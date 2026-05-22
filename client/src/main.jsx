@@ -8,7 +8,6 @@ import WelcomePage from "./pages/WelcomePage";
 import App from "./App";
 import Landing from "./pages/Landing";
 
-// ── Auth context ───────────────────────────────────────────────────────────
 const AuthCtx = createContext(null);
 export const useAuth = () => useContext(AuthCtx);
 
@@ -21,21 +20,18 @@ function AuthProvider({ children }) {
     try { return { token, user: JSON.parse(raw), org: JSON.parse(org) }; }
     catch { return null; }
   });
-
   const login = (data) => {
     localStorage.setItem("npe_token", data.token);
     localStorage.setItem("npe_user", JSON.stringify(data.user));
     localStorage.setItem("npe_org",  JSON.stringify(data.org));
     setAuth(data);
   };
-
   const logout = () => {
     localStorage.removeItem("npe_token");
     localStorage.removeItem("npe_user");
     localStorage.removeItem("npe_org");
     setAuth(null);
   };
-
   const refreshOrg = async () => {
     try {
       const { org } = await apiFetch("/me");
@@ -45,11 +41,9 @@ function AuthProvider({ children }) {
       return org;
     } catch { return null; }
   };
-
   return <AuthCtx.Provider value={{ auth, login, logout, refreshOrg }}>{children}</AuthCtx.Provider>;
 }
 
-// ── Route guards ───────────────────────────────────────────────────────────
 function RequireAuth({ children }) {
   const { auth } = useAuth();
   if (!auth) return <Navigate to="/login" replace />;
@@ -69,18 +63,17 @@ function PublicOnly({ children }) {
   return <Navigate to={auth.org?.onboarding_complete ? "/dashboard" : "/welcome"} replace />;
 }
 
-// ── Root ───────────────────────────────────────────────────────────────────
 function Root() {
   return (
     <AuthProvider>
       <BrowserRouter>
         <Routes>
-          <Route path="/"        element={<PublicOnly><Landing /></PublicOnly>} />
-          <Route path="/login"   element={<PublicOnly><LoginPage /></PublicOnly>} />
-          <Route path="/signup"  element={<PublicOnly><SignupPage /></PublicOnly>} />
-          <Route path="/welcome" element={<RequireAuth><WelcomePage /></RequireAuth>} />
+          <Route path="/"          element={<PublicOnly><Landing /></PublicOnly>} />
+          <Route path="/login"     element={<PublicOnly><LoginPage /></PublicOnly>} />
+          <Route path="/signup"    element={<PublicOnly><SignupPage /></PublicOnly>} />
+          <Route path="/welcome"   element={<RequireAuth><WelcomePage /></RequireAuth>} />
           <Route path="/dashboard" element={<RequireOnboarded><App /></RequireOnboarded>} />
-          <Route path="*"        element={<Navigate to="/" replace />} />
+          <Route path="*"          element={<Navigate to="/" replace />} />
         </Routes>
       </BrowserRouter>
     </AuthProvider>
