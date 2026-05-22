@@ -271,218 +271,379 @@ function Dashboard({data}) {
   </div>;
 }
 
+// ── Moves Management ───────────────────────────────────────────────────────
+const STAGES=[
+  {id:"prospect",  label:"Prospect",  color:"#6b7280", hint:"Identified, not yet engaged"},
+  {id:"qualify",   label:"Qualify",   color:"#3b82f6", hint:"Researching fit & capacity"},
+  {id:"cultivate", label:"Cultivate", color:"#8b5cf6", hint:"Building relationship"},
+  {id:"solicit",   label:"Solicit",   color:"#f59e0b", hint:"Ready for the ask"},
+  {id:"steward",   label:"Steward",   color:"#10b981", hint:"Deepen post-gift relationship"},
+  {id:"lapsed",    label:"Lapsed",    color:"#ef4444", hint:"Needs re-engagement"},
+];
+const STAGE_THRESH={prospect:[60,120],qualify:[14,30],cultivate:[30,60],solicit:[7,14],steward:[30,90],lapsed:[90,180]};
+const STAGE_ACTION={
+  prospect:"Research capacity — find a warm intro",
+  qualify: "Schedule a discovery call or coffee",
+  cultivate:"Share an impact story or invite to a program visit",
+  solicit: "Book a gift conversation and make the ask",
+  steward: "Send personalized impact update or thank you",
+  lapsed:  "Personal outreach — acknowledge lapse, invite back",
+};
+function moveUrgency(d){
+  const lastContact=d.lastTouchpoint||d.lastGift;
+  const days=lastContact?daysDiff(lastContact):999;
+  const [warn,crit]=STAGE_THRESH[d.stage||"cultivate"]||[30,60];
+  const level=days>crit?"critical":days>warn?"due":"ok";
+  const urgencyColor={critical:"#ef4444",due:"#f59e0b",ok:"#10b981"}[level];
+  return{days,level,urgencyColor};
+}
+
+function LogTouchpointModal({donor,onSave,onClose}){
+  const[type,setType]=useState("call");const[note,setNote]=useState("");
+  const[date,setDate]=useState(new Date().toISOString().split("T")[0]);
+  const[loading,setLoading]=useState(false);
+  const types=["call","email","meeting","event","gift","note"];
+  const save=async()=>{
+    if(!note.trim())return;setLoading(true);
+    try{await apiFetch(`/donors/${donor.id}/interactions`,{method:"POST",body:JSON.stringify({type,note,date})});onSave({type,note,date});}
+    catch(e){console.error(e);}setLoading(false);
+  };
+  const s={background:"#0a0f1e",border:"1px solid #1f2937",borderRadius:18,width:"100%",maxWidth:440,padding:24};
+  const inp={width:"100%",background:"#111827",border:"1px solid #374151",borderRadius:8,padding:"9px 12px",color:"#f3f4f6",fontSize:13,outline:"none",fontFamily:"inherit",boxSizing:"border-box"};
+  return(
+    <div style={{position:"fixed",inset:0,background:"#000c",zIndex:300,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+      <div style={s}>
+        <div style={{fontSize:16,fontWeight:800,color:"#f9fafb",marginBottom:2}}>Log Touchpoint</div>
+        <div style={{fontSize:12,color:"#6b7280",marginBottom:16}}>{donor.name}</div>
+        <div style={{display:"flex",gap:5,flexWrap:"wrap",marginBottom:12}}>
+          {types.map(t=><button key={t} onClick={()=>setType(t)} style={{background:type===t?"#10b981":"#1f2937",border:`1px solid ${type===t?"#10b981":"#374151"}`,borderRadius:7,padding:"5px 11px",color:type===t?"#fff":"#9ca3af",fontSize:12,fontWeight:600,cursor:"pointer",textTransform:"capitalize"}}>{t}</button>)}
+        </div>
+        <input type="date" value={date} onChange={e=>setDate(e.target.value)} style={{...inp,marginBottom:10}}/>
+        <textarea value={note} onChange={e=>setNote(e.target.value)} placeholder="What happened? What was discussed?" rows={3} style={{...inp,resize:"vertical",lineHeight:1.5,marginBottom:14}}/>
+        <div style={{display:"flex",gap:8}}>
+          <button onClick={save} disabled={loading||!note.trim()} style={{flex:1,background:note.trim()?"#10b981":"#1f2937",border:"none",borderRadius:10,padding:"11px",color:"#fff",fontSize:14,fontWeight:700,cursor:note.trim()?"pointer":"not-allowed"}}>{loading?"Saving…":"Save Touchpoint"}</button>
+          <button onClick={onClose} style={{background:"#374151",border:"none",borderRadius:10,padding:"11px 14px",color:"#9ca3af",fontSize:13,cursor:"pointer"}}>Cancel</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function TouchpointTimeline({interactions}){
+  if(!interactions?.length)return<div style={{fontSize:13,color:"#6b7280",textAlign:"center",padding:"16px 0"}}>No touchpoints logged yet.</div>;
+  const typeColor={call:"#3b82f6",email:"#8b5cf6",meeting:"#10b981",gift:"#f59e0b",event:"#ec4899",note:"#6b7280"};
+  const sorted=[...interactions].sort((a,b)=>new Date(b.date)-new Date(a.date));
+  return(
+    <div style={{display:"flex",flexDirection:"column",gap:0}}>
+      {sorted.map((int,i)=>{
+        const c=typeColor[int.type]||"#6b7280";
+        const dAgo=daysDiff(int.date);
+        const when=dAgo===0?"Today":dAgo===1?"Yesterday":`${dAgo}d ago`;
+        return(
+          <div key={i} style={{display:"flex",gap:12,paddingBottom:16,position:"relative"}}>
+            {i<sorted.length-1&&<div style={{position:"absolute",left:11,top:24,width:2,bottom:0,background:"#1f2937"}}/>}
+            <div style={{width:24,height:24,borderRadius:"50%",background:c+"22",border:`2px solid ${c}`,flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",zIndex:1,marginTop:2}}>
+              <div style={{width:7,height:7,borderRadius:"50%",background:c}}/>
+            </div>
+            <div style={{flex:1}}>
+              <div style={{display:"flex",alignItems:"center",gap:7,marginBottom:3,flexWrap:"wrap"}}>
+                <span style={{fontSize:11,fontWeight:700,textTransform:"capitalize",color:c}}>{int.type}</span>
+                <span style={{fontSize:11,color:"#4b5563"}}>{int.date}</span>
+                <span style={{fontSize:11,color:"#374151"}}>({when})</span>
+              </div>
+              <div style={{fontSize:13,color:"#d1d5db",lineHeight:1.5}}>{int.note}</div>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function DonorDetailModal({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loadingKey,getAI}){
+  const stage=STAGES.find(s=>s.id===(donor.stage||"cultivate"))||STAGES[2];
+  const sc=donorScore(donor);const scoreColor=sc>70?"#10b981":sc>45?"#f59e0b":"#ef4444";
+  const urg=moveUrgency(donor);
+  return(
+    <div style={{position:"fixed",inset:0,background:"#000c",zIndex:200,display:"flex",alignItems:"center",justifyContent:"center",padding:20}} onClick={onClose}>
+      <div onClick={e=>e.stopPropagation()} style={{background:"#0a0f1e",border:"1px solid #1f2937",borderRadius:20,width:"100%",maxWidth:580,maxHeight:"88vh",overflowY:"auto",padding:28,boxSizing:"border-box"}}>
+        <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",marginBottom:16}}>
+          <div>
+            <div style={{fontSize:22,fontWeight:800,color:"#f9fafb",letterSpacing:"-0.02em"}}>{donor.name}</div>
+            <div style={{display:"flex",gap:8,alignItems:"center",marginTop:6,flexWrap:"wrap"}}>
+              <span style={{fontSize:11,fontWeight:700,padding:"3px 10px",borderRadius:99,background:stage.color+"22",color:stage.color}}>{stage.label}</span>
+              <span style={{fontSize:12,color:"#6b7280"}}>{fmtFull(donor.total)} lifetime · {donor.gifts} gifts</span>
+              <span style={{fontSize:12,color:"#6b7280"}}>{donor.email}</span>
+            </div>
+          </div>
+          <button onClick={onClose} style={{background:"#1f2937",border:"none",borderRadius:8,padding:"6px 12px",color:"#9ca3af",cursor:"pointer",fontSize:13,flexShrink:0}}>✕</button>
+        </div>
+
+        <div style={{marginBottom:16}}>
+          <div style={{fontSize:10,fontWeight:700,color:"#6b7280",textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:8}}>Move Stage</div>
+          <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
+            {STAGES.map(s=><button key={s.id} onClick={()=>onStageChange(donor.id,s.id)} style={{background:(donor.stage||"cultivate")===s.id?s.color+"22":"#111827",border:`1px solid ${(donor.stage||"cultivate")===s.id?s.color:"#374151"}`,borderRadius:8,padding:"6px 12px",color:(donor.stage||"cultivate")===s.id?s.color:"#6b7280",fontSize:12,fontWeight:600,cursor:"pointer"}}>{s.label}</button>)}
+          </div>
+        </div>
+
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10,marginBottom:16}}>
+          {[["Last Gift",fmtFull(donor.lastAmount),donor.lastGift,"#f3f4f6"],["Last Contact",`${urg.days}d ago`,urg.level,urg.urgencyColor],["Engagement",`${sc}/99`,"score",scoreColor]].map(([l,v,s,c])=>(
+            <div key={l} style={{background:"#111827",borderRadius:10,padding:"10px 12px"}}>
+              <div style={{fontSize:10,color:"#6b7280",textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:4}}>{l}</div>
+              <div style={{fontSize:15,fontWeight:700,color:c}}>{v}</div>
+              <div style={{fontSize:10,color:"#6b7280",marginTop:1,textTransform:"capitalize"}}>{s}</div>
+            </div>
+          ))}
+        </div>
+
+        {donor.notes&&<div style={{background:"#111827",borderRadius:10,padding:"12px 14px",fontSize:13,color:"#9ca3af",marginBottom:16,lineHeight:1.5}}>{donor.notes}</div>}
+
+        <div style={{marginBottom:16}}>
+          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12}}>
+            <div style={{fontSize:11,fontWeight:700,color:"#6b7280",textTransform:"uppercase",letterSpacing:"0.06em"}}>Touchpoint Timeline</div>
+            <button onClick={onLogTouchpoint} style={{background:"#10b981",border:"none",borderRadius:7,padding:"5px 12px",color:"#fff",fontSize:11,fontWeight:700,cursor:"pointer"}}>+ Log</button>
+          </div>
+          <TouchpointTimeline interactions={donor.interactions}/>
+        </div>
+
+        <div style={{borderTop:"1px solid #1f2937",paddingTop:14}}>
+          <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:10}}>
+            <AIBtn onClick={()=>getAI(donor,"nextmove")} loading={loadingKey===`${donor.id}_nextmove`} label="✦ Next Move" small/>
+            <AIBtn onClick={()=>getAI(donor,"outreach")} loading={loadingKey===`${donor.id}_outreach`} label="✦ Outreach Strategy" small/>
+            <AIBtn onClick={()=>getAI(donor,"email")} loading={loadingKey===`${donor.id}_email`} label="✦ Draft Email" small/>
+            <AIBtn onClick={()=>getAI(donor,"callscript")} loading={loadingKey===`${donor.id}_callscript`} label="✦ Call Script" small/>
+          </div>
+          {["nextmove","outreach","email","callscript"].map(t=>aiMap[`${donor.id}_${t}`]?<AIPanel key={t} text={aiMap[`${donor.id}_${t}`]} onClose={()=>{}}/>:null)}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function DonorKanban({donors,onStageChange,onLogTouchpoint,onSelectDonor}){
+  const[draggingId,setDraggingId]=useState(null);const[dragOver,setDragOver]=useState(null);
+  const byStage=sid=>donors.filter(d=>(d.stage||"cultivate")===sid).sort((a,b)=>b.total-a.total);
+  return(
+    <div style={{display:"flex",gap:10,overflowX:"auto",paddingBottom:16,minHeight:500,alignItems:"flex-start"}}>
+      {STAGES.map(stage=>{
+        const cols=byStage(stage.id);
+        const total=cols.reduce((s,d)=>s+d.total,0);
+        const isOver=dragOver===stage.id;
+        return(
+          <div key={stage.id} style={{flexShrink:0,width:218,display:"flex",flexDirection:"column",gap:8}}
+            onDragOver={e=>{e.preventDefault();setDragOver(stage.id);}}
+            onDragLeave={e=>{if(!e.currentTarget.contains(e.relatedTarget))setDragOver(null);}}
+            onDrop={e=>{e.preventDefault();const id=e.dataTransfer.getData("donorId");if(id)onStageChange(id,stage.id);setDragOver(null);}}>
+            <div style={{background:"#111827",border:`1px solid ${isOver?stage.color+"88":"#1f2937"}`,borderRadius:12,padding:"10px 12px",transition:"border-color 0.15s"}}>
+              <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:2}}>
+                <div style={{width:7,height:7,borderRadius:"50%",background:stage.color,flexShrink:0}}/>
+                <span style={{fontSize:12,fontWeight:800,color:stage.color,letterSpacing:"0.03em"}}>{stage.label}</span>
+                <span style={{marginLeft:"auto",background:stage.color+"22",color:stage.color,fontSize:10,fontWeight:700,borderRadius:99,padding:"1px 6px"}}>{cols.length}</span>
+              </div>
+              <div style={{fontSize:11,color:"#4b5563"}}>{total>0?`${fmt(total)} lifetime`:stage.hint}</div>
+            </div>
+            <div style={{display:"flex",flexDirection:"column",gap:8,border:`2px dashed ${isOver?stage.color+"55":"transparent"}`,borderRadius:10,padding:isOver?4:0,transition:"all 0.15s",minHeight:60}}>
+              {cols.map(d=>{
+                const urg=moveUrgency(d);const sc=donorScore(d);
+                const isDragging=draggingId===d.id;
+                return(
+                  <div key={d.id} draggable
+                    onDragStart={e=>{e.dataTransfer.setData("donorId",d.id);setDraggingId(d.id);}}
+                    onDragEnd={()=>{setDraggingId(null);setDragOver(null);}}
+                    style={{background:"#111827",border:`1px solid ${urg.level==="critical"?"#ef444444":"#1f2937"}`,borderRadius:10,padding:"11px 12px",cursor:"grab",opacity:isDragging?0.35:1,transition:"opacity 0.15s",userSelect:"none"}}>
+                    <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",gap:6,marginBottom:5}}>
+                      <div style={{flex:1,minWidth:0}}>
+                        <div style={{fontSize:13,fontWeight:700,color:"#f3f4f6",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{d.name}</div>
+                        <div style={{fontSize:11,color:"#6b7280",marginTop:1}}>{fmt(d.total)}</div>
+                      </div>
+                      <div style={{width:8,height:8,borderRadius:"50%",background:urg.urgencyColor,flexShrink:0,marginTop:3}} title={`${urg.level}: ${urg.days}d since contact`}/>
+                    </div>
+                    <div style={{fontSize:11,color:urg.urgencyColor,marginBottom:5}}>
+                      {urg.level==="ok"?"✓ ":urg.level==="due"?"! ":"!! "}{urg.days}d since contact
+                    </div>
+                    <div style={{fontSize:11,color:"#6b7280",lineHeight:1.35,marginBottom:8}}>{STAGE_ACTION[stage.id]}</div>
+                    <div style={{display:"flex",gap:5}}>
+                      <button onClick={e=>{e.stopPropagation();onLogTouchpoint(d);}} style={{flex:1,background:"#1f2937",border:"1px solid #374151",borderRadius:6,padding:"5px 0",color:"#9ca3af",fontSize:11,fontWeight:600,cursor:"pointer"}}>+ Log</button>
+                      <button onClick={e=>{e.stopPropagation();onSelectDonor(d);}} style={{flex:1,background:"#1f2937",border:"1px solid #374151",borderRadius:6,padding:"5px 0",color:"#9ca3af",fontSize:11,fontWeight:600,cursor:"pointer"}}>View →</button>
+                    </div>
+                  </div>
+                );
+              })}
+              {cols.length===0&&!isOver&&<div style={{textAlign:"center",padding:"20px 8px",color:"#374151",fontSize:12,border:"1px dashed #1f2937",borderRadius:10}}>Drop here</div>}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 // ── Donors ─────────────────────────────────────────────────────────────────
-function Donors({data,setData}) {
-  const [search,setSearch]=useState(""); const [filter,setFilter]=useState("all");
-  const [selected,setSelected]=useState(null); const [showAdd,setShowAdd]=useState(false);
-  const [newDonor,setNewDonor]=useState({name:"",email:"",phone:"",lastAmount:"",tags:""});
-  const [aiMap,setAiMap]=useState({}); const [loadingKey,setLoadingKey]=useState(null);
-  const [callList,setCallList]=useState(""); const [callLoading,setCallLoading]=useState(false);
-  const [newInteraction,setNewInteraction]=useState({donorId:null,type:"call",note:""});
-  const [showImport,setShowImport]=useState(false);
-  const [showLapsed,setShowLapsed]=useState(false);
-  const [lapsedEmails,setLapsedEmails]=useState({});
-  const [lapsedLoadingId,setLapsedLoadingId]=useState(null);
+function Donors({data,setData}){
+  const[view,setView]=useState("kanban");
+  const[search,setSearch]=useState("");
+  const[selected,setSelected]=useState(null);
+  const[logTarget,setLogTarget]=useState(null);
+  const[aiMap,setAiMap]=useState({});const[loadingKey,setLoadingKey]=useState(null);
+  const[callList,setCallList]=useState("");const[callLoading,setCallLoading]=useState(false);
+  const[showAdd,setShowAdd]=useState(false);const[showImport,setShowImport]=useState(false);
+  const[newDonor,setNewDonor]=useState({name:"",email:"",phone:"",lastAmount:"",stage:"prospect"});
 
-  const lapsedDonors=[...data.donors].filter(d=>d.status==="lapsed"||retentionRisk(d).level==="high").sort((a,b)=>b.total-a.total);
-  const atRisk=data.donors.filter(d=>retentionRisk(d).level!=="low"&&d.status!=="lapsed");
+  const filtered=data.donors.filter(d=>!search||(d.name+d.email).toLowerCase().includes(search.toLowerCase()));
 
-  const draftLapsedEmail = async (donor) => {
-    setLapsedLoadingId(donor.id);
-    const sys=`You are a nonprofit major gifts officer. Write a warm, personal re-engagement email. Max 150 words. Do not use subject line headers.`;
-    const msg=`Write a re-engagement email for ${donor.name}.\nLast gift: ${fmtFull(donor.lastAmount)} on ${donor.lastGift} (${daysDiff(donor.lastGift)} days ago)\nTotal giving: ${fmtFull(donor.total)} across ${donor.gifts} gifts\nNotes: ${donor.notes||"none"}\nOrg: ${data.org.name} — ${data.org.mission}\n\nBe warm and specific. Reference their giving history. Include a clear but gentle ask.`;
-    await askClaude(sys, msg, chunk=>setLapsedEmails(p=>({...p,[donor.id]:chunk})));
-    setLapsedLoadingId(null);
+  const moveToStage=async(donorId,stage)=>{
+    setData(prev=>({...prev,donors:prev.donors.map(d=>d.id===donorId?{...d,stage}:d)}));
+    if(selected?.id===donorId)setSelected(prev=>({...prev,stage}));
+    try{await apiFetch(`/donors/${donorId}/stage`,{method:"PATCH",body:JSON.stringify({stage})});}
+    catch(e){console.error(e);}
   };
 
-  const reloadDonors = async () => {
-    try {
-      const donors = await apiFetch("/donors");
-      setData(prev => ({ ...prev, donors: donors.map(d => ({
-        id: d.id, name: d.name, email: d.email||"", phone: d.phone||"",
-        total: d.total_giving||0, lastGift: d.last_gift_date||new Date().toISOString().split("T")[0],
-        lastAmount: d.last_gift_amount||0, gifts: d.gift_count||0, status: d.status,
-        tags: Array.isArray(d.tags)?d.tags:JSON.parse(d.tags||"[]"),
-        notes: d.notes||"", interactions: d.interactions||[],
-      })) }));
-    } catch(e) { console.error(e); }
+  const handleLogged=(donor,interaction)=>{
+    const updated={...donor,lastTouchpoint:interaction.date,interactions:[interaction,...(donor.interactions||[])]};
+    setData(prev=>({...prev,donors:prev.donors.map(d=>d.id===donor.id?updated:d)}));
+    if(selected?.id===donor.id)setSelected(updated);
+    setLogTarget(null);
   };
 
-  const filtered=data.donors.filter(d=>{
-    const ms=d.name.toLowerCase().includes(search.toLowerCase())||d.email.toLowerCase().includes(search.toLowerCase());
-    return ms&&(filter==="all"||d.status===filter);
-  }).sort((a,b)=>donorScore(b)-donorScore(a));
-
-  const getAI = async (donor,type) => {
-    const key=`${donor.id}_${type}`; setLoadingKey(key); setAiMap(p=>({...p,[key]:""}));
-    const sys=`You are a nonprofit major gifts officer. Specific, strategic, warm. Max 180 words. Reference actual donor history.`;
-    const prompts = {
-      outreach:`Outreach strategy for ${donor.name}.\nTotal: ${fmtFull(donor.total)}, ${donor.gifts} gifts, last: ${fmtFull(donor.lastAmount)} ${daysDiff(donor.lastGift)}d ago\nStatus: ${donor.status} | Tags: ${donor.tags.join(",")}\nNotes: ${donor.notes}\nInteractions: ${donor.interactions?.map(i=>`${i.date}: ${i.note}`).join("; ")||"none"}\nOrg: ${data.org.mission}\n\nGive: best channel, key talking points, suggested ask amount, personal reference.`,
-      upgrade:`Upgrade path for ${donor.name}.\nCurrent: ${donor.gifts} gifts, avg ${fmt(donor.total/donor.gifts)}, last ${fmtFull(donor.lastAmount)}\nNotes: ${donor.notes}\n\nSuggest: next ask amount, timing, framing strategy, what to say.`,
-      email:`Write a personalized re-engagement email for lapsed donor ${donor.name}.\nLast gift: ${fmtFull(donor.lastAmount)} on ${donor.lastGift}\nNotes: ${donor.notes}\nOrg: ${data.org.name} — ${data.org.mission}\n\nWarm, specific, not desperate. Include a clear but soft ask.`,
-      callscript:`Write a phone call script for ${donor.name}.\nContext: ${donor.notes}\nLast gift: ${fmtFull(donor.lastAmount)}\nGoal: cultivation / upgrade conversation\n\nInclude: opening, 2 listening questions, impact story hook, soft ask.`,
+  const getAI=async(donor,type)=>{
+    const key=`${donor.id}_${type}`;setLoadingKey(key);setAiMap(p=>({...p,[key]:""}));
+    const stage=STAGES.find(s=>s.id===(donor.stage||"cultivate"))||STAGES[2];
+    const urg=moveUrgency(donor);
+    const sys=`You are an expert major gifts officer. Be specific, strategic, brief. Max 200 words. Reference actual donor data.`;
+    const prompts={
+      nextmove:`Donor: ${donor.name} | Stage: ${stage.label} | Days since contact: ${urg.days} | Total: ${fmtFull(donor.total)} (${donor.gifts} gifts) | Last: ${fmtFull(donor.lastAmount)} on ${donor.lastGift}\nNotes: ${donor.notes||"none"}\nOrg: ${data.org.name} — ${data.org.mission}\nRecent touchpoints: ${donor.interactions?.slice(0,3).map(i=>`${i.date}: ${i.type} - ${i.note}`).join("; ")||"none"}\n\nProvide:\n**Urgency Score:** X/10\n**Recommended Move:** [exact action]\n**Timing:** [when]\n**What to say:** [2-3 sentences]\n**Goal:** [what you're trying to achieve]`,
+      outreach:`Write an outreach strategy for ${donor.name} (${stage.label} stage).\nTotal: ${fmtFull(donor.total)}, last gift ${fmtFull(donor.lastAmount)} ${urg.days}d ago.\nNotes: ${donor.notes}\nOrg: ${data.org.mission}\n\nBest channel, talking points, suggested ask amount, personal hook.`,
+      email:`Write a personalized email to ${donor.name} (${stage.label} stage).\nLast gift: ${fmtFull(donor.lastAmount)} on ${donor.lastGift}. Notes: ${donor.notes}\nOrg: ${data.org.name}.\n\nWarm, specific, 150 words max.`,
+      callscript:`Phone call script for ${donor.name} (${stage.label}).\nContext: ${donor.notes}\nLast gift: ${fmtFull(donor.lastAmount)}\n\nOpening, 2 listening questions, impact hook, soft ask.`,
     };
     await askClaude(sys,prompts[type],chunk=>setAiMap(p=>({...p,[key]:chunk})));
     setLoadingKey(null);
   };
 
-  const generateCallList = async () => {
-    setCallLoading(true); setCallList("");
-    await askClaude(
-      `You are a chief development officer. Be tactical. Max 200 words.`,
-      `Generate a prioritized call list for this week. For each donor, give: why call now, what to say, what to ask for.\n\n${data.donors.map(d=>`${d.name} [${d.status}]: score ${donorScore(d)}, last gift ${daysDiff(d.lastGift)}d ago ${fmtFull(d.lastAmount)}, notes: ${d.notes}`).join("\n")}`,
-      chunk=>setCallList(chunk)
-    );
+  const reloadDonors=async()=>{
+    try{
+      const donors=await apiFetch("/donors");
+      const interactions_map=Object.fromEntries(donors.map(d=>[d.id,d.interactions||[]]));
+      setData(prev=>({...prev,donors:donors.map(d=>{
+        const ints=(d.interactions||[]).map(i=>({date:i.date||i.created_at?.split("T")[0],type:i.type,note:i.note||""}));
+        const lastTouchpoint=ints.length>0?ints.slice().sort((a,b)=>new Date(b.date)-new Date(a.date))[0].date:null;
+        return{id:d.id,name:d.name,email:d.email||"",phone:d.phone||"",total:d.total_giving||0,
+          lastGift:d.last_gift_date||"",lastAmount:d.last_gift_amount||0,gifts:d.gift_count||0,
+          status:d.status,stage:d.stage||"cultivate",lastTouchpoint,
+          tags:Array.isArray(d.tags)?d.tags:JSON.parse(d.tags||"[]"),notes:d.notes||"",interactions:ints};
+      })}));
+    }catch(e){console.error(e);}
+  };
+
+  const generateCallList=async()=>{
+    setCallLoading(true);setCallList("");
+    await askClaude(`You are a chief development officer. Be tactical. Max 200 words.`,
+      `Prioritized call list for this week:\n${data.donors.map(d=>`${d.name} [${d.stage||"cultivate"}]: ${daysDiff(d.lastTouchpoint||d.lastGift)}d since contact, ${fmtFull(d.lastAmount)} last gift, score ${donorScore(d)}, notes: ${d.notes}`).join("\n")}`,
+      chunk=>setCallList(chunk));
     setCallLoading(false);
   };
 
-  const addInteraction = (donorId) => {
-    if(!newInteraction.note) return;
-    const interaction = {date:new Date().toISOString().split("T")[0],type:newInteraction.type,note:newInteraction.note};
-    setData(prev=>({...prev,donors:prev.donors.map(d=>d.id===donorId?{...d,interactions:[interaction,...(d.interactions||[])]}:d)}));
-    setNewInteraction({donorId:null,type:"call",note:""});
+  const addDonor=async()=>{
+    if(!newDonor.name)return;
+    const temp={id:"tmp_"+Date.now(),name:newDonor.name,email:newDonor.email,phone:newDonor.phone,
+      total:parseInt(newDonor.lastAmount)||0,lastGift:new Date().toISOString().split("T")[0],
+      lastAmount:parseInt(newDonor.lastAmount)||0,gifts:newDonor.lastAmount?1:0,
+      status:"new",stage:newDonor.stage,tags:[],notes:"",interactions:[],lastTouchpoint:null};
+    setData(prev=>({...prev,donors:[...prev.donors,temp]}));
+    setShowAdd(false);setNewDonor({name:"",email:"",phone:"",lastAmount:"",stage:"prospect"});
+    try{await apiFetch("/donors",{method:"POST",body:JSON.stringify({...newDonor,stage:newDonor.stage})});await reloadDonors();}
+    catch(e){console.error(e);}
   };
 
-  const addDonor = () => {
-    if(!newDonor.name) return;
-    const d={id:Date.now(),name:newDonor.name,email:newDonor.email,phone:newDonor.phone,total:parseInt(newDonor.lastAmount)||0,lastGift:new Date().toISOString().split("T")[0],lastAmount:parseInt(newDonor.lastAmount)||0,gifts:1,status:"new",tags:newDonor.tags.split(",").map(t=>t.trim()).filter(Boolean),notes:"",interactions:[]};
-    setData(prev=>({...prev,donors:[...prev.donors,d]}));
-    setShowAdd(false); setNewDonor({name:"",email:"",phone:"",lastAmount:"",tags:""});
-  };
+  return(
+    <div style={{display:"flex",flexDirection:"column",gap:14}}>
+      {showImport&&<DonorImport onClose={()=>setShowImport(false)} onImported={()=>{reloadDonors();setShowImport(false);}}/>}
+      {logTarget&&<LogTouchpointModal donor={logTarget} onSave={int=>handleLogged(logTarget,int)} onClose={()=>setLogTarget(null)}/>}
+      {selected&&view==="kanban"&&<DonorDetailModal donor={selected} onClose={()=>setSelected(null)}
+        onStageChange={moveToStage} onLogTouchpoint={()=>{setLogTarget(selected);}}
+        aiMap={aiMap} loadingKey={loadingKey} getAI={getAI}/>}
 
-  return <div style={{display:"flex",flexDirection:"column",gap:14}}>
-    {showImport&&<DonorImport onClose={()=>setShowImport(false)} onImported={()=>{reloadDonors();setShowImport(false);}}/>}
-
-    <div style={{display:"flex",gap:10,flexWrap:"wrap",alignItems:"center"}}>
-      <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search donors…" style={{flex:1,minWidth:160,background:"#111827",border:"1px solid #374151",borderRadius:10,padding:"10px 14px",color:"#f3f4f6",fontSize:13,outline:"none"}}/>
-      <select value={filter} onChange={e=>setFilter(e.target.value)} style={{background:"#111827",border:"1px solid #374151",borderRadius:10,padding:"10px 12px",color:"#9ca3af",fontSize:13,outline:"none"}}>
-        <option value="all">All</option><option value="major">Major</option><option value="mid">Mid</option><option value="new">New</option><option value="lapsed">Lapsed</option>
-      </select>
-      <AIBtn onClick={generateCallList} loading={callLoading} label="✦ This Week's Call List"/>
-      <button onClick={()=>setShowAdd(true)} style={{background:"#10b981",border:"none",borderRadius:10,padding:"10px 14px",color:"#fff",fontSize:13,fontWeight:600,cursor:"pointer"}}>+ Add</button>
-      <button onClick={()=>setShowImport(true)} style={{background:"#1f2937",border:"1px solid #374151",borderRadius:10,padding:"10px 14px",color:"#9ca3af",fontSize:13,fontWeight:600,cursor:"pointer"}}>↑ Import CSV</button>
-    </div>
-
-    {(callLoading||callList)&&<AIPanel text={callList} onClose={()=>setCallList("")}/>}
-
-    {lapsedDonors.length>0&&<div style={{background:"#1c0a0a",border:"1px solid #ef444433",borderRadius:14,overflow:"hidden"}}>
-      <button onClick={()=>setShowLapsed(!showLapsed)} style={{width:"100%",background:"transparent",border:"none",padding:"14px 18px",display:"flex",alignItems:"center",justifyContent:"space-between",cursor:"pointer",textAlign:"left"}}>
-        <div style={{display:"flex",alignItems:"center",gap:10}}>
-          <div style={{width:8,height:8,borderRadius:"50%",background:"#ef4444"}}/>
-          <span style={{fontSize:13,fontWeight:700,color:"#f87171"}}>Lapsed & At-Risk Donors</span>
-          <span style={{background:"#ef444422",color:"#ef4444",fontSize:11,fontWeight:700,borderRadius:99,padding:"2px 8px"}}>{lapsedDonors.length}</span>
-          <span style={{fontSize:12,color:"#9ca3af"}}>{fmtFull(lapsedDonors.reduce((s,d)=>s+d.total,0))} total at risk</span>
+      <div style={{display:"flex",gap:10,flexWrap:"wrap",alignItems:"center"}}>
+        <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search donors…" style={{flex:1,minWidth:160,background:"#111827",border:"1px solid #374151",borderRadius:10,padding:"10px 14px",color:"#f3f4f6",fontSize:13,outline:"none"}}/>
+        <div style={{display:"flex",background:"#111827",border:"1px solid #1f2937",borderRadius:10,overflow:"hidden"}}>
+          {[["kanban","Pipeline"],["list","List"]].map(([v,l])=>(
+            <button key={v} onClick={()=>setView(v)} style={{background:view===v?"#1f2937":"transparent",border:"none",padding:"9px 14px",color:view===v?"#f3f4f6":"#6b7280",fontSize:13,fontWeight:view===v?700:400,cursor:"pointer"}}>{l}</button>
+          ))}
         </div>
-        <span style={{fontSize:12,color:"#6b7280"}}>{showLapsed?"▲ Collapse":"▼ Expand"}</span>
-      </button>
-      {showLapsed&&<div style={{borderTop:"1px solid #ef444422",padding:"14px 18px",display:"flex",flexDirection:"column",gap:14}}>
-        {lapsedDonors.map(d=>{
-          const rr=retentionRisk(d);
-          return <div key={d.id} style={{background:"#0f172a",borderRadius:12,padding:16,border:"1px solid #1f2937"}}>
-            <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",gap:10,marginBottom:10}}>
-              <div>
-                <div style={{fontSize:14,fontWeight:700,color:"#f3f4f6"}}>{d.name}</div>
-                <div style={{fontSize:12,color:"#6b7280",marginTop:2}}>{fmtFull(d.total)} lifetime · {daysDiff(d.lastGift)}d since last gift · {d.gifts} gifts</div>
-                <div style={{fontSize:12,color:"#ef4444",marginTop:3}}>{rr.reason}</div>
-              </div>
-              <div style={{display:"flex",gap:6,flexShrink:0,flexWrap:"wrap",justifyContent:"flex-end"}}>
-                <button onClick={()=>draftLapsedEmail(d)} disabled={lapsedLoadingId===d.id} style={{background:lapsedLoadingId===d.id?"#1f2937":"linear-gradient(135deg,#7c3aed,#3b82f6)",border:"none",borderRadius:8,padding:"7px 12px",color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer",display:"flex",alignItems:"center",gap:5,opacity:lapsedLoadingId===d.id?0.6:1}}>
-                  {lapsedLoadingId===d.id?<><Spin/>Drafting…</>:"✦ Draft Email"}
-                </button>
-              </div>
-            </div>
-            {lapsedEmails[d.id]&&<div style={{background:"#1a0f3c",border:"1px solid #7c3aed44",borderRadius:10,padding:"12px 14px",position:"relative"}}>
-              <div style={{fontSize:10,fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase",color:"#8b5cf6",marginBottom:8}}>Draft Email</div>
-              <div style={{fontSize:13,color:"#e2e8f0",lineHeight:1.75,whiteSpace:"pre-wrap"}}>{lapsedEmails[d.id]}</div>
-              <button onClick={()=>navigator.clipboard.writeText(lapsedEmails[d.id])} style={{marginTop:10,background:"#374151",border:"none",borderRadius:6,padding:"5px 10px",color:"#9ca3af",fontSize:11,cursor:"pointer"}}>Copy</button>
-            </div>}
-          </div>;
-        })}
-      </div>}
-    </div>}
-
-    {showAdd&&<Card style={{gap:10,display:"flex",flexDirection:"column"}}>
-      <div style={{fontSize:14,fontWeight:700,color:"#f3f4f6"}}>New Donor</div>
-      {[["name","Full Name"],["email","Email"],["phone","Phone"],["lastAmount","Gift Amount ($)"],["tags","Tags (comma-separated)"]].map(([k,pl])=>
-        <input key={k} value={newDonor[k]} onChange={e=>setNewDonor(p=>({...p,[k]:e.target.value}))} placeholder={pl} style={{background:"#0f172a",border:"1px solid #374151",borderRadius:8,padding:"9px 12px",color:"#f3f4f6",fontSize:13,outline:"none"}}/>
-      )}
-      <div style={{display:"flex",gap:8}}>
-        <button onClick={addDonor} style={{background:"#10b981",border:"none",borderRadius:8,padding:"8px 14px",color:"#fff",fontSize:13,fontWeight:600,cursor:"pointer"}}>Save</button>
-        <button onClick={()=>setShowAdd(false)} style={{background:"#374151",border:"none",borderRadius:8,padding:"8px 14px",color:"#9ca3af",fontSize:13,cursor:"pointer"}}>Cancel</button>
+        <AIBtn onClick={generateCallList} loading={callLoading} label="✦ Call List"/>
+        <button onClick={()=>setShowAdd(!showAdd)} style={{background:"#10b981",border:"none",borderRadius:10,padding:"10px 14px",color:"#fff",fontSize:13,fontWeight:600,cursor:"pointer"}}>+ Add</button>
+        <button onClick={()=>setShowImport(true)} style={{background:"#1f2937",border:"1px solid #374151",borderRadius:10,padding:"10px 14px",color:"#9ca3af",fontSize:13,cursor:"pointer"}}>↑ Import</button>
       </div>
-    </Card>}
 
-    {filtered.map(d=>{
-      const sc=donorScore(d); const isOpen=selected?.id===d.id;
-      const scoreColor=sc>70?"#10b981":sc>45?"#f59e0b":"#ef4444";
-      const rr=retentionRisk(d);
-      const riskColor={high:"#ef4444",medium:"#f59e0b",low:"#10b981"}[rr.level];
-      return <Card key={d.id} selected={isOpen} accent={SC[d.status]} onClick={()=>setSelected(isOpen?null:d)}>
-        <div style={{display:"flex",alignItems:"center",gap:12}}>
-          <div style={{position:"relative",flexShrink:0}}>
-            <div style={{width:42,height:42,borderRadius:"50%",background:SC[d.status]+"33",display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,fontWeight:800,color:SC[d.status]}}>{d.name[0]}</div>
-            <div style={{position:"absolute",bottom:-2,right:-2,width:18,height:18,borderRadius:"50%",background:scoreColor,border:"2px solid #111827",display:"flex",alignItems:"center",justifyContent:"center"}}>
-              <span style={{fontSize:8,fontWeight:800,color:"#fff"}}>{sc}</span>
-            </div>
-          </div>
-          <div style={{flex:1,minWidth:0}}>
-            <div style={{fontSize:15,fontWeight:700,color:"#f3f4f6"}}>{d.name}</div>
-            <div style={{fontSize:11,color:"#6b7280",marginTop:1}}>{d.email} · {daysDiff(d.lastGift)}d since last gift</div>
-            <div style={{display:"flex",gap:4,marginTop:5,flexWrap:"wrap"}}>
-              {d.tags.map(t=><Pill key={t} label={t} color="#6b7280"/>)}
-              {rr.level!=="low"&&<span style={{fontSize:9,fontWeight:800,letterSpacing:"0.06em",textTransform:"uppercase",padding:"2px 7px",borderRadius:99,background:riskColor+"22",color:riskColor,whiteSpace:"nowrap"}}>{rr.level} churn risk</span>}
-            </div>
-          </div>
-          <div style={{textAlign:"right",flexShrink:0}}>
-            <div style={{fontSize:17,fontWeight:800,color:"#f3f4f6"}}>{fmt(d.total)}</div>
-            <div style={{fontSize:11,color:"#6b7280"}}>{d.gifts} gifts</div>
-            <div style={{marginTop:4}}><Pill label={d.status} color={SC[d.status]}/></div>
-          </div>
+      {(callLoading||callList)&&<AIPanel text={callList} onClose={()=>setCallList("")}/>}
+
+      {showAdd&&<Card style={{gap:10,display:"flex",flexDirection:"column"}}>
+        <div style={{fontSize:14,fontWeight:700,color:"#f3f4f6"}}>New Donor</div>
+        <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
+          {STAGES.map(s=><button key={s.id} onClick={()=>setNewDonor(p=>({...p,stage:s.id}))} style={{background:newDonor.stage===s.id?s.color+"22":"#0f172a",border:`1px solid ${newDonor.stage===s.id?s.color:"#374151"}`,borderRadius:7,padding:"5px 11px",color:newDonor.stage===s.id?s.color:"#6b7280",fontSize:12,fontWeight:600,cursor:"pointer"}}>{s.label}</button>)}
         </div>
+        {[["name","Full Name"],["email","Email"],["phone","Phone"],["lastAmount","Gift Amount ($)"]].map(([k,pl])=>(
+          <input key={k} value={newDonor[k]} onChange={e=>setNewDonor(p=>({...p,[k]:e.target.value}))} placeholder={pl} style={{background:"#0f172a",border:"1px solid #374151",borderRadius:8,padding:"9px 12px",color:"#f3f4f6",fontSize:13,outline:"none"}}/>
+        ))}
+        <div style={{display:"flex",gap:8}}>
+          <button onClick={addDonor} style={{background:"#10b981",border:"none",borderRadius:8,padding:"9px 16px",color:"#fff",fontSize:13,fontWeight:600,cursor:"pointer"}}>Save</button>
+          <button onClick={()=>setShowAdd(false)} style={{background:"#374151",border:"none",borderRadius:8,padding:"9px 14px",color:"#9ca3af",fontSize:13,cursor:"pointer"}}>Cancel</button>
+        </div>
+      </Card>}
 
-        {isOpen&&<div style={{marginTop:14,paddingTop:14,borderTop:"1px solid #1f2937"}}>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:10,marginBottom:14}}>
-            <div><div style={{fontSize:10,color:"#6b7280",textTransform:"uppercase",letterSpacing:"0.06em"}}>Last Gift</div><div style={{fontSize:13,color:"#f3f4f6",marginTop:3}}>{fmtFull(d.lastAmount)}</div></div>
-            <div><div style={{fontSize:10,color:"#6b7280",textTransform:"uppercase",letterSpacing:"0.06em"}}>Phone</div><div style={{fontSize:13,color:"#f3f4f6",marginTop:3}}>{d.phone||"—"}</div></div>
-            <div><div style={{fontSize:10,color:"#6b7280",textTransform:"uppercase",letterSpacing:"0.06em"}}>Engagement</div><div style={{fontSize:13,color:scoreColor,marginTop:3,fontWeight:700}}>{sc}/99</div></div>
-            <div><div style={{fontSize:10,color:"#6b7280",textTransform:"uppercase",letterSpacing:"0.06em"}}>Churn Risk</div>
-              <div style={{fontSize:12,color:riskColor,marginTop:3,fontWeight:700,textTransform:"capitalize"}}>{rr.level}</div>
-              <div style={{fontSize:10,color:"#6b7280",marginTop:1}}>{rr.action}</div>
-            </div>
-          </div>
-          {d.notes&&<div style={{background:"#0f172a",borderRadius:10,padding:"10px 14px",fontSize:13,color:"#9ca3af",marginBottom:12,lineHeight:1.5}}>{d.notes}</div>}
+      {view==="kanban"&&<DonorKanban donors={filtered} onStageChange={moveToStage} onLogTouchpoint={d=>setLogTarget(d)} onSelectDonor={d=>setSelected(d)}/>}
 
-          {d.interactions?.length>0&&<div style={{marginBottom:14}}>
-            <div style={{fontSize:11,fontWeight:700,color:"#374151",textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:8}}>Interaction Log</div>
-            {d.interactions.slice(0,3).map((int,i)=><div key={i} style={{display:"flex",gap:10,padding:"7px 0",borderBottom:"1px solid #1f2937",alignItems:"flex-start"}}>
-              <Pill label={int.type} color="#6b7280"/>
-              <div style={{flex:1}}>
-                <div style={{fontSize:12,color:"#9ca3af"}}>{int.note}</div>
-                <div style={{fontSize:10,color:"#4b5563",marginTop:2}}>{int.date}</div>
+      {view==="list"&&filtered.map(d=>{
+        const sc=donorScore(d);const scoreColor=sc>70?"#10b981":sc>45?"#f59e0b":"#ef4444";
+        const urg=moveUrgency(d);const stage=STAGES.find(s=>s.id===(d.stage||"cultivate"))||STAGES[2];
+        const isOpen=selected?.id===d.id;
+        return(
+          <Card key={d.id} selected={isOpen} accent={stage.color} onClick={()=>setSelected(isOpen?null:d)}>
+            <div style={{display:"flex",alignItems:"center",gap:12}}>
+              <div style={{position:"relative",flexShrink:0}}>
+                <div style={{width:40,height:40,borderRadius:"50%",background:stage.color+"33",display:"flex",alignItems:"center",justifyContent:"center",fontSize:15,fontWeight:800,color:stage.color}}>{d.name[0]}</div>
+                <div style={{position:"absolute",bottom:-2,right:-2,width:14,height:14,borderRadius:"50%",background:urg.urgencyColor,border:"2px solid #111827"}}/>
               </div>
-            </div>)}
-          </div>}
+              <div style={{flex:1,minWidth:0}}>
+                <div style={{display:"flex",alignItems:"center",gap:7,flexWrap:"wrap"}}>
+                  <div style={{fontSize:14,fontWeight:700,color:"#f3f4f6"}}>{d.name}</div>
+                  <span style={{fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:99,background:stage.color+"22",color:stage.color}}>{stage.label}</span>
+                </div>
+                <div style={{fontSize:11,color:"#6b7280",marginTop:2}}>{urg.days}d since contact · {fmtFull(d.total)} · {d.gifts} gifts</div>
+              </div>
+              <button onClick={e=>{e.stopPropagation();setLogTarget(d);}} style={{background:"#1f2937",border:"1px solid #374151",borderRadius:8,padding:"7px 12px",color:"#9ca3af",fontSize:12,cursor:"pointer",flexShrink:0}}>+ Log</button>
+            </div>
 
-          {newInteraction.donorId===d.id?<div style={{display:"flex",gap:8,marginBottom:12,flexWrap:"wrap"}}>
-            <select value={newInteraction.type} onChange={e=>setNewInteraction(p=>({...p,type:e.target.value}))} style={{background:"#0f172a",border:"1px solid #374151",borderRadius:8,padding:"7px 10px",color:"#9ca3af",fontSize:12,outline:"none"}}>
-              <option value="call">Call</option><option value="email">Email</option><option value="meeting">Meeting</option><option value="gift">Gift</option><option value="event">Event</option>
-            </select>
-            <input value={newInteraction.note} onChange={e=>setNewInteraction(p=>({...p,note:e.target.value}))} placeholder="Note about interaction…" style={{flex:1,minWidth:150,background:"#0f172a",border:"1px solid #374151",borderRadius:8,padding:"7px 10px",color:"#f3f4f6",fontSize:12,outline:"none"}}/>
-            <button onClick={e=>{e.stopPropagation();addInteraction(d.id);}} style={{background:"#10b981",border:"none",borderRadius:8,padding:"7px 12px",color:"#fff",fontSize:12,fontWeight:600,cursor:"pointer"}}>Log</button>
-            <button onClick={e=>{e.stopPropagation();setNewInteraction({donorId:null,type:"call",note:""});}} style={{background:"#374151",border:"none",borderRadius:8,padding:"7px 10px",color:"#9ca3af",fontSize:12,cursor:"pointer"}}>×</button>
-          </div>:<button onClick={e=>{e.stopPropagation();setNewInteraction({donorId:d.id,type:"call",note:""});}} style={{background:"#1f2937",border:"1px solid #374151",borderRadius:8,padding:"7px 12px",color:"#9ca3af",fontSize:12,cursor:"pointer",marginBottom:12}}>+ Log Interaction</button>}
-
-          <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-            <AIBtn onClick={e=>{e.stopPropagation();getAI(d,"outreach");}} loading={loadingKey===`${d.id}_outreach`} label="✦ Outreach Strategy" small/>
-            <AIBtn onClick={e=>{e.stopPropagation();getAI(d,"upgrade");}} loading={loadingKey===`${d.id}_upgrade`} label="✦ Upgrade Path" small/>
-            <AIBtn onClick={e=>{e.stopPropagation();getAI(d,"callscript");}} loading={loadingKey===`${d.id}_callscript`} label="✦ Call Script" small/>
-            {d.status==="lapsed"&&<AIBtn onClick={e=>{e.stopPropagation();getAI(d,"email");}} loading={loadingKey===`${d.id}_email`} label="✦ Re-engagement Email" small/>}
-          </div>
-          {["outreach","upgrade","callscript","email"].map(t=>aiMap[`${d.id}_${t}`]?<AIPanel key={t} text={aiMap[`${d.id}_${t}`]} onClose={()=>setAiMap(p=>({...p,[`${d.id}_${t}`]:""}))}/>:null)}
-        </div>}
-      </Card>;
-    })}
-  </div>;
+            {isOpen&&<div style={{marginTop:14,paddingTop:14,borderTop:"1px solid #1f2937"}}>
+              <div style={{marginBottom:14}}>
+                <div style={{fontSize:10,fontWeight:700,color:"#6b7280",textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:8}}>Move Stage</div>
+                <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
+                  {STAGES.map(s=><button key={s.id} onClick={e=>{e.stopPropagation();moveToStage(d.id,s.id);setSelected(prev=>({...prev,stage:s.id}));}} style={{background:(d.stage||"cultivate")===s.id?s.color+"22":"#0f172a",border:`1px solid ${(d.stage||"cultivate")===s.id?s.color:"#374151"}`,borderRadius:7,padding:"5px 11px",color:(d.stage||"cultivate")===s.id?s.color:"#6b7280",fontSize:12,fontWeight:600,cursor:"pointer"}}>{s.label}</button>)}
+                </div>
+              </div>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10,marginBottom:14}}>
+                <div><div style={{fontSize:10,color:"#6b7280",textTransform:"uppercase",letterSpacing:"0.06em"}}>Last Gift</div><div style={{fontSize:13,color:"#f3f4f6",marginTop:3}}>{fmtFull(d.lastAmount)}</div></div>
+                <div><div style={{fontSize:10,color:"#6b7280",textTransform:"uppercase",letterSpacing:"0.06em"}}>Contact</div><div style={{fontSize:13,color:urg.urgencyColor,marginTop:3,fontWeight:600,textTransform:"capitalize"}}>{urg.level} ({urg.days}d)</div></div>
+                <div><div style={{fontSize:10,color:"#6b7280",textTransform:"uppercase",letterSpacing:"0.06em"}}>Engagement</div><div style={{fontSize:13,color:scoreColor,marginTop:3,fontWeight:700}}>{sc}/99</div></div>
+              </div>
+              {d.notes&&<div style={{background:"#0f172a",borderRadius:10,padding:"10px 14px",fontSize:13,color:"#9ca3af",marginBottom:14,lineHeight:1.5}}>{d.notes}</div>}
+              <div style={{marginBottom:14}}>
+                <div style={{fontSize:11,fontWeight:700,color:"#6b7280",textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:10}}>Touchpoint Timeline</div>
+                <TouchpointTimeline interactions={d.interactions}/>
+              </div>
+              <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+                <AIBtn onClick={e=>{e.stopPropagation();getAI(d,"nextmove");}} loading={loadingKey===`${d.id}_nextmove`} label="✦ Next Move" small/>
+                <AIBtn onClick={e=>{e.stopPropagation();getAI(d,"outreach");}} loading={loadingKey===`${d.id}_outreach`} label="✦ Outreach" small/>
+                <AIBtn onClick={e=>{e.stopPropagation();getAI(d,"email");}} loading={loadingKey===`${d.id}_email`} label="✦ Draft Email" small/>
+                <AIBtn onClick={e=>{e.stopPropagation();getAI(d,"callscript");}} loading={loadingKey===`${d.id}_callscript`} label="✦ Call Script" small/>
+              </div>
+              {["nextmove","outreach","email","callscript"].map(t=>aiMap[`${d.id}_${t}`]?<AIPanel key={t} text={aiMap[`${d.id}_${t}`]} onClose={()=>setAiMap(p=>({...p,[`${d.id}_${t}`]:""}))}/>:null)}
+            </div>}
+          </Card>
+        );
+      })}
+    </div>
+  );
 }
 
 // ── Grants ─────────────────────────────────────────────────────────────────

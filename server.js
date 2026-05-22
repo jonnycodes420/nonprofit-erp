@@ -131,15 +131,15 @@ app.get("/donors/:id", requireAuth, (req, res) => {
 });
 
 app.post("/donors", requireAuth, (req, res) => {
-  const { name, email, phone, status, tags, notes, lastAmount } = req.body;
+  const { name, email, phone, status, stage, tags, notes, lastAmount } = req.body;
   if (!name) return res.status(400).json({ error: "Name required" });
 
   const id = "d_" + uuid().slice(0, 8);
   const today = new Date().toISOString().split("T")[0];
   run(
-    `INSERT INTO donors (id,org_id,name,email,phone,status,total_giving,last_gift_amount,last_gift_date,gift_count,tags,notes)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
-    [id, req.user.orgId, name, email || "", phone || "", status || "new",
+    `INSERT INTO donors (id,org_id,name,email,phone,status,stage,total_giving,last_gift_amount,last_gift_date,gift_count,tags,notes)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+    [id, req.user.orgId, name, email || "", phone || "", status || "new", stage || "prospect",
      lastAmount || 0, lastAmount || 0, today, lastAmount ? 1 : 0,
      JSON.stringify(tags || []), notes || ""]
   );
@@ -157,10 +157,11 @@ app.post("/donors/import", requireAuth, (req, res) => {
     const id = "d_" + uuid().slice(0, 8);
     const today = new Date().toISOString().split("T")[0];
     run(
-      `INSERT INTO donors (id,org_id,name,email,phone,status,total_giving,last_gift_amount,last_gift_date,gift_count,tags,notes)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
+      `INSERT INTO donors (id,org_id,name,email,phone,status,stage,total_giving,last_gift_amount,last_gift_date,gift_count,tags,notes)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       [id, req.user.orgId, d.name, d.email || "", d.phone || "",
-       d.status || "new", parseInt(d.total) || 0, parseInt(d.lastAmount) || 0,
+       d.status || "new", d.stage || "prospect",
+       parseInt(d.total) || 0, parseInt(d.lastAmount) || 0,
        d.lastGift || today, parseInt(d.gifts) || (d.total ? 1 : 0),
        JSON.stringify(Array.isArray(d.tags) ? d.tags : []), d.notes || ""]
     );
@@ -170,13 +171,13 @@ app.post("/donors/import", requireAuth, (req, res) => {
 });
 
 app.put("/donors/:id", requireAuth, (req, res) => {
-  const { name, email, phone, status, tags, notes } = req.body;
+  const { name, email, phone, status, stage, tags, notes } = req.body;
   if (!name) return res.status(400).json({ error: "Name required" });
 
   const affected = run(
-    `UPDATE donors SET name=?,email=?,phone=?,status=?,tags=?,notes=?,updated_at=datetime('now')
+    `UPDATE donors SET name=?,email=?,phone=?,status=?,stage=?,tags=?,notes=?,updated_at=datetime('now')
      WHERE id=? AND org_id=?`,
-    [name, email || "", phone || "", status, JSON.stringify(tags || []), notes || "",
+    [name, email || "", phone || "", status, stage || "cultivate", JSON.stringify(tags || []), notes || "",
      req.params.id, req.user.orgId]
   );
   if (!affected.changes) return res.status(404).json({ error: "Donor not found" });
@@ -184,6 +185,19 @@ app.put("/donors/:id", requireAuth, (req, res) => {
   const d = query("SELECT * FROM donors WHERE id = ?", [req.params.id])[0];
   d.tags = JSON.parse(d.tags || "[]");
   res.json(d);
+});
+
+app.patch("/donors/:id/stage", requireAuth, (req, res) => {
+  const { stage } = req.body;
+  const valid = ["prospect","qualify","cultivate","solicit","steward","lapsed"];
+  if (!valid.includes(stage)) return res.status(400).json({ error: "Invalid stage" });
+
+  const affected = run(
+    `UPDATE donors SET stage=?,updated_at=datetime('now') WHERE id=? AND org_id=?`,
+    [stage, req.params.id, req.user.orgId]
+  );
+  if (!affected.changes) return res.status(404).json({ error: "Donor not found" });
+  res.json({ success: true, stage });
 });
 
 app.delete("/donors/:id", requireAuth, (req, res) => {

@@ -60,24 +60,32 @@ export function adaptData({ org, donors, grants, volunteers, tasks, board, finan
       ein:        org.ein || "",
       fiscalYear: "Jan-Dec",
     },
-    donors: donors.map(d => ({
-      id:          d.id,
-      name:        d.name,
-      email:       d.email || "",
-      phone:       d.phone || "",
-      total:       d.total_giving || 0,
-      lastGift:    d.last_gift_date || new Date().toISOString().split("T")[0],
-      lastAmount:  d.last_gift_amount || 0,
-      gifts:       d.gift_count || 0,
-      status:      d.status,
-      tags:        Array.isArray(d.tags) ? d.tags : JSON.parse(d.tags || "[]"),
-      notes:       d.notes || "",
-      interactions: (d.interactions || []).map(i => ({
+    donors: donors.map(d => {
+      const interactions = (d.interactions || []).map(i => ({
         date: i.date || i.created_at?.split("T")[0],
         type: i.type,
         note: i.note || "",
-      })),
-    })),
+      }));
+      const lastTouchpoint = interactions.length > 0
+        ? interactions.slice().sort((a, b) => new Date(b.date) - new Date(a.date))[0].date
+        : null;
+      return {
+        id:             d.id,
+        name:           d.name,
+        email:          d.email || "",
+        phone:          d.phone || "",
+        total:          d.total_giving || 0,
+        lastGift:       d.last_gift_date || new Date().toISOString().split("T")[0],
+        lastAmount:     d.last_gift_amount || 0,
+        gifts:          d.gift_count || 0,
+        status:         d.status,
+        stage:          d.stage || "cultivate",
+        tags:           Array.isArray(d.tags) ? d.tags : JSON.parse(d.tags || "[]"),
+        notes:          d.notes || "",
+        lastTouchpoint,
+        interactions,
+      };
+    }),
     grants: grants.map(g => ({
       id:        g.id,
       funder:    g.funder,

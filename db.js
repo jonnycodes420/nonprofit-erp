@@ -41,6 +41,7 @@ function initSchema() {
       email TEXT,
       phone TEXT,
       status TEXT DEFAULT 'new',
+      stage TEXT DEFAULT 'cultivate',
       total_giving INTEGER DEFAULT 0,
       last_gift_amount INTEGER DEFAULT 0,
       last_gift_date TEXT,
@@ -178,15 +179,15 @@ function seedData() {
     [userId, orgId, "admin@creoarts.org", hash, "Admin User", "admin"]);
 
   const donors = [
-    ["d1", orgId, "Margaret Chen",         "m.chen@example.com",    "212-555-0101", "major",  24500, 5000,  "2024-11-15", 8, '["board-adjacent","arts"]',  "Prefers phone calls. Interested in youth programming. Has mentioned potentially increasing giving this year."],
-    ["d2", orgId, "Robert & Lisa Atkinson", "ratkinson@example.com", "917-555-0234", "mid",    12000, 3000,  "2025-01-03", 5, '["education","recurring"]',  "Both educators. Very engaged with after-school programs. Anniversary donors."],
-    ["d3", orgId, "James Okafor",           "jokafor@example.com",   "646-555-0387", "lapsed",  3200,  500,  "2023-09-22", 4, '["youth"]',                  "Lapsed 18+ months. Was a regular $500 donor. Worth personal outreach."],
-    ["d4", orgId, "Sunrise Foundation",     "grants@sunrisefdn.org", "212-555-0199", "major",  75000, 25000, "2025-03-01", 3, '["foundation","arts"]',      "Program officer is Angela Wu. Next grant cycle opens September."],
-    ["d5", orgId, "Diana Torres",           "dtorres@example.com",   "718-555-0421", "new",      850,  250,  "2025-02-14", 3, '["online"]',                 "Online donor via Instagram. Young professional. Good upgrade potential."],
-    ["d6", orgId, "William Park",           "wpark@example.com",     "347-555-0512", "mid",     6700, 1000,  "2024-06-30", 7, '["recurring","arts"]',       "Long-time supporter. Consistent annual donor. Approaching 11 months since last gift."],
+    ["d1", orgId, "Margaret Chen",         "m.chen@example.com",    "212-555-0101", "major",  "steward",   24500, 5000,  "2024-11-15", 8, '["board-adjacent","arts"]',  "Prefers phone calls. Interested in youth programming. Has mentioned potentially increasing giving this year."],
+    ["d2", orgId, "Robert & Lisa Atkinson", "ratkinson@example.com", "917-555-0234", "mid",   "steward",   12000, 3000,  "2025-01-03", 5, '["education","recurring"]',  "Both educators. Very engaged with after-school programs. Anniversary donors."],
+    ["d3", orgId, "James Okafor",           "jokafor@example.com",   "646-555-0387", "lapsed","lapsed",     3200,  500,  "2023-09-22", 4, '["youth"]',                  "Lapsed 18+ months. Was a regular $500 donor. Worth personal outreach."],
+    ["d4", orgId, "Sunrise Foundation",     "grants@sunrisefdn.org", "212-555-0199", "major",  "steward",  75000, 25000, "2025-03-01", 3, '["foundation","arts"]',      "Program officer is Angela Wu. Next grant cycle opens September."],
+    ["d5", orgId, "Diana Torres",           "dtorres@example.com",   "718-555-0421", "new",    "cultivate",  850,  250,  "2025-02-14", 3, '["online"]',                 "Online donor via Instagram. Young professional. Good upgrade potential."],
+    ["d6", orgId, "William Park",           "wpark@example.com",     "347-555-0512", "mid",    "solicit",   6700, 1000,  "2024-06-30", 7, '["recurring","arts"]',       "Long-time supporter. Consistent annual donor. Approaching 11 months since last gift."],
   ];
   donors.forEach(d => db.run(
-    `INSERT OR IGNORE INTO donors VALUES (?,?,?,?,?,?,?,?,?,?,?,?,datetime('now'),datetime('now'))`, d));
+    `INSERT OR IGNORE INTO donors VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,datetime('now'),datetime('now'))`, d));
 
   const interactions = [
     ["i1", orgId, "d1", "gift",    "Annual major gift $5,000",                "2024-11-15"],
@@ -288,26 +289,26 @@ function seedOrgData(orgId, answers) {
 
   // ── Donors ────────────────────────────────────────────────────────────────
   const donorTemplates = [
-    ["Alexandra Rivera",    "arivera@example.com",  "212-555-0101", "major",   28000, 6000,  8,  '["board-adjacent","arts"]',   "Major donor since founding. Board-adjacent. Prefers personal calls."],
-    ["Thomas & Gwen Park",  "tgpark@example.com",   "917-555-0202", "mid",     11500, 2500,  5,  '["recurring","education"]',   "Educators. Anniversary donors. Very engaged with programs."],
-    ["Diane Osei",          "dosei@example.com",    "646-555-0303", "lapsed",   3400,  500,  4,  '["youth"]',                  "Lapsed 14+ months. Was a reliable $500 donor. Worth outreach."],
-    ["Meridian Foundation", "grants@meridian.org",  "212-555-0404", "major",   60000,20000,  3,  '["foundation","grants"]',    "Program officer is James Lee. Next cycle opens Q3."],
-    ["Carlos Vega",         "cvega@example.com",    "718-555-0505", "new",       750,  250,  3,  '["online","young-professional"]', "Online donor via social media. Good upgrade potential."],
-    ["Susan Holbrook",      "sholbrook@example.com","347-555-0606", "mid",      7200, 1200,  6,  '["recurring"]',              "Consistent annual donor. Approaching renewal window."],
-    ["James Whitfield",     "jwhit@example.com",    "212-555-0707", "major",   15000, 5000,  4,  '["arts","board-adjacent"]',  "Recently upgraded to major. Strong cultivation opportunity."],
-    ["Priya Anand",         "panand@example.com",   "646-555-0808", "new",      1200,  400,  2,  '["education"]',              "First-time donor from spring event. High potential."],
-    ["Marcus & Tia Brown",  "mtbrown@example.com",  "917-555-0909", "mid",      5500, 1000,  5,  '["recurring","community"]',  "Community connectors. Can make valuable introductions."],
-    ["Liberty Fund",        "info@libertyfund.org", "212-555-1010", "major",   42000,12000,  3,  '["foundation"]',             "Long-term funder. Mid-year check-in due."],
+    ["Alexandra Rivera",    "arivera@example.com",  "212-555-0101", "major",  "steward",   28000, 6000,  8,  '["board-adjacent","arts"]',      "Major donor since founding. Board-adjacent. Prefers personal calls."],
+    ["Thomas & Gwen Park",  "tgpark@example.com",   "917-555-0202", "mid",    "steward",   11500, 2500,  5,  '["recurring","education"]',      "Educators. Anniversary donors. Very engaged with programs."],
+    ["Diane Osei",          "dosei@example.com",    "646-555-0303", "lapsed", "lapsed",     3400,  500,  4,  '["youth"]',                      "Lapsed 14+ months. Was a reliable $500 donor. Worth outreach."],
+    ["Meridian Foundation", "grants@meridian.org",  "212-555-0404", "major",  "steward",   60000,20000,  3,  '["foundation","grants"]',        "Program officer is James Lee. Next cycle opens Q3."],
+    ["Carlos Vega",         "cvega@example.com",    "718-555-0505", "new",    "cultivate",   750,  250,  3,  '["online","young-professional"]', "Online donor via social media. Good upgrade potential."],
+    ["Susan Holbrook",      "sholbrook@example.com","347-555-0606", "mid",    "solicit",    7200, 1200,  6,  '["recurring"]',                  "Consistent annual donor. Approaching renewal window."],
+    ["James Whitfield",     "jwhit@example.com",    "212-555-0707", "major",  "cultivate", 15000, 5000,  4,  '["arts","board-adjacent"]',      "Recently upgraded to major. Strong cultivation opportunity."],
+    ["Priya Anand",         "panand@example.com",   "646-555-0808", "new",    "qualify",    1200,  400,  2,  '["education"]',                  "First-time donor from spring event. High potential."],
+    ["Marcus & Tia Brown",  "mtbrown@example.com",  "917-555-0909", "mid",    "steward",    5500, 1000,  5,  '["recurring","community"]',      "Community connectors. Can make valuable introductions."],
+    ["Liberty Fund",        "info@libertyfund.org", "212-555-1010", "major",  "steward",   42000,12000,  3,  '["foundation"]',                 "Long-term funder. Mid-year check-in due."],
   ];
 
   const counts = { sm: 3, md: 5, lg: 7, xl: 10 };
   const donorRows = donorTemplates.slice(0, counts[size]);
 
-  donorRows.forEach(([name, email, phone, status, total, last, gifts, tags, notes], i) => {
+  donorRows.forEach(([name, email, phone, status, stage, total, last, gifts, tags, notes], i) => {
     const did = `d_${uuid().slice(0, 8)}`;
     db.run(
-      `INSERT OR IGNORE INTO donors (id,org_id,name,email,phone,status,total_giving,last_gift_amount,last_gift_date,gift_count,tags,notes) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
-      [did, orgId, name, email, phone, status, total, last, mo(i * 30), gifts, tags, notes]
+      `INSERT OR IGNORE INTO donors (id,org_id,name,email,phone,status,stage,total_giving,last_gift_amount,last_gift_date,gift_count,tags,notes) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+      [did, orgId, name, email, phone, status, stage, total, last, mo(i * 30), gifts, tags, notes]
     );
   });
 
