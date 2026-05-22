@@ -1306,12 +1306,486 @@ Focus on grants under $200K that match this org's size and mission. Include a mi
   </div>;
 }
 
+// ── Communications Hub ─────────────────────────────────────────────────────
+function Communications({data}) {
+  const {auth}=useAuth(); const isAdmin=auth?.user?.role==="admin";
+  const [campaigns,setCampaigns]=useState([]); const [loading,setLoading]=useState(true);
+  const [selected,setSelected]=useState(null); const [showBuilder,setShowBuilder]=useState(false);
+  const [showSmtp,setShowSmtp]=useState(false); const [sending,setSending]=useState(false);
+  const [aiDraft,setAiDraft]=useState(""); const [aiLoading,setAiLoading]=useState(false);
+  const [form,setForm]=useState({name:"",type:"appeal",subject:"",body:"",stages:[],statuses:[]});
+  const [smtp,setSmtp]=useState({smtpHost:"",smtpPort:587,smtpUser:"",smtpPass:"",smtpFrom:""});
+  const [savingSmtp,setSavingSmtp]=useState(false); const [sendResult,setSendResult]=useState(null);
+  const STAGES=["prospect","qualify","cultivate","solicit","steward","lapsed"];
+  const STATUSES=["major","mid","new","lapsed"];
+  const TYPES=["appeal","thank-you","grant-ack","tax-receipt","newsletter"];
+
+  const load=async()=>{try{setCampaigns(await apiFetch("/campaigns"));}catch{}setLoading(false);};
+  useEffect(()=>{load();},[]);
+
+  const save=async()=>{
+    const seg=JSON.stringify({stages:form.stages,statuses:form.statuses});
+    try{await apiFetch("/campaigns",{method:"POST",body:JSON.stringify({name:form.name,type:form.type,subject:form.subject,body:form.body,segment:seg})});
+      await load();setShowBuilder(false);setForm({name:"",type:"appeal",subject:"",body:"",stages:[],statuses:[]});}
+    catch(e){alert(e.message);}
+  };
+
+  const send=async(cmp)=>{
+    if(!window.confirm(`Send "${cmp.name}" to filtered donors? This sends real emails.`))return;
+    setSending(true);setSendResult(null);
+    try{const r=await apiFetch(`/campaigns/${cmp.id}/send`,{method:"POST"});setSendResult(r);await load();}
+    catch(e){alert(e.message);}
+    setSending(false);
+  };
+
+  const draftAI=async()=>{
+    setAiLoading(true);setAiDraft("");
+    const seg=form.stages.length?`Segments: ${form.stages.join(", ")}`:"";
+    await askClaude(`You are an expert nonprofit development writer. Warm, authentic donor communications. Max 250 words.`,
+      `Write a donor email for ${data.org.name}.\nType: ${form.type}\nMission: ${data.org.mission}\n${seg}\nSubject hint: ${form.subject||"(generate one)"}\n\nUse these variables where natural: {{donor_name}}, {{gift_amount}}, {{gift_date}}, {{total_giving}}, {{org_name}}, {{year}}\n\nReturn: "Subject: ..." then blank line then the email body. Be personal and mission-driven.`,
+      chunk=>setAiDraft(chunk));
+    setAiLoading(false);
+  };
+
+  const applyDraft=()=>{
+    const lines=aiDraft.split("\n"); const subjLine=lines.find(l=>l.startsWith("Subject:"));
+    const bodyText=lines.filter(l=>!l.startsWith("Subject:")).join("\n").trim();
+    setForm(f=>({...f,subject:subjLine?subjLine.replace("Subject:","").trim():f.subject,body:bodyText||f.body}));
+    setAiDraft("");
+  };
+
+  const saveSmtp=async()=>{
+    setSavingSmtp(true);
+    try{await apiFetch("/org/smtp",{method:"PUT",body:JSON.stringify(smtp)});alert("SMTP settings saved.");}
+    catch(e){alert(e.message);}
+    setSavingSmtp(false);
+  };
+
+  const toggleStage=s=>setForm(f=>({...f,stages:f.stages.includes(s)?f.stages.filter(x=>x!==s):[...f.stages,s]}));
+  const toggleStatus=s=>setForm(f=>({...f,statuses:f.statuses.includes(s)?f.statuses.filter(x=>x!==s):[...f.statuses,s]}));
+
+  const Inp=({label,k,state,set,type="text",ph=""})=>(
+    <div style={{display:"flex",flexDirection:"column",gap:4}}>
+      <label style={{fontSize:11,color:"#6b7280",textTransform:"uppercase",letterSpacing:"0.06em"}}>{label}</label>
+      <input type={type} value={state[k]} onChange={e=>set(s=>({...s,[k]:e.target.value}))} placeholder={ph}
+        style={{background:"#1e293b",border:"1px solid #374151",borderRadius:8,padding:"9px 12px",color:"#f3f4f6",fontSize:13,outline:"none"}}/>
+    </div>
+  );
+
+  return <div style={{display:"flex",flexDirection:"column",gap:16}}>
+    <div style={{display:"flex",gap:10,alignItems:"center"}}>
+      <button onClick={()=>setShowBuilder(true)} style={{background:"#10b981",border:"none",borderRadius:10,padding:"10px 16px",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer"}}>+ New Campaign</button>
+      {isAdmin&&<button onClick={()=>setShowSmtp(!showSmtp)} style={{background:"transparent",border:"1px solid #374151",borderRadius:10,padding:"10px 14px",color:"#9ca3af",fontSize:12,cursor:"pointer"}}>⚙ SMTP Settings</button>}
+    </div>
+
+    {showSmtp&&isAdmin&&<Card>
+      <SectionLabel>SMTP Settings</SectionLabel>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+        <Inp label="SMTP Host" k="smtpHost" state={smtp} set={setSmtp} ph="smtp.gmail.com"/>
+        <Inp label="Port" k="smtpPort" state={smtp} set={setSmtp} type="number" ph="587"/>
+        <Inp label="Username" k="smtpUser" state={smtp} set={setSmtp} ph="you@yourdomain.org"/>
+        <Inp label="Password" k="smtpPass" state={smtp} set={setSmtp} type="password" ph="••••••••"/>
+        <Inp label="From Address" k="smtpFrom" state={smtp} set={setSmtp} ph="CREO Arts <outreach@creoarts.org>"/>
+      </div>
+      <button onClick={saveSmtp} disabled={savingSmtp} style={{marginTop:12,background:"#10b981",border:"none",borderRadius:8,padding:"9px 16px",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer"}}>Save SMTP</button>
+      <div style={{marginTop:8,fontSize:11,color:"#6b7280"}}>Gmail: use an App Password. Resend: smtp.resend.com / port 465.</div>
+    </Card>}
+
+    {showBuilder&&<Card style={{display:"flex",flexDirection:"column",gap:12}}>
+      <SectionLabel>New Campaign</SectionLabel>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+        <Inp label="Campaign Name" k="name" state={form} set={setForm} ph="Spring Appeal 2025"/>
+        <div style={{display:"flex",flexDirection:"column",gap:4}}>
+          <label style={{fontSize:11,color:"#6b7280",textTransform:"uppercase",letterSpacing:"0.06em"}}>Type</label>
+          <select value={form.type} onChange={e=>setForm(f=>({...f,type:e.target.value}))} style={{background:"#1e293b",border:"1px solid #374151",borderRadius:8,padding:"9px 12px",color:"#f3f4f6",fontSize:13}}>
+            {TYPES.map(t=><option key={t} value={t}>{t}</option>)}
+          </select>
+        </div>
+      </div>
+      <Inp label="Subject Line" k="subject" state={form} set={setForm} ph="A message from {{org_name}}"/>
+      <div style={{display:"flex",flexDirection:"column",gap:4}}>
+        <label style={{fontSize:11,color:"#6b7280",textTransform:"uppercase",letterSpacing:"0.06em"}}>Email Body</label>
+        <textarea value={form.body} onChange={e=>setForm(f=>({...f,body:e.target.value}))} rows={8} placeholder={"Dear {{donor_name}},\n\n..."}
+          style={{background:"#1e293b",border:"1px solid #374151",borderRadius:8,padding:"10px 12px",color:"#f3f4f6",fontSize:13,outline:"none",resize:"vertical",fontFamily:"inherit"}}/>
+        <div style={{fontSize:10,color:"#4b5563"}}>Variables: {"{{donor_name}} {{gift_amount}} {{gift_date}} {{total_giving}} {{org_name}} {{year}}"}</div>
+      </div>
+      <div>
+        <SectionLabel>Segment — Stages</SectionLabel>
+        <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:8}}>
+          {STAGES.map(s=><button key={s} onClick={()=>toggleStage(s)} style={{background:form.stages.includes(s)?"#10b981":"#1f2937",border:"none",borderRadius:99,padding:"5px 12px",color:form.stages.includes(s)?"#fff":"#9ca3af",fontSize:11,cursor:"pointer",fontWeight:form.stages.includes(s)?700:400}}>{s}</button>)}
+        </div>
+        <SectionLabel>Segment — Status</SectionLabel>
+        <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+          {STATUSES.map(s=><button key={s} onClick={()=>toggleStatus(s)} style={{background:form.statuses.includes(s)?"#8b5cf6":"#1f2937",border:"none",borderRadius:99,padding:"5px 12px",color:form.statuses.includes(s)?"#fff":"#9ca3af",fontSize:11,cursor:"pointer",fontWeight:form.statuses.includes(s)?700:400}}>{s}</button>)}
+        </div>
+      </div>
+      <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
+        <AIBtn onClick={draftAI} loading={aiLoading} label="✦ AI Draft" small/>
+        <button onClick={save} style={{background:"#10b981",border:"none",borderRadius:8,padding:"9px 16px",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer"}}>Save Draft</button>
+        <button onClick={()=>{setShowBuilder(false);setAiDraft("");}} style={{background:"#374151",border:"none",borderRadius:8,padding:"9px 14px",color:"#9ca3af",fontSize:13,cursor:"pointer"}}>Cancel</button>
+      </div>
+      {aiDraft&&<div style={{background:"#0f172a",border:"1px solid #7c3aed44",borderRadius:12,padding:16}}>
+        <div style={{fontSize:10,fontWeight:700,color:"#8b5cf6",letterSpacing:"0.08em",textTransform:"uppercase",marginBottom:8}}>✦ AI Draft</div>
+        <div style={{fontSize:13,color:"#e2e8f0",lineHeight:1.75,whiteSpace:"pre-wrap",marginBottom:12}}>{aiDraft}</div>
+        <button onClick={applyDraft} style={{background:"#7c3aed",border:"none",borderRadius:8,padding:"8px 14px",color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer"}}>Apply to form</button>
+      </div>}
+    </Card>}
+
+    {sendResult&&<div style={{background:"#052e16",border:"1px solid #10b981",borderRadius:12,padding:"14px 18px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+      <span style={{color:"#10b981",fontWeight:700,fontSize:14}}>✓ Sent to {sendResult.sent} donors{sendResult.failed>0?` (${sendResult.failed} failed)`:""}</span>
+      <button onClick={()=>setSendResult(null)} style={{background:"transparent",border:"none",color:"#10b981",cursor:"pointer",fontSize:18}}>×</button>
+    </div>}
+
+    {loading?<div style={{color:"#6b7280",fontSize:13,textAlign:"center",padding:40}}>Loading campaigns…</div>:
+      campaigns.length===0?<Card><div style={{color:"#6b7280",fontSize:13,textAlign:"center",padding:20}}>No campaigns yet. Create your first campaign above.</div></Card>:
+      campaigns.map(c=>{
+        const isOpen=selected?.id===c.id;
+        const openRate=c.recipient_count>0?Math.round(c.open_count/c.recipient_count*100):0;
+        const seg=typeof c.segment==="string"?JSON.parse(c.segment||"{}"):c.segment||{};
+        return <Card key={c.id} selected={isOpen} accent={c.status==="sent"?"#10b981":"#8b5cf6"} onClick={()=>setSelected(isOpen?null:c)}>
+          <div style={{display:"flex",alignItems:"center",gap:12}}>
+            <div style={{flex:1}}>
+              <div style={{fontSize:15,fontWeight:700,color:"#f3f4f6"}}>{c.name}</div>
+              <div style={{fontSize:12,color:"#9ca3af",marginTop:2}}>{c.subject}</div>
+            </div>
+            <div style={{textAlign:"right"}}>
+              {c.status==="sent"&&<div style={{fontSize:13,color:"#f3f4f6",fontWeight:600}}>{c.recipient_count} sent · {openRate}% opened</div>}
+              {c.status==="draft"&&<div style={{fontSize:11,color:"#6b7280"}}>Draft</div>}
+            </div>
+            <Pill label={c.status} color={c.status==="sent"?"#10b981":"#8b5cf6"}/>
+          </div>
+          {c.status==="sent"&&<div style={{marginTop:8,height:3,background:"#1f2937",borderRadius:99}}>
+            <div style={{height:"100%",width:`${openRate}%`,background:"#10b981",borderRadius:99}}/>
+          </div>}
+          {isOpen&&<div style={{marginTop:14,paddingTop:14,borderTop:"1px solid #1f2937"}}>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:14}}>
+              <div><div style={{fontSize:10,color:"#6b7280",textTransform:"uppercase",letterSpacing:"0.06em"}}>Type</div><div style={{fontSize:13,color:"#f3f4f6",marginTop:3}}>{c.type}</div></div>
+              <div><div style={{fontSize:10,color:"#6b7280",textTransform:"uppercase",letterSpacing:"0.06em"}}>Segment</div><div style={{fontSize:12,color:"#9ca3af",marginTop:3}}>{[...(seg.stages||[]),...(seg.statuses||[])].join(", ")||"All donors with email"}</div></div>
+              {c.status==="sent"&&<><div><div style={{fontSize:10,color:"#6b7280",textTransform:"uppercase",letterSpacing:"0.06em"}}>Recipients</div><div style={{fontSize:13,color:"#f3f4f6",marginTop:3}}>{c.recipient_count}</div></div>
+              <div><div style={{fontSize:10,color:"#6b7280",textTransform:"uppercase",letterSpacing:"0.06em"}}>Open Rate</div><div style={{fontSize:13,color:openRate>=25?"#10b981":"#f59e0b",marginTop:3}}>{openRate}%</div></div></>}
+              <div style={{gridColumn:"1/-1"}}><div style={{fontSize:10,color:"#6b7280",textTransform:"uppercase",letterSpacing:"0.06em"}}>Preview</div>
+                <div style={{fontSize:12,color:"#9ca3af",marginTop:3,lineHeight:1.5,whiteSpace:"pre-wrap"}}>{c.body?.slice(0,220)}{c.body?.length>220?"…":""}</div></div>
+            </div>
+            {c.status==="draft"&&isAdmin&&<button onClick={e=>{e.stopPropagation();send(c);}} disabled={sending}
+              style={{background:sending?"#1f2937":"#10b981",border:"none",borderRadius:8,padding:"9px 16px",color:"#fff",fontSize:13,fontWeight:700,cursor:sending?"not-allowed":"pointer"}}>
+              {sending?<><Spin/>Sending…</>:"↑ Send Campaign"}
+            </button>}
+            {c.recipients&&c.recipients.length>0&&<div style={{marginTop:14}}>
+              <div style={{fontSize:11,fontWeight:700,color:"#6b7280",textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:8}}>Recipients</div>
+              {c.recipients.slice(0,10).map(r=><div key={r.id} style={{display:"flex",justifyContent:"space-between",padding:"6px 0",borderBottom:"1px solid #111827",fontSize:12}}>
+                <span style={{color:"#f3f4f6"}}>{r.donor_name||r.email}</span>
+                <span style={{color:r.opened_at?"#10b981":"#6b7280"}}>{r.opened_at?"✓ opened":r.sent_at?"delivered":"pending"}</span>
+              </div>)}
+              {c.recipients.length>10&&<div style={{fontSize:11,color:"#6b7280",marginTop:6}}>+{c.recipients.length-10} more</div>}
+            </div>}
+          </div>}
+        </Card>;
+      })}
+  </div>;
+}
+
+// ── Program Management ─────────────────────────────────────────────────────
+function Programs({data}) {
+  const {auth}=useAuth(); const isAdmin=auth?.user?.role==="admin";
+  const [programs,setPrograms]=useState([]); const [loading,setLoading]=useState(true);
+  const [selected,setSelected]=useState(null); const [showAdd,setShowAdd]=useState(false);
+  const [aiMap,setAiMap]=useState({}); const [aiLoading,setAiLoading]=useState(null);
+  const [form,setForm]=useState({name:"",description:"",budget:"",spent:"",staff:"",participantCount:"",startDate:"",endDate:"",status:"active",outcomes:""});
+  const [linkGrant,setLinkGrant]=useState({programId:null,grantId:"",allocated:""});
+
+  const load=async()=>{try{setPrograms(await apiFetch("/programs"));}catch{}setLoading(false);};
+  useEffect(()=>{load();},[]);
+
+  const save=async()=>{
+    const body={name:form.name,description:form.description,budget:parseInt(form.budget)||0,spent:parseInt(form.spent)||0,
+      staff:JSON.stringify(form.staff.split(",").map(s=>s.trim()).filter(Boolean)),participantCount:parseInt(form.participantCount)||0,
+      startDate:form.startDate,endDate:form.endDate,status:form.status,outcomes:form.outcomes,metrics:{}};
+    try{await apiFetch("/programs",{method:"POST",body:JSON.stringify(body)});await load();setShowAdd(false);
+      setForm({name:"",description:"",budget:"",spent:"",staff:"",participantCount:"",startDate:"",endDate:"",status:"active",outcomes:""});}
+    catch(e){alert(e.message);}
+  };
+
+  const addGrantLink=async(programId)=>{
+    try{await apiFetch(`/programs/${programId}/grants`,{method:"POST",body:JSON.stringify({grantId:linkGrant.grantId,allocated:parseInt(linkGrant.allocated)||0})});
+      await load();setLinkGrant({programId:null,grantId:"",allocated:""});}
+    catch(e){alert(e.message);}
+  };
+
+  const removeGrantLink=async(programId,grantId)=>{
+    try{await apiFetch(`/programs/${programId}/grants/${grantId}`,{method:"DELETE"});await load();}
+    catch(e){alert(e.message);}
+  };
+
+  const getAI=async(p,type)=>{
+    const key=`${p.id}_${type}`;setAiLoading(key);setAiMap(m=>({...m,[key]:""}));
+    const staff=Array.isArray(p.staff)?p.staff:JSON.parse(p.staff||"[]");
+    const metrics=typeof p.metrics==="string"?JSON.parse(p.metrics||"{}"):p.metrics||{};
+    const sys=`You are a nonprofit program evaluation expert. Impact-focused, specific. Max 250 words.`;
+    const prompt=type==="impact"
+      ?`Write an impact narrative for a grant report.\n\nProgram: ${p.name}\nDesc: ${p.description}\nBudget: ${fmtFull(p.budget)} | Spent: ${fmtFull(p.spent)} | Participants: ${p.participant_count}\nStaff: ${staff.join(", ")}\nDates: ${p.start_date} — ${p.end_date}\nOutcomes: ${p.outcomes}\nMetrics: ${JSON.stringify(metrics)}\nOrg: ${data.org.name} — ${data.org.mission}\n\nLead with the most powerful outcome. Include specific numbers and connect to org mission.`
+      :`Write a theory of change for this program.\n\nProgram: ${p.name}\nDesc: ${p.description}\nOutcomes: ${p.outcomes}\nOrg: ${data.org.name} — ${data.org.mission}\n\nFormat: Activities → Outputs → Outcomes → Long-term Impact. Be specific and measurable.`;
+    await askClaude(sys,prompt,chunk=>setAiMap(m=>({...m,[key]:chunk})));
+    setAiLoading(null);
+  };
+
+  const Inp=({label,k,type="text",ph=""})=>(
+    <div style={{display:"flex",flexDirection:"column",gap:4}}>
+      <label style={{fontSize:11,color:"#6b7280",textTransform:"uppercase",letterSpacing:"0.06em"}}>{label}</label>
+      <input type={type} value={form[k]} onChange={e=>setForm(f=>({...f,[k]:e.target.value}))} placeholder={ph}
+        style={{background:"#1e293b",border:"1px solid #374151",borderRadius:8,padding:"9px 12px",color:"#f3f4f6",fontSize:13,outline:"none"}}/>
+    </div>
+  );
+
+  return <div style={{display:"flex",flexDirection:"column",gap:16}}>
+    <button onClick={()=>setShowAdd(!showAdd)} style={{alignSelf:"flex-start",background:"#10b981",border:"none",borderRadius:10,padding:"10px 16px",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer"}}>+ New Program</button>
+
+    {showAdd&&<Card style={{display:"flex",flexDirection:"column",gap:12}}>
+      <SectionLabel>New Program</SectionLabel>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+        <Inp label="Program Name" k="name" ph="After-School Arts"/>
+        <div style={{display:"flex",flexDirection:"column",gap:4}}>
+          <label style={{fontSize:11,color:"#6b7280",textTransform:"uppercase",letterSpacing:"0.06em"}}>Status</label>
+          <select value={form.status} onChange={e=>setForm(f=>({...f,status:e.target.value}))} style={{background:"#1e293b",border:"1px solid #374151",borderRadius:8,padding:"9px 12px",color:"#f3f4f6",fontSize:13}}>
+            {["active","planning","completed","paused"].map(s=><option key={s} value={s}>{s}</option>)}
+          </select>
+        </div>
+        <Inp label="Budget ($)" k="budget" type="number" ph="85000"/>
+        <Inp label="Spent ($)" k="spent" type="number" ph="52000"/>
+        <Inp label="Participants" k="participantCount" type="number" ph="120"/>
+        <Inp label="Staff (comma-separated)" k="staff" ph="Carlos Mendez, Sophie Laurent"/>
+        <Inp label="Start Date" k="startDate" type="date"/>
+        <Inp label="End Date" k="endDate" type="date"/>
+      </div>
+      <div style={{display:"flex",flexDirection:"column",gap:4}}>
+        <label style={{fontSize:11,color:"#6b7280",textTransform:"uppercase",letterSpacing:"0.06em"}}>Description</label>
+        <textarea value={form.description} onChange={e=>setForm(f=>({...f,description:e.target.value}))} rows={2}
+          style={{background:"#1e293b",border:"1px solid #374151",borderRadius:8,padding:"9px 12px",color:"#f3f4f6",fontSize:13,outline:"none",resize:"vertical",fontFamily:"inherit"}}/>
+      </div>
+      <div style={{display:"flex",flexDirection:"column",gap:4}}>
+        <label style={{fontSize:11,color:"#6b7280",textTransform:"uppercase",letterSpacing:"0.06em"}}>Outcomes</label>
+        <textarea value={form.outcomes} onChange={e=>setForm(f=>({...f,outcomes:e.target.value}))} rows={2}
+          style={{background:"#1e293b",border:"1px solid #374151",borderRadius:8,padding:"9px 12px",color:"#f3f4f6",fontSize:13,outline:"none",resize:"vertical",fontFamily:"inherit"}}/>
+      </div>
+      <div style={{display:"flex",gap:8}}>
+        <button onClick={save} style={{background:"#10b981",border:"none",borderRadius:8,padding:"9px 16px",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer"}}>Save Program</button>
+        <button onClick={()=>setShowAdd(false)} style={{background:"#374151",border:"none",borderRadius:8,padding:"9px 14px",color:"#9ca3af",fontSize:13,cursor:"pointer"}}>Cancel</button>
+      </div>
+    </Card>}
+
+    {loading?<div style={{color:"#6b7280",fontSize:13,textAlign:"center",padding:40}}>Loading programs…</div>:
+      programs.length===0?<Card><div style={{color:"#6b7280",fontSize:13,textAlign:"center",padding:20}}>No programs yet. Add your first program above.</div></Card>:
+      programs.map(p=>{
+        const isOpen=selected?.id===p.id;
+        const staff=Array.isArray(p.staff)?p.staff:JSON.parse(p.staff||"[]");
+        const metrics=typeof p.metrics==="string"?JSON.parse(p.metrics||"{}"):p.metrics||{};
+        const grants=p.grants||[];
+        const pct=p.budget>0?Math.round(p.spent/p.budget*100):0;
+        const totalAllocated=grants.reduce((s,g)=>s+g.allocated,0);
+        const statusColor={active:"#10b981",planning:"#3b82f6",completed:"#6b7280",paused:"#f59e0b"}[p.status]||"#6b7280";
+        return <Card key={p.id} selected={isOpen} accent={statusColor} onClick={()=>setSelected(isOpen?null:p)}>
+          <div style={{display:"flex",alignItems:"flex-start",gap:14}}>
+            <div style={{flex:1}}>
+              <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:4}}>
+                <div style={{fontSize:15,fontWeight:700,color:"#f3f4f6"}}>{p.name}</div>
+                <Pill label={p.status} color={statusColor}/>
+              </div>
+              <div style={{fontSize:12,color:"#9ca3af",lineHeight:1.5}}>{p.description?.slice(0,100)}{p.description?.length>100?"…":""}</div>
+            </div>
+            <div style={{textAlign:"right",flexShrink:0}}>
+              <div style={{fontSize:14,fontWeight:700,color:"#f3f4f6"}}>{fmt(p.budget)}</div>
+              <div style={{fontSize:11,color:pct>90?"#ef4444":"#6b7280"}}>{pct}% spent</div>
+            </div>
+          </div>
+          <div style={{marginTop:10,height:4,background:"#1f2937",borderRadius:99}}>
+            <div style={{height:"100%",width:`${Math.min(pct,100)}%`,background:pct>90?"#ef4444":pct>70?"#f59e0b":"#10b981",borderRadius:99}}/>
+          </div>
+          <div style={{display:"flex",gap:16,marginTop:10}}>
+            <span style={{fontSize:11,color:"#6b7280"}}>{p.participant_count} participants</span>
+            {staff.length>0&&<span style={{fontSize:11,color:"#6b7280"}}>Staff: {staff.join(", ")}</span>}
+            {grants.length>0&&<span style={{fontSize:11,color:"#8b5cf6"}}>{fmt(totalAllocated)} grant-funded</span>}
+          </div>
+          {isOpen&&<div style={{marginTop:14,paddingTop:14,borderTop:"1px solid #1f2937"}}>
+            {p.outcomes&&<div style={{marginBottom:12}}>
+              <div style={{fontSize:10,fontWeight:700,color:"#6b7280",textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:6}}>Outcomes</div>
+              <div style={{fontSize:13,color:"#9ca3af",lineHeight:1.65}}>{p.outcomes}</div>
+            </div>}
+            {Object.keys(metrics).length>0&&<div style={{marginBottom:12}}>
+              <div style={{fontSize:10,fontWeight:700,color:"#6b7280",textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:6}}>Metrics</div>
+              <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
+                {Object.entries(metrics).map(([k,v])=><div key={k} style={{background:"#1f2937",borderRadius:8,padding:"6px 10px"}}>
+                  <div style={{fontSize:10,color:"#6b7280"}}>{k.replace(/_/g," ")}</div>
+                  <div style={{fontSize:13,color:"#f3f4f6",fontWeight:600}}>{String(v)}</div>
+                </div>)}
+              </div>
+            </div>}
+            <div style={{marginBottom:12}}>
+              <div style={{fontSize:10,fontWeight:700,color:"#6b7280",textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:6}}>Grant Funding</div>
+              {grants.map(g=><div key={g.grant_id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"6px 0",borderBottom:"1px solid #111827",fontSize:12}}>
+                <span style={{color:"#f3f4f6"}}>{g.funder} — {g.program_name}</span>
+                <div style={{display:"flex",gap:8,alignItems:"center"}}>
+                  <span style={{color:"#8b5cf6",fontWeight:600}}>{fmt(g.allocated)}</span>
+                  {isAdmin&&<button onClick={e=>{e.stopPropagation();removeGrantLink(p.id,g.grant_id);}} style={{background:"transparent",border:"none",color:"#ef4444",cursor:"pointer",fontSize:14,lineHeight:1}}>×</button>}
+                </div>
+              </div>)}
+              {isAdmin&&linkGrant.programId!==p.id&&<button onClick={e=>{e.stopPropagation();setLinkGrant({programId:p.id,grantId:"",allocated:""});}}
+                style={{marginTop:8,background:"transparent",border:"1px dashed #374151",borderRadius:8,padding:"6px 12px",color:"#6b7280",fontSize:12,cursor:"pointer"}}>+ Link Grant</button>}
+              {isAdmin&&linkGrant.programId===p.id&&<div style={{display:"flex",gap:8,marginTop:8,alignItems:"flex-end"}} onClick={e=>e.stopPropagation()}>
+                <select value={linkGrant.grantId} onChange={e=>setLinkGrant(l=>({...l,grantId:e.target.value}))}
+                  style={{flex:1,background:"#1e293b",border:"1px solid #374151",borderRadius:8,padding:"8px 10px",color:"#f3f4f6",fontSize:12}}>
+                  <option value="">Select grant…</option>
+                  {data.grants.map(g=><option key={g.id} value={g.id}>{g.funder} — {g.program}</option>)}
+                </select>
+                <input type="number" placeholder="Allocated $" value={linkGrant.allocated} onChange={e=>setLinkGrant(l=>({...l,allocated:e.target.value}))}
+                  style={{width:110,background:"#1e293b",border:"1px solid #374151",borderRadius:8,padding:"8px 10px",color:"#f3f4f6",fontSize:12,outline:"none"}}/>
+                <button onClick={()=>addGrantLink(p.id)} style={{background:"#8b5cf6",border:"none",borderRadius:8,padding:"8px 12px",color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer"}}>Link</button>
+                <button onClick={e=>{e.stopPropagation();setLinkGrant({programId:null,grantId:"",allocated:""});}} style={{background:"#374151",border:"none",borderRadius:8,padding:"8px 10px",color:"#9ca3af",fontSize:12,cursor:"pointer"}}>✕</button>
+              </div>}
+            </div>
+            <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+              <AIBtn onClick={e=>{e.stopPropagation();getAI(p,"impact");}} loading={aiLoading===`${p.id}_impact`} label="✦ Impact Report" small/>
+              <AIBtn onClick={e=>{e.stopPropagation();getAI(p,"toc");}} loading={aiLoading===`${p.id}_toc`} label="✦ Theory of Change" small/>
+            </div>
+            {["impact","toc"].map(t=>aiMap[`${p.id}_${t}`]?<AIPanel key={t} text={aiMap[`${p.id}_${t}`]} onClose={()=>setAiMap(m=>({...m,[`${p.id}_${t}`]:""}))}/>:null)}
+          </div>}
+        </Card>;
+      })}
+  </div>;
+}
+
+// ── Annual Fund Dashboard ──────────────────────────────────────────────────
+function AnnualFund({data}) {
+  const {auth}=useAuth(); const isAdmin=auth?.user?.role==="admin";
+  const currentYear=new Date().getFullYear();
+  const [year,setYear]=useState(currentYear); const [fund,setFund]=useState(null); const [loading,setLoading]=useState(true);
+  const [editGoal,setEditGoal]=useState(false); const [goalInput,setGoalInput]=useState("");
+  const [aiText,setAiText]=useState(""); const [aiLoading,setAiLoading]=useState(false);
+
+  const load=async(y=year)=>{setLoading(true);try{setFund(await apiFetch(`/annual-fund?year=${y}`));}catch{}setLoading(false);};
+  useEffect(()=>{load();},[]);
+
+  const saveGoal=async()=>{
+    try{await apiFetch("/annual-fund/goal",{method:"POST",body:JSON.stringify({year,goal:parseInt(goalInput)||0})});
+      await load();setEditGoal(false);}
+    catch(e){alert(e.message);}
+  };
+
+  const getForecast=async()=>{
+    setAiLoading(true);setAiText("");
+    await askClaude(`You are a nonprofit development strategist. Data-driven, actionable. Max 250 words.`,
+      `Annual fund forecast and strategy for ${data.org.name}.\n\nYear: ${year}\nGoal: ${fund?.goal?fmtFull(fund.goal):"not set"}\nRaised so far: ${fmtFull(fund?.totalRaised||0)}\nGoal progress: ${fund?.goalPct||0}%\nProjected year-end: ${fmtFull(fund?.projectedTotal||0)}\nDonors this year: ${fund?.donors?.total||0} (${fund?.donors?.acquired||0} new, ${fund?.donors?.retained||0} retained)\nRetention rate: ${fund?.donors?.retentionRate||0}%\nAvg gift: ${fmtFull(fund?.avgGift||0)}\nRecovered lapsed donors: ${fund?.recovered||0}\nMonthly: ${(fund?.monthly||[]).map(m=>`${m.month}: ${fmt(m.raised)}`).join(", ")}\n\nProvide:\n1. Forecast — will we hit goal? What's the gap?\n2. Top 2-3 strategies to close any gap before year-end\n3. What the retention rate signals\n4. One bold move to consider`,
+      chunk=>setAiText(chunk));
+    setAiLoading(false);
+  };
+
+  const maxMonth=Math.max(...(fund?.monthly||[{raised:1}]).map(m=>m.raised),1);
+
+  return <div style={{display:"flex",flexDirection:"column",gap:16}}>
+    <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}>
+      <div style={{display:"flex",gap:6}}>
+        {[currentYear-1,currentYear].map(y2=><button key={y2} onClick={()=>{setYear(y2);load(y2);}}
+          style={{background:year===y2?"#10b981":"transparent",border:year===y2?"none":"1px solid #374151",borderRadius:8,padding:"7px 14px",color:year===y2?"#fff":"#9ca3af",fontSize:12,fontWeight:year===y2?700:400,cursor:"pointer"}}>{y2}</button>)}
+      </div>
+      <AIBtn onClick={getForecast} loading={aiLoading} label="✦ AI Forecast" small/>
+      {isAdmin&&<button onClick={()=>{setEditGoal(!editGoal);setGoalInput(fund?.goal?.toString()||"");}}
+        style={{background:"transparent",border:"1px solid #374151",borderRadius:8,padding:"7px 12px",color:"#9ca3af",fontSize:12,cursor:"pointer"}}>⚙ Set Goal</button>}
+    </div>
+
+    {editGoal&&isAdmin&&<Card style={{display:"flex",gap:10,alignItems:"flex-end"}}>
+      <div style={{display:"flex",flexDirection:"column",gap:4,flex:1}}>
+        <label style={{fontSize:11,color:"#6b7280",textTransform:"uppercase",letterSpacing:"0.06em"}}>Annual Fund Goal {year}</label>
+        <input type="number" value={goalInput} onChange={e=>setGoalInput(e.target.value)} placeholder="250000"
+          style={{background:"#1e293b",border:"1px solid #374151",borderRadius:8,padding:"9px 12px",color:"#f3f4f6",fontSize:13,outline:"none"}}/>
+      </div>
+      <button onClick={saveGoal} style={{background:"#10b981",border:"none",borderRadius:8,padding:"10px 16px",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer"}}>Save</button>
+      <button onClick={()=>setEditGoal(false)} style={{background:"#374151",border:"none",borderRadius:8,padding:"10px 12px",color:"#9ca3af",fontSize:13,cursor:"pointer"}}>Cancel</button>
+    </Card>}
+
+    {(aiLoading||aiText)&&<AIPanel text={aiText} onClose={()=>setAiText("")}/>}
+
+    {loading?<div style={{color:"#6b7280",fontSize:13,textAlign:"center",padding:60}}>Loading annual fund data…</div>:!fund?null:<>
+      <Card>
+        <div style={{display:"flex",alignItems:"center",gap:20,flexWrap:"wrap"}}>
+          <div style={{flex:1}}>
+            <div style={{fontSize:11,fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase",color:"#6b7280",marginBottom:8}}>{year} Annual Fund</div>
+            <div style={{fontSize:38,fontWeight:800,color:"#f9fafb",fontFamily:"'DM Serif Display',serif",lineHeight:1}}>{fmt(fund.totalRaised)}</div>
+            {fund.goal>0&&<div style={{fontSize:13,color:"#9ca3af",marginTop:4}}>of {fmtFull(fund.goal)} goal · {fund.goalPct}% raised</div>}
+            {fund.projectedTotal>0&&year===currentYear&&fund.projectedTotal!==fund.totalRaised&&
+              <div style={{fontSize:12,color:"#8b5cf6",marginTop:4}}>Projected year-end: {fmt(fund.projectedTotal)}</div>}
+          </div>
+          {fund.goal>0&&<div style={{flexShrink:0}}>
+            <svg width="88" height="88" viewBox="0 0 88 88">
+              <circle cx="44" cy="44" r="36" fill="none" stroke="#1f2937" strokeWidth="9"/>
+              <circle cx="44" cy="44" r="36" fill="none" stroke="#10b981" strokeWidth="9"
+                strokeDasharray={`${Math.min(fund.goalPct,100)*2.262} 226.2`}
+                strokeDashoffset="56.6" strokeLinecap="round" transform="rotate(-90 44 44)"/>
+              <text x="44" y="50" textAnchor="middle" fill="#f9fafb" fontSize="15" fontWeight="800" fontFamily="sans-serif">{fund.goalPct}%</text>
+            </svg>
+          </div>}
+        </div>
+        {fund.goal>0&&<div style={{marginTop:14,height:6,background:"#1f2937",borderRadius:99}}>
+          <div style={{height:"100%",width:`${Math.min(fund.goalPct,100)}%`,background:fund.goalPct>=100?"#10b981":fund.goalPct>=60?"#f59e0b":"#ef4444",borderRadius:99,transition:"width 0.5s"}}/>
+        </div>}
+      </Card>
+
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))",gap:10}}>
+        <MetricCard label="Total Gifts" value={fund.giftCount} sub={`avg ${fmt(fund.avgGift)}`} color="#10b981"/>
+        <MetricCard label="Total Donors" value={fund.donors.total} sub={`${fund.donors.acquired} new · ${fund.donors.retained} renewed`} color="#3b82f6"/>
+        <MetricCard label="Retention Rate" value={`${fund.donors.retentionRate}%`} sub="vs prior year" color={fund.donors.retentionRate>=70?"#10b981":fund.donors.retentionRate>=50?"#f59e0b":"#ef4444"}/>
+        <MetricCard label="Avg Gift" value={fmt(fund.avgGift)} color="#8b5cf6"/>
+        {fund.recovered>0&&<MetricCard label="Lapsed Recovered" value={fund.recovered} sub="gave again this year" color="#f59e0b"/>}
+        {fund.projectedTotal>0&&year===currentYear&&<MetricCard label="Year-End Proj." value={fmt(fund.projectedTotal)} sub="at current pace" color="#6b7280"/>}
+      </div>
+
+      <Card>
+        <SectionLabel>Monthly Revenue — {year}</SectionLabel>
+        <div style={{display:"flex",alignItems:"flex-end",gap:4,height:140}}>
+          {fund.monthly.map(m=>{
+            const h=maxMonth>0?Math.round(m.raised/maxMonth*120):0;
+            return <div key={m.month} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:4}}>
+              <div style={{fontSize:9,color:"#6b7280"}}>{m.raised>0?fmt(m.raised):""}</div>
+              <div style={{width:"100%",height:h,background:m.raised>0?"linear-gradient(180deg,#10b981,#059669)":"#1f2937",borderRadius:"4px 4px 0 0",minHeight:3}}/>
+              <div style={{fontSize:9,color:"#6b7280"}}>{m.month.slice(0,3)}</div>
+            </div>;
+          })}
+        </div>
+      </Card>
+
+      <Card>
+        <SectionLabel>Donor Acquisition vs Retention</SectionLabel>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16,marginBottom:14}}>
+          <div>
+            <div style={{fontSize:28,fontWeight:800,color:"#3b82f6",fontFamily:"'DM Serif Display',serif"}}>{fund.donors.acquired}</div>
+            <div style={{fontSize:12,color:"#9ca3af",marginTop:2}}>New donors</div>
+            <div style={{fontSize:11,color:"#6b7280",marginTop:6,lineHeight:1.5}}>First-time givers who didn't donate in {year-1}.</div>
+          </div>
+          <div>
+            <div style={{fontSize:28,fontWeight:800,color:"#10b981",fontFamily:"'DM Serif Display',serif"}}>{fund.donors.retained}</div>
+            <div style={{fontSize:12,color:"#9ca3af",marginTop:2}}>Renewed donors</div>
+            <div style={{fontSize:11,color:"#6b7280",marginTop:6,lineHeight:1.5}}>Gave in both {year-1} and {year}. Rate: {fund.donors.retentionRate}%</div>
+          </div>
+        </div>
+        <div style={{height:6,background:"#1f2937",borderRadius:99,display:"flex",overflow:"hidden"}}>
+          <div style={{width:`${fund.donors.total>0?Math.round(fund.donors.retained/fund.donors.total*100):0}%`,background:"#10b981"}}/>
+          <div style={{flex:1,background:"#3b82f6"}}/>
+        </div>
+        <div style={{display:"flex",gap:12,marginTop:8}}>
+          <div style={{display:"flex",alignItems:"center",gap:4,fontSize:11,color:"#6b7280"}}><div style={{width:10,height:10,background:"#10b981",borderRadius:2}}/>Retained</div>
+          <div style={{display:"flex",alignItems:"center",gap:4,fontSize:11,color:"#6b7280"}}><div style={{width:10,height:10,background:"#3b82f6",borderRadius:2}}/>New</div>
+        </div>
+      </Card>
+    </>}
+  </div>;
+}
+
 // ── App Shell ──────────────────────────────────────────────────────────────
 const TABS=[
   {id:"dashboard",label:"Dashboard",icon:"◈"},
   {id:"donors",label:"Donors",icon:"♦"},
   {id:"grants",label:"Grants",icon:"◉"},
   {id:"findgrants",label:"Find Grants",icon:"✦"},
+  {id:"communications",label:"Communications",icon:"◑"},
+  {id:"programs",label:"Programs",icon:"◐"},
+  {id:"annualfund",label:"Annual Fund",icon:"◒"},
   {id:"volunteers",label:"Volunteers",icon:"◎"},
   {id:"board",label:"Board",icon:"◆"},
   {id:"finance",label:"Finance",icon:"◇"},
@@ -1381,6 +1855,9 @@ export default function App() {
       {tab==="donors"&&<Donors data={data} setData={setData}/>}
       {tab==="grants"&&<Grants data={data} setData={setData}/>}
       {tab==="findgrants"&&<FindGrants data={data}/>}
+      {tab==="communications"&&<Communications data={data}/>}
+      {tab==="programs"&&<Programs data={data}/>}
+      {tab==="annualfund"&&<AnnualFund data={data}/>}
       {tab==="volunteers"&&<Volunteers data={data}/>}
       {tab==="board"&&<Board data={data}/>}
       {tab==="finance"&&<Finance data={data}/>}

@@ -30,6 +30,13 @@ async function run(sql, params = []) {
 }
 
 async function initSchema() {
+  // ALTER TABLE statements must run individually before the big CREATE block
+  await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS smtp_host TEXT`);
+  await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS smtp_port INTEGER DEFAULT 587`);
+  await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS smtp_user TEXT`);
+  await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS smtp_pass TEXT`);
+  await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS smtp_from TEXT`);
+
   await pool.query(`
     CREATE TABLE IF NOT EXISTS orgs (
       id TEXT PRIMARY KEY,
@@ -181,6 +188,70 @@ async function initSchema() {
       prompt_summary TEXT,
       created_at TIMESTAMPTZ DEFAULT NOW()
     );
+
+    CREATE TABLE IF NOT EXISTS campaigns (
+      id TEXT PRIMARY KEY,
+      org_id TEXT REFERENCES orgs(id),
+      name TEXT NOT NULL,
+      type TEXT DEFAULT 'appeal',
+      subject TEXT DEFAULT '',
+      body TEXT DEFAULT '',
+      status TEXT DEFAULT 'draft',
+      segment TEXT DEFAULT '{}',
+      sent_at TIMESTAMPTZ,
+      recipient_count INTEGER DEFAULT 0,
+      open_count INTEGER DEFAULT 0,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS campaign_recipients (
+      id TEXT PRIMARY KEY,
+      org_id TEXT REFERENCES orgs(id),
+      campaign_id TEXT REFERENCES campaigns(id) ON DELETE CASCADE,
+      donor_id TEXT REFERENCES donors(id) ON DELETE CASCADE,
+      email TEXT NOT NULL,
+      sent_at TIMESTAMPTZ,
+      opened_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS programs (
+      id TEXT PRIMARY KEY,
+      org_id TEXT REFERENCES orgs(id),
+      name TEXT NOT NULL,
+      description TEXT DEFAULT '',
+      budget INTEGER DEFAULT 0,
+      spent INTEGER DEFAULT 0,
+      staff TEXT DEFAULT '[]',
+      participant_count INTEGER DEFAULT 0,
+      start_date TEXT,
+      end_date TEXT,
+      status TEXT DEFAULT 'active',
+      outcomes TEXT DEFAULT '',
+      metrics TEXT DEFAULT '{}',
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS program_grants (
+      id TEXT PRIMARY KEY,
+      org_id TEXT REFERENCES orgs(id),
+      program_id TEXT REFERENCES programs(id) ON DELETE CASCADE,
+      grant_id TEXT REFERENCES grants(id) ON DELETE CASCADE,
+      allocated INTEGER DEFAULT 0,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      UNIQUE (program_id, grant_id)
+    );
+
+    CREATE TABLE IF NOT EXISTS annual_fund_goals (
+      id TEXT PRIMARY KEY,
+      org_id TEXT REFERENCES orgs(id),
+      year INTEGER NOT NULL,
+      goal INTEGER DEFAULT 0,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      UNIQUE (org_id, year)
+    );
   `);
 }
 
@@ -320,6 +391,99 @@ async function seedData() {
       `INSERT INTO funds (id,org_id,name,balance,restricted)
        VALUES ($1,$2,$3,$4,$5) ON CONFLICT (id) DO NOTHING`,
       f
+    );
+  }
+
+  // ── Gift history (for annual fund dashboard) ────────────────────────────
+  const gifts = [
+    ["gft_23_01", orgId, "d1", 4000,  "2023-10-15", "cash",   "Annual Appeal",      ""],
+    ["gft_23_02", orgId, "d2", 2500,  "2023-01-10", "check",  "Annual Fund",         ""],
+    ["gft_23_03", orgId, "d3",  500,  "2023-09-22", "cash",   "General",             ""],
+    ["gft_23_04", orgId, "d4", 20000, "2023-03-15", "wire",   "NEA Grant",           ""],
+    ["gft_23_05", orgId, "d6", 1000,  "2023-07-01", "cash",   "Mid-Year",            ""],
+    ["gft_23_06", orgId, "d1", 2000,  "2023-06-01", "cash",   "Gala",                ""],
+    ["gft_23_07", orgId, "d4", 15000, "2023-09-01", "wire",   "Community Trust",     ""],
+    ["gft_24_01", orgId, "d1", 5000,  "2024-11-15", "cash",   "Annual Major Gift",   ""],
+    ["gft_24_02", orgId, "d2", 2800,  "2024-01-08", "check",  "Annual Fund",         ""],
+    ["gft_24_03", orgId, "d4", 25000, "2024-03-01", "wire",   "NEA Grant",           ""],
+    ["gft_24_04", orgId, "d5",  250,  "2024-12-15", "online", "Holiday Appeal",      ""],
+    ["gft_24_05", orgId, "d6", 1000,  "2024-06-30", "cash",   "Mid-Year",            ""],
+    ["gft_24_06", orgId, "d1", 2000,  "2024-06-01", "cash",   "Gala",                ""],
+    ["gft_24_07", orgId, "d4", 25000, "2024-10-01", "wire",   "Community Trust",     ""],
+    ["gft_24_08", orgId, "d2",  500,  "2024-08-20", "online", "Giving Tuesday",      ""],
+    ["gft_25_01", orgId, "d2", 3000,  "2025-01-03", "check",  "Annual Fund",         ""],
+    ["gft_25_02", orgId, "d4", 25000, "2025-03-01", "wire",   "NEA Grant",           ""],
+    ["gft_25_03", orgId, "d5",  250,  "2025-02-14", "online", "Valentine Appeal",    ""],
+    ["gft_25_04", orgId, "d4", 25000, "2025-01-15", "wire",   "Community Trust Q1",  ""],
+    ["gft_25_05", orgId, "d1", 1500,  "2025-04-05", "cash",   "Spring Appeal",       ""],
+    ["gft_25_06", orgId, "d6",  600,  "2025-03-15", "online", "Spring Campaign",     ""],
+  ];
+  for (const g of gifts) {
+    await pool.query(
+      `INSERT INTO gifts (id,org_id,donor_id,amount,date,type,campaign,notes)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT (id) DO NOTHING`,
+      g
+    );
+  }
+
+  // ── Programs ────────────────────────────────────────────────────────────
+  const programs = [
+    [
+      "prg_01", orgId, "After-School Arts",
+      "Weekly arts education for K-8 students in underserved neighborhoods",
+      85000, 52000, '["Carlos Mendez","Sophie Laurent"]', 120,
+      "2024-09-01", "2025-06-30", "active",
+      "Students showed 40% improvement in creative confidence assessments. Program served 120 students across 4 schools in Brooklyn and the Bronx.",
+      '{"students_served":120,"schools":4,"sessions_completed":28,"avg_attendance_rate":"87%"}'
+    ],
+    [
+      "prg_02", orgId, "Summer Intensive",
+      "6-week intensive program for advanced students ages 14-18, focusing on portfolio development and college readiness.",
+      45000, 18000, '["Carlos Mendez"]', 32,
+      "2025-07-07", "2025-08-15", "planning",
+      "Builds on after-school skills with college-prep portfolio development. Target: 85% of students complete portfolio.",
+      '{"students_enrolled":32,"portfolio_completion_target":"100%","college_readiness_goal":"85%"}'
+    ],
+  ];
+  for (const p of programs) {
+    await pool.query(
+      `INSERT INTO programs (id,org_id,name,description,budget,spent,staff,participant_count,start_date,end_date,status,outcomes,metrics)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) ON CONFLICT (id) DO NOTHING`,
+      p
+    );
+  }
+
+  // ── Annual fund goal ─────────────────────────────────────────────────────
+  await pool.query(
+    `INSERT INTO annual_fund_goals (id,org_id,year,goal)
+     VALUES ($1,$2,$3,$4) ON CONFLICT (id) DO NOTHING`,
+    ["afg_01", orgId, 2025, 250000]
+  );
+
+  // ── Draft campaign ────────────────────────────────────────────────────────
+  await pool.query(
+    `INSERT INTO campaigns (id,org_id,name,type,subject,body,status,segment,recipient_count,open_count)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) ON CONFLICT (id) DO NOTHING`,
+    [
+      "cmp_01", orgId, "Spring Appeal 2025", "appeal",
+      "Help us reach 120 more students — a message from CREO Arts",
+      "Dear {{donor_name}},\n\nYour support has made an incredible difference. This year, CREO Arts served 120 students across 4 NYC schools.\n\nAs we plan for fall, we need your help to expand our reach. A gift of any size helps us purchase art supplies, pay teaching artists, and keep our programs free for students who need them most.\n\nYour previous gift of {{gift_amount}} made a real impact. Will you renew your support today?\n\nWith gratitude,\nThe CREO Arts Team",
+      "draft",
+      '{"stages":["steward","solicit"],"statuses":["major","mid"]}',
+      0, 0
+    ]
+  );
+
+  // ── Program grants ────────────────────────────────────────────────────────
+  const programGrants = [
+    ["pg_01", orgId, "prg_01", "g1", 35000],
+    ["pg_02", orgId, "prg_01", "g2", 25000],
+  ];
+  for (const pg of programGrants) {
+    await pool.query(
+      `INSERT INTO program_grants (id,org_id,program_id,grant_id,allocated)
+       VALUES ($1,$2,$3,$4,$5) ON CONFLICT (program_id, grant_id) DO NOTHING`,
+      pg
     );
   }
 }

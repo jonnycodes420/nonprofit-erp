@@ -3,6 +3,7 @@ const express = require("express");
 const cors = require("cors");
 const bcrypt = require("bcryptjs");
 const Anthropic = require("@anthropic-ai/sdk");
+const nodemailer = require("nodemailer");
 const { getDb, query, run, uuid, seedOrgData } = require("./db");
 const { signToken, requireAuth } = require("./auth");
 
@@ -592,6 +593,383 @@ app.get("/ai/donor-score", requireAuth, wrap(async (req, res) => {
     return { id: d.id, name: d.name, score: Math.max(5, Math.min(score, 99)), status: d.status };
   });
   res.json(scored.sort((a, b) => b.score - a.score));
+}));
+
+// ── SMTP settings ──────────────────────────────────────────────────────────
+app.put("/org/smtp", requireAuth, requireAdmin, wrap(async (req, res) => {
+  const { smtpHost, smtpPort, smtpUser, smtpPass, smtpFrom } = req.body;
+  await run(
+    `UPDATE orgs SET smtp_host=?, smtp_port=?, smtp_user=?, smtp_pass=?, smtp_from=? WHERE id=?`,
+    [smtpHost || null, smtpPort || 587, smtpUser || null, smtpPass || null, smtpFrom || null, req.user.orgId]
+  );
+  res.json({ success: true });
+}));
+
+// ── Campaigns ──────────────────────────────────────────────────────────────
+app.get("/campaigns", requireAuth, wrap(async (req, res) => {
+  const campaigns = await query(
+    "SELECT * FROM campaigns WHERE org_id = ? ORDER BY created_at DESC",
+    [req.user.orgId]
+  );
+  const result = await Promise.all(campaigns.map(async c => {
+    const recipients = await query(
+      `SELECT cr.id, cr.email, cr.sent_at, cr.opened_at, d.name as donor_name
+       FROM campaign_recipients cr
+       LEFT JOIN donors d ON d.id = cr.donor_id
+       WHERE cr.campaign_id = ?`,
+      [c.id]
+    );
+    return { ...c, recipients };
+  }));
+  res.json(result);
+}));
+
+app.post("/campaigns", requireAuth, wrap(async (req, res) => {
+  const { name, type, subject, body, segment } = req.body;
+  if (!name) return res.status(400).json({ error: "Name required" });
+
+  const id = "cmp_" + uuid().slice(0, 8);
+  await run(
+    `INSERT INTO campaigns (id,org_id,name,type,subject,body,status,segment,recipient_count,open_count)
+     VALUES (?,?,?,?,?,?,?,?,0,0)`,
+    [id, req.user.orgId, name, type || "appeal", subject || "", body || "",
+     "draft", JSON.stringify(segment || {})]
+  );
+  const rows = await query("SELECT * FROM campaigns WHERE id = ?", [id]);
+  res.status(201).json(rows[0]);
+}));
+
+app.put("/campaigns/:id", requireAuth, wrap(async (req, res) => {
+  const { name, type, subject, body, segment, status } = req.body;
+  if (!name) return res.status(400).json({ error: "Name required" });
+
+  const existing = await query(
+    "SELECT * FROM campaigns WHERE id = ? AND org_id = ?",
+    [req.params.id, req.user.orgId]
+  );
+  if (!existing.length) return res.status(404).json({ error: "Campaign not found" });
+  if (existing[0].status !== "draft") return res.status(400).json({ error: "Only draft campaigns can be edited" });
+
+  await run(
+    `UPDATE campaigns SET name=?,type=?,subject=?,body=?,segment=?,status=?,updated_at=NOW()
+     WHERE id=? AND org_id=?`,
+    [name, type || "appeal", subject || "", body || "",
+     JSON.stringify(segment || {}), status || "draft",
+     req.params.id, req.user.orgId]
+  );
+  const rows = await query("SELECT * FROM campaigns WHERE id = ?", [req.params.id]);
+  res.json(rows[0]);
+}));
+
+app.delete("/campaigns/:id", requireAuth, requireAdmin, wrap(async (req, res) => {
+  await run("DELETE FROM campaigns WHERE id = ? AND org_id = ?", [req.params.id, req.user.orgId]);
+  res.json({ success: true });
+}));
+
+app.post("/campaigns/:id/send", requireAuth, requireAdmin, wrap(async (req, res) => {
+  const BACKEND_URL = process.env.BACKEND_URL || "https://nonprofit-erp-production.up.railway.app";
+
+  const campaigns = await query(
+    "SELECT * FROM campaigns WHERE id = ? AND org_id = ?",
+    [req.params.id, req.user.orgId]
+  );
+  if (!campaigns.length) return res.status(404).json({ error: "Campaign not found" });
+  const campaign = campaigns[0];
+
+  const orgs = await query("SELECT * FROM orgs WHERE id = ?", [req.user.orgId]);
+  const org = orgs[0];
+
+  if (!org.smtp_host || !org.smtp_user || !org.smtp_pass) {
+    return res.status(400).json({ error: "SMTP not configured" });
+  }
+
+  const segment = typeof campaign.segment === "string"
+    ? JSON.parse(campaign.segment)
+    : campaign.segment;
+
+  let donors = await query(
+    "SELECT * FROM donors WHERE org_id = ? AND email IS NOT NULL AND email != ''",
+    [req.user.orgId]
+  );
+
+  if (segment.stages && segment.stages.length) {
+    donors = donors.filter(d => segment.stages.includes(d.stage));
+  }
+  if (segment.statuses && segment.statuses.length) {
+    donors = donors.filter(d => segment.statuses.includes(d.status));
+  }
+
+  const transporter = nodemailer.createTransport({
+    host: org.smtp_host,
+    port: org.smtp_port || 587,
+    secure: (org.smtp_port || 587) === 465,
+    auth: { user: org.smtp_user, pass: org.smtp_pass },
+  });
+
+  let sentCount = 0;
+  let failCount = 0;
+
+  for (const donor of donors) {
+    const recipientId = "cr_" + uuid().slice(0, 8);
+
+    await run(
+      `INSERT INTO campaign_recipients (id,org_id,campaign_id,donor_id,email)
+       VALUES (?,?,?,?,?)`,
+      [recipientId, req.user.orgId, campaign.id, donor.id, donor.email]
+    );
+
+    const lastGiftRows = await query(
+      "SELECT amount, date FROM gifts WHERE donor_id = ? ORDER BY date DESC LIMIT 1",
+      [donor.id]
+    );
+    const lastGift = lastGiftRows[0];
+    const giftAmount = lastGift ? `$${lastGift.amount.toLocaleString()}` : "your previous gift";
+    const giftDate   = lastGift ? lastGift.date : "";
+
+    const year = new Date().getFullYear().toString();
+    const totalGiving = donor.total_giving
+      ? `$${Number(donor.total_giving).toLocaleString()}`
+      : "$0";
+
+    const bodyText = (campaign.body || "")
+      .replace(/{{donor_name}}/g,   donor.name)
+      .replace(/{{gift_amount}}/g,  giftAmount)
+      .replace(/{{gift_date}}/g,    giftDate)
+      .replace(/{{org_name}}/g,     org.name)
+      .replace(/{{year}}/g,         year)
+      .replace(/{{total_giving}}/g, totalGiving);
+
+    const trackingPixel = `<img src="${BACKEND_URL}/track/${recipientId}/open.gif" width="1" height="1" style="display:none">`;
+    const htmlBody = bodyText.replace(/\n/g, "<br>") + trackingPixel;
+
+    try {
+      await transporter.sendMail({
+        from: org.smtp_from || org.smtp_user,
+        to: donor.email,
+        subject: campaign.subject || "",
+        html: htmlBody,
+        text: bodyText,
+      });
+      await run(
+        "UPDATE campaign_recipients SET sent_at = NOW() WHERE id = ?",
+        [recipientId]
+      );
+      sentCount++;
+    } catch (err) {
+      console.error("Failed to send to", donor.email, err.message);
+      failCount++;
+    }
+  }
+
+  await run(
+    `UPDATE campaigns SET status='sent', sent_at=NOW(), recipient_count=?, updated_at=NOW()
+     WHERE id=?`,
+    [sentCount, campaign.id]
+  );
+
+  res.json({ sent: sentCount, failed: failCount });
+}));
+
+// ── Tracking pixel (no auth) ───────────────────────────────────────────────
+app.get("/track/:recipientId/open.gif", wrap(async (req, res) => {
+  const { recipientId } = req.params;
+  await run(
+    "UPDATE campaign_recipients SET opened_at = NOW() WHERE id = ? AND opened_at IS NULL",
+    [recipientId]
+  );
+  await run(
+    `UPDATE campaigns SET open_count = open_count + 1
+     WHERE id = (SELECT campaign_id FROM campaign_recipients WHERE id = ?)`,
+    [recipientId]
+  );
+  const gif = Buffer.from("R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7", "base64");
+  res.setHeader("Content-Type", "image/gif");
+  res.setHeader("Cache-Control", "no-cache, no-store");
+  res.end(gif);
+}));
+
+// ── Programs ───────────────────────────────────────────────────────────────
+app.get("/programs", requireAuth, wrap(async (req, res) => {
+  const programs = await query(
+    "SELECT * FROM programs WHERE org_id = ? ORDER BY created_at DESC",
+    [req.user.orgId]
+  );
+  const result = await Promise.all(programs.map(async p => {
+    const grants = await query(
+      `SELECT pg.grant_id as "grantId", g.funder, g.program, pg.allocated
+       FROM program_grants pg
+       JOIN grants g ON g.id = pg.grant_id
+       WHERE pg.program_id = ?`,
+      [p.id]
+    );
+    return { ...p, grants };
+  }));
+  res.json(result);
+}));
+
+app.post("/programs", requireAuth, wrap(async (req, res) => {
+  const { name, description, budget, spent, staff, participantCount, startDate, endDate, status, outcomes, metrics } = req.body;
+  if (!name) return res.status(400).json({ error: "Name required" });
+
+  const id = "prg_" + uuid().slice(0, 8);
+  await run(
+    `INSERT INTO programs (id,org_id,name,description,budget,spent,staff,participant_count,start_date,end_date,status,outcomes,metrics)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+    [id, req.user.orgId, name, description || "", budget || 0, spent || 0,
+     JSON.stringify(staff || []), participantCount || 0,
+     startDate || null, endDate || null, status || "active",
+     outcomes || "", JSON.stringify(metrics || {})]
+  );
+  const rows = await query("SELECT * FROM programs WHERE id = ?", [id]);
+  res.status(201).json(rows[0]);
+}));
+
+app.put("/programs/:id", requireAuth, wrap(async (req, res) => {
+  const { name, description, budget, spent, staff, participantCount, startDate, endDate, status, outcomes, metrics } = req.body;
+  if (!name) return res.status(400).json({ error: "Name required" });
+
+  const affected = await run(
+    `UPDATE programs
+     SET name=?,description=?,budget=?,spent=?,staff=?,participant_count=?,
+         start_date=?,end_date=?,status=?,outcomes=?,metrics=?,updated_at=NOW()
+     WHERE id=? AND org_id=?`,
+    [name, description || "", budget || 0, spent || 0,
+     JSON.stringify(staff || []), participantCount || 0,
+     startDate || null, endDate || null, status || "active",
+     outcomes || "", JSON.stringify(metrics || {}),
+     req.params.id, req.user.orgId]
+  );
+  if (!affected.changes) return res.status(404).json({ error: "Program not found" });
+  const rows = await query("SELECT * FROM programs WHERE id = ?", [req.params.id]);
+  res.json(rows[0]);
+}));
+
+app.delete("/programs/:id", requireAuth, requireAdmin, wrap(async (req, res) => {
+  await run("DELETE FROM programs WHERE id = ? AND org_id = ?", [req.params.id, req.user.orgId]);
+  res.json({ success: true });
+}));
+
+app.post("/programs/:id/grants", requireAuth, requireAdmin, wrap(async (req, res) => {
+  const { grantId, allocated } = req.body;
+  if (!grantId) return res.status(400).json({ error: "grantId required" });
+
+  const programExists = await query(
+    "SELECT id FROM programs WHERE id = ? AND org_id = ?",
+    [req.params.id, req.user.orgId]
+  );
+  if (!programExists.length) return res.status(404).json({ error: "Program not found" });
+
+  const id = "pg_" + uuid().slice(0, 8);
+  await run(
+    `INSERT INTO program_grants (id,org_id,program_id,grant_id,allocated)
+     VALUES (?,?,?,?,?)
+     ON CONFLICT (program_id, grant_id) DO UPDATE SET allocated=EXCLUDED.allocated`,
+    [id, req.user.orgId, req.params.id, grantId, allocated || 0]
+  );
+  res.json({ success: true });
+}));
+
+app.delete("/programs/:id/grants/:grantId", requireAuth, requireAdmin, wrap(async (req, res) => {
+  await run(
+    "DELETE FROM program_grants WHERE program_id = ? AND grant_id = ?",
+    [req.params.id, req.params.grantId]
+  );
+  res.json({ success: true });
+}));
+
+// ── Annual Fund ────────────────────────────────────────────────────────────
+app.get("/annual-fund", requireAuth, wrap(async (req, res) => {
+  const { orgId } = req.user;
+  const year = parseInt(req.query.year) || new Date().getFullYear();
+  const prevYear = year - 1;
+
+  const goalRows = await query(
+    "SELECT goal FROM annual_fund_goals WHERE org_id = ? AND year = ?",
+    [orgId, year]
+  );
+  const goal = goalRows.length ? goalRows[0].goal : 0;
+
+  const allGifts = await query(
+    "SELECT * FROM gifts WHERE org_id = ?",
+    [orgId]
+  );
+
+  const monthNames = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+
+  const thisYearGifts = allGifts.filter(g => {
+    const d = new Date(g.date);
+    return d.getFullYear() === year;
+  });
+
+  const prevYearGifts = allGifts.filter(g => {
+    const d = new Date(g.date);
+    return d.getFullYear() === prevYear;
+  });
+
+  const totalRaised = thisYearGifts.reduce((s, g) => s + g.amount, 0);
+  const giftCount   = thisYearGifts.length;
+  const avgGift     = giftCount > 0 ? Math.round(totalRaised / giftCount) : 0;
+
+  const monthly = monthNames.map((month, idx) => {
+    const raised = thisYearGifts
+      .filter(g => new Date(g.date).getMonth() === idx)
+      .reduce((s, g) => s + g.amount, 0);
+    return { month, raised };
+  });
+
+  const thisYearDonorIds = new Set(thisYearGifts.map(g => g.donor_id));
+  const prevYearDonorIds = new Set(prevYearGifts.map(g => g.donor_id));
+
+  const totalDonors    = thisYearDonorIds.size;
+  const retained       = [...thisYearDonorIds].filter(id => prevYearDonorIds.has(id)).length;
+  const acquired       = totalDonors - retained;
+  const retentionRate  = prevYearDonorIds.size > 0
+    ? Math.round(retained / prevYearDonorIds.size * 100)
+    : 0;
+
+  const currentDate  = new Date();
+  const currentYear  = currentDate.getFullYear();
+  let projectedTotal = totalRaised;
+  if (year === currentYear) {
+    const elapsedMonths = currentDate.getMonth() + (currentDate.getDate() / 30);
+    projectedTotal = elapsedMonths > 0
+      ? Math.round(totalRaised / elapsedMonths * 12)
+      : totalRaised;
+  }
+
+  const goalPct = goal > 0 ? Math.round(totalRaised / goal * 100) : 0;
+
+  const lapsedDonorIds = new Set(
+    (await query("SELECT id FROM donors WHERE org_id = ? AND status = 'lapsed'", [orgId])).map(d => d.id)
+  );
+  const recovered = thisYearGifts.filter(g => lapsedDonorIds.has(g.donor_id)).length;
+
+  res.json({
+    year,
+    goal,
+    totalRaised,
+    monthly,
+    donors: { total: totalDonors, acquired, retained, retentionRate },
+    avgGift,
+    giftCount,
+    projectedTotal,
+    goalPct,
+    recovered,
+  });
+}));
+
+app.post("/annual-fund/goal", requireAuth, requireAdmin, wrap(async (req, res) => {
+  const { year, goal } = req.body;
+  if (!year || goal === undefined) return res.status(400).json({ error: "year and goal required" });
+
+  const id = "afg_" + uuid().slice(0, 8);
+  await run(
+    `INSERT INTO annual_fund_goals (id,org_id,year,goal)
+     VALUES (?,?,?,?)
+     ON CONFLICT (org_id, year) DO UPDATE SET goal=EXCLUDED.goal`,
+    [id, req.user.orgId, year, goal]
+  );
+  res.json({ success: true, year, goal });
 }));
 
 // ── 404 ────────────────────────────────────────────────────────────────────
