@@ -170,8 +170,8 @@ function seedData() {
   const orgId = "org_creo";
   const userId = "user_admin";
 
-  db.run(`INSERT OR IGNORE INTO orgs VALUES (?,?,?,?,datetime('now'))`,
-    [orgId, "CREO Arts", "Transformative arts education for underserved NYC youth", "47-1234567"]);
+  db.run(`INSERT OR IGNORE INTO orgs VALUES (?,?,?,?,?,datetime('now'))`,
+    [orgId, "CREO Arts", "Transformative arts education for underserved NYC youth", "47-1234567", 1]);
 
   const hash = bcrypt.hashSync("demo1234", 10);
   db.run(`INSERT OR IGNORE INTO users VALUES (?,?,?,?,?,?,datetime('now'))`,
