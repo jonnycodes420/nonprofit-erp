@@ -146,6 +146,29 @@ app.post("/donors", requireAuth, (req, res) => {
   res.status(201).json(query("SELECT * FROM donors WHERE id = ?", [id])[0]);
 });
 
+app.post("/donors/import", requireAuth, (req, res) => {
+  const { donors } = req.body;
+  if (!Array.isArray(donors) || donors.length === 0)
+    return res.status(400).json({ error: "donors array required" });
+
+  let inserted = 0;
+  for (const d of donors) {
+    if (!d.name) continue;
+    const id = "d_" + uuid().slice(0, 8);
+    const today = new Date().toISOString().split("T")[0];
+    run(
+      `INSERT INTO donors (id,org_id,name,email,phone,status,total_giving,last_gift_amount,last_gift_date,gift_count,tags,notes)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
+      [id, req.user.orgId, d.name, d.email || "", d.phone || "",
+       d.status || "new", parseInt(d.total) || 0, parseInt(d.lastAmount) || 0,
+       d.lastGift || today, parseInt(d.gifts) || (d.total ? 1 : 0),
+       JSON.stringify(Array.isArray(d.tags) ? d.tags : []), d.notes || ""]
+    );
+    inserted++;
+  }
+  res.json({ inserted });
+});
+
 app.put("/donors/:id", requireAuth, (req, res) => {
   const { name, email, phone, status, tags, notes } = req.body;
   if (!name) return res.status(400).json({ error: "Name required" });

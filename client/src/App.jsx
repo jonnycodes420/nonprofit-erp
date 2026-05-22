@@ -82,6 +82,28 @@ function donorScore(d) {
   return Math.max(5,Math.min(s,99));
 }
 
+function retentionRisk(d) {
+  const days = daysDiff(d.lastGift);
+  let risk = 0;
+  if (days > 365) risk += 40; else if (days > 270) risk += 25; else if (days > 180) risk += 12;
+  if (d.gifts < 2) risk += 20; else if (d.gifts < 4) risk += 8;
+  if (d.status === "lapsed") risk += 30;
+  if (d.tags.includes("recurring")) risk -= 15;
+  if (d.tags.includes("board-adjacent")) risk -= 10;
+  risk = Math.max(0, Math.min(risk, 99));
+  const level = risk >= 55 ? "high" : risk >= 30 ? "medium" : "low";
+  const reasons = [];
+  if (days > 270) reasons.push(`${days}d since last gift`);
+  if (d.gifts < 2) reasons.push("one-time donor");
+  if (d.status === "lapsed") reasons.push("marked lapsed");
+  const actions = {
+    high: "Call this week — personal touch required",
+    medium: "Send a targeted update in next 2 weeks",
+    low: "Keep on regular cadence",
+  };
+  return { risk, level, reason: reasons.join(", ") || "steady engagement", action: actions[level] };
+}
+
 // ── Global Chat ────────────────────────────────────────────────────────────
 function AIChat({data,onClose}) {
   const [msgs,setMsgs]=useState([{role:"assistant",content:`Hi! I'm your development intelligence assistant for ${data.org.name}. I have full context on your donors, grants, financials, board, and tasks.\n\nTry asking:\n• "Who should I call this week?"\n• "How's our grant pipeline?"\n• "Draft a script for my Margaret Chen call"\n• "What's our biggest financial risk right now?"\n• "Which volunteers should we convert to donors?"`}]);
@@ -257,6 +279,34 @@ function Donors({data,setData}) {
   const [aiMap,setAiMap]=useState({}); const [loadingKey,setLoadingKey]=useState(null);
   const [callList,setCallList]=useState(""); const [callLoading,setCallLoading]=useState(false);
   const [newInteraction,setNewInteraction]=useState({donorId:null,type:"call",note:""});
+  const [showImport,setShowImport]=useState(false);
+  const [showLapsed,setShowLapsed]=useState(false);
+  const [lapsedEmails,setLapsedEmails]=useState({});
+  const [lapsedLoadingId,setLapsedLoadingId]=useState(null);
+
+  const lapsedDonors=[...data.donors].filter(d=>d.status==="lapsed"||retentionRisk(d).level==="high").sort((a,b)=>b.total-a.total);
+  const atRisk=data.donors.filter(d=>retentionRisk(d).level!=="low"&&d.status!=="lapsed");
+
+  const draftLapsedEmail = async (donor) => {
+    setLapsedLoadingId(donor.id);
+    const sys=`You are a nonprofit major gifts officer. Write a warm, personal re-engagement email. Max 150 words. Do not use subject line headers.`;
+    const msg=`Write a re-engagement email for ${donor.name}.\nLast gift: ${fmtFull(donor.lastAmount)} on ${donor.lastGift} (${daysDiff(donor.lastGift)} days ago)\nTotal giving: ${fmtFull(donor.total)} across ${donor.gifts} gifts\nNotes: ${donor.notes||"none"}\nOrg: ${data.org.name} — ${data.org.mission}\n\nBe warm and specific. Reference their giving history. Include a clear but gentle ask.`;
+    await askClaude(sys, msg, chunk=>setLapsedEmails(p=>({...p,[donor.id]:chunk})));
+    setLapsedLoadingId(null);
+  };
+
+  const reloadDonors = async () => {
+    try {
+      const donors = await apiFetch("/donors");
+      setData(prev => ({ ...prev, donors: donors.map(d => ({
+        id: d.id, name: d.name, email: d.email||"", phone: d.phone||"",
+        total: d.total_giving||0, lastGift: d.last_gift_date||new Date().toISOString().split("T")[0],
+        lastAmount: d.last_gift_amount||0, gifts: d.gift_count||0, status: d.status,
+        tags: Array.isArray(d.tags)?d.tags:JSON.parse(d.tags||"[]"),
+        notes: d.notes||"", interactions: d.interactions||[],
+      })) }));
+    } catch(e) { console.error(e); }
+  };
 
   const filtered=data.donors.filter(d=>{
     const ms=d.name.toLowerCase().includes(search.toLowerCase())||d.email.toLowerCase().includes(search.toLowerCase());
@@ -301,6 +351,8 @@ function Donors({data,setData}) {
   };
 
   return <div style={{display:"flex",flexDirection:"column",gap:14}}>
+    {showImport&&<DonorImport onClose={()=>setShowImport(false)} onImported={()=>{reloadDonors();setShowImport(false);}}/>}
+
     <div style={{display:"flex",gap:10,flexWrap:"wrap",alignItems:"center"}}>
       <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search donors…" style={{flex:1,minWidth:160,background:"#111827",border:"1px solid #374151",borderRadius:10,padding:"10px 14px",color:"#f3f4f6",fontSize:13,outline:"none"}}/>
       <select value={filter} onChange={e=>setFilter(e.target.value)} style={{background:"#111827",border:"1px solid #374151",borderRadius:10,padding:"10px 12px",color:"#9ca3af",fontSize:13,outline:"none"}}>
@@ -308,9 +360,46 @@ function Donors({data,setData}) {
       </select>
       <AIBtn onClick={generateCallList} loading={callLoading} label="✦ This Week's Call List"/>
       <button onClick={()=>setShowAdd(true)} style={{background:"#10b981",border:"none",borderRadius:10,padding:"10px 14px",color:"#fff",fontSize:13,fontWeight:600,cursor:"pointer"}}>+ Add</button>
+      <button onClick={()=>setShowImport(true)} style={{background:"#1f2937",border:"1px solid #374151",borderRadius:10,padding:"10px 14px",color:"#9ca3af",fontSize:13,fontWeight:600,cursor:"pointer"}}>↑ Import CSV</button>
     </div>
 
     {(callLoading||callList)&&<AIPanel text={callList} onClose={()=>setCallList("")}/>}
+
+    {lapsedDonors.length>0&&<div style={{background:"#1c0a0a",border:"1px solid #ef444433",borderRadius:14,overflow:"hidden"}}>
+      <button onClick={()=>setShowLapsed(!showLapsed)} style={{width:"100%",background:"transparent",border:"none",padding:"14px 18px",display:"flex",alignItems:"center",justifyContent:"space-between",cursor:"pointer",textAlign:"left"}}>
+        <div style={{display:"flex",alignItems:"center",gap:10}}>
+          <div style={{width:8,height:8,borderRadius:"50%",background:"#ef4444"}}/>
+          <span style={{fontSize:13,fontWeight:700,color:"#f87171"}}>Lapsed & At-Risk Donors</span>
+          <span style={{background:"#ef444422",color:"#ef4444",fontSize:11,fontWeight:700,borderRadius:99,padding:"2px 8px"}}>{lapsedDonors.length}</span>
+          <span style={{fontSize:12,color:"#9ca3af"}}>{fmtFull(lapsedDonors.reduce((s,d)=>s+d.total,0))} total at risk</span>
+        </div>
+        <span style={{fontSize:12,color:"#6b7280"}}>{showLapsed?"▲ Collapse":"▼ Expand"}</span>
+      </button>
+      {showLapsed&&<div style={{borderTop:"1px solid #ef444422",padding:"14px 18px",display:"flex",flexDirection:"column",gap:14}}>
+        {lapsedDonors.map(d=>{
+          const rr=retentionRisk(d);
+          return <div key={d.id} style={{background:"#0f172a",borderRadius:12,padding:16,border:"1px solid #1f2937"}}>
+            <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",gap:10,marginBottom:10}}>
+              <div>
+                <div style={{fontSize:14,fontWeight:700,color:"#f3f4f6"}}>{d.name}</div>
+                <div style={{fontSize:12,color:"#6b7280",marginTop:2}}>{fmtFull(d.total)} lifetime · {daysDiff(d.lastGift)}d since last gift · {d.gifts} gifts</div>
+                <div style={{fontSize:12,color:"#ef4444",marginTop:3}}>{rr.reason}</div>
+              </div>
+              <div style={{display:"flex",gap:6,flexShrink:0,flexWrap:"wrap",justifyContent:"flex-end"}}>
+                <button onClick={()=>draftLapsedEmail(d)} disabled={lapsedLoadingId===d.id} style={{background:lapsedLoadingId===d.id?"#1f2937":"linear-gradient(135deg,#7c3aed,#3b82f6)",border:"none",borderRadius:8,padding:"7px 12px",color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer",display:"flex",alignItems:"center",gap:5,opacity:lapsedLoadingId===d.id?0.6:1}}>
+                  {lapsedLoadingId===d.id?<><Spin/>Drafting…</>:"✦ Draft Email"}
+                </button>
+              </div>
+            </div>
+            {lapsedEmails[d.id]&&<div style={{background:"#1a0f3c",border:"1px solid #7c3aed44",borderRadius:10,padding:"12px 14px",position:"relative"}}>
+              <div style={{fontSize:10,fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase",color:"#8b5cf6",marginBottom:8}}>Draft Email</div>
+              <div style={{fontSize:13,color:"#e2e8f0",lineHeight:1.75,whiteSpace:"pre-wrap"}}>{lapsedEmails[d.id]}</div>
+              <button onClick={()=>navigator.clipboard.writeText(lapsedEmails[d.id])} style={{marginTop:10,background:"#374151",border:"none",borderRadius:6,padding:"5px 10px",color:"#9ca3af",fontSize:11,cursor:"pointer"}}>Copy</button>
+            </div>}
+          </div>;
+        })}
+      </div>}
+    </div>}
 
     {showAdd&&<Card style={{gap:10,display:"flex",flexDirection:"column"}}>
       <div style={{fontSize:14,fontWeight:700,color:"#f3f4f6"}}>New Donor</div>
@@ -326,6 +415,8 @@ function Donors({data,setData}) {
     {filtered.map(d=>{
       const sc=donorScore(d); const isOpen=selected?.id===d.id;
       const scoreColor=sc>70?"#10b981":sc>45?"#f59e0b":"#ef4444";
+      const rr=retentionRisk(d);
+      const riskColor={high:"#ef4444",medium:"#f59e0b",low:"#10b981"}[rr.level];
       return <Card key={d.id} selected={isOpen} accent={SC[d.status]} onClick={()=>setSelected(isOpen?null:d)}>
         <div style={{display:"flex",alignItems:"center",gap:12}}>
           <div style={{position:"relative",flexShrink:0}}>
@@ -337,7 +428,10 @@ function Donors({data,setData}) {
           <div style={{flex:1,minWidth:0}}>
             <div style={{fontSize:15,fontWeight:700,color:"#f3f4f6"}}>{d.name}</div>
             <div style={{fontSize:11,color:"#6b7280",marginTop:1}}>{d.email} · {daysDiff(d.lastGift)}d since last gift</div>
-            <div style={{display:"flex",gap:4,marginTop:5,flexWrap:"wrap"}}>{d.tags.map(t=><Pill key={t} label={t} color="#6b7280"/>)}</div>
+            <div style={{display:"flex",gap:4,marginTop:5,flexWrap:"wrap"}}>
+              {d.tags.map(t=><Pill key={t} label={t} color="#6b7280"/>)}
+              {rr.level!=="low"&&<span style={{fontSize:9,fontWeight:800,letterSpacing:"0.06em",textTransform:"uppercase",padding:"2px 7px",borderRadius:99,background:riskColor+"22",color:riskColor,whiteSpace:"nowrap"}}>{rr.level} churn risk</span>}
+            </div>
           </div>
           <div style={{textAlign:"right",flexShrink:0}}>
             <div style={{fontSize:17,fontWeight:800,color:"#f3f4f6"}}>{fmt(d.total)}</div>
@@ -347,10 +441,14 @@ function Donors({data,setData}) {
         </div>
 
         {isOpen&&<div style={{marginTop:14,paddingTop:14,borderTop:"1px solid #1f2937"}}>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10,marginBottom:14}}>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:10,marginBottom:14}}>
             <div><div style={{fontSize:10,color:"#6b7280",textTransform:"uppercase",letterSpacing:"0.06em"}}>Last Gift</div><div style={{fontSize:13,color:"#f3f4f6",marginTop:3}}>{fmtFull(d.lastAmount)}</div></div>
-            <div><div style={{fontSize:10,color:"#6b7280",textTransform:"uppercase",letterSpacing:"0.06em"}}>Phone</div><div style={{fontSize:13,color:"#f3f4f6",marginTop:3}}>{d.phone}</div></div>
-            <div><div style={{fontSize:10,color:"#6b7280",textTransform:"uppercase",letterSpacing:"0.06em"}}>AI Score</div><div style={{fontSize:13,color:scoreColor,marginTop:3,fontWeight:700}}>{sc}/99</div></div>
+            <div><div style={{fontSize:10,color:"#6b7280",textTransform:"uppercase",letterSpacing:"0.06em"}}>Phone</div><div style={{fontSize:13,color:"#f3f4f6",marginTop:3}}>{d.phone||"—"}</div></div>
+            <div><div style={{fontSize:10,color:"#6b7280",textTransform:"uppercase",letterSpacing:"0.06em"}}>Engagement</div><div style={{fontSize:13,color:scoreColor,marginTop:3,fontWeight:700}}>{sc}/99</div></div>
+            <div><div style={{fontSize:10,color:"#6b7280",textTransform:"uppercase",letterSpacing:"0.06em"}}>Churn Risk</div>
+              <div style={{fontSize:12,color:riskColor,marginTop:3,fontWeight:700,textTransform:"capitalize"}}>{rr.level}</div>
+              <div style={{fontSize:10,color:"#6b7280",marginTop:1}}>{rr.action}</div>
+            </div>
           </div>
           {d.notes&&<div style={{background:"#0f172a",borderRadius:10,padding:"10px 14px",fontSize:13,color:"#9ca3af",marginBottom:12,lineHeight:1.5}}>{d.notes}</div>}
 
@@ -726,11 +824,234 @@ function Finance({data}) {
   </div>;
 }
 
+// ── Donor Import ───────────────────────────────────────────────────────────
+const CSV_FIELDS = [
+  {key:"name",labels:["name","full name","donor name","contact"]},
+  {key:"email",labels:["email","email address","e-mail"]},
+  {key:"phone",labels:["phone","phone number","mobile","cell"]},
+  {key:"total",labels:["total","total giving","lifetime","lifetime giving","total donated"]},
+  {key:"lastAmount",labels:["last gift","last amount","last donation","recent gift"]},
+  {key:"lastGift",labels:["last gift date","date","last donation date","most recent date"]},
+  {key:"gifts",labels:["gifts","gift count","# gifts","number of gifts","donations"]},
+  {key:"status",labels:["status","donor status","type"]},
+  {key:"notes",labels:["notes","note","comments"]},
+];
+
+function guessField(header) {
+  const h = header.toLowerCase().trim();
+  for (const f of CSV_FIELDS) {
+    if (f.labels.some(l => h === l || h.includes(l))) return f.key;
+  }
+  return "";
+}
+
+function parseCSV(text) {
+  const lines = text.trim().split(/\r?\n/);
+  if (lines.length < 2) return { headers: [], rows: [] };
+  const headers = lines[0].split(",").map(h => h.replace(/^"|"$/g, "").trim());
+  const rows = lines.slice(1).map(line => {
+    const vals = []; let cur = ""; let inQ = false;
+    for (const ch of line) {
+      if (ch === '"') { inQ = !inQ; continue; }
+      if (ch === "," && !inQ) { vals.push(cur.trim()); cur = ""; continue; }
+      cur += ch;
+    }
+    vals.push(cur.trim());
+    return Object.fromEntries(headers.map((h, i) => [h, vals[i] || ""]));
+  });
+  return { headers, rows };
+}
+
+function DonorImport({ onClose, onImported }) {
+  const [csvText, setCsvText] = useState("");
+  const [parsed, setParsed] = useState(null);
+  const [mapping, setMapping] = useState({});
+  const [loading, setLoading] = useState(false);
+  const [result, setResult] = useState(null);
+  const [err, setErr] = useState("");
+
+  const handleFile = (e) => {
+    const file = e.target.files[0]; if (!file) return;
+    const reader = new FileReader();
+    reader.onload = ev => setCsvText(ev.target.result);
+    reader.readAsText(file);
+  };
+
+  const doParse = () => {
+    const { headers, rows } = parseCSV(csvText);
+    if (!rows.length) { setErr("No rows found. Check CSV format."); return; }
+    const auto = {};
+    headers.forEach(h => { const g = guessField(h); if (g) auto[h] = g; });
+    setMapping(auto); setParsed({ headers, rows }); setErr("");
+  };
+
+  const doImport = async () => {
+    setLoading(true); setErr("");
+    const donors = parsed.rows.map(row => {
+      const d = {};
+      Object.entries(mapping).forEach(([h, field]) => { if (field) d[field] = row[h]; });
+      if (d.total) d.total = parseFloat(String(d.total).replace(/[$,]/g, "")) || 0;
+      if (d.lastAmount) d.lastAmount = parseFloat(String(d.lastAmount).replace(/[$,]/g, "")) || 0;
+      if (d.gifts) d.gifts = parseInt(d.gifts) || 1;
+      return d;
+    }).filter(d => d.name);
+    try {
+      const res = await apiFetch("/donors/import", { method: "POST", body: JSON.stringify({ donors }) });
+      setResult(res.inserted);
+      onImported();
+    } catch (e) { setErr(e.message); }
+    setLoading(false);
+  };
+
+  const overlay = { position:"fixed",inset:0,background:"#000c",zIndex:200,display:"flex",alignItems:"center",justifyContent:"center",padding:20 };
+  const modal = { background:"#0a0f1e",border:"1px solid #1f2937",borderRadius:20,width:"100%",maxWidth:680,maxHeight:"85vh",overflowY:"auto",padding:28 };
+  const inp = { width:"100%",background:"#111827",border:"1px solid #374151",borderRadius:8,padding:"9px 12px",color:"#f3f4f6",fontSize:13,outline:"none",fontFamily:"inherit",boxSizing:"border-box" };
+
+  if (result !== null) return (
+    <div style={overlay}><div style={{...modal,textAlign:"center"}}>
+      <div style={{fontSize:40,marginBottom:12}}>✓</div>
+      <div style={{fontSize:22,fontWeight:800,color:"#f9fafb",marginBottom:8}}>{result} donor{result!==1?"s":""} imported</div>
+      <div style={{fontSize:14,color:"#6b7280",marginBottom:24}}>Your donor list has been updated.</div>
+      <button onClick={onClose} style={{background:"#10b981",border:"none",borderRadius:10,padding:"12px 28px",color:"#fff",fontSize:14,fontWeight:700,cursor:"pointer"}}>Done</button>
+    </div></div>
+  );
+
+  return (
+    <div style={overlay}>
+      <div style={modal}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
+          <div><div style={{fontSize:18,fontWeight:800,color:"#f9fafb"}}>Import Donors</div>
+            <div style={{fontSize:13,color:"#6b7280",marginTop:2}}>Paste CSV or upload a file</div></div>
+          <button onClick={onClose} style={{background:"#1f2937",border:"none",borderRadius:8,padding:"6px 12px",color:"#9ca3af",cursor:"pointer",fontSize:13}}>✕ Close</button>
+        </div>
+
+        {!parsed && (<>
+          <div style={{marginBottom:12}}>
+            <div style={{fontSize:11,fontWeight:700,color:"#6b7280",textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:6}}>Upload CSV file</div>
+            <input type="file" accept=".csv" onChange={handleFile} style={{fontSize:13,color:"#9ca3af"}}/>
+          </div>
+          <div style={{fontSize:11,fontWeight:700,color:"#6b7280",textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:6}}>Or paste CSV text</div>
+          <textarea value={csvText} onChange={e=>setCsvText(e.target.value)} rows={8} placeholder={"Name,Email,Total Giving,Last Gift Date\nJane Smith,jane@example.com,5000,2024-11-01"} style={{...inp,resize:"vertical",lineHeight:1.5,marginBottom:12}}/>
+          {err&&<div style={{color:"#f87171",fontSize:12,marginBottom:10}}>{err}</div>}
+          <button onClick={doParse} disabled={!csvText.trim()} style={{background:csvText.trim()?"linear-gradient(135deg,#10b981,#3b82f6)":"#1f2937",border:"none",borderRadius:10,padding:"11px 20px",color:"#fff",fontSize:14,fontWeight:700,cursor:csvText.trim()?"pointer":"not-allowed",opacity:csvText.trim()?1:0.5}}>
+            Parse CSV →
+          </button>
+        </>)}
+
+        {parsed && (<>
+          <div style={{marginBottom:16}}>
+            <div style={{fontSize:13,fontWeight:600,color:"#10b981",marginBottom:12}}>Map columns → donor fields</div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+              {parsed.headers.map(h=>(
+                <div key={h} style={{display:"flex",alignItems:"center",gap:8}}>
+                  <span style={{fontSize:12,color:"#9ca3af",flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{h}</span>
+                  <select value={mapping[h]||""} onChange={e=>setMapping(p=>({...p,[h]:e.target.value}))}
+                    style={{background:"#111827",border:"1px solid #374151",borderRadius:6,padding:"5px 8px",color:"#f3f4f6",fontSize:12,outline:"none"}}>
+                    <option value="">— skip —</option>
+                    {CSV_FIELDS.map(f=><option key={f.key} value={f.key}>{f.key}</option>)}
+                  </select>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div style={{marginBottom:16}}>
+            <div style={{fontSize:12,fontWeight:600,color:"#6b7280",marginBottom:8}}>Preview ({parsed.rows.length} rows)</div>
+            <div style={{overflowX:"auto",border:"1px solid #1f2937",borderRadius:8}}>
+              <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+                <thead><tr style={{background:"#111827"}}>
+                  {parsed.headers.filter(h=>mapping[h]).map(h=><th key={h} style={{padding:"6px 10px",textAlign:"left",color:"#6b7280",fontWeight:600,borderBottom:"1px solid #1f2937"}}>{mapping[h]}</th>)}
+                </tr></thead>
+                <tbody>{parsed.rows.slice(0,5).map((row,i)=>(
+                  <tr key={i} style={{borderBottom:"1px solid #111827"}}>
+                    {parsed.headers.filter(h=>mapping[h]).map(h=><td key={h} style={{padding:"6px 10px",color:"#f3f4f6"}}>{row[h]}</td>)}
+                  </tr>
+                ))}</tbody>
+              </table>
+            </div>
+            {parsed.rows.length>5&&<div style={{fontSize:11,color:"#6b7280",marginTop:6}}>…and {parsed.rows.length-5} more rows</div>}
+          </div>
+
+          {err&&<div style={{color:"#f87171",fontSize:12,marginBottom:10}}>{err}</div>}
+          <div style={{display:"flex",gap:10}}>
+            <button onClick={()=>setParsed(null)} style={{background:"transparent",border:"1px solid #374151",borderRadius:10,padding:"11px 18px",color:"#6b7280",fontSize:13,cursor:"pointer"}}>← Back</button>
+            <button onClick={doImport} disabled={loading} style={{flex:1,background:loading?"#1f2937":"linear-gradient(135deg,#10b981,#3b82f6)",border:"none",borderRadius:10,padding:"11px 20px",color:"#fff",fontSize:14,fontWeight:700,cursor:loading?"not-allowed":"pointer",opacity:loading?0.7:1}}>
+              {loading?"Importing…":`Import ${parsed.rows.filter(r=>r[parsed.headers.find(h=>mapping[h]==="name")||""]||true).length} Donors →`}
+            </button>
+          </div>
+        </>)}
+      </div>
+    </div>
+  );
+}
+
+// ── Find Grants ─────────────────────────────────────────────────────────────
+function FindGrants({data}) {
+  const [results,setResults]=useState(""); const [loading,setLoading]=useState(false);
+  const [ran,setRan]=useState(false);
+
+  const ytdRev=data.financials.revenue.reduce((s,r)=>s+r.individual+r.grants+r.events+r.other,0);
+  const budgetLabel=ytdRev>1000000?"$1M+":ytdRev>500000?"$500K–$1M":ytdRev>100000?"$100K–$500K":"Under $100K";
+  const activeGrants=data.grants.filter(g=>g.status==="active").map(g=>g.funder).join(", ")||"none yet";
+
+  const find = async () => {
+    setLoading(true); setResults(""); setRan(true);
+    const sys=`You are a nonprofit grants strategist with deep knowledge of US foundations, government programs, and corporate giving. Be specific with real funder names and programs that actually exist.`;
+    const msg=`Find 10 grants this nonprofit is likely eligible for, ranked by alignment.
+
+Organization: ${data.org.name}
+Mission: ${data.org.mission}
+Annual budget: ${budgetLabel}
+Current funders: ${activeGrants}
+Board: ${data.board.map(b=>b.employer).filter(Boolean).join(", ")||"various"}
+
+For each grant, provide:
+**[Rank]. [Funder Name] — [Program Name]**
+Typical award: $[X]–$[Y]
+Alignment score: [X]/10
+Why you qualify: [2 sentences specific to this org]
+Next step: [concrete action]
+
+Focus on grants under $200K that match this org's size and mission. Include a mix of: private foundations, corporate foundations, and government programs. Be specific — name real programs.`;
+
+    await askClaude(sys, msg, chunk=>setResults(chunk));
+    setLoading(false);
+  };
+
+  return <div style={{display:"flex",flexDirection:"column",gap:16}}>
+    <Card>
+      <SectionLabel>Your Organization Profile</SectionLabel>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:16}}>
+        <div><div style={{fontSize:11,color:"#6b7280",textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:4}}>Mission</div>
+          <div style={{fontSize:13,color:"#f3f4f6",lineHeight:1.5}}>{data.org.mission||"—"}</div></div>
+        <div style={{display:"flex",flexDirection:"column",gap:10}}>
+          <div><div style={{fontSize:11,color:"#6b7280",textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:2}}>Annual Budget</div>
+            <div style={{fontSize:13,color:"#f3f4f6"}}>{budgetLabel}</div></div>
+          <div><div style={{fontSize:11,color:"#6b7280",textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:2}}>Current Funders</div>
+            <div style={{fontSize:13,color:"#f3f4f6"}}>{activeGrants}</div></div>
+        </div>
+      </div>
+      <button onClick={find} disabled={loading} style={{background:loading?"#1f2937":"linear-gradient(135deg,#8b5cf6,#3b82f6)",border:"none",borderRadius:12,padding:"13px 22px",color:"#fff",fontSize:14,fontWeight:700,cursor:loading?"not-allowed":"pointer",display:"flex",alignItems:"center",gap:8,opacity:loading?0.7:1}}>
+        {loading?<><Spin/>Scanning grant landscape…</>:"✦ Find Matching Grants"}
+      </button>
+    </Card>
+
+    {(loading||results)&&<Card style={{background:"linear-gradient(135deg,#0f0c29,#0f172a)",border:"1px solid #7c3aed44"}}>
+      <div style={{fontSize:11,fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",color:"#8b5cf6",marginBottom:14}}>✦ Grant Matches — Ranked by Alignment</div>
+      {loading&&!results&&<div style={{display:"flex",alignItems:"center",gap:10,color:"#6b7280",fontSize:13}}><Spin/>Analyzing your org and searching grant landscape…</div>}
+      {results&&<div style={{fontSize:13,color:"#e2e8f0",lineHeight:1.85,whiteSpace:"pre-wrap"}}>{results}</div>}
+    </Card>}
+
+    {ran&&!loading&&!results&&<div style={{fontSize:13,color:"#6b7280",textAlign:"center",padding:20}}>No results yet — try again.</div>}
+  </div>;
+}
+
 // ── App Shell ──────────────────────────────────────────────────────────────
 const TABS=[
   {id:"dashboard",label:"Dashboard",icon:"◈"},
   {id:"donors",label:"Donors",icon:"♦"},
   {id:"grants",label:"Grants",icon:"◉"},
+  {id:"findgrants",label:"Find Grants",icon:"✦"},
   {id:"volunteers",label:"Volunteers",icon:"◎"},
   {id:"board",label:"Board",icon:"◆"},
   {id:"finance",label:"Finance",icon:"◇"},
@@ -798,6 +1119,7 @@ export default function App() {
       {tab==="dashboard"&&<Dashboard data={data}/>}
       {tab==="donors"&&<Donors data={data} setData={setData}/>}
       {tab==="grants"&&<Grants data={data} setData={setData}/>}
+      {tab==="findgrants"&&<FindGrants data={data}/>}
       {tab==="volunteers"&&<Volunteers data={data}/>}
       {tab==="board"&&<Board data={data}/>}
       {tab==="finance"&&<Finance data={data}/>}
