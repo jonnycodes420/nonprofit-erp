@@ -20,7 +20,7 @@ export default function LoginPage() {
         body: JSON.stringify({ email, password }),
       });
       login(data);
-      navigate(data.org?.onboarding_complete ? "/" : "/welcome", { replace: true });
+      navigate(data.org?.onboarding_complete ? "/dashboard" : "/welcome", { replace: true });
     } catch (err) {
       setError(err.message);
     }
