@@ -6,6 +6,7 @@ import LoginPage from "./pages/LoginPage";
 import SignupPage from "./pages/SignupPage";
 import WelcomePage from "./pages/WelcomePage";
 import App from "./App";
+import Landing from "./pages/Landing";
 
 // ── Auth context ───────────────────────────────────────────────────────────
 const AuthCtx = createContext(null);
@@ -65,7 +66,7 @@ function RequireOnboarded({ children }) {
 function PublicOnly({ children }) {
   const { auth } = useAuth();
   if (!auth) return children;
-  return <Navigate to={auth.org?.onboarding_complete ? "/" : "/welcome"} replace />;
+  return <Navigate to={auth.org?.onboarding_complete ? "/dashboard" : "/welcome"} replace />;
 }
 
 // ── Root ───────────────────────────────────────────────────────────────────
@@ -74,10 +75,11 @@ function Root() {
     <AuthProvider>
       <BrowserRouter>
         <Routes>
+          <Route path="/"        element={<PublicOnly><Landing /></PublicOnly>} />
           <Route path="/login"   element={<PublicOnly><LoginPage /></PublicOnly>} />
           <Route path="/signup"  element={<PublicOnly><SignupPage /></PublicOnly>} />
           <Route path="/welcome" element={<RequireAuth><WelcomePage /></RequireAuth>} />
-          <Route path="/"        element={<RequireOnboarded><App /></RequireOnboarded>} />
+          <Route path="/dashboard" element={<RequireOnboarded><App /></RequireOnboarded>} />
           <Route path="*"        element={<Navigate to="/" replace />} />
         </Routes>
       </BrowserRouter>

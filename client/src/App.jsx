@@ -1,6 +1,8 @@
 import { useState, useEffect, useRef } from "react";
+import { Routes, Route } from "react-router-dom";
 import { apiFetch, streamAI, adaptData } from "./api";
 import { useAuth } from "./main";
+import Landing from "./pages/Landing";
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 const fmt = n => n>=1000?`$${(n/1000).toFixed(n%1000===0?0:1)}k`:`$${n.toLocaleString()}`;
@@ -34,38 +36,70 @@ BOARD (${data.board.length} members): ${data.board.map(b=>`${b.name} (${b.role},
 OPEN TASKS: ${data.tasks.filter(t=>!t.done).map(t=>`[${t.priority}] ${t.title} due ${t.due}`).join("; ")}`;
 }
 
+// ── Global styles ──────────────────────────────────────────────────────────
+function GlobalStyles() {
+  return <style>{`
+    *{box-sizing:border-box;-webkit-font-smoothing:antialiased;}
+    ::-webkit-scrollbar{width:5px;height:5px;}
+    ::-webkit-scrollbar-track{background:#030712;}
+    ::-webkit-scrollbar-thumb{background:#1f2937;border-radius:4px;}
+    ::-webkit-scrollbar-thumb:hover{background:#374151;}
+    ::selection{background:#7c3aed33;color:#f3f4f6;}
+    input,textarea,select{transition:border-color 0.15s,box-shadow 0.15s;}
+    input:focus,textarea:focus,select:focus{border-color:#10b981!important;box-shadow:0 0 0 3px #10b98118;outline:none;}
+    button{transition:opacity 0.12s,transform 0.1s,background 0.12s;}
+    button:not(:disabled):active{transform:scale(0.96);}
+    @keyframes sp{to{transform:rotate(360deg)}}
+    @keyframes fadein{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+    @keyframes slidein{from{opacity:0;transform:translateX(16px)}to{opacity:1;transform:translateX(0)}}
+    @keyframes pulse{0%,100%{opacity:1}50%{opacity:0.4}}
+    .fade-in{animation:fadein 0.22s ease both;}
+    .slide-in{animation:slidein 0.22s ease both;}
+    .card-click:hover{border-color:#374151!important;transform:translateY(-1px);}
+    .card-click{transition:border-color 0.15s,transform 0.15s;}
+  `}</style>;
+}
+
 // ── UI Atoms ───────────────────────────────────────────────────────────────
 function Pill({label,color}) {
-  return <span style={{fontSize:10,fontWeight:700,letterSpacing:"0.06em",textTransform:"uppercase",padding:"2px 8px",borderRadius:99,background:(color||"#6b7280")+"22",color:color||"#6b7280",whiteSpace:"nowrap"}}>{label}</span>;
+  return <span style={{fontSize:10,fontWeight:700,letterSpacing:"0.05em",textTransform:"uppercase",padding:"3px 9px",borderRadius:99,background:(color||"#6b7280")+"1a",color:color||"#6b7280",whiteSpace:"nowrap",border:`1px solid ${(color||"#6b7280")}22`}}>{label}</span>;
 }
 function Card({children,selected,accent,onClick,style={}}) {
-  return <div onClick={onClick} style={{background:"#111827",border:`1px solid ${selected?accent||"#10b981":"#1f2937"}`,borderRadius:14,padding:"16px 20px",cursor:onClick?"pointer":"default",transition:"border-color 0.15s",...style}}>{children}</div>;
+  return <div onClick={onClick} className={onClick?"card-click":""} style={{background:"#0d1117",border:`1px solid ${selected?accent||"#10b981":"#1a2235"}`,borderRadius:14,padding:"16px 20px",cursor:onClick?"pointer":"default",...style}}>{children}</div>;
 }
 function SectionLabel({children}) {
-  return <div style={{fontSize:11,fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase",color:"#6b7280",marginBottom:14}}>{children}</div>;
+  return <div style={{fontSize:10,fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",color:"#4b5563",marginBottom:12}}>{children}</div>;
 }
 function AIBtn({onClick,loading,label="✦ AI Assist",small}) {
-  return <button onClick={onClick} disabled={loading} style={{background:loading?"#1f2937":"linear-gradient(135deg,#7c3aed,#3b82f6)",border:"none",borderRadius:small?8:10,padding:small?"7px 12px":"9px 16px",color:"#fff",fontSize:small?12:13,fontWeight:700,cursor:loading?"not-allowed":"pointer",display:"flex",alignItems:"center",gap:6,opacity:loading?0.7:1,whiteSpace:"nowrap"}}>
+  return <button onClick={onClick} disabled={loading} style={{background:loading?"#1a2235":"linear-gradient(135deg,#6d28d9,#2563eb)",border:"none",borderRadius:small?8:10,padding:small?"6px 12px":"9px 16px",color:"#fff",fontSize:small?12:13,fontWeight:700,cursor:loading?"not-allowed":"pointer",display:"flex",alignItems:"center",gap:6,opacity:loading?0.65:1,whiteSpace:"nowrap",boxShadow:loading?"none":"0 1px 8px #6d28d933"}}>
     {loading?<><Spin/>Thinking…</>:label}
   </button>;
 }
 function Spin() {
-  return <><style>{`@keyframes sp{to{transform:rotate(360deg)}}`}</style><span style={{display:"inline-block",width:11,height:11,border:"2px solid #fff4",borderTopColor:"#fff",borderRadius:"50%",animation:"sp 0.7s linear infinite"}}/></>;
+  return <span style={{display:"inline-block",width:11,height:11,border:"2px solid #ffffff30",borderTopColor:"#fff",borderRadius:"50%",animation:"sp 0.7s linear infinite",flexShrink:0}}/>;
 }
 function AIPanel({text,onClose}) {
   if(!text) return null;
-  return <div style={{background:"linear-gradient(135deg,#1a0f3c,#0f172a)",border:"1px solid #7c3aed44",borderRadius:14,padding:20,position:"relative",marginTop:12}}>
-    <div style={{fontSize:10,fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",color:"#8b5cf6",marginBottom:10}}>✦ AI Intelligence</div>
-    <div style={{fontSize:13,color:"#e2e8f0",lineHeight:1.75,whiteSpace:"pre-wrap"}}>{text}</div>
-    {onClose&&<button onClick={onClose} style={{position:"absolute",top:10,right:12,background:"transparent",border:"none",color:"#6b7280",cursor:"pointer",fontSize:18,lineHeight:1}}>×</button>}
+  return <div className="fade-in" style={{background:"linear-gradient(135deg,#130c2e,#0d1117)",border:"1px solid #6d28d930",borderRadius:14,padding:"18px 20px",position:"relative",marginTop:12}}>
+    <div style={{fontSize:10,fontWeight:800,letterSpacing:"0.12em",textTransform:"uppercase",color:"#7c3aed",marginBottom:10,display:"flex",alignItems:"center",gap:6}}><span>✦</span> AI Intelligence</div>
+    <div style={{fontSize:13,color:"#e2e8f0",lineHeight:1.8,whiteSpace:"pre-wrap"}}>{text}</div>
+    {onClose&&<button onClick={onClose} style={{position:"absolute",top:12,right:14,background:"#1a2235",border:"1px solid #1f2937",borderRadius:6,color:"#6b7280",cursor:"pointer",fontSize:14,lineHeight:1,width:24,height:24,display:"flex",alignItems:"center",justifyContent:"center",padding:0}}>×</button>}
   </div>;
 }
 function MetricCard({label,value,sub,color,trend}) {
-  return <div style={{background:"#111827",border:"1px solid #1f2937",borderRadius:16,padding:"18px 22px",display:"flex",flexDirection:"column",gap:6}}>
-    <span style={{fontSize:11,fontWeight:600,letterSpacing:"0.08em",textTransform:"uppercase",color:"#6b7280"}}>{label}</span>
-    <span style={{fontSize:26,fontWeight:800,color:color||"#f9fafb",fontFamily:"'DM Serif Display',serif",lineHeight:1}}>{value}</span>
-    {sub&&<span style={{fontSize:11,color:"#9ca3af"}}>{sub}</span>}
-    {trend!==undefined&&<span style={{fontSize:11,color:trend>=0?"#10b981":"#ef4444"}}>{trend>=0?"↑":"↓"} {Math.abs(trend)}% vs last month</span>}
+  return <div className="fade-in" style={{background:"#0d1117",border:"1px solid #1a2235",borderRadius:14,padding:"16px 20px",display:"flex",flexDirection:"column",gap:5,borderLeft:`3px solid ${color||"#1f2937"}`}}>
+    <span style={{fontSize:10,fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",color:"#4b5563"}}>{label}</span>
+    <span style={{fontSize:28,fontWeight:800,color:color||"#f9fafb",fontFamily:"'DM Serif Display',serif",lineHeight:1.05,letterSpacing:"-0.02em"}}>{value}</span>
+    {sub&&<span style={{fontSize:11,color:"#6b7280"}}>{sub}</span>}
+    {trend!==undefined&&<span style={{fontSize:11,color:trend>=0?"#10b981":"#ef4444",fontWeight:600}}>{trend>=0?"↑":"↓"} {Math.abs(trend)}%</span>}
+  </div>;
+}
+function EmptyState({icon,title,message,action,onAction}) {
+  return <div className="fade-in" style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:"52px 24px",gap:12,textAlign:"center"}}>
+    <div style={{fontSize:36,marginBottom:4,opacity:0.4}}>{icon||"◇"}</div>
+    <div style={{fontSize:15,fontWeight:700,color:"#6b7280"}}>{title}</div>
+    {message&&<div style={{fontSize:13,color:"#374151",maxWidth:320,lineHeight:1.6}}>{message}</div>}
+    {action&&<button onClick={onAction} style={{marginTop:8,background:"#10b981",border:"none",borderRadius:10,padding:"9px 18px",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer"}}>{action}</button>}
   </div>;
 }
 
@@ -187,71 +221,96 @@ function Dashboard({data}) {
   const totalFunds=data.financials.funds.reduce((s,f)=>s+f.balance,0);
   const topDonors=[...data.donors].sort((a,b)=>b.total-a.total).slice(0,3);
 
-  return <div style={{display:"flex",flexDirection:"column",gap:18}}>
+  return <div style={{display:"flex",flexDirection:"column",gap:16}}>
     <DailyBriefing data={data}/>
-    <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:12}}>
-      <MetricCard label="YTD Revenue" value={fmt(ytdRev)} sub={`${((ytdRev/ytdExp)*100).toFixed(0)}% expense ratio`} color="#10b981" trend={8}/>
-      <MetricCard label="Cash on Hand" value={fmt(totalFunds)} sub={`${data.financials.funds.filter(f=>f.restricted).length} restricted funds`} color="#3b82f6"/>
+    <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(148px,1fr))",gap:10}}>
+      <MetricCard label="YTD Revenue" value={fmt(ytdRev)} sub={`${ytdExp>0?((ytdRev/ytdExp)*100).toFixed(0):0}% expense ratio`} color="#10b981" trend={8}/>
+      <MetricCard label="Cash on Hand" value={fmt(totalFunds)} sub={`${data.financials.funds.filter(f=>f.restricted).length} restricted`} color="#3b82f6"/>
       <MetricCard label="Active Grants" value={fmt(activeGrants)} sub="contracted" color="#8b5cf6"/>
       <MetricCard label="Grant Pipeline" value={fmt(pipeline)} sub="pending + prospecting" color="#f59e0b"/>
-      <MetricCard label="Lapsed Donors" value={lapsed} sub="need re-engagement" color="#ef4444" trend={-5}/>
+      <MetricCard label="Lapsed Donors" value={lapsed} sub="need re-engagement" color="#ef4444"/>
     </div>
 
-    <div style={{display:"grid",gridTemplateColumns:"1.4fr 1fr",gap:14}}>
+    <div style={{display:"grid",gridTemplateColumns:"1.5fr 1fr",gap:12}}>
       <Card>
         <SectionLabel>Revenue vs. Expenses — YTD</SectionLabel>
-        <div style={{display:"flex",gap:3,alignItems:"flex-end",height:90}}>
+        <div style={{display:"flex",gap:4,alignItems:"flex-end",height:100,marginBottom:4}}>
           {rev.map((r,i)=>{
             const rv=r.individual+r.grants+r.events+r.other;
             const ex=exp[i].programs+exp[i].admin+exp[i].fundraising;
-            return <div key={r.month} style={{flex:1,display:"flex",gap:2,alignItems:"flex-end"}}>
-              <div style={{flex:1,height:`${(rv/maxBar)*90}px`,background:"#10b981",borderRadius:"3px 3px 0 0",opacity:0.85}} title={fmtFull(rv)}/>
-              <div style={{flex:1,height:`${(ex/maxBar)*90}px`,background:"#ef4444",borderRadius:"3px 3px 0 0",opacity:0.65}} title={fmtFull(ex)}/>
+            const rh=maxBar>0?Math.round((rv/maxBar)*96):0;
+            const eh=maxBar>0?Math.round((ex/maxBar)*96):0;
+            return <div key={r.month} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:2}}>
+              <div style={{width:"100%",display:"flex",gap:1,alignItems:"flex-end",height:96}}>
+                <div style={{flex:1,height:rh,background:"linear-gradient(180deg,#10b981,#059669)",borderRadius:"3px 3px 0 0",minHeight:2}}/>
+                <div style={{flex:1,height:eh,background:"linear-gradient(180deg,#ef4444,#dc2626)",borderRadius:"3px 3px 0 0",minHeight:2,opacity:0.7}}/>
+              </div>
+              <div style={{fontSize:9,color:"#374151"}}>{r.month.slice(0,3)}</div>
             </div>;
           })}
         </div>
-        <div style={{display:"flex",gap:3,marginTop:6}}>
-          {rev.map(r=><div key={r.month} style={{flex:1,textAlign:"center",fontSize:10,color:"#6b7280"}}>{r.month}</div>)}
-        </div>
-        <div style={{display:"flex",gap:14,marginTop:10}}>
-          {[["#10b981","Revenue"],["#ef4444","Expenses"]].map(([c,l])=><div key={l} style={{display:"flex",alignItems:"center",gap:5}}><div style={{width:8,height:8,borderRadius:2,background:c}}/><span style={{fontSize:11,color:"#9ca3af"}}>{l}</span></div>)}
+        <div style={{display:"flex",gap:16,paddingTop:8,borderTop:"1px solid #0e1624"}}>
+          {[["#10b981","Revenue",fmt(ytdRev)],["#ef4444","Expenses",fmt(ytdExp)]].map(([c,l,v])=>
+            <div key={l} style={{display:"flex",alignItems:"center",gap:6}}>
+              <div style={{width:8,height:8,borderRadius:2,background:c,flexShrink:0}}/>
+              <span style={{fontSize:11,color:"#4b5563"}}>{l}</span>
+              <span style={{fontSize:11,fontWeight:700,color:"#9ca3af"}}>{v}</span>
+            </div>)}
+          <div style={{marginLeft:"auto",fontSize:11,color:ytdRev>=ytdExp?"#10b981":"#ef4444",fontWeight:700}}>
+            Net {ytdRev>=ytdExp?"+":""}{fmt(ytdRev-ytdExp)}
+          </div>
         </div>
       </Card>
 
       <Card>
-        <SectionLabel>Top Donors by Lifetime</SectionLabel>
+        <SectionLabel>Top Donors</SectionLabel>
+        {topDonors.length===0&&<EmptyState icon="♦" title="No donors yet"/>}
         {topDonors.map((d,i)=>{
           const sc=donorScore(d);
-          return <div key={d.id} style={{display:"flex",alignItems:"center",gap:10,padding:"9px 0",borderBottom:i<2?"1px solid #1f2937":""}}>
-            <span style={{fontSize:18,color:"#374151",fontWeight:800,width:20}}>{i+1}</span>
-            <div style={{flex:1}}>
-              <div style={{fontSize:13,fontWeight:600,color:"#f3f4f6"}}>{d.name}</div>
-              <div style={{fontSize:11,color:"#6b7280"}}>{d.gifts} gifts · score {sc}</div>
+          const scoreColor=sc>70?"#10b981":sc>45?"#f59e0b":"#ef4444";
+          return <div key={d.id} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 0",borderBottom:i<topDonors.length-1?"1px solid #0e1624":""}}>
+            <div style={{width:22,height:22,borderRadius:6,background:"#1a2235",display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:800,color:"#374151",flexShrink:0}}>{i+1}</div>
+            <div style={{flex:1,minWidth:0}}>
+              <div style={{fontSize:13,fontWeight:600,color:"#f3f4f6",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{d.name}</div>
+              <div style={{fontSize:11,color:"#4b5563"}}>{d.gifts} gifts</div>
             </div>
-            <div style={{fontSize:15,fontWeight:800,color:SC[d.status]}}>{fmt(d.total)}</div>
+            <div style={{textAlign:"right",flexShrink:0}}>
+              <div style={{fontSize:14,fontWeight:800,color:SC[d.status]}}>{fmt(d.total)}</div>
+              <div style={{fontSize:10,color:scoreColor}}>score {sc}</div>
+            </div>
           </div>;
         })}
       </Card>
     </div>
 
-    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14}}>
+    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
       <Card>
         <SectionLabel>Urgent Tasks</SectionLabel>
-        {urgentTasks.length===0&&<div style={{fontSize:13,color:"#6b7280"}}>All clear 🎉</div>}
-        {urgentTasks.map(t=><div key={t.id} style={{display:"flex",alignItems:"center",gap:10,padding:"9px 0",borderBottom:"1px solid #1f2937"}}>
-          <div style={{width:7,height:7,borderRadius:"50%",background:"#ef4444",flexShrink:0}}/>
-          <div style={{flex:1}}><div style={{fontSize:13,color:"#f3f4f6",fontWeight:500}}>{t.title}</div><div style={{fontSize:11,color:"#6b7280",marginTop:1}}>Due {new Date(t.due).toLocaleDateString("en-US",{month:"short",day:"numeric"})}</div></div>
-          <Pill label={t.type} color="#ef4444"/>
+        {urgentTasks.length===0?<div style={{display:"flex",alignItems:"center",gap:8,padding:"10px 0",color:"#374151",fontSize:13}}>
+          <span style={{fontSize:18}}>✓</span> All clear — no high-priority tasks
+        </div>:urgentTasks.map(t=><div key={t.id} style={{display:"flex",alignItems:"center",gap:10,padding:"9px 0",borderBottom:"1px solid #0e1624"}}>
+          <div style={{width:6,height:6,borderRadius:"50%",background:"#ef4444",flexShrink:0}}/>
+          <div style={{flex:1}}>
+            <div style={{fontSize:13,color:"#f3f4f6",fontWeight:500,lineHeight:1.3}}>{t.title}</div>
+            {t.due&&<div style={{fontSize:11,color:"#6b7280",marginTop:2}}>Due {new Date(t.due).toLocaleDateString("en-US",{month:"short",day:"numeric"})}</div>}
+          </div>
+          <Pill label={t.type} color="#6b7280"/>
         </div>)}
       </Card>
 
       <Card>
         <SectionLabel>Grant Deadlines</SectionLabel>
+        {data.grants.filter(g=>g.status!=="closed").length===0&&<EmptyState icon="◉" title="No open grants"/>}
         {data.grants.filter(g=>g.status!=="closed").sort((a,b)=>new Date(a.deadline)-new Date(b.deadline)).map(g=>{
           const d=daysUntil(g.deadline); const urg=d<30?"#ef4444":d<90?"#f59e0b":"#10b981";
-          return <div key={g.id} style={{display:"flex",alignItems:"center",gap:10,padding:"9px 0",borderBottom:"1px solid #1f2937"}}>
-            <div style={{width:34,height:34,borderRadius:8,background:urg+"22",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}><span style={{fontSize:10,fontWeight:800,color:urg}}>{d<0?"!":d+"d"}</span></div>
-            <div style={{flex:1}}><div style={{fontSize:13,color:"#f3f4f6",fontWeight:500}}>{g.funder}</div><div style={{fontSize:11,color:"#6b7280"}}>{fmt(g.amount)}</div></div>
+          return <div key={g.id} style={{display:"flex",alignItems:"center",gap:10,padding:"9px 0",borderBottom:"1px solid #0e1624"}}>
+            <div style={{width:36,height:36,borderRadius:8,background:urg+"15",border:`1px solid ${urg}30`,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+              <span style={{fontSize:11,fontWeight:800,color:urg,lineHeight:1}}>{d<0?"past":d>99?"99+d":d+"d"}</span>
+            </div>
+            <div style={{flex:1,minWidth:0}}>
+              <div style={{fontSize:13,color:"#f3f4f6",fontWeight:500,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{g.funder}</div>
+              <div style={{fontSize:11,color:"#6b7280"}}>{fmt(g.amount)}</div>
+            </div>
             <Pill label={g.status} color={SC[g.status]}/>
           </div>;
         })}
@@ -260,11 +319,11 @@ function Dashboard({data}) {
 
     <Card>
       <SectionLabel>Fund Balances</SectionLabel>
-      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(180px,1fr))",gap:10}}>
-        {data.financials.funds.map(f=><div key={f.name} style={{background:"#0f172a",borderRadius:10,padding:"12px 14px",border:`1px solid ${f.restricted?"#7c3aed44":"#1f2937"}`}}>
-          <div style={{fontSize:12,color:f.restricted?"#8b5cf6":"#6b7280",fontWeight:600,marginBottom:4}}>{f.restricted?"🔒 Restricted":"Unrestricted"}</div>
-          <div style={{fontSize:16,fontWeight:800,color:"#f3f4f6",fontFamily:"'DM Serif Display',serif"}}>{fmt(f.balance)}</div>
-          <div style={{fontSize:11,color:"#6b7280",marginTop:2}}>{f.name}</div>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(170px,1fr))",gap:8}}>
+        {data.financials.funds.map(f=><div key={f.name} style={{background:f.restricted?"#130c2e":"#0d1117",borderRadius:10,padding:"14px 16px",border:`1px solid ${f.restricted?"#6d28d930":"#1a2235"}`}}>
+          <div style={{fontSize:10,fontWeight:700,color:f.restricted?"#7c3aed":"#4b5563",textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:6}}>{f.restricted?"Restricted":"Unrestricted"}</div>
+          <div style={{fontSize:20,fontWeight:800,color:"#f3f4f6",fontFamily:"'DM Serif Display',serif"}}>{fmt(f.balance)}</div>
+          <div style={{fontSize:11,color:"#6b7280",marginTop:3}}>{f.name}</div>
         </div>)}
       </div>
     </Card>
@@ -308,13 +367,12 @@ function LogTouchpointModal({donor,onSave,onClose}){
     try{await apiFetch(`/donors/${donor.id}/interactions`,{method:"POST",body:JSON.stringify({type,note,date})});onSave({type,note,date});}
     catch(e){console.error(e);}setLoading(false);
   };
-  const s={background:"#0a0f1e",border:"1px solid #1f2937",borderRadius:18,width:"100%",maxWidth:440,padding:24};
-  const inp={width:"100%",background:"#111827",border:"1px solid #374151",borderRadius:8,padding:"9px 12px",color:"#f3f4f6",fontSize:13,outline:"none",fontFamily:"inherit",boxSizing:"border-box"};
+  const inp={width:"100%",background:"#0d1117",border:"1px solid #1a2235",borderRadius:8,padding:"9px 12px",color:"#f3f4f6",fontSize:13,outline:"none",fontFamily:"inherit",boxSizing:"border-box"};
   return(
-    <div style={{position:"fixed",inset:0,background:"#000c",zIndex:300,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
-      <div style={s}>
+    <div style={{position:"fixed",inset:0,background:"#000000cc",backdropFilter:"blur(4px)",zIndex:300,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+      <div className="fade-in" style={{background:"#0a0e1a",border:"1px solid #1a2235",borderRadius:18,width:"100%",maxWidth:440,padding:24,boxShadow:"0 25px 80px #000060"}}>
         <div style={{fontSize:16,fontWeight:800,color:"#f9fafb",marginBottom:2}}>Log Touchpoint</div>
-        <div style={{fontSize:12,color:"#6b7280",marginBottom:16}}>{donor.name}</div>
+        <div style={{fontSize:12,color:"#4b5563",marginBottom:16}}>{donor.name}</div>
         <div style={{display:"flex",gap:5,flexWrap:"wrap",marginBottom:12}}>
           {types.map(t=><button key={t} onClick={()=>setType(t)} style={{background:type===t?"#10b981":"#1f2937",border:`1px solid ${type===t?"#10b981":"#374151"}`,borderRadius:7,padding:"5px 11px",color:type===t?"#fff":"#9ca3af",fontSize:12,fontWeight:600,cursor:"pointer",textTransform:"capitalize"}}>{t}</button>)}
         </div>
@@ -428,8 +486,8 @@ function DonorDetailModal({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loa
   const sc=donorScore(donor);const scoreColor=sc>70?"#10b981":sc>45?"#f59e0b":"#ef4444";
   const urg=moveUrgency(donor);
   return(
-    <div style={{position:"fixed",inset:0,background:"#000c",zIndex:200,display:"flex",alignItems:"center",justifyContent:"center",padding:20}} onClick={onClose}>
-      <div onClick={e=>e.stopPropagation()} style={{background:"#0a0f1e",border:"1px solid #1f2937",borderRadius:20,width:"100%",maxWidth:580,maxHeight:"88vh",overflowY:"auto",padding:28,boxSizing:"border-box"}}>
+    <div style={{position:"fixed",inset:0,background:"#000000cc",backdropFilter:"blur(4px)",zIndex:200,display:"flex",alignItems:"center",justifyContent:"center",padding:20}} onClick={onClose}>
+      <div onClick={e=>e.stopPropagation()} className="fade-in" style={{background:"#0a0e1a",border:"1px solid #1a2235",borderRadius:20,width:"100%",maxWidth:580,maxHeight:"88vh",overflowY:"auto",padding:28,boxSizing:"border-box",boxShadow:"0 32px 100px #000070"}}>
         <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",marginBottom:16}}>
           <div>
             <div style={{fontSize:22,fontWeight:800,color:"#f9fafb",letterSpacing:"-0.02em"}}>{donor.name}</div>
@@ -493,52 +551,62 @@ function DonorKanban({donors,onStageChange,onLogTouchpoint,onSelectDonor}){
   const[draggingId,setDraggingId]=useState(null);const[dragOver,setDragOver]=useState(null);
   const byStage=sid=>donors.filter(d=>(d.stage||"cultivate")===sid).sort((a,b)=>b.total-a.total);
   return(
-    <div style={{display:"flex",gap:10,overflowX:"auto",paddingBottom:16,minHeight:500,alignItems:"flex-start"}}>
+    <div style={{display:"flex",gap:8,overflowX:"auto",paddingBottom:16,minHeight:480,alignItems:"flex-start"}}>
       {STAGES.map(stage=>{
         const cols=byStage(stage.id);
         const total=cols.reduce((s,d)=>s+d.total,0);
         const isOver=dragOver===stage.id;
         return(
-          <div key={stage.id} style={{flexShrink:0,width:218,display:"flex",flexDirection:"column",gap:8}}
+          <div key={stage.id} style={{flexShrink:0,width:224,display:"flex",flexDirection:"column",gap:6}}
             onDragOver={e=>{e.preventDefault();setDragOver(stage.id);}}
             onDragLeave={e=>{if(!e.currentTarget.contains(e.relatedTarget))setDragOver(null);}}
             onDrop={e=>{e.preventDefault();const id=e.dataTransfer.getData("donorId");if(id)onStageChange(id,stage.id);setDragOver(null);}}>
-            <div style={{background:"#111827",border:`1px solid ${isOver?stage.color+"88":"#1f2937"}`,borderRadius:12,padding:"10px 12px",transition:"border-color 0.15s"}}>
-              <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:2}}>
-                <div style={{width:7,height:7,borderRadius:"50%",background:stage.color,flexShrink:0}}/>
-                <span style={{fontSize:12,fontWeight:800,color:stage.color,letterSpacing:"0.03em"}}>{stage.label}</span>
-                <span style={{marginLeft:"auto",background:stage.color+"22",color:stage.color,fontSize:10,fontWeight:700,borderRadius:99,padding:"1px 6px"}}>{cols.length}</span>
+            {/* Column header */}
+            <div style={{background:isOver?stage.color+"18":"#0d1117",border:`1px solid ${isOver?stage.color+"60":"#1a2235"}`,borderRadius:10,padding:"10px 12px",transition:"all 0.15s",borderTop:`3px solid ${stage.color}`}}>
+              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:2}}>
+                <span style={{fontSize:11,fontWeight:800,color:stage.color,letterSpacing:"0.04em",textTransform:"uppercase"}}>{stage.label}</span>
+                <span style={{background:stage.color+"20",color:stage.color,fontSize:10,fontWeight:800,borderRadius:99,padding:"2px 7px",border:`1px solid ${stage.color}30`}}>{cols.length}</span>
               </div>
-              <div style={{fontSize:11,color:"#4b5563"}}>{total>0?`${fmt(total)} lifetime`:stage.hint}</div>
+              <div style={{fontSize:10,color:"#374151"}}>{total>0?fmt(total)+" pipeline":stage.hint}</div>
             </div>
-            <div style={{display:"flex",flexDirection:"column",gap:8,border:`2px dashed ${isOver?stage.color+"55":"transparent"}`,borderRadius:10,padding:isOver?4:0,transition:"all 0.15s",minHeight:60}}>
+            {/* Cards */}
+            <div style={{display:"flex",flexDirection:"column",gap:6,minHeight:60,border:`2px dashed ${isOver?stage.color+"40":"transparent"}`,borderRadius:10,padding:isOver?3:0,transition:"all 0.15s"}}>
               {cols.map(d=>{
                 const urg=moveUrgency(d);const sc=donorScore(d);
                 const isDragging=draggingId===d.id;
+                const urgBg={critical:"#ef444408",due:"#f59e0b06",ok:"transparent"}[urg.level];
+                const urgBorder={critical:"#ef444430",due:"transparent",ok:"transparent"}[urg.level];
                 return(
                   <div key={d.id} draggable
                     onDragStart={e=>{e.dataTransfer.setData("donorId",d.id);setDraggingId(d.id);}}
                     onDragEnd={()=>{setDraggingId(null);setDragOver(null);}}
-                    style={{background:"#111827",border:`1px solid ${urg.level==="critical"?"#ef444444":"#1f2937"}`,borderRadius:10,padding:"11px 12px",cursor:"grab",opacity:isDragging?0.35:1,transition:"opacity 0.15s",userSelect:"none"}}>
-                    <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",gap:6,marginBottom:5}}>
+                    style={{background:`#0d1117`,border:`1px solid ${isDragging?"#374151":urgBorder||"#1a2235"}`,borderRadius:10,padding:"11px 12px",cursor:"grab",opacity:isDragging?0.3:1,transition:"opacity 0.15s,border-color 0.15s",userSelect:"none",background:urgBg||"#0d1117"}}>
+                    <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",gap:6,marginBottom:6}}>
                       <div style={{flex:1,minWidth:0}}>
                         <div style={{fontSize:13,fontWeight:700,color:"#f3f4f6",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{d.name}</div>
-                        <div style={{fontSize:11,color:"#6b7280",marginTop:1}}>{fmt(d.total)}</div>
+                        <div style={{fontSize:11,color:"#6b7280",marginTop:1,fontWeight:600}}>{fmt(d.total)}</div>
                       </div>
-                      <div style={{width:8,height:8,borderRadius:"50%",background:urg.urgencyColor,flexShrink:0,marginTop:3}} title={`${urg.level}: ${urg.days}d since contact`}/>
+                      <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:2,flexShrink:0}}>
+                        <div style={{width:9,height:9,borderRadius:"50%",background:urg.urgencyColor,boxShadow:`0 0 6px ${urg.urgencyColor}60`}} title={`${urg.level}: ${urg.days}d`}/>
+                        <div style={{fontSize:9,color:urg.urgencyColor,fontWeight:700}}>{sc}</div>
+                      </div>
                     </div>
-                    <div style={{fontSize:11,color:urg.urgencyColor,marginBottom:5}}>
-                      {urg.level==="ok"?"✓ ":urg.level==="due"?"! ":"!! "}{urg.days}d since contact
+                    <div style={{fontSize:11,color:urg.urgencyColor,marginBottom:5,display:"flex",alignItems:"center",gap:4}}>
+                      <span>{urg.level==="ok"?"✓":urg.level==="due"?"!":"!!"}</span>
+                      <span>{urg.days}d since contact</span>
                     </div>
-                    <div style={{fontSize:11,color:"#6b7280",lineHeight:1.35,marginBottom:8}}>{STAGE_ACTION[stage.id]}</div>
-                    <div style={{display:"flex",gap:5}}>
-                      <button onClick={e=>{e.stopPropagation();onLogTouchpoint(d);}} style={{flex:1,background:"#1f2937",border:"1px solid #374151",borderRadius:6,padding:"5px 0",color:"#9ca3af",fontSize:11,fontWeight:600,cursor:"pointer"}}>+ Log</button>
-                      <button onClick={e=>{e.stopPropagation();onSelectDonor(d);}} style={{flex:1,background:"#1f2937",border:"1px solid #374151",borderRadius:6,padding:"5px 0",color:"#9ca3af",fontSize:11,fontWeight:600,cursor:"pointer"}}>View →</button>
+                    <div style={{fontSize:10,color:"#374151",lineHeight:1.4,marginBottom:8,borderLeft:`2px solid ${stage.color}30`,paddingLeft:6}}>{STAGE_ACTION[stage.id]}</div>
+                    <div style={{display:"flex",gap:4}}>
+                      <button onClick={e=>{e.stopPropagation();onLogTouchpoint(d);}} style={{flex:1,background:"#1a2235",border:"1px solid #1f2937",borderRadius:6,padding:"5px 0",color:"#6b7280",fontSize:11,fontWeight:600,cursor:"pointer"}}>+ Log</button>
+                      <button onClick={e=>{e.stopPropagation();onSelectDonor(d);}} style={{flex:1,background:"#1a2235",border:"1px solid #1f2937",borderRadius:6,padding:"5px 0",color:"#6b7280",fontSize:11,fontWeight:600,cursor:"pointer"}}>View →</button>
                     </div>
                   </div>
                 );
               })}
-              {cols.length===0&&!isOver&&<div style={{textAlign:"center",padding:"20px 8px",color:"#374151",fontSize:12,border:"1px dashed #1f2937",borderRadius:10}}>Drop here</div>}
+              {cols.length===0&&!isOver&&<div style={{textAlign:"center",padding:"28px 12px",color:"#1f2937",fontSize:12,border:"1px dashed #1a2235",borderRadius:10,marginTop:2}}>
+                <div style={{fontSize:20,marginBottom:6,opacity:0.5}}>{stage.icon||"◇"}</div>
+                Drop here
+              </div>}
             </div>
           </div>
         );
@@ -690,8 +758,12 @@ function Donors({data,setData}){
         </div>
       </Card>}
 
-      {view==="kanban"&&<DonorKanban donors={filtered} onStageChange={moveToStage} onLogTouchpoint={d=>setLogTarget(d)} onSelectDonor={d=>setSelected(d)}/>}
+      {view==="kanban"&&(filtered.length===0
+        ?<EmptyState icon="♦" title="No donors match your search" message="Try a different name or email, or clear the search to see all donors."/>
+        :<DonorKanban donors={filtered} onStageChange={moveToStage} onLogTouchpoint={d=>setLogTarget(d)} onSelectDonor={d=>setSelected(d)}/>
+      )}
 
+      {view==="list"&&filtered.length===0&&<EmptyState icon="♦" title="No donors found" message="Try a different search term or add your first donor above."/>}
       {view==="list"&&filtered.map(d=>{
         const sc=donorScore(d);const scoreColor=sc>70?"#10b981":sc>45?"#f59e0b":"#ef4444";
         const urg=moveUrgency(d);const stage=STAGES.find(s=>s.id===(d.stage||"cultivate"))||STAGES[2];
@@ -780,14 +852,15 @@ function Grants({data,setData}) {
     </div>
     {(prospectLoading||prospectAI)&&<AIPanel text={prospectAI} onClose={()=>setProspectAI("")}/>}
 
-    <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10}}>
-      {pipeline.map(s=><div key={s} style={{background:"#111827",border:`1px solid ${SC[s]}44`,borderRadius:14,padding:14}}>
-        <Pill label={s} color={SC[s]}/>
-        <div style={{fontSize:20,fontWeight:800,color:SC[s],marginTop:10,fontFamily:"'DM Serif Display',serif"}}>{fmt(totals[s])}</div>
-        <div style={{fontSize:11,color:"#6b7280",marginTop:3}}>{data.grants.filter(g=>g.status===s).length} grants</div>
+    <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:8}}>
+      {pipeline.map(s=><div key={s} style={{background:"#0d1117",border:`1px solid ${SC[s]}25`,borderRadius:12,padding:"14px 16px",borderTop:`3px solid ${SC[s]}`}}>
+        <div style={{fontSize:10,fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",color:SC[s],marginBottom:8}}>{s}</div>
+        <div style={{fontSize:22,fontWeight:800,color:"#f3f4f6",fontFamily:"'DM Serif Display',serif",lineHeight:1}}>{fmt(totals[s])}</div>
+        <div style={{fontSize:11,color:"#4b5563",marginTop:4}}>{data.grants.filter(g=>g.status===s).length} grant{data.grants.filter(g=>g.status===s).length!==1?"s":""}</div>
       </div>)}
     </div>
 
+    {data.grants.length===0&&<EmptyState icon="◉" title="No grants yet" message="Start tracking your grant portfolio — add grants by clicking Find Grants or creating one manually."/>}
     {data.grants.map(g=>{
       const isOpen=selected?.id===g.id; const pct=g.amount>0?Math.round(g.received/g.amount*100):0; const days=daysUntil(g.deadline);
       return <Card key={g.id} selected={isOpen} accent={SC[g.status]} onClick={()=>setSelected(isOpen?null:g)}>
@@ -855,6 +928,7 @@ function Volunteers({data}) {
     </div>
     {(convLoading||convPlan)&&<AIPanel text={convPlan} onClose={()=>setConvPlan("")}/>}
     {(boardLoading||boardAI)&&<AIPanel text={boardAI} onClose={()=>setBoardAI("")}/>}
+    {data.volunteers.length===0&&<EmptyState icon="◎" title="No volunteers yet" message="Add volunteers to track hours, skills, and conversion potential."/>}
     {data.volunteers.map(v=>{
       const cc=v.convertPotential==="high"?"#f59e0b":v.convertPotential==="converted"?"#10b981":"#6b7280";
       return <Card key={v.id}>
@@ -915,6 +989,7 @@ function Board({data}) {
     </div>
     {(briefLoading||boardBrief)&&<AIPanel text={boardBrief} onClose={()=>setBoardBrief("")}/>}
     {(emailLoading||boardEmail)&&<AIPanel text={boardEmail} onClose={()=>setBoardEmail("")}/>}
+    {data.board.length===0&&<EmptyState icon="◆" title="No board members yet" message="Track your board's giving, attendance, committees, and terms."/>}
     {data.board.map(b=>{
       const attColor=b.attendance>=90?"#10b981":b.attendance>=75?"#f59e0b":"#ef4444";
       return <Card key={b.id}>
@@ -985,18 +1060,24 @@ function Tasks({data,setData}) {
         <button onClick={()=>setShowAdd(false)} style={{background:"#374151",border:"none",borderRadius:8,padding:"8px 14px",color:"#9ca3af",fontSize:13,cursor:"pointer"}}>Cancel</button>
       </div>
     </Card>}
-    {pending.map(t=><div key={t.id} onClick={()=>toggle(t.id)} style={{background:"#111827",border:"1px solid #1f2937",borderRadius:12,padding:"12px 16px",cursor:"pointer",display:"flex",alignItems:"center",gap:12}}>
-      <div style={{width:20,height:20,borderRadius:6,border:`2px solid ${SC[t.priority]}`,flexShrink:0}}/>
-      <div style={{flex:1}}>
-        <div style={{fontSize:14,color:"#f3f4f6",fontWeight:500}}>{t.title}</div>
-        {t.due&&<div style={{fontSize:11,color:"#6b7280",marginTop:2}}>Due {new Date(t.due).toLocaleDateString("en-US",{month:"short",day:"numeric"})}</div>}
-      </div>
-      <div style={{display:"flex",gap:6}}><Pill label={t.priority} color={SC[t.priority]}/><Pill label={t.type} color="#6b7280"/></div>
-    </div>)}
+    {pending.length===0&&!prioAI&&<EmptyState icon="◻" title="All tasks complete" message="Nothing pending. Add a new task to stay organized."/>}
+    {pending.map(t=>{
+      const overdue=t.due&&daysUntil(t.due)<0;
+      return <div key={t.id} onClick={()=>toggle(t.id)} style={{background:"#0d1117",border:`1px solid ${overdue?"#ef444430":"#1a2235"}`,borderRadius:12,padding:"12px 16px",cursor:"pointer",display:"flex",alignItems:"center",gap:12,transition:"border-color 0.15s"}}>
+        <div style={{width:20,height:20,borderRadius:6,border:`2px solid ${SC[t.priority]}`,flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",transition:"background 0.12s"}}/>
+        <div style={{flex:1}}>
+          <div style={{fontSize:13,color:"#f3f4f6",fontWeight:500,lineHeight:1.35}}>{t.title}</div>
+          {t.due&&<div style={{fontSize:11,color:overdue?"#ef4444":"#6b7280",marginTop:2,fontWeight:overdue?700:400}}>
+            {overdue?`Overdue — was due `:"Due "}{new Date(t.due).toLocaleDateString("en-US",{month:"short",day:"numeric"})}
+          </div>}
+        </div>
+        <div style={{display:"flex",gap:5,flexShrink:0}}><Pill label={t.priority} color={SC[t.priority]}/><Pill label={t.type} color="#4b5563"/></div>
+      </div>;
+    })}
     {done.length>0&&<>
-      <div style={{fontSize:10,fontWeight:700,color:"#374151",textTransform:"uppercase",letterSpacing:"0.08em",marginTop:4}}>Completed</div>
-      {done.map(t=><div key={t.id} onClick={()=>toggle(t.id)} style={{background:"#0f172a",border:"1px solid #1f2937",borderRadius:12,padding:"11px 16px",cursor:"pointer",display:"flex",alignItems:"center",gap:12,opacity:0.45}}>
-        <div style={{width:20,height:20,borderRadius:6,background:"#10b981",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center"}}><span style={{fontSize:10,color:"#fff"}}>✓</span></div>
+      <div style={{fontSize:10,fontWeight:700,color:"#1f2937",textTransform:"uppercase",letterSpacing:"0.1em",marginTop:8,paddingTop:8,borderTop:"1px solid #0e1624"}}>Completed · {done.length}</div>
+      {done.map(t=><div key={t.id} onClick={()=>toggle(t.id)} style={{background:"#0d1117",border:"1px solid #0e1624",borderRadius:12,padding:"10px 16px",cursor:"pointer",display:"flex",alignItems:"center",gap:12,opacity:0.4}}>
+        <div style={{width:20,height:20,borderRadius:6,background:"#10b981",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center"}}><span style={{fontSize:10,color:"#fff",fontWeight:700}}>✓</span></div>
         <div style={{fontSize:13,color:"#6b7280",textDecoration:"line-through",flex:1}}>{t.title}</div>
       </div>)}
     </>}
@@ -1043,42 +1124,50 @@ function Finance({data}) {
     {(riskLoading||riskAI)&&<AIPanel text={riskAI} onClose={()=>setRiskAI("")}/>}
 
     <Card>
-      <SectionLabel>Monthly Revenue Breakdown</SectionLabel>
+      <SectionLabel>Monthly Breakdown</SectionLabel>
+      {rev.length===0&&<EmptyState icon="◇" title="No financial data" message="Add monthly financial data to see trends."/>}
       {rev.map((r,i)=>{
         const rv=r.individual+r.grants+r.events+r.other;
         const ex=exp[i].programs+exp[i].admin+exp[i].fundraising;
-        return <div key={r.month} style={{marginBottom:12}}>
-          <div style={{display:"flex",justifyContent:"space-between",marginBottom:5}}>
-            <span style={{fontSize:13,fontWeight:600,color:"#f3f4f6"}}>{r.month}</span>
-            <div style={{display:"flex",gap:12}}>
-              <span style={{fontSize:12,color:"#10b981"}}>Rev: {fmtFull(rv)}</span>
-              <span style={{fontSize:12,color:"#ef4444"}}>Exp: {fmtFull(ex)}</span>
-              <span style={{fontSize:12,color:rv>=ex?"#10b981":"#ef4444",fontWeight:700}}>{rv>=ex?"+":""}{fmtFull(rv-ex)}</span>
+        const net=rv-ex;
+        return <div key={r.month} style={{marginBottom:14,paddingBottom:14,borderBottom:"1px solid #0e1624"}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+            <span style={{fontSize:13,fontWeight:700,color:"#f3f4f6"}}>{r.month}</span>
+            <div style={{display:"flex",gap:16,alignItems:"center"}}>
+              <span style={{fontSize:11,color:"#10b981"}}>↑ {fmtFull(rv)}</span>
+              <span style={{fontSize:11,color:"#ef4444"}}>↓ {fmtFull(ex)}</span>
+              <span style={{fontSize:12,fontWeight:700,color:net>=0?"#10b981":"#ef4444"}}>{net>=0?"+":""}{fmtFull(net)}</span>
             </div>
           </div>
-          <div style={{height:6,background:"#1f2937",borderRadius:99,overflow:"hidden"}}>
-            <div style={{height:"100%",width:`${(rv/maxBar)*100}%`,background:"linear-gradient(90deg,#10b981,#3b82f6)",borderRadius:99}}/>
+          <div style={{height:5,background:"#0e1624",borderRadius:99,overflow:"hidden",marginBottom:3}}>
+            <div style={{height:"100%",width:`${maxBar>0?(rv/maxBar)*100:0}%`,background:"linear-gradient(90deg,#10b981,#3b82f6)",borderRadius:99}}/>
           </div>
-          <div style={{display:"flex",gap:3,marginTop:3}}>
+          <div style={{height:4,background:"#0e1624",borderRadius:99,overflow:"hidden"}}>
+            <div style={{height:"100%",width:`${maxBar>0?(ex/maxBar)*100:0}%`,background:"linear-gradient(90deg,#ef444488,#dc2626)",borderRadius:99,opacity:0.7}}/>
+          </div>
+          {rv>0&&<div style={{display:"flex",gap:3,marginTop:4}}>
             {[["individual",r.individual,"#10b981"],["grants",r.grants,"#3b82f6"],["events",r.events,"#8b5cf6"],["other",r.other,"#6b7280"]].filter(([,v])=>v>0).map(([k,v,c])=>
-              <div key={k} style={{flex:v/rv,height:3,background:c,borderRadius:99}} title={`${k}: ${fmtFull(v)}`}/>
+              <div key={k} style={{flex:v/rv,height:3,background:c,borderRadius:99,opacity:0.6}} title={`${k}: ${fmtFull(v)}`}/>
             )}
-          </div>
+          </div>}
         </div>;
       })}
-      <div style={{display:"flex",gap:12,marginTop:8,flexWrap:"wrap"}}>
+      <div style={{display:"flex",gap:14,marginTop:4,flexWrap:"wrap"}}>
         {[["#10b981","Individual"],["#3b82f6","Grants"],["#8b5cf6","Events"],["#6b7280","Other"]].map(([c,l])=>
-          <div key={l} style={{display:"flex",alignItems:"center",gap:4}}><div style={{width:8,height:8,borderRadius:2,background:c}}/><span style={{fontSize:11,color:"#9ca3af"}}>{l}</span></div>
+          <div key={l} style={{display:"flex",alignItems:"center",gap:5}}><div style={{width:8,height:8,borderRadius:2,background:c}}/><span style={{fontSize:11,color:"#4b5563"}}>{l}</span></div>
         )}
       </div>
     </Card>
 
     <Card>
-      <SectionLabel>Restricted Fund Tracker</SectionLabel>
-      {data.financials.funds.map(f=><div key={f.name} style={{display:"flex",alignItems:"center",gap:12,padding:"10px 0",borderBottom:"1px solid #1f2937"}}>
-        <div style={{width:8,height:8,borderRadius:"50%",background:f.restricted?"#8b5cf6":"#10b981",flexShrink:0}}/>
-        <div style={{flex:1}}><div style={{fontSize:13,fontWeight:600,color:"#f3f4f6"}}>{f.name}</div><Pill label={f.restricted?"restricted":"unrestricted"} color={f.restricted?"#8b5cf6":"#10b981"}/></div>
-        <div style={{fontSize:16,fontWeight:800,color:"#f3f4f6",fontFamily:"'DM Serif Display',serif"}}>{fmt(f.balance)}</div>
+      <SectionLabel>Fund Balances</SectionLabel>
+      {data.financials.funds.map((f,i)=><div key={f.name} style={{display:"flex",alignItems:"center",gap:12,padding:"11px 0",borderBottom:i<data.financials.funds.length-1?"1px solid #0e1624":""}}>
+        <div style={{width:10,height:10,borderRadius:"50%",background:f.restricted?"#7c3aed":"#10b981",flexShrink:0,boxShadow:f.restricted?"0 0 8px #7c3aed60":"0 0 8px #10b98160"}}/>
+        <div style={{flex:1}}>
+          <div style={{fontSize:13,fontWeight:600,color:"#f3f4f6"}}>{f.name}</div>
+          <div style={{fontSize:10,color:f.restricted?"#7c3aed":"#6b7280",fontWeight:600,textTransform:"uppercase",letterSpacing:"0.06em",marginTop:1}}>{f.restricted?"Restricted":"Unrestricted"}</div>
+        </div>
+        <div style={{fontSize:18,fontWeight:800,color:"#f3f4f6",fontFamily:"'DM Serif Display',serif"}}>{fmt(f.balance)}</div>
       </div>)}
     </Card>
   </div>;
@@ -1777,6 +1866,16 @@ function AnnualFund({data}) {
   </div>;
 }
 
+// ── Root Router ────────────────────────────────────────────────────────────
+export default function App() {
+  return (
+    <Routes>
+      <Route path="/" element={<Landing />} />
+      <Route path="/*" element={<AppShell />} />
+    </Routes>
+  );
+}
+
 // ── App Shell ──────────────────────────────────────────────────────────────
 const TABS=[
   {id:"dashboard",label:"Dashboard",icon:"◈"},
@@ -1792,7 +1891,7 @@ const TABS=[
   {id:"tasks",label:"Tasks",icon:"◻"},
 ];
 
-export default function App() {
+function AppShell() {
   const { auth, logout } = useAuth();
   const [tab,setTab]=useState("dashboard");
   const [data,setData]=useState(null);
@@ -1818,39 +1917,69 @@ export default function App() {
     })();
   },[]);
 
-  if(loading) return <div style={{minHeight:"100vh",background:"#030712",display:"flex",alignItems:"center",justifyContent:"center",color:"#6b7280",fontFamily:"'DM Sans',system-ui,sans-serif",fontSize:14}}>Loading your workspace…</div>;
-  if(loadErr||!data) return <div style={{minHeight:"100vh",background:"#030712",display:"flex",alignItems:"center",justifyContent:"center",color:"#f87171",fontFamily:"'DM Sans',system-ui,sans-serif",fontSize:14}}>Error: {loadErr||"Failed to load data"}</div>;
+  const BASE = {minHeight:"100vh",background:"#030712",fontFamily:"'DM Sans',system-ui,sans-serif"};
+
+  if(loading) return <div style={{...BASE,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:16}}>
+    <GlobalStyles/>
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=DM+Serif+Display&display=swap" rel="stylesheet"/>
+    <div style={{width:40,height:40,background:"linear-gradient(135deg,#10b981,#3b82f6)",borderRadius:14,display:"flex",alignItems:"center",justifyContent:"center"}}><span style={{fontSize:20,color:"#fff"}}>◈</span></div>
+    <div style={{display:"flex",alignItems:"center",gap:10,color:"#4b5563",fontSize:13}}><Spin/>Loading your workspace…</div>
+  </div>;
+
+  if(loadErr||!data) return <div style={{...BASE,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:12}}>
+    <GlobalStyles/>
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=DM+Serif+Display&display=swap" rel="stylesheet"/>
+    <div style={{fontSize:32,opacity:0.3}}>◈</div>
+    <div style={{fontSize:15,fontWeight:700,color:"#f87171"}}>Failed to connect</div>
+    <div style={{fontSize:13,color:"#6b7280",maxWidth:300,textAlign:"center"}}>{loadErr||"Could not load your workspace. Check your connection and try again."}</div>
+    <button onClick={()=>window.location.reload()} style={{marginTop:4,background:"#10b981",border:"none",borderRadius:10,padding:"9px 20px",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer"}}>Retry</button>
+  </div>;
 
   const tasksDue=data.tasks.filter(t=>!t.done&&t.priority==="high").length;
   const orgName=auth?.org?.name||data.org?.name||"Steward";
+  const orgInitial=(orgName[0]||"S").toUpperCase();
 
-  return <div style={{minHeight:"100vh",background:"#030712",color:"#f3f4f6",fontFamily:"'DM Sans',system-ui,sans-serif",display:"flex",flexDirection:"column"}}>
+  return <div style={{...BASE,color:"#f3f4f6",display:"flex",flexDirection:"column"}}>
+    <GlobalStyles/>
     <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=DM+Serif+Display&display=swap" rel="stylesheet"/>
-    <div style={{borderBottom:"1px solid #111827",padding:"12px 24px",display:"flex",alignItems:"center",justifyContent:"space-between",background:"#030712",position:"sticky",top:0,zIndex:100}}>
+
+    {/* Header */}
+    <div style={{borderBottom:"1px solid #0e1624",padding:"0 24px",display:"flex",alignItems:"center",justifyContent:"space-between",background:"#030712",position:"sticky",top:0,zIndex:100,height:56}}>
       <div style={{display:"flex",alignItems:"center",gap:12}}>
-        <div style={{width:32,height:32,background:"linear-gradient(135deg,#10b981,#3b82f6)",borderRadius:10,display:"flex",alignItems:"center",justifyContent:"center"}}><span style={{fontSize:16,color:"#fff"}}>◈</span></div>
-        <div>
-          <div style={{fontSize:15,fontWeight:800,color:"#f9fafb",letterSpacing:"-0.02em"}}>{orgName}</div>
-          <div style={{fontSize:10,color:"#6b7280",letterSpacing:"0.06em",textTransform:"uppercase"}}>Manage what matters.</div>
+        <div style={{width:34,height:34,background:"linear-gradient(135deg,#10b981,#3b82f6)",borderRadius:10,display:"flex",alignItems:"center",justifyContent:"center",boxShadow:"0 0 16px #10b98130",flexShrink:0}}>
+          <span style={{fontSize:16,color:"#fff",fontWeight:800}}>◈</span>
+        </div>
+        <div style={{display:"flex",alignItems:"baseline",gap:8}}>
+          <span style={{fontSize:15,fontWeight:800,color:"#f9fafb",letterSpacing:"-0.02em"}}>{orgName}</span>
+          <span style={{fontSize:10,color:"#374151",letterSpacing:"0.06em",textTransform:"uppercase"}}>Steward</span>
         </div>
       </div>
       <div style={{display:"flex",gap:8,alignItems:"center"}}>
-        <button onClick={()=>setShowChat(true)} style={{background:"linear-gradient(135deg,#7c3aed,#3b82f6)",border:"none",borderRadius:12,padding:"9px 18px",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer",display:"flex",alignItems:"center",gap:8,boxShadow:"0 0 20px #7c3aed44"}}>
-          <span>✦</span> Ask AI
+        <button onClick={()=>setShowChat(true)} style={{background:"linear-gradient(135deg,#6d28d9,#2563eb)",border:"none",borderRadius:10,padding:"7px 16px",color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer",display:"flex",alignItems:"center",gap:7,boxShadow:"0 0 16px #6d28d930"}}>
+          ✦ Ask AI
         </button>
-        <span style={{fontSize:11,fontWeight:700,padding:"4px 10px",borderRadius:99,background:auth?.user?.role==="admin"?"#7c3aed22":"#1f2937",color:auth?.user?.role==="admin"?"#8b5cf6":"#9ca3af",border:`1px solid ${auth?.user?.role==="admin"?"#7c3aed44":"#374151"}`}}>{auth?.user?.role||"staff"}</span>
-        <button onClick={logout} style={{background:"transparent",border:"1px solid #374151",borderRadius:10,padding:"9px 14px",color:"#6b7280",fontSize:12,cursor:"pointer"}}>
+        <div style={{width:28,height:28,borderRadius:8,background:auth?.user?.role==="admin"?"#6d28d920":"#1a2235",border:`1px solid ${auth?.user?.role==="admin"?"#6d28d940":"#1f2937"}`,display:"flex",alignItems:"center",justifyContent:"center"}}>
+          <span style={{fontSize:11,fontWeight:800,color:auth?.user?.role==="admin"?"#8b5cf6":"#4b5563"}}>{(auth?.user?.name||"U")[0].toUpperCase()}</span>
+        </div>
+        <button onClick={logout} style={{background:"transparent",border:"1px solid #1a2235",borderRadius:8,padding:"6px 12px",color:"#4b5563",fontSize:12,cursor:"pointer"}}>
           Sign out
         </button>
       </div>
     </div>
-    <div style={{display:"flex",gap:4,padding:"10px 24px",borderBottom:"1px solid #111827",overflowX:"auto",flexShrink:0}}>
-      {TABS.map(t=><button key={t.id} onClick={()=>setTab(t.id)} style={{background:tab===t.id?"#10b981":"transparent",border:tab===t.id?"none":"1px solid #1f2937",borderRadius:10,padding:"8px 14px",color:tab===t.id?"#fff":"#9ca3af",fontSize:13,fontWeight:tab===t.id?700:500,cursor:"pointer",display:"flex",alignItems:"center",gap:5,whiteSpace:"nowrap",transition:"all 0.15s"}}>
-        <span style={{fontSize:11}}>{t.icon}</span>{t.label}
-        {t.id==="tasks"&&tasksDue>0&&<span style={{background:"#ef4444",color:"#fff",fontSize:10,fontWeight:800,borderRadius:99,padding:"1px 5px",marginLeft:2}}>{tasksDue}</span>}
-      </button>)}
+
+    {/* Tab bar */}
+    <div style={{display:"flex",padding:"0 20px",borderBottom:"1px solid #0e1624",overflowX:"auto",flexShrink:0,background:"#030712"}}>
+      {TABS.map(t=>{
+        const active=tab===t.id;
+        return <button key={t.id} onClick={()=>setTab(t.id)} style={{background:"transparent",border:"none",borderBottom:`2px solid ${active?"#10b981":"transparent"}`,padding:"12px 14px",color:active?"#10b981":"#4b5563",fontSize:13,fontWeight:active?700:500,cursor:"pointer",display:"flex",alignItems:"center",gap:6,whiteSpace:"nowrap",transition:"color 0.15s,border-color 0.15s",flexShrink:0,marginBottom:-1}}>
+          <span style={{fontSize:11,opacity:active?1:0.6}}>{t.icon}</span>
+          {t.label}
+          {t.id==="tasks"&&tasksDue>0&&<span style={{background:"#ef4444",color:"#fff",fontSize:9,fontWeight:800,borderRadius:99,padding:"1px 5px",lineHeight:"14px"}}>{tasksDue}</span>}
+        </button>;
+      })}
     </div>
-    <div style={{flex:1,padding:22,maxWidth:1020,width:"100%",margin:"0 auto",boxSizing:"border-box"}}>
+
+    <div style={{flex:1,padding:"22px 24px",maxWidth:1060,width:"100%",margin:"0 auto",boxSizing:"border-box"}}>
       {tab==="dashboard"&&<Dashboard data={data}/>}
       {tab==="donors"&&<Donors data={data} setData={setData}/>}
       {tab==="grants"&&<Grants data={data} setData={setData}/>}
