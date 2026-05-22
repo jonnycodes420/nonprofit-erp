@@ -128,8 +128,8 @@ export default function WelcomePage() {
     setAiText("");
     setTimeout(() => aiRef.current?.scrollIntoView({ behavior: "smooth" }), 100);
 
-    const systemPrompt = `You are a nonprofit strategy expert helping a new organization get set up with Mission Suite, a nonprofit ERP. Be warm, specific, and encouraging. Keep your response to ~200 words.`;
-    const userMessage = `A nonprofit called "${orgName}" just joined Mission Suite. Here's their profile:
+    const systemPrompt = `You are a nonprofit strategy expert helping a new organization get set up with Steward, a nonprofit ERP. Be warm, specific, and encouraging. Keep your response to ~200 words.`;
+    const userMessage = `A nonprofit called "${orgName}" just joined Steward. Here's their profile:
 - Donors: ${answers.donorCount}
 - Annual budget: ${answers.budget}
 - Active grants: ${answers.grantCount}
@@ -137,7 +137,7 @@ export default function WelcomePage() {
 - Current tools: ${answers.tools}
 
 Write a personalized setup recommendation. Include:
-1. What to focus on first in Mission Suite (based on their profile)
+1. What to focus on first in Steward (based on their profile)
 2. One specific opportunity you see for them
 3. An encouraging closing sentence
 
@@ -146,7 +146,7 @@ Be warm and specific to their situation.`;
     try {
       await streamAI(systemPrompt, userMessage, chunk => setAiText(chunk));
     } catch {
-      setAiText("Welcome to Mission Suite! We've set up your workspace with sample data scaled to your organization's size. Explore your dashboard to get started.");
+      setAiText("Welcome to Steward! We've set up your workspace with sample data scaled to your organization's size. Explore your dashboard to get started.");
     }
     setAiLoading(false);
   };

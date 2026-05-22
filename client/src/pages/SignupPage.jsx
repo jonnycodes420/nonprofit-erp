@@ -43,8 +43,8 @@ export default function SignupPage() {
       <div style={{ width:"100%", maxWidth:480 }}>
         <div style={{ textAlign:"center", marginBottom:32 }}>
           <div style={{ width:48, height:48, background:"linear-gradient(135deg,#10b981,#3b82f6)", borderRadius:14, display:"flex", alignItems:"center", justifyContent:"center", margin:"0 auto 16px", fontSize:22 }}>◈</div>
-          <div style={{ fontSize:24, fontWeight:800, color:"#f9fafb", letterSpacing:"-0.02em" }}>Create your workspace</div>
-          <div style={{ fontSize:13, color:"#6b7280", marginTop:6 }}>Get Mission Suite set up for your organization in minutes</div>
+          <div style={{ fontSize:24, fontWeight:800, color:"#f9fafb", letterSpacing:"-0.02em" }}>Welcome to Steward</div>
+          <div style={{ fontSize:13, color:"#6b7280", marginTop:6 }}>Manage what matters. Get your organization set up in minutes.</div>
         </div>
 
         <form onSubmit={submit} style={{ display:"flex", flexDirection:"column", gap:16 }}>

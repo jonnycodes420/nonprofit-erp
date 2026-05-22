@@ -767,7 +767,7 @@ export default function App() {
   if(loadErr||!data) return <div style={{minHeight:"100vh",background:"#030712",display:"flex",alignItems:"center",justifyContent:"center",color:"#f87171",fontFamily:"'DM Sans',system-ui,sans-serif",fontSize:14}}>Error: {loadErr||"Failed to load data"}</div>;
 
   const tasksDue=data.tasks.filter(t=>!t.done&&t.priority==="high").length;
-  const orgName=auth?.org?.name||data.org?.name||"Mission Suite";
+  const orgName=auth?.org?.name||data.org?.name||"Steward";
 
   return <div style={{minHeight:"100vh",background:"#030712",color:"#f3f4f6",fontFamily:"'DM Sans',system-ui,sans-serif",display:"flex",flexDirection:"column"}}>
     <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=DM+Serif+Display&display=swap" rel="stylesheet"/>
@@ -776,7 +776,7 @@ export default function App() {
         <div style={{width:32,height:32,background:"linear-gradient(135deg,#10b981,#3b82f6)",borderRadius:10,display:"flex",alignItems:"center",justifyContent:"center"}}><span style={{fontSize:16,color:"#fff"}}>◈</span></div>
         <div>
           <div style={{fontSize:15,fontWeight:800,color:"#f9fafb",letterSpacing:"-0.02em"}}>{orgName}</div>
-          <div style={{fontSize:10,color:"#6b7280",letterSpacing:"0.06em",textTransform:"uppercase"}}>Mission Suite</div>
+          <div style={{fontSize:10,color:"#6b7280",letterSpacing:"0.06em",textTransform:"uppercase"}}>Manage what matters.</div>
         </div>
       </div>
       <div style={{display:"flex",gap:8,alignItems:"center"}}>
