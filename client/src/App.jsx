@@ -842,8 +842,8 @@ export default function App({ onLogout }) {
       <div style={{display:"flex",alignItems:"center",gap:12}}>
         <div style={{width:32,height:32,background:"linear-gradient(135deg,#10b981,#3b82f6)",borderRadius:10,display:"flex",alignItems:"center",justifyContent:"center"}}><span style={{fontSize:16,color:"#fff"}}>◈</span></div>
         <div>
-          <div style={{fontSize:15,fontWeight:800,color:"#f9fafb",letterSpacing:"-0.02em"}}>CREO Arts</div>
-          <div style={{fontSize:10,color:"#6b7280",letterSpacing:"0.06em",textTransform:"uppercase"}}>Development OS</div>
+          <div style={{fontSize:15,fontWeight:800,color:"#f9fafb",letterSpacing:"-0.02em"}}>Mission Suite</div>
+          <div style={{fontSize:10,color:"#6b7280",letterSpacing:"0.06em",textTransform:"uppercase"}}>Nonprofit ERP</div>
         </div>
       </div>
       <div style={{display:"flex",gap:8,alignItems:"center"}}>

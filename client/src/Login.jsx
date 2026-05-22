@@ -39,8 +39,8 @@ export default function Login({ onLogin }) {
       <div style={{ width: "100%", maxWidth: 380, padding: 20 }}>
         <div style={{ textAlign: "center", marginBottom: 32 }}>
           <div style={{ width: 48, height: 48, background: "linear-gradient(135deg,#10b981,#3b82f6)", borderRadius: 14, display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 16px", fontSize: 22 }}>◈</div>
-          <div style={{ fontSize: 22, fontWeight: 800, color: "#f9fafb", letterSpacing: "-0.02em" }}>CREO Arts</div>
-          <div style={{ fontSize: 12, color: "#6b7280", letterSpacing: "0.08em", textTransform: "uppercase", marginTop: 4 }}>Development OS</div>
+          <div style={{ fontSize: 22, fontWeight: 800, color: "#f9fafb", letterSpacing: "-0.02em" }}>Mission Suite</div>
+          <div style={{ fontSize: 12, color: "#6b7280", letterSpacing: "0.08em", textTransform: "uppercase", marginTop: 4 }}>Nonprofit ERP</div>
         </div>
 
         <form onSubmit={submit} style={{ display: "flex", flexDirection: "column", gap: 12 }}>
