@@ -3,7 +3,7 @@ const express = require("express");
 const cors = require("cors");
 const bcrypt = require("bcryptjs");
 const Anthropic = require("@anthropic-ai/sdk");
-const { getDb, query, run, uuid } = require("./db");
+const { getDb, query, run, uuid, seedOrgData } = require("./db");
 const { signToken, requireAuth } = require("./auth");
 
 const app = express();
@@ -45,11 +45,11 @@ app.post("/auth/login", (req, res) => {
 
   const org = query("SELECT * FROM orgs WHERE id = ?", [user.org_id])[0];
   const token = signToken({ userId: user.id, orgId: user.org_id, email: user.email, role: user.role });
-  res.json({ token, user: { id: user.id, email: user.email, name: user.name, role: user.role }, org });
+  res.json({ token, user: { id: user.id, email: user.email, name: user.name, role: user.role }, org: { ...org, onboarding_complete: org.onboarding_complete ?? 1 } });
 });
 
 app.post("/auth/register", (req, res) => {
-  const { email, password, name, orgName, orgMission } = req.body;
+  const { email, password, name, orgName, orgMission, ein } = req.body;
   if (!email || !password || !orgName) {
     return res.status(400).json({ error: "Email, password, and org name required" });
   }
@@ -62,13 +62,35 @@ app.post("/auth/register", (req, res) => {
 
   const orgId = "org_" + uuid().slice(0, 8);
   const userId = "user_" + uuid().slice(0, 8);
-  run("INSERT INTO orgs (id, name, mission) VALUES (?,?,?)", [orgId, orgName, orgMission || ""]);
+  run("INSERT INTO orgs (id, name, mission, ein, onboarding_complete) VALUES (?,?,?,?,0)",
+    [orgId, orgName, orgMission || "", ein || ""]);
   const hash = bcrypt.hashSync(password, 12);
   run("INSERT INTO users (id, org_id, email, password_hash, name, role) VALUES (?,?,?,?,?,?)",
     [userId, orgId, email.toLowerCase(), hash, name || email, "admin"]);
 
   const token = signToken({ userId, orgId, email: email.toLowerCase(), role: "admin" });
-  res.status(201).json({ token, user: { id: userId, email, name, role: "admin" }, org: { id: orgId, name: orgName } });
+  res.status(201).json({
+    token,
+    user: { id: userId, email, name: name || email, role: "admin" },
+    org: { id: orgId, name: orgName, onboarding_complete: 0 },
+  });
+});
+
+// ── Me ─────────────────────────────────────────────────────────────────────
+app.get("/me", requireAuth, (req, res) => {
+  const user = query("SELECT id, email, name, role FROM users WHERE id = ?", [req.user.userId])[0];
+  const org  = query("SELECT * FROM orgs WHERE id = ?", [req.user.orgId])[0];
+  if (!user || !org) return res.status(404).json({ error: "Not found" });
+  res.json({ user, org });
+});
+
+// ── Onboarding ─────────────────────────────────────────────────────────────
+app.post("/onboarding/complete", requireAuth, (req, res) => {
+  const { answers } = req.body;
+  if (!answers) return res.status(400).json({ error: "answers required" });
+  seedOrgData(req.user.orgId, answers);
+  run("UPDATE orgs SET onboarding_complete = 1 WHERE id = ?", [req.user.orgId]);
+  res.json({ success: true });
 });
 
 // ── Org ────────────────────────────────────────────────────────────────────

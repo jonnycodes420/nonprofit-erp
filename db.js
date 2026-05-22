@@ -20,6 +20,7 @@ function initSchema() {
       name TEXT NOT NULL,
       mission TEXT,
       ein TEXT,
+      onboarding_complete INTEGER DEFAULT 0,
       created_at TEXT DEFAULT (datetime('now'))
     );
 
@@ -273,4 +274,127 @@ function run(sql, params = []) {
   return { changes: db.getRowsModified() };
 }
 
-module.exports = { getDb, query, run, uuid };
+// ── Scaled org seeding ─────────────────────────────────────────────────────
+function seedOrgData(orgId, answers) {
+  const { donorCount = "50-200", budget = "$100K-$500K", grantCount = "1-3" } = answers || {};
+
+  const size =
+    donorCount === "500+" ? "xl" :
+    donorCount === "200-500" ? "lg" :
+    donorCount === "50-200" ? "md" : "sm";
+
+  const today = new Date().toISOString().split("T")[0];
+  const mo = (n) => { const d = new Date(); d.setMonth(d.getMonth() - n); return d.toISOString().split("T")[0]; };
+
+  // ── Donors ────────────────────────────────────────────────────────────────
+  const donorTemplates = [
+    ["Alexandra Rivera",    "arivera@example.com",  "212-555-0101", "major",   28000, 6000,  8,  '["board-adjacent","arts"]',   "Major donor since founding. Board-adjacent. Prefers personal calls."],
+    ["Thomas & Gwen Park",  "tgpark@example.com",   "917-555-0202", "mid",     11500, 2500,  5,  '["recurring","education"]',   "Educators. Anniversary donors. Very engaged with programs."],
+    ["Diane Osei",          "dosei@example.com",    "646-555-0303", "lapsed",   3400,  500,  4,  '["youth"]',                  "Lapsed 14+ months. Was a reliable $500 donor. Worth outreach."],
+    ["Meridian Foundation", "grants@meridian.org",  "212-555-0404", "major",   60000,20000,  3,  '["foundation","grants"]',    "Program officer is James Lee. Next cycle opens Q3."],
+    ["Carlos Vega",         "cvega@example.com",    "718-555-0505", "new",       750,  250,  3,  '["online","young-professional"]', "Online donor via social media. Good upgrade potential."],
+    ["Susan Holbrook",      "sholbrook@example.com","347-555-0606", "mid",      7200, 1200,  6,  '["recurring"]',              "Consistent annual donor. Approaching renewal window."],
+    ["James Whitfield",     "jwhit@example.com",    "212-555-0707", "major",   15000, 5000,  4,  '["arts","board-adjacent"]',  "Recently upgraded to major. Strong cultivation opportunity."],
+    ["Priya Anand",         "panand@example.com",   "646-555-0808", "new",      1200,  400,  2,  '["education"]',              "First-time donor from spring event. High potential."],
+    ["Marcus & Tia Brown",  "mtbrown@example.com",  "917-555-0909", "mid",      5500, 1000,  5,  '["recurring","community"]',  "Community connectors. Can make valuable introductions."],
+    ["Liberty Fund",        "info@libertyfund.org", "212-555-1010", "major",   42000,12000,  3,  '["foundation"]',             "Long-term funder. Mid-year check-in due."],
+  ];
+
+  const counts = { sm: 3, md: 5, lg: 7, xl: 10 };
+  const donorRows = donorTemplates.slice(0, counts[size]);
+
+  donorRows.forEach(([name, email, phone, status, total, last, gifts, tags, notes], i) => {
+    const did = `d_${uuid().slice(0, 8)}`;
+    db.run(
+      `INSERT OR IGNORE INTO donors (id,org_id,name,email,phone,status,total_giving,last_gift_amount,last_gift_date,gift_count,tags,notes) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
+      [did, orgId, name, email, phone, status, total, last, mo(i * 30), gifts, tags, notes]
+    );
+  });
+
+  // ── Grants ────────────────────────────────────────────────────────────────
+  const grantTemplates = [
+    ["State Arts Council",     "General Operating Support", 25000,  25000, "active",      mo(-180), mo(-150), "Sarah Kim",    "Annual operating grant. Report due 6 months post-period.", '["2023: $20,000"]'],
+    ["Community Foundation",   "Youth Programs",             40000,  20000, "active",      mo(-90),  mo(-60),  "Marcus Reid",  "Mid-year disbursement expected next quarter.",              '["2024: $35,000"]'],
+    ["Regional Arts Fund",     "Cultural Innovation",        15000,      0, "pending",     mo(60),   null,     "Angela Moore", "Full proposal invited. Narrative due next month.",           '["First applicant"]'],
+    ["City Council District",  "Community Programs",         10000,  10000, "closed",      mo(-365), mo(-300), "James Liu",    "Completed. New cycle opens in July.",                       '["2023: $8,000"]'],
+    ["National Endowment",     "Arts Education",             50000,      0, "prospecting", mo(120),  null,     "Lisa Chen",    "Highly competitive. Requires strong theory of change.",      '["First applicant"]'],
+    ["Private Family Fund",    "Capacity Building",          20000,  20000, "active",      mo(-30),  mo(60),   "Robert Kim",   "First-time grant. Stewardship priority.",                   '["New relationship"]'],
+  ];
+
+  const gCounts = { sm: 2, md: 3, lg: 4, xl: 6 };
+  grantTemplates.slice(0, gCounts[size]).forEach(([funder, program, amount, received, status, deadline, reportDue, officer, notes, history]) => {
+    db.run(
+      `INSERT OR IGNORE INTO grants (id,org_id,funder,program,amount,received,status,deadline,report_due,officer,notes,history) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
+      [`gr_${uuid().slice(0, 8)}`, orgId, funder, program, amount, received, status, deadline, reportDue, officer, notes, JSON.stringify(history)]
+    );
+  });
+
+  // ── Volunteers ────────────────────────────────────────────────────────────
+  const volTemplates = [
+    ["Jordan Ellis",   "jellis@example.com",   96,  '["event coordination","marketing"]',   "high",      "Accenture",  "Enthusiastic. Has offered to lead annual gala committee."],
+    ["Mia Tanaka",     "mtanaka@example.com", 215,  '["teaching","curriculum design"]',     "high",      "NYC Schools", "Most dedicated volunteer. Deep mission alignment."],
+    ["Derek Shaw",     "dshaw@example.com",    44,  '["graphic design","photography"]',     "medium",    "Freelance",  "Produced our last annual report. Engaged but sporadic."],
+    ["Faith Okonkwo",  "fokonkwo@example.com",162,  '["accounting","administration"]',      "converted", "KPMG",       "Already a donor. Quarterly finance help. Board candidate."],
+    ["Nadia Santos",   "nsantos@example.com",  28,  '["social media","communications"]',    "high",      "Google",     "Works in tech. Ran our Instagram campaign last spring."],
+    ["Leo Ramirez",    "lramirez@example.com", 88,  '["legal","governance"]',               "medium",    "Law firm",   "Pro-bono legal review of contracts. Board-adjacent."],
+  ];
+
+  const vCounts = { sm: 2, md: 3, lg: 4, xl: 6 };
+  volTemplates.slice(0, vCounts[size]).forEach(([name, email, hours, skills, potential, employer, notes]) => {
+    db.run(
+      `INSERT OR IGNORE INTO volunteers (id,org_id,name,email,hours,skills,last_active,convert_potential,employer,notes) VALUES (?,?,?,?,?,?,?,?,?,?)`,
+      [`v_${uuid().slice(0, 8)}`, orgId, name, email, hours, skills, mo(15), potential, employer, notes]
+    );
+  });
+
+  // ── Tasks ─────────────────────────────────────────────────────────────────
+  const taskTemplates = [
+    ["Schedule major donor cultivation calls",    7,  "high",   "donor"],
+    ["Submit pending grant narrative",            14, "high",   "grant"],
+    ["Follow up on LOI status",                   21, "medium", "grant"],
+    ["Prepare board packet — quarterly update",   10, "high",   "board"],
+    ["Re-engage lapsed donors (14+ months)",      5,  "medium", "donor"],
+    ["Volunteer appreciation planning",           30, "low",    "volunteer"],
+  ];
+
+  const tCounts = { sm: 3, md: 4, lg: 5, xl: 6 };
+  taskTemplates.slice(0, tCounts[size]).forEach(([title, daysOut, priority, type]) => {
+    const due = new Date(); due.setDate(due.getDate() + daysOut);
+    db.run(
+      `INSERT OR IGNORE INTO tasks (id,org_id,title,due,priority,type,done) VALUES (?,?,?,?,?,?,0)`,
+      [`t_${uuid().slice(0, 8)}`, orgId, title, due.toISOString().split("T")[0], priority, type]
+    );
+  });
+
+  // ── Financials (last 5 months) ─────────────────────────────────────────
+  const budgetMultiplier = budget === "$2M+" ? 6 : budget === "$500K-$2M" ? 3 : budget === "$100K-$500K" ? 1.5 : 0.6;
+  const base = { ind: 8000, gr: 10000, ev: 2000, oth: 400, prog: 13000, adm: 4000, fund: 2000 };
+  const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+  const now = new Date();
+
+  for (let i = 4; i >= 0; i--) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    const m = months[d.getMonth()];
+    const yr = d.getFullYear();
+    const rand = (n) => Math.round(n * budgetMultiplier * (0.85 + Math.random() * 0.3));
+    db.run(
+      `INSERT OR IGNORE INTO financials (id,org_id,month,year,individual,grants,events,other_revenue,programs,admin,fundraising) VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+      [`fin_${uuid().slice(0,8)}`, orgId, m, yr, rand(base.ind), rand(base.gr), rand(base.ev), rand(base.oth), rand(base.prog), rand(base.adm), rand(base.fund)]
+    );
+  }
+
+  // ── Funds ────────────────────────────────────────────────────────────────
+  const fundBase = Math.round(30000 * budgetMultiplier);
+  [
+    ["General Operating",        Math.round(fundBase * 0.5), 0],
+    ["Restricted Program Fund",  Math.round(fundBase * 0.7), 1],
+    ["Board Designated Reserve", Math.round(fundBase * 0.2), 0],
+  ].forEach(([name, balance, restricted]) => {
+    db.run(
+      `INSERT OR IGNORE INTO funds (id,org_id,name,balance,restricted) VALUES (?,?,?,?,?)`,
+      [`fn_${uuid().slice(0,8)}`, orgId, name, balance, restricted]
+    );
+  });
+}
+
+module.exports = { getDb, query, run, uuid, seedOrgData };

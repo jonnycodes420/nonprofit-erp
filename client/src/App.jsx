@@ -1,69 +1,6 @@
-import { useState, useRef } from "react";
-
-const API = import.meta.env.VITE_API_URL || "http://localhost:3001";
-
-// ── Seed Data ──────────────────────────────────────────────────────────────
-const INIT = {
-  donors: [
-    { id:1, name:"Margaret Chen", email:"m.chen@example.com", phone:"212-555-0101", total:24500, lastGift:"2024-11-15", lastAmount:5000, gifts:8, status:"major", tags:["board-adjacent","arts"], notes:"Prefers phone calls. Interested in youth programming. Has mentioned potentially increasing giving this year.", interactions:[{date:"2024-11-15",type:"gift",note:"Annual major gift $5,000"},{date:"2024-09-10",type:"call",note:"Cultivation call - discussed new mural program"},{date:"2024-06-01",type:"event",note:"Attended spring gala, table host"}] },
-    { id:2, name:"Robert & Lisa Atkinson", email:"ratkinson@example.com", phone:"917-555-0234", total:12000, lastGift:"2025-01-03", lastAmount:3000, gifts:5, status:"mid", tags:["education","recurring"], notes:"Both educators. Very engaged with after-school programs. Anniversary donors — always give in January.", interactions:[{date:"2025-01-03",type:"gift",note:"Annual gift $3,000"},{date:"2024-12-15",type:"email",note:"Year-end appeal response"}] },
-    { id:3, name:"James Okafor", email:"jokafor@example.com", phone:"646-555-0387", total:3200, lastGift:"2023-09-22", lastAmount:500, gifts:4, status:"lapsed", tags:["youth"], notes:"Lapsed 18+ months. Was a regular $500 donor. Life change may have affected giving — worth a personal outreach.", interactions:[{date:"2023-09-22",type:"gift",note:"Gift $500 - last donation"},{date:"2023-03-01",type:"gift",note:"Gift $500"}] },
-    { id:4, name:"Sunrise Foundation", email:"grants@sunrisefdn.org", phone:"212-555-0199", total:75000, lastGift:"2025-03-01", lastAmount:25000, gifts:3, status:"major", tags:["foundation","arts"], notes:"Program officer is Angela Wu. Prefers formal reports. Next grant cycle opens September.", interactions:[{date:"2025-03-01",type:"gift",note:"Annual grant $25,000"},{date:"2025-02-15",type:"meeting",note:"Site visit with Angela Wu"}] },
-    { id:5, name:"Diana Torres", email:"dtorres@example.com", phone:"718-555-0421", total:850, lastGift:"2025-02-14", lastAmount:250, gifts:3, status:"new", tags:["online"], notes:"Online donor, found us through Instagram. Young professional. Good upgrade potential.", interactions:[{date:"2025-02-14",type:"gift",note:"Online gift $250"},{date:"2025-01-20",type:"gift",note:"First gift $350 via Instagram campaign"}] },
-    { id:6, name:"William Park", email:"wpark@example.com", phone:"347-555-0512", total:6700, lastGift:"2024-06-30", lastAmount:1000, gifts:7, status:"mid", tags:["recurring","arts"], notes:"Long-time supporter. Consistent annual donor. Has not yet given this year — approaching 11 months.", interactions:[{date:"2024-06-30",type:"gift",note:"Mid-year gift $1,000"},{date:"2024-01-15",type:"gift",note:"Annual gift $1,000"}] },
-  ],
-  grants: [
-    { id:1, funder:"NEA", program:"Arts Education Initiative", amount:35000, received:35000, status:"active", deadline:"2025-06-30", reportDue:"2025-07-15", officer:"Sarah Kim", notes:"Final report pending. Need program data from Carlos by June 15.", history:["2023: $30,000","2024: $35,000"] },
-    { id:2, funder:"NY Community Trust", program:"Youth Development", amount:50000, received:25000, status:"active", deadline:"2025-12-31", reportDue:"2026-01-15", officer:"Marcus Reid", notes:"Mid-year report submitted. Second disbursement expected Q3.", history:["2024: $40,000","2025: $50,000"] },
-    { id:3, funder:"Rockefeller Brothers Fund", program:"Cultural Innovation", amount:20000, received:0, status:"pending", deadline:"2025-08-01", reportDue:null, officer:"Angela Moore", notes:"LOI submitted March 2025. Full proposal invited — due August 1.", history:["First-time applicant"] },
-    { id:4, funder:"City Council", program:"Cultural Programs FY25", amount:15000, received:15000, status:"closed", deadline:"2024-12-31", reportDue:"2025-02-01", officer:"James Liu", notes:"Completed. FY26 application opens July.", history:["2023: $12,000","2024: $15,000"] },
-    { id:5, funder:"Ford Foundation", program:"Creative Communities", amount:100000, received:0, status:"prospecting", deadline:"2025-09-15", reportDue:null, officer:"Sarah Kim", notes:"Competitive. Need strong theory of change narrative. Consider reaching out to program officer first.", history:["First-time applicant"] },
-  ],
-  volunteers: [
-    { id:1, name:"Priya Nair", email:"pnair@example.com", hours:84, skills:["event coordination","social media"], lastActive:"2025-04-12", donorId:null, convertPotential:"high", employer:"Google", notes:"Very enthusiastic. Has offered to help with gala. Works in tech — capacity likely $500-1000 first gift." },
-    { id:2, name:"Carlos Mendez", email:"cmendez@example.com", hours:210, skills:["teaching","curriculum"], lastActive:"2025-05-01", donorId:null, convertPotential:"high", employer:"NYC DOE", notes:"Most dedicated volunteer. Teaches our after-school program weekly. Deep mission alignment." },
-    { id:3, name:"Sophie Laurent", email:"slaurent@example.com", hours:32, skills:["design","photography"], lastActive:"2025-03-20", donorId:null, convertPotential:"medium", employer:"Freelance", notes:"Provided design work for annual report. Engaged but capacity uncertain." },
-    { id:4, name:"Devon Brooks", email:"dbrooks@example.com", hours:156, skills:["accounting","admin"], lastActive:"2025-04-28", donorId:3, convertPotential:"converted", employer:"Deloitte", notes:"Already a donor. Helps with books quarterly. Strong board candidate." },
-  ],
-  tasks: [
-    { id:1, title:"Call Margaret Chen — major gift conversation", due:"2025-05-23", priority:"high", type:"donor", done:false, donorId:1 },
-    { id:2, title:"Submit NEA final report", due:"2025-07-15", priority:"high", type:"grant", done:false },
-    { id:3, title:"Follow up: Rockefeller LOI status", due:"2025-06-01", priority:"medium", type:"grant", done:false },
-    { id:4, title:"Re-engage James Okafor (lapsed 18mo)", due:"2025-05-28", priority:"medium", type:"donor", done:false, donorId:3 },
-    { id:5, title:"Board packet — Q2 financials", due:"2025-05-30", priority:"high", type:"board", done:false },
-    { id:6, title:"Volunteer appreciation event planning", due:"2025-06-15", priority:"low", type:"volunteer", done:true },
-  ],
-  financials: {
-    revenue: [
-      { month:"Jan", individual:8200, grants:12000, events:0, other:500 },
-      { month:"Feb", individual:5400, grants:0, events:0, other:200 },
-      { month:"Mar", individual:11000, grants:25000, events:4200, other:800 },
-      { month:"Apr", individual:7300, grants:0, events:0, other:300 },
-      { month:"May", individual:9100, grants:0, events:0, other:150 },
-    ],
-    expenses: [
-      { month:"Jan", programs:14000, admin:4200, fundraising:2100 },
-      { month:"Feb", programs:13500, admin:4200, fundraising:1800 },
-      { month:"Mar", programs:15200, admin:4400, fundraising:3200 },
-      { month:"Apr", programs:14800, admin:4200, fundraising:2400 },
-      { month:"May", programs:15100, admin:4300, fundraising:2200 },
-    ],
-    funds: [
-      { name:"General Operating", balance:42000, restricted:false },
-      { name:"NEA Arts Education", balance:35000, restricted:true },
-      { name:"NY Community Trust — Youth", balance:25000, restricted:true },
-      { name:"Gala Reserve", balance:8200, restricted:false },
-    ]
-  },
-  board: [
-    { id:1, name:"Dr. Angela Washington", role:"Chair", employer:"Columbia University", term:"2023-2026", givingLevel:"$10,000", committees:["Executive","Finance"], attendance:92 },
-    { id:2, name:"Marcus Powell", role:"Treasurer", employer:"JPMorgan Chase", term:"2022-2025", givingLevel:"$5,000", committees:["Finance","Audit"], attendance:100 },
-    { id:3, name:"Keisha Brown", role:"Secretary", employer:"Brooklyn Community Foundation", term:"2024-2027", givingLevel:"$2,500", committees:["Programs","DEI"], attendance:83 },
-    { id:4, name:"Tom Ricci", role:"Member", employer:"Ricci Architecture", term:"2023-2026", givingLevel:"$5,000", committees:["Facilities","Executive"], attendance:75 },
-    { id:5, name:"Yun Li", role:"Member", employer:"Goldman Sachs", term:"2024-2027", givingLevel:"$7,500", committees:["Finance","Fundraising"], attendance:92 },
-  ],
-  org: { name:"CREO Arts", mission:"CREO Arts provides transformative arts education to underserved youth in New York City, building creative confidence and academic skills through after-school and summer programs serving 500+ students annually.", programs:["After-School Arts","Summer Intensive","Community Murals","Artist Residencies"], founded:2011, ein:"47-1234567", fiscalYear:"Jan-Dec" }
-};
+import { useState, useEffect, useRef } from "react";
+import { apiFetch, streamAI, adaptData } from "./api";
+import { useAuth } from "./main";
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 const fmt = n => n>=1000?`$${(n/1000).toFixed(n%1000===0?0:1)}k`:`$${n.toLocaleString()}`;
@@ -72,37 +9,7 @@ const daysDiff = d => Math.floor((new Date()-new Date(d))/86400000);
 const daysUntil = d => Math.floor((new Date(d)-new Date())/86400000);
 const SC = { major:"#10b981",mid:"#3b82f6",new:"#8b5cf6",lapsed:"#f59e0b",converted:"#10b981",active:"#10b981",pending:"#3b82f6",prospecting:"#8b5cf6",closed:"#6b7280",high:"#ef4444",medium:"#f59e0b",low:"#6b7280" };
 
-// ── Claude API (via backend) ───────────────────────────────────────────────
-async function askClaude(system, user, onChunk) {
-  const token = localStorage.getItem("npe_token");
-  const res = await fetch(`${API}/ai/stream`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      ...(token && { Authorization: `Bearer ${token}` }),
-    },
-    body: JSON.stringify({ systemPrompt: system, userMessage: user }),
-  });
-  if (!res.ok) throw new Error(`Request failed: ${res.status}`);
-  const reader = res.body.getReader();
-  const dec = new TextDecoder();
-  let full = "";
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    for (const line of dec.decode(value).split("\n")) {
-      if (!line.startsWith("data: ")) continue;
-      const payload = line.slice(6);
-      if (payload === "[DONE]") return full;
-      try {
-        const j = JSON.parse(payload);
-        if (j.text) { full += j.text; onChunk(full); }
-        if (j.error) throw new Error(j.error);
-      } catch {}
-    }
-  }
-  return full;
-}
+const askClaude = (system, user, onChunk) => streamAI(system, user, onChunk);
 
 // ── Org Context Builder ────────────────────────────────────────────────────
 function buildContext(data) {
@@ -830,11 +737,37 @@ const TABS=[
   {id:"tasks",label:"Tasks",icon:"◻"},
 ];
 
-export default function App({ onLogout }) {
+export default function App() {
+  const { auth, logout } = useAuth();
   const [tab,setTab]=useState("dashboard");
-  const [data,setData]=useState(INIT);
+  const [data,setData]=useState(null);
+  const [loading,setLoading]=useState(true);
+  const [loadErr,setLoadErr]=useState("");
   const [showChat,setShowChat]=useState(false);
+
+  useEffect(()=>{
+    (async()=>{
+      try {
+        const [org,donors,grants,volunteers,tasks,board,financials] = await Promise.all([
+          apiFetch("/org"),
+          apiFetch("/donors"),
+          apiFetch("/grants"),
+          apiFetch("/volunteers"),
+          apiFetch("/tasks"),
+          apiFetch("/board"),
+          apiFetch("/financials"),
+        ]);
+        setData(adaptData({org,donors,grants,volunteers,tasks,board,financials}));
+      } catch(e) { setLoadErr(e.message); }
+      setLoading(false);
+    })();
+  },[]);
+
+  if(loading) return <div style={{minHeight:"100vh",background:"#030712",display:"flex",alignItems:"center",justifyContent:"center",color:"#6b7280",fontFamily:"'DM Sans',system-ui,sans-serif",fontSize:14}}>Loading your workspace…</div>;
+  if(loadErr||!data) return <div style={{minHeight:"100vh",background:"#030712",display:"flex",alignItems:"center",justifyContent:"center",color:"#f87171",fontFamily:"'DM Sans',system-ui,sans-serif",fontSize:14}}>Error: {loadErr||"Failed to load data"}</div>;
+
   const tasksDue=data.tasks.filter(t=>!t.done&&t.priority==="high").length;
+  const orgName=auth?.org?.name||data.org?.name||"Mission Suite";
 
   return <div style={{minHeight:"100vh",background:"#030712",color:"#f3f4f6",fontFamily:"'DM Sans',system-ui,sans-serif",display:"flex",flexDirection:"column"}}>
     <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=DM+Serif+Display&display=swap" rel="stylesheet"/>
@@ -842,15 +775,15 @@ export default function App({ onLogout }) {
       <div style={{display:"flex",alignItems:"center",gap:12}}>
         <div style={{width:32,height:32,background:"linear-gradient(135deg,#10b981,#3b82f6)",borderRadius:10,display:"flex",alignItems:"center",justifyContent:"center"}}><span style={{fontSize:16,color:"#fff"}}>◈</span></div>
         <div>
-          <div style={{fontSize:15,fontWeight:800,color:"#f9fafb",letterSpacing:"-0.02em"}}>Mission Suite</div>
-          <div style={{fontSize:10,color:"#6b7280",letterSpacing:"0.06em",textTransform:"uppercase"}}>Nonprofit ERP</div>
+          <div style={{fontSize:15,fontWeight:800,color:"#f9fafb",letterSpacing:"-0.02em"}}>{orgName}</div>
+          <div style={{fontSize:10,color:"#6b7280",letterSpacing:"0.06em",textTransform:"uppercase"}}>Mission Suite</div>
         </div>
       </div>
       <div style={{display:"flex",gap:8,alignItems:"center"}}>
         <button onClick={()=>setShowChat(true)} style={{background:"linear-gradient(135deg,#7c3aed,#3b82f6)",border:"none",borderRadius:12,padding:"9px 18px",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer",display:"flex",alignItems:"center",gap:8,boxShadow:"0 0 20px #7c3aed44"}}>
           <span>✦</span> Ask AI
         </button>
-        <button onClick={onLogout} style={{background:"transparent",border:"1px solid #374151",borderRadius:10,padding:"9px 14px",color:"#6b7280",fontSize:12,cursor:"pointer"}}>
+        <button onClick={logout} style={{background:"transparent",border:"1px solid #374151",borderRadius:10,padding:"9px 14px",color:"#6b7280",fontSize:12,cursor:"pointer"}}>
           Sign out
         </button>
       </div>
