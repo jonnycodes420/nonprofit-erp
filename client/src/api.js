@@ -1,4 +1,4 @@
-export const API = import.meta.env.VITE_API_URL || "http://localhost:3001";
+export const API = import.meta.env.VITE_API_URL || "https://nonprofit-erp-production.up.railway.app";
 
 export const getToken = () => localStorage.getItem("npe_token");
 
