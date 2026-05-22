@@ -25,6 +25,12 @@ app.use((req, res, next) => {
 // ── Async error wrapper ────────────────────────────────────────────────────
 const wrap = fn => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
 
+// ── Admin guard ────────────────────────────────────────────────────────────
+const requireAdmin = (req, res, next) => {
+  if (req.user.role !== "admin") return res.status(403).json({ error: "Admin access required" });
+  next();
+};
+
 // ── Health ─────────────────────────────────────────────────────────────────
 app.get("/health", (req, res) => {
   res.json({ status: "ok", version: "1.0.0", db: dbReady });
@@ -204,7 +210,7 @@ app.patch("/donors/:id/stage", requireAuth, wrap(async (req, res) => {
   res.json({ success: true, stage });
 }));
 
-app.delete("/donors/:id", requireAuth, wrap(async (req, res) => {
+app.delete("/donors/:id", requireAuth, requireAdmin, wrap(async (req, res) => {
   await run("DELETE FROM donors WHERE id = ? AND org_id = ?", [req.params.id, req.user.orgId]);
   res.json({ success: true });
 }));
@@ -448,7 +454,7 @@ app.get("/financials", requireAuth, wrap(async (req, res) => {
   });
 }));
 
-app.post("/financials/month", requireAuth, wrap(async (req, res) => {
+app.post("/financials/month", requireAuth, requireAdmin, wrap(async (req, res) => {
   const { month, year, individual, grants, events, otherRevenue, programs, admin, fundraising } = req.body;
   if (!month || !year) return res.status(400).json({ error: "Month and year required" });
 

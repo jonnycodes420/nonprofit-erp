@@ -286,13 +286,35 @@ Vercel serves `index.html` for all paths (react-router handles client-side routi
 
 ---
 
+## What Was Built (continued)
+
+### PostgreSQL Migration (2026-05-22)
+- Migrated from sql.js (in-memory SQLite) to Supabase Postgres
+- `db.js` rewritten: `pg` Pool, async `query()`/`run()` with `?`→`$N` conversion, idempotent seed with `ON CONFLICT DO NOTHING`
+- `server.js`: all 33 route handlers made async; `datetime('now')`→`NOW()`; financials upsert via `ON CONFLICT (org_id, month, year) DO UPDATE`
+- `DATABASE_URL` set in Railway; data now persists across all deploys
+
+### Donor Profile Editing (2026-05-22)
+- `EditDonorModal` component: edit name, email, phone, tags (comma-separated), notes, and stage in one form
+- "Edit" button added to `DonorDetailModal` header — opens edit modal on top at z-index 400
+- On save: PUT /donors/:id, response adapted back to local shape preserving interactions and lastTouchpoint
+- State updated in-place (no full reload needed)
+
+### Role-Based Access (2026-05-22)
+- **Admin** — full access to everything
+- **Staff** — can view all data, log touchpoints, move stages, add/edit donors and grants; cannot delete donors or edit financial data
+- Backend: `requireAdmin` middleware applied to `DELETE /donors/:id` and `POST /financials/month` — returns 403 for non-admins
+- Frontend: "Delete Donor" button only rendered when `isAdmin=true`; role badge shown in header (purple=admin, grey=staff)
+- Role comes from JWT token (`req.user.role`), set at registration as "admin" for org founders
+
+---
+
 ## What Needs to Be Built Next
 
 ### High priority
-- **Persistent database** — sql.js resets on redeploy. Migrate to PostgreSQL (Railway has a managed Postgres add-on). This is the single biggest production blocker.
 - **Email sending** — Wire up SendGrid or Resend so drafted outreach emails can be sent directly from Steward, not just copied to clipboard.
-- **Donor profile editing** — No in-app way to edit a donor's name, email, phone, or notes after creation. Need an edit form on the detail modal.
 - **Grant report tracking** — Report due dates exist in the schema but there's no dedicated UI for tracking report submissions and attaching content.
+- **Invite users** — Email invitation flow so an ED can add development staff to their org (they'd join as "staff" role).
 
 ### Moves management enhancements
 - **Bulk stage moves** — Select multiple donors and move them all to a new stage at once (useful when onboarding a large existing portfolio).
@@ -309,9 +331,8 @@ Vercel serves `index.html` for all paths (react-router handles client-side routi
 - **Board engagement scoring** — Score each board member on giving, attendance, committee participation, and referrals. Surface who needs attention.
 
 ### Auth & multi-user
-- **Role-based access** — Admin vs. staff vs. read-only. Right now everyone in an org has full access.
-- **Invite users** — Email invitation flow so an ED can add development staff to their org.
 - **Audit log** — Track who created/edited what and when.
+- **Read-only role** — Third tier below staff: can view data but cannot log interactions or edit anything.
 
 ### Infrastructure
 - **File uploads** — Attach grant documents, donor correspondence, and reports to records.

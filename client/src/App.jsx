@@ -329,6 +329,69 @@ function LogTouchpointModal({donor,onSave,onClose}){
   );
 }
 
+function EditDonorModal({donor,onSave,onClose}){
+  const inp={width:"100%",background:"#111827",border:"1px solid #374151",borderRadius:8,padding:"9px 12px",color:"#f3f4f6",fontSize:13,outline:"none",fontFamily:"inherit",boxSizing:"border-box"};
+  const[form,setForm]=useState({
+    name:donor.name||"",email:donor.email||"",phone:donor.phone||"",
+    notes:donor.notes||"",tags:(donor.tags||[]).join(", "),
+    stage:donor.stage||"cultivate",status:donor.status||"new",
+  });
+  const[loading,setLoading]=useState(false);
+  const[err,setErr]=useState("");
+  const set=k=>e=>setForm(p=>({...p,[k]:e.target.value}));
+
+  const save=async()=>{
+    if(!form.name.trim()){setErr("Name is required");return;}
+    setLoading(true);setErr("");
+    try{
+      const tags=form.tags.split(",").map(t=>t.trim()).filter(Boolean);
+      const res=await apiFetch(`/donors/${donor.id}`,{method:"PUT",body:JSON.stringify({...form,tags})});
+      onSave(res);
+    }catch(e){setErr(e.message||"Failed to save");}
+    setLoading(false);
+  };
+
+  return(
+    <div style={{position:"fixed",inset:0,background:"#000c",zIndex:400,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+      <div style={{background:"#0a0f1e",border:"1px solid #1f2937",borderRadius:20,width:"100%",maxWidth:480,padding:28,boxSizing:"border-box"}}>
+        <div style={{fontSize:18,fontWeight:800,color:"#f9fafb",marginBottom:4}}>Edit Donor Profile</div>
+        <div style={{fontSize:12,color:"#6b7280",marginBottom:20}}>{donor.name}</div>
+        <div style={{display:"flex",flexDirection:"column",gap:10}}>
+          {[["name","Full Name","text"],["email","Email","email"],["phone","Phone","tel"]].map(([k,pl,t])=>(
+            <input key={k} type={t} value={form[k]} onChange={set(k)} placeholder={pl} style={inp}/>
+          ))}
+          <div>
+            <div style={{fontSize:11,fontWeight:700,color:"#6b7280",textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:8}}>Stage</div>
+            <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
+              {STAGES.map(s=>(
+                <button key={s.id} onClick={()=>setForm(p=>({...p,stage:s.id}))}
+                  style={{background:form.stage===s.id?s.color+"22":"#111827",border:`1px solid ${form.stage===s.id?s.color:"#374151"}`,borderRadius:7,padding:"5px 11px",color:form.stage===s.id?s.color:"#6b7280",fontSize:12,fontWeight:600,cursor:"pointer"}}>
+                  {s.label}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div>
+            <div style={{fontSize:11,fontWeight:700,color:"#6b7280",textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:6}}>Tags <span style={{fontSize:10,fontWeight:400,textTransform:"none"}}>(comma-separated)</span></div>
+            <input value={form.tags} onChange={set("tags")} placeholder="e.g. board-adjacent, recurring, arts" style={inp}/>
+          </div>
+          <div>
+            <div style={{fontSize:11,fontWeight:700,color:"#6b7280",textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:6}}>Notes</div>
+            <textarea value={form.notes} onChange={set("notes")} rows={3} style={{...inp,resize:"vertical",lineHeight:1.5}}/>
+          </div>
+          {err&&<div style={{color:"#f87171",fontSize:12}}>{err}</div>}
+          <div style={{display:"flex",gap:8,marginTop:4}}>
+            <button onClick={save} disabled={loading} style={{flex:1,background:loading?"#1f2937":"#10b981",border:"none",borderRadius:10,padding:"11px",color:"#fff",fontSize:14,fontWeight:700,cursor:loading?"not-allowed":"pointer"}}>
+              {loading?"Saving…":"Save Changes"}
+            </button>
+            <button onClick={onClose} style={{background:"#374151",border:"none",borderRadius:10,padding:"11px 14px",color:"#9ca3af",fontSize:13,cursor:"pointer"}}>Cancel</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function TouchpointTimeline({interactions}){
   if(!interactions?.length)return<div style={{fontSize:13,color:"#6b7280",textAlign:"center",padding:"16px 0"}}>No touchpoints logged yet.</div>;
   const typeColor={call:"#3b82f6",email:"#8b5cf6",meeting:"#10b981",gift:"#f59e0b",event:"#ec4899",note:"#6b7280"};
@@ -360,7 +423,7 @@ function TouchpointTimeline({interactions}){
   );
 }
 
-function DonorDetailModal({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loadingKey,getAI}){
+function DonorDetailModal({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loadingKey,getAI,isAdmin,onEdit,onDelete}){
   const stage=STAGES.find(s=>s.id===(donor.stage||"cultivate"))||STAGES[2];
   const sc=donorScore(donor);const scoreColor=sc>70?"#10b981":sc>45?"#f59e0b":"#ef4444";
   const urg=moveUrgency(donor);
@@ -376,7 +439,10 @@ function DonorDetailModal({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loa
               <span style={{fontSize:12,color:"#6b7280"}}>{donor.email}</span>
             </div>
           </div>
-          <button onClick={onClose} style={{background:"#1f2937",border:"none",borderRadius:8,padding:"6px 12px",color:"#9ca3af",cursor:"pointer",fontSize:13,flexShrink:0}}>✕</button>
+          <div style={{display:"flex",gap:6,flexShrink:0}}>
+            <button onClick={onEdit} style={{background:"#1f2937",border:"1px solid #374151",borderRadius:8,padding:"6px 12px",color:"#9ca3af",cursor:"pointer",fontSize:13}}>Edit</button>
+            <button onClick={onClose} style={{background:"#1f2937",border:"none",borderRadius:8,padding:"6px 12px",color:"#9ca3af",cursor:"pointer",fontSize:13}}>✕</button>
+          </div>
         </div>
 
         <div style={{marginBottom:16}}>
@@ -415,6 +481,9 @@ function DonorDetailModal({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loa
           </div>
           {["nextmove","outreach","email","callscript"].map(t=>aiMap[`${donor.id}_${t}`]?<AIPanel key={t} text={aiMap[`${donor.id}_${t}`]} onClose={()=>{}}/>:null)}
         </div>
+        {isAdmin&&<div style={{marginTop:14,paddingTop:14,borderTop:"1px solid #1f2937"}}>
+          <button onClick={()=>onDelete(donor.id)} style={{background:"transparent",border:"1px solid #ef444455",borderRadius:8,padding:"7px 14px",color:"#ef4444",fontSize:12,fontWeight:600,cursor:"pointer"}}>Delete Donor</button>
+        </div>}
       </div>
     </div>
   );
@@ -480,10 +549,13 @@ function DonorKanban({donors,onStageChange,onLogTouchpoint,onSelectDonor}){
 
 // ── Donors ─────────────────────────────────────────────────────────────────
 function Donors({data,setData}){
+  const{auth}=useAuth();
+  const isAdmin=auth?.user?.role==="admin";
   const[view,setView]=useState("kanban");
   const[search,setSearch]=useState("");
   const[selected,setSelected]=useState(null);
   const[logTarget,setLogTarget]=useState(null);
+  const[editTarget,setEditTarget]=useState(null);
   const[aiMap,setAiMap]=useState({});const[loadingKey,setLoadingKey]=useState(null);
   const[callList,setCallList]=useState("");const[callLoading,setCallLoading]=useState(false);
   const[showAdd,setShowAdd]=useState(false);const[showImport,setShowImport]=useState(false);
@@ -535,6 +607,31 @@ function Donors({data,setData}){
     }catch(e){console.error(e);}
   };
 
+  const handleEditSaved=(raw)=>{
+    const adapted={
+      id:raw.id,name:raw.name,email:raw.email||"",phone:raw.phone||"",
+      total:raw.total_giving||0,lastGift:raw.last_gift_date||"",
+      lastAmount:raw.last_gift_amount||0,gifts:raw.gift_count||0,
+      status:raw.status,stage:raw.stage||"cultivate",
+      tags:Array.isArray(raw.tags)?raw.tags:JSON.parse(raw.tags||"[]"),
+      notes:raw.notes||"",
+      interactions:selected?.id===raw.id?(selected.interactions||[]):[],
+      lastTouchpoint:selected?.id===raw.id?selected.lastTouchpoint:null,
+    };
+    setData(prev=>({...prev,donors:prev.donors.map(d=>d.id===raw.id?adapted:d)}));
+    if(selected?.id===raw.id)setSelected(adapted);
+    setEditTarget(null);
+  };
+
+  const deleteDonor=async(id)=>{
+    if(!window.confirm("Delete this donor? This cannot be undone."))return;
+    try{
+      await apiFetch(`/donors/${id}`,{method:"DELETE"});
+      setData(prev=>({...prev,donors:prev.donors.filter(d=>d.id!==id)}));
+      setSelected(null);
+    }catch(e){console.error(e);}
+  };
+
   const generateCallList=async()=>{
     setCallLoading(true);setCallList("");
     await askClaude(`You are a chief development officer. Be tactical. Max 200 words.`,
@@ -559,9 +656,11 @@ function Donors({data,setData}){
     <div style={{display:"flex",flexDirection:"column",gap:14}}>
       {showImport&&<DonorImport onClose={()=>setShowImport(false)} onImported={()=>{reloadDonors();setShowImport(false);}}/>}
       {logTarget&&<LogTouchpointModal donor={logTarget} onSave={int=>handleLogged(logTarget,int)} onClose={()=>setLogTarget(null)}/>}
+      {editTarget&&<EditDonorModal donor={editTarget} onSave={handleEditSaved} onClose={()=>setEditTarget(null)}/>}
       {selected&&view==="kanban"&&<DonorDetailModal donor={selected} onClose={()=>setSelected(null)}
         onStageChange={moveToStage} onLogTouchpoint={()=>{setLogTarget(selected);}}
-        aiMap={aiMap} loadingKey={loadingKey} getAI={getAI}/>}
+        aiMap={aiMap} loadingKey={loadingKey} getAI={getAI}
+        isAdmin={isAdmin} onEdit={()=>setEditTarget(selected)} onDelete={deleteDonor}/>}
 
       <div style={{display:"flex",gap:10,flexWrap:"wrap",alignItems:"center"}}>
         <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search donors…" style={{flex:1,minWidth:160,background:"#111827",border:"1px solid #374151",borderRadius:10,padding:"10px 14px",color:"#f3f4f6",fontSize:13,outline:"none"}}/>
@@ -1265,6 +1364,7 @@ export default function App() {
         <button onClick={()=>setShowChat(true)} style={{background:"linear-gradient(135deg,#7c3aed,#3b82f6)",border:"none",borderRadius:12,padding:"9px 18px",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer",display:"flex",alignItems:"center",gap:8,boxShadow:"0 0 20px #7c3aed44"}}>
           <span>✦</span> Ask AI
         </button>
+        <span style={{fontSize:11,fontWeight:700,padding:"4px 10px",borderRadius:99,background:auth?.user?.role==="admin"?"#7c3aed22":"#1f2937",color:auth?.user?.role==="admin"?"#8b5cf6":"#9ca3af",border:`1px solid ${auth?.user?.role==="admin"?"#7c3aed44":"#374151"}`}}>{auth?.user?.role||"staff"}</span>
         <button onClick={logout} style={{background:"transparent",border:"1px solid #374151",borderRadius:10,padding:"9px 14px",color:"#6b7280",fontSize:12,cursor:"pointer"}}>
           Sign out
         </button>
