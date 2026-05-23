@@ -84,6 +84,10 @@ export function adaptData({ org, donors, grants, volunteers, tasks, board, finan
         notes:          d.notes || "",
         lastTouchpoint,
         interactions,
+        wealthScore:     d.wealth_score ?? null,
+        capacityTier:    d.capacity_tier ?? null,
+        scoreConfidence: d.score_confidence ?? null,
+        scoreRationale:  d.score_rationale ?? null,
       };
     }),
     grants: grants.map(g => ({

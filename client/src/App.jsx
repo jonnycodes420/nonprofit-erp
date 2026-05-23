@@ -975,9 +975,28 @@ function TouchpointTimeline({interactions}){
   );
 }
 
+const TIER_COLOR={Micro:"#6b7280",Small:"#3b82f6",Mid:"#10b981",Major:"#8b5cf6",Principal:"#f59e0b"};
+
 function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loadingKey,getAI,isAdmin,onEdit,onDelete,tasks=[],onTaskToggle}){
   const [gifts,setGifts]=useState([]);
   const [giftLoading,setGiftLoading]=useState(true);
+  const [localScore,setLocalScore]=useState(donor.wealthScore??null);
+  const [localTier,setLocalTier]=useState(donor.capacityTier??null);
+  const [localConf,setLocalConf]=useState(donor.scoreConfidence??null);
+  const [localRationale,setLocalRationale]=useState(donor.scoreRationale??null);
+  const [scoreLoading,setScoreLoading]=useState(false);
+
+  const wsc=localScore===null?T.ink3:localScore<=3?"#6b7280":localScore<=5?"#3b82f6":localScore<=7?"#10b981":localScore<=9?"#8b5cf6":"#f59e0b";
+
+  const recalcScore=async()=>{
+    setScoreLoading(true);
+    try{
+      const r=await apiFetch(`/donors/${donor.id}/score`,{method:"POST"});
+      setLocalScore(r.wealthScore);setLocalTier(r.capacityTier);
+      setLocalConf(r.scoreConfidence);setLocalRationale(r.scoreRationale);
+    }catch(e){console.error(e);}
+    setScoreLoading(false);
+  };
   const stage=STAGES.find(s=>s.id===(donor.stage||"cultivate"))||STAGES[2];
   const sc=donorScore(donor);const scoreColor=sc>70?"#10b981":sc>45?"#f59e0b":"#ef4444";
   const urg=moveUrgency(donor);
@@ -1103,6 +1122,36 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
             </div>
             <div style={{marginTop:8,fontSize:11,color:T.ink3,lineHeight:1.5,borderLeft:`2px solid ${stage.color}40`,paddingLeft:8}}>
               {STAGE_ACTION[donor.stage||"cultivate"]}
+            </div>
+          </div>
+
+          {/* Wealth Score */}
+          <div>
+            <div style={{fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.1em",color:T.ink3,marginBottom:8}}>Wealth Score</div>
+            <div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:14,padding:"16px"}}>
+              {localScore!==null?(
+                <>
+                  <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:12}}>
+                    <div style={{textAlign:"center",background:wsc+"15",border:`2px solid ${wsc}40`,borderRadius:12,padding:"10px 14px",minWidth:56,flexShrink:0}}>
+                      <div style={{fontSize:26,fontWeight:800,color:wsc,lineHeight:1,fontFamily:"'DM Serif Display',serif"}}>{localScore}</div>
+                      <div style={{fontSize:9,color:T.ink3,fontWeight:600,marginTop:2}}>/ 10</div>
+                    </div>
+                    <div>
+                      <div style={{display:"flex",gap:5,flexWrap:"wrap",marginBottom:5}}>
+                        <span style={{background:(TIER_COLOR[localTier]||T.ink3)+"22",color:TIER_COLOR[localTier]||T.ink3,borderRadius:99,padding:"2px 9px",fontSize:11,fontWeight:700}}>{localTier}</span>
+                      </div>
+                      <div style={{fontSize:10,color:T.ink3,fontWeight:600}}>{localConf} confidence</div>
+                    </div>
+                  </div>
+                  {localRationale&&<p style={{fontSize:12,color:T.ink3,lineHeight:1.6,margin:"0 0 12px 0",fontStyle:"italic",borderLeft:"2px solid "+T.bg3,paddingLeft:10}}>{localRationale}</p>}
+                  <button onClick={recalcScore} disabled={scoreLoading} style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"6px",color:T.ink3,fontSize:11,fontWeight:600,cursor:"pointer",width:"100%",textAlign:"center"}}>{scoreLoading?"Calculating…":"↻ Recalculate"}</button>
+                </>
+              ):(
+                <div style={{textAlign:"center",padding:"4px 0"}}>
+                  <div style={{fontSize:12,color:T.ink3,marginBottom:10}}>No score yet</div>
+                  <button onClick={recalcScore} disabled={scoreLoading} style={{background:"#10b981",border:"none",borderRadius:8,padding:"8px 16px",color:"#fff",fontSize:12,fontWeight:600,cursor:"pointer"}}>{scoreLoading?"Calculating…":"Calculate Score"}</button>
+                </div>
+              )}
             </div>
           </div>
 

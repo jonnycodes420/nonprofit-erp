@@ -37,6 +37,102 @@ app.get("/health", (req, res) => {
   res.json({ status: "ok", version: "1.1.0", db: dbReady });
 });
 
+// ── Wealth Score ────────────────────────────────────────────────────────────
+async function calcWealthScore(donorId, orgId) {
+  try {
+    const [donorRows, gifts, interactions] = await Promise.all([
+      query("SELECT * FROM donors WHERE id = ? AND org_id = ?", [donorId, orgId]),
+      query("SELECT amount FROM gifts WHERE donor_id = ? ORDER BY date DESC", [donorId]),
+      query("SELECT type, note FROM interactions WHERE donor_id = ? ORDER BY date DESC", [donorId]),
+    ]);
+    if (!donorRows.length) return null;
+    const d = donorRows[0];
+
+    let score = 0;
+    const total = d.total_giving || 0;
+
+    // Lifetime giving (0–3 pts)
+    if      (total >= 100000) score += 3;
+    else if (total >= 50000)  score += 2.75;
+    else if (total >= 25000)  score += 2.5;
+    else if (total >= 10000)  score += 2;
+    else if (total >= 5000)   score += 1.5;
+    else if (total >= 1000)   score += 1;
+    else if (total >= 500)    score += 0.5;
+
+    // Largest single gift (0–2 pts)
+    const maxGift = gifts.length ? Math.max(...gifts.map(g => g.amount)) : 0;
+    if      (maxGift >= 10000) score += 2;
+    else if (maxGift >= 5000)  score += 1.5;
+    else if (maxGift >= 1000)  score += 1;
+    else if (maxGift >= 500)   score += 0.5;
+    else if (maxGift >= 100)   score += 0.25;
+
+    // Gift frequency (0–2 pts)
+    const gc = d.gift_count || 0;
+    if      (gc >= 7) score += 2;
+    else if (gc >= 4) score += 1.5;
+    else if (gc >= 2) score += 1;
+    else if (gc >= 1) score += 0.5;
+    // Recency penalty
+    if (d.last_gift_date) {
+      const daysSince = Math.floor((Date.now() - new Date(d.last_gift_date)) / 86400000);
+      if (daysSince > 730) score -= 0.5;
+    }
+
+    // Average gift size (0–1 pt)
+    const avgGift = gc > 0 ? total / gc : 0;
+    if      (avgGift >= 2500) score += 1;
+    else if (avgGift >= 1000) score += 0.75;
+    else if (avgGift >= 500)  score += 0.5;
+    else if (avgGift >= 100)  score += 0.25;
+
+    // Behavioral signals (0–2 pts)
+    score += Math.min(interactions.length * 0.1, 0.8);
+    const calls = interactions.filter(i => i.type === "call");
+    const answered = calls.filter(i => (i.note || "").toLowerCase().includes("answered: yes"));
+    if (calls.length > 0 && answered.length / calls.length > 0.5) score += 0.5;
+    const eventsAttended = interactions.filter(i => i.type === "event" && (i.note || "").toLowerCase().includes("donor attended: yes"));
+    score += Math.min(eventsAttended.length * 0.15, 0.3);
+    const stageBonus = { steward: 0.4, major: 0.3, pledge: 0.2, cultivate: 0.1, prospect: 0, lapsed: -0.3 };
+    score += stageBonus[d.stage] || 0;
+
+    const finalScore = Math.round(Math.min(10, Math.max(1, score)));
+    const capacityTier = finalScore <= 3 ? "Micro" : finalScore <= 5 ? "Small" : finalScore <= 7 ? "Mid" : finalScore <= 9 ? "Major" : "Principal";
+    const dataPoints = gc + interactions.length;
+    const confidence = dataPoints >= 6 ? "High" : dataPoints >= 3 ? "Medium" : "Low";
+
+    // Claude rationale (2 sentences, non-blocking on failure)
+    const avgGiftAmt = gc > 0 ? Math.round(total / gc) : 0;
+    let rationale = `${d.name} scored ${finalScore}/10 based on ${gc} gift${gc !== 1 ? "s" : ""} totaling $${total.toLocaleString()} and ${interactions.length} recorded touchpoints.`;
+    try {
+      const client = new Anthropic();
+      const msg = await client.messages.create({
+        model: "claude-sonnet-4-6",
+        max_tokens: 130,
+        messages: [{
+          role: "user",
+          content: `Write exactly 2 sentences: first explain why this donor scored ${finalScore}/10 (${capacityTier} tier, ${confidence} confidence) referencing their specific numbers; second, name one concrete action that would raise their score. No labels, no headers.
+
+Data: ${d.name} | Total giving: $${total.toLocaleString()} | ${gc} gifts avg $${avgGiftAmt.toLocaleString()} | Largest gift: $${maxGift.toLocaleString()} | Last gift: ${d.last_gift_date || "none"} | Stage: ${d.stage} | Touchpoints: ${interactions.length}`,
+        }],
+      });
+      rationale = msg.content[0].text;
+    } catch(e) {
+      console.error("Score rationale:", e.message);
+    }
+
+    await run(
+      "UPDATE donors SET wealth_score=?,capacity_tier=?,score_confidence=?,score_last_updated=NOW(),score_rationale=? WHERE id=?",
+      [finalScore, capacityTier, confidence, rationale, donorId]
+    );
+    return { wealthScore: finalScore, capacityTier, scoreConfidence: confidence, scoreRationale: rationale };
+  } catch(e) {
+    console.error("calcWealthScore:", e.message);
+    return null;
+  }
+}
+
 // ── Auth ───────────────────────────────────────────────────────────────────
 app.post("/auth/login", wrap(async (req, res) => {
   const { email, password } = req.body;
@@ -322,6 +418,7 @@ app.patch("/donors/:id/stage", requireAuth, wrap(async (req, res) => {
     [stage, req.params.id, req.user.orgId]
   );
   if (!affected.changes) return res.status(404).json({ error: "Donor not found" });
+  calcWealthScore(req.params.id, req.user.orgId).catch(e => console.error("score recalc:", e.message));
   res.json({ success: true, stage });
 }));
 
@@ -348,6 +445,7 @@ app.post("/donors/:id/interactions", requireAuth, wrap(async (req, res) => {
      date || new Date().toISOString().split("T")[0], req.user.userId]
   );
   const rows = await query("SELECT * FROM interactions WHERE id = ?", [id]);
+  calcWealthScore(req.params.id, req.user.orgId).catch(e => console.error("score recalc:", e.message));
   res.status(201).json(rows[0]);
 }));
 
@@ -390,7 +488,14 @@ app.post("/donors/:id/gifts", requireAuth, wrap(async (req, res) => {
 
   const giftRows  = await query("SELECT * FROM gifts  WHERE id = ?", [giftId]);
   const donorRows = await query("SELECT * FROM donors WHERE id = ?", [req.params.id]);
+  calcWealthScore(req.params.id, req.user.orgId).catch(e => console.error("score recalc:", e.message));
   res.status(201).json({ gift: giftRows[0], donor: donorRows[0] });
+}));
+
+app.post("/donors/:id/score", requireAuth, wrap(async (req, res) => {
+  const result = await calcWealthScore(req.params.id, req.user.orgId);
+  if (!result) return res.status(404).json({ error: "Donor not found" });
+  res.json(result);
 }));
 
 // ── Grants ─────────────────────────────────────────────────────────────────
