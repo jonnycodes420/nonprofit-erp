@@ -1,5 +1,4 @@
 import { useState, useEffect, useRef } from "react";
-import { Routes, Route } from "react-router-dom";
 import { apiFetch, streamAI, adaptData } from "./api";
 import { useAuth } from "./main";
 import Landing from "./pages/Landing";
@@ -1871,12 +1870,7 @@ export default function App() {
   if (typeof window !== 'undefined') {
     console.log('APP LOADED', localStorage.getItem('npe_token'));
   }
-  return (
-    <Routes>
-      <Route path="/" element={<Landing />} />
-      <Route path="/*" element={<AppShell />} />
-    </Routes>
-  );
+  return <AppShell />;
 }
 
 // ── App Shell ──────────────────────────────────────────────────────────────
