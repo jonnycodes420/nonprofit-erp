@@ -252,6 +252,18 @@ async function initSchema() {
       created_at TIMESTAMPTZ DEFAULT NOW(),
       UNIQUE (org_id, year)
     );
+
+    CREATE TABLE IF NOT EXISTS invites (
+      id TEXT PRIMARY KEY,
+      org_id TEXT REFERENCES orgs(id),
+      email TEXT NOT NULL,
+      token TEXT NOT NULL UNIQUE,
+      role TEXT DEFAULT 'staff',
+      invited_by TEXT,
+      accepted_at TIMESTAMPTZ,
+      expires_at TIMESTAMPTZ NOT NULL,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    );
   `);
 }
 

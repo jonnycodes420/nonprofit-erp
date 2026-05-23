@@ -231,6 +231,8 @@ function DailyBriefing({data}) {
 
 // ── Dashboard ──────────────────────────────────────────────────────────────
 function Dashboard({data}) {
+  const h=new Date().getHours();
+  const greeting=h>=5&&h<12?"Good morning,":h<17?"Good afternoon,":"Good evening,";
   const rev=data.financials.revenue; const exp=data.financials.expenses;
   const monthlyRev=rev.map(r=>r.individual+r.grants+r.events+r.other);
   const monthlyExp=exp.map(e=>e.programs+e.admin+e.fundraising);
@@ -244,7 +246,7 @@ function Dashboard({data}) {
   const topDonors=[...data.donors].sort((a,b)=>b.total-a.total).slice(0,3);
 
   return <div style={{display:"flex",flexDirection:"column",gap:16}}>
-    <PageTitle main="Good morning," accent="what needs attention?"/>
+    <PageTitle main={greeting} accent="what needs attention?"/>
     <DailyBriefing data={data}/>
     <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(148px,1fr))",gap:10}}>
       <MetricCard label="YTD Revenue" value={fmt(ytdRev)} sub={`${ytdExp>0?((ytdRev/ytdExp)*100).toFixed(0):0}% expense ratio`} color="#10b981" trend={8}/>
@@ -1905,12 +1907,48 @@ function Settings({auth,logout}) {
   const userName=auth?.user?.name||"User";
   const userEmail=auth?.user?.email||"";
   const userRole=auth?.user?.role||"staff";
+  const isAdmin=userRole==="admin";
   const plan=auth?.org?.plan||"seed";
   const PLANS=[
     {id:"seed",label:"Seed",price:"Free",features:["Up to 50 donors","3 staff seats","AI features","Email campaigns"],current:plan==="seed"},
     {id:"growth",label:"Growth",price:"$99/mo",features:["Unlimited donors","10 staff seats","Priority AI","Advanced analytics","Phone support"],current:plan==="growth"},
     {id:"impact",label:"Impact",price:"$299/mo",features:["Unlimited everything","Unlimited seats","Dedicated success manager","Custom integrations","SLA support"],current:plan==="impact"},
   ];
+
+  const [team,setTeam]=useState([]);
+  const [showInvite,setShowInvite]=useState(false);
+  const [invEmail,setInvEmail]=useState("");
+  const [invRole,setInvRole]=useState("staff");
+  const [inviting,setInviting]=useState(false);
+  const [inviteResult,setInviteResult]=useState(null); // {link,emailSent} or null
+  const [invErr,setInvErr]=useState("");
+  const [copied,setCopied]=useState(false);
+
+  useEffect(()=>{
+    apiFetch("/org/team").then(setTeam).catch(()=>{});
+  },[]);
+
+  async function sendInvite(){
+    if(!invEmail.trim()){setInvErr("Email required");return;}
+    setInviting(true);setInvErr("");
+    try{
+      const r=await apiFetch("/auth/invite",{method:"POST",body:JSON.stringify({email:invEmail.trim(),role:invRole})});
+      setInviteResult({link:r.inviteLink,emailSent:r.emailSent});
+    }catch(e){
+      setInvErr(e.message||"Failed to send invite");
+    }finally{setInviting(false);}
+  }
+
+  function closeInvite(){
+    setShowInvite(false);setInvEmail("");setInvRole("staff");
+    setInviting(false);setInviteResult(null);setInvErr("");setCopied(false);
+  }
+
+  function copyLink(){
+    if(!inviteResult?.link)return;
+    navigator.clipboard.writeText(inviteResult.link).then(()=>{setCopied(true);setTimeout(()=>setCopied(false),2000);});
+  }
+
   return(
     <div style={{display:"flex",flexDirection:"column",gap:20}}>
       <PageTitle main="Workspace" accent="settings."/>
@@ -1956,21 +1994,21 @@ function Settings({auth,logout}) {
       <div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:16,padding:"24px 28px"}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
           <SectionLabel>Team Members</SectionLabel>
-          {userRole==="admin"&&<button style={{background:T.green,border:"none",borderRadius:8,padding:"7px 14px",color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer"}}>+ Invite Staff</button>}
+          {isAdmin&&<button onClick={()=>setShowInvite(true)} style={{background:T.green,border:"none",borderRadius:8,padding:"7px 14px",color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer"}}>+ Invite Staff</button>}
         </div>
-        <div style={{display:"flex",alignItems:"center",gap:12,padding:"12px 0",borderBottom:"1px solid "+T.bg3}}>
-          <div style={{width:36,height:36,borderRadius:"50%",background:T.green+"18",display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,fontWeight:700,color:T.green,flexShrink:0}}>
-            {(userName[0]||"U").toUpperCase()}
+        {team.map((m,i)=>(
+          <div key={m.id} style={{display:"flex",alignItems:"center",gap:12,padding:"12px 0",borderBottom:i<team.length-1?"1px solid "+T.bg3:"none"}}>
+            <div style={{width:36,height:36,borderRadius:"50%",background:T.green+"18",display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,fontWeight:700,color:T.green,flexShrink:0}}>
+              {(m.name?.[0]||"U").toUpperCase()}
+            </div>
+            <div style={{flex:1,minWidth:0}}>
+              <div style={{fontSize:13,fontWeight:600,color:T.ink}}>{m.name}{m.id===auth?.user?.id&&<span style={{fontSize:11,color:T.ink3,marginLeft:6}}>(you)</span>}</div>
+              <div style={{fontSize:11,color:T.ink3,marginTop:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{m.email}</div>
+            </div>
+            <Pill label={m.role} color={m.role==="admin"?T.greenDk:"#6b7280"}/>
           </div>
-          <div style={{flex:1}}>
-            <div style={{fontSize:13,fontWeight:600,color:T.ink}}>{userName}</div>
-            <div style={{fontSize:11,color:T.ink3,marginTop:1}}>{userEmail}</div>
-          </div>
-          <Pill label={userRole} color={userRole==="admin"?T.greenDk:"#6b7280"}/>
-        </div>
-        {userRole==="admin"&&<div style={{marginTop:14,padding:"12px 16px",background:T.bg,borderRadius:10,fontSize:12,color:T.ink3,lineHeight:1.6}}>
-          Staff invite via email is coming soon. Each invited user gets their own login with role-based access control.
-        </div>}
+        ))}
+        {team.length===0&&<div style={{fontSize:13,color:T.ink3}}>Loading…</div>}
       </div>
       {/* Danger zone */}
       <div style={{background:T.white,border:"1px solid #fecaca",borderRadius:16,padding:"24px 28px"}}>
@@ -1979,6 +2017,60 @@ function Settings({auth,logout}) {
           Sign out of Steward
         </button>
       </div>
+
+      {/* Invite modal */}
+      {showInvite&&(
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.45)",zIndex:500,display:"flex",alignItems:"center",justifyContent:"center"}} onClick={e=>{if(e.target===e.currentTarget)closeInvite();}}>
+          <div style={{background:T.white,borderRadius:20,padding:"32px 28px",width:420,maxWidth:"calc(100vw - 32px)",boxShadow:"0 8px 40px rgba(0,0,0,0.16)"}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
+              <div style={{fontSize:17,fontWeight:700,color:T.ink}}>Invite a team member</div>
+              <button onClick={closeInvite} style={{background:"none",border:"none",fontSize:20,cursor:"pointer",color:T.ink3,lineHeight:1}}>×</button>
+            </div>
+
+            {!inviteResult?(
+              <>
+                <div style={{fontSize:12,fontWeight:600,color:T.ink3,marginBottom:4}}>Email address</div>
+                <input value={invEmail} onChange={e=>setInvEmail(e.target.value)}
+                  placeholder="staff@yourorg.org"
+                  style={{width:"100%",boxSizing:"border-box",border:"1px solid "+T.bg3,borderRadius:10,padding:"10px 12px",fontSize:14,color:T.ink,background:T.bg,outline:"none",marginBottom:12}}
+                  onKeyDown={e=>e.key==="Enter"&&sendInvite()}
+                />
+                <div style={{fontSize:12,fontWeight:600,color:T.ink3,marginBottom:4}}>Role</div>
+                <select value={invRole} onChange={e=>setInvRole(e.target.value)}
+                  style={{width:"100%",boxSizing:"border-box",border:"1px solid "+T.bg3,borderRadius:10,padding:"10px 12px",fontSize:14,color:T.ink,background:T.bg,outline:"none",marginBottom:16}}>
+                  <option value="staff">Staff — can view and edit data</option>
+                  <option value="admin">Admin — full access including settings</option>
+                </select>
+                {invErr&&<div style={{marginBottom:12,fontSize:13,color:"#dc2626",background:"#fef2f2",border:"1px solid #fecaca",borderRadius:8,padding:"8px 12px"}}>{invErr}</div>}
+                <div style={{display:"flex",gap:10}}>
+                  <button onClick={closeInvite} style={{flex:1,background:T.bg,border:"1px solid "+T.bg3,borderRadius:10,padding:"10px",color:T.ink2,fontSize:13,fontWeight:600,cursor:"pointer"}}>Cancel</button>
+                  <button onClick={sendInvite} disabled={inviting} style={{flex:2,background:T.green,border:"none",borderRadius:10,padding:"10px",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer",opacity:inviting?0.7:1}}>
+                    {inviting?"Generating invite…":"Generate invite link"}
+                  </button>
+                </div>
+              </>
+            ):(
+              <>
+                <div style={{background:"#f0fdf4",border:"1px solid #bbf7d0",borderRadius:12,padding:"14px 16px",marginBottom:16}}>
+                  <div style={{fontSize:13,fontWeight:700,color:"#166534",marginBottom:4}}>
+                    {inviteResult.emailSent?"Invite sent! You can also share the link below:":"Share this invite link:"}
+                  </div>
+                  <div style={{fontSize:12,color:"#15803d",wordBreak:"break-all",lineHeight:1.5}}>{inviteResult.link}</div>
+                </div>
+                {!inviteResult.emailSent&&<div style={{fontSize:12,color:T.ink3,marginBottom:14,lineHeight:1.5}}>
+                  SMTP not configured — copy and share this link directly. It expires in 7 days.
+                </div>}
+                <div style={{display:"flex",gap:10}}>
+                  <button onClick={copyLink} style={{flex:1,background:copied?T.green:T.bg,border:"1px solid "+(copied?T.green:T.bg3),borderRadius:10,padding:"10px",color:copied?"#fff":T.ink2,fontSize:13,fontWeight:600,cursor:"pointer",transition:"all 0.15s"}}>
+                    {copied?"Copied!":"Copy link"}
+                  </button>
+                  <button onClick={closeInvite} style={{flex:1,background:T.green,border:"none",borderRadius:10,padding:"10px",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer"}}>Done</button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

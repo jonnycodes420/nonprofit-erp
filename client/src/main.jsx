@@ -5,6 +5,7 @@ import { apiFetch } from "./api";
 import LoginPage from "./pages/LoginPage";
 import SignupPage from "./pages/SignupPage";
 import WelcomePage from "./pages/WelcomePage";
+import InvitePage from "./pages/InvitePage";
 import App from "./App";
 import Landing from "./pages/Landing";
 
@@ -71,6 +72,7 @@ function Root() {
           <Route path="/signup"    element={<PublicOnly><SignupPage /></PublicOnly>} />
           <Route path="/welcome"   element={<RequireAuth><WelcomePage /></RequireAuth>} />
           <Route path="/dashboard" element={<RequireOnboarded><App /></RequireOnboarded>} />
+          <Route path="/invite/:token" element={<InvitePage />} />
           <Route path="*"          element={<Navigate to="/" replace />} />
         </Routes>
       </BrowserRouter>

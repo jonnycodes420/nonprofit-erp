@@ -108,6 +108,119 @@ app.get("/org", requireAuth, wrap(async (req, res) => {
   res.json(orgs[0]);
 }));
 
+// ── Team ───────────────────────────────────────────────────────────────────
+app.get("/org/team", requireAuth, wrap(async (req, res) => {
+  const members = await query(
+    "SELECT id, email, name, role, created_at FROM users WHERE org_id = ? ORDER BY created_at ASC",
+    [req.user.orgId]
+  );
+  res.json(members);
+}));
+
+// ── Invite ─────────────────────────────────────────────────────────────────
+app.post("/auth/invite", requireAuth, requireAdmin, wrap(async (req, res) => {
+  const { email, role } = req.body;
+  if (!email) return res.status(400).json({ error: "Email required" });
+  const validRole = role === "admin" ? "admin" : "staff";
+
+  const existing = await query("SELECT id FROM users WHERE email = ?", [email.toLowerCase()]);
+  if (existing.length) return res.status(409).json({ error: "A user with that email already exists" });
+
+  const token = uuid().replace(/-/g, "") + uuid().replace(/-/g, "");
+  const id = "inv_" + uuid().slice(0, 8);
+  const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+
+  await run(
+    `INSERT INTO invites (id, org_id, email, token, role, invited_by, expires_at)
+     VALUES (?,?,?,?,?,?,?)`,
+    [id, req.user.orgId, email.toLowerCase(), token, validRole, req.user.userId, expiresAt]
+  );
+
+  const FRONTEND_URL = process.env.FRONTEND_URL || "https://client-five-tau-13.vercel.app";
+  const inviteLink = `${FRONTEND_URL}/invite/${token}`;
+
+  const orgs = await query("SELECT * FROM orgs WHERE id = ?", [req.user.orgId]);
+  const org = orgs[0];
+
+  // Attempt to send via org SMTP if configured
+  let emailSent = false;
+  if (org.smtp_host && org.smtp_user && org.smtp_pass) {
+    try {
+      const transporter = nodemailer.createTransport({
+        host: org.smtp_host,
+        port: org.smtp_port || 587,
+        secure: (org.smtp_port || 587) === 465,
+        auth: { user: org.smtp_user, pass: org.smtp_pass },
+      });
+      await transporter.sendMail({
+        from: org.smtp_from || org.smtp_user,
+        to: email,
+        subject: `You've been invited to join ${org.name} on Steward`,
+        html: `<p>You've been invited to join <strong>${org.name}</strong> on Steward as a <strong>${validRole}</strong>.</p>
+               <p><a href="${inviteLink}" style="background:#10b981;color:#fff;padding:10px 20px;border-radius:8px;text-decoration:none;font-weight:bold;display:inline-block;margin:16px 0">Accept Invitation</a></p>
+               <p>This link expires in 7 days.</p>`,
+        text: `You've been invited to join ${org.name} on Steward as a ${validRole}.\n\nAccept your invitation: ${inviteLink}\n\nThis link expires in 7 days.`,
+      });
+      emailSent = true;
+    } catch (err) {
+      console.error("Invite email send failed:", err.message);
+    }
+  }
+
+  res.json({ success: true, inviteLink, emailSent });
+}));
+
+app.get("/auth/invite/:token", wrap(async (req, res) => {
+  const rows = await query(
+    `SELECT i.*, o.name as org_name FROM invites i
+     JOIN orgs o ON o.id = i.org_id
+     WHERE i.token = ?`,
+    [req.params.token]
+  );
+  if (!rows.length) return res.status(404).json({ error: "Invite not found or already used" });
+  const invite = rows[0];
+  if (invite.accepted_at) return res.status(410).json({ error: "This invite has already been accepted" });
+  if (new Date(invite.expires_at) < new Date()) return res.status(410).json({ error: "This invite has expired" });
+  res.json({ email: invite.email, orgName: invite.org_name, role: invite.role });
+}));
+
+app.post("/auth/invite/accept", wrap(async (req, res) => {
+  const { token, name, password } = req.body;
+  if (!token || !name || !password) return res.status(400).json({ error: "token, name, and password required" });
+  if (password.length < 8) return res.status(400).json({ error: "Password must be at least 8 characters" });
+
+  const rows = await query(
+    `SELECT i.*, o.onboarding_complete FROM invites i
+     JOIN orgs o ON o.id = i.org_id
+     WHERE i.token = ?`,
+    [token]
+  );
+  if (!rows.length) return res.status(404).json({ error: "Invite not found" });
+  const invite = rows[0];
+  if (invite.accepted_at) return res.status(410).json({ error: "This invite has already been accepted" });
+  if (new Date(invite.expires_at) < new Date()) return res.status(410).json({ error: "This invite has expired" });
+
+  const existing = await query("SELECT id FROM users WHERE email = ?", [invite.email]);
+  if (existing.length) return res.status(409).json({ error: "An account with this email already exists" });
+
+  const userId = "user_" + uuid().slice(0, 8);
+  const hash = bcrypt.hashSync(password, 12);
+  await run(
+    "INSERT INTO users (id, org_id, email, password_hash, name, role) VALUES (?,?,?,?,?,?)",
+    [userId, invite.org_id, invite.email, hash, name, invite.role]
+  );
+  await run("UPDATE invites SET accepted_at = NOW() WHERE id = ?", [invite.id]);
+
+  const orgs = await query("SELECT * FROM orgs WHERE id = ?", [invite.org_id]);
+  const org = orgs[0];
+  const jwtToken = signToken({ userId, orgId: invite.org_id, email: invite.email, role: invite.role });
+  res.status(201).json({
+    token: jwtToken,
+    user: { id: userId, email: invite.email, name, role: invite.role },
+    org: { ...org, onboarding_complete: org.onboarding_complete ?? 1 },
+  });
+}));
+
 // ── Donors ─────────────────────────────────────────────────────────────────
 app.get("/donors", requireAuth, wrap(async (req, res) => {
   const donors = await query(
