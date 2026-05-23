@@ -423,13 +423,20 @@ function moveUrgency(d){
 
 function LogTouchpointModal({donor,onSave,onClose}){
   const[type,setType]=useState("call");const[note,setNote]=useState("");
+  const[amount,setAmount]=useState("");
   const[date,setDate]=useState(new Date().toISOString().split("T")[0]);
   const[loading,setLoading]=useState(false);
   const types=["call","email","meeting","event","gift","note"];
   const save=async()=>{
     if(!note.trim())return;setLoading(true);
-    try{await apiFetch(`/donors/${donor.id}/interactions`,{method:"POST",body:JSON.stringify({type,note,date})});onSave({type,note,date});}
-    catch(e){console.error(e);}setLoading(false);
+    try{
+      await apiFetch(`/donors/${donor.id}/interactions`,{method:"POST",body:JSON.stringify({type,note,date})});
+      const giftAmt=parseFloat(String(amount).replace(/[$,]/g,""))||0;
+      if(type==="gift"&&giftAmt>0){
+        await apiFetch(`/donors/${donor.id}/gifts`,{method:"POST",body:JSON.stringify({amount:giftAmt,date,notes:note})});
+      }
+      onSave({type,note,date,amount:giftAmt});
+    }catch(e){console.error(e);}setLoading(false);
   };
   const inp={width:"100%",background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"9px 12px",color:T.ink,fontSize:13,outline:"none",fontFamily:"inherit",boxSizing:"border-box"};
   return(
@@ -441,6 +448,7 @@ function LogTouchpointModal({donor,onSave,onClose}){
           {types.map(t=><button key={t} onClick={()=>setType(t)} style={{background:type===t?"#10b981":T.bg2,border:`1px solid ${type===t?"#10b981":T.bg3}`,borderRadius:7,padding:"5px 11px",color:type===t?"#fff":T.ink3,fontSize:12,fontWeight:600,cursor:"pointer",textTransform:"capitalize"}}>{t}</button>)}
         </div>
         <input type="date" value={date} onChange={e=>setDate(e.target.value)} style={{...inp,marginBottom:10}}/>
+        {type==="gift"&&<input type="text" value={amount} onChange={e=>setAmount(e.target.value)} placeholder="Gift amount (e.g. 500)" style={{...inp,marginBottom:10}}/>}
         <textarea value={note} onChange={e=>setNote(e.target.value)} placeholder="What happened? What was discussed?" rows={3} style={{...inp,resize:"vertical",lineHeight:1.5,marginBottom:14}}/>
         <div style={{display:"flex",gap:8}}>
           <button onClick={save} disabled={loading||!note.trim()} style={{flex:1,background:note.trim()?"#10b981":T.bg2,border:"none",borderRadius:10,padding:"11px",color:"#fff",fontSize:14,fontWeight:700,cursor:note.trim()?"pointer":"not-allowed"}}>{loading?"Saving…":"Save Touchpoint"}</button>
@@ -552,13 +560,22 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
   const sc=donorScore(donor);const scoreColor=sc>70?"#10b981":sc>45?"#f59e0b":"#ef4444";
   const urg=moveUrgency(donor);
 
+  // Re-fetch gifts whenever a new interaction is logged (catches gift type interactions)
+  const interactionCount=donor.interactions?.length||0;
   useEffect(()=>{
     setGiftLoading(true);
     apiFetch(`/donors/${donor.id}`).then(raw=>{
       setGifts((raw.gifts||[]).map(g=>({amount:g.amount||0,date:g.date||g.created_at?.split("T")[0]})));
     }).catch(()=>{}).finally(()=>setGiftLoading(false));
+  },[donor.id,interactionCount]);
+
+  useEffect(()=>{
     if(!aiMap[`${donor.id}_nextmove`])getAI(donor,"nextmove");
   },[donor.id]);
+
+  // Derive last gift from actual gift records; falls back to donor.lastAmount only if no records
+  const sortedGifts=[...gifts].sort((a,b)=>new Date(b.date)-new Date(a.date));
+  const lastGiftDisplay=giftLoading?"…":sortedGifts.length>0?fmtFull(sortedGifts[0].amount):fmtFull(donor.lastAmount);
 
   return(
     <div className="fade-in" style={{position:"fixed",inset:0,background:T.bg,zIndex:200,display:"flex",flexDirection:"column",overflow:"hidden"}}>
@@ -588,7 +605,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
 
           {/* Stats row */}
           <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10}}>
-            {[["Lifetime",fmtFull(donor.total),T.ink],["Last Gift",fmtFull(donor.lastAmount),"#10b981"],["Contact",`${urg.days}d ago`,urg.urgencyColor],["Score",`${sc}/99`,scoreColor]].map(([l,v,c])=>(
+            {[["Lifetime",fmtFull(donor.total),T.ink],["Last Gift",lastGiftDisplay,"#10b981"],["Contact",`${urg.days}d ago`,urg.urgencyColor],["Score",`${sc}/99`,scoreColor]].map(([l,v,c])=>(
               <div key={l} style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:12,padding:"12px 14px"}}>
                 <div style={{fontSize:9,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.1em",color:T.ink3,marginBottom:4}}>{l}</div>
                 <div style={{fontSize:20,fontWeight:800,color:c,fontFamily:"'DM Serif Display',serif",lineHeight:1.1}}>{v}</div>
@@ -791,6 +808,7 @@ function Donors({data,setData}){
     setData(prev=>({...prev,donors:prev.donors.map(d=>d.id===donor.id?updated:d)}));
     if(selected?.id===donor.id)setSelected(updated);
     setLogTarget(null);
+    if(interaction.type==="gift"&&interaction.amount>0)reloadDonors();
   };
 
   const getAI=async(donor,type)=>{
@@ -1402,7 +1420,10 @@ function DonorImport({ onClose, onImported }) {
     const d = {};
     Object.entries(mapping).forEach(([h, field]) => { if (field) d[field] = row[h]; });
     if (d.total) d.total = parseFloat(String(d.total).replace(/[$,]/g, "")) || 0;
-    if (d.lastAmount) d.lastAmount = parseFloat(String(d.lastAmount).replace(/[$,]/g, "")) || 0;
+    if (d.lastAmount) {
+      const s = String(d.lastAmount);
+      d.lastAmount = /^\d{4}[-\/]\d{2}/.test(s) ? 0 : parseFloat(s.replace(/[$,]/g,"")) || 0;
+    }
     if (d.gifts) d.gifts = parseInt(d.gifts) || 1;
     if (!d.stage) d.stage = inferStage(d.total, d.lastGift);
     return d;

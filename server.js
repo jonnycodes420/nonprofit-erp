@@ -284,7 +284,8 @@ app.post("/donors/import", requireAuth, wrap(async (req, res) => {
        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       [id, req.user.orgId, d.name, d.email || "", d.phone || "",
        d.status || "new", d.stage || "prospect",
-       parseInt(d.total) || 0, parseInt(d.lastAmount) || 0,
+       parseInt(d.total) || 0,
+       (/^\d{4}[-/]\d{2}/.test(String(d.lastAmount||"")) ? 0 : parseInt(d.lastAmount)||0),
        d.lastGift || today, parseInt(d.gifts) || (d.total ? 1 : 0),
        JSON.stringify(Array.isArray(d.tags) ? d.tags : []), d.notes || ""]
     );
