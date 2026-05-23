@@ -655,67 +655,103 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
 }
 
 function DonorKanban({donors,onStageChange,onLogTouchpoint,onSelectDonor}){
-  const[draggingId,setDraggingId]=useState(null);const[dragOver,setDragOver]=useState(null);
+  const[draggingId,setDraggingId]=useState(null);
+  const[dragOver,setDragOver]=useState(null);
+  const anyDragging=draggingId!==null;
   const byStage=sid=>donors.filter(d=>(d.stage||"cultivate")===sid).sort((a,b)=>b.total-a.total);
   return(
-    <div style={{display:"flex",gap:8,paddingBottom:16,minHeight:480,alignItems:"flex-start",width:"100%"}}>
+    <div style={{display:"grid",gridTemplateColumns:"repeat(6,1fr)",gap:8,minHeight:"calc(100vh - 260px)",alignItems:"flex-start",width:"100%"}}>
       {STAGES.map(stage=>{
         const cols=byStage(stage.id);
         const total=cols.reduce((s,d)=>s+d.total,0);
         const isOver=dragOver===stage.id;
         return(
-          <div key={stage.id} style={{flex:"1 1 170px",minWidth:0,display:"flex",flexDirection:"column",gap:6}}
+          <div key={stage.id} style={{display:"flex",flexDirection:"column",gap:6}}
             onDragOver={e=>{e.preventDefault();setDragOver(stage.id);}}
             onDragLeave={e=>{if(!e.currentTarget.contains(e.relatedTarget))setDragOver(null);}}
             onDrop={e=>{e.preventDefault();const id=e.dataTransfer.getData("donorId");if(id)onStageChange(id,stage.id);setDragOver(null);}}>
+
             {/* Column header */}
-            <div style={{background:isOver?stage.color+"18":T.white,border:`1px solid ${isOver?stage.color+"60":T.bg2}`,borderRadius:10,padding:"10px 12px",transition:"all 0.15s",borderTop:`3px solid ${stage.color}`}}>
-              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:2}}>
-                <span style={{fontSize:11,fontWeight:800,color:stage.color,letterSpacing:"0.04em",textTransform:"uppercase"}}>{stage.label}</span>
-                <span style={{background:stage.color+"20",color:stage.color,fontSize:10,fontWeight:800,borderRadius:99,padding:"2px 7px",border:`1px solid ${stage.color}30`}}>{cols.length}</span>
+            <div style={{
+              background:isOver?stage.color+"10":T.white,
+              border:`1px solid ${isOver?stage.color+"50":T.bg2}`,
+              borderTop:`3px solid ${stage.color}`,
+              borderRadius:10,padding:"10px 12px 9px",
+              transition:"background 0.12s,border-color 0.12s",
+            }}>
+              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:4}}>
+                <span style={{fontSize:9,fontWeight:800,color:T.ink3,letterSpacing:"0.1em",textTransform:"uppercase"}}>{stage.label}</span>
+                <span style={{background:stage.color+"20",color:stage.color,fontSize:10,fontWeight:800,borderRadius:99,padding:"1px 7px",border:`1px solid ${stage.color}28`,lineHeight:"16px"}}>{cols.length}</span>
               </div>
-              <div style={{fontSize:10,color:T.bg3}}>{total>0?fmt(total)+" pipeline":stage.hint}</div>
+              <div style={{fontSize:13,fontWeight:700,color:total>0?T.ink:T.ink3,fontFamily:"'DM Serif Display',serif",letterSpacing:"-0.01em"}}>
+                {total>0?fmt(total):"—"}
+              </div>
             </div>
-            {/* Cards */}
-            <div style={{display:"flex",flexDirection:"column",gap:6,minHeight:60,border:`2px dashed ${isOver?stage.color+"40":"transparent"}`,borderRadius:10,padding:isOver?3:0,transition:"all 0.15s"}}>
+
+            {/* Drop zone + cards */}
+            <div style={{
+              display:"flex",flexDirection:"column",gap:6,flex:1,
+              borderRadius:10,
+              border:`2px dashed ${isOver?stage.color+"45":"transparent"}`,
+              background:isOver?stage.color+"05":"transparent",
+              padding:isOver?3:0,
+              transition:"border-color 0.12s,background 0.12s",
+              minHeight:anyDragging?80:0,
+            }}>
               {cols.map(d=>{
-                const urg=moveUrgency(d);const sc=donorScore(d);
-                const isDragging=draggingId===d.id;
-                const urgBg={critical:"#ef444408",due:"#f59e0b06",ok:"transparent"}[urg.level];
-                const urgBorder={critical:"#ef444430",due:"#f59e0b30",ok:"transparent"}[urg.level];
+                const urg=moveUrgency(d);
+                const sc=donorScore(d);
+                const thisIsDragging=draggingId===d.id;
+                const urgBg={critical:"#ef444407",due:"#f59e0b05",ok:"transparent"}[urg.level];
+                const urgBorder={critical:"#ef444428",due:"#f59e0b28",ok:T.bg2}[urg.level];
                 const scColor=sc>70?"#10b981":sc>45?"#f59e0b":"#ef4444";
                 return(
                   <div key={d.id} draggable
                     onDragStart={e=>{e.dataTransfer.setData("donorId",d.id);setDraggingId(d.id);}}
                     onDragEnd={()=>{setDraggingId(null);setDragOver(null);}}
-                    style={{border:`1px solid ${isDragging?T.bg3:urgBorder||T.bg2}`,borderRadius:10,padding:"10px 11px",cursor:"grab",opacity:isDragging?0.3:1,transition:"opacity 0.15s,border-color 0.15s",userSelect:"none",background:urgBg||T.white}}>
-                    {/* Name + score badge */}
-                    <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",gap:4,marginBottom:5}}>
+                    style={{
+                      border:`1px solid ${thisIsDragging?"transparent":urgBorder}`,
+                      borderRadius:10,padding:"13px 12px 10px",
+                      cursor:"grab",opacity:thisIsDragging?0.2:1,
+                      transition:"opacity 0.12s,box-shadow 0.12s",
+                      userSelect:"none",
+                      background:thisIsDragging?"transparent":urgBg||T.white,
+                      boxShadow:thisIsDragging?"none":"0 1px 2px rgba(0,0,0,0.05)",
+                    }}>
+                    {/* Name row + score */}
+                    <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",gap:6,marginBottom:5}}>
                       <div style={{flex:1,minWidth:0}}>
-                        <div style={{fontSize:12,fontWeight:700,color:T.ink,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{d.name}</div>
-                        <div style={{fontSize:11,color:T.ink3,marginTop:1,fontWeight:600}}>{fmt(d.total)}</div>
+                        <div style={{fontSize:13,fontWeight:700,color:T.ink,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",letterSpacing:"-0.01em"}}>{d.name}</div>
+                        <div style={{fontSize:12,color:T.green,marginTop:2,fontWeight:700}}>{fmt(d.total)}</div>
                       </div>
-                      <div style={{background:scColor+"18",border:`1px solid ${scColor}40`,borderRadius:6,padding:"2px 6px",flexShrink:0,textAlign:"center"}}>
-                        <div style={{fontSize:12,fontWeight:800,color:scColor,lineHeight:1}}>{sc}</div>
-                        <div style={{fontSize:8,color:scColor,lineHeight:1.2,marginTop:1}}>score</div>
+                      <div style={{background:scColor+"15",border:`1px solid ${scColor}30`,borderRadius:6,padding:"3px 6px",flexShrink:0,textAlign:"center",minWidth:34}}>
+                        <div style={{fontSize:13,fontWeight:800,color:scColor,lineHeight:"1"}}>{sc}</div>
+                        <div style={{fontSize:8,color:scColor,lineHeight:"1.3",marginTop:1,letterSpacing:"0.05em",textTransform:"uppercase"}}>scr</div>
                       </div>
                     </div>
-                    {/* Urgency row */}
-                    <div style={{display:"flex",alignItems:"center",gap:5,marginBottom:6}}>
-                      <div style={{width:7,height:7,borderRadius:"50%",background:urg.urgencyColor,flexShrink:0}}/>
+                    {/* Urgency */}
+                    <div style={{display:"flex",alignItems:"center",gap:5,marginBottom:8}}>
+                      <div style={{width:6,height:6,borderRadius:"50%",background:urg.urgencyColor,flexShrink:0}}/>
                       <span style={{fontSize:10,color:urg.urgencyColor,fontWeight:600}}>{urg.days}d since contact</span>
                     </div>
+                    {/* Buttons */}
                     <div style={{display:"flex",gap:4}}>
-                      <button onClick={e=>{e.stopPropagation();onLogTouchpoint(d);}} style={{flex:1,background:T.bg2,border:"1px solid "+T.bg3,borderRadius:6,padding:"5px 0",color:T.ink3,fontSize:11,fontWeight:600,cursor:"pointer"}}>+ Log</button>
-                      <button onClick={e=>{e.stopPropagation();onSelectDonor(d);}} style={{flex:1,background:T.bg2,border:"1px solid "+T.bg3,borderRadius:6,padding:"5px 0",color:T.ink3,fontSize:11,fontWeight:600,cursor:"pointer"}}>View →</button>
+                      <button onClick={e=>{e.stopPropagation();onLogTouchpoint(d);}}
+                        style={{flex:1,background:T.bg,border:"1px solid "+T.bg3,borderRadius:6,padding:"5px 0",color:T.ink3,fontSize:10,fontWeight:600,cursor:"pointer"}}>
+                        + Log
+                      </button>
+                      <button onClick={e=>{e.stopPropagation();onSelectDonor(d);}}
+                        style={{flex:1,background:T.bg,border:"1px solid "+T.bg3,borderRadius:6,padding:"5px 0",color:T.ink3,fontSize:10,fontWeight:600,cursor:"pointer"}}>
+                        View →
+                      </button>
                     </div>
                   </div>
                 );
               })}
-              {cols.length===0&&!isOver&&<div style={{textAlign:"center",padding:"28px 12px",color:T.bg3,fontSize:12,border:"1px dashed "+T.bg3,borderRadius:10,marginTop:2}}>
-                <div style={{fontSize:20,marginBottom:6,opacity:0.5}}>{stage.icon||"◇"}</div>
-                Drop here
-              </div>}
+              {/* Only show drop hint when actively dragging over an empty column */}
+              {isOver&&cols.length===0&&(
+                <div style={{padding:"20px 8px",textAlign:"center",color:stage.color,fontSize:11,fontWeight:600,opacity:0.75}}>Drop here</div>
+              )}
             </div>
           </div>
         );
@@ -2320,7 +2356,7 @@ function AppShell() {
       })}
     </div>
 
-    <div style={{flex:1,padding:"28px 24px",maxWidth:1060,width:"100%",margin:"0 auto",boxSizing:"border-box"}}>
+    <div style={{flex:1,padding:"28px 24px",maxWidth:1400,width:"100%",margin:"0 auto",boxSizing:"border-box"}}>
       {tab==="dashboard"&&<Dashboard data={data}/>}
       {tab==="donors"&&<Donors data={data} setData={setData}/>}
       {tab==="grants"&&<Grants data={data} setData={setData}/>}
