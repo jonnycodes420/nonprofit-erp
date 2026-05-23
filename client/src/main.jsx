@@ -53,7 +53,6 @@ function RequireAuth({ children }) {
 function RequireOnboarded({ children }) {
   const { auth } = useAuth();
   if (!auth) return <Navigate to="/login" replace />;
-  if (!auth.org?.onboarding_complete && auth.org?.onboarding_complete !== 1) return <Navigate to="/welcome" replace />;
   return children;
 }
 
