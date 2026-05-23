@@ -21,6 +21,8 @@ export default function LoginPage() {
       });
       if (!res.ok) { const e = await res.json(); throw new Error(e.error || "Login failed"); }
       const data = await res.json();
+      console.log("LOGIN DATA:", JSON.stringify(data));
+      console.log("ONBOARDING:", data.org?.onboarding_complete);
       login(data);
       navigate(data.org?.onboarding_complete ? "/dashboard" : "/welcome", { replace: true });
     } catch (err) {
