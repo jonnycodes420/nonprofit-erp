@@ -1888,6 +1888,90 @@ function AnnualFund({data}) {
   </div>;
 }
 
+// ── Settings ───────────────────────────────────────────────────────────────
+function Settings({auth,logout}) {
+  const orgName=auth?.org?.name||"Your Organization";
+  const userName=auth?.user?.name||"User";
+  const userEmail=auth?.user?.email||"";
+  const userRole=auth?.user?.role||"staff";
+  const plan=auth?.org?.plan||"seed";
+  const PLANS=[
+    {id:"seed",label:"Seed",price:"Free",features:["Up to 50 donors","3 staff seats","AI features","Email campaigns"],current:plan==="seed"},
+    {id:"growth",label:"Growth",price:"$99/mo",features:["Unlimited donors","10 staff seats","Priority AI","Advanced analytics","Phone support"],current:plan==="growth"},
+    {id:"impact",label:"Impact",price:"$299/mo",features:["Unlimited everything","Unlimited seats","Dedicated success manager","Custom integrations","SLA support"],current:plan==="impact"},
+  ];
+  return(
+    <div style={{display:"flex",flexDirection:"column",gap:20}}>
+      <PageTitle main="Workspace" accent="settings."/>
+      {/* Account */}
+      <div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:16,padding:"24px 28px"}}>
+        <SectionLabel>Your Account</SectionLabel>
+        <div style={{display:"flex",alignItems:"center",gap:16,marginBottom:20}}>
+          <div style={{width:52,height:52,borderRadius:"50%",background:T.green+"18",border:"2px solid "+T.green+"40",display:"flex",alignItems:"center",justifyContent:"center",fontSize:20,fontWeight:700,color:T.green,flexShrink:0}}>
+            {(userName[0]||"U").toUpperCase()}
+          </div>
+          <div>
+            <div style={{fontSize:18,fontWeight:700,color:T.ink,letterSpacing:"-0.01em"}}>{userName}</div>
+            <div style={{fontSize:13,color:T.ink3,marginTop:2}}>{userEmail}</div>
+            <div style={{marginTop:6}}><Pill label={userRole} color={userRole==="admin"?T.greenDk:"#6b7280"}/></div>
+          </div>
+        </div>
+        <div style={{background:T.bg,borderRadius:10,padding:"14px 16px"}}>
+          <div style={{fontSize:11,fontWeight:700,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:6}}>Organization</div>
+          <div style={{fontSize:15,fontWeight:700,color:T.ink}}>{orgName}</div>
+          {auth?.org?.mission&&<div style={{fontSize:12,color:T.ink3,marginTop:4,lineHeight:1.5}}>{auth.org.mission}</div>}
+        </div>
+      </div>
+      {/* Billing */}
+      <div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:16,padding:"24px 28px"}}>
+        <SectionLabel>Billing & Plan</SectionLabel>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(180px,1fr))",gap:12}}>
+          {PLANS.map(p=>(
+            <div key={p.id} style={{border:`2px solid ${p.current?T.green:T.bg3}`,borderRadius:14,padding:"20px",background:p.current?T.green+"08":T.white,position:"relative"}}>
+              {p.current&&<div style={{position:"absolute",top:-10,left:16,background:T.green,color:"#fff",fontSize:10,fontWeight:700,letterSpacing:"0.05em",padding:"2px 10px",borderRadius:99,textTransform:"uppercase"}}>Current</div>}
+              <div style={{fontSize:14,fontWeight:700,color:T.ink,marginBottom:4}}>{p.label}</div>
+              <div style={{fontSize:22,fontWeight:800,color:T.green,fontFamily:"'DM Serif Display',serif",marginBottom:14}}>{p.price}</div>
+              {p.features.map(f=>(
+                <div key={f} style={{fontSize:12,color:T.ink3,marginBottom:5,display:"flex",gap:6,alignItems:"flex-start"}}>
+                  <span style={{color:T.green,flexShrink:0,marginTop:1}}>✓</span>{f}
+                </div>
+              ))}
+              {!p.current&&<button style={{marginTop:14,width:"100%",background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"8px",color:T.ink2,fontSize:12,fontWeight:600,cursor:"pointer"}}>Upgrade →</button>}
+            </div>
+          ))}
+        </div>
+      </div>
+      {/* Team */}
+      <div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:16,padding:"24px 28px"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
+          <SectionLabel>Team Members</SectionLabel>
+          {userRole==="admin"&&<button style={{background:T.green,border:"none",borderRadius:8,padding:"7px 14px",color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer"}}>+ Invite Staff</button>}
+        </div>
+        <div style={{display:"flex",alignItems:"center",gap:12,padding:"12px 0",borderBottom:"1px solid "+T.bg3}}>
+          <div style={{width:36,height:36,borderRadius:"50%",background:T.green+"18",display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,fontWeight:700,color:T.green,flexShrink:0}}>
+            {(userName[0]||"U").toUpperCase()}
+          </div>
+          <div style={{flex:1}}>
+            <div style={{fontSize:13,fontWeight:600,color:T.ink}}>{userName}</div>
+            <div style={{fontSize:11,color:T.ink3,marginTop:1}}>{userEmail}</div>
+          </div>
+          <Pill label={userRole} color={userRole==="admin"?T.greenDk:"#6b7280"}/>
+        </div>
+        {userRole==="admin"&&<div style={{marginTop:14,padding:"12px 16px",background:T.bg,borderRadius:10,fontSize:12,color:T.ink3,lineHeight:1.6}}>
+          Staff invite via email is coming soon. Each invited user gets their own login with role-based access control.
+        </div>}
+      </div>
+      {/* Danger zone */}
+      <div style={{background:T.white,border:"1px solid #fecaca",borderRadius:16,padding:"24px 28px"}}>
+        <SectionLabel>Account Actions</SectionLabel>
+        <button onClick={logout} style={{background:"#fef2f2",border:"1px solid #fecaca",borderRadius:8,padding:"9px 18px",color:"#dc2626",fontSize:13,fontWeight:600,cursor:"pointer"}}>
+          Sign out of Steward
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // ── Root Router ────────────────────────────────────────────────────────────
 export default function App() {
   if (typeof window !== 'undefined') {
@@ -1909,6 +1993,7 @@ const TABS=[
   {id:"board",label:"Board",icon:"◆"},
   {id:"finance",label:"Finance",icon:"◇"},
   {id:"tasks",label:"Tasks",icon:"◻"},
+  {id:"settings",label:"Settings",icon:"⚙"},
 ];
 
 function AppShell() {
@@ -1937,69 +2022,71 @@ function AppShell() {
     })();
   },[]);
 
-  const BASE = {minHeight:"100vh",background:"#030712",fontFamily:"'DM Sans',system-ui,sans-serif"};
+  const BASE = {minHeight:"100vh",background:T.bg,fontFamily:"'DM Sans',system-ui,sans-serif"};
 
   if(loading) return <div style={{...BASE,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:16}}>
     <GlobalStyles/>
     <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=DM+Serif+Display&display=swap" rel="stylesheet"/>
-    <div style={{width:40,height:40,background:"linear-gradient(135deg,#10b981,#3b82f6)",borderRadius:14,display:"flex",alignItems:"center",justifyContent:"center"}}><span style={{fontSize:20,color:"#fff"}}>◈</span></div>
-    <div style={{display:"flex",alignItems:"center",gap:10,color:"#4b5563",fontSize:13}}><Spin/>Loading your workspace…</div>
+    <div style={{width:40,height:40,background:T.green,borderRadius:14,display:"flex",alignItems:"center",justifyContent:"center"}}>
+      <svg width="20" height="20" viewBox="0 0 16 16" fill="none"><path d="M8 2L13 5v6L8 14 3 11V5L8 2z" stroke="#fff" strokeWidth="1.5" fill="none"/><circle cx="8" cy="8" r="2" fill="#fff"/></svg>
+    </div>
+    <div style={{display:"flex",alignItems:"center",gap:10,color:T.ink3,fontSize:13}}><span style={{display:"inline-block",width:14,height:14,border:"2px solid "+T.bg3,borderTopColor:T.green,borderRadius:"50%",animation:"sp 0.7s linear infinite"}}/>Loading your workspace…</div>
   </div>;
 
   if(loadErr||!data) return <div style={{...BASE,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:12}}>
     <GlobalStyles/>
     <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=DM+Serif+Display&display=swap" rel="stylesheet"/>
-    <div style={{fontSize:32,opacity:0.3}}>◈</div>
-    <div style={{fontSize:15,fontWeight:700,color:"#f87171"}}>Failed to connect</div>
-    <div style={{fontSize:13,color:"#6b7280",maxWidth:300,textAlign:"center"}}>{loadErr||"Could not load your workspace. Check your connection and try again."}</div>
-    <button onClick={()=>window.location.reload()} style={{marginTop:4,background:"#10b981",border:"none",borderRadius:10,padding:"9px 20px",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer"}}>Retry</button>
+    <div style={{fontSize:32,opacity:0.2,color:T.ink}}>◈</div>
+    <div style={{fontSize:15,fontWeight:700,color:"#dc2626"}}>Failed to connect</div>
+    <div style={{fontSize:13,color:T.ink3,maxWidth:300,textAlign:"center"}}>{loadErr||"Could not load your workspace. Check your connection and try again."}</div>
+    <button onClick={()=>window.location.reload()} style={{marginTop:4,background:T.green,border:"none",borderRadius:10,padding:"9px 20px",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer"}}>Retry</button>
   </div>;
 
   const tasksDue=data.tasks.filter(t=>!t.done&&t.priority==="high").length;
   const orgName=auth?.org?.name||data.org?.name||"Steward";
   const orgInitial=(orgName[0]||"S").toUpperCase();
 
-  return <div style={{...BASE,color:"#f3f4f6",display:"flex",flexDirection:"column"}}>
+  return <div style={{...BASE,color:T.ink,display:"flex",flexDirection:"column"}}>
     <GlobalStyles/>
     <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=DM+Serif+Display&display=swap" rel="stylesheet"/>
 
     {/* Header */}
-    <div style={{borderBottom:"1px solid #0e1624",padding:"0 24px",display:"flex",alignItems:"center",justifyContent:"space-between",background:"#030712",position:"sticky",top:0,zIndex:100,height:56}}>
+    <div style={{borderBottom:"1px solid "+T.bg3,padding:"0 24px",display:"flex",alignItems:"center",justifyContent:"space-between",background:T.bg,position:"sticky",top:0,zIndex:100,height:56}}>
       <div style={{display:"flex",alignItems:"center",gap:12}}>
-        <div style={{width:34,height:34,background:"linear-gradient(135deg,#10b981,#3b82f6)",borderRadius:10,display:"flex",alignItems:"center",justifyContent:"center",boxShadow:"0 0 16px #10b98130",flexShrink:0}}>
-          <span style={{fontSize:16,color:"#fff",fontWeight:800}}>◈</span>
+        <div style={{width:32,height:32,background:T.green,borderRadius:8,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M8 2L13 5v6L8 14 3 11V5L8 2z" stroke="#fff" strokeWidth="1.5" fill="none"/><circle cx="8" cy="8" r="2" fill="#fff"/></svg>
         </div>
         <div style={{display:"flex",alignItems:"baseline",gap:8}}>
-          <span style={{fontSize:15,fontWeight:800,color:"#f9fafb",letterSpacing:"-0.02em"}}>{orgName}</span>
-          <span style={{fontSize:10,color:"#374151",letterSpacing:"0.06em",textTransform:"uppercase"}}>Steward</span>
+          <span style={{fontSize:15,fontWeight:700,color:T.ink,letterSpacing:"-0.02em"}}>{orgName}</span>
+          <span style={{fontSize:10,color:T.ink3,letterSpacing:"0.06em",textTransform:"uppercase"}}>Steward</span>
         </div>
       </div>
       <div style={{display:"flex",gap:8,alignItems:"center"}}>
-        <button onClick={()=>setShowChat(true)} style={{background:"linear-gradient(135deg,#1a6b4a,#2563eb)",border:"none",borderRadius:10,padding:"7px 16px",color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer",display:"flex",alignItems:"center",gap:7,boxShadow:"0 0 16px #1a6b4a30"}}>
+        <button onClick={()=>setShowChat(true)} style={{background:T.green,border:"none",borderRadius:10,padding:"7px 16px",color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer",display:"flex",alignItems:"center",gap:7}}>
           ✦ Ask AI
         </button>
-        <div style={{width:28,height:28,borderRadius:8,background:auth?.user?.role==="admin"?"#1a6b4a20":"#1a2235",border:`1px solid ${auth?.user?.role==="admin"?"#1a6b4a40":"#1f2937"}`,display:"flex",alignItems:"center",justifyContent:"center"}}>
-          <span style={{fontSize:11,fontWeight:800,color:auth?.user?.role==="admin"?"#8b5cf6":"#4b5563"}}>{(auth?.user?.name||"U")[0].toUpperCase()}</span>
+        <div style={{width:30,height:30,borderRadius:8,background:auth?.user?.role==="admin"?T.green+"18":T.bg2,border:`1px solid ${auth?.user?.role==="admin"?T.green+"40":T.bg3}`,display:"flex",alignItems:"center",justifyContent:"center"}}>
+          <span style={{fontSize:12,fontWeight:700,color:auth?.user?.role==="admin"?T.greenDk:T.ink3}}>{(auth?.user?.name||"U")[0].toUpperCase()}</span>
         </div>
-        <button onClick={logout} style={{background:"transparent",border:"1px solid #1a2235",borderRadius:8,padding:"6px 12px",color:"#4b5563",fontSize:12,cursor:"pointer"}}>
+        <button onClick={logout} style={{background:"transparent",border:"1px solid "+T.bg3,borderRadius:8,padding:"6px 12px",color:T.ink3,fontSize:12,cursor:"pointer"}}>
           Sign out
         </button>
       </div>
     </div>
 
     {/* Tab bar */}
-    <div style={{display:"flex",padding:"0 20px",borderBottom:"1px solid #0e1624",overflowX:"auto",flexShrink:0,background:"#030712"}}>
+    <div style={{display:"flex",padding:"0 20px",borderBottom:"1px solid "+T.bg3,overflowX:"auto",flexShrink:0,background:T.bg}}>
       {TABS.map(t=>{
         const active=tab===t.id;
-        return <button key={t.id} onClick={()=>setTab(t.id)} style={{background:"transparent",border:"none",borderBottom:`2px solid ${active?"#10b981":"transparent"}`,padding:"12px 14px",color:active?"#10b981":"#4b5563",fontSize:13,fontWeight:active?700:500,cursor:"pointer",display:"flex",alignItems:"center",gap:6,whiteSpace:"nowrap",transition:"color 0.15s,border-color 0.15s",flexShrink:0,marginBottom:-1}}>
-          <span style={{fontSize:11,opacity:active?1:0.6}}>{t.icon}</span>
+        return <button key={t.id} onClick={()=>setTab(t.id)} style={{background:"transparent",border:"none",borderBottom:`2px solid ${active?T.green:"transparent"}`,padding:"12px 14px",color:active?T.green:T.ink3,fontSize:13,fontWeight:active?700:500,cursor:"pointer",display:"flex",alignItems:"center",gap:6,whiteSpace:"nowrap",transition:"color 0.15s,border-color 0.15s",flexShrink:0,marginBottom:-1}}>
+          <span style={{fontSize:11,opacity:active?1:0.5}}>{t.icon}</span>
           {t.label}
           {t.id==="tasks"&&tasksDue>0&&<span style={{background:"#ef4444",color:"#fff",fontSize:9,fontWeight:800,borderRadius:99,padding:"1px 5px",lineHeight:"14px"}}>{tasksDue}</span>}
         </button>;
       })}
     </div>
 
-    <div style={{flex:1,padding:"22px 24px",maxWidth:1060,width:"100%",margin:"0 auto",boxSizing:"border-box"}}>
+    <div style={{flex:1,padding:"28px 24px",maxWidth:1060,width:"100%",margin:"0 auto",boxSizing:"border-box"}}>
       {tab==="dashboard"&&<Dashboard data={data}/>}
       {tab==="donors"&&<Donors data={data} setData={setData}/>}
       {tab==="grants"&&<Grants data={data} setData={setData}/>}
@@ -2011,6 +2098,7 @@ function AppShell() {
       {tab==="board"&&<Board data={data}/>}
       {tab==="finance"&&<Finance data={data}/>}
       {tab==="tasks"&&<Tasks data={data} setData={setData}/>}
+      {tab==="settings"&&<Settings auth={auth} logout={logout}/>}
     </div>
     {showChat&&<AIChat data={data} onClose={()=>setShowChat(false)}/>}
   </div>;
