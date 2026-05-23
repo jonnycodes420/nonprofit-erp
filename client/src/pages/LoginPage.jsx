@@ -24,7 +24,7 @@ export default function LoginPage() {
       console.log("LOGIN DATA:", JSON.stringify(data));
       console.log("ONBOARDING:", data.org?.onboarding_complete);
       login(data);
-      navigate(data.org?.onboarding_complete ? "/dashboard" : "/welcome", { replace: true });
+      window.location.href = "/dashboard";
     } catch (err) {
       setError(err.message);
     }
