@@ -768,7 +768,7 @@ function LogTouchpointModal({donor,onSave,onClose,onToast}){
           {TYPES.map(([v,l])=><button key={v} onClick={()=>setType(v)} style={{background:type===v?"#10b981":T.bg2,border:`1px solid ${type===v?"#10b981":T.bg3}`,borderRadius:7,padding:"5px 13px",color:type===v?"#fff":T.ink3,fontSize:12,fontWeight:600,cursor:"pointer"}}>{l}</button>)}
         </div>
 
-        <div style={{marginBottom:16}}><span style={lbl}>Date</span><input type="date" value={date} onChange={e=>setDate(e.target.value)} style={inp}/></div>
+        <div style={{marginBottom:16}}><span style={{fontSize:11,fontWeight:700,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:5,display:"block"}}>Date</span><input type="date" value={date} onChange={e=>setDate(e.target.value)} style={inp}/></div>
 
         {/* Dynamic template */}
         <div style={{display:"flex",flexDirection:"column",gap:14,marginBottom:20}}>
