@@ -43,7 +43,7 @@ function GlobalStyles() {
     ::-webkit-scrollbar-track{background:#030712;}
     ::-webkit-scrollbar-thumb{background:#1f2937;border-radius:4px;}
     ::-webkit-scrollbar-thumb:hover{background:#374151;}
-    ::selection{background:#7c3aed33;color:#f3f4f6;}
+    ::selection{background:#10b98133;color:#f3f4f6;}
     input,textarea,select{transition:border-color 0.15s,box-shadow 0.15s;}
     input:focus,textarea:focus,select:focus{border-color:#10b981!important;box-shadow:0 0 0 3px #10b98118;outline:none;}
     button{transition:opacity 0.12s,transform 0.1s,background 0.12s;}
@@ -70,7 +70,7 @@ function SectionLabel({children}) {
   return <div style={{fontSize:10,fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",color:"#4b5563",marginBottom:12}}>{children}</div>;
 }
 function AIBtn({onClick,loading,label="✦ AI Assist",small}) {
-  return <button onClick={onClick} disabled={loading} style={{background:loading?"#1a2235":"linear-gradient(135deg,#6d28d9,#2563eb)",border:"none",borderRadius:small?8:10,padding:small?"6px 12px":"9px 16px",color:"#fff",fontSize:small?12:13,fontWeight:700,cursor:loading?"not-allowed":"pointer",display:"flex",alignItems:"center",gap:6,opacity:loading?0.65:1,whiteSpace:"nowrap",boxShadow:loading?"none":"0 1px 8px #6d28d933"}}>
+  return <button onClick={onClick} disabled={loading} style={{background:loading?"#1a2235":"linear-gradient(135deg,#1a6b4a,#2563eb)",border:"none",borderRadius:small?8:10,padding:small?"6px 12px":"9px 16px",color:"#fff",fontSize:small?12:13,fontWeight:700,cursor:loading?"not-allowed":"pointer",display:"flex",alignItems:"center",gap:6,opacity:loading?0.65:1,whiteSpace:"nowrap",boxShadow:loading?"none":"0 1px 8px #1a6b4a33"}}>
     {loading?<><Spin/>Thinking…</>:label}
   </button>;
 }
@@ -79,8 +79,8 @@ function Spin() {
 }
 function AIPanel({text,onClose}) {
   if(!text) return null;
-  return <div className="fade-in" style={{background:"linear-gradient(135deg,#130c2e,#0d1117)",border:"1px solid #6d28d930",borderRadius:14,padding:"18px 20px",position:"relative",marginTop:12}}>
-    <div style={{fontSize:10,fontWeight:800,letterSpacing:"0.12em",textTransform:"uppercase",color:"#7c3aed",marginBottom:10,display:"flex",alignItems:"center",gap:6}}><span>✦</span> AI Intelligence</div>
+  return <div className="fade-in" style={{background:"linear-gradient(135deg,#130c2e,#0d1117)",border:"1px solid #1a6b4a30",borderRadius:14,padding:"18px 20px",position:"relative",marginTop:12}}>
+    <div style={{fontSize:10,fontWeight:800,letterSpacing:"0.12em",textTransform:"uppercase",color:"#10b981",marginBottom:10,display:"flex",alignItems:"center",gap:6}}><span>✦</span> AI Intelligence</div>
     <div style={{fontSize:13,color:"#e2e8f0",lineHeight:1.8,whiteSpace:"pre-wrap"}}>{text}</div>
     {onClose&&<button onClick={onClose} style={{position:"absolute",top:12,right:14,background:"#1a2235",border:"1px solid #1f2937",borderRadius:6,color:"#6b7280",cursor:"pointer",fontSize:14,lineHeight:1,width:24,height:24,display:"flex",alignItems:"center",justifyContent:"center",padding:0}}>×</button>}
   </div>;
@@ -160,9 +160,9 @@ function AIChat({data,onClose}) {
   };
 
   return <div style={{position:"fixed",inset:0,background:"#000c",zIndex:1000,display:"flex",alignItems:"flex-end",justifyContent:"flex-end",padding:20}}>
-    <div style={{background:"#0a0f1e",border:"1px solid #7c3aed44",borderRadius:20,width:"100%",maxWidth:540,height:640,display:"flex",flexDirection:"column",overflow:"hidden",boxShadow:"0 25px 80px #7c3aed22"}}>
+    <div style={{background:"#0a0f1e",border:"1px solid #10b98144",borderRadius:20,width:"100%",maxWidth:540,height:640,display:"flex",flexDirection:"column",overflow:"hidden",boxShadow:"0 25px 80px #10b98122"}}>
       <div style={{padding:"14px 18px",borderBottom:"1px solid #1f2937",display:"flex",alignItems:"center",justifyContent:"space-between",background:"linear-gradient(135deg,#1a0f3c,#0f172a)"}}>
-        <div><div style={{fontSize:14,fontWeight:800,color:"#f3f4f6"}}>✦ Development Intelligence</div><div style={{fontSize:11,color:"#7c3aed"}}>Knows your full org in real time</div></div>
+        <div><div style={{fontSize:14,fontWeight:800,color:"#f3f4f6"}}>✦ Development Intelligence</div><div style={{fontSize:11,color:"#10b981"}}>Knows your full org in real time</div></div>
         <button onClick={onClose} style={{background:"#1f2937",border:"none",borderRadius:8,padding:"6px 12px",color:"#9ca3af",cursor:"pointer",fontSize:12}}>Close</button>
       </div>
       <div style={{display:"flex",gap:6,padding:"10px 14px",borderBottom:"1px solid #1f2937",overflowX:"auto",flexShrink:0}}>
@@ -170,15 +170,15 @@ function AIChat({data,onClose}) {
       </div>
       <div style={{flex:1,overflowY:"auto",padding:14,display:"flex",flexDirection:"column",gap:10}}>
         {msgs.map((m,i)=><div key={i} style={{display:"flex",justifyContent:m.role==="user"?"flex-end":"flex-start"}}>
-          <div style={{maxWidth:"88%",background:m.role==="user"?"#7c3aed":"#1e293b",borderRadius:m.role==="user"?"14px 14px 4px 14px":"14px 14px 14px 4px",padding:"10px 14px",fontSize:13,color:"#f3f4f6",lineHeight:1.65,whiteSpace:"pre-wrap"}}>
-            {m.content||(loading&&i===msgs.length-1?<span style={{color:"#7c3aed"}}>▋</span>:"")}
+          <div style={{maxWidth:"88%",background:m.role==="user"?"#10b981":"#1e293b",borderRadius:m.role==="user"?"14px 14px 4px 14px":"14px 14px 14px 4px",padding:"10px 14px",fontSize:13,color:"#f3f4f6",lineHeight:1.65,whiteSpace:"pre-wrap"}}>
+            {m.content||(loading&&i===msgs.length-1?<span style={{color:"#10b981"}}>▋</span>:"")}
           </div>
         </div>)}
         <div ref={bottomRef}/>
       </div>
       <div style={{padding:12,borderTop:"1px solid #1f2937",display:"flex",gap:8}}>
         <input value={input} onChange={e=>setInput(e.target.value)} onKeyDown={e=>e.key==="Enter"&&send()} placeholder="Ask anything about your org…" style={{flex:1,background:"#1e293b",border:"1px solid #374151",borderRadius:10,padding:"10px 14px",color:"#f3f4f6",fontSize:13,outline:"none"}}/>
-        <button onClick={()=>send()} disabled={loading||!input.trim()} style={{background:"#7c3aed",border:"none",borderRadius:10,padding:"10px 16px",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer",opacity:loading||!input.trim()?0.5:1}}>↑</button>
+        <button onClick={()=>send()} disabled={loading||!input.trim()} style={{background:"#10b981",border:"none",borderRadius:10,padding:"10px 16px",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer",opacity:loading||!input.trim()?0.5:1}}>↑</button>
       </div>
     </div>
   </div>;
@@ -319,8 +319,8 @@ function Dashboard({data}) {
     <Card>
       <SectionLabel>Fund Balances</SectionLabel>
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(170px,1fr))",gap:8}}>
-        {data.financials.funds.map(f=><div key={f.name} style={{background:f.restricted?"#130c2e":"#0d1117",borderRadius:10,padding:"14px 16px",border:`1px solid ${f.restricted?"#6d28d930":"#1a2235"}`}}>
-          <div style={{fontSize:10,fontWeight:700,color:f.restricted?"#7c3aed":"#4b5563",textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:6}}>{f.restricted?"Restricted":"Unrestricted"}</div>
+        {data.financials.funds.map(f=><div key={f.name} style={{background:f.restricted?"#130c2e":"#0d1117",borderRadius:10,padding:"14px 16px",border:`1px solid ${f.restricted?"#1a6b4a30":"#1a2235"}`}}>
+          <div style={{fontSize:10,fontWeight:700,color:f.restricted?"#10b981":"#4b5563",textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:6}}>{f.restricted?"Restricted":"Unrestricted"}</div>
           <div style={{fontSize:20,fontWeight:800,color:"#f3f4f6",fontFamily:"'DM Serif Display',serif"}}>{fmt(f.balance)}</div>
           <div style={{fontSize:11,color:"#6b7280",marginTop:3}}>{f.name}</div>
         </div>)}
@@ -1161,10 +1161,10 @@ function Finance({data}) {
     <Card>
       <SectionLabel>Fund Balances</SectionLabel>
       {data.financials.funds.map((f,i)=><div key={f.name} style={{display:"flex",alignItems:"center",gap:12,padding:"11px 0",borderBottom:i<data.financials.funds.length-1?"1px solid #0e1624":""}}>
-        <div style={{width:10,height:10,borderRadius:"50%",background:f.restricted?"#7c3aed":"#10b981",flexShrink:0,boxShadow:f.restricted?"0 0 8px #7c3aed60":"0 0 8px #10b98160"}}/>
+        <div style={{width:10,height:10,borderRadius:"50%",background:f.restricted?"#10b981":"#10b981",flexShrink:0,boxShadow:f.restricted?"0 0 8px #10b98160":"0 0 8px #10b98160"}}/>
         <div style={{flex:1}}>
           <div style={{fontSize:13,fontWeight:600,color:"#f3f4f6"}}>{f.name}</div>
-          <div style={{fontSize:10,color:f.restricted?"#7c3aed":"#6b7280",fontWeight:600,textTransform:"uppercase",letterSpacing:"0.06em",marginTop:1}}>{f.restricted?"Restricted":"Unrestricted"}</div>
+          <div style={{fontSize:10,color:f.restricted?"#10b981":"#6b7280",fontWeight:600,textTransform:"uppercase",letterSpacing:"0.06em",marginTop:1}}>{f.restricted?"Restricted":"Unrestricted"}</div>
         </div>
         <div style={{fontSize:18,fontWeight:800,color:"#f3f4f6",fontFamily:"'DM Serif Display',serif"}}>{fmt(f.balance)}</div>
       </div>)}
@@ -1384,7 +1384,7 @@ Focus on grants under $200K that match this org's size and mission. Include a mi
       </button>
     </Card>
 
-    {(loading||results)&&<Card style={{background:"linear-gradient(135deg,#0f0c29,#0f172a)",border:"1px solid #7c3aed44"}}>
+    {(loading||results)&&<Card style={{background:"linear-gradient(135deg,#0f0c29,#0f172a)",border:"1px solid #10b98144"}}>
       <div style={{fontSize:11,fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",color:"#8b5cf6",marginBottom:14}}>✦ Grant Matches — Ranked by Alignment</div>
       {loading&&!results&&<div style={{display:"flex",alignItems:"center",gap:10,color:"#6b7280",fontSize:13}}><Spin/>Analyzing your org and searching grant landscape…</div>}
       {results&&<div style={{fontSize:13,color:"#e2e8f0",lineHeight:1.85,whiteSpace:"pre-wrap"}}>{results}</div>}
@@ -1512,10 +1512,10 @@ function Communications({data}) {
         <button onClick={save} style={{background:"#10b981",border:"none",borderRadius:8,padding:"9px 16px",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer"}}>Save Draft</button>
         <button onClick={()=>{setShowBuilder(false);setAiDraft("");}} style={{background:"#374151",border:"none",borderRadius:8,padding:"9px 14px",color:"#9ca3af",fontSize:13,cursor:"pointer"}}>Cancel</button>
       </div>
-      {aiDraft&&<div style={{background:"#0f172a",border:"1px solid #7c3aed44",borderRadius:12,padding:16}}>
+      {aiDraft&&<div style={{background:"#0f172a",border:"1px solid #10b98144",borderRadius:12,padding:16}}>
         <div style={{fontSize:10,fontWeight:700,color:"#8b5cf6",letterSpacing:"0.08em",textTransform:"uppercase",marginBottom:8}}>✦ AI Draft</div>
         <div style={{fontSize:13,color:"#e2e8f0",lineHeight:1.75,whiteSpace:"pre-wrap",marginBottom:12}}>{aiDraft}</div>
-        <button onClick={applyDraft} style={{background:"#7c3aed",border:"none",borderRadius:8,padding:"8px 14px",color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer"}}>Apply to form</button>
+        <button onClick={applyDraft} style={{background:"#10b981",border:"none",borderRadius:8,padding:"8px 14px",color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer"}}>Apply to form</button>
       </div>}
     </Card>}
 
@@ -1952,10 +1952,10 @@ function AppShell() {
         </div>
       </div>
       <div style={{display:"flex",gap:8,alignItems:"center"}}>
-        <button onClick={()=>setShowChat(true)} style={{background:"linear-gradient(135deg,#6d28d9,#2563eb)",border:"none",borderRadius:10,padding:"7px 16px",color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer",display:"flex",alignItems:"center",gap:7,boxShadow:"0 0 16px #6d28d930"}}>
+        <button onClick={()=>setShowChat(true)} style={{background:"linear-gradient(135deg,#1a6b4a,#2563eb)",border:"none",borderRadius:10,padding:"7px 16px",color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer",display:"flex",alignItems:"center",gap:7,boxShadow:"0 0 16px #1a6b4a30"}}>
           ✦ Ask AI
         </button>
-        <div style={{width:28,height:28,borderRadius:8,background:auth?.user?.role==="admin"?"#6d28d920":"#1a2235",border:`1px solid ${auth?.user?.role==="admin"?"#6d28d940":"#1f2937"}`,display:"flex",alignItems:"center",justifyContent:"center"}}>
+        <div style={{width:28,height:28,borderRadius:8,background:auth?.user?.role==="admin"?"#1a6b4a20":"#1a2235",border:`1px solid ${auth?.user?.role==="admin"?"#1a6b4a40":"#1f2937"}`,display:"flex",alignItems:"center",justifyContent:"center"}}>
           <span style={{fontSize:11,fontWeight:800,color:auth?.user?.role==="admin"?"#8b5cf6":"#4b5563"}}>{(auth?.user?.name||"U")[0].toUpperCase()}</span>
         </div>
         <button onClick={logout} style={{background:"transparent",border:"1px solid #1a2235",borderRadius:8,padding:"6px 12px",color:"#4b5563",fontSize:12,cursor:"pointer"}}>

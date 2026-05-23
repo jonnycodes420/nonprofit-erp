@@ -1,10 +1,19 @@
 import { useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
-import { useAuth } from "../main";
+import { Link } from "react-router-dom";
+
+const T = {
+  cream:  "#f0ede6",
+  cream2: "#e8e4db",
+  cream3: "#ddd9d0",
+  ink:    "#0f0f0f",
+  ink2:   "#2a2a2a",
+  ink3:   "#6b6b6b",
+  green:  "#10b981",
+  greenDark: "#1a6b4a",
+  red:    "#dc2626",
+};
 
 export default function LoginPage() {
-  const { login } = useAuth();
-  const navigate   = useNavigate();
   const [email, setEmail]       = useState("");
   const [password, setPassword] = useState("");
   const [error, setError]       = useState("");
@@ -19,11 +28,11 @@ export default function LoginPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, password }),
       });
-      if (!res.ok) { const e = await res.json(); throw new Error(e.error || "Login failed"); }
+      if (!res.ok) { const d = await res.json(); throw new Error(d.error || "Login failed"); }
       const data = await res.json();
       localStorage.setItem("npe_token", data.token);
       localStorage.setItem("npe_user", JSON.stringify(data.user));
-      localStorage.setItem("npe_org", JSON.stringify(data.org));
+      localStorage.setItem("npe_org",  JSON.stringify(data.org));
       window.location.href = "/dashboard";
     } catch (err) {
       setError(err.message);
@@ -31,36 +40,147 @@ export default function LoginPage() {
     setLoading(false);
   };
 
-  const inp = { width:"100%", background:"#111827", border:"1px solid #374151", borderRadius:10, padding:"11px 14px", color:"#f3f4f6", fontSize:14, outline:"none", fontFamily:"inherit" };
-
   return (
-    <div style={{ minHeight:"100vh", background:"#030712", display:"flex", alignItems:"center", justifyContent:"center", fontFamily:"'DM Sans',system-ui,sans-serif" }}>
-      <div style={{ width:"100%", maxWidth:380, padding:20 }}>
-        <div style={{ textAlign:"center", marginBottom:32 }}>
-          <div style={{ width:48, height:48, background:"linear-gradient(135deg,#10b981,#3b82f6)", borderRadius:14, display:"flex", alignItems:"center", justifyContent:"center", margin:"0 auto 16px", fontSize:22 }}>◈</div>
-          <div style={{ fontSize:24, fontWeight:800, color:"#f9fafb", letterSpacing:"-0.02em" }}>Steward</div>
-          <div style={{ fontSize:13, color:"#6b7280", marginTop:6 }}>Manage what matters.</div>
-        </div>
+    <div style={{ minHeight: "100vh", background: T.cream, display: "flex", flexDirection: "column", fontFamily: "'DM Sans',system-ui,sans-serif" }}>
+      {/* Nav */}
+      <nav style={{ padding: "20px 32px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <Link to="/" style={{ textDecoration: "none", display: "flex", alignItems: "center", gap: 10 }}>
+          <div style={{ width: 32, height: 32, background: T.green, borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+              <path d="M8 2L13 5v6L8 14 3 11V5L8 2z" stroke="#fff" strokeWidth="1.5" fill="none" />
+              <circle cx="8" cy="8" r="2" fill="#fff" />
+            </svg>
+          </div>
+          <span style={{ fontWeight: 700, fontSize: 16, color: T.ink, letterSpacing: "-0.02em" }}>Steward</span>
+        </Link>
+        <Link to="/signup" style={{ fontSize: 14, color: T.ink2, textDecoration: "none" }}>
+          No account? <span style={{ color: T.green, fontWeight: 600 }}>Sign up free</span>
+        </Link>
+      </nav>
 
-        <form onSubmit={submit} style={{ display:"flex", flexDirection:"column", gap:12 }}>
-          <input type="email" value={email} onChange={e=>setEmail(e.target.value)} placeholder="Email" required style={inp} />
-          <input type="password" value={password} onChange={e=>setPassword(e.target.value)} placeholder="Password" required style={inp} />
-          {error && (
-            <div style={{ background:"#ef444422", border:"1px solid #ef444444", borderRadius:8, padding:"9px 12px", fontSize:13, color:"#f87171" }}>{error}</div>
-          )}
-          <button type="submit" disabled={loading} style={{ background:loading?"#1f2937":"linear-gradient(135deg,#10b981,#3b82f6)", border:"none", borderRadius:10, padding:"12px 16px", color:"#fff", fontSize:14, fontWeight:700, cursor:loading?"not-allowed":"pointer", opacity:loading?0.7:1, marginTop:4 }}>
-            {loading ? "Signing in…" : "Sign In"}
-          </button>
-        </form>
+      {/* Main */}
+      <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", padding: "40px 24px" }}>
+        <div style={{ width: "100%", maxWidth: 420 }}>
+          {/* Heading */}
+          <div style={{ marginBottom: 40 }}>
+            <h1 style={{
+              fontFamily: "'DM Serif Display',Georgia,serif",
+              fontSize: "clamp(32px,5vw,44px)",
+              fontWeight: 400,
+              color: T.ink,
+              lineHeight: 1.15,
+              letterSpacing: "-0.02em",
+              margin: "0 0 12px",
+            }}>
+              Welcome{" "}
+              <span style={{
+                borderBottom: `3px solid ${T.green}`,
+                paddingBottom: 2,
+              }}>
+                back
+              </span>
+            </h1>
+            <p style={{ fontSize: 15, color: T.ink3, margin: 0 }}>
+              Sign in to your Steward workspace.
+            </p>
+          </div>
 
-        <div style={{ textAlign:"center", marginTop:20, fontSize:13, color:"#6b7280" }}>
-          No account?{" "}
-          <Link to="/signup" style={{ color:"#10b981", textDecoration:"none", fontWeight:600 }}>Create one</Link>
-        </div>
-        <div style={{ textAlign:"center", marginTop:12, fontSize:12, color:"#374151" }}>
-          Demo: admin@creoarts.org / demo1234
+          {/* Card */}
+          <div style={{
+            background: "#fff",
+            border: `1px solid ${T.cream3}`,
+            borderRadius: 16,
+            padding: "32px 32px 28px",
+            boxShadow: "0 2px 16px rgba(15,15,15,0.06)",
+          }}>
+            <form onSubmit={submit} style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+              <Field label="Email address">
+                <input
+                  type="email"
+                  value={email}
+                  onChange={e => setEmail(e.target.value)}
+                  placeholder="you@org.com"
+                  required
+                  style={inputStyle}
+                />
+              </Field>
+
+              <Field label="Password">
+                <input
+                  type="password"
+                  value={password}
+                  onChange={e => setPassword(e.target.value)}
+                  placeholder="••••••••"
+                  required
+                  style={inputStyle}
+                />
+              </Field>
+
+              {error && (
+                <div style={{
+                  background: "#fef2f2",
+                  border: `1px solid #fecaca`,
+                  borderRadius: 8,
+                  padding: "10px 14px",
+                  fontSize: 13,
+                  color: T.red,
+                }}>
+                  {error}
+                </div>
+              )}
+
+              <button
+                type="submit"
+                disabled={loading}
+                style={{
+                  marginTop: 4,
+                  background: loading ? T.cream3 : T.green,
+                  border: "none",
+                  borderRadius: 10,
+                  padding: "13px 20px",
+                  color: loading ? T.ink3 : "#fff",
+                  fontSize: 15,
+                  fontWeight: 700,
+                  cursor: loading ? "not-allowed" : "pointer",
+                  transition: "background 0.15s",
+                  fontFamily: "inherit",
+                }}
+              >
+                {loading ? "Signing in…" : "Sign In →"}
+              </button>
+            </form>
+          </div>
+
+          {/* Demo hint */}
+          <p style={{ marginTop: 20, fontSize: 12, color: T.ink3, textAlign: "center" }}>
+            Demo: <span style={{ fontFamily: "monospace", background: T.cream2, padding: "2px 6px", borderRadius: 4 }}>admin@creoarts.org</span>{" "}
+            / <span style={{ fontFamily: "monospace", background: T.cream2, padding: "2px 6px", borderRadius: 4 }}>demo1234</span>
+          </p>
         </div>
       </div>
     </div>
   );
 }
+
+function Field({ label, children }) {
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+      <label style={{ fontSize: 13, fontWeight: 600, color: T.ink2 }}>{label}</label>
+      {children}
+    </div>
+  );
+}
+
+const inputStyle = {
+  width: "100%",
+  background: T.cream,
+  border: `1px solid ${T.cream3}`,
+  borderRadius: 8,
+  padding: "11px 14px",
+  color: T.ink,
+  fontSize: 14,
+  outline: "none",
+  fontFamily: "inherit",
+  boxSizing: "border-box",
+  transition: "border-color 0.15s",
+};
