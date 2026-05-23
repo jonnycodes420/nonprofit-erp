@@ -347,12 +347,12 @@ function Dashboard({data,setData,onNavigate}) {
   const typeColor={call:"#3b82f6",email:"#8b5cf6",meeting:"#10b981",gift:"#f59e0b",event:"#ec4899",note:"#6b7280"};
 
   const QUICK=[
-    {icon:"♦",label:"Add Donor",action:()=>setShowAddDonor(true),color:"#10b981"},
-    {icon:"⟡",label:"Log Gift",action:()=>onNavigate("donors"),color:"#f59e0b"},
-    {icon:"◉",label:"New Grant",action:()=>onNavigate("grants"),color:"#8b5cf6"},
-    {icon:"◎",label:"Add Volunteer",action:()=>onNavigate("volunteers"),color:"#3b82f6"},
-    {icon:"◻",label:"New Task",action:()=>onNavigate("tasks"),color:"#6b7280"},
-    {icon:"◑",label:"Send Email",action:()=>onNavigate("communications"),color:"#ec4899"},
+    {icon:<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" width="18" height="18"><circle cx="10" cy="7" r="3.5"/><path d="M3 17c0-3.3 3.1-6 7-6s7 2.7 7 6" strokeLinecap="round"/><line x1="14" y1="4" x2="18" y2="4" strokeLinecap="round"/><line x1="16" y1="2" x2="16" y2="6" strokeLinecap="round"/></svg>,label:"Add Donor",action:()=>setShowAddDonor(true)},
+    {icon:<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" width="18" height="18"><rect x="3" y="5" width="14" height="11" rx="2"/><path d="M7 5V4a1 1 0 011-1h4a1 1 0 011 1v1" strokeLinecap="round"/><line x1="7" y1="10" x2="13" y2="10" strokeLinecap="round"/><line x1="10" y1="7.5" x2="10" y2="12.5" strokeLinecap="round"/></svg>,label:"Log Gift",action:()=>onNavigate("donors")},
+    {icon:<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" width="18" height="18"><path d="M10 3l1.8 5.4H17l-4.5 3.3 1.7 5.3L10 14l-4.2 3 1.7-5.3L3 8.4h5.2z" strokeLinejoin="round"/></svg>,label:"New Grant",action:()=>onNavigate("grants")},
+    {icon:<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" width="18" height="18"><circle cx="10" cy="7" r="3.5"/><path d="M3 17c0-3.3 3.1-6 7-6s7 2.7 7 6" strokeLinecap="round"/></svg>,label:"Add Volunteer",action:()=>onNavigate("volunteers")},
+    {icon:<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" width="18" height="18"><rect x="3" y="3" width="14" height="14" rx="2"/><line x1="7" y1="9" x2="13" y2="9" strokeLinecap="round"/><line x1="7" y1="12" x2="11" y2="12" strokeLinecap="round"/><line x1="10" y1="5.5" x2="10" y2="3" strokeLinecap="round"/></svg>,label:"New Task",action:()=>onNavigate("tasks")},
+    {icon:<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" width="18" height="18"><rect x="2" y="5" width="16" height="11" rx="2"/><path d="M2 8l8 5 8-5" strokeLinecap="round"/></svg>,label:"Send Email",action:()=>onNavigate("communications")},
   ];
 
   return(
@@ -361,14 +361,14 @@ function Dashboard({data,setData,onNavigate}) {
       {/* ── Hero stat strip ── */}
       <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10}}>
         {[
-          {label:"Total Donors",value:totalDonors,sub:`${newDonorsThisYear} gave this year`,color:"#10b981",tab:"donors"},
-          {label:"Active Grants",value:activeGrantCount,sub:fmt(pipelineValue)+" pipeline",color:"#8b5cf6",tab:"grants"},
-          {label:"Active Volunteers",value:activeVolunteers,sub:"in last 30 days",color:"#3b82f6",tab:"volunteers"},
-          {label:"Open Tasks",value:openTasks,sub:highPriorityTasks>0?`${highPriorityTasks} high priority`:"all on track",color:highPriorityTasks>0?"#ef4444":"#10b981",tab:"tasks"},
+          {label:"Total Donors",value:totalDonors,sub:`${newDonorsThisYear} gave this year`,tab:"donors"},
+          {label:"Active Grants",value:activeGrantCount,sub:fmt(pipelineValue)+" pipeline",tab:"grants"},
+          {label:"Active Volunteers",value:activeVolunteers,sub:"in last 30 days",tab:"volunteers"},
+          {label:"Open Tasks",value:openTasks,sub:highPriorityTasks>0?`${highPriorityTasks} high priority`:"all on track",tab:"tasks"},
         ].map(s=>(
-          <div key={s.label} onClick={()=>onNavigate(s.tab)} className="card-click" style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:14,padding:"16px 20px",cursor:"pointer",borderLeft:`3px solid ${s.color}`}}>
+          <div key={s.label} onClick={()=>onNavigate(s.tab)} className="card-click" style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:14,padding:"16px 20px",cursor:"pointer",borderLeft:"3px solid #10b981"}}>
             <div style={{fontSize:10,fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",color:T.ink3,marginBottom:4}}>{s.label}</div>
-            <div style={{fontSize:28,fontWeight:800,color:s.color,fontFamily:"'DM Serif Display',serif",lineHeight:1.05,letterSpacing:"-0.02em"}}>{s.value}</div>
+            <div style={{fontSize:28,fontWeight:800,color:"#10b981",fontFamily:"'DM Serif Display',serif",lineHeight:1.05,letterSpacing:"-0.02em"}}>{s.value}</div>
             <div style={{fontSize:11,color:T.ink3,marginTop:4}}>{s.sub}</div>
           </div>
         ))}
@@ -529,7 +529,7 @@ function Dashboard({data,setData,onNavigate}) {
                   background:T.bg,border:"1px solid "+T.bg3,borderRadius:10,
                   padding:"12px 8px",display:"flex",flexDirection:"column",alignItems:"center",gap:6,cursor:"pointer",
                 }}>
-                  <div style={{width:32,height:32,borderRadius:8,background:a.color+"18",display:"flex",alignItems:"center",justifyContent:"center",fontSize:15,color:a.color,fontWeight:700}}>
+                  <div style={{width:32,height:32,borderRadius:8,background:"#10b98118",display:"flex",alignItems:"center",justifyContent:"center",color:"#10b981"}}>
                     {a.icon}
                   </div>
                   <span style={{fontSize:10,fontWeight:700,color:T.ink3,textAlign:"center",lineHeight:1.3,letterSpacing:"0.02em"}}>{a.label}</span>
@@ -1252,7 +1252,7 @@ function Donors({data,setData}){
           {[["kanban","Pipeline"],["list","List"],["reengage","Re-engage"]].map(([v,l])=>(
             <button key={v} onClick={()=>setView(v)} style={{background:view===v?T.bg2:"transparent",border:"none",padding:"9px 14px",color:view===v?T.ink:"#6b7280",fontSize:13,fontWeight:view===v?700:400,cursor:"pointer",display:"flex",alignItems:"center",gap:5}}>
               {l}
-              {v==="reengage"&&lapsedCount>0&&<span style={{background:"#ef4444",color:"#fff",borderRadius:99,padding:"1px 6px",fontSize:10,fontWeight:800,lineHeight:1.4}}>{lapsedCount}</span>}
+              {v==="reengage"&&lapsedCount>0&&<span style={{background:"#10b981",color:"#fff",borderRadius:99,padding:"1px 6px",fontSize:10,fontWeight:800,lineHeight:1.4}}>{lapsedCount}</span>}
             </button>
           ))}
         </div>
@@ -1318,23 +1318,205 @@ function Donors({data,setData}){
 }
 
 // ── Grants ─────────────────────────────────────────────────────────────────
-function Grants({data,setData}) {
-  const [selected,setSelected]=useState(null); const [aiMap,setAiMap]=useState({}); const [loadingKey,setLoadingKey]=useState(null);
-  const [prospectAI,setProspectAI]=useState(""); const [prospectLoading,setProspectLoading]=useState(false);
-  const pipeline=["prospecting","pending","active","closed"];
-  const totals=pipeline.reduce((a,s)=>{a[s]=data.grants.filter(g=>g.status===s).reduce((sum,g)=>sum+g.amount,0);return a;},{});
+function GrantProfile({grant,onClose,onUpdate,onDelete,isAdmin,org}){
+  const[aiMap,setAiMap]=useState({});const[loadingKey,setLoadingKey]=useState(null);
+  const[notes,setNotes]=useState(grant.notes||"");const[savingNotes,setSavingNotes]=useState(false);
+  const[editing,setEditing]=useState(false);
+  const[ef,setEf]=useState({funder:grant.funder,program:grant.program,amount:grant.amount,received:grant.received||0,status:grant.status,deadline:grant.deadline||"",reportDue:grant.reportDue||"",officer:grant.officer||""});
 
-  const getAI=async(grant,type)=>{
-    const key=`${grant.id}_${type}`; setLoadingKey(key); setAiMap(p=>({...p,[key]:""}));
-    const sys=`You are an expert nonprofit grant writer and strategist. Specific, tactical. Max 200 words.`;
+  const pct=grant.amount>0?Math.round((grant.received||0)/grant.amount*100):0;
+  const days=daysUntil(grant.deadline);
+  const reportDays=grant.reportDue?daysUntil(grant.reportDue):null;
+  const statuses=["prospecting","pending","active","closed"];
+
+  const getAI=async(type)=>{
+    const key=`${grant.id}_${type}`;setLoadingKey(key);setAiMap(p=>({...p,[key]:""}));
+    const sys=`You are an expert nonprofit grant writer and strategist. Specific, tactical. Max 250 words.`;
     const prompts={
-      strategy:`Grant strategy for ${grant.funder} / ${grant.program}.\nAmount: ${fmtFull(grant.amount)} | Status: ${grant.status} | Deadline: ${grant.deadline}\nOfficer: ${grant.officer}\nNotes: ${grant.notes}\nHistory: ${grant.history?.join(", ")}\nOrg: ${data.org.name} — ${data.org.mission}\nPrograms: ${data.org.programs.join(", ")}\n\nProvide: key narrative angle, what funder cares about, red flags, 3 specific things to include.`,
-      report:`Grant report outline for ${grant.funder}.\nProgram: ${grant.program} | Amount: ${fmtFull(grant.amount)} | Due: ${grant.reportDue}\nNotes: ${grant.notes}\nOrg mission: ${data.org.mission}\n\nProvide: section headers, 3 key metrics to feature, narrative arc, what to emphasize.`,
-      loi:`Write a compelling Letter of Inquiry for ${grant.funder}.\nProgram: ${grant.program} | Ask: ${fmtFull(grant.amount)}\nOrg: ${data.org.name} — ${data.org.mission}\nPrograms: ${data.org.programs.join(", ")}\n\nWrite a 3-paragraph LOI: hook, program fit, ask.`,
+      strategy:`Grant strategy for ${grant.funder} / ${grant.program}.\nAmount: ${fmtFull(grant.amount)} | Status: ${grant.status} | Deadline: ${grant.deadline}\nOfficer: ${grant.officer}\nNotes: ${grant.notes}\nHistory: ${(grant.history||[]).join(", ")}\nOrg: ${org?.name} — ${org?.mission}\nPrograms: ${org?.programs?.join(", ")}\n\nProvide: key narrative angle, what funder cares about, red flags, 3 specific things to include.`,
+      loi:`Write a compelling Letter of Inquiry for ${grant.funder}.\nProgram: ${grant.program} | Ask: ${fmtFull(grant.amount)}\nOrg: ${org?.name} — ${org?.mission}\nPrograms: ${org?.programs?.join(", ")}\n\nWrite a 3-paragraph LOI: hook, program fit, ask.`,
+      report:`Grant report outline for ${grant.funder}.\nProgram: ${grant.program} | Amount: ${fmtFull(grant.amount)} | Due: ${grant.reportDue}\nNotes: ${grant.notes}\nOrg mission: ${org?.mission}\n\nProvide: section headers, 3 key metrics to feature, narrative arc, what to emphasize.`,
     };
     await askClaude(sys,prompts[type],chunk=>setAiMap(p=>({...p,[key]:chunk})));
     setLoadingKey(null);
   };
+
+  const changeStatus=async(status)=>{
+    const g=grant;
+    await apiFetch(`/grants/${g.id}`,{method:"PUT",body:JSON.stringify({funder:g.funder,program:g.program,amount:g.amount,received:g.received||0,status,deadline:g.deadline||"",reportDue:g.reportDue||"",officer:g.officer,notes:g.notes})});
+    onUpdate({...g,status});
+  };
+
+  const saveNotes=async()=>{
+    setSavingNotes(true);const g=grant;
+    await apiFetch(`/grants/${g.id}`,{method:"PUT",body:JSON.stringify({funder:g.funder,program:g.program,amount:g.amount,received:g.received||0,status:g.status,deadline:g.deadline||"",reportDue:g.reportDue||"",officer:g.officer,notes})});
+    onUpdate({...g,notes});setSavingNotes(false);
+  };
+
+  const saveEdit=async()=>{
+    const raw=await apiFetch(`/grants/${grant.id}`,{method:"PUT",body:JSON.stringify({funder:ef.funder,program:ef.program,amount:Number(ef.amount)||0,received:Number(ef.received)||0,status:ef.status,deadline:ef.deadline||"",reportDue:ef.reportDue||"",officer:ef.officer,notes:grant.notes})});
+    const adapted={id:raw.id,funder:raw.funder,program:raw.program||"",amount:raw.amount||0,received:raw.received||0,status:raw.status,deadline:raw.deadline||"",reportDue:raw.report_due||null,officer:raw.officer||"",notes:raw.notes||"",history:Array.isArray(raw.history)?raw.history:JSON.parse(raw.history||"[]")};
+    onUpdate(adapted);setEditing(false);
+  };
+
+  const inp={width:"100%",boxSizing:"border-box",background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"9px 12px",color:T.ink,fontSize:13,outline:"none"};
+
+  return(
+    <div className="fade-in" style={{position:"fixed",inset:0,background:T.bg,zIndex:200,display:"flex",flexDirection:"column",overflow:"hidden"}}>
+      {/* Top bar */}
+      <div style={{background:T.white,borderBottom:"1px solid "+T.bg3,padding:"10px 24px",display:"flex",alignItems:"center",gap:12,flexShrink:0}}>
+        <button onClick={onClose} style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"7px 14px",color:T.ink3,fontSize:13,cursor:"pointer",whiteSpace:"nowrap"}}>← Back</button>
+        <div style={{flex:1,minWidth:0}}>
+          <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+            <span style={{fontSize:16,fontWeight:800,color:T.ink,letterSpacing:"-0.01em"}}>{grant.funder}</span>
+            <Pill label={grant.status} color={SC[grant.status]}/>
+          </div>
+          <div style={{fontSize:11,color:T.ink3,marginTop:2}}>{grant.program} · {fmtFull(grant.amount)} ask</div>
+        </div>
+        <div style={{display:"flex",gap:6,flexShrink:0}}>
+          <button onClick={()=>setEditing(true)} style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"7px 14px",color:T.ink3,fontSize:13,cursor:"pointer"}}>Edit</button>
+          {isAdmin&&<button onClick={()=>onDelete(grant.id)} style={{background:"transparent",border:"1px solid #ef444455",borderRadius:8,padding:"7px 14px",color:"#ef4444",fontSize:13,cursor:"pointer"}}>Delete</button>}
+        </div>
+      </div>
+
+      {/* Edit modal */}
+      {editing&&<div style={{position:"absolute",inset:0,background:"rgba(15,15,15,0.45)",zIndex:10,display:"flex",alignItems:"center",justifyContent:"center"}} onClick={()=>setEditing(false)}>
+        <div onClick={e=>e.stopPropagation()} style={{background:T.white,borderRadius:16,padding:24,width:480,maxWidth:"92vw",display:"flex",flexDirection:"column",gap:12}}>
+          <div style={{fontSize:15,fontWeight:700,color:T.ink}}>Edit Grant</div>
+          {[["funder","Funder"],["program","Program"],["officer","Program Officer"]].map(([k,l])=>(
+            <div key={k}>
+              <div style={{fontSize:11,color:T.ink3,marginBottom:4}}>{l}</div>
+              <input value={ef[k]} onChange={e=>setEf(p=>({...p,[k]:e.target.value}))} style={inp}/>
+            </div>
+          ))}
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+            {[["amount","Ask Amount ($)"],["received","Received ($)"]].map(([k,l])=>(
+              <div key={k}><div style={{fontSize:11,color:T.ink3,marginBottom:4}}>{l}</div>
+              <input type="number" value={ef[k]} onChange={e=>setEf(p=>({...p,[k]:e.target.value}))} style={inp}/></div>
+            ))}
+            {[["deadline","Deadline"],["reportDue","Report Due"]].map(([k,l])=>(
+              <div key={k}><div style={{fontSize:11,color:T.ink3,marginBottom:4}}>{l}</div>
+              <input type="date" value={ef[k]||""} onChange={e=>setEf(p=>({...p,[k]:e.target.value}))} style={inp}/></div>
+            ))}
+          </div>
+          <div>
+            <div style={{fontSize:11,color:T.ink3,marginBottom:4}}>Status</div>
+            <select value={ef.status} onChange={e=>setEf(p=>({...p,status:e.target.value}))} style={{...inp,cursor:"pointer"}}>
+              {statuses.map(s=><option key={s} value={s}>{s}</option>)}
+            </select>
+          </div>
+          <div style={{display:"flex",gap:8,marginTop:4}}>
+            <button onClick={saveEdit} style={{background:"#10b981",border:"none",borderRadius:8,padding:"9px 16px",color:"#fff",fontSize:13,fontWeight:600,cursor:"pointer"}}>Save Changes</button>
+            <button onClick={()=>setEditing(false)} style={{background:T.bg,border:"none",borderRadius:8,padding:"9px 16px",color:T.ink3,fontSize:13,cursor:"pointer"}}>Cancel</button>
+          </div>
+        </div>
+      </div>}
+
+      {/* Two-panel body */}
+      <div style={{flex:1,display:"grid",gridTemplateColumns:"minmax(0,1.25fr) minmax(0,0.75fr)",overflow:"hidden"}}>
+
+        {/* LEFT — details + notes */}
+        <div style={{overflowY:"auto",padding:"22px 20px 24px 24px",borderRight:"1px solid "+T.bg3,display:"flex",flexDirection:"column",gap:18}}>
+
+          {/* Stats row */}
+          <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10}}>
+            {[
+              ["Ask",fmtFull(grant.amount),T.ink],
+              ["Received",fmtFull(grant.received||0),"#10b981"],
+              ["% Funded",pct+"%",pct>75?"#10b981":pct>40?"#f59e0b":"#6b7280"],
+              ["Days Left",grant.deadline?(days<0?"Overdue":days+"d"):"—",days<0?"#ef4444":days<14?"#ef4444":days<30?"#f59e0b":T.ink],
+            ].map(([l,v,c])=>(
+              <div key={l} style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:12,padding:"12px 14px"}}>
+                <div style={{fontSize:9,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.1em",color:T.ink3,marginBottom:4}}>{l}</div>
+                <div style={{fontSize:20,fontWeight:800,color:c,fontFamily:"'DM Serif Display',serif",lineHeight:1.1}}>{v}</div>
+              </div>
+            ))}
+          </div>
+
+          {/* Funding progress */}
+          {grant.amount>0&&<div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:12,padding:"14px 16px"}}>
+            <div style={{display:"flex",justifyContent:"space-between",marginBottom:8}}>
+              <div style={{fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.1em",color:T.ink3}}>Funding Progress</div>
+              <div style={{fontSize:11,color:T.ink3}}>{fmtFull(grant.received||0)} of {fmtFull(grant.amount)}</div>
+            </div>
+            <div style={{height:8,background:T.bg3,borderRadius:99}}>
+              <div style={{height:"100%",width:`${Math.min(pct,100)}%`,background:"#10b981",borderRadius:99,transition:"width 0.4s"}}/>
+            </div>
+          </div>}
+
+          {/* Details grid */}
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+            <div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:12,padding:"12px 14px"}}>
+              <div style={{fontSize:9,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.1em",color:T.ink3,marginBottom:4}}>Application Deadline</div>
+              <div style={{fontSize:14,fontWeight:600,color:days<14?"#ef4444":days<30?"#f59e0b":T.ink}}>{grant.deadline?new Date(grant.deadline).toLocaleDateString("en-US",{month:"long",day:"numeric",year:"numeric"}):"—"}</div>
+            </div>
+            <div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:12,padding:"12px 14px"}}>
+              <div style={{fontSize:9,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.1em",color:T.ink3,marginBottom:4}}>Program Officer</div>
+              <div style={{fontSize:14,fontWeight:600,color:T.ink}}>{grant.officer||"—"}</div>
+            </div>
+            {grant.reportDue&&<div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:12,padding:"12px 14px"}}>
+              <div style={{fontSize:9,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.1em",color:T.ink3,marginBottom:4}}>Report Due</div>
+              <div style={{fontSize:14,fontWeight:600,color:reportDays<14?"#ef4444":reportDays<30?"#f59e0b":T.ink}}>{new Date(grant.reportDue).toLocaleDateString("en-US",{month:"long",day:"numeric",year:"numeric"})}</div>
+            </div>}
+          </div>
+
+          {/* Grant history tags */}
+          {grant.history&&grant.history.length>0&&<div>
+            <div style={{fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.1em",color:T.ink3,marginBottom:8}}>Prior Awards</div>
+            <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
+              {grant.history.map((h,i)=><Pill key={i} label={h} color="#10b981"/>)}
+            </div>
+          </div>}
+
+          {/* Notes */}
+          <div>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8}}>
+              <div style={{fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.1em",color:T.ink3}}>Notes</div>
+              {notes!==grant.notes&&<button onClick={saveNotes} disabled={savingNotes} style={{background:"#10b981",border:"none",borderRadius:7,padding:"4px 10px",color:"#fff",fontSize:11,fontWeight:700,cursor:"pointer"}}>{savingNotes?"Saving…":"Save"}</button>}
+            </div>
+            <textarea value={notes} onChange={e=>setNotes(e.target.value)} placeholder="Add notes about this grant…" style={{width:"100%",boxSizing:"border-box",background:T.white,border:"1px solid "+T.bg3,borderRadius:10,padding:"10px 12px",color:T.ink,fontSize:13,lineHeight:1.6,outline:"none",resize:"vertical",minHeight:100}}/>
+          </div>
+        </div>
+
+        {/* RIGHT — status + AI */}
+        <div style={{overflowY:"auto",padding:"22px 24px 24px 20px",display:"flex",flexDirection:"column",gap:18}}>
+
+          {/* Status mover */}
+          <div>
+            <div style={{fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.1em",color:T.ink3,marginBottom:8}}>Move Stage</div>
+            <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
+              {statuses.map(s=>(
+                <button key={s} onClick={()=>changeStatus(s)}
+                  style={{background:grant.status===s?SC[s]+"22":T.bg,border:`1px solid ${grant.status===s?SC[s]:T.bg3}`,borderRadius:8,padding:"6px 12px",color:grant.status===s?SC[s]:T.ink3,fontSize:12,fontWeight:600,cursor:"pointer",textTransform:"capitalize"}}>
+                  {s}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* AI Intelligence */}
+          <div>
+            <div style={{fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.1em",color:T.ink3,marginBottom:8}}>AI Intelligence</div>
+            <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:12}}>
+              {grant.status!=="closed"&&<AIBtn onClick={()=>getAI("strategy")} loading={loadingKey===`${grant.id}_strategy`} label="✦ Grant Strategy" small/>}
+              {["pending","prospecting"].includes(grant.status)&&<AIBtn onClick={()=>getAI("loi")} loading={loadingKey===`${grant.id}_loi`} label="✦ Draft LOI" small/>}
+              {grant.reportDue&&grant.status==="active"&&<AIBtn onClick={()=>getAI("report")} loading={loadingKey===`${grant.id}_report`} label="✦ Report Outline" small/>}
+            </div>
+            {["strategy","loi","report"].map(t=>aiMap[`${grant.id}_${t}`]?<AIPanel key={t} text={aiMap[`${grant.id}_${t}`]} onClose={()=>setAiMap(p=>({...p,[`${grant.id}_${t}`]:""}))}/>:null)}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Grants({data,setData}) {
+  const {auth}=useAuth();
+  const isAdmin=auth?.user?.role==="admin";
+  const [selected,setSelected]=useState(null);
+  const [prospectAI,setProspectAI]=useState(""); const [prospectLoading,setProspectLoading]=useState(false);
+  const pipeline=["prospecting","pending","active","closed"];
+  const totals=pipeline.reduce((a,s)=>{a[s]=data.grants.filter(g=>g.status===s).reduce((sum,g)=>sum+g.amount,0);return a;},{});
 
   const findProspects=async()=>{
     setProspectLoading(true); setProspectAI("");
@@ -1346,7 +1528,18 @@ function Grants({data,setData}) {
     setProspectLoading(false);
   };
 
+  const onUpdate=(updated)=>{
+    setData(prev=>({...prev,grants:prev.grants.map(g=>g.id===updated.id?updated:g)}));
+    setSelected(updated);
+  };
+  const onDelete=async(id)=>{
+    await apiFetch(`/grants/${id}`,{method:"DELETE"});
+    setData(prev=>({...prev,grants:prev.grants.filter(g=>g.id!==id)}));
+    setSelected(null);
+  };
+
   return <div style={{display:"flex",flexDirection:"column",gap:16}}>
+    {selected&&<GrantProfile grant={selected} onClose={()=>setSelected(null)} onUpdate={onUpdate} onDelete={onDelete} isAdmin={isAdmin} org={data.org}/>}
     <PageTitle main="Grant" accent="pipeline."/>
     <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
       <AIBtn onClick={findProspects} loading={prospectLoading} label="✦ Find New Grant Prospects"/>
@@ -1363,35 +1556,23 @@ function Grants({data,setData}) {
 
     {data.grants.length===0&&<EmptyState icon="◉" title="No grants yet" message="Start tracking your grant portfolio — add grants by clicking Find Grants or creating one manually."/>}
     {data.grants.map(g=>{
-      const isOpen=selected?.id===g.id; const pct=g.amount>0?Math.round(g.received/g.amount*100):0; const days=daysUntil(g.deadline);
-      return <Card key={g.id} selected={isOpen} accent={SC[g.status]} onClick={()=>setSelected(isOpen?null:g)}>
+      const pct=g.amount>0?Math.round((g.received||0)/g.amount*100):0;
+      const days=daysUntil(g.deadline);
+      return <Card key={g.id} accent={SC[g.status]} onClick={()=>setSelected(g)} style={{cursor:"pointer"}}>
         <div style={{display:"flex",alignItems:"center",gap:12}}>
           <div style={{flex:1}}>
             <div style={{fontSize:15,fontWeight:700,color:T.ink}}>{g.funder}</div>
             <div style={{fontSize:12,color:T.ink3,marginTop:2}}>{g.program}</div>
-            {g.history&&<div style={{fontSize:11,color:T.ink3,marginTop:2}}>History: {g.history.join(" · ")}</div>}
+            {g.history&&g.history.length>0&&<div style={{fontSize:11,color:T.ink3,marginTop:2}}>History: {g.history.join(" · ")}</div>}
           </div>
           <div style={{textAlign:"right"}}>
             <div style={{fontSize:16,fontWeight:800,color:T.ink}}>{fmt(g.amount)}</div>
             {g.status==="active"&&<div style={{fontSize:11,color:T.ink3}}>{pct}% received</div>}
+            {g.deadline&&days<=60&&<div style={{fontSize:11,color:days<14?"#ef4444":"#f59e0b",marginTop:2,fontWeight:600}}>{days<0?"Overdue":days+"d left"}</div>}
           </div>
           <Pill label={g.status} color={SC[g.status]}/>
         </div>
         {g.status==="active"&&<div style={{marginTop:10,height:4,background:T.bg3,borderRadius:99}}><div style={{height:"100%",width:`${pct}%`,background:"#10b981",borderRadius:99}}/></div>}
-        {isOpen&&<div style={{marginTop:14,paddingTop:14,borderTop:"1px solid "+T.bg3}}>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:14}}>
-            <div><div style={{fontSize:10,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.06em"}}>Deadline</div><div style={{fontSize:13,color:days<30?"#ef4444":T.ink,marginTop:3}}>{new Date(g.deadline).toLocaleDateString()} ({days}d)</div></div>
-            <div><div style={{fontSize:10,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.06em"}}>Program Officer</div><div style={{fontSize:13,color:T.ink,marginTop:3}}>{g.officer}</div></div>
-            {g.reportDue&&<div><div style={{fontSize:10,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.06em"}}>Report Due</div><div style={{fontSize:13,color:T.ink,marginTop:3}}>{new Date(g.reportDue).toLocaleDateString()}</div></div>}
-            <div style={{gridColumn:"1/-1"}}><div style={{fontSize:10,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.06em"}}>Notes</div><div style={{fontSize:13,color:T.ink3,marginTop:3,lineHeight:1.5}}>{g.notes}</div></div>
-          </div>
-          <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-            {g.status!=="closed"&&<AIBtn onClick={e=>{e.stopPropagation();getAI(g,"strategy");}} loading={loadingKey===`${g.id}_strategy`} label="✦ Grant Strategy" small/>}
-            {["pending","prospecting"].includes(g.status)&&<AIBtn onClick={e=>{e.stopPropagation();getAI(g,"loi");}} loading={loadingKey===`${g.id}_loi`} label="✦ Draft LOI" small/>}
-            {g.reportDue&&g.status==="active"&&<AIBtn onClick={e=>{e.stopPropagation();getAI(g,"report");}} loading={loadingKey===`${g.id}_report`} label="✦ Report Outline" small/>}
-          </div>
-          {["strategy","loi","report"].map(t=>aiMap[`${g.id}_${t}`]?<AIPanel key={t} text={aiMap[`${g.id}_${t}`]} onClose={()=>setAiMap(p=>({...p,[`${g.id}_${t}`]:""}))}/>:null)}
-        </div>}
       </Card>;
     })}
   </div>;
