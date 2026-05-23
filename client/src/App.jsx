@@ -160,6 +160,43 @@ function retentionRisk(d) {
   return { risk, level, reason: reasons.join(", ") || "steady engagement", action: actions[level] };
 }
 
+// ── Giving History Chart ──────────────────────────────────────────────────
+function GivingHistoryChart({gifts}) {
+  if (!gifts?.length) return <div style={{height:80,display:"flex",alignItems:"center",justifyContent:"center",color:T.ink3,fontSize:12}}>No gift history recorded</div>;
+  const sorted=[...gifts].sort((a,b)=>new Date(a.date)-new Date(b.date));
+  const maxAmt=Math.max(...sorted.map(g=>g.amount),1);
+  const W=500,H=110,pad={t:8,r:16,b:24,l:44};
+  const pw=W-pad.l-pad.r, ph=H-pad.t-pad.b;
+  const xs=sorted.map((_,i)=>pad.l+(sorted.length>1?(i/(sorted.length-1))*pw:pw/2));
+  const ys=sorted.map(g=>pad.t+ph-(g.amount/maxAmt)*ph);
+  const pts=xs.map((x,i)=>`${x},${ys[i]}`).join(" ");
+  const area=sorted.length>1?`M ${xs[0]},${pad.t+ph} L ${xs.map((x,i)=>`${x} ${ys[i]}`).join(" L ")} L ${xs[xs.length-1]},${pad.t+ph} Z`:null;
+  const yearOf=g=>new Date(g.date).getFullYear();
+  return(
+    <svg width="100%" viewBox={`0 0 ${W} ${H}`} style={{display:"block",overflow:"visible"}}>
+      <defs>
+        <linearGradient id="giftGrad" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="#10b981" stopOpacity="0.22"/>
+          <stop offset="100%" stopColor="#10b981" stopOpacity="0.01"/>
+        </linearGradient>
+      </defs>
+      {area&&<path d={area} fill="url(#giftGrad)"/>}
+      {sorted.length>1&&<polyline points={pts} stroke="#10b981" strokeWidth="2" fill="none" strokeLinejoin="round"/>}
+      {sorted.map((g,i)=>(
+        <g key={i}>
+          <circle cx={xs[i]} cy={ys[i]} r={4} fill="#10b981" stroke={T.white} strokeWidth={1.5}/>
+          <title>${g.amount.toLocaleString()} · {g.date}</title>
+        </g>
+      ))}
+      <text x={pad.l-4} y={pad.t+7} textAnchor="end" fontSize={9} fill={T.ink3}>{fmt(maxAmt)}</text>
+      <text x={pad.l-4} y={pad.t+ph+1} textAnchor="end" fontSize={9} fill={T.ink3}>$0</text>
+      {sorted.map((g,i)=>(i===0||i===sorted.length-1||(sorted.length<=6))?(
+        <text key={i} x={xs[i]} y={H-4} textAnchor="middle" fontSize={9} fill={T.ink3}>{yearOf(g)}</text>
+      ):null)}
+    </svg>
+  );
+}
+
 // ── Global Chat ────────────────────────────────────────────────────────────
 function AIChat({data,onClose}) {
   const [msgs,setMsgs]=useState([{role:"assistant",content:`Hi! I'm your development intelligence assistant for ${data.org.name}. I have full context on your donors, grants, financials, board, and tasks.\n\nTry asking:\n• "Who should I call this week?"\n• "How's our grant pipeline?"\n• "Draft a script for my Margaret Chen call"\n• "What's our biggest financial risk right now?"\n• "Which volunteers should we convert to donors?"`}]);
@@ -506,67 +543,112 @@ function TouchpointTimeline({interactions}){
   );
 }
 
-function DonorDetailModal({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loadingKey,getAI,isAdmin,onEdit,onDelete}){
+function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loadingKey,getAI,isAdmin,onEdit,onDelete}){
+  const [gifts,setGifts]=useState([]);
+  const [giftLoading,setGiftLoading]=useState(true);
   const stage=STAGES.find(s=>s.id===(donor.stage||"cultivate"))||STAGES[2];
   const sc=donorScore(donor);const scoreColor=sc>70?"#10b981":sc>45?"#f59e0b":"#ef4444";
   const urg=moveUrgency(donor);
+
+  useEffect(()=>{
+    setGiftLoading(true);
+    apiFetch(`/donors/${donor.id}`).then(raw=>{
+      setGifts((raw.gifts||[]).map(g=>({amount:g.amount||0,date:g.date||g.created_at?.split("T")[0]})));
+    }).catch(()=>{}).finally(()=>setGiftLoading(false));
+    if(!aiMap[`${donor.id}_nextmove`])getAI(donor,"nextmove");
+  },[donor.id]);
+
   return(
-    <div style={{position:"fixed",inset:0,background:"#000000cc",backdropFilter:"blur(4px)",zIndex:200,display:"flex",alignItems:"center",justifyContent:"center",padding:20}} onClick={onClose}>
-      <div onClick={e=>e.stopPropagation()} className="fade-in" style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:20,width:"100%",maxWidth:580,maxHeight:"88vh",overflowY:"auto",padding:28,boxSizing:"border-box",boxShadow:"0 4px 40px rgba(15,15,15,0.12)"}}>
-        <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",marginBottom:16}}>
+    <div className="fade-in" style={{position:"fixed",inset:0,background:T.bg,zIndex:200,display:"flex",flexDirection:"column",overflow:"hidden"}}>
+      {/* Top bar */}
+      <div style={{background:T.white,borderBottom:"1px solid "+T.bg3,padding:"10px 24px",display:"flex",alignItems:"center",gap:12,flexShrink:0}}>
+        <button onClick={onClose} style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"7px 14px",color:T.ink3,fontSize:13,cursor:"pointer",whiteSpace:"nowrap"}}>← Back</button>
+        <div style={{width:34,height:34,borderRadius:"50%",background:stage.color+"33",display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,fontWeight:800,color:stage.color,flexShrink:0}}>{donor.name[0]}</div>
+        <div style={{flex:1,minWidth:0}}>
+          <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+            <span style={{fontSize:16,fontWeight:800,color:T.ink,letterSpacing:"-0.01em"}}>{donor.name}</span>
+            <span style={{fontSize:10,fontWeight:700,padding:"3px 9px",borderRadius:99,background:stage.color+"22",color:stage.color}}>{stage.label}</span>
+            <span style={{fontSize:11,color:T.ink3}}>{donor.email}</span>
+          </div>
+          <div style={{fontSize:11,color:T.ink3,marginTop:2}}>{fmtFull(donor.total)} lifetime · {donor.gifts} gifts</div>
+        </div>
+        <div style={{display:"flex",gap:6,flexShrink:0}}>
+          <button onClick={onEdit} style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"7px 14px",color:T.ink3,fontSize:13,cursor:"pointer"}}>Edit</button>
+          {isAdmin&&<button onClick={()=>onDelete(donor.id)} style={{background:"transparent",border:"1px solid #ef444455",borderRadius:8,padding:"7px 14px",color:"#ef4444",fontSize:13,cursor:"pointer"}}>Delete</button>}
+        </div>
+      </div>
+
+      {/* Two-panel body */}
+      <div style={{flex:1,display:"grid",gridTemplateColumns:"minmax(0,1.25fr) minmax(0,0.75fr)",overflow:"hidden"}}>
+
+        {/* LEFT — stats + chart + timeline */}
+        <div style={{overflowY:"auto",padding:"22px 20px 24px 24px",borderRight:"1px solid "+T.bg3,display:"flex",flexDirection:"column",gap:18}}>
+
+          {/* Stats row */}
+          <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10}}>
+            {[["Lifetime",fmtFull(donor.total),T.ink],["Last Gift",fmtFull(donor.lastAmount),"#10b981"],["Contact",`${urg.days}d ago`,urg.urgencyColor],["Score",`${sc}/99`,scoreColor]].map(([l,v,c])=>(
+              <div key={l} style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:12,padding:"12px 14px"}}>
+                <div style={{fontSize:9,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.1em",color:T.ink3,marginBottom:4}}>{l}</div>
+                <div style={{fontSize:20,fontWeight:800,color:c,fontFamily:"'DM Serif Display',serif",lineHeight:1.1}}>{v}</div>
+              </div>
+            ))}
+          </div>
+
+          {/* Giving history chart */}
+          <div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:14,padding:"16px 18px"}}>
+            <div style={{fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.1em",color:T.ink3,marginBottom:12}}>
+              Giving History
+            </div>
+            {giftLoading?<div style={{height:80,display:"flex",alignItems:"center",justifyContent:"center",color:T.ink3,fontSize:12}}><Spin/></div>:<GivingHistoryChart gifts={gifts}/>}
+          </div>
+
+          {/* Tags */}
+          {donor.tags?.length>0&&<div style={{display:"flex",gap:5,flexWrap:"wrap"}}>{donor.tags.map(t=><Pill key={t} label={t}/>)}</div>}
+
+          {/* Notes */}
+          {donor.notes&&<div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:10,padding:"12px 14px",fontSize:13,color:T.ink3,lineHeight:1.6}}>{donor.notes}</div>}
+
+          {/* Timeline */}
           <div>
-            <div style={{fontSize:22,fontWeight:800,color:T.ink,letterSpacing:"-0.02em"}}>{donor.name}</div>
-            <div style={{display:"flex",gap:8,alignItems:"center",marginTop:6,flexWrap:"wrap"}}>
-              <span style={{fontSize:11,fontWeight:700,padding:"3px 10px",borderRadius:99,background:stage.color+"22",color:stage.color}}>{stage.label}</span>
-              <span style={{fontSize:12,color:T.ink3}}>{fmtFull(donor.total)} lifetime · {donor.gifts} gifts</span>
-              <span style={{fontSize:12,color:T.ink3}}>{donor.email}</span>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12}}>
+              <div style={{fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.1em",color:T.ink3}}>Touchpoint Timeline</div>
+              <button onClick={onLogTouchpoint} style={{background:"#10b981",border:"none",borderRadius:7,padding:"5px 12px",color:"#fff",fontSize:11,fontWeight:700,cursor:"pointer"}}>+ Log</button>
+            </div>
+            <TouchpointTimeline interactions={donor.interactions}/>
+          </div>
+        </div>
+
+        {/* RIGHT — stage mover + always-on AI */}
+        <div style={{overflowY:"auto",padding:"22px 24px 24px 20px",display:"flex",flexDirection:"column",gap:18}}>
+
+          {/* Stage mover */}
+          <div>
+            <div style={{fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.1em",color:T.ink3,marginBottom:8}}>Move Stage</div>
+            <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
+              {STAGES.map(s=>(
+                <button key={s.id} onClick={()=>onStageChange(donor.id,s.id)}
+                  style={{background:(donor.stage||"cultivate")===s.id?s.color+"22":T.bg,border:`1px solid ${(donor.stage||"cultivate")===s.id?s.color:T.bg3}`,borderRadius:8,padding:"6px 12px",color:(donor.stage||"cultivate")===s.id?s.color:T.ink3,fontSize:12,fontWeight:600,cursor:"pointer"}}>
+                  {s.label}
+                </button>
+              ))}
+            </div>
+            <div style={{marginTop:8,fontSize:11,color:T.ink3,lineHeight:1.5,borderLeft:`2px solid ${stage.color}40`,paddingLeft:8}}>
+              {STAGE_ACTION[donor.stage||"cultivate"]}
             </div>
           </div>
-          <div style={{display:"flex",gap:6,flexShrink:0}}>
-            <button onClick={onEdit} style={{background:T.bg3,border:"1px solid "+T.bg3,borderRadius:8,padding:"6px 12px",color:T.ink3,cursor:"pointer",fontSize:13}}>Edit</button>
-            <button onClick={onClose} style={{background:T.bg3,border:"none",borderRadius:8,padding:"6px 12px",color:T.ink3,cursor:"pointer",fontSize:13}}>✕</button>
-          </div>
-        </div>
 
-        <div style={{marginBottom:16}}>
-          <div style={{fontSize:10,fontWeight:700,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:8}}>Move Stage</div>
-          <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
-            {STAGES.map(s=><button key={s.id} onClick={()=>onStageChange(donor.id,s.id)} style={{background:(donor.stage||"cultivate")===s.id?s.color+"22":T.bg,border:`1px solid ${(donor.stage||"cultivate")===s.id?s.color:T.bg3}`,borderRadius:8,padding:"6px 12px",color:(donor.stage||"cultivate")===s.id?s.color:T.ink3,fontSize:12,fontWeight:600,cursor:"pointer"}}>{s.label}</button>)}
-          </div>
-        </div>
-
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10,marginBottom:16}}>
-          {[["Last Gift",fmtFull(donor.lastAmount),donor.lastGift,T.ink],["Last Contact",`${urg.days}d ago`,urg.level,urg.urgencyColor],["Engagement",`${sc}/99`,"score",scoreColor]].map(([l,v,s,c])=>(
-            <div key={l} style={{background:T.bg,borderRadius:10,padding:"10px 12px"}}>
-              <div style={{fontSize:10,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:4}}>{l}</div>
-              <div style={{fontSize:15,fontWeight:700,color:c}}>{v}</div>
-              <div style={{fontSize:10,color:T.ink3,marginTop:1,textTransform:"capitalize"}}>{s}</div>
+          {/* AI actions */}
+          <div>
+            <div style={{fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.1em",color:T.ink3,marginBottom:8}}>AI Intelligence</div>
+            <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:12}}>
+              <AIBtn onClick={()=>getAI(donor,"nextmove")} loading={loadingKey===`${donor.id}_nextmove`} label="✦ Next Move" small/>
+              <AIBtn onClick={()=>getAI(donor,"outreach")} loading={loadingKey===`${donor.id}_outreach`} label="✦ Outreach" small/>
+              <AIBtn onClick={()=>getAI(donor,"email")} loading={loadingKey===`${donor.id}_email`} label="✦ Draft Email" small/>
+              <AIBtn onClick={()=>getAI(donor,"callscript")} loading={loadingKey===`${donor.id}_callscript`} label="✦ Call Script" small/>
             </div>
-          ))}
-        </div>
-
-        {donor.notes&&<div style={{background:T.bg,borderRadius:10,padding:"12px 14px",fontSize:13,color:T.ink3,marginBottom:16,lineHeight:1.5}}>{donor.notes}</div>}
-
-        <div style={{marginBottom:16}}>
-          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12}}>
-            <div style={{fontSize:11,fontWeight:700,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.06em"}}>Touchpoint Timeline</div>
-            <button onClick={onLogTouchpoint} style={{background:"#10b981",border:"none",borderRadius:7,padding:"5px 12px",color:"#fff",fontSize:11,fontWeight:700,cursor:"pointer"}}>+ Log</button>
+            {["nextmove","outreach","email","callscript"].map(t=>aiMap[`${donor.id}_${t}`]?<AIPanel key={t} text={aiMap[`${donor.id}_${t}`]} onClose={()=>{}}/>:null)}
           </div>
-          <TouchpointTimeline interactions={donor.interactions}/>
         </div>
-
-        <div style={{borderTop:"1px solid "+T.bg3,paddingTop:14}}>
-          <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:10}}>
-            <AIBtn onClick={()=>getAI(donor,"nextmove")} loading={loadingKey===`${donor.id}_nextmove`} label="✦ Next Move" small/>
-            <AIBtn onClick={()=>getAI(donor,"outreach")} loading={loadingKey===`${donor.id}_outreach`} label="✦ Outreach Strategy" small/>
-            <AIBtn onClick={()=>getAI(donor,"email")} loading={loadingKey===`${donor.id}_email`} label="✦ Draft Email" small/>
-            <AIBtn onClick={()=>getAI(donor,"callscript")} loading={loadingKey===`${donor.id}_callscript`} label="✦ Call Script" small/>
-          </div>
-          {["nextmove","outreach","email","callscript"].map(t=>aiMap[`${donor.id}_${t}`]?<AIPanel key={t} text={aiMap[`${donor.id}_${t}`]} onClose={()=>{}}/>:null)}
-        </div>
-        {isAdmin&&<div style={{marginTop:14,paddingTop:14,borderTop:"1px solid "+T.bg3}}>
-          <button onClick={()=>onDelete(donor.id)} style={{background:"transparent",border:"1px solid #ef444455",borderRadius:8,padding:"7px 14px",color:"#ef4444",fontSize:12,fontWeight:600,cursor:"pointer"}}>Delete Donor</button>
-        </div>}
       </div>
     </div>
   );
@@ -576,13 +658,13 @@ function DonorKanban({donors,onStageChange,onLogTouchpoint,onSelectDonor}){
   const[draggingId,setDraggingId]=useState(null);const[dragOver,setDragOver]=useState(null);
   const byStage=sid=>donors.filter(d=>(d.stage||"cultivate")===sid).sort((a,b)=>b.total-a.total);
   return(
-    <div style={{display:"flex",gap:8,overflowX:"auto",paddingBottom:16,minHeight:480,alignItems:"flex-start"}}>
+    <div style={{display:"flex",gap:8,paddingBottom:16,minHeight:480,alignItems:"flex-start",width:"100%"}}>
       {STAGES.map(stage=>{
         const cols=byStage(stage.id);
         const total=cols.reduce((s,d)=>s+d.total,0);
         const isOver=dragOver===stage.id;
         return(
-          <div key={stage.id} style={{flexShrink:0,width:224,display:"flex",flexDirection:"column",gap:6}}
+          <div key={stage.id} style={{flex:"1 1 170px",minWidth:0,display:"flex",flexDirection:"column",gap:6}}
             onDragOver={e=>{e.preventDefault();setDragOver(stage.id);}}
             onDragLeave={e=>{if(!e.currentTarget.contains(e.relatedTarget))setDragOver(null);}}
             onDrop={e=>{e.preventDefault();const id=e.dataTransfer.getData("donorId");if(id)onStageChange(id,stage.id);setDragOver(null);}}>
@@ -600,27 +682,29 @@ function DonorKanban({donors,onStageChange,onLogTouchpoint,onSelectDonor}){
                 const urg=moveUrgency(d);const sc=donorScore(d);
                 const isDragging=draggingId===d.id;
                 const urgBg={critical:"#ef444408",due:"#f59e0b06",ok:"transparent"}[urg.level];
-                const urgBorder={critical:"#ef444430",due:"transparent",ok:"transparent"}[urg.level];
+                const urgBorder={critical:"#ef444430",due:"#f59e0b30",ok:"transparent"}[urg.level];
+                const scColor=sc>70?"#10b981":sc>45?"#f59e0b":"#ef4444";
                 return(
                   <div key={d.id} draggable
                     onDragStart={e=>{e.dataTransfer.setData("donorId",d.id);setDraggingId(d.id);}}
                     onDragEnd={()=>{setDraggingId(null);setDragOver(null);}}
-                    style={{border:`1px solid ${isDragging?T.bg3:urgBorder||T.bg2}`,borderRadius:10,padding:"11px 12px",cursor:"grab",opacity:isDragging?0.3:1,transition:"opacity 0.15s,border-color 0.15s",userSelect:"none",background:urgBg||T.white}}>
-                    <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",gap:6,marginBottom:6}}>
+                    style={{border:`1px solid ${isDragging?T.bg3:urgBorder||T.bg2}`,borderRadius:10,padding:"10px 11px",cursor:"grab",opacity:isDragging?0.3:1,transition:"opacity 0.15s,border-color 0.15s",userSelect:"none",background:urgBg||T.white}}>
+                    {/* Name + score badge */}
+                    <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",gap:4,marginBottom:5}}>
                       <div style={{flex:1,minWidth:0}}>
-                        <div style={{fontSize:13,fontWeight:700,color:T.ink,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{d.name}</div>
+                        <div style={{fontSize:12,fontWeight:700,color:T.ink,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{d.name}</div>
                         <div style={{fontSize:11,color:T.ink3,marginTop:1,fontWeight:600}}>{fmt(d.total)}</div>
                       </div>
-                      <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:2,flexShrink:0}}>
-                        <div style={{width:9,height:9,borderRadius:"50%",background:urg.urgencyColor,boxShadow:`0 0 6px ${urg.urgencyColor}60`}} title={`${urg.level}: ${urg.days}d`}/>
-                        <div style={{fontSize:9,color:urg.urgencyColor,fontWeight:700}}>{sc}</div>
+                      <div style={{background:scColor+"18",border:`1px solid ${scColor}40`,borderRadius:6,padding:"2px 6px",flexShrink:0,textAlign:"center"}}>
+                        <div style={{fontSize:12,fontWeight:800,color:scColor,lineHeight:1}}>{sc}</div>
+                        <div style={{fontSize:8,color:scColor,lineHeight:1.2,marginTop:1}}>score</div>
                       </div>
                     </div>
-                    <div style={{fontSize:11,color:urg.urgencyColor,marginBottom:5,display:"flex",alignItems:"center",gap:4}}>
-                      <span>{urg.level==="ok"?"✓":urg.level==="due"?"!":"!!"}</span>
-                      <span>{urg.days}d since contact</span>
+                    {/* Urgency row */}
+                    <div style={{display:"flex",alignItems:"center",gap:5,marginBottom:6}}>
+                      <div style={{width:7,height:7,borderRadius:"50%",background:urg.urgencyColor,flexShrink:0}}/>
+                      <span style={{fontSize:10,color:urg.urgencyColor,fontWeight:600}}>{urg.days}d since contact</span>
                     </div>
-                    <div style={{fontSize:10,color:T.ink3,lineHeight:1.4,marginBottom:8,borderLeft:`2px solid ${stage.color}30`,paddingLeft:6}}>{STAGE_ACTION[stage.id]}</div>
                     <div style={{display:"flex",gap:4}}>
                       <button onClick={e=>{e.stopPropagation();onLogTouchpoint(d);}} style={{flex:1,background:T.bg2,border:"1px solid "+T.bg3,borderRadius:6,padding:"5px 0",color:T.ink3,fontSize:11,fontWeight:600,cursor:"pointer"}}>+ Log</button>
                       <button onClick={e=>{e.stopPropagation();onSelectDonor(d);}} style={{flex:1,background:T.bg2,border:"1px solid "+T.bg3,borderRadius:6,padding:"5px 0",color:T.ink3,fontSize:11,fontWeight:600,cursor:"pointer"}}>View →</button>
@@ -751,7 +835,7 @@ function Donors({data,setData}){
       {showImport&&<DonorImport onClose={()=>setShowImport(false)} onImported={()=>{reloadDonors();setShowImport(false);}}/>}
       {logTarget&&<LogTouchpointModal donor={logTarget} onSave={int=>handleLogged(logTarget,int)} onClose={()=>setLogTarget(null)}/>}
       {editTarget&&<EditDonorModal donor={editTarget} onSave={handleEditSaved} onClose={()=>setEditTarget(null)}/>}
-      {selected&&view==="kanban"&&<DonorDetailModal donor={selected} onClose={()=>setSelected(null)}
+      {selected&&<DonorProfile donor={selected} onClose={()=>setSelected(null)}
         onStageChange={moveToStage} onLogTouchpoint={()=>{setLogTarget(selected);}}
         aiMap={aiMap} loadingKey={loadingKey} getAI={getAI}
         isAdmin={isAdmin} onEdit={()=>setEditTarget(selected)} onDelete={deleteDonor}/>}
@@ -791,51 +875,30 @@ function Donors({data,setData}){
 
       {view==="list"&&filtered.length===0&&<EmptyState icon="♦" title="No donors found" message="Try a different search term or add your first donor above."/>}
       {view==="list"&&filtered.map(d=>{
-        const sc=donorScore(d);const scoreColor=sc>70?"#10b981":sc>45?"#f59e0b":"#ef4444";
+        const sc=donorScore(d);const scColor=sc>70?"#10b981":sc>45?"#f59e0b":"#ef4444";
         const urg=moveUrgency(d);const stage=STAGES.find(s=>s.id===(d.stage||"cultivate"))||STAGES[2];
-        const isOpen=selected?.id===d.id;
         return(
-          <Card key={d.id} selected={isOpen} accent={stage.color} onClick={()=>setSelected(isOpen?null:d)}>
+          <Card key={d.id} onClick={()=>setSelected(d)} style={{cursor:"pointer"}}>
             <div style={{display:"flex",alignItems:"center",gap:12}}>
               <div style={{position:"relative",flexShrink:0}}>
                 <div style={{width:40,height:40,borderRadius:"50%",background:stage.color+"33",display:"flex",alignItems:"center",justifyContent:"center",fontSize:15,fontWeight:800,color:stage.color}}>{d.name[0]}</div>
-                <div style={{position:"absolute",bottom:-2,right:-2,width:14,height:14,borderRadius:"50%",background:urg.urgencyColor,border:"2px solid "+T.bg}}/>
+                <div style={{position:"absolute",bottom:-2,right:-2,width:10,height:10,borderRadius:"50%",background:urg.urgencyColor,border:"2px solid "+T.bg}}/>
               </div>
               <div style={{flex:1,minWidth:0}}>
                 <div style={{display:"flex",alignItems:"center",gap:7,flexWrap:"wrap"}}>
                   <div style={{fontSize:14,fontWeight:700,color:T.ink}}>{d.name}</div>
                   <span style={{fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:99,background:stage.color+"22",color:stage.color}}>{stage.label}</span>
                 </div>
-                <div style={{fontSize:11,color:T.ink3,marginTop:2}}>{urg.days}d since contact · {fmtFull(d.total)} · {d.gifts} gifts</div>
+                <div style={{fontSize:11,color:T.ink3,marginTop:2}}>{urg.days}d since contact · {fmtFull(d.total)} lifetime · {d.gifts} gifts</div>
               </div>
-              <button onClick={e=>{e.stopPropagation();setLogTarget(d);}} style={{background:T.bg3,border:"1px solid "+T.bg3,borderRadius:8,padding:"7px 12px",color:T.ink3,fontSize:12,cursor:"pointer",flexShrink:0}}>+ Log</button>
-            </div>
-
-            {isOpen&&<div style={{marginTop:14,paddingTop:14,borderTop:"1px solid "+T.bg3}}>
-              <div style={{marginBottom:14}}>
-                <div style={{fontSize:10,fontWeight:700,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:8}}>Move Stage</div>
-                <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
-                  {STAGES.map(s=><button key={s.id} onClick={e=>{e.stopPropagation();moveToStage(d.id,s.id);setSelected(prev=>({...prev,stage:s.id}));}} style={{background:(d.stage||"cultivate")===s.id?s.color+"22":T.bg,border:`1px solid ${(d.stage||"cultivate")===s.id?s.color:T.bg3}`,borderRadius:7,padding:"5px 11px",color:(d.stage||"cultivate")===s.id?s.color:T.ink3,fontSize:12,fontWeight:600,cursor:"pointer"}}>{s.label}</button>)}
+              <div style={{display:"flex",gap:6,alignItems:"center",flexShrink:0}}>
+                <div style={{background:scColor+"18",border:`1px solid ${scColor}40`,borderRadius:7,padding:"4px 8px",textAlign:"center"}}>
+                  <div style={{fontSize:13,fontWeight:800,color:scColor}}>{sc}</div>
+                  <div style={{fontSize:8,color:scColor,lineHeight:1.1}}>score</div>
                 </div>
+                <button onClick={e=>{e.stopPropagation();setLogTarget(d);}} style={{background:T.bg3,border:"1px solid "+T.bg3,borderRadius:8,padding:"7px 12px",color:T.ink3,fontSize:12,cursor:"pointer"}}>+ Log</button>
               </div>
-              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10,marginBottom:14}}>
-                <div><div style={{fontSize:10,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.06em"}}>Last Gift</div><div style={{fontSize:13,color:T.ink,marginTop:3}}>{fmtFull(d.lastAmount)}</div></div>
-                <div><div style={{fontSize:10,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.06em"}}>Contact</div><div style={{fontSize:13,color:urg.urgencyColor,marginTop:3,fontWeight:600,textTransform:"capitalize"}}>{urg.level} ({urg.days}d)</div></div>
-                <div><div style={{fontSize:10,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.06em"}}>Engagement</div><div style={{fontSize:13,color:scoreColor,marginTop:3,fontWeight:700}}>{sc}/99</div></div>
-              </div>
-              {d.notes&&<div style={{background:T.bg,borderRadius:10,padding:"10px 14px",fontSize:13,color:T.ink3,marginBottom:14,lineHeight:1.5}}>{d.notes}</div>}
-              <div style={{marginBottom:14}}>
-                <div style={{fontSize:11,fontWeight:700,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:10}}>Touchpoint Timeline</div>
-                <TouchpointTimeline interactions={d.interactions}/>
-              </div>
-              <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-                <AIBtn onClick={e=>{e.stopPropagation();getAI(d,"nextmove");}} loading={loadingKey===`${d.id}_nextmove`} label="✦ Next Move" small/>
-                <AIBtn onClick={e=>{e.stopPropagation();getAI(d,"outreach");}} loading={loadingKey===`${d.id}_outreach`} label="✦ Outreach" small/>
-                <AIBtn onClick={e=>{e.stopPropagation();getAI(d,"email");}} loading={loadingKey===`${d.id}_email`} label="✦ Draft Email" small/>
-                <AIBtn onClick={e=>{e.stopPropagation();getAI(d,"callscript");}} loading={loadingKey===`${d.id}_callscript`} label="✦ Call Script" small/>
-              </div>
-              {["nextmove","outreach","email","callscript"].map(t=>aiMap[`${d.id}_${t}`]?<AIPanel key={t} text={aiMap[`${d.id}_${t}`]} onClose={()=>setAiMap(p=>({...p,[`${d.id}_${t}`]:""}))}/>:null)}
-            </div>}
+            </div>
           </Card>
         );
       })}
@@ -1225,6 +1288,19 @@ function guessField(header) {
   return "";
 }
 
+function inferStage(total, lastGiftStr) {
+  const amount = parseFloat(String(total || "0").replace(/[$,]/g, "")) || 0;
+  const d = lastGiftStr ? new Date(lastGiftStr) : null;
+  const days = d && !isNaN(d) ? Math.floor((Date.now() - d) / 86400000) : Infinity;
+  if (!amount && days === Infinity) return "prospect";
+  if (days > 365) return "lapsed";
+  if (days < 90 && amount > 0) return "steward";
+  if (amount > 0) return "cultivate";
+  return "prospect";
+}
+
+const STAGE_COLORS = {prospect:T.ink3,qualify:"#3b82f6",cultivate:"#8b5cf6",solicit:"#f59e0b",steward:"#10b981",lapsed:"#ef4444"};
+
 function parseCSV(text) {
   const lines = text.trim().split(/\r?\n/);
   if (lines.length < 2) return { headers: [], rows: [] };
@@ -1247,6 +1323,7 @@ function DonorImport({ onClose, onImported }) {
   const [parsed, setParsed] = useState(null);
   const [mapping, setMapping] = useState({});
   const [loading, setLoading] = useState(false);
+  const [aiLoading, setAiLoading] = useState(false);
   const [result, setResult] = useState(null);
   const [err, setErr] = useState("");
 
@@ -1265,33 +1342,51 @@ function DonorImport({ onClose, onImported }) {
     setMapping(auto); setParsed({ headers, rows }); setErr("");
   };
 
+  const doAiMap = async () => {
+    if (!parsed) return;
+    setAiLoading(true);
+    try {
+      const sample = parsed.rows[0] || {};
+      const res = await apiFetch("/ai/column-map", { method:"POST", body:JSON.stringify({ headers:parsed.headers, sample }) });
+      if (res.mapping) {
+        const merged = { ...mapping };
+        Object.entries(res.mapping).forEach(([h, f]) => {
+          if (f && CSV_FIELDS.some(cf => cf.key === f)) merged[h] = f;
+        });
+        setMapping(merged);
+      }
+    } catch { /* keep existing mapping */ }
+    setAiLoading(false);
+  };
+
+  const buildDonors = () => parsed.rows.map(row => {
+    const d = {};
+    Object.entries(mapping).forEach(([h, field]) => { if (field) d[field] = row[h]; });
+    if (d.total) d.total = parseFloat(String(d.total).replace(/[$,]/g, "")) || 0;
+    if (d.lastAmount) d.lastAmount = parseFloat(String(d.lastAmount).replace(/[$,]/g, "")) || 0;
+    if (d.gifts) d.gifts = parseInt(d.gifts) || 1;
+    if (!d.stage) d.stage = inferStage(d.total, d.lastGift);
+    return d;
+  }).filter(d => d.name);
+
   const doImport = async () => {
     setLoading(true); setErr("");
-    const donors = parsed.rows.map(row => {
-      const d = {};
-      Object.entries(mapping).forEach(([h, field]) => { if (field) d[field] = row[h]; });
-      if (d.total) d.total = parseFloat(String(d.total).replace(/[$,]/g, "")) || 0;
-      if (d.lastAmount) d.lastAmount = parseFloat(String(d.lastAmount).replace(/[$,]/g, "")) || 0;
-      if (d.gifts) d.gifts = parseInt(d.gifts) || 1;
-      return d;
-    }).filter(d => d.name);
     try {
-      const res = await apiFetch("/donors/import", { method: "POST", body: JSON.stringify({ donors }) });
-      setResult(res.inserted);
-      onImported();
+      const res = await apiFetch("/donors/import", { method:"POST", body:JSON.stringify({ donors:buildDonors() }) });
+      setResult(res.inserted); onImported();
     } catch (e) { setErr(e.message); }
     setLoading(false);
   };
 
-  const overlay = { position:"fixed",inset:0,background:"#000c",zIndex:200,display:"flex",alignItems:"center",justifyContent:"center",padding:20 };
-  const modal = { background:"#ffffff",border:"1px solid "+T.bg3,borderRadius:20,width:"100%",maxWidth:680,maxHeight:"85vh",overflowY:"auto",padding:28 };
+  const overlay = { position:"fixed",inset:0,background:"#000c",zIndex:300,display:"flex",alignItems:"center",justifyContent:"center",padding:20 };
+  const modal = { background:T.white,border:"1px solid "+T.bg3,borderRadius:20,width:"100%",maxWidth:700,maxHeight:"88vh",overflowY:"auto",padding:28 };
   const inp = { width:"100%",background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"9px 12px",color:T.ink,fontSize:13,outline:"none",fontFamily:"inherit",boxSizing:"border-box" };
 
   if (result !== null) return (
     <div style={overlay}><div style={{...modal,textAlign:"center"}}>
       <div style={{fontSize:40,marginBottom:12}}>✓</div>
       <div style={{fontSize:22,fontWeight:800,color:T.ink,marginBottom:8}}>{result} donor{result!==1?"s":""} imported</div>
-      <div style={{fontSize:14,color:T.ink3,marginBottom:24}}>Your donor list has been updated.</div>
+      <div style={{fontSize:14,color:T.ink3,marginBottom:24}}>Stages were auto-assigned based on gift history.</div>
       <button onClick={onClose} style={{background:"#10b981",border:"none",borderRadius:10,padding:"12px 28px",color:"#fff",fontSize:14,fontWeight:700,cursor:"pointer"}}>Done</button>
     </div></div>
   );
@@ -1300,8 +1395,10 @@ function DonorImport({ onClose, onImported }) {
     <div style={overlay}>
       <div style={modal}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
-          <div><div style={{fontSize:18,fontWeight:800,color:T.ink}}>Import Donors</div>
-            <div style={{fontSize:13,color:T.ink3,marginTop:2}}>Paste CSV or upload a file</div></div>
+          <div>
+            <div style={{fontSize:18,fontWeight:800,color:T.ink}}>Import Donors</div>
+            <div style={{fontSize:13,color:T.ink3,marginTop:2}}>AI maps columns · stages auto-assigned from gift history</div>
+          </div>
           <button onClick={onClose} style={{background:T.bg3,border:"none",borderRadius:8,padding:"6px 12px",color:T.ink3,cursor:"pointer",fontSize:13}}>✕ Close</button>
         </div>
 
@@ -1311,7 +1408,7 @@ function DonorImport({ onClose, onImported }) {
             <input type="file" accept=".csv" onChange={handleFile} style={{fontSize:13,color:T.ink3}}/>
           </div>
           <div style={{fontSize:11,fontWeight:700,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:6}}>Or paste CSV text</div>
-          <textarea value={csvText} onChange={e=>setCsvText(e.target.value)} rows={8} placeholder={"Name,Email,Total Giving,Last Gift Date\nJane Smith,jane@example.com,5000,2024-11-01"} style={{...inp,resize:"vertical",lineHeight:1.5,marginBottom:12}}/>
+          <textarea value={csvText} onChange={e=>setCsvText(e.target.value)} rows={7} placeholder={"Name,Email,Total Giving,Last Gift Date\nJane Smith,jane@example.com,5000,2024-11-01"} style={{...inp,resize:"vertical",lineHeight:1.5,marginBottom:12}}/>
           {err&&<div style={{color:"#f87171",fontSize:12,marginBottom:10}}>{err}</div>}
           <button onClick={doParse} disabled={!csvText.trim()} style={{background:csvText.trim()?"linear-gradient(135deg,#10b981,#3b82f6)":T.bg2,border:"none",borderRadius:10,padding:"11px 20px",color:"#fff",fontSize:14,fontWeight:700,cursor:csvText.trim()?"pointer":"not-allowed",opacity:csvText.trim()?1:0.5}}>
             Parse CSV →
@@ -1319,14 +1416,20 @@ function DonorImport({ onClose, onImported }) {
         </>)}
 
         {parsed && (<>
+          {/* Column mapping */}
           <div style={{marginBottom:16}}>
-            <div style={{fontSize:13,fontWeight:600,color:"#10b981",marginBottom:12}}>Map columns → donor fields</div>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12}}>
+              <div style={{fontSize:13,fontWeight:700,color:T.ink}}>Map Columns</div>
+              <button onClick={doAiMap} disabled={aiLoading} style={{background:aiLoading?"#1a2235":"linear-gradient(135deg,#1a6b4a,#2563eb)",border:"none",borderRadius:8,padding:"6px 14px",color:"#fff",fontSize:12,fontWeight:700,cursor:aiLoading?"not-allowed":"pointer",display:"flex",alignItems:"center",gap:6,opacity:aiLoading?0.7:1}}>
+                {aiLoading?<><Spin/>Mapping…</>:<>✦ AI Map</>}
+              </button>
+            </div>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
               {parsed.headers.map(h=>(
-                <div key={h} style={{display:"flex",alignItems:"center",gap:8}}>
-                  <span style={{fontSize:12,color:T.ink3,flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{h}</span>
+                <div key={h} style={{display:"flex",alignItems:"center",gap:8,background:mapping[h]?T.bg:"transparent",borderRadius:7,padding:"5px 8px",border:`1px solid ${mapping[h]?T.bg3:"transparent"}`}}>
+                  <span style={{fontSize:12,color:mapping[h]?T.ink:T.ink3,flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{h}</span>
                   <select value={mapping[h]||""} onChange={e=>setMapping(p=>({...p,[h]:e.target.value}))}
-                    style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:6,padding:"5px 8px",color:T.ink,fontSize:12,outline:"none"}}>
+                    style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:6,padding:"4px 8px",color:T.ink,fontSize:11,outline:"none",flexShrink:0}}>
                     <option value="">— skip —</option>
                     {CSV_FIELDS.map(f=><option key={f.key} value={f.key}>{f.key}</option>)}
                   </select>
@@ -1335,28 +1438,56 @@ function DonorImport({ onClose, onImported }) {
             </div>
           </div>
 
+          {/* Stage preview */}
+          {(() => {
+            const donors = buildDonors();
+            const stageCounts = {};
+            donors.forEach(d => { stageCounts[d.stage] = (stageCounts[d.stage]||0)+1; });
+            return Object.keys(stageCounts).length > 0 && (
+              <div style={{background:T.bg,borderRadius:10,padding:"12px 14px",marginBottom:16}}>
+                <div style={{fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.1em",color:T.ink3,marginBottom:8}}>Smart Stage Assignment Preview</div>
+                <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+                  {Object.entries(stageCounts).map(([s,n])=>(
+                    <span key={s} style={{fontSize:12,fontWeight:600,padding:"3px 10px",borderRadius:99,background:(STAGE_COLORS[s]||T.ink3)+"22",color:STAGE_COLORS[s]||T.ink3,border:`1px solid ${(STAGE_COLORS[s]||T.ink3)}30`}}>
+                      {s} × {n}
+                    </span>
+                  ))}
+                </div>
+                <div style={{fontSize:11,color:T.ink3,marginTop:8}}>Based on last gift date + amount. Override any stage after import by dragging in the Kanban.</div>
+              </div>
+            );
+          })()}
+
+          {/* Preview table */}
           <div style={{marginBottom:16}}>
-            <div style={{fontSize:12,fontWeight:600,color:T.ink3,marginBottom:8}}>Preview ({parsed.rows.length} rows)</div>
+            <div style={{fontSize:11,fontWeight:600,color:T.ink3,marginBottom:8}}>{parsed.rows.length} rows · showing first 5</div>
             <div style={{overflowX:"auto",border:"1px solid "+T.bg3,borderRadius:8}}>
               <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
                 <thead><tr style={{background:T.bg}}>
                   {parsed.headers.filter(h=>mapping[h]).map(h=><th key={h} style={{padding:"6px 10px",textAlign:"left",color:T.ink3,fontWeight:600,borderBottom:"1px solid "+T.bg3}}>{mapping[h]}</th>)}
+                  <th style={{padding:"6px 10px",textAlign:"left",color:T.ink3,fontWeight:600,borderBottom:"1px solid "+T.bg3}}>stage</th>
                 </tr></thead>
-                <tbody>{parsed.rows.slice(0,5).map((row,i)=>(
-                  <tr key={i} style={{borderBottom:"1px solid "+T.bg2}}>
-                    {parsed.headers.filter(h=>mapping[h]).map(h=><td key={h} style={{padding:"6px 10px",color:T.ink}}>{row[h]}</td>)}
-                  </tr>
-                ))}</tbody>
+                <tbody>{parsed.rows.slice(0,5).map((row,i)=>{
+                  const d={};Object.entries(mapping).forEach(([h,f])=>{if(f)d[f]=row[h];});
+                  const st=inferStage(d.total,d.lastGift);
+                  return(
+                    <tr key={i} style={{borderBottom:"1px solid "+T.bg2}}>
+                      {parsed.headers.filter(h=>mapping[h]).map(h=><td key={h} style={{padding:"6px 10px",color:T.ink}}>{row[h]}</td>)}
+                      <td style={{padding:"6px 10px"}}>
+                        <span style={{fontSize:11,fontWeight:600,padding:"2px 8px",borderRadius:99,background:(STAGE_COLORS[st]||T.ink3)+"22",color:STAGE_COLORS[st]||T.ink3}}>{st}</span>
+                      </td>
+                    </tr>
+                  );
+                })}</tbody>
               </table>
             </div>
-            {parsed.rows.length>5&&<div style={{fontSize:11,color:T.ink3,marginTop:6}}>…and {parsed.rows.length-5} more rows</div>}
           </div>
 
           {err&&<div style={{color:"#f87171",fontSize:12,marginBottom:10}}>{err}</div>}
           <div style={{display:"flex",gap:10}}>
             <button onClick={()=>setParsed(null)} style={{background:"transparent",border:"1px solid "+T.bg3,borderRadius:10,padding:"11px 18px",color:T.ink3,fontSize:13,cursor:"pointer"}}>← Back</button>
             <button onClick={doImport} disabled={loading} style={{flex:1,background:loading?T.bg2:"linear-gradient(135deg,#10b981,#3b82f6)",border:"none",borderRadius:10,padding:"11px 20px",color:"#fff",fontSize:14,fontWeight:700,cursor:loading?"not-allowed":"pointer",opacity:loading?0.7:1}}>
-              {loading?"Importing…":`Import ${parsed.rows.filter(r=>r[parsed.headers.find(h=>mapping[h]==="name")||""]||true).length} Donors →`}
+              {loading?"Importing…":`Import ${buildDonors().length} Donors →`}
             </button>
           </div>
         </>)}

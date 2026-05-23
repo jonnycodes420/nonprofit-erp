@@ -679,6 +679,37 @@ app.post("/ai/stream", requireAuth, wrap(async (req, res) => {
   res.end();
 }));
 
+// ── AI — CSV column mapping ────────────────────────────────────────────────
+app.post("/ai/column-map", requireAuth, wrap(async (req, res) => {
+  const { headers, sample } = req.body;
+  if (!headers?.length) return res.status(400).json({ error: "headers required" });
+
+  const client = new Anthropic();
+  const msg = await client.messages.create({
+    model: "claude-haiku-4-5-20251001",
+    max_tokens: 512,
+    system: "You are a data mapping assistant for nonprofit CRM systems. Return only valid JSON, no explanation or markdown.",
+    messages: [{
+      role: "user",
+      content: `Map these CSV column headers to donor fields. Available target fields: name, email, phone, total, lastAmount, lastGift, gifts, status, notes. Use empty string to skip a column.
+
+Headers: ${JSON.stringify(headers)}
+Sample row values: ${JSON.stringify(sample || {})}
+
+Return ONLY a JSON object like: {"Original Header": "fieldName", "Another Header": ""}`,
+    }],
+  });
+
+  try {
+    const text = msg.content[0].text.trim();
+    const jsonMatch = text.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) throw new Error("no json");
+    res.json({ mapping: JSON.parse(jsonMatch[0]) });
+  } catch {
+    res.json({ mapping: {} });
+  }
+}));
+
 // ── AI — donor propensity scoring ──────────────────────────────────────────
 app.get("/ai/donor-score", requireAuth, wrap(async (req, res) => {
   const donors = await query("SELECT * FROM donors WHERE org_id = ?", [req.user.orgId]);
