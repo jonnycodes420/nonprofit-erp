@@ -1868,6 +1868,9 @@ function AnnualFund({data}) {
 
 // ── Root Router ────────────────────────────────────────────────────────────
 export default function App() {
+  if (typeof window !== 'undefined') {
+    console.log('APP LOADED', localStorage.getItem('npe_token'));
+  }
   return (
     <Routes>
       <Route path="/" element={<Landing />} />
