@@ -671,6 +671,53 @@ function moveUrgency(d){
   return{days,level,urgencyColor,contactTextColor};
 }
 
+function FollowUpTaskModal({donor,onSave,onClose}){
+  const due7=new Date();due7.setDate(due7.getDate()+7);
+  const[title,setTitle]=useState(`Follow up: ${donor.name}`);
+  const[due,setDue]=useState(due7.toISOString().split("T")[0]);
+  const[priority,setPriority]=useState("medium");
+  const[loading,setLoading]=useState(false);
+  const inp={width:"100%",background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"10px 12px",color:T.ink,fontSize:13,outline:"none",fontFamily:"inherit",boxSizing:"border-box"};
+  const save=async()=>{
+    if(!title.trim())return;setLoading(true);
+    try{
+      const raw=await apiFetch("/tasks",{method:"POST",body:JSON.stringify({title,due,priority,type:"donor",donorId:donor.id})});
+      onSave({id:raw.id,title:raw.title,due:raw.due||"",priority:raw.priority,type:raw.type,done:!!raw.done,donorId:donor.id});
+    }catch(e){console.error(e);}
+    setLoading(false);
+  };
+  return(
+    <div style={{position:"fixed",inset:0,background:"#000000cc",backdropFilter:"blur(4px)",zIndex:400,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+      <div className="fade-in" style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:18,width:"100%",maxWidth:420,padding:24,boxShadow:"0 4px 32px rgba(15,15,15,0.12)"}}>
+        <div style={{fontSize:16,fontWeight:800,color:T.ink,marginBottom:2}}>Create Follow-up Task</div>
+        <div style={{fontSize:12,color:T.ink3,marginBottom:20}}>For {donor.name}</div>
+        <div style={{display:"flex",flexDirection:"column",gap:12}}>
+          <div>
+            <div style={{fontSize:11,fontWeight:700,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:5}}>Task Title</div>
+            <input value={title} onChange={e=>setTitle(e.target.value)} style={inp}/>
+          </div>
+          <div>
+            <div style={{fontSize:11,fontWeight:700,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:5}}>Due Date</div>
+            <input type="date" value={due} onChange={e=>setDue(e.target.value)} style={inp}/>
+          </div>
+          <div>
+            <div style={{fontSize:11,fontWeight:700,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:8}}>Priority</div>
+            <div style={{display:"flex",gap:6}}>
+              {["high","medium","low"].map(p=>(
+                <button key={p} onClick={()=>setPriority(p)} style={{flex:1,background:priority===p?SC[p]:T.bg,border:`1px solid ${priority===p?SC[p]:T.bg3}`,borderRadius:8,padding:"8px",color:priority===p?"#fff":T.ink3,fontSize:12,fontWeight:600,cursor:"pointer",textTransform:"capitalize"}}>{p}</button>
+              ))}
+            </div>
+          </div>
+        </div>
+        <div style={{display:"flex",gap:8,marginTop:20}}>
+          <button onClick={save} disabled={loading||!title.trim()} style={{flex:1,background:title.trim()?"#10b981":T.bg2,border:"none",borderRadius:10,padding:"12px",color:"#fff",fontSize:14,fontWeight:700,cursor:title.trim()?"pointer":"not-allowed"}}>{loading?"Creating…":"Create Task"}</button>
+          <button onClick={onClose} style={{background:T.bg,border:"none",borderRadius:10,padding:"12px 16px",color:T.ink3,fontSize:13,cursor:"pointer"}}>Skip</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function TpField({label,children}){
   return <div style={{display:"flex",flexDirection:"column",gap:4}}>
     <span style={{fontSize:11,fontWeight:700,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:5,display:"block"}}>{label}</span>
@@ -744,9 +791,6 @@ function LogTouchpointModal({donor,onSave,onClose,onToast}){
       if(type==="gift"&&giftAmt>0){
         await apiFetch(`/donors/${donor.id}/gifts`,{method:"POST",body:JSON.stringify({amount:giftAmt,date,notes:note})});
       }
-      const due7=new Date();due7.setDate(due7.getDate()+7);
-      apiFetch("/tasks",{method:"POST",body:JSON.stringify({title:`Follow up: ${donor.name}`,due:due7.toISOString().split("T")[0],priority:"medium",type:"donor",donorId:donor.id})}).catch(()=>{});
-      onToast?.("Follow-up task created.");
       onSave({type:saveType,note,date,amount:giftAmt});
     }catch(e){console.error(e);}
     setLoading(false);
@@ -931,7 +975,7 @@ function TouchpointTimeline({interactions}){
   );
 }
 
-function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loadingKey,getAI,isAdmin,onEdit,onDelete}){
+function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loadingKey,getAI,isAdmin,onEdit,onDelete,tasks=[],onTaskToggle}){
   const [gifts,setGifts]=useState([]);
   const [giftLoading,setGiftLoading]=useState(true);
   const stage=STAGES.find(s=>s.id===(donor.stage||"cultivate"))||STAGES[2];
@@ -1004,6 +1048,34 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
 
           {/* Notes */}
           {donor.notes&&<div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:10,padding:"12px 14px",fontSize:13,color:T.ink3,lineHeight:1.6}}>{donor.notes}</div>}
+
+          {/* Follow-up Tasks */}
+          <div>
+            <div style={{fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.1em",color:T.ink3,marginBottom:8}}>
+              Follow-up Tasks
+              {tasks.filter(t=>!t.done).length>0&&<span style={{marginLeft:6,background:"#10b981",color:"#fff",borderRadius:99,padding:"1px 6px",fontSize:9,fontWeight:800}}>{tasks.filter(t=>!t.done).length}</span>}
+            </div>
+            {tasks.length===0
+              ?<div style={{fontSize:12,color:T.ink3,fontStyle:"italic"}}>No tasks yet — create one after logging a touchpoint.</div>
+              :<div style={{display:"flex",flexDirection:"column",gap:6}}>
+                {[...tasks].sort((a,b)=>a.done-b.done||(a.due||"").localeCompare(b.due||"")).map(t=>{
+                  const overdue=t.due&&!t.done&&daysUntil(t.due)<0;
+                  return <div key={t.id} onClick={()=>onTaskToggle(t)} style={{background:T.white,border:`1px solid ${t.done?"#10b98130":overdue?"#ef444430":T.bg3}`,borderRadius:10,padding:"10px 14px",cursor:"pointer",display:"flex",alignItems:"center",gap:10}}>
+                    <div style={{width:18,height:18,borderRadius:5,border:`2px solid ${t.done?"#10b981":SC[t.priority]}`,background:t.done?"#10b981":"transparent",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center"}}>
+                      {t.done&&<span style={{color:"#fff",fontSize:10,lineHeight:1}}>✓</span>}
+                    </div>
+                    <div style={{flex:1,minWidth:0}}>
+                      <div style={{fontSize:12,fontWeight:500,color:t.done?T.ink3:T.ink,textDecoration:t.done?"line-through":"none",lineHeight:1.3}}>{t.title}</div>
+                      {t.due&&<div style={{fontSize:11,color:overdue?"#ef4444":T.ink3,marginTop:2,fontWeight:overdue?700:400}}>
+                        {overdue?"Overdue — was ":""}{new Date(t.due).toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"})}
+                      </div>}
+                    </div>
+                    <Pill label={t.priority} color={SC[t.priority]}/>
+                  </div>;
+                })}
+              </div>
+            }
+          </div>
 
           {/* Timeline */}
           <div>
@@ -1266,7 +1338,7 @@ function Donors({data,setData}){
   const[selected,setSelected]=useState(null);
   const[logTarget,setLogTarget]=useState(null);
   const[editTarget,setEditTarget]=useState(null);
-  const[toast,setToast]=useState("");
+  const[followUpTarget,setFollowUpTarget]=useState(null);
   const[aiMap,setAiMap]=useState({});const[loadingKey,setLoadingKey]=useState(null);
   const[callList,setCallList]=useState("");const[callLoading,setCallLoading]=useState(false);
   const[showAdd,setShowAdd]=useState(false);const[showImport,setShowImport]=useState(false);
@@ -1286,7 +1358,15 @@ function Donors({data,setData}){
     setData(prev=>({...prev,donors:prev.donors.map(d=>d.id===donor.id?updated:d)}));
     if(selected?.id===donor.id)setSelected(updated);
     setLogTarget(null);
+    setFollowUpTarget(donor);
     if(interaction.type==="gift"&&interaction.amount>0)reloadDonors();
+  };
+
+  const toggleTask=async(task)=>{
+    const updated={...task,done:!task.done};
+    setData(prev=>({...prev,tasks:prev.tasks.map(t=>t.id===task.id?updated:t)}));
+    try{await apiFetch(`/tasks/${task.id}`,{method:"PUT",body:JSON.stringify({title:task.title,due:task.due||"",priority:task.priority,type:task.type,done:updated.done})});}
+    catch(e){console.error(e);}
   };
 
   const getAI=async(donor,type)=>{
@@ -1368,15 +1448,14 @@ function Donors({data,setData}){
     <div style={{display:"flex",flexDirection:"column",gap:8}}>
       <PageTitle main="Your" accent="donors."/>
       {showImport&&<DonorImport onClose={()=>setShowImport(false)} onImported={()=>{reloadDonors();setShowImport(false);}}/>}
-      {logTarget&&<LogTouchpointModal donor={logTarget} onSave={int=>handleLogged(logTarget,int)} onClose={()=>setLogTarget(null)} onToast={msg=>{setToast(msg);setTimeout(()=>setToast(""),3500);}}/>}
-      {toast&&<div style={{position:"fixed",bottom:28,left:"50%",transform:"translateX(-50%)",background:"#0f0f0f",color:"#fff",borderRadius:10,padding:"10px 22px",fontSize:13,fontWeight:600,zIndex:500,boxShadow:"0 4px 20px rgba(0,0,0,0.25)",display:"flex",alignItems:"center",gap:8,whiteSpace:"nowrap"}}>
-        <span style={{color:"#10b981",fontSize:15}}>✓</span>{toast}
-      </div>}
+      {logTarget&&<LogTouchpointModal donor={logTarget} onSave={int=>handleLogged(logTarget,int)} onClose={()=>setLogTarget(null)}/>}
+      {followUpTarget&&<FollowUpTaskModal donor={followUpTarget} onClose={()=>setFollowUpTarget(null)} onSave={task=>{setData(prev=>({...prev,tasks:[task,...prev.tasks]}));setFollowUpTarget(null);}}/>}
       {editTarget&&<EditDonorModal donor={editTarget} onSave={handleEditSaved} onClose={()=>setEditTarget(null)}/>}
       {selected&&<DonorProfile donor={selected} onClose={()=>setSelected(null)}
         onStageChange={moveToStage} onLogTouchpoint={()=>{setLogTarget(selected);}}
         aiMap={aiMap} loadingKey={loadingKey} getAI={getAI}
-        isAdmin={isAdmin} onEdit={()=>setEditTarget(selected)} onDelete={deleteDonor}/>}
+        isAdmin={isAdmin} onEdit={()=>setEditTarget(selected)} onDelete={deleteDonor}
+        tasks={data.tasks.filter(t=>t.donorId===selected.id)} onTaskToggle={toggleTask}/>}
 
       <div style={{display:"flex",gap:10,flexWrap:"wrap",alignItems:"center"}}>
         <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search donors…" style={{flex:1,minWidth:160,background:T.bg,border:"1px solid "+T.bg3,borderRadius:10,padding:"10px 14px",color:T.ink,fontSize:13,outline:"none"}}/>
