@@ -780,6 +780,74 @@ function DonorKanban({donors,onStageChange,onLogTouchpoint,onSelectDonor}){
   );
 }
 
+// ── Re-engage View ─────────────────────────────────────────────────────────
+function ReEngageView({donors,onLogTouchpoint,onSelectDonor}){
+  const lapsed=[...donors].filter(d=>d.stage==="lapsed").sort((a,b)=>b.total-a.total);
+  const totalValue=lapsed.reduce((s,d)=>s+d.total,0);
+  const avgDays=lapsed.length
+    ?Math.round(lapsed.reduce((s,d)=>s+daysDiff(d.lastGift||d.lastTouchpoint||new Date().toISOString()),0)/lapsed.length)
+    :0;
+
+  if(!lapsed.length)return<EmptyState icon="♦" title="No lapsed donors" message="All your donors are active — great work!"/>;
+
+  const cols=["Donor","Lifetime Giving","Last Gift","Days Lapsed","Score",""];
+  const colWidths="2fr 130px 120px 110px 80px 130px";
+
+  return(
+    <div style={{display:"flex",flexDirection:"column",gap:12}}>
+      {/* Summary header */}
+      <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
+        {[
+          ["Lapsed donors",lapsed.length,T.ink],
+          ["Total lapsed value",fmtFull(totalValue),T.ink],
+          ["Avg days lapsed",`${avgDays}d`,"#ef4444"],
+        ].map(([label,val,color])=>(
+          <div key={label} style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:12,padding:"10px 18px",display:"flex",flexDirection:"column",gap:2}}>
+            <div style={{fontSize:10,fontWeight:700,color:T.ink3,textTransform:"uppercase",letterSpacing:".06em"}}>{label}</div>
+            <div style={{fontSize:20,fontWeight:800,color,fontFamily:"'DM Serif Display',serif"}}>{val}</div>
+          </div>
+        ))}
+      </div>
+      {/* Table */}
+      <div style={{background:T.white,borderRadius:14,overflow:"hidden",border:"1px solid "+T.bg3}}>
+        {/* Column headers */}
+        <div style={{display:"grid",gridTemplateColumns:colWidths,gap:0,padding:"10px 18px",background:T.bg2,borderBottom:"1px solid "+T.bg3}}>
+          {cols.map((h,i)=>(
+            <div key={i} style={{fontSize:10,fontWeight:700,color:T.ink3,textTransform:"uppercase",letterSpacing:".06em",textAlign:i===0?"left":"right"}}>{h}</div>
+          ))}
+        </div>
+        {/* Rows */}
+        {lapsed.map((d,idx)=>{
+          const days=daysDiff(d.lastGift||d.lastTouchpoint||new Date().toISOString());
+          const sc=donorScore(d);
+          const scColor=sc>70?"#10b981":sc>45?"#f59e0b":"#ef4444";
+          const rowBg=days>730?"#ef444409":days>365?"#f59e0b09":"#eab30809";
+          const rowBorderColor=days>730?"#ef444425":days>365?"#f59e0b25":"#eab30825";
+          const daysColor=days>730?"#ef4444":days>365?"#f59e0b":"#ca8a04";
+          return(
+            <div key={d.id} style={{display:"grid",gridTemplateColumns:colWidths,gap:0,padding:"13px 18px",background:rowBg,borderBottom:idx<lapsed.length-1?`1px solid ${rowBorderColor}`:"none",alignItems:"center"}}>
+              <div>
+                <div style={{fontSize:13,fontWeight:700,color:T.ink}}>{d.name}</div>
+                {d.email&&<div style={{fontSize:11,color:T.ink3,marginTop:1}}>{d.email}</div>}
+              </div>
+              <div style={{textAlign:"right",fontSize:13,fontWeight:700,color:T.ink}}>{fmtFull(d.total)}</div>
+              <div style={{textAlign:"right",fontSize:13,color:T.ink3}}>{d.lastAmount>0?fmtFull(d.lastAmount):"—"}</div>
+              <div style={{textAlign:"right",fontSize:13,fontWeight:700,color:daysColor}}>{days}d</div>
+              <div style={{textAlign:"right"}}>
+                <span style={{fontSize:13,fontWeight:800,color:scColor,background:scColor+"18",borderRadius:7,padding:"3px 9px",display:"inline-block"}}>{sc}</span>
+              </div>
+              <div style={{display:"flex",gap:6,justifyContent:"flex-end"}}>
+                <button onClick={e=>{e.stopPropagation();onLogTouchpoint(d);}} style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:7,padding:"4px 10px",color:T.ink3,fontSize:11,fontWeight:600,cursor:"pointer"}}>+ Log</button>
+                <button onClick={()=>onSelectDonor(d)} style={{background:"#10b98114",border:"1px solid #10b98140",borderRadius:7,padding:"4px 10px",color:"#10b981",fontSize:11,fontWeight:600,cursor:"pointer"}}>View →</button>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 // ── Donors ─────────────────────────────────────────────────────────────────
 function Donors({data,setData}){
   const{auth}=useAuth();
@@ -900,7 +968,7 @@ function Donors({data,setData}){
       <div style={{display:"flex",gap:10,flexWrap:"wrap",alignItems:"center"}}>
         <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search donors…" style={{flex:1,minWidth:160,background:T.bg,border:"1px solid "+T.bg3,borderRadius:10,padding:"10px 14px",color:T.ink,fontSize:13,outline:"none"}}/>
         <div style={{display:"flex",background:T.bg,border:"1px solid "+T.bg3,borderRadius:10,overflow:"hidden"}}>
-          {[["kanban","Pipeline"],["list","List"]].map(([v,l])=>(
+          {[["kanban","Pipeline"],["list","List"],["reengage","Re-engage"]].map(([v,l])=>(
             <button key={v} onClick={()=>setView(v)} style={{background:view===v?T.bg2:"transparent",border:"none",padding:"9px 14px",color:view===v?T.ink:"#6b7280",fontSize:13,fontWeight:view===v?700:400,cursor:"pointer"}}>{l}</button>
           ))}
         </div>
@@ -929,6 +997,8 @@ function Donors({data,setData}){
         ?<EmptyState icon="♦" title="No donors match your search" message="Try a different name or email, or clear the search to see all donors."/>
         :<DonorKanban donors={filtered} onStageChange={moveToStage} onLogTouchpoint={d=>setLogTarget(d)} onSelectDonor={d=>setSelected(d)}/>
       )}
+
+      {view==="reengage"&&<ReEngageView donors={filtered} onLogTouchpoint={d=>setLogTarget(d)} onSelectDonor={d=>setSelected(d)}/>}
 
       {view==="list"&&filtered.length===0&&<EmptyState icon="♦" title="No donors found" message="Try a different search term or add your first donor above."/>}
       {view==="list"&&filtered.map(d=>{
