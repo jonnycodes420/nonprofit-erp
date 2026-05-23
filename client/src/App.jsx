@@ -671,38 +671,159 @@ function moveUrgency(d){
   return{days,level,urgencyColor,contactTextColor};
 }
 
-function LogTouchpointModal({donor,onSave,onClose}){
-  const[type,setType]=useState("call");const[note,setNote]=useState("");
-  const[amount,setAmount]=useState("");
+function LogTouchpointModal({donor,onSave,onClose,onToast}){
+  const[type,setType]=useState("call");
   const[date,setDate]=useState(new Date().toISOString().split("T")[0]);
   const[loading,setLoading]=useState(false);
-  const types=["call","email","meeting","event","gift","note"];
+  // Shared
+  const[kt1,setKt1]=useState("");const[kt2,setKt2]=useState("");const[kt3,setKt3]=useState("");
+  const[history,setHistory]=useState("");const[spouse,setSpouse]=useState("");const[nextStep,setNextStep]=useState("");
+  // Call
+  const[answered,setAnswered]=useState("yes");const[duration,setDuration]=useState("");const[objections,setObjections]=useState("");
+  // Meeting
+  const[attendees,setAttendees]=useState("");const[location,setLocation]=useState("");
+  const[sentiment,setSentiment]=useState("Positive");const[asksMade,setAsksMade]=useState("");
+  // Email
+  const[subject,setSubject]=useState("");const[summary,setSummary]=useState("");const[responded,setResponded]=useState("no");
+  // Event
+  const[eventName,setEventName]=useState("");const[attended,setAttended]=useState("yes");const[observations,setObservations]=useState("");
+  // Gift
+  const[amount,setAmount]=useState("");const[designation,setDesignation]=useState("");
+  const[payMethod,setPayMethod]=useState("");const[ackSent,setAckSent]=useState("no");
+  // Other
+  const[otherNotes,setOtherNotes]=useState("");
+
+  const TYPES=[["call","Call"],["meeting","Meeting"],["email","Email"],["event","Event"],["gift","Gift/Pledge"],["other","Other"]];
+
+  const buildNote=()=>{
+    const L=[];
+    const add=(k,v)=>{if(v&&String(v).trim())L.push(`${k}: ${v.trim()}`);};
+    if(type==="call"){
+      L.push(`Answered: ${answered}`);
+      add("Duration",duration);add("Key Takeaway 1",kt1);add("Key Takeaway 2",kt2);add("Key Takeaway 3",kt3);
+      add("Objections / Concerns",objections);add("Donor History",history);add("Spouse / Partner",spouse);add("Next Step",nextStep);
+    }else if(type==="meeting"){
+      add("Attendees",attendees);add("Location",location);
+      add("Key Takeaway 1",kt1);add("Key Takeaway 2",kt2);add("Key Takeaway 3",kt3);
+      L.push(`Donor Sentiment: ${sentiment}`);
+      add("Spouse / Partner",spouse);add("Donor History",history);add("Asks Made",asksMade);add("Next Step",nextStep);
+    }else if(type==="email"){
+      add("Subject",subject);add("Summary",summary);
+      L.push(`Response Received: ${responded}`);
+      add("Donor History",history);add("Next Step",nextStep);
+    }else if(type==="event"){
+      add("Event",eventName);L.push(`Donor Attended: ${attended}`);
+      add("Observations",observations);add("Donor History",history);add("Next Step",nextStep);
+    }else if(type==="gift"){
+      add("Amount",amount);add("Designation",designation);
+      add("Payment Method",payMethod);L.push(`Acknowledgement Sent: ${ackSent}`);add("Next Step",nextStep);
+    }else{
+      add("Notes",otherNotes);add("Donor History",history);add("Spouse / Partner",spouse);add("Next Step",nextStep);
+    }
+    return L.join("\n");
+  };
+
   const save=async()=>{
-    if(!note.trim())return;setLoading(true);
+    const note=buildNote();if(!note.trim())return;setLoading(true);
     try{
-      await apiFetch(`/donors/${donor.id}/interactions`,{method:"POST",body:JSON.stringify({type,note,date})});
-      const giftAmt=parseFloat(String(amount).replace(/[$,]/g,""))||0;
+      const saveType=type==="gift"?"gift":type==="meeting"?"meeting":type;
+      await apiFetch(`/donors/${donor.id}/interactions`,{method:"POST",body:JSON.stringify({type:saveType,note,date})});
+      const giftAmt=type==="gift"?(parseFloat(String(amount).replace(/[$,]/g,""))||0):0;
       if(type==="gift"&&giftAmt>0){
         await apiFetch(`/donors/${donor.id}/gifts`,{method:"POST",body:JSON.stringify({amount:giftAmt,date,notes:note})});
       }
-      onSave({type,note,date,amount:giftAmt});
-    }catch(e){console.error(e);}setLoading(false);
+      const due7=new Date();due7.setDate(due7.getDate()+7);
+      apiFetch("/tasks",{method:"POST",body:JSON.stringify({title:`Follow up: ${donor.name}`,due:due7.toISOString().split("T")[0],priority:"medium",type:"donor",donorId:donor.id})}).catch(()=>{});
+      onToast?.("Follow-up task created.");
+      onSave({type:saveType,note,date,amount:giftAmt});
+    }catch(e){console.error(e);}
+    setLoading(false);
   };
-  const inp={width:"100%",background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"9px 12px",color:T.ink,fontSize:13,outline:"none",fontFamily:"inherit",boxSizing:"border-box"};
+
+  const inp={width:"100%",background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"10px 12px",color:T.ink,fontSize:13,outline:"none",fontFamily:"inherit",boxSizing:"border-box"};
+  const ta={...inp,resize:"vertical",lineHeight:1.55};
+  const lbl={fontSize:11,fontWeight:700,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:5,display:"block"};
+  const Fld=({label,children})=><div style={{display:"flex",flexDirection:"column",gap:4}}><span style={lbl}>{label}</span>{children}</div>;
+  const YN=({val,set})=><div style={{display:"flex",gap:6}}>
+    {["yes","no"].map(v=><button key={v} onClick={()=>set(v)} style={{background:val===v?"#10b981":T.bg,border:`1px solid ${val===v?"#10b981":T.bg3}`,borderRadius:7,padding:"7px 20px",color:val===v?"#fff":T.ink3,fontSize:13,fontWeight:600,cursor:"pointer"}}>{v}</button>)}
+  </div>;
+
+  const canSave=buildNote().trim().length>0;
+
   return(
     <div style={{position:"fixed",inset:0,background:"#000000cc",backdropFilter:"blur(4px)",zIndex:300,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
-      <div className="fade-in" style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:18,width:"100%",maxWidth:440,padding:24,boxShadow:"0 4px 32px rgba(15,15,15,0.12)"}}>
+      <div className="fade-in" style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:18,width:"100%",maxWidth:520,maxHeight:"92vh",overflowY:"auto",padding:24,boxShadow:"0 4px 32px rgba(15,15,15,0.12)"}}>
         <div style={{fontSize:16,fontWeight:800,color:T.ink,marginBottom:2}}>Log Touchpoint</div>
         <div style={{fontSize:12,color:T.ink3,marginBottom:16}}>{donor.name}</div>
-        <div style={{display:"flex",gap:5,flexWrap:"wrap",marginBottom:12}}>
-          {types.map(t=><button key={t} onClick={()=>setType(t)} style={{background:type===t?"#10b981":T.bg2,border:`1px solid ${type===t?"#10b981":T.bg3}`,borderRadius:7,padding:"5px 11px",color:type===t?"#fff":T.ink3,fontSize:12,fontWeight:600,cursor:"pointer",textTransform:"capitalize"}}>{t}</button>)}
+
+        {/* Activity type tabs */}
+        <div style={{display:"flex",gap:5,flexWrap:"wrap",marginBottom:16}}>
+          {TYPES.map(([v,l])=><button key={v} onClick={()=>setType(v)} style={{background:type===v?"#10b981":T.bg2,border:`1px solid ${type===v?"#10b981":T.bg3}`,borderRadius:7,padding:"5px 13px",color:type===v?"#fff":T.ink3,fontSize:12,fontWeight:600,cursor:"pointer"}}>{l}</button>)}
         </div>
-        <input type="date" value={date} onChange={e=>setDate(e.target.value)} style={{...inp,marginBottom:10}}/>
-        {type==="gift"&&<input type="text" value={amount} onChange={e=>setAmount(e.target.value)} placeholder="Gift amount (e.g. 500)" style={{...inp,marginBottom:10}}/>}
-        <textarea value={note} onChange={e=>setNote(e.target.value)} placeholder="What happened? What was discussed?" rows={3} style={{...inp,resize:"vertical",lineHeight:1.5,marginBottom:14}}/>
+
+        <div style={{marginBottom:16}}><span style={lbl}>Date</span><input type="date" value={date} onChange={e=>setDate(e.target.value)} style={inp}/></div>
+
+        {/* Dynamic template */}
+        <div style={{display:"flex",flexDirection:"column",gap:14,marginBottom:20}}>
+          {type==="call"&&<>
+            <Fld label="Answered?"><YN val={answered} set={setAnswered}/></Fld>
+            <Fld label="Duration"><input value={duration} onChange={e=>setDuration(e.target.value)} placeholder="e.g. 20 min" style={inp}/></Fld>
+            <Fld label="Key Takeaway 1"><textarea value={kt1} onChange={e=>setKt1(e.target.value)} rows={2} style={ta}/></Fld>
+            <Fld label="Key Takeaway 2"><textarea value={kt2} onChange={e=>setKt2(e.target.value)} rows={2} style={ta}/></Fld>
+            <Fld label="Key Takeaway 3"><textarea value={kt3} onChange={e=>setKt3(e.target.value)} rows={2} style={ta}/></Fld>
+            <Fld label="Objections / Concerns"><textarea value={objections} onChange={e=>setObjections(e.target.value)} rows={2} style={ta}/></Fld>
+            <Fld label="Donor History & Background"><textarea value={history} onChange={e=>setHistory(e.target.value)} placeholder="Past relationship, giving context, background…" rows={3} style={ta}/></Fld>
+            <Fld label="Spouse / Partner"><input value={spouse} onChange={e=>setSpouse(e.target.value)} placeholder="Name and relevant details" style={inp}/></Fld>
+            <Fld label="Next Steps"><textarea value={nextStep} onChange={e=>setNextStep(e.target.value)} placeholder="Specific actions planned…" rows={3} style={ta}/></Fld>
+          </>}
+          {type==="meeting"&&<>
+            <Fld label="Attendees"><input value={attendees} onChange={e=>setAttendees(e.target.value)} placeholder="Names of everyone present" style={inp}/></Fld>
+            <Fld label="Location"><input value={location} onChange={e=>setLocation(e.target.value)} style={inp}/></Fld>
+            <Fld label="Key Takeaway 1"><textarea value={kt1} onChange={e=>setKt1(e.target.value)} rows={2} style={ta}/></Fld>
+            <Fld label="Key Takeaway 2"><textarea value={kt2} onChange={e=>setKt2(e.target.value)} rows={2} style={ta}/></Fld>
+            <Fld label="Key Takeaway 3"><textarea value={kt3} onChange={e=>setKt3(e.target.value)} rows={2} style={ta}/></Fld>
+            <Fld label="Donor Sentiment">
+              <select value={sentiment} onChange={e=>setSentiment(e.target.value)} style={{...inp,cursor:"pointer"}}>
+                {["Enthusiastic","Positive","Neutral","Hesitant"].map(s=><option key={s}>{s}</option>)}
+              </select>
+            </Fld>
+            <Fld label="Spouse / Partner"><input value={spouse} onChange={e=>setSpouse(e.target.value)} placeholder="Name and relevant details" style={inp}/></Fld>
+            <Fld label="Donor History & Background"><textarea value={history} onChange={e=>setHistory(e.target.value)} placeholder="Past relationship, context…" rows={3} style={ta}/></Fld>
+            <Fld label="Asks Made"><textarea value={asksMade} onChange={e=>setAsksMade(e.target.value)} rows={2} style={ta}/></Fld>
+            <Fld label="Next Steps"><textarea value={nextStep} onChange={e=>setNextStep(e.target.value)} placeholder="Specific actions planned…" rows={3} style={ta}/></Fld>
+          </>}
+          {type==="email"&&<>
+            <Fld label="Subject"><input value={subject} onChange={e=>setSubject(e.target.value)} style={inp}/></Fld>
+            <Fld label="Summary"><textarea value={summary} onChange={e=>setSummary(e.target.value)} rows={4} style={ta}/></Fld>
+            <Fld label="Response Received?"><YN val={responded} set={setResponded}/></Fld>
+            <Fld label="Donor History & Background"><textarea value={history} onChange={e=>setHistory(e.target.value)} placeholder="Context for this outreach…" rows={3} style={ta}/></Fld>
+            <Fld label="Next Steps"><textarea value={nextStep} onChange={e=>setNextStep(e.target.value)} placeholder="Specific actions planned…" rows={3} style={ta}/></Fld>
+          </>}
+          {type==="event"&&<>
+            <Fld label="Event Name"><input value={eventName} onChange={e=>setEventName(e.target.value)} style={inp}/></Fld>
+            <Fld label="Donor Attended?"><YN val={attended} set={setAttended}/></Fld>
+            <Fld label="Interactions & Observations"><textarea value={observations} onChange={e=>setObservations(e.target.value)} rows={4} style={ta}/></Fld>
+            <Fld label="Donor History & Background"><textarea value={history} onChange={e=>setHistory(e.target.value)} rows={3} style={ta}/></Fld>
+            <Fld label="Next Steps"><textarea value={nextStep} onChange={e=>setNextStep(e.target.value)} placeholder="Specific actions planned…" rows={3} style={ta}/></Fld>
+          </>}
+          {type==="gift"&&<>
+            <Fld label="Amount"><input type="text" value={amount} onChange={e=>setAmount(e.target.value)} placeholder="e.g. 5,000" style={inp}/></Fld>
+            <Fld label="Designation"><input value={designation} onChange={e=>setDesignation(e.target.value)} placeholder="e.g. General Operating, Arts Education…" style={inp}/></Fld>
+            <Fld label="Payment Method"><input value={payMethod} onChange={e=>setPayMethod(e.target.value)} placeholder="Check, ACH, Credit Card, Stock…" style={inp}/></Fld>
+            <Fld label="Acknowledgement Sent?"><YN val={ackSent} set={setAckSent}/></Fld>
+            <Fld label="Next Steps"><textarea value={nextStep} onChange={e=>setNextStep(e.target.value)} placeholder="Specific actions planned…" rows={3} style={ta}/></Fld>
+          </>}
+          {type==="other"&&<>
+            <Fld label="Notes"><textarea value={otherNotes} onChange={e=>setOtherNotes(e.target.value)} rows={5} style={ta}/></Fld>
+            <Fld label="Donor History & Background"><textarea value={history} onChange={e=>setHistory(e.target.value)} placeholder="Past relationship, context…" rows={3} style={ta}/></Fld>
+            <Fld label="Spouse / Partner"><input value={spouse} onChange={e=>setSpouse(e.target.value)} placeholder="Name and relevant details" style={inp}/></Fld>
+            <Fld label="Next Steps"><textarea value={nextStep} onChange={e=>setNextStep(e.target.value)} placeholder="Specific actions planned…" rows={3} style={ta}/></Fld>
+          </>}
+        </div>
+
         <div style={{display:"flex",gap:8}}>
-          <button onClick={save} disabled={loading||!note.trim()} style={{flex:1,background:note.trim()?"#10b981":T.bg2,border:"none",borderRadius:10,padding:"11px",color:"#fff",fontSize:14,fontWeight:700,cursor:note.trim()?"pointer":"not-allowed"}}>{loading?"Saving…":"Save Touchpoint"}</button>
-          <button onClick={onClose} style={{background:T.bg,border:"none",borderRadius:10,padding:"11px 14px",color:T.ink3,fontSize:13,cursor:"pointer"}}>Cancel</button>
+          <button onClick={save} disabled={loading||!canSave} style={{flex:1,background:canSave?"#10b981":T.bg2,border:"none",borderRadius:10,padding:"12px",color:"#fff",fontSize:14,fontWeight:700,cursor:canSave?"pointer":"not-allowed"}}>{loading?"Saving…":"Save Touchpoint"}</button>
+          <button onClick={onClose} style={{background:T.bg,border:"none",borderRadius:10,padding:"12px 16px",color:T.ink3,fontSize:13,cursor:"pointer"}}>Cancel</button>
         </div>
       </div>
     </div>
@@ -1138,6 +1259,7 @@ function Donors({data,setData}){
   const[selected,setSelected]=useState(null);
   const[logTarget,setLogTarget]=useState(null);
   const[editTarget,setEditTarget]=useState(null);
+  const[toast,setToast]=useState("");
   const[aiMap,setAiMap]=useState({});const[loadingKey,setLoadingKey]=useState(null);
   const[callList,setCallList]=useState("");const[callLoading,setCallLoading]=useState(false);
   const[showAdd,setShowAdd]=useState(false);const[showImport,setShowImport]=useState(false);
@@ -1239,7 +1361,10 @@ function Donors({data,setData}){
     <div style={{display:"flex",flexDirection:"column",gap:8}}>
       <PageTitle main="Your" accent="donors."/>
       {showImport&&<DonorImport onClose={()=>setShowImport(false)} onImported={()=>{reloadDonors();setShowImport(false);}}/>}
-      {logTarget&&<LogTouchpointModal donor={logTarget} onSave={int=>handleLogged(logTarget,int)} onClose={()=>setLogTarget(null)}/>}
+      {logTarget&&<LogTouchpointModal donor={logTarget} onSave={int=>handleLogged(logTarget,int)} onClose={()=>setLogTarget(null)} onToast={msg=>{setToast(msg);setTimeout(()=>setToast(""),3500);}}/>}
+      {toast&&<div style={{position:"fixed",bottom:28,left:"50%",transform:"translateX(-50%)",background:"#0f0f0f",color:"#fff",borderRadius:10,padding:"10px 22px",fontSize:13,fontWeight:600,zIndex:500,boxShadow:"0 4px 20px rgba(0,0,0,0.25)",display:"flex",alignItems:"center",gap:8,whiteSpace:"nowrap"}}>
+        <span style={{color:"#10b981",fontSize:15}}>✓</span>{toast}
+      </div>}
       {editTarget&&<EditDonorModal donor={editTarget} onSave={handleEditSaved} onClose={()=>setEditTarget(null)}/>}
       {selected&&<DonorProfile donor={selected} onClose={()=>setSelected(null)}
         onStageChange={moveToStage} onLogTouchpoint={()=>{setLogTarget(selected);}}
