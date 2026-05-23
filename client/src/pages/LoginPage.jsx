@@ -21,10 +21,9 @@ export default function LoginPage() {
       });
       if (!res.ok) { const e = await res.json(); throw new Error(e.error || "Login failed"); }
       const data = await res.json();
-      console.log("LOGIN DATA:", JSON.stringify(data));
-      console.log("ONBOARDING:", data.org?.onboarding_complete);
-      login(data);
-      await new Promise(r => setTimeout(r, 100));
+      localStorage.setItem("npe_token", data.token);
+      localStorage.setItem("npe_user", JSON.stringify(data.user));
+      localStorage.setItem("npe_org", JSON.stringify(data.org));
       window.location.href = "/dashboard";
     } catch (err) {
       setError(err.message);
