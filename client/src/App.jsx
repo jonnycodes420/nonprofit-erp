@@ -117,7 +117,7 @@ function EmptyState({icon,title,message,action,onAction}) {
 
 function PageTitle({main,accent}) {
   return (
-    <div style={{marginBottom:24}}>
+    <div style={{marginBottom:12}}>
       <h1 style={{fontFamily:"'DM Serif Display',Georgia,serif",fontSize:"clamp(26px,3.5vw,36px)",fontWeight:400,color:T.ink,letterSpacing:"-0.02em",margin:0,lineHeight:1.2}}>
         {main}{" "}<span style={{borderBottom:`3px solid ${T.green}`,paddingBottom:2}}>{accent}</span>
       </h1>
@@ -684,7 +684,7 @@ function DonorKanban({donors,onStageChange,onLogTouchpoint,onSelectDonor}){
                 <span style={{background:stage.color+"20",color:stage.color,fontSize:10,fontWeight:800,borderRadius:99,padding:"1px 7px",border:`1px solid ${stage.color}28`,lineHeight:"16px"}}>{cols.length}</span>
               </div>
               <div style={{fontSize:13,fontWeight:700,color:total>0?T.ink:T.ink3,fontFamily:"'DM Serif Display',serif",letterSpacing:"-0.01em"}}>
-                {total>0?fmt(total):"—"}
+                {total>0?fmt(total):"$0"}
               </div>
             </div>
 
@@ -724,9 +724,8 @@ function DonorKanban({donors,onStageChange,onLogTouchpoint,onSelectDonor}){
                         <div style={{fontSize:13,fontWeight:700,color:T.ink,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",letterSpacing:"-0.01em"}}>{d.name}</div>
                         <div style={{fontSize:12,color:T.green,marginTop:2,fontWeight:700}}>{fmt(d.total)}</div>
                       </div>
-                      <div style={{background:scColor+"15",border:`1px solid ${scColor}30`,borderRadius:6,padding:"3px 6px",flexShrink:0,textAlign:"center",minWidth:34}}>
+                      <div style={{background:scColor+"15",border:`1px solid ${scColor}30`,borderRadius:6,padding:"4px 7px",flexShrink:0,textAlign:"center",minWidth:30}}>
                         <div style={{fontSize:13,fontWeight:800,color:scColor,lineHeight:"1"}}>{sc}</div>
-                        <div style={{fontSize:8,color:scColor,lineHeight:"1.3",marginTop:1,letterSpacing:"0.05em",textTransform:"uppercase"}}>scr</div>
                       </div>
                     </div>
                     {/* Urgency */}
@@ -737,11 +736,11 @@ function DonorKanban({donors,onStageChange,onLogTouchpoint,onSelectDonor}){
                     {/* Buttons */}
                     <div style={{display:"flex",gap:4}}>
                       <button onClick={e=>{e.stopPropagation();onLogTouchpoint(d);}}
-                        style={{flex:1,background:T.bg,border:"1px solid "+T.bg3,borderRadius:6,padding:"5px 0",color:T.ink3,fontSize:10,fontWeight:600,cursor:"pointer"}}>
+                        style={{flex:1,background:T.bg,border:"1px solid "+T.bg3,borderRadius:6,padding:"4px 0",color:T.ink3,fontSize:11,fontWeight:600,cursor:"pointer"}}>
                         + Log
                       </button>
                       <button onClick={e=>{e.stopPropagation();onSelectDonor(d);}}
-                        style={{flex:1,background:T.bg,border:"1px solid "+T.bg3,borderRadius:6,padding:"5px 0",color:T.ink3,fontSize:10,fontWeight:600,cursor:"pointer"}}>
+                        style={{flex:1,background:T.bg,border:"1px solid "+T.bg3,borderRadius:6,padding:"4px 0",color:T.ink3,fontSize:11,fontWeight:600,cursor:"pointer"}}>
                         View →
                       </button>
                     </div>
@@ -866,7 +865,7 @@ function Donors({data,setData}){
   };
 
   return(
-    <div style={{display:"flex",flexDirection:"column",gap:14}}>
+    <div style={{display:"flex",flexDirection:"column",gap:8}}>
       <PageTitle main="Your" accent="donors."/>
       {showImport&&<DonorImport onClose={()=>setShowImport(false)} onImported={()=>{reloadDonors();setShowImport(false);}}/>}
       {logTarget&&<LogTouchpointModal donor={logTarget} onSave={int=>handleLogged(logTarget,int)} onClose={()=>setLogTarget(null)}/>}
