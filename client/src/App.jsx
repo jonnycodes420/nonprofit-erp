@@ -3,6 +3,19 @@ import { apiFetch, streamAI, adaptData } from "./api";
 import { useAuth } from "./main";
 import Landing from "./pages/Landing";
 
+// Design tokens — cream/green system
+const T = {
+  bg:     "#f0ede6",
+  bg2:    "#e8e4db",
+  bg3:    "#ddd9d0",
+  white:  "#ffffff",
+  ink:    "#0f0f0f",
+  ink2:   "#2a2a2a",
+  ink3:   "#6b6b6b",
+  green:  "#10b981",
+  greenDk:"#1a6b4a",
+};
+
 // ── Helpers ────────────────────────────────────────────────────────────────
 const fmt = n => n>=1000?`$${(n/1000).toFixed(n%1000===0?0:1)}k`:`$${n.toLocaleString()}`;
 const fmtFull = n => `$${n.toLocaleString()}`;
@@ -40,10 +53,10 @@ function GlobalStyles() {
   return <style>{`
     *{box-sizing:border-box;-webkit-font-smoothing:antialiased;}
     ::-webkit-scrollbar{width:5px;height:5px;}
-    ::-webkit-scrollbar-track{background:#030712;}
-    ::-webkit-scrollbar-thumb{background:#1f2937;border-radius:4px;}
-    ::-webkit-scrollbar-thumb:hover{background:#374151;}
-    ::selection{background:#10b98133;color:#f3f4f6;}
+    ::-webkit-scrollbar-track{background:#f0ede6;}
+    ::-webkit-scrollbar-thumb{background:#c8c4bb;border-radius:4px;}
+    ::-webkit-scrollbar-thumb:hover{background:#b0aca3;}
+    ::selection{background:#10b98133;color:#0f0f0f;}
     input,textarea,select{transition:border-color 0.15s,box-shadow 0.15s;}
     input:focus,textarea:focus,select:focus{border-color:#10b981!important;box-shadow:0 0 0 3px #10b98118;outline:none;}
     button{transition:opacity 0.12s,transform 0.1s,background 0.12s;}
@@ -54,20 +67,20 @@ function GlobalStyles() {
     @keyframes pulse{0%,100%{opacity:1}50%{opacity:0.4}}
     .fade-in{animation:fadein 0.22s ease both;}
     .slide-in{animation:slidein 0.22s ease both;}
-    .card-click:hover{border-color:#374151!important;transform:translateY(-1px);}
+    .card-click:hover{border-color:#10b981!important;transform:translateY(-1px);}
     .card-click{transition:border-color 0.15s,transform 0.15s;}
   `}</style>;
 }
 
 // ── UI Atoms ───────────────────────────────────────────────────────────────
 function Pill({label,color}) {
-  return <span style={{fontSize:10,fontWeight:700,letterSpacing:"0.05em",textTransform:"uppercase",padding:"3px 9px",borderRadius:99,background:(color||"#6b7280")+"1a",color:color||"#6b7280",whiteSpace:"nowrap",border:`1px solid ${(color||"#6b7280")}22`}}>{label}</span>;
+  return <span style={{fontSize:10,fontWeight:700,letterSpacing:"0.05em",textTransform:"uppercase",padding:"3px 9px",borderRadius:99,background:(color||T.ink3)+"1a",color:color||T.ink3,whiteSpace:"nowrap",border:`1px solid ${(color||T.ink3)}22`}}>{label}</span>;
 }
 function Card({children,selected,accent,onClick,style={}}) {
-  return <div onClick={onClick} className={onClick?"card-click":""} style={{background:"#0d1117",border:`1px solid ${selected?accent||"#10b981":"#1a2235"}`,borderRadius:14,padding:"16px 20px",cursor:onClick?"pointer":"default",...style}}>{children}</div>;
+  return <div onClick={onClick} className={onClick?"card-click":""} style={{background:T.white,border:`1px solid ${selected?accent||T.green:T.bg3}`,borderRadius:14,padding:"16px 20px",cursor:onClick?"pointer":"default",...style}}>{children}</div>;
 }
 function SectionLabel({children}) {
-  return <div style={{fontSize:10,fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",color:"#4b5563",marginBottom:12}}>{children}</div>;
+  return <div style={{fontSize:10,fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",color:T.ink3,marginBottom:12}}>{children}</div>;
 }
 function AIBtn({onClick,loading,label="✦ AI Assist",small}) {
   return <button onClick={onClick} disabled={loading} style={{background:loading?"#1a2235":"linear-gradient(135deg,#1a6b4a,#2563eb)",border:"none",borderRadius:small?8:10,padding:small?"6px 12px":"9px 16px",color:"#fff",fontSize:small?12:13,fontWeight:700,cursor:loading?"not-allowed":"pointer",display:"flex",alignItems:"center",gap:6,opacity:loading?0.65:1,whiteSpace:"nowrap",boxShadow:loading?"none":"0 1px 8px #1a6b4a33"}}>
@@ -86,20 +99,30 @@ function AIPanel({text,onClose}) {
   </div>;
 }
 function MetricCard({label,value,sub,color,trend}) {
-  return <div className="fade-in" style={{background:"#0d1117",border:"1px solid #1a2235",borderRadius:14,padding:"16px 20px",display:"flex",flexDirection:"column",gap:5,borderLeft:`3px solid ${color||"#1f2937"}`}}>
-    <span style={{fontSize:10,fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",color:"#4b5563"}}>{label}</span>
-    <span style={{fontSize:28,fontWeight:800,color:color||"#f9fafb",fontFamily:"'DM Serif Display',serif",lineHeight:1.05,letterSpacing:"-0.02em"}}>{value}</span>
-    {sub&&<span style={{fontSize:11,color:"#6b7280"}}>{sub}</span>}
+  return <div className="fade-in" style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:14,padding:"16px 20px",display:"flex",flexDirection:"column",gap:5,borderLeft:`3px solid ${color||T.bg3}`}}>
+    <span style={{fontSize:10,fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",color:T.ink3}}>{label}</span>
+    <span style={{fontSize:28,fontWeight:800,color:color||T.ink,fontFamily:"'DM Serif Display',serif",lineHeight:1.05,letterSpacing:"-0.02em"}}>{value}</span>
+    {sub&&<span style={{fontSize:11,color:T.ink3}}>{sub}</span>}
     {trend!==undefined&&<span style={{fontSize:11,color:trend>=0?"#10b981":"#ef4444",fontWeight:600}}>{trend>=0?"↑":"↓"} {Math.abs(trend)}%</span>}
   </div>;
 }
 function EmptyState({icon,title,message,action,onAction}) {
   return <div className="fade-in" style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:"52px 24px",gap:12,textAlign:"center"}}>
-    <div style={{fontSize:36,marginBottom:4,opacity:0.4}}>{icon||"◇"}</div>
-    <div style={{fontSize:15,fontWeight:700,color:"#6b7280"}}>{title}</div>
-    {message&&<div style={{fontSize:13,color:"#374151",maxWidth:320,lineHeight:1.6}}>{message}</div>}
-    {action&&<button onClick={onAction} style={{marginTop:8,background:"#10b981",border:"none",borderRadius:10,padding:"9px 18px",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer"}}>{action}</button>}
+    <div style={{fontSize:36,marginBottom:4,opacity:0.3,color:T.ink}}>{icon||"◇"}</div>
+    <div style={{fontSize:15,fontWeight:700,color:T.ink3}}>{title}</div>
+    {message&&<div style={{fontSize:13,color:T.ink3,maxWidth:320,lineHeight:1.6}}>{message}</div>}
+    {action&&<button onClick={onAction} style={{marginTop:8,background:T.green,border:"none",borderRadius:10,padding:"9px 18px",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer"}}>{action}</button>}
   </div>;
+}
+
+function PageTitle({main,accent}) {
+  return (
+    <div style={{marginBottom:24}}>
+      <h1 style={{fontFamily:"'DM Serif Display',Georgia,serif",fontSize:"clamp(26px,3.5vw,36px)",fontWeight:400,color:T.ink,letterSpacing:"-0.02em",margin:0,lineHeight:1.2}}>
+        {main}{" "}<span style={{borderBottom:`3px solid ${T.green}`,paddingBottom:2}}>{accent}</span>
+      </h1>
+    </div>
+  );
 }
 
 // ── Score ──────────────────────────────────────────────────────────────────
