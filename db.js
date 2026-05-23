@@ -1,6 +1,6 @@
 require("dotenv").config();
 const { Pool } = require("pg");
-const { v4: uuid } = require("uuid");
+const { randomUUID: uuid } = require("crypto");
 const bcrypt = require("bcryptjs");
 
 const pool = new Pool({
@@ -252,7 +252,9 @@ async function initSchema() {
       created_at TIMESTAMPTZ DEFAULT NOW(),
       UNIQUE (org_id, year)
     );
+  `);
 
+  await pool.query(`
     CREATE TABLE IF NOT EXISTS invites (
       id TEXT PRIMARY KEY,
       org_id TEXT REFERENCES orgs(id),
@@ -263,7 +265,7 @@ async function initSchema() {
       accepted_at TIMESTAMPTZ,
       expires_at TIMESTAMPTZ NOT NULL,
       created_at TIMESTAMPTZ DEFAULT NOW()
-    );
+    )
   `);
 }
 

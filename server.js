@@ -34,7 +34,7 @@ const requireAdmin = (req, res, next) => {
 
 // ── Health ─────────────────────────────────────────────────────────────────
 app.get("/health", (req, res) => {
-  res.json({ status: "ok", version: "1.0.0", db: dbReady });
+  res.json({ status: "ok", version: "1.1.0", db: dbReady });
 });
 
 // ── Auth ───────────────────────────────────────────────────────────────────
