@@ -69,6 +69,8 @@ function GlobalStyles() {
     .slide-in{animation:slidein 0.22s ease both;}
     .card-click:hover{border-color:#10b981!important;transform:translateY(-1px);}
     .card-click{transition:border-color 0.15s,transform 0.15s;}
+    .dash-row:hover{background:#f7f4ef!important;}
+    .dash-action:hover{background:#f0fdf4!important;border-color:#10b981!important;}
   `}</style>;
 }
 
@@ -244,152 +246,400 @@ function AIChat({data,onClose}) {
   </div>;
 }
 
-// ── Daily Briefing ─────────────────────────────────────────────────────────
-function DailyBriefing({data}) {
-  const [brief,setBrief]=useState(""); const [loading,setLoading]=useState(false); const [open,setOpen]=useState(false);
-  const generate = async () => {
-    setLoading(true); setBrief(""); setOpen(true);
-    const today = new Date().toLocaleDateString("en-US",{weekday:"long",month:"long",day:"numeric"});
+// ── Dashboard ──────────────────────────────────────────────────────────────
+function Dashboard({data,setData,onNavigate}) {
+  const todayStr=new Date().toLocaleDateString("en-US",{weekday:"long",month:"long",day:"numeric"});
+  const currentYear=new Date().getFullYear();
+
+  // AI briefing
+  const [briefing,setBriefing]=useState("");
+  const [briefLoading,setBriefLoading]=useState(false);
+  const [briefOpen,setBriefOpen]=useState(false);
+  // Quick-add donor
+  const [showAddDonor,setShowAddDonor]=useState(false);
+  const [newDonor,setNewDonor]=useState({name:"",email:"",phone:"",stage:"prospect"});
+
+  // ── Stats
+  const totalDonors=data.donors.length;
+  const newDonorsThisYear=data.donors.filter(d=>d.lastGift&&new Date(d.lastGift).getFullYear()===currentYear).length;
+  const activeGrantCount=data.grants.filter(g=>g.status==="active").length;
+  const pipelineValue=data.grants.filter(g=>["active","pending","prospecting"].includes(g.status)).reduce((s,g)=>s+g.amount,0);
+  const activeVolunteers=data.volunteers.filter(v=>v.lastActive&&daysDiff(v.lastActive)<=30).length;
+  const openTasks=data.tasks.filter(t=>!t.done).length;
+  const highPriorityTasks=data.tasks.filter(t=>!t.done&&t.priority==="high").length;
+  const lapsedDonors=data.donors.filter(d=>d.stage==="lapsed");
+  const lapsedValue=lapsedDonors.reduce((s,d)=>s+d.total,0);
+
+  // ── Pipeline snapshot
+  const stageSnap=STAGES.map(s=>({
+    ...s,
+    count:data.donors.filter(d=>(d.stage||"cultivate")===s.id).length,
+    total:data.donors.filter(d=>(d.stage||"cultivate")===s.id).reduce((sum,d)=>sum+d.total,0),
+  }));
+
+  // ── Upcoming grant deadlines
+  const upcomingGrants=[...data.grants]
+    .filter(g=>g.status!=="closed"&&daysUntil(g.deadline)>=-7)
+    .sort((a,b)=>new Date(a.deadline)-new Date(b.deadline))
+    .slice(0,3);
+
+  // ── Recent giving (last 5 donors sorted by lastGift)
+  const recentGifts=[...data.donors]
+    .filter(d=>d.lastGift&&d.lastAmount>0)
+    .sort((a,b)=>new Date(b.lastGift)-new Date(a.lastGift))
+    .slice(0,5);
+
+  // ── Activity feed (flatten all donor interactions)
+  const activityFeed=data.donors
+    .flatMap(d=>(d.interactions||[]).map(i=>({...i,donorName:d.name,donorId:d.id})))
+    .sort((a,b)=>new Date(b.date)-new Date(a.date))
+    .slice(0,10);
+
+  // ── Tasks this week
+  const todayIso=new Date().toISOString().split("T")[0];
+  const weekEndIso=new Date(Date.now()+7*86400000).toISOString().split("T")[0];
+  const todayTasks=data.tasks.filter(t=>!t.done&&t.due===todayIso).sort((a,b)=>({high:0,medium:1,low:2}[a.priority]-{high:0,medium:1,low:2}[b.priority]));
+  const weekTasks=data.tasks.filter(t=>!t.done&&t.due>todayIso&&t.due<=weekEndIso).sort((a,b)=>new Date(a.due)-new Date(b.due));
+
+  // ── Generate briefing
+  const generateBriefing=async()=>{
+    setBriefLoading(true);setBriefing("");setBriefOpen(true);
     await askClaude(
       `You are a chief development officer. Write a crisp daily briefing. Use bullet points. Be specific with names and numbers. Max 250 words.`,
-      `Generate today's development briefing for ${data.org.name}.\nToday: ${today}\n\n${buildContext(data)}\n\nFormat:\n**TODAY'S PRIORITY CALLS** (top 2-3 donors to contact with specific reason)\n**GRANT ALERTS** (anything urgent in next 30 days)\n**FINANCIAL PULSE** (1-2 sentences on cash/revenue)\n**ONE THING** (the single most important action today)\n\nBe sharp and specific.`,
-      chunk=>setBrief(chunk)
+      `Generate today's development briefing for ${data.org.name}.\nToday: ${todayStr}\n\n${buildContext(data)}\n\nFormat:\n**TODAY'S PRIORITY CALLS** (top 2-3 donors to contact with specific reason)\n**GRANT ALERTS** (anything urgent in next 30 days)\n**FINANCIAL PULSE** (1-2 sentences on cash/revenue)\n**ONE THING** (the single most important action today)\n\nBe sharp and specific.`,
+      chunk=>setBriefing(chunk)
     );
-    setLoading(false);
+    setBriefLoading(false);
   };
-  return <div>
-    <div style={{display:"flex",gap:10,alignItems:"center"}}>
-      <AIBtn onClick={generate} loading={loading} label="✦ Generate Daily Briefing"/>
-      {brief&&!loading&&<button onClick={()=>setOpen(!open)} style={{background:"transparent",border:"1px solid "+T.bg3,borderRadius:10,padding:"9px 14px",color:T.ink3,fontSize:12,cursor:"pointer"}}>{open?"Hide":"Show"}</button>}
-    </div>
-    {open&&(loading||brief)&&<AIPanel text={brief} onClose={()=>{setBrief("");setOpen(false);}}/>}
-  </div>;
-}
 
-// ── Dashboard ──────────────────────────────────────────────────────────────
-function Dashboard({data}) {
-  const h=new Date().getHours();
-  const greeting=h>=5&&h<12?"Good morning,":h<17?"Good afternoon,":"Good evening,";
-  const rev=data.financials.revenue; const exp=data.financials.expenses;
-  const monthlyRev=rev.map(r=>r.individual+r.grants+r.events+r.other);
-  const monthlyExp=exp.map(e=>e.programs+e.admin+e.fundraising);
-  const ytdRev=monthlyRev.reduce((a,b)=>a+b,0); const ytdExp=monthlyExp.reduce((a,b)=>a+b,0);
-  const activeGrants=data.grants.filter(g=>g.status==="active").reduce((s,g)=>s+g.amount,0);
-  const pipeline=data.grants.filter(g=>["pending","prospecting"].includes(g.status)).reduce((s,g)=>s+g.amount,0);
-  const lapsed=data.donors.filter(d=>d.status==="lapsed").length;
-  const urgentTasks=data.tasks.filter(t=>!t.done&&t.priority==="high");
-  const maxBar=Math.max(...monthlyRev,...monthlyExp);
-  const totalFunds=data.financials.funds.reduce((s,f)=>s+f.balance,0);
-  const topDonors=[...data.donors].sort((a,b)=>b.total-a.total).slice(0,3);
+  // ── Quick-add donor
+  const addDonorQuick=async()=>{
+    if(!newDonor.name.trim())return;
+    try{
+      await apiFetch("/donors",{method:"POST",body:JSON.stringify({...newDonor})});
+      const donors=await apiFetch("/donors");
+      setData(prev=>({...prev,donors:donors.map(d=>{
+        const ints=(d.interactions||[]).map(i=>({date:i.date||i.created_at?.split("T")[0],type:i.type,note:i.note||""}));
+        const lastTouchpoint=ints.length>0?ints.slice().sort((a,b)=>new Date(b.date)-new Date(a.date))[0].date:null;
+        return{id:d.id,name:d.name,email:d.email||"",phone:d.phone||"",total:d.total_giving||0,
+          lastGift:d.last_gift_date||"",lastAmount:d.last_gift_amount||0,gifts:d.gift_count||0,
+          status:d.status,stage:d.stage||"cultivate",lastTouchpoint,
+          tags:Array.isArray(d.tags)?d.tags:JSON.parse(d.tags||"[]"),notes:d.notes||"",interactions:ints};
+      })}));
+    }catch(e){console.error(e);}
+    setShowAddDonor(false);setNewDonor({name:"",email:"",phone:"",stage:"prospect"});
+    onNavigate("donors");
+  };
 
-  return <div style={{display:"flex",flexDirection:"column",gap:16}}>
-    <PageTitle main={greeting} accent="what needs attention?"/>
-    <DailyBriefing data={data}/>
-    <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(148px,1fr))",gap:10}}>
-      <MetricCard label="YTD Revenue" value={fmt(ytdRev)} sub={`${ytdExp>0?((ytdRev/ytdExp)*100).toFixed(0):0}% expense ratio`} color="#10b981" trend={8}/>
-      <MetricCard label="Cash on Hand" value={fmt(totalFunds)} sub={`${data.financials.funds.filter(f=>f.restricted).length} restricted`} color="#3b82f6"/>
-      <MetricCard label="Active Grants" value={fmt(activeGrants)} sub="contracted" color="#8b5cf6"/>
-      <MetricCard label="Grant Pipeline" value={fmt(pipeline)} sub="pending + prospecting" color="#f59e0b"/>
-      <MetricCard label="Lapsed Donors" value={lapsed} sub="need re-engagement" color="#ef4444"/>
-    </div>
+  // ── Task toggle (local — same as Tasks tab)
+  const toggleTask=id=>setData(prev=>({...prev,tasks:prev.tasks.map(t=>t.id===id?{...t,done:!t.done}:t)}));
 
-    <div style={{display:"grid",gridTemplateColumns:"1.5fr 1fr",gap:12}}>
-      <Card>
-        <SectionLabel>Revenue vs. Expenses — YTD</SectionLabel>
-        <div style={{display:"flex",gap:4,alignItems:"flex-end",height:100,marginBottom:4}}>
-          {rev.map((r,i)=>{
-            const rv=r.individual+r.grants+r.events+r.other;
-            const ex=exp[i].programs+exp[i].admin+exp[i].fundraising;
-            const rh=maxBar>0?Math.round((rv/maxBar)*96):0;
-            const eh=maxBar>0?Math.round((ex/maxBar)*96):0;
-            return <div key={r.month} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:2}}>
-              <div style={{width:"100%",display:"flex",gap:1,alignItems:"flex-end",height:96}}>
-                <div style={{flex:1,height:rh,background:"linear-gradient(180deg,#10b981,#059669)",borderRadius:"3px 3px 0 0",minHeight:2}}/>
-                <div style={{flex:1,height:eh,background:"linear-gradient(180deg,#ef4444,#dc2626)",borderRadius:"3px 3px 0 0",minHeight:2,opacity:0.7}}/>
-              </div>
-              <div style={{fontSize:9,color:T.bg3}}>{r.month.slice(0,3)}</div>
-            </div>;
-          })}
-        </div>
-        <div style={{display:"flex",gap:16,paddingTop:8,borderTop:"1px solid #0e1624"}}>
-          {[["#10b981","Revenue",fmt(ytdRev)],["#ef4444","Expenses",fmt(ytdExp)]].map(([c,l,v])=>
-            <div key={l} style={{display:"flex",alignItems:"center",gap:6}}>
-              <div style={{width:8,height:8,borderRadius:2,background:c,flexShrink:0}}/>
-              <span style={{fontSize:11,color:T.ink3}}>{l}</span>
-              <span style={{fontSize:11,fontWeight:700,color:T.ink3}}>{v}</span>
-            </div>)}
-          <div style={{marginLeft:"auto",fontSize:11,color:ytdRev>=ytdExp?"#10b981":"#ef4444",fontWeight:700}}>
-            Net {ytdRev>=ytdExp?"+":""}{fmt(ytdRev-ytdExp)}
+  // ── Pull quote: first non-header bullet from briefing
+  const bLines=briefing.split("\n").filter(l=>l.trim()&&!l.startsWith("**")&&l.trim().length>15);
+  const pullQuote=bLines.length?bLines[0].replace(/^[•\-\*\s]+/,"").slice(0,160):"";
+  const briefRest=pullQuote?briefing.slice(briefing.indexOf(pullQuote)+pullQuote.length).trim():"";
+
+  const sHdr={display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:0};
+  const sTitle={fontSize:10,fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",color:T.ink3};
+  const sLink={background:"transparent",border:"none",padding:0,color:T.green,fontSize:12,fontWeight:700,cursor:"pointer"};
+  const cardWrap={background:T.white,border:"1px solid "+T.bg3,borderRadius:14,overflow:"hidden"};
+  const cPad={padding:"14px 20px"};
+  const typeColor={call:"#3b82f6",email:"#8b5cf6",meeting:"#10b981",gift:"#f59e0b",event:"#ec4899",note:"#6b7280"};
+
+  const QUICK=[
+    {icon:"♦",label:"Add Donor",action:()=>setShowAddDonor(true),color:"#10b981"},
+    {icon:"⟡",label:"Log Gift",action:()=>onNavigate("donors"),color:"#f59e0b"},
+    {icon:"◉",label:"New Grant",action:()=>onNavigate("grants"),color:"#8b5cf6"},
+    {icon:"◎",label:"Add Volunteer",action:()=>onNavigate("volunteers"),color:"#3b82f6"},
+    {icon:"◻",label:"New Task",action:()=>onNavigate("tasks"),color:"#6b7280"},
+    {icon:"◑",label:"Send Email",action:()=>onNavigate("communications"),color:"#ec4899"},
+  ];
+
+  return(
+    <div style={{display:"flex",flexDirection:"column",gap:16}} className="fade-in">
+
+      {/* ── Hero stat strip ── */}
+      <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10}}>
+        {[
+          {label:"Total Donors",value:totalDonors,sub:`${newDonorsThisYear} gave this year`,color:"#10b981",tab:"donors"},
+          {label:"Active Grants",value:activeGrantCount,sub:fmt(pipelineValue)+" pipeline",color:"#8b5cf6",tab:"grants"},
+          {label:"Active Volunteers",value:activeVolunteers,sub:"in last 30 days",color:"#3b82f6",tab:"volunteers"},
+          {label:"Open Tasks",value:openTasks,sub:highPriorityTasks>0?`${highPriorityTasks} high priority`:"all on track",color:highPriorityTasks>0?"#ef4444":"#10b981",tab:"tasks"},
+        ].map(s=>(
+          <div key={s.label} onClick={()=>onNavigate(s.tab)} className="card-click" style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:14,padding:"16px 20px",cursor:"pointer",borderLeft:`3px solid ${s.color}`}}>
+            <div style={{fontSize:10,fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",color:T.ink3,marginBottom:4}}>{s.label}</div>
+            <div style={{fontSize:28,fontWeight:800,color:s.color,fontFamily:"'DM Serif Display',serif",lineHeight:1.05,letterSpacing:"-0.02em"}}>{s.value}</div>
+            <div style={{fontSize:11,color:T.ink3,marginTop:4}}>{s.sub}</div>
           </div>
-        </div>
-      </Card>
-
-      <Card>
-        <SectionLabel>Top Donors</SectionLabel>
-        {topDonors.length===0&&<EmptyState icon="♦" title="No donors yet"/>}
-        {topDonors.map((d,i)=>{
-          const sc=donorScore(d);
-          const scoreColor=sc>70?"#10b981":sc>45?"#f59e0b":"#ef4444";
-          return <div key={d.id} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 0",borderBottom:i<topDonors.length-1?"1px solid "+T.bg3:""}}>
-            <div style={{width:22,height:22,borderRadius:6,background:T.bg2,display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:800,color:T.ink3,flexShrink:0}}>{i+1}</div>
-            <div style={{flex:1,minWidth:0}}>
-              <div style={{fontSize:13,fontWeight:600,color:T.ink,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{d.name}</div>
-              <div style={{fontSize:11,color:T.ink3}}>{d.gifts} gifts</div>
-            </div>
-            <div style={{textAlign:"right",flexShrink:0}}>
-              <div style={{fontSize:14,fontWeight:800,color:SC[d.status]}}>{fmt(d.total)}</div>
-              <div style={{fontSize:10,color:scoreColor}}>score {sc}</div>
-            </div>
-          </div>;
-        })}
-      </Card>
-    </div>
-
-    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
-      <Card>
-        <SectionLabel>Urgent Tasks</SectionLabel>
-        {urgentTasks.length===0?<div style={{display:"flex",alignItems:"center",gap:8,padding:"10px 0",color:T.bg3,fontSize:13}}>
-          <span style={{fontSize:18}}>✓</span> All clear — no high-priority tasks
-        </div>:urgentTasks.map(t=><div key={t.id} style={{display:"flex",alignItems:"center",gap:10,padding:"9px 0",borderBottom:"1px solid #0e1624"}}>
-          <div style={{width:6,height:6,borderRadius:"50%",background:"#ef4444",flexShrink:0}}/>
-          <div style={{flex:1}}>
-            <div style={{fontSize:13,color:T.ink,fontWeight:500,lineHeight:1.3}}>{t.title}</div>
-            {t.due&&<div style={{fontSize:11,color:T.ink3,marginTop:2}}>Due {new Date(t.due).toLocaleDateString("en-US",{month:"short",day:"numeric"})}</div>}
-          </div>
-          <Pill label={t.type} color="#6b7280"/>
-        </div>)}
-      </Card>
-
-      <Card>
-        <SectionLabel>Grant Deadlines</SectionLabel>
-        {data.grants.filter(g=>g.status!=="closed").length===0&&<EmptyState icon="◉" title="No open grants"/>}
-        {data.grants.filter(g=>g.status!=="closed").sort((a,b)=>new Date(a.deadline)-new Date(b.deadline)).map(g=>{
-          const d=daysUntil(g.deadline); const urg=d<30?"#ef4444":d<90?"#f59e0b":"#10b981";
-          return <div key={g.id} style={{display:"flex",alignItems:"center",gap:10,padding:"9px 0",borderBottom:"1px solid #0e1624"}}>
-            <div style={{width:36,height:36,borderRadius:8,background:urg+"15",border:`1px solid ${urg}30`,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",flexShrink:0}}>
-              <span style={{fontSize:11,fontWeight:800,color:urg,lineHeight:1}}>{d<0?"past":d>99?"99+d":d+"d"}</span>
-            </div>
-            <div style={{flex:1,minWidth:0}}>
-              <div style={{fontSize:13,color:T.ink,fontWeight:500,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{g.funder}</div>
-              <div style={{fontSize:11,color:T.ink3}}>{fmt(g.amount)}</div>
-            </div>
-            <Pill label={g.status} color={SC[g.status]}/>
-          </div>;
-        })}
-      </Card>
-    </div>
-
-    <Card>
-      <SectionLabel>Fund Balances</SectionLabel>
-      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(170px,1fr))",gap:8}}>
-        {data.financials.funds.map(f=><div key={f.name} style={{background:f.restricted?T.green+"08":T.white,borderRadius:10,padding:"14px 16px",border:`1px solid ${f.restricted?T.green+"30":T.bg3}`}}>
-          <div style={{fontSize:10,fontWeight:700,color:f.restricted?T.green:T.ink3,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:6}}>{f.restricted?"Restricted":"Unrestricted"}</div>
-          <div style={{fontSize:20,fontWeight:800,color:T.ink,fontFamily:"'DM Serif Display',serif"}}>{fmt(f.balance)}</div>
-          <div style={{fontSize:11,color:T.ink3,marginTop:3}}>{f.name}</div>
-        </div>)}
+        ))}
       </div>
-    </Card>
-  </div>;
+
+      {/* ── Two-column body ── */}
+      <div style={{display:"grid",gridTemplateColumns:"minmax(0,1fr) 320px",gap:16,alignItems:"start"}}>
+
+        {/* LEFT COLUMN */}
+        <div style={{display:"flex",flexDirection:"column",gap:14}}>
+
+          {/* AI Briefing — morning memo */}
+          <div style={{...cardWrap}}>
+            <div style={{...cPad,borderBottom:"1px solid "+T.bg3,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+              <div style={{display:"flex",alignItems:"center",gap:10}}>
+                <span style={{background:"#10b981",color:"#fff",fontSize:9,fontWeight:800,padding:"3px 8px",borderRadius:99,letterSpacing:"0.1em",textTransform:"uppercase"}}>AI</span>
+                <span style={{fontSize:11,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.08em",fontWeight:600}}>{todayStr}</span>
+              </div>
+              {!briefing&&!briefLoading&&<AIBtn onClick={generateBriefing} label="✦ Generate briefing" small/>}
+              {briefLoading&&<div style={{display:"flex",alignItems:"center",gap:6,fontSize:12,color:T.ink3}}><Spin/>Thinking…</div>}
+            </div>
+            <div style={{padding:"18px 24px"}}>
+              {!briefing&&!briefLoading&&(
+                <div style={{fontSize:13,color:T.ink3,fontStyle:"italic",lineHeight:1.7}}>
+                  Get your personalized daily development briefing — who to call, what's urgent, one priority action.
+                </div>
+              )}
+              {briefLoading&&!briefing&&(
+                <div style={{fontSize:13,color:T.ink3,fontStyle:"italic"}}>Reading your org context…</div>
+              )}
+              {(briefing||briefLoading)&&pullQuote&&(
+                <>
+                  <blockquote style={{fontFamily:"'DM Serif Display',Georgia,serif",fontSize:17,fontStyle:"italic",color:T.ink,lineHeight:1.55,margin:"0 0 14px 0",paddingLeft:16,borderLeft:"3px solid #10b981"}}>
+                    "{pullQuote}"
+                  </blockquote>
+                  {briefOpen&&briefRest&&(
+                    <div style={{fontSize:13,color:T.ink2,lineHeight:1.85,whiteSpace:"pre-wrap",marginBottom:14}}>
+                      {briefRest}
+                    </div>
+                  )}
+                  {briefRest&&<button onClick={()=>setBriefOpen(!briefOpen)} style={{background:"transparent",border:"none",padding:0,color:T.green,fontSize:12,fontWeight:700,cursor:"pointer"}}>
+                    {briefOpen?"▲ Collapse":"▼ Read full briefing"}
+                  </button>}
+                </>
+              )}
+            </div>
+          </div>
+
+          {/* Donor pipeline snapshot */}
+          <div style={{...cardWrap}}>
+            <div style={{...cPad,borderBottom:"1px solid "+T.bg3,...sHdr}}>
+              <span style={sTitle}>Donor Pipeline</span>
+              <button onClick={()=>onNavigate("donors")} style={sLink}>View all →</button>
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(6,1fr)"}}>
+              {stageSnap.map((s,i)=>(
+                <div key={s.id} onClick={()=>onNavigate("donors")} className="dash-row" style={{
+                  padding:"14px 12px",borderRight:i<5?"1px solid "+T.bg3:"none",
+                  cursor:"pointer",borderTop:`3px solid ${s.color}`,
+                }}>
+                  <div style={{fontSize:9,fontWeight:800,textTransform:"uppercase",letterSpacing:"0.08em",color:s.color,marginBottom:6}}>{s.label}</div>
+                  <div style={{fontSize:20,fontWeight:800,color:s.count>0?T.ink:T.ink3,fontFamily:"'DM Serif Display',serif",lineHeight:1}}>{s.count}</div>
+                  <div style={{fontSize:11,color:T.ink3,marginTop:3}}>{s.total>0?fmt(s.total):"—"}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Lapsed alert */}
+          {lapsedDonors.length>0&&(
+            <div style={{background:"#fff8f0",border:"1px solid #f59e0b40",borderRadius:14,padding:"16px 20px",display:"flex",alignItems:"center",justifyContent:"space-between",gap:12}}>
+              <div>
+                <div style={{display:"flex",alignItems:"center",gap:7,marginBottom:4}}>
+                  <div style={{width:7,height:7,borderRadius:"50%",background:"#ef4444",flexShrink:0,boxShadow:"0 0 6px #ef444460"}}/>
+                  <span style={{fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.1em",color:"#dc2626"}}>Lapsed Donors</span>
+                </div>
+                <div style={{fontSize:26,fontWeight:800,fontFamily:"'DM Serif Display',serif",color:T.ink,lineHeight:1}}>{lapsedDonors.length}</div>
+                <div style={{fontSize:12,color:T.ink3,marginTop:4}}>{fmtFull(lapsedValue)} lifetime value at risk</div>
+              </div>
+              <button onClick={()=>onNavigate("donors")} style={{background:"#ef4444",border:"none",borderRadius:10,padding:"10px 18px",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer",whiteSpace:"nowrap",flexShrink:0}}>
+                Re-engage →
+              </button>
+            </div>
+          )}
+
+          {/* Upcoming grant deadlines */}
+          <div style={{...cardWrap}}>
+            <div style={{...cPad,borderBottom:"1px solid "+T.bg3,...sHdr}}>
+              <span style={sTitle}>Grant Deadlines</span>
+              <button onClick={()=>onNavigate("grants")} style={sLink}>All grants →</button>
+            </div>
+            {upcomingGrants.length===0&&<div style={{...cPad,fontSize:13,color:T.ink3,fontStyle:"italic"}}>No upcoming deadlines</div>}
+            {upcomingGrants.map((g,i)=>{
+              const d=daysUntil(g.deadline);
+              const urgColor=d<14?"#ef4444":d<30?"#f59e0b":"#10b981";
+              return(
+                <div key={g.id} className="dash-row" onClick={()=>onNavigate("grants")} style={{
+                  display:"flex",alignItems:"center",gap:12,padding:"12px 20px",
+                  borderBottom:i<upcomingGrants.length-1?"1px solid "+T.bg3:"none",cursor:"pointer",
+                }}>
+                  <div style={{background:urgColor+"15",border:"1px solid "+urgColor+"30",borderRadius:8,padding:"6px 10px",minWidth:46,textAlign:"center",flexShrink:0}}>
+                    <div style={{fontSize:12,fontWeight:800,color:urgColor,lineHeight:1}}>{d<0?"past":d+"d"}</div>
+                  </div>
+                  <div style={{flex:1,minWidth:0}}>
+                    <div style={{fontSize:13,fontWeight:600,color:T.ink,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{g.funder}</div>
+                    <div style={{fontSize:11,color:T.ink3,marginTop:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{g.program}</div>
+                  </div>
+                  <div style={{textAlign:"right",flexShrink:0}}>
+                    <div style={{fontSize:13,fontWeight:700,color:T.ink}}>{fmt(g.amount)}</div>
+                    <div style={{marginTop:4}}><Pill label={g.status} color={SC[g.status]}/></div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Recent giving */}
+          <div style={{...cardWrap}}>
+            <div style={{...cPad,borderBottom:"1px solid "+T.bg3,...sHdr}}>
+              <span style={sTitle}>Recent Giving</span>
+              <button onClick={()=>onNavigate("donors")} style={sLink}>All donors →</button>
+            </div>
+            {recentGifts.length===0&&<div style={{...cPad,fontSize:13,color:T.ink3,fontStyle:"italic"}}>No gift history yet</div>}
+            {recentGifts.map((d,i)=>{
+              const dAgo=daysDiff(d.lastGift);
+              const when=dAgo===0?"Today":dAgo===1?"Yesterday":`${dAgo}d ago`;
+              const sc=donorScore(d);const scColor=sc>70?"#10b981":sc>45?"#f59e0b":"#ef4444";
+              return(
+                <div key={d.id} className="dash-row" onClick={()=>onNavigate("donors")} style={{
+                  display:"flex",alignItems:"center",gap:12,padding:"11px 20px",
+                  borderBottom:i<recentGifts.length-1?"1px solid "+T.bg3:"none",cursor:"pointer",
+                }}>
+                  <div style={{width:34,height:34,borderRadius:"50%",background:scColor+"20",display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,fontWeight:700,color:scColor,flexShrink:0}}>{d.name[0]}</div>
+                  <div style={{flex:1,minWidth:0}}>
+                    <div style={{fontSize:13,fontWeight:600,color:T.ink,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{d.name}</div>
+                    <div style={{fontSize:11,color:T.ink3,marginTop:1}}>{when}</div>
+                  </div>
+                  <div style={{textAlign:"right",flexShrink:0}}>
+                    <div style={{fontSize:14,fontWeight:800,color:"#10b981"}}>{fmtFull(d.lastAmount)}</div>
+                    <div style={{fontSize:10,color:T.ink3,marginTop:2}}>{fmtFull(d.total)} lifetime</div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+        </div>{/* end left column */}
+
+        {/* RIGHT COLUMN */}
+        <div style={{display:"flex",flexDirection:"column",gap:14}}>
+
+          {/* Quick actions */}
+          <div style={{...cardWrap,...cPad}}>
+            <div style={sTitle}>Quick Actions</div>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8,marginTop:12}}>
+              {QUICK.map(a=>(
+                <button key={a.label} onClick={a.action} className="dash-action" style={{
+                  background:T.bg,border:"1px solid "+T.bg3,borderRadius:10,
+                  padding:"12px 8px",display:"flex",flexDirection:"column",alignItems:"center",gap:6,cursor:"pointer",
+                }}>
+                  <div style={{width:32,height:32,borderRadius:8,background:a.color+"18",display:"flex",alignItems:"center",justifyContent:"center",fontSize:15,color:a.color,fontWeight:700}}>
+                    {a.icon}
+                  </div>
+                  <span style={{fontSize:10,fontWeight:700,color:T.ink3,textAlign:"center",lineHeight:1.3,letterSpacing:"0.02em"}}>{a.label}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Tasks this week */}
+          <div style={{...cardWrap}}>
+            <div style={{...cPad,borderBottom:"1px solid "+T.bg3,...sHdr}}>
+              <span style={sTitle}>Tasks This Week</span>
+              <button onClick={()=>onNavigate("tasks")} style={sLink}>All →</button>
+            </div>
+            {todayTasks.length===0&&weekTasks.length===0&&(
+              <div style={{...cPad,fontSize:13,color:T.ink3,fontStyle:"italic"}}>No tasks due today or this week</div>
+            )}
+            {todayTasks.length>0&&(
+              <>
+                <div style={{padding:"6px 20px 4px",fontSize:9,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.1em",color:T.ink3,background:T.bg,borderBottom:"1px solid "+T.bg3}}>Today</div>
+                {todayTasks.map((t,i)=>(
+                  <div key={t.id} className="dash-row" onClick={()=>toggleTask(t.id)} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 20px",borderBottom:"1px solid "+T.bg3,cursor:"pointer"}}>
+                    <div style={{width:16,height:16,borderRadius:4,border:`2px solid ${SC[t.priority]}`,flexShrink:0}}/>
+                    <div style={{flex:1,minWidth:0}}>
+                      <div style={{fontSize:12,color:T.ink,fontWeight:500,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{t.title}</div>
+                    </div>
+                    <Pill label={t.priority} color={SC[t.priority]}/>
+                  </div>
+                ))}
+              </>
+            )}
+            {weekTasks.length>0&&(
+              <>
+                <div style={{padding:"6px 20px 4px",fontSize:9,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.1em",color:T.ink3,background:T.bg,borderBottom:"1px solid "+T.bg3}}>This week</div>
+                {weekTasks.map((t,i)=>(
+                  <div key={t.id} className="dash-row" onClick={()=>toggleTask(t.id)} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 20px",borderBottom:i<weekTasks.length-1?"1px solid "+T.bg3:"none",cursor:"pointer"}}>
+                    <div style={{width:16,height:16,borderRadius:4,border:`2px solid ${SC[t.priority]}`,flexShrink:0}}/>
+                    <div style={{flex:1,minWidth:0}}>
+                      <div style={{fontSize:12,color:T.ink,fontWeight:500,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{t.title}</div>
+                      {t.due&&<div style={{fontSize:10,color:T.ink3,marginTop:2}}>{new Date(t.due).toLocaleDateString("en-US",{weekday:"short",month:"short",day:"numeric"})}</div>}
+                    </div>
+                    <Pill label={t.priority} color={SC[t.priority]}/>
+                  </div>
+                ))}
+              </>
+            )}
+          </div>
+
+          {/* Activity feed */}
+          <div style={{...cardWrap}}>
+            <div style={{...cPad,borderBottom:"1px solid "+T.bg3}}>
+              <span style={sTitle}>Recent Activity</span>
+            </div>
+            {activityFeed.length===0&&<div style={{...cPad,fontSize:13,color:T.ink3,fontStyle:"italic"}}>No activity logged yet</div>}
+            {activityFeed.map((item,i)=>{
+              const tc=typeColor[item.type]||"#6b7280";
+              const dAgo=daysDiff(item.date);
+              const when=dAgo===0?"Today":dAgo===1?"Yesterday":`${dAgo}d ago`;
+              return(
+                <div key={i} className="dash-row" onClick={()=>onNavigate("donors")} style={{
+                  display:"flex",alignItems:"flex-start",gap:10,padding:"10px 20px",
+                  borderBottom:i<activityFeed.length-1?"1px solid "+T.bg3:"none",cursor:"pointer",
+                }}>
+                  <div style={{width:7,height:7,borderRadius:"50%",background:tc,marginTop:4,flexShrink:0}}/>
+                  <div style={{flex:1,minWidth:0}}>
+                    <div style={{fontSize:12,color:T.ink,lineHeight:1.4}}>
+                      <span style={{fontWeight:600}}>{item.donorName}</span>
+                      {" · "}<span style={{color:tc,fontWeight:600,textTransform:"capitalize"}}>{item.type}</span>
+                    </div>
+                    {item.note&&<div style={{fontSize:11,color:T.ink3,marginTop:2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{item.note}</div>}
+                  </div>
+                  <div style={{fontSize:10,color:T.ink3,flexShrink:0,marginTop:2,whiteSpace:"nowrap"}}>{when}</div>
+                </div>
+              );
+            })}
+          </div>
+
+        </div>{/* end right column */}
+      </div>{/* end two-column */}
+
+      {/* Quick-add donor modal */}
+      {showAddDonor&&(
+        <div style={{position:"fixed",inset:0,background:"#000000cc",backdropFilter:"blur(4px)",zIndex:300,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+          <div className="fade-in" style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:18,width:"100%",maxWidth:420,padding:24,boxShadow:"0 4px 32px rgba(15,15,15,0.12)"}}>
+            <div style={{fontSize:16,fontWeight:800,color:T.ink,marginBottom:16}}>Add Donor</div>
+            {[["name","Full Name"],["email","Email"],["phone","Phone"]].map(([k,pl])=>(
+              <input key={k} value={newDonor[k]||""} onChange={e=>setNewDonor(p=>({...p,[k]:e.target.value}))} placeholder={pl}
+                style={{width:"100%",boxSizing:"border-box",background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"9px 12px",color:T.ink,fontSize:13,outline:"none",marginBottom:10}}/>
+            ))}
+            <div style={{fontSize:11,fontWeight:700,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:8}}>Stage</div>
+            <div style={{display:"flex",gap:5,flexWrap:"wrap",marginBottom:16}}>
+              {STAGES.map(s=>(
+                <button key={s.id} onClick={()=>setNewDonor(p=>({...p,stage:s.id}))}
+                  style={{background:newDonor.stage===s.id?s.color+"22":T.bg,border:`1px solid ${newDonor.stage===s.id?s.color:T.bg3}`,borderRadius:7,padding:"5px 11px",color:newDonor.stage===s.id?s.color:T.ink3,fontSize:12,fontWeight:600,cursor:"pointer"}}>
+                  {s.label}
+                </button>
+              ))}
+            </div>
+            <div style={{display:"flex",gap:8}}>
+              <button onClick={addDonorQuick} disabled={!newDonor.name.trim()} style={{flex:1,background:newDonor.name.trim()?"#10b981":T.bg2,border:"none",borderRadius:10,padding:"11px",color:"#fff",fontSize:14,fontWeight:700,cursor:newDonor.name.trim()?"pointer":"not-allowed"}}>
+                Save Donor
+              </button>
+              <button onClick={()=>setShowAddDonor(false)} style={{background:T.bg,border:"none",borderRadius:10,padding:"11px 14px",color:T.ink3,fontSize:13,cursor:"pointer"}}>Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+    </div>
+  );
 }
 
 // ── Moves Management ───────────────────────────────────────────────────────
@@ -2485,7 +2735,7 @@ function AppShell() {
     </div>
 
     <div style={{flex:1,padding:"28px 24px",maxWidth:1400,width:"100%",margin:"0 auto",boxSizing:"border-box"}}>
-      {tab==="dashboard"&&<Dashboard data={data}/>}
+      {tab==="dashboard"&&<Dashboard data={data} setData={setData} onNavigate={setTab}/>}
       {tab==="donors"&&<Donors data={data} setData={setData}/>}
       {tab==="grants"&&<Grants data={data} setData={setData}/>}
       {tab==="findgrants"&&<FindGrants data={data}/>}
