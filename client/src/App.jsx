@@ -223,7 +223,7 @@ function DailyBriefing({data}) {
   return <div>
     <div style={{display:"flex",gap:10,alignItems:"center"}}>
       <AIBtn onClick={generate} loading={loading} label="✦ Generate Daily Briefing"/>
-      {brief&&!loading&&<button onClick={()=>setOpen(!open)} style={{background:"transparent",border:"1px solid #374151",borderRadius:10,padding:"9px 14px",color:"#6b7280",fontSize:12,cursor:"pointer"}}>{open?"Hide":"Show"}</button>}
+      {brief&&!loading&&<button onClick={()=>setOpen(!open)} style={{background:"transparent",border:"1px solid "+T.bg3,borderRadius:10,padding:"9px 14px",color:T.ink3,fontSize:12,cursor:"pointer"}}>{open?"Hide":"Show"}</button>}
     </div>
     {open&&(loading||brief)&&<AIPanel text={brief} onClose={()=>{setBrief("");setOpen(false);}}/>}
   </div>;
@@ -244,6 +244,7 @@ function Dashboard({data}) {
   const topDonors=[...data.donors].sort((a,b)=>b.total-a.total).slice(0,3);
 
   return <div style={{display:"flex",flexDirection:"column",gap:16}}>
+    <PageTitle main="Good morning," accent="what needs attention?"/>
     <DailyBriefing data={data}/>
     <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(148px,1fr))",gap:10}}>
       <MetricCard label="YTD Revenue" value={fmt(ytdRev)} sub={`${ytdExp>0?((ytdRev/ytdExp)*100).toFixed(0):0}% expense ratio`} color="#10b981" trend={8}/>
@@ -267,7 +268,7 @@ function Dashboard({data}) {
                 <div style={{flex:1,height:rh,background:"linear-gradient(180deg,#10b981,#059669)",borderRadius:"3px 3px 0 0",minHeight:2}}/>
                 <div style={{flex:1,height:eh,background:"linear-gradient(180deg,#ef4444,#dc2626)",borderRadius:"3px 3px 0 0",minHeight:2,opacity:0.7}}/>
               </div>
-              <div style={{fontSize:9,color:"#374151"}}>{r.month.slice(0,3)}</div>
+              <div style={{fontSize:9,color:T.bg3}}>{r.month.slice(0,3)}</div>
             </div>;
           })}
         </div>
@@ -275,8 +276,8 @@ function Dashboard({data}) {
           {[["#10b981","Revenue",fmt(ytdRev)],["#ef4444","Expenses",fmt(ytdExp)]].map(([c,l,v])=>
             <div key={l} style={{display:"flex",alignItems:"center",gap:6}}>
               <div style={{width:8,height:8,borderRadius:2,background:c,flexShrink:0}}/>
-              <span style={{fontSize:11,color:"#4b5563"}}>{l}</span>
-              <span style={{fontSize:11,fontWeight:700,color:"#9ca3af"}}>{v}</span>
+              <span style={{fontSize:11,color:T.ink3}}>{l}</span>
+              <span style={{fontSize:11,fontWeight:700,color:T.ink3}}>{v}</span>
             </div>)}
           <div style={{marginLeft:"auto",fontSize:11,color:ytdRev>=ytdExp?"#10b981":"#ef4444",fontWeight:700}}>
             Net {ytdRev>=ytdExp?"+":""}{fmt(ytdRev-ytdExp)}
@@ -290,11 +291,11 @@ function Dashboard({data}) {
         {topDonors.map((d,i)=>{
           const sc=donorScore(d);
           const scoreColor=sc>70?"#10b981":sc>45?"#f59e0b":"#ef4444";
-          return <div key={d.id} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 0",borderBottom:i<topDonors.length-1?"1px solid #0e1624":""}}>
-            <div style={{width:22,height:22,borderRadius:6,background:"#1a2235",display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:800,color:"#374151",flexShrink:0}}>{i+1}</div>
+          return <div key={d.id} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 0",borderBottom:i<topDonors.length-1?"1px solid "+T.bg3:""}}>
+            <div style={{width:22,height:22,borderRadius:6,background:T.bg2,display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:800,color:T.ink3,flexShrink:0}}>{i+1}</div>
             <div style={{flex:1,minWidth:0}}>
-              <div style={{fontSize:13,fontWeight:600,color:"#f3f4f6",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{d.name}</div>
-              <div style={{fontSize:11,color:"#4b5563"}}>{d.gifts} gifts</div>
+              <div style={{fontSize:13,fontWeight:600,color:T.ink,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{d.name}</div>
+              <div style={{fontSize:11,color:T.ink3}}>{d.gifts} gifts</div>
             </div>
             <div style={{textAlign:"right",flexShrink:0}}>
               <div style={{fontSize:14,fontWeight:800,color:SC[d.status]}}>{fmt(d.total)}</div>
@@ -308,13 +309,13 @@ function Dashboard({data}) {
     <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
       <Card>
         <SectionLabel>Urgent Tasks</SectionLabel>
-        {urgentTasks.length===0?<div style={{display:"flex",alignItems:"center",gap:8,padding:"10px 0",color:"#374151",fontSize:13}}>
+        {urgentTasks.length===0?<div style={{display:"flex",alignItems:"center",gap:8,padding:"10px 0",color:T.bg3,fontSize:13}}>
           <span style={{fontSize:18}}>✓</span> All clear — no high-priority tasks
         </div>:urgentTasks.map(t=><div key={t.id} style={{display:"flex",alignItems:"center",gap:10,padding:"9px 0",borderBottom:"1px solid #0e1624"}}>
           <div style={{width:6,height:6,borderRadius:"50%",background:"#ef4444",flexShrink:0}}/>
           <div style={{flex:1}}>
-            <div style={{fontSize:13,color:"#f3f4f6",fontWeight:500,lineHeight:1.3}}>{t.title}</div>
-            {t.due&&<div style={{fontSize:11,color:"#6b7280",marginTop:2}}>Due {new Date(t.due).toLocaleDateString("en-US",{month:"short",day:"numeric"})}</div>}
+            <div style={{fontSize:13,color:T.ink,fontWeight:500,lineHeight:1.3}}>{t.title}</div>
+            {t.due&&<div style={{fontSize:11,color:T.ink3,marginTop:2}}>Due {new Date(t.due).toLocaleDateString("en-US",{month:"short",day:"numeric"})}</div>}
           </div>
           <Pill label={t.type} color="#6b7280"/>
         </div>)}
@@ -330,8 +331,8 @@ function Dashboard({data}) {
               <span style={{fontSize:11,fontWeight:800,color:urg,lineHeight:1}}>{d<0?"past":d>99?"99+d":d+"d"}</span>
             </div>
             <div style={{flex:1,minWidth:0}}>
-              <div style={{fontSize:13,color:"#f3f4f6",fontWeight:500,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{g.funder}</div>
-              <div style={{fontSize:11,color:"#6b7280"}}>{fmt(g.amount)}</div>
+              <div style={{fontSize:13,color:T.ink,fontWeight:500,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{g.funder}</div>
+              <div style={{fontSize:11,color:T.ink3}}>{fmt(g.amount)}</div>
             </div>
             <Pill label={g.status} color={SC[g.status]}/>
           </div>;
@@ -342,10 +343,10 @@ function Dashboard({data}) {
     <Card>
       <SectionLabel>Fund Balances</SectionLabel>
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(170px,1fr))",gap:8}}>
-        {data.financials.funds.map(f=><div key={f.name} style={{background:f.restricted?"#130c2e":"#0d1117",borderRadius:10,padding:"14px 16px",border:`1px solid ${f.restricted?"#1a6b4a30":"#1a2235"}`}}>
-          <div style={{fontSize:10,fontWeight:700,color:f.restricted?"#10b981":"#4b5563",textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:6}}>{f.restricted?"Restricted":"Unrestricted"}</div>
-          <div style={{fontSize:20,fontWeight:800,color:"#f3f4f6",fontFamily:"'DM Serif Display',serif"}}>{fmt(f.balance)}</div>
-          <div style={{fontSize:11,color:"#6b7280",marginTop:3}}>{f.name}</div>
+        {data.financials.funds.map(f=><div key={f.name} style={{background:f.restricted?T.green+"08":T.white,borderRadius:10,padding:"14px 16px",border:`1px solid ${f.restricted?T.green+"30":T.bg3}`}}>
+          <div style={{fontSize:10,fontWeight:700,color:f.restricted?T.green:T.ink3,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:6}}>{f.restricted?"Restricted":"Unrestricted"}</div>
+          <div style={{fontSize:20,fontWeight:800,color:T.ink,fontFamily:"'DM Serif Display',serif"}}>{fmt(f.balance)}</div>
+          <div style={{fontSize:11,color:T.ink3,marginTop:3}}>{f.name}</div>
         </div>)}
       </div>
     </Card>
@@ -354,7 +355,7 @@ function Dashboard({data}) {
 
 // ── Moves Management ───────────────────────────────────────────────────────
 const STAGES=[
-  {id:"prospect",  label:"Prospect",  color:"#6b7280", hint:"Identified, not yet engaged"},
+  {id:"prospect",  label:"Prospect",  color:T.ink3, hint:"Identified, not yet engaged"},
   {id:"qualify",   label:"Qualify",   color:"#3b82f6", hint:"Researching fit & capacity"},
   {id:"cultivate", label:"Cultivate", color:"#8b5cf6", hint:"Building relationship"},
   {id:"solicit",   label:"Solicit",   color:"#f59e0b", hint:"Ready for the ask"},
@@ -389,20 +390,20 @@ function LogTouchpointModal({donor,onSave,onClose}){
     try{await apiFetch(`/donors/${donor.id}/interactions`,{method:"POST",body:JSON.stringify({type,note,date})});onSave({type,note,date});}
     catch(e){console.error(e);}setLoading(false);
   };
-  const inp={width:"100%",background:"#0d1117",border:"1px solid #1a2235",borderRadius:8,padding:"9px 12px",color:"#f3f4f6",fontSize:13,outline:"none",fontFamily:"inherit",boxSizing:"border-box"};
+  const inp={width:"100%",background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"9px 12px",color:T.ink,fontSize:13,outline:"none",fontFamily:"inherit",boxSizing:"border-box"};
   return(
     <div style={{position:"fixed",inset:0,background:"#000000cc",backdropFilter:"blur(4px)",zIndex:300,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
-      <div className="fade-in" style={{background:"#0a0e1a",border:"1px solid #1a2235",borderRadius:18,width:"100%",maxWidth:440,padding:24,boxShadow:"0 25px 80px #000060"}}>
-        <div style={{fontSize:16,fontWeight:800,color:"#f9fafb",marginBottom:2}}>Log Touchpoint</div>
-        <div style={{fontSize:12,color:"#4b5563",marginBottom:16}}>{donor.name}</div>
+      <div className="fade-in" style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:18,width:"100%",maxWidth:440,padding:24,boxShadow:"0 4px 32px rgba(15,15,15,0.12)"}}>
+        <div style={{fontSize:16,fontWeight:800,color:T.ink,marginBottom:2}}>Log Touchpoint</div>
+        <div style={{fontSize:12,color:T.ink3,marginBottom:16}}>{donor.name}</div>
         <div style={{display:"flex",gap:5,flexWrap:"wrap",marginBottom:12}}>
-          {types.map(t=><button key={t} onClick={()=>setType(t)} style={{background:type===t?"#10b981":"#1f2937",border:`1px solid ${type===t?"#10b981":"#374151"}`,borderRadius:7,padding:"5px 11px",color:type===t?"#fff":"#9ca3af",fontSize:12,fontWeight:600,cursor:"pointer",textTransform:"capitalize"}}>{t}</button>)}
+          {types.map(t=><button key={t} onClick={()=>setType(t)} style={{background:type===t?"#10b981":T.bg2,border:`1px solid ${type===t?"#10b981":T.bg3}`,borderRadius:7,padding:"5px 11px",color:type===t?"#fff":T.ink3,fontSize:12,fontWeight:600,cursor:"pointer",textTransform:"capitalize"}}>{t}</button>)}
         </div>
         <input type="date" value={date} onChange={e=>setDate(e.target.value)} style={{...inp,marginBottom:10}}/>
         <textarea value={note} onChange={e=>setNote(e.target.value)} placeholder="What happened? What was discussed?" rows={3} style={{...inp,resize:"vertical",lineHeight:1.5,marginBottom:14}}/>
         <div style={{display:"flex",gap:8}}>
-          <button onClick={save} disabled={loading||!note.trim()} style={{flex:1,background:note.trim()?"#10b981":"#1f2937",border:"none",borderRadius:10,padding:"11px",color:"#fff",fontSize:14,fontWeight:700,cursor:note.trim()?"pointer":"not-allowed"}}>{loading?"Saving…":"Save Touchpoint"}</button>
-          <button onClick={onClose} style={{background:"#374151",border:"none",borderRadius:10,padding:"11px 14px",color:"#9ca3af",fontSize:13,cursor:"pointer"}}>Cancel</button>
+          <button onClick={save} disabled={loading||!note.trim()} style={{flex:1,background:note.trim()?"#10b981":T.bg2,border:"none",borderRadius:10,padding:"11px",color:"#fff",fontSize:14,fontWeight:700,cursor:note.trim()?"pointer":"not-allowed"}}>{loading?"Saving…":"Save Touchpoint"}</button>
+          <button onClick={onClose} style={{background:T.bg,border:"none",borderRadius:10,padding:"11px 14px",color:T.ink3,fontSize:13,cursor:"pointer"}}>Cancel</button>
         </div>
       </div>
     </div>
@@ -410,7 +411,7 @@ function LogTouchpointModal({donor,onSave,onClose}){
 }
 
 function EditDonorModal({donor,onSave,onClose}){
-  const inp={width:"100%",background:"#111827",border:"1px solid #374151",borderRadius:8,padding:"9px 12px",color:"#f3f4f6",fontSize:13,outline:"none",fontFamily:"inherit",boxSizing:"border-box"};
+  const inp={width:"100%",background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"9px 12px",color:T.ink,fontSize:13,outline:"none",fontFamily:"inherit",boxSizing:"border-box"};
   const[form,setForm]=useState({
     name:donor.name||"",email:donor.email||"",phone:donor.phone||"",
     notes:donor.notes||"",tags:(donor.tags||[]).join(", "),
@@ -433,38 +434,38 @@ function EditDonorModal({donor,onSave,onClose}){
 
   return(
     <div style={{position:"fixed",inset:0,background:"#000c",zIndex:400,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
-      <div style={{background:"#0a0f1e",border:"1px solid #1f2937",borderRadius:20,width:"100%",maxWidth:480,padding:28,boxSizing:"border-box"}}>
-        <div style={{fontSize:18,fontWeight:800,color:"#f9fafb",marginBottom:4}}>Edit Donor Profile</div>
-        <div style={{fontSize:12,color:"#6b7280",marginBottom:20}}>{donor.name}</div>
+      <div style={{background:"#ffffff",border:"1px solid "+T.bg3,borderRadius:20,width:"100%",maxWidth:480,padding:28,boxSizing:"border-box"}}>
+        <div style={{fontSize:18,fontWeight:800,color:T.ink,marginBottom:4}}>Edit Donor Profile</div>
+        <div style={{fontSize:12,color:T.ink3,marginBottom:20}}>{donor.name}</div>
         <div style={{display:"flex",flexDirection:"column",gap:10}}>
           {[["name","Full Name","text"],["email","Email","email"],["phone","Phone","tel"]].map(([k,pl,t])=>(
             <input key={k} type={t} value={form[k]} onChange={set(k)} placeholder={pl} style={inp}/>
           ))}
           <div>
-            <div style={{fontSize:11,fontWeight:700,color:"#6b7280",textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:8}}>Stage</div>
+            <div style={{fontSize:11,fontWeight:700,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:8}}>Stage</div>
             <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
               {STAGES.map(s=>(
                 <button key={s.id} onClick={()=>setForm(p=>({...p,stage:s.id}))}
-                  style={{background:form.stage===s.id?s.color+"22":"#111827",border:`1px solid ${form.stage===s.id?s.color:"#374151"}`,borderRadius:7,padding:"5px 11px",color:form.stage===s.id?s.color:"#6b7280",fontSize:12,fontWeight:600,cursor:"pointer"}}>
+                  style={{background:form.stage===s.id?s.color+"22":T.bg,border:`1px solid ${form.stage===s.id?s.color:T.bg3}`,borderRadius:7,padding:"5px 11px",color:form.stage===s.id?s.color:T.ink3,fontSize:12,fontWeight:600,cursor:"pointer"}}>
                   {s.label}
                 </button>
               ))}
             </div>
           </div>
           <div>
-            <div style={{fontSize:11,fontWeight:700,color:"#6b7280",textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:6}}>Tags <span style={{fontSize:10,fontWeight:400,textTransform:"none"}}>(comma-separated)</span></div>
+            <div style={{fontSize:11,fontWeight:700,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:6}}>Tags <span style={{fontSize:10,fontWeight:400,textTransform:"none"}}>(comma-separated)</span></div>
             <input value={form.tags} onChange={set("tags")} placeholder="e.g. board-adjacent, recurring, arts" style={inp}/>
           </div>
           <div>
-            <div style={{fontSize:11,fontWeight:700,color:"#6b7280",textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:6}}>Notes</div>
+            <div style={{fontSize:11,fontWeight:700,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:6}}>Notes</div>
             <textarea value={form.notes} onChange={set("notes")} rows={3} style={{...inp,resize:"vertical",lineHeight:1.5}}/>
           </div>
           {err&&<div style={{color:"#f87171",fontSize:12}}>{err}</div>}
           <div style={{display:"flex",gap:8,marginTop:4}}>
-            <button onClick={save} disabled={loading} style={{flex:1,background:loading?"#1f2937":"#10b981",border:"none",borderRadius:10,padding:"11px",color:"#fff",fontSize:14,fontWeight:700,cursor:loading?"not-allowed":"pointer"}}>
+            <button onClick={save} disabled={loading} style={{flex:1,background:loading?T.bg2:"#10b981",border:"none",borderRadius:10,padding:"11px",color:"#fff",fontSize:14,fontWeight:700,cursor:loading?"not-allowed":"pointer"}}>
               {loading?"Saving…":"Save Changes"}
             </button>
-            <button onClick={onClose} style={{background:"#374151",border:"none",borderRadius:10,padding:"11px 14px",color:"#9ca3af",fontSize:13,cursor:"pointer"}}>Cancel</button>
+            <button onClick={onClose} style={{background:T.bg,border:"none",borderRadius:10,padding:"11px 14px",color:T.ink3,fontSize:13,cursor:"pointer"}}>Cancel</button>
           </div>
         </div>
       </div>
@@ -473,7 +474,7 @@ function EditDonorModal({donor,onSave,onClose}){
 }
 
 function TouchpointTimeline({interactions}){
-  if(!interactions?.length)return<div style={{fontSize:13,color:"#6b7280",textAlign:"center",padding:"16px 0"}}>No touchpoints logged yet.</div>;
+  if(!interactions?.length)return<div style={{fontSize:13,color:T.ink3,textAlign:"center",padding:"16px 0"}}>No touchpoints logged yet.</div>;
   const typeColor={call:"#3b82f6",email:"#8b5cf6",meeting:"#10b981",gift:"#f59e0b",event:"#ec4899",note:"#6b7280"};
   const sorted=[...interactions].sort((a,b)=>new Date(b.date)-new Date(a.date));
   return(
@@ -484,17 +485,17 @@ function TouchpointTimeline({interactions}){
         const when=dAgo===0?"Today":dAgo===1?"Yesterday":`${dAgo}d ago`;
         return(
           <div key={i} style={{display:"flex",gap:12,paddingBottom:16,position:"relative"}}>
-            {i<sorted.length-1&&<div style={{position:"absolute",left:11,top:24,width:2,bottom:0,background:"#1f2937"}}/>}
+            {i<sorted.length-1&&<div style={{position:"absolute",left:11,top:24,width:2,bottom:0,background:T.bg3}}/>}
             <div style={{width:24,height:24,borderRadius:"50%",background:c+"22",border:`2px solid ${c}`,flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",zIndex:1,marginTop:2}}>
               <div style={{width:7,height:7,borderRadius:"50%",background:c}}/>
             </div>
             <div style={{flex:1}}>
               <div style={{display:"flex",alignItems:"center",gap:7,marginBottom:3,flexWrap:"wrap"}}>
                 <span style={{fontSize:11,fontWeight:700,textTransform:"capitalize",color:c}}>{int.type}</span>
-                <span style={{fontSize:11,color:"#4b5563"}}>{int.date}</span>
-                <span style={{fontSize:11,color:"#374151"}}>({when})</span>
+                <span style={{fontSize:11,color:T.ink3}}>{int.date}</span>
+                <span style={{fontSize:11,color:T.bg3}}>({when})</span>
               </div>
-              <div style={{fontSize:13,color:"#d1d5db",lineHeight:1.5}}>{int.note}</div>
+              <div style={{fontSize:13,color:T.ink2,lineHeight:1.5}}>{int.note}</div>
             </div>
           </div>
         );
@@ -509,50 +510,50 @@ function DonorDetailModal({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loa
   const urg=moveUrgency(donor);
   return(
     <div style={{position:"fixed",inset:0,background:"#000000cc",backdropFilter:"blur(4px)",zIndex:200,display:"flex",alignItems:"center",justifyContent:"center",padding:20}} onClick={onClose}>
-      <div onClick={e=>e.stopPropagation()} className="fade-in" style={{background:"#0a0e1a",border:"1px solid #1a2235",borderRadius:20,width:"100%",maxWidth:580,maxHeight:"88vh",overflowY:"auto",padding:28,boxSizing:"border-box",boxShadow:"0 32px 100px #000070"}}>
+      <div onClick={e=>e.stopPropagation()} className="fade-in" style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:20,width:"100%",maxWidth:580,maxHeight:"88vh",overflowY:"auto",padding:28,boxSizing:"border-box",boxShadow:"0 4px 40px rgba(15,15,15,0.12)"}}>
         <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",marginBottom:16}}>
           <div>
-            <div style={{fontSize:22,fontWeight:800,color:"#f9fafb",letterSpacing:"-0.02em"}}>{donor.name}</div>
+            <div style={{fontSize:22,fontWeight:800,color:T.ink,letterSpacing:"-0.02em"}}>{donor.name}</div>
             <div style={{display:"flex",gap:8,alignItems:"center",marginTop:6,flexWrap:"wrap"}}>
               <span style={{fontSize:11,fontWeight:700,padding:"3px 10px",borderRadius:99,background:stage.color+"22",color:stage.color}}>{stage.label}</span>
-              <span style={{fontSize:12,color:"#6b7280"}}>{fmtFull(donor.total)} lifetime · {donor.gifts} gifts</span>
-              <span style={{fontSize:12,color:"#6b7280"}}>{donor.email}</span>
+              <span style={{fontSize:12,color:T.ink3}}>{fmtFull(donor.total)} lifetime · {donor.gifts} gifts</span>
+              <span style={{fontSize:12,color:T.ink3}}>{donor.email}</span>
             </div>
           </div>
           <div style={{display:"flex",gap:6,flexShrink:0}}>
-            <button onClick={onEdit} style={{background:"#1f2937",border:"1px solid #374151",borderRadius:8,padding:"6px 12px",color:"#9ca3af",cursor:"pointer",fontSize:13}}>Edit</button>
-            <button onClick={onClose} style={{background:"#1f2937",border:"none",borderRadius:8,padding:"6px 12px",color:"#9ca3af",cursor:"pointer",fontSize:13}}>✕</button>
+            <button onClick={onEdit} style={{background:T.bg3,border:"1px solid "+T.bg3,borderRadius:8,padding:"6px 12px",color:T.ink3,cursor:"pointer",fontSize:13}}>Edit</button>
+            <button onClick={onClose} style={{background:T.bg3,border:"none",borderRadius:8,padding:"6px 12px",color:T.ink3,cursor:"pointer",fontSize:13}}>✕</button>
           </div>
         </div>
 
         <div style={{marginBottom:16}}>
-          <div style={{fontSize:10,fontWeight:700,color:"#6b7280",textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:8}}>Move Stage</div>
+          <div style={{fontSize:10,fontWeight:700,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:8}}>Move Stage</div>
           <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
-            {STAGES.map(s=><button key={s.id} onClick={()=>onStageChange(donor.id,s.id)} style={{background:(donor.stage||"cultivate")===s.id?s.color+"22":"#111827",border:`1px solid ${(donor.stage||"cultivate")===s.id?s.color:"#374151"}`,borderRadius:8,padding:"6px 12px",color:(donor.stage||"cultivate")===s.id?s.color:"#6b7280",fontSize:12,fontWeight:600,cursor:"pointer"}}>{s.label}</button>)}
+            {STAGES.map(s=><button key={s.id} onClick={()=>onStageChange(donor.id,s.id)} style={{background:(donor.stage||"cultivate")===s.id?s.color+"22":T.bg,border:`1px solid ${(donor.stage||"cultivate")===s.id?s.color:T.bg3}`,borderRadius:8,padding:"6px 12px",color:(donor.stage||"cultivate")===s.id?s.color:T.ink3,fontSize:12,fontWeight:600,cursor:"pointer"}}>{s.label}</button>)}
           </div>
         </div>
 
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10,marginBottom:16}}>
-          {[["Last Gift",fmtFull(donor.lastAmount),donor.lastGift,"#f3f4f6"],["Last Contact",`${urg.days}d ago`,urg.level,urg.urgencyColor],["Engagement",`${sc}/99`,"score",scoreColor]].map(([l,v,s,c])=>(
-            <div key={l} style={{background:"#111827",borderRadius:10,padding:"10px 12px"}}>
-              <div style={{fontSize:10,color:"#6b7280",textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:4}}>{l}</div>
+          {[["Last Gift",fmtFull(donor.lastAmount),donor.lastGift,T.ink],["Last Contact",`${urg.days}d ago`,urg.level,urg.urgencyColor],["Engagement",`${sc}/99`,"score",scoreColor]].map(([l,v,s,c])=>(
+            <div key={l} style={{background:T.bg,borderRadius:10,padding:"10px 12px"}}>
+              <div style={{fontSize:10,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:4}}>{l}</div>
               <div style={{fontSize:15,fontWeight:700,color:c}}>{v}</div>
-              <div style={{fontSize:10,color:"#6b7280",marginTop:1,textTransform:"capitalize"}}>{s}</div>
+              <div style={{fontSize:10,color:T.ink3,marginTop:1,textTransform:"capitalize"}}>{s}</div>
             </div>
           ))}
         </div>
 
-        {donor.notes&&<div style={{background:"#111827",borderRadius:10,padding:"12px 14px",fontSize:13,color:"#9ca3af",marginBottom:16,lineHeight:1.5}}>{donor.notes}</div>}
+        {donor.notes&&<div style={{background:T.bg,borderRadius:10,padding:"12px 14px",fontSize:13,color:T.ink3,marginBottom:16,lineHeight:1.5}}>{donor.notes}</div>}
 
         <div style={{marginBottom:16}}>
           <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12}}>
-            <div style={{fontSize:11,fontWeight:700,color:"#6b7280",textTransform:"uppercase",letterSpacing:"0.06em"}}>Touchpoint Timeline</div>
+            <div style={{fontSize:11,fontWeight:700,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.06em"}}>Touchpoint Timeline</div>
             <button onClick={onLogTouchpoint} style={{background:"#10b981",border:"none",borderRadius:7,padding:"5px 12px",color:"#fff",fontSize:11,fontWeight:700,cursor:"pointer"}}>+ Log</button>
           </div>
           <TouchpointTimeline interactions={donor.interactions}/>
         </div>
 
-        <div style={{borderTop:"1px solid #1f2937",paddingTop:14}}>
+        <div style={{borderTop:"1px solid "+T.bg3,paddingTop:14}}>
           <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:10}}>
             <AIBtn onClick={()=>getAI(donor,"nextmove")} loading={loadingKey===`${donor.id}_nextmove`} label="✦ Next Move" small/>
             <AIBtn onClick={()=>getAI(donor,"outreach")} loading={loadingKey===`${donor.id}_outreach`} label="✦ Outreach Strategy" small/>
@@ -561,7 +562,7 @@ function DonorDetailModal({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loa
           </div>
           {["nextmove","outreach","email","callscript"].map(t=>aiMap[`${donor.id}_${t}`]?<AIPanel key={t} text={aiMap[`${donor.id}_${t}`]} onClose={()=>{}}/>:null)}
         </div>
-        {isAdmin&&<div style={{marginTop:14,paddingTop:14,borderTop:"1px solid #1f2937"}}>
+        {isAdmin&&<div style={{marginTop:14,paddingTop:14,borderTop:"1px solid "+T.bg3}}>
           <button onClick={()=>onDelete(donor.id)} style={{background:"transparent",border:"1px solid #ef444455",borderRadius:8,padding:"7px 14px",color:"#ef4444",fontSize:12,fontWeight:600,cursor:"pointer"}}>Delete Donor</button>
         </div>}
       </div>
@@ -584,12 +585,12 @@ function DonorKanban({donors,onStageChange,onLogTouchpoint,onSelectDonor}){
             onDragLeave={e=>{if(!e.currentTarget.contains(e.relatedTarget))setDragOver(null);}}
             onDrop={e=>{e.preventDefault();const id=e.dataTransfer.getData("donorId");if(id)onStageChange(id,stage.id);setDragOver(null);}}>
             {/* Column header */}
-            <div style={{background:isOver?stage.color+"18":"#0d1117",border:`1px solid ${isOver?stage.color+"60":"#1a2235"}`,borderRadius:10,padding:"10px 12px",transition:"all 0.15s",borderTop:`3px solid ${stage.color}`}}>
+            <div style={{background:isOver?stage.color+"18":T.white,border:`1px solid ${isOver?stage.color+"60":T.bg2}`,borderRadius:10,padding:"10px 12px",transition:"all 0.15s",borderTop:`3px solid ${stage.color}`}}>
               <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:2}}>
                 <span style={{fontSize:11,fontWeight:800,color:stage.color,letterSpacing:"0.04em",textTransform:"uppercase"}}>{stage.label}</span>
                 <span style={{background:stage.color+"20",color:stage.color,fontSize:10,fontWeight:800,borderRadius:99,padding:"2px 7px",border:`1px solid ${stage.color}30`}}>{cols.length}</span>
               </div>
-              <div style={{fontSize:10,color:"#374151"}}>{total>0?fmt(total)+" pipeline":stage.hint}</div>
+              <div style={{fontSize:10,color:T.bg3}}>{total>0?fmt(total)+" pipeline":stage.hint}</div>
             </div>
             {/* Cards */}
             <div style={{display:"flex",flexDirection:"column",gap:6,minHeight:60,border:`2px dashed ${isOver?stage.color+"40":"transparent"}`,borderRadius:10,padding:isOver?3:0,transition:"all 0.15s"}}>
@@ -602,11 +603,11 @@ function DonorKanban({donors,onStageChange,onLogTouchpoint,onSelectDonor}){
                   <div key={d.id} draggable
                     onDragStart={e=>{e.dataTransfer.setData("donorId",d.id);setDraggingId(d.id);}}
                     onDragEnd={()=>{setDraggingId(null);setDragOver(null);}}
-                    style={{background:`#0d1117`,border:`1px solid ${isDragging?"#374151":urgBorder||"#1a2235"}`,borderRadius:10,padding:"11px 12px",cursor:"grab",opacity:isDragging?0.3:1,transition:"opacity 0.15s,border-color 0.15s",userSelect:"none",background:urgBg||"#0d1117"}}>
+                    style={{border:`1px solid ${isDragging?T.bg3:urgBorder||T.bg2}`,borderRadius:10,padding:"11px 12px",cursor:"grab",opacity:isDragging?0.3:1,transition:"opacity 0.15s,border-color 0.15s",userSelect:"none",background:urgBg||T.white}}>
                     <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",gap:6,marginBottom:6}}>
                       <div style={{flex:1,minWidth:0}}>
-                        <div style={{fontSize:13,fontWeight:700,color:"#f3f4f6",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{d.name}</div>
-                        <div style={{fontSize:11,color:"#6b7280",marginTop:1,fontWeight:600}}>{fmt(d.total)}</div>
+                        <div style={{fontSize:13,fontWeight:700,color:T.ink,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{d.name}</div>
+                        <div style={{fontSize:11,color:T.ink3,marginTop:1,fontWeight:600}}>{fmt(d.total)}</div>
                       </div>
                       <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:2,flexShrink:0}}>
                         <div style={{width:9,height:9,borderRadius:"50%",background:urg.urgencyColor,boxShadow:`0 0 6px ${urg.urgencyColor}60`}} title={`${urg.level}: ${urg.days}d`}/>
@@ -617,15 +618,15 @@ function DonorKanban({donors,onStageChange,onLogTouchpoint,onSelectDonor}){
                       <span>{urg.level==="ok"?"✓":urg.level==="due"?"!":"!!"}</span>
                       <span>{urg.days}d since contact</span>
                     </div>
-                    <div style={{fontSize:10,color:"#374151",lineHeight:1.4,marginBottom:8,borderLeft:`2px solid ${stage.color}30`,paddingLeft:6}}>{STAGE_ACTION[stage.id]}</div>
+                    <div style={{fontSize:10,color:T.ink3,lineHeight:1.4,marginBottom:8,borderLeft:`2px solid ${stage.color}30`,paddingLeft:6}}>{STAGE_ACTION[stage.id]}</div>
                     <div style={{display:"flex",gap:4}}>
-                      <button onClick={e=>{e.stopPropagation();onLogTouchpoint(d);}} style={{flex:1,background:"#1a2235",border:"1px solid #1f2937",borderRadius:6,padding:"5px 0",color:"#6b7280",fontSize:11,fontWeight:600,cursor:"pointer"}}>+ Log</button>
-                      <button onClick={e=>{e.stopPropagation();onSelectDonor(d);}} style={{flex:1,background:"#1a2235",border:"1px solid #1f2937",borderRadius:6,padding:"5px 0",color:"#6b7280",fontSize:11,fontWeight:600,cursor:"pointer"}}>View →</button>
+                      <button onClick={e=>{e.stopPropagation();onLogTouchpoint(d);}} style={{flex:1,background:T.bg2,border:"1px solid "+T.bg3,borderRadius:6,padding:"5px 0",color:T.ink3,fontSize:11,fontWeight:600,cursor:"pointer"}}>+ Log</button>
+                      <button onClick={e=>{e.stopPropagation();onSelectDonor(d);}} style={{flex:1,background:T.bg2,border:"1px solid "+T.bg3,borderRadius:6,padding:"5px 0",color:T.ink3,fontSize:11,fontWeight:600,cursor:"pointer"}}>View →</button>
                     </div>
                   </div>
                 );
               })}
-              {cols.length===0&&!isOver&&<div style={{textAlign:"center",padding:"28px 12px",color:"#1f2937",fontSize:12,border:"1px dashed #1a2235",borderRadius:10,marginTop:2}}>
+              {cols.length===0&&!isOver&&<div style={{textAlign:"center",padding:"28px 12px",color:T.bg3,fontSize:12,border:"1px dashed "+T.bg3,borderRadius:10,marginTop:2}}>
                 <div style={{fontSize:20,marginBottom:6,opacity:0.5}}>{stage.icon||"◇"}</div>
                 Drop here
               </div>}
@@ -744,6 +745,7 @@ function Donors({data,setData}){
 
   return(
     <div style={{display:"flex",flexDirection:"column",gap:14}}>
+      <PageTitle main="Your" accent="donors."/>
       {showImport&&<DonorImport onClose={()=>setShowImport(false)} onImported={()=>{reloadDonors();setShowImport(false);}}/>}
       {logTarget&&<LogTouchpointModal donor={logTarget} onSave={int=>handleLogged(logTarget,int)} onClose={()=>setLogTarget(null)}/>}
       {editTarget&&<EditDonorModal donor={editTarget} onSave={handleEditSaved} onClose={()=>setEditTarget(null)}/>}
@@ -753,30 +755,30 @@ function Donors({data,setData}){
         isAdmin={isAdmin} onEdit={()=>setEditTarget(selected)} onDelete={deleteDonor}/>}
 
       <div style={{display:"flex",gap:10,flexWrap:"wrap",alignItems:"center"}}>
-        <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search donors…" style={{flex:1,minWidth:160,background:"#111827",border:"1px solid #374151",borderRadius:10,padding:"10px 14px",color:"#f3f4f6",fontSize:13,outline:"none"}}/>
-        <div style={{display:"flex",background:"#111827",border:"1px solid #1f2937",borderRadius:10,overflow:"hidden"}}>
+        <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search donors…" style={{flex:1,minWidth:160,background:T.bg,border:"1px solid "+T.bg3,borderRadius:10,padding:"10px 14px",color:T.ink,fontSize:13,outline:"none"}}/>
+        <div style={{display:"flex",background:T.bg,border:"1px solid "+T.bg3,borderRadius:10,overflow:"hidden"}}>
           {[["kanban","Pipeline"],["list","List"]].map(([v,l])=>(
-            <button key={v} onClick={()=>setView(v)} style={{background:view===v?"#1f2937":"transparent",border:"none",padding:"9px 14px",color:view===v?"#f3f4f6":"#6b7280",fontSize:13,fontWeight:view===v?700:400,cursor:"pointer"}}>{l}</button>
+            <button key={v} onClick={()=>setView(v)} style={{background:view===v?T.bg2:"transparent",border:"none",padding:"9px 14px",color:view===v?T.ink:"#6b7280",fontSize:13,fontWeight:view===v?700:400,cursor:"pointer"}}>{l}</button>
           ))}
         </div>
         <AIBtn onClick={generateCallList} loading={callLoading} label="✦ Call List"/>
         <button onClick={()=>setShowAdd(!showAdd)} style={{background:"#10b981",border:"none",borderRadius:10,padding:"10px 14px",color:"#fff",fontSize:13,fontWeight:600,cursor:"pointer"}}>+ Add</button>
-        <button onClick={()=>setShowImport(true)} style={{background:"#1f2937",border:"1px solid #374151",borderRadius:10,padding:"10px 14px",color:"#9ca3af",fontSize:13,cursor:"pointer"}}>↑ Import</button>
+        <button onClick={()=>setShowImport(true)} style={{background:T.bg3,border:"1px solid "+T.bg3,borderRadius:10,padding:"10px 14px",color:T.ink3,fontSize:13,cursor:"pointer"}}>↑ Import</button>
       </div>
 
       {(callLoading||callList)&&<AIPanel text={callList} onClose={()=>setCallList("")}/>}
 
       {showAdd&&<Card style={{gap:10,display:"flex",flexDirection:"column"}}>
-        <div style={{fontSize:14,fontWeight:700,color:"#f3f4f6"}}>New Donor</div>
+        <div style={{fontSize:14,fontWeight:700,color:T.ink}}>New Donor</div>
         <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
-          {STAGES.map(s=><button key={s.id} onClick={()=>setNewDonor(p=>({...p,stage:s.id}))} style={{background:newDonor.stage===s.id?s.color+"22":"#0f172a",border:`1px solid ${newDonor.stage===s.id?s.color:"#374151"}`,borderRadius:7,padding:"5px 11px",color:newDonor.stage===s.id?s.color:"#6b7280",fontSize:12,fontWeight:600,cursor:"pointer"}}>{s.label}</button>)}
+          {STAGES.map(s=><button key={s.id} onClick={()=>setNewDonor(p=>({...p,stage:s.id}))} style={{background:newDonor.stage===s.id?s.color+"22":T.bg,border:`1px solid ${newDonor.stage===s.id?s.color:T.bg3}`,borderRadius:7,padding:"5px 11px",color:newDonor.stage===s.id?s.color:T.ink3,fontSize:12,fontWeight:600,cursor:"pointer"}}>{s.label}</button>)}
         </div>
         {[["name","Full Name"],["email","Email"],["phone","Phone"],["lastAmount","Gift Amount ($)"]].map(([k,pl])=>(
-          <input key={k} value={newDonor[k]} onChange={e=>setNewDonor(p=>({...p,[k]:e.target.value}))} placeholder={pl} style={{background:"#0f172a",border:"1px solid #374151",borderRadius:8,padding:"9px 12px",color:"#f3f4f6",fontSize:13,outline:"none"}}/>
+          <input key={k} value={newDonor[k]} onChange={e=>setNewDonor(p=>({...p,[k]:e.target.value}))} placeholder={pl} style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"9px 12px",color:T.ink,fontSize:13,outline:"none"}}/>
         ))}
         <div style={{display:"flex",gap:8}}>
           <button onClick={addDonor} style={{background:"#10b981",border:"none",borderRadius:8,padding:"9px 16px",color:"#fff",fontSize:13,fontWeight:600,cursor:"pointer"}}>Save</button>
-          <button onClick={()=>setShowAdd(false)} style={{background:"#374151",border:"none",borderRadius:8,padding:"9px 14px",color:"#9ca3af",fontSize:13,cursor:"pointer"}}>Cancel</button>
+          <button onClick={()=>setShowAdd(false)} style={{background:T.bg,border:"none",borderRadius:8,padding:"9px 14px",color:T.ink3,fontSize:13,cursor:"pointer"}}>Cancel</button>
         </div>
       </Card>}
 
@@ -795,33 +797,33 @@ function Donors({data,setData}){
             <div style={{display:"flex",alignItems:"center",gap:12}}>
               <div style={{position:"relative",flexShrink:0}}>
                 <div style={{width:40,height:40,borderRadius:"50%",background:stage.color+"33",display:"flex",alignItems:"center",justifyContent:"center",fontSize:15,fontWeight:800,color:stage.color}}>{d.name[0]}</div>
-                <div style={{position:"absolute",bottom:-2,right:-2,width:14,height:14,borderRadius:"50%",background:urg.urgencyColor,border:"2px solid #111827"}}/>
+                <div style={{position:"absolute",bottom:-2,right:-2,width:14,height:14,borderRadius:"50%",background:urg.urgencyColor,border:"2px solid "+T.bg}}/>
               </div>
               <div style={{flex:1,minWidth:0}}>
                 <div style={{display:"flex",alignItems:"center",gap:7,flexWrap:"wrap"}}>
-                  <div style={{fontSize:14,fontWeight:700,color:"#f3f4f6"}}>{d.name}</div>
+                  <div style={{fontSize:14,fontWeight:700,color:T.ink}}>{d.name}</div>
                   <span style={{fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:99,background:stage.color+"22",color:stage.color}}>{stage.label}</span>
                 </div>
-                <div style={{fontSize:11,color:"#6b7280",marginTop:2}}>{urg.days}d since contact · {fmtFull(d.total)} · {d.gifts} gifts</div>
+                <div style={{fontSize:11,color:T.ink3,marginTop:2}}>{urg.days}d since contact · {fmtFull(d.total)} · {d.gifts} gifts</div>
               </div>
-              <button onClick={e=>{e.stopPropagation();setLogTarget(d);}} style={{background:"#1f2937",border:"1px solid #374151",borderRadius:8,padding:"7px 12px",color:"#9ca3af",fontSize:12,cursor:"pointer",flexShrink:0}}>+ Log</button>
+              <button onClick={e=>{e.stopPropagation();setLogTarget(d);}} style={{background:T.bg3,border:"1px solid "+T.bg3,borderRadius:8,padding:"7px 12px",color:T.ink3,fontSize:12,cursor:"pointer",flexShrink:0}}>+ Log</button>
             </div>
 
-            {isOpen&&<div style={{marginTop:14,paddingTop:14,borderTop:"1px solid #1f2937"}}>
+            {isOpen&&<div style={{marginTop:14,paddingTop:14,borderTop:"1px solid "+T.bg3}}>
               <div style={{marginBottom:14}}>
-                <div style={{fontSize:10,fontWeight:700,color:"#6b7280",textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:8}}>Move Stage</div>
+                <div style={{fontSize:10,fontWeight:700,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:8}}>Move Stage</div>
                 <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
-                  {STAGES.map(s=><button key={s.id} onClick={e=>{e.stopPropagation();moveToStage(d.id,s.id);setSelected(prev=>({...prev,stage:s.id}));}} style={{background:(d.stage||"cultivate")===s.id?s.color+"22":"#0f172a",border:`1px solid ${(d.stage||"cultivate")===s.id?s.color:"#374151"}`,borderRadius:7,padding:"5px 11px",color:(d.stage||"cultivate")===s.id?s.color:"#6b7280",fontSize:12,fontWeight:600,cursor:"pointer"}}>{s.label}</button>)}
+                  {STAGES.map(s=><button key={s.id} onClick={e=>{e.stopPropagation();moveToStage(d.id,s.id);setSelected(prev=>({...prev,stage:s.id}));}} style={{background:(d.stage||"cultivate")===s.id?s.color+"22":T.bg,border:`1px solid ${(d.stage||"cultivate")===s.id?s.color:T.bg3}`,borderRadius:7,padding:"5px 11px",color:(d.stage||"cultivate")===s.id?s.color:T.ink3,fontSize:12,fontWeight:600,cursor:"pointer"}}>{s.label}</button>)}
                 </div>
               </div>
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10,marginBottom:14}}>
-                <div><div style={{fontSize:10,color:"#6b7280",textTransform:"uppercase",letterSpacing:"0.06em"}}>Last Gift</div><div style={{fontSize:13,color:"#f3f4f6",marginTop:3}}>{fmtFull(d.lastAmount)}</div></div>
-                <div><div style={{fontSize:10,color:"#6b7280",textTransform:"uppercase",letterSpacing:"0.06em"}}>Contact</div><div style={{fontSize:13,color:urg.urgencyColor,marginTop:3,fontWeight:600,textTransform:"capitalize"}}>{urg.level} ({urg.days}d)</div></div>
-                <div><div style={{fontSize:10,color:"#6b7280",textTransform:"uppercase",letterSpacing:"0.06em"}}>Engagement</div><div style={{fontSize:13,color:scoreColor,marginTop:3,fontWeight:700}}>{sc}/99</div></div>
+                <div><div style={{fontSize:10,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.06em"}}>Last Gift</div><div style={{fontSize:13,color:T.ink,marginTop:3}}>{fmtFull(d.lastAmount)}</div></div>
+                <div><div style={{fontSize:10,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.06em"}}>Contact</div><div style={{fontSize:13,color:urg.urgencyColor,marginTop:3,fontWeight:600,textTransform:"capitalize"}}>{urg.level} ({urg.days}d)</div></div>
+                <div><div style={{fontSize:10,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.06em"}}>Engagement</div><div style={{fontSize:13,color:scoreColor,marginTop:3,fontWeight:700}}>{sc}/99</div></div>
               </div>
-              {d.notes&&<div style={{background:"#0f172a",borderRadius:10,padding:"10px 14px",fontSize:13,color:"#9ca3af",marginBottom:14,lineHeight:1.5}}>{d.notes}</div>}
+              {d.notes&&<div style={{background:T.bg,borderRadius:10,padding:"10px 14px",fontSize:13,color:T.ink3,marginBottom:14,lineHeight:1.5}}>{d.notes}</div>}
               <div style={{marginBottom:14}}>
-                <div style={{fontSize:11,fontWeight:700,color:"#6b7280",textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:10}}>Touchpoint Timeline</div>
+                <div style={{fontSize:11,fontWeight:700,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:10}}>Touchpoint Timeline</div>
                 <TouchpointTimeline interactions={d.interactions}/>
               </div>
               <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
@@ -869,16 +871,17 @@ function Grants({data,setData}) {
   };
 
   return <div style={{display:"flex",flexDirection:"column",gap:16}}>
+    <PageTitle main="Grant" accent="pipeline."/>
     <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
       <AIBtn onClick={findProspects} loading={prospectLoading} label="✦ Find New Grant Prospects"/>
     </div>
     {(prospectLoading||prospectAI)&&<AIPanel text={prospectAI} onClose={()=>setProspectAI("")}/>}
 
     <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:8}}>
-      {pipeline.map(s=><div key={s} style={{background:"#0d1117",border:`1px solid ${SC[s]}25`,borderRadius:12,padding:"14px 16px",borderTop:`3px solid ${SC[s]}`}}>
+      {pipeline.map(s=><div key={s} style={{background:T.white,border:`1px solid ${SC[s]}25`,borderRadius:12,padding:"14px 16px",borderTop:`3px solid ${SC[s]}`}}>
         <div style={{fontSize:10,fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",color:SC[s],marginBottom:8}}>{s}</div>
-        <div style={{fontSize:22,fontWeight:800,color:"#f3f4f6",fontFamily:"'DM Serif Display',serif",lineHeight:1}}>{fmt(totals[s])}</div>
-        <div style={{fontSize:11,color:"#4b5563",marginTop:4}}>{data.grants.filter(g=>g.status===s).length} grant{data.grants.filter(g=>g.status===s).length!==1?"s":""}</div>
+        <div style={{fontSize:22,fontWeight:800,color:T.ink,fontFamily:"'DM Serif Display',serif",lineHeight:1}}>{fmt(totals[s])}</div>
+        <div style={{fontSize:11,color:T.ink3,marginTop:4}}>{data.grants.filter(g=>g.status===s).length} grant{data.grants.filter(g=>g.status===s).length!==1?"s":""}</div>
       </div>)}
     </div>
 
@@ -888,23 +891,23 @@ function Grants({data,setData}) {
       return <Card key={g.id} selected={isOpen} accent={SC[g.status]} onClick={()=>setSelected(isOpen?null:g)}>
         <div style={{display:"flex",alignItems:"center",gap:12}}>
           <div style={{flex:1}}>
-            <div style={{fontSize:15,fontWeight:700,color:"#f3f4f6"}}>{g.funder}</div>
-            <div style={{fontSize:12,color:"#9ca3af",marginTop:2}}>{g.program}</div>
-            {g.history&&<div style={{fontSize:11,color:"#4b5563",marginTop:2}}>History: {g.history.join(" · ")}</div>}
+            <div style={{fontSize:15,fontWeight:700,color:T.ink}}>{g.funder}</div>
+            <div style={{fontSize:12,color:T.ink3,marginTop:2}}>{g.program}</div>
+            {g.history&&<div style={{fontSize:11,color:T.ink3,marginTop:2}}>History: {g.history.join(" · ")}</div>}
           </div>
           <div style={{textAlign:"right"}}>
-            <div style={{fontSize:16,fontWeight:800,color:"#f3f4f6"}}>{fmt(g.amount)}</div>
-            {g.status==="active"&&<div style={{fontSize:11,color:"#6b7280"}}>{pct}% received</div>}
+            <div style={{fontSize:16,fontWeight:800,color:T.ink}}>{fmt(g.amount)}</div>
+            {g.status==="active"&&<div style={{fontSize:11,color:T.ink3}}>{pct}% received</div>}
           </div>
           <Pill label={g.status} color={SC[g.status]}/>
         </div>
-        {g.status==="active"&&<div style={{marginTop:10,height:4,background:"#1f2937",borderRadius:99}}><div style={{height:"100%",width:`${pct}%`,background:"#10b981",borderRadius:99}}/></div>}
-        {isOpen&&<div style={{marginTop:14,paddingTop:14,borderTop:"1px solid #1f2937"}}>
+        {g.status==="active"&&<div style={{marginTop:10,height:4,background:T.bg3,borderRadius:99}}><div style={{height:"100%",width:`${pct}%`,background:"#10b981",borderRadius:99}}/></div>}
+        {isOpen&&<div style={{marginTop:14,paddingTop:14,borderTop:"1px solid "+T.bg3}}>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:14}}>
-            <div><div style={{fontSize:10,color:"#6b7280",textTransform:"uppercase",letterSpacing:"0.06em"}}>Deadline</div><div style={{fontSize:13,color:days<30?"#ef4444":"#f3f4f6",marginTop:3}}>{new Date(g.deadline).toLocaleDateString()} ({days}d)</div></div>
-            <div><div style={{fontSize:10,color:"#6b7280",textTransform:"uppercase",letterSpacing:"0.06em"}}>Program Officer</div><div style={{fontSize:13,color:"#f3f4f6",marginTop:3}}>{g.officer}</div></div>
-            {g.reportDue&&<div><div style={{fontSize:10,color:"#6b7280",textTransform:"uppercase",letterSpacing:"0.06em"}}>Report Due</div><div style={{fontSize:13,color:"#f3f4f6",marginTop:3}}>{new Date(g.reportDue).toLocaleDateString()}</div></div>}
-            <div style={{gridColumn:"1/-1"}}><div style={{fontSize:10,color:"#6b7280",textTransform:"uppercase",letterSpacing:"0.06em"}}>Notes</div><div style={{fontSize:13,color:"#9ca3af",marginTop:3,lineHeight:1.5}}>{g.notes}</div></div>
+            <div><div style={{fontSize:10,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.06em"}}>Deadline</div><div style={{fontSize:13,color:days<30?"#ef4444":T.ink,marginTop:3}}>{new Date(g.deadline).toLocaleDateString()} ({days}d)</div></div>
+            <div><div style={{fontSize:10,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.06em"}}>Program Officer</div><div style={{fontSize:13,color:T.ink,marginTop:3}}>{g.officer}</div></div>
+            {g.reportDue&&<div><div style={{fontSize:10,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.06em"}}>Report Due</div><div style={{fontSize:13,color:T.ink,marginTop:3}}>{new Date(g.reportDue).toLocaleDateString()}</div></div>}
+            <div style={{gridColumn:"1/-1"}}><div style={{fontSize:10,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.06em"}}>Notes</div><div style={{fontSize:13,color:T.ink3,marginTop:3,lineHeight:1.5}}>{g.notes}</div></div>
           </div>
           <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
             {g.status!=="closed"&&<AIBtn onClick={e=>{e.stopPropagation();getAI(g,"strategy");}} loading={loadingKey===`${g.id}_strategy`} label="✦ Grant Strategy" small/>}
@@ -939,6 +942,7 @@ function Volunteers({data}) {
   };
 
   return <div style={{display:"flex",flexDirection:"column",gap:14}}>
+    <PageTitle main="Your" accent="volunteers."/>
     <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:12}}>
       <MetricCard label="Total Volunteers" value={data.volunteers.length} sub={`${data.volunteers.reduce((s,v)=>s+v.hours,0)} total hours`} color="#8b5cf6"/>
       <MetricCard label="High Convert Potential" value={data.volunteers.filter(v=>v.convertPotential==="high").length} sub="ready to cultivate" color="#f59e0b"/>
@@ -957,17 +961,17 @@ function Volunteers({data}) {
         <div style={{display:"flex",alignItems:"center",gap:12}}>
           <div style={{width:42,height:42,borderRadius:"50%",background:cc+"33",display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,fontWeight:800,color:cc,flexShrink:0}}>{v.name[0]}</div>
           <div style={{flex:1}}>
-            <div style={{fontSize:15,fontWeight:700,color:"#f3f4f6"}}>{v.name}</div>
-            <div style={{fontSize:12,color:"#6b7280",marginTop:1}}>{v.employer} · {v.email}</div>
+            <div style={{fontSize:15,fontWeight:700,color:T.ink}}>{v.name}</div>
+            <div style={{fontSize:12,color:T.ink3,marginTop:1}}>{v.employer} · {v.email}</div>
             <div style={{display:"flex",gap:4,marginTop:5,flexWrap:"wrap"}}>{v.skills.map(s=><Pill key={s} label={s} color="#8b5cf6"/>)}</div>
           </div>
           <div style={{textAlign:"right",flexShrink:0}}>
             <div style={{fontSize:20,fontWeight:800,color:cc,fontFamily:"'DM Serif Display',serif"}}>{v.hours}h</div>
-            <div style={{fontSize:11,color:"#6b7280",marginTop:1}}>{daysDiff(v.lastActive)}d ago</div>
+            <div style={{fontSize:11,color:T.ink3,marginTop:1}}>{daysDiff(v.lastActive)}d ago</div>
             <div style={{marginTop:4}}><Pill label={v.convertPotential==="converted"?"donor":`${v.convertPotential} potential`} color={cc}/></div>
           </div>
         </div>
-        {v.notes&&<div style={{marginTop:12,background:"#0f172a",borderRadius:8,padding:"9px 12px",fontSize:12,color:"#9ca3af",lineHeight:1.5}}>{v.notes}</div>}
+        {v.notes&&<div style={{marginTop:12,background:T.bg,borderRadius:8,padding:"9px 12px",fontSize:12,color:T.ink3,lineHeight:1.5}}>{v.notes}</div>}
       </Card>;
     })}
   </div>;
@@ -1000,6 +1004,7 @@ function Board({data}) {
   };
 
   return <div style={{display:"flex",flexDirection:"column",gap:16}}>
+    <PageTitle main="Board" accent="management."/>
     <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:12}}>
       <MetricCard label="Board Members" value={data.board.length} sub={`${avgAttendance}% avg attendance`} color="#3b82f6"/>
       <MetricCard label="Board Giving" value={fmt(totalGiving)} sub="100% board participation" color="#10b981"/>
@@ -1019,16 +1024,16 @@ function Board({data}) {
           <div style={{width:42,height:42,borderRadius:"50%",background:"#3b82f633",display:"flex",alignItems:"center",justifyContent:"center",fontSize:15,fontWeight:800,color:"#3b82f6",flexShrink:0}}>{b.name[0]}</div>
           <div style={{flex:1}}>
             <div style={{display:"flex",alignItems:"center",gap:8}}>
-              <div style={{fontSize:15,fontWeight:700,color:"#f3f4f6"}}>{b.name}</div>
+              <div style={{fontSize:15,fontWeight:700,color:T.ink}}>{b.name}</div>
               <Pill label={b.role} color="#3b82f6"/>
             </div>
-            <div style={{fontSize:12,color:"#6b7280",marginTop:1}}>{b.employer}</div>
+            <div style={{fontSize:12,color:T.ink3,marginTop:1}}>{b.employer}</div>
             <div style={{display:"flex",gap:4,marginTop:5,flexWrap:"wrap"}}>{b.committees.map(c=><Pill key={c} label={c} color="#6b7280"/>)}</div>
           </div>
           <div style={{textAlign:"right",flexShrink:0}}>
             <div style={{fontSize:15,fontWeight:800,color:"#10b981"}}>{b.givingLevel}</div>
             <div style={{fontSize:11,color:attColor,marginTop:3,fontWeight:600}}>{b.attendance}% attendance</div>
-            <div style={{fontSize:11,color:"#6b7280",marginTop:1}}>Term: {b.term}</div>
+            <div style={{fontSize:11,color:T.ink3,marginTop:1}}>Term: {b.term}</div>
           </div>
         </div>
       </Card>;
@@ -1060,35 +1065,36 @@ function Tasks({data,setData}) {
   const done=data.tasks.filter(t=>t.done);
 
   return <div style={{display:"flex",flexDirection:"column",gap:12}}>
+    <PageTitle main="Open" accent="tasks."/>
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:8}}>
       <div style={{display:"flex",gap:8}}>
         <AIBtn onClick={prioritize} loading={prioLoading} label="✦ AI Prioritize"/>
         <button onClick={()=>setShowAdd(true)} style={{background:"#10b981",border:"none",borderRadius:10,padding:"9px 14px",color:"#fff",fontSize:13,fontWeight:600,cursor:"pointer"}}>+ Add</button>
       </div>
-      <div style={{fontSize:12,color:"#6b7280"}}>{pending.length} open · {done.length} done</div>
+      <div style={{fontSize:12,color:T.ink3}}>{pending.length} open · {done.length} done</div>
     </div>
     {(prioLoading||prioAI)&&<AIPanel text={prioAI} onClose={()=>setPrioAI("")}/>}
     {showAdd&&<Card style={{flexDirection:"column",display:"flex",gap:10}}>
-      <input value={newTask.title} onChange={e=>setNewTask(p=>({...p,title:e.target.value}))} placeholder="Task title" style={{background:"#0f172a",border:"1px solid #374151",borderRadius:8,padding:"9px 12px",color:"#f3f4f6",fontSize:13,outline:"none"}}/>
+      <input value={newTask.title} onChange={e=>setNewTask(p=>({...p,title:e.target.value}))} placeholder="Task title" style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"9px 12px",color:T.ink,fontSize:13,outline:"none"}}/>
       <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-        <input type="date" value={newTask.due} onChange={e=>setNewTask(p=>({...p,due:e.target.value}))} style={{flex:1,background:"#0f172a",border:"1px solid #374151",borderRadius:8,padding:"9px 12px",color:"#9ca3af",fontSize:13,outline:"none"}}/>
+        <input type="date" value={newTask.due} onChange={e=>setNewTask(p=>({...p,due:e.target.value}))} style={{flex:1,background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"9px 12px",color:T.ink3,fontSize:13,outline:"none"}}/>
         {[["priority",["high","medium","low"]],["type",["donor","grant","board","volunteer","finance"]]].map(([k,opts])=>
-          <select key={k} value={newTask[k]} onChange={e=>setNewTask(p=>({...p,[k]:e.target.value}))} style={{background:"#0f172a",border:"1px solid #374151",borderRadius:8,padding:"9px 10px",color:"#9ca3af",fontSize:13,outline:"none"}}>
+          <select key={k} value={newTask[k]} onChange={e=>setNewTask(p=>({...p,[k]:e.target.value}))} style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"9px 10px",color:T.ink3,fontSize:13,outline:"none"}}>
             {opts.map(o=><option key={o} value={o}>{o}</option>)}
           </select>)}
       </div>
       <div style={{display:"flex",gap:8}}>
         <button onClick={addTask} style={{background:"#10b981",border:"none",borderRadius:8,padding:"8px 14px",color:"#fff",fontSize:13,fontWeight:600,cursor:"pointer"}}>Save</button>
-        <button onClick={()=>setShowAdd(false)} style={{background:"#374151",border:"none",borderRadius:8,padding:"8px 14px",color:"#9ca3af",fontSize:13,cursor:"pointer"}}>Cancel</button>
+        <button onClick={()=>setShowAdd(false)} style={{background:T.bg,border:"none",borderRadius:8,padding:"8px 14px",color:T.ink3,fontSize:13,cursor:"pointer"}}>Cancel</button>
       </div>
     </Card>}
     {pending.length===0&&!prioAI&&<EmptyState icon="◻" title="All tasks complete" message="Nothing pending. Add a new task to stay organized."/>}
     {pending.map(t=>{
       const overdue=t.due&&daysUntil(t.due)<0;
-      return <div key={t.id} onClick={()=>toggle(t.id)} style={{background:"#0d1117",border:`1px solid ${overdue?"#ef444430":"#1a2235"}`,borderRadius:12,padding:"12px 16px",cursor:"pointer",display:"flex",alignItems:"center",gap:12,transition:"border-color 0.15s"}}>
+      return <div key={t.id} onClick={()=>toggle(t.id)} style={{background:T.white,border:`1px solid ${overdue?"#ef444430":T.bg2}`,borderRadius:12,padding:"12px 16px",cursor:"pointer",display:"flex",alignItems:"center",gap:12,transition:"border-color 0.15s"}}>
         <div style={{width:20,height:20,borderRadius:6,border:`2px solid ${SC[t.priority]}`,flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",transition:"background 0.12s"}}/>
         <div style={{flex:1}}>
-          <div style={{fontSize:13,color:"#f3f4f6",fontWeight:500,lineHeight:1.35}}>{t.title}</div>
+          <div style={{fontSize:13,color:T.ink,fontWeight:500,lineHeight:1.35}}>{t.title}</div>
           {t.due&&<div style={{fontSize:11,color:overdue?"#ef4444":"#6b7280",marginTop:2,fontWeight:overdue?700:400}}>
             {overdue?`Overdue — was due `:"Due "}{new Date(t.due).toLocaleDateString("en-US",{month:"short",day:"numeric"})}
           </div>}
@@ -1097,10 +1103,10 @@ function Tasks({data,setData}) {
       </div>;
     })}
     {done.length>0&&<>
-      <div style={{fontSize:10,fontWeight:700,color:"#1f2937",textTransform:"uppercase",letterSpacing:"0.1em",marginTop:8,paddingTop:8,borderTop:"1px solid #0e1624"}}>Completed · {done.length}</div>
-      {done.map(t=><div key={t.id} onClick={()=>toggle(t.id)} style={{background:"#0d1117",border:"1px solid #0e1624",borderRadius:12,padding:"10px 16px",cursor:"pointer",display:"flex",alignItems:"center",gap:12,opacity:0.4}}>
+      <div style={{fontSize:10,fontWeight:700,color:T.bg2,textTransform:"uppercase",letterSpacing:"0.1em",marginTop:8,paddingTop:8,borderTop:"1px solid #0e1624"}}>Completed · {done.length}</div>
+      {done.map(t=><div key={t.id} onClick={()=>toggle(t.id)} style={{background:T.white,border:"1px solid #0e1624",borderRadius:12,padding:"10px 16px",cursor:"pointer",display:"flex",alignItems:"center",gap:12,opacity:0.4}}>
         <div style={{width:20,height:20,borderRadius:6,background:"#10b981",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center"}}><span style={{fontSize:10,color:"#fff",fontWeight:700}}>✓</span></div>
-        <div style={{fontSize:13,color:"#6b7280",textDecoration:"line-through",flex:1}}>{t.title}</div>
+        <div style={{fontSize:13,color:T.ink3,textDecoration:"line-through",flex:1}}>{t.title}</div>
       </div>)}
     </>}
   </div>;
@@ -1132,6 +1138,7 @@ function Finance({data}) {
   };
 
   return <div style={{display:"flex",flexDirection:"column",gap:16}}>
+    <PageTitle main="Financial" accent="overview."/>
     <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:12}}>
       <MetricCard label="YTD Revenue" value={fmt(ytdRev)} color="#10b981"/>
       <MetricCard label="YTD Expenses" value={fmt(ytdExp)} color="#ef4444"/>
@@ -1154,17 +1161,17 @@ function Finance({data}) {
         const net=rv-ex;
         return <div key={r.month} style={{marginBottom:14,paddingBottom:14,borderBottom:"1px solid #0e1624"}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
-            <span style={{fontSize:13,fontWeight:700,color:"#f3f4f6"}}>{r.month}</span>
+            <span style={{fontSize:13,fontWeight:700,color:T.ink}}>{r.month}</span>
             <div style={{display:"flex",gap:16,alignItems:"center"}}>
               <span style={{fontSize:11,color:"#10b981"}}>↑ {fmtFull(rv)}</span>
               <span style={{fontSize:11,color:"#ef4444"}}>↓ {fmtFull(ex)}</span>
               <span style={{fontSize:12,fontWeight:700,color:net>=0?"#10b981":"#ef4444"}}>{net>=0?"+":""}{fmtFull(net)}</span>
             </div>
           </div>
-          <div style={{height:5,background:"#0e1624",borderRadius:99,overflow:"hidden",marginBottom:3}}>
+          <div style={{height:5,background:T.bg2,borderRadius:99,overflow:"hidden",marginBottom:3}}>
             <div style={{height:"100%",width:`${maxBar>0?(rv/maxBar)*100:0}%`,background:"linear-gradient(90deg,#10b981,#3b82f6)",borderRadius:99}}/>
           </div>
-          <div style={{height:4,background:"#0e1624",borderRadius:99,overflow:"hidden"}}>
+          <div style={{height:4,background:T.bg2,borderRadius:99,overflow:"hidden"}}>
             <div style={{height:"100%",width:`${maxBar>0?(ex/maxBar)*100:0}%`,background:"linear-gradient(90deg,#ef444488,#dc2626)",borderRadius:99,opacity:0.7}}/>
           </div>
           {rv>0&&<div style={{display:"flex",gap:3,marginTop:4}}>
@@ -1176,7 +1183,7 @@ function Finance({data}) {
       })}
       <div style={{display:"flex",gap:14,marginTop:4,flexWrap:"wrap"}}>
         {[["#10b981","Individual"],["#3b82f6","Grants"],["#8b5cf6","Events"],["#6b7280","Other"]].map(([c,l])=>
-          <div key={l} style={{display:"flex",alignItems:"center",gap:5}}><div style={{width:8,height:8,borderRadius:2,background:c}}/><span style={{fontSize:11,color:"#4b5563"}}>{l}</span></div>
+          <div key={l} style={{display:"flex",alignItems:"center",gap:5}}><div style={{width:8,height:8,borderRadius:2,background:c}}/><span style={{fontSize:11,color:T.ink3}}>{l}</span></div>
         )}
       </div>
     </Card>
@@ -1186,10 +1193,10 @@ function Finance({data}) {
       {data.financials.funds.map((f,i)=><div key={f.name} style={{display:"flex",alignItems:"center",gap:12,padding:"11px 0",borderBottom:i<data.financials.funds.length-1?"1px solid #0e1624":""}}>
         <div style={{width:10,height:10,borderRadius:"50%",background:f.restricted?"#10b981":"#10b981",flexShrink:0,boxShadow:f.restricted?"0 0 8px #10b98160":"0 0 8px #10b98160"}}/>
         <div style={{flex:1}}>
-          <div style={{fontSize:13,fontWeight:600,color:"#f3f4f6"}}>{f.name}</div>
+          <div style={{fontSize:13,fontWeight:600,color:T.ink}}>{f.name}</div>
           <div style={{fontSize:10,color:f.restricted?"#10b981":"#6b7280",fontWeight:600,textTransform:"uppercase",letterSpacing:"0.06em",marginTop:1}}>{f.restricted?"Restricted":"Unrestricted"}</div>
         </div>
-        <div style={{fontSize:18,fontWeight:800,color:"#f3f4f6",fontFamily:"'DM Serif Display',serif"}}>{fmt(f.balance)}</div>
+        <div style={{fontSize:18,fontWeight:800,color:T.ink,fontFamily:"'DM Serif Display',serif"}}>{fmt(f.balance)}</div>
       </div>)}
     </Card>
   </div>;
@@ -1275,14 +1282,14 @@ function DonorImport({ onClose, onImported }) {
   };
 
   const overlay = { position:"fixed",inset:0,background:"#000c",zIndex:200,display:"flex",alignItems:"center",justifyContent:"center",padding:20 };
-  const modal = { background:"#0a0f1e",border:"1px solid #1f2937",borderRadius:20,width:"100%",maxWidth:680,maxHeight:"85vh",overflowY:"auto",padding:28 };
-  const inp = { width:"100%",background:"#111827",border:"1px solid #374151",borderRadius:8,padding:"9px 12px",color:"#f3f4f6",fontSize:13,outline:"none",fontFamily:"inherit",boxSizing:"border-box" };
+  const modal = { background:"#ffffff",border:"1px solid "+T.bg3,borderRadius:20,width:"100%",maxWidth:680,maxHeight:"85vh",overflowY:"auto",padding:28 };
+  const inp = { width:"100%",background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"9px 12px",color:T.ink,fontSize:13,outline:"none",fontFamily:"inherit",boxSizing:"border-box" };
 
   if (result !== null) return (
     <div style={overlay}><div style={{...modal,textAlign:"center"}}>
       <div style={{fontSize:40,marginBottom:12}}>✓</div>
-      <div style={{fontSize:22,fontWeight:800,color:"#f9fafb",marginBottom:8}}>{result} donor{result!==1?"s":""} imported</div>
-      <div style={{fontSize:14,color:"#6b7280",marginBottom:24}}>Your donor list has been updated.</div>
+      <div style={{fontSize:22,fontWeight:800,color:T.ink,marginBottom:8}}>{result} donor{result!==1?"s":""} imported</div>
+      <div style={{fontSize:14,color:T.ink3,marginBottom:24}}>Your donor list has been updated.</div>
       <button onClick={onClose} style={{background:"#10b981",border:"none",borderRadius:10,padding:"12px 28px",color:"#fff",fontSize:14,fontWeight:700,cursor:"pointer"}}>Done</button>
     </div></div>
   );
@@ -1291,20 +1298,20 @@ function DonorImport({ onClose, onImported }) {
     <div style={overlay}>
       <div style={modal}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
-          <div><div style={{fontSize:18,fontWeight:800,color:"#f9fafb"}}>Import Donors</div>
-            <div style={{fontSize:13,color:"#6b7280",marginTop:2}}>Paste CSV or upload a file</div></div>
-          <button onClick={onClose} style={{background:"#1f2937",border:"none",borderRadius:8,padding:"6px 12px",color:"#9ca3af",cursor:"pointer",fontSize:13}}>✕ Close</button>
+          <div><div style={{fontSize:18,fontWeight:800,color:T.ink}}>Import Donors</div>
+            <div style={{fontSize:13,color:T.ink3,marginTop:2}}>Paste CSV or upload a file</div></div>
+          <button onClick={onClose} style={{background:T.bg3,border:"none",borderRadius:8,padding:"6px 12px",color:T.ink3,cursor:"pointer",fontSize:13}}>✕ Close</button>
         </div>
 
         {!parsed && (<>
           <div style={{marginBottom:12}}>
-            <div style={{fontSize:11,fontWeight:700,color:"#6b7280",textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:6}}>Upload CSV file</div>
-            <input type="file" accept=".csv" onChange={handleFile} style={{fontSize:13,color:"#9ca3af"}}/>
+            <div style={{fontSize:11,fontWeight:700,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:6}}>Upload CSV file</div>
+            <input type="file" accept=".csv" onChange={handleFile} style={{fontSize:13,color:T.ink3}}/>
           </div>
-          <div style={{fontSize:11,fontWeight:700,color:"#6b7280",textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:6}}>Or paste CSV text</div>
+          <div style={{fontSize:11,fontWeight:700,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:6}}>Or paste CSV text</div>
           <textarea value={csvText} onChange={e=>setCsvText(e.target.value)} rows={8} placeholder={"Name,Email,Total Giving,Last Gift Date\nJane Smith,jane@example.com,5000,2024-11-01"} style={{...inp,resize:"vertical",lineHeight:1.5,marginBottom:12}}/>
           {err&&<div style={{color:"#f87171",fontSize:12,marginBottom:10}}>{err}</div>}
-          <button onClick={doParse} disabled={!csvText.trim()} style={{background:csvText.trim()?"linear-gradient(135deg,#10b981,#3b82f6)":"#1f2937",border:"none",borderRadius:10,padding:"11px 20px",color:"#fff",fontSize:14,fontWeight:700,cursor:csvText.trim()?"pointer":"not-allowed",opacity:csvText.trim()?1:0.5}}>
+          <button onClick={doParse} disabled={!csvText.trim()} style={{background:csvText.trim()?"linear-gradient(135deg,#10b981,#3b82f6)":T.bg2,border:"none",borderRadius:10,padding:"11px 20px",color:"#fff",fontSize:14,fontWeight:700,cursor:csvText.trim()?"pointer":"not-allowed",opacity:csvText.trim()?1:0.5}}>
             Parse CSV →
           </button>
         </>)}
@@ -1315,9 +1322,9 @@ function DonorImport({ onClose, onImported }) {
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
               {parsed.headers.map(h=>(
                 <div key={h} style={{display:"flex",alignItems:"center",gap:8}}>
-                  <span style={{fontSize:12,color:"#9ca3af",flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{h}</span>
+                  <span style={{fontSize:12,color:T.ink3,flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{h}</span>
                   <select value={mapping[h]||""} onChange={e=>setMapping(p=>({...p,[h]:e.target.value}))}
-                    style={{background:"#111827",border:"1px solid #374151",borderRadius:6,padding:"5px 8px",color:"#f3f4f6",fontSize:12,outline:"none"}}>
+                    style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:6,padding:"5px 8px",color:T.ink,fontSize:12,outline:"none"}}>
                     <option value="">— skip —</option>
                     {CSV_FIELDS.map(f=><option key={f.key} value={f.key}>{f.key}</option>)}
                   </select>
@@ -1327,26 +1334,26 @@ function DonorImport({ onClose, onImported }) {
           </div>
 
           <div style={{marginBottom:16}}>
-            <div style={{fontSize:12,fontWeight:600,color:"#6b7280",marginBottom:8}}>Preview ({parsed.rows.length} rows)</div>
-            <div style={{overflowX:"auto",border:"1px solid #1f2937",borderRadius:8}}>
+            <div style={{fontSize:12,fontWeight:600,color:T.ink3,marginBottom:8}}>Preview ({parsed.rows.length} rows)</div>
+            <div style={{overflowX:"auto",border:"1px solid "+T.bg3,borderRadius:8}}>
               <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
-                <thead><tr style={{background:"#111827"}}>
-                  {parsed.headers.filter(h=>mapping[h]).map(h=><th key={h} style={{padding:"6px 10px",textAlign:"left",color:"#6b7280",fontWeight:600,borderBottom:"1px solid #1f2937"}}>{mapping[h]}</th>)}
+                <thead><tr style={{background:T.bg}}>
+                  {parsed.headers.filter(h=>mapping[h]).map(h=><th key={h} style={{padding:"6px 10px",textAlign:"left",color:T.ink3,fontWeight:600,borderBottom:"1px solid "+T.bg3}}>{mapping[h]}</th>)}
                 </tr></thead>
                 <tbody>{parsed.rows.slice(0,5).map((row,i)=>(
-                  <tr key={i} style={{borderBottom:"1px solid #111827"}}>
-                    {parsed.headers.filter(h=>mapping[h]).map(h=><td key={h} style={{padding:"6px 10px",color:"#f3f4f6"}}>{row[h]}</td>)}
+                  <tr key={i} style={{borderBottom:"1px solid "+T.bg2}}>
+                    {parsed.headers.filter(h=>mapping[h]).map(h=><td key={h} style={{padding:"6px 10px",color:T.ink}}>{row[h]}</td>)}
                   </tr>
                 ))}</tbody>
               </table>
             </div>
-            {parsed.rows.length>5&&<div style={{fontSize:11,color:"#6b7280",marginTop:6}}>…and {parsed.rows.length-5} more rows</div>}
+            {parsed.rows.length>5&&<div style={{fontSize:11,color:T.ink3,marginTop:6}}>…and {parsed.rows.length-5} more rows</div>}
           </div>
 
           {err&&<div style={{color:"#f87171",fontSize:12,marginBottom:10}}>{err}</div>}
           <div style={{display:"flex",gap:10}}>
-            <button onClick={()=>setParsed(null)} style={{background:"transparent",border:"1px solid #374151",borderRadius:10,padding:"11px 18px",color:"#6b7280",fontSize:13,cursor:"pointer"}}>← Back</button>
-            <button onClick={doImport} disabled={loading} style={{flex:1,background:loading?"#1f2937":"linear-gradient(135deg,#10b981,#3b82f6)",border:"none",borderRadius:10,padding:"11px 20px",color:"#fff",fontSize:14,fontWeight:700,cursor:loading?"not-allowed":"pointer",opacity:loading?0.7:1}}>
+            <button onClick={()=>setParsed(null)} style={{background:"transparent",border:"1px solid "+T.bg3,borderRadius:10,padding:"11px 18px",color:T.ink3,fontSize:13,cursor:"pointer"}}>← Back</button>
+            <button onClick={doImport} disabled={loading} style={{flex:1,background:loading?T.bg2:"linear-gradient(135deg,#10b981,#3b82f6)",border:"none",borderRadius:10,padding:"11px 20px",color:"#fff",fontSize:14,fontWeight:700,cursor:loading?"not-allowed":"pointer",opacity:loading?0.7:1}}>
               {loading?"Importing…":`Import ${parsed.rows.filter(r=>r[parsed.headers.find(h=>mapping[h]==="name")||""]||true).length} Donors →`}
             </button>
           </div>
@@ -1390,30 +1397,31 @@ Focus on grants under $200K that match this org's size and mission. Include a mi
   };
 
   return <div style={{display:"flex",flexDirection:"column",gap:16}}>
+    <PageTitle main="Find" accent="new grants."/>
     <Card>
       <SectionLabel>Your Organization Profile</SectionLabel>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:16}}>
-        <div><div style={{fontSize:11,color:"#6b7280",textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:4}}>Mission</div>
-          <div style={{fontSize:13,color:"#f3f4f6",lineHeight:1.5}}>{data.org.mission||"—"}</div></div>
+        <div><div style={{fontSize:11,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:4}}>Mission</div>
+          <div style={{fontSize:13,color:T.ink,lineHeight:1.5}}>{data.org.mission||"—"}</div></div>
         <div style={{display:"flex",flexDirection:"column",gap:10}}>
-          <div><div style={{fontSize:11,color:"#6b7280",textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:2}}>Annual Budget</div>
-            <div style={{fontSize:13,color:"#f3f4f6"}}>{budgetLabel}</div></div>
-          <div><div style={{fontSize:11,color:"#6b7280",textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:2}}>Current Funders</div>
-            <div style={{fontSize:13,color:"#f3f4f6"}}>{activeGrants}</div></div>
+          <div><div style={{fontSize:11,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:2}}>Annual Budget</div>
+            <div style={{fontSize:13,color:T.ink}}>{budgetLabel}</div></div>
+          <div><div style={{fontSize:11,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:2}}>Current Funders</div>
+            <div style={{fontSize:13,color:T.ink}}>{activeGrants}</div></div>
         </div>
       </div>
-      <button onClick={find} disabled={loading} style={{background:loading?"#1f2937":"linear-gradient(135deg,#8b5cf6,#3b82f6)",border:"none",borderRadius:12,padding:"13px 22px",color:"#fff",fontSize:14,fontWeight:700,cursor:loading?"not-allowed":"pointer",display:"flex",alignItems:"center",gap:8,opacity:loading?0.7:1}}>
+      <button onClick={find} disabled={loading} style={{background:loading?T.bg2:"linear-gradient(135deg,#8b5cf6,#3b82f6)",border:"none",borderRadius:12,padding:"13px 22px",color:"#fff",fontSize:14,fontWeight:700,cursor:loading?"not-allowed":"pointer",display:"flex",alignItems:"center",gap:8,opacity:loading?0.7:1}}>
         {loading?<><Spin/>Scanning grant landscape…</>:"✦ Find Matching Grants"}
       </button>
     </Card>
 
     {(loading||results)&&<Card style={{background:"linear-gradient(135deg,#0f0c29,#0f172a)",border:"1px solid #10b98144"}}>
       <div style={{fontSize:11,fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",color:"#8b5cf6",marginBottom:14}}>✦ Grant Matches — Ranked by Alignment</div>
-      {loading&&!results&&<div style={{display:"flex",alignItems:"center",gap:10,color:"#6b7280",fontSize:13}}><Spin/>Analyzing your org and searching grant landscape…</div>}
-      {results&&<div style={{fontSize:13,color:"#e2e8f0",lineHeight:1.85,whiteSpace:"pre-wrap"}}>{results}</div>}
+      {loading&&!results&&<div style={{display:"flex",alignItems:"center",gap:10,color:T.ink3,fontSize:13}}><Spin/>Analyzing your org and searching grant landscape…</div>}
+      {results&&<div style={{fontSize:13,color:T.ink2,lineHeight:1.85,whiteSpace:"pre-wrap"}}>{results}</div>}
     </Card>}
 
-    {ran&&!loading&&!results&&<div style={{fontSize:13,color:"#6b7280",textAlign:"center",padding:20}}>No results yet — try again.</div>}
+    {ran&&!loading&&!results&&<div style={{fontSize:13,color:T.ink3,textAlign:"center",padding:20}}>No results yet — try again.</div>}
   </div>;
 }
 
@@ -1477,16 +1485,17 @@ function Communications({data}) {
 
   const Inp=({label,k,state,set,type="text",ph=""})=>(
     <div style={{display:"flex",flexDirection:"column",gap:4}}>
-      <label style={{fontSize:11,color:"#6b7280",textTransform:"uppercase",letterSpacing:"0.06em"}}>{label}</label>
+      <label style={{fontSize:11,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.06em"}}>{label}</label>
       <input type={type} value={state[k]} onChange={e=>set(s=>({...s,[k]:e.target.value}))} placeholder={ph}
-        style={{background:"#1e293b",border:"1px solid #374151",borderRadius:8,padding:"9px 12px",color:"#f3f4f6",fontSize:13,outline:"none"}}/>
+        style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"9px 12px",color:T.ink,fontSize:13,outline:"none"}}/>
     </div>
   );
 
   return <div style={{display:"flex",flexDirection:"column",gap:16}}>
+    <PageTitle main="Email" accent="campaigns."/>
     <div style={{display:"flex",gap:10,alignItems:"center"}}>
       <button onClick={()=>setShowBuilder(true)} style={{background:"#10b981",border:"none",borderRadius:10,padding:"10px 16px",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer"}}>+ New Campaign</button>
-      {isAdmin&&<button onClick={()=>setShowSmtp(!showSmtp)} style={{background:"transparent",border:"1px solid #374151",borderRadius:10,padding:"10px 14px",color:"#9ca3af",fontSize:12,cursor:"pointer"}}>⚙ SMTP Settings</button>}
+      {isAdmin&&<button onClick={()=>setShowSmtp(!showSmtp)} style={{background:"transparent",border:"1px solid "+T.bg3,borderRadius:10,padding:"10px 14px",color:T.ink3,fontSize:12,cursor:"pointer"}}>⚙ SMTP Settings</button>}
     </div>
 
     {showSmtp&&isAdmin&&<Card>
@@ -1499,7 +1508,7 @@ function Communications({data}) {
         <Inp label="From Address" k="smtpFrom" state={smtp} set={setSmtp} ph="CREO Arts <outreach@creoarts.org>"/>
       </div>
       <button onClick={saveSmtp} disabled={savingSmtp} style={{marginTop:12,background:"#10b981",border:"none",borderRadius:8,padding:"9px 16px",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer"}}>Save SMTP</button>
-      <div style={{marginTop:8,fontSize:11,color:"#6b7280"}}>Gmail: use an App Password. Resend: smtp.resend.com / port 465.</div>
+      <div style={{marginTop:8,fontSize:11,color:T.ink3}}>Gmail: use an App Password. Resend: smtp.resend.com / port 465.</div>
     </Card>}
 
     {showBuilder&&<Card style={{display:"flex",flexDirection:"column",gap:12}}>
@@ -1507,37 +1516,37 @@ function Communications({data}) {
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
         <Inp label="Campaign Name" k="name" state={form} set={setForm} ph="Spring Appeal 2025"/>
         <div style={{display:"flex",flexDirection:"column",gap:4}}>
-          <label style={{fontSize:11,color:"#6b7280",textTransform:"uppercase",letterSpacing:"0.06em"}}>Type</label>
-          <select value={form.type} onChange={e=>setForm(f=>({...f,type:e.target.value}))} style={{background:"#1e293b",border:"1px solid #374151",borderRadius:8,padding:"9px 12px",color:"#f3f4f6",fontSize:13}}>
+          <label style={{fontSize:11,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.06em"}}>Type</label>
+          <select value={form.type} onChange={e=>setForm(f=>({...f,type:e.target.value}))} style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"9px 12px",color:T.ink,fontSize:13}}>
             {TYPES.map(t=><option key={t} value={t}>{t}</option>)}
           </select>
         </div>
       </div>
       <Inp label="Subject Line" k="subject" state={form} set={setForm} ph="A message from {{org_name}}"/>
       <div style={{display:"flex",flexDirection:"column",gap:4}}>
-        <label style={{fontSize:11,color:"#6b7280",textTransform:"uppercase",letterSpacing:"0.06em"}}>Email Body</label>
+        <label style={{fontSize:11,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.06em"}}>Email Body</label>
         <textarea value={form.body} onChange={e=>setForm(f=>({...f,body:e.target.value}))} rows={8} placeholder={"Dear {{donor_name}},\n\n..."}
-          style={{background:"#1e293b",border:"1px solid #374151",borderRadius:8,padding:"10px 12px",color:"#f3f4f6",fontSize:13,outline:"none",resize:"vertical",fontFamily:"inherit"}}/>
-        <div style={{fontSize:10,color:"#4b5563"}}>Variables: {"{{donor_name}} {{gift_amount}} {{gift_date}} {{total_giving}} {{org_name}} {{year}}"}</div>
+          style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"10px 12px",color:T.ink,fontSize:13,outline:"none",resize:"vertical",fontFamily:"inherit"}}/>
+        <div style={{fontSize:10,color:T.ink3}}>Variables: {"{{donor_name}} {{gift_amount}} {{gift_date}} {{total_giving}} {{org_name}} {{year}}"}</div>
       </div>
       <div>
         <SectionLabel>Segment — Stages</SectionLabel>
         <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:8}}>
-          {STAGES.map(s=><button key={s} onClick={()=>toggleStage(s)} style={{background:form.stages.includes(s)?"#10b981":"#1f2937",border:"none",borderRadius:99,padding:"5px 12px",color:form.stages.includes(s)?"#fff":"#9ca3af",fontSize:11,cursor:"pointer",fontWeight:form.stages.includes(s)?700:400}}>{s}</button>)}
+          {STAGES.map(s=><button key={s} onClick={()=>toggleStage(s)} style={{background:form.stages.includes(s)?"#10b981":T.bg2,border:"none",borderRadius:99,padding:"5px 12px",color:form.stages.includes(s)?"#fff":T.ink3,fontSize:11,cursor:"pointer",fontWeight:form.stages.includes(s)?700:400}}>{s}</button>)}
         </div>
         <SectionLabel>Segment — Status</SectionLabel>
         <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-          {STATUSES.map(s=><button key={s} onClick={()=>toggleStatus(s)} style={{background:form.statuses.includes(s)?"#8b5cf6":"#1f2937",border:"none",borderRadius:99,padding:"5px 12px",color:form.statuses.includes(s)?"#fff":"#9ca3af",fontSize:11,cursor:"pointer",fontWeight:form.statuses.includes(s)?700:400}}>{s}</button>)}
+          {STATUSES.map(s=><button key={s} onClick={()=>toggleStatus(s)} style={{background:form.statuses.includes(s)?"#8b5cf6":T.bg2,border:"none",borderRadius:99,padding:"5px 12px",color:form.statuses.includes(s)?"#fff":T.ink3,fontSize:11,cursor:"pointer",fontWeight:form.statuses.includes(s)?700:400}}>{s}</button>)}
         </div>
       </div>
       <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
         <AIBtn onClick={draftAI} loading={aiLoading} label="✦ AI Draft" small/>
         <button onClick={save} style={{background:"#10b981",border:"none",borderRadius:8,padding:"9px 16px",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer"}}>Save Draft</button>
-        <button onClick={()=>{setShowBuilder(false);setAiDraft("");}} style={{background:"#374151",border:"none",borderRadius:8,padding:"9px 14px",color:"#9ca3af",fontSize:13,cursor:"pointer"}}>Cancel</button>
+        <button onClick={()=>{setShowBuilder(false);setAiDraft("");}} style={{background:T.bg,border:"none",borderRadius:8,padding:"9px 14px",color:T.ink3,fontSize:13,cursor:"pointer"}}>Cancel</button>
       </div>
-      {aiDraft&&<div style={{background:"#0f172a",border:"1px solid #10b98144",borderRadius:12,padding:16}}>
+      {aiDraft&&<div style={{background:T.bg,border:"1px solid #10b98144",borderRadius:12,padding:16}}>
         <div style={{fontSize:10,fontWeight:700,color:"#8b5cf6",letterSpacing:"0.08em",textTransform:"uppercase",marginBottom:8}}>✦ AI Draft</div>
-        <div style={{fontSize:13,color:"#e2e8f0",lineHeight:1.75,whiteSpace:"pre-wrap",marginBottom:12}}>{aiDraft}</div>
+        <div style={{fontSize:13,color:T.ink2,lineHeight:1.75,whiteSpace:"pre-wrap",marginBottom:12}}>{aiDraft}</div>
         <button onClick={applyDraft} style={{background:"#10b981",border:"none",borderRadius:8,padding:"8px 14px",color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer"}}>Apply to form</button>
       </div>}
     </Card>}
@@ -1547,8 +1556,8 @@ function Communications({data}) {
       <button onClick={()=>setSendResult(null)} style={{background:"transparent",border:"none",color:"#10b981",cursor:"pointer",fontSize:18}}>×</button>
     </div>}
 
-    {loading?<div style={{color:"#6b7280",fontSize:13,textAlign:"center",padding:40}}>Loading campaigns…</div>:
-      campaigns.length===0?<Card><div style={{color:"#6b7280",fontSize:13,textAlign:"center",padding:20}}>No campaigns yet. Create your first campaign above.</div></Card>:
+    {loading?<div style={{color:T.ink3,fontSize:13,textAlign:"center",padding:40}}>Loading campaigns…</div>:
+      campaigns.length===0?<Card><div style={{color:T.ink3,fontSize:13,textAlign:"center",padding:20}}>No campaigns yet. Create your first campaign above.</div></Card>:
       campaigns.map(c=>{
         const isOpen=selected?.id===c.id;
         const openRate=c.recipient_count>0?Math.round(c.open_count/c.recipient_count*100):0;
@@ -1556,38 +1565,38 @@ function Communications({data}) {
         return <Card key={c.id} selected={isOpen} accent={c.status==="sent"?"#10b981":"#8b5cf6"} onClick={()=>setSelected(isOpen?null:c)}>
           <div style={{display:"flex",alignItems:"center",gap:12}}>
             <div style={{flex:1}}>
-              <div style={{fontSize:15,fontWeight:700,color:"#f3f4f6"}}>{c.name}</div>
-              <div style={{fontSize:12,color:"#9ca3af",marginTop:2}}>{c.subject}</div>
+              <div style={{fontSize:15,fontWeight:700,color:T.ink}}>{c.name}</div>
+              <div style={{fontSize:12,color:T.ink3,marginTop:2}}>{c.subject}</div>
             </div>
             <div style={{textAlign:"right"}}>
-              {c.status==="sent"&&<div style={{fontSize:13,color:"#f3f4f6",fontWeight:600}}>{c.recipient_count} sent · {openRate}% opened</div>}
-              {c.status==="draft"&&<div style={{fontSize:11,color:"#6b7280"}}>Draft</div>}
+              {c.status==="sent"&&<div style={{fontSize:13,color:T.ink,fontWeight:600}}>{c.recipient_count} sent · {openRate}% opened</div>}
+              {c.status==="draft"&&<div style={{fontSize:11,color:T.ink3}}>Draft</div>}
             </div>
             <Pill label={c.status} color={c.status==="sent"?"#10b981":"#8b5cf6"}/>
           </div>
-          {c.status==="sent"&&<div style={{marginTop:8,height:3,background:"#1f2937",borderRadius:99}}>
+          {c.status==="sent"&&<div style={{marginTop:8,height:3,background:T.bg3,borderRadius:99}}>
             <div style={{height:"100%",width:`${openRate}%`,background:"#10b981",borderRadius:99}}/>
           </div>}
-          {isOpen&&<div style={{marginTop:14,paddingTop:14,borderTop:"1px solid #1f2937"}}>
+          {isOpen&&<div style={{marginTop:14,paddingTop:14,borderTop:"1px solid "+T.bg3}}>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:14}}>
-              <div><div style={{fontSize:10,color:"#6b7280",textTransform:"uppercase",letterSpacing:"0.06em"}}>Type</div><div style={{fontSize:13,color:"#f3f4f6",marginTop:3}}>{c.type}</div></div>
-              <div><div style={{fontSize:10,color:"#6b7280",textTransform:"uppercase",letterSpacing:"0.06em"}}>Segment</div><div style={{fontSize:12,color:"#9ca3af",marginTop:3}}>{[...(seg.stages||[]),...(seg.statuses||[])].join(", ")||"All donors with email"}</div></div>
-              {c.status==="sent"&&<><div><div style={{fontSize:10,color:"#6b7280",textTransform:"uppercase",letterSpacing:"0.06em"}}>Recipients</div><div style={{fontSize:13,color:"#f3f4f6",marginTop:3}}>{c.recipient_count}</div></div>
-              <div><div style={{fontSize:10,color:"#6b7280",textTransform:"uppercase",letterSpacing:"0.06em"}}>Open Rate</div><div style={{fontSize:13,color:openRate>=25?"#10b981":"#f59e0b",marginTop:3}}>{openRate}%</div></div></>}
-              <div style={{gridColumn:"1/-1"}}><div style={{fontSize:10,color:"#6b7280",textTransform:"uppercase",letterSpacing:"0.06em"}}>Preview</div>
-                <div style={{fontSize:12,color:"#9ca3af",marginTop:3,lineHeight:1.5,whiteSpace:"pre-wrap"}}>{c.body?.slice(0,220)}{c.body?.length>220?"…":""}</div></div>
+              <div><div style={{fontSize:10,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.06em"}}>Type</div><div style={{fontSize:13,color:T.ink,marginTop:3}}>{c.type}</div></div>
+              <div><div style={{fontSize:10,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.06em"}}>Segment</div><div style={{fontSize:12,color:T.ink3,marginTop:3}}>{[...(seg.stages||[]),...(seg.statuses||[])].join(", ")||"All donors with email"}</div></div>
+              {c.status==="sent"&&<><div><div style={{fontSize:10,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.06em"}}>Recipients</div><div style={{fontSize:13,color:T.ink,marginTop:3}}>{c.recipient_count}</div></div>
+              <div><div style={{fontSize:10,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.06em"}}>Open Rate</div><div style={{fontSize:13,color:openRate>=25?"#10b981":"#f59e0b",marginTop:3}}>{openRate}%</div></div></>}
+              <div style={{gridColumn:"1/-1"}}><div style={{fontSize:10,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.06em"}}>Preview</div>
+                <div style={{fontSize:12,color:T.ink3,marginTop:3,lineHeight:1.5,whiteSpace:"pre-wrap"}}>{c.body?.slice(0,220)}{c.body?.length>220?"…":""}</div></div>
             </div>
             {c.status==="draft"&&isAdmin&&<button onClick={e=>{e.stopPropagation();send(c);}} disabled={sending}
-              style={{background:sending?"#1f2937":"#10b981",border:"none",borderRadius:8,padding:"9px 16px",color:"#fff",fontSize:13,fontWeight:700,cursor:sending?"not-allowed":"pointer"}}>
+              style={{background:sending?T.bg2:"#10b981",border:"none",borderRadius:8,padding:"9px 16px",color:"#fff",fontSize:13,fontWeight:700,cursor:sending?"not-allowed":"pointer"}}>
               {sending?<><Spin/>Sending…</>:"↑ Send Campaign"}
             </button>}
             {c.recipients&&c.recipients.length>0&&<div style={{marginTop:14}}>
-              <div style={{fontSize:11,fontWeight:700,color:"#6b7280",textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:8}}>Recipients</div>
-              {c.recipients.slice(0,10).map(r=><div key={r.id} style={{display:"flex",justifyContent:"space-between",padding:"6px 0",borderBottom:"1px solid #111827",fontSize:12}}>
-                <span style={{color:"#f3f4f6"}}>{r.donor_name||r.email}</span>
+              <div style={{fontSize:11,fontWeight:700,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:8}}>Recipients</div>
+              {c.recipients.slice(0,10).map(r=><div key={r.id} style={{display:"flex",justifyContent:"space-between",padding:"6px 0",borderBottom:"1px solid "+T.bg2,fontSize:12}}>
+                <span style={{color:T.ink}}>{r.donor_name||r.email}</span>
                 <span style={{color:r.opened_at?"#10b981":"#6b7280"}}>{r.opened_at?"✓ opened":r.sent_at?"delivered":"pending"}</span>
               </div>)}
-              {c.recipients.length>10&&<div style={{fontSize:11,color:"#6b7280",marginTop:6}}>+{c.recipients.length-10} more</div>}
+              {c.recipients.length>10&&<div style={{fontSize:11,color:T.ink3,marginTop:6}}>+{c.recipients.length-10} more</div>}
             </div>}
           </div>}
         </Card>;
@@ -1641,13 +1650,14 @@ function Programs({data}) {
 
   const Inp=({label,k,type="text",ph=""})=>(
     <div style={{display:"flex",flexDirection:"column",gap:4}}>
-      <label style={{fontSize:11,color:"#6b7280",textTransform:"uppercase",letterSpacing:"0.06em"}}>{label}</label>
+      <label style={{fontSize:11,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.06em"}}>{label}</label>
       <input type={type} value={form[k]} onChange={e=>setForm(f=>({...f,[k]:e.target.value}))} placeholder={ph}
-        style={{background:"#1e293b",border:"1px solid #374151",borderRadius:8,padding:"9px 12px",color:"#f3f4f6",fontSize:13,outline:"none"}}/>
+        style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"9px 12px",color:T.ink,fontSize:13,outline:"none"}}/>
     </div>
   );
 
   return <div style={{display:"flex",flexDirection:"column",gap:16}}>
+    <PageTitle main="Your" accent="programs."/>
     <button onClick={()=>setShowAdd(!showAdd)} style={{alignSelf:"flex-start",background:"#10b981",border:"none",borderRadius:10,padding:"10px 16px",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer"}}>+ New Program</button>
 
     {showAdd&&<Card style={{display:"flex",flexDirection:"column",gap:12}}>
@@ -1655,8 +1665,8 @@ function Programs({data}) {
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
         <Inp label="Program Name" k="name" ph="After-School Arts"/>
         <div style={{display:"flex",flexDirection:"column",gap:4}}>
-          <label style={{fontSize:11,color:"#6b7280",textTransform:"uppercase",letterSpacing:"0.06em"}}>Status</label>
-          <select value={form.status} onChange={e=>setForm(f=>({...f,status:e.target.value}))} style={{background:"#1e293b",border:"1px solid #374151",borderRadius:8,padding:"9px 12px",color:"#f3f4f6",fontSize:13}}>
+          <label style={{fontSize:11,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.06em"}}>Status</label>
+          <select value={form.status} onChange={e=>setForm(f=>({...f,status:e.target.value}))} style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"9px 12px",color:T.ink,fontSize:13}}>
             {["active","planning","completed","paused"].map(s=><option key={s} value={s}>{s}</option>)}
           </select>
         </div>
@@ -1668,23 +1678,23 @@ function Programs({data}) {
         <Inp label="End Date" k="endDate" type="date"/>
       </div>
       <div style={{display:"flex",flexDirection:"column",gap:4}}>
-        <label style={{fontSize:11,color:"#6b7280",textTransform:"uppercase",letterSpacing:"0.06em"}}>Description</label>
+        <label style={{fontSize:11,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.06em"}}>Description</label>
         <textarea value={form.description} onChange={e=>setForm(f=>({...f,description:e.target.value}))} rows={2}
-          style={{background:"#1e293b",border:"1px solid #374151",borderRadius:8,padding:"9px 12px",color:"#f3f4f6",fontSize:13,outline:"none",resize:"vertical",fontFamily:"inherit"}}/>
+          style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"9px 12px",color:T.ink,fontSize:13,outline:"none",resize:"vertical",fontFamily:"inherit"}}/>
       </div>
       <div style={{display:"flex",flexDirection:"column",gap:4}}>
-        <label style={{fontSize:11,color:"#6b7280",textTransform:"uppercase",letterSpacing:"0.06em"}}>Outcomes</label>
+        <label style={{fontSize:11,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.06em"}}>Outcomes</label>
         <textarea value={form.outcomes} onChange={e=>setForm(f=>({...f,outcomes:e.target.value}))} rows={2}
-          style={{background:"#1e293b",border:"1px solid #374151",borderRadius:8,padding:"9px 12px",color:"#f3f4f6",fontSize:13,outline:"none",resize:"vertical",fontFamily:"inherit"}}/>
+          style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"9px 12px",color:T.ink,fontSize:13,outline:"none",resize:"vertical",fontFamily:"inherit"}}/>
       </div>
       <div style={{display:"flex",gap:8}}>
         <button onClick={save} style={{background:"#10b981",border:"none",borderRadius:8,padding:"9px 16px",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer"}}>Save Program</button>
-        <button onClick={()=>setShowAdd(false)} style={{background:"#374151",border:"none",borderRadius:8,padding:"9px 14px",color:"#9ca3af",fontSize:13,cursor:"pointer"}}>Cancel</button>
+        <button onClick={()=>setShowAdd(false)} style={{background:T.bg,border:"none",borderRadius:8,padding:"9px 14px",color:T.ink3,fontSize:13,cursor:"pointer"}}>Cancel</button>
       </div>
     </Card>}
 
-    {loading?<div style={{color:"#6b7280",fontSize:13,textAlign:"center",padding:40}}>Loading programs…</div>:
-      programs.length===0?<Card><div style={{color:"#6b7280",fontSize:13,textAlign:"center",padding:20}}>No programs yet. Add your first program above.</div></Card>:
+    {loading?<div style={{color:T.ink3,fontSize:13,textAlign:"center",padding:40}}>Loading programs…</div>:
+      programs.length===0?<Card><div style={{color:T.ink3,fontSize:13,textAlign:"center",padding:20}}>No programs yet. Add your first program above.</div></Card>:
       programs.map(p=>{
         const isOpen=selected?.id===p.id;
         const staff=Array.isArray(p.staff)?p.staff:JSON.parse(p.staff||"[]");
@@ -1697,59 +1707,59 @@ function Programs({data}) {
           <div style={{display:"flex",alignItems:"flex-start",gap:14}}>
             <div style={{flex:1}}>
               <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:4}}>
-                <div style={{fontSize:15,fontWeight:700,color:"#f3f4f6"}}>{p.name}</div>
+                <div style={{fontSize:15,fontWeight:700,color:T.ink}}>{p.name}</div>
                 <Pill label={p.status} color={statusColor}/>
               </div>
-              <div style={{fontSize:12,color:"#9ca3af",lineHeight:1.5}}>{p.description?.slice(0,100)}{p.description?.length>100?"…":""}</div>
+              <div style={{fontSize:12,color:T.ink3,lineHeight:1.5}}>{p.description?.slice(0,100)}{p.description?.length>100?"…":""}</div>
             </div>
             <div style={{textAlign:"right",flexShrink:0}}>
-              <div style={{fontSize:14,fontWeight:700,color:"#f3f4f6"}}>{fmt(p.budget)}</div>
+              <div style={{fontSize:14,fontWeight:700,color:T.ink}}>{fmt(p.budget)}</div>
               <div style={{fontSize:11,color:pct>90?"#ef4444":"#6b7280"}}>{pct}% spent</div>
             </div>
           </div>
-          <div style={{marginTop:10,height:4,background:"#1f2937",borderRadius:99}}>
+          <div style={{marginTop:10,height:4,background:T.bg3,borderRadius:99}}>
             <div style={{height:"100%",width:`${Math.min(pct,100)}%`,background:pct>90?"#ef4444":pct>70?"#f59e0b":"#10b981",borderRadius:99}}/>
           </div>
           <div style={{display:"flex",gap:16,marginTop:10}}>
-            <span style={{fontSize:11,color:"#6b7280"}}>{p.participant_count} participants</span>
-            {staff.length>0&&<span style={{fontSize:11,color:"#6b7280"}}>Staff: {staff.join(", ")}</span>}
+            <span style={{fontSize:11,color:T.ink3}}>{p.participant_count} participants</span>
+            {staff.length>0&&<span style={{fontSize:11,color:T.ink3}}>Staff: {staff.join(", ")}</span>}
             {grants.length>0&&<span style={{fontSize:11,color:"#8b5cf6"}}>{fmt(totalAllocated)} grant-funded</span>}
           </div>
-          {isOpen&&<div style={{marginTop:14,paddingTop:14,borderTop:"1px solid #1f2937"}}>
+          {isOpen&&<div style={{marginTop:14,paddingTop:14,borderTop:"1px solid "+T.bg3}}>
             {p.outcomes&&<div style={{marginBottom:12}}>
-              <div style={{fontSize:10,fontWeight:700,color:"#6b7280",textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:6}}>Outcomes</div>
-              <div style={{fontSize:13,color:"#9ca3af",lineHeight:1.65}}>{p.outcomes}</div>
+              <div style={{fontSize:10,fontWeight:700,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:6}}>Outcomes</div>
+              <div style={{fontSize:13,color:T.ink3,lineHeight:1.65}}>{p.outcomes}</div>
             </div>}
             {Object.keys(metrics).length>0&&<div style={{marginBottom:12}}>
-              <div style={{fontSize:10,fontWeight:700,color:"#6b7280",textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:6}}>Metrics</div>
+              <div style={{fontSize:10,fontWeight:700,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:6}}>Metrics</div>
               <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
-                {Object.entries(metrics).map(([k,v])=><div key={k} style={{background:"#1f2937",borderRadius:8,padding:"6px 10px"}}>
-                  <div style={{fontSize:10,color:"#6b7280"}}>{k.replace(/_/g," ")}</div>
-                  <div style={{fontSize:13,color:"#f3f4f6",fontWeight:600}}>{String(v)}</div>
+                {Object.entries(metrics).map(([k,v])=><div key={k} style={{background:T.bg3,borderRadius:8,padding:"6px 10px"}}>
+                  <div style={{fontSize:10,color:T.ink3}}>{k.replace(/_/g," ")}</div>
+                  <div style={{fontSize:13,color:T.ink,fontWeight:600}}>{String(v)}</div>
                 </div>)}
               </div>
             </div>}
             <div style={{marginBottom:12}}>
-              <div style={{fontSize:10,fontWeight:700,color:"#6b7280",textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:6}}>Grant Funding</div>
-              {grants.map(g=><div key={g.grant_id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"6px 0",borderBottom:"1px solid #111827",fontSize:12}}>
-                <span style={{color:"#f3f4f6"}}>{g.funder} — {g.program_name}</span>
+              <div style={{fontSize:10,fontWeight:700,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:6}}>Grant Funding</div>
+              {grants.map(g=><div key={g.grant_id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"6px 0",borderBottom:"1px solid "+T.bg2,fontSize:12}}>
+                <span style={{color:T.ink}}>{g.funder} — {g.program_name}</span>
                 <div style={{display:"flex",gap:8,alignItems:"center"}}>
                   <span style={{color:"#8b5cf6",fontWeight:600}}>{fmt(g.allocated)}</span>
                   {isAdmin&&<button onClick={e=>{e.stopPropagation();removeGrantLink(p.id,g.grant_id);}} style={{background:"transparent",border:"none",color:"#ef4444",cursor:"pointer",fontSize:14,lineHeight:1}}>×</button>}
                 </div>
               </div>)}
               {isAdmin&&linkGrant.programId!==p.id&&<button onClick={e=>{e.stopPropagation();setLinkGrant({programId:p.id,grantId:"",allocated:""});}}
-                style={{marginTop:8,background:"transparent",border:"1px dashed #374151",borderRadius:8,padding:"6px 12px",color:"#6b7280",fontSize:12,cursor:"pointer"}}>+ Link Grant</button>}
+                style={{marginTop:8,background:"transparent",border:"1px dashed "+T.bg3,borderRadius:8,padding:"6px 12px",color:T.ink3,fontSize:12,cursor:"pointer"}}>+ Link Grant</button>}
               {isAdmin&&linkGrant.programId===p.id&&<div style={{display:"flex",gap:8,marginTop:8,alignItems:"flex-end"}} onClick={e=>e.stopPropagation()}>
                 <select value={linkGrant.grantId} onChange={e=>setLinkGrant(l=>({...l,grantId:e.target.value}))}
-                  style={{flex:1,background:"#1e293b",border:"1px solid #374151",borderRadius:8,padding:"8px 10px",color:"#f3f4f6",fontSize:12}}>
+                  style={{flex:1,background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"8px 10px",color:T.ink,fontSize:12}}>
                   <option value="">Select grant…</option>
                   {data.grants.map(g=><option key={g.id} value={g.id}>{g.funder} — {g.program}</option>)}
                 </select>
                 <input type="number" placeholder="Allocated $" value={linkGrant.allocated} onChange={e=>setLinkGrant(l=>({...l,allocated:e.target.value}))}
-                  style={{width:110,background:"#1e293b",border:"1px solid #374151",borderRadius:8,padding:"8px 10px",color:"#f3f4f6",fontSize:12,outline:"none"}}/>
+                  style={{width:110,background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"8px 10px",color:T.ink,fontSize:12,outline:"none"}}/>
                 <button onClick={()=>addGrantLink(p.id)} style={{background:"#8b5cf6",border:"none",borderRadius:8,padding:"8px 12px",color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer"}}>Link</button>
-                <button onClick={e=>{e.stopPropagation();setLinkGrant({programId:null,grantId:"",allocated:""});}} style={{background:"#374151",border:"none",borderRadius:8,padding:"8px 10px",color:"#9ca3af",fontSize:12,cursor:"pointer"}}>✕</button>
+                <button onClick={e=>{e.stopPropagation();setLinkGrant({programId:null,grantId:"",allocated:""});}} style={{background:T.bg,border:"none",borderRadius:8,padding:"8px 10px",color:T.ink3,fontSize:12,cursor:"pointer"}}>✕</button>
               </div>}
             </div>
             <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
@@ -1791,49 +1801,50 @@ function AnnualFund({data}) {
   const maxMonth=Math.max(...(fund?.monthly||[{raised:1}]).map(m=>m.raised),1);
 
   return <div style={{display:"flex",flexDirection:"column",gap:16}}>
+    <PageTitle main="Annual" accent="fund."/>
     <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}>
       <div style={{display:"flex",gap:6}}>
         {[currentYear-1,currentYear].map(y2=><button key={y2} onClick={()=>{setYear(y2);load(y2);}}
-          style={{background:year===y2?"#10b981":"transparent",border:year===y2?"none":"1px solid #374151",borderRadius:8,padding:"7px 14px",color:year===y2?"#fff":"#9ca3af",fontSize:12,fontWeight:year===y2?700:400,cursor:"pointer"}}>{y2}</button>)}
+          style={{background:year===y2?"#10b981":"transparent",border:year===y2?"none":"1px solid #374151",borderRadius:8,padding:"7px 14px",color:year===y2?"#fff":T.ink3,fontSize:12,fontWeight:year===y2?700:400,cursor:"pointer"}}>{y2}</button>)}
       </div>
       <AIBtn onClick={getForecast} loading={aiLoading} label="✦ AI Forecast" small/>
       {isAdmin&&<button onClick={()=>{setEditGoal(!editGoal);setGoalInput(fund?.goal?.toString()||"");}}
-        style={{background:"transparent",border:"1px solid #374151",borderRadius:8,padding:"7px 12px",color:"#9ca3af",fontSize:12,cursor:"pointer"}}>⚙ Set Goal</button>}
+        style={{background:"transparent",border:"1px solid "+T.bg3,borderRadius:8,padding:"7px 12px",color:T.ink3,fontSize:12,cursor:"pointer"}}>⚙ Set Goal</button>}
     </div>
 
     {editGoal&&isAdmin&&<Card style={{display:"flex",gap:10,alignItems:"flex-end"}}>
       <div style={{display:"flex",flexDirection:"column",gap:4,flex:1}}>
-        <label style={{fontSize:11,color:"#6b7280",textTransform:"uppercase",letterSpacing:"0.06em"}}>Annual Fund Goal {year}</label>
+        <label style={{fontSize:11,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.06em"}}>Annual Fund Goal {year}</label>
         <input type="number" value={goalInput} onChange={e=>setGoalInput(e.target.value)} placeholder="250000"
-          style={{background:"#1e293b",border:"1px solid #374151",borderRadius:8,padding:"9px 12px",color:"#f3f4f6",fontSize:13,outline:"none"}}/>
+          style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"9px 12px",color:T.ink,fontSize:13,outline:"none"}}/>
       </div>
       <button onClick={saveGoal} style={{background:"#10b981",border:"none",borderRadius:8,padding:"10px 16px",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer"}}>Save</button>
-      <button onClick={()=>setEditGoal(false)} style={{background:"#374151",border:"none",borderRadius:8,padding:"10px 12px",color:"#9ca3af",fontSize:13,cursor:"pointer"}}>Cancel</button>
+      <button onClick={()=>setEditGoal(false)} style={{background:T.bg,border:"none",borderRadius:8,padding:"10px 12px",color:T.ink3,fontSize:13,cursor:"pointer"}}>Cancel</button>
     </Card>}
 
     {(aiLoading||aiText)&&<AIPanel text={aiText} onClose={()=>setAiText("")}/>}
 
-    {loading?<div style={{color:"#6b7280",fontSize:13,textAlign:"center",padding:60}}>Loading annual fund data…</div>:!fund?null:<>
+    {loading?<div style={{color:T.ink3,fontSize:13,textAlign:"center",padding:60}}>Loading annual fund data…</div>:!fund?null:<>
       <Card>
         <div style={{display:"flex",alignItems:"center",gap:20,flexWrap:"wrap"}}>
           <div style={{flex:1}}>
-            <div style={{fontSize:11,fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase",color:"#6b7280",marginBottom:8}}>{year} Annual Fund</div>
-            <div style={{fontSize:38,fontWeight:800,color:"#f9fafb",fontFamily:"'DM Serif Display',serif",lineHeight:1}}>{fmt(fund.totalRaised)}</div>
-            {fund.goal>0&&<div style={{fontSize:13,color:"#9ca3af",marginTop:4}}>of {fmtFull(fund.goal)} goal · {fund.goalPct}% raised</div>}
+            <div style={{fontSize:11,fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase",color:T.ink3,marginBottom:8}}>{year} Annual Fund</div>
+            <div style={{fontSize:38,fontWeight:800,color:T.ink,fontFamily:"'DM Serif Display',serif",lineHeight:1}}>{fmt(fund.totalRaised)}</div>
+            {fund.goal>0&&<div style={{fontSize:13,color:T.ink3,marginTop:4}}>of {fmtFull(fund.goal)} goal · {fund.goalPct}% raised</div>}
             {fund.projectedTotal>0&&year===currentYear&&fund.projectedTotal!==fund.totalRaised&&
               <div style={{fontSize:12,color:"#8b5cf6",marginTop:4}}>Projected year-end: {fmt(fund.projectedTotal)}</div>}
           </div>
           {fund.goal>0&&<div style={{flexShrink:0}}>
             <svg width="88" height="88" viewBox="0 0 88 88">
-              <circle cx="44" cy="44" r="36" fill="none" stroke="#1f2937" strokeWidth="9"/>
+              <circle cx="44" cy="44" r="36" fill="none" stroke="#e8e4db" strokeWidth="9"/>
               <circle cx="44" cy="44" r="36" fill="none" stroke="#10b981" strokeWidth="9"
                 strokeDasharray={`${Math.min(fund.goalPct,100)*2.262} 226.2`}
                 strokeDashoffset="56.6" strokeLinecap="round" transform="rotate(-90 44 44)"/>
-              <text x="44" y="50" textAnchor="middle" fill="#f9fafb" fontSize="15" fontWeight="800" fontFamily="sans-serif">{fund.goalPct}%</text>
+              <text x="44" y="50" textAnchor="middle" fill={T.ink} fontSize="15" fontWeight="800" fontFamily="sans-serif">{fund.goalPct}%</text>
             </svg>
           </div>}
         </div>
-        {fund.goal>0&&<div style={{marginTop:14,height:6,background:"#1f2937",borderRadius:99}}>
+        {fund.goal>0&&<div style={{marginTop:14,height:6,background:T.bg3,borderRadius:99}}>
           <div style={{height:"100%",width:`${Math.min(fund.goalPct,100)}%`,background:fund.goalPct>=100?"#10b981":fund.goalPct>=60?"#f59e0b":"#ef4444",borderRadius:99,transition:"width 0.5s"}}/>
         </div>}
       </Card>
@@ -1853,9 +1864,9 @@ function AnnualFund({data}) {
           {fund.monthly.map(m=>{
             const h=maxMonth>0?Math.round(m.raised/maxMonth*120):0;
             return <div key={m.month} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:4}}>
-              <div style={{fontSize:9,color:"#6b7280"}}>{m.raised>0?fmt(m.raised):""}</div>
-              <div style={{width:"100%",height:h,background:m.raised>0?"linear-gradient(180deg,#10b981,#059669)":"#1f2937",borderRadius:"4px 4px 0 0",minHeight:3}}/>
-              <div style={{fontSize:9,color:"#6b7280"}}>{m.month.slice(0,3)}</div>
+              <div style={{fontSize:9,color:T.ink3}}>{m.raised>0?fmt(m.raised):""}</div>
+              <div style={{width:"100%",height:h,background:m.raised>0?"linear-gradient(180deg,#10b981,#059669)":T.bg2,borderRadius:"4px 4px 0 0",minHeight:3}}/>
+              <div style={{fontSize:9,color:T.ink3}}>{m.month.slice(0,3)}</div>
             </div>;
           })}
         </div>
@@ -1866,22 +1877,22 @@ function AnnualFund({data}) {
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16,marginBottom:14}}>
           <div>
             <div style={{fontSize:28,fontWeight:800,color:"#3b82f6",fontFamily:"'DM Serif Display',serif"}}>{fund.donors.acquired}</div>
-            <div style={{fontSize:12,color:"#9ca3af",marginTop:2}}>New donors</div>
-            <div style={{fontSize:11,color:"#6b7280",marginTop:6,lineHeight:1.5}}>First-time givers who didn't donate in {year-1}.</div>
+            <div style={{fontSize:12,color:T.ink3,marginTop:2}}>New donors</div>
+            <div style={{fontSize:11,color:T.ink3,marginTop:6,lineHeight:1.5}}>First-time givers who didn't donate in {year-1}.</div>
           </div>
           <div>
             <div style={{fontSize:28,fontWeight:800,color:"#10b981",fontFamily:"'DM Serif Display',serif"}}>{fund.donors.retained}</div>
-            <div style={{fontSize:12,color:"#9ca3af",marginTop:2}}>Renewed donors</div>
-            <div style={{fontSize:11,color:"#6b7280",marginTop:6,lineHeight:1.5}}>Gave in both {year-1} and {year}. Rate: {fund.donors.retentionRate}%</div>
+            <div style={{fontSize:12,color:T.ink3,marginTop:2}}>Renewed donors</div>
+            <div style={{fontSize:11,color:T.ink3,marginTop:6,lineHeight:1.5}}>Gave in both {year-1} and {year}. Rate: {fund.donors.retentionRate}%</div>
           </div>
         </div>
-        <div style={{height:6,background:"#1f2937",borderRadius:99,display:"flex",overflow:"hidden"}}>
+        <div style={{height:6,background:T.bg3,borderRadius:99,display:"flex",overflow:"hidden"}}>
           <div style={{width:`${fund.donors.total>0?Math.round(fund.donors.retained/fund.donors.total*100):0}%`,background:"#10b981"}}/>
           <div style={{flex:1,background:"#3b82f6"}}/>
         </div>
         <div style={{display:"flex",gap:12,marginTop:8}}>
-          <div style={{display:"flex",alignItems:"center",gap:4,fontSize:11,color:"#6b7280"}}><div style={{width:10,height:10,background:"#10b981",borderRadius:2}}/>Retained</div>
-          <div style={{display:"flex",alignItems:"center",gap:4,fontSize:11,color:"#6b7280"}}><div style={{width:10,height:10,background:"#3b82f6",borderRadius:2}}/>New</div>
+          <div style={{display:"flex",alignItems:"center",gap:4,fontSize:11,color:T.ink3}}><div style={{width:10,height:10,background:"#10b981",borderRadius:2}}/>Retained</div>
+          <div style={{display:"flex",alignItems:"center",gap:4,fontSize:11,color:T.ink3}}><div style={{width:10,height:10,background:"#3b82f6",borderRadius:2}}/>New</div>
         </div>
       </Card>
     </>}
