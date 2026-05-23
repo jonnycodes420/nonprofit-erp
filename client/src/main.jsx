@@ -57,9 +57,7 @@ function RequireOnboarded({ children }) {
 }
 
 function PublicOnly({ children }) {
-  const { auth } = useAuth();
-  if (!auth) return children;
-  return <Navigate to={auth.org?.onboarding_complete ? "/dashboard" : "/welcome"} replace />;
+  return children;
 }
 
 function Root() {
