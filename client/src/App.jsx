@@ -118,7 +118,7 @@ function EmptyState({icon,title,message,action,onAction}) {
 function PageTitle({main,accent}) {
   return (
     <div style={{marginBottom:12}}>
-      <h1 style={{fontFamily:"'DM Serif Display',Georgia,serif",fontSize:"clamp(26px,3.5vw,36px)",fontWeight:400,color:T.ink,letterSpacing:"-0.02em",margin:0,lineHeight:1.2}}>
+      <h1 style={{fontFamily:"'DM Serif Display',Georgia,serif",fontSize:"clamp(22px,2.4vw,32px)",fontWeight:400,color:T.ink,letterSpacing:"-0.02em",margin:0,lineHeight:1.2}}>
         {main}{" "}<span style={{borderBottom:`3px solid ${T.green}`,paddingBottom:2}}>{accent}</span>
       </h1>
     </div>
@@ -416,7 +416,9 @@ function moveUrgency(d){
   const [warn,crit]=STAGE_THRESH[d.stage||"cultivate"]||[30,60];
   const level=days>crit?"critical":days>warn?"due":"ok";
   const urgencyColor={critical:"#ef4444",due:"#f59e0b",ok:"#10b981"}[level];
-  return{days,level,urgencyColor};
+  // Text label color uses absolute thresholds: red >365d, amber 180-365d, muted gray otherwise
+  const contactTextColor=days>365?"#ef4444":days>180?"#f59e0b":T.ink3;
+  return{days,level,urgencyColor,contactTextColor};
 }
 
 function LogTouchpointModal({donor,onSave,onClose}){
@@ -692,11 +694,13 @@ function DonorKanban({donors,onStageChange,onLogTouchpoint,onSelectDonor}){
             <div style={{
               display:"flex",flexDirection:"column",gap:6,flex:1,
               borderRadius:10,
-              border:`2px dashed ${isOver?stage.color+"45":"transparent"}`,
+              border:isOver?`2px dashed ${stage.color+"45"}`
+                    :cols.length===0?`1px dashed ${T.bg3}`
+                    :"1px dashed transparent",
               background:isOver?stage.color+"05":"transparent",
               padding:isOver?3:0,
               transition:"border-color 0.12s,background 0.12s",
-              minHeight:anyDragging?80:0,
+              minHeight:cols.length===0?60:0,
             }}>
               {cols.map(d=>{
                 const urg=moveUrgency(d);
@@ -731,7 +735,7 @@ function DonorKanban({donors,onStageChange,onLogTouchpoint,onSelectDonor}){
                     {/* Urgency */}
                     <div style={{display:"flex",alignItems:"center",gap:5,marginBottom:8}}>
                       <div style={{width:6,height:6,borderRadius:"50%",background:urg.urgencyColor,flexShrink:0}}/>
-                      <span style={{fontSize:10,color:urg.urgencyColor,fontWeight:600}}>{urg.days}d since contact</span>
+                      <span style={{fontSize:10,color:urg.contactTextColor,fontWeight:600}}>{urg.days}d since contact</span>
                     </div>
                     {/* Buttons */}
                     <div style={{display:"flex",gap:4}}>
