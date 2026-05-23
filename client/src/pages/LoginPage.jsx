@@ -1,6 +1,5 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { apiFetch } from "../api";
 import { useAuth } from "../main";
 
 export default function LoginPage() {
@@ -15,10 +14,13 @@ export default function LoginPage() {
     e.preventDefault();
     setLoading(true); setError("");
     try {
-      const data = await apiFetch("/auth/login", {
+      const res = await fetch("https://nonprofit-erp-production.up.railway.app/auth/login", {
         method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, password }),
       });
+      if (!res.ok) { const e = await res.json(); throw new Error(e.error || "Login failed"); }
+      const data = await res.json();
       login(data);
       navigate(data.org?.onboarding_complete ? "/dashboard" : "/welcome", { replace: true });
     } catch (err) {
