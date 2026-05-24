@@ -195,6 +195,17 @@ Data: ${d.name} | Total giving: $${total.toLocaleString()} | ${gc} gifts avg $${
   }
 }
 
+// ── Finance audit log helper ───────────────────────────────────────────────
+async function writeAuditLog(orgId, userId, userName, action, entityType, entityId, changes) {
+  try {
+    const id = "al_" + uuid().slice(0, 8);
+    await run(
+      "INSERT INTO fin_audit_log (id,org_id,user_id,user_name,action,entity_type,entity_id,changes) VALUES (?,?,?,?,?,?,?,?)",
+      [id, orgId, userId, userName, action, entityType, entityId, JSON.stringify(changes || {})]
+    );
+  } catch(e) { console.error("Audit log write:", e.message); }
+}
+
 // ── Auth ───────────────────────────────────────────────────────────────────
 app.post("/auth/login", wrap(async (req, res) => {
   const { email, password } = req.body;
@@ -1439,18 +1450,28 @@ app.post("/finance/accounts", requireAuth, requireAdmin, wrap(async (req, res) =
     [id, req.user.orgId, code, name, type, subtype || ""]
   );
   const rows = await query("SELECT * FROM accounts WHERE id = ?", [id]);
+  writeAuditLog(req.user.orgId, req.user.userId, req.user.email, "created", "account", id, {
+    description: `Created account ${code} ${name} (${type})`,
+    new: { code, name, type, subtype: subtype || "" }
+  }).catch(() => {});
   res.status(201).json(rows[0]);
 }));
 
 app.put("/finance/accounts/:id", requireAuth, requireAdmin, wrap(async (req, res) => {
   const { name, subtype, active } = req.body;
   if (!name) return res.status(400).json({ error: "name required" });
+  const [oldAcct] = await query("SELECT * FROM accounts WHERE id = ? AND org_id = ?", [req.params.id, req.user.orgId]);
   const affected = await run(
     "UPDATE accounts SET name=?,subtype=?,active=? WHERE id=? AND org_id=?",
     [name, subtype || "", active !== false, req.params.id, req.user.orgId]
   );
   if (!affected.changes) return res.status(404).json({ error: "Account not found" });
   const rows = await query("SELECT * FROM accounts WHERE id = ?", [req.params.id]);
+  writeAuditLog(req.user.orgId, req.user.userId, req.user.email, "updated", "account", req.params.id, {
+    description: `Updated account ${oldAcct?.code || ""} ${oldAcct?.name || name}`,
+    old: oldAcct ? { name: oldAcct.name, subtype: oldAcct.subtype, active: oldAcct.active } : {},
+    new: { name, subtype: subtype || "", active: active !== false }
+  }).catch(() => {});
   res.json(rows[0]);
 }));
 
@@ -1472,18 +1493,28 @@ app.post("/finance/funds", requireAuth, requireAdmin, wrap(async (req, res) => {
     [id, req.user.orgId, name, description || "", restricted ? true : false]
   );
   const rows = await query("SELECT * FROM fin_funds WHERE id = ?", [id]);
+  writeAuditLog(req.user.orgId, req.user.userId, req.user.email, "created", "fund", id, {
+    description: `Created fund "${name}"${restricted ? " (restricted)" : ""}`,
+    new: { name, description: description || "", restricted: !!restricted }
+  }).catch(() => {});
   res.status(201).json(rows[0]);
 }));
 
 app.put("/finance/funds/:id", requireAuth, requireAdmin, wrap(async (req, res) => {
   const { name, description, restricted } = req.body;
   if (!name) return res.status(400).json({ error: "name required" });
+  const [oldFund] = await query("SELECT * FROM fin_funds WHERE id = ? AND org_id = ?", [req.params.id, req.user.orgId]);
   const affected = await run(
     "UPDATE fin_funds SET name=?,description=?,restricted=? WHERE id=? AND org_id=?",
     [name, description || "", restricted ? true : false, req.params.id, req.user.orgId]
   );
   if (!affected.changes) return res.status(404).json({ error: "Fund not found" });
   const rows = await query("SELECT * FROM fin_funds WHERE id = ?", [req.params.id]);
+  writeAuditLog(req.user.orgId, req.user.userId, req.user.email, "updated", "fund", req.params.id, {
+    description: `Updated fund "${name}"`,
+    old: oldFund ? { name: oldFund.name, description: oldFund.description, restricted: oldFund.restricted } : {},
+    new: { name, description: description || "", restricted: !!restricted }
+  }).catch(() => {});
   res.json(rows[0]);
 }));
 
@@ -1524,11 +1555,25 @@ app.post("/finance/transactions", requireAuth, wrap(async (req, res) => {
     LEFT JOIN accounts a ON a.id = ft.account_id
     LEFT JOIN fin_funds f ON f.id = ft.fund_id
     WHERE ft.id = ?`, [id]);
+  writeAuditLog(req.user.orgId, req.user.userId, req.user.email, "created", "transaction", id, {
+    description: `Added ${type === "income" ? "+" : "-"}$${parseFloat(amount).toFixed(2)} — ${description} (${rows[0]?.account_name || "No account"}, ${rows[0]?.fund_name || "No fund"})`,
+    new: { amount: parseFloat(amount), type, description, account: rows[0]?.account_name, fund: rows[0]?.fund_name, date, vendorDonor }
+  }).catch(() => {});
   res.status(201).json(rows[0]);
 }));
 
 app.delete("/finance/transactions/:id", requireAuth, requireAdmin, wrap(async (req, res) => {
+  const [txnToDelete] = await query(`
+    SELECT ft.*, a.name as account_name, f.name as fund_name
+    FROM fin_transactions ft
+    LEFT JOIN accounts a ON a.id = ft.account_id
+    LEFT JOIN fin_funds f ON f.id = ft.fund_id
+    WHERE ft.id = ? AND ft.org_id = ?`, [req.params.id, req.user.orgId]);
   await run("DELETE FROM fin_transactions WHERE id = ? AND org_id = ?", [req.params.id, req.user.orgId]);
+  writeAuditLog(req.user.orgId, req.user.userId, req.user.email, "deleted", "transaction", req.params.id, {
+    description: txnToDelete ? `Deleted ${txnToDelete.type === "income" ? "+" : "-"}$${parseFloat(txnToDelete.amount).toFixed(2)} — ${txnToDelete.description}` : "Deleted transaction",
+    old: txnToDelete ? { amount: parseFloat(txnToDelete.amount), type: txnToDelete.type, description: txnToDelete.description, account: txnToDelete.account_name, fund: txnToDelete.fund_name, date: txnToDelete.date } : {}
+  }).catch(() => {});
   res.json({ success: true });
 }));
 
@@ -1575,6 +1620,11 @@ app.post("/finance/budgets", requireAuth, requireAdmin, wrap(async (req, res) =>
      ON CONFLICT (org_id, account_id, year) DO UPDATE SET amount=EXCLUDED.amount`,
     [id, req.user.orgId, accountId, parseInt(year), parseFloat(amount) || 0]
   );
+  const [acctRow] = await query("SELECT code, name FROM accounts WHERE id = ?", [accountId]);
+  writeAuditLog(req.user.orgId, req.user.userId, req.user.email, "updated", "budget", `${accountId}_${year}`, {
+    description: `Set ${year} budget for ${acctRow?.code || ""} ${acctRow?.name || accountId} to $${(parseFloat(amount)||0).toLocaleString()}`,
+    new: { account: acctRow?.name || accountId, year: parseInt(year), amount: parseFloat(amount) || 0 }
+  }).catch(() => {});
   res.json({ success: true, accountId, year, amount: parseFloat(amount) || 0 });
 }));
 
@@ -1600,6 +1650,22 @@ app.get("/finance/summary", requireAuth, wrap(async (req, res) => {
   const ytdExpenses = ytd.expense || 0;
   const cashOnHand  = (all.income || 0) - (all.expense || 0);
   res.json({ cashOnHand, ytdRevenue, ytdExpenses, netSurplus: ytdRevenue - ytdExpenses });
+}));
+
+// ── Finance: Audit Log ─────────────────────────────────────────────────────
+app.get("/finance/audit-log", requireAuth, wrap(async (req, res) => {
+  const { action, entityType, limit = 200 } = req.query;
+  let sql = "SELECT * FROM fin_audit_log WHERE org_id = ?";
+  const params = [req.user.orgId];
+  if (action) { sql += " AND action = ?"; params.push(action); }
+  if (entityType) { sql += " AND entity_type = ?"; params.push(entityType); }
+  sql += " ORDER BY created_at DESC LIMIT ?";
+  params.push(parseInt(limit));
+  const rows = await query(sql, params);
+  res.json(rows.map(r => ({
+    ...r,
+    changes: typeof r.changes === "string" ? JSON.parse(r.changes || "{}") : (r.changes || {}),
+  })));
 }));
 
 // ── Demo request (no auth — public landing page) ──────────────────────────

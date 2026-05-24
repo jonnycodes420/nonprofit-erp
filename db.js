@@ -348,6 +348,20 @@ async function initSchema() {
       UNIQUE (org_id, account_id, year)
     )
   `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS fin_audit_log (
+      id TEXT PRIMARY KEY,
+      org_id TEXT REFERENCES orgs(id),
+      user_id TEXT,
+      user_name TEXT,
+      action TEXT NOT NULL,
+      entity_type TEXT NOT NULL,
+      entity_id TEXT,
+      changes JSONB,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
 }
 
 async function seedData() {
