@@ -119,12 +119,12 @@ export function Settings({auth,logout}) {
         ):(
           <div style={{display:"flex",alignItems:"center",gap:16,flexWrap:"wrap"}}>
             <div style={{flex:1,minWidth:200}}>
-              <div style={{fontSize:13,color:T.ink2,marginBottom:4}}>Connect your Stripe account to generate donation payment links for individual donors.</div>
-              <div style={{fontSize:11,color:T.ink3}}>Steward never touches your money — donors pay directly to your Stripe account.</div>
+              <div style={{fontSize:13,color:T.ink2,marginBottom:4}}>Set up Stripe to accept online donations directly from your donors. Steward creates a Stripe Express account linked to your organization — you'll be guided through a short onboarding on Stripe's site.</div>
+              <div style={{fontSize:11,color:T.ink3,marginTop:4}}>Steward never touches your money — donors pay directly to your Stripe account.</div>
             </div>
             {isAdmin&&<button onClick={connectStripe} disabled={stripeLoading}
               style={{background:T.green,border:"none",borderRadius:10,padding:"10px 20px",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer",opacity:stripeLoading?0.7:1,flexShrink:0}}>
-              {stripeLoading?"Connecting…":"Connect Stripe →"}
+              {stripeLoading?"Setting up…":"Set up Stripe →"}
             </button>}
           </div>
         )}

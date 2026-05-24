@@ -1411,33 +1411,24 @@ app.post("/annual-fund/goal", requireAuth, requireAdmin, wrap(async (req, res) =
 // ── Stripe Connect ────────────────────────────────────────────────────────
 app.post("/stripe/connect", requireAuth, requireAdmin, wrap(async (req, res) => {
   if (!stripe) return res.status(503).json({ error: "Stripe not configured" });
-  const state = Buffer.from(JSON.stringify({ orgId: req.user.orgId, ts: Date.now() })).toString("base64url");
-  const url = `https://connect.stripe.com/oauth/authorize?response_type=code&client_id=${process.env.STRIPE_CLIENT_ID}&scope=read_write&state=${state}&redirect_uri=${encodeURIComponent(process.env.APP_URL + "/stripe/callback")}`;
-  res.json({ url });
-}));
 
-app.get("/stripe/callback", wrap(async (req, res) => {
-  if (!stripe) return res.status(503).send("Stripe not configured");
-  const { code, state } = req.query;
-  if (!code || !state) return res.status(400).send("Missing code or state");
+  const appUrl = process.env.APP_URL || process.env.FRONTEND_URL || process.env.CORS_ORIGIN || "https://client-five-tau-13.vercel.app";
 
-  let orgId;
-  try {
-    const parsed = JSON.parse(Buffer.from(state, "base64url").toString());
-    orgId = parsed.orgId;
-  } catch {
-    return res.status(400).send("Invalid state");
-  }
+  const account = await stripe.accounts.create({ type: "express" });
 
-  const response = await stripe.oauth.token({ grant_type: "authorization_code", code });
-  const accountId = response.stripe_user_id;
+  const accountLink = await stripe.accountLinks.create({
+    account: account.id,
+    refresh_url: `${appUrl}/dashboard`,
+    return_url: `${appUrl}/dashboard`,
+    type: "account_onboarding",
+  });
+
   await run(
     `UPDATE orgs SET stripe_account_id=$1, stripe_connected=TRUE, stripe_connected_at=NOW() WHERE id=$2`,
-    [accountId, orgId]
+    [account.id, req.user.orgId]
   );
 
-  const frontendUrl = process.env.CORS_ORIGIN || "http://localhost:5173";
-  res.redirect(`${frontendUrl}/dashboard?tab=settings&stripe=connected`);
+  res.json({ url: accountLink.url });
 }));
 
 app.post("/stripe/donation-page", requireAuth, wrap(async (req, res) => {
