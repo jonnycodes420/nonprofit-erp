@@ -286,8 +286,32 @@ export function Grants({data,setData}) {
   const isAdmin=auth?.user?.role==="admin";
   const [selected,setSelected]=useState(null);
   const [prospectAI,setProspectAI]=useState(""); const [prospectLoading,setProspectLoading]=useState(false);
+  const [showAdd,setShowAdd]=useState(false);
+  const [newGrant,setNewGrant]=useState({funder:"",program:"",amount:"",status:"prospecting",deadline:"",officer:""});
+  const [addLoading,setAddLoading]=useState(false);
   const pipeline=["prospecting","pending","active","closed"];
   const totals=pipeline.reduce((a,s)=>{a[s]=data.grants.filter(g=>g.status===s).reduce((sum,g)=>sum+g.amount,0);return a;},{});
+
+  const addGrant=async()=>{
+    if(!newGrant.funder.trim())return;
+    setAddLoading(true);
+    try{
+      const raw=await apiFetch("/grants",{method:"POST",body:JSON.stringify({
+        funder:newGrant.funder.trim(),program:newGrant.program.trim(),
+        amount:parseFloat(newGrant.amount)||0,status:newGrant.status,
+        deadline:newGrant.deadline||"",officer:newGrant.officer.trim(),
+      })});
+      const adapted={id:raw.id,funder:raw.funder,program:raw.program||"",amount:raw.amount||0,
+        received:raw.received||0,status:raw.status,deadline:raw.deadline||"",
+        reportDue:raw.report_due||null,officer:raw.officer||"",notes:raw.notes||"",
+        description:raw.description||"",requirements:raw.requirements||"",
+        history:Array.isArray(raw.history)?raw.history:JSON.parse(raw.history||"[]")};
+      setData(prev=>({...prev,grants:[adapted,...prev.grants]}));
+      setNewGrant({funder:"",program:"",amount:"",status:"prospecting",deadline:"",officer:""});
+      setShowAdd(false);
+    }catch(e){console.error(e);}
+    setAddLoading(false);
+  };
 
   const findProspects=async()=>{
     setProspectLoading(true); setProspectAI("");
@@ -312,10 +336,40 @@ export function Grants({data,setData}) {
   return <div style={{display:"flex",flexDirection:"column",gap:16}}>
     {selected&&<GrantProfile grant={selected} onClose={()=>setSelected(null)} onUpdate={onUpdate} onDelete={onDelete} isAdmin={isAdmin} org={data.org}/>}
     <PageTitle main="Grant" accent="pipeline."/>
-    <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
+    <div style={{display:"flex",gap:10,flexWrap:"wrap",alignItems:"center"}}>
       <AIBtn onClick={findProspects} loading={prospectLoading} label="✦ Find New Grant Prospects"/>
+      <button onClick={()=>setShowAdd(v=>!v)} style={{background:"#10b981",border:"none",borderRadius:10,padding:"10px 16px",color:"#fff",fontSize:13,fontWeight:600,cursor:"pointer",marginLeft:"auto"}}>+ Add Grant</button>
     </div>
     {(prospectLoading||prospectAI)&&<AIPanel text={prospectAI} onClose={()=>setProspectAI("")}/>}
+
+    {showAdd&&(()=>{
+      const inp={background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"9px 12px",color:T.ink,fontSize:13,outline:"none",width:"100%",boxSizing:"border-box"};
+      return <Card style={{display:"flex",flexDirection:"column",gap:12}}>
+        <div style={{fontSize:14,fontWeight:700,color:T.ink}}>New Grant</div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+          {[["funder","Funder *","text","e.g. Rockefeller Foundation"],["program","Program / Grant Name","text","e.g. Arts Education Initiative"],["amount","Ask Amount ($)","number","50000"],["officer","Program Officer","text","e.g. Angela Wu"]].map(([k,l,t,ph])=>(
+            <div key={k} style={{display:"flex",flexDirection:"column",gap:4}}>
+              <label style={{fontSize:11,fontWeight:700,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.06em"}}>{l}</label>
+              <input type={t} value={newGrant[k]} onChange={e=>setNewGrant(p=>({...p,[k]:e.target.value}))} placeholder={ph} style={inp}/>
+            </div>
+          ))}
+          <div style={{display:"flex",flexDirection:"column",gap:4}}>
+            <label style={{fontSize:11,fontWeight:700,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.06em"}}>Status</label>
+            <select value={newGrant.status} onChange={e=>setNewGrant(p=>({...p,status:e.target.value}))} style={{...inp,cursor:"pointer"}}>
+              {pipeline.map(s=><option key={s} value={s} style={{textTransform:"capitalize"}}>{s}</option>)}
+            </select>
+          </div>
+          <div style={{display:"flex",flexDirection:"column",gap:4}}>
+            <label style={{fontSize:11,fontWeight:700,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.06em"}}>Deadline</label>
+            <input type="date" value={newGrant.deadline} onChange={e=>setNewGrant(p=>({...p,deadline:e.target.value}))} style={inp}/>
+          </div>
+        </div>
+        <div style={{display:"flex",gap:8}}>
+          <button onClick={addGrant} disabled={addLoading||!newGrant.funder.trim()} style={{background:newGrant.funder.trim()?"#10b981":T.bg2,border:"none",borderRadius:8,padding:"9px 18px",color:"#fff",fontSize:13,fontWeight:600,cursor:newGrant.funder.trim()?"pointer":"not-allowed"}}>{addLoading?"Saving…":"Save Grant"}</button>
+          <button onClick={()=>setShowAdd(false)} style={{background:T.bg,border:"none",borderRadius:8,padding:"9px 14px",color:T.ink3,fontSize:13,cursor:"pointer"}}>Cancel</button>
+        </div>
+      </Card>;
+    })()}
 
     <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:8}}>
       {pipeline.map(s=><div key={s} style={{background:T.white,border:`1px solid ${SC[s]}25`,borderRadius:12,padding:"14px 16px",borderTop:`3px solid ${SC[s]}`}}>
