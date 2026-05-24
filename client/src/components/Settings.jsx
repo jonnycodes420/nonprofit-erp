@@ -24,9 +24,24 @@ export function Settings({auth,logout}) {
   const [invErr,setInvErr]=useState("");
   const [copied,setCopied]=useState(false);
 
+  const [stripe,setStripe]=useState(null);
+  const [stripeLoading,setStripeLoading]=useState(false);
+
   useEffect(()=>{
     apiFetch("/org/team").then(setTeam).catch(()=>{});
+    apiFetch("/stripe/status").then(setStripe).catch(()=>{});
   },[]);
+
+  async function connectStripe(){
+    setStripeLoading(true);
+    try{
+      const r=await apiFetch("/stripe/connect",{method:"POST"});
+      window.location.href=r.url;
+    }catch(e){
+      alert(e.message||"Failed to start Stripe connect");
+      setStripeLoading(false);
+    }
+  }
 
   async function sendInvite(){
     if(!invEmail.trim()){setInvErr("Email required");return;}
@@ -87,6 +102,32 @@ export function Settings({auth,logout}) {
             </div>
           ))}
         </div>
+      </div>
+      <div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:16,padding:"24px 28px"}}>
+        <SectionLabel>Payments</SectionLabel>
+        {stripe?.connected?(
+          <div style={{display:"flex",alignItems:"center",gap:14,flexWrap:"wrap"}}>
+            <div style={{display:"flex",alignItems:"center",gap:8,background:"#f0fdf4",border:"1px solid #bbf7d0",borderRadius:10,padding:"10px 16px"}}>
+              <span style={{fontSize:16}}>💳</span>
+              <div>
+                <div style={{fontSize:13,fontWeight:700,color:"#166534"}}>Stripe Connected</div>
+                <div style={{fontSize:11,color:"#15803d",marginTop:1}}>Account: {stripe.accountId}</div>
+              </div>
+            </div>
+            <div style={{fontSize:12,color:T.ink3}}>Connected {stripe.connectedAt?new Date(stripe.connectedAt).toLocaleDateString():""}</div>
+          </div>
+        ):(
+          <div style={{display:"flex",alignItems:"center",gap:16,flexWrap:"wrap"}}>
+            <div style={{flex:1,minWidth:200}}>
+              <div style={{fontSize:13,color:T.ink2,marginBottom:4}}>Connect your Stripe account to generate donation payment links for individual donors.</div>
+              <div style={{fontSize:11,color:T.ink3}}>Steward never touches your money — donors pay directly to your Stripe account.</div>
+            </div>
+            {isAdmin&&<button onClick={connectStripe} disabled={stripeLoading}
+              style={{background:T.green,border:"none",borderRadius:10,padding:"10px 20px",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer",opacity:stripeLoading?0.7:1,flexShrink:0}}>
+              {stripeLoading?"Connecting…":"Connect Stripe →"}
+            </button>}
+          </div>
+        )}
       </div>
       <div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:16,padding:"24px 28px"}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>

@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { apiFetch } from "../api";
 import { T, fmt, fmtFull, daysDiff, daysUntil, SC, askClaude, buildContext, STAGES, donorScore, Spin, Pill, Card, AIBtn, AIPanel, PageTitle, EmptyState } from "./shared";
 
@@ -59,6 +59,11 @@ export function Dashboard({data,setData,onNavigate}) {
   const [briefOpen,setBriefOpen]=useState(false);
   const [showAddDonor,setShowAddDonor]=useState(false);
   const [newDonor,setNewDonor]=useState({name:"",email:"",phone:"",stage:"prospect"});
+  const [onlineGifts,setOnlineGifts]=useState([]);
+
+  useEffect(()=>{
+    apiFetch("/stripe/online-gifts").then(r=>setOnlineGifts(r||[])).catch(()=>{});
+  },[]);
 
   const totalDonors=data.donors.length;
   const newDonorsThisYear=data.donors.filter(d=>d.lastGift&&new Date(d.lastGift).getFullYear()===currentYear).length;
@@ -299,6 +304,33 @@ export function Dashboard({data,setData,onNavigate}) {
               );
             })}
           </div>
+
+          {onlineGifts.length>0&&<div style={{...cardWrap}}>
+            <div style={{...cPad,borderBottom:"1px solid "+T.bg3,...sHdr}}>
+              <span style={sTitle}>Recent Online Gifts</span>
+              <span style={{fontSize:11,color:T.ink3}}>via Stripe</span>
+            </div>
+            {onlineGifts.slice(0,5).map((g,i)=>{
+              const dAgo=daysDiff(g.date);
+              const when=dAgo===0?"Today":dAgo===1?"Yesterday":`${dAgo}d ago`;
+              return(
+                <div key={g.id} style={{
+                  display:"flex",alignItems:"center",gap:12,padding:"11px 20px",
+                  borderBottom:i<Math.min(onlineGifts.length,5)-1?"1px solid "+T.bg3:"none",
+                }}>
+                  <div style={{width:34,height:34,borderRadius:"50%",background:"#ede9fe",display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,flexShrink:0}}>💳</div>
+                  <div style={{flex:1,minWidth:0}}>
+                    <div style={{fontSize:13,fontWeight:600,color:T.ink,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{g.donorName||g.donorEmail}</div>
+                    <div style={{fontSize:11,color:T.ink3,marginTop:1}}>{when}</div>
+                  </div>
+                  <div style={{textAlign:"right",flexShrink:0}}>
+                    <div style={{fontSize:14,fontWeight:800,color:"#10b981"}}>{fmtFull(g.amount)}</div>
+                    <div style={{fontSize:10,background:"#ede9fe",color:"#7c3aed",borderRadius:4,padding:"1px 5px",marginTop:2,fontWeight:600}}>Online</div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>}
         </div>
 
         {/* RIGHT COLUMN */}

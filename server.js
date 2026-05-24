@@ -6,10 +6,72 @@ const Anthropic = require("@anthropic-ai/sdk");
 const nodemailer = require("nodemailer");
 const { getDb, query, run, uuid, seedOrgData } = require("./db");
 const { signToken, requireAuth } = require("./auth");
+const Stripe = require("stripe");
+
+const stripe = process.env.STRIPE_SECRET_KEY ? new Stripe(process.env.STRIPE_SECRET_KEY) : null;
 
 const app = express();
 
 app.use(cors({ origin: process.env.CORS_ORIGIN || "*" }));
+
+// Stripe webhook must receive raw body — register BEFORE express.json()
+app.post("/stripe/webhook", express.raw({ type: "application/json" }), async (req, res) => {
+  if (!stripe) return res.status(503).json({ error: "Stripe not configured" });
+  const sig = req.headers["stripe-signature"];
+  let event;
+  try {
+    event = stripe.webhooks.constructEvent(req.body, sig, process.env.STRIPE_WEBHOOK_SECRET);
+  } catch (err) {
+    return res.status(400).json({ error: `Webhook signature failed: ${err.message}` });
+  }
+
+  try {
+    if (event.type === "payment_intent.succeeded") {
+      const pi = event.data.object;
+      const email = pi.receipt_email || pi.metadata?.donor_email;
+      const amount = pi.amount_received / 100;
+      const accountId = event.account;
+
+      if (email && accountId) {
+        const orgRow = await query("SELECT id FROM orgs WHERE stripe_account_id=$1", [accountId]);
+        if (orgRow.rows.length) {
+          const orgId = orgRow.rows[0].id;
+          const donorRow = await query("SELECT id FROM donors WHERE org_id=$1 AND email ILIKE $2", [orgId, email]);
+          if (donorRow.rows.length) {
+            const donorId = donorRow.rows[0].id;
+            const giftId = "g_" + uuid().slice(0, 8);
+            const today = new Date().toISOString().slice(0, 10);
+            await run(
+              `INSERT INTO gifts (id, org_id, donor_id, amount, date, notes, stripe_payment_id)
+               VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+              [giftId, orgId, donorId, amount, today, "Online payment via Stripe", pi.id]
+            );
+            await run(
+              `UPDATE donors SET
+                 total = total + $1,
+                 gifts = gifts + 1,
+                 last_gift = GREATEST(last_gift::date, $2::date)::text,
+                 last_amount = CASE WHEN ($2::date >= COALESCE(last_gift,'0001-01-01')::date) THEN $3 ELSE last_amount END
+               WHERE id = $4`,
+              [amount, today, amount, donorId]
+            );
+            const taskId = "t_" + uuid().slice(0, 8);
+            await run(
+              `INSERT INTO tasks (id, org_id, title, priority, done, created_at)
+               VALUES ($1,$2,$3,$4,$5,NOW())`,
+              [taskId, orgId, `Thank ${email} for online gift of $${amount}`, "high", false]
+            );
+          }
+        }
+      }
+    }
+  } catch (err) {
+    console.error("Webhook processing error:", err);
+  }
+
+  res.json({ received: true });
+});
+
 app.use(express.json());
 
 // ── DB readiness guard ─────────────────────────────────────────────────────
@@ -1220,6 +1282,101 @@ app.post("/annual-fund/goal", requireAuth, requireAdmin, wrap(async (req, res) =
     [id, req.user.orgId, year, goal]
   );
   res.json({ success: true, year, goal });
+}));
+
+// ── Stripe Connect ────────────────────────────────────────────────────────
+app.post("/stripe/connect", requireAuth, requireAdmin, wrap(async (req, res) => {
+  if (!stripe) return res.status(503).json({ error: "Stripe not configured" });
+  const state = Buffer.from(JSON.stringify({ orgId: req.user.orgId, ts: Date.now() })).toString("base64url");
+  const url = `https://connect.stripe.com/oauth/authorize?response_type=code&client_id=${process.env.STRIPE_CLIENT_ID}&scope=read_write&state=${state}&redirect_uri=${encodeURIComponent(process.env.APP_URL + "/stripe/callback")}`;
+  res.json({ url });
+}));
+
+app.get("/stripe/callback", wrap(async (req, res) => {
+  if (!stripe) return res.status(503).send("Stripe not configured");
+  const { code, state } = req.query;
+  if (!code || !state) return res.status(400).send("Missing code or state");
+
+  let orgId;
+  try {
+    const parsed = JSON.parse(Buffer.from(state, "base64url").toString());
+    orgId = parsed.orgId;
+  } catch {
+    return res.status(400).send("Invalid state");
+  }
+
+  const response = await stripe.oauth.token({ grant_type: "authorization_code", code });
+  const accountId = response.stripe_user_id;
+  await run(
+    `UPDATE orgs SET stripe_account_id=$1, stripe_connected=TRUE, stripe_connected_at=NOW() WHERE id=$2`,
+    [accountId, orgId]
+  );
+
+  const frontendUrl = process.env.CORS_ORIGIN || "http://localhost:5173";
+  res.redirect(`${frontendUrl}/dashboard?tab=settings&stripe=connected`);
+}));
+
+app.post("/stripe/donation-page", requireAuth, wrap(async (req, res) => {
+  if (!stripe) return res.status(503).json({ error: "Stripe not configured" });
+  const { donorName, donorEmail, amount } = req.body;
+  if (!donorName || !donorEmail) return res.status(400).json({ error: "donorName and donorEmail required" });
+
+  const orgRow = await query("SELECT stripe_account_id, stripe_connected, name FROM orgs WHERE id=$1", [req.user.orgId]);
+  const org = orgRow.rows[0];
+  if (!org?.stripe_connected || !org.stripe_account_id) {
+    return res.status(400).json({ error: "Stripe not connected" });
+  }
+
+  const amountCents = amount ? Math.round(parseFloat(amount) * 100) : null;
+  const stripeOpts = { stripeAccount: org.stripe_account_id };
+
+  const product = await stripe.products.create(
+    { name: `Donation to ${org.name}`, metadata: { donor_email: donorEmail, donor_name: donorName } },
+    stripeOpts
+  );
+  const price = await stripe.prices.create(
+    amountCents
+      ? { unit_amount: amountCents, currency: "usd", product: product.id }
+      : { currency: "usd", product: product.id, custom_unit_amount: { enabled: true } },
+    stripeOpts
+  );
+  const link = await stripe.paymentLinks.create(
+    { line_items: [{ price: price.id, quantity: 1 }], metadata: { donor_email: donorEmail } },
+    stripeOpts
+  );
+
+  res.json({ url: link.url });
+}));
+
+app.get("/stripe/status", requireAuth, wrap(async (req, res) => {
+  const orgRow = await query("SELECT stripe_account_id, stripe_connected, stripe_connected_at FROM orgs WHERE id=$1", [req.user.orgId]);
+  const org = orgRow.rows[0];
+  res.json({
+    connected: !!org?.stripe_connected,
+    accountId: org?.stripe_account_id || null,
+    connectedAt: org?.stripe_connected_at || null,
+  });
+}));
+
+app.get("/stripe/online-gifts", requireAuth, wrap(async (req, res) => {
+  const result = await query(
+    `SELECT g.id, g.amount, g.date, g.stripe_payment_id,
+            d.name AS donor_name, d.email AS donor_email
+     FROM gifts g
+     JOIN donors d ON d.id = g.donor_id
+     WHERE g.org_id=$1 AND g.stripe_payment_id IS NOT NULL
+     ORDER BY g.date DESC, g.created_at DESC
+     LIMIT 20`,
+    [req.user.orgId]
+  );
+  res.json(result.rows.map(r => ({
+    id: r.id,
+    amount: parseFloat(r.amount),
+    date: r.date,
+    donorName: r.donor_name,
+    donorEmail: r.donor_email,
+    stripePaymentId: r.stripe_payment_id,
+  })));
 }));
 
 // ── Demo request (no auth — public landing page) ──────────────────────────

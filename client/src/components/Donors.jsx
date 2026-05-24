@@ -504,6 +504,22 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
     setScoreLoading(false);
   };
 
+  const [giftLinkLoading,setGiftLinkLoading]=useState(false);
+  const [giftLinkToast,setGiftLinkToast]=useState("");
+
+  const requestGift=async()=>{
+    setGiftLinkLoading(true);
+    try{
+      const r=await apiFetch("/stripe/donation-page",{method:"POST",body:JSON.stringify({donorName:donor.name,donorEmail:donor.email})});
+      await navigator.clipboard.writeText(r.url);
+      setGiftLinkToast("Payment link copied!");
+      setTimeout(()=>setGiftLinkToast(""),3000);
+    }catch(e){
+      setGiftLinkToast(e.message||"Failed to create payment link");
+      setTimeout(()=>setGiftLinkToast(""),4000);
+    }finally{setGiftLinkLoading(false);}
+  };
+
   const stage=STAGES.find(s=>s.id===(donor.stage||"cultivate"))||STAGES[2];
   const sc=donorScore(donor);const scoreColor=sc>70?"#10b981":sc>45?"#f59e0b":"#ef4444";
   const urg=moveUrgency(donor);
@@ -536,7 +552,11 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
           </div>
           <div style={{fontSize:11,color:T.ink3,marginTop:2}}>{fmtFull(donor.total)} lifetime · {donor.gifts} gifts</div>
         </div>
-        <div style={{display:"flex",gap:6,flexShrink:0}}>
+        <div style={{display:"flex",gap:6,flexShrink:0,alignItems:"center"}}>
+          {giftLinkToast&&<span style={{fontSize:12,color:giftLinkToast.includes("copied")?"#10b981":"#ef4444",fontWeight:600,transition:"opacity 0.3s"}}>{giftLinkToast}</span>}
+          <button onClick={requestGift} disabled={giftLinkLoading} style={{background:T.green,border:"none",borderRadius:8,padding:"7px 14px",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer",opacity:giftLinkLoading?0.6:1}}>
+            {giftLinkLoading?"…":"💳 Request Gift"}
+          </button>
           <button onClick={onEdit} style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"7px 14px",color:T.ink3,fontSize:13,cursor:"pointer"}}>Edit</button>
           {isAdmin&&<button onClick={()=>onDelete(donor.id)} style={{background:"transparent",border:"1px solid #ef444455",borderRadius:8,padding:"7px 14px",color:"#ef4444",fontSize:13,cursor:"pointer"}}>Delete</button>}
         </div>
