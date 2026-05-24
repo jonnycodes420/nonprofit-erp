@@ -970,6 +970,60 @@ app.put("/org/smtp", requireAuth, requireAdmin, wrap(async (req, res) => {
   res.json({ success: true });
 }));
 
+// ── SMTP test endpoint ─────────────────────────────────────────────────────
+app.get("/email/test-smtp", requireAuth, requireAdmin, wrap(async (req, res) => {
+  const smtpHost = process.env.DEMO_SMTP_HOST;
+  const smtpUser = process.env.DEMO_SMTP_USER;
+  const smtpPass = process.env.DEMO_SMTP_PASS;
+  const smtpPort = parseInt(process.env.DEMO_SMTP_PORT || "587");
+  const to = process.env.DEMO_NOTIFY_EMAIL || smtpUser;
+
+  const cfg = {
+    host: smtpHost || "MISSING",
+    port: smtpPort,
+    user: smtpUser || "MISSING",
+    pass: smtpPass ? "set" : "MISSING",
+    secure: smtpPort === 465,
+    to: to || "MISSING",
+  };
+
+  if (!smtpHost || !smtpUser || !smtpPass) {
+    console.error("[test-smtp] env vars missing:", cfg);
+    return res.json({ success: false, error: "DEMO_SMTP_* env vars not fully configured", config: cfg });
+  }
+
+  const transporter = nodemailer.createTransport({
+    host: smtpHost, port: smtpPort,
+    secure: smtpPort === 465,
+    auth: { user: smtpUser, pass: smtpPass },
+  });
+
+  try {
+    console.log("[test-smtp] verifying connection…", cfg);
+    await transporter.verify();
+    console.log("[test-smtp] connection OK, sending test email to", to);
+    const info = await transporter.sendMail({
+      from: smtpUser,
+      to,
+      subject: "Steward SMTP test",
+      text: "SMTP is working. This is a test from your Steward ERP.",
+      html: "<p>SMTP is working. This is a test from your <strong>Steward ERP</strong>.</p>",
+    });
+    console.log("[test-smtp] sent OK — messageId:", info.messageId);
+    res.json({ success: true, messageId: info.messageId, from: smtpUser, to, config: cfg });
+  } catch (err) {
+    const detail = {
+      message:      err.message,
+      code:         err.code         || null,
+      responseCode: err.responseCode || null,
+      response:     err.response     || null,
+      command:      err.command      || null,
+    };
+    console.error("[test-smtp] FAILED:", detail);
+    res.json({ success: false, error: detail, config: cfg });
+  }
+}));
+
 // ── Campaigns ──────────────────────────────────────────────────────────────
 app.get("/campaigns", requireAuth, wrap(async (req, res) => {
   const campaigns = await query(
@@ -1103,7 +1157,8 @@ app.post("/campaigns/:id/send", requireAuth, requireAdmin, wrap(async (req, res)
       const smtpUser = process.env.DEMO_SMTP_USER;
       const smtpPass = process.env.DEMO_SMTP_PASS;
       const smtpPort = parseInt(process.env.DEMO_SMTP_PORT || "587");
-      const smtpFrom = process.env.DEMO_SMTP_FROM || smtpUser;
+      // Use smtpUser as from exactly — Gmail rejects mismatched from addresses
+      const smtpFrom = smtpUser;
 
       let transporter = null;
       if (smtpHost && smtpUser && smtpPass) {
@@ -1112,9 +1167,9 @@ app.post("/campaigns/:id/send", requireAuth, requireAdmin, wrap(async (req, res)
           secure: smtpPort === 465,
           auth: { user: smtpUser, pass: smtpPass },
         });
-        console.log(`[campaign:${campaign.id}] SMTP configured via ${smtpHost}`);
+        console.log(`[campaign:${campaign.id}] SMTP host=${smtpHost} port=${smtpPort} user=${smtpUser} from=${smtpFrom} secure=${smtpPort === 465}`);
       } else {
-        console.log(`[campaign:${campaign.id}] No DEMO_SMTP_* env vars — recording sends without emailing`);
+        console.log(`[campaign:${campaign.id}] DEMO_SMTP_* not set (HOST=${smtpHost||"?"} USER=${smtpUser||"?"} PASS=${smtpPass?"set":"MISSING"}) — logging only`);
       }
 
       const year = String(new Date().getFullYear());
@@ -1157,8 +1212,14 @@ app.post("/campaigns/:id/send", requireAuth, requireAdmin, wrap(async (req, res)
           sentCount++;
         } catch (err) {
           failCount++;
-          const reason = err.message.slice(0, 500);
-          console.error(`[campaign:${campaign.id}] send failed for ${donor.email}:`, reason);
+          const reason = [
+            err.message,
+            err.code        ? `code=${err.code}`               : "",
+            err.responseCode ? `smtp=${err.responseCode}`      : "",
+            err.response    ? `response="${err.response}"`     : "",
+            err.command     ? `cmd=${err.command}`             : "",
+          ].filter(Boolean).join(" | ").slice(0, 500);
+          console.error(`[campaign:${campaign.id}] SEND FAILED ${donor.email}: ${reason}`);
           await run(
             "UPDATE campaign_recipients SET failure_reason=? WHERE id=?",
             [reason, recipientId]
@@ -1166,7 +1227,7 @@ app.post("/campaigns/:id/send", requireAuth, requireAdmin, wrap(async (req, res)
         }
       }
     } catch (err) {
-      console.error(`[campaign:${campaign.id}] background send fatal error:`, err.message);
+      console.error(`[campaign:${campaign.id}] FATAL send error: msg="${err.message}" code=${err.code||"?"} smtp=${err.responseCode||"?"} response="${err.response||""}" stack=${err.stack?.split("\n").slice(0,2).join(" | ")}`);
     }
 
     // Always finalize — even if some or all emails failed
