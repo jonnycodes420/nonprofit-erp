@@ -990,22 +990,22 @@ app.get("/campaigns", requireAuth, wrap(async (req, res) => {
 }));
 
 app.post("/campaigns", requireAuth, wrap(async (req, res) => {
-  const { name, type, subject, body, segment } = req.body;
+  const { name, type, subject, body, segment, scheduledAt } = req.body;
   if (!name) return res.status(400).json({ error: "Name required" });
 
   const id = "cmp_" + uuid().slice(0, 8);
   await run(
-    `INSERT INTO campaigns (id,org_id,name,type,subject,body,status,segment,recipient_count,open_count)
-     VALUES (?,?,?,?,?,?,?,?,0,0)`,
+    `INSERT INTO campaigns (id,org_id,name,type,subject,body,status,segment,scheduled_at,recipient_count,open_count)
+     VALUES (?,?,?,?,?,?,?,?,?,0,0)`,
     [id, req.user.orgId, name, type || "appeal", subject || "", body || "",
-     "draft", JSON.stringify(segment || {})]
+     scheduledAt ? "scheduled" : "draft", JSON.stringify(segment || {}), scheduledAt || null]
   );
   const rows = await query("SELECT * FROM campaigns WHERE id = ?", [id]);
   res.status(201).json(rows[0]);
 }));
 
 app.put("/campaigns/:id", requireAuth, wrap(async (req, res) => {
-  const { name, type, subject, body, segment, status } = req.body;
+  const { name, type, subject, body, segment, status, scheduledAt } = req.body;
   if (!name) return res.status(400).json({ error: "Name required" });
 
   const existing = await query(
@@ -1013,13 +1013,15 @@ app.put("/campaigns/:id", requireAuth, wrap(async (req, res) => {
     [req.params.id, req.user.orgId]
   );
   if (!existing.length) return res.status(404).json({ error: "Campaign not found" });
-  if (existing[0].status !== "draft") return res.status(400).json({ error: "Only draft campaigns can be edited" });
+  if (!["draft", "scheduled"].includes(existing[0].status))
+    return res.status(400).json({ error: "Only draft or scheduled campaigns can be edited" });
 
   await run(
-    `UPDATE campaigns SET name=?,type=?,subject=?,body=?,segment=?,status=?,updated_at=NOW()
+    `UPDATE campaigns SET name=?,type=?,subject=?,body=?,segment=?,status=?,scheduled_at=?,updated_at=NOW()
      WHERE id=? AND org_id=?`,
     [name, type || "appeal", subject || "", body || "",
      JSON.stringify(segment || {}), status || "draft",
+     scheduledAt || null,
      req.params.id, req.user.orgId]
   );
   const rows = await query("SELECT * FROM campaigns WHERE id = ?", [req.params.id]);
@@ -1040,99 +1042,111 @@ app.post("/campaigns/:id/send", requireAuth, requireAdmin, wrap(async (req, res)
   );
   if (!campaigns.length) return res.status(404).json({ error: "Campaign not found" });
   const campaign = campaigns[0];
+  if (campaign.status === "sent") return res.status(400).json({ error: "Campaign already sent" });
 
   const orgs = await query("SELECT * FROM orgs WHERE id = ?", [req.user.orgId]);
   const org = orgs[0];
 
-  if (!org.smtp_host || !org.smtp_user || !org.smtp_pass) {
-    return res.status(400).json({ error: "SMTP not configured" });
-  }
-
   const segment = typeof campaign.segment === "string"
-    ? JSON.parse(campaign.segment)
-    : campaign.segment;
+    ? JSON.parse(campaign.segment || "{}")
+    : (campaign.segment || {});
 
   let donors = await query(
     "SELECT * FROM donors WHERE org_id = ? AND email IS NOT NULL AND email != ''",
     [req.user.orgId]
   );
 
-  if (segment.stages && segment.stages.length) {
-    donors = donors.filter(d => segment.stages.includes(d.stage));
+  const mode = segment.mode || "legacy";
+  if (mode === "major") {
+    donors = donors.filter(d => Number(d.total_giving) >= 10000);
+  } else if (mode === "lapsed") {
+    donors = donors.filter(d => d.stage === "lapsed");
+  } else if (mode === "byStage") {
+    if (segment.stages && segment.stages.length) donors = donors.filter(d => segment.stages.includes(d.stage));
+  } else if (mode === "byTier") {
+    if (segment.tiers && segment.tiers.length) donors = donors.filter(d => segment.tiers.includes(d.capacity_tier));
+  } else if (mode === "manual") {
+    if (segment.donorIds && segment.donorIds.length) donors = donors.filter(d => segment.donorIds.includes(d.id));
+  } else {
+    // "all" or legacy format
+    if (segment.stages && segment.stages.length) donors = donors.filter(d => segment.stages.includes(d.stage));
+    if (segment.statuses && segment.statuses.length) donors = donors.filter(d => segment.statuses.includes(d.status));
   }
-  if (segment.statuses && segment.statuses.length) {
-    donors = donors.filter(d => segment.statuses.includes(d.status));
-  }
 
-  const transporter = nodemailer.createTransport({
-    host: org.smtp_host,
-    port: org.smtp_port || 587,
-    secure: (org.smtp_port || 587) === 465,
-    auth: { user: org.smtp_user, pass: org.smtp_pass },
-  });
+  // Mark as sending and respond immediately (non-blocking)
+  await run("UPDATE campaigns SET status='sending', updated_at=NOW() WHERE id=?", [campaign.id]);
+  res.json({ queued: true, recipientCount: donors.length });
 
-  let sentCount = 0;
-  let failCount = 0;
-
-  for (const donor of donors) {
-    const recipientId = "cr_" + uuid().slice(0, 8);
-
-    await run(
-      `INSERT INTO campaign_recipients (id,org_id,campaign_id,donor_id,email)
-       VALUES (?,?,?,?,?)`,
-      [recipientId, req.user.orgId, campaign.id, donor.id, donor.email]
-    );
-
-    const lastGiftRows = await query(
-      "SELECT amount, date FROM gifts WHERE donor_id = ? ORDER BY date DESC LIMIT 1",
-      [donor.id]
-    );
-    const lastGift = lastGiftRows[0];
-    const giftAmount = lastGift ? `$${lastGift.amount.toLocaleString()}` : "your previous gift";
-    const giftDate   = lastGift ? lastGift.date : "";
-
-    const year = new Date().getFullYear().toString();
-    const totalGiving = donor.total_giving
-      ? `$${Number(donor.total_giving).toLocaleString()}`
-      : "$0";
-
-    const bodyText = (campaign.body || "")
-      .replace(/{{donor_name}}/g,   donor.name)
-      .replace(/{{gift_amount}}/g,  giftAmount)
-      .replace(/{{gift_date}}/g,    giftDate)
-      .replace(/{{org_name}}/g,     org.name)
-      .replace(/{{year}}/g,         year)
-      .replace(/{{total_giving}}/g, totalGiving);
-
-    const trackingPixel = `<img src="${BACKEND_URL}/track/${recipientId}/open.gif" width="1" height="1" style="display:none">`;
-    const htmlBody = bodyText.replace(/\n/g, "<br>") + trackingPixel;
-
+  setImmediate(async () => {
     try {
-      await transporter.sendMail({
-        from: org.smtp_from || org.smtp_user,
-        to: donor.email,
-        subject: campaign.subject || "",
-        html: htmlBody,
-        text: bodyText,
-      });
+      const smtpHost = process.env.DEMO_SMTP_HOST;
+      const smtpUser = process.env.DEMO_SMTP_USER;
+      const smtpPass = process.env.DEMO_SMTP_PASS;
+      const smtpPort = parseInt(process.env.DEMO_SMTP_PORT || "587");
+      const smtpFrom = process.env.DEMO_SMTP_FROM || smtpUser;
+
+      let transporter = null;
+      if (smtpHost && smtpUser && smtpPass) {
+        transporter = nodemailer.createTransport({
+          host: smtpHost, port: smtpPort,
+          secure: smtpPort === 465,
+          auth: { user: smtpUser, pass: smtpPass },
+        });
+      }
+
+      let sentCount = 0;
+      const year = String(new Date().getFullYear());
+
+      for (const donor of donors) {
+        const recipientId = "cr_" + uuid().slice(0, 8);
+        await run(
+          "INSERT INTO campaign_recipients (id,org_id,campaign_id,donor_id,email) VALUES (?,?,?,?,?)",
+          [recipientId, org.id, campaign.id, donor.id, donor.email]
+        );
+
+        const firstName   = donor.name.split(" ")[0];
+        const lastName    = donor.name.split(" ").slice(1).join(" ");
+        const totalGiving = donor.total_giving ? `$${Number(donor.total_giving).toLocaleString()}` : "$0";
+        const giftRows    = await query("SELECT amount FROM gifts WHERE donor_id=? ORDER BY date DESC LIMIT 1", [donor.id]);
+        const giftAmount  = giftRows[0] ? `$${Number(giftRows[0].amount).toLocaleString()}` : "your previous gift";
+
+        const bodyHtml = (campaign.body || "")
+          .replace(/{{first_name}}/g,   firstName)
+          .replace(/{{last_name}}/g,    lastName)
+          .replace(/{{donor_name}}/g,   donor.name)
+          .replace(/{{org_name}}/g,     org.name)
+          .replace(/{{gift_amount}}/g,  giftAmount)
+          .replace(/{{total_giving}}/g, totalGiving)
+          .replace(/{{year}}/g,         year);
+
+        const pixel   = `<img src="${BACKEND_URL}/track/${recipientId}/open.gif" width="1" height="1" style="display:none">`;
+        const htmlFull = bodyHtml + pixel;
+        const textBody = bodyHtml.replace(/<[^>]+>/g, "");
+
+        try {
+          if (transporter) {
+            await transporter.sendMail({
+              from: smtpFrom, to: donor.email,
+              subject: campaign.subject || "",
+              html: htmlFull, text: textBody,
+            });
+          }
+          await run("UPDATE campaign_recipients SET sent_at=NOW() WHERE id=?", [recipientId]);
+          sentCount++;
+        } catch (err) {
+          console.error("Email send failed:", donor.email, err.message);
+        }
+      }
+
       await run(
-        "UPDATE campaign_recipients SET sent_at = NOW() WHERE id = ?",
-        [recipientId]
+        "UPDATE campaigns SET status='sent', sent_at=NOW(), recipient_count=?, updated_at=NOW() WHERE id=?",
+        [sentCount, campaign.id]
       );
-      sentCount++;
     } catch (err) {
-      console.error("Failed to send to", donor.email, err.message);
-      failCount++;
+      console.error("Campaign background send error:", err.message);
+      await run("UPDATE campaigns SET status='draft', updated_at=NOW() WHERE id=?", [campaign.id]).catch(() => {});
     }
-  }
-
-  await run(
-    `UPDATE campaigns SET status='sent', sent_at=NOW(), recipient_count=?, updated_at=NOW()
-     WHERE id=?`,
-    [sentCount, campaign.id]
-  );
-
-  res.json({ sent: sentCount, failed: failCount });
+  });
 }));
 
 // ── Tracking pixel (no auth) ───────────────────────────────────────────────
