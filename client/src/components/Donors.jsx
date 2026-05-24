@@ -295,6 +295,15 @@ function LogTouchpointModal({donor,onSave,onClose}){
   const[amount,setAmount]=useState("");const[designation,setDesignation]=useState("");
   const[payMethod,setPayMethod]=useState("");const[ackSent,setAckSent]=useState("no");
   const[otherNotes,setOtherNotes]=useState("");
+  const[finFunds,setFinFunds]=useState([]);const[finFundId,setFinFundId]=useState("");const[finAcctId,setFinAcctId]=useState("");
+  useEffect(()=>{
+    Promise.all([apiFetch("/finance/funds"),apiFetch("/finance/accounts")]).then(([fds,accts])=>{
+      setFinFunds(fds);
+      const def=fds.find(f=>!f.restricted)||fds[0];if(def)setFinFundId(def.id);
+      const ca=accts.find(a=>a.type==="revenue"&&(a.code==="4010"||a.name.toLowerCase().includes("contribution")))||accts.find(a=>a.type==="revenue");
+      if(ca)setFinAcctId(ca.id);
+    }).catch(()=>{});
+  },[]);
 
   const TYPES=[["call","Call"],["meeting","Meeting"],["email","Email"],["event","Event"],["gift","Gift/Pledge"],["other","Other"]];
 
@@ -334,6 +343,14 @@ function LogTouchpointModal({donor,onSave,onClose}){
       const giftAmt=type==="gift"?(parseFloat(String(amount).replace(/[$,]/g,""))||0):0;
       if(type==="gift"&&giftAmt>0){
         await apiFetch(`/donors/${donor.id}/gifts`,{method:"POST",body:JSON.stringify({amount:giftAmt,date,notes:note})});
+        if(finAcctId){
+          try{
+            await apiFetch("/finance/transactions",{method:"POST",body:JSON.stringify({
+              date,description:`Gift from ${donor.name}`,vendorDonor:donor.name,
+              amount:giftAmt,type:"income",accountId:finAcctId,fundId:finFundId||"",notes:note,
+            })});
+          }catch(e){console.error("Finance sync:",e);}
+        }
       }
       onSave({type:saveType,note,date,amount:giftAmt});
     }catch(e){console.error(e);}
@@ -400,6 +417,12 @@ function LogTouchpointModal({donor,onSave,onClose}){
             <TpField label="Designation"><input value={designation} onChange={e=>setDesignation(e.target.value)} placeholder="e.g. General Operating, Arts Education…" style={inp}/></TpField>
             <TpField label="Payment Method"><input value={payMethod} onChange={e=>setPayMethod(e.target.value)} placeholder="Check, ACH, Credit Card, Stock…" style={inp}/></TpField>
             <TpField label="Acknowledgement Sent?"><TpYesNo val={ackSent} set={setAckSent}/></TpField>
+            {finFunds.length>0&&<TpField label="Finance Fund">
+              <select value={finFundId} onChange={e=>setFinFundId(e.target.value)} style={{...inp,cursor:"pointer"}}>
+                <option value="">— no fund —</option>
+                {finFunds.map(f=><option key={f.id} value={f.id}>{f.name}{f.restricted?" (Restricted)":""}</option>)}
+              </select>
+            </TpField>}
             <TpField label="Next Steps"><textarea value={nextStep} onChange={e=>setNextStep(e.target.value)} placeholder="Specific actions planned…" rows={3} style={ta}/></TpField>
           </>}
           {type==="other"&&<>

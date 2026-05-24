@@ -273,8 +273,12 @@ export function Finance({ data }) {
 
   const handleAddTxn = async (form) => {
     try {
-      await apiFetch("/finance/transactions", { method:"POST", body: JSON.stringify(form) });
-      await Promise.all([reloadTxns(txnYear), reloadSummary()]);
+      const created = await apiFetch("/finance/transactions", { method:"POST", body: JSON.stringify(form) });
+      // Update transactions immediately so all derived views (reports, fund balances) refresh without a round-trip
+      const thisYear = new Date(created.date).getFullYear() === txnYear;
+      if (thisYear) setTransactions(prev => [created, ...prev]);
+      // Reload summary + budgets actuals (server-computed)
+      await Promise.all([reloadSummary(), reloadBudgets(budgetYear)]);
       setShowTxnModal(false);
     } catch(e) { console.error(e); }
   };
@@ -284,7 +288,7 @@ export function Finance({ data }) {
     try {
       await apiFetch(`/finance/transactions/${id}`, { method:"DELETE" });
       setTransactions(prev => prev.filter(t => t.id !== id));
-      reloadSummary();
+      await Promise.all([reloadSummary(), reloadBudgets(budgetYear)]);
     } catch(e) { console.error(e); }
   };
 
@@ -297,6 +301,10 @@ export function Finance({ data }) {
       } else {
         const created = await apiFetch("/finance/accounts", { method:"POST", body: JSON.stringify(form) });
         setAccounts(prev => [...prev, created].sort((a,b) => a.code.localeCompare(b.code)));
+        // New account shows up in budget table immediately
+        if (created.type === "revenue" || created.type === "expense") {
+          setBudgets(prev => [...prev, { accountId:created.id, accountCode:created.code, accountName:created.name, accountType:created.type, subtype:created.subtype||"", budget:0, actual:0, variance:0 }]);
+        }
       }
       setShowAcctModal(false); setEditAcct(null);
     } catch(e) { console.error(e); }
@@ -307,6 +315,7 @@ export function Finance({ data }) {
     try {
       if (editFund) {
         const updated = await apiFetch(`/finance/funds/${editFund.id}`, { method:"PUT", body: JSON.stringify(form) });
+        // Update funds state — fundBalances is derived from funds+transactions so it re-renders immediately
         setFunds(prev => prev.map(f => f.id === editFund.id ? updated : f));
       } else {
         const created = await apiFetch("/finance/funds", { method:"POST", body: JSON.stringify(form) });
