@@ -781,7 +781,7 @@ function DonorKanban({donors,onStageChange,onLogTouchpoint,onSelectDonor}){
 
 // ── Re-engage View ─────────────────────────────────────────────────────────
 function ReEngageView({donors,org,onLogTouchpoint,onSelectDonor}){
-  const lapsed=[...donors].filter(d=>d.stage==="lapsed").sort((a,b)=>b.total-a.total);
+  const lapsed=[...donors].filter(d=>d.stage==="lapsed"||(d.lastGift&&daysDiff(d.lastGift)>365)).sort((a,b)=>b.total-a.total);
   const totalValue=lapsed.reduce((s,d)=>s+d.total,0);
   const avgDays=lapsed.length
     ?Math.round(lapsed.reduce((s,d)=>s+daysDiff(d.lastGift||d.lastTouchpoint||new Date().toISOString()),0)/lapsed.length)
@@ -879,7 +879,7 @@ function ReEngageView({donors,org,onLogTouchpoint,onSelectDonor}){
 export function Donors({data,setData}){
   const{auth}=useAuth();
   const isAdmin=auth?.user?.role==="admin";
-  const lapsedCount=data.donors.filter(d=>d.stage==="lapsed").length;
+  const lapsedCount=data.donors.filter(d=>d.stage==="lapsed"||(d.lastGift&&daysDiff(d.lastGift)>365)).length;
   const[view,setView]=useState("kanban");
   const[search,setSearch]=useState("");
   const[selected,setSelected]=useState(null);
