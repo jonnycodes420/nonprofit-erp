@@ -995,6 +995,9 @@ app.get("/email/test-smtp", requireAuth, requireAdmin, wrap(async (req, res) => 
   const transporter = nodemailer.createTransport({
     host: smtpHost, port: smtpPort,
     secure: smtpPort === 465,
+    connectionTimeout: 10000,
+    greetingTimeout:   10000,
+    socketTimeout:     15000,
     auth: { user: smtpUser, pass: smtpPass },
   });
 
@@ -1165,6 +1168,9 @@ app.post("/campaigns/:id/send", requireAuth, requireAdmin, wrap(async (req, res)
         transporter = nodemailer.createTransport({
           host: smtpHost, port: smtpPort,
           secure: smtpPort === 465,
+          connectionTimeout: 10000,
+          greetingTimeout:   10000,
+          socketTimeout:     15000,
           auth: { user: smtpUser, pass: smtpPass },
         });
         console.log(`[campaign:${campaign.id}] SMTP host=${smtpHost} port=${smtpPort} user=${smtpUser} from=${smtpFrom} secure=${smtpPort === 465}`);
