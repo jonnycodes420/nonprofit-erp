@@ -972,48 +972,38 @@ app.put("/org/smtp", requireAuth, requireAdmin, wrap(async (req, res) => {
 
 // ── SMTP test endpoint ─────────────────────────────────────────────────────
 app.get("/email/test-smtp", requireAuth, requireAdmin, wrap(async (req, res) => {
-  const smtpHost = process.env.DEMO_SMTP_HOST;
-  const smtpUser = process.env.DEMO_SMTP_USER;
-  const smtpPass = process.env.DEMO_SMTP_PASS;
-  const smtpPort = parseInt(process.env.DEMO_SMTP_PORT || "587");
-  const to = process.env.DEMO_NOTIFY_EMAIL || smtpUser;
+  const apiKey = process.env.RESEND_API_KEY;
+  const from   = process.env.DEMO_SMTP_FROM;
+  const to     = process.env.DEMO_NOTIFY_EMAIL;
 
   const cfg = {
-    host: smtpHost || "MISSING",
-    port: smtpPort,
-    user: smtpUser || "MISSING",
-    pass: smtpPass ? "set" : "MISSING",
-    secure: smtpPort === 465,
-    to: to || "MISSING",
+    host: "smtp.resend.com", port: 465, user: "resend",
+    pass: apiKey ? "set" : "MISSING",
+    from: from || "MISSING",
+    to:   to   || "MISSING",
   };
 
-  if (!smtpHost || !smtpUser || !smtpPass) {
-    console.error("[test-smtp] env vars missing:", cfg);
-    return res.json({ success: false, error: "DEMO_SMTP_* env vars not fully configured", config: cfg });
-  }
+  if (!apiKey) return res.json({ success: false, error: "RESEND_API_KEY env var not set", config: cfg });
+  if (!from)   return res.json({ success: false, error: "DEMO_SMTP_FROM env var not set (verified-domain from address)", config: cfg });
+  if (!to)     return res.json({ success: false, error: "DEMO_NOTIFY_EMAIL env var not set", config: cfg });
 
   const transporter = nodemailer.createTransport({
-    host: smtpHost, port: smtpPort,
-    secure: smtpPort === 465,
-    connectionTimeout: 10000,
-    greetingTimeout:   10000,
-    socketTimeout:     15000,
-    auth: { user: smtpUser, pass: smtpPass },
+    host: "smtp.resend.com", port: 465, secure: true,
+    connectionTimeout: 10000, greetingTimeout: 10000, socketTimeout: 15000,
+    auth: { user: "resend", pass: apiKey },
   });
 
   try {
-    console.log("[test-smtp] verifying connection…", cfg);
+    console.log("[test-smtp] verifying Resend connection…", cfg);
     await transporter.verify();
-    console.log("[test-smtp] connection OK, sending test email to", to);
     const info = await transporter.sendMail({
-      from: smtpUser,
-      to,
+      from, to,
       subject: "Steward SMTP test",
       text: "SMTP is working. This is a test from your Steward ERP.",
       html: "<p>SMTP is working. This is a test from your <strong>Steward ERP</strong>.</p>",
     });
     console.log("[test-smtp] sent OK — messageId:", info.messageId);
-    res.json({ success: true, messageId: info.messageId, from: smtpUser, to, config: cfg });
+    res.json({ success: true, messageId: info.messageId, from, to, config: cfg });
   } catch (err) {
     const detail = {
       message:      err.message,
@@ -1156,26 +1146,19 @@ app.post("/campaigns/:id/send", requireAuth, requireAdmin, wrap(async (req, res)
     let failCount = 0;
 
     try {
-      const smtpHost = process.env.DEMO_SMTP_HOST;
-      const smtpUser = process.env.DEMO_SMTP_USER;
-      const smtpPass = process.env.DEMO_SMTP_PASS;
-      const smtpPort = parseInt(process.env.DEMO_SMTP_PORT || "587");
-      // Use smtpUser as from exactly — Gmail rejects mismatched from addresses
-      const smtpFrom = smtpUser;
+      const resendApiKey = process.env.RESEND_API_KEY;
+      const smtpFrom     = process.env.DEMO_SMTP_FROM;
 
       let transporter = null;
-      if (smtpHost && smtpUser && smtpPass) {
+      if (resendApiKey && smtpFrom) {
         transporter = nodemailer.createTransport({
-          host: smtpHost, port: smtpPort,
-          secure: smtpPort === 465,
-          connectionTimeout: 10000,
-          greetingTimeout:   10000,
-          socketTimeout:     15000,
-          auth: { user: smtpUser, pass: smtpPass },
+          host: "smtp.resend.com", port: 465, secure: true,
+          connectionTimeout: 10000, greetingTimeout: 10000, socketTimeout: 15000,
+          auth: { user: "resend", pass: resendApiKey },
         });
-        console.log(`[campaign:${campaign.id}] SMTP host=${smtpHost} port=${smtpPort} user=${smtpUser} from=${smtpFrom} secure=${smtpPort === 465}`);
+        console.log(`[campaign:${campaign.id}] Resend SMTP configured — from=${smtpFrom}`);
       } else {
-        console.log(`[campaign:${campaign.id}] DEMO_SMTP_* not set (HOST=${smtpHost||"?"} USER=${smtpUser||"?"} PASS=${smtpPass?"set":"MISSING"}) — logging only`);
+        console.log(`[campaign:${campaign.id}] RESEND_API_KEY=${resendApiKey?"set":"MISSING"} DEMO_SMTP_FROM=${smtpFrom||"MISSING"} — recording sends without emailing`);
       }
 
       const year = String(new Date().getFullYear());
@@ -1533,7 +1516,7 @@ app.get("/stripe/online-gifts", requireAuth, wrap(async (req, res) => {
      LIMIT 20`,
     [req.user.orgId]
   );
-  res.json(result.rows.map(r => ({
+  res.json(result.map(r => ({
     id: r.id,
     amount: parseFloat(r.amount),
     date: r.date,
