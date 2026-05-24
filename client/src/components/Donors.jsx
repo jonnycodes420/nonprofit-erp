@@ -875,6 +875,76 @@ function ReEngageView({donors,org,onLogTouchpoint,onSelectDonor}){
   );
 }
 
+// ── Donor Segmentation ─────────────────────────────────────────────────────
+const TIER_META=[
+  {id:"micro",    label:"Micro",     color:"#6b7280"},
+  {id:"small",    label:"Small",     color:"#3b82f6"},
+  {id:"mid",      label:"Mid",       color:"#8b5cf6"},
+  {id:"major",    label:"Major",     color:"#f59e0b"},
+  {id:"principal",label:"Principal", color:"#10b981"},
+];
+const PATTERN_META=[
+  {id:"one-time", label:"One-time"},
+  {id:"recurring",label:"Recurring (2+ gifts)"},
+  {id:"major",    label:"Major gift (>$10k)"},
+  {id:"lapsed",   label:"Lapsed (>365d)"},
+];
+
+function FilterBar({filters,onChange}){
+  const set=(key,val)=>onChange({...filters,[key]:val});
+  const tog=(key,val)=>{const arr=filters[key];set(key,arr.includes(val)?arr.filter(v=>v!==val):[...arr,val]);};
+  const inp={background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"7px 10px",color:T.ink,fontSize:12,outline:"none",boxSizing:"border-box"};
+  const row={display:"flex",gap:12,flexWrap:"wrap",alignItems:"center"};
+  const lbl={fontSize:11,fontWeight:700,color:T.ink3,textTransform:"uppercase",letterSpacing:".06em",whiteSpace:"nowrap",minWidth:90};
+  return(
+    <div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:12,padding:"16px 18px",display:"flex",flexDirection:"column",gap:12}}>
+      <div style={row}>
+        <span style={lbl}>Capacity Tier</span>
+        <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
+          {TIER_META.map(t=>{const a=filters.tiers.includes(t.id);return(
+            <button key={t.id} onClick={()=>tog("tiers",t.id)} style={{background:a?t.color+"22":T.bg,border:`1px solid ${a?t.color:T.bg3}`,borderRadius:7,padding:"4px 12px",color:a?t.color:T.ink3,fontSize:12,fontWeight:a?700:400,cursor:"pointer"}}>{t.label}</button>
+          );})}
+        </div>
+      </div>
+      <div style={row}>
+        <span style={lbl}>Stage</span>
+        <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
+          {STAGES.map(s=>{const a=filters.stages.includes(s.id);return(
+            <button key={s.id} onClick={()=>tog("stages",s.id)} style={{background:a?s.color+"22":T.bg,border:`1px solid ${a?s.color:T.bg3}`,borderRadius:7,padding:"4px 12px",color:a?s.color:T.ink3,fontSize:12,fontWeight:a?700:400,cursor:"pointer"}}>{s.label}</button>
+          );})}
+        </div>
+      </div>
+      <div style={row}>
+        <div style={{display:"flex",alignItems:"center",gap:6}}>
+          <span style={lbl}>Giving Pattern</span>
+          <select value={filters.pattern} onChange={e=>set("pattern",e.target.value)} style={{...inp,cursor:"pointer",minWidth:190}}>
+            <option value="">Any</option>
+            {PATTERN_META.map(p=><option key={p.id} value={p.id}>{p.label}</option>)}
+          </select>
+        </div>
+        <div style={{display:"flex",alignItems:"center",gap:6}}>
+          <span style={lbl}>Geography</span>
+          <input value={filters.geo} onChange={e=>set("geo",e.target.value)} placeholder="Search notes & tags…" style={{...inp,minWidth:160}}/>
+        </div>
+      </div>
+      <div style={row}>
+        <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
+          <span style={lbl}>Last Gift</span>
+          <input type="date" value={filters.giftFrom} onChange={e=>set("giftFrom",e.target.value)} style={inp}/>
+          <span style={{fontSize:11,color:T.ink3}}>→</span>
+          <input type="date" value={filters.giftTo} onChange={e=>set("giftTo",e.target.value)} style={inp}/>
+        </div>
+        <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
+          <span style={lbl}>Lifetime Giving</span>
+          <input type="number" value={filters.totalMin} onChange={e=>set("totalMin",e.target.value)} placeholder="$min" style={{...inp,width:80}}/>
+          <span style={{fontSize:11,color:T.ink3}}>→</span>
+          <input type="number" value={filters.totalMax} onChange={e=>set("totalMax",e.target.value)} placeholder="any" style={{...inp,width:80}}/>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Donors ─────────────────────────────────────────────────────────────────
 export function Donors({data,setData}){
   const{auth}=useAuth();
@@ -890,8 +960,25 @@ export function Donors({data,setData}){
   const[callList,setCallList]=useState("");const[callLoading,setCallLoading]=useState(false);
   const[showAdd,setShowAdd]=useState(false);const[showImport,setShowImport]=useState(false);
   const[newDonor,setNewDonor]=useState({name:"",email:"",phone:"",lastAmount:"",stage:"prospect"});
+  const[filtersOpen,setFiltersOpen]=useState(false);
+  const[filters,setFilters]=useState({tiers:[],stages:[],pattern:"",geo:"",giftFrom:"",giftTo:"",totalMin:"",totalMax:""});
 
-  const filtered=data.donors.filter(d=>!search||(d.name+d.email).toLowerCase().includes(search.toLowerCase()));
+  const filtered=data.donors
+    .filter(d=>!search||(d.name+d.email).toLowerCase().includes(search.toLowerCase()))
+    .filter(d=>{
+      if(filters.tiers.length&&!filters.tiers.includes((d.capacityTier||"").toLowerCase()))return false;
+      if(filters.stages.length&&!filters.stages.includes(d.stage||"cultivate"))return false;
+      if(filters.pattern==="one-time"&&d.gifts!==1)return false;
+      if(filters.pattern==="recurring"&&d.gifts<2)return false;
+      if(filters.pattern==="major"&&d.lastAmount<10000)return false;
+      if(filters.pattern==="lapsed"&&!(d.stage==="lapsed"||(d.lastGift&&daysDiff(d.lastGift)>365)))return false;
+      if(filters.geo.trim()&&!`${d.notes||""} ${(d.tags||[]).join(" ")}`.toLowerCase().includes(filters.geo.toLowerCase()))return false;
+      if(filters.giftFrom&&d.lastGift&&d.lastGift<filters.giftFrom)return false;
+      if(filters.giftTo&&d.lastGift&&d.lastGift>filters.giftTo)return false;
+      if(filters.totalMin!==""&&!isNaN(parseFloat(filters.totalMin))&&d.total<parseFloat(filters.totalMin))return false;
+      if(filters.totalMax!==""&&!isNaN(parseFloat(filters.totalMax))&&d.total>parseFloat(filters.totalMax))return false;
+      return true;
+    });
 
   const moveToStage=async(donorId,stage)=>{
     setData(prev=>({...prev,donors:prev.donors.map(d=>d.id===donorId?{...d,stage}:d)}));
@@ -1017,6 +1104,34 @@ export function Donors({data,setData}){
         <button onClick={()=>setShowAdd(!showAdd)} style={{background:"#10b981",border:"none",borderRadius:10,padding:"10px 14px",color:"#fff",fontSize:13,fontWeight:600,cursor:"pointer"}}>+ Add</button>
         <button onClick={()=>setShowImport(true)} style={{background:T.bg3,border:"1px solid "+T.bg3,borderRadius:10,padding:"10px 14px",color:T.ink3,fontSize:13,cursor:"pointer"}}>↑ Import</button>
       </div>
+
+      {(()=>{
+        const count=filters.tiers.length+filters.stages.length+(filters.pattern?1:0)+(filters.geo.trim()?1:0)+((filters.giftFrom||filters.giftTo)?1:0)+((filters.totalMin||filters.totalMax)?1:0);
+        const pills=[];
+        filters.tiers.forEach(t=>{const m=TIER_META.find(x=>x.id===t);pills.push({id:"t"+t,label:`Tier: ${m?.label||t}`,rm:()=>setFilters(f=>({...f,tiers:f.tiers.filter(v=>v!==t)}))});});
+        filters.stages.forEach(s=>{const m=STAGES.find(x=>x.id===s);pills.push({id:"s"+s,label:`Stage: ${m?.label||s}`,rm:()=>setFilters(f=>({...f,stages:f.stages.filter(v=>v!==s)}))});});
+        if(filters.pattern){const m=PATTERN_META.find(p=>p.id===filters.pattern);pills.push({id:"pat",label:`Pattern: ${m?.label||filters.pattern}`,rm:()=>setFilters(f=>({...f,pattern:""}))});}
+        if(filters.geo.trim())pills.push({id:"geo",label:`Geo: "${filters.geo}"`,rm:()=>setFilters(f=>({...f,geo:""}))});
+        if(filters.giftFrom||filters.giftTo)pills.push({id:"gift",label:`Last gift: ${filters.giftFrom||"any"} → ${filters.giftTo||"any"}`,rm:()=>setFilters(f=>({...f,giftFrom:"",giftTo:""}))});
+        if(filters.totalMin||filters.totalMax)pills.push({id:"total",label:`Giving: ${filters.totalMin?"$"+filters.totalMin:"$0"} → ${filters.totalMax?"$"+filters.totalMax:"any"}`,rm:()=>setFilters(f=>({...f,totalMin:"",totalMax:""}))});
+        const clearAll=()=>setFilters({tiers:[],stages:[],pattern:"",geo:"",giftFrom:"",giftTo:"",totalMin:"",totalMax:""});
+        return<>
+          <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+            <button onClick={()=>setFiltersOpen(v=>!v)} style={{background:filtersOpen||count>0?T.bg2:T.bg,border:"1px solid "+(count>0?T.green:T.bg3),borderRadius:9,padding:"7px 12px",color:count>0?T.green:T.ink3,fontSize:12,fontWeight:count>0?700:400,cursor:"pointer",display:"flex",alignItems:"center",gap:6}}>
+              ⊞ Filters
+              {count>0&&<span style={{background:T.green,color:"#fff",borderRadius:99,padding:"0 6px",fontSize:10,fontWeight:800,lineHeight:"16px"}}>{count}</span>}
+            </button>
+            {pills.map(p=>(
+              <span key={p.id} style={{background:T.bg2,border:"1px solid "+T.bg3,borderRadius:99,padding:"4px 10px",fontSize:12,color:T.ink2,display:"inline-flex",alignItems:"center",gap:5}}>
+                {p.label}
+                <button onClick={p.rm} style={{background:"none",border:"none",cursor:"pointer",color:T.ink3,fontSize:13,lineHeight:1,padding:0,marginLeft:2}}>×</button>
+              </span>
+            ))}
+            {count>0&&<button onClick={clearAll} style={{background:"none",border:"none",color:T.ink3,fontSize:12,cursor:"pointer",textDecoration:"underline",padding:0}}>Clear all</button>}
+          </div>
+          {filtersOpen&&<FilterBar filters={filters} onChange={setFilters}/>}
+        </>;
+      })()}
 
       {(callLoading||callList)&&<AIPanel text={callList} onClose={()=>setCallList("")}/>}
 
