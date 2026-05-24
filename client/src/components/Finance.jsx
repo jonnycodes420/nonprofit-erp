@@ -7,7 +7,7 @@ const ACCT_TYPES = [
   { id:"asset",     label:"Asset",       color:"#3b82f6" },
   { id:"liability", label:"Liability",   color:"#f59e0b" },
   { id:"net_asset", label:"Net Asset",   color:"#8b5cf6" },
-  { id:"revenue",   label:"Revenue",     color:"#10b981" },
+  { id:"revenue",   label:"Revenue",     color:"#1a6b4a" },
   { id:"expense",   label:"Expense",     color:"#ef4444" },
 ];
 const TYPE_COLOR = Object.fromEntries(ACCT_TYPES.map(t => [t.id, t.color]));
@@ -252,10 +252,10 @@ export function Finance({ data }) {
   const SummaryCard = () => summary ? (
     <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(160px,1fr))", gap:10, marginBottom:4 }}>
       {[
-        ["Cash on Hand",    fmt(summary.cashOnHand),    summary.cashOnHand >= 0 ? "#10b981" : "#ef4444"],
-        ["YTD Revenue",     fmt(summary.ytdRevenue),    "#10b981"],
+        ["Cash on Hand",    fmt(summary.cashOnHand),    summary.cashOnHand >= 0 ? "#1a6b4a" : "#ef4444"],
+        ["YTD Revenue",     fmt(summary.ytdRevenue),    "#1a6b4a"],
         ["YTD Expenses",    fmt(summary.ytdExpenses),   "#ef4444"],
-        ["Net Surplus",     fmt(summary.netSurplus),    summary.netSurplus >= 0 ? "#10b981" : "#ef4444"],
+        ["Net Surplus",     fmt(summary.netSurplus),    summary.netSurplus >= 0 ? "#1a6b4a" : "#ef4444"],
       ].map(([label, value, color]) => (
         <div key={label} style={{ background:T.white, border:"1px solid "+T.bg3, borderRadius:12, padding:"14px 16px" }}>
           <div style={{ fontSize:11, color:T.ink3, textTransform:"uppercase", letterSpacing:".06em", marginBottom:4 }}>{label}</div>
@@ -477,7 +477,7 @@ export function Finance({ data }) {
       {/* Sub-tab nav */}
       <div style={{ display:"flex", background:T.bg, border:"1px solid "+T.bg3, borderRadius:10, overflow:"hidden", flexWrap:"wrap" }}>
         {subTabs.map(([id, label]) => (
-          <button key={id} onClick={() => setSubtab(id)} style={{ background:subtab===id?T.bg2:"transparent", border:"none", borderRight:"1px solid "+T.bg3, padding:"10px 16px", color:subtab===id?T.ink:T.ink3, fontSize:13, fontWeight:subtab===id?700:400, cursor:"pointer" }}>
+          <button key={id} onClick={() => setSubtab(id)} style={{ background:subtab===id?"#1a6b4a":"transparent", border:"none", borderRight:"1px solid "+T.bg3, padding:"10px 16px", color:subtab===id?"#fff":T.ink3, fontSize:13, fontWeight:subtab===id?700:400, cursor:"pointer" }}>
             {label}
           </button>
         ))}
@@ -504,13 +504,13 @@ export function Finance({ data }) {
                 <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:6 }}>
                   <span style={{ fontSize:13, fontWeight:700, color:T.ink }}>{r.month}</span>
                   <div style={{ display:"flex", gap:12 }}>
-                    <span style={{ fontSize:11, color:"#10b981" }}>↑ {fmtFull(rv)}</span>
+                    <span style={{ fontSize:11, color:"#1a6b4a" }}>↑ {fmtFull(rv)}</span>
                     <span style={{ fontSize:11, color:"#ef4444" }}>↓ {fmtFull(ex)}</span>
-                    <span style={{ fontSize:12, fontWeight:700, color:net>=0?"#10b981":"#ef4444" }}>{net>=0?"+":""}{fmtFull(net)}</span>
+                    <span style={{ fontSize:12, fontWeight:700, color:net>=0?"#1a6b4a":"#ef4444" }}>{net>=0?"+":""}{fmtFull(net)}</span>
                   </div>
                 </div>
                 <div style={{ height:5, background:T.bg2, borderRadius:99, overflow:"hidden", marginBottom:3 }}>
-                  <div style={{ height:"100%", width:`${(rv/maxBar)*100}%`, background:"linear-gradient(90deg,#10b981,#3b82f6)", borderRadius:99 }}/>
+                  <div style={{ height:"100%", width:`${(rv/maxBar)*100}%`, background:"linear-gradient(90deg,#1a6b4a,#3b82f6)", borderRadius:99 }}/>
                 </div>
                 <div style={{ height:4, background:T.bg2, borderRadius:99, overflow:"hidden" }}>
                   <div style={{ height:"100%", width:`${(ex/maxBar)*100}%`, background:"linear-gradient(90deg,#ef444488,#dc2626)", borderRadius:99, opacity:0.7 }}/>
@@ -524,7 +524,7 @@ export function Finance({ data }) {
           {data.financials.funds.length === 0 && <EmptyState icon="◇" title="No funds" message="Add funds to track restricted and unrestricted balances."/>}
           {data.financials.funds.map((f, i) => (
             <div key={f.name} style={{ display:"flex", alignItems:"center", gap:12, padding:"11px 0", borderBottom: i < data.financials.funds.length - 1 ? "1px solid "+T.bg3 : "" }}>
-              <div style={{ width:10, height:10, borderRadius:"50%", background:f.restricted?"#8b5cf6":"#10b981", flexShrink:0 }}/>
+              <div style={{ width:10, height:10, borderRadius:"50%", background:f.restricted?"#8b5cf6":"#1a6b4a", flexShrink:0 }}/>
               <div style={{ flex:1 }}>
                 <div style={{ fontSize:13, fontWeight:600, color:T.ink }}>{f.name}</div>
                 <div style={{ fontSize:10, color:f.restricted?"#8b5cf6":"#6b7280", fontWeight:600, textTransform:"uppercase", letterSpacing:".06em", marginTop:1 }}>{f.restricted ? "Restricted" : "Unrestricted"}</div>
@@ -551,9 +551,9 @@ export function Finance({ data }) {
               <div style={{ overflowX:"auto" }}>
                 <table style={{ width:"100%", borderCollapse:"collapse", fontSize:13 }}>
                   <thead>
-                    <tr style={{ background:T.bg2 }}>
+                    <tr style={{ background:"#1a6b4a" }}>
                       {[["date","Date"],["amount","Amount"],["description","Description"],["account_name","Account"],["fund_name","Fund"]].map(([col, label]) => (
-                        <th key={col} onClick={() => toggleSort(col)} style={{ padding:"10px 14px", textAlign:"left", fontSize:11, fontWeight:700, color:T.ink3, textTransform:"uppercase", letterSpacing:".06em", cursor:"pointer", whiteSpace:"nowrap" }}>
+                        <th key={col} onClick={() => toggleSort(col)} style={{ padding:"10px 14px", textAlign:"left", fontSize:11, fontWeight:700, color:"#fff", textTransform:"uppercase", letterSpacing:".06em", cursor:"pointer", whiteSpace:"nowrap" }}>
                           {label}{sortArrow(col)}
                         </th>
                       ))}
@@ -564,7 +564,7 @@ export function Finance({ data }) {
                     {sortedTxns.map((t, i) => (
                       <tr key={t.id} style={{ borderTop:"1px solid "+T.bg3, background: i%2===0?"transparent":T.bg+"44" }}>
                         <td style={{ padding:"10px 14px", color:T.ink3, whiteSpace:"nowrap" }}>{t.date}</td>
-                        <td style={{ padding:"10px 14px", fontWeight:700, color:t.type==="income"?"#10b981":"#ef4444", whiteSpace:"nowrap" }}>
+                        <td style={{ padding:"10px 14px", fontWeight:700, color:t.type==="income"?"#1a6b4a":"#ef4444", whiteSpace:"nowrap" }}>
                           {t.type === "income" ? "+" : "−"}{fmtFull(parseFloat(t.amount))}
                         </td>
                         <td style={{ padding:"10px 14px" }}>
@@ -580,7 +580,7 @@ export function Finance({ data }) {
                         </td>
                         <td style={{ padding:"10px 14px" }}>
                           {t.fund_name && (
-                            <span style={{ background:t.fund_restricted?"#8b5cf618":"#10b98118", color:t.fund_restricted?"#8b5cf6":"#10b981", borderRadius:6, padding:"2px 8px", fontSize:11, fontWeight:600 }}>
+                            <span style={{ background:t.fund_restricted?"#8b5cf618":"#1a6b4a18", color:t.fund_restricted?"#8b5cf6":"#1a6b4a", borderRadius:6, padding:"2px 8px", fontSize:11, fontWeight:600 }}>
                               {t.fund_name}
                             </span>
                           )}
@@ -595,7 +595,7 @@ export function Finance({ data }) {
                     <tr style={{ borderTop:"2px solid "+T.bg3, background:T.bg2 }}>
                       <td style={{ padding:"10px 14px", fontSize:12, fontWeight:700, color:T.ink3 }}>Totals</td>
                       <td style={{ padding:"10px 14px" }}>
-                        <div style={{ fontSize:12, color:"#10b981", fontWeight:700 }}>+{fmtFull(sortedTxns.filter(t=>t.type==="income").reduce((s,t)=>s+parseFloat(t.amount),0))}</div>
+                        <div style={{ fontSize:12, color:"#1a6b4a", fontWeight:700 }}>+{fmtFull(sortedTxns.filter(t=>t.type==="income").reduce((s,t)=>s+parseFloat(t.amount),0))}</div>
                         <div style={{ fontSize:12, color:"#ef4444", fontWeight:700 }}>−{fmtFull(sortedTxns.filter(t=>t.type==="expense").reduce((s,t)=>s+parseFloat(t.amount),0))}</div>
                       </td>
                       <td colSpan={4}/>
@@ -622,9 +622,9 @@ export function Finance({ data }) {
                   <div style={{ overflowX:"auto" }}>
                     <table style={{ width:"100%", borderCollapse:"collapse", fontSize:13 }}>
                       <thead>
-                        <tr style={{ background:T.bg2 }}>
+                        <tr style={{ background:"#1a6b4a" }}>
                           {["Date","Amount","Description","Fund"].map(h => (
-                            <th key={h} style={{ padding:"10px 14px", textAlign:"left", fontSize:11, fontWeight:700, color:T.ink3, textTransform:"uppercase", letterSpacing:".06em" }}>{h}</th>
+                            <th key={h} style={{ padding:"10px 14px", textAlign:"left", fontSize:11, fontWeight:700, color:"#fff", textTransform:"uppercase", letterSpacing:".06em" }}>{h}</th>
                           ))}
                         </tr>
                       </thead>
@@ -634,7 +634,7 @@ export function Finance({ data }) {
                           .map((t, i) => (
                           <tr key={t.id} style={{ borderTop:"1px solid "+T.bg3, background:i%2===0?"transparent":T.bg+"44" }}>
                             <td style={{ padding:"10px 14px", color:T.ink3, whiteSpace:"nowrap" }}>{t.date}</td>
-                            <td style={{ padding:"10px 14px", fontWeight:700, color:t.type==="income"?"#10b981":"#ef4444" }}>
+                            <td style={{ padding:"10px 14px", fontWeight:700, color:t.type==="income"?"#1a6b4a":"#ef4444" }}>
                               {t.type==="income"?"+":"−"}{fmtFull(parseFloat(t.amount))}
                             </td>
                             <td style={{ padding:"10px 14px" }}>
@@ -642,7 +642,7 @@ export function Finance({ data }) {
                               {t.vendor_donor && <div style={{ fontSize:11, color:T.ink3 }}>{t.vendor_donor}</div>}
                             </td>
                             <td style={{ padding:"10px 14px" }}>
-                              {t.fund_name && <span style={{ fontSize:11, fontWeight:600, color:t.fund_restricted?"#8b5cf6":"#10b981" }}>{t.fund_name}</span>}
+                              {t.fund_name && <span style={{ fontSize:11, fontWeight:600, color:t.fund_restricted?"#8b5cf6":"#1a6b4a" }}>{t.fund_name}</span>}
                             </td>
                           </tr>
                         ))}
@@ -652,7 +652,7 @@ export function Finance({ data }) {
                           <td style={{ padding:"10px 14px", fontWeight:700, fontSize:12 }}>Balance</td>
                           <td style={{ padding:"10px 14px", fontWeight:800, color:
                             (transactions.filter(t=>t.account_id===drillAcct.id&&t.type==="income").reduce((s,t)=>s+parseFloat(t.amount),0) -
-                            transactions.filter(t=>t.account_id===drillAcct.id&&t.type==="expense").reduce((s,t)=>s+parseFloat(t.amount),0)) >= 0 ? "#10b981" : "#ef4444"
+                            transactions.filter(t=>t.account_id===drillAcct.id&&t.type==="expense").reduce((s,t)=>s+parseFloat(t.amount),0)) >= 0 ? "#1a6b4a" : "#ef4444"
                           }}>
                             {fmtFull(
                               transactions.filter(t=>t.account_id===drillAcct.id&&t.type==="income").reduce((s,t)=>s+parseFloat(t.amount),0) -
@@ -690,7 +690,7 @@ export function Finance({ data }) {
                         <span style={{ fontSize:12, fontWeight:700, color:T.ink3, minWidth:40 }}>{a.code}</span>
                         <span style={{ flex:1, fontSize:13, fontWeight:600, color:a.active===false?T.ink3:T.ink, textDecoration:a.active===false?"line-through":"none" }}>{a.name}</span>
                         {a.active === false && <span style={{ fontSize:11, color:"#ef4444", background:"#ef444418", borderRadius:5, padding:"2px 7px" }}>Inactive</span>}
-                        <span style={{ fontSize:13, fontWeight:700, color:acctBal>=0?"#10b981":"#ef4444", minWidth:80, textAlign:"right" }}>{fmtFull(acctBal)}</span>
+                        <span style={{ fontSize:13, fontWeight:700, color:acctBal>=0?"#1a6b4a":"#ef4444", minWidth:80, textAlign:"right" }}>{fmtFull(acctBal)}</span>
                         <button style={ghostBtn} onClick={e => { e.stopPropagation(); setEditAcct(a); }}>Edit</button>
                       </div>
                     );
@@ -719,16 +719,16 @@ export function Finance({ data }) {
             const sparkVals = getFundSparkline(f.id);
             return (
               <div key={f.id} style={{ display:"flex", alignItems:"center", gap:12, padding:"12px 0", borderTop: i > 0 ? "1px solid "+T.bg3 : "" }}>
-                <div style={{ width:10, height:10, borderRadius:"50%", background:f.restricted?"#8b5cf6":"#10b981", flexShrink:0 }}/>
+                <div style={{ width:10, height:10, borderRadius:"50%", background:f.restricted?"#8b5cf6":"#1a6b4a", flexShrink:0 }}/>
                 <div style={{ flex:1 }}>
                   <div style={{ display:"flex", alignItems:"center", gap:8 }}>
                     <span style={{ fontSize:13, fontWeight:700, color:T.ink }}>{f.name}</span>
-                    <span style={{ fontSize:10, fontWeight:600, textTransform:"uppercase", letterSpacing:".06em", color:f.restricted?"#8b5cf6":"#10b981" }}>{f.restricted ? "Restricted" : "Unrestricted"}</span>
+                    <span style={{ fontSize:10, fontWeight:600, textTransform:"uppercase", letterSpacing:".06em", color:f.restricted?"#8b5cf6":"#1a6b4a" }}>{f.restricted ? "Restricted" : "Unrestricted"}</span>
                   </div>
                   {f.description && <div style={{ fontSize:12, color:T.ink3, marginTop:2 }}>{f.description}</div>}
                   <div style={{ fontSize:11, color:T.ink3, marginTop:4 }}>
                     ↑ {fmtFull(fb.income)} income &nbsp;·&nbsp; ↓ {fmtFull(fb.expense)} expenses &nbsp;·&nbsp;
-                    <span style={{ fontWeight:700, color:balance >= 0?"#10b981":"#ef4444" }}>Balance: {fmtFull(balance)}</span>
+                    <span style={{ fontWeight:700, color:balance >= 0?"#1a6b4a":"#ef4444" }}>Balance: {fmtFull(balance)}</span>
                   </div>
                 </div>
                 <div style={{ display:"flex", flexDirection:"column", alignItems:"center", gap:2 }}>
@@ -762,12 +762,12 @@ export function Finance({ data }) {
               <SectionLabel>{section === "revenue" ? "Revenue Budget" : "Expense Budget"}</SectionLabel>
               <table style={{ width:"100%", borderCollapse:"collapse", fontSize:13 }}>
                 <thead>
-                  <tr style={{ background:T.bg2 }}>
-                    <th style={{ padding:"8px 12px", textAlign:"left", fontSize:11, fontWeight:700, color:T.ink3, textTransform:"uppercase", letterSpacing:".06em" }}>Account</th>
-                    <th style={{ padding:"8px 12px", textAlign:"right", fontSize:11, fontWeight:700, color:T.ink3, textTransform:"uppercase", letterSpacing:".06em" }}>Budget</th>
-                    <th style={{ padding:"8px 12px", textAlign:"right", fontSize:11, fontWeight:700, color:T.ink3, textTransform:"uppercase", letterSpacing:".06em" }}>Actual YTD</th>
-                    <th style={{ padding:"8px 12px", textAlign:"right", fontSize:11, fontWeight:700, color:T.ink3, textTransform:"uppercase", letterSpacing:".06em" }}>Variance</th>
-                    <th style={{ padding:"8px 12px", textAlign:"right", fontSize:11, fontWeight:700, color:T.ink3, textTransform:"uppercase", letterSpacing:".06em" }}>Proj. Year-End</th>
+                  <tr style={{ background:"#1a6b4a" }}>
+                    <th style={{ padding:"8px 12px", textAlign:"left", fontSize:11, fontWeight:700, color:"#fff", textTransform:"uppercase", letterSpacing:".06em" }}>Account</th>
+                    <th style={{ padding:"8px 12px", textAlign:"right", fontSize:11, fontWeight:700, color:"#fff", textTransform:"uppercase", letterSpacing:".06em" }}>Budget</th>
+                    <th style={{ padding:"8px 12px", textAlign:"right", fontSize:11, fontWeight:700, color:"#fff", textTransform:"uppercase", letterSpacing:".06em" }}>Actual YTD</th>
+                    <th style={{ padding:"8px 12px", textAlign:"right", fontSize:11, fontWeight:700, color:"#fff", textTransform:"uppercase", letterSpacing:".06em" }}>Variance</th>
+                    <th style={{ padding:"8px 12px", textAlign:"right", fontSize:11, fontWeight:700, color:"#fff", textTransform:"uppercase", letterSpacing:".06em" }}>Proj. Year-End</th>
                     <th style={{ padding:"8px 12px", width:80 }}/>
                   </tr>
                 </thead>
@@ -790,7 +790,7 @@ export function Finance({ data }) {
                           <div>{fmtFull(b.actual)}</div>
                           {b.budget > 0 && <div style={{ fontSize:10, color:T.ink3 }}>{pct}% of budget</div>}
                         </td>
-                        <td style={{ padding:"10px 12px", textAlign:"right", fontWeight:700, color:over?"#ef4444":"#10b981" }}>
+                        <td style={{ padding:"10px 12px", textAlign:"right", fontWeight:700, color:over?"#ef4444":"#1a6b4a" }}>
                           {b.variance >= 0 ? "+" : ""}{fmtFull(b.variance)}
                         </td>
                         <td style={{ padding:"10px 12px", textAlign:"right", fontWeight:700, color:overProj?"#ef4444":T.ink3 }}>
@@ -799,7 +799,7 @@ export function Finance({ data }) {
                         </td>
                         <td style={{ padding:"10px 12px" }}>
                           <div style={{ height:6, background:T.bg3, borderRadius:99, overflow:"hidden" }}>
-                            <div style={{ height:"100%", width:`${Math.min(pct,100)}%`, background:over?"#ef4444":"#10b981", borderRadius:99 }}/>
+                            <div style={{ height:"100%", width:`${Math.min(pct,100)}%`, background:over?"#ef4444":"#1a6b4a", borderRadius:99 }}/>
                           </div>
                         </td>
                       </tr>
@@ -811,7 +811,7 @@ export function Finance({ data }) {
                     <td style={{ padding:"10px 12px", fontWeight:700, fontSize:12 }}>Total</td>
                     <td style={{ padding:"10px 12px", textAlign:"right", fontWeight:700 }}>{fmtFull(totBudget)}</td>
                     <td style={{ padding:"10px 12px", textAlign:"right", fontWeight:700 }}>{fmtFull(totActual)}</td>
-                    <td style={{ padding:"10px 12px", textAlign:"right", fontWeight:700, color:totVar>=0?"#10b981":"#ef4444" }}>{totVar>=0?"+":""}{fmtFull(totVar)}</td>
+                    <td style={{ padding:"10px 12px", textAlign:"right", fontWeight:700, color:totVar>=0?"#1a6b4a":"#ef4444" }}>{totVar>=0?"+":""}{fmtFull(totVar)}</td>
                     <td style={{ padding:"10px 12px", textAlign:"right", fontWeight:700, color:T.ink3 }}>{fmtFull(monthsElapsed>0?Math.round((totActual/monthsElapsed)*12):totActual)}</td>
                     <td/>
                   </tr>
@@ -842,12 +842,12 @@ export function Finance({ data }) {
             {Object.entries(incomeByAcct).map(([name, amt]) => (
               <div key={name} style={{ display:"flex", justifyContent:"space-between", padding:"7px 0", borderBottom:"1px solid "+T.bg3 }}>
                 <span style={{ fontSize:13, color:T.ink }}>{name}</span>
-                <span style={{ fontSize:13, fontWeight:600, color:"#10b981" }}>{fmtFull(amt)}</span>
+                <span style={{ fontSize:13, fontWeight:600, color:"#1a6b4a" }}>{fmtFull(amt)}</span>
               </div>
             ))}
             <div style={{ display:"flex", justifyContent:"space-between", padding:"10px 0", borderTop:"2px solid "+T.ink3, marginTop:4 }}>
               <span style={{ fontWeight:700, color:T.ink }}>Total Revenue</span>
-              <span style={{ fontWeight:800, color:"#10b981" }}>{fmtFull(totalRev)}</span>
+              <span style={{ fontWeight:800, color:"#1a6b4a" }}>{fmtFull(totalRev)}</span>
             </div>
             <SectionLabel style={{ marginTop:16 }}>Expenses</SectionLabel>
             {Object.entries(expenseByAcct).map(([name, amt]) => (
@@ -860,9 +860,9 @@ export function Finance({ data }) {
               <span style={{ fontWeight:700, color:T.ink }}>Total Expenses</span>
               <span style={{ fontWeight:800, color:"#ef4444" }}>{fmtFull(totalExp)}</span>
             </div>
-            <div style={{ display:"flex", justifyContent:"space-between", padding:"14px 16px", background:totalRev-totalExp>=0?"#10b98118":"#ef444418", borderRadius:10, marginTop:16 }}>
+            <div style={{ display:"flex", justifyContent:"space-between", padding:"14px 16px", background:totalRev-totalExp>=0?"#1a6b4a18":"#ef444418", borderRadius:10, marginTop:16 }}>
               <span style={{ fontWeight:800, fontSize:15, color:T.ink }}>Net Surplus / (Deficit)</span>
-              <span style={{ fontWeight:800, fontSize:15, color:totalRev-totalExp>=0?"#10b981":"#ef4444" }}>{fmtFull(totalRev - totalExp)}</span>
+              <span style={{ fontWeight:800, fontSize:15, color:totalRev-totalExp>=0?"#1a6b4a":"#ef4444" }}>{fmtFull(totalRev - totalExp)}</span>
             </div>
           </Card>
         )}
@@ -900,9 +900,9 @@ export function Finance({ data }) {
             <div style={{ fontSize:12, color:T.ink3, marginBottom:18 }}>Year to Date {txnYear} &nbsp;·&nbsp; {new Date().toLocaleDateString()}</div>
             <table style={{ width:"100%", borderCollapse:"collapse", fontSize:13 }}>
               <thead>
-                <tr style={{ background:T.bg2 }}>
+                <tr style={{ background:"#1a6b4a" }}>
                   {["Fund","Type","Income","Expenses","Balance"].map(h => (
-                    <th key={h} style={{ padding:"9px 12px", textAlign:"left", fontSize:11, fontWeight:700, color:T.ink3, textTransform:"uppercase", letterSpacing:".06em" }}>{h}</th>
+                    <th key={h} style={{ padding:"9px 12px", textAlign:"left", fontSize:11, fontWeight:700, color:"#fff", textTransform:"uppercase", letterSpacing:".06em" }}>{h}</th>
                   ))}
                 </tr>
               </thead>
@@ -911,18 +911,18 @@ export function Finance({ data }) {
                   <tr key={i} style={{ borderTop:"1px solid "+T.bg3 }}>
                     <td style={{ padding:"10px 12px", fontWeight:600, color:T.ink }}>{f.name}</td>
                     <td style={{ padding:"10px 12px" }}>
-                      <span style={{ fontSize:11, fontWeight:600, color:f.restricted?"#8b5cf6":"#10b981" }}>{f.restricted?"Restricted":"Unrestricted"}</span>
+                      <span style={{ fontSize:11, fontWeight:600, color:f.restricted?"#8b5cf6":"#1a6b4a" }}>{f.restricted?"Restricted":"Unrestricted"}</span>
                     </td>
-                    <td style={{ padding:"10px 12px", color:"#10b981", fontWeight:600 }}>{fmtFull(f.income)}</td>
+                    <td style={{ padding:"10px 12px", color:"#1a6b4a", fontWeight:600 }}>{fmtFull(f.income)}</td>
                     <td style={{ padding:"10px 12px", color:"#ef4444", fontWeight:600 }}>{fmtFull(f.expense)}</td>
-                    <td style={{ padding:"10px 12px", fontWeight:700, color:f.income-f.expense>=0?"#10b981":"#ef4444" }}>{fmtFull(f.income-f.expense)}</td>
+                    <td style={{ padding:"10px 12px", fontWeight:700, color:f.income-f.expense>=0?"#1a6b4a":"#ef4444" }}>{fmtFull(f.income-f.expense)}</td>
                   </tr>
                 ))}
               </tbody>
               <tfoot>
                 <tr style={{ borderTop:"2px solid "+T.ink3, background:T.bg2 }}>
                   <td style={{ padding:"10px 12px", fontWeight:700 }} colSpan={2}>Total</td>
-                  <td style={{ padding:"10px 12px", fontWeight:700, color:"#10b981" }}>{fmtFull(Object.values(fundBalances).reduce((s,f)=>s+f.income,0))}</td>
+                  <td style={{ padding:"10px 12px", fontWeight:700, color:"#1a6b4a" }}>{fmtFull(Object.values(fundBalances).reduce((s,f)=>s+f.income,0))}</td>
                   <td style={{ padding:"10px 12px", fontWeight:700, color:"#ef4444" }}>{fmtFull(Object.values(fundBalances).reduce((s,f)=>s+f.expense,0))}</td>
                   <td style={{ padding:"10px 12px", fontWeight:700 }}>{fmtFull(Object.values(fundBalances).reduce((s,f)=>s+(f.income-f.expense),0))}</td>
                 </tr>
@@ -957,7 +957,7 @@ export function Finance({ data }) {
             ))}
             <div style={{ display:"flex", justifyContent:"space-between", padding:"10px 0", borderTop:"2px solid "+T.ink3, marginTop:4 }}>
               <span style={{ fontWeight:700 }}>Total Revenue (Line 12)</span>
-              <span style={{ fontWeight:800, color:"#10b981" }}>{fmtFull(totalRev)}</span>
+              <span style={{ fontWeight:800, color:"#1a6b4a" }}>{fmtFull(totalRev)}</span>
             </div>
             <SectionLabel style={{ marginTop:16 }}>Part IX — Expenses (Statement of Functional Expenses)</SectionLabel>
             {[
@@ -1013,9 +1013,9 @@ export function Finance({ data }) {
                 <div style={{ overflowX:"auto" }}>
                   <table style={{ width:"100%", borderCollapse:"collapse", fontSize:13 }}>
                     <thead>
-                      <tr style={{ background:T.bg2 }}>
+                      <tr style={{ background:"#1a6b4a" }}>
                         {["Timestamp","User","Action","Entity","Description"].map(h => (
-                          <th key={h} style={{ padding:"10px 14px", textAlign:"left", fontSize:11, fontWeight:700, color:T.ink3, textTransform:"uppercase", letterSpacing:".06em", whiteSpace:"nowrap" }}>{h}</th>
+                          <th key={h} style={{ padding:"10px 14px", textAlign:"left", fontSize:11, fontWeight:700, color:"#fff", textTransform:"uppercase", letterSpacing:".06em", whiteSpace:"nowrap" }}>{h}</th>
                         ))}
                         <th style={{ padding:"10px 14px", width:40 }}/>
                       </tr>
@@ -1026,7 +1026,7 @@ export function Finance({ data }) {
                         const changes = typeof entry.changes === "object" && entry.changes ? entry.changes : {};
                         const hasOldNew = (changes.old && Object.keys(changes.old).length > 0) || (changes.new && Object.keys(changes.new).length > 0);
                         const ACTION_STYLE = {
-                          created: { bg:"#10b98120", color:"#10b981" },
+                          created: { bg:"#1a6b4a18", color:"#1a6b4a" },
                           updated: { bg:"#f59e0b20", color:"#d97706" },
                           deleted: { bg:"#ef444420", color:"#ef4444" },
                         };
@@ -1071,7 +1071,7 @@ export function Finance({ data }) {
                                     )}
                                     {changes.new && Object.keys(changes.new).length > 0 && (
                                       <div>
-                                        <div style={{ fontSize:10, fontWeight:700, color:"#10b981", marginBottom:6, textTransform:"uppercase", letterSpacing:".06em" }}>After</div>
+                                        <div style={{ fontSize:10, fontWeight:700, color:"#1a6b4a", marginBottom:6, textTransform:"uppercase", letterSpacing:".06em" }}>After</div>
                                         {Object.entries(changes.new).map(([k, v]) => (
                                           <div key={k} style={{ fontSize:12, color:T.ink, marginBottom:2 }}>
                                             <span style={{ color:T.ink3 }}>{k}:</span> {String(v ?? "—")}
@@ -1112,7 +1112,7 @@ function Sparkline({ values, width = 80, height = 28 }) {
     return `${x.toFixed(1)},${y.toFixed(1)}`;
   }).join(" ");
   const trending = values[values.length - 1] >= values[0];
-  const color = trending ? "#10b981" : "#ef4444";
+  const color = trending ? "#1a6b4a" : "#ef4444";
   return (
     <svg width={width} height={height} style={{ display:"block", overflow:"visible" }}>
       <polyline points={pts} fill="none" stroke={color} strokeWidth="1.5" strokeLinejoin="round" strokeLinecap="round"/>

@@ -25,9 +25,9 @@ export function AIChat({data,onClose}) {
   };
 
   return <div style={{position:"fixed",inset:0,background:"#000c",zIndex:1000,display:"flex",alignItems:"flex-end",justifyContent:"flex-end",padding:20}}>
-    <div style={{background:"#0a0f1e",border:"1px solid #10b98144",borderRadius:20,width:"100%",maxWidth:540,height:640,display:"flex",flexDirection:"column",overflow:"hidden",boxShadow:"0 25px 80px #10b98122"}}>
+    <div style={{background:"#0a0f1e",border:"1px solid #1a6b4a44",borderRadius:20,width:"100%",maxWidth:540,height:640,display:"flex",flexDirection:"column",overflow:"hidden",boxShadow:"0 25px 80px #1a6b4a22"}}>
       <div style={{padding:"14px 18px",borderBottom:"1px solid #1f2937",display:"flex",alignItems:"center",justifyContent:"space-between",background:"linear-gradient(135deg,#1a0f3c,#0f172a)"}}>
-        <div><div style={{fontSize:14,fontWeight:800,color:"#f3f4f6"}}>✦ Development Intelligence</div><div style={{fontSize:11,color:"#10b981"}}>Knows your full org in real time</div></div>
+        <div><div style={{fontSize:14,fontWeight:800,color:"#f3f4f6"}}>✦ Development Intelligence</div><div style={{fontSize:11,color:"#1a6b4a"}}>Knows your full org in real time</div></div>
         <button onClick={onClose} style={{background:"#1f2937",border:"none",borderRadius:8,padding:"6px 12px",color:"#9ca3af",cursor:"pointer",fontSize:12}}>Close</button>
       </div>
       <div style={{display:"flex",gap:6,padding:"10px 14px",borderBottom:"1px solid #1f2937",overflowX:"auto",flexShrink:0}}>
@@ -35,8 +35,8 @@ export function AIChat({data,onClose}) {
       </div>
       <div style={{flex:1,overflowY:"auto",padding:14,display:"flex",flexDirection:"column",gap:10}}>
         {msgs.map((m,i)=><div key={i} style={{display:"flex",justifyContent:m.role==="user"?"flex-end":"flex-start"}}>
-          <div style={{maxWidth:"88%",background:m.role==="user"?"#10b981":"#1e293b",borderRadius:m.role==="user"?"14px 14px 4px 14px":"14px 14px 14px 4px",padding:"10px 14px",fontSize:13,color:"#f3f4f6",lineHeight:1.65,whiteSpace:"pre-wrap"}}>
-            {m.content||(loading&&i===msgs.length-1?<span style={{color:"#10b981"}}>▋</span>:"")}
+          <div style={{maxWidth:"88%",background:m.role==="user"?"#1a6b4a":"#1e293b",borderRadius:m.role==="user"?"14px 14px 4px 14px":"14px 14px 14px 4px",padding:"10px 14px",fontSize:13,color:"#f3f4f6",lineHeight:1.65,whiteSpace:"pre-wrap"}}>
+            {m.content||(loading&&i===msgs.length-1?<span style={{color:"#1a6b4a"}}>▋</span>:"")}
           </div>
         </div>)}
         <div ref={bottomRef}/>
@@ -137,10 +137,10 @@ export function Dashboard({data,setData,onNavigate}) {
 
   const sHdr={display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:0};
   const sTitle={fontSize:10,fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",color:T.ink3};
-  const sLink={background:"transparent",border:"none",padding:0,color:T.green,fontSize:12,fontWeight:700,cursor:"pointer"};
+  const sLink={background:"transparent",border:"none",padding:0,color:T.greenDk,fontSize:12,fontWeight:700,cursor:"pointer"};
   const cardWrap={background:T.white,border:"1px solid "+T.bg3,borderRadius:14,overflow:"hidden"};
   const cPad={padding:"14px 20px"};
-  const typeColor={call:"#3b82f6",email:"#8b5cf6",meeting:"#10b981",gift:"#f59e0b",event:"#ec4899",note:"#6b7280"};
+  const typeColor={call:"#3b82f6",email:"#8b5cf6",meeting:"#1a6b4a",gift:"#f59e0b",event:"#ec4899",note:"#6b7280"};
 
   const QUICK=[
     {icon:<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" width="18" height="18"><circle cx="10" cy="7" r="3.5"/><path d="M3 17c0-3.3 3.1-6 7-6s7 2.7 7 6" strokeLinecap="round"/><line x1="14" y1="4" x2="18" y2="4" strokeLinecap="round"/><line x1="16" y1="2" x2="16" y2="6" strokeLinecap="round"/></svg>,label:"Add Donor",action:()=>setShowAddDonor(true)},
@@ -160,9 +160,9 @@ export function Dashboard({data,setData,onNavigate}) {
           {label:"Active Volunteers",value:activeVolunteers,sub:"in last 30 days",tab:"volunteers"},
           {label:"Open Tasks",value:openTasks,sub:highPriorityTasks>0?`${highPriorityTasks} high priority`:"all on track",tab:"tasks"},
         ].map(s=>(
-          <div key={s.label} onClick={()=>onNavigate(s.tab)} className="card-click" style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:14,padding:"16px 20px",cursor:"pointer",borderLeft:"3px solid #10b981"}}>
+          <div key={s.label} onClick={()=>onNavigate(s.tab)} className="card-click" style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:14,padding:"16px 20px",cursor:"pointer",borderLeft:"3px solid #1a6b4a"}}>
             <div style={{fontSize:10,fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",color:T.ink3,marginBottom:4}}>{s.label}</div>
-            <div style={{fontSize:28,fontWeight:800,color:"#10b981",fontFamily:"'DM Serif Display',serif",lineHeight:1.05,letterSpacing:"-0.02em"}}>{s.value}</div>
+            <div style={{fontSize:28,fontWeight:800,color:"#1a6b4a",fontFamily:"'DM Serif Display',serif",lineHeight:1.05,letterSpacing:"-0.02em"}}>{s.value}</div>
             <div style={{fontSize:11,color:T.ink3,marginTop:4}}>{s.sub}</div>
           </div>
         ))}
@@ -174,7 +174,7 @@ export function Dashboard({data,setData,onNavigate}) {
           <div style={{...cardWrap}}>
             <div style={{...cPad,borderBottom:"1px solid "+T.bg3,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
               <div style={{display:"flex",alignItems:"center",gap:10}}>
-                <span style={{background:"#10b981",color:"#fff",fontSize:9,fontWeight:800,padding:"3px 8px",borderRadius:99,letterSpacing:"0.1em",textTransform:"uppercase"}}>AI</span>
+                <span style={{background:"#1a6b4a",color:"#fff",fontSize:9,fontWeight:800,padding:"3px 8px",borderRadius:99,letterSpacing:"0.1em",textTransform:"uppercase"}}>AI</span>
                 <span style={{fontSize:11,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.08em",fontWeight:600}}>{todayStr}</span>
               </div>
               {!briefing&&!briefLoading&&<AIBtn onClick={generateBriefing} label="✦ Generate briefing" small/>}
@@ -191,7 +191,7 @@ export function Dashboard({data,setData,onNavigate}) {
               )}
               {(briefing||briefLoading)&&pullQuote&&(
                 <>
-                  <blockquote style={{fontFamily:"'DM Serif Display',Georgia,serif",fontSize:17,fontStyle:"italic",color:T.ink,lineHeight:1.55,margin:"0 0 14px 0",paddingLeft:16,borderLeft:"3px solid #10b981"}}>
+                  <blockquote style={{fontFamily:"'DM Serif Display',Georgia,serif",fontSize:17,fontStyle:"italic",color:T.ink,lineHeight:1.55,margin:"0 0 14px 0",paddingLeft:16,borderLeft:"3px solid #1a6b4a"}}>
                     "{pullQuote}"
                   </blockquote>
                   {briefOpen&&briefRest&&(
@@ -199,7 +199,7 @@ export function Dashboard({data,setData,onNavigate}) {
                       {briefRest}
                     </div>
                   )}
-                  {briefRest&&<button onClick={()=>setBriefOpen(!briefOpen)} style={{background:"transparent",border:"none",padding:0,color:T.green,fontSize:12,fontWeight:700,cursor:"pointer"}}>
+                  {briefRest&&<button onClick={()=>setBriefOpen(!briefOpen)} style={{background:"transparent",border:"none",padding:0,color:T.greenDk,fontSize:12,fontWeight:700,cursor:"pointer"}}>
                     {briefOpen?"▲ Collapse":"▼ Read full briefing"}
                   </button>}
                 </>
@@ -253,7 +253,7 @@ export function Dashboard({data,setData,onNavigate}) {
             {upcomingGrants.length===0&&<div style={{...cPad,fontSize:13,color:T.ink3,fontStyle:"italic"}}>No upcoming deadlines</div>}
             {upcomingGrants.map((g,i)=>{
               const d=daysUntil(g.deadline);
-              const urgColor=d<14?"#ef4444":d<30?"#f59e0b":"#10b981";
+              const urgColor=d<14?"#ef4444":d<30?"#f59e0b":"#1a6b4a";
               return(
                 <div key={g.id} className="dash-row" onClick={()=>onNavigate("grants")} style={{
                   display:"flex",alignItems:"center",gap:12,padding:"12px 20px",
@@ -285,7 +285,7 @@ export function Dashboard({data,setData,onNavigate}) {
             {recentGifts.map((d,i)=>{
               const dAgo=daysDiff(d.lastGift);
               const when=dAgo===0?"Today":dAgo===1?"Yesterday":`${dAgo}d ago`;
-              const sc=donorScore(d);const scColor=sc>70?"#10b981":sc>45?"#f59e0b":"#ef4444";
+              const sc=donorScore(d);const scColor=sc>70?"#1a6b4a":sc>45?"#f59e0b":"#ef4444";
               return(
                 <div key={d.id} className="dash-row" onClick={()=>onNavigate("donors")} style={{
                   display:"flex",alignItems:"center",gap:12,padding:"11px 20px",
@@ -297,7 +297,7 @@ export function Dashboard({data,setData,onNavigate}) {
                     <div style={{fontSize:11,color:T.ink3,marginTop:1}}>{when}</div>
                   </div>
                   <div style={{textAlign:"right",flexShrink:0}}>
-                    <div style={{fontSize:14,fontWeight:800,color:"#10b981"}}>{fmtFull(d.lastAmount)}</div>
+                    <div style={{fontSize:14,fontWeight:800,color:"#1a6b4a"}}>{fmtFull(d.lastAmount)}</div>
                     <div style={{fontSize:10,color:T.ink3,marginTop:2}}>{fmtFull(d.total)} lifetime</div>
                   </div>
                 </div>
@@ -324,7 +324,7 @@ export function Dashboard({data,setData,onNavigate}) {
                     <div style={{fontSize:11,color:T.ink3,marginTop:1}}>{when}</div>
                   </div>
                   <div style={{textAlign:"right",flexShrink:0}}>
-                    <div style={{fontSize:14,fontWeight:800,color:"#10b981"}}>{fmtFull(g.amount)}</div>
+                    <div style={{fontSize:14,fontWeight:800,color:"#1a6b4a"}}>{fmtFull(g.amount)}</div>
                     <div style={{fontSize:10,background:"#ede9fe",color:"#7c3aed",borderRadius:4,padding:"1px 5px",marginTop:2,fontWeight:600}}>Online</div>
                   </div>
                 </div>
@@ -344,7 +344,7 @@ export function Dashboard({data,setData,onNavigate}) {
                   background:T.bg,border:"1px solid "+T.bg3,borderRadius:10,
                   padding:"12px 8px",display:"flex",flexDirection:"column",alignItems:"center",gap:6,cursor:"pointer",
                 }}>
-                  <div style={{width:32,height:32,borderRadius:8,background:"#10b98118",display:"flex",alignItems:"center",justifyContent:"center",color:"#10b981"}}>
+                  <div style={{width:32,height:32,borderRadius:8,background:"#1a6b4a18",display:"flex",alignItems:"center",justifyContent:"center",color:"#1a6b4a"}}>
                     {a.icon}
                   </div>
                   <span style={{fontSize:10,fontWeight:700,color:T.ink3,textAlign:"center",lineHeight:1.3,letterSpacing:"0.02em"}}>{a.label}</span>

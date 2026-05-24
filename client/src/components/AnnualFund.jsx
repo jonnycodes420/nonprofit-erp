@@ -34,7 +34,7 @@ export function AnnualFund({data}) {
     <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}>
       <div style={{display:"flex",gap:6}}>
         {[currentYear-1,currentYear].map(y2=><button key={y2} onClick={()=>{setYear(y2);load(y2);}}
-          style={{background:year===y2?"#10b981":"transparent",border:year===y2?"none":"1px solid #374151",borderRadius:8,padding:"7px 14px",color:year===y2?"#fff":T.ink3,fontSize:12,fontWeight:year===y2?700:400,cursor:"pointer"}}>{y2}</button>)}
+          style={{background:year===y2?"#1a6b4a":"transparent",border:year===y2?"none":"1px solid #374151",borderRadius:8,padding:"7px 14px",color:year===y2?"#fff":T.ink3,fontSize:12,fontWeight:year===y2?700:400,cursor:"pointer"}}>{y2}</button>)}
       </div>
       <AIBtn onClick={getForecast} loading={aiLoading} label="✦ AI Forecast" small/>
       {isAdmin&&<button onClick={()=>{setEditGoal(!editGoal);setGoalInput(fund?.goal?.toString()||"");}}
@@ -66,7 +66,7 @@ export function AnnualFund({data}) {
           {fund.goal>0&&<div style={{flexShrink:0}}>
             <svg width="88" height="88" viewBox="0 0 88 88">
               <circle cx="44" cy="44" r="36" fill="none" stroke="#e8e4db" strokeWidth="9"/>
-              <circle cx="44" cy="44" r="36" fill="none" stroke="#10b981" strokeWidth="9"
+              <circle cx="44" cy="44" r="36" fill="none" stroke="#1a6b4a" strokeWidth="9"
                 strokeDasharray={`${Math.min(fund.goalPct,100)*2.262} 226.2`}
                 strokeDashoffset="56.6" strokeLinecap="round" transform="rotate(-90 44 44)"/>
               <text x="44" y="50" textAnchor="middle" fill={T.ink} fontSize="15" fontWeight="800" fontFamily="sans-serif">{fund.goalPct}%</text>
@@ -74,14 +74,14 @@ export function AnnualFund({data}) {
           </div>}
         </div>
         {fund.goal>0&&<div style={{marginTop:14,height:6,background:T.bg3,borderRadius:99}}>
-          <div style={{height:"100%",width:`${Math.min(fund.goalPct,100)}%`,background:fund.goalPct>=100?"#10b981":fund.goalPct>=60?"#f59e0b":"#ef4444",borderRadius:99,transition:"width 0.5s"}}/>
+          <div style={{height:"100%",width:`${Math.min(fund.goalPct,100)}%`,background:fund.goalPct>=100?"#1a6b4a":fund.goalPct>=60?"#f59e0b":"#ef4444",borderRadius:99,transition:"width 0.5s"}}/>
         </div>}
       </Card>
 
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))",gap:10}}>
-        <MetricCard label="Total Gifts" value={fund.giftCount} sub={`avg ${fmt(fund.avgGift)}`} color="#10b981"/>
+        <MetricCard label="Total Gifts" value={fund.giftCount} sub={`avg ${fmt(fund.avgGift)}`} color="#1a6b4a"/>
         <MetricCard label="Total Donors" value={fund.donors.total} sub={`${fund.donors.acquired} new · ${fund.donors.retained} renewed`} color="#3b82f6"/>
-        <MetricCard label="Retention Rate" value={`${fund.donors.retentionRate}%`} sub="vs prior year" color={fund.donors.retentionRate>=70?"#10b981":fund.donors.retentionRate>=50?"#f59e0b":"#ef4444"}/>
+        <MetricCard label="Retention Rate" value={`${fund.donors.retentionRate}%`} sub="vs prior year" color={fund.donors.retentionRate>=70?"#1a6b4a":fund.donors.retentionRate>=50?"#f59e0b":"#ef4444"}/>
         <MetricCard label="Avg Gift" value={fmt(fund.avgGift)} color="#8b5cf6"/>
         {fund.recovered>0&&<MetricCard label="Lapsed Recovered" value={fund.recovered} sub="gave again this year" color="#f59e0b"/>}
         {fund.projectedTotal>0&&year===currentYear&&<MetricCard label="Year-End Proj." value={fmt(fund.projectedTotal)} sub="at current pace" color="#6b7280"/>}
@@ -94,7 +94,7 @@ export function AnnualFund({data}) {
             const h=maxMonth>0?Math.round(m.raised/maxMonth*120):0;
             return <div key={m.month} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:4}}>
               <div style={{fontSize:9,color:T.ink3}}>{m.raised>0?fmt(m.raised):""}</div>
-              <div style={{width:"100%",height:h,background:m.raised>0?"linear-gradient(180deg,#10b981,#059669)":T.bg2,borderRadius:"4px 4px 0 0",minHeight:3}}/>
+              <div style={{width:"100%",height:h,background:m.raised>0?"linear-gradient(180deg,#1a6b4a,#0f4a33)":T.bg2,borderRadius:"4px 4px 0 0",minHeight:3}}/>
               <div style={{fontSize:9,color:T.ink3}}>{m.month.slice(0,3)}</div>
             </div>;
           })}
@@ -110,17 +110,17 @@ export function AnnualFund({data}) {
             <div style={{fontSize:11,color:T.ink3,marginTop:6,lineHeight:1.5}}>First-time givers who didn't donate in {year-1}.</div>
           </div>
           <div>
-            <div style={{fontSize:28,fontWeight:800,color:"#10b981",fontFamily:"'DM Serif Display',serif"}}>{fund.donors.retained}</div>
+            <div style={{fontSize:28,fontWeight:800,color:"#1a6b4a",fontFamily:"'DM Serif Display',serif"}}>{fund.donors.retained}</div>
             <div style={{fontSize:12,color:T.ink3,marginTop:2}}>Renewed donors</div>
             <div style={{fontSize:11,color:T.ink3,marginTop:6,lineHeight:1.5}}>Gave in both {year-1} and {year}. Rate: {fund.donors.retentionRate}%</div>
           </div>
         </div>
         <div style={{height:6,background:T.bg3,borderRadius:99,display:"flex",overflow:"hidden"}}>
-          <div style={{width:`${fund.donors.total>0?Math.round(fund.donors.retained/fund.donors.total*100):0}%`,background:"#10b981"}}/>
+          <div style={{width:`${fund.donors.total>0?Math.round(fund.donors.retained/fund.donors.total*100):0}%`,background:"#1a6b4a"}}/>
           <div style={{flex:1,background:"#3b82f6"}}/>
         </div>
         <div style={{display:"flex",gap:12,marginTop:8}}>
-          <div style={{display:"flex",alignItems:"center",gap:4,fontSize:11,color:T.ink3}}><div style={{width:10,height:10,background:"#10b981",borderRadius:2}}/>Retained</div>
+          <div style={{display:"flex",alignItems:"center",gap:4,fontSize:11,color:T.ink3}}><div style={{width:10,height:10,background:"#1a6b4a",borderRadius:2}}/>Retained</div>
           <div style={{display:"flex",alignItems:"center",gap:4,fontSize:11,color:T.ink3}}><div style={{width:10,height:10,background:"#3b82f6",borderRadius:2}}/>New</div>
         </div>
       </Card>

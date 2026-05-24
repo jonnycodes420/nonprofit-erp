@@ -70,7 +70,7 @@ export function Settings({auth,logout}) {
       <div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:16,padding:"24px 28px"}}>
         <SectionLabel>Your Account</SectionLabel>
         <div style={{display:"flex",alignItems:"center",gap:16,marginBottom:20}}>
-          <div style={{width:52,height:52,borderRadius:"50%",background:T.green+"18",border:"2px solid "+T.green+"40",display:"flex",alignItems:"center",justifyContent:"center",fontSize:20,fontWeight:700,color:T.green,flexShrink:0}}>
+          <div style={{width:52,height:52,borderRadius:"50%",background:T.greenDk+"18",border:"2px solid "+T.greenDk+"40",display:"flex",alignItems:"center",justifyContent:"center",fontSize:20,fontWeight:700,color:T.greenDk,flexShrink:0}}>
             {(userName[0]||"U").toUpperCase()}
           </div>
           <div>
@@ -89,13 +89,13 @@ export function Settings({auth,logout}) {
         <SectionLabel>Billing & Plan</SectionLabel>
         <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(180px,1fr))",gap:12}}>
           {PLANS.map(p=>(
-            <div key={p.id} style={{border:`2px solid ${p.current?T.green:T.bg3}`,borderRadius:14,padding:"20px",background:p.current?T.green+"08":T.white,position:"relative"}}>
-              {p.current&&<div style={{position:"absolute",top:-10,left:16,background:T.green,color:"#fff",fontSize:10,fontWeight:700,letterSpacing:"0.05em",padding:"2px 10px",borderRadius:99,textTransform:"uppercase"}}>Current</div>}
+            <div key={p.id} style={{border:`2px solid ${p.current?T.greenDk:T.bg3}`,borderRadius:14,padding:"20px",background:p.current?T.greenDk+"08":T.white,position:"relative"}}>
+              {p.current&&<div style={{position:"absolute",top:-10,left:16,background:T.greenDk,color:"#fff",fontSize:10,fontWeight:700,letterSpacing:"0.05em",padding:"2px 10px",borderRadius:99,textTransform:"uppercase"}}>Current</div>}
               <div style={{fontSize:14,fontWeight:700,color:T.ink,marginBottom:4}}>{p.label}</div>
-              <div style={{fontSize:22,fontWeight:800,color:T.green,fontFamily:"'DM Serif Display',serif",marginBottom:14}}>{p.price}</div>
+              <div style={{fontSize:22,fontWeight:800,color:T.greenDk,fontFamily:"'DM Serif Display',serif",marginBottom:14}}>{p.price}</div>
               {p.features.map(f=>(
                 <div key={f} style={{fontSize:12,color:T.ink3,marginBottom:5,display:"flex",gap:6,alignItems:"flex-start"}}>
-                  <span style={{color:T.green,flexShrink:0,marginTop:1}}>✓</span>{f}
+                  <span style={{color:T.greenDk,flexShrink:0,marginTop:1}}>✓</span>{f}
                 </div>
               ))}
               {!p.current&&<button style={{marginTop:14,width:"100%",background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"8px",color:T.ink2,fontSize:12,fontWeight:600,cursor:"pointer"}}>Upgrade →</button>}
@@ -136,7 +136,7 @@ export function Settings({auth,logout}) {
         </div>
         {team.map((m,i)=>(
           <div key={m.id} style={{display:"flex",alignItems:"center",gap:12,padding:"12px 0",borderBottom:i<team.length-1?"1px solid "+T.bg3:"none"}}>
-            <div style={{width:36,height:36,borderRadius:"50%",background:T.green+"18",display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,fontWeight:700,color:T.green,flexShrink:0}}>
+            <div style={{width:36,height:36,borderRadius:"50%",background:T.greenDk+"18",display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,fontWeight:700,color:T.greenDk,flexShrink:0}}>
               {(m.name?.[0]||"U").toUpperCase()}
             </div>
             <div style={{flex:1,minWidth:0}}>

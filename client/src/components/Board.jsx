@@ -30,7 +30,7 @@ export function Board({data}) {
     <PageTitle main="Board" accent="management."/>
     <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:12}}>
       <MetricCard label="Board Members" value={data.board.length} sub={`${avgAttendance}% avg attendance`} color="#3b82f6"/>
-      <MetricCard label="Board Giving" value={fmt(totalGiving)} sub="100% board participation" color="#10b981"/>
+      <MetricCard label="Board Giving" value={fmt(totalGiving)} sub="100% board participation" color="#1a6b4a"/>
       <MetricCard label="Committees" value={[...new Set(data.board.flatMap(b=>b.committees))].length} sub="active committees" color="#8b5cf6"/>
     </div>
     <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
@@ -41,7 +41,7 @@ export function Board({data}) {
     {(emailLoading||boardEmail)&&<AIPanel text={boardEmail} onClose={()=>setBoardEmail("")}/>}
     {data.board.length===0&&<EmptyState icon="◆" title="No board members yet" message="Track your board's giving, attendance, committees, and terms."/>}
     {data.board.map(b=>{
-      const attColor=b.attendance>=90?"#10b981":b.attendance>=75?"#f59e0b":"#ef4444";
+      const attColor=b.attendance>=90?"#1a6b4a":b.attendance>=75?"#f59e0b":"#ef4444";
       return <Card key={b.id}>
         <div style={{display:"flex",alignItems:"center",gap:12}}>
           <div style={{width:42,height:42,borderRadius:"50%",background:"#3b82f633",display:"flex",alignItems:"center",justifyContent:"center",fontSize:15,fontWeight:800,color:"#3b82f6",flexShrink:0}}>{b.name[0]}</div>
@@ -54,7 +54,7 @@ export function Board({data}) {
             <div style={{display:"flex",gap:4,marginTop:5,flexWrap:"wrap"}}>{b.committees.map(c=><Pill key={c} label={c} color="#6b7280"/>)}</div>
           </div>
           <div style={{textAlign:"right",flexShrink:0}}>
-            <div style={{fontSize:15,fontWeight:800,color:"#10b981"}}>{b.givingLevel}</div>
+            <div style={{fontSize:15,fontWeight:800,color:"#1a6b4a"}}>{b.givingLevel}</div>
             <div style={{fontSize:11,color:attColor,marginTop:3,fontWeight:600}}>{b.attendance}% attendance</div>
             <div style={{fontSize:11,color:T.ink3,marginTop:1}}>Term: {b.term}</div>
           </div>

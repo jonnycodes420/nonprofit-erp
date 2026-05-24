@@ -100,7 +100,7 @@ export function Programs({data}) {
         const grants=p.grants||[];
         const pct=p.budget>0?Math.round(p.spent/p.budget*100):0;
         const totalAllocated=grants.reduce((s,g)=>s+g.allocated,0);
-        const statusColor={active:"#10b981",planning:"#3b82f6",completed:"#6b7280",paused:"#f59e0b"}[p.status]||"#6b7280";
+        const statusColor={active:"#1a6b4a",planning:"#3b82f6",completed:"#6b7280",paused:"#f59e0b"}[p.status]||"#6b7280";
         return <Card key={p.id} selected={isOpen} accent={statusColor} onClick={()=>setSelected(isOpen?null:p)}>
           <div style={{display:"flex",alignItems:"flex-start",gap:14}}>
             <div style={{flex:1}}>
@@ -116,7 +116,7 @@ export function Programs({data}) {
             </div>
           </div>
           <div style={{marginTop:10,height:4,background:T.bg3,borderRadius:99}}>
-            <div style={{height:"100%",width:`${Math.min(pct,100)}%`,background:pct>90?"#ef4444":pct>70?"#f59e0b":"#10b981",borderRadius:99}}/>
+            <div style={{height:"100%",width:`${Math.min(pct,100)}%`,background:pct>90?"#ef4444":pct>70?"#f59e0b":"#1a6b4a",borderRadius:99}}/>
           </div>
           <div style={{display:"flex",gap:16,marginTop:10}}>
             <span style={{fontSize:11,color:T.ink3}}>{p.participant_count} participants</span>

@@ -35,7 +35,7 @@ function inferStage(total, lastGiftStr) {
   return "prospect";
 }
 
-const STAGE_COLORS = {prospect:T.ink3,qualify:"#3b82f6",cultivate:"#8b5cf6",solicit:"#f59e0b",steward:"#10b981",lapsed:"#ef4444"};
+const STAGE_COLORS = {prospect:T.ink3,qualify:"#3b82f6",cultivate:"#8b5cf6",solicit:"#f59e0b",steward:"#1a6b4a",lapsed:"#ef4444"};
 
 function parseCSV(text) {
   const lines = text.trim().split(/\r?\n/);
@@ -515,7 +515,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
   const [localRationale,setLocalRationale]=useState(donor.scoreRationale??null);
   const [scoreLoading,setScoreLoading]=useState(false);
 
-  const wsc=localScore===null?T.ink3:localScore<=3?"#6b7280":localScore<=5?"#3b82f6":localScore<=7?"#10b981":localScore<=9?"#8b5cf6":"#f59e0b";
+  const wsc=localScore===null?T.ink3:localScore<=3?"#6b7280":localScore<=5?"#3b82f6":localScore<=7?"#1a6b4a":localScore<=9?"#8b5cf6":"#f59e0b";
 
   const recalcScore=async()=>{
     setScoreLoading(true);
@@ -544,7 +544,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
   };
 
   const stage=STAGES.find(s=>s.id===(donor.stage||"cultivate"))||STAGES[2];
-  const sc=donorScore(donor);const scoreColor=sc>70?"#10b981":sc>45?"#f59e0b":"#ef4444";
+  const sc=donorScore(donor);const scoreColor=sc>70?"#1a6b4a":sc>45?"#f59e0b":"#ef4444";
   const urg=moveUrgency(donor);
 
   const interactionCount=donor.interactions?.length||0;
@@ -576,7 +576,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
           <div style={{fontSize:11,color:T.ink3,marginTop:2}}>{fmtFull(donor.total)} lifetime · {donor.gifts} gifts</div>
         </div>
         <div style={{display:"flex",gap:6,flexShrink:0,alignItems:"center"}}>
-          {giftLinkToast&&<span style={{fontSize:12,color:giftLinkToast.includes("copied")?"#10b981":"#ef4444",fontWeight:600,transition:"opacity 0.3s"}}>{giftLinkToast}</span>}
+          {giftLinkToast&&<span style={{fontSize:12,color:giftLinkToast.includes("copied")?"#1a6b4a":"#ef4444",fontWeight:600,transition:"opacity 0.3s"}}>{giftLinkToast}</span>}
           <button onClick={requestGift} disabled={giftLinkLoading} style={{background:T.green,border:"none",borderRadius:8,padding:"7px 14px",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer",opacity:giftLinkLoading?0.6:1}}>
             {giftLinkLoading?"…":"💳 Request Gift"}
           </button>
@@ -589,7 +589,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
         {/* LEFT */}
         <div style={{overflowY:"auto",padding:"22px 20px 24px 24px",borderRight:"1px solid "+T.bg3,display:"flex",flexDirection:"column",gap:18}}>
           <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10}}>
-            {[["Lifetime",fmtFull(donor.total),T.ink],["Last Gift",lastGiftDisplay,"#10b981"],["Contact",`${urg.days}d ago`,urg.urgencyColor],["Score",`${sc}/99`,scoreColor]].map(([l,v,c])=>(
+            {[["Lifetime",fmtFull(donor.total),T.ink],["Last Gift",lastGiftDisplay,"#1a6b4a"],["Contact",`${urg.days}d ago`,urg.urgencyColor],["Score",`${sc}/99`,scoreColor]].map(([l,v,c])=>(
               <div key={l} style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:12,padding:"12px 14px"}}>
                 <div style={{fontSize:9,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.1em",color:T.ink3,marginBottom:4}}>{l}</div>
                 <div style={{fontSize:20,fontWeight:800,color:c,fontFamily:"'DM Serif Display',serif",lineHeight:1.1}}>{v}</div>
@@ -608,15 +608,15 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
           <div>
             <div style={{fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.1em",color:T.ink3,marginBottom:8}}>
               Follow-up Tasks
-              {tasks.filter(t=>!t.done).length>0&&<span style={{marginLeft:6,background:"#10b981",color:"#fff",borderRadius:99,padding:"1px 6px",fontSize:9,fontWeight:800}}>{tasks.filter(t=>!t.done).length}</span>}
+              {tasks.filter(t=>!t.done).length>0&&<span style={{marginLeft:6,background:"#1a6b4a",color:"#fff",borderRadius:99,padding:"1px 6px",fontSize:9,fontWeight:800}}>{tasks.filter(t=>!t.done).length}</span>}
             </div>
             {tasks.length===0
               ?<div style={{fontSize:12,color:T.ink3,fontStyle:"italic"}}>No tasks yet — create one after logging a touchpoint.</div>
               :<div style={{display:"flex",flexDirection:"column",gap:6}}>
                 {[...tasks].sort((a,b)=>a.done-b.done||(a.due||"").localeCompare(b.due||"")).map(t=>{
                   const overdue=t.due&&!t.done&&daysDiff(t.due)<0;
-                  return <div key={t.id} onClick={()=>onTaskToggle(t)} style={{background:T.white,border:`1px solid ${t.done?"#10b98130":overdue?"#ef444430":T.bg3}`,borderRadius:10,padding:"10px 14px",cursor:"pointer",display:"flex",alignItems:"center",gap:10}}>
-                    <div style={{width:18,height:18,borderRadius:5,border:`2px solid ${t.done?"#10b981":SC[t.priority]}`,background:t.done?"#10b981":"transparent",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center"}}>
+                  return <div key={t.id} onClick={()=>onTaskToggle(t)} style={{background:T.white,border:`1px solid ${t.done?"#1a6b4a30":overdue?"#ef444430":T.bg3}`,borderRadius:10,padding:"10px 14px",cursor:"pointer",display:"flex",alignItems:"center",gap:10}}>
+                    <div style={{width:18,height:18,borderRadius:5,border:`2px solid ${t.done?"#1a6b4a":SC[t.priority]}`,background:t.done?"#1a6b4a":"transparent",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center"}}>
                       {t.done&&<span style={{color:"#fff",fontSize:10,lineHeight:1}}>✓</span>}
                     </div>
                     <div style={{flex:1,minWidth:0}}>
@@ -751,7 +751,7 @@ function DonorKanban({donors,onStageChange,onLogTouchpoint,onSelectDonor}){
                 const thisIsDragging=draggingId===d.id;
                 const urgBg={critical:"#ef444407",due:"#f59e0b05",ok:"transparent"}[urg.level];
                 const urgBorder={critical:"#ef444428",due:"#f59e0b28",ok:T.bg2}[urg.level];
-                const scColor=sc>70?"#10b981":sc>45?"#f59e0b":"#ef4444";
+                const scColor=sc>70?"#1a6b4a":sc>45?"#f59e0b":"#ef4444";
                 return(
                   <div key={d.id} draggable
                     onDragStart={e=>{e.dataTransfer.setData("donorId",d.id);setDraggingId(d.id);}}
@@ -768,7 +768,7 @@ function DonorKanban({donors,onStageChange,onLogTouchpoint,onSelectDonor}){
                     <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",gap:6,marginBottom:5}}>
                       <div style={{flex:1,minWidth:0}}>
                         <div style={{fontSize:13,fontWeight:700,color:T.ink,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",letterSpacing:"-0.01em"}}>{d.name}</div>
-                        <div style={{fontSize:12,color:T.green,marginTop:2,fontWeight:700}}>{fmt(d.total)}</div>
+                        <div style={{fontSize:12,color:T.greenDk,marginTop:2,fontWeight:700}}>{fmt(d.total)}</div>
                       </div>
                       <div style={{background:scColor+"15",border:`1px solid ${scColor}30`,borderRadius:6,padding:"4px 7px",flexShrink:0,textAlign:"center",minWidth:30}}>
                         <div style={{fontSize:13,fontWeight:800,color:scColor,lineHeight:"1"}}>{sc}</div>
@@ -852,15 +852,15 @@ function ReEngageView({donors,org,onLogTouchpoint,onSelectDonor}){
       </div>
       {(aiLoading||aiText)&&<AIPanel text={aiText} onClose={()=>setAiText("")}/>}
       <div style={{background:T.white,borderRadius:14,overflow:"hidden",border:"1px solid "+T.bg3}}>
-        <div style={{display:"grid",gridTemplateColumns:colWidths,gap:0,padding:"10px 18px",background:T.bg2,borderBottom:"1px solid "+T.bg3}}>
+        <div style={{display:"grid",gridTemplateColumns:colWidths,gap:0,padding:"10px 18px",background:"#1a6b4a",borderBottom:"1px solid "+T.bg3}}>
           {cols.map((h,i)=>(
-            <div key={i} style={{fontSize:10,fontWeight:700,color:T.ink3,textTransform:"uppercase",letterSpacing:".06em",textAlign:i===0?"left":"right"}}>{h}</div>
+            <div key={i} style={{fontSize:10,fontWeight:700,color:"#fff",textTransform:"uppercase",letterSpacing:".06em",textAlign:i===0?"left":"right"}}>{h}</div>
           ))}
         </div>
         {lapsed.map((d,idx)=>{
           const days=daysDiff(d.lastGift||d.lastTouchpoint||new Date().toISOString());
           const sc=donorScore(d);
-          const scColor=sc>70?"#10b981":sc>45?"#f59e0b":"#ef4444";
+          const scColor=sc>70?"#1a6b4a":sc>45?"#f59e0b":"#ef4444";
           const rowBg=days>730?"#ef444409":days>365?"#f59e0b09":"#eab30809";
           const rowBorderColor=days>730?"#ef444425":days>365?"#f59e0b25":"#eab30825";
           const daysColor=days>730?"#ef4444":days>365?"#f59e0b":"#ca8a04";
@@ -888,7 +888,7 @@ function ReEngageView({donors,org,onLogTouchpoint,onSelectDonor}){
               </div>
               <div style={{display:"flex",gap:6,justifyContent:"flex-end"}}>
                 <button onClick={e=>{e.stopPropagation();onLogTouchpoint(d);}} style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:7,padding:"4px 10px",color:T.ink3,fontSize:11,fontWeight:600,cursor:"pointer"}}>+ Log</button>
-                <button onClick={()=>onSelectDonor(d)} style={{background:"#10b98114",border:"1px solid #10b98140",borderRadius:7,padding:"4px 10px",color:"#10b981",fontSize:11,fontWeight:600,cursor:"pointer"}}>View →</button>
+                <button onClick={()=>onSelectDonor(d)} style={{background:"#1a6b4a14",border:"1px solid #1a6b4a40",borderRadius:7,padding:"4px 10px",color:"#1a6b4a",fontSize:11,fontWeight:600,cursor:"pointer"}}>View →</button>
               </div>
             </div>
           );
@@ -904,7 +904,7 @@ const TIER_META=[
   {id:"small",    label:"Small",     color:"#3b82f6"},
   {id:"mid",      label:"Mid",       color:"#8b5cf6"},
   {id:"major",    label:"Major",     color:"#f59e0b"},
-  {id:"principal",label:"Principal", color:"#10b981"},
+  {id:"principal",label:"Principal", color:"#1a6b4a"},
 ];
 const PATTERN_META=[
   {id:"one-time", label:"One-time"},
@@ -1119,7 +1119,7 @@ export function Donors({data,setData}){
           {[["kanban","Pipeline"],["list","List"],["reengage","Re-engage"]].map(([v,l])=>(
             <button key={v} onClick={()=>setView(v)} style={{background:view===v?T.bg2:"transparent",border:"none",padding:"9px 14px",color:view===v?T.ink:"#6b7280",fontSize:13,fontWeight:view===v?700:400,cursor:"pointer",display:"flex",alignItems:"center",gap:5}}>
               {l}
-              {v==="reengage"&&lapsedCount>0&&<span style={{background:"#10b981",color:"#fff",borderRadius:99,padding:"1px 6px",fontSize:10,fontWeight:800,lineHeight:1.4}}>{lapsedCount}</span>}
+              {v==="reengage"&&lapsedCount>0&&<span style={{background:"#1a6b4a",color:"#fff",borderRadius:99,padding:"1px 6px",fontSize:10,fontWeight:800,lineHeight:1.4}}>{lapsedCount}</span>}
             </button>
           ))}
         </div>
@@ -1140,9 +1140,9 @@ export function Donors({data,setData}){
         const clearAll=()=>setFilters({tiers:[],stages:[],pattern:"",geo:"",giftFrom:"",giftTo:"",totalMin:"",totalMax:""});
         return<>
           <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
-            <button onClick={()=>setFiltersOpen(v=>!v)} style={{background:filtersOpen||count>0?T.bg2:T.bg,border:"1px solid "+(count>0?T.green:T.bg3),borderRadius:9,padding:"7px 12px",color:count>0?T.green:T.ink3,fontSize:12,fontWeight:count>0?700:400,cursor:"pointer",display:"flex",alignItems:"center",gap:6}}>
+            <button onClick={()=>setFiltersOpen(v=>!v)} style={{background:filtersOpen||count>0?T.bg2:T.bg,border:"1px solid "+(count>0?T.greenDk:T.bg3),borderRadius:9,padding:"7px 12px",color:count>0?T.greenDk:T.ink3,fontSize:12,fontWeight:count>0?700:400,cursor:"pointer",display:"flex",alignItems:"center",gap:6}}>
               ⊞ Filters
-              {count>0&&<span style={{background:T.green,color:"#fff",borderRadius:99,padding:"0 6px",fontSize:10,fontWeight:800,lineHeight:"16px"}}>{count}</span>}
+              {count>0&&<span style={{background:T.greenDk,color:"#fff",borderRadius:99,padding:"0 6px",fontSize:10,fontWeight:800,lineHeight:"16px"}}>{count}</span>}
             </button>
             {pills.map(p=>(
               <span key={p.id} style={{background:T.bg2,border:"1px solid "+T.bg3,borderRadius:99,padding:"4px 10px",fontSize:12,color:T.ink2,display:"inline-flex",alignItems:"center",gap:5}}>
@@ -1181,7 +1181,7 @@ export function Donors({data,setData}){
 
       {view==="list"&&filtered.length===0&&<EmptyState icon="♦" title="No donors found" message="Try a different search term or add your first donor above."/>}
       {view==="list"&&filtered.map(d=>{
-        const sc=donorScore(d);const scColor=sc>70?"#10b981":sc>45?"#f59e0b":"#ef4444";
+        const sc=donorScore(d);const scColor=sc>70?"#1a6b4a":sc>45?"#f59e0b":"#ef4444";
         const urg=moveUrgency(d);const stage=STAGES.find(s=>s.id===(d.stage||"cultivate"))||STAGES[2];
         return(
           <Card key={d.id} onClick={()=>setSelected(d)} style={{cursor:"pointer"}}>

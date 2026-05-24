@@ -172,8 +172,8 @@ function GrantProfile({grant,onClose,onUpdate,onDelete,isAdmin,org}){
           <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10}}>
             {[
               ["Amount Requested",fmtFull(grant.amount),T.ink],
-              ["Amount Awarded",fmtFull(grant.received||0),"#10b981"],
-              ["% Funded",pct+"%",pct>75?"#10b981":pct>40?"#f59e0b":"#6b7280"],
+              ["Amount Awarded",fmtFull(grant.received||0),"#1a6b4a"],
+              ["% Funded",pct+"%",pct>75?"#1a6b4a":pct>40?"#f59e0b":"#6b7280"],
               ["Days to Deadline",grant.deadline?(days<0?"Overdue":days+"d"):"—",days<0?"#ef4444":days<14?"#ef4444":days<30?"#f59e0b":T.ink],
             ].map(([l,v,c])=>(
               <div key={l} style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:12,padding:"12px 14px"}}>
@@ -189,7 +189,7 @@ function GrantProfile({grant,onClose,onUpdate,onDelete,isAdmin,org}){
               <div style={{fontSize:11,color:T.ink3}}>{fmtFull(grant.received||0)} of {fmtFull(grant.amount)}</div>
             </div>
             <div style={{height:8,background:T.bg3,borderRadius:99}}>
-              <div style={{height:"100%",width:`${Math.min(pct,100)}%`,background:"#10b981",borderRadius:99,transition:"width 0.4s"}}/>
+              <div style={{height:"100%",width:`${Math.min(pct,100)}%`,background:"#1a6b4a",borderRadius:99,transition:"width 0.4s"}}/>
             </div>
           </div>}
 
@@ -229,7 +229,7 @@ function GrantProfile({grant,onClose,onUpdate,onDelete,isAdmin,org}){
           {grant.history&&grant.history.length>0&&<div>
             <div style={{fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.1em",color:T.ink3,marginBottom:8}}>Prior Awards</div>
             <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
-              {grant.history.map((h,i)=><Pill key={i} label={h} color="#10b981"/>)}
+              {grant.history.map((h,i)=><Pill key={i} label={h} color="#1a6b4a"/>)}
             </div>
           </div>}
         </div>
@@ -397,7 +397,7 @@ export function Grants({data,setData}) {
           </div>
           <Pill label={g.status} color={SC[g.status]}/>
         </div>
-        {g.status==="active"&&<div style={{marginTop:10,height:4,background:T.bg3,borderRadius:99}}><div style={{height:"100%",width:`${pct}%`,background:"#10b981",borderRadius:99}}/></div>}
+        {g.status==="active"&&<div style={{marginTop:10,height:4,background:T.bg3,borderRadius:99}}><div style={{height:"100%",width:`${pct}%`,background:"#1a6b4a",borderRadius:99}}/></div>}
       </Card>;
     })}
   </div>;
@@ -455,7 +455,7 @@ Focus on grants under $200K that match this org's size and mission. Include a mi
       </button>
     </Card>
 
-    {(loading||results)&&<Card style={{background:"linear-gradient(135deg,#0f0c29,#0f172a)",border:"1px solid #10b98144"}}>
+    {(loading||results)&&<Card style={{background:"linear-gradient(135deg,#0f0c29,#0f172a)",border:"1px solid #1a6b4a44"}}>
       <div style={{fontSize:11,fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",color:"#8b5cf6",marginBottom:14}}>✦ Grant Matches — Ranked by Alignment</div>
       {loading&&!results&&<div style={{display:"flex",alignItems:"center",gap:10,color:T.ink3,fontSize:13}}><Spin/>Analyzing your org and searching grant landscape…</div>}
       {results&&<div style={{fontSize:13,color:T.ink2,lineHeight:1.85,whiteSpace:"pre-wrap"}}>{results}</div>}
