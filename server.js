@@ -978,15 +978,31 @@ app.get("/campaigns", requireAuth, wrap(async (req, res) => {
   );
   const result = await Promise.all(campaigns.map(async c => {
     const recipients = await query(
-      `SELECT cr.id, cr.email, cr.sent_at, cr.opened_at, d.name as donor_name
+      `SELECT cr.id, cr.email, cr.sent_at, cr.opened_at, cr.failure_reason, d.name as donor_name
        FROM campaign_recipients cr
        LEFT JOIN donors d ON d.id = cr.donor_id
-       WHERE cr.campaign_id = ?`,
+       WHERE cr.campaign_id = ? ORDER BY cr.created_at DESC`,
       [c.id]
     );
     return { ...c, recipients };
   }));
   res.json(result);
+}));
+
+app.get("/campaigns/:id", requireAuth, wrap(async (req, res) => {
+  const rows = await query(
+    "SELECT * FROM campaigns WHERE id = ? AND org_id = ?",
+    [req.params.id, req.user.orgId]
+  );
+  if (!rows.length) return res.status(404).json({ error: "Not found" });
+  const recipients = await query(
+    `SELECT cr.id, cr.email, cr.sent_at, cr.opened_at, cr.failure_reason, d.name as donor_name
+     FROM campaign_recipients cr
+     LEFT JOIN donors d ON d.id = cr.donor_id
+     WHERE cr.campaign_id = ? ORDER BY cr.created_at DESC`,
+    [rows[0].id]
+  );
+  res.json({ ...rows[0], recipients });
 }));
 
 app.post("/campaigns", requireAuth, wrap(async (req, res) => {
@@ -1078,6 +1094,10 @@ app.post("/campaigns/:id/send", requireAuth, requireAdmin, wrap(async (req, res)
   res.json({ queued: true, recipientCount: donors.length });
 
   setImmediate(async () => {
+    console.log(`[campaign:${campaign.id}] background send starting — ${donors.length} recipients`);
+    let sentCount = 0;
+    let failCount = 0;
+
     try {
       const smtpHost = process.env.DEMO_SMTP_HOST;
       const smtpUser = process.env.DEMO_SMTP_USER;
@@ -1092,9 +1112,11 @@ app.post("/campaigns/:id/send", requireAuth, requireAdmin, wrap(async (req, res)
           secure: smtpPort === 465,
           auth: { user: smtpUser, pass: smtpPass },
         });
+        console.log(`[campaign:${campaign.id}] SMTP configured via ${smtpHost}`);
+      } else {
+        console.log(`[campaign:${campaign.id}] No DEMO_SMTP_* env vars — recording sends without emailing`);
       }
 
-      let sentCount = 0;
       const year = String(new Date().getFullYear());
 
       for (const donor of donors) {
@@ -1119,7 +1141,7 @@ app.post("/campaigns/:id/send", requireAuth, requireAdmin, wrap(async (req, res)
           .replace(/{{total_giving}}/g, totalGiving)
           .replace(/{{year}}/g,         year);
 
-        const pixel   = `<img src="${BACKEND_URL}/track/${recipientId}/open.gif" width="1" height="1" style="display:none">`;
+        const pixel    = `<img src="${BACKEND_URL}/track/${recipientId}/open.gif" width="1" height="1" style="display:none">`;
         const htmlFull = bodyHtml + pixel;
         const textBody = bodyHtml.replace(/<[^>]+>/g, "");
 
@@ -1134,18 +1156,26 @@ app.post("/campaigns/:id/send", requireAuth, requireAdmin, wrap(async (req, res)
           await run("UPDATE campaign_recipients SET sent_at=NOW() WHERE id=?", [recipientId]);
           sentCount++;
         } catch (err) {
-          console.error("Email send failed:", donor.email, err.message);
+          failCount++;
+          const reason = err.message.slice(0, 500);
+          console.error(`[campaign:${campaign.id}] send failed for ${donor.email}:`, reason);
+          await run(
+            "UPDATE campaign_recipients SET failure_reason=? WHERE id=?",
+            [reason, recipientId]
+          ).catch(() => {});
         }
       }
-
-      await run(
-        "UPDATE campaigns SET status='sent', sent_at=NOW(), recipient_count=?, updated_at=NOW() WHERE id=?",
-        [sentCount, campaign.id]
-      );
     } catch (err) {
-      console.error("Campaign background send error:", err.message);
-      await run("UPDATE campaigns SET status='draft', updated_at=NOW() WHERE id=?", [campaign.id]).catch(() => {});
+      console.error(`[campaign:${campaign.id}] background send fatal error:`, err.message);
     }
+
+    // Always finalize — even if some or all emails failed
+    await run(
+      "UPDATE campaigns SET status='sent', sent_at=NOW(), recipient_count=?, updated_at=NOW() WHERE id=?",
+      [sentCount, campaign.id]
+    ).catch(e => console.error(`[campaign:${campaign.id}] final status update failed:`, e.message));
+
+    console.log(`[campaign:${campaign.id}] done — sent:${sentCount} failed:${failCount}`);
   });
 }));
 

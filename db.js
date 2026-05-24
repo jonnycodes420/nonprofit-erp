@@ -364,6 +364,7 @@ async function initSchema() {
   `);
 
   await pool.query(`ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS scheduled_at TIMESTAMPTZ`);
+  await pool.query(`ALTER TABLE campaign_recipients ADD COLUMN IF NOT EXISTS failure_reason TEXT`);
 }
 
 async function seedData() {

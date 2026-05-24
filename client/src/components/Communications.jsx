@@ -167,6 +167,16 @@ export function Communications({ data }) {
 
   useEffect(() => { loadCampaigns(); }, []);
 
+  // Poll every 5 s while any campaign is still sending
+  const anySending = campaigns.some(c => c.status === "sending");
+  useEffect(() => {
+    if (!anySending) return;
+    const tid = setInterval(async () => {
+      try { setCampaigns(await apiFetch("/campaigns")); } catch (e) { /* ignore */ }
+    }, 5000);
+    return () => clearInterval(tid);
+  }, [anySending]);
+
   const loadDonors = async () => {
     if (allDonors.length) return;
     try { setAllDonors(await apiFetch("/donors")); }
@@ -285,7 +295,6 @@ export function Communications({ data }) {
     return html
       .replace(/{{first_name}}/g,   "Margaret")
       .replace(/{{last_name}}/g,    "Chen")
-      .replace(/{{donor_name}}/g,   "Margaret Chen")
       .replace(/{{org_name}}/g,     data?.org?.name || "Org")
       .replace(/{{gift_amount}}/g,  "$5,000")
       .replace(/{{total_giving}}/g, "$24,500")
@@ -492,8 +501,9 @@ export function Communications({ data }) {
                         {recs.slice(0, 20).map(r => (
                           <div key={r.id} style={{ display: "grid", gridTemplateColumns: "1fr 80px 80px", padding: "8px 12px", borderTop: "1px solid " + T.bg2, fontSize: 12, gap: 8 }}>
                             <span style={{ color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.donor_name || r.email}</span>
-                            <span style={{ color: r.opened_at ? "#10b981" : r.sent_at ? T.ink3 : "#f59e0b" }}>
-                              {r.opened_at ? "Opened" : r.sent_at ? "Delivered" : "Pending"}
+                            <span style={{ color: r.opened_at ? "#10b981" : r.failure_reason ? "#ef4444" : r.sent_at ? T.ink3 : "#f59e0b" }}
+                              title={r.failure_reason || undefined}>
+                              {r.opened_at ? "Opened" : r.failure_reason ? "Failed" : r.sent_at ? "Delivered" : "Pending"}
                             </span>
                             <span style={{ color: T.ink3, fontSize: 11 }}>
                               {r.opened_at
