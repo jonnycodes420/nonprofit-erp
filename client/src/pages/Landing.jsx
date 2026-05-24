@@ -17,7 +17,10 @@ const T = {
   white:      "#ffffff",
 };
 
-// ── Animated mesh canvas for the dark section ──────────────────────────────
+const API = import.meta.env.VITE_API_URL || "http://localhost:3001";
+const CALENDLY_URL = "https://calendly.com/YOUR_LINK_HERE";
+
+// ── Animated mesh canvas ───────────────────────────────────────────────────
 function MeshCanvas() {
   const canvasRef = useRef(null);
   const mouseRef  = useRef({ x: 0.5, y: 0.5 });
@@ -36,7 +39,6 @@ function MeshCanvas() {
     resize();
     window.addEventListener("resize", resize);
 
-    // Build hexagonal mesh points
     const points = [];
     const cols = 18, rows = 10;
     for (let r = 0; r < rows; r++) {
@@ -53,7 +55,6 @@ function MeshCanvas() {
       }
     }
 
-    let t = 0;
     const draw = () => {
       const w = canvas.offsetWidth;
       const h = canvas.offsetHeight;
@@ -64,7 +65,6 @@ function MeshCanvas() {
       ctx.fillStyle = T.dark;
       ctx.fillRect(0, 0, w, h);
 
-      // Update points with mouse influence + gentle drift
       points.forEach(p => {
         const dx = mx - p.bx;
         const dy = my - p.by;
@@ -72,12 +72,10 @@ function MeshCanvas() {
         const pull = Math.max(0, 0.18 - dist) * 0.08;
         p.bx += p.vx + dx * pull;
         p.by += p.vy + dy * pull;
-        // Spring back
         p.bx += (p.ox - p.bx) * 0.012;
         p.by += (p.oy - p.by) * 0.012;
       });
 
-      // Draw edges between nearby points
       for (let i = 0; i < points.length; i++) {
         for (let j = i + 1; j < points.length; j++) {
           const pi = points[i], pj = points[j];
@@ -86,7 +84,6 @@ function MeshCanvas() {
           const d  = Math.sqrt(dx * dx + dy * dy);
           if (d < 0.12) {
             const alpha = (1 - d / 0.12) * 0.55;
-            // Color shifts toward green near mouse
             const mdx = (pi.bx + pj.bx) / 2 - mx;
             const mdy = (pi.by + pj.by) / 2 - my;
             const md  = Math.sqrt(mdx * mdx + mdy * mdy);
@@ -104,7 +101,6 @@ function MeshCanvas() {
         }
       }
 
-      // Draw nodes
       points.forEach(p => {
         const dx = p.bx - mx, dy = p.by - my;
         const d = Math.sqrt(dx * dx + dy * dy);
@@ -118,14 +114,12 @@ function MeshCanvas() {
         ctx.fill();
       });
 
-      // Green glow orb following mouse
       const gx = ctx.createRadialGradient(mx * w, my * h, 0, mx * w, my * h, w * 0.28);
       gx.addColorStop(0, "rgba(16,185,129,0.12)");
       gx.addColorStop(1, "transparent");
       ctx.fillStyle = gx;
       ctx.fillRect(0, 0, w, h);
 
-      t += 0.01;
       animRef.current = requestAnimationFrame(draw);
     };
 
@@ -153,10 +147,179 @@ function MeshCanvas() {
   );
 }
 
+// ── Demo booking modal ─────────────────────────────────────────────────────
+function DemoModal({ onClose }) {
+  const [form, setForm] = useState({ name: "", email: "", orgName: "", orgSize: "", challenge: "" });
+  const [submitted, setSubmitted] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [err, setErr] = useState("");
+  const calendlyLoaded = useRef(false);
+
+  // Load Calendly widget script once
+  useEffect(() => {
+    if (calendlyLoaded.current) return;
+    calendlyLoaded.current = true;
+    const s = document.createElement("script");
+    s.src = "https://assets.calendly.com/assets/external/widget.js";
+    s.async = true;
+    document.head.appendChild(s);
+  }, []);
+
+  // Close on Escape
+  useEffect(() => {
+    const onKey = (e) => { if (e.key === "Escape") onClose(); };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  const set = (k) => (e) => setForm(f => ({ ...f, [k]: e.target.value }));
+
+  const submit = async (e) => {
+    e.preventDefault();
+    if (!form.name.trim() || !form.email.trim()) { setErr("Name and email are required."); return; }
+    setLoading(true); setErr("");
+    try {
+      const r = await fetch(`${API}/demo-request`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(form),
+      });
+      if (!r.ok) throw new Error("Something went wrong.");
+      setSubmitted(true);
+    } catch (e) {
+      setErr(e.message);
+    }
+    setLoading(false);
+  };
+
+  const inp = {
+    width: "100%", boxSizing: "border-box",
+    border: `1px solid ${T.cream3}`, borderRadius: 9,
+    padding: "10px 13px", fontSize: 14, color: T.ink,
+    background: T.cream, outline: "none",
+    fontFamily: "'DM Sans',sans-serif",
+  };
+
+  return (
+    <div
+      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+      style={{
+        position: "fixed", inset: 0, zIndex: 500,
+        background: "rgba(0,0,0,0.45)",
+        display: "flex", alignItems: "flex-start", justifyContent: "center",
+        padding: "40px 16px", overflowY: "auto",
+      }}
+    >
+      <div style={{
+        background: T.cream, borderRadius: 20, width: "100%", maxWidth: 680,
+        boxShadow: "0 24px 80px rgba(0,0,0,0.18)",
+        border: `1px solid ${T.cream3}`,
+      }}>
+
+        {/* Header */}
+        <div style={{ padding: "28px 32px 0", display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+          <div>
+            <div style={{ fontFamily: "'DM Serif Display',serif", fontSize: 26, color: T.ink, letterSpacing: "-0.5px", marginBottom: 6 }}>
+              Book a demo
+            </div>
+            <div style={{ fontSize: 14, color: T.ink3, lineHeight: 1.5 }}>
+              Tell us about your org, then pick a time that works for you.
+            </div>
+          </div>
+          <button onClick={onClose} style={{ background: "none", border: "none", fontSize: 22, color: T.ink3, cursor: "pointer", lineHeight: 1, padding: 4 }}>×</button>
+        </div>
+
+        {submitted ? (
+          <div style={{ padding: "48px 32px", textAlign: "center" }}>
+            <div style={{ fontSize: 44, marginBottom: 16 }}>✓</div>
+            <div style={{ fontFamily: "'DM Serif Display',serif", fontSize: 26, color: T.ink, marginBottom: 10 }}>
+              We'll see you then!
+            </div>
+            <div style={{ fontSize: 15, color: T.ink3, lineHeight: 1.65, marginBottom: 28 }}>
+              Check your inbox for a calendar confirmation. We'll have a customized walkthrough ready for {form.orgName || "your org"}.
+            </div>
+            <button onClick={onClose} style={{ background: T.ink, color: T.cream, border: "none", borderRadius: 9, padding: "11px 28px", fontSize: 14, fontWeight: 500, cursor: "pointer", fontFamily: "'DM Sans',sans-serif" }}>
+              Close
+            </button>
+          </div>
+        ) : (
+          <form onSubmit={submit} style={{ padding: "24px 32px 32px" }}>
+            {/* Form fields */}
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 14 }}>
+              <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+                <label style={{ fontSize: 12, fontWeight: 500, color: T.ink2 }}>Your name *</label>
+                <input value={form.name} onChange={set("name")} placeholder="Jane Smith" style={inp} />
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+                <label style={{ fontSize: 12, fontWeight: 500, color: T.ink2 }}>Work email *</label>
+                <input type="email" value={form.email} onChange={set("email")} placeholder="jane@yourorg.org" style={inp} />
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+                <label style={{ fontSize: 12, fontWeight: 500, color: T.ink2 }}>Organization name</label>
+                <input value={form.orgName} onChange={set("orgName")} placeholder="CREO Arts NYC" style={inp} />
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+                <label style={{ fontSize: 12, fontWeight: 500, color: T.ink2 }}>Organization size</label>
+                <select value={form.orgSize} onChange={set("orgSize")} style={{ ...inp, appearance: "none" }}>
+                  <option value="">Select…</option>
+                  <option value="1-5">1–5 staff</option>
+                  <option value="6-20">6–20 staff</option>
+                  <option value="21-50">21–50 staff</option>
+                  <option value="50+">50+ staff</option>
+                </select>
+              </div>
+            </div>
+
+            <div style={{ display: "flex", flexDirection: "column", gap: 5, marginBottom: 20 }}>
+              <label style={{ fontSize: 12, fontWeight: 500, color: T.ink2 }}>Primary challenge</label>
+              <select value={form.challenge} onChange={set("challenge")} style={{ ...inp, appearance: "none" }}>
+                <option value="">Select…</option>
+                <option value="Donor management">Donor management</option>
+                <option value="Grant tracking">Grant tracking</option>
+                <option value="Volunteer coordination">Volunteer coordination</option>
+                <option value="All of the above">All of the above</option>
+              </select>
+            </div>
+
+            {err && (
+              <div style={{ marginBottom: 14, fontSize: 13, color: "#dc2626", background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 8, padding: "9px 13px" }}>{err}</div>
+            )}
+
+            <button type="submit" disabled={loading} style={{
+              width: "100%", background: T.ink, color: T.cream, border: "none",
+              borderRadius: 9, padding: "12px", fontSize: 15, fontWeight: 500,
+              cursor: loading ? "not-allowed" : "pointer",
+              fontFamily: "'DM Sans',sans-serif", marginBottom: 24,
+              opacity: loading ? 0.7 : 1,
+            }}>
+              {loading ? "Saving…" : "Continue to scheduling →"}
+            </button>
+
+            {/* Divider */}
+            <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 20 }}>
+              <div style={{ flex: 1, height: 1, background: T.cream3 }} />
+              <span style={{ fontSize: 12, color: T.ink3 }}>Pick a time</span>
+              <div style={{ flex: 1, height: 1, background: T.cream3 }} />
+            </div>
+
+            {/* Calendly inline embed */}
+            <div
+              className="calendly-inline-widget"
+              data-url={CALENDLY_URL}
+              style={{ minWidth: 320, height: 600, borderRadius: 12, overflow: "hidden" }}
+            />
+          </form>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ── Main ───────────────────────────────────────────────────────────────────
 export default function Landing() {
   const navigate = useNavigate();
   const [navShadow, setNavShadow] = useState(false);
+  const [showModal, setShowModal] = useState(false);
 
   useEffect(() => {
     const onScroll = () => setNavShadow(window.scrollY > 10);
@@ -164,7 +327,6 @@ export default function Landing() {
     return () => window.removeEventListener("scroll", onScroll);
   }, []);
 
-  // Staggered reveal
   useEffect(() => {
     const els = document.querySelectorAll("[data-reveal]");
     els.forEach((el, i) => {
@@ -177,6 +339,29 @@ export default function Landing() {
       }, 80 + i * 100);
     });
   }, []);
+
+  // Lock body scroll when modal open
+  useEffect(() => {
+    document.body.style.overflow = showModal ? "hidden" : "";
+    return () => { document.body.style.overflow = ""; };
+  }, [showModal]);
+
+  const BookBtn = ({ children, style = {}, ...props }) => (
+    <button
+      onClick={() => setShowModal(true)}
+      style={{
+        background: T.ink, color: T.cream, border: "none",
+        padding: "13px 28px", borderRadius: 9, fontSize: 15, fontWeight: 500,
+        cursor: "pointer", fontFamily: "'DM Sans',sans-serif", transition: "background .2s",
+        ...style,
+      }}
+      onMouseEnter={e => e.currentTarget.style.background = "#2a2a2a"}
+      onMouseLeave={e => e.currentTarget.style.background = style.background || T.ink}
+      {...props}
+    >
+      {children || "Book a Demo"}
+    </button>
+  );
 
   return (
     <>
@@ -199,8 +384,11 @@ export default function Landing() {
           .features-grid { grid-template-columns: 1fr !important; }
           .pricing-grid { grid-template-columns: 1fr !important; }
           .nav-links { display: none !important; }
+          .demo-form-grid { grid-template-columns: 1fr !important; }
         }
       `}</style>
+
+      {showModal && <DemoModal onClose={() => setShowModal(false)} />}
 
       <div className="steward">
 
@@ -231,24 +419,12 @@ export default function Landing() {
               cursor: "pointer", fontFamily: "'DM Sans',sans-serif",
               transition: "opacity .2s", padding: "8px 4px",
             }}>Log in</button>
-            <button onClick={() => navigate("/signup")} style={{
-              background: T.ink, color: T.cream, border: "none",
-              padding: "10px 22px", borderRadius: 8, fontSize: 15, fontWeight: 500,
-              cursor: "pointer", fontFamily: "'DM Sans',sans-serif",
-              transition: "background .2s",
-            }}
-              onMouseEnter={e => e.currentTarget.style.background = "#2a2a2a"}
-              onMouseLeave={e => e.currentTarget.style.background = T.ink}
-            >
-              Try Steward
-            </button>
+            <BookBtn style={{ padding: "10px 22px", fontSize: 15 }} />
           </div>
         </nav>
 
         {/* ── Hero ── */}
         <section style={{ padding: "90px 48px 80px", maxWidth: 1200, margin: "0 auto" }}>
-
-          {/* Eyebrow */}
           <div data-reveal style={{ marginBottom: 52 }}>
             <span style={{
               display: "inline-flex", alignItems: "center", gap: 7,
@@ -260,9 +436,7 @@ export default function Landing() {
             </span>
           </div>
 
-          {/* Two-column headline layout — Anthropic style */}
           <div className="hero-grid" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 80px", alignItems: "start" }}>
-            {/* Left: giant headline */}
             <div data-reveal>
               <h1 className="h1-hero" style={{
                 fontFamily: "'DM Serif Display',serif",
@@ -279,29 +453,12 @@ export default function Landing() {
               </h1>
             </div>
 
-            {/* Right: subtext + CTAs */}
             <div data-reveal style={{ paddingTop: 12 }}>
               <p style={{ fontSize: 19, color: T.ink2, lineHeight: 1.7, fontWeight: 300, marginBottom: 36, maxWidth: 420 }}>
                 Steward replaces Bloomerang, QuickBooks, and five spreadsheets — one platform for donors, grants, programs, finance, and your team.
               </p>
-              <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 40 }}>
-                <button onClick={() => navigate("/signup")} style={{
-                  background: T.ink, color: T.cream, border: "none",
-                  padding: "13px 28px", borderRadius: 9, fontSize: 15, fontWeight: 500,
-                  cursor: "pointer", fontFamily: "'DM Sans',sans-serif", transition: "background .2s",
-                }}
-                  onMouseEnter={e => e.currentTarget.style.background = "#2a2a2a"}
-                  onMouseLeave={e => e.currentTarget.style.background = T.ink}
-                >
-                  Start free trial
-                </button>
-                <button className="btn-text" style={{
-                  background: "none", border: "none", fontSize: 15, color: T.ink3,
-                  cursor: "pointer", fontFamily: "'DM Sans',sans-serif",
-                  display: "flex", alignItems: "center", gap: 6, transition: "opacity .2s",
-                }}>
-                  Watch demo <i className="ti ti-arrow-right" aria-hidden="true" />
-                </button>
+              <div style={{ marginBottom: 40 }}>
+                <BookBtn style={{ padding: "13px 28px", fontSize: 15 }} />
               </div>
               <div style={{ display: "flex", gap: 24, flexWrap: "wrap" }}>
                 {[
@@ -319,7 +476,7 @@ export default function Landing() {
           </div>
         </section>
 
-        {/* ── Dark animated mesh card — Anthropic style ── */}
+        {/* ── Dark animated mesh card ── */}
         <section style={{ padding: "0 32px 80px" }}>
           <div style={{
             position: "relative", borderRadius: 24, overflow: "hidden",
@@ -327,7 +484,6 @@ export default function Landing() {
             minHeight: 460, cursor: "crosshair",
           }}>
             <MeshCanvas />
-            {/* Content overlay */}
             <div style={{ position: "relative", zIndex: 2, padding: "64px 64px", display: "grid", gridTemplateColumns: "1fr 1fr", gap: 64, alignItems: "center" }}>
               <div>
                 <div style={{
@@ -351,7 +507,6 @@ export default function Landing() {
                 </p>
               </div>
 
-              {/* Mini app mockup */}
               <div style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.09)", borderRadius: 16, overflow: "hidden" }}>
                 <div style={{ background: "rgba(255,255,255,0.04)", borderBottom: "1px solid rgba(255,255,255,0.07)", padding: "10px 16px", display: "flex", alignItems: "center", gap: 6 }}>
                   <div style={{ width: 8, height: 8, borderRadius: "50%", background: "#ff6b6b" }} />
@@ -480,18 +635,20 @@ export default function Landing() {
                       <i className="ti ti-check" style={{ fontSize: 14, color: T.green, flexShrink: 0 }} aria-hidden="true" /> {f}
                     </div>
                   ))}
-                  <button onClick={() => navigate("/signup")} style={{
-                    width: "100%", marginTop: 24, padding: 12, borderRadius: 9,
-                    fontSize: 14, fontWeight: 500, cursor: "pointer",
-                    fontFamily: "'DM Sans',sans-serif", transition: "all .2s",
-                    border: p.featured ? `1.5px solid ${T.green}` : `1.5px solid ${T.cream3}`,
-                    color: p.featured ? T.white : T.ink,
-                    background: p.featured ? T.green : "transparent",
-                  }}
+                  <button
+                    onClick={() => setShowModal(true)}
+                    style={{
+                      width: "100%", marginTop: 24, padding: 12, borderRadius: 9,
+                      fontSize: 14, fontWeight: 500, cursor: "pointer",
+                      fontFamily: "'DM Sans',sans-serif", transition: "all .2s",
+                      border: p.featured ? `1.5px solid ${T.green}` : `1.5px solid ${T.cream3}`,
+                      color: p.featured ? T.white : T.ink,
+                      background: p.featured ? T.green : "transparent",
+                    }}
                     onMouseEnter={e => { e.currentTarget.style.background = p.featured ? "#0ea371" : T.cream2; }}
                     onMouseLeave={e => { e.currentTarget.style.background = p.featured ? T.green : "transparent"; }}
                   >
-                    Get started
+                    Book a Demo
                   </button>
                 </div>
               ))}
@@ -503,35 +660,16 @@ export default function Landing() {
           </div>
         </div>
 
-        {/* ── CTA ── */}
+        {/* ── Bottom CTA ── */}
         <div style={{ padding: "120px 48px", textAlign: "center", maxWidth: 760, margin: "0 auto" }}>
           <h2 style={{ fontFamily: "'DM Serif Display',serif", fontSize: "clamp(38px, 5vw, 62px)", letterSpacing: "-1.5px", color: T.ink, marginBottom: 20, lineHeight: 1.06 }}>
             Ready to run your org{" "}
             <span style={{ textDecoration: "underline", textDecorationColor: T.green, textDecorationThickness: 3, textUnderlineOffset: 6 }}>smarter</span>?
           </h2>
           <p style={{ fontSize: 17, color: T.ink3, marginBottom: 44, fontWeight: 300, lineHeight: 1.65 }}>
-            No credit card. No spreadsheets. No switching headache. Free for 14 days.
+            See Steward live with your own data. 30-minute walkthrough, no pressure.
           </p>
-          <div style={{ display: "flex", justifyContent: "center", gap: 14, flexWrap: "wrap" }}>
-            <button onClick={() => navigate("/signup")} style={{
-              background: T.ink, color: T.cream, border: "none",
-              padding: "14px 32px", borderRadius: 10, fontSize: 15, fontWeight: 500,
-              cursor: "pointer", fontFamily: "'DM Sans',sans-serif", transition: "background .2s",
-            }}
-              onMouseEnter={e => e.currentTarget.style.background = "#2a2a2a"}
-              onMouseLeave={e => e.currentTarget.style.background = T.ink}
-            >
-              Start your free trial
-            </button>
-            <button className="btn-text" style={{
-              background: "none", border: `1px solid ${T.cream3}`, fontSize: 15, color: T.ink3,
-              cursor: "pointer", fontFamily: "'DM Sans',sans-serif",
-              display: "flex", alignItems: "center", gap: 8, padding: "14px 24px", borderRadius: 10,
-              transition: "opacity .2s",
-            }}>
-              Book a demo <i className="ti ti-arrow-right" aria-hidden="true" />
-            </button>
-          </div>
+          <BookBtn style={{ padding: "16px 40px", fontSize: 16 }} />
         </div>
 
         {/* ── Footer ── */}

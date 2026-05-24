@@ -1222,6 +1222,53 @@ app.post("/annual-fund/goal", requireAuth, requireAdmin, wrap(async (req, res) =
   res.json({ success: true, year, goal });
 }));
 
+// ── Demo request (no auth — public landing page) ──────────────────────────
+app.post("/demo-request", wrap(async (req, res) => {
+  const { name, email, orgName, orgSize, challenge } = req.body;
+  if (!name || !email) return res.status(400).json({ error: "Name and email required" });
+
+  // Store in DB for reference
+  await run(
+    `CREATE TABLE IF NOT EXISTS demo_requests (
+      id TEXT PRIMARY KEY,
+      name TEXT, email TEXT, org_name TEXT,
+      org_size TEXT, challenge TEXT, created_at TIMESTAMPTZ DEFAULT NOW()
+    )`
+  );
+  await run(
+    `INSERT INTO demo_requests (id, name, email, org_name, org_size, challenge)
+     VALUES (?, ?, ?, ?, ?, ?)`,
+    [uuid(), name, email, orgName || "", orgSize || "", challenge || ""]
+  );
+
+  // Send notification email if DEMO_NOTIFY_EMAIL + SMTP env vars are set
+  const notifyTo = process.env.DEMO_NOTIFY_EMAIL;
+  const smtpHost = process.env.DEMO_SMTP_HOST;
+  const smtpUser = process.env.DEMO_SMTP_USER;
+  const smtpPass = process.env.DEMO_SMTP_PASS;
+
+  if (notifyTo && smtpHost && smtpUser && smtpPass) {
+    try {
+      const transporter = nodemailer.createTransport({
+        host: smtpHost,
+        port: parseInt(process.env.DEMO_SMTP_PORT || "587"),
+        secure: parseInt(process.env.DEMO_SMTP_PORT || "587") === 465,
+        auth: { user: smtpUser, pass: smtpPass },
+      });
+      await transporter.sendMail({
+        from: smtpUser,
+        to: notifyTo,
+        subject: `New Steward demo request — ${name} (${orgName || "unknown org"})`,
+        text: `New demo request:\n\nName: ${name}\nEmail: ${email}\nOrg: ${orgName}\nSize: ${orgSize}\nChallenge: ${challenge}\n`,
+      });
+    } catch (e) {
+      console.error("Demo notify email failed:", e.message);
+    }
+  }
+
+  res.json({ success: true });
+}));
+
 // ── 404 ────────────────────────────────────────────────────────────────────
 app.use((req, res) => {
   res.status(404).json({ error: "Not found" });
