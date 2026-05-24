@@ -17,7 +17,6 @@ const T = {
   white:      "#ffffff",
 };
 
-const API = import.meta.env.VITE_API_URL || "http://localhost:3001";
 const CALENDLY_URL = "https://calendly.com/xjca2006/new-meeting";
 
 // ── Animated mesh canvas ───────────────────────────────────────────────────
@@ -149,13 +148,8 @@ function MeshCanvas() {
 
 // ── Demo booking modal ─────────────────────────────────────────────────────
 function DemoModal({ onClose }) {
-  const [form, setForm] = useState({ name: "", email: "", orgName: "", orgSize: "", challenge: "" });
-  const [submitted, setSubmitted] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [err, setErr] = useState("");
   const calendlyLoaded = useRef(false);
 
-  // Load Calendly widget script once
   useEffect(() => {
     if (calendlyLoaded.current) return;
     calendlyLoaded.current = true;
@@ -165,40 +159,11 @@ function DemoModal({ onClose }) {
     document.head.appendChild(s);
   }, []);
 
-  // Close on Escape
   useEffect(() => {
     const onKey = (e) => { if (e.key === "Escape") onClose(); };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
   }, [onClose]);
-
-  const set = (k) => (e) => setForm(f => ({ ...f, [k]: e.target.value }));
-
-  const submit = async (e) => {
-    e.preventDefault();
-    if (!form.name.trim() || !form.email.trim()) { setErr("Name and email are required."); return; }
-    setLoading(true); setErr("");
-    try {
-      const r = await fetch(`${API}/demo-request`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(form),
-      });
-      if (!r.ok) throw new Error("Something went wrong.");
-      setSubmitted(true);
-    } catch (e) {
-      setErr(e.message);
-    }
-    setLoading(false);
-  };
-
-  const inp = {
-    width: "100%", boxSizing: "border-box",
-    border: `1px solid ${T.cream3}`, borderRadius: 9,
-    padding: "10px 13px", fontSize: 14, color: T.ink,
-    background: T.cream, outline: "none",
-    fontFamily: "'DM Sans',sans-serif",
-  };
 
   return (
     <div
@@ -214,102 +179,19 @@ function DemoModal({ onClose }) {
         background: T.cream, borderRadius: 20, width: "100%", maxWidth: 680,
         boxShadow: "0 24px 80px rgba(0,0,0,0.18)",
         border: `1px solid ${T.cream3}`,
+        overflow: "hidden",
       }}>
-
-        {/* Header */}
-        <div style={{ padding: "28px 32px 0", display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-          <div>
-            <div style={{ fontFamily: "'DM Serif Display',serif", fontSize: 26, color: T.ink, letterSpacing: "-0.5px", marginBottom: 6 }}>
-              Book a demo
-            </div>
-            <div style={{ fontSize: 14, color: T.ink3, lineHeight: 1.5 }}>
-              Tell us about your org, then pick a time that works for you.
-            </div>
-          </div>
+        <div style={{ padding: "24px 28px 0", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <span style={{ fontFamily: "'DM Serif Display',serif", fontSize: 24, color: T.ink, letterSpacing: "-0.5px" }}>
+            Book a Demo
+          </span>
           <button onClick={onClose} style={{ background: "none", border: "none", fontSize: 22, color: T.ink3, cursor: "pointer", lineHeight: 1, padding: 4 }}>×</button>
         </div>
-
-        {submitted ? (
-          <div style={{ padding: "48px 32px", textAlign: "center" }}>
-            <div style={{ fontSize: 44, marginBottom: 16 }}>✓</div>
-            <div style={{ fontFamily: "'DM Serif Display',serif", fontSize: 26, color: T.ink, marginBottom: 10 }}>
-              We'll see you then!
-            </div>
-            <div style={{ fontSize: 15, color: T.ink3, lineHeight: 1.65, marginBottom: 28 }}>
-              Check your inbox for a calendar confirmation. We'll have a customized walkthrough ready for {form.orgName || "your org"}.
-            </div>
-            <button onClick={onClose} style={{ background: T.ink, color: T.cream, border: "none", borderRadius: 9, padding: "11px 28px", fontSize: 14, fontWeight: 500, cursor: "pointer", fontFamily: "'DM Sans',sans-serif" }}>
-              Close
-            </button>
-          </div>
-        ) : (
-          <form onSubmit={submit} style={{ padding: "24px 32px 32px" }}>
-            {/* Form fields */}
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 14 }}>
-              <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-                <label style={{ fontSize: 12, fontWeight: 500, color: T.ink2 }}>Your name *</label>
-                <input value={form.name} onChange={set("name")} placeholder="Jane Smith" style={inp} />
-              </div>
-              <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-                <label style={{ fontSize: 12, fontWeight: 500, color: T.ink2 }}>Work email *</label>
-                <input type="email" value={form.email} onChange={set("email")} placeholder="jane@yourorg.org" style={inp} />
-              </div>
-              <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-                <label style={{ fontSize: 12, fontWeight: 500, color: T.ink2 }}>Organization name</label>
-                <input value={form.orgName} onChange={set("orgName")} placeholder="CREO Arts NYC" style={inp} />
-              </div>
-              <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-                <label style={{ fontSize: 12, fontWeight: 500, color: T.ink2 }}>Organization size</label>
-                <select value={form.orgSize} onChange={set("orgSize")} style={{ ...inp, appearance: "none" }}>
-                  <option value="">Select…</option>
-                  <option value="1-5">1–5 staff</option>
-                  <option value="6-20">6–20 staff</option>
-                  <option value="21-50">21–50 staff</option>
-                  <option value="50+">50+ staff</option>
-                </select>
-              </div>
-            </div>
-
-            <div style={{ display: "flex", flexDirection: "column", gap: 5, marginBottom: 20 }}>
-              <label style={{ fontSize: 12, fontWeight: 500, color: T.ink2 }}>Primary challenge</label>
-              <select value={form.challenge} onChange={set("challenge")} style={{ ...inp, appearance: "none" }}>
-                <option value="">Select…</option>
-                <option value="Donor management">Donor management</option>
-                <option value="Grant tracking">Grant tracking</option>
-                <option value="Volunteer coordination">Volunteer coordination</option>
-                <option value="All of the above">All of the above</option>
-              </select>
-            </div>
-
-            {err && (
-              <div style={{ marginBottom: 14, fontSize: 13, color: "#dc2626", background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 8, padding: "9px 13px" }}>{err}</div>
-            )}
-
-            <button type="submit" disabled={loading} style={{
-              width: "100%", background: T.ink, color: T.cream, border: "none",
-              borderRadius: 9, padding: "12px", fontSize: 15, fontWeight: 500,
-              cursor: loading ? "not-allowed" : "pointer",
-              fontFamily: "'DM Sans',sans-serif", marginBottom: 24,
-              opacity: loading ? 0.7 : 1,
-            }}>
-              {loading ? "Saving…" : "Continue to scheduling →"}
-            </button>
-
-            {/* Divider */}
-            <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 20 }}>
-              <div style={{ flex: 1, height: 1, background: T.cream3 }} />
-              <span style={{ fontSize: 12, color: T.ink3 }}>Pick a time</span>
-              <div style={{ flex: 1, height: 1, background: T.cream3 }} />
-            </div>
-
-            {/* Calendly inline embed */}
-            <div
-              className="calendly-inline-widget"
-              data-url={CALENDLY_URL}
-              style={{ minWidth: 320, height: 600, borderRadius: 12, overflow: "hidden" }}
-            />
-          </form>
-        )}
+        <div
+          className="calendly-inline-widget"
+          data-url={CALENDLY_URL}
+          style={{ minWidth: 320, height: 660 }}
+        />
       </div>
     </div>
   );
