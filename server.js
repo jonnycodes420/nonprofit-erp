@@ -1414,21 +1414,39 @@ app.post("/stripe/connect", requireAuth, requireAdmin, wrap(async (req, res) => 
 
   const appUrl = process.env.APP_URL || process.env.FRONTEND_URL || process.env.CORS_ORIGIN || "https://client-five-tau-13.vercel.app";
 
-  const account = await stripe.accounts.create({ type: "express" });
+  try {
+    const account = await stripe.accounts.create({
+      type: "express",
+      country: "US",
+      capabilities: {
+        card_payments: { requested: true },
+        transfers: { requested: true },
+      },
+    });
 
-  const accountLink = await stripe.accountLinks.create({
-    account: account.id,
-    refresh_url: `${appUrl}/dashboard`,
-    return_url: `${appUrl}/dashboard`,
-    type: "account_onboarding",
-  });
+    const accountLink = await stripe.accountLinks.create({
+      account: account.id,
+      refresh_url: `${appUrl}/dashboard`,
+      return_url: `${appUrl}/dashboard`,
+      type: "account_onboarding",
+    });
 
-  await run(
-    `UPDATE orgs SET stripe_account_id=$1, stripe_connected=TRUE, stripe_connected_at=NOW() WHERE id=$2`,
-    [account.id, req.user.orgId]
-  );
+    await run(
+      `UPDATE orgs SET stripe_account_id=$1, stripe_connected=TRUE, stripe_connected_at=NOW() WHERE id=$2`,
+      [account.id, req.user.orgId]
+    );
 
-  res.json({ url: accountLink.url });
+    res.json({ url: accountLink.url });
+  } catch (err) {
+    console.error("[stripe/connect] error:", err.message, err.type, err.code, err.param);
+    const statusCode = err.statusCode || err.raw?.statusCode || 500;
+    res.status(statusCode).json({
+      error: err.message || "Stripe error",
+      type: err.type,
+      code: err.code,
+      param: err.param,
+    });
+  }
 }));
 
 app.post("/stripe/donation-page", requireAuth, wrap(async (req, res) => {
