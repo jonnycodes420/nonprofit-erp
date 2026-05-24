@@ -1,14 +1,67 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { apiFetch } from "../api";
 import { useAuth } from "../main";
-import { T, fmt, fmtFull, daysUntil, SC, askClaude, Spin, Pill, Card, SectionLabel, AIBtn, AIPanel, PageTitle, EmptyState } from "./shared";
+import { T, fmt, fmtFull, daysUntil, SC, askClaude, Spin, Pill, Card, SectionLabel, AIBtn, AIPanel, PageTitle, EmptyState, TouchpointTimeline } from "./shared";
+
+// ── Grant Log Modal ────────────────────────────────────────────────────────
+function GrantLogModal({grant,onSave,onClose}){
+  const[type,setType]=useState("call");
+  const[date,setDate]=useState(new Date().toISOString().split("T")[0]);
+  const[note,setNote]=useState("");
+  const[loading,setLoading]=useState(false);
+  const inp={width:"100%",boxSizing:"border-box",background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"10px 12px",color:T.ink,fontSize:13,outline:"none",fontFamily:"inherit"};
+  const TYPES=[["call","Call"],["email","Email"],["meeting","Meeting"],["site_visit","Site Visit"],["other","Other"]];
+  const save=async()=>{
+    if(!note.trim())return;setLoading(true);
+    try{
+      const r=await apiFetch(`/grants/${grant.id}/interactions`,{method:"POST",body:JSON.stringify({type,note,date})});
+      onSave(r);
+    }catch(e){console.error(e);}
+    setLoading(false);
+  };
+  return(
+    <div style={{position:"fixed",inset:0,background:"#000000cc",backdropFilter:"blur(4px)",zIndex:300,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+      <div className="fade-in" style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:18,width:"100%",maxWidth:460,padding:24,boxShadow:"0 4px 32px rgba(15,15,15,0.12)"}}>
+        <div style={{fontSize:16,fontWeight:800,color:T.ink,marginBottom:2}}>Log Touchpoint</div>
+        <div style={{fontSize:12,color:T.ink3,marginBottom:16}}>{grant.funder} — {grant.program}</div>
+        <div style={{display:"flex",gap:5,flexWrap:"wrap",marginBottom:14}}>
+          {TYPES.map(([v,l])=><button key={v} onClick={()=>setType(v)} style={{background:type===v?"#10b981":T.bg2,border:`1px solid ${type===v?"#10b981":T.bg3}`,borderRadius:7,padding:"5px 12px",color:type===v?"#fff":T.ink3,fontSize:12,fontWeight:600,cursor:"pointer"}}>{l}</button>)}
+        </div>
+        <div style={{marginBottom:12}}>
+          <div style={{fontSize:11,fontWeight:700,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:5}}>Date</div>
+          <input type="date" value={date} onChange={e=>setDate(e.target.value)} style={inp}/>
+        </div>
+        <div style={{marginBottom:20}}>
+          <div style={{fontSize:11,fontWeight:700,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:5}}>Notes</div>
+          <textarea value={note} onChange={e=>setNote(e.target.value)} rows={4} placeholder="What happened? Key takeaways, next steps…" style={{...inp,resize:"vertical",lineHeight:1.55}}/>
+        </div>
+        <div style={{display:"flex",gap:8}}>
+          <button onClick={save} disabled={loading||!note.trim()} style={{flex:1,background:note.trim()?"#10b981":T.bg2,border:"none",borderRadius:10,padding:"12px",color:"#fff",fontSize:14,fontWeight:700,cursor:note.trim()?"pointer":"not-allowed"}}>{loading?"Saving…":"Save Touchpoint"}</button>
+          <button onClick={onClose} style={{background:T.bg,border:"none",borderRadius:10,padding:"12px 16px",color:T.ink3,fontSize:13,cursor:"pointer"}}>Cancel</button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 // ── Grant Profile ──────────────────────────────────────────────────────────
 function GrantProfile({grant,onClose,onUpdate,onDelete,isAdmin,org}){
   const[aiMap,setAiMap]=useState({});const[loadingKey,setLoadingKey]=useState(null);
   const[notes,setNotes]=useState(grant.notes||"");const[savingNotes,setSavingNotes]=useState(false);
   const[editing,setEditing]=useState(false);
-  const[ef,setEf]=useState({funder:grant.funder,program:grant.program,amount:grant.amount,received:grant.received||0,status:grant.status,deadline:grant.deadline||"",reportDue:grant.reportDue||"",officer:grant.officer||""});
+  const[ef,setEf]=useState({
+    funder:grant.funder,program:grant.program,amount:grant.amount,received:grant.received||0,
+    status:grant.status,deadline:grant.deadline||"",reportDue:grant.reportDue||"",officer:grant.officer||"",
+    description:grant.description||"",requirements:grant.requirements||"",
+  });
+  const[interactions,setInteractions]=useState([]);
+  const[logOpen,setLogOpen]=useState(false);
+
+  useEffect(()=>{
+    apiFetch(`/grants/${grant.id}`).then(r=>{
+      setInteractions(r.interactions||[]);
+    }).catch(()=>{});
+  },[grant.id]);
 
   const pct=grant.amount>0?Math.round((grant.received||0)/grant.amount*100):0;
   const days=daysUntil(grant.deadline);
@@ -19,8 +72,9 @@ function GrantProfile({grant,onClose,onUpdate,onDelete,isAdmin,org}){
     const key=`${grant.id}_${type}`;setLoadingKey(key);setAiMap(p=>({...p,[key]:""}));
     const sys=`You are an expert nonprofit grant writer and strategist. Specific, tactical. Max 250 words.`;
     const prompts={
-      strategy:`Grant strategy for ${grant.funder} / ${grant.program}.\nAmount: ${fmtFull(grant.amount)} | Status: ${grant.status} | Deadline: ${grant.deadline}\nOfficer: ${grant.officer}\nNotes: ${grant.notes}\nHistory: ${(grant.history||[]).join(", ")}\nOrg: ${org?.name} — ${org?.mission}\nPrograms: ${org?.programs?.join(", ")}\n\nProvide: key narrative angle, what funder cares about, red flags, 3 specific things to include.`,
-      loi:`Write a compelling Letter of Inquiry for ${grant.funder}.\nProgram: ${grant.program} | Ask: ${fmtFull(grant.amount)}\nOrg: ${org?.name} — ${org?.mission}\nPrograms: ${org?.programs?.join(", ")}\n\nWrite a 3-paragraph LOI: hook, program fit, ask.`,
+      analyze:`Analyze grant fit for ${grant.funder} / ${grant.program}.\nAsk: ${fmtFull(grant.amount)} | Status: ${grant.status} | Deadline: ${grant.deadline}\nDescription: ${grant.description||"not set"}\nRequirements: ${grant.requirements||"not set"}\nHistory: ${(grant.history||[]).join(", ")||"none"}\nOrg: ${org?.name} — ${org?.mission}\n\nProvide:\n**Fit Score:** X/10 with 1-sentence reason\n**Key Requirements:** top 3 things the funder wants\n**Recommended Next Steps:** 3 specific actions with timing\n**Risk Flags:** anything that could disqualify us`,
+      strategy:`Grant strategy for ${grant.funder} / ${grant.program}.\nAmount: ${fmtFull(grant.amount)} | Status: ${grant.status} | Deadline: ${grant.deadline}\nOfficer: ${grant.officer}\nNotes: ${grant.notes}\nHistory: ${(grant.history||[]).join(", ")}\nOrg: ${org?.name} — ${org?.mission}\n\nProvide: key narrative angle, what funder cares about, red flags, 3 specific things to include.`,
+      loi:`Write a compelling Letter of Inquiry for ${grant.funder}.\nProgram: ${grant.program} | Ask: ${fmtFull(grant.amount)}\nOrg: ${org?.name} — ${org?.mission}\n\nWrite a 3-paragraph LOI: hook, program fit, ask.`,
       report:`Grant report outline for ${grant.funder}.\nProgram: ${grant.program} | Amount: ${fmtFull(grant.amount)} | Due: ${grant.reportDue}\nNotes: ${grant.notes}\nOrg mission: ${org?.mission}\n\nProvide: section headers, 3 key metrics to feature, narrative arc, what to emphasize.`,
     };
     await askClaude(sys,prompts[type],chunk=>setAiMap(p=>({...p,[key]:chunk})));
@@ -29,26 +83,34 @@ function GrantProfile({grant,onClose,onUpdate,onDelete,isAdmin,org}){
 
   const changeStatus=async(status)=>{
     const g=grant;
-    await apiFetch(`/grants/${g.id}`,{method:"PUT",body:JSON.stringify({funder:g.funder,program:g.program,amount:g.amount,received:g.received||0,status,deadline:g.deadline||"",reportDue:g.reportDue||"",officer:g.officer,notes:g.notes})});
+    await apiFetch(`/grants/${g.id}`,{method:"PUT",body:JSON.stringify({funder:g.funder,program:g.program,amount:g.amount,received:g.received||0,status,deadline:g.deadline||"",reportDue:g.reportDue||"",officer:g.officer,notes:g.notes,description:g.description||"",requirements:g.requirements||""})});
     onUpdate({...g,status});
   };
 
   const saveNotes=async()=>{
     setSavingNotes(true);const g=grant;
-    await apiFetch(`/grants/${g.id}`,{method:"PUT",body:JSON.stringify({funder:g.funder,program:g.program,amount:g.amount,received:g.received||0,status:g.status,deadline:g.deadline||"",reportDue:g.reportDue||"",officer:g.officer,notes})});
+    await apiFetch(`/grants/${g.id}`,{method:"PUT",body:JSON.stringify({funder:g.funder,program:g.program,amount:g.amount,received:g.received||0,status:g.status,deadline:g.deadline||"",reportDue:g.reportDue||"",officer:g.officer,notes,description:g.description||"",requirements:g.requirements||""})});
     onUpdate({...g,notes});setSavingNotes(false);
   };
 
   const saveEdit=async()=>{
-    const raw=await apiFetch(`/grants/${grant.id}`,{method:"PUT",body:JSON.stringify({funder:ef.funder,program:ef.program,amount:Number(ef.amount)||0,received:Number(ef.received)||0,status:ef.status,deadline:ef.deadline||"",reportDue:ef.reportDue||"",officer:ef.officer,notes:grant.notes})});
-    const adapted={id:raw.id,funder:raw.funder,program:raw.program||"",amount:raw.amount||0,received:raw.received||0,status:raw.status,deadline:raw.deadline||"",reportDue:raw.report_due||null,officer:raw.officer||"",notes:raw.notes||"",history:Array.isArray(raw.history)?raw.history:JSON.parse(raw.history||"[]")};
+    const raw=await apiFetch(`/grants/${grant.id}`,{method:"PUT",body:JSON.stringify({funder:ef.funder,program:ef.program,amount:Number(ef.amount)||0,received:Number(ef.received)||0,status:ef.status,deadline:ef.deadline||"",reportDue:ef.reportDue||"",officer:ef.officer,notes:grant.notes,description:ef.description||"",requirements:ef.requirements||""})});
+    const adapted={id:raw.id,funder:raw.funder,program:raw.program||"",amount:raw.amount||0,received:raw.received||0,status:raw.status,deadline:raw.deadline||"",reportDue:raw.report_due||null,officer:raw.officer||"",notes:raw.notes||"",description:raw.description||"",requirements:raw.requirements||"",history:Array.isArray(raw.history)?raw.history:JSON.parse(raw.history||"[]")};
     onUpdate(adapted);setEditing(false);
   };
 
+  const handleLogged=(interaction)=>{
+    setInteractions(prev=>[interaction,...prev]);
+    setLogOpen(false);
+  };
+
   const inp={width:"100%",boxSizing:"border-box",background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"9px 12px",color:T.ink,fontSize:13,outline:"none"};
+  const ta={...inp,resize:"vertical",lineHeight:1.5};
 
   return(
     <div className="fade-in" style={{position:"fixed",inset:0,background:T.bg,zIndex:200,display:"flex",flexDirection:"column",overflow:"hidden"}}>
+      {logOpen&&<GrantLogModal grant={grant} onSave={handleLogged} onClose={()=>setLogOpen(false)}/>}
+
       <div style={{background:T.white,borderBottom:"1px solid "+T.bg3,padding:"10px 24px",display:"flex",alignItems:"center",gap:12,flexShrink:0}}>
         <button onClick={onClose} style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"7px 14px",color:T.ink3,fontSize:13,cursor:"pointer",whiteSpace:"nowrap"}}>← Back</button>
         <div style={{flex:1,minWidth:0}}>
@@ -65,7 +127,7 @@ function GrantProfile({grant,onClose,onUpdate,onDelete,isAdmin,org}){
       </div>
 
       {editing&&<div style={{position:"absolute",inset:0,background:"rgba(15,15,15,0.45)",zIndex:10,display:"flex",alignItems:"center",justifyContent:"center"}} onClick={()=>setEditing(false)}>
-        <div onClick={e=>e.stopPropagation()} style={{background:T.white,borderRadius:16,padding:24,width:480,maxWidth:"92vw",display:"flex",flexDirection:"column",gap:12}}>
+        <div onClick={e=>e.stopPropagation()} style={{background:T.white,borderRadius:16,padding:24,width:520,maxWidth:"92vw",maxHeight:"88vh",overflowY:"auto",display:"flex",flexDirection:"column",gap:12}}>
           <div style={{fontSize:15,fontWeight:700,color:T.ink}}>Edit Grant</div>
           {[["funder","Funder"],["program","Program"],["officer","Program Officer"]].map(([k,l])=>(
             <div key={k}>
@@ -89,6 +151,14 @@ function GrantProfile({grant,onClose,onUpdate,onDelete,isAdmin,org}){
               {statuses.map(s=><option key={s} value={s}>{s}</option>)}
             </select>
           </div>
+          <div>
+            <div style={{fontSize:11,color:T.ink3,marginBottom:4}}>Grant Description</div>
+            <textarea value={ef.description} onChange={e=>setEf(p=>({...p,description:e.target.value}))} rows={3} placeholder="What does this grant fund? What is the funder's focus area?" style={{...ta,boxSizing:"border-box"}}/>
+          </div>
+          <div>
+            <div style={{fontSize:11,color:T.ink3,marginBottom:4}}>Requirements & Eligibility</div>
+            <textarea value={ef.requirements} onChange={e=>setEf(p=>({...p,requirements:e.target.value}))} rows={3} placeholder="Key eligibility criteria, required attachments, page limits…" style={{...ta,boxSizing:"border-box"}}/>
+          </div>
           <div style={{display:"flex",gap:8,marginTop:4}}>
             <button onClick={saveEdit} style={{background:"#10b981",border:"none",borderRadius:8,padding:"9px 16px",color:"#fff",fontSize:13,fontWeight:600,cursor:"pointer"}}>Save Changes</button>
             <button onClick={()=>setEditing(false)} style={{background:T.bg,border:"none",borderRadius:8,padding:"9px 16px",color:T.ink3,fontSize:13,cursor:"pointer"}}>Cancel</button>
@@ -96,14 +166,15 @@ function GrantProfile({grant,onClose,onUpdate,onDelete,isAdmin,org}){
         </div>
       </div>}
 
-      <div style={{flex:1,display:"grid",gridTemplateColumns:"minmax(0,1.25fr) minmax(0,0.75fr)",overflow:"hidden"}}>
+      <div style={{flex:1,display:"grid",gridTemplateColumns:"65fr 35fr",overflow:"hidden"}}>
+        {/* LEFT */}
         <div style={{overflowY:"auto",padding:"22px 20px 24px 24px",borderRight:"1px solid "+T.bg3,display:"flex",flexDirection:"column",gap:18}}>
           <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10}}>
             {[
-              ["Ask",fmtFull(grant.amount),T.ink],
-              ["Received",fmtFull(grant.received||0),"#10b981"],
+              ["Amount Requested",fmtFull(grant.amount),T.ink],
+              ["Amount Awarded",fmtFull(grant.received||0),"#10b981"],
               ["% Funded",pct+"%",pct>75?"#10b981":pct>40?"#f59e0b":"#6b7280"],
-              ["Days Left",grant.deadline?(days<0?"Overdue":days+"d"):"—",days<0?"#ef4444":days<14?"#ef4444":days<30?"#f59e0b":T.ink],
+              ["Days to Deadline",grant.deadline?(days<0?"Overdue":days+"d"):"—",days<0?"#ef4444":days<14?"#ef4444":days<30?"#f59e0b":T.ink],
             ].map(([l,v,c])=>(
               <div key={l} style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:12,padding:"12px 14px"}}>
                 <div style={{fontSize:9,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.1em",color:T.ink3,marginBottom:4}}>{l}</div>
@@ -133,8 +204,26 @@ function GrantProfile({grant,onClose,onUpdate,onDelete,isAdmin,org}){
             </div>
             {grant.reportDue&&<div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:12,padding:"12px 14px"}}>
               <div style={{fontSize:9,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.1em",color:T.ink3,marginBottom:4}}>Report Due</div>
-              <div style={{fontSize:14,fontWeight:600,color:reportDays<14?"#ef4444":reportDays<30?"#f59e0b":T.ink}}>{new Date(grant.reportDue).toLocaleDateString("en-US",{month:"long",day:"numeric",year:"numeric"})}</div>
+              <div style={{fontSize:14,fontWeight:600,color:reportDays!==null&&reportDays<14?"#ef4444":reportDays!==null&&reportDays<30?"#f59e0b":T.ink}}>{new Date(grant.reportDue).toLocaleDateString("en-US",{month:"long",day:"numeric",year:"numeric"})}</div>
             </div>}
+          </div>
+
+          {grant.description&&<div>
+            <div style={{fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.1em",color:T.ink3,marginBottom:8}}>Description</div>
+            <div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:10,padding:"14px 16px",fontSize:13,color:T.ink2,lineHeight:1.65}}>{grant.description}</div>
+          </div>}
+
+          {grant.requirements&&<div>
+            <div style={{fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.1em",color:T.ink3,marginBottom:8}}>Requirements & Eligibility</div>
+            <div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:10,padding:"14px 16px",fontSize:13,color:T.ink2,lineHeight:1.65,whiteSpace:"pre-wrap"}}>{grant.requirements}</div>
+          </div>}
+
+          <div>
+            <div style={{fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.1em",color:T.ink3,marginBottom:8}}>Attachments</div>
+            <div style={{background:T.white,border:"1px dashed "+T.bg3,borderRadius:10,padding:"16px",textAlign:"center"}}>
+              <div style={{fontSize:12,color:T.ink3}}>No attachments yet</div>
+              <div style={{fontSize:11,color:T.ink3,marginTop:4,opacity:0.7}}>File uploads coming soon</div>
+            </div>
           </div>
 
           {grant.history&&grant.history.length>0&&<div>
@@ -143,16 +232,9 @@ function GrantProfile({grant,onClose,onUpdate,onDelete,isAdmin,org}){
               {grant.history.map((h,i)=><Pill key={i} label={h} color="#10b981"/>)}
             </div>
           </div>}
-
-          <div>
-            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8}}>
-              <div style={{fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.1em",color:T.ink3}}>Notes</div>
-              {notes!==grant.notes&&<button onClick={saveNotes} disabled={savingNotes} style={{background:"#10b981",border:"none",borderRadius:7,padding:"4px 10px",color:"#fff",fontSize:11,fontWeight:700,cursor:"pointer"}}>{savingNotes?"Saving…":"Save"}</button>}
-            </div>
-            <textarea value={notes} onChange={e=>setNotes(e.target.value)} placeholder="Add notes about this grant…" style={{width:"100%",boxSizing:"border-box",background:T.white,border:"1px solid "+T.bg3,borderRadius:10,padding:"10px 12px",color:T.ink,fontSize:13,lineHeight:1.6,outline:"none",resize:"vertical",minHeight:100}}/>
-          </div>
         </div>
 
+        {/* RIGHT */}
         <div style={{overflowY:"auto",padding:"22px 24px 24px 20px",display:"flex",flexDirection:"column",gap:18}}>
           <div>
             <div style={{fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.1em",color:T.ink3,marginBottom:8}}>Move Stage</div>
@@ -167,13 +249,30 @@ function GrantProfile({grant,onClose,onUpdate,onDelete,isAdmin,org}){
           </div>
 
           <div>
-            <div style={{fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.1em",color:T.ink3,marginBottom:8}}>AI Intelligence</div>
+            <div style={{fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.1em",color:T.ink3,marginBottom:8}}>AI Analysis</div>
             <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:12}}>
-              {grant.status!=="closed"&&<AIBtn onClick={()=>getAI("strategy")} loading={loadingKey===`${grant.id}_strategy`} label="✦ Grant Strategy" small/>}
+              <AIBtn onClick={()=>getAI("analyze")} loading={loadingKey===`${grant.id}_analyze`} label="✦ Analyze Grant Fit" small/>
+              {grant.status!=="closed"&&<AIBtn onClick={()=>getAI("strategy")} loading={loadingKey===`${grant.id}_strategy`} label="✦ Strategy" small/>}
               {["pending","prospecting"].includes(grant.status)&&<AIBtn onClick={()=>getAI("loi")} loading={loadingKey===`${grant.id}_loi`} label="✦ Draft LOI" small/>}
               {grant.reportDue&&grant.status==="active"&&<AIBtn onClick={()=>getAI("report")} loading={loadingKey===`${grant.id}_report`} label="✦ Report Outline" small/>}
             </div>
-            {["strategy","loi","report"].map(t=>aiMap[`${grant.id}_${t}`]?<AIPanel key={t} text={aiMap[`${grant.id}_${t}`]} onClose={()=>setAiMap(p=>({...p,[`${grant.id}_${t}`]:""}))}/>:null)}
+            {["analyze","strategy","loi","report"].map(t=>aiMap[`${grant.id}_${t}`]?<AIPanel key={t} text={aiMap[`${grant.id}_${t}`]} onClose={()=>setAiMap(p=>({...p,[`${grant.id}_${t}`]:""}))}/>:null)}
+          </div>
+
+          <div>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8}}>
+              <div style={{fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.1em",color:T.ink3}}>Notes</div>
+              {notes!==grant.notes&&<button onClick={saveNotes} disabled={savingNotes} style={{background:"#10b981",border:"none",borderRadius:7,padding:"4px 10px",color:"#fff",fontSize:11,fontWeight:700,cursor:"pointer"}}>{savingNotes?"Saving…":"Save"}</button>}
+            </div>
+            <textarea value={notes} onChange={e=>setNotes(e.target.value)} placeholder="Add notes about this grant…" style={{width:"100%",boxSizing:"border-box",background:T.white,border:"1px solid "+T.bg3,borderRadius:10,padding:"10px 12px",color:T.ink,fontSize:13,lineHeight:1.6,outline:"none",resize:"vertical",minHeight:90}}/>
+          </div>
+
+          <div>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12}}>
+              <div style={{fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.1em",color:T.ink3}}>Activity Timeline</div>
+              <button onClick={()=>setLogOpen(true)} style={{background:"#10b981",border:"none",borderRadius:7,padding:"5px 12px",color:"#fff",fontSize:11,fontWeight:700,cursor:"pointer"}}>+ Log</button>
+            </div>
+            <TouchpointTimeline interactions={interactions}/>
           </div>
         </div>
       </div>

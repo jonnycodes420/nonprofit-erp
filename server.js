@@ -584,15 +584,16 @@ app.post("/grants", requireAuth, wrap(async (req, res) => {
 }));
 
 app.put("/grants/:id", requireAuth, wrap(async (req, res) => {
-  const { funder, program, amount, received, status, deadline, reportDue, officer, notes } = req.body;
+  const { funder, program, amount, received, status, deadline, reportDue, officer, notes, description, requirements } = req.body;
   if (!funder) return res.status(400).json({ error: "Funder required" });
 
   const affected = await run(
     `UPDATE grants
-     SET funder=?,program=?,amount=?,received=?,status=?,deadline=?,report_due=?,officer=?,notes=?,updated_at=NOW()
+     SET funder=?,program=?,amount=?,received=?,status=?,deadline=?,report_due=?,officer=?,notes=?,description=?,requirements=?,updated_at=NOW()
      WHERE id=? AND org_id=?`,
     [funder, program || "", amount || 0, received || 0, status, deadline || "",
-     reportDue || "", officer || "", notes || "", req.params.id, req.user.orgId]
+     reportDue || "", officer || "", notes || "", description || "", requirements || "",
+     req.params.id, req.user.orgId]
   );
   if (!affected.changes) return res.status(404).json({ error: "Grant not found" });
 
@@ -605,6 +606,32 @@ app.put("/grants/:id", requireAuth, wrap(async (req, res) => {
 app.delete("/grants/:id", requireAuth, wrap(async (req, res) => {
   await run("DELETE FROM grants WHERE id = ? AND org_id = ?", [req.params.id, req.user.orgId]);
   res.json({ success: true });
+}));
+
+app.get("/grants/:id", requireAuth, wrap(async (req, res) => {
+  const rows = await query("SELECT * FROM grants WHERE id = ? AND org_id = ?", [req.params.id, req.user.orgId]);
+  if (!rows.length) return res.status(404).json({ error: "Not found" });
+  const g = rows[0];
+  g.history = JSON.parse(g.history || "[]");
+  const ints = await query(
+    "SELECT * FROM grant_interactions WHERE grant_id = ? ORDER BY date DESC, created_at DESC",
+    [req.params.id]
+  );
+  g.interactions = ints;
+  res.json(g);
+}));
+
+app.post("/grants/:id/interactions", requireAuth, wrap(async (req, res) => {
+  const { type, note, date } = req.body;
+  if (!note || !note.trim()) return res.status(400).json({ error: "Note required" });
+  const rows = await query("SELECT id FROM grants WHERE id = ? AND org_id = ?", [req.params.id, req.user.orgId]);
+  if (!rows.length) return res.status(404).json({ error: "Grant not found" });
+  const id = "gi_" + uuid().slice(0, 8);
+  await run(
+    "INSERT INTO grant_interactions (id, org_id, grant_id, type, note, date) VALUES (?,?,?,?,?,?)",
+    [id, req.user.orgId, req.params.id, type || "note", note.trim(), date || new Date().toISOString().slice(0, 10)]
+  );
+  res.status(201).json({ id, type: type || "note", note: note.trim(), date: date || new Date().toISOString().slice(0, 10) });
 }));
 
 // ── Volunteers ─────────────────────────────────────────────────────────────
