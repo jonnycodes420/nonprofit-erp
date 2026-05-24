@@ -17,7 +17,7 @@ const S = {
     danger:  { background: "transparent", border: "1px solid #ef4444", borderRadius: 8, padding: "8px 14px", color: "#ef4444", fontSize: 13, cursor: "pointer" },
     amber:   { background: "#f59e0b", border: "none", borderRadius: 8, padding: "9px 18px", color: "#fff", fontSize: 13, fontWeight: 700, cursor: "pointer" },
     subtle:  { background: T.bg2, border: "1px solid " + T.bg3, borderRadius: 8, padding: "8px 14px", color: T.ink, fontSize: 13, cursor: "pointer" },
-  }[variant],
+  })[variant],
 };
 
 // ── Status badge ──────────────────────────────────────────────────────────────
