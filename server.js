@@ -3,7 +3,8 @@ const express = require("express");
 const cors = require("cors");
 const bcrypt = require("bcryptjs");
 const Anthropic = require("@anthropic-ai/sdk");
-const nodemailer = require("nodemailer");
+const { Resend } = require("resend");
+const resend = new Resend(process.env.RESEND_API_KEY);
 const { getDb, query, run, uuid, seedOrgData } = require("./db");
 const { signToken, requireAuth } = require("./auth");
 const Stripe = require("stripe");
@@ -311,25 +312,20 @@ app.post("/auth/invite", requireAuth, requireAdmin, wrap(async (req, res) => {
   const orgs = await query("SELECT * FROM orgs WHERE id = ?", [req.user.orgId]);
   const org = orgs[0];
 
-  // Attempt to send via org SMTP if configured
+  // Send invite via Resend HTTP API
   let emailSent = false;
-  if (org.smtp_host && org.smtp_user && org.smtp_pass) {
+  if (process.env.RESEND_API_KEY) {
     try {
-      const transporter = nodemailer.createTransport({
-        host: org.smtp_host,
-        port: org.smtp_port || 587,
-        secure: (org.smtp_port || 587) === 465,
-        auth: { user: org.smtp_user, pass: org.smtp_pass },
-      });
-      await transporter.sendMail({
-        from: org.smtp_from || org.smtp_user,
+      const from = process.env.DEMO_SMTP_FROM || "onboarding@resend.dev";
+      const { error } = await resend.emails.send({
+        from,
         to: email,
         subject: `You've been invited to join ${org.name} on Steward`,
         html: `<p>You've been invited to join <strong>${org.name}</strong> on Steward as a <strong>${validRole}</strong>.</p>
                <p><a href="${inviteLink}" style="background:#10b981;color:#fff;padding:10px 20px;border-radius:8px;text-decoration:none;font-weight:bold;display:inline-block;margin:16px 0">Accept Invitation</a></p>
                <p>This link expires in 7 days.</p>`,
-        text: `You've been invited to join ${org.name} on Steward as a ${validRole}.\n\nAccept your invitation: ${inviteLink}\n\nThis link expires in 7 days.`,
       });
+      if (error) throw new Error(error.message);
       emailSent = true;
     } catch (err) {
       console.error("Invite email send failed:", err.message);
@@ -987,33 +983,19 @@ app.get("/email/test-smtp", requireAuth, requireAdmin, wrap(async (req, res) => 
   if (!from)   return res.json({ success: false, error: "DEMO_SMTP_FROM env var not set (verified-domain from address)", config: cfg });
   if (!to)     return res.json({ success: false, error: "DEMO_NOTIFY_EMAIL env var not set", config: cfg });
 
-  const transporter = nodemailer.createTransport({
-    host: "smtp.resend.com", port: 465, secure: true,
-    connectionTimeout: 10000, greetingTimeout: 10000, socketTimeout: 15000,
-    auth: { user: "resend", pass: apiKey },
-  });
-
   try {
-    console.log("[test-smtp] verifying Resend connection…", cfg);
-    await transporter.verify();
-    const info = await transporter.sendMail({
+    console.log("[test-smtp] sending via Resend HTTP API…", cfg);
+    const { data, error } = await resend.emails.send({
       from, to,
       subject: "Steward SMTP test",
-      text: "SMTP is working. This is a test from your Steward ERP.",
       html: "<p>SMTP is working. This is a test from your <strong>Steward ERP</strong>.</p>",
     });
-    console.log("[test-smtp] sent OK — messageId:", info.messageId);
-    res.json({ success: true, messageId: info.messageId, from, to, config: cfg });
+    if (error) throw new Error(error.message);
+    console.log("[test-smtp] sent OK — id:", data.id);
+    res.json({ success: true, id: data.id, from, to, config: cfg });
   } catch (err) {
-    const detail = {
-      message:      err.message,
-      code:         err.code         || null,
-      responseCode: err.responseCode || null,
-      response:     err.response     || null,
-      command:      err.command      || null,
-    };
-    console.error("[test-smtp] FAILED:", detail);
-    res.json({ success: false, error: detail, config: cfg });
+    console.error("[test-smtp] FAILED:", err.message);
+    res.json({ success: false, error: { message: err.message }, config: cfg });
   }
 }));
 
@@ -1149,16 +1131,10 @@ app.post("/campaigns/:id/send", requireAuth, requireAdmin, wrap(async (req, res)
       const resendApiKey = process.env.RESEND_API_KEY;
       const smtpFrom     = process.env.DEMO_SMTP_FROM;
 
-      let transporter = null;
-      if (resendApiKey && smtpFrom) {
-        transporter = nodemailer.createTransport({
-          host: "smtp.resend.com", port: 465, secure: true,
-          connectionTimeout: 10000, greetingTimeout: 10000, socketTimeout: 15000,
-          auth: { user: "resend", pass: resendApiKey },
-        });
-        console.log(`[campaign:${campaign.id}] Resend SMTP configured — from=${smtpFrom}`);
-      } else {
+      if (!resendApiKey || !smtpFrom) {
         console.log(`[campaign:${campaign.id}] RESEND_API_KEY=${resendApiKey?"set":"MISSING"} DEMO_SMTP_FROM=${smtpFrom||"MISSING"} — recording sends without emailing`);
+      } else {
+        console.log(`[campaign:${campaign.id}] Resend HTTP API configured — from=${smtpFrom}`);
       }
 
       const year = String(new Date().getFullYear());
@@ -1190,12 +1166,13 @@ app.post("/campaigns/:id/send", requireAuth, requireAdmin, wrap(async (req, res)
         const textBody = bodyHtml.replace(/<[^>]+>/g, "");
 
         try {
-          if (transporter) {
-            await transporter.sendMail({
+          if (resendApiKey && smtpFrom) {
+            const { error: sendError } = await resend.emails.send({
               from: smtpFrom, to: donor.email,
               subject: campaign.subject || "",
-              html: htmlFull, text: textBody,
+              html: htmlFull,
             });
+            if (sendError) throw new Error(sendError.message);
           }
           await run("UPDATE campaign_recipients SET sent_at=NOW() WHERE id=?", [recipientId]);
           sentCount++;
@@ -1781,26 +1758,19 @@ app.post("/demo-request", wrap(async (req, res) => {
     [uuid(), name, email, orgName || "", orgSize || "", challenge || ""]
   );
 
-  // Send notification email if DEMO_NOTIFY_EMAIL + SMTP env vars are set
+  // Send notification email via Resend HTTP API
   const notifyTo = process.env.DEMO_NOTIFY_EMAIL;
-  const smtpHost = process.env.DEMO_SMTP_HOST;
-  const smtpUser = process.env.DEMO_SMTP_USER;
-  const smtpPass = process.env.DEMO_SMTP_PASS;
-
-  if (notifyTo && smtpHost && smtpUser && smtpPass) {
+  if (notifyTo && process.env.RESEND_API_KEY) {
     try {
-      const transporter = nodemailer.createTransport({
-        host: smtpHost,
-        port: parseInt(process.env.DEMO_SMTP_PORT || "587"),
-        secure: parseInt(process.env.DEMO_SMTP_PORT || "587") === 465,
-        auth: { user: smtpUser, pass: smtpPass },
-      });
-      await transporter.sendMail({
-        from: smtpUser,
+      const from = process.env.DEMO_SMTP_FROM || "onboarding@resend.dev";
+      const { error } = await resend.emails.send({
+        from,
         to: notifyTo,
         subject: `New Steward demo request — ${name} (${orgName || "unknown org"})`,
-        text: `New demo request:\n\nName: ${name}\nEmail: ${email}\nOrg: ${orgName}\nSize: ${orgSize}\nChallenge: ${challenge}\n`,
+        html: `<p><strong>New demo request:</strong></p>
+               <p>Name: ${name}<br>Email: ${email}<br>Org: ${orgName}<br>Size: ${orgSize}<br>Challenge: ${challenge}</p>`,
       });
+      if (error) throw new Error(error.message);
     } catch (e) {
       console.error("Demo notify email failed:", e.message);
     }

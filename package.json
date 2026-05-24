@@ -20,6 +20,7 @@
     "jsonwebtoken": "^9.0.3",
     "nodemailer": "^6.9.14",
     "pg": "^8.13.3",
+    "resend": "^6.12.3",
     "stripe": "^22.1.1"
   }
 }
