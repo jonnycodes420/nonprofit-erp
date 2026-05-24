@@ -294,6 +294,60 @@ async function initSchema() {
   await pool.query(`ALTER TABLE grants ADD COLUMN IF NOT EXISTS description TEXT`);
   await pool.query(`ALTER TABLE grants ADD COLUMN IF NOT EXISTS requirements TEXT`);
   await pool.query(`ALTER TABLE grants ADD COLUMN IF NOT EXISTS attachments TEXT DEFAULT '[]'`);
+
+  // ── Finance module ────────────────────────────────────────────────────────
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS accounts (
+      id TEXT PRIMARY KEY,
+      org_id TEXT REFERENCES orgs(id),
+      code TEXT NOT NULL,
+      name TEXT NOT NULL,
+      type TEXT NOT NULL,
+      subtype TEXT DEFAULT '',
+      active BOOLEAN DEFAULT TRUE,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS fin_funds (
+      id TEXT PRIMARY KEY,
+      org_id TEXT REFERENCES orgs(id),
+      name TEXT NOT NULL,
+      description TEXT DEFAULT '',
+      restricted BOOLEAN DEFAULT FALSE,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS fin_transactions (
+      id TEXT PRIMARY KEY,
+      org_id TEXT REFERENCES orgs(id),
+      date TEXT NOT NULL,
+      description TEXT NOT NULL,
+      vendor_donor TEXT DEFAULT '',
+      amount NUMERIC NOT NULL,
+      type TEXT NOT NULL,
+      account_id TEXT REFERENCES accounts(id),
+      fund_id TEXT REFERENCES fin_funds(id),
+      notes TEXT DEFAULT '',
+      receipt_url TEXT DEFAULT '',
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS budgets (
+      id TEXT PRIMARY KEY,
+      org_id TEXT REFERENCES orgs(id),
+      account_id TEXT REFERENCES accounts(id),
+      year INTEGER NOT NULL,
+      amount NUMERIC DEFAULT 0,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      UNIQUE (org_id, account_id, year)
+    )
+  `);
 }
 
 async function seedData() {
@@ -514,6 +568,114 @@ async function seedData() {
       0, 0
     ]
   );
+
+  // ── Chart of Accounts ────────────────────────────────────────────────────
+  const chartOfAccounts = [
+    ["acc_1010", orgId, "1010", "Cash & Cash Equivalents",            "asset",     "current"],
+    ["acc_1020", orgId, "1020", "Savings / Reserve Account",          "asset",     "current"],
+    ["acc_1100", orgId, "1100", "Accounts Receivable",                "asset",     "current"],
+    ["acc_1200", orgId, "1200", "Prepaid Expenses",                   "asset",     "current"],
+    ["acc_2010", orgId, "2010", "Accounts Payable",                   "liability", "current"],
+    ["acc_2100", orgId, "2100", "Accrued Expenses",                   "liability", "current"],
+    ["acc_2200", orgId, "2200", "Deferred Revenue",                   "liability", "current"],
+    ["acc_3010", orgId, "3010", "Unrestricted Net Assets",            "net_asset", "unrestricted"],
+    ["acc_3100", orgId, "3100", "Temporarily Restricted Net Assets",  "net_asset", "restricted"],
+    ["acc_3200", orgId, "3200", "Permanently Restricted Net Assets",  "net_asset", "restricted"],
+    ["acc_4010", orgId, "4010", "Individual Contributions",           "revenue",   "contributions"],
+    ["acc_4020", orgId, "4020", "Foundation Grants",                  "revenue",   "grants"],
+    ["acc_4030", orgId, "4030", "Government Grants",                  "revenue",   "grants"],
+    ["acc_4040", orgId, "4040", "Program Revenue",                    "revenue",   "program"],
+    ["acc_4050", orgId, "4050", "Special Events Revenue",             "revenue",   "events"],
+    ["acc_4060", orgId, "4060", "Other Revenue",                      "revenue",   "other"],
+    ["acc_5010", orgId, "5010", "Program Services — Salaries",        "expense",   "program"],
+    ["acc_5020", orgId, "5020", "Program Services — Supplies",        "expense",   "program"],
+    ["acc_5030", orgId, "5030", "Program Services — Contractors",     "expense",   "program"],
+    ["acc_5040", orgId, "5040", "Program Services — Occupancy",       "expense",   "program"],
+    ["acc_6010", orgId, "6010", "Management & General — Salaries",    "expense",   "management"],
+    ["acc_6020", orgId, "6020", "Management & General — Admin",       "expense",   "management"],
+    ["acc_6030", orgId, "6030", "Management & General — Technology",  "expense",   "management"],
+    ["acc_7010", orgId, "7010", "Fundraising — Salaries",             "expense",   "fundraising"],
+    ["acc_7020", orgId, "7020", "Fundraising — Events",               "expense",   "fundraising"],
+    ["acc_7030", orgId, "7030", "Fundraising — Marketing",            "expense",   "fundraising"],
+  ];
+  for (const a of chartOfAccounts) {
+    await pool.query(
+      `INSERT INTO accounts (id,org_id,code,name,type,subtype)
+       VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT (id) DO NOTHING`,
+      a
+    );
+  }
+
+  // ── Finance Funds ─────────────────────────────────────────────────────────
+  const finFunds = [
+    ["ff_01", orgId, "General Operating",         "General unrestricted operating fund", false],
+    ["ff_02", orgId, "NEA Arts Education",         "NEA grant — restricted to arts education programs", true],
+    ["ff_03", orgId, "NY Community Trust — Youth", "Community Trust grant — restricted to youth development", true],
+    ["ff_04", orgId, "Gala Reserve",              "Board-designated reserve for annual gala", false],
+  ];
+  for (const f of finFunds) {
+    await pool.query(
+      `INSERT INTO fin_funds (id,org_id,name,description,restricted)
+       VALUES ($1,$2,$3,$4,$5) ON CONFLICT (id) DO NOTHING`,
+      f
+    );
+  }
+
+  // ── Sample Transactions 2025 ──────────────────────────────────────────────
+  const finTxns = [
+    ["ft_01", orgId, "2025-01-03",  "Annual Fund Gift — Atkinson",        "Robert Atkinson",       3000,  "income",  "acc_4010", "ff_01"],
+    ["ft_02", orgId, "2025-01-15",  "Community Trust Q1 Disbursement",    "NY Community Trust",    25000, "income",  "acc_4020", "ff_03"],
+    ["ft_03", orgId, "2025-02-14",  "Valentine Appeal — Torres",          "Diana Torres",          250,   "income",  "acc_4010", "ff_01"],
+    ["ft_04", orgId, "2025-03-01",  "NEA Spring Disbursement",            "NEA",                   25000, "income",  "acc_4030", "ff_02"],
+    ["ft_05", orgId, "2025-04-05",  "Spring Appeal — Chen",               "Margaret Chen",         1500,  "income",  "acc_4010", "ff_01"],
+    ["ft_06", orgId, "2025-03-15",  "Spring Campaign — Park",             "William Park",          600,   "income",  "acc_4010", "ff_01"],
+    ["ft_07", orgId, "2025-05-10",  "Foundation Grant — Q2",              "Sunrise Foundation",    10000, "income",  "acc_4020", "ff_02"],
+    ["ft_08", orgId, "2025-01-15",  "Program Staff — January",            "Payroll",               8500,  "expense", "acc_5010", "ff_01"],
+    ["ft_09", orgId, "2025-01-20",  "Art Supplies — Q1",                  "Blick Art Materials",   1200,  "expense", "acc_5020", "ff_02"],
+    ["ft_10", orgId, "2025-01-31",  "Office Rent — January",              "123 Main St LLC",       3200,  "expense", "acc_5040", "ff_01"],
+    ["ft_11", orgId, "2025-02-15",  "Program Staff — February",           "Payroll",               8500,  "expense", "acc_5010", "ff_01"],
+    ["ft_12", orgId, "2025-02-28",  "Office Rent — February",             "123 Main St LLC",       3200,  "expense", "acc_5040", "ff_01"],
+    ["ft_13", orgId, "2025-03-15",  "Program Staff — March",              "Payroll",               8500,  "expense", "acc_5010", "ff_01"],
+    ["ft_14", orgId, "2025-03-20",  "Admin Software — Q1",               "Quickbooks, Zoom",      450,   "expense", "acc_6030", "ff_01"],
+    ["ft_15", orgId, "2025-03-31",  "Office Rent — March",                "123 Main St LLC",       3200,  "expense", "acc_5040", "ff_01"],
+    ["ft_16", orgId, "2025-04-15",  "Program Staff — April",              "Payroll",               8500,  "expense", "acc_5010", "ff_02"],
+    ["ft_17", orgId, "2025-04-20",  "Teaching Artist Contractors",        "Carlos Mendez",         3000,  "expense", "acc_5030", "ff_02"],
+    ["ft_18", orgId, "2025-04-30",  "Office Rent — April",                "123 Main St LLC",       3200,  "expense", "acc_5040", "ff_01"],
+    ["ft_19", orgId, "2025-05-15",  "Program Staff — May",                "Payroll",               8500,  "expense", "acc_5010", "ff_01"],
+    ["ft_20", orgId, "2025-05-20",  "Spring Gala Expenses",               "Event Venue",           4200,  "expense", "acc_7020", "ff_04"],
+  ];
+  for (const t of finTxns) {
+    await pool.query(
+      `INSERT INTO fin_transactions (id,org_id,date,description,vendor_donor,amount,type,account_id,fund_id)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT (id) DO NOTHING`,
+      t
+    );
+  }
+
+  // ── Annual Budgets 2025 ────────────────────────────────────────────────────
+  const budgets2025 = [
+    ["bgt_4010", orgId, "acc_4010", 2025, 75000],
+    ["bgt_4020", orgId, "acc_4020", 2025, 60000],
+    ["bgt_4030", orgId, "acc_4030", 2025, 50000],
+    ["bgt_4050", orgId, "acc_4050", 2025, 12000],
+    ["bgt_5010", orgId, "acc_5010", 2025, 102000],
+    ["bgt_5020", orgId, "acc_5020", 2025, 12000],
+    ["bgt_5030", orgId, "acc_5030", 2025, 24000],
+    ["bgt_5040", orgId, "acc_5040", 2025, 38400],
+    ["bgt_6010", orgId, "acc_6010", 2025, 48000],
+    ["bgt_6020", orgId, "acc_6020", 2025, 6000],
+    ["bgt_6030", orgId, "acc_6030", 2025, 3600],
+    ["bgt_7010", orgId, "acc_7010", 2025, 18000],
+    ["bgt_7020", orgId, "acc_7020", 2025, 8000],
+    ["bgt_7030", orgId, "acc_7030", 2025, 4000],
+  ];
+  for (const b of budgets2025) {
+    await pool.query(
+      `INSERT INTO budgets (id,org_id,account_id,year,amount)
+       VALUES ($1,$2,$3,$4,$5) ON CONFLICT (org_id, account_id, year) DO NOTHING`,
+      b
+    );
+  }
 
   // ── Program grants ────────────────────────────────────────────────────────
   const programGrants = [

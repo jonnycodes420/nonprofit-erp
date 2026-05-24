@@ -1406,6 +1406,187 @@ app.get("/stripe/online-gifts", requireAuth, wrap(async (req, res) => {
   })));
 }));
 
+// ── Finance: Accounts ─────────────────────────────────────────────────────
+app.get("/finance/accounts", requireAuth, wrap(async (req, res) => {
+  const rows = await query(
+    "SELECT * FROM accounts WHERE org_id = ? ORDER BY code ASC",
+    [req.user.orgId]
+  );
+  res.json(rows);
+}));
+
+app.post("/finance/accounts", requireAuth, requireAdmin, wrap(async (req, res) => {
+  const { code, name, type, subtype } = req.body;
+  if (!code || !name || !type) return res.status(400).json({ error: "code, name, and type required" });
+  const id = "acc_" + uuid().slice(0, 8);
+  await run(
+    "INSERT INTO accounts (id,org_id,code,name,type,subtype) VALUES (?,?,?,?,?,?)",
+    [id, req.user.orgId, code, name, type, subtype || ""]
+  );
+  const rows = await query("SELECT * FROM accounts WHERE id = ?", [id]);
+  res.status(201).json(rows[0]);
+}));
+
+app.put("/finance/accounts/:id", requireAuth, requireAdmin, wrap(async (req, res) => {
+  const { name, subtype, active } = req.body;
+  if (!name) return res.status(400).json({ error: "name required" });
+  const affected = await run(
+    "UPDATE accounts SET name=?,subtype=?,active=? WHERE id=? AND org_id=?",
+    [name, subtype || "", active !== false, req.params.id, req.user.orgId]
+  );
+  if (!affected.changes) return res.status(404).json({ error: "Account not found" });
+  const rows = await query("SELECT * FROM accounts WHERE id = ?", [req.params.id]);
+  res.json(rows[0]);
+}));
+
+// ── Finance: Funds ─────────────────────────────────────────────────────────
+app.get("/finance/funds", requireAuth, wrap(async (req, res) => {
+  const rows = await query(
+    "SELECT * FROM fin_funds WHERE org_id = ? ORDER BY restricted ASC, name ASC",
+    [req.user.orgId]
+  );
+  res.json(rows);
+}));
+
+app.post("/finance/funds", requireAuth, requireAdmin, wrap(async (req, res) => {
+  const { name, description, restricted } = req.body;
+  if (!name) return res.status(400).json({ error: "name required" });
+  const id = "ff_" + uuid().slice(0, 8);
+  await run(
+    "INSERT INTO fin_funds (id,org_id,name,description,restricted) VALUES (?,?,?,?,?)",
+    [id, req.user.orgId, name, description || "", restricted ? true : false]
+  );
+  const rows = await query("SELECT * FROM fin_funds WHERE id = ?", [id]);
+  res.status(201).json(rows[0]);
+}));
+
+app.put("/finance/funds/:id", requireAuth, requireAdmin, wrap(async (req, res) => {
+  const { name, description, restricted } = req.body;
+  if (!name) return res.status(400).json({ error: "name required" });
+  const affected = await run(
+    "UPDATE fin_funds SET name=?,description=?,restricted=? WHERE id=? AND org_id=?",
+    [name, description || "", restricted ? true : false, req.params.id, req.user.orgId]
+  );
+  if (!affected.changes) return res.status(404).json({ error: "Fund not found" });
+  const rows = await query("SELECT * FROM fin_funds WHERE id = ?", [req.params.id]);
+  res.json(rows[0]);
+}));
+
+// ── Finance: Transactions ──────────────────────────────────────────────────
+app.get("/finance/transactions", requireAuth, wrap(async (req, res) => {
+  const { year, fund, account } = req.query;
+  let sql = `
+    SELECT ft.*, a.code as account_code, a.name as account_name, a.type as account_type,
+           f.name as fund_name, f.restricted as fund_restricted
+    FROM fin_transactions ft
+    LEFT JOIN accounts a ON a.id = ft.account_id
+    LEFT JOIN fin_funds f ON f.id = ft.fund_id
+    WHERE ft.org_id = ?
+  `;
+  const params = [req.user.orgId];
+  if (year) { sql += " AND ft.date >= ? AND ft.date <= ?"; params.push(`${year}-01-01`, `${year}-12-31`); }
+  if (fund) { sql += " AND ft.fund_id = ?"; params.push(fund); }
+  if (account) { sql += " AND ft.account_id = ?"; params.push(account); }
+  sql += " ORDER BY ft.date DESC, ft.created_at DESC";
+  const rows = await query(sql, params);
+  res.json(rows);
+}));
+
+app.post("/finance/transactions", requireAuth, wrap(async (req, res) => {
+  const { date, description, vendorDonor, amount, type, accountId, fundId, notes } = req.body;
+  if (!date || !description || !amount || !type) {
+    return res.status(400).json({ error: "date, description, amount, and type required" });
+  }
+  const id = "ft_" + uuid().slice(0, 8);
+  await run(
+    "INSERT INTO fin_transactions (id,org_id,date,description,vendor_donor,amount,type,account_id,fund_id,notes) VALUES (?,?,?,?,?,?,?,?,?,?)",
+    [id, req.user.orgId, date, description, vendorDonor || "", parseFloat(amount), type, accountId || null, fundId || null, notes || ""]
+  );
+  const rows = await query(`
+    SELECT ft.*, a.code as account_code, a.name as account_name, a.type as account_type,
+           f.name as fund_name, f.restricted as fund_restricted
+    FROM fin_transactions ft
+    LEFT JOIN accounts a ON a.id = ft.account_id
+    LEFT JOIN fin_funds f ON f.id = ft.fund_id
+    WHERE ft.id = ?`, [id]);
+  res.status(201).json(rows[0]);
+}));
+
+app.delete("/finance/transactions/:id", requireAuth, requireAdmin, wrap(async (req, res) => {
+  await run("DELETE FROM fin_transactions WHERE id = ? AND org_id = ?", [req.params.id, req.user.orgId]);
+  res.json({ success: true });
+}));
+
+// ── Finance: Budgets ───────────────────────────────────────────────────────
+app.get("/finance/budgets", requireAuth, wrap(async (req, res) => {
+  const year = parseInt(req.query.year) || new Date().getFullYear();
+  const accounts = await query(
+    "SELECT * FROM accounts WHERE org_id = ? AND active = TRUE AND type IN ('revenue','expense') ORDER BY code ASC",
+    [req.user.orgId]
+  );
+  const budgets = await query(
+    "SELECT * FROM budgets WHERE org_id = ? AND year = ?",
+    [req.user.orgId, year]
+  );
+  const actuals = await query(
+    `SELECT account_id, type, SUM(amount) as total
+     FROM fin_transactions
+     WHERE org_id = ? AND date >= ? AND date <= ?
+     GROUP BY account_id, type`,
+    [req.user.orgId, `${year}-01-01`, `${year}-12-31`]
+  );
+  const budgetMap = Object.fromEntries(budgets.map(b => [b.account_id, parseFloat(b.amount)]));
+  const actualMap = Object.fromEntries(actuals.map(a => [a.account_id, parseFloat(a.total)]));
+
+  res.json(accounts.map(a => ({
+    accountId:   a.id,
+    accountCode: a.code,
+    accountName: a.name,
+    accountType: a.type,
+    subtype:     a.subtype,
+    budget:      budgetMap[a.id] || 0,
+    actual:      actualMap[a.id] || 0,
+    variance:    (budgetMap[a.id] || 0) - (actualMap[a.id] || 0),
+  })));
+}));
+
+app.post("/finance/budgets", requireAuth, requireAdmin, wrap(async (req, res) => {
+  const { accountId, year, amount } = req.body;
+  if (!accountId || !year) return res.status(400).json({ error: "accountId and year required" });
+  const id = "bgt_" + uuid().slice(0, 8);
+  await run(
+    `INSERT INTO budgets (id,org_id,account_id,year,amount)
+     VALUES (?,?,?,?,?)
+     ON CONFLICT (org_id, account_id, year) DO UPDATE SET amount=EXCLUDED.amount`,
+    [id, req.user.orgId, accountId, parseInt(year), parseFloat(amount) || 0]
+  );
+  res.json({ success: true, accountId, year, amount: parseFloat(amount) || 0 });
+}));
+
+// ── Finance: Summary ───────────────────────────────────────────────────────
+app.get("/finance/summary", requireAuth, wrap(async (req, res) => {
+  const { orgId } = req.user;
+  const year = new Date().getFullYear();
+  const [ytdRows, allRows] = await Promise.all([
+    query(
+      `SELECT type, SUM(amount) as total FROM fin_transactions
+       WHERE org_id = ? AND date >= ? AND date <= ?
+       GROUP BY type`,
+      [orgId, `${year}-01-01`, `${year}-12-31`]
+    ),
+    query(
+      "SELECT type, SUM(amount) as total FROM fin_transactions WHERE org_id = ? GROUP BY type",
+      [orgId]
+    ),
+  ]);
+  const ytd = Object.fromEntries(ytdRows.map(r => [r.type, parseFloat(r.total)]));
+  const all = Object.fromEntries(allRows.map(r => [r.type, parseFloat(r.total)]));
+  const ytdRevenue  = ytd.income  || 0;
+  const ytdExpenses = ytd.expense || 0;
+  const cashOnHand  = (all.income || 0) - (all.expense || 0);
+  res.json({ cashOnHand, ytdRevenue, ytdExpenses, netSurplus: ytdRevenue - ytdExpenses });
+}));
+
 // ── Demo request (no auth — public landing page) ──────────────────────────
 app.post("/demo-request", wrap(async (req, res) => {
   const { name, email, orgName, orgSize, challenge } = req.body;
