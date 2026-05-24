@@ -550,6 +550,21 @@ app.post("/donors/:id/gifts", requireAuth, wrap(async (req, res) => {
 
   const giftRows  = await query("SELECT * FROM gifts  WHERE id = ?", [giftId]);
   const donorRows = await query("SELECT * FROM donors WHERE id = ?", [req.params.id]);
+  // Auto-sync gift to Finance ledger
+  try {
+    const [contribAcct, genFund] = await Promise.all([
+      query("SELECT id FROM accounts WHERE org_id = ? AND code = '4010' LIMIT 1", [req.user.orgId]),
+      query("SELECT id FROM fin_funds WHERE org_id = ? AND restricted = false ORDER BY created_at ASC LIMIT 1", [req.user.orgId]),
+    ]);
+    if (contribAcct.length) {
+      await run(
+        "INSERT INTO fin_transactions (id,org_id,date,description,vendor_donor,amount,type,account_id,fund_id) VALUES (?,?,?,?,?,?,?,?,?)",
+        ["ft_"+uuid().slice(0,8), req.user.orgId, giftDate,
+         `Gift from ${donorRows[0]?.name || "Donor"}`, donorRows[0]?.name || "",
+         amt, "income", contribAcct[0].id, genFund.length ? genFund[0].id : null]
+      );
+    }
+  } catch(e) { console.error("Finance sync:", e.message); }
   calcWealthScore(req.params.id, req.user.orgId).catch(e => console.error("score recalc:", e.message));
   res.status(201).json({ gift: giftRows[0], donor: donorRows[0] });
 }));

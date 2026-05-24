@@ -193,6 +193,7 @@ export function Finance({ data }) {
   const [forecastAI, setForecastAI] = useState(""); const [forecastLoading, setForecastLoading] = useState(false);
   const [riskAI, setRiskAI] = useState(""); const [riskLoading, setRiskLoading] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [drillAcct, setDrillAcct] = useState(null);
 
   const loadAll = (yr = txnYear, byr = budgetYear) => {
     Promise.all([
@@ -361,6 +362,45 @@ export function Finance({ data }) {
 
   const totalRev = Object.values(incomeByAcct).reduce((s, v) => s + v, 0);
   const totalExp = Object.values(expenseByAcct).reduce((s, v) => s + v, 0);
+  const monthsElapsed = new Date().getMonth() + 1;
+
+  const export990CSV = () => {
+    const p8Lines = [
+      ["1a","Federated campaigns",""],
+      ["1b","Membership dues",""],
+      ["1c","Fundraising events (Gross)", expenseByAcct["Fundraising — Events"]||0],
+      ["1d","Related organizations",""],
+      ["1e","Government grants", incomeByAcct["Government Grants"]||0],
+      ["1f","All other contributions", (incomeByAcct["Individual Contributions"]||0)+(incomeByAcct["Foundation Grants"]||0)],
+      ["2","Program service revenue", incomeByAcct["Program Revenue"]||0],
+      ["7","Other revenue", incomeByAcct["Other Revenue"]||0],
+      ["12","Total Revenue", totalRev],
+    ];
+    const p9Lines = [
+      ["Program services", ["Program Services — Salaries","Program Services — Supplies","Program Services — Contractors","Program Services — Occupancy"].reduce((s,k)=>s+(expenseByAcct[k]||0),0)],
+      ["Management & general", ["Management & General — Salaries","Management & General — Admin","Management & General — Technology"].reduce((s,k)=>s+(expenseByAcct[k]||0),0)],
+      ["Fundraising", ["Fundraising — Salaries","Fundraising — Events","Fundraising — Marketing"].reduce((s,k)=>s+(expenseByAcct[k]||0),0)],
+      ["Total Expenses (Line 25)", totalExp],
+    ];
+    const esc = v => `"${String(v).replace(/"/g,'""')}"`;
+    const rows = [
+      [`Form 990 Prep Export — Year ${txnYear}`, `Generated ${new Date().toLocaleDateString()}`],
+      [],
+      ["PART VIII — REVENUE"],
+      ["Line","Description","Amount"],
+      ...p8Lines.map(([line,desc,amt]) => [line, desc, amt === "" ? "" : Number(amt).toFixed(2)]),
+      [],
+      ["PART IX — FUNCTIONAL EXPENSES"],
+      ["Category","Amount"],
+      ...p9Lines.map(([cat,amt]) => [cat, Number(amt).toFixed(2)]),
+    ];
+    const csv = rows.map(r => r.map(esc).join(",")).join("\r\n");
+    const blob = new Blob([csv], { type:"text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = `990-prep-${txnYear}.csv`; a.click();
+    URL.revokeObjectURL(url);
+  };
 
   if (loading) return (
     <div style={{ display:"flex", flexDirection:"column", gap:16 }}>
@@ -515,30 +555,97 @@ export function Finance({ data }) {
 
       {/* ── Accounts ── */}
       {subtab === "accounts" && <>
-        <div style={{ display:"flex", justifyContent:"flex-end" }}>
-          <button style={btn()} onClick={() => setShowAcctModal(true)}>+ Add Account</button>
-        </div>
-        {ACCT_TYPES.map(type => {
-          const group = accounts.filter(a => a.type === type.id);
-          if (!group.length) return null;
-          return (
-            <Card key={type.id}>
-              <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:12 }}>
-                <div style={{ width:8, height:8, borderRadius:2, background:type.color }}/>
-                <SectionLabel style={{ marginBottom:0 }}>{type.label}s</SectionLabel>
-              </div>
-              {group.map((a, i) => (
-                <div key={a.id} style={{ display:"flex", alignItems:"center", gap:12, padding:"10px 0", borderTop: i > 0 ? "1px solid "+T.bg3 : "" }}>
-                  <span style={{ fontSize:12, fontWeight:700, color:T.ink3, minWidth:40 }}>{a.code}</span>
-                  <span style={{ flex:1, fontSize:13, fontWeight:600, color:a.active===false?T.ink3:T.ink, textDecoration:a.active===false?"line-through":"none" }}>{a.name}</span>
-                  {a.subtype && <span style={{ fontSize:11, color:T.ink3, background:T.bg2, borderRadius:5, padding:"2px 7px" }}>{a.subtype}</span>}
-                  {a.active === false && <span style={{ fontSize:11, color:"#ef4444", background:"#ef444418", borderRadius:5, padding:"2px 7px" }}>Inactive</span>}
-                  <button style={ghostBtn} onClick={() => setEditAcct(a)}>Edit</button>
-                </div>
-              ))}
+        {drillAcct ? (
+          <>
+            <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+              <button style={ghostBtn} onClick={() => setDrillAcct(null)}>← Back</button>
+              <span style={{ fontSize:14, fontWeight:700, color:T.ink }}>{drillAcct.code} {drillAcct.name}</span>
+            </div>
+            <Card style={{ padding:0, overflow:"hidden" }}>
+              {transactions.filter(t => t.account_id === drillAcct.id).length === 0
+                ? <EmptyState icon="◇" title="No transactions" message="No transactions posted to this account yet."/>
+                : (
+                  <div style={{ overflowX:"auto" }}>
+                    <table style={{ width:"100%", borderCollapse:"collapse", fontSize:13 }}>
+                      <thead>
+                        <tr style={{ background:T.bg2 }}>
+                          {["Date","Amount","Description","Fund"].map(h => (
+                            <th key={h} style={{ padding:"10px 14px", textAlign:"left", fontSize:11, fontWeight:700, color:T.ink3, textTransform:"uppercase", letterSpacing:".06em" }}>{h}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {transactions.filter(t => t.account_id === drillAcct.id)
+                          .sort((a,b) => b.date.localeCompare(a.date))
+                          .map((t, i) => (
+                          <tr key={t.id} style={{ borderTop:"1px solid "+T.bg3, background:i%2===0?"transparent":T.bg+"44" }}>
+                            <td style={{ padding:"10px 14px", color:T.ink3, whiteSpace:"nowrap" }}>{t.date}</td>
+                            <td style={{ padding:"10px 14px", fontWeight:700, color:t.type==="income"?"#10b981":"#ef4444" }}>
+                              {t.type==="income"?"+":"−"}{fmtFull(parseFloat(t.amount))}
+                            </td>
+                            <td style={{ padding:"10px 14px" }}>
+                              <div style={{ fontWeight:600, color:T.ink }}>{t.description}</div>
+                              {t.vendor_donor && <div style={{ fontSize:11, color:T.ink3 }}>{t.vendor_donor}</div>}
+                            </td>
+                            <td style={{ padding:"10px 14px" }}>
+                              {t.fund_name && <span style={{ fontSize:11, fontWeight:600, color:t.fund_restricted?"#8b5cf6":"#10b981" }}>{t.fund_name}</span>}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                      <tfoot>
+                        <tr style={{ borderTop:"2px solid "+T.bg3, background:T.bg2 }}>
+                          <td style={{ padding:"10px 14px", fontWeight:700, fontSize:12 }}>Balance</td>
+                          <td style={{ padding:"10px 14px", fontWeight:800, color:
+                            (transactions.filter(t=>t.account_id===drillAcct.id&&t.type==="income").reduce((s,t)=>s+parseFloat(t.amount),0) -
+                            transactions.filter(t=>t.account_id===drillAcct.id&&t.type==="expense").reduce((s,t)=>s+parseFloat(t.amount),0)) >= 0 ? "#10b981" : "#ef4444"
+                          }}>
+                            {fmtFull(
+                              transactions.filter(t=>t.account_id===drillAcct.id&&t.type==="income").reduce((s,t)=>s+parseFloat(t.amount),0) -
+                              transactions.filter(t=>t.account_id===drillAcct.id&&t.type==="expense").reduce((s,t)=>s+parseFloat(t.amount),0)
+                            )}
+                          </td>
+                          <td colSpan={2}/>
+                        </tr>
+                      </tfoot>
+                    </table>
+                  </div>
+                )
+              }
             </Card>
-          );
-        })}
+          </>
+        ) : (
+          <>
+            <div style={{ display:"flex", justifyContent:"flex-end" }}>
+              <button style={btn()} onClick={() => setShowAcctModal(true)}>+ Add Account</button>
+            </div>
+            {ACCT_TYPES.map(type => {
+              const group = accounts.filter(a => a.type === type.id);
+              if (!group.length) return null;
+              return (
+                <Card key={type.id}>
+                  <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:12 }}>
+                    <div style={{ width:8, height:8, borderRadius:2, background:type.color }}/>
+                    <SectionLabel style={{ marginBottom:0 }}>{type.label === "Liability" ? "Liabilities" : type.label + "s"}</SectionLabel>
+                  </div>
+                  {group.map((a, i) => {
+                    const acctBal = transactions.filter(t=>t.account_id===a.id&&t.type==="income").reduce((s,t)=>s+parseFloat(t.amount),0)
+                      - transactions.filter(t=>t.account_id===a.id&&t.type==="expense").reduce((s,t)=>s+parseFloat(t.amount),0);
+                    return (
+                      <div key={a.id} onClick={() => setDrillAcct(a)} style={{ display:"flex", alignItems:"center", gap:12, padding:"10px 0", borderTop: i > 0 ? "1px solid "+T.bg3 : "", cursor:"pointer" }}>
+                        <span style={{ fontSize:12, fontWeight:700, color:T.ink3, minWidth:40 }}>{a.code}</span>
+                        <span style={{ flex:1, fontSize:13, fontWeight:600, color:a.active===false?T.ink3:T.ink, textDecoration:a.active===false?"line-through":"none" }}>{a.name}</span>
+                        {a.active === false && <span style={{ fontSize:11, color:"#ef4444", background:"#ef444418", borderRadius:5, padding:"2px 7px" }}>Inactive</span>}
+                        <span style={{ fontSize:13, fontWeight:700, color:acctBal>=0?"#10b981":"#ef4444", minWidth:80, textAlign:"right" }}>{fmtFull(acctBal)}</span>
+                        <button style={ghostBtn} onClick={e => { e.stopPropagation(); setEditAcct(a); }}>Edit</button>
+                      </div>
+                    );
+                  })}
+                </Card>
+              );
+            })}
+          </>
+        )}
       </>}
 
       {/* ── Funds ── */}
@@ -601,6 +708,7 @@ export function Finance({ data }) {
                     <th style={{ padding:"8px 12px", textAlign:"right", fontSize:11, fontWeight:700, color:T.ink3, textTransform:"uppercase", letterSpacing:".06em" }}>Budget</th>
                     <th style={{ padding:"8px 12px", textAlign:"right", fontSize:11, fontWeight:700, color:T.ink3, textTransform:"uppercase", letterSpacing:".06em" }}>Actual YTD</th>
                     <th style={{ padding:"8px 12px", textAlign:"right", fontSize:11, fontWeight:700, color:T.ink3, textTransform:"uppercase", letterSpacing:".06em" }}>Variance</th>
+                    <th style={{ padding:"8px 12px", textAlign:"right", fontSize:11, fontWeight:700, color:T.ink3, textTransform:"uppercase", letterSpacing:".06em" }}>Proj. Year-End</th>
                     <th style={{ padding:"8px 12px", width:80 }}/>
                   </tr>
                 </thead>
@@ -608,6 +716,8 @@ export function Finance({ data }) {
                   {rows.map((b, i) => {
                     const pct = b.budget > 0 ? Math.round(b.actual / b.budget * 100) : 0;
                     const over = section === "expense" ? b.actual > b.budget : b.actual < b.budget * 0.5;
+                    const projected = monthsElapsed > 0 && b.actual > 0 ? Math.round((b.actual / monthsElapsed) * 12) : b.actual;
+                    const overProj = section === "expense" && b.budget > 0 && projected > b.budget;
                     return (
                       <tr key={b.accountId} style={{ borderTop:"1px solid "+T.bg3 }}>
                         <td style={{ padding:"10px 12px" }}>
@@ -624,6 +734,10 @@ export function Finance({ data }) {
                         <td style={{ padding:"10px 12px", textAlign:"right", fontWeight:700, color:over?"#ef4444":"#10b981" }}>
                           {b.variance >= 0 ? "+" : ""}{fmtFull(b.variance)}
                         </td>
+                        <td style={{ padding:"10px 12px", textAlign:"right", fontWeight:700, color:overProj?"#ef4444":T.ink3 }}>
+                          {fmtFull(projected)}
+                          {overProj && <div style={{ fontSize:10, color:"#ef4444" }}>over budget</div>}
+                        </td>
                         <td style={{ padding:"10px 12px" }}>
                           <div style={{ height:6, background:T.bg3, borderRadius:99, overflow:"hidden" }}>
                             <div style={{ height:"100%", width:`${Math.min(pct,100)}%`, background:over?"#ef4444":"#10b981", borderRadius:99 }}/>
@@ -639,6 +753,7 @@ export function Finance({ data }) {
                     <td style={{ padding:"10px 12px", textAlign:"right", fontWeight:700 }}>{fmtFull(totBudget)}</td>
                     <td style={{ padding:"10px 12px", textAlign:"right", fontWeight:700 }}>{fmtFull(totActual)}</td>
                     <td style={{ padding:"10px 12px", textAlign:"right", fontWeight:700, color:totVar>=0?"#10b981":"#ef4444" }}>{totVar>=0?"+":""}{fmtFull(totVar)}</td>
+                    <td style={{ padding:"10px 12px", textAlign:"right", fontWeight:700, color:T.ink3 }}>{fmtFull(monthsElapsed>0?Math.round((totActual/monthsElapsed)*12):totActual)}</td>
                     <td/>
                   </tr>
                 </tfoot>
@@ -759,7 +874,10 @@ export function Finance({ data }) {
 
         {report === "990" && (
           <Card>
-            <div style={{ fontSize:16, fontWeight:800, color:T.ink, marginBottom:4 }}>Form 990 Prep Report</div>
+            <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:4 }}>
+              <div style={{ fontSize:16, fontWeight:800, color:T.ink, flex:1 }}>Form 990 Prep Report</div>
+              <button style={ghostBtn} onClick={export990CSV}>⬇ Export CSV</button>
+            </div>
             <div style={{ fontSize:12, color:T.ink3, marginBottom:18 }}>Year {txnYear} &nbsp;·&nbsp; For accountant use — verify all figures with audited financials.</div>
             <SectionLabel>Part VIII — Revenue (Statement of Revenue)</SectionLabel>
             {[
