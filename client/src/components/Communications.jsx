@@ -25,7 +25,7 @@ const STATUS_META = {
   draft:     { label: "Draft",     color: "#6b7280", bg: "#6b728018" },
   scheduled: { label: "Scheduled", color: "#3b82f6", bg: "#3b82f618" },
   sending:   { label: "Sending",   color: "#f59e0b", bg: "#f59e0b18" },
-  sent:      { label: "Sent",      color: "#10b981", bg: "#10b98118" },
+  sent:      { label: "Sent",      color: "#fff",    bg: "#1a6b4a" },
 };
 function StatusBadge({ status }) {
   const m = STATUS_META[status] || STATUS_META.draft;
@@ -229,7 +229,7 @@ function BarChart({ data }) {
     <div style={{ display: "flex", alignItems: "flex-end", gap: 6, height: 80 }}>
       {data.map((d, i) => (
         <div key={i} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>
-          <div style={{ width: "100%", height: Math.max(4, (d.v / max) * 64), background: T.green, borderRadius: "4px 4px 0 0", opacity: 0.85 }} />
+          <div style={{ width: "100%", height: Math.max(4, (d.v / max) * 64), background: "#1a6b4a", borderRadius: "4px 4px 0 0", opacity: 0.85 }} />
           <div style={{ fontSize: 9, color: T.ink3 }}>{d.label}</div>
         </div>
       ))}
@@ -270,6 +270,8 @@ export function Communications({ data }) {
 
   // Audience tab segment preview
   const [audienceSeg, setAudienceSeg] = useState("all");
+  const [newBtnHover, setNewBtnHover] = useState(false);
+  const [hoveredRowId, setHoveredRowId] = useState(null);
 
   const loadCampaigns = async () => {
     try { setCampaigns(await apiFetch("/campaigns")); } catch (e) { console.error(e); }
@@ -559,16 +561,16 @@ export function Communications({ data }) {
           <button key={n.id} onClick={() => setNav(n.id)}
             style={{
               display: "flex", alignItems: "center", gap: 10, padding: "9px 16px",
-              background: nav === n.id ? T.bg3 : "transparent",
+              background: nav === n.id ? "#1a6b4a" : "transparent",
               border: "none", borderRadius: 8, margin: "0 6px",
-              color: nav === n.id ? T.ink : T.ink3,
+              color: nav === n.id ? "#fff" : T.ink3,
               fontSize: 13, fontWeight: nav === n.id ? 700 : 400,
               cursor: "pointer", textAlign: "left",
             }}>
             <span style={{ fontSize: 14, opacity: 0.7 }}>{n.icon}</span>
             {n.label}
             {n.id === "campaigns" && campaigns.length > 0 && (
-              <span style={{ marginLeft: "auto", fontSize: 11, background: T.bg3, borderRadius: 99, padding: "1px 7px", color: T.ink3 }}>{campaigns.length}</span>
+              <span style={{ marginLeft: "auto", fontSize: 11, background: nav === n.id ? "#ffffff22" : T.bg3, borderRadius: 99, padding: "1px 7px", color: nav === n.id ? "#fff" : T.ink3 }}>{campaigns.length}</span>
             )}
           </button>
         ))}
@@ -583,7 +585,12 @@ export function Communications({ data }) {
             {/* Header row */}
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
               <h2 style={{ margin: 0, fontSize: 20, fontWeight: 800, color: T.ink }}>Campaigns</h2>
-              <button onClick={() => openBuilder()} style={S.btn("primary")}>+ New Campaign</button>
+              <button onClick={() => openBuilder()}
+                onMouseEnter={() => setNewBtnHover(true)}
+                onMouseLeave={() => setNewBtnHover(false)}
+                style={{ ...S.btn("primary"), background: newBtnHover ? "#0d9e6e" : T.green }}>
+                + New Campaign
+              </button>
             </div>
 
             {/* Stat pills */}
@@ -593,9 +600,9 @@ export function Communications({ data }) {
                 { label: "Avg Open Rate", value: overallRate + "%" },
                 { label: "Active", value: stats.active },
               ].map(({ label, value }) => (
-                <div key={label} style={{ background: T.bg2, border: "1px solid " + T.bg3, borderRadius: 99, padding: "7px 16px", display: "flex", gap: 8, alignItems: "center" }}>
+                <div key={label} style={{ background: T.bg2, border: "1px solid #1a6b4a", borderRadius: 99, padding: "7px 16px", display: "flex", gap: 8, alignItems: "center" }}>
                   <span style={{ fontSize: 11, color: T.ink3 }}>{label}</span>
-                  <span style={{ fontSize: 14, fontWeight: 800, color: T.ink }}>{value}</span>
+                  <span style={{ fontSize: 14, fontWeight: 800, color: "#1a6b4a" }}>{value}</span>
                 </div>
               ))}
             </div>
@@ -622,7 +629,7 @@ export function Communications({ data }) {
             ) : (
               <div style={{ background: T.bg2, border: "1px solid " + T.bg3, borderRadius: 12, overflow: "hidden" }}>
                 {/* Table header */}
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 140px 100px 70px 90px 100px 100px", padding: "10px 16px", background: T.bg3, fontSize: 10, fontWeight: 700, color: T.ink3, textTransform: "uppercase", letterSpacing: "0.06em", gap: 8 }}>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 140px 100px 70px 90px 100px 100px", padding: "10px 16px", background: "#1a6b4a", fontSize: 10, fontWeight: 700, color: "#fff", textTransform: "uppercase", letterSpacing: "0.06em", gap: 8 }}>
                   <span>Campaign</span>
                   <span>Segment</span>
                   <span>Status</span>
@@ -645,11 +652,11 @@ export function Communications({ data }) {
                       <div
                         style={{ display: "grid", gridTemplateColumns: "1fr 140px 100px 70px 90px 100px 100px", padding: "12px 16px", gap: 8, alignItems: "center", cursor: "pointer", transition: "background 0.1s" }}
                         onClick={() => setExpandedId(isOpen ? null : c.id)}
-                        onMouseEnter={e => e.currentTarget.style.background = T.bg3}
-                        onMouseLeave={e => e.currentTarget.style.background = "transparent"}
+                        onMouseEnter={e => { e.currentTarget.style.background = T.bg3; setHoveredRowId(c.id); }}
+                        onMouseLeave={e => { e.currentTarget.style.background = "transparent"; setHoveredRowId(null); }}
                       >
                         <div>
-                          <div style={{ fontSize: 13, fontWeight: 600, color: T.ink }}>{c.name}</div>
+                          <div style={{ fontSize: 13, fontWeight: 600, color: hoveredRowId === c.id ? "#1a6b4a" : T.ink, transition: "color 0.1s" }}>{c.name}</div>
                           <div style={{ fontSize: 11, color: T.ink3, marginTop: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 220 }}>{c.subject}</div>
                         </div>
                         <div style={{ fontSize: 11, color: T.ink3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{segLabel(raw)}</div>
@@ -660,7 +667,7 @@ export function Communications({ data }) {
                             <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
                               <span style={{ fontSize: 12, fontWeight: 700, color: openRate >= 25 ? T.green : openRate >= 15 ? "#f59e0b" : T.ink3 }}>{openRate}%</span>
                               <div style={{ height: 3, background: T.bg3, borderRadius: 99 }}>
-                                <div style={{ height: "100%", width: `${Math.min(openRate, 100)}%`, background: openRate >= 25 ? T.green : "#f59e0b", borderRadius: 99 }} />
+                                <div style={{ height: "100%", width: `${Math.min(openRate, 100)}%`, background: openRate >= 25 ? "#1a6b4a" : "#f59e0b", borderRadius: 99 }} />
                               </div>
                             </div>
                           ) : <span style={{ fontSize: 11, color: T.ink3 }}>—</span>}
@@ -801,7 +808,7 @@ export function Communications({ data }) {
               <div style={{ color: T.ink3, fontSize: 13, padding: 20 }}>No donors in this segment.</div>
             ) : (
               <div style={{ background: T.bg2, border: "1px solid " + T.bg3, borderRadius: 12, overflow: "hidden" }}>
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 180px 110px 90px", padding: "9px 16px", background: T.bg3, fontSize: 10, fontWeight: 700, color: T.ink3, textTransform: "uppercase", letterSpacing: "0.06em", gap: 8 }}>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 180px 110px 90px", padding: "9px 16px", background: "#1a6b4a", fontSize: 10, fontWeight: 700, color: "#fff", textTransform: "uppercase", letterSpacing: "0.06em", gap: 8 }}>
                   <span>Donor</span><span>Email</span><span>Stage</span><span>Total Giving</span>
                 </div>
                 {audDonors.slice(0, 50).map(d => (
@@ -878,7 +885,7 @@ export function Communications({ data }) {
                     <div style={{ textAlign: "right" }}>
                       <div style={{ fontSize: 16, fontWeight: 800, color: c.rate >= 25 ? T.green : "#f59e0b" }}>{c.rate}%</div>
                       <div style={{ height: 3, width: 60, background: T.bg3, borderRadius: 99, marginTop: 3 }}>
-                        <div style={{ height: "100%", width: `${Math.min(c.rate, 100)}%`, background: c.rate >= 25 ? T.green : "#f59e0b", borderRadius: 99 }} />
+                        <div style={{ height: "100%", width: `${Math.min(c.rate, 100)}%`, background: c.rate >= 25 ? "#1a6b4a" : "#f59e0b", borderRadius: 99 }} />
                       </div>
                     </div>
                   </div>
