@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import QRCode from "qrcode";
 import { T, Pill, SectionLabel, PageTitle } from "./shared";
 import { apiFetch } from "../api";
 
@@ -27,10 +28,65 @@ export function Settings({auth,logout}) {
   const [stripe,setStripe]=useState(null);
   const [stripeLoading,setStripeLoading]=useState(false);
 
+  const [orgSlug,setOrgSlug]=useState(auth?.org?.org_slug||"");
+  const [qrDataUrl,setQrDataUrl]=useState("");
+  const [qrLoading,setQrLoading]=useState(false);
+  const [embedCopied,setEmbedCopied]=useState(false);
+
   useEffect(()=>{
     apiFetch("/org/team").then(setTeam).catch(()=>{});
     apiFetch("/stripe/status").then(setStripe).catch(()=>{});
+    if(!auth?.org?.org_slug){
+      apiFetch("/org").then(r=>{ if(r.org_slug) setOrgSlug(r.org_slug); }).catch(()=>{});
+    }
   },[]);
+
+  const donationUrl = orgSlug ? `${window.location.origin}/give/${orgSlug}` : "";
+  const embedCode = orgSlug
+    ? `<iframe src="${window.location.origin}/give/${orgSlug}" width="100%" height="600" frameborder="0"></iframe>`
+    : "";
+
+  async function generateQR(){
+    if(!donationUrl) return;
+    setQrLoading(true);
+    try{
+      const url=await QRCode.toDataURL(donationUrl,{width:300,margin:2,color:{dark:"#1a1a1a",light:"#faf8f4"}});
+      setQrDataUrl(url);
+    }catch(e){ console.error(e); }
+    setQrLoading(false);
+  }
+
+  function downloadQR(){
+    if(!qrDataUrl) return;
+    const a=document.createElement("a");
+    a.href=qrDataUrl;
+    a.download=`${orgName.toLowerCase().replace(/[^a-z0-9]+/g,"-")}-donation-qr.png`;
+    a.click();
+  }
+
+  function printQR(){
+    if(!qrDataUrl) return;
+    const w=window.open("","_blank","width=600,height=700");
+    w.document.write(`<!DOCTYPE html><html><head><title>Donation QR — ${orgName}</title>
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{background:#fff;font-family:'DM Sans',system-ui,sans-serif;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;padding:40px}
+  img{width:280px;height:280px}
+  h1{font-size:26px;font-weight:800;color:#1a1a1a;margin:24px 0 8px;text-align:center}
+  p{font-size:16px;color:#6b6b6b;text-align:center}
+  @media print{@page{margin:0.5in}body{padding:20px}}
+</style></head><body>
+<img src="${qrDataUrl}"/>
+<h1>${orgName}</h1>
+<p>Scan to give</p>
+<script>window.onload=()=>{setTimeout(()=>{window.print();},400)}<\/script>
+</body></html>`);
+    w.document.close();
+  }
+
+  function copyEmbed(){
+    navigator.clipboard.writeText(embedCode).then(()=>{setEmbedCopied(true);setTimeout(()=>setEmbedCopied(false),2500);});
+  }
 
   async function connectStripe(){
     setStripeLoading(true);
@@ -129,6 +185,70 @@ export function Settings({auth,logout}) {
           </div>
         )}
       </div>
+      {orgSlug&&<div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:16,padding:"24px 28px"}}>
+        <SectionLabel>Donation QR Code</SectionLabel>
+        <div style={{fontSize:13,color:T.ink3,marginBottom:14,lineHeight:1.6}}>
+          Print this QR code and put it in your bulletin, on a sign, or anywhere donors can scan it to give.
+        </div>
+        <div style={{background:T.bg,borderRadius:10,padding:"10px 14px",fontFamily:"monospace",fontSize:12,color:T.ink2,wordBreak:"break-all",marginBottom:14,border:"1px solid "+T.bg3}}>
+          {donationUrl}
+        </div>
+        <div style={{display:"flex",gap:10,flexWrap:"wrap",alignItems:"flex-start"}}>
+          <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+            {!qrDataUrl?(
+              <button onClick={generateQR} disabled={qrLoading}
+                style={{background:T.green,border:"none",borderRadius:8,padding:"9px 18px",color:"#fff",fontSize:13,fontWeight:700,cursor:qrLoading?"not-allowed":"pointer",opacity:qrLoading?0.7:1}}>
+                {qrLoading?"Generating…":"Generate QR Code"}
+              </button>
+            ):(
+              <>
+                <button onClick={downloadQR}
+                  style={{background:T.greenDk,border:"none",borderRadius:8,padding:"9px 18px",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer"}}>
+                  ↓ Download PNG
+                </button>
+                <button onClick={printQR}
+                  style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"9px 18px",color:T.ink,fontSize:13,fontWeight:600,cursor:"pointer"}}>
+                  🖨 Print
+                </button>
+                <button onClick={()=>setQrDataUrl("")}
+                  style={{background:"transparent",border:"1px solid "+T.bg3,borderRadius:8,padding:"9px 14px",color:T.ink3,fontSize:13,cursor:"pointer"}}>
+                  Regenerate
+                </button>
+              </>
+            )}
+          </div>
+          {qrDataUrl&&<img src={qrDataUrl} alt="Donation QR Code" style={{width:120,height:120,borderRadius:8,border:"1px solid "+T.bg3,flexShrink:0}}/>}
+        </div>
+      </div>}
+
+      {orgSlug&&<div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:16,padding:"24px 28px"}}>
+        <SectionLabel>Embed Donation Form</SectionLabel>
+        <div style={{fontSize:13,color:T.ink3,marginBottom:14,lineHeight:1.6}}>
+          Paste this anywhere on your website to let donors give without leaving your site.
+        </div>
+        <div style={{position:"relative",marginBottom:10}}>
+          <pre style={{background:"#0f172a",color:"#a5f3c0",borderRadius:10,padding:"14px 16px",fontSize:12,lineHeight:1.7,overflowX:"auto",margin:0,fontFamily:"'Fira Code',monospace,monospace",whiteSpace:"pre-wrap",wordBreak:"break-all"}}>
+            {embedCode}
+          </pre>
+          <button onClick={copyEmbed}
+            style={{position:"absolute",top:10,right:10,background:embedCopied?"#10b98130":"rgba(255,255,255,0.12)",border:"1px solid rgba(255,255,255,0.2)",borderRadius:6,padding:"4px 10px",color:embedCopied?"#a5f3c0":"#e2e8f0",fontSize:11,fontWeight:700,cursor:"pointer",transition:"all 0.15s"}}>
+            {embedCopied?"✓ Copied!":"Copy Code"}
+          </button>
+        </div>
+        <div style={{fontSize:11,color:T.ink3,marginBottom:16}}>Width and height are customizable. Use <code style={{background:T.bg3,padding:"1px 5px",borderRadius:4}}>height="700"</code> for the full form without scrolling.</div>
+        <div style={{fontSize:11,fontWeight:700,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:8}}>Live Preview</div>
+        <div style={{border:"1px solid "+T.bg3,borderRadius:10,overflow:"hidden",background:T.bg}}>
+          <iframe
+            src={donationUrl}
+            width="100%"
+            height="560"
+            frameBorder="0"
+            title="Donation form preview"
+            style={{display:"block"}}
+          />
+        </div>
+      </div>}
+
       <div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:16,padding:"24px 28px"}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
           <SectionLabel>Team Members</SectionLabel>

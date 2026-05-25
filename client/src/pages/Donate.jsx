@@ -76,11 +76,13 @@ export default function Donate() {
     }
   };
 
+  const isEmbed = window.self !== window.top;
+
   const BASE = {
     minHeight: "100vh", background: T.bg,
     fontFamily: "'DM Sans', system-ui, sans-serif",
     display: "flex", flexDirection: "column", alignItems: "center",
-    padding: "40px 16px 80px",
+    padding: isEmbed ? "20px 16px 40px" : "40px 16px 80px",
   };
 
   if (pageLoading) return (
@@ -122,18 +124,20 @@ export default function Donate() {
       <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=DM+Serif+Display:ital@0;1&display=swap" rel="stylesheet" />
       <style>{`@keyframes sp{to{transform:rotate(360deg)}}`}</style>
 
-      {/* Header */}
-      <div style={{ marginBottom: 32, textAlign: "center" }}>
-        <div style={{ width: 48, height: 48, background: T.greenDk, borderRadius: 14, display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 16px" }}>
-          <svg width="22" height="22" viewBox="0 0 16 16" fill="none"><path d="M8 2L13 5v6L8 14 3 11V5L8 2z" stroke="#fff" strokeWidth="1.5" fill="none"/><circle cx="8" cy="8" r="2" fill="#fff"/></svg>
+      {/* Header — hidden when embedded in an iframe */}
+      {!isEmbed && (
+        <div style={{ marginBottom: 32, textAlign: "center" }}>
+          <div style={{ width: 48, height: 48, background: T.greenDk, borderRadius: 14, display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 16px" }}>
+            <svg width="22" height="22" viewBox="0 0 16 16" fill="none"><path d="M8 2L13 5v6L8 14 3 11V5L8 2z" stroke="#fff" strokeWidth="1.5" fill="none"/><circle cx="8" cy="8" r="2" fill="#fff"/></svg>
+          </div>
+          <h1 style={{ margin: 0, fontSize: 26, fontWeight: 800, color: T.ink, fontFamily: "'DM Serif Display', serif", letterSpacing: "-0.02em" }}>
+            Give to {org.name}
+          </h1>
+          {org.mission && (
+            <p style={{ margin: "8px 0 0", fontSize: 14, color: T.ink3, maxWidth: 400, lineHeight: 1.6 }}>{org.mission}</p>
+          )}
         </div>
-        <h1 style={{ margin: 0, fontSize: 26, fontWeight: 800, color: T.ink, fontFamily: "'DM Serif Display', serif", letterSpacing: "-0.02em" }}>
-          Give to {org.name}
-        </h1>
-        {org.mission && (
-          <p style={{ margin: "8px 0 0", fontSize: 14, color: T.ink3, maxWidth: 400, lineHeight: 1.6 }}>{org.mission}</p>
-        )}
-      </div>
+      )}
 
       {/* Form */}
       <form onSubmit={handleSubmit} style={{ width: "100%", maxWidth: 480, display: "flex", flexDirection: "column", gap: 20 }}>
