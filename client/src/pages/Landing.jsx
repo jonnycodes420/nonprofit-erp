@@ -583,46 +583,50 @@ export default function Landing() {
         {/* ── Who we serve ── */}
         <section style={{ background: T.cream, borderBottom: `1px solid ${T.cream3}`, padding: "100px 48px" }}>
           <div style={{ maxWidth: 1100, margin: "0 auto" }}>
-            <div style={{ marginBottom: 52, maxWidth: 520 }}>
-              <div style={{ fontSize: 11, color: T.greenDark, fontWeight: 500, letterSpacing: ".8px", textTransform: "uppercase", marginBottom: 14 }}>Who we serve</div>
-              <h2 style={{ fontFamily: "'DM Serif Display',serif", fontSize: "clamp(34px, 4vw, 52px)", letterSpacing: "-1.5px", lineHeight: 1.1, color: T.ink }}>
-                We built this for you.
+            <div style={{ marginBottom: 64 }}>
+              <div style={{ fontSize: 11, color: T.greenDark, fontWeight: 500, letterSpacing: ".8px", textTransform: "uppercase", marginBottom: 16 }}>Who we serve</div>
+              <h2 style={{ fontFamily: "'DM Serif Display',serif", fontSize: "clamp(34px, 4vw, 52px)", letterSpacing: "-1.5px", lineHeight: 1.1, color: T.ink, maxWidth: 640 }}>
+                The world runs on organizations like yours.
               </h2>
             </div>
-            <div className="serve-grid" style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 20 }}>
+            <div>
               {[
                 {
-                  icon: "ti-heart-handshake",
+                  num: "01",
                   title: "Nonprofits",
-                  desc: "From donor pipelines to grant reporting, we help you run your entire organization in one place. No more juggling five tools to do one job.",
+                  desc: "You're doing work the world needs. We built Steward so the weight of running an organization never gets in the way of the reason you started it.",
                 },
                 {
-                  icon: "ti-building-church",
+                  num: "02",
                   title: "Churches",
-                  desc: "Manage giving, volunteers, communications, and community programs — all under one roof. Built for the way your community actually works.",
+                  desc: "Your congregation is your community. We give you the tools to care for your people, manage your finances, and grow your ministry — without the corporate feel.",
                 },
                 {
-                  icon: "ti-star",
+                  num: "03",
                   title: "Mission-driven orgs",
-                  desc: "If you exist to serve others, Steward exists to serve you. Whatever your cause, your operations deserve the same care you give your mission.",
+                  desc: "Whatever you're building — if it exists to serve others, Steward exists to serve you. Full stop.",
                 },
-              ].map(c => (
-                <div key={c.title} className="serve-card" style={{
-                  background: T.cream,
-                  border: `1px solid ${T.cream3}`,
-                  borderRadius: 18,
-                  padding: "32px 28px",
-                  transition: "background .2s, box-shadow .2s",
-                }}>
-                  <div style={{
-                    width: 44, height: 44, background: T.greenDark + "14",
-                    borderRadius: 12, display: "flex", alignItems: "center",
-                    justifyContent: "center", marginBottom: 20,
-                  }}>
-                    <i className={`ti ${c.icon}`} style={{ fontSize: 22, color: T.greenDark }} aria-hidden="true" />
-                  </div>
-                  <div style={{ fontSize: 17, fontWeight: 600, color: T.ink, marginBottom: 10 }}>{c.title}</div>
-                  <div style={{ fontSize: 14, color: T.ink3, lineHeight: 1.7 }}>{c.desc}</div>
+              ].map((row, i, arr) => (
+                <div
+                  key={row.num}
+                  className="serve-row"
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "56px 1fr 1fr",
+                    alignItems: "center",
+                    gap: "0 48px",
+                    padding: "40px 0 40px 28px",
+                    borderLeft: `4px solid ${T.greenDark}`,
+                    borderBottom: i < arr.length - 1 ? `1px solid ${T.cream3}` : "none",
+                    transition: "background .2s",
+                    cursor: "default",
+                  }}
+                  onMouseEnter={e => e.currentTarget.style.background = "#f7f4ef"}
+                  onMouseLeave={e => e.currentTarget.style.background = "transparent"}
+                >
+                  <div style={{ fontSize: 13, fontWeight: 500, color: T.cream3, letterSpacing: "0.05em", userSelect: "none" }}>{row.num}</div>
+                  <div style={{ fontFamily: "'DM Serif Display',serif", fontSize: "clamp(26px, 3vw, 40px)", color: T.ink, letterSpacing: "-1px", lineHeight: 1.1 }}>{row.title}</div>
+                  <div style={{ fontSize: 15, color: T.ink3, lineHeight: 1.75, fontWeight: 300, maxWidth: 480 }}>{row.desc}</div>
                 </div>
               ))}
             </div>
