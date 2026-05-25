@@ -202,6 +202,7 @@ export default function Landing() {
   const navigate = useNavigate();
   const [navShadow, setNavShadow] = useState(false);
   const [showModal, setShowModal] = useState(false);
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
   useEffect(() => {
     const onScroll = () => setNavShadow(window.scrollY > 10);
@@ -262,19 +263,74 @@ export default function Landing() {
         .pill-btn:hover { background: ${T.cream2} !important; }
         .quote-card:hover { box-shadow: 0 4px 24px rgba(0,0,0,0.07) !important; }
         @keyframes pulse-dot { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.5; transform: scale(0.75); } }
+        .lp-mobile-hamburger { display: none; background: none; border: none; font-size: 22px; cursor: pointer; color: ${T.ink}; padding: 4px; line-height: 1; }
+        .lp-nav-cta { display: flex; }
+        .lp-mobile-nav-overlay { display: none; position: fixed; inset: 0; z-index: 600; background: rgba(0,0,0,0.45); align-items: flex-end; }
+        .lp-mobile-nav-open { display: flex !important; }
+        .lp-mobile-nav-drawer { background: ${T.cream}; border-radius: 20px 20px 0 0; width: 100%; padding-bottom: env(safe-area-inset-bottom, 0px); }
+        .lp-mobile-nav-handle { width: 36px; height: 4px; border-radius: 2px; background: ${T.cream3}; margin: 12px auto 8px; }
+        .lp-mobile-nav-row { display: flex; align-items: center; padding: 16px 24px; font-family: 'DM Sans', sans-serif; font-size: 17px; color: ${T.ink}; border-bottom: 1px solid ${T.cream3}; text-decoration: none; width: 100%; background: none; border-left: none; border-right: none; border-top: none; cursor: pointer; text-align: left; }
+        .lp-mobile-nav-row:hover { background: ${T.cream2}; }
         @media (max-width: 768px) {
           .hero-grid { grid-template-columns: 1fr !important; }
-          .h1-hero { font-size: 42px !important; }
+          .h1-hero { font-size: 36px !important; letter-spacing: -1px !important; }
           .features-grid { grid-template-columns: 1fr !important; }
           .serve-grid { grid-template-columns: 1fr !important; }
           .pricing-grid { grid-template-columns: 1fr !important; }
           .quotes-grid { grid-template-columns: 1fr !important; }
           .nav-links { display: none !important; }
           .definition-block { padding-left: 20px !important; }
+          /* Hamburger + nav CTA visibility */
+          .lp-mobile-hamburger { display: block !important; }
+          .lp-nav-cta { display: none !important; }
+          /* Section horizontal padding */
+          .lp-section { padding-left: 16px !important; padding-right: 16px !important; }
+          .landing-nav { padding: 0 16px !important; }
+          /* Hero vertical padding */
+          .hero-section { padding-top: 56px !important; padding-bottom: 48px !important; }
+          /* Dark mesh card inner: stack to single column */
+          .mesh-card-inner { grid-template-columns: 1fr !important; padding: 28px 20px !important; gap: 24px !important; }
+          /* Consulting inner grid: stack */
+          .consulting-grid { grid-template-columns: 1fr !important; gap: 32px !important; }
+          /* Features + Pricing section headers: stack */
+          .features-header { grid-template-columns: 1fr !important; gap: 12px !important; }
+          .pricing-header { grid-template-columns: 1fr !important; gap: 12px !important; }
+          /* Who we serve rows: stack to single column */
+          .serve-row { grid-template-columns: 1fr !important; gap: 6px !important; padding: 24px 16px !important; }
+          /* Mesh section outer padding */
+          .mesh-section { padding-left: 12px !important; padding-right: 12px !important; }
+          /* Footer */
+          .landing-footer { padding: 28px 16px !important; }
         }
       `}</style>
 
       {showModal && <DemoModal onClose={() => setShowModal(false)} />}
+
+      {/* Mobile nav drawer */}
+      {mobileNavOpen && (
+        <div className="lp-mobile-nav-overlay lp-mobile-nav-open" onClick={() => setMobileNavOpen(false)}>
+          <div className="lp-mobile-nav-drawer" onClick={e => e.stopPropagation()}>
+            <div className="lp-mobile-nav-handle" />
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 24px 12px" }}>
+              <span style={{ fontFamily: "'DM Serif Display',serif", fontSize: 18, color: T.ink }}>Steward</span>
+              <button onClick={() => setMobileNavOpen(false)} style={{ background: "none", border: "none", fontSize: 24, color: T.ink3, cursor: "pointer", lineHeight: 1 }}>×</button>
+            </div>
+            {[["Features","#features"],["Pricing","#pricing"],["Consulting","#consulting"]].map(([l,h]) => (
+              <a key={l} href={h} className="lp-mobile-nav-row" onClick={() => setMobileNavOpen(false)}>{l}</a>
+            ))}
+            <div style={{ padding: "16px 24px", display: "flex", flexDirection: "column", gap: 10 }}>
+              <button onClick={() => { navigate("/login"); setMobileNavOpen(false); }}
+                style={{ width: "100%", padding: "13px", border: `1px solid ${T.cream3}`, borderRadius: 9, background: "transparent", fontSize: 15, fontWeight: 400, color: T.ink, fontFamily: "'DM Sans',sans-serif", cursor: "pointer" }}>
+                Log in
+              </button>
+              <button onClick={() => { setShowModal(true); setMobileNavOpen(false); }}
+                style={{ width: "100%", padding: "13px", border: "none", borderRadius: 9, background: T.ink, color: T.cream, fontSize: 15, fontWeight: 500, fontFamily: "'DM Sans',sans-serif", cursor: "pointer" }}>
+                Book a Demo
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="steward">
 
@@ -293,7 +349,7 @@ export default function Landing() {
         </div>
 
         {/* ── Nav ── */}
-        <nav style={{
+        <nav className="landing-nav" style={{
           display: "flex", alignItems: "center", justifyContent: "space-between",
           padding: "0 48px", height: 64,
           background: navShadow ? "rgba(240,237,230,0.92)" : T.cream,
@@ -313,7 +369,7 @@ export default function Landing() {
               </a>
             ))}
           </div>
-          <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+          <div className="lp-nav-cta" style={{ display: "flex", gap: 10, alignItems: "center" }}>
             <button className="btn-text" onClick={() => navigate("/login")} style={{
               background: "none", border: "none", fontSize: 15, color: T.ink2,
               cursor: "pointer", fontFamily: "'DM Sans',sans-serif",
@@ -321,10 +377,11 @@ export default function Landing() {
             }}>Log in</button>
             <BookBtn style={{ padding: "10px 22px", fontSize: 15 }} />
           </div>
+          <button className="lp-mobile-hamburger" onClick={() => setMobileNavOpen(true)}>☰</button>
         </nav>
 
         {/* ── Hero ── */}
-        <section style={{ padding: "90px 48px 80px", maxWidth: 1200, margin: "0 auto" }}>
+        <section className="hero-section lp-section" style={{ padding: "90px 48px 80px", maxWidth: 1200, margin: "0 auto" }}>
           <div data-reveal style={{ marginBottom: 52 }}>
             <span style={{
               display: "inline-flex", alignItems: "center", gap: 10,
@@ -384,14 +441,14 @@ export default function Landing() {
         </section>
 
         {/* ── Dark animated mesh card ── */}
-        <section style={{ padding: "0 32px 80px" }}>
+        <section className="mesh-section" style={{ padding: "0 32px 80px" }}>
           <div style={{
             position: "relative", borderRadius: 24, overflow: "hidden",
             maxWidth: 1200, margin: "0 auto",
             minHeight: 460, cursor: "crosshair",
           }}>
             <MeshCanvas />
-            <div style={{ position: "relative", zIndex: 2, padding: "64px 64px", display: "grid", gridTemplateColumns: "1fr 1fr", gap: 64, alignItems: "center" }}>
+            <div className="mesh-card-inner" style={{ position: "relative", zIndex: 2, padding: "64px 64px", display: "grid", gridTemplateColumns: "1fr 1fr", gap: 64, alignItems: "center" }}>
               <div>
                 <div style={{
                   display: "inline-flex", alignItems: "center", gap: 6,
@@ -459,7 +516,7 @@ export default function Landing() {
         </section>
 
         {/* ── The meaning of Steward ── */}
-        <section style={{ padding: "120px 48px 130px", maxWidth: 860, margin: "0 auto" }}>
+        <section className="lp-section" style={{ padding: "120px 48px 130px", maxWidth: 860, margin: "0 auto" }}>
           <div
             className="definition-block"
             style={{
@@ -503,7 +560,7 @@ export default function Landing() {
         </section>
 
         {/* ── What we do ── */}
-        <section style={{ background: T.cream2, borderTop: `1px solid ${T.cream3}`, borderBottom: `1px solid ${T.cream3}`, padding: "100px 48px" }}>
+        <section className="lp-section" style={{ background: T.cream2, borderTop: `1px solid ${T.cream3}`, borderBottom: `1px solid ${T.cream3}`, padding: "100px 48px" }}>
           <div style={{ maxWidth: 1100, margin: "0 auto" }}>
             <div style={{ marginBottom: 52, maxWidth: 520 }}>
               <div style={{ fontSize: 11, color: T.greenDark, fontWeight: 500, letterSpacing: ".8px", textTransform: "uppercase", marginBottom: 14 }}>What we do</div>
@@ -552,7 +609,7 @@ export default function Landing() {
         </section>
 
         {/* ── Relational, not transactional ── */}
-        <section style={{ background: T.greenDark, padding: "110px 48px" }}>
+        <section className="lp-section" style={{ background: T.greenDark, padding: "110px 48px" }}>
           <div style={{ maxWidth: 780, margin: "0 auto", textAlign: "center" }}>
             <div style={{ fontSize: 11, color: "rgba(240,237,230,0.5)", fontWeight: 500, letterSpacing: ".8px", textTransform: "uppercase", marginBottom: 20 }}>Our commitment</div>
             <h2 style={{
@@ -591,7 +648,7 @@ export default function Landing() {
         </section>
 
         {/* ── Who we serve ── */}
-        <section style={{ background: T.cream, borderBottom: `1px solid ${T.cream3}`, padding: "100px 48px" }}>
+        <section className="lp-section" style={{ background: T.cream, borderBottom: `1px solid ${T.cream3}`, padding: "100px 48px" }}>
           <div style={{ maxWidth: 1100, margin: "0 auto" }}>
             <div style={{ marginBottom: 64 }}>
               <div style={{ fontSize: 11, color: T.greenDark, fontWeight: 500, letterSpacing: ".8px", textTransform: "uppercase", marginBottom: 16 }}>Who we serve</div>
@@ -644,9 +701,9 @@ export default function Landing() {
         </section>
 
         {/* ── Features ── */}
-        <div id="features" style={{ padding: "100px 48px", maxWidth: 1100, margin: "0 auto" }}>
+        <div id="features" className="lp-section" style={{ padding: "100px 48px", maxWidth: 1100, margin: "0 auto" }}>
           <div style={{ fontSize: 11, color: T.greenDark, fontWeight: 500, letterSpacing: ".8px", textTransform: "uppercase", marginBottom: 14 }}>Everything in one place</div>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 80px", marginBottom: 56, alignItems: "end" }}>
+          <div className="features-header" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 80px", marginBottom: 56, alignItems: "end" }}>
             <h2 style={{ fontFamily: "'DM Serif Display',serif", fontSize: 42, letterSpacing: "-1px", lineHeight: 1.1, color: T.ink }}>
               Everything your organization<br />
               needs.{" "}
@@ -683,8 +740,8 @@ export default function Landing() {
         </div>
 
         {/* ── Consulting ── */}
-        <div id="consulting" style={{ background: T.cream2, borderTop: `1px solid ${T.cream3}`, borderBottom: `1px solid ${T.cream3}`, padding: "100px 48px" }}>
-          <div style={{ maxWidth: 860, margin: "0 auto", display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 80px", alignItems: "center" }}>
+        <div id="consulting" className="lp-section" style={{ background: T.cream2, borderTop: `1px solid ${T.cream3}`, borderBottom: `1px solid ${T.cream3}`, padding: "100px 48px" }}>
+          <div className="consulting-grid" style={{ maxWidth: 860, margin: "0 auto", display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 80px", alignItems: "center" }}>
             <div>
               <div style={{ fontSize: 11, color: T.greenDark, fontWeight: 500, letterSpacing: ".8px", textTransform: "uppercase", marginBottom: 16 }}>Consulting</div>
               <h2 style={{ fontFamily: "'DM Serif Display',serif", fontSize: "clamp(32px, 4vw, 48px)", letterSpacing: "-1px", lineHeight: 1.1, color: T.ink, marginBottom: 20 }}>
@@ -732,7 +789,7 @@ export default function Landing() {
         </div>
 
         {/* ── Social proof ── */}
-        <div style={{ padding: "100px 48px", maxWidth: 1100, margin: "0 auto" }}>
+        <div className="lp-section" style={{ padding: "100px 48px", maxWidth: 1100, margin: "0 auto" }}>
           <div style={{ marginBottom: 52, textAlign: "center" }}>
             <div style={{ fontSize: 11, color: T.greenDark, fontWeight: 500, letterSpacing: ".8px", textTransform: "uppercase", marginBottom: 14 }}>In their words</div>
             <h2 style={{ fontFamily: "'DM Serif Display',serif", fontSize: "clamp(32px, 4vw, 48px)", letterSpacing: "-1px", lineHeight: 1.1, color: T.ink }}>
@@ -782,9 +839,9 @@ export default function Landing() {
         </div>
 
         {/* ── Pricing ── */}
-        <div id="pricing" style={{ background: T.cream2, borderTop: `1px solid ${T.cream3}`, padding: "100px 48px" }}>
+        <div id="pricing" className="lp-section" style={{ background: T.cream2, borderTop: `1px solid ${T.cream3}`, padding: "100px 48px" }}>
           <div style={{ maxWidth: 960, margin: "0 auto" }}>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 80px", marginBottom: 56, alignItems: "end" }}>
+            <div className="pricing-header" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 80px", marginBottom: 56, alignItems: "end" }}>
               <h2 style={{ fontFamily: "'DM Serif Display',serif", fontSize: 42, letterSpacing: "-1px", color: T.ink, lineHeight: 1.1 }}>
                 Transparent,<br />flat-rate plans
               </h2>
@@ -843,7 +900,7 @@ export default function Landing() {
         </div>
 
         {/* ── Final CTA ── */}
-        <div style={{ padding: "120px 48px", textAlign: "center", maxWidth: 760, margin: "0 auto" }}>
+        <div className="lp-section" style={{ padding: "120px 48px", textAlign: "center", maxWidth: 760, margin: "0 auto" }}>
           <h2 style={{ fontFamily: "'DM Serif Display',serif", fontSize: "clamp(38px, 5vw, 62px)", letterSpacing: "-1.5px", color: T.ink, marginBottom: 20, lineHeight: 1.06 }}>
             Your mission is worth it.{" "}
             <span style={{ textDecoration: "underline", textDecorationColor: T.greenDark, textDecorationThickness: 3, textUnderlineOffset: 6 }}>Let's build something together.</span>
@@ -855,7 +912,7 @@ export default function Landing() {
         </div>
 
         {/* ── Footer ── */}
-        <footer style={{ borderTop: `1px solid ${T.cream3}`, padding: "32px 48px" }}>
+        <footer className="landing-footer" style={{ borderTop: `1px solid ${T.cream3}`, padding: "32px 48px" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 24 }}>
             <div>
               <div style={{ fontFamily: "'DM Serif Display',serif", fontSize: 20, color: T.ink, marginBottom: 6 }}>Steward</div>

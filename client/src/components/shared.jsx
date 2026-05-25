@@ -196,6 +196,28 @@ export function GlobalStyles() {
 
       /* Ensure all cards and containers never exceed viewport */
       .fade-in,[class*="card"]{max-width:100%!important;}
+
+      /* Finance sub-tab: horizontal scroll strip */
+      .finance-subtab-bar{overflow-x:auto!important;flex-wrap:nowrap!important;-webkit-overflow-scrolling:touch!important;}
+      .finance-subtab-bar button{flex-shrink:0!important;white-space:nowrap!important;}
+
+      /* Grants pipeline + profile */
+      .grants-pipeline-grid{grid-template-columns:repeat(2,1fr)!important;}
+      .grant-profile-body{display:flex!important;flex-direction:column!important;overflow-y:auto!important;overflow-x:hidden!important;}
+      .grant-profile-body>div{overflow-y:visible!important;border-right:none!important;padding:14px 16px!important;}
+      .grant-stat-grid{grid-template-columns:repeat(2,1fr)!important;}
+      .grant-2col{grid-template-columns:1fr!important;}
+      .grant-add-form-grid{grid-template-columns:1fr!important;}
+
+      /* Communications: sidebar → horizontal scroll nav bar */
+      .comm-layout{flex-direction:column!important;min-height:0!important;}
+      .comm-sidebar{width:100%!important;flex-direction:row!important;overflow-x:auto!important;-webkit-overflow-scrolling:touch!important;padding:6px 8px!important;border-right:none!important;border-bottom:1px solid #ddd9d0!important;flex-shrink:0!important;gap:0!important;}
+      .comm-sidebar-label{display:none!important;}
+      .comm-sidebar button{margin:2px 3px!important;padding:8px 12px!important;}
+      .comm-main{min-height:0!important;overflow-y:auto!important;}
+
+      /* Volunteers + Board: 3-col → 2-col */
+      .vol-metric-grid,.board-metric-grid{grid-template-columns:repeat(2,1fr)!important;}
     }
   `}</style>;
 }

@@ -30,8 +30,8 @@ function AccountModal({ account, onSave, onClose }) {
   const overlay = { position:"fixed", inset:0, background:"rgba(0,0,0,0.4)", zIndex:1000, display:"flex", alignItems:"center", justifyContent:"center" };
   const box = { background:T.white, borderRadius:16, padding:28, width:420, display:"flex", flexDirection:"column", gap:14 };
   return (
-    <div style={overlay} onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
-      <div style={box}>
+    <div className="modal-sheet-overlay" style={overlay} onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="modal-sheet-inner" style={box}>
         <div style={{ fontSize:15, fontWeight:700, color:T.ink }}>{account ? "Edit Account" : "New Account"}</div>
         <div style={{ display:"flex", gap:8 }}>
           <div style={{ flex:"0 0 90px" }}>
@@ -81,8 +81,8 @@ function FundModal({ fund, onSave, onClose }) {
   const overlay = { position:"fixed", inset:0, background:"rgba(0,0,0,0.4)", zIndex:1000, display:"flex", alignItems:"center", justifyContent:"center" };
   const box = { background:T.white, borderRadius:16, padding:28, width:400, display:"flex", flexDirection:"column", gap:14 };
   return (
-    <div style={overlay} onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
-      <div style={box}>
+    <div className="modal-sheet-overlay" style={overlay} onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="modal-sheet-inner" style={box}>
         <div style={{ fontSize:15, fontWeight:700, color:T.ink }}>{fund ? "Edit Fund" : "New Fund"}</div>
         <div>
           <div style={{ fontSize:11, color:T.ink3, marginBottom:4 }}>Fund Name</div>
@@ -114,8 +114,8 @@ function TransactionModal({ accounts, funds, onSave, onClose }) {
   const overlay = { position:"fixed", inset:0, background:"rgba(0,0,0,0.4)", zIndex:1000, display:"flex", alignItems:"center", justifyContent:"center" };
   const box = { background:T.white, borderRadius:16, padding:28, width:460, display:"flex", flexDirection:"column", gap:14 };
   return (
-    <div style={overlay} onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
-      <div style={box}>
+    <div className="modal-sheet-overlay" style={overlay} onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="modal-sheet-inner" style={box}>
         <div style={{ fontSize:15, fontWeight:700, color:T.ink }}>Log Transaction</div>
         <div style={{ display:"flex", gap:6 }}>
           {["income","expense"].map(t => (
@@ -475,7 +475,7 @@ export function Finance({ data }) {
       <SummaryCard/>
 
       {/* Sub-tab nav */}
-      <div style={{ display:"flex", background:T.bg, border:"1px solid "+T.bg3, borderRadius:10, overflow:"hidden", flexWrap:"wrap" }}>
+      <div className="finance-subtab-bar" style={{ display:"flex", background:T.bg, border:"1px solid "+T.bg3, borderRadius:10, overflow:"hidden", flexWrap:"wrap" }}>
         {subTabs.map(([id, label]) => (
           <button key={id} onClick={() => setSubtab(id)} style={{ background:subtab===id?"#1a6b4a":"transparent", border:"none", borderRight:"1px solid "+T.bg3, padding:"10px 16px", color:subtab===id?"#fff":T.ink3, fontSize:13, fontWeight:subtab===id?700:400, cursor:"pointer" }}>
             {label}

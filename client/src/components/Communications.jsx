@@ -605,10 +605,10 @@ export function Communications({ data }) {
 
   // ── Main layout ─────────────────────────────────────────────────────────────
   return (
-    <div style={{ display: "flex", minHeight: 0 }}>
+    <div className="comm-layout" style={{ display: "flex", minHeight: 0 }}>
       {/* Sidebar */}
-      <div style={{ width: S.sidebar.width, flexShrink: 0, background: S.sidebar.bg, borderRight: S.sidebar.borderRight, padding: "16px 0", display: "flex", flexDirection: "column", gap: 2 }}>
-        <div style={{ padding: "0 14px 14px", fontSize: 11, fontWeight: 800, color: T.ink3, textTransform: "uppercase", letterSpacing: "0.1em" }}>Email</div>
+      <div className="comm-sidebar" style={{ width: S.sidebar.width, flexShrink: 0, background: S.sidebar.bg, borderRight: S.sidebar.borderRight, padding: "16px 0", display: "flex", flexDirection: "column", gap: 2 }}>
+        <div className="comm-sidebar-label" style={{ padding: "0 14px 14px", fontSize: 11, fontWeight: 800, color: T.ink3, textTransform: "uppercase", letterSpacing: "0.1em" }}>Email</div>
         {NAV.map(n => (
           <button key={n.id} onClick={() => setNav(n.id)}
             style={{
@@ -629,7 +629,7 @@ export function Communications({ data }) {
       </div>
 
       {/* Main content */}
-      <div style={{ flex: 1, padding: 24, overflowY: "auto", minHeight: 0 }}>
+      <div className="comm-main" style={{ flex: 1, padding: 24, overflowY: "auto", minHeight: 0 }}>
 
         {/* ── CAMPAIGNS ────────────────────────────────────────────────────── */}
         {nav === "campaigns" && (

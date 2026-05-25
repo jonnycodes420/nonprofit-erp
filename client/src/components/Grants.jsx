@@ -20,8 +20,8 @@ function GrantLogModal({grant,onSave,onClose}){
     setLoading(false);
   };
   return(
-    <div style={{position:"fixed",inset:0,background:"#000000cc",backdropFilter:"blur(4px)",zIndex:300,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
-      <div className="fade-in" style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:18,width:"100%",maxWidth:460,padding:24,boxShadow:"0 4px 32px rgba(15,15,15,0.12)"}}>
+    <div className="modal-sheet-overlay" style={{position:"fixed",inset:0,background:"#000000cc",backdropFilter:"blur(4px)",zIndex:300,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+      <div className="fade-in modal-sheet-inner" style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:18,width:"100%",maxWidth:460,padding:24,boxShadow:"0 4px 32px rgba(15,15,15,0.12)"}}>
         <div style={{fontSize:16,fontWeight:800,color:T.ink,marginBottom:2}}>Log Touchpoint</div>
         <div style={{fontSize:12,color:T.ink3,marginBottom:16}}>{grant.funder} — {grant.program}</div>
         <div style={{display:"flex",gap:5,flexWrap:"wrap",marginBottom:14}}>
@@ -166,10 +166,10 @@ function GrantProfile({grant,onClose,onUpdate,onDelete,isAdmin,org}){
         </div>
       </div>}
 
-      <div style={{flex:1,display:"grid",gridTemplateColumns:"65fr 35fr",overflow:"hidden"}}>
+      <div className="grant-profile-body" style={{flex:1,display:"grid",gridTemplateColumns:"65fr 35fr",overflow:"hidden"}}>
         {/* LEFT */}
         <div style={{overflowY:"auto",padding:"22px 20px 24px 24px",borderRight:"1px solid "+T.bg3,display:"flex",flexDirection:"column",gap:18}}>
-          <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10}}>
+          <div className="grant-stat-grid" style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10}}>
             {[
               ["Amount Requested",fmtFull(grant.amount),T.ink],
               ["Amount Awarded",fmtFull(grant.received||0),"#1a6b4a"],
@@ -193,7 +193,7 @@ function GrantProfile({grant,onClose,onUpdate,onDelete,isAdmin,org}){
             </div>
           </div>}
 
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+          <div className="grant-2col" style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
             <div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:12,padding:"12px 14px"}}>
               <div style={{fontSize:9,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.1em",color:T.ink3,marginBottom:4}}>Application Deadline</div>
               <div style={{fontSize:14,fontWeight:600,color:days<14?"#ef4444":days<30?"#f59e0b":T.ink}}>{grant.deadline?new Date(grant.deadline).toLocaleDateString("en-US",{month:"long",day:"numeric",year:"numeric"}):"—"}</div>
@@ -358,7 +358,7 @@ export function Grants({data,setData}) {
       const inp={background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"9px 12px",color:T.ink,fontSize:13,outline:"none",width:"100%",boxSizing:"border-box"};
       return <Card style={{display:"flex",flexDirection:"column",gap:12}}>
         <div style={{fontSize:14,fontWeight:700,color:T.ink}}>New Grant</div>
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+        <div className="grant-add-form-grid" style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
           {[["funder","Funder *","text","e.g. Rockefeller Foundation"],["program","Program / Grant Name","text","e.g. Arts Education Initiative"],["amount","Ask Amount ($)","number","50000"],["officer","Program Officer","text","e.g. Angela Wu"]].map(([k,l,t,ph])=>(
             <div key={k} style={{display:"flex",flexDirection:"column",gap:4}}>
               <label style={{fontSize:11,fontWeight:700,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.06em"}}>{l}</label>
@@ -383,7 +383,7 @@ export function Grants({data,setData}) {
       </Card>;
     })()}
 
-    <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:8}}>
+    <div className="grants-pipeline-grid" style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:8}}>
       {pipeline.map(s=><div key={s} style={{background:T.white,border:`1px solid ${SC[s]}25`,borderRadius:12,padding:"14px 16px",borderTop:`3px solid ${SC[s]}`}}>
         <div style={{fontSize:10,fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",color:SC[s],marginBottom:8}}>{s}</div>
         <div style={{fontSize:22,fontWeight:800,color:T.ink,fontFamily:"'DM Serif Display',serif",lineHeight:1}}>{fmt(totals[s])}</div>
