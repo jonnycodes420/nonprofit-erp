@@ -1412,8 +1412,8 @@ app.post("/annual-fund/goal", requireAuth, requireAdmin, wrap(async (req, res) =
 app.post("/stripe/connect", requireAuth, requireAdmin, wrap(async (req, res) => {
   if (!stripe) return res.status(503).json({ error: "Stripe not configured" });
 
-  const rawAppUrl = process.env.APP_URL || process.env.FRONTEND_URL || process.env.CORS_ORIGIN || "https://client-five-tau-13.vercel.app";
-  const appUrl = rawAppUrl.replace(/^http:\/\//i, "https://");
+  const rawFrontendUrl = process.env.FRONTEND_URL || process.env.CORS_ORIGIN || "https://client-five-tau-13.vercel.app";
+  const frontendUrl = rawFrontendUrl.replace(/^http:\/\//i, "https://");
 
   try {
     const account = await stripe.accounts.create({
@@ -1427,8 +1427,8 @@ app.post("/stripe/connect", requireAuth, requireAdmin, wrap(async (req, res) => 
 
     const accountLink = await stripe.accountLinks.create({
       account: account.id,
-      refresh_url: `${appUrl}/dashboard`,
-      return_url: `${appUrl}/dashboard`,
+      refresh_url: `${frontendUrl}/dashboard`,
+      return_url: `${frontendUrl}/dashboard`,
       type: "account_onboarding",
     });
 
