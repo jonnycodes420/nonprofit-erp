@@ -5,9 +5,9 @@ import { streamAI } from "../api";
 export const T = {
   bg:     "#f0ede6",
   bg2:    "#e8e4db",
-  bg3:    "#ddd9d0",
-  white:  "#ffffff",
-  ink:    "#0f0f0f",
+  bg3:    "#e8e2d9",
+  white:  "#faf8f4",
+  ink:    "#1a1a1a",
   ink2:   "#2a2a2a",
   ink3:   "#6b6b6b",
   green:  "#10b981",
@@ -140,7 +140,7 @@ export function Pill({label,color}) {
   return <span style={{fontSize:10,fontWeight:700,letterSpacing:"0.05em",textTransform:"uppercase",padding:"3px 9px",borderRadius:99,background:(color||T.ink3)+"1a",color:color||T.ink3,whiteSpace:"nowrap",border:`1px solid ${(color||T.ink3)}22`}}>{label}</span>;
 }
 export function Card({children,selected,accent,onClick,style={}}) {
-  return <div onClick={onClick} className={onClick?"card-click":""} style={{background:T.white,border:`1px solid ${selected?accent||T.green:T.bg3}`,borderRadius:14,padding:"16px 20px",cursor:onClick?"pointer":"default",...style}}>{children}</div>;
+  return <div onClick={onClick} className={onClick?"card-click":""} style={{background:T.white,border:`1px solid ${selected?accent||T.greenDk:T.bg3}`,borderRadius:14,padding:"16px 20px",cursor:onClick?"pointer":"default",...style}}>{children}</div>;
 }
 export function SectionLabel({children}) {
   return <div style={{fontSize:10,fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",color:T.ink3,marginBottom:12}}>{children}</div>;
@@ -168,10 +168,10 @@ export function MetricCard({label,value,sub,color,trend}) {
 }
 export function EmptyState({icon,title,message,action,onAction}) {
   return <div className="fade-in" style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:"52px 24px",gap:12,textAlign:"center"}}>
-    <div style={{fontSize:36,marginBottom:4,opacity:0.3,color:T.ink}}>{icon||"◇"}</div>
-    <div style={{fontSize:15,fontWeight:700,color:T.ink3}}>{title}</div>
-    {message&&<div style={{fontSize:13,color:T.ink3,maxWidth:320,lineHeight:1.6}}>{message}</div>}
-    {action&&<button onClick={onAction} style={{marginTop:8,background:T.green,border:"none",borderRadius:10,padding:"9px 18px",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer"}}>{action}</button>}
+    <div style={{fontSize:36,marginBottom:4,opacity:0.25,color:T.greenDk}}>{icon||"◇"}</div>
+    <div style={{fontSize:15,fontWeight:700,color:T.ink2}}>{title||"Nothing here yet"}</div>
+    <div style={{fontSize:13,color:T.ink3,maxWidth:340,lineHeight:1.65}}>{message||"Nothing here yet — this is where the magic starts."}</div>
+    {action&&<button onClick={onAction} style={{marginTop:8,background:T.greenDk,border:"none",borderRadius:10,padding:"9px 18px",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer",boxShadow:"0 2px 10px rgba(26,107,74,0.2)"}}>{action}</button>}
   </div>;
 }
 export function PageTitle({main,accent}) {

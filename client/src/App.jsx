@@ -4,10 +4,8 @@ import { useAuth } from "./main";
 import { T, GlobalStyles } from "./components/shared";
 import { AIChat, Dashboard } from "./components/Dashboard";
 import { Donors } from "./components/Donors";
-import { Grants, FindGrants } from "./components/Grants";
+import { Grants } from "./components/Grants";
 import { Communications } from "./components/Communications";
-import { Programs } from "./components/Programs";
-import { AnnualFund } from "./components/AnnualFund";
 import { Volunteers } from "./components/Volunteers";
 import { Board } from "./components/Board";
 import { Finance } from "./components/Finance";
@@ -19,13 +17,10 @@ const TABS=[
   {id:"dashboard",label:"Dashboard",icon:"◈"},
   {id:"donors",label:"Donors",icon:"♦"},
   {id:"grants",label:"Grants",icon:"◉"},
-  {id:"findgrants",label:"Find Grants",icon:"✦"},
   {id:"communications",label:"Communications",icon:"◑"},
-  {id:"programs",label:"Programs",icon:"◐"},
-  {id:"annualfund",label:"Annual Fund",icon:"◒"},
-  {id:"volunteers",label:"Volunteers",icon:"◎"},
-  {id:"board",label:"Board",icon:"◆"},
   {id:"finance",label:"Finance",icon:"◇"},
+  {id:"volunteers",label:"Volunteers",icon:"◎",earlyAccess:true},
+  {id:"board",label:"Board",icon:"◆",earlyAccess:true},
   {id:"tasks",label:"Tasks",icon:"◻"},
   {id:"settings",label:"Settings",icon:"⚙"},
 ];
@@ -112,9 +107,9 @@ function AppShell() {
     <div style={{display:"flex",padding:"0 20px",borderBottom:"1px solid "+T.bg3,overflowX:"auto",flexShrink:0,background:T.bg}}>
       {TABS.map(t=>{
         const active=tab===t.id;
-        return <button key={t.id} onClick={()=>setTab(t.id)} style={{background:"transparent",border:"none",borderBottom:`2px solid ${active?T.green:"transparent"}`,padding:"12px 14px",color:active?T.green:T.ink3,fontSize:13,fontWeight:active?700:500,cursor:"pointer",display:"flex",alignItems:"center",gap:6,whiteSpace:"nowrap",transition:"color 0.15s,border-color 0.15s",flexShrink:0,marginBottom:-1}}>
-          <span style={{fontSize:11,opacity:active?1:0.5}}>{t.icon}</span>
+        return <button key={t.id} onClick={()=>setTab(t.id)} style={{background:"transparent",border:"none",borderBottom:`2px solid ${active?T.greenDk:"transparent"}`,padding:"12px 18px",color:active?T.greenDk:T.ink3,fontSize:13,fontWeight:active?700:500,cursor:"pointer",display:"flex",alignItems:"center",gap:6,whiteSpace:"nowrap",transition:"color 0.15s,border-color 0.15s",flexShrink:0,marginBottom:-1}}>
           {t.label}
+          {t.earlyAccess&&<span style={{fontSize:9,fontWeight:700,letterSpacing:"0.04em",background:T.greenDk+"18",color:T.greenDk,border:`1px solid ${T.greenDk}30`,borderRadius:99,padding:"1px 6px",lineHeight:"14px"}}>Early Access</span>}
           {t.id==="tasks"&&tasksDue>0&&<span style={{background:"#ef4444",color:"#fff",fontSize:9,fontWeight:800,borderRadius:99,padding:"1px 5px",lineHeight:"14px"}}>{tasksDue}</span>}
         </button>;
       })}
@@ -124,10 +119,7 @@ function AppShell() {
       {tab==="dashboard"&&<Dashboard data={data} setData={setData} onNavigate={setTab}/>}
       {tab==="donors"&&<Donors data={data} setData={setData}/>}
       {tab==="grants"&&<Grants data={data} setData={setData}/>}
-      {tab==="findgrants"&&<FindGrants data={data}/>}
       {tab==="communications"&&<Communications data={data}/>}
-      {tab==="programs"&&<Programs data={data}/>}
-      {tab==="annualfund"&&<AnnualFund data={data}/>}
       {tab==="volunteers"&&<Volunteers data={data}/>}
       {tab==="board"&&<Board data={data}/>}
       {tab==="finance"&&<Finance data={data}/>}

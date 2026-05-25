@@ -284,6 +284,7 @@ function GrantProfile({grant,onClose,onUpdate,onDelete,isAdmin,org}){
 export function Grants({data,setData}) {
   const {auth}=useAuth();
   const isAdmin=auth?.user?.role==="admin";
+  const [subTab,setSubTab]=useState("pipeline");
   const [selected,setSelected]=useState(null);
   const [prospectAI,setProspectAI]=useState(""); const [prospectLoading,setProspectLoading]=useState(false);
   const [showAdd,setShowAdd]=useState(false);
@@ -335,10 +336,21 @@ export function Grants({data,setData}) {
 
   return <div style={{display:"flex",flexDirection:"column",gap:16}}>
     {selected&&<GrantProfile grant={selected} onClose={()=>setSelected(null)} onUpdate={onUpdate} onDelete={onDelete} isAdmin={isAdmin} org={data.org}/>}
-    <PageTitle main="Grant" accent="pipeline."/>
+    <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,flexWrap:"wrap"}}>
+      <PageTitle main="Grant" accent={subTab==="findgrants"?"discovery.":"pipeline."}/>
+      <div style={{display:"flex",gap:2,background:T.bg2,borderRadius:10,padding:3}}>
+        {[["pipeline","Pipeline"],["findgrants","Find Grants"]].map(([id,label])=>(
+          <button key={id} onClick={()=>setSubTab(id)} style={{background:subTab===id?T.greenDk:"transparent",color:subTab===id?"#fff":T.ink3,border:"none",borderRadius:8,padding:"6px 16px",fontSize:12,fontWeight:600,cursor:"pointer",transition:"all 0.15s",display:"flex",alignItems:"center",gap:5}}>
+            {id==="findgrants"&&<span style={{fontSize:10}}>✦</span>}{label}
+          </button>
+        ))}
+      </div>
+    </div>
+    {subTab==="findgrants"&&<FindGrants data={data}/>}
+    {subTab==="pipeline"&&<>
     <div style={{display:"flex",gap:10,flexWrap:"wrap",alignItems:"center"}}>
-      <AIBtn onClick={findProspects} loading={prospectLoading} label="✦ Find New Grant Prospects"/>
-      <button onClick={()=>setShowAdd(v=>!v)} style={{background:"#10b981",border:"none",borderRadius:10,padding:"10px 16px",color:"#fff",fontSize:13,fontWeight:600,cursor:"pointer",marginLeft:"auto"}}>+ Add Grant</button>
+      <AIBtn onClick={findProspects} loading={prospectLoading} label="✦ AI Prospect Research"/>
+      <button onClick={()=>setShowAdd(v=>!v)} style={{background:T.greenDk,border:"none",borderRadius:10,padding:"10px 16px",color:"#fff",fontSize:13,fontWeight:600,cursor:"pointer",marginLeft:"auto",boxShadow:"0 2px 8px rgba(26,107,74,0.2)"}}>+ Add Grant</button>
     </div>
     {(prospectLoading||prospectAI)&&<AIPanel text={prospectAI} onClose={()=>setProspectAI("")}/>}
 
@@ -379,7 +391,7 @@ export function Grants({data,setData}) {
       </div>)}
     </div>
 
-    {data.grants.length===0&&<EmptyState icon="◉" title="No grants yet" message="Start tracking your grant portfolio — add grants by clicking Find Grants or creating one manually."/>}
+    {data.grants.length===0&&<EmptyState icon="◉" title="No grants yet" message="Start tracking your grant portfolio — add one manually or use Find Grants to discover new funders." action="+ Add your first grant" onAction={()=>setShowAdd(true)}/>}
     {data.grants.map(g=>{
       const pct=g.amount>0?Math.round((g.received||0)/g.amount*100):0;
       const days=daysUntil(g.deadline);
@@ -400,6 +412,7 @@ export function Grants({data,setData}) {
         {g.status==="active"&&<div style={{marginTop:10,height:4,background:T.bg3,borderRadius:99}}><div style={{height:"100%",width:`${pct}%`,background:"#1a6b4a",borderRadius:99}}/></div>}
       </Card>;
     })}
+    </>}
   </div>;
 }
 
