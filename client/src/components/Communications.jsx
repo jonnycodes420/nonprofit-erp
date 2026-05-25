@@ -467,7 +467,7 @@ export function Communications({ data }) {
     const recipCount = countSegment(allDonors, form.seg);
     const subjLen = form.subject.length;
     return (
-      <div style={{ display: "flex", flexDirection: "column", height: "calc(100vh - 80px)", minHeight: 0 }}>
+      <div style={{ display: "flex", flexDirection: "column", height: "calc(100vh - 80px)", minHeight: 0, background: T.white, color: T.ink }}>
         {/* Header */}
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 20px", background: T.bg2, borderBottom: "1px solid " + T.bg3, flexShrink: 0 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
@@ -499,7 +499,7 @@ export function Communications({ data }) {
         {/* Two-panel body */}
         <div style={{ display: "flex", flex: 1, minHeight: 0 }}>
           {/* Left: settings */}
-          <div style={{ width: 320, flexShrink: 0, padding: 20, borderRight: "1px solid " + T.bg3, overflowY: "auto", display: "flex", flexDirection: "column", gap: 18 }}>
+          <div style={{ width: 320, flexShrink: 0, padding: 20, borderRight: "1px solid " + T.bg3, overflowY: "auto", display: "flex", flexDirection: "column", gap: 18, background: T.white }}>
 
             <div>
               <label style={S.label}>Campaign Name</label>
@@ -540,7 +540,7 @@ export function Communications({ data }) {
           </div>
 
           {/* Right: editor */}
-          <div style={{ flex: 1, padding: 20, overflowY: "auto" }}>
+          <div style={{ flex: 1, padding: 20, overflowY: "auto", background: T.white }}>
             <label style={S.label}>Email Body</label>
             <RichEditor key={editorKey} editorRef={editorRef} initialHtml={form.bodyHtml} />
           </div>
