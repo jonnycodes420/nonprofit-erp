@@ -44,7 +44,7 @@ app.post("/stripe/webhook", express.raw({ type: "application/json" }), async (re
             const newDonorId = "d_" + uuid().slice(0, 8);
             await run(
               `INSERT INTO donors (id, org_id, name, email, status, stage, total_giving, gift_count)
-               VALUES ($1,$2,$3,$4,'new','cultivate',0,0)`,
+               VALUES ($1,$2,$3,$4,'active','steward',0,0)`,
               [newDonorId, orgId, donorName, email.toLowerCase()]
             );
             donorRow = [{ id: newDonorId }];
@@ -63,15 +63,25 @@ app.post("/stripe/webhook", express.raw({ type: "application/json" }), async (re
                  total_giving = total_giving + $1,
                  gift_count = gift_count + 1,
                  last_gift_date = GREATEST(COALESCE(last_gift_date,'0001-01-01')::date, $2::date)::text,
-                 last_gift_amount = CASE WHEN ($2::date >= COALESCE(last_gift_date,'0001-01-01')::date) THEN $3 ELSE last_gift_amount END
+                 last_gift_amount = CASE WHEN ($2::date >= COALESCE(last_gift_date,'0001-01-01')::date) THEN $3 ELSE last_gift_amount END,
+                 stage = CASE WHEN stage IN ('prospect','cultivate','lapsed') THEN 'steward' ELSE stage END
                WHERE id = $4`,
               [amount, today, amount, donorId]
             );
+            const acctRow = await query("SELECT id FROM accounts WHERE org_id=$1 AND code='4010' LIMIT 1", [orgId]);
+            const genFundRow = await query("SELECT id FROM fin_funds WHERE org_id=$1 AND restricted=false ORDER BY created_at ASC LIMIT 1", [orgId]);
+            if (acctRow.length) {
+              const txnId = "ft_" + uuid().slice(0, 8);
+              await run(
+                "INSERT INTO fin_transactions (id,org_id,date,description,vendor_donor,amount,type,account_id,fund_id) VALUES (?,?,?,?,?,?,?,?,?)",
+                [txnId, orgId, today, "Online gift via Stripe", donorName || email, amount, "income", acctRow[0].id, genFundRow.length ? genFundRow[0].id : null]
+              );
+            }
             const taskId = "t_" + uuid().slice(0, 8);
             await run(
               `INSERT INTO tasks (id, org_id, title, priority, done, created_at)
                VALUES ($1,$2,$3,$4,$5,NOW())`,
-              [taskId, orgId, `Thank ${donorName || email} for online gift of $${amount}`, "high", false]
+              [taskId, orgId, `Send personal thank-you to ${donorName || email} for $${amount} online gift`, "high", false]
             );
           }
         }
@@ -96,19 +106,21 @@ app.post("/stripe/webhook", express.raw({ type: "application/json" }), async (re
               donorId = "d_" + uuid().slice(0, 8);
               await run(
                 `INSERT INTO donors (id, org_id, name, email, status, stage, total_giving, gift_count)
-                 VALUES ($1,$2,$3,$4,'new','cultivate',0,0)`,
+                 VALUES ($1,$2,$3,$4,'active','steward',0,0)`,
                 [donorId, orgId, donorName, email.toLowerCase()]
               );
             }
             const frequency = session.metadata?.frequency || "monthly";
             await run(
-              `UPDATE donors SET stripe_subscription_id=$1, stripe_subscription_status='active' WHERE id=$2`,
+              `UPDATE donors SET stripe_subscription_id=$1, stripe_subscription_status='active',
+               stage = CASE WHEN stage IN ('prospect','cultivate','lapsed') THEN 'steward' ELSE stage END
+               WHERE id=$2`,
               [session.subscription, donorId]
             );
             const taskId = "t_" + uuid().slice(0, 8);
             await run(
               `INSERT INTO tasks (id, org_id, title, priority, done, created_at) VALUES ($1,$2,$3,'high',false,NOW())`,
-              [taskId, orgId, `Thank ${donorName} for starting ${frequency} giving`]
+              [taskId, orgId, `Welcome ${donorName} as a ${frequency} recurring donor — send personal thank-you`]
             );
           }
         }
@@ -1625,7 +1637,13 @@ app.post("/donate/:orgSlug", wrap(async (req, res) => {
     cancel_url: `${frontendUrl}/give/${req.params.orgSlug}`,
     ...(isRecurring
       ? { subscription_data: { metadata } }
-      : { payment_intent_data: { receipt_email: email, metadata } }
+      : {
+          payment_intent_data: {
+            receipt_email: email,
+            metadata,
+            statement_descriptor: org.name.toUpperCase().replace(/[^A-Z0-9 ]/g, "").replace(/\s+/g, " ").trim().slice(0, 22),
+          },
+        }
     ),
   };
 
