@@ -35,11 +35,11 @@ app.post("/stripe/webhook", express.raw({ type: "application/json" }), async (re
 
       if (email && accountId) {
         const orgRow = await query("SELECT id FROM orgs WHERE stripe_account_id=$1", [accountId]);
-        if (orgRow.rows.length) {
-          const orgId = orgRow.rows[0].id;
+        if (orgRow.length) {
+          const orgId = orgRow[0].id;
           const donorRow = await query("SELECT id FROM donors WHERE org_id=$1 AND email ILIKE $2", [orgId, email]);
-          if (donorRow.rows.length) {
-            const donorId = donorRow.rows[0].id;
+          if (donorRow.length) {
+            const donorId = donorRow[0].id;
             const giftId = "g_" + uuid().slice(0, 8);
             const today = new Date().toISOString().slice(0, 10);
             await run(
@@ -1465,7 +1465,7 @@ app.post("/stripe/donation-page", requireAuth, wrap(async (req, res) => {
   if (!donorName || !donorEmail) return res.status(400).json({ error: "donorName and donorEmail required" });
 
   const orgRow = await query("SELECT stripe_account_id, stripe_connected, name FROM orgs WHERE id=$1", [req.user.orgId]);
-  const org = orgRow.rows[0];
+  const org = orgRow[0];
   if (!org?.stripe_connected || !org.stripe_account_id) {
     return res.status(400).json({ error: "Stripe not connected" });
   }
@@ -1493,7 +1493,7 @@ app.post("/stripe/donation-page", requireAuth, wrap(async (req, res) => {
 
 app.get("/stripe/status", requireAuth, wrap(async (req, res) => {
   const orgRow = await query("SELECT stripe_account_id, stripe_connected, stripe_connected_at FROM orgs WHERE id=$1", [req.user.orgId]);
-  const org = orgRow.rows[0];
+  const org = orgRow[0];
   res.json({
     connected: !!org?.stripe_connected,
     accountId: org?.stripe_account_id || null,
