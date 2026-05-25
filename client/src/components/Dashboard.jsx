@@ -172,7 +172,7 @@ export function Dashboard({data,setData,onNavigate}) {
         <div style={{display:"flex",flexDirection:"column",gap:14}}>
           {/* AI Briefing */}
           <div style={{...cardWrap}}>
-            <div className="dash-cpad" style={{...cPad,borderBottom:"1px solid "+T.bg3,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+            <div className="dash-briefing-hdr dash-cpad" style={{...cPad,borderBottom:"1px solid "+T.bg3,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
               <div style={{display:"flex",alignItems:"center",gap:10}}>
                 <span style={{background:"#1a6b4a",color:"#fff",fontSize:9,fontWeight:800,padding:"3px 8px",borderRadius:99,letterSpacing:"0.1em",textTransform:"uppercase"}}>AI</span>
                 <span style={{fontSize:11,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.08em",fontWeight:600}}>{todayStr}</span>
@@ -213,17 +213,19 @@ export function Dashboard({data,setData,onNavigate}) {
               <span style={sTitle}>Donor Pipeline</span>
               <button onClick={()=>onNavigate("donors")} style={sLink}>View all →</button>
             </div>
-            <div className="dash-pipeline-grid" style={{display:"grid",gridTemplateColumns:"repeat(6,1fr)"}}>
-              {stageSnap.map((s,i)=>(
-                <div key={s.id} onClick={()=>onNavigate("donors")} className="dash-row" style={{
-                  padding:"14px 12px",borderRight:i<5?"1px solid "+T.bg3:"none",
-                  cursor:"pointer",borderTop:`3px solid ${s.color}`,
-                }}>
-                  <div style={{fontSize:9,fontWeight:800,textTransform:"uppercase",letterSpacing:"0.08em",color:s.color,marginBottom:6}}>{s.label}</div>
-                  <div style={{fontSize:20,fontWeight:800,color:s.count>0?T.ink:T.ink3,fontFamily:"'DM Serif Display',serif",lineHeight:1}}>{s.count}</div>
-                  <div style={{fontSize:11,color:T.ink3,marginTop:3}}>{s.total>0?fmt(s.total):"—"}</div>
-                </div>
-              ))}
+            <div className="dash-pipeline-scroll">
+              <div className="dash-pipeline-grid" style={{display:"grid",gridTemplateColumns:"repeat(6,1fr)"}}>
+                {stageSnap.map((s,i)=>(
+                  <div key={s.id} onClick={()=>onNavigate("donors")} className="dash-row" style={{
+                    padding:"14px 12px",borderRight:i<5?"1px solid "+T.bg3:"none",
+                    cursor:"pointer",borderTop:`3px solid ${s.color}`,
+                  }}>
+                    <div style={{fontSize:9,fontWeight:800,textTransform:"uppercase",letterSpacing:"0.08em",color:s.color,marginBottom:6}}>{s.label}</div>
+                    <div style={{fontSize:20,fontWeight:800,color:s.count>0?T.ink:T.ink3,fontFamily:"'DM Serif Display',serif",lineHeight:1}}>{s.count}</div>
+                    <div style={{fontSize:11,color:T.ink3,marginTop:3}}>{s.total>0?fmt(s.total):"—"}</div>
+                  </div>
+                ))}
+              </div>
             </div>
           </div>
 

@@ -166,12 +166,20 @@ export function GlobalStyles() {
       .dash-stat-num{font-size:24px!important;}
       .dash-cpad{padding:12px!important;}
       .dash-briefing-body{padding:12px 14px!important;}
-      .dash-pipeline-card{overflow-x:auto!important;}
+      .dash-briefing-hdr{flex-wrap:wrap!important;align-items:flex-start!important;gap:8px!important;}
+      .dash-briefing-hdr>div:last-child{align-self:flex-start!important;}
+      /* Pipeline: outer card allows overflow, inner scroll wrapper contains it */
+      .dash-pipeline-card{overflow:visible!important;}
+      .dash-pipeline-scroll{overflow-x:auto!important;-webkit-overflow-scrolling:touch!important;width:100%!important;}
       .dash-pipeline-grid{display:grid!important;grid-template-columns:repeat(6,82px)!important;}
       .dash-pipeline-grid>div>div:first-child{font-size:11px!important;}
       .dash-pipeline-grid>div>div:last-child{font-size:13px!important;}
-      .dash-lapsed{flex-wrap:wrap!important;gap:12px!important;}
+      /* Lapsed alert: full width, contained */
+      .dash-lapsed{flex-wrap:wrap!important;gap:12px!important;width:100%!important;box-sizing:border-box!important;}
       .dash-lapsed>div{flex:1!important;min-width:0!important;}
+      .dash-lapsed>button{align-self:flex-start!important;}
+      /* General column containment */
+      .dash-main-grid>div{min-width:0!important;width:100%!important;}
       .dash-quick-btn{min-height:44px!important;padding:10px 6px!important;}
       .dash-quick-label{font-size:12px!important;}
       .dash-activity-note{overflow:hidden!important;display:-webkit-box!important;-webkit-line-clamp:2!important;-webkit-box-orient:vertical!important;white-space:normal!important;text-overflow:unset!important;}

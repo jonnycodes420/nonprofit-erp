@@ -271,6 +271,7 @@ export default function Landing() {
         .lp-mobile-nav-handle { width: 36px; height: 4px; border-radius: 2px; background: ${T.cream3}; margin: 12px auto 8px; }
         .lp-mobile-nav-row { display: flex; align-items: center; padding: 16px 24px; font-family: 'DM Sans', sans-serif; font-size: 17px; color: ${T.ink}; border-bottom: 1px solid ${T.cream3}; text-decoration: none; width: 100%; background: none; border-left: none; border-right: none; border-top: none; cursor: pointer; text-align: left; }
         .lp-mobile-nav-row:hover { background: ${T.cream2}; }
+        .mesh-section-mobile { display: none; }
         @media (max-width: 768px) {
           .hero-grid { grid-template-columns: 1fr !important; }
           .h1-hero { font-size: 36px !important; letter-spacing: -1px !important; }
@@ -288,8 +289,9 @@ export default function Landing() {
           .landing-nav { padding: 0 16px !important; }
           /* Hero vertical padding */
           .hero-section { padding-top: 56px !important; padding-bottom: 48px !important; }
-          /* Dark mesh card inner: stack to single column */
-          .mesh-card-inner { grid-template-columns: 1fr !important; padding: 28px 20px !important; gap: 24px !important; }
+          /* Mesh section: swap dark for clean cream on mobile */
+          .mesh-section-desktop { display: none !important; }
+          .mesh-section-mobile { display: block !important; }
           /* Consulting inner grid: stack */
           .consulting-grid { grid-template-columns: 1fr !important; gap: 32px !important; }
           /* Features + Pricing section headers: stack */
@@ -297,8 +299,6 @@ export default function Landing() {
           .pricing-header { grid-template-columns: 1fr !important; gap: 12px !important; }
           /* Who we serve rows: stack to single column */
           .serve-row { grid-template-columns: 1fr !important; gap: 6px !important; padding: 24px 16px !important; }
-          /* Mesh section outer padding */
-          .mesh-section { padding-left: 12px !important; padding-right: 12px !important; }
           /* Footer */
           .landing-footer { padding: 28px 16px !important; }
         }
@@ -441,7 +441,7 @@ export default function Landing() {
         </section>
 
         {/* ── Dark animated mesh card ── */}
-        <section className="mesh-section" style={{ padding: "0 32px 80px" }}>
+        <section className="mesh-section mesh-section-desktop" style={{ padding: "0 32px 80px" }}>
           <div style={{
             position: "relative", borderRadius: 24, overflow: "hidden",
             maxWidth: 1200, margin: "0 auto",
@@ -491,6 +491,25 @@ export default function Landing() {
               </div>
             </div>
           </div>
+        </section>
+
+        {/* ── Mobile stats section (replaces mesh section on mobile) ── */}
+        <section className="mesh-section-mobile lp-section" style={{ padding: "64px 24px 72px", background: T.cream, textAlign: "center" }}>
+          <div style={{ display: "flex", justifyContent: "center", gap: 40, marginBottom: 40, flexWrap: "wrap" }}>
+            {[
+              { num: "8+", label: "tools replaced\nby one" },
+              { num: "100%", label: "built for\nnonprofits" },
+              { num: "$0", label: "hidden\nfees" },
+            ].map(s => (
+              <div key={s.num}>
+                <div style={{ fontFamily: "'DM Serif Display',serif", fontSize: 56, fontWeight: 400, color: T.greenDark, lineHeight: 1, letterSpacing: "-2px" }}>{s.num}</div>
+                <div style={{ fontSize: 13, color: T.ink3, marginTop: 10, lineHeight: 1.5, whiteSpace: "pre-line" }}>{s.label}</div>
+              </div>
+            ))}
+          </div>
+          <p style={{ fontFamily: "'DM Serif Display',serif", fontStyle: "italic", fontSize: 20, color: T.ink2, lineHeight: 1.55, maxWidth: 300, margin: "0 auto" }}>
+            "Everything your organization runs on. Nothing it doesn't."
+          </p>
         </section>
 
         {/* ── The meaning of Steward ── */}
