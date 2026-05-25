@@ -492,22 +492,24 @@ export default function Landing() {
         </section>
 
         {/* ── Mobile stats section (replaces mesh section on mobile) ── */}
-        <section className="mesh-section-mobile lp-section" style={{ padding: "64px 24px 72px", background: T.cream, textAlign: "center" }}>
-          <div style={{ display: "flex", justifyContent: "center", gap: 40, marginBottom: 40, flexWrap: "wrap" }}>
-            {[
-              { num: "8+", label: "tools replaced\nby one" },
-              { num: "100%", label: "built for\nnonprofits" },
-              { num: "$0", label: "hidden\nfees" },
-            ].map(s => (
-              <div key={s.num}>
-                <div style={{ fontFamily: "'DM Serif Display',serif", fontSize: 56, fontWeight: 400, color: T.greenDark, lineHeight: 1, letterSpacing: "-2px" }}>{s.num}</div>
-                <div style={{ fontSize: 13, color: T.ink3, marginTop: 10, lineHeight: 1.5, whiteSpace: "pre-line" }}>{s.label}</div>
-              </div>
-            ))}
+        <section className="mesh-section-mobile lp-section" style={{ padding: "40px 0", background: T.cream }}>
+          <div style={{ margin: "0 16px", background: "rgba(15,15,15,0.92)", borderRadius: 16, padding: "32px 24px", textAlign: "center" }}>
+            <div style={{ display: "flex", justifyContent: "center", gap: 40, marginBottom: 36, flexWrap: "wrap" }}>
+              {[
+                { num: "8+", label: "tools replaced\nby one" },
+                { num: "100%", label: "built for\nnonprofits" },
+                { num: "$0", label: "hidden\nfees" },
+              ].map(s => (
+                <div key={s.num}>
+                  <div style={{ fontFamily: "'DM Serif Display',serif", fontSize: 56, fontWeight: 400, color: "#10b981", lineHeight: 1, letterSpacing: "-2px" }}>{s.num}</div>
+                  <div style={{ fontSize: 13, color: "#f0ede6", marginTop: 10, lineHeight: 1.5, whiteSpace: "pre-line" }}>{s.label}</div>
+                </div>
+              ))}
+            </div>
+            <p style={{ fontFamily: "'DM Serif Display',serif", fontStyle: "italic", fontSize: 20, color: "rgba(240,237,230,0.62)", lineHeight: 1.55, maxWidth: 300, margin: "0 auto" }}>
+              "Everything your organization runs on. Nothing it doesn't."
+            </p>
           </div>
-          <p style={{ fontFamily: "'DM Serif Display',serif", fontStyle: "italic", fontSize: 20, color: T.ink2, lineHeight: 1.55, maxWidth: 300, margin: "0 auto" }}>
-            "Everything your organization runs on. Nothing it doesn't."
-          </p>
         </section>
 
         {/* ── The meaning of Steward ── */}
