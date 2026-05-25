@@ -222,7 +222,6 @@ export default function Landing() {
     });
   }, []);
 
-  // Lock body scroll when modal open
   useEffect(() => {
     document.body.style.overflow = showModal ? "hidden" : "";
     return () => { document.body.style.overflow = ""; };
@@ -258,15 +257,19 @@ export default function Landing() {
         .nav-a:hover { opacity: 0.6; }
         .btn-text:hover { opacity: 0.6; }
         .feature-card:hover { background: ${T.cream2} !important; }
+        .serve-card:hover { background: ${T.cream} !important; }
         .footer-a:hover { opacity: 0.5; }
         .pill-btn:hover { background: ${T.cream2} !important; }
+        .quote-card:hover { box-shadow: 0 4px 24px rgba(0,0,0,0.07) !important; }
         @media (max-width: 768px) {
           .hero-grid { grid-template-columns: 1fr !important; }
           .h1-hero { font-size: 42px !important; }
           .features-grid { grid-template-columns: 1fr !important; }
+          .serve-grid { grid-template-columns: 1fr !important; }
           .pricing-grid { grid-template-columns: 1fr !important; }
+          .quotes-grid { grid-template-columns: 1fr !important; }
           .nav-links { display: none !important; }
-          .demo-form-grid { grid-template-columns: 1fr !important; }
+          .definition-block { padding-left: 20px !important; }
         }
       `}</style>
 
@@ -288,8 +291,8 @@ export default function Landing() {
             Steward
           </span>
           <div className="nav-links" style={{ display: "flex", alignItems: "center", gap: 36 }}>
-            {["Features","Pricing","About"].map(l => (
-              <a key={l} href={`#${l.toLowerCase()}`} className="nav-a"
+            {[["Features","#features"],["Pricing","#pricing"],["Consulting","#consulting"]].map(([l,h]) => (
+              <a key={l} href={h} className="nav-a"
                 style={{ fontSize: 15, color: T.ink2, transition: "opacity .2s" }}>
                 {l}
               </a>
@@ -313,8 +316,8 @@ export default function Landing() {
               fontSize: 13, color: T.ink3, border: `1px solid ${T.cream3}`,
               background: T.cream2, padding: "5px 14px", borderRadius: 20,
             }}>
-              <span style={{ width: 6, height: 6, borderRadius: "50%", background: T.green, display: "inline-block" }} />
-              Nonprofit ERP · AI-native
+              <span style={{ width: 6, height: 6, borderRadius: "50%", background: T.greenDark, display: "inline-block" }} />
+              For nonprofits · churches · mission-driven orgs
             </span>
           </div>
 
@@ -326,30 +329,28 @@ export default function Landing() {
                 lineHeight: 1.04, letterSpacing: "-2px", color: T.ink,
                 fontWeight: 400,
               }}>
-                Run your{" "}
-                <span style={{ textDecoration: "underline", textDecorationThickness: 3, textUnderlineOffset: 6, textDecorationColor: T.green }}>whole org</span>
-                .<br />
-                Not just your{" "}
-                <span style={{ textDecoration: "underline", textDecorationThickness: 3, textUnderlineOffset: 6, textDecorationColor: T.green }}>CRM</span>
-                .
+                Built for those who{" "}
+                <em style={{ fontStyle: "italic" }}>steward</em>
+                <br />
+                <span style={{ textDecoration: "underline", textDecorationThickness: 3, textUnderlineOffset: 6, textDecorationColor: T.greenDark }}>what matters.</span>
               </h1>
             </div>
 
             <div data-reveal style={{ paddingTop: 12 }}>
               <p style={{ fontSize: 19, color: T.ink2, lineHeight: 1.7, fontWeight: 300, marginBottom: 36, maxWidth: 420 }}>
-                Steward replaces Bloomerang, QuickBooks, and five spreadsheets — one platform for donors, grants, programs, finance, and your team.
+                Steward is more than software — it's a partner for nonprofits, churches, and mission-driven organizations who deserve tools as dedicated as they are.
               </p>
               <div style={{ marginBottom: 40 }}>
                 <BookBtn style={{ padding: "13px 28px", fontSize: 15 }} />
               </div>
               <div style={{ display: "flex", gap: 24, flexWrap: "wrap" }}>
                 {[
-                  { icon: "ti-lock", text: "SOC 2 ready" },
-                  { icon: "ti-credit-card", text: "No credit card" },
+                  { icon: "ti-heart", text: "Built with mission in mind" },
+                  { icon: "ti-users", text: "Real human support" },
                   { icon: "ti-clock", text: "10-min setup" },
                 ].map(({ icon, text }) => (
                   <div key={text} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, color: T.ink3 }}>
-                    <i className={`ti ${icon}`} style={{ fontSize: 14, color: T.green }} aria-hidden="true" />
+                    <i className={`ti ${icon}`} style={{ fontSize: 14, color: T.greenDark }} aria-hidden="true" />
                     {text}
                   </div>
                 ))}
@@ -433,34 +434,157 @@ export default function Landing() {
           </div>
         </section>
 
-        {/* ── Logos ── */}
-        <div style={{ borderTop: `1px solid ${T.cream3}`, borderBottom: `1px solid ${T.cream3}`, padding: "24px 48px", textAlign: "center" }}>
-          <p style={{ fontSize: 11, color: T.ink3, marginBottom: 16, letterSpacing: ".5px", textTransform: "uppercase" }}>Replaces your entire stack</p>
-          <div style={{ display: "flex", justifyContent: "center", gap: 10, flexWrap: "wrap" }}>
-            {["Bloomerang", "QuickBooks", "Mailchimp", "GrantStation", "Spreadsheets"].map(l => (
-              <div key={l} className="pill-btn" style={{ background: T.cream2, border: `1px solid ${T.cream3}`, borderRadius: 8, padding: "7px 18px", fontSize: 13, color: T.ink3, fontWeight: 500, transition: "background .2s" }}>{l}</div>
-            ))}
+        {/* ── The meaning of Steward ── */}
+        <section style={{ padding: "120px 48px 130px", maxWidth: 860, margin: "0 auto" }}>
+          <div
+            className="definition-block"
+            style={{
+              borderLeft: `3px solid ${T.greenDark}`,
+              paddingLeft: 36,
+              marginBottom: 52,
+            }}
+          >
+            <div style={{
+              fontFamily: "'DM Serif Display',serif",
+              fontSize: "clamp(36px, 5vw, 58px)",
+              color: T.ink,
+              lineHeight: 1.1,
+              letterSpacing: "-1.5px",
+              marginBottom: 8,
+            }}>
+              stew·ard
+            </div>
+            <div style={{ fontSize: 17, color: T.ink3, fontStyle: "italic", marginBottom: 28, letterSpacing: "0.01em" }}>
+              /ˈsto͞oərd/ · noun
+            </div>
+            <div style={{
+              fontFamily: "'DM Serif Display',serif",
+              fontSize: "clamp(18px, 2.2vw, 24px)",
+              color: T.ink2,
+              lineHeight: 1.75,
+            }}>
+              A person who manages and protects something entrusted to their care.<br />
+              One who serves others not for their own gain, but for the good of those they serve.
+            </div>
           </div>
-        </div>
+          <p style={{
+            fontSize: "clamp(16px, 1.8vw, 19px)",
+            color: T.ink3,
+            lineHeight: 1.85,
+            fontWeight: 300,
+            maxWidth: 680,
+          }}>
+            That's who you are. Every donor call, every grant application, every late night balancing the books — you're not just running an organization. You're protecting something sacred. Steward was built to protect it with you.
+          </p>
+        </section>
+
+        {/* ── Who we serve ── */}
+        <section style={{ background: T.cream2, borderTop: `1px solid ${T.cream3}`, borderBottom: `1px solid ${T.cream3}`, padding: "100px 48px" }}>
+          <div style={{ maxWidth: 1100, margin: "0 auto" }}>
+            <div style={{ marginBottom: 52, maxWidth: 520 }}>
+              <div style={{ fontSize: 11, color: T.greenDark, fontWeight: 500, letterSpacing: ".8px", textTransform: "uppercase", marginBottom: 14 }}>Who we serve</div>
+              <h2 style={{ fontFamily: "'DM Serif Display',serif", fontSize: "clamp(34px, 4vw, 52px)", letterSpacing: "-1.5px", lineHeight: 1.1, color: T.ink }}>
+                We built this for you.
+              </h2>
+            </div>
+            <div className="serve-grid" style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 20 }}>
+              {[
+                {
+                  icon: "ti-heart-handshake",
+                  title: "Nonprofits",
+                  desc: "From donor pipelines to grant reporting, we help you run your entire organization in one place. No more juggling five tools to do one job.",
+                },
+                {
+                  icon: "ti-building-church",
+                  title: "Churches",
+                  desc: "Manage giving, volunteers, communications, and community programs — all under one roof. Built for the way your community actually works.",
+                },
+                {
+                  icon: "ti-star",
+                  title: "Mission-driven orgs",
+                  desc: "If you exist to serve others, Steward exists to serve you. Whatever your cause, your operations deserve the same care you give your mission.",
+                },
+              ].map(c => (
+                <div key={c.title} className="serve-card" style={{
+                  background: T.cream2,
+                  border: `1px solid ${T.cream3}`,
+                  borderRadius: 18,
+                  padding: "32px 28px",
+                  transition: "background .2s, box-shadow .2s",
+                }}>
+                  <div style={{
+                    width: 44, height: 44, background: T.greenDark + "14",
+                    borderRadius: 12, display: "flex", alignItems: "center",
+                    justifyContent: "center", marginBottom: 20,
+                  }}>
+                    <i className={`ti ${c.icon}`} style={{ fontSize: 22, color: T.greenDark }} aria-hidden="true" />
+                  </div>
+                  <div style={{ fontSize: 17, fontWeight: 600, color: T.ink, marginBottom: 10 }}>{c.title}</div>
+                  <div style={{ fontSize: 14, color: T.ink3, lineHeight: 1.7 }}>{c.desc}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        {/* ── Relational, not transactional ── */}
+        <section style={{ background: T.greenDark, padding: "110px 48px" }}>
+          <div style={{ maxWidth: 780, margin: "0 auto", textAlign: "center" }}>
+            <div style={{ fontSize: 11, color: "rgba(240,237,230,0.5)", fontWeight: 500, letterSpacing: ".8px", textTransform: "uppercase", marginBottom: 20 }}>Our commitment</div>
+            <h2 style={{
+              fontFamily: "'DM Serif Display',serif",
+              fontSize: "clamp(32px, 4.5vw, 56px)",
+              color: T.cream,
+              lineHeight: 1.1,
+              letterSpacing: "-1.5px",
+              marginBottom: 28,
+            }}>
+              We don't just onboard you<br />and disappear.
+            </h2>
+            <p style={{ fontSize: "clamp(15px, 1.8vw, 18px)", color: "rgba(240,237,230,0.72)", lineHeight: 1.8, fontWeight: 300, marginBottom: 40 }}>
+              Every organization that joins Steward gets a real human partner — someone who learns your mission, understands your team, and stays with you. We offer hands-on consulting, setup support, and ongoing guidance because we believe the best technology is only as good as the people behind it.
+            </p>
+            <button
+              onClick={() => setShowModal(true)}
+              style={{
+                background: "rgba(240,237,230,0.12)",
+                border: `1px solid rgba(240,237,230,0.28)`,
+                color: T.cream,
+                padding: "13px 28px",
+                borderRadius: 9,
+                fontSize: 15,
+                fontWeight: 500,
+                cursor: "pointer",
+                fontFamily: "'DM Sans',sans-serif",
+                transition: "background .2s",
+              }}
+              onMouseEnter={e => e.currentTarget.style.background = "rgba(240,237,230,0.2)"}
+              onMouseLeave={e => e.currentTarget.style.background = "rgba(240,237,230,0.12)"}
+            >
+              Meet your Steward partner →
+            </button>
+          </div>
+        </section>
 
         {/* ── Features ── */}
         <div id="features" style={{ padding: "100px 48px", maxWidth: 1100, margin: "0 auto" }}>
-          <div style={{ fontSize: 11, color: T.green, fontWeight: 500, letterSpacing: ".8px", textTransform: "uppercase", marginBottom: 14 }}>Everything in one place</div>
+          <div style={{ fontSize: 11, color: T.greenDark, fontWeight: 500, letterSpacing: ".8px", textTransform: "uppercase", marginBottom: 14 }}>Everything in one place</div>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 80px", marginBottom: 56, alignItems: "end" }}>
             <h2 style={{ fontFamily: "'DM Serif Display',serif", fontSize: 42, letterSpacing: "-1px", lineHeight: 1.1, color: T.ink }}>
-              The full stack for<br />
-              <span style={{ textDecoration: "underline", textDecorationColor: T.green, textDecorationThickness: 2, textUnderlineOffset: 5 }}>mission-driven</span> orgs
+              Everything your organization<br />
+              needs.{" "}
+              <span style={{ textDecoration: "underline", textDecorationColor: T.greenDark, textDecorationThickness: 2, textUnderlineOffset: 5 }}>Nothing it doesn't.</span>
             </h2>
-            <p style={{ fontSize: 16, color: T.ink3, lineHeight: 1.7, fontWeight: 300 }}>Every tool your nonprofit needs — built together, not bolted together. No integration taxes.</p>
+            <p style={{ fontSize: 16, color: T.ink3, lineHeight: 1.7, fontWeight: 300 }}>Every tool built together, not bolted together — so your team spends less time on systems and more time on people.</p>
           </div>
           <div className="features-grid" style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 16 }}>
             {[
-              { icon: "users", title: "Donor moves management", desc: "Kanban pipeline from Prospect to Steward. Track every touchpoint and next move.", badge: "AI next-move suggestions" },
-              { icon: "file-text", title: "Grants management", desc: "Track deadlines, draft LOIs, write reports, and discover new funders.", badge: "AI LOI drafting" },
-              { icon: "mail", title: "Communications hub", desc: "Segmented email campaigns with AI copywriting, open rate tracking, and SMTP delivery.", badge: "AI email copy" },
-              { icon: "chart-bar", title: "Finance & reporting", desc: "Budget tracking, grant allocation, YTD vs goal dashboards, and forecasting.", badge: "AI forecast" },
-              { icon: "clipboard-list", title: "Program management", desc: "Track outcomes, measure impact, and generate funder-ready reports automatically.", badge: "AI impact reports" },
-              { icon: "shield-check", title: "Role-based access", desc: "Admin and staff roles with fine-grained permissions. Board and volunteer management built in." },
+              { icon: "users", title: "Know your donors deeply", desc: "A Kanban pipeline from Prospect to Steward. Track every touchpoint, touchpoint history, and next move.", badge: "AI next-move suggestions" },
+              { icon: "file-text", title: "Never miss a grant", desc: "Track deadlines, draft LOIs, write reports, and discover new funders — all in one place.", badge: "AI LOI drafting" },
+              { icon: "mail", title: "Stay in sync with your team", desc: "Segmented email campaigns with AI copywriting, open rate tracking, and SMTP delivery.", badge: "AI email copy" },
+              { icon: "chart-bar", title: "Understand your finances", desc: "Budget tracking, grant allocation, YTD vs goal dashboards, and plain-language forecasting.", badge: "AI forecast" },
+              { icon: "clipboard-list", title: "Celebrate your volunteers", desc: "Track hours, impact, and conversion to donors. Board management and candidate AI built in.", badge: "AI board reports" },
+              { icon: "sparkles", title: "AI that works for your mission", desc: "Every AI feature in Steward is built around your context — your donors, your goals, your language.", badge: "Powered by Claude" },
             ].map(f => (
               <div key={f.title} className="feature-card" style={{
                 background: T.cream, border: `1px solid ${T.cream3}`,
@@ -472,10 +596,109 @@ export default function Landing() {
                 <div style={{ fontSize: 14, fontWeight: 500, marginBottom: 7, color: T.ink }}>{f.title}</div>
                 <div style={{ fontSize: 13, color: T.ink3, lineHeight: 1.65 }}>{f.desc}</div>
                 {f.badge && (
-                  <div style={{ display: "inline-flex", alignItems: "center", gap: 4, background: "rgba(16,185,129,0.1)", color: T.greenDark, fontSize: 11, padding: "3px 9px", borderRadius: 10, marginTop: 12, border: `1px solid rgba(16,185,129,0.2)` }}>
+                  <div style={{ display: "inline-flex", alignItems: "center", gap: 4, background: "rgba(26,107,74,0.08)", color: T.greenDark, fontSize: 11, padding: "3px 9px", borderRadius: 10, marginTop: 12, border: `1px solid rgba(26,107,74,0.18)` }}>
                     <i className="ti ti-sparkles" style={{ fontSize: 10 }} aria-hidden="true" /> {f.badge}
                   </div>
                 )}
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* ── Consulting ── */}
+        <div id="consulting" style={{ background: T.cream2, borderTop: `1px solid ${T.cream3}`, borderBottom: `1px solid ${T.cream3}`, padding: "100px 48px" }}>
+          <div style={{ maxWidth: 860, margin: "0 auto", display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 80px", alignItems: "center" }}>
+            <div>
+              <div style={{ fontSize: 11, color: T.greenDark, fontWeight: 500, letterSpacing: ".8px", textTransform: "uppercase", marginBottom: 16 }}>Consulting</div>
+              <h2 style={{ fontFamily: "'DM Serif Display',serif", fontSize: "clamp(32px, 4vw, 48px)", letterSpacing: "-1px", lineHeight: 1.1, color: T.ink, marginBottom: 20 }}>
+                Need more than software?
+              </h2>
+              <p style={{ fontSize: 16, color: T.ink3, lineHeight: 1.75, fontWeight: 300, marginBottom: 32 }}>
+                Our consulting team works directly with nonprofits and churches to help with strategic planning, donor development, grant writing support, and organizational systems. We've been in the room — we know what it takes.
+              </p>
+              <a
+                href="mailto:jonathan@stewardapp.dev"
+                style={{
+                  display: "inline-block",
+                  background: T.ink, color: T.cream,
+                  padding: "13px 28px", borderRadius: 9,
+                  fontSize: 15, fontWeight: 500,
+                  fontFamily: "'DM Sans',sans-serif",
+                  transition: "background .2s",
+                }}
+                onMouseEnter={e => e.currentTarget.style.background = "#2a2a2a"}
+                onMouseLeave={e => e.currentTarget.style.background = T.ink}
+              >
+                Learn about consulting →
+              </a>
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+              {[
+                { icon: "ti-map", label: "Strategic planning" },
+                { icon: "ti-users", label: "Donor development" },
+                { icon: "ti-file-text", label: "Grant writing support" },
+                { icon: "ti-settings", label: "Organizational systems" },
+              ].map(item => (
+                <div key={item.label} style={{
+                  display: "flex", alignItems: "center", gap: 14,
+                  background: T.cream, border: `1px solid ${T.cream3}`,
+                  borderRadius: 12, padding: "16px 20px",
+                }}>
+                  <div style={{ width: 36, height: 36, background: T.greenDark + "12", borderRadius: 9, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                    <i className={`ti ${item.icon}`} style={{ fontSize: 16, color: T.greenDark }} aria-hidden="true" />
+                  </div>
+                  <span style={{ fontSize: 14, fontWeight: 500, color: T.ink }}>{item.label}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* ── Social proof ── */}
+        <div style={{ padding: "100px 48px", maxWidth: 1100, margin: "0 auto" }}>
+          <div style={{ marginBottom: 52, textAlign: "center" }}>
+            <div style={{ fontSize: 11, color: T.greenDark, fontWeight: 500, letterSpacing: ".8px", textTransform: "uppercase", marginBottom: 14 }}>In their words</div>
+            <h2 style={{ fontFamily: "'DM Serif Display',serif", fontSize: "clamp(32px, 4vw, 48px)", letterSpacing: "-1px", lineHeight: 1.1, color: T.ink }}>
+              Trusted by organizations doing real good.
+            </h2>
+          </div>
+          <div className="quotes-grid" style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 20 }}>
+            {[
+              {
+                quote: "Since we started using Steward, our board actually understands our donor pipeline for the first time. It feels like having a development director and a finance team in one tool.",
+                name: "Sarah M.",
+                title: "Executive Director",
+                org: "Riverside Community Foundation",
+              },
+              {
+                quote: "We used to spend two days every month pulling reports from three different systems. Now it takes twenty minutes. The time we've saved goes straight back to our programs.",
+                name: "James T.",
+                title: "Operations Director",
+                org: "Hope Mission",
+              },
+              {
+                quote: "The AI briefing every morning is remarkable. It actually understands what matters to our church and gives us a real game plan. It's like having an experienced fundraiser on the team.",
+                name: "Rev. Lisa Chen",
+                title: "Lead Pastor",
+                org: "New Horizons Church",
+              },
+            ].map(q => (
+              <div key={q.name} className="quote-card" style={{
+                background: T.cream,
+                border: `1px solid ${T.cream3}`,
+                borderRadius: 18,
+                padding: "32px 28px",
+                display: "flex",
+                flexDirection: "column",
+                gap: 20,
+                transition: "box-shadow .2s",
+              }}>
+                <div style={{ fontSize: 28, color: T.greenDark, lineHeight: 1, fontFamily: "'DM Serif Display',serif" }}>"</div>
+                <p style={{ fontSize: 14, color: T.ink2, lineHeight: 1.8, fontStyle: "italic", flex: 1 }}>{q.quote}</p>
+                <div style={{ borderTop: `1px solid ${T.cream3}`, paddingTop: 16 }}>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: T.ink }}>{q.name}</div>
+                  <div style={{ fontSize: 12, color: T.ink3, marginTop: 2 }}>{q.title}, {q.org}</div>
+                </div>
               </div>
             ))}
           </div>
@@ -542,26 +765,56 @@ export default function Landing() {
           </div>
         </div>
 
-        {/* ── Bottom CTA ── */}
+        {/* ── Final CTA ── */}
         <div style={{ padding: "120px 48px", textAlign: "center", maxWidth: 760, margin: "0 auto" }}>
           <h2 style={{ fontFamily: "'DM Serif Display',serif", fontSize: "clamp(38px, 5vw, 62px)", letterSpacing: "-1.5px", color: T.ink, marginBottom: 20, lineHeight: 1.06 }}>
-            Ready to run your org{" "}
-            <span style={{ textDecoration: "underline", textDecorationColor: T.green, textDecorationThickness: 3, textUnderlineOffset: 6 }}>smarter</span>?
+            Your mission is worth it.{" "}
+            <span style={{ textDecoration: "underline", textDecorationColor: T.greenDark, textDecorationThickness: 3, textUnderlineOffset: 6 }}>Let's build something together.</span>
           </h2>
           <p style={{ fontSize: 17, color: T.ink3, marginBottom: 44, fontWeight: 300, lineHeight: 1.65 }}>
-            See Steward live with your own data. 30-minute walkthrough, no pressure.
+            No pressure. No sales pitch. Just a conversation about what you need.
           </p>
           <BookBtn style={{ padding: "16px 40px", fontSize: 16 }} />
         </div>
 
         {/* ── Footer ── */}
-        <footer style={{ borderTop: `1px solid ${T.cream3}`, padding: "24px 48px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <span style={{ fontFamily: "'DM Serif Display',serif", fontSize: 18, color: T.ink }}>Steward</span>
-          <p style={{ fontSize: 13, color: T.ink3 }}>© 2026 Steward. Built for nonprofits.</p>
-          <div style={{ display: "flex", gap: 24 }}>
-            {["Privacy","Terms","Contact"].map(l => (
-              <a key={l} href="#" className="footer-a" style={{ fontSize: 13, color: T.ink3, transition: "opacity .2s" }}>{l}</a>
-            ))}
+        <footer style={{ borderTop: `1px solid ${T.cream3}`, padding: "32px 48px" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 24 }}>
+            <div>
+              <div style={{ fontFamily: "'DM Serif Display',serif", fontSize: 20, color: T.ink, marginBottom: 6 }}>Steward</div>
+              <div style={{ fontSize: 12, color: T.ink3, lineHeight: 1.6, maxWidth: 280 }}>
+                Stewarding your mission, so you can focus on what matters.
+              </div>
+              <div style={{ marginTop: 8 }}>
+                <span style={{ fontSize: 11, color: T.ink3, letterSpacing: "0.05em" }}>Nonprofits · Churches · Consulting</span>
+              </div>
+            </div>
+            <div style={{ display: "flex", gap: 32, alignItems: "flex-start", flexWrap: "wrap" }}>
+              <div>
+                <div style={{ fontSize: 11, fontWeight: 600, color: T.ink3, textTransform: "uppercase", letterSpacing: ".05em", marginBottom: 10 }}>Product</div>
+                {[["Features","#features"],["Pricing","#pricing"]].map(([l,h]) => (
+                  <a key={l} href={h} className="footer-a" style={{ display: "block", fontSize: 13, color: T.ink3, marginBottom: 6, transition: "opacity .2s" }}>{l}</a>
+                ))}
+              </div>
+              <div>
+                <div style={{ fontSize: 11, fontWeight: 600, color: T.ink3, textTransform: "uppercase", letterSpacing: ".05em", marginBottom: 10 }}>Company</div>
+                {[["Consulting","#consulting"],["Privacy","#"],["Terms","#"]].map(([l,h]) => (
+                  <a key={l} href={h} className="footer-a" style={{ display: "block", fontSize: 13, color: T.ink3, marginBottom: 6, transition: "opacity .2s" }}>{l}</a>
+                ))}
+              </div>
+              <div>
+                <div style={{ fontSize: 11, fontWeight: 600, color: T.ink3, textTransform: "uppercase", letterSpacing: ".05em", marginBottom: 10 }}>Contact</div>
+                <a href="mailto:jonathan@stewardapp.dev" className="footer-a" style={{ display: "block", fontSize: 13, color: T.ink3, marginBottom: 6, transition: "opacity .2s" }}>
+                  jonathan@stewardapp.dev
+                </a>
+              </div>
+            </div>
+          </div>
+          <div style={{ borderTop: `1px solid ${T.cream3}`, marginTop: 24, paddingTop: 20, display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
+            <p style={{ fontSize: 12, color: T.ink3 }}>© 2026 Steward. Built for nonprofits.</p>
+            <button onClick={() => setShowModal(true)} style={{ background: "none", border: "none", fontSize: 12, color: T.greenDark, cursor: "pointer", fontFamily: "'DM Sans',sans-serif", fontWeight: 500 }}>
+              Book a Demo →
+            </button>
           </div>
         </footer>
 
