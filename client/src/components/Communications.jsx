@@ -342,6 +342,15 @@ export function Communications({ data }) {
     return months.filter(m => map[m] !== undefined).map(m => ({ label: m, v: map[m] || 0 })).slice(-6);
   }, [campaigns]);
 
+  // ── Analytics (must be before any early return — Rules of Hooks) ────────────
+  const topByOpen = useMemo(() => {
+    return [...campaigns]
+      .filter(c => c.status === "sent" && (c.recipient_count || 0) > 0)
+      .map(c => ({ ...c, rate: Math.round((c.open_count || 0) / c.recipient_count * 100) }))
+      .sort((a, b) => b.rate - a.rate)
+      .slice(0, 5);
+  }, [campaigns]);
+
   // ── Builder actions ─────────────────────────────────────────────────────────
   const openBuilder = (campaign = null) => {
     if (campaign) {
@@ -588,14 +597,6 @@ export function Communications({ data }) {
   const audDonors = allDonors.filter(activeSeg.filter);
 
   // ── Analytics ───────────────────────────────────────────────────────────────
-  const topByOpen = useMemo(() => {
-    return [...campaigns]
-      .filter(c => c.status === "sent" && (c.recipient_count || 0) > 0)
-      .map(c => ({ ...c, rate: Math.round((c.open_count || 0) / c.recipient_count * 100) }))
-      .sort((a, b) => b.rate - a.rate)
-      .slice(0, 5);
-  }, [campaigns]);
-
   const sentCampaigns = campaigns.filter(c => c.status === "sent");
   const allTimeSent   = sentCampaigns.reduce((s, c) => s + (c.recipient_count || 0), 0);
   const allTimeOpen   = sentCampaigns.reduce((s, c) => s + (c.open_count || 0), 0);
