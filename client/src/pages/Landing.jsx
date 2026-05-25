@@ -277,7 +277,6 @@ export default function Landing() {
           .h1-hero { font-size: 36px !important; letter-spacing: -1px !important; }
           .features-grid { grid-template-columns: 1fr !important; }
           .serve-grid { grid-template-columns: 1fr !important; }
-          .pricing-grid { grid-template-columns: 1fr !important; }
           .quotes-grid { grid-template-columns: 1fr !important; }
           .nav-links { display: none !important; }
           .definition-block { padding-left: 20px !important; }
@@ -294,9 +293,8 @@ export default function Landing() {
           .mesh-section-mobile { display: block !important; }
           /* Consulting inner grid: stack */
           .consulting-grid { grid-template-columns: 1fr !important; gap: 32px !important; }
-          /* Features + Pricing section headers: stack */
+          /* Features section header: stack */
           .features-header { grid-template-columns: 1fr !important; gap: 12px !important; }
-          .pricing-header { grid-template-columns: 1fr !important; gap: 12px !important; }
           /* Who we serve rows: stack to single column */
           .serve-row { grid-template-columns: 1fr !important; gap: 6px !important; padding: 24px 16px !important; }
           /* Footer */
@@ -315,7 +313,7 @@ export default function Landing() {
               <span style={{ fontFamily: "'DM Serif Display',serif", fontSize: 18, color: T.ink }}>Steward</span>
               <button onClick={() => setMobileNavOpen(false)} style={{ background: "none", border: "none", fontSize: 24, color: T.ink3, cursor: "pointer", lineHeight: 1 }}>×</button>
             </div>
-            {[["Features","#features"],["Pricing","#pricing"],["Consulting","#consulting"]].map(([l,h]) => (
+            {[["Features","#features"],["Consulting","#consulting"]].map(([l,h]) => (
               <a key={l} href={h} className="lp-mobile-nav-row" onClick={() => setMobileNavOpen(false)}>{l}</a>
             ))}
             <div style={{ padding: "16px 24px", display: "flex", flexDirection: "column", gap: 10 }}>
@@ -362,7 +360,7 @@ export default function Landing() {
             Steward
           </span>
           <div className="nav-links" style={{ display: "flex", alignItems: "center", gap: 36 }}>
-            {[["Features","#features"],["Pricing","#pricing"],["Consulting","#consulting"]].map(([l,h]) => (
+            {[["Features","#features"],["Consulting","#consulting"]].map(([l,h]) => (
               <a key={l} href={h} className="nav-a"
                 style={{ fontSize: 15, color: T.ink2, transition: "opacity .2s" }}>
                 {l}
@@ -835,66 +833,6 @@ export default function Landing() {
           </div>
         </div>
 
-        {/* ── Pricing ── */}
-        <div id="pricing" className="lp-section" style={{ background: T.cream2, borderTop: `1px solid ${T.cream3}`, padding: "100px 48px" }}>
-          <div style={{ maxWidth: 960, margin: "0 auto" }}>
-            <div className="pricing-header" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 80px", marginBottom: 56, alignItems: "end" }}>
-              <h2 style={{ fontFamily: "'DM Serif Display',serif", fontSize: 42, letterSpacing: "-1px", color: T.ink, lineHeight: 1.1 }}>
-                Transparent,<br />flat-rate plans
-              </h2>
-              <p style={{ fontSize: 16, color: T.ink3, lineHeight: 1.7, fontWeight: 300 }}>No per-seat fees. No module unlocks. No surprises. Everything included from day one.</p>
-            </div>
-            <div className="pricing-grid" style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 16 }}>
-              {[
-                { tier: "Seed", price: "$149", desc: "Small orgs up to $500k annual budget", features: ["Up to 500 donors", "Donor + grants modules", "2 staff seats", "AI features included"], featured: false },
-                { tier: "Growth", price: "$249", desc: "Growing orgs up to $2M annual budget", features: ["Unlimited donors", "All modules", "10 staff seats", "Priority AI + email", "CSV import"], featured: true },
-                { tier: "Impact", price: "$399", desc: "Established orgs, multi-program", features: ["Everything in Growth", "Unlimited seats", "Custom domain email", "Dedicated onboarding", "SLA + priority support"], featured: false },
-              ].map(p => (
-                <div key={p.tier} style={{
-                  background: p.featured ? T.ink : T.cream,
-                  border: p.featured ? `2px solid ${T.ink}` : `1px solid ${T.cream3}`,
-                  borderRadius: 16, padding: 28, position: "relative",
-                }}>
-                  {p.featured && (
-                    <div style={{ position: "absolute", top: -12, left: "50%", transform: "translateX(-50%)", background: T.green, color: T.white, fontSize: 11, fontWeight: 500, padding: "4px 16px", borderRadius: 20, whiteSpace: "nowrap" }}>
-                      Most popular
-                    </div>
-                  )}
-                  <div style={{ fontSize: 11, fontWeight: 500, color: p.featured ? "rgba(255,255,255,0.4)" : T.ink3, textTransform: "uppercase", letterSpacing: ".5px", marginBottom: 10 }}>{p.tier}</div>
-                  <div style={{ fontFamily: "'DM Serif Display',serif", fontSize: 44, color: p.featured ? T.white : T.ink, letterSpacing: "-1.5px" }}>
-                    {p.price}<span style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 14, fontWeight: 400, color: p.featured ? "rgba(255,255,255,0.4)" : T.ink3 }}>/mo</span>
-                  </div>
-                  <div style={{ fontSize: 13, color: p.featured ? "rgba(255,255,255,0.5)" : T.ink3, margin: "10px 0 20px", lineHeight: 1.5 }}>{p.desc}</div>
-                  <hr style={{ border: "none", borderTop: p.featured ? "1px solid rgba(255,255,255,0.1)" : `1px solid ${T.cream3}`, margin: "20px 0" }} />
-                  {p.features.map(f => (
-                    <div key={f} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: p.featured ? "rgba(255,255,255,0.75)" : T.ink2, padding: "5px 0" }}>
-                      <i className="ti ti-check" style={{ fontSize: 14, color: T.green, flexShrink: 0 }} aria-hidden="true" /> {f}
-                    </div>
-                  ))}
-                  <button
-                    onClick={() => setShowModal(true)}
-                    style={{
-                      width: "100%", marginTop: 24, padding: 12, borderRadius: 9,
-                      fontSize: 14, fontWeight: 500, cursor: "pointer",
-                      fontFamily: "'DM Sans',sans-serif", transition: "all .2s",
-                      border: p.featured ? `1.5px solid ${T.green}` : `1.5px solid ${T.cream3}`,
-                      color: p.featured ? T.white : T.ink,
-                      background: p.featured ? T.green : "transparent",
-                    }}
-                    onMouseEnter={e => { e.currentTarget.style.background = p.featured ? "#0ea371" : T.cream2; }}
-                    onMouseLeave={e => { e.currentTarget.style.background = p.featured ? T.green : "transparent"; }}
-                  >
-                    Book a Demo
-                  </button>
-                </div>
-              ))}
-            </div>
-            <p style={{ textAlign: "center", marginTop: 24, fontSize: 13, color: T.ink3 }}>
-              Replace <s>Bloomerang $199</s> + <s>QuickBooks $85</s> + <s>Mailchimp $60</s> with{" "}
-              <span style={{ color: T.greenDark, fontWeight: 500 }}>Steward Growth at $249/mo</span>
-            </p>
-          </div>
-        </div>
 
         {/* ── Final CTA ── */}
         <div className="lp-section" style={{ padding: "120px 48px", textAlign: "center", maxWidth: 760, margin: "0 auto" }}>
@@ -923,7 +861,7 @@ export default function Landing() {
             <div style={{ display: "flex", gap: 32, alignItems: "flex-start", flexWrap: "wrap" }}>
               <div>
                 <div style={{ fontSize: 11, fontWeight: 600, color: T.ink3, textTransform: "uppercase", letterSpacing: ".05em", marginBottom: 10 }}>Product</div>
-                {[["Features","#features"],["Pricing","#pricing"]].map(([l,h]) => (
+                {[["Features","#features"]].map(([l,h]) => (
                   <a key={l} href={h} className="footer-a" style={{ display: "block", fontSize: 13, color: T.ink3, marginBottom: 6, transition: "opacity .2s" }}>{l}</a>
                 ))}
               </div>

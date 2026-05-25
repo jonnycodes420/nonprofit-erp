@@ -9,12 +9,6 @@ export function Settings({auth,logout}) {
   const userEmail=auth?.user?.email||"";
   const userRole=auth?.user?.role||"staff";
   const isAdmin=userRole==="admin";
-  const plan=auth?.org?.plan||"seed";
-  const PLANS=[
-    {id:"seed",label:"Seed",price:"Free",features:["Up to 50 donors","3 staff seats","AI features","Email campaigns"],current:plan==="seed"},
-    {id:"growth",label:"Growth",price:"$99/mo",features:["Unlimited donors","10 staff seats","Priority AI","Advanced analytics","Phone support"],current:plan==="growth"},
-    {id:"impact",label:"Impact",price:"$299/mo",features:["Unlimited everything","Unlimited seats","Dedicated success manager","Custom integrations","SLA support"],current:plan==="impact"},
-  ];
 
   const [team,setTeam]=useState([]);
   const [showInvite,setShowInvite]=useState(false);
@@ -139,24 +133,6 @@ export function Settings({auth,logout}) {
           <div style={{fontSize:11,fontWeight:700,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:6}}>Organization</div>
           <div style={{fontSize:15,fontWeight:700,color:T.ink}}>{orgName}</div>
           {auth?.org?.mission&&<div style={{fontSize:12,color:T.ink3,marginTop:4,lineHeight:1.5}}>{auth.org.mission}</div>}
-        </div>
-      </div>
-      <div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:16,padding:"24px 28px"}}>
-        <SectionLabel>Billing & Plan</SectionLabel>
-        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(180px,1fr))",gap:12}}>
-          {PLANS.map(p=>(
-            <div key={p.id} style={{border:`2px solid ${p.current?T.greenDk:T.bg3}`,borderRadius:14,padding:"20px",background:p.current?T.greenDk+"08":T.white,position:"relative"}}>
-              {p.current&&<div style={{position:"absolute",top:-10,left:16,background:T.greenDk,color:"#fff",fontSize:10,fontWeight:700,letterSpacing:"0.05em",padding:"2px 10px",borderRadius:99,textTransform:"uppercase"}}>Current</div>}
-              <div style={{fontSize:14,fontWeight:700,color:T.ink,marginBottom:4}}>{p.label}</div>
-              <div style={{fontSize:22,fontWeight:800,color:T.greenDk,fontFamily:"'DM Serif Display',serif",marginBottom:14}}>{p.price}</div>
-              {p.features.map(f=>(
-                <div key={f} style={{fontSize:12,color:T.ink3,marginBottom:5,display:"flex",gap:6,alignItems:"flex-start"}}>
-                  <span style={{color:T.greenDk,flexShrink:0,marginTop:1}}>✓</span>{f}
-                </div>
-              ))}
-              {!p.current&&<button style={{marginTop:14,width:"100%",background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"8px",color:T.ink2,fontSize:12,fontWeight:600,cursor:"pointer"}}>Upgrade →</button>}
-            </div>
-          ))}
         </div>
       </div>
       <div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:16,padding:"24px 28px"}}>
