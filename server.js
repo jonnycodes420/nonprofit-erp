@@ -1414,9 +1414,15 @@ app.post("/stripe/connect", requireAuth, requireAdmin, wrap(async (req, res) => 
 
   const rawFrontendUrl = process.env.FRONTEND_URL || process.env.CORS_ORIGIN || "https://client-five-tau-13.vercel.app";
   const frontendUrl = rawFrontendUrl.replace(/^http:\/\//i, "https://");
+  console.log("[stripe/connect] frontendUrl resolved to:", frontendUrl);
 
+  if (!frontendUrl.startsWith("https://")) {
+    return res.status(500).json({ error: `Invalid FRONTEND_URL: "${frontendUrl}" — must start with https://` });
+  }
+
+  let account;
   try {
-    const account = await stripe.accounts.create({
+    account = await stripe.accounts.create({
       type: "express",
       country: "US",
       capabilities: {
@@ -1424,13 +1430,21 @@ app.post("/stripe/connect", requireAuth, requireAdmin, wrap(async (req, res) => 
         transfers: { requested: true },
       },
     });
+    console.log("[stripe/connect] created account:", account.id);
+  } catch (err) {
+    console.error("[stripe/connect] accounts.create failed:", JSON.stringify({ message: err.message, type: err.type, code: err.code, param: err.param, raw: err.raw }));
+    const statusCode = err.statusCode || err.raw?.statusCode || 500;
+    return res.status(statusCode).json({ error: err.message || "Stripe error", type: err.type, code: err.code, param: err.param });
+  }
 
+  try {
     const accountLink = await stripe.accountLinks.create({
       account: account.id,
       refresh_url: `${frontendUrl}/dashboard`,
       return_url: `${frontendUrl}/dashboard`,
       type: "account_onboarding",
     });
+    console.log("[stripe/connect] accountLink created:", accountLink.url);
 
     await run(
       `UPDATE orgs SET stripe_account_id=$1, stripe_connected=TRUE, stripe_connected_at=NOW() WHERE id=$2`,
@@ -1439,14 +1453,9 @@ app.post("/stripe/connect", requireAuth, requireAdmin, wrap(async (req, res) => 
 
     res.json({ url: accountLink.url });
   } catch (err) {
-    console.error("[stripe/connect] error:", err.message, err.type, err.code, err.param);
+    console.error("[stripe/connect] accountLinks.create failed:", JSON.stringify({ message: err.message, type: err.type, code: err.code, param: err.param, raw: err.raw }));
     const statusCode = err.statusCode || err.raw?.statusCode || 500;
-    res.status(statusCode).json({
-      error: err.message || "Stripe error",
-      type: err.type,
-      code: err.code,
-      param: err.param,
-    });
+    res.status(statusCode).json({ error: err.message || "Stripe error", type: err.type, code: err.code, param: err.param });
   }
 }));
 
