@@ -1441,7 +1441,7 @@ app.post("/stripe/connect", requireAuth, requireAdmin, wrap(async (req, res) => 
     const accountLink = await stripe.accountLinks.create({
       account: account.id,
       refresh_url: `${frontendUrl}/dashboard`,
-      return_url: `${frontendUrl}/dashboard`,
+      return_url: `${frontendUrl}/dashboard?stripe_connected=true`,
       type: "account_onboarding",
     });
     console.log("[stripe/connect] accountLink created:", accountLink.url);

@@ -33,6 +33,16 @@ function AppShell() {
   const [loading,setLoading]=useState(true);
   const [loadErr,setLoadErr]=useState("");
   const [showChat,setShowChat]=useState(false);
+  const [stripeToast,setStripeToast]=useState(false);
+
+  useEffect(()=>{
+    const params=new URLSearchParams(window.location.search);
+    if(params.get("stripe_connected")==="true"){
+      setStripeToast(true);
+      window.history.replaceState({},"","/dashboard");
+      setTimeout(()=>setStripeToast(false),6000);
+    }
+  },[]);
 
   useEffect(()=>{
     (async()=>{
@@ -127,6 +137,14 @@ function AppShell() {
       {tab==="settings"&&<Settings auth={auth} logout={logout}/>}
     </div>
     {showChat&&<AIChat data={data} onClose={()=>setShowChat(false)}/>}
+    {stripeToast&&<div style={{position:"fixed",bottom:24,right:24,zIndex:9999,background:T.greenDk,color:"#fff",borderRadius:14,padding:"14px 20px",fontSize:13,fontWeight:600,boxShadow:"0 8px 32px rgba(26,107,74,0.35)",display:"flex",alignItems:"center",gap:10,maxWidth:340}}>
+      <span style={{fontSize:18}}>💳</span>
+      <div>
+        <div style={{fontWeight:700,marginBottom:2}}>Stripe connected!</div>
+        <div style={{fontWeight:400,opacity:0.85}}>You can now accept online donations.</div>
+      </div>
+      <button onClick={()=>setStripeToast(false)} style={{marginLeft:"auto",background:"rgba(255,255,255,0.2)",border:"none",borderRadius:6,color:"#fff",cursor:"pointer",padding:"2px 8px",fontSize:13,fontWeight:700}}>✕</button>
+    </div>}
   </div>;
 }
 
