@@ -161,10 +161,20 @@ export function GlobalStyles() {
       .dash-stat-grid{grid-template-columns:repeat(2,1fr)!important;}
       /* Dashboard two-col layout: stack */
       .dash-main-grid{grid-template-columns:1fr!important;}
-      /* Dashboard pipeline snapshot: 3 cols (wraps to 2 rows) */
-      .dash-pipeline-grid{grid-template-columns:repeat(3,1fr)!important;}
-      /* Quick action buttons */
-      .dash-quick-btn{min-height:64px!important;padding:12px 8px!important;}
+      /* Dashboard mobile comprehensive */
+      .dash-root{font-size:14px!important;}
+      .dash-stat-num{font-size:24px!important;}
+      .dash-cpad{padding:12px!important;}
+      .dash-briefing-body{padding:12px 14px!important;}
+      .dash-pipeline-card{overflow-x:auto!important;}
+      .dash-pipeline-grid{display:grid!important;grid-template-columns:repeat(6,82px)!important;}
+      .dash-pipeline-grid>div>div:first-child{font-size:11px!important;}
+      .dash-pipeline-grid>div>div:last-child{font-size:13px!important;}
+      .dash-lapsed{flex-wrap:wrap!important;gap:12px!important;}
+      .dash-lapsed>div{flex:1!important;min-width:0!important;}
+      .dash-quick-btn{min-height:44px!important;padding:10px 6px!important;}
+      .dash-quick-label{font-size:12px!important;}
+      .dash-activity-note{overflow:hidden!important;display:-webkit-box!important;-webkit-line-clamp:2!important;-webkit-box-orient:vertical!important;white-space:normal!important;text-overflow:unset!important;}
 
       /* Donors toolbar */
       .donors-toolbar{flex-direction:column!important;align-items:stretch!important;gap:8px!important;}

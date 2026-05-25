@@ -152,7 +152,7 @@ export function Dashboard({data,setData,onNavigate}) {
   ];
 
   return(
-    <div style={{display:"flex",flexDirection:"column",gap:16}} className="fade-in">
+    <div style={{display:"flex",flexDirection:"column",gap:16}} className="dash-root fade-in">
       <div className="dash-stat-grid" style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10}}>
         {[
           {label:"Total Donors",value:totalDonors,sub:`${newDonorsThisYear} gave this year`,tab:"donors"},
@@ -162,7 +162,7 @@ export function Dashboard({data,setData,onNavigate}) {
         ].map(s=>(
           <div key={s.label} onClick={()=>onNavigate(s.tab)} className="card-click" style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:14,padding:"16px 20px",cursor:"pointer",borderLeft:"3px solid #1a6b4a"}}>
             <div style={{fontSize:10,fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",color:T.ink3,marginBottom:4}}>{s.label}</div>
-            <div style={{fontSize:28,fontWeight:800,color:"#1a6b4a",fontFamily:"'DM Serif Display',serif",lineHeight:1.05,letterSpacing:"-0.02em"}}>{s.value}</div>
+            <div className="dash-stat-num" style={{fontSize:28,fontWeight:800,color:"#1a6b4a",fontFamily:"'DM Serif Display',serif",lineHeight:1.05,letterSpacing:"-0.02em"}}>{s.value}</div>
             <div style={{fontSize:11,color:T.ink3,marginTop:4}}>{s.sub}</div>
           </div>
         ))}
@@ -172,7 +172,7 @@ export function Dashboard({data,setData,onNavigate}) {
         <div style={{display:"flex",flexDirection:"column",gap:14}}>
           {/* AI Briefing */}
           <div style={{...cardWrap}}>
-            <div style={{...cPad,borderBottom:"1px solid "+T.bg3,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+            <div className="dash-cpad" style={{...cPad,borderBottom:"1px solid "+T.bg3,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
               <div style={{display:"flex",alignItems:"center",gap:10}}>
                 <span style={{background:"#1a6b4a",color:"#fff",fontSize:9,fontWeight:800,padding:"3px 8px",borderRadius:99,letterSpacing:"0.1em",textTransform:"uppercase"}}>AI</span>
                 <span style={{fontSize:11,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.08em",fontWeight:600}}>{todayStr}</span>
@@ -180,7 +180,7 @@ export function Dashboard({data,setData,onNavigate}) {
               {!briefing&&!briefLoading&&<AIBtn onClick={generateBriefing} label="✦ Generate briefing" small/>}
               {briefLoading&&<div style={{display:"flex",alignItems:"center",gap:6,fontSize:12,color:T.ink3}}><Spin/>Thinking…</div>}
             </div>
-            <div style={{padding:"18px 24px"}}>
+            <div className="dash-briefing-body" style={{padding:"18px 24px"}}>
               {!briefing&&!briefLoading&&(
                 <div style={{fontSize:13,color:T.ink3,fontStyle:"italic",lineHeight:1.7}}>
                   Get your personalized daily development briefing — who to call, what's urgent, one priority action.
@@ -208,8 +208,8 @@ export function Dashboard({data,setData,onNavigate}) {
           </div>
 
           {/* Donor pipeline snapshot */}
-          <div style={{...cardWrap}}>
-            <div style={{...cPad,borderBottom:"1px solid "+T.bg3,...sHdr}}>
+          <div className="dash-pipeline-card" style={{...cardWrap}}>
+            <div className="dash-cpad" style={{...cPad,borderBottom:"1px solid "+T.bg3,...sHdr}}>
               <span style={sTitle}>Donor Pipeline</span>
               <button onClick={()=>onNavigate("donors")} style={sLink}>View all →</button>
             </div>
@@ -229,7 +229,7 @@ export function Dashboard({data,setData,onNavigate}) {
 
           {/* Lapsed alert */}
           {lapsedDonors.length>0&&(
-            <div style={{background:"#fff8f0",border:"1px solid #f59e0b40",borderRadius:14,padding:"16px 20px",display:"flex",alignItems:"center",justifyContent:"space-between",gap:12}}>
+            <div className="dash-lapsed" style={{background:"#fff8f0",border:"1px solid #f59e0b40",borderRadius:14,padding:"16px 20px",display:"flex",alignItems:"center",justifyContent:"space-between",gap:12}}>
               <div>
                 <div style={{display:"flex",alignItems:"center",gap:7,marginBottom:4}}>
                   <div style={{width:7,height:7,borderRadius:"50%",background:"#ef4444",flexShrink:0,boxShadow:"0 0 6px #ef444460"}}/>
@@ -246,7 +246,7 @@ export function Dashboard({data,setData,onNavigate}) {
 
           {/* Upcoming grant deadlines */}
           <div style={{...cardWrap}}>
-            <div style={{...cPad,borderBottom:"1px solid "+T.bg3,...sHdr}}>
+            <div className="dash-cpad" style={{...cPad,borderBottom:"1px solid "+T.bg3,...sHdr}}>
               <span style={sTitle}>Grant Deadlines</span>
               <button onClick={()=>onNavigate("grants")} style={sLink}>All grants →</button>
             </div>
@@ -277,7 +277,7 @@ export function Dashboard({data,setData,onNavigate}) {
 
           {/* Recent giving */}
           <div style={{...cardWrap}}>
-            <div style={{...cPad,borderBottom:"1px solid "+T.bg3,...sHdr}}>
+            <div className="dash-cpad" style={{...cPad,borderBottom:"1px solid "+T.bg3,...sHdr}}>
               <span style={sTitle}>Recent Giving</span>
               <button onClick={()=>onNavigate("donors")} style={sLink}>All donors →</button>
             </div>
@@ -338,7 +338,7 @@ export function Dashboard({data,setData,onNavigate}) {
           {/* Quick actions */}
           <div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:14,overflow:"hidden",padding:"14px 20px"}}>
             <div style={sTitle}>Quick Actions</div>
-            <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8,marginTop:12}}>
+            <div className="dash-quick-grid" style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8,marginTop:12}}>
               {QUICK.map(a=>(
                 <button key={a.label} onClick={a.action} className="dash-action dash-quick-btn" style={{
                   background:T.bg,border:"1px solid "+T.bg3,borderRadius:10,
@@ -347,7 +347,7 @@ export function Dashboard({data,setData,onNavigate}) {
                   <div style={{width:32,height:32,borderRadius:8,background:"#1a6b4a18",display:"flex",alignItems:"center",justifyContent:"center",color:"#1a6b4a"}}>
                     {a.icon}
                   </div>
-                  <span style={{fontSize:10,fontWeight:700,color:T.ink3,textAlign:"center",lineHeight:1.3,letterSpacing:"0.02em"}}>{a.label}</span>
+                  <span className="dash-quick-label" style={{fontSize:10,fontWeight:700,color:T.ink3,textAlign:"center",lineHeight:1.3,letterSpacing:"0.02em"}}>{a.label}</span>
                 </button>
               ))}
             </div>
@@ -355,7 +355,7 @@ export function Dashboard({data,setData,onNavigate}) {
 
           {/* Tasks this week */}
           <div style={{...cardWrap}}>
-            <div style={{...cPad,borderBottom:"1px solid "+T.bg3,...sHdr}}>
+            <div className="dash-cpad" style={{...cPad,borderBottom:"1px solid "+T.bg3,...sHdr}}>
               <span style={sTitle}>Tasks This Week</span>
               <button onClick={()=>onNavigate("tasks")} style={sLink}>All →</button>
             </div>
@@ -395,7 +395,7 @@ export function Dashboard({data,setData,onNavigate}) {
 
           {/* Activity feed */}
           <div style={{...cardWrap}}>
-            <div style={{...cPad,borderBottom:"1px solid "+T.bg3}}>
+            <div className="dash-cpad" style={{...cPad,borderBottom:"1px solid "+T.bg3}}>
               <span style={sTitle}>Recent Activity</span>
             </div>
             {activityFeed.length===0&&<div style={{...cPad,fontSize:13,color:T.ink3,fontStyle:"italic"}}>No activity logged yet</div>}
@@ -414,7 +414,7 @@ export function Dashboard({data,setData,onNavigate}) {
                       <span style={{fontWeight:600}}>{item.donorName}</span>
                       {" · "}<span style={{color:tc,fontWeight:600,textTransform:"capitalize"}}>{item.type}</span>
                     </div>
-                    {item.note&&<div style={{fontSize:11,color:T.ink3,marginTop:2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{item.note}</div>}
+                    {item.note&&<div className="dash-activity-note" style={{fontSize:11,color:T.ink3,marginTop:2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{item.note}</div>}
                   </div>
                   <div style={{fontSize:10,color:T.ink3,flexShrink:0,marginTop:2,whiteSpace:"nowrap"}}>{when}</div>
                 </div>

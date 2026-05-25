@@ -471,45 +471,23 @@ export default function Landing() {
                 </p>
               </div>
 
-              <div style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.09)", borderRadius: 16, overflow: "hidden" }}>
-                <div style={{ background: "rgba(255,255,255,0.04)", borderBottom: "1px solid rgba(255,255,255,0.07)", padding: "10px 16px", display: "flex", alignItems: "center", gap: 6 }}>
-                  <div style={{ width: 8, height: 8, borderRadius: "50%", background: "#ff6b6b" }} />
-                  <div style={{ width: 8, height: 8, borderRadius: "50%", background: "#ffd93d" }} />
-                  <div style={{ width: 8, height: 8, borderRadius: "50%", background: "#6bcb77" }} />
-                  <span style={{ fontSize: 11, color: "rgba(255,255,255,0.3)", marginLeft: "auto", marginRight: "auto" }}>Steward — CREO Arts</span>
-                </div>
-                <div style={{ padding: 16 }}>
-                  <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 8, marginBottom: 14 }}>
-                    {[
-                      { label: "YTD raised", value: "$84k", sub: "↑ 12%" },
-                      { label: "Donors", value: "247", sub: "↑ 18 mo" },
-                      { label: "Grants", value: "6", sub: "2 due" },
-                    ].map(s => (
-                      <div key={s.label} style={{ background: "rgba(255,255,255,0.05)", borderRadius: 8, padding: 10, border: "1px solid rgba(255,255,255,0.07)" }}>
-                        <div style={{ fontSize: 9, color: "rgba(255,255,255,0.35)", marginBottom: 4 }}>{s.label}</div>
-                        <div style={{ fontSize: 16, fontWeight: 500, color: T.white }}>{s.value}</div>
-                        <div style={{ fontSize: 9, color: T.green }}>{s.sub}</div>
-                      </div>
-                    ))}
+              <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                {[
+                  { icon: "ti-sparkles", label: "AI daily briefings", desc: "Who to call, what to say, and what's urgent — every morning." },
+                  { icon: "ti-users", label: "Donor pipeline", desc: "Kanban stages from Prospect to Major Gift, with AI nudges." },
+                  { icon: "ti-chart-bar", label: "Wealth scoring", desc: "Capacity tiers and churn risk scored on every relationship." },
+                  { icon: "ti-file-text", label: "Grant management", desc: "LOI drafts, deadline tracking, and funder strategy in one place." },
+                ].map(f => (
+                  <div key={f.label} style={{ display: "flex", alignItems: "center", gap: 14, background: "rgba(255,255,255,0.05)", borderRadius: 12, padding: "13px 16px", border: "1px solid rgba(255,255,255,0.08)" }}>
+                    <div style={{ width: 36, height: 36, borderRadius: 9, background: "rgba(16,185,129,0.18)", border: "1px solid rgba(16,185,129,0.25)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                      <i className={`ti ${f.icon}`} style={{ fontSize: 16, color: T.green }} aria-hidden="true" />
+                    </div>
+                    <div>
+                      <div style={{ fontSize: 13, fontWeight: 700, color: T.white, marginBottom: 2 }}>{f.label}</div>
+                      <div style={{ fontSize: 12, color: "rgba(255,255,255,0.5)", lineHeight: 1.4 }}>{f.desc}</div>
+                    </div>
                   </div>
-                  <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 8 }}>
-                    {[
-                      { title: "Prospect", name: "Maria Chen", ai: "Call script ready" },
-                      { title: "Cultivate", name: "T. Okonkwo", ai: "High churn risk" },
-                      { title: "Steward", name: "R. Patel", ai: "Renewal due" },
-                    ].map(col => (
-                      <div key={col.title} style={{ background: "rgba(255,255,255,0.05)", borderRadius: 8, padding: 10, border: "1px solid rgba(255,255,255,0.07)" }}>
-                        <div style={{ fontSize: 8, color: "rgba(255,255,255,0.3)", textTransform: "uppercase", letterSpacing: ".5px", marginBottom: 8 }}>{col.title}</div>
-                        <div style={{ background: "rgba(255,255,255,0.04)", borderRadius: 6, padding: "7px 8px", border: "1px solid rgba(255,255,255,0.06)" }}>
-                          <div style={{ fontSize: 10, fontWeight: 500, color: T.white, marginBottom: 2 }}>{col.name}</div>
-                          <div style={{ display: "inline-flex", alignItems: "center", gap: 3, background: "rgba(16,185,129,0.15)", color: T.green, fontSize: 8, padding: "2px 6px", borderRadius: 8 }}>
-                            <i className="ti ti-sparkles" style={{ fontSize: 8 }} aria-hidden="true" /> {col.ai}
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
+                ))}
               </div>
             </div>
           </div>
