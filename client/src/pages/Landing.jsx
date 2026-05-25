@@ -261,6 +261,7 @@ export default function Landing() {
         .footer-a:hover { opacity: 0.5; }
         .pill-btn:hover { background: ${T.cream2} !important; }
         .quote-card:hover { box-shadow: 0 4px 24px rgba(0,0,0,0.07) !important; }
+        @keyframes pulse-dot { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.5; transform: scale(0.75); } }
         @media (max-width: 768px) {
           .hero-grid { grid-template-columns: 1fr !important; }
           .h1-hero { font-size: 42px !important; }
@@ -326,11 +327,20 @@ export default function Landing() {
         <section style={{ padding: "90px 48px 80px", maxWidth: 1200, margin: "0 auto" }}>
           <div data-reveal style={{ marginBottom: 52 }}>
             <span style={{
-              display: "inline-flex", alignItems: "center", gap: 7,
-              fontSize: 13, color: T.ink3, border: `1px solid ${T.cream3}`,
-              background: T.cream2, padding: "5px 14px", borderRadius: 20,
+              display: "inline-flex", alignItems: "center", gap: 10,
+              fontSize: 15, color: T.ink,
+              fontFamily: "'DM Serif Display',serif", fontStyle: "italic",
+              border: `1.5px solid ${T.greenDark}`,
+              background: T.cream,
+              padding: "9px 24px", borderRadius: 99,
+              letterSpacing: "0.02em",
+              boxShadow: `0 1px 8px rgba(26,107,74,0.10)`,
             }}>
-              <span style={{ width: 6, height: 6, borderRadius: "50%", background: T.greenDark, display: "inline-block" }} />
+              <span style={{
+                width: 7, height: 7, borderRadius: "50%",
+                background: T.greenDark, display: "inline-block", flexShrink: 0,
+                animation: "pulse-dot 2s ease-in-out infinite",
+              }} />
               For nonprofits · churches · mission-driven orgs
             </span>
           </div>
