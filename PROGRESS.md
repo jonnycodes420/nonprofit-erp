@@ -8,6 +8,42 @@
 
 ---
 
+## Onboarding & Auth (2026-05-25)
+
+### Blank-slate signup flow
+New orgs receive zero sample data. `seedOrgData()` in db.js now seeds only:
+1. Standard 26-account nonprofit chart of accounts (assets/liabilities/net assets/revenue/expense)
+2. One "General Operating" unrestricted fund in `fin_funds`
+
+No fake donors, grants, volunteers, tasks, or financials are created for any new org.
+
+### 3-step WelcomePage
+**File:** `client/src/pages/WelcomePage.jsx`
+
+Replaced the 5-question quiz + AI recommendation flow with a clean 3-step onboarding:
+- **Step 0:** Single question — "What will you focus on first?" (Donor Management / Grant Tracking / Financial Management / All of the above). One radio selector, one CTA.
+- **Step 1:** Animated setup progress — calls `POST /onboarding/complete` in parallel with a 4-item checklist animation. Items tick off as the API works. Auto-advances when both finish.
+- **Step 2:** "You're all set!" summary — lists what was configured, CTA navigates to `/dashboard`.
+
+Bug fixed: previous finish() navigated to `"/"` (landing); now correctly navigates to `"/dashboard"`.
+
+### RequireOnboarded guard
+**File:** `client/src/main.jsx`
+
+Fixed: `RequireOnboarded` now checks `auth.org?.onboarding_complete` and redirects to `/welcome` if falsy. Previously it was a pass-through that only checked for auth.
+
+### InvitePage dark theme
+**File:** `client/src/pages/InvitePage.jsx`
+
+Updated from light theme (#fafaf9/white card) to dark theme matching login/signup pages (#030712 background, #111827 card, #0d1117 inputs). Same functionality, consistent visual identity.
+
+### Org_id scoping fix
+**File:** `server.js`
+
+`calcWealthScore()` now scopes `gifts` and `interactions` queries by both `donor_id AND org_id`. Previously these subqueries only filtered by `donor_id`. Also scoped the `UPDATE donors SET wealth_score...` by `AND org_id=?`.
+
+---
+
 ## Features built
 
 ### Dashboard

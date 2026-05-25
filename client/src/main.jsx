@@ -55,7 +55,7 @@ function RequireAuth({ children }) {
 function RequireOnboarded({ children }) {
   const { auth } = useAuth();
   if (!auth) return <Navigate to="/login" replace />;
-  console.log('REQUIRE ONBOARDED AUTH:', JSON.stringify(auth));
+  if (!auth.org?.onboarding_complete) return <Navigate to="/welcome" replace />;
   return children;
 }
 

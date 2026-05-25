@@ -35,7 +35,7 @@
 - /client/src/pages/Landing.jsx — public landing page (relational copy, mobile responsive)
 - /client/src/pages/LoginPage.jsx — login, writes localStorage directly
 - /client/src/pages/SignupPage.jsx — signup
-- /client/src/pages/WelcomePage.jsx — onboarding wizard
+- /client/src/pages/WelcomePage.jsx — 3-step onboarding (focus select → animated setup → launch)
 - /client/src/pages/GivePage.jsx — public donation page at /give/:orgSlug
 - /client/src/api.js — apiFetch, streamAI, adaptData helpers
 - /server.js — Express backend (all routes)
@@ -74,6 +74,15 @@ Mobile "More" drawer: communications, volunteers, board, tasks, settings
 - LoginPage uses hardcoded fetch() to Railway URL, not apiFetch
 - onboarding_complete comes back as 1 (number) not true (boolean)
 - After login: window.location.href = "/dashboard"
+- RequireOnboarded guard in main.jsx checks both auth AND onboarding_complete; redirects to /welcome if onboarding_complete is 0
+
+## Onboarding flow (IMPORTANT)
+- Signup → /welcome (RequireAuth, not RequireOnboarded)
+- WelcomePage: 3 steps — Step 0: focus selection (donors/grants/finance/all); Step 1: animated setup (calls POST /onboarding/complete); Step 2: launch
+- POST /onboarding/complete calls seedOrgData(orgId) then sets onboarding_complete=1
+- seedOrgData seeds ONLY structural data: 26-account chart of accounts + one General Operating fund (no fake donors/grants/financials)
+- New orgs get a true blank slate — no sample data
+- InvitePage: dark theme; invited staff land on /dashboard (org already onboarded)
 
 ## Database — key tables and columns
 ### donors
@@ -105,7 +114,7 @@ Mobile "More" drawer: communications, volunteers, board, tasks, settings
 - Resend domain verified: stewardapp.dev, sends from noreply@stewardapp.dev
 
 ## What's built
-- Auth + onboarding wizard
+- Auth + 3-step onboarding (blank slate — chart of accounts + General Operating fund only)
 - Dashboard — hero stat cards, AI daily briefing (pull quote + expandable), donor pipeline snapshot, lapsed donor alert, grant deadlines, recent giving, online gifts (Stripe), quick actions, tasks this week, activity feed
 - Donors — Kanban pipeline, CSV import, AI features, editing, interaction timeline (dynamic templates by type: Call/Meeting/Email/Event/Gift/Other), auto follow-up task on touchpoint save, wealth score card (5-component scoring, DB columns, recalculate button)
 - Grants — CRUD, AI strategy, LOI drafting, grant discovery (FindGrants merged into Grants tab)
@@ -133,3 +142,8 @@ Mobile "More" drawer: communications, volunteers, board, tasks, settings
 1. Email deliverability — confirm Resend DNS (SPF/DKIM) fully propagated for stewardapp.dev
 2. Stripe live mode — currently test keys; need production Stripe account approval
 3. Custom domain final — confirm stewardapp.dev routes correctly on all paths
+
+## Org_id scoping (security)
+- All donor/grant/task/volunteer/board endpoints use AND org_id = ? on SELECT, UPDATE, DELETE
+- calcWealthScore scopes gifts and interactions queries by both donor_id AND org_id
+- Stripe webhook looks up org by stripe_account_id (per-org), then inserts scoped records

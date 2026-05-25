@@ -165,8 +165,8 @@ async function calcWealthScore(donorId, orgId) {
   try {
     const [donorRows, gifts, interactions] = await Promise.all([
       query("SELECT * FROM donors WHERE id = ? AND org_id = ?", [donorId, orgId]),
-      query("SELECT amount FROM gifts WHERE donor_id = ? ORDER BY date DESC", [donorId]),
-      query("SELECT type, note FROM interactions WHERE donor_id = ? ORDER BY date DESC", [donorId]),
+      query("SELECT amount FROM gifts WHERE donor_id = ? AND org_id = ? ORDER BY date DESC", [donorId, orgId]),
+      query("SELECT type, note FROM interactions WHERE donor_id = ? AND org_id = ? ORDER BY date DESC", [donorId, orgId]),
     ]);
     if (!donorRows.length) return null;
     const d = donorRows[0];
@@ -246,8 +246,8 @@ Data: ${d.name} | Total giving: $${total.toLocaleString()} | ${gc} gifts avg $${
     }
 
     await run(
-      "UPDATE donors SET wealth_score=?,capacity_tier=?,score_confidence=?,score_last_updated=NOW(),score_rationale=? WHERE id=?",
-      [finalScore, capacityTier, confidence, rationale, donorId]
+      "UPDATE donors SET wealth_score=?,capacity_tier=?,score_confidence=?,score_last_updated=NOW(),score_rationale=? WHERE id=? AND org_id=?",
+      [finalScore, capacityTier, confidence, rationale, donorId, orgId]
     );
     return { wealthScore: finalScore, capacityTier, scoreConfidence: confidence, scoreRationale: rationale };
   } catch(e) {
@@ -325,9 +325,7 @@ app.get("/me", requireAuth, wrap(async (req, res) => {
 
 // ── Onboarding ─────────────────────────────────────────────────────────────
 app.post("/onboarding/complete", requireAuth, wrap(async (req, res) => {
-  const { answers } = req.body;
-  if (!answers) return res.status(400).json({ error: "answers required" });
-  await seedOrgData(req.user.orgId, answers);
+  await seedOrgData(req.user.orgId);
   await run("UPDATE orgs SET onboarding_complete = 1 WHERE id = ?", [req.user.orgId]);
   res.json({ success: true });
 }));
