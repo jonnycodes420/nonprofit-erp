@@ -32,27 +32,38 @@ app.post("/stripe/webhook", express.raw({ type: "application/json" }), async (re
       const email = pi.receipt_email || pi.metadata?.donor_email;
       const amount = pi.amount_received / 100;
       const accountId = event.account;
+      const campaignId = pi.metadata?.campaign_id || null;
+      const donorName = pi.metadata?.donor_name || "";
 
       if (email && accountId) {
         const orgRow = await query("SELECT id FROM orgs WHERE stripe_account_id=$1", [accountId]);
         if (orgRow.length) {
           const orgId = orgRow[0].id;
-          const donorRow = await query("SELECT id FROM donors WHERE org_id=$1 AND email ILIKE $2", [orgId, email]);
+          let donorRow = await query("SELECT id FROM donors WHERE org_id=$1 AND email ILIKE $2", [orgId, email]);
+          if (!donorRow.length && donorName) {
+            const newDonorId = "d_" + uuid().slice(0, 8);
+            await run(
+              `INSERT INTO donors (id, org_id, name, email, status, stage, total_giving, gift_count)
+               VALUES ($1,$2,$3,$4,'new','cultivate',0,0)`,
+              [newDonorId, orgId, donorName, email.toLowerCase()]
+            );
+            donorRow = [{ id: newDonorId }];
+          }
           if (donorRow.length) {
             const donorId = donorRow[0].id;
             const giftId = "g_" + uuid().slice(0, 8);
             const today = new Date().toISOString().slice(0, 10);
             await run(
-              `INSERT INTO gifts (id, org_id, donor_id, amount, date, notes, stripe_payment_id)
-               VALUES ($1,$2,$3,$4,$5,$6,$7)`,
-              [giftId, orgId, donorId, amount, today, "Online payment via Stripe", pi.id]
+              `INSERT INTO gifts (id, org_id, donor_id, amount, date, notes, stripe_payment_id, campaign_id)
+               VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+              [giftId, orgId, donorId, amount, today, "Online payment via Stripe", pi.id, campaignId]
             );
             await run(
               `UPDATE donors SET
-                 total = total + $1,
-                 gifts = gifts + 1,
-                 last_gift = GREATEST(last_gift::date, $2::date)::text,
-                 last_amount = CASE WHEN ($2::date >= COALESCE(last_gift,'0001-01-01')::date) THEN $3 ELSE last_amount END
+                 total_giving = total_giving + $1,
+                 gift_count = gift_count + 1,
+                 last_gift_date = GREATEST(COALESCE(last_gift_date,'0001-01-01')::date, $2::date)::text,
+                 last_gift_amount = CASE WHEN ($2::date >= COALESCE(last_gift_date,'0001-01-01')::date) THEN $3 ELSE last_gift_amount END
                WHERE id = $4`,
               [amount, today, amount, donorId]
             );
@@ -60,7 +71,44 @@ app.post("/stripe/webhook", express.raw({ type: "application/json" }), async (re
             await run(
               `INSERT INTO tasks (id, org_id, title, priority, done, created_at)
                VALUES ($1,$2,$3,$4,$5,NOW())`,
-              [taskId, orgId, `Thank ${email} for online gift of $${amount}`, "high", false]
+              [taskId, orgId, `Thank ${donorName || email} for online gift of $${amount}`, "high", false]
+            );
+          }
+        }
+      }
+    }
+
+    if (event.type === "checkout.session.completed") {
+      const session = event.data.object;
+      if (session.mode === "subscription") {
+        const email = session.customer_email || session.customer_details?.email;
+        const accountId = event.account;
+        if (email && accountId) {
+          const orgRow = await query("SELECT id FROM orgs WHERE stripe_account_id=$1", [accountId]);
+          if (orgRow.length) {
+            const orgId = orgRow[0].id;
+            const donorName = session.metadata?.donor_name || email;
+            let donorRow = await query("SELECT id FROM donors WHERE org_id=$1 AND email ILIKE $2", [orgId, email]);
+            let donorId;
+            if (donorRow.length) {
+              donorId = donorRow[0].id;
+            } else {
+              donorId = "d_" + uuid().slice(0, 8);
+              await run(
+                `INSERT INTO donors (id, org_id, name, email, status, stage, total_giving, gift_count)
+                 VALUES ($1,$2,$3,$4,'new','cultivate',0,0)`,
+                [donorId, orgId, donorName, email.toLowerCase()]
+              );
+            }
+            const frequency = session.metadata?.frequency || "monthly";
+            await run(
+              `UPDATE donors SET stripe_subscription_id=$1, stripe_subscription_status='active' WHERE id=$2`,
+              [session.subscription, donorId]
+            );
+            const taskId = "t_" + uuid().slice(0, 8);
+            await run(
+              `INSERT INTO tasks (id, org_id, title, priority, done, created_at) VALUES ($1,$2,$3,'high',false,NOW())`,
+              [taskId, orgId, `Thank ${donorName} for starting ${frequency} giving`]
             );
           }
         }
@@ -240,8 +288,9 @@ app.post("/auth/register", wrap(async (req, res) => {
 
   const orgId = "org_" + uuid().slice(0, 8);
   const userId = "user_" + uuid().slice(0, 8);
-  await run("INSERT INTO orgs (id, name, mission, ein, onboarding_complete) VALUES (?,?,?,?,0)",
-    [orgId, orgName, orgMission || "", ein || ""]);
+  const orgSlug = orgName.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") + "-" + orgId.slice(4, 10);
+  await run("INSERT INTO orgs (id, name, mission, ein, onboarding_complete, org_slug) VALUES (?,?,?,?,0,?)",
+    [orgId, orgName, orgMission || "", ein || "", orgSlug]);
   const hash = bcrypt.hashSync(password, 12);
   await run("INSERT INTO users (id, org_id, email, password_hash, name, role) VALUES (?,?,?,?,?,?)",
     [userId, orgId, email.toLowerCase(), hash, name || email, "admin"]);
@@ -1499,6 +1548,118 @@ app.get("/stripe/status", requireAuth, wrap(async (req, res) => {
     accountId: org?.stripe_account_id || null,
     connectedAt: org?.stripe_connected_at || null,
   });
+}));
+
+// ── Public donation page ───────────────────────────────────────────────────
+app.get("/org/:orgSlug/public", wrap(async (req, res) => {
+  const orgs = await query(
+    "SELECT id, name, mission FROM orgs WHERE org_slug = $1",
+    [req.params.orgSlug]
+  );
+  if (!orgs.length) return res.status(404).json({ error: "Organization not found" });
+  const org = orgs[0];
+  const funds = await query("SELECT id, name, restricted FROM fin_funds WHERE org_id = $1 ORDER BY name ASC", [org.id]);
+  res.json({ org: { name: org.name, mission: org.mission, slug: req.params.orgSlug }, funds });
+}));
+
+app.post("/donate/:orgSlug", wrap(async (req, res) => {
+  if (!stripe) return res.status(503).json({ error: "Stripe not configured" });
+  const { amount, fundId, frequency, firstName, lastName, email, campaignId } = req.body;
+  if (!amount || !firstName || !lastName || !email) return res.status(400).json({ error: "All fields required" });
+
+  const orgs = await query(
+    "SELECT id, name, stripe_account_id, stripe_connected FROM orgs WHERE org_slug = $1",
+    [req.params.orgSlug]
+  );
+  if (!orgs.length) return res.status(404).json({ error: "Organization not found" });
+  const org = orgs[0];
+  if (!org.stripe_connected || !org.stripe_account_id) {
+    return res.status(400).json({ error: "This organization is not set up to accept online donations yet." });
+  }
+
+  const amountCents = Math.round(parseFloat(amount) * 100);
+  if (amountCents < 100) return res.status(400).json({ error: "Minimum donation is $1" });
+
+  const donorName = `${firstName} ${lastName}`.trim();
+  const isRecurring = frequency === "monthly" || frequency === "annual";
+  const rawFrontendUrl = process.env.FRONTEND_URL || "https://client-five-tau-13.vercel.app";
+  const frontendUrl = rawFrontendUrl.replace(/^http:\/\//i, "https://");
+
+  let fundName = "";
+  if (fundId) {
+    const fundRow = await query("SELECT name FROM fin_funds WHERE id=$1 AND org_id=$2", [fundId, org.id]);
+    if (fundRow.length) fundName = fundRow[0].name;
+  }
+
+  const productName = `Donation to ${org.name}${fundName ? ` — ${fundName}` : ""}`;
+  const metadata = {
+    donor_email: email,
+    donor_name: donorName,
+    fund_id: fundId || "",
+    frequency,
+    campaign_id: campaignId || "",
+    org_id: org.id,
+  };
+
+  const sessionParams = {
+    payment_method_types: ["card"],
+    mode: isRecurring ? "subscription" : "payment",
+    customer_email: email,
+    line_items: [{
+      price_data: {
+        currency: "usd",
+        product_data: { name: productName },
+        unit_amount: amountCents,
+        ...(isRecurring && { recurring: { interval: frequency === "annual" ? "year" : "month" } }),
+      },
+      quantity: 1,
+    }],
+    metadata,
+    success_url: `${frontendUrl}/give/${req.params.orgSlug}?donated=true`,
+    cancel_url: `${frontendUrl}/give/${req.params.orgSlug}`,
+    ...(isRecurring
+      ? { subscription_data: { metadata } }
+      : { payment_intent_data: { receipt_email: email, metadata } }
+    ),
+  };
+
+  const session = await stripe.checkout.sessions.create(sessionParams, {
+    stripeAccount: org.stripe_account_id,
+  });
+  res.json({ url: session.url });
+}));
+
+// ── Campaign donation link ─────────────────────────────────────────────────
+app.post("/stripe/campaign-link", requireAuth, wrap(async (req, res) => {
+  if (!stripe) return res.status(503).json({ error: "Stripe not configured" });
+  const { campaignId, campaignName } = req.body;
+
+  const orgRow = await query(
+    "SELECT stripe_account_id, stripe_connected, name FROM orgs WHERE id=$1",
+    [req.user.orgId]
+  );
+  const org = orgRow[0];
+  if (!org?.stripe_connected || !org.stripe_account_id) {
+    return res.status(400).json({ error: "Connect Stripe in Settings before generating donation links." });
+  }
+
+  const stripeOpts = { stripeAccount: org.stripe_account_id };
+  const product = await stripe.products.create(
+    { name: `Donation to ${org.name}${campaignName ? ` — ${campaignName}` : ""}` },
+    stripeOpts
+  );
+  const price = await stripe.prices.create(
+    { currency: "usd", product: product.id, custom_unit_amount: { enabled: true } },
+    stripeOpts
+  );
+  const link = await stripe.paymentLinks.create(
+    {
+      line_items: [{ price: price.id, quantity: 1 }],
+      payment_intent_data: { metadata: { campaign_id: campaignId || "", org_id: req.user.orgId } },
+    },
+    stripeOpts
+  );
+  res.json({ url: link.url });
 }));
 
 app.get("/stripe/online-gifts", requireAuth, wrap(async (req, res) => {

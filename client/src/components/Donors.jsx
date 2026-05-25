@@ -505,8 +505,124 @@ function EditDonorModal({donor,onSave,onClose}){
   );
 }
 
+// ── Gift Link Modal ────────────────────────────────────────────────────────
+function GiftLinkModal({donor,orgName,onClose}){
+  const[url,setUrl]=useState("");
+  const[loading,setLoading]=useState(true);
+  const[err,setErr]=useState("");
+  const[copied,setCopied]=useState(false);
+  const[showEmail,setShowEmail]=useState(false);
+  const[emailSubject,setEmailSubject]=useState(`A quick way to give to ${orgName}`);
+  const[emailBody,setEmailBody]=useState(
+    `<p>Hi ${donor.name.split(" ")[0]},</p>\n<p>Thank you so much for your continued support of ${orgName}. Your generosity makes our work possible.</p>\n<p>If you'd like to make a gift online, we've made it simple:</p>\n<p><a href="PAYMENT_LINK">Give now →</a></p>\n<p>It only takes a moment, and every gift goes directly to our programs. Thank you for everything you do for our mission.</p>\n<p>With gratitude,<br>The ${orgName} Team</p>`
+  );
+  const[sending,setSending]=useState(false);
+  const[sent,setSent]=useState(false);
+  const[sendErr,setSendErr]=useState("");
+
+  useEffect(()=>{
+    apiFetch("/stripe/donation-page",{method:"POST",body:JSON.stringify({donorName:donor.name,donorEmail:donor.email})})
+      .then(r=>{setUrl(r.url);setEmailBody(b=>b.replace("PAYMENT_LINK",r.url));})
+      .catch(e=>setErr(e.message||"Could not create payment link"))
+      .finally(()=>setLoading(false));
+  },[]);
+
+  const copyLink=()=>{
+    if(!url)return;
+    navigator.clipboard.writeText(url).then(()=>{setCopied(true);setTimeout(()=>setCopied(false),2500);});
+  };
+
+  const sendEmail=async()=>{
+    if(!donor.email){setSendErr("This donor has no email address.");return;}
+    setSending(true);setSendErr("");
+    try{
+      const seg={mode:"manual",donorIds:[donor.id]};
+      const created=await apiFetch("/campaigns",{method:"POST",body:JSON.stringify({
+        name:`Gift request — ${donor.name}`,subject:emailSubject,body:emailBody,segment:seg,status:"draft"
+      })});
+      await apiFetch(`/campaigns/${created.id}/send`,{method:"POST"});
+      setSent(true);
+    }catch(e){setSendErr(e.message||"Failed to send email");}
+    setSending(false);
+  };
+
+  const inp={width:"100%",boxSizing:"border-box",background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"9px 12px",color:T.ink,fontSize:13,outline:"none",fontFamily:"inherit"};
+
+  return(
+    <div style={{position:"fixed",inset:0,background:"#000000cc",zIndex:500,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+      <div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:18,width:"100%",maxWidth:480,padding:24,boxShadow:"0 8px 40px rgba(0,0,0,0.18)"}}>
+        {!showEmail?(
+          <>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
+              <div>
+                <div style={{fontSize:16,fontWeight:800,color:T.ink}}>Request Gift</div>
+                <div style={{fontSize:12,color:T.ink3,marginTop:2}}>For {donor.name}</div>
+              </div>
+              <button onClick={onClose} style={{background:"none",border:"none",fontSize:20,cursor:"pointer",color:T.ink3}}>×</button>
+            </div>
+            {loading&&<div style={{padding:"24px 0",textAlign:"center",color:T.ink3,fontSize:13}}>Generating payment link…</div>}
+            {err&&<div style={{color:"#dc2626",fontSize:13,background:"#fef2f2",border:"1px solid #fecaca",borderRadius:8,padding:"10px 12px",marginBottom:14}}>{err}</div>}
+            {url&&!loading&&(
+              <>
+                <div style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:10,padding:"10px 14px",fontSize:12,color:T.ink3,wordBreak:"break-all",lineHeight:1.5,marginBottom:16}}>{url}</div>
+                <div style={{display:"flex",gap:10}}>
+                  <button onClick={copyLink} style={{flex:1,background:copied?T.greenDk:T.bg,border:"1px solid "+(copied?T.greenDk:T.bg3),borderRadius:10,padding:"11px",color:copied?"#fff":T.ink2,fontSize:13,fontWeight:700,cursor:"pointer",transition:"all 0.15s"}}>
+                    {copied?"✓ Copied!":"Copy Link"}
+                  </button>
+                  {donor.email&&<button onClick={()=>setShowEmail(true)} style={{flex:1,background:T.greenDk,border:"none",borderRadius:10,padding:"11px",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer"}}>
+                    ✉ Send via Email
+                  </button>}
+                </div>
+              </>
+            )}
+          </>
+        ):(
+          <>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
+              <div>
+                <div style={{fontSize:16,fontWeight:800,color:T.ink}}>Send via Email</div>
+                <div style={{fontSize:12,color:T.ink3,marginTop:2}}>To: {donor.email}</div>
+              </div>
+              <button onClick={()=>setShowEmail(false)} style={{background:"none",border:"none",fontSize:13,cursor:"pointer",color:T.ink3}}>← Back</button>
+            </div>
+            {sent?(
+              <div style={{textAlign:"center",padding:"20px 0"}}>
+                <div style={{fontSize:28,marginBottom:10}}>✓</div>
+                <div style={{fontSize:15,fontWeight:700,color:T.ink,marginBottom:6}}>Email sent!</div>
+                <div style={{fontSize:13,color:T.ink3,marginBottom:20}}>Your message to {donor.name} has been sent.</div>
+                <button onClick={onClose} style={{background:T.greenDk,border:"none",borderRadius:10,padding:"11px 24px",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer"}}>Done</button>
+              </div>
+            ):(
+              <>
+                <div style={{display:"flex",flexDirection:"column",gap:12,marginBottom:16}}>
+                  <div>
+                    <div style={{fontSize:11,fontWeight:700,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:5}}>Subject</div>
+                    <input value={emailSubject} onChange={e=>setEmailSubject(e.target.value)} style={inp}/>
+                  </div>
+                  <div>
+                    <div style={{fontSize:11,fontWeight:700,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:5}}>Message</div>
+                    <textarea value={emailBody} onChange={e=>setEmailBody(e.target.value)} rows={8}
+                      style={{...inp,resize:"vertical",lineHeight:1.55,fontSize:12}}/>
+                  </div>
+                </div>
+                {sendErr&&<div style={{color:"#dc2626",fontSize:13,background:"#fef2f2",border:"1px solid #fecaca",borderRadius:8,padding:"8px 12px",marginBottom:12}}>{sendErr}</div>}
+                <div style={{display:"flex",gap:8}}>
+                  <button onClick={sendEmail} disabled={sending} style={{flex:1,background:sending?T.bg3:T.greenDk,border:"none",borderRadius:10,padding:"11px",color:"#fff",fontSize:13,fontWeight:700,cursor:sending?"not-allowed":"pointer"}}>
+                    {sending?"Sending…":"Send Email"}
+                  </button>
+                  <button onClick={()=>setShowEmail(false)} style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:10,padding:"11px 14px",color:T.ink3,fontSize:13,cursor:"pointer"}}>Cancel</button>
+                </div>
+              </>
+            )}
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ── Donor Profile ──────────────────────────────────────────────────────────
-function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loadingKey,getAI,isAdmin,onEdit,onDelete,tasks=[],onTaskToggle}){
+function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loadingKey,getAI,isAdmin,onEdit,onDelete,tasks=[],onTaskToggle,orgName=""}){
   const [gifts,setGifts]=useState([]);
   const [giftLoading,setGiftLoading]=useState(true);
   const [localScore,setLocalScore]=useState(donor.wealthScore??null);
@@ -527,21 +643,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
     setScoreLoading(false);
   };
 
-  const [giftLinkLoading,setGiftLinkLoading]=useState(false);
-  const [giftLinkToast,setGiftLinkToast]=useState("");
-
-  const requestGift=async()=>{
-    setGiftLinkLoading(true);
-    try{
-      const r=await apiFetch("/stripe/donation-page",{method:"POST",body:JSON.stringify({donorName:donor.name,donorEmail:donor.email})});
-      await navigator.clipboard.writeText(r.url);
-      setGiftLinkToast("Payment link copied!");
-      setTimeout(()=>setGiftLinkToast(""),3000);
-    }catch(e){
-      setGiftLinkToast(e.message||"Failed to create payment link");
-      setTimeout(()=>setGiftLinkToast(""),4000);
-    }finally{setGiftLinkLoading(false);}
-  };
+  const [showGiftModal,setShowGiftModal]=useState(false);
 
   const stage=STAGES.find(s=>s.id===(donor.stage||"cultivate"))||STAGES[2];
   const sc=donorScore(donor);const scoreColor=sc>70?"#1a6b4a":sc>45?"#f59e0b":"#ef4444";
@@ -564,6 +666,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
 
   return(
     <div className="fade-in" style={{position:"fixed",inset:0,background:T.bg,zIndex:200,display:"flex",flexDirection:"column",overflow:"hidden"}}>
+      {showGiftModal&&<GiftLinkModal donor={donor} orgName={orgName} onClose={()=>setShowGiftModal(false)}/>}
       <div style={{background:T.white,borderBottom:"1px solid "+T.bg3,padding:"10px 24px",display:"flex",alignItems:"center",gap:12,flexShrink:0}}>
         <button onClick={onClose} style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"7px 14px",color:T.ink3,fontSize:13,cursor:"pointer",whiteSpace:"nowrap"}}>← Back</button>
         <div style={{width:34,height:34,borderRadius:"50%",background:stage.color+"33",display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,fontWeight:800,color:stage.color,flexShrink:0}}>{donor.name[0]}</div>
@@ -576,9 +679,8 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
           <div style={{fontSize:11,color:T.ink3,marginTop:2}}>{fmtFull(donor.total)} lifetime · {donor.gifts} gifts</div>
         </div>
         <div style={{display:"flex",gap:6,flexShrink:0,alignItems:"center"}}>
-          {giftLinkToast&&<span style={{fontSize:12,color:giftLinkToast.includes("copied")?"#1a6b4a":"#ef4444",fontWeight:600,transition:"opacity 0.3s"}}>{giftLinkToast}</span>}
-          <button onClick={requestGift} disabled={giftLinkLoading} style={{background:T.green,border:"none",borderRadius:8,padding:"7px 14px",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer",opacity:giftLinkLoading?0.6:1}}>
-            {giftLinkLoading?"…":"💳 Request Gift"}
+          <button onClick={()=>setShowGiftModal(true)} style={{background:T.green,border:"none",borderRadius:8,padding:"7px 14px",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer"}}>
+            💳 Request Gift
           </button>
           <button onClick={onEdit} style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"7px 14px",color:T.ink3,fontSize:13,cursor:"pointer"}}>Edit</button>
           {isAdmin&&<button onClick={()=>onDelete(donor.id)} style={{background:"transparent",border:"1px solid #ef444455",borderRadius:8,padding:"7px 14px",color:"#ef4444",fontSize:13,cursor:"pointer"}}>Delete</button>}
@@ -643,6 +745,15 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
 
         {/* RIGHT */}
         <div style={{overflowY:"auto",padding:"22px 24px 24px 20px",display:"flex",flexDirection:"column",gap:18}}>
+          {donor.stripeSubscriptionStatus==="active"&&(
+            <div style={{background:"#10b98110",border:"1px solid #10b98130",borderRadius:12,padding:"12px 14px",display:"flex",alignItems:"center",gap:8}}>
+              <span style={{fontSize:16}}>🔁</span>
+              <div>
+                <div style={{fontSize:12,fontWeight:700,color:"#1a6b4a"}}>Recurring Donor</div>
+                <div style={{fontSize:11,color:"#15803d",marginTop:1}}>Active {donor.stripeSubscriptionId?"subscription":"recurring gift"}</div>
+              </div>
+            </div>
+          )}
           <div>
             <div style={{fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.1em",color:T.ink3,marginBottom:8}}>Move Stage</div>
             <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
@@ -1111,7 +1222,8 @@ export function Donors({data,setData}){
         onStageChange={moveToStage} onLogTouchpoint={()=>{setLogTarget(selected);}}
         aiMap={aiMap} loadingKey={loadingKey} getAI={getAI}
         isAdmin={isAdmin} onEdit={()=>setEditTarget(selected)} onDelete={deleteDonor}
-        tasks={data.tasks.filter(t=>t.donorId===selected.id)} onTaskToggle={toggleTask}/>}
+        tasks={data.tasks.filter(t=>t.donorId===selected.id)} onTaskToggle={toggleTask}
+        orgName={data.org?.name||""}/>}
 
       <div style={{display:"flex",gap:10,flexWrap:"wrap",alignItems:"center"}}>
         <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search donors…" style={{flex:1,minWidth:160,background:T.bg,border:"1px solid "+T.bg3,borderRadius:10,padding:"10px 14px",color:T.ink,fontSize:13,outline:"none"}}/>

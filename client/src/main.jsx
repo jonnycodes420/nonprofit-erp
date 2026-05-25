@@ -8,6 +8,7 @@ import WelcomePage from "./pages/WelcomePage";
 import InvitePage from "./pages/InvitePage";
 import App from "./App";
 import Landing from "./pages/Landing";
+import Donate from "./pages/Donate";
 
 const AuthCtx = createContext(null);
 export const useAuth = () => useContext(AuthCtx);
@@ -73,6 +74,7 @@ function Root() {
           <Route path="/welcome"   element={<RequireAuth><WelcomePage /></RequireAuth>} />
           <Route path="/dashboard" element={<RequireOnboarded><App /></RequireOnboarded>} />
           <Route path="/invite/:token" element={<InvitePage />} />
+          <Route path="/give/:orgSlug" element={<Donate />} />
           <Route path="*"          element={<Navigate to="/" replace />} />
         </Routes>
       </BrowserRouter>

@@ -237,6 +237,34 @@ function BarChart({ data }) {
   );
 }
 
+// ── Campaign donation link copy button ────────────────────────────────────────
+function CampaignLinkBtn({ campaignId, campaignName }) {
+  const [loading, setLoading] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const generate = async (e) => {
+    e.stopPropagation();
+    setLoading(true);
+    try {
+      const r = await apiFetch("/stripe/campaign-link", {
+        method: "POST",
+        body: JSON.stringify({ campaignId, campaignName }),
+      });
+      await navigator.clipboard.writeText(r.url);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2500);
+    } catch (err) {
+      alert(err.message || "Connect Stripe in Settings to generate donation links.");
+    }
+    setLoading(false);
+  };
+  return (
+    <button onClick={generate} disabled={loading}
+      style={{ background: copied ? T.greenDk : T.greenDk + "14", border: "1px solid " + T.greenDk + "30", borderRadius: 8, padding: "8px 14px", color: copied ? "#fff" : T.greenDk, fontSize: 12, fontWeight: 700, cursor: loading ? "not-allowed" : "pointer", display: "flex", alignItems: "center", gap: 6 }}>
+      {loading ? <><Spin /> Generating…</> : copied ? "✓ Link copied!" : "💳 Copy Donation Link"}
+    </button>
+  );
+}
+
 // ── BLANK form ────────────────────────────────────────────────────────────────
 const BLANK = { name: "", subject: "", bodyHtml: "", seg: { mode: "all" }, scheduledAt: "" };
 
@@ -262,6 +290,7 @@ export function Communications({ data }) {
   const [showPreview, setShowPreview] = useState(false);
   const [aiLoading, setAiLoading]     = useState(false);
   const [aiDraft, setAiDraft]         = useState("");
+  const [linkLoading, setLinkLoading] = useState(false);
   const editorRef                     = useRef(null);
   const [editorKey, setEditorKey]     = useState(0);
 
@@ -394,6 +423,24 @@ export function Communications({ data }) {
     setAiLoading(false);
   };
 
+  const addDonationLink = async () => {
+    setLinkLoading(true);
+    try {
+      const r = await apiFetch("/stripe/campaign-link", {
+        method: "POST",
+        body: JSON.stringify({ campaignId: editingId || "", campaignName: form.name }),
+      });
+      if (editorRef.current) {
+        editorRef.current.focus();
+        const linkHtml = `<p><a href="${r.url}" style="background:#1a6b4a;color:#fff;padding:10px 20px;border-radius:8px;text-decoration:none;font-weight:bold;display:inline-block">Give Now →</a></p>`;
+        document.execCommand("insertHTML", false, linkHtml);
+      }
+    } catch (e) {
+      alert(e.message || "Could not generate donation link. Make sure Stripe is connected in Settings.");
+    }
+    setLinkLoading(false);
+  };
+
   const applyAIDraft = () => {
     const lines = aiDraft.split("\n");
     const subjLine = lines.find(l => l.startsWith("Subject:"));
@@ -432,6 +479,10 @@ export function Communications({ data }) {
             <button onClick={draftAI} disabled={aiLoading}
               style={{ background: aiLoading ? T.bg3 : "#8b5cf614", border: "1px solid #8b5cf630", borderRadius: 8, padding: "8px 14px", color: aiLoading ? T.ink3 : "#8b5cf6", fontSize: 13, fontWeight: 700, cursor: aiLoading ? "not-allowed" : "pointer", display: "flex", alignItems: "center", gap: 6 }}>
               {aiLoading ? <><Spin /> Drafting…</> : "✦ AI Draft"}
+            </button>
+            <button onClick={addDonationLink} disabled={linkLoading}
+              style={{ background: linkLoading ? T.bg3 : T.greenDk + "14", border: "1px solid " + T.greenDk + "30", borderRadius: 8, padding: "8px 14px", color: linkLoading ? T.ink3 : T.greenDk, fontSize: 13, fontWeight: 700, cursor: linkLoading ? "not-allowed" : "pointer", display: "flex", alignItems: "center", gap: 6 }}>
+              {linkLoading ? <><Spin /> Generating…</> : "💳 Donation Link"}
             </button>
             <button onClick={() => setShowPreview(true)} style={S.btn("ghost")}>Preview</button>
             <button onClick={saveDraft} style={S.btn("subtle")}>Save Draft</button>
@@ -702,18 +753,17 @@ export function Communications({ data }) {
                               ))}
                             </div>
                           )}
-                          {/* Draft/scheduled actions */}
-                          {c.status !== "sent" && (
-                            <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
-                              <button onClick={() => openBuilder(c)} style={S.btn("subtle")}>Edit</button>
-                              {isAdmin && c.status !== "sending" && (
-                                <button onClick={() => sendNow(c.id)} disabled={sending}
-                                  style={{ ...S.btn("primary"), opacity: sending ? 0.6 : 1 }}>
-                                  {sending ? <><Spin /> Sending…</> : "↑ Send Now"}
-                                </button>
-                              )}
-                            </div>
-                          )}
+                          {/* Draft/scheduled/sent actions */}
+                          <div style={{ display: "flex", gap: 8, marginBottom: 14, flexWrap: "wrap" }}>
+                            {c.status !== "sent" && <button onClick={() => openBuilder(c)} style={S.btn("subtle")}>Edit</button>}
+                            {isAdmin && c.status !== "sending" && c.status !== "sent" && (
+                              <button onClick={() => sendNow(c.id)} disabled={sending}
+                                style={{ ...S.btn("primary"), opacity: sending ? 0.6 : 1 }}>
+                                {sending ? <><Spin /> Sending…</> : "↑ Send Now"}
+                              </button>
+                            )}
+                            <CampaignLinkBtn campaignId={c.id} campaignName={c.name} />
+                          </div>
                           {/* Recipient list */}
                           {recs.length > 0 && (
                             <div style={{ border: "1px solid " + T.bg3, borderRadius: 8, overflow: "hidden" }}>

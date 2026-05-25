@@ -290,6 +290,18 @@ async function initSchema() {
   await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS stripe_connected_at TIMESTAMPTZ`);
   await pool.query(`ALTER TABLE gifts ADD COLUMN IF NOT EXISTS stripe_payment_id TEXT`);
   await pool.query(`ALTER TABLE gifts ADD COLUMN IF NOT EXISTS stripe_payment_link TEXT`);
+  await pool.query(`ALTER TABLE gifts ADD COLUMN IF NOT EXISTS campaign_id TEXT`);
+
+  await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS org_slug TEXT`);
+  await pool.query(`ALTER TABLE donors ADD COLUMN IF NOT EXISTS stripe_subscription_id TEXT`);
+  await pool.query(`ALTER TABLE donors ADD COLUMN IF NOT EXISTS stripe_subscription_status TEXT`);
+
+  // Backfill slugs for existing orgs (safe to re-run)
+  await pool.query(`
+    UPDATE orgs
+    SET org_slug = REGEXP_REPLACE(LOWER(TRIM(name)), '[^a-z0-9]+', '-', 'g') || '-' || SUBSTRING(id FROM 5 FOR 6)
+    WHERE org_slug IS NULL
+  `);
 
   await pool.query(`ALTER TABLE grants ADD COLUMN IF NOT EXISTS description TEXT`);
   await pool.query(`ALTER TABLE grants ADD COLUMN IF NOT EXISTS requirements TEXT`);
