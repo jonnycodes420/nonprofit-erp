@@ -1550,6 +1550,12 @@ app.get("/stripe/status", requireAuth, wrap(async (req, res) => {
   });
 }));
 
+// ── Public org slug list (diagnostic) ─────────────────────────────────────
+app.get("/org/public-list", wrap(async (req, res) => {
+  const orgs = await query("SELECT id, name, org_slug FROM orgs ORDER BY name ASC");
+  res.json(orgs.map(o => ({ id: o.id, name: o.name, slug: o.org_slug, url: `/give/${o.org_slug}` })));
+}));
+
 // ── Public donation page ───────────────────────────────────────────────────
 app.get("/org/:orgSlug/public", wrap(async (req, res) => {
   const orgs = await query(
