@@ -109,6 +109,7 @@ export function moveUrgency(d) {
 // ── Global styles ──────────────────────────────────────────────────────────
 export function GlobalStyles() {
   return <style>{`
+    html,body{overflow-x:hidden;max-width:100vw;}
     *{box-sizing:border-box;-webkit-font-smoothing:antialiased;}
     ::-webkit-scrollbar{width:5px;height:5px;}
     ::-webkit-scrollbar-track{background:#f0ede6;}
@@ -146,16 +147,23 @@ export function GlobalStyles() {
     .mobile-more-signout{display:flex;align-items:center;gap:16px;width:100%;background:transparent;border:none;padding:16px 24px;color:#6b7280;font-family:'DM Sans',system-ui,sans-serif;font-size:16px;font-weight:400;cursor:pointer;text-align:left;}
 
     @media(max-width:768px){
+      /* Root overflow kill — nothing bleeds past viewport */
+      .app-root{overflow-x:hidden!important;max-width:100vw!important;}
+      .app-content{padding:20px 16px calc(68px + env(safe-area-inset-bottom,0px)) 16px!important;max-width:100%!important;overflow-x:hidden!important;}
+
       /* Navigation */
       .app-tabbar{display:none!important;}
       .app-signout{display:none!important;}
       .mobile-bottom-bar{display:flex!important;}
       .mobile-more-overlay{display:flex!important;}
-      .app-content{padding:20px 16px calc(68px + env(safe-area-inset-bottom,0px)) 16px!important;max-width:100%!important;}
 
-      /* Dashboard */
+      /* Dashboard stat cards: 2×2 */
       .dash-stat-grid{grid-template-columns:repeat(2,1fr)!important;}
+      /* Dashboard two-col layout: stack */
       .dash-main-grid{grid-template-columns:1fr!important;}
+      /* Dashboard pipeline snapshot: 3 cols (wraps to 2 rows) */
+      .dash-pipeline-grid{grid-template-columns:repeat(3,1fr)!important;}
+      /* Quick action buttons */
       .dash-quick-btn{min-height:64px!important;padding:12px 8px!important;}
 
       /* Donors toolbar */
@@ -164,17 +172,30 @@ export function GlobalStyles() {
       .donors-view-toggle{width:100%!important;}
       .donors-view-toggle button{flex:1!important;justify-content:center!important;}
 
-      /* Kanban horizontal scroll */
-      .donor-kanban-wrap{display:flex!important;flex-direction:row!important;overflow-x:auto!important;-webkit-overflow-scrolling:touch!important;scroll-snap-type:x mandatory!important;align-items:flex-start!important;min-height:auto!important;padding-bottom:12px!important;gap:10px!important;}
+      /* Kanban: contained horizontal scroll only — page never scrolls horiz */
+      .donor-kanban-wrap{display:flex!important;flex-direction:row!important;overflow-x:auto!important;overflow-y:visible!important;-webkit-overflow-scrolling:touch!important;scroll-snap-type:x mandatory!important;align-items:flex-start!important;min-height:auto!important;padding-bottom:12px!important;gap:10px!important;width:100%!important;}
       .kanban-col{min-width:268px!important;width:268px!important;max-width:268px!important;flex-shrink:0!important;scroll-snap-align:start!important;}
+
+      /* Donor profile: single column, 2×2 stat mini-cards */
+      .donor-profile-body{grid-template-columns:1fr!important;overflow:auto!important;}
+      .donor-profile-header{padding:10px 16px!important;}
+      .donor-stat-grid{grid-template-columns:repeat(2,1fr)!important;}
+
+      /* ReEngage table: hide non-essential columns, fix grid template */
+      .reEngage-header{grid-template-columns:1fr 90px 100px!important;}
+      .reEngage-row{grid-template-columns:1fr 90px 100px!important;}
+      .re-col-lifetime,.re-col-lastgift,.re-col-score{display:none!important;}
+
+      /* Filter bar */
+      .filter-bar{flex-direction:column!important;gap:12px!important;}
+      .filter-bar-row{flex-direction:column!important;align-items:flex-start!important;gap:8px!important;}
 
       /* Mobile modal sheets */
       .modal-sheet-overlay{align-items:flex-end!important;padding:0!important;}
       .modal-sheet-inner{border-radius:20px 20px 0 0!important;max-width:100%!important;width:100%!important;max-height:90vh!important;margin:0!important;}
 
-      /* Donor profile */
-      .donor-profile-body{grid-template-columns:1fr!important;overflow:auto!important;}
-      .donor-profile-header{padding:10px 16px!important;}
+      /* Ensure all cards and containers never exceed viewport */
+      .fade-in,[class*="card"]{max-width:100%!important;}
     }
   `}</style>;
 }

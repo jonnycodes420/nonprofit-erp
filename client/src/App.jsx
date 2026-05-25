@@ -76,7 +76,7 @@ function AppShell() {
     })();
   },[]);
 
-  const BASE = {minHeight:"100vh",background:T.bg,fontFamily:"'DM Sans',system-ui,sans-serif"};
+  const BASE = {minHeight:"100vh",background:T.bg,fontFamily:"'DM Sans',system-ui,sans-serif",overflowX:"hidden",maxWidth:"100vw"};
 
   if(loading) return <div style={{...BASE,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:16}}>
     <GlobalStyles/>
@@ -99,7 +99,7 @@ function AppShell() {
   const tasksDue=data.tasks.filter(t=>!t.done&&t.priority==="high").length;
   const orgName=auth?.org?.name||data.org?.name||"Steward";
 
-  return <div style={{...BASE,color:T.ink,display:"flex",flexDirection:"column"}}>
+  return <div className="app-root" style={{...BASE,color:T.ink,display:"flex",flexDirection:"column"}}>
     <GlobalStyles/>
     <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=DM+Serif+Display&display=swap" rel="stylesheet"/>
 

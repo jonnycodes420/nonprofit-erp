@@ -213,7 +213,7 @@ export function Dashboard({data,setData,onNavigate}) {
               <span style={sTitle}>Donor Pipeline</span>
               <button onClick={()=>onNavigate("donors")} style={sLink}>View all →</button>
             </div>
-            <div style={{display:"grid",gridTemplateColumns:"repeat(6,1fr)"}}>
+            <div className="dash-pipeline-grid" style={{display:"grid",gridTemplateColumns:"repeat(6,1fr)"}}>
               {stageSnap.map((s,i)=>(
                 <div key={s.id} onClick={()=>onNavigate("donors")} className="dash-row" style={{
                   padding:"14px 12px",borderRight:i<5?"1px solid "+T.bg3:"none",

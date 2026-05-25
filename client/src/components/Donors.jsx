@@ -690,7 +690,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
       <div className="donor-profile-body" style={{flex:1,display:"grid",gridTemplateColumns:"minmax(0,1.25fr) minmax(0,0.75fr)",overflow:"hidden"}}>
         {/* LEFT */}
         <div style={{overflowY:"auto",padding:"22px 20px 24px 24px",borderRight:"1px solid "+T.bg3,display:"flex",flexDirection:"column",gap:18}}>
-          <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10}}>
+          <div className="donor-stat-grid" style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10}}>
             {[["Lifetime",fmtFull(donor.total),T.ink],["Last Gift",lastGiftDisplay,"#1a6b4a"],["Contact",`${urg.days}d ago`,urg.urgencyColor],["Score",`${sc}/99`,scoreColor]].map(([l,v,c])=>(
               <div key={l} style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:12,padding:"12px 14px"}}>
                 <div style={{fontSize:9,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.1em",color:T.ink3,marginBottom:4}}>{l}</div>
@@ -963,10 +963,13 @@ function ReEngageView({donors,org,onLogTouchpoint,onSelectDonor}){
       </div>
       {(aiLoading||aiText)&&<AIPanel text={aiText} onClose={()=>setAiText("")}/>}
       <div style={{background:T.white,borderRadius:14,overflow:"hidden",border:"1px solid "+T.bg3}}>
-        <div style={{display:"grid",gridTemplateColumns:colWidths,gap:0,padding:"10px 18px",background:"#1a6b4a",borderBottom:"1px solid "+T.bg3}}>
-          {cols.map((h,i)=>(
-            <div key={i} style={{fontSize:10,fontWeight:700,color:"#fff",textTransform:"uppercase",letterSpacing:".06em",textAlign:i===0?"left":"right"}}>{h}</div>
-          ))}
+        <div className="reEngage-header" style={{display:"grid",gridTemplateColumns:colWidths,gap:0,padding:"10px 18px",background:"#1a6b4a",borderBottom:"1px solid "+T.bg3}}>
+          <div className="re-col-name" style={{fontSize:10,fontWeight:700,color:"#fff",textTransform:"uppercase",letterSpacing:".06em"}}>Donor</div>
+          <div className="re-col-lifetime" style={{fontSize:10,fontWeight:700,color:"#fff",textTransform:"uppercase",letterSpacing:".06em",textAlign:"right"}}>Lifetime Giving</div>
+          <div className="re-col-lastgift" style={{fontSize:10,fontWeight:700,color:"#fff",textTransform:"uppercase",letterSpacing:".06em",textAlign:"right"}}>Last Gift</div>
+          <div className="re-col-days" style={{fontSize:10,fontWeight:700,color:"#fff",textTransform:"uppercase",letterSpacing:".06em",textAlign:"right"}}>Days Lapsed</div>
+          <div className="re-col-score" style={{fontSize:10,fontWeight:700,color:"#fff",textTransform:"uppercase",letterSpacing:".06em",textAlign:"right"}}>Score</div>
+          <div className="re-col-actions" style={{fontSize:10,fontWeight:700,color:"#fff",textTransform:"uppercase",letterSpacing:".06em",textAlign:"right"}}></div>
         </div>
         {lapsed.map((d,idx)=>{
           const days=daysDiff(d.lastGift||d.lastTouchpoint||new Date().toISOString());
@@ -978,26 +981,26 @@ function ReEngageView({donors,org,onLogTouchpoint,onSelectDonor}){
           const urgencyLabel=days>730?"Critical":days>365?"At Risk":"Watch";
           const giftDate=fmtGiftDate(d.lastGift);
           return(
-            <div key={d.id} style={{display:"grid",gridTemplateColumns:colWidths,gap:0,padding:"13px 18px",background:rowBg,borderBottom:idx<lapsed.length-1?`1px solid ${rowBorderColor}`:"none",alignItems:"center"}}>
-              <div>
-                <div style={{fontSize:13,fontWeight:700,color:T.ink}}>{d.name}</div>
-                {d.email&&<div style={{fontSize:11,color:T.ink3,marginTop:1}}>{d.email}</div>}
+            <div key={d.id} className="reEngage-row" style={{display:"grid",gridTemplateColumns:colWidths,gap:0,padding:"13px 18px",background:rowBg,borderBottom:idx<lapsed.length-1?`1px solid ${rowBorderColor}`:"none",alignItems:"center"}}>
+              <div className="re-col-name">
+                <div style={{fontSize:13,fontWeight:700,color:T.ink,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{d.name}</div>
+                {d.email&&<div style={{fontSize:11,color:T.ink3,marginTop:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{d.email}</div>}
               </div>
-              <div style={{textAlign:"right",fontSize:13,fontWeight:700,color:T.ink}}>{fmtFull(d.total)}</div>
-              <div style={{textAlign:"right"}}>
+              <div className="re-col-lifetime" style={{textAlign:"right",fontSize:13,fontWeight:700,color:T.ink}}>{fmtFull(d.total)}</div>
+              <div className="re-col-lastgift" style={{textAlign:"right"}}>
                 {giftDate
                   ?<><div style={{fontSize:13,color:T.ink,fontWeight:600}}>{giftDate}</div><div style={{fontSize:11,color:T.ink3,marginTop:1}}>{d.lastAmount>0?fmtFull(d.lastAmount):""}</div></>
                   :<div style={{fontSize:13,color:T.ink3}}>—</div>
                 }
               </div>
-              <div style={{textAlign:"right"}}>
+              <div className="re-col-days" style={{textAlign:"right"}}>
                 <div style={{fontSize:13,fontWeight:700,color:daysColor}}>{days}d</div>
                 <div style={{fontSize:10,color:daysColor,fontWeight:700,marginTop:2,textTransform:"uppercase",letterSpacing:".04em"}}>{urgencyLabel}</div>
               </div>
-              <div style={{textAlign:"right"}}>
+              <div className="re-col-score" style={{textAlign:"right"}}>
                 <span style={{fontSize:13,fontWeight:800,color:scColor,background:scColor+"18",borderRadius:7,padding:"3px 9px",display:"inline-block"}}>{sc}</span>
               </div>
-              <div style={{display:"flex",gap:6,justifyContent:"flex-end"}}>
+              <div className="re-col-actions" style={{display:"flex",gap:6,justifyContent:"flex-end"}}>
                 <button onClick={e=>{e.stopPropagation();onLogTouchpoint(d);}} style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:7,padding:"4px 10px",color:T.ink3,fontSize:11,fontWeight:600,cursor:"pointer"}}>+ Log</button>
                 <button onClick={()=>onSelectDonor(d)} style={{background:"#1a6b4a14",border:"1px solid #1a6b4a40",borderRadius:7,padding:"4px 10px",color:"#1a6b4a",fontSize:11,fontWeight:600,cursor:"pointer"}}>View →</button>
               </div>
@@ -1031,8 +1034,8 @@ function FilterBar({filters,onChange}){
   const row={display:"flex",gap:12,flexWrap:"wrap",alignItems:"center"};
   const lbl={fontSize:11,fontWeight:700,color:T.ink3,textTransform:"uppercase",letterSpacing:".06em",whiteSpace:"nowrap",minWidth:90};
   return(
-    <div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:12,padding:"16px 18px",display:"flex",flexDirection:"column",gap:12}}>
-      <div style={row}>
+    <div className="filter-bar" style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:12,padding:"16px 18px",display:"flex",flexDirection:"column",gap:12}}>
+      <div className="filter-bar-row" style={row}>
         <span style={lbl}>Capacity Tier</span>
         <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
           {TIER_META.map(t=>{const a=filters.tiers.includes(t.id);return(
@@ -1040,7 +1043,7 @@ function FilterBar({filters,onChange}){
           );})}
         </div>
       </div>
-      <div style={row}>
+      <div className="filter-bar-row" style={row}>
         <span style={lbl}>Stage</span>
         <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
           {STAGES.map(s=>{const a=filters.stages.includes(s.id);return(
@@ -1048,8 +1051,8 @@ function FilterBar({filters,onChange}){
           );})}
         </div>
       </div>
-      <div style={row}>
-        <div style={{display:"flex",alignItems:"center",gap:6}}>
+      <div className="filter-bar-row" style={row}>
+        <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
           <span style={lbl}>Giving Pattern</span>
           <select value={filters.pattern} onChange={e=>set("pattern",e.target.value)} style={{...inp,cursor:"pointer",minWidth:190}}>
             <option value="">Any</option>
@@ -1061,7 +1064,7 @@ function FilterBar({filters,onChange}){
           <input value={filters.geo} onChange={e=>set("geo",e.target.value)} placeholder="Search notes & tags…" style={{...inp,minWidth:160}}/>
         </div>
       </div>
-      <div style={row}>
+      <div className="filter-bar-row" style={row}>
         <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
           <span style={lbl}>Last Gift</span>
           <input type="date" value={filters.giftFrom} onChange={e=>set("giftFrom",e.target.value)} style={inp}/>
