@@ -277,6 +277,20 @@ export default function Landing() {
 
       <div className="steward">
 
+        {/* ── Announcement bar ── */}
+        <div style={{
+          background: T.greenDark,
+          color: T.cream,
+          textAlign: "center",
+          padding: "10px 24px",
+          fontSize: 14,
+          fontFamily: "'DM Sans',sans-serif",
+          letterSpacing: "0.06em",
+          fontWeight: 400,
+        }}>
+          Stewarding your mission, so you can focus on what matters.
+        </div>
+
         {/* ── Nav ── */}
         <nav style={{
           display: "flex", alignItems: "center", justifyContent: "space-between",
