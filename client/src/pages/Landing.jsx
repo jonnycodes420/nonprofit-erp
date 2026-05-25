@@ -580,6 +580,55 @@ export default function Landing() {
           </div>
         </section>
 
+        {/* ── Who we serve ── */}
+        <section style={{ background: T.cream, borderBottom: `1px solid ${T.cream3}`, padding: "100px 48px" }}>
+          <div style={{ maxWidth: 1100, margin: "0 auto" }}>
+            <div style={{ marginBottom: 52, maxWidth: 520 }}>
+              <div style={{ fontSize: 11, color: T.greenDark, fontWeight: 500, letterSpacing: ".8px", textTransform: "uppercase", marginBottom: 14 }}>Who we serve</div>
+              <h2 style={{ fontFamily: "'DM Serif Display',serif", fontSize: "clamp(34px, 4vw, 52px)", letterSpacing: "-1.5px", lineHeight: 1.1, color: T.ink }}>
+                We built this for you.
+              </h2>
+            </div>
+            <div className="serve-grid" style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 20 }}>
+              {[
+                {
+                  icon: "ti-heart-handshake",
+                  title: "Nonprofits",
+                  desc: "From donor pipelines to grant reporting, we help you run your entire organization in one place. No more juggling five tools to do one job.",
+                },
+                {
+                  icon: "ti-building-church",
+                  title: "Churches",
+                  desc: "Manage giving, volunteers, communications, and community programs — all under one roof. Built for the way your community actually works.",
+                },
+                {
+                  icon: "ti-star",
+                  title: "Mission-driven orgs",
+                  desc: "If you exist to serve others, Steward exists to serve you. Whatever your cause, your operations deserve the same care you give your mission.",
+                },
+              ].map(c => (
+                <div key={c.title} className="serve-card" style={{
+                  background: T.cream,
+                  border: `1px solid ${T.cream3}`,
+                  borderRadius: 18,
+                  padding: "32px 28px",
+                  transition: "background .2s, box-shadow .2s",
+                }}>
+                  <div style={{
+                    width: 44, height: 44, background: T.greenDark + "14",
+                    borderRadius: 12, display: "flex", alignItems: "center",
+                    justifyContent: "center", marginBottom: 20,
+                  }}>
+                    <i className={`ti ${c.icon}`} style={{ fontSize: 22, color: T.greenDark }} aria-hidden="true" />
+                  </div>
+                  <div style={{ fontSize: 17, fontWeight: 600, color: T.ink, marginBottom: 10 }}>{c.title}</div>
+                  <div style={{ fontSize: 14, color: T.ink3, lineHeight: 1.7 }}>{c.desc}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+
         {/* ── Features ── */}
         <div id="features" style={{ padding: "100px 48px", maxWidth: 1100, margin: "0 auto" }}>
           <div style={{ fontSize: 11, color: T.greenDark, fontWeight: 500, letterSpacing: ".8px", textTransform: "uppercase", marginBottom: 14 }}>Everything in one place</div>
