@@ -467,7 +467,7 @@ export function Communications({ data }) {
     const recipCount = countSegment(allDonors, form.seg);
     const subjLen = form.subject.length;
     return (
-      <div style={{ display: "flex", flexDirection: "column", height: "calc(100vh - 80px)", minHeight: 0, background: T.white, color: T.ink }}>
+      <div style={{ position: "fixed", inset: 0, zIndex: 200, display: "flex", flexDirection: "column", background: T.white, color: T.ink }}>
         {/* Header */}
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 20px", background: T.bg2, borderBottom: "1px solid " + T.bg3, flexShrink: 0 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
