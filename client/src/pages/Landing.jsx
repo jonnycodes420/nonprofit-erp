@@ -87,9 +87,9 @@ function MeshCanvas() {
             const mdy = (pi.by + pj.by) / 2 - my;
             const md  = Math.sqrt(mdx * mdx + mdy * mdy);
             const greenness = Math.max(0, 1 - md / 0.22);
-            const r = Math.round(255 * (1 - greenness) + 16  * greenness);
-            const g = Math.round(255 * (1 - greenness) + 185 * greenness);
-            const b = Math.round(255 * (1 - greenness) + 129 * greenness);
+            const r = Math.round(212 * (1 - greenness) + 26  * greenness);
+            const g = Math.round(197 * (1 - greenness) + 107 * greenness);
+            const b = Math.round(169 * (1 - greenness) + 74  * greenness);
             ctx.strokeStyle = `rgba(${r},${g},${b},${alpha})`;
             ctx.lineWidth = 1;
             ctx.beginPath();
@@ -108,13 +108,14 @@ function MeshCanvas() {
         ctx.beginPath();
         ctx.arc(p.bx * w, p.by * h, r2, 0, Math.PI * 2);
         ctx.fillStyle = glow > 0.1
-          ? `rgba(16,185,129,${0.4 + glow * 0.6})`
-          : `rgba(255,255,255,0.25)`;
+          ? `rgba(26,107,74,${0.5 + glow * 0.5})`
+          : `rgba(212,197,169,0.35)`;
         ctx.fill();
       });
 
       const gx = ctx.createRadialGradient(mx * w, my * h, 0, mx * w, my * h, w * 0.28);
-      gx.addColorStop(0, "rgba(16,185,129,0.12)");
+      gx.addColorStop(0, "rgba(26,107,74,0.18)");
+      gx.addColorStop(0.5, "rgba(180,150,100,0.06)");
       gx.addColorStop(1, "transparent");
       ctx.fillStyle = gx;
       ctx.fillRect(0, 0, w, h);
@@ -324,8 +325,8 @@ export default function Landing() {
         </nav>
 
         {/* ── Hero ── */}
-        <section style={{ padding: "90px 48px 80px", maxWidth: 1200, margin: "0 auto" }}>
-          <div data-reveal style={{ marginBottom: 52 }}>
+        <section style={{ padding: "100px 48px 96px", maxWidth: 860, margin: "0 auto", textAlign: "center" }}>
+          <div data-reveal style={{ marginBottom: 40, display: "flex", justifyContent: "center" }}>
             <span style={{
               display: "inline-flex", alignItems: "center", gap: 10,
               fontSize: 15, color: T.ink,
@@ -345,41 +346,35 @@ export default function Landing() {
             </span>
           </div>
 
-          <div className="hero-grid" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 80px", alignItems: "start" }}>
-            <div data-reveal>
-              <h1 className="h1-hero" style={{
-                fontFamily: "'DM Serif Display',serif",
-                fontSize: "clamp(44px, 5.5vw, 72px)",
-                lineHeight: 1.04, letterSpacing: "-2px", color: T.ink,
-                fontWeight: 400,
-              }}>
-                Built for those who{" "}
-                <em style={{ fontStyle: "italic" }}>steward</em>
-                <br />
-                <span style={{ textDecoration: "underline", textDecorationThickness: 3, textUnderlineOffset: 6, textDecorationColor: T.greenDark }}>what matters.</span>
-              </h1>
-            </div>
+          <div data-reveal style={{ marginBottom: 32 }}>
+            <h1 className="h1-hero" style={{
+              fontFamily: "'DM Serif Display',serif",
+              fontSize: "clamp(44px, 6vw, 78px)",
+              lineHeight: 1.06, letterSpacing: "-2.5px", color: T.ink,
+              fontWeight: 400,
+            }}>
+              Built for those who{" "}
+              <em style={{ fontStyle: "italic" }}>steward</em>
+              <br />
+              <span style={{ textDecoration: "underline", textDecorationThickness: 3, textUnderlineOffset: 8, textDecorationColor: T.greenDark }}>what matters.</span>
+            </h1>
+          </div>
 
-            <div data-reveal style={{ paddingTop: 12 }}>
-              <p style={{ fontSize: 19, color: T.ink2, lineHeight: 1.7, fontWeight: 300, marginBottom: 36, maxWidth: 420 }}>
-                Steward is more than software — it's a partner for nonprofits, churches, and mission-driven organizations who deserve tools as dedicated as they are.
-              </p>
-              <div style={{ marginBottom: 40 }}>
-                <BookBtn style={{ padding: "13px 28px", fontSize: 15 }} />
-              </div>
-              <div style={{ display: "flex", gap: 24, flexWrap: "wrap" }}>
-                {[
-                  { icon: "ti-heart", text: "Built with mission in mind" },
-                  { icon: "ti-users", text: "Real human support" },
-                  { icon: "ti-clock", text: "10-min setup" },
-                ].map(({ icon, text }) => (
-                  <div key={text} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, color: T.ink3 }}>
-                    <i className={`ti ${icon}`} style={{ fontSize: 14, color: T.greenDark }} aria-hidden="true" />
-                    {text}
-                  </div>
-                ))}
-              </div>
-            </div>
+          <div data-reveal style={{ marginBottom: 48 }}>
+            <p style={{ fontSize: 19, color: T.ink3, lineHeight: 1.85, fontWeight: 300, maxWidth: 600, margin: "0 auto" }}>
+              Steward is more than software — it's a partner for nonprofits, churches, and mission-driven organizations who deserve tools as dedicated as they are.
+            </p>
+          </div>
+
+          <div data-reveal style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 16 }}>
+            <BookBtn
+              style={{ padding: "15px 36px", fontSize: 16 }}
+              onMouseEnter={e => { e.currentTarget.style.background = "#2a2a2a"; e.currentTarget.style.boxShadow = "0 6px 24px rgba(15,15,15,0.18)"; }}
+              onMouseLeave={e => { e.currentTarget.style.background = T.ink; e.currentTarget.style.boxShadow = "none"; }}
+            />
+            <p style={{ fontSize: 13, color: T.greenDark, fontStyle: "italic", fontFamily: "'DM Sans',sans-serif", opacity: 0.8 }}>
+              No contracts. No pressure. Just a conversation.
+            </p>
           </div>
         </section>
 
