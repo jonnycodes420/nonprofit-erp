@@ -492,11 +492,11 @@ export default function Landing() {
           </p>
         </section>
 
-        {/* ── Who we serve ── */}
+        {/* ── What we do ── */}
         <section style={{ background: T.cream2, borderTop: `1px solid ${T.cream3}`, borderBottom: `1px solid ${T.cream3}`, padding: "100px 48px" }}>
           <div style={{ maxWidth: 1100, margin: "0 auto" }}>
             <div style={{ marginBottom: 52, maxWidth: 520 }}>
-              <div style={{ fontSize: 11, color: T.greenDark, fontWeight: 500, letterSpacing: ".8px", textTransform: "uppercase", marginBottom: 14 }}>Who we serve</div>
+              <div style={{ fontSize: 11, color: T.greenDark, fontWeight: 500, letterSpacing: ".8px", textTransform: "uppercase", marginBottom: 14 }}>What we do</div>
               <h2 style={{ fontFamily: "'DM Serif Display',serif", fontSize: "clamp(34px, 4vw, 52px)", letterSpacing: "-1.5px", lineHeight: 1.1, color: T.ink }}>
                 We built this for you.
               </h2>
@@ -505,18 +505,18 @@ export default function Landing() {
               {[
                 {
                   icon: "ti-heart-handshake",
-                  title: "Nonprofits",
-                  desc: "From donor pipelines to grant reporting, we help you run your entire organization in one place. No more juggling five tools to do one job.",
+                  title: "Love your donors well",
+                  desc: "Every gift is an act of trust. Steward helps you remember the details, follow up with intention, and build relationships that last decades — not just donation cycles.",
                 },
                 {
-                  icon: "ti-building-church",
-                  title: "Churches",
-                  desc: "Manage giving, volunteers, communications, and community programs — all under one roof. Built for the way your community actually works.",
+                  icon: "ti-coin",
+                  title: "Handle every dollar with integrity",
+                  desc: "Your donors gave in faith. Honor that with finances you can actually see — fund accounting, budgets, and reports built the way nonprofits work.",
                 },
                 {
-                  icon: "ti-star",
-                  title: "Mission-driven orgs",
-                  desc: "If you exist to serve others, Steward exists to serve you. Whatever your cause, your operations deserve the same care you give your mission.",
+                  icon: "ti-plant",
+                  title: "Built to keep you alive and thriving",
+                  desc: "Most nonprofits don't fail because of bad missions — they fail because of broken systems. Steward gives you the operational foundation to grow, sustain, and outlast the hard seasons.",
                 },
               ].map(c => (
                 <div key={c.title} className="serve-card" style={{
