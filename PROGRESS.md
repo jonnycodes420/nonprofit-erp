@@ -1,308 +1,169 @@
 # Steward — Build Progress
 
-**Tagline:** Manage what matters.  
-**GitHub:** https://github.com/jonnycodes420/nonprofit-erp  
-**Backend (Railway):** https://nonprofit-erp-production.up.railway.app  
-**Frontend (Vercel):** https://client-five-tau-13.vercel.app  
-**Demo login:** admin@creoarts.org / demo1234
+## Architecture snapshot (current)
+- App.jsx: 147 lines — thin shell that imports 9 component files
+- 12 component files in client/src/components/
+- Active tabs: Dashboard, Donors, Grants, Communications, Finance, Volunteers, Board, Tasks, Settings
+- Removed tabs: Annual Fund, Programs (consolidated into Finance/Donors); Find Grants (merged into Grants tab)
 
 ---
 
-## Current Stack
-
-| Layer | Technology |
-|-------|-----------|
-| Backend | Node.js + Express |
-| Database | Supabase PostgreSQL (migrated from in-memory SQLite 2026-05-22) |
-| Auth | bcryptjs + jsonwebtoken (7d expiry), localStorage |
-| AI | @anthropic-ai/sdk → claude-sonnet-4-6 |
-| Frontend | React 18 + Vite |
-| Routing | react-router-dom 6 |
-| Styling | Inline styles, no CSS framework |
-| Font | DM Sans + DM Serif Display |
-| Backend deploy | Railway (auto-deploy on push to main) |
-| Frontend deploy | Vercel (auto-deploy on push to main) |
-
----
-
-## File Structure
-
-```
-nonprofit-erp/
-├── server.js              # Express API
-├── db.js                  # Supabase pg Pool, async query/run helpers
-├── auth.js                # JWT middleware, requireAdmin
-├── package.json
-└── client/
-    ├── vercel.json        # VITE_API_URL env var
-    └── src/
-        ├── main.jsx       # AuthContext, route guards, BrowserRouter
-        ├── api.js         # apiFetch, streamAI, adaptData (snake→camelCase)
-        ├── App.jsx        # AppShell + TABS (147 lines — imports from components/)
-        ├── pages/
-        │   ├── Landing.jsx
-        │   ├── LoginPage.jsx
-        │   ├── SignupPage.jsx
-        │   └── WelcomePage.jsx
-        └── components/
-            ├── shared.jsx         # T tokens, helpers, all shared UI primitives
-            ├── Dashboard.jsx      # AIChat, Dashboard
-            ├── Donors.jsx         # Donors + all donor sub-components
-            ├── Grants.jsx         # Grants, FindGrants, GrantProfile
-            ├── Communications.jsx
-            ├── Programs.jsx
-            ├── AnnualFund.jsx
-            ├── Finance.jsx
-            ├── Volunteers.jsx
-            ├── Board.jsx
-            ├── Tasks.jsx
-            └── Settings.jsx
-```
-
----
-
-## Backend API Endpoints
-
-All routes except `/auth/*` and `/health` require `Authorization: Bearer <token>`.
-
-### Auth
-| Method | Path | Description |
-|--------|------|-------------|
-| POST | /auth/register | Create org + first user |
-| POST | /auth/login | Returns token + user + org |
-| POST | /auth/invite | Admin generates invite link (+ optional email). Body: { email, role } |
-| POST | /auth/accept-invite | Invited user sets name + password |
-| GET | /me | Current user + org |
-
-### Org
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | /org | Returns org row |
-| PUT | /org/smtp | Save SMTP settings |
-| GET | /org/team | List all users in org |
-
-### Onboarding
-| Method | Path | Description |
-|--------|------|-------------|
-| POST | /onboarding/complete | Seeds org with sample data, marks onboarding_complete=1 |
-
-### Donors
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | /donors | All donors with last 10 interactions |
-| GET | /donors/:id | Single donor with all interactions + gifts |
-| POST | /donors | Create donor |
-| POST | /donors/import | Bulk import. Body: { donors: [...] } |
-| PUT | /donors/:id | Update donor |
-| PATCH | /donors/:id/stage | Update stage only (Kanban drag-drop) |
-| DELETE | /donors/:id | Admin only |
-| POST | /donors/:id/interactions | Log touchpoint |
-| POST | /donors/:id/gifts | Record a gift |
-| POST | /donors/:id/wealth-score | Recalculate wealth score (server-side, Claude rationale) |
-
-### Grants
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | /grants | All grants |
-| POST | /grants | Create grant |
-| PUT | /grants/:id | Update grant |
-| DELETE | /grants/:id | Delete grant |
-
-### Communications
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | /campaigns | All campaigns |
-| POST | /campaigns | Create campaign |
-| POST | /campaigns/:id/send | Send campaign to filtered donors |
-| GET | /campaigns/:id/recipients | Recipient list with open status |
-| GET | /track/open/:recipientId | Open tracking pixel endpoint |
-
-### Programs
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | /programs | All programs with linked grants |
-| POST | /programs | Create program |
-| PUT | /programs/:id | Update program |
-| POST | /programs/:id/grants | Link a grant to a program |
-| DELETE | /programs/:id/grants/:grantId | Unlink grant |
-
-### Annual Fund
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | /annual-fund?year=YYYY | Fund summary: goal, raised, monthly, donor counts |
-| POST | /annual-fund/goal | Set annual goal. Body: { year, goal } |
-
-### Volunteers / Board / Tasks / Financials
-| Method | Path | Description |
-|--------|------|-------------|
-| GET/POST/PUT | /volunteers | CRUD |
-| GET/POST | /board | CRUD |
-| GET/POST/PUT/DELETE | /tasks | CRUD |
-| GET | /financials | { revenue: [...], expenses: [...], funds: [...] } |
-| POST | /financials/month | Add/update a month (admin only) |
-
-### AI
-| Method | Path | Description |
-|--------|------|-------------|
-| POST | /ai/stream | SSE stream. Body: { systemPrompt, userMessage } |
-| POST | /ai/column-map | Map CSV headers to donor fields. Body: { headers, sample } |
-
----
-
-## Database Schema (Supabase Postgres)
-
-```sql
-orgs           (id, name, mission, ein, plan, smtp_host, smtp_port, smtp_user,
-                smtp_pass, smtp_from, onboarding_complete, created_at)
-users          (id, org_id, email, password_hash, name, role, invite_token,
-                invite_expires, created_at)
-donors         (id, org_id, name, email, phone, status, stage, total_giving,
-                last_gift_amount, last_gift_date, gift_count, tags, notes,
-                wealth_score, capacity_tier, score_confidence,
-                score_last_updated, score_rationale, created_at, updated_at)
-gifts          (id, org_id, donor_id, amount, date, type, campaign, notes, created_at)
-interactions   (id, org_id, donor_id, type, note, date, created_by, created_at)
-grants         (id, org_id, funder, program, amount, received, status, deadline,
-                report_due, officer, notes, history, loi_draft, created_at, updated_at)
-campaigns      (id, org_id, name, type, subject, body, segment, status,
-                sent_at, recipient_count, open_count, created_at)
-campaign_recipients (id, campaign_id, donor_id, email, donor_name, sent_at, opened_at)
-programs       (id, org_id, name, description, budget, spent, staff,
-                participant_count, start_date, end_date, status, outcomes,
-                metrics, created_at)
-program_grants (id, program_id, grant_id, allocated)
-annual_fund_goals (id, org_id, year, goal, created_at)
-volunteers     (id, org_id, name, email, hours, skills, last_active,
-                convert_potential, employer, notes, created_at)
-tasks          (id, org_id, donor_id, title, due, priority, type, done, created_at)
-board_members  (id, org_id, name, role, employer, term, giving_level,
-                committees, attendance, created_at)
-financials     (id, org_id, month, year, individual, grants, events, other_revenue,
-                programs, admin, fundraising, created_at)
-funds          (id, org_id, name, balance, restricted, created_at)
-```
-
----
-
-## Features Built
-
-### Auth & Multi-Org
-- JWT auth (7-day tokens), stored in localStorage as npe_token/npe_user/npe_org
-- Each org fully isolated — all queries filter by org_id
-- Route guards: RequireAuth, RequireOnboarded, PublicOnly
-- RBAC: admin (full access) / staff (no delete, no financials write)
-- Invite flow: admin generates link → invited user sets name + password → joins org as staff or admin
-
-### Onboarding
-- Signup → 5-question wizard → Claude streams personalized setup advice
-- seedOrgData() generates scaled sample data based on org size answers
-- Marks onboarding_complete=1 on org
+## Features built
 
 ### Dashboard
-- Hero stat cards (total raised, active grants, pipeline value, lapsed count)
-- AI daily briefing (streaming, full org context)
-- Pipeline snapshot by stage
-- Lapsed donor alert with re-engage link
-- Grant deadlines
-- Recent giving feed
-- Quick actions
-- Tasks this week
-- Activity feed
-- Global AI chat overlay (Ask AI — full org context, streaming)
+**File:** `client/src/components/Dashboard.jsx`
 
-### Donors
-- **Kanban** — 6 stages (Prospect→Qualify→Cultivate→Solicit→Steward→Lapsed), drag-and-drop, per-stage urgency thresholds
-- **Full-screen profile** — two-panel (info left, AI/timeline right), stage mover, engagement score, retention risk
-- **Smart CSV import** — AI column mapping via /ai/column-map, auto stage assignment from gift history, preview table
-- **Interaction timeline** — color-coded by type, relative timestamps
-- **Dynamic touchpoint log** — templates per activity type (Call/Meeting/Email/Event/Gift/Other), each with tailored fields: Key Takeaways ×3, History, Spouse/Partner, Next Steps
-- **Follow-up task modal** — surfaces after logging, creates real DB task, visible in donor profile and Tasks tab
-- **Edit donor modal** — name, email, phone, tags, notes, stage
-- **Donor Wealth Score** — 5-component server-side calc (giving history, capacity signals, engagement, tenure, network), score 1–10, capacity tier (Micro/Small/Mid/Major/Principal), confidence, Claude rationale, Recalculate button
-- **Re-engage queue** — lapsed donors sorted by urgency, AI re-engagement plan per donor
-- AI features: next move analysis, outreach strategy, draft email, call script, portfolio analysis
-
-### Grants
-- CRUD with status badges (active/pending/prospecting/closed)
-- Full-screen detail — two-panel layout matching donor profile
-- AI: grant strategy, LOI drafting, report narrative, renewal strategy
-- **Find Grants** tab — AI scans landscape, returns 10 ranked matches with alignment score, award range, why you qualify, next step
-
-### Communications
-- Campaign builder — name, type (appeal/thank-you/grant-ack/tax-receipt/newsletter), subject, body
-- Segment by stage and/or donor status
-- AI email copy drafting with variable hints ({{donor_name}}, {{gift_amount}}, etc.)
-- SMTP configuration per org (Gmail app passwords, Resend, etc.)
-- Send to filtered donors
-- Open rate tracking — recipient list, opened_at timestamps, progress bar
-
-### Programs
-- CRUD — name, description, budget/spent, staff, participants, dates, status, outcomes
-- Budget spend progress bar with color coding
-- Grant funding links — link/unlink grants, show allocated amounts
-- AI impact report (grant report narrative)
-- AI theory of change (Activities → Outputs → Outcomes → Long-term Impact)
-
-### Annual Fund
-- Year selector (current + prior)
-- Goal setting (admin)
-- Progress ring (SVG) + progress bar
-- Projected year-end at current pace
-- Monthly revenue bar chart
-- Donor acquisition vs retention breakdown (new vs renewed)
-- Retention rate with color coding
-- AI forecast and gap-closing strategy
-
-### Finance
-- YTD revenue, expenses, net position, program ratio
-- Monthly P&L with revenue/expense bars + revenue stream breakdown
-- Fund balances (restricted/unrestricted)
-- AI 6-month forecast
-- AI financial risk analysis
-
-### Volunteers
-- Cards with hours, skills, employer, last active
-- Convert potential tracking (low/high/converted)
-- AI volunteer-to-donor conversion plan
-- AI board candidate identification
-
-### Board
-- Member cards — role, employer, committees, giving level, attendance
-- AI Q2 board report
-- AI board ask email (introductions to prospects)
-
-### Tasks
-- Priority queue (high/medium/low) with overdue detection
-- Add task — title, due date, priority, type
-- Toggle complete
-- AI prioritization
-- High-priority count badge on tab
-- Tasks created from donor follow-up modal appear here
-
-### Settings
-- Account info, org name + mission
-- Billing & plan (Seed/Growth/Impact — UI only, no Stripe yet)
-- Team members list
-- Invite staff modal — generates invite link, copy to clipboard
-- Sign out
+Hero stat cards (Total Donors, Active Grants, Active Volunteers, Open Tasks) each link to their tab. Left column: AI daily briefing (streamed, pull-quote + expandable full text), donor pipeline snapshot (6-stage bar), lapsed donor alert (count + lifetime value + Re-engage button), upcoming grant deadlines, recent giving list, Stripe online gifts feed. Right column: Quick Actions grid (Add Donor, Log Gift, New Grant, Add Volunteer, New Task, Send Email), Tasks This Week (today / this week groups), Activity Feed (10 most recent touchpoints across all donors). Global AI chat overlay (AIChat component, fixed position, quick-prompt chips).
 
 ---
 
-## To Do
+### Donor wealth scoring
+**File:** `client/src/components/Donors.jsx` (DonorProfile section), `server.js` (POST /donors/:id/wealth-score)
 
-### Near-term
-- [ ] Landing page — wire CTA buttons to /signup and /login
-- [ ] Custom domain — thesteward.dev
+`calcWealthScore()` — 5 components: total giving history (0–40 pts), recency of last gift (0–20 pts), gift frequency (0–20 pts), capacity signals from employer/notes (0–10 pts), engagement score from touchpoint frequency (0–10 pts). Returns: score (0–100), capacity_tier (major/mid/small/prospect), confidence (high/medium/low), rationale (string).
 
-### Backlog
-- [ ] Stripe billing integration (upgrade buttons are UI-only)
-- [ ] Email open tracking pixel (endpoint exists at /track/open/:id, needs wiring to actual pixel img tag in sent emails)
-- [ ] Export donors/grants to CSV
-- [ ] Grant calendar / deadline timeline view
-- [ ] Mobile-responsive layout (Kanban especially)
-- [ ] Role-based field visibility (staff vs admin for wealth score, financials)
-- [ ] Audit log — track who changed what and when
-- [ ] Automated reminders — cron for grant report due dates, overdue donor contact
-- [ ] Bulk stage moves in Kanban
-- [ ] Next scheduled contact date per donor
-- [ ] Bloomerang / Salesforce import adapters
+**DB columns on `donors` table:**
+- `wealth_score` integer
+- `capacity_tier` text
+- `score_confidence` text
+- `score_last_updated` timestamptz
+- `score_rationale` text
+
+UI: score card on DonorProfile with color-coded tier badge (TIER_COLOR map), confidence indicator, rationale text, Recalculate button.
+
+---
+
+### Dynamic activity log templates
+**File:** `client/src/components/Donors.jsx` (LogTouchpointModal)
+
+Per-type prompt templates shown when logging a touchpoint. Types: Call, Meeting, Email, Event, Gift, Other. Each type pre-fills a structured note template (e.g., Call → "Called [name]. Discussed: ... Next step: ..."). On save, if type is Call or Meeting, a follow-up task is silently created (POST /tasks) with due date 7 days out, and a toast notification confirms it.
+
+---
+
+### App.jsx refactor
+**Before:** 3,195 lines (monolith with all components inline)
+**After:** 147 lines (thin shell: imports, TABS array, AppShell, App)
+
+12 component files extracted to `client/src/components/`:
+shared.jsx, Dashboard.jsx, Donors.jsx, Grants.jsx, Communications.jsx, Volunteers.jsx, Board.jsx, Finance.jsx, Tasks.jsx, Programs.jsx (inactive), AnnualFund.jsx (inactive), Settings.jsx
+
+---
+
+### Finance module
+**File:** `client/src/components/Finance.jsx`
+
+6 sub-tabs:
+1. **Overview** — YTD revenue vs expenses P&L chart, fund balance cards, AI forecast + risk analysis (streamed)
+2. **Transactions** — full CRUD table with date/description/amount/category/fund filters; inline add row
+3. **Accounts** — checking/savings/credit accounts with running balance
+4. **Funds** — restricted/unrestricted fund tracking with SVG sparkline (8-week trend per fund), balance vs target progress bar
+5. **Budgets** — category budgets (monthly or annual) with actuals vs budget comparison
+6. **Reports** — generated P&L, fund summary, and grant allocation reports
+
+**DB tables created:**
+- `fin_transactions` (id, org_id, date, description, amount, type, category, fund_id, account_id, donor_id)
+- `fin_accounts` (id, org_id, name, type, balance, institution)
+- `fin_funds` (id, org_id, name, balance, target, restricted, description)
+- `fin_budgets` (id, org_id, category, amount, period, fund_id)
+- `fin_audit_log` (id, org_id, table_name, record_id, action, changed_by, changed_at, old_values, new_values)
+
+**Donor → Finance sync:** POST /donors/:id/gifts inserts a corresponding `fin_transactions` row (type: income, category: donation, donor_id set). One-way sync — edits to gifts do not retroactively update fin_transactions.
+
+---
+
+### Email marketing (Communications)
+**File:** `client/src/components/Communications.jsx`
+
+Campaign builder with audience segmentation (all donors, by stage, by tag, lapsed). AI copywriting (streamed subject + body). Send via Resend HTTP API (`POST https://api.resend.com/emails`). Open tracking via 1×1 pixel redirect through backend. Campaign analytics (sent count, open count, open rate). Template library (save/reuse campaigns).
+
+**Backend routes:** POST /email/send, GET /email/campaigns, POST /email/campaigns, GET /email/open/:campaignId/:donorId (tracking pixel redirect)
+
+**Env var required:** `RESEND_API_KEY`
+**Sending domain:** noreply@stewardapp.dev (Resend domain verified)
+
+---
+
+### Stripe Connect + public donation
+**Files:** `client/src/components/Settings.jsx`, `client/src/pages/GivePage.jsx`, `server.js`
+
+- Settings: "Set up Stripe" button → POST /stripe/connect → returns Stripe account link URL → redirects to Stripe onboarding. After return, account ID stored on `orgs` table.
+- Public donation page at `/give/:orgSlug` — Stripe Checkout session (one-time and recurring). Donor name/email collected pre-checkout.
+- Campaign-specific payment links: grants and campaigns can have a `stripe_payment_link` that routes to a specific Checkout session.
+- Recurring gifts: Stripe Subscriptions (monthly/annual interval selector on GivePage).
+- Email gift request: button on DonorProfile opens a pre-filled email draft with a donation link.
+
+**DB columns on `orgs` table:** `org_slug` (text, unique), `stripe_account_id`, `stripe_connected_at`
+
+**DB tables:** `stripe_donations`, `stripe_subscriptions`
+
+**Env vars:** `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`
+
+**Backend routes:** POST /stripe/connect, GET /stripe/status, POST /stripe/checkout, POST /stripe/webhook, GET /stripe/online-gifts
+
+---
+
+### QR code + donation widget
+**File:** `client/src/components/Settings.jsx`
+
+- QR code: generated client-side via `qrcode` npm package from `/give/:orgSlug` URL. Download PNG, print (opens print-ready window), regenerate buttons.
+- Embed widget: `<iframe>` snippet with copyable code. Live preview rendered inline in Settings.
+
+---
+
+### Landing page rebuild
+**File:** `client/src/pages/Landing.jsx`
+
+Sections (in order): announcement bar, sticky nav (Features / Consulting links only — no Pricing), Hero, dark animated mesh card (desktop) / dark stats card (mobile), Steward definition section, What We Do (3 cards), Relational commitment section (dark green bg), Who We Serve (numbered rows: Nonprofits / Churches / Mission-driven orgs), Features grid (6 cards), Consulting section, Social proof (3 quotes), Final CTA, Footer.
+
+Mobile-specific: hamburger nav → bottom sheet drawer; dark `rgba(15,15,15,0.92)` stats card showing **8+** / **100%** / **$0** with green numbers and cream labels (replaces animated mesh on mobile); all sections stack to 1 column.
+
+**No pricing section.** Removed: tier cards, plan comparison, "Replace Bloomerang…" line.
+
+---
+
+### Mobile responsive pass
+**File:** `client/src/components/shared.jsx` (GlobalStyles — single source for all @media(max-width:768px) rules)
+
+- Mobile bottom nav bar (4 primary tabs + "More" drawer for secondary tabs)
+- Dashboard: 2×2 stat grid, pipeline horizontal scroll inside card, briefing wraps, lapsed card contained
+- Donors: toolbar stacks, Kanban horizontal scroll (snap), donor profile single column
+- Finance: sub-tab horizontal scroll strip
+- Grants: 2-column pipeline, profile stacks to single column
+- Communications: sidebar → horizontal scroll top nav
+- Volunteers/Board: 3-col → 2-col metric grids
+- All modals: bottom sheet (border-radius top corners, full width, 90vh max)
+- No element wider than 100vw; `overflow-x:hidden` on html/body
+
+---
+
+### Domain + email
+- **stewardapp.dev** purchased, DNS via Vercel nameservers → Vercel handles all routing
+- **Resend** domain verification complete for stewardapp.dev — SPF, DKIM records added
+- All transactional and campaign email sends from `noreply@stewardapp.dev`
+
+---
+
+## What was removed / consolidated
+- `AnnualFund.jsx` — tab removed (goal tracking moved to Finance Overview)
+- `Programs.jsx` — tab removed (program–grant linking now handled inline in Grants)
+- Find Grants — merged into Grants tab (not a separate tab)
+- Pricing section — removed from Landing.jsx and Settings.jsx (no plan tiers, no Upgrade buttons)
+
+---
+
+## Key file index
+| File | Role |
+|------|------|
+| client/src/App.jsx | Shell, TABS, AppShell (147 lines) |
+| client/src/components/shared.jsx | Design tokens, all shared components, GlobalStyles (all mobile CSS) |
+| client/src/components/Dashboard.jsx | AIChat overlay + Dashboard |
+| client/src/components/Donors.jsx | Full donor CRM — Kanban, profile, touchpoints, wealth score |
+| client/src/components/Grants.jsx | Grant CRUD + discovery merged |
+| client/src/components/Communications.jsx | Email campaigns via Resend |
+| client/src/components/Finance.jsx | 6-tab finance module |
+| client/src/components/Settings.jsx | Stripe, QR, embed, team |
+| client/src/pages/Landing.jsx | Public marketing page |
+| client/src/pages/GivePage.jsx | Public /give/:orgSlug donation page |
+| server.js | All Express routes |
+| auth.js | requireAuth, requireAdmin middleware |
+| db.js | Supabase client |
