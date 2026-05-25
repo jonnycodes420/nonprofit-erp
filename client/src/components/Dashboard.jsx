@@ -153,7 +153,7 @@ export function Dashboard({data,setData,onNavigate}) {
 
   return(
     <div style={{display:"flex",flexDirection:"column",gap:16}} className="fade-in">
-      <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10}}>
+      <div className="dash-stat-grid" style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10}}>
         {[
           {label:"Total Donors",value:totalDonors,sub:`${newDonorsThisYear} gave this year`,tab:"donors"},
           {label:"Active Grants",value:activeGrantCount,sub:fmt(pipelineValue)+" pipeline",tab:"grants"},
@@ -168,7 +168,7 @@ export function Dashboard({data,setData,onNavigate}) {
         ))}
       </div>
 
-      <div style={{display:"grid",gridTemplateColumns:"minmax(0,1fr) 320px",gap:16,alignItems:"start"}}>
+      <div className="dash-main-grid" style={{display:"grid",gridTemplateColumns:"minmax(0,1fr) 320px",gap:16,alignItems:"start"}}>
         <div style={{display:"flex",flexDirection:"column",gap:14}}>
           {/* AI Briefing */}
           <div style={{...cardWrap}}>
@@ -340,7 +340,7 @@ export function Dashboard({data,setData,onNavigate}) {
             <div style={sTitle}>Quick Actions</div>
             <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8,marginTop:12}}>
               {QUICK.map(a=>(
-                <button key={a.label} onClick={a.action} className="dash-action" style={{
+                <button key={a.label} onClick={a.action} className="dash-action dash-quick-btn" style={{
                   background:T.bg,border:"1px solid "+T.bg3,borderRadius:10,
                   padding:"12px 8px",display:"flex",flexDirection:"column",alignItems:"center",gap:6,cursor:"pointer",
                 }}>

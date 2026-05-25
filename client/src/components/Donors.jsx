@@ -118,11 +118,11 @@ function DonorImport({ onClose, onImported }) {
   };
 
   const overlay = { position:"fixed",inset:0,background:"#000c",zIndex:300,display:"flex",alignItems:"center",justifyContent:"center",padding:20 };
-  const modal = { background:T.white,border:"1px solid "+T.bg3,borderRadius:20,width:"100%",maxWidth:700,maxHeight:"88vh",overflowY:"auto",padding:28 };
+  const modal = { background:T.white,border:"1px solid "+T.bg3,borderRadius:20,width:"100%",maxWidth:700,maxHeight:"88vh",overflowY:"auto",padding:28,boxSizing:"border-box" };
   const inp = { width:"100%",background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"9px 12px",color:T.ink,fontSize:13,outline:"none",fontFamily:"inherit",boxSizing:"border-box" };
 
   if (result !== null) return (
-    <div style={overlay}><div style={{...modal,textAlign:"center"}}>
+    <div style={overlay} className="modal-sheet-overlay"><div style={{...modal,textAlign:"center"}} className="modal-sheet-inner">
       <div style={{fontSize:40,marginBottom:12}}>✓</div>
       <div style={{fontSize:22,fontWeight:800,color:T.ink,marginBottom:8}}>{result} donor{result!==1?"s":""} imported</div>
       <div style={{fontSize:14,color:T.ink3,marginBottom:24}}>Stages were auto-assigned based on gift history.</div>
@@ -131,8 +131,8 @@ function DonorImport({ onClose, onImported }) {
   );
 
   return (
-    <div style={overlay}>
-      <div style={modal}>
+    <div style={overlay} className="modal-sheet-overlay">
+      <div style={modal} className="modal-sheet-inner">
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
           <div>
             <div style={{fontSize:18,fontWeight:800,color:T.ink}}>Import Donors</div>
@@ -249,8 +249,8 @@ function FollowUpTaskModal({donor,onSave,onClose}){
     setLoading(false);
   };
   return(
-    <div style={{position:"fixed",inset:0,background:"#000000cc",backdropFilter:"blur(4px)",zIndex:400,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
-      <div className="fade-in" style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:18,width:"100%",maxWidth:420,padding:24,boxShadow:"0 4px 32px rgba(15,15,15,0.12)"}}>
+    <div className="modal-sheet-overlay" style={{position:"fixed",inset:0,background:"#000000cc",backdropFilter:"blur(4px)",zIndex:400,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+      <div className="fade-in modal-sheet-inner" style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:18,width:"100%",maxWidth:420,padding:24,boxShadow:"0 4px 32px rgba(15,15,15,0.12)"}}>
         <div style={{fontSize:16,fontWeight:800,color:T.ink,marginBottom:2}}>Create Follow-up Task</div>
         <div style={{fontSize:12,color:T.ink3,marginBottom:20}}>For {donor.name}</div>
         <div style={{display:"flex",flexDirection:"column",gap:12}}>
@@ -362,8 +362,8 @@ function LogTouchpointModal({donor,onSave,onClose}){
   const canSave=buildNote().trim().length>0;
 
   return(
-    <div style={{position:"fixed",inset:0,background:"#000000cc",backdropFilter:"blur(4px)",zIndex:300,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
-      <div className="fade-in" style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:18,width:"100%",maxWidth:520,maxHeight:"92vh",overflowY:"auto",padding:24,boxShadow:"0 4px 32px rgba(15,15,15,0.12)"}}>
+    <div className="modal-sheet-overlay" style={{position:"fixed",inset:0,background:"#000000cc",backdropFilter:"blur(4px)",zIndex:300,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+      <div className="fade-in modal-sheet-inner" style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:18,width:"100%",maxWidth:520,maxHeight:"92vh",overflowY:"auto",padding:24,boxShadow:"0 4px 32px rgba(15,15,15,0.12)"}}>
         <div style={{fontSize:16,fontWeight:800,color:T.ink,marginBottom:2}}>Log Touchpoint</div>
         <div style={{fontSize:12,color:T.ink3,marginBottom:16}}>{donor.name}</div>
         <div style={{display:"flex",gap:5,flexWrap:"wrap",marginBottom:16}}>
@@ -465,8 +465,8 @@ function EditDonorModal({donor,onSave,onClose}){
   };
 
   return(
-    <div style={{position:"fixed",inset:0,background:"#000c",zIndex:400,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
-      <div style={{background:"#ffffff",border:"1px solid "+T.bg3,borderRadius:20,width:"100%",maxWidth:480,padding:28,boxSizing:"border-box"}}>
+    <div className="modal-sheet-overlay" style={{position:"fixed",inset:0,background:"#000c",zIndex:400,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+      <div className="modal-sheet-inner" style={{background:"#ffffff",border:"1px solid "+T.bg3,borderRadius:20,width:"100%",maxWidth:480,padding:28,boxSizing:"border-box",overflowY:"auto"}}>
         <div style={{fontSize:18,fontWeight:800,color:T.ink,marginBottom:4}}>Edit Donor Profile</div>
         <div style={{fontSize:12,color:T.ink3,marginBottom:20}}>{donor.name}</div>
         <div style={{display:"flex",flexDirection:"column",gap:10}}>
@@ -667,7 +667,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
   return(
     <div className="fade-in" style={{position:"fixed",inset:0,background:T.bg,zIndex:200,display:"flex",flexDirection:"column",overflow:"hidden"}}>
       {showGiftModal&&<GiftLinkModal donor={donor} orgName={orgName} onClose={()=>setShowGiftModal(false)}/>}
-      <div style={{background:T.white,borderBottom:"1px solid "+T.bg3,padding:"10px 24px",display:"flex",alignItems:"center",gap:12,flexShrink:0}}>
+      <div className="donor-profile-header" style={{background:T.white,borderBottom:"1px solid "+T.bg3,padding:"10px 24px",display:"flex",alignItems:"center",gap:12,flexShrink:0}}>
         <button onClick={onClose} style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"7px 14px",color:T.ink3,fontSize:13,cursor:"pointer",whiteSpace:"nowrap"}}>← Back</button>
         <div style={{width:34,height:34,borderRadius:"50%",background:stage.color+"33",display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,fontWeight:800,color:stage.color,flexShrink:0}}>{donor.name[0]}</div>
         <div style={{flex:1,minWidth:0}}>
@@ -687,7 +687,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
         </div>
       </div>
 
-      <div style={{flex:1,display:"grid",gridTemplateColumns:"minmax(0,1.25fr) minmax(0,0.75fr)",overflow:"hidden"}}>
+      <div className="donor-profile-body" style={{flex:1,display:"grid",gridTemplateColumns:"minmax(0,1.25fr) minmax(0,0.75fr)",overflow:"hidden"}}>
         {/* LEFT */}
         <div style={{overflowY:"auto",padding:"22px 20px 24px 24px",borderRight:"1px solid "+T.bg3,display:"flex",flexDirection:"column",gap:18}}>
           <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10}}>
@@ -820,13 +820,13 @@ function DonorKanban({donors,onStageChange,onLogTouchpoint,onSelectDonor}){
   const[dragOver,setDragOver]=useState(null);
   const byStage=sid=>donors.filter(d=>(d.stage||"cultivate")===sid).sort((a,b)=>b.total-a.total);
   return(
-    <div style={{display:"grid",gridTemplateColumns:"repeat(6,1fr)",gap:8,minHeight:"calc(100vh - 260px)",alignItems:"flex-start",width:"100%"}}>
+    <div className="donor-kanban-wrap" style={{display:"grid",gridTemplateColumns:"repeat(6,1fr)",gap:8,minHeight:"calc(100vh - 260px)",alignItems:"flex-start",width:"100%"}}>
       {STAGES.map(stage=>{
         const cols=byStage(stage.id);
         const total=cols.reduce((s,d)=>s+d.total,0);
         const isOver=dragOver===stage.id;
         return(
-          <div key={stage.id} style={{display:"flex",flexDirection:"column",gap:6}}
+          <div key={stage.id} className="kanban-col" style={{display:"flex",flexDirection:"column",gap:6}}
             onDragOver={e=>{e.preventDefault();setDragOver(stage.id);}}
             onDragLeave={e=>{if(!e.currentTarget.contains(e.relatedTarget))setDragOver(null);}}
             onDrop={e=>{e.preventDefault();const id=e.dataTransfer.getData("donorId");if(id)onStageChange(id,stage.id);setDragOver(null);}}>
@@ -1225,9 +1225,9 @@ export function Donors({data,setData}){
         tasks={data.tasks.filter(t=>t.donorId===selected.id)} onTaskToggle={toggleTask}
         orgName={data.org?.name||""}/>}
 
-      <div style={{display:"flex",gap:10,flexWrap:"wrap",alignItems:"center"}}>
-        <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search donors…" style={{flex:1,minWidth:160,background:T.bg,border:"1px solid "+T.bg3,borderRadius:10,padding:"10px 14px",color:T.ink,fontSize:13,outline:"none"}}/>
-        <div style={{display:"flex",background:T.bg,border:"1px solid "+T.bg3,borderRadius:10,overflow:"hidden"}}>
+      <div className="donors-toolbar" style={{display:"flex",gap:10,flexWrap:"wrap",alignItems:"center"}}>
+        <input className="donors-search" value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search donors…" style={{flex:1,minWidth:160,background:T.bg,border:"1px solid "+T.bg3,borderRadius:10,padding:"10px 14px",color:T.ink,fontSize:13,outline:"none"}}/>
+        <div className="donors-view-toggle" style={{display:"flex",background:T.bg,border:"1px solid "+T.bg3,borderRadius:10,overflow:"hidden"}}>
           {[["kanban","Pipeline"],["list","List"],["reengage","Re-engage"]].map(([v,l])=>(
             <button key={v} onClick={()=>setView(v)} style={{background:view===v?T.bg2:"transparent",border:"none",padding:"9px 14px",color:view===v?T.ink:"#6b7280",fontSize:13,fontWeight:view===v?700:400,cursor:"pointer",display:"flex",alignItems:"center",gap:5}}>
               {l}

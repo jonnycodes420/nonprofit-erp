@@ -24,6 +24,19 @@ const TABS=[
   {id:"tasks",label:"Tasks",icon:"◻"},
   {id:"settings",label:"Settings",icon:"⚙"},
 ];
+const BOTTOM_TABS=[
+  {id:"dashboard",label:"Dashboard",icon:"◈"},
+  {id:"donors",label:"Donors",icon:"♦"},
+  {id:"grants",label:"Grants",icon:"◉"},
+  {id:"finance",label:"Finance",icon:"◇"},
+];
+const MORE_TABS=[
+  {id:"communications",label:"Communications",icon:"◑"},
+  {id:"volunteers",label:"Volunteers",icon:"◎",earlyAccess:true},
+  {id:"board",label:"Board",icon:"◆",earlyAccess:true},
+  {id:"tasks",label:"Tasks",icon:"◻"},
+  {id:"settings",label:"Settings",icon:"⚙"},
+];
 
 // ── App Shell ──────────────────────────────────────────────────────────────
 function AppShell() {
@@ -34,6 +47,7 @@ function AppShell() {
   const [loadErr,setLoadErr]=useState("");
   const [showChat,setShowChat]=useState(false);
   const [stripeToast,setStripeToast]=useState(false);
+  const [moreOpen,setMoreOpen]=useState(false);
 
   useEffect(()=>{
     const params=new URLSearchParams(window.location.search);
@@ -104,17 +118,17 @@ function AppShell() {
         <button onClick={()=>setShowChat(true)} style={{background:T.green,border:"none",borderRadius:10,padding:"7px 16px",color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer",display:"flex",alignItems:"center",gap:7}}>
           ✦ Ask AI
         </button>
-        <div style={{width:30,height:30,borderRadius:8,background:auth?.user?.role==="admin"?T.green+"18":T.bg2,border:`1px solid ${auth?.user?.role==="admin"?T.green+"40":T.bg3}`,display:"flex",alignItems:"center",justifyContent:"center"}}>
+        <div className="app-avatar" style={{width:30,height:30,borderRadius:8,background:auth?.user?.role==="admin"?T.green+"18":T.bg2,border:`1px solid ${auth?.user?.role==="admin"?T.green+"40":T.bg3}`,display:"flex",alignItems:"center",justifyContent:"center"}}>
           <span style={{fontSize:12,fontWeight:700,color:auth?.user?.role==="admin"?T.greenDk:T.ink3}}>{(auth?.user?.name||"U")[0].toUpperCase()}</span>
         </div>
-        <button onClick={logout} style={{background:"transparent",border:"1px solid "+T.bg3,borderRadius:8,padding:"6px 12px",color:T.ink3,fontSize:12,cursor:"pointer"}}>
+        <button onClick={logout} className="app-signout" style={{background:"transparent",border:"1px solid "+T.bg3,borderRadius:8,padding:"6px 12px",color:T.ink3,fontSize:12,cursor:"pointer"}}>
           Sign out
         </button>
       </div>
     </div>
 
     {/* Tab bar */}
-    <div style={{display:"flex",padding:"0 20px",borderBottom:"1px solid "+T.bg3,overflowX:"auto",flexShrink:0,background:T.bg}}>
+    <div className="app-tabbar" style={{display:"flex",padding:"0 20px",borderBottom:"1px solid "+T.bg3,overflowX:"auto",flexShrink:0,background:T.bg}}>
       {TABS.map(t=>{
         const active=tab===t.id;
         return <button key={t.id} onClick={()=>setTab(t.id)} style={{background:"transparent",border:"none",borderBottom:`2px solid ${active?T.greenDk:"transparent"}`,padding:"12px 18px",color:active?T.greenDk:T.ink3,fontSize:13,fontWeight:active?700:500,cursor:"pointer",display:"flex",alignItems:"center",gap:6,whiteSpace:"nowrap",transition:"color 0.15s,border-color 0.15s",flexShrink:0,marginBottom:-1}}>
@@ -125,7 +139,7 @@ function AppShell() {
       })}
     </div>
 
-    <div style={{flex:1,padding:"28px 24px",maxWidth:1400,width:"100%",margin:"0 auto",boxSizing:"border-box"}}>
+    <div className="app-content" style={{flex:1,padding:"28px 24px",maxWidth:1400,width:"100%",margin:"0 auto",boxSizing:"border-box"}}>
       {tab==="dashboard"&&<Dashboard data={data} setData={setData} onNavigate={setTab}/>}
       {tab==="donors"&&<Donors data={data} setData={setData}/>}
       {tab==="grants"&&<Grants data={data} setData={setData}/>}
@@ -145,6 +159,43 @@ function AppShell() {
       </div>
       <button onClick={()=>setStripeToast(false)} style={{marginLeft:"auto",background:"rgba(255,255,255,0.2)",border:"none",borderRadius:6,color:"#fff",cursor:"pointer",padding:"2px 8px",fontSize:13,fontWeight:700}}>✕</button>
     </div>}
+
+    {/* More drawer — mobile only */}
+    {moreOpen&&<div className="mobile-more-overlay" onClick={()=>setMoreOpen(false)}>
+      <div className="mobile-more-drawer slide-up" onClick={e=>e.stopPropagation()}>
+        <div className="mobile-more-handle"/>
+        {MORE_TABS.map(t=>{
+          const active=tab===t.id;
+          return(
+            <button key={t.id} onClick={()=>{setTab(t.id);setMoreOpen(false);}} className={`mobile-more-row${active?" active":""}`}>
+              <span className="mob-icon">{t.icon}</span>
+              <span style={{flex:1}}>{t.label}</span>
+              {t.earlyAccess&&<span style={{fontSize:9,fontWeight:700,letterSpacing:"0.04em",background:T.greenDk+"18",color:T.greenDk,border:`1px solid ${T.greenDk}30`,borderRadius:99,padding:"2px 7px"}}>Early Access</span>}
+              {t.id==="tasks"&&tasksDue>0&&<span style={{background:"#ef4444",color:"#fff",fontSize:10,fontWeight:800,borderRadius:99,padding:"1px 6px"}}>{tasksDue}</span>}
+            </button>
+          );
+        })}
+        <div style={{borderTop:"1px solid "+T.bg3,margin:"4px 0"}}/>
+        <button className="mobile-more-signout" onClick={()=>{logout();setMoreOpen(false);}}>
+          <span className="mob-icon" style={{fontSize:18,width:28,textAlign:"center"}}>↩</span>
+          Sign out
+        </button>
+      </div>
+    </div>}
+
+    {/* Bottom nav bar — mobile only, always in DOM */}
+    <div className="mobile-bottom-bar">
+      {BOTTOM_TABS.map(t=>(
+        <button key={t.id} onClick={()=>{setTab(t.id);setMoreOpen(false);}} className={`mobile-bottom-tab${tab===t.id?" active":""}`}>
+          <span className="mob-icon">{t.icon}</span>
+          {t.label}
+        </button>
+      ))}
+      <button onClick={()=>setMoreOpen(v=>!v)} className={`mobile-bottom-tab${MORE_TABS.some(t=>t.id===tab)||moreOpen?" active":""}`}>
+        <span className="mob-icon">⋯</span>
+        More
+      </button>
+    </div>
   </div>;
 }
 

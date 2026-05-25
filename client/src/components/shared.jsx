@@ -122,13 +122,60 @@ export function GlobalStyles() {
     @keyframes sp{to{transform:rotate(360deg)}}
     @keyframes fadein{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
     @keyframes slidein{from{opacity:0;transform:translateX(16px)}to{opacity:1;transform:translateX(0)}}
+    @keyframes slideup{from{opacity:0;transform:translateY(100%)}to{opacity:1;transform:translateY(0)}}
     @keyframes pulse{0%,100%{opacity:1}50%{opacity:0.4}}
     .fade-in{animation:fadein 0.22s ease both;}
     .slide-in{animation:slidein 0.22s ease both;}
+    .slide-up{animation:slideup 0.25s ease both;}
     .card-click:hover{border-color:#1a6b4a!important;transform:translateY(-1px);}
     .card-click{transition:border-color 0.15s,transform 0.15s;}
     .dash-row:hover{background:#f7f4ef!important;box-shadow:inset 2px 0 0 #1a6b4a;}
     .dash-action:hover{background:#f0fdf4!important;border-color:#1a6b4a!important;}
+
+    /* ── Mobile bottom nav (hidden on desktop) ─────────────────────────── */
+    .mobile-bottom-bar{display:none;position:fixed;bottom:0;left:0;right:0;z-index:150;background:#f0ede6;border-top:1px solid #e8e2d9;box-shadow:0 -1px 0 rgba(0,0,0,.05),0 -4px 20px rgba(0,0,0,.04);padding-bottom:env(safe-area-inset-bottom,0px);}
+    .mobile-bottom-tab{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;background:transparent;border:none;cursor:pointer;padding:8px 4px;color:#6b7280;font-family:'DM Sans',system-ui,sans-serif;font-size:9px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;min-height:60px;transition:color .15s;}
+    .mobile-bottom-tab .mob-icon{font-size:18px;line-height:1.2;margin-bottom:1px;display:block;}
+    .mobile-bottom-tab.active{color:#1a6b4a;}
+    .mobile-more-overlay{display:none;position:fixed;inset:0;z-index:200;background:rgba(0,0,0,.45);align-items:flex-end;}
+    .mobile-more-drawer{background:#f0ede6;border-radius:20px 20px 0 0;width:100%;padding-bottom:env(safe-area-inset-bottom,0px);overflow:hidden;}
+    .mobile-more-handle{width:36px;height:4px;border-radius:2px;background:#c8c4bb;margin:12px auto 4px;}
+    .mobile-more-row{display:flex;align-items:center;gap:16px;width:100%;background:transparent;border:none;border-bottom:1px solid #e8e2d9;padding:16px 24px;color:#1a1a1a;font-family:'DM Sans',system-ui,sans-serif;font-size:16px;font-weight:500;cursor:pointer;text-align:left;}
+    .mobile-more-row .mob-icon{font-size:20px;width:28px;text-align:center;flex-shrink:0;}
+    .mobile-more-row.active{color:#1a6b4a;font-weight:700;}
+    .mobile-more-signout{display:flex;align-items:center;gap:16px;width:100%;background:transparent;border:none;padding:16px 24px;color:#6b7280;font-family:'DM Sans',system-ui,sans-serif;font-size:16px;font-weight:400;cursor:pointer;text-align:left;}
+
+    @media(max-width:768px){
+      /* Navigation */
+      .app-tabbar{display:none!important;}
+      .app-signout{display:none!important;}
+      .mobile-bottom-bar{display:flex!important;}
+      .mobile-more-overlay{display:flex!important;}
+      .app-content{padding:20px 16px calc(68px + env(safe-area-inset-bottom,0px)) 16px!important;max-width:100%!important;}
+
+      /* Dashboard */
+      .dash-stat-grid{grid-template-columns:repeat(2,1fr)!important;}
+      .dash-main-grid{grid-template-columns:1fr!important;}
+      .dash-quick-btn{min-height:64px!important;padding:12px 8px!important;}
+
+      /* Donors toolbar */
+      .donors-toolbar{flex-direction:column!important;align-items:stretch!important;gap:8px!important;}
+      .donors-search{flex:none!important;min-width:unset!important;width:100%!important;}
+      .donors-view-toggle{width:100%!important;}
+      .donors-view-toggle button{flex:1!important;justify-content:center!important;}
+
+      /* Kanban horizontal scroll */
+      .donor-kanban-wrap{display:flex!important;flex-direction:row!important;overflow-x:auto!important;-webkit-overflow-scrolling:touch!important;scroll-snap-type:x mandatory!important;align-items:flex-start!important;min-height:auto!important;padding-bottom:12px!important;gap:10px!important;}
+      .kanban-col{min-width:268px!important;width:268px!important;max-width:268px!important;flex-shrink:0!important;scroll-snap-align:start!important;}
+
+      /* Mobile modal sheets */
+      .modal-sheet-overlay{align-items:flex-end!important;padding:0!important;}
+      .modal-sheet-inner{border-radius:20px 20px 0 0!important;max-width:100%!important;width:100%!important;max-height:90vh!important;margin:0!important;}
+
+      /* Donor profile */
+      .donor-profile-body{grid-template-columns:1fr!important;overflow:auto!important;}
+      .donor-profile-header{padding:10px 16px!important;}
+    }
   `}</style>;
 }
 
