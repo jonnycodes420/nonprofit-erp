@@ -9,6 +9,8 @@ import InvitePage from "./pages/InvitePage";
 import App from "./App";
 import Landing from "./pages/Landing";
 import Donate from "./pages/Donate";
+import { Analytics } from '@vercel/analytics/react'
+import { SpeedInsights } from '@vercel/speed-insights/react'
 
 const AuthCtx = createContext(null);
 export const useAuth = () => useContext(AuthCtx);
@@ -77,6 +79,8 @@ function Root() {
           <Route path="/give/:orgSlug" element={<Donate />} />
           <Route path="*"          element={<Navigate to="/" replace />} />
         </Routes>
+        <Analytics />
+        <SpeedInsights />
       </BrowserRouter>
     </AuthProvider>
   );
