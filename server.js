@@ -1981,6 +1981,422 @@ app.post("/demo-request", wrap(async (req, res) => {
   res.json({ success: true });
 }));
 
+// ── Board Reports ──────────────────────────────────────────────────────────
+const BOARD_REPORTS_DDL = `
+  CREATE TABLE IF NOT EXISTS board_reports (
+    id TEXT PRIMARY KEY,
+    org_id TEXT NOT NULL,
+    quarter INTEGER,
+    year INTEGER,
+    generated_at TIMESTAMPTZ DEFAULT NOW(),
+    generated_by TEXT,
+    generated_by_name TEXT,
+    metrics TEXT,
+    pdf_data TEXT
+  )`;
+const BOARD_REPORTS_MIGRATE = `ALTER TABLE board_reports ADD COLUMN IF NOT EXISTS pdf_data TEXT`;
+
+app.get("/reports/board", requireAuth, wrap(async (req, res) => {
+  await run(BOARD_REPORTS_DDL).catch(() => {});
+  await run(BOARD_REPORTS_MIGRATE).catch(() => {});
+  const rows = await query(
+    "SELECT id, quarter, year, generated_at, generated_by_name, metrics FROM board_reports WHERE org_id = ? ORDER BY generated_at DESC LIMIT 20",
+    [req.user.orgId]
+  );
+  res.json(rows.map(r => ({
+    ...r,
+    metrics: typeof r.metrics === "string" ? JSON.parse(r.metrics || "{}") : (r.metrics || {}),
+  })));
+}));
+
+app.get("/reports/board/:id/pdf", requireAuth, wrap(async (req, res) => {
+  const [report] = await query(
+    "SELECT id, quarter, year, pdf_data FROM board_reports WHERE id = ? AND org_id = ?",
+    [req.params.id, req.user.orgId]
+  );
+  if (!report || !report.pdf_data) return res.status(404).json({ error: "Report not found" });
+  const buf = Buffer.from(report.pdf_data, "base64");
+  res.setHeader("Content-Type", "application/pdf");
+  res.setHeader("Content-Disposition", `attachment; filename="board-report-q${report.quarter}-${report.year}.pdf"`);
+  res.setHeader("Content-Length", buf.length);
+  res.end(buf);
+}));
+
+app.post("/reports/board", requireAuth, wrap(async (req, res) => {
+  const PDFDocument = require("pdfkit");
+  const { orgId, userId, email } = req.user;
+
+  await run(BOARD_REPORTS_DDL).catch(() => {});
+
+  // Date helpers
+  const now = new Date();
+  const yr = now.getFullYear();
+  const q = Math.floor(now.getMonth() / 3) + 1;
+  const qMs = new Date(yr, (q - 1) * 3, 1).toISOString().slice(0, 10);
+  const qMe = new Date(yr, q * 3, 0).toISOString().slice(0, 10);
+  const pqMs = new Date(yr, (q - 2) * 3, 1).toISOString().slice(0, 10);
+  const pqMe = new Date(yr, (q - 1) * 3, 0).toISOString().slice(0, 10);
+  const ytdS = `${yr}-01-01`;
+  const ytdE = `${yr}-12-31`;
+  const today = now.toISOString().slice(0, 10);
+
+  // Fetch raw data
+  const [org, allDonors, allGrants, allTasks, allCampaigns] = await Promise.all([
+    query("SELECT * FROM orgs WHERE id = ?", [orgId]).then(r => r[0]),
+    query("SELECT id,name,total_giving,stage,created_at FROM donors WHERE org_id = ?", [orgId]),
+    query("SELECT * FROM grants WHERE org_id = ?", [orgId]),
+    query("SELECT done,due,updated_at FROM tasks WHERE org_id = ?", [orgId]),
+    query("SELECT * FROM campaigns WHERE org_id = ?", [orgId]),
+  ]);
+
+  // Finance
+  const [ytdFinRows, allFinRows, topExpRows, budgetRows] = await Promise.all([
+    query("SELECT type, SUM(amount) as total FROM fin_transactions WHERE org_id = ? AND date >= ? AND date <= ? GROUP BY type", [orgId, ytdS, ytdE]),
+    query("SELECT type, SUM(amount) as total FROM fin_transactions WHERE org_id = ? GROUP BY type", [orgId]),
+    query(
+      `SELECT a.name, SUM(ft.amount) as total FROM fin_transactions ft
+       LEFT JOIN accounts a ON a.id = ft.account_id
+       WHERE ft.org_id = ? AND ft.type = 'expense' AND ft.date >= ? AND ft.date <= ?
+       GROUP BY a.name ORDER BY total DESC LIMIT 5`,
+      [orgId, ytdS, ytdE]
+    ),
+    query(
+      `SELECT a.name, COALESCE(b.amount, 0) as budget, COALESCE(SUM(ft.amount), 0) as actual
+       FROM accounts a
+       LEFT JOIN budgets b ON b.account_id = a.id AND b.year = ?
+       LEFT JOIN fin_transactions ft ON ft.account_id = a.id AND ft.type = 'expense' AND ft.date >= ? AND ft.date <= ?
+       WHERE a.org_id = ? AND a.type = 'expense' AND a.active = TRUE
+       GROUP BY a.name, b.amount ORDER BY actual DESC LIMIT 8`,
+      [yr, ytdS, ytdE, orgId]
+    ),
+  ]);
+
+  const ytdFin = Object.fromEntries(ytdFinRows.map(r => [r.type, parseFloat(r.total) || 0]));
+  const allFin = Object.fromEntries(allFinRows.map(r => [r.type, parseFloat(r.total) || 0]));
+  const ytdRevenue  = ytdFin.income  || 0;
+  const ytdExpenses = ytdFin.expense || 0;
+  const netSurplus  = ytdRevenue - ytdExpenses;
+  const cashOnHand  = (allFin.income || 0) - (allFin.expense || 0);
+  const totalBudget = budgetRows.reduce((s, r) => s + (parseFloat(r.budget) || 0), 0);
+  const totalActual = budgetRows.reduce((s, r) => s + (parseFloat(r.actual) || 0), 0);
+  const budgetVariance = totalBudget - totalActual;
+
+  // Donors
+  const totalDonors  = allDonors.length;
+  const lapsedDonors = allDonors.filter(d => d.stage === "lapsed").length;
+  const newDonorsQ   = allDonors.filter(d => (d.created_at || "").slice(0, 10) >= qMs && (d.created_at || "").slice(0, 10) <= qMe).length;
+  const top10        = [...allDonors].sort((a, b) => (b.total_giving || 0) - (a.total_giving || 0)).slice(0, 10);
+
+  const [thisYrRows, prevYrRows, qGiftRows, pqGiftRows] = await Promise.all([
+    query("SELECT DISTINCT donor_id FROM gifts WHERE org_id = ? AND date >= ? AND date <= ?", [orgId, ytdS, ytdE]),
+    query("SELECT DISTINCT donor_id FROM gifts WHERE org_id = ? AND date >= ? AND date <= ?", [orgId, `${yr - 1}-01-01`, `${yr - 1}-12-31`]),
+    query("SELECT COALESCE(SUM(amount),0) as total FROM gifts WHERE org_id = ? AND date >= ? AND date <= ?", [orgId, qMs, qMe]),
+    query("SELECT COALESCE(SUM(amount),0) as total FROM gifts WHERE org_id = ? AND date >= ? AND date <= ?", [orgId, pqMs, pqMe]),
+  ]);
+  const prevYrIds     = new Set(prevYrRows.map(r => r.donor_id));
+  const thisYrIds     = new Set(thisYrRows.map(r => r.donor_id));
+  const retained      = [...thisYrIds].filter(id => prevYrIds.has(id)).length;
+  const retentionRate = prevYrIds.size > 0 ? Math.round(retained / prevYrIds.size * 100) : 0;
+  const raisedThisQ   = parseFloat(qGiftRows[0]?.total) || 0;
+  const raisedLastQ   = parseFloat(pqGiftRows[0]?.total) || 0;
+
+  // Grants
+  const activeGrants    = allGrants.filter(g => g.status === "active");
+  const pipelineGrants  = allGrants.filter(g => ["prospecting", "pending"].includes(g.status));
+  const wonThisQ        = allGrants.filter(g => g.status === "active" && (g.updated_at || "").slice(0, 10) >= qMs);
+  const thirty          = new Date(now); thirty.setDate(thirty.getDate() + 30);
+  const upcomingDL      = allGrants.filter(g => {
+    if (!g.deadline || g.status === "closed") return false;
+    const d = new Date(g.deadline); return d >= now && d <= thirty;
+  });
+  const pipelineValue = pipelineGrants.reduce((s, g) => s + (g.amount || 0), 0);
+  const awardedYTD    = activeGrants.reduce((s, g) => s + (g.received || 0), 0);
+
+  // Communications
+  const sentQ        = allCampaigns.filter(c => c.status === "sent" && (c.sent_at || "").slice(0, 10) >= qMs && (c.sent_at || "").slice(0, 10) <= qMe);
+  const avgOpenRate  = sentQ.length > 0
+    ? Math.round(sentQ.reduce((s, c) => s + ((c.open_count || 0) / Math.max(c.recipient_count || 1, 1) * 100), 0) / sentQ.length)
+    : 0;
+  const totalReached = sentQ.reduce((s, c) => s + (c.recipient_count || 0), 0);
+
+  // Tasks
+  const completedQ = allTasks.filter(t => t.done && (t.updated_at || "").slice(0, 10) >= qMs).length;
+  const overdue    = allTasks.filter(t => !t.done && t.due && t.due < today).length;
+
+  // AI Executive Summary
+  const client = new Anthropic();
+  let execSummary = "";
+  try {
+    const msg = await client.messages.create({
+      model: "claude-sonnet-4-6",
+      max_tokens: 600,
+      messages: [{
+        role: "user",
+        content: `Write an executive summary for a nonprofit board of directors. Exactly 3 paragraphs. Confident, board-appropriate, factual tone. No bullet points. No headers. Prose only.
+
+Paragraph 1 — Financial Health: YTD Revenue $${ytdRevenue.toLocaleString()}, Expenses $${ytdExpenses.toLocaleString()}, Net Surplus $${netSurplus.toLocaleString()}, Cash on Hand $${cashOnHand.toLocaleString()}, Budget Variance ${budgetVariance >= 0 ? "favorable" : "unfavorable"} by $${Math.abs(budgetVariance).toLocaleString()}. Top expense category: ${topExpRows[0]?.name || "operations"}.
+
+Paragraph 2 — Donor & Fundraising Momentum: ${totalDonors} total donors, ${newDonorsQ} new this quarter, ${lapsedDonors} lapsed, ${retentionRate}% retention rate vs prior year. Raised $${raisedThisQ.toLocaleString()} this quarter vs $${raisedLastQ.toLocaleString()} last quarter. ${sentQ.length} campaigns sent with ${avgOpenRate}% average open rate.
+
+Paragraph 3 — Grants & Opportunities: ${activeGrants.length} active grants, $${pipelineValue.toLocaleString()} in pipeline, $${awardedYTD.toLocaleString()} awarded YTD. ${wonThisQ.length} grants won this quarter. ${upcomingDL.length} deadline(s) in the next 30 days${upcomingDL.length > 0 ? " (" + upcomingDL.slice(0, 3).map(g => g.funder).join(", ") + ")" : ""}. ${overdue} overdue tasks.
+
+Organization: ${org.name}. Mission: ${org.mission || "not specified"}. Period: Q${q} ${yr}.`,
+      }],
+    });
+    execSummary = msg.content[0].text.trim();
+  } catch(e) {
+    console.error("Board report AI summary:", e.message);
+    execSummary = `${org.name} concludes Q${q} ${yr} with year-to-date revenue of $${ytdRevenue.toLocaleString()} and expenses of $${ytdExpenses.toLocaleString()}, producing a net ${netSurplus >= 0 ? "surplus" : "deficit"} of $${Math.abs(netSurplus).toLocaleString()}. Cash on hand stands at $${cashOnHand.toLocaleString()}, with a budget variance that is ${budgetVariance >= 0 ? "favorable" : "unfavorable"} by $${Math.abs(budgetVariance).toLocaleString()}.\n\nThe donor base comprises ${totalDonors} constituents, with ${newDonorsQ} new donors acquired this quarter and a year-over-year retention rate of ${retentionRate}%. The organization raised $${raisedThisQ.toLocaleString()} this quarter compared to $${raisedLastQ.toLocaleString()} in the prior quarter. ${sentQ.length} email campaigns reached ${totalReached} donors with an average open rate of ${avgOpenRate}%.\n\nThe grant portfolio includes ${activeGrants.length} active grants with $${pipelineValue.toLocaleString()} in the pipeline and $${awardedYTD.toLocaleString()} awarded year to date. ${wonThisQ.length > 0 ? wonThisQ.length + " grant(s) were secured this quarter. " : ""}${upcomingDL.length} deadline(s) fall within the next 30 days, requiring board awareness and organizational follow-through.`;
+  }
+
+  // Generate PDF
+  const doc = new PDFDocument({ margin: 50, size: "LETTER", bufferPages: true });
+  const pdfBuffer = await new Promise((resolve, reject) => {
+    const chunks = [];
+    doc.on("data", c => chunks.push(c));
+    doc.on("end", () => resolve(Buffer.concat(chunks)));
+    doc.on("error", reject);
+
+    const GREEN = "#1a6b4a";
+    const INK   = "#1a1a1a";
+    const INK3  = "#6b7280";
+    const BG    = "#f5f5f0";
+    const PW    = doc.page.width;
+    const fmtD  = n => "$" + (parseFloat(n) || 0).toLocaleString("en-US", { maximumFractionDigits: 0 });
+    const ql    = `Q${q} ${yr}`;
+    const genDate = now.toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" });
+
+    // ── PAGE 1: Cover ──────────────────────────────────────────────────────
+    doc.rect(0, 0, PW, doc.page.height).fill("#0d1117");
+    doc.rect(0, 0, PW, 5).fill(GREEN);
+    doc.rect(0, doc.page.height - 5, PW, 5).fill(GREEN);
+    doc.font("Helvetica-Bold").fontSize(30).fillColor("#ffffff").text(org.name, 0, 250, { align: "center", width: PW });
+    doc.font("Helvetica").fontSize(10).fillColor("#6b7280").text("B O A R D   R E P O R T", 0, doc.y + 10, { align: "center" });
+    doc.font("Helvetica-Bold").fontSize(22).fillColor(GREEN).text(ql, 0, doc.y + 10, { align: "center" });
+    doc.font("Helvetica").fontSize(10).fillColor("#4b5563").text(genDate, 0, doc.y + 8, { align: "center" });
+    doc.font("Helvetica").fontSize(8).fillColor("#374151").text("CONFIDENTIAL — FOR BOARD USE ONLY", 0, doc.y + 40, { align: "center", characterSpacing: 1.5 });
+
+    // ── PAGE 2: Executive Summary ──────────────────────────────────────────
+    doc.addPage();
+    doc.rect(0, 0, PW, 58).fill(GREEN);
+    doc.font("Helvetica-Bold").fontSize(20).fillColor("#fff").text("Executive Summary", 50, 18);
+    doc.font("Helvetica").fontSize(9).fillColor("#a7f3d0").text(ql + " · " + org.name, 50, 42);
+
+    let y = 76;
+    execSummary.split(/\n+/).filter(Boolean).forEach((para, i) => {
+      if (i > 0) y += 12;
+      doc.font("Helvetica").fontSize(11).fillColor(INK).text(para.trim(), 50, y, { width: PW - 100, lineGap: 5 });
+      y = doc.y + 2;
+    });
+
+    // ── PAGE 3: Financial Snapshot ─────────────────────────────────────────
+    doc.addPage();
+    doc.rect(0, 0, PW, 58).fill(GREEN);
+    doc.font("Helvetica-Bold").fontSize(20).fillColor("#fff").text("Financial Snapshot", 50, 18);
+    doc.font("Helvetica").fontSize(9).fillColor("#a7f3d0").text(`Year to Date ${yr}`, 50, 42);
+
+    y = 76;
+    const mw = (PW - 100) / 4;
+    [
+      ["YTD Revenue",  fmtD(ytdRevenue),  "#1a6b4a"],
+      ["YTD Expenses", fmtD(ytdExpenses), "#dc2626"],
+      ["Net Surplus",  fmtD(netSurplus),  netSurplus >= 0 ? "#1a6b4a" : "#dc2626"],
+      ["Cash on Hand", fmtD(cashOnHand),  cashOnHand >= 0 ? "#1a6b4a" : "#dc2626"],
+    ].forEach(([label, value, color], i) => {
+      const x = 50 + i * mw;
+      doc.rect(x, y, mw - 6, 60).fill(BG);
+      doc.font("Helvetica").fontSize(7).fillColor(INK3).text(label.toUpperCase(), x + 8, y + 9, { width: mw - 18 });
+      doc.font("Helvetica-Bold").fontSize(15).fillColor(color).text(value, x + 8, y + 24, { width: mw - 18 });
+    });
+    y += 72;
+
+    doc.font("Helvetica-Bold").fontSize(11).fillColor(INK).text("Budget vs. Actuals — Expense Accounts", 50, y); y += 18;
+    doc.rect(50, y, PW - 100, 22).fill(GREEN);
+    doc.font("Helvetica-Bold").fontSize(8).fillColor("#fff");
+    doc.text("Account", 58, y + 7, { width: 195 });
+    doc.text("Budget", 260, y + 7, { width: 85, align: "right" });
+    doc.text("Actual YTD", 352, y + 7, { width: 85, align: "right" });
+    doc.text("Variance", 444, y + 7, { width: 78, align: "right" });
+    y += 22;
+
+    budgetRows.forEach((row, i) => {
+      const bgt  = parseFloat(row.budget) || 0;
+      const act  = parseFloat(row.actual) || 0;
+      const vari = bgt - act;
+      doc.rect(50, y, PW - 100, 20).fill(i % 2 === 0 ? "#ffffff" : BG);
+      doc.font("Helvetica").fontSize(8).fillColor(INK).text(row.name || "Uncategorized", 58, y + 6, { width: 195 });
+      doc.text(bgt > 0 ? fmtD(bgt) : "—", 260, y + 6, { width: 85, align: "right" });
+      doc.text(fmtD(act), 352, y + 6, { width: 85, align: "right" });
+      doc.font("Helvetica-Bold").fillColor(vari >= 0 ? "#1a6b4a" : "#dc2626").text((vari >= 0 ? "+" : "") + fmtD(vari), 444, y + 6, { width: 78, align: "right" });
+      y += 20;
+    });
+
+    doc.rect(50, y, PW - 100, 22).fill("#e5e7eb");
+    doc.font("Helvetica-Bold").fontSize(8).fillColor(INK).text("TOTAL", 58, y + 7, { width: 195 });
+    doc.text(fmtD(totalBudget), 260, y + 7, { width: 85, align: "right" });
+    doc.text(fmtD(totalActual), 352, y + 7, { width: 85, align: "right" });
+    doc.fillColor(budgetVariance >= 0 ? "#1a6b4a" : "#dc2626").text((budgetVariance >= 0 ? "+" : "") + fmtD(budgetVariance), 444, y + 7, { width: 78, align: "right" });
+    y += 30;
+
+    if (topExpRows.length > 0) {
+      doc.font("Helvetica").fontSize(8).fillColor(INK3).text(
+        `Largest expense category: ${topExpRows[0].name} (${fmtD(topExpRows[0].total)})`, 50, y
+      );
+    }
+
+    // ── PAGE 4: Donor Dashboard ────────────────────────────────────────────
+    doc.addPage();
+    doc.rect(0, 0, PW, 58).fill(GREEN);
+    doc.font("Helvetica-Bold").fontSize(20).fillColor("#fff").text("Donor Dashboard", 50, 18);
+    doc.font("Helvetica").fontSize(9).fillColor("#a7f3d0").text(ql, 50, 42);
+
+    y = 76;
+    [
+      ["Total Donors",      String(totalDonors),  INK],
+      ["New This Quarter",  String(newDonorsQ),   "#1a6b4a"],
+      ["Lapsed Donors",     String(lapsedDonors), "#dc2626"],
+      ["Retention Rate",    retentionRate + "%",  retentionRate >= 70 ? "#1a6b4a" : retentionRate >= 50 ? "#f59e0b" : "#dc2626"],
+    ].forEach(([label, value, color], i) => {
+      const x = 50 + i * mw;
+      doc.rect(x, y, mw - 6, 60).fill(BG);
+      doc.font("Helvetica").fontSize(7).fillColor(INK3).text(label.toUpperCase(), x + 8, y + 9, { width: mw - 18 });
+      doc.font("Helvetica-Bold").fontSize(15).fillColor(color).text(value, x + 8, y + 24, { width: mw - 18 });
+    });
+    y += 72;
+
+    const qChange = raisedLastQ > 0 ? ((raisedThisQ - raisedLastQ) / raisedLastQ * 100).toFixed(1) : null;
+    doc.rect(50, y, PW - 100, 44).fill(BG);
+    doc.font("Helvetica").fontSize(8).fillColor(INK3).text("RAISED THIS QUARTER", 62, y + 9);
+    doc.font("Helvetica-Bold").fontSize(20).fillColor(GREEN).text(fmtD(raisedThisQ), 62, y + 22);
+    doc.font("Helvetica").fontSize(9).fillColor(INK3).text(`vs ${fmtD(raisedLastQ)} prior quarter`, 215, y + 26);
+    if (qChange !== null) {
+      const dir = parseFloat(qChange) >= 0 ? "▲" : "▼";
+      doc.font("Helvetica-Bold").fontSize(12)
+        .fillColor(parseFloat(qChange) >= 0 ? "#1a6b4a" : "#dc2626")
+        .text(`${dir} ${Math.abs(parseFloat(qChange)).toFixed(1)}%`, 375, y + 22);
+    }
+    y += 56;
+
+    doc.font("Helvetica-Bold").fontSize(11).fillColor(INK).text("Top 10 Donors — Lifetime Giving", 50, y); y += 18;
+    doc.rect(50, y, PW - 100, 22).fill(GREEN);
+    doc.font("Helvetica-Bold").fontSize(8).fillColor("#fff");
+    doc.text("#", 58, y + 7, { width: 18 });
+    doc.text("Donor", 82, y + 7, { width: 235 });
+    doc.text("Stage", 324, y + 7, { width: 90 });
+    doc.text("Lifetime Giving", 422, y + 7, { width: 100, align: "right" });
+    y += 22;
+
+    top10.forEach((d, i) => {
+      const parts   = (d.name || "").trim().split(" ");
+      const display = parts.length > 1 ? `${parts[0]} ${parts[parts.length - 1][0]}.` : parts[0];
+      doc.rect(50, y, PW - 100, 20).fill(i % 2 === 0 ? "#ffffff" : BG);
+      doc.font("Helvetica").fontSize(8).fillColor(INK3).text(String(i + 1), 58, y + 6, { width: 18 });
+      doc.fillColor(INK).text(display, 82, y + 6, { width: 235 });
+      doc.fillColor(INK3).text(d.stage || "—", 324, y + 6, { width: 90 });
+      doc.font("Helvetica-Bold").fillColor(GREEN).text(fmtD(d.total_giving), 422, y + 6, { width: 100, align: "right" });
+      y += 20;
+    });
+
+    // ── PAGE 5: Grants + Communications + Tasks ────────────────────────────
+    doc.addPage();
+    doc.rect(0, 0, PW, 58).fill(GREEN);
+    doc.font("Helvetica-Bold").fontSize(20).fillColor("#fff").text("Grants & Operations", 50, 18);
+    doc.font("Helvetica").fontSize(9).fillColor("#a7f3d0").text(ql, 50, 42);
+
+    y = 76;
+    doc.font("Helvetica-Bold").fontSize(11).fillColor(INK).text("Grant Portfolio", 50, y); y += 18;
+    const gmw = (PW - 100) / 5;
+    [
+      ["Active Grants",  String(activeGrants.length)],
+      ["Pipeline Value", fmtD(pipelineValue)],
+      ["Awarded YTD",    fmtD(awardedYTD)],
+      ["Won This Qtr",   String(wonThisQ.length)],
+      ["Due in 30 Days", String(upcomingDL.length)],
+    ].forEach(([label, value], i) => {
+      const x = 50 + i * gmw;
+      doc.rect(x, y, gmw - 5, 52).fill(BG);
+      doc.font("Helvetica").fontSize(7).fillColor(INK3).text(label.toUpperCase(), x + 7, y + 8, { width: gmw - 16 });
+      doc.font("Helvetica-Bold").fontSize(14).fillColor(GREEN).text(value, x + 7, y + 22, { width: gmw - 16 });
+    });
+    y += 64;
+
+    if (upcomingDL.length > 0) {
+      doc.font("Helvetica-Bold").fontSize(10).fillColor(INK).text("Upcoming Grant Deadlines (Next 30 Days)", 50, y); y += 16;
+      upcomingDL.slice(0, 5).forEach((g, i) => {
+        const days = Math.round((new Date(g.deadline) - now) / 86400000);
+        doc.rect(50, y, PW - 100, 19).fill(i % 2 === 0 ? "#ffffff" : BG);
+        doc.font("Helvetica").fontSize(8).fillColor(INK).text(g.funder, 58, y + 5, { width: 200 });
+        doc.fillColor(INK3).text(g.program || "—", 264, y + 5, { width: 140 });
+        doc.font("Helvetica-Bold").fillColor(days <= 14 ? "#dc2626" : "#f59e0b").text(days + "d", 415, y + 5, { width: 100, align: "right" });
+        y += 19;
+      });
+      y += 12;
+    }
+
+    doc.moveTo(50, y).lineTo(PW - 50, y).strokeColor("#e5e7eb").lineWidth(0.5).stroke(); y += 16;
+
+    doc.font("Helvetica-Bold").fontSize(11).fillColor(INK).text("Communications — Q" + q + " Activity", 50, y); y += 18;
+    const cw = (PW - 100) / 3;
+    [
+      ["Campaigns Sent", String(sentQ.length)],
+      ["Avg Open Rate",  avgOpenRate + "%"],
+      ["Donors Reached", String(totalReached)],
+    ].forEach(([label, value], i) => {
+      const x = 50 + i * cw;
+      doc.rect(x, y, cw - 6, 50).fill(BG);
+      doc.font("Helvetica").fontSize(7).fillColor(INK3).text(label.toUpperCase(), x + 8, y + 9, { width: cw - 18 });
+      doc.font("Helvetica-Bold").fontSize(16).fillColor(INK).text(value, x + 8, y + 22, { width: cw - 18 });
+    });
+    y += 62;
+
+    doc.moveTo(50, y).lineTo(PW - 50, y).strokeColor("#e5e7eb").lineWidth(0.5).stroke(); y += 16;
+
+    doc.font("Helvetica-Bold").fontSize(11).fillColor(INK).text("Task Summary", 50, y); y += 18;
+    [
+      ["Completed This Qtr", String(completedQ),                        "#1a6b4a"],
+      ["Overdue Tasks",      String(overdue),                           overdue > 0 ? "#dc2626" : "#1a6b4a"],
+      ["Total Open",         String(allTasks.filter(t => !t.done).length), INK],
+    ].forEach(([label, value, color], i) => {
+      const x = 50 + i * cw;
+      doc.rect(x, y, cw - 6, 50).fill(BG);
+      doc.font("Helvetica").fontSize(7).fillColor(INK3).text(label.toUpperCase(), x + 8, y + 9, { width: cw - 18 });
+      doc.font("Helvetica-Bold").fontSize(16).fillColor(color).text(value, x + 8, y + 22, { width: cw - 18 });
+    });
+
+    // Page numbers + footer on every page
+    const range = doc.bufferedPageRange();
+    for (let i = range.start; i < range.start + range.count; i++) {
+      doc.switchToPage(i);
+      doc.font("Helvetica").fontSize(7).fillColor("#9ca3af")
+        .text(`${org.name}  ·  ${ql} Board Report  ·  Confidential`, 50, doc.page.height - 28, { width: PW - 130, align: "left" })
+        .text(`${i - range.start + 1} / ${range.count}`, PW - 80, doc.page.height - 28, { width: 30, align: "right" });
+    }
+
+    doc.end();
+  });
+
+  // Save report record
+  const reportId = "br_" + uuid().slice(0, 8);
+  await run(
+    "INSERT INTO board_reports (id,org_id,quarter,year,generated_by,generated_by_name,metrics,pdf_data) VALUES (?,?,?,?,?,?,?,?)",
+    [reportId, orgId, q, yr, userId, email, JSON.stringify({
+      ytdRevenue, ytdExpenses, netSurplus, cashOnHand,
+      totalDonors, newDonorsQ, lapsedDonors, retentionRate,
+      raisedThisQ, raisedLastQ,
+      activeGrants: activeGrants.length, pipelineValue, awardedYTD,
+      sentCampaigns: sentQ.length, avgOpenRate, totalReached,
+      completedQ, overdue,
+    }), pdfBuffer.toString("base64")]
+  ).catch(e => console.error("Board report save:", e.message));
+
+  const safeOrg  = org.name.replace(/[^a-z0-9]/gi, "-").replace(/-+/g, "-").toLowerCase();
+  const filename = `${safeOrg}-board-report-q${q}-${yr}.pdf`;
+  res.setHeader("Content-Type", "application/pdf");
+  res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+  res.setHeader("Content-Length", pdfBuffer.length);
+  res.end(pdfBuffer);
+}));
+
 // ── 404 ────────────────────────────────────────────────────────────────────
 app.use((req, res) => {
   res.status(404).json({ error: "Not found" });

@@ -138,10 +138,18 @@ Mobile "More" drawer: communications, volunteers, board, tasks, settings
 - Activity log templates: LogTouchpointModal in Donors.jsx has per-type prompt templates. On save, if type is Call/Meeting, a follow-up task is silently created and a toast shown.
 - Mobile: GlobalStyles() in shared.jsx is the single CSS home for all @media(max-width:768px) rules. Use className + !important to override inline JSX styles.
 
+## Board Reports
+- `board_reports` table: id, org_id, quarter, year, generated_at, generated_by, generated_by_name, metrics (TEXT/JSON), pdf_data (TEXT/base64)
+- `GET /reports/board` — list past reports (no pdf_data in response)
+- `GET /reports/board/:id/pdf` — stream stored PDF back as binary (requireAuth + org scoped)
+- `POST /reports/board` — generate report: pulls live Finance/Donor/Grant/Comms/Task data, calls claude-sonnet-4-6 for 3-para executive summary, builds 5-page PDF via pdfkit (bufferPages: true), saves pdf_data as base64, returns PDF binary
+- pdfkit installed: `pdfkit ^0.18.0` in package.json
+- Board.jsx subtabs: "members" | "reports"; raw fetch() for binary PDF download (not apiFetch)
+
 ## Current priorities
-1. Email deliverability — confirm Resend DNS (SPF/DKIM) fully propagated for stewardapp.dev
-2. Stripe live mode — currently test keys; need production Stripe account approval
-3. Custom domain final — confirm stewardapp.dev routes correctly on all paths
+- Stripe live mode: confirmed working (production keys active)
+- Email: Resend SPF/DKIM verified, sending from noreply@stewardapp.dev
+- Custom domain: stewardapp.dev live and routing correctly on all paths
 
 ## Org_id scoping (security)
 - All donor/grant/task/volunteer/board endpoints use AND org_id = ? on SELECT, UPDATE, DELETE
