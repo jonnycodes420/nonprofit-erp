@@ -622,9 +622,11 @@ function GiftLinkModal({donor,orgName,onClose}){
 }
 
 // ── Donor Profile ──────────────────────────────────────────────────────────
-function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loadingKey,getAI,isAdmin,onEdit,onDelete,tasks=[],onTaskToggle,orgName="",orgTeam=[],onReassign,sequences=[]}){
+function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loadingKey,getAI,isAdmin,onEdit,onDelete,tasks=[],onTaskToggle,orgName="",orgTeam=[],onReassign}){
   const [gifts,setGifts]=useState([]);
   const [giftLoading,setGiftLoading]=useState(true);
+  const [sequences,setSequences]=useState([]);
+  useEffect(()=>{apiFetch("/sequences").then(rows=>setSequences(Array.isArray(rows)?rows.filter(s=>s.status==="active"):[])).catch(()=>{});},[]);
   const [localScore,setLocalScore]=useState(donor.wealthScore??null);
   const [localTier,setLocalTier]=useState(donor.capacityTier??null);
   const [localConf,setLocalConf]=useState(donor.scoreConfidence??null);
@@ -1324,7 +1326,6 @@ export function Donors({data,setData}){
   const[filtersOpen,setFiltersOpen]=useState(false);
   const[filters,setFilters]=useState({tiers:[],stages:[],pattern:"",geo:"",giftFrom:"",giftTo:"",totalMin:"",totalMax:""});
   const[orgTeam,setOrgTeam]=useState([]);
-  const[sequences,setSequences]=useState([]);
   const[dirStage,setDirStage]=useState("");
   const[dirAssignee,setDirAssignee]=useState("");
   const[assignTarget,setAssignTarget]=useState(null);
@@ -1347,7 +1348,6 @@ export function Donors({data,setData}){
     });
 
   useEffect(()=>{apiFetch("/org/team").then(setOrgTeam).catch(()=>{});},[]);
-  useEffect(()=>{apiFetch("/sequences").then(rows=>setSequences(Array.isArray(rows)?rows.filter(s=>s.status==="active"):[])).catch(()=>{});},[]);
 
   const handleAssign=(donorId,assignedToId,assignedToName)=>{
     setData(prev=>({...prev,donors:prev.donors.map(d=>d.id===donorId?{...d,assignedTo:assignedToId,assignedToName}:d)}));
@@ -1469,8 +1469,7 @@ export function Donors({data,setData}){
         aiMap={aiMap} loadingKey={loadingKey} getAI={getAI}
         isAdmin={isAdmin} onEdit={()=>setEditTarget(selected)} onDelete={deleteDonor}
         tasks={data.tasks.filter(t=>t.donorId===selected.id)} onTaskToggle={toggleTask}
-        orgName={data.org?.name||""} orgTeam={orgTeam} onReassign={handleAssign}
-        sequences={sequences}/>}
+        orgName={data.org?.name||""} orgTeam={orgTeam} onReassign={handleAssign}/>}
 
       <div className="donors-toolbar" style={{display:"flex",gap:10,flexWrap:"wrap",alignItems:"center"}}>
         <input className="donors-search" value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search donors…" style={{flex:1,minWidth:160,background:T.bg,border:"1px solid "+T.bg3,borderRadius:10,padding:"10px 14px",color:T.ink,fontSize:13,outline:"none"}}/>
