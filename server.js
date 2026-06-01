@@ -2023,12 +2023,23 @@ app.get("/reports/board/:id/pdf", requireAuth, wrap(async (req, res) => {
 }));
 
 app.post("/reports/board", requireAuth, wrap(async (req, res) => {
-  const PDFDocument = require("pdfkit");
+  console.log("[board-report] START — orgId:", req.user.orgId);
+
+  let PDFDocument;
+  try {
+    PDFDocument = require("pdfkit");
+    console.log("[board-report] step 1: pdfkit loaded OK");
+  } catch(e) {
+    console.error("[board-report] FAIL step 1: pdfkit not found —", e.message);
+    return res.status(500).json({ error: "pdfkit module missing: " + e.message });
+  }
+
   const { orgId, userId, email } = req.user;
 
-  await run(BOARD_REPORTS_DDL).catch(() => {});
+  await run(BOARD_REPORTS_DDL).catch(e => console.error("[board-report] DDL warn:", e.message));
+  await run(BOARD_REPORTS_MIGRATE).catch(() => {});
 
-  // Date helpers
+  // Date helpers — toDs safely converts Date objects OR strings to YYYY-MM-DD
   const now = new Date();
   const yr = now.getFullYear();
   const q = Math.floor(now.getMonth() / 3) + 1;
@@ -2039,17 +2050,23 @@ app.post("/reports/board", requireAuth, wrap(async (req, res) => {
   const ytdS = `${yr}-01-01`;
   const ytdE = `${yr}-12-31`;
   const today = now.toISOString().slice(0, 10);
+  const toDs = d => d ? (d instanceof Date ? d.toISOString() : String(d)).slice(0, 10) : "";
+
+  console.log("[board-report] step 2: dates — q:", q, "yr:", yr, "qMs:", qMs, "qMe:", qMe);
 
   // Fetch raw data
+  console.log("[board-report] step 3: fetching core data...");
   const [org, allDonors, allGrants, allTasks, allCampaigns] = await Promise.all([
     query("SELECT * FROM orgs WHERE id = ?", [orgId]).then(r => r[0]),
     query("SELECT id,name,total_giving,stage,created_at FROM donors WHERE org_id = ?", [orgId]),
     query("SELECT * FROM grants WHERE org_id = ?", [orgId]),
-    query("SELECT done,due,updated_at FROM tasks WHERE org_id = ?", [orgId]),
+    query("SELECT done,due FROM tasks WHERE org_id = ?", [orgId]),
     query("SELECT * FROM campaigns WHERE org_id = ?", [orgId]),
   ]);
+  console.log("[board-report] step 3: core data OK — donors:", allDonors.length, "grants:", allGrants.length, "tasks:", allTasks.length, "campaigns:", allCampaigns.length);
 
   // Finance
+  console.log("[board-report] step 4: fetching finance data...");
   const [ytdFinRows, allFinRows, topExpRows, budgetRows] = await Promise.all([
     query("SELECT type, SUM(amount) as total FROM fin_transactions WHERE org_id = ? AND date >= ? AND date <= ? GROUP BY type", [orgId, ytdS, ytdE]),
     query("SELECT type, SUM(amount) as total FROM fin_transactions WHERE org_id = ? GROUP BY type", [orgId]),
@@ -2071,6 +2088,7 @@ app.post("/reports/board", requireAuth, wrap(async (req, res) => {
     ),
   ]);
 
+  console.log("[board-report] step 4: finance OK — ytdFinRows:", ytdFinRows.length, "budgetRows:", budgetRows.length);
   const ytdFin = Object.fromEntries(ytdFinRows.map(r => [r.type, parseFloat(r.total) || 0]));
   const allFin = Object.fromEntries(allFinRows.map(r => [r.type, parseFloat(r.total) || 0]));
   const ytdRevenue  = ytdFin.income  || 0;
@@ -2087,12 +2105,14 @@ app.post("/reports/board", requireAuth, wrap(async (req, res) => {
   const newDonorsQ   = allDonors.filter(d => (d.created_at || "").slice(0, 10) >= qMs && (d.created_at || "").slice(0, 10) <= qMe).length;
   const top10        = [...allDonors].sort((a, b) => (b.total_giving || 0) - (a.total_giving || 0)).slice(0, 10);
 
+  console.log("[board-report] step 5: fetching gift retention rows...");
   const [thisYrRows, prevYrRows, qGiftRows, pqGiftRows] = await Promise.all([
     query("SELECT DISTINCT donor_id FROM gifts WHERE org_id = ? AND date >= ? AND date <= ?", [orgId, ytdS, ytdE]),
     query("SELECT DISTINCT donor_id FROM gifts WHERE org_id = ? AND date >= ? AND date <= ?", [orgId, `${yr - 1}-01-01`, `${yr - 1}-12-31`]),
     query("SELECT COALESCE(SUM(amount),0) as total FROM gifts WHERE org_id = ? AND date >= ? AND date <= ?", [orgId, qMs, qMe]),
     query("SELECT COALESCE(SUM(amount),0) as total FROM gifts WHERE org_id = ? AND date >= ? AND date <= ?", [orgId, pqMs, pqMe]),
   ]);
+  console.log("[board-report] step 5: retention OK — thisYr:", thisYrRows.length, "prevYr:", prevYrRows.length);
   const prevYrIds     = new Set(prevYrRows.map(r => r.donor_id));
   const thisYrIds     = new Set(thisYrRows.map(r => r.donor_id));
   const retained      = [...thisYrIds].filter(id => prevYrIds.has(id)).length;
@@ -2103,7 +2123,7 @@ app.post("/reports/board", requireAuth, wrap(async (req, res) => {
   // Grants
   const activeGrants    = allGrants.filter(g => g.status === "active");
   const pipelineGrants  = allGrants.filter(g => ["prospecting", "pending"].includes(g.status));
-  const wonThisQ        = allGrants.filter(g => g.status === "active" && (g.updated_at || "").slice(0, 10) >= qMs);
+  const wonThisQ        = allGrants.filter(g => g.status === "active" && toDs(g.updated_at) >= qMs);
   const thirty          = new Date(now); thirty.setDate(thirty.getDate() + 30);
   const upcomingDL      = allGrants.filter(g => {
     if (!g.deadline || g.status === "closed") return false;
@@ -2113,17 +2133,20 @@ app.post("/reports/board", requireAuth, wrap(async (req, res) => {
   const awardedYTD    = activeGrants.reduce((s, g) => s + (g.received || 0), 0);
 
   // Communications
-  const sentQ        = allCampaigns.filter(c => c.status === "sent" && (c.sent_at || "").slice(0, 10) >= qMs && (c.sent_at || "").slice(0, 10) <= qMe);
+  const sentQ        = allCampaigns.filter(c => c.status === "sent" && toDs(c.sent_at) >= qMs && toDs(c.sent_at) <= qMe);
   const avgOpenRate  = sentQ.length > 0
     ? Math.round(sentQ.reduce((s, c) => s + ((c.open_count || 0) / Math.max(c.recipient_count || 1, 1) * 100), 0) / sentQ.length)
     : 0;
   const totalReached = sentQ.reduce((s, c) => s + (c.recipient_count || 0), 0);
 
   // Tasks
-  const completedQ = allTasks.filter(t => t.done && (t.updated_at || "").slice(0, 10) >= qMs).length;
+  const completedQ = allTasks.filter(t => t.done && (t.due || "") >= qMs && (t.due || "") <= qMe).length;
   const overdue    = allTasks.filter(t => !t.done && t.due && t.due < today).length;
 
+  console.log("[board-report] step 6: computed — totalDonors:", totalDonors, "activeGrants:", activeGrants.length, "pipelineValue:", pipelineValue, "raisedThisQ:", raisedThisQ, "completedQ:", completedQ, "overdue:", overdue);
+
   // AI Executive Summary
+  console.log("[board-report] step 7: calling Claude API...");
   const client = new Anthropic();
   let execSummary = "";
   try {
@@ -2144,12 +2167,14 @@ Organization: ${org.name}. Mission: ${org.mission || "not specified"}. Period: Q
       }],
     });
     execSummary = msg.content[0].text.trim();
+    console.log("[board-report] step 7: Claude OK —", execSummary.length, "chars");
   } catch(e) {
-    console.error("Board report AI summary:", e.message);
+    console.error("[board-report] step 7: Claude FAILED (using fallback) —", e.message);
     execSummary = `${org.name} concludes Q${q} ${yr} with year-to-date revenue of $${ytdRevenue.toLocaleString()} and expenses of $${ytdExpenses.toLocaleString()}, producing a net ${netSurplus >= 0 ? "surplus" : "deficit"} of $${Math.abs(netSurplus).toLocaleString()}. Cash on hand stands at $${cashOnHand.toLocaleString()}, with a budget variance that is ${budgetVariance >= 0 ? "favorable" : "unfavorable"} by $${Math.abs(budgetVariance).toLocaleString()}.\n\nThe donor base comprises ${totalDonors} constituents, with ${newDonorsQ} new donors acquired this quarter and a year-over-year retention rate of ${retentionRate}%. The organization raised $${raisedThisQ.toLocaleString()} this quarter compared to $${raisedLastQ.toLocaleString()} in the prior quarter. ${sentQ.length} email campaigns reached ${totalReached} donors with an average open rate of ${avgOpenRate}%.\n\nThe grant portfolio includes ${activeGrants.length} active grants with $${pipelineValue.toLocaleString()} in the pipeline and $${awardedYTD.toLocaleString()} awarded year to date. ${wonThisQ.length > 0 ? wonThisQ.length + " grant(s) were secured this quarter. " : ""}${upcomingDL.length} deadline(s) fall within the next 30 days, requiring board awareness and organizational follow-through.`;
   }
 
   // Generate PDF
+  console.log("[board-report] step 8: generating PDF...");
   const doc = new PDFDocument({ margin: 50, size: "LETTER", bufferPages: true });
   const pdfBuffer = await new Promise((resolve, reject) => {
     const chunks = [];
@@ -2375,6 +2400,8 @@ Organization: ${org.name}. Mission: ${org.mission || "not specified"}. Period: Q
     doc.end();
   });
 
+  console.log("[board-report] step 8: PDF OK —", pdfBuffer.length, "bytes");
+
   // Save report record
   const reportId = "br_" + uuid().slice(0, 8);
   await run(
@@ -2387,10 +2414,12 @@ Organization: ${org.name}. Mission: ${org.mission || "not specified"}. Period: Q
       sentCampaigns: sentQ.length, avgOpenRate, totalReached,
       completedQ, overdue,
     }), pdfBuffer.toString("base64")]
-  ).catch(e => console.error("Board report save:", e.message));
+  ).catch(e => console.error("[board-report] step 9 WARN: save failed —", e.message));
+  console.log("[board-report] step 9: record saved —", reportId);
 
   const safeOrg  = org.name.replace(/[^a-z0-9]/gi, "-").replace(/-+/g, "-").toLowerCase();
   const filename = `${safeOrg}-board-report-q${q}-${yr}.pdf`;
+  console.log("[board-report] DONE — sending", filename, pdfBuffer.length, "bytes");
   res.setHeader("Content-Type", "application/pdf");
   res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
   res.setHeader("Content-Length", pdfBuffer.length);
