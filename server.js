@@ -478,6 +478,14 @@ app.get("/donors/my", requireAuth, wrap(async (req, res) => {
   res.json(result);
 }));
 
+app.get("/donors/custom-field-values/all", requireAuth, wrap(async (req, res) => {
+  const rows = await query(
+    "SELECT donor_id, field_id, value FROM custom_field_values WHERE org_id = ?",
+    [req.user.orgId]
+  );
+  res.json(rows.map(r => ({ donorId: r.donor_id, fieldId: r.field_id, value: r.value })));
+}));
+
 app.get("/donors/:id", requireAuth, wrap(async (req, res) => {
   const rows = await query(
     "SELECT * FROM donors WHERE id = ? AND org_id = ?",

@@ -226,6 +226,25 @@ Automated multi-step email drip campaigns for donors.
 
 ---
 
+### Custom Field Filtering (2026-06-01)
+**Files:** `server.js`, `client/src/components/Donors.jsx`
+
+Filter donors in the Directory view by their custom field values.
+
+**New backend route:**
+- `GET /donors/custom-field-values/all` — returns all `custom_field_values` rows for the org as `[{donorId, fieldId, value}]`. Declared before `GET /donors/:id` to prevent Express collisions.
+
+**Frontend:**
+- `Donors` component fetches `GET /custom-fields` and `GET /donors/custom-field-values/all` on mount; builds `cfValues[donorId][fieldId] = value` lookup map
+- `cfFilters` state: keyed by fieldId; text/number → string, checkbox → string (""|"Yes"|"No"), dropdown → string[], date → `{from,to}`
+- `filtered` computation extended with custom field filter pass (after existing filters)
+- `FilterBar` extended with Custom Fields section (only shown when org has fields): dropdown → multi-select pills, checkbox → Any/Yes/No toggle, date → from/to range, text/number → search input
+- Active filter count includes custom fields; dismissible pills show in the active filter bar with "Label: value" format
+- `clearAll` resets cfFilters alongside standard filters
+- `DonorProfile` calls `onCfSaved()` after saving a custom field value → triggers `reloadCfValues()` in parent so filters reflect the latest data
+
+---
+
 ### Custom Fields (2026-06-01)
 **Files:** `db.js`, `server.js`, `client/src/components/Settings.jsx`, `client/src/components/Donors.jsx`
 

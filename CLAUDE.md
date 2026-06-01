@@ -169,6 +169,7 @@ Mobile "More" drawer: communications, volunteers, board, tasks, settings
 - `PUT /custom-fields/reorder` — reorder fields by passing `ids` array (MUST be declared before `PUT /custom-fields/:id`)
 - `PUT /custom-fields/:id` — update field (admin only)
 - `DELETE /custom-fields/:id` — deletes values then field (admin only)
+- `GET /donors/custom-field-values/all` — returns all custom_field_values for the org as `[{donorId, fieldId, value}]`. Declared BEFORE `GET /donors/:id` to avoid Express collision.
 - `GET /donors/:id/custom-fields` — returns fields + values joined (LEFT JOIN) for a donor
 - `POST /donors/:id/custom-fields` — upsert a value for a field on a donor (ON CONFLICT DO UPDATE)
 - Settings.jsx: Custom Fields section between Team Members and Account Actions. Field manager with add/edit/delete. Dropdown type shows option builder.

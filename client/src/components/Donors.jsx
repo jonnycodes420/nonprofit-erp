@@ -622,7 +622,7 @@ function GiftLinkModal({donor,orgName,onClose}){
 }
 
 // ── Donor Profile ──────────────────────────────────────────────────────────
-function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loadingKey,getAI,isAdmin,onEdit,onDelete,tasks=[],onTaskToggle,orgName="",orgTeam=[],onReassign}){
+function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loadingKey,getAI,isAdmin,onEdit,onDelete,tasks=[],onTaskToggle,orgName="",orgTeam=[],onReassign,onCfSaved}){
   const [gifts,setGifts]=useState([]);
   const [giftLoading,setGiftLoading]=useState(true);
   const [sequences,setSequences]=useState([]);
@@ -864,7 +864,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
                               await apiFetch(`/donors/${donor.id}/custom-fields`,{method:"POST",body:JSON.stringify({fieldId:f.fieldId,value:cfEditVal})});
                               setCfData(prev=>prev.map(x=>x.fieldId===f.fieldId?{...x,value:cfEditVal}:x));
                               setCfSaved(f.fieldId);setTimeout(()=>setCfSaved(null),2000);
-                              setCfEditing(null);
+                              setCfEditing(null);onCfSaved?.();
                             }else if(e.key==="Escape"){setCfEditing(null);}
                           }}
                           autoFocus
@@ -874,7 +874,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
                         await apiFetch(`/donors/${donor.id}/custom-fields`,{method:"POST",body:JSON.stringify({fieldId:f.fieldId,value:cfEditVal})});
                         setCfData(prev=>prev.map(x=>x.fieldId===f.fieldId?{...x,value:cfEditVal}:x));
                         setCfSaved(f.fieldId);setTimeout(()=>setCfSaved(null),2000);
-                        setCfEditing(null);
+                        setCfEditing(null);onCfSaved?.();
                       }} style={{background:T.greenDk,border:"none",borderRadius:8,padding:"5px 10px",color:"#fff",fontSize:11,fontWeight:700,cursor:"pointer"}}>Save</button>
                       <button onClick={()=>setCfEditing(null)} style={{background:"transparent",border:"none",padding:"5px 8px",color:T.ink3,fontSize:12,cursor:"pointer"}}>✕</button>
                     </div>
@@ -1315,12 +1315,14 @@ const PATTERN_META=[
   {id:"lapsed",   label:"Lapsed (>365d)"},
 ];
 
-function FilterBar({filters,onChange}){
+function FilterBar({filters,onChange,customFields,cfFilters,onCfChange}){
   const set=(key,val)=>onChange({...filters,[key]:val});
   const tog=(key,val)=>{const arr=filters[key];set(key,arr.includes(val)?arr.filter(v=>v!==val):[...arr,val]);};
   const inp={background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"7px 10px",color:T.ink,fontSize:12,outline:"none",boxSizing:"border-box"};
   const row={display:"flex",gap:12,flexWrap:"wrap",alignItems:"center"};
   const lbl={fontSize:11,fontWeight:700,color:T.ink3,textTransform:"uppercase",letterSpacing:".06em",whiteSpace:"nowrap",minWidth:90};
+  function setCf(fieldId,val){onCfChange({...cfFilters,[fieldId]:val});}
+  function togCfOption(fieldId,opt){const cur=cfFilters[fieldId]||[];onCfChange({...cfFilters,[fieldId]:cur.includes(opt)?cur.filter(v=>v!==opt):[...cur,opt]});}
   return(
     <div className="filter-bar" style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:12,padding:"16px 18px",display:"flex",flexDirection:"column",gap:12}}>
       <div className="filter-bar-row" style={row}>
@@ -1366,6 +1368,57 @@ function FilterBar({filters,onChange}){
           <input type="number" value={filters.totalMax} onChange={e=>set("totalMax",e.target.value)} placeholder="any" style={{...inp,width:80}}/>
         </div>
       </div>
+      {customFields&&customFields.length>0&&(
+        <div style={{borderTop:"1px solid "+T.bg3,paddingTop:12,display:"flex",flexDirection:"column",gap:10}}>
+          <span style={{fontSize:11,fontWeight:700,color:T.ink3,textTransform:"uppercase",letterSpacing:".06em"}}>Custom Fields</span>
+          {customFields.map(f=>{
+            if(f.field_type==="dropdown"){
+              const sel=cfFilters[f.id]||[];
+              return(
+                <div key={f.id} className="filter-bar-row" style={row}>
+                  <span style={lbl}>{f.label}</span>
+                  <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
+                    {(f.options||[]).map(opt=>{const a=sel.includes(opt);return(
+                      <button key={opt} onClick={()=>togCfOption(f.id,opt)} style={{background:a?T.greenDk+"22":T.bg,border:`1px solid ${a?T.greenDk:T.bg3}`,borderRadius:7,padding:"4px 12px",color:a?T.greenDk:T.ink3,fontSize:12,fontWeight:a?700:400,cursor:"pointer"}}>{opt}</button>
+                    );})}
+                  </div>
+                </div>
+              );
+            }
+            if(f.field_type==="checkbox"){
+              const val=cfFilters[f.id]||"";
+              return(
+                <div key={f.id} className="filter-bar-row" style={row}>
+                  <span style={lbl}>{f.label}</span>
+                  <div style={{display:"flex",gap:5}}>
+                    {["","Yes","No"].map((opt,i)=>{const a=val===opt;return(
+                      <button key={i} onClick={()=>setCf(f.id,opt)} style={{background:a?T.greenDk+"22":T.bg,border:`1px solid ${a?T.greenDk:T.bg3}`,borderRadius:7,padding:"4px 12px",color:a?T.greenDk:T.ink3,fontSize:12,fontWeight:a?700:400,cursor:"pointer"}}>{opt||"Any"}</button>
+                    );})}
+                  </div>
+                </div>
+              );
+            }
+            if(f.field_type==="date"){
+              const val=cfFilters[f.id]||{from:"",to:""};
+              return(
+                <div key={f.id} className="filter-bar-row" style={row}>
+                  <span style={lbl}>{f.label}</span>
+                  <input type="date" value={val.from||""} onChange={e=>setCf(f.id,{...val,from:e.target.value})} style={inp}/>
+                  <span style={{fontSize:11,color:T.ink3}}>→</span>
+                  <input type="date" value={val.to||""} onChange={e=>setCf(f.id,{...val,to:e.target.value})} style={inp}/>
+                </div>
+              );
+            }
+            const val=cfFilters[f.id]||"";
+            return(
+              <div key={f.id} className="filter-bar-row" style={row}>
+                <span style={lbl}>{f.label}</span>
+                <input value={val} onChange={e=>setCf(f.id,e.target.value)} type={f.field_type==="number"?"number":"text"} placeholder={f.field_type==="number"?"Any value":"Search…"} style={{...inp,minWidth:160}}/>
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
@@ -1390,6 +1443,9 @@ export function Donors({data,setData}){
   const[filtersOpen,setFiltersOpen]=useState(false);
   const[filters,setFilters]=useState({tiers:[],stages:[],pattern:"",geo:"",giftFrom:"",giftTo:"",totalMin:"",totalMax:""});
   const[orgTeam,setOrgTeam]=useState([]);
+  const[customFields,setCustomFields]=useState([]);
+  const[cfValues,setCfValues]=useState({});
+  const[cfFilters,setCfFilters]=useState({});
   const[dirStage,setDirStage]=useState("");
   const[dirAssignee,setDirAssignee]=useState("");
   const[assignTarget,setAssignTarget]=useState(null);
@@ -1409,9 +1465,40 @@ export function Donors({data,setData}){
       if(filters.totalMin!==""&&!isNaN(parseFloat(filters.totalMin))&&d.total<parseFloat(filters.totalMin))return false;
       if(filters.totalMax!==""&&!isNaN(parseFloat(filters.totalMax))&&d.total>parseFloat(filters.totalMax))return false;
       return true;
+    })
+    .filter(d=>{
+      for(const [fieldId,fval] of Object.entries(cfFilters)){
+        if(!fval||fval==="")continue;
+        if(Array.isArray(fval)&&fval.length===0)continue;
+        if(typeof fval==="object"&&!Array.isArray(fval)&&!fval.from&&!fval.to)continue;
+        const f=customFields.find(x=>x.id===fieldId);
+        if(!f)continue;
+        const dv=(cfValues[d.id]?.[fieldId]||"").toLowerCase();
+        if(f.field_type==="dropdown"){
+          if(fval.length===0)continue;
+          if(!fval.some(opt=>dv===opt.toLowerCase()))return false;
+        }else if(f.field_type==="checkbox"){
+          if(fval&&dv!==fval.toLowerCase())return false;
+        }else if(f.field_type==="date"){
+          if(fval.from&&dv<fval.from)return false;
+          if(fval.to&&dv>fval.to)return false;
+        }else{
+          if(!dv.includes(fval.toLowerCase()))return false;
+        }
+      }
+      return true;
     });
 
-  useEffect(()=>{apiFetch("/org/team").then(setOrgTeam).catch(()=>{});},[]);
+  useEffect(()=>{
+    apiFetch("/org/team").then(setOrgTeam).catch(()=>{});
+    apiFetch("/custom-fields").then(rows=>setCustomFields(Array.isArray(rows)?rows:[])).catch(()=>{});
+    apiFetch("/donors/custom-field-values/all").then(rows=>{
+      if(!Array.isArray(rows))return;
+      const map={};
+      rows.forEach(r=>{if(!map[r.donorId])map[r.donorId]={};map[r.donorId][r.fieldId]=r.value;});
+      setCfValues(map);
+    }).catch(()=>{});
+  },[]);
 
   const handleAssign=(donorId,assignedToId,assignedToName)=>{
     setData(prev=>({...prev,donors:prev.donors.map(d=>d.id===donorId?{...d,assignedTo:assignedToId,assignedToName}:d)}));
@@ -1454,6 +1541,16 @@ export function Donors({data,setData}){
     };
     await askClaude(sys,prompts[type],chunk=>setAiMap(p=>({...p,[key]:chunk})));
     setLoadingKey(null);
+  };
+
+  const reloadCfValues=async()=>{
+    try{
+      const rows=await apiFetch("/donors/custom-field-values/all");
+      if(!Array.isArray(rows))return;
+      const map={};
+      rows.forEach(r=>{if(!map[r.donorId])map[r.donorId]={};map[r.donorId][r.fieldId]=r.value;});
+      setCfValues(map);
+    }catch(e){console.error(e);}
   };
 
   const reloadDonors=async()=>{
@@ -1533,7 +1630,7 @@ export function Donors({data,setData}){
         aiMap={aiMap} loadingKey={loadingKey} getAI={getAI}
         isAdmin={isAdmin} onEdit={()=>setEditTarget(selected)} onDelete={deleteDonor}
         tasks={data.tasks.filter(t=>t.donorId===selected.id)} onTaskToggle={toggleTask}
-        orgName={data.org?.name||""} orgTeam={orgTeam} onReassign={handleAssign}/>}
+        orgName={data.org?.name||""} orgTeam={orgTeam} onReassign={handleAssign} onCfSaved={reloadCfValues}/>}
 
       <div className="donors-toolbar" style={{display:"flex",gap:10,flexWrap:"wrap",alignItems:"center"}}>
         <input className="donors-search" value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search donors…" style={{flex:1,minWidth:160,background:T.bg,border:"1px solid "+T.bg3,borderRadius:10,padding:"10px 14px",color:T.ink,fontSize:13,outline:"none"}}/>
@@ -1551,7 +1648,8 @@ export function Donors({data,setData}){
       </div>
 
       {(()=>{
-        const count=filters.tiers.length+filters.stages.length+(filters.pattern?1:0)+(filters.geo.trim()?1:0)+((filters.giftFrom||filters.giftTo)?1:0)+((filters.totalMin||filters.totalMax)?1:0);
+        const cfActiveCount=Object.entries(cfFilters).filter(([,v])=>{if(!v||v==="")return false;if(Array.isArray(v))return v.length>0;if(typeof v==="object")return v.from||v.to;return true;}).length;
+        const count=filters.tiers.length+filters.stages.length+(filters.pattern?1:0)+(filters.geo.trim()?1:0)+((filters.giftFrom||filters.giftTo)?1:0)+((filters.totalMin||filters.totalMax)?1:0)+cfActiveCount;
         const pills=[];
         filters.tiers.forEach(t=>{const m=TIER_META.find(x=>x.id===t);pills.push({id:"t"+t,label:`Tier: ${m?.label||t}`,rm:()=>setFilters(f=>({...f,tiers:f.tiers.filter(v=>v!==t)}))});});
         filters.stages.forEach(s=>{const m=STAGES.find(x=>x.id===s);pills.push({id:"s"+s,label:`Stage: ${m?.label||s}`,rm:()=>setFilters(f=>({...f,stages:f.stages.filter(v=>v!==s)}))});});
@@ -1559,7 +1657,19 @@ export function Donors({data,setData}){
         if(filters.geo.trim())pills.push({id:"geo",label:`Geo: "${filters.geo}"`,rm:()=>setFilters(f=>({...f,geo:""}))});
         if(filters.giftFrom||filters.giftTo)pills.push({id:"gift",label:`Last gift: ${filters.giftFrom||"any"} → ${filters.giftTo||"any"}`,rm:()=>setFilters(f=>({...f,giftFrom:"",giftTo:""}))});
         if(filters.totalMin||filters.totalMax)pills.push({id:"total",label:`Giving: ${filters.totalMin?"$"+filters.totalMin:"$0"} → ${filters.totalMax?"$"+filters.totalMax:"any"}`,rm:()=>setFilters(f=>({...f,totalMin:"",totalMax:""}))});
-        const clearAll=()=>setFilters({tiers:[],stages:[],pattern:"",geo:"",giftFrom:"",giftTo:"",totalMin:"",totalMax:""});
+        Object.entries(cfFilters).forEach(([fieldId,fval])=>{
+          if(!fval||fval==="")return;
+          if(Array.isArray(fval)&&fval.length===0)return;
+          if(typeof fval==="object"&&!Array.isArray(fval)&&!fval.from&&!fval.to)return;
+          const f=customFields.find(x=>x.id===fieldId);
+          if(!f)return;
+          let label=`${f.label}: `;
+          if(Array.isArray(fval))label+=fval.join(", ");
+          else if(typeof fval==="object")label+=`${fval.from||"any"} → ${fval.to||"any"}`;
+          else label+=fval;
+          pills.push({id:"cf_"+fieldId,label,rm:()=>setCfFilters(p=>({...p,[fieldId]:f.field_type==="dropdown"?[]:f.field_type==="date"?{from:"",to:""}:""}))});
+        });
+        const clearAll=()=>{setFilters({tiers:[],stages:[],pattern:"",geo:"",giftFrom:"",giftTo:"",totalMin:"",totalMax:""});setCfFilters({});};
         return<>
           <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
             <button onClick={()=>setFiltersOpen(v=>!v)} style={{background:filtersOpen||count>0?T.bg2:T.bg,border:"1px solid "+(count>0?T.greenDk:T.bg3),borderRadius:9,padding:"7px 12px",color:count>0?T.greenDk:T.ink3,fontSize:12,fontWeight:count>0?700:400,cursor:"pointer",display:"flex",alignItems:"center",gap:6}}>
@@ -1574,7 +1684,7 @@ export function Donors({data,setData}){
             ))}
             {count>0&&<button onClick={clearAll} style={{background:"none",border:"none",color:T.ink3,fontSize:12,cursor:"pointer",textDecoration:"underline",padding:0}}>Clear all</button>}
           </div>
-          {filtersOpen&&<FilterBar filters={filters} onChange={setFilters}/>}
+          {filtersOpen&&<FilterBar filters={filters} onChange={setFilters} customFields={customFields} cfFilters={cfFilters} onCfChange={setCfFilters}/>}
         </>;
       })()}
 
