@@ -11,7 +11,7 @@ export const T = {
   bgCard:     "#ffffff",
   bgElevated: "#1a2e1f",
   // Ink
-  ink:        "#0a0a0a",
+  ink:        "#0f1a12",
   ink2:       "#2d2d2d",
   ink3:       "#6b6560",
   inkInverse: "#f0ede6",
@@ -132,14 +132,14 @@ export function GlobalStyles() {
   return <style>{`
     html,body{margin:0;padding:0;overflow-x:hidden;max-width:100vw;background:#f0ede6;-webkit-font-smoothing:antialiased;}
     *{box-sizing:border-box;}
-    body{font-family:'DM Sans',system-ui,sans-serif;color:#0a0a0a;}
+    body{font-family:'DM Sans',system-ui,sans-serif;color:#0f1a12;}
     h1,h2,h3{font-family:'DM Serif Display',Georgia,serif;letter-spacing:-0.02em;}
     ::-webkit-scrollbar{width:5px;height:5px;}
     ::-webkit-scrollbar-track{background:#e8e4dc;}
     ::-webkit-scrollbar-thumb{background:#c9a84c;border-radius:99px;}
     ::-webkit-scrollbar-thumb:hover{background:#b8933c;}
-    ::selection{background:#0d5c3a22;color:#0a0a0a;}
-    input,textarea,select{background:#f8f6f2;border:1.5px solid #d4cfc6;border-radius:8px;color:#0a0a0a;transition:border-color 0.15s,box-shadow 0.15s;}
+    ::selection{background:#0d5c3a22;color:#0f1a12;}
+    input,textarea,select{background:#f8f6f2;border:1.5px solid #d4cfc6;border-radius:8px;color:#0f1a12;transition:border-color 0.15s,box-shadow 0.15s;}
     input:focus,textarea:focus,select:focus{border-color:#0d5c3a!important;box-shadow:0 0 0 3px rgba(13,92,58,0.12)!important;outline:none!important;}
     button{transition:all 0.15s ease;}
     button:not(:disabled):active{transform:scale(0.97);}

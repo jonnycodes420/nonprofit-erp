@@ -841,11 +841,11 @@ export function Communications({ data }) {
             <div style={{ background: "#fff", borderRadius: 16, padding: 32, maxWidth: 600, width: "90%", maxHeight: "80vh", overflowY: "auto" }}
               onClick={e => e.stopPropagation()}>
               <div style={{ fontSize: 11, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 4 }}>Subject</div>
-              <div style={{ fontSize: 16, fontWeight: 700, color: "#111", marginBottom: 16 }}>
+              <div style={{ fontSize: 16, fontWeight: 700, color: "#0f1a12", marginBottom: 16 }}>
                 {form.subject.replace(/{{org_name}}/g, data?.org?.name || "Org").replace(/{{first_name}}/g, "Margaret")}
               </div>
               <hr style={{ border: "none", borderTop: "1px solid #e5e7eb", marginBottom: 16 }} />
-              <div style={{ fontSize: 14, color: "#111", lineHeight: 1.8 }} dangerouslySetInnerHTML={{ __html: getPreviewHtml() }} />
+              <div style={{ fontSize: 14, color: "#0f1a12", lineHeight: 1.8 }} dangerouslySetInnerHTML={{ __html: getPreviewHtml() }} />
               <div style={{ marginTop: 10, fontSize: 11, color: "#9ca3af" }}>Preview — merge tags replaced with sample data when sent.</div>
               <button onClick={() => setShowPreview(false)} style={{ marginTop: 16, ...S.btn("subtle") }}>Close</button>
             </div>

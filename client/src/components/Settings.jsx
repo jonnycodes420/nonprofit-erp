@@ -52,7 +52,7 @@ export function Settings({auth,logout}) {
     if(!donationUrl) return;
     setQrLoading(true);
     try{
-      const url=await QRCode.toDataURL(donationUrl,{width:300,margin:2,color:{dark:"#1a1a1a",light:"#faf8f4"}});
+      const url=await QRCode.toDataURL(donationUrl,{width:300,margin:2,color:{dark:"#0f1a12",light:"#faf8f4"}});
       setQrDataUrl(url);
     }catch(e){ console.error(e); }
     setQrLoading(false);
@@ -74,7 +74,7 @@ export function Settings({auth,logout}) {
   *{margin:0;padding:0;box-sizing:border-box}
   body{background:#fff;font-family:'DM Sans',system-ui,sans-serif;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;padding:40px}
   img{width:280px;height:280px}
-  h1{font-size:26px;font-weight:800;color:#1a1a1a;margin:24px 0 8px;text-align:center}
+  h1{font-size:26px;font-weight:800;color:#0f1a12;margin:24px 0 8px;text-align:center}
   p{font-size:16px;color:#6b6b6b;text-align:center}
   @media print{@page{margin:0.5in}body{padding:20px}}
 </style></head><body>

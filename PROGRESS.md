@@ -1,5 +1,10 @@
 # Steward — Build Progress
 
+### Black → dark green sweep (2026-06-01)
+`T.ink` changed from `#0a0a0a` to `#0f1a12`; all hard-coded `#0a0a0a`, `#1a1a1a`, `#000000` (incl. `cc` overlay variants), and `"#111"` values replaced with `#0f1a12` across all component files.
+
+---
+
 ## Architecture snapshot (current)
 - App.jsx: 147 lines — thin shell that imports 9 component files
 - 12 component files in client/src/components/

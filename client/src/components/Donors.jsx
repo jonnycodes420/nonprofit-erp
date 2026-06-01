@@ -249,7 +249,7 @@ function FollowUpTaskModal({donor,onSave,onClose}){
     setLoading(false);
   };
   return(
-    <div className="modal-sheet-overlay" style={{position:"fixed",inset:0,background:"#000000cc",backdropFilter:"blur(4px)",zIndex:400,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+    <div className="modal-sheet-overlay" style={{position:"fixed",inset:0,background:"#0f1a12cc",backdropFilter:"blur(4px)",zIndex:400,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
       <div className="fade-in modal-sheet-inner" style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:18,width:"100%",maxWidth:420,padding:24,boxShadow:"0 4px 32px rgba(15,15,15,0.12)"}}>
         <div style={{fontSize:16,fontWeight:800,color:T.ink,marginBottom:2}}>Create Follow-up Task</div>
         <div style={{fontSize:12,color:T.ink3,marginBottom:20}}>For {donor.name}</div>
@@ -362,7 +362,7 @@ function LogTouchpointModal({donor,onSave,onClose}){
   const canSave=buildNote().trim().length>0;
 
   return(
-    <div className="modal-sheet-overlay" style={{position:"fixed",inset:0,background:"#000000cc",backdropFilter:"blur(4px)",zIndex:300,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+    <div className="modal-sheet-overlay" style={{position:"fixed",inset:0,background:"#0f1a12cc",backdropFilter:"blur(4px)",zIndex:300,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
       <div className="fade-in modal-sheet-inner" style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:18,width:"100%",maxWidth:520,maxHeight:"92vh",overflowY:"auto",padding:24,boxShadow:"0 4px 32px rgba(15,15,15,0.12)"}}>
         <div style={{fontSize:16,fontWeight:800,color:T.ink,marginBottom:2}}>Log Touchpoint</div>
         <div style={{fontSize:12,color:T.ink3,marginBottom:16}}>{donor.name}</div>
@@ -549,7 +549,7 @@ function GiftLinkModal({donor,orgName,onClose}){
   const inp={width:"100%",boxSizing:"border-box",background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"9px 12px",color:T.ink,fontSize:13,outline:"none",fontFamily:"inherit"};
 
   return(
-    <div style={{position:"fixed",inset:0,background:"#000000cc",zIndex:500,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+    <div style={{position:"fixed",inset:0,background:"#0f1a12cc",zIndex:500,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
       <div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:18,width:"100%",maxWidth:480,padding:24,boxShadow:"0 8px 40px rgba(0,0,0,0.18)"}}>
         {!showEmail?(
           <>
@@ -1169,7 +1169,7 @@ function AssignModal({donor,orgTeam,onSave,onClose}){
     onClose();
   };
   return(
-    <div style={{position:"fixed",inset:0,background:"#000000cc",zIndex:500,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+    <div style={{position:"fixed",inset:0,background:"#0f1a12cc",zIndex:500,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
       <div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:18,width:"100%",maxWidth:360,padding:24,boxShadow:"0 4px 32px rgba(15,15,15,0.12)"}}>
         <div style={{fontSize:16,fontWeight:800,color:T.ink,marginBottom:4}}>Assign Relationship Owner</div>
         <div style={{fontSize:12,color:T.ink3,marginBottom:16}}>{donor.name}</div>
