@@ -2102,7 +2102,7 @@ app.post("/reports/board", requireAuth, wrap(async (req, res) => {
   // Donors
   const totalDonors  = allDonors.length;
   const lapsedDonors = allDonors.filter(d => d.stage === "lapsed").length;
-  const newDonorsQ   = allDonors.filter(d => (d.created_at || "").slice(0, 10) >= qMs && (d.created_at || "").slice(0, 10) <= qMe).length;
+  const newDonorsQ   = allDonors.filter(d => toDs(d.created_at) >= qMs && toDs(d.created_at) <= qMe).length;
   const top10        = [...allDonors].sort((a, b) => (b.total_giving || 0) - (a.total_giving || 0)).slice(0, 10);
 
   console.log("[board-report] step 5: fetching gift retention rows...");
