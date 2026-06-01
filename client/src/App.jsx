@@ -79,7 +79,7 @@ function AppShell() {
     })();
   },[]);
 
-  const BASE = {minHeight:"100vh",background:T.bg,fontFamily:"'DM Sans',system-ui,sans-serif",overflowX:"hidden",maxWidth:"100vw"};
+  const BASE = {minHeight:"100vh",background:"#0f1a12",fontFamily:"'DM Sans',system-ui,sans-serif",overflowX:"hidden",maxWidth:"100vw"};
 
   if(loading) return <div style={{...BASE,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:16}}>
     <GlobalStyles/>
