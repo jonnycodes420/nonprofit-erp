@@ -280,6 +280,93 @@ function GrantProfile({grant,onClose,onUpdate,onDelete,isAdmin,org}){
   );
 }
 
+// ── Grant Kanban ───────────────────────────────────────────────────────────
+const KANBAN_COLS = [
+  { id:"prospecting", label:"Prospecting",  color:"#8b5cf6" },
+  { id:"loi",         label:"LOI",          color:"#6366f1" },
+  { id:"applied",     label:"Applied",      color:"#3b82f6" },
+  { id:"pending",     label:"Under Review", color:"#f59e0b" },
+  { id:"awarded",     label:"Awarded",      color:"#10b981" },
+  { id:"closed",      label:"Closed",       color:"#6b7280" },
+];
+
+const statusToCol = s => {
+  if (s === "active" || s === "applied") return "applied";
+  if (s === "rejected") return "closed";
+  return KANBAN_COLS.find(c => c.id === s) ? s : "prospecting";
+};
+
+function GrantKanban({ grants, onUpdate, onAddClick }) {
+  const [dragging, setDragging] = useState(null);
+  const [dragOver, setDragOver] = useState(null);
+
+  const colGrants = id => grants.filter(g => statusToCol(g.status) === id);
+
+  const drop = async colId => {
+    if (!dragging || statusToCol(dragging.status) === colId) { setDragging(null); setDragOver(null); return; }
+    const g = dragging;
+    setDragging(null); setDragOver(null);
+    try {
+      await apiFetch(`/grants/${g.id}`, { method:"PUT", body: JSON.stringify({
+        funder:g.funder, program:g.program, amount:g.amount, received:g.received||0,
+        status:colId, deadline:g.deadline||"", reportDue:g.reportDue||"",
+        officer:g.officer||"", notes:g.notes||"", description:g.description||"", requirements:g.requirements||"",
+      })});
+      onUpdate({ ...g, status: colId });
+    } catch(e) { console.error(e); }
+  };
+
+  return (
+    <div style={{ display:"flex", gap:10, overflowX:"auto", paddingBottom:8, scrollSnapType:"x mandatory" }}>
+      {KANBAN_COLS.map(col => {
+        const items = colGrants(col.id);
+        const colTotal = items.reduce((s,g) => s+g.amount, 0);
+        const isOver = dragOver === col.id;
+        return (
+          <div key={col.id}
+            style={{ minWidth:260, flex:"0 0 260px", background: isOver ? T.bg3 : T.bg2, borderRadius:12, padding:10, borderTop:`3px solid ${col.color}`, transition:"background 0.12s", scrollSnapAlign:"start" }}
+            onDragOver={e => { e.preventDefault(); setDragOver(col.id); }}
+            onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget)) setDragOver(null); }}
+            onDrop={() => drop(col.id)}
+          >
+            <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:10 }}>
+              <div style={{ fontSize:10, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.08em", color:col.color }}>{col.label}</div>
+              <div style={{ display:"flex", alignItems:"center", gap:6 }}>
+                {colTotal > 0 && <div style={{ fontSize:10, color:T.ink3, fontWeight:600 }}>{fmt(colTotal)}</div>}
+                <div style={{ fontSize:10, background:col.color+"22", color:col.color, borderRadius:99, padding:"1px 7px", fontWeight:700 }}>{items.length}</div>
+              </div>
+            </div>
+            <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
+              {items.map(g => {
+                const days = g.deadline ? Math.round((new Date(g.deadline)-new Date())/86400000) : null;
+                const dColor = days === null ? T.ink3 : days < 0 ? "#ef4444" : days < 14 ? "#ef4444" : days < 30 ? "#f59e0b" : "#1a6b4a";
+                return (
+                  <div key={g.id}
+                    draggable
+                    onDragStart={() => setDragging(g)}
+                    onDragEnd={() => { setDragging(null); setDragOver(null); }}
+                    style={{ background:T.white, border:"1px solid "+T.bg3, borderRadius:10, padding:"10px 12px", cursor:"grab", userSelect:"none", opacity:dragging?.id===g.id?0.45:1, transition:"opacity 0.12s" }}
+                  >
+                    <div style={{ fontSize:13, fontWeight:700, color:T.ink, marginBottom:2 }}>{g.funder}</div>
+                    {g.program && <div style={{ fontSize:11, color:T.ink3, marginBottom:6 }}>{g.program}</div>}
+                    <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between" }}>
+                      <div style={{ fontSize:13, fontWeight:800, color:"#1a6b4a" }}>{fmt(g.amount)}</div>
+                      {days !== null && <div style={{ fontSize:10, fontWeight:600, color:dColor }}>{days < 0 ? "Overdue" : days === 0 ? "Due today" : `${days}d`}</div>}
+                    </div>
+                  </div>
+                );
+              })}
+              {col.id === "prospecting" && (
+                <button onClick={onAddClick} style={{ width:"100%", background:"transparent", border:`1px dashed ${T.bg3}`, borderRadius:8, padding:"8px", color:T.ink3, fontSize:12, cursor:"pointer", textAlign:"center" }}>+ Add Grant</button>
+              )}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 // ── Grants ─────────────────────────────────────────────────────────────────
 export function Grants({data,setData}) {
   const {auth}=useAuth();
@@ -290,6 +377,7 @@ export function Grants({data,setData}) {
   const [showAdd,setShowAdd]=useState(false);
   const [newGrant,setNewGrant]=useState({funder:"",program:"",amount:"",status:"prospecting",deadline:"",officer:""});
   const [addLoading,setAddLoading]=useState(false);
+  const [grantView,setGrantView]=useState("kanban");
   const pipeline=["prospecting","pending","active","closed"];
   const totals=pipeline.reduce((a,s)=>{a[s]=data.grants.filter(g=>g.status===s).reduce((sum,g)=>sum+g.amount,0);return a;},{});
 
@@ -350,11 +438,16 @@ export function Grants({data,setData}) {
     {subTab==="pipeline"&&<>
     <div style={{display:"flex",gap:10,flexWrap:"wrap",alignItems:"center"}}>
       <AIBtn onClick={findProspects} loading={prospectLoading} label="✦ AI Prospect Research"/>
-      <button onClick={()=>setShowAdd(v=>!v)} style={{background:T.greenDk,border:"none",borderRadius:10,padding:"10px 16px",color:"#fff",fontSize:13,fontWeight:600,cursor:"pointer",marginLeft:"auto",boxShadow:"0 2px 8px rgba(26,107,74,0.2)"}}>+ Add Grant</button>
+      <div style={{display:"flex",gap:2,background:T.bg2,borderRadius:8,padding:2}}>
+        {[["kanban","Kanban"],["list","List"]].map(([id,label])=>(
+          <button key={id} onClick={()=>setGrantView(id)} style={{background:grantView===id?T.white:"transparent",border:grantView===id?"1px solid "+T.bg3:"1px solid transparent",borderRadius:7,padding:"5px 13px",fontSize:12,fontWeight:600,color:grantView===id?T.ink:T.ink3,cursor:"pointer",transition:"all 0.12s"}}>{label}</button>
+        ))}
+      </div>
+      {grantView==="list"&&<button onClick={()=>setShowAdd(v=>!v)} style={{background:T.greenDk,border:"none",borderRadius:10,padding:"10px 16px",color:"#fff",fontSize:13,fontWeight:600,cursor:"pointer",marginLeft:"auto",boxShadow:"0 2px 8px rgba(26,107,74,0.2)"}}>+ Add Grant</button>}
     </div>
     {(prospectLoading||prospectAI)&&<AIPanel text={prospectAI} onClose={()=>setProspectAI("")}/>}
 
-    {showAdd&&(()=>{
+    {showAdd&&grantView==="list"&&(()=>{
       const inp={background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"9px 12px",color:T.ink,fontSize:13,outline:"none",width:"100%",boxSizing:"border-box"};
       return <Card style={{display:"flex",flexDirection:"column",gap:12}}>
         <div style={{fontSize:14,fontWeight:700,color:T.ink}}>New Grant</div>
@@ -383,6 +476,12 @@ export function Grants({data,setData}) {
       </Card>;
     })()}
 
+    {grantView==="kanban"&&<>
+      {data.grants.length===0&&<EmptyState icon="◉" title="No grants yet" message="Start tracking your grant portfolio — add one manually or use Find Grants to discover new funders." action="+ Add your first grant" onAction={()=>{ setGrantView("list"); setShowAdd(true); }}/>}
+      <GrantKanban grants={data.grants} onUpdate={onUpdate} onAddClick={()=>{ setGrantView("list"); setShowAdd(true); }}/>
+    </>}
+
+    {grantView==="list"&&<>
     <div className="grants-pipeline-grid" style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:8}}>
       {pipeline.map(s=><div key={s} style={{background:T.white,border:`1px solid ${SC[s]}25`,borderRadius:12,padding:"14px 16px",borderTop:`3px solid ${SC[s]}`}}>
         <div style={{fontSize:10,fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",color:SC[s],marginBottom:8}}>{s}</div>
@@ -412,6 +511,7 @@ export function Grants({data,setData}) {
         {g.status==="active"&&<div style={{marginTop:10,height:4,background:T.bg3,borderRadius:99}}><div style={{height:"100%",width:`${pct}%`,background:"#1a6b4a",borderRadius:99}}/></div>}
       </Card>;
     })}
+    </>}
     </>}
   </div>;
 }

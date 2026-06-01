@@ -11,6 +11,7 @@ import { Board } from "./components/Board";
 import { Finance } from "./components/Finance";
 import { Tasks } from "./components/Tasks";
 import { Settings } from "./components/Settings";
+import { Analytics } from "./components/Analytics";
 
 // ── Tabs ───────────────────────────────────────────────────────────────────
 const TABS=[
@@ -21,6 +22,7 @@ const TABS=[
   {id:"finance",label:"Finance",icon:"◇"},
   {id:"volunteers",label:"Volunteers",icon:"◎",earlyAccess:true},
   {id:"board",label:"Board",icon:"◆",earlyAccess:true},
+  {id:"analytics",label:"Analytics",icon:"◈"},
   {id:"tasks",label:"Tasks",icon:"◻"},
   {id:"settings",label:"Settings",icon:"⚙"},
 ];
@@ -34,6 +36,7 @@ const MORE_TABS=[
   {id:"communications",label:"Communications",icon:"◑"},
   {id:"volunteers",label:"Volunteers",icon:"◎",earlyAccess:true},
   {id:"board",label:"Board",icon:"◆",earlyAccess:true},
+  {id:"analytics",label:"Analytics",icon:"◈"},
   {id:"tasks",label:"Tasks",icon:"◻"},
   {id:"settings",label:"Settings",icon:"⚙"},
 ];
@@ -147,6 +150,7 @@ function AppShell() {
       {tab==="volunteers"&&<Volunteers data={data}/>}
       {tab==="board"&&<Board data={data}/>}
       {tab==="finance"&&<Finance data={data}/>}
+      {tab==="analytics"&&<Analytics data={data}/>}
       {tab==="tasks"&&<Tasks data={data} setData={setData}/>}
       {tab==="settings"&&<Settings auth={auth} logout={logout}/>}
     </div>

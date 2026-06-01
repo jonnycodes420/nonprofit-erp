@@ -179,6 +179,42 @@ Mobile-specific: hamburger nav → bottom sheet drawer; dark `rgba(15,15,15,0.92
 
 ---
 
+### Analytics Tab (2026-06-01)
+**File:** `client/src/components/Analytics.jsx`, `client/src/App.jsx`
+
+New "Analytics" tab added to the main nav (desktop tab bar + mobile More drawer). No AI features — pure data visualization using custom div-based charts (no recharts).
+
+6 charts:
+1. **Giving Trend** — vertical bar chart of monthly total revenue (individual + grants + events + other) for all 12 months. Color #10b981.
+2. **Donor Retention** — 3-bar chart showing New / Retained / Lapsed donors this year, with color-coded legend.
+3. **Pipeline Velocity** — horizontal bar chart of donor count per cultivation stage, using STAGES colors.
+4. **Grant Pipeline** — vertical bar chart of total ask value by status (dynamically shows all statuses present in data).
+5. **Email Performance** — progress bar list of open rate per sent campaign (last 10 campaigns, fetched from GET /email/campaigns).
+6. **Top Donors** — full-width table of top 10 donors by lifetime giving, showing name, last gift date, lifetime total, wealth score, and stage pill.
+
+Layout: 2-column responsive grid (`repeat(auto-fit, minmax(380px, 1fr))`), Top Donors spans full width. Empty states shown for each chart when no data.
+
+---
+
+### Grant Kanban (2026-06-01)
+**File:** `client/src/components/Grants.jsx`
+
+Added a Kanban view to the Grants pipeline tab alongside the existing List view. Default view is Kanban. Toggle between Kanban and List via a pill toggle in the toolbar.
+
+**Kanban columns (left to right):** Prospecting · LOI · Applied · Under Review · Awarded · Closed
+
+**Status mapping:** `active/applied → Applied`, `rejected → Closed`, all others map to matching column. New statuses `loi`, `applied`, `awarded` are persisted to the DB (TEXT column, no migration needed).
+
+**Drag-and-drop:** HTML5 drag API. On drop, calls `PUT /grants/:id` with full grant object + new status. Dragged card fades to 45% opacity; drop target column darkens.
+
+**Card shows:** funder name, program, ask amount, deadline color-coded (red <14d, yellow <30d, green otherwise). Column header shows label + count + total pipeline value.
+
+**Mobile:** horizontal scroll with `scrollSnapType: x mandatory`, 260px min-width per column.
+
+**+ Add Grant:** available via "Add Grant" button in the Prospecting column (switches to List view and opens the add form). In List view, button stays in toolbar as before.
+
+---
+
 ## What was removed / consolidated
 - `AnnualFund.jsx` — tab removed (goal tracking moved to Finance Overview)
 - `Programs.jsx` — tab removed (program–grant linking now handled inline in Grants)
