@@ -1,150 +1,24 @@
 import React, { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
-const T = {
-  cream:      "#f0ede6",
-  cream2:     "#e8e4db",
-  cream3:     "#ddd9d0",
-  ink:        "#0f0f0f",
-  ink2:       "#2a2a2a",
-  ink3:       "#6b6b6b",
-  dark:       "#111111",
-  dark2:      "#1a1a1a",
-  darkBorder: "rgba(255,255,255,0.08)",
-  green:      "#10b981",
-  greenDark:  "#1a6b4a",
-  greenGlow:  "rgba(16,185,129,0.18)",
-  white:      "#ffffff",
+// ── Design tokens (landing-local, matches app palette) ─────────────────────
+const C = {
+  dark:    "#0f1a12",
+  dark2:   "#1a2e1f",
+  dark3:   "#2d4a35",
+  cream:   "#f0ede6",
+  cream2:  "#e8e4db",
+  cream3:  "#ddd9d0",
+  white:   "#ffffff",
+  gold:    "#c9a84c",
+  sage:    "#8fa896",
+  green:   "#10b981",
+  greenDk: "#0d5c3a",
+  greenMd: "#1a6b4a",
+  ink3:    "#6b6b6b",
 };
 
 const CALENDLY_URL = "https://calendly.com/xjca2006/new-meeting";
-
-// ── Animated mesh canvas ───────────────────────────────────────────────────
-function MeshCanvas() {
-  const canvasRef = useRef(null);
-  const mouseRef  = useRef({ x: 0.5, y: 0.5 });
-  const animRef   = useRef(null);
-
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext("2d");
-
-    const resize = () => {
-      canvas.width  = canvas.offsetWidth  * window.devicePixelRatio;
-      canvas.height = canvas.offsetHeight * window.devicePixelRatio;
-      ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
-    };
-    resize();
-    window.addEventListener("resize", resize);
-
-    const points = [];
-    const cols = 18, rows = 10;
-    for (let r = 0; r < rows; r++) {
-      for (let c = 0; c < cols; c++) {
-        const offX = r % 2 === 0 ? 0 : 0.5;
-        points.push({
-          bx: (c + offX) / (cols - 1),
-          by: r / (rows - 1),
-          vx: (Math.random() - 0.5) * 0.0004,
-          vy: (Math.random() - 0.5) * 0.0004,
-          ox: (c + offX) / (cols - 1),
-          oy: r / (rows - 1),
-        });
-      }
-    }
-
-    const draw = () => {
-      const w = canvas.offsetWidth;
-      const h = canvas.offsetHeight;
-      const mx = mouseRef.current.x;
-      const my = mouseRef.current.y;
-
-      ctx.clearRect(0, 0, w, h);
-      ctx.fillStyle = T.dark;
-      ctx.fillRect(0, 0, w, h);
-
-      points.forEach(p => {
-        const dx = mx - p.bx;
-        const dy = my - p.by;
-        const dist = Math.sqrt(dx * dx + dy * dy);
-        const pull = Math.max(0, 0.18 - dist) * 0.08;
-        p.bx += p.vx + dx * pull;
-        p.by += p.vy + dy * pull;
-        p.bx += (p.ox - p.bx) * 0.012;
-        p.by += (p.oy - p.by) * 0.012;
-      });
-
-      for (let i = 0; i < points.length; i++) {
-        for (let j = i + 1; j < points.length; j++) {
-          const pi = points[i], pj = points[j];
-          const dx = pi.bx - pj.bx;
-          const dy = pi.by - pj.by;
-          const d  = Math.sqrt(dx * dx + dy * dy);
-          if (d < 0.12) {
-            const alpha = (1 - d / 0.12) * 0.55;
-            const mdx = (pi.bx + pj.bx) / 2 - mx;
-            const mdy = (pi.by + pj.by) / 2 - my;
-            const md  = Math.sqrt(mdx * mdx + mdy * mdy);
-            const greenness = Math.max(0, 1 - md / 0.22);
-            const r = Math.round(255 * (1 - greenness) + 16  * greenness);
-            const g = Math.round(255 * (1 - greenness) + 185 * greenness);
-            const b = Math.round(255 * (1 - greenness) + 129 * greenness);
-            ctx.strokeStyle = `rgba(${r},${g},${b},${alpha})`;
-            ctx.lineWidth = 1;
-            ctx.beginPath();
-            ctx.moveTo(pi.bx * w, pi.by * h);
-            ctx.lineTo(pj.bx * w, pj.by * h);
-            ctx.stroke();
-          }
-        }
-      }
-
-      points.forEach(p => {
-        const dx = p.bx - mx, dy = p.by - my;
-        const d = Math.sqrt(dx * dx + dy * dy);
-        const glow = Math.max(0, 1 - d / 0.18);
-        const r2 = 1.5 + glow * 2.5;
-        ctx.beginPath();
-        ctx.arc(p.bx * w, p.by * h, r2, 0, Math.PI * 2);
-        ctx.fillStyle = glow > 0.1
-          ? `rgba(16,185,129,${0.4 + glow * 0.6})`
-          : `rgba(255,255,255,0.25)`;
-        ctx.fill();
-      });
-
-      const gx = ctx.createRadialGradient(mx * w, my * h, 0, mx * w, my * h, w * 0.28);
-      gx.addColorStop(0, "rgba(16,185,129,0.12)");
-      gx.addColorStop(1, "transparent");
-      ctx.fillStyle = gx;
-      ctx.fillRect(0, 0, w, h);
-
-      animRef.current = requestAnimationFrame(draw);
-    };
-
-    draw();
-
-    const section = canvas.parentElement;
-    const onMove = (e) => {
-      const rect = section.getBoundingClientRect();
-      mouseRef.current = {
-        x: (e.clientX - rect.left) / rect.width,
-        y: (e.clientY - rect.top)  / rect.height,
-      };
-    };
-    section.addEventListener("mousemove", onMove);
-
-    return () => {
-      cancelAnimationFrame(animRef.current);
-      window.removeEventListener("resize", resize);
-      section.removeEventListener("mousemove", onMove);
-    };
-  }, []);
-
-  return (
-    <canvas ref={canvasRef} style={{ position: "absolute", inset: 0, width: "100%", height: "100%", display: "block" }} />
-  );
-}
 
 // ── Demo booking modal ─────────────────────────────────────────────────────
 function DemoModal({ onClose }) {
@@ -170,22 +44,22 @@ function DemoModal({ onClose }) {
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
       style={{
         position: "fixed", inset: 0, zIndex: 500,
-        background: "rgba(0,0,0,0.45)",
+        background: "rgba(0,0,0,0.55)",
         display: "flex", alignItems: "flex-start", justifyContent: "center",
         padding: "40px 16px", overflowY: "auto",
       }}
     >
       <div style={{
-        background: T.cream, borderRadius: 20, width: "100%", maxWidth: 680,
-        boxShadow: "0 24px 80px rgba(0,0,0,0.18)",
-        border: `1px solid ${T.cream3}`,
+        background: C.cream, borderRadius: 20, width: "100%", maxWidth: 680,
+        boxShadow: "0 24px 80px rgba(0,0,0,0.22)",
+        border: `1px solid ${C.cream3}`,
         overflow: "hidden",
       }}>
         <div style={{ padding: "24px 28px 0", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <span style={{ fontFamily: "'DM Serif Display',serif", fontSize: 24, color: T.ink, letterSpacing: "-0.5px" }}>
+          <span style={{ fontFamily: "'DM Serif Display',serif", fontSize: 24, color: C.dark, letterSpacing: "-0.5px" }}>
             Book a Demo
           </span>
-          <button onClick={onClose} style={{ background: "none", border: "none", fontSize: 22, color: T.ink3, cursor: "pointer", lineHeight: 1, padding: 4 }}>×</button>
+          <button onClick={onClose} style={{ background: "none", border: "none", fontSize: 22, color: C.ink3, cursor: "pointer", lineHeight: 1, padding: 4 }}>×</button>
         </div>
         <div
           className="calendly-inline-widget"
@@ -197,30 +71,121 @@ function DemoModal({ onClose }) {
   );
 }
 
+// ── Hero UI mockup — pure CSS, looks like the real app ─────────────────────
+function HeroMockup() {
+  const STAGES = [
+    { label: "Prospect",  color: "#8b5cf6", count: 12 },
+    { label: "Qualify",   color: "#3b82f6", count: 8  },
+    { label: "Cultivate", color: "#f59e0b", count: 15 },
+    { label: "Solicit",   color: "#10b981", count: 7  },
+    { label: "Steward",   color: "#0d5c3a", count: 4  },
+    { label: "Lapsed",    color: "#ef4444", count: 1  },
+  ];
+  const STATS = [
+    { label: "Total Donors",   value: "47",       sub: "12 gave this year" },
+    { label: "Active Grants",  value: "$340k",    sub: "pipeline value"    },
+    { label: "Giving YTD",     value: "$127,450", sub: "vs $98k last year" },
+    { label: "Open Tasks",     value: "12",       sub: "3 high priority"   },
+  ];
+  return (
+    <div style={{
+      background: C.dark, border: `1px solid ${C.dark3}`, borderRadius: 16,
+      padding: "20px", fontFamily: "'DM Sans',sans-serif",
+      boxShadow: "0 32px 80px rgba(0,0,0,0.4)",
+    }}>
+      {/* Mini app header */}
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 16, paddingBottom: 12, borderBottom: `1px solid ${C.dark2}` }}>
+        <div style={{ width: 22, height: 22, background: C.greenDk, borderRadius: 6, display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <svg width="11" height="11" viewBox="0 0 16 16" fill="none"><path d="M8 2L13 5v6L8 14 3 11V5L8 2z" stroke={C.cream} strokeWidth="1.5" fill="none"/><circle cx="8" cy="8" r="2" fill={C.cream}/></svg>
+        </div>
+        <span style={{ fontSize: 11, fontWeight: 700, color: C.cream, fontFamily: "'DM Serif Display',serif" }}>Creo Arts Organization</span>
+        <span style={{ fontSize: 9, color: C.sage, textTransform: "uppercase", letterSpacing: "0.08em" }}>Steward</span>
+        <div style={{ marginLeft: "auto", background: C.dark2, border: `1px solid ${C.dark3}`, borderRadius: 6, padding: "3px 10px", fontSize: 10, color: C.green, fontWeight: 700 }}>✦ Ask AI</div>
+      </div>
+      {/* Stat cards */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 8, marginBottom: 14 }}>
+        {STATS.map(s => (
+          <div key={s.label} style={{ background: C.dark2, border: `1px solid ${C.dark3}`, borderRadius: 10, padding: "10px 12px", borderLeft: `3px solid ${C.greenDk}` }}>
+            <div style={{ fontSize: 8, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", color: C.sage, marginBottom: 4 }}>{s.label}</div>
+            <div style={{ fontSize: 18, fontWeight: 800, color: C.cream, fontFamily: "'DM Serif Display',serif", lineHeight: 1, letterSpacing: "-0.02em" }}>{s.value}</div>
+            <div style={{ fontSize: 9, color: C.sage, marginTop: 3 }}>{s.sub}</div>
+          </div>
+        ))}
+      </div>
+      {/* Pipeline strip */}
+      <div style={{ background: C.dark2, border: `1px solid ${C.dark3}`, borderRadius: 10, overflow: "hidden" }}>
+        <div style={{ padding: "7px 12px 5px", borderBottom: `1px solid ${C.dark3}`, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <span style={{ fontSize: 8, fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.1em", color: C.sage }}>Donor Pipeline</span>
+          <span style={{ fontSize: 8, color: C.sage }}>View all →</span>
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(6,1fr)" }}>
+          {STAGES.map((s, i) => (
+            <div key={s.label} style={{ padding: "9px 8px", borderRight: i < 5 ? `1px solid ${C.dark3}` : "none", borderTop: `2px solid ${s.color}` }}>
+              <div style={{ fontSize: 7, fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.06em", color: s.color, marginBottom: 4 }}>{s.label}</div>
+              <div style={{ fontSize: 16, fontWeight: 800, color: C.cream, fontFamily: "'DM Serif Display',serif", lineHeight: 1 }}>{s.count}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Health Score ring ──────────────────────────────────────────────────────
+function HealthRing() {
+  return (
+    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 24 }}>
+      {/* Ring */}
+      <div style={{ position: "relative", width: 200, height: 200 }}>
+        <div style={{
+          width: 200, height: 200, borderRadius: "50%",
+          background: "conic-gradient(#10b981 0% 82%, #1a2e1f 82% 100%)",
+          display: "flex", alignItems: "center", justifyContent: "center",
+          boxShadow: "0 0 40px rgba(16,185,129,0.25)",
+        }}>
+          <div style={{
+            width: 158, height: 158, borderRadius: "50%",
+            background: C.dark, display: "flex", flexDirection: "column",
+            alignItems: "center", justifyContent: "center", gap: 2,
+          }}>
+            <div style={{ fontSize: 56, fontWeight: 800, color: C.cream, fontFamily: "'DM Serif Display',serif", lineHeight: 1, letterSpacing: "-0.02em" }}>82</div>
+            <div style={{ fontSize: 16, fontWeight: 700, color: C.gold, letterSpacing: "0.04em" }}>B+</div>
+            <div style={{ fontSize: 9, textTransform: "uppercase", letterSpacing: "0.12em", color: C.sage, fontWeight: 700, marginTop: 2 }}>Org Health</div>
+          </div>
+        </div>
+      </div>
+      {/* Risk flags */}
+      <div style={{ display: "flex", flexDirection: "column", gap: 8, width: "100%", maxWidth: 280 }}>
+        {[
+          { icon: "✓", label: "6 months runway",         color: C.green },
+          { icon: "✓", label: "78% donor retention",     color: C.green },
+          { icon: "⚠", label: "3 grants expiring soon",  color: C.gold  },
+        ].map(f => (
+          <div key={f.label} style={{
+            display: "flex", alignItems: "center", gap: 10,
+            background: C.dark2, border: `1px solid ${C.dark3}`, borderRadius: 8,
+            padding: "9px 14px",
+          }}>
+            <span style={{ fontSize: 13, color: f.color, fontWeight: 800, flexShrink: 0 }}>{f.icon}</span>
+            <span style={{ fontSize: 12, color: C.cream, fontWeight: 500 }}>{f.label}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 // ── Main ───────────────────────────────────────────────────────────────────
 export default function Landing() {
   const navigate = useNavigate();
-  const [navShadow, setNavShadow] = useState(false);
-  const [showModal, setShowModal] = useState(false);
+  const [showModal, setShowModal]       = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const [navScrolled, setNavScrolled]   = useState(false);
 
   useEffect(() => {
-    const onScroll = () => setNavShadow(window.scrollY > 10);
+    const onScroll = () => setNavScrolled(window.scrollY > 20);
     window.addEventListener("scroll", onScroll);
     return () => window.removeEventListener("scroll", onScroll);
-  }, []);
-
-  useEffect(() => {
-    const els = document.querySelectorAll("[data-reveal]");
-    els.forEach((el, i) => {
-      el.style.opacity = 0;
-      el.style.transform = "translateY(20px)";
-      setTimeout(() => {
-        el.style.transition = "opacity .9s cubic-bezier(.16,1,.3,1), transform .9s cubic-bezier(.16,1,.3,1)";
-        el.style.opacity = 1;
-        el.style.transform = "translateY(0)";
-      }, 80 + i * 100);
-    });
   }, []);
 
   useEffect(() => {
@@ -228,77 +193,76 @@ export default function Landing() {
     return () => { document.body.style.overflow = ""; };
   }, [showModal]);
 
-  const BookBtn = ({ children, style = {}, ...props }) => (
+  const BookBtn = ({ children, small, outlined, style = {} }) => (
     <button
       onClick={() => setShowModal(true)}
       style={{
-        background: T.ink, color: T.cream, border: "none",
-        padding: "13px 28px", borderRadius: 9, fontSize: 15, fontWeight: 500,
-        cursor: "pointer", fontFamily: "'DM Sans',sans-serif", transition: "background .2s",
+        background: outlined ? "transparent" : C.green,
+        color: outlined ? C.cream : C.dark,
+        border: outlined ? `1px solid ${C.cream}` : "none",
+        padding: small ? "9px 20px" : "13px 28px",
+        borderRadius: 9, fontSize: small ? 13 : 15, fontWeight: 700,
+        cursor: "pointer", fontFamily: "'DM Sans',sans-serif",
+        transition: "opacity .15s", letterSpacing: "0.01em",
         ...style,
       }}
-      onMouseEnter={e => e.currentTarget.style.background = "#2a2a2a"}
-      onMouseLeave={e => e.currentTarget.style.background = style.background || T.ink}
-      {...props}
+      onMouseEnter={e => e.currentTarget.style.opacity = "0.85"}
+      onMouseLeave={e => e.currentTarget.style.opacity = "1"}
     >
-      {children || "Book a Demo"}
+      {children || "Book a Demo →"}
     </button>
+  );
+
+  const Eyebrow = ({ children, dark = false }) => (
+    <div style={{
+      fontSize: 10, fontWeight: 800, textTransform: "uppercase",
+      letterSpacing: "0.12em", color: dark ? C.gold : C.greenDk,
+      marginBottom: 14, fontFamily: "'DM Sans',sans-serif",
+    }}>{children}</div>
   );
 
   return (
     <>
-      <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;1,9..40,300&display=swap" rel="stylesheet" />
-      <link href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/dist/tabler-icons.min.css" rel="stylesheet" />
+      <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
 
       <style>{`
         *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
-        html, body { background: ${T.cream}; }
-        .steward { font-family: 'DM Sans', sans-serif; background: ${T.cream}; color: ${T.ink}; overflow-x: hidden; line-height: 1.6; }
+        html, body { background: ${C.cream}; overflow-x: hidden; }
+        .lp { font-family: 'DM Sans', sans-serif; color: ${C.dark}; overflow-x: hidden; line-height: 1.6; }
         a { text-decoration: none; color: inherit; }
-        .nav-a:hover { opacity: 0.6; }
-        .btn-text:hover { opacity: 0.6; }
-        .feature-card:hover { background: ${T.cream2} !important; }
-        .serve-card:hover { background: ${T.cream} !important; }
+        .nav-a:hover { opacity: 0.6; transition: opacity .15s; }
         .footer-a:hover { opacity: 0.5; }
-        .pill-btn:hover { background: ${T.cream2} !important; }
-        .quote-card:hover { box-shadow: 0 4px 24px rgba(0,0,0,0.07) !important; }
-        @keyframes pulse-dot { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.5; transform: scale(0.75); } }
-        .lp-mobile-hamburger { display: none; background: none; border: none; font-size: 22px; cursor: pointer; color: ${T.ink}; padding: 4px; line-height: 1; }
-        .lp-nav-cta { display: flex; }
-        .lp-mobile-nav-overlay { display: none; position: fixed; inset: 0; z-index: 600; background: rgba(0,0,0,0.45); align-items: flex-end; }
-        .lp-mobile-nav-open { display: flex !important; }
-        .lp-mobile-nav-drawer { background: ${T.cream}; border-radius: 20px 20px 0 0; width: 100%; padding-bottom: env(safe-area-inset-bottom, 0px); }
-        .lp-mobile-nav-handle { width: 36px; height: 4px; border-radius: 2px; background: ${T.cream3}; margin: 12px auto 8px; }
-        .lp-mobile-nav-row { display: flex; align-items: center; padding: 16px 24px; font-family: 'DM Sans', sans-serif; font-size: 17px; color: ${T.ink}; border-bottom: 1px solid ${T.cream3}; text-decoration: none; width: 100%; background: none; border-left: none; border-right: none; border-top: none; cursor: pointer; text-align: left; }
-        .lp-mobile-nav-row:hover { background: ${T.cream2}; }
-        .mesh-section-mobile { display: none; }
+        .lp-hero-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 64px; align-items: center; }
+        .lp-feat-grid  { display: grid; grid-template-columns: repeat(3,1fr); gap: 20px; }
+        .lp-price-grid { display: grid; grid-template-columns: repeat(3,1fr); gap: 20px; }
+        .lp-pain-grid  { display: grid; grid-template-columns: repeat(3,1fr); gap: 20px; }
+        .lp-health-grid{ display: grid; grid-template-columns: 1fr 1fr; gap: 64px; align-items: center; }
+        .lp-quote-grid { display: grid; grid-template-columns: repeat(3,1fr); gap: 20px; }
+        .lp-card-hover:hover { transform: translateY(-2px); transition: transform .2s, box-shadow .2s; box-shadow: 0 8px 32px rgba(0,0,0,0.10) !important; }
+        .lp-price-card-hover:hover { transform: translateY(-2px); transition: transform .2s; }
+        /* Mobile nav */
+        .lp-hamburger { display: none; background: none; border: none; font-size: 22px; cursor: pointer; color: ${C.cream}; padding: 4px; line-height: 1; }
+        .lp-nav-links { display: flex; }
+        .lp-nav-cta   { display: flex; }
+        .lp-mobile-nav-overlay { display: none; position: fixed; inset: 0; z-index: 600; background: rgba(0,0,0,0.55); align-items: flex-end; }
+        .lp-mobile-nav-open    { display: flex !important; }
+        .lp-mobile-nav-drawer  { background: ${C.dark}; border-radius: 20px 20px 0 0; width: 100%; padding-bottom: env(safe-area-inset-bottom, 0px); }
+        .lp-mobile-nav-handle  { width: 36px; height: 4px; border-radius: 2px; background: ${C.dark2}; margin: 12px auto 8px; }
+        .lp-mobile-nav-row     { display: flex; align-items: center; padding: 16px 24px; font-family: 'DM Sans',sans-serif; font-size: 17px; color: ${C.cream}; border-bottom: 1px solid ${C.dark2}; text-decoration: none; width: 100%; background: none; border-left: none; border-right: none; border-top: none; cursor: pointer; text-align: left; }
+        .lp-mobile-nav-row:hover { background: ${C.dark2}; }
         @media (max-width: 768px) {
-          .hero-grid { grid-template-columns: 1fr !important; }
-          .h1-hero { font-size: 36px !important; letter-spacing: -1px !important; }
-          .features-grid { grid-template-columns: 1fr !important; }
-          .serve-grid { grid-template-columns: 1fr !important; }
-          .quotes-grid { grid-template-columns: 1fr !important; }
-          .nav-links { display: none !important; }
-          .definition-block { padding-left: 20px !important; }
-          /* Hamburger + nav CTA visibility */
-          .lp-mobile-hamburger { display: block !important; }
-          .lp-nav-cta { display: none !important; }
-          /* Section horizontal padding */
-          .lp-section { padding-left: 16px !important; padding-right: 16px !important; }
-          .landing-nav { padding: 0 16px !important; }
-          /* Hero vertical padding */
-          .hero-section { padding-top: 56px !important; padding-bottom: 48px !important; }
-          /* Mesh section: swap dark for clean cream on mobile */
-          .mesh-section-desktop { display: none !important; }
-          .mesh-section-mobile { display: block !important; }
-          /* Consulting inner grid: stack */
-          .consulting-grid { grid-template-columns: 1fr !important; gap: 32px !important; }
-          /* Features section header: stack */
-          .features-header { grid-template-columns: 1fr !important; gap: 12px !important; }
-          /* Who we serve rows: stack to single column */
-          .serve-row { grid-template-columns: 1fr !important; gap: 6px !important; padding: 24px 16px !important; }
-          /* Footer */
-          .landing-footer { padding: 28px 16px !important; }
+          .lp-hero-grid   { grid-template-columns: 1fr !important; gap: 40px !important; }
+          .lp-feat-grid   { grid-template-columns: 1fr !important; }
+          .lp-price-grid  { grid-template-columns: 1fr !important; }
+          .lp-pain-grid   { grid-template-columns: 1fr !important; }
+          .lp-health-grid { grid-template-columns: 1fr !important; gap: 40px !important; }
+          .lp-quote-grid  { grid-template-columns: 1fr !important; }
+          .lp-section     { padding-left: 20px !important; padding-right: 20px !important; }
+          .lp-nav-links   { display: none !important; }
+          .lp-nav-cta     { display: none !important; }
+          .lp-hamburger   { display: block !important; }
+          .lp-hero-mockup { display: none !important; }
+          .lp-h1          { font-size: 38px !important; }
         }
       `}</style>
 
@@ -310,387 +274,141 @@ export default function Landing() {
           <div className="lp-mobile-nav-drawer" onClick={e => e.stopPropagation()}>
             <div className="lp-mobile-nav-handle" />
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 24px 12px" }}>
-              <span style={{ fontFamily: "'DM Serif Display',serif", fontSize: 18, color: T.ink }}>Steward</span>
-              <button onClick={() => setMobileNavOpen(false)} style={{ background: "none", border: "none", fontSize: 24, color: T.ink3, cursor: "pointer", lineHeight: 1 }}>×</button>
+              <span style={{ fontFamily: "'DM Serif Display',serif", fontSize: 18, color: C.cream }}>Steward</span>
+              <button onClick={() => setMobileNavOpen(false)} style={{ background: "none", border: "none", fontSize: 24, color: C.sage, cursor: "pointer", lineHeight: 1 }}>×</button>
             </div>
-            {[["Features","#features"],["Consulting","#consulting"]].map(([l,h]) => (
+            {[["Features","#features"],["Pricing","#pricing"]].map(([l,h]) => (
               <a key={l} href={h} className="lp-mobile-nav-row" onClick={() => setMobileNavOpen(false)}>{l}</a>
             ))}
             <div style={{ padding: "16px 24px", display: "flex", flexDirection: "column", gap: 10 }}>
               <button onClick={() => { navigate("/login"); setMobileNavOpen(false); }}
-                style={{ width: "100%", padding: "13px", border: `1px solid ${T.cream3}`, borderRadius: 9, background: "transparent", fontSize: 15, fontWeight: 400, color: T.ink, fontFamily: "'DM Sans',sans-serif", cursor: "pointer" }}>
+                style={{ width: "100%", padding: "13px", border: `1px solid ${C.dark2}`, borderRadius: 9, background: "transparent", fontSize: 15, fontWeight: 500, color: C.cream, fontFamily: "'DM Sans',sans-serif", cursor: "pointer" }}>
                 Log in
               </button>
               <button onClick={() => { setShowModal(true); setMobileNavOpen(false); }}
-                style={{ width: "100%", padding: "13px", border: "none", borderRadius: 9, background: T.ink, color: T.cream, fontSize: 15, fontWeight: 500, fontFamily: "'DM Sans',sans-serif", cursor: "pointer" }}>
-                Book a Demo
+                style={{ width: "100%", padding: "13px", border: "none", borderRadius: 9, background: C.green, color: C.dark, fontSize: 15, fontWeight: 700, fontFamily: "'DM Sans',sans-serif", cursor: "pointer" }}>
+                Book a Demo →
               </button>
             </div>
           </div>
         </div>
       )}
 
-      <div className="steward">
-
-        {/* ── Announcement bar ── */}
-        <div style={{
-          background: T.greenDark,
-          color: T.cream,
-          textAlign: "center",
-          padding: "10px 24px",
-          fontSize: 14,
-          fontFamily: "'DM Sans',sans-serif",
-          letterSpacing: "0.06em",
-          fontWeight: 400,
-        }}>
-          Stewarding your mission, so you can focus on what matters.
-        </div>
+      <div className="lp">
 
         {/* ── Nav ── */}
-        <nav className="landing-nav" style={{
+        <nav style={{
           display: "flex", alignItems: "center", justifyContent: "space-between",
-          padding: "0 48px", height: 64,
-          background: navShadow ? "rgba(240,237,230,0.92)" : T.cream,
-          backdropFilter: "blur(10px)",
-          borderBottom: navShadow ? `1px solid ${T.cream3}` : "1px solid transparent",
+          padding: "0 48px", height: 60,
+          background: navScrolled ? "rgba(15,26,18,0.96)" : C.dark,
+          backdropFilter: "blur(12px)",
+          borderBottom: `1px solid ${navScrolled ? C.dark2 : "transparent"}`,
           position: "sticky", top: 0, zIndex: 100,
-          transition: "background .3s, border-color .3s",
+          transition: "border-color .3s",
         }}>
-          <span style={{ fontFamily: "'DM Serif Display',serif", fontSize: 20, color: T.ink, letterSpacing: "-0.3px" }}>
+          <span style={{ fontFamily: "'DM Serif Display',serif", fontSize: 20, color: C.cream, letterSpacing: "-0.3px" }}>
             Steward
           </span>
-          <div className="nav-links" style={{ display: "flex", alignItems: "center", gap: 36 }}>
-            {[["Features","#features"],["Consulting","#consulting"]].map(([l,h]) => (
-              <a key={l} href={h} className="nav-a"
-                style={{ fontSize: 15, color: T.ink2, transition: "opacity .2s" }}>
-                {l}
-              </a>
+          <div className="lp-nav-links" style={{ display: "flex", alignItems: "center", gap: 32 }}>
+            {[["Features","#features"],["Pricing","#pricing"]].map(([l,h]) => (
+              <a key={l} href={h} className="nav-a" style={{ fontSize: 14, color: C.sage, transition: "opacity .15s" }}>{l}</a>
             ))}
           </div>
           <div className="lp-nav-cta" style={{ display: "flex", gap: 10, alignItems: "center" }}>
-            <button className="btn-text" onClick={() => navigate("/login")} style={{
-              background: "none", border: "none", fontSize: 15, color: T.ink2,
-              cursor: "pointer", fontFamily: "'DM Sans',sans-serif",
-              transition: "opacity .2s", padding: "8px 4px",
+            <button className="nav-a" onClick={() => navigate("/login")} style={{
+              background: "none", border: "none", fontSize: 14, color: C.sage,
+              cursor: "pointer", fontFamily: "'DM Sans',sans-serif", transition: "opacity .15s",
             }}>Log in</button>
-            <BookBtn style={{ padding: "10px 22px", fontSize: 15 }} />
+            <BookBtn small style={{ padding: "8px 18px", fontSize: 13 }} />
           </div>
-          <button className="lp-mobile-hamburger" onClick={() => setMobileNavOpen(true)}>☰</button>
+          <button className="lp-hamburger" onClick={() => setMobileNavOpen(true)}>☰</button>
         </nav>
 
         {/* ── Hero ── */}
-        <section className="hero-section lp-section" style={{ padding: "90px 48px 80px", maxWidth: 1200, margin: "0 auto" }}>
-          <div data-reveal style={{ marginBottom: 52 }}>
-            <span style={{
-              display: "inline-flex", alignItems: "center", gap: 10,
-              fontSize: 15, color: T.ink,
-              fontFamily: "'DM Serif Display',serif", fontStyle: "italic",
-              border: `1.5px solid ${T.greenDark}`,
-              background: T.cream,
-              padding: "9px 24px", borderRadius: 99,
-              letterSpacing: "0.02em",
-              boxShadow: `0 1px 8px rgba(26,107,74,0.10)`,
-            }}>
-              <span style={{
-                width: 7, height: 7, borderRadius: "50%",
-                background: T.greenDark, display: "inline-block", flexShrink: 0,
-                animation: "pulse-dot 2s ease-in-out infinite",
-              }} />
-              For nonprofits · churches · mission-driven orgs
-            </span>
-          </div>
-
-          <div className="hero-grid" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 80px", alignItems: "start" }}>
-            <div data-reveal>
-              <h1 className="h1-hero" style={{
-                fontFamily: "'DM Serif Display',serif",
-                fontSize: "clamp(44px, 5.5vw, 72px)",
-                lineHeight: 1.04, letterSpacing: "-2px", color: T.ink,
-                fontWeight: 400,
-              }}>
-                Built for those who{" "}
-                <em style={{ fontStyle: "italic" }}>steward</em>
-                <br />
-                <span style={{ textDecoration: "underline", textDecorationThickness: 3, textUnderlineOffset: 6, textDecorationColor: T.greenDark }}>what matters.</span>
-              </h1>
-            </div>
-
-            <div data-reveal style={{ paddingTop: 12 }}>
-              <p style={{ fontSize: 19, color: T.ink2, lineHeight: 1.7, fontWeight: 300, marginBottom: 36, maxWidth: 420 }}>
-                Steward is more than software — it's a partner for nonprofits, churches, and mission-driven organizations who deserve tools as dedicated as they are.
-              </p>
-              <div style={{ marginBottom: 40 }}>
-                <BookBtn style={{ padding: "13px 28px", fontSize: 15 }} />
-              </div>
-              <div style={{ display: "flex", gap: 24, flexWrap: "wrap" }}>
-                {[
-                  { icon: "ti-heart", text: "Built with mission in mind" },
-                  { icon: "ti-users", text: "Real human support" },
-                  { icon: "ti-clock", text: "10-min setup" },
-                ].map(({ icon, text }) => (
-                  <div key={text} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, color: T.ink3 }}>
-                    <i className={`ti ${icon}`} style={{ fontSize: 14, color: T.greenDark }} aria-hidden="true" />
-                    {text}
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-        </section>
-
-        {/* ── Dark animated mesh card ── */}
-        <section className="mesh-section mesh-section-desktop" style={{ padding: "0 32px 80px" }}>
-          <div style={{
-            position: "relative", borderRadius: 24, overflow: "hidden",
-            maxWidth: 1200, margin: "0 auto",
-            minHeight: 460, cursor: "crosshair",
-          }}>
-            <MeshCanvas />
-            <div className="mesh-card-inner" style={{ position: "relative", zIndex: 2, padding: "64px 64px", display: "grid", gridTemplateColumns: "1fr 1fr", gap: 64, alignItems: "center" }}>
+        <section className="lp-section" style={{ background: C.dark, padding: "96px 64px 80px" }}>
+          <div style={{ maxWidth: 1200, margin: "0 auto" }}>
+            <div className="lp-hero-grid">
+              {/* Left */}
               <div>
-                <div style={{
-                  display: "inline-flex", alignItems: "center", gap: 6,
-                  background: "rgba(16,185,129,0.12)", border: "1px solid rgba(16,185,129,0.25)",
-                  color: T.green, fontSize: 12, fontWeight: 500,
-                  padding: "4px 12px", borderRadius: 20, marginBottom: 24,
-                }}>
-                  <i className="ti ti-sparkles" style={{ fontSize: 12 }} aria-hidden="true" /> AI-powered pipeline
-                </div>
-                <h2 style={{
+                <Eyebrow dark>Built for Nonprofits</Eyebrow>
+                <h1 className="lp-h1" style={{
                   fontFamily: "'DM Serif Display',serif",
-                  fontSize: "clamp(32px, 3.5vw, 48px)",
-                  color: T.white, lineHeight: 1.1, letterSpacing: "-1px", marginBottom: 18,
+                  fontSize: "clamp(42px, 5vw, 68px)",
+                  fontWeight: 400, lineHeight: 1.05,
+                  letterSpacing: "-0.02em", color: C.cream,
+                  marginBottom: 24,
                 }}>
-                  Your donors.<br />
-                  <em style={{ fontStyle: "italic", color: T.green }}>Always moving forward.</em>
-                </h2>
-                <p style={{ fontSize: 16, color: "rgba(255,255,255,0.55)", lineHeight: 1.7, fontWeight: 300, maxWidth: 380 }}>
-                  Steward's AI watches every donor relationship and tells you exactly who to call, what to say, and when — before opportunities go cold.
+                  Your mission<br />
+                  deserves better{" "}
+                  <span style={{ textDecoration: "underline", textDecorationColor: C.gold, textDecorationThickness: 3, textUnderlineOffset: 6 }}>software.</span>
+                </h1>
+                <p style={{ fontSize: 18, color: C.sage, lineHeight: 1.7, marginBottom: 36, maxWidth: 480 }}>
+                  Steward is the CRM, grant tracker, and finance tool built for development teams who are tired of duct-taping spreadsheets together.
+                </p>
+                <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 28 }}>
+                  <BookBtn>Book a Demo →</BookBtn>
+                  <button
+                    onClick={() => navigate("/login")}
+                    style={{
+                      background: "transparent", border: `1px solid ${C.cream}`,
+                      color: C.cream, padding: "13px 28px", borderRadius: 9,
+                      fontSize: 15, fontWeight: 700, cursor: "pointer",
+                      fontFamily: "'DM Sans',sans-serif", transition: "opacity .15s",
+                    }}
+                    onMouseEnter={e => e.currentTarget.style.opacity = "0.75"}
+                    onMouseLeave={e => e.currentTarget.style.opacity = "1"}
+                  >
+                    See it live →
+                  </button>
+                </div>
+                <p style={{ fontSize: 12, color: C.sage, letterSpacing: "0.02em", lineHeight: 1.6 }}>
+                  Used by arts organizations, social services nonprofits, and community foundations.
                 </p>
               </div>
-
-              <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-                {[
-                  { icon: "ti-sparkles", label: "AI daily briefings", desc: "Who to call, what to say, and what's urgent — every morning." },
-                  { icon: "ti-users", label: "Donor pipeline", desc: "Kanban stages from Prospect to Major Gift, with AI nudges." },
-                  { icon: "ti-chart-bar", label: "Wealth scoring", desc: "Capacity tiers and churn risk scored on every relationship." },
-                  { icon: "ti-file-text", label: "Grant management", desc: "LOI drafts, deadline tracking, and funder strategy in one place." },
-                ].map(f => (
-                  <div key={f.label} style={{ display: "flex", alignItems: "center", gap: 14, background: "rgba(255,255,255,0.05)", borderRadius: 12, padding: "13px 16px", border: "1px solid rgba(255,255,255,0.08)" }}>
-                    <div style={{ width: 36, height: 36, borderRadius: 9, background: "rgba(16,185,129,0.18)", border: "1px solid rgba(16,185,129,0.25)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                      <i className={`ti ${f.icon}`} style={{ fontSize: 16, color: T.green }} aria-hidden="true" />
-                    </div>
-                    <div>
-                      <div style={{ fontSize: 13, fontWeight: 700, color: T.white, marginBottom: 2 }}>{f.label}</div>
-                      <div style={{ fontSize: 12, color: "rgba(255,255,255,0.5)", lineHeight: 1.4 }}>{f.desc}</div>
-                    </div>
-                  </div>
-                ))}
+              {/* Right — UI mockup */}
+              <div className="lp-hero-mockup">
+                <HeroMockup />
               </div>
             </div>
           </div>
         </section>
 
-        {/* ── Mobile stats section (replaces mesh section on mobile) ── */}
-        <section className="mesh-section-mobile lp-section" style={{ padding: "40px 0", background: T.cream }}>
-          <div style={{ margin: "0 16px", background: "rgba(15,15,15,0.92)", borderRadius: 16, padding: "32px 24px", textAlign: "center" }}>
-            <div style={{ display: "flex", justifyContent: "center", gap: 40, marginBottom: 36, flexWrap: "wrap" }}>
-              {[
-                { num: "8+", label: "tools replaced\nby one" },
-                { num: "100%", label: "built for\nnonprofits" },
-                { num: "$0", label: "hidden\nfees" },
-              ].map(s => (
-                <div key={s.num}>
-                  <div style={{ fontFamily: "'DM Serif Display',serif", fontSize: 56, fontWeight: 400, color: "#10b981", lineHeight: 1, letterSpacing: "-2px" }}>{s.num}</div>
-                  <div style={{ fontSize: 13, color: "#f0ede6", marginTop: 10, lineHeight: 1.5, whiteSpace: "pre-line" }}>{s.label}</div>
-                </div>
-              ))}
-            </div>
-            <p style={{ fontFamily: "'DM Serif Display',serif", fontStyle: "italic", fontSize: 20, color: "rgba(240,237,230,0.62)", lineHeight: 1.55, maxWidth: 300, margin: "0 auto" }}>
-              "Everything your organization runs on. Nothing it doesn't."
-            </p>
-          </div>
-        </section>
-
-        {/* ── The meaning of Steward ── */}
-        <section className="lp-section" style={{ padding: "120px 48px 130px", maxWidth: 860, margin: "0 auto" }}>
-          <div
-            className="definition-block"
-            style={{
-              borderLeft: `3px solid ${T.greenDark}`,
-              paddingLeft: 36,
-              marginBottom: 52,
-            }}
-          >
-            <div style={{
-              fontFamily: "'DM Serif Display',serif",
-              fontSize: "clamp(36px, 5vw, 58px)",
-              color: T.ink,
-              lineHeight: 1.1,
-              letterSpacing: "-1.5px",
-              marginBottom: 8,
-            }}>
-              stew·ard
-            </div>
-            <div style={{ fontSize: 17, color: T.ink3, fontStyle: "italic", marginBottom: 28, letterSpacing: "0.01em" }}>
-              /ˈsto͞oərd/ · noun
-            </div>
-            <div style={{
-              fontFamily: "'DM Serif Display',serif",
-              fontSize: "clamp(18px, 2.2vw, 24px)",
-              color: T.ink2,
-              lineHeight: 1.75,
-            }}>
-              A person who manages and protects something entrusted to their care.<br />
-              One who serves others not for their own gain, but for the good of those they serve.
-            </div>
-          </div>
-          <p style={{
-            fontSize: "clamp(16px, 1.8vw, 19px)",
-            color: T.ink3,
-            lineHeight: 1.85,
-            fontWeight: 300,
-            maxWidth: 680,
-          }}>
-            That's who you are. Every donor call, every grant application, every late night balancing the books — you're not just running an organization. You're protecting something sacred. Steward was built to protect it with you.
-          </p>
-        </section>
-
-        {/* ── What we do ── */}
-        <section className="lp-section" style={{ background: T.cream2, borderTop: `1px solid ${T.cream3}`, borderBottom: `1px solid ${T.cream3}`, padding: "100px 48px" }}>
+        {/* ── Problem ── */}
+        <section className="lp-section" style={{ background: C.cream, padding: "96px 64px" }}>
           <div style={{ maxWidth: 1100, margin: "0 auto" }}>
-            <div style={{ marginBottom: 52, maxWidth: 520 }}>
-              <div style={{ fontSize: 11, color: T.greenDark, fontWeight: 500, letterSpacing: ".8px", textTransform: "uppercase", marginBottom: 14 }}>What we do</div>
-              <h2 style={{ fontFamily: "'DM Serif Display',serif", fontSize: "clamp(34px, 4vw, 52px)", letterSpacing: "-1.5px", lineHeight: 1.1, color: T.ink }}>
-                We built this for you.
-              </h2>
-            </div>
-            <div className="serve-grid" style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 20 }}>
-              {[
-                {
-                  icon: "ti-heart-handshake",
-                  title: "Love your donors well",
-                  desc: "Every gift is an act of trust. Steward helps you remember the details, follow up with intention, and build relationships that last decades — not just donation cycles.",
-                },
-                {
-                  icon: "ti-coin",
-                  title: "Handle every dollar with integrity",
-                  desc: "Your donors gave in faith. Honor that with finances you can actually see — fund accounting, budgets, and reports built the way nonprofits work.",
-                },
-                {
-                  icon: "ti-plant",
-                  title: "Built to keep you alive and thriving",
-                  desc: "Most nonprofits don't fail because of bad missions — they fail because of broken systems. Steward gives you the operational foundation to grow, sustain, and outlast the hard seasons.",
-                },
-              ].map(c => (
-                <div key={c.title} className="serve-card" style={{
-                  background: T.cream2,
-                  border: `1px solid ${T.cream3}`,
-                  borderRadius: 18,
-                  padding: "32px 28px",
-                  transition: "background .2s, box-shadow .2s",
-                }}>
-                  <div style={{
-                    width: 44, height: 44, background: T.greenDark + "14",
-                    borderRadius: 12, display: "flex", alignItems: "center",
-                    justifyContent: "center", marginBottom: 20,
-                  }}>
-                    <i className={`ti ${c.icon}`} style={{ fontSize: 22, color: T.greenDark }} aria-hidden="true" />
-                  </div>
-                  <div style={{ fontSize: 17, fontWeight: 600, color: T.ink, marginBottom: 10 }}>{c.title}</div>
-                  <div style={{ fontSize: 14, color: T.ink3, lineHeight: 1.7 }}>{c.desc}</div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </section>
-
-        {/* ── Relational, not transactional ── */}
-        <section className="lp-section" style={{ background: T.greenDark, padding: "110px 48px" }}>
-          <div style={{ maxWidth: 780, margin: "0 auto", textAlign: "center" }}>
-            <div style={{ fontSize: 11, color: "rgba(240,237,230,0.5)", fontWeight: 500, letterSpacing: ".8px", textTransform: "uppercase", marginBottom: 20 }}>Our commitment</div>
+            <Eyebrow>The Problem</Eyebrow>
             <h2 style={{
               fontFamily: "'DM Serif Display',serif",
-              fontSize: "clamp(32px, 4.5vw, 56px)",
-              color: T.cream,
-              lineHeight: 1.1,
-              letterSpacing: "-1.5px",
-              marginBottom: 28,
+              fontSize: "clamp(32px, 4vw, 52px)",
+              fontWeight: 400, letterSpacing: "-0.02em", lineHeight: 1.1,
+              color: C.dark, marginBottom: 52, maxWidth: 700,
             }}>
-              We don't just onboard you<br />and disappear.
+              Nonprofits run on Salesforce licenses they can't afford and spreadsheets that don't scale.
             </h2>
-            <p style={{ fontSize: "clamp(15px, 1.8vw, 18px)", color: "rgba(240,237,230,0.72)", lineHeight: 1.8, fontWeight: 300, marginBottom: 40 }}>
-              Every organization that joins Steward gets a real human partner — someone who learns your mission, understands your team, and stays with you. We offer hands-on consulting, setup support, and ongoing guidance because we believe the best technology is only as good as the people behind it.
-            </p>
-            <button
-              onClick={() => setShowModal(true)}
-              style={{
-                background: "rgba(240,237,230,0.12)",
-                border: `1px solid rgba(240,237,230,0.28)`,
-                color: T.cream,
-                padding: "13px 28px",
-                borderRadius: 9,
-                fontSize: 15,
-                fontWeight: 500,
-                cursor: "pointer",
-                fontFamily: "'DM Sans',sans-serif",
-                transition: "background .2s",
-              }}
-              onMouseEnter={e => e.currentTarget.style.background = "rgba(240,237,230,0.2)"}
-              onMouseLeave={e => e.currentTarget.style.background = "rgba(240,237,230,0.12)"}
-            >
-              Meet your Steward partner →
-            </button>
-          </div>
-        </section>
-
-        {/* ── Who we serve ── */}
-        <section className="lp-section" style={{ background: T.cream, borderBottom: `1px solid ${T.cream3}`, padding: "100px 48px" }}>
-          <div style={{ maxWidth: 1100, margin: "0 auto" }}>
-            <div style={{ marginBottom: 64 }}>
-              <div style={{ fontSize: 11, color: T.greenDark, fontWeight: 500, letterSpacing: ".8px", textTransform: "uppercase", marginBottom: 16 }}>Who we serve</div>
-              <h2 style={{ fontFamily: "'DM Serif Display',serif", fontSize: "clamp(34px, 4vw, 52px)", letterSpacing: "-1.5px", lineHeight: 1.1, color: T.ink, maxWidth: 640 }}>
-                The world runs on organizations like yours.
-              </h2>
-            </div>
-            <div>
+            <div className="lp-pain-grid">
               {[
                 {
                   num: "01",
-                  title: "Nonprofits",
-                  desc: "You're doing work the world needs. We built Steward so the weight of running an organization never gets in the way of the reason you started it.",
+                  text: "Bloomerang costs $500/mo and still can't track grants.",
                 },
                 {
                   num: "02",
-                  title: "Churches",
-                  desc: "Your congregation is your community. We give you the tools to care for your people, manage your finances, and grow your ministry — without the corporate feel.",
+                  text: "Your donor data lives in 4 different places.",
                 },
                 {
                   num: "03",
-                  title: "Mission-driven orgs",
-                  desc: "Whatever you're building — if it exists to serve others, Steward exists to serve you. Full stop.",
+                  text: "Your ED asks for a board report and it takes you two days.",
                 },
-              ].map((row, i, arr) => (
-                <div
-                  key={row.num}
-                  className="serve-row"
-                  style={{
-                    display: "grid",
-                    gridTemplateColumns: "56px 1fr 1fr",
-                    alignItems: "center",
-                    gap: "0 48px",
-                    padding: "40px 0 40px 28px",
-                    borderLeft: `4px solid ${T.greenDark}`,
-                    borderBottom: i < arr.length - 1 ? `1px solid ${T.cream3}` : "none",
-                    transition: "background .2s",
-                    cursor: "default",
-                  }}
-                  onMouseEnter={e => e.currentTarget.style.background = "#f7f4ef"}
-                  onMouseLeave={e => e.currentTarget.style.background = "transparent"}
-                >
-                  <div style={{ fontSize: 13, fontWeight: 500, color: T.cream3, letterSpacing: "0.05em", userSelect: "none" }}>{row.num}</div>
-                  <div style={{ fontFamily: "'DM Serif Display',serif", fontSize: "clamp(26px, 3vw, 40px)", color: T.ink, letterSpacing: "-1px", lineHeight: 1.1 }}>{row.title}</div>
-                  <div style={{ fontSize: 15, color: T.ink3, lineHeight: 1.75, fontWeight: 300, maxWidth: 480 }}>{row.desc}</div>
+              ].map(c => (
+                <div key={c.num} className="lp-card-hover" style={{
+                  background: C.white, borderRadius: 14,
+                  padding: "28px 24px 24px",
+                  borderLeft: `3px solid ${C.gold}`,
+                  boxShadow: "0 2px 12px rgba(0,0,0,0.06)",
+                  transition: "transform .2s, box-shadow .2s",
+                }}>
+                  <div style={{ fontSize: 11, fontWeight: 800, color: C.gold, letterSpacing: "0.12em", textTransform: "uppercase", marginBottom: 14 }}>{c.num}</div>
+                  <p style={{ fontSize: 16, color: C.dark, lineHeight: 1.65, fontFamily: "'DM Serif Display',serif", fontWeight: 400 }}>{c.text}</p>
                 </div>
               ))}
             </div>
@@ -698,194 +416,298 @@ export default function Landing() {
         </section>
 
         {/* ── Features ── */}
-        <div id="features" className="lp-section" style={{ padding: "100px 48px", maxWidth: 1100, margin: "0 auto" }}>
-          <div style={{ fontSize: 11, color: T.greenDark, fontWeight: 500, letterSpacing: ".8px", textTransform: "uppercase", marginBottom: 14 }}>Everything in one place</div>
-          <div className="features-header" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 80px", marginBottom: 56, alignItems: "end" }}>
-            <h2 style={{ fontFamily: "'DM Serif Display',serif", fontSize: 42, letterSpacing: "-1px", lineHeight: 1.1, color: T.ink }}>
-              Everything your organization<br />
-              needs.{" "}
-              <span style={{ textDecoration: "underline", textDecorationColor: T.greenDark, textDecorationThickness: 2, textUnderlineOffset: 5 }}>Nothing it doesn't.</span>
+        <section id="features" className="lp-section" style={{ background: C.white, padding: "96px 64px" }}>
+          <div style={{ maxWidth: 1100, margin: "0 auto" }}>
+            <Eyebrow>What Steward Does</Eyebrow>
+            <h2 style={{
+              fontFamily: "'DM Serif Display',serif",
+              fontSize: "clamp(32px, 4vw, 52px)",
+              fontWeight: 400, letterSpacing: "-0.02em", lineHeight: 1.1,
+              color: C.dark, marginBottom: 52, maxWidth: 600,
+            }}>
+              One platform. Every tool your development team needs.
             </h2>
-            <p style={{ fontSize: 16, color: T.ink3, lineHeight: 1.7, fontWeight: 300 }}>Every tool built together, not bolted together — so your team spends less time on systems and more time on people.</p>
-          </div>
-          <div className="features-grid" style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 16 }}>
-            {[
-              { icon: "users", title: "Know your donors deeply", desc: "A Kanban pipeline from Prospect to Steward. Track every touchpoint, touchpoint history, and next move.", badge: "AI next-move suggestions" },
-              { icon: "file-text", title: "Never miss a grant", desc: "Track deadlines, draft LOIs, write reports, and discover new funders — all in one place.", badge: "AI LOI drafting" },
-              { icon: "mail", title: "Stay in sync with your team", desc: "Segmented email campaigns with AI copywriting, open rate tracking, and SMTP delivery.", badge: "AI email copy" },
-              { icon: "chart-bar", title: "Understand your finances", desc: "Budget tracking, grant allocation, YTD vs goal dashboards, and plain-language forecasting.", badge: "AI forecast" },
-              { icon: "clipboard-list", title: "Celebrate your volunteers", desc: "Track hours, impact, and conversion to donors. Board management and candidate AI built in.", badge: "AI board reports" },
-              { icon: "sparkles", title: "AI that works for your mission", desc: "Every AI feature in Steward is built around your context — your donors, your goals, your language.", badge: "Powered by Claude" },
-            ].map(f => (
-              <div key={f.title} className="feature-card" style={{
-                background: T.cream, border: `1px solid ${T.cream3}`,
-                borderRadius: 14, padding: 24, transition: "background .2s",
-              }}>
-                <div style={{ width: 36, height: 36, background: T.cream2, borderRadius: 9, display: "flex", alignItems: "center", justifyContent: "center", marginBottom: 16 }}>
-                  <i className={`ti ti-${f.icon}`} style={{ fontSize: 18, color: T.greenDark }} aria-hidden="true" />
-                </div>
-                <div style={{ fontSize: 14, fontWeight: 500, marginBottom: 7, color: T.ink }}>{f.title}</div>
-                <div style={{ fontSize: 13, color: T.ink3, lineHeight: 1.65 }}>{f.desc}</div>
-                {f.badge && (
-                  <div style={{ display: "inline-flex", alignItems: "center", gap: 4, background: "rgba(26,107,74,0.08)", color: T.greenDark, fontSize: 11, padding: "3px 9px", borderRadius: 10, marginTop: 12, border: `1px solid rgba(26,107,74,0.18)` }}>
-                    <i className="ti ti-sparkles" style={{ fontSize: 10 }} aria-hidden="true" /> {f.badge}
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* ── Consulting ── */}
-        <div id="consulting" className="lp-section" style={{ background: T.cream2, borderTop: `1px solid ${T.cream3}`, borderBottom: `1px solid ${T.cream3}`, padding: "100px 48px" }}>
-          <div className="consulting-grid" style={{ maxWidth: 860, margin: "0 auto", display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 80px", alignItems: "center" }}>
-            <div>
-              <div style={{ fontSize: 11, color: T.greenDark, fontWeight: 500, letterSpacing: ".8px", textTransform: "uppercase", marginBottom: 16 }}>Consulting</div>
-              <h2 style={{ fontFamily: "'DM Serif Display',serif", fontSize: "clamp(32px, 4vw, 48px)", letterSpacing: "-1px", lineHeight: 1.1, color: T.ink, marginBottom: 20 }}>
-                Need more than software?
-              </h2>
-              <p style={{ fontSize: 16, color: T.ink3, lineHeight: 1.75, fontWeight: 300, marginBottom: 32 }}>
-                Our consulting team works directly with nonprofits and churches to help with strategic planning, donor development, grant writing support, and organizational systems. We've been in the room — we know what it takes.
-              </p>
-              <a
-                href="mailto:jonathan@stewardapp.dev"
-                style={{
-                  display: "inline-block",
-                  background: T.ink, color: T.cream,
-                  padding: "13px 28px", borderRadius: 9,
-                  fontSize: 15, fontWeight: 500,
-                  fontFamily: "'DM Sans',sans-serif",
-                  transition: "background .2s",
-                }}
-                onMouseEnter={e => e.currentTarget.style.background = "#2a2a2a"}
-                onMouseLeave={e => e.currentTarget.style.background = T.ink}
-              >
-                Learn about consulting →
-              </a>
-            </div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+            <div className="lp-feat-grid">
               {[
-                { icon: "ti-map", label: "Strategic planning" },
-                { icon: "ti-users", label: "Donor development" },
-                { icon: "ti-file-text", label: "Grant writing support" },
-                { icon: "ti-settings", label: "Organizational systems" },
-              ].map(item => (
-                <div key={item.label} style={{
-                  display: "flex", alignItems: "center", gap: 14,
-                  background: T.cream, border: `1px solid ${T.cream3}`,
-                  borderRadius: 12, padding: "16px 20px",
+                {
+                  icon: "🎯",
+                  title: "Donor CRM",
+                  desc: "Pipeline stages, wealth scoring, relationship ownership, AI outreach drafts. Every donor relationship in one place.",
+                },
+                {
+                  icon: "📋",
+                  title: "Grant Management",
+                  desc: "Kanban pipeline, deadline reminders, LOI drafting, AI fit analysis. Never miss a deadline or a funder.",
+                },
+                {
+                  icon: "💰",
+                  title: "Finance",
+                  desc: "Full fund accounting, budget tracking, one-click board reports. A QuickBooks replacement built for nonprofits.",
+                },
+                {
+                  icon: "📧",
+                  title: "Communications",
+                  desc: "Email campaigns, automated sequences, open tracking, donor segments. Stay in front of your donors.",
+                },
+                {
+                  icon: "📊",
+                  title: "Analytics",
+                  desc: "Giving trends, retention curves, pipeline velocity, grant concentration risk. Know what's working.",
+                },
+                {
+                  icon: "🤖",
+                  title: "AI Throughout",
+                  desc: "Daily briefings, next-move recommendations, wealth scoring, draft generation. Built on Claude.",
+                },
+              ].map(f => (
+                <div key={f.title} className="lp-card-hover" style={{
+                  background: C.cream, border: `1px solid ${C.cream3}`,
+                  borderRadius: 14, padding: "24px",
+                  transition: "transform .2s, box-shadow .2s",
+                  boxShadow: "0 1px 4px rgba(0,0,0,0.04)",
                 }}>
-                  <div style={{ width: 36, height: 36, background: T.greenDark + "12", borderRadius: 9, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                    <i className={`ti ${item.icon}`} style={{ fontSize: 16, color: T.greenDark }} aria-hidden="true" />
-                  </div>
-                  <span style={{ fontSize: 14, fontWeight: 500, color: T.ink }}>{item.label}</span>
+                  <div style={{ fontSize: 32, marginBottom: 14, lineHeight: 1 }}>{f.icon}</div>
+                  <div style={{ fontSize: 18, fontFamily: "'DM Serif Display',serif", color: C.dark, marginBottom: 8, letterSpacing: "-0.01em" }}>{f.title}</div>
+                  <div style={{ fontSize: 13, color: C.ink3, lineHeight: 1.7 }}>{f.desc}</div>
                 </div>
               ))}
             </div>
           </div>
-        </div>
+        </section>
 
-        {/* ── Social proof ── */}
-        <div className="lp-section" style={{ padding: "100px 48px", maxWidth: 1100, margin: "0 auto" }}>
-          <div style={{ marginBottom: 52, textAlign: "center" }}>
-            <div style={{ fontSize: 11, color: T.greenDark, fontWeight: 500, letterSpacing: ".8px", textTransform: "uppercase", marginBottom: 14 }}>In their words</div>
-            <h2 style={{ fontFamily: "'DM Serif Display',serif", fontSize: "clamp(32px, 4vw, 48px)", letterSpacing: "-1px", lineHeight: 1.1, color: T.ink }}>
-              Trusted by organizations doing real good.
-            </h2>
-          </div>
-          <div className="quotes-grid" style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 20 }}>
-            {[
-              {
-                quote: "Since we started using Steward, our board actually understands our donor pipeline for the first time. It feels like having a development director and a finance team in one tool.",
-                name: "Sarah M.",
-                title: "Executive Director",
-                org: "Riverside Community Foundation",
-              },
-              {
-                quote: "We used to spend two days every month pulling reports from three different systems. Now it takes twenty minutes. The time we've saved goes straight back to our programs.",
-                name: "James T.",
-                title: "Operations Director",
-                org: "Hope Mission",
-              },
-              {
-                quote: "The AI briefing every morning is remarkable. It actually understands what matters to our church and gives us a real game plan. It's like having an experienced fundraiser on the team.",
-                name: "Rev. Lisa Chen",
-                title: "Lead Pastor",
-                org: "New Horizons Church",
-              },
-            ].map(q => (
-              <div key={q.name} className="quote-card" style={{
-                background: T.cream,
-                border: `1px solid ${T.cream3}`,
-                borderRadius: 18,
-                padding: "32px 28px",
-                display: "flex",
-                flexDirection: "column",
-                gap: 20,
-                transition: "box-shadow .2s",
-              }}>
-                <div style={{ fontSize: 28, color: T.greenDark, lineHeight: 1, fontFamily: "'DM Serif Display',serif" }}>"</div>
-                <p style={{ fontSize: 14, color: T.ink2, lineHeight: 1.8, fontStyle: "italic", flex: 1 }}>{q.quote}</p>
-                <div style={{ borderTop: `1px solid ${T.cream3}`, paddingTop: 16 }}>
-                  <div style={{ fontSize: 13, fontWeight: 600, color: T.ink }}>{q.name}</div>
-                  <div style={{ fontSize: 12, color: T.ink3, marginTop: 2 }}>{q.title}, {q.org}</div>
+        {/* ── Org Health Score ── */}
+        <section className="lp-section" style={{ background: C.dark, padding: "96px 64px" }}>
+          <div style={{ maxWidth: 1100, margin: "0 auto" }}>
+            <div className="lp-health-grid">
+              {/* Left */}
+              <div>
+                <Eyebrow dark>Org Health Score</Eyebrow>
+                <h2 style={{
+                  fontFamily: "'DM Serif Display',serif",
+                  fontSize: "clamp(32px, 4vw, 52px)",
+                  fontWeight: 400, letterSpacing: "-0.02em", lineHeight: 1.1,
+                  color: C.cream, marginBottom: 24,
+                }}>
+                  Know exactly how healthy your organization is. In real time.
+                </h2>
+                <p style={{ fontSize: 16, color: C.sage, lineHeight: 1.75, marginBottom: 40, maxWidth: 460 }}>
+                  Steward calculates a 1–100 health score from your donor retention, financial runway, grant concentration, and pipeline activity. You see risks before they become crises.
+                </p>
+                <div style={{ display: "flex", gap: 32, flexWrap: "wrap" }}>
+                  {[
+                    { stat: "6 months", label: "runway" },
+                    { stat: "78%",      label: "retention" },
+                    { stat: "3",        label: "grants expiring soon" },
+                  ].map(s => (
+                    <div key={s.label}>
+                      <div style={{ fontSize: 36, fontWeight: 800, color: C.gold, fontFamily: "'DM Serif Display',serif", lineHeight: 1, letterSpacing: "-0.02em" }}>{s.stat}</div>
+                      <div style={{ fontSize: 12, color: C.sage, marginTop: 4, textTransform: "uppercase", letterSpacing: "0.08em", fontWeight: 600 }}>{s.label}</div>
+                    </div>
+                  ))}
                 </div>
               </div>
-            ))}
+              {/* Right — health ring mockup */}
+              <div style={{ display: "flex", justifyContent: "center" }}>
+                <HealthRing />
+              </div>
+            </div>
           </div>
-        </div>
+        </section>
 
+        {/* ── Pricing ── */}
+        <section id="pricing" className="lp-section" style={{ background: C.cream, padding: "96px 64px" }}>
+          <div style={{ maxWidth: 1100, margin: "0 auto" }}>
+            <Eyebrow>Pricing</Eyebrow>
+            <h2 style={{
+              fontFamily: "'DM Serif Display',serif",
+              fontSize: "clamp(32px, 4vw, 52px)",
+              fontWeight: 400, letterSpacing: "-0.02em", lineHeight: 1.1,
+              color: C.dark, marginBottom: 16, maxWidth: 540,
+            }}>
+              Transparent pricing. No per-seat surprises.
+            </h2>
+            <p style={{ fontSize: 15, color: C.ink3, marginBottom: 48, lineHeight: 1.7 }}>
+              All plans include a 30-day free trial. No credit card required.
+            </p>
+            <div className="lp-price-grid">
+              {[
+                {
+                  name: "Seed",
+                  price: "$99",
+                  period: "/mo",
+                  tagline: "For orgs just getting organized.",
+                  features: ["Up to 500 donors", "All core features", "Donor CRM + Grants + Finance", "Email support"],
+                  highlight: false,
+                },
+                {
+                  name: "Growth",
+                  price: "$249",
+                  period: "/mo",
+                  tagline: "For active development teams.",
+                  features: ["Unlimited donors", "Email sequences + analytics", "Board reports", "Priority support"],
+                  highlight: true,
+                },
+                {
+                  name: "Impact",
+                  price: "$499",
+                  period: "/mo",
+                  tagline: "For large orgs and multi-site.",
+                  features: ["Everything in Growth", "Custom fields", "Board report PDF generation", "Dedicated onboarding"],
+                  highlight: false,
+                },
+              ].map(p => (
+                <div key={p.name} className="lp-price-card-hover" style={{
+                  background: p.highlight ? C.dark : C.white,
+                  border: p.highlight ? `2px solid ${C.green}` : `1px solid ${C.cream3}`,
+                  borderRadius: 16,
+                  padding: "32px 28px",
+                  display: "flex", flexDirection: "column", gap: 0,
+                  boxShadow: p.highlight ? `0 8px 40px rgba(16,185,129,0.18)` : "0 2px 12px rgba(0,0,0,0.05)",
+                  transition: "transform .2s",
+                  position: "relative",
+                }}>
+                  {p.highlight && (
+                    <div style={{
+                      position: "absolute", top: -12, left: "50%", transform: "translateX(-50%)",
+                      background: C.green, color: C.dark, fontSize: 10, fontWeight: 800,
+                      textTransform: "uppercase", letterSpacing: "0.1em",
+                      padding: "4px 14px", borderRadius: 99,
+                    }}>Most Popular</div>
+                  )}
+                  <div style={{ fontSize: 11, fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.12em", color: p.highlight ? C.gold : C.greenDk, marginBottom: 10 }}>{p.name}</div>
+                  <div style={{ display: "flex", alignItems: "baseline", gap: 2, marginBottom: 8 }}>
+                    <span style={{ fontSize: 52, fontWeight: 800, color: p.highlight ? C.cream : C.dark, fontFamily: "'DM Serif Display',serif", lineHeight: 1, letterSpacing: "-0.02em" }}>{p.price}</span>
+                    <span style={{ fontSize: 14, color: p.highlight ? C.sage : C.ink3 }}>{p.period}</span>
+                  </div>
+                  <p style={{ fontSize: 13, color: p.highlight ? C.sage : C.ink3, marginBottom: 24, lineHeight: 1.5 }}>{p.tagline}</p>
+                  <ul style={{ listStyle: "none", display: "flex", flexDirection: "column", gap: 10, marginBottom: 32, flex: 1 }}>
+                    {p.features.map(f => (
+                      <li key={f} style={{ display: "flex", alignItems: "flex-start", gap: 9, fontSize: 13, color: p.highlight ? C.cream : C.dark, lineHeight: 1.5 }}>
+                        <span style={{ color: C.green, fontWeight: 800, flexShrink: 0, marginTop: 1 }}>✓</span>
+                        {f}
+                      </li>
+                    ))}
+                  </ul>
+                  <button
+                    onClick={() => setShowModal(true)}
+                    style={{
+                      background: p.highlight ? C.green : "transparent",
+                      border: p.highlight ? "none" : `1px solid ${C.cream3}`,
+                      color: p.highlight ? C.dark : C.dark,
+                      padding: "11px", borderRadius: 9,
+                      fontSize: 14, fontWeight: 700, cursor: "pointer",
+                      fontFamily: "'DM Sans',sans-serif", transition: "opacity .15s",
+                    }}
+                    onMouseEnter={e => e.currentTarget.style.opacity = "0.8"}
+                    onMouseLeave={e => e.currentTarget.style.opacity = "1"}
+                  >
+                    Book a demo to get started →
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        {/* ── Social proof ── */}
+        <section className="lp-section" style={{ background: C.white, padding: "96px 64px" }}>
+          <div style={{ maxWidth: 1100, margin: "0 auto" }}>
+            <div style={{ textAlign: "center", marginBottom: 52 }}>
+              <Eyebrow>In Their Words</Eyebrow>
+              <h2 style={{
+                fontFamily: "'DM Serif Display',serif",
+                fontSize: "clamp(28px, 3.5vw, 44px)",
+                fontWeight: 400, letterSpacing: "-0.02em", lineHeight: 1.1,
+                color: C.dark,
+              }}>
+                Trusted by organizations doing real good.
+              </h2>
+            </div>
+            <div className="lp-quote-grid">
+              {[
+                {
+                  quote: "Since we started using Steward, our board actually understands our donor pipeline for the first time. It feels like having a development director and a finance team in one tool.",
+                  name: "Sarah M.", title: "Executive Director", org: "Riverside Community Foundation",
+                },
+                {
+                  quote: "We used to spend two days every month pulling reports from three different systems. Now it takes twenty minutes. The time we've saved goes straight back to our programs.",
+                  name: "James T.", title: "Operations Director", org: "Hope Mission",
+                },
+                {
+                  quote: "The AI briefing every morning is remarkable. It actually understands what matters to our organization and gives us a real game plan. It's like having an experienced fundraiser on the team.",
+                  name: "Rev. Lisa Chen", title: "Lead Pastor", org: "New Horizons Church",
+                },
+              ].map(q => (
+                <div key={q.name} className="lp-card-hover" style={{
+                  background: C.cream, border: `1px solid ${C.cream3}`,
+                  borderRadius: 16, padding: "32px 28px",
+                  display: "flex", flexDirection: "column", gap: 20,
+                  transition: "transform .2s, box-shadow .2s",
+                  boxShadow: "0 2px 8px rgba(0,0,0,0.04)",
+                }}>
+                  <div style={{ fontSize: 28, color: C.greenDk, fontFamily: "'DM Serif Display',serif", lineHeight: 1 }}>"</div>
+                  <p style={{ fontSize: 14, color: C.dark, lineHeight: 1.8, fontStyle: "italic", flex: 1 }}>{q.quote}</p>
+                  <div style={{ borderTop: `1px solid ${C.cream3}`, paddingTop: 16 }}>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: C.dark }}>{q.name}</div>
+                    <div style={{ fontSize: 12, color: C.ink3, marginTop: 2 }}>{q.title}, {q.org}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
 
         {/* ── Final CTA ── */}
-        <div className="lp-section" style={{ padding: "120px 48px", textAlign: "center", maxWidth: 760, margin: "0 auto" }}>
-          <h2 style={{ fontFamily: "'DM Serif Display',serif", fontSize: "clamp(38px, 5vw, 62px)", letterSpacing: "-1.5px", color: T.ink, marginBottom: 20, lineHeight: 1.06 }}>
-            Your mission is worth it.{" "}
-            <span style={{ textDecoration: "underline", textDecorationColor: T.greenDark, textDecorationThickness: 3, textUnderlineOffset: 6 }}>Let's build something together.</span>
-          </h2>
-          <p style={{ fontSize: 17, color: T.ink3, marginBottom: 44, fontWeight: 300, lineHeight: 1.65 }}>
-            No pressure. No sales pitch. Just a conversation about what you need.
-          </p>
-          <BookBtn style={{ padding: "16px 40px", fontSize: 16 }} />
-        </div>
+        <section className="lp-section" style={{ background: C.dark, padding: "112px 64px", textAlign: "center" }}>
+          <div style={{ maxWidth: 700, margin: "0 auto" }}>
+            <Eyebrow dark>Get Started</Eyebrow>
+            <h2 style={{
+              fontFamily: "'DM Serif Display',serif",
+              fontSize: "clamp(36px, 5vw, 60px)",
+              fontWeight: 400, letterSpacing: "-0.02em", lineHeight: 1.08,
+              color: C.cream, marginBottom: 20,
+            }}>
+              Your mission is worth{" "}
+              <span style={{ textDecoration: "underline", textDecorationColor: C.gold, textDecorationThickness: 3, textUnderlineOffset: 7 }}>better tools.</span>
+            </h2>
+            <p style={{ fontSize: 17, color: C.sage, marginBottom: 44, lineHeight: 1.7 }}>
+              No pressure. No sales pitch. Just a conversation about what you need.
+            </p>
+            <BookBtn style={{ padding: "15px 36px", fontSize: 16 }}>Book a Demo →</BookBtn>
+          </div>
+        </section>
 
         {/* ── Footer ── */}
-        <footer className="landing-footer" style={{ borderTop: `1px solid ${T.cream3}`, padding: "32px 48px" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 24 }}>
-            <div>
-              <div style={{ fontFamily: "'DM Serif Display',serif", fontSize: 20, color: T.ink, marginBottom: 6 }}>Steward</div>
-              <div style={{ fontSize: 12, color: T.ink3, lineHeight: 1.6, maxWidth: 280 }}>
-                Stewarding your mission, so you can focus on what matters.
+        <footer className="lp-section" style={{ background: C.dark, borderTop: `1px solid ${C.dark2}`, padding: "48px 64px 32px" }}>
+          <div style={{ maxWidth: 1100, margin: "0 auto" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 32, marginBottom: 40 }}>
+              <div>
+                <div style={{ fontFamily: "'DM Serif Display',serif", fontSize: 22, color: C.cream, marginBottom: 8, letterSpacing: "-0.3px" }}>Steward</div>
+                <div style={{ fontSize: 13, color: C.sage, lineHeight: 1.6, maxWidth: 240 }}>
+                  Your mission. Our pipeline.
+                </div>
+                <div style={{ marginTop: 12, fontSize: 11, color: C.dark3, letterSpacing: "0.06em", textTransform: "uppercase" }}>Built with care for the nonprofit sector.</div>
               </div>
-              <div style={{ marginTop: 8 }}>
-                <span style={{ fontSize: 11, color: T.ink3, letterSpacing: "0.05em" }}>Nonprofits · Churches · Consulting</span>
+              <div style={{ display: "flex", gap: 40, flexWrap: "wrap" }}>
+                <div>
+                  <div style={{ fontSize: 10, fontWeight: 800, color: C.sage, textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 14 }}>Product</div>
+                  {[["Features","#features"],["Pricing","#pricing"],["Book a Demo",""]].map(([l,h]) => (
+                    h
+                      ? <a key={l} href={h} className="footer-a" style={{ display: "block", fontSize: 13, color: C.sage, marginBottom: 8, transition: "opacity .15s" }}>{l}</a>
+                      : <button key={l} onClick={() => setShowModal(true)} className="footer-a" style={{ display: "block", fontSize: 13, color: C.sage, marginBottom: 8, background: "none", border: "none", cursor: "pointer", fontFamily: "'DM Sans',sans-serif", padding: 0 }}>{l}</button>
+                  ))}
+                </div>
+                <div>
+                  <div style={{ fontSize: 10, fontWeight: 800, color: C.sage, textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 14 }}>Account</div>
+                  <button onClick={() => navigate("/login")} className="footer-a" style={{ display: "block", fontSize: 13, color: C.sage, marginBottom: 8, background: "none", border: "none", cursor: "pointer", fontFamily: "'DM Sans',sans-serif", padding: 0 }}>Login</button>
+                  <a href="mailto:jonathan@stewardapp.dev" className="footer-a" style={{ display: "block", fontSize: 13, color: C.sage, marginBottom: 8, transition: "opacity .15s" }}>Contact</a>
+                </div>
               </div>
             </div>
-            <div style={{ display: "flex", gap: 32, alignItems: "flex-start", flexWrap: "wrap" }}>
-              <div>
-                <div style={{ fontSize: 11, fontWeight: 600, color: T.ink3, textTransform: "uppercase", letterSpacing: ".05em", marginBottom: 10 }}>Product</div>
-                {[["Features","#features"]].map(([l,h]) => (
-                  <a key={l} href={h} className="footer-a" style={{ display: "block", fontSize: 13, color: T.ink3, marginBottom: 6, transition: "opacity .2s" }}>{l}</a>
-                ))}
-              </div>
-              <div>
-                <div style={{ fontSize: 11, fontWeight: 600, color: T.ink3, textTransform: "uppercase", letterSpacing: ".05em", marginBottom: 10 }}>Company</div>
-                {[["Consulting","#consulting"],["Privacy","#"],["Terms","#"]].map(([l,h]) => (
-                  <a key={l} href={h} className="footer-a" style={{ display: "block", fontSize: 13, color: T.ink3, marginBottom: 6, transition: "opacity .2s" }}>{l}</a>
-                ))}
-              </div>
-              <div>
-                <div style={{ fontSize: 11, fontWeight: 600, color: T.ink3, textTransform: "uppercase", letterSpacing: ".05em", marginBottom: 10 }}>Contact</div>
-                <a href="mailto:jonathan@stewardapp.dev" className="footer-a" style={{ display: "block", fontSize: 13, color: T.ink3, marginBottom: 6, transition: "opacity .2s" }}>
-                  jonathan@stewardapp.dev
-                </a>
-              </div>
+            <div style={{ borderTop: `1px solid ${C.dark2}`, paddingTop: 24, display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
+              <p style={{ fontSize: 12, color: C.dark3 }}>© 2025 Steward. Made for missions.</p>
+              <p style={{ fontSize: 12, color: C.dark3 }}>Built with care for the nonprofit sector.</p>
             </div>
-          </div>
-          <div style={{ borderTop: `1px solid ${T.cream3}`, marginTop: 24, paddingTop: 20, display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
-            <p style={{ fontSize: 12, color: T.ink3 }}>© 2026 Steward. Built for nonprofits.</p>
-            <button onClick={() => setShowModal(true)} style={{ background: "none", border: "none", fontSize: 12, color: T.greenDark, cursor: "pointer", fontFamily: "'DM Sans',sans-serif", fontWeight: 500 }}>
-              Book a Demo →
-            </button>
           </div>
         </footer>
 

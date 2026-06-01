@@ -1,5 +1,10 @@
 # Steward — Build Progress
 
+### Landing page redesign (2026-06-01)
+Full rebuild of `client/src/pages/Landing.jsx`. Dark hero (#0f1a12) with pure-CSS app UI mockup (stat cards + pipeline strip), Problem section (cream, gold-bordered pain cards), Features grid (3×2, icon-led), Org Health Score section (dark, CSS conic-gradient ring with score 82/B+), Pricing section (3 tiers: Seed $99 / Growth $249 highlighted / Impact $499), social proof, dark final CTA, dark footer. Typography-led, no gradients, no blobs. Calendly link and `/login` routing preserved.
+
+---
+
 ### Black → dark green sweep (2026-06-01)
 `T.ink` changed from `#0a0a0a` to `#0f1a12`; all hard-coded `#0a0a0a`, `#1a1a1a`, `#000000` (incl. `cc` overlay variants), and `"#111"` values replaced with `#0f1a12` across all component files.
 
