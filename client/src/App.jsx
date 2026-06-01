@@ -107,7 +107,7 @@ function AppShell() {
     <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=DM+Serif+Display&display=swap" rel="stylesheet"/>
 
     {/* Header */}
-    <div style={{borderBottom:"1px solid #1a2e1f",padding:"0 24px",display:"flex",alignItems:"center",justifyContent:"space-between",background:"#0f1a12",position:"sticky",top:0,zIndex:100,height:52}}>
+    <div style={{borderBottom:"1px solid #1a2e1f",padding:"0 24px",display:"flex",alignItems:"center",justifyContent:"space-between",background:"#0f1a12",position:"sticky",top:0,zIndex:100,height:52,width:"100%",boxSizing:"border-box"}}>
       <div style={{display:"flex",alignItems:"center",gap:12}}>
         <div style={{width:30,height:30,background:T.greenDk,borderRadius:8,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
           <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M8 2L13 5v6L8 14 3 11V5L8 2z" stroke="#f0ede6" strokeWidth="1.5" fill="none"/><circle cx="8" cy="8" r="2" fill="#f0ede6"/></svg>
@@ -131,7 +131,7 @@ function AppShell() {
     </div>
 
     {/* Tab bar */}
-    <div className="app-tabbar" style={{display:"flex",padding:"0 20px",borderBottom:"1px solid #1a2e1f",overflowX:"auto",flexShrink:0,background:"#0f1a12"}}>
+    <div className="app-tabbar" style={{display:"flex",padding:"0 20px",borderBottom:"1px solid #1a2e1f",overflowX:"auto",flexShrink:0,background:"#0f1a12",width:"100%",boxSizing:"border-box"}}>
       {TABS.map(t=>{
         const active=tab===t.id;
         return <button key={t.id} onClick={()=>setTab(t.id)} style={{background:"transparent",border:"none",borderBottom:`2px solid ${active?"#c9a84c":"transparent"}`,padding:"12px 18px",color:active?"#f0ede6":"#8fa896",fontSize:13,fontWeight:active?700:400,cursor:"pointer",display:"flex",alignItems:"center",gap:6,whiteSpace:"nowrap",transition:"color 0.15s,border-color 0.15s",flexShrink:0,marginBottom:-1}}>
