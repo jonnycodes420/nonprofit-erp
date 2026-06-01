@@ -389,6 +389,44 @@ async function initSchema() {
 
   await pool.query(`ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS scheduled_at TIMESTAMPTZ`);
   await pool.query(`ALTER TABLE campaign_recipients ADD COLUMN IF NOT EXISTS failure_reason TEXT`);
+
+  // ── Email sequences ───────────────────────────────────────────────────────
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS sequences (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL,
+      name TEXT NOT NULL,
+      trigger TEXT NOT NULL,
+      trigger_stage TEXT,
+      status TEXT DEFAULT 'active',
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS sequence_steps (
+      id TEXT PRIMARY KEY,
+      sequence_id TEXT NOT NULL REFERENCES sequences(id) ON DELETE CASCADE,
+      step_order INTEGER NOT NULL,
+      delay_days INTEGER NOT NULL DEFAULT 0,
+      subject TEXT NOT NULL,
+      body TEXT NOT NULL,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS sequence_enrollments (
+      id TEXT PRIMARY KEY,
+      sequence_id TEXT NOT NULL,
+      org_id TEXT NOT NULL,
+      donor_id TEXT NOT NULL,
+      enrolled_at TIMESTAMPTZ DEFAULT NOW(),
+      current_step INTEGER DEFAULT 0,
+      status TEXT DEFAULT 'active',
+      next_send_at TIMESTAMPTZ,
+      completed_at TIMESTAMPTZ,
+      UNIQUE(sequence_id, donor_id)
+    )
+  `);
 }
 
 async function seedData() {

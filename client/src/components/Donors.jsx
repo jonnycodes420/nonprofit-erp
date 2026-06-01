@@ -622,7 +622,7 @@ function GiftLinkModal({donor,orgName,onClose}){
 }
 
 // ── Donor Profile ──────────────────────────────────────────────────────────
-function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loadingKey,getAI,isAdmin,onEdit,onDelete,tasks=[],onTaskToggle,orgName="",orgTeam=[],onReassign}){
+function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loadingKey,getAI,isAdmin,onEdit,onDelete,tasks=[],onTaskToggle,orgName="",orgTeam=[],onReassign,sequences=[]}){
   const [gifts,setGifts]=useState([]);
   const [giftLoading,setGiftLoading]=useState(true);
   const [localScore,setLocalScore]=useState(donor.wealthScore??null);
@@ -665,6 +665,10 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
   };
 
   const [showGiftModal,setShowGiftModal]=useState(false);
+  const [seqOpen,setSeqOpen]=useState(false);
+  const [seqId,setSeqId]=useState("");
+  const [seqLoading,setSeqLoading]=useState(false);
+  const [seqToast,setSeqToast]=useState("");
 
   const stage=STAGES.find(s=>s.id===(donor.stage||"cultivate"))||STAGES[2];
   const sc=donorScore(donor);const scoreColor=sc>70?"#1a6b4a":sc>45?"#f59e0b":"#ef4444";
@@ -794,6 +798,33 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
               </div>}
             </div>
           </div>
+
+          {sequences.length>0&&<div>
+            <div style={{fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.1em",color:T.ink3,marginBottom:8}}>Sequences</div>
+            {seqToast&&<div style={{background:"#052e16",border:"1px solid #10b981",borderRadius:8,padding:"8px 12px",fontSize:12,color:"#10b981",fontWeight:600,marginBottom:8}}>{seqToast}</div>}
+            <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
+              {!seqOpen?<button onClick={()=>{setSeqOpen(true);setSeqId("");}} style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"6px 12px",fontSize:12,color:T.ink3,cursor:"pointer"}}>+ Enroll in sequence</button>
+              :<>
+                <select value={seqId} onChange={e=>setSeqId(e.target.value)} style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"6px 10px",color:T.ink,fontSize:12,outline:"none",cursor:"pointer",flex:1}}>
+                  <option value="">Select sequence…</option>
+                  {sequences.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}
+                </select>
+                <button disabled={!seqId||seqLoading} onClick={async()=>{
+                  if(!seqId)return;setSeqLoading(true);
+                  try{
+                    await apiFetch(`/sequences/${seqId}/enroll`,{method:"POST",body:JSON.stringify({donorId:donor.id})});
+                    const seqName=sequences.find(s=>s.id===seqId)?.name||"sequence";
+                    setSeqToast(`Enrolled in "${seqName}"`);setTimeout(()=>setSeqToast(""),3500);
+                    setSeqOpen(false);setSeqId("");
+                  }catch(e){alert(e.message||"Could not enroll");}
+                  setSeqLoading(false);
+                }} style={{background:seqId?"#1a6b4a":T.bg2,border:"none",borderRadius:8,padding:"6px 12px",color:"#fff",fontSize:12,fontWeight:600,cursor:seqId?"pointer":"not-allowed"}}>
+                  {seqLoading?"…":"Enroll"}
+                </button>
+                <button onClick={()=>{setSeqOpen(false);setSeqId("");}} style={{background:"transparent",border:"none",padding:"6px 8px",color:T.ink3,fontSize:12,cursor:"pointer"}}>✕</button>
+              </>}
+            </div>
+          </div>}
 
           <div>
             <div style={{fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.1em",color:T.ink3,marginBottom:8}}>Move Stage</div>
@@ -1293,6 +1324,7 @@ export function Donors({data,setData}){
   const[filtersOpen,setFiltersOpen]=useState(false);
   const[filters,setFilters]=useState({tiers:[],stages:[],pattern:"",geo:"",giftFrom:"",giftTo:"",totalMin:"",totalMax:""});
   const[orgTeam,setOrgTeam]=useState([]);
+  const[sequences,setSequences]=useState([]);
   const[dirStage,setDirStage]=useState("");
   const[dirAssignee,setDirAssignee]=useState("");
   const[assignTarget,setAssignTarget]=useState(null);
@@ -1315,6 +1347,7 @@ export function Donors({data,setData}){
     });
 
   useEffect(()=>{apiFetch("/org/team").then(setOrgTeam).catch(()=>{});},[]);
+  useEffect(()=>{apiFetch("/sequences").then(rows=>setSequences(Array.isArray(rows)?rows.filter(s=>s.status==="active"):[])).catch(()=>{});},[]);
 
   const handleAssign=(donorId,assignedToId,assignedToName)=>{
     setData(prev=>({...prev,donors:prev.donors.map(d=>d.id===donorId?{...d,assignedTo:assignedToId,assignedToName}:d)}));
@@ -1436,7 +1469,8 @@ export function Donors({data,setData}){
         aiMap={aiMap} loadingKey={loadingKey} getAI={getAI}
         isAdmin={isAdmin} onEdit={()=>setEditTarget(selected)} onDelete={deleteDonor}
         tasks={data.tasks.filter(t=>t.donorId===selected.id)} onTaskToggle={toggleTask}
-        orgName={data.org?.name||""} orgTeam={orgTeam} onReassign={handleAssign}/>}
+        orgName={data.org?.name||""} orgTeam={orgTeam} onReassign={handleAssign}
+        sequences={sequences}/>}
 
       <div className="donors-toolbar" style={{display:"flex",gap:10,flexWrap:"wrap",alignItems:"center"}}>
         <input className="donors-search" value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search donors…" style={{flex:1,minWidth:160,background:T.bg,border:"1px solid "+T.bg3,borderRadius:10,padding:"10px 14px",color:T.ink,fontSize:13,outline:"none"}}/>

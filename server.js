@@ -2459,6 +2459,266 @@ Organization: ${org.name}. Mission: ${org.mission || "not specified"}. Period: Q
   res.end(pdfBuffer);
 }));
 
+// ── Sequence Engine ─────────────────────────────────────────────────────────
+async function processSequences() {
+  try {
+    const enrollments = await query(
+      `SELECT se.*, s.name AS seq_name, s.org_id
+       FROM sequence_enrollments se
+       JOIN sequences s ON se.sequence_id = s.id
+       WHERE se.status = 'active' AND se.next_send_at <= NOW()`,
+      []
+    );
+    for (const enr of enrollments) {
+      try {
+        const steps = await query(
+          "SELECT * FROM sequence_steps WHERE sequence_id = ? ORDER BY step_order ASC",
+          [enr.sequence_id]
+        );
+        const step = steps[enr.current_step];
+        if (!step) {
+          await run("UPDATE sequence_enrollments SET status='completed', completed_at=NOW() WHERE id=?", [enr.id]);
+          continue;
+        }
+        const donorRows = await query(
+          "SELECT id, name, email FROM donors WHERE id = ? AND org_id = ?",
+          [enr.donor_id, enr.org_id]
+        );
+        const donor = donorRows[0];
+        if (!donor || !donor.email) {
+          const nxt = steps[enr.current_step + 1];
+          if (nxt) {
+            await run(
+              `UPDATE sequence_enrollments SET current_step = current_step + 1, next_send_at = NOW() + INTERVAL '${parseInt(nxt.delay_days, 10)} days' WHERE id = ?`,
+              [enr.id]
+            );
+          } else {
+            await run("UPDATE sequence_enrollments SET status='completed', completed_at=NOW() WHERE id=?", [enr.id]);
+          }
+          continue;
+        }
+        const orgRows = await query("SELECT name FROM orgs WHERE id = ?", [enr.org_id]);
+        const orgName = orgRows[0]?.name || "";
+        const subject = (step.subject || "").replace(/{{donor_name}}/g, donor.name).replace(/{{org_name}}/g, orgName);
+        const bodyRaw = (step.body || "").replace(/{{donor_name}}/g, donor.name).replace(/{{org_name}}/g, orgName);
+        const bodyHtml = bodyRaw.includes("<") ? bodyRaw
+          : `<p>${bodyRaw.replace(/\n\n+/g, "</p><p>").replace(/\n/g, "<br>")}</p>`;
+        const smtpFrom = process.env.DEMO_SMTP_FROM || "noreply@stewardapp.dev";
+        if (process.env.RESEND_API_KEY && smtpFrom) {
+          try {
+            const { error: sendErr } = await resend.emails.send({ from: smtpFrom, to: donor.email, subject, html: bodyHtml });
+            if (sendErr) console.error("[seq] send error:", sendErr.message);
+          } catch (e) { console.error("[seq] resend error:", e.message); }
+        }
+        const intId = "i_" + uuid().slice(0, 8);
+        const today = new Date().toISOString().slice(0, 10);
+        await run(
+          "INSERT INTO interactions (id, org_id, donor_id, type, note, date) VALUES (?, ?, ?, 'email', ?, ?)",
+          [intId, enr.org_id, enr.donor_id, `Sequence: ${enr.seq_name} — Step ${enr.current_step + 1}: ${step.subject}`, today]
+        );
+        const nextStep = steps[enr.current_step + 1];
+        if (nextStep) {
+          await run(
+            `UPDATE sequence_enrollments SET current_step = current_step + 1, next_send_at = NOW() + INTERVAL '${parseInt(nextStep.delay_days, 10)} days' WHERE id = ?`,
+            [enr.id]
+          );
+        } else {
+          await run("UPDATE sequence_enrollments SET status='completed', completed_at=NOW(), current_step=current_step+1 WHERE id=?", [enr.id]);
+        }
+      } catch (e) { console.error("[seq] enrollment", enr.id, e.message); }
+    }
+  } catch (e) { console.error("[seq] processSequences:", e.message); }
+}
+
+async function autoEnroll() {
+  try {
+    const seqs = await query(
+      "SELECT * FROM sequences WHERE status = 'active' AND trigger NOT IN ('manual', 'stage_change')",
+      []
+    );
+    for (const seq of seqs) {
+      let donors = [];
+      if (seq.trigger === "lapsed_90") {
+        donors = await query(
+          `SELECT id FROM donors WHERE org_id = ? AND stage = 'lapsed' AND last_gift_date IS NOT NULL AND last_gift_date::date < NOW() - INTERVAL '90 days'`,
+          [seq.org_id]
+        );
+      } else if (seq.trigger === "lapsed_180") {
+        donors = await query(
+          `SELECT id FROM donors WHERE org_id = ? AND stage = 'lapsed' AND last_gift_date IS NOT NULL AND last_gift_date::date < NOW() - INTERVAL '180 days'`,
+          [seq.org_id]
+        );
+      } else if (seq.trigger === "new_donor") {
+        donors = await query(
+          `SELECT id FROM donors WHERE org_id = ? AND gift_count = 1 AND last_gift_date IS NOT NULL AND last_gift_date::date > NOW() - INTERVAL '7 days'`,
+          [seq.org_id]
+        );
+      }
+      for (const donor of donors) {
+        const existing = await query(
+          "SELECT id FROM sequence_enrollments WHERE sequence_id = ? AND donor_id = ?",
+          [seq.id, donor.id]
+        );
+        if (existing.length) continue;
+        const steps = await query(
+          "SELECT delay_days FROM sequence_steps WHERE sequence_id = ? ORDER BY step_order ASC LIMIT 1",
+          [seq.id]
+        );
+        const firstDelay = parseInt(steps[0]?.delay_days || 0, 10);
+        const enrId = "se_" + uuid().slice(0, 8);
+        await run(
+          `INSERT INTO sequence_enrollments (id, sequence_id, org_id, donor_id, current_step, status, next_send_at)
+           VALUES (?, ?, ?, ?, 0, 'active', NOW() + INTERVAL '${firstDelay} days')
+           ON CONFLICT (sequence_id, donor_id) DO NOTHING`,
+          [enrId, seq.id, seq.org_id, donor.id]
+        );
+      }
+    }
+  } catch (e) { console.error("[seq] autoEnroll:", e.message); }
+}
+
+// ── Sequence routes ─────────────────────────────────────────────────────────
+app.post("/sequences/process", requireAuth, requireAdmin, wrap(async (req, res) => {
+  await processSequences();
+  await autoEnroll();
+  res.json({ success: true });
+}));
+
+app.get("/sequences", requireAuth, wrap(async (req, res) => {
+  const rows = await query(
+    `SELECT s.*,
+     (SELECT COUNT(*) FROM sequence_steps WHERE sequence_id = s.id) AS step_count,
+     (SELECT COUNT(*) FROM sequence_enrollments WHERE sequence_id = s.id AND status = 'active') AS active_enrollments
+     FROM sequences s
+     WHERE s.org_id = ?
+     ORDER BY s.created_at DESC`,
+    [req.user.orgId]
+  );
+  res.json(rows);
+}));
+
+app.post("/sequences", requireAuth, requireAdmin, wrap(async (req, res) => {
+  const { name, trigger, triggerStage, steps = [] } = req.body;
+  if (!name) return res.status(400).json({ error: "Name required" });
+  const id = "seq_" + uuid().slice(0, 8);
+  await run(
+    "INSERT INTO sequences (id, org_id, name, trigger, trigger_stage) VALUES (?, ?, ?, ?, ?)",
+    [id, req.user.orgId, name, trigger || "manual", triggerStage || null]
+  );
+  for (let i = 0; i < steps.length; i++) {
+    const s = steps[i];
+    await run(
+      "INSERT INTO sequence_steps (id, sequence_id, step_order, delay_days, subject, body) VALUES (?, ?, ?, ?, ?, ?)",
+      ["ss_" + uuid().slice(0, 8), id, i + 1, parseInt(s.delayDays || 0, 10), s.subject || "", s.body || ""]
+    );
+  }
+  const created = await query("SELECT * FROM sequences WHERE id = ?", [id]);
+  res.status(201).json(created[0]);
+}));
+
+app.get("/sequences/:id/steps", requireAuth, wrap(async (req, res) => {
+  const seq = await query("SELECT id FROM sequences WHERE id = ? AND org_id = ?", [req.params.id, req.user.orgId]);
+  if (!seq.length) return res.status(404).json({ error: "Not found" });
+  const steps = await query("SELECT * FROM sequence_steps WHERE sequence_id = ? ORDER BY step_order ASC", [req.params.id]);
+  res.json(steps);
+}));
+
+app.get("/sequences/:id/enrollments", requireAuth, wrap(async (req, res) => {
+  const seq = await query("SELECT id FROM sequences WHERE id = ? AND org_id = ?", [req.params.id, req.user.orgId]);
+  if (!seq.length) return res.status(404).json({ error: "Not found" });
+  const rows = await query(
+    `SELECT se.*, d.name AS donor_name, d.email AS donor_email,
+     (SELECT COUNT(*) FROM sequence_steps WHERE sequence_id = se.sequence_id) AS total_steps
+     FROM sequence_enrollments se
+     JOIN donors d ON se.donor_id = d.id
+     WHERE se.sequence_id = ? AND se.org_id = ?
+     ORDER BY se.enrolled_at DESC`,
+    [req.params.id, req.user.orgId]
+  );
+  res.json(rows);
+}));
+
+app.post("/sequences/:id/enroll", requireAuth, wrap(async (req, res) => {
+  const { donorId } = req.body;
+  if (!donorId) return res.status(400).json({ error: "donorId required" });
+  const seq = await query("SELECT id FROM sequences WHERE id = ? AND org_id = ?", [req.params.id, req.user.orgId]);
+  if (!seq.length) return res.status(404).json({ error: "Sequence not found" });
+  const existing = await query(
+    "SELECT id, status FROM sequence_enrollments WHERE sequence_id = ? AND donor_id = ?",
+    [req.params.id, donorId]
+  );
+  if (existing.length && existing[0].status === "active") return res.status(409).json({ error: "Already enrolled" });
+  const steps = await query(
+    "SELECT delay_days FROM sequence_steps WHERE sequence_id = ? ORDER BY step_order ASC LIMIT 1",
+    [req.params.id]
+  );
+  const firstDelay = parseInt(steps[0]?.delay_days || 0, 10);
+  if (existing.length) {
+    await run(
+      `UPDATE sequence_enrollments SET status='active', current_step=0, enrolled_at=NOW(), completed_at=NULL, next_send_at=NOW() + INTERVAL '${firstDelay} days' WHERE id=?`,
+      [existing[0].id]
+    );
+  } else {
+    const enrId = "se_" + uuid().slice(0, 8);
+    await run(
+      `INSERT INTO sequence_enrollments (id, sequence_id, org_id, donor_id, current_step, status, next_send_at)
+       VALUES (?, ?, ?, ?, 0, 'active', NOW() + INTERVAL '${firstDelay} days')`,
+      [enrId, req.params.id, req.user.orgId, donorId]
+    );
+  }
+  res.json({ success: true });
+}));
+
+app.post("/sequences/:id/unenroll", requireAuth, wrap(async (req, res) => {
+  const { donorId } = req.body;
+  await run(
+    "UPDATE sequence_enrollments SET status='unsubscribed' WHERE sequence_id=? AND donor_id=? AND org_id=?",
+    [req.params.id, donorId, req.user.orgId]
+  );
+  res.json({ success: true });
+}));
+
+app.put("/sequences/:id", requireAuth, requireAdmin, wrap(async (req, res) => {
+  const { name, trigger, triggerStage, status, steps } = req.body;
+  const existing = await query("SELECT id FROM sequences WHERE id = ? AND org_id = ?", [req.params.id, req.user.orgId]);
+  if (!existing.length) return res.status(404).json({ error: "Not found" });
+  await run(
+    "UPDATE sequences SET name=?, trigger=?, trigger_stage=?, status=? WHERE id=? AND org_id=?",
+    [name, trigger || "manual", triggerStage || null, status || "active", req.params.id, req.user.orgId]
+  );
+  if (Array.isArray(steps)) {
+    await run("DELETE FROM sequence_steps WHERE sequence_id=?", [req.params.id]);
+    for (let i = 0; i < steps.length; i++) {
+      const s = steps[i];
+      await run(
+        "INSERT INTO sequence_steps (id, sequence_id, step_order, delay_days, subject, body) VALUES (?, ?, ?, ?, ?, ?)",
+        ["ss_" + uuid().slice(0, 8), req.params.id, i + 1, parseInt(s.delayDays || 0, 10), s.subject || "", s.body || ""]
+      );
+    }
+  }
+  const updated = await query("SELECT * FROM sequences WHERE id = ?", [req.params.id]);
+  res.json(updated[0]);
+}));
+
+app.patch("/sequences/:id/status", requireAuth, requireAdmin, wrap(async (req, res) => {
+  const { status } = req.body;
+  if (!["active", "paused"].includes(status)) return res.status(400).json({ error: "Invalid status" });
+  const affected = await run(
+    "UPDATE sequences SET status=? WHERE id=? AND org_id=?",
+    [status, req.params.id, req.user.orgId]
+  );
+  if (!affected.changes) return res.status(404).json({ error: "Not found" });
+  res.json({ success: true });
+}));
+
+app.delete("/sequences/:id", requireAuth, requireAdmin, wrap(async (req, res) => {
+  const existing = await query("SELECT id FROM sequences WHERE id = ? AND org_id = ?", [req.params.id, req.user.orgId]);
+  if (!existing.length) return res.status(404).json({ error: "Not found" });
+  await run("DELETE FROM sequence_enrollments WHERE sequence_id=?", [req.params.id]);
+  await run("DELETE FROM sequences WHERE id=? AND org_id=?", [req.params.id, req.user.orgId]);
+  res.json({ success: true });
+}));
+
 // ── 404 ────────────────────────────────────────────────────────────────────
 app.use((req, res) => {
   res.status(404).json({ error: "Not found" });
@@ -2477,5 +2737,15 @@ app.listen(PORT, () => {
   console.log(`🚀 Steward backend running on port ${PORT}`);
   console.log(`   Demo login: admin@creoarts.org / demo1234`);
 });
+
+// Run sequence engine on startup (5s delay) then every hour
+setTimeout(() => {
+  processSequences().catch(console.error);
+  autoEnroll().catch(console.error);
+}, 5000);
+setInterval(() => {
+  processSequences().catch(console.error);
+  autoEnroll().catch(console.error);
+}, 60 * 60 * 1000);
 
 module.exports = app;

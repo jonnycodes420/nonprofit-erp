@@ -179,6 +179,53 @@ Mobile-specific: hamburger nav → bottom sheet drawer; dark `rgba(15,15,15,0.92
 
 ---
 
+### Email Sequences / Drip Campaigns (2026-06-01)
+**Files:** `server.js`, `db.js`, `client/src/components/Communications.jsx`, `client/src/components/Donors.jsx`
+
+Automated multi-step email drip campaigns for donors.
+
+**Database (3 new tables):**
+- `sequences` — stores each sequence (name, trigger, status, org_id)
+- `sequence_steps` — ordered steps per sequence (delay_days, subject, body), cascades on sequence delete
+- `sequence_enrollments` — per-donor enrollment state (current_step, next_send_at, status)
+
+**Sequence engine (server.js):**
+- `processSequences()` — finds active enrollments where `next_send_at <= NOW()`, sends via Resend, logs to `interactions`, advances step or marks completed. Replaces `{{donor_name}}` and `{{org_name}}` in subject + body.
+- `autoEnroll()` — auto-enrolls qualifying donors into active sequences by trigger:
+  - `lapsed_90`: stage=lapsed + last_gift_date < 90 days ago
+  - `lapsed_180`: stage=lapsed + last_gift_date < 180 days ago
+  - `new_donor`: gift_count=1 + last_gift_date within 7 days
+- Engine runs on startup (5s delay) and every 1 hour via `setInterval`
+
+**Backend routes (all before 404 handler):**
+- `GET /sequences` — list with step_count and active_enrollment count
+- `POST /sequences` — create with steps array
+- `GET /sequences/:id/steps` — fetch steps for editing
+- `GET /sequences/:id/enrollments` — enrollments with donor name/email + total_steps
+- `POST /sequences/:id/enroll` — enroll donor, 409 if already active
+- `POST /sequences/:id/unenroll` — set status=unsubscribed
+- `PUT /sequences/:id` — update name/trigger/status; replaces steps if `steps` array provided
+- `PATCH /sequences/:id/status` — quick status toggle (active/paused)
+- `DELETE /sequences/:id` — deletes enrollments then sequence
+- `POST /sequences/process` — admin trigger for manual engine run (declared BEFORE /:id routes)
+
+**Frontend — Sequences subtab in Communications:**
+- New "Sequences" nav item in Communications sidebar (after Analytics)
+- `SequencesPanel` module-level component manages all sequence state
+- Sequence builder: name, trigger dropdown (4 options), active/paused toggle, multi-step editor
+- Each step: delay days, subject, body textarea, "✦ Write with AI" (streams via askClaude), token preview
+- Sequence card: name, trigger label, step count, active enrollment count, status badge
+- Actions: Edit (loads steps, prefills builder), Delete (confirm), Pause/Resume toggle
+- Enrollments panel: inline table per sequence showing donor name, email, step progress, next send date, status, Unenroll button
+- "Trigger now →" link for manual engine run
+
+**DonorProfile — Enroll in sequence:**
+- "Sequences" section in right panel (only shown if active sequences exist)
+- "+ Enroll in sequence" button → inline dropdown of active sequences → Enroll button
+- Calls `POST /sequences/:id/enroll` → shows green toast for 3.5s
+
+---
+
 ### Analytics Tab (2026-06-01)
 **File:** `client/src/components/Analytics.jsx`, `client/src/App.jsx`
 

@@ -268,6 +268,285 @@ function CampaignLinkBtn({ campaignId, campaignName }) {
 // ── BLANK form ────────────────────────────────────────────────────────────────
 const BLANK = { name: "", subject: "", bodyHtml: "", seg: { mode: "all" }, scheduledAt: "" };
 
+// ── Sequence trigger labels ───────────────────────────────────────────────────
+const SEQ_TRIGGERS = [
+  { id: "lapsed_90",  label: "Lapsed (90 days)",       ctx: "re-engaging lapsed donors who haven't given in 90+ days" },
+  { id: "lapsed_180", label: "Lapsed (180 days)",      ctx: "re-engaging long-lapsed donors who haven't given in 180+ days" },
+  { id: "new_donor",  label: "New donor (first gift)", ctx: "welcoming first-time donors and building the relationship after their first gift" },
+  { id: "manual",     label: "Manual only",            ctx: "a personal donor outreach sequence" },
+];
+
+// ── Single step row in the sequence builder ───────────────────────────────────
+function SeqStep({ step, index, total, onChange, onRemove, onAI, aiLoading }) {
+  const inp = { background: T.bg, border: "1px solid " + T.bg3, borderRadius: 8, padding: "8px 11px", color: T.ink, fontSize: 13, outline: "none", width: "100%", boxSizing: "border-box" };
+  const preview = step.body ? step.body.replace(/{{donor_name}}/g, "Alexandra").replace(/{{org_name}}/g, "your org").slice(0, 80) + (step.body.length > 80 ? "…" : "") : "";
+  return (
+    <div style={{ background: T.bg2, borderRadius: 12, padding: 14, display: "flex", flexDirection: "column", gap: 10, border: "1px solid " + T.bg3 }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <div style={{ fontSize: 12, fontWeight: 700, color: T.ink3 }}>Step {index + 1}</div>
+        <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+          <button onClick={onAI} disabled={aiLoading}
+            style={{ background: aiLoading ? T.bg3 : "#8b5cf614", border: "1px solid #8b5cf630", borderRadius: 7, padding: "4px 10px", color: aiLoading ? T.ink3 : "#8b5cf6", fontSize: 11, fontWeight: 700, cursor: aiLoading ? "not-allowed" : "pointer", display: "flex", alignItems: "center", gap: 5 }}>
+            {aiLoading ? <><Spin/> Writing…</> : "✦ Write with AI"}
+          </button>
+          {total > 1 && <button onClick={onRemove} style={{ background: "transparent", border: "1px solid #ef444440", borderRadius: 7, padding: "4px 9px", color: "#ef4444", fontSize: 11, cursor: "pointer" }}>Remove</button>}
+        </div>
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "80px 1fr", gap: 10 }}>
+        <div>
+          <div style={{ fontSize: 10, color: T.ink3, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 4 }}>Delay (days)</div>
+          <input type="number" min="0" value={step.delayDays} onChange={e => onChange({ delayDays: parseInt(e.target.value) || 0 })} style={inp}/>
+        </div>
+        <div>
+          <div style={{ fontSize: 10, color: T.ink3, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 4 }}>Subject</div>
+          <input value={step.subject} onChange={e => onChange({ subject: e.target.value })} placeholder="Subject line…" style={inp}/>
+        </div>
+      </div>
+      <div>
+        <div style={{ fontSize: 10, color: T.ink3, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 4 }}>Body — supports <code style={{ fontSize: 9 }}>{"{{donor_name}}"}</code> and <code style={{ fontSize: 9 }}>{"{{org_name}}"}</code></div>
+        <textarea value={step.body} onChange={e => onChange({ body: e.target.value })} placeholder="Write your email body here, or click ✦ Write with AI…" rows={5} style={{ ...inp, resize: "vertical", lineHeight: 1.6 }}/>
+        {preview && <div style={{ fontSize: 11, color: T.ink3, marginTop: 5, fontStyle: "italic" }}>Preview: {preview}</div>}
+      </div>
+    </div>
+  );
+}
+
+// ── Sequences panel ───────────────────────────────────────────────────────────
+function SequencesPanel({ data }) {
+  const [seqList, setSeqList] = useState([]);
+  const [seqLoading, setSeqLoading] = useState(true);
+  const [view, setView] = useState("list");
+  const [editing, setEditing] = useState(null);
+  const [form, setForm] = useState({ name: "", trigger: "manual", triggerStage: "", status: "active", steps: [{ delayDays: 0, subject: "", body: "" }] });
+  const [saveLoading, setSaveLoading] = useState(false);
+  const [expandedEnr, setExpandedEnr] = useState(null);
+  const [enrollmentsMap, setEnrollmentsMap] = useState({});
+  const [stepAiLoading, setStepAiLoading] = useState({});
+
+  const loadSeqs = async () => {
+    setSeqLoading(true);
+    try { setSeqList(await apiFetch("/sequences")); } catch (e) {}
+    setSeqLoading(false);
+  };
+  useEffect(() => { loadSeqs(); }, []);
+
+  const openBuilder = async (seq = null) => {
+    if (seq) {
+      setEditing(seq);
+      const steps = await apiFetch(`/sequences/${seq.id}/steps`).catch(() => []);
+      setForm({
+        name: seq.name,
+        trigger: seq.trigger,
+        triggerStage: seq.trigger_stage || "",
+        status: seq.status,
+        steps: steps.length ? steps.map(s => ({ delayDays: s.delay_days, subject: s.subject, body: s.body })) : [{ delayDays: 0, subject: "", body: "" }],
+      });
+    } else {
+      setEditing(null);
+      setForm({ name: "", trigger: "manual", triggerStage: "", status: "active", steps: [{ delayDays: 0, subject: "", body: "" }] });
+    }
+    setView("builder");
+  };
+
+  const saveSeq = async () => {
+    if (!form.name.trim()) return;
+    setSaveLoading(true);
+    try {
+      const payload = { ...form };
+      if (editing) await apiFetch(`/sequences/${editing.id}`, { method: "PUT", body: JSON.stringify(payload) });
+      else await apiFetch("/sequences", { method: "POST", body: JSON.stringify(payload) });
+      await loadSeqs();
+      setView("list"); setEditing(null);
+    } catch (e) { alert(e.message); }
+    setSaveLoading(false);
+  };
+
+  const deleteSeq = async (id) => {
+    if (!window.confirm("Delete this sequence and all enrollments?")) return;
+    try { await apiFetch(`/sequences/${id}`, { method: "DELETE" }); await loadSeqs(); }
+    catch (e) { alert(e.message); }
+  };
+
+  const toggleStatus = async (seq) => {
+    const newStatus = seq.status === "active" ? "paused" : "active";
+    try {
+      await apiFetch(`/sequences/${seq.id}/status`, { method: "PATCH", body: JSON.stringify({ status: newStatus }) });
+      setSeqList(prev => prev.map(s => s.id === seq.id ? { ...s, status: newStatus } : s));
+    } catch (e) { alert(e.message); }
+  };
+
+  const viewEnrollments = async (seqId) => {
+    if (expandedEnr === seqId) { setExpandedEnr(null); return; }
+    setExpandedEnr(seqId);
+    try {
+      const rows = await apiFetch(`/sequences/${seqId}/enrollments`);
+      setEnrollmentsMap(prev => ({ ...prev, [seqId]: rows }));
+    } catch (e) {}
+  };
+
+  const unenroll = async (seqId, donorId) => {
+    try {
+      await apiFetch(`/sequences/${seqId}/unenroll`, { method: "POST", body: JSON.stringify({ donorId }) });
+      setEnrollmentsMap(prev => ({ ...prev, [seqId]: (prev[seqId] || []).map(e => e.donor_id === donorId ? { ...e, status: "unsubscribed" } : e) }));
+    } catch (e) { alert(e.message); }
+  };
+
+  const addStep = () => setForm(f => ({ ...f, steps: [...f.steps, { delayDays: 3, subject: "", body: "" }] }));
+  const removeStep = i => setForm(f => ({ ...f, steps: f.steps.filter((_, idx) => idx !== i) }));
+  const updateStep = (i, patch) => setForm(f => ({ ...f, steps: f.steps.map((s, idx) => idx === i ? { ...s, ...patch } : s) }));
+
+  const writeWithAI = async (i) => {
+    const step = form.steps[i];
+    const trig = SEQ_TRIGGERS.find(t => t.id === form.trigger) || SEQ_TRIGGERS[3];
+    setStepAiLoading(prev => ({ ...prev, [i]: true }));
+    let acc = "";
+    await askClaude(
+      "You are an expert nonprofit fundraiser. Write warm, personal, conversational donor emails. No fluff, no corporate jargon. Max 150 words.",
+      `Write a fundraising email for ${data.org.name} (mission: ${data.org.mission || "serving our community"}).\nContext: ${trig.ctx}.\nThis is step ${i + 1} of a ${form.steps.length}-step sequence.\n${step.subject ? `Subject: ${step.subject}` : "Also generate a compelling subject line — put it on the first line as 'Subject: ...' then the body."}\nUse {{donor_name}} to address them personally. Use {{org_name}} for the org name. Keep it under 150 words. Plain text only, no HTML.`,
+      chunk => { acc = chunk; updateStep(i, { body: chunk }); }
+    );
+    setStepAiLoading(prev => ({ ...prev, [i]: false }));
+  };
+
+  const trigLabel = id => SEQ_TRIGGERS.find(t => t.id === id)?.label || id;
+  const inp = { background: T.bg, border: "1px solid " + T.bg3, borderRadius: 8, padding: "9px 12px", color: T.ink, fontSize: 13, outline: "none", width: "100%", boxSizing: "border-box" };
+
+  // Builder view
+  if (view === "builder") return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 18, maxWidth: 680 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+        <button onClick={() => { setView("list"); setEditing(null); }} style={{ ...S.btn("ghost"), padding: "6px 12px", fontSize: 12 }}>← Back</button>
+        <h2 style={{ margin: 0, fontSize: 18, fontWeight: 800, color: T.ink }}>{editing ? "Edit Sequence" : "New Sequence"}</h2>
+      </div>
+
+      <div style={{ display: "flex", flexDirection: "column", gap: 12, background: T.bg2, borderRadius: 12, padding: 16 }}>
+        <div>
+          <div style={S.label}>Sequence Name</div>
+          <input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="e.g. Lapsed donor re-engagement" style={inp}/>
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+          <div>
+            <div style={S.label}>Trigger</div>
+            <select value={form.trigger} onChange={e => setForm(f => ({ ...f, trigger: e.target.value }))} style={{ ...inp, cursor: "pointer" }}>
+              {SEQ_TRIGGERS.map(t => <option key={t.id} value={t.id}>{t.label}</option>)}
+            </select>
+          </div>
+          <div>
+            <div style={S.label}>Status</div>
+            <select value={form.status} onChange={e => setForm(f => ({ ...f, status: e.target.value }))} style={{ ...inp, cursor: "pointer" }}>
+              <option value="active">Active</option>
+              <option value="paused">Paused</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+        <div style={{ fontSize: 13, fontWeight: 700, color: T.ink }}>Steps</div>
+        {form.steps.map((step, i) => (
+          <SeqStep key={i} step={step} index={i} total={form.steps.length}
+            onChange={patch => updateStep(i, patch)}
+            onRemove={() => removeStep(i)}
+            onAI={() => writeWithAI(i)}
+            aiLoading={!!stepAiLoading[i]}
+          />
+        ))}
+        <button onClick={addStep} style={{ ...S.btn("ghost"), alignSelf: "flex-start", fontSize: 12, display: "flex", alignItems: "center", gap: 5 }}>+ Add Step</button>
+      </div>
+
+      <div style={{ display: "flex", gap: 8 }}>
+        <button onClick={saveSeq} disabled={saveLoading || !form.name.trim()} style={{ ...S.btn("primary"), opacity: saveLoading || !form.name.trim() ? 0.6 : 1 }}>
+          {saveLoading ? "Saving…" : editing ? "Save Changes" : "Create Sequence"}
+        </button>
+        <button onClick={() => { setView("list"); setEditing(null); }} style={S.btn("ghost")}>Cancel</button>
+      </div>
+    </div>
+  );
+
+  // List view
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <h2 style={{ margin: 0, fontSize: 20, fontWeight: 800, color: T.ink }}>Sequences</h2>
+        <button onClick={() => openBuilder()} style={S.btn("primary")}>+ New Sequence</button>
+      </div>
+
+      <div style={{ background: T.bg2, borderRadius: 10, padding: "12px 16px", fontSize: 12, color: T.ink3, lineHeight: 1.6 }}>
+        Sequences automatically send multi-step emails to donors based on triggers (new gift, lapsed, etc.). The engine runs every hour.{" "}
+        <button onClick={async () => { await apiFetch("/sequences/process", { method: "POST" }).catch(() => {}); alert("Processing triggered."); }} style={{ background: "none", border: "none", color: T.green, cursor: "pointer", fontSize: 12, padding: 0, fontWeight: 600 }}>Trigger now →</button>
+      </div>
+
+      {seqLoading ? (
+        <div style={{ color: T.ink3, fontSize: 13, textAlign: "center", padding: 40 }}>Loading…</div>
+      ) : seqList.length === 0 ? (
+        <div style={{ background: T.bg2, borderRadius: 12, padding: 40, textAlign: "center", color: T.ink3, fontSize: 14 }}>
+          No sequences yet. Create your first one above.
+        </div>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          {seqList.map(seq => {
+            const isActive = seq.status === "active";
+            const enrList = enrollmentsMap[seq.id] || [];
+            return (
+              <div key={seq.id} style={{ background: T.bg2, borderRadius: 12, border: "1px solid " + T.bg3, overflow: "hidden" }}>
+                <div style={{ padding: "14px 16px" }}>
+                  <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                        <div style={{ fontSize: 15, fontWeight: 700, color: T.ink }}>{seq.name}</div>
+                        <span style={{ fontSize: 10, fontWeight: 700, borderRadius: 99, padding: "2px 8px", background: isActive ? "#10b98120" : "#6b728020", color: isActive ? T.green : T.ink3 }}>{isActive ? "Active" : "Paused"}</span>
+                      </div>
+                      <div style={{ fontSize: 12, color: T.ink3, marginTop: 3 }}>
+                        {trigLabel(seq.trigger)} · {seq.step_count} step{seq.step_count != 1 ? "s" : ""} · {seq.active_enrollments} active enrollment{seq.active_enrollments != 1 ? "s" : ""}
+                      </div>
+                    </div>
+                    <div style={{ display: "flex", gap: 6, flexShrink: 0, flexWrap: "wrap" }}>
+                      <button onClick={() => viewEnrollments(seq.id)} style={{ ...S.btn("ghost"), fontSize: 11, padding: "5px 10px" }}>
+                        {expandedEnr === seq.id ? "Hide" : "Enrollments"}
+                      </button>
+                      <button onClick={() => toggleStatus(seq)} style={{ ...S.btn("ghost"), fontSize: 11, padding: "5px 10px" }}>
+                        {isActive ? "⏸ Pause" : "▶ Resume"}
+                      </button>
+                      <button onClick={() => openBuilder(seq)} style={{ ...S.btn("subtle"), fontSize: 11, padding: "5px 10px" }}>Edit</button>
+                      <button onClick={() => deleteSeq(seq.id)} style={{ ...S.btn("danger"), fontSize: 11, padding: "5px 10px" }}>Delete</button>
+                    </div>
+                  </div>
+                </div>
+
+                {expandedEnr === seq.id && (
+                  <div style={{ borderTop: "1px solid " + T.bg3, padding: "12px 16px" }}>
+                    {enrList.length === 0 ? (
+                      <div style={{ fontSize: 12, color: T.ink3, textAlign: "center", padding: "8px 0" }}>No enrollments yet.</div>
+                    ) : (
+                      <div>
+                        <div style={{ display: "grid", gridTemplateColumns: "1fr 160px 80px 100px 100px 80px", gap: 8, padding: "5px 0", fontSize: 10, fontWeight: 700, color: T.ink3, textTransform: "uppercase", letterSpacing: "0.06em", borderBottom: "1px solid " + T.bg3, marginBottom: 4 }}>
+                          <span>Donor</span><span>Email</span><span>Step</span><span>Next Send</span><span>Status</span><span></span>
+                        </div>
+                        {enrList.map(e => (
+                          <div key={e.id} style={{ display: "grid", gridTemplateColumns: "1fr 160px 80px 100px 100px 80px", gap: 8, padding: "7px 0", borderBottom: "1px solid " + T.bg2, alignItems: "center" }}>
+                            <span style={{ fontSize: 13, fontWeight: 600, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{e.donor_name}</span>
+                            <span style={{ fontSize: 11, color: T.ink3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{e.donor_email}</span>
+                            <span style={{ fontSize: 12, color: T.ink3 }}>{e.current_step}/{e.total_steps}</span>
+                            <span style={{ fontSize: 11, color: T.ink3 }}>{e.next_send_at ? new Date(e.next_send_at).toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "—"}</span>
+                            <span style={{ fontSize: 10, fontWeight: 700, borderRadius: 99, padding: "2px 7px", background: e.status === "active" ? "#10b98120" : "#6b728020", color: e.status === "active" ? T.green : T.ink3, display: "inline-block" }}>{e.status}</span>
+                            {e.status === "active" && (
+                              <button onClick={() => unenroll(seq.id, e.donor_id)} style={{ fontSize: 10, background: "transparent", border: "1px solid #ef444440", borderRadius: 6, padding: "2px 7px", color: "#ef4444", cursor: "pointer" }}>Unenroll</button>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Main component ────────────────────────────────────────────────────────────
 export function Communications({ data }) {
   const { auth } = useAuth();
@@ -582,6 +861,7 @@ export function Communications({ data }) {
     { id: "templates",  label: "Templates",  icon: "⊞" },
     { id: "audience",   label: "Audience",   icon: "◈" },
     { id: "analytics",  label: "Analytics",  icon: "⬡" },
+    { id: "sequences",  label: "Sequences",  icon: "⟳" },
   ];
 
   // ── Audience tab segments ───────────────────────────────────────────────────
@@ -951,6 +1231,9 @@ export function Communications({ data }) {
             )}
           </div>
         )}
+
+        {/* ── SEQUENCES ─────────────────────────────────────────────────────── */}
+        {nav === "sequences" && <SequencesPanel data={data} />}
       </div>
     </div>
   );

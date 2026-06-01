@@ -138,6 +138,29 @@ Mobile "More" drawer: communications, volunteers, board, tasks, settings
 - Activity log templates: LogTouchpointModal in Donors.jsx has per-type prompt templates. On save, if type is Call/Meeting, a follow-up task is silently created and a toast shown.
 - Mobile: GlobalStyles() in shared.jsx is the single CSS home for all @media(max-width:768px) rules. Use className + !important to override inline JSX styles.
 
+## Email Sequences
+
+### Tables
+- `sequences` — id, org_id, name, trigger (`lapsed_90`|`lapsed_180`|`new_donor`|`stage_change`|`manual`), trigger_stage, status (`active`|`paused`), created_at
+- `sequence_steps` — id, sequence_id (FK→sequences ON DELETE CASCADE), step_order, delay_days, subject, body
+- `sequence_enrollments` — id, sequence_id, org_id, donor_id, enrolled_at, current_step, status (`active`|`completed`|`unsubscribed`|`bounced`), next_send_at, completed_at. UNIQUE(sequence_id, donor_id)
+
+### Engine pattern
+- `processSequences()` + `autoEnroll()` in server.js (module-level async functions)
+- Called on startup via `setTimeout(fn, 5000)` and every hour via `setInterval(fn, 3600000)`
+- Also exposed as `POST /sequences/process` (admin-only) for manual trigger
+- Email sent via `resend.emails.send()` using `DEMO_SMTP_FROM` env var
+- Interaction logged to `interactions` table on each send
+- INTERVAL with variable days uses template literal: `` `INTERVAL '${parseInt(n,10)} days'` `` (safe — n is integer from DB)
+
+### Frontend
+- Sequences subtab in Communications.jsx sidebar nav (after Analytics)
+- `SequencesPanel` and `SeqStep` are module-level components (before `export function Communications`)
+- DonorProfile (Donors.jsx) has inline enroll dropdown — `sequences` prop passed from `Donors` component which fetches `GET /sequences` on mount
+
+### Route ordering note
+`POST /sequences/process` is declared BEFORE `GET /sequences/:id` routes to prevent Express matching "process" as an :id param
+
 ## Board Reports
 - `board_reports` table: id, org_id, quarter, year, generated_at, generated_by, generated_by_name, metrics (TEXT/JSON), pdf_data (TEXT/base64)
 - `GET /reports/board` — list past reports (no pdf_data in response)
