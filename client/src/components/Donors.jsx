@@ -627,6 +627,12 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
   const [giftLoading,setGiftLoading]=useState(true);
   const [sequences,setSequences]=useState([]);
   useEffect(()=>{apiFetch("/sequences").then(rows=>setSequences(Array.isArray(rows)?rows.filter(s=>s.status==="active"):[])).catch(()=>{});},[]);
+
+  const [cfData,setCfData]=useState([]);
+  const [cfEditing,setCfEditing]=useState(null);
+  const [cfEditVal,setCfEditVal]=useState("");
+  const [cfSaved,setCfSaved]=useState(null);
+  useEffect(()=>{apiFetch(`/donors/${donor.id}/custom-fields`).then(rows=>setCfData(Array.isArray(rows)?rows:[])).catch(()=>{});},[donor.id]);
   const [localScore,setLocalScore]=useState(donor.wealthScore??null);
   const [localTier,setLocalTier]=useState(donor.capacityTier??null);
   const [localConf,setLocalConf]=useState(donor.scoreConfidence??null);
@@ -825,6 +831,64 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
                 </button>
                 <button onClick={()=>{setSeqOpen(false);setSeqId("");}} style={{background:"transparent",border:"none",padding:"6px 8px",color:T.ink3,fontSize:12,cursor:"pointer"}}>✕</button>
               </>}
+            </div>
+          </div>}
+
+          {cfData.length>0&&<div>
+            <div style={{fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.1em",color:T.ink3,marginBottom:8}}>Custom Fields</div>
+            <div style={{display:"flex",flexDirection:"column",gap:8}}>
+              {cfData.map(f=>(
+                <div key={f.fieldId} style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8}}>
+                  <div style={{fontSize:12,color:T.ink3,fontWeight:600,minWidth:90,flexShrink:0}}>{f.label}{f.required&&<span style={{color:"#dc2626",marginLeft:2}}>*</span>}</div>
+                  {cfEditing===f.fieldId?(
+                    <div style={{display:"flex",gap:6,flex:1}}>
+                      {f.fieldType==="checkbox"?(
+                        <select value={cfEditVal} onChange={e=>setCfEditVal(e.target.value)}
+                          style={{flex:1,background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"5px 8px",fontSize:12,color:T.ink,outline:"none"}}>
+                          <option value="">—</option>
+                          <option value="Yes">Yes</option>
+                          <option value="No">No</option>
+                        </select>
+                      ):f.fieldType==="dropdown"?(
+                        <select value={cfEditVal} onChange={e=>setCfEditVal(e.target.value)}
+                          style={{flex:1,background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"5px 8px",fontSize:12,color:T.ink,outline:"none"}}>
+                          <option value="">—</option>
+                          {(f.options||[]).map(o=><option key={o} value={o}>{o}</option>)}
+                        </select>
+                      ):(
+                        <input value={cfEditVal} onChange={e=>setCfEditVal(e.target.value)}
+                          type={f.fieldType==="number"?"number":f.fieldType==="date"?"date":"text"}
+                          style={{flex:1,background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"5px 8px",fontSize:12,color:T.ink,outline:"none"}}
+                          onKeyDown={async e=>{
+                            if(e.key==="Enter"){
+                              await apiFetch(`/donors/${donor.id}/custom-fields`,{method:"POST",body:JSON.stringify({fieldId:f.fieldId,value:cfEditVal})});
+                              setCfData(prev=>prev.map(x=>x.fieldId===f.fieldId?{...x,value:cfEditVal}:x));
+                              setCfSaved(f.fieldId);setTimeout(()=>setCfSaved(null),2000);
+                              setCfEditing(null);
+                            }else if(e.key==="Escape"){setCfEditing(null);}
+                          }}
+                          autoFocus
+                        />
+                      )}
+                      <button onClick={async()=>{
+                        await apiFetch(`/donors/${donor.id}/custom-fields`,{method:"POST",body:JSON.stringify({fieldId:f.fieldId,value:cfEditVal})});
+                        setCfData(prev=>prev.map(x=>x.fieldId===f.fieldId?{...x,value:cfEditVal}:x));
+                        setCfSaved(f.fieldId);setTimeout(()=>setCfSaved(null),2000);
+                        setCfEditing(null);
+                      }} style={{background:T.greenDk,border:"none",borderRadius:8,padding:"5px 10px",color:"#fff",fontSize:11,fontWeight:700,cursor:"pointer"}}>Save</button>
+                      <button onClick={()=>setCfEditing(null)} style={{background:"transparent",border:"none",padding:"5px 8px",color:T.ink3,fontSize:12,cursor:"pointer"}}>✕</button>
+                    </div>
+                  ):(
+                    <div style={{display:"flex",alignItems:"center",gap:6,flex:1,justifyContent:"flex-end"}}>
+                      <span style={{fontSize:12,color:f.value?T.ink:T.ink3,fontStyle:f.value?"normal":"italic"}}>
+                        {cfSaved===f.fieldId?"Saved ✓":f.value||"—"}
+                      </span>
+                      <button onClick={()=>{setCfEditing(f.fieldId);setCfEditVal(f.value||"");}}
+                        style={{background:"transparent",border:"1px solid "+T.bg3,borderRadius:6,padding:"3px 8px",fontSize:10,color:T.ink3,cursor:"pointer"}}>Edit</button>
+                    </div>
+                  )}
+                </div>
+              ))}
             </div>
           </div>}
 

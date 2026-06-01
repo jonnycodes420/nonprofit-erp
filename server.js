@@ -2719,6 +2719,96 @@ app.delete("/sequences/:id", requireAuth, requireAdmin, wrap(async (req, res) =>
   res.json({ success: true });
 }));
 
+// ── Custom Fields ───────────────────────────────────────────────────────────
+app.get("/custom-fields", requireAuth, wrap(async (req, res) => {
+  const rows = await query(
+    "SELECT * FROM custom_fields WHERE org_id=? ORDER BY field_order ASC, created_at ASC",
+    [req.user.orgId]
+  );
+  res.json(rows);
+}));
+
+app.post("/custom-fields", requireAuth, requireAdmin, wrap(async (req, res) => {
+  const { label, fieldType, options, required } = req.body;
+  if (!label || !fieldType) return res.status(400).json({ error: "label and fieldType required" });
+  const maxOrder = await query(
+    "SELECT COALESCE(MAX(field_order),0) AS mo FROM custom_fields WHERE org_id=?",
+    [req.user.orgId]
+  );
+  const nextOrder = (maxOrder[0]?.mo || 0) + 1;
+  const id = "cf_" + Date.now();
+  await run(
+    "INSERT INTO custom_fields (id,org_id,label,field_type,options,required,field_order) VALUES (?,?,?,?,?,?,?)",
+    [id, req.user.orgId, label, fieldType, JSON.stringify(options || []), required ? 1 : 0, nextOrder]
+  );
+  const [field] = await query("SELECT * FROM custom_fields WHERE id=?", [id]);
+  res.json(field);
+}));
+
+// reorder MUST be before /:id
+app.put("/custom-fields/reorder", requireAuth, requireAdmin, wrap(async (req, res) => {
+  const { ids } = req.body; // ordered array of field ids
+  if (!Array.isArray(ids)) return res.status(400).json({ error: "ids array required" });
+  for (let i = 0; i < ids.length; i++) {
+    await run(
+      "UPDATE custom_fields SET field_order=? WHERE id=? AND org_id=?",
+      [i, ids[i], req.user.orgId]
+    );
+  }
+  res.json({ ok: true });
+}));
+
+app.put("/custom-fields/:id", requireAuth, requireAdmin, wrap(async (req, res) => {
+  const { label, fieldType, options, required } = req.body;
+  await run(
+    "UPDATE custom_fields SET label=?,field_type=?,options=?,required=? WHERE id=? AND org_id=?",
+    [label, fieldType, JSON.stringify(options || []), required ? 1 : 0, req.params.id, req.user.orgId]
+  );
+  const [field] = await query("SELECT * FROM custom_fields WHERE id=? AND org_id=?", [req.params.id, req.user.orgId]);
+  if (!field) return res.status(404).json({ error: "Not found" });
+  res.json(field);
+}));
+
+app.delete("/custom-fields/:id", requireAuth, requireAdmin, wrap(async (req, res) => {
+  await run("DELETE FROM custom_field_values WHERE field_id=? AND org_id=?", [req.params.id, req.user.orgId]);
+  await run("DELETE FROM custom_fields WHERE id=? AND org_id=?", [req.params.id, req.user.orgId]);
+  res.json({ ok: true });
+}));
+
+app.get("/donors/:id/custom-fields", requireAuth, wrap(async (req, res) => {
+  const rows = await query(
+    `SELECT cf.id AS field_id, cf.label, cf.field_type, cf.options, cf.required, cf.field_order,
+            cfv.value
+     FROM custom_fields cf
+     LEFT JOIN custom_field_values cfv ON cfv.field_id=cf.id AND cfv.donor_id=?
+     WHERE cf.org_id=?
+     ORDER BY cf.field_order ASC, cf.created_at ASC`,
+    [req.params.id, req.user.orgId]
+  );
+  res.json(rows.map(r => ({
+    fieldId: r.field_id,
+    label: r.label,
+    fieldType: r.field_type,
+    options: r.options || [],
+    required: r.required,
+    fieldOrder: r.field_order,
+    value: r.value || null,
+  })));
+}));
+
+app.post("/donors/:id/custom-fields", requireAuth, wrap(async (req, res) => {
+  const { fieldId, value } = req.body;
+  if (!fieldId) return res.status(400).json({ error: "fieldId required" });
+  const valId = "cfv_" + Date.now();
+  await run(
+    `INSERT INTO custom_field_values (id,org_id,donor_id,field_id,value,updated_at)
+     VALUES (?,?,?,?,?,NOW())
+     ON CONFLICT (donor_id,field_id) DO UPDATE SET value=EXCLUDED.value, updated_at=NOW()`,
+    [valId, req.user.orgId, req.params.id, fieldId, value]
+  );
+  res.json({ ok: true });
+}));
+
 // ── 404 ────────────────────────────────────────────────────────────────────
 app.use((req, res) => {
   res.status(404).json({ error: "Not found" });

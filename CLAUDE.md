@@ -161,6 +161,19 @@ Mobile "More" drawer: communications, volunteers, board, tasks, settings
 ### Route ordering note
 `POST /sequences/process` is declared BEFORE `GET /sequences/:id` routes to prevent Express matching "process" as an :id param
 
+## Custom Fields
+- `custom_fields` table: id, org_id, label, field_type (text/number/date/dropdown/checkbox), options (JSONB), required (boolean), field_order, created_at
+- `custom_field_values` table: id, org_id, donor_id, field_id (FK→custom_fields ON DELETE CASCADE), value (TEXT), updated_at. UNIQUE(donor_id, field_id)
+- `GET /custom-fields` — list org fields ordered by field_order
+- `POST /custom-fields` — create field (admin only)
+- `PUT /custom-fields/reorder` — reorder fields by passing `ids` array (MUST be declared before `PUT /custom-fields/:id`)
+- `PUT /custom-fields/:id` — update field (admin only)
+- `DELETE /custom-fields/:id` — deletes values then field (admin only)
+- `GET /donors/:id/custom-fields` — returns fields + values joined (LEFT JOIN) for a donor
+- `POST /donors/:id/custom-fields` — upsert a value for a field on a donor (ON CONFLICT DO UPDATE)
+- Settings.jsx: Custom Fields section between Team Members and Account Actions. Field manager with add/edit/delete. Dropdown type shows option builder.
+- DonorProfile (Donors.jsx): Custom Fields section shown only when org has custom fields (cfData.length > 0). Inline edit per field with appropriate input type.
+
 ## Board Reports
 - `board_reports` table: id, org_id, quarter, year, generated_at, generated_by, generated_by_name, metrics (TEXT/JSON), pdf_data (TEXT/base64)
 - `GET /reports/board` — list past reports (no pdf_data in response)

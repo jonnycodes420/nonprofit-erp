@@ -27,12 +27,20 @@ export function Settings({auth,logout}) {
   const [qrLoading,setQrLoading]=useState(false);
   const [embedCopied,setEmbedCopied]=useState(false);
 
+  const [customFields,setCustomFields]=useState([]);
+  const [showAddField,setShowAddField]=useState(false);
+  const [editingField,setEditingField]=useState(null);
+  const [cfForm,setCfForm]=useState({label:"",fieldType:"text",options:[],required:false});
+  const [cfOptInput,setCfOptInput]=useState("");
+  const [cfSaving,setCfSaving]=useState(false);
+
   useEffect(()=>{
     apiFetch("/org/team").then(setTeam).catch(()=>{});
     apiFetch("/stripe/status").then(setStripe).catch(()=>{});
     if(!auth?.org?.org_slug){
       apiFetch("/org").then(r=>{ if(r.org_slug) setOrgSlug(r.org_slug); }).catch(()=>{});
     }
+    apiFetch("/custom-fields").then(setCustomFields).catch(()=>{});
   },[]);
 
   const donationUrl = orgSlug ? `${window.location.origin}/give/${orgSlug}` : "";
@@ -103,6 +111,61 @@ export function Settings({auth,logout}) {
       setInvErr(e.message||"Failed to send invite");
     }finally{setInviting(false);}
   }
+
+  function openAddField(){
+    setEditingField(null);
+    setCfForm({label:"",fieldType:"text",options:[],required:false});
+    setCfOptInput("");
+    setShowAddField(true);
+  }
+
+  function openEditField(f){
+    setEditingField(f);
+    setCfForm({label:f.label,fieldType:f.field_type,options:Array.isArray(f.options)?f.options:[],required:!!f.required});
+    setCfOptInput("");
+    setShowAddField(true);
+  }
+
+  function closeCfModal(){
+    setShowAddField(false);setEditingField(null);
+    setCfForm({label:"",fieldType:"text",options:[],required:false});
+    setCfOptInput("");
+  }
+
+  function addCfOption(){
+    const v=cfOptInput.trim();
+    if(!v)return;
+    setCfForm(f=>({...f,options:[...f.options,v]}));
+    setCfOptInput("");
+  }
+
+  function removeCfOption(i){
+    setCfForm(f=>({...f,options:f.options.filter((_,j)=>j!==i)}));
+  }
+
+  async function saveCfField(){
+    if(!cfForm.label.trim()){return;}
+    setCfSaving(true);
+    try{
+      if(editingField){
+        const updated=await apiFetch(`/custom-fields/${editingField.id}`,{method:"PUT",body:JSON.stringify({label:cfForm.label,fieldType:cfForm.fieldType,options:cfForm.options,required:cfForm.required})});
+        setCustomFields(prev=>prev.map(f=>f.id===editingField.id?updated:f));
+      }else{
+        const created=await apiFetch("/custom-fields",{method:"POST",body:JSON.stringify({label:cfForm.label,fieldType:cfForm.fieldType,options:cfForm.options,required:cfForm.required})});
+        setCustomFields(prev=>[...prev,created]);
+      }
+      closeCfModal();
+    }catch(e){alert(e.message||"Failed to save field");}
+    setCfSaving(false);
+  }
+
+  async function deleteCfField(id){
+    if(!window.confirm("Delete this custom field? All saved values will be permanently removed."))return;
+    await apiFetch(`/custom-fields/${id}`,{method:"DELETE"}).catch(()=>{});
+    setCustomFields(prev=>prev.filter(f=>f.id!==id));
+  }
+
+  const CF_TYPE_LABELS={text:"Text",number:"Number",date:"Date",dropdown:"Dropdown",checkbox:"Yes/No"};
 
   function closeInvite(){
     setShowInvite(false);setInvEmail("");setInvRole("staff");
@@ -244,12 +307,92 @@ export function Settings({auth,logout}) {
         ))}
         {team.length===0&&<div style={{fontSize:13,color:T.ink3}}>Loading…</div>}
       </div>
+
+      <div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:16,padding:"24px 28px"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
+          <SectionLabel>Custom Fields</SectionLabel>
+          {isAdmin&&<button onClick={openAddField} style={{background:T.green,border:"none",borderRadius:8,padding:"7px 14px",color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer"}}>+ Add Field</button>}
+        </div>
+        <div style={{fontSize:13,color:T.ink3,marginBottom:customFields.length?14:0,lineHeight:1.6}}>
+          {customFields.length===0?"No custom fields yet. Add fields to capture extra donor data specific to your organization.":""}
+        </div>
+        {customFields.map((f,i)=>(
+          <div key={f.id} style={{display:"flex",alignItems:"center",gap:12,padding:"11px 0",borderBottom:i<customFields.length-1?"1px solid "+T.bg3:"none"}}>
+            <div style={{flex:1,minWidth:0}}>
+              <div style={{fontSize:13,fontWeight:600,color:T.ink}}>{f.label}{f.required&&<span style={{marginLeft:5,fontSize:10,color:T.ink3,fontWeight:400}}>required</span>}</div>
+              <div style={{fontSize:11,color:T.ink3,marginTop:2}}>{CF_TYPE_LABELS[f.field_type]||f.field_type}{f.field_type==="dropdown"&&f.options?.length?` — ${f.options.join(", ")}`:""}
+              </div>
+            </div>
+            {isAdmin&&<div style={{display:"flex",gap:6,flexShrink:0}}>
+              <button onClick={()=>openEditField(f)} style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:6,padding:"5px 10px",fontSize:11,fontWeight:600,color:T.ink2,cursor:"pointer"}}>Edit</button>
+              <button onClick={()=>deleteCfField(f.id)} style={{background:"#fef2f2",border:"1px solid #fecaca",borderRadius:6,padding:"5px 10px",fontSize:11,fontWeight:600,color:"#dc2626",cursor:"pointer"}}>Delete</button>
+            </div>}
+          </div>
+        ))}
+      </div>
+
       <div style={{background:T.white,border:"1px solid #fecaca",borderRadius:16,padding:"24px 28px"}}>
         <SectionLabel>Account Actions</SectionLabel>
         <button onClick={logout} style={{background:"#fef2f2",border:"1px solid #fecaca",borderRadius:8,padding:"9px 18px",color:"#dc2626",fontSize:13,fontWeight:600,cursor:"pointer"}}>
           Sign out of Steward
         </button>
       </div>
+
+      {showAddField&&(
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.45)",zIndex:500,display:"flex",alignItems:"center",justifyContent:"center"}} onClick={e=>{if(e.target===e.currentTarget)closeCfModal();}}>
+          <div style={{background:T.white,borderRadius:20,padding:"32px 28px",width:440,maxWidth:"calc(100vw - 32px)",boxShadow:"0 8px 40px rgba(0,0,0,0.16)"}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
+              <div style={{fontSize:17,fontWeight:700,color:T.ink}}>{editingField?"Edit field":"Add custom field"}</div>
+              <button onClick={closeCfModal} style={{background:"none",border:"none",fontSize:20,cursor:"pointer",color:T.ink3,lineHeight:1}}>×</button>
+            </div>
+            <div style={{fontSize:12,fontWeight:600,color:T.ink3,marginBottom:4}}>Field label</div>
+            <input value={cfForm.label} onChange={e=>setCfForm(f=>({...f,label:e.target.value}))}
+              placeholder="e.g. Board Connection, Peer-to-Peer Interest"
+              style={{width:"100%",boxSizing:"border-box",border:"1px solid "+T.bg3,borderRadius:10,padding:"10px 12px",fontSize:14,color:T.ink,background:T.bg,outline:"none",marginBottom:14}}
+            />
+            <div style={{fontSize:12,fontWeight:600,color:T.ink3,marginBottom:4}}>Field type</div>
+            <select value={cfForm.fieldType} onChange={e=>setCfForm(f=>({...f,fieldType:e.target.value}))}
+              style={{width:"100%",boxSizing:"border-box",border:"1px solid "+T.bg3,borderRadius:10,padding:"10px 12px",fontSize:14,color:T.ink,background:T.bg,outline:"none",marginBottom:14}}>
+              <option value="text">Text</option>
+              <option value="number">Number</option>
+              <option value="date">Date</option>
+              <option value="dropdown">Dropdown</option>
+              <option value="checkbox">Yes/No (Checkbox)</option>
+            </select>
+            {cfForm.fieldType==="dropdown"&&(
+              <div style={{marginBottom:14}}>
+                <div style={{fontSize:12,fontWeight:600,color:T.ink3,marginBottom:6}}>Options</div>
+                <div style={{display:"flex",gap:8,marginBottom:8}}>
+                  <input value={cfOptInput} onChange={e=>setCfOptInput(e.target.value)}
+                    placeholder="Add option…"
+                    onKeyDown={e=>e.key==="Enter"&&(e.preventDefault(),addCfOption())}
+                    style={{flex:1,border:"1px solid "+T.bg3,borderRadius:8,padding:"8px 12px",fontSize:13,color:T.ink,background:T.bg,outline:"none"}}
+                  />
+                  <button onClick={addCfOption} style={{background:T.green,border:"none",borderRadius:8,padding:"8px 14px",color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer"}}>Add</button>
+                </div>
+                <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
+                  {cfForm.options.map((o,i)=>(
+                    <div key={i} style={{display:"flex",alignItems:"center",gap:4,background:T.bg2,border:"1px solid "+T.bg3,borderRadius:20,padding:"3px 10px 3px 10px",fontSize:12,color:T.ink}}>
+                      {o}
+                      <span onClick={()=>removeCfOption(i)} style={{cursor:"pointer",marginLeft:4,color:T.ink3,fontSize:14,lineHeight:1}}>×</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+            <label style={{display:"flex",alignItems:"center",gap:8,fontSize:13,color:T.ink,cursor:"pointer",marginBottom:20}}>
+              <input type="checkbox" checked={!!cfForm.required} onChange={e=>setCfForm(f=>({...f,required:e.target.checked}))} style={{width:16,height:16,cursor:"pointer"}}/>
+              Required field
+            </label>
+            <div style={{display:"flex",gap:10}}>
+              <button onClick={closeCfModal} style={{flex:1,background:T.bg,border:"1px solid "+T.bg3,borderRadius:10,padding:"10px",color:T.ink2,fontSize:13,fontWeight:600,cursor:"pointer"}}>Cancel</button>
+              <button onClick={saveCfField} disabled={cfSaving||!cfForm.label.trim()} style={{flex:2,background:T.green,border:"none",borderRadius:10,padding:"10px",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer",opacity:(cfSaving||!cfForm.label.trim())?0.7:1}}>
+                {cfSaving?"Saving…":editingField?"Save changes":"Add field"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {showInvite&&(
         <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.45)",zIndex:500,display:"flex",alignItems:"center",justifyContent:"center"}} onClick={e=>{if(e.target===e.currentTarget)closeInvite();}}>

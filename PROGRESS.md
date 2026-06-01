@@ -226,6 +226,39 @@ Automated multi-step email drip campaigns for donors.
 
 ---
 
+### Custom Fields (2026-06-01)
+**Files:** `db.js`, `server.js`, `client/src/components/Settings.jsx`, `client/src/components/Donors.jsx`
+
+Per-org custom fields for the donor profile. Admins define fields in Settings; all staff see and fill them on individual donor profiles.
+
+**Database (2 new tables):**
+- `custom_fields` — org-scoped field definitions (label, field_type, options JSONB, required, field_order)
+- `custom_field_values` — per-donor values with UNIQUE(donor_id, field_id) + ON DELETE CASCADE from custom_fields
+
+**Field types:** text, number, date, dropdown (options list), checkbox (Yes/No)
+
+**Backend routes (7 routes; reorder before /:id):**
+- `GET /custom-fields` — list org fields by field_order
+- `POST /custom-fields` — create (adminOnly)
+- `PUT /custom-fields/reorder` — reorder by ids array (declared BEFORE /:id)
+- `PUT /custom-fields/:id` — update (adminOnly)
+- `DELETE /custom-fields/:id` — deletes values then field (adminOnly)
+- `GET /donors/:id/custom-fields` — LEFT JOIN fields + values for a donor
+- `POST /donors/:id/custom-fields` — upsert value (ON CONFLICT DO UPDATE)
+
+**Settings.jsx:**
+- "Custom Fields" section between Team Members and Account Actions
+- Lists fields with type badge + dropdown options preview
+- Admin: Add Field button → modal with label, type select, options builder (dropdown only), required toggle
+- Admin: Edit / Delete per field
+
+**DonorProfile (Donors.jsx):**
+- Custom Fields section shown only when org has any fields (cfData.length > 0)
+- Each field shows label + current value, inline Edit → saves on button click or Enter
+- Input type matches field type: text/number/date input or select for dropdown/checkbox
+
+---
+
 ### Analytics Tab (2026-06-01)
 **File:** `client/src/components/Analytics.jsx`, `client/src/App.jsx`
 

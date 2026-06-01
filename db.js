@@ -427,6 +427,29 @@ async function initSchema() {
       UNIQUE(sequence_id, donor_id)
     )
   `);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS custom_fields (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL,
+      label TEXT NOT NULL,
+      field_type TEXT NOT NULL,
+      options JSONB,
+      required BOOLEAN DEFAULT false,
+      field_order INTEGER DEFAULT 0,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS custom_field_values (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL,
+      donor_id TEXT NOT NULL,
+      field_id TEXT NOT NULL REFERENCES custom_fields(id) ON DELETE CASCADE,
+      value TEXT,
+      updated_at TIMESTAMPTZ DEFAULT NOW(),
+      UNIQUE(donor_id, field_id)
+    )
+  `);
 }
 
 async function seedData() {
