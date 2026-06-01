@@ -142,7 +142,7 @@ function AppShell() {
       })}
     </div>
 
-    <div className="app-content" style={{flex:1,padding:"28px 24px",maxWidth:1400,width:"100%",margin:"0 auto",boxSizing:"border-box"}}>
+    <div className="app-content" style={{flex:1,padding:"0 24px 28px 24px",maxWidth:1400,width:"100%",margin:"0 auto",boxSizing:"border-box"}}>
       {tab==="dashboard"&&<Dashboard data={data} setData={setData} onNavigate={setTab}/>}
       {tab==="donors"&&<Donors data={data} setData={setData}/>}
       {tab==="grants"&&<Grants data={data} setData={setData}/>}
