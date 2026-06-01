@@ -130,7 +130,7 @@ export function moveUrgency(d) {
 // ── Global styles ──────────────────────────────────────────────────────────
 export function GlobalStyles() {
   return <style>{`
-    html,body{overflow-x:hidden;max-width:100vw;background:#f0ede6;-webkit-font-smoothing:antialiased;}
+    html,body{margin:0;padding:0;overflow-x:hidden;max-width:100vw;background:#f0ede6;-webkit-font-smoothing:antialiased;}
     *{box-sizing:border-box;}
     body{font-family:'DM Sans',system-ui,sans-serif;color:#0a0a0a;}
     h1,h2,h3{font-family:'DM Serif Display',Georgia,serif;letter-spacing:-0.02em;}
