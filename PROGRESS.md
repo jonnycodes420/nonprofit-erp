@@ -278,6 +278,52 @@ Per-org custom fields for the donor profile. Admins define fields in Settings; a
 
 ---
 
+### Design system hardening (2026-06-01)
+**Files:** `client/src/components/shared.jsx`, `client/src/App.jsx`, `client/src/components/Dashboard.jsx`, `client/src/components/Donors.jsx`, `client/src/components/Grants.jsx`, `client/src/components/Communications.jsx`, `client/src/components/Finance.jsx`, `client/src/components/Settings.jsx`
+
+Full visual redesign. Direction: "Hardened, warm, confident. Attio meets a leather-bound ledger."
+
+**Design tokens (shared.jsx T object):**
+- Deep green `#0d5c3a` (greenDk), mid green `#1a6b4a` (greenMid), gold accent `#c9a84c`, near-black ink `#0a0a0a`
+- Dark surface `#0f1a12` (bgDark), elevated surface `#1a2e1f` (bgElevated), dark border `#2d4a35`
+- Shadow tokens (shadowSm/Md), border radius tokens (r6/r10/r14/r20)
+
+**App shell:**
+- Header + tab bar: `#0f1a12` bg with `#1a2e1f` border, cream logo, sage inactive tabs, gold active tab underline
+- Avatar: deep green background
+
+**Dashboard:**
+- Stat cards: left `3px solid greenDk` border, DM Serif number in near-black
+- AI briefing blockquote: gold left border `3px solid #c9a84c`, 19px DM Serif italic
+- Quick Actions: dark `#0f1a12` container, `#1a2e1f` button cells, gold icons, sage labels
+
+**Donors, Grants:**
+- Kanban column headers: `#0f1a12` dark header block with stage/status color left border
+- Right profile panel: full `#0f1a12` background, sage section labels, cream values, `#1a2e1f` surface cards
+
+**Finance:**
+- Sub-tab strip: `#0f1a12` bg, gold active underline
+- Audit log table header: `#0f1a12` with sage column labels; timestamp column in monospace
+
+**Communications:**
+- Sequence cards: `#0f1a12` bg, cream name, sage meta, gold step count
+- Campaign table header: `#0f1a12` with sage column labels
+
+**Settings:**
+- Custom field rows: `3px solid greenDk` left border on hover
+- Account Actions danger zone: `#1a0a0a` bg, `#3d1515` border, `#f87171` sign-out button
+
+**Updated shared components:**
+- `Pill`: uppercase, weight 700, tighter padding
+- `Card`: `variant="dark"` and `variant="elevated"` props
+- `SectionLabel`: weight 800, wide letter-spacing
+- `PageTitle`: 32px DM Serif, optional gold accent underline, subtitle prop
+- `MetricCard`: shadow token, greenMid/red trend colors
+- `AIBtn`: dark gradient, cream text, green glow
+- `AIPanel`: `#0f1a12` bg, gold `3px` left border
+
+---
+
 ### Analytics Tab (2026-06-01)
 **File:** `client/src/components/Analytics.jsx`, `client/src/App.jsx`
 

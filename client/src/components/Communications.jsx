@@ -488,16 +488,16 @@ function SequencesPanel({ data }) {
             const isActive = seq.status === "active";
             const enrList = enrollmentsMap[seq.id] || [];
             return (
-              <div key={seq.id} style={{ background: T.bg2, borderRadius: 12, border: "1px solid " + T.bg3, overflow: "hidden" }}>
+              <div key={seq.id} style={{ background: "#0f1a12", borderRadius: 12, border: "1px solid #1a2e1f", overflow: "hidden", boxShadow: T.shadow }}>
                 <div style={{ padding: "14px 16px" }}>
                   <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
                     <div style={{ flex: 1 }}>
                       <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                        <div style={{ fontSize: 15, fontWeight: 700, color: T.ink }}>{seq.name}</div>
-                        <span style={{ fontSize: 10, fontWeight: 700, borderRadius: 99, padding: "2px 8px", background: isActive ? "#10b98120" : "#6b728020", color: isActive ? T.green : T.ink3 }}>{isActive ? "Active" : "Paused"}</span>
+                        <div style={{ fontSize: 15, fontWeight: 700, color: "#f0ede6" }}>{seq.name}</div>
+                        <span style={{ fontSize: 10, fontWeight: 700, borderRadius: 99, padding: "3px 9px", background: isActive ? "#10b98120" : "#ffffff12", color: isActive ? "#10b981" : "#8fa896", letterSpacing:"0.04em", textTransform:"uppercase" }}>{isActive ? "Active" : "Paused"}</span>
                       </div>
-                      <div style={{ fontSize: 12, color: T.ink3, marginTop: 3 }}>
-                        {trigLabel(seq.trigger)} · {seq.step_count} step{seq.step_count != 1 ? "s" : ""} · {seq.active_enrollments} active enrollment{seq.active_enrollments != 1 ? "s" : ""}
+                      <div style={{ fontSize: 12, color: "#8fa896", marginTop: 4 }}>
+                        {trigLabel(seq.trigger)} · <span style={{ color: "#c9a84c", fontWeight: 700 }}>{seq.step_count} step{seq.step_count != 1 ? "s" : ""}</span> · {seq.active_enrollments} active
                       </div>
                     </div>
                     <div style={{ display: "flex", gap: 6, flexShrink: 0, flexWrap: "wrap" }}>
@@ -514,19 +514,19 @@ function SequencesPanel({ data }) {
                 </div>
 
                 {expandedEnr === seq.id && (
-                  <div style={{ borderTop: "1px solid " + T.bg3, padding: "12px 16px" }}>
+                  <div style={{ borderTop: "1px solid #1a2e1f", padding: "12px 16px" }}>
                     {enrList.length === 0 ? (
-                      <div style={{ fontSize: 12, color: T.ink3, textAlign: "center", padding: "8px 0" }}>No enrollments yet.</div>
+                      <div style={{ fontSize: 12, color: "#8fa896", textAlign: "center", padding: "8px 0" }}>No enrollments yet.</div>
                     ) : (
                       <div>
-                        <div style={{ display: "grid", gridTemplateColumns: "1fr 160px 80px 100px 100px 80px", gap: 8, padding: "5px 0", fontSize: 10, fontWeight: 700, color: T.ink3, textTransform: "uppercase", letterSpacing: "0.06em", borderBottom: "1px solid " + T.bg3, marginBottom: 4 }}>
+                        <div style={{ display: "grid", gridTemplateColumns: "1fr 160px 80px 100px 100px 80px", gap: 8, padding: "5px 0", fontSize: 10, fontWeight: 700, color: "#8fa896", textTransform: "uppercase", letterSpacing: "0.06em", borderBottom: "1px solid #1a2e1f", marginBottom: 4 }}>
                           <span>Donor</span><span>Email</span><span>Step</span><span>Next Send</span><span>Status</span><span></span>
                         </div>
                         {enrList.map(e => (
-                          <div key={e.id} style={{ display: "grid", gridTemplateColumns: "1fr 160px 80px 100px 100px 80px", gap: 8, padding: "7px 0", borderBottom: "1px solid " + T.bg2, alignItems: "center" }}>
-                            <span style={{ fontSize: 13, fontWeight: 600, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{e.donor_name}</span>
-                            <span style={{ fontSize: 11, color: T.ink3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{e.donor_email}</span>
-                            <span style={{ fontSize: 12, color: T.ink3 }}>{e.current_step}/{e.total_steps}</span>
+                          <div key={e.id} style={{ display: "grid", gridTemplateColumns: "1fr 160px 80px 100px 100px 80px", gap: 8, padding: "7px 0", borderBottom: "1px solid #1a2e1f", alignItems: "center" }}>
+                            <span style={{ fontSize: 13, fontWeight: 600, color: "#f0ede6", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{e.donor_name}</span>
+                            <span style={{ fontSize: 11, color: "#8fa896", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{e.donor_email}</span>
+                            <span style={{ fontSize: 12, color: "#c9a84c", fontWeight: 700 }}>{e.current_step}/{e.total_steps}</span>
                             <span style={{ fontSize: 11, color: T.ink3 }}>{e.next_send_at ? new Date(e.next_send_at).toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "—"}</span>
                             <span style={{ fontSize: 10, fontWeight: 700, borderRadius: 99, padding: "2px 7px", background: e.status === "active" ? "#10b98120" : "#6b728020", color: e.status === "active" ? T.green : T.ink3, display: "inline-block" }}>{e.status}</span>
                             {e.status === "active" && (
@@ -961,7 +961,7 @@ export function Communications({ data }) {
             ) : (
               <div style={{ background: T.bg2, border: "1px solid " + T.bg3, borderRadius: 12, overflow: "hidden" }}>
                 {/* Table header */}
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 140px 100px 70px 90px 100px 100px", padding: "10px 16px", background: "#1a6b4a", fontSize: 10, fontWeight: 700, color: "#fff", textTransform: "uppercase", letterSpacing: "0.06em", gap: 8 }}>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 140px 100px 70px 90px 100px 100px", padding: "10px 16px", background: "#0f1a12", fontSize: 10, fontWeight: 700, color: "#8fa896", textTransform: "uppercase", letterSpacing: "0.06em", gap: 8 }}>
                   <span>Campaign</span>
                   <span>Segment</span>
                   <span>Status</span>

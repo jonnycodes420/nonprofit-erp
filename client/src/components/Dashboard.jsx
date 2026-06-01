@@ -160,9 +160,9 @@ export function Dashboard({data,setData,onNavigate}) {
           {label:"Active Volunteers",value:activeVolunteers,sub:"in last 30 days",tab:"volunteers"},
           {label:"Open Tasks",value:openTasks,sub:highPriorityTasks>0?`${highPriorityTasks} high priority`:"all on track",tab:"tasks"},
         ].map(s=>(
-          <div key={s.label} onClick={()=>onNavigate(s.tab)} className="card-click" style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:14,padding:"16px 20px",cursor:"pointer",borderLeft:"3px solid #1a6b4a"}}>
+          <div key={s.label} onClick={()=>onNavigate(s.tab)} className="card-click" style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:14,padding:"16px 20px",cursor:"pointer",borderLeft:"3px solid "+T.greenDk}}>
             <div style={{fontSize:10,fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",color:T.ink3,marginBottom:4}}>{s.label}</div>
-            <div className="dash-stat-num" style={{fontSize:28,fontWeight:800,color:"#1a6b4a",fontFamily:"'DM Serif Display',serif",lineHeight:1.05,letterSpacing:"-0.02em"}}>{s.value}</div>
+            <div className="dash-stat-num" style={{fontSize:28,fontWeight:800,color:T.ink,fontFamily:"'DM Serif Display',serif",lineHeight:1.05,letterSpacing:"-0.02em"}}>{s.value}</div>
             <div style={{fontSize:11,color:T.ink3,marginTop:4}}>{s.sub}</div>
           </div>
         ))}
@@ -191,7 +191,7 @@ export function Dashboard({data,setData,onNavigate}) {
               )}
               {(briefing||briefLoading)&&pullQuote&&(
                 <>
-                  <blockquote style={{fontFamily:"'DM Serif Display',Georgia,serif",fontSize:17,fontStyle:"italic",color:T.ink,lineHeight:1.55,margin:"0 0 14px 0",paddingLeft:16,borderLeft:"3px solid #1a6b4a"}}>
+                  <blockquote style={{fontFamily:"'DM Serif Display',Georgia,serif",fontSize:19,fontStyle:"italic",color:T.ink,lineHeight:1.55,margin:"0 0 14px 0",paddingLeft:16,borderLeft:"3px solid #c9a84c"}}>
                     "{pullQuote}"
                   </blockquote>
                   {briefOpen&&briefRest&&(
@@ -338,18 +338,18 @@ export function Dashboard({data,setData,onNavigate}) {
         {/* RIGHT COLUMN */}
         <div style={{display:"flex",flexDirection:"column",gap:14}}>
           {/* Quick actions */}
-          <div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:14,overflow:"hidden",padding:"14px 20px"}}>
-            <div style={sTitle}>Quick Actions</div>
+          <div style={{background:"#0f1a12",border:"1px solid #1a2e1f",borderRadius:14,overflow:"hidden",padding:"14px 20px"}}>
+            <div style={{...sTitle,color:"#8fa896"}}>Quick Actions</div>
             <div className="dash-quick-grid" style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8,marginTop:12}}>
               {QUICK.map(a=>(
                 <button key={a.label} onClick={a.action} className="dash-action dash-quick-btn" style={{
-                  background:T.bg,border:"1px solid "+T.bg3,borderRadius:10,
+                  background:"#1a2e1f",border:"1px solid #2d4a35",borderRadius:10,
                   padding:"12px 8px",display:"flex",flexDirection:"column",alignItems:"center",gap:6,cursor:"pointer",
                 }}>
-                  <div style={{width:32,height:32,borderRadius:8,background:"#1a6b4a18",display:"flex",alignItems:"center",justifyContent:"center",color:"#1a6b4a"}}>
+                  <div style={{width:32,height:32,borderRadius:8,background:"#0d5c3a22",display:"flex",alignItems:"center",justifyContent:"center",color:"#c9a84c"}}>
                     {a.icon}
                   </div>
-                  <span className="dash-quick-label" style={{fontSize:10,fontWeight:700,color:T.ink3,textAlign:"center",lineHeight:1.3,letterSpacing:"0.02em"}}>{a.label}</span>
+                  <span className="dash-quick-label" style={{fontSize:10,fontWeight:700,color:"#8fa896",textAlign:"center",lineHeight:1.3,letterSpacing:"0.02em"}}>{a.label}</span>
                 </button>
               ))}
             </div>

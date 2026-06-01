@@ -317,7 +317,10 @@ export function Settings({auth,logout}) {
           {customFields.length===0?"No custom fields yet. Add fields to capture extra donor data specific to your organization.":""}
         </div>
         {customFields.map((f,i)=>(
-          <div key={f.id} style={{display:"flex",alignItems:"center",gap:12,padding:"11px 0",borderBottom:i<customFields.length-1?"1px solid "+T.bg3:"none"}}>
+          <div key={f.id}
+            style={{display:"flex",alignItems:"center",gap:12,padding:"11px 0 11px 10px",borderBottom:i<customFields.length-1?"1px solid "+T.bg3:"none",borderLeft:"3px solid "+T.bg3,transition:"border-color 0.15s",marginLeft:-10}}
+            onMouseEnter={e=>e.currentTarget.style.borderLeftColor=T.greenDk}
+            onMouseLeave={e=>e.currentTarget.style.borderLeftColor=T.bg3}>
             <div style={{flex:1,minWidth:0}}>
               <div style={{fontSize:13,fontWeight:600,color:T.ink}}>{f.label}{f.required&&<span style={{marginLeft:5,fontSize:10,color:T.ink3,fontWeight:400}}>required</span>}</div>
               <div style={{fontSize:11,color:T.ink3,marginTop:2}}>{CF_TYPE_LABELS[f.field_type]||f.field_type}{f.field_type==="dropdown"&&f.options?.length?` — ${f.options.join(", ")}`:""}
@@ -331,9 +334,9 @@ export function Settings({auth,logout}) {
         ))}
       </div>
 
-      <div style={{background:T.white,border:"1px solid #fecaca",borderRadius:16,padding:"24px 28px"}}>
+      <div style={{background:"#1a0a0a",border:"1px solid #3d1515",borderRadius:16,padding:"24px 28px"}}>
         <SectionLabel>Account Actions</SectionLabel>
-        <button onClick={logout} style={{background:"#fef2f2",border:"1px solid #fecaca",borderRadius:8,padding:"9px 18px",color:"#dc2626",fontSize:13,fontWeight:600,cursor:"pointer"}}>
+        <button onClick={logout} style={{background:"#2d0a0a",border:"1px solid #3d1515",borderRadius:8,padding:"9px 18px",color:"#f87171",fontSize:13,fontWeight:600,cursor:"pointer"}}>
           Sign out of Steward
         </button>
       </div>

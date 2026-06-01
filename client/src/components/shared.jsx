@@ -3,15 +3,36 @@ import { streamAI } from "../api";
 
 // ── Design tokens ──────────────────────────────────────────────────────────
 export const T = {
-  bg:     "#f0ede6",
-  bg2:    "#e8e4db",
-  bg3:    "#e8e2d9",
-  white:  "#faf8f4",
-  ink:    "#1a1a1a",
-  ink2:   "#2a2a2a",
-  ink3:   "#6b6b6b",
-  green:  "#10b981",
-  greenDk:"#1a6b4a",
+  // Backgrounds
+  bg:         "#f0ede6",
+  bg2:        "#e8e4dc",
+  bg3:        "#d4cfc6",
+  bgDark:     "#0f1a12",
+  bgCard:     "#ffffff",
+  bgElevated: "#1a2e1f",
+  // Ink
+  ink:        "#0a0a0a",
+  ink2:       "#2d2d2d",
+  ink3:       "#6b6560",
+  inkInverse: "#f0ede6",
+  // Greens
+  green:      "#10b981",
+  greenDk:    "#0d5c3a",
+  greenMid:   "#1a6b4a",
+  greenPale:  "#d1fae5",
+  // Accents
+  gold:       "#c9a84c",
+  red:        "#c0392b",
+  amber:      "#d97706",
+  blue:       "#2563eb",
+  // Surfaces
+  white:      "#ffffff",
+  shadow:     "0 1px 3px rgba(10,10,10,0.08), 0 4px 16px rgba(10,10,10,0.06)",
+  shadowMd:   "0 4px 24px rgba(10,10,10,0.12), 0 1px 4px rgba(10,10,10,0.08)",
+  shadowLg:   "0 8px 48px rgba(10,10,10,0.18), 0 2px 8px rgba(10,10,10,0.10)",
+  radius:     "12px",
+  radiusSm:   "8px",
+  radiusLg:   "16px",
 };
 
 // ── Helpers ────────────────────────────────────────────────────────────────
@@ -109,42 +130,46 @@ export function moveUrgency(d) {
 // ── Global styles ──────────────────────────────────────────────────────────
 export function GlobalStyles() {
   return <style>{`
-    html,body{overflow-x:hidden;max-width:100vw;}
-    *{box-sizing:border-box;-webkit-font-smoothing:antialiased;}
+    html,body{overflow-x:hidden;max-width:100vw;background:#f0ede6;-webkit-font-smoothing:antialiased;}
+    *{box-sizing:border-box;}
+    body{font-family:'DM Sans',system-ui,sans-serif;color:#0a0a0a;}
+    h1,h2,h3{font-family:'DM Serif Display',Georgia,serif;letter-spacing:-0.02em;}
     ::-webkit-scrollbar{width:5px;height:5px;}
-    ::-webkit-scrollbar-track{background:#f0ede6;}
-    ::-webkit-scrollbar-thumb{background:#c8c4bb;border-radius:4px;}
-    ::-webkit-scrollbar-thumb:hover{background:#b0aca3;}
-    ::selection{background:#10b98133;color:#0f0f0f;}
-    input,textarea,select{transition:border-color 0.15s,box-shadow 0.15s;}
-    input:focus,textarea:focus,select:focus{border-color:#10b981!important;box-shadow:0 0 0 3px #10b98118;outline:none;}
-    button{transition:opacity 0.12s,transform 0.1s,background 0.12s;}
-    button:not(:disabled):active{transform:scale(0.96);}
+    ::-webkit-scrollbar-track{background:#e8e4dc;}
+    ::-webkit-scrollbar-thumb{background:#c9a84c;border-radius:99px;}
+    ::-webkit-scrollbar-thumb:hover{background:#b8933c;}
+    ::selection{background:#0d5c3a22;color:#0a0a0a;}
+    input,textarea,select{background:#f8f6f2;border:1.5px solid #d4cfc6;border-radius:8px;color:#0a0a0a;transition:border-color 0.15s,box-shadow 0.15s;}
+    input:focus,textarea:focus,select:focus{border-color:#0d5c3a!important;box-shadow:0 0 0 3px rgba(13,92,58,0.12)!important;outline:none!important;}
+    button{transition:all 0.15s ease;}
+    button:not(:disabled):active{transform:scale(0.97);}
     @keyframes sp{to{transform:rotate(360deg)}}
-    @keyframes fadein{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
-    @keyframes slidein{from{opacity:0;transform:translateX(16px)}to{opacity:1;transform:translateX(0)}}
+    @keyframes fadeIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
+    @keyframes slideUp{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
+    @keyframes slideIn{from{opacity:0;transform:translateX(16px)}to{opacity:1;transform:translateX(0)}}
     @keyframes slideup{from{opacity:0;transform:translateY(100%)}to{opacity:1;transform:translateY(0)}}
     @keyframes pulse{0%,100%{opacity:1}50%{opacity:0.4}}
-    .fade-in{animation:fadein 0.22s ease both;}
-    .slide-in{animation:slidein 0.22s ease both;}
+    .fade-in{animation:fadeIn 0.2s ease-out both;}
+    .slide-in{animation:slideIn 0.18s ease-out both;}
     .slide-up{animation:slideup 0.25s ease both;}
-    .card-click:hover{border-color:#1a6b4a!important;transform:translateY(-1px);}
-    .card-click{transition:border-color 0.15s,transform 0.15s;}
-    .dash-row:hover{background:#f7f4ef!important;box-shadow:inset 2px 0 0 #1a6b4a;}
-    .dash-action:hover{background:#f0fdf4!important;border-color:#1a6b4a!important;}
+    .modal-anim{animation:slideUp 0.2s ease-out both;}
+    .card-click{transition:transform 0.15s ease,box-shadow 0.15s ease,border-color 0.15s;}
+    .card-click:hover{box-shadow:0 4px 24px rgba(10,10,10,0.12)!important;transform:translateY(-1px);border-color:#0d5c3a!important;}
+    .dash-row:hover{background:#f0ede6!important;box-shadow:inset 2px 0 0 #0d5c3a;}
+    .dash-action:hover{background:#f0ede6!important;border-color:#0d5c3a!important;transform:translateY(-1px);}
 
     /* ── Mobile bottom nav (hidden on desktop) ─────────────────────────── */
-    .mobile-bottom-bar{display:none;position:fixed;bottom:0;left:0;right:0;z-index:150;background:#f0ede6;border-top:1px solid #e8e2d9;box-shadow:0 -1px 0 rgba(0,0,0,.05),0 -4px 20px rgba(0,0,0,.04);padding-bottom:env(safe-area-inset-bottom,0px);}
-    .mobile-bottom-tab{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;background:transparent;border:none;cursor:pointer;padding:8px 4px;color:#6b7280;font-family:'DM Sans',system-ui,sans-serif;font-size:9px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;min-height:60px;transition:color .15s;}
+    .mobile-bottom-bar{display:none;position:fixed;bottom:0;left:0;right:0;z-index:150;background:#0f1a12;border-top:1px solid #1a2e1f;box-shadow:0 -1px 0 rgba(0,0,0,.2),0 -4px 20px rgba(0,0,0,.15);padding-bottom:env(safe-area-inset-bottom,0px);}
+    .mobile-bottom-tab{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;background:transparent;border:none;cursor:pointer;padding:8px 4px;color:#8fa896;font-family:'DM Sans',system-ui,sans-serif;font-size:9px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;min-height:60px;transition:color .15s;}
     .mobile-bottom-tab .mob-icon{font-size:18px;line-height:1.2;margin-bottom:1px;display:block;}
-    .mobile-bottom-tab.active{color:#1a6b4a;}
-    .mobile-more-overlay{display:none;position:fixed;inset:0;z-index:200;background:rgba(0,0,0,.45);align-items:flex-end;}
-    .mobile-more-drawer{background:#f0ede6;border-radius:20px 20px 0 0;width:100%;padding-bottom:env(safe-area-inset-bottom,0px);overflow:hidden;}
-    .mobile-more-handle{width:36px;height:4px;border-radius:2px;background:#c8c4bb;margin:12px auto 4px;}
-    .mobile-more-row{display:flex;align-items:center;gap:16px;width:100%;background:transparent;border:none;border-bottom:1px solid #e8e2d9;padding:16px 24px;color:#1a1a1a;font-family:'DM Sans',system-ui,sans-serif;font-size:16px;font-weight:500;cursor:pointer;text-align:left;}
+    .mobile-bottom-tab.active{color:#c9a84c;}
+    .mobile-more-overlay{display:none;position:fixed;inset:0;z-index:200;background:rgba(0,0,0,.6);align-items:flex-end;}
+    .mobile-more-drawer{background:#0f1a12;border-radius:20px 20px 0 0;width:100%;padding-bottom:env(safe-area-inset-bottom,0px);overflow:hidden;}
+    .mobile-more-handle{width:36px;height:4px;border-radius:2px;background:#1a2e1f;margin:12px auto 4px;}
+    .mobile-more-row{display:flex;align-items:center;gap:16px;width:100%;background:transparent;border:none;border-bottom:1px solid #1a2e1f;padding:16px 24px;color:#f0ede6;font-family:'DM Sans',system-ui,sans-serif;font-size:16px;font-weight:500;cursor:pointer;text-align:left;}
     .mobile-more-row .mob-icon{font-size:20px;width:28px;text-align:center;flex-shrink:0;}
-    .mobile-more-row.active{color:#1a6b4a;font-weight:700;}
-    .mobile-more-signout{display:flex;align-items:center;gap:16px;width:100%;background:transparent;border:none;padding:16px 24px;color:#6b7280;font-family:'DM Sans',system-ui,sans-serif;font-size:16px;font-weight:400;cursor:pointer;text-align:left;}
+    .mobile-more-row.active{color:#c9a84c;font-weight:700;}
+    .mobile-more-signout{display:flex;align-items:center;gap:16px;width:100%;background:transparent;border:none;padding:16px 24px;color:#8fa896;font-family:'DM Sans',system-ui,sans-serif;font-size:16px;font-weight:400;cursor:pointer;text-align:left;}
 
     @media(max-width:768px){
       /* Root overflow kill — nothing bleeds past viewport */
@@ -245,33 +270,38 @@ export function Spin() {
   return <span style={{display:"inline-block",width:11,height:11,border:"2px solid #ffffff30",borderTopColor:"#fff",borderRadius:"50%",animation:"sp 0.7s linear infinite",flexShrink:0}}/>;
 }
 export function Pill({label,color}) {
-  return <span style={{fontSize:10,fontWeight:700,letterSpacing:"0.05em",textTransform:"uppercase",padding:"3px 9px",borderRadius:99,background:(color||T.ink3)+"1a",color:color||T.ink3,whiteSpace:"nowrap",border:`1px solid ${(color||T.ink3)}22`}}>{label}</span>;
+  return <span style={{fontSize:10,fontWeight:700,letterSpacing:"0.06em",textTransform:"uppercase",padding:"4px 10px",borderRadius:99,background:(color||T.ink3)+"1a",color:color||T.ink3,whiteSpace:"nowrap",border:`1px solid ${(color||T.ink3)}28`}}>{label}</span>;
 }
-export function Card({children,selected,accent,onClick,style={}}) {
-  return <div onClick={onClick} className={onClick?"card-click":""} style={{background:T.white,border:`1px solid ${selected?accent||T.greenDk:T.bg3}`,borderRadius:14,padding:"16px 20px",cursor:onClick?"pointer":"default",...style}}>{children}</div>;
+export function Card({children,selected,accent,onClick,style={},variant}) {
+  const base = variant==="dark"
+    ? {background:"#0f1a12",border:`1px solid ${selected?"#c9a84c":"#1a2e1f"}`,color:"#f0ede6"}
+    : variant==="elevated"
+    ? {background:T.white,border:`1px solid ${selected?accent||T.greenDk:T.bg3}`,boxShadow:T.shadowMd}
+    : {background:T.white,border:`1px solid ${selected?accent||T.greenDk:T.bg3}`,boxShadow:T.shadow};
+  return <div onClick={onClick} className={onClick?"card-click":""} style={{...base,borderRadius:14,padding:"20px 24px",cursor:onClick?"pointer":"default",...style}}>{children}</div>;
 }
 export function SectionLabel({children}) {
-  return <div style={{fontSize:10,fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",color:T.ink3,marginBottom:12}}>{children}</div>;
+  return <div style={{fontSize:10,fontWeight:800,letterSpacing:"0.12em",textTransform:"uppercase",color:T.ink3,marginBottom:12}}>{children}</div>;
 }
 export function AIBtn({onClick,loading,label="✦ AI Assist",small}) {
-  return <button onClick={onClick} disabled={loading} style={{background:loading?"#1a2235":"linear-gradient(135deg,#1a6b4a,#2563eb)",border:"none",borderRadius:small?8:10,padding:small?"6px 12px":"9px 16px",color:"#fff",fontSize:small?12:13,fontWeight:700,cursor:loading?"not-allowed":"pointer",display:"flex",alignItems:"center",gap:6,opacity:loading?0.65:1,whiteSpace:"nowrap",boxShadow:loading?"none":"0 1px 8px #1a6b4a33"}}>
+  return <button onClick={onClick} disabled={loading} style={{background:loading?"#1a2e1f":"linear-gradient(135deg,#0d5c3a,#1a6b4a)",border:"none",borderRadius:small?8:10,padding:small?"6px 12px":"9px 16px",color:"#f0ede6",fontSize:small?12:13,fontWeight:700,cursor:loading?"not-allowed":"pointer",display:"flex",alignItems:"center",gap:6,opacity:loading?0.65:1,whiteSpace:"nowrap",boxShadow:loading?"none":"0 2px 12px rgba(13,92,58,0.35)",letterSpacing:"0.01em"}}>
     {loading?<><Spin/>Thinking…</>:label}
   </button>;
 }
 export function AIPanel({text,onClose}) {
   if(!text) return null;
-  return <div className="fade-in" style={{background:"linear-gradient(135deg,#130c2e,#0d1117)",border:"1px solid #1a6b4a30",borderRadius:14,padding:"18px 20px",position:"relative",marginTop:12}}>
-    <div style={{fontSize:10,fontWeight:800,letterSpacing:"0.12em",textTransform:"uppercase",color:"#1a6b4a",marginBottom:10,display:"flex",alignItems:"center",gap:6}}><span>✦</span> AI Intelligence</div>
-    <div style={{fontSize:13,color:"#e2e8f0",lineHeight:1.8,whiteSpace:"pre-wrap"}}>{text}</div>
-    {onClose&&<button onClick={onClose} style={{position:"absolute",top:12,right:14,background:"#1a2235",border:"1px solid #1f2937",borderRadius:6,color:"#6b7280",cursor:"pointer",fontSize:14,lineHeight:1,width:24,height:24,display:"flex",alignItems:"center",justifyContent:"center",padding:0}}>×</button>}
+  return <div className="fade-in modal-anim" style={{background:"#0f1a12",border:"1px solid #1a2e1f",borderLeft:"3px solid #c9a84c",borderRadius:14,padding:"18px 20px",position:"relative",marginTop:12}}>
+    <div style={{fontSize:10,fontWeight:800,letterSpacing:"0.12em",textTransform:"uppercase",color:"#c9a84c",marginBottom:10,display:"flex",alignItems:"center",gap:6}}><span>✦</span> AI Intelligence</div>
+    <div style={{fontSize:13,color:"#e8e4dc",lineHeight:1.8,whiteSpace:"pre-wrap"}}>{text}</div>
+    {onClose&&<button onClick={onClose} style={{position:"absolute",top:12,right:14,background:"#1a2e1f",border:"1px solid #2d4a35",borderRadius:6,color:"#8fa896",cursor:"pointer",fontSize:14,lineHeight:1,width:24,height:24,display:"flex",alignItems:"center",justifyContent:"center",padding:0}}>×</button>}
   </div>;
 }
 export function MetricCard({label,value,sub,color,trend}) {
-  return <div className="fade-in" style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:14,padding:"16px 20px",display:"flex",flexDirection:"column",gap:5,borderLeft:`3px solid ${color||T.bg3}`}}>
-    <span style={{fontSize:10,fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",color:T.ink3}}>{label}</span>
+  return <div className="fade-in" style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:14,padding:"16px 20px",display:"flex",flexDirection:"column",gap:5,borderLeft:`3px solid ${color||T.bg3}`,boxShadow:T.shadow}}>
+    <span style={{fontSize:10,fontWeight:800,letterSpacing:"0.12em",textTransform:"uppercase",color:T.ink3}}>{label}</span>
     <span style={{fontSize:28,fontWeight:800,color:color||T.ink,fontFamily:"'DM Serif Display',serif",lineHeight:1.05,letterSpacing:"-0.02em"}}>{value}</span>
     {sub&&<span style={{fontSize:11,color:T.ink3}}>{sub}</span>}
-    {trend!==undefined&&<span style={{fontSize:11,color:trend>=0?"#1a6b4a":"#ef4444",fontWeight:600}}>{trend>=0?"↑":"↓"} {Math.abs(trend)}%</span>}
+    {trend!==undefined&&<span style={{fontSize:11,color:trend>=0?T.greenMid:T.red,fontWeight:600}}>{trend>=0?"↑":"↓"} {Math.abs(trend)}%</span>}
   </div>;
 }
 export function EmptyState({icon,title,message,action,onAction}) {
@@ -282,12 +312,13 @@ export function EmptyState({icon,title,message,action,onAction}) {
     {action&&<button onClick={onAction} style={{marginTop:8,background:T.greenDk,border:"none",borderRadius:10,padding:"9px 18px",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer",boxShadow:"0 2px 10px rgba(26,107,74,0.2)"}}>{action}</button>}
   </div>;
 }
-export function PageTitle({main,accent}) {
+export function PageTitle({main,accent,sub}) {
   return (
-    <div style={{marginBottom:12}}>
-      <h1 style={{fontFamily:"'DM Serif Display',Georgia,serif",fontSize:"clamp(22px,2.4vw,32px)",fontWeight:400,color:T.ink,letterSpacing:"-0.02em",margin:0,lineHeight:1.2}}>
-        {main}{" "}<span style={{borderBottom:`3px solid ${T.greenDk}`,paddingBottom:2}}>{accent}</span>
+    <div style={{marginBottom:16}}>
+      <h1 style={{fontFamily:"'DM Serif Display',Georgia,serif",fontSize:32,fontWeight:400,letterSpacing:"-0.02em",margin:0,lineHeight:1.15}}>
+        <span style={{color:T.ink3}}>{main}{" "}</span><span style={{color:T.ink,borderBottom:"3px solid #c9a84c",paddingBottom:2}}>{accent}</span>
       </h1>
+      {sub&&<div style={{fontSize:14,color:T.ink3,marginTop:6,fontFamily:"'DM Sans',sans-serif"}}>{sub}</div>}
     </div>
   );
 }
@@ -341,7 +372,7 @@ export function TpYesNo({val,set}){
 }
 export function TouchpointTimeline({interactions}){
   if(!interactions?.length)return<div style={{fontSize:13,color:T.ink3,textAlign:"center",padding:"16px 0"}}>No touchpoints logged yet.</div>;
-  const typeColor={call:"#3b82f6",email:"#8b5cf6",meeting:"#1a6b4a",gift:"#f59e0b",event:"#ec4899",note:"#6b7280"};
+  const typeColor={call:"#3b82f6",email:"#8b5cf6",meeting:T.greenMid,gift:"#f59e0b",event:"#ec4899",note:"#6b7280"};
   const sorted=[...interactions].sort((a,b)=>new Date(b.date)-new Date(a.date));
   return(
     <div style={{display:"flex",flexDirection:"column",gap:0}}>
@@ -351,15 +382,15 @@ export function TouchpointTimeline({interactions}){
         const when=dAgo===0?"Today":dAgo===1?"Yesterday":`${dAgo}d ago`;
         return(
           <div key={i} style={{display:"flex",gap:12,paddingBottom:16,position:"relative"}}>
-            {i<sorted.length-1&&<div style={{position:"absolute",left:11,top:24,width:2,bottom:0,background:T.bg3}}/>}
-            <div style={{width:24,height:24,borderRadius:"50%",background:c+"22",border:`2px solid ${c}`,flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",zIndex:1,marginTop:2}}>
-              <div style={{width:7,height:7,borderRadius:"50%",background:c}}/>
+            {i<sorted.length-1&&<div style={{position:"absolute",left:12,top:26,width:2,bottom:0,background:T.bg3}}/>}
+            <div style={{width:26,height:26,borderRadius:"50%",background:c+"28",border:`2px solid ${c}`,flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",zIndex:1,marginTop:2}}>
+              <div style={{width:10,height:10,borderRadius:"50%",background:c}}/>
             </div>
             <div style={{flex:1}}>
               <div style={{display:"flex",alignItems:"center",gap:7,marginBottom:3,flexWrap:"wrap"}}>
                 <span style={{fontSize:11,fontWeight:700,textTransform:"capitalize",color:c}}>{int.type}</span>
                 <span style={{fontSize:11,color:T.ink3}}>{int.date}</span>
-                <span style={{fontSize:11,color:T.bg3}}>({when})</span>
+                <span style={{fontSize:11,color:T.ink3,opacity:0.6}}>({when})</span>
               </div>
               <div style={{fontSize:13,color:T.ink2,lineHeight:1.5}}>{int.note}</div>
             </div>

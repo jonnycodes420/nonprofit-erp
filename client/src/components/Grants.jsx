@@ -235,13 +235,13 @@ function GrantProfile({grant,onClose,onUpdate,onDelete,isAdmin,org}){
         </div>
 
         {/* RIGHT */}
-        <div style={{overflowY:"auto",padding:"22px 24px 24px 20px",display:"flex",flexDirection:"column",gap:18}}>
+        <div style={{overflowY:"auto",padding:"22px 24px 24px 20px",display:"flex",flexDirection:"column",gap:18,background:"#0f1a12"}}>
           <div>
-            <div style={{fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.1em",color:T.ink3,marginBottom:8}}>Move Stage</div>
+            <div style={{fontSize:10,fontWeight:800,textTransform:"uppercase",letterSpacing:"0.1em",color:"#8fa896",marginBottom:8}}>Move Stage</div>
             <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
               {statuses.map(s=>(
                 <button key={s} onClick={()=>changeStatus(s)}
-                  style={{background:grant.status===s?SC[s]+"22":T.bg,border:`1px solid ${grant.status===s?SC[s]:T.bg3}`,borderRadius:8,padding:"6px 12px",color:grant.status===s?SC[s]:T.ink3,fontSize:12,fontWeight:600,cursor:"pointer",textTransform:"capitalize"}}>
+                  style={{background:grant.status===s?SC[s]+"22":"#1a2e1f",border:`1px solid ${grant.status===s?SC[s]:"#2d4a35"}`,borderRadius:8,padding:"6px 12px",color:grant.status===s?SC[s]:"#8fa896",fontSize:12,fontWeight:600,cursor:"pointer",textTransform:"capitalize"}}>
                   {s}
                 </button>
               ))}
@@ -249,7 +249,7 @@ function GrantProfile({grant,onClose,onUpdate,onDelete,isAdmin,org}){
           </div>
 
           <div>
-            <div style={{fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.1em",color:T.ink3,marginBottom:8}}>AI Analysis</div>
+            <div style={{fontSize:10,fontWeight:800,textTransform:"uppercase",letterSpacing:"0.1em",color:"#8fa896",marginBottom:8}}>AI Analysis</div>
             <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:12}}>
               <AIBtn onClick={()=>getAI("analyze")} loading={loadingKey===`${grant.id}_analyze`} label="✦ Analyze Grant Fit" small/>
               {grant.status!=="closed"&&<AIBtn onClick={()=>getAI("strategy")} loading={loadingKey===`${grant.id}_strategy`} label="✦ Strategy" small/>}
@@ -261,15 +261,15 @@ function GrantProfile({grant,onClose,onUpdate,onDelete,isAdmin,org}){
 
           <div>
             <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8}}>
-              <div style={{fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.1em",color:T.ink3}}>Notes</div>
+              <div style={{fontSize:10,fontWeight:800,textTransform:"uppercase",letterSpacing:"0.1em",color:"#8fa896"}}>Notes</div>
               {notes!==grant.notes&&<button onClick={saveNotes} disabled={savingNotes} style={{background:"#10b981",border:"none",borderRadius:7,padding:"4px 10px",color:"#fff",fontSize:11,fontWeight:700,cursor:"pointer"}}>{savingNotes?"Saving…":"Save"}</button>}
             </div>
-            <textarea value={notes} onChange={e=>setNotes(e.target.value)} placeholder="Add notes about this grant…" style={{width:"100%",boxSizing:"border-box",background:T.white,border:"1px solid "+T.bg3,borderRadius:10,padding:"10px 12px",color:T.ink,fontSize:13,lineHeight:1.6,outline:"none",resize:"vertical",minHeight:90}}/>
+            <textarea value={notes} onChange={e=>setNotes(e.target.value)} placeholder="Add notes about this grant…" style={{width:"100%",boxSizing:"border-box",background:"#1a2e1f",border:"1px solid #2d4a35",borderRadius:10,padding:"10px 12px",color:"#f0ede6",fontSize:13,lineHeight:1.6,outline:"none",resize:"vertical",minHeight:90}}/>
           </div>
 
           <div>
             <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12}}>
-              <div style={{fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.1em",color:T.ink3}}>Activity Timeline</div>
+              <div style={{fontSize:10,fontWeight:800,textTransform:"uppercase",letterSpacing:"0.1em",color:"#8fa896"}}>Activity Timeline</div>
               <button onClick={()=>setLogOpen(true)} style={{background:"#10b981",border:"none",borderRadius:7,padding:"5px 12px",color:"#fff",fontSize:11,fontWeight:700,cursor:"pointer"}}>+ Log</button>
             </div>
             <TouchpointTimeline interactions={interactions}/>
@@ -324,16 +324,18 @@ function GrantKanban({ grants, onUpdate, onAddClick }) {
         const isOver = dragOver === col.id;
         return (
           <div key={col.id}
-            style={{ minWidth:260, flex:"0 0 260px", background: isOver ? T.bg3 : T.bg2, borderRadius:12, padding:10, borderTop:`3px solid ${col.color}`, transition:"background 0.12s", scrollSnapAlign:"start" }}
+            style={{ minWidth:260, flex:"0 0 260px", background: "#f5f2ec", border:"1px solid "+T.bg3, borderRadius:12, padding:10, transition:"background 0.12s", scrollSnapAlign:"start" }}
             onDragOver={e => { e.preventDefault(); setDragOver(col.id); }}
             onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget)) setDragOver(null); }}
             onDrop={() => drop(col.id)}
           >
-            <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:10 }}>
-              <div style={{ fontSize:10, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.08em", color:col.color }}>{col.label}</div>
-              <div style={{ display:"flex", alignItems:"center", gap:6 }}>
-                {colTotal > 0 && <div style={{ fontSize:10, color:T.ink3, fontWeight:600 }}>{fmt(colTotal)}</div>}
-                <div style={{ fontSize:10, background:col.color+"22", color:col.color, borderRadius:99, padding:"1px 7px", fontWeight:700 }}>{items.length}</div>
+            <div style={{ background:"#0f1a12", borderLeft:`3px solid ${col.color}`, borderRadius:8, padding:"8px 12px", marginBottom:10 }}>
+              <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between" }}>
+                <div style={{ fontSize:9, fontWeight:800, textTransform:"uppercase", letterSpacing:"0.1em", color:"#8fa896" }}>{col.label}</div>
+                <div style={{ display:"flex", alignItems:"center", gap:6 }}>
+                  {colTotal > 0 && <div style={{ fontSize:10, color:"#f0ede6", fontWeight:700, fontFamily:"'DM Serif Display',serif" }}>{fmt(colTotal)}</div>}
+                  <div style={{ fontSize:10, background:col.color+"28", color:col.color, borderRadius:99, padding:"1px 7px", fontWeight:800 }}>{items.length}</div>
+                </div>
               </div>
             </div>
             <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
@@ -345,7 +347,7 @@ function GrantKanban({ grants, onUpdate, onAddClick }) {
                     draggable
                     onDragStart={() => setDragging(g)}
                     onDragEnd={() => { setDragging(null); setDragOver(null); }}
-                    style={{ background:T.white, border:"1px solid "+T.bg3, borderRadius:10, padding:"10px 12px", cursor:"grab", userSelect:"none", opacity:dragging?.id===g.id?0.45:1, transition:"opacity 0.12s" }}
+                    style={{ background:T.white, border:"1px solid "+T.bg3, borderLeft:`3px solid ${dColor}`, borderRadius:10, padding:"10px 12px", cursor:"grab", userSelect:"none", opacity:dragging?.id===g.id?0.45:1, transition:"opacity 0.12s,box-shadow 0.12s", boxShadow:"0 1px 3px rgba(10,10,10,0.06)" }}
                   >
                     <div style={{ fontSize:13, fontWeight:700, color:T.ink, marginBottom:2 }}>{g.funder}</div>
                     {g.program && <div style={{ fontSize:11, color:T.ink3, marginBottom:6 }}>{g.program}</div>}

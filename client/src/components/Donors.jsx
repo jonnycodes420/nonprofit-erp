@@ -777,7 +777,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
         </div>
 
         {/* RIGHT */}
-        <div style={{overflowY:"auto",padding:"22px 24px 24px 20px",display:"flex",flexDirection:"column",gap:18}}>
+        <div style={{overflowY:"auto",padding:"22px 24px 24px 20px",display:"flex",flexDirection:"column",gap:18,background:"#0f1a12"}}>
           {donor.stripeSubscriptionStatus==="active"&&(
             <div style={{background:"#10b98110",border:"1px solid #10b98130",borderRadius:12,padding:"12px 14px",display:"flex",alignItems:"center",gap:8}}>
               <span style={{fontSize:16}}>🔁</span>
@@ -788,19 +788,19 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
             </div>
           )}
           <div>
-            <div style={{fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.1em",color:T.ink3,marginBottom:8}}>Relationship Owner</div>
-            <div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:12,padding:"12px 14px"}}>
+            <div style={{fontSize:10,fontWeight:800,textTransform:"uppercase",letterSpacing:"0.12em",color:"#8fa896",marginBottom:8}}>Relationship Owner</div>
+            <div style={{background:"#1a2e1f",border:"1px solid #2d4a35",borderRadius:12,padding:"12px 14px"}}>
               <div style={{display:"flex",alignItems:"center",gap:8}}>
-                <div style={{width:28,height:28,borderRadius:"50%",background:"#1a6b4a22",display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:800,color:"#1a6b4a",flexShrink:0}}>{(donor.assignedToName||"?")[0]}</div>
-                <div style={{flex:1,fontSize:13,fontWeight:600,color:T.ink}}>{donor.assignedToName||"Unassigned"}</div>
-                {isAdmin&&<button onClick={()=>setShowReassign(v=>!v)} style={{background:"none",border:"1px solid "+T.bg3,borderRadius:7,padding:"3px 10px",color:T.ink3,fontSize:11,cursor:"pointer"}}>{showReassign?"Cancel":"Reassign"}</button>}
+                <div style={{width:28,height:28,borderRadius:"50%",background:T.greenDk+"44",display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:800,color:"#10b981",flexShrink:0}}>{(donor.assignedToName||"?")[0]}</div>
+                <div style={{flex:1,fontSize:13,fontWeight:600,color:"#f0ede6"}}>{donor.assignedToName||"Unassigned"}</div>
+                {isAdmin&&<button onClick={()=>setShowReassign(v=>!v)} style={{background:"#0f1a12",border:"1px solid #2d4a35",borderRadius:7,padding:"3px 10px",color:"#8fa896",fontSize:11,cursor:"pointer"}}>{showReassign?"Cancel":"Reassign"}</button>}
               </div>
               {showReassign&&isAdmin&&<div style={{marginTop:10,display:"flex",flexDirection:"column",gap:8}}>
-                <select value={reassignId} onChange={e=>setReassignId(e.target.value)} style={{width:"100%",background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"8px 10px",color:T.ink,fontSize:12,outline:"none",cursor:"pointer"}}>
+                <select value={reassignId} onChange={e=>setReassignId(e.target.value)} style={{width:"100%",background:"#0f1a12",border:"1px solid #2d4a35",borderRadius:8,padding:"8px 10px",color:"#f0ede6",fontSize:12,outline:"none",cursor:"pointer"}}>
                   <option value="">Select team member…</option>
                   {orgTeam.map(u=><option key={u.id} value={u.id}>{u.name} ({u.role})</option>)}
                 </select>
-                <button onClick={handleReassign} disabled={reassignLoading||!reassignId} style={{background:reassignId?"#1a6b4a":T.bg2,border:"none",borderRadius:8,padding:"8px",color:"#fff",fontSize:12,fontWeight:600,cursor:reassignId?"pointer":"not-allowed"}}>
+                <button onClick={handleReassign} disabled={reassignLoading||!reassignId} style={{background:reassignId?T.greenDk:"#1a2e1f",border:"none",borderRadius:8,padding:"8px",color:"#f0ede6",fontSize:12,fontWeight:600,cursor:reassignId?"pointer":"not-allowed"}}>
                   {reassignLoading?"Saving…":"Confirm Reassignment"}
                 </button>
               </div>}
@@ -808,12 +808,12 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
           </div>
 
           {sequences.length>0&&<div>
-            <div style={{fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.1em",color:T.ink3,marginBottom:8}}>Sequences</div>
-            {seqToast&&<div style={{background:"#052e16",border:"1px solid #10b981",borderRadius:8,padding:"8px 12px",fontSize:12,color:"#10b981",fontWeight:600,marginBottom:8}}>{seqToast}</div>}
+            <div style={{fontSize:10,fontWeight:800,textTransform:"uppercase",letterSpacing:"0.12em",color:"#8fa896",marginBottom:8}}>Sequences</div>
+            {seqToast&&<div style={{background:"#0d5c3a22",border:"1px solid #10b981",borderRadius:8,padding:"8px 12px",fontSize:12,color:"#10b981",fontWeight:600,marginBottom:8}}>{seqToast}</div>}
             <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
-              {!seqOpen?<button onClick={()=>{setSeqOpen(true);setSeqId("");}} style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"6px 12px",fontSize:12,color:T.ink3,cursor:"pointer"}}>+ Enroll in sequence</button>
+              {!seqOpen?<button onClick={()=>{setSeqOpen(true);setSeqId("");}} style={{background:"#1a2e1f",border:"1px solid #2d4a35",borderRadius:8,padding:"6px 12px",fontSize:12,color:"#10b981",cursor:"pointer"}}>+ Enroll in sequence</button>
               :<>
-                <select value={seqId} onChange={e=>setSeqId(e.target.value)} style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"6px 10px",color:T.ink,fontSize:12,outline:"none",cursor:"pointer",flex:1}}>
+                <select value={seqId} onChange={e=>setSeqId(e.target.value)} style={{background:"#0f1a12",border:"1px solid #2d4a35",borderRadius:8,padding:"6px 10px",color:"#f0ede6",fontSize:12,outline:"none",cursor:"pointer",flex:1}}>
                   <option value="">Select sequence…</option>
                   {sequences.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}
                 </select>
@@ -826,39 +826,39 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
                     setSeqOpen(false);setSeqId("");
                   }catch(e){alert(e.message||"Could not enroll");}
                   setSeqLoading(false);
-                }} style={{background:seqId?"#1a6b4a":T.bg2,border:"none",borderRadius:8,padding:"6px 12px",color:"#fff",fontSize:12,fontWeight:600,cursor:seqId?"pointer":"not-allowed"}}>
+                }} style={{background:seqId?T.greenDk:"#1a2e1f",border:"none",borderRadius:8,padding:"6px 12px",color:"#f0ede6",fontSize:12,fontWeight:600,cursor:seqId?"pointer":"not-allowed"}}>
                   {seqLoading?"…":"Enroll"}
                 </button>
-                <button onClick={()=>{setSeqOpen(false);setSeqId("");}} style={{background:"transparent",border:"none",padding:"6px 8px",color:T.ink3,fontSize:12,cursor:"pointer"}}>✕</button>
+                <button onClick={()=>{setSeqOpen(false);setSeqId("");}} style={{background:"transparent",border:"none",padding:"6px 8px",color:"#8fa896",fontSize:12,cursor:"pointer"}}>✕</button>
               </>}
             </div>
           </div>}
 
           {cfData.length>0&&<div>
-            <div style={{fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.1em",color:T.ink3,marginBottom:8}}>Custom Fields</div>
+            <div style={{fontSize:10,fontWeight:800,textTransform:"uppercase",letterSpacing:"0.12em",color:"#8fa896",marginBottom:8}}>Custom Fields</div>
             <div style={{display:"flex",flexDirection:"column",gap:8}}>
               {cfData.map(f=>(
                 <div key={f.fieldId} style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8}}>
-                  <div style={{fontSize:12,color:T.ink3,fontWeight:600,minWidth:90,flexShrink:0}}>{f.label}{f.required&&<span style={{color:"#dc2626",marginLeft:2}}>*</span>}</div>
+                  <div style={{fontSize:12,color:"#8fa896",fontWeight:600,minWidth:90,flexShrink:0}}>{f.label}{f.required&&<span style={{color:"#f87171",marginLeft:2}}>*</span>}</div>
                   {cfEditing===f.fieldId?(
                     <div style={{display:"flex",gap:6,flex:1}}>
                       {f.fieldType==="checkbox"?(
                         <select value={cfEditVal} onChange={e=>setCfEditVal(e.target.value)}
-                          style={{flex:1,background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"5px 8px",fontSize:12,color:T.ink,outline:"none"}}>
+                          style={{flex:1,background:"#0f1a12",border:"1px solid #2d4a35",borderRadius:8,padding:"5px 8px",fontSize:12,color:"#f0ede6",outline:"none"}}>
                           <option value="">—</option>
                           <option value="Yes">Yes</option>
                           <option value="No">No</option>
                         </select>
                       ):f.fieldType==="dropdown"?(
                         <select value={cfEditVal} onChange={e=>setCfEditVal(e.target.value)}
-                          style={{flex:1,background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"5px 8px",fontSize:12,color:T.ink,outline:"none"}}>
+                          style={{flex:1,background:"#0f1a12",border:"1px solid #2d4a35",borderRadius:8,padding:"5px 8px",fontSize:12,color:"#f0ede6",outline:"none"}}>
                           <option value="">—</option>
                           {(f.options||[]).map(o=><option key={o} value={o}>{o}</option>)}
                         </select>
                       ):(
                         <input value={cfEditVal} onChange={e=>setCfEditVal(e.target.value)}
                           type={f.fieldType==="number"?"number":f.fieldType==="date"?"date":"text"}
-                          style={{flex:1,background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"5px 8px",fontSize:12,color:T.ink,outline:"none"}}
+                          style={{flex:1,background:"#0f1a12",border:"1px solid #2d4a35",borderRadius:8,padding:"5px 8px",fontSize:12,color:"#f0ede6",outline:"none"}}
                           onKeyDown={async e=>{
                             if(e.key==="Enter"){
                               await apiFetch(`/donors/${donor.id}/custom-fields`,{method:"POST",body:JSON.stringify({fieldId:f.fieldId,value:cfEditVal})});
@@ -875,16 +875,16 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
                         setCfData(prev=>prev.map(x=>x.fieldId===f.fieldId?{...x,value:cfEditVal}:x));
                         setCfSaved(f.fieldId);setTimeout(()=>setCfSaved(null),2000);
                         setCfEditing(null);onCfSaved?.();
-                      }} style={{background:T.greenDk,border:"none",borderRadius:8,padding:"5px 10px",color:"#fff",fontSize:11,fontWeight:700,cursor:"pointer"}}>Save</button>
-                      <button onClick={()=>setCfEditing(null)} style={{background:"transparent",border:"none",padding:"5px 8px",color:T.ink3,fontSize:12,cursor:"pointer"}}>✕</button>
+                      }} style={{background:T.greenDk,border:"none",borderRadius:8,padding:"5px 10px",color:"#f0ede6",fontSize:11,fontWeight:700,cursor:"pointer"}}>Save</button>
+                      <button onClick={()=>setCfEditing(null)} style={{background:"transparent",border:"none",padding:"5px 8px",color:"#8fa896",fontSize:12,cursor:"pointer"}}>✕</button>
                     </div>
                   ):(
                     <div style={{display:"flex",alignItems:"center",gap:6,flex:1,justifyContent:"flex-end"}}>
-                      <span style={{fontSize:12,color:f.value?T.ink:T.ink3,fontStyle:f.value?"normal":"italic"}}>
+                      <span style={{fontSize:12,color:f.value?"#f0ede6":"#8fa896",fontStyle:f.value?"normal":"italic"}}>
                         {cfSaved===f.fieldId?"Saved ✓":f.value||"—"}
                       </span>
                       <button onClick={()=>{setCfEditing(f.fieldId);setCfEditVal(f.value||"");}}
-                        style={{background:"transparent",border:"1px solid "+T.bg3,borderRadius:6,padding:"3px 8px",fontSize:10,color:T.ink3,cursor:"pointer"}}>Edit</button>
+                        style={{background:"#1a2e1f",border:"1px solid #2d4a35",borderRadius:6,padding:"3px 8px",fontSize:10,color:"#10b981",cursor:"pointer"}}>Edit</button>
                     </div>
                   )}
                 </div>
@@ -893,51 +893,51 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
           </div>}
 
           <div>
-            <div style={{fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.1em",color:T.ink3,marginBottom:8}}>Move Stage</div>
+            <div style={{fontSize:10,fontWeight:800,textTransform:"uppercase",letterSpacing:"0.12em",color:"#8fa896",marginBottom:8}}>Move Stage</div>
             <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
               {STAGES.map(s=>(
                 <button key={s.id} onClick={()=>onStageChange(donor.id,s.id)}
-                  style={{background:(donor.stage||"cultivate")===s.id?s.color+"22":T.bg,border:`1px solid ${(donor.stage||"cultivate")===s.id?s.color:T.bg3}`,borderRadius:8,padding:"6px 12px",color:(donor.stage||"cultivate")===s.id?s.color:T.ink3,fontSize:12,fontWeight:600,cursor:"pointer"}}>
+                  style={{background:(donor.stage||"cultivate")===s.id?s.color+"28":"#1a2e1f",border:`1px solid ${(donor.stage||"cultivate")===s.id?s.color:"#2d4a35"}`,borderRadius:8,padding:"6px 12px",color:(donor.stage||"cultivate")===s.id?s.color:"#8fa896",fontSize:12,fontWeight:600,cursor:"pointer"}}>
                   {s.label}
                 </button>
               ))}
             </div>
-            <div style={{marginTop:8,fontSize:11,color:T.ink3,lineHeight:1.5,borderLeft:`2px solid ${stage.color}40`,paddingLeft:8}}>
+            <div style={{marginTop:8,fontSize:11,color:"#8fa896",lineHeight:1.5,borderLeft:`2px solid ${stage.color}`,paddingLeft:8}}>
               {STAGE_ACTION[donor.stage||"cultivate"]}
             </div>
           </div>
 
           <div>
-            <div style={{fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.1em",color:T.ink3,marginBottom:8}}>Wealth Score</div>
-            <div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:14,padding:"16px"}}>
+            <div style={{fontSize:10,fontWeight:800,textTransform:"uppercase",letterSpacing:"0.12em",color:"#8fa896",marginBottom:8}}>Wealth Score</div>
+            <div style={{background:"#1a2e1f",border:"1px solid #2d4a35",borderRadius:14,padding:"16px"}}>
               {localScore!==null?(
                 <>
                   <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:12}}>
-                    <div style={{textAlign:"center",background:wsc+"15",border:`2px solid ${wsc}40`,borderRadius:12,padding:"10px 14px",minWidth:56,flexShrink:0}}>
+                    <div style={{textAlign:"center",background:wsc+"22",border:`2px solid ${wsc}`,borderRadius:12,padding:"10px 14px",minWidth:56,flexShrink:0}}>
                       <div style={{fontSize:26,fontWeight:800,color:wsc,lineHeight:1,fontFamily:"'DM Serif Display',serif"}}>{localScore}</div>
-                      <div style={{fontSize:9,color:T.ink3,fontWeight:600,marginTop:2}}>/ 10</div>
+                      <div style={{fontSize:9,color:"#8fa896",fontWeight:600,marginTop:2}}>/ 10</div>
                     </div>
                     <div>
                       <div style={{display:"flex",gap:5,flexWrap:"wrap",marginBottom:5}}>
-                        <span style={{background:(TIER_COLOR[localTier]||T.ink3)+"22",color:TIER_COLOR[localTier]||T.ink3,borderRadius:99,padding:"2px 9px",fontSize:11,fontWeight:700}}>{localTier}</span>
+                        <span style={{background:(TIER_COLOR[localTier]||"#8fa896")+"33",color:TIER_COLOR[localTier]||"#8fa896",borderRadius:99,padding:"3px 10px",fontSize:11,fontWeight:800,letterSpacing:"0.04em"}}>{localTier}</span>
                       </div>
-                      <div style={{fontSize:10,color:T.ink3,fontWeight:600}}>{localConf} confidence</div>
+                      <div style={{fontSize:10,color:"#8fa896",fontWeight:600}}>{localConf} confidence</div>
                     </div>
                   </div>
-                  {localRationale&&<p style={{fontSize:12,color:T.ink3,lineHeight:1.6,margin:"0 0 12px 0",fontStyle:"italic",borderLeft:"2px solid "+T.bg3,paddingLeft:10}}>{localRationale}</p>}
-                  <button onClick={recalcScore} disabled={scoreLoading} style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"6px",color:T.ink3,fontSize:11,fontWeight:600,cursor:"pointer",width:"100%",textAlign:"center"}}>{scoreLoading?"Calculating…":"↻ Recalculate"}</button>
+                  {localRationale&&<p style={{fontSize:12,color:"#8fa896",lineHeight:1.6,margin:"0 0 12px 0",fontStyle:"italic",borderLeft:"2px solid #2d4a35",paddingLeft:10}}>{localRationale}</p>}
+                  <button onClick={recalcScore} disabled={scoreLoading} style={{background:"#0f1a12",border:"1px solid #2d4a35",borderRadius:8,padding:"6px",color:"#10b981",fontSize:11,fontWeight:600,cursor:"pointer",width:"100%",textAlign:"center"}}>{scoreLoading?"Calculating…":"↻ Recalculate"}</button>
                 </>
               ):(
                 <div style={{textAlign:"center",padding:"4px 0"}}>
-                  <div style={{fontSize:12,color:T.ink3,marginBottom:10}}>No score yet</div>
-                  <button onClick={recalcScore} disabled={scoreLoading} style={{background:"#10b981",border:"none",borderRadius:8,padding:"8px 16px",color:"#fff",fontSize:12,fontWeight:600,cursor:"pointer"}}>{scoreLoading?"Calculating…":"Calculate Score"}</button>
+                  <div style={{fontSize:12,color:"#8fa896",marginBottom:10}}>No score yet</div>
+                  <button onClick={recalcScore} disabled={scoreLoading} style={{background:T.green,border:"none",borderRadius:8,padding:"8px 16px",color:"#fff",fontSize:12,fontWeight:600,cursor:"pointer"}}>{scoreLoading?"Calculating…":"Calculate Score"}</button>
                 </div>
               )}
             </div>
           </div>
 
           <div>
-            <div style={{fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.1em",color:T.ink3,marginBottom:8}}>AI Intelligence</div>
+            <div style={{fontSize:10,fontWeight:800,textTransform:"uppercase",letterSpacing:"0.12em",color:"#8fa896",marginBottom:8}}>AI Intelligence</div>
             <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:12}}>
               <AIBtn onClick={()=>getAI(donor,"nextmove")} loading={loadingKey===`${donor.id}_nextmove`} label="✦ Next Move" small/>
               <AIBtn onClick={()=>getAI(donor,"outreach")} loading={loadingKey===`${donor.id}_outreach`} label="✦ Outreach" small/>
@@ -969,17 +969,17 @@ function DonorKanban({donors,onStageChange,onLogTouchpoint,onSelectDonor}){
             onDragLeave={e=>{if(!e.currentTarget.contains(e.relatedTarget))setDragOver(null);}}
             onDrop={e=>{e.preventDefault();const id=e.dataTransfer.getData("donorId");if(id)onStageChange(id,stage.id);setDragOver(null);}}>
             <div style={{
-              background:isOver?stage.color+"10":T.white,
-              border:`1px solid ${isOver?stage.color+"50":T.bg2}`,
-              borderTop:`3px solid ${stage.color}`,
+              background:"#0f1a12",
+              border:`1px solid ${isOver?stage.color+"50":"#1a2e1f"}`,
+              borderLeft:`3px solid ${stage.color}`,
               borderRadius:10,padding:"10px 12px 9px",
               transition:"background 0.12s,border-color 0.12s",
             }}>
               <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:4}}>
-                <span style={{fontSize:9,fontWeight:800,color:T.ink3,letterSpacing:"0.1em",textTransform:"uppercase"}}>{stage.label}</span>
-                <span style={{background:stage.color+"20",color:stage.color,fontSize:10,fontWeight:800,borderRadius:99,padding:"1px 7px",border:`1px solid ${stage.color}28`,lineHeight:"16px"}}>{cols.length}</span>
+                <span style={{fontSize:9,fontWeight:800,color:"#8fa896",letterSpacing:"0.1em",textTransform:"uppercase"}}>{stage.label}</span>
+                <span style={{background:stage.color+"28",color:stage.color,fontSize:10,fontWeight:800,borderRadius:99,padding:"1px 7px",border:`1px solid ${stage.color}40`,lineHeight:"16px"}}>{cols.length}</span>
               </div>
-              <div style={{fontSize:13,fontWeight:700,color:total>0?T.ink:T.ink3,fontFamily:"'DM Serif Display',serif",letterSpacing:"-0.01em"}}>
+              <div style={{fontSize:13,fontWeight:700,color:total>0?"#f0ede6":"#8fa896",fontFamily:"'DM Serif Display',serif",letterSpacing:"-0.01em"}}>
                 {total>0?fmt(total):"$0"}
               </div>
             </div>
@@ -1007,12 +1007,13 @@ function DonorKanban({donors,onStageChange,onLogTouchpoint,onSelectDonor}){
                     onDragEnd={()=>{setDraggingId(null);setDragOver(null);}}
                     style={{
                       border:`1px solid ${thisIsDragging?"transparent":urgBorder}`,
+                      borderLeft:`3px solid ${stage.color}`,
                       borderRadius:10,padding:"13px 12px 10px",
                       cursor:"grab",opacity:thisIsDragging?0.2:1,
-                      transition:"opacity 0.12s,box-shadow 0.12s",
+                      transition:"opacity 0.12s,box-shadow 0.12s,transform 0.12s",
                       userSelect:"none",
-                      background:thisIsDragging?"transparent":urgBg||T.white,
-                      boxShadow:thisIsDragging?"none":"0 1px 2px rgba(0,0,0,0.05)",
+                      background:thisIsDragging?"transparent":T.white,
+                      boxShadow:thisIsDragging?"none":"0 1px 3px rgba(10,10,10,0.07)",
                     }}>
                     <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",gap:6,marginBottom:5}}>
                       <div style={{flex:1,minWidth:0}}>
@@ -1222,9 +1223,9 @@ function DirectoryView({donors,orgTeam,isAdmin,onSelectDonor,onAssign,stageFilte
             const isLast=idx===filtered.length-1;
             return(
               <div key={d.id} onClick={()=>onSelectDonor(d)}
-                style={{display:"grid",gridTemplateColumns:colGrid,gap:0,padding:"11px 18px",background:T.white,borderBottom:isLast?"none":"1px solid "+T.bg3,cursor:"pointer",alignItems:"center"}}
-                onMouseEnter={e=>e.currentTarget.style.background=T.bg2}
-                onMouseLeave={e=>e.currentTarget.style.background=T.white}>
+                style={{display:"grid",gridTemplateColumns:colGrid,gap:0,padding:"11px 18px",background:idx%2===0?T.white:"#faf9f6",borderBottom:isLast?"none":"1px solid "+T.bg3,cursor:"pointer",alignItems:"center",transition:"background 0.12s"}}
+                onMouseEnter={e=>e.currentTarget.style.background=T.bg}
+                onMouseLeave={e=>e.currentTarget.style.background=idx%2===0?T.white:"#faf9f6"}>
                 <div style={{display:"flex",alignItems:"center",gap:8,minWidth:0}}>
                   <div style={{width:32,height:32,borderRadius:"50%",background:stage.color+"22",display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,fontWeight:800,color:stage.color,flexShrink:0}}>{d.name[0]}</div>
                   <div style={{minWidth:0}}>
@@ -1233,7 +1234,7 @@ function DirectoryView({donors,orgTeam,isAdmin,onSelectDonor,onAssign,stageFilte
                   </div>
                 </div>
                 <div>
-                  <span style={{background:stage.color+"22",color:stage.color,borderRadius:99,padding:"3px 8px",fontSize:11,fontWeight:700}}>{stage.label}</span>
+                  <span style={{background:stage.color+"22",color:stage.color,borderRadius:99,padding:"4px 10px",fontSize:10,fontWeight:800,letterSpacing:"0.04em",textTransform:"uppercase"}}>{stage.label}</span>
                 </div>
                 <div style={{display:"flex",alignItems:"center",gap:5,minWidth:0}}>
                   <div style={{width:22,height:22,borderRadius:"50%",background:"#1a6b4a22",display:"flex",alignItems:"center",justifyContent:"center",fontSize:10,fontWeight:800,color:"#1a6b4a",flexShrink:0}}>{(d.assignedToName||"?")[0]}</div>

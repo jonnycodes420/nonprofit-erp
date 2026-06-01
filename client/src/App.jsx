@@ -107,36 +107,36 @@ function AppShell() {
     <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=DM+Serif+Display&display=swap" rel="stylesheet"/>
 
     {/* Header */}
-    <div style={{borderBottom:"1px solid "+T.bg3,padding:"0 24px",display:"flex",alignItems:"center",justifyContent:"space-between",background:T.bg,position:"sticky",top:0,zIndex:100,height:56}}>
+    <div style={{borderBottom:"1px solid #1a2e1f",padding:"0 24px",display:"flex",alignItems:"center",justifyContent:"space-between",background:"#0f1a12",position:"sticky",top:0,zIndex:100,height:52}}>
       <div style={{display:"flex",alignItems:"center",gap:12}}>
-        <div style={{width:32,height:32,background:T.green,borderRadius:8,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M8 2L13 5v6L8 14 3 11V5L8 2z" stroke="#fff" strokeWidth="1.5" fill="none"/><circle cx="8" cy="8" r="2" fill="#fff"/></svg>
+        <div style={{width:30,height:30,background:T.greenDk,borderRadius:8,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+          <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M8 2L13 5v6L8 14 3 11V5L8 2z" stroke="#f0ede6" strokeWidth="1.5" fill="none"/><circle cx="8" cy="8" r="2" fill="#f0ede6"/></svg>
         </div>
         <div style={{display:"flex",alignItems:"baseline",gap:8}}>
-          <span style={{fontSize:15,fontWeight:700,color:T.ink,letterSpacing:"-0.02em"}}>{orgName}</span>
-          <span style={{fontSize:10,color:T.ink3,letterSpacing:"0.06em",textTransform:"uppercase"}}>Steward</span>
+          <span style={{fontSize:15,fontWeight:700,color:"#f0ede6",letterSpacing:"-0.02em",fontFamily:"'DM Serif Display',Georgia,serif"}}>{orgName}</span>
+          <span style={{fontSize:10,color:"#8fa896",letterSpacing:"0.06em",textTransform:"uppercase"}}>Steward</span>
         </div>
       </div>
       <div style={{display:"flex",gap:8,alignItems:"center"}}>
-        <button onClick={()=>setShowChat(true)} style={{background:T.green,border:"none",borderRadius:10,padding:"7px 16px",color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer",display:"flex",alignItems:"center",gap:7}}>
+        <button onClick={()=>setShowChat(true)} style={{background:"#1a2e1f",border:"1px solid #2d4a35",borderRadius:10,padding:"7px 16px",color:"#10b981",fontSize:12,fontWeight:700,cursor:"pointer",display:"flex",alignItems:"center",gap:7}}>
           ✦ Ask AI
         </button>
-        <div className="app-avatar" style={{width:30,height:30,borderRadius:8,background:auth?.user?.role==="admin"?T.green+"18":T.bg2,border:`1px solid ${auth?.user?.role==="admin"?T.green+"40":T.bg3}`,display:"flex",alignItems:"center",justifyContent:"center"}}>
-          <span style={{fontSize:12,fontWeight:700,color:auth?.user?.role==="admin"?T.greenDk:T.ink3}}>{(auth?.user?.name||"U")[0].toUpperCase()}</span>
+        <div className="app-avatar" style={{width:30,height:30,borderRadius:8,background:T.greenDk,display:"flex",alignItems:"center",justifyContent:"center"}}>
+          <span style={{fontSize:12,fontWeight:700,color:"#f0ede6"}}>{(auth?.user?.name||"U")[0].toUpperCase()}</span>
         </div>
-        <button onClick={logout} className="app-signout" style={{background:"transparent",border:"1px solid "+T.bg3,borderRadius:8,padding:"6px 12px",color:T.ink3,fontSize:12,cursor:"pointer"}}>
+        <button onClick={logout} className="app-signout" style={{background:"transparent",border:"1px solid #2d4a35",borderRadius:8,padding:"6px 12px",color:"#8fa896",fontSize:12,cursor:"pointer"}}>
           Sign out
         </button>
       </div>
     </div>
 
     {/* Tab bar */}
-    <div className="app-tabbar" style={{display:"flex",padding:"0 20px",borderBottom:"1px solid "+T.bg3,overflowX:"auto",flexShrink:0,background:T.bg}}>
+    <div className="app-tabbar" style={{display:"flex",padding:"0 20px",borderBottom:"1px solid #1a2e1f",overflowX:"auto",flexShrink:0,background:"#0f1a12"}}>
       {TABS.map(t=>{
         const active=tab===t.id;
-        return <button key={t.id} onClick={()=>setTab(t.id)} style={{background:"transparent",border:"none",borderBottom:`2px solid ${active?T.greenDk:"transparent"}`,padding:"12px 18px",color:active?T.greenDk:T.ink3,fontSize:13,fontWeight:active?700:500,cursor:"pointer",display:"flex",alignItems:"center",gap:6,whiteSpace:"nowrap",transition:"color 0.15s,border-color 0.15s",flexShrink:0,marginBottom:-1}}>
+        return <button key={t.id} onClick={()=>setTab(t.id)} style={{background:"transparent",border:"none",borderBottom:`2px solid ${active?"#c9a84c":"transparent"}`,padding:"12px 18px",color:active?"#f0ede6":"#8fa896",fontSize:13,fontWeight:active?700:400,cursor:"pointer",display:"flex",alignItems:"center",gap:6,whiteSpace:"nowrap",transition:"color 0.15s,border-color 0.15s",flexShrink:0,marginBottom:-1}}>
           {t.label}
-          {t.earlyAccess&&<span style={{fontSize:9,fontWeight:700,letterSpacing:"0.04em",background:T.greenDk+"18",color:T.greenDk,border:`1px solid ${T.greenDk}30`,borderRadius:99,padding:"1px 6px",lineHeight:"14px"}}>Early Access</span>}
+          {t.earlyAccess&&<span style={{fontSize:9,fontWeight:700,letterSpacing:"0.04em",background:"#1a2e1f",color:"#8fa896",border:"1px solid #2d4a35",borderRadius:99,padding:"1px 6px",lineHeight:"14px"}}>Early Access</span>}
           {t.id==="tasks"&&tasksDue>0&&<span style={{background:"#ef4444",color:"#fff",fontSize:9,fontWeight:800,borderRadius:99,padding:"1px 5px",lineHeight:"14px"}}>{tasksDue}</span>}
         </button>;
       })}
@@ -174,7 +174,7 @@ function AppShell() {
             <button key={t.id} onClick={()=>{setTab(t.id);setMoreOpen(false);}} className={`mobile-more-row${active?" active":""}`}>
               <span className="mob-icon">{t.icon}</span>
               <span style={{flex:1}}>{t.label}</span>
-              {t.earlyAccess&&<span style={{fontSize:9,fontWeight:700,letterSpacing:"0.04em",background:T.greenDk+"18",color:T.greenDk,border:`1px solid ${T.greenDk}30`,borderRadius:99,padding:"2px 7px"}}>Early Access</span>}
+              {t.earlyAccess&&<span style={{fontSize:9,fontWeight:700,letterSpacing:"0.04em",background:"#1a2e1f",color:"#8fa896",border:"1px solid #2d4a35",borderRadius:99,padding:"2px 7px"}}>Early Access</span>}
               {t.id==="tasks"&&tasksDue>0&&<span style={{background:"#ef4444",color:"#fff",fontSize:10,fontWeight:800,borderRadius:99,padding:"1px 6px"}}>{tasksDue}</span>}
             </button>
           );
