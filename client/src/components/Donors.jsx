@@ -622,7 +622,7 @@ function GiftLinkModal({donor,orgName,onClose}){
 }
 
 // ── Donor Profile ──────────────────────────────────────────────────────────
-function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loadingKey,getAI,isAdmin,onEdit,onDelete,tasks=[],onTaskToggle,orgName=""}){
+function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loadingKey,getAI,isAdmin,onEdit,onDelete,tasks=[],onTaskToggle,orgName="",orgTeam=[],onReassign}){
   const [gifts,setGifts]=useState([]);
   const [giftLoading,setGiftLoading]=useState(true);
   const [localScore,setLocalScore]=useState(donor.wealthScore??null);
@@ -641,6 +641,27 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
       setLocalConf(r.scoreConfidence);setLocalRationale(r.scoreRationale);
     }catch(e){console.error(e);}
     setScoreLoading(false);
+  };
+
+  const [showReassign,setShowReassign]=useState(false);
+  const [reassignId,setReassignId]=useState(donor.assignedTo||"");
+  const [reassignLoading,setReassignLoading]=useState(false);
+
+  const handleReassign=async()=>{
+    const member=orgTeam.find(u=>u.id===reassignId);
+    if(!member)return;
+    setReassignLoading(true);
+    try{
+      const prevOwner=donor.assignedToName||"nobody";
+      await apiFetch(`/donors/${donor.id}/assign`,{method:"PATCH",body:JSON.stringify({assignedTo:member.id,assignedToName:member.name})});
+      await apiFetch(`/donors/${donor.id}/interactions`,{method:"POST",body:JSON.stringify({
+        type:"other",note:`Reassigned from ${prevOwner} to ${member.name}`,
+        date:new Date().toISOString().split("T")[0]
+      })});
+      if(onReassign)onReassign(donor.id,member.id,member.name);
+      setShowReassign(false);
+    }catch(e){console.error(e);}
+    setReassignLoading(false);
   };
 
   const [showGiftModal,setShowGiftModal]=useState(false);
@@ -754,6 +775,26 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
               </div>
             </div>
           )}
+          <div>
+            <div style={{fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.1em",color:T.ink3,marginBottom:8}}>Relationship Owner</div>
+            <div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:12,padding:"12px 14px"}}>
+              <div style={{display:"flex",alignItems:"center",gap:8}}>
+                <div style={{width:28,height:28,borderRadius:"50%",background:"#1a6b4a22",display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:800,color:"#1a6b4a",flexShrink:0}}>{(donor.assignedToName||"?")[0]}</div>
+                <div style={{flex:1,fontSize:13,fontWeight:600,color:T.ink}}>{donor.assignedToName||"Unassigned"}</div>
+                {isAdmin&&<button onClick={()=>setShowReassign(v=>!v)} style={{background:"none",border:"1px solid "+T.bg3,borderRadius:7,padding:"3px 10px",color:T.ink3,fontSize:11,cursor:"pointer"}}>{showReassign?"Cancel":"Reassign"}</button>}
+              </div>
+              {showReassign&&isAdmin&&<div style={{marginTop:10,display:"flex",flexDirection:"column",gap:8}}>
+                <select value={reassignId} onChange={e=>setReassignId(e.target.value)} style={{width:"100%",background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"8px 10px",color:T.ink,fontSize:12,outline:"none",cursor:"pointer"}}>
+                  <option value="">Select team member…</option>
+                  {orgTeam.map(u=><option key={u.id} value={u.id}>{u.name} ({u.role})</option>)}
+                </select>
+                <button onClick={handleReassign} disabled={reassignLoading||!reassignId} style={{background:reassignId?"#1a6b4a":T.bg2,border:"none",borderRadius:8,padding:"8px",color:"#fff",fontSize:12,fontWeight:600,cursor:reassignId?"pointer":"not-allowed"}}>
+                  {reassignLoading?"Saving…":"Confirm Reassignment"}
+                </button>
+              </div>}
+            </div>
+          </div>
+
           <div>
             <div style={{fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.1em",color:T.ink3,marginBottom:8}}>Move Stage</div>
             <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
@@ -1012,6 +1053,156 @@ function ReEngageView({donors,org,onLogTouchpoint,onSelectDonor}){
   );
 }
 
+// ── Assign Modal ───────────────────────────────────────────────────────────
+function AssignModal({donor,orgTeam,onSave,onClose}){
+  const[selectedId,setSelectedId]=useState(donor.assignedTo||"");
+  const[loading,setLoading]=useState(false);
+  const inp={width:"100%",background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"9px 12px",color:T.ink,fontSize:13,outline:"none",fontFamily:"inherit",boxSizing:"border-box",cursor:"pointer"};
+  const save=async()=>{
+    if(!selectedId)return;
+    const member=orgTeam.find(u=>u.id===selectedId);
+    if(!member)return;
+    setLoading(true);
+    try{
+      await apiFetch(`/donors/${donor.id}/assign`,{method:"PATCH",body:JSON.stringify({assignedTo:member.id,assignedToName:member.name})});
+      onSave(donor.id,member.id,member.name);
+    }catch(e){console.error(e);}
+    setLoading(false);
+    onClose();
+  };
+  return(
+    <div style={{position:"fixed",inset:0,background:"#000000cc",zIndex:500,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+      <div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:18,width:"100%",maxWidth:360,padding:24,boxShadow:"0 4px 32px rgba(15,15,15,0.12)"}}>
+        <div style={{fontSize:16,fontWeight:800,color:T.ink,marginBottom:4}}>Assign Relationship Owner</div>
+        <div style={{fontSize:12,color:T.ink3,marginBottom:16}}>{donor.name}</div>
+        <select value={selectedId} onChange={e=>setSelectedId(e.target.value)} style={{...inp,marginBottom:16}}>
+          <option value="">— unassigned —</option>
+          {orgTeam.map(u=><option key={u.id} value={u.id}>{u.name} ({u.role})</option>)}
+        </select>
+        <div style={{display:"flex",gap:8}}>
+          <button onClick={save} disabled={loading||!selectedId} style={{flex:1,background:selectedId?"#1a6b4a":T.bg2,border:"none",borderRadius:10,padding:"11px",color:"#fff",fontSize:13,fontWeight:700,cursor:selectedId?"pointer":"not-allowed"}}>
+            {loading?"Saving…":"Assign"}
+          </button>
+          <button onClick={onClose} style={{background:T.bg,border:"none",borderRadius:10,padding:"11px 14px",color:T.ink3,fontSize:13,cursor:"pointer"}}>Cancel</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Directory View ─────────────────────────────────────────────────────────
+function DirectoryView({donors,orgTeam,isAdmin,onSelectDonor,onAssign,stageFilter,setStageFilter,assigneeFilter,setAssigneeFilter}){
+  const filtered=donors
+    .filter(d=>!stageFilter||d.stage===stageFilter)
+    .filter(d=>!assigneeFilter||d.assignedTo===assigneeFilter);
+  const sel={background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"7px 10px",color:T.ink,fontSize:12,outline:"none",cursor:"pointer"};
+  const cols=["Donor","Stage","Owner","Lifetime","Last Gift","Score",...(isAdmin?[""]:[])]
+  const colGrid="minmax(0,2fr) minmax(0,1fr) minmax(0,1fr) 120px 110px 60px"+(isAdmin?" 80px":"");
+  return(
+    <div style={{display:"flex",flexDirection:"column",gap:10}}>
+      <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
+        <select value={stageFilter} onChange={e=>setStageFilter(e.target.value)} style={sel}>
+          <option value="">All stages</option>
+          {STAGES.map(s=><option key={s.id} value={s.id}>{s.label}</option>)}
+        </select>
+        <select value={assigneeFilter} onChange={e=>setAssigneeFilter(e.target.value)} style={sel}>
+          <option value="">All owners</option>
+          {orgTeam.map(u=><option key={u.id} value={u.id}>{u.name}</option>)}
+        </select>
+        <span style={{fontSize:12,color:T.ink3}}>{filtered.length} donor{filtered.length!==1?"s":""}</span>
+      </div>
+      {filtered.length===0
+        ?<EmptyState icon="♦" title="No donors found" message="Try adjusting your filters or search term."/>
+        :<div style={{background:T.white,borderRadius:14,overflow:"hidden",border:"1px solid "+T.bg3}}>
+          <div style={{display:"grid",gridTemplateColumns:colGrid,gap:0,padding:"10px 18px",background:"#1a6b4a"}}>
+            {cols.map((h,i)=>(
+              <div key={i} style={{fontSize:10,fontWeight:700,color:"#fff",textTransform:"uppercase",letterSpacing:".06em",textAlign:i>=3?"right":"left"}}>{h}</div>
+            ))}
+          </div>
+          {filtered.map((d,idx)=>{
+            const stage=STAGES.find(s=>s.id===(d.stage||"cultivate"))||STAGES[2];
+            const sc=donorScore(d);const scColor=sc>70?"#1a6b4a":sc>45?"#f59e0b":"#ef4444";
+            const isLast=idx===filtered.length-1;
+            return(
+              <div key={d.id} onClick={()=>onSelectDonor(d)}
+                style={{display:"grid",gridTemplateColumns:colGrid,gap:0,padding:"11px 18px",background:T.white,borderBottom:isLast?"none":"1px solid "+T.bg3,cursor:"pointer",alignItems:"center"}}
+                onMouseEnter={e=>e.currentTarget.style.background=T.bg2}
+                onMouseLeave={e=>e.currentTarget.style.background=T.white}>
+                <div style={{display:"flex",alignItems:"center",gap:8,minWidth:0}}>
+                  <div style={{width:32,height:32,borderRadius:"50%",background:stage.color+"22",display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,fontWeight:800,color:stage.color,flexShrink:0}}>{d.name[0]}</div>
+                  <div style={{minWidth:0}}>
+                    <div style={{fontSize:13,fontWeight:700,color:T.ink,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{d.name}</div>
+                    {d.email&&<div style={{fontSize:11,color:T.ink3,marginTop:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{d.email}</div>}
+                  </div>
+                </div>
+                <div>
+                  <span style={{background:stage.color+"22",color:stage.color,borderRadius:99,padding:"3px 8px",fontSize:11,fontWeight:700}}>{stage.label}</span>
+                </div>
+                <div style={{display:"flex",alignItems:"center",gap:5,minWidth:0}}>
+                  <div style={{width:22,height:22,borderRadius:"50%",background:"#1a6b4a22",display:"flex",alignItems:"center",justifyContent:"center",fontSize:10,fontWeight:800,color:"#1a6b4a",flexShrink:0}}>{(d.assignedToName||"?")[0]}</div>
+                  <span style={{fontSize:12,color:T.ink,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{d.assignedToName||"—"}</span>
+                </div>
+                <div style={{textAlign:"right",fontSize:13,fontWeight:700,color:T.ink}}>{fmtFull(d.total)}</div>
+                <div style={{textAlign:"right"}}>
+                  {d.lastGift
+                    ?<><div style={{fontSize:12,color:T.ink}}>{new Date(d.lastGift).toLocaleDateString("en-US",{month:"short",year:"numeric"})}</div><div style={{fontSize:11,color:T.ink3}}>{d.lastAmount>0?fmtFull(d.lastAmount):""}</div></>
+                    :<div style={{fontSize:12,color:T.ink3}}>—</div>}
+                </div>
+                <div style={{textAlign:"right"}}>
+                  <span style={{background:scColor+"18",color:scColor,borderRadius:7,padding:"3px 8px",fontSize:12,fontWeight:800}}>{sc}</span>
+                </div>
+                {isAdmin&&<div style={{textAlign:"right"}}>
+                  <button onClick={e=>{e.stopPropagation();onAssign(d);}} style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:7,padding:"4px 10px",color:T.ink3,fontSize:11,fontWeight:600,cursor:"pointer"}}>Assign</button>
+                </div>}
+              </div>
+            );
+          })}
+        </div>
+      }
+    </div>
+  );
+}
+
+// ── Team View ──────────────────────────────────────────────────────────────
+function TeamView({donors,orgTeam,onSelectDonor}){
+  if(!orgTeam.length)return<EmptyState icon="◆" title="No team members yet" message="Invite team members from Settings to assign and track donor ownership."/>;
+  return(
+    <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(280px,1fr))",gap:12}}>
+      {orgTeam.map(member=>{
+        const md=donors.filter(d=>d.assignedTo===member.id).sort((a,b)=>b.total-a.total);
+        const tv=md.reduce((s,d)=>s+d.total,0);
+        return(
+          <div key={member.id} style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:14,padding:16}}>
+            <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:12,paddingBottom:10,borderBottom:"1px solid "+T.bg3}}>
+              <div style={{width:36,height:36,borderRadius:"50%",background:"#1a6b4a22",display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,fontWeight:800,color:"#1a6b4a",flexShrink:0}}>{member.name[0]}</div>
+              <div>
+                <div style={{fontSize:14,fontWeight:700,color:T.ink}}>{member.name}</div>
+                <div style={{fontSize:11,color:T.ink3,marginTop:1}}>{md.length} donor{md.length!==1?"s":""} · {fmtFull(tv)}</div>
+              </div>
+            </div>
+            {md.length===0
+              ?<div style={{fontSize:12,color:T.ink3,fontStyle:"italic",padding:"4px 0 8px"}}>No assigned donors yet</div>
+              :md.slice(0,10).map((d,i)=>{
+                const stage=STAGES.find(s=>s.id===(d.stage||"cultivate"))||STAGES[2];
+                return(
+                  <div key={d.id} onClick={()=>onSelectDonor(d)} style={{display:"flex",alignItems:"center",gap:8,padding:"9px 0",borderBottom:i<Math.min(md.length,10)-1?"1px solid "+T.bg3:"none",cursor:"pointer"}}>
+                    <div style={{width:28,height:28,borderRadius:"50%",background:stage.color+"22",display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:800,color:stage.color,flexShrink:0}}>{d.name[0]}</div>
+                    <div style={{flex:1,minWidth:0}}>
+                      <div style={{fontSize:13,fontWeight:600,color:T.ink,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{d.name}</div>
+                      <div style={{fontSize:11,color:T.ink3,marginTop:1}}>{stage.label} · {fmtFull(d.total)}</div>
+                    </div>
+                  </div>
+                );
+              })
+            }
+            {md.length>10&&<div style={{fontSize:11,color:T.ink3,textAlign:"center",paddingTop:10,fontStyle:"italic"}}>+{md.length-10} more donors</div>}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 // ── Donor Segmentation ─────────────────────────────────────────────────────
 const TIER_META=[
   {id:"micro",    label:"Micro",     color:"#6b7280"},
@@ -1086,8 +1277,10 @@ function FilterBar({filters,onChange}){
 export function Donors({data,setData}){
   const{auth}=useAuth();
   const isAdmin=auth?.user?.role==="admin";
+  const userId=auth?.user?.id||"";
+  const userName=auth?.user?.name||auth?.user?.email||"";
   const lapsedCount=data.donors.filter(d=>d.stage==="lapsed"||(d.lastGift&&daysDiff(d.lastGift)>365)).length;
-  const[view,setView]=useState("kanban");
+  const[view,setView]=useState("directory");
   const[search,setSearch]=useState("");
   const[selected,setSelected]=useState(null);
   const[logTarget,setLogTarget]=useState(null);
@@ -1099,6 +1292,10 @@ export function Donors({data,setData}){
   const[newDonor,setNewDonor]=useState({name:"",email:"",phone:"",lastAmount:"",stage:"prospect"});
   const[filtersOpen,setFiltersOpen]=useState(false);
   const[filters,setFilters]=useState({tiers:[],stages:[],pattern:"",geo:"",giftFrom:"",giftTo:"",totalMin:"",totalMax:""});
+  const[orgTeam,setOrgTeam]=useState([]);
+  const[dirStage,setDirStage]=useState("");
+  const[dirAssignee,setDirAssignee]=useState("");
+  const[assignTarget,setAssignTarget]=useState(null);
 
   const filtered=data.donors
     .filter(d=>!search||(d.name+d.email).toLowerCase().includes(search.toLowerCase()))
@@ -1116,6 +1313,13 @@ export function Donors({data,setData}){
       if(filters.totalMax!==""&&!isNaN(parseFloat(filters.totalMax))&&d.total>parseFloat(filters.totalMax))return false;
       return true;
     });
+
+  useEffect(()=>{apiFetch("/org/team").then(setOrgTeam).catch(()=>{});},[]);
+
+  const handleAssign=(donorId,assignedToId,assignedToName)=>{
+    setData(prev=>({...prev,donors:prev.donors.map(d=>d.id===donorId?{...d,assignedTo:assignedToId,assignedToName}:d)}));
+    if(selected?.id===donorId)setSelected(prev=>({...prev,assignedTo:assignedToId,assignedToName}));
+  };
 
   const moveToStage=async(donorId,stage)=>{
     setData(prev=>({...prev,donors:prev.donors.map(d=>d.id===donorId?{...d,stage}:d)}));
@@ -1202,21 +1406,27 @@ export function Donors({data,setData}){
     setCallLoading(false);
   };
 
+  const[newDonorAssignee,setNewDonorAssignee]=useState("");
+
   const addDonor=async()=>{
     if(!newDonor.name)return;
+    const assignTo=newDonorAssignee||userId;
+    const assignToName=newDonorAssignee?(orgTeam.find(u=>u.id===newDonorAssignee)?.name||""):userName;
     const temp={id:"tmp_"+Date.now(),name:newDonor.name,email:newDonor.email,phone:newDonor.phone,
       total:parseInt(newDonor.lastAmount)||0,lastGift:new Date().toISOString().split("T")[0],
       lastAmount:parseInt(newDonor.lastAmount)||0,gifts:newDonor.lastAmount?1:0,
-      status:"new",stage:newDonor.stage,tags:[],notes:"",interactions:[],lastTouchpoint:null};
+      status:"new",stage:newDonor.stage,tags:[],notes:"",interactions:[],lastTouchpoint:null,
+      assignedTo:assignTo,assignedToName:assignToName};
     setData(prev=>({...prev,donors:[...prev.donors,temp]}));
-    setShowAdd(false);setNewDonor({name:"",email:"",phone:"",lastAmount:"",stage:"prospect"});
-    try{await apiFetch("/donors",{method:"POST",body:JSON.stringify({...newDonor,stage:newDonor.stage})});await reloadDonors();}
+    setShowAdd(false);setNewDonor({name:"",email:"",phone:"",lastAmount:"",stage:"prospect"});setNewDonorAssignee("");
+    try{await apiFetch("/donors",{method:"POST",body:JSON.stringify({...newDonor,stage:newDonor.stage,assignedTo:assignTo,assignedToName:assignToName})});await reloadDonors();}
     catch(e){console.error(e);}
   };
 
   return(
     <div style={{display:"flex",flexDirection:"column",gap:8}}>
       <PageTitle main="Your" accent="donors."/>
+      {assignTarget&&<AssignModal donor={assignTarget} orgTeam={orgTeam} onSave={handleAssign} onClose={()=>setAssignTarget(null)}/>}
       {showImport&&<DonorImport onClose={()=>setShowImport(false)} onImported={()=>{reloadDonors();setShowImport(false);}}/>}
       {logTarget&&<LogTouchpointModal donor={logTarget} onSave={int=>handleLogged(logTarget,int)} onClose={()=>setLogTarget(null)}/>}
       {followUpTarget&&<FollowUpTaskModal donor={followUpTarget} onClose={()=>setFollowUpTarget(null)} onSave={task=>{setData(prev=>({...prev,tasks:[task,...prev.tasks]}));setFollowUpTarget(null);}}/>}
@@ -1226,12 +1436,12 @@ export function Donors({data,setData}){
         aiMap={aiMap} loadingKey={loadingKey} getAI={getAI}
         isAdmin={isAdmin} onEdit={()=>setEditTarget(selected)} onDelete={deleteDonor}
         tasks={data.tasks.filter(t=>t.donorId===selected.id)} onTaskToggle={toggleTask}
-        orgName={data.org?.name||""}/>}
+        orgName={data.org?.name||""} orgTeam={orgTeam} onReassign={handleAssign}/>}
 
       <div className="donors-toolbar" style={{display:"flex",gap:10,flexWrap:"wrap",alignItems:"center"}}>
         <input className="donors-search" value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search donors…" style={{flex:1,minWidth:160,background:T.bg,border:"1px solid "+T.bg3,borderRadius:10,padding:"10px 14px",color:T.ink,fontSize:13,outline:"none"}}/>
         <div className="donors-view-toggle" style={{display:"flex",background:T.bg,border:"1px solid "+T.bg3,borderRadius:10,overflow:"hidden"}}>
-          {[["kanban","Pipeline"],["list","List"],["reengage","Re-engage"]].map(([v,l])=>(
+          {[["directory","Directory"],["pipeline","My Pipeline"],...(isAdmin?[["team","Team"]]:[]),["reengage","Re-engage"]].map(([v,l])=>(
             <button key={v} onClick={()=>setView(v)} style={{background:view===v?T.bg2:"transparent",border:"none",padding:"9px 14px",color:view===v?T.ink:"#6b7280",fontSize:13,fontWeight:view===v?700:400,cursor:"pointer",display:"flex",alignItems:"center",gap:5}}>
               {l}
               {v==="reengage"&&lapsedCount>0&&<span style={{background:"#1a6b4a",color:"#fff",borderRadius:99,padding:"1px 6px",fontSize:10,fontWeight:800,lineHeight:1.4}}>{lapsedCount}</span>}
@@ -1281,48 +1491,37 @@ export function Donors({data,setData}){
         {[["name","Full Name"],["email","Email"],["phone","Phone"],["lastAmount","Gift Amount ($)"]].map(([k,pl])=>(
           <input key={k} value={newDonor[k]} onChange={e=>setNewDonor(p=>({...p,[k]:e.target.value}))} placeholder={pl} style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"9px 12px",color:T.ink,fontSize:13,outline:"none"}}/>
         ))}
+        {isAdmin&&orgTeam.length>1&&<select value={newDonorAssignee} onChange={e=>setNewDonorAssignee(e.target.value)} style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"9px 12px",color:T.ink,fontSize:13,outline:"none",cursor:"pointer"}}>
+          <option value="">Assign to me ({userName})</option>
+          {orgTeam.filter(u=>u.id!==userId).map(u=><option key={u.id} value={u.id}>Assign to {u.name}</option>)}
+        </select>}
         <div style={{display:"flex",gap:8}}>
           <button onClick={addDonor} style={{background:"#10b981",border:"none",borderRadius:8,padding:"9px 16px",color:"#fff",fontSize:13,fontWeight:600,cursor:"pointer"}}>Save</button>
           <button onClick={()=>setShowAdd(false)} style={{background:T.bg,border:"none",borderRadius:8,padding:"9px 14px",color:T.ink3,fontSize:13,cursor:"pointer"}}>Cancel</button>
         </div>
       </Card>}
 
-      {view==="kanban"&&(filtered.length===0
-        ?<EmptyState icon="♦" title="No donors match your search" message="Try a different name or email, or clear the search to see all donors."/>
-        :<DonorKanban donors={filtered} onStageChange={moveToStage} onLogTouchpoint={d=>setLogTarget(d)} onSelectDonor={d=>setSelected(d)}/>
-      )}
+      {view==="directory"&&<DirectoryView donors={filtered} orgTeam={orgTeam} isAdmin={isAdmin} onSelectDonor={d=>setSelected(d)} onAssign={d=>setAssignTarget(d)} stageFilter={dirStage} setStageFilter={setDirStage} assigneeFilter={dirAssignee} setAssigneeFilter={setDirAssignee}/>}
+
+      {view==="pipeline"&&(()=>{
+        const myDonors=filtered.filter(d=>d.assignedTo===userId);
+        const myTotal=myDonors.reduce((s,d)=>s+d.total,0);
+        return<>
+          <div style={{display:"flex",gap:10,flexWrap:"wrap",alignItems:"center",padding:"4px 0"}}>
+            <div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:10,padding:"10px 16px",display:"flex",gap:16}}>
+              <div><div style={{fontSize:9,fontWeight:700,color:T.ink3,textTransform:"uppercase",letterSpacing:".06em"}}>Assigned to me</div><div style={{fontSize:18,fontWeight:800,color:T.ink,fontFamily:"'DM Serif Display',serif"}}>{myDonors.length}</div></div>
+              <div><div style={{fontSize:9,fontWeight:700,color:T.ink3,textTransform:"uppercase",letterSpacing:".06em"}}>Portfolio value</div><div style={{fontSize:18,fontWeight:800,color:"#1a6b4a",fontFamily:"'DM Serif Display',serif"}}>{fmtFull(myTotal)}</div></div>
+            </div>
+          </div>
+          {myDonors.length===0
+            ?<EmptyState icon="♦" title="No donors in your pipeline" message="Donors assigned to you will appear here as a Kanban board."/>
+            :<DonorKanban donors={myDonors} onStageChange={moveToStage} onLogTouchpoint={d=>setLogTarget(d)} onSelectDonor={d=>setSelected(d)}/>}
+        </>;
+      })()}
+
+      {view==="team"&&isAdmin&&<TeamView donors={filtered} orgTeam={orgTeam} onSelectDonor={d=>setSelected(d)}/>}
 
       {view==="reengage"&&<ReEngageView donors={filtered} org={data.org} onLogTouchpoint={d=>setLogTarget(d)} onSelectDonor={d=>setSelected(d)}/>}
-
-      {view==="list"&&filtered.length===0&&<EmptyState icon="♦" title="No donors found" message="Try a different search term or add your first donor above."/>}
-      {view==="list"&&filtered.map(d=>{
-        const sc=donorScore(d);const scColor=sc>70?"#1a6b4a":sc>45?"#f59e0b":"#ef4444";
-        const urg=moveUrgency(d);const stage=STAGES.find(s=>s.id===(d.stage||"cultivate"))||STAGES[2];
-        return(
-          <Card key={d.id} onClick={()=>setSelected(d)} style={{cursor:"pointer"}}>
-            <div style={{display:"flex",alignItems:"center",gap:12}}>
-              <div style={{position:"relative",flexShrink:0}}>
-                <div style={{width:40,height:40,borderRadius:"50%",background:stage.color+"33",display:"flex",alignItems:"center",justifyContent:"center",fontSize:15,fontWeight:800,color:stage.color}}>{d.name[0]}</div>
-                <div style={{position:"absolute",bottom:-2,right:-2,width:10,height:10,borderRadius:"50%",background:urg.urgencyColor,border:"2px solid "+T.bg}}/>
-              </div>
-              <div style={{flex:1,minWidth:0}}>
-                <div style={{display:"flex",alignItems:"center",gap:7,flexWrap:"wrap"}}>
-                  <div style={{fontSize:14,fontWeight:700,color:T.ink}}>{d.name}</div>
-                  <span style={{fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:99,background:stage.color+"22",color:stage.color}}>{stage.label}</span>
-                </div>
-                <div style={{fontSize:11,color:T.ink3,marginTop:2}}>{urg.days}d since contact · {fmtFull(d.total)} lifetime · {d.gifts} gifts</div>
-              </div>
-              <div style={{display:"flex",gap:6,alignItems:"center",flexShrink:0}}>
-                <div style={{background:scColor+"18",border:`1px solid ${scColor}40`,borderRadius:7,padding:"4px 8px",textAlign:"center"}}>
-                  <div style={{fontSize:13,fontWeight:800,color:scColor}}>{sc}</div>
-                  <div style={{fontSize:8,color:scColor,lineHeight:1.1}}>score</div>
-                </div>
-                <button onClick={e=>{e.stopPropagation();setLogTarget(d);}} style={{background:T.bg3,border:"1px solid "+T.bg3,borderRadius:8,padding:"7px 12px",color:T.ink3,fontSize:12,cursor:"pointer"}}>+ Log</button>
-              </div>
-            </div>
-          </Card>
-        );
-      })}
     </div>
   );
 }

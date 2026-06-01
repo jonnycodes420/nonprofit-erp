@@ -462,6 +462,22 @@ app.get("/donors", requireAuth, wrap(async (req, res) => {
   res.json(result);
 }));
 
+app.get("/donors/my", requireAuth, wrap(async (req, res) => {
+  const donors = await query(
+    "SELECT * FROM donors WHERE org_id = ? AND assigned_to = ? ORDER BY total_giving DESC",
+    [req.user.orgId, req.user.userId]
+  );
+  const result = await Promise.all(donors.map(async d => ({
+    ...d,
+    tags: JSON.parse(d.tags || "[]"),
+    interactions: await query(
+      "SELECT * FROM interactions WHERE donor_id = ? ORDER BY date DESC LIMIT 10",
+      [d.id]
+    ),
+  })));
+  res.json(result);
+}));
+
 app.get("/donors/:id", requireAuth, wrap(async (req, res) => {
   const rows = await query(
     "SELECT * FROM donors WHERE id = ? AND org_id = ?",
@@ -477,17 +493,24 @@ app.get("/donors/:id", requireAuth, wrap(async (req, res) => {
 }));
 
 app.post("/donors", requireAuth, wrap(async (req, res) => {
-  const { name, email, phone, status, stage, tags, notes, lastAmount } = req.body;
+  const { name, email, phone, status, stage, tags, notes, lastAmount, assignedTo, assignedToName } = req.body;
   if (!name) return res.status(400).json({ error: "Name required" });
 
   const id = "d_" + uuid().slice(0, 8);
   const today = new Date().toISOString().split("T")[0];
+  let selfName = assignedToName;
+  if (!assignedTo && !selfName) {
+    const uRow = await query("SELECT name FROM users WHERE id = ?", [req.user.userId]);
+    selfName = uRow[0]?.name || req.user.email;
+  }
+  const finalAssignedTo = assignedTo || req.user.userId;
+  const finalAssignedToName = assignedTo ? (assignedToName || "") : selfName;
   await run(
-    `INSERT INTO donors (id,org_id,name,email,phone,status,stage,total_giving,last_gift_amount,last_gift_date,gift_count,tags,notes)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+    `INSERT INTO donors (id,org_id,name,email,phone,status,stage,total_giving,last_gift_amount,last_gift_date,gift_count,tags,notes,assigned_to,assigned_to_name)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     [id, req.user.orgId, name, email || "", phone || "", status || "new", stage || "prospect",
      lastAmount || 0, lastAmount || 0, today, lastAmount ? 1 : 0,
-     JSON.stringify(tags || []), notes || ""]
+     JSON.stringify(tags || []), notes || "", finalAssignedTo, finalAssignedToName]
   );
   const rows = await query("SELECT * FROM donors WHERE id = ?", [id]);
   res.status(201).json(rows[0]);
@@ -552,6 +575,16 @@ app.patch("/donors/:id/stage", requireAuth, wrap(async (req, res) => {
 
 app.delete("/donors/:id", requireAuth, requireAdmin, wrap(async (req, res) => {
   await run("DELETE FROM donors WHERE id = ? AND org_id = ?", [req.params.id, req.user.orgId]);
+  res.json({ success: true });
+}));
+
+app.patch("/donors/:id/assign", requireAuth, requireAdmin, wrap(async (req, res) => {
+  const { assignedTo, assignedToName } = req.body;
+  const affected = await run(
+    `UPDATE donors SET assigned_to=?, assigned_to_name=?, updated_at=NOW() WHERE id=? AND org_id=?`,
+    [assignedTo || null, assignedToName || null, req.params.id, req.user.orgId]
+  );
+  if (!affected.changes) return res.status(404).json({ error: "Donor not found" });
   res.json({ success: true });
 }));
 

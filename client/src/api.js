@@ -90,6 +90,8 @@ export function adaptData({ org, donors, grants, volunteers, tasks, board, finan
         scoreRationale:        d.score_rationale ?? null,
         stripeSubscriptionId:  d.stripe_subscription_id ?? null,
         stripeSubscriptionStatus: d.stripe_subscription_status ?? null,
+        assignedTo:    d.assigned_to ?? null,
+        assignedToName: d.assigned_to_name ?? null,
       };
     }),
     grants: grants.map(g => ({

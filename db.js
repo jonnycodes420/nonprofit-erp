@@ -285,6 +285,18 @@ async function initSchema() {
   await pool.query(`ALTER TABLE donors ADD COLUMN IF NOT EXISTS score_last_updated TIMESTAMPTZ DEFAULT NULL`);
   await pool.query(`ALTER TABLE donors ADD COLUMN IF NOT EXISTS score_rationale TEXT DEFAULT NULL`);
 
+  await pool.query(`ALTER TABLE donors ADD COLUMN IF NOT EXISTS assigned_to TEXT DEFAULT NULL`);
+  await pool.query(`ALTER TABLE donors ADD COLUMN IF NOT EXISTS assigned_to_name TEXT DEFAULT NULL`);
+  await pool.query(`
+    UPDATE donors d
+    SET assigned_to = u.id, assigned_to_name = u.name
+    FROM (
+      SELECT DISTINCT ON (org_id) id, org_id, name
+      FROM users WHERE role = 'admin' ORDER BY org_id, created_at ASC
+    ) u
+    WHERE d.org_id = u.org_id AND d.assigned_to IS NULL
+  `);
+
   await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS stripe_account_id TEXT`);
   await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS stripe_connected BOOLEAN DEFAULT FALSE`);
   await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS stripe_connected_at TIMESTAMPTZ`);
