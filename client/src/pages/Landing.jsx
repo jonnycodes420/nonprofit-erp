@@ -514,6 +514,38 @@ export default function Landing() {
           </div>
         </section>
 
+        {/* ── About ── */}
+        <section className="lp-section" style={{ background: C.dark, padding: "96px 64px", borderTop: `1px solid ${C.dark2}` }}>
+          <div style={{ maxWidth: 720, margin: "0 auto" }}>
+            <Eyebrow dark>Why Steward Exists</Eyebrow>
+            <h2 style={{
+              fontFamily: "'DM Serif Display',serif",
+              fontSize: "clamp(32px, 4vw, 50px)",
+              fontWeight: 400, letterSpacing: "-0.02em", lineHeight: 1.1,
+              color: C.cream, marginBottom: 32,
+            }}>
+              We've sat in those planning meetings.
+            </h2>
+            <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+              <p style={{ fontSize: 17, color: C.sage, lineHeight: 1.8 }}>
+                Steward was built by people who've worked inside nonprofits — who've exported the same donor spreadsheet seventeen times, who've lost a grant because a deadline slipped through a shared inbox, who've spent a Sunday building a board report that should have taken twenty minutes.
+              </p>
+              <p style={{ fontSize: 17, color: C.sage, lineHeight: 1.8 }}>
+                You're not running a small business. You're trying to change something. The software you use should understand that.
+              </p>
+            </div>
+            <p style={{
+              fontFamily: "'DM Serif Display',serif",
+              fontStyle: "italic",
+              fontSize: 22, color: C.gold,
+              lineHeight: 1.5, marginTop: 40,
+              paddingTop: 40, borderTop: `1px solid ${C.dark2}`,
+            }}>
+              "Your mission. Our pipeline."
+            </p>
+          </div>
+        </section>
+
         {/* ── Pricing ── */}
         <section id="pricing" className="lp-section" style={{ background: C.cream, padding: "96px 64px" }}>
           <div style={{ maxWidth: 1100, margin: "0 auto" }}>
