@@ -589,6 +589,7 @@ export default function Landing() {
             <div className="lp-price-grid">
               {[
                 {
+                  id: "seed",
                   name: "Seed",
                   price: "$99",
                   period: "/mo",
@@ -597,6 +598,7 @@ export default function Landing() {
                   highlight: false,
                 },
                 {
+                  id: "growth",
                   name: "Growth",
                   price: "$249",
                   period: "/mo",
@@ -605,6 +607,7 @@ export default function Landing() {
                   highlight: true,
                 },
                 {
+                  id: "impact",
                   name: "Impact",
                   price: "$499",
                   period: "/mo",
@@ -646,7 +649,7 @@ export default function Landing() {
                     ))}
                   </ul>
                   <button
-                    onClick={() => navigate("/signup")}
+                    onClick={() => navigate(`/signup?plan=${p.id}`)}
                     style={{
                       background: p.highlight ? C.green : "transparent",
                       border: p.highlight ? "none" : `1px solid ${C.cream3}`,
@@ -658,7 +661,7 @@ export default function Landing() {
                     onMouseEnter={e => e.currentTarget.style.opacity = "0.8"}
                     onMouseLeave={e => e.currentTarget.style.opacity = "1"}
                   >
-                    Start free trial →
+                    Get started →
                   </button>
                 </div>
               ))}

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useLocation } from "react-router-dom";
 import { useAuth } from "../main";
 
 const API = import.meta.env.VITE_API_URL || "https://nonprofit-erp-production.up.railway.app";
@@ -7,6 +7,8 @@ const API = import.meta.env.VITE_API_URL || "https://nonprofit-erp-production.up
 export default function SignupPage() {
   const { login } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
+  const planParam = new URLSearchParams(location.search).get("plan");
   const [form, setForm] = useState({ orgName: "", userName: "", email: "", password: "", confirm: "" });
   const [errors, setErrors] = useState({});
   const [loading, setLoading] = useState(false);
@@ -40,6 +42,15 @@ export default function SignupPage() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Signup failed");
       login(data);
+      if (planParam && ["seed", "growth", "impact"].includes(planParam)) {
+        const checkoutRes = await fetch(API + "/billing/create-checkout", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "Authorization": "Bearer " + data.token },
+          body: JSON.stringify({ plan: planParam }),
+        });
+        const checkoutData = await checkoutRes.json();
+        if (checkoutRes.ok && checkoutData.url) { window.location.href = checkoutData.url; return; }
+      }
       navigate("/pricing", { replace: true });
     } catch (err) {
       setServerErr(err.message);
