@@ -319,7 +319,12 @@ export default function Landing() {
               background: "none", border: "none", fontSize: 14, color: C.sage,
               cursor: "pointer", fontFamily: "'DM Sans',sans-serif", transition: "opacity .15s",
             }}>Log in</button>
-            <BookBtn small style={{ padding: "8px 18px", fontSize: 13 }} />
+            <BookBtn small outlined style={{ padding: "7px 16px", fontSize: 13 }}>Book a Demo</BookBtn>
+            <button onClick={() => navigate("/signup")} style={{
+              background: C.green, border: "none", color: "#fff",
+              padding: "8px 18px", borderRadius: 9, fontSize: 13, fontWeight: 700,
+              cursor: "pointer", fontFamily: "'DM Sans',sans-serif",
+            }}>Start Free Trial →</button>
           </div>
           <button className="lp-hamburger" onClick={() => setMobileNavOpen(true)}>☰</button>
         </nav>
@@ -346,20 +351,20 @@ export default function Landing() {
                   Steward is the CRM, grant tracker, and finance tool built for development teams who are tired of duct-taping spreadsheets together.
                 </p>
                 <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 28 }}>
-                  <BookBtn>Book a Demo →</BookBtn>
                   <button
-                    onClick={() => navigate("/login")}
+                    onClick={() => navigate("/signup")}
                     style={{
-                      background: "transparent", border: `1px solid ${C.cream}`,
-                      color: C.cream, padding: "13px 28px", borderRadius: 9,
+                      background: C.green, border: "none",
+                      color: "#fff", padding: "13px 28px", borderRadius: 9,
                       fontSize: 15, fontWeight: 700, cursor: "pointer",
                       fontFamily: "'DM Sans',sans-serif", transition: "opacity .15s",
                     }}
-                    onMouseEnter={e => e.currentTarget.style.opacity = "0.75"}
+                    onMouseEnter={e => e.currentTarget.style.opacity = "0.85"}
                     onMouseLeave={e => e.currentTarget.style.opacity = "1"}
                   >
-                    See it live →
+                    Start Free Trial →
                   </button>
+                  <BookBtn outlined>Book a Demo →</BookBtn>
                 </div>
                 <p style={{ fontSize: 12, color: C.sage, letterSpacing: "0.02em", lineHeight: 1.6 }}>
                   Used by arts organizations, social services nonprofits, and community foundations.
@@ -641,11 +646,11 @@ export default function Landing() {
                     ))}
                   </ul>
                   <button
-                    onClick={() => setShowModal(true)}
+                    onClick={() => navigate("/signup")}
                     style={{
                       background: p.highlight ? C.green : "transparent",
                       border: p.highlight ? "none" : `1px solid ${C.cream3}`,
-                      color: p.highlight ? C.dark : C.dark,
+                      color: p.highlight ? "#fff" : C.dark,
                       padding: "11px", borderRadius: 9,
                       fontSize: 14, fontWeight: 700, cursor: "pointer",
                       fontFamily: "'DM Sans',sans-serif", transition: "opacity .15s",
@@ -653,7 +658,7 @@ export default function Landing() {
                     onMouseEnter={e => e.currentTarget.style.opacity = "0.8"}
                     onMouseLeave={e => e.currentTarget.style.opacity = "1"}
                   >
-                    Book a demo to get started →
+                    Start free trial →
                   </button>
                 </div>
               ))}
@@ -725,7 +730,21 @@ export default function Landing() {
             <p style={{ fontSize: 17, color: C.sage, marginBottom: 44, lineHeight: 1.7 }}>
               No pressure. No sales pitch. Just a conversation about what you need.
             </p>
-            <BookBtn style={{ padding: "15px 36px", fontSize: 16 }}>Book a Demo →</BookBtn>
+            <div style={{ display: "flex", gap: 14, justifyContent: "center", flexWrap: "wrap" }}>
+              <button
+                onClick={() => navigate("/signup")}
+                style={{
+                  background: C.green, border: "none", color: "#fff",
+                  padding: "15px 36px", borderRadius: 9, fontSize: 16, fontWeight: 700,
+                  cursor: "pointer", fontFamily: "'DM Sans',sans-serif", transition: "opacity .15s",
+                }}
+                onMouseEnter={e => e.currentTarget.style.opacity = "0.85"}
+                onMouseLeave={e => e.currentTarget.style.opacity = "1"}
+              >
+                Start Free Trial →
+              </button>
+              <BookBtn outlined style={{ padding: "15px 36px", fontSize: 16 }}>Book a Demo →</BookBtn>
+            </div>
           </div>
         </section>
 

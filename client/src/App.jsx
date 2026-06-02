@@ -53,6 +53,8 @@ function AppShell() {
   const [stripeToast,setStripeToast]=useState(false);
   const [moreOpen,setMoreOpen]=useState(false);
   const [showWizard,setShowWizard]=useState(false);
+  const [billing,setBilling]=useState(null);
+  const [bannerDismissed,setBannerDismissed]=useState(false);
 
   useEffect(()=>{
     const params=new URLSearchParams(window.location.search);
@@ -87,7 +89,10 @@ function AppShell() {
     setLoading(false);
   }
 
-  useEffect(()=>{ loadData(); },[]);
+  useEffect(()=>{
+    loadData();
+    apiFetch("/billing/status").then(setBilling).catch(()=>{});
+  },[]);
 
   const BASE = {minHeight:"100vh",background:T.bg,fontFamily:"'DM Sans',system-ui,sans-serif",overflowX:"hidden",maxWidth:"100vw"};
 
@@ -111,6 +116,15 @@ function AppShell() {
 
   const tasksDue=data.tasks.filter(t=>!t.done&&t.priority==="high").length;
   const orgName=auth?.org?.name||data.org?.name||"Steward";
+
+  const showTrialBanner=!bannerDismissed&&billing?.subscriptionStatus==="trialing"&&billing?.trialDaysLeft<=14;
+
+  async function openPortal(){
+    try{
+      const r=await apiFetch("/billing/create-portal",{method:"POST"});
+      window.location.href=r.url;
+    }catch(e){ alert(e.message); }
+  }
 
   return <div className="app-root" style={{...BASE,color:T.ink,display:"flex",flexDirection:"column"}}>
     <GlobalStyles/>
@@ -151,6 +165,13 @@ function AppShell() {
         </button>;
       })}
     </div>
+
+    {showTrialBanner&&<div style={{background:"#1a2e1f",borderBottom:"1px solid #0d5c3a",padding:"9px 24px",display:"flex",alignItems:"center",gap:12,fontSize:13,color:"#8fa896"}}>
+      <span>⏳</span>
+      <span><strong style={{color:"#f0ede6"}}>{billing.trialDaysLeft} days</strong> left in your trial —</span>
+      <button onClick={openPortal} style={{background:"none",border:"none",color:"#c9a84c",fontSize:13,fontWeight:700,cursor:"pointer",padding:0,textDecoration:"underline"}}>Upgrade now →</button>
+      <button onClick={()=>setBannerDismissed(true)} style={{marginLeft:"auto",background:"transparent",border:"none",color:"#3d5245",cursor:"pointer",fontSize:16,padding:"0 4px",lineHeight:1}}>✕</button>
+    </div>}
 
     <div className="app-content" style={{flex:1,padding:"20px 24px 28px 24px",maxWidth:1400,width:"100%",margin:"0 auto",boxSizing:"border-box"}}>
       {tab==="dashboard"&&<Dashboard data={data} setData={setData} onNavigate={setTab}/>}

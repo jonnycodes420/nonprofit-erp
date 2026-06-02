@@ -455,6 +455,13 @@ async function initSchema() {
   await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS annual_budget TEXT`);
   await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS founded_year INTEGER`);
   await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS website TEXT`);
+
+  // ── SaaS billing ─────────────────────────────────────────────────────────
+  await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS plan TEXT DEFAULT 'trial'`);
+  await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS trial_ends_at TIMESTAMPTZ DEFAULT NOW() + INTERVAL '30 days'`);
+  await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS stripe_customer_id TEXT`);
+  await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS stripe_subscription_id TEXT`);
+  await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS subscription_status TEXT DEFAULT 'trialing'`);
 }
 
 async function seedData() {

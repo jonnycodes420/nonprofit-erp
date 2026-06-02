@@ -9,6 +9,7 @@ import InvitePage from "./pages/InvitePage";
 import App from "./App";
 import Landing from "./pages/Landing";
 import Donate from "./pages/Donate";
+import Pricing from "./pages/Pricing";
 import { Analytics } from '@vercel/analytics/react'
 import { SpeedInsights } from '@vercel/speed-insights/react'
 
@@ -76,6 +77,7 @@ function Root() {
           <Route path="/welcome"   element={<RequireAuth><WelcomePage /></RequireAuth>} />
           <Route path="/dashboard" element={<RequireOnboarded><App /></RequireOnboarded>} />
           <Route path="/invite/:token" element={<InvitePage />} />
+          <Route path="/pricing"   element={<Pricing />} />
           <Route path="/give/:orgSlug" element={<Donate />} />
           <Route path="*"          element={<Navigate to="/" replace />} />
         </Routes>

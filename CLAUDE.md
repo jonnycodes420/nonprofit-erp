@@ -23,7 +23,11 @@
 - `JWT_SECRET` — JWT signing secret
 - `RESEND_API_KEY` — Resend API key for email campaigns
 - `STRIPE_SECRET_KEY` — Stripe platform secret key
-- `STRIPE_WEBHOOK_SECRET` — Stripe webhook signing secret
+- `STRIPE_WEBHOOK_SECRET` — Stripe webhook signing secret (Connect events at /stripe/webhook)
+- `STRIPE_BILLING_WEBHOOK_SECRET` — Stripe webhook signing secret for /billing/webhook (platform subscription events; can reuse STRIPE_WEBHOOK_SECRET if same endpoint)
+- `STRIPE_PRICE_SEED` — Stripe Price ID for $99/mo Seed plan
+- `STRIPE_PRICE_GROWTH` — Stripe Price ID for $249/mo Growth plan
+- `STRIPE_PRICE_IMPACT` — Stripe Price ID for $499/mo Impact plan
 - `FRONTEND_URL` — used in invite links and Stripe redirects
 
 ### Frontend (Vercel / client/vercel.json)
@@ -95,6 +99,18 @@ Mobile "More" drawer: communications, volunteers, board, tasks, settings
 - fin_funds — id, org_id, name, balance, target, restricted (boolean), description
 - fin_budgets — id, org_id, category, amount, period (monthly/annual), fund_id
 - fin_audit_log — id, org_id, table_name, record_id, action, changed_by, changed_at, old_values, new_values
+
+### SaaS billing (platform)
+- orgs table: `plan TEXT DEFAULT 'trial'`, `trial_ends_at TIMESTAMPTZ`, `stripe_customer_id TEXT`, `stripe_subscription_id TEXT`, `subscription_status TEXT DEFAULT 'trialing'`
+- Plans: `trial` | `seed` | `growth` | `impact`
+- Subscription statuses: `trialing` | `active` | `past_due` | `cancelled`
+- `POST /auth/register-org` — public self-serve signup (creates Stripe customer inline)
+- `GET /billing/status` — returns plan, subscriptionStatus, trialEndsAt, trialDaysLeft
+- `POST /billing/create-checkout` — creates Stripe Checkout session for subscription
+- `POST /billing/create-portal` — creates Stripe Customer Portal session
+- `POST /billing/webhook` — handles checkout.session.completed, customer.subscription.deleted, invoice.payment_failed
+- Trial banner in App.jsx when trialing && trialDaysLeft <= 14; dismissible per session
+- No paywall enforced yet — banner only
 
 ### Stripe / donations
 - orgs table: org_slug (text, unique), stripe_account_id, stripe_connected_at

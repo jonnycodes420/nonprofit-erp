@@ -315,6 +315,60 @@ app.post("/auth/register", wrap(async (req, res) => {
   });
 }));
 
+// ── Self-serve org registration (SaaS signup) ──────────────────────────────
+app.post("/auth/register-org", wrap(async (req, res) => {
+  const { orgName, userName, email, password } = req.body;
+  if (!orgName || !userName || !email || !password) {
+    return res.status(400).json({ error: "All fields are required" });
+  }
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    return res.status(400).json({ error: "Invalid email address" });
+  }
+  if (password.length < 8) {
+    return res.status(400).json({ error: "Password must be at least 8 characters" });
+  }
+
+  const existing = await query("SELECT id FROM users WHERE email = ?", [email.toLowerCase()]);
+  if (existing.length) return res.status(409).json({ error: "An account with that email already exists" });
+
+  const orgId  = "org_"  + uuid().slice(0, 8);
+  const userId = "user_" + uuid().slice(0, 8);
+  const orgSlug = orgName.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") + "-" + orgId.slice(4, 10);
+
+  await run(
+    "INSERT INTO orgs (id, name, onboarding_complete, org_slug, plan, subscription_status) VALUES (?,?,0,?,'trial','trialing')",
+    [orgId, orgName, orgSlug]
+  );
+  const hash = bcrypt.hashSync(password, 12);
+  await run(
+    "INSERT INTO users (id, org_id, email, password_hash, name, role) VALUES (?,?,?,?,?,?)",
+    [userId, orgId, email.toLowerCase(), hash, userName, "admin"]
+  );
+
+  let stripeCustomerId = null;
+  if (stripe) {
+    try {
+      const customer = await stripe.customers.create({
+        email: email.toLowerCase(),
+        name: orgName,
+        metadata: { orgId },
+      });
+      stripeCustomerId = customer.id;
+      await run("UPDATE orgs SET stripe_customer_id=? WHERE id=?", [stripeCustomerId, orgId]);
+    } catch (err) {
+      console.error("Stripe customer creation failed:", err.message);
+    }
+  }
+
+  const token = signToken({ userId, orgId, email: email.toLowerCase(), role: "admin" });
+  res.status(201).json({
+    token,
+    user: { id: userId, email: email.toLowerCase(), name: userName, role: "admin" },
+    org: { id: orgId, name: orgName, onboarding_complete: 0, plan: "trial", subscription_status: "trialing" },
+    stripeCustomerId,
+  });
+}));
+
 // ── Me ─────────────────────────────────────────────────────────────────────
 app.get("/me", requireAuth, wrap(async (req, res) => {
   const users = await query("SELECT id, email, name, role FROM users WHERE id = ?", [req.user.userId]);
@@ -2827,6 +2881,104 @@ app.post("/donors/:id/custom-fields", requireAuth, wrap(async (req, res) => {
   );
   res.json({ ok: true });
 }));
+
+// ── Billing ────────────────────────────────────────────────────────────────
+app.get("/billing/status", requireAuth, wrap(async (req, res) => {
+  const orgs = await query("SELECT plan, subscription_status, trial_ends_at, stripe_customer_id FROM orgs WHERE id=?", [req.user.orgId]);
+  if (!orgs.length) return res.status(404).json({ error: "Org not found" });
+  const org = orgs[0];
+  const trialEndsAt = org.trial_ends_at ? new Date(org.trial_ends_at) : null;
+  const trialDaysLeft = trialEndsAt ? Math.max(0, Math.ceil((trialEndsAt - Date.now()) / 86400000)) : null;
+  res.json({
+    plan: org.plan || "trial",
+    subscriptionStatus: org.subscription_status || "trialing",
+    trialEndsAt: org.trial_ends_at,
+    trialDaysLeft,
+  });
+}));
+
+app.post("/billing/create-checkout", requireAuth, wrap(async (req, res) => {
+  if (!stripe) return res.status(503).json({ error: "Stripe not configured" });
+  const { plan } = req.body;
+  const priceMap = {
+    seed:   process.env.STRIPE_PRICE_SEED,
+    growth: process.env.STRIPE_PRICE_GROWTH,
+    impact: process.env.STRIPE_PRICE_IMPACT,
+  };
+  const priceId = priceMap[plan];
+  if (!priceId) return res.status(400).json({ error: "Invalid plan. Must be seed, growth, or impact." });
+
+  const orgs = await query("SELECT stripe_customer_id FROM orgs WHERE id=?", [req.user.orgId]);
+  if (!orgs.length) return res.status(404).json({ error: "Org not found" });
+  const customerId = orgs[0].stripe_customer_id;
+
+  const sessionParams = {
+    mode: "subscription",
+    line_items: [{ price: priceId, quantity: 1 }],
+    success_url: (process.env.FRONTEND_URL || "https://stewardapp.dev") + "/dashboard?subscribed=true",
+    cancel_url:  (process.env.FRONTEND_URL || "https://stewardapp.dev") + "/pricing",
+    metadata: { orgId: req.user.orgId, plan },
+    subscription_data: { metadata: { orgId: req.user.orgId, plan } },
+  };
+  if (customerId) sessionParams.customer = customerId;
+  else sessionParams.customer_email = req.user.email;
+
+  const session = await stripe.checkout.sessions.create(sessionParams);
+  res.json({ url: session.url });
+}));
+
+app.post("/billing/create-portal", requireAuth, wrap(async (req, res) => {
+  if (!stripe) return res.status(503).json({ error: "Stripe not configured" });
+  const orgs = await query("SELECT stripe_customer_id FROM orgs WHERE id=?", [req.user.orgId]);
+  if (!orgs.length || !orgs[0].stripe_customer_id) {
+    return res.status(400).json({ error: "No Stripe customer linked to this org" });
+  }
+  const session = await stripe.billingPortal.sessions.create({
+    customer: orgs[0].stripe_customer_id,
+    return_url: (process.env.FRONTEND_URL || "https://stewardapp.dev") + "/dashboard",
+  });
+  res.json({ url: session.url });
+}));
+
+// ── Billing webhook (platform subscriptions) ───────────────────────────────
+app.post("/billing/webhook", express.raw({ type: "application/json" }), async (req, res) => {
+  if (!stripe) return res.status(503).json({ error: "Stripe not configured" });
+  const sig = req.headers["stripe-signature"];
+  let event;
+  try {
+    event = stripe.webhooks.constructEvent(req.body, sig, process.env.STRIPE_BILLING_WEBHOOK_SECRET || process.env.STRIPE_WEBHOOK_SECRET);
+  } catch (err) {
+    return res.status(400).json({ error: `Webhook signature failed: ${err.message}` });
+  }
+
+  try {
+    if (event.type === "checkout.session.completed") {
+      const session = event.data.object;
+      if (session.metadata?.orgId) {
+        await run(
+          "UPDATE orgs SET plan=?, subscription_status='active', stripe_subscription_id=? WHERE id=?",
+          [session.metadata.plan || "growth", session.subscription, session.metadata.orgId]
+        );
+      }
+    } else if (event.type === "customer.subscription.deleted") {
+      const sub = event.data.object;
+      const orgId = sub.metadata?.orgId;
+      if (orgId) {
+        await run("UPDATE orgs SET subscription_status='cancelled', plan='trial' WHERE id=?", [orgId]);
+      }
+    } else if (event.type === "invoice.payment_failed") {
+      const inv = event.data.object;
+      const orgRow = await query("SELECT id FROM orgs WHERE stripe_customer_id=?", [inv.customer]);
+      if (orgRow.length) {
+        await run("UPDATE orgs SET subscription_status='past_due' WHERE id=?", [orgRow[0].id]);
+      }
+    }
+  } catch (err) {
+    console.error("Billing webhook error:", err);
+  }
+
+  res.json({ received: true });
+});
 
 // ── 404 ────────────────────────────────────────────────────────────────────
 app.use((req, res) => {

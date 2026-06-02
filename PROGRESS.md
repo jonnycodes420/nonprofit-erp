@@ -1,5 +1,35 @@
 # Steward — Build Progress
 
+### Self-serve SaaS billing (2026-06-01)
+Strangers can now sign up and pay without talking to anyone.
+
+**Database:** 5 new org columns via `ALTER TABLE IF NOT EXISTS`: `plan TEXT DEFAULT 'trial'`, `trial_ends_at TIMESTAMPTZ DEFAULT NOW() + INTERVAL '30 days'`, `stripe_customer_id TEXT`, `stripe_subscription_id TEXT`, `subscription_status TEXT DEFAULT 'trialing'`.
+
+**Backend routes (server.js):**
+- `POST /auth/register-org` — public self-serve signup. Validates all fields, checks email uniqueness (409), creates org+user, creates Stripe customer via `stripe.customers.create`, updates org with `stripe_customer_id`, returns JWT + `{ token, user, org, stripeCustomerId }`.
+- `GET /billing/status` — returns `{ plan, subscriptionStatus, trialEndsAt, trialDaysLeft }`.
+- `POST /billing/create-checkout` — maps plan (seed/growth/impact) to `STRIPE_PRICE_SEED/GROWTH/IMPACT` env vars, creates Stripe Checkout session (mode: subscription), returns `{ url }`.
+- `POST /billing/create-portal` — creates Stripe Customer Portal session, returns `{ url }`.
+- `POST /billing/webhook` — handles `checkout.session.completed` (updates plan/subscription_status/stripe_subscription_id), `customer.subscription.deleted` (sets cancelled/trial), `invoice.payment_failed` (sets past_due). Uses `STRIPE_BILLING_WEBHOOK_SECRET` (falls back to `STRIPE_WEBHOOK_SECRET`).
+
+**Frontend:**
+- `client/src/pages/SignupPage.jsx` — full redesign: `#0f1a12` dark left panel (30-day trial benefits, 3 checkmarks), white right card (5 fields: org name, your name, email, password, confirm), client-side validation with inline field errors. Calls `POST /auth/register-org`, saves token, redirects to `/pricing`.
+- `client/src/pages/Pricing.jsx` — new public page. 3 plan cards (Seed $99 / Growth $249 highlighted / Impact $499). If authed → `POST /billing/create-checkout` → Stripe Checkout. If not authed → `/signup`. Accessible at `/pricing`.
+- `client/src/main.jsx` — `/pricing` route added (public, no auth guard).
+- `client/src/App.jsx` — fetches `GET /billing/status` on mount. Trial banner shown when `subscriptionStatus === 'trialing' && trialDaysLeft <= 14`. Banner: `#1a2e1f` bg, gold "Upgrade now →" → `POST /billing/create-portal`. Dismissible per session (× button).
+- `client/src/components/Settings.jsx` — new Billing section before Account Actions. Shows plan badge, subscription status pill, trial end date + days left. "Manage billing →" → portal. "Upgrade plan →" link to `/pricing` (shown when plan is trial or seed).
+- `client/src/pages/Landing.jsx` — hero, nav, and final CTA updated: "Start Free Trial →" is now primary (green filled, → `/signup`), "Book a Demo →" is secondary (outlined, opens Calendly modal). Pricing section plan buttons now link to `/signup`.
+
+**Access control:** No paywall. Trial expiry and payment failures show banners only — full app access preserved for all plans during pilot phase.
+
+**Env vars needed in Railway:**
+- `STRIPE_PRICE_SEED` — Stripe Price ID for $99/mo plan
+- `STRIPE_PRICE_GROWTH` — Stripe Price ID for $249/mo plan
+- `STRIPE_PRICE_IMPACT` — Stripe Price ID for $499/mo plan
+- `STRIPE_BILLING_WEBHOOK_SECRET` — webhook secret for `/billing/webhook` endpoint (can reuse `STRIPE_WEBHOOK_SECRET` if using same endpoint)
+
+---
+
 ### Onboarding wizard (2026-06-01)
 Full-screen first-run wizard shown to admin users on brand-new orgs (no donors, grants, or financials). Trigger stored in `localStorage["steward_onboarded_" + orgId]` so it never fires twice.
 

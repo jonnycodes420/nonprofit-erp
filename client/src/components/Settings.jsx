@@ -34,14 +34,26 @@ export function Settings({auth,logout}) {
   const [cfOptInput,setCfOptInput]=useState("");
   const [cfSaving,setCfSaving]=useState(false);
 
+  const [billing,setBilling]=useState(null);
+  const [portalLoading,setPortalLoading]=useState(false);
+
   useEffect(()=>{
     apiFetch("/org/team").then(setTeam).catch(()=>{});
     apiFetch("/stripe/status").then(setStripe).catch(()=>{});
+    apiFetch("/billing/status").then(setBilling).catch(()=>{});
     if(!auth?.org?.org_slug){
       apiFetch("/org").then(r=>{ if(r.org_slug) setOrgSlug(r.org_slug); }).catch(()=>{});
     }
     apiFetch("/custom-fields").then(setCustomFields).catch(()=>{});
   },[]);
+
+  async function openBillingPortal(){
+    setPortalLoading(true);
+    try{
+      const r=await apiFetch("/billing/create-portal",{method:"POST"});
+      window.location.href=r.url;
+    }catch(e){ alert(e.message||"Could not open billing portal"); setPortalLoading(false); }
+  }
 
   const donationUrl = orgSlug ? `${window.location.origin}/give/${orgSlug}` : "";
   const embedCode = orgSlug
@@ -332,6 +344,46 @@ export function Settings({auth,logout}) {
             </div>}
           </div>
         ))}
+      </div>
+
+      <div style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:16,padding:"24px 28px"}}>
+        <SectionLabel>Billing</SectionLabel>
+        {billing ? (
+          <div style={{display:"flex",flexDirection:"column",gap:16}}>
+            <div style={{display:"flex",gap:24,flexWrap:"wrap"}}>
+              <div>
+                <div style={{fontSize:11,fontWeight:700,letterSpacing:"0.07em",textTransform:"uppercase",color:T.ink3,marginBottom:4}}>Current Plan</div>
+                <div style={{display:"flex",alignItems:"center",gap:8}}>
+                  <span style={{fontSize:15,fontWeight:700,color:T.ink,textTransform:"capitalize"}}>{billing.plan||"Trial"}</span>
+                  <span style={{fontSize:11,fontWeight:700,padding:"2px 8px",borderRadius:99,background:billing.subscriptionStatus==="active"?"#e8f5ef":billing.subscriptionStatus==="past_due"?"#fef2f2":"#1a2e1f",color:billing.subscriptionStatus==="active"?"#1a6b4a":billing.subscriptionStatus==="past_due"?"#dc2626":"#8fa896",border:"1px solid "+(billing.subscriptionStatus==="active"?"#10b981":billing.subscriptionStatus==="past_due"?"#fecaca":"#2d4a35")}}>
+                    {billing.subscriptionStatus==="active"?"Active":billing.subscriptionStatus==="past_due"?"Past Due":billing.subscriptionStatus==="cancelled"?"Cancelled":"Trialing"}
+                  </span>
+                </div>
+              </div>
+              {billing.subscriptionStatus==="trialing"&&billing.trialEndsAt&&(
+                <div>
+                  <div style={{fontSize:11,fontWeight:700,letterSpacing:"0.07em",textTransform:"uppercase",color:T.ink3,marginBottom:4}}>Trial Ends</div>
+                  <div style={{fontSize:14,fontWeight:600,color:billing.trialDaysLeft<=7?"#ef4444":T.ink}}>
+                    {new Date(billing.trialEndsAt).toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"})}
+                    {billing.trialDaysLeft!=null&&<span style={{fontSize:12,color:T.ink3,fontWeight:400,marginLeft:6}}>({billing.trialDaysLeft} days left)</span>}
+                  </div>
+                </div>
+              )}
+            </div>
+            <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
+              <button onClick={openBillingPortal} disabled={portalLoading} style={{background:"#0f1a12",border:"none",borderRadius:8,padding:"9px 18px",color:"#f0ede6",fontSize:13,fontWeight:600,cursor:portalLoading?"not-allowed":"pointer",opacity:portalLoading?0.7:1}}>
+                {portalLoading?"Opening…":"Manage billing →"}
+              </button>
+              {(billing.plan==="trial"||billing.plan==="seed")&&(
+                <a href="/pricing" style={{display:"inline-block",background:"#1a6b4a",border:"none",borderRadius:8,padding:"9px 18px",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer",textDecoration:"none"}}>
+                  Upgrade plan →
+                </a>
+              )}
+            </div>
+          </div>
+        ) : (
+          <div style={{fontSize:13,color:T.ink3}}>Loading billing information…</div>
+        )}
       </div>
 
       <div style={{background:"#1a0a0a",border:"1px solid #3d1515",borderRadius:16,padding:"24px 28px"}}>
