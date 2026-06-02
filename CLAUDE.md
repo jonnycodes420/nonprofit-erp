@@ -71,7 +71,19 @@ Mobile "More" drawer: communications, volunteers, board, tasks, settings
 - /welcome → WelcomePage (auth required)
 - /dashboard → App/AppShell (auth + onboarded required)
 - /give/:orgSlug → GivePage (public donation page)
+- /admin → AdminDashboard (super admin only — RequireSuperAdmin guard checks localStorage npe_user.isSuperAdmin)
 - App.jsx renders <AppShell /> directly — NO internal router
+
+## Super admin pattern
+- `is_super_admin BOOLEAN DEFAULT false` column on `users` table
+- Set via: `UPDATE users SET is_super_admin = true WHERE email = 'your@email.com'` in Supabase
+- Login route includes `isSuperAdmin` in JWT payload and returned user object
+- `requireSuperAdmin` middleware in auth.js — returns 403 (not 404)
+- All `/admin/*` routes require both `requireAuth` + `requireSuperAdmin`
+- After login: `isSuperAdmin ? "/admin" : "/dashboard"` in LoginPage.jsx
+- `RequireSuperAdmin` component in main.jsx reads localStorage (not AuthCtx) so it works without re-render on redirect
+- AdminDashboard.jsx has its own `adminFetch()` helper (not apiFetch) and its own layout — no AppShell
+- Design tokens: `A` object (not `T`) — bg `#0a0f0a`, dark ops-tool aesthetic
 
 ## Auth (IMPORTANT)
 - Login writes npe_token, npe_user, npe_org to localStorage directly

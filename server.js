@@ -6,7 +6,7 @@ const Anthropic = require("@anthropic-ai/sdk");
 const { Resend } = require("resend");
 const resend = new Resend(process.env.RESEND_API_KEY);
 const { getDb, query, run, uuid, seedOrgData } = require("./db");
-const { signToken, requireAuth } = require("./auth");
+const { signToken, requireAuth, requireSuperAdmin } = require("./auth");
 const Stripe = require("stripe");
 
 const stripe = process.env.STRIPE_SECRET_KEY ? new Stripe(process.env.STRIPE_SECRET_KEY) : null;
@@ -282,8 +282,9 @@ app.post("/auth/login", wrap(async (req, res) => {
 
   const orgs = await query("SELECT * FROM orgs WHERE id = ?", [user.org_id]);
   const org = orgs[0];
-  const token = signToken({ userId: user.id, orgId: user.org_id, email: user.email, role: user.role });
-  res.json({ token, user: { id: user.id, email: user.email, name: user.name, role: user.role }, org: { ...org, onboarding_complete: org.onboarding_complete ?? 1 } });
+  const isSuperAdmin = !!user.is_super_admin;
+  const token = signToken({ userId: user.id, orgId: user.org_id, email: user.email, role: user.role, isSuperAdmin });
+  res.json({ token, user: { id: user.id, email: user.email, name: user.name, role: user.role, isSuperAdmin }, org: { ...org, onboarding_complete: org.onboarding_complete ?? 1 } });
 }));
 
 app.post("/auth/register", wrap(async (req, res) => {
@@ -2979,6 +2980,159 @@ app.post("/billing/webhook", express.raw({ type: "application/json" }), async (r
 
   res.json({ received: true });
 });
+
+// ── Admin (super admin only) ───────────────────────────────────────────────
+const PLAN_MRR = { seed: 99, growth: 249, impact: 499, trial: 0 };
+
+async function orgWithMetrics(org) {
+  const [donors, grants, users, lastActive] = await Promise.all([
+    query("SELECT COUNT(*) AS c FROM donors WHERE org_id=?", [org.id]),
+    query("SELECT COUNT(*) AS c FROM grants WHERE org_id=?", [org.id]),
+    query("SELECT COUNT(*) AS c FROM users WHERE org_id=?", [org.id]),
+    query("SELECT MAX(created_at) AS t FROM interactions WHERE org_id=?", [org.id]),
+  ]);
+  return {
+    ...org,
+    donor_count:    parseInt(donors[0].c, 10),
+    grant_count:    parseInt(grants[0].c, 10),
+    user_count:     parseInt(users[0].c, 10),
+    last_active:    lastActive[0]?.t || null,
+    monthly_revenue: PLAN_MRR[org.subscription_status === "active" ? org.plan : "trial"] || 0,
+  };
+}
+
+app.get("/admin/orgs", requireAuth, requireSuperAdmin, wrap(async (req, res) => {
+  const orgs = await query("SELECT * FROM orgs ORDER BY created_at DESC", []);
+  const result = await Promise.all(orgs.map(orgWithMetrics));
+  res.json(result);
+}));
+
+app.get("/admin/metrics", requireAuth, requireSuperAdmin, wrap(async (req, res) => {
+  const orgs = await query("SELECT * FROM orgs", []);
+  const now = new Date();
+  const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
+  const startOfLastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1).toISOString();
+  const endOfLastMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
+
+  const active = orgs.filter(o => o.subscription_status === "active");
+  const trialing = orgs.filter(o => o.subscription_status === "trialing");
+  const churned = orgs.filter(o => o.subscription_status === "cancelled");
+  const mrr = active.reduce((s, o) => s + (PLAN_MRR[o.plan] || 0), 0);
+
+  const [donors, grants, interactions, newThisMonth, newLastMonth] = await Promise.all([
+    query("SELECT COUNT(*) AS c FROM donors", []),
+    query("SELECT COUNT(*) AS c FROM grants", []),
+    query("SELECT COUNT(*) AS c FROM interactions", []),
+    query("SELECT COUNT(*) AS c FROM orgs WHERE created_at >= ?", [startOfMonth]),
+    query("SELECT COUNT(*) AS c FROM orgs WHERE created_at >= ? AND created_at < ?", [startOfLastMonth, endOfLastMonth]),
+  ]);
+
+  const trialDaysLeft = trialing.map(o => {
+    if (!o.trial_ends_at) return 30;
+    return Math.max(0, Math.ceil((new Date(o.trial_ends_at) - Date.now()) / 86400000));
+  });
+  const avgTrialDays = trialDaysLeft.length ? Math.round(trialDaysLeft.reduce((a, b) => a + b, 0) / trialDaysLeft.length) : 0;
+
+  res.json({
+    total_orgs: orgs.length,
+    active_subscriptions: active.length,
+    trialing: trialing.length,
+    churned: churned.length,
+    mrr,
+    arr: mrr * 12,
+    avg_trial_days_remaining: avgTrialDays,
+    trial_conversion_rate: (active.length + churned.length) > 0
+      ? Math.round((active.length / (active.length + churned.length)) * 100)
+      : 0,
+    new_orgs_this_month: parseInt(newThisMonth[0].c, 10),
+    new_orgs_last_month: parseInt(newLastMonth[0].c, 10),
+    total_donors: parseInt(donors[0].c, 10),
+    total_grants: parseInt(grants[0].c, 10),
+    total_interactions: parseInt(interactions[0].c, 10),
+    plan_breakdown: {
+      trial:  orgs.filter(o => !o.plan || o.plan === "trial").length,
+      seed:   orgs.filter(o => o.plan === "seed" && o.subscription_status === "active").length,
+      growth: orgs.filter(o => o.plan === "growth" && o.subscription_status === "active").length,
+      impact: orgs.filter(o => o.plan === "impact" && o.subscription_status === "active").length,
+    },
+  });
+}));
+
+app.get("/admin/orgs/:id", requireAuth, requireSuperAdmin, wrap(async (req, res) => {
+  const orgs = await query("SELECT * FROM orgs WHERE id=?", [req.params.id]);
+  if (!orgs.length) return res.status(404).json({ error: "Org not found" });
+  const org = await orgWithMetrics(orgs[0]);
+
+  const [users, recentActivity, sequences, enrollments] = await Promise.all([
+    query("SELECT id, name, email, role, created_at FROM users WHERE org_id=? ORDER BY created_at ASC", [req.params.id]),
+    query(`SELECT i.type, i.note, i.date, i.created_at, d.name AS donor_name
+           FROM interactions i JOIN donors d ON i.donor_id = d.id
+           WHERE i.org_id=? ORDER BY i.created_at DESC LIMIT 10`, [req.params.id]),
+    query("SELECT COUNT(*) AS c FROM sequences WHERE org_id=?", [req.params.id]),
+    query("SELECT COUNT(*) AS c FROM sequence_enrollments WHERE org_id=?", [req.params.id]),
+  ]);
+
+  res.json({
+    ...org,
+    users,
+    recent_activity: recentActivity,
+    sequence_count: parseInt(sequences[0].c, 10),
+    enrollment_count: parseInt(enrollments[0].c, 10),
+  });
+}));
+
+app.post("/admin/orgs/:id/extend-trial", requireAuth, requireSuperAdmin, wrap(async (req, res) => {
+  const { days } = req.body;
+  if (!days || isNaN(parseInt(days, 10))) return res.status(400).json({ error: "days required" });
+  await pool.query(
+    `UPDATE orgs SET trial_ends_at = COALESCE(trial_ends_at, NOW()) + INTERVAL '${parseInt(days, 10)} days' WHERE id = $1`,
+    [req.params.id]
+  );
+  const orgs = await query("SELECT * FROM orgs WHERE id=?", [req.params.id]);
+  res.json(orgs[0]);
+}));
+
+app.post("/admin/orgs/:id/change-plan", requireAuth, requireSuperAdmin, wrap(async (req, res) => {
+  const { plan } = req.body;
+  const valid = ["trial", "seed", "growth", "impact"];
+  if (!valid.includes(plan)) return res.status(400).json({ error: "Invalid plan" });
+  const status = plan === "trial" ? "trialing" : "active";
+  await run("UPDATE orgs SET plan=?, subscription_status=? WHERE id=?", [plan, status, req.params.id]);
+  const orgs = await query("SELECT * FROM orgs WHERE id=?", [req.params.id]);
+  res.json(orgs[0]);
+}));
+
+app.delete("/admin/orgs/:id", requireAuth, requireSuperAdmin, wrap(async (req, res) => {
+  const { confirm } = req.body;
+  if (!confirm) return res.status(400).json({ error: "confirm: true required" });
+  const orgs = await query("SELECT id FROM orgs WHERE id=?", [req.params.id]);
+  if (!orgs.length) return res.status(404).json({ error: "Org not found" });
+  const orgId = req.params.id;
+  // Cascade delete — order matters for FK constraints
+  await run("DELETE FROM sequence_enrollments WHERE org_id=?", [orgId]);
+  await run("DELETE FROM sequence_steps WHERE sequence_id IN (SELECT id FROM sequences WHERE org_id=?)", [orgId]);
+  await run("DELETE FROM sequences WHERE org_id=?", [orgId]);
+  await run("DELETE FROM custom_field_values WHERE org_id=?", [orgId]);
+  await run("DELETE FROM custom_fields WHERE org_id=?", [orgId]);
+  await run("DELETE FROM fin_audit_log WHERE org_id=?", [orgId]);
+  await run("DELETE FROM budgets WHERE org_id=?", [orgId]);
+  await run("DELETE FROM fin_transactions WHERE org_id=?", [orgId]);
+  await run("DELETE FROM fin_funds WHERE org_id=?", [orgId]);
+  await run("DELETE FROM accounts WHERE org_id=?", [orgId]);
+  await run("DELETE FROM campaign_recipients WHERE org_id=?", [orgId]);
+  await run("DELETE FROM campaigns WHERE org_id=?", [orgId]);
+  await run("DELETE FROM interactions WHERE org_id=?", [orgId]);
+  await run("DELETE FROM gifts WHERE org_id=?", [orgId]);
+  await run("DELETE FROM donors WHERE org_id=?", [orgId]);
+  await run("DELETE FROM grants WHERE org_id=?", [orgId]);
+  await run("DELETE FROM volunteers WHERE org_id=?", [orgId]);
+  await run("DELETE FROM tasks WHERE org_id=?", [orgId]);
+  await run("DELETE FROM board_members WHERE org_id=?", [orgId]);
+  await run("DELETE FROM invites WHERE org_id=?", [orgId]);
+  await run("DELETE FROM users WHERE org_id=?", [orgId]);
+  await run("DELETE FROM orgs WHERE id=?", [orgId]);
+  res.json({ deleted: true });
+}));
 
 // ── 404 ────────────────────────────────────────────────────────────────────
 app.use((req, res) => {

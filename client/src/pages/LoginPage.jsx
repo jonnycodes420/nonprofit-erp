@@ -33,7 +33,7 @@ export default function LoginPage() {
       localStorage.setItem("npe_token", data.token);
       localStorage.setItem("npe_user", JSON.stringify(data.user));
       localStorage.setItem("npe_org",  JSON.stringify(data.org));
-      window.location.href = "/dashboard";
+      window.location.href = data.user?.isSuperAdmin ? "/admin" : "/dashboard";
     } catch (err) {
       setError(err.message);
     }

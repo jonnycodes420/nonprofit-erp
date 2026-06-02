@@ -23,4 +23,9 @@ function requireAuth(req, res, next) {
   }
 }
 
-module.exports = { signToken, requireAuth };
+function requireSuperAdmin(req, res, next) {
+  if (!req.user?.isSuperAdmin) return res.status(403).json({ error: "Forbidden" });
+  next();
+}
+
+module.exports = { signToken, requireAuth, requireSuperAdmin };

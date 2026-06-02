@@ -10,6 +10,7 @@ import App from "./App";
 import Landing from "./pages/Landing";
 import Donate from "./pages/Donate";
 import Pricing from "./pages/Pricing";
+import AdminDashboard from "./pages/AdminDashboard";
 import { Analytics } from '@vercel/analytics/react'
 import { SpeedInsights } from '@vercel/speed-insights/react'
 
@@ -66,6 +67,17 @@ function PublicOnly({ children }) {
   return children;
 }
 
+function RequireSuperAdmin({ children }) {
+  const raw = localStorage.getItem("npe_user");
+  try {
+    const user = JSON.parse(raw);
+    if (!user?.isSuperAdmin) return <Navigate to="/dashboard" replace />;
+  } catch {
+    return <Navigate to="/login" replace />;
+  }
+  return children;
+}
+
 function Root() {
   return (
     <AuthProvider>
@@ -79,6 +91,7 @@ function Root() {
           <Route path="/invite/:token" element={<InvitePage />} />
           <Route path="/pricing"   element={<Pricing />} />
           <Route path="/give/:orgSlug" element={<Donate />} />
+          <Route path="/admin"     element={<RequireSuperAdmin><AdminDashboard /></RequireSuperAdmin>} />
           <Route path="*"          element={<Navigate to="/" replace />} />
         </Routes>
         <Analytics />

@@ -1,5 +1,33 @@
 # Steward — Build Progress
 
+### Super-admin dashboard (2026-06-02)
+Internal ops tool for Steward platform admins. Separate authenticated view at `/admin` — not part of the AppShell.
+
+**Database:** `is_super_admin BOOLEAN DEFAULT false` column added to `users` table via `ALTER TABLE IF NOT EXISTS`. Set via Supabase SQL: `UPDATE users SET is_super_admin = true WHERE email = 'your@email.com'`.
+
+**Backend (server.js + auth.js):**
+- `requireSuperAdmin` middleware in auth.js — returns 403 if `req.user.isSuperAdmin` is falsy
+- Login route updated: `isSuperAdmin` field included in JWT payload and returned user object
+- `PLAN_MRR = { trial:0, seed:99, growth:249, impact:499 }` helper constant
+- `orgWithMetrics(org)` async helper — parallel queries for donor_count, grant_count, user_count, last_active, monthly_revenue per org
+- Routes (all require `requireAuth + requireSuperAdmin`):
+  - `GET /admin/orgs` — all orgs with metrics
+  - `GET /admin/metrics` — aggregate platform stats (MRR, ARR, trial conversion rate, plan breakdown, new orgs this/last month, total donors/grants/interactions)
+  - `GET /admin/orgs/:id` — single org with users + recent_activity + sequence/enrollment counts
+  - `POST /admin/orgs/:id/extend-trial` — extends trial by N days (uses raw template literal INTERVAL)
+  - `POST /admin/orgs/:id/change-plan` — updates plan + subscription_status
+  - `DELETE /admin/orgs/:id` — cascades through all FK-related tables in safe order (requires `{ confirm: true }`)
+
+**Frontend:**
+- `client/src/pages/AdminDashboard.jsx` — ~500 lines, own layout (no AppShell), own `adminFetch()` helper
+- Design tokens: `A` object — bg `#0a0f0a`, dark ops-tool aesthetic with green tones
+- 3 pages: Overview (KPI cards, MRR breakdown, new signup bars, recent signups table), Organizations (sortable/filterable table + 480px slide-in OrgPanel), Metrics (MRR by cohort, plan distribution bars, trial conversion funnel, top orgs by usage)
+- OrgPanel: metrics grid, users table, recent activity, extend trial, change plan, delete with name confirmation
+- `client/src/main.jsx` — `RequireSuperAdmin` guard added; `/admin` route added
+- `client/src/pages/LoginPage.jsx` — after login: `isSuperAdmin ? "/admin" : "/dashboard"`
+
+---
+
 ### Self-serve SaaS billing (2026-06-01)
 Strangers can now sign up and pay without talking to anyone.
 
