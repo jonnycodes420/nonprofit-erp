@@ -1,5 +1,27 @@
 # Steward — Build Progress
 
+### Gmail integration — Session 1: OAuth connect + sync (2026-06-02)
+Donors who email the org auto-log to their interaction timeline.
+
+**Database:** `gmail_connections` table (id, org_id, user_id, email, access_token, refresh_token, token_expiry, last_synced_at, history_id, status, UNIQUE(user_id)). `metadata JSONB` column added to `interactions`.
+
+**Backend (`server.js`):**
+- `makeOAuth2Client()` factory (reads `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REDIRECT_URI`)
+- `syncGmail(userId, orgId)` — fetches Gmail messages matching known donor emails (chunked 20 at a time, max 100/chunk), deduplicates via `metadata->>'gmail_message_id'`, inserts `type='email'` interactions with `note="Subject: X\n\nsnippet"` and `metadata={gmail_message_id, from, to, subject, direction}`
+- `syncAllGmail()` — iterates all active connections, called on startup (+10s) and every 15 min
+- Token auto-refresh via `oauth2Client.on('tokens')` listener; revoked tokens set `status='disconnected'`
+- Routes: `POST /gmail/auth-url` (returns OAuth URL), `GET /gmail/callback` (public, exchanges code, upserts connection, kicks initial sync), `GET /gmail/status`, `DELETE /gmail/disconnect` (revokes token), `POST /gmail/sync` (manual trigger)
+
+**Frontend:**
+- `Settings.jsx` — new Integrations section with Gmail card: Connect/Reconnect/Disconnect buttons, "Sync now", connected email + last-synced time, success/error toast on redirect back from OAuth
+- `shared.jsx TouchpointTimeline` — email interactions parsed into subject (bold) + snippet (muted, 2-line clamp) + direction badge (Received/Sent)
+- `Dashboard.jsx` — activity feed shows "Email — [subject]" instead of just "Email" for Gmail-synced messages
+
+**Env vars needed:** `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REDIRECT_URI=https://nonprofit-erp-production.up.railway.app/gmail/callback`
+**Setup:** Enable Gmail API in Google Cloud Console, add OAuth consent scopes `gmail.readonly` + `gmail.send`, add redirect URI.
+
+---
+
 ### Admin dashboard light-mode overhaul (2026-06-02)
 Complete flip from dark to light: `#f7f7f5` bg, white sidebar/cards, `#0d5c3a` green accent, soft pill badges (TRIAL amber, ACTIVE green, CHURNED red, SEED blue, IMPACT purple), 32px metric values with colored 3px bottom borders, 40px signup numbers, JetBrains Mono for all numeric data, breadcrumb top bar, `S` logomark, scrollbar + focus-ring global CSS. No logic changes.
 

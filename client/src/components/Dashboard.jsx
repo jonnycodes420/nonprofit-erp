@@ -414,9 +414,13 @@ export function Dashboard({data,setData,onNavigate}) {
                   <div style={{flex:1,minWidth:0}}>
                     <div style={{fontSize:12,color:T.ink,lineHeight:1.4}}>
                       <span style={{fontWeight:600}}>{item.donorName}</span>
-                      {" · "}<span style={{color:tc,fontWeight:600,textTransform:"capitalize"}}>{item.type}</span>
+                      {" · "}<span style={{color:tc,fontWeight:600,textTransform:"capitalize"}}>
+                        {item.type==="email"&&item.note?.startsWith("Subject: ")
+                          ?`Email — ${item.note.split("\n")[0].replace("Subject: ","")}`
+                          :item.type}
+                      </span>
                     </div>
-                    {item.note&&<div className="dash-activity-note" style={{fontSize:11,color:T.ink3,marginTop:2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{item.note}</div>}
+                    {item.note&&!(item.type==="email"&&item.note.startsWith("Subject: "))&&<div className="dash-activity-note" style={{fontSize:11,color:T.ink3,marginTop:2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{item.note}</div>}
                   </div>
                   <div style={{fontSize:10,color:T.ink3,flexShrink:0,marginTop:2,whiteSpace:"nowrap"}}>{when}</div>
                 </div>

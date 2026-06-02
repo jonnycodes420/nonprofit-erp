@@ -8,8 +8,17 @@ const resend = new Resend(process.env.RESEND_API_KEY);
 const { getDb, query, run, uuid, seedOrgData } = require("./db");
 const { signToken, requireAuth, requireSuperAdmin } = require("./auth");
 const Stripe = require("stripe");
+const { google } = require("googleapis");
 
 const stripe = process.env.STRIPE_SECRET_KEY ? new Stripe(process.env.STRIPE_SECRET_KEY) : null;
+
+function makeOAuth2Client() {
+  return new google.auth.OAuth2(
+    process.env.GOOGLE_CLIENT_ID,
+    process.env.GOOGLE_CLIENT_SECRET,
+    process.env.GOOGLE_REDIRECT_URI || "https://nonprofit-erp-production.up.railway.app/gmail/callback"
+  );
+}
 
 const app = express();
 
@@ -3134,6 +3143,242 @@ app.delete("/admin/orgs/:id", requireAuth, requireSuperAdmin, wrap(async (req, r
   res.json({ deleted: true });
 }));
 
+// ── Gmail integration ──────────────────────────────────────────────────────
+
+async function syncGmail(userId, orgId) {
+  const conns = await query("SELECT * FROM gmail_connections WHERE user_id=? AND status='active'", [userId]);
+  if (!conns.length) return;
+  const conn = conns[0];
+
+  const oauth2Client = makeOAuth2Client();
+  oauth2Client.setCredentials({
+    access_token:  conn.access_token,
+    refresh_token: conn.refresh_token,
+    expiry_date:   conn.token_expiry ? new Date(conn.token_expiry).getTime() : undefined,
+  });
+
+  // Persist refreshed tokens automatically
+  oauth2Client.on("tokens", async (tokens) => {
+    const sets = [];
+    const vals = [];
+    if (tokens.access_token) { sets.push("access_token=?"); vals.push(tokens.access_token); }
+    if (tokens.expiry_date)  { sets.push("token_expiry=?");  vals.push(new Date(tokens.expiry_date).toISOString()); }
+    if (sets.length) { vals.push(conn.id); await run(`UPDATE gmail_connections SET ${sets.join(",")} WHERE id=?`, vals); }
+  });
+
+  const gmail = google.gmail({ version: "v1", auth: oauth2Client });
+
+  // Get all donor emails for this org
+  const donors = await query(
+    "SELECT id, email FROM donors WHERE org_id=? AND email IS NOT NULL AND email != ''",
+    [orgId]
+  );
+  if (!donors.length) return;
+
+  const donorByEmail = {};
+  donors.forEach(d => { donorByEmail[d.email.toLowerCase().trim()] = d; });
+  const donorEmails = Object.keys(donorByEmail);
+
+  // Process in chunks of 20 emails to stay within query length limits
+  const CHUNK = 20;
+  for (let i = 0; i < donorEmails.length; i += CHUNK) {
+    const chunk = donorEmails.slice(i, i + CHUNK);
+    const q = chunk.map(e => `from:${e} OR to:${e}`).join(" OR ");
+
+    let pageToken;
+    let fetched = 0;
+    do {
+      let listRes;
+      try {
+        listRes = await gmail.users.messages.list({ userId: "me", q, maxResults: 50, ...(pageToken ? { pageToken } : {}) });
+      } catch (e) {
+        if (e.code === 401 || e.status === 401) {
+          await run("UPDATE gmail_connections SET status='disconnected' WHERE id=?", [conn.id]);
+          throw new Error("Gmail token revoked");
+        }
+        throw e;
+      }
+
+      pageToken = listRes.data.nextPageToken;
+      const messages = listRes.data.messages || [];
+      fetched += messages.length;
+
+      for (const { id: msgId } of messages) {
+        // Idempotency: skip if already logged
+        const existing = await query(
+          "SELECT id FROM interactions WHERE org_id=? AND metadata->>'gmail_message_id'=?",
+          [orgId, msgId]
+        );
+        if (existing.length) continue;
+
+        let msgRes;
+        try {
+          msgRes = await gmail.users.messages.get({
+            userId: "me", id: msgId, format: "metadata",
+            metadataHeaders: ["From", "To", "Subject", "Date"],
+          });
+        } catch { continue; }
+
+        const headers = msgRes.data.payload?.headers || [];
+        const hdr = (name) => headers.find(h => h.name.toLowerCase() === name.toLowerCase())?.value || "";
+        const from    = hdr("From");
+        const to      = hdr("To");
+        const subject = hdr("Subject") || "(no subject)";
+        const dateStr = hdr("Date");
+        const snippet = (msgRes.data.snippet || "").slice(0, 500);
+
+        // Parse bare email from "Name <email@example.com>" format
+        const parseAddr = (s) => { const m = s.match(/<([^>]+)>/); return (m ? m[1] : s).toLowerCase().trim(); };
+        const fromEmail = parseAddr(from);
+        const toEmails  = to.split(",").map(parseAddr);
+
+        // Match to donor (from = inbound, to = outbound)
+        let matchedDonor = donorByEmail[fromEmail];
+        let direction    = "inbound";
+        if (!matchedDonor) {
+          for (const te of toEmails) {
+            if (donorByEmail[te]) { matchedDonor = donorByEmail[te]; direction = "outbound"; break; }
+          }
+        }
+        if (!matchedDonor) continue;
+
+        // Parse message date
+        let msgDate = new Date(dateStr);
+        if (isNaN(msgDate.getTime())) msgDate = new Date();
+        const dateIso = msgDate.toISOString().split("T")[0];
+
+        await run(
+          `INSERT INTO interactions (id, org_id, donor_id, type, note, date, created_at, metadata)
+           VALUES (?, ?, ?, 'email', ?, ?, ?, ?)`,
+          [
+            `int_${uuid().slice(0, 8)}`,
+            orgId,
+            matchedDonor.id,
+            `Subject: ${subject}\n\n${snippet}`,
+            dateIso,
+            msgDate.toISOString(),
+            JSON.stringify({ gmail_message_id: msgId, from, to, subject, direction }),
+          ]
+        );
+      }
+
+      if (fetched >= 100) break; // Safety cap per chunk
+    } while (pageToken);
+  }
+
+  await run("UPDATE gmail_connections SET last_synced_at=NOW() WHERE id=?", [conn.id]);
+}
+
+async function syncAllGmail() {
+  const connections = await query("SELECT * FROM gmail_connections WHERE status='active'");
+  for (const conn of connections) {
+    await syncGmail(conn.user_id, conn.org_id).catch(e => console.error("[gmail-sync]", e.message));
+  }
+}
+
+// POST /gmail/auth-url — returns OAuth URL for frontend to redirect to
+app.post("/gmail/auth-url", requireAuth, wrap(async (req, res) => {
+  if (!process.env.GOOGLE_CLIENT_ID) return res.status(503).json({ error: "Gmail not configured" });
+  const oauth2Client = makeOAuth2Client();
+  const url = oauth2Client.generateAuthUrl({
+    access_type: "offline",
+    scope: [
+      "https://www.googleapis.com/auth/gmail.readonly",
+      "https://www.googleapis.com/auth/gmail.send",
+    ],
+    state: req.user.userId,
+    prompt: "consent",
+  });
+  res.json({ url });
+}));
+
+// GET /gmail/callback — OAuth callback from Google (public)
+app.get("/gmail/callback", wrap(async (req, res) => {
+  const { code, state: userId, error } = req.query;
+  const frontendUrl = process.env.FRONTEND_URL || "https://client-five-tau-13.vercel.app";
+  if (error || !code) return res.redirect(`${frontendUrl}/dashboard?gmailError=access_denied`);
+
+  try {
+    const oauth2Client = makeOAuth2Client();
+    const { tokens } = await oauth2Client.getToken(code);
+    oauth2Client.setCredentials(tokens);
+
+    const gmail   = google.gmail({ version: "v1", auth: oauth2Client });
+    const profile = await gmail.users.getProfile({ userId: "me" });
+    const email   = profile.data.emailAddress;
+
+    // Look up the user to get their org
+    const users = await query("SELECT id, org_id FROM users WHERE id=?", [userId]);
+    if (!users.length) return res.redirect(`${frontendUrl}/dashboard?gmailError=user_not_found`);
+    const orgId = users[0].org_id;
+
+    await run(
+      `INSERT INTO gmail_connections (id, org_id, user_id, email, access_token, refresh_token, token_expiry, status)
+       VALUES (?, ?, ?, ?, ?, ?, ?, 'active')
+       ON CONFLICT (user_id) DO UPDATE SET
+         email=EXCLUDED.email, access_token=EXCLUDED.access_token,
+         refresh_token=EXCLUDED.refresh_token, token_expiry=EXCLUDED.token_expiry,
+         status='active'`,
+      [
+        `gc_${uuid().slice(0, 8)}`,
+        orgId,
+        userId,
+        email,
+        tokens.access_token,
+        tokens.refresh_token || "",
+        tokens.expiry_date ? new Date(tokens.expiry_date).toISOString() : null,
+      ]
+    );
+
+    // Kick off an initial sync in the background
+    syncGmail(userId, orgId).catch(e => console.error("[gmail-connect-sync]", e.message));
+
+    res.redirect(`${frontendUrl}/dashboard?gmailConnected=true`);
+  } catch (e) {
+    console.error("[gmail-callback]", e.message);
+    res.redirect(`${frontendUrl}/dashboard?gmailError=callback_failed`);
+  }
+}));
+
+// GET /gmail/status — returns connection info for current user
+app.get("/gmail/status", requireAuth, wrap(async (req, res) => {
+  const rows = await query(
+    "SELECT email, status, last_synced_at FROM gmail_connections WHERE user_id=?",
+    [req.user.userId]
+  );
+  if (!rows.length) return res.json({ connected: false });
+  const c = rows[0];
+  res.json({
+    connected: c.status === "active",
+    disconnected: c.status === "disconnected",
+    email: c.email,
+    lastSyncedAt: c.last_synced_at,
+  });
+}));
+
+// DELETE /gmail/disconnect — revokes token and removes connection
+app.delete("/gmail/disconnect", requireAuth, wrap(async (req, res) => {
+  const rows = await query("SELECT * FROM gmail_connections WHERE user_id=?", [req.user.userId]);
+  if (!rows.length) return res.json({ ok: true });
+  const conn = rows[0];
+  try {
+    const oauth2Client = makeOAuth2Client();
+    await oauth2Client.revokeToken(conn.access_token);
+  } catch { /* ignore revocation errors */ }
+  await run("DELETE FROM gmail_connections WHERE user_id=?", [req.user.userId]);
+  res.json({ ok: true });
+}));
+
+// POST /gmail/sync — manually trigger sync for current user
+app.post("/gmail/sync", requireAuth, wrap(async (req, res) => {
+  const rows = await query("SELECT status FROM gmail_connections WHERE user_id=?", [req.user.userId]);
+  if (!rows.length) return res.status(404).json({ error: "No Gmail connection found" });
+  if (rows[0].status !== "active") return res.status(400).json({ error: "Gmail connection is not active" });
+  // Run sync async — respond immediately
+  syncGmail(req.user.userId, req.user.orgId).catch(e => console.error("[gmail-manual-sync]", e.message));
+  res.json({ ok: true, message: "Sync started" });
+}));
+
 // ── 404 ────────────────────────────────────────────────────────────────────
 app.use((req, res) => {
   res.status(404).json({ error: "Not found" });
@@ -3162,5 +3407,9 @@ setInterval(() => {
   processSequences().catch(console.error);
   autoEnroll().catch(console.error);
 }, 60 * 60 * 1000);
+
+// Run Gmail sync on startup (10s delay) then every 15 min
+setTimeout(() => syncAllGmail().catch(console.error), 10000);
+setInterval(() => syncAllGmail().catch(console.error), 15 * 60 * 1000);
 
 module.exports = app;

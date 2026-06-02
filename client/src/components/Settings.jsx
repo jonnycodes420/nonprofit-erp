@@ -37,6 +37,10 @@ export function Settings({auth,logout}) {
   const [billing,setBilling]=useState(null);
   const [portalLoading,setPortalLoading]=useState(false);
 
+  const [gmailStatus,setGmailStatus]=useState(null);
+  const [gmailSyncing,setGmailSyncing]=useState(false);
+  const [gmailToast,setGmailToast]=useState("");
+
   useEffect(()=>{
     apiFetch("/org/team").then(setTeam).catch(()=>{});
     apiFetch("/stripe/status").then(setStripe).catch(()=>{});
@@ -45,7 +49,56 @@ export function Settings({auth,logout}) {
       apiFetch("/org").then(r=>{ if(r.org_slug) setOrgSlug(r.org_slug); }).catch(()=>{});
     }
     apiFetch("/custom-fields").then(setCustomFields).catch(()=>{});
+    apiFetch("/gmail/status").then(setGmailStatus).catch(()=>{});
+
+    // Show success toast if redirected back after OAuth connect
+    const params=new URLSearchParams(window.location.search);
+    if(params.get("gmailConnected")==="true"){
+      setGmailToast("Gmail connected! Syncing donor emails now…");
+      setTimeout(()=>setGmailToast(""),4000);
+      window.history.replaceState({},"",window.location.pathname);
+      apiFetch("/gmail/status").then(setGmailStatus).catch(()=>{});
+    }
+    if(params.get("gmailError")){
+      setGmailToast("Gmail connection failed. Please try again.");
+      setTimeout(()=>setGmailToast(""),4000);
+      window.history.replaceState({},"",window.location.pathname);
+    }
   },[]);
+
+  async function connectGmail(){
+    try{
+      const r=await apiFetch("/gmail/auth-url",{method:"POST"});
+      window.location.href=r.url;
+    }catch(e){ alert(e.message||"Failed to start Gmail connect"); }
+  }
+
+  async function disconnectGmail(){
+    if(!window.confirm("Disconnect Gmail? Synced interactions will remain."))return;
+    await apiFetch("/gmail/disconnect",{method:"DELETE"}).catch(()=>{});
+    setGmailStatus({connected:false});
+  }
+
+  async function syncGmailNow(){
+    setGmailSyncing(true);
+    try{
+      await apiFetch("/gmail/sync",{method:"POST"});
+      setGmailToast("Sync started — new emails will appear shortly.");
+      setTimeout(()=>setGmailToast(""),3500);
+      setTimeout(()=>apiFetch("/gmail/status").then(setGmailStatus).catch(()=>{}),3000);
+    }catch(e){ alert(e.message||"Sync failed"); }
+    setGmailSyncing(false);
+  }
+
+  function fmtSynced(ts){
+    if(!ts)return"Never synced";
+    const mins=Math.floor((Date.now()-new Date(ts))/60000);
+    if(mins<1)return"Just now";
+    if(mins<60)return`${mins}m ago`;
+    const hrs=Math.floor(mins/60);
+    if(hrs<24)return`${hrs}h ago`;
+    return new Date(ts).toLocaleDateString("en-US",{month:"short",day:"numeric"});
+  }
 
   async function openBillingPortal(){
     setPortalLoading(true);
@@ -344,6 +397,65 @@ export function Settings({auth,logout}) {
             </div>}
           </div>
         ))}
+      </div>
+
+      <div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:16,padding:"24px 28px"}}>
+        <SectionLabel>Integrations</SectionLabel>
+        <div style={{fontSize:13,color:T.ink3,marginBottom:16,lineHeight:1.5}}>Connect your tools to Steward.</div>
+
+        {/* Gmail card */}
+        <div style={{display:"flex",alignItems:"center",gap:16,padding:"16px",background:T.bg,borderRadius:12,border:"1px solid "+T.bg3,flexWrap:"wrap"}}>
+          <div style={{width:40,height:40,borderRadius:10,background:"#fff",border:"1px solid "+T.bg3,display:"flex",alignItems:"center",justifyContent:"center",fontSize:22,flexShrink:0}}>
+            📧
+          </div>
+          <div style={{flex:1,minWidth:180}}>
+            <div style={{fontSize:14,fontWeight:700,color:T.ink,marginBottom:2}}>Gmail</div>
+            <div style={{fontSize:12,color:T.ink3,lineHeight:1.5}}>
+              {gmailStatus?.disconnected
+                ? "Connection lost — please reconnect."
+                : gmailStatus?.connected
+                  ? `Connected as ${gmailStatus.email}`
+                  : "Sync donor emails automatically to your timeline."}
+            </div>
+            {gmailStatus?.connected&&(
+              <div style={{fontSize:11,color:T.ink3,marginTop:3}}>Synced {fmtSynced(gmailStatus.lastSyncedAt)}</div>
+            )}
+          </div>
+          <div style={{display:"flex",gap:8,alignItems:"center",flexShrink:0,flexWrap:"wrap"}}>
+            {gmailStatus?.connected ? (
+              <>
+                <div style={{display:"flex",alignItems:"center",gap:5,background:"#f0fdf4",border:"1px solid #bbf7d0",borderRadius:8,padding:"5px 10px"}}>
+                  <div style={{width:7,height:7,borderRadius:"50%",background:"#16a34a"}}/>
+                  <span style={{fontSize:12,fontWeight:600,color:"#166534"}}>Connected</span>
+                </div>
+                <button onClick={syncGmailNow} disabled={gmailSyncing}
+                  style={{background:T.green,border:"none",borderRadius:8,padding:"7px 14px",color:"#fff",fontSize:12,fontWeight:700,cursor:gmailSyncing?"not-allowed":"pointer",opacity:gmailSyncing?0.7:1}}>
+                  {gmailSyncing?"Syncing…":"Sync now"}
+                </button>
+                <button onClick={disconnectGmail}
+                  style={{background:"transparent",border:"none",fontSize:12,color:"#dc2626",cursor:"pointer",fontWeight:500,padding:"7px 4px"}}>
+                  Disconnect
+                </button>
+              </>
+            ) : gmailStatus?.disconnected ? (
+              <button onClick={connectGmail}
+                style={{background:T.green,border:"none",borderRadius:8,padding:"8px 16px",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer"}}>
+                Reconnect Gmail →
+              </button>
+            ) : (
+              <button onClick={connectGmail}
+                style={{background:"transparent",border:"1px solid "+T.greenDk,borderRadius:8,padding:"8px 16px",color:T.greenDk,fontSize:13,fontWeight:700,cursor:"pointer"}}>
+                Connect Gmail →
+              </button>
+            )}
+          </div>
+        </div>
+
+        {gmailToast&&(
+          <div style={{marginTop:12,background:"#f0fdf4",border:"1px solid #bbf7d0",borderRadius:8,padding:"10px 14px",fontSize:13,color:"#166534",fontWeight:600}}>
+            ✓ {gmailToast}
+          </div>
+        )}
       </div>
 
       <div style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:16,padding:"24px 28px"}}>

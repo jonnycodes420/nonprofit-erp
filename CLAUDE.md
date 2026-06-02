@@ -74,6 +74,31 @@ Mobile "More" drawer: communications, volunteers, board, tasks, settings
 - /admin → AdminDashboard (super admin only — RequireSuperAdmin guard checks localStorage npe_user.isSuperAdmin)
 - App.jsx renders <AppShell /> directly — NO internal router
 
+## Gmail integration
+
+### Tables
+- `gmail_connections` — id, org_id, user_id (UNIQUE), email, access_token, refresh_token, token_expiry, last_synced_at, history_id, status (`active`|`disconnected`)
+- `interactions.metadata JSONB` — added column; Gmail interactions store `{ gmail_message_id, from, to, subject, direction: 'inbound'|'outbound' }`
+
+### Auth flow
+- `POST /gmail/auth-url` (requireAuth) → returns `{ url }` for frontend to redirect to
+- `GET /gmail/callback` (public) → exchanges code, upserts gmail_connections, redirects to `${FRONTEND_URL}/dashboard?gmailConnected=true`
+- `makeOAuth2Client()` factory in server.js reads `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REDIRECT_URI`
+
+### Sync logic
+- `syncGmail(userId, orgId)` — async function, chunks donor emails 20 at a time, deduplicates via `metadata->>'gmail_message_id'`, inserts `type='email'` interactions
+- `syncAllGmail()` — iterates all active connections; called on startup (+10s) and every 15 min via setInterval
+- Token refresh: `oauth2Client.on('tokens')` persists new tokens; 401 errors set `status='disconnected'`
+- Interaction note format: `"Subject: X\n\nsnippet"` — parsed by TouchpointTimeline into subject + snippet display
+
+### Env vars required
+- `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REDIRECT_URI`
+
+### Frontend pattern
+- Settings Integrations section calls `POST /gmail/auth-url` then redirects; reads `?gmailConnected` on return
+- `TouchpointTimeline` in shared.jsx parses email note format and shows direction badge
+- Dashboard activity feed shows "Email — [subject]" for Gmail-synced messages
+
 ## Super admin pattern
 - `is_super_admin BOOLEAN DEFAULT false` column on `users` table
 - Set via: `UPDATE users SET is_super_admin = true WHERE email = 'your@email.com'` in Supabase

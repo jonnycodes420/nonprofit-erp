@@ -380,6 +380,16 @@ export function TouchpointTimeline({interactions}){
         const c=typeColor[int.type]||"#6b7280";
         const dAgo=daysDiff(int.date);
         const when=dAgo===0?"Today":dAgo===1?"Yesterday":`${dAgo}d ago`;
+
+        // Parse Gmail-synced email metadata
+        const meta=int.metadata||(int.metadata_raw?JSON.parse(int.metadata_raw):null);
+        let emailSubject=null,emailSnippet=null,direction=null;
+        if(int.type==="email"&&int.note){
+          const m=int.note.match(/^Subject: (.+?)(?:\n\n([\s\S]*))?$/);
+          if(m){emailSubject=m[1];emailSnippet=m[2]||"";}
+        }
+        if(meta?.direction)direction=meta.direction;
+
         return(
           <div key={i} style={{display:"flex",gap:12,paddingBottom:16,position:"relative"}}>
             {i<sorted.length-1&&<div style={{position:"absolute",left:12,top:26,width:2,bottom:0,background:T.bg3}}/>}
@@ -389,10 +399,25 @@ export function TouchpointTimeline({interactions}){
             <div style={{flex:1}}>
               <div style={{display:"flex",alignItems:"center",gap:7,marginBottom:3,flexWrap:"wrap"}}>
                 <span style={{fontSize:11,fontWeight:700,textTransform:"capitalize",color:c}}>{int.type}</span>
+                {direction&&(
+                  <span style={{fontSize:10,fontWeight:700,padding:"1px 7px",borderRadius:99,
+                    background:direction==="inbound"?"#f0fdf4":"#f3f4f6",
+                    color:direction==="inbound"?"#166534":"#6b7280",
+                    border:"1px solid "+(direction==="inbound"?"#bbf7d0":"#e5e7eb")}}>
+                    {direction==="inbound"?"Received":"Sent"}
+                  </span>
+                )}
                 <span style={{fontSize:11,color:T.ink3}}>{int.date}</span>
                 <span style={{fontSize:11,color:T.ink3,opacity:0.6}}>({when})</span>
               </div>
-              <div style={{fontSize:13,color:T.ink2,lineHeight:1.5}}>{int.note}</div>
+              {emailSubject?(
+                <div>
+                  <div style={{fontSize:13,fontWeight:600,color:T.ink,marginBottom:2}}>{emailSubject}</div>
+                  {emailSnippet&&<div style={{fontSize:12,color:T.ink3,lineHeight:1.5,overflow:"hidden",textOverflow:"ellipsis",display:"-webkit-box",WebkitLineClamp:2,WebkitBoxOrient:"vertical"}}>{emailSnippet}</div>}
+                </div>
+              ):(
+                <div style={{fontSize:13,color:T.ink2,lineHeight:1.5}}>{int.note}</div>
+              )}
             </div>
           </div>
         );
