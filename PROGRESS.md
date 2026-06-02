@@ -1,5 +1,10 @@
 # Steward — Build Progress
 
+### Landing page nav + About definition block (2026-06-01)
+"About" link added to desktop nav, mobile drawer, and footer nav (all via `replace_all`). About section given `id="about"`. Definition block added after closing gold line: gold `STEWARD` label, sage IPA + "noun", cream definition, sage second sentence — `#1a2e1f` inset card, gold left border.
+
+---
+
 ### Landing page redesign (2026-06-01)
 Full rebuild of `client/src/pages/Landing.jsx`. Dark hero (#0f1a12) with pure-CSS app UI mockup (stat cards + pipeline strip), Problem section (cream, gold-bordered pain cards), Features grid (3×2, icon-led), Org Health Score section (dark, CSS conic-gradient ring with score 82/B+), Pricing section (3 tiers: Seed $99 / Growth $249 highlighted / Impact $499), social proof, dark final CTA, dark footer. Typography-led, no gradients, no blobs. Calendly link and `/login` routing preserved.
 

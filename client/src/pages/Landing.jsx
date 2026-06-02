@@ -277,7 +277,7 @@ export default function Landing() {
               <span style={{ fontFamily: "'DM Serif Display',serif", fontSize: 18, color: C.cream }}>Steward</span>
               <button onClick={() => setMobileNavOpen(false)} style={{ background: "none", border: "none", fontSize: 24, color: C.sage, cursor: "pointer", lineHeight: 1 }}>×</button>
             </div>
-            {[["Features","#features"],["Pricing","#pricing"]].map(([l,h]) => (
+            {[["Features","#features"],["About","#about"],["Pricing","#pricing"]].map(([l,h]) => (
               <a key={l} href={h} className="lp-mobile-nav-row" onClick={() => setMobileNavOpen(false)}>{l}</a>
             ))}
             <div style={{ padding: "16px 24px", display: "flex", flexDirection: "column", gap: 10 }}>
@@ -310,7 +310,7 @@ export default function Landing() {
             Steward
           </span>
           <div className="lp-nav-links" style={{ display: "flex", alignItems: "center", gap: 32 }}>
-            {[["Features","#features"],["Pricing","#pricing"]].map(([l,h]) => (
+            {[["Features","#features"],["About","#about"],["Pricing","#pricing"]].map(([l,h]) => (
               <a key={l} href={h} className="nav-a" style={{ fontSize: 14, color: C.sage, transition: "opacity .15s" }}>{l}</a>
             ))}
           </div>
@@ -515,7 +515,7 @@ export default function Landing() {
         </section>
 
         {/* ── About ── */}
-        <section className="lp-section" style={{ background: C.dark, padding: "96px 64px", borderTop: `1px solid ${C.dark2}` }}>
+        <section id="about" className="lp-section" style={{ background: C.dark, padding: "96px 64px", borderTop: `1px solid ${C.dark2}` }}>
           <div style={{ maxWidth: 720, margin: "0 auto" }}>
             <Eyebrow dark>Why Steward Exists</Eyebrow>
             <h2 style={{
@@ -543,6 +543,26 @@ export default function Landing() {
             }}>
               "Your mission. Our pipeline."
             </p>
+            {/* Definition block */}
+            <div style={{
+              marginTop: 32, maxWidth: 480,
+              background: C.dark2, borderRadius: 10,
+              padding: "16px 20px", borderLeft: `3px solid ${C.gold}`,
+            }}>
+              <div style={{ marginBottom: 8 }}>
+                <span style={{ fontSize: 11, fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.12em", color: C.gold }}>Steward</span>
+                {"  "}
+                <span style={{ fontSize: 12, fontStyle: "italic", color: C.sage }}>/ˈstjuːərd/</span>
+                {"  "}
+                <span style={{ fontSize: 11, color: C.sage }}>noun</span>
+              </div>
+              <p style={{ fontSize: 14, color: C.cream, lineHeight: 1.65, marginBottom: 6, fontFamily: "'DM Sans',sans-serif" }}>
+                One who manages and protects something entrusted to their care.
+              </p>
+              <p style={{ fontSize: 13, color: C.sage, lineHeight: 1.6, fontFamily: "'DM Sans',sans-serif" }}>
+                That's what great development officers do. That's what we help them do better.
+              </p>
+            </div>
           </div>
         </section>
 
