@@ -450,6 +450,11 @@ async function initSchema() {
       UNIQUE(donor_id, field_id)
     )
   `);
+
+  await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS focus_area TEXT`);
+  await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS annual_budget TEXT`);
+  await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS founded_year INTEGER`);
+  await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS website TEXT`);
 }
 
 async function seedData() {

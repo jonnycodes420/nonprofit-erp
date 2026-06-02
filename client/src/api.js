@@ -54,8 +54,13 @@ export async function streamAI(systemPrompt, userMessage, onChunk) {
 export function adaptData({ org, donors, grants, volunteers, tasks, board, financials }) {
   return {
     org: {
+      id:         org.id,
       name:       org.name,
       mission:    org.mission || "",
+      focus_area: org.focus_area || "",
+      annual_budget: org.annual_budget || "",
+      founded_year: org.founded_year || "",
+      website:    org.website || "",
       programs:   [],
       ein:        org.ein || "",
       fiscalYear: "Jan-Dec",

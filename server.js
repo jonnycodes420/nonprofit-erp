@@ -337,6 +337,17 @@ app.get("/org", requireAuth, wrap(async (req, res) => {
   res.json(orgs[0]);
 }));
 
+app.patch("/orgs/:id", requireAuth, wrap(async (req, res) => {
+  if (req.user.orgId !== req.params.id) return res.status(403).json({ error: "Forbidden" });
+  const { mission, focusArea, annualBudget, foundedYear, website } = req.body;
+  await run(
+    `UPDATE orgs SET mission=?, focus_area=?, annual_budget=?, founded_year=?, website=? WHERE id=?`,
+    [mission || null, focusArea || null, annualBudget || null, foundedYear ? parseInt(foundedYear, 10) : null, website || null, req.params.id]
+  );
+  const orgs = await query("SELECT * FROM orgs WHERE id = ?", [req.params.id]);
+  res.json(orgs[0]);
+}));
+
 // ── Team ───────────────────────────────────────────────────────────────────
 app.get("/org/team", requireAuth, wrap(async (req, res) => {
   const members = await query(

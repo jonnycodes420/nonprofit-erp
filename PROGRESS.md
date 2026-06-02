@@ -1,5 +1,21 @@
 # Steward — Build Progress
 
+### Onboarding wizard (2026-06-01)
+Full-screen first-run wizard shown to admin users on brand-new orgs (no donors, grants, or financials). Trigger stored in `localStorage["steward_onboarded_" + orgId]` so it never fires twice.
+
+**Backend:** Added 4 new org columns via `ALTER TABLE IF NOT EXISTS` in db.js (`focus_area TEXT`, `annual_budget TEXT`, `founded_year INTEGER`, `website TEXT`). Added `PATCH /orgs/:id` route in server.js (admin-org scoped) that updates all 5 profile fields. `adaptData` in api.js now passes `id`, `focus_area`, `annual_budget`, `founded_year`, `website` through on the org object.
+
+**Frontend:** `client/src/components/OnboardingWizard.jsx` — 5-step wizard:
+1. Welcome — 2×2 feature card grid, skip escape hatch
+2. Org Profile — mission / focus area / budget / year / website, calls `PATCH /orgs/:id`
+3. Import Donors — CSV upload with auto column mapping (reuses CSV_FIELDS/guessField/inferStage logic from Donors.jsx), or skip
+4. First Sequence — pick one of 3 preset templates (New Donor Welcome / Lapsed Re-engagement / Major Donor Stewardship), calls `POST /sequences` with inline steps
+5. You're Ready — checkmark, import/sequence status summary, 3 first-move action cards
+
+Layout: `#0f1a12` full-screen overlay, left 40% panel (DM Serif headline, sage desc, gold italic, step dots), right 60% white card (36px 40px padding, 20px radius, deep shadow).
+
+---
+
 ### Landing page nav + About definition block (2026-06-01)
 "About" link added to desktop nav, mobile drawer, and footer nav (all via `replace_all`). About section given `id="about"`. Definition block added after closing gold line: gold `STEWARD` label, sage IPA + "noun", cream definition, sage second sentence — `#1a2e1f` inset card, gold left border.
 
