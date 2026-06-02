@@ -63,31 +63,31 @@ function AppShell() {
     }
   },[]);
 
-  useEffect(()=>{
-    (async()=>{
-      try {
-        const [org,donors,grants,volunteers,tasks,board,financials] = await Promise.all([
-          apiFetch("/org"),
-          apiFetch("/donors"),
-          apiFetch("/grants"),
-          apiFetch("/volunteers"),
-          apiFetch("/tasks"),
-          apiFetch("/board"),
-          apiFetch("/financials"),
-        ]);
-        const adapted=adaptData({org,donors,grants,volunteers,tasks,board,financials});
-        setData(adapted);
-        const noData=
-          adapted.donors.length===0 &&
-          adapted.grants.length===0 &&
-          adapted.financials.revenue.every(m=>m.individual+m.grants+m.events+m.other===0);
-        if(noData && auth?.user?.role==="admin" && !localStorage.getItem("steward_onboarded_"+org.id)){
-          setShowWizard(true);
-        }
-      } catch(e) { setLoadErr(e.message); }
-      setLoading(false);
-    })();
-  },[]);
+  async function loadData() {
+    try {
+      const [org,donors,grants,volunteers,tasks,board,financials] = await Promise.all([
+        apiFetch("/org"),
+        apiFetch("/donors"),
+        apiFetch("/grants"),
+        apiFetch("/volunteers"),
+        apiFetch("/tasks"),
+        apiFetch("/board"),
+        apiFetch("/financials"),
+      ]);
+      const adapted=adaptData({org,donors,grants,volunteers,tasks,board,financials});
+      setData(adapted);
+      const noData=
+        adapted.donors.length===0 &&
+        adapted.grants.length===0 &&
+        adapted.financials.revenue.every(m=>m.individual+m.grants+m.events+m.other===0);
+      if(noData && auth?.user?.role==="admin" && !localStorage.getItem("steward_onboarded_"+org.id)){
+        setShowWizard(true);
+      }
+    } catch(e) { setLoadErr(e.message); }
+    setLoading(false);
+  }
+
+  useEffect(()=>{ loadData(); },[]);
 
   const BASE = {minHeight:"100vh",background:T.bg,fontFamily:"'DM Sans',system-ui,sans-serif",overflowX:"hidden",maxWidth:"100vw"};
 
@@ -164,7 +164,7 @@ function AppShell() {
       {tab==="tasks"&&<Tasks data={data} setData={setData}/>}
       {tab==="settings"&&<Settings auth={auth} logout={logout}/>}
     </div>
-    {showWizard&&<OnboardingWizard org={data.org} onDone={()=>setShowWizard(false)}/>}
+    {showWizard&&<OnboardingWizard org={data.org} onDone={()=>{loadData();setTab("dashboard");setShowWizard(false);}}/>}
     {showChat&&<AIChat data={data} onClose={()=>setShowChat(false)}/>}
     {stripeToast&&<div style={{position:"fixed",bottom:24,right:24,zIndex:9999,background:T.greenDk,color:"#fff",borderRadius:14,padding:"14px 20px",fontSize:13,fontWeight:600,boxShadow:"0 8px 32px rgba(26,107,74,0.35)",display:"flex",alignItems:"center",gap:10,maxWidth:340}}>
       <span style={{fontSize:18}}>💳</span>
