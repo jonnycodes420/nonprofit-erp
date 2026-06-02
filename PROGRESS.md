@@ -1,5 +1,10 @@
 # Steward — Build Progress
 
+### Admin dashboard design pass (2026-06-02)
+Design-only refinement of `AdminDashboard.jsx` — no logic changes. Updated color tokens (`#080f09` bg, `#0a110a` sidebar, `#e8f0e8` primary text, `#6b8f6b`/`#3d5c3d` secondary/muted), tighter badge style (9px, 3px radius, per-status bg/border), compact MetricCard (16×20 padding, 10px uppercase labels), monospace numbers via JetBrains Mono, 4px flat bars, table headers at 10px uppercase muted, sidebar text-only logo `STEWARD` in 0.2em letter-spacing, 44px top bar, hover transitions throughout.
+
+---
+
 ### Super-admin dashboard (2026-06-02)
 Internal ops tool for Steward platform admins. Separate authenticated view at `/admin` — not part of the AppShell.
 
