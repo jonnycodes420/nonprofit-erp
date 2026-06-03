@@ -70,6 +70,7 @@ export function adaptData({ org, donors, grants, volunteers, tasks, board, finan
         date: i.date || i.created_at?.split("T")[0],
         type: i.type,
         note: i.note || "",
+        metadata: i.metadata || null,
       }));
       const lastTouchpoint = interactions.length > 0
         ? interactions.slice().sort((a, b) => new Date(b.date) - new Date(a.date))[0].date

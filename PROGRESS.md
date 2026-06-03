@@ -1,5 +1,193 @@
 # Steward — Build Progress
 
+### Events & Meeting Tracking (2026-06-02)
+Full event lifecycle management — create events, track attendees, log gifts, create follow-up tasks.
+
+**Database (2 new tables in `db.js`):**
+- `events` — id, org_id, name, event_type (gala/cultivation/site_visit/board_meeting/volunteer/webinar/other), date, end_date, location, description, capacity, status (upcoming/completed/cancelled), revenue, cost, notes, created_at
+- `event_attendees` — id, event_id (FK→events CASCADE), org_id, donor_id (FK→donors SET NULL), name, email, status (invited/confirmed/attended/no_show/cancelled), gift_amount, notes, UNIQUE(event_id, donor_id)
+
+**Backend routes (all `requireAuth`, added before 404 handler in `server.js`):**
+- `GET /events` — org events ordered by date DESC with attendee_count, confirmed_count, no_show_count, invited_count, total_revenue aggregates
+- `POST /events` — create event
+- `PUT /events/:id` — update event (name, type, date, status, revenue, cost, notes, etc.)
+- `DELETE /events/:id` — cascade deletes attendees
+- `GET /events/:id` — full event with attendees JOINed to donor data (stage, total_giving)
+- `POST /events/:id/attendees` — bulk add donors by donorIds array OR add manual guest by {name,email}
+- `PATCH /events/:id/attendees/:attendeeId` — update status/giftAmount; if status=attended + gift>0 + donor_id exists: logs gift to gifts table, updates donor totals, syncs to fin_transactions
+- `DELETE /events/:id/attendees/:attendeeId` — remove attendee
+- `POST /events/:id/follow-up` — creates tasks for all 'attended' donors with `{{event_name}}` token replacement; returns count
+- `GET /donors/:id/events` — all events a donor has been invited to / attended
+
+**Frontend — `client/src/components/Events.jsx`:**
+- `PageTitle`: "Your events."
+- **Stats strip**: 4 cards — Events This Year, Total Attendees, Event Revenue, Avg Attendance Rate
+- **Filter toggle**: Upcoming / Past / All
+- **Event cards** (2-col grid, 1-col mobile): type icon + left border color, DM Serif name, date+location, status badge, attendee/capacity progress bar, revenue display, Manage → button
+- **NewEventPanel**: slide-in from right; name, type dropdown, date range, location, description, capacity, cost
+- **EventDetail** (full-screen overlay): header with type/status badges; 4 stat tiles (Invited/Confirmed/Attended/No Show); Revenue vs Cost bars with net; notes textarea (auto-save on blur); inline attendee table with status dropdown click-to-edit + gift amount inline edit + remove; "Mark all confirmed as attended" bulk action; right panel: event stats (conversion rate, avg gift, top donor), Add Attendees (from directory with checkbox list / manual guest), Follow-up Tasks call-to-action
+- **FollowUpModal**: task title template with `{{event_name}}`, due date, priority selector; shows count on success
+- **Edit Event modal**: all fields editable inline from detail view header
+
+**`client/src/App.jsx`:**
+- Added `{id:"events",label:"Events",icon:"◎"}` to TABS and MORE_TABS
+- Import and render `<Events data={data}/>` at `tab==="events"`
+
+**`client/src/components/Donors.jsx`:**
+- `DonorProfile`: fetches `GET /donors/:id/events` on mount; shows Events section in right panel (below Custom Fields) when donor has any events — each row shows type icon, event name, date, attendee status badge
+- `LogTouchpointModal`: when type="event", loads org's events from `GET /events` and offers a dropdown to select from recent events (falls back to text input if none)
+
+**`client/src/components/Analytics.jsx`:**
+- Added Event Performance chart (7th chart): bar chart of attendee count per event (last 6), color-coded by event type; revenue legend below for events with gifts
+
+**`client/src/components/shared.jsx` (GlobalStyles):**
+- Added mobile CSS: `.events-stats-grid` 2-col, `.events-grid` 1-col, `.event-detail-body` stacks single column
+
+**Event type color system:** gala=#8b5cf6, cultivation=#10b981, site_visit=#3b82f6, board_meeting=#0d5c3a, volunteer=#f59e0b, webinar=#ec4899, other=#6b7280 — used for card left border, type badges, chart bars.
+
+---
+
+### Terms of Service + Privacy Policy pages (2026-06-02)
+Public legal pages at `/terms` and `/privacy`. Linked from Landing footer, Signup form, and Settings.
+
+**New pages:**
+- `client/src/pages/TermsPage.jsx` — 14-section Terms of Service. Covers acceptance, service description, accounts, billing (30-day trial, monthly billing, cancellation, failed payments, price changes), data ownership, acceptable use, privacy, IP, termination, limitation of liability, disclaimer of warranties, Kentucky governing law, and changes. Contact: `legal@stewardapp.dev`.
+- `client/src/pages/PrivacyPage.jsx` — 13-section Privacy Policy. Covers data collected (account, donor/org data, usage, payments, cookies/localStorage), how it's used, AI features (Anthropic API usage disclosure), data ownership + Supabase/US storage, third parties (Supabase, Railway, Vercel, Stripe, Resend, Anthropic, Google Gmail API, Intercom, Sentry), Gmail integration (Limited Use disclosure), retention, user rights (CCPA/GDPR), children's privacy, security, governing law (Kentucky), and changes. Contact: `privacy@stewardapp.dev`.
+
+**Both pages share:** sticky dark nav with Steward logo + "← Back to home" link; cream `#f0ede6` background; DM Serif Display headings; max-width 720px.
+
+**`client/src/main.jsx`** — added `TermsPage` and `PrivacyPage` imports and routes `/terms` + `/privacy` (public, no auth guard).
+
+**Links added:**
+- `client/src/pages/Landing.jsx` footer bottom strip — Terms and Privacy links alongside copyright (muted `C.dark3` color matching existing style)
+- `client/src/pages/SignupPage.jsx` — "By signing up you agree to our Terms of Service and Privacy Policy." with underlined links to `/terms` and `/privacy`
+- `client/src/components/Settings.jsx` Account Actions section — "Terms of Service" and "Privacy Policy" links below Sign out button (open in new tab)
+
+---
+
+### Intercom live chat widget (2026-06-02)
+Users can message from inside the app. Widget appears bottom-right on all authenticated screens.
+
+**`client/index.html`** — standard Intercom loader snippet added to `<head>`. Sets `window.intercomSettings` with `app_id`, then async-loads the widget script.
+
+**`client/src/App.jsx`** — `window.Intercom('boot', {...})` called in a `useEffect([auth])` inside `AppShell`. Passes user name, email, and org context (id, name, plan) so conversations in the Intercom dashboard show the org and plan automatically.
+
+**To activate:** Go to [intercom.com](https://intercom.com) → sign up free → Settings → Installation → copy the App ID → replace `YOUR_INTERCOM_APP_ID` in two places:
+- `client/index.html` (lines with `app_id` and widget script URL)
+- `client/src/App.jsx` (the `boot` call `app_id` field)
+
+---
+
+### Sentry error monitoring (2026-06-02)
+Frontend and backend wired to Sentry. Both only initialize when the DSN env var is set — no-op in local dev without the var.
+
+**Packages installed:**
+- `@sentry/node@10.56.0` — root `package.json` (backend)
+- `@sentry/react@10.56.0` — `client/package.json` (frontend)
+
+**`server.js`:**
+- `Sentry.init()` called at the very top (after `dotenv.config()`, before all other requires), guarded by `if (process.env.SENTRY_DSN)`
+- `Sentry.Handlers.requestHandler()` registered immediately after `cors` middleware (first middleware position), conditionally
+- `Sentry.Handlers.errorHandler()` registered just before the global 500 error handler, conditionally
+
+**`client/src/main.jsx`:**
+- `import * as Sentry from "@sentry/react"` at top of file
+- `Sentry.init()` with `browserTracingIntegration()`, guarded by `if (import.meta.env.VITE_SENTRY_DSN)`
+
+**Setup instructions:**
+1. Go to [sentry.io](https://sentry.io) → create account (or sign in) → **New Project**
+2. For backend: choose **Node.js** → copy the DSN → add to Railway as `SENTRY_DSN`
+3. For frontend: choose **React** → copy the DSN → add to Vercel as `VITE_SENTRY_DSN`
+4. Both DSNs are different — create two separate Sentry projects for cleaner separation
+
+**New env vars:**
+- `SENTRY_DSN` — Railway (backend). Without it, Sentry is entirely skipped.
+- `VITE_SENTRY_DSN` — Vercel (frontend). Without it, Sentry is entirely skipped.
+
+---
+
+### Email deliverability setup (2026-06-02)
+Infrastructure documentation + startup warning for SPF/DKIM/DMARC via Resend.
+
+**`EMAIL_SETUP.md`** (repo root) — step-by-step guide covering:
+1. Adding `stewardapp.dev` in the Resend dashboard
+2. Exact DNS records for Vercel nameservers: SPF TXT (`v=spf1 include:amazonses.com ~all`), two DKIM CNAME records (values from Resend), DMARC TXT (`v=DMARC1; p=quarantine; rua=...`)
+3. Verifying the domain in Resend (green checkmarks on SPF/DKIM/DMARC)
+4. Setting `DEMO_SMTP_FROM=noreply@stewardapp.dev` and `RESEND_DOMAIN_VERIFIED=true` in Railway
+5. Testing with mail-tester.com (target 9–10/10)
+6. Spam troubleshooting checklist: IP warm-up, MX records, content scoring, Google Postmaster Tools, Resend logs
+
+**`server.js`** — added startup warning in `app.listen` callback:
+```js
+if (!process.env.RESEND_DOMAIN_VERIFIED) {
+  console.warn("[email] WARNING: RESEND_DOMAIN_VERIFIED not set — emails may land in spam");
+}
+```
+
+**New env var:** `RESEND_DOMAIN_VERIFIED=true` — set in Railway after verifying domain in Resend. Suppresses the startup warning. No runtime effect beyond the check.
+
+---
+
+### Password reset flow (2026-06-02)
+Users can request a reset link via email and set a new password.
+
+**Database:** `password_reset_tokens` table — id, user_id, token (UNIQUE), expires_at (`NOW() + INTERVAL '1 hour'`), used BOOLEAN, created_at.
+
+**Backend (`server.js`):**
+- Added `const crypto = require("crypto")` at top
+- `POST /auth/forgot-password` — finds user by email (silent 200 if not found), generates 32-byte hex token, inserts into `password_reset_tokens`, sends branded HTML reset email via Resend from `noreply@stewardapp.dev`. Subject: "Reset your Steward password".
+- `POST /auth/reset-password` — validates token (unused + not expired), bcrypt-hashes new password (min 8 chars), updates `users.password_hash`, marks token `used=true`.
+
+**Frontend:**
+- `client/src/pages/ForgotPasswordPage.jsx` — split dark-left / white-right layout matching SignupPage. Email input → "Send reset link →" → success state shows "Check your email — we sent a reset link to [email]." with back-to-login link.
+- `client/src/pages/ResetPasswordPage.jsx` — reads `?token=` from URL. New password + confirm inputs with inline validation (min 8 chars, match check). Success: "Password updated! Redirecting to login…" → 2s redirect to `/login`. Error message from API shown in red.
+- `client/src/main.jsx` — added `/forgot-password` and `/reset-password` routes (public, no auth guard).
+- `client/src/pages/LoginPage.jsx` — "Forgot your password?" link added below password field, right-aligned, muted 12px, links to `/forgot-password`.
+
+---
+
+### PWA — installable app (2026-06-02)
+Steward is now installable on iPhone and Android home screens. Runs full-screen with no browser chrome.
+
+**Files created/modified:**
+- `client/public/site.webmanifest` — updated with Steward name, `#0f1a12` theme/bg, `start_url: /dashboard`, existing android-chrome PNG icons (192 + 512), `display: standalone`
+- `client/public/sw.js` — service worker: caches static assets on install, network-first strategy for all GET requests (API calls pass through uncached), serves `/offline.html` for failed navigation requests
+- `client/public/offline.html` — dark `#0f1a12` offline page: Steward mark, "You're offline" in DM Serif, animated green pulse dots, "Try again" button
+- `client/index.html` — added `<meta name="theme-color">`, `<meta name="apple-mobile-web-app-capable">`, `<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">`, `<meta name="apple-mobile-web-app-title">`, startup image link
+- `client/src/main.jsx` — registers `/sw.js` on `window.load`
+- `client/src/components/shared.jsx` (GlobalStyles) — added `overscroll-behavior:none` on body, `-webkit-tap-highlight-color:transparent` globally, `touch-action:manipulation` on all buttons, `.app-header { padding-top: env(safe-area-inset-top) }` for iPhone status bar, `user-select:none` on nav elements (already had safe-area bottom padding)
+- `client/src/App.jsx` — `className="app-header"` on sticky header div; `beforeinstallprompt` handler fires after 30s; install banner (above bottom nav, `#0f1a12` bg) with "Add" + × dismiss; dismissed state saved to localStorage
+
+**No new npm packages installed** — uses existing android-chrome PNGs already in `client/public/`.
+
+---
+
+### Gmail integration — Session 2: Send from donor profiles + AI thread context (2026-06-02)
+Send emails directly from donor profiles via connected Gmail. Full thread history fed into AI context.
+
+**Backend (`server.js`):**
+- `POST /gmail/send` — requireAuth. Gets user's active gmail_connection, builds RFC 2822 email, sends via `gmail.users.messages.send`, retries once on 401 (then sets `status='disconnected'`). Logs `type='email'` interaction with `metadata={gmail_message_id, from, to, subject, direction:'outbound'}`.
+- `GET /gmail/thread/:donorId` — requireAuth. Returns last 20 email interactions for donor (type='email'), with parsed `{subject, snippet, direction, created_at}`.
+
+**Frontend (`Donors.jsx` — DonorProfile):**
+- `gmailConnected` state: fetches `GET /gmail/status` on mount
+- "✉ Send Email" button in AI Intelligence section (same style as AIBtn small)
+- Compose panel: inline dark surface (`#1a2e1f`), slides open below AI buttons. Pre-fills To field with `donor.email`. Subject + body inputs + token hint (`{{donor_name}}`, `{{org_name}}`).
+- "✦ Draft with AI": fetches thread, streams AI with donor context + thread history. Parses `Subject: X` from first line into subject field, rest into body.
+- "Send →": replaces tokens, calls `POST /gmail/send`, shows "✓ Sent and logged" toast for 3s, closes panel, calls `onInteractionAdded` → `reloadDonors`.
+- If Gmail not connected: shows "Connect Gmail in Settings" link instead of form.
+- If donor has no email: shows "No email address on file" message.
+- `getAI` for "email" and "outreach" types: fetches `GET /gmail/thread/:donorId` first, prepends thread history to prompt if ≥1 email exists.
+
+**`api.js`:** `adaptData` interactions mapping now includes `metadata: i.metadata || null` so direction badges work on timeline.
+
+**`shared.jsx TouchpointTimeline`:**
+- Email dot → ✉ icon
+- "Sent" direction badge changed from grey → blue pale (`#eff6ff`/`#1d4ed8`/`#bfdbfe`)
+- "via Gmail" label shown when `meta.gmail_message_id` exists
+
+---
+
 ### Gmail integration — Session 1: OAuth connect + sync (2026-06-02)
 Donors who email the org auto-log to their interaction timeline.
 

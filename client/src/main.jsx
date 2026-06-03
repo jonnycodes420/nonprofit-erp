@@ -1,4 +1,13 @@
 import React, { useState, useEffect, createContext, useContext } from "react";
+import * as Sentry from "@sentry/react";
+if (import.meta.env.VITE_SENTRY_DSN) {
+  Sentry.init({
+    dsn: import.meta.env.VITE_SENTRY_DSN,
+    environment: import.meta.env.MODE,
+    tracesSampleRate: 0.1,
+    integrations: [Sentry.browserTracingIntegration()],
+  });
+}
 import ReactDOM from "react-dom/client";
 import { BrowserRouter, Routes, Route, Navigate, useNavigate } from "react-router-dom";
 import { apiFetch } from "./api";
@@ -11,6 +20,10 @@ import Landing from "./pages/Landing";
 import Donate from "./pages/Donate";
 import Pricing from "./pages/Pricing";
 import AdminDashboard from "./pages/AdminDashboard";
+import ForgotPasswordPage from "./pages/ForgotPasswordPage";
+import ResetPasswordPage from "./pages/ResetPasswordPage";
+import TermsPage from "./pages/TermsPage";
+import PrivacyPage from "./pages/PrivacyPage";
 import { Analytics } from '@vercel/analytics/react'
 import { SpeedInsights } from '@vercel/speed-insights/react'
 
@@ -91,8 +104,12 @@ function Root() {
           <Route path="/invite/:token" element={<InvitePage />} />
           <Route path="/pricing"   element={<Pricing />} />
           <Route path="/give/:orgSlug" element={<Donate />} />
-          <Route path="/admin"     element={<RequireSuperAdmin><AdminDashboard /></RequireSuperAdmin>} />
-          <Route path="*"          element={<Navigate to="/" replace />} />
+          <Route path="/admin"             element={<RequireSuperAdmin><AdminDashboard /></RequireSuperAdmin>} />
+          <Route path="/forgot-password"  element={<ForgotPasswordPage />} />
+          <Route path="/reset-password"   element={<ResetPasswordPage />} />
+          <Route path="/terms"            element={<TermsPage />} />
+          <Route path="/privacy"          element={<PrivacyPage />} />
+          <Route path="*"                 element={<Navigate to="/" replace />} />
         </Routes>
         <Analytics />
         <SpeedInsights />
@@ -104,4 +121,12 @@ function Root() {
 ReactDOM.createRoot(document.getElementById("root")).render(
   <React.StrictMode><Root /></React.StrictMode>
 );
+
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js')
+      .then(reg => console.log('[SW] registered', reg.scope))
+      .catch(err => console.error('[SW] registration failed', err));
+  });
+}
  

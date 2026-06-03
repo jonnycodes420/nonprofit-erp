@@ -780,7 +780,10 @@ export default function Landing() {
             </div>
             <div style={{ borderTop: `1px solid ${C.dark2}`, paddingTop: 24, display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
               <p style={{ fontSize: 12, color: C.dark3 }}>© 2025 Steward. Made for missions.</p>
-              <p style={{ fontSize: 12, color: C.dark3 }}>Built with care for the nonprofit sector.</p>
+              <div style={{ display: "flex", gap: 20, alignItems: "center" }}>
+                <a href="/terms" style={{ fontSize: 12, color: C.dark3, textDecoration: "none", transition: "opacity .15s" }} className="footer-a">Terms</a>
+                <a href="/privacy" style={{ fontSize: 12, color: C.dark3, textDecoration: "none", transition: "opacity .15s" }} className="footer-a">Privacy</a>
+              </div>
             </div>
           </div>
         </footer>

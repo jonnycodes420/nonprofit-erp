@@ -156,7 +156,10 @@ export default function SignupPage() {
           </form>
 
           <div style={{ marginTop: 20, fontSize: 11, color: "#9ca896", textAlign: "center", lineHeight: 1.5 }}>
-            By signing up you agree to our Terms of Service.
+            By signing up you agree to our{" "}
+            <Link to="/terms" style={{ color: "#8fa896", textDecoration: "underline" }}>Terms of Service</Link>
+            {" "}and{" "}
+            <Link to="/privacy" style={{ color: "#8fa896", textDecoration: "underline" }}>Privacy Policy</Link>.
           </div>
         </div>
       </div>

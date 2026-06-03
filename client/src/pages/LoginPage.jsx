@@ -33,7 +33,7 @@ export default function LoginPage() {
       localStorage.setItem("npe_token", data.token);
       localStorage.setItem("npe_user", JSON.stringify(data.user));
       localStorage.setItem("npe_org",  JSON.stringify(data.org));
-      window.location.href = data.user?.isSuperAdmin ? "/admin" : "/dashboard";
+      window.location.href = "/dashboard";
     } catch (err) {
       setError(err.message);
     }
@@ -114,6 +114,11 @@ export default function LoginPage() {
                   required
                   style={inputStyle}
                 />
+                <div style={{ textAlign: "right", marginTop: 4 }}>
+                  <Link to="/forgot-password" style={{ fontSize: 12, color: T.ink3, textDecoration: "none" }}>
+                    Forgot your password?
+                  </Link>
+                </div>
               </Field>
 
               {error && (

@@ -12,6 +12,7 @@ import { Finance } from "./components/Finance";
 import { Tasks } from "./components/Tasks";
 import { Settings } from "./components/Settings";
 import { Analytics } from "./components/Analytics";
+import { Events } from "./components/Events";
 import { OnboardingWizard } from "./components/OnboardingWizard";
 
 // ── Tabs ───────────────────────────────────────────────────────────────────
@@ -21,11 +22,12 @@ const TABS=[
   {id:"grants",label:"Grants",icon:"◉"},
   {id:"communications",label:"Communications",icon:"◑"},
   {id:"finance",label:"Finance",icon:"◇"},
-  {id:"volunteers",label:"Volunteers",icon:"◎",earlyAccess:true},
-  {id:"board",label:"Board",icon:"◆",earlyAccess:true},
+  {id:"events",label:"Events",icon:"◎"},
   {id:"analytics",label:"Analytics",icon:"◈"},
   {id:"tasks",label:"Tasks",icon:"◻"},
   {id:"settings",label:"Settings",icon:"⚙"},
+  {id:"volunteers",label:"Volunteers",icon:"◎",earlyAccess:true},
+  {id:"board",label:"Board",icon:"◆",earlyAccess:true},
 ];
 const BOTTOM_TABS=[
   {id:"dashboard",label:"Dashboard",icon:"◈"},
@@ -35,6 +37,7 @@ const BOTTOM_TABS=[
 ];
 const MORE_TABS=[
   {id:"communications",label:"Communications",icon:"◑"},
+  {id:"events",label:"Events",icon:"◎"},
   {id:"volunteers",label:"Volunteers",icon:"◎",earlyAccess:true},
   {id:"board",label:"Board",icon:"◆",earlyAccess:true},
   {id:"analytics",label:"Analytics",icon:"◈"},
@@ -55,6 +58,25 @@ function AppShell() {
   const [showWizard,setShowWizard]=useState(false);
   const [billing,setBilling]=useState(null);
   const [bannerDismissed,setBannerDismissed]=useState(false);
+  const [showInstallPrompt,setShowInstallPrompt]=useState(false);
+  const [deferredPrompt,setDeferredPrompt]=useState(null);
+
+  useEffect(()=>{
+    if(auth?.user&&window.Intercom){
+      window.Intercom('boot',{
+        api_base:'https://api-iam.intercom.io',
+        app_id:'YOUR_INTERCOM_APP_ID',
+        name:auth.user.name,
+        email:auth.user.email,
+        created_at:Math.floor(Date.now()/1000),
+        company:{
+          id:auth.org?.id,
+          name:auth.org?.name,
+          plan:auth.org?.plan,
+        },
+      });
+    }
+  },[auth]);
 
   useEffect(()=>{
     const params=new URLSearchParams(window.location.search);
@@ -63,6 +85,18 @@ function AppShell() {
       window.history.replaceState({},"","/dashboard");
       setTimeout(()=>setStripeToast(false),6000);
     }
+  },[]);
+
+  useEffect(()=>{
+    if(window.matchMedia('(display-mode: standalone)').matches)return;
+    if(localStorage.getItem('installDismissed'))return;
+    const handler=e=>{
+      e.preventDefault();
+      setDeferredPrompt(e);
+      setTimeout(()=>setShowInstallPrompt(true),30000);
+    };
+    window.addEventListener('beforeinstallprompt',handler);
+    return()=>window.removeEventListener('beforeinstallprompt',handler);
   },[]);
 
   async function loadData() {
@@ -131,7 +165,7 @@ function AppShell() {
     <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=DM+Serif+Display&display=swap" rel="stylesheet"/>
 
     {/* Header */}
-    <div style={{borderBottom:"1px solid #1a2e1f",padding:"0 24px",display:"flex",alignItems:"center",justifyContent:"space-between",background:"#0f1a12",position:"sticky",top:0,zIndex:100,height:52,width:"100%",boxSizing:"border-box"}}>
+    <div className="app-header" style={{borderBottom:"1px solid #1a2e1f",padding:"0 24px",display:"flex",alignItems:"center",justifyContent:"space-between",background:"#0f1a12",position:"sticky",top:0,zIndex:100,height:52,width:"100%",boxSizing:"border-box"}}>
       <div style={{display:"flex",alignItems:"center",gap:12}}>
         <div style={{width:30,height:30,background:T.greenDk,borderRadius:8,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
           <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M8 2L13 5v6L8 14 3 11V5L8 2z" stroke="#f0ede6" strokeWidth="1.5" fill="none"/><circle cx="8" cy="8" r="2" fill="#f0ede6"/></svg>
@@ -178,6 +212,7 @@ function AppShell() {
       {tab==="donors"&&<Donors data={data} setData={setData}/>}
       {tab==="grants"&&<Grants data={data} setData={setData}/>}
       {tab==="communications"&&<Communications data={data}/>}
+      {tab==="events"&&<Events data={data}/>}
       {tab==="volunteers"&&<Volunteers data={data}/>}
       {tab==="board"&&<Board data={data}/>}
       {tab==="finance"&&<Finance data={data}/>}
@@ -217,6 +252,14 @@ function AppShell() {
           Sign out
         </button>
       </div>
+    </div>}
+
+    {/* Install prompt — mobile browsers only */}
+    {showInstallPrompt&&deferredPrompt&&<div style={{position:"fixed",bottom:"calc(60px + env(safe-area-inset-bottom,0px))",left:0,right:0,zIndex:145,background:"#0f1a12",borderTop:"1px solid #1a2e1f",padding:"10px 16px",display:"flex",alignItems:"center",gap:12,boxShadow:"0 -4px 20px rgba(0,0,0,0.3)"}}>
+      <span style={{fontSize:18,lineHeight:1,flexShrink:0}}>📱</span>
+      <span style={{flex:1,fontSize:13,color:"#f0ede6",fontWeight:500}}>Add Steward to your home screen</span>
+      <button onClick={async()=>{deferredPrompt.prompt();setShowInstallPrompt(false);}} style={{background:"#10b981",border:"none",borderRadius:8,padding:"6px 14px",color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer",flexShrink:0}}>Add</button>
+      <button onClick={()=>{setShowInstallPrompt(false);localStorage.setItem('installDismissed','true');}} style={{background:"transparent",border:"none",color:"#8fa896",fontSize:18,cursor:"pointer",padding:"0 4px",lineHeight:1,flexShrink:0}}>×</button>
     </div>}
 
     {/* Bottom nav bar — mobile only, always in DOM */}

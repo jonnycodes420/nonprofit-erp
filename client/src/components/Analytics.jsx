@@ -35,9 +35,11 @@ function HBarChart({ data }) {
 
 export function Analytics({ data }) {
   const [campaigns, setCampaigns] = useState([]);
+  const [events, setEvents] = useState([]);
 
   useEffect(() => {
-    apiFetch("/email/campaigns").then(rows => setCampaigns(Array.isArray(rows) ? rows : [])).catch(() => {});
+    apiFetch("/campaigns").then(rows => setCampaigns(Array.isArray(rows) ? rows : [])).catch(() => {});
+    apiFetch("/events").then(rows => setEvents(Array.isArray(rows) ? rows : [])).catch(() => {});
   }, []);
 
   const currentYear = new Date().getFullYear();
@@ -83,6 +85,20 @@ export function Analytics({ data }) {
     .filter(c => c.status === "sent")
     .sort((a, b) => new Date(b.sent_at || 0) - new Date(a.sent_at || 0))
     .slice(0, 10);
+
+  // Chart 7: Event Performance
+  const recentEvents = [...events]
+    .filter(e => e.attendee_count != null)
+    .sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0))
+    .slice(0, 6)
+    .reverse();
+  const eventTypeColors = { gala:"#8b5cf6", cultivation:"#10b981", site_visit:"#3b82f6", board_meeting:"#0d5c3a", volunteer:"#f59e0b", webinar:"#ec4899", other:"#6b7280" };
+  const eventChartData = recentEvents.map(e => ({
+    label: e.name.length > 10 ? e.name.slice(0, 10) + "…" : e.name,
+    v: parseInt(e.attendee_count) || 0,
+    color: eventTypeColors[e.event_type] || "#6b7280",
+    revenue: parseFloat(e.total_revenue) || 0,
+  }));
 
   // Chart 6: Top Donors
   const topDonors = [...data.donors].sort((a, b) => b.total - a.total).slice(0, 10);
@@ -168,6 +184,27 @@ export function Analytics({ data }) {
                 </div>
               </div>
             </div>}
+        </Card>
+
+        <Card>
+          <SectionLabel>Event Performance</SectionLabel>
+          <div style={{ fontSize: 11, color: T.ink3, marginBottom: 12 }}>Attendance by event, last 6 events</div>
+          {recentEvents.length === 0
+            ? <div style={{ fontSize: 12, color: T.ink3, textAlign: "center", padding: "28px 0" }}>No events yet</div>
+            : <>
+              <BarChart data={eventChartData} height={80} />
+              {recentEvents.some(e => parseFloat(e.total_revenue) > 0) && (
+                <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 10 }}>
+                  {recentEvents.filter(e => parseFloat(e.total_revenue) > 0).map(e => (
+                    <div key={e.id} style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <div style={{ width: 8, height: 8, borderRadius: 2, background: eventTypeColors[e.event_type] || "#6b7280", flexShrink: 0 }} />
+                      <div style={{ flex: 1, fontSize: 11, color: T.ink3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{e.name}</div>
+                      <div style={{ fontSize: 11, fontWeight: 700, color: "#1a6b4a", flexShrink: 0 }}>{fmt(parseFloat(e.total_revenue))}</div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </>}
         </Card>
 
         <div style={{ gridColumn: "1 / -1" }}>

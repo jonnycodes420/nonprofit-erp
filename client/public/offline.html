@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Steward — Offline</title>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;600&family=DM+Serif+Display&display=swap" rel="stylesheet"/>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body {
+      height: 100%;
+      background: #0f1a12;
+      font-family: 'DM Sans', system-ui, sans-serif;
+      -webkit-font-smoothing: antialiased;
+    }
+    body {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      padding: 24px;
+    }
+    .wrap {
+      text-align: center;
+      max-width: 320px;
+    }
+    .logo {
+      width: 56px;
+      height: 56px;
+      background: #1a2e1f;
+      border-radius: 16px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin: 0 auto 24px;
+      border: 1px solid #2d4a35;
+    }
+    .wordmark {
+      font-family: 'DM Serif Display', Georgia, serif;
+      font-size: 13px;
+      font-weight: 400;
+      color: #8fa896;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      margin-bottom: 32px;
+    }
+    h1 {
+      font-family: 'DM Serif Display', Georgia, serif;
+      font-size: 36px;
+      font-weight: 400;
+      color: #f0ede6;
+      letter-spacing: -0.02em;
+      line-height: 1.15;
+      margin-bottom: 12px;
+    }
+    p {
+      font-size: 15px;
+      color: #8fa896;
+      line-height: 1.6;
+      margin-bottom: 32px;
+    }
+    .pulse-wrap {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+    }
+    .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #10b981;
+      animation: pulse 1.4s ease-in-out infinite;
+    }
+    .dot:nth-child(2) { animation-delay: 0.2s; }
+    .dot:nth-child(3) { animation-delay: 0.4s; }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.3; transform: scale(0.75); }
+    }
+    .retry {
+      display: inline-block;
+      margin-top: 28px;
+      padding: 10px 24px;
+      background: #1a2e1f;
+      border: 1px solid #2d4a35;
+      border-radius: 10px;
+      color: #10b981;
+      font-size: 13px;
+      font-weight: 700;
+      cursor: pointer;
+      text-decoration: none;
+      font-family: 'DM Sans', system-ui, sans-serif;
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="logo">
+      <svg width="24" height="24" viewBox="0 0 16 16" fill="none">
+        <path d="M8 2L13 5v6L8 14 3 11V5L8 2z" stroke="#10b981" stroke-width="1.5" fill="none"/>
+        <circle cx="8" cy="8" r="2" fill="#10b981"/>
+      </svg>
+    </div>
+    <div class="wordmark">Steward</div>
+    <h1>You're offline</h1>
+    <p>Check your connection and try again.</p>
+    <div class="pulse-wrap">
+      <div class="dot"></div>
+      <div class="dot"></div>
+      <div class="dot"></div>
+    </div>
+    <a class="retry" href="/dashboard" onclick="location.reload();return false;">Try again →</a>
+  </div>
+</body>
+</html>

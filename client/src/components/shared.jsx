@@ -130,8 +130,8 @@ export function moveUrgency(d) {
 // ── Global styles ──────────────────────────────────────────────────────────
 export function GlobalStyles() {
   return <style>{`
-    html,body{margin:0;padding:0;overflow-x:hidden;max-width:100vw;background:#f0ede6;-webkit-font-smoothing:antialiased;}
-    *{box-sizing:border-box;}
+    html,body{margin:0;padding:0;overflow-x:hidden;max-width:100vw;background:#f0ede6;-webkit-font-smoothing:antialiased;overscroll-behavior:none;}
+    *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
     body{font-family:'DM Sans',system-ui,sans-serif;color:#0f1a12;}
     h1,h2,h3{font-family:'DM Serif Display',Georgia,serif;letter-spacing:-0.02em;}
     ::-webkit-scrollbar{width:5px;height:5px;}
@@ -141,8 +141,10 @@ export function GlobalStyles() {
     ::selection{background:#0d5c3a22;color:#0f1a12;}
     input,textarea,select{background:#f8f6f2;border:1.5px solid #d4cfc6;border-radius:8px;color:#0f1a12;transition:border-color 0.15s,box-shadow 0.15s;}
     input:focus,textarea:focus,select:focus{border-color:#0d5c3a!important;box-shadow:0 0 0 3px rgba(13,92,58,0.12)!important;outline:none!important;}
-    button{transition:all 0.15s ease;}
+    button{transition:all 0.15s ease;touch-action:manipulation;}
     button:not(:disabled):active{transform:scale(0.97);}
+    .app-header{padding-top:env(safe-area-inset-top,0px);user-select:none;}
+    .mobile-bottom-bar,.mobile-more-drawer{user-select:none;}
     @keyframes sp{to{transform:rotate(360deg)}}
     @keyframes fadeIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
     @keyframes slideUp{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
@@ -261,6 +263,15 @@ export function GlobalStyles() {
 
       /* Volunteers + Board: 3-col → 2-col */
       .vol-metric-grid,.board-metric-grid{grid-template-columns:repeat(2,1fr)!important;}
+
+      /* Events */
+      .events-stats-grid{grid-template-columns:repeat(2,1fr)!important;}
+      .events-grid{grid-template-columns:1fr!important;}
+      .event-detail-body{grid-template-columns:1fr!important;overflow-y:auto!important;overflow-x:hidden!important;}
+      .event-detail-body>div{overflow-y:visible!important;border-right:none!important;padding:14px 16px!important;}
+
+      /* Analytics grid */
+      .analytics-grid{grid-template-columns:1fr!important;}
     }
   `}</style>;
 }
@@ -394,19 +405,22 @@ export function TouchpointTimeline({interactions}){
           <div key={i} style={{display:"flex",gap:12,paddingBottom:16,position:"relative"}}>
             {i<sorted.length-1&&<div style={{position:"absolute",left:12,top:26,width:2,bottom:0,background:T.bg3}}/>}
             <div style={{width:26,height:26,borderRadius:"50%",background:c+"28",border:`2px solid ${c}`,flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",zIndex:1,marginTop:2}}>
-              <div style={{width:10,height:10,borderRadius:"50%",background:c}}/>
+              {int.type==="email"
+                ?<span style={{fontSize:11,lineHeight:1,color:c}}>✉</span>
+                :<div style={{width:10,height:10,borderRadius:"50%",background:c}}/>}
             </div>
             <div style={{flex:1}}>
               <div style={{display:"flex",alignItems:"center",gap:7,marginBottom:3,flexWrap:"wrap"}}>
                 <span style={{fontSize:11,fontWeight:700,textTransform:"capitalize",color:c}}>{int.type}</span>
                 {direction&&(
                   <span style={{fontSize:10,fontWeight:700,padding:"1px 7px",borderRadius:99,
-                    background:direction==="inbound"?"#f0fdf4":"#f3f4f6",
-                    color:direction==="inbound"?"#166534":"#6b7280",
-                    border:"1px solid "+(direction==="inbound"?"#bbf7d0":"#e5e7eb")}}>
+                    background:direction==="inbound"?"#f0fdf4":"#eff6ff",
+                    color:direction==="inbound"?"#166534":"#1d4ed8",
+                    border:"1px solid "+(direction==="inbound"?"#bbf7d0":"#bfdbfe")}}>
                     {direction==="inbound"?"Received":"Sent"}
                   </span>
                 )}
+                {meta?.gmail_message_id&&<span style={{fontSize:10,color:T.ink3,fontWeight:500}}>via Gmail</span>}
                 <span style={{fontSize:11,color:T.ink3}}>{int.date}</span>
                 <span style={{fontSize:11,color:T.ink3,opacity:0.6}}>({when})</span>
               </div>

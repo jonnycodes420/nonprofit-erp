@@ -47,20 +47,22 @@
 - /db.js — Supabase client
 
 ## Active tabs (App.jsx TABS array)
-dashboard → donors → grants → communications → finance → volunteers (earlyAccess) → board (earlyAccess) → tasks → settings
+dashboard → donors → grants → communications → events → finance → volunteers (earlyAccess) → board (earlyAccess) → analytics → tasks → settings
 
 Mobile bottom bar: dashboard, donors, grants, finance
-Mobile "More" drawer: communications, volunteers, board, tasks, settings
+Mobile "More" drawer: communications, events, volunteers, board, analytics, tasks, settings
 
 ## Component files (client/src/components/)
 - shared.jsx — T (design tokens), fmt, fmtFull, daysDiff, daysUntil, SC, askClaude, buildContext, STAGES, STAGE_THRESH, STAGE_ACTION, TIER_COLOR, donorScore, retentionRisk, moveUrgency, GlobalStyles, Spin, Pill, Card, SectionLabel, AIBtn, AIPanel, MetricCard, EmptyState, PageTitle, GivingHistoryChart, TpField, TpYesNo, TouchpointTimeline
 - Dashboard.jsx — exports AIChat (global chat overlay), Dashboard (hero stats, AI briefing, pipeline snapshot, lapsed alert, grant deadlines, recent giving, quick actions, tasks, activity feed)
 - Donors.jsx — exports Donors (includes DonorImport, FollowUpTaskModal, LogTouchpointModal, EditDonorModal, DonorProfile, DonorKanban, ReEngageView internally)
+- Events.jsx — exports Events (EventCard, EventDetail, NewEventPanel, FollowUpModal internally)
 - Grants.jsx — exports Grants (includes GrantProfile, FindGrants internally)
 - Communications.jsx — exports Communications (email campaigns, templates, audience segmentation, Resend API, open tracking)
 - Volunteers.jsx — exports Volunteers
 - Board.jsx — exports Board
 - Finance.jsx — exports Finance (6 tabs: Overview, Transactions, Accounts, Funds, Budgets, Reports; includes fund sparklines)
+- Analytics.jsx — exports Analytics (7 charts: giving trend, donor retention, pipeline velocity, grant pipeline, email performance, event performance, top donors)
 - Tasks.jsx — exports Tasks
 - Settings.jsx — exports Settings (Stripe connect, QR code, donation widget embed, team management, invite modal)
 
@@ -85,19 +87,26 @@ Mobile "More" drawer: communications, volunteers, board, tasks, settings
 - `GET /gmail/callback` (public) → exchanges code, upserts gmail_connections, redirects to `${FRONTEND_URL}/dashboard?gmailConnected=true`
 - `makeOAuth2Client()` factory in server.js reads `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REDIRECT_URI`
 
-### Sync logic
+### Sync logic (inbound)
 - `syncGmail(userId, orgId)` — async function, chunks donor emails 20 at a time, deduplicates via `metadata->>'gmail_message_id'`, inserts `type='email'` interactions
 - `syncAllGmail()` — iterates all active connections; called on startup (+10s) and every 15 min via setInterval
 - Token refresh: `oauth2Client.on('tokens')` persists new tokens; 401 errors set `status='disconnected'`
 - Interaction note format: `"Subject: X\n\nsnippet"` — parsed by TouchpointTimeline into subject + snippet display
+
+### Send route
+- `POST /gmail/send` (requireAuth) — body: `{donorId, to, subject, body}`. Builds RFC 2822 message, sends via gmail.users.messages.send, retries once on 401. Logs `type='email'` interaction with `direction:'outbound'` in metadata.
+- `GET /gmail/thread/:donorId` (requireAuth) — returns last 20 email interactions for AI context. Response: `[{id, date, created_at, subject, snippet, direction, note}]`
 
 ### Env vars required
 - `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REDIRECT_URI`
 
 ### Frontend pattern
 - Settings Integrations section calls `POST /gmail/auth-url` then redirects; reads `?gmailConnected` on return
-- `TouchpointTimeline` in shared.jsx parses email note format and shows direction badge
+- `TouchpointTimeline` in shared.jsx parses email note format and shows direction badge (Received=green, Sent=blue), ✉ icon, "via Gmail" label when `metadata.gmail_message_id` exists
 - Dashboard activity feed shows "Email — [subject]" for Gmail-synced messages
+- `DonorProfile` (Donors.jsx): fetches `GET /gmail/status` on mount; "✉ Send Email" button opens inline compose panel. `draftWithAI` fetches thread + streams AI; `sendEmail` replaces {{tokens}} and calls `POST /gmail/send`.
+- `getAI` in Donors component: fetches thread for "email"/"outreach" types and prepends to prompt
+- `adaptData` in api.js includes `metadata` in interactions so direction badges render from DB data
 
 ## Super admin pattern
 - `is_super_admin BOOLEAN DEFAULT false` column on `users` table
@@ -105,7 +114,7 @@ Mobile "More" drawer: communications, volunteers, board, tasks, settings
 - Login route includes `isSuperAdmin` in JWT payload and returned user object
 - `requireSuperAdmin` middleware in auth.js — returns 403 (not 404)
 - All `/admin/*` routes require both `requireAuth` + `requireSuperAdmin`
-- After login: `isSuperAdmin ? "/admin" : "/dashboard"` in LoginPage.jsx
+- After login: always `"/dashboard"` — super admins navigate to `/admin` manually
 - `RequireSuperAdmin` component in main.jsx reads localStorage (not AuthCtx) so it works without re-render on redirect
 - AdminDashboard.jsx has its own `adminFetch()` helper (not apiFetch) and its own layout — no AppShell
 - Design tokens: `A` object (not `T`) — bg `#0a0f0a`, dark ops-tool aesthetic
@@ -129,6 +138,12 @@ Mobile "More" drawer: communications, volunteers, board, tasks, settings
 ### donors
 - wealth_score (integer), capacity_tier (text), score_confidence (text), score_last_updated (timestamptz), score_rationale (text) — wealth scoring system
 - stage (text), total_giving, last_gift_date, last_gift_amount, gift_count, tags (jsonb), notes
+
+### Events tables
+- `events` — id, org_id, name, event_type (gala/cultivation/site_visit/board_meeting/volunteer/webinar/other), date DATE, end_date DATE, location, description, capacity INTEGER, status (upcoming/completed/cancelled), revenue NUMERIC, cost NUMERIC, notes, created_at
+- `event_attendees` — id, event_id (FK→events CASCADE), org_id, donor_id (FK→donors SET NULL), name, email, status (invited/confirmed/attended/no_show/cancelled), gift_amount NUMERIC, notes, UNIQUE(event_id, donor_id). PATCH to 'attended' + gift_amount > 0 auto-logs gift to donors/gifts/fin_transactions.
+- Event type colors: gala=#8b5cf6, cultivation=#10b981, site_visit=#3b82f6, board_meeting=#0d5c3a, volunteer=#f59e0b, webinar=#ec4899, other=#6b7280
+- Routes: GET/POST /events, PUT/DELETE/GET /events/:id, POST /events/:id/attendees, PATCH/DELETE /events/:id/attendees/:attendeeId, POST /events/:id/follow-up, GET /donors/:id/events
 
 ### Finance tables
 - fin_transactions — id, org_id, date, description, amount, type (income/expense), category, fund_id, account_id, donor_id (nullable, set when synced from gift)

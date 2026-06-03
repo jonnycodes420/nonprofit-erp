@@ -503,6 +503,10 @@ export function Settings({auth,logout}) {
         <button onClick={logout} style={{background:"#2d0a0a",border:"1px solid #3d1515",borderRadius:8,padding:"9px 18px",color:"#f87171",fontSize:13,fontWeight:600,cursor:"pointer"}}>
           Sign out of Steward
         </button>
+        <div style={{marginTop:20,display:"flex",gap:20}}>
+          <a href="/terms" target="_blank" rel="noopener noreferrer" style={{fontSize:12,color:T.ink3,textDecoration:"none",borderBottom:"1px solid "+T.bg3}}>Terms of Service</a>
+          <a href="/privacy" target="_blank" rel="noopener noreferrer" style={{fontSize:12,color:T.ink3,textDecoration:"none",borderBottom:"1px solid "+T.bg3}}>Privacy Policy</a>
+        </div>
       </div>
 
       {showAddField&&(

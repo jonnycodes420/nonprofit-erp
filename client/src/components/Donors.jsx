@@ -296,12 +296,14 @@ function LogTouchpointModal({donor,onSave,onClose}){
   const[payMethod,setPayMethod]=useState("");const[ackSent,setAckSent]=useState("no");
   const[otherNotes,setOtherNotes]=useState("");
   const[finFunds,setFinFunds]=useState([]);const[finFundId,setFinFundId]=useState("");const[finAcctId,setFinAcctId]=useState("");
+  const[orgEvents,setOrgEvents]=useState([]);
   useEffect(()=>{
-    Promise.all([apiFetch("/finance/funds"),apiFetch("/finance/accounts")]).then(([fds,accts])=>{
+    Promise.all([apiFetch("/finance/funds"),apiFetch("/finance/accounts"),apiFetch("/events")]).then(([fds,accts,evts])=>{
       setFinFunds(fds);
       const def=fds.find(f=>!f.restricted)||fds[0];if(def)setFinFundId(def.id);
       const ca=accts.find(a=>a.type==="revenue"&&(a.code==="4010"||a.name.toLowerCase().includes("contribution")))||accts.find(a=>a.type==="revenue");
       if(ca)setFinAcctId(ca.id);
+      setOrgEvents(Array.isArray(evts)?evts.slice(0,20):[]);
     }).catch(()=>{});
   },[]);
 
@@ -406,7 +408,15 @@ function LogTouchpointModal({donor,onSave,onClose}){
             <TpField label="Next Steps"><textarea value={nextStep} onChange={e=>setNextStep(e.target.value)} placeholder="Specific actions planned…" rows={3} style={ta}/></TpField>
           </>}
           {type==="event"&&<>
-            <TpField label="Event Name"><input value={eventName} onChange={e=>setEventName(e.target.value)} style={inp}/></TpField>
+            <TpField label="Event">
+              {orgEvents.length>0?(
+                <select value={eventName} onChange={e=>setEventName(e.target.value)} style={{...inp,cursor:"pointer"}}>
+                  <option value="">— select event or type below —</option>
+                  {orgEvents.map(ev=><option key={ev.id} value={ev.name}>{ev.name}</option>)}
+                </select>
+              ):<input value={eventName} onChange={e=>setEventName(e.target.value)} placeholder="Event name" style={inp}/>}
+            </TpField>
+            {orgEvents.length>0&&<TpField label="Event Name (or override)"><input value={eventName} onChange={e=>setEventName(e.target.value)} placeholder="Custom event name" style={inp}/></TpField>}
             <TpField label="Donor Attended?"><TpYesNo val={attended} set={setAttended}/></TpField>
             <TpField label="Interactions & Observations"><textarea value={observations} onChange={e=>setObservations(e.target.value)} rows={4} style={ta}/></TpField>
             <TpField label="Donor History & Background"><textarea value={history} onChange={e=>setHistory(e.target.value)} rows={3} style={ta}/></TpField>
@@ -622,7 +632,7 @@ function GiftLinkModal({donor,orgName,onClose}){
 }
 
 // ── Donor Profile ──────────────────────────────────────────────────────────
-function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loadingKey,getAI,isAdmin,onEdit,onDelete,tasks=[],onTaskToggle,orgName="",orgTeam=[],onReassign,onCfSaved}){
+function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loadingKey,getAI,isAdmin,onEdit,onDelete,tasks=[],onTaskToggle,orgName="",orgTeam=[],onReassign,onCfSaved,onInteractionAdded}){
   const [gifts,setGifts]=useState([]);
   const [giftLoading,setGiftLoading]=useState(true);
   const [sequences,setSequences]=useState([]);
@@ -633,6 +643,8 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
   const [cfEditVal,setCfEditVal]=useState("");
   const [cfSaved,setCfSaved]=useState(null);
   useEffect(()=>{apiFetch(`/donors/${donor.id}/custom-fields`).then(rows=>setCfData(Array.isArray(rows)?rows:[])).catch(()=>{});},[donor.id]);
+  const [donorEvents,setDonorEvents]=useState([]);
+  useEffect(()=>{apiFetch(`/donors/${donor.id}/events`).then(rows=>setDonorEvents(Array.isArray(rows)?rows:[])).catch(()=>{});},[donor.id]);
   const [localScore,setLocalScore]=useState(donor.wealthScore??null);
   const [localTier,setLocalTier]=useState(donor.capacityTier??null);
   const [localConf,setLocalConf]=useState(donor.scoreConfidence??null);
@@ -655,6 +667,20 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
   const [reassignId,setReassignId]=useState(donor.assignedTo||"");
   const [reassignLoading,setReassignLoading]=useState(false);
 
+  const [gmailConnected,setGmailConnected]=useState(null);
+  const [gmailEmail,setGmailEmail]=useState("");
+  const [composeOpen,setComposeOpen]=useState(false);
+  const [composeTo,setComposeTo]=useState(donor.email||"");
+  const [composeSubject,setComposeSubject]=useState("");
+  const [composeBody,setComposeBody]=useState("");
+  const [composeSending,setComposeSending]=useState(false);
+  const [composeSent,setComposeSent]=useState(false);
+  const [composeErr,setComposeErr]=useState("");
+  const [draftLoading,setDraftLoading]=useState(false);
+  useEffect(()=>{
+    apiFetch("/gmail/status").then(s=>{setGmailConnected(!!s.connected);setGmailEmail(s.email||"");}).catch(()=>setGmailConnected(false));
+  },[]);
+
   const handleReassign=async()=>{
     const member=orgTeam.find(u=>u.id===reassignId);
     if(!member)return;
@@ -670,6 +696,40 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
       setShowReassign(false);
     }catch(e){console.error(e);}
     setReassignLoading(false);
+  };
+
+  const sendEmail=async()=>{
+    if(!composeTo||!composeSubject)return;
+    setComposeSending(true);setComposeErr("");
+    const first=donor.name.split(" ")[0];
+    const resolvedSubj=composeSubject.replace(/\{\{donor_name\}\}/g,first).replace(/\{\{org_name\}\}/g,orgName);
+    const resolvedBody=composeBody.replace(/\{\{donor_name\}\}/g,first).replace(/\{\{org_name\}\}/g,orgName);
+    try{
+      await apiFetch("/gmail/send",{method:"POST",body:JSON.stringify({donorId:donor.id,to:composeTo,subject:resolvedSubj,body:resolvedBody})});
+      setComposeSent(true);
+      setTimeout(()=>{setComposeSent(false);setComposeOpen(false);setComposeSubject("");setComposeBody("");if(onInteractionAdded)onInteractionAdded();},3000);
+    }catch(e){setComposeErr(e.message||"Failed to send email");}
+    setComposeSending(false);
+  };
+
+  const draftWithAI=async()=>{
+    setDraftLoading(true);setComposeBody("");setComposeSubject("");
+    try{
+      let thread=[];
+      try{thread=await apiFetch(`/gmail/thread/${donor.id}`);}catch(e){}
+      const threadCtx=thread.length>0?`\n\nRecent email thread:\n${thread.map(t=>`[${t.direction}] ${t.subject}: ${t.snippet}`).join("\n")}`:"";
+      const sys=`You are a nonprofit development officer assistant. Draft a warm, personal email.`;
+      const prompt=`Draft a warm, personal email to ${donor.name} from ${orgName}.\n\nDonor context:\n- Lifetime giving: ${fmtFull(donor.total)}\n- Stage: ${donor.stage||"cultivate"}\n- Last gift: ${donor.lastGift}\n- Notes: ${donor.notes||"none"}${threadCtx}\n\nWrite a professional but warm email. Subject line first (starting with "Subject: "), then body. Keep it under 200 words. Address them by first name.`;
+      await askClaude(sys,prompt,(chunk)=>{
+        const lines=chunk.split("\n");
+        const sIdx=lines.findIndex(l=>l.startsWith("Subject: "));
+        if(sIdx>=0){
+          setComposeSubject(lines[sIdx].replace("Subject: ","").trim());
+          setComposeBody(lines.slice(sIdx+1).join("\n").replace(/^\n+/,""));
+        }else{setComposeBody(chunk);}
+      });
+    }catch(e){console.error(e);}
+    setDraftLoading(false);
   };
 
   const [showGiftModal,setShowGiftModal]=useState(false);
@@ -892,6 +952,30 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
             </div>
           </div>}
 
+          {donorEvents.length>0&&<div>
+            <div style={{fontSize:10,fontWeight:800,textTransform:"uppercase",letterSpacing:"0.12em",color:"#8fa896",marginBottom:8}}>Events</div>
+            <div style={{display:"flex",flexDirection:"column",gap:4}}>
+              {donorEvents.slice(0,5).map(e=>{
+                const EVT_ICONS={gala:"🎭",cultivation:"🍽️",site_visit:"🏢",board_meeting:"🏛️",volunteer:"🤝",webinar:"💻",other:"📅"};
+                const EVT_COLORS={gala:"#8b5cf6",cultivation:"#10b981",site_visit:"#3b82f6",board_meeting:"#0d5c3a",volunteer:"#f59e0b",webinar:"#ec4899",other:"#6b7280"};
+                const ATT_COL={invited:"#6b7280",confirmed:"#3b82f6",attended:"#10b981",no_show:"#ef4444",cancelled:"#6b7280"};
+                const icon=EVT_ICONS[e.event_type]||"📅";
+                const attCol=ATT_COL[e.attendee_status]||"#6b7280";
+                const d=e.date?new Date(e.date+"T12:00:00").toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"}):"";
+                return(
+                  <div key={e.id} style={{background:"#1a2e1f",border:"1px solid #2d4a35",borderRadius:8,padding:"8px 10px",display:"flex",alignItems:"center",gap:8}}>
+                    <span style={{fontSize:14,flexShrink:0}}>{icon}</span>
+                    <div style={{flex:1,minWidth:0}}>
+                      <div style={{fontSize:12,fontWeight:600,color:"#f0ede6",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{e.name}</div>
+                      <div style={{fontSize:10,color:"#8fa896"}}>{d}</div>
+                    </div>
+                    <span style={{background:attCol+"22",color:attCol,border:`1px solid ${attCol}44`,borderRadius:99,padding:"2px 8px",fontSize:9,fontWeight:700,flexShrink:0,textTransform:"capitalize"}}>{(e.attendee_status||"invited").replace("_"," ")}</span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>}
+
           <div>
             <div style={{fontSize:10,fontWeight:800,textTransform:"uppercase",letterSpacing:"0.12em",color:"#8fa896",marginBottom:8}}>Move Stage</div>
             <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
@@ -943,8 +1027,41 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
               <AIBtn onClick={()=>getAI(donor,"outreach")} loading={loadingKey===`${donor.id}_outreach`} label="✦ Outreach" small/>
               <AIBtn onClick={()=>getAI(donor,"email")} loading={loadingKey===`${donor.id}_email`} label="✦ Draft Email" small/>
               <AIBtn onClick={()=>getAI(donor,"callscript")} loading={loadingKey===`${donor.id}_callscript`} label="✦ Call Script" small/>
+              <button onClick={()=>setComposeOpen(o=>!o)} style={{background:"#1a2e1f",border:"1px solid #2d4a35",borderRadius:8,padding:"5px 11px",color:"#c9a84c",fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>✉ Send Email</button>
             </div>
             {["nextmove","outreach","email","callscript"].map(t=>aiMap[`${donor.id}_${t}`]?<AIPanel key={t} text={aiMap[`${donor.id}_${t}`]} onClose={()=>{}}/>:null)}
+
+            {composeOpen&&(
+              <div style={{marginTop:12,background:"#1a2e1f",borderRadius:12,padding:"20px",border:"1px solid #2d4a35"}}>
+                <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14}}>
+                  <div>
+                    <span style={{fontSize:12,fontWeight:700,color:"#f0ede6"}}>Send via Gmail</span>
+                    {gmailEmail&&<span style={{fontSize:11,color:"#8fa896",marginLeft:8}}>{gmailEmail}</span>}
+                  </div>
+                  <button onClick={()=>{setComposeOpen(false);setComposeSent(false);setComposeErr("");}} style={{background:"transparent",border:"none",color:"#8fa896",fontSize:18,cursor:"pointer",lineHeight:1,padding:0}}>×</button>
+                </div>
+                {gmailConnected===false?(
+                  <div style={{fontSize:13,color:"#8fa896",textAlign:"center",padding:"12px 0"}}>
+                    <a href="/dashboard" onClick={e=>{e.preventDefault();window.location.href="/dashboard?tab=settings";}} style={{color:"#10b981",textDecoration:"none"}}>Connect Gmail in Settings</a> to send emails from donor profiles.
+                  </div>
+                ):!donor.email?(
+                  <div style={{fontSize:13,color:"#8fa896",textAlign:"center",padding:"12px 0"}}>No email address on file for this donor.</div>
+                ):(
+                  <div style={{display:"flex",flexDirection:"column",gap:8}}>
+                    <input value={composeTo} onChange={e=>setComposeTo(e.target.value)} placeholder="To" style={{background:"#0f1a12",border:"1px solid #2d4a35",borderRadius:7,padding:"8px 10px",color:"#f0ede6",fontSize:13,outline:"none",fontFamily:"inherit",boxSizing:"border-box",width:"100%"}}/>
+                    <input value={composeSubject} onChange={e=>setComposeSubject(e.target.value)} placeholder="Subject…" style={{background:"#0f1a12",border:"1px solid #2d4a35",borderRadius:7,padding:"8px 10px",color:"#f0ede6",fontSize:13,outline:"none",fontFamily:"inherit",boxSizing:"border-box",width:"100%"}}/>
+                    <textarea value={composeBody} onChange={e=>setComposeBody(e.target.value)} placeholder="Write your message…" style={{background:"#0f1a12",border:"1px solid #2d4a35",borderRadius:7,padding:"8px 10px",color:"#f0ede6",fontSize:13,outline:"none",fontFamily:"inherit",resize:"vertical",minHeight:120,width:"100%",boxSizing:"border-box"}}/>
+                    <div style={{fontSize:11,color:"#8fa896"}}>Use <code style={{background:"#0f1a12",padding:"1px 5px",borderRadius:4,fontFamily:"monospace"}}>{"{{donor_name}}"}</code> and <code style={{background:"#0f1a12",padding:"1px 5px",borderRadius:4,fontFamily:"monospace"}}>{"{{org_name}}"}</code></div>
+                    {composeErr&&<div style={{fontSize:12,color:"#ef4444",background:"#1a0a0a",border:"1px solid #3d1515",borderRadius:7,padding:"8px 10px"}}>{composeErr}</div>}
+                    {composeSent&&<div style={{fontSize:12,color:"#10b981",background:"#0a1a0f",border:"1px solid #1a4a2a",borderRadius:7,padding:"8px 10px"}}>✓ Sent and logged to timeline</div>}
+                    <div style={{display:"flex",gap:8}}>
+                      <button onClick={draftWithAI} disabled={draftLoading} style={{flex:1,background:"#0f1a12",border:"1px solid #2d4a35",borderRadius:8,padding:"9px",color:"#c9a84c",fontSize:12,fontWeight:700,cursor:draftLoading?"not-allowed":"pointer",fontFamily:"inherit"}}>{draftLoading?"Drafting…":"✦ Draft with AI"}</button>
+                      <button onClick={sendEmail} disabled={composeSending||!composeTo||!composeSubject} style={{flex:1,background:composeSending||!composeTo||!composeSubject?"#2d4a35":"#10b981",border:"none",borderRadius:8,padding:"9px",color:"#fff",fontSize:12,fontWeight:700,cursor:composeSending||!composeTo||!composeSubject?"not-allowed":"pointer",fontFamily:"inherit"}}>{composeSending?"Sending…":"Send →"}</button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -1534,10 +1651,19 @@ export function Donors({data,setData}){
     const stage=STAGES.find(s=>s.id===(donor.stage||"cultivate"))||STAGES[2];
     const urg=moveUrgency(donor);
     const sys=`You are an expert major gifts officer. Be specific, strategic, brief. Max 200 words. Reference actual donor data.`;
+    let threadCtx="";
+    if(type==="email"||type==="outreach"){
+      try{
+        const thread=await apiFetch(`/gmail/thread/${donor.id}`);
+        if(thread.length>0){
+          threadCtx=`\n\nRecent email history with this donor:\n${thread.map(t=>`[${t.created_at.split("T")[0]}] ${t.direction==="outbound"?"You":donor.name}: "${t.subject}" — ${t.note.slice(0,200)}`).join("\n")}`;
+        }
+      }catch(e){}
+    }
     const prompts={
       nextmove:`Donor: ${donor.name} | Stage: ${stage.label} | Days since contact: ${urg.days} | Total: ${fmtFull(donor.total)} (${donor.gifts} gifts) | Last: ${fmtFull(donor.lastAmount)} on ${donor.lastGift}\nNotes: ${donor.notes||"none"}\nOrg: ${data.org.name} — ${data.org.mission}\nRecent touchpoints: ${donor.interactions?.slice(0,3).map(i=>`${i.date}: ${i.type} - ${i.note}`).join("; ")||"none"}\n\nProvide:\n**Urgency Score:** X/10\n**Recommended Move:** [exact action]\n**Timing:** [when]\n**What to say:** [2-3 sentences]\n**Goal:** [what you're trying to achieve]`,
-      outreach:`Write an outreach strategy for ${donor.name} (${stage.label} stage).\nTotal: ${fmtFull(donor.total)}, last gift ${fmtFull(donor.lastAmount)} ${urg.days}d ago.\nNotes: ${donor.notes}\nOrg: ${data.org.mission}\n\nBest channel, talking points, suggested ask amount, personal hook.`,
-      email:`Write a personalized email to ${donor.name} (${stage.label} stage).\nLast gift: ${fmtFull(donor.lastAmount)} on ${donor.lastGift}. Notes: ${donor.notes}\nOrg: ${data.org.name}.\n\nWarm, specific, 150 words max.`,
+      outreach:`Write an outreach strategy for ${donor.name} (${stage.label} stage).\nTotal: ${fmtFull(donor.total)}, last gift ${fmtFull(donor.lastAmount)} ${urg.days}d ago.\nNotes: ${donor.notes}\nOrg: ${data.org.mission}${threadCtx}\n\nBest channel, talking points, suggested ask amount, personal hook.`,
+      email:`Write a personalized email to ${donor.name} (${stage.label} stage).\nLast gift: ${fmtFull(donor.lastAmount)} on ${donor.lastGift}. Notes: ${donor.notes}\nOrg: ${data.org.name}.${threadCtx}\n\nWarm, specific, 150 words max.`,
       callscript:`Phone call script for ${donor.name} (${stage.label}).\nContext: ${donor.notes}\nLast gift: ${fmtFull(donor.lastAmount)}\n\nOpening, 2 listening questions, impact hook, soft ask.`,
     };
     await askClaude(sys,prompts[type],chunk=>setAiMap(p=>({...p,[key]:chunk})));
@@ -1631,7 +1757,7 @@ export function Donors({data,setData}){
         aiMap={aiMap} loadingKey={loadingKey} getAI={getAI}
         isAdmin={isAdmin} onEdit={()=>setEditTarget(selected)} onDelete={deleteDonor}
         tasks={data.tasks.filter(t=>t.donorId===selected.id)} onTaskToggle={toggleTask}
-        orgName={data.org?.name||""} orgTeam={orgTeam} onReassign={handleAssign} onCfSaved={reloadCfValues}/>}
+        orgName={data.org?.name||""} orgTeam={orgTeam} onReassign={handleAssign} onCfSaved={reloadCfValues} onInteractionAdded={reloadDonors}/>}
 
       <div className="donors-toolbar" style={{display:"flex",gap:10,flexWrap:"wrap",alignItems:"center"}}>
         <input className="donors-search" value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search donors…" style={{flex:1,minWidth:160,background:T.bg,border:"1px solid "+T.bg3,borderRadius:10,padding:"10px 14px",color:T.ink,fontSize:13,outline:"none"}}/>

@@ -484,6 +484,52 @@ async function initSchema() {
     )
   `);
   await pool.query(`ALTER TABLE interactions ADD COLUMN IF NOT EXISTS metadata JSONB`);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS password_reset_tokens (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      token TEXT NOT NULL UNIQUE,
+      expires_at TIMESTAMPTZ NOT NULL,
+      used BOOLEAN DEFAULT false,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+
+  // ── Events ────────────────────────────────────────────────────────────────
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS events (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL,
+      name TEXT NOT NULL,
+      event_type TEXT NOT NULL,
+      date DATE NOT NULL,
+      end_date DATE,
+      location TEXT,
+      description TEXT,
+      capacity INTEGER,
+      status TEXT DEFAULT 'upcoming',
+      revenue NUMERIC DEFAULT 0,
+      cost NUMERIC DEFAULT 0,
+      notes TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS event_attendees (
+      id TEXT PRIMARY KEY,
+      event_id TEXT NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+      org_id TEXT NOT NULL,
+      donor_id TEXT REFERENCES donors(id) ON DELETE SET NULL,
+      name TEXT NOT NULL,
+      email TEXT,
+      status TEXT DEFAULT 'invited',
+      gift_amount NUMERIC,
+      notes TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      UNIQUE(event_id, donor_id)
+    )
+  `);
 }
 
 async function seedData() {

@@ -1,7 +1,16 @@
 require("dotenv").config();
+const Sentry = require("@sentry/node");
+if (process.env.SENTRY_DSN) {
+  Sentry.init({
+    dsn: process.env.SENTRY_DSN,
+    environment: process.env.NODE_ENV || "production",
+    tracesSampleRate: 0.1,
+  });
+}
 const express = require("express");
 const cors = require("cors");
 const bcrypt = require("bcryptjs");
+const crypto = require("crypto");
 const Anthropic = require("@anthropic-ai/sdk");
 const { Resend } = require("resend");
 const resend = new Resend(process.env.RESEND_API_KEY);
@@ -23,6 +32,7 @@ function makeOAuth2Client() {
 const app = express();
 
 app.use(cors({ origin: process.env.CORS_ORIGIN || "*" }));
+if (process.env.SENTRY_DSN) app.use(Sentry.Handlers.requestHandler());
 
 // Stripe webhook must receive raw body — register BEFORE express.json()
 app.post("/stripe/webhook", express.raw({ type: "application/json" }), async (req, res) => {
@@ -323,6 +333,104 @@ app.post("/auth/register", wrap(async (req, res) => {
     user: { id: userId, email, name: name || email, role: "admin" },
     org: { id: orgId, name: orgName, onboarding_complete: 0 },
   });
+}));
+
+// POST /auth/forgot-password — generate reset token and email the user
+app.post("/auth/forgot-password", wrap(async (req, res) => {
+  const { email } = req.body;
+  if (!email) return res.status(400).json({ error: "Email is required" });
+
+  const users = await query("SELECT * FROM users WHERE email = ?", [email.toLowerCase()]);
+  // Always return 200 to avoid leaking whether the email exists
+  if (!users.length) return res.json({ success: true });
+
+  const user = users[0];
+  const token = crypto.randomBytes(32).toString("hex");
+  const id = "prt_" + uuid().slice(0, 8);
+  await run(
+    `INSERT INTO password_reset_tokens (id, user_id, token, expires_at) VALUES (?, ?, ?, NOW() + INTERVAL '1 hour')`,
+    [id, user.id, token]
+  );
+
+  const frontendUrl = process.env.FRONTEND_URL || "https://client-five-tau-13.vercel.app";
+  const resetLink = `${frontendUrl}/reset-password?token=${token}`;
+
+  if (process.env.RESEND_API_KEY) {
+    const from = process.env.DEMO_SMTP_FROM || "noreply@stewardapp.dev";
+    try {
+      await resend.emails.send({
+        from,
+        to: user.email,
+        subject: "Reset your Steward password",
+        html: `<!DOCTYPE html>
+<html>
+<head><meta charset="UTF-8"/></head>
+<body style="margin:0;padding:0;background:#f0ede6;font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#f0ede6;padding:40px 16px;">
+    <tr><td align="center">
+      <table width="100%" cellpadding="0" cellspacing="0" style="max-width:520px;">
+        <!-- Header -->
+        <tr><td style="padding-bottom:24px;text-align:center;">
+          <table cellpadding="0" cellspacing="0" style="display:inline-flex;align-items:center;gap:8px;margin:0 auto;">
+            <tr>
+              <td style="width:32px;height:32px;background:#0f1a12;border-radius:9px;text-align:center;vertical-align:middle;">
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" style="display:inline-block;vertical-align:middle;">
+                  <path d="M8 2L13 5v6L8 14 3 11V5L8 2z" stroke="#f0ede6" stroke-width="1.5" fill="none"/>
+                  <circle cx="8" cy="8" r="2" fill="#f0ede6"/>
+                </svg>
+              </td>
+              <td style="padding-left:8px;font-size:17px;font-weight:700;color:#0f1a12;letter-spacing:-0.02em;">Steward</td>
+            </tr>
+          </table>
+        </td></tr>
+        <!-- Card -->
+        <tr><td style="background:#ffffff;border-radius:16px;padding:40px 40px 36px;box-shadow:0 2px 20px rgba(15,26,18,0.08);">
+          <h1 style="margin:0 0 12px;font-size:26px;font-weight:700;color:#0f1a12;letter-spacing:-0.02em;line-height:1.2;">Reset your password</h1>
+          <p style="margin:0 0 28px;font-size:15px;color:#6b7c72;line-height:1.6;">Click the button below to reset your password. This link expires in <strong style="color:#0f1a12;">1 hour</strong>.</p>
+          <table cellpadding="0" cellspacing="0" style="margin-bottom:28px;">
+            <tr><td style="border-radius:10px;background:#10b981;">
+              <a href="${resetLink}" style="display:inline-block;padding:13px 28px;font-size:15px;font-weight:700;color:#ffffff;text-decoration:none;letter-spacing:-0.01em;">Reset Password →</a>
+            </td></tr>
+          </table>
+          <p style="margin:0 0 8px;font-size:13px;color:#8fa896;line-height:1.5;">If you didn't request this, you can safely ignore this email. Your password won't change.</p>
+          <p style="margin:0;font-size:12px;color:#b0b8b2;">Or copy this link: <span style="color:#0f1a12;word-break:break-all;">${resetLink}</span></p>
+        </td></tr>
+        <!-- Footer -->
+        <tr><td style="padding-top:20px;text-align:center;font-size:12px;color:#a0a8a4;">
+          Steward · stewardapp.dev
+        </td></tr>
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>`,
+      });
+    } catch (err) {
+      console.error("[forgot-password] email send failed:", err.message);
+    }
+  }
+
+  res.json({ success: true });
+}));
+
+// POST /auth/reset-password — validate token and update password
+app.post("/auth/reset-password", wrap(async (req, res) => {
+  const { token, password } = req.body;
+  if (!token || !password) return res.status(400).json({ error: "Token and password are required" });
+  if (password.length < 8) return res.status(400).json({ error: "Password must be at least 8 characters" });
+
+  const rows = await query(
+    `SELECT * FROM password_reset_tokens WHERE token = ? AND used = false AND expires_at > NOW()`,
+    [token]
+  );
+  if (!rows.length) return res.status(400).json({ error: "Invalid or expired reset link" });
+
+  const prt = rows[0];
+  const hash = bcrypt.hashSync(password, 12);
+  await run("UPDATE users SET password_hash = ? WHERE id = ?", [hash, prt.user_id]);
+  await run("UPDATE password_reset_tokens SET used = true WHERE id = ?", [prt.id]);
+
+  res.json({ success: true });
 }));
 
 // ── Self-serve org registration (SaaS signup) ──────────────────────────────
@@ -3379,12 +3487,311 @@ app.post("/gmail/sync", requireAuth, wrap(async (req, res) => {
   res.json({ ok: true, message: "Sync started" });
 }));
 
+// POST /gmail/send — send email via user's connected Gmail and log to interactions
+app.post("/gmail/send", requireAuth, wrap(async (req, res) => {
+  const { donorId, to, subject, body } = req.body;
+  const conns = await query("SELECT * FROM gmail_connections WHERE user_id=? AND status='active'", [req.user.userId]);
+  if (!conns.length) return res.status(400).json({ error: "Gmail not connected" });
+  const conn = conns[0];
+
+  const oauth2Client = makeOAuth2Client();
+  oauth2Client.setCredentials({
+    access_token: conn.access_token,
+    refresh_token: conn.refresh_token,
+    expiry_date: conn.token_expiry ? new Date(conn.token_expiry).getTime() : undefined,
+  });
+  oauth2Client.on("tokens", async (tokens) => {
+    const sets = [], vals = [];
+    if (tokens.access_token) { sets.push("access_token=?"); vals.push(tokens.access_token); }
+    if (tokens.expiry_date) { sets.push("token_expiry=?"); vals.push(new Date(tokens.expiry_date).toISOString()); }
+    if (sets.length) { vals.push(conn.id); await run(`UPDATE gmail_connections SET ${sets.join(",")} WHERE id=?`, vals); }
+  });
+
+  const emailLines = [`To: ${to}`, `Subject: ${subject}`, `Content-Type: text/plain; charset=utf-8`, ``, body];
+  const raw = Buffer.from(emailLines.join("\r\n")).toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  const gmail = google.gmail({ version: "v1", auth: oauth2Client });
+
+  let sendResp;
+  try {
+    sendResp = await gmail.users.messages.send({ userId: "me", requestBody: { raw } });
+  } catch (e) {
+    if (e.code === 401) {
+      try {
+        await oauth2Client.refreshAccessToken();
+        sendResp = await gmail.users.messages.send({ userId: "me", requestBody: { raw } });
+      } catch {
+        await run("UPDATE gmail_connections SET status='disconnected' WHERE id=?", [conn.id]);
+        return res.status(401).json({ error: "Failed to send — reconnect Gmail in Settings" });
+      }
+    } else throw e;
+  }
+
+  const msgId = sendResp.data.id;
+  if (donorId) {
+    const id = Math.random().toString(36).slice(2);
+    const note = `Subject: ${subject}\n\n${body.slice(0, 500)}`;
+    const metadata = JSON.stringify({ gmail_message_id: msgId, from: conn.email, to, subject, direction: "outbound" });
+    await run(
+      `INSERT INTO interactions (id, org_id, donor_id, type, note, date, metadata, created_at) VALUES (?, ?, ?, 'email', ?, ?, ?, NOW())`,
+      [id, req.user.orgId, donorId, note, new Date().toISOString().split("T")[0], metadata]
+    );
+  }
+  res.json({ success: true, messageId: msgId });
+}));
+
+// GET /gmail/thread/:donorId — last 20 email interactions for AI context
+app.get("/gmail/thread/:donorId", requireAuth, wrap(async (req, res) => {
+  const rows = await query(
+    `SELECT id, type, note, date, created_at, metadata FROM interactions WHERE org_id=? AND donor_id=? AND type='email' ORDER BY created_at DESC LIMIT 20`,
+    [req.user.orgId, req.params.donorId]
+  );
+  res.json(rows.map(r => {
+    const meta = r.metadata ? (typeof r.metadata === "string" ? JSON.parse(r.metadata) : r.metadata) : {};
+    const m = (r.note || "").match(/^Subject: (.+?)(?:\n\n([\s\S]*))?$/);
+    return {
+      id: r.id,
+      date: r.date,
+      created_at: r.created_at,
+      subject: m ? m[1] : "",
+      snippet: m ? (m[2] || "").slice(0, 200) : (r.note || "").slice(0, 200),
+      direction: meta.direction || "inbound",
+      note: r.note || "",
+    };
+  }));
+}));
+
+// ── Events ────────────────────────────────────────────────────────────────────
+
+app.get("/events", requireAuth, async (req, res) => {
+  try {
+    const orgId = req.user.orgId;
+    const rows = await query(`
+      SELECT e.*,
+        COUNT(CASE WHEN ea.status='attended' THEN 1 END)::int AS attendee_count,
+        COUNT(CASE WHEN ea.status='confirmed' THEN 1 END)::int AS confirmed_count,
+        COUNT(CASE WHEN ea.status='no_show' THEN 1 END)::int AS no_show_count,
+        COUNT(ea.id)::int AS invited_count,
+        COALESCE(SUM(ea.gift_amount),0) AS total_revenue
+      FROM events e
+      LEFT JOIN event_attendees ea ON ea.event_id = e.id
+      WHERE e.org_id = $1
+      GROUP BY e.id
+      ORDER BY e.date DESC
+    `, [orgId]);
+    res.json(rows);
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post("/events", requireAuth, async (req, res) => {
+  try {
+    const orgId = req.user.orgId;
+    const { name, eventType, date, endDate, location, description, capacity, cost } = req.body;
+    if (!name || !eventType || !date) return res.status(400).json({ error: "name, eventType, date required" });
+    const id = "evt_" + uuid().slice(0, 8);
+    await run(
+      `INSERT INTO events (id, org_id, name, event_type, date, end_date, location, description, capacity, cost)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+      [id, orgId, name, eventType, date, endDate || null, location || null, description || null, capacity || null, parseFloat(cost) || 0]
+    );
+    const [row] = await query("SELECT * FROM events WHERE id=$1", [id]);
+    res.json({ ...row, attendee_count: 0, confirmed_count: 0, no_show_count: 0, invited_count: 0, total_revenue: 0 });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+app.put("/events/:id", requireAuth, async (req, res) => {
+  try {
+    const orgId = req.user.orgId;
+    const { name, eventType, date, endDate, location, description, capacity, status, revenue, cost, notes } = req.body;
+    await run(
+      `UPDATE events SET name=$1, event_type=$2, date=$3, end_date=$4, location=$5,
+       description=$6, capacity=$7, status=$8, revenue=$9, cost=$10, notes=$11
+       WHERE id=$12 AND org_id=$13`,
+      [name, eventType, date, endDate || null, location || null, description || null,
+       capacity || null, status || 'upcoming', parseFloat(revenue) || 0, parseFloat(cost) || 0,
+       notes || null, req.params.id, orgId]
+    );
+    const rows = await query(`
+      SELECT e.*, COUNT(CASE WHEN ea.status='attended' THEN 1 END)::int AS attendee_count,
+        COUNT(CASE WHEN ea.status='confirmed' THEN 1 END)::int AS confirmed_count,
+        COUNT(CASE WHEN ea.status='no_show' THEN 1 END)::int AS no_show_count,
+        COUNT(ea.id)::int AS invited_count,
+        COALESCE(SUM(ea.gift_amount),0) AS total_revenue
+      FROM events e LEFT JOIN event_attendees ea ON ea.event_id=e.id
+      WHERE e.id=$1 GROUP BY e.id
+    `, [req.params.id]);
+    res.json(rows[0] || {});
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+app.delete("/events/:id", requireAuth, async (req, res) => {
+  try {
+    await run("DELETE FROM events WHERE id=$1 AND org_id=$2", [req.params.id, req.user.orgId]);
+    res.json({ ok: true });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+app.get("/events/:id", requireAuth, async (req, res) => {
+  try {
+    const orgId = req.user.orgId;
+    const evts = await query(`
+      SELECT e.*, COUNT(CASE WHEN ea.status='attended' THEN 1 END)::int AS attendee_count,
+        COUNT(CASE WHEN ea.status='confirmed' THEN 1 END)::int AS confirmed_count,
+        COUNT(CASE WHEN ea.status='invited' THEN 1 END)::int AS invited_count_raw,
+        COUNT(CASE WHEN ea.status='no_show' THEN 1 END)::int AS no_show_count,
+        COUNT(ea.id)::int AS total_count,
+        COALESCE(SUM(ea.gift_amount),0) AS total_revenue
+      FROM events e LEFT JOIN event_attendees ea ON ea.event_id=e.id
+      WHERE e.id=$1 AND e.org_id=$2 GROUP BY e.id
+    `, [req.params.id, orgId]);
+    if (!evts.length) return res.status(404).json({ error: "Not found" });
+    const attendees = await query(`
+      SELECT ea.*, d.stage, d.total_giving, d.assigned_to_name
+      FROM event_attendees ea
+      LEFT JOIN donors d ON d.id = ea.donor_id
+      WHERE ea.event_id=$1
+      ORDER BY ea.created_at ASC
+    `, [req.params.id]);
+    res.json({ ...evts[0], attendees });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post("/events/:id/attendees", requireAuth, async (req, res) => {
+  try {
+    const orgId = req.user.orgId;
+    const eventId = req.params.id;
+    const evts = await query("SELECT id FROM events WHERE id=$1 AND org_id=$2", [eventId, orgId]);
+    if (!evts.length) return res.status(404).json({ error: "Event not found" });
+    const { donorIds, name, email, notes } = req.body;
+    const added = [];
+    if (donorIds && Array.isArray(donorIds)) {
+      for (const donorId of donorIds) {
+        const dr = await query("SELECT id, name, email FROM donors WHERE id=$1 AND org_id=$2", [donorId, orgId]);
+        if (!dr.length) continue;
+        const d = dr[0];
+        const attId = "att_" + uuid().slice(0, 8);
+        try {
+          await run(
+            `INSERT INTO event_attendees (id, event_id, org_id, donor_id, name, email)
+             VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT (event_id, donor_id) DO NOTHING`,
+            [attId, eventId, orgId, donorId, d.name, d.email || ""]
+          );
+          added.push(d.name);
+        } catch { /* skip */ }
+      }
+    } else {
+      if (!name) return res.status(400).json({ error: "name required" });
+      const attId = "att_" + uuid().slice(0, 8);
+      await run(
+        `INSERT INTO event_attendees (id, event_id, org_id, donor_id, name, email, notes)
+         VALUES ($1,$2,$3,NULL,$4,$5,$6)`,
+        [attId, eventId, orgId, name, email || "", notes || ""]
+      );
+      added.push(name);
+    }
+    res.json({ added: added.length, names: added });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+app.patch("/events/:id/attendees/:attendeeId", requireAuth, async (req, res) => {
+  try {
+    const orgId = req.user.orgId;
+    const { status, giftAmount, notes } = req.body;
+    const rows = await query("SELECT * FROM event_attendees WHERE id=$1 AND org_id=$2", [req.params.attendeeId, orgId]);
+    if (!rows.length) return res.status(404).json({ error: "Not found" });
+    const att = rows[0];
+    const newStatus = status !== undefined ? status : att.status;
+    const newGift = giftAmount !== undefined ? (parseFloat(giftAmount) || 0) : (parseFloat(att.gift_amount) || 0);
+    const newNotes = notes !== undefined ? notes : att.notes;
+    await run(
+      "UPDATE event_attendees SET status=$1, gift_amount=$2, notes=$3 WHERE id=$4 AND org_id=$5",
+      [newStatus, newGift, newNotes, req.params.attendeeId, orgId]
+    );
+    // If attended + gift > 0 + has a donor, log the gift
+    if (newStatus === 'attended' && newGift > 0 && att.donor_id) {
+      const evtRows = await query("SELECT * FROM events WHERE id=$1", [att.event_id]);
+      const evt = evtRows[0];
+      const today = new Date().toISOString().slice(0, 10);
+      const giftId = "g_" + uuid().slice(0, 8);
+      await run(
+        `INSERT INTO gifts (id, org_id, donor_id, amount, date, type, campaign, notes)
+         VALUES ($1,$2,$3,$4,$5,'cash',$6,$7)
+         ON CONFLICT DO NOTHING`,
+        [giftId, orgId, att.donor_id, newGift, today, evt?.name || "Event", `Gift at ${evt?.name || "event"}`]
+      );
+      await run(
+        `UPDATE donors SET total_giving=total_giving+$1, last_gift_amount=$1,
+         last_gift_date=$2, gift_count=gift_count+1 WHERE id=$3 AND org_id=$4`,
+        [newGift, today, att.donor_id, orgId]
+      );
+      const funds = await query("SELECT id FROM fin_funds WHERE org_id=$1 AND restricted=false LIMIT 1", [orgId]);
+      const accts = await query("SELECT id FROM accounts WHERE org_id=$1 AND type='revenue' LIMIT 1", [orgId]);
+      if (funds.length && accts.length) {
+        await run(
+          `INSERT INTO fin_transactions (id, org_id, date, description, vendor_donor, amount, type, account_id, fund_id)
+           VALUES ($1,$2,$3,$4,$5,$6,'income',$7,$8)`,
+          ["ft_" + uuid().slice(0,8), orgId, today, `Event Gift — ${evt?.name||"event"}`, att.name, newGift, accts[0].id, funds[0].id]
+        );
+      }
+    }
+    const updated = await query("SELECT ea.*, d.stage, d.total_giving FROM event_attendees ea LEFT JOIN donors d ON d.id=ea.donor_id WHERE ea.id=$1", [req.params.attendeeId]);
+    res.json(updated[0]);
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+app.delete("/events/:id/attendees/:attendeeId", requireAuth, async (req, res) => {
+  try {
+    await run("DELETE FROM event_attendees WHERE id=$1 AND org_id=$2", [req.params.attendeeId, req.user.orgId]);
+    res.json({ ok: true });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post("/events/:id/follow-up", requireAuth, async (req, res) => {
+  try {
+    const orgId = req.user.orgId;
+    const { taskTitle, dueDate, priority } = req.body;
+    const evts = await query("SELECT name FROM events WHERE id=$1 AND org_id=$2", [req.params.id, orgId]);
+    if (!evts.length) return res.status(404).json({ error: "Event not found" });
+    const eventName = evts[0].name;
+    const attendees = await query(
+      "SELECT * FROM event_attendees WHERE event_id=$1 AND status='attended' AND donor_id IS NOT NULL",
+      [req.params.id]
+    );
+    let count = 0;
+    for (const att of attendees) {
+      const title = (taskTitle || "Follow up with {{event_name}} attendee")
+        .replace("{{event_name}}", eventName);
+      await run(
+        `INSERT INTO tasks (id, org_id, title, due, priority, type, donor_id)
+         VALUES ($1,$2,$3,$4,$5,'donor',$6)`,
+        ["tsk_" + uuid().slice(0, 8), orgId, title, dueDate || null, priority || 'medium', att.donor_id]
+      );
+      count++;
+    }
+    res.json({ count });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+app.get("/donors/:id/events", requireAuth, async (req, res) => {
+  try {
+    const orgId = req.user.orgId;
+    const rows = await query(`
+      SELECT e.id, e.name, e.event_type, e.date, e.status, ea.status AS attendee_status
+      FROM event_attendees ea
+      JOIN events e ON e.id = ea.event_id
+      WHERE ea.donor_id = $1 AND ea.org_id = $2
+      ORDER BY e.date DESC
+    `, [req.params.id, orgId]);
+    res.json(rows);
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
 // ── 404 ────────────────────────────────────────────────────────────────────
 app.use((req, res) => {
   res.status(404).json({ error: "Not found" });
 });
 
 // ── Global error handler ───────────────────────────────────────────────────
+if (process.env.SENTRY_DSN) app.use(Sentry.Handlers.errorHandler());
 // eslint-disable-next-line no-unused-vars
 app.use((err, req, res, next) => {
   console.error(err);
@@ -3396,6 +3803,9 @@ const PORT = parseInt(process.env.PORT || "3001", 10);
 app.listen(PORT, () => {
   console.log(`🚀 Steward backend running on port ${PORT}`);
   console.log(`   Demo login: admin@creoarts.org / demo1234`);
+  if (!process.env.RESEND_DOMAIN_VERIFIED) {
+    console.warn("[email] WARNING: RESEND_DOMAIN_VERIFIED not set — emails may land in spam");
+  }
 });
 
 // Run sequence engine on startup (5s delay) then every hour
