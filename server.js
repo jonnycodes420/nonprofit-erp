@@ -485,6 +485,9 @@ app.post("/auth/register-org", wrap(async (req, res) => {
     org: { id: orgId, name: orgName, onboarding_complete: 0, plan: "trial", subscription_status: "trialing" },
     stripeCustomerId,
   });
+  sendOnboardingSequence(orgId, userId, userName, email.toLowerCase()).catch(e =>
+    console.error("[onboarding] failed to start sequence:", e.message)
+  );
 }));
 
 // ── Me ─────────────────────────────────────────────────────────────────────
@@ -2651,10 +2654,75 @@ Organization: ${org.name}. Mission: ${org.mission || "not specified"}. Period: Q
 }));
 
 // ── Sequence Engine ─────────────────────────────────────────────────────────
+async function sendOnboardingSequence(orgId, userId, userName, userEmail) {
+  console.log("[onboarding] creating sequence for", orgId, userId, userEmail);
+  try {
+    const seqId = "seq_" + uuid().slice(0, 8);
+    await run(
+      "INSERT INTO sequences (id, org_id, name, trigger, status) VALUES (?, ?, 'Onboarding', 'onboarding', 'active')",
+      [seqId, orgId]
+    );
+    const steps = [
+      {
+        delay_days: 0,
+        subject: "You just made a great decision for your mission",
+        body: `Hi {{first_name}},\n\nWelcome to Steward. I'm Jonathan — I built this.\n\nI built Steward because a nonprofit I cared about was managing their entire donor relationships in Google Sheets. They were spending hours every week on things that should take minutes — tracking who gave what, remembering who to follow up with, pulling together board reports.\n\nSound familiar?\n\nOver the next few days I'm going to show you exactly how to get the most out of Steward. But first — one question:\n\nWhat's the #1 thing eating your time in fundraising right now?\n\nJust reply to this email. I read every response personally.\n\n— Jonathan\nFounder, Steward`,
+      },
+      {
+        delay_days: 2,
+        subject: "The spreadsheet problem (and how to fix it in 10 minutes)",
+        body: `Hi {{first_name}},\n\nMost development officers I talk to manage donors in one of three ways:\n\n1. Google Sheets (the classic)\n2. A CRM they barely use because it's too complicated\n3. Their own memory (terrifying)\n\nAll three have the same problem: they don't tell you what to do next.\n\nSteward does.\n\nToday's task: import your donor list.\n\nIf you have a spreadsheet with donor names, emails, and giving history — you can import it in about 10 minutes. Steward will automatically score each donor, assign them a stage, and tell you who to call first.\n\nHere's how:\n1. Go to Donors → Import\n2. Upload your CSV\n3. Map your columns (takes 2 minutes)\n4. Done — your whole donor list is in Steward\n\nTomorrow I'll show you something that development officers tell me saves them 2 hours a week.\n\n— Jonathan`,
+      },
+      {
+        delay_days: 4,
+        subject: `What if your CRM texted you "call Sarah today"?`,
+        body: `Hi {{first_name}},\n\nEvery morning when you open Steward, you get a daily briefing.\n\nIt reads your donor data overnight and tells you:\n- Who you haven't contacted in too long\n- Who just gave and needs a thank you\n- Which grant deadline is coming up\n- What your one priority action is for the day\n\nIt's like having a chief of staff who never sleeps and never forgets anything.\n\nTo generate your first briefing:\n1. Go to Dashboard\n2. Hit "Generate briefing"\n3. Read it. Do the first thing it says.\n\n— Jonathan\n\nP.S. — If you haven't imported your donors yet, do that first. The briefing gets dramatically smarter when it has real data to work with.`,
+      },
+      {
+        delay_days: 7,
+        subject: "Your board report used to take how long?",
+        body: `Hi {{first_name}},\n\nI asked a development director at an arts organization how long it took her to put together a quarterly board report.\n\n"Two days," she said. "Sometimes three."\n\nTwo days. Every quarter. Just compiling data that already existed in five different places.\n\nSteward generates your board report in about 45 seconds.\n\nIt pulls your YTD giving, grant status, top donors, pipeline summary, and key metrics — formats it into a PDF — and it's ready to email to your board.\n\nTry it:\n1. Go to Board tab\n2. Hit "Generate Board Report"\n3. Download the PDF\n\nThat's time you could spend actually talking to donors.\n\n— Jonathan`,
+      },
+      {
+        delay_days: 10,
+        subject: "The donors you're about to lose (and how to keep them)",
+        body: `Hi {{first_name}},\n\nHere's a number most development officers don't know off the top of their head:\n\nTheir donor retention rate.\n\nThe nonprofit sector average is about 43%. That means for every 100 donors you had last year, 57 didn't give again.\n\nSteward tracks this automatically. It flags donors who are at risk of lapsing and puts them in a Re-engage queue so nothing falls through the cracks.\n\nGo to Donors → Re-engage and see who's there.\n\nIf you've set up email sequences, Steward will also automatically reach out to lapsed donors on your behalf — a warm, personal email that goes out without you having to remember to send it.\n\nRetaining one major donor is worth more than acquiring ten new ones. This is where the money is.\n\n— Jonathan`,
+      },
+      {
+        delay_days: 18,
+        subject: "Quick question",
+        body: `Hi {{first_name}},\n\nYou've been using Steward for a couple weeks now.\n\nQuick question — what's one thing you wish it did that it doesn't?\n\nI'm building this in real time and I read every reply. The features on the roadmap right now came directly from conversations with users like you.\n\nWhat would make Steward a no-brainer for your org?\n\n— Jonathan`,
+      },
+      {
+        delay_days: 28,
+        subject: "Your trial ends in 2 days",
+        body: `Hi {{first_name}},\n\nYour 30-day Steward trial ends in 2 days.\n\nIf Steward has saved you time, helped you stay on top of your donors, or made one thing easier — I'd love for you to keep using it.\n\nPlans start at $99/month. For context: that's less than what most nonprofits spend on office supplies in a month, and a fraction of what Bloomerang or Salesforce charge.\n\nhttps://stewardapp.dev/pricing\n\nIf the timing isn't right or you have questions, just reply to this email. I'm happy to extend your trial or hop on a 15-minute call.\n\nEither way — thank you for trying Steward. Building software for people doing meaningful work is the best job I've ever had.\n\n— Jonathan\nFounder, Steward\nstewardapp.dev`,
+      },
+    ];
+    for (let i = 0; i < steps.length; i++) {
+      const stepId = "ss_" + uuid().slice(0, 8);
+      await run(
+        "INSERT INTO sequence_steps (id, sequence_id, step_order, delay_days, subject, body) VALUES (?, ?, ?, ?, ?, ?)",
+        [stepId, seqId, i, steps[i].delay_days, steps[i].subject, steps[i].body]
+      );
+    }
+    const enrId = "se_" + uuid().slice(0, 8);
+    await run(
+      `INSERT INTO sequence_enrollments (id, sequence_id, org_id, donor_id, current_step, status, next_send_at)
+       VALUES (?, ?, ?, ?, 0, 'active', NOW())
+       ON CONFLICT (sequence_id, donor_id) DO NOTHING`,
+      [enrId, seqId, orgId, userId]
+    );
+    console.log(`[onboarding] sequence created for org ${orgId}, user ${userId} (${userEmail})`);
+  } catch (e) {
+    console.error("[onboarding] sendOnboardingSequence error:", e.message);
+  }
+}
+
 async function processSequences() {
   try {
     const enrollments = await query(
-      `SELECT se.*, s.name AS seq_name, s.org_id
+      `SELECT se.*, s.name AS seq_name, s.org_id, s.trigger AS seq_trigger
        FROM sequence_enrollments se
        JOIN sequences s ON se.sequence_id = s.id
        WHERE se.status = 'active' AND se.next_send_at <= NOW()`,
@@ -2671,12 +2739,16 @@ async function processSequences() {
           await run("UPDATE sequence_enrollments SET status='completed', completed_at=NOW() WHERE id=?", [enr.id]);
           continue;
         }
-        const donorRows = await query(
-          "SELECT id, name, email FROM donors WHERE id = ? AND org_id = ?",
-          [enr.donor_id, enr.org_id]
-        );
-        const donor = donorRows[0];
-        if (!donor || !donor.email) {
+        // Onboarding sequences store user_id in donor_id — look up users table instead of donors
+        let recipient;
+        if (enr.seq_trigger === "onboarding") {
+          const rows = await query("SELECT id, name, email FROM users WHERE id = ? AND org_id = ?", [enr.donor_id, enr.org_id]);
+          recipient = rows[0];
+        } else {
+          const rows = await query("SELECT id, name, email FROM donors WHERE id = ? AND org_id = ?", [enr.donor_id, enr.org_id]);
+          recipient = rows[0];
+        }
+        if (!recipient || !recipient.email) {
           const nxt = steps[enr.current_step + 1];
           if (nxt) {
             await run(
@@ -2690,23 +2762,37 @@ async function processSequences() {
         }
         const orgRows = await query("SELECT name FROM orgs WHERE id = ?", [enr.org_id]);
         const orgName = orgRows[0]?.name || "";
-        const subject = (step.subject || "").replace(/{{donor_name}}/g, donor.name).replace(/{{org_name}}/g, orgName);
-        const bodyRaw = (step.body || "").replace(/{{donor_name}}/g, donor.name).replace(/{{org_name}}/g, orgName);
+        const firstName = recipient.name ? recipient.name.trim().split(/\s+/)[0] : "";
+        const applyTokens = str => (str || "")
+          .replace(/{{donor_name}}/g, recipient.name)
+          .replace(/{{user_name}}/g, recipient.name)
+          .replace(/{{first_name}}/g, firstName)
+          .replace(/{{org_name}}/g, orgName);
+        const subject = applyTokens(step.subject);
+        const bodyRaw = applyTokens(step.body);
         const bodyHtml = bodyRaw.includes("<") ? bodyRaw
           : `<p>${bodyRaw.replace(/\n\n+/g, "</p><p>").replace(/\n/g, "<br>")}</p>`;
-        const smtpFrom = process.env.DEMO_SMTP_FROM || "noreply@stewardapp.dev";
+        const founderEmail = process.env.FOUNDER_EMAIL || "noreply@stewardapp.dev";
+        const smtpFrom = enr.seq_trigger === "onboarding"
+          ? founderEmail
+          : (process.env.DEMO_SMTP_FROM || "noreply@stewardapp.dev");
         if (process.env.RESEND_API_KEY && smtpFrom) {
           try {
-            const { error: sendErr } = await resend.emails.send({ from: smtpFrom, to: donor.email, subject, html: bodyHtml });
+            const sendOpts = { from: smtpFrom, to: recipient.email, subject, html: bodyHtml };
+            if (enr.seq_trigger === "onboarding") sendOpts.reply_to = founderEmail;
+            const { error: sendErr } = await resend.emails.send(sendOpts);
             if (sendErr) console.error("[seq] send error:", sendErr.message);
           } catch (e) { console.error("[seq] resend error:", e.message); }
         }
-        const intId = "i_" + uuid().slice(0, 8);
-        const today = new Date().toISOString().slice(0, 10);
-        await run(
-          "INSERT INTO interactions (id, org_id, donor_id, type, note, date) VALUES (?, ?, ?, 'email', ?, ?)",
-          [intId, enr.org_id, enr.donor_id, `Sequence: ${enr.seq_name} — Step ${enr.current_step + 1}: ${step.subject}`, today]
-        );
+        // Only log donor interactions for non-onboarding sequences (donor_id is a user_id for onboarding)
+        if (enr.seq_trigger !== "onboarding") {
+          const intId = "i_" + uuid().slice(0, 8);
+          const today = new Date().toISOString().slice(0, 10);
+          await run(
+            "INSERT INTO interactions (id, org_id, donor_id, type, note, date) VALUES (?, ?, ?, 'email', ?, ?)",
+            [intId, enr.org_id, enr.donor_id, `Sequence: ${enr.seq_name} — Step ${enr.current_step + 1}: ${step.subject}`, today]
+          );
+        }
         const nextStep = steps[enr.current_step + 1];
         if (nextStep) {
           await run(
@@ -2724,7 +2810,7 @@ async function processSequences() {
 async function autoEnroll() {
   try {
     const seqs = await query(
-      "SELECT * FROM sequences WHERE status = 'active' AND trigger NOT IN ('manual', 'stage_change')",
+      "SELECT * FROM sequences WHERE status = 'active' AND trigger NOT IN ('manual', 'stage_change', 'onboarding')",
       []
     );
     for (const seq of seqs) {
@@ -3225,28 +3311,39 @@ app.delete("/admin/orgs/:id", requireAuth, requireSuperAdmin, wrap(async (req, r
   const orgs = await query("SELECT id FROM orgs WHERE id=?", [req.params.id]);
   if (!orgs.length) return res.status(404).json({ error: "Org not found" });
   const orgId = req.params.id;
-  // Cascade delete — order matters for FK constraints
-  await run("DELETE FROM sequence_enrollments WHERE org_id=?", [orgId]);
-  await run("DELETE FROM sequence_steps WHERE sequence_id IN (SELECT id FROM sequences WHERE org_id=?)", [orgId]);
-  await run("DELETE FROM sequences WHERE org_id=?", [orgId]);
-  await run("DELETE FROM custom_field_values WHERE org_id=?", [orgId]);
-  await run("DELETE FROM custom_fields WHERE org_id=?", [orgId]);
-  await run("DELETE FROM fin_audit_log WHERE org_id=?", [orgId]);
-  await run("DELETE FROM budgets WHERE org_id=?", [orgId]);
-  await run("DELETE FROM fin_transactions WHERE org_id=?", [orgId]);
-  await run("DELETE FROM fin_funds WHERE org_id=?", [orgId]);
-  await run("DELETE FROM accounts WHERE org_id=?", [orgId]);
-  await run("DELETE FROM campaign_recipients WHERE org_id=?", [orgId]);
-  await run("DELETE FROM campaigns WHERE org_id=?", [orgId]);
-  await run("DELETE FROM interactions WHERE org_id=?", [orgId]);
-  await run("DELETE FROM gifts WHERE org_id=?", [orgId]);
-  await run("DELETE FROM donors WHERE org_id=?", [orgId]);
-  await run("DELETE FROM grants WHERE org_id=?", [orgId]);
-  await run("DELETE FROM volunteers WHERE org_id=?", [orgId]);
-  await run("DELETE FROM tasks WHERE org_id=?", [orgId]);
-  await run("DELETE FROM board_members WHERE org_id=?", [orgId]);
-  await run("DELETE FROM invites WHERE org_id=?", [orgId]);
-  await run("DELETE FROM users WHERE org_id=?", [orgId]);
+  // Cascade delete — order matters for FK constraints; .catch(() => {}) on each so a missing table never aborts
+  await run("DELETE FROM sequence_enrollments WHERE org_id=?", [orgId]).catch(() => {});
+  await run("DELETE FROM sequence_steps WHERE sequence_id IN (SELECT id FROM sequences WHERE org_id=?)", [orgId]).catch(() => {});
+  await run("DELETE FROM sequences WHERE org_id=?", [orgId]).catch(() => {});
+  await run("DELETE FROM custom_field_values WHERE org_id=?", [orgId]).catch(() => {});
+  await run("DELETE FROM custom_fields WHERE org_id=?", [orgId]).catch(() => {});
+  await run("DELETE FROM fin_audit_log WHERE org_id=?", [orgId]).catch(() => {});
+  await run("DELETE FROM budgets WHERE org_id=?", [orgId]).catch(() => {});
+  await run("DELETE FROM fin_transactions WHERE org_id=?", [orgId]).catch(() => {});
+  await run("DELETE FROM fin_funds WHERE org_id=?", [orgId]).catch(() => {});
+  await run("DELETE FROM accounts WHERE org_id=?", [orgId]).catch(() => {});
+  await run("DELETE FROM campaign_recipients WHERE org_id=?", [orgId]).catch(() => {});
+  await run("DELETE FROM campaigns WHERE org_id=?", [orgId]).catch(() => {});
+  await run("DELETE FROM event_attendees WHERE org_id=?", [orgId]).catch(() => {});
+  await run("DELETE FROM events WHERE org_id=?", [orgId]).catch(() => {});
+  await run("DELETE FROM grant_interactions WHERE org_id=?", [orgId]).catch(() => {});
+  await run("DELETE FROM interactions WHERE org_id=?", [orgId]).catch(() => {});
+  await run("DELETE FROM gifts WHERE org_id=?", [orgId]).catch(() => {});
+  await run("DELETE FROM donors WHERE org_id=?", [orgId]).catch(() => {});
+  await run("DELETE FROM program_grants WHERE org_id=?", [orgId]).catch(() => {});
+  await run("DELETE FROM programs WHERE org_id=?", [orgId]).catch(() => {});
+  await run("DELETE FROM grants WHERE org_id=?", [orgId]).catch(() => {});
+  await run("DELETE FROM volunteers WHERE org_id=?", [orgId]).catch(() => {});
+  await run("DELETE FROM tasks WHERE org_id=?", [orgId]).catch(() => {});
+  await run("DELETE FROM board_members WHERE org_id=?", [orgId]).catch(() => {});
+  await run("DELETE FROM invites WHERE org_id=?", [orgId]).catch(() => {});
+  await run("DELETE FROM annual_fund_goals WHERE org_id=?", [orgId]).catch(() => {});
+  await run("DELETE FROM financials WHERE org_id=?", [orgId]).catch(() => {});
+  await run("DELETE FROM funds WHERE org_id=?", [orgId]).catch(() => {});
+  await run("DELETE FROM ai_log WHERE org_id=?", [orgId]).catch(() => {});
+  await run("DELETE FROM gmail_connections WHERE org_id=?", [orgId]).catch(() => {});
+  await run("DELETE FROM password_reset_tokens WHERE user_id IN (SELECT id FROM users WHERE org_id=?)", [orgId]).catch(() => {});
+  await run("DELETE FROM users WHERE org_id=?", [orgId]).catch(() => {});
   await run("DELETE FROM orgs WHERE id=?", [orgId]);
   res.json({ deleted: true });
 }));

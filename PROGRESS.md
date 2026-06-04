@@ -1,5 +1,32 @@
 # Steward — Build Progress
 
+### Onboarding Email Sequence (2026-06-03)
+7-email founder-voice drip sequence that fires automatically when a new org signs up. Backend only — pure sequences engine, no frontend changes.
+
+**Pattern:** `sendOnboardingSequence(orgId, userId, userName, userEmail)` is called fire-and-forget at the end of `POST /auth/register-org`. Creates a sequence row + 7 steps + immediate enrollment in one transaction. The existing `processSequences()` engine handles delivery on its hourly tick.
+
+**Trigger type:** `'onboarding'` — new trigger type added to the sequences system. `autoEnroll()` excludes it (no donor matching needed). `processSequences()` branches on `enr.seq_trigger === "onboarding"` to look up `users` table instead of `donors` (because `donor_id` stores the user_id for onboarding enrollments).
+
+**7 emails (delay_days: 0, 2, 4, 7, 10, 18, 28):**
+1. Day 0 — "You just made a great decision for your mission" — welcome + founder story + reply ask
+2. Day 2 — "The spreadsheet problem (and how to fix it in 10 minutes)" — donor import CTA
+3. Day 4 — `What if your CRM texted you "call Sarah today"?` — daily briefing feature
+4. Day 7 — "Your board report used to take how long?" — board report PDF CTA
+5. Day 10 — "The donors you're about to lose (and how to keep them)" — retention + re-engage CTA
+6. Day 18 — "Quick question" — open feedback loop
+7. Day 28 — "Your trial ends in 2 days" — upgrade CTA with pricing link
+
+**Sender:** `FOUNDER_EMAIL` env var (default: `jonathan@stewardapp.dev`), not `DEMO_SMTP_FROM`. All onboarding emails include `reply_to: founderEmail`. Donor sequences continue to use `DEMO_SMTP_FROM`.
+
+**Token support:** `{{first_name}}` (first word of name), `{{user_name}}`, `{{donor_name}}`, `{{org_name}}` — all resolved in `processSequences()` via `applyTokens()` helper.
+
+**Interaction logging:** skipped for onboarding sequences (donor_id is a user_id — logging would create bad data).
+
+**New env var needed in Railway:** `FOUNDER_EMAIL=jonathan@stewardapp.dev`
+**Resend:** verify `jonathan@stewardapp.dev` as a sender in Resend dashboard.
+
+---
+
 ### Events & Meeting Tracking (2026-06-02)
 Full event lifecycle management — create events, track attendees, log gifts, create follow-up tasks.
 

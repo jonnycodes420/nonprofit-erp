@@ -61,22 +61,6 @@ function AppShell() {
   const [showInstallPrompt,setShowInstallPrompt]=useState(false);
   const [deferredPrompt,setDeferredPrompt]=useState(null);
 
-  useEffect(()=>{
-    if(auth?.user&&window.Intercom){
-      window.Intercom('boot',{
-        api_base:'https://api-iam.intercom.io',
-        app_id:'YOUR_INTERCOM_APP_ID',
-        name:auth.user.name,
-        email:auth.user.email,
-        created_at:Math.floor(Date.now()/1000),
-        company:{
-          id:auth.org?.id,
-          name:auth.org?.name,
-          plan:auth.org?.plan,
-        },
-      });
-    }
-  },[auth]);
 
   useEffect(()=>{
     const params=new URLSearchParams(window.location.search);

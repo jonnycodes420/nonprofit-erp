@@ -25,6 +25,7 @@
 - `STRIPE_SECRET_KEY` — Stripe platform secret key
 - `STRIPE_WEBHOOK_SECRET` — Stripe webhook signing secret (Connect events at /stripe/webhook)
 - `STRIPE_BILLING_WEBHOOK_SECRET` — Stripe webhook signing secret for /billing/webhook (platform subscription events; can reuse STRIPE_WEBHOOK_SECRET if same endpoint)
+- `FOUNDER_EMAIL` — from address for onboarding email sequence (e.g. jonathan@stewardapp.dev); must be a verified Resend sender
 - `STRIPE_PRICE_SEED` — Stripe Price ID for $99/mo Seed plan
 - `STRIPE_PRICE_GROWTH` — Stripe Price ID for $249/mo Growth plan
 - `STRIPE_PRICE_IMPACT` — Stripe Price ID for $499/mo Impact plan
@@ -209,7 +210,7 @@ Mobile "More" drawer: communications, events, volunteers, board, analytics, task
 ## Email Sequences
 
 ### Tables
-- `sequences` — id, org_id, name, trigger (`lapsed_90`|`lapsed_180`|`new_donor`|`stage_change`|`manual`), trigger_stage, status (`active`|`paused`), created_at
+- `sequences` — id, org_id, name, trigger (`lapsed_90`|`lapsed_180`|`new_donor`|`stage_change`|`manual`|`onboarding`), trigger_stage, status (`active`|`paused`), created_at
 - `sequence_steps` — id, sequence_id (FK→sequences ON DELETE CASCADE), step_order, delay_days, subject, body
 - `sequence_enrollments` — id, sequence_id, org_id, donor_id, enrolled_at, current_step, status (`active`|`completed`|`unsubscribed`|`bounced`), next_send_at, completed_at. UNIQUE(sequence_id, donor_id)
 
@@ -217,9 +218,18 @@ Mobile "More" drawer: communications, events, volunteers, board, analytics, task
 - `processSequences()` + `autoEnroll()` in server.js (module-level async functions)
 - Called on startup via `setTimeout(fn, 5000)` and every hour via `setInterval(fn, 3600000)`
 - Also exposed as `POST /sequences/process` (admin-only) for manual trigger
-- Email sent via `resend.emails.send()` using `DEMO_SMTP_FROM` env var
-- Interaction logged to `interactions` table on each send
+- Email sent via `resend.emails.send()` using `DEMO_SMTP_FROM` env var (or `FOUNDER_EMAIL` for onboarding trigger)
+- Interaction logged to `interactions` table on each send (skipped for `onboarding` trigger — donor_id stores user_id)
 - INTERVAL with variable days uses template literal: `` `INTERVAL '${parseInt(n,10)} days'` `` (safe — n is integer from DB)
+- Token replacements: `{{donor_name}}`, `{{user_name}}`, `{{first_name}}` (first word of name), `{{org_name}}`
+
+### Onboarding trigger
+- Trigger type `'onboarding'` is reserved for the signup drip sequence — excluded from `autoEnroll()`
+- `sendOnboardingSequence(orgId, userId, userName, userEmail)` called fire-and-forget at end of `POST /auth/register-org`
+- Stores `userId` in `donor_id` column of `sequence_enrollments` (no FK constraint on that column)
+- `processSequences()` detects `seq_trigger === "onboarding"` and looks up `users` table instead of `donors`
+- Sender: `FOUNDER_EMAIL` env var (default `jonathan@stewardapp.dev`), with `reply_to` set to same
+- 7 steps at delay_days: 0, 2, 4, 7, 10, 18, 28
 
 ### Frontend
 - Sequences subtab in Communications.jsx sidebar nav (after Analytics)
