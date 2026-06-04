@@ -2713,6 +2713,31 @@ async function sendOnboardingSequence(orgId, userId, userName, userEmail) {
        ON CONFLICT (sequence_id, donor_id) DO NOTHING`,
       [enrId, seqId, orgId, userId]
     );
+    // Send email 1 immediately — don't wait for the hourly engine tick
+    const firstName = userName ? userName.trim().split(/\s+/)[0] : "";
+    const applyTokens = str => (str || "")
+      .replace(/{{first_name}}/g, firstName)
+      .replace(/{{user_name}}/g, userName)
+      .replace(/{{donor_name}}/g, userName);
+    const step0 = steps[0];
+    const subject0 = applyTokens(step0.subject);
+    const body0 = applyTokens(step0.body);
+    const bodyHtml0 = `<p>${body0.replace(/\n\n+/g, "</p><p>").replace(/\n/g, "<br>")}</p>`;
+    const founderEmail = process.env.FOUNDER_EMAIL || "noreply@stewardapp.dev";
+    if (process.env.RESEND_API_KEY) {
+      try {
+        const { error: sendErr } = await resend.emails.send({
+          from: founderEmail, to: userEmail, subject: subject0, html: bodyHtml0, reply_to: founderEmail,
+        });
+        if (sendErr) console.error("[onboarding] email 1 send error:", sendErr.message);
+        else console.log("[onboarding] email 1 sent to", userEmail);
+      } catch (e) { console.error("[onboarding] email 1 resend error:", e.message); }
+    }
+    // Advance enrollment past step 0 — engine picks up from step 1 (delay_days: 2)
+    await run(
+      `UPDATE sequence_enrollments SET current_step = 1, next_send_at = NOW() + INTERVAL '2 days' WHERE id = ?`,
+      [enrId]
+    );
     console.log(`[onboarding] sequence created for org ${orgId}, user ${userId} (${userEmail})`);
   } catch (e) {
     console.error("[onboarding] sendOnboardingSequence error:", e.message);
