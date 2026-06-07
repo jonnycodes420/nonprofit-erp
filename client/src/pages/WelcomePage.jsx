@@ -33,7 +33,14 @@ export default function WelcomePage() {
   const [focus, setFocus] = useState("");
   const [error, setError] = useState("");
   const [setupItems, setSetupItems] = useState([]);
+  const [loadingSample, setLoadingSample] = useState(false);
   const focusRef = useRef(focus);
+
+  const handleLoadSample = async () => {
+    setLoadingSample(true);
+    try { await apiFetch("/org/load-sample-data", { method: "POST" }); } catch {}
+    navigate("/dashboard", { replace: true });
+  };
 
   const orgName  = auth?.org?.name             || "your organization";
   const userName = auth?.user?.name?.split(" ")[0] || "";
@@ -202,37 +209,31 @@ export default function WelcomePage() {
               <div style={{ width:56, height:56, background:"#10b98118", border:"1px solid #10b98140", borderRadius:"50%", display:"flex", alignItems:"center", justifyContent:"center", margin:"0 auto 16px", fontSize:26, color:"#10b981" }}>◈</div>
               <div style={{ fontSize:24, fontWeight:800, color:"#f9fafb", letterSpacing:"-0.02em" }}>You're all set!</div>
               <div style={{ fontSize:14, color:"#6b7280", marginTop:8 }}>
-                <span style={{ color:"#10b981", fontWeight:600 }}>{orgName}</span> is ready. Start by adding your first donor.
+                <span style={{ color:"#10b981", fontWeight:600 }}>{orgName}</span> is ready.
               </div>
             </div>
 
             <div style={card}>
-              <div style={{ fontSize:11, fontWeight:700, color:"#10b981", textTransform:"uppercase", letterSpacing:"0.08em", marginBottom:14 }}>What's ready</div>
-              {[
-                "Standard chart of accounts (26 accounts)",
-                "General Operating fund",
-                "Donor pipeline — 6 stages: Prospect through Steward",
-                "Grant tracker, volunteer log, task queue",
-                "AI assistant ready to help across every module",
-              ].map(item => (
-                <div key={item} style={{ display:"flex", gap:10, alignItems:"flex-start", fontSize:13, color:"#9ca3af", marginBottom:10 }}>
-                  <span style={{ color:"#10b981", flexShrink:0, fontWeight:700 }}>✓</span>
-                  <span>{item}</span>
-                </div>
-              ))}
+              <div style={{ fontSize:14, fontWeight:700, color:"#f9fafb", marginBottom:8 }}>Want to explore with sample data first?</div>
+              <div style={{ fontSize:13, color:"#9ca3af", marginBottom:20, lineHeight:1.6 }}>
+                Instantly populate with 25 donors across every stage, gifts, grants, events, and more. You can clear it anytime in Settings.
+              </div>
+              <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
+                <button
+                  onClick={handleLoadSample}
+                  disabled={loadingSample}
+                  style={{ width:"100%", background:"#c9a84c", border:"none", borderRadius:10, padding:"13px 16px", color:"#fff", fontSize:14, fontWeight:700, cursor:loadingSample?"not-allowed":"pointer", opacity:loadingSample?0.7:1 }}
+                >
+                  {loadingSample ? "Loading sample data…" : "Load sample data & explore →"}
+                </button>
+                <button
+                  onClick={() => navigate("/dashboard", { replace:true })}
+                  style={{ width:"100%", background:"transparent", border:"1px solid #1f2937", borderRadius:10, padding:"13px 16px", color:"#6b7280", fontSize:14, fontWeight:600, cursor:"pointer" }}
+                >
+                  Start with my real data
+                </button>
+              </div>
             </div>
-
-            <button
-              onClick={() => navigate("/dashboard", { replace:true })}
-              style={{
-                width:"100%",
-                background:"linear-gradient(135deg,#10b981,#3b82f6)",
-                border:"none", borderRadius:12, padding:"14px 16px",
-                color:"#fff", fontSize:15, fontWeight:700, cursor:"pointer",
-              }}
-            >
-              Enter My Workspace →
-            </button>
           </>
         )}
 

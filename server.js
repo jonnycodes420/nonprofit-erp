@@ -8,7 +8,6 @@ if (process.env.SENTRY_DSN) {
   });
 }
 const express = require("express");
-const archiver = require("archiver");
 const cors = require("cors");
 const bcrypt = require("bcryptjs");
 const crypto = require("crypto");
@@ -4453,35 +4452,10 @@ app.get("/donors/:id/events", requireAuth, async (req, res) => {
 app.get("/org/export", requireAuth, wrap(async (req, res) => {
   const orgId = req.user.orgId;
 
-  // CSV helper — escapes values per RFC 4180
-  function esc(v) {
-    if (v == null) return "";
-    const s = String(v);
-    return (s.includes(",") || s.includes('"') || s.includes("\n") || s.includes("\r"))
-      ? '"' + s.replace(/"/g, '""') + '"'
-      : s;
-  }
-  function makeCsv(headers, rows) {
-    const lines = [headers.map(esc).join(",")];
-    for (const r of rows) lines.push(r.map(esc).join(","));
-    return lines.join("\n");
-  }
-
-  // Fetch org for filename
   const orgRows = await query("SELECT name, org_slug FROM orgs WHERE id=?", [orgId]);
-  const orgName = orgRows[0]?.name || "org";
-  const orgSlug = orgRows[0]?.org_slug || orgId;
+  const orgSlug = (orgRows[0]?.org_slug || orgId).replace(/[^a-z0-9-]/gi, "-").toLowerCase();
   const date = new Date().toISOString().split("T")[0];
 
-  // Lookup maps
-  const donorRows = await query("SELECT id, name FROM donors WHERE org_id=?", [orgId]);
-  const donorMap = Object.fromEntries(donorRows.map(d => [d.id, d.name]));
-  const fundRows = await query("SELECT id, name FROM fin_funds WHERE org_id=?", [orgId]);
-  const fundMap = Object.fromEntries(fundRows.map(f => [f.id, f.name]));
-  const eventRows2 = await query("SELECT id, name FROM events WHERE org_id=?", [orgId]);
-  const eventMap = Object.fromEntries(eventRows2.map(e => [e.id, e.name]));
-
-  // Custom fields for donors
   const cfDefs = await query("SELECT id, label FROM custom_fields WHERE org_id=? ORDER BY field_order", [orgId]);
   const cfVals = await query("SELECT donor_id, field_id, value FROM custom_field_values WHERE org_id=?", [orgId]);
   const cfByDonor = {};
@@ -4490,127 +4464,43 @@ app.get("/org/export", requireAuth, wrap(async (req, res) => {
     cfByDonor[v.donor_id][v.field_id] = v.value;
   }
 
-  // donors.csv
-  const donors = await query("SELECT * FROM donors WHERE org_id=? ORDER BY name", [orgId]);
-  const donorHeaders = [
-    "Name","Email","Phone","Stage","Total Giving","Last Gift Amount","Last Gift Date","Gift Count",
-    "Assigned To","City","State","ZIP","Wealth Score","Capacity Tier","Planned Giving","Tags","Notes",
-    ...cfDefs.map(f => f.label)
-  ];
-  const donorsCsv = makeCsv(donorHeaders, donors.map(d => [
-    d.name, d.email, d.phone, d.stage, d.total_giving, d.last_gift_amount, d.last_gift_date, d.gift_count,
-    d.assigned_to_name, d.city, d.state, d.zip, d.wealth_score, d.capacity_tier,
-    d.planned_giving ? "Yes" : "No",
-    d.tags ? (Array.isArray(d.tags) ? d.tags.join(";") : d.tags) : "",
-    d.notes,
-    ...cfDefs.map(f => cfByDonor[d.id]?.[f.id] ?? "")
-  ]));
+  const [donors, gifts, pledges, grants, txns, events, attendees, campaigns, interactions, volunteers, board, tasks] = await Promise.all([
+    query("SELECT * FROM donors WHERE org_id=? ORDER BY name", [orgId]),
+    query("SELECT g.*, d.name as donor_name FROM gifts g LEFT JOIN donors d ON d.id=g.donor_id WHERE g.org_id=? ORDER BY g.date DESC", [orgId]),
+    query("SELECT pg.*, d.name as donor_name FROM planned_gifts pg LEFT JOIN donors d ON d.id=pg.donor_id WHERE pg.org_id=? ORDER BY pg.created_at DESC", [orgId]),
+    query("SELECT * FROM grants WHERE org_id=? ORDER BY deadline", [orgId]),
+    query("SELECT * FROM fin_transactions WHERE org_id=? ORDER BY date DESC", [orgId]),
+    query("SELECT * FROM events WHERE org_id=? ORDER BY date DESC", [orgId]),
+    query("SELECT ea.*, d.name as donor_name, e.name as event_name FROM event_attendees ea LEFT JOIN donors d ON d.id=ea.donor_id LEFT JOIN events e ON e.id=ea.event_id WHERE ea.org_id=? ORDER BY ea.created_at DESC", [orgId]),
+    query("SELECT * FROM campaigns WHERE org_id=? ORDER BY created_at DESC", [orgId]),
+    query("SELECT i.*, d.name as donor_name FROM interactions i LEFT JOIN donors d ON d.id=i.donor_id WHERE i.org_id=? ORDER BY i.date DESC", [orgId]),
+    query("SELECT * FROM volunteers WHERE org_id=? ORDER BY name", [orgId]),
+    query("SELECT * FROM board_members WHERE org_id=? ORDER BY name", [orgId]),
+    query("SELECT t.*, d.name as donor_name FROM tasks t LEFT JOIN donors d ON d.id=t.donor_id WHERE t.org_id=? ORDER BY t.due", [orgId]),
+  ]);
 
-  // gifts.csv
-  const gifts = await query("SELECT g.*, d.name as donor_name FROM gifts g LEFT JOIN donors d ON d.id=g.donor_id WHERE g.org_id=? ORDER BY g.date DESC", [orgId]);
-  const giftsCsv = makeCsv(
-    ["Date","Donor","Amount","Type","Fund","Payment Method","Campaign","Acknowledgement Sent","Notes"],
-    gifts.map(g => [g.date, g.donor_name, g.amount, g.type, fundMap[g.fund_id]||g.fund_id||"", g.payment_method, g.campaign, g.acknowledgement_sent?"Yes":"No", g.notes])
-  );
+  const donorsEnriched = donors.map(d => ({
+    ...d,
+    custom_fields: cfDefs.reduce((acc, f) => { acc[f.label] = cfByDonor[d.id]?.[f.id] ?? null; return acc; }, {}),
+  }));
 
-  // pledges.csv (planned_gifts)
-  const pledges = await query("SELECT pg.*, d.name as donor_name FROM planned_gifts pg LEFT JOIN donors d ON d.id=pg.donor_id WHERE pg.org_id=? ORDER BY pg.created_at DESC", [orgId]);
-  const pledgesCsv = makeCsv(
-    ["Donor","Type","Estimated Value","Date Indicated","Notes"],
-    pledges.map(p => [p.donor_name, p.type, p.estimated_value, p.date_indicated, p.notes])
-  );
-
-  // grants.csv
-  const grants = await query("SELECT * FROM grants WHERE org_id=? ORDER BY deadline", [orgId]);
-  const grantsCsv = makeCsv(
-    ["Funder","Program","Amount","Status","Deadline","Report Due","Officer","Notes"],
-    grants.map(g => [g.funder, g.program, g.amount, g.status, g.deadline, g.report_due, g.officer, g.notes])
-  );
-
-  // transactions.csv
-  const txns = await query("SELECT * FROM fin_transactions WHERE org_id=? ORDER BY date DESC", [orgId]);
-  const txnsCsv = makeCsv(
-    ["Date","Description","Vendor/Donor","Amount","Type","Fund","Notes"],
-    txns.map(t => [t.date, t.description, t.vendor_donor, t.amount, t.type, fundMap[t.fund_id]||t.fund_id||"", t.notes])
-  );
-
-  // events.csv
-  const events = await query("SELECT * FROM events WHERE org_id=? ORDER BY date DESC", [orgId]);
-  const eventsCsv = makeCsv(
-    ["Name","Type","Date","End Date","Location","Status","Capacity","Revenue","Cost","Notes"],
-    events.map(e => [e.name, e.event_type, e.date, e.end_date, e.location, e.status, e.capacity, e.revenue, e.cost, e.notes])
-  );
-
-  // event_attendees.csv
-  const attendees = await query("SELECT ea.*, d.name as donor_name FROM event_attendees ea LEFT JOIN donors d ON d.id=ea.donor_id WHERE ea.org_id=? ORDER BY ea.created_at DESC", [orgId]);
-  const attendeesCsv = makeCsv(
-    ["Event","Attendee Name","Email","Donor Match","Status","Gift Amount","Notes"],
-    attendees.map(a => [eventMap[a.event_id]||a.event_id, a.name, a.email, a.donor_name||"", a.status, a.gift_amount, a.notes])
-  );
-
-  // campaigns.csv
-  const campaigns = await query("SELECT * FROM campaigns WHERE org_id=? ORDER BY created_at DESC", [orgId]);
-  const campaignsCsv = makeCsv(
-    ["Name","Subject","Status","Recipient Count","Open Count","Sent At","Goal Amount","Raised Amount"],
-    campaigns.map(c => [c.name, c.subject, c.status, c.recipient_count, c.open_count, c.sent_at, c.goal_amount, c.raised_amount])
-  );
-
-  // interactions.csv
-  const interactions = await query("SELECT i.*, d.name as donor_name FROM interactions i LEFT JOIN donors d ON d.id=i.donor_id WHERE i.org_id=? ORDER BY i.date DESC", [orgId]);
-  const interactionsCsv = makeCsv(
-    ["Date","Donor","Type","Note","Logged By"],
-    interactions.map(i => [i.date, i.donor_name, i.type, i.note, i.logged_by_name])
-  );
-
-  // volunteers.csv
-  const volunteers = await query("SELECT * FROM volunteers WHERE org_id=? ORDER BY name", [orgId]);
-  const volunteersCsv = makeCsv(
-    ["Name","Email","Hours","Skills","Employer","Convert Potential","Notes"],
-    volunteers.map(v => [v.name, v.email, v.hours, v.skills, v.employer, v.convert_potential, v.notes])
-  );
-
-  // board_members.csv
-  const board = await query("SELECT * FROM board_members WHERE org_id=? ORDER BY name", [orgId]);
-  const boardCsv = makeCsv(
-    ["Name","Role","Employer","Term","Giving Level","Committees","Attendance %"],
-    board.map(b => [b.name, b.role, b.employer, b.term, b.giving_level, b.committees, b.attendance])
-  );
-
-  // tasks.csv
-  const tasks = await query("SELECT t.*, d.name as donor_name FROM tasks t LEFT JOIN donors d ON d.id=t.donor_id WHERE t.org_id=? ORDER BY t.due", [orgId]);
-  const tasksCsv = makeCsv(
-    ["Title","Due","Priority","Type","Done","Linked Donor"],
-    tasks.map(t => [t.title, t.due, t.priority, t.type, t.done?"Yes":"No", t.donor_name||""])
-  );
-
-  // Stream zip
-  const safeSlug = orgSlug.replace(/[^a-z0-9-]/gi, "-").toLowerCase();
-  res.setHeader("Content-Type", "application/zip");
-  res.setHeader("Content-Disposition", `attachment; filename="steward-export-${safeSlug}-${date}.zip"`);
-
-  const archive = archiver.create("zip", { zlib: { level: 9 } });
-  archive.on("error", err => { console.error("Export zip error:", err); });
-  archive.pipe(res);
-
-  const files = [
-    { name: "donors.csv", content: donorsCsv, rows: donors },
-    { name: "gifts.csv", content: giftsCsv, rows: gifts },
-    { name: "pledges.csv", content: pledgesCsv, rows: pledges },
-    { name: "grants.csv", content: grantsCsv, rows: grants },
-    { name: "transactions.csv", content: txnsCsv, rows: txns },
-    { name: "events.csv", content: eventsCsv, rows: events },
-    { name: "event_attendees.csv", content: attendeesCsv, rows: attendees },
-    { name: "campaigns.csv", content: campaignsCsv, rows: campaigns },
-    { name: "interactions.csv", content: interactionsCsv, rows: interactions },
-    { name: "volunteers.csv", content: volunteersCsv, rows: volunteers },
-    { name: "board_members.csv", content: boardCsv, rows: board },
-    { name: "tasks.csv", content: tasksCsv, rows: tasks },
-  ];
-  for (const f of files) {
-    if (f.rows.length > 0) archive.append(f.content, { name: f.name });
-  }
-
-  await archive.finalize();
+  res.setHeader("Content-Disposition", `attachment; filename="steward-export-${orgSlug}-${date}.json"`);
+  res.json({
+    exported_at: new Date().toISOString(),
+    org: orgRows[0] || {},
+    donors: donorsEnriched,
+    gifts,
+    planned_gifts: pledges,
+    grants,
+    transactions: txns,
+    events,
+    event_attendees: attendees,
+    campaigns,
+    interactions,
+    volunteers,
+    board_members: board,
+    tasks,
+  });
 }));
 
 // ── 404 ────────────────────────────────────────────────────────────────────
