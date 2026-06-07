@@ -736,13 +736,14 @@ app.post("/donors/import", requireAuth, wrap(async (req, res) => {
 }));
 
 app.put("/donors/:id", requireAuth, wrap(async (req, res) => {
-  const { name, email, phone, status, stage, tags, notes } = req.body;
+  const { name, email, phone, status, stage, tags, notes, city, state, zip } = req.body;
   if (!name) return res.status(400).json({ error: "Name required" });
 
   const affected = await run(
-    `UPDATE donors SET name=?,email=?,phone=?,status=?,stage=?,tags=?,notes=?,updated_at=NOW()
+    `UPDATE donors SET name=?,email=?,phone=?,status=?,stage=?,tags=?,notes=?,city=?,state=?,zip=?,updated_at=NOW()
      WHERE id=? AND org_id=?`,
     [name, email || "", phone || "", status, stage || "cultivate", JSON.stringify(tags || []), notes || "",
+     city || null, state || null, zip || null,
      req.params.id, req.user.orgId]
   );
   if (!affected.changes) return res.status(404).json({ error: "Donor not found" });
@@ -860,6 +861,114 @@ app.post("/donors/:id/gifts", requireAuth, wrap(async (req, res) => {
   } catch(e) { console.error("Finance sync:", e.message); }
   calcWealthScore(req.params.id, req.user.orgId).catch(e => console.error("score recalc:", e.message));
   res.status(201).json({ gift: giftRows[0], donor: donorRows[0] });
+}));
+
+app.put("/gifts/:id", requireAuth, wrap(async (req, res) => {
+  const { amount, date, type, campaign, notes, fund_id, payment_method, acknowledgement_sent } = req.body;
+  const existing = await query("SELECT * FROM gifts WHERE id=? AND org_id=?", [req.params.id, req.user.orgId]);
+  if (!existing.length) return res.status(404).json({ error: "Gift not found" });
+  const g = existing[0];
+  const newAmt = amount !== undefined ? Number(amount) : g.amount;
+  const diff = newAmt - g.amount;
+  await run(
+    `UPDATE gifts SET amount=?,date=?,type=?,campaign=?,notes=?,fund_id=?,payment_method=?,acknowledgement_sent=? WHERE id=? AND org_id=?`,
+    [newAmt, date||g.date, type||g.type, campaign!==undefined?campaign:g.campaign,
+     notes!==undefined?notes:g.notes, fund_id!==undefined?fund_id:g.fund_id,
+     payment_method!==undefined?payment_method:g.payment_method,
+     acknowledgement_sent!==undefined?acknowledgement_sent:g.acknowledgement_sent,
+     req.params.id, req.user.orgId]
+  );
+  if (diff !== 0) {
+    await run(
+      `UPDATE donors SET total_giving=total_giving+?,last_gift_amount=CASE WHEN last_gift_date=? THEN ? ELSE last_gift_amount END,updated_at=NOW() WHERE id=? AND org_id=?`,
+      [diff, date||g.date, newAmt, g.donor_id, req.user.orgId]
+    );
+  }
+  const rows = await query("SELECT * FROM gifts WHERE id=?", [req.params.id]);
+  res.json(rows[0]);
+}));
+
+app.delete("/gifts/:id", requireAuth, wrap(async (req, res) => {
+  const existing = await query("SELECT * FROM gifts WHERE id=? AND org_id=?", [req.params.id, req.user.orgId]);
+  if (!existing.length) return res.status(404).json({ error: "Gift not found" });
+  const g = existing[0];
+  await run("DELETE FROM gifts WHERE id=? AND org_id=?", [req.params.id, req.user.orgId]);
+  await run(
+    `UPDATE donors SET total_giving=GREATEST(0,total_giving-?),gift_count=GREATEST(0,gift_count-1),updated_at=NOW() WHERE id=? AND org_id=?`,
+    [g.amount, g.donor_id, req.user.orgId]
+  );
+  res.json({ ok: true });
+}));
+
+app.get("/donors/:id/planned-gifts", requireAuth, wrap(async (req, res) => {
+  const rows = await query("SELECT * FROM planned_gifts WHERE donor_id=? AND org_id=? ORDER BY created_at DESC", [req.params.id, req.user.orgId]);
+  res.json(rows);
+}));
+
+app.post("/donors/:id/planned-gifts", requireAuth, wrap(async (req, res) => {
+  const { type, estimated_value, date_indicated, notes } = req.body;
+  if (!type) return res.status(400).json({ error: "type required" });
+  const donorCheck = await query("SELECT id FROM donors WHERE id=? AND org_id=?", [req.params.id, req.user.orgId]);
+  if (!donorCheck.length) return res.status(404).json({ error: "Donor not found" });
+  const id = "pg_" + uuid().slice(0,8);
+  await run(
+    "INSERT INTO planned_gifts (id,org_id,donor_id,type,estimated_value,date_indicated,notes) VALUES (?,?,?,?,?,?,?)",
+    [id, req.user.orgId, req.params.id, type, estimated_value||null, date_indicated||null, notes||""]
+  );
+  if (!donorCheck[0].planned_giving) {
+    await run("UPDATE donors SET planned_giving=true WHERE id=? AND org_id=?", [req.params.id, req.user.orgId]);
+  }
+  const rows = await query("SELECT * FROM planned_gifts WHERE id=?", [id]);
+  res.status(201).json(rows[0]);
+}));
+
+app.put("/planned-gifts/:id", requireAuth, wrap(async (req, res) => {
+  const existing = await query("SELECT * FROM planned_gifts WHERE id=? AND org_id=?", [req.params.id, req.user.orgId]);
+  if (!existing.length) return res.status(404).json({ error: "Not found" });
+  const pg = existing[0];
+  const { type, estimated_value, date_indicated, notes } = req.body;
+  await run(
+    "UPDATE planned_gifts SET type=?,estimated_value=?,date_indicated=?,notes=? WHERE id=? AND org_id=?",
+    [type||pg.type, estimated_value!==undefined?estimated_value:pg.estimated_value,
+     date_indicated!==undefined?date_indicated:pg.date_indicated, notes!==undefined?notes:pg.notes,
+     req.params.id, req.user.orgId]
+  );
+  const rows = await query("SELECT * FROM planned_gifts WHERE id=?", [req.params.id]);
+  res.json(rows[0]);
+}));
+
+app.delete("/planned-gifts/:id", requireAuth, wrap(async (req, res) => {
+  const existing = await query("SELECT * FROM planned_gifts WHERE id=? AND org_id=?", [req.params.id, req.user.orgId]);
+  if (!existing.length) return res.status(404).json({ error: "Not found" });
+  await run("DELETE FROM planned_gifts WHERE id=? AND org_id=?", [req.params.id, req.user.orgId]);
+  res.json({ ok: true });
+}));
+
+app.get("/donors/:id/materials", requireAuth, wrap(async (req, res) => {
+  const rows = await query("SELECT id,org_id,donor_id,file_name,file_type,file_url,notes,uploaded_by,uploaded_at FROM donor_materials WHERE donor_id=? AND org_id=? ORDER BY uploaded_at DESC", [req.params.id, req.user.orgId]);
+  res.json(rows);
+}));
+
+app.post("/donors/:id/materials", requireAuth, wrap(async (req, res) => {
+  const { file_name, file_type, file_url, file_data, notes } = req.body;
+  if (!file_name) return res.status(400).json({ error: "file_name required" });
+  const donorCheck = await query("SELECT id FROM donors WHERE id=? AND org_id=?", [req.params.id, req.user.orgId]);
+  if (!donorCheck.length) return res.status(404).json({ error: "Donor not found" });
+  const userRow = await query("SELECT name FROM users WHERE id=?", [req.user.userId]);
+  const id = "mat_" + uuid().slice(0,8);
+  await run(
+    "INSERT INTO donor_materials (id,org_id,donor_id,file_name,file_type,file_url,file_data,notes,uploaded_by) VALUES (?,?,?,?,?,?,?,?,?)",
+    [id, req.user.orgId, req.params.id, file_name, file_type||"", file_url||null, file_data||null, notes||"", userRow[0]?.name||""]
+  );
+  const rows = await query("SELECT id,org_id,donor_id,file_name,file_type,file_url,notes,uploaded_by,uploaded_at FROM donor_materials WHERE id=?", [id]);
+  res.status(201).json(rows[0]);
+}));
+
+app.delete("/materials/:id", requireAuth, wrap(async (req, res) => {
+  const existing = await query("SELECT * FROM donor_materials WHERE id=? AND org_id=?", [req.params.id, req.user.orgId]);
+  if (!existing.length) return res.status(404).json({ error: "Not found" });
+  await run("DELETE FROM donor_materials WHERE id=? AND org_id=?", [req.params.id, req.user.orgId]);
+  res.json({ ok: true });
 }));
 
 app.post("/donors/:id/score", requireAuth, wrap(async (req, res) => {
@@ -1128,6 +1237,33 @@ app.get("/analytics", requireAuth, wrap(async (req, res) => {
 }));
 
 // ── Dashboard ──────────────────────────────────────────────────────────────
+app.get("/dashboard/my-stats", requireAuth, wrap(async (req, res) => {
+  const { orgId, userId } = req.user;
+  const now = new Date();
+  const fyStart = now.getMonth() < 6
+    ? new Date(now.getFullYear() - 1, 6, 1).toISOString().split("T")[0]
+    : new Date(now.getFullYear(), 6, 1).toISOString().split("T")[0];
+  const today = now.toISOString().split("T")[0];
+
+  const [portfolioRows, visitsRows, movesRows, giftsRows, pipelineRows, lapsedRows] = await Promise.all([
+    query("SELECT COUNT(*) as cnt FROM donors WHERE org_id=? AND assigned_to=?", [orgId, userId]),
+    query("SELECT COUNT(*) as cnt FROM interactions WHERE org_id=? AND created_by=? AND type='meeting' AND date>=?", [orgId, userId, fyStart]),
+    query("SELECT COUNT(*) as cnt FROM interactions WHERE org_id=? AND created_by=? AND date>=?", [orgId, userId, fyStart]),
+    query("SELECT COALESCE(SUM(g.amount),0) as total FROM gifts g JOIN donors d ON d.id=g.donor_id WHERE d.org_id=? AND d.assigned_to=? AND g.date>=?", [orgId, userId, fyStart]),
+    query("SELECT COALESCE(SUM(total_giving),0) as total FROM donors WHERE org_id=? AND assigned_to=? AND stage NOT IN ('lapsed','closed')", [orgId, userId]),
+    query("SELECT COUNT(*) as cnt FROM donors WHERE org_id=? AND assigned_to=? AND stage='lapsed'", [orgId, userId]),
+  ]);
+
+  res.json({
+    portfolioCount: parseInt(portfolioRows[0]?.cnt || 0),
+    visitsYtd: parseInt(visitsRows[0]?.cnt || 0),
+    madeYtd: parseInt(movesRows[0]?.cnt || 0),
+    giftsYtd: parseInt(giftsRows[0]?.total || 0),
+    pipelineValue: parseInt(pipelineRows[0]?.total || 0),
+    lapsedCount: parseInt(lapsedRows[0]?.cnt || 0),
+  });
+}));
+
 app.get("/dashboard", requireAuth, wrap(async (req, res) => {
   const { orgId } = req.user;
   const urgentTasks = await query(

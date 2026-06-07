@@ -98,6 +98,10 @@ export function adaptData({ org, donors, grants, volunteers, tasks, board, finan
         stripeSubscriptionStatus: d.stripe_subscription_status ?? null,
         assignedTo:    d.assigned_to ?? null,
         assignedToName: d.assigned_to_name ?? null,
+        city:          d.city ?? null,
+        state:         d.state ?? null,
+        zip:           d.zip ?? null,
+        plannedGiving: d.planned_giving ?? false,
       };
     }),
     grants: grants.map(g => ({

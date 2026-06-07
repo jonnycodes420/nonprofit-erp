@@ -530,6 +530,42 @@ async function initSchema() {
       UNIQUE(event_id, donor_id)
     )
   `);
+
+  // ── MGO toolkit ───────────────────────────────────────────────────────────
+  await pool.query(`ALTER TABLE donors ADD COLUMN IF NOT EXISTS city TEXT`);
+  await pool.query(`ALTER TABLE donors ADD COLUMN IF NOT EXISTS state TEXT`);
+  await pool.query(`ALTER TABLE donors ADD COLUMN IF NOT EXISTS zip TEXT`);
+  await pool.query(`ALTER TABLE donors ADD COLUMN IF NOT EXISTS country TEXT DEFAULT 'US'`);
+  await pool.query(`ALTER TABLE donors ADD COLUMN IF NOT EXISTS planned_giving BOOLEAN DEFAULT false`);
+  await pool.query(`ALTER TABLE gifts ADD COLUMN IF NOT EXISTS fund_id TEXT`);
+  await pool.query(`ALTER TABLE gifts ADD COLUMN IF NOT EXISTS payment_method TEXT`);
+  await pool.query(`ALTER TABLE gifts ADD COLUMN IF NOT EXISTS acknowledgement_sent BOOLEAN DEFAULT false`);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS planned_gifts (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL,
+      donor_id TEXT NOT NULL,
+      type TEXT NOT NULL,
+      estimated_value NUMERIC,
+      date_indicated DATE,
+      notes TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS donor_materials (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL,
+      donor_id TEXT NOT NULL,
+      file_name TEXT NOT NULL,
+      file_type TEXT NOT NULL,
+      file_url TEXT,
+      file_data TEXT,
+      notes TEXT,
+      uploaded_by TEXT,
+      uploaded_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
 }
 
 async function seedData() {

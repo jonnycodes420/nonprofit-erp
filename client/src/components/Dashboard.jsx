@@ -60,9 +60,12 @@ export function Dashboard({data,setData,onNavigate}) {
   const [showAddDonor,setShowAddDonor]=useState(false);
   const [newDonor,setNewDonor]=useState({name:"",email:"",phone:"",stage:"prospect"});
   const [onlineGifts,setOnlineGifts]=useState([]);
+  const [myStats,setMyStats]=useState(null);
+  const [portfolioOpen,setPortfolioOpen]=useState(false);
 
   useEffect(()=>{
     apiFetch("/stripe/online-gifts").then(r=>setOnlineGifts(r||[])).catch(()=>{});
+    apiFetch("/dashboard/my-stats").then(r=>setMyStats(r||null)).catch(()=>{});
   },[]);
 
   const totalDonors=data.donors.length;
@@ -153,6 +156,35 @@ export function Dashboard({data,setData,onNavigate}) {
 
   return(
     <div style={{display:"flex",flexDirection:"column",gap:16}} className="dash-root fade-in">
+      {myStats&&(
+        <div style={{background:T.white,border:"1px solid #3b82f630",borderLeft:"3px solid #3b82f6",borderRadius:14,overflow:"hidden"}}>
+          <button onClick={()=>setPortfolioOpen(v=>!v)} style={{width:"100%",background:"none",border:"none",padding:"10px 16px",display:"flex",alignItems:"center",justifyContent:"space-between",cursor:"pointer",color:T.ink}}>
+            <div style={{display:"flex",alignItems:"center",gap:8}}>
+              <span style={{fontSize:9,fontWeight:800,letterSpacing:"0.1em",textTransform:"uppercase",color:"#3b82f6",background:"#3b82f610",padding:"3px 8px",borderRadius:99}}>MY PORTFOLIO</span>
+              <span style={{fontSize:12,color:T.ink3}}>FY Jul–Jun</span>
+            </div>
+            <span style={{fontSize:12,color:T.ink3}}>{portfolioOpen?"▲":"▼"}</span>
+          </button>
+          {portfolioOpen&&(
+            <div style={{display:"grid",gridTemplateColumns:"repeat(6,1fr)",borderTop:"1px solid "+T.bg3}} className="portfolio-grid">
+              {[
+                {label:"Portfolio",value:myStats.portfolioCount,unit:"donors"},
+                {label:"Visits YTD",value:myStats.visitsYtd,unit:"meetings"},
+                {label:"Moves Made",value:myStats.madeYtd,unit:"interactions"},
+                {label:"Gifts YTD",value:fmt(myStats.giftsYtd),unit:"raised"},
+                {label:"Pipeline",value:fmt(myStats.pipelineValue),unit:"value"},
+                {label:"Lapsed",value:myStats.lapsedCount,unit:"in portfolio",warn:myStats.lapsedCount>0},
+              ].map((m,i)=>(
+                <div key={m.label} style={{padding:"12px 14px",borderRight:i<5?"1px solid "+T.bg3:"none",textAlign:"center"}}>
+                  <div style={{fontSize:9,fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase",color:m.warn?"#ef4444":"#3b82f6",marginBottom:4}}>{m.label}</div>
+                  <div style={{fontSize:20,fontWeight:800,color:m.warn?"#ef4444":T.ink,fontFamily:"'DM Serif Display',serif",lineHeight:1}}>{m.value}</div>
+                  <div style={{fontSize:10,color:T.ink3,marginTop:2}}>{m.unit}</div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
       <div className="dash-stat-grid" style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10}}>
         {[
           {label:"Total Donors",value:totalDonors,sub:`${newDonorsThisYear} gave this year`,tab:"donors"},

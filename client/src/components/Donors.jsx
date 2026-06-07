@@ -1,7 +1,8 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { apiFetch } from "../api";
 import { useAuth } from "../main";
 import { T, fmt, fmtFull, daysDiff, SC, askClaude, STAGES, STAGE_ACTION, TIER_COLOR, donorScore, moveUrgency, Spin, Pill, Card, AIBtn, AIPanel, PageTitle, EmptyState, GivingHistoryChart, TpField, TpYesNo, TouchpointTimeline } from "./shared";
+import { DonorMap } from "./DonorMap";
 
 // ── CSV Import helpers ─────────────────────────────────────────────────────
 const CSV_FIELDS = [
@@ -458,6 +459,7 @@ function EditDonorModal({donor,onSave,onClose}){
     name:donor.name||"",email:donor.email||"",phone:donor.phone||"",
     notes:donor.notes||"",tags:(donor.tags||[]).join(", "),
     stage:donor.stage||"cultivate",status:donor.status||"new",
+    city:donor.city||"",state:donor.state||"",zip:donor.zip||"",
   });
   const[loading,setLoading]=useState(false);
   const[err,setErr]=useState("");
@@ -483,6 +485,11 @@ function EditDonorModal({donor,onSave,onClose}){
           {[["name","Full Name","text"],["email","Email","email"],["phone","Phone","tel"]].map(([k,pl,t])=>(
             <input key={k} type={t} value={form[k]} onChange={set(k)} placeholder={pl} style={inp}/>
           ))}
+          <div style={{display:"flex",gap:8}}>
+            <input value={form.city} onChange={set("city")} placeholder="City" style={{...inp,flex:2}}/>
+            <input value={form.state} onChange={set("state")} placeholder="State" style={{...inp,flex:1}}/>
+            <input value={form.zip} onChange={set("zip")} placeholder="ZIP" style={{...inp,flex:1}}/>
+          </div>
           <div>
             <div style={{fontSize:11,fontWeight:700,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:8}}>Stage</div>
             <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
@@ -738,6 +745,57 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
   const [seqLoading,setSeqLoading]=useState(false);
   const [seqToast,setSeqToast]=useState("");
 
+  // Tabs
+  const [dpTab,setDpTab]=useState("overview");
+
+  // Full gift data for Gifts & Pledges tab
+  const [giftsFull,setGiftsFull]=useState([]);
+  const [giftEditId,setGiftEditId]=useState(null);
+  const [giftEditForm,setGiftEditForm]=useState({});
+  const [addGiftForm,setAddGiftForm]=useState({amount:"",date:new Date().toISOString().split("T")[0],type:"cash",payment_method:"",notes:"",fund_id:"",acknowledgement_sent:false});
+  const [addGiftOpen,setAddGiftOpen]=useState(false);
+  const [giftSaving,setGiftSaving]=useState(false);
+
+  // Planned gifts
+  const [plannedGifts,setPlannedGifts]=useState([]);
+  const [pgForm,setPgForm]=useState({type:"bequest",estimated_value:"",date_indicated:"",notes:""});
+  const [addPgOpen,setAddPgOpen]=useState(false);
+  const [pgSaving,setPgSaving]=useState(false);
+
+  // Materials
+  const [materials,setMaterials]=useState([]);
+  const [matLoading,setMatLoading]=useState(false);
+  const [matDragging,setMatDragging]=useState(false);
+  const [matNote,setMatNote]=useState("");
+  const [matUploading,setMatUploading]=useState(false);
+  const fileInputRef=useRef(null);
+
+  // Activity tab filters
+  const [actFilter,setActFilter]=useState("all");
+
+  const loadGiftsFull=()=>{
+    apiFetch(`/donors/${donor.id}`).then(raw=>{
+      const g=(raw.gifts||[]).map(g=>({
+        id:g.id,amount:g.amount||0,date:g.date||g.created_at?.split("T")[0],
+        type:g.type||"cash",campaign:g.campaign||"",notes:g.notes||"",
+        fund_id:g.fund_id||"",payment_method:g.payment_method||"",
+        acknowledgement_sent:!!g.acknowledgement_sent,
+      }));
+      setGiftsFull(g);
+      setGifts(g.map(x=>({amount:x.amount,date:x.date})));
+      setGiftLoading(false);
+    }).catch(()=>setGiftLoading(false));
+  };
+
+  const loadPlannedGifts=()=>{
+    apiFetch(`/donors/${donor.id}/planned-gifts`).then(rows=>setPlannedGifts(Array.isArray(rows)?rows:[])).catch(()=>{});
+  };
+
+  const loadMaterials=()=>{
+    setMatLoading(true);
+    apiFetch(`/donors/${donor.id}/materials`).then(rows=>setMaterials(Array.isArray(rows)?rows:[])).catch(()=>{}).finally(()=>setMatLoading(false));
+  };
+
   const stage=STAGES.find(s=>s.id===(donor.stage||"cultivate"))||STAGES[2];
   const sc=donorScore(donor);const scoreColor=sc>70?"#1a6b4a":sc>45?"#f59e0b":"#ef4444";
   const urg=moveUrgency(donor);
@@ -745,10 +803,115 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
   const interactionCount=donor.interactions?.length||0;
   useEffect(()=>{
     setGiftLoading(true);
-    apiFetch(`/donors/${donor.id}`).then(raw=>{
-      setGifts((raw.gifts||[]).map(g=>({amount:g.amount||0,date:g.date||g.created_at?.split("T")[0]})));
-    }).catch(()=>{}).finally(()=>setGiftLoading(false));
+    loadGiftsFull();
+    loadPlannedGifts();
   },[donor.id,interactionCount]);
+
+  useEffect(()=>{
+    if(dpTab==="materials")loadMaterials();
+  },[dpTab,donor.id]);
+
+  const saveGiftEdit=async(giftId)=>{
+    setGiftSaving(true);
+    try{
+      await apiFetch(`/gifts/${giftId}`,{method:"PUT",body:JSON.stringify(giftEditForm)});
+      loadGiftsFull();
+      setGiftEditId(null);
+    }catch(e){console.error(e);}
+    setGiftSaving(false);
+  };
+
+  const deleteGift=async(giftId)=>{
+    if(!confirm("Delete this gift?"))return;
+    try{
+      await apiFetch(`/gifts/${giftId}`,{method:"DELETE"});
+      loadGiftsFull();
+    }catch(e){console.error(e);}
+  };
+
+  const addGift=async()=>{
+    if(!addGiftForm.amount||isNaN(Number(addGiftForm.amount)))return;
+    setGiftSaving(true);
+    try{
+      await apiFetch(`/donors/${donor.id}/gifts`,{method:"POST",body:JSON.stringify({
+        amount:Number(addGiftForm.amount),date:addGiftForm.date,type:addGiftForm.type,
+        campaign:addGiftForm.campaign||"",notes:addGiftForm.notes,
+        fund_id:addGiftForm.fund_id,payment_method:addGiftForm.payment_method,
+        acknowledgement_sent:addGiftForm.acknowledgement_sent,
+      })});
+      setAddGiftOpen(false);
+      setAddGiftForm({amount:"",date:new Date().toISOString().split("T")[0],type:"cash",payment_method:"",notes:"",fund_id:"",acknowledgement_sent:false});
+      loadGiftsFull();
+    }catch(e){console.error(e);}
+    setGiftSaving(false);
+  };
+
+  const addPlannedGift=async()=>{
+    if(!pgForm.type)return;
+    setPgSaving(true);
+    try{
+      await apiFetch(`/donors/${donor.id}/planned-gifts`,{method:"POST",body:JSON.stringify(pgForm)});
+      setAddPgOpen(false);
+      setPgForm({type:"bequest",estimated_value:"",date_indicated:"",notes:""});
+      loadPlannedGifts();
+    }catch(e){console.error(e);}
+    setPgSaving(false);
+  };
+
+  const deletePlannedGift=async(id)=>{
+    if(!confirm("Delete this planned gift entry?"))return;
+    try{
+      await apiFetch(`/planned-gifts/${id}`,{method:"DELETE"});
+      loadPlannedGifts();
+    }catch(e){console.error(e);}
+  };
+
+  const uploadMaterial=async(file)=>{
+    setMatUploading(true);
+    try{
+      let file_data=null,file_url=null;
+      if(file.size<1024*1024){
+        const buf=await file.arrayBuffer();
+        file_data=btoa(String.fromCharCode(...new Uint8Array(buf)));
+      }
+      await apiFetch(`/donors/${donor.id}/materials`,{method:"POST",body:JSON.stringify({
+        file_name:file.name,file_type:file.type||"application/octet-stream",
+        file_data,file_url,notes:matNote,
+      })});
+      setMatNote("");
+      loadMaterials();
+    }catch(e){console.error(e);}
+    setMatUploading(false);
+  };
+
+  const viewMaterial=(m)=>{
+    if(m.file_data){
+      const byteCharacters=atob(m.file_data);
+      const byteNumbers=new Array(byteCharacters.length).fill(0).map((_,i)=>byteCharacters.charCodeAt(i));
+      const byteArray=new Uint8Array(byteNumbers);
+      const blob=new Blob([byteArray],{type:m.file_type||"application/octet-stream"});
+      const url=URL.createObjectURL(blob);
+      window.open(url,"_blank");
+    }else if(m.file_url){
+      window.open(m.file_url,"_blank");
+    }
+  };
+
+  const deleteMaterial=async(id)=>{
+    if(!confirm("Delete this file?"))return;
+    try{
+      await apiFetch(`/materials/${id}`,{method:"DELETE"});
+      loadMaterials();
+    }catch(e){console.error(e);}
+  };
+
+  const exportGiftsCSV=()=>{
+    const rows=[["Date","Amount","Type","Payment Method","Fund","Ack Sent","Notes"],...giftsFull.map(g=>[g.date,g.amount,g.type,g.payment_method,g.fund_id,g.acknowledgement_sent?"Yes":"No",g.notes])];
+    const csv=rows.map(r=>r.map(v=>`"${(v||"").toString().replace(/"/g,'""')}"`).join(",")).join("\n");
+    const blob=new Blob([csv],{type:"text/csv"});
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement("a");a.href=url;a.download=`${donor.name}-gifts.csv`;a.click();
+  };
 
   useEffect(()=>{
     if(!aiMap[`${donor.id}_nextmove`])getAI(donor,"nextmove");
@@ -782,58 +945,256 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
 
       <div className="donor-profile-body" style={{flex:1,display:"grid",gridTemplateColumns:"minmax(0,1.25fr) minmax(0,0.75fr)",overflow:"hidden"}}>
         {/* LEFT */}
-        <div style={{overflowY:"auto",padding:"22px 20px 24px 24px",borderRight:"1px solid "+T.bg3,display:"flex",flexDirection:"column",gap:18}}>
-          <div className="donor-stat-grid" style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10}}>
-            {[["Lifetime",fmtFull(donor.total),T.ink],["Last Gift",lastGiftDisplay,"#1a6b4a"],["Contact",`${urg.days}d ago`,urg.urgencyColor],["Score",`${sc}/99`,scoreColor]].map(([l,v,c])=>(
-              <div key={l} style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:12,padding:"12px 14px"}}>
-                <div style={{fontSize:9,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.1em",color:T.ink3,marginBottom:4}}>{l}</div>
-                <div style={{fontSize:20,fontWeight:800,color:c,fontFamily:"'DM Serif Display',serif",lineHeight:1.1}}>{v}</div>
-              </div>
+        <div style={{overflowY:"auto",borderRight:"1px solid "+T.bg3,display:"flex",flexDirection:"column"}}>
+          {/* Tab Nav */}
+          <div style={{display:"flex",background:T.white,borderBottom:"1px solid "+T.bg3,flexShrink:0,overflowX:"auto"}}>
+            {[["overview","Overview"],["gifts","Gifts & Pledges"],["materials","Materials"],["activity","Activity"]].map(([id,label])=>(
+              <button key={id} onClick={()=>setDpTab(id)} style={{background:"none",border:"none",borderBottom:`2px solid ${dpTab===id?T.greenDk:"transparent"}`,padding:"11px 18px",color:dpTab===id?T.greenDk:T.ink3,fontSize:13,fontWeight:dpTab===id?700:400,cursor:"pointer",whiteSpace:"nowrap",flexShrink:0}}>
+                {label}
+                {id==="gifts"&&giftsFull.length>0&&<span style={{marginLeft:5,background:T.bg2,borderRadius:99,padding:"1px 6px",fontSize:10,fontWeight:700,color:T.ink3}}>{giftsFull.length}</span>}
+                {id==="materials"&&materials.length>0&&<span style={{marginLeft:5,background:T.bg2,borderRadius:99,padding:"1px 6px",fontSize:10,fontWeight:700,color:T.ink3}}>{materials.length}</span>}
+              </button>
             ))}
           </div>
 
-          <div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:14,padding:"16px 18px"}}>
-            <div style={{fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.1em",color:T.ink3,marginBottom:12}}>Giving History</div>
-            {giftLoading?<div style={{height:80,display:"flex",alignItems:"center",justifyContent:"center",color:T.ink3,fontSize:12}}><Spin/></div>:<GivingHistoryChart gifts={gifts}/>}
-          </div>
-
-          {donor.tags?.length>0&&<div style={{display:"flex",gap:5,flexWrap:"wrap"}}>{donor.tags.map(t=><Pill key={t} label={t}/>)}</div>}
-          {donor.notes&&<div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:10,padding:"12px 14px",fontSize:13,color:T.ink3,lineHeight:1.6}}>{donor.notes}</div>}
-
-          <div>
-            <div style={{fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.1em",color:T.ink3,marginBottom:8}}>
-              Follow-up Tasks
-              {tasks.filter(t=>!t.done).length>0&&<span style={{marginLeft:6,background:"#1a6b4a",color:"#fff",borderRadius:99,padding:"1px 6px",fontSize:9,fontWeight:800}}>{tasks.filter(t=>!t.done).length}</span>}
+          {/* Overview tab */}
+          {dpTab==="overview"&&<div style={{padding:"22px 20px 24px 24px",display:"flex",flexDirection:"column",gap:18}}>
+            <div className="donor-stat-grid" style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10}}>
+              {[["Lifetime",fmtFull(donor.total),T.ink],["Last Gift",lastGiftDisplay,"#1a6b4a"],["Contact",`${urg.days}d ago`,urg.urgencyColor],["Score",`${sc}/99`,scoreColor]].map(([l,v,c])=>(
+                <div key={l} style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:12,padding:"12px 14px"}}>
+                  <div style={{fontSize:9,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.1em",color:T.ink3,marginBottom:4}}>{l}</div>
+                  <div style={{fontSize:20,fontWeight:800,color:c,fontFamily:"'DM Serif Display',serif",lineHeight:1.1}}>{v}</div>
+                </div>
+              ))}
             </div>
-            {tasks.length===0
-              ?<div style={{fontSize:12,color:T.ink3,fontStyle:"italic"}}>No tasks yet — create one after logging a touchpoint.</div>
-              :<div style={{display:"flex",flexDirection:"column",gap:6}}>
-                {[...tasks].sort((a,b)=>a.done-b.done||(a.due||"").localeCompare(b.due||"")).map(t=>{
-                  const overdue=t.due&&!t.done&&daysDiff(t.due)<0;
-                  return <div key={t.id} onClick={()=>onTaskToggle(t)} style={{background:T.white,border:`1px solid ${t.done?"#1a6b4a30":overdue?"#ef444430":T.bg3}`,borderRadius:10,padding:"10px 14px",cursor:"pointer",display:"flex",alignItems:"center",gap:10}}>
-                    <div style={{width:18,height:18,borderRadius:5,border:`2px solid ${t.done?"#1a6b4a":SC[t.priority]}`,background:t.done?"#1a6b4a":"transparent",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center"}}>
-                      {t.done&&<span style={{color:"#fff",fontSize:10,lineHeight:1}}>✓</span>}
+
+            <div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:14,padding:"16px 18px"}}>
+              <div style={{fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.1em",color:T.ink3,marginBottom:12}}>Giving History</div>
+              {giftLoading?<div style={{height:80,display:"flex",alignItems:"center",justifyContent:"center",color:T.ink3,fontSize:12}}><Spin/></div>:<GivingHistoryChart gifts={gifts}/>}
+            </div>
+
+            {donor.tags?.length>0&&<div style={{display:"flex",gap:5,flexWrap:"wrap"}}>{donor.tags.map(t=><Pill key={t} label={t}/>)}</div>}
+            {donor.notes&&<div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:10,padding:"12px 14px",fontSize:13,color:T.ink3,lineHeight:1.6}}>{donor.notes}</div>}
+
+            <div>
+              <div style={{fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.1em",color:T.ink3,marginBottom:8}}>
+                Follow-up Tasks
+                {tasks.filter(t=>!t.done).length>0&&<span style={{marginLeft:6,background:"#1a6b4a",color:"#fff",borderRadius:99,padding:"1px 6px",fontSize:9,fontWeight:800}}>{tasks.filter(t=>!t.done).length}</span>}
+              </div>
+              {tasks.length===0
+                ?<div style={{fontSize:12,color:T.ink3,fontStyle:"italic"}}>No tasks yet — create one after logging a touchpoint.</div>
+                :<div style={{display:"flex",flexDirection:"column",gap:6}}>
+                  {[...tasks].sort((a,b)=>a.done-b.done||(a.due||"").localeCompare(b.due||"")).map(t=>{
+                    const overdue=t.due&&!t.done&&daysDiff(t.due)<0;
+                    return <div key={t.id} onClick={()=>onTaskToggle(t)} style={{background:T.white,border:`1px solid ${t.done?"#1a6b4a30":overdue?"#ef444430":T.bg3}`,borderRadius:10,padding:"10px 14px",cursor:"pointer",display:"flex",alignItems:"center",gap:10}}>
+                      <div style={{width:18,height:18,borderRadius:5,border:`2px solid ${t.done?"#1a6b4a":SC[t.priority]}`,background:t.done?"#1a6b4a":"transparent",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center"}}>
+                        {t.done&&<span style={{color:"#fff",fontSize:10,lineHeight:1}}>✓</span>}
+                      </div>
+                      <div style={{flex:1,minWidth:0}}>
+                        <div style={{fontSize:12,fontWeight:500,color:t.done?T.ink3:T.ink,textDecoration:t.done?"line-through":"none",lineHeight:1.3}}>{t.title}</div>
+                        {t.due&&<div style={{fontSize:11,color:overdue?"#ef4444":T.ink3,marginTop:2,fontWeight:overdue?700:400}}>
+                          {overdue?"Overdue — was ":""}{new Date(t.due).toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"})}
+                        </div>}
+                      </div>
+                      <Pill label={t.priority} color={SC[t.priority]}/>
+                    </div>;
+                  })}
+                </div>
+              }
+            </div>
+
+            <div>
+              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12}}>
+                <div style={{fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.1em",color:T.ink3}}>Touchpoint Timeline</div>
+                <button onClick={onLogTouchpoint} style={{background:"#10b981",border:"none",borderRadius:7,padding:"5px 12px",color:"#fff",fontSize:11,fontWeight:700,cursor:"pointer"}}>+ Log</button>
+              </div>
+              <TouchpointTimeline interactions={donor.interactions}/>
+            </div>
+          </div>}
+
+          {/* Gifts & Pledges tab */}
+          {dpTab==="gifts"&&<div style={{padding:"20px 20px 24px 24px",display:"flex",flexDirection:"column",gap:18}}>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+              <div>
+                <div style={{fontSize:14,fontWeight:800,color:T.ink}}>Gift History</div>
+                <div style={{fontSize:12,color:T.ink3,marginTop:2}}>
+                  Total: <strong style={{color:"#1a6b4a"}}>{fmtFull(giftsFull.reduce((s,g)=>s+g.amount,0))}</strong> · {giftsFull.length} gifts
+                </div>
+              </div>
+              <div style={{display:"flex",gap:8}}>
+                <button onClick={exportGiftsCSV} style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"6px 12px",color:T.ink3,fontSize:12,cursor:"pointer"}}>↓ CSV</button>
+                <button onClick={()=>setAddGiftOpen(v=>!v)} style={{background:"#10b981",border:"none",borderRadius:8,padding:"7px 12px",color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer"}}>+ Add Gift</button>
+              </div>
+            </div>
+
+            {addGiftOpen&&<div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:12,padding:"16px"}}>
+              <div style={{fontSize:12,fontWeight:700,color:T.ink,marginBottom:12}}>New Gift</div>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:8}}>
+                <input value={addGiftForm.amount} onChange={e=>setAddGiftForm(p=>({...p,amount:e.target.value}))} placeholder="Amount ($)" type="number" style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"8px 10px",color:T.ink,fontSize:13,outline:"none"}}/>
+                <input value={addGiftForm.date} onChange={e=>setAddGiftForm(p=>({...p,date:e.target.value}))} type="date" style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"8px 10px",color:T.ink,fontSize:13,outline:"none"}}/>
+                <select value={addGiftForm.type} onChange={e=>setAddGiftForm(p=>({...p,type:e.target.value}))} style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"8px 10px",color:T.ink,fontSize:13,outline:"none"}}>
+                  {["cash","check","credit_card","stock","in_kind","matching","other"].map(t=><option key={t}>{t}</option>)}
+                </select>
+                <input value={addGiftForm.payment_method} onChange={e=>setAddGiftForm(p=>({...p,payment_method:e.target.value}))} placeholder="Payment method" style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"8px 10px",color:T.ink,fontSize:13,outline:"none"}}/>
+              </div>
+              <input value={addGiftForm.notes} onChange={e=>setAddGiftForm(p=>({...p,notes:e.target.value}))} placeholder="Notes" style={{width:"100%",background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"8px 10px",color:T.ink,fontSize:13,outline:"none",boxSizing:"border-box",marginBottom:8}}/>
+              <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:12}}>
+                <label style={{display:"flex",alignItems:"center",gap:6,fontSize:12,color:T.ink,cursor:"pointer"}}>
+                  <input type="checkbox" checked={addGiftForm.acknowledgement_sent} onChange={e=>setAddGiftForm(p=>({...p,acknowledgement_sent:e.target.checked}))} style={{accentColor:"#1a6b4a"}}/>
+                  Acknowledgement sent
+                </label>
+              </div>
+              <div style={{display:"flex",gap:8}}>
+                <button onClick={addGift} disabled={giftSaving} style={{background:"#10b981",border:"none",borderRadius:8,padding:"8px 16px",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer"}}>Save</button>
+                <button onClick={()=>setAddGiftOpen(false)} style={{background:T.bg,border:"none",borderRadius:8,padding:"8px 14px",color:T.ink3,fontSize:13,cursor:"pointer"}}>Cancel</button>
+              </div>
+            </div>}
+
+            <div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:12,overflow:"hidden"}}>
+              {giftLoading?<div style={{padding:24,textAlign:"center",color:T.ink3,fontSize:12}}><Spin/></div>:giftsFull.length===0?<div style={{padding:24,textAlign:"center",color:T.ink3,fontSize:13,fontStyle:"italic"}}>No gifts on file</div>:(
+                <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+                  <thead>
+                    <tr style={{background:T.bg2}}>
+                      {["Date","Amount","Type","Method","Ack","Note",""].map(h=><th key={h} style={{padding:"8px 12px",textAlign:"left",fontWeight:700,color:T.ink3,fontSize:10,textTransform:"uppercase",letterSpacing:"0.08em",borderBottom:"1px solid "+T.bg3}}>{h}</th>)}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {[...giftsFull].sort((a,b)=>new Date(b.date)-new Date(a.date)).map(g=>(
+                      <tr key={g.id} style={{borderBottom:"1px solid "+T.bg3}}>
+                        {giftEditId===g.id?(
+                          <td colSpan={7} style={{padding:"10px 12px"}}>
+                            <div style={{display:"flex",gap:6,flexWrap:"wrap",alignItems:"center"}}>
+                              <input value={giftEditForm.amount} onChange={e=>setGiftEditForm(p=>({...p,amount:e.target.value}))} placeholder="Amount" type="number" style={{width:80,background:T.bg,border:"1px solid "+T.bg3,borderRadius:6,padding:"5px 8px",color:T.ink,fontSize:12,outline:"none"}}/>
+                              <input value={giftEditForm.date} onChange={e=>setGiftEditForm(p=>({...p,date:e.target.value}))} type="date" style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:6,padding:"5px 8px",color:T.ink,fontSize:12,outline:"none"}}/>
+                              <select value={giftEditForm.type} onChange={e=>setGiftEditForm(p=>({...p,type:e.target.value}))} style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:6,padding:"5px 8px",color:T.ink,fontSize:12,outline:"none"}}>
+                                {["cash","check","credit_card","stock","in_kind","matching","other"].map(t=><option key={t}>{t}</option>)}
+                              </select>
+                              <input value={giftEditForm.payment_method} onChange={e=>setGiftEditForm(p=>({...p,payment_method:e.target.value}))} placeholder="Method" style={{width:100,background:T.bg,border:"1px solid "+T.bg3,borderRadius:6,padding:"5px 8px",color:T.ink,fontSize:12,outline:"none"}}/>
+                              <input value={giftEditForm.notes} onChange={e=>setGiftEditForm(p=>({...p,notes:e.target.value}))} placeholder="Notes" style={{flex:1,minWidth:80,background:T.bg,border:"1px solid "+T.bg3,borderRadius:6,padding:"5px 8px",color:T.ink,fontSize:12,outline:"none"}}/>
+                              <label style={{display:"flex",alignItems:"center",gap:4,fontSize:11,color:T.ink,cursor:"pointer",flexShrink:0}}>
+                                <input type="checkbox" checked={!!giftEditForm.acknowledgement_sent} onChange={e=>setGiftEditForm(p=>({...p,acknowledgement_sent:e.target.checked}))} style={{accentColor:"#1a6b4a"}}/>
+                                Ack
+                              </label>
+                              <button onClick={()=>saveGiftEdit(g.id)} disabled={giftSaving} style={{background:"#10b981",border:"none",borderRadius:6,padding:"5px 10px",color:"#fff",fontSize:11,fontWeight:700,cursor:"pointer"}}>Save</button>
+                              <button onClick={()=>setGiftEditId(null)} style={{background:T.bg,border:"none",borderRadius:6,padding:"5px 10px",color:T.ink3,fontSize:11,cursor:"pointer"}}>Cancel</button>
+                            </div>
+                          </td>
+                        ):(
+                          <>
+                            <td style={{padding:"9px 12px",color:T.ink3,whiteSpace:"nowrap"}}>{g.date}</td>
+                            <td style={{padding:"9px 12px",fontWeight:700,color:"#1a6b4a",whiteSpace:"nowrap"}}>{fmtFull(g.amount)}</td>
+                            <td style={{padding:"9px 12px",color:T.ink3,textTransform:"capitalize"}}>{g.type||"cash"}</td>
+                            <td style={{padding:"9px 12px",color:T.ink3}}>{g.payment_method||"—"}</td>
+                            <td style={{padding:"9px 12px",textAlign:"center"}}>{g.acknowledgement_sent?<span style={{color:"#1a6b4a",fontSize:13}}>✓</span>:<span style={{color:T.ink3,fontSize:13}}>—</span>}</td>
+                            <td style={{padding:"9px 12px",color:T.ink3,maxWidth:140,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{g.notes||""}</td>
+                            <td style={{padding:"9px 12px",whiteSpace:"nowrap"}}>
+                              <button onClick={()=>{setGiftEditId(g.id);setGiftEditForm({amount:g.amount,date:g.date,type:g.type,payment_method:g.payment_method||"",notes:g.notes||"",fund_id:g.fund_id||"",acknowledgement_sent:g.acknowledgement_sent});}} style={{background:"none",border:"none",color:T.ink3,fontSize:12,cursor:"pointer",padding:"2px 6px"}}>Edit</button>
+                              <button onClick={()=>deleteGift(g.id)} style={{background:"none",border:"none",color:"#ef4444",fontSize:12,cursor:"pointer",padding:"2px 6px"}}>Delete</button>
+                            </td>
+                          </>
+                        )}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+
+            {/* Planned Giving */}
+            <div>
+              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}>
+                <div style={{fontSize:12,fontWeight:700,color:T.ink,display:"flex",alignItems:"center",gap:7}}>
+                  Planned Giving
+                  {donor.plannedGiving&&<span style={{background:"#8b5cf610",color:"#8b5cf6",border:"1px solid #8b5cf640",borderRadius:99,padding:"2px 8px",fontSize:10,fontWeight:700}}>Indicated</span>}
+                </div>
+                <button onClick={()=>setAddPgOpen(v=>!v)} style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"5px 10px",color:T.ink3,fontSize:11,cursor:"pointer"}}>+ Add</button>
+              </div>
+              {addPgOpen&&<div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:10,padding:"14px",marginBottom:10}}>
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:8}}>
+                  <select value={pgForm.type} onChange={e=>setPgForm(p=>({...p,type:e.target.value}))} style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"7px 10px",color:T.ink,fontSize:12,outline:"none"}}>
+                    {["bequest","charitable_remainder_trust","charitable_lead_trust","annuity","ira_beneficiary","life_insurance","real_estate","other"].map(t=><option key={t} value={t}>{t.replace(/_/g," ")}</option>)}
+                  </select>
+                  <input value={pgForm.estimated_value} onChange={e=>setPgForm(p=>({...p,estimated_value:e.target.value}))} placeholder="Estimated value ($)" type="number" style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"7px 10px",color:T.ink,fontSize:12,outline:"none"}}/>
+                  <input value={pgForm.date_indicated} onChange={e=>setPgForm(p=>({...p,date_indicated:e.target.value}))} type="date" placeholder="Date indicated" style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"7px 10px",color:T.ink,fontSize:12,outline:"none"}}/>
+                  <input value={pgForm.notes} onChange={e=>setPgForm(p=>({...p,notes:e.target.value}))} placeholder="Notes" style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"7px 10px",color:T.ink,fontSize:12,outline:"none"}}/>
+                </div>
+                <div style={{display:"flex",gap:8}}>
+                  <button onClick={addPlannedGift} disabled={pgSaving} style={{background:"#8b5cf6",border:"none",borderRadius:8,padding:"7px 14px",color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer"}}>Save</button>
+                  <button onClick={()=>setAddPgOpen(false)} style={{background:T.bg,border:"none",borderRadius:8,padding:"7px 12px",color:T.ink3,fontSize:12,cursor:"pointer"}}>Cancel</button>
+                </div>
+              </div>}
+              {plannedGifts.length===0?<div style={{fontSize:12,color:T.ink3,fontStyle:"italic"}}>No planned giving on file</div>:(
+                <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                  {plannedGifts.map(pg=>(
+                    <div key={pg.id} style={{background:T.white,border:"1px solid #8b5cf620",borderRadius:10,padding:"10px 14px",display:"flex",alignItems:"flex-start",justifyContent:"space-between",gap:10}}>
+                      <div>
+                        <div style={{fontSize:13,fontWeight:700,color:"#8b5cf6",textTransform:"capitalize"}}>{(pg.type||"").replace(/_/g," ")}</div>
+                        {pg.estimated_value&&<div style={{fontSize:12,color:T.ink3,marginTop:2}}>Est. {fmtFull(pg.estimated_value)}</div>}
+                        {pg.date_indicated&&<div style={{fontSize:11,color:T.ink3,marginTop:1}}>Indicated {pg.date_indicated}</div>}
+                        {pg.notes&&<div style={{fontSize:12,color:T.ink3,marginTop:3,lineHeight:1.4}}>{pg.notes}</div>}
+                      </div>
+                      <button onClick={()=>deletePlannedGift(pg.id)} style={{background:"none",border:"none",color:"#ef4444",fontSize:12,cursor:"pointer",flexShrink:0,padding:"2px 4px"}}>×</button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>}
+
+          {/* Materials tab */}
+          {dpTab==="materials"&&<div style={{padding:"20px 20px 24px 24px",display:"flex",flexDirection:"column",gap:16}}>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+              <div style={{fontSize:14,fontWeight:800,color:T.ink}}>Donor Materials</div>
+            </div>
+            <div
+              onDragOver={e=>{e.preventDefault();setMatDragging(true);}}
+              onDragLeave={()=>setMatDragging(false)}
+              onDrop={async e=>{e.preventDefault();setMatDragging(false);const file=e.dataTransfer.files[0];if(file)uploadMaterial(file);}}
+              onClick={()=>fileInputRef.current?.click()}
+              style={{border:`2px dashed ${matDragging?"#10b981":T.bg3}`,borderRadius:12,padding:"28px 20px",textAlign:"center",cursor:"pointer",transition:"border-color 0.15s",background:matDragging?"#10b98108":T.bg}}>
+              <div style={{fontSize:28,marginBottom:6}}>📎</div>
+              <div style={{fontSize:13,color:T.ink3}}>{matUploading?"Uploading…":"Drop a file here or click to browse"}</div>
+              <div style={{fontSize:11,color:T.ink3,marginTop:4}}>Proposals, letters, research — any file type</div>
+              <input ref={fileInputRef} type="file" style={{display:"none"}} onChange={e=>{const f=e.target.files[0];if(f)uploadMaterial(f);e.target.value="";}}/>
+            </div>
+            {matLoading?<div style={{textAlign:"center",color:T.ink3,fontSize:12,padding:16}}><Spin/></div>:materials.length===0?<div style={{fontSize:12,color:T.ink3,fontStyle:"italic",textAlign:"center",padding:16}}>No materials uploaded yet</div>:(
+              <div style={{display:"flex",flexDirection:"column",gap:8}}>
+                {materials.map(m=>(
+                  <div key={m.id} style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:10,padding:"12px 14px",display:"flex",alignItems:"center",gap:12}}>
+                    <div style={{fontSize:22,flexShrink:0}}>
+                      {m.file_type?.includes("pdf")?"📄":m.file_type?.includes("image")?"🖼️":m.file_type?.includes("word")?"📝":"📎"}
                     </div>
                     <div style={{flex:1,minWidth:0}}>
-                      <div style={{fontSize:12,fontWeight:500,color:t.done?T.ink3:T.ink,textDecoration:t.done?"line-through":"none",lineHeight:1.3}}>{t.title}</div>
-                      {t.due&&<div style={{fontSize:11,color:overdue?"#ef4444":T.ink3,marginTop:2,fontWeight:overdue?700:400}}>
-                        {overdue?"Overdue — was ":""}{new Date(t.due).toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"})}
-                      </div>}
+                      <div style={{fontSize:13,fontWeight:600,color:T.ink,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{m.file_name}</div>
+                      <div style={{fontSize:11,color:T.ink3,marginTop:1}}>{m.uploaded_by&&`Uploaded by ${m.uploaded_by} · `}{new Date(m.uploaded_at).toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"})}</div>
+                      {m.notes&&<div style={{fontSize:11,color:T.ink3,marginTop:2}}>{m.notes}</div>}
                     </div>
-                    <Pill label={t.priority} color={SC[t.priority]}/>
-                  </div>;
-                })}
+                    <div style={{display:"flex",gap:6,flexShrink:0}}>
+                      {(m.file_data||m.file_url)&&<button onClick={()=>viewMaterial(m)} style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:7,padding:"5px 10px",color:T.ink3,fontSize:11,cursor:"pointer"}}>View</button>}
+                      <button onClick={()=>deleteMaterial(m.id)} style={{background:"none",border:"1px solid #ef444430",borderRadius:7,padding:"5px 10px",color:"#ef4444",fontSize:11,cursor:"pointer"}}>Delete</button>
+                    </div>
+                  </div>
+                ))}
               </div>
-            }
-          </div>
+            )}
+          </div>}
 
-          <div>
-            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12}}>
-              <div style={{fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.1em",color:T.ink3}}>Touchpoint Timeline</div>
-              <button onClick={onLogTouchpoint} style={{background:"#10b981",border:"none",borderRadius:7,padding:"5px 12px",color:"#fff",fontSize:11,fontWeight:700,cursor:"pointer"}}>+ Log</button>
+          {/* Activity tab */}
+          {dpTab==="activity"&&<div style={{padding:"20px 20px 24px 24px",display:"flex",flexDirection:"column",gap:14}}>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:8}}>
+              <div style={{fontSize:14,fontWeight:800,color:T.ink}}>Full Activity</div>
+              <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+                {["all","call","meeting","email","gift","event","note"].map(t=>(
+                  <button key={t} onClick={()=>setActFilter(t)} style={{background:actFilter===t?T.greenDk:"transparent",border:`1px solid ${actFilter===t?T.greenDk:T.bg3}`,borderRadius:99,padding:"4px 10px",color:actFilter===t?"#fff":T.ink3,fontSize:11,cursor:"pointer",fontWeight:actFilter===t?700:400,textTransform:"capitalize"}}>
+                    {t}
+                  </button>
+                ))}
+              </div>
             </div>
-            <TouchpointTimeline interactions={donor.interactions}/>
-          </div>
+            <button onClick={onLogTouchpoint} style={{background:"#10b981",border:"none",borderRadius:8,padding:"8px 14px",color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer",alignSelf:"flex-start"}}>+ Log Touchpoint</button>
+            <TouchpointTimeline interactions={(donor.interactions||[]).filter(i=>actFilter==="all"||i.type===actFilter)}/>
+            {donor.interactions?.length===0&&<div style={{fontSize:12,color:T.ink3,fontStyle:"italic",textAlign:"center",padding:16}}>No activity logged yet</div>}
+          </div>}
         </div>
 
         {/* RIGHT */}
@@ -1762,7 +2123,7 @@ export function Donors({data,setData}){
       <div className="donors-toolbar" style={{display:"flex",gap:10,flexWrap:"wrap",alignItems:"center"}}>
         <input className="donors-search" value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search donors…" style={{flex:1,minWidth:160,background:T.bg,border:"1px solid "+T.bg3,borderRadius:10,padding:"10px 14px",color:T.ink,fontSize:13,outline:"none"}}/>
         <div className="donors-view-toggle" style={{display:"flex",background:T.bg,border:"1px solid "+T.bg3,borderRadius:10,overflow:"hidden"}}>
-          {[["directory","Directory"],["pipeline","My Pipeline"],...(isAdmin?[["team","Team"]]:[]),["reengage","Re-engage"]].map(([v,l])=>(
+          {[["directory","Directory"],["pipeline","My Pipeline"],...(isAdmin?[["team","Team"]]:[]),["reengage","Re-engage"],["map","Map"]].map(([v,l])=>(
             <button key={v} onClick={()=>setView(v)} style={{background:view===v?T.bg2:"transparent",border:"none",padding:"9px 14px",color:view===v?T.ink:"#6b7280",fontSize:13,fontWeight:view===v?700:400,cursor:"pointer",display:"flex",alignItems:"center",gap:5}}>
               {l}
               {v==="reengage"&&lapsedCount>0&&<span style={{background:"#1a6b4a",color:"#fff",borderRadius:99,padding:"1px 6px",fontSize:10,fontWeight:800,lineHeight:1.4}}>{lapsedCount}</span>}
@@ -1856,6 +2217,7 @@ export function Donors({data,setData}){
       {view==="team"&&isAdmin&&<TeamView donors={filtered} orgTeam={orgTeam} onSelectDonor={d=>setSelected(d)}/>}
 
       {view==="reengage"&&<ReEngageView donors={filtered} org={data.org} onLogTouchpoint={d=>setLogTarget(d)} onSelectDonor={d=>setSelected(d)}/>}
+      {view==="map"&&<DonorMap donors={filtered} userId={userId} onSelectDonor={d=>setSelected(d)}/>}
     </div>
   );
 }
