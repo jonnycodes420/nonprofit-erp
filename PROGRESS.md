@@ -1,18 +1,29 @@
 # Steward — Build Progress
 
-### Data Export — one-click CSV zip (2026-06-07)
+### Settings reorganization + onboarding sample data + JSON export (2026-06-07)
 
-**Backend (server.js)**
-- `GET /org/export` — requireAuth; streams a zip archive via archiver, scoped to org_id
-- Up to 12 CSVs included — only non-empty tables: donors (with custom fields flattened as columns), gifts (with donor name joined), pledges/planned_gifts, grants, transactions, events, event_attendees (with event name joined), campaigns, interactions (with donor name joined), volunteers, board_members, tasks (with donor name joined)
-- Hand-rolled CSV escaper (RFC 4180: wraps in double-quotes if value contains comma/quote/newline; escapes internal quotes as `""`) — no heavy CSV dependency
-- Filename: `steward-export-{orgSlug}-{YYYY-MM-DD}.zip`
-- archiver installed: `"archiver": "^8.0.0"` in package.json
+**Data export (server.js)**
+- `GET /org/export` now returns a single JSON file instead of a zip — dead simple, no dependencies
+- All tables fetched in parallel via `Promise.all`; donors enriched with custom field key-value map
+- Filename: `steward-export-{orgSlug}-{YYYY-MM-DD}.json`; Content-Disposition header triggers browser download
+- archiver uninstalled (`npm uninstall archiver`) — was causing `archiver is not a function` errors
 
-**Frontend (Settings.jsx)**
-- "Export your data" card with gold left border (`#c9a84c`), above Account Actions
-- Blob download pattern: fetches with `Authorization: Bearer {token}` header, creates object URL, triggers download, revokes URL — works with requireAuth route
-- Shows "Building export…" loading state during fetch
+**Onboarding sample data (WelcomePage.jsx)**
+- Step 2 now offers two choices instead of a single "Enter My Workspace" button:
+  1. "Load sample data & explore →" (gold) — calls `POST /org/load-sample-data` then navigates to /dashboard
+  2. "Start with my real data" — navigates directly
+- `loadingSample` state disables button and shows loading text while API call runs
+- Non-fatal: if sample load fails, user still lands on /dashboard
+
+**Settings reorganization (Settings.jsx)**
+- Reorganized from flat card list into 6 clearly labeled sections with SecHead dividers (thin ruled line + uppercase label):
+  1. **Organization** — user profile + org info card
+  2. **Team** — team members list + Invite Staff button
+  3. **Integrations** — Payments (Stripe), Donation QR Code, Embed Form, Gmail
+  4. **Customization** — Custom Fields
+  5. **Your Data** — Export card + Demo Data card (both gold-bordered)
+  6. **Account** — Billing + Account Actions (sign out, legal links)
+- `SecHead` defined as a const inside the component (before return) — renders a labeled horizontal rule
 
 ### Sample Data Loader — one-click demo org (2026-06-07)
 
