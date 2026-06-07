@@ -197,8 +197,8 @@ function AppShell() {
       {tab==="grants"&&<Grants data={data} setData={setData}/>}
       {tab==="communications"&&<Communications data={data}/>}
       {tab==="events"&&<Events data={data}/>}
-      {tab==="volunteers"&&<Volunteers data={data}/>}
-      {tab==="board"&&<Board data={data}/>}
+      {tab==="volunteers"&&<Volunteers data={data} setData={setData}/>}
+      {tab==="board"&&<Board data={data} setData={setData}/>}
       {tab==="finance"&&<Finance data={data}/>}
       {tab==="analytics"&&<Analytics data={data}/>}
       {tab==="tasks"&&<Tasks data={data} setData={setData}/>}

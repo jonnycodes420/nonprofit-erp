@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { T, fmt, fmtFull, askClaude, Pill, Card, AIBtn, AIPanel, MetricCard, EmptyState, PageTitle, Spin } from "./shared";
 import { apiFetch, API, getToken } from "../api";
 
-export function Board({data}) {
+export function Board({data, setData}) {
   const [subTab, setSubTab] = useState("members");
   const [boardBrief,setBoardBrief]=useState(""); const [briefLoading,setBriefLoading]=useState(false);
   const [boardEmail,setBoardEmail]=useState(""); const [emailLoading,setEmailLoading]=useState(false);
@@ -10,6 +10,9 @@ export function Board({data}) {
   const [reportsLoading, setReportsLoading] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [genError, setGenError] = useState("");
+  const [showAdd,setShowAdd]=useState(false);
+  const [form,setForm]=useState({name:"",role:"Member",employer:"",committees:"",term:"",givingLevel:""});
+  const [saving,setSaving]=useState(false);
 
   const totalGiving=data.board.reduce((s,b)=>s+parseInt(b.givingLevel.replace(/[$,]/g,"")),0);
   const avgAttendance=data.board.length ? Math.round(data.board.reduce((s,b)=>s+b.attendance,0)/data.board.length) : 0;
@@ -76,6 +79,32 @@ export function Board({data}) {
     setEmailLoading(false);
   };
 
+  async function addMember(){
+    if(!form.name.trim())return;
+    setSaving(true);
+    try{
+      const committeeArr=form.committees.split(",").map(s=>s.trim()).filter(Boolean);
+      const raw=await apiFetch("/board",{method:"POST",body:JSON.stringify({
+        name:form.name.trim(),role:form.role||"Member",employer:form.employer.trim(),
+        term:form.term.trim(),givingLevel:form.givingLevel.trim()||"$0",
+        committees:committeeArr,attendance:100,
+      })});
+      const adapted={
+        id:raw.id, name:raw.name, role:raw.role||"Member",
+        employer:raw.employer||"", term:raw.term||"",
+        givingLevel:raw.giving_level||"$0",
+        committees:Array.isArray(raw.committees)?raw.committees:JSON.parse(raw.committees||"[]"),
+        attendance:raw.attendance??100,
+      };
+      setData(prev=>({...prev,board:[...prev.board,adapted]}));
+      setForm({name:"",role:"Member",employer:"",committees:"",term:"",givingLevel:""});
+      setShowAdd(false);
+    }catch(e){alert(e.message||"Failed to add board member");}
+    setSaving(false);
+  }
+
+  const inp={background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"9px 12px",color:T.ink,fontSize:13,outline:"none",width:"100%",boxSizing:"border-box"};
+
   const tabStyle = (active) => ({
     padding:"7px 16px", borderRadius:8, border:`1px solid ${active ? "#1a6b4a" : T.bg3}`, cursor:"pointer", fontSize:13, fontWeight:600,
     background: active ? "#1a6b4a" : T.bg2,
@@ -96,13 +125,44 @@ export function Board({data}) {
     </div>
 
     {subTab==="members" && <>
-      <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
+      <div style={{display:"flex",gap:10,flexWrap:"wrap",alignItems:"center"}}>
         <AIBtn onClick={generateBrief} loading={briefLoading} label="✦ Generate Q2 Board Report"/>
         <AIBtn onClick={draftEmail} loading={emailLoading} label="✦ Draft Board Ask Email"/>
+        <button onClick={()=>setShowAdd(v=>!v)}
+          style={{marginLeft:"auto",background:"#1a6b4a",color:"#fff",border:"none",borderRadius:8,padding:"8px 16px",fontSize:13,fontWeight:700,cursor:"pointer"}}>
+          + Add Board Member
+        </button>
       </div>
       {(briefLoading||boardBrief)&&<AIPanel text={boardBrief} onClose={()=>setBoardBrief("")}/>}
       {(emailLoading||boardEmail)&&<AIPanel text={boardEmail} onClose={()=>setBoardEmail("")}/>}
-      {data.board.length===0&&<EmptyState icon="◆" title="No board members yet" message="Track your board's giving, attendance, committees, and terms."/>}
+      {showAdd&&<Card>
+        <div style={{fontSize:14,fontWeight:700,color:T.ink,marginBottom:14}}>New Board Member</div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+          <input placeholder="Full name *" value={form.name} onChange={e=>setForm(f=>({...f,name:e.target.value}))} style={inp}/>
+          <select value={form.role} onChange={e=>setForm(f=>({...f,role:e.target.value}))} style={{...inp,cursor:"pointer"}}>
+            <option value="Member">Member</option>
+            <option value="Chair">Chair</option>
+            <option value="Vice Chair">Vice Chair</option>
+            <option value="Treasurer">Treasurer</option>
+            <option value="Secretary">Secretary</option>
+          </select>
+          <input placeholder="Employer / Organization" value={form.employer} onChange={e=>setForm(f=>({...f,employer:e.target.value}))} style={inp}/>
+          <input placeholder="Giving level (e.g. $10,000+)" value={form.givingLevel} onChange={e=>setForm(f=>({...f,givingLevel:e.target.value}))} style={inp}/>
+          <input placeholder="Committees (comma-separated)" value={form.committees} onChange={e=>setForm(f=>({...f,committees:e.target.value}))} style={inp}/>
+          <input placeholder="Term (e.g. 2024–2027)" value={form.term} onChange={e=>setForm(f=>({...f,term:e.target.value}))} style={inp}/>
+        </div>
+        <div style={{display:"flex",gap:8,marginTop:12}}>
+          <button onClick={addMember} disabled={saving||!form.name.trim()}
+            style={{background:"#1a6b4a",color:"#fff",border:"none",borderRadius:8,padding:"9px 18px",fontSize:13,fontWeight:700,cursor:saving?"not-allowed":"pointer",opacity:saving?0.7:1}}>
+            {saving?"Saving…":"Save Board Member"}
+          </button>
+          <button onClick={()=>setShowAdd(false)}
+            style={{background:"transparent",color:T.ink3,border:"1px solid "+T.bg3,borderRadius:8,padding:"9px 14px",fontSize:13,cursor:"pointer"}}>
+            Cancel
+          </button>
+        </div>
+      </Card>}
+      {data.board.length===0&&!showAdd&&<EmptyState icon="◆" title="No board members yet" message="Track your board's giving, attendance, committees, and terms."/>}
       {data.board.map(b=>{
         const attColor=b.attendance>=90?"#1a6b4a":b.attendance>=75?"#f59e0b":"#ef4444";
         return <Card key={b.id}>
