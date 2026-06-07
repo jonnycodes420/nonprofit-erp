@@ -165,7 +165,7 @@ function AppShell() {
         </div>
       </div>
       <div style={{display:"flex",gap:8,alignItems:"center"}}>
-        <button onClick={()=>setShowChat(true)} style={{background:"#1a2e1f",border:"1px solid #2d4a35",borderRadius:10,padding:"7px 16px",color:"#10b981",fontSize:12,fontWeight:700,cursor:"pointer",display:"flex",alignItems:"center",gap:7}}>
+        <button data-tour="ask-ai" onClick={()=>setShowChat(true)} style={{background:"#1a2e1f",border:"1px solid #2d4a35",borderRadius:10,padding:"7px 16px",color:"#10b981",fontSize:12,fontWeight:700,cursor:"pointer",display:"flex",alignItems:"center",gap:7}}>
           ✦ Ask AI
         </button>
         <div className="app-avatar" style={{width:30,height:30,borderRadius:8,background:T.greenDk,display:"flex",alignItems:"center",justifyContent:"center"}}>
@@ -179,13 +179,13 @@ function AppShell() {
 
     {/* Tab bar */}
     <div className="app-tabbar" style={{display:"flex",padding:"0 20px",borderBottom:"1px solid #1a2e1f",overflow:"hidden",flexShrink:0,background:"#0f1a12",width:"100%",boxSizing:"border-box"}}>
-      <button onClick={()=>window.location.href="/today"} style={{background:"transparent",border:"none",borderBottom:"2px solid #10b981",padding:"8px 14px",color:"#10b981",fontSize:13,fontWeight:700,cursor:"pointer",display:"flex",alignItems:"center",gap:5,whiteSpace:"nowrap",flexShrink:0,marginBottom:-1,marginRight:4}}>
+      <button data-tour="nav-today" onClick={()=>window.location.href="/today"} style={{background:"transparent",border:"none",borderBottom:"2px solid #10b981",padding:"8px 14px",color:"#10b981",fontSize:13,fontWeight:700,cursor:"pointer",display:"flex",alignItems:"center",gap:5,whiteSpace:"nowrap",flexShrink:0,marginBottom:-1,marginRight:4}}>
         ◉ Today
       </button>
       <div style={{width:1,background:"#1a2e1f",margin:"8px 4px 8px 0",flexShrink:0}}/>
       {TABS.map(t=>{
         const active=tab===t.id;
-        return <button key={t.id} onClick={()=>setTab(t.id)} style={{background:"transparent",border:"none",borderBottom:`2px solid ${active?"#c9a84c":"transparent"}`,padding:"8px 12px",color:active?"#f0ede6":"#8fa896",fontSize:13,fontWeight:active?700:400,cursor:"pointer",display:"flex",alignItems:"center",gap:6,whiteSpace:"nowrap",transition:"color 0.15s,border-color 0.15s",flexShrink:1,marginBottom:-1}}>
+        return <button key={t.id} data-tour={t.id==="donors"?"nav-donors":t.id==="finance"?"nav-finance":t.id==="analytics"?"nav-analytics":undefined} onClick={()=>setTab(t.id)} style={{background:"transparent",border:"none",borderBottom:`2px solid ${active?"#c9a84c":"transparent"}`,padding:"8px 12px",color:active?"#f0ede6":"#8fa896",fontSize:13,fontWeight:active?700:400,cursor:"pointer",display:"flex",alignItems:"center",gap:6,whiteSpace:"nowrap",transition:"color 0.15s,border-color 0.15s",flexShrink:1,marginBottom:-1}}>
           {t.label}
           {t.earlyAccess&&<span style={{fontSize:9,fontWeight:700,letterSpacing:"0.04em",background:"#1a2e1f",color:"#8fa896",border:"1px solid #2d4a35",borderRadius:99,padding:"1px 6px",lineHeight:"14px"}}>Early Access</span>}
           {t.id==="tasks"&&tasksDue>0&&<span style={{background:"#ef4444",color:"#fff",fontSize:9,fontWeight:800,borderRadius:99,padding:"1px 5px",lineHeight:"14px"}}>{tasksDue}</span>}
@@ -230,7 +230,7 @@ function AppShell() {
       {tab==="tasks"&&<Tasks data={data} setData={setData}/>}
       {tab==="settings"&&<Settings auth={auth} logout={logout}/>}
     </div>
-    {showWizard&&<OnboardingWizard org={data.org} onDone={()=>{loadData();setTab("dashboard");setShowWizard(false);}}/>}
+    {showWizard&&<OnboardingWizard org={data.org} onDone={()=>{setShowWizard(false);window.location.href="/today";}}/>}
     {showChat&&<AIChat data={data} onClose={()=>setShowChat(false)}/>}
     {stripeToast&&<div style={{position:"fixed",bottom:24,right:24,zIndex:9999,background:T.greenDk,color:"#fff",borderRadius:14,padding:"14px 20px",fontSize:13,fontWeight:600,boxShadow:"0 8px 32px rgba(26,107,74,0.35)",display:"flex",alignItems:"center",gap:10,maxWidth:340}}>
       <span style={{fontSize:18}}>💳</span>
