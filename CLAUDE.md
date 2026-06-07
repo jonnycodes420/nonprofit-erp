@@ -233,7 +233,8 @@ Mobile "More" drawer: communications, events, volunteers, board, analytics, task
 - Volunteers — hours tracking, conversion to donor, board candidate AI
 - Board — giving levels, attendance, committees, AI board report
 - Tasks — priority queue, AI prioritization, add/complete, due dates
-- Settings — Stripe Connect Express flow, QR code generator, embeddable iframe widget, team management, invite staff (email + link fallback), NO billing/plan UI
+- Settings — Stripe Connect Express flow, QR code generator, embeddable iframe widget, team management, invite staff (email + link fallback), NO billing/plan UI; Demo Data card (gold left border) at top
+- Sample data loader — `POST /org/load-sample-data` (refused if >5 real donors; seeds 25 donors across all stages, gifts, funds, transactions, grants, events, campaign, interactions, tasks, volunteers, board members; all tagged `is_sample=true`); `POST /org/clear-sample-data` (per-table `.catch(()=>{})` deletes); `GET /org/sample-data-status` → `{ hasSampleData, sampleDonorCount }`; DirectoryView shows inviting empty state with Load button when org has 0 donors
 - RBAC — requireAdmin middleware, admin/staff roles
 - Public donation page (/give/:orgSlug) — Stripe Checkout, campaign links, recurring gifts via Subscriptions, email gift request from donor profile
 - Landing page — relational copy, Steward definition section, Who We Serve, What We Do, Consulting section, announcement bar, NO pricing section; mobile: dark stats card (8+/100%/$0), hamburger nav
@@ -242,6 +243,7 @@ Mobile "More" drawer: communications, events, volunteers, board, analytics, task
 - TpField and TpYesNo MUST stay at module level (not inside components) — defined in shared.jsx. Moving them inside a component causes React to remount inputs on every keystroke.
 - Donor wealth score: POST /donors/:id/wealth-score → calcWealthScore() uses 5 components (giving history, recency, frequency, capacity signals, engagement). DB columns: wealth_score, capacity_tier, score_confidence, score_last_updated, score_rationale. TIER_COLOR maps tier → hex color.
 - Finance sync: every gift saved via POST /donors/:id/gifts also inserts a row in fin_transactions with donor_id set — one-way sync, no double-write on edit.
+- Sample data flag: `is_sample BOOLEAN DEFAULT false` column exists on donors, gifts, grants, events, event_attendees, campaigns, interactions, tasks, fin_transactions, fin_funds, volunteers, board_members. Clear route deletes in FK-safe order (children before parents). Sample funds use hardcoded IDs: `fund_smpl_general`, `fund_smpl_edu`, `fund_smpl_capital`.
 - STAGES in shared.jsx is an object array (with color/label). Communications.jsx uses a plain string array called STAGE_LIST — kept separate to avoid shadowing.
 - All AI features stream through /ai/stream on backend via askClaude (= streamAI from api.js).
 - Stripe Connect: POST /stripe/connect returns a Stripe account link URL; /stripe/webhook handles payment_intent.succeeded and checkout.session.completed.

@@ -1,5 +1,24 @@
 # Steward — Build Progress
 
+### Sample Data Loader — one-click demo org (2026-06-07)
+
+**Backend (server.js)**
+- `GET /org/sample-data-status` → `{ hasSampleData, sampleDonorCount }`
+- `POST /org/load-sample-data` → guards if org has >5 real donors (400 error); seeds 25 donors across all 6 stages, all `assigned_to` current user so My Portfolio strip populates; also seeds 3 sample funds, gifts + historical giving, fin_transactions (income + expense), 4 grants, 2 events with attendees, 1 campaign with briefing + goal, 15 interactions, 5 tasks, 4 volunteers, 5 board members
+- `POST /org/clear-sample-data` → deletes all records with `is_sample=true`, each table in its own `.catch(()=>{})`, correct FK order (attendees before events, gifts before donors, transactions before funds)
+
+**Database (db.js)**
+- `is_sample BOOLEAN DEFAULT false` added via ALTER TABLE IF NOT EXISTS to: donors, gifts, grants, events, event_attendees, campaigns, interactions, tasks, fin_transactions, fin_funds, volunteers, board_members
+
+**Settings.jsx**
+- Demo Data card at very top (after PageTitle), gold left border `#c9a84c`
+- Fetches `/org/sample-data-status` on mount; shows Load button or "N sample donors loaded + Clear" depending on state
+- Load/Clear both call `window.location.reload()` on success to refresh all data
+
+**Donors.jsx**
+- DirectoryView receives `totalDonors`, `onLoadSampleData`, `sampleLoading`, `hasSampleData` props
+- When `totalDonors === 0 && !hasSampleData`: shows inviting empty state with Load Sample Data gold button instead of generic "No donors found"
+
 ### MGO Toolkit pt 2 — fund affinity, campaign briefings, interaction logging, stewardship timeline (2026-06-07)
 
 **Feature 5: Fund Affinity tab in DonorProfile**
