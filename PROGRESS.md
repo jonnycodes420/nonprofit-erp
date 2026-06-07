@@ -1,5 +1,65 @@
 # Steward — Build Progress
 
+### MGO Toolkit pt 2 — fund affinity, campaign briefings, interaction logging, stewardship timeline (2026-06-07)
+
+**Feature 5: Fund Affinity tab in DonorProfile**
+- New "Funds" tab between Gifts & Pledges and Materials in the donor profile left panel
+- `GET /donors/:id/fund-affinity` — gifts grouped by fund_id with totals, counts, last dates, percentages
+- Visual horizontal bars sorted by giving size; restricted vs unrestricted two-segment bar
+- Suggested ask callouts for top funds; "not yet engaged with" list for unvisited active funds
+
+**Feature 6: Campaign Briefings**
+- `CampaignBriefing` component renders inside the expanded campaign row in Communications.jsx
+- Editable textarea auto-saves on blur (PUT /campaigns/:id/briefing)
+- Goal vs raised progress bar — raised is summed from gifts where campaign name or campaign_id matches
+- Start/end dates, days remaining display
+- DB columns added: `campaigns.briefing`, `campaigns.goal_amount`, `campaigns.raised_amount`, `campaigns.start_date`, `campaigns.end_date`
+
+**Feature 7: Full Interaction Logging**
+- Gift logged → auto-logs `type='gift'` interaction with amount and type
+- Planned gift indicated → auto-logs `type='planned_gift'` interaction
+- Material uploaded → auto-logs `type='material'` interaction with file name
+- Stage change → auto-logs `type='stage_change'` interaction 'Moved from X → Y'
+- POST /donors/:id/interactions now accepts `metadata` JSONB and stores `logged_by_name`
+- Activity Log now shows "by [name]" on every interaction where available
+- DB column added: `interactions.logged_by_name`
+
+**Feature 8: Stewardship Timeline**
+- Activity tab now has mode toggle: Activity Log | Stewardship Timeline
+- Activity Log: type filter pills now include `stewardship` type; each item shows "by [name]"
+- "Log Stewardship" button opens quick form: 8 touch types (thank you, recognition, gift sent, impact update, appreciation event, holiday card, birthday, other), detail field, date, note
+- Stewardship Timeline: vertical visual timeline with auto-detected milestones (first gift ⭐, largest gift ⭐, 1-year anniversary ⭐, $10k/$25k/$50k/$100k/$250k cumulative thresholds ⭐); gold milestone nodes, color-coded by interaction type
+- Stewardship touches stored as `type='stewardship'` interactions with `metadata.stewardship_type`
+- Campaign attribution dropdown added to Add Gift form (pulls from /campaigns)
+
+---
+
+### MGO Toolkit pt 1 — officer dashboard, donor map, gifts/pledges tab, materials tab (2026-06-07)
+
+**Feature 1: My Portfolio Strip (Dashboard)**
+- Blue-bordered collapsible strip above org-wide stat grid; 6 FY metrics (portfolio count, visits YTD, moves made, gifts raised, pipeline value, lapsed in portfolio)
+- `GET /dashboard/my-stats` — scoped to current user, July 1–June 30 fiscal year
+
+**Feature 2: Donor Map**
+- "Map" view in Donors toolbar toggle (next to Directory, My Pipeline, Team, Re-engage)
+- Leaflet + react-leaflet@4.2.1 (React 18 compatible), OpenStreetMap tiles, Nominatim geocoding
+- Color-coded pins by pipeline stage; stage filter checkboxes; "My portfolio only" toggle
+- Sidebar lists donors without address on file; popup with "Open profile →"
+- City/state/zip fields added to donors table and Edit Donor modal
+
+**Feature 3: DonorProfile Tab System**
+- Left panel now has 5 tabs: Overview | Gifts & Pledges | Funds | Materials | Activity
+- Overview: unchanged (stat cards, giving history, tags, notes, tasks, touchpoint timeline)
+- Gifts & Pledges: full gift table (inline edit/delete), Add Gift form, CSV export, planned giving CRUD
+- Materials: drag-and-drop upload, base64 <1MB, view/delete
+- Activity: see Feature 8
+
+**Feature 4: Materials**
+- `donor_materials` table: id, org_id, donor_id, file_name, file_type, file_url, file_data (base64), notes, uploaded_by, uploaded_at
+- Backend: GET/POST /donors/:id/materials, DELETE /materials/:id
+
+---
+
 ### Landing page messaging overhaul — outcome-first positioning (2026-06-06)
 Complete rewrite of `client/src/pages/Landing.jsx`. New positioning: Steward is not a CRM — it's a fundraising partner built for missions that matter.
 

@@ -139,6 +139,47 @@ Mobile "More" drawer: communications, events, volunteers, board, analytics, task
 ### donors
 - wealth_score (integer), capacity_tier (text), score_confidence (text), score_last_updated (timestamptz), score_rationale (text) — wealth scoring system
 - stage (text), total_giving, last_gift_date, last_gift_amount, gift_count, tags (jsonb), notes
+- assigned_to (text), assigned_to_name (text) — MGO portfolio assignment
+- city, state, zip — for Donor Map geocoding
+- planned_giving (boolean) — set true when first planned gift is indicated
+
+### gifts
+- amount, date, type, campaign, notes, stripe_payment_id, campaign_id
+- fund_id TEXT — for fund affinity tracking
+- payment_method TEXT — how gift was received
+- acknowledgement_sent BOOLEAN DEFAULT false
+
+### interactions
+- type: call | meeting | email | gift | event | note | stewardship | stage_change | planned_gift | material | email_open
+- created_by (user_id), logged_by_name (user name display string)
+- metadata JSONB — Gmail interactions store `{gmail_message_id, from, to, subject, direction}`; stewardship stores `{stewardship_type, detail}`
+
+### MGO toolkit tables
+- `planned_gifts` — id, org_id, donor_id, type (bequest/charitable_remainder_trust/charitable_lead_trust/annuity/ira_beneficiary/life_insurance/real_estate/other), estimated_value, date_indicated, notes, created_at
+- `donor_materials` — id, org_id, donor_id, file_name, file_type, file_url, file_data (base64 <1MB), notes, uploaded_by, uploaded_at
+
+### campaigns (extended)
+- briefing TEXT — strategy/talking points, editable auto-save
+- goal_amount NUMERIC, raised_amount NUMERIC DEFAULT 0
+- start_date DATE, end_date DATE
+- Raised is calculated live from gifts where campaign=name OR campaign_id=id
+
+### MGO backend routes
+- `GET /dashboard/my-stats` — 6 FY metrics for current user (portfolioCount, visitsYtd, madeYtd, giftsYtd, pipelineValue, lapsedCount); fiscal year July 1–June 30
+- `GET /donors/:id/fund-affinity` — gifts grouped by fund_id with totals, counts, last dates, percentages; includes activeFunds for suggested asks
+- `PUT /campaigns/:id/briefing` — save briefing, goal_amount, start_date, end_date (any campaign status)
+- `GET /campaigns/:id/progress` — goal, raised (sum from gifts), donorCount, daysRemaining
+- `PUT /gifts/:id`, `DELETE /gifts/:id` — inline gift editing/deletion
+- `GET/POST /donors/:id/planned-gifts`, `PUT/DELETE /planned-gifts/:id` — planned giving CRUD
+- `GET/POST /donors/:id/materials`, `DELETE /materials/:id` — donor materials CRUD
+
+### DonorProfile tab system (left panel)
+- Tabs: Overview | Gifts & Pledges | Funds | Materials | Activity
+- Overview: stat cards, giving history chart, tags, notes, tasks, touchpoint timeline (unchanged)
+- Gifts & Pledges: full gift table with inline edit/delete, Add Gift form with campaign attribution, CSV export, planned giving section
+- Funds: fund affinity bars, restricted vs unrestricted split, suggested ask callouts
+- Materials: drag-and-drop upload, base64 <1MB, view/delete grid
+- Activity: mode toggle (Activity Log | Stewardship Timeline); type filter pills; Log Stewardship form (8 types); vertical timeline with auto-detected milestones
 
 ### Events tables
 - `events` — id, org_id, name, event_type (gala/cultivation/site_visit/board_meeting/volunteer/webinar/other), date DATE, end_date DATE, location, description, capacity INTEGER, status (upcoming/completed/cancelled), revenue NUMERIC, cost NUMERIC, notes, created_at
