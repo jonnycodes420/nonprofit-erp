@@ -4588,7 +4588,7 @@ app.get("/org/export", requireAuth, wrap(async (req, res) => {
   res.setHeader("Content-Type", "application/zip");
   res.setHeader("Content-Disposition", `attachment; filename="steward-export-${safeSlug}-${date}.zip"`);
 
-  const archive = archiver("zip", { zlib: { level: 9 } });
+  const archive = archiver.create("zip", { zlib: { level: 9 } });
   archive.on("error", err => { console.error("Export zip error:", err); });
   archive.pipe(res);
 
