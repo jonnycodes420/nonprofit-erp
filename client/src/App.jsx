@@ -179,6 +179,10 @@ function AppShell() {
 
     {/* Tab bar */}
     <div className="app-tabbar" style={{display:"flex",padding:"0 20px",borderBottom:"1px solid #1a2e1f",overflow:"hidden",flexShrink:0,background:"#0f1a12",width:"100%",boxSizing:"border-box"}}>
+      <button onClick={()=>window.location.href="/today"} style={{background:"transparent",border:"none",borderBottom:"2px solid #10b981",padding:"8px 14px",color:"#10b981",fontSize:13,fontWeight:700,cursor:"pointer",display:"flex",alignItems:"center",gap:5,whiteSpace:"nowrap",flexShrink:0,marginBottom:-1,marginRight:4}}>
+        ◉ Today
+      </button>
+      <div style={{width:1,background:"#1a2e1f",margin:"8px 4px 8px 0",flexShrink:0}}/>
       {TABS.map(t=>{
         const active=tab===t.id;
         return <button key={t.id} onClick={()=>setTab(t.id)} style={{background:"transparent",border:"none",borderBottom:`2px solid ${active?"#c9a84c":"transparent"}`,padding:"8px 12px",color:active?"#f0ede6":"#8fa896",fontSize:13,fontWeight:active?700:400,cursor:"pointer",display:"flex",alignItems:"center",gap:6,whiteSpace:"nowrap",transition:"color 0.15s,border-color 0.15s",flexShrink:1,marginBottom:-1}}>

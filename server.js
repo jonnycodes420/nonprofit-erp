@@ -1634,6 +1634,99 @@ app.get("/dashboard/my-stats", requireAuth, wrap(async (req, res) => {
   });
 }));
 
+app.get("/dashboard/today", requireAuth, wrap(async (req, res) => {
+  const { orgId } = req.user;
+  const today = new Date();
+  const todayStr = today.toISOString().split("T")[0];
+  const ninetyDaysAgo = new Date(today - 90 * 86400000).toISOString().split("T")[0];
+  const items = [];
+
+  // Donors in active stages with no recent contact
+  const noContact = await query(`
+    SELECT d.id, d.name, d.total_giving, d.last_gift_date, d.last_gift_amount, d.stage,
+           MAX(i.date) AS last_contact
+    FROM donors d
+    LEFT JOIN interactions i ON i.donor_id = d.id AND i.type != 'email_open'
+    WHERE d.org_id = ? AND d.stage NOT IN ('prospect','lapsed')
+    GROUP BY d.id, d.name, d.total_giving, d.last_gift_date, d.last_gift_amount, d.stage
+    HAVING MAX(i.date) < ? OR MAX(i.date) IS NULL
+    ORDER BY COALESCE(d.total_giving, 0) DESC
+    LIMIT 20
+  `, [orgId, ninetyDaysAgo]);
+
+  for (const d of noContact) {
+    const daysSinceContact = d.last_contact
+      ? Math.floor((today - new Date(d.last_contact)) / 86400000) : null;
+    const daysSinceGift = d.last_gift_date
+      ? Math.floor((today - new Date(d.last_gift_date)) / 86400000) : null;
+    const totalGiving = parseFloat(d.total_giving) || 0;
+    const lastAmt = parseFloat(d.last_gift_amount) || 0;
+
+    let reason, action;
+    if (daysSinceGift && daysSinceGift > 300 && totalGiving >= 5000) {
+      reason = `Gave $${lastAmt.toLocaleString()} — last gift ${daysSinceGift} days ago, lapsing risk`;
+      action = "call";
+    } else if (daysSinceContact) {
+      const prefix = totalGiving > 0 ? `Gave $${totalGiving.toLocaleString()} total — ` : "";
+      reason = `${prefix}no contact in ${daysSinceContact} days`;
+      action = totalGiving >= 5000 ? "call" : "email";
+    } else {
+      reason = `${d.stage} donor, never contacted`;
+      action = "call";
+    }
+
+    const priority = Math.min(50, totalGiving / 5000)
+      + (daysSinceGift && daysSinceGift > 300 ? 30 : 0)
+      + (daysSinceContact && daysSinceContact > 180 ? 20 : 0);
+
+    items.push({ donorId: d.id, donorName: d.name, reason, priority, action });
+  }
+
+  // Unacknowledged recent gifts (need a thank-you)
+  const unacked = await query(`
+    SELECT g.id AS gift_id, g.amount, g.date, d.id AS donor_id, d.name AS donor_name
+    FROM gifts g
+    JOIN donors d ON d.id = g.donor_id
+    WHERE d.org_id = ?
+      AND (g.acknowledgement_sent = false OR g.acknowledgement_sent IS NULL)
+      AND g.date >= ?
+    ORDER BY g.amount DESC
+    LIMIT 5
+  `, [orgId, ninetyDaysAgo]);
+
+  for (const g of unacked) {
+    if (items.some(i => i.donorId === g.donor_id)) continue;
+    const days = Math.floor((today - new Date(g.date)) / 86400000);
+    items.push({
+      donorId: g.donor_id, donorName: g.donor_name,
+      reason: `Gave $${Number(g.amount).toLocaleString()} ${days} day${days !== 1 ? "s" : ""} ago — acknowledgement not sent`,
+      priority: 75, action: "thank",
+    });
+  }
+
+  // Overdue donor-linked tasks
+  const dueTasks = await query(`
+    SELECT t.id, t.title, t.due, t.donor_id, d.name AS donor_name
+    FROM tasks t
+    JOIN donors d ON d.id = t.donor_id
+    WHERE t.org_id = ? AND done=0 AND t.due <= ?
+    ORDER BY t.due ASC
+    LIMIT 5
+  `, [orgId, todayStr]);
+
+  for (const t of dueTasks) {
+    if (items.some(i => i.donorId === t.donor_id)) continue;
+    items.push({
+      donorId: t.donor_id, donorName: t.donor_name,
+      reason: `Task: "${t.title}" — ${t.due < todayStr ? "overdue" : "due today"}`,
+      priority: 90, action: "call",
+    });
+  }
+
+  items.sort((a, b) => b.priority - a.priority);
+  res.json(items.slice(0, 10));
+}));
+
 app.get("/dashboard", requireAuth, wrap(async (req, res) => {
   const { orgId } = req.user;
   const urgentTasks = await query(
