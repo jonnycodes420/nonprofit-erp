@@ -1,5 +1,27 @@
 # Steward — Build Progress
 
+### Landing page messaging overhaul — outcome-first positioning (2026-06-06)
+Complete rewrite of `client/src/pages/Landing.jsx`. New positioning: Steward is not a CRM — it's a fundraising partner built for missions that matter.
+
+**New/updated sections (in page order):**
+- **Nav**: Added "How it works" between Features and About; "Book a Demo" → "Book a 15-min demo" everywhere
+- **Hero**: New headline "Your donors deserve to be remembered." / new subhead / trust line "Built for development teams doing more with less."
+- **ROI Calculator** (new, dark bg): Interactive calculator with donor count, avg gift, retention rate slider. Real-time output: donors lost, revenue at risk, recovered revenue, ROI multiplier. Shows "Your mission can't afford not to." when ROI > 5x. State lives in Landing component; calculations are pure math (no API).
+- **Problem**: Rewritten with specific, visceral pain card copy (847-row spreadsheet / lapsed donor / weekend board report)
+- **Features**: New headline + subhead; outcome-first copy for all 6 cards
+- **How it works** (new, cream bg, `id="howitworks"`): 4-step horizontal layout with gold-numbered circles + dashed connector line on desktop, stacks on mobile
+- **Testimonials** (dark bg): New placeholder quotes with org-type tags; moved from white bg to dark to match brand tone
+- **About**: Rewritten as founder story — "I built Steward after watching a nonprofit I cared about manage their entire donor program in Google Sheets." Definition block preserved.
+- **Pricing**: Growth ($249) as hero dark card; Impact ($499) as secondary card (2-col grid, 3fr/2fr); Seed demoted to footnote link; closer quote added below tiers
+- **Final CTA**: New headline "Your donors are waiting to hear from you." with two CTA buttons + muted fine print
+- **Footer**: New tagline "Fundraising intelligence for missions that matter."; added ROI Calculator + How it works + Book a 15-min demo links
+
+**Smooth scroll targets added:** `#roi`, `#howitworks` (existing: `#features`, `#about`, `#pricing`)
+**Removed section:** Org Health Score (HealthRing component removed — not part of new page structure)
+**No app component files touched. No routing changes.**
+
+---
+
 ### Onboarding Email Sequence (2026-06-03)
 7-email founder-voice drip sequence that fires automatically when a new org signs up. Backend only — pure sequences engine, no frontend changes.
 
