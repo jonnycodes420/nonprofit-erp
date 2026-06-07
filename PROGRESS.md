@@ -1,5 +1,19 @@
 # Steward — Build Progress
 
+### Data Export — one-click CSV zip (2026-06-07)
+
+**Backend (server.js)**
+- `GET /org/export` — requireAuth; streams a zip archive via archiver, scoped to org_id
+- Up to 12 CSVs included — only non-empty tables: donors (with custom fields flattened as columns), gifts (with donor name joined), pledges/planned_gifts, grants, transactions, events, event_attendees (with event name joined), campaigns, interactions (with donor name joined), volunteers, board_members, tasks (with donor name joined)
+- Hand-rolled CSV escaper (RFC 4180: wraps in double-quotes if value contains comma/quote/newline; escapes internal quotes as `""`) — no heavy CSV dependency
+- Filename: `steward-export-{orgSlug}-{YYYY-MM-DD}.zip`
+- archiver installed: `"archiver": "^8.0.0"` in package.json
+
+**Frontend (Settings.jsx)**
+- "Export your data" card with gold left border (`#c9a84c`), above Account Actions
+- Blob download pattern: fetches with `Authorization: Bearer {token}` header, creates object URL, triggers download, revokes URL — works with requireAuth route
+- Shows "Building export…" loading state during fetch
+
 ### Sample Data Loader — one-click demo org (2026-06-07)
 
 **Backend (server.js)**
