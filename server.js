@@ -755,15 +755,32 @@ app.put("/donors/:id", requireAuth, wrap(async (req, res) => {
 }));
 
 app.patch("/donors/:id/stage", requireAuth, wrap(async (req, res) => {
-  const { stage } = req.body;
+  const { stage, prevStage } = req.body;
   const valid = ["prospect","qualify","cultivate","solicit","steward","lapsed"];
   if (!valid.includes(stage)) return res.status(400).json({ error: "Invalid stage" });
+
+  const donorRow = await query("SELECT stage FROM donors WHERE id=? AND org_id=?", [req.params.id, req.user.orgId]);
+  if (!donorRow.length) return res.status(404).json({ error: "Donor not found" });
+  const oldStage = prevStage || donorRow[0].stage;
 
   const affected = await run(
     `UPDATE donors SET stage=?,updated_at=NOW() WHERE id=? AND org_id=?`,
     [stage, req.params.id, req.user.orgId]
   );
   if (!affected.changes) return res.status(404).json({ error: "Donor not found" });
+
+  // Log stage change
+  try {
+    const userRow = await query("SELECT name FROM users WHERE id=?", [req.user.userId]);
+    const userName = userRow[0]?.name || "";
+    await run(
+      "INSERT INTO interactions (id,org_id,donor_id,type,note,date,created_by,logged_by_name) VALUES (?,?,?,?,?,?,?,?)",
+      ["int_"+uuid().slice(0,8), req.user.orgId, req.params.id, "stage_change",
+       `Stage moved from ${oldStage} → ${stage}`,
+       new Date().toISOString().split("T")[0], req.user.userId, userName]
+    );
+  } catch(e) { console.error("Stage change log:", e.message); }
+
   calcWealthScore(req.params.id, req.user.orgId).catch(e => console.error("score recalc:", e.message));
   res.json({ success: true, stage });
 }));
@@ -785,7 +802,7 @@ app.patch("/donors/:id/assign", requireAuth, requireAdmin, wrap(async (req, res)
 
 // ── Interactions ───────────────────────────────────────────────────────────
 app.post("/donors/:id/interactions", requireAuth, wrap(async (req, res) => {
-  const { type, note, date } = req.body;
+  const { type, note, date, metadata } = req.body;
   if (!type) return res.status(400).json({ error: "Interaction type required" });
 
   const donorExists = await query(
@@ -794,11 +811,14 @@ app.post("/donors/:id/interactions", requireAuth, wrap(async (req, res) => {
   );
   if (!donorExists.length) return res.status(404).json({ error: "Donor not found" });
 
+  const userRow = await query("SELECT name FROM users WHERE id=?", [req.user.userId]);
+  const userName = userRow[0]?.name || "";
   const id = "int_" + uuid().slice(0, 8);
   await run(
-    "INSERT INTO interactions (id,org_id,donor_id,type,note,date,created_by) VALUES (?,?,?,?,?,?,?)",
+    "INSERT INTO interactions (id,org_id,donor_id,type,note,date,created_by,logged_by_name,metadata) VALUES (?,?,?,?,?,?,?,?,?)",
     [id, req.user.orgId, req.params.id, type, note || "",
-     date || new Date().toISOString().split("T")[0], req.user.userId]
+     date || new Date().toISOString().split("T")[0], req.user.userId,
+     userName, metadata ? JSON.stringify(metadata) : null]
   );
   const rows = await query("SELECT * FROM interactions WHERE id = ?", [id]);
   calcWealthScore(req.params.id, req.user.orgId).catch(e => console.error("score recalc:", e.message));
@@ -859,6 +879,18 @@ app.post("/donors/:id/gifts", requireAuth, wrap(async (req, res) => {
       );
     }
   } catch(e) { console.error("Finance sync:", e.message); }
+  // Log gift interaction
+  try {
+    const userRow = await query("SELECT name FROM users WHERE id=?", [req.user.userId]);
+    const userName = userRow[0]?.name || "";
+    const fundNote = type || "cash";
+    await run(
+      "INSERT INTO interactions (id,org_id,donor_id,type,note,date,created_by,logged_by_name) VALUES (?,?,?,?,?,?,?,?)",
+      ["int_"+uuid().slice(0,8), req.user.orgId, req.params.id, "gift",
+       `Gift received: $${amt.toLocaleString()} (${fundNote})${notes ? " — " + notes : ""}`,
+       giftDate, req.user.userId, userName]
+    );
+  } catch(e) { console.error("Gift interaction log:", e.message); }
   calcWealthScore(req.params.id, req.user.orgId).catch(e => console.error("score recalc:", e.message));
   res.status(201).json({ gift: giftRows[0], donor: donorRows[0] });
 }));
@@ -919,6 +951,17 @@ app.post("/donors/:id/planned-gifts", requireAuth, wrap(async (req, res) => {
     await run("UPDATE donors SET planned_giving=true WHERE id=? AND org_id=?", [req.params.id, req.user.orgId]);
   }
   const rows = await query("SELECT * FROM planned_gifts WHERE id=?", [id]);
+  // Log interaction
+  try {
+    const userRow = await query("SELECT name FROM users WHERE id=?", [req.user.userId]);
+    const userName = userRow[0]?.name || "";
+    await run(
+      "INSERT INTO interactions (id,org_id,donor_id,type,note,date,created_by,logged_by_name) VALUES (?,?,?,?,?,?,?,?)",
+      ["int_"+uuid().slice(0,8), req.user.orgId, req.params.id, "planned_gift",
+       `Planned gift indicated: ${type.replace(/_/g," ")}${estimated_value ? " (est. $" + Number(estimated_value).toLocaleString() + ")" : ""}`,
+       new Date().toISOString().split("T")[0], req.user.userId, userName]
+    );
+  } catch(e) { console.error("Planned gift log:", e.message); }
   res.status(201).json(rows[0]);
 }));
 
@@ -961,6 +1004,16 @@ app.post("/donors/:id/materials", requireAuth, wrap(async (req, res) => {
     [id, req.user.orgId, req.params.id, file_name, file_type||"", file_url||null, file_data||null, notes||"", userRow[0]?.name||""]
   );
   const rows = await query("SELECT id,org_id,donor_id,file_name,file_type,file_url,notes,uploaded_by,uploaded_at FROM donor_materials WHERE id=?", [id]);
+  // Log interaction
+  try {
+    const ext = file_type ? file_type.split("/").pop() : "file";
+    await run(
+      "INSERT INTO interactions (id,org_id,donor_id,type,note,date,created_by,logged_by_name) VALUES (?,?,?,?,?,?,?,?)",
+      ["int_"+uuid().slice(0,8), req.user.orgId, req.params.id, "material",
+       `Material added: ${file_name} (${ext})`,
+       new Date().toISOString().split("T")[0], req.user.userId, userRow[0]?.name||""]
+    );
+  } catch(e) { console.error("Material log:", e.message); }
   res.status(201).json(rows[0]);
 }));
 
@@ -975,6 +1028,56 @@ app.post("/donors/:id/score", requireAuth, wrap(async (req, res) => {
   const result = await calcWealthScore(req.params.id, req.user.orgId);
   if (!result) return res.status(404).json({ error: "Donor not found" });
   res.json(result);
+}));
+
+app.get("/donors/:id/fund-affinity", requireAuth, wrap(async (req, res) => {
+  const { orgId } = req.user;
+  const donorCheck = await query("SELECT * FROM donors WHERE id=? AND org_id=?", [req.params.id, orgId]);
+  if (!donorCheck.length) return res.status(404).json({ error: "Donor not found" });
+  const totalGiving = donorCheck[0].total_giving || 0;
+
+  // Gifts with a fund_id
+  const fundGifts = await query(
+    `SELECT g.fund_id, COALESCE(f.name,'Unknown Fund') as fund_name,
+            COALESCE(f.restricted,false) as restricted,
+            COUNT(*) as gift_count, SUM(g.amount) as total,
+            MAX(g.date) as last_date
+     FROM gifts g
+     LEFT JOIN fin_funds f ON f.id=g.fund_id
+     WHERE g.donor_id=? AND g.org_id=? AND g.fund_id IS NOT NULL AND g.fund_id != ''
+     GROUP BY g.fund_id, f.name, f.restricted
+     ORDER BY total DESC`,
+    [req.params.id, orgId]
+  );
+
+  // Unrestricted (no fund_id)
+  const unrestrictedGifts = await query(
+    `SELECT COALESCE(SUM(amount),0) as total, COUNT(*) as gift_count FROM gifts WHERE donor_id=? AND org_id=? AND (fund_id IS NULL OR fund_id='')`,
+    [req.params.id, orgId]
+  );
+  const unrestrictedTotal = parseFloat(unrestrictedGifts[0]?.total || 0);
+  const restrictedTotal = fundGifts.filter(f => f.restricted).reduce((s, f) => s + parseFloat(f.total), 0);
+
+  // Active fin_funds for suggested asks
+  const activeFunds = await query("SELECT id, name FROM fin_funds WHERE org_id=? ORDER BY name ASC", [orgId]);
+
+  const affinityRows = fundGifts.map(f => ({
+    fundId: f.fund_id,
+    fundName: f.fund_name,
+    restricted: f.restricted,
+    total: parseFloat(f.total),
+    giftCount: parseInt(f.gift_count),
+    lastDate: f.last_date,
+    pct: totalGiving > 0 ? Math.round(parseFloat(f.total) / totalGiving * 100) : 0,
+  }));
+
+  res.json({
+    affinity: affinityRows,
+    unrestrictedTotal,
+    restrictedTotal,
+    totalGiving,
+    activeFunds,
+  });
 }));
 
 // ── Grants ─────────────────────────────────────────────────────────────────
@@ -1498,6 +1601,41 @@ app.put("/campaigns/:id", requireAuth, wrap(async (req, res) => {
 app.delete("/campaigns/:id", requireAuth, requireAdmin, wrap(async (req, res) => {
   await run("DELETE FROM campaigns WHERE id = ? AND org_id = ?", [req.params.id, req.user.orgId]);
   res.json({ success: true });
+}));
+
+app.put("/campaigns/:id/briefing", requireAuth, wrap(async (req, res) => {
+  const { briefing, goal_amount, start_date, end_date } = req.body;
+  const existing = await query("SELECT id FROM campaigns WHERE id=? AND org_id=?", [req.params.id, req.user.orgId]);
+  if (!existing.length) return res.status(404).json({ error: "Campaign not found" });
+  await run(
+    `UPDATE campaigns SET briefing=?,goal_amount=?,start_date=?,end_date=?,updated_at=NOW() WHERE id=? AND org_id=?`,
+    [briefing||null, goal_amount||null, start_date||null, end_date||null, req.params.id, req.user.orgId]
+  );
+  const rows = await query("SELECT id,name,briefing,goal_amount,start_date,end_date,status FROM campaigns WHERE id=?", [req.params.id]);
+  res.json(rows[0]);
+}));
+
+app.get("/campaigns/:id/progress", requireAuth, wrap(async (req, res) => {
+  const rows = await query("SELECT * FROM campaigns WHERE id=? AND org_id=?", [req.params.id, req.user.orgId]);
+  if (!rows.length) return res.status(404).json({ error: "Campaign not found" });
+  const c = rows[0];
+  // Sum gifts attributed to this campaign by campaign name match
+  const giftSum = await query(
+    `SELECT COALESCE(SUM(amount),0) as total, COUNT(DISTINCT donor_id) as donor_count FROM gifts WHERE org_id=? AND (campaign=? OR campaign_id=?)`,
+    [req.user.orgId, c.name, c.id]
+  );
+  const raised = parseFloat(giftSum[0]?.total || 0);
+  const donorCount = parseInt(giftSum[0]?.donor_count || 0);
+  const daysRemaining = c.end_date ? Math.ceil((new Date(c.end_date) - new Date()) / 86400000) : null;
+  res.json({
+    goal: parseFloat(c.goal_amount || 0),
+    raised,
+    donorCount,
+    daysRemaining,
+    startDate: c.start_date,
+    endDate: c.end_date,
+    briefing: c.briefing || "",
+  });
 }));
 
 app.post("/campaigns/:id/send", requireAuth, requireAdmin, wrap(async (req, res) => {

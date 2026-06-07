@@ -762,6 +762,10 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
   const [addPgOpen,setAddPgOpen]=useState(false);
   const [pgSaving,setPgSaving]=useState(false);
 
+  // Fund affinity
+  const [fundAffinity,setFundAffinity]=useState(null);
+  const [fundLoading,setFundLoading]=useState(false);
+
   // Materials
   const [materials,setMaterials]=useState([]);
   const [matLoading,setMatLoading]=useState(false);
@@ -770,8 +774,17 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
   const [matUploading,setMatUploading]=useState(false);
   const fileInputRef=useRef(null);
 
-  // Activity tab filters
+  // Activity tab
   const [actFilter,setActFilter]=useState("all");
+  const [actMode,setActMode]=useState("log");
+
+  // Stewardship log form
+  const [stwOpen,setStwOpen]=useState(false);
+  const [stwForm,setStwForm]=useState({type:"thank_you",detail:"",date:new Date().toISOString().split("T")[0],note:""});
+  const [stwSaving,setStwSaving]=useState(false);
+
+  // Campaigns for gift attribution
+  const [campaigns,setCampaigns]=useState([]);
 
   const loadGiftsFull=()=>{
     apiFetch(`/donors/${donor.id}`).then(raw=>{
@@ -796,6 +809,28 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
     apiFetch(`/donors/${donor.id}/materials`).then(rows=>setMaterials(Array.isArray(rows)?rows:[])).catch(()=>{}).finally(()=>setMatLoading(false));
   };
 
+  const loadFundAffinity=()=>{
+    setFundLoading(true);
+    apiFetch(`/donors/${donor.id}/fund-affinity`).then(r=>setFundAffinity(r||null)).catch(()=>{}).finally(()=>setFundLoading(false));
+  };
+
+  const saveStewardship=async()=>{
+    if(!stwForm.type)return;
+    setStwSaving(true);
+    try{
+      await apiFetch(`/donors/${donor.id}/interactions`,{method:"POST",body:JSON.stringify({
+        type:"stewardship",
+        note:`${stwForm.type.replace(/_/g," ")}${stwForm.detail?" — "+stwForm.detail:""}${stwForm.note?"\n"+stwForm.note:""}`,
+        date:stwForm.date,
+        metadata:{stewardship_type:stwForm.type,detail:stwForm.detail},
+      })});
+      setStwOpen(false);
+      setStwForm({type:"thank_you",detail:"",date:new Date().toISOString().split("T")[0],note:""});
+      if(onInteractionAdded)onInteractionAdded();
+    }catch(e){console.error(e);}
+    setStwSaving(false);
+  };
+
   const stage=STAGES.find(s=>s.id===(donor.stage||"cultivate"))||STAGES[2];
   const sc=donorScore(donor);const scoreColor=sc>70?"#1a6b4a":sc>45?"#f59e0b":"#ef4444";
   const urg=moveUrgency(donor);
@@ -809,7 +844,12 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
 
   useEffect(()=>{
     if(dpTab==="materials")loadMaterials();
+    if(dpTab==="funds"&&!fundAffinity)loadFundAffinity();
   },[dpTab,donor.id]);
+
+  useEffect(()=>{
+    apiFetch("/campaigns").then(r=>setCampaigns(Array.isArray(r)?r:[])).catch(()=>{});
+  },[]);
 
   const saveGiftEdit=async(giftId)=>{
     setGiftSaving(true);
@@ -948,8 +988,8 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
         <div style={{overflowY:"auto",borderRight:"1px solid "+T.bg3,display:"flex",flexDirection:"column"}}>
           {/* Tab Nav */}
           <div style={{display:"flex",background:T.white,borderBottom:"1px solid "+T.bg3,flexShrink:0,overflowX:"auto"}}>
-            {[["overview","Overview"],["gifts","Gifts & Pledges"],["materials","Materials"],["activity","Activity"]].map(([id,label])=>(
-              <button key={id} onClick={()=>setDpTab(id)} style={{background:"none",border:"none",borderBottom:`2px solid ${dpTab===id?T.greenDk:"transparent"}`,padding:"11px 18px",color:dpTab===id?T.greenDk:T.ink3,fontSize:13,fontWeight:dpTab===id?700:400,cursor:"pointer",whiteSpace:"nowrap",flexShrink:0}}>
+            {[["overview","Overview"],["gifts","Gifts & Pledges"],["funds","Funds"],["materials","Materials"],["activity","Activity"]].map(([id,label])=>(
+              <button key={id} onClick={()=>setDpTab(id)} style={{background:"none",border:"none",borderBottom:`2px solid ${dpTab===id?T.greenDk:"transparent"}`,padding:"11px 16px",color:dpTab===id?T.greenDk:T.ink3,fontSize:13,fontWeight:dpTab===id?700:400,cursor:"pointer",whiteSpace:"nowrap",flexShrink:0}}>
                 {label}
                 {id==="gifts"&&giftsFull.length>0&&<span style={{marginLeft:5,background:T.bg2,borderRadius:99,padding:"1px 6px",fontSize:10,fontWeight:700,color:T.ink3}}>{giftsFull.length}</span>}
                 {id==="materials"&&materials.length>0&&<span style={{marginLeft:5,background:T.bg2,borderRadius:99,padding:"1px 6px",fontSize:10,fontWeight:700,color:T.ink3}}>{materials.length}</span>}
@@ -1038,6 +1078,10 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
                 <input value={addGiftForm.payment_method} onChange={e=>setAddGiftForm(p=>({...p,payment_method:e.target.value}))} placeholder="Payment method" style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"8px 10px",color:T.ink,fontSize:13,outline:"none"}}/>
               </div>
               <input value={addGiftForm.notes} onChange={e=>setAddGiftForm(p=>({...p,notes:e.target.value}))} placeholder="Notes" style={{width:"100%",background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"8px 10px",color:T.ink,fontSize:13,outline:"none",boxSizing:"border-box",marginBottom:8}}/>
+              {campaigns.length>0&&<select value={addGiftForm.campaign_id||""} onChange={e=>setAddGiftForm(p=>({...p,campaign_id:e.target.value}))} style={{width:"100%",background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"8px 10px",color:T.ink,fontSize:13,outline:"none",boxSizing:"border-box",marginBottom:8}}>
+                <option value="">No campaign attribution</option>
+                {campaigns.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>}
               <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:12}}>
                 <label style={{display:"flex",alignItems:"center",gap:6,fontSize:12,color:T.ink,cursor:"pointer"}}>
                   <input type="checkbox" checked={addGiftForm.acknowledgement_sent} onChange={e=>setAddGiftForm(p=>({...p,acknowledgement_sent:e.target.checked}))} style={{accentColor:"#1a6b4a"}}/>
@@ -1142,6 +1186,78 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
           </div>}
 
           {/* Materials tab */}
+          {/* Funds tab */}
+          {dpTab==="funds"&&<div style={{padding:"20px 20px 24px 24px",display:"flex",flexDirection:"column",gap:18}}>
+            {fundLoading&&<div style={{textAlign:"center",color:T.ink3,fontSize:12,padding:24}}><Spin/></div>}
+            {!fundLoading&&fundAffinity&&(()=>{
+              const {affinity,unrestrictedTotal,restrictedTotal,totalGiving,activeFunds}=fundAffinity;
+              const maxFund=affinity.length>0?affinity[0].total:1;
+              return(<>
+                <div>
+                  <div style={{fontSize:14,fontWeight:800,color:T.ink,marginBottom:14}}>What they support</div>
+                  {affinity.length===0
+                    ?<div style={{fontSize:13,color:T.ink3,fontStyle:"italic"}}>No fund-attributed gifts yet. Assign funds when logging gifts.</div>
+                    :<div style={{display:"flex",flexDirection:"column",gap:10}}>
+                      {affinity.map(f=>(
+                        <div key={f.fundId} style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:12,padding:"14px 16px"}}>
+                          <div style={{display:"flex",alignItems:"baseline",justifyContent:"space-between",marginBottom:6}}>
+                            <div>
+                              <span style={{fontSize:13,fontWeight:700,color:T.ink}}>{f.fundName}</span>
+                              {f.restricted&&<span style={{marginLeft:6,fontSize:10,fontWeight:700,color:"#8b5cf6",background:"#8b5cf610",borderRadius:99,padding:"2px 7px"}}>Restricted</span>}
+                            </div>
+                            <div style={{textAlign:"right"}}>
+                              <div style={{fontSize:14,fontWeight:800,color:"#1a6b4a"}}>{fmtFull(f.total)}</div>
+                              <div style={{fontSize:10,color:T.ink3}}>{f.pct}% of lifetime</div>
+                            </div>
+                          </div>
+                          <div style={{background:T.bg3,borderRadius:99,height:6,overflow:"hidden",marginBottom:6}}>
+                            <div style={{height:"100%",background:"#1a6b4a",borderRadius:99,width:`${Math.round(f.total/maxFund*100)}%`,transition:"width 0.4s"}}/>
+                          </div>
+                          <div style={{fontSize:11,color:T.ink3}}>{f.giftCount} gift{f.giftCount!==1?"s":""} · Last: {f.lastDate}</div>
+                        </div>
+                      ))}
+                    </div>
+                  }
+                </div>
+
+                <div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:12,padding:"14px 16px"}}>
+                  <div style={{fontSize:12,fontWeight:700,color:T.ink,marginBottom:10}}>Restricted vs Unrestricted</div>
+                  {totalGiving>0?(()=>{
+                    const rPct=Math.round(restrictedTotal/totalGiving*100);
+                    const uPct=100-rPct;
+                    return(<>
+                      <div style={{height:10,borderRadius:99,overflow:"hidden",display:"flex",marginBottom:8}}>
+                        <div style={{width:`${rPct}%`,background:"#8b5cf6",transition:"width 0.4s"}}/>
+                        <div style={{flex:1,background:"#10b981"}}/>
+                      </div>
+                      <div style={{display:"flex",gap:16,fontSize:12}}>
+                        <div style={{display:"flex",alignItems:"center",gap:5}}><span style={{width:10,height:10,borderRadius:2,background:"#8b5cf6",display:"inline-block"}}/>Restricted: {fmtFull(restrictedTotal)} ({rPct}%)</div>
+                        <div style={{display:"flex",alignItems:"center",gap:5}}><span style={{width:10,height:10,borderRadius:2,background:"#10b981",display:"inline-block"}}/>Unrestricted: {fmtFull(unrestrictedTotal)} ({uPct}%)</div>
+                      </div>
+                    </>);
+                  })():<div style={{fontSize:12,color:T.ink3,fontStyle:"italic"}}>No giving data yet</div>}
+                </div>
+
+                {affinity.length>0&&(
+                  <div style={{background:"#c9a84c10",border:"1px solid #c9a84c40",borderRadius:12,padding:"14px 16px"}}>
+                    <div style={{fontSize:12,fontWeight:700,color:"#c9a84c",marginBottom:8}}>💡 Suggested Asks</div>
+                    {affinity.slice(0,2).map(f=>(
+                      <div key={f.fundId} style={{fontSize:12,color:T.ink,marginBottom:4}}>
+                        This donor has given {fmtFull(f.total)} to <strong>{f.fundName}</strong>. Consider them for {f.fundName} campaign appeals.
+                      </div>
+                    ))}
+                    {activeFunds.filter(f=>!affinity.find(a=>a.fundId===f.id)).length>0&&(
+                      <div style={{fontSize:12,color:T.ink3,marginTop:8}}>
+                        Not yet engaged with: {activeFunds.filter(f=>!affinity.find(a=>a.fundId===f.id)).map(f=>f.name).slice(0,3).join(", ")}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </>);
+            })()}
+            {!fundLoading&&!fundAffinity&&<div style={{fontSize:13,color:T.ink3,fontStyle:"italic",textAlign:"center",padding:24}}>Could not load fund data.</div>}
+          </div>}
+
           {dpTab==="materials"&&<div style={{padding:"20px 20px 24px 24px",display:"flex",flexDirection:"column",gap:16}}>
             <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
               <div style={{fontSize:14,fontWeight:800,color:T.ink}}>Donor Materials</div>
@@ -1181,19 +1297,118 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
 
           {/* Activity tab */}
           {dpTab==="activity"&&<div style={{padding:"20px 20px 24px 24px",display:"flex",flexDirection:"column",gap:14}}>
-            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:8}}>
-              <div style={{fontSize:14,fontWeight:800,color:T.ink}}>Full Activity</div>
-              <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
-                {["all","call","meeting","email","gift","event","note"].map(t=>(
-                  <button key={t} onClick={()=>setActFilter(t)} style={{background:actFilter===t?T.greenDk:"transparent",border:`1px solid ${actFilter===t?T.greenDk:T.bg3}`,borderRadius:99,padding:"4px 10px",color:actFilter===t?"#fff":T.ink3,fontSize:11,cursor:"pointer",fontWeight:actFilter===t?700:400,textTransform:"capitalize"}}>
-                    {t}
-                  </button>
-                ))}
-              </div>
+            {/* Mode toggle */}
+            <div style={{display:"flex",background:T.bg,border:"1px solid "+T.bg3,borderRadius:10,overflow:"hidden",alignSelf:"flex-start"}}>
+              {[["log","Activity Log"],["timeline","Stewardship Timeline"]].map(([m,l])=>(
+                <button key={m} onClick={()=>setActMode(m)} style={{background:actMode===m?T.white:"transparent",border:"none",padding:"8px 16px",color:actMode===m?T.ink:T.ink3,fontSize:12,fontWeight:actMode===m?700:400,cursor:"pointer"}}>
+                  {l}
+                </button>
+              ))}
             </div>
-            <button onClick={onLogTouchpoint} style={{background:"#10b981",border:"none",borderRadius:8,padding:"8px 14px",color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer",alignSelf:"flex-start"}}>+ Log Touchpoint</button>
-            <TouchpointTimeline interactions={(donor.interactions||[]).filter(i=>actFilter==="all"||i.type===actFilter)}/>
-            {donor.interactions?.length===0&&<div style={{fontSize:12,color:T.ink3,fontStyle:"italic",textAlign:"center",padding:16}}>No activity logged yet</div>}
+
+            {actMode==="log"&&<>
+              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:8}}>
+                <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+                  {["all","call","meeting","email","gift","event","stewardship","note"].map(t=>(
+                    <button key={t} onClick={()=>setActFilter(t)} style={{background:actFilter===t?T.greenDk:"transparent",border:`1px solid ${actFilter===t?T.greenDk:T.bg3}`,borderRadius:99,padding:"4px 10px",color:actFilter===t?"#fff":T.ink3,fontSize:11,cursor:"pointer",fontWeight:actFilter===t?700:400,textTransform:"capitalize"}}>
+                      {t}
+                    </button>
+                  ))}
+                </div>
+                <div style={{display:"flex",gap:6}}>
+                  <button onClick={()=>setStwOpen(v=>!v)} style={{background:"#10b98110",border:"1px solid #10b98130",borderRadius:8,padding:"7px 12px",color:"#10b981",fontSize:12,fontWeight:700,cursor:"pointer"}}>💌 Log Stewardship</button>
+                  <button onClick={onLogTouchpoint} style={{background:"#10b981",border:"none",borderRadius:8,padding:"7px 12px",color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer"}}>+ Log Touchpoint</button>
+                </div>
+              </div>
+              {stwOpen&&<div style={{background:T.white,border:"1px solid #10b98130",borderRadius:12,padding:"14px 16px"}}>
+                <div style={{fontSize:12,fontWeight:700,color:T.ink,marginBottom:10}}>Log Stewardship Touch</div>
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:8}}>
+                  <select value={stwForm.type} onChange={e=>setStwForm(p=>({...p,type:e.target.value}))} style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"7px 10px",color:T.ink,fontSize:12,outline:"none"}}>
+                    {[["thank_you","Thank You Sent"],["recognition","Recognition"],["gift_sent","Gift Sent"],["impact_update","Impact Update"],["appreciation_event","Appreciation Event"],["holiday_card","Holiday Card"],["birthday","Birthday"],["other","Other"]].map(([v,l])=><option key={v} value={v}>{l}</option>)}
+                  </select>
+                  <input value={stwForm.date} onChange={e=>setStwForm(p=>({...p,date:e.target.value}))} type="date" style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"7px 10px",color:T.ink,fontSize:12,outline:"none"}}/>
+                  <input value={stwForm.detail} onChange={e=>setStwForm(p=>({...p,detail:e.target.value}))} placeholder="What was sent/done (e.g. signed book, tote bag)" style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"7px 10px",color:T.ink,fontSize:12,outline:"none",gridColumn:"1/-1"}}/>
+                  <input value={stwForm.note} onChange={e=>setStwForm(p=>({...p,note:e.target.value}))} placeholder="Optional note" style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"7px 10px",color:T.ink,fontSize:12,outline:"none",gridColumn:"1/-1"}}/>
+                </div>
+                <div style={{display:"flex",gap:8}}>
+                  <button onClick={saveStewardship} disabled={stwSaving} style={{background:"#10b981",border:"none",borderRadius:8,padding:"7px 14px",color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer"}}>Save</button>
+                  <button onClick={()=>setStwOpen(false)} style={{background:T.bg,border:"none",borderRadius:8,padding:"7px 12px",color:T.ink3,fontSize:12,cursor:"pointer"}}>Cancel</button>
+                </div>
+              </div>}
+              <div style={{display:"flex",flexDirection:"column",gap:8}}>
+                {(donor.interactions||[]).filter(i=>actFilter==="all"||i.type===actFilter).map(i=>{
+                  const typeIcon={call:"📞",meeting:"🤝",email:"✉️",gift:"🎁",event:"🎟️",stewardship:"💌",note:"📝",stage_change:"📈",planned_gift:"⭐",material:"📄"}[i.type]||"•";
+                  const typeColor={call:"#3b82f6",meeting:"#1a6b4a",email:"#8b5cf6",gift:"#c9a84c",event:"#ec4899",stewardship:"#10b981",stage_change:"#3b82f6",planned_gift:"#f59e0b",material:"#6b7280"}[i.type]||T.ink3;
+                  return(<div key={i.id||i.date} style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:10,padding:"10px 14px",display:"flex",gap:10,alignItems:"flex-start"}}>
+                    <div style={{fontSize:16,flexShrink:0,marginTop:1}}>{typeIcon}</div>
+                    <div style={{flex:1,minWidth:0}}>
+                      <div style={{display:"flex",alignItems:"baseline",gap:8,flexWrap:"wrap"}}>
+                        <span style={{fontSize:11,fontWeight:700,color:typeColor,textTransform:"capitalize"}}>{(i.type||"note").replace(/_/g," ")}</span>
+                        <span style={{fontSize:11,color:T.ink3}}>{i.date}</span>
+                        {i.logged_by_name&&<span style={{fontSize:10,color:T.ink3,fontStyle:"italic"}}>by {i.logged_by_name}</span>}
+                      </div>
+                      {i.note&&<div style={{fontSize:12,color:T.ink,marginTop:3,lineHeight:1.5,whiteSpace:"pre-wrap"}}>{i.note}</div>}
+                    </div>
+                  </div>);
+                })}
+                {(donor.interactions||[]).filter(i=>actFilter==="all"||i.type===actFilter).length===0&&<div style={{fontSize:12,color:T.ink3,fontStyle:"italic",textAlign:"center",padding:16}}>No activity logged yet</div>}
+              </div>
+            </>}
+
+            {actMode==="timeline"&&(()=>{
+              const ints=donor.interactions||[];
+              const sortedGiftsForTimeline=[...giftsFull].sort((a,b)=>new Date(a.date)-new Date(b.date));
+              const firstGiftDate=sortedGiftsForTimeline[0]?.date;
+              const largestGift=sortedGiftsForTimeline.reduce((m,g)=>g.amount>m.amount?g:m,{amount:0,date:""});
+              const milestones=[];
+              if(firstGiftDate)milestones.push({date:firstGiftDate,icon:"⭐",label:"First gift",desc:`$${sortedGiftsForTimeline[0]?.amount?.toLocaleString()} — relationship began`,color:"#c9a84c",big:true});
+              if(largestGift.amount>0&&largestGift.date!==firstGiftDate)milestones.push({date:largestGift.date,icon:"⭐",label:"Largest gift",desc:`$${largestGift.amount.toLocaleString()} — record gift`,color:"#c9a84c",big:true});
+              if(firstGiftDate){
+                const ann=new Date(firstGiftDate);ann.setFullYear(ann.getFullYear()+1);
+                const annStr=ann.toISOString().split("T")[0];
+                if(new Date(annStr)<=new Date())milestones.push({date:annStr,icon:"⭐",label:"1-year anniversary",desc:"One year as a donor",color:"#c9a84c",big:true});
+              }
+              let cumulative=0;
+              sortedGiftsForTimeline.forEach(g=>{
+                const prev=cumulative;cumulative+=g.amount;
+                const crossed=[10000,25000,50000,100000,250000].filter(t=>prev<t&&cumulative>=t);
+                crossed.forEach(t=>milestones.push({date:g.date,icon:"⭐",label:`$${(t/1000)}k milestone`,desc:`Lifetime giving crossed $${(t/1000)}k`,color:"#c9a84c",big:true}));
+              });
+
+              const events=[
+                ...ints.filter(i=>["call","meeting","email","gift","event","stewardship","stage_change","planned_gift"].includes(i.type)).map(i=>({
+                  date:i.date,
+                  icon:{call:"📞",meeting:"🤝",email:"✉️",gift:"🎁",event:"🎟️",stewardship:"💌",stage_change:"📈",planned_gift:"⭐"}[i.type]||"•",
+                  label:(i.type||"note").replace(/_/g," "),
+                  desc:i.note||"",
+                  color:{call:"#3b82f6",meeting:"#1a6b4a",email:"#8b5cf6",gift:"#c9a84c",event:"#ec4899",stewardship:"#10b981",stage_change:"#3b82f6",planned_gift:"#f59e0b"}[i.type]||T.ink3,
+                  big:false,
+                  loggedBy:i.logged_by_name,
+                })),
+                ...milestones,
+              ].sort((a,b)=>new Date(b.date)-new Date(a.date));
+
+              if(events.length===0)return<div style={{fontSize:12,color:T.ink3,fontStyle:"italic",textAlign:"center",padding:24}}>No timeline events yet. Log touchpoints and gifts to build the relationship arc.</div>;
+
+              return(<div style={{position:"relative",paddingLeft:28}}>
+                <div style={{position:"absolute",left:10,top:0,bottom:0,width:2,background:"linear-gradient(to bottom, #10b981, #c9a84c44)"}}/>
+                {events.map((ev,i)=>(
+                  <div key={i} style={{position:"relative",marginBottom:ev.big?20:14}}>
+                    <div style={{position:"absolute",left:-28,width:ev.big?20:16,height:ev.big?20:16,borderRadius:"50%",background:ev.color,display:"flex",alignItems:"center",justifyContent:"center",fontSize:ev.big?11:9,border:`2px solid ${T.white}`,boxShadow:`0 0 0 2px ${ev.color}44`,top:0,flexShrink:0,zIndex:1}}>
+                      {ev.icon}
+                    </div>
+                    <div style={{background:ev.big?"#c9a84c08":T.white,border:`1px solid ${ev.big?"#c9a84c40":T.bg3}`,borderRadius:10,padding:ev.big?"12px 14px":"9px 13px",marginLeft:4}}>
+                      <div style={{display:"flex",alignItems:"baseline",gap:8,flexWrap:"wrap"}}>
+                        <span style={{fontSize:12,fontWeight:ev.big?800:700,color:ev.color,textTransform:"capitalize"}}>{ev.label}</span>
+                        <span style={{fontSize:11,color:T.ink3}}>{ev.date}</span>
+                        {ev.loggedBy&&<span style={{fontSize:10,color:T.ink3,fontStyle:"italic"}}>by {ev.loggedBy}</span>}
+                      </div>
+                      {ev.desc&&<div style={{fontSize:12,color:T.ink,marginTop:2,lineHeight:1.4}}>{ev.desc}</div>}
+                    </div>
+                  </div>
+                ))}
+              </div>);
+            })()}
           </div>}
         </div>
 

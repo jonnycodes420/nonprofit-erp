@@ -531,6 +531,14 @@ async function initSchema() {
     )
   `);
 
+  // ── MGO toolkit pt 2 ─────────────────────────────────────────────────────
+  await pool.query(`ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS briefing TEXT`);
+  await pool.query(`ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS goal_amount NUMERIC`);
+  await pool.query(`ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS raised_amount NUMERIC DEFAULT 0`);
+  await pool.query(`ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS start_date DATE`);
+  await pool.query(`ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS end_date DATE`);
+  await pool.query(`ALTER TABLE interactions ADD COLUMN IF NOT EXISTS logged_by_name TEXT`);
+
   // ── MGO toolkit ───────────────────────────────────────────────────────────
   await pool.query(`ALTER TABLE donors ADD COLUMN IF NOT EXISTS city TEXT`);
   await pool.query(`ALTER TABLE donors ADD COLUMN IF NOT EXISTS state TEXT`);
