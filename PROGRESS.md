@@ -1,5 +1,42 @@
 # Steward — Build Progress
 
+### Billing lifecycle hardening (2026-06-07)
+
+**DB schema (db.js)**
+- Added `current_period_end TIMESTAMPTZ` and `grace_until TIMESTAMPTZ` columns to orgs (IF NOT EXISTS)
+
+**Access state model (server.js)**
+- `getOrgAccessState(org)` → `full | warning | read_only`. Logic: active/trialing → full; past_due/canceled within grace_until → warning; trial_expired or past/canceled past grace_until → read_only. Handles both `'cancelled'` and `'canceled'` spellings.
+- `checkWriteAccess` middleware: queries org status, returns 402 `{error:"subscription_required"}` when read_only. Non-blocking on DB error.
+- Applied to: `POST /donors`, `PUT /donors/:id`, `POST /donors/:id/gifts`, `POST /grants`, `PUT /grants/:id`
+- Export route (`GET /org/export`) never blocked
+
+**Webhook expansion (server.js)**
+- `checkout.session.completed` → set active, store `current_period_end` (via Stripe subscription retrieve), clear `grace_until`
+- `invoice.payment_succeeded` → set active, update `current_period_end`, clear `grace_until`
+- `invoice.payment_failed` → set past_due, `grace_until = NOW() + 7 days`
+- `customer.subscription.deleted` → set canceled, `grace_until = NOW() + 3 days`
+
+**`GET /org` and `GET /billing/status`**
+- Both now include `accessState` in response
+- `/billing/status` also returns `graceUntil` and `currentPeriodEnd`
+
+**Trial expiry job (server.js)**
+- `checkTrialExpiry()` sets `subscription_status = 'trial_expired'` for orgs where status = 'trialing' AND trial_ends_at < NOW()
+- Runs on startup (+15s delay) and every 6 hours via setInterval
+
+**Multi-state banner (App.jsx)**
+- read_only: red persistent bar with "Export data →" (→ settings tab) + "Reactivate →" (→ portal)
+- warning + past_due: amber "Update payment →" (→ portal)
+- warning + canceled: amber with grace date + export + reactivate
+- trialing ≤14 days: existing green banner; ≤3 days turns amber with "Choose a plan →"
+- Warning/read_only banners are not dismissible
+
+**UI button gating (Dashboard, Donors, Grants)**
+- Dashboard Quick Actions: "Add Donor", "Log Gift", "New Grant" disabled (opacity 0.45, not-allowed cursor) with tooltip when isReadOnly
+- Donors: `+ Add` and `+ Add Gift` buttons disabled when isReadOnly
+- Grants: `+ Add Grant` button disabled when isReadOnly
+
 ### Settings reorganization + onboarding sample data + JSON export (2026-06-07)
 
 **Data export (server.js)**

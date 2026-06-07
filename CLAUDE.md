@@ -195,16 +195,19 @@ Mobile "More" drawer: communications, events, volunteers, board, analytics, task
 - fin_audit_log — id, org_id, table_name, record_id, action, changed_by, changed_at, old_values, new_values
 
 ### SaaS billing (platform)
-- orgs table: `plan TEXT DEFAULT 'trial'`, `trial_ends_at TIMESTAMPTZ`, `stripe_customer_id TEXT`, `stripe_subscription_id TEXT`, `subscription_status TEXT DEFAULT 'trialing'`
+- orgs table: `plan TEXT DEFAULT 'trial'`, `trial_ends_at TIMESTAMPTZ`, `stripe_customer_id TEXT`, `stripe_subscription_id TEXT`, `subscription_status TEXT DEFAULT 'trialing'`, `current_period_end TIMESTAMPTZ`, `grace_until TIMESTAMPTZ`
 - Plans: `trial` | `seed` | `growth` | `impact`
-- Subscription statuses: `trialing` | `active` | `past_due` | `cancelled`
+- Subscription statuses: `trialing` | `active` | `past_due` | `canceled` | `trial_expired` (note: old rows may have `cancelled` with 2 l's — code handles both)
 - `POST /auth/register-org` — public self-serve signup (creates Stripe customer inline)
-- `GET /billing/status` — returns plan, subscriptionStatus, trialEndsAt, trialDaysLeft
+- `GET /billing/status` — returns plan, subscriptionStatus, trialEndsAt, trialDaysLeft, graceUntil, currentPeriodEnd, accessState
 - `POST /billing/create-checkout` — creates Stripe Checkout session for subscription
 - `POST /billing/create-portal` — creates Stripe Customer Portal session
-- `POST /billing/webhook` — handles checkout.session.completed, customer.subscription.deleted, invoice.payment_failed
-- Trial banner in App.jsx when trialing && trialDaysLeft <= 14; dismissible per session
-- No paywall enforced yet — banner only
+- `POST /billing/webhook` — handles checkout.session.completed (active + period_end + clear grace), invoice.payment_succeeded (active + period_end + clear grace), invoice.payment_failed (past_due + grace 7d), customer.subscription.deleted (canceled + grace 3d)
+- `getOrgAccessState(org)` → `full | warning | read_only`. active/trialing → full; past_due/canceled within grace_until → warning; trial_expired or past/canceled past grace_until → read_only
+- `checkWriteAccess` middleware: returns 402 `{error:"subscription_required"}` when read_only. Applied to POST /donors, PUT /donors/:id, POST /donors/:id/gifts, POST /grants, PUT /grants/:id. Never blocks GET or export.
+- `checkTrialExpiry()` job: sets trial_expired when trial_ends_at < NOW(). Runs on startup (+15s) + every 6h.
+- Multi-state banner in App.jsx: read_only=red persistent; warning+past_due=amber update payment; warning+canceled=amber with grace date; trialing≤14d=green (amber at ≤3d). Warning/read_only not dismissible.
+- Create buttons (Add Donor, Log Gift, New Grant, + Add, + Add Gift, + Add Grant) disabled with tooltip when isReadOnly
 
 ### Stripe / donations
 - orgs table: org_slug (text, unique), stripe_account_id, stripe_connected_at
