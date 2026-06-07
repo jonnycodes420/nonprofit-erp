@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import QRCode from "qrcode";
 import { T, Pill, SectionLabel, PageTitle } from "./shared";
-import { apiFetch } from "../api";
+import { apiFetch, API, getToken } from "../api";
 
 export function Settings({auth,logout}) {
   const orgName=auth?.org?.name||"Your Organization";
@@ -44,6 +44,7 @@ export function Settings({auth,logout}) {
   const [sampleStatus,setSampleStatus]=useState(null);
   const [sampleLoading,setSampleLoading]=useState(false);
   const [sampleClearing,setSampleClearing]=useState(false);
+  const [exporting,setExporting]=useState(false);
 
   useEffect(()=>{
     apiFetch("/org/team").then(setTeam).catch(()=>{});
@@ -178,6 +179,21 @@ export function Settings({auth,logout}) {
       setSampleStatus({hasSampleData:false,sampleDonorCount:0});
       window.location.reload();
     }catch(e){ alert(e.message||"Failed to clear sample data"); setSampleClearing(false); }
+  }
+
+  async function exportData(){
+    setExporting(true);
+    try{
+      const r=await fetch(`${API}/org/export`,{headers:{Authorization:`Bearer ${getToken()}`}});
+      if(!r.ok){const e=await r.json().catch(()=>({}));throw new Error(e.error||"Export failed");}
+      const blob=await r.blob();
+      const url=URL.createObjectURL(blob);
+      const a=document.createElement("a");
+      a.href=url; a.download=`steward-export.zip`;
+      document.body.appendChild(a); a.click();
+      document.body.removeChild(a); URL.revokeObjectURL(url);
+    }catch(e){alert(e.message||"Export failed");}
+    setExporting(false);
   }
 
   async function connectStripe(){
@@ -545,6 +561,18 @@ export function Settings({auth,logout}) {
         ) : (
           <div style={{fontSize:13,color:T.ink3}}>Loading billing information…</div>
         )}
+      </div>
+
+      <div style={{background:T.white,border:"1px solid "+T.bg3,borderLeft:"3px solid #c9a84c",borderRadius:16,padding:"24px 28px"}}>
+        <SectionLabel>Export your data</SectionLabel>
+        <div style={{fontSize:15,fontWeight:700,color:T.ink,marginBottom:6}}>Your data belongs to you.</div>
+        <div style={{fontSize:13,color:T.ink3,marginBottom:18,lineHeight:1.6,maxWidth:520}}>
+          Download everything in Steward — donors, gifts, grants, finances, and more — as CSV files in a single zip. Yours to keep, anytime.
+        </div>
+        <button onClick={exportData} disabled={exporting}
+          style={{background:"#c9a84c",color:"#fff",border:"none",borderRadius:8,padding:"10px 22px",fontSize:13,fontWeight:700,cursor:exporting?"not-allowed":"pointer",opacity:exporting?0.7:1}}>
+          {exporting?"Building export…":"Export all data"}
+        </button>
       </div>
 
       <div style={{background:"#1a0a0a",border:"1px solid #3d1515",borderRadius:16,padding:"24px 28px"}}>
