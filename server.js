@@ -1662,8 +1662,9 @@ app.get("/dashboard/today", requireAuth, wrap(async (req, res) => {
     const totalGiving = parseFloat(d.total_giving) || 0;
     const lastAmt = parseFloat(d.last_gift_amount) || 0;
 
+    const isLapsing = !!(daysSinceGift && daysSinceGift > 300 && totalGiving >= 5000);
     let reason, action;
-    if (daysSinceGift && daysSinceGift > 300 && totalGiving >= 5000) {
+    if (isLapsing) {
       reason = `Gave $${lastAmt.toLocaleString()} — last gift ${daysSinceGift} days ago, lapsing risk`;
       action = "call";
     } else if (daysSinceContact) {
@@ -1671,20 +1672,22 @@ app.get("/dashboard/today", requireAuth, wrap(async (req, res) => {
       reason = `${prefix}no contact in ${daysSinceContact} days`;
       action = totalGiving >= 5000 ? "call" : "email";
     } else {
-      reason = `${d.stage} donor, never contacted`;
+      reason = d.stage === "qualify"
+        ? "New prospect — no contact yet. First outreach sets the tone."
+        : "In your portfolio — no outreach logged yet. Make a strong first impression.";
       action = "call";
     }
 
     const priority = Math.min(50, totalGiving / 5000)
-      + (daysSinceGift && daysSinceGift > 300 ? 30 : 0)
+      + (isLapsing ? 30 : 0)
       + (daysSinceContact && daysSinceContact > 180 ? 20 : 0);
 
-    items.push({ donorId: d.id, donorName: d.name, reason, priority, action });
+    items.push({ donorId: d.id, donorName: d.name, reason, priority, action, totalGiving, isLapsing });
   }
 
   // Unacknowledged recent gifts (need a thank-you)
   const unacked = await query(`
-    SELECT g.id AS gift_id, g.amount, g.date, d.id AS donor_id, d.name AS donor_name
+    SELECT g.id AS gift_id, g.amount, g.date, d.id AS donor_id, d.name AS donor_name, d.total_giving
     FROM gifts g
     JOIN donors d ON d.id = g.donor_id
     WHERE d.org_id = ?
@@ -1696,17 +1699,18 @@ app.get("/dashboard/today", requireAuth, wrap(async (req, res) => {
 
   for (const g of unacked) {
     if (items.some(i => i.donorId === g.donor_id)) continue;
-    const days = Math.floor((today - new Date(g.date)) / 86400000);
+    const giftDate = new Date(g.date).toLocaleDateString("en-US", { month: "long", day: "numeric" });
     items.push({
       donorId: g.donor_id, donorName: g.donor_name,
-      reason: `Gave $${Number(g.amount).toLocaleString()} ${days} day${days !== 1 ? "s" : ""} ago — acknowledgement not sent`,
+      reason: `Gave $${Number(g.amount).toLocaleString()} on ${giftDate} — not yet thanked`,
       priority: 75, action: "thank",
+      totalGiving: parseFloat(g.total_giving) || 0,
     });
   }
 
   // Overdue donor-linked tasks
   const dueTasks = await query(`
-    SELECT t.id, t.title, t.due, t.donor_id, d.name AS donor_name
+    SELECT t.id, t.title, t.due, t.donor_id, d.name AS donor_name, d.total_giving
     FROM tasks t
     JOIN donors d ON d.id = t.donor_id
     WHERE t.org_id = ? AND done=0 AND t.due <= ?
@@ -1716,10 +1720,14 @@ app.get("/dashboard/today", requireAuth, wrap(async (req, res) => {
 
   for (const t of dueTasks) {
     if (items.some(i => i.donorId === t.donor_id)) continue;
+    const daysOverdue = t.due && t.due < todayStr
+      ? Math.floor((today - new Date(t.due)) / 86400000) : 0;
     items.push({
       donorId: t.donor_id, donorName: t.donor_name,
-      reason: `Task: "${t.title}" — ${t.due < todayStr ? "overdue" : "due today"}`,
+      reason: `Task: "${t.title}"`,
       priority: 90, action: "call",
+      totalGiving: parseFloat(t.total_giving) || 0,
+      daysOverdue,
     });
   }
 

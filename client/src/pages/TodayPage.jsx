@@ -6,6 +6,7 @@ const T = {
   bg: "#f0ede6", bg2: "#e8e4db", bg3: "#ddd9d0",
   ink: "#0f0f0f", ink2: "#2a2a2a", ink3: "#6b6b6b",
   green: "#10b981", greenDk: "#0d5c3a", gold: "#c9a84c",
+  amber: "#d97706", red: "#dc2626",
 };
 
 const ACTION_LABEL = { call: "Call", email: "Email", thank: "Thank", meeting: "Meeting" };
@@ -46,20 +47,47 @@ function TodayCard({ item, onDismiss }) {
     }}>
       <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
         <div style={{ flex: 1 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+
+          {/* Badge row: action pill + lapsing pill + donor name */}
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 3, flexWrap: "wrap" }}>
             <span style={{
               fontSize: 10, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase",
               color: accentColor, background: accentColor + "18", borderRadius: 6, padding: "2px 8px",
             }}>
               {ACTION_LABEL[item.action] || item.action}
             </span>
+            {item.isLapsing && (
+              <span style={{
+                fontSize: 10, fontWeight: 700, letterSpacing: "0.06em",
+                color: T.amber, background: T.amber + "18", borderRadius: 6, padding: "2px 8px",
+              }}>
+                ⚠ Lapsing
+              </span>
+            )}
             <span style={{ fontSize: 16, fontWeight: 700, color: T.ink }}>{item.donorName}</span>
           </div>
 
-          <p style={{ margin: "0 0 14px", fontSize: 14, color: T.ink2, lineHeight: 1.55 }}>
+          {/* Lifetime giving — stakes at a glance */}
+          {item.totalGiving > 0 && (
+            <div style={{ fontSize: 12, color: T.ink3, marginBottom: 8 }}>
+              ${item.totalGiving.toLocaleString()} lifetime giving
+            </div>
+          )}
+
+          {/* Reason — the hero */}
+          <p style={{ margin: "0 0 4px", fontSize: 14, color: T.ink2, lineHeight: 1.55 }}>
             {item.reason}
           </p>
 
+          {/* Days overdue — task cards only */}
+          {item.daysOverdue > 0 && (
+            <p style={{ margin: "0 0 12px", fontSize: 12, fontWeight: 600, color: T.red }}>
+              Overdue by {item.daysOverdue} day{item.daysOverdue !== 1 ? "s" : ""}
+            </p>
+          )}
+          {!item.daysOverdue && <div style={{ marginBottom: 12 }} />}
+
+          {/* Action buttons */}
           {!expanded && (
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
               <button
@@ -83,6 +111,7 @@ function TodayCard({ item, onDismiss }) {
             </div>
           )}
 
+          {/* Inline log form */}
           {expanded && (
             <div style={{ marginTop: 2 }}>
               <div style={{ display: "flex", gap: 6, marginBottom: 10 }}>
@@ -156,7 +185,13 @@ export default function TodayPage() {
   const [loading, setLoading] = useState(true);
 
   const orgName = auth?.org?.name || "Steward";
-  const userName = auth?.user?.name?.split(" ")[0] || "";
+
+  // Fix 1: proper-case the first name — never "ADMIN" or "admin"
+  const rawName = (auth?.user?.name || "").trim();
+  const firstName = rawName.split(/\s+/)[0] || "";
+  const userName = firstName
+    ? firstName[0].toUpperCase() + firstName.slice(1).toLowerCase()
+    : "";
 
   useEffect(() => {
     apiFetch("/dashboard/today")
