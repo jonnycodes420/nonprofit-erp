@@ -50,7 +50,7 @@ export function AIChat({data,onClose}) {
 }
 
 // ── Dashboard ──────────────────────────────────────────────────────────────
-export function Dashboard({data,setData,onNavigate}) {
+export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
   const todayStr=new Date().toLocaleDateString("en-US",{weekday:"long",month:"long",day:"numeric"});
   const currentYear=new Date().getFullYear();
 
@@ -146,9 +146,9 @@ export function Dashboard({data,setData,onNavigate}) {
   const typeColor={call:"#3b82f6",email:"#8b5cf6",meeting:"#1a6b4a",gift:"#f59e0b",event:"#ec4899",note:"#6b7280"};
 
   const QUICK=[
-    {icon:<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" width="18" height="18"><circle cx="10" cy="7" r="3.5"/><path d="M3 17c0-3.3 3.1-6 7-6s7 2.7 7 6" strokeLinecap="round"/><line x1="14" y1="4" x2="18" y2="4" strokeLinecap="round"/><line x1="16" y1="2" x2="16" y2="6" strokeLinecap="round"/></svg>,label:"Add Donor",action:()=>setShowAddDonor(true)},
-    {icon:<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" width="18" height="18"><rect x="3" y="5" width="14" height="11" rx="2"/><path d="M7 5V4a1 1 0 011-1h4a1 1 0 011 1v1" strokeLinecap="round"/><line x1="7" y1="10" x2="13" y2="10" strokeLinecap="round"/><line x1="10" y1="7.5" x2="10" y2="12.5" strokeLinecap="round"/></svg>,label:"Log Gift",action:()=>onNavigate("donors")},
-    {icon:<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" width="18" height="18"><path d="M10 3l1.8 5.4H17l-4.5 3.3 1.7 5.3L10 14l-4.2 3 1.7-5.3L3 8.4h5.2z" strokeLinejoin="round"/></svg>,label:"New Grant",action:()=>onNavigate("grants")},
+    {icon:<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" width="18" height="18"><circle cx="10" cy="7" r="3.5"/><path d="M3 17c0-3.3 3.1-6 7-6s7 2.7 7 6" strokeLinecap="round"/><line x1="14" y1="4" x2="18" y2="4" strokeLinecap="round"/><line x1="16" y1="2" x2="16" y2="6" strokeLinecap="round"/></svg>,label:"Add Donor",action:()=>setShowAddDonor(true),isWrite:true},
+    {icon:<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" width="18" height="18"><rect x="3" y="5" width="14" height="11" rx="2"/><path d="M7 5V4a1 1 0 011-1h4a1 1 0 011 1v1" strokeLinecap="round"/><line x1="7" y1="10" x2="13" y2="10" strokeLinecap="round"/><line x1="10" y1="7.5" x2="10" y2="12.5" strokeLinecap="round"/></svg>,label:"Log Gift",action:()=>onNavigate("donors"),isWrite:true},
+    {icon:<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" width="18" height="18"><path d="M10 3l1.8 5.4H17l-4.5 3.3 1.7 5.3L10 14l-4.2 3 1.7-5.3L3 8.4h5.2z" strokeLinejoin="round"/></svg>,label:"New Grant",action:()=>onNavigate("grants"),isWrite:true},
     {icon:<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" width="18" height="18"><circle cx="10" cy="7" r="3.5"/><path d="M3 17c0-3.3 3.1-6 7-6s7 2.7 7 6" strokeLinecap="round"/></svg>,label:"Add Volunteer",action:()=>onNavigate("volunteers")},
     {icon:<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" width="18" height="18"><rect x="3" y="3" width="14" height="14" rx="2"/><line x1="7" y1="9" x2="13" y2="9" strokeLinecap="round"/><line x1="7" y1="12" x2="11" y2="12" strokeLinecap="round"/><line x1="10" y1="5.5" x2="10" y2="3" strokeLinecap="round"/></svg>,label:"New Task",action:()=>onNavigate("tasks")},
     {icon:<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" width="18" height="18"><rect x="2" y="5" width="16" height="11" rx="2"/><path d="M2 8l8 5 8-5" strokeLinecap="round"/></svg>,label:"Send Email",action:()=>onNavigate("communications")},
@@ -373,17 +373,24 @@ export function Dashboard({data,setData,onNavigate}) {
           <div style={{background:"#0f1a12",border:"1px solid #1a2e1f",borderRadius:14,overflow:"hidden",padding:"14px 20px"}}>
             <div style={{...sTitle,color:"#8fa896"}}>Quick Actions</div>
             <div className="dash-quick-grid" style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8,marginTop:12}}>
-              {QUICK.map(a=>(
-                <button key={a.label} onClick={a.action} className="dash-action dash-quick-btn" style={{
-                  background:"#1a2e1f",border:"1px solid #2d4a35",borderRadius:10,
-                  padding:"12px 8px",display:"flex",flexDirection:"column",alignItems:"center",gap:6,cursor:"pointer",
-                }}>
+              {QUICK.map(a=>{
+                const blocked=isReadOnly&&a.isWrite;
+                return(
+                <button key={a.label} onClick={blocked?undefined:a.action} className="dash-action dash-quick-btn"
+                  disabled={blocked}
+                  title={blocked?"Reactivate your subscription to make changes.":undefined}
+                  style={{
+                    background:"#1a2e1f",border:"1px solid #2d4a35",borderRadius:10,
+                    padding:"12px 8px",display:"flex",flexDirection:"column",alignItems:"center",gap:6,
+                    cursor:blocked?"not-allowed":"pointer",opacity:blocked?0.45:1,
+                  }}>
                   <div style={{width:32,height:32,borderRadius:8,background:"#0d5c3a22",display:"flex",alignItems:"center",justifyContent:"center",color:"#c9a84c"}}>
                     {a.icon}
                   </div>
                   <span className="dash-quick-label" style={{fontSize:10,fontWeight:700,color:"#8fa896",textAlign:"center",lineHeight:1.3,letterSpacing:"0.02em"}}>{a.label}</span>
                 </button>
-              ))}
+                );
+              })}
             </div>
           </div>
 

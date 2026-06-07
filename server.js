@@ -509,7 +509,8 @@ app.post("/onboarding/complete", requireAuth, wrap(async (req, res) => {
 app.get("/org", requireAuth, wrap(async (req, res) => {
   const orgs = await query("SELECT * FROM orgs WHERE id = ?", [req.user.orgId]);
   if (!orgs.length) return res.status(404).json({ error: "Org not found" });
-  res.json(orgs[0]);
+  const org = orgs[0];
+  res.json({ ...org, accessState: getOrgAccessState(org) });
 }));
 
 app.patch("/orgs/:id", requireAuth, wrap(async (req, res) => {
@@ -953,7 +954,7 @@ app.get("/donors/:id", requireAuth, wrap(async (req, res) => {
   res.json(d);
 }));
 
-app.post("/donors", requireAuth, wrap(async (req, res) => {
+app.post("/donors", requireAuth, checkWriteAccess, wrap(async (req, res) => {
   const { name, email, phone, status, stage, tags, notes, lastAmount, assignedTo, assignedToName } = req.body;
   if (!name) return res.status(400).json({ error: "Name required" });
 
@@ -1002,7 +1003,7 @@ app.post("/donors/import", requireAuth, wrap(async (req, res) => {
   res.json({ inserted });
 }));
 
-app.put("/donors/:id", requireAuth, wrap(async (req, res) => {
+app.put("/donors/:id", requireAuth, checkWriteAccess, wrap(async (req, res) => {
   const { name, email, phone, status, stage, tags, notes, city, state, zip } = req.body;
   if (!name) return res.status(400).json({ error: "Name required" });
 
@@ -1093,7 +1094,7 @@ app.post("/donors/:id/interactions", requireAuth, wrap(async (req, res) => {
 }));
 
 // ── Gifts ──────────────────────────────────────────────────────────────────
-app.post("/donors/:id/gifts", requireAuth, wrap(async (req, res) => {
+app.post("/donors/:id/gifts", requireAuth, checkWriteAccess, wrap(async (req, res) => {
   const { amount, date, type, campaign, notes } = req.body;
   if (!amount || isNaN(Number(amount)) || Number(amount) <= 0) {
     return res.status(400).json({ error: "A positive amount is required" });
@@ -1356,7 +1357,7 @@ app.get("/grants", requireAuth, wrap(async (req, res) => {
   res.json(grants.map(g => ({ ...g, history: JSON.parse(g.history || "[]") })));
 }));
 
-app.post("/grants", requireAuth, wrap(async (req, res) => {
+app.post("/grants", requireAuth, checkWriteAccess, wrap(async (req, res) => {
   const { funder, program, amount, status, deadline, reportDue, officer, notes } = req.body;
   if (!funder) return res.status(400).json({ error: "Funder required" });
 
@@ -1370,7 +1371,7 @@ app.post("/grants", requireAuth, wrap(async (req, res) => {
   res.status(201).json(rows[0]);
 }));
 
-app.put("/grants/:id", requireAuth, wrap(async (req, res) => {
+app.put("/grants/:id", requireAuth, checkWriteAccess, wrap(async (req, res) => {
   const { funder, program, amount, received, status, deadline, reportDue, officer, notes, description, requirements } = req.body;
   if (!funder) return res.status(400).json({ error: "Funder required" });
 
@@ -3652,9 +3653,33 @@ app.post("/donors/:id/custom-fields", requireAuth, wrap(async (req, res) => {
   res.json({ ok: true });
 }));
 
+// ── Billing helpers ────────────────────────────────────────────────────────
+function getOrgAccessState(org) {
+  const status = org.subscription_status || "trialing";
+  const now = Date.now();
+  const graceUntil = org.grace_until ? new Date(org.grace_until).getTime() : null;
+  if (status === "active" || status === "trialing") return "full";
+  if (status === "past_due" || status === "canceled" || status === "cancelled") {
+    if (graceUntil && now < graceUntil) return "warning";
+    return "read_only";
+  }
+  if (status === "trial_expired") return "read_only";
+  return "full";
+}
+
+async function checkWriteAccess(req, res, next) {
+  try {
+    const orgs = await query("SELECT subscription_status, grace_until FROM orgs WHERE id=?", [req.user.orgId]);
+    if (orgs.length && getOrgAccessState(orgs[0]) === "read_only") {
+      return res.status(402).json({ error: "subscription_required", message: "Your account is in read-only mode. Reactivate your subscription to make changes." });
+    }
+  } catch (e) { console.error("checkWriteAccess error:", e); }
+  next();
+}
+
 // ── Billing ────────────────────────────────────────────────────────────────
 app.get("/billing/status", requireAuth, wrap(async (req, res) => {
-  const orgs = await query("SELECT plan, subscription_status, trial_ends_at, stripe_customer_id FROM orgs WHERE id=?", [req.user.orgId]);
+  const orgs = await query("SELECT plan, subscription_status, trial_ends_at, stripe_customer_id, grace_until, current_period_end FROM orgs WHERE id=?", [req.user.orgId]);
   if (!orgs.length) return res.status(404).json({ error: "Org not found" });
   const org = orgs[0];
   const trialEndsAt = org.trial_ends_at ? new Date(org.trial_ends_at) : null;
@@ -3664,6 +3689,9 @@ app.get("/billing/status", requireAuth, wrap(async (req, res) => {
     subscriptionStatus: org.subscription_status || "trialing",
     trialEndsAt: org.trial_ends_at,
     trialDaysLeft,
+    graceUntil: org.grace_until,
+    currentPeriodEnd: org.current_period_end,
+    accessState: getOrgAccessState(org),
   });
 }));
 
@@ -3725,22 +3753,47 @@ app.post("/billing/webhook", express.raw({ type: "application/json" }), async (r
     if (event.type === "checkout.session.completed") {
       const session = event.data.object;
       if (session.metadata?.orgId) {
+        let periodEnd = null;
+        if (session.subscription && stripe) {
+          try {
+            const sub = await stripe.subscriptions.retrieve(session.subscription);
+            periodEnd = sub.current_period_end ? new Date(sub.current_period_end * 1000).toISOString() : null;
+          } catch {}
+        }
         await run(
-          "UPDATE orgs SET plan=?, subscription_status='active', stripe_subscription_id=? WHERE id=?",
-          [session.metadata.plan || "growth", session.subscription, session.metadata.orgId]
+          "UPDATE orgs SET plan=?, subscription_status='active', stripe_subscription_id=?, current_period_end=?, grace_until=NULL WHERE id=?",
+          [session.metadata.plan || "growth", session.subscription, periodEnd, session.metadata.orgId]
+        );
+      }
+    } else if (event.type === "invoice.payment_succeeded") {
+      const inv = event.data.object;
+      const orgRow = await query("SELECT id FROM orgs WHERE stripe_customer_id=?", [inv.customer]);
+      if (orgRow.length) {
+        const periodEnd = inv.lines?.data?.[0]?.period?.end
+          ? new Date(inv.lines.data[0].period.end * 1000).toISOString()
+          : null;
+        await run(
+          "UPDATE orgs SET subscription_status='active', current_period_end=?, grace_until=NULL WHERE id=?",
+          [periodEnd, orgRow[0].id]
+        );
+      }
+    } else if (event.type === "invoice.payment_failed") {
+      const inv = event.data.object;
+      const orgRow = await query("SELECT id FROM orgs WHERE stripe_customer_id=?", [inv.customer]);
+      if (orgRow.length) {
+        await run(
+          "UPDATE orgs SET subscription_status='past_due', grace_until=NOW() + INTERVAL '7 days' WHERE id=?",
+          [orgRow[0].id]
         );
       }
     } else if (event.type === "customer.subscription.deleted") {
       const sub = event.data.object;
       const orgId = sub.metadata?.orgId;
       if (orgId) {
-        await run("UPDATE orgs SET subscription_status='cancelled', plan='trial' WHERE id=?", [orgId]);
-      }
-    } else if (event.type === "invoice.payment_failed") {
-      const inv = event.data.object;
-      const orgRow = await query("SELECT id FROM orgs WHERE stripe_customer_id=?", [inv.customer]);
-      if (orgRow.length) {
-        await run("UPDATE orgs SET subscription_status='past_due' WHERE id=?", [orgRow[0].id]);
+        await run(
+          "UPDATE orgs SET subscription_status='canceled', plan='trial', grace_until=NOW() + INTERVAL '3 days' WHERE id=?",
+          [orgId]
+        );
       }
     }
   } catch (err) {
@@ -4539,5 +4592,17 @@ setInterval(() => {
 // Run Gmail sync on startup (10s delay) then every 15 min
 setTimeout(() => syncAllGmail().catch(console.error), 10000);
 setInterval(() => syncAllGmail().catch(console.error), 15 * 60 * 1000);
+
+// Check trial expiry on startup (15s delay) then every 6 hours
+async function checkTrialExpiry() {
+  try {
+    await run(
+      `UPDATE orgs SET subscription_status = 'trial_expired' WHERE subscription_status = 'trialing' AND trial_ends_at IS NOT NULL AND trial_ends_at < NOW()`,
+      []
+    );
+  } catch (e) { console.error("checkTrialExpiry error:", e); }
+}
+setTimeout(() => checkTrialExpiry(), 15000);
+setInterval(() => checkTrialExpiry(), 6 * 60 * 60 * 1000);
 
 module.exports = app;

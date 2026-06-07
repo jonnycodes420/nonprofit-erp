@@ -135,7 +135,12 @@ function AppShell() {
   const tasksDue=data.tasks.filter(t=>!t.done&&t.priority==="high").length;
   const orgName=auth?.org?.name||data.org?.name||"Steward";
 
-  const showTrialBanner=!bannerDismissed&&billing?.subscriptionStatus==="trialing"&&billing?.trialDaysLeft<=14;
+  const accessState=billing?.accessState||"full";
+  const isReadOnly=accessState==="read_only";
+  const subStatus=billing?.subscriptionStatus;
+  const showTrialBanner=!bannerDismissed&&subStatus==="trialing"&&billing?.trialDaysLeft<=14;
+  const showWarningBanner=accessState==="warning";
+  const showReadOnlyBanner=isReadOnly;
 
   async function openPortal(){
     try{
@@ -184,17 +189,34 @@ function AppShell() {
       })}
     </div>
 
-    {showTrialBanner&&<div style={{background:"#1a2e1f",borderBottom:"1px solid #0d5c3a",padding:"9px 24px",display:"flex",alignItems:"center",gap:12,fontSize:13,color:"#8fa896"}}>
+    {showReadOnlyBanner&&<div style={{background:"#7f1d1d",borderBottom:"1px solid #991b1b",padding:"9px 24px",display:"flex",alignItems:"center",gap:12,fontSize:13,color:"#fca5a5",flexWrap:"wrap"}}>
+      <span>🔒</span>
+      <span style={{flex:1,minWidth:200}}><strong style={{color:"#fef2f2"}}>Your account is read-only.</strong> {subStatus==="trial_expired"?"Your free trial has ended.":"Your subscription has ended."} Export your data or reactivate to continue.</span>
+      <button onClick={()=>setTab("settings")} style={{background:"none",border:"1px solid #fca5a5",borderRadius:8,color:"#fca5a5",fontSize:12,fontWeight:700,cursor:"pointer",padding:"4px 12px",whiteSpace:"nowrap"}}>Export data →</button>
+      <button onClick={openPortal} style={{background:"#fef2f2",border:"none",borderRadius:8,color:"#7f1d1d",fontSize:12,fontWeight:700,cursor:"pointer",padding:"4px 12px",whiteSpace:"nowrap"}}>Reactivate →</button>
+    </div>}
+    {!showReadOnlyBanner&&showWarningBanner&&subStatus==="past_due"&&<div style={{background:"#451a03",borderBottom:"1px solid #92400e",padding:"9px 24px",display:"flex",alignItems:"center",gap:12,fontSize:13,color:"#fbbf24",flexWrap:"wrap"}}>
+      <span>⚠️</span>
+      <span style={{flex:1,minWidth:200}}><strong style={{color:"#fef3c7"}}>Your last payment didn't go through.</strong> Update your payment method to keep Steward active.</span>
+      <button onClick={openPortal} style={{background:"#f59e0b",border:"none",borderRadius:8,color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer",padding:"4px 12px",whiteSpace:"nowrap"}}>Update payment →</button>
+    </div>}
+    {!showReadOnlyBanner&&showWarningBanner&&(subStatus==="canceled"||subStatus==="cancelled")&&<div style={{background:"#451a03",borderBottom:"1px solid #92400e",padding:"9px 24px",display:"flex",alignItems:"center",gap:12,fontSize:13,color:"#fbbf24",flexWrap:"wrap"}}>
+      <span>⚠️</span>
+      <span style={{flex:1,minWidth:200}}><strong style={{color:"#fef3c7"}}>Your subscription is canceled.</strong> You have until {billing?.graceUntil?new Date(billing.graceUntil).toLocaleDateString("en-US",{month:"short",day:"numeric"}):"soon"} to export your data or reactivate.</span>
+      <button onClick={()=>setTab("settings")} style={{background:"none",border:"1px solid #fbbf24",borderRadius:8,color:"#fbbf24",fontSize:12,fontWeight:700,cursor:"pointer",padding:"4px 12px",whiteSpace:"nowrap"}}>Export data</button>
+      <button onClick={openPortal} style={{background:"#f59e0b",border:"none",borderRadius:8,color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer",padding:"4px 12px",whiteSpace:"nowrap"}}>Reactivate →</button>
+    </div>}
+    {showTrialBanner&&<div style={{background:billing.trialDaysLeft<=3?"#451a03":"#1a2e1f",borderBottom:`1px solid ${billing.trialDaysLeft<=3?"#92400e":"#0d5c3a"}`,padding:"9px 24px",display:"flex",alignItems:"center",gap:12,fontSize:13,color:billing.trialDaysLeft<=3?"#fbbf24":"#8fa896"}}>
       <span>⏳</span>
       <span><strong style={{color:"#f0ede6"}}>{billing.trialDaysLeft} days</strong> left in your trial —</span>
-      <button onClick={openPortal} style={{background:"none",border:"none",color:"#c9a84c",fontSize:13,fontWeight:700,cursor:"pointer",padding:0,textDecoration:"underline"}}>Upgrade now →</button>
+      <button onClick={openPortal} style={{background:"none",border:"none",color:billing.trialDaysLeft<=3?"#f59e0b":"#c9a84c",fontSize:13,fontWeight:700,cursor:"pointer",padding:0,textDecoration:"underline"}}>{billing.trialDaysLeft<=3?"Choose a plan →":"Upgrade now →"}</button>
       <button onClick={()=>setBannerDismissed(true)} style={{marginLeft:"auto",background:"transparent",border:"none",color:"#3d5245",cursor:"pointer",fontSize:16,padding:"0 4px",lineHeight:1}}>✕</button>
     </div>}
 
     <div className="app-content" style={{flex:1,padding:"20px 24px 28px 24px",maxWidth:1400,width:"100%",margin:"0 auto",boxSizing:"border-box"}}>
-      {tab==="dashboard"&&<Dashboard data={data} setData={setData} onNavigate={setTab}/>}
-      {tab==="donors"&&<Donors data={data} setData={setData}/>}
-      {tab==="grants"&&<Grants data={data} setData={setData}/>}
+      {tab==="dashboard"&&<Dashboard data={data} setData={setData} onNavigate={setTab} isReadOnly={isReadOnly}/>}
+      {tab==="donors"&&<Donors data={data} setData={setData} isReadOnly={isReadOnly}/>}
+      {tab==="grants"&&<Grants data={data} setData={setData} isReadOnly={isReadOnly}/>}
       {tab==="communications"&&<Communications data={data}/>}
       {tab==="events"&&<Events data={data}/>}
       {tab==="volunteers"&&<Volunteers data={data} setData={setData}/>}
