@@ -32,7 +32,6 @@ function makeOAuth2Client() {
 const app = express();
 
 app.use(cors({ origin: process.env.CORS_ORIGIN || "*" }));
-if (process.env.SENTRY_DSN) app.use(Sentry.Handlers.requestHandler());
 
 // Stripe webhook must receive raw body — register BEFORE express.json()
 app.post("/stripe/webhook", express.raw({ type: "application/json" }), async (req, res) => {
@@ -4562,7 +4561,7 @@ app.use((req, res) => {
 });
 
 // ── Global error handler ───────────────────────────────────────────────────
-if (process.env.SENTRY_DSN) app.use(Sentry.Handlers.errorHandler());
+if (process.env.SENTRY_DSN) Sentry.setupExpressErrorHandler(app);
 // eslint-disable-next-line no-unused-vars
 app.use((err, req, res, next) => {
   console.error(err);
