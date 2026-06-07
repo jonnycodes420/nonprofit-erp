@@ -41,6 +41,10 @@ export function Settings({auth,logout}) {
   const [gmailSyncing,setGmailSyncing]=useState(false);
   const [gmailToast,setGmailToast]=useState("");
 
+  const [sampleStatus,setSampleStatus]=useState(null);
+  const [sampleLoading,setSampleLoading]=useState(false);
+  const [sampleClearing,setSampleClearing]=useState(false);
+
   useEffect(()=>{
     apiFetch("/org/team").then(setTeam).catch(()=>{});
     apiFetch("/stripe/status").then(setStripe).catch(()=>{});
@@ -50,6 +54,7 @@ export function Settings({auth,logout}) {
     }
     apiFetch("/custom-fields").then(setCustomFields).catch(()=>{});
     apiFetch("/gmail/status").then(setGmailStatus).catch(()=>{});
+    apiFetch("/org/sample-data-status").then(setSampleStatus).catch(()=>{});
 
     // Show success toast if redirected back after OAuth connect
     const params=new URLSearchParams(window.location.search);
@@ -155,6 +160,26 @@ export function Settings({auth,logout}) {
     navigator.clipboard.writeText(embedCode).then(()=>{setEmbedCopied(true);setTimeout(()=>setEmbedCopied(false),2500);});
   }
 
+  async function loadSampleData(){
+    setSampleLoading(true);
+    try{
+      await apiFetch("/org/load-sample-data",{method:"POST"});
+      const s=await apiFetch("/org/sample-data-status");
+      setSampleStatus(s);
+      window.location.reload();
+    }catch(e){ alert(e.message||"Failed to load sample data"); setSampleLoading(false); }
+  }
+
+  async function clearSampleData(){
+    if(!window.confirm("Remove all sample data? This cannot be undone."))return;
+    setSampleClearing(true);
+    try{
+      await apiFetch("/org/clear-sample-data",{method:"POST"});
+      setSampleStatus({hasSampleData:false,sampleDonorCount:0});
+      window.location.reload();
+    }catch(e){ alert(e.message||"Failed to clear sample data"); setSampleClearing(false); }
+  }
+
   async function connectStripe(){
     setStripeLoading(true);
     try{
@@ -245,6 +270,30 @@ export function Settings({auth,logout}) {
   return(
     <div style={{display:"flex",flexDirection:"column",gap:20}}>
       <PageTitle main="Workspace" accent="settings."/>
+
+      {sampleStatus&&(
+        <div style={{background:T.white,border:"1px solid "+T.bg3,borderLeft:"3px solid #c9a84c",borderRadius:16,padding:"20px 24px"}}>
+          <SectionLabel>Demo Data</SectionLabel>
+          <div style={{fontSize:13,color:T.ink3,marginBottom:14,lineHeight:1.6}}>
+            Instantly populate this workspace with a realistic sample dataset — 25 donors across every stage, gifts, grants, events, campaigns, and tasks — so you can explore every feature without entering real data first.
+          </div>
+          {sampleStatus.hasSampleData?(
+            <div style={{display:"flex",alignItems:"center",gap:14,flexWrap:"wrap"}}>
+              <span style={{fontSize:13,color:T.ink3,background:T.bg,borderRadius:8,padding:"6px 12px"}}>{sampleStatus.sampleDonorCount} sample donors loaded</span>
+              <button onClick={clearSampleData} disabled={sampleClearing}
+                style={{background:"#fee2e2",color:"#dc2626",border:"1px solid #fca5a5",borderRadius:8,padding:"8px 16px",fontSize:13,fontWeight:600,cursor:sampleClearing?"not-allowed":"pointer",opacity:sampleClearing?0.7:1}}>
+                {sampleClearing?"Clearing…":"Clear sample data"}
+              </button>
+            </div>
+          ):(
+            <button onClick={loadSampleData} disabled={sampleLoading}
+              style={{background:"#c9a84c",color:"#fff",border:"none",borderRadius:8,padding:"10px 20px",fontSize:13,fontWeight:700,cursor:sampleLoading?"not-allowed":"pointer",opacity:sampleLoading?0.7:1}}>
+              {sampleLoading?"Loading sample data…":"Load sample data"}
+            </button>
+          )}
+        </div>
+      )}
+
       <div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:16,padding:"24px 28px"}}>
         <SectionLabel>Your Account</SectionLabel>
         <div style={{display:"flex",alignItems:"center",gap:16,marginBottom:20}}>

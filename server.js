@@ -523,6 +523,273 @@ app.patch("/orgs/:id", requireAuth, wrap(async (req, res) => {
   res.json(orgs[0]);
 }));
 
+// ── Sample data ────────────────────────────────────────────────────────────
+app.get("/org/sample-data-status", requireAuth, wrap(async (req, res) => {
+  const rows = await query(
+    "SELECT COUNT(*) as cnt FROM donors WHERE org_id=? AND is_sample=true",
+    [req.user.orgId]
+  );
+  const sampleDonorCount = parseInt(rows[0].cnt || 0);
+  res.json({ hasSampleData: sampleDonorCount > 0, sampleDonorCount });
+}));
+
+app.post("/org/load-sample-data", requireAuth, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  const userId = req.user.userId;
+
+  const existing = await query(
+    "SELECT COUNT(*) as cnt FROM donors WHERE org_id=? AND (is_sample IS NULL OR is_sample=false)",
+    [orgId]
+  );
+  if (parseInt(existing[0].cnt) > 5) {
+    return res.status(400).json({ error: "Org already has data" });
+  }
+
+  const userRows = await query("SELECT name FROM users WHERE id=?", [userId]);
+  const userName = userRows[0]?.name || "Sample User";
+
+  const today = new Date();
+  function dAgo(n) {
+    const d = new Date(today);
+    d.setDate(d.getDate() - n);
+    return d.toISOString().split("T")[0];
+  }
+
+  // Insert 3 sample funds
+  const fGen = "fund_smpl_general", fEdu = "fund_smpl_edu", fCap = "fund_smpl_capital";
+  await run(`INSERT INTO fin_funds (id,org_id,name,description,restricted,is_sample) VALUES (?,?,?,?,false,true) ON CONFLICT (id) DO NOTHING`,
+    [fGen, orgId, "General Operating", "Unrestricted operating support"]);
+  await run(`INSERT INTO fin_funds (id,org_id,name,description,restricted,is_sample) VALUES (?,?,?,?,true,true) ON CONFLICT (id) DO NOTHING`,
+    [fEdu, orgId, "Education Program", "Restricted to youth education programs"]);
+  await run(`INSERT INTO fin_funds (id,org_id,name,description,restricted,is_sample) VALUES (?,?,?,?,true,true) ON CONFLICT (id) DO NOTHING`,
+    [fCap, orgId, "Capital Campaign", "New facility construction"]);
+
+  // 25 donors across all 6 stages, all assigned to current user
+  const donors = [
+    {id:"smpl_d1",name:"Margaret Whitfield",email:"mwhitfield@example.com",phone:"212-555-0101",stage:"steward",total:485000,last:150000,lastGift:dAgo(45),giftCount:12,city:"New York",state:"NY",zip:"10021"},
+    {id:"smpl_d2",name:"James & Carol Thorne",email:"thornegiving@example.com",phone:"617-555-0102",stage:"steward",total:225000,last:75000,lastGift:dAgo(60),giftCount:8,city:"Boston",state:"MA",zip:"02116"},
+    {id:"smpl_d3",name:"David Okonkwo",email:"dokonkwo@example.com",phone:"312-555-0103",stage:"solicit",total:95000,last:50000,lastGift:dAgo(180),giftCount:5,city:"Chicago",state:"IL",zip:"60611"},
+    {id:"smpl_d4",name:"Patricia Hernandez",email:"phernandez@example.com",phone:"415-555-0104",stage:"solicit",total:42000,last:20000,lastGift:dAgo(120),giftCount:4,city:"San Francisco",state:"CA",zip:"94105"},
+    {id:"smpl_d5",name:"Robert Chen",email:"rchen@example.com",phone:"202-555-0105",stage:"solicit",total:58000,last:25000,lastGift:dAgo(90),giftCount:6,city:"Washington",state:"DC",zip:"20001"},
+    {id:"smpl_d6",name:"Linda Abramowitz",email:"labramowitz@example.com",phone:"212-555-0106",stage:"cultivate",total:28000,last:10000,lastGift:dAgo(210),giftCount:3,city:"New York",state:"NY",zip:"10022"},
+    {id:"smpl_d7",name:"Thomas Nakamura",email:"tnakamura@example.com",phone:"310-555-0107",stage:"cultivate",total:15000,last:5000,lastGift:dAgo(300),giftCount:2,city:"Los Angeles",state:"CA",zip:"90025"},
+    {id:"smpl_d8",name:"Sarah Obi",email:"sobi@example.com",phone:"512-555-0108",stage:"cultivate",total:8500,last:3500,lastGift:dAgo(400),giftCount:3,city:"Austin",state:"TX",zip:"78701"},
+    {id:"smpl_d9",name:"Michael Russo",email:"mrusso@example.com",phone:"305-555-0109",stage:"cultivate",total:12000,last:4000,lastGift:dAgo(350),giftCount:2,city:"Miami",state:"FL",zip:"33101"},
+    {id:"smpl_d10",name:"Eleanor Park",email:"epark@example.com",phone:"206-555-0110",stage:"cultivate",total:6000,last:2000,lastGift:dAgo(500),giftCount:3,city:"Seattle",state:"WA",zip:"98101"},
+    {id:"smpl_d11",name:"William Foster",email:"wfoster@example.com",phone:"404-555-0111",stage:"qualify",total:4000,last:1500,lastGift:dAgo(450),giftCount:2,city:"Atlanta",state:"GA",zip:"30303"},
+    {id:"smpl_d12",name:"Amanda Kowalski",email:"akowalski@example.com",phone:"303-555-0112",stage:"qualify",total:2500,last:1000,lastGift:dAgo(600),giftCount:2,city:"Denver",state:"CO",zip:"80202"},
+    {id:"smpl_d13",name:"Kevin Patel",email:"kpatel@example.com",phone:"480-555-0113",stage:"qualify",total:1800,last:800,lastGift:dAgo(700),giftCount:2,city:"Phoenix",state:"AZ",zip:"85001"},
+    {id:"smpl_d14",name:"Nancy Williams",email:"nwilliams@example.com",phone:"614-555-0114",stage:"qualify",total:900,last:500,lastGift:dAgo(800),giftCount:1,city:"Columbus",state:"OH",zip:"43215"},
+    {id:"smpl_d15",name:"Gregory Martin",email:"gmartin@example.com",phone:"215-555-0115",stage:"qualify",total:1200,last:600,lastGift:dAgo(550),giftCount:2,city:"Philadelphia",state:"PA",zip:"19103"},
+    {id:"smpl_d16",name:"Priya Sharma",email:"psharma@example.com",phone:"617-555-0116",stage:"prospect",total:0,last:null,lastGift:null,giftCount:0,city:"Cambridge",state:"MA",zip:"02139"},
+    {id:"smpl_d17",name:"Christopher Hughes",email:"chughes@example.com",phone:"502-555-0117",stage:"prospect",total:0,last:null,lastGift:null,giftCount:0,city:"Louisville",state:"KY",zip:"40202"},
+    {id:"smpl_d18",name:"Diana Moss",email:"dmoss@example.com",phone:"901-555-0118",stage:"prospect",total:0,last:null,lastGift:null,giftCount:0,city:"Memphis",state:"TN",zip:"38101"},
+    {id:"smpl_d19",name:"Frank Delgado",email:"fdelgado@example.com",phone:"505-555-0119",stage:"prospect",total:0,last:null,lastGift:null,giftCount:0,city:"Albuquerque",state:"NM",zip:"87101"},
+    {id:"smpl_d20",name:"Helen Kim",email:"hkim@example.com",phone:"503-555-0120",stage:"prospect",total:0,last:null,lastGift:null,giftCount:0,city:"Portland",state:"OR",zip:"97201"},
+    {id:"smpl_d21",name:"Arthur Blake",email:"ablake@example.com",phone:"212-555-0121",stage:"lapsed",total:35000,last:15000,lastGift:dAgo(800),giftCount:5,city:"New York",state:"NY",zip:"10001"},
+    {id:"smpl_d22",name:"Meredith Stone",email:"mstone@example.com",phone:"619-555-0122",stage:"lapsed",total:18000,last:8000,lastGift:dAgo(950),giftCount:3,city:"San Diego",state:"CA",zip:"92101"},
+    {id:"smpl_d23",name:"George Tremblay",email:"gtremblay@example.com",phone:"718-555-0123",stage:"lapsed",total:9000,last:3000,lastGift:dAgo(750),giftCount:4,city:"Brooklyn",state:"NY",zip:"11201"},
+    {id:"smpl_d24",name:"Beatrice Nguyen",email:"bnguyen@example.com",phone:"619-555-0124",stage:"lapsed",total:7500,last:2500,lastGift:dAgo(820),giftCount:3,city:"San Diego",state:"CA",zip:"92103"},
+    {id:"smpl_d25",name:"Oscar Campbell",email:"ocampbell@example.com",phone:"401-555-0125",stage:"lapsed",total:500,last:500,lastGift:dAgo(900),giftCount:1,city:"Providence",state:"RI",zip:"02903"},
+  ];
+
+  for (const d of donors) {
+    await run(
+      `INSERT INTO donors (id,org_id,name,email,phone,stage,total_giving,last_gift_amount,last_gift_date,gift_count,city,state,zip,assigned_to,assigned_to_name,is_sample)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,true) ON CONFLICT (id) DO NOTHING`,
+      [d.id,orgId,d.name,d.email,d.phone,d.stage,d.total,d.last,d.lastGift,d.giftCount,d.city,d.state,d.zip,userId,userName]
+    );
+  }
+
+  // Gifts for donors with giving history
+  for (const d of donors.filter(x => x.total > 0)) {
+    const n = d.id.replace("smpl_d","");
+    const fundId = d.stage==="steward" ? fEdu : fGen;
+    const method = (d.stage==="steward"||d.stage==="solicit") ? "check" : "credit_card";
+    await run(
+      `INSERT INTO gifts (id,org_id,donor_id,amount,date,type,fund_id,payment_method,is_sample) VALUES (?,?,?,?,?,?,?,?,true) ON CONFLICT (id) DO NOTHING`,
+      ["smpl_g"+n, orgId, d.id, d.last, d.lastGift, "cash", fundId, method]
+    );
+    await run(
+      `INSERT INTO fin_transactions (id,org_id,date,description,vendor_donor,amount,type,account_id,fund_id,is_sample) VALUES (?,?,?,?,?,?,?,?,?,true) ON CONFLICT (id) DO NOTHING`,
+      ["smpl_ftx"+n, orgId, d.lastGift, `Gift — ${d.name}`, d.name, d.last, "income", null, fundId]
+    );
+  }
+  // Additional historical gifts for top donors
+  const oldGifts = [
+    {id:"smpl_g1b",donor:"smpl_d1",amount:125000,date:dAgo(400),fund:fEdu,method:"check"},
+    {id:"smpl_g1c",donor:"smpl_d1",amount:100000,date:dAgo(750),fund:fCap,method:"check"},
+    {id:"smpl_g2b",donor:"smpl_d2",amount:60000,date:dAgo(390),fund:fGen,method:"check"},
+    {id:"smpl_g3b",donor:"smpl_d3",amount:25000,date:dAgo(540),fund:fEdu,method:"check"},
+    {id:"smpl_g21b",donor:"smpl_d21",amount:12000,date:dAgo(400),fund:fGen,method:"check"},
+  ];
+  for (const g of oldGifts) {
+    await run(
+      `INSERT INTO gifts (id,org_id,donor_id,amount,date,type,fund_id,payment_method,is_sample) VALUES (?,?,?,?,?,?,?,?,true) ON CONFLICT (id) DO NOTHING`,
+      [g.id,orgId,g.donor,g.amount,g.date,"cash",g.fund,g.method]
+    );
+    await run(
+      `INSERT INTO fin_transactions (id,org_id,date,description,vendor_donor,amount,type,account_id,fund_id,is_sample) VALUES (?,?,?,?,?,?,?,?,?,true) ON CONFLICT (id) DO NOTHING`,
+      [g.id+"_ftx",orgId,g.date,`Historical gift`,donors.find(d=>d.id===g.donor)?.name||"",g.amount,"income",null,g.fund]
+    );
+  }
+
+  // Expense transactions to make Finance Overview show P&L
+  const expenses = [
+    {id:"smpl_exp1",date:dAgo(30),desc:"Program staff salaries",vendor:"Payroll",amount:28000,fund:fGen},
+    {id:"smpl_exp2",date:dAgo(30),desc:"Facilities & rent",vendor:"Property Management",amount:8500,fund:fGen},
+    {id:"smpl_exp3",date:dAgo(60),desc:"Arts supplies & materials",vendor:"Dick Blick Art Materials",amount:3200,fund:fEdu},
+    {id:"smpl_exp4",date:dAgo(60),desc:"Program staff salaries",vendor:"Payroll",amount:28000,fund:fGen},
+    {id:"smpl_exp5",date:dAgo(90),desc:"Annual Spring Gala event costs",vendor:"The Plaza Hotel",amount:42000,fund:fGen},
+    {id:"smpl_exp6",date:dAgo(15),desc:"Marketing & communications",vendor:"Design Agency",amount:4800,fund:fGen},
+  ];
+  for (const e of expenses) {
+    await run(
+      `INSERT INTO fin_transactions (id,org_id,date,description,vendor_donor,amount,type,account_id,fund_id,is_sample) VALUES (?,?,?,?,?,?,?,?,?,true) ON CONFLICT (id) DO NOTHING`,
+      [e.id,orgId,e.date,e.desc,e.vendor,e.amount,"expense",null,e.fund]
+    );
+  }
+
+  // 4 grants
+  const grants = [
+    {id:"smpl_gr1",funder:"W.K. Kellogg Foundation",program:"Arts Education Grant",amount:120000,status:"submitted",deadline:dAgo(-45),notes:"Annual renewal - strong history with this funder. Proposal submitted on time."},
+    {id:"smpl_gr2",funder:"MacArthur Foundation",program:"Enduring Commitment Grant",amount:250000,status:"prospecting",deadline:dAgo(-120),notes:"LOI approved. Invited to submit full proposal. Strongest funding prospect for capital campaign."},
+    {id:"smpl_gr3",funder:"NYC Dept. of Cultural Affairs",program:"Cultural Development Fund",amount:75000,status:"draft",deadline:dAgo(-200),notes:"LOI drafted. Awaiting program officer feedback before submitting."},
+    {id:"smpl_gr4",funder:"National Endowment for the Arts",program:"Arts Education Partnership",amount:50000,status:"awarded",deadline:dAgo(90),notes:"Year 2 of 3-year grant. Mid-year report due in 60 days. On track."},
+  ];
+  for (const g of grants) {
+    await run(
+      `INSERT INTO grants (id,org_id,funder,program,amount,status,deadline,notes,is_sample) VALUES (?,?,?,?,?,?,?,?,true) ON CONFLICT (id) DO NOTHING`,
+      [g.id,orgId,g.funder,g.program,g.amount,g.status,g.deadline,g.notes]
+    );
+  }
+
+  // 2 events
+  const ev1 = "smpl_ev1", ev2 = "smpl_ev2";
+  await run(
+    `INSERT INTO events (id,org_id,name,event_type,date,end_date,location,description,capacity,status,revenue,cost,is_sample) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,true) ON CONFLICT (id) DO NOTHING`,
+    [ev1,orgId,"Annual Spring Gala","gala",dAgo(30),dAgo(30),"The Plaza Hotel, NYC","Our signature annual fundraising gala celebrating 10 years of impact.",200,"completed",185000,42000]
+  );
+  await run(
+    `INSERT INTO events (id,org_id,name,event_type,date,end_date,location,description,capacity,status,revenue,cost,is_sample) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,true) ON CONFLICT (id) DO NOTHING`,
+    [ev2,orgId,"Fall Cultivation Dinner","cultivation",dAgo(-60),dAgo(-60),"Private Dining Room, One World Trade","Intimate dinner for prospective major donors.",30,"upcoming",0,8500]
+  );
+  // Gala attendees
+  const galaGuests = [
+    {aId:"smpl_ea1",dId:"smpl_d1",gift:5000},
+    {aId:"smpl_ea2",dId:"smpl_d2",gift:2500},
+    {aId:"smpl_ea3",dId:"smpl_d3",gift:1000},
+    {aId:"smpl_ea4",dId:"smpl_d5",gift:1000},
+    {aId:"smpl_ea5",dId:"smpl_d6",gift:500},
+  ];
+  for (const a of galaGuests) {
+    const dn = donors.find(d=>d.id===a.dId);
+    if (!dn) continue;
+    await run(
+      `INSERT INTO event_attendees (id,event_id,org_id,donor_id,name,email,status,gift_amount,is_sample) VALUES (?,?,?,?,?,?,?,?,true) ON CONFLICT DO NOTHING`,
+      [a.aId,ev1,orgId,a.dId,dn.name,dn.email,"attended",a.gift]
+    );
+  }
+
+  // 1 email campaign
+  await run(
+    `INSERT INTO campaigns (id,org_id,name,subject,body,status,briefing,goal_amount,raised_amount,start_date,end_date,is_sample) VALUES (?,?,?,?,?,?,?,?,?,?,?,true) ON CONFLICT (id) DO NOTHING`,
+    ["smpl_camp1",orgId,"Year-End Giving Appeal","Make a difference before December 31st",
+     "Dear {{first_name}},\n\nAs the year draws to a close, we reflect on the incredible impact your support has made possible. This year, our students performed on stages across New York City, received 47 scholarships, and logged over 12,000 hours of instruction.\n\nYour gift today — doubled by a board matching challenge — will fund another year of transformative programming.\n\nWith gratitude,\n{{user_name}}",
+     "sent",
+     "Lead with the 3 scholarship recipient stories. Emphasize the 2:1 board match — expires Dec 31. Subject line A/B: test urgency vs. impact angle. Send to all active donors + lapsed within 2 years.",
+     200000,142000,dAgo(45),dAgo(-20)]
+  );
+
+  // 15 interactions
+  const interactions = [
+    {id:"smpl_i1",donor:"smpl_d1",type:"meeting",note:"Stewardship lunch at Per Se. Discussed Capital Campaign leadership gift opportunity. Very enthusiastic about naming the rehearsal hall. Will bring husband to site visit next month.",date:dAgo(15)},
+    {id:"smpl_i2",donor:"smpl_d1",type:"call",note:"Called to thank for $150k Annual Fund renewal. She mentioned interest in an endowed scholarship. Will follow up with proposal.",date:dAgo(45)},
+    {id:"smpl_i3",donor:"smpl_d2",type:"meeting",note:"Portfolio review with James and Carol. Carol is particularly interested in scholarship outcomes. James wants to see facility plans for capital campaign.",date:dAgo(25)},
+    {id:"smpl_i4",donor:"smpl_d3",type:"call",note:"Discovery call — board member referral. David runs a PE firm, has significant capacity. Deep interest in youth workforce development. Scheduled site visit for next week.",date:dAgo(8)},
+    {id:"smpl_i5",donor:"smpl_d3",type:"meeting",note:"Site visit to after-school program. Deeply moved by student presentations. Ask conversation: mid-six figures for endowed scholarship. Strategy session with ED scheduled.",date:dAgo(45)},
+    {id:"smpl_i6",donor:"smpl_d4",type:"email",note:"Subject: Follow-up on proposal\n\nSent $20k proposal documents as discussed. Patricia confirmed receipt and said she would review with her financial advisor this month.",date:dAgo(30)},
+    {id:"smpl_i7",donor:"smpl_d5",type:"meeting",note:"Met at Kennedy Center gala. Strong connection to arts education mission — has given to 3 similar organizations. Invited to Fall Cultivation Dinner.",date:dAgo(18)},
+    {id:"smpl_i8",donor:"smpl_d6",type:"call",note:"Follow-up after proposal submission. Linda said the grants committee meets next month. Asked about a board matching gift opportunity.",date:dAgo(12)},
+    {id:"smpl_i9",donor:"smpl_d8",type:"event",note:"Attended Spring Gala with spouse. Made $3,500 gift at the event. Very engaged during student performances — a strong cultivation prospect.",date:dAgo(30)},
+    {id:"smpl_i10",donor:"smpl_d9",type:"call",note:"Cold outreach from board referral. Michael is a real estate developer, new to NYC philanthropy. Invited to a site visit. Very responsive.",date:dAgo(22)},
+    {id:"smpl_i11",donor:"smpl_d21",type:"email",note:"Subject: Reconnecting — 2 years since your last gift\n\nSent personalized re-engagement email. Arthur's company was recently acquired. New email confirmed by EA.",date:dAgo(40)},
+    {id:"smpl_i12",donor:"smpl_d22",type:"call",note:"Left voicemail — 3rd attempt this quarter. Meredith has not responded to outreach since her major gift 3 years ago. May need board member warm intro.",date:dAgo(60)},
+    {id:"smpl_i13",donor:"smpl_d1",type:"stewardship",note:"Mailed annual impact report with personal handwritten note. Highlighted the scholarship recipients she funded this year.",date:dAgo(20)},
+    {id:"smpl_i14",donor:"smpl_d2",type:"gift",note:"Received $75,000 annual fund gift via wire transfer. Acknowledgement letter sent same day.",date:dAgo(60)},
+    {id:"smpl_i15",donor:"smpl_d3",type:"meeting",note:"Strategy session with ED and board chair. Confirmed ask of $75,000 for named scholarship fund. Meeting scheduled for next week.",date:dAgo(5)},
+  ];
+  for (const i of interactions) {
+    await run(
+      `INSERT INTO interactions (id,org_id,donor_id,type,note,date,created_by,logged_by_name,is_sample) VALUES (?,?,?,?,?,?,?,?,true) ON CONFLICT (id) DO NOTHING`,
+      [i.id,orgId,i.donor,i.type,i.note,i.date,userId,userName]
+    );
+  }
+
+  // 5 tasks
+  const tasks = [
+    {id:"smpl_t1",title:"Call David Okonkwo — schedule formal ask meeting",priority:"high",due:dAgo(-3),donor:"smpl_d3"},
+    {id:"smpl_t2",title:"Draft MacArthur Foundation full proposal",priority:"high",due:dAgo(-14),donor:null},
+    {id:"smpl_t3",title:"Send Fall Cultivation Dinner invitations to Prospect-stage donors",priority:"medium",due:dAgo(-7),donor:null},
+    {id:"smpl_t4",title:"Prepare NEA mid-year grant report",priority:"medium",due:dAgo(-30),donor:null},
+    {id:"smpl_t5",title:"Follow up with Arthur Blake — re-engagement email",priority:"low",due:dAgo(-2),donor:"smpl_d21"},
+  ];
+  for (const t of tasks) {
+    await run(
+      `INSERT INTO tasks (id,org_id,title,due,priority,type,done,donor_id,is_sample) VALUES (?,?,?,?,?,?,0,?,true) ON CONFLICT (id) DO NOTHING`,
+      [t.id,orgId,t.title,t.due,t.priority,"donor",t.donor]
+    );
+  }
+
+  // 4 volunteers
+  const volunteers = [
+    {id:"smpl_v1",name:"Jessica Kim",email:"jkim@example.com",hours:42,skills:JSON.stringify(["Arts instruction","Curriculum design"]),notes:"Lead instructor for after-school program. Available Mon/Wed/Fri."},
+    {id:"smpl_v2",name:"Marco Alvarez",email:"malvarez@example.com",hours:28,skills:JSON.stringify(["Event planning","Marketing"]),notes:"Coordinates all signature events. Very reliable."},
+    {id:"smpl_v3",name:"Denise Okafor",email:"dokafor@example.com",hours:35,skills:JSON.stringify(["Youth mentorship","Career development"]),notes:"Board-matched mentor for senior students. Board candidate."},
+    {id:"smpl_v4",name:"Alex Brennan",email:"abrennan@example.com",hours:15,skills:JSON.stringify(["Audiovisual","IT support"]),notes:"Manages tech for performances and webinars."},
+  ];
+  for (const v of volunteers) {
+    await run(
+      `INSERT INTO volunteers (id,org_id,name,email,hours,skills,notes,is_sample) VALUES (?,?,?,?,?,?,?,true) ON CONFLICT (id) DO NOTHING`,
+      [v.id,orgId,v.name,v.email,v.hours,v.skills,v.notes]
+    );
+  }
+
+  // 5 board members
+  const board = [
+    {id:"smpl_bm1",name:"Catherine Worthington",role:"Chair",giving_level:"100,000+",committees:JSON.stringify(["Executive","Finance"])},
+    {id:"smpl_bm2",name:"Daniel Fontaine",role:"Treasurer",giving_level:"50,000+",committees:JSON.stringify(["Finance","Audit"])},
+    {id:"smpl_bm3",name:"Rosalind Chen",role:"Secretary",giving_level:"25,000+",committees:JSON.stringify(["Governance"])},
+    {id:"smpl_bm4",name:"Victor Osei",role:"Member",giving_level:"10,000+",committees:JSON.stringify(["Programs","Development"])},
+    {id:"smpl_bm5",name:"Sylvia Brennan",role:"Member",giving_level:"10,000+",committees:JSON.stringify(["Development"])},
+  ];
+  for (const b of board) {
+    await run(
+      `INSERT INTO board_members (id,org_id,name,role,giving_level,committees,is_sample) VALUES (?,?,?,?,?,?,true) ON CONFLICT (id) DO NOTHING`,
+      [b.id,orgId,b.name,b.role,b.giving_level,b.committees]
+    );
+  }
+
+  res.json({ ok: true, donorCount: donors.length });
+}));
+
+app.post("/org/clear-sample-data", requireAuth, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  await run("DELETE FROM event_attendees WHERE org_id=? AND is_sample=true", [orgId]).catch(()=>{});
+  await run("DELETE FROM events WHERE org_id=? AND is_sample=true", [orgId]).catch(()=>{});
+  await run("DELETE FROM interactions WHERE org_id=? AND is_sample=true", [orgId]).catch(()=>{});
+  await run("DELETE FROM gifts WHERE org_id=? AND is_sample=true", [orgId]).catch(()=>{});
+  await run("DELETE FROM fin_transactions WHERE org_id=? AND is_sample=true", [orgId]).catch(()=>{});
+  await run("DELETE FROM donors WHERE org_id=? AND is_sample=true", [orgId]).catch(()=>{});
+  await run("DELETE FROM grants WHERE org_id=? AND is_sample=true", [orgId]).catch(()=>{});
+  await run("DELETE FROM campaigns WHERE org_id=? AND is_sample=true", [orgId]).catch(()=>{});
+  await run("DELETE FROM tasks WHERE org_id=? AND is_sample=true", [orgId]).catch(()=>{});
+  await run("DELETE FROM volunteers WHERE org_id=? AND is_sample=true", [orgId]).catch(()=>{});
+  await run("DELETE FROM board_members WHERE org_id=? AND is_sample=true", [orgId]).catch(()=>{});
+  await run("DELETE FROM fin_funds WHERE org_id=? AND id IN (?,?,?)", [orgId,"fund_smpl_general","fund_smpl_edu","fund_smpl_capital"]).catch(()=>{});
+  res.json({ ok: true });
+}));
+
 // ── Team ───────────────────────────────────────────────────────────────────
 app.get("/org/team", requireAuth, wrap(async (req, res) => {
   const members = await query(

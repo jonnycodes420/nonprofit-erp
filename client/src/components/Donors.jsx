@@ -1882,13 +1882,30 @@ function AssignModal({donor,orgTeam,onSave,onClose}){
 }
 
 // ── Directory View ─────────────────────────────────────────────────────────
-function DirectoryView({donors,orgTeam,isAdmin,onSelectDonor,onAssign,stageFilter,setStageFilter,assigneeFilter,setAssigneeFilter}){
+function DirectoryView({donors,totalDonors,orgTeam,isAdmin,onSelectDonor,onAssign,stageFilter,setStageFilter,assigneeFilter,setAssigneeFilter,onLoadSampleData,sampleLoading,hasSampleData}){
   const filtered=donors
     .filter(d=>!stageFilter||d.stage===stageFilter)
     .filter(d=>!assigneeFilter||d.assignedTo===assigneeFilter);
   const sel={background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"7px 10px",color:T.ink,fontSize:12,outline:"none",cursor:"pointer"};
   const cols=["Donor","Stage","Owner","Lifetime","Last Gift","Score",...(isAdmin?[""]:[])]
   const colGrid="minmax(0,2fr) minmax(0,1fr) minmax(0,1fr) 120px 110px 60px"+(isAdmin?" 80px":"");
+
+  if(totalDonors===0&&!hasSampleData){
+    return(
+      <div style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:"60px 20px",gap:16,textAlign:"center"}}>
+        <div style={{fontSize:40,opacity:.35}}>♦</div>
+        <div style={{fontSize:18,fontWeight:700,color:"#1a1a1a",letterSpacing:"-0.01em"}}>No donors yet</div>
+        <div style={{fontSize:13,color:"#9ca3af",maxWidth:380,lineHeight:1.6}}>Add your first donor manually, import a CSV, or load a sample dataset to explore every feature with realistic data.</div>
+        {onLoadSampleData&&(
+          <button onClick={onLoadSampleData} disabled={sampleLoading}
+            style={{marginTop:8,background:"#c9a84c",color:"#fff",border:"none",borderRadius:8,padding:"11px 22px",fontSize:13,fontWeight:700,cursor:sampleLoading?"not-allowed":"pointer",opacity:sampleLoading?0.7:1}}>
+            {sampleLoading?"Loading…":"Load sample data"}
+          </button>
+        )}
+      </div>
+    );
+  }
+
   return(
     <div style={{display:"flex",flexDirection:"column",gap:10}}>
       <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
@@ -2143,6 +2160,8 @@ export function Donors({data,setData}){
   const[dirStage,setDirStage]=useState("");
   const[dirAssignee,setDirAssignee]=useState("");
   const[assignTarget,setAssignTarget]=useState(null);
+  const[sampleStatus,setSampleStatus]=useState(null);
+  const[sampleLoading,setSampleLoading]=useState(false);
 
   const filtered=data.donors
     .filter(d=>!search||(d.name+d.email).toLowerCase().includes(search.toLowerCase()))
@@ -2184,6 +2203,7 @@ export function Donors({data,setData}){
     });
 
   useEffect(()=>{
+    apiFetch("/org/sample-data-status").then(setSampleStatus).catch(()=>{});
     apiFetch("/org/team").then(setOrgTeam).catch(()=>{});
     apiFetch("/custom-fields").then(rows=>setCustomFields(Array.isArray(rows)?rows:[])).catch(()=>{});
     apiFetch("/donors/custom-field-values/all").then(rows=>{
@@ -2193,6 +2213,14 @@ export function Donors({data,setData}){
       setCfValues(map);
     }).catch(()=>{});
   },[]);
+
+  const loadSampleData=async()=>{
+    setSampleLoading(true);
+    try{
+      await apiFetch("/org/load-sample-data",{method:"POST"});
+      window.location.reload();
+    }catch(e){ alert(e.message||"Failed to load sample data"); setSampleLoading(false); }
+  };
 
   const handleAssign=(donorId,assignedToId,assignedToName)=>{
     setData(prev=>({...prev,donors:prev.donors.map(d=>d.id===donorId?{...d,assignedTo:assignedToId,assignedToName}:d)}));
@@ -2411,7 +2439,7 @@ export function Donors({data,setData}){
         </div>
       </Card>}
 
-      {view==="directory"&&<DirectoryView donors={filtered} orgTeam={orgTeam} isAdmin={isAdmin} onSelectDonor={d=>setSelected(d)} onAssign={d=>setAssignTarget(d)} stageFilter={dirStage} setStageFilter={setDirStage} assigneeFilter={dirAssignee} setAssigneeFilter={setDirAssignee}/>}
+      {view==="directory"&&<DirectoryView donors={filtered} totalDonors={data.donors.length} orgTeam={orgTeam} isAdmin={isAdmin} onSelectDonor={d=>setSelected(d)} onAssign={d=>setAssignTarget(d)} stageFilter={dirStage} setStageFilter={setDirStage} assigneeFilter={dirAssignee} setAssigneeFilter={setDirAssignee} onLoadSampleData={loadSampleData} sampleLoading={sampleLoading} hasSampleData={sampleStatus?.hasSampleData}/>}
 
       {view==="pipeline"&&(()=>{
         const myDonors=filtered.filter(d=>d.assignedTo===userId);

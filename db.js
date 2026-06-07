@@ -574,6 +574,20 @@ async function initSchema() {
       uploaded_at TIMESTAMPTZ DEFAULT NOW()
     )
   `);
+
+  // ── Sample data flag ──────────────────────────────────────────────────────
+  await pool.query(`ALTER TABLE donors ADD COLUMN IF NOT EXISTS is_sample BOOLEAN DEFAULT false`);
+  await pool.query(`ALTER TABLE gifts ADD COLUMN IF NOT EXISTS is_sample BOOLEAN DEFAULT false`);
+  await pool.query(`ALTER TABLE grants ADD COLUMN IF NOT EXISTS is_sample BOOLEAN DEFAULT false`);
+  await pool.query(`ALTER TABLE events ADD COLUMN IF NOT EXISTS is_sample BOOLEAN DEFAULT false`);
+  await pool.query(`ALTER TABLE event_attendees ADD COLUMN IF NOT EXISTS is_sample BOOLEAN DEFAULT false`);
+  await pool.query(`ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS is_sample BOOLEAN DEFAULT false`);
+  await pool.query(`ALTER TABLE interactions ADD COLUMN IF NOT EXISTS is_sample BOOLEAN DEFAULT false`);
+  await pool.query(`ALTER TABLE tasks ADD COLUMN IF NOT EXISTS is_sample BOOLEAN DEFAULT false`);
+  await pool.query(`ALTER TABLE fin_transactions ADD COLUMN IF NOT EXISTS is_sample BOOLEAN DEFAULT false`);
+  await pool.query(`ALTER TABLE fin_funds ADD COLUMN IF NOT EXISTS is_sample BOOLEAN DEFAULT false`);
+  await pool.query(`ALTER TABLE volunteers ADD COLUMN IF NOT EXISTS is_sample BOOLEAN DEFAULT false`);
+  await pool.query(`ALTER TABLE board_members ADD COLUMN IF NOT EXISTS is_sample BOOLEAN DEFAULT false`);
 }
 
 async function seedData() {
