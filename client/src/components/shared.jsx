@@ -223,7 +223,10 @@ export function GlobalStyles() {
 
       /* Donor profile: single column, 2×2 stat mini-cards */
       .donor-profile-body{grid-template-columns:1fr!important;overflow:auto!important;}
-      .donor-profile-header{padding:10px 16px!important;}
+      .donor-profile-header{flex-direction:column!important;align-items:stretch!important;padding:10px 16px!important;gap:6px!important;}
+      .dph-identity{flex:none!important;}
+      .dph-actions{width:100%!important;flex-shrink:unset!important;gap:6px!important;}
+      .dph-actions>button{flex:1!important;justify-content:center!important;font-size:12px!important;padding:8px 4px!important;}
       .donor-stat-grid{grid-template-columns:repeat(2,1fr)!important;}
 
       /* ReEngage table: hide non-essential columns, fix grid template */
