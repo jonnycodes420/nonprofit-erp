@@ -1113,7 +1113,21 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
             </div>}
 
             <div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:12,overflow:"hidden"}}>
-              {giftLoading?<div style={{padding:24,textAlign:"center",color:T.ink3,fontSize:12}}><Spin/></div>:giftsFull.length===0?<div style={{padding:24,textAlign:"center",color:T.ink3,fontSize:13,fontStyle:"italic"}}>No gifts on file</div>:(
+              {giftLoading?<div style={{padding:24,textAlign:"center",color:T.ink3,fontSize:12}}><Spin/></div>:giftsFull.length===0?(
+                <div style={{display:"flex",flexDirection:"column",alignItems:"center",padding:"40px 24px",textAlign:"center",gap:0}}>
+                  <div style={{marginBottom:16,color:"#10b981",opacity:0.7}}>
+                    <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>
+                    </svg>
+                  </div>
+                  <div style={{fontFamily:"'DM Serif Display',Georgia,serif",fontSize:20,fontWeight:400,color:"#0f1a12",letterSpacing:"-0.01em",marginBottom:8}}>No gifts recorded yet.</div>
+                  <div style={{fontSize:13,color:"#6b7280",maxWidth:260,lineHeight:1.65,marginBottom:20}}>Log your first gift to start tracking acknowledgments and giving history.</div>
+                  <button onClick={()=>setAddGiftOpen(true)} disabled={isReadOnly} title={isReadOnly?"Reactivate your subscription to make changes.":undefined}
+                    style={{background:"#1a6b4a",color:"#fff",border:"none",borderRadius:10,padding:"10px 22px",fontSize:13,fontWeight:600,cursor:isReadOnly?"not-allowed":"pointer",opacity:isReadOnly?0.45:1,fontFamily:"'DM Sans',system-ui,sans-serif"}}>
+                    Record a gift →
+                  </button>
+                </div>
+              ):(
                 <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
                   <thead>
                     <tr style={{background:T.bg2}}>
@@ -1900,7 +1914,7 @@ function AssignModal({donor,orgTeam,onSave,onClose}){
 }
 
 // ── Directory View ─────────────────────────────────────────────────────────
-function DirectoryView({donors,totalDonors,orgTeam,isAdmin,onSelectDonor,onAssign,stageFilter,setStageFilter,assigneeFilter,setAssigneeFilter,onLoadSampleData,sampleLoading,hasSampleData}){
+function DirectoryView({donors,totalDonors,orgTeam,isAdmin,onSelectDonor,onAssign,stageFilter,setStageFilter,assigneeFilter,setAssigneeFilter,onLoadSampleData,sampleLoading,hasSampleData,onAddDonor}){
   const filtered=donors
     .filter(d=>!stageFilter||d.stage===stageFilter)
     .filter(d=>!assigneeFilter||d.assignedTo===assigneeFilter);
@@ -1910,16 +1924,31 @@ function DirectoryView({donors,totalDonors,orgTeam,isAdmin,onSelectDonor,onAssig
 
   if(totalDonors===0&&!hasSampleData){
     return(
-      <div style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:"60px 20px",gap:16,textAlign:"center"}}>
-        <div style={{fontSize:40,opacity:.35}}>♦</div>
-        <div style={{fontSize:18,fontWeight:700,color:"#1a1a1a",letterSpacing:"-0.01em"}}>No donors yet</div>
-        <div style={{fontSize:13,color:"#9ca3af",maxWidth:380,lineHeight:1.6}}>Add your first donor manually, import a CSV, or load a sample dataset to explore every feature with realistic data.</div>
-        {onLoadSampleData&&(
-          <button onClick={onLoadSampleData} disabled={sampleLoading}
-            style={{marginTop:8,background:"#c9a84c",color:"#fff",border:"none",borderRadius:8,padding:"11px 22px",fontSize:13,fontWeight:700,cursor:sampleLoading?"not-allowed":"pointer",opacity:sampleLoading?0.7:1}}>
-            {sampleLoading?"Loading…":"Load sample data"}
-          </button>
-        )}
+      <div style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:"60px 20px",gap:0,textAlign:"center"}}>
+        <div style={{marginBottom:18,color:"#10b981",opacity:0.7}}>
+          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+            <circle cx="9" cy="7" r="4"/>
+            <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
+            <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+          </svg>
+        </div>
+        <div style={{fontFamily:"'DM Serif Display',Georgia,serif",fontSize:22,fontWeight:400,color:"#0f1a12",letterSpacing:"-0.01em",marginBottom:10}}>No donors yet.</div>
+        <div style={{fontSize:14,color:"#6b7280",maxWidth:280,lineHeight:1.65,marginBottom:24}}>Add your first contact and start building your relationship pipeline.</div>
+        <div style={{display:"flex",gap:10,flexWrap:"wrap",justifyContent:"center"}}>
+          {onAddDonor&&(
+            <button onClick={onAddDonor}
+              style={{background:"#1a6b4a",color:"#fff",border:"none",borderRadius:12,padding:"12px 24px",fontSize:14,fontWeight:600,cursor:"pointer",fontFamily:"'DM Sans',system-ui,sans-serif"}}>
+              Add a donor →
+            </button>
+          )}
+          {onLoadSampleData&&(
+            <button onClick={onLoadSampleData} disabled={sampleLoading}
+              style={{background:"transparent",color:"#1a6b4a",border:"1.5px solid #1a6b4a",borderRadius:12,padding:"12px 24px",fontSize:14,fontWeight:600,cursor:sampleLoading?"not-allowed":"pointer",opacity:sampleLoading?0.7:1,fontFamily:"'DM Sans',system-ui,sans-serif"}}>
+              {sampleLoading?"Loading…":"Explore with sample data"}
+            </button>
+          )}
+        </div>
       </div>
     );
   }
@@ -2458,7 +2487,7 @@ export function Donors({data,setData,isReadOnly=false}){
         </div>
       </Card>}
 
-      {view==="directory"&&<DirectoryView donors={filtered} totalDonors={data.donors.length} orgTeam={orgTeam} isAdmin={isAdmin} onSelectDonor={d=>setSelected(d)} onAssign={d=>setAssignTarget(d)} stageFilter={dirStage} setStageFilter={setDirStage} assigneeFilter={dirAssignee} setAssigneeFilter={setDirAssignee} onLoadSampleData={loadSampleData} sampleLoading={sampleLoading} hasSampleData={sampleStatus?.hasSampleData}/>}
+      {view==="directory"&&<DirectoryView donors={filtered} totalDonors={data.donors.length} orgTeam={orgTeam} isAdmin={isAdmin} onSelectDonor={d=>setSelected(d)} onAssign={d=>setAssignTarget(d)} stageFilter={dirStage} setStageFilter={setDirStage} assigneeFilter={dirAssignee} setAssigneeFilter={setDirAssignee} onLoadSampleData={loadSampleData} sampleLoading={sampleLoading} hasSampleData={sampleStatus?.hasSampleData} onAddDonor={()=>setShowAdd(true)}/>}
 
       {view==="pipeline"&&(()=>{
         const myDonors=filtered.filter(d=>d.assignedTo===userId);

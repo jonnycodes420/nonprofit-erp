@@ -13,7 +13,6 @@ import { Tasks } from "./components/Tasks";
 import { Settings } from "./components/Settings";
 import { Analytics } from "./components/Analytics";
 import { Events } from "./components/Events";
-import { OnboardingWizard } from "./components/OnboardingWizard";
 
 // ── Tabs ───────────────────────────────────────────────────────────────────
 const TABS=[
@@ -55,7 +54,6 @@ function AppShell() {
   const [showChat,setShowChat]=useState(false);
   const [stripeToast,setStripeToast]=useState(false);
   const [moreOpen,setMoreOpen]=useState(false);
-  const [showWizard,setShowWizard]=useState(false);
   const [billing,setBilling]=useState(null);
   const [bannerDismissed,setBannerDismissed]=useState(false);
   const [showInstallPrompt,setShowInstallPrompt]=useState(false);
@@ -96,13 +94,7 @@ function AppShell() {
       ]);
       const adapted=adaptData({org,donors,grants,volunteers,tasks,board,financials});
       setData(adapted);
-      const noData=
-        adapted.donors.length===0 &&
-        adapted.grants.length===0 &&
-        adapted.financials.revenue.every(m=>m.individual+m.grants+m.events+m.other===0);
-      if(noData && auth?.user?.role==="admin" && !localStorage.getItem("steward_onboarded_"+org.id)){
-        setShowWizard(true);
-      }
+      if(org?.id) localStorage.setItem("steward_onboarded_"+org.id,"1");
     } catch(e) { setLoadErr(e.message); }
     setLoading(false);
   }
@@ -230,7 +222,6 @@ function AppShell() {
       {tab==="tasks"&&<Tasks data={data} setData={setData}/>}
       {tab==="settings"&&<Settings auth={auth} logout={logout}/>}
     </div>
-    {showWizard&&<OnboardingWizard org={data.org} onDone={()=>{setShowWizard(false);window.location.href="/today";}}/>}
     {showChat&&<AIChat data={data} onClose={()=>setShowChat(false)}/>}
     {stripeToast&&<div style={{position:"fixed",bottom:24,right:24,zIndex:9999,background:T.greenDk,color:"#fff",borderRadius:14,padding:"14px 20px",fontSize:13,fontWeight:600,boxShadow:"0 8px 32px rgba(26,107,74,0.35)",display:"flex",alignItems:"center",gap:10,maxWidth:340}}>
       <span style={{fontSize:18}}>💳</span>

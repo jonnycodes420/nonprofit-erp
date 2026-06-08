@@ -241,33 +241,26 @@ export default function TodayPage() {
         {loading ? (
           <p style={{ color: T.ink3, fontSize: 14, marginTop: 32 }}>Loading your follow-ups…</p>
         ) : items.length === 0 ? (
-          <>
-            <p style={{ fontSize: 15, color: T.green, fontWeight: 600, margin: "0 0 40px" }}>
-              You're all caught up. ✓
-            </p>
-            <div style={{
-              background: "#fff", border: `1px solid ${T.bg3}`, borderRadius: 14,
-              padding: "40px 32px", textAlign: "center",
-            }}>
-              <div style={{ fontSize: 36, marginBottom: 14 }}>🌿</div>
-              <div style={{ fontSize: 16, fontWeight: 700, color: T.ink, marginBottom: 6 }}>
-                Nothing needs your attention right now.
-              </div>
-              <div style={{ fontSize: 14, color: T.ink3, lineHeight: 1.6 }}>
-                Check back tomorrow, or head to the full workspace to explore your data.
-              </div>
-              <a
-                href="/dashboard"
-                style={{
-                  display: "inline-block", marginTop: 24, background: T.green,
-                  color: "#fff", borderRadius: 10, padding: "10px 28px",
-                  fontSize: 14, fontWeight: 700, textDecoration: "none",
-                }}
-              >
-                Go to Dashboard →
-              </a>
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", padding: "60px 20px", textAlign: "center" }}>
+            <div style={{ marginBottom: 20, color: T.green, opacity: 0.7 }}>
+              <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="12" cy="12" r="10"/>
+                <polyline points="12 6 12 12 16 14"/>
+              </svg>
             </div>
-          </>
+            <h2 style={{ fontFamily: "'DM Serif Display',Georgia,serif", fontSize: 22, fontWeight: 400, color: T.ink, margin: "0 0 10px", letterSpacing: "-0.01em" }}>
+              You're all caught up.
+            </h2>
+            <p style={{ fontSize: 14, color: T.ink3, maxWidth: 280, lineHeight: 1.65, margin: "0 0 24px" }}>
+              No follow-ups due today. Add donors to start tracking relationships.
+            </p>
+            <button
+              onClick={() => { window.location.href = "/dashboard"; }}
+              style={{ background: "#1a6b4a", border: "none", borderRadius: 12, padding: "12px 24px", color: "#fff", fontSize: 14, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}
+            >
+              Add your first donor →
+            </button>
+          </div>
         ) : (
           <>
             <p style={{ fontSize: 15, color: T.ink3, margin: "0 0 36px" }}>
