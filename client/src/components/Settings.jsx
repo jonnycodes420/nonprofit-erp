@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import QRCode from "qrcode";
 import { T, Pill, SectionLabel, PageTitle } from "./shared";
 import { apiFetch, API, getToken } from "../api";
+import UpgradeModal from "./UpgradeModal";
 
 export function Settings({auth,logout}) {
   const orgName=auth?.org?.name||"Your Organization";
@@ -36,6 +37,7 @@ export function Settings({auth,logout}) {
 
   const [billing,setBilling]=useState(null);
   const [portalLoading,setPortalLoading]=useState(false);
+  const [upgradeModal,setUpgradeModal]=useState(null);
 
   const [gmailStatus,setGmailStatus]=useState(null);
   const [gmailSyncing,setGmailSyncing]=useState(false);
@@ -213,7 +215,12 @@ export function Settings({auth,logout}) {
       const r=await apiFetch("/auth/invite",{method:"POST",body:JSON.stringify({email:invEmail.trim(),role:invRole})});
       setInviteResult({link:r.inviteLink,emailSent:r.emailSent});
     }catch(e){
-      setInvErr(e.message||"Failed to send invite");
+      if(e.error==="seat_limit"){
+        closeInvite();
+        setUpgradeModal({reason:e.error,current:e.current,limit:e.limit,plan:e.plan});
+      } else {
+        setInvErr(e.message||"Failed to send invite");
+      }
     }finally{setInviting(false);}
   }
 
@@ -321,6 +328,12 @@ export function Settings({auth,logout}) {
           <SectionLabel>Team Members</SectionLabel>
           {isAdmin&&<button onClick={()=>setShowInvite(true)} style={{background:T.green,border:"none",borderRadius:8,padding:"7px 14px",color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer"}}>+ Invite Staff</button>}
         </div>
+        {billing&&!billing.isTrial&&billing.limits?.seats!==999999999&&billing.usage?.seats>=billing.limits?.seats&&(
+          <div style={{background:"#faf9f6",border:"1px solid #d4cfc6",borderRadius:10,padding:"10px 14px",marginBottom:14,fontSize:12,color:"#4a5e4f",display:"flex",alignItems:"center",justifyContent:"space-between",gap:12}}>
+            <span>You're using all {billing.limits.seats} seat{billing.limits.seats!==1?"s":""}.</span>
+            <a href="/pricing" style={{color:"#1a6b4a",fontWeight:700,textDecoration:"none",whiteSpace:"nowrap"}}>Add more or upgrade →</a>
+          </div>
+        )}
         {team.map((m,i)=>(
           <div key={m.id} style={{display:"flex",alignItems:"center",gap:12,padding:"12px 0",borderBottom:i<team.length-1?"1px solid "+T.bg3:"none"}}>
             <div style={{width:36,height:36,borderRadius:"50%",background:T.greenDk+"18",display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,fontWeight:700,color:T.greenDk,flexShrink:0}}>
@@ -712,6 +725,7 @@ export function Settings({auth,logout}) {
           </div>
         </div>
       )}
+      {upgradeModal&&<UpgradeModal open={true} onClose={()=>setUpgradeModal(null)} reason={upgradeModal.reason} current={upgradeModal.current} limit={upgradeModal.limit} plan={upgradeModal.plan}/>}
     </div>
   );
 }

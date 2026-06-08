@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, Component } from "react";
 import { apiFetch } from "../api";
 import { useAuth } from "../main";
+import UpgradeModal from "./UpgradeModal";
 
 class ErrorBoundary extends Component {
   constructor(props) { super(props); this.state = { error: null }; }
@@ -81,6 +82,7 @@ function DonorImport({ onClose, onImported }) {
   const [aiLoading, setAiLoading] = useState(false);
   const [result, setResult] = useState(null);
   const [err, setErr] = useState("");
+  const [upgradeInfo, setUpgradeInfo] = useState(null);
 
   const handleFile = (e) => {
     const file = e.target.files[0]; if (!file) return;
@@ -132,7 +134,10 @@ function DonorImport({ onClose, onImported }) {
     try {
       const res = await apiFetch("/donors/import", { method:"POST", body:JSON.stringify({ donors:buildDonors() }) });
       setResult(res.inserted); onImported();
-    } catch (e) { setErr(e.message); }
+    } catch (e) {
+      if (e.error === "record_limit") { setUpgradeInfo(e); }
+      else { setErr(e.message); }
+    }
     setLoading(false);
   };
 
@@ -247,6 +252,7 @@ function DonorImport({ onClose, onImported }) {
           </div>
         </>)}
       </div>
+      {upgradeInfo&&<UpgradeModal open={true} onClose={()=>{setUpgradeInfo(null);onClose();}} reason={upgradeInfo.error} current={upgradeInfo.current} limit={upgradeInfo.limit} plan={upgradeInfo.plan}/>}
     </div>
   );
 }
@@ -2205,6 +2211,7 @@ export function Donors({data,setData,isReadOnly=false}){
   const[aiMap,setAiMap]=useState({});const[loadingKey,setLoadingKey]=useState(null);
   const[callList,setCallList]=useState("");const[callLoading,setCallLoading]=useState(false);
   const[showAdd,setShowAdd]=useState(false);const[showImport,setShowImport]=useState(false);
+  const[upgradeModal,setUpgradeModal]=useState(null);
   const[newDonor,setNewDonor]=useState({name:"",email:"",phone:"",lastAmount:"",stage:"prospect"});
   const[filtersOpen,setFiltersOpen]=useState(false);
   const[filters,setFilters]=useState({tiers:[],stages:[],pattern:"",geo:"",giftFrom:"",giftTo:"",totalMin:"",totalMax:""});
@@ -2400,7 +2407,12 @@ export function Donors({data,setData,isReadOnly=false}){
     setData(prev=>({...prev,donors:[...prev.donors,temp]}));
     setShowAdd(false);setNewDonor({name:"",email:"",phone:"",lastAmount:"",stage:"prospect"});setNewDonorAssignee("");
     try{await apiFetch("/donors",{method:"POST",body:JSON.stringify({...newDonor,stage:newDonor.stage,assignedTo:assignTo,assignedToName:assignToName})});await reloadDonors();}
-    catch(e){console.error(e);}
+    catch(e){
+      if(e.error==="record_limit"){
+        setData(prev=>({...prev,donors:prev.donors.filter(d=>d.id!==temp.id)}));
+        setUpgradeModal({reason:e.error,current:e.current,limit:e.limit,plan:e.plan});
+      } else { console.error(e); }
+    }
   };
 
   return(
@@ -2408,6 +2420,7 @@ export function Donors({data,setData,isReadOnly=false}){
       <PageTitle main="Your" accent="donors."/>
       {assignTarget&&<AssignModal donor={assignTarget} orgTeam={orgTeam} onSave={handleAssign} onClose={()=>setAssignTarget(null)}/>}
       {showImport&&<DonorImport onClose={()=>setShowImport(false)} onImported={()=>{reloadDonors();setShowImport(false);}}/>}
+      {upgradeModal&&<UpgradeModal open={true} onClose={()=>setUpgradeModal(null)} reason={upgradeModal.reason} current={upgradeModal.current} limit={upgradeModal.limit} plan={upgradeModal.plan}/>}
       {logTarget&&<LogTouchpointModal donor={logTarget} onSave={int=>handleLogged(logTarget,int)} onClose={()=>setLogTarget(null)}/>}
       {followUpTarget&&<FollowUpTaskModal donor={followUpTarget} onClose={()=>setFollowUpTarget(null)} onSave={task=>{setData(prev=>({...prev,tasks:[task,...prev.tasks]}));setFollowUpTarget(null);}}/>}
       {editTarget&&<EditDonorModal donor={editTarget} onSave={handleEditSaved} onClose={()=>setEditTarget(null)}/>}

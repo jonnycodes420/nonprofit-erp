@@ -808,6 +808,22 @@ app.post("/auth/invite", requireAuth, requireAdmin, wrap(async (req, res) => {
   const existing = await query("SELECT id FROM users WHERE email = ?", [email.toLowerCase()]);
   if (existing.length) return res.status(409).json({ error: "A user with that email already exists" });
 
+  // Seat limit: count active users + pending unexpired invites
+  const orgForLimit = await query("SELECT * FROM orgs WHERE id=?", [req.user.orgId]);
+  if (orgForLimit.length) {
+    const seatCheck = await checkPlanLimit(orgForLimit[0], "seats");
+    if (!seatCheck.isTrial && seatCheck.limit !== 999999999) {
+      const pendingRow = await query(
+        "SELECT COUNT(*) AS c FROM invites WHERE org_id=? AND accepted_at IS NULL AND expires_at > NOW()",
+        [req.user.orgId]
+      );
+      const totalWithPending = seatCheck.current + Number(pendingRow[0]?.c || 0);
+      if (totalWithPending >= seatCheck.limit) {
+        return res.status(403).json({ error: "seat_limit", message: "You've reached your seat limit.", current: totalWithPending, limit: seatCheck.limit, plan: orgForLimit[0].plan, isTrial: false });
+      }
+    }
+  }
+
   const token = uuid().replace(/-/g, "") + uuid().replace(/-/g, "");
   const id = "inv_" + uuid().slice(0, 8);
   const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
@@ -957,6 +973,14 @@ app.post("/donors", requireAuth, checkWriteAccess, wrap(async (req, res) => {
   const { name, email, phone, status, stage, tags, notes, lastAmount, assignedTo, assignedToName } = req.body;
   if (!name) return res.status(400).json({ error: "Name required" });
 
+  const orgForLimit = await query("SELECT * FROM orgs WHERE id=?", [req.user.orgId]);
+  if (orgForLimit.length) {
+    const recordCheck = await checkPlanLimit(orgForLimit[0], "records");
+    if (!recordCheck.isTrial && recordCheck.limit !== 999999999 && recordCheck.current >= recordCheck.limit) {
+      return res.status(403).json({ error: "record_limit", message: `You've reached your donor record limit of ${recordCheck.limit}.`, current: recordCheck.current, limit: recordCheck.limit, plan: orgForLimit[0].plan, isTrial: false });
+    }
+  }
+
   const id = "d_" + uuid().slice(0, 8);
   const today = new Date().toISOString().split("T")[0];
   let selfName = assignedToName;
@@ -981,6 +1005,28 @@ app.post("/donors/import", requireAuth, wrap(async (req, res) => {
   const { donors } = req.body;
   if (!Array.isArray(donors) || donors.length === 0)
     return res.status(400).json({ error: "donors array required" });
+
+  const orgForLimit = await query("SELECT * FROM orgs WHERE id=?", [req.user.orgId]);
+  if (orgForLimit.length) {
+    const recordCheck = await checkPlanLimit(orgForLimit[0], "records");
+    if (!recordCheck.isTrial && recordCheck.limit !== 999999999) {
+      const validCount = donors.filter(d => d.name).length;
+      const remaining = recordCheck.limit - recordCheck.current;
+      if (remaining <= 0 || validCount > remaining) {
+        return res.status(403).json({
+          error: "record_limit",
+          message: remaining <= 0
+            ? `You've reached your donor record limit of ${recordCheck.limit}.`
+            : `This import would add ${validCount} records but you can only add ${remaining} more (limit: ${recordCheck.limit}).`,
+          current: recordCheck.current,
+          limit: recordCheck.limit,
+          allowed: Math.max(0, remaining),
+          plan: orgForLimit[0].plan,
+          isTrial: false,
+        });
+      }
+    }
+  }
 
   let inserted = 0;
   for (const d of donors) {
