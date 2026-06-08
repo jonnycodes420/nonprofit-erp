@@ -3782,16 +3782,25 @@ app.get("/billing/status", requireAuth, wrap(async (req, res) => {
   const orgs = await query("SELECT plan, subscription_status, trial_ends_at, stripe_customer_id, grace_until, current_period_end FROM orgs WHERE id=?", [req.user.orgId]);
   if (!orgs.length) return res.status(404).json({ error: "Org not found" });
   const org = orgs[0];
+  const plan = org.plan || "trial";
   const trialEndsAt = org.trial_ends_at ? new Date(org.trial_ends_at) : null;
   const trialDaysLeft = trialEndsAt ? Math.max(0, Math.ceil((trialEndsAt - Date.now()) / 86400000)) : null;
+
+  const [[seatRow], [recordRow]] = await Promise.all([
+    query("SELECT COUNT(*) AS c FROM users WHERE org_id=?", [req.user.orgId]),
+    query("SELECT COUNT(*) AS c FROM donors WHERE org_id=?", [req.user.orgId]),
+  ]);
+
   res.json({
-    plan: org.plan || "trial",
+    plan,
     subscriptionStatus: org.subscription_status || "trialing",
     trialEndsAt: org.trial_ends_at,
     trialDaysLeft,
     graceUntil: org.grace_until,
     currentPeriodEnd: org.current_period_end,
     accessState: getOrgAccessState(org),
+    limits: PLAN_LIMITS[plan] || PLAN_LIMITS.trial,
+    usage: { seats: seatRow?.c || 0, records: recordRow?.c || 0 },
   });
 }));
 
@@ -3905,6 +3914,28 @@ app.post("/billing/webhook", express.raw({ type: "application/json" }), async (r
 
 // ── Admin (super admin only) ───────────────────────────────────────────────
 const PLAN_MRR = { seed: 99, growth: 249, impact: 499, trial: 0 };
+
+// 999999999 used for "unlimited" — Infinity serializes to null in JSON
+const PLAN_LIMITS = {
+  seed:   { seats: 1,         records: 1000,     extraSeatPrice: null },
+  growth: { seats: 5,         records: 10000,    extraSeatPrice: 25   },
+  impact: { seats: 999999999, records: 999999999, extraSeatPrice: null },
+  trial:  { seats: 1,         records: 1000,     extraSeatPrice: null },
+};
+
+async function checkPlanLimit(orgId, plan, dimension) {
+  const limits = PLAN_LIMITS[plan] || PLAN_LIMITS.trial;
+  const limit = limits[dimension];
+  let current = 0;
+  if (dimension === "seats") {
+    const rows = await query("SELECT COUNT(*) AS c FROM users WHERE org_id=?", [orgId]);
+    current = rows[0]?.c || 0;
+  } else if (dimension === "records") {
+    const rows = await query("SELECT COUNT(*) AS c FROM donors WHERE org_id=?", [orgId]);
+    current = rows[0]?.c || 0;
+  }
+  return { allowed: current < limit, current, limit, plan };
+}
 
 async function orgWithMetrics(org) {
   const [donors, grants, users, lastActive] = await Promise.all([
