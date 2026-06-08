@@ -3986,10 +3986,10 @@ async function checkPlanLimit(org, dimension) {
   let current = 0;
   if (dimension === "seats") {
     const rows = await query("SELECT COUNT(*) AS c FROM users WHERE org_id=?", [org.id]);
-    current = rows[0]?.c || 0;
+    current = Number(rows[0]?.c) || 0;
   } else if (dimension === "records") {
     const rows = await query("SELECT COUNT(*) AS c FROM donors WHERE org_id=?", [org.id]);
-    current = rows[0]?.c || 0;
+    current = Number(rows[0]?.c) || 0;
   }
   const isTrial = (org.subscription_status || "trialing") === "trialing";
   return { allowed: current < limit, current, limit, isTrial };
