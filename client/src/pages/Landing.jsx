@@ -315,12 +315,12 @@ export default function Landing() {
                   letterSpacing: "-0.02em", color: C.cream,
                   marginBottom: 24,
                 }}>
-                  Your donors deserve<br />
-                  to be{" "}
-                  <span style={{ textDecoration: "underline", textDecorationColor: C.gold, textDecorationThickness: 3, textUnderlineOffset: 6 }}>remembered.</span>
+                  Steward tells you who to call<br />
+                  today, and{" "}
+                  <span style={{ textDecoration: "underline", textDecorationColor: C.gold, textDecorationThickness: 3, textUnderlineOffset: 6 }}>what to say.</span>
                 </h1>
                 <p style={{ fontSize: 18, color: C.sage, lineHeight: 1.7, marginBottom: 36, maxWidth: 480 }}>
-                  Steward is the fundraising platform that learns your relationships, catches the donors you're about to lose, and tells you exactly who to call today — so you can spend less time on software and more time on your mission.
+                  The fundraising OS for small nonprofits. Replace your spreadsheets with a system that remembers every donor, flags every lapse, and drafts every email — so you can focus on relationships, not admin.
                 </p>
                 <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 28 }}>
                   <button

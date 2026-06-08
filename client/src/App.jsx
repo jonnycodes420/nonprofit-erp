@@ -148,13 +148,12 @@ function AppShell() {
     {/* Header */}
     <div className="app-header" style={{borderBottom:"1px solid #1a2e1f",padding:"0 24px",display:"flex",alignItems:"center",justifyContent:"space-between",background:"#0f1a12",position:"sticky",top:0,zIndex:100,height:52,width:"100%",boxSizing:"border-box"}}>
       <div style={{display:"flex",alignItems:"center",gap:12}}>
-        <div style={{width:30,height:30,background:T.greenDk,borderRadius:8,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
-          <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M8 2L13 5v6L8 14 3 11V5L8 2z" stroke="#f0ede6" strokeWidth="1.5" fill="none"/><circle cx="8" cy="8" r="2" fill="#f0ede6"/></svg>
-        </div>
-        <div style={{display:"flex",alignItems:"baseline",gap:8}}>
-          <span style={{fontSize:15,fontWeight:700,color:"#f0ede6",letterSpacing:"-0.02em",fontFamily:"'DM Serif Display',Georgia,serif"}}>{orgName}</span>
-          <span style={{fontSize:10,color:"#8fa896",letterSpacing:"0.06em",textTransform:"uppercase"}}>Steward</span>
-        </div>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 40" width="32" height="32" style={{flexShrink:0}}>
+          <rect width="40" height="40" rx="8" fill="#0f1a12"/>
+          <text x="20" y="28" fontFamily="Georgia, 'Times New Roman', serif" fontSize="24" fontWeight="700" fill="#f0ede6" textAnchor="middle">S</text>
+          <rect x="10" y="31" width="20" height="3" rx="1.5" fill="#c9a84c"/>
+        </svg>
+        <span style={{fontSize:20,fontWeight:400,color:"#f0ede6",fontFamily:"'DM Serif Display',Georgia,serif",letterSpacing:"-0.02em"}}>Steward</span>
       </div>
       <div style={{display:"flex",gap:8,alignItems:"center"}}>
         <button data-tour="ask-ai" onClick={()=>setShowChat(true)} style={{background:"#1a2e1f",border:"1px solid #2d4a35",borderRadius:10,padding:"7px 16px",color:"#10b981",fontSize:12,fontWeight:700,cursor:"pointer",display:"flex",alignItems:"center",gap:7}}>

@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1128 191" width="1128" height="191">
+  <rect width="1128" height="191" fill="#0f1a12"/>
+  <rect x="48" y="36" width="80" height="80" rx="14" fill="#1a6b4a"/>
+  <text x="88" y="96"
+    font-family="Georgia, 'Times New Roman', serif"
+    font-size="56"
+    font-weight="700"
+    fill="#f0ede6"
+    text-anchor="middle">S</text>
+  <rect x="60" y="104" width="56" height="5" rx="2.5" fill="#c9a84c"/>
+  <text x="152" y="85"
+    font-family="Georgia, 'Times New Roman', serif"
+    font-size="48"
+    font-weight="700"
+    fill="#f0ede6">Steward</text>
+  <text x="152" y="125"
+    font-family="Arial, sans-serif"
+    font-size="22"
+    fill="#a3b8a8">The fundraising OS for nonprofits.</text>
+  <text x="1080" y="110"
+    font-family="Arial, sans-serif"
+    font-size="18"
+    fill="#c9a84c"
+    text-anchor="end">stewardapp.dev</text>
+</svg>

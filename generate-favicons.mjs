@@ -44,3 +44,12 @@ for (const { file, size } of appSizes) {
   await sharp(fullLogoSvg).resize(size, size).png().toFile(out(file));
   console.log(`✓ ${file} (${size}x${size}) — full logo`);
 }
+
+// Social / marketing images
+const ogSvg = readFileSync(resolve(__dirname, "client/public/og-image.svg"));
+await sharp(ogSvg).resize(1200, 630).png().toFile(out("og-image.png"));
+console.log("✓ og-image.png (1200x630)");
+
+const liSvg = readFileSync(resolve(__dirname, "client/public/linkedin-cover.svg"));
+await sharp(liSvg).resize(1128, 191).png().toFile(out("linkedin-cover.png"));
+console.log("✓ linkedin-cover.png (1128x191)");
