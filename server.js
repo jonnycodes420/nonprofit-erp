@@ -3802,7 +3802,7 @@ app.get("/billing/status", requireAuth, wrap(async (req, res) => {
     accessState: getOrgAccessState(org),
     limits: effectivePlanLimits(org),
     planLimits: PLAN_LIMITS[plan] || PLAN_LIMITS.seed,
-    usage: { seats: seatRow?.c || 0, records: recordRow?.c || 0 },
+    usage: { seats: Number(seatRow?.c) || 0, records: Number(recordRow?.c) || 0 },
     isTrial,
   });
 }));
