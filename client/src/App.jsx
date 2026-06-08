@@ -174,7 +174,7 @@ function AppShell() {
         ◉ Today
       </button>
       <div style={{width:1,background:"#1a2e1f",margin:"8px 4px 8px 0",flexShrink:0}}/>
-      {TABS.map(t=>{
+      {TABS.filter(t=>t.id!=="settings").map(t=>{
         const active=tab===t.id;
         return <button key={t.id} data-tour={t.id==="donors"?"nav-donors":t.id==="finance"?"nav-finance":t.id==="analytics"?"nav-analytics":undefined} onClick={()=>setTab(t.id)} style={{background:"transparent",border:"none",borderBottom:`2px solid ${active?"#c9a84c":"transparent"}`,padding:"8px 12px",color:active?"#f0ede6":"#8fa896",fontSize:13,fontWeight:active?700:400,cursor:"pointer",display:"flex",alignItems:"center",gap:6,whiteSpace:"nowrap",transition:"color 0.15s,border-color 0.15s",flexShrink:1,marginBottom:-1}}>
           {t.label}
@@ -182,6 +182,11 @@ function AppShell() {
           {t.id==="tasks"&&tasksDue>0&&<span style={{background:"#ef4444",color:"#fff",fontSize:9,fontWeight:800,borderRadius:99,padding:"1px 5px",lineHeight:"14px"}}>{tasksDue}</span>}
         </button>;
       })}
+      <div style={{flex:1,minWidth:8}}/>
+      <div style={{width:1,background:"#2d4a35",margin:"8px 4px",flexShrink:0}}/>
+      <button onClick={()=>setTab("settings")} style={{background:"transparent",border:"none",borderBottom:`2px solid ${tab==="settings"?"#c9a84c":"transparent"}`,padding:"8px 10px",color:tab==="settings"?"#f0ede6":"#6b8f7a",fontSize:12,fontWeight:tab==="settings"?600:400,cursor:"pointer",display:"flex",alignItems:"center",gap:5,whiteSpace:"nowrap",transition:"color 0.15s,border-color 0.15s",flexShrink:0,marginBottom:-1}}>
+        <span style={{fontSize:13}}>⚙</span>Settings
+      </button>
     </div>
 
     {showReadOnlyBanner&&<div style={{background:"#7f1d1d",borderBottom:"1px solid #991b1b",padding:"9px 24px",display:"flex",alignItems:"center",gap:12,fontSize:13,color:"#fca5a5",flexWrap:"wrap"}}>
