@@ -1975,9 +1975,10 @@ function DirectoryView({donors,totalDonors,orgTeam,isAdmin,onSelectDonor,onAssig
       {filtered.length===0
         ?<EmptyState icon="♦" title="No donors found" message="Try adjusting your filters or search term."/>
         :<div style={{background:T.white,borderRadius:14,overflow:"hidden",border:"1px solid "+T.bg3}}>
-          <div style={{display:"grid",gridTemplateColumns:colGrid,gap:0,padding:"10px 18px",background:"#1a6b4a"}}>
+          <div className="dir-header-row" style={{display:"grid",gridTemplateColumns:colGrid,gap:0,padding:"10px 18px",background:"#1a6b4a"}}>
             {cols.map((h,i)=>(
-              <div key={i} style={{fontSize:10,fontWeight:700,color:"#fff",textTransform:"uppercase",letterSpacing:".06em",textAlign:i>=3?"right":"left"}}>{h}</div>
+              <div key={i} className={h==="Stage"?"dir-col-stage":h==="Owner"?"dir-col-owner":h===""?"dir-col-assign":""}
+                   style={{fontSize:10,fontWeight:700,color:"#fff",textTransform:"uppercase",letterSpacing:".06em",textAlign:i>=3?"right":"left"}}>{h}</div>
             ))}
           </div>
           {filtered.map((d,idx)=>{
@@ -1985,7 +1986,7 @@ function DirectoryView({donors,totalDonors,orgTeam,isAdmin,onSelectDonor,onAssig
             const sc=donorScore(d);const scColor=sc>70?"#1a6b4a":sc>45?"#f59e0b":"#ef4444";
             const isLast=idx===filtered.length-1;
             return(
-              <div key={d.id} onClick={()=>onSelectDonor(d)}
+              <div key={d.id} className="dir-donor-row" onClick={()=>onSelectDonor(d)}
                 style={{display:"grid",gridTemplateColumns:colGrid,gap:0,padding:"11px 18px",background:idx%2===0?T.white:"#faf9f6",borderBottom:isLast?"none":"1px solid "+T.bg3,cursor:"pointer",alignItems:"center",transition:"background 0.12s"}}
                 onMouseEnter={e=>e.currentTarget.style.background=T.bg}
                 onMouseLeave={e=>e.currentTarget.style.background=idx%2===0?T.white:"#faf9f6"}>
@@ -1994,12 +1995,13 @@ function DirectoryView({donors,totalDonors,orgTeam,isAdmin,onSelectDonor,onAssig
                   <div style={{minWidth:0}}>
                     <div style={{fontSize:13,fontWeight:700,color:T.ink,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{d.name}</div>
                     {d.email&&<div style={{fontSize:11,color:T.ink3,marginTop:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{d.email}</div>}
+                    <span className="dir-stage-mobile" style={{background:stage.color+"22",color:stage.color,borderRadius:99,padding:"2px 7px",fontSize:10,fontWeight:800,letterSpacing:"0.04em",textTransform:"uppercase",marginTop:3}}>{stage.label}</span>
                   </div>
                 </div>
-                <div>
+                <div className="dir-col-stage">
                   <span style={{background:stage.color+"22",color:stage.color,borderRadius:99,padding:"4px 10px",fontSize:10,fontWeight:800,letterSpacing:"0.04em",textTransform:"uppercase"}}>{stage.label}</span>
                 </div>
-                <div style={{display:"flex",alignItems:"center",gap:5,minWidth:0}}>
+                <div className="dir-col-owner" style={{display:"flex",alignItems:"center",gap:5,minWidth:0}}>
                   <div style={{width:22,height:22,borderRadius:"50%",background:"#1a6b4a22",display:"flex",alignItems:"center",justifyContent:"center",fontSize:10,fontWeight:800,color:"#1a6b4a",flexShrink:0}}>{(d.assignedToName||"?")[0]}</div>
                   <span style={{fontSize:12,color:T.ink,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{d.assignedToName||"—"}</span>
                 </div>
@@ -2012,7 +2014,7 @@ function DirectoryView({donors,totalDonors,orgTeam,isAdmin,onSelectDonor,onAssig
                 <div style={{textAlign:"right"}}>
                   <span style={{background:scColor+"18",color:scColor,borderRadius:7,padding:"3px 8px",fontSize:12,fontWeight:800}}>{sc}</span>
                 </div>
-                {isAdmin&&<div style={{textAlign:"right"}}>
+                {isAdmin&&<div className="dir-col-assign" style={{textAlign:"right"}}>
                   <button onClick={e=>{e.stopPropagation();onAssign(d);}} style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:7,padding:"4px 10px",color:T.ink3,fontSize:11,fontWeight:600,cursor:"pointer"}}>Assign</button>
                 </div>}
               </div>
