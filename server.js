@@ -3785,6 +3785,7 @@ app.get("/billing/status", requireAuth, wrap(async (req, res) => {
   const plan = org.plan || "trial";
   const trialEndsAt = org.trial_ends_at ? new Date(org.trial_ends_at) : null;
   const trialDaysLeft = trialEndsAt ? Math.max(0, Math.ceil((trialEndsAt - Date.now()) / 86400000)) : null;
+  const isTrial = (org.subscription_status || "trialing") === "trialing";
 
   const [[seatRow], [recordRow]] = await Promise.all([
     query("SELECT COUNT(*) AS c FROM users WHERE org_id=?", [req.user.orgId]),
@@ -3799,8 +3800,10 @@ app.get("/billing/status", requireAuth, wrap(async (req, res) => {
     graceUntil: org.grace_until,
     currentPeriodEnd: org.current_period_end,
     accessState: getOrgAccessState(org),
-    limits: PLAN_LIMITS[plan] || PLAN_LIMITS.trial,
+    limits: effectivePlanLimits(org),
+    planLimits: PLAN_LIMITS[plan] || PLAN_LIMITS.seed,
     usage: { seats: seatRow?.c || 0, records: recordRow?.c || 0 },
+    isTrial,
   });
 }));
 
@@ -3916,25 +3919,34 @@ app.post("/billing/webhook", express.raw({ type: "application/json" }), async (r
 const PLAN_MRR = { seed: 99, growth: 249, impact: 499, trial: 0 };
 
 // 999999999 used for "unlimited" — Infinity serializes to null in JSON
+// trial gets Growth limits: limits only engage once trial converts to paid
 const PLAN_LIMITS = {
-  seed:   { seats: 1,         records: 1000,     extraSeatPrice: null },
-  growth: { seats: 5,         records: 10000,    extraSeatPrice: 25   },
+  seed:   { seats: 1,         records: 1000,      extraSeatPrice: null },
+  growth: { seats: 5,         records: 10000,     extraSeatPrice: 25   },
   impact: { seats: 999999999, records: 999999999, extraSeatPrice: null },
-  trial:  { seats: 1,         records: 1000,     extraSeatPrice: null },
+  trial:  { seats: 5,         records: 10000,     extraSeatPrice: null },
 };
 
-async function checkPlanLimit(orgId, plan, dimension) {
-  const limits = PLAN_LIMITS[plan] || PLAN_LIMITS.trial;
+// Returns the limits actually in effect for an org, accounting for trial state
+function effectivePlanLimits(org) {
+  const status = org.subscription_status || "trialing";
+  if (status === "trialing") return PLAN_LIMITS.trial; // Growth limits during trial
+  return PLAN_LIMITS[org.plan] || PLAN_LIMITS.seed;
+}
+
+async function checkPlanLimit(org, dimension) {
+  const limits = effectivePlanLimits(org);
   const limit = limits[dimension];
   let current = 0;
   if (dimension === "seats") {
-    const rows = await query("SELECT COUNT(*) AS c FROM users WHERE org_id=?", [orgId]);
+    const rows = await query("SELECT COUNT(*) AS c FROM users WHERE org_id=?", [org.id]);
     current = rows[0]?.c || 0;
   } else if (dimension === "records") {
-    const rows = await query("SELECT COUNT(*) AS c FROM donors WHERE org_id=?", [orgId]);
+    const rows = await query("SELECT COUNT(*) AS c FROM donors WHERE org_id=?", [org.id]);
     current = rows[0]?.c || 0;
   }
-  return { allowed: current < limit, current, limit, plan };
+  const isTrial = (org.subscription_status || "trialing") === "trialing";
+  return { allowed: current < limit, current, limit, isTrial };
 }
 
 async function orgWithMetrics(org) {
