@@ -451,10 +451,11 @@ app.post("/auth/register-org", wrap(async (req, res) => {
   const orgId  = "org_"  + uuid().slice(0, 8);
   const userId = "user_" + uuid().slice(0, 8);
   const orgSlug = orgName.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") + "-" + orgId.slice(4, 10);
+  const trialEndsAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
 
   await run(
-    "INSERT INTO orgs (id, name, onboarding_complete, org_slug, plan, subscription_status) VALUES (?,?,0,?,'trial','trialing')",
-    [orgId, orgName, orgSlug]
+    "INSERT INTO orgs (id, name, onboarding_complete, org_slug, plan, subscription_status, trial_ends_at) VALUES (?,?,0,?,'trial','trialing',?)",
+    [orgId, orgName, orgSlug, trialEndsAt]
   );
   const hash = bcrypt.hashSync(password, 12);
   await run(
@@ -481,7 +482,7 @@ app.post("/auth/register-org", wrap(async (req, res) => {
   res.status(201).json({
     token,
     user: { id: userId, email: email.toLowerCase(), name: userName, role: "admin" },
-    org: { id: orgId, name: orgName, onboarding_complete: 0, plan: "trial", subscription_status: "trialing" },
+    org: { id: orgId, name: orgName, onboarding_complete: 0, plan: "trial", subscription_status: "trialing", trial_ends_at: trialEndsAt },
     stripeCustomerId,
   });
   sendOnboardingSequence(orgId, userId, userName, email.toLowerCase()).catch(e =>
