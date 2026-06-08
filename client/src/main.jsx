@@ -78,6 +78,12 @@ function RequireOnboarded({ children }) {
 }
 
 function PublicOnly({ children }) {
+  const { auth } = useAuth();
+  if (auth) {
+    if (auth.user?.isSuperAdmin) return <Navigate to="/admin" replace />;
+    if (!auth.org?.onboarding_complete) return <Navigate to="/welcome" replace />;
+    return <Navigate to="/today" replace />;
+  }
   return children;
 }
 
