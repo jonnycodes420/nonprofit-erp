@@ -193,6 +193,53 @@ app.get("/health", (req, res) => {
   res.json({ status: "ok", version: "1.1.0", db: dbReady });
 });
 
+// ── Gift date normalization ────────────────────────────────────────────────
+// Enforces ISO YYYY-MM-DD so MAX(date) string comparison = chronological order.
+function normalizeGiftDate(raw) {
+  if (!raw) return new Date().toISOString().split("T")[0];
+  const s = String(raw).trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;          // already ISO
+  const d = new Date(s);
+  if (!isNaN(d)) return d.toISOString().split("T")[0];   // parse → ISO
+  return new Date().toISOString().split("T")[0];          // fallback to today
+}
+
+// ── Donor summary recalculation ────────────────────────────────────────────
+// Recomputes total_giving, gift_count, last_gift_date, last_gift_amount
+// from the gifts table (source of truth). Replace delta adjustments on
+// edit/delete with this — it's correct even after complex edits.
+// Note: amounts stored as INTEGER (whole dollars, no cents). If sub-dollar
+// precision is ever needed, gifts.amount and donors.total_giving would need
+// a schema migration to NUMERIC.
+async function recalcDonorSummary(donorId, orgId) {
+  const agg = await query(
+    `SELECT COALESCE(SUM(amount),0) AS total, COUNT(*) AS cnt, MAX(date) AS last_date
+     FROM gifts WHERE donor_id=? AND org_id=?`,
+    [donorId, orgId]
+  );
+  const total    = parseInt(agg[0].total, 10) || 0;
+  const cnt      = parseInt(agg[0].cnt,   10) || 0;
+  const lastDate = agg[0].last_date || null;
+
+  let lastAmt = 0;
+  if (lastDate) {
+    // If two gifts share the same latest date, take the one inserted last
+    const lr = await query(
+      `SELECT amount FROM gifts WHERE donor_id=? AND org_id=? AND date=?
+       ORDER BY created_at DESC LIMIT 1`,
+      [donorId, orgId, lastDate]
+    );
+    lastAmt = parseInt(lr[0]?.amount, 10) || 0;
+  }
+
+  await run(
+    `UPDATE donors
+     SET total_giving=?, gift_count=?, last_gift_date=?, last_gift_amount=?, updated_at=NOW()
+     WHERE id=? AND org_id=?`,
+    [total, cnt, lastDate, lastAmt, donorId, orgId]
+  );
+}
+
 // ── Wealth Score ────────────────────────────────────────────────────────────
 async function calcWealthScore(donorId, orgId) {
   try {
@@ -1286,18 +1333,20 @@ app.post("/donors/:id/gifts", requireAuth, checkWriteAccess, wrap(async (req, re
   if (!donorExists.length) return res.status(404).json({ error: "Donor not found" });
 
   const giftId = "g_" + uuid().slice(0, 8);
-  const giftDate = date || new Date().toISOString().split("T")[0];
-  const amt = Number(amount);
+  const giftDate = normalizeGiftDate(date);              // enforce ISO YYYY-MM-DD
+  const amt = Math.round(Number(amount));                // round, not truncate; INTEGER column
 
   await run(
     "INSERT INTO gifts (id,org_id,donor_id,amount,date,type,campaign,notes) VALUES (?,?,?,?,?,?,?,?)",
     [giftId, req.user.orgId, req.params.id, amt, giftDate, type || "cash", campaign || "", notes || ""]
   );
+  // Delta kept here (correct for a fresh gift) so status tier promotion fires.
+  // PUT/DELETE use recalcDonorSummary instead — see those routes.
   await run(
     `UPDATE donors
      SET total_giving     = total_giving + ?,
          last_gift_amount = ?,
-         last_gift_date   = ?,
+         last_gift_date   = CASE WHEN last_gift_date IS NULL OR ? >= last_gift_date THEN ? ELSE last_gift_date END,
          gift_count       = gift_count + 1,
          status           = CASE
            WHEN total_giving + ? > 20000 THEN 'major'
@@ -1306,7 +1355,7 @@ app.post("/donors/:id/gifts", requireAuth, checkWriteAccess, wrap(async (req, re
          END,
          updated_at = NOW()
      WHERE id = ?`,
-    [amt, amt, giftDate, amt, amt, req.params.id]
+    [amt, amt, giftDate, giftDate, amt, amt, req.params.id]
   );
 
   const giftRows  = await query("SELECT * FROM gifts  WHERE id = ?", [giftId]);
@@ -1347,22 +1396,18 @@ app.put("/gifts/:id", requireAuth, wrap(async (req, res) => {
   const existing = await query("SELECT * FROM gifts WHERE id=? AND org_id=?", [req.params.id, req.user.orgId]);
   if (!existing.length) return res.status(404).json({ error: "Gift not found" });
   const g = existing[0];
-  const newAmt = amount !== undefined ? Number(amount) : g.amount;
-  const diff = newAmt - g.amount;
+  const newAmt  = amount !== undefined ? Math.round(Number(amount)) : g.amount; // round, not truncate
+  const newDate = date ? normalizeGiftDate(date) : g.date;                       // enforce ISO
   await run(
     `UPDATE gifts SET amount=?,date=?,type=?,campaign=?,notes=?,fund_id=?,payment_method=?,acknowledgement_sent=? WHERE id=? AND org_id=?`,
-    [newAmt, date||g.date, type||g.type, campaign!==undefined?campaign:g.campaign,
+    [newAmt, newDate, type||g.type, campaign!==undefined?campaign:g.campaign,
      notes!==undefined?notes:g.notes, fund_id!==undefined?fund_id:g.fund_id,
      payment_method!==undefined?payment_method:g.payment_method,
      acknowledgement_sent!==undefined?acknowledgement_sent:g.acknowledgement_sent,
      req.params.id, req.user.orgId]
   );
-  if (diff !== 0) {
-    await run(
-      `UPDATE donors SET total_giving=total_giving+?,last_gift_amount=CASE WHEN last_gift_date=? THEN ? ELSE last_gift_amount END,updated_at=NOW() WHERE id=? AND org_id=?`,
-      [diff, date||g.date, newAmt, g.donor_id, req.user.orgId]
-    );
-  }
+  // Full recalc replaces the old delta — delta was wrong when editing a non-latest gift's amount
+  await recalcDonorSummary(g.donor_id, req.user.orgId);
   const rows = await query("SELECT * FROM gifts WHERE id=?", [req.params.id]);
   res.json(rows[0]);
 }));
@@ -1372,10 +1417,8 @@ app.delete("/gifts/:id", requireAuth, wrap(async (req, res) => {
   if (!existing.length) return res.status(404).json({ error: "Gift not found" });
   const g = existing[0];
   await run("DELETE FROM gifts WHERE id=? AND org_id=?", [req.params.id, req.user.orgId]);
-  await run(
-    `UPDATE donors SET total_giving=GREATEST(0,total_giving-?),gift_count=GREATEST(0,gift_count-1),updated_at=NOW() WHERE id=? AND org_id=?`,
-    [g.amount, g.donor_id, req.user.orgId]
-  );
+  // Full recalc: old delta left last_gift_date and last_gift_amount stale when deleting the most recent gift
+  await recalcDonorSummary(g.donor_id, req.user.orgId);
   res.json({ ok: true });
 }));
 
