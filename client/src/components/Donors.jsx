@@ -360,6 +360,7 @@ function DonorImport({ onClose, onImported }) {
 
   // ── Submit import ──
   const doImport = async () => {
+    console.log("IMPORT CLICKED");
     // Body-build phase — wrapped in try/catch so a silent throw here is never
     // swallowed. Previously this threw before reaching the fetch with no UX feedback.
     let toSend, warnedCount, skippedCount;
@@ -368,6 +369,7 @@ function DonorImport({ onClose, onImported }) {
       warnedCount  = warned.length;
       skippedCount = skipped.length;
       toSend = [...ready, ...warned].map(({ _warnings, _rowIndex, ...d }) => d);
+      console.log("BUILD DONORS LENGTH:", toSend.length);
       if (!toSend.length) {
         setErr(skippedCount ? `All ${skippedCount} rows skipped — no usable name or email.` : "Nothing to import.");
         return;
