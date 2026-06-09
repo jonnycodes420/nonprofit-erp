@@ -427,6 +427,7 @@ function DonorImport({ onClose, onImported }) {
 
   const { ready, warned, skipped } = built;
   const totalToImport = ready.length + warned.length;
+  console.log("IMPORT BUTTON DISABLED?:", loading||totalToImport===0, "| loading:", loading, "| totalToImport:", totalToImport);
 
   return (
     <div style={overlay} className="modal-sheet-overlay">
