@@ -1926,13 +1926,68 @@ function AssignModal({donor,orgTeam,onSave,onClose}){
 }
 
 // ── Directory View ─────────────────────────────────────────────────────────
-function DirectoryView({donors,totalDonors,orgTeam,isAdmin,onSelectDonor,onAssign,stageFilter,setStageFilter,assigneeFilter,setAssigneeFilter,onLoadSampleData,sampleLoading,hasSampleData,onAddDonor}){
+function DirectoryView({donors,totalDonors,orgTeam,isAdmin,onSelectDonor,onAssign,stageFilter,setStageFilter,assigneeFilter,setAssigneeFilter,onLoadSampleData,sampleLoading,hasSampleData,onAddDonor,onBulkDone}){
+  const [selIds,setSelIds]=useState(new Set());
+  const [stageDrop,setStageDrop]=useState(false);
+  const [assignDrop,setAssignDrop]=useState(false);
+  const [delModal,setDelModal]=useState(false);
+  const [busy,setBusy]=useState(false);
+  const [toast,setToast]=useState("");
+
   const filtered=donors
     .filter(d=>!stageFilter||d.stage===stageFilter)
     .filter(d=>!assigneeFilter||d.assignedTo===assigneeFilter);
-  const sel={background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"7px 10px",color:T.ink,fontSize:12,outline:"none",cursor:"pointer"};
-  const cols=["Donor","Stage","Owner","Lifetime","Last Gift","Score",...(isAdmin?[""]:[])]
-  const colGrid="minmax(0,2fr) minmax(0,1fr) minmax(0,1fr) 120px 110px 60px"+(isAdmin?" 80px":"");
+
+  const selFiltered=filtered.filter(d=>selIds.has(d.id));
+  const allChecked=filtered.length>0&&filtered.every(d=>selIds.has(d.id));
+  const someChecked=!allChecked&&filtered.some(d=>selIds.has(d.id));
+
+  function toggleAll(){
+    if(allChecked){const n=new Set(selIds);filtered.forEach(d=>n.delete(d.id));setSelIds(n);}
+    else{const n=new Set(selIds);filtered.forEach(d=>n.add(d.id));setSelIds(n);}
+  }
+  function toggleOne(id,e){
+    e.stopPropagation();
+    const n=new Set(selIds);n.has(id)?n.delete(id):n.add(id);setSelIds(n);
+  }
+  function flash(msg){setToast(msg);setTimeout(()=>setToast(""),3500);}
+
+  async function bulkStage(stage){
+    const ids=selFiltered.map(d=>d.id);
+    setBusy(true);
+    try{
+      const r=await apiFetch("/donors/bulk-stage",{method:"PATCH",body:JSON.stringify({ids,stage})});
+      flash(`${r.updated} donor${r.updated!==1?"s":""} moved to ${STAGES.find(s=>s.id===stage)?.label||stage}`);
+      setSelIds(new Set());if(onBulkDone)onBulkDone();
+    }catch(e){flash("Error: "+e.message);}
+    setBusy(false);setStageDrop(false);
+  }
+
+  async function bulkAssign(userId,name){
+    const ids=selFiltered.map(d=>d.id);
+    setBusy(true);
+    try{
+      const r=await apiFetch("/donors/bulk-assign",{method:"PATCH",body:JSON.stringify({ids,assignedTo:userId})});
+      flash(`${r.updated} donor${r.updated!==1?"s":""} assigned to ${name}`);
+      setSelIds(new Set());if(onBulkDone)onBulkDone();
+    }catch(e){flash("Error: "+e.message);}
+    setBusy(false);setAssignDrop(false);
+  }
+
+  async function bulkDelete(){
+    const ids=selFiltered.map(d=>d.id);
+    setBusy(true);
+    try{
+      const r=await apiFetch("/donors/bulk-delete",{method:"POST",body:JSON.stringify({ids})});
+      flash(`${r.deleted} donor${r.deleted!==1?"s":""} moved to trash`);
+      setSelIds(new Set());setDelModal(false);if(onBulkDone)onBulkDone();
+    }catch(e){flash("Error: "+e.message);}
+    setBusy(false);
+  }
+
+  const filterSel={background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"7px 10px",color:T.ink,fontSize:12,outline:"none",cursor:"pointer"};
+  const colGrid="36px minmax(0,2fr) minmax(0,1fr) minmax(0,1fr) 120px 110px 60px"+(isAdmin?" 80px":"");
+  const dropItem={display:"block",width:"100%",textAlign:"left",background:"none",border:"none",padding:"9px 14px",fontSize:13,color:"#0f1a12",cursor:"pointer",borderBottom:"1px solid #f3f0eb",fontFamily:"'DM Sans',system-ui,sans-serif"};
 
   if(totalDonors===0&&!hasSampleData){
     return(
@@ -1948,18 +2003,8 @@ function DirectoryView({donors,totalDonors,orgTeam,isAdmin,onSelectDonor,onAssig
         <div style={{fontFamily:"'DM Serif Display',Georgia,serif",fontSize:22,fontWeight:400,color:"#0f1a12",letterSpacing:"-0.01em",marginBottom:10}}>No donors yet.</div>
         <div style={{fontSize:14,color:"#6b7280",maxWidth:280,lineHeight:1.65,marginBottom:24}}>Add your first contact and start building your relationship pipeline.</div>
         <div style={{display:"flex",gap:10,flexWrap:"wrap",justifyContent:"center"}}>
-          {onAddDonor&&(
-            <button onClick={onAddDonor}
-              style={{background:"#1a6b4a",color:"#fff",border:"none",borderRadius:12,padding:"12px 24px",fontSize:14,fontWeight:600,cursor:"pointer",fontFamily:"'DM Sans',system-ui,sans-serif"}}>
-              Add a donor →
-            </button>
-          )}
-          {onLoadSampleData&&(
-            <button onClick={onLoadSampleData} disabled={sampleLoading}
-              style={{background:"transparent",color:"#1a6b4a",border:"1.5px solid #1a6b4a",borderRadius:12,padding:"12px 24px",fontSize:14,fontWeight:600,cursor:sampleLoading?"not-allowed":"pointer",opacity:sampleLoading?0.7:1,fontFamily:"'DM Sans',system-ui,sans-serif"}}>
-              {sampleLoading?"Loading…":"Explore with sample data"}
-            </button>
-          )}
+          {onAddDonor&&<button onClick={onAddDonor} style={{background:"#1a6b4a",color:"#fff",border:"none",borderRadius:12,padding:"12px 24px",fontSize:14,fontWeight:600,cursor:"pointer",fontFamily:"'DM Sans',system-ui,sans-serif"}}>Add a donor →</button>}
+          {onLoadSampleData&&<button onClick={onLoadSampleData} disabled={sampleLoading} style={{background:"transparent",color:"#1a6b4a",border:"1.5px solid #1a6b4a",borderRadius:12,padding:"12px 24px",fontSize:14,fontWeight:600,cursor:sampleLoading?"not-allowed":"pointer",opacity:sampleLoading?0.7:1,fontFamily:"'DM Sans',system-ui,sans-serif"}}>{sampleLoading?"Loading…":"Explore with sample data"}</button>}
         </div>
       </div>
     );
@@ -1967,35 +2012,110 @@ function DirectoryView({donors,totalDonors,orgTeam,isAdmin,onSelectDonor,onAssig
 
   return(
     <div style={{display:"flex",flexDirection:"column",gap:10}}>
+
+      {/* Toast */}
+      {toast&&<div style={{background:"#0f1a12",color:"#f0ede6",borderRadius:10,padding:"10px 16px",fontSize:13,fontWeight:600,textAlign:"center"}}>{toast}</div>}
+
+      {/* Filters */}
       <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
-        <select value={stageFilter} onChange={e=>setStageFilter(e.target.value)} style={sel}>
+        <select value={stageFilter} onChange={e=>setStageFilter(e.target.value)} style={filterSel}>
           <option value="">All stages</option>
           {STAGES.map(s=><option key={s.id} value={s.id}>{s.label}</option>)}
         </select>
-        <select value={assigneeFilter} onChange={e=>setAssigneeFilter(e.target.value)} style={sel}>
+        <select value={assigneeFilter} onChange={e=>setAssigneeFilter(e.target.value)} style={filterSel}>
           <option value="">All owners</option>
           {orgTeam.map(u=><option key={u.id} value={u.id}>{u.name}</option>)}
         </select>
         <span style={{fontSize:12,color:T.ink3}}>{filtered.length} donor{filtered.length!==1?"s":""}</span>
       </div>
+
+      {/* Bulk action bar — shown when ≥1 rows selected */}
+      {selIds.size>0&&(
+        <div style={{background:"#0f1a12",borderRadius:12,padding:"10px 14px",display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+          <span style={{fontSize:13,fontWeight:700,color:"#f0ede6",whiteSpace:"nowrap"}}>{selFiltered.length} selected</span>
+          <button onClick={()=>setSelIds(new Set())} style={{background:"none",border:"none",color:"#a1b5a8",fontSize:12,cursor:"pointer",padding:0,textDecoration:"underline",whiteSpace:"nowrap"}}>Clear</button>
+          <div style={{flex:1,minWidth:8}}/>
+
+          {/* Move to stage */}
+          <div style={{position:"relative"}}>
+            <button onClick={()=>{setStageDrop(v=>!v);setAssignDrop(false);}} disabled={busy}
+              style={{background:"#1a6b4a",border:"none",borderRadius:8,padding:"7px 12px",color:"#fff",fontSize:12,fontWeight:600,cursor:"pointer",whiteSpace:"nowrap",opacity:busy?0.6:1}}>
+              Move to stage ▾
+            </button>
+            {stageDrop&&(
+              <div style={{position:"absolute",top:"calc(100% + 6px)",left:0,background:"#f0ede6",border:"1px solid #d4cfc6",borderRadius:12,boxShadow:"0 8px 28px rgba(0,0,0,0.15)",zIndex:500,minWidth:148,overflow:"hidden"}}>
+                {STAGES.map(s=>(
+                  <button key={s.id} onClick={()=>bulkStage(s.id)} style={dropItem}
+                    onMouseEnter={e=>e.target.style.background="#e8e4db"} onMouseLeave={e=>e.target.style.background="none"}>
+                    {s.label}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Assign to (admin only) */}
+          {isAdmin&&orgTeam.length>0&&(
+            <div style={{position:"relative"}}>
+              <button onClick={()=>{setAssignDrop(v=>!v);setStageDrop(false);}} disabled={busy}
+                style={{background:"#1a6b4a",border:"none",borderRadius:8,padding:"7px 12px",color:"#fff",fontSize:12,fontWeight:600,cursor:"pointer",whiteSpace:"nowrap",opacity:busy?0.6:1}}>
+                Assign to ▾
+              </button>
+              {assignDrop&&(
+                <div style={{position:"absolute",top:"calc(100% + 6px)",right:0,background:"#f0ede6",border:"1px solid #d4cfc6",borderRadius:12,boxShadow:"0 8px 28px rgba(0,0,0,0.15)",zIndex:500,minWidth:160,overflow:"hidden"}}>
+                  {orgTeam.map(u=>(
+                    <button key={u.id} onClick={()=>bulkAssign(u.id,u.name)} style={dropItem}
+                      onMouseEnter={e=>e.target.style.background="#e8e4db"} onMouseLeave={e=>e.target.style.background="none"}>
+                      {u.name}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Delete (admin only) */}
+          {isAdmin&&(
+            <button onClick={()=>setDelModal(true)} disabled={busy}
+              style={{background:"#ef4444",border:"none",borderRadius:8,padding:"7px 12px",color:"#fff",fontSize:12,fontWeight:600,cursor:"pointer",whiteSpace:"nowrap",opacity:busy?0.6:1}}>
+              Delete
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* Donor table */}
       {filtered.length===0
         ?<EmptyState icon="♦" title="No donors found" message="Try adjusting your filters or search term."/>
         :<div style={{background:T.white,borderRadius:14,overflow:"hidden",border:"1px solid "+T.bg3}}>
-          <div className="dir-header-row" style={{display:"grid",gridTemplateColumns:colGrid,gap:0,padding:"10px 18px",background:"#1a6b4a"}}>
-            {cols.map((h,i)=>(
-              <div key={i} className={h==="Stage"?"dir-col-stage":h==="Owner"?"dir-col-owner":h===""?"dir-col-assign":""}
-                   style={{fontSize:10,fontWeight:700,color:"#fff",textTransform:"uppercase",letterSpacing:".06em",textAlign:i>=3?"right":"left"}}>{h}</div>
-            ))}
+          {/* Header */}
+          <div className="dir-header-row" style={{display:"grid",gridTemplateColumns:colGrid,gap:0,padding:"10px 18px",background:"#1a6b4a",alignItems:"center"}}>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"center"}}>
+              <input type="checkbox" checked={allChecked} ref={el=>{if(el)el.indeterminate=someChecked;}} onChange={toggleAll}
+                style={{width:15,height:15,cursor:"pointer",accentColor:"#10b981"}}/>
+            </div>
+            {["Donor","Stage","Owner","Lifetime","Last Gift","Score",...(isAdmin?[""]:[])]
+              .map((h,i)=>(
+                <div key={i} className={h==="Stage"?"dir-col-stage":h==="Owner"?"dir-col-owner":h===""?"dir-col-assign":""}
+                  style={{fontSize:10,fontWeight:700,color:"#fff",textTransform:"uppercase",letterSpacing:".06em",textAlign:i>=3?"right":"left"}}>{h}</div>
+              ))}
           </div>
+          {/* Rows */}
           {filtered.map((d,idx)=>{
             const stage=STAGES.find(s=>s.id===(d.stage||"cultivate"))||STAGES[2];
             const sc=donorScore(d);const scColor=sc>70?"#1a6b4a":sc>45?"#f59e0b":"#ef4444";
             const isLast=idx===filtered.length-1;
+            const checked=selIds.has(d.id);
+            const rowBg=checked?"#f0faf4":idx%2===0?T.white:"#faf9f6";
             return(
               <div key={d.id} className="dir-donor-row" onClick={()=>onSelectDonor(d)}
-                style={{display:"grid",gridTemplateColumns:colGrid,gap:0,padding:"11px 18px",background:idx%2===0?T.white:"#faf9f6",borderBottom:isLast?"none":"1px solid "+T.bg3,cursor:"pointer",alignItems:"center",transition:"background 0.12s"}}
-                onMouseEnter={e=>e.currentTarget.style.background=T.bg}
-                onMouseLeave={e=>e.currentTarget.style.background=idx%2===0?T.white:"#faf9f6"}>
+                style={{display:"grid",gridTemplateColumns:colGrid,gap:0,padding:"11px 18px",background:rowBg,borderBottom:isLast?"none":"1px solid "+T.bg3,cursor:"pointer",alignItems:"center",transition:"background 0.1s"}}
+                onMouseEnter={e=>e.currentTarget.style.background=checked?"#e6f5ec":T.bg}
+                onMouseLeave={e=>e.currentTarget.style.background=rowBg}>
+                <div onClick={e=>toggleOne(d.id,e)} style={{display:"flex",alignItems:"center",justifyContent:"center",padding:"4px"}}>
+                  <input type="checkbox" checked={checked} onChange={e=>{e.stopPropagation();toggleOne(d.id,e);}}
+                    style={{width:15,height:15,cursor:"pointer",accentColor:"#10b981"}} onClick={e=>e.stopPropagation()}/>
+                </div>
                 <div style={{display:"flex",alignItems:"center",gap:8,minWidth:0}}>
                   <div style={{width:32,height:32,borderRadius:"50%",background:stage.color+"22",display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,fontWeight:800,color:stage.color,flexShrink:0}}>{d.name[0]}</div>
                   <div style={{minWidth:0}}>
@@ -2028,6 +2148,31 @@ function DirectoryView({donors,totalDonors,orgTeam,isAdmin,onSelectDonor,onAssig
           })}
         </div>
       }
+
+      {/* Delete confirmation modal — never auto-confirm */}
+      {delModal&&(
+        <div style={{position:"fixed",inset:0,background:"rgba(15,26,18,0.72)",zIndex:900,display:"flex",alignItems:"center",justifyContent:"center",padding:24}}
+          onClick={e=>{if(e.target===e.currentTarget)setDelModal(false);}}>
+          <div style={{background:"#f0ede6",borderRadius:20,padding:"36px 32px",maxWidth:420,width:"100%",boxShadow:"0 24px 60px rgba(0,0,0,0.22)"}}>
+            <div style={{fontSize:24,fontWeight:400,color:"#0f1a12",fontFamily:"'DM Serif Display',Georgia,serif",letterSpacing:"-0.02em",marginBottom:12,lineHeight:1.2}}>
+              Delete {selFiltered.length} donor{selFiltered.length!==1?"s":""}?
+            </div>
+            <div style={{fontSize:14,color:"#4a5e4f",lineHeight:1.65,marginBottom:28}}>
+              This removes {selFiltered.length} donor{selFiltered.length!==1?"s":""} and their gift history from your active lists. You can restore them later from trash.
+            </div>
+            <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
+              <button onClick={()=>setDelModal(false)}
+                style={{flex:1,background:"transparent",border:"1px solid #c9c3b8",borderRadius:10,padding:"11px 16px",color:"#4a5e4f",fontSize:13,fontWeight:600,cursor:"pointer",minWidth:100}}>
+                Cancel
+              </button>
+              <button onClick={bulkDelete} disabled={busy}
+                style={{flex:1,background:"#ef4444",border:"none",borderRadius:10,padding:"11px 16px",color:"#fff",fontSize:13,fontWeight:700,cursor:busy?"not-allowed":"pointer",opacity:busy?0.7:1,minWidth:100}}>
+                {busy?"Deleting…":`Delete ${selFiltered.length} donor${selFiltered.length!==1?"s":""}`}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -2508,7 +2653,7 @@ export function Donors({data,setData,isReadOnly=false}){
         </div>
       </Card>}
 
-      {view==="directory"&&<DirectoryView donors={filtered} totalDonors={data.donors.length} orgTeam={orgTeam} isAdmin={isAdmin} onSelectDonor={d=>setSelected(d)} onAssign={d=>setAssignTarget(d)} stageFilter={dirStage} setStageFilter={setDirStage} assigneeFilter={dirAssignee} setAssigneeFilter={setDirAssignee} onLoadSampleData={loadSampleData} sampleLoading={sampleLoading} hasSampleData={sampleStatus?.hasSampleData} onAddDonor={()=>setShowAdd(true)}/>}
+      {view==="directory"&&<DirectoryView donors={filtered} totalDonors={data.donors.length} orgTeam={orgTeam} isAdmin={isAdmin} onSelectDonor={d=>setSelected(d)} onAssign={d=>setAssignTarget(d)} stageFilter={dirStage} setStageFilter={setDirStage} assigneeFilter={dirAssignee} setAssigneeFilter={setDirAssignee} onLoadSampleData={loadSampleData} sampleLoading={sampleLoading} hasSampleData={sampleStatus?.hasSampleData} onAddDonor={()=>setShowAdd(true)} onBulkDone={reloadDonors}/>}
 
       {view==="pipeline"&&(()=>{
         const myDonors=filtered.filter(d=>d.assignedTo===userId);

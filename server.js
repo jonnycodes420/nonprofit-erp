@@ -933,7 +933,7 @@ app.post("/auth/invite/accept", wrap(async (req, res) => {
 // ── Donors ─────────────────────────────────────────────────────────────────
 app.get("/donors", requireAuth, wrap(async (req, res) => {
   const donors = await query(
-    "SELECT * FROM donors WHERE org_id = ? ORDER BY total_giving DESC",
+    "SELECT * FROM donors WHERE org_id = ? AND deleted_at IS NULL ORDER BY total_giving DESC",
     [req.user.orgId]
   );
   const result = await Promise.all(donors.map(async d => ({
@@ -949,7 +949,7 @@ app.get("/donors", requireAuth, wrap(async (req, res) => {
 
 app.get("/donors/my", requireAuth, wrap(async (req, res) => {
   const donors = await query(
-    "SELECT * FROM donors WHERE org_id = ? AND assigned_to = ? ORDER BY total_giving DESC",
+    "SELECT * FROM donors WHERE org_id = ? AND assigned_to = ? AND deleted_at IS NULL ORDER BY total_giving DESC",
     [req.user.orgId, req.user.userId]
   );
   const result = await Promise.all(donors.map(async d => ({
@@ -1127,6 +1127,69 @@ app.patch("/donors/:id/assign", requireAuth, requireAdmin, wrap(async (req, res)
   );
   if (!affected.changes) return res.status(404).json({ error: "Donor not found" });
   res.json({ success: true });
+}));
+
+// ── Bulk donor operations ──────────────────────────────────────────────────
+// Future: restore-from-trash view + permanent-purge scheduled job can be
+// built on deleted_at — the column is stable and org-scoped.
+
+app.patch("/donors/bulk-stage", requireAuth, wrap(async (req, res) => {
+  const { ids, stage } = req.body;
+  const VALID = ["prospect","qualify","cultivate","solicit","steward","lapsed"];
+  if (!Array.isArray(ids) || ids.length === 0) return res.status(400).json({ error: "ids array required" });
+  if (!VALID.includes(stage)) return res.status(400).json({ error: "Invalid stage" });
+
+  // Verify every id belongs to the caller's org — reject the whole batch on any mismatch
+  const owned = await query(
+    "SELECT id FROM donors WHERE id = ANY(?) AND org_id = ? AND deleted_at IS NULL",
+    [ids, req.user.orgId]
+  );
+  if (owned.length !== ids.length) return res.status(403).json({ error: "One or more donors not found in your org" });
+
+  const result = await run(
+    "UPDATE donors SET stage=?, updated_at=NOW() WHERE id = ANY(?) AND org_id = ? AND deleted_at IS NULL",
+    [stage, ids, req.user.orgId]
+  );
+  res.json({ updated: result.changes });
+}));
+
+app.patch("/donors/bulk-assign", requireAuth, requireAdmin, wrap(async (req, res) => {
+  const { ids, assignedTo } = req.body;
+  if (!Array.isArray(ids) || ids.length === 0) return res.status(400).json({ error: "ids array required" });
+  if (!assignedTo) return res.status(400).json({ error: "assignedTo required" });
+
+  const userRow = await query("SELECT id, name FROM users WHERE id=? AND org_id=?", [assignedTo, req.user.orgId]);
+  if (!userRow.length) return res.status(400).json({ error: "User not found in your org" });
+  const assignedToName = userRow[0].name;
+
+  const owned = await query(
+    "SELECT id FROM donors WHERE id = ANY(?) AND org_id = ? AND deleted_at IS NULL",
+    [ids, req.user.orgId]
+  );
+  if (owned.length !== ids.length) return res.status(403).json({ error: "One or more donors not found in your org" });
+
+  const result = await run(
+    "UPDATE donors SET assigned_to=?, assigned_to_name=?, updated_at=NOW() WHERE id = ANY(?) AND org_id = ? AND deleted_at IS NULL",
+    [assignedTo, assignedToName, ids, req.user.orgId]
+  );
+  res.json({ updated: result.changes });
+}));
+
+app.post("/donors/bulk-delete", requireAuth, requireAdmin, wrap(async (req, res) => {
+  const { ids } = req.body;
+  if (!Array.isArray(ids) || ids.length === 0) return res.status(400).json({ error: "ids array required" });
+
+  const owned = await query(
+    "SELECT id FROM donors WHERE id = ANY(?) AND org_id = ? AND deleted_at IS NULL",
+    [ids, req.user.orgId]
+  );
+  if (owned.length !== ids.length) return res.status(403).json({ error: "One or more donors not found in your org" });
+
+  const result = await run(
+    "UPDATE donors SET deleted_at=NOW() WHERE id = ANY(?) AND org_id = ? AND deleted_at IS NULL",
+    [ids, req.user.orgId]
+  );
+  res.json({ deleted: result.changes });
 }));
 
 // ── Interactions ───────────────────────────────────────────────────────────
@@ -1707,7 +1770,7 @@ app.post("/financials/month", requireAuth, requireAdmin, wrap(async (req, res) =
 // ── Analytics ──────────────────────────────────────────────────────────────
 app.get("/analytics", requireAuth, wrap(async (req, res) => {
   const { orgId } = req.user;
-  const donors     = await query("SELECT * FROM donors     WHERE org_id = ?", [orgId]);
+  const donors     = await query("SELECT * FROM donors     WHERE org_id = ? AND deleted_at IS NULL", [orgId]);
   const grants     = await query("SELECT * FROM grants     WHERE org_id = ?", [orgId]);
   const tasks      = await query("SELECT * FROM tasks      WHERE org_id = ?", [orgId]);
   const financials = await query("SELECT * FROM financials WHERE org_id = ?", [orgId]);
@@ -1751,12 +1814,12 @@ app.get("/dashboard/my-stats", requireAuth, wrap(async (req, res) => {
   const today = now.toISOString().split("T")[0];
 
   const [portfolioRows, visitsRows, movesRows, giftsRows, pipelineRows, lapsedRows] = await Promise.all([
-    query("SELECT COUNT(*) as cnt FROM donors WHERE org_id=? AND assigned_to=?", [orgId, userId]),
+    query("SELECT COUNT(*) as cnt FROM donors WHERE org_id=? AND assigned_to=? AND deleted_at IS NULL", [orgId, userId]),
     query("SELECT COUNT(*) as cnt FROM interactions WHERE org_id=? AND created_by=? AND type='meeting' AND date>=?", [orgId, userId, fyStart]),
     query("SELECT COUNT(*) as cnt FROM interactions WHERE org_id=? AND created_by=? AND date>=?", [orgId, userId, fyStart]),
     query("SELECT COALESCE(SUM(g.amount),0) as total FROM gifts g JOIN donors d ON d.id=g.donor_id WHERE d.org_id=? AND d.assigned_to=? AND g.date>=?", [orgId, userId, fyStart]),
-    query("SELECT COALESCE(SUM(total_giving),0) as total FROM donors WHERE org_id=? AND assigned_to=? AND stage NOT IN ('lapsed','closed')", [orgId, userId]),
-    query("SELECT COUNT(*) as cnt FROM donors WHERE org_id=? AND assigned_to=? AND stage='lapsed'", [orgId, userId]),
+    query("SELECT COALESCE(SUM(total_giving),0) as total FROM donors WHERE org_id=? AND assigned_to=? AND stage NOT IN ('lapsed','closed') AND deleted_at IS NULL", [orgId, userId]),
+    query("SELECT COUNT(*) as cnt FROM donors WHERE org_id=? AND assigned_to=? AND stage='lapsed' AND deleted_at IS NULL", [orgId, userId]),
   ]);
 
   res.json({
@@ -1782,7 +1845,7 @@ app.get("/dashboard/today", requireAuth, wrap(async (req, res) => {
            MAX(i.date) AS last_contact
     FROM donors d
     LEFT JOIN interactions i ON i.donor_id = d.id AND i.type != 'email_open'
-    WHERE d.org_id = ? AND d.stage NOT IN ('prospect','lapsed')
+    WHERE d.org_id = ? AND d.deleted_at IS NULL AND d.stage NOT IN ('prospect','lapsed')
     GROUP BY d.id, d.name, d.total_giving, d.last_gift_date, d.last_gift_amount, d.stage
     HAVING MAX(i.date) < ? OR MAX(i.date) IS NULL
     ORDER BY COALESCE(d.total_giving, 0) DESC
@@ -1887,7 +1950,7 @@ app.get("/dashboard", requireAuth, wrap(async (req, res) => {
     [orgId]
   );
   const lapsedDonors = await query(
-    "SELECT * FROM donors WHERE org_id=? AND status='lapsed' ORDER BY last_gift_date ASC LIMIT 5",
+    "SELECT * FROM donors WHERE org_id=? AND status='lapsed' AND deleted_at IS NULL ORDER BY last_gift_date ASC LIMIT 5",
     [orgId]
   );
   res.json({ urgentTasks, upcomingDeadlines, recentInteractions, lapsedDonors });
@@ -1957,7 +2020,7 @@ Return ONLY a JSON object like: {"Original Header": "fieldName", "Another Header
 
 // ── AI — donor propensity scoring ──────────────────────────────────────────
 app.get("/ai/donor-score", requireAuth, wrap(async (req, res) => {
-  const donors = await query("SELECT * FROM donors WHERE org_id = ?", [req.user.orgId]);
+  const donors = await query("SELECT * FROM donors WHERE org_id = ? AND deleted_at IS NULL", [req.user.orgId]);
   const scored = donors.map(d => {
     let score = 0;
 
@@ -2160,7 +2223,7 @@ app.post("/campaigns/:id/send", requireAuth, requireAdmin, wrap(async (req, res)
     : (campaign.segment || {});
 
   let donors = await query(
-    "SELECT * FROM donors WHERE org_id = ? AND email IS NOT NULL AND email != ''",
+    "SELECT * FROM donors WHERE org_id = ? AND email IS NOT NULL AND email != '' AND deleted_at IS NULL",
     [req.user.orgId]
   );
 
@@ -2476,7 +2539,7 @@ app.get("/annual-fund", requireAuth, wrap(async (req, res) => {
   const goalPct = goal > 0 ? Math.round(totalRaised / goal * 100) : 0;
 
   const lapsedDonorIds = new Set(
-    (await query("SELECT id FROM donors WHERE org_id = ? AND status = 'lapsed'", [orgId])).map(d => d.id)
+    (await query("SELECT id FROM donors WHERE org_id = ? AND status = 'lapsed' AND deleted_at IS NULL", [orgId])).map(d => d.id)
   );
   const recovered = thisYearGifts.filter(g => lapsedDonorIds.has(g.donor_id)).length;
 
@@ -3100,7 +3163,7 @@ app.post("/reports/board", requireAuth, wrap(async (req, res) => {
   console.log("[board-report] step 3: fetching core data...");
   const [org, allDonors, allGrants, allTasks, allCampaigns] = await Promise.all([
     query("SELECT * FROM orgs WHERE id = ?", [orgId]).then(r => r[0]),
-    query("SELECT id,name,total_giving,stage,created_at FROM donors WHERE org_id = ?", [orgId]),
+    query("SELECT id,name,total_giving,stage,created_at FROM donors WHERE org_id = ? AND deleted_at IS NULL", [orgId]),
     query("SELECT * FROM grants WHERE org_id = ?", [orgId]),
     query("SELECT done,due FROM tasks WHERE org_id = ?", [orgId]),
     query("SELECT * FROM campaigns WHERE org_id = ?", [orgId]),
@@ -3657,17 +3720,17 @@ async function autoEnroll() {
       let donors = [];
       if (seq.trigger === "lapsed_90") {
         donors = await query(
-          `SELECT id FROM donors WHERE org_id = ? AND stage = 'lapsed' AND last_gift_date IS NOT NULL AND last_gift_date::date < NOW() - INTERVAL '90 days'`,
+          `SELECT id FROM donors WHERE org_id = ? AND stage = 'lapsed' AND deleted_at IS NULL AND last_gift_date IS NOT NULL AND last_gift_date::date < NOW() - INTERVAL '90 days'`,
           [seq.org_id]
         );
       } else if (seq.trigger === "lapsed_180") {
         donors = await query(
-          `SELECT id FROM donors WHERE org_id = ? AND stage = 'lapsed' AND last_gift_date IS NOT NULL AND last_gift_date::date < NOW() - INTERVAL '180 days'`,
+          `SELECT id FROM donors WHERE org_id = ? AND stage = 'lapsed' AND deleted_at IS NULL AND last_gift_date IS NOT NULL AND last_gift_date::date < NOW() - INTERVAL '180 days'`,
           [seq.org_id]
         );
       } else if (seq.trigger === "new_donor") {
         donors = await query(
-          `SELECT id FROM donors WHERE org_id = ? AND gift_count = 1 AND last_gift_date IS NOT NULL AND last_gift_date::date > NOW() - INTERVAL '7 days'`,
+          `SELECT id FROM donors WHERE org_id = ? AND gift_count = 1 AND deleted_at IS NULL AND last_gift_date IS NOT NULL AND last_gift_date::date > NOW() - INTERVAL '7 days'`,
           [seq.org_id]
         );
       }
@@ -3962,7 +4025,7 @@ app.get("/billing/status", requireAuth, wrap(async (req, res) => {
 
   const [[seatRow], [recordRow]] = await Promise.all([
     query("SELECT COUNT(*) AS c FROM users WHERE org_id=?", [req.user.orgId]),
-    query("SELECT COUNT(*) AS c FROM donors WHERE org_id=?", [req.user.orgId]),
+    query("SELECT COUNT(*) AS c FROM donors WHERE org_id=? AND deleted_at IS NULL", [req.user.orgId]),
   ]);
 
   res.json({
@@ -4115,7 +4178,7 @@ async function checkPlanLimit(org, dimension) {
     const rows = await query("SELECT COUNT(*) AS c FROM users WHERE org_id=?", [org.id]);
     current = Number(rows[0]?.c) || 0;
   } else if (dimension === "records") {
-    const rows = await query("SELECT COUNT(*) AS c FROM donors WHERE org_id=?", [org.id]);
+    const rows = await query("SELECT COUNT(*) AS c FROM donors WHERE org_id=? AND deleted_at IS NULL", [org.id]);
     current = Number(rows[0]?.c) || 0;
   }
   const isTrial = (org.subscription_status || "trialing") === "trialing";
@@ -4124,7 +4187,7 @@ async function checkPlanLimit(org, dimension) {
 
 async function orgWithMetrics(org) {
   const [donors, grants, users, lastActive] = await Promise.all([
-    query("SELECT COUNT(*) AS c FROM donors WHERE org_id=?", [org.id]),
+    query("SELECT COUNT(*) AS c FROM donors WHERE org_id=? AND deleted_at IS NULL", [org.id]),
     query("SELECT COUNT(*) AS c FROM grants WHERE org_id=?", [org.id]),
     query("SELECT COUNT(*) AS c FROM users WHERE org_id=?", [org.id]),
     query("SELECT MAX(created_at) AS t FROM interactions WHERE org_id=?", [org.id]),
@@ -4310,7 +4373,7 @@ async function syncGmail(userId, orgId) {
 
   // Get all donor emails for this org
   const donors = await query(
-    "SELECT id, email FROM donors WHERE org_id=? AND email IS NOT NULL AND email != ''",
+    "SELECT id, email FROM donors WHERE org_id=? AND email IS NOT NULL AND email != '' AND deleted_at IS NULL",
     [orgId]
   );
   if (!donors.length) return;
@@ -4845,7 +4908,7 @@ app.get("/org/export", requireAuth, wrap(async (req, res) => {
   }
 
   const [donors, gifts, pledges, grants, txns, events, attendees, campaigns, interactions, volunteers, board, tasks] = await Promise.all([
-    query("SELECT * FROM donors WHERE org_id=? ORDER BY name", [orgId]),
+    query("SELECT * FROM donors WHERE org_id=? AND deleted_at IS NULL ORDER BY name", [orgId]),
     query("SELECT g.*, d.name as donor_name FROM gifts g LEFT JOIN donors d ON d.id=g.donor_id WHERE g.org_id=? ORDER BY g.date DESC", [orgId]),
     query("SELECT pg.*, d.name as donor_name FROM planned_gifts pg LEFT JOIN donors d ON d.id=pg.donor_id WHERE pg.org_id=? ORDER BY pg.created_at DESC", [orgId]),
     query("SELECT * FROM grants WHERE org_id=? ORDER BY deadline", [orgId]),
