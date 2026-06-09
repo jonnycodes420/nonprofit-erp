@@ -1,4 +1,6 @@
-import { useState, useEffect, useRef, Component } from "react";
+import { useState, useEffect, useRef, useMemo, Component } from "react";
+import Papa from "papaparse";
+import * as XLSX from "xlsx";
 import { apiFetch } from "../api";
 import { useAuth } from "../main";
 import UpgradeModal from "./UpgradeModal";
@@ -24,20 +26,29 @@ import { T, fmt, fmtFull, daysDiff, SC, askClaude, STAGES, STAGE_ACTION, TIER_CO
 import { DonorMap } from "./DonorMap";
 
 // ── CSV Import helpers ─────────────────────────────────────────────────────
+// ── Import field registry ──────────────────────────────────────────────────
 const CSV_FIELDS = [
-  {key:"name",labels:["name","full name","donor name","contact"]},
-  {key:"email",labels:["email","email address","e-mail"]},
-  {key:"phone",labels:["phone","phone number","mobile","cell"]},
-  {key:"total",labels:["total","total giving","lifetime","lifetime giving","total donated"]},
-  {key:"lastAmount",labels:["last gift","last amount","last donation","recent gift"]},
-  {key:"lastGift",labels:["last gift date","date","last donation date","most recent date"]},
-  {key:"gifts",labels:["gifts","gift count","# gifts","number of gifts","donations"]},
-  {key:"status",labels:["status","donor status","type"]},
-  {key:"notes",labels:["notes","note","comments"]},
+  { key:"name",      labels:["name","full name","donor name","contact","display name"] },
+  { key:"email",     labels:["email","email address","e-mail","e mail"] },
+  { key:"phone",     labels:["phone","phone number","mobile","cell","telephone"] },
+  { key:"total",     labels:["total","total giving","lifetime","lifetime giving","total donated","cumulative giving"] },
+  { key:"lastAmount",labels:["last gift amount","last amount","last donation amount","recent gift","most recent gift"] },
+  { key:"lastGift",  labels:["last gift date","last donation date","most recent date","last gift"] },
+  { key:"gifts",     labels:["gifts","gift count","# gifts","number of gifts","donations","gift #","# donations"] },
+  { key:"status",    labels:["status","donor status","type"] },
+  { key:"city",      labels:["city","town"] },
+  { key:"state",     labels:["state","province","region"] },
+  { key:"notes",     labels:["notes","note","comments","memo"] },
 ];
+const VALID_IMPORT_KEYS = new Set([...CSV_FIELDS.map(f => f.key), "_firstName", "_lastName"]);
+const IMPORT_STAGES = ["prospect","qualify","cultivate","solicit","steward","lapsed"];
 
 function guessField(header) {
-  const h = header.toLowerCase().trim();
+  if (!header || !String(header).trim()) return "";
+  const h = String(header).toLowerCase().trim();
+  // Separate first/last name columns → internal keys combined into name on build
+  if (h === "first" || h === "first name" || h === "firstname" || h === "given name") return "_firstName";
+  if (h === "last"  || h === "last name"  || h === "lastname"  || h === "surname" || h === "family name") return "_lastName";
   for (const f of CSV_FIELDS) {
     if (f.labels.some(l => h === l || h.includes(l))) return f.key;
   }
@@ -57,48 +68,188 @@ function inferStage(total, lastGiftStr) {
 
 const STAGE_COLORS = {prospect:T.ink3,qualify:"#3b82f6",cultivate:"#8b5cf6",solicit:"#f59e0b",steward:"#1a6b4a",lapsed:"#ef4444"};
 
-function parseCSV(text) {
-  const lines = text.trim().split(/\r?\n/);
-  if (lines.length < 2) return { headers: [], rows: [] };
-  const headers = lines[0].split(",").map(h => h.replace(/^"|"$/g, "").trim());
-  const rows = lines.slice(1).map(line => {
-    const vals = []; let cur = ""; let inQ = false;
-    for (const ch of line) {
-      if (ch === '"') { inQ = !inQ; continue; }
-      if (ch === "," && !inQ) { vals.push(cur.trim()); cur = ""; continue; }
-      cur += ch;
+// ── Normalization helpers ──────────────────────────────────────────────────
+function normalizeDate(val) {
+  if (val === null || val === undefined || val === "") return { value:null, warn:null };
+  if (val instanceof Date) {
+    return isNaN(val) ? { value:null, warn:"invalid date" } : { value:val.toISOString().split("T")[0], warn:null };
+  }
+  const s = String(val).trim();
+  if (!s) return { value:null, warn:null };
+  // Excel serial (5-digit number > 25569 = 1970-01-01)
+  if (/^\d{5}$/.test(s)) {
+    const n = parseInt(s);
+    if (n > 25569 && n < 60000) {
+      const d = new Date((n - 25569) * 86400000);
+      if (!isNaN(d)) return { value:d.toISOString().split("T")[0], warn:null };
     }
-    vals.push(cur.trim());
-    return Object.fromEntries(headers.map((h, i) => [h, vals[i] || ""]));
-  });
-  return { headers, rows };
+  }
+  // ISO YYYY-MM-DD
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) {
+    const d = new Date(s + "T12:00:00Z");
+    if (!isNaN(d)) return { value:s, warn:null };
+  }
+  // MM/DD/YYYY or M/D/YYYY
+  const mdy = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (mdy) {
+    const iso = `${mdy[3]}-${mdy[1].padStart(2,"0")}-${mdy[2].padStart(2,"0")}`;
+    const d = new Date(iso + "T12:00:00Z");
+    if (!isNaN(d)) return { value:iso, warn:null };
+  }
+  // YYYY/MM/DD
+  const ymd = s.match(/^(\d{4})\/(\d{2})\/(\d{2})$/);
+  if (ymd) {
+    const iso = `${ymd[1]}-${ymd[2]}-${ymd[3]}`;
+    const d = new Date(iso + "T12:00:00Z");
+    if (!isNaN(d)) return { value:iso, warn:null };
+  }
+  // "Jan 2023" / "January 2023"
+  const monYear = s.match(/^([A-Za-z]+)\s+(\d{4})$/);
+  if (monYear) {
+    const d = new Date(`${monYear[1]} 1, ${monYear[2]}`);
+    if (!isNaN(d)) return { value:d.toISOString().split("T")[0], warn:null };
+  }
+  // Native parse as last resort (guard against bare 4-digit years)
+  if (!/^\d{4}$/.test(s)) {
+    const d = new Date(s);
+    if (!isNaN(d) && d.getFullYear() > 1900 && d.getFullYear() < 2100)
+      return { value:d.toISOString().split("T")[0], warn:null };
+  }
+  return { value:null, warn:`couldn't parse date '${s}'` };
 }
 
+function normalizeMoney(val) {
+  if (val === null || val === undefined || val === "") return { value:null, warn:null };
+  if (typeof val === "number" && !isNaN(val)) return { value:val, warn:null };
+  const s = String(val).trim();
+  if (!s) return { value:null, warn:null };
+  const n = parseFloat(s.replace(/[$,\s]/g, ""));
+  if (isNaN(n)) return { value:null, warn:`couldn't parse amount '${s}'` };
+  return { value:n, warn:null };
+}
+
+function normalizeStage(val) {
+  if (!val) return null;
+  const v = String(val).toLowerCase().trim();
+  if (IMPORT_STAGES.includes(v)) return v;
+  if (v.includes("prospect") || v.includes("lead") || v.includes("potential")) return "prospect";
+  if (v.includes("qualif")) return "qualify";
+  if (v.includes("cultivat") || v.includes("nurtur")) return "cultivate";
+  if (v.includes("solicit") || v.includes("ask")) return "solicit";
+  if (v.includes("steward") || v.includes("current") || v.includes("active donor")) return "steward";
+  if (v.includes("lapsed") || v.includes("inactive") || v.includes("lost") || v.includes("former")) return "lapsed";
+  return null;
+}
+
+function normalizeEmail(val) {
+  if (!val) return { value:null, warn:null };
+  const s = String(val).trim();
+  if (!s) return { value:null, warn:null };
+  const lower = s.toLowerCase();
+  if (!lower.includes("@") || !lower.includes(".") || lower.length < 5)
+    return { value:lower, warn:`invalid email '${s}'` };
+  return { value:lower, warn:null };
+}
+
+// ── DonorImport component ──────────────────────────────────────────────────
 function DonorImport({ onClose, onImported }) {
-  const [csvText, setCsvText] = useState("");
-  const [parsed, setParsed] = useState(null);
-  const [mapping, setMapping] = useState({});
-  const [loading, setLoading] = useState(false);
-  const [aiLoading, setAiLoading] = useState(false);
-  const [result, setResult] = useState(null);
-  const [err, setErr] = useState("");
-  const [upgradeInfo, setUpgradeInfo] = useState(null);
+  const [csvText,    setCsvText]    = useState("");
+  const [parsed,     setParsed]     = useState(null);       // { headers:[], rows:[] }
+  const [xlsxSheets, setXlsxSheets]= useState(null);       // [{name, rowCount, headers, rows}] | null
+  const [mapping,    setMapping]    = useState({});
+  const [loading,    setLoading]    = useState(false);
+  const [aiLoading,  setAiLoading]  = useState(false);
+  const [result,     setResult]     = useState(null);       // {created,duplicates,warned,skipped,batchErrors}
+  const [err,        setErr]        = useState("");
+  const [upgradeInfo,setUpgradeInfo]= useState(null);
 
-  const handleFile = (e) => {
-    const file = e.target.files[0]; if (!file) return;
-    const reader = new FileReader();
-    reader.onload = ev => setCsvText(ev.target.result);
-    reader.readAsText(file);
-  };
-
-  const doParse = () => {
-    const { headers, rows } = parseCSV(csvText);
-    if (!rows.length) { setErr("No rows found. Check CSV format."); return; }
+  // Build initial column mapping from headers
+  const buildAutoMapping = (headers) => {
+    const guesses = headers.map(h => ({ h, g: guessField(h) }));
+    const hasSingleName = guesses.some(x => x.g === "name");
     const auto = {};
-    headers.forEach(h => { const g = guessField(h); if (g) auto[h] = g; });
-    setMapping(auto); setParsed({ headers, rows }); setErr("");
+    guesses.forEach(({ h, g }) => {
+      if (!g) return;
+      // If a dedicated "name" column exists, don't also map first/last (let user decide)
+      if (hasSingleName && (g === "_firstName" || g === "_lastName")) return;
+      auto[h] = g;
+    });
+    return auto;
   };
 
+  const applyParsed = (headers, rows) => {
+    setMapping(buildAutoMapping(headers));
+    setParsed({ headers, rows });
+    setXlsxSheets(null);
+    setErr("");
+  };
+
+  // ── File handler ──
+  const handleFile = async (e) => {
+    const file = e.target.files?.[0]; if (!file) return;
+    setErr("");
+    const name = file.name.toLowerCase();
+
+    if (name.endsWith(".xlsx") || name.endsWith(".xls")) {
+      try {
+        const buf = await file.arrayBuffer();
+        const wb = XLSX.read(new Uint8Array(buf), { type:"array" });
+        const sheetsData = wb.SheetNames.map(sheetName => {
+          const ws = wb.Sheets[sheetName];
+          if (!ws) return null;
+          const rawArr = XLSX.utils.sheet_to_json(ws, { header:1, defval:"" });
+          if (rawArr.length < 2) return { name:sheetName, rowCount:0, headers:[], rows:[] };
+          const headers = rawArr[0].map(h => String(h || "").trim());
+          const dataRows = rawArr.slice(1).filter(r => r.some(c => String(c || "").trim()));
+          const rows = dataRows.map(r =>
+            Object.fromEntries(headers.map((h, i) => {
+              const v = r[i];
+              // Pre-convert Date objects that xlsx parses natively
+              if (v instanceof Date) return [h, isNaN(v) ? "" : v.toISOString().split("T")[0]];
+              return [h, String(v ?? "").trim()];
+            }))
+          );
+          return { name:sheetName, rowCount:rows.length, headers, rows };
+        }).filter(s => s && s.rowCount > 0);
+
+        if (!sheetsData.length) { setErr("No data rows found in this file."); return; }
+        if (sheetsData.length === 1) {
+          applyParsed(sheetsData[0].headers, sheetsData[0].rows);
+        } else {
+          sheetsData.sort((a, b) => b.rowCount - a.rowCount); // largest first
+          setXlsxSheets(sheetsData);
+        }
+      } catch (ex) { setErr("Could not read Excel file: " + ex.message); }
+    } else {
+      Papa.parse(file, {
+        header: true,
+        skipEmptyLines: true,
+        transformHeader: h => h.trim(),
+        complete: res => {
+          if (!res.data?.length) { setErr("No rows found."); return; }
+          applyParsed(res.meta.fields || [], res.data);
+        },
+        error: ex => setErr("Parse error: " + ex.message),
+      });
+    }
+  };
+
+  // ── Paste flow ──
+  const doParse = () => {
+    if (!csvText.trim()) return;
+    Papa.parse(csvText, {
+      header: true,
+      skipEmptyLines: true,
+      transformHeader: h => h.trim(),
+      complete: res => {
+        if (!res.data?.length) { setErr("No rows found. Check CSV format."); return; }
+        applyParsed(res.meta.fields || [], res.data);
+      },
+      error: ex => setErr("Parse error: " + ex.message),
+    });
+  };
+
+  // ── AI column mapping ──
   const doAiMap = async () => {
     if (!parsed) return;
     setAiLoading(true);
@@ -108,32 +259,90 @@ function DonorImport({ onClose, onImported }) {
       if (res.mapping) {
         const merged = { ...mapping };
         Object.entries(res.mapping).forEach(([h, f]) => {
-          if (f && CSV_FIELDS.some(cf => cf.key === f)) merged[h] = f;
+          if (f && VALID_IMPORT_KEYS.has(f)) merged[h] = f;
         });
         setMapping(merged);
       }
-    } catch { /* keep existing mapping */ }
+    } catch { /* keep existing mapping on AI failure */ }
     setAiLoading(false);
   };
 
-  const buildDonors = () => parsed.rows.map(row => {
-    const d = {};
-    Object.entries(mapping).forEach(([h, field]) => { if (field) d[field] = row[h]; });
-    if (d.total) d.total = parseFloat(String(d.total).replace(/[$,]/g, "")) || 0;
-    if (d.lastAmount) {
-      const s = String(d.lastAmount);
-      d.lastAmount = /^\d{4}[-\/]\d{2}/.test(s) ? 0 : parseFloat(s.replace(/[$,]/g,"")) || 0;
-    }
-    if (d.gifts) d.gifts = parseInt(d.gifts) || 1;
-    if (!d.stage) d.stage = inferStage(d.total, d.lastGift);
-    return d;
-  }).filter(d => d.name);
+  // ── Normalized donor build (memoized — expensive for large files) ──
+  const built = useMemo(() => {
+    if (!parsed) return { ready:[], warned:[], skipped:[] };
+    const ready = [], warned = [], skipped = [];
 
+    parsed.rows.forEach((row, idx) => {
+      const d = {};
+      const warnings = [];
+      const rowLabel = `Row ${idx + 2}`; // 1-indexed + skip header row
+
+      Object.entries(mapping).forEach(([h, field]) => { if (field) d[field] = row[h]; });
+
+      // Combine first + last name if mapped separately
+      if (d._firstName || d._lastName) {
+        const combined = [d._firstName, d._lastName].filter(Boolean).join(" ").trim();
+        if (!d.name || !String(d.name).trim()) d.name = combined;
+      }
+      delete d._firstName; delete d._lastName;
+
+      const hasName  = !!(d.name  && String(d.name).trim());
+      const hasEmail = !!(d.email && String(d.email).trim());
+      if (!hasName && !hasEmail) { skipped.push({ row:idx+2, reason:"no name or email" }); return; }
+
+      // Name fallback: use email if no name
+      if (!hasName) { d.name = String(d.email).trim(); warnings.push(`${rowLabel}: no name — using email as name`); }
+      else d.name = String(d.name).trim();
+
+      // Email
+      if (d.email !== undefined) { const { value, warn } = normalizeEmail(d.email); d.email = value; if (warn) warnings.push(`${rowLabel}: ${warn}`); }
+
+      // Phone — trim only
+      if (d.phone) d.phone = String(d.phone).trim() || null;
+
+      // Total (money)
+      if (d.total !== undefined && d.total !== "") { const { value, warn } = normalizeMoney(d.total); d.total = value; if (warn) warnings.push(`${rowLabel}: ${warn}`); }
+
+      // lastAmount — guard date-looking strings before money parse
+      if (d.lastAmount !== undefined && d.lastAmount !== "") {
+        const s = String(d.lastAmount || "");
+        if (/^\d{4}[-/]\d{2}/.test(s)) { d.lastAmount = null; }
+        else { const { value, warn } = normalizeMoney(d.lastAmount); d.lastAmount = value; if (warn) warnings.push(`${rowLabel}: ${warn}`); }
+      }
+
+      // lastGift (date)
+      if (d.lastGift !== undefined && d.lastGift !== "") { const { value, warn } = normalizeDate(d.lastGift); d.lastGift = value; if (warn) warnings.push(`${rowLabel}: ${warn}`); }
+
+      // gifts count
+      if (d.gifts !== undefined && d.gifts !== "") d.gifts = parseInt(d.gifts) || null;
+
+      // Stage — fuzzy normalize then fall back to inferStage
+      d.stage = normalizeStage(d.stage) || inferStage(d.total, d.lastGift);
+
+      // City / state
+      if (d.city)  d.city  = String(d.city).trim()  || null;
+      if (d.state) d.state = String(d.state).trim()  || null;
+
+      if (warnings.length) warned.push({ ...d, _warnings:warnings, _rowIndex:idx+2 });
+      else ready.push(d);
+    });
+
+    return { ready, warned, skipped };
+  }, [parsed, mapping]);
+
+  // ── Submit import ──
   const doImport = async () => {
+    const { ready, warned, skipped } = built;
+    const toSend = [...ready, ...warned].map(({ _warnings, _rowIndex, ...d }) => d);
+    if (!toSend.length) {
+      setErr(skipped.length ? `All ${skipped.length} rows skipped — no usable name or email.` : "Nothing to import.");
+      return;
+    }
     setLoading(true); setErr("");
     try {
-      const res = await apiFetch("/donors/import", { method:"POST", body:JSON.stringify({ donors:buildDonors() }) });
-      setResult(res.inserted); onImported();
+      const res = await apiFetch("/donors/import", { method:"POST", body:JSON.stringify({ donors:toSend }) });
+      setResult({ ...res, warned:warned.length, skipped:skipped.length });
+      onImported();
     } catch (e) {
       if (e.error === "record_limit") { setUpgradeInfo(e); }
       else { setErr(e.message); }
@@ -141,58 +350,119 @@ function DonorImport({ onClose, onImported }) {
     setLoading(false);
   };
 
-  const overlay = { position:"fixed",inset:0,background:"#000c",zIndex:300,display:"flex",alignItems:"center",justifyContent:"center",padding:20 };
-  const modal = { background:T.white,border:"1px solid "+T.bg3,borderRadius:20,width:"100%",maxWidth:700,maxHeight:"88vh",overflowY:"auto",padding:28,boxSizing:"border-box" };
-  const inp = { width:"100%",background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"9px 12px",color:T.ink,fontSize:13,outline:"none",fontFamily:"inherit",boxSizing:"border-box" };
+  // ── Shared styles ──
+  const overlay = { position:"fixed",inset:0,background:"rgba(15,26,18,0.72)",zIndex:300,display:"flex",alignItems:"center",justifyContent:"center",padding:20 };
+  const modal   = { background:T.white,border:"1px solid "+T.bg3,borderRadius:20,width:"100%",maxWidth:700,maxHeight:"90vh",overflowY:"auto",padding:28,boxSizing:"border-box" };
+  const inp     = { width:"100%",background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"9px 12px",color:T.ink,fontSize:13,outline:"none",fontFamily:"inherit",boxSizing:"border-box" };
 
-  if (result !== null) return (
-    <div style={overlay} className="modal-sheet-overlay"><div style={{...modal,textAlign:"center"}} className="modal-sheet-inner">
-      <div style={{fontSize:40,marginBottom:12}}>✓</div>
-      <div style={{fontSize:22,fontWeight:800,color:T.ink,marginBottom:8}}>{result} donor{result!==1?"s":""} imported</div>
-      <div style={{fontSize:14,color:T.ink3,marginBottom:24}}>Stages were auto-assigned based on gift history.</div>
-      <button onClick={onClose} style={{background:"#10b981",border:"none",borderRadius:10,padding:"12px 28px",color:"#fff",fontSize:14,fontWeight:700,cursor:"pointer"}}>Done</button>
-    </div></div>
-  );
+  // ── Result screen ──
+  if (result !== null) {
+    const hasBatchErrors = result.batchErrors?.length > 0;
+    return (
+      <div style={overlay} className="modal-sheet-overlay">
+        <div style={{...modal,textAlign:"center"}} className="modal-sheet-inner">
+          <div style={{fontSize:36,marginBottom:12}}>{hasBatchErrors?"⚠":"✓"}</div>
+          <div style={{fontFamily:"'DM Serif Display',Georgia,serif",fontSize:22,fontWeight:400,color:T.ink,marginBottom:12,letterSpacing:"-0.01em"}}>
+            {hasBatchErrors ? "Import finished with errors." : "Import complete."}
+          </div>
+          <div style={{fontSize:14,color:T.ink3,marginBottom:hasBatchErrors?12:28,lineHeight:1.8}}>
+            <strong style={{color:T.ink}}>{result.created}</strong> added
+            {result.duplicates > 0 && <> · <strong>{result.duplicates}</strong> duplicates skipped</>}
+            {result.warned > 0    && <> · <strong>{result.warned}</strong> imported with warnings</>}
+            {result.skipped > 0   && <> · <strong>{result.skipped}</strong> skipped (no name or email)</>}
+          </div>
+          {hasBatchErrors && (
+            <div style={{background:"#fef2f2",border:"1px solid #fca5a5",borderRadius:10,padding:"10px 14px",marginBottom:24,textAlign:"left",fontSize:12,color:"#991b1b"}}>
+              <strong>Batch errors — some rows may not have been inserted:</strong>
+              {result.batchErrors.map((e,i) => <div key={i} style={{marginTop:4}}>Rows {e.rows}: {e.error}</div>)}
+            </div>
+          )}
+          <button onClick={onClose} style={{background:"#10b981",border:"none",borderRadius:10,padding:"12px 28px",color:"#fff",fontSize:14,fontWeight:700,cursor:"pointer"}}>Done</button>
+        </div>
+      </div>
+    );
+  }
+
+  const { ready, warned, skipped } = built;
+  const totalToImport = ready.length + warned.length;
 
   return (
     <div style={overlay} className="modal-sheet-overlay">
       <div style={modal} className="modal-sheet-inner">
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
+
+        {/* Header */}
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:20}}>
           <div>
             <div style={{fontSize:18,fontWeight:800,color:T.ink}}>Import Donors</div>
-            <div style={{fontSize:13,color:T.ink3,marginTop:2}}>AI maps columns · stages auto-assigned from gift history</div>
+            <div style={{fontSize:13,color:T.ink3,marginTop:2}}>CSV, TSV, or Excel · AI maps columns · stages auto-assigned</div>
           </div>
-          <button onClick={onClose} style={{background:T.bg3,border:"none",borderRadius:8,padding:"6px 12px",color:T.ink3,cursor:"pointer",fontSize:13}}>✕ Close</button>
+          <button onClick={onClose} style={{background:T.bg3,border:"none",borderRadius:8,padding:"6px 12px",color:T.ink3,cursor:"pointer",fontSize:13,flexShrink:0}}>✕ Close</button>
         </div>
 
-        {!parsed && (<>
-          <div style={{marginBottom:12}}>
-            <div style={{fontSize:11,fontWeight:700,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:6}}>Upload CSV file</div>
-            <input type="file" accept=".csv" onChange={handleFile} style={{fontSize:13,color:T.ink3}}/>
+        {/* ── Step 1a: Upload / Paste ── */}
+        {!parsed && !xlsxSheets && (<>
+          <div style={{marginBottom:14}}>
+            <div style={{fontSize:11,fontWeight:700,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:6}}>Upload file</div>
+            <input type="file" accept=".csv,.tsv,.xlsx,.xls" onChange={handleFile} style={{fontSize:13,color:T.ink3}}/>
+            <div style={{fontSize:11,color:T.ink3,marginTop:5}}>Supports .csv, .tsv, .xlsx, .xls — multi-tab Excel files will let you pick the right sheet.</div>
           </div>
-          <div style={{fontSize:11,fontWeight:700,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:6}}>Or paste CSV text</div>
-          <textarea value={csvText} onChange={e=>setCsvText(e.target.value)} rows={7} placeholder={"Name,Email,Total Giving,Last Gift Date\nJane Smith,jane@example.com,5000,2024-11-01"} style={{...inp,resize:"vertical",lineHeight:1.5,marginBottom:12}}/>
-          {err&&<div style={{color:"#f87171",fontSize:12,marginBottom:10}}>{err}</div>}
-          <button onClick={doParse} disabled={!csvText.trim()} style={{background:csvText.trim()?"linear-gradient(135deg,#10b981,#3b82f6)":T.bg2,border:"none",borderRadius:10,padding:"11px 20px",color:"#fff",fontSize:14,fontWeight:700,cursor:csvText.trim()?"pointer":"not-allowed",opacity:csvText.trim()?1:0.5}}>
-            Parse CSV →
+          <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:14}}>
+            <div style={{flex:1,height:1,background:T.bg3}}/><span style={{fontSize:12,color:T.ink3}}>or paste CSV text</span><div style={{flex:1,height:1,background:T.bg3}}/>
+          </div>
+          <textarea value={csvText} onChange={e=>setCsvText(e.target.value)} rows={6}
+            placeholder={"Name,Email,Total Giving,Last Gift Date\nJane Smith,jane@example.com,5000,2024-11-01"}
+            style={{...inp,resize:"vertical",lineHeight:1.5,marginBottom:12}}/>
+          {err && <div style={{color:"#f87171",fontSize:12,marginBottom:10}}>{err}</div>}
+          <button onClick={doParse} disabled={!csvText.trim()}
+            style={{background:csvText.trim()?"linear-gradient(135deg,#10b981,#3b82f6)":T.bg2,border:"none",borderRadius:10,padding:"11px 20px",color:"#fff",fontSize:14,fontWeight:700,cursor:csvText.trim()?"pointer":"not-allowed",opacity:csvText.trim()?1:0.5}}>
+            Parse →
           </button>
         </>)}
 
+        {/* ── Step 1b: Multi-sheet picker (xlsx with 2+ data sheets) ── */}
+        {!parsed && xlsxSheets && (<>
+          <div style={{fontSize:14,fontWeight:700,color:T.ink,marginBottom:4}}>This workbook has {xlsxSheets.length} sheets with data.</div>
+          <div style={{fontSize:13,color:T.ink3,marginBottom:16}}>Pick the sheet to import. You can import the others separately afterward.</div>
+          <div style={{display:"flex",flexDirection:"column",gap:8,marginBottom:16}}>
+            {xlsxSheets.map((s,i) => (
+              <div key={s.name} style={{display:"flex",alignItems:"center",justifyContent:"space-between",background:T.bg,border:"1px solid "+T.bg3,borderRadius:10,padding:"12px 16px"}}>
+                <div>
+                  <div style={{fontSize:14,fontWeight:600,color:T.ink}}>{s.name}</div>
+                  <div style={{fontSize:12,color:T.ink3,marginTop:2}}>{s.rowCount.toLocaleString()} rows · {s.headers.filter(Boolean).length} columns</div>
+                </div>
+                <button onClick={()=>applyParsed(s.headers,s.rows)}
+                  style={{background:"#1a6b4a",border:"none",borderRadius:8,padding:"8px 16px",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer"}}>
+                  {i===0?"Use this ←":"Select"}
+                </button>
+              </div>
+            ))}
+          </div>
+          <button onClick={()=>setXlsxSheets(null)} style={{background:"transparent",border:"1px solid "+T.bg3,borderRadius:10,padding:"9px 16px",color:T.ink3,fontSize:13,cursor:"pointer"}}>← Back</button>
+        </>)}
+
+        {/* ── Step 2: Column mapping + validation preview ── */}
         {parsed && (<>
-          <div style={{marginBottom:16}}>
-            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12}}>
-              <div style={{fontSize:13,fontWeight:700,color:T.ink}}>Map Columns</div>
-              <button onClick={doAiMap} disabled={aiLoading} style={{background:aiLoading?"#1a2235":"linear-gradient(135deg,#1a6b4a,#2563eb)",border:"none",borderRadius:8,padding:"6px 14px",color:"#fff",fontSize:12,fontWeight:700,cursor:aiLoading?"not-allowed":"pointer",display:"flex",alignItems:"center",gap:6,opacity:aiLoading?0.7:1}}>
+
+          {/* Column mapper */}
+          <div style={{marginBottom:14}}>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}>
+              <div style={{fontSize:13,fontWeight:700,color:T.ink}}>
+                Map Columns <span style={{fontSize:11,color:T.ink3,fontWeight:400}}>({parsed.headers.length} columns · {parsed.rows.length.toLocaleString()} rows)</span>
+              </div>
+              <button onClick={doAiMap} disabled={aiLoading}
+                style={{background:aiLoading?"#1a2235":"linear-gradient(135deg,#1a6b4a,#2563eb)",border:"none",borderRadius:8,padding:"6px 14px",color:"#fff",fontSize:12,fontWeight:700,cursor:aiLoading?"not-allowed":"pointer",display:"flex",alignItems:"center",gap:6,opacity:aiLoading?0.7:1}}>
                 {aiLoading?<><Spin/>Mapping…</>:<>✦ AI Map</>}
               </button>
             </div>
-            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
-              {parsed.headers.map(h=>(
-                <div key={h} style={{display:"flex",alignItems:"center",gap:8,background:mapping[h]?T.bg:"transparent",borderRadius:7,padding:"5px 8px",border:`1px solid ${mapping[h]?T.bg3:"transparent"}`}}>
-                  <span style={{fontSize:12,color:mapping[h]?T.ink:T.ink3,flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{h}</span>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6}}>
+              {parsed.headers.map(h => (
+                <div key={h} style={{display:"flex",alignItems:"center",gap:6,background:mapping[h]?T.bg:"transparent",borderRadius:7,padding:"5px 8px",border:`1px solid ${mapping[h]?T.bg3:"transparent"}`}}>
+                  <span style={{fontSize:12,color:mapping[h]?T.ink:T.ink3,flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",minWidth:0}} title={h||"(blank)"}>{h||"(blank)"}</span>
                   <select value={mapping[h]||""} onChange={e=>setMapping(p=>({...p,[h]:e.target.value}))}
-                    style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:6,padding:"4px 8px",color:T.ink,fontSize:11,outline:"none",flexShrink:0}}>
+                    style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:6,padding:"4px 6px",color:T.ink,fontSize:11,outline:"none",flexShrink:0}}>
                     <option value="">— skip —</option>
+                    <option value="_firstName">firstName</option>
+                    <option value="_lastName">lastName</option>
                     {CSV_FIELDS.map(f=><option key={f.key} value={f.key}>{f.key}</option>)}
                   </select>
                 </div>
@@ -200,13 +470,30 @@ function DonorImport({ onClose, onImported }) {
             </div>
           </div>
 
-          {(() => {
-            const donors = buildDonors();
-            const stageCounts = {};
-            donors.forEach(d => { stageCounts[d.stage] = (stageCounts[d.stage]||0)+1; });
-            return Object.keys(stageCounts).length > 0 && (
-              <div style={{background:T.bg,borderRadius:10,padding:"12px 14px",marginBottom:16}}>
-                <div style={{fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.1em",color:T.ink3,marginBottom:8}}>Smart Stage Assignment Preview</div>
+          {/* Validation summary */}
+          <div style={{background:T.bg,borderRadius:10,padding:"12px 14px",marginBottom:12}}>
+            <div style={{fontSize:13,fontWeight:700,color:T.ink,marginBottom:warned.length||skipped.length?8:0}}>
+              {totalToImport>0
+                ? <>{" "}<span style={{color:"#10b981"}}>{totalToImport.toLocaleString()}</span>{" ready"}
+                    {warned.length>0&&<>{" · "}<span style={{color:"#f59e0b"}}>{warned.length}</span>{" with warnings"}</>}
+                    {skipped.length>0&&<>{" · "}<span style={{color:T.ink3}}>{skipped.length}</span>{" skipped (no name or email)"}</>}</>
+                : <span style={{color:T.ink3}}>No rows ready — map at least one column to <em>name</em> or <em>email</em>.</span>}
+            </div>
+            {warned.slice(0,5).flatMap(d=>d._warnings).slice(0,6).map((w,i)=>(
+              <div key={i} style={{fontSize:11,color:"#92400e",background:"#fef3c7",borderRadius:5,padding:"3px 8px",marginTop:4,display:"inline-block",marginRight:4}}>⚠ {w}</div>
+            ))}
+            {warned.length>5&&<div style={{fontSize:11,color:T.ink3,marginTop:6}}>{warned.length-5} more rows with warnings — they will still import.</div>}
+            {skipped.length>0&&<div style={{fontSize:11,color:T.ink3,marginTop:4}}>Skipped: {skipped.slice(0,3).map(s=>`row ${s.row}`).join(", ")}{skipped.length>3?` +${skipped.length-3} more`:""}</div>}
+          </div>
+
+          {/* Smart stage assignment preview */}
+          {(()=>{
+            const all=[...ready,...warned];
+            const stageCounts={};
+            all.forEach(d=>{stageCounts[d.stage]=(stageCounts[d.stage]||0)+1;});
+            return Object.keys(stageCounts).length>0&&(
+              <div style={{background:T.bg,borderRadius:10,padding:"10px 14px",marginBottom:12}}>
+                <div style={{fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.1em",color:T.ink3,marginBottom:6}}>Smart Stage Assignment Preview</div>
                 <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
                   {Object.entries(stageCounts).map(([s,n])=>(
                     <span key={s} style={{fontSize:12,fontWeight:600,padding:"3px 10px",borderRadius:99,background:(STAGE_COLORS[s]||T.ink3)+"22",color:STAGE_COLORS[s]||T.ink3,border:`1px solid ${(STAGE_COLORS[s]||T.ink3)}30`}}>
@@ -214,17 +501,18 @@ function DonorImport({ onClose, onImported }) {
                     </span>
                   ))}
                 </div>
-                <div style={{fontSize:11,color:T.ink3,marginTop:8}}>Based on last gift date + amount. Override any stage after import by dragging in the Kanban.</div>
+                <div style={{fontSize:11,color:T.ink3,marginTop:6}}>Based on last gift date + amount. Override after import by dragging in the Kanban.</div>
               </div>
             );
           })()}
 
-          <div style={{marginBottom:16}}>
-            <div style={{fontSize:11,fontWeight:600,color:T.ink3,marginBottom:8}}>{parsed.rows.length} rows · showing first 5</div>
+          {/* Row preview table */}
+          <div style={{marginBottom:14}}>
+            <div style={{fontSize:11,fontWeight:600,color:T.ink3,marginBottom:6}}>{parsed.rows.length.toLocaleString()} rows · showing first 5</div>
             <div style={{overflowX:"auto",border:"1px solid "+T.bg3,borderRadius:8}}>
               <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
                 <thead><tr style={{background:T.bg}}>
-                  {parsed.headers.filter(h=>mapping[h]).map(h=><th key={h} style={{padding:"6px 10px",textAlign:"left",color:T.ink3,fontWeight:600,borderBottom:"1px solid "+T.bg3}}>{mapping[h]}</th>)}
+                  {parsed.headers.filter(h=>mapping[h]).map(h=><th key={h} style={{padding:"6px 10px",textAlign:"left",color:T.ink3,fontWeight:600,borderBottom:"1px solid "+T.bg3,whiteSpace:"nowrap"}}>{mapping[h]}</th>)}
                   <th style={{padding:"6px 10px",textAlign:"left",color:T.ink3,fontWeight:600,borderBottom:"1px solid "+T.bg3}}>stage</th>
                 </tr></thead>
                 <tbody>{parsed.rows.slice(0,5).map((row,i)=>{
@@ -232,7 +520,7 @@ function DonorImport({ onClose, onImported }) {
                   const st=inferStage(d.total,d.lastGift);
                   return(
                     <tr key={i} style={{borderBottom:"1px solid "+T.bg2}}>
-                      {parsed.headers.filter(h=>mapping[h]).map(h=><td key={h} style={{padding:"6px 10px",color:T.ink}}>{row[h]}</td>)}
+                      {parsed.headers.filter(h=>mapping[h]).map(h=><td key={h} style={{padding:"6px 10px",color:T.ink,maxWidth:150,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{row[h]}</td>)}
                       <td style={{padding:"6px 10px"}}>
                         <span style={{fontSize:11,fontWeight:600,padding:"2px 8px",borderRadius:99,background:(STAGE_COLORS[st]||T.ink3)+"22",color:STAGE_COLORS[st]||T.ink3}}>{st}</span>
                       </td>
@@ -245,9 +533,11 @@ function DonorImport({ onClose, onImported }) {
 
           {err&&<div style={{color:"#f87171",fontSize:12,marginBottom:10}}>{err}</div>}
           <div style={{display:"flex",gap:10}}>
-            <button onClick={()=>setParsed(null)} style={{background:"transparent",border:"1px solid "+T.bg3,borderRadius:10,padding:"11px 18px",color:T.ink3,fontSize:13,cursor:"pointer"}}>← Back</button>
-            <button onClick={doImport} disabled={loading} style={{flex:1,background:loading?T.bg2:"linear-gradient(135deg,#10b981,#3b82f6)",border:"none",borderRadius:10,padding:"11px 20px",color:"#fff",fontSize:14,fontWeight:700,cursor:loading?"not-allowed":"pointer",opacity:loading?0.7:1}}>
-              {loading?"Importing…":`Import ${buildDonors().length} Donors →`}
+            <button onClick={()=>{setParsed(null);setErr("");}}
+              style={{background:"transparent",border:"1px solid "+T.bg3,borderRadius:10,padding:"11px 18px",color:T.ink3,fontSize:13,cursor:"pointer"}}>← Back</button>
+            <button onClick={doImport} disabled={loading||totalToImport===0}
+              style={{flex:1,background:loading||totalToImport===0?T.bg2:"linear-gradient(135deg,#10b981,#3b82f6)",border:"none",borderRadius:10,padding:"11px 20px",color:"#fff",fontSize:14,fontWeight:700,cursor:loading||totalToImport===0?"not-allowed":"pointer",opacity:loading||totalToImport===0?0.6:1}}>
+              {loading?"Importing…":`Import ${totalToImport.toLocaleString()} Donors →`}
             </button>
           </div>
         </>)}

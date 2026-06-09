@@ -14,7 +14,7 @@ const crypto = require("crypto");
 const Anthropic = require("@anthropic-ai/sdk");
 const { Resend } = require("resend");
 const resend = new Resend(process.env.RESEND_API_KEY);
-const { getDb, query, run, uuid, seedOrgData } = require("./db");
+const { getDb, query, run, uuid, seedOrgData, withTransaction, queryTx, runTx } = require("./db");
 const { signToken, requireAuth, requireSuperAdmin } = require("./auth");
 const Stripe = require("stripe");
 const { google } = require("googleapis");
@@ -1022,6 +1022,7 @@ app.post("/donors/import", requireAuth, wrap(async (req, res) => {
   if (!Array.isArray(donors) || donors.length === 0)
     return res.status(400).json({ error: "donors array required" });
 
+  // ── Plan limit check (unchanged — keep 403 + UpgradeModal flow exactly) ──
   const orgForLimit = await query("SELECT * FROM orgs WHERE id=?", [req.user.orgId]);
   if (orgForLimit.length) {
     const recordCheck = await checkPlanLimit(orgForLimit[0], "records");
@@ -1044,24 +1045,78 @@ app.post("/donors/import", requireAuth, wrap(async (req, res) => {
     }
   }
 
-  let inserted = 0;
+  // ── Importer identity (assigned_to default) ──
+  const importerRow = await query("SELECT name FROM users WHERE id=?", [req.user.userId]);
+  const importerName = importerRow[0]?.name || "";
+
+  // ── Dedup by email against existing donors (case-insensitive) ──
+  // Comment: future option is merge/update rather than skip.
+  const existingEmailRows = await query(
+    "SELECT LOWER(email) AS e FROM donors WHERE org_id=? AND email IS NOT NULL AND email != '' AND deleted_at IS NULL",
+    [req.user.orgId]
+  );
+  const existingEmails = new Set(existingEmailRows.map(r => r.e));
+  const seenEmails = new Set(); // within-import dedup
+
+  const today = new Date().toISOString().split("T")[0];
+  let duplicates = 0;
+  const donorsToInsert = [];
+
   for (const d of donors) {
-    if (!d.name) continue;
-    const id = "d_" + uuid().slice(0, 8);
-    const today = new Date().toISOString().split("T")[0];
-    await run(
-      `INSERT INTO donors (id,org_id,name,email,phone,status,stage,total_giving,last_gift_amount,last_gift_date,gift_count,tags,notes)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-      [id, req.user.orgId, d.name, d.email || "", d.phone || "",
-       d.status || "new", d.stage || "prospect",
-       parseInt(d.total) || 0,
-       (/^\d{4}[-/]\d{2}/.test(String(d.lastAmount||"")) ? 0 : parseInt(d.lastAmount)||0),
-       d.lastGift || today, parseInt(d.gifts) || (d.total ? 1 : 0),
-       JSON.stringify(Array.isArray(d.tags) ? d.tags : []), d.notes || ""]
-    );
-    inserted++;
+    if (!d.name || !String(d.name).trim()) continue;
+    const emailLower = (d.email || "").toLowerCase().trim();
+    if (emailLower) {
+      if (existingEmails.has(emailLower) || seenEmails.has(emailLower)) { duplicates++; continue; }
+      seenEmails.add(emailLower);
+    }
+    donorsToInsert.push(d);
   }
-  res.json({ inserted });
+
+  // ── Batched transactional inserts (500/batch) ──
+  const BATCH = 500;
+  let created = 0;
+  const batchErrors = [];
+
+  for (let bi = 0; bi < donorsToInsert.length; bi += BATCH) {
+    const batch = donorsToInsert.slice(bi, bi + BATCH);
+    try {
+      await withTransaction(async (client) => {
+        for (const d of batch) {
+          const id = "d_" + uuid().slice(0, 8);
+          await runTx(client,
+            `INSERT INTO donors
+               (id,org_id,name,email,phone,status,stage,total_giving,last_gift_amount,
+                last_gift_date,gift_count,tags,notes,city,state,assigned_to,assigned_to_name)
+             VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+            [id, req.user.orgId,
+             String(d.name).trim(),
+             d.email   || "",
+             d.phone   || "",
+             d.status  || "new",
+             d.stage   || "prospect",
+             parseFloat(d.total)      || 0,
+             parseFloat(d.lastAmount) || 0,
+             d.lastGift || today,
+             parseInt(d.gifts) || (d.total ? 1 : 0),
+             JSON.stringify(Array.isArray(d.tags) ? d.tags : []),
+             d.notes || "",
+             d.city  || null,
+             d.state || null,
+             req.user.userId,
+             importerName]
+          );
+        }
+      });
+      created += batch.length;
+    } catch (e) {
+      const rowStart = bi + 1;
+      const rowEnd   = bi + batch.length;
+      console.error(`[import] batch rows ${rowStart}–${rowEnd} failed:`, e.message);
+      batchErrors.push({ rows: `${rowStart}–${rowEnd}`, error: e.message });
+    }
+  }
+
+  res.json({ created, duplicates, batchErrors });
 }));
 
 app.put("/donors/:id", requireAuth, checkWriteAccess, wrap(async (req, res) => {
@@ -1999,7 +2054,7 @@ app.post("/ai/column-map", requireAuth, wrap(async (req, res) => {
     system: "You are a data mapping assistant for nonprofit CRM systems. Return only valid JSON, no explanation or markdown.",
     messages: [{
       role: "user",
-      content: `Map these CSV column headers to donor fields. Available target fields: name, email, phone, total, lastAmount, lastGift, gifts, status, notes. Use empty string to skip a column.
+      content: `Map these CSV column headers to donor fields. Available target fields: name, _firstName, _lastName, email, phone, total, lastAmount, lastGift, gifts, status, city, state, notes. Use empty string to skip a column. Use _firstName/_lastName when separate first/last name columns are present instead of a single name column.
 
 Headers: ${JSON.stringify(headers)}
 Sample row values: ${JSON.stringify(sample || {})}

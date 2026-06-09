@@ -29,6 +29,34 @@ async function run(sql, params = []) {
   return { changes: result.rowCount };
 }
 
+// Transaction helper — acquire a dedicated client, run fn(client) inside BEGIN/COMMIT
+async function withTransaction(fn) {
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const result = await fn(client);
+    await client.query("COMMIT");
+    return result;
+  } catch (e) {
+    await client.query("ROLLBACK");
+    throw e;
+  } finally {
+    client.release();
+  }
+}
+
+// Like query() / run() but bound to a specific pg client (for use inside withTransaction)
+function queryTx(client, sql, params = []) {
+  let i = 0;
+  const pgSql = sql.replace(/\?/g, () => `$${++i}`);
+  return client.query(pgSql, params).then(r => r.rows);
+}
+function runTx(client, sql, params = []) {
+  let i = 0;
+  const pgSql = sql.replace(/\?/g, () => `$${++i}`);
+  return client.query(pgSql, params).then(r => ({ changes: r.rowCount }));
+}
+
 async function initSchema() {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS orgs (
@@ -986,4 +1014,4 @@ async function seedOrgData(orgId) {
   );
 }
 
-module.exports = { getDb, query, run, uuid, seedOrgData };
+module.exports = { getDb, query, run, uuid, seedOrgData, withTransaction, queryTx, runTx };
