@@ -13,7 +13,6 @@ import { Tasks } from "./components/Tasks";
 import { Settings } from "./components/Settings";
 import { Analytics } from "./components/Analytics";
 import { Events } from "./components/Events";
-import { OnboardingWizard } from "./components/OnboardingWizard";
 
 // ── Tabs ───────────────────────────────────────────────────────────────────
 const TABS=[
@@ -55,7 +54,6 @@ function AppShell() {
   const [showChat,setShowChat]=useState(false);
   const [stripeToast,setStripeToast]=useState(false);
   const [moreOpen,setMoreOpen]=useState(false);
-  const [showWizard,setShowWizard]=useState(false);
   const [billing,setBilling]=useState(null);
   const [bannerDismissed,setBannerDismissed]=useState(false);
   const [showInstallPrompt,setShowInstallPrompt]=useState(false);
@@ -96,13 +94,7 @@ function AppShell() {
       ]);
       const adapted=adaptData({org,donors,grants,volunteers,tasks,board,financials});
       setData(adapted);
-      const noData=
-        adapted.donors.length===0 &&
-        adapted.grants.length===0 &&
-        adapted.financials.revenue.every(m=>m.individual+m.grants+m.events+m.other===0);
-      if(noData && auth?.user?.role==="admin" && !localStorage.getItem("steward_onboarded_"+org.id)){
-        setShowWizard(true);
-      }
+      if(org?.id) localStorage.setItem("steward_onboarded_"+org.id,"1");
     } catch(e) { setLoadErr(e.message); }
     setLoading(false);
   }
@@ -135,7 +127,12 @@ function AppShell() {
   const tasksDue=data.tasks.filter(t=>!t.done&&t.priority==="high").length;
   const orgName=auth?.org?.name||data.org?.name||"Steward";
 
-  const showTrialBanner=!bannerDismissed&&billing?.subscriptionStatus==="trialing"&&billing?.trialDaysLeft<=14;
+  const accessState=billing?.accessState||"full";
+  const isReadOnly=accessState==="read_only";
+  const subStatus=billing?.subscriptionStatus;
+  const showTrialBanner=!bannerDismissed&&subStatus==="trialing"&&billing?.trialDaysLeft<=14;
+  const showWarningBanner=accessState==="warning";
+  const showReadOnlyBanner=isReadOnly;
 
   async function openPortal(){
     try{
@@ -151,16 +148,15 @@ function AppShell() {
     {/* Header */}
     <div className="app-header" style={{borderBottom:"1px solid #1a2e1f",padding:"0 24px",display:"flex",alignItems:"center",justifyContent:"space-between",background:"#0f1a12",position:"sticky",top:0,zIndex:100,height:52,width:"100%",boxSizing:"border-box"}}>
       <div style={{display:"flex",alignItems:"center",gap:12}}>
-        <div style={{width:30,height:30,background:T.greenDk,borderRadius:8,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
-          <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M8 2L13 5v6L8 14 3 11V5L8 2z" stroke="#f0ede6" strokeWidth="1.5" fill="none"/><circle cx="8" cy="8" r="2" fill="#f0ede6"/></svg>
-        </div>
-        <div style={{display:"flex",alignItems:"baseline",gap:8}}>
-          <span style={{fontSize:15,fontWeight:700,color:"#f0ede6",letterSpacing:"-0.02em",fontFamily:"'DM Serif Display',Georgia,serif"}}>{orgName}</span>
-          <span style={{fontSize:10,color:"#8fa896",letterSpacing:"0.06em",textTransform:"uppercase"}}>Steward</span>
-        </div>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 40" width="32" height="32" style={{flexShrink:0}}>
+          <rect width="40" height="40" rx="8" fill="#0f1a12"/>
+          <text x="20" y="28" fontFamily="Georgia, 'Times New Roman', serif" fontSize="24" fontWeight="700" fill="#f0ede6" textAnchor="middle">S</text>
+          <rect x="10" y="31" width="20" height="3" rx="1.5" fill="#c9a84c"/>
+        </svg>
+        <span style={{fontSize:20,fontWeight:400,color:"#f0ede6",fontFamily:"'DM Serif Display',Georgia,serif",letterSpacing:"-0.02em"}}>Steward</span>
       </div>
       <div style={{display:"flex",gap:8,alignItems:"center"}}>
-        <button onClick={()=>setShowChat(true)} style={{background:"#1a2e1f",border:"1px solid #2d4a35",borderRadius:10,padding:"7px 16px",color:"#10b981",fontSize:12,fontWeight:700,cursor:"pointer",display:"flex",alignItems:"center",gap:7}}>
+        <button data-tour="ask-ai" onClick={()=>setShowChat(true)} style={{background:"#1a2e1f",border:"1px solid #2d4a35",borderRadius:10,padding:"7px 16px",color:"#10b981",fontSize:12,fontWeight:700,cursor:"pointer",display:"flex",alignItems:"center",gap:7}}>
           ✦ Ask AI
         </button>
         <div className="app-avatar" style={{width:30,height:30,borderRadius:8,background:T.greenDk,display:"flex",alignItems:"center",justifyContent:"center"}}>
@@ -174,37 +170,62 @@ function AppShell() {
 
     {/* Tab bar */}
     <div className="app-tabbar" style={{display:"flex",padding:"0 20px",borderBottom:"1px solid #1a2e1f",overflow:"hidden",flexShrink:0,background:"#0f1a12",width:"100%",boxSizing:"border-box"}}>
-      {TABS.map(t=>{
+      <button data-tour="nav-today" onClick={()=>window.location.href="/today"} style={{background:"transparent",border:"none",borderBottom:"2px solid #10b981",padding:"8px 14px",color:"#10b981",fontSize:13,fontWeight:700,cursor:"pointer",display:"flex",alignItems:"center",gap:5,whiteSpace:"nowrap",flexShrink:0,marginBottom:-1,marginRight:4}}>
+        ◉ Today
+      </button>
+      <div style={{width:1,background:"#1a2e1f",margin:"8px 4px 8px 0",flexShrink:0}}/>
+      {TABS.filter(t=>t.id!=="settings").map(t=>{
         const active=tab===t.id;
-        return <button key={t.id} onClick={()=>setTab(t.id)} style={{background:"transparent",border:"none",borderBottom:`2px solid ${active?"#c9a84c":"transparent"}`,padding:"8px 12px",color:active?"#f0ede6":"#8fa896",fontSize:13,fontWeight:active?700:400,cursor:"pointer",display:"flex",alignItems:"center",gap:6,whiteSpace:"nowrap",transition:"color 0.15s,border-color 0.15s",flexShrink:1,marginBottom:-1}}>
+        return <button key={t.id} data-tour={t.id==="donors"?"nav-donors":t.id==="finance"?"nav-finance":t.id==="analytics"?"nav-analytics":undefined} onClick={()=>setTab(t.id)} style={{background:"transparent",border:"none",borderBottom:`2px solid ${active?"#c9a84c":"transparent"}`,padding:"8px 12px",color:active?"#f0ede6":"#8fa896",fontSize:13,fontWeight:active?700:400,cursor:"pointer",display:"flex",alignItems:"center",gap:6,whiteSpace:"nowrap",transition:"color 0.15s,border-color 0.15s",flexShrink:1,marginBottom:-1}}>
           {t.label}
           {t.earlyAccess&&<span style={{fontSize:9,fontWeight:700,letterSpacing:"0.04em",background:"#1a2e1f",color:"#8fa896",border:"1px solid #2d4a35",borderRadius:99,padding:"1px 6px",lineHeight:"14px"}}>Early Access</span>}
           {t.id==="tasks"&&tasksDue>0&&<span style={{background:"#ef4444",color:"#fff",fontSize:9,fontWeight:800,borderRadius:99,padding:"1px 5px",lineHeight:"14px"}}>{tasksDue}</span>}
         </button>;
       })}
+      <div style={{flex:1,minWidth:8}}/>
+      <div style={{width:1,background:"#2d4a35",margin:"8px 4px",flexShrink:0}}/>
+      <button onClick={()=>setTab("settings")} style={{background:"transparent",border:"none",borderBottom:`2px solid ${tab==="settings"?"#c9a84c":"transparent"}`,padding:"8px 10px",color:tab==="settings"?"#f0ede6":"#6b8f7a",fontSize:12,fontWeight:tab==="settings"?600:400,cursor:"pointer",display:"flex",alignItems:"center",gap:5,whiteSpace:"nowrap",transition:"color 0.15s,border-color 0.15s",flexShrink:0,marginBottom:-1}}>
+        <span style={{fontSize:13}}>⚙</span>Settings
+      </button>
     </div>
 
-    {showTrialBanner&&<div style={{background:"#1a2e1f",borderBottom:"1px solid #0d5c3a",padding:"9px 24px",display:"flex",alignItems:"center",gap:12,fontSize:13,color:"#8fa896"}}>
+    {showReadOnlyBanner&&<div style={{background:"#7f1d1d",borderBottom:"1px solid #991b1b",padding:"9px 24px",display:"flex",alignItems:"center",gap:12,fontSize:13,color:"#fca5a5",flexWrap:"wrap"}}>
+      <span>🔒</span>
+      <span style={{flex:1,minWidth:200}}><strong style={{color:"#fef2f2"}}>Your account is read-only.</strong> {subStatus==="trial_expired"?"Your free trial has ended.":"Your subscription has ended."} Export your data or reactivate to continue.</span>
+      <button onClick={()=>setTab("settings")} style={{background:"none",border:"1px solid #fca5a5",borderRadius:8,color:"#fca5a5",fontSize:12,fontWeight:700,cursor:"pointer",padding:"4px 12px",whiteSpace:"nowrap"}}>Export data →</button>
+      <button onClick={openPortal} style={{background:"#fef2f2",border:"none",borderRadius:8,color:"#7f1d1d",fontSize:12,fontWeight:700,cursor:"pointer",padding:"4px 12px",whiteSpace:"nowrap"}}>Reactivate →</button>
+    </div>}
+    {!showReadOnlyBanner&&showWarningBanner&&subStatus==="past_due"&&<div style={{background:"#451a03",borderBottom:"1px solid #92400e",padding:"9px 24px",display:"flex",alignItems:"center",gap:12,fontSize:13,color:"#fbbf24",flexWrap:"wrap"}}>
+      <span>⚠️</span>
+      <span style={{flex:1,minWidth:200}}><strong style={{color:"#fef3c7"}}>Your last payment didn't go through.</strong> Update your payment method to keep Steward active.</span>
+      <button onClick={openPortal} style={{background:"#f59e0b",border:"none",borderRadius:8,color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer",padding:"4px 12px",whiteSpace:"nowrap"}}>Update payment →</button>
+    </div>}
+    {!showReadOnlyBanner&&showWarningBanner&&(subStatus==="canceled"||subStatus==="cancelled")&&<div style={{background:"#451a03",borderBottom:"1px solid #92400e",padding:"9px 24px",display:"flex",alignItems:"center",gap:12,fontSize:13,color:"#fbbf24",flexWrap:"wrap"}}>
+      <span>⚠️</span>
+      <span style={{flex:1,minWidth:200}}><strong style={{color:"#fef3c7"}}>Your subscription is canceled.</strong> You have until {billing?.graceUntil?new Date(billing.graceUntil).toLocaleDateString("en-US",{month:"short",day:"numeric"}):"soon"} to export your data or reactivate.</span>
+      <button onClick={()=>setTab("settings")} style={{background:"none",border:"1px solid #fbbf24",borderRadius:8,color:"#fbbf24",fontSize:12,fontWeight:700,cursor:"pointer",padding:"4px 12px",whiteSpace:"nowrap"}}>Export data</button>
+      <button onClick={openPortal} style={{background:"#f59e0b",border:"none",borderRadius:8,color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer",padding:"4px 12px",whiteSpace:"nowrap"}}>Reactivate →</button>
+    </div>}
+    {showTrialBanner&&<div style={{background:billing.trialDaysLeft<=3?"#451a03":"#1a2e1f",borderBottom:`1px solid ${billing.trialDaysLeft<=3?"#92400e":"#0d5c3a"}`,padding:"9px 24px",display:"flex",alignItems:"center",gap:12,fontSize:13,color:billing.trialDaysLeft<=3?"#fbbf24":"#8fa896"}}>
       <span>⏳</span>
       <span><strong style={{color:"#f0ede6"}}>{billing.trialDaysLeft} days</strong> left in your trial —</span>
-      <button onClick={openPortal} style={{background:"none",border:"none",color:"#c9a84c",fontSize:13,fontWeight:700,cursor:"pointer",padding:0,textDecoration:"underline"}}>Upgrade now →</button>
+      <button onClick={openPortal} style={{background:"none",border:"none",color:billing.trialDaysLeft<=3?"#f59e0b":"#c9a84c",fontSize:13,fontWeight:700,cursor:"pointer",padding:0,textDecoration:"underline"}}>{billing.trialDaysLeft<=3?"Choose a plan →":"Upgrade now →"}</button>
       <button onClick={()=>setBannerDismissed(true)} style={{marginLeft:"auto",background:"transparent",border:"none",color:"#3d5245",cursor:"pointer",fontSize:16,padding:"0 4px",lineHeight:1}}>✕</button>
     </div>}
 
     <div className="app-content" style={{flex:1,padding:"20px 24px 28px 24px",maxWidth:1400,width:"100%",margin:"0 auto",boxSizing:"border-box"}}>
-      {tab==="dashboard"&&<Dashboard data={data} setData={setData} onNavigate={setTab}/>}
-      {tab==="donors"&&<Donors data={data} setData={setData}/>}
-      {tab==="grants"&&<Grants data={data} setData={setData}/>}
+      {tab==="dashboard"&&<Dashboard data={data} setData={setData} onNavigate={setTab} isReadOnly={isReadOnly}/>}
+      {tab==="donors"&&<Donors data={data} setData={setData} isReadOnly={isReadOnly}/>}
+      {tab==="grants"&&<Grants data={data} setData={setData} isReadOnly={isReadOnly}/>}
       {tab==="communications"&&<Communications data={data}/>}
       {tab==="events"&&<Events data={data}/>}
-      {tab==="volunteers"&&<Volunteers data={data}/>}
-      {tab==="board"&&<Board data={data}/>}
+      {tab==="volunteers"&&<Volunteers data={data} setData={setData}/>}
+      {tab==="board"&&<Board data={data} setData={setData}/>}
       {tab==="finance"&&<Finance data={data}/>}
       {tab==="analytics"&&<Analytics data={data}/>}
       {tab==="tasks"&&<Tasks data={data} setData={setData}/>}
       {tab==="settings"&&<Settings auth={auth} logout={logout}/>}
     </div>
-    {showWizard&&<OnboardingWizard org={data.org} onDone={()=>{loadData();setTab("dashboard");setShowWizard(false);}}/>}
     {showChat&&<AIChat data={data} onClose={()=>setShowChat(false)}/>}
     {stripeToast&&<div style={{position:"fixed",bottom:24,right:24,zIndex:9999,background:T.greenDk,color:"#fff",borderRadius:14,padding:"14px 20px",fontSize:13,fontWeight:600,boxShadow:"0 8px 32px rgba(26,107,74,0.35)",display:"flex",alignItems:"center",gap:10,maxWidth:340}}>
       <span style={{fontSize:18}}>💳</span>

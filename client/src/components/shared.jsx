@@ -172,6 +172,7 @@ export function GlobalStyles() {
     .mobile-more-row .mob-icon{font-size:20px;width:28px;text-align:center;flex-shrink:0;}
     .mobile-more-row.active{color:#c9a84c;font-weight:700;}
     .mobile-more-signout{display:flex;align-items:center;gap:16px;width:100%;background:transparent;border:none;padding:16px 24px;color:#8fa896;font-family:'DM Sans',system-ui,sans-serif;font-size:16px;font-weight:400;cursor:pointer;text-align:left;}
+    .dir-stage-mobile{display:none;}
 
     @media(max-width:768px){
       /* Root overflow kill — nothing bleeds past viewport */
@@ -223,8 +224,16 @@ export function GlobalStyles() {
 
       /* Donor profile: single column, 2×2 stat mini-cards */
       .donor-profile-body{grid-template-columns:1fr!important;overflow:auto!important;}
-      .donor-profile-header{padding:10px 16px!important;}
+      .donor-profile-header{flex-direction:column!important;align-items:stretch!important;padding:10px 16px!important;gap:6px!important;}
+      .dph-identity{flex:none!important;}
+      .dph-actions{width:100%!important;flex-shrink:unset!important;gap:6px!important;}
+      .dph-actions>button{flex:1!important;justify-content:center!important;font-size:12px!important;padding:8px 4px!important;}
       .donor-stat-grid{grid-template-columns:repeat(2,1fr)!important;}
+
+      /* Directory donor list: collapse to 4 columns, hide Stage/Owner/Assign */
+      .dir-header-row,.dir-donor-row{grid-template-columns:2fr 68px 68px 44px!important;padding-left:12px!important;padding-right:12px!important;}
+      .dir-col-stage,.dir-col-owner,.dir-col-assign{display:none!important;}
+      .dir-stage-mobile{display:inline-flex!important;align-items:center!important;margin-top:3px!important;}
 
       /* ReEngage table: hide non-essential columns, fix grid template */
       .reEngage-header{grid-template-columns:1fr 90px 100px!important;}

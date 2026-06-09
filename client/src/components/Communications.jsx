@@ -1,7 +1,98 @@
-import { useState, useEffect, useRef, useMemo } from "react";
+import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { apiFetch } from "../api";
 import { useAuth } from "../main";
-import { T, askClaude, Spin } from "./shared";
+import { T, askClaude, Spin, fmtFull } from "./shared";
+
+// ── Campaign Briefing panel (rendered inside expanded row) ──────────────────
+function CampaignBriefing({ campaign }) {
+  const [progress, setProgress] = useState(null);
+  const [briefing, setBriefing] = useState(campaign.briefing || "");
+  const [goal, setGoal] = useState(campaign.goal_amount || "");
+  const [startDate, setStartDate] = useState(campaign.start_date ? campaign.start_date.split("T")[0] : "");
+  const [endDate, setEndDate] = useState(campaign.end_date ? campaign.end_date.split("T")[0] : "");
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+
+  useEffect(() => {
+    apiFetch(`/campaigns/${campaign.id}/progress`).then(r => setProgress(r)).catch(() => {});
+  }, [campaign.id]);
+
+  const save = useCallback(async () => {
+    setSaving(true); setSaved(false);
+    try {
+      await apiFetch(`/campaigns/${campaign.id}/briefing`, {
+        method: "PUT",
+        body: JSON.stringify({ briefing, goal_amount: goal || null, start_date: startDate || null, end_date: endDate || null }),
+      });
+      apiFetch(`/campaigns/${campaign.id}/progress`).then(r => setProgress(r)).catch(() => {});
+      setSaved(true); setTimeout(() => setSaved(false), 2000);
+    } catch (e) { console.error(e); }
+    setSaving(false);
+  }, [campaign.id, briefing, goal, startDate, endDate]);
+
+  const raisedAmt = progress?.raised || 0;
+  const goalAmt = parseFloat(goal) || 0;
+  const pct = goalAmt > 0 ? Math.min(Math.round(raisedAmt / goalAmt * 100), 100) : 0;
+
+  return (
+    <div style={{ borderTop: "1px solid " + T.bg3, background: T.bg, padding: "16px" }}>
+      <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: T.ink3, marginBottom: 12 }}>Campaign Briefing</div>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 24 }}>
+        {/* Left: briefing text + timeline */}
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          <textarea
+            value={briefing}
+            onChange={e => setBriefing(e.target.value)}
+            onBlur={save}
+            placeholder="Strategy, key messages, target segments, talking points…"
+            rows={5}
+            style={{ background: T.white, border: "1px solid " + T.bg3, borderRadius: 8, padding: "10px 12px", color: T.ink, fontSize: 12, outline: "none", resize: "vertical", lineHeight: 1.6, fontFamily: "inherit" }}
+          />
+          <div style={{ display: "flex", gap: 8 }}>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 10, color: T.ink3, marginBottom: 4 }}>Start date</div>
+              <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} onBlur={save} style={{ width: "100%", background: T.white, border: "1px solid " + T.bg3, borderRadius: 8, padding: "7px 10px", color: T.ink, fontSize: 12, outline: "none", boxSizing: "border-box" }} />
+            </div>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 10, color: T.ink3, marginBottom: 4 }}>End date</div>
+              <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} onBlur={save} style={{ width: "100%", background: T.white, border: "1px solid " + T.bg3, borderRadius: 8, padding: "7px 10px", color: T.ink, fontSize: 12, outline: "none", boxSizing: "border-box" }} />
+            </div>
+          </div>
+          <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 8 }}>
+            {saved && <span style={{ fontSize: 11, color: "#10b981" }}>✓ Saved</span>}
+            <button onClick={save} disabled={saving} style={{ background: "#10b981", border: "none", borderRadius: 8, padding: "7px 14px", color: "#fff", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+              {saving ? "Saving…" : "Save"}
+            </button>
+          </div>
+        </div>
+        {/* Right: goal + progress */}
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          <div>
+            <div style={{ fontSize: 10, color: T.ink3, marginBottom: 4 }}>Campaign Goal ($)</div>
+            <input type="number" value={goal} onChange={e => setGoal(e.target.value)} onBlur={save} placeholder="e.g. 50000" style={{ width: "100%", background: T.white, border: "1px solid " + T.bg3, borderRadius: 8, padding: "7px 10px", color: T.ink, fontSize: 12, outline: "none", boxSizing: "border-box" }} />
+          </div>
+          {goalAmt > 0 && (
+            <div>
+              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
+                <span style={{ fontSize: 12, fontWeight: 700, color: "#1a6b4a" }}>{fmtFull(raisedAmt)} raised</span>
+                <span style={{ fontSize: 12, color: T.ink3 }}>of {fmtFull(goalAmt)} goal · {pct}%</span>
+              </div>
+              <div style={{ height: 8, background: T.bg3, borderRadius: 99, overflow: "hidden" }}>
+                <div style={{ height: "100%", width: `${pct}%`, background: pct >= 100 ? "#1a6b4a" : "#10b981", borderRadius: 99, transition: "width 0.4s" }} />
+              </div>
+              {progress?.donorCount > 0 && <div style={{ fontSize: 11, color: T.ink3, marginTop: 6 }}>{progress.donorCount} donor{progress.donorCount !== 1 ? "s" : ""} contributed</div>}
+              {progress?.daysRemaining !== null && progress?.daysRemaining !== undefined && (
+                <div style={{ fontSize: 11, color: progress.daysRemaining < 0 ? "#ef4444" : T.ink3, marginTop: 4, fontWeight: progress.daysRemaining < 7 ? 700 : 400 }}>
+                  {progress.daysRemaining < 0 ? `Ended ${Math.abs(progress.daysRemaining)} days ago` : progress.daysRemaining === 0 ? "Ends today" : `${progress.daysRemaining} days remaining`}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
 
 // ── Design constants ──────────────────────────────────────────────────────────
 const S = {
@@ -1020,9 +1111,11 @@ export function Communications({ data }) {
                         </div>
                       </div>
 
-                      {/* Expanded row: recipient table */}
+                      {/* Expanded row: briefing + recipient table */}
                       {isOpen && (
-                        <div style={{ borderTop: "1px solid " + T.bg3, background: T.bg, padding: "14px 16px" }}>
+                        <div style={{ borderTop: "1px solid " + T.bg3 }}>
+                          <CampaignBriefing campaign={c} />
+                        <div style={{ background: T.bg, padding: "14px 16px" }}>
                           {/* Stats */}
                           {c.status === "sent" && sentCt > 0 && (
                             <div style={{ display: "flex", gap: 10, marginBottom: 14 }}>
@@ -1066,6 +1159,7 @@ export function Communications({ data }) {
                               {recs.length > 30 && <div style={{ padding: "8px 12px", fontSize: 11, color: T.ink3, borderTop: "1px solid " + T.bg2 }}>+{recs.length - 30} more</div>}
                             </div>
                           )}
+                        </div>
                         </div>
                       )}
                     </div>

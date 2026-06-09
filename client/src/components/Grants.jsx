@@ -370,7 +370,7 @@ function GrantKanban({ grants, onUpdate, onAddClick }) {
 }
 
 // ── Grants ─────────────────────────────────────────────────────────────────
-export function Grants({data,setData}) {
+export function Grants({data,setData,isReadOnly=false}) {
   const {auth}=useAuth();
   const isAdmin=auth?.user?.role==="admin";
   const [subTab,setSubTab]=useState("pipeline");
@@ -445,7 +445,7 @@ export function Grants({data,setData}) {
           <button key={id} onClick={()=>setGrantView(id)} style={{background:grantView===id?T.white:"transparent",border:grantView===id?"1px solid "+T.bg3:"1px solid transparent",borderRadius:7,padding:"5px 13px",fontSize:12,fontWeight:600,color:grantView===id?T.ink:T.ink3,cursor:"pointer",transition:"all 0.12s"}}>{label}</button>
         ))}
       </div>
-      {grantView==="list"&&<button onClick={()=>setShowAdd(v=>!v)} style={{background:T.greenDk,border:"none",borderRadius:10,padding:"10px 16px",color:"#fff",fontSize:13,fontWeight:600,cursor:"pointer",marginLeft:"auto",boxShadow:"0 2px 8px rgba(26,107,74,0.2)"}}>+ Add Grant</button>}
+      {grantView==="list"&&<button onClick={()=>setShowAdd(v=>!v)} disabled={isReadOnly} title={isReadOnly?"Reactivate your subscription to make changes.":undefined} style={{background:T.greenDk,border:"none",borderRadius:10,padding:"10px 16px",color:"#fff",fontSize:13,fontWeight:600,cursor:isReadOnly?"not-allowed":"pointer",marginLeft:"auto",boxShadow:"0 2px 8px rgba(26,107,74,0.2)",opacity:isReadOnly?0.45:1}}>+ Add Grant</button>}
     </div>
     {(prospectLoading||prospectAI)&&<AIPanel text={prospectAI} onClose={()=>setProspectAI("")}/>}
 

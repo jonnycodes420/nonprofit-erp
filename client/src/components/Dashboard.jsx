@@ -50,7 +50,7 @@ export function AIChat({data,onClose}) {
 }
 
 // ── Dashboard ──────────────────────────────────────────────────────────────
-export function Dashboard({data,setData,onNavigate}) {
+export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
   const todayStr=new Date().toLocaleDateString("en-US",{weekday:"long",month:"long",day:"numeric"});
   const currentYear=new Date().getFullYear();
 
@@ -60,11 +60,12 @@ export function Dashboard({data,setData,onNavigate}) {
   const [showAddDonor,setShowAddDonor]=useState(false);
   const [newDonor,setNewDonor]=useState({name:"",email:"",phone:"",stage:"prospect"});
   const [onlineGifts,setOnlineGifts]=useState([]);
-  const [gmailStatus,setGmailStatus]=useState(null);
+  const [myStats,setMyStats]=useState(null);
+  const [portfolioOpen,setPortfolioOpen]=useState(false);
 
   useEffect(()=>{
     apiFetch("/stripe/online-gifts").then(r=>setOnlineGifts(r||[])).catch(()=>{});
-    apiFetch("/gmail/status").then(setGmailStatus).catch(()=>{});
+    apiFetch("/dashboard/my-stats").then(r=>setMyStats(r||null)).catch(()=>{});
   },[]);
 
   const totalDonors=data.donors.length;
@@ -105,48 +106,9 @@ export function Dashboard({data,setData,onNavigate}) {
 
   const generateBriefing=async()=>{
     setBriefLoading(true);setBriefing("");setBriefOpen(true);
-    const lapsedCount=data.donors.filter(d=>d.stage==="lapsed").length;
-    const recentGifts=data.donors.filter(d=>d.lastGift&&daysDiff(d.lastGift)<=7&&d.lastAmount>0);
-    const topPriority=data.donors
-      .filter(d=>d.stage==="major"||d.total>5000)
-      .sort((a,b)=>daysDiff(a.lastTouchpoint||"2000-01-01")-daysDiff(b.lastTouchpoint||"2000-01-01"))
-      .slice(0,3);
-    const grantDeadlines=data.grants
-      .filter(g=>g.status!=="closed"&&daysUntil(g.deadline)>=0&&daysUntil(g.deadline)<=30)
-      .sort((a,b)=>new Date(a.deadline)-new Date(b.deadline));
-    const ytdRevenue=data.financials?.revenue?.reduce((s,r)=>s+r.individual+r.grants+r.events+r.other,0)||0;
-    const thisMonthRevenue=data.financials?.revenue?.slice(-1)[0]||{individual:0,grants:0};
-    const volProspects=data.volunteers?.filter(v=>v.hours>=20).length||0;
-    const recentEmails=activityFeed.filter(i=>i.type==="email").slice(0,5);
-    const gmailLine=gmailStatus?.connected
-      ?`Gmail: connected (${gmailStatus.email}), last synced ${gmailStatus.lastSyncedAt?Math.round((Date.now()-new Date(gmailStatus.lastSyncedAt))/60000)+" min ago":"recently"}`
-      :"Gmail: not connected";
-    const prompt=`You are a nonprofit development strategist. Generate a daily briefing for ${data.org.name}.
-Today: ${todayStr}
-
-DONORS: ${data.donors.length} total, ${lapsedCount} lapsed, ${recentGifts.length} gifts this week
-TOP PRIORITY DONORS: ${topPriority.map(d=>`${d.name} (${d.stage}, last contact ${daysDiff(d.lastTouchpoint||"")||"unknown"} days ago, lifetime ${fmtFull(d.total)})`).join(", ")||"none flagged"}
-
-GRANTS: ${data.grants.filter(g=>g.status==="active").length} active, ${grantDeadlines.length} deadlines in 30 days
-GRANT DEADLINES: ${grantDeadlines.map(g=>`${g.funder} due ${g.deadline} (${daysUntil(g.deadline)}d)`).join(", ")||"none"}
-
-FINANCE: ${fmtFull(ytdRevenue)} YTD revenue, ${fmtFull(thisMonthRevenue.individual+thisMonthRevenue.grants)} this month
-RECENT GIFTS: ${recentGifts.map(d=>`${d.name} $${d.lastAmount}`).join(", ")||"none"}
-
-VOLUNTEERS: ${volProspects} volunteers with 20+ hours ready to convert to donors
-${gmailLine}
-RECENT DONOR EMAILS: ${recentEmails.map(e=>`${e.donorName}: ${e.note?.replace("Subject: ","")?.split("\n")[0]||e.type}`).join("; ")||"none"}
-
-Based on all of this, give me:
-1. The single most important action to take today (be specific — name the donor or grant)
-2. Two other high-priority items
-3. One risk to be aware of
-4. One opportunity I might be missing
-
-Be direct. Use names. No fluff. Max 280 words.`;
     await askClaude(
-      `You are a chief development officer. Write a crisp daily briefing. Use bullet points. Be specific with names and numbers.`,
-      prompt,
+      `You are a chief development officer. Write a crisp daily briefing. Use bullet points. Be specific with names and numbers. Max 250 words.`,
+      `Generate today's development briefing for ${data.org.name}.\nToday: ${todayStr}\n\n${buildContext(data)}\n\nFormat:\n**TODAY'S PRIORITY CALLS** (top 2-3 donors to contact with specific reason)\n**GRANT ALERTS** (anything urgent in next 30 days)\n**FINANCIAL PULSE** (1-2 sentences on cash/revenue)\n**ONE THING** (the single most important action today)\n\nBe sharp and specific.`,
       chunk=>setBriefing(chunk)
     );
     setBriefLoading(false);
@@ -184,9 +146,9 @@ Be direct. Use names. No fluff. Max 280 words.`;
   const typeColor={call:"#3b82f6",email:"#8b5cf6",meeting:"#1a6b4a",gift:"#f59e0b",event:"#ec4899",note:"#6b7280"};
 
   const QUICK=[
-    {icon:<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" width="18" height="18"><circle cx="10" cy="7" r="3.5"/><path d="M3 17c0-3.3 3.1-6 7-6s7 2.7 7 6" strokeLinecap="round"/><line x1="14" y1="4" x2="18" y2="4" strokeLinecap="round"/><line x1="16" y1="2" x2="16" y2="6" strokeLinecap="round"/></svg>,label:"Add Donor",action:()=>setShowAddDonor(true)},
-    {icon:<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" width="18" height="18"><rect x="3" y="5" width="14" height="11" rx="2"/><path d="M7 5V4a1 1 0 011-1h4a1 1 0 011 1v1" strokeLinecap="round"/><line x1="7" y1="10" x2="13" y2="10" strokeLinecap="round"/><line x1="10" y1="7.5" x2="10" y2="12.5" strokeLinecap="round"/></svg>,label:"Log Gift",action:()=>onNavigate("donors")},
-    {icon:<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" width="18" height="18"><path d="M10 3l1.8 5.4H17l-4.5 3.3 1.7 5.3L10 14l-4.2 3 1.7-5.3L3 8.4h5.2z" strokeLinejoin="round"/></svg>,label:"New Grant",action:()=>onNavigate("grants")},
+    {icon:<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" width="18" height="18"><circle cx="10" cy="7" r="3.5"/><path d="M3 17c0-3.3 3.1-6 7-6s7 2.7 7 6" strokeLinecap="round"/><line x1="14" y1="4" x2="18" y2="4" strokeLinecap="round"/><line x1="16" y1="2" x2="16" y2="6" strokeLinecap="round"/></svg>,label:"Add Donor",action:()=>setShowAddDonor(true),isWrite:true},
+    {icon:<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" width="18" height="18"><rect x="3" y="5" width="14" height="11" rx="2"/><path d="M7 5V4a1 1 0 011-1h4a1 1 0 011 1v1" strokeLinecap="round"/><line x1="7" y1="10" x2="13" y2="10" strokeLinecap="round"/><line x1="10" y1="7.5" x2="10" y2="12.5" strokeLinecap="round"/></svg>,label:"Log Gift",action:()=>onNavigate("donors"),isWrite:true},
+    {icon:<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" width="18" height="18"><path d="M10 3l1.8 5.4H17l-4.5 3.3 1.7 5.3L10 14l-4.2 3 1.7-5.3L3 8.4h5.2z" strokeLinejoin="round"/></svg>,label:"New Grant",action:()=>onNavigate("grants"),isWrite:true},
     {icon:<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" width="18" height="18"><circle cx="10" cy="7" r="3.5"/><path d="M3 17c0-3.3 3.1-6 7-6s7 2.7 7 6" strokeLinecap="round"/></svg>,label:"Add Volunteer",action:()=>onNavigate("volunteers")},
     {icon:<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" width="18" height="18"><rect x="3" y="3" width="14" height="14" rx="2"/><line x1="7" y1="9" x2="13" y2="9" strokeLinecap="round"/><line x1="7" y1="12" x2="11" y2="12" strokeLinecap="round"/><line x1="10" y1="5.5" x2="10" y2="3" strokeLinecap="round"/></svg>,label:"New Task",action:()=>onNavigate("tasks")},
     {icon:<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" width="18" height="18"><rect x="2" y="5" width="16" height="11" rx="2"/><path d="M2 8l8 5 8-5" strokeLinecap="round"/></svg>,label:"Send Email",action:()=>onNavigate("communications")},
@@ -194,6 +156,35 @@ Be direct. Use names. No fluff. Max 280 words.`;
 
   return(
     <div style={{display:"flex",flexDirection:"column",gap:16}} className="dash-root fade-in">
+      {myStats&&(
+        <div style={{background:T.white,border:"1px solid #3b82f630",borderLeft:"3px solid #3b82f6",borderRadius:14,overflow:"hidden"}}>
+          <button onClick={()=>setPortfolioOpen(v=>!v)} style={{width:"100%",background:"none",border:"none",padding:"10px 16px",display:"flex",alignItems:"center",justifyContent:"space-between",cursor:"pointer",color:T.ink}}>
+            <div style={{display:"flex",alignItems:"center",gap:8}}>
+              <span style={{fontSize:9,fontWeight:800,letterSpacing:"0.1em",textTransform:"uppercase",color:"#3b82f6",background:"#3b82f610",padding:"3px 8px",borderRadius:99}}>MY PORTFOLIO</span>
+              <span style={{fontSize:12,color:T.ink3}}>FY Jul–Jun</span>
+            </div>
+            <span style={{fontSize:12,color:T.ink3}}>{portfolioOpen?"▲":"▼"}</span>
+          </button>
+          {portfolioOpen&&(
+            <div style={{display:"grid",gridTemplateColumns:"repeat(6,1fr)",borderTop:"1px solid "+T.bg3}} className="portfolio-grid">
+              {[
+                {label:"Portfolio",value:myStats.portfolioCount,unit:"donors"},
+                {label:"Visits YTD",value:myStats.visitsYtd,unit:"meetings"},
+                {label:"Moves Made",value:myStats.madeYtd,unit:"interactions"},
+                {label:"Gifts YTD",value:fmt(myStats.giftsYtd),unit:"raised"},
+                {label:"Pipeline",value:fmt(myStats.pipelineValue),unit:"value"},
+                {label:"Lapsed",value:myStats.lapsedCount,unit:"in portfolio",warn:myStats.lapsedCount>0},
+              ].map((m,i)=>(
+                <div key={m.label} style={{padding:"12px 14px",borderRight:i<5?"1px solid "+T.bg3:"none",textAlign:"center"}}>
+                  <div style={{fontSize:9,fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase",color:m.warn?"#ef4444":"#3b82f6",marginBottom:4}}>{m.label}</div>
+                  <div style={{fontSize:20,fontWeight:800,color:m.warn?"#ef4444":T.ink,fontFamily:"'DM Serif Display',serif",lineHeight:1}}>{m.value}</div>
+                  <div style={{fontSize:10,color:T.ink3,marginTop:2}}>{m.unit}</div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
       <div className="dash-stat-grid" style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10}}>
         {[
           {label:"Total Donors",value:totalDonors,sub:`${newDonorsThisYear} gave this year`,tab:"donors"},
@@ -213,25 +204,13 @@ Be direct. Use names. No fluff. Max 280 words.`;
         <div style={{display:"flex",flexDirection:"column",gap:14}}>
           {/* AI Briefing */}
           <div style={{...cardWrap}}>
-            <div className="dash-briefing-hdr dash-cpad" style={{...cPad,borderBottom:"1px solid "+T.bg3,display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:8}}>
+            <div className="dash-briefing-hdr dash-cpad" style={{...cPad,borderBottom:"1px solid "+T.bg3,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
               <div style={{display:"flex",alignItems:"center",gap:10}}>
                 <span style={{background:"#1a6b4a",color:"#fff",fontSize:9,fontWeight:800,padding:"3px 8px",borderRadius:99,letterSpacing:"0.1em",textTransform:"uppercase"}}>AI</span>
                 <span style={{fontSize:11,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.08em",fontWeight:600}}>{todayStr}</span>
               </div>
-              <div style={{display:"flex",alignItems:"center",gap:10}}>
-                {gmailStatus?.connected
-                  ? <div style={{display:"flex",alignItems:"center",gap:5,fontSize:11,color:T.ink3}}>
-                      <span style={{width:7,height:7,borderRadius:"50%",background:"#10b981",display:"inline-block",flexShrink:0}}/>
-                      Gmail synced {gmailStatus.lastSyncedAt?Math.round((Date.now()-new Date(gmailStatus.lastSyncedAt))/60000)+"m ago":"recently"}
-                    </div>
-                  : <button onClick={()=>onNavigate("settings")} style={{background:"transparent",border:"none",padding:0,cursor:"pointer",display:"flex",alignItems:"center",gap:5,fontSize:11,color:T.ink3}}>
-                      <span style={{width:7,height:7,borderRadius:"50%",background:"#6b7280",display:"inline-block",flexShrink:0}}/>
-                      Gmail not connected
-                    </button>
-                }
-                {!briefing&&!briefLoading&&<AIBtn onClick={generateBriefing} label="✦ Generate briefing" small/>}
-                {briefLoading&&<div style={{display:"flex",alignItems:"center",gap:6,fontSize:12,color:T.ink3}}><Spin/>Thinking…</div>}
-              </div>
+              {!briefing&&!briefLoading&&<AIBtn onClick={generateBriefing} label="✦ Generate briefing" small/>}
+              {briefLoading&&<div style={{display:"flex",alignItems:"center",gap:6,fontSize:12,color:T.ink3}}><Spin/>Thinking…</div>}
             </div>
             <div className="dash-briefing-body" style={{padding:"18px 24px"}}>
               {!briefing&&!briefLoading&&(
@@ -394,17 +373,24 @@ Be direct. Use names. No fluff. Max 280 words.`;
           <div style={{background:"#0f1a12",border:"1px solid #1a2e1f",borderRadius:14,overflow:"hidden",padding:"14px 20px"}}>
             <div style={{...sTitle,color:"#8fa896"}}>Quick Actions</div>
             <div className="dash-quick-grid" style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8,marginTop:12}}>
-              {QUICK.map(a=>(
-                <button key={a.label} onClick={a.action} className="dash-action dash-quick-btn" style={{
-                  background:"#1a2e1f",border:"1px solid #2d4a35",borderRadius:10,
-                  padding:"12px 8px",display:"flex",flexDirection:"column",alignItems:"center",gap:6,cursor:"pointer",
-                }}>
+              {QUICK.map(a=>{
+                const blocked=isReadOnly&&a.isWrite;
+                return(
+                <button key={a.label} onClick={blocked?undefined:a.action} className="dash-action dash-quick-btn"
+                  disabled={blocked}
+                  title={blocked?"Reactivate your subscription to make changes.":undefined}
+                  style={{
+                    background:"#1a2e1f",border:"1px solid #2d4a35",borderRadius:10,
+                    padding:"12px 8px",display:"flex",flexDirection:"column",alignItems:"center",gap:6,
+                    cursor:blocked?"not-allowed":"pointer",opacity:blocked?0.45:1,
+                  }}>
                   <div style={{width:32,height:32,borderRadius:8,background:"#0d5c3a22",display:"flex",alignItems:"center",justifyContent:"center",color:"#c9a84c"}}>
                     {a.icon}
                   </div>
                   <span className="dash-quick-label" style={{fontSize:10,fontWeight:700,color:"#8fa896",textAlign:"center",lineHeight:1.3,letterSpacing:"0.02em"}}>{a.label}</span>
                 </button>
-              ))}
+                );
+              })}
             </div>
           </div>
 
@@ -447,31 +433,6 @@ Be direct. Use names. No fluff. Max 280 words.`;
               </>
             )}
           </div>
-
-          {/* Recent emails (Gmail-synced) */}
-          {activityFeed.filter(i=>i.type==="email"&&i.note?.startsWith("Subject: ")).length>0&&(
-            <div style={{...cardWrap}}>
-              <div className="dash-cpad" style={{...cPad,borderBottom:"1px solid "+T.bg3,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-                <span style={sTitle}>✉ Recent Emails</span>
-                <span style={{fontSize:10,color:T.ink3}}>via Gmail</span>
-              </div>
-              {activityFeed.filter(i=>i.type==="email"&&i.note?.startsWith("Subject: ")).slice(0,3).map((item,i,arr)=>{
-                const subject=item.note?.split("\n")[0]?.replace("Subject: ","")||"Email";
-                const tc=item.note?.toLowerCase().includes("direction:outbound")||item.note?.includes("Sent")||item.metadata?.direction==="outbound"?"#3b82f6":"#10b981";
-                const dir=item.metadata?.direction==="outbound"?"Sent":"Received";
-                return(
-                  <div key={i} onClick={()=>onNavigate("donors")} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 20px",borderBottom:i<arr.length-1?"1px solid "+T.bg3:"none",cursor:"pointer"}}>
-                    <span style={{fontSize:14,flexShrink:0}}>✉</span>
-                    <div style={{flex:1,minWidth:0}}>
-                      <div style={{fontSize:12,fontWeight:600,color:T.ink,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{subject}</div>
-                      <div style={{fontSize:11,color:T.ink3,marginTop:1}}>{item.donorName}</div>
-                    </div>
-                    <span style={{fontSize:10,fontWeight:700,background:tc+"22",color:tc,borderRadius:99,padding:"2px 7px",flexShrink:0}}>{dir}</span>
-                  </div>
-                );
-              })}
-            </div>
-          )}
 
           {/* Activity feed */}
           <div style={{...cardWrap}}>

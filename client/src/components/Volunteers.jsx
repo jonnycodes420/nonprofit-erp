@@ -1,9 +1,13 @@
 import { useState } from "react";
 import { T, askClaude, daysDiff, Pill, Card, AIBtn, AIPanel, MetricCard, EmptyState, PageTitle } from "./shared";
+import { apiFetch } from "../api";
 
-export function Volunteers({data}) {
+export function Volunteers({data, setData}) {
   const [convPlan,setConvPlan]=useState(""); const [convLoading,setConvLoading]=useState(false);
   const [boardAI,setBoardAI]=useState(""); const [boardLoading,setBoardLoading]=useState(false);
+  const [showAdd,setShowAdd]=useState(false);
+  const [form,setForm]=useState({name:"",email:"",skills:"",convertPotential:"medium",employer:"",notes:""});
+  const [saving,setSaving]=useState(false);
 
   const getConvPlan=async()=>{
     setConvLoading(true); setConvPlan("");
@@ -20,6 +24,31 @@ export function Volunteers({data}) {
     setBoardLoading(false);
   };
 
+  async function addVolunteer(){
+    if(!form.name.trim())return;
+    setSaving(true);
+    try{
+      const skillsArr=form.skills.split(",").map(s=>s.trim()).filter(Boolean);
+      const raw=await apiFetch("/volunteers",{method:"POST",body:JSON.stringify({
+        name:form.name.trim(),email:form.email.trim(),skills:skillsArr,
+        convertPotential:form.convertPotential,employer:form.employer.trim(),notes:form.notes.trim(),
+      })});
+      const adapted={
+        id:raw.id, name:raw.name, email:raw.email||"", hours:raw.hours||0,
+        skills:Array.isArray(raw.skills)?raw.skills:JSON.parse(raw.skills||"[]"),
+        lastActive:raw.last_active||"", donorId:raw.donor_id||null,
+        convertPotential:raw.convert_potential||"medium",
+        employer:raw.employer||"", notes:raw.notes||"",
+      };
+      setData(prev=>({...prev,volunteers:[...prev.volunteers,adapted]}));
+      setForm({name:"",email:"",skills:"",convertPotential:"medium",employer:"",notes:""});
+      setShowAdd(false);
+    }catch(e){alert(e.message||"Failed to add volunteer");}
+    setSaving(false);
+  }
+
+  const inp={background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"9px 12px",color:T.ink,fontSize:13,outline:"none",width:"100%",boxSizing:"border-box"};
+
   return <div style={{display:"flex",flexDirection:"column",gap:14}}>
     <PageTitle main="Your" accent="volunteers."/>
     <div className="vol-metric-grid" style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:12}}>
@@ -27,13 +56,43 @@ export function Volunteers({data}) {
       <MetricCard label="High Convert Potential" value={data.volunteers.filter(v=>v.convertPotential==="high").length} sub="ready to cultivate" color="#f59e0b"/>
       <MetricCard label="Converted" value={data.volunteers.filter(v=>v.convertPotential==="converted").length} sub="volunteer → donor" color="#1a6b4a"/>
     </div>
-    <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
+    <div style={{display:"flex",gap:10,flexWrap:"wrap",alignItems:"center"}}>
       <AIBtn onClick={getConvPlan} loading={convLoading} label="✦ Volunteer-to-Donor Conversion Plan"/>
       <AIBtn onClick={getBoardCandidates} loading={boardLoading} label="✦ Identify Board Candidates"/>
+      <button onClick={()=>setShowAdd(v=>!v)}
+        style={{marginLeft:"auto",background:"#1a6b4a",color:"#fff",border:"none",borderRadius:8,padding:"8px 16px",fontSize:13,fontWeight:700,cursor:"pointer"}}>
+        + Add Volunteer
+      </button>
     </div>
     {(convLoading||convPlan)&&<AIPanel text={convPlan} onClose={()=>setConvPlan("")}/>}
     {(boardLoading||boardAI)&&<AIPanel text={boardAI} onClose={()=>setBoardAI("")}/>}
-    {data.volunteers.length===0&&<EmptyState icon="◎" title="No volunteers yet" message="Add volunteers to track hours, skills, and conversion potential."/>}
+    {showAdd&&<Card>
+      <div style={{fontSize:14,fontWeight:700,color:T.ink,marginBottom:14}}>New Volunteer</div>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+        <input placeholder="Full name *" value={form.name} onChange={e=>setForm(f=>({...f,name:e.target.value}))} style={inp}/>
+        <input placeholder="Email" type="email" value={form.email} onChange={e=>setForm(f=>({...f,email:e.target.value}))} style={inp}/>
+        <input placeholder="Skills (comma-separated)" value={form.skills} onChange={e=>setForm(f=>({...f,skills:e.target.value}))} style={inp}/>
+        <input placeholder="Employer / Organization" value={form.employer} onChange={e=>setForm(f=>({...f,employer:e.target.value}))} style={inp}/>
+        <select value={form.convertPotential} onChange={e=>setForm(f=>({...f,convertPotential:e.target.value}))} style={{...inp,cursor:"pointer"}}>
+          <option value="low">Low conversion potential</option>
+          <option value="medium">Medium conversion potential</option>
+          <option value="high">High conversion potential</option>
+          <option value="converted">Already a donor</option>
+        </select>
+      </div>
+      <textarea placeholder="Notes (optional)" value={form.notes} onChange={e=>setForm(f=>({...f,notes:e.target.value}))} rows={2} style={{...inp,marginTop:10,resize:"vertical"}}/>
+      <div style={{display:"flex",gap:8,marginTop:12}}>
+        <button onClick={addVolunteer} disabled={saving||!form.name.trim()}
+          style={{background:"#1a6b4a",color:"#fff",border:"none",borderRadius:8,padding:"9px 18px",fontSize:13,fontWeight:700,cursor:saving?"not-allowed":"pointer",opacity:saving?0.7:1}}>
+          {saving?"Saving…":"Save Volunteer"}
+        </button>
+        <button onClick={()=>setShowAdd(false)}
+          style={{background:"transparent",color:T.ink3,border:"1px solid "+T.bg3,borderRadius:8,padding:"9px 14px",fontSize:13,cursor:"pointer"}}>
+          Cancel
+        </button>
+      </div>
+    </Card>}
+    {data.volunteers.length===0&&!showAdd&&<EmptyState icon="◎" title="No volunteers yet" message="Add volunteers to track hours, skills, and conversion potential."/>}
     {data.volunteers.map(v=>{
       const cc=v.convertPotential==="high"?"#f59e0b":v.convertPotential==="converted"?"#1a6b4a":"#6b7280";
       return <Card key={v.id}>
@@ -41,12 +100,12 @@ export function Volunteers({data}) {
           <div style={{width:42,height:42,borderRadius:"50%",background:cc+"33",display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,fontWeight:800,color:cc,flexShrink:0}}>{v.name[0]}</div>
           <div style={{flex:1}}>
             <div style={{fontSize:15,fontWeight:700,color:T.ink}}>{v.name}</div>
-            <div style={{fontSize:12,color:T.ink3,marginTop:1}}>{v.employer} · {v.email}</div>
+            <div style={{fontSize:12,color:T.ink3,marginTop:1}}>{v.employer}{v.employer&&v.email?" · ":""}{v.email}</div>
             <div style={{display:"flex",gap:4,marginTop:5,flexWrap:"wrap"}}>{v.skills.map(s=><Pill key={s} label={s} color="#8b5cf6"/>)}</div>
           </div>
           <div style={{textAlign:"right",flexShrink:0}}>
             <div style={{fontSize:20,fontWeight:800,color:cc,fontFamily:"'DM Serif Display',serif"}}>{v.hours}h</div>
-            <div style={{fontSize:11,color:T.ink3,marginTop:1}}>{daysDiff(v.lastActive)}d ago</div>
+            {v.lastActive&&<div style={{fontSize:11,color:T.ink3,marginTop:1}}>{daysDiff(v.lastActive)}d ago</div>}
             <div style={{marginTop:4}}><Pill label={v.convertPotential==="converted"?"donor":`${v.convertPotential} potential`} color={cc}/></div>
           </div>
         </div>

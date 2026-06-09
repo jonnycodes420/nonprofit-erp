@@ -139,6 +139,47 @@ Mobile "More" drawer: communications, events, volunteers, board, analytics, task
 ### donors
 - wealth_score (integer), capacity_tier (text), score_confidence (text), score_last_updated (timestamptz), score_rationale (text) — wealth scoring system
 - stage (text), total_giving, last_gift_date, last_gift_amount, gift_count, tags (jsonb), notes
+- assigned_to (text), assigned_to_name (text) — MGO portfolio assignment
+- city, state, zip — for Donor Map geocoding
+- planned_giving (boolean) — set true when first planned gift is indicated
+
+### gifts
+- amount, date, type, campaign, notes, stripe_payment_id, campaign_id
+- fund_id TEXT — for fund affinity tracking
+- payment_method TEXT — how gift was received
+- acknowledgement_sent BOOLEAN DEFAULT false
+
+### interactions
+- type: call | meeting | email | gift | event | note | stewardship | stage_change | planned_gift | material | email_open
+- created_by (user_id), logged_by_name (user name display string)
+- metadata JSONB — Gmail interactions store `{gmail_message_id, from, to, subject, direction}`; stewardship stores `{stewardship_type, detail}`
+
+### MGO toolkit tables
+- `planned_gifts` — id, org_id, donor_id, type (bequest/charitable_remainder_trust/charitable_lead_trust/annuity/ira_beneficiary/life_insurance/real_estate/other), estimated_value, date_indicated, notes, created_at
+- `donor_materials` — id, org_id, donor_id, file_name, file_type, file_url, file_data (base64 <1MB), notes, uploaded_by, uploaded_at
+
+### campaigns (extended)
+- briefing TEXT — strategy/talking points, editable auto-save
+- goal_amount NUMERIC, raised_amount NUMERIC DEFAULT 0
+- start_date DATE, end_date DATE
+- Raised is calculated live from gifts where campaign=name OR campaign_id=id
+
+### MGO backend routes
+- `GET /dashboard/my-stats` — 6 FY metrics for current user (portfolioCount, visitsYtd, madeYtd, giftsYtd, pipelineValue, lapsedCount); fiscal year July 1–June 30
+- `GET /donors/:id/fund-affinity` — gifts grouped by fund_id with totals, counts, last dates, percentages; includes activeFunds for suggested asks
+- `PUT /campaigns/:id/briefing` — save briefing, goal_amount, start_date, end_date (any campaign status)
+- `GET /campaigns/:id/progress` — goal, raised (sum from gifts), donorCount, daysRemaining
+- `PUT /gifts/:id`, `DELETE /gifts/:id` — inline gift editing/deletion
+- `GET/POST /donors/:id/planned-gifts`, `PUT/DELETE /planned-gifts/:id` — planned giving CRUD
+- `GET/POST /donors/:id/materials`, `DELETE /materials/:id` — donor materials CRUD
+
+### DonorProfile tab system (left panel)
+- Tabs: Overview | Gifts & Pledges | Funds | Materials | Activity
+- Overview: stat cards, giving history chart, tags, notes, tasks, touchpoint timeline (unchanged)
+- Gifts & Pledges: full gift table with inline edit/delete, Add Gift form with campaign attribution, CSV export, planned giving section
+- Funds: fund affinity bars, restricted vs unrestricted split, suggested ask callouts
+- Materials: drag-and-drop upload, base64 <1MB, view/delete grid
+- Activity: mode toggle (Activity Log | Stewardship Timeline); type filter pills; Log Stewardship form (8 types); vertical timeline with auto-detected milestones
 
 ### Events tables
 - `events` — id, org_id, name, event_type (gala/cultivation/site_visit/board_meeting/volunteer/webinar/other), date DATE, end_date DATE, location, description, capacity INTEGER, status (upcoming/completed/cancelled), revenue NUMERIC, cost NUMERIC, notes, created_at
@@ -154,16 +195,19 @@ Mobile "More" drawer: communications, events, volunteers, board, analytics, task
 - fin_audit_log — id, org_id, table_name, record_id, action, changed_by, changed_at, old_values, new_values
 
 ### SaaS billing (platform)
-- orgs table: `plan TEXT DEFAULT 'trial'`, `trial_ends_at TIMESTAMPTZ`, `stripe_customer_id TEXT`, `stripe_subscription_id TEXT`, `subscription_status TEXT DEFAULT 'trialing'`
+- orgs table: `plan TEXT DEFAULT 'trial'`, `trial_ends_at TIMESTAMPTZ`, `stripe_customer_id TEXT`, `stripe_subscription_id TEXT`, `subscription_status TEXT DEFAULT 'trialing'`, `current_period_end TIMESTAMPTZ`, `grace_until TIMESTAMPTZ`
 - Plans: `trial` | `seed` | `growth` | `impact`
-- Subscription statuses: `trialing` | `active` | `past_due` | `cancelled`
+- Subscription statuses: `trialing` | `active` | `past_due` | `canceled` | `trial_expired` (note: old rows may have `cancelled` with 2 l's — code handles both)
 - `POST /auth/register-org` — public self-serve signup (creates Stripe customer inline)
-- `GET /billing/status` — returns plan, subscriptionStatus, trialEndsAt, trialDaysLeft
+- `GET /billing/status` — returns plan, subscriptionStatus, trialEndsAt, trialDaysLeft, graceUntil, currentPeriodEnd, accessState
 - `POST /billing/create-checkout` — creates Stripe Checkout session for subscription
 - `POST /billing/create-portal` — creates Stripe Customer Portal session
-- `POST /billing/webhook` — handles checkout.session.completed, customer.subscription.deleted, invoice.payment_failed
-- Trial banner in App.jsx when trialing && trialDaysLeft <= 14; dismissible per session
-- No paywall enforced yet — banner only
+- `POST /billing/webhook` — handles checkout.session.completed (active + period_end + clear grace), invoice.payment_succeeded (active + period_end + clear grace), invoice.payment_failed (past_due + grace 7d), customer.subscription.deleted (canceled + grace 3d)
+- `getOrgAccessState(org)` → `full | warning | read_only`. active/trialing → full; past_due/canceled within grace_until → warning; trial_expired or past/canceled past grace_until → read_only
+- `checkWriteAccess` middleware: returns 402 `{error:"subscription_required"}` when read_only. Applied to POST /donors, PUT /donors/:id, POST /donors/:id/gifts, POST /grants, PUT /grants/:id. Never blocks GET or export.
+- `checkTrialExpiry()` job: sets trial_expired when trial_ends_at < NOW(). Runs on startup (+15s) + every 6h.
+- Multi-state banner in App.jsx: read_only=red persistent; warning+past_due=amber update payment; warning+canceled=amber with grace date; trialing≤14d=green (amber at ≤3d). Warning/read_only not dismissible.
+- Create buttons (Add Donor, Log Gift, New Grant, + Add, + Add Gift, + Add Grant) disabled with tooltip when isReadOnly
 
 ### Stripe / donations
 - orgs table: org_slug (text, unique), stripe_account_id, stripe_connected_at
@@ -192,7 +236,8 @@ Mobile "More" drawer: communications, events, volunteers, board, analytics, task
 - Volunteers — hours tracking, conversion to donor, board candidate AI
 - Board — giving levels, attendance, committees, AI board report
 - Tasks — priority queue, AI prioritization, add/complete, due dates
-- Settings — Stripe Connect Express flow, QR code generator, embeddable iframe widget, team management, invite staff (email + link fallback), NO billing/plan UI
+- Settings — Stripe Connect Express flow, QR code generator, embeddable iframe widget, team management, invite staff (email + link fallback), NO billing/plan UI; Demo Data card (gold left border) at top
+- Sample data loader — `POST /org/load-sample-data` (refused if >5 real donors; seeds 25 donors across all stages, gifts, funds, transactions, grants, events, campaign, interactions, tasks, volunteers, board members; all tagged `is_sample=true`); `POST /org/clear-sample-data` (per-table `.catch(()=>{})` deletes); `GET /org/sample-data-status` → `{ hasSampleData, sampleDonorCount }`; DirectoryView shows inviting empty state with Load button when org has 0 donors
 - RBAC — requireAdmin middleware, admin/staff roles
 - Public donation page (/give/:orgSlug) — Stripe Checkout, campaign links, recurring gifts via Subscriptions, email gift request from donor profile
 - Landing page — relational copy, Steward definition section, Who We Serve, What We Do, Consulting section, announcement bar, NO pricing section; mobile: dark stats card (8+/100%/$0), hamburger nav
@@ -201,6 +246,7 @@ Mobile "More" drawer: communications, events, volunteers, board, analytics, task
 - TpField and TpYesNo MUST stay at module level (not inside components) — defined in shared.jsx. Moving them inside a component causes React to remount inputs on every keystroke.
 - Donor wealth score: POST /donors/:id/wealth-score → calcWealthScore() uses 5 components (giving history, recency, frequency, capacity signals, engagement). DB columns: wealth_score, capacity_tier, score_confidence, score_last_updated, score_rationale. TIER_COLOR maps tier → hex color.
 - Finance sync: every gift saved via POST /donors/:id/gifts also inserts a row in fin_transactions with donor_id set — one-way sync, no double-write on edit.
+- Sample data flag: `is_sample BOOLEAN DEFAULT false` column exists on donors, gifts, grants, events, event_attendees, campaigns, interactions, tasks, fin_transactions, fin_funds, volunteers, board_members. Clear route deletes in FK-safe order (children before parents). Sample funds use hardcoded IDs: `fund_smpl_general`, `fund_smpl_edu`, `fund_smpl_capital`.
 - STAGES in shared.jsx is an object array (with color/label). Communications.jsx uses a plain string array called STAGE_LIST — kept separate to avoid shadowing.
 - All AI features stream through /ai/stream on backend via askClaude (= streamAI from api.js).
 - Stripe Connect: POST /stripe/connect returns a Stripe account link URL; /stripe/webhook handles payment_intent.succeeded and checkout.session.completed.

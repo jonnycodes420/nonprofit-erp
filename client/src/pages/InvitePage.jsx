@@ -47,7 +47,7 @@ export default function InvitePage() {
       localStorage.setItem("npe_user", JSON.stringify(data.user));
       localStorage.setItem("npe_org",  JSON.stringify(data.org));
       setStatus("accepted");
-      setTimeout(() => { window.location.href = "/dashboard"; }, 1500);
+      setTimeout(() => { window.location.href = "/today"; }, 1500);
     } catch {
       setFormErr("Network error. Please try again.");
       setSubmitting(false);

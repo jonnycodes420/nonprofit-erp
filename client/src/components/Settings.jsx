@@ -1,7 +1,8 @@
 import { useState, useEffect } from "react";
 import QRCode from "qrcode";
 import { T, Pill, SectionLabel, PageTitle } from "./shared";
-import { apiFetch } from "../api";
+import { apiFetch, API, getToken } from "../api";
+import UpgradeModal from "./UpgradeModal";
 
 export function Settings({auth,logout}) {
   const orgName=auth?.org?.name||"Your Organization";
@@ -36,10 +37,16 @@ export function Settings({auth,logout}) {
 
   const [billing,setBilling]=useState(null);
   const [portalLoading,setPortalLoading]=useState(false);
+  const [upgradeModal,setUpgradeModal]=useState(null);
 
   const [gmailStatus,setGmailStatus]=useState(null);
   const [gmailSyncing,setGmailSyncing]=useState(false);
   const [gmailToast,setGmailToast]=useState("");
+
+  const [sampleStatus,setSampleStatus]=useState(null);
+  const [sampleLoading,setSampleLoading]=useState(false);
+  const [sampleClearing,setSampleClearing]=useState(false);
+  const [exporting,setExporting]=useState(false);
 
   useEffect(()=>{
     apiFetch("/org/team").then(setTeam).catch(()=>{});
@@ -50,8 +57,8 @@ export function Settings({auth,logout}) {
     }
     apiFetch("/custom-fields").then(setCustomFields).catch(()=>{});
     apiFetch("/gmail/status").then(setGmailStatus).catch(()=>{});
+    apiFetch("/org/sample-data-status").then(setSampleStatus).catch(()=>{});
 
-    // Show success toast if redirected back after OAuth connect
     const params=new URLSearchParams(window.location.search);
     if(params.get("gmailConnected")==="true"){
       setGmailToast("Gmail connected! Syncing donor emails now…");
@@ -155,6 +162,41 @@ export function Settings({auth,logout}) {
     navigator.clipboard.writeText(embedCode).then(()=>{setEmbedCopied(true);setTimeout(()=>setEmbedCopied(false),2500);});
   }
 
+  async function loadSampleData(){
+    setSampleLoading(true);
+    try{
+      await apiFetch("/org/load-sample-data",{method:"POST"});
+      const s=await apiFetch("/org/sample-data-status");
+      setSampleStatus(s);
+      window.location.reload();
+    }catch(e){ alert(e.message||"Failed to load sample data"); setSampleLoading(false); }
+  }
+
+  async function clearSampleData(){
+    if(!window.confirm("Remove all sample data? This cannot be undone."))return;
+    setSampleClearing(true);
+    try{
+      await apiFetch("/org/clear-sample-data",{method:"POST"});
+      setSampleStatus({hasSampleData:false,sampleDonorCount:0});
+      window.location.reload();
+    }catch(e){ alert(e.message||"Failed to clear sample data"); setSampleClearing(false); }
+  }
+
+  async function exportData(){
+    setExporting(true);
+    try{
+      const r=await fetch(`${API}/org/export`,{headers:{Authorization:`Bearer ${getToken()}`}});
+      if(!r.ok){const e=await r.json().catch(()=>({}));throw new Error(e.error||"Export failed");}
+      const blob=await r.blob();
+      const url=URL.createObjectURL(blob);
+      const a=document.createElement("a");
+      a.href=url; a.download=`steward-export.json`;
+      document.body.appendChild(a); a.click();
+      document.body.removeChild(a); URL.revokeObjectURL(url);
+    }catch(e){alert(e.message||"Export failed");}
+    setExporting(false);
+  }
+
   async function connectStripe(){
     setStripeLoading(true);
     try{
@@ -173,7 +215,12 @@ export function Settings({auth,logout}) {
       const r=await apiFetch("/auth/invite",{method:"POST",body:JSON.stringify({email:invEmail.trim(),role:invRole})});
       setInviteResult({link:r.inviteLink,emailSent:r.emailSent});
     }catch(e){
-      setInvErr(e.message||"Failed to send invite");
+      if(e.error==="seat_limit"){
+        closeInvite();
+        setUpgradeModal({reason:e.error,current:e.current,limit:e.limit,plan:e.plan});
+      } else {
+        setInvErr(e.message||"Failed to send invite");
+      }
     }finally{setInviting(false);}
   }
 
@@ -213,7 +260,7 @@ export function Settings({auth,logout}) {
     setCfSaving(true);
     try{
       if(editingField){
-        const updated=await apiFetch(`/custom-fields/${editingField.id}`,{method:"PUT",body:JSON.stringify({label:cfForm.label,fieldType:cfForm.fieldType,options:cfForm.options,required:cfForm.required,showInDirectory:!!editingField.show_in_directory})});
+        const updated=await apiFetch(`/custom-fields/${editingField.id}`,{method:"PUT",body:JSON.stringify({label:cfForm.label,fieldType:cfForm.fieldType,options:cfForm.options,required:cfForm.required})});
         setCustomFields(prev=>prev.map(f=>f.id===editingField.id?updated:f));
       }else{
         const created=await apiFetch("/custom-fields",{method:"POST",body:JSON.stringify({label:cfForm.label,fieldType:cfForm.fieldType,options:cfForm.options,required:cfForm.required})});
@@ -242,39 +289,19 @@ export function Settings({auth,logout}) {
     navigator.clipboard.writeText(inviteResult.link).then(()=>{setCopied(true);setTimeout(()=>setCopied(false),2000);});
   }
 
-  async function toggleDirectoryVisibility(field){
-    const updated=await apiFetch(`/custom-fields/${field.id}`,{method:"PUT",body:JSON.stringify({
-      label:field.label,fieldType:field.field_type,options:field.options||[],
-      required:!!field.required,showInDirectory:!field.show_in_directory
-    })}).catch(()=>null);
-    if(updated) setCustomFields(prev=>prev.map(f=>f.id===field.id?updated:f));
-  }
+  const SecHead=({label})=>(
+    <div style={{display:"flex",alignItems:"center",gap:10,margin:"4px 0 -8px"}}>
+      <div style={{fontSize:10,fontWeight:800,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.12em",whiteSpace:"nowrap"}}>{label}</div>
+      <div style={{flex:1,height:1,background:T.bg3}}/>
+    </div>
+  );
 
   return(
     <div style={{display:"flex",flexDirection:"column",gap:20}}>
       <PageTitle main="Workspace" accent="settings."/>
 
-      {/* Integration health strip */}
-      <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10}}>
-        {[
-          {icon:"✉",label:"Gmail",desc:gmailStatus?.connected?`Connected — ${gmailStatus.email||""}`:"Not connected",ok:!!gmailStatus?.connected},
-          {icon:"💳",label:"Stripe",desc:stripe?.connected?"Donations active":"Not connected",ok:!!stripe?.connected},
-          {icon:"📨",label:"Resend",desc:"Email domain verified",ok:true},
-          {icon:"📊",label:"QuickBooks",desc:"Export available",ok:null},
-        ].map(({icon,label,desc,ok})=>(
-          <div key={label} style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:12,padding:"14px 16px",display:"flex",gap:10,alignItems:"flex-start"}}>
-            <span style={{fontSize:18,lineHeight:1,flexShrink:0}}>{icon}</span>
-            <div style={{flex:1,minWidth:0}}>
-              <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:3}}>
-                <span style={{fontSize:12,fontWeight:700,color:T.ink}}>{label}</span>
-                <span style={{width:6,height:6,borderRadius:"50%",background:ok===null?"#e5e7eb":ok?"#10b981":"#6b7280",flexShrink:0}}/>
-              </div>
-              <div style={{fontSize:11,color:T.ink3,lineHeight:1.4}}>{desc}</div>
-            </div>
-          </div>
-        ))}
-      </div>
-
+      {/* ── Organization ──────────────────────────────────────────────────── */}
+      <SecHead label="Organization"/>
       <div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:16,padding:"24px 28px"}}>
         <SectionLabel>Your Account</SectionLabel>
         <div style={{display:"flex",alignItems:"center",gap:16,marginBottom:20}}>
@@ -293,6 +320,37 @@ export function Settings({auth,logout}) {
           {auth?.org?.mission&&<div style={{fontSize:12,color:T.ink3,marginTop:4,lineHeight:1.5}}>{auth.org.mission}</div>}
         </div>
       </div>
+
+      {/* ── Team ──────────────────────────────────────────────────────────── */}
+      <SecHead label="Team"/>
+      <div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:16,padding:"24px 28px"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
+          <SectionLabel>Team Members</SectionLabel>
+          {isAdmin&&<button onClick={()=>setShowInvite(true)} style={{background:T.green,border:"none",borderRadius:8,padding:"7px 14px",color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer"}}>+ Invite Staff</button>}
+        </div>
+        {billing&&!billing.isTrial&&billing.limits?.seats!==999999999&&billing.usage?.seats>=billing.limits?.seats&&(
+          <div style={{background:"#faf9f6",border:"1px solid #d4cfc6",borderRadius:10,padding:"10px 14px",marginBottom:14,fontSize:12,color:"#4a5e4f",display:"flex",alignItems:"center",justifyContent:"space-between",gap:12}}>
+            <span>You're using all {billing.limits.seats} seat{billing.limits.seats!==1?"s":""}.</span>
+            <a href="/pricing" style={{color:"#1a6b4a",fontWeight:700,textDecoration:"none",whiteSpace:"nowrap"}}>Add more or upgrade →</a>
+          </div>
+        )}
+        {team.map((m,i)=>(
+          <div key={m.id} style={{display:"flex",alignItems:"center",gap:12,padding:"12px 0",borderBottom:i<team.length-1?"1px solid "+T.bg3:"none"}}>
+            <div style={{width:36,height:36,borderRadius:"50%",background:T.greenDk+"18",display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,fontWeight:700,color:T.greenDk,flexShrink:0}}>
+              {(m.name?.[0]||"U").toUpperCase()}
+            </div>
+            <div style={{flex:1,minWidth:0}}>
+              <div style={{fontSize:13,fontWeight:600,color:T.ink}}>{m.name}{m.id===auth?.user?.id&&<span style={{fontSize:11,color:T.ink3,marginLeft:6}}>(you)</span>}</div>
+              <div style={{fontSize:11,color:T.ink3,marginTop:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{m.email}</div>
+            </div>
+            <Pill label={m.role} color={m.role==="admin"?T.greenDk:"#6b7280"}/>
+          </div>
+        ))}
+        {team.length===0&&<div style={{fontSize:13,color:T.ink3}}>Loading…</div>}
+      </div>
+
+      {/* ── Integrations ──────────────────────────────────────────────────── */}
+      <SecHead label="Integrations"/>
       <div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:16,padding:"24px 28px"}}>
         <SectionLabel>Payments</SectionLabel>
         {stripe?.connected?(
@@ -319,6 +377,7 @@ export function Settings({auth,logout}) {
           </div>
         )}
       </div>
+
       {orgSlug&&<div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:16,padding:"24px 28px"}}>
         <SectionLabel>Donation QR Code</SectionLabel>
         <div style={{fontSize:13,color:T.ink3,marginBottom:14,lineHeight:1.6}}>
@@ -384,61 +443,8 @@ export function Settings({auth,logout}) {
       </div>}
 
       <div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:16,padding:"24px 28px"}}>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
-          <SectionLabel>Team Members</SectionLabel>
-          {isAdmin&&<button onClick={()=>setShowInvite(true)} style={{background:T.green,border:"none",borderRadius:8,padding:"7px 14px",color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer"}}>+ Invite Staff</button>}
-        </div>
-        {team.map((m,i)=>(
-          <div key={m.id} style={{display:"flex",alignItems:"center",gap:12,padding:"12px 0",borderBottom:i<team.length-1?"1px solid "+T.bg3:"none"}}>
-            <div style={{width:36,height:36,borderRadius:"50%",background:T.greenDk+"18",display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,fontWeight:700,color:T.greenDk,flexShrink:0}}>
-              {(m.name?.[0]||"U").toUpperCase()}
-            </div>
-            <div style={{flex:1,minWidth:0}}>
-              <div style={{fontSize:13,fontWeight:600,color:T.ink}}>{m.name}{m.id===auth?.user?.id&&<span style={{fontSize:11,color:T.ink3,marginLeft:6}}>(you)</span>}</div>
-              <div style={{fontSize:11,color:T.ink3,marginTop:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{m.email}</div>
-            </div>
-            <Pill label={m.role} color={m.role==="admin"?T.greenDk:"#6b7280"}/>
-          </div>
-        ))}
-        {team.length===0&&<div style={{fontSize:13,color:T.ink3}}>Loading…</div>}
-      </div>
-
-      <div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:16,padding:"24px 28px"}}>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
-          <SectionLabel>Custom Fields</SectionLabel>
-          {isAdmin&&<button onClick={openAddField} style={{background:T.green,border:"none",borderRadius:8,padding:"7px 14px",color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer"}}>+ Add Field</button>}
-        </div>
-        <div style={{fontSize:13,color:T.ink3,marginBottom:customFields.length?14:0,lineHeight:1.6}}>
-          {customFields.length===0?"No custom fields yet. Add fields to capture extra donor data specific to your organization.":""}
-        </div>
-        {customFields.map((f,i)=>(
-          <div key={f.id}
-            style={{display:"flex",alignItems:"center",gap:12,padding:"11px 0 11px 10px",borderBottom:i<customFields.length-1?"1px solid "+T.bg3:"none",borderLeft:"3px solid "+T.bg3,transition:"border-color 0.15s",marginLeft:-10}}
-            onMouseEnter={e=>e.currentTarget.style.borderLeftColor=T.greenDk}
-            onMouseLeave={e=>e.currentTarget.style.borderLeftColor=T.bg3}>
-            <div style={{flex:1,minWidth:0}}>
-              <div style={{fontSize:13,fontWeight:600,color:T.ink}}>{f.label}{f.required&&<span style={{marginLeft:5,fontSize:10,color:T.ink3,fontWeight:400}}>required</span>}</div>
-              <div style={{fontSize:11,color:T.ink3,marginTop:2}}>{CF_TYPE_LABELS[f.field_type]||f.field_type}{f.field_type==="dropdown"&&f.options?.length?` — ${f.options.join(", ")}`:""}
-              </div>
-            </div>
-            {isAdmin&&<div style={{display:"flex",gap:6,flexShrink:0,alignItems:"center"}}>
-              <button onClick={()=>toggleDirectoryVisibility(f)}
-                title={f.show_in_directory?"Hide from donor directory":"Show in donor directory"}
-                style={{background:f.show_in_directory?T.greenDk+"18":T.bg,border:`1px solid ${f.show_in_directory?T.greenDk:T.bg3}`,borderRadius:6,padding:"5px 10px",fontSize:11,fontWeight:600,color:f.show_in_directory?T.greenDk:T.ink3,cursor:"pointer"}}>
-                {f.show_in_directory?"In directory ✓":"Directory"}
-              </button>
-              <button onClick={()=>openEditField(f)} style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:6,padding:"5px 10px",fontSize:11,fontWeight:600,color:T.ink2,cursor:"pointer"}}>Edit</button>
-              <button onClick={()=>deleteCfField(f.id)} style={{background:"#fef2f2",border:"1px solid #fecaca",borderRadius:6,padding:"5px 10px",fontSize:11,fontWeight:600,color:"#dc2626",cursor:"pointer"}}>Delete</button>
-            </div>}
-          </div>
-        ))}
-      </div>
-
-      <div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:16,padding:"24px 28px"}}>
-        <SectionLabel>Integrations</SectionLabel>
-        <div style={{fontSize:13,color:T.ink3,marginBottom:16,lineHeight:1.5}}>Connect your tools to Steward.</div>
-
-        {/* Gmail card */}
+        <SectionLabel>Gmail</SectionLabel>
+        <div style={{fontSize:13,color:T.ink3,marginBottom:16,lineHeight:1.5}}>Sync donor emails automatically to your interaction timeline.</div>
         <div style={{display:"flex",alignItems:"center",gap:16,padding:"16px",background:T.bg,borderRadius:12,border:"1px solid "+T.bg3,flexWrap:"wrap"}}>
           <div style={{width:40,height:40,borderRadius:10,background:"#fff",border:"1px solid "+T.bg3,display:"flex",alignItems:"center",justifyContent:"center",fontSize:22,flexShrink:0}}>
             📧
@@ -485,7 +491,6 @@ export function Settings({auth,logout}) {
             )}
           </div>
         </div>
-
         {gmailToast&&(
           <div style={{marginTop:12,background:"#f0fdf4",border:"1px solid #bbf7d0",borderRadius:8,padding:"10px 14px",fontSize:13,color:"#166534",fontWeight:600}}>
             ✓ {gmailToast}
@@ -493,6 +498,74 @@ export function Settings({auth,logout}) {
         )}
       </div>
 
+      {/* ── Customization ─────────────────────────────────────────────────── */}
+      <SecHead label="Customization"/>
+      <div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:16,padding:"24px 28px"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
+          <SectionLabel>Custom Fields</SectionLabel>
+          {isAdmin&&<button onClick={openAddField} style={{background:T.green,border:"none",borderRadius:8,padding:"7px 14px",color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer"}}>+ Add Field</button>}
+        </div>
+        <div style={{fontSize:13,color:T.ink3,marginBottom:customFields.length?14:0,lineHeight:1.6}}>
+          {customFields.length===0?"No custom fields yet. Add fields to capture extra donor data specific to your organization.":""}
+        </div>
+        {customFields.map((f,i)=>(
+          <div key={f.id}
+            style={{display:"flex",alignItems:"center",gap:12,padding:"11px 0 11px 10px",borderBottom:i<customFields.length-1?"1px solid "+T.bg3:"none",borderLeft:"3px solid "+T.bg3,transition:"border-color 0.15s",marginLeft:-10}}
+            onMouseEnter={e=>e.currentTarget.style.borderLeftColor=T.greenDk}
+            onMouseLeave={e=>e.currentTarget.style.borderLeftColor=T.bg3}>
+            <div style={{flex:1,minWidth:0}}>
+              <div style={{fontSize:13,fontWeight:600,color:T.ink}}>{f.label}{f.required&&<span style={{marginLeft:5,fontSize:10,color:T.ink3,fontWeight:400}}>required</span>}</div>
+              <div style={{fontSize:11,color:T.ink3,marginTop:2}}>{CF_TYPE_LABELS[f.field_type]||f.field_type}{f.field_type==="dropdown"&&f.options?.length?` — ${f.options.join(", ")}`:""}
+              </div>
+            </div>
+            {isAdmin&&<div style={{display:"flex",gap:6,flexShrink:0}}>
+              <button onClick={()=>openEditField(f)} style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:6,padding:"5px 10px",fontSize:11,fontWeight:600,color:T.ink2,cursor:"pointer"}}>Edit</button>
+              <button onClick={()=>deleteCfField(f.id)} style={{background:"#fef2f2",border:"1px solid #fecaca",borderRadius:6,padding:"5px 10px",fontSize:11,fontWeight:600,color:"#dc2626",cursor:"pointer"}}>Delete</button>
+            </div>}
+          </div>
+        ))}
+      </div>
+
+      {/* ── Your Data ─────────────────────────────────────────────────────── */}
+      <SecHead label="Your Data"/>
+      <div style={{background:T.white,border:"1px solid "+T.bg3,borderLeft:"3px solid #c9a84c",borderRadius:16,padding:"24px 28px"}}>
+        <SectionLabel>Export your data</SectionLabel>
+        <div style={{fontSize:15,fontWeight:700,color:T.ink,marginBottom:6}}>Your data belongs to you.</div>
+        <div style={{fontSize:13,color:T.ink3,marginBottom:6,lineHeight:1.6,maxWidth:520}}>
+          Download everything in Steward — donors, gifts, grants, finances, and more — as a structured JSON file.
+        </div>
+        <div style={{fontSize:12,color:T.ink3,marginBottom:18}}>Exports all your data as a structured file you can open, import, or archive.</div>
+        <button onClick={exportData} disabled={exporting}
+          style={{background:"#c9a84c",color:"#fff",border:"none",borderRadius:8,padding:"10px 22px",fontSize:13,fontWeight:700,cursor:exporting?"not-allowed":"pointer",opacity:exporting?0.7:1}}>
+          {exporting?"Building export…":"Export all data"}
+        </button>
+      </div>
+
+      {sampleStatus&&(
+        <div style={{background:T.white,border:"1px solid "+T.bg3,borderLeft:"3px solid #c9a84c",borderRadius:16,padding:"20px 24px"}}>
+          <SectionLabel>Demo Data</SectionLabel>
+          <div style={{fontSize:13,color:T.ink3,marginBottom:14,lineHeight:1.6}}>
+            Instantly populate this workspace with a realistic sample dataset — 25 donors across every stage, gifts, grants, events, campaigns, and tasks — so you can explore every feature without entering real data first.
+          </div>
+          {sampleStatus.hasSampleData?(
+            <div style={{display:"flex",alignItems:"center",gap:14,flexWrap:"wrap"}}>
+              <span style={{fontSize:13,color:T.ink3,background:T.bg,borderRadius:8,padding:"6px 12px"}}>{sampleStatus.sampleDonorCount} sample donors loaded</span>
+              <button onClick={clearSampleData} disabled={sampleClearing}
+                style={{background:"#fee2e2",color:"#dc2626",border:"1px solid #fca5a5",borderRadius:8,padding:"8px 16px",fontSize:13,fontWeight:600,cursor:sampleClearing?"not-allowed":"pointer",opacity:sampleClearing?0.7:1}}>
+                {sampleClearing?"Clearing…":"Clear sample data"}
+              </button>
+            </div>
+          ):(
+            <button onClick={loadSampleData} disabled={sampleLoading}
+              style={{background:"#c9a84c",color:"#fff",border:"none",borderRadius:8,padding:"10px 20px",fontSize:13,fontWeight:700,cursor:sampleLoading?"not-allowed":"pointer",opacity:sampleLoading?0.7:1}}>
+              {sampleLoading?"Loading sample data…":"Load sample data"}
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* ── Account ───────────────────────────────────────────────────────── */}
+      <SecHead label="Account"/>
       <div style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:16,padding:"24px 28px"}}>
         <SectionLabel>Billing</SectionLabel>
         {billing ? (
@@ -652,6 +725,7 @@ export function Settings({auth,logout}) {
           </div>
         </div>
       )}
+      {upgradeModal&&<UpgradeModal open={true} onClose={()=>setUpgradeModal(null)} reason={upgradeModal.reason} current={upgradeModal.current} limit={upgradeModal.limit} plan={upgradeModal.plan}/>}
     </div>
   );
 }

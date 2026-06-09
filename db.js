@@ -465,6 +465,8 @@ async function initSchema() {
   await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS stripe_customer_id TEXT`);
   await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS stripe_subscription_id TEXT`);
   await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS subscription_status TEXT DEFAULT 'trialing'`);
+  await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS current_period_end TIMESTAMPTZ`);
+  await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS grace_until TIMESTAMPTZ`);
 
   // ── Gmail integration ─────────────────────────────────────────────────────
   await pool.query(`
@@ -531,6 +533,64 @@ async function initSchema() {
       UNIQUE(event_id, donor_id)
     )
   `);
+
+  // ── MGO toolkit pt 2 ─────────────────────────────────────────────────────
+  await pool.query(`ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS briefing TEXT`);
+  await pool.query(`ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS goal_amount NUMERIC`);
+  await pool.query(`ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS raised_amount NUMERIC DEFAULT 0`);
+  await pool.query(`ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS start_date DATE`);
+  await pool.query(`ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS end_date DATE`);
+  await pool.query(`ALTER TABLE interactions ADD COLUMN IF NOT EXISTS logged_by_name TEXT`);
+
+  // ── MGO toolkit ───────────────────────────────────────────────────────────
+  await pool.query(`ALTER TABLE donors ADD COLUMN IF NOT EXISTS city TEXT`);
+  await pool.query(`ALTER TABLE donors ADD COLUMN IF NOT EXISTS state TEXT`);
+  await pool.query(`ALTER TABLE donors ADD COLUMN IF NOT EXISTS zip TEXT`);
+  await pool.query(`ALTER TABLE donors ADD COLUMN IF NOT EXISTS country TEXT DEFAULT 'US'`);
+  await pool.query(`ALTER TABLE donors ADD COLUMN IF NOT EXISTS planned_giving BOOLEAN DEFAULT false`);
+  await pool.query(`ALTER TABLE gifts ADD COLUMN IF NOT EXISTS fund_id TEXT`);
+  await pool.query(`ALTER TABLE gifts ADD COLUMN IF NOT EXISTS payment_method TEXT`);
+  await pool.query(`ALTER TABLE gifts ADD COLUMN IF NOT EXISTS acknowledgement_sent BOOLEAN DEFAULT false`);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS planned_gifts (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL,
+      donor_id TEXT NOT NULL,
+      type TEXT NOT NULL,
+      estimated_value NUMERIC,
+      date_indicated DATE,
+      notes TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS donor_materials (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL,
+      donor_id TEXT NOT NULL,
+      file_name TEXT NOT NULL,
+      file_type TEXT NOT NULL,
+      file_url TEXT,
+      file_data TEXT,
+      notes TEXT,
+      uploaded_by TEXT,
+      uploaded_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+
+  // ── Sample data flag ──────────────────────────────────────────────────────
+  await pool.query(`ALTER TABLE donors ADD COLUMN IF NOT EXISTS is_sample BOOLEAN DEFAULT false`);
+  await pool.query(`ALTER TABLE gifts ADD COLUMN IF NOT EXISTS is_sample BOOLEAN DEFAULT false`);
+  await pool.query(`ALTER TABLE grants ADD COLUMN IF NOT EXISTS is_sample BOOLEAN DEFAULT false`);
+  await pool.query(`ALTER TABLE events ADD COLUMN IF NOT EXISTS is_sample BOOLEAN DEFAULT false`);
+  await pool.query(`ALTER TABLE event_attendees ADD COLUMN IF NOT EXISTS is_sample BOOLEAN DEFAULT false`);
+  await pool.query(`ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS is_sample BOOLEAN DEFAULT false`);
+  await pool.query(`ALTER TABLE interactions ADD COLUMN IF NOT EXISTS is_sample BOOLEAN DEFAULT false`);
+  await pool.query(`ALTER TABLE tasks ADD COLUMN IF NOT EXISTS is_sample BOOLEAN DEFAULT false`);
+  await pool.query(`ALTER TABLE fin_transactions ADD COLUMN IF NOT EXISTS is_sample BOOLEAN DEFAULT false`);
+  await pool.query(`ALTER TABLE fin_funds ADD COLUMN IF NOT EXISTS is_sample BOOLEAN DEFAULT false`);
+  await pool.query(`ALTER TABLE volunteers ADD COLUMN IF NOT EXISTS is_sample BOOLEAN DEFAULT false`);
+  await pool.query(`ALTER TABLE board_members ADD COLUMN IF NOT EXISTS is_sample BOOLEAN DEFAULT false`);
 }
 
 async function seedData() {
