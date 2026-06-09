@@ -179,13 +179,14 @@ function DonorImport({ onClose, onImported }) {
       // If a dedicated "name" column exists, don't also map first/last (let user decide)
       if (hasSingleName && (g === "_firstName" || g === "_lastName")) return;
       // Email shape-check: at least one sample value must contain "@"
+      // Use ?? (not ||) so numeric 0 isn't coerced to "" and dropped
       if (g === "email") {
-        const vals = sample.map(r => String(r[h] || "").trim()).filter(Boolean);
+        const vals = sample.map(r => String(r[h] ?? "").trim()).filter(Boolean);
         if (vals.length && !vals.some(v => v.includes("@"))) return;
       }
       // Phone shape-check: at least one sample value must contain a digit
       if (g === "phone") {
-        const vals = sample.map(r => String(r[h] || "").trim()).filter(Boolean);
+        const vals = sample.map(r => String(r[h] ?? "").trim()).filter(Boolean);
         if (vals.length && !vals.some(v => /\d/.test(v))) return;
       }
       auto[h] = g;
@@ -293,11 +294,22 @@ function DonorImport({ onClose, onImported }) {
       const warnings = [];
       const rowLabel = `Row ${idx + 2}`; // 1-indexed + skip header row
 
-      Object.entries(mapping).forEach(([h, field]) => { if (field) d[field] = row[h]; });
+      // Coerce every cell value to string — xlsx cells can be numbers, booleans,
+      // Dates, or null; never assume string.
+      Object.entries(mapping).forEach(([h, field]) => {
+        if (!field) return;
+        const raw = row[h];
+        // Date objects were already pre-converted to ISO strings in handleFile,
+        // but guard again in case a code path skipped that step.
+        if (raw instanceof Date) { d[field] = isNaN(raw) ? "" : raw.toISOString().split("T")[0]; }
+        else { d[field] = raw === null || raw === undefined ? "" : String(raw); }
+      });
 
       // Combine first + last name if mapped separately
       if (d._firstName || d._lastName) {
-        const combined = [d._firstName, d._lastName].filter(Boolean).join(" ").trim();
+        const first = String(d._firstName ?? "").trim();
+        const last  = String(d._lastName  ?? "").trim();
+        const combined = [first, last].filter(Boolean).join(" ");
         if (!d.name || !String(d.name).trim()) d.name = combined;
       }
       delete d._firstName; delete d._lastName;
@@ -348,20 +360,32 @@ function DonorImport({ onClose, onImported }) {
 
   // ── Submit import ──
   const doImport = async () => {
-    const { ready, warned, skipped } = built;
-    const toSend = [...ready, ...warned].map(({ _warnings, _rowIndex, ...d }) => d);
-    if (!toSend.length) {
-      setErr(skipped.length ? `All ${skipped.length} rows skipped — no usable name or email.` : "Nothing to import.");
+    // Body-build phase — wrapped in try/catch so a silent throw here is never
+    // swallowed. Previously this threw before reaching the fetch with no UX feedback.
+    let toSend, warnedCount, skippedCount;
+    try {
+      const { ready, warned, skipped } = built;
+      warnedCount  = warned.length;
+      skippedCount = skipped.length;
+      toSend = [...ready, ...warned].map(({ _warnings, _rowIndex, ...d }) => d);
+      if (!toSend.length) {
+        setErr(skippedCount ? `All ${skippedCount} rows skipped — no usable name or email.` : "Nothing to import.");
+        return;
+      }
+    } catch (e) {
+      console.error("[import] failed preparing donor payload:", e);
+      setErr("Failed to prepare import data — " + (e.message || "unknown error") + ". Check the browser console.");
       return;
     }
+
     setLoading(true); setErr("");
     try {
       const res = await apiFetch("/donors/import", { method:"POST", body:JSON.stringify({ donors:toSend }) });
-      setResult({ ...res, warned:warned.length, skipped:skipped.length });
+      setResult({ ...res, warned:warnedCount, skipped:skippedCount });
       onImported();
     } catch (e) {
       if (e.error === "record_limit") { setUpgradeInfo(e); }
-      else { setErr(e.message); }
+      else { setErr(e.message || "Import failed. See browser console."); }
     }
     setLoading(false);
   };
