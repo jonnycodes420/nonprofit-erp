@@ -1422,6 +1422,82 @@ app.delete("/gifts/:id", requireAuth, wrap(async (req, res) => {
   res.json({ ok: true });
 }));
 
+// ── Gift history bulk import ───────────────────────────────────────────────
+// Accepts pre-matched gifts (donorId already resolved by frontend) and inserts
+// them transactionally, then recalcs each affected donor's summary. Deduplicates
+// by exact (donor_id, amount, date) fingerprint so re-running is safe.
+app.post("/gifts/import-history", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  const { gifts } = req.body;
+  if (!Array.isArray(gifts) || !gifts.length)
+    return res.status(400).json({ error: "gifts array required" });
+
+  const orgId = req.user.orgId;
+
+  // Validate all provided donorIds belong to this org
+  const donorIds = [...new Set(gifts.map(g => g.donorId).filter(Boolean))];
+  if (!donorIds.length)
+    return res.status(400).json({ error: "All gifts must have a donorId" });
+
+  const orgDonors = await query(
+    "SELECT id FROM donors WHERE org_id = ? AND id = ANY(?) AND deleted_at IS NULL",
+    [orgId, donorIds]
+  );
+  const validDonorIds = new Set(orgDonors.map(d => d.id));
+
+  // Pre-load existing fingerprints for dedup check
+  const existingRows = await query(
+    "SELECT donor_id, amount, date FROM gifts WHERE org_id = ? AND donor_id = ANY(?)",
+    [orgId, donorIds]
+  );
+  const fingerprints = new Set(existingRows.map(g => `${g.donor_id}|${g.amount}|${g.date}`));
+
+  let duplicates = 0, invalid = 0;
+  const toInsert = [];
+  for (const g of gifts) {
+    if (!g.donorId || !validDonorIds.has(g.donorId)) { invalid++; continue; }
+    const amt = Math.round(Number(g.amount) || 0);
+    if (amt <= 0) { invalid++; continue; }
+    const date = normalizeGiftDate(g.date);
+    const fp   = `${g.donorId}|${amt}|${date}`;
+    if (fingerprints.has(fp)) { duplicates++; continue; }
+    fingerprints.add(fp); // within-import dedup
+    toInsert.push({ donorId:g.donorId, amount:amt, date, type:g.type||"cash", campaign:g.campaign||"", fund_id:g.fund_id||null, notes:g.notes||"" });
+  }
+
+  const BATCH = 200;
+  let inserted = 0;
+  const affectedDonorIds = new Set();
+  const batchErrors = [];
+
+  for (let bi = 0; bi < toInsert.length; bi += BATCH) {
+    const batch = toInsert.slice(bi, bi + BATCH);
+    try {
+      await withTransaction(async (client) => {
+        for (const g of batch) {
+          const id = "g_" + uuid().slice(0, 8);
+          await runTx(client,
+            "INSERT INTO gifts (id,org_id,donor_id,amount,date,type,campaign,fund_id,notes) VALUES (?,?,?,?,?,?,?,?,?)",
+            [id, orgId, g.donorId, g.amount, g.date, g.type, g.campaign, g.fund_id, g.notes]
+          );
+          affectedDonorIds.add(g.donorId);
+        }
+      });
+      inserted += batch.length;
+    } catch (e) {
+      console.error(`[gift-import] batch ${bi}–${bi+batch.length} failed:`, e.message);
+      batchErrors.push({ error: e.message });
+    }
+  }
+
+  // Recalc donor summaries — always full recalc from gifts table, never delta
+  for (const donorId of affectedDonorIds) {
+    try { await recalcDonorSummary(donorId, orgId); }
+    catch (e) { console.error(`[gift-import] recalc failed for ${donorId}:`, e.message); }
+  }
+
+  res.json({ inserted, duplicates, invalid, donorsUpdated: affectedDonorIds.size, batchErrors });
+}));
+
 app.get("/donors/:id/planned-gifts", requireAuth, wrap(async (req, res) => {
   const rows = await query("SELECT * FROM planned_gifts WHERE donor_id=? AND org_id=? ORDER BY created_at DESC", [req.params.id, req.user.orgId]);
   res.json(rows);
