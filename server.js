@@ -2056,6 +2056,12 @@ app.post("/ai/column-map", requireAuth, wrap(async (req, res) => {
       role: "user",
       content: `Map these CSV column headers to donor fields. Available target fields: name, _firstName, _lastName, email, phone, total, lastAmount, lastGift, gifts, status, city, state, notes. Use empty string to skip a column. Use _firstName/_lastName when separate first/last name columns are present instead of a single name column.
 
+RULES — follow these strictly:
+1. Negation/flag columns: if a header signals a negation or opt-out ("do not email", "do not call", "do not mail", "opt out", "unsubscribe", "do not contact", or any similar phrasing), map it to "" (skip) or "notes" — NEVER to the contact field it negates (email, phone, etc.).
+2. Email shape check: only map a column to "email" if the sample values actually look like email addresses (contain "@"). If the sample values are "Yes", "No", blank, or anything without "@", map to "" instead.
+3. Phone shape check: only map a column to "phone" if the sample values contain digits that look like phone numbers.
+4. Use the sample row values below to verify these shape rules before assigning a field.
+
 Headers: ${JSON.stringify(headers)}
 Sample row values: ${JSON.stringify(sample || {})}
 

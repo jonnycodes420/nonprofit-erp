@@ -43,9 +43,14 @@ const CSV_FIELDS = [
 const VALID_IMPORT_KEYS = new Set([...CSV_FIELDS.map(f => f.key), "_firstName", "_lastName"]);
 const IMPORT_STAGES = ["prospect","qualify","cultivate","solicit","steward","lapsed"];
 
+// Headers that negate a contact field — never map to that field
+const NEGATOR_PHRASES = ["do not", "don't", "opt out", "opt-out", "unsubscribe", "no email", "no phone", "no mail", "do not contact"];
+
 function guessField(header) {
   if (!header || !String(header).trim()) return "";
   const h = String(header).toLowerCase().trim();
+  // Reject headers that signal a negation/flag ("do not email", "opt out of email", etc.)
+  if (NEGATOR_PHRASES.some(n => h.includes(n))) return "";
   // Separate first/last name columns → internal keys combined into name on build
   if (h === "first" || h === "first name" || h === "firstname" || h === "given name") return "_firstName";
   if (h === "last"  || h === "last name"  || h === "lastname"  || h === "surname" || h === "family name") return "_lastName";
@@ -163,8 +168,9 @@ function DonorImport({ onClose, onImported }) {
   const [err,        setErr]        = useState("");
   const [upgradeInfo,setUpgradeInfo]= useState(null);
 
-  // Build initial column mapping from headers
-  const buildAutoMapping = (headers) => {
+  // Build initial column mapping from headers + sample rows
+  const buildAutoMapping = (headers, rows = []) => {
+    const sample = rows.slice(0, 10);
     const guesses = headers.map(h => ({ h, g: guessField(h) }));
     const hasSingleName = guesses.some(x => x.g === "name");
     const auto = {};
@@ -172,13 +178,23 @@ function DonorImport({ onClose, onImported }) {
       if (!g) return;
       // If a dedicated "name" column exists, don't also map first/last (let user decide)
       if (hasSingleName && (g === "_firstName" || g === "_lastName")) return;
+      // Email shape-check: at least one sample value must contain "@"
+      if (g === "email") {
+        const vals = sample.map(r => String(r[h] || "").trim()).filter(Boolean);
+        if (vals.length && !vals.some(v => v.includes("@"))) return;
+      }
+      // Phone shape-check: at least one sample value must contain a digit
+      if (g === "phone") {
+        const vals = sample.map(r => String(r[h] || "").trim()).filter(Boolean);
+        if (vals.length && !vals.some(v => /\d/.test(v))) return;
+      }
       auto[h] = g;
     });
     return auto;
   };
 
   const applyParsed = (headers, rows) => {
-    setMapping(buildAutoMapping(headers));
+    setMapping(buildAutoMapping(headers, rows));
     setParsed({ headers, rows });
     setXlsxSheets(null);
     setErr("");
