@@ -240,7 +240,7 @@ Mobile "More" drawer: communications, events, volunteers, board, analytics, task
 `POST /sequences/process` is declared BEFORE `GET /sequences/:id` routes to prevent Express matching "process" as an :id param
 
 ## Custom Fields
-- `custom_fields` table: id, org_id, label, field_type (text/number/date/dropdown/checkbox), options (JSONB), required (boolean), field_order, created_at
+- `custom_fields` table: id, org_id, label, field_type (text/number/date/dropdown/checkbox), options (JSONB), required (boolean), field_order, show_in_directory (boolean, default false), created_at
 - `custom_field_values` table: id, org_id, donor_id, field_id (FK→custom_fields ON DELETE CASCADE), value (TEXT), updated_at. UNIQUE(donor_id, field_id)
 - `GET /custom-fields` — list org fields ordered by field_order
 - `POST /custom-fields` — create field (admin only)

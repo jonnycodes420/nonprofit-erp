@@ -60,9 +60,11 @@ export function Dashboard({data,setData,onNavigate}) {
   const [showAddDonor,setShowAddDonor]=useState(false);
   const [newDonor,setNewDonor]=useState({name:"",email:"",phone:"",stage:"prospect"});
   const [onlineGifts,setOnlineGifts]=useState([]);
+  const [gmailStatus,setGmailStatus]=useState(null);
 
   useEffect(()=>{
     apiFetch("/stripe/online-gifts").then(r=>setOnlineGifts(r||[])).catch(()=>{});
+    apiFetch("/gmail/status").then(setGmailStatus).catch(()=>{});
   },[]);
 
   const totalDonors=data.donors.length;
@@ -103,9 +105,48 @@ export function Dashboard({data,setData,onNavigate}) {
 
   const generateBriefing=async()=>{
     setBriefLoading(true);setBriefing("");setBriefOpen(true);
+    const lapsedCount=data.donors.filter(d=>d.stage==="lapsed").length;
+    const recentGifts=data.donors.filter(d=>d.lastGift&&daysDiff(d.lastGift)<=7&&d.lastAmount>0);
+    const topPriority=data.donors
+      .filter(d=>d.stage==="major"||d.total>5000)
+      .sort((a,b)=>daysDiff(a.lastTouchpoint||"2000-01-01")-daysDiff(b.lastTouchpoint||"2000-01-01"))
+      .slice(0,3);
+    const grantDeadlines=data.grants
+      .filter(g=>g.status!=="closed"&&daysUntil(g.deadline)>=0&&daysUntil(g.deadline)<=30)
+      .sort((a,b)=>new Date(a.deadline)-new Date(b.deadline));
+    const ytdRevenue=data.financials?.revenue?.reduce((s,r)=>s+r.individual+r.grants+r.events+r.other,0)||0;
+    const thisMonthRevenue=data.financials?.revenue?.slice(-1)[0]||{individual:0,grants:0};
+    const volProspects=data.volunteers?.filter(v=>v.hours>=20).length||0;
+    const recentEmails=activityFeed.filter(i=>i.type==="email").slice(0,5);
+    const gmailLine=gmailStatus?.connected
+      ?`Gmail: connected (${gmailStatus.email}), last synced ${gmailStatus.lastSyncedAt?Math.round((Date.now()-new Date(gmailStatus.lastSyncedAt))/60000)+" min ago":"recently"}`
+      :"Gmail: not connected";
+    const prompt=`You are a nonprofit development strategist. Generate a daily briefing for ${data.org.name}.
+Today: ${todayStr}
+
+DONORS: ${data.donors.length} total, ${lapsedCount} lapsed, ${recentGifts.length} gifts this week
+TOP PRIORITY DONORS: ${topPriority.map(d=>`${d.name} (${d.stage}, last contact ${daysDiff(d.lastTouchpoint||"")||"unknown"} days ago, lifetime ${fmtFull(d.total)})`).join(", ")||"none flagged"}
+
+GRANTS: ${data.grants.filter(g=>g.status==="active").length} active, ${grantDeadlines.length} deadlines in 30 days
+GRANT DEADLINES: ${grantDeadlines.map(g=>`${g.funder} due ${g.deadline} (${daysUntil(g.deadline)}d)`).join(", ")||"none"}
+
+FINANCE: ${fmtFull(ytdRevenue)} YTD revenue, ${fmtFull(thisMonthRevenue.individual+thisMonthRevenue.grants)} this month
+RECENT GIFTS: ${recentGifts.map(d=>`${d.name} $${d.lastAmount}`).join(", ")||"none"}
+
+VOLUNTEERS: ${volProspects} volunteers with 20+ hours ready to convert to donors
+${gmailLine}
+RECENT DONOR EMAILS: ${recentEmails.map(e=>`${e.donorName}: ${e.note?.replace("Subject: ","")?.split("\n")[0]||e.type}`).join("; ")||"none"}
+
+Based on all of this, give me:
+1. The single most important action to take today (be specific — name the donor or grant)
+2. Two other high-priority items
+3. One risk to be aware of
+4. One opportunity I might be missing
+
+Be direct. Use names. No fluff. Max 280 words.`;
     await askClaude(
-      `You are a chief development officer. Write a crisp daily briefing. Use bullet points. Be specific with names and numbers. Max 250 words.`,
-      `Generate today's development briefing for ${data.org.name}.\nToday: ${todayStr}\n\n${buildContext(data)}\n\nFormat:\n**TODAY'S PRIORITY CALLS** (top 2-3 donors to contact with specific reason)\n**GRANT ALERTS** (anything urgent in next 30 days)\n**FINANCIAL PULSE** (1-2 sentences on cash/revenue)\n**ONE THING** (the single most important action today)\n\nBe sharp and specific.`,
+      `You are a chief development officer. Write a crisp daily briefing. Use bullet points. Be specific with names and numbers.`,
+      prompt,
       chunk=>setBriefing(chunk)
     );
     setBriefLoading(false);
@@ -172,13 +213,25 @@ export function Dashboard({data,setData,onNavigate}) {
         <div style={{display:"flex",flexDirection:"column",gap:14}}>
           {/* AI Briefing */}
           <div style={{...cardWrap}}>
-            <div className="dash-briefing-hdr dash-cpad" style={{...cPad,borderBottom:"1px solid "+T.bg3,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+            <div className="dash-briefing-hdr dash-cpad" style={{...cPad,borderBottom:"1px solid "+T.bg3,display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:8}}>
               <div style={{display:"flex",alignItems:"center",gap:10}}>
                 <span style={{background:"#1a6b4a",color:"#fff",fontSize:9,fontWeight:800,padding:"3px 8px",borderRadius:99,letterSpacing:"0.1em",textTransform:"uppercase"}}>AI</span>
                 <span style={{fontSize:11,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.08em",fontWeight:600}}>{todayStr}</span>
               </div>
-              {!briefing&&!briefLoading&&<AIBtn onClick={generateBriefing} label="✦ Generate briefing" small/>}
-              {briefLoading&&<div style={{display:"flex",alignItems:"center",gap:6,fontSize:12,color:T.ink3}}><Spin/>Thinking…</div>}
+              <div style={{display:"flex",alignItems:"center",gap:10}}>
+                {gmailStatus?.connected
+                  ? <div style={{display:"flex",alignItems:"center",gap:5,fontSize:11,color:T.ink3}}>
+                      <span style={{width:7,height:7,borderRadius:"50%",background:"#10b981",display:"inline-block",flexShrink:0}}/>
+                      Gmail synced {gmailStatus.lastSyncedAt?Math.round((Date.now()-new Date(gmailStatus.lastSyncedAt))/60000)+"m ago":"recently"}
+                    </div>
+                  : <button onClick={()=>onNavigate("settings")} style={{background:"transparent",border:"none",padding:0,cursor:"pointer",display:"flex",alignItems:"center",gap:5,fontSize:11,color:T.ink3}}>
+                      <span style={{width:7,height:7,borderRadius:"50%",background:"#6b7280",display:"inline-block",flexShrink:0}}/>
+                      Gmail not connected
+                    </button>
+                }
+                {!briefing&&!briefLoading&&<AIBtn onClick={generateBriefing} label="✦ Generate briefing" small/>}
+                {briefLoading&&<div style={{display:"flex",alignItems:"center",gap:6,fontSize:12,color:T.ink3}}><Spin/>Thinking…</div>}
+              </div>
             </div>
             <div className="dash-briefing-body" style={{padding:"18px 24px"}}>
               {!briefing&&!briefLoading&&(
@@ -394,6 +447,31 @@ export function Dashboard({data,setData,onNavigate}) {
               </>
             )}
           </div>
+
+          {/* Recent emails (Gmail-synced) */}
+          {activityFeed.filter(i=>i.type==="email"&&i.note?.startsWith("Subject: ")).length>0&&(
+            <div style={{...cardWrap}}>
+              <div className="dash-cpad" style={{...cPad,borderBottom:"1px solid "+T.bg3,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                <span style={sTitle}>✉ Recent Emails</span>
+                <span style={{fontSize:10,color:T.ink3}}>via Gmail</span>
+              </div>
+              {activityFeed.filter(i=>i.type==="email"&&i.note?.startsWith("Subject: ")).slice(0,3).map((item,i,arr)=>{
+                const subject=item.note?.split("\n")[0]?.replace("Subject: ","")||"Email";
+                const tc=item.note?.toLowerCase().includes("direction:outbound")||item.note?.includes("Sent")||item.metadata?.direction==="outbound"?"#3b82f6":"#10b981";
+                const dir=item.metadata?.direction==="outbound"?"Sent":"Received";
+                return(
+                  <div key={i} onClick={()=>onNavigate("donors")} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 20px",borderBottom:i<arr.length-1?"1px solid "+T.bg3:"none",cursor:"pointer"}}>
+                    <span style={{fontSize:14,flexShrink:0}}>✉</span>
+                    <div style={{flex:1,minWidth:0}}>
+                      <div style={{fontSize:12,fontWeight:600,color:T.ink,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{subject}</div>
+                      <div style={{fontSize:11,color:T.ink3,marginTop:1}}>{item.donorName}</div>
+                    </div>
+                    <span style={{fontSize:10,fontWeight:700,background:tc+"22",color:tc,borderRadius:99,padding:"2px 7px",flexShrink:0}}>{dir}</span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
 
           {/* Activity feed */}
           <div style={{...cardWrap}}>

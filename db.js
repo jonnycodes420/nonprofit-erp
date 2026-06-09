@@ -484,6 +484,7 @@ async function initSchema() {
     )
   `);
   await pool.query(`ALTER TABLE interactions ADD COLUMN IF NOT EXISTS metadata JSONB`);
+  await pool.query(`ALTER TABLE custom_fields ADD COLUMN IF NOT EXISTS show_in_directory BOOLEAN DEFAULT false`);
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS password_reset_tokens (

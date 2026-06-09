@@ -1,5 +1,28 @@
 # Steward — Build Progress
 
+### Deep integration pass — modules now interconnected (2026-06-04)
+Every module now feeds data into every other. No new tables (except one column). No new routes except `/volunteers/donor-prospects` and `donor_id` filter on `/finance/transactions`.
+
+**Backend (server.js):**
+- `PATCH /events/:id/attendees/:attendeeId` — on `status=attended`: +5 wealth_score (capped 99), logs `type='event'` interaction, auto-advances prospect→qualify or qualify→cultivate
+- `PUT /volunteers/:id` — detects 20-hour threshold crossing; auto-creates donor prospect + interaction + 7-day task; `GET /volunteers/donor-prospects` returns volunteers with 20+ hours and no donor record
+- `PUT /grants/:id` — fetches prev status first; on `awarded`: auto-creates `fin_transaction` (income, tries to match fund by funder/program name); on `closed`/`rejected`: creates 6-month follow-up task
+- `GET /track/:recipientId/open.gif` — logs `type='email'` interaction on first open; checks last 3 email interactions for high/low engagement signals; updates donor notes
+- `payment_intent.succeeded` webhook — adds interaction log, detects previously-lapsed donors (moves to `qualify` not `steward`), creates 48-hour re-engagement task
+- `GET /finance/transactions` — added `donor_id` query param filter
+
+**db.js:**
+- `ALTER TABLE custom_fields ADD COLUMN IF NOT EXISTS show_in_directory BOOLEAN DEFAULT false`
+
+**Frontend:**
+- `Dashboard.jsx` — fetches `/gmail/status`; Gmail sync indicator on briefing card header; enriched briefing prompt (all modules: donors/grants/finance/events/sequences/volunteers/gmail); "Recent Emails" card shows last 3 Gmail-synced interactions
+- `Board.jsx` — matches board members to donors by email; shows lifetime giving, last gift date, stage badge inline; "Board Giving" subtab with per-member participation grid; `boardParticipation` % metric on stat card
+- `Settings.jsx` — 4-card Integration health strip at top (Gmail, Stripe, Resend, QuickBooks); `show_in_directory` toggle per custom field (inline, calls PUT); `PUT /custom-fields/:id` now persists `show_in_directory`
+- `Finance.jsx` — added `SC` import; donor revenue % and grant revenue % in SummaryCard; transaction rows show donor stage pill when `donor_id` matches; "Donor Giving" subtab (top 10 by lifetime, with sparklines from transactions, stage badge, last gift)
+- `Donors.jsx` — `orgTotal` passed to DonorProfile; Lifetime stat card is clickable (fetches `/finance/transactions?donor_id=X`, shows inline panel); Revenue Impact "X% of org total" below Lifetime stat; DirectoryView accepts `customFields`+`cfValues` props and renders `show_in_directory` fields as extra columns
+
+---
+
 ### Onboarding Email Sequence (2026-06-03)
 7-email founder-voice drip sequence that fires automatically when a new org signs up. Backend only — pure sequences engine, no frontend changes.
 

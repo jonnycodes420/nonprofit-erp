@@ -213,7 +213,7 @@ export function Settings({auth,logout}) {
     setCfSaving(true);
     try{
       if(editingField){
-        const updated=await apiFetch(`/custom-fields/${editingField.id}`,{method:"PUT",body:JSON.stringify({label:cfForm.label,fieldType:cfForm.fieldType,options:cfForm.options,required:cfForm.required})});
+        const updated=await apiFetch(`/custom-fields/${editingField.id}`,{method:"PUT",body:JSON.stringify({label:cfForm.label,fieldType:cfForm.fieldType,options:cfForm.options,required:cfForm.required,showInDirectory:!!editingField.show_in_directory})});
         setCustomFields(prev=>prev.map(f=>f.id===editingField.id?updated:f));
       }else{
         const created=await apiFetch("/custom-fields",{method:"POST",body:JSON.stringify({label:cfForm.label,fieldType:cfForm.fieldType,options:cfForm.options,required:cfForm.required})});
@@ -242,9 +242,39 @@ export function Settings({auth,logout}) {
     navigator.clipboard.writeText(inviteResult.link).then(()=>{setCopied(true);setTimeout(()=>setCopied(false),2000);});
   }
 
+  async function toggleDirectoryVisibility(field){
+    const updated=await apiFetch(`/custom-fields/${field.id}`,{method:"PUT",body:JSON.stringify({
+      label:field.label,fieldType:field.field_type,options:field.options||[],
+      required:!!field.required,showInDirectory:!field.show_in_directory
+    })}).catch(()=>null);
+    if(updated) setCustomFields(prev=>prev.map(f=>f.id===field.id?updated:f));
+  }
+
   return(
     <div style={{display:"flex",flexDirection:"column",gap:20}}>
       <PageTitle main="Workspace" accent="settings."/>
+
+      {/* Integration health strip */}
+      <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10}}>
+        {[
+          {icon:"✉",label:"Gmail",desc:gmailStatus?.connected?`Connected — ${gmailStatus.email||""}`:"Not connected",ok:!!gmailStatus?.connected},
+          {icon:"💳",label:"Stripe",desc:stripe?.connected?"Donations active":"Not connected",ok:!!stripe?.connected},
+          {icon:"📨",label:"Resend",desc:"Email domain verified",ok:true},
+          {icon:"📊",label:"QuickBooks",desc:"Export available",ok:null},
+        ].map(({icon,label,desc,ok})=>(
+          <div key={label} style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:12,padding:"14px 16px",display:"flex",gap:10,alignItems:"flex-start"}}>
+            <span style={{fontSize:18,lineHeight:1,flexShrink:0}}>{icon}</span>
+            <div style={{flex:1,minWidth:0}}>
+              <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:3}}>
+                <span style={{fontSize:12,fontWeight:700,color:T.ink}}>{label}</span>
+                <span style={{width:6,height:6,borderRadius:"50%",background:ok===null?"#e5e7eb":ok?"#10b981":"#6b7280",flexShrink:0}}/>
+              </div>
+              <div style={{fontSize:11,color:T.ink3,lineHeight:1.4}}>{desc}</div>
+            </div>
+          </div>
+        ))}
+      </div>
+
       <div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:16,padding:"24px 28px"}}>
         <SectionLabel>Your Account</SectionLabel>
         <div style={{display:"flex",alignItems:"center",gap:16,marginBottom:20}}>
@@ -391,7 +421,12 @@ export function Settings({auth,logout}) {
               <div style={{fontSize:11,color:T.ink3,marginTop:2}}>{CF_TYPE_LABELS[f.field_type]||f.field_type}{f.field_type==="dropdown"&&f.options?.length?` — ${f.options.join(", ")}`:""}
               </div>
             </div>
-            {isAdmin&&<div style={{display:"flex",gap:6,flexShrink:0}}>
+            {isAdmin&&<div style={{display:"flex",gap:6,flexShrink:0,alignItems:"center"}}>
+              <button onClick={()=>toggleDirectoryVisibility(f)}
+                title={f.show_in_directory?"Hide from donor directory":"Show in donor directory"}
+                style={{background:f.show_in_directory?T.greenDk+"18":T.bg,border:`1px solid ${f.show_in_directory?T.greenDk:T.bg3}`,borderRadius:6,padding:"5px 10px",fontSize:11,fontWeight:600,color:f.show_in_directory?T.greenDk:T.ink3,cursor:"pointer"}}>
+                {f.show_in_directory?"In directory ✓":"Directory"}
+              </button>
               <button onClick={()=>openEditField(f)} style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:6,padding:"5px 10px",fontSize:11,fontWeight:600,color:T.ink2,cursor:"pointer"}}>Edit</button>
               <button onClick={()=>deleteCfField(f.id)} style={{background:"#fef2f2",border:"1px solid #fecaca",borderRadius:6,padding:"5px 10px",fontSize:11,fontWeight:600,color:"#dc2626",cursor:"pointer"}}>Delete</button>
             </div>}

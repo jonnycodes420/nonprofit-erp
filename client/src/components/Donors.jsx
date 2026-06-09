@@ -62,6 +62,7 @@ function DonorImport({ onClose, onImported }) {
   const [aiLoading, setAiLoading] = useState(false);
   const [result, setResult] = useState(null);
   const [err, setErr] = useState("");
+  const [limitBlocked, setLimitBlocked] = useState(null); // { allowed: number }
 
   const handleFile = (e) => {
     const file = e.target.files[0]; if (!file) return;
@@ -109,17 +110,44 @@ function DonorImport({ onClose, onImported }) {
   }).filter(d => d.name);
 
   const doImport = async () => {
-    setLoading(true); setErr("");
+    setLoading(true); setErr(""); setLimitBlocked(null);
     try {
       const res = await apiFetch("/donors/import", { method:"POST", body:JSON.stringify({ donors:buildDonors() }) });
       setResult(res.inserted); onImported();
-    } catch (e) { setErr(e.message); }
+    } catch (e) {
+      if (e.status === 403 && e.message === "record_limit") {
+        setLimitBlocked({ allowed: e.data?.allowed ?? 0 });
+      } else {
+        setErr(e.message);
+      }
+    }
     setLoading(false);
   };
 
   const overlay = { position:"fixed",inset:0,background:"#000c",zIndex:300,display:"flex",alignItems:"center",justifyContent:"center",padding:20 };
   const modal = { background:T.white,border:"1px solid "+T.bg3,borderRadius:20,width:"100%",maxWidth:700,maxHeight:"88vh",overflowY:"auto",padding:28,boxSizing:"border-box" };
   const inp = { width:"100%",background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"9px 12px",color:T.ink,fontSize:13,outline:"none",fontFamily:"inherit",boxSizing:"border-box" };
+
+  if (limitBlocked !== null) return (
+    <div style={overlay} className="modal-sheet-overlay"><div style={{...modal,textAlign:"center"}} className="modal-sheet-inner">
+      <div style={{fontSize:40,marginBottom:12}}>🔒</div>
+      <div style={{fontSize:22,fontWeight:800,color:T.ink,marginBottom:8}}>Donor limit reached</div>
+      <div style={{fontSize:14,color:T.ink3,marginBottom:6}}>
+        Your plan allows <strong>{limitBlocked.allowed}</strong> more donor{limitBlocked.allowed !== 1 ? "s" : ""}.
+        This CSV has <strong>{buildDonors().length}</strong> rows.
+      </div>
+      <div style={{fontSize:13,color:T.ink3,marginBottom:28}}>
+        Upgrade your plan to import more, or trim the CSV to {limitBlocked.allowed} rows.
+      </div>
+      <div style={{display:"flex",gap:12,justifyContent:"center",flexWrap:"wrap"}}>
+        <button onClick={onClose} style={{background:T.bg3,border:"none",borderRadius:10,padding:"12px 24px",color:T.ink,fontSize:14,fontWeight:600,cursor:"pointer"}}>Cancel</button>
+        <a href="https://stewardapp.dev/pricing" target="_blank" rel="noreferrer"
+          style={{background:"#10b981",border:"none",borderRadius:10,padding:"12px 24px",color:"#fff",fontSize:14,fontWeight:700,cursor:"pointer",textDecoration:"none",display:"inline-block"}}>
+          Upgrade plan
+        </a>
+      </div>
+    </div></div>
+  );
 
   if (result !== null) return (
     <div style={overlay} className="modal-sheet-overlay"><div style={{...modal,textAlign:"center"}} className="modal-sheet-inner">
@@ -632,9 +660,12 @@ function GiftLinkModal({donor,orgName,onClose}){
 }
 
 // ── Donor Profile ──────────────────────────────────────────────────────────
-function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loadingKey,getAI,isAdmin,onEdit,onDelete,tasks=[],onTaskToggle,orgName="",orgTeam=[],onReassign,onCfSaved,onInteractionAdded}){
+function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loadingKey,getAI,isAdmin,onEdit,onDelete,tasks=[],onTaskToggle,orgName="",orgTeam=[],onReassign,onCfSaved,onInteractionAdded,orgTotal=0}){
   const [gifts,setGifts]=useState([]);
   const [giftLoading,setGiftLoading]=useState(true);
+  const [showTxnPanel,setShowTxnPanel]=useState(false);
+  const [donorTxns,setDonorTxns]=useState([]);
+  const [txnLoading,setTxnLoading]=useState(false);
   const [sequences,setSequences]=useState([]);
   useEffect(()=>{apiFetch("/sequences").then(rows=>setSequences(Array.isArray(rows)?rows.filter(s=>s.status==="active"):[])).catch(()=>{});},[]);
 
@@ -784,13 +815,42 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
         {/* LEFT */}
         <div style={{overflowY:"auto",padding:"22px 20px 24px 24px",borderRight:"1px solid "+T.bg3,display:"flex",flexDirection:"column",gap:18}}>
           <div className="donor-stat-grid" style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10}}>
-            {[["Lifetime",fmtFull(donor.total),T.ink],["Last Gift",lastGiftDisplay,"#1a6b4a"],["Contact",`${urg.days}d ago`,urg.urgencyColor],["Score",`${sc}/99`,scoreColor]].map(([l,v,c])=>(
+            {[["Last Gift",lastGiftDisplay,"#1a6b4a"],["Contact",`${urg.days}d ago`,urg.urgencyColor],["Score",`${sc}/99`,scoreColor]].map(([l,v,c])=>(
               <div key={l} style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:12,padding:"12px 14px"}}>
                 <div style={{fontSize:9,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.1em",color:T.ink3,marginBottom:4}}>{l}</div>
                 <div style={{fontSize:20,fontWeight:800,color:c,fontFamily:"'DM Serif Display',serif",lineHeight:1.1}}>{v}</div>
               </div>
             ))}
+            {/* Lifetime — clickable to show finance panel */}
+            <div onClick={async()=>{
+              if(!showTxnPanel){
+                setShowTxnPanel(true);setTxnLoading(true);
+                const rows=await apiFetch(`/finance/transactions?donor_id=${donor.id}`).catch(()=>[]);
+                setDonorTxns(Array.isArray(rows)?rows:[]);setTxnLoading(false);
+              }else{setShowTxnPanel(false);}
+            }} style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:12,padding:"12px 14px",cursor:"pointer",borderBottomColor:showTxnPanel?"#c9a84c":T.bg3,borderBottomWidth:showTxnPanel?2:1}}>
+              <div style={{fontSize:9,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.1em",color:T.ink3,marginBottom:4}}>Lifetime ▾</div>
+              <div style={{fontSize:20,fontWeight:800,color:T.ink,fontFamily:"'DM Serif Display',serif",lineHeight:1.1}}>{fmtFull(donor.total)}</div>
+              {orgTotal>0&&<div style={{fontSize:9,color:T.ink3,marginTop:3}}>{Math.round(donor.total/orgTotal*100)}% of org total</div>}
+            </div>
           </div>
+          {showTxnPanel&&(
+            <div style={{background:T.bg,border:"1px solid #c9a84c44",borderRadius:12,padding:"14px 16px"}}>
+              <div style={{fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.1em",color:"#c9a84c",marginBottom:10}}>Transactions — {donor.name}</div>
+              {txnLoading?<div style={{fontSize:12,color:T.ink3}}>Loading…</div>
+                :donorTxns.length===0?<div style={{fontSize:12,color:T.ink3,fontStyle:"italic"}}>No financial transactions on record.</div>
+                :<div style={{display:"flex",flexDirection:"column",gap:4,maxHeight:200,overflowY:"auto"}}>
+                  {donorTxns.slice(0,15).map(t=>(
+                    <div key={t.id} style={{display:"flex",justifyContent:"space-between",fontSize:12,padding:"5px 0",borderBottom:"1px solid "+T.bg2}}>
+                      <span style={{color:T.ink3}}>{t.date}</span>
+                      <span style={{flex:1,margin:"0 10px",color:T.ink,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{t.description}</span>
+                      <span style={{fontWeight:700,color:t.type==="income"?"#1a6b4a":"#ef4444",flexShrink:0}}>{t.type==="income"?"+":"−"}{fmtFull(parseFloat(t.amount))}</span>
+                    </div>
+                  ))}
+                </div>
+              }
+            </div>
+          )}
 
           <div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:14,padding:"16px 18px"}}>
             <div style={{fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.1em",color:T.ink3,marginBottom:12}}>Giving History</div>
@@ -1306,13 +1366,14 @@ function AssignModal({donor,orgTeam,onSave,onClose}){
 }
 
 // ── Directory View ─────────────────────────────────────────────────────────
-function DirectoryView({donors,orgTeam,isAdmin,onSelectDonor,onAssign,stageFilter,setStageFilter,assigneeFilter,setAssigneeFilter}){
+function DirectoryView({donors,orgTeam,isAdmin,onSelectDonor,onAssign,stageFilter,setStageFilter,assigneeFilter,setAssigneeFilter,customFields=[],cfValues={}}){
   const filtered=donors
     .filter(d=>!stageFilter||d.stage===stageFilter)
     .filter(d=>!assigneeFilter||d.assignedTo===assigneeFilter);
   const sel={background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"7px 10px",color:T.ink,fontSize:12,outline:"none",cursor:"pointer"};
-  const cols=["Donor","Stage","Owner","Lifetime","Last Gift","Score",...(isAdmin?[""]:[])]
-  const colGrid="minmax(0,2fr) minmax(0,1fr) minmax(0,1fr) 120px 110px 60px"+(isAdmin?" 80px":"");
+  const dirFields=(customFields||[]).filter(f=>f.show_in_directory);
+  const cols=["Donor","Stage","Owner","Lifetime","Last Gift","Score",...dirFields.map(f=>f.label),...(isAdmin?[""]:[])]
+  const colGrid="minmax(0,2fr) minmax(0,1fr) minmax(0,1fr) 120px 110px 60px"+dirFields.map(()=>" minmax(80px,1fr)").join("")+(isAdmin?" 80px":"");
   return(
     <div style={{display:"flex",flexDirection:"column",gap:10}}>
       <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
@@ -1366,6 +1427,11 @@ function DirectoryView({donors,orgTeam,isAdmin,onSelectDonor,onAssign,stageFilte
                 <div style={{textAlign:"right"}}>
                   <span style={{background:scColor+"18",color:scColor,borderRadius:7,padding:"3px 8px",fontSize:12,fontWeight:800}}>{sc}</span>
                 </div>
+                {dirFields.map(f=>(
+                  <div key={f.id} style={{fontSize:12,color:T.ink,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
+                    {cfValues[d.id]?.[f.id]||"—"}
+                  </div>
+                ))}
                 {isAdmin&&<div style={{textAlign:"right"}}>
                   <button onClick={e=>{e.stopPropagation();onAssign(d);}} style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:7,padding:"4px 10px",color:T.ink3,fontSize:11,fontWeight:600,cursor:"pointer"}}>Assign</button>
                 </div>}
@@ -1757,7 +1823,8 @@ export function Donors({data,setData}){
         aiMap={aiMap} loadingKey={loadingKey} getAI={getAI}
         isAdmin={isAdmin} onEdit={()=>setEditTarget(selected)} onDelete={deleteDonor}
         tasks={data.tasks.filter(t=>t.donorId===selected.id)} onTaskToggle={toggleTask}
-        orgName={data.org?.name||""} orgTeam={orgTeam} onReassign={handleAssign} onCfSaved={reloadCfValues} onInteractionAdded={reloadDonors}/>}
+        orgName={data.org?.name||""} orgTeam={orgTeam} onReassign={handleAssign} onCfSaved={reloadCfValues} onInteractionAdded={reloadDonors}
+        orgTotal={data.donors.reduce((s,d)=>s+(d.total||0),0)}/>}
 
       <div className="donors-toolbar" style={{display:"flex",gap:10,flexWrap:"wrap",alignItems:"center"}}>
         <input className="donors-search" value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search donors…" style={{flex:1,minWidth:160,background:T.bg,border:"1px solid "+T.bg3,borderRadius:10,padding:"10px 14px",color:T.ink,fontSize:13,outline:"none"}}/>
@@ -1835,7 +1902,7 @@ export function Donors({data,setData}){
         </div>
       </Card>}
 
-      {view==="directory"&&<DirectoryView donors={filtered} orgTeam={orgTeam} isAdmin={isAdmin} onSelectDonor={d=>setSelected(d)} onAssign={d=>setAssignTarget(d)} stageFilter={dirStage} setStageFilter={setDirStage} assigneeFilter={dirAssignee} setAssigneeFilter={setDirAssignee}/>}
+      {view==="directory"&&<DirectoryView donors={filtered} orgTeam={orgTeam} isAdmin={isAdmin} onSelectDonor={d=>setSelected(d)} onAssign={d=>setAssignTarget(d)} stageFilter={dirStage} setStageFilter={setDirStage} assigneeFilter={dirAssignee} setAssigneeFilter={setDirAssignee} customFields={customFields} cfValues={cfValues}/>}
 
       {view==="pipeline"&&(()=>{
         const myDonors=filtered.filter(d=>d.assignedTo===userId);

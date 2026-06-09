@@ -72,6 +72,9 @@ app.post("/stripe/webhook", express.raw({ type: "application/json" }), async (re
             const donorId = donorRow[0].id;
             const giftId = "g_" + uuid().slice(0, 8);
             const today = new Date().toISOString().slice(0, 10);
+            // Check if donor was lapsed before updating stage
+            const donorPreRow = await query("SELECT stage FROM donors WHERE id=$1", [donorId]);
+            const wasLapsed = donorPreRow[0]?.stage === 'lapsed';
             await run(
               `INSERT INTO gifts (id, org_id, donor_id, amount, date, notes, stripe_payment_id, campaign_id)
                VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
@@ -83,10 +86,22 @@ app.post("/stripe/webhook", express.raw({ type: "application/json" }), async (re
                  gift_count = gift_count + 1,
                  last_gift_date = GREATEST(COALESCE(last_gift_date,'0001-01-01')::date, $2::date)::text,
                  last_gift_amount = CASE WHEN ($2::date >= COALESCE(last_gift_date,'0001-01-01')::date) THEN $3 ELSE last_gift_amount END,
-                 stage = CASE WHEN stage IN ('prospect','cultivate','lapsed') THEN 'steward' ELSE stage END
+                 stage = CASE WHEN stage = 'lapsed' THEN 'qualify' WHEN stage IN ('prospect','cultivate') THEN 'steward' ELSE stage END
                WHERE id = $4`,
               [amount, today, amount, donorId]
             );
+            // Log gift interaction
+            await run("INSERT INTO interactions (id,org_id,donor_id,type,note,date) VALUES ($1,$2,$3,'gift',$4,$5)",
+              ["i_"+uuid().slice(0,8), orgId, donorId, `Online donation: $${amount} via Steward Giving Page`, today]
+            ).catch(()=>{});
+            // Re-engagement task for previously lapsed donors
+            if (wasLapsed) {
+              await run(
+                "INSERT INTO tasks (id,org_id,title,priority,done,due) VALUES ($1,$2,$3,'high',false,$4)",
+                ["t_"+uuid().slice(0,8), orgId, `Re-engaged via online gift — follow up with ${donorName||email} within 48 hours`,
+                 new Date(Date.now()+2*24*60*60*1000).toISOString().slice(0,10)]
+              ).catch(()=>{});
+            }
             const acctRow = await query("SELECT id FROM accounts WHERE org_id=$1 AND code='4010' LIMIT 1", [orgId]);
             const genFundRow = await query("SELECT id FROM fin_funds WHERE org_id=$1 AND restricted=false ORDER BY created_at ASC LIMIT 1", [orgId]);
             if (acctRow.length) {
@@ -152,7 +167,7 @@ app.post("/stripe/webhook", express.raw({ type: "application/json" }), async (re
   res.json({ received: true });
 });
 
-app.use(express.json());
+app.use(express.json({ limit: "5mb" }));
 
 // ── DB readiness guard ─────────────────────────────────────────────────────
 let dbReady = false;
@@ -167,6 +182,9 @@ app.use((req, res, next) => {
 
 // ── Async error wrapper ────────────────────────────────────────────────────
 const wrap = fn => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
+
+// ── Plan limits ────────────────────────────────────────────────────────────
+const PLAN_LIMITS = { trial: 100, seed: 1000, growth: 5000, impact: Infinity };
 
 // ── Admin guard ────────────────────────────────────────────────────────────
 const requireAdmin = (req, res, next) => {
@@ -715,6 +733,19 @@ app.post("/donors/import", requireAuth, wrap(async (req, res) => {
   if (!Array.isArray(donors) || donors.length === 0)
     return res.status(400).json({ error: "donors array required" });
 
+  const orgRows = await query("SELECT plan FROM orgs WHERE id=?", [req.user.orgId]);
+  const plan = orgRows[0]?.plan || "trial";
+  const cap = PLAN_LIMITS[plan] ?? PLAN_LIMITS.trial;
+
+  if (isFinite(cap)) {
+    const countRows = await query("SELECT COUNT(*) AS n FROM donors WHERE org_id=?", [req.user.orgId]);
+    const current = parseInt(countRows[0].n, 10) || 0;
+    const allowed = cap - current;
+    if (donors.length > allowed) {
+      return res.status(403).json({ error: "record_limit", allowed: Math.max(0, allowed) });
+    }
+  }
+
   let inserted = 0;
   for (const d of donors) {
     if (!d.name) continue;
@@ -894,6 +925,11 @@ app.post("/grants", requireAuth, wrap(async (req, res) => {
 app.put("/grants/:id", requireAuth, wrap(async (req, res) => {
   const { funder, program, amount, received, status, deadline, reportDue, officer, notes, description, requirements } = req.body;
   if (!funder) return res.status(400).json({ error: "Funder required" });
+  const orgId = req.user.orgId;
+
+  // Capture previous status before update
+  const prevRows = await query("SELECT status FROM grants WHERE id=? AND org_id=?", [req.params.id, orgId]);
+  const prevStatus = prevRows[0]?.status;
 
   const affected = await run(
     `UPDATE grants
@@ -901,9 +937,37 @@ app.put("/grants/:id", requireAuth, wrap(async (req, res) => {
      WHERE id=? AND org_id=?`,
     [funder, program || "", amount || 0, received || 0, status, deadline || "",
      reportDue || "", officer || "", notes || "", description || "", requirements || "",
-     req.params.id, req.user.orgId]
+     req.params.id, orgId]
   );
   if (!affected.changes) return res.status(404).json({ error: "Grant not found" });
+
+  const today = new Date().toISOString().slice(0, 10);
+
+  // Grant awarded → auto-post fin_transaction
+  if (status === 'awarded' && prevStatus !== 'awarded') {
+    const matchFund = await query(
+      "SELECT id FROM fin_funds WHERE org_id=? AND (name ILIKE ? OR name ILIKE ?) LIMIT 1",
+      [orgId, `%${funder}%`, `%${program||""}%`]
+    );
+    const genFund = matchFund.length ? matchFund : await query(
+      "SELECT id FROM fin_funds WHERE org_id=? AND restricted=false ORDER BY created_at ASC LIMIT 1", [orgId]
+    );
+    const acct = await query("SELECT id FROM accounts WHERE org_id=? LIMIT 1", [orgId]);
+    await run(
+      "INSERT INTO fin_transactions (id,org_id,date,description,vendor_donor,amount,type,account_id,fund_id) VALUES (?,?,?,?,?,?,'income',?,?)",
+      ["ft_"+uuid().slice(0,8), orgId, today, `Grant awarded: ${funder} — ${program||""}`, funder,
+       parseFloat(amount)||0, acct[0]?.id||null, genFund[0]?.id||null]
+    ).catch(() => {});
+  }
+
+  // Grant closed/rejected → follow-up task in 6 months
+  if ((status === 'closed' || status === 'rejected') && prevStatus !== status) {
+    const sixMonths = new Date(Date.now() + 180*24*60*60*1000).toISOString().slice(0, 10);
+    await run(
+      "INSERT INTO tasks (id,org_id,title,priority,done,due) VALUES (?,?,?,'medium',false,?)",
+      ["t_"+uuid().slice(0,8), orgId, `Follow up with ${funder} re: next cycle`, sixMonths]
+    ).catch(() => {});
+  }
 
   const rows = await query("SELECT * FROM grants WHERE id = ?", [req.params.id]);
   const g = rows[0];
@@ -970,14 +1034,54 @@ app.put("/volunteers/:id", requireAuth, wrap(async (req, res) => {
   const { name, email, hours, skills, employer, notes, convertPotential } = req.body;
   if (!name) return res.status(400).json({ error: "Name required" });
 
+  // Capture old hours before update to detect 20-hour threshold crossing
+  const prevRows = await query("SELECT hours FROM volunteers WHERE id=? AND org_id=?", [req.params.id, req.user.orgId]);
+  const prevHours = parseFloat(prevRows[0]?.hours || 0);
+  const newHours = parseFloat(hours || 0);
+
   const affected = await run(
     "UPDATE volunteers SET name=?,email=?,hours=?,skills=?,employer=?,notes=?,convert_potential=? WHERE id=? AND org_id=?",
-    [name, email || "", hours || 0, JSON.stringify(skills || []),
+    [name, email || "", newHours, JSON.stringify(skills || []),
      employer || "", notes || "", convertPotential || "medium", req.params.id, req.user.orgId]
   );
   if (!affected.changes) return res.status(404).json({ error: "Volunteer not found" });
+
+  // 20-hour threshold: auto-create donor prospect + task
+  if (prevHours < 20 && newHours >= 20 && email) {
+    const orgId = req.user.orgId;
+    const existing = await query("SELECT id FROM donors WHERE org_id=? AND email ILIKE ?", [orgId, email]);
+    if (!existing.length) {
+      const donorId = "d_" + uuid().slice(0, 8);
+      await run(
+        "INSERT INTO donors (id,org_id,name,email,stage,notes,gift_count,total_giving) VALUES (?,?,?,?,'prospect',?,0,0)",
+        [donorId, orgId, name, email.toLowerCase(), "Auto-created from volunteer record. 20+ hours logged."]
+      ).catch(() => {});
+      const today = new Date().toISOString().slice(0, 10);
+      await run("INSERT INTO interactions (id,org_id,donor_id,type,note,date) VALUES (?,?,?,'note',?,?)",
+        ["i_"+uuid().slice(0,8), orgId, donorId, "Volunteer prospect — 20+ hours logged", today]).catch(() => {});
+    }
+    const dueDate = new Date(Date.now() + 7*24*60*60*1000).toISOString().slice(0, 10);
+    await run("INSERT INTO tasks (id,org_id,title,priority,done,due) VALUES (?,?,?,'high',false,?)",
+      ["t_"+uuid().slice(0,8), orgId, `Cultivate volunteer ${name} as donor prospect — 20+ hours logged`, dueDate]).catch(() => {});
+  }
+
   const rows = await query("SELECT * FROM volunteers WHERE id = ?", [req.params.id]);
   res.json(rows[0]);
+}));
+
+app.get("/volunteers/donor-prospects", requireAuth, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  const vols = await query(
+    "SELECT * FROM volunteers WHERE org_id=? AND hours >= 20 ORDER BY hours DESC",
+    [orgId]
+  );
+  const result = await Promise.all(vols.map(async v => {
+    const donor = v.email
+      ? await query("SELECT id FROM donors WHERE org_id=? AND email ILIKE ?", [orgId, v.email])
+      : [];
+    return { ...v, skills: JSON.parse(v.skills || "[]"), hasDonorRecord: donor.length > 0 };
+  }));
+  res.json(result.filter(v => !v.hasDonorRecord));
 }));
 
 // ── Tasks ──────────────────────────────────────────────────────────────────
@@ -1495,15 +1599,52 @@ app.post("/campaigns/:id/send", requireAuth, requireAdmin, wrap(async (req, res)
 // ── Tracking pixel (no auth) ───────────────────────────────────────────────
 app.get("/track/:recipientId/open.gif", wrap(async (req, res) => {
   const { recipientId } = req.params;
-  await run(
-    "UPDATE campaign_recipients SET opened_at = NOW() WHERE id = ? AND opened_at IS NULL",
-    [recipientId]
-  );
+  const wasAlreadyOpen = await query("SELECT opened_at FROM campaign_recipients WHERE id=?", [recipientId]);
+  const alreadyOpened = wasAlreadyOpen[0]?.opened_at != null;
+  await run("UPDATE campaign_recipients SET opened_at = NOW() WHERE id = ? AND opened_at IS NULL", [recipientId]);
   await run(
     `UPDATE campaigns SET open_count = open_count + 1
      WHERE id = (SELECT campaign_id FROM campaign_recipients WHERE id = ?)`,
     [recipientId]
   );
+
+  // Log interaction + engagement intelligence (fire-and-forget)
+  if (!alreadyOpened) {
+    (async () => {
+      try {
+        const recRows = await query(
+          `SELECT cr.email, cr.donor_id, c.name AS campaign_name, c.org_id
+           FROM campaign_recipients cr JOIN campaigns c ON c.id=cr.campaign_id WHERE cr.id=?`,
+          [recipientId]
+        );
+        if (!recRows.length) return;
+        const rec = recRows[0];
+        const donorId = rec.donor_id || (rec.email
+          ? (await query("SELECT id FROM donors WHERE org_id=? AND email ILIKE ?", [rec.org_id, rec.email]))[0]?.id
+          : null);
+        if (!donorId) return;
+        const today = new Date().toISOString().slice(0, 10);
+        await run("INSERT INTO interactions (id,org_id,donor_id,type,note,date) VALUES (?,?,?,'email',?,?)",
+          ["i_"+uuid().slice(0,8), rec.org_id, donorId, `Opened campaign: ${rec.campaign_name}`, today]);
+        // Check last 3 email interactions for engagement signals
+        const recent = await query(
+          "SELECT note FROM interactions WHERE donor_id=? AND org_id=? AND type='email' ORDER BY date DESC, created_at DESC LIMIT 3",
+          [donorId, rec.org_id]
+        );
+        const opens = recent.filter(r => r.note?.startsWith("Opened"));
+        if (opens.length >= 2) {
+          await run(`UPDATE donors SET notes = CASE WHEN notes NOT LIKE '%High engagement%'
+            THEN TRIM(COALESCE(notes||' | ','') || 'High engagement — opened last 2+ emails')
+            ELSE notes END WHERE id=? AND org_id=?`, [donorId, rec.org_id]);
+        } else if (opens.length === 0 && recent.length >= 3) {
+          await run(`UPDATE donors SET notes = CASE WHEN notes NOT LIKE '%Low email engagement%'
+            THEN TRIM(COALESCE(notes||' | ','') || 'Low email engagement — consider phone outreach')
+            ELSE notes END WHERE id=? AND org_id=?`, [donorId, rec.org_id]);
+        }
+      } catch (e) { /* non-critical */ }
+    })();
+  }
+
   const gif = Buffer.from("R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7", "base64");
   res.setHeader("Content-Type", "image/gif");
   res.setHeader("Cache-Control", "no-cache, no-store");
@@ -2020,7 +2161,7 @@ app.put("/finance/funds/:id", requireAuth, requireAdmin, wrap(async (req, res) =
 
 // ── Finance: Transactions ──────────────────────────────────────────────────
 app.get("/finance/transactions", requireAuth, wrap(async (req, res) => {
-  const { year, fund, account } = req.query;
+  const { year, fund, account, donor_id } = req.query;
   let sql = `
     SELECT ft.*, a.code as account_code, a.name as account_name, a.type as account_type,
            f.name as fund_name, f.restricted as fund_restricted
@@ -2033,6 +2174,7 @@ app.get("/finance/transactions", requireAuth, wrap(async (req, res) => {
   if (year) { sql += " AND ft.date >= ? AND ft.date <= ?"; params.push(`${year}-01-01`, `${year}-12-31`); }
   if (fund) { sql += " AND ft.fund_id = ?"; params.push(fund); }
   if (account) { sql += " AND ft.account_id = ?"; params.push(account); }
+  if (donor_id) { sql += " AND ft.donor_id = ?"; params.push(donor_id); }
   sql += " ORDER BY ft.date DESC, ft.created_at DESC";
   const rows = await query(sql, params);
   res.json(rows);
@@ -3061,14 +3203,14 @@ app.put("/custom-fields/reorder", requireAuth, requireAdmin, wrap(async (req, re
 }));
 
 app.put("/custom-fields/:id", requireAuth, requireAdmin, wrap(async (req, res) => {
-  const { label, fieldType, options, required } = req.body;
+  const { label, fieldType, options, required, showInDirectory } = req.body;
   await run(
-    "UPDATE custom_fields SET label=?,field_type=?,options=?,required=? WHERE id=? AND org_id=?",
-    [label, fieldType, JSON.stringify(options || []), required ? 1 : 0, req.params.id, req.user.orgId]
+    "UPDATE custom_fields SET label=?,field_type=?,options=?,required=?,show_in_directory=? WHERE id=? AND org_id=?",
+    [label, fieldType, JSON.stringify(options || []), required ? 1 : 0, showInDirectory ? true : false, req.params.id, req.user.orgId]
   );
   const [field] = await query("SELECT * FROM custom_fields WHERE id=? AND org_id=?", [req.params.id, req.user.orgId]);
   if (!field) return res.status(404).json({ error: "Not found" });
-  res.json(field);
+  res.json({ ...field, options: typeof field.options === "string" ? JSON.parse(field.options||"[]") : field.options });
 }));
 
 app.delete("/custom-fields/:id", requireAuth, requireAdmin, wrap(async (req, res) => {
@@ -3854,6 +3996,17 @@ app.patch("/events/:id/attendees/:attendeeId", requireAuth, async (req, res) => 
           ["ft_" + uuid().slice(0,8), orgId, today, `Event Gift — ${evt?.name||"event"}`, att.name, newGift, accts[0].id, funds[0].id]
         );
       }
+    }
+    // On attendance: +5 wealth score, log interaction, advance prospect/qualify stage
+    if (newStatus === 'attended' && att.donor_id) {
+      const evtInfoRows = await query("SELECT name FROM events WHERE id=$1", [att.event_id]);
+      const evtName = evtInfoRows[0]?.name || "event";
+      const today = new Date().toISOString().slice(0, 10);
+      await run(`UPDATE donors SET wealth_score = LEAST(COALESCE(wealth_score,0)+5, 99) WHERE id=$1 AND org_id=$2`, [att.donor_id, orgId]).catch(() => {});
+      await run("INSERT INTO interactions (id,org_id,donor_id,type,note,date) VALUES ($1,$2,$3,'event',$4,$5)",
+        ["i_"+uuid().slice(0,8), orgId, att.donor_id, `Attended: ${evtName}`, today]).catch(() => {});
+      await run(`UPDATE donors SET stage = CASE WHEN stage='prospect' THEN 'qualify' WHEN stage='qualify' THEN 'cultivate' ELSE stage END WHERE id=$1 AND org_id=$2 AND stage IN ('prospect','qualify')`,
+        [att.donor_id, orgId]).catch(() => {});
     }
     const updated = await query("SELECT ea.*, d.stage, d.total_giving FROM event_attendees ea LEFT JOIN donors d ON d.id=ea.donor_id WHERE ea.id=$1", [req.params.attendeeId]);
     res.json(updated[0]);

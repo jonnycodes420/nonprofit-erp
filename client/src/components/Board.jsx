@@ -13,6 +13,12 @@ export function Board({data}) {
 
   const totalGiving=data.board.reduce((s,b)=>s+parseInt(b.givingLevel.replace(/[$,]/g,"")),0);
   const avgAttendance=data.board.length ? Math.round(data.board.reduce((s,b)=>s+b.attendance,0)/data.board.length) : 0;
+  // Match board members to donor records by email
+  const donorByEmail = Object.fromEntries((data.donors||[]).filter(d=>d.email).map(d=>[d.email.toLowerCase(),d]));
+  const currentYear = new Date().getFullYear();
+  const boardWithDonor = data.board.map(b=>({...b, donor: b.email ? donorByEmail[b.email.toLowerCase()] : null}));
+  const gaveThisYear = boardWithDonor.filter(b=>b.donor&&b.donor.lastGift&&new Date(b.donor.lastGift).getFullYear()===currentYear);
+  const boardParticipation = data.board.length ? Math.round((gaveThisYear.length/data.board.length)*100) : 0;
 
   const loadReports = async () => {
     setReportsLoading(true);
@@ -87,12 +93,12 @@ export function Board({data}) {
     <PageTitle main="Board" accent="management."/>
     <div className="board-metric-grid" style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:12}}>
       <MetricCard label="Board Members" value={data.board.length} sub={`${avgAttendance}% avg attendance`} color="#1a6b4a"/>
-      <MetricCard label="Board Giving" value={fmt(totalGiving)} sub="100% board participation" color="#1a6b4a"/>
+      <MetricCard label="Board Giving" value={fmt(totalGiving)} sub={`${boardParticipation}% board participation this year`} color={boardParticipation===100?"#1a6b4a":boardParticipation>=75?"#f59e0b":"#ef4444"}/>
       <MetricCard label="Committees" value={[...new Set(data.board.flatMap(b=>b.committees))].length} sub="active committees" color="#1a6b4a"/>
     </div>
 
     <div style={{display:"flex",gap:8}}>
-      {["members","reports"].map(t=><button key={t} style={tabStyle(subTab===t)} onClick={()=>setSubTab(t)}>{t==="members"?"Board Members":"Reports"}</button>)}
+      {["members","giving","reports"].map(t=><button key={t} style={tabStyle(subTab===t)} onClick={()=>setSubTab(t)}>{t==="members"?"Board Members":t==="giving"?"Board Giving":"Reports"}</button>)}
     </div>
 
     {subTab==="members" && <>
@@ -103,18 +109,24 @@ export function Board({data}) {
       {(briefLoading||boardBrief)&&<AIPanel text={boardBrief} onClose={()=>setBoardBrief("")}/>}
       {(emailLoading||boardEmail)&&<AIPanel text={boardEmail} onClose={()=>setBoardEmail("")}/>}
       {data.board.length===0&&<EmptyState icon="◆" title="No board members yet" message="Track your board's giving, attendance, committees, and terms."/>}
-      {data.board.map(b=>{
+      {boardWithDonor.map(b=>{
         const attColor=b.attendance>=90?"#1a6b4a":b.attendance>=75?"#f59e0b":"#ef4444";
+        const d=b.donor;
         return <Card key={b.id}>
           <div style={{display:"flex",alignItems:"center",gap:12}}>
             <div style={{width:42,height:42,borderRadius:"50%",background:"#1a6b4a22",display:"flex",alignItems:"center",justifyContent:"center",fontSize:15,fontWeight:800,color:"#1a6b4a",flexShrink:0}}>{b.name[0]}</div>
             <div style={{flex:1}}>
-              <div style={{display:"flex",alignItems:"center",gap:8}}>
+              <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
                 <div style={{fontSize:15,fontWeight:700,color:T.ink}}>{b.name}</div>
                 <Pill label={b.role} color="#1a6b4a"/>
+                {d&&<Pill label={d.stage} color={SC[d.stage]||"#6b7280"}/>}
               </div>
               <div style={{fontSize:12,color:T.ink3,marginTop:1}}>{b.employer}</div>
               <div style={{display:"flex",gap:4,marginTop:5,flexWrap:"wrap"}}>{b.committees.map(c=><Pill key={c} label={c} color="#6b7280"/>)}</div>
+              {d&&<div style={{fontSize:11,color:"#1a6b4a",marginTop:4,display:"flex",gap:12}}>
+                <span>Lifetime: <strong>{fmtFull(d.total)}</strong></span>
+                {d.lastGift&&<span>Last gift: <strong>{new Date(d.lastGift).toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"})}</strong></span>}
+              </div>}
             </div>
             <div style={{textAlign:"right",flexShrink:0}}>
               <div style={{fontSize:15,fontWeight:800,color:"#1a6b4a"}}>{b.givingLevel}</div>
@@ -124,6 +136,39 @@ export function Board({data}) {
           </div>
         </Card>;
       })}
+    </>}
+
+    {subTab==="giving" && <>
+      <Card>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16,flexWrap:"wrap",gap:8}}>
+          <div>
+            <div style={{fontSize:15,fontWeight:700,color:T.ink}}>Board Giving Participation</div>
+            <div style={{fontSize:12,color:T.ink3,marginTop:2}}>{gaveThisYear.length} of {data.board.length} board members gave in {currentYear} — <strong style={{color:boardParticipation>=80?"#1a6b4a":boardParticipation>=60?"#f59e0b":"#ef4444"}}>{boardParticipation}% participation</strong></div>
+          </div>
+          <div style={{fontSize:11,color:T.ink3,background:T.bg2,borderRadius:8,padding:"6px 12px"}}>Funders look for 100% board participation</div>
+        </div>
+        <div style={{display:"flex",flexDirection:"column",gap:2}}>
+          {boardWithDonor.map(b=>{
+            const gave=b.donor&&b.donor.lastGift&&new Date(b.donor.lastGift).getFullYear()===currentYear;
+            return(
+              <div key={b.id} style={{display:"flex",alignItems:"center",gap:12,padding:"10px 0",borderBottom:"1px solid "+T.bg2}}>
+                <span style={{width:8,height:8,borderRadius:"50%",background:gave?"#10b981":"#e5e7eb",flexShrink:0}}/>
+                <div style={{flex:1}}>
+                  <div style={{fontSize:13,fontWeight:600,color:T.ink}}>{b.name}</div>
+                  <div style={{fontSize:11,color:T.ink3}}>{b.role}{b.employer?` · ${b.employer}`:""}</div>
+                </div>
+                {gave
+                  ? <div style={{textAlign:"right"}}>
+                      <div style={{fontSize:12,fontWeight:700,color:"#1a6b4a"}}>{fmtFull(b.donor.lastAmount)}</div>
+                      <div style={{fontSize:10,color:T.ink3}}>{new Date(b.donor.lastGift).toLocaleDateString("en-US",{month:"short",day:"numeric"})}</div>
+                    </div>
+                  : <span style={{fontSize:11,color:"#ef4444",fontWeight:600}}>Not yet this year</span>
+                }
+              </div>
+            );
+          })}
+        </div>
+      </Card>
     </>}
 
     {subTab==="reports" && <>

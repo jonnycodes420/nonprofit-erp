@@ -1,5 +1,5 @@
 import { useState, useEffect, Fragment } from "react";
-import { T, fmt, fmtFull, askClaude, Card, AIBtn, AIPanel, EmptyState, SectionLabel, PageTitle } from "./shared";
+import { T, fmt, fmtFull, SC, askClaude, Card, AIBtn, AIPanel, EmptyState, SectionLabel, PageTitle } from "./shared";
 import { apiFetch } from "../api";
 
 // ── Constants ──────────────────────────────────────────────────────────────
@@ -248,6 +248,16 @@ export function Finance({ data }) {
     setRiskLoading(false);
   };
 
+  // ── Revenue breakdown from transactions ─────────────────────────────────
+  const donorRevenue = transactions.filter(t => t.type === "income" && t.donor_id).reduce((s, t) => s + parseFloat(t.amount), 0);
+  const grantRevenue = transactions.filter(t => t.type === "income" && (t.category === "Grants" || t.description?.toLowerCase().startsWith("grant"))).reduce((s, t) => s + parseFloat(t.amount), 0);
+  const totalIncome = transactions.filter(t => t.type === "income").reduce((s, t) => s + parseFloat(t.amount), 0);
+  const donorPct = totalIncome > 0 ? Math.round(donorRevenue / totalIncome * 100) : 0;
+  const grantPct = totalIncome > 0 ? Math.round(grantRevenue / totalIncome * 100) : 0;
+
+  // ── Donor lookup for transactions ────────────────────────────────────────
+  const donorById = Object.fromEntries((data.donors || []).map(d => [d.id, d]));
+
   // ── Summary bar ──────────────────────────────────────────────────────────
   const SummaryCard = () => summary ? (
     <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(160px,1fr))", gap:10, marginBottom:4 }}>
@@ -262,11 +272,23 @@ export function Finance({ data }) {
           <div style={{ fontSize:22, fontWeight:800, color, fontFamily:"'DM Serif Display',serif" }}>{value}</div>
         </div>
       ))}
+      {totalIncome > 0 && <>
+        <div style={{ background:T.white, border:"1px solid "+T.bg3, borderRadius:12, padding:"14px 16px" }}>
+          <div style={{ fontSize:11, color:T.ink3, textTransform:"uppercase", letterSpacing:".06em", marginBottom:4 }}>Donor Revenue</div>
+          <div style={{ fontSize:22, fontWeight:800, color:"#1a6b4a", fontFamily:"'DM Serif Display',serif" }}>{fmt(donorRevenue)}</div>
+          <div style={{ fontSize:11, color:T.ink3, marginTop:3 }}>{donorPct}% of total income</div>
+        </div>
+        <div style={{ background:T.white, border:"1px solid "+T.bg3, borderRadius:12, padding:"14px 16px" }}>
+          <div style={{ fontSize:11, color:T.ink3, textTransform:"uppercase", letterSpacing:".06em", marginBottom:4 }}>Grant Revenue</div>
+          <div style={{ fontSize:22, fontWeight:800, color:"#8b5cf6", fontFamily:"'DM Serif Display',serif" }}>{fmt(grantRevenue)}</div>
+          <div style={{ fontSize:11, color:T.ink3, marginTop:3 }}>{grantPct}% of total income</div>
+        </div>
+      </>}
     </div>
   ) : null;
 
   // ── Sub-tab bar ──────────────────────────────────────────────────────────
-  const subTabs = [["overview","Overview"],["transactions","Transactions"],["accounts","Accounts"],["funds","Funds"],["budgets","Budgets"],["reports","Reports"],["audit","Audit Log"]];
+  const subTabs = [["overview","Overview"],["donors","Donor Giving"],["transactions","Transactions"],["accounts","Accounts"],["funds","Funds"],["budgets","Budgets"],["reports","Reports"],["audit","Audit Log"]];
 
   // ── Transactions tab ─────────────────────────────────────────────────────
   const sortedTxns = [...transactions]
@@ -535,6 +557,58 @@ export function Finance({ data }) {
         </Card>
       </>}
 
+      {/* ── Donor Giving ── */}
+      {subtab === "donors" && (() => {
+        const currentYr = new Date().getFullYear();
+        const topDonors = [...(data.donors||[])]
+          .sort((a,b) => b.total - a.total)
+          .slice(0, 10);
+        return <>
+          <Card style={{ padding:0, overflow:"hidden" }}>
+            {topDonors.length === 0
+              ? <EmptyState icon="♦" title="No donors yet" message="Import donors to see giving analysis."/>
+              : <table style={{ width:"100%", borderCollapse:"collapse", fontSize:13 }}>
+                  <thead>
+                    <tr style={{ background:"#1a6b4a" }}>
+                      {["Donor","Stage","Last Gift","Last Gift Date","Lifetime"].map(h => (
+                        <th key={h} style={{ padding:"10px 14px", textAlign:"left", fontSize:11, fontWeight:700, color:"#fff", textTransform:"uppercase", letterSpacing:".06em", whiteSpace:"nowrap" }}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {topDonors.map((d, i) => {
+                      const gifts = transactions.filter(t => t.donor_id === d.id && t.type === "income").sort((a,b) => new Date(b.date) - new Date(a.date)).slice(0,4);
+                      const max = Math.max(...gifts.map(g => parseFloat(g.amount)), 1);
+                      return (
+                        <tr key={d.id} style={{ borderTop:"1px solid "+T.bg3, background: i%2===0?T.white:"#faf9f6" }}>
+                          <td style={{ padding:"10px 14px", fontWeight:700, color:T.ink }}>{d.name}</td>
+                          <td style={{ padding:"10px 14px" }}>
+                            <span style={{ background:(SC[d.stage]||"#6b7280")+"22", color:SC[d.stage]||"#6b7280", borderRadius:99, padding:"2px 8px", fontSize:11, fontWeight:700, textTransform:"capitalize" }}>{d.stage}</span>
+                          </td>
+                          <td style={{ padding:"10px 14px", color:T.greenDk, fontWeight:700 }}>{d.lastAmount > 0 ? fmtFull(d.lastAmount) : "—"}</td>
+                          <td style={{ padding:"10px 14px", color:T.ink3 }}>{d.lastGift || "—"}</td>
+                          <td style={{ padding:"10px 14px" }}>
+                            <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+                              <span style={{ fontWeight:800, color:"#1a6b4a" }}>{fmtFull(d.total)}</span>
+                              {gifts.length > 1 && (
+                                <div style={{ display:"flex", gap:2, alignItems:"flex-end", height:20 }}>
+                                  {gifts.map((g,gi) => (
+                                    <div key={gi} style={{ width:6, background:"#1a6b4a66", borderRadius:2, height:Math.max(4, Math.round(parseFloat(g.amount)/max*20)) }}/>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+            }
+          </Card>
+        </>;
+      })()}
+
       {/* ── Transactions ── */}
       {subtab === "transactions" && <>
         <div style={{ display:"flex", gap:8, flexWrap:"wrap", alignItems:"center" }}>
@@ -569,7 +643,14 @@ export function Finance({ data }) {
                         </td>
                         <td style={{ padding:"10px 14px" }}>
                           <div style={{ fontWeight:600, color:T.ink }}>{t.description}</div>
-                          {t.vendor_donor && <div style={{ fontSize:11, color:T.ink3 }}>{t.vendor_donor}</div>}
+                          {t.vendor_donor && <div style={{ fontSize:11, color:T.ink3, display:"flex", alignItems:"center", gap:5 }}>
+                            {t.vendor_donor}
+                            {t.donor_id && donorById[t.donor_id] && (
+                              <span style={{ background:(SC[donorById[t.donor_id].stage]||"#6b7280")+"22", color:SC[donorById[t.donor_id].stage]||"#6b7280", borderRadius:99, padding:"1px 6px", fontSize:9, fontWeight:700, textTransform:"capitalize" }}>
+                                {donorById[t.donor_id].stage}
+                              </span>
+                            )}
+                          </div>}
                         </td>
                         <td style={{ padding:"10px 14px" }}>
                           {t.account_name && (
