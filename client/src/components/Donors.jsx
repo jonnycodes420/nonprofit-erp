@@ -382,10 +382,14 @@ function DonorImport({ onClose, onImported }) {
 
     setLoading(true); setErr("");
     try {
+      console.log("SENDING IMPORT REQUEST", toSend.length, "donors");
       const res = await apiFetch("/donors/import", { method:"POST", body:JSON.stringify({ donors:toSend }) });
+      console.log("IMPORT RESPONSE:", res);
+      // Don't call onImported() here — result screen must render first.
+      // Done button calls onImported() so the modal stays visible until user dismisses.
       setResult({ ...res, warned:warnedCount, skipped:skippedCount });
-      onImported();
     } catch (e) {
+      console.error("IMPORT FAILED:", e);
       if (e.error === "record_limit") { setUpgradeInfo(e); }
       else { setErr(e.message || "Import failed. See browser console."); }
     }
@@ -419,7 +423,7 @@ function DonorImport({ onClose, onImported }) {
               {result.batchErrors.map((e,i) => <div key={i} style={{marginTop:4}}>Rows {e.rows}: {e.error}</div>)}
             </div>
           )}
-          <button onClick={onClose} style={{background:"#10b981",border:"none",borderRadius:10,padding:"12px 28px",color:"#fff",fontSize:14,fontWeight:700,cursor:"pointer"}}>Done</button>
+          <button onClick={onImported} style={{background:"#10b981",border:"none",borderRadius:10,padding:"12px 28px",color:"#fff",fontSize:14,fontWeight:700,cursor:"pointer"}}>Done</button>
         </div>
       </div>
     );
