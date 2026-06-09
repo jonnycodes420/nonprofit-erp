@@ -24,7 +24,7 @@ const PLANS = [
     price: 249,
     tagline: "For teams ready to grow.",
     features: [
-      "Up to 5 user seats (+$25/mo per extra seat)",
+      "Up to 5 user seats",
       "Up to 10,000 donor records",
       "Everything in the platform — nothing locked",
       "Priority support",

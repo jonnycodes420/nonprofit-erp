@@ -1,27 +1,15 @@
-import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { apiFetch } from "../api";
 import { T } from "./shared";
+
+const PLAN_NAME = { seed: "Seed", growth: "Growth", impact: "Impact", trial: "Trial" };
 
 export default function UpgradeModal({ open, onClose, reason, current, limit, plan }) {
   const navigate = useNavigate();
-  const [portalLoading, setPortalLoading] = useState(false);
 
   if (!open) return null;
 
   const isSeat = reason === "seat_limit";
-
-  async function handleManageSeats() {
-    // TODO: true per-seat add-on checkout (future step). For now open Stripe billing portal.
-    setPortalLoading(true);
-    try {
-      const r = await apiFetch("/billing/create-portal", { method: "POST" });
-      window.location.href = r.url;
-    } catch {
-      navigate("/pricing");
-    }
-    setPortalLoading(false);
-  }
+  const planName = PLAN_NAME[plan] || (plan ? plan.charAt(0).toUpperCase() + plan.slice(1) : "");
 
   return (
     <div
@@ -34,46 +22,26 @@ export default function UpgradeModal({ open, onClose, reason, current, limit, pl
         </div>
         <div style={{ fontSize:14,color:"#4a5e4f",lineHeight:1.65,marginBottom:8 }}>
           {isSeat
-            ? <>You're using all <strong>{limit}</strong> seats on your current plan. Add more seats for $25/mo each, or move up to a plan with more room.</>
+            ? <>You're using all <strong>{limit}</strong> seats on the {planName} plan. Upgrade to add your whole team and keep growing.</>
             : <>You've reached <strong>{limit}</strong> donor records on your current plan. Upgrade to keep adding contacts and growing your database.</>}
         </div>
         <div style={{ fontSize:12,color:T.ink3,marginBottom:28 }}>
           {current} of {limit} {isSeat ? "seats" : "records"} used
-          {plan && plan !== "trial" && <> · <span style={{ textTransform:"capitalize" }}>{plan}</span> plan</>}
+          {planName && plan !== "trial" && <> · {planName} plan</>}
         </div>
         <div style={{ display:"flex",gap:10,flexWrap:"wrap" }}>
-          {isSeat ? (
-            <>
-              <button
-                onClick={handleManageSeats}
-                disabled={portalLoading}
-                style={{ flex:1,background:"#1a6b4a",border:"none",borderRadius:10,padding:"11px 16px",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer",opacity:portalLoading?0.7:1 }}
-              >
-                {portalLoading ? "Opening…" : "Manage seats →"}
-              </button>
-              <button
-                onClick={() => { onClose(); navigate("/pricing"); }}
-                style={{ flex:1,background:"transparent",border:"1px solid "+T.bg3,borderRadius:10,padding:"11px 16px",color:T.ink2,fontSize:13,fontWeight:600,cursor:"pointer" }}
-              >
-                Compare plans
-              </button>
-            </>
-          ) : (
-            <>
-              <button
-                onClick={() => { onClose(); navigate("/pricing"); }}
-                style={{ flex:1,background:"#1a6b4a",border:"none",borderRadius:10,padding:"11px 16px",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer" }}
-              >
-                Upgrade plan →
-              </button>
-              <button
-                onClick={onClose}
-                style={{ flex:1,background:"transparent",border:"1px solid "+T.bg3,borderRadius:10,padding:"11px 16px",color:T.ink2,fontSize:13,fontWeight:600,cursor:"pointer" }}
-              >
-                Maybe later
-              </button>
-            </>
-          )}
+          <button
+            onClick={() => { onClose(); navigate("/pricing"); }}
+            style={{ flex:1,background:"#1a6b4a",border:"none",borderRadius:10,padding:"11px 16px",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer" }}
+          >
+            Upgrade plan →
+          </button>
+          <button
+            onClick={onClose}
+            style={{ flex:1,background:"transparent",border:"1px solid "+T.bg3,borderRadius:10,padding:"11px 16px",color:T.ink2,fontSize:13,fontWeight:600,cursor:"pointer" }}
+          >
+            Maybe later
+          </button>
         </div>
       </div>
     </div>
