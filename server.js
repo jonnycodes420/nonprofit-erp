@@ -1451,6 +1451,11 @@ app.post("/gifts/import-history", requireAuth, checkWriteAccess, wrap(async (req
   );
   const fingerprints = new Set(existingRows.map(g => `${g.donor_id}|${g.amount}|${g.date}`));
 
+  // Importer identity — used in interaction logged_by_name, same pattern as single-gift route
+  const importerRow = await query("SELECT name FROM users WHERE id=?", [req.user.userId]);
+  const importerName = importerRow[0]?.name || "";
+  const importerId   = req.user.userId;
+
   let duplicates = 0, invalid = 0;
   const toInsert = [];
   for (const g of gifts) {
@@ -1478,6 +1483,12 @@ app.post("/gifts/import-history", requireAuth, checkWriteAccess, wrap(async (req
           await runTx(client,
             "INSERT INTO gifts (id,org_id,donor_id,amount,date,type,campaign,fund_id,notes) VALUES (?,?,?,?,?,?,?,?,?)",
             [id, orgId, g.donorId, g.amount, g.date, g.type, g.campaign, g.fund_id, g.notes]
+          );
+          // Mirror the touchpoint the single-gift route creates — same table, type, note format
+          const intNote = `Gift received: $${g.amount.toLocaleString()} (${g.type})${g.notes ? " — " + g.notes : ""}`;
+          await runTx(client,
+            "INSERT INTO interactions (id,org_id,donor_id,type,note,date,created_by,logged_by_name) VALUES (?,?,?,?,?,?,?,?)",
+            ["int_"+uuid().slice(0,8), orgId, g.donorId, "gift", intNote, g.date, importerId, importerName]
           );
           affectedDonorIds.add(g.donorId);
         }
