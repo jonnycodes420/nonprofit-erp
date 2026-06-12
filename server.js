@@ -853,6 +853,48 @@ app.post("/org/clear-sample-data", requireAuth, wrap(async (req, res) => {
   res.json({ ok: true });
 }));
 
+// ── One-time backfill: create missing gift touchpoints ────────────────────
+// For gifts that pre-date the touchpoint-creation code in the history importer.
+// Safe to re-run: skips any gift that already has a type='gift' interaction
+// whose note contains the same dollar amount (donor_id + date + amount match).
+app.post("/org/backfill-gift-touchpoints", requireAuth, requireAdmin, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+
+  const toBackfill = await query(
+    `SELECT g.id, g.donor_id, g.amount, g.date, g.type, g.notes
+     FROM gifts g
+     WHERE g.org_id = ?
+     AND NOT EXISTS (
+       SELECT 1 FROM interactions i
+       WHERE i.org_id = ?
+       AND i.type = 'gift'
+       AND i.donor_id = g.donor_id
+       AND i.date = g.date
+       AND i.note LIKE '%$' || to_char(g.amount, 'FM999,999,999') || '%'
+     )
+     ORDER BY g.donor_id, g.date`,
+    [orgId, orgId]
+  );
+
+  let created = 0;
+  for (const g of toBackfill) {
+    const fundNote = g.type || "cash";
+    const amt = Number(g.amount);
+    const intNote = `Gift received: $${amt.toLocaleString()} (${fundNote})${g.notes ? " — " + g.notes : ""}`;
+    await run(
+      "INSERT INTO interactions (id,org_id,donor_id,type,note,date,created_by,logged_by_name) VALUES (?,?,?,?,?,?,?,?)",
+      ["int_"+uuid().slice(0,8), orgId, g.donor_id, "gift", intNote, g.date, req.user.userId, "Import Backfill"]
+    );
+    created++;
+  }
+
+  res.json({
+    found: toBackfill.length,
+    backfilled: created,
+    gifts: toBackfill.map(g => ({ donor_id: g.donor_id, amount: g.amount, date: g.date }))
+  });
+}));
+
 // ── Team ───────────────────────────────────────────────────────────────────
 app.get("/org/team", requireAuth, wrap(async (req, res) => {
   const members = await query(
