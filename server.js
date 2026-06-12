@@ -1021,34 +1021,30 @@ app.post("/auth/invite/accept", wrap(async (req, res) => {
 
 // ── Donors ─────────────────────────────────────────────────────────────────
 app.get("/donors", requireAuth, wrap(async (req, res) => {
-  const donors = await query(
-    "SELECT * FROM donors WHERE org_id = ? AND deleted_at IS NULL ORDER BY total_giving DESC",
-    [req.user.orgId]
-  );
-  const result = await Promise.all(donors.map(async d => ({
+  const [donors, touchpoints] = await Promise.all([
+    query("SELECT * FROM donors WHERE org_id = ? AND deleted_at IS NULL ORDER BY total_giving DESC", [req.user.orgId]),
+    query("SELECT donor_id, MAX(date) AS last_touchpoint FROM interactions WHERE org_id = ? GROUP BY donor_id", [req.user.orgId]),
+  ]);
+  const tpMap = Object.fromEntries(touchpoints.map(r => [r.donor_id, r.last_touchpoint]));
+  const result = donors.map(d => ({
     ...d,
     tags: JSON.parse(d.tags || "[]"),
-    interactions: await query(
-      "SELECT * FROM interactions WHERE donor_id = ? ORDER BY date DESC LIMIT 10",
-      [d.id]
-    ),
-  })));
+    last_touchpoint: tpMap[d.id] || null,
+  }));
   res.json(result);
 }));
 
 app.get("/donors/my", requireAuth, wrap(async (req, res) => {
-  const donors = await query(
-    "SELECT * FROM donors WHERE org_id = ? AND assigned_to = ? AND deleted_at IS NULL ORDER BY total_giving DESC",
-    [req.user.orgId, req.user.userId]
-  );
-  const result = await Promise.all(donors.map(async d => ({
+  const [donors, touchpoints] = await Promise.all([
+    query("SELECT * FROM donors WHERE org_id = ? AND assigned_to = ? AND deleted_at IS NULL ORDER BY total_giving DESC", [req.user.orgId, req.user.userId]),
+    query("SELECT donor_id, MAX(date) AS last_touchpoint FROM interactions WHERE org_id = ? GROUP BY donor_id", [req.user.orgId]),
+  ]);
+  const tpMap = Object.fromEntries(touchpoints.map(r => [r.donor_id, r.last_touchpoint]));
+  const result = donors.map(d => ({
     ...d,
     tags: JSON.parse(d.tags || "[]"),
-    interactions: await query(
-      "SELECT * FROM interactions WHERE donor_id = ? ORDER BY date DESC LIMIT 10",
-      [d.id]
-    ),
-  })));
+    last_touchpoint: tpMap[d.id] || null,
+  }));
   res.json(result);
 }));
 

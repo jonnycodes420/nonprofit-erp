@@ -1645,6 +1645,7 @@ function GiftLinkModal({donor,orgName,onClose}){
 function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loadingKey,getAI,isAdmin,onEdit,onDelete,tasks=[],onTaskToggle,orgName="",orgTeam=[],onReassign,onCfSaved,onInteractionAdded,isReadOnly=false}){
   const [gifts,setGifts]=useState([]);
   const [giftLoading,setGiftLoading]=useState(true);
+  const [localInts,setLocalInts]=useState(null); // loaded lazily from GET /donors/:id
   const [sequences,setSequences]=useState([]);
   useEffect(()=>{apiFetch("/sequences").then(rows=>setSequences(Array.isArray(rows)?rows.filter(s=>s.status==="active"):[])).catch(()=>{});},[]);
 
@@ -1800,6 +1801,11 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
       setGiftsFull(g);
       setGifts(g.map(x=>({amount:x.amount,date:x.date})));
       setGiftLoading(false);
+      // Capture full interactions from the profile fetch so the timeline works
+      // without the list endpoint needing to embed them.
+      if(raw.interactions) setLocalInts(raw.interactions.map(i=>({
+        ...i, date:i.date||i.created_at?.split("T")[0], note:i.note||"",
+      })));
     }).catch(()=>setGiftLoading(false));
   };
 
@@ -2057,7 +2063,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
                 <div style={{fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.1em",color:T.ink3}}>Touchpoint Timeline</div>
                 <button onClick={onLogTouchpoint} style={{background:"#10b981",border:"none",borderRadius:7,padding:"5px 12px",color:"#fff",fontSize:11,fontWeight:700,cursor:"pointer"}}>+ Log</button>
               </div>
-              <TouchpointTimeline interactions={donor.interactions}/>
+              <TouchpointTimeline interactions={localInts??donor.interactions??[]}/>
             </div>
           </div>}
 
@@ -2359,7 +2365,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
                 </div>
               </div>}
               <div style={{display:"flex",flexDirection:"column",gap:8}}>
-                {(donor.interactions||[]).filter(i=>actFilter==="all"||i.type===actFilter).map(i=>{
+                {(localInts??donor.interactions??[]).filter(i=>actFilter==="all"||i.type===actFilter).map(i=>{
                   const typeIcon={call:"📞",meeting:"🤝",email:"✉️",gift:"🎁",event:"🎟️",stewardship:"💌",note:"📝",stage_change:"📈",planned_gift:"⭐",material:"📄"}[i.type]||"•";
                   const typeColor={call:"#3b82f6",meeting:"#1a6b4a",email:"#8b5cf6",gift:"#c9a84c",event:"#ec4899",stewardship:"#10b981",stage_change:"#3b82f6",planned_gift:"#f59e0b",material:"#6b7280"}[i.type]||T.ink3;
                   return(<div key={i.id||i.date} style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:10,padding:"10px 14px",display:"flex",gap:10,alignItems:"flex-start"}}>
@@ -2374,12 +2380,12 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
                     </div>
                   </div>);
                 })}
-                {(donor.interactions||[]).filter(i=>actFilter==="all"||i.type===actFilter).length===0&&<div style={{fontSize:12,color:T.ink3,fontStyle:"italic",textAlign:"center",padding:16}}>No activity logged yet</div>}
+                {(localInts??donor.interactions??[]).filter(i=>actFilter==="all"||i.type===actFilter).length===0&&<div style={{fontSize:12,color:T.ink3,fontStyle:"italic",textAlign:"center",padding:16}}>No activity logged yet</div>}
               </div>
             </>}
 
             {actMode==="timeline"&&(()=>{
-              const ints=donor.interactions||[];
+              const ints=localInts??donor.interactions??[];
               const sortedGiftsForTimeline=[...giftsFull].sort((a,b)=>new Date(a.date)-new Date(b.date));
               const firstGiftDate=sortedGiftsForTimeline[0]?.date;
               const largestGift=sortedGiftsForTimeline.reduce((m,g)=>g.amount>m.amount?g:m,{amount:0,date:""});
@@ -3473,14 +3479,15 @@ export function Donors({data,setData,isReadOnly=false}){
   const reloadDonors=async()=>{
     try{
       const donors=await apiFetch("/donors");
-      setData(prev=>({...prev,donors:donors.map(d=>{
-        const ints=(d.interactions||[]).map(i=>({date:i.date||i.created_at?.split("T")[0],type:i.type,note:i.note||""}));
-        const lastTouchpoint=ints.length>0?ints.slice().sort((a,b)=>new Date(b.date)-new Date(a.date))[0].date:null;
-        return{id:d.id,name:d.name,email:d.email||"",phone:d.phone||"",total:d.total_giving||0,
-          lastGift:d.last_gift_date||"",lastAmount:d.last_gift_amount||0,gifts:d.gift_count||0,
-          status:d.status,stage:d.stage||"cultivate",lastTouchpoint,
-          tags:Array.isArray(d.tags)?d.tags:JSON.parse(d.tags||"[]"),notes:d.notes||"",interactions:ints};
-      })}));
+      setData(prev=>({...prev,donors:donors.map(d=>({
+        id:d.id,name:d.name,email:d.email||"",phone:d.phone||"",total:d.total_giving||0,
+        lastGift:d.last_gift_date||"",lastAmount:d.last_gift_amount||0,gifts:d.gift_count||0,
+        status:d.status,stage:d.stage||"cultivate",
+        lastTouchpoint:d.last_touchpoint||null,
+        tags:Array.isArray(d.tags)?d.tags:JSON.parse(d.tags||"[]"),
+        notes:d.notes||"",
+        interactions:[],
+      }))}));
     }catch(e){console.error(e);}
   };
 

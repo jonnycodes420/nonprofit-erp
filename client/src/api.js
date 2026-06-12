@@ -66,15 +66,6 @@ export function adaptData({ org, donors, grants, volunteers, tasks, board, finan
       fiscalYear: "Jan-Dec",
     },
     donors: donors.map(d => {
-      const interactions = (d.interactions || []).map(i => ({
-        date: i.date || i.created_at?.split("T")[0],
-        type: i.type,
-        note: i.note || "",
-        metadata: i.metadata || null,
-      }));
-      const lastTouchpoint = interactions.length > 0
-        ? interactions.slice().sort((a, b) => new Date(b.date) - new Date(a.date))[0].date
-        : null;
       return {
         id:             d.id,
         name:           d.name,
@@ -88,8 +79,8 @@ export function adaptData({ org, donors, grants, volunteers, tasks, board, finan
         stage:          d.stage || "cultivate",
         tags:           Array.isArray(d.tags) ? d.tags : JSON.parse(d.tags || "[]"),
         notes:          d.notes || "",
-        lastTouchpoint,
-        interactions,
+        lastTouchpoint: d.last_touchpoint || null,
+        interactions:   [],
         wealthScore:           d.wealth_score ?? null,
         capacityTier:          d.capacity_tier ?? null,
         scoreConfidence:       d.score_confidence ?? null,
