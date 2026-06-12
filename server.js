@@ -1426,6 +1426,34 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrap(async (r
     } catch (e) { console.error(`[combined-import] status promotion failed:`, e.message); }
   }
 
+  // Infer pipeline stage from recalculated giving data.
+  // GUARDRAIL: AND stage = 'prospect' — only touches donors at the unset default,
+  // never overrides a stage a human deliberately set (qualify/cultivate/solicit/steward/lapsed).
+  // SQL mirrors inferStage() exactly: no data→prospect; last gift >365d→lapsed;
+  // last gift <90d + amount>0→steward; amount>0→cultivate; else→prospect.
+  if (affectedDonorIds.size > 0) {
+    try {
+      await run(
+        `UPDATE donors
+         SET stage = CASE
+           WHEN total_giving = 0 AND last_gift_date IS NULL            THEN 'prospect'
+           WHEN last_gift_date IS NOT NULL
+                AND (CURRENT_DATE - last_gift_date::date) > 365        THEN 'lapsed'
+           WHEN last_gift_date IS NOT NULL
+                AND (CURRENT_DATE - last_gift_date::date) < 90
+                AND total_giving > 0                                   THEN 'steward'
+           WHEN total_giving > 0                                        THEN 'cultivate'
+           ELSE 'prospect'
+         END,
+         updated_at = NOW()
+         WHERE org_id = ? AND id = ANY(?)
+           AND stage = 'prospect'
+           AND deleted_at IS NULL`,
+        [orgId, [...affectedDonorIds]]
+      );
+    } catch (e) { console.error(`[combined-import] stage inference failed:`, e.message); }
+  }
+
   res.json({ created, giftsInserted, duplicates, donorsUpdated: affectedDonorIds.size, financeSynced, batchErrors });
 }));
 
@@ -1824,6 +1852,30 @@ app.post("/gifts/import-history", requireAuth, checkWriteAccess, wrap(async (req
         [orgId, [...affectedDonorIds]]
       );
     } catch (e) { console.error(`[gift-import] status promotion failed:`, e.message); }
+  }
+
+  // Infer pipeline stage — same logic as combined import, same guardrail.
+  if (affectedDonorIds.size > 0) {
+    try {
+      await run(
+        `UPDATE donors
+         SET stage = CASE
+           WHEN total_giving = 0 AND last_gift_date IS NULL            THEN 'prospect'
+           WHEN last_gift_date IS NOT NULL
+                AND (CURRENT_DATE - last_gift_date::date) > 365        THEN 'lapsed'
+           WHEN last_gift_date IS NOT NULL
+                AND (CURRENT_DATE - last_gift_date::date) < 90
+                AND total_giving > 0                                   THEN 'steward'
+           WHEN total_giving > 0                                        THEN 'cultivate'
+           ELSE 'prospect'
+         END,
+         updated_at = NOW()
+         WHERE org_id = ? AND id = ANY(?)
+           AND stage = 'prospect'
+           AND deleted_at IS NULL`,
+        [orgId, [...affectedDonorIds]]
+      );
+    } catch (e) { console.error(`[gift-import] stage inference failed:`, e.message); }
   }
 
   res.json({ inserted, duplicates, invalid, donorsUpdated: affectedDonorIds.size, financeSynced, batchErrors });
@@ -3520,13 +3572,33 @@ app.post("/finance/budgets", requireAuth, requireAdmin, wrap(async (req, res) =>
 // ── Finance: Summary ───────────────────────────────────────────────────────
 app.get("/finance/summary", requireAuth, wrap(async (req, res) => {
   const { orgId } = req.user;
-  const year = new Date().getFullYear();
+  const { yearMode = "calendar" } = req.query;
+
+  let dateStart, dateEnd, periodLabel;
+  if (yearMode === "fiscal") {
+    // Identical boundary to /dashboard/my-stats: July 1 fiscal year
+    const now = new Date();
+    dateStart = now.getMonth() < 6
+      ? new Date(now.getFullYear() - 1, 6, 1).toISOString().split("T")[0]
+      : new Date(now.getFullYear(), 6, 1).toISOString().split("T")[0];
+    dateEnd = now.getMonth() < 6
+      ? new Date(now.getFullYear(), 5, 30).toISOString().split("T")[0]
+      : new Date(now.getFullYear() + 1, 5, 30).toISOString().split("T")[0];
+    const fyStartYear = parseInt(dateStart.slice(0, 4));
+    periodLabel = `Jul ${fyStartYear} – Jun ${fyStartYear + 1}`;
+  } else {
+    const year = new Date().getFullYear();
+    dateStart   = `${year}-01-01`;
+    dateEnd     = `${year}-12-31`;
+    periodLabel = `Jan – Dec ${year}`;
+  }
+
   const [ytdRows, allRows] = await Promise.all([
     query(
       `SELECT type, SUM(amount) as total FROM fin_transactions
        WHERE org_id = ? AND date >= ? AND date <= ?
        GROUP BY type`,
-      [orgId, `${year}-01-01`, `${year}-12-31`]
+      [orgId, dateStart, dateEnd]
     ),
     query(
       "SELECT type, SUM(amount) as total FROM fin_transactions WHERE org_id = ? GROUP BY type",
@@ -3538,7 +3610,7 @@ app.get("/finance/summary", requireAuth, wrap(async (req, res) => {
   const ytdRevenue  = ytd.income  || 0;
   const ytdExpenses = ytd.expense || 0;
   const cashOnHand  = (all.income || 0) - (all.expense || 0);
-  res.json({ cashOnHand, ytdRevenue, ytdExpenses, netSurplus: ytdRevenue - ytdExpenses });
+  res.json({ cashOnHand, ytdRevenue, ytdExpenses, netSurplus: ytdRevenue - ytdExpenses, yearMode, periodLabel });
 }));
 
 // ── Finance: Audit Log ─────────────────────────────────────────────────────

@@ -199,14 +199,16 @@ export function Finance({ data }) {
   const [auditActionFilter, setAuditActionFilter] = useState("");
   const [auditEntityFilter, setAuditEntityFilter] = useState("");
   const [expandedAuditRows, setExpandedAuditRows] = useState(new Set());
+  // Persisted in localStorage so it survives page reloads
+  const [yearMode, setYearMode] = useState(() => localStorage.getItem("steward_fin_yearmode") || "fiscal");
 
-  const loadAll = (yr = txnYear, byr = budgetYear) => {
+  const loadAll = (yr = txnYear, byr = budgetYear, ym = yearMode) => {
     Promise.all([
       apiFetch("/finance/accounts"),
       apiFetch("/finance/funds"),
       apiFetch(`/finance/transactions?year=${yr}`),
       apiFetch(`/finance/budgets?year=${byr}`),
-      apiFetch("/finance/summary"),
+      apiFetch(`/finance/summary?yearMode=${ym}`),
     ]).then(([a, f, t, b, s]) => {
       setAccounts(a); setFunds(f); setTransactions(t); setBudgets(b); setSummary(s);
       setLoading(false);
@@ -218,7 +220,12 @@ export function Finance({ data }) {
 
   const reloadTxns = (yr) => apiFetch(`/finance/transactions?year=${yr}`).then(setTransactions);
   const reloadBudgets = (yr) => apiFetch(`/finance/budgets?year=${yr}`).then(setBudgets);
-  const reloadSummary = () => apiFetch("/finance/summary").then(setSummary);
+  const reloadSummary = (ym = yearMode) => apiFetch(`/finance/summary?yearMode=${ym}`).then(setSummary);
+  const handleYearModeChange = (v) => {
+    localStorage.setItem("steward_fin_yearmode", v);
+    setYearMode(v);
+    reloadSummary(v); // pass explicitly to avoid stale closure
+  };
   const reloadAuditLog = async () => {
     setAuditLoading(true);
     try { const rows = await apiFetch("/finance/audit-log?limit=200"); setAuditLog(rows); }
@@ -259,13 +266,20 @@ export function Finance({ data }) {
   const donorById = Object.fromEntries((data.donors || []).map(d => [d.id, d]));
 
   // ── Summary bar ──────────────────────────────────────────────────────────
+  const isFiscal = yearMode === "fiscal";
   const SummaryCard = () => summary ? (
-    <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(160px,1fr))", gap:10, marginBottom:4 }}>
+    <div>
+      {summary.periodLabel && (
+        <div style={{ fontSize:11, color:T.ink3, marginBottom:6, textAlign:"right" }}>
+          {isFiscal ? "Fiscal Year" : "Calendar Year"} &nbsp;·&nbsp; {summary.periodLabel}
+        </div>
+      )}
+      <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(160px,1fr))", gap:10, marginBottom:4 }}>
       {[
-        ["Cash on Hand",    fmt(summary.cashOnHand),    summary.cashOnHand >= 0 ? "#1a6b4a" : "#ef4444"],
-        ["YTD Revenue",     fmt(summary.ytdRevenue),    "#1a6b4a"],
-        ["YTD Expenses",    fmt(summary.ytdExpenses),   "#ef4444"],
-        ["Net Surplus",     fmt(summary.netSurplus),    summary.netSurplus >= 0 ? "#1a6b4a" : "#ef4444"],
+        ["Cash on Hand",                         fmt(summary.cashOnHand),  summary.cashOnHand >= 0 ? "#1a6b4a" : "#ef4444"],
+        [isFiscal ? "FY Revenue" : "YTD Revenue", fmt(summary.ytdRevenue),  "#1a6b4a"],
+        [isFiscal ? "FY Expenses" : "YTD Expenses", fmt(summary.ytdExpenses), "#ef4444"],
+        ["Net Surplus",                           fmt(summary.netSurplus),  summary.netSurplus >= 0 ? "#1a6b4a" : "#ef4444"],
       ].map(([label, value, color]) => (
         <div key={label} style={{ background:T.white, border:"1px solid "+T.bg3, borderRadius:12, padding:"14px 16px" }}>
           <div style={{ fontSize:11, color:T.ink3, textTransform:"uppercase", letterSpacing:".06em", marginBottom:4 }}>{label}</div>
@@ -284,6 +298,7 @@ export function Finance({ data }) {
           <div style={{ fontSize:11, color:T.ink3, marginTop:3 }}>{grantPct}% of total income</div>
         </div>
       </>}
+      </div>
     </div>
   ) : null;
 
@@ -493,6 +508,19 @@ export function Finance({ data }) {
       {showTxnModal && <TransactionModal accounts={accounts} funds={funds} onSave={handleAddTxn} onClose={() => setShowTxnModal(false)}/>}
       {(showAcctModal || editAcct) && <AccountModal account={editAcct} onSave={handleSaveAcct} onClose={() => { setShowAcctModal(false); setEditAcct(null); }}/>}
       {(showFundModal || editFund) && <FundModal fund={editFund} onSave={handleSaveFund} onClose={() => { setShowFundModal(false); setEditFund(null); }}/>}
+
+      {/* Fiscal / calendar year toggle */}
+      <div style={{ display:"flex", justifyContent:"flex-end", alignItems:"center", gap:8 }}>
+        <span style={{ fontSize:11, color:T.ink3 }}>Year basis:</span>
+        <div style={{ display:"flex", background:T.bg, border:"1px solid "+T.bg3, borderRadius:8, overflow:"hidden" }}>
+          {[["fiscal","Fiscal Year"],["calendar","Calendar Year"]].map(([v,l]) => (
+            <button key={v} onClick={() => handleYearModeChange(v)}
+              style={{ background:yearMode===v?"#1a6b4a":"transparent", border:"none", padding:"6px 14px", color:yearMode===v?"#fff":T.ink3, fontSize:12, fontWeight:yearMode===v?700:400, cursor:"pointer", whiteSpace:"nowrap" }}>
+              {l}
+            </button>
+          ))}
+        </div>
+      </div>
 
       <SummaryCard/>
 
