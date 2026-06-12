@@ -1334,14 +1334,31 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrap(async (r
     giftsToInsert.push({ donorId, amount:amt, date, type:g.type||"cash", campaign:g.campaign||"", notes:g.notes||"" });
   }
 
+  // ── Finance sync setup (Gap 1) ───────────────────────────────────────────
+  // fyStart mirrors /dashboard/my-stats exactly: July 1 fiscal year boundary.
+  const _fyNow = new Date();
+  const fyStart = _fyNow.getMonth() < 6
+    ? new Date(_fyNow.getFullYear() - 1, 6, 1).toISOString().split("T")[0]
+    : new Date(_fyNow.getFullYear(), 6, 1).toISOString().split("T")[0];
+
+  const [contribAcctRowsC, genFundRowsC] = await Promise.all([
+    query("SELECT id FROM accounts WHERE org_id = ? AND code = '4010' LIMIT 1", [orgId]),
+    query("SELECT id FROM fin_funds WHERE org_id = ? AND restricted = false ORDER BY created_at ASC LIMIT 1", [orgId]),
+  ]);
+  const contribAcctId = contribAcctRowsC[0]?.id || null;
+  const genFundId     = genFundRowsC[0]?.id     || null;
+  // Donor names map: built from the already-prepared donorsToInsert list (no extra query)
+  const donorNameMap = Object.fromEntries(donorsToInsert.map(d => [d._id, String(d.name).trim()]));
+
   // ── Bulk-insert gifts + interactions (200/batch, both in same transaction) ──
   const GIFT_BATCH = 200;
-  let giftsInserted = 0;
+  let giftsInserted = 0, financeSynced = 0;
   const affectedDonorIds = new Set();
 
   for (let bi = 0; bi < giftsToInsert.length; bi += GIFT_BATCH) {
     const batch = giftsToInsert.slice(bi, bi + GIFT_BATCH);
     const giftParams = [], intParams = [], giftTuples = [], intTuples = [];
+    const ftParams = [], ftTuples = [];
     batch.forEach(g => {
       const intNote = `Gift received: $${g.amount.toLocaleString()} (${g.type})${g.notes?" — "+g.notes:""}`;
       giftParams.push("g_"+uuid().slice(0,8), orgId, g.donorId, g.amount, g.date, g.type, g.campaign, null, g.notes);
@@ -1349,6 +1366,13 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrap(async (r
       intParams.push("int_"+uuid().slice(0,8), orgId, g.donorId, "gift", intNote, g.date, importerId, importerName);
       intTuples.push("(?,?,?,?,?,?,?,?)");
       affectedDonorIds.add(g.donorId);
+      // Accumulate fin_transactions for current-FY gifts — same shape as single-gift route
+      if (contribAcctId && g.date >= fyStart) {
+        const dName = donorNameMap[g.donorId] || "Donor";
+        ftParams.push("ft_"+uuid().slice(0,8), orgId, g.date,
+          `Gift from ${dName}`, dName, g.amount, "income", contribAcctId, genFundId);
+        ftTuples.push("(?,?,?,?,?,?,?,?,?)");
+      }
     });
     try {
       await withTransaction(async (client) => {
@@ -1360,8 +1384,17 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrap(async (r
           `INSERT INTO interactions (id,org_id,donor_id,type,note,date,created_by,logged_by_name) VALUES ${intTuples.join(",")}`,
           intParams
         );
+        // One bulk INSERT for FY fin_transactions — same tx as gifts, rolls back together
+        if (ftTuples.length) {
+          await runTx(client,
+            `INSERT INTO fin_transactions (id,org_id,date,description,vendor_donor,amount,type,account_id,fund_id)
+             VALUES ${ftTuples.join(",")}`,
+            ftParams
+          );
+        }
       });
       giftsInserted += batch.length;
+      financeSynced += ftTuples.length;
     } catch (e) {
       console.error(`[combined-import] gift batch ${bi}–${bi+batch.length} failed:`, e.message);
       batchErrors.push({ error: e.message });
@@ -1374,7 +1407,26 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrap(async (r
     catch (e) { console.error(`[combined-import] recalc failed for ${donorId}:`, e.message); }
   }
 
-  res.json({ created, giftsInserted, duplicates, donorsUpdated: affectedDonorIds.size, batchErrors });
+  // Gap 2: Promote donor status — same thresholds as single-gift route
+  // (total_giving > 20000 → 'major', > 5000 → 'mid', ELSE keep existing)
+  // Runs after recalcDonorSummary so total_giving is accurate before promotion.
+  if (affectedDonorIds.size > 0) {
+    try {
+      await run(
+        `UPDATE donors
+         SET status = CASE
+           WHEN total_giving > 20000 THEN 'major'
+           WHEN total_giving > 5000  THEN 'mid'
+           ELSE status
+         END,
+         updated_at = NOW()
+         WHERE org_id = ? AND id = ANY(?) AND deleted_at IS NULL`,
+        [orgId, [...affectedDonorIds]]
+      );
+    } catch (e) { console.error(`[combined-import] status promotion failed:`, e.message); }
+  }
+
+  res.json({ created, giftsInserted, duplicates, donorsUpdated: affectedDonorIds.size, financeSynced, batchErrors });
 }));
 
 app.put("/donors/:id", requireAuth, checkWriteAccess, wrap(async (req, res) => {
@@ -1680,13 +1732,36 @@ app.post("/gifts/import-history", requireAuth, checkWriteAccess, wrap(async (req
     toInsert.push({ donorId:g.donorId, amount:amt, date, type:g.type||"cash", campaign:g.campaign||"", fund_id:g.fund_id||null, notes:g.notes||"" });
   }
 
+  // ── Finance sync setup (Gap 1) ───────────────────────────────────────────
+  // fyStart mirrors /dashboard/my-stats exactly: July 1 fiscal year boundary.
+  const _fyNow = new Date();
+  const fyStart = _fyNow.getMonth() < 6
+    ? new Date(_fyNow.getFullYear() - 1, 6, 1).toISOString().split("T")[0]
+    : new Date(_fyNow.getFullYear(), 6, 1).toISOString().split("T")[0];
+
+  // Donor names needed for fin_transactions description / vendor_donor (bulk, one query)
+  const dnRows = await query(
+    "SELECT id, name FROM donors WHERE org_id = ? AND id = ANY(?)",
+    [orgId, donorIds]
+  );
+  const donorNameMap = Object.fromEntries(dnRows.map(d => [d.id, d.name]));
+
+  // Same account + fund the single-gift route uses
+  const [contribAcctRowsH, genFundRowsH] = await Promise.all([
+    query("SELECT id FROM accounts WHERE org_id = ? AND code = '4010' LIMIT 1", [orgId]),
+    query("SELECT id FROM fin_funds WHERE org_id = ? AND restricted = false ORDER BY created_at ASC LIMIT 1", [orgId]),
+  ]);
+  const contribAcctId = contribAcctRowsH[0]?.id || null;
+  const genFundId     = genFundRowsH[0]?.id     || null;
+
   const BATCH = 200;
-  let inserted = 0;
+  let inserted = 0, financeSynced = 0;
   const affectedDonorIds = new Set();
   const batchErrors = [];
 
   for (let bi = 0; bi < toInsert.length; bi += BATCH) {
     const batch = toInsert.slice(bi, bi + BATCH);
+    const ftParams = [], ftTuples = []; // fin_transactions rows for current-FY gifts in this batch
     try {
       await withTransaction(async (client) => {
         for (const g of batch) {
@@ -1695,16 +1770,31 @@ app.post("/gifts/import-history", requireAuth, checkWriteAccess, wrap(async (req
             "INSERT INTO gifts (id,org_id,donor_id,amount,date,type,campaign,fund_id,notes) VALUES (?,?,?,?,?,?,?,?,?)",
             [id, orgId, g.donorId, g.amount, g.date, g.type, g.campaign, g.fund_id, g.notes]
           );
-          // Mirror the touchpoint the single-gift route creates — same table, type, note format
           const intNote = `Gift received: $${g.amount.toLocaleString()} (${g.type})${g.notes ? " — " + g.notes : ""}`;
           await runTx(client,
             "INSERT INTO interactions (id,org_id,donor_id,type,note,date,created_by,logged_by_name) VALUES (?,?,?,?,?,?,?,?)",
             ["int_"+uuid().slice(0,8), orgId, g.donorId, "gift", intNote, g.date, importerId, importerName]
           );
           affectedDonorIds.add(g.donorId);
+          // Accumulate fin_transactions for current-FY gifts — same shape as single-gift route
+          if (contribAcctId && g.date >= fyStart) {
+            const dName = donorNameMap[g.donorId] || "Donor";
+            ftParams.push("ft_"+uuid().slice(0,8), orgId, g.date,
+              `Gift from ${dName}`, dName, g.amount, "income", contribAcctId, genFundId);
+            ftTuples.push("(?,?,?,?,?,?,?,?,?)");
+          }
+        }
+        // One bulk INSERT for all FY fin_transactions in this batch — same tx as gifts
+        if (ftTuples.length) {
+          await runTx(client,
+            `INSERT INTO fin_transactions (id,org_id,date,description,vendor_donor,amount,type,account_id,fund_id)
+             VALUES ${ftTuples.join(",")}`,
+            ftParams
+          );
         }
       });
       inserted += batch.length;
+      financeSynced += ftTuples.length;
     } catch (e) {
       console.error(`[gift-import] batch ${bi}–${bi+batch.length} failed:`, e.message);
       batchErrors.push({ error: e.message });
@@ -1717,7 +1807,26 @@ app.post("/gifts/import-history", requireAuth, checkWriteAccess, wrap(async (req
     catch (e) { console.error(`[gift-import] recalc failed for ${donorId}:`, e.message); }
   }
 
-  res.json({ inserted, duplicates, invalid, donorsUpdated: affectedDonorIds.size, batchErrors });
+  // Gap 2: Promote donor status — same thresholds as single-gift route
+  // (total_giving > 20000 → 'major', > 5000 → 'mid', ELSE keep existing)
+  // Runs after recalcDonorSummary so total_giving is accurate before promotion.
+  if (affectedDonorIds.size > 0) {
+    try {
+      await run(
+        `UPDATE donors
+         SET status = CASE
+           WHEN total_giving > 20000 THEN 'major'
+           WHEN total_giving > 5000  THEN 'mid'
+           ELSE status
+         END,
+         updated_at = NOW()
+         WHERE org_id = ? AND id = ANY(?) AND deleted_at IS NULL`,
+        [orgId, [...affectedDonorIds]]
+      );
+    } catch (e) { console.error(`[gift-import] status promotion failed:`, e.message); }
+  }
+
+  res.json({ inserted, duplicates, invalid, donorsUpdated: affectedDonorIds.size, financeSynced, batchErrors });
 }));
 
 app.get("/donors/:id/planned-gifts", requireAuth, wrap(async (req, res) => {
