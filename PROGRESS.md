@@ -2,7 +2,7 @@
 
 ## Demo account
 - URL: https://client-five-tau-13.vercel.app (also stewardapp.dev)
-- Login: admin@creoarts.org / demo1234
+- Login: admin@creoarts.org / demo1234 (org_creo)
 
 ## Stack
 - Frontend: React 18 + Vite → Vercel
@@ -13,6 +13,40 @@
 - AI: claude-sonnet-4-6
 
 ---
+
+## DONE & VERIFIED
+
+- Combined import (Shape A: one wide file, donor cols + year-gift cols) — POST /donors/import-combined. Creates donors + attaches gifts + touchpoints in one pass, bulk inserts, dedup by fingerprint. VERIFIED working: 300 donors/934 gifts imported, dedup on re-import shows 0/0/50-skipped (no double-count), totals/profiles/timeline all correct.
+- Three extractions done (parseFileToSheets, buildAutoMapping, buildDonorRows) — regular Import + Giving History still work.
+- Finance wiring: imported gifts in current FISCAL year sync to fin_transactions (dedup-safe, only non-duplicates). Finance Donor Giving tab shows imported gifts. VERIFIED.
+- Finance fiscal/calendar toggle — VERIFIED working (FY shows $310.1k, Calendar shows $0 because test gifts are dated Dec-2025 = fiscal-2026 but calendar-2025). Labels + date-range subtitle swap correctly.
+- Donor `status` (giving-tier) promotion after import ($20k→major, $5k→mid) — committed.
+- Wealth scores: intentionally left on-demand (not auto-recalc'd on import).
+
+---
+
+## KNOWN BUG — STAGE INFERENCE NOT WORKING (TOP PRIORITY NEXT SESSION)
+
+After import, all donors still show stage 'prospect' in My Pipeline + Analytics Pipeline Velocity, even $60k donors that should be 'cultivate'. The status (tier) update may have worked but the STAGE (pipeline) update did not take.
+
+**Leading hypothesis:** the combined-import INSERT writes new donors with a stage value that is NOT the literal string 'prospect' (possibly NULL or 'cultivate' from an insert-time inferStage call with no gift data). The post-recalc stage UPDATE has guardrail `WHERE stage='prospect'`, so it matches ZERO rows. The UI displays "Prospect" only because the Kanban falls back to prospect when stage is NULL/unset — the stored value differs from the displayed value, so the guardrail misses.
+
+**Next step:** cat the stage-inference block in POST /donors/import-combined. Report (a) does it exist in committed code, (b) what stage value the new-donor INSERT actually writes, (c) the UPDATE's WHERE clause, (d) whether it reads recalculated total_giving/last_gift_date. Fix direction: for NEWLY-CREATED donors, run stage inference regardless of the prospect-only guardrail (no human placement to protect on brand-new records). The guardrail (only touch stage='prospect') should apply ONLY to the history-only importer that touches EXISTING donors. We conflated new-donor vs existing-donor guardrail rules.
+
+---
+
+## OTHER PENDING (none blocking, none urgent)
+
+1. UI: consolidate three import buttons (Import / Giving History / Import + History) into ONE "Import" dropdown with three options. Pure polish, no logic change.
+2. Favicon revert to old dark-green-square no-gold-bar version (prompt was written earlier, deferred).
+3. CREO test-data cleanup: run `DELETE FROM donors WHERE org_id='org_creo' AND email LIKE '%@example.com';` to clear ~800+ .combo/.final test donors and restore the ~7 real demo records.
+4. /gifts/import-history still has per-row insert N+1 (minor speed; combined route is already bulk).
+5. Combined import Shape B (separate donor file + gift file chained) — deferred.
+6. Expired-token UX: show login redirect instead of "Failed to connect / Invalid token" error.
+
+---
+
+## Earlier sessions (for reference)
 
 ### Guided tour + WelcomePage redesign (2026-06-07)
 
@@ -39,8 +73,6 @@
 **InvitePage.jsx** — redirect fix
 - Line 50: window.location.href="/dashboard" → "/today"
 
----
-
 ### Today follow-up flow (2026-06-07)
 
 **TodayPage.jsx** (new) — standalone at /today; cream design system
@@ -58,15 +90,11 @@
 
 **main.jsx** — added /today route (RequireOnboarded guard)
 
----
-
 ### isReadOnly bug fix (2026-06-06)
 
 - DonorProfile (line 660) was missing isReadOnly prop — caused ReferenceError crash in Gifts & Pledges tab
 - Added ErrorBoundary class to Donors.jsx (key={selected.id} resets on donor change)
 - Added isReadOnly=false to DonorProfile props; passed from Donors render site
-
----
 
 ### Billing lifecycle hardening (2026-06-06)
 
@@ -92,8 +120,6 @@
 - isReadOnly passed to Dashboard, Donors, Grants
 - Create buttons disabled with tooltip when isReadOnly
 
----
-
 ### Sentry v8 startup crash fix (2026-06-06)
 
 - Removed app.use(Sentry.Handlers.requestHandler()) — doesn't exist in v8
@@ -101,7 +127,7 @@
 
 ---
 
-### What's built (full feature list)
+## Full feature list
 
 - Auth + 3-step onboarding (blank slate — chart of accounts + General Operating fund)
 - Today flow — prioritized daily follow-up page; default landing for org users

@@ -13,7 +13,11 @@
 - Frontend: https://client-five-tau-13.vercel.app (also stewardapp.dev via Vercel nameservers)
 - Backend: https://nonprofit-erp-production.up.railway.app
 - GitHub: github.com/jonnycodes420/nonprofit-erp
-- Demo login: admin@creoarts.org / demo1234
+- Demo login: admin@creoarts.org / demo1234 (org_creo)
+
+## Design system
+- Colors: cream #f0ede6, dark green #0f1a12, primary green #1a6b4a, accent green #10b981, gold #c9a84c
+- Fonts: DM Serif Display + DM Sans
 
 ## Required Environment Variables
 ### Backend (Railway)
@@ -36,7 +40,7 @@
 
 ## Project structure
 - /client/src/App.jsx — AppShell + TABS + App (147 lines, imports from components/)
-- /client/src/main.jsx — router, auth context, route guards
+- /client/src/main.jsx — router, auth context, route guards — ALL ROUTING LIVES HERE ONLY
 - /client/src/pages/Landing.jsx — public landing page (relational copy, mobile responsive)
 - /client/src/pages/LoginPage.jsx — login, writes localStorage directly
 - /client/src/pages/SignupPage.jsx — signup
@@ -46,6 +50,15 @@
 - /server.js — Express backend (all routes)
 - /auth.js — auth middleware (requireAuth, requireAdmin)
 - /db.js — Supabase client
+
+## Key files
+- client/src/components/Donors.jsx — donor list + ALL importers
+- client/src/components/Finance.jsx
+- client/src/components/Analytics.jsx
+- client/src/components/Settings.jsx
+- client/src/components/UpgradeModal.jsx
+- server.js
+- db.js
 
 ## Active tabs (App.jsx TABS array)
 dashboard → donors → grants → communications → events → finance → volunteers (earlyAccess) → board (earlyAccess) → analytics → tasks → settings
@@ -76,6 +89,12 @@ Mobile "More" drawer: communications, events, volunteers, board, analytics, task
 - /give/:orgSlug → GivePage (public donation page)
 - /admin → AdminDashboard (super admin only — RequireSuperAdmin guard checks localStorage npe_user.isSuperAdmin)
 - App.jsx renders <AppShell /> directly — NO internal router
+
+## CRITICAL WORKING RULES
+- After every change, run: git add -A && git commit -m "..." && git push origin main. Always run `git status` and `git log --oneline -3` to CONFIRM the commit landed — do not report work as "done" until git confirms it's committed and pushed.
+- IMPORTANT donor table distinction: there are TWO separate columns: `status` (giving-tier: new/mid/major/lapsed) and `stage` (pipeline: prospect/qualify/cultivate/solicit/steward/lapsed). The UI Kanban/Directory/Analytics Pipeline Velocity read `stage`. Analytics major-donor/retention reads `status`. They are NOT the same and must not be conflated.
+- inferStage outputs only: 'prospect' (no data), 'cultivate' (gift exists, not recent), 'steward' (gift <90 days), 'lapsed' (last gift >365 days). It never produces 'qualify' or 'solicit' (those are human-only).
+- Fiscal year = July 1 boundary (reuse fyStart logic from /dashboard/my-stats). Finance has a fiscal/calendar toggle (localStorage key "steward_fin_yearmode", default fiscal).
 
 ## Gmail integration
 
@@ -139,6 +158,7 @@ Mobile "More" drawer: communications, events, volunteers, board, analytics, task
 ### donors
 - wealth_score (integer), capacity_tier (text), score_confidence (text), score_last_updated (timestamptz), score_rationale (text) — wealth scoring system
 - stage (text), total_giving, last_gift_date, last_gift_amount, gift_count, tags (jsonb), notes
+- status (text) — giving tier: new/mid/major/lapsed (separate from stage!)
 - assigned_to (text), assigned_to_name (text) — MGO portfolio assignment
 - city, state, zip — for Donor Map geocoding
 - planned_giving (boolean) — set true when first planned gift is indicated
