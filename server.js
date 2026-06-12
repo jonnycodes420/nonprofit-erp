@@ -1427,10 +1427,9 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrap(async (r
   }
 
   // Infer pipeline stage from recalculated giving data.
-  // GUARDRAIL: AND stage = 'prospect' — only touches donors at the unset default,
-  // never overrides a stage a human deliberately set (qualify/cultivate/solicit/steward/lapsed).
-  // SQL mirrors inferStage() exactly: no data→prospect; last gift >365d→lapsed;
-  // last gift <90d + amount>0→steward; amount>0→cultivate; else→prospect.
+  // No prospect-only guardrail here: new donors land as 'cultivate' (DB default),
+  // so the guardrail would match zero rows. Combined-import only creates NEW donors —
+  // no human-set stages to protect. SQL mirrors inferStage() exactly.
   if (affectedDonorIds.size > 0) {
     try {
       await run(
@@ -1447,7 +1446,6 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrap(async (r
          END,
          updated_at = NOW()
          WHERE org_id = ? AND id = ANY(?)
-           AND stage = 'prospect'
            AND deleted_at IS NULL`,
         [orgId, [...affectedDonorIds]]
       );
