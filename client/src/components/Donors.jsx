@@ -156,6 +156,162 @@ function normalizeEmail(val) {
   return { value:lower, warn:null };
 }
 
+// ── Shared file-parsing helper ────────────────────────────────────────────
+// Replaces the identical ~45-line xlsx/CSV block duplicated in each importer.
+async function parseFileToSheets(file, { onSingle, onMulti, onError }) {
+  const name = file.name.toLowerCase();
+  if (name.endsWith(".xlsx") || name.endsWith(".xls")) {
+    try {
+      const buf = await file.arrayBuffer();
+      const wb = XLSX.read(new Uint8Array(buf), { type:"array" });
+      const sheetsData = wb.SheetNames.map(sn => {
+        const ws = wb.Sheets[sn];
+        if (!ws) return null;
+        const rawArr = XLSX.utils.sheet_to_json(ws, { header:1, defval:"" });
+        if (rawArr.length < 2) return { name:sn, rowCount:0, headers:[], rows:[] };
+        const headers = rawArr[0].map(h => String(h||"").trim());
+        const dataRows = rawArr.slice(1).filter(r => r.some(c => String(c||"").trim()));
+        const rows = dataRows.map(r =>
+          Object.fromEntries(headers.map((h,i) => {
+            const v = r[i];
+            if (v instanceof Date) return [h, isNaN(v) ? "" : v.toISOString().split("T")[0]];
+            return [h, String(v ?? "").trim()];
+          }))
+        );
+        return { name:sn, rowCount:rows.length, headers, rows };
+      }).filter(s => s && s.rowCount > 0);
+      if (!sheetsData.length) { onError("No data rows found in this file."); return; }
+      if (sheetsData.length === 1) { onSingle(sheetsData[0].headers, sheetsData[0].rows); }
+      else { sheetsData.sort((a,b) => b.rowCount - a.rowCount); onMulti(sheetsData); }
+    } catch(ex) { onError("Could not read Excel file: " + ex.message); }
+  } else {
+    Papa.parse(file, {
+      header:true, skipEmptyLines:true, transformHeader: h => h.trim(),
+      complete: res => {
+        if (!res.data?.length) { onError("No rows found."); return; }
+        onSingle(res.meta.fields || [], res.data);
+      },
+      error: ex => onError("Parse error: " + ex.message),
+    });
+  }
+}
+
+// ── Module-level column auto-mapper ──────────────────────────────────────
+// Extracted from DonorImport so CombinedImport can reuse it.
+function buildAutoMapping(headers, rows = []) {
+  const sample = rows.slice(0, 10);
+  const guesses = headers.map(h => ({ h, g: guessField(h) }));
+  const hasSingleName = guesses.some(x => x.g === "name");
+  const auto = {};
+  guesses.forEach(({ h, g }) => {
+    if (!g) return;
+    if (hasSingleName && (g === "_firstName" || g === "_lastName")) return;
+    if (g === "email") {
+      const vals = sample.map(r => String(r[h] ?? "").trim()).filter(Boolean);
+      if (vals.length && !vals.some(v => v.includes("@"))) return;
+    }
+    if (g === "phone") {
+      const vals = sample.map(r => String(r[h] ?? "").trim()).filter(Boolean);
+      if (vals.length && !vals.some(v => /\d/.test(v))) return;
+    }
+    auto[h] = g;
+  });
+  return auto;
+}
+
+// ── Module-level donor row normalization ──────────────────────────────────
+// Extracted from DonorImport's built useMemo so CombinedImport can share it.
+function buildDonorRows(parsed, mapping) {
+  if (!parsed) return { ready:[], warned:[], skipped:[] };
+  const ready = [], warned = [], skipped = [];
+  parsed.rows.forEach((row, idx) => {
+    const d = {};
+    const warnings = [];
+    const rowLabel = `Row ${idx + 2}`;
+    Object.entries(mapping).forEach(([h, field]) => {
+      if (!field) return;
+      const raw = row[h];
+      if (raw instanceof Date) { d[field] = isNaN(raw) ? "" : raw.toISOString().split("T")[0]; }
+      else { d[field] = raw === null || raw === undefined ? "" : String(raw); }
+    });
+    if (d._firstName || d._lastName) {
+      const combined = [String(d._firstName??"").trim(), String(d._lastName??"").trim()].filter(Boolean).join(" ");
+      if (!d.name || !String(d.name).trim()) d.name = combined;
+    }
+    delete d._firstName; delete d._lastName;
+    const hasName  = !!(d.name  && String(d.name).trim());
+    const hasEmail = !!(d.email && String(d.email).trim());
+    if (!hasName && !hasEmail) { skipped.push({ row:idx+2, reason:"no name or email" }); return; }
+    if (!hasName) { d.name = String(d.email).trim(); warnings.push(`${rowLabel}: no name — using email as name`); }
+    else d.name = String(d.name).trim();
+    if (d.email !== undefined) { const {value,warn} = normalizeEmail(d.email); d.email=value; if(warn) warnings.push(`${rowLabel}: ${warn}`); }
+    if (d.phone) d.phone = String(d.phone).trim() || null;
+    if (d.total !== undefined && d.total !== "") { const {value,warn} = normalizeMoney(d.total); d.total=value; if(warn) warnings.push(`${rowLabel}: ${warn}`); }
+    if (d.lastAmount !== undefined && d.lastAmount !== "") {
+      const s = String(d.lastAmount||"");
+      if (/^\d{4}[-/]\d{2}/.test(s)) { d.lastAmount=null; }
+      else { const {value,warn} = normalizeMoney(d.lastAmount); d.lastAmount=value; if(warn) warnings.push(`${rowLabel}: ${warn}`); }
+    }
+    if (d.lastGift !== undefined && d.lastGift !== "") { const {value,warn} = normalizeDate(d.lastGift); d.lastGift=value; if(warn) warnings.push(`${rowLabel}: ${warn}`); }
+    if (d.gifts !== undefined && d.gifts !== "") d.gifts = parseInt(d.gifts) || null;
+    d.stage = normalizeStage(d.stage) || inferStage(d.total, d.lastGift);
+    if (d.city)  d.city  = String(d.city).trim()  || null;
+    if (d.state) d.state = String(d.state).trim()  || null;
+    if (warnings.length) warned.push({ ...d, _warnings:warnings, _rowIndex:idx+2 });
+    else ready.push(d);
+  });
+  return { ready, warned, skipped };
+}
+
+// ── Combined-row builder (donor + year-column gifts in one pass) ──────────
+// Used only by CombinedImport. Preserves rowIdx so gift attachments are exact.
+function buildCombinedRows(parsed, donorMapping, yearCols) {
+  if (!parsed) return [];
+  const activeCols = yearCols.filter(yc => yc.enabled && yc.date);
+  const results = [];
+  parsed.rows.forEach((row, idx) => {
+    const d = {};
+    const warnings = [];
+    const rowLabel = `Row ${idx + 2}`;
+    Object.entries(donorMapping).forEach(([h, field]) => {
+      if (!field) return;
+      const raw = row[h];
+      if (raw instanceof Date) { d[field] = isNaN(raw) ? "" : raw.toISOString().split("T")[0]; }
+      else { d[field] = raw === null || raw === undefined ? "" : String(raw); }
+    });
+    if (d._firstName || d._lastName) {
+      const combined = [String(d._firstName??"").trim(), String(d._lastName??"").trim()].filter(Boolean).join(" ");
+      if (!d.name || !String(d.name).trim()) d.name = combined;
+    }
+    delete d._firstName; delete d._lastName;
+    const hasName  = !!(d.name  && String(d.name).trim());
+    const hasEmail = !!(d.email && String(d.email).trim());
+    if (!hasName && !hasEmail) { results.push({ rowIdx:idx, donor:null, gifts:[], warnings:[], skipped:true }); return; }
+    if (!hasName) { d.name = String(d.email).trim(); warnings.push(`${rowLabel}: no name`); }
+    else d.name = String(d.name).trim();
+    if (d.email !== undefined) { const {value,warn} = normalizeEmail(d.email); d.email=value; if(warn) warnings.push(`${rowLabel}: ${warn}`); }
+    if (d.phone) d.phone = String(d.phone).trim() || null;
+    if (d.total !== undefined && d.total !== "") { const {value,warn} = normalizeMoney(d.total); d.total=value; if(warn) warnings.push(`${rowLabel}: ${warn}`); }
+    if (d.lastAmount !== undefined && d.lastAmount !== "") {
+      const s = String(d.lastAmount||"");
+      if (/^\d{4}[-/]\d{2}/.test(s)) { d.lastAmount=null; }
+      else { const {value,warn} = normalizeMoney(d.lastAmount); d.lastAmount=value; if(warn) warnings.push(`${rowLabel}: ${warn}`); }
+    }
+    if (d.lastGift !== undefined && d.lastGift !== "") { const {value,warn} = normalizeDate(d.lastGift); d.lastGift=value; if(warn) warnings.push(`${rowLabel}: ${warn}`); }
+    if (d.gifts !== undefined && d.gifts !== "") d.gifts = parseInt(d.gifts) || null;
+    d.stage = normalizeStage(d.stage) || inferStage(d.total, d.lastGift);
+    if (d.city)  d.city  = String(d.city).trim()  || null;
+    if (d.state) d.state = String(d.state).trim()  || null;
+    const gifts = activeCols.map(yc => {
+      const {value:amtVal} = normalizeMoney(row[yc.col]);
+      const amt = Math.round(amtVal || 0);
+      return amt > 0 ? { amount:amt, date:yc.date, type:"cash", campaign:"" } : null;
+    }).filter(Boolean);
+    results.push({ rowIdx:idx, donor:d, gifts, warnings, skipped:false });
+  });
+  return results;
+}
+
 // ── DonorImport component ──────────────────────────────────────────────────
 function DonorImport({ onClose, onImported }) {
   const [csvText,    setCsvText]    = useState("");
@@ -168,32 +324,6 @@ function DonorImport({ onClose, onImported }) {
   const [err,        setErr]        = useState("");
   const [upgradeInfo,setUpgradeInfo]= useState(null);
 
-  // Build initial column mapping from headers + sample rows
-  const buildAutoMapping = (headers, rows = []) => {
-    const sample = rows.slice(0, 10);
-    const guesses = headers.map(h => ({ h, g: guessField(h) }));
-    const hasSingleName = guesses.some(x => x.g === "name");
-    const auto = {};
-    guesses.forEach(({ h, g }) => {
-      if (!g) return;
-      // If a dedicated "name" column exists, don't also map first/last (let user decide)
-      if (hasSingleName && (g === "_firstName" || g === "_lastName")) return;
-      // Email shape-check: at least one sample value must contain "@"
-      // Use ?? (not ||) so numeric 0 isn't coerced to "" and dropped
-      if (g === "email") {
-        const vals = sample.map(r => String(r[h] ?? "").trim()).filter(Boolean);
-        if (vals.length && !vals.some(v => v.includes("@"))) return;
-      }
-      // Phone shape-check: at least one sample value must contain a digit
-      if (g === "phone") {
-        const vals = sample.map(r => String(r[h] ?? "").trim()).filter(Boolean);
-        if (vals.length && !vals.some(v => /\d/.test(v))) return;
-      }
-      auto[h] = g;
-    });
-    return auto;
-  };
-
   const applyParsed = (headers, rows) => {
     setMapping(buildAutoMapping(headers, rows));
     setParsed({ headers, rows });
@@ -205,50 +335,7 @@ function DonorImport({ onClose, onImported }) {
   const handleFile = async (e) => {
     const file = e.target.files?.[0]; if (!file) return;
     setErr("");
-    const name = file.name.toLowerCase();
-
-    if (name.endsWith(".xlsx") || name.endsWith(".xls")) {
-      try {
-        const buf = await file.arrayBuffer();
-        const wb = XLSX.read(new Uint8Array(buf), { type:"array" });
-        const sheetsData = wb.SheetNames.map(sheetName => {
-          const ws = wb.Sheets[sheetName];
-          if (!ws) return null;
-          const rawArr = XLSX.utils.sheet_to_json(ws, { header:1, defval:"" });
-          if (rawArr.length < 2) return { name:sheetName, rowCount:0, headers:[], rows:[] };
-          const headers = rawArr[0].map(h => String(h || "").trim());
-          const dataRows = rawArr.slice(1).filter(r => r.some(c => String(c || "").trim()));
-          const rows = dataRows.map(r =>
-            Object.fromEntries(headers.map((h, i) => {
-              const v = r[i];
-              // Pre-convert Date objects that xlsx parses natively
-              if (v instanceof Date) return [h, isNaN(v) ? "" : v.toISOString().split("T")[0]];
-              return [h, String(v ?? "").trim()];
-            }))
-          );
-          return { name:sheetName, rowCount:rows.length, headers, rows };
-        }).filter(s => s && s.rowCount > 0);
-
-        if (!sheetsData.length) { setErr("No data rows found in this file."); return; }
-        if (sheetsData.length === 1) {
-          applyParsed(sheetsData[0].headers, sheetsData[0].rows);
-        } else {
-          sheetsData.sort((a, b) => b.rowCount - a.rowCount); // largest first
-          setXlsxSheets(sheetsData);
-        }
-      } catch (ex) { setErr("Could not read Excel file: " + ex.message); }
-    } else {
-      Papa.parse(file, {
-        header: true,
-        skipEmptyLines: true,
-        transformHeader: h => h.trim(),
-        complete: res => {
-          if (!res.data?.length) { setErr("No rows found."); return; }
-          applyParsed(res.meta.fields || [], res.data);
-        },
-        error: ex => setErr("Parse error: " + ex.message),
-      });
-    }
+    await parseFileToSheets(file, { onSingle:applyParsed, onMulti:s=>setXlsxSheets(s), onError:msg=>setErr(msg) });
   };
 
   // ── Paste flow ──
@@ -284,79 +371,8 @@ function DonorImport({ onClose, onImported }) {
     setAiLoading(false);
   };
 
-  // ── Normalized donor build (memoized — expensive for large files) ──
-  const built = useMemo(() => {
-    if (!parsed) return { ready:[], warned:[], skipped:[] };
-    const ready = [], warned = [], skipped = [];
-
-    parsed.rows.forEach((row, idx) => {
-      const d = {};
-      const warnings = [];
-      const rowLabel = `Row ${idx + 2}`; // 1-indexed + skip header row
-
-      // Coerce every cell value to string — xlsx cells can be numbers, booleans,
-      // Dates, or null; never assume string.
-      Object.entries(mapping).forEach(([h, field]) => {
-        if (!field) return;
-        const raw = row[h];
-        // Date objects were already pre-converted to ISO strings in handleFile,
-        // but guard again in case a code path skipped that step.
-        if (raw instanceof Date) { d[field] = isNaN(raw) ? "" : raw.toISOString().split("T")[0]; }
-        else { d[field] = raw === null || raw === undefined ? "" : String(raw); }
-      });
-
-      // Combine first + last name if mapped separately
-      if (d._firstName || d._lastName) {
-        const first = String(d._firstName ?? "").trim();
-        const last  = String(d._lastName  ?? "").trim();
-        const combined = [first, last].filter(Boolean).join(" ");
-        if (!d.name || !String(d.name).trim()) d.name = combined;
-      }
-      delete d._firstName; delete d._lastName;
-
-      const hasName  = !!(d.name  && String(d.name).trim());
-      const hasEmail = !!(d.email && String(d.email).trim());
-      if (!hasName && !hasEmail) { skipped.push({ row:idx+2, reason:"no name or email" }); return; }
-
-      // Name fallback: use email if no name
-      if (!hasName) { d.name = String(d.email).trim(); warnings.push(`${rowLabel}: no name — using email as name`); }
-      else d.name = String(d.name).trim();
-
-      // Email
-      if (d.email !== undefined) { const { value, warn } = normalizeEmail(d.email); d.email = value; if (warn) warnings.push(`${rowLabel}: ${warn}`); }
-
-      // Phone — trim only
-      if (d.phone) d.phone = String(d.phone).trim() || null;
-
-      // Total (money)
-      if (d.total !== undefined && d.total !== "") { const { value, warn } = normalizeMoney(d.total); d.total = value; if (warn) warnings.push(`${rowLabel}: ${warn}`); }
-
-      // lastAmount — guard date-looking strings before money parse
-      if (d.lastAmount !== undefined && d.lastAmount !== "") {
-        const s = String(d.lastAmount || "");
-        if (/^\d{4}[-/]\d{2}/.test(s)) { d.lastAmount = null; }
-        else { const { value, warn } = normalizeMoney(d.lastAmount); d.lastAmount = value; if (warn) warnings.push(`${rowLabel}: ${warn}`); }
-      }
-
-      // lastGift (date)
-      if (d.lastGift !== undefined && d.lastGift !== "") { const { value, warn } = normalizeDate(d.lastGift); d.lastGift = value; if (warn) warnings.push(`${rowLabel}: ${warn}`); }
-
-      // gifts count
-      if (d.gifts !== undefined && d.gifts !== "") d.gifts = parseInt(d.gifts) || null;
-
-      // Stage — fuzzy normalize then fall back to inferStage
-      d.stage = normalizeStage(d.stage) || inferStage(d.total, d.lastGift);
-
-      // City / state
-      if (d.city)  d.city  = String(d.city).trim()  || null;
-      if (d.state) d.state = String(d.state).trim()  || null;
-
-      if (warnings.length) warned.push({ ...d, _warnings:warnings, _rowIndex:idx+2 });
-      else ready.push(d);
-    });
-
-    return { ready, warned, skipped };
-  }, [parsed, mapping]);
+  // ── Normalized donor build (memoized — calls the extracted buildDonorRows) ──
+  const built = useMemo(() => buildDonorRows(parsed, mapping), [parsed, mapping]);
 
   // ── Submit import ──
   const doImport = async () => {
@@ -729,41 +745,7 @@ function GiftHistoryImport({ donors, onClose, onImported }) {
   const handleFile = async (e) => {
     const file = e.target.files?.[0]; if (!file) return;
     setErr("");
-    const name = file.name.toLowerCase();
-    if (name.endsWith(".xlsx") || name.endsWith(".xls")) {
-      try {
-        const buf = await file.arrayBuffer();
-        const wb = XLSX.read(new Uint8Array(buf), { type:"array" });
-        const sheetsData = wb.SheetNames.map(sn => {
-          const ws = wb.Sheets[sn];
-          if (!ws) return null;
-          const rawArr = XLSX.utils.sheet_to_json(ws, { header:1, defval:"" });
-          if (rawArr.length < 2) return { name:sn, rowCount:0, headers:[], rows:[] };
-          const headers = rawArr[0].map(h => String(h||"").trim());
-          const dataRows = rawArr.slice(1).filter(r => r.some(c => String(c||"").trim()));
-          const rows = dataRows.map(r =>
-            Object.fromEntries(headers.map((h,i) => {
-              const v = r[i];
-              if (v instanceof Date) return [h, isNaN(v) ? "" : v.toISOString().split("T")[0]];
-              return [h, String(v ?? "").trim()];
-            }))
-          );
-          return { name:sn, rowCount:rows.length, headers, rows };
-        }).filter(s => s && s.rowCount > 0);
-        if (!sheetsData.length) { setErr("No data rows found."); return; }
-        if (sheetsData.length === 1) { applyParsed(sheetsData[0].headers, sheetsData[0].rows); }
-        else { sheetsData.sort((a,b) => b.rowCount - a.rowCount); setXlsxSheets(sheetsData); }
-      } catch(ex) { setErr("Could not read Excel file: " + ex.message); }
-    } else {
-      Papa.parse(file, {
-        header:true, skipEmptyLines:true, transformHeader: h => h.trim(),
-        complete: res => {
-          if (!res.data?.length) { setErr("No rows found."); return; }
-          applyParsed(res.meta.fields || [], res.data);
-        },
-        error: ex => setErr("Parse error: " + ex.message),
-      });
-    }
+    await parseFileToSheets(file, { onSingle:applyParsed, onMulti:s=>setXlsxSheets(s), onError:msg=>setErr(msg) });
   };
 
   const doPaste = () => {
@@ -1232,6 +1214,305 @@ function GiftHistoryImport({ donors, onClose, onImported }) {
         </>)}
 
       </div>
+    </div>
+  );
+}
+
+// ── CombinedImport ─────────────────────────────────────────────────────────
+function CombinedImport({ onClose, onImported }) {
+  const [step, setStep]             = useState("upload");
+  const [csvText, setCsvText]       = useState("");
+  const [xlsxSheets, setXlsxSheets] = useState(null);
+  const [parsed, setParsed]         = useState(null);
+  const [err, setErr]               = useState("");
+
+  const [donorMapping, setDonorMapping]     = useState({});
+  const [yearCols, setYearCols]             = useState([]);
+  const [yearConvention, setYearConvention] = useState("dec31");
+
+  const [combinedRows, setCombinedRows] = useState([]);
+  const [loading, setLoading]   = useState(false);
+  const [result, setResult]     = useState(null);
+  const [upgradeInfo, setUpgradeInfo] = useState(null);
+
+  const overlay = { position:"fixed",inset:0,background:"rgba(15,26,18,0.72)",zIndex:300,display:"flex",alignItems:"center",justifyContent:"center",padding:20 };
+  const modal   = { background:T.white,border:"1px solid "+T.bg3,borderRadius:20,width:"100%",maxWidth:720,maxHeight:"90vh",overflowY:"auto",padding:28,boxSizing:"border-box" };
+  const inp     = { width:"100%",background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"9px 12px",color:T.ink,fontSize:13,outline:"none",fontFamily:"inherit",boxSizing:"border-box" };
+
+  // Non-year headers only — used for donor field mapping
+  const donorHeaders = parsed?.headers.filter(h => !YEAR_HDR_PAT.test(h)) ?? [];
+
+  const applyParsed = (headers, rows) => {
+    const nonYear = headers.filter(h => !YEAR_HDR_PAT.test(h));
+    setDonorMapping(buildAutoMapping(nonYear, rows));
+    const cfg = autoDetectWideConfig(headers, rows);
+    setYearCols(cfg.yearCols.map(col => ({ col, date: yearColToDate(col,"dec31"), enabled:true })));
+    setParsed({ headers, rows }); setXlsxSheets(null); setErr("");
+    setStep("configure");
+  };
+
+  const handleFile = async (e) => {
+    const file = e.target.files?.[0]; if (!file) return;
+    setErr("");
+    await parseFileToSheets(file, { onSingle:applyParsed, onMulti:s=>setXlsxSheets(s), onError:msg=>setErr(msg) });
+  };
+
+  const doPaste = () => {
+    if (!csvText.trim()) return;
+    Papa.parse(csvText, {
+      header:true, skipEmptyLines:true, transformHeader:h=>h.trim(),
+      complete: res => { if (!res.data?.length) { setErr("No rows found."); return; } applyParsed(res.meta.fields||[], res.data); },
+      error: ex => setErr("Parse error: " + ex.message),
+    });
+  };
+
+  const onConventionChange = (val) => {
+    setYearConvention(val);
+    setYearCols(cols => cols.map(yc => ({ ...yc, date: yearColToDate(yc.col, val) })));
+  };
+
+  const buildPreview = () => {
+    setErr("");
+    if (!parsed) return;
+    const rows = buildCombinedRows(parsed, donorMapping, yearCols);
+    if (!rows.some(r => !r.skipped)) { setErr("No valid rows — map a name or email column."); return; }
+    setCombinedRows(rows);
+    setStep("preview");
+  };
+
+  const stats = useMemo(() => {
+    const valid   = combinedRows.filter(r => !r.skipped);
+    const skipped = combinedRows.filter(r => r.skipped).length;
+    const warned  = valid.filter(r => r.warnings.length > 0).length;
+    const gifts   = valid.reduce((s,r) => s + r.gifts.length, 0);
+    return { donors:valid.length, gifts, warned, skipped };
+  }, [combinedRows]);
+
+  const doImport = async () => {
+    const validRows = combinedRows.filter(r => !r.skipped);
+    const donors = validRows.map(({donor}) => { const {_warnings,_rowIndex,...d}=donor; return d; });
+    const gifts  = [];
+    validRows.forEach(({gifts:rg}, idx) => rg.forEach(g => gifts.push({ ...g, donorIndex:idx })));
+    if (!donors.length) { setErr("No donors to import."); return; }
+    setLoading(true); setErr("");
+    try {
+      const res = await apiFetch("/donors/import-combined", { method:"POST", body:JSON.stringify({ donors, gifts }) });
+      setResult(res); setStep("result");
+    } catch(e) {
+      if (e.error === "record_limit") setUpgradeInfo(e);
+      else setErr(e.message || "Import failed.");
+    }
+    setLoading(false);
+  };
+
+  // Result screen
+  if (step === "result" && result) {
+    return (
+      <div style={overlay} className="modal-sheet-overlay">
+        <div style={{...modal,textAlign:"center"}} className="modal-sheet-inner">
+          <div style={{fontSize:36,marginBottom:12}}>✓</div>
+          <div style={{fontFamily:"'DM Serif Display',Georgia,serif",fontSize:22,fontWeight:400,color:T.ink,marginBottom:12,letterSpacing:"-0.01em"}}>Import complete.</div>
+          <div style={{fontSize:14,color:T.ink3,marginBottom:20,lineHeight:1.8}}>
+            <strong style={{color:T.ink}}>{result.created}</strong> donors created &nbsp;·&nbsp;
+            <strong style={{color:T.ink}}>{result.giftsInserted}</strong> gifts attached
+            {result.duplicates>0 && <> &nbsp;·&nbsp; <strong>{result.duplicates}</strong> duplicates skipped</>}
+          </div>
+          {result.donorsUpdated>0 && <div style={{fontSize:12,color:T.ink3,marginBottom:24}}>{result.donorsUpdated} donor giving total{result.donorsUpdated!==1?"s":""} recalculated.</div>}
+          <button onClick={onImported} style={{background:"#10b981",border:"none",borderRadius:10,padding:"12px 28px",color:"#fff",fontSize:14,fontWeight:700,cursor:"pointer"}}>Done</button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div style={overlay} className="modal-sheet-overlay">
+      <div style={modal} className="modal-sheet-inner">
+
+        {/* Header */}
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:20}}>
+          <div>
+            <div style={{fontSize:18,fontWeight:800,color:T.ink}}>Import Donors + History</div>
+            <div style={{fontSize:13,color:T.ink3,marginTop:2}}>One wide file: donor info + year-column gifts — creates donors and attaches their history in one step</div>
+          </div>
+          <button onClick={onClose} style={{background:T.bg3,border:"none",borderRadius:8,padding:"6px 12px",color:T.ink3,cursor:"pointer",fontSize:13,flexShrink:0}}>✕ Close</button>
+        </div>
+
+        {/* Upload */}
+        {step === "upload" && !xlsxSheets && (<>
+          <div style={{marginBottom:14}}>
+            <div style={{fontSize:11,fontWeight:700,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:6}}>Upload file</div>
+            <input type="file" accept=".csv,.tsv,.xlsx,.xls" onChange={handleFile} style={{fontSize:13,color:T.ink3}}/>
+            <div style={{fontSize:11,color:T.ink3,marginTop:5}}>Wide format with donor columns (Name, Email…) and gift year columns (2021, 2022 Gift, Jan 2023…).</div>
+          </div>
+          <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:14}}>
+            <div style={{flex:1,height:1,background:T.bg3}}/><span style={{fontSize:12,color:T.ink3}}>or paste CSV text</span><div style={{flex:1,height:1,background:T.bg3}}/>
+          </div>
+          <textarea value={csvText} onChange={e=>setCsvText(e.target.value)} rows={5}
+            placeholder={"Name,Email,2021 Gift,2022 Gift,2023 Gift\nJane Smith,jane@example.com,500,750,1000"}
+            style={{...inp,resize:"vertical",lineHeight:1.5,marginBottom:12}}/>
+          {err&&<div style={{color:"#f87171",fontSize:12,marginBottom:10}}>{err}</div>}
+          <button onClick={doPaste} disabled={!csvText.trim()}
+            style={{background:csvText.trim()?"linear-gradient(135deg,#10b981,#3b82f6)":T.bg2,border:"none",borderRadius:10,padding:"11px 20px",color:"#fff",fontSize:14,fontWeight:700,cursor:csvText.trim()?"pointer":"not-allowed",opacity:csvText.trim()?1:0.5}}>
+            Parse →
+          </button>
+        </>)}
+
+        {/* Sheet picker */}
+        {step === "upload" && xlsxSheets && (<>
+          <div style={{fontSize:14,fontWeight:700,color:T.ink,marginBottom:4}}>This workbook has {xlsxSheets.length} sheets with data.</div>
+          <div style={{fontSize:13,color:T.ink3,marginBottom:16}}>Pick the sheet to import.</div>
+          <div style={{display:"flex",flexDirection:"column",gap:8,marginBottom:16}}>
+            {xlsxSheets.map((s,i) => (
+              <div key={s.name} style={{display:"flex",alignItems:"center",justifyContent:"space-between",background:T.bg,border:"1px solid "+T.bg3,borderRadius:10,padding:"12px 16px"}}>
+                <div>
+                  <div style={{fontSize:14,fontWeight:600,color:T.ink}}>{s.name}</div>
+                  <div style={{fontSize:12,color:T.ink3,marginTop:2}}>{s.rowCount.toLocaleString()} rows · {s.headers.filter(Boolean).length} columns</div>
+                </div>
+                <button onClick={()=>applyParsed(s.headers,s.rows)}
+                  style={{background:"#1a6b4a",border:"none",borderRadius:8,padding:"8px 16px",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer"}}>
+                  {i===0?"Use this ←":"Select"}
+                </button>
+              </div>
+            ))}
+          </div>
+          <button onClick={()=>setXlsxSheets(null)} style={{background:"transparent",border:"1px solid "+T.bg3,borderRadius:10,padding:"9px 16px",color:T.ink3,fontSize:13,cursor:"pointer"}}>← Back</button>
+        </>)}
+
+        {/* Configure */}
+        {step === "configure" && parsed && (<>
+
+          <div style={{background:T.bg,borderRadius:10,padding:"10px 14px",marginBottom:16,fontSize:12,color:T.ink3}}>
+            {parsed.rows.length.toLocaleString()} rows · {parsed.headers.length} columns &nbsp;·&nbsp;
+            {donorHeaders.length} donor field{donorHeaders.length!==1?"s":""} · {yearCols.length} year column{yearCols.length!==1?"s":""}
+          </div>
+
+          {/* Donor field mapping */}
+          <div style={{marginBottom:16}}>
+            <div style={{fontSize:11,fontWeight:700,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:8}}>
+              Donor Field Mapping
+            </div>
+            {donorHeaders.length === 0
+              ? <div style={{fontSize:13,color:"#f59e0b",background:"#fef3c7",borderRadius:8,padding:"10px 12px"}}>No non-year columns detected. This file may be gift-only — use "↑ Giving History" instead.</div>
+              : <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6}}>
+                  {donorHeaders.map(h => (
+                    <div key={h} style={{display:"flex",alignItems:"center",gap:6,background:donorMapping[h]?T.bg:"transparent",borderRadius:7,padding:"5px 8px",border:`1px solid ${donorMapping[h]?T.bg3:"transparent"}`}}>
+                      <span style={{fontSize:12,color:donorMapping[h]?T.ink:T.ink3,flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={h}>{h}</span>
+                      <select value={donorMapping[h]||""} onChange={e=>setDonorMapping(p=>({...p,[h]:e.target.value}))}
+                        style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:6,padding:"4px 6px",color:T.ink,fontSize:11,outline:"none",flexShrink:0}}>
+                        <option value="">— skip —</option>
+                        <option value="_firstName">firstName</option>
+                        <option value="_lastName">lastName</option>
+                        {CSV_FIELDS.map(f=><option key={f.key} value={f.key}>{f.key}</option>)}
+                      </select>
+                    </div>
+                  ))}
+                </div>
+            }
+          </div>
+
+          {/* Year columns */}
+          <div style={{marginBottom:16}}>
+            <div style={{fontSize:11,fontWeight:700,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:8}}>
+              Gift Year Columns — {yearCols.filter(yc=>yc.enabled).length}/{yearCols.length} enabled
+            </div>
+
+            {/* Convention toggle */}
+            <div style={{display:"flex",gap:8,marginBottom:10}}>
+              {[["dec31","Dec 31 (end of year)"],["first","Jan 1 (start of year)"]].map(([v,l]) => (
+                <button key={v} onClick={()=>onConventionChange(v)}
+                  style={{flex:1,background:yearConvention===v?T.bg2:"transparent",border:`1px solid ${yearConvention===v?T.greenDk:T.bg3}`,borderRadius:8,padding:"7px 12px",color:yearConvention===v?T.greenDk:T.ink3,fontSize:12,fontWeight:600,cursor:"pointer",textAlign:"left"}}>
+                  {l}
+                </button>
+              ))}
+            </div>
+
+            {yearCols.length === 0
+              ? <div style={{fontSize:13,color:T.ink3}}>No year-like columns found. Proceed to create donors without gift history, or go back and check your file.</div>
+              : <div style={{display:"flex",flexDirection:"column",gap:4}}>
+                  {yearCols.map((yc,i) => (
+                    <div key={yc.col} style={{display:"flex",alignItems:"center",gap:10,background:yc.enabled?T.bg:"transparent",border:`1px solid ${yc.enabled?T.bg3:"transparent"}`,borderRadius:8,padding:"7px 10px"}}>
+                      <input type="checkbox" checked={yc.enabled} onChange={e=>setYearCols(c=>c.map((x,j)=>j===i?{...x,enabled:e.target.checked}:x))} style={{cursor:"pointer"}}/>
+                      <span style={{flex:1,fontSize:13,color:yc.enabled?T.ink:T.ink3}}>{yc.col}</span>
+                      <span style={{fontSize:12,color:T.ink3}}>→</span>
+                      <input type="date" value={yc.date||""} onChange={e=>setYearCols(c=>c.map((x,j)=>j===i?{...x,date:e.target.value}:x))}
+                        style={{background:T.bg2,border:"1px solid "+T.bg3,borderRadius:6,padding:"4px 8px",color:T.ink,fontSize:12,outline:"none"}}/>
+                    </div>
+                  ))}
+                </div>
+            }
+          </div>
+
+          {err&&<div style={{color:"#f87171",fontSize:12,marginBottom:10}}>{err}</div>}
+          <div style={{display:"flex",gap:10}}>
+            <button onClick={()=>{setParsed(null);setStep("upload");setErr("");}}
+              style={{background:"transparent",border:"1px solid "+T.bg3,borderRadius:10,padding:"11px 18px",color:T.ink3,fontSize:13,cursor:"pointer"}}>← Back</button>
+            <button onClick={buildPreview}
+              style={{flex:1,background:"linear-gradient(135deg,#1a6b4a,#2563eb)",border:"none",borderRadius:10,padding:"11px 20px",color:"#fff",fontSize:14,fontWeight:700,cursor:"pointer"}}>
+              Preview →
+            </button>
+          </div>
+        </>)}
+
+        {/* Preview — mandatory confirm before any write */}
+        {step === "preview" && (<>
+
+          {/* Summary card */}
+          <div style={{background:T.bg,borderRadius:12,padding:"14px 16px",marginBottom:16}}>
+            <div style={{fontSize:15,fontWeight:700,color:T.ink,marginBottom:6}}>
+              <span style={{color:"#10b981"}}>{stats.donors}</span> donors to create &nbsp;·&nbsp;
+              <span style={{color:"#3b82f6"}}>{stats.gifts}</span> gifts to attach
+              {stats.warned>0&&<> &nbsp;·&nbsp; <span style={{color:"#f59e0b"}}>{stats.warned}</span> with warnings</>}
+              {stats.skipped>0&&<> &nbsp;·&nbsp; <span style={{color:T.ink3}}>{stats.skipped}</span> skipped</>}
+            </div>
+            <div style={{fontSize:12,color:T.ink3}}>No data is written until you click the confirm button below.</div>
+          </div>
+
+          {/* Row preview */}
+          <div style={{marginBottom:14}}>
+            <div style={{fontSize:11,fontWeight:700,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:8}}>
+              First {Math.min(combinedRows.filter(r=>!r.skipped).length,6)} Rows
+            </div>
+            <div style={{display:"flex",flexDirection:"column",gap:6}}>
+              {combinedRows.filter(r=>!r.skipped).slice(0,6).map((cr,i) => (
+                <div key={i} style={{background:cr.warnings.length?`#fef9f0`:"#f8fdf8",border:`1px solid ${cr.warnings.length?"#fde68a":T.bg3}`,borderRadius:9,padding:"10px 12px"}}>
+                  <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:cr.gifts.length?5:0,flexWrap:"wrap"}}>
+                    <span style={{fontSize:13,fontWeight:700,color:T.ink}}>{cr.donor.name}</span>
+                    {cr.donor.email&&<span style={{fontSize:11,color:T.ink3}}>{cr.donor.email}</span>}
+                    {cr.warnings.length>0&&<span style={{fontSize:11,color:"#92400e",background:"#fef3c7",borderRadius:4,padding:"1px 6px"}}>⚠ {cr.warnings[0]}</span>}
+                  </div>
+                  {cr.gifts.length>0&&(
+                    <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+                      {cr.gifts.map((g,j)=>(
+                        <span key={j} style={{fontSize:11,background:T.bg2,borderRadius:5,padding:"2px 8px",color:T.ink2}}>${g.amount.toLocaleString()} · {g.date}</span>
+                      ))}
+                    </div>
+                  )}
+                  {cr.gifts.length===0&&<div style={{fontSize:11,color:T.ink3}}>No gift amounts in year columns</div>}
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Skipped rows */}
+          {stats.skipped>0&&(
+            <div style={{marginBottom:14,fontSize:12,color:T.ink3}}>
+              <strong>{stats.skipped} row{stats.skipped!==1?"s":""} skipped</strong> — no name or email to identify the donor.
+            </div>
+          )}
+
+          {err&&<div style={{color:"#f87171",fontSize:12,marginBottom:10}}>{err}</div>}
+          <div style={{display:"flex",gap:10,marginTop:4}}>
+            <button onClick={()=>setStep("configure")}
+              style={{background:"transparent",border:"1px solid "+T.bg3,borderRadius:10,padding:"11px 18px",color:T.ink3,fontSize:13,cursor:"pointer"}}>← Back</button>
+            <button onClick={doImport} disabled={loading||stats.donors===0}
+              style={{flex:1,background:loading||stats.donors===0?T.bg2:"linear-gradient(135deg,#10b981,#3b82f6)",border:"none",borderRadius:10,padding:"11px 20px",color:"#fff",fontSize:14,fontWeight:700,cursor:loading||stats.donors===0?"not-allowed":"pointer",opacity:loading||stats.donors===0?0.6:1}}>
+              {loading?"Importing…":`Import ${stats.donors} Donor${stats.donors!==1?"s":""} + ${stats.gifts} Gift${stats.gifts!==1?"s":""} →`}
+            </button>
+          </div>
+        </>)}
+
+      </div>
+      {upgradeInfo&&<UpgradeModal open={true} onClose={()=>{setUpgradeInfo(null);onClose();}} reason={upgradeInfo.error} current={upgradeInfo.current} limit={upgradeInfo.limit} plan={upgradeInfo.plan}/>}
     </div>
   );
 }
@@ -3340,7 +3621,7 @@ export function Donors({data,setData,isReadOnly=false}){
   const[followUpTarget,setFollowUpTarget]=useState(null);
   const[aiMap,setAiMap]=useState({});const[loadingKey,setLoadingKey]=useState(null);
   const[callList,setCallList]=useState("");const[callLoading,setCallLoading]=useState(false);
-  const[showAdd,setShowAdd]=useState(false);const[showImport,setShowImport]=useState(false);const[showGiftImport,setShowGiftImport]=useState(false);
+  const[showAdd,setShowAdd]=useState(false);const[showImport,setShowImport]=useState(false);const[showGiftImport,setShowGiftImport]=useState(false);const[showCombinedImport,setShowCombinedImport]=useState(false);
   const[upgradeModal,setUpgradeModal]=useState(null);
   const[newDonor,setNewDonor]=useState({name:"",email:"",phone:"",lastAmount:"",stage:"prospect"});
   const[filtersOpen,setFiltersOpen]=useState(false);
@@ -3552,6 +3833,7 @@ export function Donors({data,setData,isReadOnly=false}){
       {assignTarget&&<AssignModal donor={assignTarget} orgTeam={orgTeam} onSave={handleAssign} onClose={()=>setAssignTarget(null)}/>}
       {showImport&&<DonorImport onClose={()=>setShowImport(false)} onImported={()=>{reloadDonors();setShowImport(false);}}/>}
       {showGiftImport&&<GiftHistoryImport donors={data.donors} onClose={()=>setShowGiftImport(false)} onImported={()=>{reloadDonors();setShowGiftImport(false);}}/>}
+      {showCombinedImport&&<CombinedImport onClose={()=>setShowCombinedImport(false)} onImported={()=>{reloadDonors();setShowCombinedImport(false);}}/>}
       {upgradeModal&&<UpgradeModal open={true} onClose={()=>setUpgradeModal(null)} reason={upgradeModal.reason} current={upgradeModal.current} limit={upgradeModal.limit} plan={upgradeModal.plan}/>}
       {logTarget&&<LogTouchpointModal donor={logTarget} onSave={int=>handleLogged(logTarget,int)} onClose={()=>setLogTarget(null)}/>}
       {followUpTarget&&<FollowUpTaskModal donor={followUpTarget} onClose={()=>setFollowUpTarget(null)} onSave={task=>{setData(prev=>({...prev,tasks:[task,...prev.tasks]}));setFollowUpTarget(null);}}/>}
@@ -3578,6 +3860,7 @@ export function Donors({data,setData,isReadOnly=false}){
         <button onClick={()=>setShowAdd(!showAdd)} disabled={isReadOnly} title={isReadOnly?"Reactivate your subscription to make changes.":undefined} style={{background:"#10b981",border:"none",borderRadius:10,padding:"10px 14px",color:"#fff",fontSize:13,fontWeight:600,cursor:isReadOnly?"not-allowed":"pointer",opacity:isReadOnly?0.45:1}}>+ Add</button>
         <button onClick={()=>setShowImport(true)} style={{background:T.bg3,border:"1px solid "+T.bg3,borderRadius:10,padding:"10px 14px",color:T.ink3,fontSize:13,cursor:"pointer"}}>↑ Import</button>
         <button onClick={()=>setShowGiftImport(true)} style={{background:T.bg3,border:"1px solid "+T.bg3,borderRadius:10,padding:"10px 14px",color:T.ink3,fontSize:13,cursor:"pointer"}}>↑ Giving History</button>
+        <button onClick={()=>setShowCombinedImport(true)} style={{background:T.bg3,border:"1px solid "+T.bg3,borderRadius:10,padding:"10px 14px",color:T.ink3,fontSize:13,cursor:"pointer"}}>↑ Import + History</button>
       </div>
 
       {(()=>{

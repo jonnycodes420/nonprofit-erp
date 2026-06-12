@@ -1214,6 +1214,169 @@ app.post("/donors/import", requireAuth, wrap(async (req, res) => {
   res.json({ created, duplicates, batchErrors });
 }));
 
+// ── Combined import: new donors + their year-column gift history in one pass ─
+// Donor IDs are generated in JS before any DB write so gift rows can reference
+// them without a round trip. Both donor and gift inserts are bulk (one statement
+// per batch), matching the pattern in /donors/import and matching the gift+
+// interaction format that /gifts/import-history and the single-gift route use.
+app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  const { donors, gifts } = req.body;
+  if (!Array.isArray(donors) || !donors.length)
+    return res.status(400).json({ error: "donors array required" });
+  if (!Array.isArray(gifts))
+    return res.status(400).json({ error: "gifts array required" });
+
+  const orgId = req.user.orgId;
+
+  // Plan limit check (same as /donors/import)
+  const orgForLimit = await query("SELECT * FROM orgs WHERE id=?", [orgId]);
+  if (orgForLimit.length) {
+    const recordCheck = await checkPlanLimit(orgForLimit[0], "records");
+    if (!recordCheck.isTrial && recordCheck.limit !== 999999999) {
+      const validCount = donors.filter(d => d.name).length;
+      const remaining = recordCheck.limit - recordCheck.current;
+      if (remaining <= 0 || validCount > remaining) {
+        return res.status(403).json({
+          error: "record_limit",
+          message: remaining <= 0
+            ? `You've reached your donor record limit of ${recordCheck.limit}.`
+            : `This import would add ${validCount} records but you can only add ${remaining} more.`,
+          current: recordCheck.current, limit: recordCheck.limit,
+          allowed: Math.max(0, remaining), plan: orgForLimit[0].plan, isTrial: false,
+        });
+      }
+    }
+  }
+
+  // Importer identity
+  const importerRow = await query("SELECT name FROM users WHERE id=?", [req.user.userId]);
+  const importerName = importerRow[0]?.name || "";
+  const importerId   = req.user.userId;
+
+  // Email dedup (same bulk-Set approach as /donors/import)
+  const existingEmailRows = await query(
+    "SELECT LOWER(email) AS e FROM donors WHERE org_id=? AND email IS NOT NULL AND email != '' AND deleted_at IS NULL",
+    [orgId]
+  );
+  const existingEmails = new Set(existingEmailRows.map(r => r.e));
+  const seenEmails = new Set();
+  const today = new Date().toISOString().split("T")[0];
+
+  // Generate all donor IDs in JS before inserting — gifts reference these IDs directly,
+  // no extra round trip needed.
+  let duplicates = 0;
+  const donorsToInsert = [];
+  const indexToId = {}; // donorIndex → pre-generated id (only non-deduped donors)
+
+  donors.forEach((d, idx) => {
+    if (!d.name || !String(d.name).trim()) return;
+    const emailLower = (d.email || "").toLowerCase().trim();
+    if (emailLower) {
+      if (existingEmails.has(emailLower) || seenEmails.has(emailLower)) { duplicates++; return; }
+      seenEmails.add(emailLower);
+    }
+    const id = "d_" + uuid().slice(0, 8);
+    indexToId[idx] = id;
+    donorsToInsert.push({ ...d, _id: id });
+  });
+
+  // ── Bulk-insert donors (500/batch, one multi-row INSERT per batch) ──
+  const DONOR_BATCH = 500;
+  let created = 0;
+  const batchErrors = [];
+  const failedIds = new Set(); // IDs whose batch failed — drop their gifts too
+
+  for (let bi = 0; bi < donorsToInsert.length; bi += DONOR_BATCH) {
+    const batch = donorsToInsert.slice(bi, bi + DONOR_BATCH);
+    const params = [];
+    const tuples = batch.map(d => {
+      params.push(
+        d._id, orgId, String(d.name).trim(), d.email||"", d.phone||"",
+        d.status||"new", d.stage||"prospect",
+        Math.round(parseFloat(d.total)||0), Math.round(parseFloat(d.lastAmount)||0),
+        d.lastGift||today, parseInt(d.gifts)||(d.total?1:0),
+        JSON.stringify(Array.isArray(d.tags)?d.tags:[]),
+        d.notes||"", d.city||null, d.state||null, importerId, importerName
+      );
+      return "(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)";
+    });
+    try {
+      await withTransaction(async (client) => {
+        await runTx(client,
+          `INSERT INTO donors
+             (id,org_id,name,email,phone,status,stage,total_giving,last_gift_amount,
+              last_gift_date,gift_count,tags,notes,city,state,assigned_to,assigned_to_name)
+           VALUES ${tuples.join(",")}`,
+          params
+        );
+      });
+      created += batch.length;
+    } catch (e) {
+      console.error(`[combined-import] donor batch ${bi}–${bi+batch.length} failed:`, e.message);
+      batchErrors.push({ rows:`${bi+1}–${bi+batch.length}`, error:e.message });
+      batch.forEach(d => failedIds.add(d._id));
+    }
+  }
+
+  // ── Build gift+interaction records ──
+  // Filter to gifts whose donor was actually inserted (not deduped or batch-failed).
+  const giftFingerprints = new Set(); // within-import dedup
+  const giftsToInsert = [];
+  for (const g of gifts) {
+    const donorId = indexToId[g.donorIndex];
+    if (!donorId || failedIds.has(donorId)) continue;
+    const amt  = Math.round(Number(g.amount) || 0);
+    if (amt <= 0) continue;
+    const date = normalizeGiftDate(g.date);
+    const fp   = `${donorId}|${amt}|${date}`;
+    if (giftFingerprints.has(fp)) continue;
+    giftFingerprints.add(fp);
+    giftsToInsert.push({ donorId, amount:amt, date, type:g.type||"cash", campaign:g.campaign||"", notes:g.notes||"" });
+  }
+
+  // ── Bulk-insert gifts + interactions (200/batch, both in same transaction) ──
+  const GIFT_BATCH = 200;
+  let giftsInserted = 0;
+  const affectedDonorIds = new Set();
+
+  for (let bi = 0; bi < giftsToInsert.length; bi += GIFT_BATCH) {
+    const batch = giftsToInsert.slice(bi, bi + GIFT_BATCH);
+    const giftParams = [], intParams = [], giftTuples = [], intTuples = [];
+    batch.forEach(g => {
+      const intNote = `Gift received: $${g.amount.toLocaleString()} (${g.type})${g.notes?" — "+g.notes:""}`;
+      giftParams.push("g_"+uuid().slice(0,8), orgId, g.donorId, g.amount, g.date, g.type, g.campaign, null, g.notes);
+      giftTuples.push("(?,?,?,?,?,?,?,?,?)");
+      intParams.push("int_"+uuid().slice(0,8), orgId, g.donorId, "gift", intNote, g.date, importerId, importerName);
+      intTuples.push("(?,?,?,?,?,?,?,?)");
+      affectedDonorIds.add(g.donorId);
+    });
+    try {
+      await withTransaction(async (client) => {
+        await runTx(client,
+          `INSERT INTO gifts (id,org_id,donor_id,amount,date,type,campaign,fund_id,notes) VALUES ${giftTuples.join(",")}`,
+          giftParams
+        );
+        await runTx(client,
+          `INSERT INTO interactions (id,org_id,donor_id,type,note,date,created_by,logged_by_name) VALUES ${intTuples.join(",")}`,
+          intParams
+        );
+      });
+      giftsInserted += batch.length;
+    } catch (e) {
+      console.error(`[combined-import] gift batch ${bi}–${bi+batch.length} failed:`, e.message);
+      batchErrors.push({ error: e.message });
+    }
+  }
+
+  // recalcDonorSummary for every donor that had gifts inserted
+  for (const donorId of affectedDonorIds) {
+    try { await recalcDonorSummary(donorId, orgId); }
+    catch (e) { console.error(`[combined-import] recalc failed for ${donorId}:`, e.message); }
+  }
+
+  res.json({ created, giftsInserted, duplicates, donorsUpdated: affectedDonorIds.size, batchErrors });
+}));
+
 app.put("/donors/:id", requireAuth, checkWriteAccess, wrap(async (req, res) => {
   const { name, email, phone, status, stage, tags, notes, city, state, zip } = req.body;
   if (!name) return res.status(400).json({ error: "Name required" });
