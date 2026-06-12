@@ -1157,40 +1157,50 @@ app.post("/donors/import", requireAuth, wrap(async (req, res) => {
     donorsToInsert.push(d);
   }
 
-  // ── Batched transactional inserts (500/batch) ──
+  // ── Batched bulk INSERTs (500/batch, one statement per batch) ──
+  // 17 columns × 500 rows = 8,500 params — well under PG's 65,535 placeholder limit.
+  // runTx's ?→$n substitution handles the flat positional array correctly.
   const BATCH = 500;
   let created = 0;
   const batchErrors = [];
 
   for (let bi = 0; bi < donorsToInsert.length; bi += BATCH) {
     const batch = donorsToInsert.slice(bi, bi + BATCH);
+
+    // Build one flat params array and matching VALUE tuples in a single pass
+    // so column order and param order are always in sync.
+    const params = [];
+    const tuples = batch.map(d => {
+      params.push(
+        "d_" + uuid().slice(0, 8), req.user.orgId,
+        String(d.name).trim(),
+        d.email   || "",
+        d.phone   || "",
+        d.status  || "new",
+        d.stage   || "prospect",
+        Math.round(parseFloat(d.total)      || 0),
+        Math.round(parseFloat(d.lastAmount) || 0),
+        d.lastGift || today,
+        parseInt(d.gifts) || (d.total ? 1 : 0),
+        JSON.stringify(Array.isArray(d.tags) ? d.tags : []),
+        d.notes || "",
+        d.city  || null,
+        d.state || null,
+        req.user.userId,
+        importerName
+      );
+      return "(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)";
+    });
+
     try {
       await withTransaction(async (client) => {
-        for (const d of batch) {
-          const id = "d_" + uuid().slice(0, 8);
-          await runTx(client,
-            `INSERT INTO donors
-               (id,org_id,name,email,phone,status,stage,total_giving,last_gift_amount,
-                last_gift_date,gift_count,tags,notes,city,state,assigned_to,assigned_to_name)
-             VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-            [id, req.user.orgId,
-             String(d.name).trim(),
-             d.email   || "",
-             d.phone   || "",
-             d.status  || "new",
-             d.stage   || "prospect",
-             Math.round(parseFloat(d.total)      || 0),
-             Math.round(parseFloat(d.lastAmount) || 0),
-             d.lastGift || today,
-             parseInt(d.gifts) || (d.total ? 1 : 0),
-             JSON.stringify(Array.isArray(d.tags) ? d.tags : []),
-             d.notes || "",
-             d.city  || null,
-             d.state || null,
-             req.user.userId,
-             importerName]
-          );
-        }
+        await runTx(client,
+          `INSERT INTO donors
+             (id,org_id,name,email,phone,status,stage,total_giving,last_gift_amount,
+              last_gift_date,gift_count,tags,notes,city,state,assigned_to,assigned_to_name)
+           VALUES ${tuples.join(",")}`,
+          params
+        );
       });
       created += batch.length;
     } catch (e) {
