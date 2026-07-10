@@ -13,6 +13,7 @@ import { Tasks } from "./components/Tasks";
 import { Settings } from "./components/Settings";
 import { Analytics } from "./components/Analytics";
 import { Events } from "./components/Events";
+import PlanPicker from "./components/PlanPicker";
 
 // ── Tabs ───────────────────────────────────────────────────────────────────
 const TABS=[
@@ -57,6 +58,7 @@ function AppShell() {
   const [billing,setBilling]=useState(null);
   const [bannerDismissed,setBannerDismissed]=useState(false);
   const [exportingBanner,setExportingBanner]=useState(false);
+  const [showPlanPicker,setShowPlanPicker]=useState(false);
   const [showInstallPrompt,setShowInstallPrompt]=useState(false);
   const [deferredPrompt,setDeferredPrompt]=useState(null);
 
@@ -212,7 +214,7 @@ function AppShell() {
       <span>🔒</span>
       <span style={{flex:1,minWidth:200}}><strong style={{color:"#fef2f2"}}>Your account is read-only.</strong> {subStatus==="trial_expired"?"Your free trial has ended.":"Your subscription has ended."} Export your data or reactivate to continue.</span>
       <button onClick={exportDataFromBanner} disabled={exportingBanner} style={{background:"none",border:"1px solid #fca5a5",borderRadius:8,color:"#fca5a5",fontSize:12,fontWeight:700,cursor:exportingBanner?"not-allowed":"pointer",padding:"4px 12px",whiteSpace:"nowrap",opacity:exportingBanner?0.7:1}}>{exportingBanner?"Exporting…":"Export data →"}</button>
-      <button onClick={openPortal} style={{background:"#fef2f2",border:"none",borderRadius:8,color:"#7f1d1d",fontSize:12,fontWeight:700,cursor:"pointer",padding:"4px 12px",whiteSpace:"nowrap"}}>Reactivate →</button>
+      <button onClick={()=>setShowPlanPicker(true)} style={{background:"#fef2f2",border:"none",borderRadius:8,color:"#7f1d1d",fontSize:12,fontWeight:700,cursor:"pointer",padding:"4px 12px",whiteSpace:"nowrap"}}>Reactivate →</button>
     </div>}
     {!showReadOnlyBanner&&showWarningBanner&&subStatus==="past_due"&&<div style={{background:"#451a03",borderBottom:"1px solid #92400e",padding:"9px 24px",display:"flex",alignItems:"center",gap:12,fontSize:13,color:"#fbbf24",flexWrap:"wrap"}}>
       <span>⚠️</span>
@@ -223,7 +225,7 @@ function AppShell() {
       <span>⚠️</span>
       <span style={{flex:1,minWidth:200}}><strong style={{color:"#fef3c7"}}>Your subscription is canceled.</strong> You have until {billing?.graceUntil?new Date(billing.graceUntil).toLocaleDateString("en-US",{month:"short",day:"numeric"}):"soon"} to export your data or reactivate.</span>
       <button onClick={exportDataFromBanner} disabled={exportingBanner} style={{background:"none",border:"1px solid #fbbf24",borderRadius:8,color:"#fbbf24",fontSize:12,fontWeight:700,cursor:exportingBanner?"not-allowed":"pointer",padding:"4px 12px",whiteSpace:"nowrap",opacity:exportingBanner?0.7:1}}>{exportingBanner?"Exporting…":"Export data"}</button>
-      <button onClick={openPortal} style={{background:"#f59e0b",border:"none",borderRadius:8,color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer",padding:"4px 12px",whiteSpace:"nowrap"}}>Reactivate →</button>
+      <button onClick={()=>setShowPlanPicker(true)} style={{background:"#f59e0b",border:"none",borderRadius:8,color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer",padding:"4px 12px",whiteSpace:"nowrap"}}>Reactivate →</button>
     </div>}
     {showTrialBanner&&<div style={{background:billing.trialDaysLeft<=3?"#451a03":"#1a2e1f",borderBottom:`1px solid ${billing.trialDaysLeft<=3?"#92400e":"#0d5c3a"}`,padding:"9px 24px",display:"flex",alignItems:"center",gap:12,fontSize:13,color:billing.trialDaysLeft<=3?"#fbbf24":"#8fa896"}}>
       <span>⏳</span>
@@ -246,6 +248,7 @@ function AppShell() {
       {tab==="settings"&&<Settings auth={auth} logout={logout}/>}
     </div>
     {showChat&&<AIChat data={data} onClose={()=>setShowChat(false)}/>}
+    <PlanPicker open={showPlanPicker} onClose={()=>setShowPlanPicker(false)}/>
     {stripeToast&&<div style={{position:"fixed",bottom:24,right:24,zIndex:9999,background:T.greenDk,color:"#fff",borderRadius:14,padding:"14px 20px",fontSize:13,fontWeight:600,boxShadow:"0 8px 32px rgba(26,107,74,0.35)",display:"flex",alignItems:"center",gap:10,maxWidth:340}}>
       <span style={{fontSize:18}}>💳</span>
       <div>

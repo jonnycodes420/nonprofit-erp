@@ -4,7 +4,7 @@ import { useAuth } from "../main";
 
 const API = import.meta.env.VITE_API_URL || "https://nonprofit-erp-production.up.railway.app";
 
-const PLANS = [
+export const PLANS = [
   {
     id: "seed",
     name: "Seed",
