@@ -42,11 +42,57 @@ After import, all donors still show stage 'prospect' in My Pipeline + Analytics 
 3. CREO test-data cleanup: run `DELETE FROM donors WHERE org_id='org_creo' AND email LIKE '%@example.com';` to clear ~800+ .combo/.final test donors and restore the ~7 real demo records.
 4. /gifts/import-history still has per-row insert N+1 (minor speed; combined route is already bulk).
 5. Combined import Shape B (separate donor file + gift file chained) — deferred.
-6. Expired-token UX: show login redirect instead of "Failed to connect / Invalid token" error.
+
+DONE (was item 6): Expired-token UX — see "Auth, Gmail, billing/Reactivate, and QA-sweep fixes" below.
 
 ---
 
 ## Earlier sessions (for reference)
+
+### Auth, Gmail, billing/Reactivate, and QA-sweep fixes (2026-07-09 – 2026-07-10)
+
+Prompted by a live incident (401s on every authenticated route) plus a full pre-launch QA sweep (Playwright, desktop + mobile) that found 3 blocking and 3 cosmetic bugs. Commits `4a9e406`..`d6823e6`.
+
+**auth.js / client/src/api.js / client/src/pages/LoginPage.jsx** — 401 dead-end fix
+- `requireAuth` now distinguishes `jwt.verify` failure modes: `{error:"token_expired"}` (TokenExpiredError), `{error:"invalid_token"}` (bad signature/malformed), `{error:"no_token"}` (missing header) — was one generic "Invalid token"/"No token provided"
+- `apiFetch`/`streamAI` (api.js) detect any of these (plus the legacy message strings) on a 401, clear `npe_token`/`npe_user`/`npe_org`, and redirect to `/login` with a "session expired" message — instead of a dead-end "Failed to connect / Retry" screen that could never succeed on a bad token
+- Root cause of the actual incident: an out-of-band `JWT_SECRET` rotation on Railway invalidated every issued token — not a bug in the sign/verify code, which was already internally consistent. This fix is about graceful recovery from that class of event, not a signing/verification correctness fix.
+
+**server.js — syncGmail()** — Gmail sync retry-forever fix
+- Now also catches `invalid_grant` (revoked/expired Google refresh token, thrown as HTTP 400 by google-auth-library at the token-refresh step — NOT a 401) in addition to a genuine 401, and marks the connection `status='disconnected'`
+- `syncAllGmail()`'s `WHERE status='active'` query then excludes it from all future runs — previously `invalid_grant` fell through uncaught and retried every 15 minutes forever
+
+**server.js — ensureStripeCustomer(orgId, email)** (new helper) + `POST /billing/create-checkout` / `POST /billing/create-portal`
+- Both routes call this first instead of reading `stripe_customer_id` directly — an org with a null `stripe_customer_id` (legacy `/auth/register` signup, or a failed inline creation in `/auth/register-org`) gets a Stripe customer created transparently instead of the routes throwing "No Stripe customer linked to this org"
+
+**client/src/components/PlanPicker.jsx** (new) + App.jsx — Reactivate now opens a plan picker, not the Portal
+- New modal: Seed/Growth/Impact plan cards, pulling plan data from `pages/Pricing.jsx` (single source of truth, no duplicated pricing)
+- "Reactivate" (read_only banner, canceled/warning banner) and "Choose a plan"/"Upgrade now" (trial banner) now open `PlanPicker` → `POST /billing/create-checkout`, instead of the Stripe Customer Portal (which just showed empty payment-method/invoice states for an org with no subscription yet)
+- Portal access preserved where it's actually correct: "Update payment" (past_due banner) and Settings' "Manage billing" (orgs with an active subscription)
+
+**client/src/App.jsx — Export data button**
+- Banner's "Export data" button was a no-op (`onClick={()=>setTab("settings")}` — just switched tabs). Now calls the existing `GET /org/export` route directly and downloads a real JSON file (donors/gifts/grants/transactions) via the same blob+anchor pattern already used in Settings.jsx
+
+**client/src/components/shared.jsx (GlobalStyles) / client/src/pages/SignupPage.jsx** — mobile signup overflow fix
+- SignupPage's two-column layout had a hardcoded `minWidth:280` left panel + fixed px padding with zero `@media` rules — the math went negative below ~700-750px viewport width, so the form overflowed off-screen with clipped text. Added `@media(max-width:768px)` rules to `GlobalStyles()` (the established single CSS home for this breakpoint) to stack to single-column on mobile.
+
+**server.js — checkWriteAccess** — expanded from 7 routes to 24
+- Previously only guarded `POST/PUT /donors*` (5 routes incl. import) and `POST/PUT /grants` (2 routes)
+- Now also applied to Volunteers (`POST/PUT`), Tasks (`POST/PUT`), Events incl. attendees (`POST/PUT/PATCH`, plus `/events/:id/follow-up` which inserts tasks directly and would otherwise have bypassed the Tasks gate), Campaigns incl. briefing/send (`POST/PUT`), Board (`POST`), Custom Fields (`POST/PUT/reorder`) — full route list in CLAUDE.md's SaaS billing section
+- Matching frontend create/add buttons (12 total, across Dashboard Quick Actions, Grants Kanban + List, Communications, Events, Tasks, Volunteers, Board, Settings) now disable with the same tooltip pattern already used in Donors/Grants when `isReadOnly`. Two were simple pre-existing bugs, not new wiring: Dashboard's "Add Volunteer"/"New Task" Quick Actions were just missing the `isWrite:true` flag other Quick Actions had, and Grants Kanban's own "+ Add Grant" button (distinct from List view's) had no `isReadOnly` check at all.
+
+**client/src/components/Finance.jsx — Overview tab data-source fix**
+- Overview's Fund Balances card and Monthly Breakdown chart read `data.financials.funds`/`.revenue`/`.expenses` — a prop from the legacy `GET /financials` endpoint (old `financials`+`funds` tables) — while every other Finance subtab (Transactions/Accounts/Funds/Budgets/Reports) reads the newer `/finance/*` endpoints (`fin_transactions`/`fin_funds`/`fin_accounts`/`fin_budgets`). For CREO Arts the legacy tables still held old seeded balances while the live `fin_*` tables were genuinely empty — Overview showed real-looking numbers ($42k/$35k/$25k/$8.2k) that directly contradicted $0 shown one click away for the same funds.
+- Fix: Overview (and the 6-Month Forecast / Risk Analysis AI prompts) now derive from the same `fundBalances` (computed client-side: income − expense per fund from live `funds`+`transactions` state) and `summary.ytdRevenue`/`ytdExpenses` already used by the rest of the module. See CLAUDE.md's "Finance tables" section for the legacy-vs-live table note.
+
+**client/src/components/Donors.jsx / Grants.jsx — profile view layout fix**
+- `{selected && <Profile/>}` rendered the donor/grant profile *alongside* the toolbar/list rather than replacing it — both were in the DOM at once, so scrolling down while a profile was open revealed the full list again below it. Changed to `{selected ? <Profile/> : <List/>}` in both files.
+
+**client/src/components/Grants.jsx — Kanban card click handler**
+- Kanban cards (the default Grants view) only had `draggable`/`onDragStart`/`onDragEnd` for reordering between pipeline stages — no way to open a grant's profile without knowing to switch to List view. Added `onClick={()=>onSelectGrant(g)}` alongside the existing drag handlers; no custom click-vs-drag threshold logic needed since native HTML5 drag-and-drop already distinguishes the two at the browser level (dragstart only fires past the browser's own movement threshold; a press-release that doesn't cross it fires a normal click and never fires dragstart).
+
+**client/src/components/Settings.jsx — billing status badge fix**
+- The plan/status badge's ternary chain (`active ? "Active" : past_due ? "Past Due" : cancelled ? "Cancelled" : "Trialing"`) had no branch for `trial_expired`, so an org whose trial had actually ended still showed "Trialing" — directly under a banner reading "Your free trial has ended" on the same page. Replaced with a `BILLING_STATUS_META` lookup covering `active/trialing/past_due/trial_expired/canceled/cancelled` (both spellings).
 
 ### Guided tour + WelcomePage redesign (2026-06-07)
 

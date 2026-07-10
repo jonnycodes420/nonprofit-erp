@@ -79,6 +79,7 @@ Mobile "More" drawer: communications, events, volunteers, board, analytics, task
 - Analytics.jsx — exports Analytics (7 charts: giving trend, donor retention, pipeline velocity, grant pipeline, email performance, event performance, top donors)
 - Tasks.jsx — exports Tasks
 - Settings.jsx — exports Settings (Stripe connect, QR code, donation widget embed, team management, invite modal)
+- PlanPicker.jsx — exports default PlanPicker(open, onClose) modal; Seed/Growth/Impact plan cards pulling plan data from pages/Pricing.jsx (single source of truth); selecting a plan calls POST /billing/create-checkout. Used by App.jsx banner "Reactivate"/"Choose a plan" buttons — NOT the Stripe Customer Portal (see SaaS billing section)
 
 ## Routing (IMPORTANT)
 - / → Landing (public)
@@ -109,8 +110,8 @@ Mobile "More" drawer: communications, events, volunteers, board, analytics, task
 
 ### Sync logic (inbound)
 - `syncGmail(userId, orgId)` — async function, chunks donor emails 20 at a time, deduplicates via `metadata->>'gmail_message_id'`, inserts `type='email'` interactions
-- `syncAllGmail()` — iterates all active connections; called on startup (+10s) and every 15 min via setInterval
-- Token refresh: `oauth2Client.on('tokens')` persists new tokens; 401 errors set `status='disconnected'`
+- `syncAllGmail()` — iterates connections `WHERE status='active'` only; called on startup (+10s) and every 15 min via setInterval — a connection marked `disconnected` is excluded from all future runs, so it stops being retried
+- Token refresh: `oauth2Client.on('tokens')` persists new tokens; a dead connection is detected two ways, both set `status='disconnected'`: a genuine 401 from the Gmail API, OR `invalid_grant` (message === "invalid_grant", HTTP 400 — thrown by google-auth-library when the refresh token itself has been revoked/expired at the token-refresh step, *before* any Gmail API call happens). `invalid_grant` is NOT a 401 and was previously falling through uncaught, retrying forever every 15 min — both are now caught in the same `catch` in `syncGmail`'s `gmail.users.messages.list` call
 - Interaction note format: `"Subject: X\n\nsnippet"` — parsed by TouchpointTimeline into subject + snippet display
 
 ### Send route
@@ -143,8 +144,11 @@ Mobile "More" drawer: communications, events, volunteers, board, analytics, task
 - Login writes npe_token, npe_user, npe_org to localStorage directly
 - LoginPage uses hardcoded fetch() to Railway URL, not apiFetch
 - onboarding_complete comes back as 1 (number) not true (boolean)
-- After login: window.location.href = "/dashboard"
+- After login: `window.location.href = data.user.isSuperAdmin ? "/admin" : "/today"` (not `/dashboard`)
 - RequireOnboarded guard in main.jsx checks both auth AND onboarding_complete; redirects to /welcome if onboarding_complete is 0
+- `requireAuth` (auth.js) distinguishes `jwt.verify` failure modes and returns a distinct error code + message rather than one generic message: `{error:"token_expired"}` (TokenExpiredError), `{error:"invalid_token"}` (bad signature/malformed — e.g. what a server-side `JWT_SECRET` rotation looks like to every previously-issued token), `{error:"no_token"}` (missing/malformed Authorization header)
+- Client (`api.js` `apiFetch`/`streamAI`) detects any of these three codes (plus the legacy `"Invalid token"`/`"No token provided"` message strings, for compatibility during a deploy) on a 401, clears `npe_token`/`npe_user`/`npe_org`, and redirects to `/login` with a "Your session expired — please log in again" message via `sessionStorage` — instead of leaving the app on a dead-end "Failed to connect" screen with a Retry button that could never succeed on a bad token
+- A real production incident of this kind was traced to an out-of-band `JWT_SECRET` rotation on Railway invalidating all issued tokens — not a bug in the sign/verify code itself, which was already internally consistent. The fix above is about graceful recovery from that class of event (expected or accidental), not a correctness fix to token signing/verification.
 
 ## Onboarding flow (IMPORTANT)
 - Signup → /welcome (RequireAuth, not RequireOnboarded)
@@ -213,21 +217,33 @@ Mobile "More" drawer: communications, events, volunteers, board, analytics, task
 - fin_funds — id, org_id, name, balance, target, restricted (boolean), description
 - fin_budgets — id, org_id, category, amount, period (monthly/annual), fund_id
 - fin_audit_log — id, org_id, table_name, record_id, action, changed_by, changed_at, old_values, new_values
+- LEGACY (do not use for new Finance UI): `financials` (monthly pre-aggregated rows) + `funds` (old fund balances), served by `GET /financials`. `Finance.jsx`'s Overview subtab used to read fund balances + monthly breakdown from this legacy pair via the `data.financials.*` prop, which had diverged from the live `fin_*` data shown on every other Finance subtab. Fixed: Overview now derives from the same `/finance/funds` + `/finance/transactions` state (`fundBalances`, computed client-side as income − expense per fund) that Funds/Accounts/Budgets/Reports/Transactions already use — including the 6-Month Forecast / Risk Analysis AI prompts. The `financials`/`funds` tables and `GET /financials` route still exist but should be treated as legacy/unused going forward.
 
 ### SaaS billing (platform)
 - orgs table: `plan TEXT DEFAULT 'trial'`, `trial_ends_at TIMESTAMPTZ`, `stripe_customer_id TEXT`, `stripe_subscription_id TEXT`, `subscription_status TEXT DEFAULT 'trialing'`, `current_period_end TIMESTAMPTZ`, `grace_until TIMESTAMPTZ`
 - Plans: `trial` | `seed` | `growth` | `impact`
 - Subscription statuses: `trialing` | `active` | `past_due` | `canceled` | `trial_expired` (note: old rows may have `cancelled` with 2 l's — code handles both)
-- `POST /auth/register-org` — public self-serve signup (creates Stripe customer inline)
+- `POST /auth/register-org` — public self-serve signup (creates Stripe customer inline; wrapped in try/catch that only logs on failure, so `stripe_customer_id` can still end up null — see `ensureStripeCustomer` below). The older `POST /auth/register` route (still mounted) never attempts Stripe customer creation at all.
 - `GET /billing/status` — returns plan, subscriptionStatus, trialEndsAt, trialDaysLeft, graceUntil, currentPeriodEnd, accessState
+- `ensureStripeCustomer(orgId, email)` helper — looks up `orgs.stripe_customer_id`; if null, creates a Stripe customer from the org name + given email, persists it, and returns it. `POST /billing/create-checkout` and `POST /billing/create-portal` both call this first instead of reading `stripe_customer_id` directly, so an org with no Stripe customer (legacy-route signup, or a failed inline creation) gets one transparently instead of the routes throwing "No Stripe customer linked to this org"
 - `POST /billing/create-checkout` — creates Stripe Checkout session for subscription
-- `POST /billing/create-portal` — creates Stripe Customer Portal session
+- `POST /billing/create-portal` — creates Stripe Customer Portal session — for managing an *existing* subscription (payment method, invoices) only. NOT used by Reactivate/upgrade flows anymore (see PlanPicker below) since the Portal shows confusing empty states for an org with no subscription yet.
 - `POST /billing/webhook` — handles checkout.session.completed (active + period_end + clear grace), invoice.payment_succeeded (active + period_end + clear grace), invoice.payment_failed (past_due + grace 7d), customer.subscription.deleted (canceled + grace 3d)
 - `getOrgAccessState(org)` → `full | warning | read_only`. active/trialing → full; past_due/canceled within grace_until → warning; trial_expired or past/canceled past grace_until → read_only
-- `checkWriteAccess` middleware: returns 402 `{error:"subscription_required"}` when read_only. Applied to POST /donors, PUT /donors/:id, POST /donors/:id/gifts, POST /grants, PUT /grants/:id. Never blocks GET or export.
+- `checkWriteAccess` middleware: returns 402 `{error:"subscription_required"}` when read_only. Applied to all create/update routes across Donors, Grants, Volunteers, Tasks, Events, Campaigns, Board, and Custom Fields:
+  `POST /donors`, `POST /donors/import-combined`, `PUT /donors/:id`, `POST /donors/:id/gifts`, `POST /gifts/import-history`,
+  `POST /grants`, `PUT /grants/:id`,
+  `POST /volunteers`, `PUT /volunteers/:id`,
+  `POST /tasks`, `PUT /tasks/:id`,
+  `POST /events`, `PUT /events/:id`, `POST /events/:id/attendees`, `PATCH /events/:id/attendees/:attendeeId`, `POST /events/:id/follow-up`,
+  `POST /campaigns`, `PUT /campaigns/:id`, `PUT /campaigns/:id/briefing`, `POST /campaigns/:id/send`,
+  `POST /board`,
+  `POST /custom-fields`, `PUT /custom-fields/reorder`, `PUT /custom-fields/:id`.
+  DELETE routes are intentionally never gated (consistent across all of the above). Never blocks GET or export.
 - `checkTrialExpiry()` job: sets trial_expired when trial_ends_at < NOW(). Runs on startup (+15s) + every 6h.
-- Multi-state banner in App.jsx: read_only=red persistent; warning+past_due=amber update payment; warning+canceled=amber with grace date; trialing≤14d=green (amber at ≤3d). Warning/read_only not dismissible.
-- Create buttons (Add Donor, Log Gift, New Grant, + Add, + Add Gift, + Add Grant) disabled with tooltip when isReadOnly
+- Multi-state banner in App.jsx: read_only=red persistent; warning+past_due=amber update payment; warning+canceled=amber with grace date; trialing≤14d=green (amber at ≤3d). Warning/read_only not dismissible. "Reactivate" (read_only + canceled/warning banners) and "Choose a plan"/"Upgrade now" (trial banner) open `PlanPicker.jsx` → `POST /billing/create-checkout`, not the Portal. "Update payment" (past_due banner) still opens the Portal, since that org has an existing subscription/payment method to fix.
+- Create/add buttons disabled with the `"Reactivate your subscription to make changes."` tooltip when `isReadOnly`, matching client-side the routes `checkWriteAccess` gates server-side: Add Donor/Log Gift/New Grant (Dashboard Quick Actions), Send Email (Dashboard Quick Action → Communications), "+ Add" (Donors), "+ Add Grant" (Grants List view AND Kanban view's own Add Grant button — these are two separate buttons), "+ New Campaign" (Communications), "+ New Event"/"Create Your First Event" (Events), "+ Add" (Tasks), "+ Add Volunteer" (Volunteers), "+ Add Board Member" (Board), "+ Add Field" (Settings custom fields)
+- Settings.jsx billing badge: `BILLING_STATUS_META` lookup (label + bg/color/border per `subscriptionStatus`) covering `active | trialing | past_due | trial_expired | canceled | cancelled` — replaced an earlier ternary chain that had no `trial_expired` branch (fell through to "Trialing" for an org whose trial had actually ended)
 
 ### Stripe / donations
 - orgs table: org_slug (text, unique), stripe_account_id, stripe_connected_at
