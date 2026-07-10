@@ -1,6 +1,15 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
 
+// Message set by api.js handleAuthFailure when a stale/invalid token is cleared.
+function popAuthNotice() {
+  try {
+    const m = sessionStorage.getItem("steward_auth_message");
+    if (m) sessionStorage.removeItem("steward_auth_message");
+    return m || "";
+  } catch { return ""; }
+}
+
 const T = {
   cream:  "#f0ede6",
   cream2: "#e8e4db",
@@ -17,11 +26,12 @@ export default function LoginPage() {
   const [email, setEmail]       = useState("");
   const [password, setPassword] = useState("");
   const [error, setError]       = useState("");
+  const [notice, setNotice]     = useState(popAuthNotice);
   const [loading, setLoading]   = useState(false);
 
   const submit = async (e) => {
     e.preventDefault();
-    setLoading(true); setError("");
+    setLoading(true); setError(""); setNotice("");
     try {
       const res = await fetch("https://nonprofit-erp-production.up.railway.app/auth/login", {
         method: "POST",
@@ -93,6 +103,19 @@ export default function LoginPage() {
             padding: "32px 32px 28px",
             boxShadow: "0 2px 16px rgba(15,15,15,0.06)",
           }}>
+            {notice && (
+              <div style={{
+                background: "#ecfdf5",
+                border: `1px solid #a7f3d0`,
+                borderRadius: 8,
+                padding: "10px 14px",
+                fontSize: 13,
+                color: T.greenDark,
+                marginBottom: 16,
+              }}>
+                {notice}
+              </div>
+            )}
             <form onSubmit={submit} style={{ display: "flex", flexDirection: "column", gap: 16 }}>
               <Field label="Email address">
                 <input

@@ -2,6 +2,32 @@ export const API = import.meta.env.VITE_API_URL || "https://nonprofit-erp-produc
 
 export const getToken = () => localStorage.getItem("npe_token");
 
+// Error codes returned by requireAuth for an unusable token. Legacy string
+// messages are matched too so this keeps working during the backend deploy
+// window (old server still returns "Invalid token"/"No token provided").
+const AUTH_ERROR_CODES = ["token_expired", "invalid_token", "no_token"];
+const LEGACY_AUTH_MESSAGES = ["Invalid token", "No token provided"];
+
+function isAuthError(err) {
+  return AUTH_ERROR_CODES.includes(err?.error) || LEGACY_AUTH_MESSAGES.includes(err?.error);
+}
+
+// A present-but-unusable token can never succeed on retry. Clear the stale
+// session and send the user to /login with an explanation, instead of leaving
+// them on a dead-end "Failed to connect / Retry" screen.
+export function handleAuthFailure(code) {
+  localStorage.removeItem("npe_token");
+  localStorage.removeItem("npe_user");
+  localStorage.removeItem("npe_org");
+  const msg = code === "token_expired"
+    ? "Your session expired — please log in again."
+    : "Your session is no longer valid — please log in again.";
+  try { sessionStorage.setItem("steward_auth_message", msg); } catch {}
+  if (!window.location.pathname.startsWith("/login")) {
+    window.location.replace("/login");
+  }
+}
+
 export async function apiFetch(path, options = {}) {
   const token = getToken();
   const res = await fetch(`${API}${path}`, {
@@ -14,7 +40,10 @@ export async function apiFetch(path, options = {}) {
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: res.statusText }));
-    throw Object.assign(new Error(err.error || "Request failed"), { status: res.status, ...err });
+    if (res.status === 401 && isAuthError(err)) {
+      handleAuthFailure(err.error);
+    }
+    throw Object.assign(new Error(err.message || err.error || "Request failed"), { status: res.status, ...err });
   }
   return res.json();
 }
@@ -29,7 +58,13 @@ export async function streamAI(systemPrompt, userMessage, onChunk) {
     },
     body: JSON.stringify({ systemPrompt, userMessage }),
   });
-  if (!res.ok) throw new Error(`Stream failed: ${res.status}`);
+  if (!res.ok) {
+    if (res.status === 401) {
+      const err = await res.json().catch(() => ({}));
+      if (isAuthError(err)) handleAuthFailure(err.error);
+    }
+    throw new Error(`Stream failed: ${res.status}`);
+  }
   const reader = res.body.getReader();
   const dec = new TextDecoder();
   let full = "";

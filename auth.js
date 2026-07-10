@@ -13,13 +13,18 @@ function signToken(payload) {
 function requireAuth(req, res, next) {
   const auth = req.headers.authorization;
   if (!auth?.startsWith("Bearer ")) {
-    return res.status(401).json({ error: "No token provided" });
+    return res.status(401).json({ error: "no_token", message: "No token provided" });
   }
   try {
     req.user = jwt.verify(auth.slice(7), SIGNING_SECRET);
     next();
-  } catch {
-    return res.status(401).json({ error: "Invalid token" });
+  } catch (err) {
+    // Distinguish verify failure modes so the client can react appropriately.
+    if (err.name === "TokenExpiredError") {
+      return res.status(401).json({ error: "token_expired", message: "Your session has expired" });
+    }
+    // JsonWebTokenError (bad signature / malformed) and anything else → invalid.
+    return res.status(401).json({ error: "invalid_token", message: "Invalid or corrupted session token" });
   }
 }
 
