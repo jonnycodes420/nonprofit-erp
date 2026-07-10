@@ -1,4 +1,4 @@
-const CACHE_NAME = 'steward-v1';
+const CACHE_NAME = 'steward-v2';
 const STATIC_ASSETS = ['/', '/index.html', '/offline.html'];
 
 self.addEventListener('install', event => {
