@@ -4595,6 +4595,20 @@ async function checkWriteAccess(req, res, next) {
 }
 
 // ── Billing ────────────────────────────────────────────────────────────────
+
+// Returns the org's stripe_customer_id, creating and persisting one on the
+// fly if missing (e.g. orgs created via the legacy /auth/register route,
+// which predates Stripe billing, or ones where inline creation at signup
+// failed silently). Returns null only if the org itself doesn't exist.
+async function ensureStripeCustomer(orgId, email) {
+  const orgs = await query("SELECT name, stripe_customer_id FROM orgs WHERE id=?", [orgId]);
+  if (!orgs.length) return null;
+  if (orgs[0].stripe_customer_id) return orgs[0].stripe_customer_id;
+  const customer = await stripe.customers.create({ email, name: orgs[0].name, metadata: { orgId } });
+  await run("UPDATE orgs SET stripe_customer_id=? WHERE id=?", [customer.id, orgId]);
+  return customer.id;
+}
+
 app.get("/billing/status", requireAuth, wrap(async (req, res) => {
   const orgs = await query("SELECT plan, subscription_status, trial_ends_at, stripe_customer_id, grace_until, current_period_end FROM orgs WHERE id=?", [req.user.orgId]);
   if (!orgs.length) return res.status(404).json({ error: "Org not found" });
@@ -4635,9 +4649,8 @@ app.post("/billing/create-checkout", requireAuth, wrap(async (req, res) => {
   const priceId = priceMap[plan];
   if (!priceId) return res.status(400).json({ error: "Invalid plan. Must be seed, growth, or impact." });
 
-  const orgs = await query("SELECT stripe_customer_id FROM orgs WHERE id=?", [req.user.orgId]);
-  if (!orgs.length) return res.status(404).json({ error: "Org not found" });
-  const customerId = orgs[0].stripe_customer_id;
+  const customerId = await ensureStripeCustomer(req.user.orgId, req.user.email);
+  if (!customerId) return res.status(404).json({ error: "Org not found" });
 
   const sessionParams = {
     mode: "subscription",
@@ -4646,9 +4659,8 @@ app.post("/billing/create-checkout", requireAuth, wrap(async (req, res) => {
     cancel_url:  (process.env.FRONTEND_URL || "https://stewardapp.dev") + "/pricing",
     metadata: { orgId: req.user.orgId, plan },
     subscription_data: { metadata: { orgId: req.user.orgId, plan } },
+    customer: customerId,
   };
-  if (customerId) sessionParams.customer = customerId;
-  else sessionParams.customer_email = req.user.email;
 
   const session = await stripe.checkout.sessions.create(sessionParams);
   res.json({ url: session.url });
@@ -4656,12 +4668,10 @@ app.post("/billing/create-checkout", requireAuth, wrap(async (req, res) => {
 
 app.post("/billing/create-portal", requireAuth, wrap(async (req, res) => {
   if (!stripe) return res.status(503).json({ error: "Stripe not configured" });
-  const orgs = await query("SELECT stripe_customer_id FROM orgs WHERE id=?", [req.user.orgId]);
-  if (!orgs.length || !orgs[0].stripe_customer_id) {
-    return res.status(400).json({ error: "No Stripe customer linked to this org" });
-  }
+  const customerId = await ensureStripeCustomer(req.user.orgId, req.user.email);
+  if (!customerId) return res.status(404).json({ error: "Org not found" });
   const session = await stripe.billingPortal.sessions.create({
-    customer: orgs[0].stripe_customer_id,
+    customer: customerId,
     return_url: (process.env.FRONTEND_URL || "https://stewardapp.dev") + "/dashboard",
   });
   res.json({ url: session.url });
