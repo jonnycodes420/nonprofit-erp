@@ -425,7 +425,9 @@ export function Grants({data,setData,isReadOnly=false}) {
   };
 
   return <div style={{display:"flex",flexDirection:"column",gap:16}}>
-    {selected&&<GrantProfile grant={selected} onClose={()=>setSelected(null)} onUpdate={onUpdate} onDelete={onDelete} isAdmin={isAdmin} org={data.org}/>}
+    {selected ? (
+    <GrantProfile grant={selected} onClose={()=>setSelected(null)} onUpdate={onUpdate} onDelete={onDelete} isAdmin={isAdmin} org={data.org}/>
+    ) : (<>
     <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,flexWrap:"wrap"}}>
       <PageTitle main="Grant" accent={subTab==="findgrants"?"discovery.":"pipeline."}/>
       <div style={{display:"flex",gap:2,background:T.bg2,borderRadius:10,padding:3}}>
@@ -515,6 +517,7 @@ export function Grants({data,setData,isReadOnly=false}) {
     })}
     </>}
     </>}
+    </>)}
   </div>;
 }
 
