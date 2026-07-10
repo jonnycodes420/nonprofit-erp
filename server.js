@@ -1303,7 +1303,7 @@ app.get("/donors/:id", requireAuth, wrap(async (req, res) => {
 
   const d = rows[0];
   d.tags = JSON.parse(d.tags || "[]");
-  d.interactions = await query("SELECT * FROM interactions WHERE donor_id = ? ORDER BY date DESC", [d.id]);
+  d.interactions = await query("SELECT * FROM interactions WHERE donor_id = ? AND org_id = ? ORDER BY date DESC", [d.id, req.user.orgId]);
   d.gifts = await query("SELECT * FROM gifts WHERE donor_id = ? ORDER BY date DESC", [d.id]);
   res.json(d);
 }));
@@ -5547,6 +5547,10 @@ app.post("/gmail/sync", requireAuth, wrap(async (req, res) => {
 // POST /gmail/send — send email via user's connected Gmail and log to interactions
 app.post("/gmail/send", requireAuth, wrap(async (req, res) => {
   const { donorId, to, subject, body } = req.body;
+  if (donorId) {
+    const donorCheck = await query("SELECT id FROM donors WHERE id=? AND org_id=?", [donorId, req.user.orgId]);
+    if (!donorCheck.length) return res.status(404).json({ error: "Donor not found" });
+  }
   const conns = await query("SELECT * FROM gmail_connections WHERE user_id=? AND status='active'", [req.user.userId]);
   if (!conns.length) return res.status(400).json({ error: "Gmail not connected" });
   const conn = conns[0];
