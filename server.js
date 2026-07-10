@@ -9,6 +9,7 @@ if (process.env.SENTRY_DSN) {
 }
 const express = require("express");
 const cors = require("cors");
+const { rateLimit, ipKeyGenerator } = require("express-rate-limit");
 const bcrypt = require("bcryptjs");
 const crypto = require("crypto");
 const Anthropic = require("@anthropic-ai/sdk");
@@ -31,7 +32,87 @@ function makeOAuth2Client() {
 
 const app = express();
 
-app.use(cors({ origin: process.env.CORS_ORIGIN || "*" }));
+// Railway terminates TLS and proxies every request through a single edge hop,
+// setting X-Forwarded-For itself. Trusting exactly 1 hop lets express-rate-limit
+// (and req.ip generally) see the real client IP without trusting the full,
+// client-spoofable X-Forwarded-For chain that `trust proxy: true` would allow.
+app.set("trust proxy", 1);
+
+// Fail closed: an explicit, comma-separated allowlist is required to enable
+// cross-origin browser access. If CORS_ORIGIN is ever unset in the deploy
+// environment, fall back to the known production frontend origins rather than "*".
+const DEFAULT_CORS_ORIGINS = ["https://stewardapp.dev", "https://client-five-tau-13.vercel.app"];
+const corsOrigins = process.env.CORS_ORIGIN
+  ? process.env.CORS_ORIGIN.split(",").map(o => o.trim()).filter(Boolean)
+  : DEFAULT_CORS_ORIGINS;
+app.use(cors({ origin: corsOrigins }));
+
+// ── Rate limiting ────────────────────────────────────────────────────────
+// Shared 429 handler: explicit Retry-After header + a body shape that can't be
+// mistaken for a generic error (client code can key off error === "rate_limited").
+function rateLimitHandler(req, res) {
+  const resetMs = req.rateLimit?.resetTime ? req.rateLimit.resetTime.getTime() - Date.now() : 60000;
+  res.set("Retry-After", String(Math.max(1, Math.ceil(resetMs / 1000))));
+  res.status(429).json({ error: "rate_limited", message: "Too many requests. Please try again later." });
+}
+
+// Loose baseline across the whole API — catches scraping/volumetric abuse
+// without interfering with normal SPA usage (a dashboard load fires many
+// parallel fetches from one IP).
+const generalLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 1000,
+  standardHeaders: true,
+  legacyHeaders: false,
+  handler: rateLimitHandler,
+  // Webhooks are server-to-server (Stripe) and health checks are polled
+  // frequently by design — neither should share budget with browser traffic.
+  skip: (req) => req.path === "/health" || req.path === "/stripe/webhook" || req.path === "/billing/webhook",
+});
+app.use(generalLimiter);
+
+// Per-IP: stops one attacker from spraying attempts across many different
+// accounts (each account-scoped limiter below would look "clean" individually).
+const loginIpLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  handler: rateLimitHandler,
+});
+// Per-account+IP: stops repeated brute force against one specific account.
+const loginAccountLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 6,
+  standardHeaders: true,
+  legacyHeaders: false,
+  handler: rateLimitHandler,
+  keyGenerator: (req) => `${ipKeyGenerator(req.ip)}:${String(req.body?.email || "").toLowerCase()}`,
+});
+
+const registerLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  limit: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  handler: rateLimitHandler,
+});
+
+const passwordResetLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  limit: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  handler: rateLimitHandler,
+});
+
+const donateLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 15,
+  standardHeaders: true,
+  legacyHeaders: false,
+  handler: rateLimitHandler,
+});
 
 // Stripe webhook must receive raw body — register BEFORE express.json()
 app.post("/stripe/webhook", express.raw({ type: "application/json" }), async (req, res) => {
@@ -348,7 +429,7 @@ async function writeAuditLog(orgId, userId, userName, action, entityType, entity
 }
 
 // ── Auth ───────────────────────────────────────────────────────────────────
-app.post("/auth/login", wrap(async (req, res) => {
+app.post("/auth/login", loginIpLimiter, loginAccountLimiter, wrap(async (req, res) => {
   const { email, password } = req.body;
   if (!email || !password) return res.status(400).json({ error: "Email and password required" });
 
@@ -367,7 +448,7 @@ app.post("/auth/login", wrap(async (req, res) => {
   res.json({ token, user: { id: user.id, email: user.email, name: user.name, role: user.role, isSuperAdmin }, org: { ...org, onboarding_complete: org.onboarding_complete ?? 1 } });
 }));
 
-app.post("/auth/register", wrap(async (req, res) => {
+app.post("/auth/register", registerLimiter, wrap(async (req, res) => {
   const { email, password, name, orgName, orgMission, ein } = req.body;
   if (!email || !password || !orgName) {
     return res.status(400).json({ error: "Email, password, and org name required" });
@@ -397,7 +478,7 @@ app.post("/auth/register", wrap(async (req, res) => {
 }));
 
 // POST /auth/forgot-password — generate reset token and email the user
-app.post("/auth/forgot-password", wrap(async (req, res) => {
+app.post("/auth/forgot-password", passwordResetLimiter, wrap(async (req, res) => {
   const { email } = req.body;
   if (!email) return res.status(400).json({ error: "Email is required" });
 
@@ -475,7 +556,7 @@ app.post("/auth/forgot-password", wrap(async (req, res) => {
 }));
 
 // POST /auth/reset-password — validate token and update password
-app.post("/auth/reset-password", wrap(async (req, res) => {
+app.post("/auth/reset-password", passwordResetLimiter, wrap(async (req, res) => {
   const { token, password } = req.body;
   if (!token || !password) return res.status(400).json({ error: "Token and password are required" });
   if (password.length < 8) return res.status(400).json({ error: "Password must be at least 8 characters" });
@@ -495,7 +576,7 @@ app.post("/auth/reset-password", wrap(async (req, res) => {
 }));
 
 // ── Self-serve org registration (SaaS signup) ──────────────────────────────
-app.post("/auth/register-org", wrap(async (req, res) => {
+app.post("/auth/register-org", registerLimiter, wrap(async (req, res) => {
   const { orgName, userName, email, password } = req.body;
   if (!orgName || !userName || !email || !password) {
     return res.status(400).json({ error: "All fields are required" });
@@ -3243,7 +3324,7 @@ app.get("/org/:orgSlug/public", wrap(async (req, res) => {
   res.json({ org: { name: org.name, mission: org.mission, slug: req.params.orgSlug }, funds });
 }));
 
-app.post("/donate/:orgSlug", wrap(async (req, res) => {
+app.post("/donate/:orgSlug", donateLimiter, wrap(async (req, res) => {
   if (!stripe) return res.status(503).json({ error: "Stripe not configured" });
   const { amount, fundId, frequency, firstName, lastName, email, campaignId } = req.body;
   if (!amount || !firstName || !lastName || !email) return res.status(400).json({ error: "All fields required" });
