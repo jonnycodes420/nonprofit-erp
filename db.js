@@ -607,6 +607,22 @@ async function initSchema() {
     )
   `);
 
+  // ── Email suppression (unsubscribe / bounce / complaint) ────────────────────
+  // org_id NULL = global suppression (bounce/complaint — protects shared sending
+  // domain reputation across every org). org_id set = that org's donor opted out
+  // of that org's mail only.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS email_suppressions (
+      id TEXT PRIMARY KEY,
+      org_id TEXT,
+      email TEXT NOT NULL,
+      reason TEXT NOT NULL,
+      source TEXT NOT NULL,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_email_suppressions_email ON email_suppressions (email)`);
+
   // ── Sample data flag ──────────────────────────────────────────────────────
   await pool.query(`ALTER TABLE donors ADD COLUMN IF NOT EXISTS is_sample BOOLEAN DEFAULT false`);
   await pool.query(`ALTER TABLE gifts ADD COLUMN IF NOT EXISTS is_sample BOOLEAN DEFAULT false`);

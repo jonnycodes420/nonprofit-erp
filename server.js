@@ -19,6 +19,7 @@ const { getDb, query, run, uuid, seedOrgData, withTransaction, queryTx, runTx } 
 const { signToken, requireAuth, requireSuperAdmin } = require("./auth");
 const Stripe = require("stripe");
 const { google } = require("googleapis");
+const { Webhook: SvixWebhook } = require("svix");
 
 const stripe = process.env.STRIPE_SECRET_KEY ? new Stripe(process.env.STRIPE_SECRET_KEY) : null;
 
@@ -245,6 +246,58 @@ app.post("/stripe/webhook", express.raw({ type: "application/json" }), async (re
   }
 
   res.json({ received: true });
+});
+
+// Resend delivery-event webhook (bounce/complaint) — Svix-signed, must receive
+// raw body like the Stripe webhook above, so it's also registered BEFORE express.json().
+app.post("/resend/webhook", express.raw({ type: "application/json" }), async (req, res) => {
+  if (!process.env.RESEND_WEBHOOK_SECRET) return res.status(503).json({ error: "Resend webhook not configured" });
+
+  let event;
+  try {
+    const wh = new SvixWebhook(process.env.RESEND_WEBHOOK_SECRET);
+    event = wh.verify(req.body, {
+      "svix-id": req.headers["svix-id"],
+      "svix-timestamp": req.headers["svix-timestamp"],
+      "svix-signature": req.headers["svix-signature"],
+    });
+  } catch (err) {
+    return res.status(400).json({ error: `Webhook signature verification failed: ${err.message}` });
+  }
+
+  try {
+    const type = event?.type;
+    if (type === "email.bounced" || type === "email.complained") {
+      const reason = type === "email.bounced" ? "bounced" : "complained";
+      const rawTo = event?.data?.to;
+      const recipients = Array.isArray(rawTo) ? rawTo : (rawTo ? [rawTo] : []);
+      for (const rawEmail of recipients) {
+        const email = String(rawEmail).toLowerCase().trim();
+        if (!email) continue;
+        // Global: a bounce/complaint is a shared-domain reputation issue, not an
+        // org-specific preference, so it suppresses sends from every org.
+        await run(
+          "INSERT INTO email_suppressions (id, org_id, email, reason, source) VALUES (?,?,?,?,?)",
+          ["sup_" + uuid().slice(0, 8), null, email, reason, "webhook"]
+        );
+        // sequence_enrollments only models unsubscribed|bounced (no 'complained'
+        // value) — a complaint is functionally "stop sending", so map it to bounced.
+        await run(
+          `UPDATE sequence_enrollments SET status='bounced', completed_at=NOW()
+           WHERE status='active' AND donor_id IN (
+             SELECT id FROM donors WHERE email IS NOT NULL AND LOWER(email) = ?
+           )`,
+          [email]
+        );
+        console.log(`[resend-webhook] ${type} for ${email} — suppressed globally`);
+      }
+    }
+    // Other event types (delivered, opened, clicked, etc.) are no-ops for now.
+    res.json({ received: true });
+  } catch (err) {
+    console.error("[resend-webhook] handling error:", err.message);
+    res.status(500).json({ error: "Internal error processing webhook" });
+  }
 });
 
 app.use(express.json({ limit: "5mb" }));
@@ -2732,6 +2785,158 @@ app.get("/email/test-smtp", requireAuth, requireAdmin, wrap(async (req, res) => 
   }
 }));
 
+// ── Email suppression & unsubscribe ─────────────────────────────────────────
+// Signed, no-login-required unsubscribe tokens. HMAC (not full JWT) is enough
+// here — the payload only needs tamper-proofing, not the extra claims/expiry
+// machinery a JWT brings. Reuses the same secret auth.js signs session tokens
+// with (same dev-only fallback, gated the same way) rather than introducing a
+// second secret to provision.
+const UNSUB_SECRET = process.env.JWT_SECRET || "nonprofit_erp_secret_dev";
+
+function signUnsubscribeToken(email, orgId, source) {
+  const payload = Buffer.from(JSON.stringify({
+    email: String(email).toLowerCase(),
+    orgId: orgId || null,
+    source: source === "sequence" ? "sequence" : "campaign",
+  })).toString("base64url");
+  const sig = crypto.createHmac("sha256", UNSUB_SECRET).update(payload).digest("base64url");
+  return `${payload}.${sig}`;
+}
+
+function verifyUnsubscribeToken(token) {
+  if (!token || typeof token !== "string" || !token.includes(".")) return null;
+  const [payload, sig] = token.split(".");
+  if (!payload || !sig) return null;
+  const expected = crypto.createHmac("sha256", UNSUB_SECRET).update(payload).digest("base64url");
+  const sigBuf = Buffer.from(sig), expBuf = Buffer.from(expected);
+  if (sigBuf.length !== expBuf.length || !crypto.timingSafeEqual(sigBuf, expBuf)) return null;
+  try {
+    const decoded = JSON.parse(Buffer.from(payload, "base64url").toString());
+    if (!decoded.email) return null;
+    return decoded;
+  } catch { return null; }
+}
+
+function buildUnsubscribeUrl(email, orgId, source) {
+  const backendUrl = process.env.BACKEND_URL || "https://nonprofit-erp-production.up.railway.app";
+  return `${backendUrl}/unsubscribe?token=${signUnsubscribeToken(email, orgId, source)}`;
+}
+
+function unsubscribeEmailFooterHtml(email, orgId, source) {
+  const url = buildUnsubscribeUrl(email, orgId, source);
+  return `<div style="margin-top:32px;padding-top:16px;border-top:1px solid #e5e0d5;font-family:'DM Sans',Helvetica,Arial,sans-serif;font-size:12px;color:#8fa896;">
+    <a href="${url}" style="color:#8fa896;text-decoration:underline;">Unsubscribe</a> from these emails.
+  </div>`;
+}
+
+// List-Unsubscribe headers (RFC 8058) so Gmail/Outlook render a native
+// one-click unsubscribe button. The mailto: address isn't monitored/processed —
+// it's included only to satisfy the two-part format some older clients expect;
+// modern one-click support (Gmail/Outlook) relies on the https: URL + POST below.
+function unsubscribeHeaders(email, orgId, source) {
+  const url = buildUnsubscribeUrl(email, orgId, source);
+  return {
+    "List-Unsubscribe": `<mailto:unsubscribe@stewardapp.dev>, <${url}>`,
+    "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
+  };
+}
+
+// Returns the suppression reason ('unsubscribed'|'bounced'|'complained') if this
+// address is suppressed for this org — either a global row (org_id IS NULL,
+// from a bounce/complaint) or an org-scoped row (that org's own unsubscribe).
+async function getSuppressionReason(email, orgId) {
+  if (!email) return null;
+  const rows = await query(
+    `SELECT reason FROM email_suppressions
+     WHERE LOWER(email) = LOWER(?) AND (org_id IS NULL OR org_id = ?)
+     ORDER BY created_at DESC LIMIT 1`,
+    [email, orgId || null]
+  );
+  return rows[0]?.reason || null;
+}
+
+async function recordUnsubscribe(email, orgId, source) {
+  await run(
+    "INSERT INTO email_suppressions (id, org_id, email, reason, source) VALUES (?,?,?,?,?)",
+    ["sup_" + uuid().slice(0, 8), orgId || null, email.toLowerCase(), "unsubscribed", source === "sequence" ? "sequence" : "campaign"]
+  );
+  // Org-scoped unsubscribe only stops that org's sends; a global (webhook-sourced)
+  // suppression stops sends from every org — mirror that scope in enrollment status.
+  if (orgId) {
+    await run(
+      `UPDATE sequence_enrollments SET status='unsubscribed', completed_at=NOW()
+       WHERE org_id = ? AND status='active' AND donor_id IN (
+         SELECT id FROM donors WHERE org_id = ? AND email IS NOT NULL AND LOWER(email) = ?
+       )`,
+      [orgId, orgId, email.toLowerCase()]
+    );
+  } else {
+    await run(
+      `UPDATE sequence_enrollments SET status='unsubscribed', completed_at=NOW()
+       WHERE status='active' AND donor_id IN (
+         SELECT id FROM donors WHERE email IS NOT NULL AND LOWER(email) = ?
+       )`,
+      [email.toLowerCase()]
+    );
+  }
+}
+
+function unsubscribeHtml({ ok, email }) {
+  const message = ok
+    ? `<h1>You're unsubscribed</h1><p>${email ? `<strong>${email}</strong> ` : ""}won't receive any more emails from this list. It can take a few minutes to fully take effect.</p>`
+    : `<h1>Link expired</h1><p>This unsubscribe link is invalid or has expired. If you're still receiving unwanted emails, reply to any message and ask to be removed.</p>`;
+  return `<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Unsubscribed — Steward</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=DM+Sans:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  * { box-sizing: border-box; }
+  body { margin:0; padding:0; background:#f0ede6; font-family:'DM Sans',Helvetica,Arial,sans-serif; color:#0f1a12; }
+  .wrap { min-height:100vh; display:flex; align-items:center; justify-content:center; padding:24px; }
+  .card { background:#ffffff; border-radius:16px; padding:40px; max-width:440px; width:100%; box-shadow:0 2px 20px rgba(15,26,18,0.08); text-align:center; }
+  h1 { font-family:'DM Serif Display',Georgia,serif; font-size:26px; font-weight:400; margin:0 0 12px; letter-spacing:-0.02em; }
+  p { font-size:15px; color:#6b7c72; line-height:1.6; margin:0; }
+  .badge { width:48px; height:48px; background:#0f1a12; border-radius:12px; margin:0 auto 20px; display:flex; align-items:center; justify-content:center; }
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card">
+      <div class="badge">
+        <svg width="22" height="22" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <path d="M8 2L13 5v6L8 14 3 11V5L8 2z" stroke="#f0ede6" stroke-width="1.5" fill="none"/>
+          <circle cx="8" cy="8" r="2" fill="#f0ede6"/>
+        </svg>
+      </div>
+      ${message}
+    </div>
+  </div>
+</body>
+</html>`;
+}
+
+// GET — a human clicking the footer link in the email; renders a confirmation page.
+app.get("/unsubscribe", wrap(async (req, res) => {
+  const decoded = verifyUnsubscribeToken(req.query.token);
+  res.set("Content-Type", "text/html");
+  if (!decoded) return res.status(400).send(unsubscribeHtml({ ok: false }));
+  await recordUnsubscribe(decoded.email, decoded.orgId, decoded.source);
+  res.send(unsubscribeHtml({ ok: true, email: decoded.email }));
+}));
+
+// POST — RFC 8058 one-click unsubscribe: Gmail/Outlook POST here silently
+// (no page render) when the recipient taps the native unsubscribe button.
+app.post("/unsubscribe", wrap(async (req, res) => {
+  const decoded = verifyUnsubscribeToken(req.query.token);
+  if (!decoded) return res.status(400).end();
+  await recordUnsubscribe(decoded.email, decoded.orgId, decoded.source);
+  res.status(200).end();
+}));
+
 // ── Campaigns ──────────────────────────────────────────────────────────────
 app.get("/campaigns", requireAuth, wrap(async (req, res) => {
   const campaigns = await query(
@@ -2908,6 +3113,16 @@ app.post("/campaigns/:id/send", requireAuth, requireAdmin, checkWriteAccess, wra
       const year = String(new Date().getFullYear());
 
       for (const donor of donors) {
+        const suppressReason = await getSuppressionReason(donor.email, org.id);
+        if (suppressReason) {
+          console.log(`[campaign:${campaign.id}] skipping suppressed address ${donor.email} (${suppressReason})`);
+          await run(
+            "INSERT INTO campaign_recipients (id,org_id,campaign_id,donor_id,email,failure_reason) VALUES (?,?,?,?,?,?)",
+            ["cr_" + uuid().slice(0, 8), org.id, campaign.id, donor.id, donor.email, `suppressed: ${suppressReason}`]
+          ).catch(() => {});
+          continue;
+        }
+
         const recipientId = "cr_" + uuid().slice(0, 8);
         await run(
           "INSERT INTO campaign_recipients (id,org_id,campaign_id,donor_id,email) VALUES (?,?,?,?,?)",
@@ -2930,7 +3145,8 @@ app.post("/campaigns/:id/send", requireAuth, requireAdmin, checkWriteAccess, wra
           .replace(/{{year}}/g,         year);
 
         const pixel    = `<img src="${BACKEND_URL}/track/${recipientId}/open.gif" width="1" height="1" style="display:none">`;
-        const htmlFull = bodyHtml + pixel;
+        const footer   = unsubscribeEmailFooterHtml(donor.email, org.id, "campaign");
+        const htmlFull = bodyHtml + footer + pixel;
         const textBody = bodyHtml.replace(/<[^>]+>/g, "");
 
         try {
@@ -2939,6 +3155,7 @@ app.post("/campaigns/:id/send", requireAuth, requireAdmin, checkWriteAccess, wra
               from: smtpFrom, to: donor.email,
               subject: campaign.subject || "",
               html: htmlFull,
+              headers: unsubscribeHeaders(donor.email, org.id, "campaign"),
             });
             if (sendError) throw new Error(sendError.message);
           }
@@ -4262,12 +4479,16 @@ async function sendOnboardingSequence(orgId, userId, userName, userEmail) {
     const step0 = steps[0];
     const subject0 = applyTokens(step0.subject);
     const body0 = applyTokens(step0.body);
-    const bodyHtml0 = `<p>${body0.replace(/\n\n+/g, "</p><p>").replace(/\n/g, "<br>")}</p>`;
+    const bodyHtml0 = `<p>${body0.replace(/\n\n+/g, "</p><p>").replace(/\n/g, "<br>")}</p>` + unsubscribeEmailFooterHtml(userEmail, orgId, "sequence");
     const founderEmail = process.env.FOUNDER_EMAIL || "noreply@stewardapp.dev";
-    if (process.env.RESEND_API_KEY) {
+    const suppressReason0 = await getSuppressionReason(userEmail, orgId);
+    if (suppressReason0) {
+      console.log(`[onboarding] skipping suppressed address ${userEmail} (${suppressReason0})`);
+    } else if (process.env.RESEND_API_KEY) {
       try {
         const { error: sendErr } = await resend.emails.send({
           from: founderEmail, to: userEmail, subject: subject0, html: bodyHtml0, reply_to: founderEmail,
+          headers: unsubscribeHeaders(userEmail, orgId, "sequence"),
         });
         if (sendErr) console.error("[onboarding] email 1 send error:", sendErr.message);
         else console.log("[onboarding] email 1 sent to", userEmail);
@@ -4325,6 +4546,15 @@ async function processSequences() {
           }
           continue;
         }
+        const suppressReason = await getSuppressionReason(recipient.email, enr.org_id);
+        if (suppressReason) {
+          console.log(`[seq] skipping suppressed recipient ${recipient.email} (${suppressReason}) — enrollment ${enr.id}`);
+          await run(
+            `UPDATE sequence_enrollments SET status=?, completed_at=NOW() WHERE id=?`,
+            [suppressReason === "unsubscribed" ? "unsubscribed" : "bounced", enr.id]
+          );
+          continue;
+        }
         const orgRows = await query("SELECT name FROM orgs WHERE id = ?", [enr.org_id]);
         const orgName = orgRows[0]?.name || "";
         const firstName = recipient.name ? recipient.name.trim().split(/\s+/)[0] : "";
@@ -4335,15 +4565,19 @@ async function processSequences() {
           .replace(/{{org_name}}/g, orgName);
         const subject = applyTokens(step.subject);
         const bodyRaw = applyTokens(step.body);
-        const bodyHtml = bodyRaw.includes("<") ? bodyRaw
-          : `<p>${bodyRaw.replace(/\n\n+/g, "</p><p>").replace(/\n/g, "<br>")}</p>`;
+        const bodyHtml = (bodyRaw.includes("<") ? bodyRaw
+          : `<p>${bodyRaw.replace(/\n\n+/g, "</p><p>").replace(/\n/g, "<br>")}</p>`)
+          + unsubscribeEmailFooterHtml(recipient.email, enr.org_id, "sequence");
         const founderEmail = process.env.FOUNDER_EMAIL || "noreply@stewardapp.dev";
         const smtpFrom = enr.seq_trigger === "onboarding"
           ? founderEmail
           : (process.env.DEMO_SMTP_FROM || "noreply@stewardapp.dev");
         if (process.env.RESEND_API_KEY && smtpFrom) {
           try {
-            const sendOpts = { from: smtpFrom, to: recipient.email, subject, html: bodyHtml };
+            const sendOpts = {
+              from: smtpFrom, to: recipient.email, subject, html: bodyHtml,
+              headers: unsubscribeHeaders(recipient.email, enr.org_id, "sequence"),
+            };
             if (enr.seq_trigger === "onboarding") sendOpts.reply_to = founderEmail;
             const { error: sendErr } = await resend.emails.send(sendOpts);
             if (sendErr) console.error("[seq] send error:", sendErr.message);
