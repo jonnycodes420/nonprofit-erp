@@ -233,24 +233,23 @@ export function Finance({ data }) {
     setAuditLoading(false);
   };
 
-  // ── AI (reuse existing data context) ────────────────────────────────────
-  const rev = data.financials.revenue;
-  const exp = data.financials.expenses;
-  const ytdRev = rev.reduce((s, r) => s + r.individual + r.grants + r.events + r.other, 0);
-  const ytdExp = exp.reduce((s, e) => s + e.programs + e.admin + e.fundraising, 0);
-  const programRatio = ytdExp > 0 ? Math.round(exp.reduce((s, e) => s + e.programs, 0) / ytdExp * 100) : 0;
+  // ── AI (reuse live finance data — NOT the legacy data.financials.* prop,
+  // which reads from the old financials/funds tables and was contradicting
+  // every other Finance subtab that reads from fin_transactions/fin_funds) ──
+  const ytdRev = summary?.ytdRevenue || 0;
+  const ytdExp = summary?.ytdExpenses || 0;
 
   const getForecast = async () => {
     setForecastLoading(true); setForecastAI("");
     await askClaude("You are a nonprofit CFO. Specific, data-driven. Max 200 words.",
-      `Generate a 6-month revenue forecast.\nYTD Revenue: ${fmtFull(ytdRev)} | YTD Expenses: ${fmtFull(ytdExp)} | Net: ${fmtFull(ytdRev - ytdExp)}\nActive grants: ${data.grants.filter(g => g.status === "active").map(g => `${g.funder} ${fmtFull(g.amount)} ends ${g.deadline}`).join(", ")}\nFund balances: ${data.financials.funds.map(f => `${f.name}: ${fmtFull(f.balance)}`).join(", ")}\nProgram ratio: ${programRatio}%\n\nQ3-Q4 projection, 3 financial risks, 2 opportunities.`,
+      `Generate a 6-month revenue forecast.\nYTD Revenue: ${fmtFull(ytdRev)} | YTD Expenses: ${fmtFull(ytdExp)} | Net: ${fmtFull(ytdRev - ytdExp)}\nActive grants: ${data.grants.filter(g => g.status === "active").map(g => `${g.funder} ${fmtFull(g.amount)} ends ${g.deadline}`).join(", ")}\nFund balances: ${Object.values(fundBalances).map(f => `${f.name}: ${fmtFull(f.income - f.expense)}`).join(", ")}\n\nQ3-Q4 projection, 3 financial risks, 2 opportunities.`,
       chunk => setForecastAI(chunk));
     setForecastLoading(false);
   };
   const getRisks = async () => {
     setRiskLoading(true); setRiskAI("");
     await askClaude("You are a nonprofit financial auditor. Direct, specific. Max 150 words.",
-      `Identify financial risks.\nYTD Net: ${fmtFull(ytdRev - ytdExp)}\nRestricted funds: ${data.financials.funds.filter(f => f.restricted).map(f => `${f.name}: ${fmtFull(f.balance)}`).join(", ")}\nGrant concentration: ${data.grants.filter(g => g.status === "active").map(g => `${g.funder}: ${fmtFull(g.amount)}`).join(", ")}\nLapsed donors: ${data.donors.filter(d => d.status === "lapsed").length}\n\nTop 3 risks with severity and mitigation.`,
+      `Identify financial risks.\nYTD Net: ${fmtFull(ytdRev - ytdExp)}\nRestricted funds: ${Object.values(fundBalances).filter(f => f.restricted).map(f => `${f.name}: ${fmtFull(f.income - f.expense)}`).join(", ")}\nGrant concentration: ${data.grants.filter(g => g.status === "active").map(g => `${g.funder}: ${fmtFull(g.amount)}`).join(", ")}\nLapsed donors: ${data.donors.filter(d => d.status === "lapsed").length}\n\nTop 3 risks with severity and mitigation.`,
       chunk => setRiskAI(chunk));
     setRiskLoading(false);
   };
@@ -413,6 +412,21 @@ export function Finance({ data }) {
   const totalExp = Object.values(expenseByAcct).reduce((s, v) => s + v, 0);
   const monthsElapsed = new Date().getMonth() + 1;
 
+  // Overview cards — derived from the SAME live funds/transactions used by
+  // the rest of this module (not the legacy data.financials.* prop, which
+  // reads from the old financials/funds tables and was showing numbers that
+  // contradicted every other Finance subtab for the same org).
+  const liveFundBalances = Object.values(fundBalances).map(f => ({ ...f, balance: f.income - f.expense }));
+  const monthsToShow = txnYear === new Date().getFullYear() ? monthsElapsed : 12;
+  const monthlyBreakdown = REPORT_MONTHS.slice(0, monthsToShow).map((month, i) => {
+    const monthTxns = allTxns.filter(t => new Date(t.date).getMonth() === i);
+    return {
+      month,
+      income: monthTxns.filter(t => t.type === "income").reduce((s, t) => s + parseFloat(t.amount), 0),
+      expense: monthTxns.filter(t => t.type === "expense").reduce((s, t) => s + parseFloat(t.amount), 0),
+    };
+  });
+
   const export990CSV = () => {
     const p8Lines = [
       ["1a","Federated campaigns",""],
@@ -542,38 +556,37 @@ export function Finance({ data }) {
         {(forecastLoading || forecastAI) && <AIPanel text={forecastAI} onClose={() => setForecastAI("")}/>}
         {(riskLoading || riskAI) && <AIPanel text={riskAI} onClose={() => setRiskAI("")}/>}
         <Card>
-          <SectionLabel>Monthly Breakdown (legacy data)</SectionLabel>
-          {rev.length === 0 && <EmptyState icon="◇" title="No financial data" message="Log transactions to see trends."/>}
-          {rev.map((r, i) => {
-            const rv = r.individual + r.grants + r.events + r.other;
-            const ex = exp[i] ? exp[i].programs + exp[i].admin + exp[i].fundraising : 0;
-            const net = rv - ex;
-            const maxBar = Math.max(...rev.map(r2 => r2.individual+r2.grants+r2.events+r2.other), 1);
-            return (
-              <div key={r.month} style={{ marginBottom:12, paddingBottom:12, borderBottom:"1px solid "+T.bg3 }}>
-                <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:6 }}>
-                  <span style={{ fontSize:13, fontWeight:700, color:T.ink }}>{r.month}</span>
-                  <div style={{ display:"flex", gap:12 }}>
-                    <span style={{ fontSize:11, color:T.greenDk }}>↑ {fmtFull(rv)}</span>
-                    <span style={{ fontSize:11, color:"#ef4444" }}>↓ {fmtFull(ex)}</span>
-                    <span style={{ fontSize:12, fontWeight:700, color:net>=0?"#1a6b4a":"#ef4444" }}>{net>=0?"+":""}{fmtFull(net)}</span>
+          <SectionLabel>Monthly Breakdown ({txnYear})</SectionLabel>
+          {monthlyBreakdown.every(m => m.income === 0 && m.expense === 0)
+            ? <EmptyState icon="◇" title="No financial data" message="Log transactions to see trends."/>
+            : monthlyBreakdown.map((m) => {
+                const net = m.income - m.expense;
+                const maxBar = Math.max(...monthlyBreakdown.map(m2 => m2.income), 1);
+                return (
+                  <div key={m.month} style={{ marginBottom:12, paddingBottom:12, borderBottom:"1px solid "+T.bg3 }}>
+                    <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:6 }}>
+                      <span style={{ fontSize:13, fontWeight:700, color:T.ink }}>{m.month}</span>
+                      <div style={{ display:"flex", gap:12 }}>
+                        <span style={{ fontSize:11, color:T.greenDk }}>↑ {fmtFull(m.income)}</span>
+                        <span style={{ fontSize:11, color:"#ef4444" }}>↓ {fmtFull(m.expense)}</span>
+                        <span style={{ fontSize:12, fontWeight:700, color:net>=0?"#1a6b4a":"#ef4444" }}>{net>=0?"+":""}{fmtFull(net)}</span>
+                      </div>
+                    </div>
+                    <div style={{ height:5, background:T.bg2, borderRadius:99, overflow:"hidden", marginBottom:3 }}>
+                      <div style={{ height:"100%", width:`${(m.income/maxBar)*100}%`, background:"linear-gradient(90deg,#1a6b4a,#3b82f6)", borderRadius:99 }}/>
+                    </div>
+                    <div style={{ height:4, background:T.bg2, borderRadius:99, overflow:"hidden" }}>
+                      <div style={{ height:"100%", width:`${(m.expense/maxBar)*100}%`, background:"linear-gradient(90deg,#ef444488,#dc2626)", borderRadius:99, opacity:0.7 }}/>
+                    </div>
                   </div>
-                </div>
-                <div style={{ height:5, background:T.bg2, borderRadius:99, overflow:"hidden", marginBottom:3 }}>
-                  <div style={{ height:"100%", width:`${(rv/maxBar)*100}%`, background:"linear-gradient(90deg,#1a6b4a,#3b82f6)", borderRadius:99 }}/>
-                </div>
-                <div style={{ height:4, background:T.bg2, borderRadius:99, overflow:"hidden" }}>
-                  <div style={{ height:"100%", width:`${(ex/maxBar)*100}%`, background:"linear-gradient(90deg,#ef444488,#dc2626)", borderRadius:99, opacity:0.7 }}/>
-                </div>
-              </div>
-            );
-          })}
+                );
+              })}
         </Card>
         <Card>
           <SectionLabel>Fund Balances</SectionLabel>
-          {data.financials.funds.length === 0 && <EmptyState icon="◇" title="No funds" message="Add funds to track restricted and unrestricted balances."/>}
-          {data.financials.funds.map((f, i) => (
-            <div key={f.name} style={{ display:"flex", alignItems:"center", gap:12, padding:"11px 0", borderBottom: i < data.financials.funds.length - 1 ? "1px solid "+T.bg3 : "" }}>
+          {liveFundBalances.length === 0 && <EmptyState icon="◇" title="No funds" message="Add funds to track restricted and unrestricted balances."/>}
+          {liveFundBalances.map((f, i) => (
+            <div key={f.name} style={{ display:"flex", alignItems:"center", gap:12, padding:"11px 0", borderBottom: i < liveFundBalances.length - 1 ? "1px solid "+T.bg3 : "" }}>
               <div style={{ width:10, height:10, borderRadius:"50%", background:f.restricted?"#8b5cf6":"#1a6b4a", flexShrink:0 }}/>
               <div style={{ flex:1 }}>
                 <div style={{ fontSize:13, fontWeight:600, color:T.ink }}>{f.name}</div>
