@@ -333,6 +333,77 @@ app.post("/resend/webhook", express.raw({ type: "application/json" }), async (re
   }
 });
 
+// Billing webhook (platform subscriptions) must also receive raw body — same
+// reason as /stripe/webhook above. This route previously lived much further
+// down the file, AFTER app.use(express.json(...)), which meant the global
+// JSON parser had already consumed the request stream by the time this
+// route's own express.raw() ran: stripe.webhooks.constructEvent() received a
+// parsed object instead of a Buffer and threw on every real delivery. Moved
+// here so it's registered before the global parser, matching /stripe/webhook.
+app.post("/billing/webhook", express.raw({ type: "application/json" }), async (req, res) => {
+  if (!stripe) return res.status(503).json({ error: "Stripe not configured" });
+  const sig = req.headers["stripe-signature"];
+  let event;
+  try {
+    event = stripe.webhooks.constructEvent(req.body, sig, process.env.STRIPE_BILLING_WEBHOOK_SECRET || process.env.STRIPE_WEBHOOK_SECRET);
+  } catch (err) {
+    return res.status(400).json({ error: `Webhook signature failed: ${err.message}` });
+  }
+
+  try {
+    if (event.type === "checkout.session.completed") {
+      const session = event.data.object;
+      if (session.metadata?.orgId) {
+        let periodEnd = null;
+        if (session.subscription && stripe) {
+          try {
+            const sub = await stripe.subscriptions.retrieve(session.subscription);
+            periodEnd = sub.current_period_end ? new Date(sub.current_period_end * 1000).toISOString() : null;
+          } catch {}
+        }
+        await run(
+          "UPDATE orgs SET plan=?, subscription_status='active', stripe_subscription_id=?, current_period_end=?, grace_until=NULL WHERE id=?",
+          [session.metadata.plan || "growth", session.subscription, periodEnd, session.metadata.orgId]
+        );
+      }
+    } else if (event.type === "invoice.payment_succeeded") {
+      const inv = event.data.object;
+      const orgRow = await query("SELECT id FROM orgs WHERE stripe_customer_id=?", [inv.customer]);
+      if (orgRow.length) {
+        const periodEnd = inv.lines?.data?.[0]?.period?.end
+          ? new Date(inv.lines.data[0].period.end * 1000).toISOString()
+          : null;
+        await run(
+          "UPDATE orgs SET subscription_status='active', current_period_end=?, grace_until=NULL WHERE id=?",
+          [periodEnd, orgRow[0].id]
+        );
+      }
+    } else if (event.type === "invoice.payment_failed") {
+      const inv = event.data.object;
+      const orgRow = await query("SELECT id FROM orgs WHERE stripe_customer_id=?", [inv.customer]);
+      if (orgRow.length) {
+        await run(
+          "UPDATE orgs SET subscription_status='past_due', grace_until=NOW() + INTERVAL '7 days' WHERE id=?",
+          [orgRow[0].id]
+        );
+      }
+    } else if (event.type === "customer.subscription.deleted") {
+      const sub = event.data.object;
+      const orgId = sub.metadata?.orgId;
+      if (orgId) {
+        await run(
+          "UPDATE orgs SET subscription_status='canceled', plan='trial', grace_until=NOW() + INTERVAL '3 days' WHERE id=?",
+          [orgId]
+        );
+      }
+    }
+  } catch (err) {
+    console.error("Billing webhook error:", err);
+  }
+
+  res.json({ received: true });
+});
+
 app.use(express.json({ limit: "5mb" }));
 
 // ── DB readiness guard ─────────────────────────────────────────────────────
@@ -5026,71 +5097,6 @@ app.post("/billing/create-portal", requireAuth, wrap(async (req, res) => {
   });
   res.json({ url: session.url });
 }));
-
-// ── Billing webhook (platform subscriptions) ───────────────────────────────
-app.post("/billing/webhook", express.raw({ type: "application/json" }), async (req, res) => {
-  if (!stripe) return res.status(503).json({ error: "Stripe not configured" });
-  const sig = req.headers["stripe-signature"];
-  let event;
-  try {
-    event = stripe.webhooks.constructEvent(req.body, sig, process.env.STRIPE_BILLING_WEBHOOK_SECRET || process.env.STRIPE_WEBHOOK_SECRET);
-  } catch (err) {
-    return res.status(400).json({ error: `Webhook signature failed: ${err.message}` });
-  }
-
-  try {
-    if (event.type === "checkout.session.completed") {
-      const session = event.data.object;
-      if (session.metadata?.orgId) {
-        let periodEnd = null;
-        if (session.subscription && stripe) {
-          try {
-            const sub = await stripe.subscriptions.retrieve(session.subscription);
-            periodEnd = sub.current_period_end ? new Date(sub.current_period_end * 1000).toISOString() : null;
-          } catch {}
-        }
-        await run(
-          "UPDATE orgs SET plan=?, subscription_status='active', stripe_subscription_id=?, current_period_end=?, grace_until=NULL WHERE id=?",
-          [session.metadata.plan || "growth", session.subscription, periodEnd, session.metadata.orgId]
-        );
-      }
-    } else if (event.type === "invoice.payment_succeeded") {
-      const inv = event.data.object;
-      const orgRow = await query("SELECT id FROM orgs WHERE stripe_customer_id=?", [inv.customer]);
-      if (orgRow.length) {
-        const periodEnd = inv.lines?.data?.[0]?.period?.end
-          ? new Date(inv.lines.data[0].period.end * 1000).toISOString()
-          : null;
-        await run(
-          "UPDATE orgs SET subscription_status='active', current_period_end=?, grace_until=NULL WHERE id=?",
-          [periodEnd, orgRow[0].id]
-        );
-      }
-    } else if (event.type === "invoice.payment_failed") {
-      const inv = event.data.object;
-      const orgRow = await query("SELECT id FROM orgs WHERE stripe_customer_id=?", [inv.customer]);
-      if (orgRow.length) {
-        await run(
-          "UPDATE orgs SET subscription_status='past_due', grace_until=NOW() + INTERVAL '7 days' WHERE id=?",
-          [orgRow[0].id]
-        );
-      }
-    } else if (event.type === "customer.subscription.deleted") {
-      const sub = event.data.object;
-      const orgId = sub.metadata?.orgId;
-      if (orgId) {
-        await run(
-          "UPDATE orgs SET subscription_status='canceled', plan='trial', grace_until=NOW() + INTERVAL '3 days' WHERE id=?",
-          [orgId]
-        );
-      }
-    }
-  } catch (err) {
-    console.error("Billing webhook error:", err);
-  }
-
-  res.json({ received: true });
-});
 
 // ── Admin (super admin only) ───────────────────────────────────────────────
 const PLAN_MRR = { seed: 99, growth: 249, impact: 499, trial: 0 };
