@@ -4889,10 +4889,10 @@ app.get("/donors/:id/custom-fields", requireAuth, wrap(async (req, res) => {
     `SELECT cf.id AS field_id, cf.label, cf.field_type, cf.options, cf.required, cf.field_order,
             cfv.value
      FROM custom_fields cf
-     LEFT JOIN custom_field_values cfv ON cfv.field_id=cf.id AND cfv.donor_id=?
+     LEFT JOIN custom_field_values cfv ON cfv.field_id=cf.id AND cfv.donor_id=? AND cfv.org_id=?
      WHERE cf.org_id=?
      ORDER BY cf.field_order ASC, cf.created_at ASC`,
-    [req.params.id, req.user.orgId]
+    [req.params.id, req.user.orgId, req.user.orgId]
   );
   res.json(rows.map(r => ({
     fieldId: r.field_id,
@@ -4908,6 +4908,8 @@ app.get("/donors/:id/custom-fields", requireAuth, wrap(async (req, res) => {
 app.post("/donors/:id/custom-fields", requireAuth, wrap(async (req, res) => {
   const { fieldId, value } = req.body;
   if (!fieldId) return res.status(400).json({ error: "fieldId required" });
+  const donorCheck = await query("SELECT id FROM donors WHERE id=? AND org_id=?", [req.params.id, req.user.orgId]);
+  if (!donorCheck.length) return res.status(404).json({ error: "Donor not found" });
   const valId = "cfv_" + Date.now();
   await run(
     `INSERT INTO custom_field_values (id,org_id,donor_id,field_id,value,updated_at)
