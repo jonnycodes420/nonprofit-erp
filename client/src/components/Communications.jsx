@@ -639,7 +639,7 @@ function SequencesPanel({ data }) {
 }
 
 // ── Main component ────────────────────────────────────────────────────────────
-export function Communications({ data }) {
+export function Communications({ data, isReadOnly }) {
   const { auth } = useAuth();
   const isAdmin = auth?.user?.role === "admin";
 
@@ -1011,7 +1011,9 @@ export function Communications({ data }) {
               <button onClick={() => openBuilder()}
                 onMouseEnter={() => setNewBtnHover(true)}
                 onMouseLeave={() => setNewBtnHover(false)}
-                style={{ ...S.btn("primary"), background: newBtnHover ? "#0d9e6e" : T.green }}>
+                disabled={isReadOnly}
+                title={isReadOnly?"Reactivate your subscription to make changes.":undefined}
+                style={{ ...S.btn("primary"), background: newBtnHover && !isReadOnly ? "#0d9e6e" : T.green, cursor: isReadOnly?"not-allowed":"pointer", opacity: isReadOnly?0.45:1 }}>
                 + New Campaign
               </button>
             </div>

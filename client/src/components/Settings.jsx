@@ -38,6 +38,7 @@ export function Settings({auth,logout}) {
   const [billing,setBilling]=useState(null);
   const [portalLoading,setPortalLoading]=useState(false);
   const [upgradeModal,setUpgradeModal]=useState(null);
+  const isReadOnly=billing?.accessState==="read_only";
 
   const [gmailStatus,setGmailStatus]=useState(null);
   const [gmailSyncing,setGmailSyncing]=useState(false);
@@ -503,7 +504,7 @@ export function Settings({auth,logout}) {
       <div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:16,padding:"24px 28px"}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
           <SectionLabel>Custom Fields</SectionLabel>
-          {isAdmin&&<button onClick={openAddField} style={{background:T.green,border:"none",borderRadius:8,padding:"7px 14px",color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer"}}>+ Add Field</button>}
+          {isAdmin&&<button onClick={openAddField} disabled={isReadOnly} title={isReadOnly?"Reactivate your subscription to make changes.":undefined} style={{background:T.green,border:"none",borderRadius:8,padding:"7px 14px",color:"#fff",fontSize:12,fontWeight:700,cursor:isReadOnly?"not-allowed":"pointer",opacity:isReadOnly?0.45:1}}>+ Add Field</button>}
         </div>
         <div style={{fontSize:13,color:T.ink3,marginBottom:customFields.length?14:0,lineHeight:1.6}}>
           {customFields.length===0?"No custom fields yet. Add fields to capture extra donor data specific to your organization.":""}

@@ -2,7 +2,7 @@ import { useState } from "react";
 import { T, askClaude, daysDiff, Pill, Card, AIBtn, AIPanel, MetricCard, EmptyState, PageTitle } from "./shared";
 import { apiFetch } from "../api";
 
-export function Volunteers({data, setData}) {
+export function Volunteers({data, setData, isReadOnly}) {
   const [convPlan,setConvPlan]=useState(""); const [convLoading,setConvLoading]=useState(false);
   const [boardAI,setBoardAI]=useState(""); const [boardLoading,setBoardLoading]=useState(false);
   const [showAdd,setShowAdd]=useState(false);
@@ -59,8 +59,8 @@ export function Volunteers({data, setData}) {
     <div style={{display:"flex",gap:10,flexWrap:"wrap",alignItems:"center"}}>
       <AIBtn onClick={getConvPlan} loading={convLoading} label="✦ Volunteer-to-Donor Conversion Plan"/>
       <AIBtn onClick={getBoardCandidates} loading={boardLoading} label="✦ Identify Board Candidates"/>
-      <button onClick={()=>setShowAdd(v=>!v)}
-        style={{marginLeft:"auto",background:"#1a6b4a",color:"#fff",border:"none",borderRadius:8,padding:"8px 16px",fontSize:13,fontWeight:700,cursor:"pointer"}}>
+      <button onClick={()=>setShowAdd(v=>!v)} disabled={isReadOnly} title={isReadOnly?"Reactivate your subscription to make changes.":undefined}
+        style={{marginLeft:"auto",background:"#1a6b4a",color:"#fff",border:"none",borderRadius:8,padding:"8px 16px",fontSize:13,fontWeight:700,cursor:isReadOnly?"not-allowed":"pointer",opacity:isReadOnly?0.45:1}}>
         + Add Volunteer
       </button>
     </div>

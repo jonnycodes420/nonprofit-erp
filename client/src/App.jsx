@@ -238,13 +238,13 @@ function AppShell() {
       {tab==="dashboard"&&<Dashboard data={data} setData={setData} onNavigate={setTab} isReadOnly={isReadOnly}/>}
       {tab==="donors"&&<Donors data={data} setData={setData} isReadOnly={isReadOnly}/>}
       {tab==="grants"&&<Grants data={data} setData={setData} isReadOnly={isReadOnly}/>}
-      {tab==="communications"&&<Communications data={data}/>}
-      {tab==="events"&&<Events data={data}/>}
-      {tab==="volunteers"&&<Volunteers data={data} setData={setData}/>}
-      {tab==="board"&&<Board data={data} setData={setData}/>}
+      {tab==="communications"&&<Communications data={data} isReadOnly={isReadOnly}/>}
+      {tab==="events"&&<Events data={data} isReadOnly={isReadOnly}/>}
+      {tab==="volunteers"&&<Volunteers data={data} setData={setData} isReadOnly={isReadOnly}/>}
+      {tab==="board"&&<Board data={data} setData={setData} isReadOnly={isReadOnly}/>}
       {tab==="finance"&&<Finance data={data}/>}
       {tab==="analytics"&&<Analytics data={data}/>}
-      {tab==="tasks"&&<Tasks data={data} setData={setData}/>}
+      {tab==="tasks"&&<Tasks data={data} setData={setData} isReadOnly={isReadOnly}/>}
       {tab==="settings"&&<Settings auth={auth} logout={logout}/>}
     </div>
     {showChat&&<AIChat data={data} onClose={()=>setShowChat(false)}/>}

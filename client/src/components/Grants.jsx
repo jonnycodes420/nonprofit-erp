@@ -296,7 +296,7 @@ const statusToCol = s => {
   return KANBAN_COLS.find(c => c.id === s) ? s : "prospecting";
 };
 
-function GrantKanban({ grants, onUpdate, onAddClick }) {
+function GrantKanban({ grants, onUpdate, onAddClick, isReadOnly }) {
   const [dragging, setDragging] = useState(null);
   const [dragOver, setDragOver] = useState(null);
 
@@ -359,7 +359,7 @@ function GrantKanban({ grants, onUpdate, onAddClick }) {
                 );
               })}
               {col.id === "prospecting" && (
-                <button onClick={onAddClick} style={{ width:"100%", background:"transparent", border:`1px dashed ${T.bg3}`, borderRadius:8, padding:"8px", color:T.ink3, fontSize:12, cursor:"pointer", textAlign:"center" }}>+ Add Grant</button>
+                <button onClick={onAddClick} disabled={isReadOnly} title={isReadOnly?"Reactivate your subscription to make changes.":undefined} style={{ width:"100%", background:"transparent", border:`1px dashed ${T.bg3}`, borderRadius:8, padding:"8px", color:T.ink3, fontSize:12, cursor:isReadOnly?"not-allowed":"pointer", textAlign:"center", opacity:isReadOnly?0.45:1 }}>+ Add Grant</button>
               )}
             </div>
           </div>
@@ -480,7 +480,7 @@ export function Grants({data,setData,isReadOnly=false}) {
 
     {grantView==="kanban"&&<>
       {data.grants.length===0&&<EmptyState icon="◉" title="No grants yet" message="Start tracking your grant portfolio — add one manually or use Find Grants to discover new funders." action="+ Add your first grant" onAction={()=>{ setGrantView("list"); setShowAdd(true); }}/>}
-      <GrantKanban grants={data.grants} onUpdate={onUpdate} onAddClick={()=>{ setGrantView("list"); setShowAdd(true); }}/>
+      <GrantKanban grants={data.grants} onUpdate={onUpdate} onAddClick={()=>{ setGrantView("list"); setShowAdd(true); }} isReadOnly={isReadOnly}/>
     </>}
 
     {grantView==="list"&&<>

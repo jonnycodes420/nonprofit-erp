@@ -714,7 +714,7 @@ function EventDetail({ eventId, donors: allDonors, onClose, onEventUpdated }) {
 }
 
 // ── Main Events Component ───────────────────────────────────────────────────
-export function Events({ data }) {
+export function Events({ data, isReadOnly }) {
   const [events, setEvents] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState("upcoming");
@@ -789,7 +789,7 @@ export function Events({ data }) {
             </button>
           ))}
         </div>
-        <button onClick={() => setShowNew(true)} style={{ background: T.greenDk, border: "none", borderRadius: 10, padding: "9px 20px", color: "#fff", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
+        <button onClick={() => setShowNew(true)} disabled={isReadOnly} title={isReadOnly?"Reactivate your subscription to make changes.":undefined} style={{ background: T.greenDk, border: "none", borderRadius: 10, padding: "9px 20px", color: "#fff", fontSize: 13, fontWeight: 700, cursor: isReadOnly?"not-allowed":"pointer", opacity: isReadOnly?0.45:1 }}>
           + New Event
         </button>
       </div>
@@ -802,7 +802,7 @@ export function Events({ data }) {
           <div style={{ fontSize: 32, marginBottom: 12, opacity: 0.3 }}>📅</div>
           <div style={{ fontSize: 15, fontWeight: 700, color: T.ink, marginBottom: 6 }}>No {filter === "all" ? "" : filter} events yet</div>
           <div style={{ fontSize: 13, color: T.ink3, marginBottom: 20 }}>Track galas, cultivation dinners, site visits, and more.</div>
-          <button onClick={() => setShowNew(true)} style={{ background: T.greenDk, border: "none", borderRadius: 10, padding: "10px 24px", color: "#fff", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>Create Your First Event</button>
+          <button onClick={() => setShowNew(true)} disabled={isReadOnly} title={isReadOnly?"Reactivate your subscription to make changes.":undefined} style={{ background: T.greenDk, border: "none", borderRadius: 10, padding: "10px 24px", color: "#fff", fontSize: 13, fontWeight: 700, cursor: isReadOnly?"not-allowed":"pointer", opacity: isReadOnly?0.45:1 }}>Create Your First Event</button>
         </div>
       ) : (
         <div className="events-grid" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))", gap: 14 }}>

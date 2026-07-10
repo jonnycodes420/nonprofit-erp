@@ -2143,7 +2143,7 @@ app.get("/volunteers", requireAuth, wrap(async (req, res) => {
   res.json(vols.map(v => ({ ...v, skills: JSON.parse(v.skills || "[]") })));
 }));
 
-app.post("/volunteers", requireAuth, wrap(async (req, res) => {
+app.post("/volunteers", requireAuth, checkWriteAccess, wrap(async (req, res) => {
   const { name, email, hours, skills, employer, notes, convertPotential } = req.body;
   if (!name) return res.status(400).json({ error: "Name required" });
 
@@ -2158,7 +2158,7 @@ app.post("/volunteers", requireAuth, wrap(async (req, res) => {
   res.status(201).json(rows[0]);
 }));
 
-app.put("/volunteers/:id", requireAuth, wrap(async (req, res) => {
+app.put("/volunteers/:id", requireAuth, checkWriteAccess, wrap(async (req, res) => {
   const { name, email, hours, skills, employer, notes, convertPotential } = req.body;
   if (!name) return res.status(400).json({ error: "Name required" });
 
@@ -2222,7 +2222,7 @@ app.get("/tasks", requireAuth, wrap(async (req, res) => {
   res.json(tasks);
 }));
 
-app.post("/tasks", requireAuth, wrap(async (req, res) => {
+app.post("/tasks", requireAuth, checkWriteAccess, wrap(async (req, res) => {
   const { title, due, priority, type, donorId } = req.body;
   if (!title) return res.status(400).json({ error: "Title required" });
 
@@ -2235,7 +2235,7 @@ app.post("/tasks", requireAuth, wrap(async (req, res) => {
   res.status(201).json(rows[0]);
 }));
 
-app.put("/tasks/:id", requireAuth, wrap(async (req, res) => {
+app.put("/tasks/:id", requireAuth, checkWriteAccess, wrap(async (req, res) => {
   const { title, due, priority, type, done } = req.body;
   if (!title) return res.status(400).json({ error: "Title required" });
 
@@ -2260,7 +2260,7 @@ app.get("/board", requireAuth, wrap(async (req, res) => {
   res.json(members.map(m => ({ ...m, committees: JSON.parse(m.committees || "[]") })));
 }));
 
-app.post("/board", requireAuth, wrap(async (req, res) => {
+app.post("/board", requireAuth, checkWriteAccess, wrap(async (req, res) => {
   const { name, role, employer, term, givingLevel, committees, attendance } = req.body;
   if (!name) return res.status(400).json({ error: "Name required" });
 
@@ -2686,7 +2686,7 @@ app.get("/campaigns/:id", requireAuth, wrap(async (req, res) => {
   res.json({ ...rows[0], recipients });
 }));
 
-app.post("/campaigns", requireAuth, wrap(async (req, res) => {
+app.post("/campaigns", requireAuth, checkWriteAccess, wrap(async (req, res) => {
   const { name, type, subject, body, segment, scheduledAt } = req.body;
   if (!name) return res.status(400).json({ error: "Name required" });
 
@@ -2701,7 +2701,7 @@ app.post("/campaigns", requireAuth, wrap(async (req, res) => {
   res.status(201).json(rows[0]);
 }));
 
-app.put("/campaigns/:id", requireAuth, wrap(async (req, res) => {
+app.put("/campaigns/:id", requireAuth, checkWriteAccess, wrap(async (req, res) => {
   const { name, type, subject, body, segment, status, scheduledAt } = req.body;
   if (!name) return res.status(400).json({ error: "Name required" });
 
@@ -2730,7 +2730,7 @@ app.delete("/campaigns/:id", requireAuth, requireAdmin, wrap(async (req, res) =>
   res.json({ success: true });
 }));
 
-app.put("/campaigns/:id/briefing", requireAuth, wrap(async (req, res) => {
+app.put("/campaigns/:id/briefing", requireAuth, checkWriteAccess, wrap(async (req, res) => {
   const { briefing, goal_amount, start_date, end_date } = req.body;
   const existing = await query("SELECT id FROM campaigns WHERE id=? AND org_id=?", [req.params.id, req.user.orgId]);
   if (!existing.length) return res.status(404).json({ error: "Campaign not found" });
@@ -2765,7 +2765,7 @@ app.get("/campaigns/:id/progress", requireAuth, wrap(async (req, res) => {
   });
 }));
 
-app.post("/campaigns/:id/send", requireAuth, requireAdmin, wrap(async (req, res) => {
+app.post("/campaigns/:id/send", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
   const BACKEND_URL = process.env.BACKEND_URL || "https://nonprofit-erp-production.up.railway.app";
 
   const campaigns = await query(
@@ -4489,7 +4489,7 @@ app.get("/custom-fields", requireAuth, wrap(async (req, res) => {
   res.json(rows);
 }));
 
-app.post("/custom-fields", requireAuth, requireAdmin, wrap(async (req, res) => {
+app.post("/custom-fields", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
   const { label, fieldType, options, required } = req.body;
   if (!label || !fieldType) return res.status(400).json({ error: "label and fieldType required" });
   const maxOrder = await query(
@@ -4507,7 +4507,7 @@ app.post("/custom-fields", requireAuth, requireAdmin, wrap(async (req, res) => {
 }));
 
 // reorder MUST be before /:id
-app.put("/custom-fields/reorder", requireAuth, requireAdmin, wrap(async (req, res) => {
+app.put("/custom-fields/reorder", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
   const { ids } = req.body; // ordered array of field ids
   if (!Array.isArray(ids)) return res.status(400).json({ error: "ids array required" });
   for (let i = 0; i < ids.length; i++) {
@@ -4519,7 +4519,7 @@ app.put("/custom-fields/reorder", requireAuth, requireAdmin, wrap(async (req, re
   res.json({ ok: true });
 }));
 
-app.put("/custom-fields/:id", requireAuth, requireAdmin, wrap(async (req, res) => {
+app.put("/custom-fields/:id", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
   const { label, fieldType, options, required, showInDirectory } = req.body;
   await run(
     "UPDATE custom_fields SET label=?,field_type=?,options=?,required=?,show_in_directory=? WHERE id=? AND org_id=?",
@@ -5275,7 +5275,7 @@ app.get("/events", requireAuth, async (req, res) => {
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
-app.post("/events", requireAuth, async (req, res) => {
+app.post("/events", requireAuth, checkWriteAccess, async (req, res) => {
   try {
     const orgId = req.user.orgId;
     const { name, eventType, date, endDate, location, description, capacity, cost } = req.body;
@@ -5291,7 +5291,7 @@ app.post("/events", requireAuth, async (req, res) => {
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
-app.put("/events/:id", requireAuth, async (req, res) => {
+app.put("/events/:id", requireAuth, checkWriteAccess, async (req, res) => {
   try {
     const orgId = req.user.orgId;
     const { name, eventType, date, endDate, location, description, capacity, status, revenue, cost, notes } = req.body;
@@ -5348,7 +5348,7 @@ app.get("/events/:id", requireAuth, async (req, res) => {
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
-app.post("/events/:id/attendees", requireAuth, async (req, res) => {
+app.post("/events/:id/attendees", requireAuth, checkWriteAccess, async (req, res) => {
   try {
     const orgId = req.user.orgId;
     const eventId = req.params.id;
@@ -5385,7 +5385,7 @@ app.post("/events/:id/attendees", requireAuth, async (req, res) => {
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
-app.patch("/events/:id/attendees/:attendeeId", requireAuth, async (req, res) => {
+app.patch("/events/:id/attendees/:attendeeId", requireAuth, checkWriteAccess, async (req, res) => {
   try {
     const orgId = req.user.orgId;
     const { status, giftAmount, notes } = req.body;
@@ -5449,7 +5449,7 @@ app.delete("/events/:id/attendees/:attendeeId", requireAuth, async (req, res) =>
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
-app.post("/events/:id/follow-up", requireAuth, async (req, res) => {
+app.post("/events/:id/follow-up", requireAuth, checkWriteAccess, async (req, res) => {
   try {
     const orgId = req.user.orgId;
     const { taskTitle, dueDate, priority } = req.body;

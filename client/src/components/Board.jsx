@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { T, fmt, fmtFull, askClaude, Pill, Card, AIBtn, AIPanel, MetricCard, EmptyState, PageTitle, Spin } from "./shared";
 import { apiFetch, API, getToken } from "../api";
 
-export function Board({data, setData}) {
+export function Board({data, setData, isReadOnly}) {
   const [subTab, setSubTab] = useState("members");
   const [boardBrief,setBoardBrief]=useState(""); const [briefLoading,setBriefLoading]=useState(false);
   const [boardEmail,setBoardEmail]=useState(""); const [emailLoading,setEmailLoading]=useState(false);
@@ -128,8 +128,8 @@ export function Board({data, setData}) {
       <div style={{display:"flex",gap:10,flexWrap:"wrap",alignItems:"center"}}>
         <AIBtn onClick={generateBrief} loading={briefLoading} label="✦ Generate Q2 Board Report"/>
         <AIBtn onClick={draftEmail} loading={emailLoading} label="✦ Draft Board Ask Email"/>
-        <button onClick={()=>setShowAdd(v=>!v)}
-          style={{marginLeft:"auto",background:"#1a6b4a",color:"#fff",border:"none",borderRadius:8,padding:"8px 16px",fontSize:13,fontWeight:700,cursor:"pointer"}}>
+        <button onClick={()=>setShowAdd(v=>!v)} disabled={isReadOnly} title={isReadOnly?"Reactivate your subscription to make changes.":undefined}
+          style={{marginLeft:"auto",background:"#1a6b4a",color:"#fff",border:"none",borderRadius:8,padding:"8px 16px",fontSize:13,fontWeight:700,cursor:isReadOnly?"not-allowed":"pointer",opacity:isReadOnly?0.45:1}}>
           + Add Board Member
         </button>
       </div>
