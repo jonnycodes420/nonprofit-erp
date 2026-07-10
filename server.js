@@ -4976,8 +4976,15 @@ async function syncGmail(userId, orgId) {
       try {
         listRes = await gmail.users.messages.list({ userId: "me", q, maxResults: 50, ...(pageToken ? { pageToken } : {}) });
       } catch (e) {
-        if (e.code === 401 || e.status === 401) {
+        // A revoked/expired refresh token surfaces from the token endpoint as
+        // invalid_grant with HTTP 400 (message "invalid_grant", not a 401) —
+        // catch it alongside a genuine 401 so it stops being retried forever.
+        const isInvalidGrant = e.message === "invalid_grant" || e.response?.data?.error === "invalid_grant";
+        if (e.code === 401 || e.status === 401 || isInvalidGrant) {
           await run("UPDATE gmail_connections SET status='disconnected' WHERE id=?", [conn.id]);
+          if (isInvalidGrant) {
+            console.error(`[gmail-sync] Connection ${conn.id} (${conn.email || conn.user_id}) refresh token revoked (invalid_grant) — marked disconnected, will not retry until reconnected.`);
+          }
           throw new Error("Gmail token revoked");
         }
         throw e;
