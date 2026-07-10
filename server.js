@@ -4810,10 +4810,10 @@ app.get("/sequences/:id/enrollments", requireAuth, wrap(async (req, res) => {
     `SELECT se.*, d.name AS donor_name, d.email AS donor_email,
      (SELECT COUNT(*) FROM sequence_steps WHERE sequence_id = se.sequence_id) AS total_steps
      FROM sequence_enrollments se
-     JOIN donors d ON se.donor_id = d.id
+     JOIN donors d ON se.donor_id = d.id AND d.org_id = ?
      WHERE se.sequence_id = ? AND se.org_id = ?
      ORDER BY se.enrolled_at DESC`,
-    [req.params.id, req.user.orgId]
+    [req.user.orgId, req.params.id, req.user.orgId]
   );
   res.json(rows);
 }));
@@ -4823,6 +4823,8 @@ app.post("/sequences/:id/enroll", requireAuth, wrap(async (req, res) => {
   if (!donorId) return res.status(400).json({ error: "donorId required" });
   const seq = await query("SELECT id FROM sequences WHERE id = ? AND org_id = ?", [req.params.id, req.user.orgId]);
   if (!seq.length) return res.status(404).json({ error: "Sequence not found" });
+  const donorCheck = await query("SELECT id FROM donors WHERE id = ? AND org_id = ?", [donorId, req.user.orgId]);
+  if (!donorCheck.length) return res.status(404).json({ error: "Donor not found" });
   const existing = await query(
     "SELECT id, status FROM sequence_enrollments WHERE sequence_id = ? AND donor_id = ?",
     [req.params.id, donorId]
