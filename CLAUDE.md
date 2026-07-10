@@ -34,9 +34,16 @@
 - `STRIPE_PRICE_GROWTH` — Stripe Price ID for $249/mo Growth plan
 - `STRIPE_PRICE_IMPACT` — Stripe Price ID for $499/mo Impact plan
 - `FRONTEND_URL` — used in invite links and Stripe redirects
+- `SENTRY_DSN` — backend error reporting; also gates `Sentry.setupExpressErrorHandler` and the process-level `uncaughtException`/`unhandledRejection` handlers (see Error monitoring below) — unset means none of that runs, not a hard failure
 
 ### Frontend (Vercel / client/vercel.json)
 - `VITE_API_URL` — Railway backend URL
+- `VITE_SENTRY_DSN` — client error reporting (build-time; baked into the bundle, not a runtime secret)
+- `SENTRY_ORG`, `SENTRY_PROJECT`, `SENTRY_AUTH_TOKEN` — build-time only, used by `@sentry/vite-plugin` to upload source maps during `vite build` so production stack traces resolve to real file/line instead of minified output; the plugin no-ops (via `disable: !process.env.SENTRY_AUTH_TOKEN`) when `SENTRY_AUTH_TOKEN` isn't set, so local/preview builds without the secret still succeed. `SENTRY_AUTH_TOKEN` is a Sentry **org auth token** (from sentry.io → org settings → Auth Tokens), not the DSN — treat it like any other build secret (Vercel project env var, not committed)
+
+## Error monitoring
+- Backend: `Sentry.init()` gated on `SENTRY_DSN` (server.js top). `Sentry.setupExpressErrorHandler(app)` catches errors that flow through Express's request/response cycle. `process.on("uncaughtException")` and `process.on("unhandledRejection")` (registered immediately after `Sentry.init()`, before any other require) are the backstop for everything Express never sees — background jobs (`syncAllGmail`, `processSequences`, `checkTrialExpiry`, etc.), truly synchronous throws, or a rejected promise nobody `.catch()`ed. `uncaughtException` reports to Sentry then exits (`Sentry.close()` → `process.exit(1)`) since Node's own guidance is not to keep serving requests after one — Railway restarts the process clean. `unhandledRejection` reports and deliberately does NOT exit, since in this codebase it's overwhelmingly a rejected promise inside a fire-and-forget background job (most of which already have their own local `.catch(console.error)`); killing the whole API over one of those would be worse than the bug itself.
+- Client: `Sentry.init()` gated on `VITE_SENTRY_DSN` (main.jsx top), with `browserTracingIntegration()`. Source maps: `vite.config.js` sets `build.sourcemap: !!process.env.SENTRY_AUTH_TOKEN` (not unconditionally `true` — a build with no token generates no maps at all, so there's never a window where maps sit in `dist` unuploaded-and-unstripped) and runs `@sentry/vite-plugin`'s `sentryVitePlugin(...)`, which uploads maps to Sentry at build time then deletes them from the `dist` output (`sourcemaps.filesToDeleteAfterUpload`) regardless of whether the upload itself succeeded — production never publicly serves raw source maps either way.
 
 ## Project structure
 - /client/src/App.jsx — AppShell + TABS + App (147 lines, imports from components/)

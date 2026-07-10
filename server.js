@@ -7,6 +7,39 @@ if (process.env.SENTRY_DSN) {
     tracesSampleRate: 0.1,
   });
 }
+
+// Sentry.setupExpressErrorHandler(app) (registered near the bottom of this file)
+// only sees errors that flow through Express's request/response cycle — anything
+// synchronous outside a route handler, or a rejected promise nobody attached a
+// .catch() to (a background setInterval job, the Gmail sync loop, the sequence
+// processor, etc.) never reaches it and was previously silent: caught nowhere,
+// reported nowhere. These two process-level handlers are that backstop.
+//
+// Different exit behavior is deliberate, not an oversight:
+// - uncaughtException means the process is in a state Node's own docs say you
+//   should not trust to keep serving requests from — report, then exit and let
+//   Railway restart the process clean.
+// - unhandledRejection here is overwhelmingly a rejected promise in a
+//   fire-and-forget background job (most of which already have their own
+//   .catch(console.error)) — killing the whole API over one of those would be
+//   a worse outcome than the bug itself, so this reports and keeps running.
+process.on("uncaughtException", (err) => {
+  console.error("[uncaughtException] — process will exit:", err);
+  if (process.env.SENTRY_DSN) {
+    Sentry.captureException(err);
+    Sentry.close(2000).finally(() => process.exit(1));
+  } else {
+    process.exit(1);
+  }
+});
+
+process.on("unhandledRejection", (reason) => {
+  console.error("[unhandledRejection]:", reason);
+  if (process.env.SENTRY_DSN) {
+    Sentry.captureException(reason instanceof Error ? reason : new Error(String(reason)));
+  }
+});
+
 const express = require("express");
 const cors = require("cors");
 const { rateLimit, ipKeyGenerator } = require("express-rate-limit");
