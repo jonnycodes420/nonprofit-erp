@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Link, useNavigate, useLocation } from "react-router-dom";
 import { useAuth } from "../main";
+import { GlobalStyles } from "../components/shared";
 
 const API = import.meta.env.VITE_API_URL || "https://nonprofit-erp-production.up.railway.app";
 
@@ -73,19 +74,20 @@ export default function SignupPage() {
   const ERR = { fontSize: 12, color: "#ef4444", marginTop: 4 };
 
   return (
-    <div style={{ minHeight: "100vh", background: "#0f1a12", display: "flex", fontFamily: "'DM Sans',system-ui,sans-serif" }}>
+    <div className="signup-shell" style={{ minHeight: "100vh", background: "#0f1a12", display: "flex", fontFamily: "'DM Sans',system-ui,sans-serif" }}>
+      <GlobalStyles/>
       <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=DM+Serif+Display&display=swap" rel="stylesheet"/>
 
       {/* Left panel */}
-      <div style={{ width: "40%", minWidth: 280, display: "flex", flexDirection: "column", padding: "48px 40px", flexShrink: 0 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: "auto" }}>
+      <div className="signup-left" style={{ width: "40%", minWidth: 280, display: "flex", flexDirection: "column", padding: "48px 40px", flexShrink: 0 }}>
+        <div className="signup-left-top" style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: "auto" }}>
           <div style={{ width: 32, height: 32, background: "#1a6b4a", borderRadius: 9, display: "flex", alignItems: "center", justifyContent: "center" }}>
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M8 2L13 5v6L8 14 3 11V5L8 2z" stroke="#f0ede6" strokeWidth="1.5" fill="none"/><circle cx="8" cy="8" r="2" fill="#f0ede6"/></svg>
           </div>
           <Link to="/" style={{ fontSize: 16, fontWeight: 700, color: "#f0ede6", textDecoration: "none", fontFamily: "'DM Serif Display',Georgia,serif" }}>Steward</Link>
         </div>
 
-        <div style={{ marginBottom: 48 }}>
+        <div className="signup-left-hero" style={{ marginBottom: 48 }}>
           <div style={{ fontSize: 30, fontWeight: 400, color: "#f0ede6", fontFamily: "'DM Serif Display',Georgia,serif", lineHeight: 1.25, marginBottom: 16 }}>
             Start your free<br/>30-day trial.
           </div>
@@ -112,8 +114,8 @@ export default function SignupPage() {
       </div>
 
       {/* Right panel */}
-      <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", padding: "40px 40px 40px 0", overflow: "auto" }}>
-        <div style={{ width: "100%", maxWidth: 480, background: "#fff", borderRadius: 20, padding: "36px 40px", boxShadow: "0 24px 64px rgba(0,0,0,0.3)" }}>
+      <div className="signup-right" style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", padding: "40px 40px 40px 0", overflow: "auto" }}>
+        <div className="signup-card" style={{ width: "100%", maxWidth: 480, background: "#fff", borderRadius: 20, padding: "36px 40px", boxShadow: "0 24px 64px rgba(0,0,0,0.3)" }}>
           <div style={{ fontSize: 20, fontWeight: 700, color: "#0f1a12", marginBottom: 6 }}>Create your account</div>
           <div style={{ fontSize: 13, color: "#6b7c72", marginBottom: 28 }}>Get your workspace set up in under two minutes.</div>
 

@@ -281,6 +281,14 @@ export function GlobalStyles() {
 
       /* Analytics grid */
       .analytics-grid{grid-template-columns:1fr!important;}
+
+      /* Signup: two-column hero → stacked single column */
+      .signup-shell{flex-direction:column!important;min-height:auto!important;}
+      .signup-left{width:100%!important;min-width:unset!important;padding:28px 20px 20px!important;flex-shrink:unset!important;}
+      .signup-left-top{margin-bottom:20px!important;}
+      .signup-left-hero{margin-bottom:20px!important;}
+      .signup-right{flex:none!important;padding:0 20px 32px!important;overflow:visible!important;}
+      .signup-card{max-width:100%!important;padding:24px 20px!important;}
     }
   `}</style>;
 }
