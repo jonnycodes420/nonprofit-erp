@@ -3360,9 +3360,9 @@ app.get("/programs", requireAuth, wrap(async (req, res) => {
     const grants = await query(
       `SELECT pg.grant_id as "grantId", g.funder, g.program, pg.allocated
        FROM program_grants pg
-       JOIN grants g ON g.id = pg.grant_id
-       WHERE pg.program_id = ?`,
-      [p.id]
+       JOIN grants g ON g.id = pg.grant_id AND g.org_id = ?
+       WHERE pg.program_id = ? AND pg.org_id = ?`,
+      [req.user.orgId, p.id, req.user.orgId]
     );
     return { ...p, grants };
   }));
@@ -3421,6 +3421,12 @@ app.post("/programs/:id/grants", requireAuth, requireAdmin, wrap(async (req, res
   );
   if (!programExists.length) return res.status(404).json({ error: "Program not found" });
 
+  const grantExists = await query(
+    "SELECT id FROM grants WHERE id = ? AND org_id = ?",
+    [grantId, req.user.orgId]
+  );
+  if (!grantExists.length) return res.status(404).json({ error: "Grant not found" });
+
   const id = "pg_" + uuid().slice(0, 8);
   await run(
     `INSERT INTO program_grants (id,org_id,program_id,grant_id,allocated)
@@ -3433,8 +3439,8 @@ app.post("/programs/:id/grants", requireAuth, requireAdmin, wrap(async (req, res
 
 app.delete("/programs/:id/grants/:grantId", requireAuth, requireAdmin, wrap(async (req, res) => {
   await run(
-    "DELETE FROM program_grants WHERE program_id = ? AND grant_id = ?",
-    [req.params.id, req.params.grantId]
+    "DELETE FROM program_grants WHERE program_id = ? AND grant_id = ? AND org_id = ?",
+    [req.params.id, req.params.grantId, req.user.orgId]
   );
   res.json({ success: true });
 }));
