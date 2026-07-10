@@ -75,7 +75,19 @@ app.set("trust proxy", 1);
 // Fail closed: an explicit, comma-separated allowlist is required to enable
 // cross-origin browser access. If CORS_ORIGIN is ever unset in the deploy
 // environment, fall back to the known production frontend origins rather than "*".
-const DEFAULT_CORS_ORIGINS = ["https://stewardapp.dev", "https://client-five-tau-13.vercel.app"];
+//
+// Both the apex (stewardapp.dev) and www subdomain are listed explicitly.
+// Neither vercel.json in this repo configures a www<->apex redirect, and
+// there's no redirect configured at the Vercel/DNS level either — confirmed
+// by the 2026-07 production incident where browsers loaded the app directly
+// under https://www.stewardapp.dev (if a redirect existed there, the app
+// could never have loaded under that origin in the first place, since the
+// redirect would fire before the page loaded). So this isn't defensive
+// belt-and-suspenders — both origins are genuinely live and reachable today.
+// If a canonical redirect is ever added in Vercel's dashboard, the losing
+// origin becomes unreachable by browsers and could in principle be dropped
+// from this list, but there is little cost to leaving both here.
+const DEFAULT_CORS_ORIGINS = ["https://stewardapp.dev", "https://www.stewardapp.dev", "https://client-five-tau-13.vercel.app"];
 const corsOrigins = process.env.CORS_ORIGIN
   ? process.env.CORS_ORIGIN.split(",").map(o => o.trim()).filter(Boolean)
   : DEFAULT_CORS_ORIGINS;
