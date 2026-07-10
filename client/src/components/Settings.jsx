@@ -4,6 +4,18 @@ import { T, Pill, SectionLabel, PageTitle } from "./shared";
 import { apiFetch, API, getToken } from "../api";
 import UpgradeModal from "./UpgradeModal";
 
+// Billing status badge styling, keyed by orgs.subscription_status.
+// "cancelled" (2 l's) is included alongside "canceled" (1 l) because old
+// rows may have been written with either spelling (see server.js).
+const BILLING_STATUS_META = {
+  active:        { label:"Active",        bg:"#e8f5ef", color:"#1a6b4a", border:"#10b981" },
+  trialing:      { label:"Trialing",      bg:"#1a2e1f", color:"#8fa896", border:"#2d4a35" },
+  past_due:      { label:"Past Due",      bg:"#fef2f2", color:"#dc2626", border:"#fecaca" },
+  trial_expired: { label:"Trial Expired", bg:"#fef2f2", color:"#dc2626", border:"#fecaca" },
+  canceled:      { label:"Canceled",      bg:"#1a2e1f", color:"#8fa896", border:"#2d4a35" },
+  cancelled:     { label:"Canceled",      bg:"#1a2e1f", color:"#8fa896", border:"#2d4a35" },
+};
+
 export function Settings({auth,logout}) {
   const orgName=auth?.org?.name||"Your Organization";
   const userName=auth?.user?.name||"User";
@@ -576,9 +588,11 @@ export function Settings({auth,logout}) {
                 <div style={{fontSize:11,fontWeight:700,letterSpacing:"0.07em",textTransform:"uppercase",color:T.ink3,marginBottom:4}}>Current Plan</div>
                 <div style={{display:"flex",alignItems:"center",gap:8}}>
                   <span style={{fontSize:15,fontWeight:700,color:T.ink,textTransform:"capitalize"}}>{billing.plan||"Trial"}</span>
-                  <span style={{fontSize:11,fontWeight:700,padding:"2px 8px",borderRadius:99,background:billing.subscriptionStatus==="active"?"#e8f5ef":billing.subscriptionStatus==="past_due"?"#fef2f2":"#1a2e1f",color:billing.subscriptionStatus==="active"?"#1a6b4a":billing.subscriptionStatus==="past_due"?"#dc2626":"#8fa896",border:"1px solid "+(billing.subscriptionStatus==="active"?"#10b981":billing.subscriptionStatus==="past_due"?"#fecaca":"#2d4a35")}}>
-                    {billing.subscriptionStatus==="active"?"Active":billing.subscriptionStatus==="past_due"?"Past Due":billing.subscriptionStatus==="cancelled"?"Cancelled":"Trialing"}
+                  {(()=>{const m=BILLING_STATUS_META[billing.subscriptionStatus]||BILLING_STATUS_META.trialing; return (
+                  <span style={{fontSize:11,fontWeight:700,padding:"2px 8px",borderRadius:99,background:m.bg,color:m.color,border:"1px solid "+m.border}}>
+                    {m.label}
                   </span>
+                  );})()}
                 </div>
               </div>
               {billing.subscriptionStatus==="trialing"&&billing.trialEndsAt&&(
