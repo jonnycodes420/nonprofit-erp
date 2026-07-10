@@ -2177,9 +2177,42 @@ app.get("/donors/:id/materials", requireAuth, wrap(async (req, res) => {
   res.json(rows);
 }));
 
+// Server-side backstop for donor material uploads. The client only checks
+// file.size<1MB before base64-encoding — trivially bypassed by calling the
+// API directly, so it's not a real limit on its own. The MIME allowlist is
+// the actual fix for the stored-XSS risk: file_type is attacker/uploader-
+// controlled and the frontend's viewMaterial() trusts it verbatim to build a
+// Blob it opens via window.open(URL.createObjectURL(...)) — if file_type
+// were ever "text/html" or "image/svg+xml", that blob would execute as
+// script in the browser. That path isn't reachable today only because
+// GET /donors/:id/materials happens to exclude file_data from its SELECT
+// (an apparently unrelated bug that also makes the "View" button do nothing
+// for base64 uploads) — an accident, not a real control. Constraining
+// file_type to genuinely inert formats at write time closes the actual gap,
+// so it stays closed even if that unrelated bug gets "fixed" later by
+// someone adding file_data back to a read response.
+const MATERIAL_MAX_BYTES = 1024 * 1024; // 1MB, matches the documented convention
+const MATERIAL_ALLOWED_MIME_TYPES = new Set([
+  "application/pdf",
+  "image/jpeg", "image/png", "image/gif", "image/webp",
+  "application/msword",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "application/vnd.ms-excel",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  "text/plain",
+  "text/csv",
+  "application/octet-stream",
+]);
+
 app.post("/donors/:id/materials", requireAuth, wrap(async (req, res) => {
   const { file_name, file_type, file_url, file_data, notes } = req.body;
   if (!file_name) return res.status(400).json({ error: "file_name required" });
+  if (file_type && !MATERIAL_ALLOWED_MIME_TYPES.has(file_type)) {
+    return res.status(400).json({ error: `Unsupported file type: ${file_type}` });
+  }
+  if (file_data && Buffer.byteLength(file_data, "base64") > MATERIAL_MAX_BYTES) {
+    return res.status(400).json({ error: "File too large. Maximum size is 1MB." });
+  }
   const donorCheck = await query("SELECT id FROM donors WHERE id=? AND org_id=?", [req.params.id, req.user.orgId]);
   if (!donorCheck.length) return res.status(404).json({ error: "Donor not found" });
   const userRow = await query("SELECT name FROM users WHERE id=?", [req.user.userId]);
