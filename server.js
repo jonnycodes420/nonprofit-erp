@@ -5645,7 +5645,7 @@ app.put("/events/:id", requireAuth, checkWriteAccess, async (req, res) => {
   try {
     const orgId = req.user.orgId;
     const { name, eventType, date, endDate, location, description, capacity, status, revenue, cost, notes } = req.body;
-    await run(
+    const affected = await run(
       `UPDATE events SET name=$1, event_type=$2, date=$3, end_date=$4, location=$5,
        description=$6, capacity=$7, status=$8, revenue=$9, cost=$10, notes=$11
        WHERE id=$12 AND org_id=$13`,
@@ -5653,6 +5653,7 @@ app.put("/events/:id", requireAuth, checkWriteAccess, async (req, res) => {
        capacity || null, status || 'upcoming', parseFloat(revenue) || 0, parseFloat(cost) || 0,
        notes || null, req.params.id, orgId]
     );
+    if (!affected.changes) return res.status(404).json({ error: "Event not found" });
     const rows = await query(`
       SELECT e.*, COUNT(CASE WHEN ea.status='attended' THEN 1 END)::int AS attendee_count,
         COUNT(CASE WHEN ea.status='confirmed' THEN 1 END)::int AS confirmed_count,
@@ -5660,8 +5661,8 @@ app.put("/events/:id", requireAuth, checkWriteAccess, async (req, res) => {
         COUNT(ea.id)::int AS invited_count,
         COALESCE(SUM(ea.gift_amount),0) AS total_revenue
       FROM events e LEFT JOIN event_attendees ea ON ea.event_id=e.id
-      WHERE e.id=$1 GROUP BY e.id
-    `, [req.params.id]);
+      WHERE e.id=$1 AND e.org_id=$2 GROUP BY e.id
+    `, [req.params.id, orgId]);
     res.json(rows[0] || {});
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
