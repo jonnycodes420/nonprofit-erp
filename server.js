@@ -87,10 +87,22 @@ app.set("trust proxy", 1);
 // If a canonical redirect is ever added in Vercel's dashboard, the losing
 // origin becomes unreachable by browsers and could in principle be dropped
 // from this list, but there is little cost to leaving both here.
+//
+// 2026-07 incident #2: CORS_ORIGIN was set on Railway to a stale/unrelated
+// value, which under the previous "env var replaces the default entirely"
+// logic silently locked out every real production origin — apex, www, AND
+// the Vercel URL all got rejected, confirmed by direct curl against the
+// live server (no Access-Control-Allow-Origin header for any of them,
+// despite Vary: Origin proving the array-based check was active). The known
+// production origins are no longer replaceable by the env var at all now —
+// CORS_ORIGIN can only ADD extra origins (e.g. a staging domain), never
+// remove/override the baseline ones. Whatever Railway's CORS_ORIGIN is
+// currently set to, it can no longer take production down by itself.
 const DEFAULT_CORS_ORIGINS = ["https://stewardapp.dev", "https://www.stewardapp.dev", "https://client-five-tau-13.vercel.app"];
-const corsOrigins = process.env.CORS_ORIGIN
+const extraCorsOrigins = process.env.CORS_ORIGIN
   ? process.env.CORS_ORIGIN.split(",").map(o => o.trim()).filter(Boolean)
-  : DEFAULT_CORS_ORIGINS;
+  : [];
+const corsOrigins = [...new Set([...DEFAULT_CORS_ORIGINS, ...extraCorsOrigins])];
 app.use(cors({ origin: corsOrigins }));
 
 // ── Rate limiting ────────────────────────────────────────────────────────
