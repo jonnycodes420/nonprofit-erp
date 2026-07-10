@@ -813,7 +813,7 @@ app.get("/org", requireAuth, wrap(async (req, res) => {
   res.json({ ...org, accessState: getOrgAccessState(org) });
 }));
 
-app.patch("/orgs/:id", requireAuth, wrap(async (req, res) => {
+app.patch("/orgs/:id", requireAuth, requireAdmin, wrap(async (req, res) => {
   if (req.user.orgId !== req.params.id) return res.status(403).json({ error: "Forbidden" });
   const { mission, focusArea, annualBudget, foundedYear, website } = req.body;
   await run(
@@ -5067,7 +5067,7 @@ app.get("/billing/status", requireAuth, wrap(async (req, res) => {
   });
 }));
 
-app.post("/billing/create-checkout", requireAuth, wrap(async (req, res) => {
+app.post("/billing/create-checkout", requireAuth, requireAdmin, wrap(async (req, res) => {
   if (!stripe) return res.status(503).json({ error: "Stripe not configured" });
   const { plan } = req.body;
   const priceMap = {
@@ -5095,7 +5095,7 @@ app.post("/billing/create-checkout", requireAuth, wrap(async (req, res) => {
   res.json({ url: session.url });
 }));
 
-app.post("/billing/create-portal", requireAuth, wrap(async (req, res) => {
+app.post("/billing/create-portal", requireAuth, requireAdmin, wrap(async (req, res) => {
   if (!stripe) return res.status(503).json({ error: "Stripe not configured" });
   const customerId = await ensureStripeCustomer(req.user.orgId, req.user.email);
   if (!customerId) return res.status(404).json({ error: "Org not found" });
