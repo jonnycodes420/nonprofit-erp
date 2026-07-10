@@ -61,61 +61,56 @@ function DemoModal({ onClose }) {
   );
 }
 
-function HeroMockup() {
-  const STAGES = [
-    { label: "Prospect",  color: "#8b5cf6", count: 12 },
-    { label: "Qualify",   color: "#3b82f6", count: 8  },
-    { label: "Cultivate", color: "#f59e0b", count: 15 },
-    { label: "Solicit",   color: "#10b981", count: 7  },
-    { label: "Steward",   color: "#0d5c3a", count: 4  },
-    { label: "Lapsed",    color: "#ef4444", count: 1  },
-  ];
-  const STATS = [
-    { label: "Total Donors",   value: "47",       sub: "12 gave this year" },
-    { label: "Active Grants",  value: "$340k",    sub: "pipeline value"    },
-    { label: "Giving YTD",     value: "$127,450", sub: "vs $98k last year" },
-    { label: "Open Tasks",     value: "12",       sub: "3 high priority"   },
-  ];
-  return (
-    <div style={{
-      background: C.dark, border: `1px solid ${C.dark3}`, borderRadius: 16,
-      padding: "20px", fontFamily: "'DM Sans',sans-serif",
-      boxShadow: "0 32px 80px rgba(0,0,0,0.4)",
-    }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 16, paddingBottom: 12, borderBottom: `1px solid ${C.dark2}` }}>
-        <div style={{ width: 22, height: 22, background: C.greenDk, borderRadius: 6, display: "flex", alignItems: "center", justifyContent: "center" }}>
-          <svg width="11" height="11" viewBox="0 0 16 16" fill="none"><path d="M8 2L13 5v6L8 14 3 11V5L8 2z" stroke={C.cream} strokeWidth="1.5" fill="none"/><circle cx="8" cy="8" r="2" fill={C.cream}/></svg>
-        </div>
-        <span style={{ fontSize: 11, fontWeight: 700, color: C.cream, fontFamily: "'DM Serif Display',serif" }}>Creo Arts Organization</span>
-        <span style={{ fontSize: 9, color: C.sage, textTransform: "uppercase", letterSpacing: "0.08em" }}>Steward</span>
-        <div style={{ marginLeft: "auto", background: C.dark2, border: `1px solid ${C.dark3}`, borderRadius: 6, padding: "3px 10px", fontSize: 10, color: C.green, fontWeight: 700 }}>✦ Ask AI</div>
-      </div>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 8, marginBottom: 14 }}>
-        {STATS.map(s => (
-          <div key={s.label} style={{ background: C.dark2, border: `1px solid ${C.dark3}`, borderRadius: 10, padding: "10px 12px", borderLeft: `3px solid ${C.greenDk}` }}>
-            <div style={{ fontSize: 8, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", color: C.sage, marginBottom: 4 }}>{s.label}</div>
-            <div style={{ fontSize: 18, fontWeight: 800, color: C.cream, fontFamily: "'DM Serif Display',serif", lineHeight: 1, letterSpacing: "-0.02em" }}>{s.value}</div>
-            <div style={{ fontSize: 9, color: C.sage, marginTop: 3 }}>{s.sub}</div>
-          </div>
-        ))}
-      </div>
-      <div style={{ background: C.dark2, border: `1px solid ${C.dark3}`, borderRadius: 10, overflow: "hidden" }}>
-        <div style={{ padding: "7px 12px 5px", borderBottom: `1px solid ${C.dark3}`, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <span style={{ fontSize: 8, fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.1em", color: C.sage }}>Donor Pipeline</span>
-          <span style={{ fontSize: 8, color: C.sage }}>View all →</span>
-        </div>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(6,1fr)" }}>
-          {STAGES.map((s, i) => (
-            <div key={s.label} style={{ padding: "9px 8px", borderRight: i < 5 ? `1px solid ${C.dark3}` : "none", borderTop: `2px solid ${s.color}` }}>
-              <div style={{ fontSize: 7, fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.06em", color: s.color, marginBottom: 4 }}>{s.label}</div>
-              <div style={{ fontSize: 16, fontWeight: 800, color: C.cream, fontFamily: "'DM Serif Display',serif", lineHeight: 1 }}>{s.count}</div>
-            </div>
-          ))}
-        </div>
-      </div>
-    </div>
-  );
-}
+// ── Feature icons ──────────────────────────────────────────────────────────
+// Simple, consistent line icons (lucide-react isn't a project dependency, so
+// these are hand-drawn to the same visual convention: 24x24 viewBox, ~1.7
+// stroke, round caps/joins) in place of the emoji that used to sit here.
+const IconWrap = ({ children }) => (
+  <div style={{ marginBottom: 14 }}>
+    <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke={C.greenDk} strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+      {children}
+    </svg>
+  </div>
+);
+const IconUsers = () => (
+  <IconWrap>
+    <circle cx="9" cy="8" r="3.2" />
+    <path d="M3 20.5c0-3.6 2.7-6.3 6-6.3s6 2.7 6 6.3" />
+    <circle cx="17.3" cy="9.2" r="2.4" />
+    <path d="M15.8 14.3c2.6.5 4.6 2.7 4.7 5.6" />
+  </IconWrap>
+);
+const IconFileText = () => (
+  <IconWrap>
+    <path d="M6.5 2.5h8l5 5v13.5a1 1 0 01-1 1h-12a1 1 0 01-1-1v-17.5a1 1 0 011-1z" />
+    <path d="M14.5 2.5v5h5" />
+    <path d="M9 13h6M9 16.5h6M9 9.5h2" />
+  </IconWrap>
+);
+const IconDollarSign = () => (
+  <IconWrap>
+    <path d="M12 2.5v19" />
+    <path d="M16.8 6.8c0-2.1-2.2-3.6-4.8-3.6s-4.8 1.7-4.8 3.6c0 2 2.2 3 4.8 3.5 2.8.6 4.8 1.6 4.8 3.6 0 2.1-2.2 3.6-4.8 3.6s-4.8-1.5-4.8-3.6" />
+  </IconWrap>
+);
+const IconMail = () => (
+  <IconWrap>
+    <rect x="2.5" y="4.5" width="19" height="15" rx="2" />
+    <path d="M3.5 6.5l8.5 6.5 8.5-6.5" />
+  </IconWrap>
+);
+const IconSparkles = () => (
+  <IconWrap>
+    <path d="M12 2.5l1.7 5 5 1.7-5 1.7-1.7 5-1.7-5-5-1.7 5-1.7 1.7-5z" />
+    <path d="M19 15l.7 2 2 .7-2 .7-.7 2-.7-2-2-.7 2-.7.7-2z" />
+  </IconWrap>
+);
+const IconSettings = () => (
+  <IconWrap>
+    <circle cx="12" cy="12" r="3.2" />
+    <path d="M19.4 13.3a8 8 0 000-2.6l2-1.5-2-3.4-2.4 1a8 8 0 00-2.2-1.3L14.4 2.6h-4.8l-.4 2.9a8 8 0 00-2.2 1.3l-2.4-1-2 3.4 2 1.5a8 8 0 000 2.6l-2 1.5 2 3.4 2.4-1c.6.6 1.4 1 2.2 1.3l.4 2.9h4.8l.4-2.9c.8-.3 1.6-.7 2.2-1.3l2.4 1 2-3.4-2-1.5z" />
+  </IconWrap>
+);
 
 export default function Landing() {
   const navigate = useNavigate();
@@ -195,7 +190,6 @@ export default function Landing() {
         .lp-hero-grid  { display: grid; grid-template-columns: 1fr 1fr; gap: 64px; align-items: center; }
         .lp-feat-grid  { display: grid; grid-template-columns: repeat(3,1fr); gap: 20px; }
         .lp-pain-grid  { display: grid; grid-template-columns: repeat(3,1fr); gap: 20px; }
-        .lp-quote-grid { display: grid; grid-template-columns: repeat(3,1fr); gap: 20px; }
         .lp-price-grid { display: grid; grid-template-columns: 3fr 2fr; gap: 20px; }
         .roi-grid      { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; align-items: start; }
         .lp-card-hover:hover { transform: translateY(-2px); transition: transform .2s, box-shadow .2s; box-shadow: 0 8px 32px rgba(0,0,0,0.10) !important; }
@@ -228,7 +222,6 @@ export default function Landing() {
           .lp-feat-grid  { grid-template-columns: 1fr !important; }
           .lp-price-grid { grid-template-columns: 1fr !important; }
           .lp-pain-grid  { grid-template-columns: 1fr !important; }
-          .lp-quote-grid { grid-template-columns: 1fr !important; }
           .roi-grid      { grid-template-columns: 1fr !important; }
           .hw-steps      { grid-template-columns: 1fr !important; }
           .hw-step::after { display: none !important; }
@@ -341,9 +334,242 @@ export default function Landing() {
                 </p>
               </div>
               <div className="lp-hero-mockup">
-                <HeroMockup />
+                <img
+                  src="/hero-screenshot.png"
+                  alt="Steward dashboard showing donor pipeline and daily briefing"
+                  style={{
+                    width: "100%", display: "block", borderRadius: 16,
+                    border: `1px solid ${C.dark3}`,
+                    boxShadow: "0 32px 80px rgba(0,0,0,0.4)",
+                  }}
+                />
               </div>
             </div>
+          </div>
+        </section>
+
+        {/* ── Problem ── */}
+        <section className="lp-section" style={{ background: C.cream, padding: "96px 64px" }}>
+          <div style={{ maxWidth: 1100, margin: "0 auto" }}>
+            <Eyebrow>The Problem</Eyebrow>
+            <h2 style={{
+              fontFamily: "'DM Serif Display',serif",
+              fontSize: "clamp(32px, 4vw, 52px)",
+              fontWeight: 400, letterSpacing: "-0.02em", lineHeight: 1.1,
+              color: C.dark, marginBottom: 52, maxWidth: 700,
+            }}>
+              You're losing donors you worked years to build.
+            </h2>
+            <div className="lp-pain-grid">
+              {[
+                { num: "01", text: "The spreadsheet that runs your development program has 847 rows, 12 tabs, and is one accidental delete away from a crisis." },
+                { num: "02", text: "Your top donor gave last March. It's now November. Nobody noticed. They just gave $10,000 to another org." },
+                { num: "03", text: "Your ED asked for a board report on Friday afternoon. You spent your weekend building it in Excel." },
+              ].map(c => (
+                <div key={c.num} className="lp-card-hover" style={{
+                  background: C.white, borderRadius: 14,
+                  padding: "28px 24px 24px",
+                  borderLeft: `3px solid ${C.gold}`,
+                  boxShadow: "0 2px 12px rgba(0,0,0,0.06)",
+                  transition: "transform .2s, box-shadow .2s",
+                }}>
+                  <div style={{ fontSize: 11, fontWeight: 800, color: C.gold, letterSpacing: "0.12em", textTransform: "uppercase", marginBottom: 14 }}>{c.num}</div>
+                  <p style={{ fontSize: 16, color: C.dark, lineHeight: 1.65, fontFamily: "'DM Serif Display',serif", fontWeight: 400 }}>{c.text}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        {/* ── About ── */}
+        <section id="about" className="lp-section" style={{ background: C.dark, padding: "96px 64px", borderTop: `1px solid ${C.dark2}` }}>
+          <div style={{ maxWidth: 720, margin: "0 auto" }}>
+            <Eyebrow dark>Why Steward Exists</Eyebrow>
+            <h2 style={{
+              fontFamily: "'DM Serif Display',serif",
+              fontSize: "clamp(32px, 4vw, 50px)",
+              fontWeight: 400, letterSpacing: "-0.02em", lineHeight: 1.1,
+              color: C.cream, marginBottom: 32,
+            }}>
+              Built by someone who felt the weight.
+            </h2>
+            <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+              <p style={{ fontSize: 17, color: C.sage, lineHeight: 1.8 }}>
+                I built Steward after watching a nonprofit I cared about manage their entire donor program in Google Sheets.
+              </p>
+              <p style={{ fontSize: 17, color: C.sage, lineHeight: 1.8 }}>
+                They had incredible relationships with their donors. Real, meaningful connections built over years. But they were losing people — not because the relationships weren't there, but because they couldn't keep track. A donor would lapse and nobody would notice until it was too late.
+              </p>
+              <p style={{ fontSize: 17, color: C.sage, lineHeight: 1.8 }}>
+                I built Steward to be the tool I wished they had. Not another enterprise CRM with a 6-month implementation. Not another spreadsheet. Something that actually understands how development work happens — the relationships, the conversations, the follow-ups, the board reports at midnight.
+              </p>
+              <p style={{ fontSize: 17, color: C.sage, lineHeight: 1.8 }}>
+                If you're a development officer doing more with less, Steward was built for you.
+              </p>
+            </div>
+            <p style={{
+              fontFamily: "'DM Serif Display',serif", fontStyle: "italic",
+              fontSize: 22, color: C.gold, lineHeight: 1.5, marginTop: 40,
+              paddingTop: 40, borderTop: `1px solid ${C.dark2}`,
+            }}>
+              "Your mission. Our pipeline."
+            </p>
+            <div style={{
+              marginTop: 32, maxWidth: 480,
+              background: C.dark2, borderRadius: 10,
+              padding: "16px 20px", borderLeft: `3px solid ${C.gold}`,
+            }}>
+              <div style={{ marginBottom: 8 }}>
+                <span style={{ fontSize: 11, fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.12em", color: C.gold }}>Steward</span>
+                {"  "}
+                <span style={{ fontSize: 12, fontStyle: "italic", color: C.sage }}>/ˈstjuːərd/</span>
+                {"  "}
+                <span style={{ fontSize: 11, color: C.sage }}>noun</span>
+              </div>
+              <p style={{ fontSize: 14, color: C.cream, lineHeight: 1.65, marginBottom: 6, fontFamily: "'DM Sans',sans-serif" }}>
+                One who manages and protects something entrusted to their care.
+              </p>
+              <p style={{ fontSize: 13, color: C.sage, lineHeight: 1.6, fontFamily: "'DM Sans',sans-serif" }}>
+                That's what great development officers do. That's what we help them do better.
+              </p>
+            </div>
+          </div>
+        </section>
+
+        {/* ── Features ── */}
+        <section id="features" className="lp-section" style={{ background: C.white, padding: "96px 64px" }}>
+          <div style={{ maxWidth: 1100, margin: "0 auto" }}>
+            <Eyebrow>What Steward Does</Eyebrow>
+            <h2 style={{
+              fontFamily: "'DM Serif Display',serif",
+              fontSize: "clamp(32px, 4vw, 52px)",
+              fontWeight: 400, letterSpacing: "-0.02em", lineHeight: 1.1,
+              color: C.dark, marginBottom: 16, maxWidth: 640,
+            }}>
+              The parts of development work that actually need a system behind them.
+            </h2>
+            <p style={{ fontSize: 15, color: C.ink3, marginBottom: 48, lineHeight: 1.7, maxWidth: 580 }}>
+              Built by someone who watched a nonprofit struggle with spreadsheets. Designed for the one-person development shop and the five-person team alike.
+            </p>
+            <div className="lp-feat-grid">
+              {[
+                {
+                  icon: <IconUsers />,
+                  title: "Donor Relationships",
+                  desc: "Know every donor by name, giving history, and what they care about. Never forget a follow-up. Never lose a relationship to a staff transition.",
+                },
+                {
+                  icon: <IconFileText />,
+                  title: "Grant Pipeline",
+                  desc: "Track every grant from prospect to award. Get deadline reminders before it's too late. Draft your LOI in seconds with AI that knows your mission.",
+                },
+                {
+                  icon: <IconDollarSign />,
+                  title: "Finance & Reporting",
+                  desc: "Replace the five spreadsheets you use for finance with one tool that actually talks to your donor data. Board report in 45 seconds, not two days.",
+                },
+                {
+                  icon: <IconMail />,
+                  title: "Smart Outreach",
+                  desc: "Steward automatically reaches out to donors who are about to lapse — before they're gone. Personal, warm emails that sound like you wrote them.",
+                },
+                {
+                  icon: <IconSparkles />,
+                  title: "Daily Intelligence",
+                  desc: "Every morning, Steward tells you who to call, what to say, and why it matters. Like having a senior fundraising consultant on staff — for $249/month.",
+                },
+                {
+                  icon: <IconSettings />,
+                  title: "Built for Your Mission",
+                  desc: "Custom fields for your specific programs. Your terminology. Your workflows. Steward adapts to how you work, not the other way around.",
+                },
+              ].map(f => (
+                <div key={f.title} className="lp-card-hover" style={{
+                  background: C.cream, border: `1px solid ${C.cream3}`,
+                  borderRadius: 14, padding: "24px",
+                  transition: "transform .2s, box-shadow .2s",
+                  boxShadow: "0 1px 4px rgba(0,0,0,0.04)",
+                }}>
+                  {f.icon}
+                  <div style={{ fontSize: 18, fontFamily: "'DM Serif Display',serif", color: C.dark, marginBottom: 8, letterSpacing: "-0.01em" }}>{f.title}</div>
+                  <div style={{ fontSize: 13, color: C.ink3, lineHeight: 1.7 }}>{f.desc}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        {/* ── How it works ── */}
+        <section id="howitworks" className="lp-section" style={{ background: C.cream, padding: "96px 64px", borderTop: `1px solid ${C.cream3}` }}>
+          <div style={{ maxWidth: 1100, margin: "0 auto" }}>
+            <div style={{ textAlign: "center", marginBottom: 64 }}>
+              <Eyebrow>How it works</Eyebrow>
+              <h2 style={{
+                fontFamily: "'DM Serif Display',serif",
+                fontSize: "clamp(32px, 4vw, 52px)",
+                fontWeight: 400, letterSpacing: "-0.02em", lineHeight: 1.1,
+                color: C.dark, maxWidth: 640, margin: "0 auto",
+              }}>
+                From spreadsheet chaos to fundraising clarity — in one afternoon.
+              </h2>
+            </div>
+            <div className="hw-steps">
+              {[
+                {
+                  n: "1",
+                  title: "Import your donors",
+                  desc: "Upload your spreadsheet. Steward maps your columns automatically and scores every donor in minutes.",
+                },
+                {
+                  n: "2",
+                  title: "Connect your tools",
+                  desc: "Link your Gmail. Every email you send or receive with a donor auto-logs to their timeline. No manual entry.",
+                },
+                {
+                  n: "3",
+                  title: "Let Steward work",
+                  desc: "Automated sequences reach out to lapsed donors. Deadline reminders fire before grants are due. Your AI briefing tells you what to do each morning.",
+                },
+                {
+                  n: "4",
+                  title: "Focus on your mission",
+                  desc: "Stop managing spreadsheets. Start building relationships. That's why you got into this work.",
+                },
+              ].map(step => (
+                <div key={step.n} className="hw-step" style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+                  <div style={{
+                    width: 44, height: 44, borderRadius: "50%",
+                    border: `2px solid ${C.gold}`,
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                    fontFamily: "'DM Serif Display',serif", fontSize: 20, color: C.gold,
+                    flexShrink: 0, background: C.cream, position: "relative", zIndex: 2,
+                  }}>{step.n}</div>
+                  <div>
+                    <div style={{ fontSize: 17, fontFamily: "'DM Serif Display',serif", color: C.dark, marginBottom: 8, letterSpacing: "-0.01em" }}>{step.title}</div>
+                    <div style={{ fontSize: 14, color: C.ink3, lineHeight: 1.7 }}>{step.desc}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        {/* ── Where Steward Is Today ── */}
+        <section className="lp-section" style={{ background: C.dark, padding: "96px 64px", borderTop: `1px solid ${C.dark2}` }}>
+          <div style={{ maxWidth: 720, margin: "0 auto", textAlign: "center" }}>
+            <Eyebrow dark>Where Steward Is Today</Eyebrow>
+            <h2 style={{
+              fontFamily: "'DM Serif Display',serif",
+              fontSize: "clamp(30px, 4vw, 46px)",
+              fontWeight: 400, letterSpacing: "-0.02em", lineHeight: 1.18,
+              color: C.cream, marginBottom: 28,
+            }}>
+              This is new. I'd rather tell you the truth than sell you a testimonial.
+            </h2>
+            <p style={{ fontSize: 17, color: C.sage, lineHeight: 1.8, marginBottom: 36, textAlign: "left", maxWidth: 620, marginLeft: "auto", marginRight: "auto" }}>
+              Steward doesn't have a decade of case studies or a wall of logos. It's a new product, built by one person who spent time inside a nonprofit's donor spreadsheet and couldn't stop thinking about how much of it was fixable. If you sign on now, you're not getting a mature enterprise platform — you're getting something built specifically for the problems small development teams actually have, with a founder who reads every support email personally and builds what your team needs next.
+            </p>
+            <BookBtn>Book a 15-min demo and judge for yourself →</BookBtn>
           </div>
         </section>
 
@@ -477,272 +703,6 @@ export default function Landing() {
           </div>
         </section>
 
-        {/* ── Problem ── */}
-        <section className="lp-section" style={{ background: C.cream, padding: "96px 64px" }}>
-          <div style={{ maxWidth: 1100, margin: "0 auto" }}>
-            <Eyebrow>The Problem</Eyebrow>
-            <h2 style={{
-              fontFamily: "'DM Serif Display',serif",
-              fontSize: "clamp(32px, 4vw, 52px)",
-              fontWeight: 400, letterSpacing: "-0.02em", lineHeight: 1.1,
-              color: C.dark, marginBottom: 52, maxWidth: 700,
-            }}>
-              You're losing donors you worked years to build.
-            </h2>
-            <div className="lp-pain-grid">
-              {[
-                { num: "01", text: "The spreadsheet that runs your development program has 847 rows, 12 tabs, and is one accidental delete away from a crisis." },
-                { num: "02", text: "Your top donor gave last March. It's now November. Nobody noticed. They just gave $10,000 to another org." },
-                { num: "03", text: "Your ED asked for a board report on Friday afternoon. You spent your weekend building it in Excel." },
-              ].map(c => (
-                <div key={c.num} className="lp-card-hover" style={{
-                  background: C.white, borderRadius: 14,
-                  padding: "28px 24px 24px",
-                  borderLeft: `3px solid ${C.gold}`,
-                  boxShadow: "0 2px 12px rgba(0,0,0,0.06)",
-                  transition: "transform .2s, box-shadow .2s",
-                }}>
-                  <div style={{ fontSize: 11, fontWeight: 800, color: C.gold, letterSpacing: "0.12em", textTransform: "uppercase", marginBottom: 14 }}>{c.num}</div>
-                  <p style={{ fontSize: 16, color: C.dark, lineHeight: 1.65, fontFamily: "'DM Serif Display',serif", fontWeight: 400 }}>{c.text}</p>
-                </div>
-              ))}
-            </div>
-          </div>
-        </section>
-
-        {/* ── Features ── */}
-        <section id="features" className="lp-section" style={{ background: C.white, padding: "96px 64px" }}>
-          <div style={{ maxWidth: 1100, margin: "0 auto" }}>
-            <Eyebrow>What Steward Does</Eyebrow>
-            <h2 style={{
-              fontFamily: "'DM Serif Display',serif",
-              fontSize: "clamp(32px, 4vw, 52px)",
-              fontWeight: 400, letterSpacing: "-0.02em", lineHeight: 1.1,
-              color: C.dark, marginBottom: 16, maxWidth: 640,
-            }}>
-              Everything your development team needs. Nothing they don't.
-            </h2>
-            <p style={{ fontSize: 15, color: C.ink3, marginBottom: 48, lineHeight: 1.7, maxWidth: 580 }}>
-              Built by someone who watched a nonprofit struggle with spreadsheets. Designed for the one-person development shop and the five-person team alike.
-            </p>
-            <div className="lp-feat-grid">
-              {[
-                {
-                  icon: "🎯",
-                  title: "Donor Relationships",
-                  desc: "Know every donor by name, giving history, and what they care about. Never forget a follow-up. Never lose a relationship to a staff transition.",
-                },
-                {
-                  icon: "📋",
-                  title: "Grant Pipeline",
-                  desc: "Track every grant from prospect to award. Get deadline reminders before it's too late. Draft your LOI in seconds with AI that knows your mission.",
-                },
-                {
-                  icon: "💰",
-                  title: "Finance & Reporting",
-                  desc: "Replace the five spreadsheets you use for finance with one tool that actually talks to your donor data. Board report in 45 seconds, not two days.",
-                },
-                {
-                  icon: "📧",
-                  title: "Smart Outreach",
-                  desc: "Steward automatically reaches out to donors who are about to lapse — before they're gone. Personal, warm emails that sound like you wrote them.",
-                },
-                {
-                  icon: "📊",
-                  title: "Daily Intelligence",
-                  desc: "Every morning, Steward tells you who to call, what to say, and why it matters. Like having a senior fundraising consultant on staff — for $249/month.",
-                },
-                {
-                  icon: "🤝",
-                  title: "Built for Your Mission",
-                  desc: "Custom fields for your specific programs. Your terminology. Your workflows. Steward adapts to how you work, not the other way around.",
-                },
-              ].map(f => (
-                <div key={f.title} className="lp-card-hover" style={{
-                  background: C.cream, border: `1px solid ${C.cream3}`,
-                  borderRadius: 14, padding: "24px",
-                  transition: "transform .2s, box-shadow .2s",
-                  boxShadow: "0 1px 4px rgba(0,0,0,0.04)",
-                }}>
-                  <div style={{ fontSize: 32, marginBottom: 14, lineHeight: 1 }}>{f.icon}</div>
-                  <div style={{ fontSize: 18, fontFamily: "'DM Serif Display',serif", color: C.dark, marginBottom: 8, letterSpacing: "-0.01em" }}>{f.title}</div>
-                  <div style={{ fontSize: 13, color: C.ink3, lineHeight: 1.7 }}>{f.desc}</div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </section>
-
-        {/* ── How it works ── */}
-        <section id="howitworks" className="lp-section" style={{ background: C.cream, padding: "96px 64px", borderTop: `1px solid ${C.cream3}` }}>
-          <div style={{ maxWidth: 1100, margin: "0 auto" }}>
-            <div style={{ textAlign: "center", marginBottom: 64 }}>
-              <Eyebrow>How it works</Eyebrow>
-              <h2 style={{
-                fontFamily: "'DM Serif Display',serif",
-                fontSize: "clamp(32px, 4vw, 52px)",
-                fontWeight: 400, letterSpacing: "-0.02em", lineHeight: 1.1,
-                color: C.dark, maxWidth: 640, margin: "0 auto",
-              }}>
-                From spreadsheet chaos to fundraising clarity — in one afternoon.
-              </h2>
-            </div>
-            <div className="hw-steps">
-              {[
-                {
-                  n: "1",
-                  title: "Import your donors",
-                  desc: "Upload your spreadsheet. Steward maps your columns automatically and scores every donor in minutes.",
-                },
-                {
-                  n: "2",
-                  title: "Connect your tools",
-                  desc: "Link your Gmail. Every email you send or receive with a donor auto-logs to their timeline. No manual entry.",
-                },
-                {
-                  n: "3",
-                  title: "Let Steward work",
-                  desc: "Automated sequences reach out to lapsed donors. Deadline reminders fire before grants are due. Your AI briefing tells you what to do each morning.",
-                },
-                {
-                  n: "4",
-                  title: "Focus on your mission",
-                  desc: "Stop managing spreadsheets. Start building relationships. That's why you got into this work.",
-                },
-              ].map(step => (
-                <div key={step.n} className="hw-step" style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-                  <div style={{
-                    width: 44, height: 44, borderRadius: "50%",
-                    border: `2px solid ${C.gold}`,
-                    display: "flex", alignItems: "center", justifyContent: "center",
-                    fontFamily: "'DM Serif Display',serif", fontSize: 20, color: C.gold,
-                    flexShrink: 0, background: C.cream, position: "relative", zIndex: 2,
-                  }}>{step.n}</div>
-                  <div>
-                    <div style={{ fontSize: 17, fontFamily: "'DM Serif Display',serif", color: C.dark, marginBottom: 8, letterSpacing: "-0.01em" }}>{step.title}</div>
-                    <div style={{ fontSize: 14, color: C.ink3, lineHeight: 1.7 }}>{step.desc}</div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </section>
-
-        {/* ── Testimonials ── */}
-        <section className="lp-section" style={{ background: C.dark, padding: "96px 64px" }}>
-          <div style={{ maxWidth: 1100, margin: "0 auto" }}>
-            <div style={{ textAlign: "center", marginBottom: 52 }}>
-              <Eyebrow dark>What development officers say</Eyebrow>
-              <h2 style={{
-                fontFamily: "'DM Serif Display',serif",
-                fontSize: "clamp(28px, 3.5vw, 44px)",
-                fontWeight: 400, letterSpacing: "-0.02em", lineHeight: 1.1,
-                color: C.cream,
-              }}>
-                Real results. Real missions.
-              </h2>
-            </div>
-            <div className="lp-quote-grid">
-              {[
-                {
-                  quote: "I used to spend every Sunday pulling together donor reports. Now I generate a board report in under a minute and spend my Sundays with my family.",
-                  name: "Development Director", org: "Arts Education Nonprofit", type: "Education",
-                },
-                {
-                  quote: "We recovered three major donors in our first month using Steward's re-engagement sequences. That's $15,000 we would have lost.",
-                  name: "Executive Director", org: "Community Foundation", type: "Community",
-                },
-                {
-                  quote: "Finally a CRM that doesn't require a consultant to set up. I imported our donors on a Tuesday afternoon and had my first AI briefing by Wednesday morning.",
-                  name: "Individual Giving Manager", org: "Social Services Nonprofit", type: "Social Services",
-                },
-              ].map((q, i) => (
-                <div key={i} className="lp-card-hover" style={{
-                  background: C.dark2, border: `1px solid ${C.dark3}`,
-                  borderRadius: 16, padding: "32px 28px",
-                  display: "flex", flexDirection: "column", gap: 20,
-                  transition: "transform .2s, box-shadow .2s",
-                }}>
-                  <div style={{ fontSize: 28, color: C.gold, fontFamily: "'DM Serif Display',serif", lineHeight: 1 }}>"</div>
-                  <p style={{
-                    fontFamily: "'DM Serif Display',serif", fontStyle: "italic",
-                    fontSize: 17, color: C.cream, lineHeight: 1.7, flex: 1,
-                  }}>{q.quote}</p>
-                  <div style={{ borderTop: `1px solid ${C.dark3}`, paddingTop: 16 }}>
-                    <div style={{ fontSize: 13, fontWeight: 600, color: C.sage }}>— {q.name}</div>
-                    <div style={{ fontSize: 12, color: C.dark3, marginTop: 3 }}>{q.org}</div>
-                    <div style={{ marginTop: 10 }}>
-                      <span style={{
-                        fontSize: 10, fontWeight: 700, textTransform: "uppercase",
-                        letterSpacing: "0.08em", color: C.sage,
-                        background: C.dark3 + "44", padding: "3px 8px", borderRadius: 4,
-                      }}>{q.type}</span>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-            <p style={{ textAlign: "center", fontSize: 11, color: C.dark3, marginTop: 32 }}>
-              Results based on early user feedback. Individual results may vary.
-            </p>
-          </div>
-        </section>
-
-        {/* ── About ── */}
-        <section id="about" className="lp-section" style={{ background: C.dark, padding: "96px 64px", borderTop: `1px solid ${C.dark2}` }}>
-          <div style={{ maxWidth: 720, margin: "0 auto" }}>
-            <Eyebrow dark>Why Steward Exists</Eyebrow>
-            <h2 style={{
-              fontFamily: "'DM Serif Display',serif",
-              fontSize: "clamp(32px, 4vw, 50px)",
-              fontWeight: 400, letterSpacing: "-0.02em", lineHeight: 1.1,
-              color: C.cream, marginBottom: 32,
-            }}>
-              Built by someone who felt the weight.
-            </h2>
-            <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
-              <p style={{ fontSize: 17, color: C.sage, lineHeight: 1.8 }}>
-                I built Steward after watching a nonprofit I cared about manage their entire donor program in Google Sheets.
-              </p>
-              <p style={{ fontSize: 17, color: C.sage, lineHeight: 1.8 }}>
-                They had incredible relationships with their donors. Real, meaningful connections built over years. But they were losing people — not because the relationships weren't there, but because they couldn't keep track. A donor would lapse and nobody would notice until it was too late.
-              </p>
-              <p style={{ fontSize: 17, color: C.sage, lineHeight: 1.8 }}>
-                I built Steward to be the tool I wished they had. Not another enterprise CRM with a 6-month implementation. Not another spreadsheet. Something that actually understands how development work happens — the relationships, the conversations, the follow-ups, the board reports at midnight.
-              </p>
-              <p style={{ fontSize: 17, color: C.sage, lineHeight: 1.8 }}>
-                If you're a development officer doing more with less, Steward was built for you.
-              </p>
-            </div>
-            <p style={{
-              fontFamily: "'DM Serif Display',serif", fontStyle: "italic",
-              fontSize: 22, color: C.gold, lineHeight: 1.5, marginTop: 40,
-              paddingTop: 40, borderTop: `1px solid ${C.dark2}`,
-            }}>
-              "Your mission. Our pipeline."
-            </p>
-            <div style={{
-              marginTop: 32, maxWidth: 480,
-              background: C.dark2, borderRadius: 10,
-              padding: "16px 20px", borderLeft: `3px solid ${C.gold}`,
-            }}>
-              <div style={{ marginBottom: 8 }}>
-                <span style={{ fontSize: 11, fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.12em", color: C.gold }}>Steward</span>
-                {"  "}
-                <span style={{ fontSize: 12, fontStyle: "italic", color: C.sage }}>/ˈstjuːərd/</span>
-                {"  "}
-                <span style={{ fontSize: 11, color: C.sage }}>noun</span>
-              </div>
-              <p style={{ fontSize: 14, color: C.cream, lineHeight: 1.65, marginBottom: 6, fontFamily: "'DM Sans',sans-serif" }}>
-                One who manages and protects something entrusted to their care.
-              </p>
-              <p style={{ fontSize: 13, color: C.sage, lineHeight: 1.6, fontFamily: "'DM Sans',sans-serif" }}>
-                That's what great development officers do. That's what we help them do better.
-              </p>
-            </div>
-          </div>
-        </section>
-
         {/* ── Pricing ── */}
         <section id="pricing" className="lp-section" style={{ background: C.cream, padding: "96px 64px" }}>
           <div style={{ maxWidth: 1000, margin: "0 auto" }}>
@@ -867,7 +827,7 @@ export default function Landing() {
               borderLeft: `3px solid ${C.gold}`,
             }}>
               <p style={{ fontSize: 16, color: C.dark, lineHeight: 1.75, fontFamily: "'DM Serif Display',serif", fontWeight: 400 }}>
-                Still not sure? Consider this: if Steward helps you retain one $2,500 donor who would have lapsed, it pays for itself for 10 months. That's not a software purchase — that's an investment in your mission.
+                Still deciding? One retained donor giving $2,500 covers ten months of Steward. Most of the cost of losing a donor happens quietly, before anyone notices.
               </p>
             </div>
           </div>
