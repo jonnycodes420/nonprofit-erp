@@ -21,28 +21,30 @@ const TABS=[
   {id:"donors",label:"Donors",icon:"♦"},
   {id:"grants",label:"Grants",icon:"◉"},
   {id:"communications",label:"Communications",icon:"◑"},
-  {id:"finance",label:"Finance",icon:"◇"},
-  {id:"events",label:"Events",icon:"◎"},
-  {id:"analytics",label:"Analytics",icon:"◈"},
-  {id:"tasks",label:"Tasks",icon:"◻"},
   {id:"settings",label:"Settings",icon:"⚙"},
-  {id:"volunteers",label:"Volunteers",icon:"◎",earlyAccess:true},
-  {id:"board",label:"Board",icon:"◆",earlyAccess:true},
+  // DEPRIORITIZED — pivoting to donor dashboard focus, code kept intact, re-enable by uncommenting
+  // {id:"finance",label:"Finance",icon:"◇"},
+  // {id:"events",label:"Events",icon:"◎"},
+  // {id:"analytics",label:"Analytics",icon:"◈"},
+  // {id:"tasks",label:"Tasks",icon:"◻"},
+  // {id:"volunteers",label:"Volunteers",icon:"◎",earlyAccess:true},
+  // {id:"board",label:"Board",icon:"◆",earlyAccess:true},
 ];
 const BOTTOM_TABS=[
-  {id:"dashboard",label:"Dashboard",icon:"◈"},
+  {id:"today",label:"Today",icon:"◉"},
   {id:"donors",label:"Donors",icon:"♦"},
   {id:"grants",label:"Grants",icon:"◉"},
-  {id:"finance",label:"Finance",icon:"◇"},
+  {id:"settings",label:"Settings",icon:"⚙"},
 ];
 const MORE_TABS=[
+  {id:"dashboard",label:"Dashboard",icon:"◈"},
   {id:"communications",label:"Communications",icon:"◑"},
-  {id:"events",label:"Events",icon:"◎"},
-  {id:"volunteers",label:"Volunteers",icon:"◎",earlyAccess:true},
-  {id:"board",label:"Board",icon:"◆",earlyAccess:true},
-  {id:"analytics",label:"Analytics",icon:"◈"},
-  {id:"tasks",label:"Tasks",icon:"◻"},
-  {id:"settings",label:"Settings",icon:"⚙"},
+  // DEPRIORITIZED — pivoting to donor dashboard focus, code kept intact, re-enable by uncommenting
+  // {id:"events",label:"Events",icon:"◎"},
+  // {id:"volunteers",label:"Volunteers",icon:"◎",earlyAccess:true},
+  // {id:"board",label:"Board",icon:"◆",earlyAccess:true},
+  // {id:"analytics",label:"Analytics",icon:"◈"},
+  // {id:"tasks",label:"Tasks",icon:"◻"},
 ];
 
 // ── App Shell ──────────────────────────────────────────────────────────────
@@ -292,7 +294,10 @@ function AppShell() {
     {/* Bottom nav bar — mobile only, always in DOM */}
     <div className="mobile-bottom-bar">
       {BOTTOM_TABS.map(t=>(
-        <button key={t.id} onClick={()=>{setTab(t.id);setMoreOpen(false);}} className={`mobile-bottom-tab${tab===t.id?" active":""}`}>
+        // "today" isn't an AppShell tab (it's the separate /today route, same as the
+        // desktop nav's hardcoded Today button above), so it navigates instead of
+        // switching internal tab state — every other entry keeps the normal setTab behavior.
+        <button key={t.id} onClick={()=>{if(t.id==="today"){window.location.href="/today";}else{setTab(t.id);setMoreOpen(false);}}} className={`mobile-bottom-tab${tab===t.id?" active":""}`}>
           <span className="mob-icon">{t.icon}</span>
           {t.label}
         </button>

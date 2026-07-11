@@ -72,9 +72,6 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
   const newDonorsThisYear=data.donors.filter(d=>d.lastGift&&new Date(d.lastGift).getFullYear()===currentYear).length;
   const activeGrantCount=data.grants.filter(g=>g.status==="active").length;
   const pipelineValue=data.grants.filter(g=>["active","pending","prospecting"].includes(g.status)).reduce((s,g)=>s+g.amount,0);
-  const activeVolunteers=data.volunteers.filter(v=>v.lastActive&&daysDiff(v.lastActive)<=30).length;
-  const openTasks=data.tasks.filter(t=>!t.done).length;
-  const highPriorityTasks=data.tasks.filter(t=>!t.done&&t.priority==="high").length;
   const lapsedDonors=data.donors.filter(d=>d.stage==="lapsed");
   const lapsedValue=lapsedDonors.reduce((s,d)=>s+d.total,0);
 
@@ -98,11 +95,6 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
     .flatMap(d=>(d.interactions||[]).map(i=>({...i,donorName:d.name,donorId:d.id})))
     .sort((a,b)=>new Date(b.date)-new Date(a.date))
     .slice(0,10);
-
-  const todayIso=new Date().toISOString().split("T")[0];
-  const weekEndIso=new Date(Date.now()+7*86400000).toISOString().split("T")[0];
-  const todayTasks=data.tasks.filter(t=>!t.done&&t.due===todayIso).sort((a,b)=>({high:0,medium:1,low:2}[a.priority]-{high:0,medium:1,low:2}[b.priority]));
-  const weekTasks=data.tasks.filter(t=>!t.done&&t.due>todayIso&&t.due<=weekEndIso).sort((a,b)=>new Date(a.due)-new Date(b.due));
 
   const generateBriefing=async()=>{
     setBriefLoading(true);setBriefing("");setBriefOpen(true);
@@ -132,8 +124,6 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
     onNavigate("donors");
   };
 
-  const toggleTask=id=>setData(prev=>({...prev,tasks:prev.tasks.map(t=>t.id===id?{...t,done:!t.done}:t)}));
-
   const bLines=briefing.split("\n").filter(l=>l.trim()&&!l.startsWith("**")&&l.trim().length>15);
   const pullQuote=bLines.length?bLines[0].replace(/^[•\-\*\s]+/,"").slice(0,160):"";
   const briefRest=pullQuote?briefing.slice(briefing.indexOf(pullQuote)+pullQuote.length).trim():"";
@@ -149,9 +139,10 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
     {icon:<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" width="18" height="18"><circle cx="10" cy="7" r="3.5"/><path d="M3 17c0-3.3 3.1-6 7-6s7 2.7 7 6" strokeLinecap="round"/><line x1="14" y1="4" x2="18" y2="4" strokeLinecap="round"/><line x1="16" y1="2" x2="16" y2="6" strokeLinecap="round"/></svg>,label:"Add Donor",action:()=>setShowAddDonor(true),isWrite:true},
     {icon:<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" width="18" height="18"><rect x="3" y="5" width="14" height="11" rx="2"/><path d="M7 5V4a1 1 0 011-1h4a1 1 0 011 1v1" strokeLinecap="round"/><line x1="7" y1="10" x2="13" y2="10" strokeLinecap="round"/><line x1="10" y1="7.5" x2="10" y2="12.5" strokeLinecap="round"/></svg>,label:"Log Gift",action:()=>onNavigate("donors"),isWrite:true},
     {icon:<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" width="18" height="18"><path d="M10 3l1.8 5.4H17l-4.5 3.3 1.7 5.3L10 14l-4.2 3 1.7-5.3L3 8.4h5.2z" strokeLinejoin="round"/></svg>,label:"New Grant",action:()=>onNavigate("grants"),isWrite:true},
-    {icon:<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" width="18" height="18"><circle cx="10" cy="7" r="3.5"/><path d="M3 17c0-3.3 3.1-6 7-6s7 2.7 7 6" strokeLinecap="round"/></svg>,label:"Add Volunteer",action:()=>onNavigate("volunteers"),isWrite:true},
-    {icon:<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" width="18" height="18"><rect x="3" y="3" width="14" height="14" rx="2"/><line x1="7" y1="9" x2="13" y2="9" strokeLinecap="round"/><line x1="7" y1="12" x2="11" y2="12" strokeLinecap="round"/><line x1="10" y1="5.5" x2="10" y2="3" strokeLinecap="round"/></svg>,label:"New Task",action:()=>onNavigate("tasks"),isWrite:true},
     {icon:<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" width="18" height="18"><rect x="2" y="5" width="16" height="11" rx="2"/><path d="M2 8l8 5 8-5" strokeLinecap="round"/></svg>,label:"Send Email",action:()=>onNavigate("communications"),isWrite:true},
+    // DEPRIORITIZED — pivoting to donor dashboard focus, code kept intact, re-enable by uncommenting
+    // {icon:<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" width="18" height="18"><circle cx="10" cy="7" r="3.5"/><path d="M3 17c0-3.3 3.1-6 7-6s7 2.7 7 6" strokeLinecap="round"/></svg>,label:"Add Volunteer",action:()=>onNavigate("volunteers"),isWrite:true},
+    // {icon:<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" width="18" height="18"><rect x="3" y="3" width="14" height="14" rx="2"/><line x1="7" y1="9" x2="13" y2="9" strokeLinecap="round"/><line x1="7" y1="12" x2="11" y2="12" strokeLinecap="round"/><line x1="10" y1="5.5" x2="10" y2="3" strokeLinecap="round"/></svg>,label:"New Task",action:()=>onNavigate("tasks"),isWrite:true},
   ];
 
   return(
@@ -185,12 +176,14 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
           )}
         </div>
       )}
-      <div className="dash-stat-grid" style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10}}>
+      <div className="dash-stat-grid" style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10}}>
         {[
           {label:"Total Donors",value:totalDonors,sub:`${newDonorsThisYear} gave this year`,tab:"donors"},
           {label:"Active Grants",value:activeGrantCount,sub:fmt(pipelineValue)+" pipeline",tab:"grants"},
-          {label:"Active Volunteers",value:activeVolunteers,sub:"in last 30 days",tab:"volunteers"},
-          {label:"Open Tasks",value:openTasks,sub:highPriorityTasks>0?`${highPriorityTasks} high priority`:"all on track",tab:"tasks"},
+          {label:"Lapsed Donors",value:lapsedDonors.length,sub:lapsedDonors.length>0?fmtFull(lapsedValue)+" at risk":"none right now",tab:"donors"},
+          // DEPRIORITIZED — pivoting to donor dashboard focus, code kept intact, re-enable by uncommenting
+          // {label:"Active Volunteers",value:activeVolunteers,sub:"in last 30 days",tab:"volunteers"},
+          // {label:"Open Tasks",value:openTasks,sub:highPriorityTasks>0?`${highPriorityTasks} high priority`:"all on track",tab:"tasks"},
         ].map(s=>(
           <div key={s.label} onClick={()=>onNavigate(s.tab)} className="card-click" style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:14,padding:"16px 20px",cursor:"pointer",borderLeft:"3px solid "+T.greenDk}}>
             <div style={{fontSize:10,fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",color:T.ink3,marginBottom:4}}>{s.label}</div>
@@ -372,7 +365,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
           {/* Quick actions */}
           <div style={{background:"#0f1a12",border:"1px solid #1a2e1f",borderRadius:14,overflow:"hidden",padding:"14px 20px"}}>
             <div style={{...sTitle,color:"#8fa896"}}>Quick Actions</div>
-            <div className="dash-quick-grid" style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8,marginTop:12}}>
+            <div className="dash-quick-grid" style={{display:"grid",gridTemplateColumns:"repeat(2,1fr)",gap:8,marginTop:12}}>
               {QUICK.map(a=>{
                 const blocked=isReadOnly&&a.isWrite;
                 return(
@@ -394,45 +387,11 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
             </div>
           </div>
 
-          {/* Tasks this week */}
-          <div style={{...cardWrap}}>
-            <div className="dash-cpad" style={{...cPad,borderBottom:"1px solid "+T.bg3,...sHdr}}>
-              <span style={sTitle}>Tasks This Week</span>
-              <button onClick={()=>onNavigate("tasks")} style={sLink}>All →</button>
-            </div>
-            {todayTasks.length===0&&weekTasks.length===0&&(
-              <div style={{...cPad,fontSize:13,color:T.ink3,fontStyle:"italic"}}>No tasks due today or this week</div>
-            )}
-            {todayTasks.length>0&&(
-              <>
-                <div style={{padding:"6px 20px 4px",fontSize:9,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.1em",color:T.ink3,background:T.bg,borderBottom:"1px solid "+T.bg3}}>Today</div>
-                {todayTasks.map((t)=>(
-                  <div key={t.id} className="dash-row" onClick={()=>toggleTask(t.id)} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 20px",borderBottom:"1px solid "+T.bg3,cursor:"pointer"}}>
-                    <div style={{width:16,height:16,borderRadius:4,border:`2px solid ${SC[t.priority]}`,flexShrink:0}}/>
-                    <div style={{flex:1,minWidth:0}}>
-                      <div style={{fontSize:12,color:T.ink,fontWeight:500,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{t.title}</div>
-                    </div>
-                    <Pill label={t.priority} color={SC[t.priority]}/>
-                  </div>
-                ))}
-              </>
-            )}
-            {weekTasks.length>0&&(
-              <>
-                <div style={{padding:"6px 20px 4px",fontSize:9,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.1em",color:T.ink3,background:T.bg,borderBottom:"1px solid "+T.bg3}}>This week</div>
-                {weekTasks.map((t,i)=>(
-                  <div key={t.id} className="dash-row" onClick={()=>toggleTask(t.id)} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 20px",borderBottom:i<weekTasks.length-1?"1px solid "+T.bg3:"none",cursor:"pointer"}}>
-                    <div style={{width:16,height:16,borderRadius:4,border:`2px solid ${SC[t.priority]}`,flexShrink:0}}/>
-                    <div style={{flex:1,minWidth:0}}>
-                      <div style={{fontSize:12,color:T.ink,fontWeight:500,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{t.title}</div>
-                      {t.due&&<div style={{fontSize:10,color:T.ink3,marginTop:2}}>{new Date(t.due).toLocaleDateString("en-US",{weekday:"short",month:"short",day:"numeric"})}</div>}
-                    </div>
-                    <Pill label={t.priority} color={SC[t.priority]}/>
-                  </div>
-                ))}
-              </>
-            )}
-          </div>
+          {/* DEPRIORITIZED — Tasks This Week widget removed from view, pivoting to
+              donor dashboard focus. Tasks.jsx, the /tasks backend routes, and the
+              tasks table are untouched — re-enable by restoring this block (see
+              git history) once todayTasks/weekTasks/toggleTask are reintroduced
+              above alongside the other removed dashboard state. */}
 
           {/* Activity feed */}
           <div style={{...cardWrap}}>
