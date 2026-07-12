@@ -25,6 +25,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
   const [savingGoal,setSavingGoal]=useState(false);
 
   const [stageCounts,setStageCounts]=useState([]);
+  const [stewardMetrics,setStewardMetrics]=useState(null);
 
   const loadGoal=()=>apiFetch("/goals/active").then(r=>setGoal(r)).catch(()=>setGoal(null));
 
@@ -32,6 +33,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
     apiFetch("/dashboard/my-stats").then(r=>setMyStats(r||null)).catch(()=>{});
     apiFetch("/dashboard/today").then(r=>setQueueItems(r||[])).catch(()=>{}).finally(()=>setQueueLoading(false));
     apiFetch("/donors/stage-counts").then(r=>setStageCounts(r||[])).catch(()=>{});
+    apiFetch("/metrics/stewardship-summary").then(r=>setStewardMetrics(r)).catch(()=>{});
     loadGoal();
   },[]);
 
@@ -140,6 +142,19 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
     </div>
   );
 
+  const Sparkline=({trend,color,width=100,height=30})=>{
+    if(!trend||trend.length<2)return null;
+    const vals=trend.map(t=>t.value);
+    const min=Math.min(...vals),max=Math.max(...vals);
+    const range=max-min||1;
+    const pts=trend.map((t,i)=>{
+      const x=(i/(trend.length-1))*width;
+      const y=height-((t.value-min)/range)*height;
+      return `${x.toFixed(1)},${y.toFixed(1)}`;
+    }).join(" ");
+    return <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`} style={{display:"block"}}><polyline points={pts} fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>;
+  };
+
   const FUNNEL_STAGES=STAGES.filter(s=>s.id!=="lapsed");
   const lapsedStageInfo=STAGES.find(s=>s.id==="lapsed");
   const countsByStage=Object.fromEntries(stageCounts.map(s=>[s.stage,s]));
@@ -176,6 +191,37 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
           </div>
         )}
       </div>
+
+      {/* Stewardship debt — headline metric, not a buried stat */}
+      {stewardMetrics&&(
+        <div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:16,padding:"20px 24px",display:"flex",flexWrap:"wrap",gap:24,alignItems:"center"}}>
+          <div style={{flex:"1 1 220px"}}>
+            <div style={{fontSize:10,fontWeight:800,letterSpacing:"0.1em",textTransform:"uppercase",color:T.ink3,marginBottom:6}}>Stewardship Debt</div>
+            <div style={{display:"flex",alignItems:"baseline",gap:10,flexWrap:"wrap"}}>
+              <div style={{fontSize:36,fontWeight:800,fontFamily:"'DM Serif Display',serif",color:T.ink,lineHeight:1}}>{stewardMetrics.stewardshipDebt.current.toLocaleString()}</div>
+              {stewardMetrics.stewardshipDebt.deltaVsTrendStart!=null&&(
+                <span style={{fontSize:13,fontWeight:700,color:stewardMetrics.stewardshipDebt.deltaVsTrendStart>0?"#ef4444":"#1a6b4a"}}>
+                  {stewardMetrics.stewardshipDebt.deltaVsTrendStart>0?"↑":"↓"} {Math.abs(stewardMetrics.stewardshipDebt.deltaVsTrendStart).toLocaleString()} vs 3 weeks ago
+                </span>
+              )}
+            </div>
+            <div style={{fontSize:11,color:T.ink3,marginTop:4}}>Donors weighted by days since last personal contact × giving significance, summed</div>
+          </div>
+          {stewardMetrics.stewardshipDebt.trend.length>=2&&(
+            <Sparkline trend={stewardMetrics.stewardshipDebt.trend} color={stewardMetrics.stewardshipDebt.deltaVsTrendStart>0?"#ef4444":"#1a6b4a"} width={120} height={36}/>
+          )}
+          <div style={{width:1,alignSelf:"stretch",background:T.bg3,minHeight:44}}/>
+          <div style={{flex:"1 1 200px"}}>
+            <div style={{fontSize:10,fontWeight:800,letterSpacing:"0.1em",textTransform:"uppercase",color:T.ink3,marginBottom:6}}>First-Touch Delay</div>
+            <div style={{fontSize:24,fontWeight:800,fontFamily:"'DM Serif Display',serif",color:T.ink,lineHeight:1}}>
+              {stewardMetrics.firstTouchDelay.current!=null?`${stewardMetrics.firstTouchDelay.current}d`:"—"}
+            </div>
+            <div style={{fontSize:11,color:T.ink3,marginTop:4}}>
+              Avg days before a new donor gets a personal touch{stewardMetrics.firstTouchDelay.sampleSize?` (n=${stewardMetrics.firstTouchDelay.sampleSize})`:""}
+            </div>
+          </div>
+        </div>
+      )}
 
       {myStats&&(
         <div style={{background:T.white,border:"1px solid #3b82f630",borderLeft:"3px solid #3b82f6",borderRadius:14,overflow:"hidden"}}>

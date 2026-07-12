@@ -729,6 +729,23 @@ async function initSchema() {
       created_at TIMESTAMPTZ DEFAULT NOW()
     )
   `);
+
+  // Generic daily snapshot store for computed "name the vague anxiety as a
+  // number" metrics (see CLAUDE.md design patterns) — shared by
+  // stewardship_debt, first_touch_delay, and any future metric of the same
+  // shape, rather than a bespoke history table per metric. One row per
+  // (org, metric, day); re-snapshotting the same day updates in place.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS metric_snapshots (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL,
+      metric_key TEXT NOT NULL,
+      value NUMERIC NOT NULL,
+      snapshot_date TEXT NOT NULL,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      UNIQUE(org_id, metric_key, snapshot_date)
+    )
+  `);
 }
 
 async function seedData() {
@@ -1230,6 +1247,26 @@ async function seedData() {
      VALUES ($1,$2,$3,$4,$5,$6,$7) ON CONFLICT (id) DO NOTHING`,
     ["goalseed_01", orgId, seedAgo(30), seedFromNow(60), "total_raised", 25000, "Raise $25,000 this quarter"]
   );
+
+  // Historical trend for the stewardship-debt / first-touch-delay metrics —
+  // 21 daily points so the home screen's headline number has a real trend
+  // to draw on first load, not just today's single value. Debt trending
+  // down (staff catching up on outreach); first-touch delay roughly flat.
+  for (let daysAgo = 20; daysAgo >= 0; daysAgo--) {
+    const date = seedAgo(daysAgo);
+    const debtValue = Math.round(340 + daysAgo * 9 + Math.sin(daysAgo) * 15);
+    const touchValue = Math.round(6 + Math.sin(daysAgo / 3) * 1.5);
+    await pool.query(
+      `INSERT INTO metric_snapshots (id,org_id,metric_key,value,snapshot_date) VALUES ($1,$2,$3,$4,$5)
+       ON CONFLICT (org_id, metric_key, snapshot_date) DO NOTHING`,
+      [`msseed_debt_${daysAgo}`, orgId, "stewardship_debt", debtValue, date]
+    );
+    await pool.query(
+      `INSERT INTO metric_snapshots (id,org_id,metric_key,value,snapshot_date) VALUES ($1,$2,$3,$4,$5)
+       ON CONFLICT (org_id, metric_key, snapshot_date) DO NOTHING`,
+      [`msseed_touch_${daysAgo}`, orgId, "first_touch_delay", touchValue, date]
+    );
+  }
 }
 
 // ── Blank org seeding (called from onboarding flow) ───────────────────────────

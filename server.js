@@ -2949,6 +2949,34 @@ app.post("/goals", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req,
   res.status(201).json({ id });
 }));
 
+// Computes both metrics live (so the number shown is never stale), persists
+// today's snapshot for this org (so the trend line fills in as the page
+// gets viewed, on top of the periodic background job), and returns the
+// last 30 days of history for each.
+app.get("/metrics/stewardship-summary", requireAuth, wrap(async (req, res) => {
+  const { orgId } = req.user;
+  const debt = await snapshotMetricsForOrg(orgId);
+  const firstTouch = await computeFirstTouchDelay(orgId);
+
+  const since = new Date(); since.setDate(since.getDate() - 30);
+  const sinceStr = since.toISOString().slice(0, 10);
+  const debtTrend = await query(
+    "SELECT snapshot_date, value FROM metric_snapshots WHERE org_id=? AND metric_key='stewardship_debt' AND snapshot_date >= ? ORDER BY snapshot_date ASC",
+    [orgId, sinceStr]
+  );
+  const touchTrend = await query(
+    "SELECT snapshot_date, value FROM metric_snapshots WHERE org_id=? AND metric_key='first_touch_delay' AND snapshot_date >= ? ORDER BY snapshot_date ASC",
+    [orgId, sinceStr]
+  );
+
+  const trendDelta = trend => trend.length >= 2 ? Math.round(Number(trend[trend.length - 1].value) - Number(trend[0].value)) : null;
+
+  res.json({
+    stewardshipDebt: { current: debt, trend: debtTrend.map(r => ({ date: r.snapshot_date, value: Number(r.value) })), deltaVsTrendStart: trendDelta(debtTrend) },
+    firstTouchDelay: { current: firstTouch.avgDays, sampleSize: firstTouch.sampleSize, untouchedCount: firstTouch.untouchedCount, trend: touchTrend.map(r => ({ date: r.snapshot_date, value: Number(r.value) })), deltaVsTrendStart: trendDelta(touchTrend) },
+  });
+}));
+
 app.get("/dashboard", requireAuth, wrap(async (req, res) => {
   const { orgId } = req.user;
   const urgentTasks = await query(
@@ -6889,5 +6917,94 @@ async function checkTrialExpiry() {
 }
 setTimeout(() => checkTrialExpiry(), 15000);
 setInterval(() => checkTrialExpiry(), 6 * 60 * 60 * 1000);
+
+// ── "Name the vague anxiety as a number" metrics ────────────────────────────
+// Design pattern (see CLAUDE.md): a fuzzy staff worry gets computed into one
+// trackable, trending number instead of staying a vibe. Two examples so far,
+// sharing the same metric_snapshots storage/trend mechanism rather than each
+// getting a bespoke history table:
+//   - stewardship_debt: donors weighted by (days since last meaningful
+//     contact) x (giving significance), summed across the portfolio. Up =
+//     donors are going quiet relative to what they've given; down = staff
+//     are keeping pace with their most significant relationships.
+//   - first_touch_delay: average days between a donor's first gift and the
+//     first personal (non-gift) touch they received. Up = new donors are
+//     waiting longer for a human response to their first gift, which donor
+//     research consistently ties to weaker retention.
+// "Meaningful contact" = call/meeting/email/stewardship interactions —
+// deliberately excludes passive rows like email_open or gift/note/
+// stage_change, which aren't a human reaching out.
+const MEANINGFUL_CONTACT_TYPES = "('call','meeting','email','stewardship')";
+
+async function computeStewardshipDebt(orgId) {
+  const rows = await query(
+    `SELECT d.id, d.total_giving,
+       COALESCE(
+         (SELECT MAX(i.date) FROM interactions i WHERE i.donor_id = d.id AND i.type IN ${MEANINGFUL_CONTACT_TYPES}),
+         d.first_gift_date
+       ) AS last_contact
+     FROM donors d
+     WHERE d.org_id = ? AND d.deleted_at IS NULL AND d.total_giving > 0`,
+    [orgId]
+  );
+  const today = Date.now();
+  let debt = 0;
+  for (const d of rows) {
+    if (!d.last_contact) continue; // no gift and no contact — nothing to weight yet
+    const daysSince = Math.max(0, Math.min(1000, Math.floor((today - new Date(d.last_contact).getTime()) / 86400000)));
+    const significance = (Number(d.total_giving) || 0) / 1000;
+    debt += (daysSince / 30) * significance;
+  }
+  return Math.round(debt);
+}
+
+async function computeFirstTouchDelay(orgId) {
+  const rows = await query(
+    `SELECT d.id, d.first_gift_date,
+       (SELECT MIN(i.date) FROM interactions i
+        WHERE i.donor_id = d.id AND i.type IN ${MEANINGFUL_CONTACT_TYPES} AND i.date >= d.first_gift_date) AS first_touch_date
+     FROM donors d
+     WHERE d.org_id = ? AND d.deleted_at IS NULL AND d.first_gift_date IS NOT NULL`,
+    [orgId]
+  );
+  let totalDays = 0, touched = 0, untouched = 0;
+  for (const d of rows) {
+    if (!d.first_touch_date) { untouched++; continue; }
+    const days = Math.max(0, Math.floor((new Date(d.first_touch_date) - new Date(d.first_gift_date)) / 86400000));
+    totalDays += days;
+    touched++;
+  }
+  return { avgDays: touched > 0 ? Math.round(totalDays / touched) : null, sampleSize: touched, untouchedCount: untouched };
+}
+
+async function snapshotMetricsForOrg(orgId) {
+  const today = new Date().toISOString().slice(0, 10);
+  const debt = await computeStewardshipDebt(orgId);
+  const { avgDays } = await computeFirstTouchDelay(orgId);
+  await run(
+    `INSERT INTO metric_snapshots (id, org_id, metric_key, value, snapshot_date) VALUES (?,?,?,?,?)
+     ON CONFLICT (org_id, metric_key, snapshot_date) DO UPDATE SET value = EXCLUDED.value`,
+    ["ms_" + uuid().slice(0, 8), orgId, "stewardship_debt", debt, today]
+  );
+  if (avgDays != null) {
+    await run(
+      `INSERT INTO metric_snapshots (id, org_id, metric_key, value, snapshot_date) VALUES (?,?,?,?,?)
+       ON CONFLICT (org_id, metric_key, snapshot_date) DO UPDATE SET value = EXCLUDED.value`,
+      ["ms_" + uuid().slice(0, 8), orgId, "first_touch_delay", avgDays, today]
+    );
+  }
+  return debt;
+}
+
+async function snapshotAllOrgMetrics() {
+  try {
+    const orgs = await query("SELECT id FROM orgs", []);
+    for (const o of orgs) {
+      try { await snapshotMetricsForOrg(o.id); } catch (e) { console.error(`[metrics] snapshot failed for org ${o.id}:`, e.message); }
+    }
+  } catch (e) { console.error("[metrics] snapshotAllOrgMetrics error:", e.message); }
+}
+setTimeout(() => snapshotAllOrgMetrics(), 20000);
+setInterval(() => snapshotAllOrgMetrics(), 6 * 60 * 60 * 1000);
 
 module.exports = app;

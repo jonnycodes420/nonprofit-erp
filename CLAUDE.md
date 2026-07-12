@@ -296,6 +296,12 @@ Mobile "More" drawer: communications, events, volunteers, board, analytics, task
 - Activity log templates: LogTouchpointModal in Donors.jsx has per-type prompt templates. On save, if type is Call/Meeting, a follow-up task is silently created and a toast shown.
 - Mobile: GlobalStyles() in shared.jsx is the single CSS home for all @media(max-width:768px) rules. Use className + !important to override inline JSX styles.
 
+## Product design patterns
+- **Name the vague anxiety as a number.** When a feature is answering a fuzzy staff worry ("are we neglecting our best donors?", "are new donors falling through the cracks?"), don't default to a generic stat card — compute it into one concrete, trackable, trending number instead. Two examples so far, sharing the same `metric_snapshots` table/trend mechanism (org_id, metric_key, value, snapshot_date; one row per org+metric+day, `snapshotMetricsForOrg()`/`snapshotAllOrgMetrics()` in server.js) rather than a bespoke history table per metric:
+  - `stewardship_debt` — donors weighted by (days since last meaningful contact) × (giving significance), summed across the portfolio. Up = donors are going quiet relative to what they've given.
+  - `first_touch_delay` — average days between a donor's first gift and their first personal (non-gift) touch. Up = new donors waiting longer for a human response.
+  Both are computed live on every `GET /metrics/stewardship-summary` call (never served stale-only) and featured as a headline number on the home screen (Dashboard.jsx), not buried in a stat grid. When building the next feature that's really answering an anxiety rather than reporting a fact, reach for this pattern — a real formula + a trend — before reaching for a plain count or dollar total.
+
 ## Email Sequences
 
 ### Tables
