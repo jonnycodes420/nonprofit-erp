@@ -63,6 +63,9 @@ function AppShell() {
   const [showPlanPicker,setShowPlanPicker]=useState(false);
   const [showInstallPrompt,setShowInstallPrompt]=useState(false);
   const [deferredPrompt,setDeferredPrompt]=useState(null);
+  const [commsInitialNav,setCommsInitialNav]=useState(null);
+
+  const navigateTo=(t,opts)=>{setCommsInitialNav(opts?.subtab||null);setTab(t);};
 
 
   useEffect(()=>{
@@ -237,10 +240,10 @@ function AppShell() {
     </div>}
 
     <div className="app-content" style={{flex:1,padding:"20px 24px 28px 24px",maxWidth:1400,width:"100%",margin:"0 auto",boxSizing:"border-box"}}>
-      {tab==="dashboard"&&<Dashboard data={data} setData={setData} onNavigate={setTab} isReadOnly={isReadOnly}/>}
+      {tab==="dashboard"&&<Dashboard data={data} setData={setData} onNavigate={navigateTo} isReadOnly={isReadOnly}/>}
       {tab==="donors"&&<Donors data={data} setData={setData} isReadOnly={isReadOnly}/>}
       {tab==="grants"&&<Grants data={data} setData={setData} isReadOnly={isReadOnly}/>}
-      {tab==="communications"&&<Communications data={data} isReadOnly={isReadOnly}/>}
+      {tab==="communications"&&<Communications data={data} isReadOnly={isReadOnly} initialNav={commsInitialNav} onInitialNavConsumed={()=>setCommsInitialNav(null)}/>}
       {tab==="events"&&<Events data={data} isReadOnly={isReadOnly}/>}
       {tab==="volunteers"&&<Volunteers data={data} setData={setData} isReadOnly={isReadOnly}/>}
       {tab==="board"&&<Board data={data} setData={setData} isReadOnly={isReadOnly}/>}

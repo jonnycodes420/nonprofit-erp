@@ -62,10 +62,12 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
   const [onlineGifts,setOnlineGifts]=useState([]);
   const [myStats,setMyStats]=useState(null);
   const [portfolioOpen,setPortfolioOpen]=useState(false);
+  const [milestoneDrafts,setMilestoneDrafts]=useState([]);
 
   useEffect(()=>{
     apiFetch("/stripe/online-gifts").then(r=>setOnlineGifts(r||[])).catch(()=>{});
     apiFetch("/dashboard/my-stats").then(r=>setMyStats(r||null)).catch(()=>{});
+    apiFetch("/milestone-drafts").then(r=>setMilestoneDrafts(r||[])).catch(()=>{});
   },[]);
 
   const totalDonors=data.donors.length;
@@ -98,9 +100,12 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
 
   const generateBriefing=async()=>{
     setBriefLoading(true);setBriefing("");setBriefOpen(true);
+    const milestoneLine=milestoneDrafts.length>0
+      ?`\nMilestone emails pending review: ${milestoneDrafts.length} AI-drafted thank-you email(s) awaiting staff approval (donors who just crossed a giving milestone or anniversary) — ${milestoneDrafts.slice(0,3).map(m=>m.donor_name).join(", ")}.`
+      :"";
     await askClaude(
       `You are a chief development officer. Write a crisp daily briefing. Use bullet points. Be specific with names and numbers. Max 250 words.`,
-      `Generate today's development briefing for ${data.org.name}.\nToday: ${todayStr}\n\n${buildContext(data)}\n\nFormat:\n**TODAY'S PRIORITY CALLS** (top 2-3 donors to contact with specific reason)\n**GRANT ALERTS** (anything urgent in next 30 days)\n**FINANCIAL PULSE** (1-2 sentences on cash/revenue)\n**ONE THING** (the single most important action today)\n\nBe sharp and specific.`,
+      `Generate today's development briefing for ${data.org.name}.\nToday: ${todayStr}\n\n${buildContext(data)}${milestoneLine}\n\nFormat:\n**TODAY'S PRIORITY CALLS** (top 2-3 donors to contact with specific reason)\n**GRANT ALERTS** (anything urgent in next 30 days)\n**MILESTONE EMAILS** (if any are pending review, mention how many and nudge toward reviewing them — omit this section entirely if none are pending)\n**FINANCIAL PULSE** (1-2 sentences on cash/revenue)\n**ONE THING** (the single most important action today)\n\nBe sharp and specific.`,
       chunk=>setBriefing(chunk)
     );
     setBriefLoading(false);
@@ -134,6 +139,16 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
   const cardWrap={background:T.white,border:"1px solid "+T.bg3,borderRadius:14,overflow:"hidden"};
   const cPad={padding:"14px 20px"};
   const typeColor={call:"#3b82f6",email:"#8b5cf6",meeting:"#1a6b4a",gift:"#f59e0b",event:"#ec4899",note:"#6b7280"};
+
+  const MiniEmpty=({icon,text,cta,onCta})=>(
+    <div style={{...cPad,display:"flex",alignItems:"center",gap:12}}>
+      <div style={{fontSize:20,opacity:0.3,color:T.greenDk,flexShrink:0,lineHeight:1}}>{icon}</div>
+      <div style={{flex:1,minWidth:0}}>
+        <div style={{fontSize:13,color:T.ink3,lineHeight:1.5}}>{text}</div>
+        {cta&&<button onClick={onCta} style={{...sLink,marginTop:3,fontSize:12}}>{cta}</button>}
+      </div>
+    </div>
+  );
 
   const QUICK=[
     {icon:<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" width="18" height="18"><circle cx="10" cy="7" r="3.5"/><path d="M3 17c0-3.3 3.1-6 7-6s7 2.7 7 6" strokeLinecap="round"/><line x1="14" y1="4" x2="18" y2="4" strokeLinecap="round"/><line x1="16" y1="2" x2="16" y2="6" strokeLinecap="round"/></svg>,label:"Add Donor",action:()=>setShowAddDonor(true),isWrite:true},
@@ -176,8 +191,9 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
           )}
         </div>
       )}
-      <div className="dash-stat-grid" style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10}}>
+      <div className="dash-stat-grid" style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10}}>
         {[
+          {label:"Milestones Ready",value:milestoneDrafts.length,sub:milestoneDrafts.length>0?"AI-drafted, ready to review →":"You're all caught up",tab:"communications",subtab:"milestones",accent:"#c9a84c",badge:true},
           {label:"Total Donors",value:totalDonors,sub:`${newDonorsThisYear} gave this year`,tab:"donors"},
           {label:"Active Grants",value:activeGrantCount,sub:fmt(pipelineValue)+" pipeline",tab:"grants"},
           {label:"Lapsed Donors",value:lapsedDonors.length,sub:lapsedDonors.length>0?fmtFull(lapsedValue)+" at risk":"none right now",tab:"donors"},
@@ -185,10 +201,13 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
           // {label:"Active Volunteers",value:activeVolunteers,sub:"in last 30 days",tab:"volunteers"},
           // {label:"Open Tasks",value:openTasks,sub:highPriorityTasks>0?`${highPriorityTasks} high priority`:"all on track",tab:"tasks"},
         ].map(s=>(
-          <div key={s.label} onClick={()=>onNavigate(s.tab)} className="card-click" style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:14,padding:"16px 20px",cursor:"pointer",borderLeft:"3px solid "+T.greenDk}}>
-            <div style={{fontSize:10,fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",color:T.ink3,marginBottom:4}}>{s.label}</div>
+          <div key={s.label} onClick={()=>onNavigate(s.tab,s.subtab?{subtab:s.subtab}:undefined)} className="card-click" style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:14,padding:"16px 20px",cursor:"pointer",borderLeft:"3px solid "+(s.accent||T.greenDk)}}>
+            <div style={{display:"flex",alignItems:"center",gap:6,fontSize:10,fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",color:T.ink3,marginBottom:4}}>
+              {s.label}
+              {s.badge&&<span style={{background:"#c9a84c",color:"#fff",fontSize:8,fontWeight:800,borderRadius:99,padding:"1px 6px",letterSpacing:"0.04em"}}>NEW</span>}
+            </div>
             <div className="dash-stat-num" style={{fontSize:28,fontWeight:800,color:T.ink,fontFamily:"'DM Serif Display',serif",lineHeight:1.05,letterSpacing:"-0.02em"}}>{s.value}</div>
-            <div style={{fontSize:11,color:T.ink3,marginTop:4}}>{s.sub}</div>
+            <div style={{fontSize:11,color:s.accent&&s.value>0?"#a8873a":T.ink3,marginTop:4,fontWeight:s.accent&&s.value>0?700:400}}>{s.sub}</div>
           </div>
         ))}
       </div>
@@ -208,7 +227,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
             <div className="dash-briefing-body" style={{padding:"18px 24px"}}>
               {!briefing&&!briefLoading&&(
                 <div style={{fontSize:13,color:T.ink3,fontStyle:"italic",lineHeight:1.7}}>
-                  Get your personalized daily development briefing — who to call, what's urgent, one priority action.
+                  Get your personalized daily development briefing — who to call, what's urgent, milestone thank-yous ready to review, one priority action.
                 </div>
               )}
               {briefLoading&&!briefing&&(
@@ -277,7 +296,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
               <span style={sTitle}>Grant Deadlines</span>
               <button onClick={()=>onNavigate("grants")} style={sLink}>All grants →</button>
             </div>
-            {upcomingGrants.length===0&&<div style={{...cPad,fontSize:13,color:T.ink3,fontStyle:"italic"}}>No upcoming deadlines</div>}
+            {upcomingGrants.length===0&&<MiniEmpty icon="◉" text="No upcoming deadlines in the next 30 days." cta="+ Add a grant →" onCta={()=>onNavigate("grants")}/>}
             {upcomingGrants.map((g,i)=>{
               const d=daysUntil(g.deadline);
               const urgColor=d<14?"#ef4444":d<30?"#f59e0b":"#1a6b4a";
@@ -308,7 +327,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
               <span style={sTitle}>Recent Giving</span>
               <button onClick={()=>onNavigate("donors")} style={sLink}>All donors →</button>
             </div>
-            {recentGifts.length===0&&<div style={{...cPad,fontSize:13,color:T.ink3,fontStyle:"italic"}}>No gift history yet</div>}
+            {recentGifts.length===0&&<MiniEmpty icon="♦" text="No gifts logged yet." cta="Log a gift →" onCta={()=>onNavigate("donors")}/>}
             {recentGifts.map((d,i)=>{
               const dAgo=daysDiff(d.lastGift);
               const when=dAgo===0?"Today":dAgo===1?"Yesterday":`${dAgo}d ago`;
@@ -398,7 +417,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
             <div className="dash-cpad" style={{...cPad,borderBottom:"1px solid "+T.bg3}}>
               <span style={sTitle}>Recent Activity</span>
             </div>
-            {activityFeed.length===0&&<div style={{...cPad,fontSize:13,color:T.ink3,fontStyle:"italic"}}>No activity logged yet</div>}
+            {activityFeed.length===0&&<MiniEmpty icon="◑" text="No activity logged yet. Calls, emails, and notes will show up here." cta="Log a touchpoint →" onCta={()=>onNavigate("donors")}/>}
             {activityFeed.map((item,i)=>{
               const tc=typeColor[item.type]||"#6b7280";
               const dAgo=daysDiff(item.date);

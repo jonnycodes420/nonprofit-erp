@@ -749,12 +749,13 @@ function MilestoneDraftsPanel() {
 }
 
 // ── Main component ────────────────────────────────────────────────────────────
-export function Communications({ data, isReadOnly }) {
+export function Communications({ data, isReadOnly, initialNav, onInitialNavConsumed }) {
   const { auth } = useAuth();
   const isAdmin = auth?.user?.role === "admin";
 
   // Sidebar nav
-  const [nav, setNav] = useState("campaigns");
+  const [nav, setNav] = useState(initialNav || "campaigns");
+  useEffect(() => { if (initialNav && onInitialNavConsumed) onInitialNavConsumed(); }, []);
 
   // Campaigns
   const [campaigns, setCampaigns]     = useState([]);

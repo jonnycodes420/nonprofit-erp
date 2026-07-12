@@ -1046,6 +1046,119 @@ async function seedData() {
       m
     );
   }
+
+  // ── Dashboard revamp enrichment (2026-07) ─────────────────────────────────
+  // org_creo's real donor set (CSV-imported at some point post-launch) only
+  // ever lands in 'cultivate' or 'lapsed' — inferStage() never assigns
+  // qualify/solicit, and cultivate/lapsed dominate. These fill out the other
+  // four pipeline stages, add grants with deadlines that are actually still
+  // in the future, some recent activity, and a few pending milestone_drafts
+  // so the Dashboard's new milestone widget has real content. Dates are
+  // computed relative to seed time rather than hardcoded, so they don't go
+  // stale the way g1-g5's 2025 deadlines did.
+  const seedNow = new Date();
+  const seedAgo = n => { const d = new Date(seedNow); d.setDate(d.getDate() - n); return d.toISOString().split("T")[0]; };
+  const seedFromNow = n => { const d = new Date(seedNow); d.setDate(d.getDate() + n); return d.toISOString().split("T")[0]; };
+
+  const stageDonors = [
+    ["dseed_01", orgId, "Priya Anand",     "panand@example.com",    "212-555-0801", "new",   "prospect", 0,     null, null,         0, '["board-referral"]', "Introduced by a board member at the spring gala. Not yet engaged.", null],
+    ["dseed_02", orgId, "Marcus Webb",     "mwebb@example.com",     "718-555-0802", "new",   "prospect", 0,     null, null,         0, '["cold"]',           "Identified via prospect research. Local business owner, arts-adjacent.", null],
+    ["dseed_03", orgId, "Renee Castillo",  "rcastillo@example.com", "347-555-0803", "new",   "qualify",  0,     null, null,         0, '["referral"]',       "Researching giving capacity. Attended an info session, hasn't given yet.", null],
+    ["dseed_04", orgId, "Owen Bishop",     "obishop@example.com",   "929-555-0804", "new",   "qualify",  250,   250,  seedAgo(40),  1, '["first-gift"]',     "Made a small first gift after the winter showcase. Assessing upgrade potential.", seedAgo(40)],
+    ["dseed_05", orgId, "Vanessa Cole",    "vcole@example.com",     "917-555-0805", "mid",   "solicit",  8000,  3000, seedAgo(200), 2, '["arts","overdue"]', "Ready for the ask — capacity signals are strong. Overdue for a follow-up call.", seedAgo(650)],
+    ["dseed_06", orgId, "Julian Marsh",    "jmarsh@example.com",    "646-555-0806", "mid",   "solicit",  15000, 5000, seedAgo(150), 2, '["recurring"]',      "Consistent annual donor, due for this year's ask conversation.", seedAgo(900)],
+    ["dseed_07", orgId, "Camille Torres",  "ctorres@example.com",   "212-555-0807", "mid",   "steward",  3200,  500,  seedAgo(20),  3, '["arts","loyal"]',   "Just crossed $2,500 lifetime giving. Warm relationship, steady giver.", seedAgo(920)],
+    ["dseed_08", orgId, "Nathaniel Cross", "ncross@example.com",    "718-555-0808", "new",   "steward",  1050,  300,  seedAgo(35),  2, '["arts"]',           "Recently crossed $1,000 lifetime giving. Responsive to email outreach.", seedAgo(410)],
+    ["dseed_09", orgId, "Elena Marchetti", "emarchetti@example.com","212-555-0809", "major", "steward",  12500, 5000, seedAgo(15),  3, '["arts","loyal"]',   "Just crossed $10,000 lifetime giving. High-touch relationship, board-adjacent.", seedAgo(1000)],
+  ];
+  for (const d of stageDonors) {
+    await pool.query(
+      `INSERT INTO donors (id,org_id,name,email,phone,status,stage,total_giving,last_gift_amount,last_gift_date,gift_count,tags,notes,first_gift_date)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) ON CONFLICT (id) DO NOTHING`,
+      d
+    );
+  }
+
+  const stageGifts = [
+    ["gftseed_04a", orgId, "dseed_04", 250,  seedAgo(40),   "online", "Winter Showcase",  ""],
+    ["gftseed_05a", orgId, "dseed_05", 3000, seedAgo(200),  "check",  "Annual Fund",       ""],
+    ["gftseed_05b", orgId, "dseed_05", 5000, seedAgo(650),  "check",  "Gala",              ""],
+    ["gftseed_06a", orgId, "dseed_06", 5000, seedAgo(150),  "wire",   "Annual Fund",       ""],
+    ["gftseed_06b", orgId, "dseed_06", 10000,seedAgo(900),  "wire",   "Capital Campaign",  ""],
+    ["gftseed_07a", orgId, "dseed_07", 500,  seedAgo(20),   "online", "Spring Appeal",     ""],
+    ["gftseed_07b", orgId, "dseed_07", 700,  seedAgo(300),  "cash",   "Gala",              ""],
+    ["gftseed_07c", orgId, "dseed_07", 2000, seedAgo(920),  "check",  "Annual Fund",       ""],
+    ["gftseed_08a", orgId, "dseed_08", 300,  seedAgo(35),   "online", "Spring Appeal",     ""],
+    ["gftseed_08b", orgId, "dseed_08", 750,  seedAgo(410),  "cash",   "Annual Fund",       ""],
+    ["gftseed_09a", orgId, "dseed_09", 5000, seedAgo(15),   "check",  "Annual Major Gift", ""],
+    ["gftseed_09b", orgId, "dseed_09", 4500, seedAgo(400),  "check",  "Capital Campaign",  ""],
+    ["gftseed_09c", orgId, "dseed_09", 3000, seedAgo(1000), "check",  "Annual Fund",       ""],
+  ];
+  for (const g of stageGifts) {
+    await pool.query(
+      `INSERT INTO gifts (id,org_id,donor_id,amount,date,type,campaign,notes)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT (id) DO NOTHING`,
+      g
+    );
+  }
+
+  // A couple of grants with real near-future deadlines — g1-g5 above are all
+  // 2025-dated and have long since passed, which is why the Dashboard's
+  // Grant Deadlines widget always read empty.
+  const upcomingGrants = [
+    ["gseed_01", orgId, "Robert Wood Johnson Foundation", "Arts & Wellbeing Initiative", 45000, 0, "pending",     seedFromNow(12), null, "Dana Whitfield", "LOI accepted — full proposal under review.", '["First-time applicant"]'],
+    ["gseed_02", orgId, "Mellon Foundation",               "Community Arts Access",       60000, 0, "prospecting", seedFromNow(25), null, "Priya Raman",    "Site visit completed; decision expected soon.", '["First-time applicant"]'],
+  ];
+  for (const g of upcomingGrants) {
+    await pool.query(
+      `INSERT INTO grants (id,org_id,funder,program,amount,received,status,deadline,report_due,officer,notes,history)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) ON CONFLICT (id) DO NOTHING`,
+      g
+    );
+  }
+
+  // Recent activity so the Dashboard feed isn't empty
+  const recentActivity = [
+    ["iseed_01", orgId, "dseed_07", "gift",    "Gift received — $500 (Spring Appeal)",                                                                        seedAgo(20)],
+    ["iseed_02", orgId, "dseed_07", "call",    "Thank-you call for recent gift — warm response",                                                              seedAgo(18)],
+    ["iseed_03", orgId, "dseed_08", "email",   "Subject: Thank you for your generous support\n\nSo grateful for your continued generosity toward our after-school program.", seedAgo(9)],
+    ["iseed_04", orgId, "dseed_09", "meeting", "Coffee meeting — discussed fall gala sponsorship",                                                             seedAgo(5)],
+    ["iseed_05", orgId, "dseed_05", "call",    "Cultivation call — discussed program impact, gauging interest in a leadership gift",                          seedAgo(13)],
+    ["iseed_06", orgId, "dseed_02", "note",    "Introduced by board member; interested in youth arts programming",                                            seedAgo(2)],
+  ];
+  for (const i of recentActivity) {
+    await pool.query(
+      `INSERT INTO interactions (id,org_id,donor_id,type,note,date,created_by)
+       VALUES ($1,$2,$3,$4,$5,$6,null) ON CONFLICT (id) DO NOTHING`,
+      i
+    );
+  }
+
+  // Pending milestone drafts — populates the Dashboard's new review-queue
+  // widget with real content on first load instead of another empty state.
+  // Mirrors what generateMilestoneDraft() would actually produce: warm,
+  // specific, no gamification language.
+  const milestoneDrafts = [
+    ["mdseed_01", orgId, "dseed_07", null, "threshold_2500",
+     "Camille, a quick thank you",
+     "Camille — I wanted to pause and let you know you've now given $3,200 with us. That total has now covered a full year of scholarship support for one of our students. It's donors like you, giving steadily and thoughtfully, who make that kind of continuity possible. Thank you for sticking with us.",
+     "pending_review"],
+    ["mdseed_02", orgId, "dseed_08", null, "threshold_1000",
+     "Nathaniel — a thank you at $1,000",
+     "Nathaniel — you've now given $1,050 total, and that's enough to fund three after-school arts workshops for our students. I don't think we've properly thanked you for how consistent you've been. It matters more than you probably realize. Thank you.",
+     "pending_review"],
+    ["mdseed_03", orgId, "dseed_09", null, "threshold_10000",
+     "Elena — $12,500 and five scholarships",
+     "Elena — your giving has now reached $12,500 with us, which has covered five full-year arts program scholarships for students who wouldn't otherwise have this kind of access. That's a real, tangible difference in five young people's lives, and I wanted you to hear it directly from us rather than just see it on a receipt. Thank you.",
+     "pending_review"],
+  ];
+  for (const m of milestoneDrafts) {
+    await pool.query(
+      `INSERT INTO milestone_drafts (id,org_id,donor_id,sequence_enrollment_id,milestone_key,subject,body,status)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT (id) DO NOTHING`,
+      m
+    );
+  }
 }
 
 // ── Blank org seeding (called from onboarding flow) ───────────────────────────
