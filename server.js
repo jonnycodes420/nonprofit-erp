@@ -6220,7 +6220,11 @@ app.delete("/admin/orgs/:id", requireAuth, requireSuperAdmin, wrap(async (req, r
   const orgs = await query("SELECT id FROM orgs WHERE id=?", [req.params.id]);
   if (!orgs.length) return res.status(404).json({ error: "Org not found" });
   const orgId = req.params.id;
-  // Cascade delete — order matters for FK constraints; .catch(() => {}) on each so a missing table never aborts
+  // Cascade delete — order matters for FK constraints; .catch(() => {}) on each so a missing table never aborts.
+  // donor_materials/planned_gifts/milestone_drafts/note_reminders reference
+  // donor_id and MUST go before the `donors` delete below — found missing
+  // from this cascade entirely (added in later sessions after this route
+  // was written) while investigating a manually-deleted test org.
   await run("DELETE FROM sequence_enrollments WHERE org_id=?", [orgId]).catch(() => {});
   await run("DELETE FROM sequence_steps WHERE sequence_id IN (SELECT id FROM sequences WHERE org_id=?)", [orgId]).catch(() => {});
   await run("DELETE FROM sequences WHERE org_id=?", [orgId]).catch(() => {});
@@ -6236,6 +6240,10 @@ app.delete("/admin/orgs/:id", requireAuth, requireSuperAdmin, wrap(async (req, r
   await run("DELETE FROM event_attendees WHERE org_id=?", [orgId]).catch(() => {});
   await run("DELETE FROM events WHERE org_id=?", [orgId]).catch(() => {});
   await run("DELETE FROM grant_interactions WHERE org_id=?", [orgId]).catch(() => {});
+  await run("DELETE FROM milestone_drafts WHERE org_id=?", [orgId]).catch(() => {});
+  await run("DELETE FROM note_reminders WHERE org_id=?", [orgId]).catch(() => {});
+  await run("DELETE FROM donor_materials WHERE org_id=?", [orgId]).catch(() => {});
+  await run("DELETE FROM planned_gifts WHERE org_id=?", [orgId]).catch(() => {});
   await run("DELETE FROM interactions WHERE org_id=?", [orgId]).catch(() => {});
   await run("DELETE FROM gifts WHERE org_id=?", [orgId]).catch(() => {});
   await run("DELETE FROM donors WHERE org_id=?", [orgId]).catch(() => {});
@@ -6245,8 +6253,13 @@ app.delete("/admin/orgs/:id", requireAuth, requireSuperAdmin, wrap(async (req, r
   await run("DELETE FROM volunteers WHERE org_id=?", [orgId]).catch(() => {});
   await run("DELETE FROM tasks WHERE org_id=?", [orgId]).catch(() => {});
   await run("DELETE FROM board_members WHERE org_id=?", [orgId]).catch(() => {});
+  await run("DELETE FROM board_reports WHERE org_id=?", [orgId]).catch(() => {});
   await run("DELETE FROM invites WHERE org_id=?", [orgId]).catch(() => {});
   await run("DELETE FROM annual_fund_goals WHERE org_id=?", [orgId]).catch(() => {});
+  await run("DELETE FROM fundraising_goals WHERE org_id=?", [orgId]).catch(() => {});
+  await run("DELETE FROM impact_metrics WHERE org_id=?", [orgId]).catch(() => {});
+  await run("DELETE FROM metric_snapshots WHERE org_id=?", [orgId]).catch(() => {});
+  await run("DELETE FROM email_suppressions WHERE org_id=?", [orgId]).catch(() => {});
   await run("DELETE FROM financials WHERE org_id=?", [orgId]).catch(() => {});
   await run("DELETE FROM funds WHERE org_id=?", [orgId]).catch(() => {});
   await run("DELETE FROM ai_log WHERE org_id=?", [orgId]).catch(() => {});
@@ -6255,6 +6268,104 @@ app.delete("/admin/orgs/:id", requireAuth, requireSuperAdmin, wrap(async (req, r
   await run("DELETE FROM users WHERE org_id=?", [orgId]).catch(() => {});
   await run("DELETE FROM orgs WHERE id=?", [orgId]);
   res.json({ deleted: true });
+}));
+
+// ── Data integrity diagnostics (super admin) ────────────────────────────────
+// Ad hoc maintenance tool: reports (and can fix) drift left behind by manual
+// edits directly in the DB — orgs with no users left to log in, and TEXT
+// columns that reference a user_id/donor "logged by" style but aren't real
+// FK constraints, so deleting a user row via Table Editor never errors and
+// silently leaves dangling references behind.
+const DANGLING_USER_REF_CHECKS = [
+  { table: "interactions", col: "created_by" },
+  { table: "donors", col: "assigned_to" },
+  { table: "donor_materials", col: "uploaded_by" },
+  { table: "milestone_drafts", col: "reviewed_by" },
+  { table: "note_reminders", col: "sent_by" },
+  { table: "board_reports", col: "generated_by" },
+  { table: "fin_audit_log", col: "user_id" },
+  { table: "ai_log", col: "user_id" },
+  { table: "invites", col: "invited_by" },
+];
+// NOT NULL + UNIQUE(user_id)/user_id columns — can't null these, the whole
+// row is dead once the user is gone (an OAuth connection or reset token
+// nobody can use), so a dangling reference here means DELETE the row, not
+// null the column.
+const DANGLING_USER_ROW_CHECKS = [
+  { table: "gmail_connections", col: "user_id", hasOrgId: true },
+  { table: "password_reset_tokens", col: "user_id", hasOrgId: false },
+];
+
+app.get("/admin/data-integrity", requireAuth, requireSuperAdmin, wrap(async (req, res) => {
+  const orphanedOrgs = await query(
+    `SELECT o.id, o.name, o.created_at, o.stripe_customer_id, o.stripe_subscription_id, o.subscription_status, o.plan
+     FROM orgs o WHERE NOT EXISTS (SELECT 1 FROM users u WHERE u.org_id = o.id) ORDER BY o.created_at DESC`,
+    []
+  );
+
+  const danglingRefs = [];
+  for (const c of DANGLING_USER_REF_CHECKS) {
+    const rows = await query(
+      `SELECT id, org_id, ${c.col} AS dangling_value FROM ${c.table}
+       WHERE ${c.col} IS NOT NULL AND ${c.col} NOT IN (SELECT id FROM users)
+       LIMIT 5`,
+      []
+    ).catch(() => []);
+    const countRows = await query(
+      `SELECT COUNT(*) AS c FROM ${c.table} WHERE ${c.col} IS NOT NULL AND ${c.col} NOT IN (SELECT id FROM users)`,
+      []
+    ).catch(() => [{ c: 0 }]);
+    const count = parseInt(countRows[0]?.c || 0, 10);
+    if (count > 0) danglingRefs.push({ table: c.table, column: c.col, count, samples: rows });
+  }
+
+  const danglingRows = [];
+  for (const c of DANGLING_USER_ROW_CHECKS) {
+    const cols = c.hasOrgId ? `id, org_id, ${c.col} AS dangling_value` : `id, ${c.col} AS dangling_value`;
+    const rows = await query(
+      `SELECT ${cols} FROM ${c.table} WHERE ${c.col} NOT IN (SELECT id FROM users) LIMIT 5`,
+      []
+    ).catch(() => []);
+    const countRows = await query(
+      `SELECT COUNT(*) AS c FROM ${c.table} WHERE ${c.col} NOT IN (SELECT id FROM users)`,
+      []
+    ).catch(() => [{ c: 0 }]);
+    const count = parseInt(countRows[0]?.c || 0, 10);
+    if (count > 0) danglingRows.push({ table: c.table, column: c.col, count, samples: rows });
+  }
+
+  res.json({ orphanedOrgs, danglingRefs, danglingRows });
+}));
+
+// Fixes only what's unambiguously safe: nulls a dangling "who did this"
+// reference (never touches the parent row's real content), or deletes a
+// row that is ENTIRELY about a now-nonexistent user (a dead OAuth
+// connection, an unusable reset token) — never touches donors, gifts, or
+// any row containing real org data.
+app.post("/admin/data-integrity/fix", requireAuth, requireSuperAdmin, wrap(async (req, res) => {
+  const results = { nulled: [], deleted: [] };
+  for (const c of DANGLING_USER_REF_CHECKS) {
+    const affected = await run(
+      `UPDATE ${c.table} SET ${c.col}=NULL WHERE ${c.col} IS NOT NULL AND ${c.col} NOT IN (SELECT id FROM users)`,
+      []
+    ).catch(() => ({ changes: 0 }));
+    if (affected.changes) results.nulled.push({ table: c.table, column: c.col, count: affected.changes });
+  }
+  // donors.assigned_to_name is a paired display-name column with no FK
+  // reference of its own — clear it wherever assigned_to just got nulled
+  // above so the two don't fall out of sync (an assigned_to_name with no
+  // assigned_to would otherwise look like a UI bug).
+  await run(`UPDATE donors SET assigned_to_name=NULL WHERE assigned_to IS NULL AND assigned_to_name IS NOT NULL`, []).catch(() => {});
+  await run(`UPDATE board_reports SET generated_by_name=NULL WHERE generated_by IS NULL AND generated_by_name IS NOT NULL`, []).catch(() => {});
+
+  for (const c of DANGLING_USER_ROW_CHECKS) {
+    const affected = await run(
+      `DELETE FROM ${c.table} WHERE ${c.col} NOT IN (SELECT id FROM users)`,
+      []
+    ).catch(() => ({ changes: 0 }));
+    if (affected.changes) results.deleted.push({ table: c.table, column: c.col, count: affected.changes });
+  }
+  res.json(results);
 }));
 
 // ── Gmail integration ──────────────────────────────────────────────────────
