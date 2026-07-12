@@ -839,7 +839,14 @@ app.get("/org", requireAuth, wrap(async (req, res) => {
 
 app.patch("/orgs/:id", requireAuth, requireAdmin, wrap(async (req, res) => {
   if (req.user.orgId !== req.params.id) return res.status(403).json({ error: "Forbidden" });
-  const { mission, focusArea, annualBudget, foundedYear, website } = req.body;
+  const { name, mission, focusArea, annualBudget, foundedYear, website } = req.body;
+  // name is optional — only the new onboarding flow's "org basics" step
+  // sends it (letting a fresh org tweak the name they typed at signup);
+  // Settings' org-profile form never has, so it must stay opt-in rather
+  // than overwriting a real org's name with null on every other caller.
+  if (name && name.trim()) {
+    await run(`UPDATE orgs SET name=? WHERE id=?`, [name.trim(), req.params.id]);
+  }
   await run(
     `UPDATE orgs SET mission=?, focus_area=?, annual_budget=?, founded_year=?, website=? WHERE id=?`,
     [mission || null, focusArea || null, annualBudget || null, foundedYear ? parseInt(foundedYear, 10) : null, website || null, req.params.id]

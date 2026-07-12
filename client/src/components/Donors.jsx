@@ -317,7 +317,9 @@ function buildCombinedRows(parsed, donorMapping, yearCols) {
 }
 
 // ── DonorImport component ──────────────────────────────────────────────────
-function DonorImport({ onClose, onImported }) {
+// Exported so WelcomePage's onboarding flow can reuse it directly as the
+// centerpiece "Import your donors" step, rather than forking/rebuilding it.
+export function DonorImport({ onClose, onImported }) {
   const [csvText,    setCsvText]    = useState("");
   const [parsed,     setParsed]     = useState(null);       // { headers:[], rows:[] }
   const [xlsxSheets, setXlsxSheets]= useState(null);       // [{name, rowCount, headers, rows}] | null
