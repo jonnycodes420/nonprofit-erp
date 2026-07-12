@@ -1278,10 +1278,26 @@ async function seedData() {
   }
   debtBaseline = Math.round(debtBaseline) || 400;
 
+  const touchBaselineRows = await pool.query(
+    `SELECT d.first_gift_date,
+       (SELECT MIN(i.date) FROM interactions i
+        WHERE i.donor_id = d.id AND i.type IN ('call','meeting','email','stewardship') AND i.date >= d.first_gift_date) AS first_touch_date
+     FROM donors d
+     WHERE d.org_id = $1 AND d.deleted_at IS NULL AND d.first_gift_date IS NOT NULL`,
+    [orgId]
+  );
+  let touchTotalDays = 0, touchSampleSize = 0;
+  for (const row of touchBaselineRows.rows) {
+    if (!row.first_touch_date) continue;
+    touchTotalDays += Math.max(0, Math.floor((new Date(row.first_touch_date) - new Date(row.first_gift_date)) / 86400000));
+    touchSampleSize++;
+  }
+  const touchBaseline = touchSampleSize > 0 ? Math.round(touchTotalDays / touchSampleSize) : 6;
+
   for (let daysAgo = 20; daysAgo >= 0; daysAgo--) {
     const date = seedAgo(daysAgo);
     const debtValue = Math.round(debtBaseline * (1 + daysAgo * 0.018) + Math.sin(daysAgo) * debtBaseline * 0.02);
-    const touchValue = Math.round(6 + Math.sin(daysAgo / 3) * 1.5);
+    const touchValue = Math.max(1, Math.round(touchBaseline * (1 + Math.sin(daysAgo / 3) * 0.15)));
     await pool.query(
       // DO UPDATE (not DO NOTHING) deliberately: this seed shipped once
       // already with an arbitrary, badly-scaled baseline (see comment
