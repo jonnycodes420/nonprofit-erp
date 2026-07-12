@@ -47,6 +47,12 @@ export function Settings({auth,logout}) {
   const [cfOptInput,setCfOptInput]=useState("");
   const [cfSaving,setCfSaving]=useState(false);
 
+  const [impactMetrics,setImpactMetrics]=useState([]);
+  const [showAddMetric,setShowAddMetric]=useState(false);
+  const [editingMetric,setEditingMetric]=useState(null);
+  const [imForm,setImForm]=useState({name:"",dollarThreshold:"",outcomeTemplate:""});
+  const [imSaving,setImSaving]=useState(false);
+
   const [billing,setBilling]=useState(null);
   const [portalLoading,setPortalLoading]=useState(false);
   const [upgradeModal,setUpgradeModal]=useState(null);
@@ -69,6 +75,7 @@ export function Settings({auth,logout}) {
       apiFetch("/org").then(r=>{ if(r.org_slug) setOrgSlug(r.org_slug); }).catch(()=>{});
     }
     apiFetch("/custom-fields").then(setCustomFields).catch(()=>{});
+    apiFetch("/impact-metrics").then(setImpactMetrics).catch(()=>{});
     apiFetch("/gmail/status").then(setGmailStatus).catch(()=>{});
     apiFetch("/org/sample-data-status").then(setSampleStatus).catch(()=>{});
 
@@ -291,6 +298,45 @@ export function Settings({auth,logout}) {
   }
 
   const CF_TYPE_LABELS={text:"Text",number:"Number",date:"Date",dropdown:"Dropdown",checkbox:"Yes/No"};
+
+  function openAddMetric(){
+    setEditingMetric(null);
+    setImForm({name:"",dollarThreshold:"",outcomeTemplate:""});
+    setShowAddMetric(true);
+  }
+
+  function openEditMetric(m){
+    setEditingMetric(m);
+    setImForm({name:m.name,dollarThreshold:String(m.dollar_threshold),outcomeTemplate:m.outcome_template});
+    setShowAddMetric(true);
+  }
+
+  function closeImModal(){
+    setShowAddMetric(false);setEditingMetric(null);
+    setImForm({name:"",dollarThreshold:"",outcomeTemplate:""});
+  }
+
+  async function saveImMetric(){
+    if(!imForm.name.trim()||!imForm.dollarThreshold||!imForm.outcomeTemplate.trim())return;
+    setImSaving(true);
+    try{
+      if(editingMetric){
+        const updated=await apiFetch(`/impact-metrics/${editingMetric.id}`,{method:"PUT",body:JSON.stringify({name:imForm.name,dollarThreshold:imForm.dollarThreshold,outcomeTemplate:imForm.outcomeTemplate,active:true})});
+        setImpactMetrics(prev=>prev.map(m=>m.id===editingMetric.id?updated:m));
+      }else{
+        const created=await apiFetch("/impact-metrics",{method:"POST",body:JSON.stringify({name:imForm.name,dollarThreshold:imForm.dollarThreshold,outcomeTemplate:imForm.outcomeTemplate})});
+        setImpactMetrics(prev=>[...prev,created]);
+      }
+      closeImModal();
+    }catch(e){alert(e.message||"Failed to save impact metric");}
+    setImSaving(false);
+  }
+
+  async function deleteImMetric(id){
+    if(!window.confirm("Delete this impact metric? Donors won't reference it in future milestone emails."))return;
+    await apiFetch(`/impact-metrics/${id}`,{method:"DELETE"}).catch(()=>{});
+    setImpactMetrics(prev=>prev.filter(m=>m.id!==id));
+  }
 
   function closeInvite(){
     setShowInvite(false);setInvEmail("");setInvRole("staff");
@@ -539,6 +585,32 @@ export function Settings({auth,logout}) {
         ))}
       </div>
 
+      {/* ── Impact Metrics ────────────────────────────────────────────────── */}
+      <div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:16,padding:"24px 28px"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
+          <SectionLabel>Impact Metrics</SectionLabel>
+          {isAdmin&&<button onClick={openAddMetric} disabled={isReadOnly} title={isReadOnly?"Reactivate your subscription to make changes.":undefined} style={{background:T.green,border:"none",borderRadius:8,padding:"7px 14px",color:"#fff",fontSize:12,fontWeight:700,cursor:isReadOnly?"not-allowed":"pointer",opacity:isReadOnly?0.45:1}}>+ Add Metric</button>}
+        </div>
+        <div style={{fontSize:13,color:T.ink3,marginBottom:impactMetrics.length?14:0,lineHeight:1.6}}>
+          {impactMetrics.length===0?"No impact metrics yet. Add giving thresholds that translate a donor's cumulative gifts into concrete outcomes for milestone emails.":"Cumulative giving thresholds used to translate a donor's total giving into concrete outcomes in milestone emails."}
+        </div>
+        {impactMetrics.map((m,i)=>(
+          <div key={m.id}
+            style={{display:"flex",alignItems:"center",gap:12,padding:"11px 0 11px 10px",borderBottom:i<impactMetrics.length-1?"1px solid "+T.bg3:"none",borderLeft:"3px solid "+T.bg3,transition:"border-color 0.15s",marginLeft:-10}}
+            onMouseEnter={e=>e.currentTarget.style.borderLeftColor=T.greenDk}
+            onMouseLeave={e=>e.currentTarget.style.borderLeftColor=T.bg3}>
+            <div style={{flex:1,minWidth:0}}>
+              <div style={{fontSize:13,fontWeight:600,color:T.ink}}>{m.name}{m.active===false&&<span style={{marginLeft:5,fontSize:10,color:T.ink3,fontWeight:400}}>inactive</span>}</div>
+              <div style={{fontSize:11,color:T.ink3,marginTop:2}}>${Number(m.dollar_threshold).toLocaleString()} — {m.outcome_template}</div>
+            </div>
+            {isAdmin&&<div style={{display:"flex",gap:6,flexShrink:0}}>
+              <button onClick={()=>openEditMetric(m)} style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:6,padding:"5px 10px",fontSize:11,fontWeight:600,color:T.ink2,cursor:"pointer"}}>Edit</button>
+              <button onClick={()=>deleteImMetric(m.id)} style={{background:"#fef2f2",border:"1px solid #fecaca",borderRadius:6,padding:"5px 10px",fontSize:11,fontWeight:600,color:"#dc2626",cursor:"pointer"}}>Delete</button>
+            </div>}
+          </div>
+        ))}
+      </div>
+
       {/* ── Your Data ─────────────────────────────────────────────────────── */}
       <SecHead label="Your Data"/>
       <div style={{background:T.white,border:"1px solid "+T.bg3,borderLeft:"3px solid #c9a84c",borderRadius:16,padding:"24px 28px"}}>
@@ -682,6 +754,42 @@ export function Settings({auth,logout}) {
               <button onClick={closeCfModal} style={{flex:1,background:T.bg,border:"1px solid "+T.bg3,borderRadius:10,padding:"10px",color:T.ink2,fontSize:13,fontWeight:600,cursor:"pointer"}}>Cancel</button>
               <button onClick={saveCfField} disabled={cfSaving||!cfForm.label.trim()} style={{flex:2,background:T.green,border:"none",borderRadius:10,padding:"10px",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer",opacity:(cfSaving||!cfForm.label.trim())?0.7:1}}>
                 {cfSaving?"Saving…":editingField?"Save changes":"Add field"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showAddMetric&&(
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.45)",zIndex:500,display:"flex",alignItems:"center",justifyContent:"center"}} onClick={e=>{if(e.target===e.currentTarget)closeImModal();}}>
+          <div style={{background:T.white,borderRadius:20,padding:"32px 28px",width:440,maxWidth:"calc(100vw - 32px)",boxShadow:"0 8px 40px rgba(0,0,0,0.16)"}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
+              <div style={{fontSize:17,fontWeight:700,color:T.ink}}>{editingMetric?"Edit impact metric":"Add impact metric"}</div>
+              <button onClick={closeImModal} style={{background:"none",border:"none",fontSize:20,cursor:"pointer",color:T.ink3,lineHeight:1}}>×</button>
+            </div>
+            <div style={{fontSize:12,fontWeight:600,color:T.ink3,marginBottom:4}}>Metric name</div>
+            <input value={imForm.name} onChange={e=>setImForm(f=>({...f,name:e.target.value}))}
+              placeholder="e.g. Full-Year Scholarship"
+              style={{width:"100%",boxSizing:"border-box",border:"1px solid "+T.bg3,borderRadius:10,padding:"10px 12px",fontSize:14,color:T.ink,background:T.bg,outline:"none",marginBottom:14}}
+            />
+            <div style={{fontSize:12,fontWeight:600,color:T.ink3,marginBottom:4}}>Cumulative giving threshold ($)</div>
+            <input type="number" value={imForm.dollarThreshold} onChange={e=>setImForm(f=>({...f,dollarThreshold:e.target.value}))}
+              placeholder="e.g. 2500"
+              style={{width:"100%",boxSizing:"border-box",border:"1px solid "+T.bg3,borderRadius:10,padding:"10px 12px",fontSize:14,color:T.ink,background:T.bg,outline:"none",marginBottom:14}}
+            />
+            <div style={{fontSize:12,fontWeight:600,color:T.ink3,marginBottom:4}}>Outcome template</div>
+            <textarea value={imForm.outcomeTemplate} onChange={e=>setImForm(f=>({...f,outcomeTemplate:e.target.value}))}
+              placeholder="e.g. Your ${amount} has covered {n} full-year arts program scholarships"
+              rows={3}
+              style={{width:"100%",boxSizing:"border-box",border:"1px solid "+T.bg3,borderRadius:10,padding:"10px 12px",fontSize:14,color:T.ink,background:T.bg,outline:"none",marginBottom:6,fontFamily:"inherit",resize:"vertical"}}
+            />
+            <div style={{fontSize:11,color:T.ink3,marginBottom:20,lineHeight:1.5}}>
+              Use <code>{"{amount}"}</code> for the donor's cumulative giving and <code>{"{n}"}</code> for how many times this threshold has been covered. Used by AI to draft warm, specific milestone emails — not shown to donors verbatim.
+            </div>
+            <div style={{display:"flex",gap:10}}>
+              <button onClick={closeImModal} style={{flex:1,background:T.bg,border:"1px solid "+T.bg3,borderRadius:10,padding:"10px",color:T.ink2,fontSize:13,fontWeight:600,cursor:"pointer"}}>Cancel</button>
+              <button onClick={saveImMetric} disabled={imSaving||!imForm.name.trim()||!imForm.dollarThreshold||!imForm.outcomeTemplate.trim()} style={{flex:2,background:T.green,border:"none",borderRadius:10,padding:"10px",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer",opacity:(imSaving||!imForm.name.trim()||!imForm.dollarThreshold||!imForm.outcomeTemplate.trim())?0.7:1}}>
+                {imSaving?"Saving…":editingMetric?"Save changes":"Add metric"}
               </button>
             </div>
           </div>
