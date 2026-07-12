@@ -6,8 +6,12 @@ import { useAuth } from "../main";
 const FOCUS_OPTIONS = [
   { value: "donors",  label: "Donor Management",     sub: "Track relationships, gifts & pipelines" },
   { value: "grants",  label: "Grant Tracking",       sub: "Manage funders, deadlines & reports" },
-  { value: "finance", label: "Financial Management", sub: "Bookkeeping, budgets & fund accounting" },
-  { value: "all",     label: "All of the above",     sub: "Get the full picture from day one" },
+  // "finance" removed — the Finance tab is currently hidden from nav (see
+  // the Donors/Grants-focus product pivot), so offering it here as a
+  // selectable focus promised something a new user couldn't actually reach.
+  // Not gone for good: Finance backend/data is intact, just not navigable
+  // right now — re-add this option if/when the tab comes back.
+  { value: "all",     label: "Both",                 sub: "Get the full picture from day one" },
 ];
 
 const SETUP_ITEMS = [

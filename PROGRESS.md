@@ -119,6 +119,17 @@ Prompted by a live incident (401s on every authenticated route) plus a full pre-
 **InvitePage.jsx** — redirect fix
 - Line 50: window.location.href="/dashboard" → "/today"
 
+> **Superseded (2026-06-07, later same day, commit b9fcf7a "Kill guided
+> tour...")**: OnboardingWizard.jsx (the GuidedTour described above) was
+> deleted entirely. There is currently no post-onboarding tour of any kind —
+> this section was never updated to reflect that and caused confusion in a
+> later session, which found the 5 `data-tour` attributes still scattered
+> across App.jsx with no tour engine left to consume them (now removed).
+> If a guided tour is wanted again, it needs to be rebuilt from scratch
+> against the current nav (Home/Donors/Grants/Communications/Settings), not
+> restored from this entry — Finance/Analytics/Ask AI (all referenced above)
+> are hidden or removed from the product surface as of today.
+
 ### Today follow-up flow (2026-06-07)
 
 **TodayPage.jsx** (new) — standalone at /today; cream design system
