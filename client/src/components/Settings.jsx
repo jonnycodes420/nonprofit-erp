@@ -784,7 +784,7 @@ export function Settings({auth,logout}) {
               style={{width:"100%",boxSizing:"border-box",border:"1px solid "+T.bg3,borderRadius:10,padding:"10px 12px",fontSize:14,color:T.ink,background:T.bg,outline:"none",marginBottom:6,fontFamily:"inherit",resize:"vertical"}}
             />
             <div style={{fontSize:11,color:T.ink3,marginBottom:20,lineHeight:1.5}}>
-              Use <code>{"{amount}"}</code> for the donor's cumulative giving and <code>{"{n}"}</code> for how many times this threshold has been covered. Used by AI to draft warm, specific milestone emails — not shown to donors verbatim.
+              Use <code>{"{amount}"}</code> for the donor's cumulative giving and <code>{"{n}"}</code> for how many times this threshold has been covered. Used to draft warm, specific milestone emails — not shown to donors verbatim.
             </div>
             <div style={{display:"flex",gap:10}}>
               <button onClick={closeImModal} style={{flex:1,background:T.bg,border:"1px solid "+T.bg3,borderRadius:10,padding:"10px",color:T.ink2,fontSize:13,fontWeight:600,cursor:"pointer"}}>Cancel</button>

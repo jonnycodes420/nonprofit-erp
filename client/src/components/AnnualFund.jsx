@@ -36,7 +36,7 @@ export function AnnualFund({data}) {
         {[currentYear-1,currentYear].map(y2=><button key={y2} onClick={()=>{setYear(y2);load(y2);}}
           style={{background:year===y2?"#1a6b4a":"transparent",border:year===y2?"none":"1px solid #374151",borderRadius:8,padding:"7px 14px",color:year===y2?"#fff":T.ink3,fontSize:12,fontWeight:year===y2?700:400,cursor:"pointer"}}>{y2}</button>)}
       </div>
-      <AIBtn onClick={getForecast} loading={aiLoading} label="✦ AI Forecast" small/>
+      <AIBtn onClick={getForecast} loading={aiLoading} label="✦ Forecast" small/>
       {isAdmin&&<button onClick={()=>{setEditGoal(!editGoal);setGoalInput(fund?.goal?.toString()||"");}}
         style={{background:"transparent",border:"1px solid "+T.bg3,borderRadius:8,padding:"7px 12px",color:T.ink3,fontSize:12,cursor:"pointer"}}>⚙ Set Goal</button>}
     </div>

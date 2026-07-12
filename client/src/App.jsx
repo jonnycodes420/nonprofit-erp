@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { apiFetch, adaptData, API, getToken } from "./api";
 import { useAuth } from "./main";
 import { T, GlobalStyles } from "./components/shared";
-import { AIChat, Dashboard } from "./components/Dashboard";
+import { Dashboard } from "./components/Dashboard";
 import { Donors } from "./components/Donors";
 import { Grants } from "./components/Grants";
 import { Communications } from "./components/Communications";
@@ -53,7 +53,6 @@ function AppShell() {
   const [data,setData]=useState(null);
   const [loading,setLoading]=useState(true);
   const [loadErr,setLoadErr]=useState("");
-  const [showChat,setShowChat]=useState(false);
   const [stripeToast,setStripeToast]=useState(false);
   const [moreOpen,setMoreOpen]=useState(false);
   const [billing,setBilling]=useState(null);
@@ -185,9 +184,6 @@ function AppShell() {
         <span style={{fontSize:20,fontWeight:400,color:"#f0ede6",fontFamily:"'DM Serif Display',Georgia,serif",letterSpacing:"-0.02em"}}>Steward</span>
       </div>
       <div style={{display:"flex",gap:8,alignItems:"center"}}>
-        <button data-tour="ask-ai" onClick={()=>setShowChat(true)} style={{background:"#1a2e1f",border:"1px solid #2d4a35",borderRadius:10,padding:"7px 16px",color:"#10b981",fontSize:12,fontWeight:700,cursor:"pointer",display:"flex",alignItems:"center",gap:7}}>
-          ✦ Ask AI
-        </button>
         <div className="app-avatar" style={{width:30,height:30,borderRadius:8,background:T.greenDk,display:"flex",alignItems:"center",justifyContent:"center"}}>
           <span style={{fontSize:12,fontWeight:700,color:"#f0ede6"}}>{(auth?.user?.name||"U")[0].toUpperCase()}</span>
         </div>
@@ -251,7 +247,6 @@ function AppShell() {
       {tab==="tasks"&&<Tasks data={data} setData={setData} isReadOnly={isReadOnly}/>}
       {tab==="settings"&&<Settings auth={auth} logout={logout}/>}
     </div>
-    {showChat&&<AIChat data={data} onClose={()=>setShowChat(false)}/>}
     <PlanPicker open={showPlanPicker} onClose={()=>setShowPlanPicker(false)}/>
     {stripeToast&&<div style={{position:"fixed",bottom:24,right:24,zIndex:9999,background:T.greenDk,color:"#fff",borderRadius:14,padding:"14px 20px",fontSize:13,fontWeight:600,boxShadow:"0 8px 32px rgba(26,107,74,0.35)",display:"flex",alignItems:"center",gap:10,maxWidth:340}}>
       <span style={{fontSize:18}}>💳</span>

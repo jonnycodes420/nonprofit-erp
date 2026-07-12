@@ -249,7 +249,7 @@ function GrantProfile({grant,onClose,onUpdate,onDelete,isAdmin,org}){
           </div>
 
           <div>
-            <div style={{fontSize:10,fontWeight:800,textTransform:"uppercase",letterSpacing:"0.1em",color:"#8fa896",marginBottom:8}}>AI Analysis</div>
+            <div style={{fontSize:10,fontWeight:800,textTransform:"uppercase",letterSpacing:"0.1em",color:"#8fa896",marginBottom:8}}>Grant Strategy</div>
             <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:12}}>
               <AIBtn onClick={()=>getAI("analyze")} loading={loadingKey===`${grant.id}_analyze`} label="✦ Analyze Grant Fit" small/>
               {grant.status!=="closed"&&<AIBtn onClick={()=>getAI("strategy")} loading={loadingKey===`${grant.id}_strategy`} label="✦ Strategy" small/>}
@@ -446,7 +446,7 @@ export function Grants({data,setData,isReadOnly=false,initialGrantId,onIntentCon
     {subTab==="findgrants"&&<FindGrants data={data}/>}
     {subTab==="pipeline"&&<>
     <div style={{display:"flex",gap:10,flexWrap:"wrap",alignItems:"center"}}>
-      <AIBtn onClick={findProspects} loading={prospectLoading} label="✦ AI Prospect Research"/>
+      <AIBtn onClick={findProspects} loading={prospectLoading} label="✦ Prospect Research"/>
       <div style={{display:"flex",gap:2,background:T.bg2,borderRadius:8,padding:2}}>
         {[["kanban","Kanban"],["list","List"]].map(([id,label])=>(
           <button key={id} onClick={()=>setGrantView(id)} style={{background:grantView===id?T.white:"transparent",border:grantView===id?"1px solid "+T.bg3:"1px solid transparent",borderRadius:7,padding:"5px 13px",fontSize:12,fontWeight:600,color:grantView===id?T.ink:T.ink3,cursor:"pointer",transition:"all 0.12s"}}>{label}</button>

@@ -199,7 +199,7 @@ export function Board({data, setData, isReadOnly}) {
         </div>
         {genError && <div style={{marginTop:10,padding:"8px 12px",background:"#ef444420",borderRadius:6,color:"#ef4444",fontSize:12}}>{genError}</div>}
         {generating && <div style={{marginTop:12,padding:"10px 14px",background:T.bg2,borderRadius:8,fontSize:12,color:T.ink3}}>
-          Pulling live data, generating AI executive summary, and building PDF… this takes about 15–20 seconds.
+          Pulling live data, generating an executive summary, and building PDF… this takes about 15–20 seconds.
         </div>}
       </Card>
 

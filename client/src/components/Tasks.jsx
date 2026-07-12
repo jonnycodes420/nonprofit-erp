@@ -27,7 +27,7 @@ export function Tasks({data,setData,isReadOnly}) {
     <PageTitle main="Open" accent="tasks."/>
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:8}}>
       <div style={{display:"flex",gap:8}}>
-        <AIBtn onClick={prioritize} loading={prioLoading} label="✦ AI Prioritize"/>
+        <AIBtn onClick={prioritize} loading={prioLoading} label="✦ Prioritize"/>
         <button onClick={()=>setShowAdd(true)} disabled={isReadOnly} title={isReadOnly?"Reactivate your subscription to make changes.":undefined} style={{background:"#10b981",border:"none",borderRadius:10,padding:"9px 14px",color:"#fff",fontSize:13,fontWeight:600,cursor:isReadOnly?"not-allowed":"pointer",opacity:isReadOnly?0.45:1}}>+ Add</button>
       </div>
       <div style={{fontSize:12,color:T.ink3}}>{pending.length} open · {done.length} done</div>

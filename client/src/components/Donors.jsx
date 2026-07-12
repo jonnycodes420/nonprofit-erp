@@ -457,7 +457,7 @@ function DonorImport({ onClose, onImported }) {
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:20}}>
           <div>
             <div style={{fontSize:18,fontWeight:800,color:T.ink}}>Import Donors</div>
-            <div style={{fontSize:13,color:T.ink3,marginTop:2}}>CSV, TSV, or Excel · AI maps columns · stages auto-assigned</div>
+            <div style={{fontSize:13,color:T.ink3,marginTop:2}}>CSV, TSV, or Excel · columns auto-mapped · stages auto-assigned</div>
           </div>
           <button onClick={onClose} style={{background:T.bg3,border:"none",borderRadius:8,padding:"6px 12px",color:T.ink3,cursor:"pointer",fontSize:13,flexShrink:0}}>✕ Close</button>
         </div>
@@ -514,7 +514,7 @@ function DonorImport({ onClose, onImported }) {
               </div>
               <button onClick={doAiMap} disabled={aiLoading}
                 style={{background:aiLoading?"#1a2235":"linear-gradient(135deg,#1a6b4a,#2563eb)",border:"none",borderRadius:8,padding:"6px 14px",color:"#fff",fontSize:12,fontWeight:700,cursor:aiLoading?"not-allowed":"pointer",display:"flex",alignItems:"center",gap:6,opacity:aiLoading?0.7:1}}>
-                {aiLoading?<><Spin/>Mapping…</>:<>✦ AI Map</>}
+                {aiLoading?<><Spin/>Mapping…</>:<>✦ Auto-map</>}
               </button>
             </div>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6}}>
@@ -2926,7 +2926,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
           </div>
 
           <div>
-            <div style={{fontSize:10,fontWeight:800,textTransform:"uppercase",letterSpacing:"0.12em",color:"#8fa896",marginBottom:8}}>AI Intelligence</div>
+            <div style={{fontSize:10,fontWeight:800,textTransform:"uppercase",letterSpacing:"0.12em",color:"#8fa896",marginBottom:8}}>Suggested Actions</div>
             <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:12}}>
               <AIBtn onClick={()=>getAI(donor,"nextmove")} loading={loadingKey===`${donor.id}_nextmove`} label="✦ Next Move" small/>
               <AIBtn onClick={()=>getAI(donor,"outreach")} loading={loadingKey===`${donor.id}_outreach`} label="✦ Outreach" small/>
@@ -2960,7 +2960,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
                     {composeErr&&<div style={{fontSize:12,color:"#ef4444",background:"#1a0a0a",border:"1px solid #3d1515",borderRadius:7,padding:"8px 10px"}}>{composeErr}</div>}
                     {composeSent&&<div style={{fontSize:12,color:"#10b981",background:"#0a1a0f",border:"1px solid #1a4a2a",borderRadius:7,padding:"8px 10px"}}>✓ Sent and logged to timeline</div>}
                     <div style={{display:"flex",gap:8}}>
-                      <button onClick={draftWithAI} disabled={draftLoading} style={{flex:1,background:"#0f1a12",border:"1px solid #2d4a35",borderRadius:8,padding:"9px",color:"#c9a84c",fontSize:12,fontWeight:700,cursor:draftLoading?"not-allowed":"pointer",fontFamily:"inherit"}}>{draftLoading?"Drafting…":"✦ Draft with AI"}</button>
+                      <button onClick={draftWithAI} disabled={draftLoading} style={{flex:1,background:"#0f1a12",border:"1px solid #2d4a35",borderRadius:8,padding:"9px",color:"#c9a84c",fontSize:12,fontWeight:700,cursor:draftLoading?"not-allowed":"pointer",fontFamily:"inherit"}}>{draftLoading?"Drafting…":"✦ Draft this email"}</button>
                       <button onClick={sendEmail} disabled={composeSending||!composeTo||!composeSubject} style={{flex:1,background:composeSending||!composeTo||!composeSubject?"#2d4a35":"#10b981",border:"none",borderRadius:8,padding:"9px",color:"#fff",fontSize:12,fontWeight:700,cursor:composeSending||!composeTo||!composeSubject?"not-allowed":"pointer",fontFamily:"inherit"}}>{composeSending?"Sending…":"Send →"}</button>
                     </div>
                   </div>

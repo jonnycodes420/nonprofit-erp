@@ -705,7 +705,7 @@ function MilestoneDraftsPanel({ highlightDraftId }) {
       <div>
         <h2 style={{ margin: 0, fontSize: 20, fontWeight: 800, color: T.ink }}>Milestone Drafts</h2>
         <p style={{ margin: "4px 0 0", fontSize: 13, color: T.ink3 }}>
-          AI-drafted emails for donors who just crossed a giving threshold or hit a giving anniversary. Nothing sends until you approve it here.
+          Drafted emails for donors who just crossed a giving threshold or hit a giving anniversary. Nothing sends until you approve it here.
         </p>
       </div>
 
@@ -972,10 +972,10 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
             <span style={{ fontSize: 15, fontWeight: 700, color: T.ink }}>{editingId ? "Edit Campaign" : "New Campaign"}</span>
           </div>
           <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-            {/* AI Draft */}
+            {/* Draft campaign copy */}
             <button onClick={draftAI} disabled={aiLoading}
               style={{ background: aiLoading ? T.bg3 : "#8b5cf614", border: "1px solid #8b5cf630", borderRadius: 8, padding: "8px 14px", color: aiLoading ? T.ink3 : "#8b5cf6", fontSize: 13, fontWeight: 700, cursor: aiLoading ? "not-allowed" : "pointer", display: "flex", alignItems: "center", gap: 6 }}>
-              {aiLoading ? <><Spin /> Drafting…</> : "✦ AI Draft"}
+              {aiLoading ? <><Spin /> Drafting…</> : "✦ Draft Copy"}
             </button>
             <button onClick={addDonationLink} disabled={linkLoading}
               style={{ background: linkLoading ? T.bg3 : T.greenDk + "14", border: "1px solid " + T.greenDk + "30", borderRadius: 8, padding: "8px 14px", color: linkLoading ? T.ink3 : T.greenDk, fontSize: 13, fontWeight: 700, cursor: linkLoading ? "not-allowed" : "pointer", display: "flex", alignItems: "center", gap: 6 }}>
@@ -1029,7 +1029,7 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
 
             {aiDraft && (
               <div style={{ background: "#8b5cf608", border: "1px solid #8b5cf630", borderRadius: 10, padding: 14 }}>
-                <div style={{ fontSize: 10, fontWeight: 700, color: "#8b5cf6", letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 8 }}>✦ AI Draft</div>
+                <div style={{ fontSize: 10, fontWeight: 700, color: "#8b5cf6", letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 8 }}>✦ Suggested Draft</div>
                 <div style={{ fontSize: 12, color: T.ink2, lineHeight: 1.7, whiteSpace: "pre-wrap", marginBottom: 10 }}>{aiDraft}</div>
                 <button onClick={applyAIDraft} style={{ ...S.btn("primary"), padding: "7px 12px", fontSize: 12 }}>Apply to editor</button>
               </div>

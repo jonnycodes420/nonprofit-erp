@@ -1,54 +1,7 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useEffect } from "react";
 import { apiFetch } from "../api";
 import { useAuth } from "../main";
 import { T, fmt, fmtFull, daysUntil, askClaude, buildContext, STAGES, Spin, AIBtn } from "./shared";
-
-// ── Global Chat ────────────────────────────────────────────────────────────
-export function AIChat({data,onClose}) {
-  const [msgs,setMsgs]=useState([{role:"assistant",content:`Hi! I'm your development intelligence assistant for ${data.org.name}. I have full context on your donors and grants.\n\nTry asking:\n• "Who should I call this week?"\n• "How's our grant pipeline?"\n• "Draft a script for my Margaret Chen call"\n• "Which donors are at risk of lapsing?"\n• "What grants have deadlines coming up?"`}]);
-  const [input,setInput]=useState(""); const [loading,setLoading]=useState(false); const bottomRef=useRef(null);
-  const QUICK = ["Who should I call today?","Which donors are at risk of lapsing?","Draft a donor re-engagement email","Upgrade path for William Park","Which grants need attention?"];
-
-  const send = async (text) => {
-    const msg = text||input; if(!msg.trim()||loading) return;
-    setInput("");
-    const history = [...msgs,{role:"user",content:msg}];
-    setMsgs([...history,{role:"assistant",content:""}]);
-    setLoading(true);
-    const sys = `You are an expert nonprofit development strategist and AI assistant for ${data.org.name}. You have deep expertise in major gifts, grant writing, volunteer management, and nonprofit finance. Be specific, strategic, and reference actual names/numbers from the org data. Never be generic.\n\n${buildContext(data)}`;
-    const apiMsgs = history.filter(m=>m.content).map(m=>({role:m.role,content:m.content}));
-    try {
-      await askClaude(sys, apiMsgs.map(m=>`${m.role==="user"?"User":"Assistant"}: ${m.content}`).join("\n\n"), chunk=>{
-        setMsgs(prev=>prev.map((m,i)=>i===prev.length-1?{...m,content:chunk}:m));
-      });
-    } catch { setMsgs(prev=>prev.map((m,i)=>i===prev.length-1?{...m,content:"Connection error. Try again."}:m)); }
-    setLoading(false);
-  };
-
-  return <div style={{position:"fixed",inset:0,background:"#000c",zIndex:1000,display:"flex",alignItems:"flex-end",justifyContent:"flex-end",padding:20}}>
-    <div style={{background:"#0a0f1e",border:"1px solid #1a6b4a44",borderRadius:20,width:"100%",maxWidth:540,height:640,display:"flex",flexDirection:"column",overflow:"hidden",boxShadow:"0 25px 80px #1a6b4a22"}}>
-      <div style={{padding:"14px 18px",borderBottom:"1px solid #1f2937",display:"flex",alignItems:"center",justifyContent:"space-between",background:"linear-gradient(135deg,#1a0f3c,#0f172a)"}}>
-        <div><div style={{fontSize:14,fontWeight:800,color:"#f3f4f6"}}>✦ Development Intelligence</div><div style={{fontSize:11,color:"#1a6b4a"}}>Knows your full org in real time</div></div>
-        <button onClick={onClose} style={{background:"#1f2937",border:"none",borderRadius:8,padding:"6px 12px",color:"#9ca3af",cursor:"pointer",fontSize:12}}>Close</button>
-      </div>
-      <div style={{display:"flex",gap:6,padding:"10px 14px",borderBottom:"1px solid #1f2937",overflowX:"auto",flexShrink:0}}>
-        {QUICK.map(q=><button key={q} onClick={()=>send(q)} style={{background:"#1f2937",border:"1px solid #374151",borderRadius:20,padding:"5px 12px",color:"#9ca3af",fontSize:11,cursor:"pointer",whiteSpace:"nowrap",flexShrink:0}}>{q}</button>)}
-      </div>
-      <div style={{flex:1,overflowY:"auto",padding:14,display:"flex",flexDirection:"column",gap:10}}>
-        {msgs.map((m,i)=><div key={i} style={{display:"flex",justifyContent:m.role==="user"?"flex-end":"flex-start"}}>
-          <div style={{maxWidth:"88%",background:m.role==="user"?"#1a6b4a":"#1e293b",borderRadius:m.role==="user"?"14px 14px 4px 14px":"14px 14px 14px 4px",padding:"10px 14px",fontSize:13,color:"#f3f4f6",lineHeight:1.65,whiteSpace:"pre-wrap"}}>
-            {m.content||(loading&&i===msgs.length-1?<span style={{color:"#1a6b4a"}}>▋</span>:"")}
-          </div>
-        </div>)}
-        <div ref={bottomRef}/>
-      </div>
-      <div style={{padding:12,borderTop:"1px solid #1f2937",display:"flex",gap:8}}>
-        <input value={input} onChange={e=>setInput(e.target.value)} onKeyDown={e=>e.key==="Enter"&&send()} placeholder="Ask anything about your org…" style={{flex:1,background:"#1e293b",border:"1px solid #374151",borderRadius:10,padding:"10px 14px",color:"#f3f4f6",fontSize:13,outline:"none"}}/>
-        <button onClick={()=>send()} disabled={loading||!input.trim()} style={{background:"#10b981",border:"none",borderRadius:10,padding:"10px 16px",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer",opacity:loading||!input.trim()?0.5:1}}>↑</button>
-      </div>
-    </div>
-  </div>;
-}
 
 // ── Dashboard / Home ─────────────────────────────────────────────────────────
 export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
@@ -281,20 +234,20 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
             })}
           </div>
 
-          {/* AI Briefing */}
+          {/* Today's Suggested Outreach */}
           <div style={{...cardWrap}}>
             <div className="dash-briefing-hdr dash-cpad" style={{...cPad,borderBottom:"1px solid "+T.bg3,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
               <div style={{display:"flex",alignItems:"center",gap:10}}>
-                <span style={{background:"#1a6b4a",color:"#fff",fontSize:9,fontWeight:800,padding:"3px 8px",borderRadius:99,letterSpacing:"0.1em",textTransform:"uppercase"}}>AI</span>
-                <span style={{fontSize:11,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.08em",fontWeight:600}}>{todayStr}</span>
+                <span style={{fontSize:11,color:T.ink,textTransform:"uppercase",letterSpacing:"0.08em",fontWeight:700}}>Today's Suggested Outreach</span>
+                <span style={{fontSize:11,color:T.ink3}}>· {todayStr}</span>
               </div>
-              {!briefing&&!briefLoading&&<AIBtn onClick={generateBriefing} label="✦ Generate briefing" small/>}
+              {!briefing&&!briefLoading&&<AIBtn onClick={generateBriefing} label="✦ Suggest today's outreach" small/>}
               {briefLoading&&<div style={{display:"flex",alignItems:"center",gap:6,fontSize:12,color:T.ink3}}><Spin/>Thinking…</div>}
             </div>
             <div className="dash-briefing-body" style={{padding:"18px 24px"}}>
               {!briefing&&!briefLoading&&(
                 <div style={{fontSize:13,color:T.ink3,fontStyle:"italic",lineHeight:1.7}}>
-                  Get your personalized daily development briefing — who to call, what's urgent, milestone thank-yous ready to review, one priority action.
+                  See who to call, what's urgent, milestone thank-yous ready to review, and one priority action for today.
                 </div>
               )}
               {briefLoading&&!briefing&&(
