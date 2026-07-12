@@ -4722,6 +4722,35 @@ async function processSequences() {
           );
           continue;
         }
+        // Milestone emails default to staff review rather than auto-send — the
+        // AI drafts it, it lands in milestone_drafts for a human to approve/edit
+        // (see POST /milestone-drafts/:id/send), and the enrollment is marked
+        // complete here so the engine doesn't keep re-processing it. This is a
+        // deliberate product decision, not a technical limitation: a tone-deaf
+        // auto-sent milestone email is a real trust risk, matching the
+        // human-in-the-loop pattern the AI daily briefing already uses
+        // elsewhere in Steward (AI informs, staff acts). Flipping to fully
+        // automatic sending later is a small change — swap the block below for
+        // the same subject/body/send logic the rest of this function already uses.
+        if (enr.seq_trigger === "milestone") {
+          try {
+            const metaRaw = enr.metadata;
+            const meta = metaRaw ? (typeof metaRaw === "string" ? JSON.parse(metaRaw) : metaRaw) : {};
+            const draft = await generateMilestoneDraft(recipient, enr.org_id, meta);
+            if (draft) {
+              await run(
+                `INSERT INTO milestone_drafts (id, org_id, donor_id, sequence_enrollment_id, milestone_key, subject, body, status)
+                 VALUES (?,?,?,?,?,?,?,'pending_review')`,
+                ["mdraft_" + uuid().slice(0, 8), enr.org_id, enr.donor_id, enr.id, meta.milestone_key || null, draft.subject, draft.body]
+              );
+              console.log(`[milestone] queued draft for donor ${enr.donor_id} (${meta.milestone_key}) — pending review`);
+            } else {
+              console.error(`[milestone] draft generation returned nothing for enrollment ${enr.id}`);
+            }
+          } catch (e) { console.error("[milestone] draft generation failed:", e.message); }
+          await run("UPDATE sequence_enrollments SET status='completed', completed_at=NOW() WHERE id=?", [enr.id]);
+          continue;
+        }
         const orgRows = await query("SELECT name FROM orgs WHERE id = ?", [enr.org_id]);
         const orgName = orgRows[0]?.name || "";
         const firstName = recipient.name ? recipient.name.trim().split(/\s+/)[0] : "";
@@ -4773,8 +4802,147 @@ async function processSequences() {
   } catch (e) { console.error("[seq] processSequences:", e.message); }
 }
 
+// ── Stewardship: milestone & anniversary detection ──────────────────────────
+// Fixed checkpoints for "just crossed a round-number cumulative giving total"
+// detection — separate from impact_metrics, which is org-configured content
+// for what to SAY once a milestone fires, not when one fires.
+const MILESTONE_THRESHOLDS = [10000, 5000, 2500, 1000, 500];
+
+// Finds donors who just crossed a threshold (via their most recent gift) or
+// just hit a giving anniversary. Each candidate carries a milestoneKey that
+// uniquely identifies THIS specific milestone (e.g. "threshold_1000",
+// "anniversary_year_3") so autoEnroll can tell a genuinely new milestone
+// apart from one it already handled, without needing a separate table.
+async function computeMilestoneCandidates(orgId) {
+  const candidates = [];
+
+  const recentGiftDonors = await query(
+    `SELECT id, total_giving, last_gift_amount FROM donors
+     WHERE org_id = ? AND deleted_at IS NULL AND email IS NOT NULL AND email != ''
+       AND last_gift_date IS NOT NULL AND last_gift_date::date >= NOW() - INTERVAL '2 days'`,
+    [orgId]
+  );
+  for (const d of recentGiftDonors) {
+    const total = Number(d.total_giving) || 0;
+    const lastAmt = Number(d.last_gift_amount) || 0;
+    const priorTotal = total - lastAmt;
+    for (const t of MILESTONE_THRESHOLDS) {
+      if (priorTotal < t && total >= t) {
+        candidates.push({ donorId: d.id, milestoneKey: `threshold_${t}`, milestoneType: "threshold", threshold: t });
+        break; // only the highest threshold crossed by this one gift
+      }
+    }
+  }
+
+  const anniversaryDonors = await query(
+    `SELECT id, first_gift_date FROM donors
+     WHERE org_id = ? AND deleted_at IS NULL AND email IS NOT NULL AND email != '' AND first_gift_date IS NOT NULL`,
+    [orgId]
+  );
+  const today = new Date();
+  for (const d of anniversaryDonors) {
+    const first = new Date(d.first_gift_date);
+    if (isNaN(first.getTime())) continue;
+    const dayDiff = Math.abs(today.getDate() - first.getDate());
+    const inWindow = dayDiff <= 3 || dayDiff >= 27; // loose +/-3 day window, tolerates month-length wraparound
+    const monthsSince = (today.getFullYear() - first.getFullYear()) * 12 + (today.getMonth() - first.getMonth());
+    if (monthsSince === 6 && inWindow) {
+      candidates.push({ donorId: d.id, milestoneKey: "anniversary_6mo", milestoneType: "anniversary", label: "6-month" });
+      continue;
+    }
+    const yearsSince = today.getFullYear() - first.getFullYear();
+    if (yearsSince >= 1 && today.getMonth() === first.getMonth() && inWindow) {
+      candidates.push({ donorId: d.id, milestoneKey: `anniversary_year_${yearsSince}`, milestoneType: "anniversary", label: `${yearsSince}-year` });
+    }
+  }
+  return candidates;
+}
+
+// Lazily provisions one "milestone" sequence per org that has opted in by
+// configuring at least one active impact_metrics row. A single dummy step is
+// enough — milestone content is generated per-donor by generateMilestoneDraft(),
+// not from sequence_steps.body like other trigger types.
+async function ensureMilestoneSequences() {
+  const orgs = await query("SELECT DISTINCT org_id FROM impact_metrics WHERE active = true", []);
+  for (const o of orgs) {
+    const existing = await query("SELECT id FROM sequences WHERE org_id = ? AND trigger = 'milestone'", [o.org_id]);
+    if (existing.length) continue;
+    const seqId = "seq_" + uuid().slice(0, 8);
+    await run(
+      "INSERT INTO sequences (id, org_id, name, trigger, status) VALUES (?,?,?,?,'active')",
+      [seqId, o.org_id, "Milestone & Anniversary Emails", "milestone"]
+    );
+    await run(
+      "INSERT INTO sequence_steps (id, sequence_id, step_order, delay_days, subject, body) VALUES (?,?,?,?,?,?)",
+      ["ss_" + uuid().slice(0, 8), seqId, 0, 0, "Milestone email (AI-drafted per donor)", ""]
+    );
+  }
+}
+
+// Generates a warm, specific, non-gamified thank-you draft for one milestone.
+// The dollar math ({n} = floor(total / dollar_threshold)) is computed here in
+// JS, not left to the model — only the prose is AI-written. Returns null on
+// any failure so the caller can skip gracefully rather than queue garbage.
+async function generateMilestoneDraft(recipient, orgId, meta) {
+  const donorRows = await query("SELECT * FROM donors WHERE id = ? AND org_id = ?", [recipient.id, orgId]);
+  const donor = donorRows[0];
+  if (!donor) return null;
+  const orgRows = await query("SELECT name FROM orgs WHERE id = ?", [orgId]);
+  const orgName = orgRows[0]?.name || "";
+  const totalGiving = Number(donor.total_giving) || 0;
+
+  const metricRows = await query(
+    "SELECT * FROM impact_metrics WHERE org_id = ? AND active = true AND dollar_threshold <= ? ORDER BY dollar_threshold DESC LIMIT 1",
+    [orgId, totalGiving]
+  );
+  let impactLine = null;
+  if (metricRows.length) {
+    const m = metricRows[0];
+    const n = Math.max(1, Math.floor(totalGiving / Number(m.dollar_threshold)));
+    impactLine = String(m.outcome_template || "")
+      .replace(/\{amount\}/g, totalGiving.toLocaleString())
+      .replace(/\{n\}/g, n);
+  }
+
+  const firstName = donor.name ? donor.name.trim().split(/\s+/)[0] : "there";
+  const sinceMonth = donor.first_gift_date ? new Date(donor.first_gift_date).toLocaleDateString("en-US", { month: "long", year: "numeric" }) : null;
+  const milestoneDesc = meta.milestone_type === "anniversary"
+    ? `This marks their ${meta.label || "giving"} anniversary with your organization.`
+    : `They just crossed $${(meta.threshold || 0).toLocaleString()} in total lifetime giving.`;
+
+  try {
+    const client = new Anthropic();
+    const msg = await client.messages.create({
+      model: "claude-sonnet-4-6",
+      max_tokens: 400,
+      system: `You write short, warm donor thank-you emails for a nonprofit development team. The donor just reached a real giving milestone. Rules: no hype, no exclamation-point overload, absolutely no gamification language — never say "tier", "level up", "unlock", "badge", "milestone reward", "leaderboard", or "you're so close to your next milestone". Write like a staff member who personally noticed and cared, not an app tracking progress. 3-5 sentences, plain language, specific, genuine. Return ONLY valid JSON: {"subject":"...","body":"..."} — no markdown, no code fences, no explanation.`,
+      messages: [{
+        role: "user",
+        content: `Donor first name: ${firstName}
+Organization: ${orgName}
+Total given to date: $${totalGiving.toLocaleString()}
+${sinceMonth ? `Donor's first gift was in ${sinceMonth}.` : ""}
+Milestone: ${milestoneDesc}
+${impactLine ? `Concrete impact to reference naturally (weave it in, don't just paste it verbatim): "${impactLine}"` : "No specific impact figure is configured for this giving level — keep it a genuine, specific thank-you about their giving without inventing outcome numbers."}
+
+Write the email now.`,
+      }],
+    });
+    const text = msg.content[0].text.trim();
+    const jsonMatch = text.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) return null;
+    const parsed = JSON.parse(jsonMatch[0]);
+    if (!parsed.subject || !parsed.body) return null;
+    return { subject: String(parsed.subject), body: String(parsed.body) };
+  } catch (e) {
+    console.error("[milestone] generateMilestoneDraft failed:", e.message);
+    return null;
+  }
+}
+
 async function autoEnroll() {
   try {
+    await ensureMilestoneSequences();
     const seqs = await query(
       "SELECT * FROM sequences WHERE status = 'active' AND trigger NOT IN ('manual', 'stage_change', 'onboarding')",
       []
@@ -4796,6 +4964,43 @@ async function autoEnroll() {
           `SELECT id FROM donors WHERE org_id = ? AND gift_count = 1 AND deleted_at IS NULL AND last_gift_date IS NOT NULL AND last_gift_date::date > NOW() - INTERVAL '7 days'`,
           [seq.org_id]
         );
+      } else if (seq.trigger === "milestone") {
+        // Distinct handling: each donor can hit MANY different milestones over
+        // time (crossing $500, then later $1000, then a 1-year anniversary...),
+        // which the plain ON CONFLICT DO NOTHING enrollment below can't express
+        // for a single (sequence_id, donor_id) row. Instead, reuse/reset that one
+        // row per donor and track WHICH milestone it currently represents via
+        // metadata.milestone_key — a re-detected key that matches what's already
+        // there is skipped (already handled); a different key means a genuinely
+        // new milestone, so the row is reset and re-enrolled.
+        const candidates = await computeMilestoneCandidates(seq.org_id);
+        for (const c of candidates) {
+          const existing = await query(
+            "SELECT id, metadata FROM sequence_enrollments WHERE sequence_id = ? AND donor_id = ?",
+            [seq.id, c.donorId]
+          );
+          const existingMeta = existing[0]?.metadata
+            ? (typeof existing[0].metadata === "string" ? JSON.parse(existing[0].metadata) : existing[0].metadata)
+            : null;
+          if (existing.length && existingMeta?.milestone_key === c.milestoneKey) continue;
+          const metaJson = JSON.stringify({
+            milestone_key: c.milestoneKey, milestone_type: c.milestoneType,
+            threshold: c.threshold || null, label: c.label || null,
+          });
+          if (existing.length) {
+            await run(
+              `UPDATE sequence_enrollments SET status='active', current_step=0, enrolled_at=NOW(), completed_at=NULL, next_send_at=NOW(), metadata=? WHERE id=?`,
+              [metaJson, existing[0].id]
+            );
+          } else {
+            await run(
+              `INSERT INTO sequence_enrollments (id, sequence_id, org_id, donor_id, current_step, status, next_send_at, metadata)
+               VALUES (?, ?, ?, ?, 0, 'active', NOW(), ?)`,
+              ["se_" + uuid().slice(0, 8), seq.id, seq.org_id, c.donorId, metaJson]
+            );
+          }
+        }
+        continue;
       }
       for (const donor of donors) {
         const existing = await query(
@@ -4961,6 +5166,119 @@ app.delete("/sequences/:id", requireAuth, requireAdmin, wrap(async (req, res) =>
   if (!existing.length) return res.status(404).json({ error: "Not found" });
   await run("DELETE FROM sequence_enrollments WHERE sequence_id=?", [req.params.id]);
   await run("DELETE FROM sequences WHERE id=? AND org_id=?", [req.params.id, req.user.orgId]);
+  res.json({ success: true });
+}));
+
+// ── Impact metrics (org-configured milestone/anniversary email content) ────
+app.get("/impact-metrics", requireAuth, wrap(async (req, res) => {
+  const rows = await query("SELECT * FROM impact_metrics WHERE org_id=? ORDER BY dollar_threshold ASC", [req.user.orgId]);
+  res.json(rows);
+}));
+
+app.post("/impact-metrics", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
+  const { name, dollarThreshold, outcomeTemplate } = req.body;
+  if (!name || !dollarThreshold || !outcomeTemplate) return res.status(400).json({ error: "name, dollarThreshold, and outcomeTemplate required" });
+  const id = "im_" + uuid().slice(0, 8);
+  await run(
+    "INSERT INTO impact_metrics (id,org_id,name,dollar_threshold,outcome_template) VALUES (?,?,?,?,?)",
+    [id, req.user.orgId, name, parseFloat(dollarThreshold), outcomeTemplate]
+  );
+  const rows = await query("SELECT * FROM impact_metrics WHERE id=?", [id]);
+  res.status(201).json(rows[0]);
+}));
+
+app.put("/impact-metrics/:id", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
+  const { name, dollarThreshold, outcomeTemplate, active } = req.body;
+  const affected = await run(
+    "UPDATE impact_metrics SET name=?, dollar_threshold=?, outcome_template=?, active=? WHERE id=? AND org_id=?",
+    [name, parseFloat(dollarThreshold), outcomeTemplate, active !== false, req.params.id, req.user.orgId]
+  );
+  if (!affected.changes) return res.status(404).json({ error: "Not found" });
+  const rows = await query("SELECT * FROM impact_metrics WHERE id=?", [req.params.id]);
+  res.json(rows[0]);
+}));
+
+app.delete("/impact-metrics/:id", requireAuth, requireAdmin, wrap(async (req, res) => {
+  await run("DELETE FROM impact_metrics WHERE id=? AND org_id=?", [req.params.id, req.user.orgId]);
+  res.json({ success: true });
+}));
+
+// ── Milestone drafts (AI-drafted, staff-reviewed before sending — see
+// processSequences()'s 'milestone' branch for why this isn't auto-sent) ────
+app.get("/milestone-drafts", requireAuth, wrap(async (req, res) => {
+  const status = req.query.status || "pending_review";
+  const rows = await query(
+    `SELECT md.*, d.name AS donor_name, d.email AS donor_email, d.total_giving AS donor_total_giving
+     FROM milestone_drafts md
+     JOIN donors d ON d.id = md.donor_id
+     WHERE md.org_id = ? AND md.status = ?
+     ORDER BY md.created_at DESC`,
+    [req.user.orgId, status]
+  );
+  res.json(rows);
+}));
+
+app.put("/milestone-drafts/:id", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  const { subject, body } = req.body;
+  if (!subject || !body) return res.status(400).json({ error: "subject and body required" });
+  const affected = await run(
+    "UPDATE milestone_drafts SET subject=?, body=? WHERE id=? AND org_id=? AND status='pending_review'",
+    [subject, body, req.params.id, req.user.orgId]
+  );
+  if (!affected.changes) return res.status(404).json({ error: "Not found or already sent" });
+  const rows = await query("SELECT * FROM milestone_drafts WHERE id=?", [req.params.id]);
+  res.json(rows[0]);
+}));
+
+app.post("/milestone-drafts/:id/dismiss", requireAuth, wrap(async (req, res) => {
+  const affected = await run(
+    "UPDATE milestone_drafts SET status='dismissed' WHERE id=? AND org_id=? AND status='pending_review'",
+    [req.params.id, req.user.orgId]
+  );
+  if (!affected.changes) return res.status(404).json({ error: "Not found or already sent" });
+  res.json({ success: true });
+}));
+
+app.post("/milestone-drafts/:id/send", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
+  const drafts = await query(
+    "SELECT * FROM milestone_drafts WHERE id=? AND org_id=? AND status='pending_review'",
+    [req.params.id, req.user.orgId]
+  );
+  if (!drafts.length) return res.status(404).json({ error: "Not found or already sent" });
+  const draft = drafts[0];
+
+  const donorRows = await query("SELECT * FROM donors WHERE id=? AND org_id=?", [draft.donor_id, req.user.orgId]);
+  const donor = donorRows[0];
+  if (!donor || !donor.email) return res.status(400).json({ error: "Donor has no email on file" });
+
+  const suppressReason = await getSuppressionReason(donor.email, req.user.orgId);
+  if (suppressReason) return res.status(400).json({ error: `Cannot send — this donor is suppressed (${suppressReason})` });
+
+  const smtpFrom = process.env.DEMO_SMTP_FROM || "noreply@stewardapp.dev";
+  if (process.env.RESEND_API_KEY) {
+    const bodyHtml = `<p>${draft.body.replace(/\n\n+/g, "</p><p>").replace(/\n/g, "<br>")}</p>`
+      + unsubscribeEmailFooterHtml(donor.email, req.user.orgId, "sequence");
+    try {
+      const { error: sendErr } = await resend.emails.send({
+        from: smtpFrom, to: donor.email, subject: draft.subject, html: bodyHtml,
+        headers: unsubscribeHeaders(donor.email, req.user.orgId, "sequence"),
+      });
+      if (sendErr) return res.status(502).json({ error: `Send failed: ${sendErr.message}` });
+    } catch (e) {
+      return res.status(502).json({ error: `Send failed: ${e.message}` });
+    }
+  }
+
+  await run(
+    "UPDATE milestone_drafts SET status='sent', sent_at=NOW(), reviewed_by=? WHERE id=?",
+    [req.user.userId, draft.id]
+  );
+  const today = new Date().toISOString().slice(0, 10);
+  await run(
+    "INSERT INTO interactions (id, org_id, donor_id, type, note, date) VALUES (?, ?, ?, 'email', ?, ?)",
+    ["i_" + uuid().slice(0, 8), req.user.orgId, draft.donor_id, `Milestone email: ${draft.subject}`, today]
+  ).catch(() => {});
+
   res.json({ success: true });
 }));
 

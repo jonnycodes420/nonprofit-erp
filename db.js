@@ -636,6 +636,61 @@ async function initSchema() {
   await pool.query(`ALTER TABLE fin_funds ADD COLUMN IF NOT EXISTS is_sample BOOLEAN DEFAULT false`);
   await pool.query(`ALTER TABLE volunteers ADD COLUMN IF NOT EXISTS is_sample BOOLEAN DEFAULT false`);
   await pool.query(`ALTER TABLE board_members ADD COLUMN IF NOT EXISTS is_sample BOOLEAN DEFAULT false`);
+
+  // ── Stewardship: giving milestones & impact reporting ───────────────────
+  // Org-configured "at this cumulative amount, here's what it funded" copy.
+  // dollar_threshold doubles as the "cost per unit of impact" used to compute
+  // {n} in outcome_template (e.g. threshold=300 + donor total=1200 -> n=4).
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS impact_metrics (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL,
+      name TEXT NOT NULL,
+      dollar_threshold NUMERIC NOT NULL,
+      outcome_template TEXT NOT NULL,
+      active BOOLEAN DEFAULT true,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+
+  // Milestones are computed from existing donor/gift data rather than stored
+  // as their own events — first_gift_date is the one field that isn't cleanly
+  // derivable from gifts alone (donors bulk-imported via the basic /donors/import
+  // route get total_giving/gift_count set directly with no individual gifts
+  // rows at all, so MIN(gifts.date) is NULL for them). Backfilled below.
+  await pool.query(`ALTER TABLE donors ADD COLUMN IF NOT EXISTS first_gift_date TEXT`);
+  await pool.query(`
+    UPDATE donors d
+    SET first_gift_date = COALESCE(
+      (SELECT MIN(g.date) FROM gifts g WHERE g.donor_id = d.id),
+      d.last_gift_date
+    )
+    WHERE d.first_gift_date IS NULL
+      AND (EXISTS (SELECT 1 FROM gifts g WHERE g.donor_id = d.id) OR d.last_gift_date IS NOT NULL)
+  `);
+
+  // Stores which specific milestone (threshold/anniversary) an enrollment
+  // represents, so the sequences engine can tell a genuinely new milestone
+  // apart from one already handled — see autoEnroll()'s 'milestone' branch.
+  await pool.query(`ALTER TABLE sequence_enrollments ADD COLUMN IF NOT EXISTS metadata JSONB`);
+
+  // AI-drafted milestone emails land here for staff review before sending —
+  // deliberately not auto-sent. See processSequences()'s 'milestone' branch.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS milestone_drafts (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL,
+      donor_id TEXT NOT NULL,
+      sequence_enrollment_id TEXT,
+      milestone_key TEXT,
+      subject TEXT NOT NULL,
+      body TEXT NOT NULL,
+      status TEXT DEFAULT 'pending_review',
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      reviewed_by TEXT,
+      sent_at TIMESTAMPTZ
+    )
+  `);
 }
 
 async function seedData() {
@@ -975,6 +1030,20 @@ async function seedData() {
       `INSERT INTO program_grants (id,org_id,program_id,grant_id,allocated)
        VALUES ($1,$2,$3,$4,$5) ON CONFLICT (program_id, grant_id) DO NOTHING`,
       pg
+    );
+  }
+
+  // ── Impact metrics (for milestone/anniversary donor emails) ────────────────
+  const impactMetrics = [
+    ["im_01", orgId, "Art Supplies Kit", 50, "Your ${amount} has provided art supplies kits for {n} students"],
+    ["im_02", orgId, "After-School Workshop", 300, "Your ${amount} has funded {n} after-school arts workshops"],
+    ["im_03", orgId, "Full-Year Scholarship", 2500, "Your ${amount} has covered {n} full-year arts program scholarships"],
+  ];
+  for (const m of impactMetrics) {
+    await pool.query(
+      `INSERT INTO impact_metrics (id,org_id,name,dollar_threshold,outcome_template)
+       VALUES ($1,$2,$3,$4,$5) ON CONFLICT (id) DO NOTHING`,
+      m
     );
   }
 }

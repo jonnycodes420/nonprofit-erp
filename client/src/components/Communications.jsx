@@ -638,6 +638,116 @@ function SequencesPanel({ data }) {
   );
 }
 
+// ── Milestone Drafts panel ───────────────────────────────────────────────────
+// AI-drafted giving-milestone/anniversary emails, queued here for a human to
+// approve/edit/send rather than going out automatically — see
+// processSequences()'s 'milestone' branch in server.js for why.
+function MilestoneDraftsPanel() {
+  const [drafts, setDrafts] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [editingId, setEditingId] = useState(null);
+  const [editForm, setEditForm] = useState({ subject: "", body: "" });
+  const [busyId, setBusyId] = useState(null);
+
+  const load = async () => {
+    setLoading(true);
+    try { setDrafts(await apiFetch("/milestone-drafts")); } catch (e) {}
+    setLoading(false);
+  };
+  useEffect(() => { load(); }, []);
+
+  const startEdit = (d) => { setEditingId(d.id); setEditForm({ subject: d.subject, body: d.body }); };
+  const cancelEdit = () => { setEditingId(null); };
+
+  const saveEdit = async (id) => {
+    setBusyId(id);
+    try {
+      await apiFetch(`/milestone-drafts/${id}`, { method: "PUT", body: JSON.stringify(editForm) });
+      setDrafts(prev => prev.map(d => d.id === id ? { ...d, ...editForm } : d));
+      setEditingId(null);
+    } catch (e) { alert(e.message); }
+    setBusyId(null);
+  };
+
+  const send = async (id) => {
+    if (!window.confirm("Send this email now?")) return;
+    setBusyId(id);
+    try {
+      await apiFetch(`/milestone-drafts/${id}/send`, { method: "POST" });
+      setDrafts(prev => prev.filter(d => d.id !== id));
+    } catch (e) { alert(e.message); }
+    setBusyId(null);
+  };
+
+  const dismiss = async (id) => {
+    if (!window.confirm("Dismiss this draft without sending?")) return;
+    setBusyId(id);
+    try {
+      await apiFetch(`/milestone-drafts/${id}/dismiss`, { method: "POST" });
+      setDrafts(prev => prev.filter(d => d.id !== id));
+    } catch (e) { alert(e.message); }
+    setBusyId(null);
+  };
+
+  const inp = { background: T.bg, border: "1px solid " + T.bg3, borderRadius: 8, padding: "9px 12px", color: T.ink, fontSize: 13, outline: "none", width: "100%", boxSizing: "border-box", fontFamily: "inherit" };
+
+  if (loading) return <Spin />;
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
+      <div>
+        <h2 style={{ margin: 0, fontSize: 20, fontWeight: 800, color: T.ink }}>Milestone Drafts</h2>
+        <p style={{ margin: "4px 0 0", fontSize: 13, color: T.ink3 }}>
+          AI-drafted emails for donors who just crossed a giving threshold or hit a giving anniversary. Nothing sends until you approve it here.
+        </p>
+      </div>
+
+      {drafts.length === 0 && (
+        <div style={{ background: T.bg2, borderRadius: 12, padding: 40, textAlign: "center", color: T.ink3, fontSize: 14 }}>
+          No drafts waiting for review right now.
+        </div>
+      )}
+
+      {drafts.map(d => (
+        <div key={d.id} style={{ background: T.white, border: "1px solid " + T.bg3, borderRadius: 12, padding: 18 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 10 }}>
+            <div>
+              <div style={{ fontSize: 15, fontWeight: 700, color: T.ink }}>{d.donor_name}</div>
+              <div style={{ fontSize: 12, color: T.ink3 }}>{d.donor_email} · {fmtFull(d.donor_total_giving || 0)} lifetime giving</div>
+            </div>
+            <div style={{ fontSize: 11, color: T.ink3 }}>{new Date(d.created_at).toLocaleDateString()}</div>
+          </div>
+
+          {editingId === d.id ? (
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              <input style={inp} value={editForm.subject} onChange={e => setEditForm(f => ({ ...f, subject: e.target.value }))} placeholder="Subject" />
+              <textarea style={{ ...inp, minHeight: 140, resize: "vertical" }} value={editForm.body} onChange={e => setEditForm(f => ({ ...f, body: e.target.value }))} placeholder="Body" />
+              <div style={{ display: "flex", gap: 8 }}>
+                <button onClick={() => saveEdit(d.id)} disabled={busyId === d.id} style={{ background: T.green, border: "none", borderRadius: 8, padding: "8px 14px", color: "#fff", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>Save</button>
+                <button onClick={cancelEdit} style={{ background: "transparent", border: "1px solid " + T.bg3, borderRadius: 8, padding: "8px 14px", color: T.ink3, fontSize: 12, cursor: "pointer" }}>Cancel</button>
+              </div>
+            </div>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              <div style={{ background: T.bg, borderRadius: 8, padding: 14 }}>
+                <div style={{ fontSize: 13, fontWeight: 700, color: T.ink, marginBottom: 6 }}>{d.subject}</div>
+                <div style={{ fontSize: 13, color: T.ink2 || T.ink, lineHeight: 1.6, whiteSpace: "pre-wrap" }}>{d.body}</div>
+              </div>
+              <div style={{ display: "flex", gap: 8 }}>
+                <button onClick={() => send(d.id)} disabled={busyId === d.id} style={{ background: T.green, border: "none", borderRadius: 8, padding: "8px 14px", color: "#fff", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+                  {busyId === d.id ? "Sending…" : "Approve & Send"}
+                </button>
+                <button onClick={() => startEdit(d)} style={{ background: "transparent", border: "1px solid " + T.bg3, borderRadius: 8, padding: "8px 14px", color: T.ink, fontSize: 12, cursor: "pointer" }}>Edit</button>
+                <button onClick={() => dismiss(d.id)} disabled={busyId === d.id} style={{ background: "transparent", border: "1px solid " + T.bg3, borderRadius: 8, padding: "8px 14px", color: T.ink3, fontSize: 12, cursor: "pointer" }}>Dismiss</button>
+              </div>
+            </div>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 // ── Main component ────────────────────────────────────────────────────────────
 export function Communications({ data, isReadOnly }) {
   const { auth } = useAuth();
@@ -953,6 +1063,7 @@ export function Communications({ data, isReadOnly }) {
     { id: "audience",   label: "Audience",   icon: "◈" },
     { id: "analytics",  label: "Analytics",  icon: "⬡" },
     { id: "sequences",  label: "Sequences",  icon: "⟳" },
+    { id: "milestones", label: "Milestone Drafts", icon: "✦" },
   ];
 
   // ── Audience tab segments ───────────────────────────────────────────────────
@@ -1330,6 +1441,9 @@ export function Communications({ data, isReadOnly }) {
 
         {/* ── SEQUENCES ─────────────────────────────────────────────────────── */}
         {nav === "sequences" && <SequencesPanel data={data} />}
+
+        {/* ── MILESTONE DRAFTS ──────────────────────────────────────────────── */}
+        {nav === "milestones" && <MilestoneDraftsPanel />}
       </div>
     </div>
   );
