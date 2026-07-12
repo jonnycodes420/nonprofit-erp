@@ -1,7 +1,11 @@
 import { useState, useEffect } from "react";
 import { apiFetch, adaptData, API, getToken } from "./api";
 import { useAuth } from "./main";
-import { T, GlobalStyles, VoiceMemoModal } from "./components/shared";
+import { T, GlobalStyles } from "./components/shared";
+// SHELVED — voice capture works but unproven adoption assumption, revisit later.
+// Code intact, re-enable by uncommenting (see showVoiceMemo state, header
+// button, and modal render below, and the matching import above:
+// `VoiceMemoModal` from "./components/shared").
 import { Dashboard } from "./components/Dashboard";
 import { Donors } from "./components/Donors";
 import { Grants } from "./components/Grants";
@@ -65,7 +69,9 @@ function AppShell() {
   const [commsHighlightDraftId,setCommsHighlightDraftId]=useState(null);
   const [donorsIntent,setDonorsIntent]=useState(null);
   const [grantsIntent,setGrantsIntent]=useState(null);
-  const [showVoiceMemo,setShowVoiceMemo]=useState(false);
+  // SHELVED — voice capture works but unproven adoption assumption, revisit
+  // later. Code intact, re-enable by uncommenting.
+  // const [showVoiceMemo,setShowVoiceMemo]=useState(false);
 
   const navigateTo=(t,opts)=>{
     setCommsInitialNav(opts?.subtab||null);
@@ -185,9 +191,12 @@ function AppShell() {
         <span style={{fontSize:20,fontWeight:400,color:"#f0ede6",fontFamily:"'DM Serif Display',Georgia,serif",letterSpacing:"-0.02em"}}>Steward</span>
       </div>
       <div style={{display:"flex",gap:8,alignItems:"center"}}>
+        {/* SHELVED — voice capture works but unproven adoption assumption, revisit later.
+            Code intact, re-enable by uncommenting.
         <button onClick={()=>setShowVoiceMemo(true)} title="Record a voice memo" style={{background:"#1a2e1f",border:"1px solid #2d4a35",borderRadius:10,padding:"7px 12px",color:"#c9a84c",fontSize:12,fontWeight:700,cursor:"pointer",display:"flex",alignItems:"center",gap:6}}>
           🎙 Voice memo
         </button>
+        */}
         <div className="app-avatar" style={{width:30,height:30,borderRadius:8,background:T.greenDk,display:"flex",alignItems:"center",justifyContent:"center"}}>
           <span style={{fontSize:12,fontWeight:700,color:"#f0ede6"}}>{(auth?.user?.name||"U")[0].toUpperCase()}</span>
         </div>
@@ -252,7 +261,10 @@ function AppShell() {
       {tab==="settings"&&<Settings auth={auth} logout={logout}/>}
     </div>
     <PlanPicker open={showPlanPicker} onClose={()=>setShowPlanPicker(false)}/>
+    {/* SHELVED — voice capture works but unproven adoption assumption, revisit later.
+        Code intact, re-enable by uncommenting.
     {showVoiceMemo&&<VoiceMemoModal donors={data.donors} onClose={()=>setShowVoiceMemo(false)} onSaved={()=>loadData()}/>}
+    */}
     {stripeToast&&<div style={{position:"fixed",bottom:24,right:24,zIndex:9999,background:T.greenDk,color:"#fff",borderRadius:14,padding:"14px 20px",fontSize:13,fontWeight:600,boxShadow:"0 8px 32px rgba(26,107,74,0.35)",display:"flex",alignItems:"center",gap:10,maxWidth:340}}>
       <span style={{fontSize:18}}>💳</span>
       <div>

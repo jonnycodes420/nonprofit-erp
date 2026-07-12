@@ -22,7 +22,11 @@ class ErrorBoundary extends Component {
     return this.props.children;
   }
 }
-import { T, fmt, fmtFull, daysDiff, SC, askClaude, STAGES, STAGE_ACTION, TIER_COLOR, donorScore, moveUrgency, Spin, Pill, Card, AIBtn, AIPanel, PageTitle, EmptyState, GivingHistoryChart, TpField, TpYesNo, TouchpointTimeline, VoiceMemoModal } from "./shared";
+import { T, fmt, fmtFull, daysDiff, SC, askClaude, STAGES, STAGE_ACTION, TIER_COLOR, donorScore, moveUrgency, Spin, Pill, Card, AIBtn, AIPanel, PageTitle, EmptyState, GivingHistoryChart, TpField, TpYesNo, TouchpointTimeline } from "./shared";
+// SHELVED — voice capture works but unproven adoption assumption, revisit
+// later. Code intact, re-enable by uncommenting (see showVoiceMemo state,
+// profile button, and modal render below, and add `VoiceMemoModal` back to
+// the import above).
 import { DonorMap } from "./DonorMap";
 
 // ── CSV Import helpers ─────────────────────────────────────────────────────
@@ -2236,7 +2240,9 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
   };
 
   const [impactPdfLoading,setImpactPdfLoading]=useState(false);
-  const [showVoiceMemo,setShowVoiceMemo]=useState(false);
+  // SHELVED — voice capture works but unproven adoption assumption, revisit
+  // later. Code intact, re-enable by uncommenting.
+  // const [showVoiceMemo,setShowVoiceMemo]=useState(false);
   const downloadImpactSummary=async()=>{
     setImpactPdfLoading(true);
     try{
@@ -2270,7 +2276,10 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
   return(
     <div className="fade-in" style={{position:"fixed",inset:0,background:T.bg,zIndex:200,display:"flex",flexDirection:"column",overflow:"hidden"}}>
       {showGiftModal&&<GiftLinkModal donor={donor} orgName={orgName} onClose={()=>setShowGiftModal(false)}/>}
+      {/* SHELVED — voice capture works but unproven adoption assumption, revisit later.
+          Code intact, re-enable by uncommenting.
       {showVoiceMemo&&<VoiceMemoModal donor={donor} onClose={()=>setShowVoiceMemo(false)} onSaved={()=>{setShowVoiceMemo(false);if(onInteractionAdded)onInteractionAdded();}}/>}
+      */}
       <div className="donor-profile-header" style={{background:T.white,borderBottom:"1px solid "+T.bg3,padding:"10px 24px",display:"flex",alignItems:"center",gap:12,flexShrink:0}}>
         <button onClick={onClose} style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"7px 14px",color:T.ink3,fontSize:13,cursor:"pointer",whiteSpace:"nowrap"}}>← Back</button>
         <div className="dph-identity" style={{display:"flex",alignItems:"center",gap:10,flex:1,minWidth:0}}>
@@ -2292,9 +2301,12 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
           <button onClick={()=>setShowGiftModal(true)} style={{background:T.green,border:"none",borderRadius:8,padding:"7px 14px",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer"}}>
             💳 Request Gift
           </button>
+          {/* SHELVED — voice capture works but unproven adoption assumption, revisit later.
+              Code intact, re-enable by uncommenting.
           <button onClick={()=>setShowVoiceMemo(true)} style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"7px 14px",color:T.ink3,fontSize:13,cursor:"pointer"}}>
             🎙 Voice memo
           </button>
+          */}
           <button onClick={downloadImpactSummary} disabled={impactPdfLoading} style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"7px 14px",color:T.ink3,fontSize:13,cursor:impactPdfLoading?"not-allowed":"pointer",opacity:impactPdfLoading?0.6:1}}>
             {impactPdfLoading?"Generating…":"↓ Impact Summary"}
           </button>
