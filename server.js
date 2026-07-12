@@ -5069,8 +5069,8 @@ app.get("/donors/:id/impact-summary/pdf", requireAuth, wrap(async (req, res) => 
     for (let i = range.start; i < range.start + range.count; i++) {
       doc.switchToPage(i);
       doc.font("Helvetica").fontSize(7).fillColor("#9ca3af")
-        .text(`${org.name}  ·  Impact Summary  ·  Generated ${genDate}`, 50, doc.page.height - 28, { width: PW - 130, align: "left" })
-        .text(`${i - range.start + 1} / ${range.count}`, PW - 80, doc.page.height - 28, { width: 30, align: "right" });
+        .text(`${org.name}  ·  Impact Summary  ·  Generated ${genDate}`, 50, doc.page.height - 28, { width: PW - 130, height: 20, align: "left" })
+        .text(`${i - range.start + 1} / ${range.count}`, PW - 80, doc.page.height - 28, { width: 30, height: 20, align: "right" });
     }
 
     doc.end();
