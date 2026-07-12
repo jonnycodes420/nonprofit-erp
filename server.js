@@ -4940,6 +4940,149 @@ Write the email now.`,
   }
 }
 
+// One-page printable/mailable "Impact Summary" for a single donor — cumulative
+// giving, milestones reached, and org-configured impact translations. Reuses
+// the pdfkit pattern from POST /reports/board (same require, buffer-to-Promise
+// approach, page-footer loop) rather than a new rendering system.
+app.get("/donors/:id/impact-summary/pdf", requireAuth, wrap(async (req, res) => {
+  let PDFDocument;
+  try {
+    PDFDocument = require("pdfkit");
+  } catch (e) {
+    return res.status(500).json({ error: "pdfkit module missing: " + e.message });
+  }
+
+  const { orgId } = req.user;
+  const [donor] = await query("SELECT * FROM donors WHERE id = ? AND org_id = ? AND deleted_at IS NULL", [req.params.id, orgId]);
+  if (!donor) return res.status(404).json({ error: "Donor not found" });
+  const [org] = await query("SELECT name FROM orgs WHERE id = ?", [orgId]);
+
+  const totalGiving = Number(donor.total_giving) || 0;
+  const giftCount = Number(donor.gift_count) || 0;
+  const now = new Date();
+
+  const thresholdsReached = MILESTONE_THRESHOLDS.filter(t => totalGiving >= t).sort((a, b) => a - b);
+
+  let yearsGiving = null;
+  let firstGiftLabel = null;
+  if (donor.first_gift_date) {
+    const first = new Date(donor.first_gift_date);
+    if (!isNaN(first.getTime())) {
+      yearsGiving = now.getFullYear() - first.getFullYear() - ((now.getMonth() < first.getMonth() || (now.getMonth() === first.getMonth() && now.getDate() < first.getDate())) ? 1 : 0);
+      firstGiftLabel = first.toLocaleDateString("en-US", { month: "long", year: "numeric" });
+    }
+  }
+
+  const metricRows = await query(
+    "SELECT * FROM impact_metrics WHERE org_id = ? AND active = true AND dollar_threshold <= ? ORDER BY dollar_threshold ASC",
+    [orgId, totalGiving]
+  );
+  const impactLines = metricRows.map(m => {
+    const n = Math.max(1, Math.floor(totalGiving / Number(m.dollar_threshold)));
+    return String(m.outcome_template || "")
+      .replace(/\{amount\}/g, totalGiving.toLocaleString())
+      .replace(/\{n\}/g, n);
+  });
+
+  const recentGifts = await query(
+    "SELECT amount, date, campaign FROM gifts WHERE donor_id = ? AND org_id = ? ORDER BY date DESC LIMIT 5",
+    [donor.id, orgId]
+  );
+
+  const doc = new PDFDocument({ margin: 50, size: "LETTER", bufferPages: true });
+  const pdfBuffer = await new Promise((resolve, reject) => {
+    const chunks = [];
+    doc.on("data", c => chunks.push(c));
+    doc.on("end", () => resolve(Buffer.concat(chunks)));
+    doc.on("error", reject);
+
+    const GREEN = "#1a6b4a";
+    const INK   = "#1a1a1a";
+    const INK3  = "#6b7280";
+    const BG    = "#f5f5f0";
+    const PW    = doc.page.width;
+    const fmtD  = n => "$" + (parseFloat(n) || 0).toLocaleString("en-US", { maximumFractionDigits: 0 });
+    const genDate = now.toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" });
+
+    doc.rect(0, 0, PW, 96).fill(GREEN);
+    doc.font("Helvetica").fontSize(9).fillColor("#a7f3d0").text("I M P A C T   S U M M A R Y", 50, 22);
+    doc.font("Helvetica-Bold").fontSize(24).fillColor("#fff").text(donor.name || "Valued Donor", 50, 38);
+    doc.font("Helvetica").fontSize(10).fillColor("#d1fae5").text(org.name, 50, 70);
+
+    let y = 128;
+    doc.font("Helvetica-Bold").fontSize(12).fillColor(INK).text("Giving Summary", 50, y); y += 20;
+    const boxes = [
+      ["Total Given", fmtD(totalGiving)],
+      ["Gifts Given", String(giftCount)],
+      ["Donor Since", firstGiftLabel || "—"],
+      ["Years Giving", yearsGiving != null ? String(Math.max(yearsGiving, 0)) : "—"],
+    ];
+    const bw = (PW - 100) / boxes.length;
+    boxes.forEach(([label, value], i) => {
+      const x = 50 + i * bw;
+      doc.rect(x, y, bw - 8, 56).fill(BG);
+      doc.font("Helvetica").fontSize(7).fillColor(INK3).text(label.toUpperCase(), x + 10, y + 10, { width: bw - 26 });
+      doc.font("Helvetica-Bold").fontSize(15).fillColor(GREEN).text(value, x + 10, y + 26, { width: bw - 26 });
+    });
+    y += 76;
+
+    doc.font("Helvetica-Bold").fontSize(12).fillColor(INK).text("Milestones Reached", 50, y); y += 18;
+    const milestoneLabels = [
+      ...thresholdsReached.map(t => `Crossed $${t.toLocaleString()} in lifetime giving`),
+      ...(yearsGiving != null && yearsGiving >= 1 ? [`${yearsGiving} year${yearsGiving === 1 ? "" : "s"} of continuous giving`] : []),
+    ];
+    if (milestoneLabels.length === 0) {
+      doc.font("Helvetica").fontSize(10).fillColor(INK3).text("No milestones reached yet.", 50, y); y = doc.y + 10;
+    } else {
+      milestoneLabels.forEach(label => {
+        doc.font("Helvetica").fontSize(10).fillColor(INK).text("•  " + label, 50, y, { width: PW - 100 });
+        y = doc.y + 4;
+      });
+      y += 8;
+    }
+
+    doc.font("Helvetica-Bold").fontSize(12).fillColor(INK).text("Your Impact", 50, y); y += 18;
+    if (impactLines.length === 0) {
+      doc.font("Helvetica").fontSize(10).fillColor(INK3).text("Impact translations will appear here once configured for this organization.", 50, y, { width: PW - 100 }); y = doc.y + 10;
+    } else {
+      impactLines.forEach(line => {
+        doc.font("Helvetica").fontSize(10).fillColor(INK).text("•  " + line, 50, y, { width: PW - 100, lineGap: 2 });
+        y = doc.y + 6;
+      });
+      y += 8;
+    }
+
+    if (recentGifts.length > 0) {
+      doc.moveTo(50, y).lineTo(PW - 50, y).strokeColor("#e5e7eb").lineWidth(0.5).stroke(); y += 16;
+      doc.font("Helvetica-Bold").fontSize(12).fillColor(INK).text("Recent Gifts", 50, y); y += 18;
+      recentGifts.forEach((g, i) => {
+        const d = g.date ? new Date(g.date).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : "—";
+        doc.rect(50, y, PW - 100, 19).fill(i % 2 === 0 ? "#ffffff" : BG);
+        doc.font("Helvetica").fontSize(8).fillColor(INK).text(d, 58, y + 5, { width: 90 });
+        doc.fillColor(INK3).text(g.campaign || "General", 155, y + 5, { width: 250 });
+        doc.font("Helvetica-Bold").fillColor(GREEN).text(fmtD(g.amount), PW - 150, y + 5, { width: 100, align: "right" });
+        y += 19;
+      });
+    }
+
+    const range = doc.bufferedPageRange();
+    for (let i = range.start; i < range.start + range.count; i++) {
+      doc.switchToPage(i);
+      doc.font("Helvetica").fontSize(7).fillColor("#9ca3af")
+        .text(`${org.name}  ·  Impact Summary  ·  Generated ${genDate}`, 50, doc.page.height - 28, { width: PW - 130, align: "left" })
+        .text(`${i - range.start + 1} / ${range.count}`, PW - 80, doc.page.height - 28, { width: 30, align: "right" });
+    }
+
+    doc.end();
+  });
+
+  const safeDonor = (donor.name || "donor").replace(/[^a-z0-9]/gi, "-").replace(/-+/g, "-").toLowerCase();
+  res.setHeader("Content-Type", "application/pdf");
+  res.setHeader("Content-Disposition", `attachment; filename="${safeDonor}-impact-summary.pdf"`);
+  res.setHeader("Content-Length", pdfBuffer.length);
+  res.end(pdfBuffer);
+}));
+
 async function autoEnroll() {
   try {
     await ensureMilestoneSequences();

@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useMemo, Component } from "react";
 import Papa from "papaparse";
 import * as XLSX from "xlsx";
-import { apiFetch } from "../api";
+import { apiFetch, API, getToken } from "../api";
 import { useAuth } from "../main";
 import UpgradeModal from "./UpgradeModal";
 
@@ -2235,6 +2235,22 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
     }catch(e){console.error(e);}
   };
 
+  const [impactPdfLoading,setImpactPdfLoading]=useState(false);
+  const downloadImpactSummary=async()=>{
+    setImpactPdfLoading(true);
+    try{
+      const resp=await fetch(`${API}/donors/${donor.id}/impact-summary/pdf`,{headers:{Authorization:`Bearer ${getToken()}`}});
+      if(!resp.ok)throw new Error("Could not generate impact summary");
+      const blob=await resp.blob();
+      const url=URL.createObjectURL(blob);
+      const a=document.createElement("a");
+      a.href=url;a.download=`${donor.name}-impact-summary.pdf`;
+      document.body.appendChild(a);a.click();
+      document.body.removeChild(a);URL.revokeObjectURL(url);
+    }catch(e){console.error(e);}
+    setImpactPdfLoading(false);
+  };
+
   const exportGiftsCSV=()=>{
     const rows=[["Date","Amount","Type","Payment Method","Fund","Ack Sent","Notes"],...giftsFull.map(g=>[g.date,g.amount,g.type,g.payment_method,g.fund_id,g.acknowledgement_sent?"Yes":"No",g.notes])];
     const csv=rows.map(r=>r.map(v=>`"${(v||"").toString().replace(/"/g,'""')}"`).join(",")).join("\n");
@@ -2273,6 +2289,9 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
         <div className="dph-actions" style={{display:"flex",gap:6,flexShrink:0,alignItems:"center"}}>
           <button onClick={()=>setShowGiftModal(true)} style={{background:T.green,border:"none",borderRadius:8,padding:"7px 14px",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer"}}>
             💳 Request Gift
+          </button>
+          <button onClick={downloadImpactSummary} disabled={impactPdfLoading} style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"7px 14px",color:T.ink3,fontSize:13,cursor:impactPdfLoading?"not-allowed":"pointer",opacity:impactPdfLoading?0.6:1}}>
+            {impactPdfLoading?"Generating…":"↓ Impact Summary"}
           </button>
           <button onClick={onEdit} style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"7px 14px",color:T.ink3,fontSize:13,cursor:"pointer"}}>Edit</button>
           {isAdmin&&<button onClick={()=>onDelete(donor.id)} style={{background:"transparent",border:"1px solid #ef444455",borderRadius:8,padding:"7px 14px",color:"#ef4444",fontSize:13,cursor:"pointer"}}>Delete</button>}
