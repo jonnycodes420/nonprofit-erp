@@ -2862,6 +2862,30 @@ app.get("/dashboard/today", requireAuth, wrap(async (req, res) => {
     upsertItem(milestoneItem);
   }
 
+  // Personal-note reminders — the "write a note" sibling of the milestone
+  // drafts above. Priority 82: a hair above milestone-drafted emails (80),
+  // since these represent the org's highest-value/most-personal moments by
+  // design (see isNoteMoment()).
+  const noteReminderRows = await query(`
+    SELECT nr.id AS reminder_id, nr.donor_id, nr.talking_points, nr.created_at, d.name AS donor_name, d.total_giving
+    FROM note_reminders nr
+    JOIN donors d ON d.id = nr.donor_id
+    WHERE nr.org_id = ? AND nr.status = 'pending'
+    ORDER BY nr.created_at DESC
+    LIMIT 5
+  `, [orgId]);
+
+  for (const n of noteReminderRows) {
+    const points = typeof n.talking_points === "string" ? JSON.parse(n.talking_points) : n.talking_points;
+    upsertItem({
+      donorId: n.donor_id, donorName: n.donor_name,
+      reason: "Worth a personal note — see talking points",
+      priority: 82, action: "note",
+      totalGiving: parseFloat(n.total_giving) || 0,
+      reminderId: n.reminder_id, talkingPoints: points || [],
+    });
+  }
+
   items.sort((a, b) => b.priority - a.priority);
   res.json(items.slice(0, 10));
 }));
@@ -4843,6 +4867,29 @@ async function processSequences() {
           const rows = await query("SELECT id, name, email FROM donors WHERE id = ? AND org_id = ?", [enr.donor_id, enr.org_id]);
           recipient = rows[0];
         }
+        // "Write a note" reminders are handled before the email-presence
+        // check below — they're an in-app nudge for staff to write a real
+        // note, not an email send, so a donor without an email on file can
+        // still get one.
+        if (enr.seq_trigger === "milestone") {
+          const metaRaw0 = enr.metadata;
+          const meta0 = metaRaw0 ? (typeof metaRaw0 === "string" ? JSON.parse(metaRaw0) : metaRaw0) : {};
+          if (isNoteMoment(meta0.milestone_key)) {
+            try {
+              const points = await computeNoteTalkingPoints(enr.donor_id, enr.org_id, meta0);
+              if (points) {
+                await run(
+                  `INSERT INTO note_reminders (id, org_id, donor_id, sequence_enrollment_id, milestone_key, talking_points, status)
+                   VALUES (?,?,?,?,?,?,'pending')`,
+                  ["note_" + uuid().slice(0, 8), enr.org_id, enr.donor_id, enr.id, meta0.milestone_key || null, JSON.stringify(points)]
+                );
+                console.log(`[note-reminder] queued for donor ${enr.donor_id} (${meta0.milestone_key})`);
+              }
+            } catch (e) { console.error("[note-reminder] failed:", e.message); }
+            await run("UPDATE sequence_enrollments SET status='completed', completed_at=NOW() WHERE id=?", [enr.id]);
+            continue;
+          }
+        }
         if (!recipient || !recipient.email) {
           const nxt = steps[enr.current_step + 1];
           if (nxt) {
@@ -4864,7 +4911,9 @@ async function processSequences() {
           );
           continue;
         }
-        // Milestone emails default to staff review rather than auto-send — the
+        // Only non-note milestone moments reach here — note moments already
+        // branched off and `continue`d above. Milestone emails default to
+        // staff review rather than auto-send — the
         // AI drafts it, it lands in milestone_drafts for a human to approve/edit
         // (see POST /milestone-drafts/:id/send), and the enrollment is marked
         // complete here so the engine doesn't keep re-processing it. This is a
@@ -5019,6 +5068,77 @@ async function ensureMilestoneSequences() {
       ["ss_" + uuid().slice(0, 8), seqId, 0, 0, "Milestone email (AI-drafted per donor)", ""]
     );
   }
+}
+
+// Which milestones get a human-written "write a note" nudge instead of an
+// AI-drafted email: the two highest dollar thresholds (real major-gift
+// moments) and every giving anniversary (inherently personal/relational —
+// worth a genuine handwritten touch regardless of dollar amount). Everything
+// smaller/routine ($500/$1,000/$2,500 crossings) keeps the existing
+// AI-drafted-email flow, which is efficient and already staff-reviewed
+// before sending. This is a product judgment call, not a technical one —
+// see the Phase 2 commit message for the full reasoning.
+const NOTE_MILESTONE_KEYS = new Set(["threshold_10000", "threshold_5000"]);
+function isNoteMoment(milestoneKey) {
+  if (!milestoneKey) return false;
+  return NOTE_MILESTONE_KEYS.has(milestoneKey) || milestoneKey.startsWith("anniversary_");
+}
+
+// Computes exactly 3 short, specific, real-data talking points for a
+// "write a note" reminder. Deliberately NOT an AI call — no note content is
+// ever generated here, only facts pulled straight from the donor record for
+// a staff member to write their own note from.
+async function computeNoteTalkingPoints(donorId, orgId, meta) {
+  const donorRows = await query("SELECT * FROM donors WHERE id = ? AND org_id = ?", [donorId, orgId]);
+  const donor = donorRows[0];
+  if (!donor) return null;
+  const totalGiving = Number(donor.total_giving) || 0;
+  const points = [];
+
+  // 1. The milestone itself
+  if (meta.milestone_type === "anniversary") {
+    points.push(`This marks their ${meta.label || "giving"} anniversary with your organization.`);
+  } else {
+    points.push(`Just crossed $${(meta.threshold || 0).toLocaleString()} in total lifetime giving ($${totalGiving.toLocaleString()} total).`);
+  }
+
+  // 2. A personal detail — donor.notes first, else the most recent
+  // interaction note on file
+  let personalDetail = donor.notes && donor.notes.trim() ? donor.notes.trim() : null;
+  if (!personalDetail) {
+    const lastNoteRows = await query(
+      "SELECT note FROM interactions WHERE donor_id = ? AND org_id = ? AND note IS NOT NULL AND note != '' ORDER BY date DESC LIMIT 1",
+      [donorId, orgId]
+    );
+    personalDetail = lastNoteRows[0]?.note || null;
+  }
+  points.push(personalDetail
+    ? `From their file: "${personalDetail.slice(0, 140)}${personalDetail.length > 140 ? "…" : ""}"`
+    : "No personal notes on file yet — worth asking what first drew them to this cause.");
+
+  // 3. Something time-relevant — when the milestone itself is already an
+  // anniversary (point 1), use recency of their last gift here instead so
+  // this point doesn't just repeat "X years" a second time.
+  if (meta.milestone_type === "anniversary") {
+    points.push(donor.last_gift_date
+      ? `Most recent gift: $${(Number(donor.last_gift_amount) || 0).toLocaleString()} on ${new Date(donor.last_gift_date).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })}.`
+      : `${donor.gift_count || 0} gift(s) total.`);
+  } else if (donor.first_gift_date) {
+    const first = new Date(donor.first_gift_date);
+    if (!isNaN(first.getTime())) {
+      const years = Math.floor((Date.now() - first.getTime()) / (365.25 * 86400000));
+      points.push(years >= 1
+        ? `They've been giving for ${years} year${years === 1 ? "" : "s"} — since ${first.toLocaleDateString("en-US", { month: "long", year: "numeric" })}.`
+        : `They made their first gift on ${first.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })}.`);
+    }
+  }
+  if (points.length < 3) {
+    points.push(donor.last_gift_date
+      ? `Last gift: $${(Number(donor.last_gift_amount) || 0).toLocaleString()} on ${new Date(donor.last_gift_date).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })}.`
+      : `${donor.gift_count || 0} gift(s) total.`);
+  }
+
+  return points.slice(0, 3);
 }
 
 // Generates a warm, specific, non-gamified thank-you draft for one milestone.
@@ -5564,6 +5684,54 @@ app.post("/milestone-drafts/:id/send", requireAuth, requireAdmin, checkWriteAcce
     ["i_" + uuid().slice(0, 8), req.user.orgId, draft.donor_id, `Milestone email: ${draft.subject}`, today]
   ).catch(() => {});
 
+  res.json({ success: true });
+}));
+
+// ── Personal-note reminders (non-AI-drafted sibling of milestone_drafts) ───
+app.get("/note-reminders", requireAuth, wrap(async (req, res) => {
+  const status = req.query.status || "pending";
+  const rows = await query(
+    `SELECT nr.*, d.name AS donor_name, d.email AS donor_email, d.total_giving AS donor_total_giving
+     FROM note_reminders nr
+     JOIN donors d ON d.id = nr.donor_id
+     WHERE nr.org_id = ? AND nr.status = ?
+     ORDER BY nr.created_at DESC`,
+    [req.user.orgId, status]
+  );
+  res.json(rows.map(r => ({ ...r, talking_points: typeof r.talking_points === "string" ? JSON.parse(r.talking_points) : r.talking_points })));
+}));
+
+// Marks the reminder sent and logs a stewardship interaction confirming a
+// personal note went out — never generates or stores any note content.
+app.post("/note-reminders/:id/send", requireAuth, wrap(async (req, res) => {
+  const rows = await query(
+    "SELECT * FROM note_reminders WHERE id=? AND org_id=? AND status='pending'",
+    [req.params.id, req.user.orgId]
+  );
+  if (!rows.length) return res.status(404).json({ error: "Not found or already handled" });
+  const reminder = rows[0];
+  const points = typeof reminder.talking_points === "string" ? JSON.parse(reminder.talking_points) : reminder.talking_points;
+
+  await run(
+    "UPDATE note_reminders SET status='sent', sent_at=NOW(), sent_by=? WHERE id=?",
+    [req.user.userId, reminder.id]
+  );
+  const today = new Date().toISOString().slice(0, 10);
+  await run(
+    "INSERT INTO interactions (id, org_id, donor_id, type, note, date, metadata) VALUES (?, ?, ?, 'stewardship', ?, ?, ?)",
+    ["i_" + uuid().slice(0, 8), req.user.orgId, reminder.donor_id, "Personal note sent", today,
+     JSON.stringify({ stewardship_type: "personal_note", detail: (points || []).join(" · ") })]
+  ).catch(() => {});
+
+  res.json({ success: true });
+}));
+
+app.post("/note-reminders/:id/dismiss", requireAuth, wrap(async (req, res) => {
+  const affected = await run(
+    "UPDATE note_reminders SET status='dismissed' WHERE id=? AND org_id=? AND status='pending'",
+    [req.params.id, req.user.orgId]
+  );
+  if (!affected.changes) return res.status(404).json({ error: "Not found or already handled" });
   res.json({ success: true });
 }));
 

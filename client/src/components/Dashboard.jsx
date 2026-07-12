@@ -71,7 +71,17 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
     setBusyDonorId(null);
   };
 
+  const markNoteSent=async(item)=>{
+    setBusyDonorId(item.donorId);
+    try{
+      await apiFetch(`/note-reminders/${item.reminderId}/send`,{method:"POST"});
+      setQueueItems(prev=>prev.filter(i=>i.reminderId!==item.reminderId));
+    }catch(e){alert(e.message||"Could not mark note sent");}
+    setBusyDonorId(null);
+  };
+
   const handleQueueAction=(item)=>{
+    if(item.action==="note")return markNoteSent(item);
     if(item.action==="milestone")return onNavigate("communications",{subtab:"milestones",highlightDraftId:item.draftId});
     if(item.action==="lapsed")return onNavigate("donors",{view:"reengage"});
     if(item.taskId)return completeTask(item);
@@ -79,6 +89,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
   };
 
   const actionLabel=(item)=>{
+    if(item.action==="note")return busyDonorId===item.donorId?"Saving…":"Mark sent ✓";
     if(item.action==="milestone")return "Review draft →";
     if(item.action==="lapsed")return "Re-engage →";
     if(item.taskId)return busyDonorId===item.donorId?"Saving…":"Mark done ✓";
@@ -87,7 +98,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
     return "Log call →";
   };
 
-  const ROW_COLOR={milestone:T.gold,lapsed:T.terracotta,thank:T.green,email:"#3b82f6"};
+  const ROW_COLOR={note:"#8b6f47",milestone:T.gold,lapsed:T.terracotta,thank:T.green,email:"#3b82f6"};
   const rowColor=(item)=>item.taskId?"#8b5cf6":(ROW_COLOR[item.action]||T.greenMid);
 
   const openSetGoal=()=>{
@@ -211,7 +222,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
               const busy=busyDonorId===item.donorId;
               return(
                 <div key={item.donorId+"_"+item.action} className="dash-row dash-queue-row" style={{
-                  display:"flex",alignItems:"center",gap:14,padding:"14px 20px",
+                  display:"flex",alignItems:"flex-start",gap:14,padding:"14px 20px",
                   borderBottom:i<visibleQueue.length-1?"1px solid "+T.bg3:"none",
                   borderLeft:"3px solid "+color,
                 }}>
@@ -220,7 +231,13 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
                   </div>
                   <div style={{flex:1,minWidth:0}}>
                     <div style={{fontSize:13,fontWeight:700,color:T.ink}}>{item.donorName}</div>
-                    <div style={{fontSize:12,color:T.ink3,marginTop:2,lineHeight:1.4}}>{item.reason}</div>
+                    {item.action==="note"&&Array.isArray(item.talkingPoints)?(
+                      <ul style={{margin:"4px 0 0",padding:"0 0 0 16px",fontSize:12,color:T.ink3,lineHeight:1.5}}>
+                        {item.talkingPoints.map((p,pi)=><li key={pi} style={{marginBottom:2}}>{p}</li>)}
+                      </ul>
+                    ):(
+                      <div style={{fontSize:12,color:T.ink3,marginTop:2,lineHeight:1.4}}>{item.reason}</div>
+                    )}
                   </div>
                   <button onClick={()=>handleQueueAction(item)} disabled={busy||(item.taskId&&isReadOnly)}
                     title={item.taskId&&isReadOnly?"Reactivate your subscription to make changes.":undefined}

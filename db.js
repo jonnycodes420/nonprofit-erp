@@ -692,6 +692,26 @@ async function initSchema() {
     )
   `);
 
+  // Personal-note reminders — the non-AI-drafted sibling of milestone_drafts.
+  // Major milestones/anniversaries get a "write a note" nudge with real,
+  // computed talking points instead of a drafted email; see isNoteMoment()
+  // and computeNoteTalkingPoints() in server.js. No note content is ever
+  // generated or stored here — talking_points are reference facts only.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS note_reminders (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL,
+      donor_id TEXT NOT NULL,
+      sequence_enrollment_id TEXT,
+      milestone_key TEXT,
+      talking_points JSONB NOT NULL,
+      status TEXT DEFAULT 'pending',
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      sent_at TIMESTAMPTZ,
+      sent_by TEXT
+    )
+  `);
+
   // Org-scoped fundraising goal for the home screen's goal banner. Only one
   // is "active" at a time — GET /goals/active picks the most recently
   // created row whose period contains today, so creating a new one that
@@ -1165,16 +1185,41 @@ async function seedData() {
      "Nathaniel — a thank you at $1,000",
      "Nathaniel — you've now given $1,050 total, and that's enough to fund three after-school arts workshops for our students. I don't think we've properly thanked you for how consistent you've been. It matters more than you probably realize. Thank you.",
      "pending_review"],
-    ["mdseed_03", orgId, "dseed_09", null, "threshold_10000",
-     "Elena — $12,500 and five scholarships",
-     "Elena — your giving has now reached $12,500 with us, which has covered five full-year arts program scholarships for students who wouldn't otherwise have this kind of access. That's a real, tangible difference in five young people's lives, and I wanted you to hear it directly from us rather than just see it on a receipt. Thank you.",
-     "pending_review"],
+    // Elena's $10,000 crossing is NOT here — per the Phase 2 note/email split
+    // (isNoteMoment() in server.js), $10k+ thresholds get a "write a note"
+    // reminder instead of an AI-drafted email. See noteReminders below.
   ];
   for (const m of milestoneDrafts) {
     await pool.query(
       `INSERT INTO milestone_drafts (id,org_id,donor_id,sequence_enrollment_id,milestone_key,subject,body,status)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT (id) DO NOTHING`,
       m
+    );
+  }
+
+  // Personal-note reminders — real, computed talking points (not AI-drafted
+  // text) for the org's highest-value/most-personal milestone moments.
+  // Mirrors the shape computeNoteTalkingPoints() would actually produce.
+  const elenaFirst = new Date(seedNow); elenaFirst.setDate(elenaFirst.getDate() - 1000);
+  const elenaYears = Math.floor(1000 / 365.25);
+  const julianLastGift = new Date(seedNow); julianLastGift.setDate(julianLastGift.getDate() - 150);
+  const noteReminders = [
+    ["notereminder_01", orgId, "dseed_09", null, "threshold_10000", JSON.stringify([
+      "Just crossed $10,000 in total lifetime giving ($12,500 total).",
+      'From their file: "Just crossed $10,000 lifetime giving. High-touch relationship, board-adjacent."',
+      `They've been giving for ${elenaYears} years — since ${elenaFirst.toLocaleDateString("en-US",{month:"long",year:"numeric"})}.`,
+    ]), "pending"],
+    ["notereminder_02", orgId, "dseed_06", null, "anniversary_year_2", JSON.stringify([
+      "This marks their 2-year anniversary with your organization.",
+      'From their file: "Consistent annual donor, due for this year\'s ask conversation."',
+      `Most recent gift: $5,000 on ${julianLastGift.toLocaleDateString("en-US",{month:"long",day:"numeric",year:"numeric"})}.`,
+    ]), "pending"],
+  ];
+  for (const n of noteReminders) {
+    await pool.query(
+      `INSERT INTO note_reminders (id,org_id,donor_id,sequence_enrollment_id,milestone_key,talking_points,status)
+       VALUES ($1,$2,$3,$4,$5,$6,$7) ON CONFLICT (id) DO NOTHING`,
+      n
     );
   }
 
