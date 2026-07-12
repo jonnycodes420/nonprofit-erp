@@ -82,9 +82,21 @@ export default function WelcomePage() {
   const [setupItems, setSetupItems] = useState([]);
   const [loadingSample, setLoadingSample] = useState(false);
 
+  // Mount-only guard: if someone lands on /welcome while already onboarded,
+  // send them to their dashboard. Deliberately NOT watching `auth` reactively
+  // (the original version did, via `[auth]`) — refreshOrg() inside
+  // runFinish() below updates the auth context with onboarding_complete:1
+  // partway through step 5, and a reactive effect fired on that update
+  // immediately, hijacking the navigation before the "ready" screen (and
+  // its conditional "Load sample data" button) ever rendered. Confirmed
+  // live: this same latent bug existed in the original 3-step flow too, but
+  // was invisible there because both of its step-2 buttons led to
+  // /dashboard anyway — it only became a visible, real bug once "ready" had
+  // a meaningful conditional choice on it.
   useEffect(() => {
     if (auth?.org?.onboarding_complete) navigate("/dashboard", { replace: true });
-  }, [auth]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // A suggested goal, computed from whatever just got imported — donors who
   // read as lapsed (real win-back opportunity) take priority over a flat
