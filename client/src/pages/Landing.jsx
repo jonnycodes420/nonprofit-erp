@@ -87,10 +87,10 @@ const IconFileText = () => (
     <path d="M9 13h6M9 16.5h6M9 9.5h2" />
   </IconWrap>
 );
-const IconDollarSign = () => (
+const IconMessageHistory = () => (
   <IconWrap>
-    <path d="M12 2.5v19" />
-    <path d="M16.8 6.8c0-2.1-2.2-3.6-4.8-3.6s-4.8 1.7-4.8 3.6c0 2 2.2 3 4.8 3.5 2.8.6 4.8 1.6 4.8 3.6 0 2.1-2.2 3.6-4.8 3.6s-4.8-1.5-4.8-3.6" />
+    <path d="M4 5.5a2 2 0 012-2h12a2 2 0 012 2v9a2 2 0 01-2 2H9l-4.5 3.5V16.5H6a2 2 0 01-2-2v-9z" />
+    <path d="M7.5 9h9M7.5 12h6" />
   </IconWrap>
 );
 const IconMail = () => (
@@ -464,9 +464,9 @@ export default function Landing() {
                   desc: "Track every grant from prospect to award. Get deadline reminders before it's too late. Draft your LOI in seconds with AI that knows your mission.",
                 },
                 {
-                  icon: <IconDollarSign />,
-                  title: "Finance & Reporting",
-                  desc: "Replace the five spreadsheets you use for finance with one tool that actually talks to your donor data. Board report in 45 seconds, not two days.",
+                  icon: <IconMessageHistory />,
+                  title: "Every Conversation, Remembered",
+                  desc: "Connect your Gmail once. Every email you send or receive with a donor auto-logs to their timeline — nothing lost to a staff transition or buried in an old inbox thread.",
                 },
                 {
                   icon: <IconMail />,
