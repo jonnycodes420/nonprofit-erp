@@ -1318,6 +1318,16 @@ app.get("/donors/custom-field-values/all", requireAuth, wrap(async (req, res) =>
   res.json(rows.map(r => ({ donorId: r.donor_id, fieldId: r.field_id, value: r.value })));
 }));
 
+// Pipeline stage counts — reuses the same grouping the Dashboard's Donor
+// Pipeline/funnel widgets compute, exposed as its own callable endpoint.
+app.get("/donors/stage-counts", requireAuth, wrap(async (req, res) => {
+  const rows = await query(
+    "SELECT stage, COUNT(*) as count, COALESCE(SUM(total_giving),0) as total FROM donors WHERE org_id = ? AND deleted_at IS NULL GROUP BY stage",
+    [req.user.orgId]
+  );
+  res.json(rows.map(r => ({ stage: r.stage || "cultivate", count: parseInt(r.count, 10), total: parseFloat(r.total) || 0 })));
+}));
+
 app.get("/donors/:id", requireAuth, wrap(async (req, res) => {
   const rows = await query(
     "SELECT * FROM donors WHERE id = ? AND org_id = ?",
@@ -2776,7 +2786,7 @@ app.get("/dashboard/today", requireAuth, wrap(async (req, res) => {
 
   // Overdue donor-linked tasks
   const dueTasks = await query(`
-    SELECT t.id, t.title, t.due, t.donor_id, d.name AS donor_name, d.total_giving
+    SELECT t.id, t.title, t.due, t.priority AS task_priority, t.type AS task_type, t.donor_id, d.name AS donor_name, d.total_giving
     FROM tasks t
     JOIN donors d ON d.id = t.donor_id
     WHERE t.org_id = ? AND done=0 AND t.due <= ?
@@ -2794,11 +2804,95 @@ app.get("/dashboard/today", requireAuth, wrap(async (req, res) => {
       priority: 90, action: "call",
       totalGiving: parseFloat(t.total_giving) || 0,
       daysOverdue,
+      taskId: t.id, taskTitle: t.title, taskDue: t.due, taskPriority: t.task_priority, taskType: t.task_type,
+    });
+  }
+
+  // Milestone-ready donors — pending AI-drafted stewardship emails awaiting
+  // staff review (see milestone_drafts / retention feature). Unified into
+  // the same ranked queue as lapsed/no-contact/overdue-task reasons so this
+  // one endpoint is the single source for "needs your attention".
+  const milestoneRows = await query(`
+    SELECT md.id AS draft_id, md.donor_id, md.subject, md.created_at, d.name AS donor_name, d.total_giving
+    FROM milestone_drafts md
+    JOIN donors d ON d.id = md.donor_id
+    WHERE md.org_id = ? AND md.status = 'pending_review'
+    ORDER BY md.created_at DESC
+    LIMIT 5
+  `, [orgId]);
+
+  for (const m of milestoneRows) {
+    if (items.some(i => i.donorId === m.donor_id)) continue;
+    items.push({
+      donorId: m.donor_id, donorName: m.donor_name,
+      reason: `Milestone email drafted — "${m.subject}" ready for review`,
+      priority: 80, action: "milestone",
+      totalGiving: parseFloat(m.total_giving) || 0,
+      draftId: m.draft_id,
     });
   }
 
   items.sort((a, b) => b.priority - a.priority);
   res.json(items.slice(0, 10));
+}));
+
+// ── Fundraising goals (home screen goal banner) ─────────────────────────────
+app.get("/goals/active", requireAuth, wrap(async (req, res) => {
+  const today = new Date().toISOString().split("T")[0];
+  const rows = await query(
+    "SELECT * FROM fundraising_goals WHERE org_id = ? AND period_start <= ? AND period_end >= ? ORDER BY created_at DESC LIMIT 1",
+    [req.user.orgId, today, today]
+  );
+  if (!rows.length) return res.json(null);
+  const goal = rows[0];
+  const goalAmount = parseFloat(goal.goal_amount) || 0;
+
+  let currentAmount = 0;
+  if (goal.goal_type === "lapsed_recovery") {
+    // A gift counts toward recovery when it's a donor's most recent gift in
+    // the period AND it followed a gap of more than 365 days since their
+    // prior gift — i.e. it's the gift that actually pulled them back from
+    // lapsed, reconstructed from gift history rather than a stage-history
+    // table (which doesn't exist).
+    const rows2 = await query(
+      `SELECT COALESCE(SUM(g.amount),0) AS total
+       FROM gifts g
+       JOIN donors d ON d.id = g.donor_id
+       WHERE g.org_id = ? AND g.date >= ? AND g.date <= ? AND g.date = d.last_gift_date
+         AND (SELECT MAX(g2.date) FROM gifts g2 WHERE g2.donor_id = d.id AND g2.date < g.date) IS NOT NULL
+         AND g.date::date - (SELECT MAX(g2.date) FROM gifts g2 WHERE g2.donor_id = d.id AND g2.date < g.date)::date > 365`,
+      [req.user.orgId, goal.period_start, goal.period_end]
+    );
+    currentAmount = parseFloat(rows2[0]?.total) || 0;
+  } else {
+    const rows2 = await query(
+      "SELECT COALESCE(SUM(amount),0) AS total FROM gifts WHERE org_id = ? AND date >= ? AND date <= ?",
+      [req.user.orgId, goal.period_start, goal.period_end]
+    );
+    currentAmount = parseFloat(rows2[0]?.total) || 0;
+  }
+
+  const percent = goalAmount > 0 ? Math.min(100, Math.round((currentAmount / goalAmount) * 100)) : 0;
+  res.json({
+    label: goal.label, goalType: goal.goal_type, goalAmount, currentAmount, percent,
+    periodStart: goal.period_start, periodEnd: goal.period_end,
+  });
+}));
+
+app.post("/goals", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
+  const { label, goalAmount, goalType, periodStart, periodEnd } = req.body;
+  if (!label || !goalAmount || !goalType || !periodStart || !periodEnd) {
+    return res.status(400).json({ error: "label, goalAmount, goalType, periodStart, and periodEnd required" });
+  }
+  if (!["lapsed_recovery", "total_raised"].includes(goalType)) {
+    return res.status(400).json({ error: "goalType must be lapsed_recovery or total_raised" });
+  }
+  const id = "goal_" + uuid().slice(0, 8);
+  await run(
+    "INSERT INTO fundraising_goals (id,org_id,period_start,period_end,goal_type,goal_amount,label) VALUES (?,?,?,?,?,?,?)",
+    [id, req.user.orgId, periodStart, periodEnd, goalType, parseFloat(goalAmount), label]
+  );
+  res.status(201).json({ id });
 }));
 
 app.get("/dashboard", requireAuth, wrap(async (req, res) => {

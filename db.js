@@ -691,6 +691,24 @@ async function initSchema() {
       sent_at TIMESTAMPTZ
     )
   `);
+
+  // Org-scoped fundraising goal for the home screen's goal banner. Only one
+  // is "active" at a time — GET /goals/active picks the most recently
+  // created row whose period contains today, so creating a new one that
+  // overlaps today effectively replaces the prior active goal without
+  // needing a delete/deactivate step.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS fundraising_goals (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL,
+      period_start TEXT NOT NULL,
+      period_end TEXT NOT NULL,
+      goal_type TEXT NOT NULL,
+      goal_amount NUMERIC NOT NULL,
+      label TEXT NOT NULL,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
 }
 
 async function seedData() {
@@ -1159,6 +1177,14 @@ async function seedData() {
       m
     );
   }
+
+  // A real active fundraising goal so the home screen's goal banner has
+  // something to show on first load instead of the empty state.
+  await pool.query(
+    `INSERT INTO fundraising_goals (id,org_id,period_start,period_end,goal_type,goal_amount,label)
+     VALUES ($1,$2,$3,$4,$5,$6,$7) ON CONFLICT (id) DO NOTHING`,
+    ["goalseed_01", orgId, seedAgo(30), seedFromNow(60), "total_raised", 25000, "Raise $25,000 this quarter"]
+  );
 }
 
 // ── Blank org seeding (called from onboarding flow) ───────────────────────────
