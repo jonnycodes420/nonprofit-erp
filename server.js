@@ -2822,14 +2822,20 @@ app.get("/dashboard/today", requireAuth, wrap(async (req, res) => {
   `, [orgId]);
 
   for (const m of milestoneRows) {
-    if (items.some(i => i.donorId === m.donor_id)) continue;
-    items.push({
+    const milestoneItem = {
       donorId: m.donor_id, donorName: m.donor_name,
       reason: `Milestone email drafted — "${m.subject}" ready for review`,
       priority: 80, action: "milestone",
       totalGiving: parseFloat(m.total_giving) || 0,
       draftId: m.draft_id,
-    });
+    };
+    // A milestone draft already covers "say thank you" (and more) — let it
+    // win over a lower-priority reason for the same donor (e.g. a plain
+    // unacked-gift "thank" item at priority 75) rather than losing the
+    // dedup race just because that bucket happened to run first.
+    const existingIdx = items.findIndex(i => i.donorId === m.donor_id);
+    if (existingIdx === -1) items.push(milestoneItem);
+    else if (items[existingIdx].priority < milestoneItem.priority) items[existingIdx] = milestoneItem;
   }
 
   items.sort((a, b) => b.priority - a.priority);
