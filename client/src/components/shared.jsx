@@ -200,9 +200,11 @@ export function GlobalStyles() {
       .dash-briefing-hdr>div:last-child{align-self:flex-start!important;}
       /* Goal banner: keep full-width and prominent */
       .dash-goal-banner{padding:16px 18px!important;}
-      /* Queue rows: stack action button under the reason on narrow screens */
+      /* Queue rows: keep avatar+name+reason on one line, force the action
+         button onto its own full-width line below (flex-basis:100% forces
+         a wrap point in a flex-wrap row) instead of squeezing the text. */
       .dash-queue-row{flex-wrap:wrap!important;padding:12px 14px!important;}
-      .dash-queue-action{margin-left:52px!important;}
+      .dash-queue-action{flex-basis:100%!important;margin-top:10px!important;padding:10px!important;text-align:center!important;}
 
       /* Donors toolbar */
       .donors-toolbar{flex-direction:column!important;align-items:stretch!important;gap:8px!important;}
