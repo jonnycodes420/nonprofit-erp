@@ -3626,16 +3626,16 @@ function FilterBar({filters,onChange,customFields,cfFilters,onCfChange}){
 }
 
 // ── Donors ─────────────────────────────────────────────────────────────────
-export function Donors({data,setData,isReadOnly=false}){
+export function Donors({data,setData,isReadOnly=false,initialView,initialLogDonorId,initialStageFilter,onIntentConsumed}){
   const{auth}=useAuth();
   const isAdmin=auth?.user?.role==="admin";
   const userId=auth?.user?.id||"";
   const userName=auth?.user?.name||auth?.user?.email||"";
   const lapsedCount=data.donors.filter(d=>d.stage==="lapsed"||(d.lastGift&&daysDiff(d.lastGift)>365)).length;
-  const[view,setView]=useState("directory");
+  const[view,setView]=useState(initialView||"directory");
   const[search,setSearch]=useState("");
   const[selected,setSelected]=useState(null);
-  const[logTarget,setLogTarget]=useState(null);
+  const[logTarget,setLogTarget]=useState(()=>initialLogDonorId?data.donors.find(d=>d.id===initialLogDonorId)||null:null);
   const[editTarget,setEditTarget]=useState(null);
   const[followUpTarget,setFollowUpTarget]=useState(null);
   const[aiMap,setAiMap]=useState({});const[loadingKey,setLoadingKey]=useState(null);
@@ -3649,11 +3649,15 @@ export function Donors({data,setData,isReadOnly=false}){
   const[customFields,setCustomFields]=useState([]);
   const[cfValues,setCfValues]=useState({});
   const[cfFilters,setCfFilters]=useState({});
-  const[dirStage,setDirStage]=useState("");
+  const[dirStage,setDirStage]=useState(initialStageFilter||"");
   const[dirAssignee,setDirAssignee]=useState("");
   const[assignTarget,setAssignTarget]=useState(null);
   const[sampleStatus,setSampleStatus]=useState(null);
   const[sampleLoading,setSampleLoading]=useState(false);
+
+  useEffect(()=>{
+    if((initialView||initialLogDonorId||initialStageFilter)&&onIntentConsumed)onIntentConsumed();
+  },[]);
 
   const filtered=data.donors
     .filter(d=>!search||(d.name+d.email).toLowerCase().includes(search.toLowerCase()))

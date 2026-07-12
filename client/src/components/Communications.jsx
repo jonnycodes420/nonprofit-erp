@@ -642,12 +642,13 @@ function SequencesPanel({ data }) {
 // AI-drafted giving-milestone/anniversary emails, queued here for a human to
 // approve/edit/send rather than going out automatically — see
 // processSequences()'s 'milestone' branch in server.js for why.
-function MilestoneDraftsPanel() {
+function MilestoneDraftsPanel({ highlightDraftId }) {
   const [drafts, setDrafts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [editingId, setEditingId] = useState(null);
   const [editForm, setEditForm] = useState({ subject: "", body: "" });
   const [busyId, setBusyId] = useState(null);
+  const rowRefs = useRef({});
 
   const load = async () => {
     setLoading(true);
@@ -655,6 +656,12 @@ function MilestoneDraftsPanel() {
     setLoading(false);
   };
   useEffect(() => { load(); }, []);
+
+  useEffect(() => {
+    if (!highlightDraftId || loading) return;
+    const el = rowRefs.current[highlightDraftId];
+    if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, [highlightDraftId, loading]);
 
   const startEdit = (d) => { setEditingId(d.id); setEditForm({ subject: d.subject, body: d.body }); };
   const cancelEdit = () => { setEditingId(null); };
@@ -709,7 +716,7 @@ function MilestoneDraftsPanel() {
       )}
 
       {drafts.map(d => (
-        <div key={d.id} style={{ background: T.white, border: "1px solid " + T.bg3, borderRadius: 12, padding: 18 }}>
+        <div key={d.id} ref={el => { rowRefs.current[d.id] = el; }} style={{ background: T.white, border: (highlightDraftId === d.id ? "2px solid " + T.gold : "1px solid " + T.bg3), boxShadow: highlightDraftId === d.id ? "0 0 0 3px " + T.gold + "22" : "none", borderRadius: 12, padding: 18, transition: "box-shadow 0.3s" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 10 }}>
             <div>
               <div style={{ fontSize: 15, fontWeight: 700, color: T.ink }}>{d.donor_name}</div>
@@ -749,7 +756,7 @@ function MilestoneDraftsPanel() {
 }
 
 // ── Main component ────────────────────────────────────────────────────────────
-export function Communications({ data, isReadOnly, initialNav, onInitialNavConsumed }) {
+export function Communications({ data, isReadOnly, initialNav, onInitialNavConsumed, highlightDraftId }) {
   const { auth } = useAuth();
   const isAdmin = auth?.user?.role === "admin";
 
@@ -1444,7 +1451,7 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
         {nav === "sequences" && <SequencesPanel data={data} />}
 
         {/* ── MILESTONE DRAFTS ──────────────────────────────────────────────── */}
-        {nav === "milestones" && <MilestoneDraftsPanel />}
+        {nav === "milestones" && <MilestoneDraftsPanel highlightDraftId={highlightDraftId}/>}
       </div>
     </div>
   );

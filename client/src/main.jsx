@@ -20,7 +20,6 @@ import Landing from "./pages/Landing";
 import Donate from "./pages/Donate";
 import Pricing from "./pages/Pricing";
 import AdminDashboard from "./pages/AdminDashboard";
-import TodayPage from "./pages/TodayPage";
 import ForgotPasswordPage from "./pages/ForgotPasswordPage";
 import ResetPasswordPage from "./pages/ResetPasswordPage";
 import TermsPage from "./pages/TermsPage";
@@ -82,7 +81,7 @@ function PublicOnly({ children }) {
   if (auth) {
     if (auth.user?.isSuperAdmin) return <Navigate to="/admin" replace />;
     if (!auth.org?.onboarding_complete) return <Navigate to="/welcome" replace />;
-    return <Navigate to="/today" replace />;
+    return <Navigate to="/dashboard" replace />;
   }
   return children;
 }
@@ -107,7 +106,7 @@ function Root() {
           <Route path="/login"     element={<PublicOnly><LoginPage /></PublicOnly>} />
           <Route path="/signup"    element={<PublicOnly><SignupPage /></PublicOnly>} />
           <Route path="/welcome"   element={<RequireAuth><WelcomePage /></RequireAuth>} />
-          <Route path="/today"     element={<RequireOnboarded><TodayPage /></RequireOnboarded>} />
+          <Route path="/today"     element={<Navigate to="/dashboard" replace />} />
           <Route path="/dashboard" element={<RequireOnboarded><App /></RequireOnboarded>} />
           <Route path="/invite/:token" element={<InvitePage />} />
           <Route path="/pricing"   element={<Pricing />} />

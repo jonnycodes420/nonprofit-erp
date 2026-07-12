@@ -371,11 +371,15 @@ function GrantKanban({ grants, onUpdate, onAddClick, onSelectGrant, isReadOnly }
 }
 
 // ── Grants ─────────────────────────────────────────────────────────────────
-export function Grants({data,setData,isReadOnly=false}) {
+export function Grants({data,setData,isReadOnly=false,initialGrantId,onIntentConsumed}) {
   const {auth}=useAuth();
   const isAdmin=auth?.user?.role==="admin";
   const [subTab,setSubTab]=useState("pipeline");
-  const [selected,setSelected]=useState(null);
+  const [selected,setSelected]=useState(()=>initialGrantId?data.grants.find(g=>g.id===initialGrantId)||null:null);
+
+  useEffect(()=>{
+    if(initialGrantId&&onIntentConsumed)onIntentConsumed();
+  },[]);
   const [prospectAI,setProspectAI]=useState(""); const [prospectLoading,setProspectLoading]=useState(false);
   const [showAdd,setShowAdd]=useState(false);
   const [newGrant,setNewGrant]=useState({funder:"",program:"",amount:"",status:"prospecting",deadline:"",officer:""});

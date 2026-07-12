@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import { apiFetch } from "../api";
-import { T, fmt, fmtFull, daysDiff, daysUntil, SC, askClaude, buildContext, STAGES, donorScore, Spin, Pill, Card, AIBtn, AIPanel, PageTitle, EmptyState } from "./shared";
+import { useAuth } from "../main";
+import { T, fmt, fmtFull, daysUntil, askClaude, buildContext, STAGES, Spin, AIBtn } from "./shared";
 
 // ── Global Chat ────────────────────────────────────────────────────────────
 export function AIChat({data,onClose}) {
@@ -49,58 +50,54 @@ export function AIChat({data,onClose}) {
   </div>;
 }
 
-// ── Dashboard ──────────────────────────────────────────────────────────────
+// ── Dashboard / Home ─────────────────────────────────────────────────────────
 export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
+  const {auth}=useAuth();
+  const isAdmin=auth?.user?.role==="admin";
   const todayStr=new Date().toLocaleDateString("en-US",{weekday:"long",month:"long",day:"numeric"});
-  const currentYear=new Date().getFullYear();
 
   const [briefing,setBriefing]=useState("");
   const [briefLoading,setBriefLoading]=useState(false);
   const [briefOpen,setBriefOpen]=useState(false);
-  const [showAddDonor,setShowAddDonor]=useState(false);
-  const [newDonor,setNewDonor]=useState({name:"",email:"",phone:"",stage:"prospect"});
-  const [onlineGifts,setOnlineGifts]=useState([]);
   const [myStats,setMyStats]=useState(null);
   const [portfolioOpen,setPortfolioOpen]=useState(false);
-  const [milestoneDrafts,setMilestoneDrafts]=useState([]);
-  const [recentActivity,setRecentActivity]=useState([]);
+
+  const [queueItems,setQueueItems]=useState([]);
+  const [queueLoading,setQueueLoading]=useState(true);
+  const [busyDonorId,setBusyDonorId]=useState(null);
+
+  const [goal,setGoal]=useState(undefined); // undefined = loading, null = none set
+  const [showSetGoal,setShowSetGoal]=useState(false);
+  const [goalForm,setGoalForm]=useState({label:"",goalAmount:"",goalType:"total_raised",periodStart:"",periodEnd:""});
+  const [savingGoal,setSavingGoal]=useState(false);
+
+  const [stageCounts,setStageCounts]=useState([]);
+
+  const loadGoal=()=>apiFetch("/goals/active").then(r=>setGoal(r)).catch(()=>setGoal(null));
 
   useEffect(()=>{
-    apiFetch("/stripe/online-gifts").then(r=>setOnlineGifts(r||[])).catch(()=>{});
     apiFetch("/dashboard/my-stats").then(r=>setMyStats(r||null)).catch(()=>{});
-    apiFetch("/milestone-drafts").then(r=>setMilestoneDrafts(r||[])).catch(()=>{});
-    apiFetch("/dashboard/recent-activity").then(r=>setRecentActivity(r||[])).catch(()=>{});
+    apiFetch("/dashboard/today").then(r=>setQueueItems(r||[])).catch(()=>{}).finally(()=>setQueueLoading(false));
+    apiFetch("/donors/stage-counts").then(r=>setStageCounts(r||[])).catch(()=>{});
+    loadGoal();
   },[]);
 
-  const totalDonors=data.donors.length;
-  const newDonorsThisYear=data.donors.filter(d=>d.lastGift&&new Date(d.lastGift).getFullYear()===currentYear).length;
-  const activeGrantCount=data.grants.filter(g=>g.status==="active").length;
-  const pipelineValue=data.grants.filter(g=>["active","pending","prospecting"].includes(g.status)).reduce((s,g)=>s+g.amount,0);
-  const lapsedDonors=data.donors.filter(d=>d.stage==="lapsed");
-  const lapsedValue=lapsedDonors.reduce((s,d)=>s+d.total,0);
+  // Guards against a pre-existing /dashboard/today quirk (task rows aren't
+  // filtered by donor deleted_at) — if the donor isn't in the live donor
+  // list anymore, don't show a queue row nothing can act on.
+  const visibleQueue=queueItems
+    .filter(item=>data.donors.some(d=>d.id===item.donorId))
+    .slice(0,6);
+  const milestoneCount=queueItems.filter(i=>i.action==="milestone").length;
 
-  const stageSnap=STAGES.map(s=>({
-    ...s,
-    count:data.donors.filter(d=>(d.stage||"cultivate")===s.id).length,
-    total:data.donors.filter(d=>(d.stage||"cultivate")===s.id).reduce((sum,d)=>sum+d.total,0),
-  }));
-
-  const upcomingGrants=[...data.grants]
-    .filter(g=>g.status!=="closed"&&daysUntil(g.deadline)>=-7)
-    .sort((a,b)=>new Date(a.deadline)-new Date(b.deadline))
-    .slice(0,3);
-
-  const recentGifts=[...data.donors]
-    .filter(d=>d.lastGift&&d.lastAmount>0)
-    .sort((a,b)=>new Date(b.lastGift)-new Date(a.lastGift))
-    .slice(0,5);
-
-  const activityFeed=recentActivity.map(i=>({...i,donorName:i.donor_name,donorId:i.donor_id}));
+  const nextGrant=[...data.grants]
+    .filter(g=>g.status!=="closed"&&g.deadline)
+    .sort((a,b)=>new Date(a.deadline)-new Date(b.deadline))[0]||null;
 
   const generateBriefing=async()=>{
     setBriefLoading(true);setBriefing("");setBriefOpen(true);
-    const milestoneLine=milestoneDrafts.length>0
-      ?`\nMilestone emails pending review: ${milestoneDrafts.length} AI-drafted thank-you email(s) awaiting staff approval (donors who just crossed a giving milestone or anniversary) — ${milestoneDrafts.slice(0,3).map(m=>m.donor_name).join(", ")}.`
+    const milestoneLine=milestoneCount>0
+      ?`\nMilestone emails pending review: ${milestoneCount} AI-drafted thank-you email(s) awaiting staff approval (donors who just crossed a giving milestone or anniversary).`
       :"";
     await askClaude(
       `You are a chief development officer. Write a crisp daily briefing. Use bullet points. Be specific with names and numbers. Max 250 words.`,
@@ -110,22 +107,52 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
     setBriefLoading(false);
   };
 
-  const addDonorQuick=async()=>{
-    if(!newDonor.name.trim())return;
+  const completeTask=async(item)=>{
+    setBusyDonorId(item.donorId);
     try{
-      await apiFetch("/donors",{method:"POST",body:JSON.stringify({...newDonor})});
-      const donors=await apiFetch("/donors");
-      setData(prev=>({...prev,donors:donors.map(d=>{
-        const ints=(d.interactions||[]).map(i=>({date:i.date||i.created_at?.split("T")[0],type:i.type,note:i.note||""}));
-        const lastTouchpoint=ints.length>0?ints.slice().sort((a,b)=>new Date(b.date)-new Date(a.date))[0].date:null;
-        return{id:d.id,name:d.name,email:d.email||"",phone:d.phone||"",total:d.total_giving||0,
-          lastGift:d.last_gift_date||"",lastAmount:d.last_gift_amount||0,gifts:d.gift_count||0,
-          status:d.status,stage:d.stage||"cultivate",lastTouchpoint,
-          tags:Array.isArray(d.tags)?d.tags:JSON.parse(d.tags||"[]"),notes:d.notes||"",interactions:ints};
-      })}));
-    }catch(e){console.error(e);}
-    setShowAddDonor(false);setNewDonor({name:"",email:"",phone:"",stage:"prospect"});
-    onNavigate("donors");
+      await apiFetch(`/tasks/${item.taskId}`,{method:"PUT",body:JSON.stringify({
+        title:item.taskTitle,due:item.taskDue,priority:item.taskPriority,type:item.taskType,done:1,
+      })});
+      setQueueItems(prev=>prev.filter(i=>i.taskId!==item.taskId));
+    }catch(e){alert(e.message||"Could not mark task done");}
+    setBusyDonorId(null);
+  };
+
+  const handleQueueAction=(item)=>{
+    if(item.action==="milestone")return onNavigate("communications",{subtab:"milestones",highlightDraftId:item.draftId});
+    if(item.action==="lapsed")return onNavigate("donors",{view:"reengage"});
+    if(item.taskId)return completeTask(item);
+    return onNavigate("donors",{logDonorId:item.donorId});
+  };
+
+  const actionLabel=(item)=>{
+    if(item.action==="milestone")return "Review draft →";
+    if(item.action==="lapsed")return "Re-engage →";
+    if(item.taskId)return busyDonorId===item.donorId?"Saving…":"Mark done ✓";
+    if(item.action==="thank")return "Log thank-you →";
+    if(item.action==="email")return "Log email →";
+    return "Log call →";
+  };
+
+  const ROW_COLOR={milestone:T.gold,lapsed:T.terracotta,thank:T.green,email:"#3b82f6"};
+  const rowColor=(item)=>item.taskId?"#8b5cf6":(ROW_COLOR[item.action]||T.greenMid);
+
+  const openSetGoal=()=>{
+    const today=new Date();
+    const in90=new Date(today);in90.setDate(in90.getDate()+90);
+    setGoalForm({label:"",goalAmount:"",goalType:"total_raised",periodStart:today.toISOString().split("T")[0],periodEnd:in90.toISOString().split("T")[0]});
+    setShowSetGoal(true);
+  };
+
+  const saveGoal=async()=>{
+    if(!goalForm.label.trim()||!goalForm.goalAmount||!goalForm.periodStart||!goalForm.periodEnd)return;
+    setSavingGoal(true);
+    try{
+      await apiFetch("/goals",{method:"POST",body:JSON.stringify(goalForm)});
+      await loadGoal();
+      setShowSetGoal(false);
+    }catch(e){alert(e.message||"Could not save goal");}
+    setSavingGoal(false);
   };
 
   const bLines=briefing.split("\n").filter(l=>l.trim()&&!l.startsWith("**")&&l.trim().length>15);
@@ -137,7 +164,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
   const sLink={background:"transparent",border:"none",padding:0,color:T.greenDk,fontSize:12,fontWeight:700,cursor:"pointer"};
   const cardWrap={background:T.white,border:"1px solid "+T.bg3,borderRadius:14,overflow:"hidden"};
   const cPad={padding:"14px 20px"};
-  const typeColor={call:"#3b82f6",email:"#8b5cf6",meeting:"#1a6b4a",gift:"#f59e0b",event:"#ec4899",note:"#6b7280"};
+  const inp={width:"100%",boxSizing:"border-box",background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"9px 12px",color:T.ink,fontSize:13,outline:"none",marginBottom:10};
 
   const MiniEmpty=({icon,text,cta,onCta})=>(
     <div style={{...cPad,display:"flex",alignItems:"center",gap:12}}>
@@ -149,18 +176,43 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
     </div>
   );
 
-  const QUICK=[
-    {icon:<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" width="18" height="18"><circle cx="10" cy="7" r="3.5"/><path d="M3 17c0-3.3 3.1-6 7-6s7 2.7 7 6" strokeLinecap="round"/><line x1="14" y1="4" x2="18" y2="4" strokeLinecap="round"/><line x1="16" y1="2" x2="16" y2="6" strokeLinecap="round"/></svg>,label:"Add Donor",action:()=>setShowAddDonor(true),isWrite:true},
-    {icon:<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" width="18" height="18"><rect x="3" y="5" width="14" height="11" rx="2"/><path d="M7 5V4a1 1 0 011-1h4a1 1 0 011 1v1" strokeLinecap="round"/><line x1="7" y1="10" x2="13" y2="10" strokeLinecap="round"/><line x1="10" y1="7.5" x2="10" y2="12.5" strokeLinecap="round"/></svg>,label:"Log Gift",action:()=>onNavigate("donors"),isWrite:true},
-    {icon:<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" width="18" height="18"><path d="M10 3l1.8 5.4H17l-4.5 3.3 1.7 5.3L10 14l-4.2 3 1.7-5.3L3 8.4h5.2z" strokeLinejoin="round"/></svg>,label:"New Grant",action:()=>onNavigate("grants"),isWrite:true},
-    {icon:<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" width="18" height="18"><rect x="2" y="5" width="16" height="11" rx="2"/><path d="M2 8l8 5 8-5" strokeLinecap="round"/></svg>,label:"Send Email",action:()=>onNavigate("communications"),isWrite:true},
-    // DEPRIORITIZED — pivoting to donor dashboard focus, code kept intact, re-enable by uncommenting
-    // {icon:<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" width="18" height="18"><circle cx="10" cy="7" r="3.5"/><path d="M3 17c0-3.3 3.1-6 7-6s7 2.7 7 6" strokeLinecap="round"/></svg>,label:"Add Volunteer",action:()=>onNavigate("volunteers"),isWrite:true},
-    // {icon:<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" width="18" height="18"><rect x="3" y="3" width="14" height="14" rx="2"/><line x1="7" y1="9" x2="13" y2="9" strokeLinecap="round"/><line x1="7" y1="12" x2="11" y2="12" strokeLinecap="round"/><line x1="10" y1="5.5" x2="10" y2="3" strokeLinecap="round"/></svg>,label:"New Task",action:()=>onNavigate("tasks"),isWrite:true},
-  ];
+  const FUNNEL_STAGES=STAGES.filter(s=>s.id!=="lapsed");
+  const lapsedStageInfo=STAGES.find(s=>s.id==="lapsed");
+  const countsByStage=Object.fromEntries(stageCounts.map(s=>[s.stage,s]));
+  const maxFunnelCount=Math.max(1,...FUNNEL_STAGES.map(s=>countsByStage[s.id]?.count||0));
+  const lapsedCountVal=countsByStage.lapsed?.count||0;
+  const lapsedTotalVal=countsByStage.lapsed?.total||0;
 
   return(
-    <div style={{display:"flex",flexDirection:"column",gap:16}} className="dash-root fade-in">
+    <div className="dash-root dash-bleed fade-in" style={{background:T.bgDeep,margin:"-20px -24px -28px -24px",padding:"20px 24px 28px 24px",display:"flex",flexDirection:"column",gap:16,minHeight:"calc(100vh - 92px)"}}>
+
+      {/* Goal banner */}
+      <div className="dash-goal-banner" style={{background:"linear-gradient(135deg,#0f1a12,#152420)",border:"1px solid #1a2e1f",borderRadius:16,padding:"20px 24px",color:"#f0ede6"}}>
+        {goal===undefined?(
+          <div style={{display:"flex",alignItems:"center",gap:8,color:"#8fa896",fontSize:13}}><Spin/>Loading goal…</div>
+        ):goal?(
+          <>
+            <div style={{fontSize:10,fontWeight:800,letterSpacing:"0.12em",textTransform:"uppercase",color:"#8fa896",marginBottom:6}}>Fundraising Goal</div>
+            <div style={{fontSize:21,fontWeight:400,fontFamily:"'DM Serif Display',Georgia,serif",marginBottom:14,color:"#f8f6f0"}}>{goal.label}</div>
+            <div style={{background:"#0a120c",borderRadius:99,height:11,overflow:"hidden",marginBottom:10}}>
+              <div style={{height:"100%",width:`${goal.percent}%`,background:`linear-gradient(90deg,${T.gold},${T.terracotta})`,borderRadius:99,transition:"width 0.6s ease"}}/>
+            </div>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",flexWrap:"wrap",gap:8}}>
+              <div style={{fontSize:13,color:"#c9c2b4"}}><strong style={{fontSize:19,color:T.gold,fontFamily:"'DM Serif Display',serif",fontWeight:400}}>{fmtFull(goal.currentAmount)}</strong> of {fmtFull(goal.goalAmount)}</div>
+              <div style={{fontSize:13,fontWeight:700,color:"#8fa896"}}>{goal.percent}% there</div>
+            </div>
+          </>
+        ):(
+          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:12}}>
+            <div>
+              <div style={{fontSize:15,fontWeight:600,color:"#f0ede6",marginBottom:2}}>No goal set for this period.</div>
+              <div style={{fontSize:12,color:"#8fa896"}}>Set a fundraising target to track progress here.</div>
+            </div>
+            {isAdmin&&<button onClick={openSetGoal} style={{background:T.gold,border:"none",borderRadius:10,padding:"9px 18px",color:"#1a1206",fontSize:13,fontWeight:700,cursor:"pointer",whiteSpace:"nowrap"}}>Set a goal →</button>}
+          </div>
+        )}
+      </div>
+
       {myStats&&(
         <div style={{background:T.white,border:"1px solid #3b82f630",borderLeft:"3px solid #3b82f6",borderRadius:14,overflow:"hidden"}}>
           <button onClick={()=>setPortfolioOpen(v=>!v)} style={{width:"100%",background:"none",border:"none",padding:"10px 16px",display:"flex",alignItems:"center",justifyContent:"space-between",cursor:"pointer",color:T.ink}}>
@@ -190,29 +242,42 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
           )}
         </div>
       )}
-      <div className="dash-stat-grid" style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10}}>
-        {[
-          {label:"Milestones Ready",value:milestoneDrafts.length,sub:milestoneDrafts.length>0?"AI-drafted, ready to review →":"You're all caught up",tab:"communications",subtab:"milestones",accent:"#c9a84c",badge:true},
-          {label:"Total Donors",value:totalDonors,sub:`${newDonorsThisYear} gave this year`,tab:"donors"},
-          {label:"Active Grants",value:activeGrantCount,sub:fmt(pipelineValue)+" pipeline",tab:"grants"},
-          {label:"Lapsed Donors",value:lapsedDonors.length,sub:lapsedDonors.length>0?fmtFull(lapsedValue)+" at risk":"none right now",tab:"donors"},
-          // DEPRIORITIZED — pivoting to donor dashboard focus, code kept intact, re-enable by uncommenting
-          // {label:"Active Volunteers",value:activeVolunteers,sub:"in last 30 days",tab:"volunteers"},
-          // {label:"Open Tasks",value:openTasks,sub:highPriorityTasks>0?`${highPriorityTasks} high priority`:"all on track",tab:"tasks"},
-        ].map(s=>(
-          <div key={s.label} onClick={()=>onNavigate(s.tab,s.subtab?{subtab:s.subtab}:undefined)} className="card-click" style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:14,padding:"16px 20px",cursor:"pointer",borderLeft:"3px solid "+(s.accent||T.greenDk)}}>
-            <div style={{display:"flex",alignItems:"center",gap:6,fontSize:10,fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",color:T.ink3,marginBottom:4}}>
-              {s.label}
-              {s.badge&&<span style={{background:"#c9a84c",color:"#fff",fontSize:8,fontWeight:800,borderRadius:99,padding:"1px 6px",letterSpacing:"0.04em"}}>NEW</span>}
-            </div>
-            <div className="dash-stat-num" style={{fontSize:28,fontWeight:800,color:T.ink,fontFamily:"'DM Serif Display',serif",lineHeight:1.05,letterSpacing:"-0.02em"}}>{s.value}</div>
-            <div style={{fontSize:11,color:s.accent&&s.value>0?"#a8873a":T.ink3,marginTop:4,fontWeight:s.accent&&s.value>0?700:400}}>{s.sub}</div>
-          </div>
-        ))}
-      </div>
 
       <div className="dash-main-grid" style={{display:"grid",gridTemplateColumns:"minmax(0,1fr) 320px",gap:16,alignItems:"start"}}>
+        {/* LEFT: the queue is the hero */}
         <div style={{display:"flex",flexDirection:"column",gap:14}}>
+          <div style={{...cardWrap}}>
+            <div className="dash-cpad" style={{...cPad,borderBottom:"1px solid "+T.bg3,...sHdr}}>
+              <span style={sTitle}>Needs Your Attention</span>
+              {!queueLoading&&<span style={{fontSize:11,color:T.ink3}}>{visibleQueue.length} {visibleQueue.length===1?"item":"items"}</span>}
+            </div>
+            {queueLoading&&<div style={{...cPad}}><Spin/></div>}
+            {!queueLoading&&visibleQueue.length===0&&<MiniEmpty icon="✓" text="You're all caught up — nothing needs attention right now."/>}
+            {!queueLoading&&visibleQueue.map((item,i)=>{
+              const color=rowColor(item);
+              const busy=busyDonorId===item.donorId;
+              return(
+                <div key={item.donorId+"_"+item.action} className="dash-row dash-queue-row" style={{
+                  display:"flex",alignItems:"center",gap:14,padding:"14px 20px",
+                  borderBottom:i<visibleQueue.length-1?"1px solid "+T.bg3:"none",
+                  borderLeft:"3px solid "+color,
+                }}>
+                  <div style={{width:38,height:38,borderRadius:"50%",background:color+"22",display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,fontWeight:800,color,flexShrink:0}}>
+                    {(item.donorName||"?")[0]}
+                  </div>
+                  <div style={{flex:1,minWidth:0}}>
+                    <div style={{fontSize:13,fontWeight:700,color:T.ink}}>{item.donorName}</div>
+                    <div style={{fontSize:12,color:T.ink3,marginTop:2,lineHeight:1.4}}>{item.reason}</div>
+                  </div>
+                  <button onClick={()=>handleQueueAction(item)} disabled={busy} className="dash-queue-action" style={{
+                    background:color,border:"none",borderRadius:8,padding:"8px 14px",color:"#fff",fontSize:12,fontWeight:700,
+                    cursor:busy?"not-allowed":"pointer",whiteSpace:"nowrap",flexShrink:0,opacity:busy?0.7:1,
+                  }}>{actionLabel(item)}</button>
+                </div>
+              );
+            })}
+          </div>
+
           {/* AI Briefing */}
           <div style={{...cardWrap}}>
             <div className="dash-briefing-hdr dash-cpad" style={{...cPad,borderBottom:"1px solid "+T.bg3,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
@@ -249,226 +314,97 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
               )}
             </div>
           </div>
-
-          {/* Donor pipeline snapshot */}
-          <div className="dash-pipeline-card" style={{...cardWrap}}>
-            <div className="dash-cpad" style={{...cPad,borderBottom:"1px solid "+T.bg3,...sHdr}}>
-              <span style={sTitle}>Donor Pipeline</span>
-              <button onClick={()=>onNavigate("donors")} style={sLink}>View all →</button>
-            </div>
-            <div className="dash-pipeline-scroll">
-              <div className="dash-pipeline-grid" style={{display:"grid",gridTemplateColumns:"repeat(6,1fr)"}}>
-                {stageSnap.map((s,i)=>(
-                  <div key={s.id} onClick={()=>onNavigate("donors")} className="dash-row" style={{
-                    padding:"14px 12px",borderRight:i<5?"1px solid "+T.bg3:"none",
-                    cursor:"pointer",borderTop:`3px solid ${s.color}`,
-                  }}>
-                    <div style={{fontSize:9,fontWeight:800,textTransform:"uppercase",letterSpacing:"0.08em",color:s.color,marginBottom:6}}>{s.label}</div>
-                    <div style={{fontSize:20,fontWeight:800,color:s.count>0?T.ink:T.ink3,fontFamily:"'DM Serif Display',serif",lineHeight:1}}>{s.count}</div>
-                    <div style={{fontSize:11,color:T.ink3,marginTop:3}}>{s.total>0?fmt(s.total):"—"}</div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-
-          {/* Lapsed alert */}
-          {lapsedDonors.length>0&&(
-            <div className="dash-lapsed" style={{background:"#fff8f0",border:"1px solid #f59e0b40",borderRadius:14,padding:"16px 20px",display:"flex",alignItems:"center",justifyContent:"space-between",gap:12}}>
-              <div>
-                <div style={{display:"flex",alignItems:"center",gap:7,marginBottom:4}}>
-                  <div style={{width:7,height:7,borderRadius:"50%",background:"#ef4444",flexShrink:0,boxShadow:"0 0 6px #ef444460"}}/>
-                  <span style={{fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.1em",color:"#dc2626"}}>Lapsed Donors</span>
-                </div>
-                <div style={{fontSize:26,fontWeight:800,fontFamily:"'DM Serif Display',serif",color:T.ink,lineHeight:1}}>{lapsedDonors.length}</div>
-                <div style={{fontSize:12,color:T.ink3,marginTop:4}}>{fmtFull(lapsedValue)} lifetime value at risk</div>
-              </div>
-              <button onClick={()=>onNavigate("donors")} style={{background:"#ef4444",border:"none",borderRadius:10,padding:"10px 18px",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer",whiteSpace:"nowrap",flexShrink:0}}>
-                Re-engage →
-              </button>
-            </div>
-          )}
-
-          {/* Upcoming grant deadlines */}
-          <div style={{...cardWrap}}>
-            <div className="dash-cpad" style={{...cPad,borderBottom:"1px solid "+T.bg3,...sHdr}}>
-              <span style={sTitle}>Grant Deadlines</span>
-              <button onClick={()=>onNavigate("grants")} style={sLink}>All grants →</button>
-            </div>
-            {upcomingGrants.length===0&&<MiniEmpty icon="◉" text="No upcoming deadlines in the next 30 days." cta="+ Add a grant →" onCta={()=>onNavigate("grants")}/>}
-            {upcomingGrants.map((g,i)=>{
-              const d=daysUntil(g.deadline);
-              const urgColor=d<14?"#ef4444":d<30?"#f59e0b":"#1a6b4a";
-              return(
-                <div key={g.id} className="dash-row" onClick={()=>onNavigate("grants")} style={{
-                  display:"flex",alignItems:"center",gap:12,padding:"12px 20px",
-                  borderBottom:i<upcomingGrants.length-1?"1px solid "+T.bg3:"none",cursor:"pointer",
-                }}>
-                  <div style={{background:urgColor+"15",border:"1px solid "+urgColor+"30",borderRadius:8,padding:"6px 10px",minWidth:46,textAlign:"center",flexShrink:0}}>
-                    <div style={{fontSize:12,fontWeight:800,color:urgColor,lineHeight:1}}>{d<0?"past":d+"d"}</div>
-                  </div>
-                  <div style={{flex:1,minWidth:0}}>
-                    <div style={{fontSize:13,fontWeight:600,color:T.ink,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{g.funder}</div>
-                    <div style={{fontSize:11,color:T.ink3,marginTop:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{g.program}</div>
-                  </div>
-                  <div style={{textAlign:"right",flexShrink:0}}>
-                    <div style={{fontSize:13,fontWeight:700,color:T.ink}}>{fmt(g.amount)}</div>
-                    <div style={{marginTop:4}}><Pill label={g.status} color={SC[g.status]}/></div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-
-          {/* Recent giving */}
-          <div style={{...cardWrap}}>
-            <div className="dash-cpad" style={{...cPad,borderBottom:"1px solid "+T.bg3,...sHdr}}>
-              <span style={sTitle}>Recent Giving</span>
-              <button onClick={()=>onNavigate("donors")} style={sLink}>All donors →</button>
-            </div>
-            {recentGifts.length===0&&<MiniEmpty icon="♦" text="No gifts logged yet." cta="Log a gift →" onCta={()=>onNavigate("donors")}/>}
-            {recentGifts.map((d,i)=>{
-              const dAgo=daysDiff(d.lastGift);
-              const when=dAgo===0?"Today":dAgo===1?"Yesterday":`${dAgo}d ago`;
-              const sc=donorScore(d);const scColor=sc>70?"#1a6b4a":sc>45?"#f59e0b":"#ef4444";
-              return(
-                <div key={d.id} className="dash-row" onClick={()=>onNavigate("donors")} style={{
-                  display:"flex",alignItems:"center",gap:12,padding:"11px 20px",
-                  borderBottom:i<recentGifts.length-1?"1px solid "+T.bg3:"none",cursor:"pointer",
-                }}>
-                  <div style={{width:34,height:34,borderRadius:"50%",background:scColor+"20",display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,fontWeight:700,color:scColor,flexShrink:0}}>{d.name[0]}</div>
-                  <div style={{flex:1,minWidth:0}}>
-                    <div style={{fontSize:13,fontWeight:600,color:T.ink,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{d.name}</div>
-                    <div style={{fontSize:11,color:T.ink3,marginTop:1}}>{when}</div>
-                  </div>
-                  <div style={{textAlign:"right",flexShrink:0}}>
-                    <div style={{fontSize:14,fontWeight:800,color:"#1a6b4a"}}>{fmtFull(d.lastAmount)}</div>
-                    <div style={{fontSize:10,color:T.ink3,marginTop:2}}>{fmtFull(d.total)} lifetime</div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-
-          {onlineGifts.length>0&&<div style={{...cardWrap}}>
-            <div style={{...cPad,borderBottom:"1px solid "+T.bg3,...sHdr}}>
-              <span style={sTitle}>Recent Online Gifts</span>
-              <span style={{fontSize:11,color:T.ink3}}>via Stripe</span>
-            </div>
-            {onlineGifts.slice(0,5).map((g,i)=>{
-              const dAgo=daysDiff(g.date);
-              const when=dAgo===0?"Today":dAgo===1?"Yesterday":`${dAgo}d ago`;
-              return(
-                <div key={g.id} style={{
-                  display:"flex",alignItems:"center",gap:12,padding:"11px 20px",
-                  borderBottom:i<Math.min(onlineGifts.length,5)-1?"1px solid "+T.bg3:"none",
-                }}>
-                  <div style={{width:34,height:34,borderRadius:"50%",background:"#ede9fe",display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,flexShrink:0}}>💳</div>
-                  <div style={{flex:1,minWidth:0}}>
-                    <div style={{fontSize:13,fontWeight:600,color:T.ink,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{g.donorName||g.donorEmail}</div>
-                    <div style={{fontSize:11,color:T.ink3,marginTop:1}}>{when}</div>
-                  </div>
-                  <div style={{textAlign:"right",flexShrink:0}}>
-                    <div style={{fontSize:14,fontWeight:800,color:"#1a6b4a"}}>{fmtFull(g.amount)}</div>
-                    <div style={{fontSize:10,background:"#ede9fe",color:"#7c3aed",borderRadius:4,padding:"1px 5px",marginTop:2,fontWeight:600}}>Online</div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>}
         </div>
 
-        {/* RIGHT COLUMN */}
+        {/* RIGHT: funnel + next grant deadline */}
         <div style={{display:"flex",flexDirection:"column",gap:14}}>
-          {/* Quick actions */}
-          <div style={{background:"#0f1a12",border:"1px solid #1a2e1f",borderRadius:14,overflow:"hidden",padding:"14px 20px"}}>
-            <div style={{...sTitle,color:"#8fa896"}}>Quick Actions</div>
-            <div className="dash-quick-grid" style={{display:"grid",gridTemplateColumns:"repeat(2,1fr)",gap:8,marginTop:12}}>
-              {QUICK.map(a=>{
-                const blocked=isReadOnly&&a.isWrite;
+          <div style={{...cardWrap}}>
+            <div className="dash-cpad" style={{...cPad,borderBottom:"1px solid "+T.bg3,...sHdr}}>
+              <span style={sTitle}>Pipeline Funnel</span>
+              <button onClick={()=>onNavigate("donors")} style={sLink}>View all →</button>
+            </div>
+            <div style={{padding:"16px 20px",display:"flex",flexDirection:"column",gap:10}}>
+              {FUNNEL_STAGES.map(s=>{
+                const c=countsByStage[s.id]?.count||0;
+                const t=countsByStage[s.id]?.total||0;
+                const widthPct=Math.max(8,(c/maxFunnelCount)*100);
                 return(
-                <button key={a.label} onClick={blocked?undefined:a.action} className="dash-action dash-quick-btn"
-                  disabled={blocked}
-                  title={blocked?"Reactivate your subscription to make changes.":undefined}
-                  style={{
-                    background:"#1a2e1f",border:"1px solid #2d4a35",borderRadius:10,
-                    padding:"12px 8px",display:"flex",flexDirection:"column",alignItems:"center",gap:6,
-                    cursor:blocked?"not-allowed":"pointer",opacity:blocked?0.45:1,
-                  }}>
-                  <div style={{width:32,height:32,borderRadius:8,background:"#0d5c3a22",display:"flex",alignItems:"center",justifyContent:"center",color:"#c9a84c"}}>
-                    {a.icon}
+                  <div key={s.id} onClick={()=>onNavigate("donors",{stageFilter:s.id})} style={{cursor:"pointer"}}>
+                    <div style={{display:"flex",justifyContent:"space-between",fontSize:10,marginBottom:3}}>
+                      <span style={{fontWeight:800,color:s.color,textTransform:"uppercase",letterSpacing:"0.06em"}}>{s.label}</span>
+                      <span style={{color:T.ink3}}>{c} · {t>0?fmt(t):"—"}</span>
+                    </div>
+                    <div style={{background:T.bg,borderRadius:6,height:16,overflow:"hidden"}}>
+                      <div style={{height:"100%",width:`${widthPct}%`,background:s.color,borderRadius:6,transition:"width 0.4s ease"}}/>
+                    </div>
                   </div>
-                  <span className="dash-quick-label" style={{fontSize:10,fontWeight:700,color:"#8fa896",textAlign:"center",lineHeight:1.3,letterSpacing:"0.02em"}}>{a.label}</span>
-                </button>
                 );
               })}
+              <div onClick={()=>onNavigate("donors",{stageFilter:"lapsed"})} style={{cursor:"pointer",marginTop:4,paddingTop:12,borderTop:"1px dashed "+T.bg3}}>
+                <div style={{display:"flex",justifyContent:"space-between",fontSize:10,marginBottom:3}}>
+                  <span style={{fontWeight:800,color:lapsedStageInfo.color,textTransform:"uppercase",letterSpacing:"0.06em"}}>↘ Leaking Out — Lapsed</span>
+                  <span style={{color:T.ink3}}>{lapsedCountVal} · {lapsedTotalVal>0?fmt(lapsedTotalVal):"—"}</span>
+                </div>
+                <div style={{background:T.bg,borderRadius:6,height:16,overflow:"hidden"}}>
+                  <div style={{height:"100%",width:`${Math.max(8,(lapsedCountVal/maxFunnelCount)*100)}%`,background:lapsedStageInfo.color,borderRadius:6}}/>
+                </div>
+              </div>
             </div>
           </div>
 
-          {/* DEPRIORITIZED — Tasks This Week widget removed from view, pivoting to
-              donor dashboard focus. Tasks.jsx, the /tasks backend routes, and the
-              tasks table are untouched — re-enable by restoring this block (see
-              git history) once todayTasks/weekTasks/toggleTask are reintroduced
-              above alongside the other removed dashboard state. */}
-
-          {/* Activity feed */}
-          <div style={{...cardWrap}}>
+          <div onClick={nextGrant?()=>onNavigate("grants",{grantId:nextGrant.id}):undefined} className={nextGrant?"card-click":""} style={{...cardWrap,cursor:nextGrant?"pointer":"default"}}>
             <div className="dash-cpad" style={{...cPad,borderBottom:"1px solid "+T.bg3}}>
-              <span style={sTitle}>Recent Activity</span>
+              <span style={sTitle}>Next Grant Deadline</span>
             </div>
-            {activityFeed.length===0&&<MiniEmpty icon="◑" text="No activity logged yet. Calls, emails, and notes will show up here." cta="Log a touchpoint →" onCta={()=>onNavigate("donors")}/>}
-            {activityFeed.map((item,i)=>{
-              const tc=typeColor[item.type]||"#6b7280";
-              const dAgo=daysDiff(item.date);
-              const when=dAgo===0?"Today":dAgo===1?"Yesterday":`${dAgo}d ago`;
+            {!nextGrant&&<div style={{...cPad,fontSize:13,color:T.ink3,fontStyle:"italic"}}>No upcoming deadlines.</div>}
+            {nextGrant&&(()=>{
+              const d=daysUntil(nextGrant.deadline);
+              const urgColor=d<14?"#ef4444":d<30?"#f59e0b":"#1a6b4a";
               return(
-                <div key={i} className="dash-row" onClick={()=>onNavigate("donors")} style={{
-                  display:"flex",alignItems:"flex-start",gap:10,padding:"10px 20px",
-                  borderBottom:i<activityFeed.length-1?"1px solid "+T.bg3:"none",cursor:"pointer",
-                }}>
-                  <div style={{width:7,height:7,borderRadius:"50%",background:tc,marginTop:4,flexShrink:0}}/>
-                  <div style={{flex:1,minWidth:0}}>
-                    <div style={{fontSize:12,color:T.ink,lineHeight:1.4}}>
-                      <span style={{fontWeight:600}}>{item.donorName}</span>
-                      {" · "}<span style={{color:tc,fontWeight:600,textTransform:"capitalize"}}>
-                        {item.type==="email"&&item.note?.startsWith("Subject: ")
-                          ?`Email — ${item.note.split("\n")[0].replace("Subject: ","")}`
-                          :item.type}
-                      </span>
-                    </div>
-                    {item.note&&!(item.type==="email"&&item.note.startsWith("Subject: "))&&<div className="dash-activity-note" style={{fontSize:11,color:T.ink3,marginTop:2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{item.note}</div>}
+                <div style={{padding:"14px 20px"}}>
+                  <div style={{fontSize:13,fontWeight:700,color:T.ink,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{nextGrant.funder}</div>
+                  <div style={{fontSize:11,color:T.ink3,marginTop:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{nextGrant.program}</div>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:10}}>
+                    <span style={{background:urgColor+"15",border:"1px solid "+urgColor+"30",borderRadius:8,padding:"4px 10px",fontSize:12,fontWeight:800,color:urgColor}}>{d<0?"past due":d+"d"}</span>
+                    <span style={{fontSize:14,fontWeight:800,color:T.ink}}>{fmt(nextGrant.amount)}</span>
                   </div>
-                  <div style={{fontSize:10,color:T.ink3,flexShrink:0,marginTop:2,whiteSpace:"nowrap"}}>{when}</div>
                 </div>
               );
-            })}
+            })()}
           </div>
         </div>
       </div>
 
-      {/* Quick-add donor modal */}
-      {showAddDonor&&(
+      {/* Set-goal modal */}
+      {showSetGoal&&(
         <div style={{position:"fixed",inset:0,background:"#0f1a12cc",backdropFilter:"blur(4px)",zIndex:300,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
           <div className="fade-in" style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:18,width:"100%",maxWidth:420,padding:24,boxShadow:"0 4px 32px rgba(15,15,15,0.12)"}}>
-            <div style={{fontSize:16,fontWeight:800,color:T.ink,marginBottom:16}}>Add Donor</div>
-            {[["name","Full Name"],["email","Email"],["phone","Phone"]].map(([k,pl])=>(
-              <input key={k} value={newDonor[k]||""} onChange={e=>setNewDonor(p=>({...p,[k]:e.target.value}))} placeholder={pl}
-                style={{width:"100%",boxSizing:"border-box",background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"9px 12px",color:T.ink,fontSize:13,outline:"none",marginBottom:10}}/>
-            ))}
-            <div style={{fontSize:11,fontWeight:700,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:8}}>Stage</div>
-            <div style={{display:"flex",gap:5,flexWrap:"wrap",marginBottom:16}}>
-              {STAGES.map(s=>(
-                <button key={s.id} onClick={()=>setNewDonor(p=>({...p,stage:s.id}))}
-                  style={{background:newDonor.stage===s.id?s.color+"22":T.bg,border:`1px solid ${newDonor.stage===s.id?s.color:T.bg3}`,borderRadius:7,padding:"5px 11px",color:newDonor.stage===s.id?s.color:T.ink3,fontSize:12,fontWeight:600,cursor:"pointer"}}>
-                  {s.label}
-                </button>
+            <div style={{fontSize:16,fontWeight:800,color:T.ink,marginBottom:16}}>Set a fundraising goal</div>
+            <div style={{fontSize:11,fontWeight:700,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:4}}>Label</div>
+            <input value={goalForm.label} onChange={e=>setGoalForm(f=>({...f,label:e.target.value}))} placeholder="e.g. Win back $50,000 in lapsed giving" style={inp}/>
+            <div style={{fontSize:11,fontWeight:700,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:4}}>Target amount ($)</div>
+            <input type="number" value={goalForm.goalAmount} onChange={e=>setGoalForm(f=>({...f,goalAmount:e.target.value}))} placeholder="25000" style={inp}/>
+            <div style={{fontSize:11,fontWeight:700,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:4}}>Goal type</div>
+            <div style={{display:"flex",gap:6,marginBottom:10}}>
+              {[["total_raised","Total raised"],["lapsed_recovery","Lapsed recovery"]].map(([v,l])=>(
+                <button key={v} onClick={()=>setGoalForm(f=>({...f,goalType:v}))} style={{flex:1,background:goalForm.goalType===v?T.greenDk+"18":T.bg,border:`1px solid ${goalForm.goalType===v?T.greenDk:T.bg3}`,borderRadius:8,padding:"8px",color:goalForm.goalType===v?T.greenDk:T.ink3,fontSize:12,fontWeight:600,cursor:"pointer"}}>{l}</button>
               ))}
             </div>
-            <div style={{display:"flex",gap:8}}>
-              <button onClick={addDonorQuick} disabled={!newDonor.name.trim()} style={{flex:1,background:newDonor.name.trim()?"#10b981":T.bg2,border:"none",borderRadius:10,padding:"11px",color:"#fff",fontSize:14,fontWeight:700,cursor:newDonor.name.trim()?"pointer":"not-allowed"}}>
-                Save Donor
+            <div style={{display:"flex",gap:8,marginBottom:10}}>
+              <div style={{flex:1}}>
+                <div style={{fontSize:11,fontWeight:700,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:4}}>Period start</div>
+                <input type="date" value={goalForm.periodStart} onChange={e=>setGoalForm(f=>({...f,periodStart:e.target.value}))} style={{...inp,marginBottom:0}}/>
+              </div>
+              <div style={{flex:1}}>
+                <div style={{fontSize:11,fontWeight:700,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:4}}>Period end</div>
+                <input type="date" value={goalForm.periodEnd} onChange={e=>setGoalForm(f=>({...f,periodEnd:e.target.value}))} style={{...inp,marginBottom:0}}/>
+              </div>
+            </div>
+            <div style={{display:"flex",gap:8,marginTop:6}}>
+              <button onClick={saveGoal} disabled={savingGoal||!goalForm.label.trim()||!goalForm.goalAmount} style={{flex:1,background:(savingGoal||!goalForm.label.trim()||!goalForm.goalAmount)?T.bg2:T.gold,border:"none",borderRadius:10,padding:"11px",color:"#1a1206",fontSize:14,fontWeight:700,cursor:(savingGoal||!goalForm.label.trim()||!goalForm.goalAmount)?"not-allowed":"pointer"}}>
+                {savingGoal?"Saving…":"Set goal"}
               </button>
-              <button onClick={()=>setShowAddDonor(false)} style={{background:T.bg,border:"none",borderRadius:10,padding:"11px 14px",color:T.ink3,fontSize:13,cursor:"pointer"}}>Cancel</button>
+              <button onClick={()=>setShowSetGoal(false)} style={{background:T.bg,border:"none",borderRadius:10,padding:"11px 14px",color:T.ink3,fontSize:13,cursor:"pointer"}}>Cancel</button>
             </div>
           </div>
         </div>

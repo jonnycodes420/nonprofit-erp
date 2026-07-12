@@ -17,7 +17,7 @@ import PlanPicker from "./components/PlanPicker";
 
 // ── Tabs ───────────────────────────────────────────────────────────────────
 const TABS=[
-  {id:"dashboard",label:"Dashboard",icon:"◈"},
+  {id:"dashboard",label:"Home",icon:"◈"},
   {id:"donors",label:"Donors",icon:"♦"},
   {id:"grants",label:"Grants",icon:"◉"},
   {id:"communications",label:"Communications",icon:"◑"},
@@ -31,13 +31,12 @@ const TABS=[
   // {id:"board",label:"Board",icon:"◆",earlyAccess:true},
 ];
 const BOTTOM_TABS=[
-  {id:"today",label:"Today",icon:"◉"},
+  {id:"dashboard",label:"Home",icon:"◉"},
   {id:"donors",label:"Donors",icon:"♦"},
   {id:"grants",label:"Grants",icon:"◉"},
   {id:"settings",label:"Settings",icon:"⚙"},
 ];
 const MORE_TABS=[
-  {id:"dashboard",label:"Dashboard",icon:"◈"},
   {id:"communications",label:"Communications",icon:"◑"},
   // DEPRIORITIZED — pivoting to donor dashboard focus, code kept intact, re-enable by uncommenting
   // {id:"events",label:"Events",icon:"◎"},
@@ -64,8 +63,17 @@ function AppShell() {
   const [showInstallPrompt,setShowInstallPrompt]=useState(false);
   const [deferredPrompt,setDeferredPrompt]=useState(null);
   const [commsInitialNav,setCommsInitialNav]=useState(null);
+  const [commsHighlightDraftId,setCommsHighlightDraftId]=useState(null);
+  const [donorsIntent,setDonorsIntent]=useState(null);
+  const [grantsIntent,setGrantsIntent]=useState(null);
 
-  const navigateTo=(t,opts)=>{setCommsInitialNav(opts?.subtab||null);setTab(t);};
+  const navigateTo=(t,opts)=>{
+    setCommsInitialNav(opts?.subtab||null);
+    setCommsHighlightDraftId(opts?.highlightDraftId||null);
+    setDonorsIntent(opts?.view||opts?.logDonorId||opts?.stageFilter?{view:opts.view,logDonorId:opts.logDonorId,stageFilter:opts.stageFilter}:null);
+    setGrantsIntent(opts?.grantId?{grantId:opts.grantId}:null);
+    setTab(t);
+  };
 
 
   useEffect(()=>{
@@ -174,11 +182,6 @@ function AppShell() {
     {/* Header */}
     <div className="app-header" style={{borderBottom:"1px solid #1a2e1f",padding:"0 24px",display:"flex",alignItems:"center",justifyContent:"space-between",background:"#0f1a12",position:"sticky",top:0,zIndex:100,height:52,width:"100%",boxSizing:"border-box"}}>
       <div style={{display:"flex",alignItems:"center",gap:12}}>
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 40" width="32" height="32" style={{flexShrink:0}}>
-          <rect width="40" height="40" rx="8" fill="#0f1a12"/>
-          <text x="20" y="28" fontFamily="Georgia, 'Times New Roman', serif" fontSize="24" fontWeight="700" fill="#f0ede6" textAnchor="middle">S</text>
-          <rect x="10" y="31" width="20" height="3" rx="1.5" fill="#c9a84c"/>
-        </svg>
         <span style={{fontSize:20,fontWeight:400,color:"#f0ede6",fontFamily:"'DM Serif Display',Georgia,serif",letterSpacing:"-0.02em"}}>Steward</span>
       </div>
       <div style={{display:"flex",gap:8,alignItems:"center"}}>
@@ -196,10 +199,6 @@ function AppShell() {
 
     {/* Tab bar */}
     <div className="app-tabbar" style={{display:"flex",padding:"0 20px",borderBottom:"1px solid #1a2e1f",overflow:"hidden",flexShrink:0,background:"#0f1a12",width:"100%",boxSizing:"border-box"}}>
-      <button data-tour="nav-today" onClick={()=>window.location.href="/today"} style={{background:"transparent",border:"none",borderBottom:"2px solid #10b981",padding:"8px 14px",color:"#10b981",fontSize:13,fontWeight:700,cursor:"pointer",display:"flex",alignItems:"center",gap:5,whiteSpace:"nowrap",flexShrink:0,marginBottom:-1,marginRight:4}}>
-        ◉ Today
-      </button>
-      <div style={{width:1,background:"#1a2e1f",margin:"8px 4px 8px 0",flexShrink:0}}/>
       {TABS.filter(t=>t.id!=="settings").map(t=>{
         const active=tab===t.id;
         return <button key={t.id} data-tour={t.id==="donors"?"nav-donors":t.id==="finance"?"nav-finance":t.id==="analytics"?"nav-analytics":undefined} onClick={()=>setTab(t.id)} style={{background:"transparent",border:"none",borderBottom:`2px solid ${active?"#c9a84c":"transparent"}`,padding:"8px 12px",color:active?"#f0ede6":"#8fa896",fontSize:13,fontWeight:active?700:400,cursor:"pointer",display:"flex",alignItems:"center",gap:6,whiteSpace:"nowrap",transition:"color 0.15s,border-color 0.15s",flexShrink:1,marginBottom:-1}}>
@@ -241,9 +240,9 @@ function AppShell() {
 
     <div className="app-content" style={{flex:1,padding:"20px 24px 28px 24px",maxWidth:1400,width:"100%",margin:"0 auto",boxSizing:"border-box"}}>
       {tab==="dashboard"&&<Dashboard data={data} setData={setData} onNavigate={navigateTo} isReadOnly={isReadOnly}/>}
-      {tab==="donors"&&<Donors data={data} setData={setData} isReadOnly={isReadOnly}/>}
-      {tab==="grants"&&<Grants data={data} setData={setData} isReadOnly={isReadOnly}/>}
-      {tab==="communications"&&<Communications data={data} isReadOnly={isReadOnly} initialNav={commsInitialNav} onInitialNavConsumed={()=>setCommsInitialNav(null)}/>}
+      {tab==="donors"&&<Donors data={data} setData={setData} isReadOnly={isReadOnly} initialView={donorsIntent?.view} initialLogDonorId={donorsIntent?.logDonorId} initialStageFilter={donorsIntent?.stageFilter} onIntentConsumed={()=>setDonorsIntent(null)}/>}
+      {tab==="grants"&&<Grants data={data} setData={setData} isReadOnly={isReadOnly} initialGrantId={grantsIntent?.grantId} onIntentConsumed={()=>setGrantsIntent(null)}/>}
+      {tab==="communications"&&<Communications data={data} isReadOnly={isReadOnly} initialNav={commsInitialNav} highlightDraftId={commsHighlightDraftId} onInitialNavConsumed={()=>{setCommsInitialNav(null);setCommsHighlightDraftId(null);}}/>}
       {tab==="events"&&<Events data={data} isReadOnly={isReadOnly}/>}
       {tab==="volunteers"&&<Volunteers data={data} setData={setData} isReadOnly={isReadOnly}/>}
       {tab==="board"&&<Board data={data} setData={setData} isReadOnly={isReadOnly}/>}
@@ -297,10 +296,7 @@ function AppShell() {
     {/* Bottom nav bar — mobile only, always in DOM */}
     <div className="mobile-bottom-bar">
       {BOTTOM_TABS.map(t=>(
-        // "today" isn't an AppShell tab (it's the separate /today route, same as the
-        // desktop nav's hardcoded Today button above), so it navigates instead of
-        // switching internal tab state — every other entry keeps the normal setTab behavior.
-        <button key={t.id} onClick={()=>{if(t.id==="today"){window.location.href="/today";}else{setTab(t.id);setMoreOpen(false);}}} className={`mobile-bottom-tab${tab===t.id?" active":""}`}>
+        <button key={t.id} onClick={()=>{setTab(t.id);setMoreOpen(false);}} className={`mobile-bottom-tab${tab===t.id?" active":""}`}>
           <span className="mob-icon">{t.icon}</span>
           {t.label}
         </button>

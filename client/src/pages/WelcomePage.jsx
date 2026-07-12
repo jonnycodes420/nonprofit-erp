@@ -48,7 +48,7 @@ export default function WelcomePage() {
   const focusRef = useRef(focus);
 
   useEffect(() => {
-    if (auth?.org?.onboarding_complete) navigate("/today", { replace: true });
+    if (auth?.org?.onboarding_complete) navigate("/dashboard", { replace: true });
   }, [auth]);
 
   useEffect(() => {
@@ -92,7 +92,7 @@ export default function WelcomePage() {
   const handleLoadSample = async () => {
     setLoadingSample(true);
     try { await apiFetch("/org/load-sample-data", { method: "POST" }); } catch {}
-    navigate("/today", { replace: true });
+    navigate("/dashboard", { replace: true });
   };
 
   const ink = "#0f1a12";
@@ -263,7 +263,7 @@ export default function WelcomePage() {
                 {loadingSample ? "Loading sample data…" : "Load sample data & explore →"}
               </button>
               <button
-                onClick={() => navigate("/today", { replace: true })}
+                onClick={() => navigate("/dashboard", { replace: true })}
                 style={{
                   width: "100%", background: "transparent", border: `1.5px solid ${greenDk}`,
                   borderRadius: 12, padding: "14px 16px", color: greenDk,
