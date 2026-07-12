@@ -1,5 +1,5 @@
 import { useState, useRef } from "react";
-import { streamAI } from "../api";
+import { streamAI, apiFetch } from "../api";
 
 // ── Design tokens ──────────────────────────────────────────────────────────
 export const T = {
@@ -394,7 +394,8 @@ export function TpYesNo({val,set}){
 }
 export function TouchpointTimeline({interactions}){
   if(!interactions?.length)return<div style={{fontSize:13,color:T.ink3,textAlign:"center",padding:"16px 0"}}>No touchpoints logged yet.</div>;
-  const typeColor={call:"#3b82f6",email:"#8b5cf6",meeting:T.greenMid,gift:"#f59e0b",event:"#ec4899",note:"#6b7280"};
+  const typeColor={call:"#3b82f6",email:"#8b5cf6",meeting:T.greenMid,gift:"#f59e0b",event:"#ec4899",note:"#6b7280",stewardship:T.gold,voice_memo:"#0ea5e9"};
+  const typeLabel={voice_memo:"Voice Memo"};
   const sorted=[...interactions].sort((a,b)=>new Date(b.date)-new Date(a.date));
   return(
     <div style={{display:"flex",flexDirection:"column",gap:0}}>
@@ -422,7 +423,7 @@ export function TouchpointTimeline({interactions}){
             </div>
             <div style={{flex:1}}>
               <div style={{display:"flex",alignItems:"center",gap:7,marginBottom:3,flexWrap:"wrap"}}>
-                <span style={{fontSize:11,fontWeight:700,textTransform:"capitalize",color:c}}>{int.type}</span>
+                <span style={{fontSize:11,fontWeight:700,textTransform:"capitalize",color:c}}>{typeLabel[int.type]||int.type}</span>
                 {direction&&(
                   <span style={{fontSize:10,fontWeight:700,padding:"1px 7px",borderRadius:99,
                     background:direction==="inbound"?"#f0fdf4":"#eff6ff",
@@ -447,6 +448,230 @@ export function TouchpointTimeline({interactions}){
           </div>
         );
       })}
+    </div>
+  );
+}
+
+// ── Voice memo capture ────────────────────────────────────────────────────
+// Record -> transcribe (Whisper via /voice-memos/transcribe) -> the officer
+// reviews the transcript + two AI-suggested extras and explicitly opts in to
+// each before anything is saved. Reachable either pre-scoped to a donor
+// (DonorProfile passes `donor`) or as a global quick-capture entry point
+// (App.jsx passes `donors` for the picker instead).
+function pickMimeType(){
+  const candidates=["audio/webm;codecs=opus","audio/webm","audio/mp4","audio/ogg"];
+  for(const c of candidates){ if(window.MediaRecorder?.isTypeSupported?.(c)) return c; }
+  return "";
+}
+function blobToBase64(blob){
+  return new Promise((resolve,reject)=>{
+    const reader=new FileReader();
+    reader.onloadend=()=>resolve(String(reader.result).split(",")[1]||"");
+    reader.onerror=reject;
+    reader.readAsDataURL(blob);
+  });
+}
+
+export function VoiceMemoModal({donor,donors,onClose,onSaved}){
+  const [selectedDonor,setSelectedDonor]=useState(donor||null);
+  const [search,setSearch]=useState("");
+  const [phase,setPhase]=useState("idle"); // idle|recording|recorded|transcribing|review|saving
+  const [error,setError]=useState("");
+  const [audioUrl,setAudioUrl]=useState(null);
+  const [elapsed,setElapsed]=useState(0);
+  const [transcript,setTranscript]=useState("");
+  const [suggestedDetail,setSuggestedDetail]=useState(null);
+  const [suggestedAction,setSuggestedAction]=useState(null);
+  const [includeDetail,setIncludeDetail]=useState(false);
+  const [includeAction,setIncludeAction]=useState(false);
+
+  const mediaRecorderRef=useRef(null);
+  const chunksRef=useRef([]);
+  const audioBlobRef=useRef(null);
+  const timerRef=useRef(null);
+  const streamRef=useRef(null);
+
+  const stopStream=()=>{ streamRef.current?.getTracks()?.forEach(t=>t.stop()); streamRef.current=null; };
+
+  const startRecording=async()=>{
+    setError("");
+    try{
+      const stream=await navigator.mediaDevices.getUserMedia({audio:true});
+      streamRef.current=stream;
+      const mimeType=pickMimeType();
+      const mr=new MediaRecorder(stream,mimeType?{mimeType}:undefined);
+      chunksRef.current=[];
+      mr.ondataavailable=e=>{ if(e.data.size>0) chunksRef.current.push(e.data); };
+      mr.onstop=()=>{
+        const blob=new Blob(chunksRef.current,{type:mimeType||"audio/webm"});
+        audioBlobRef.current=blob;
+        setAudioUrl(URL.createObjectURL(blob));
+        setPhase("recorded");
+        stopStream();
+      };
+      mediaRecorderRef.current=mr;
+      mr.start();
+      setElapsed(0);
+      timerRef.current=setInterval(()=>setElapsed(s=>s+1),1000);
+      setPhase("recording");
+    }catch(e){
+      setError("Couldn't access the microphone — check your browser permissions.");
+    }
+  };
+
+  const stopRecording=()=>{
+    clearInterval(timerRef.current);
+    mediaRecorderRef.current?.stop();
+  };
+
+  const reRecord=()=>{
+    setAudioUrl(null); audioBlobRef.current=null; setPhase("idle");
+  };
+
+  const transcribeAndSuggest=async()=>{
+    if(!audioBlobRef.current||!selectedDonor)return;
+    setPhase("transcribing"); setError("");
+    try{
+      const audioBase64=await blobToBase64(audioBlobRef.current);
+      const r=await apiFetch("/voice-memos/transcribe",{method:"POST",body:JSON.stringify({
+        donorId:selectedDonor.id, audioBase64, mimeType:audioBlobRef.current.type,
+      })});
+      setTranscript(r.transcript||"");
+      setSuggestedDetail(r.suggestedDetail||null);
+      setSuggestedAction(r.suggestedAction||null);
+      setIncludeDetail(false); setIncludeAction(false);
+      setPhase("review");
+    }catch(e){
+      setError(e.message||"Transcription failed — please try again.");
+      setPhase("recorded");
+    }
+  };
+
+  const save=async()=>{
+    setPhase("saving"); setError("");
+    try{
+      const r=await apiFetch("/voice-memos/save",{method:"POST",body:JSON.stringify({
+        donorId:selectedDonor.id, transcript,
+        addDetailToNotes:includeDetail, detailText:suggestedDetail,
+        createFollowUpTask:includeAction, actionText:suggestedAction,
+      })});
+      onSaved?.(selectedDonor,r);
+      close();
+    }catch(e){
+      setError(e.message||"Could not save — please try again.");
+      setPhase("review");
+    }
+  };
+
+  const close=()=>{
+    clearInterval(timerRef.current);
+    stopStream();
+    if(audioUrl) URL.revokeObjectURL(audioUrl);
+    onClose?.();
+  };
+
+  const mm=String(Math.floor(elapsed/60)).padStart(2,"0");
+  const ss=String(elapsed%60).padStart(2,"0");
+
+  const filteredDonors=donors&&search.trim()
+    ?donors.filter(d=>d.name.toLowerCase().includes(search.trim().toLowerCase())).slice(0,8)
+    :[];
+
+  return(
+    <div style={{position:"fixed",inset:0,background:"#0f1a12cc",backdropFilter:"blur(4px)",zIndex:400,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+      <div className="fade-in" style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:18,width:"100%",maxWidth:460,padding:24,boxShadow:"0 4px 32px rgba(15,15,15,0.12)"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
+          <div style={{fontSize:16,fontWeight:800,color:T.ink}}>🎙 Voice memo</div>
+          <button onClick={close} style={{background:"none",border:"none",fontSize:20,cursor:"pointer",color:T.ink3,lineHeight:1}}>×</button>
+        </div>
+
+        {!selectedDonor?(
+          <div>
+            <div style={{fontSize:12,fontWeight:600,color:T.ink3,marginBottom:6}}>Who is this about?</div>
+            <input autoFocus value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search donors…"
+              style={{width:"100%",boxSizing:"border-box",border:"1px solid "+T.bg3,borderRadius:10,padding:"10px 12px",fontSize:14,color:T.ink,background:T.bg,outline:"none",marginBottom:10}}/>
+            {filteredDonors.map(d=>(
+              <div key={d.id} onClick={()=>{setSelectedDonor(d);setSearch("");}}
+                style={{padding:"9px 12px",borderRadius:8,cursor:"pointer",fontSize:13,color:T.ink,border:"1px solid "+T.bg3,marginBottom:6}}
+                onMouseEnter={e=>e.currentTarget.style.background=T.bg}
+                onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
+                {d.name}
+              </div>
+            ))}
+            {search.trim()&&filteredDonors.length===0&&<div style={{fontSize:12,color:T.ink3,fontStyle:"italic"}}>No donors match "{search}"</div>}
+          </div>
+        ):(
+          <>
+            <div style={{fontSize:12,color:T.ink3,marginBottom:14}}>About <strong style={{color:T.ink}}>{selectedDonor.name}</strong>{!donor&&<button onClick={()=>setSelectedDonor(null)} style={{marginLeft:8,background:"none",border:"none",color:T.greenDk,fontSize:12,fontWeight:600,cursor:"pointer",padding:0}}>Change</button>}</div>
+
+            {error&&<div style={{marginBottom:12,fontSize:13,color:"#dc2626",background:"#fef2f2",border:"1px solid #fecaca",borderRadius:8,padding:"8px 12px"}}>{error}</div>}
+
+            {(phase==="idle")&&(
+              <div style={{textAlign:"center",padding:"24px 0"}}>
+                <button onClick={startRecording} style={{width:64,height:64,borderRadius:"50%",background:T.terracotta,border:"none",color:"#fff",fontSize:24,cursor:"pointer",boxShadow:"0 4px 16px rgba(184,89,63,0.35)"}}>●</button>
+                <div style={{fontSize:12,color:T.ink3,marginTop:12}}>Tap to start recording</div>
+              </div>
+            )}
+
+            {phase==="recording"&&(
+              <div style={{textAlign:"center",padding:"24px 0"}}>
+                <button onClick={stopRecording} style={{width:64,height:64,borderRadius:12,background:"#dc2626",border:"none",color:"#fff",fontSize:20,cursor:"pointer",boxShadow:"0 4px 16px rgba(220,38,38,0.35)"}}>■</button>
+                <div style={{fontSize:18,fontWeight:700,color:T.ink,marginTop:12,fontFamily:"monospace"}}>{mm}:{ss}</div>
+                <div style={{fontSize:12,color:T.ink3,marginTop:4}}>Recording — tap to stop</div>
+              </div>
+            )}
+
+            {phase==="recorded"&&(
+              <div style={{padding:"12px 0"}}>
+                {audioUrl&&<audio controls src={audioUrl} style={{width:"100%",marginBottom:14}}/>}
+                <div style={{display:"flex",gap:8}}>
+                  <button onClick={transcribeAndSuggest} style={{flex:1,background:T.green,border:"none",borderRadius:10,padding:"11px",color:"#fff",fontSize:14,fontWeight:700,cursor:"pointer"}}>Transcribe</button>
+                  <button onClick={reRecord} style={{background:T.bg,border:"none",borderRadius:10,padding:"11px 14px",color:T.ink3,fontSize:13,cursor:"pointer"}}>Re-record</button>
+                </div>
+              </div>
+            )}
+
+            {phase==="transcribing"&&(
+              <div style={{textAlign:"center",padding:"32px 0",display:"flex",flexDirection:"column",alignItems:"center",gap:10}}>
+                <Spin/><div style={{fontSize:13,color:T.ink3}}>Transcribing…</div>
+              </div>
+            )}
+
+            {(phase==="review"||phase==="saving")&&(
+              <div>
+                <div style={{fontSize:11,fontWeight:700,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:5}}>Transcript</div>
+                <textarea value={transcript} onChange={e=>setTranscript(e.target.value)} rows={4}
+                  style={{width:"100%",boxSizing:"border-box",border:"1px solid "+T.bg3,borderRadius:10,padding:"10px 12px",fontSize:13,color:T.ink,background:T.bg,outline:"none",marginBottom:14,resize:"vertical",fontFamily:"inherit",lineHeight:1.55}}/>
+
+                {(suggestedDetail||suggestedAction)&&(
+                  <div style={{background:"#f0fdf4",border:"1px solid #bbf7d0",borderRadius:10,padding:"12px 14px",marginBottom:14}}>
+                    <div style={{fontSize:10,fontWeight:800,color:"#166534",textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:8}}>Worth saving? (your call)</div>
+                    {suggestedDetail&&(
+                      <label style={{display:"flex",alignItems:"flex-start",gap:8,fontSize:13,color:T.ink,cursor:"pointer",marginBottom:suggestedAction?8:0}}>
+                        <input type="checkbox" checked={includeDetail} onChange={e=>setIncludeDetail(e.target.checked)} style={{marginTop:3,width:15,height:15,cursor:"pointer",flexShrink:0}}/>
+                        <span>Add to donor notes: <em>"{suggestedDetail}"</em></span>
+                      </label>
+                    )}
+                    {suggestedAction&&(
+                      <label style={{display:"flex",alignItems:"flex-start",gap:8,fontSize:13,color:T.ink,cursor:"pointer"}}>
+                        <input type="checkbox" checked={includeAction} onChange={e=>setIncludeAction(e.target.checked)} style={{marginTop:3,width:15,height:15,cursor:"pointer",flexShrink:0}}/>
+                        <span>Create follow-up task: <em>"{suggestedAction}"</em></span>
+                      </label>
+                    )}
+                  </div>
+                )}
+
+                <div style={{display:"flex",gap:8}}>
+                  <button onClick={save} disabled={phase==="saving"||!transcript.trim()} style={{flex:1,background:T.green,border:"none",borderRadius:10,padding:"11px",color:"#fff",fontSize:14,fontWeight:700,cursor:phase==="saving"?"not-allowed":"pointer",opacity:phase==="saving"?0.7:1}}>
+                    {phase==="saving"?"Saving…":"Save to timeline"}
+                  </button>
+                  <button onClick={close} style={{background:T.bg,border:"none",borderRadius:10,padding:"11px 14px",color:T.ink3,fontSize:13,cursor:"pointer"}}>Cancel</button>
+                </div>
+              </div>
+            )}
+          </>
+        )}
+      </div>
     </div>
   );
 }

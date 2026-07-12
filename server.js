@@ -5735,6 +5735,106 @@ app.post("/note-reminders/:id/dismiss", requireAuth, wrap(async (req, res) => {
   res.json({ success: true });
 }));
 
+// ── Voice memos ──────────────────────────────────────────────────────────────
+// Two-step, human-in-the-loop flow: /transcribe uploads + transcribes audio
+// and runs one narrow AI extraction pass, but saves NOTHING — the officer
+// reviews the transcript and suggestions client-side and only /save persists
+// anything (the interaction, and optionally the extracted detail/task, only
+// if the officer confirmed each). Requires OPENAI_API_KEY (Whisper) — if
+// unset, returns a clear error rather than failing silently or falling back
+// to a stub.
+app.post("/voice-memos/transcribe", requireAuth, wrap(async (req, res) => {
+  const { donorId, audioBase64, mimeType } = req.body;
+  if (!donorId || !audioBase64) return res.status(400).json({ error: "donorId and audioBase64 required" });
+  if (!process.env.OPENAI_API_KEY) return res.status(500).json({ error: "Voice transcription is not configured (missing OPENAI_API_KEY)." });
+
+  const donorRows = await query("SELECT id, name FROM donors WHERE id=? AND org_id=?", [donorId, req.user.orgId]);
+  if (!donorRows.length) return res.status(404).json({ error: "Donor not found" });
+
+  let transcript;
+  try {
+    const audioBuffer = Buffer.from(audioBase64, "base64");
+    const ext = (mimeType || "").includes("mp4") ? "mp4" : (mimeType || "").includes("wav") ? "wav" : "webm";
+    const form = new FormData();
+    form.append("file", new Blob([audioBuffer], { type: mimeType || "audio/webm" }), `memo.${ext}`);
+    form.append("model", "whisper-1");
+    const whisperResp = await fetch("https://api.openai.com/v1/audio/transcriptions", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${process.env.OPENAI_API_KEY}` },
+      body: form,
+    });
+    if (!whisperResp.ok) {
+      const errText = await whisperResp.text();
+      console.error("[voice-memo] Whisper error:", whisperResp.status, errText);
+      return res.status(502).json({ error: "Transcription failed — please try again." });
+    }
+    const whisperJson = await whisperResp.json();
+    transcript = (whisperJson.text || "").trim();
+  } catch (e) {
+    console.error("[voice-memo] transcription failed:", e.message);
+    return res.status(502).json({ error: "Transcription failed: " + e.message });
+  }
+
+  if (!transcript) return res.json({ transcript: "", suggestedDetail: null, suggestedAction: null });
+
+  // Single narrow extraction pass — not a general chatbot, one specific job.
+  let suggestedDetail = null, suggestedAction = null;
+  try {
+    const client = new Anthropic();
+    const msg = await client.messages.create({
+      model: "claude-sonnet-4-6",
+      max_tokens: 200,
+      system: `Extract from a voice memo a nonprofit development officer just recorded about a donor. Return ONLY valid JSON: {"personalDetail":"..." or null,"suggestedAction":"..." or null} — no markdown, no explanation. personalDetail: one short, specific, worth-remembering fact about the donor (family, interests, preferences, life event) mentioned in the memo — null if nothing like that was mentioned. suggestedAction: one short, concrete next step implied by the memo (e.g. "Send the gala invite", "Follow up after their trip in March") — null if none is implied.`,
+      messages: [{ role: "user", content: `Donor: ${donorRows[0].name}\nTranscript: ${transcript}` }],
+    });
+    const text = msg.content[0].text.trim();
+    const jsonMatch = text.match(/\{[\s\S]*\}/);
+    if (jsonMatch) {
+      const parsed = JSON.parse(jsonMatch[0]);
+      suggestedDetail = parsed.personalDetail || null;
+      suggestedAction = parsed.suggestedAction || null;
+    }
+  } catch (e) {
+    console.error("[voice-memo] extraction failed (non-fatal, transcript still returned):", e.message);
+  }
+
+  res.json({ transcript, suggestedDetail, suggestedAction });
+}));
+
+app.post("/voice-memos/save", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  const { donorId, transcript, addDetailToNotes, detailText, createFollowUpTask, actionText } = req.body;
+  if (!donorId || !transcript) return res.status(400).json({ error: "donorId and transcript required" });
+  const donorRows = await query("SELECT * FROM donors WHERE id=? AND org_id=?", [donorId, req.user.orgId]);
+  if (!donorRows.length) return res.status(404).json({ error: "Donor not found" });
+  const donor = donorRows[0];
+
+  const today = new Date().toISOString().slice(0, 10);
+  await run(
+    "INSERT INTO interactions (id,org_id,donor_id,type,note,date,created_by) VALUES (?,?,?,?,?,?,?)",
+    ["i_" + uuid().slice(0, 8), req.user.orgId, donorId, "voice_memo", transcript, today, req.user.userId]
+  );
+
+  // Both of these are opt-in — the officer explicitly confirmed each one
+  // client-side before this request was sent. Nothing AI-inferred is saved
+  // to the donor record without that confirmation.
+  if (addDetailToNotes && detailText && detailText.trim()) {
+    const updatedNotes = donor.notes ? `${donor.notes}\n\n${detailText.trim()}` : detailText.trim();
+    await run("UPDATE donors SET notes=? WHERE id=? AND org_id=?", [updatedNotes, donorId, req.user.orgId]);
+  }
+
+  let taskId = null;
+  if (createFollowUpTask && actionText && actionText.trim()) {
+    taskId = "t_" + uuid().slice(0, 8);
+    const due = new Date(); due.setDate(due.getDate() + 7);
+    await run(
+      "INSERT INTO tasks (id,org_id,title,due,priority,type,done,donor_id) VALUES (?,?,?,?,?,?,0,?)",
+      [taskId, req.user.orgId, actionText.trim(), due.toISOString().slice(0, 10), "medium", "donor", donorId]
+    );
+  }
+
+  res.json({ success: true, taskId });
+}));
+
 // ── Custom Fields ───────────────────────────────────────────────────────────
 app.get("/custom-fields", requireAuth, wrap(async (req, res) => {
   const rows = await query(
