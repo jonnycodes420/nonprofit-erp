@@ -1250,20 +1250,50 @@ async function seedData() {
 
   // Historical trend for the stewardship-debt / first-touch-delay metrics —
   // 21 daily points so the home screen's headline number has a real trend
-  // to draw on first load, not just today's single value. Debt trending
-  // down (staff catching up on outreach); first-touch delay roughly flat.
+  // to draw on first load, not just today's single value. The synthetic
+  // curve is scaled off a baseline computed with the same formula
+  // computeStewardshipDebt() uses (mirrored here since server.js isn't
+  // importable from db.js), rather than an arbitrary illustrative number —
+  // org_creo's real (mostly CSV-imported) donor set makes the actual value
+  // much larger than a hand-picked constant, and a mismatched seed curve
+  // would show up as a jarring, misleading cliff on the sparkline the first
+  // time this endpoint computes the real live number. Debt trending down
+  // (staff catching up on outreach); first-touch delay roughly flat.
+  const debtBaselineRows = await pool.query(
+    `SELECT d.total_giving,
+       COALESCE(
+         (SELECT MAX(i.date) FROM interactions i WHERE i.donor_id = d.id AND i.type IN ('call','meeting','email','stewardship')),
+         d.first_gift_date
+       ) AS last_contact
+     FROM donors d
+     WHERE d.org_id = $1 AND d.deleted_at IS NULL AND d.total_giving > 0`,
+    [orgId]
+  );
+  let debtBaseline = 0;
+  const nowMs = seedNow.getTime();
+  for (const row of debtBaselineRows.rows) {
+    if (!row.last_contact) continue;
+    const daysSince = Math.max(0, Math.min(1000, Math.floor((nowMs - new Date(row.last_contact).getTime()) / 86400000)));
+    debtBaseline += (daysSince / 30) * ((Number(row.total_giving) || 0) / 1000);
+  }
+  debtBaseline = Math.round(debtBaseline) || 400;
+
   for (let daysAgo = 20; daysAgo >= 0; daysAgo--) {
     const date = seedAgo(daysAgo);
-    const debtValue = Math.round(340 + daysAgo * 9 + Math.sin(daysAgo) * 15);
+    const debtValue = Math.round(debtBaseline * (1 + daysAgo * 0.018) + Math.sin(daysAgo) * debtBaseline * 0.02);
     const touchValue = Math.round(6 + Math.sin(daysAgo / 3) * 1.5);
     await pool.query(
+      // DO UPDATE (not DO NOTHING) deliberately: this seed shipped once
+      // already with an arbitrary, badly-scaled baseline (see comment
+      // above) — an already-deployed org's rows need the corrected,
+      // data-derived values to actually replace them, not be skipped.
       `INSERT INTO metric_snapshots (id,org_id,metric_key,value,snapshot_date) VALUES ($1,$2,$3,$4,$5)
-       ON CONFLICT (org_id, metric_key, snapshot_date) DO NOTHING`,
+       ON CONFLICT (org_id, metric_key, snapshot_date) DO UPDATE SET value = EXCLUDED.value`,
       [`msseed_debt_${daysAgo}`, orgId, "stewardship_debt", debtValue, date]
     );
     await pool.query(
       `INSERT INTO metric_snapshots (id,org_id,metric_key,value,snapshot_date) VALUES ($1,$2,$3,$4,$5)
-       ON CONFLICT (org_id, metric_key, snapshot_date) DO NOTHING`,
+       ON CONFLICT (org_id, metric_key, snapshot_date) DO UPDATE SET value = EXCLUDED.value`,
       [`msseed_touch_${daysAgo}`, orgId, "first_touch_delay", touchValue, date]
     );
   }
