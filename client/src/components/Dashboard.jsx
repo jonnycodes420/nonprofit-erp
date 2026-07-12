@@ -91,7 +91,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
   const milestoneCount=queueItems.filter(i=>i.action==="milestone").length;
 
   const nextGrant=[...data.grants]
-    .filter(g=>g.status!=="closed"&&g.deadline)
+    .filter(g=>g.status!=="closed"&&g.deadline&&daysUntil(g.deadline)>=-7)
     .sort((a,b)=>new Date(a.deadline)-new Date(b.deadline))[0]||null;
 
   const generateBriefing=async()=>{
@@ -269,10 +269,13 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
                     <div style={{fontSize:13,fontWeight:700,color:T.ink}}>{item.donorName}</div>
                     <div style={{fontSize:12,color:T.ink3,marginTop:2,lineHeight:1.4}}>{item.reason}</div>
                   </div>
-                  <button onClick={()=>handleQueueAction(item)} disabled={busy} className="dash-queue-action" style={{
-                    background:color,border:"none",borderRadius:8,padding:"8px 14px",color:"#fff",fontSize:12,fontWeight:700,
-                    cursor:busy?"not-allowed":"pointer",whiteSpace:"nowrap",flexShrink:0,opacity:busy?0.7:1,
-                  }}>{actionLabel(item)}</button>
+                  <button onClick={()=>handleQueueAction(item)} disabled={busy||(item.taskId&&isReadOnly)}
+                    title={item.taskId&&isReadOnly?"Reactivate your subscription to make changes.":undefined}
+                    className="dash-queue-action" style={{
+                      background:color,border:"none",borderRadius:8,padding:"8px 14px",color:"#fff",fontSize:12,fontWeight:700,
+                      cursor:(busy||(item.taskId&&isReadOnly))?"not-allowed":"pointer",whiteSpace:"nowrap",flexShrink:0,
+                      opacity:(busy||(item.taskId&&isReadOnly))?0.45:1,
+                    }}>{actionLabel(item)}</button>
                 </div>
               );
             })}
