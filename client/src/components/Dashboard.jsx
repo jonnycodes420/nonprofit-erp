@@ -4,9 +4,9 @@ import { T, fmt, fmtFull, daysDiff, daysUntil, SC, askClaude, buildContext, STAG
 
 // ── Global Chat ────────────────────────────────────────────────────────────
 export function AIChat({data,onClose}) {
-  const [msgs,setMsgs]=useState([{role:"assistant",content:`Hi! I'm your development intelligence assistant for ${data.org.name}. I have full context on your donors, grants, financials, board, and tasks.\n\nTry asking:\n• "Who should I call this week?"\n• "How's our grant pipeline?"\n• "Draft a script for my Margaret Chen call"\n• "What's our biggest financial risk right now?"\n• "Which volunteers should we convert to donors?"`}]);
+  const [msgs,setMsgs]=useState([{role:"assistant",content:`Hi! I'm your development intelligence assistant for ${data.org.name}. I have full context on your donors and grants.\n\nTry asking:\n• "Who should I call this week?"\n• "How's our grant pipeline?"\n• "Draft a script for my Margaret Chen call"\n• "Which donors are at risk of lapsing?"\n• "What grants have deadlines coming up?"`}]);
   const [input,setInput]=useState(""); const [loading,setLoading]=useState(false); const bottomRef=useRef(null);
-  const QUICK = ["Who should I call today?","Biggest risks this month?","Draft board update email","Upgrade path for William Park","Which grants need attention?"];
+  const QUICK = ["Who should I call today?","Which donors are at risk of lapsing?","Draft a donor re-engagement email","Upgrade path for William Park","Which grants need attention?"];
 
   const send = async (text) => {
     const msg = text||input; if(!msg.trim()||loading) return;
