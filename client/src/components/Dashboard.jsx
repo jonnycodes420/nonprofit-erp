@@ -63,11 +63,13 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
   const [myStats,setMyStats]=useState(null);
   const [portfolioOpen,setPortfolioOpen]=useState(false);
   const [milestoneDrafts,setMilestoneDrafts]=useState([]);
+  const [recentActivity,setRecentActivity]=useState([]);
 
   useEffect(()=>{
     apiFetch("/stripe/online-gifts").then(r=>setOnlineGifts(r||[])).catch(()=>{});
     apiFetch("/dashboard/my-stats").then(r=>setMyStats(r||null)).catch(()=>{});
     apiFetch("/milestone-drafts").then(r=>setMilestoneDrafts(r||[])).catch(()=>{});
+    apiFetch("/dashboard/recent-activity").then(r=>setRecentActivity(r||[])).catch(()=>{});
   },[]);
 
   const totalDonors=data.donors.length;
@@ -93,10 +95,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
     .sort((a,b)=>new Date(b.lastGift)-new Date(a.lastGift))
     .slice(0,5);
 
-  const activityFeed=data.donors
-    .flatMap(d=>(d.interactions||[]).map(i=>({...i,donorName:d.name,donorId:d.id})))
-    .sort((a,b)=>new Date(b.date)-new Date(a.date))
-    .slice(0,10);
+  const activityFeed=recentActivity.map(i=>({...i,donorName:i.donor_name,donorId:i.donor_id}));
 
   const generateBriefing=async()=>{
     setBriefLoading(true);setBriefing("");setBriefOpen(true);

@@ -2655,6 +2655,24 @@ app.get("/analytics", requireAuth, wrap(async (req, res) => {
 }));
 
 // ── Dashboard ──────────────────────────────────────────────────────────────
+// GET /donors (the list route App.jsx's loadData() uses) never embeds
+// interactions — only GET /donors/:id does, joined lazily when a profile
+// opens. adaptData() hardcodes donors[].interactions to [], so the
+// Dashboard's Recent Activity feed had no real data source. This gives it
+// one directly, org-wide, instead of relying on the per-donor shape.
+app.get("/dashboard/recent-activity", requireAuth, wrap(async (req, res) => {
+  const rows = await query(
+    `SELECT i.id, i.type, i.note, i.date, i.donor_id, d.name AS donor_name
+     FROM interactions i
+     JOIN donors d ON d.id = i.donor_id
+     WHERE i.org_id = ? AND d.deleted_at IS NULL
+     ORDER BY i.date DESC, i.created_at DESC
+     LIMIT 10`,
+    [req.user.orgId]
+  );
+  res.json(rows);
+}));
+
 app.get("/dashboard/my-stats", requireAuth, wrap(async (req, res) => {
   const { orgId, userId } = req.user;
   const now = new Date();
