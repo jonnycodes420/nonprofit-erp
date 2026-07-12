@@ -2716,6 +2716,15 @@ app.get("/dashboard/today", requireAuth, wrap(async (req, res) => {
   const todayStr = today.toISOString().split("T")[0];
   const ninetyDaysAgo = new Date(today - 90 * 86400000).toISOString().split("T")[0];
   const items = [];
+  // Each bucket below can produce a reason for a donor another bucket
+  // already claimed. The queue is meant to be one ranked, unified list, so
+  // the higher-priority reason should always win regardless of which
+  // bucket happened to run first — not whichever bucket got there first.
+  const upsertItem = item => {
+    const existingIdx = items.findIndex(i => i.donorId === item.donorId);
+    if (existingIdx === -1) items.push(item);
+    else if (items[existingIdx].priority < item.priority) items[existingIdx] = item;
+  };
 
   // Donors in active stages with no recent contact
   const noContact = await query(`
@@ -2758,7 +2767,30 @@ app.get("/dashboard/today", requireAuth, wrap(async (req, res) => {
       + (isLapsing ? 30 : 0)
       + (daysSinceContact && daysSinceContact > 180 ? 20 : 0);
 
-    items.push({ donorId: d.id, donorName: d.name, reason, priority, action, totalGiving, isLapsing });
+    upsertItem({ donorId: d.id, donorName: d.name, reason, priority, action, totalGiving, isLapsing });
+  }
+
+  // Lapsed donors — explicitly excluded from the no-contact bucket above
+  // (which only looks at active stages), but the queue is meant to unify
+  // lapsed/no-contact/overdue-task/milestone in one ranked list, so they
+  // need their own bucket rather than never appearing at all.
+  const lapsedDonorRows = await query(`
+    SELECT id, name, total_giving, last_gift_date
+    FROM donors
+    WHERE org_id = ? AND deleted_at IS NULL AND stage = 'lapsed'
+    ORDER BY total_giving DESC
+    LIMIT 5
+  `, [orgId]);
+  for (const l of lapsedDonorRows) {
+    const daysSince = l.last_gift_date ? Math.floor((today - new Date(l.last_gift_date)) / 86400000) : null;
+    const totalGiving = parseFloat(l.total_giving) || 0;
+    const lapsedItem = {
+      donorId: l.id, donorName: l.name,
+      reason: `Lapsed — ${daysSince != null ? `last gift ${daysSince} days ago` : "no gift on record"}${totalGiving > 0 ? `, $${totalGiving.toLocaleString()} lifetime value` : ""}`,
+      priority: 60 + Math.min(20, totalGiving / 5000), action: "lapsed",
+      totalGiving, isLapsing: true,
+    };
+    upsertItem(lapsedItem);
   }
 
   // Unacknowledged recent gifts (need a thank-you)
@@ -2774,9 +2806,8 @@ app.get("/dashboard/today", requireAuth, wrap(async (req, res) => {
   `, [orgId, ninetyDaysAgo]);
 
   for (const g of unacked) {
-    if (items.some(i => i.donorId === g.donor_id)) continue;
     const giftDate = new Date(g.date).toLocaleDateString("en-US", { month: "long", day: "numeric" });
-    items.push({
+    upsertItem({
       donorId: g.donor_id, donorName: g.donor_name,
       reason: `Gave $${Number(g.amount).toLocaleString()} on ${giftDate} — not yet thanked`,
       priority: 75, action: "thank",
@@ -2795,10 +2826,9 @@ app.get("/dashboard/today", requireAuth, wrap(async (req, res) => {
   `, [orgId, todayStr]);
 
   for (const t of dueTasks) {
-    if (items.some(i => i.donorId === t.donor_id)) continue;
     const daysOverdue = t.due && t.due < todayStr
       ? Math.floor((today - new Date(t.due)) / 86400000) : 0;
-    items.push({
+    upsertItem({
       donorId: t.donor_id, donorName: t.donor_name,
       reason: `Task: "${t.title}"`,
       priority: 90, action: "call",
@@ -2829,13 +2859,7 @@ app.get("/dashboard/today", requireAuth, wrap(async (req, res) => {
       totalGiving: parseFloat(m.total_giving) || 0,
       draftId: m.draft_id,
     };
-    // A milestone draft already covers "say thank you" (and more) — let it
-    // win over a lower-priority reason for the same donor (e.g. a plain
-    // unacked-gift "thank" item at priority 75) rather than losing the
-    // dedup race just because that bucket happened to run first.
-    const existingIdx = items.findIndex(i => i.donorId === m.donor_id);
-    if (existingIdx === -1) items.push(milestoneItem);
-    else if (items[existingIdx].priority < milestoneItem.priority) items[existingIdx] = milestoneItem;
+    upsertItem(milestoneItem);
   }
 
   items.sort((a, b) => b.priority - a.priority);
