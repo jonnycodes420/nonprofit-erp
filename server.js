@@ -3235,6 +3235,7 @@ app.get("/metrics/stewardship-summary", requireAuth, wrap(async (req, res) => {
   const { orgId } = req.user;
   const debt = await snapshotMetricsForOrg(orgId);
   const firstTouch = await computeFirstTouchDelay(orgId);
+  const retention = await computeRetentionRate(orgId);
 
   const since = new Date(); since.setDate(since.getDate() - 30);
   const sinceStr = since.toISOString().slice(0, 10);
@@ -3246,12 +3247,21 @@ app.get("/metrics/stewardship-summary", requireAuth, wrap(async (req, res) => {
     "SELECT snapshot_date, value FROM metric_snapshots WHERE org_id=? AND metric_key='first_touch_delay' AND snapshot_date >= ? ORDER BY snapshot_date ASC",
     [orgId, sinceStr]
   );
+  const retentionTrend = await query(
+    "SELECT snapshot_date, value FROM metric_snapshots WHERE org_id=? AND metric_key='retention_rate' AND snapshot_date >= ? ORDER BY snapshot_date ASC",
+    [orgId, sinceStr]
+  );
 
   const trendDelta = trend => trend.length >= 2 ? Math.round(Number(trend[trend.length - 1].value) - Number(trend[0].value)) : null;
 
   res.json({
     stewardshipDebt: { current: debt, trend: debtTrend.map(r => ({ date: r.snapshot_date, value: Number(r.value) })), deltaVsTrendStart: trendDelta(debtTrend) },
     firstTouchDelay: { current: firstTouch.avgDays, sampleSize: firstTouch.sampleSize, untouchedCount: firstTouch.untouchedCount, trend: touchTrend.map(r => ({ date: r.snapshot_date, value: Number(r.value) })), deltaVsTrendStart: trendDelta(touchTrend) },
+    retentionRate: {
+      current: retention.retentionRate, sectorAverage: SECTOR_AVG_RETENTION_RATE,
+      retained: retention.retained, prevYearCount: retention.prevYearCount,
+      trend: retentionTrend.map(r => ({ date: r.snapshot_date, value: Number(r.value) })), deltaVsTrendStart: trendDelta(retentionTrend),
+    },
   });
 }));
 
@@ -3275,6 +3285,45 @@ app.get("/dashboard/stewardship-debt/breakdown", requireAuth, wrap(async (req, r
     percentOfTotal: total > 0 ? Math.round((d.contribution / total) * 1000) / 10 : 0,
   }));
   res.json({ total: Math.round(total), count: breakdown.length, rows });
+}));
+
+// Ranked drill-down behind the Retention Rate headline number — the actual
+// donors who gave last year but haven't given again this year, i.e. the
+// specific list dragging the rate down. Shares computeRetentionRate's exact
+// donor-set math (thisYearDonorIds/prevYearDonorIds) so the headline % and
+// this list can never disagree: nonRetained.length always equals
+// prevYearCount - retained by construction (set difference vs set
+// intersection of the same two sets).
+app.get("/dashboard/retention/breakdown", requireAuth, wrap(async (req, res) => {
+  const { orgId } = req.user;
+  const PAGE_SIZE = 50;
+  const retention = await computeRetentionRate(orgId);
+  const nonRetainedIds = [...retention.prevYearDonorIds].filter(id => !retention.thisYearDonorIds.has(id));
+
+  let rows = [];
+  if (nonRetainedIds.length) {
+    const donorRows = await query(
+      `SELECT id, name, last_gift_amount, last_gift_date FROM donors
+       WHERE org_id = ? AND deleted_at IS NULL AND id IN (${nonRetainedIds.map(() => "?").join(",")})`,
+      [orgId, ...nonRetainedIds]
+    );
+    rows = donorRows
+      .sort((a, b) => new Date(b.last_gift_date || 0) - new Date(a.last_gift_date || 0))
+      .slice(0, PAGE_SIZE)
+      .map(d => ({
+        donorId: d.id,
+        donorName: d.name,
+        lastGiftAmount: Number(d.last_gift_amount) || 0,
+        lastGiftDate: d.last_gift_date,
+      }));
+  }
+
+  res.json({
+    retentionRate: retention.retentionRate, sectorAverage: SECTOR_AVG_RETENTION_RATE,
+    retained: retention.retained, prevYearCount: retention.prevYearCount,
+    year: retention.year, prevYear: retention.prevYear,
+    nonRetainedCount: nonRetainedIds.length, rows,
+  });
 }));
 
 app.get("/dashboard", requireAuth, wrap(async (req, res) => {
@@ -4223,15 +4272,14 @@ app.get("/annual-fund", requireAuth, wrap(async (req, res) => {
     return { month, raised };
   });
 
-  const thisYearDonorIds = new Set(thisYearGifts.map(g => g.donor_id));
-  const prevYearDonorIds = new Set(prevYearGifts.map(g => g.donor_id));
-
-  const totalDonors    = thisYearDonorIds.size;
-  const retained       = [...thisYearDonorIds].filter(id => prevYearDonorIds.has(id)).length;
+  // Shared with the Home dashboard's Retention Rate metric (see
+  // computeRetentionRate) so the two can never disagree — pass the
+  // already-fetched allGifts through rather than querying twice.
+  const retentionResult = await computeRetentionRate(orgId, { year, gifts: allGifts });
+  const totalDonors    = retentionResult.thisYearCount;
+  const retained       = retentionResult.retained;
   const acquired       = totalDonors - retained;
-  const retentionRate  = prevYearDonorIds.size > 0
-    ? Math.round(retained / prevYearDonorIds.size * 100)
-    : 0;
+  const retentionRate  = retentionResult.retentionRate ?? 0;
 
   const currentDate  = new Date();
   const currentYear  = currentDate.getFullYear();
@@ -5291,7 +5339,7 @@ async function sendOnboardingSequence(orgId, userId, userName, userEmail) {
       {
         delay_days: 10,
         subject: "The donors you're about to lose (and how to keep them)",
-        body: `Hi {{first_name}},\n\nHere's a number most development officers don't know off the top of their head:\n\nTheir donor retention rate.\n\nThe nonprofit sector average is about 43%. That means for every 100 donors you had last year, 57 didn't give again.\n\nSteward tracks this automatically. It flags donors who are at risk of lapsing and puts them in a Re-engage queue so nothing falls through the cracks.\n\nGo to Donors → Re-engage and see who's there.\n\nIf you've set up email sequences, Steward will also automatically reach out to lapsed donors on your behalf — a warm, personal email that goes out without you having to remember to send it.\n\nRetaining one major donor is worth more than acquiring ten new ones. This is where the money is.\n\n— Jonathan`,
+        body: `Hi {{first_name}},\n\nHere's a number most development officers don't know off the top of their head:\n\nTheir donor retention rate.\n\nThe nonprofit sector average is about ${SECTOR_AVG_RETENTION_RATE}%. That means for every 100 donors you had last year, ${100 - SECTOR_AVG_RETENTION_RATE} didn't give again.\n\nSteward tracks this automatically. It flags donors who are at risk of lapsing and puts them in a Re-engage queue so nothing falls through the cracks.\n\nGo to Donors → Re-engage and see who's there.\n\nIf you've set up email sequences, Steward will also automatically reach out to lapsed donors on your behalf — a warm, personal email that goes out without you having to remember to send it.\n\nRetaining one major donor is worth more than acquiring ten new ones. This is where the money is.\n\n— Jonathan`,
       },
       {
         delay_days: 18,
@@ -7873,6 +7921,39 @@ async function computeFirstTouchDelay(orgId) {
   return { avgDays: touched > 0 ? Math.round(totalDays / touched) : null, sampleSize: touched, untouchedCount: untouched };
 }
 
+// Sector benchmark line already used in the onboarding drip email (see
+// sendOnboardingSequence's step-0 body) — pulled out as a named constant so
+// both places read from one source instead of a second hardcoded "43".
+const SECTOR_AVG_RETENTION_RATE = 43;
+
+// Cohort year-over-year donor retention: what % of last year's donors gave
+// again this year. This is a real, correct metric fundraisers already
+// benchmark against — unlike stewardship_debt's invented composite score.
+// Originally computed inline only inside GET /annual-fund; extracted here so
+// /annual-fund and the Home dashboard's retention metric call the exact same
+// code, not two copies that can drift. Deliberately preserves /annual-fund's
+// exact original logic (fetch all gifts, bucket by calendar year via JS
+// `Date.getFullYear()`) rather than rewriting as a SQL date-range query —
+// a rewrite risks a subtle timezone-parsing mismatch that would make the two
+// callers disagree. Pass `gifts` when the caller already has the org's full
+// gift list (e.g. /annual-fund) to avoid fetching it twice.
+async function computeRetentionRate(orgId, { year = new Date().getFullYear(), gifts } = {}) {
+  const prevYear = year - 1;
+  const allGifts = gifts || await query("SELECT * FROM gifts WHERE org_id = ?", [orgId]);
+  const thisYearGifts = allGifts.filter(g => new Date(g.date).getFullYear() === year);
+  const prevYearGifts = allGifts.filter(g => new Date(g.date).getFullYear() === prevYear);
+  const thisYearDonorIds = new Set(thisYearGifts.map(g => g.donor_id));
+  const prevYearDonorIds = new Set(prevYearGifts.map(g => g.donor_id));
+  const retained = [...thisYearDonorIds].filter(id => prevYearDonorIds.has(id)).length;
+  const retentionRate = prevYearDonorIds.size > 0 ? Math.round(retained / prevYearDonorIds.size * 100) : null;
+  return {
+    retentionRate, retained,
+    thisYearDonorIds, prevYearDonorIds,
+    thisYearCount: thisYearDonorIds.size, prevYearCount: prevYearDonorIds.size,
+    year, prevYear,
+  };
+}
+
 async function snapshotMetricsForOrg(orgId) {
   const today = new Date().toISOString().slice(0, 10);
   const debt = await computeStewardshipDebt(orgId);
@@ -7895,6 +7976,14 @@ async function snapshotMetricsForOrg(orgId) {
       `INSERT INTO metric_snapshots (id, org_id, metric_key, value, snapshot_date) VALUES (?,?,?,?,?)
        ON CONFLICT (org_id, metric_key, snapshot_date) DO UPDATE SET value = EXCLUDED.value`,
       ["ms_" + uuid().slice(0, 8), orgId, "recovery_rate", recoveryRate, today]
+    );
+  }
+  const { retentionRate } = await computeRetentionRate(orgId);
+  if (retentionRate != null) {
+    await run(
+      `INSERT INTO metric_snapshots (id, org_id, metric_key, value, snapshot_date) VALUES (?,?,?,?,?)
+       ON CONFLICT (org_id, metric_key, snapshot_date) DO UPDATE SET value = EXCLUDED.value`,
+      ["ms_" + uuid().slice(0, 8), orgId, "retention_rate", retentionRate, today]
     );
   }
   return debt;

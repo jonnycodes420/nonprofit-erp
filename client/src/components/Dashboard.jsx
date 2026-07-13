@@ -44,8 +44,25 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
       .catch(()=>setDebtBreakdown({total:0,count:0,rows:[]}))
       .finally(()=>setDebtBreakdownLoading(false));
   };
+  const [retentionBreakdownOpen,setRetentionBreakdownOpen]=useState(false);
+  const [retentionBreakdown,setRetentionBreakdown]=useState(null);
+  const [retentionBreakdownLoading,setRetentionBreakdownLoading]=useState(false);
+
+  const openRetentionBreakdown=()=>{
+    setRetentionBreakdownOpen(true);
+    if(retentionBreakdown)return;
+    setRetentionBreakdownLoading(true);
+    apiFetch("/dashboard/retention/breakdown")
+      .then(r=>setRetentionBreakdown(r))
+      .catch(()=>setRetentionBreakdown({retentionRate:null,sectorAverage:43,retained:0,prevYearCount:0,nonRetainedCount:0,rows:[]}))
+      .finally(()=>setRetentionBreakdownLoading(false));
+  };
+
+  // Shared by both drill-downs — same donor-profile navigation already used
+  // by the "Needs Your Attention" queue.
   const goToDonorFromBreakdown=row=>{
     setDebtBreakdownOpen(false);
+    setRetentionBreakdownOpen(false);
     onNavigate("donors",{selectDonorId:row.donorId});
   };
 
@@ -194,6 +211,13 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
 
   const countsByStage=Object.fromEntries(stageCounts.map(s=>[s.stage,s]));
 
+  // Above sector average reads positive; below reads amber, then red the
+  // further under benchmark it falls — visually honest, not falsely
+  // encouraging (see CLAUDE.md's "name the vague anxiety as a number" pattern).
+  const retentionCurrent=stewardMetrics?.retentionRate?.current;
+  const retentionSector=stewardMetrics?.retentionRate?.sectorAverage??43;
+  const retentionColor=retentionCurrent==null?T.ink:retentionCurrent>=retentionSector?"#1a6b4a":retentionCurrent>=retentionSector-15?"#d97706":"#ef4444";
+
   return(
     <div className="dash-root dash-bleed fade-in" style={{background:T.bgDeep,margin:"-20px -24px -28px -24px",padding:"20px 24px 28px 24px",display:"flex",flexDirection:"column",gap:16,minHeight:"calc(100vh - 92px)"}}>
 
@@ -224,35 +248,61 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
         )}
       </div>
 
-      {/* Stewardship debt — headline metric, not a buried stat */}
+      {/* Donor Retention Rate — the Home dashboard's primary hero metric.
+          This is the number fundraisers already benchmark against (unlike
+          Stewardship Debt's invented composite score, see the demoted strip
+          below) — the nonprofit sector average line already lived in the
+          onboarding drip email before this. */}
       {stewardMetrics&&(
-        <div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:16,padding:"20px 24px",display:"flex",flexWrap:"wrap",gap:24,alignItems:"center"}}>
-          <div onClick={openDebtBreakdown} className="card-click" style={{flex:"1 1 220px",display:"flex",alignItems:"center",gap:20,cursor:"pointer",borderRadius:12,margin:-4,padding:4}}>
-            <div style={{flex:1,minWidth:0}}>
-              <div style={{fontSize:10,fontWeight:800,letterSpacing:"0.1em",textTransform:"uppercase",color:T.ink3,marginBottom:6}}>Stewardship Debt</div>
-              <div style={{display:"flex",alignItems:"baseline",gap:10,flexWrap:"wrap"}}>
-                <div style={{fontSize:36,fontWeight:800,fontFamily:"'DM Serif Display',serif",color:T.ink,lineHeight:1}}>{stewardMetrics.stewardshipDebt.current.toLocaleString()}</div>
-                {stewardMetrics.stewardshipDebt.deltaVsTrendStart!=null&&(
-                  <span style={{fontSize:13,fontWeight:700,color:stewardMetrics.stewardshipDebt.deltaVsTrendStart>0?"#ef4444":"#1a6b4a"}}>
-                    {stewardMetrics.stewardshipDebt.deltaVsTrendStart>0?"↑":"↓"} {Math.abs(stewardMetrics.stewardshipDebt.deltaVsTrendStart).toLocaleString()} vs 3 weeks ago
-                  </span>
-                )}
+        <div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:16,padding:"20px 24px",display:"flex",flexDirection:"column",gap:14}}>
+          <div style={{display:"flex",flexWrap:"wrap",gap:24,alignItems:"center"}}>
+            <div onClick={openRetentionBreakdown} className="card-click" style={{flex:"1 1 220px",display:"flex",alignItems:"center",gap:20,cursor:"pointer",borderRadius:12,margin:-4,padding:4}}>
+              <div style={{flex:1,minWidth:0}}>
+                <div style={{fontSize:10,fontWeight:800,letterSpacing:"0.1em",textTransform:"uppercase",color:T.ink3,marginBottom:6}}>Donor Retention Rate</div>
+                <div style={{display:"flex",alignItems:"baseline",gap:10,flexWrap:"wrap"}}>
+                  <div style={{fontSize:36,fontWeight:800,fontFamily:"'DM Serif Display',serif",color:retentionColor,lineHeight:1}}>
+                    {retentionCurrent!=null?`${retentionCurrent}%`:"—"}
+                  </div>
+                  {stewardMetrics.retentionRate.deltaVsTrendStart!=null&&(
+                    <span style={{fontSize:13,fontWeight:700,color:stewardMetrics.retentionRate.deltaVsTrendStart>=0?"#1a6b4a":"#ef4444"}}>
+                      {stewardMetrics.retentionRate.deltaVsTrendStart>=0?"↑":"↓"} {Math.abs(stewardMetrics.retentionRate.deltaVsTrendStart)}pt vs 3 weeks ago
+                    </span>
+                  )}
+                </div>
+                <div style={{fontSize:11,color:T.ink3,marginTop:4}}>
+                  vs. {retentionSector}% sector average — <span style={{fontWeight:700,color:T.greenDk}}>see who's not renewing →</span>
+                </div>
               </div>
-              <div style={{fontSize:11,color:T.ink3,marginTop:4}}>Donors weighted by days since last personal contact × giving significance, summed — <span style={{fontWeight:700,color:T.greenDk}}>see who's driving it →</span></div>
+              {stewardMetrics.retentionRate.trend.length>=2&&(
+                <Sparkline trend={stewardMetrics.retentionRate.trend} color={retentionColor} width={120} height={36}/>
+              )}
             </div>
-            {stewardMetrics.stewardshipDebt.trend.length>=2&&(
-              <Sparkline trend={stewardMetrics.stewardshipDebt.trend} color={stewardMetrics.stewardshipDebt.deltaVsTrendStart>0?"#ef4444":"#1a6b4a"} width={120} height={36}/>
-            )}
+            <div style={{width:1,alignSelf:"stretch",background:T.bg3,minHeight:44}}/>
+            <div style={{flex:"1 1 200px"}}>
+              <div style={{fontSize:10,fontWeight:800,letterSpacing:"0.1em",textTransform:"uppercase",color:T.ink3,marginBottom:6}}>First-Touch Delay</div>
+              <div style={{fontSize:24,fontWeight:800,fontFamily:"'DM Serif Display',serif",color:T.ink,lineHeight:1}}>
+                {stewardMetrics.firstTouchDelay.current!=null?`${stewardMetrics.firstTouchDelay.current}d`:"—"}
+              </div>
+              <div style={{fontSize:11,color:T.ink3,marginTop:4}}>
+                Avg days before a new donor gets a personal touch{stewardMetrics.firstTouchDelay.sampleSize?` (n=${stewardMetrics.firstTouchDelay.sampleSize})`:""}
+              </div>
+            </div>
           </div>
-          <div style={{width:1,alignSelf:"stretch",background:T.bg3,minHeight:44}}/>
-          <div style={{flex:"1 1 200px"}}>
-            <div style={{fontSize:10,fontWeight:800,letterSpacing:"0.1em",textTransform:"uppercase",color:T.ink3,marginBottom:6}}>First-Touch Delay</div>
-            <div style={{fontSize:24,fontWeight:800,fontFamily:"'DM Serif Display',serif",color:T.ink,lineHeight:1}}>
-              {stewardMetrics.firstTouchDelay.current!=null?`${stewardMetrics.firstTouchDelay.current}d`:"—"}
+
+          {/* Stewardship Debt — demoted from hero to a slim secondary strip.
+              Still the same real, computed metric and drill-down; just no
+              longer the first thing you see. */}
+          <div onClick={openDebtBreakdown} className="card-click" style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,paddingTop:14,borderTop:"1px dashed "+T.bg3,cursor:"pointer",borderRadius:8,margin:"-4px -4px -8px",padding:"4px 4px 8px"}}>
+            <div style={{fontSize:11,color:T.ink3,minWidth:0}}>
+              <span style={{fontWeight:700,color:T.ink}}>Stewardship Debt: {stewardMetrics.stewardshipDebt.current.toLocaleString()}</span>
+              {stewardMetrics.stewardshipDebt.deltaVsTrendStart!=null&&(
+                <span style={{marginLeft:6,fontWeight:700,color:stewardMetrics.stewardshipDebt.deltaVsTrendStart>0?"#ef4444":"#1a6b4a"}}>
+                  {stewardMetrics.stewardshipDebt.deltaVsTrendStart>0?"↑":"↓"} {Math.abs(stewardMetrics.stewardshipDebt.deltaVsTrendStart).toLocaleString()} vs 3 weeks ago
+                </span>
+              )}
+              <span> — donors weighted by days since contact × giving significance</span>
             </div>
-            <div style={{fontSize:11,color:T.ink3,marginTop:4}}>
-              Avg days before a new donor gets a personal touch{stewardMetrics.firstTouchDelay.sampleSize?` (n=${stewardMetrics.firstTouchDelay.sampleSize})`:""}
-            </div>
+            <span style={{fontSize:11,fontWeight:700,color:T.greenDk,flexShrink:0,whiteSpace:"nowrap"}}>see breakdown →</span>
           </div>
         </div>
       )}
@@ -481,6 +531,24 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
           detail:`${fmtFull(r.totalGiving)} total · ${r.daysSinceContact}d since contact`,
           value:r.contribution.toLocaleString(),
           percentOfTotal:r.percentOfTotal,
+        }))}
+        onSelectDonor={goToDonorFromBreakdown}
+      />
+
+      <MetricBreakdownPanel
+        open={retentionBreakdownOpen}
+        onClose={()=>setRetentionBreakdownOpen(false)}
+        title="Donor Retention Rate"
+        explanation={`Donors who gave in ${retentionBreakdown?.prevYear??"the prior year"} but haven't given again in ${retentionBreakdown?.year??"the current year"} — the specific list dragging the rate down, not just the percentage.`}
+        loading={retentionBreakdownLoading}
+        total={retentionBreakdown?.retentionRate!=null?`${retentionBreakdown.retentionRate}%`:"—"}
+        totalLabel="Retention rate"
+        totalCount={retentionBreakdown?.nonRetainedCount}
+        rows={(retentionBreakdown?.rows||[]).map(r=>({
+          donorId:r.donorId,
+          donorName:r.donorName,
+          detail:r.lastGiftDate?`Last gave ${new Date(r.lastGiftDate).toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"})}`:"No gift date on file",
+          value:fmtFull(r.lastGiftAmount),
         }))}
         onSelectDonor={goToDonorFromBreakdown}
       />
