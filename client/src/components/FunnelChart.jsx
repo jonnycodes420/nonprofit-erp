@@ -1,17 +1,23 @@
 import { STAGES, T, fmt } from "./shared";
 
 // ── Shared funnel math ───────────────────────────────────────────────────────
-// Both <FunnelChart> and DonorKanban's conversion strip need "what % of
-// donors in stage A made it to stage B" computed from the same real counts —
-// factored out here so it's written once, not once per component.
-export function computeStageConversions(counts, stages) {
-  return stages.slice(0, -1).map((s, i) => {
-    const next = stages[i + 1];
-    const fromCount = counts[s.id]?.count || 0;
-    const toCount = counts[next.id]?.count || 0;
-    const pct = fromCount > 0 ? Math.round((toCount / fromCount) * 100) : null;
-    return { fromId: s.id, toId: next.id, fromLabel: s.label, toLabel: next.label, pct };
+// Each stage's share of the total (non-lapsed) pipeline — an honest, always
+// ≤100% number. This replaces an earlier "conversion rate" framing
+// (nextStageCount / currentStageCount) that looked like a cohort conversion
+// but wasn't one: donor stage is a snapshot, not a tracked historical
+// transition (no time-boxed cohort data exists to support a real conversion
+// rate — see computeStagePipelineShare's callers), and a downstream stage
+// where donors sit long-term (Cultivate, Steward) routinely holds MORE
+// donors than a faster-moving upstream stage, so that ratio routinely
+// exceeded 100% on real data and was misleading, not just an edge case.
+export function computeStagePipelineShare(counts, stages) {
+  const total = stages.reduce((sum, s) => sum + (counts[s.id]?.count || 0), 0);
+  const share = {};
+  stages.forEach(s => {
+    const c = counts[s.id]?.count || 0;
+    share[s.id] = total > 0 ? Math.round((c / total) * 100) : 0;
   });
+  return share;
 }
 
 // Proportional "how wide should this stage be" weights (0..1, floor-clamped
@@ -27,52 +33,67 @@ export function computeStageWeights(counts, stages, metric = "count", floor = 0.
   return { weights, max, valueOf };
 }
 
-// A real tapering funnel: each stage is a trapezoid band whose top width
-// matches its own share of donors/value and whose bottom width tapers to the
-// next stage's share, so bands visually "pour" toward Steward. Lapsed is
-// rendered as a separate branch below — a leak out of the funnel, not the
-// next step in it.
+const SHAPE_W = 88;
+
+// A real tapering funnel: every band's bottom edge is exactly the next
+// band's top edge (both come from the same precomputed `edgeWidths` array,
+// not recomputed per band), and the bands are stacked with zero gap between
+// them, so the stack reads as one continuous silhouette instead of
+// independently-shaped triangles/diamonds per band. Labels live in a
+// separate column beside the shape (not inside the clipped element) so a
+// narrow taper never clips the text along with it. Lapsed is rendered as a
+// separate branch below — a leak out of the funnel, not the next step in it.
 export default function FunnelChart({ counts, metric = "count", onStageClick, showLapsed = true, bandHeight = 40 }) {
   const coreStages = STAGES.filter(s => s.id !== "lapsed");
   const lapsedStage = STAGES.find(s => s.id === "lapsed");
   const { weights, max, valueOf } = computeStageWeights(counts, coreStages, metric);
-  const conversions = computeStageConversions(counts, coreStages);
-  const widthPct = id => Math.round(weights[id] * 100);
+  const pipelineShare = computeStagePipelineShare(counts, coreStages);
   const lapsedWidthPct = lapsedStage ? Math.round(Math.max(0.08, valueOf(lapsedStage) / max) * 100) : 0;
 
-  const valueLabel = s => {
+  // One pass across the full stage list, computed before any rendering —
+  // edgeWidths[i] is stage i's own width%. Band i's top = edgeWidths[i] and
+  // its bottom = edgeWidths[i+1], the exact same value the next band uses as
+  // its own top, so adjacent bands always share a seam instead of being
+  // computed independently of their neighbor.
+  const edgeWidths = coreStages.map(s => Math.round(weights[s.id] * 100));
+
+  const baseLabel = s => {
     const c = counts[s.id]?.count || 0;
     const t = counts[s.id]?.total || 0;
     return `${c} · ${t > 0 ? fmt(t) : "—"}`;
   };
+  const valueLabel = s => `${baseLabel(s)} · ${pipelineShare[s.id]}% of pipeline`;
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", width: "100%" }}>
-      {coreStages.map((s, i) => {
-        const topW = widthPct(s.id);
-        const bottomW = i < coreStages.length - 1 ? widthPct(coreStages[i + 1].id) : topW;
-        const topInset = (100 - topW) / 2;
-        const bottomInset = (100 - bottomW) / 2;
-        const clip = `polygon(${topInset}% 0%, ${100 - topInset}% 0%, ${100 - bottomInset}% 100%, ${bottomInset}% 100%)`;
-        const conv = conversions[i];
-        return (
-          <div key={s.id} onClick={onStageClick ? () => onStageClick(s.id) : undefined} style={{ cursor: onStageClick ? "pointer" : "default" }}>
-            {/* Label sits above the band, not inside it — a narrow taper
-                (near the floor width) would otherwise clip the label text
-                along with the trapezoid's clip-path. */}
-            <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, marginBottom: 3 }}>
-              <span style={{ fontWeight: 800, color: s.color, textTransform: "uppercase", letterSpacing: "0.06em" }}>{s.label}</span>
-              <span style={{ color: T.ink3 }}>{valueLabel(s)}</span>
-            </div>
-            <div style={{ height: bandHeight, background: s.color, clipPath: clip, transition: "clip-path 0.4s ease" }} />
-            {conv && (
-              <div style={{ textAlign: "center", fontSize: 10, color: T.ink3, padding: "3px 0", fontWeight: 700 }}>
-                {conv.pct == null ? "—" : `${conv.pct}%`} {conv.fromLabel.toLowerCase()} → {conv.toLabel.toLowerCase()}
+    <div style={{ width: "100%" }}>
+      <div style={{ display: "flex", flexDirection: "column" }}>
+        {coreStages.map((s, i) => {
+          const topW = edgeWidths[i];
+          const bottomW = i < edgeWidths.length - 1 ? edgeWidths[i + 1] : topW;
+          const topInset = (100 - topW) / 2;
+          const bottomInset = (100 - bottomW) / 2;
+          const clip = `polygon(${topInset}% 0%, ${100 - topInset}% 0%, ${100 - bottomInset}% 100%, ${bottomInset}% 100%)`;
+          return (
+            <div
+              key={s.id}
+              onClick={onStageClick ? () => onStageClick(s.id) : undefined}
+              style={{ display: "flex", alignItems: "stretch", gap: 12, height: bandHeight, cursor: onStageClick ? "pointer" : "default" }}
+            >
+              <div style={{ width: SHAPE_W, flexShrink: 0, position: "relative" }}>
+                <div style={{ position: "absolute", inset: 0, background: s.color, clipPath: clip, transition: "clip-path 0.4s ease" }} />
               </div>
-            )}
-          </div>
-        );
-      })}
+              <div style={{ flex: 1, minWidth: 0, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+                <span style={{ fontSize: 11, fontWeight: 800, color: s.color, textTransform: "uppercase", letterSpacing: "0.06em", flexShrink: 0 }}>
+                  {s.label}
+                </span>
+                <span style={{ fontSize: 11, color: T.ink3, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", minWidth: 0 }}>
+                  {valueLabel(s)}
+                </span>
+              </div>
+            </div>
+          );
+        })}
+      </div>
 
       {showLapsed && lapsedStage && (
         <div
@@ -81,7 +102,7 @@ export default function FunnelChart({ counts, metric = "count", onStageClick, sh
         >
           <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, marginBottom: 3 }}>
             <span style={{ fontWeight: 800, color: lapsedStage.color, textTransform: "uppercase", letterSpacing: "0.06em" }}>↘ Leaking Out — Lapsed</span>
-            <span style={{ color: T.ink3 }}>{valueLabel(lapsedStage)}</span>
+            <span style={{ color: T.ink3 }}>{baseLabel(lapsedStage)}</span>
           </div>
           <div style={{ background: T.bg, borderRadius: 6, height: 16, overflow: "hidden" }}>
             <div style={{ height: "100%", width: `${lapsedWidthPct}%`, background: lapsedStage.color, borderRadius: 6 }} />

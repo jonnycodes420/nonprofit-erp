@@ -3255,6 +3255,28 @@ app.get("/metrics/stewardship-summary", requireAuth, wrap(async (req, res) => {
   });
 }));
 
+// Ranked, per-donor drill-down behind the Stewardship Debt headline number —
+// every donor with total_giving > 0 has a precise, individually-attributable
+// contribution to that aggregate (see computeStewardshipDebtBreakdown), so
+// this surfaces it directly instead of leaving it as one opaque figure.
+// Capped at a page size since a large org could have hundreds of qualifying
+// donors; `count` is the true total so the UI can say "top 50 of 214".
+app.get("/dashboard/stewardship-debt/breakdown", requireAuth, wrap(async (req, res) => {
+  const { orgId } = req.user;
+  const PAGE_SIZE = 50;
+  const breakdown = await computeStewardshipDebtBreakdown(orgId);
+  const total = breakdown.reduce((sum, d) => sum + d.contribution, 0);
+  const rows = breakdown.slice(0, PAGE_SIZE).map(d => ({
+    donorId: d.donorId,
+    donorName: d.donorName,
+    totalGiving: d.totalGiving,
+    daysSinceContact: d.daysSinceContact,
+    contribution: Math.round(d.contribution * 10) / 10,
+    percentOfTotal: total > 0 ? Math.round((d.contribution / total) * 1000) / 10 : 0,
+  }));
+  res.json({ total: Math.round(total), count: breakdown.length, rows });
+}));
+
 app.get("/dashboard", requireAuth, wrap(async (req, res) => {
   const { orgId } = req.user;
   const urgentTasks = await query(
@@ -7797,9 +7819,14 @@ setInterval(() => checkTrialExpiry(), 6 * 60 * 60 * 1000);
 // stage_change, which aren't a human reaching out.
 const MEANINGFUL_CONTACT_TYPES = "('call','meeting','email','stewardship')";
 
-async function computeStewardshipDebt(orgId) {
+// Per-donor breakdown behind the stewardship_debt headline number — every
+// donor's exact contribution to the aggregate, sorted by who's driving it
+// most. computeStewardshipDebt() below just sums this same list, so the
+// headline number and the drill-down list (GET /dashboard/stewardship-debt/
+// breakdown) can never drift into two different computations.
+async function computeStewardshipDebtBreakdown(orgId) {
   const rows = await query(
-    `SELECT d.id, d.total_giving,
+    `SELECT d.id, d.name, d.total_giving,
        COALESCE(
          (SELECT MAX(i.date) FROM interactions i WHERE i.donor_id = d.id AND i.type IN ${MEANINGFUL_CONTACT_TYPES}),
          d.first_gift_date
@@ -7809,14 +7836,22 @@ async function computeStewardshipDebt(orgId) {
     [orgId]
   );
   const today = Date.now();
-  let debt = 0;
+  const breakdown = [];
   for (const d of rows) {
     if (!d.last_contact) continue; // no gift and no contact — nothing to weight yet
-    const daysSince = Math.max(0, Math.min(1000, Math.floor((today - new Date(d.last_contact).getTime()) / 86400000)));
-    const significance = (Number(d.total_giving) || 0) / 1000;
-    debt += (daysSince / 30) * significance;
+    const daysSinceContact = Math.max(0, Math.min(1000, Math.floor((today - new Date(d.last_contact).getTime()) / 86400000)));
+    const totalGiving = Number(d.total_giving) || 0;
+    const significance = totalGiving / 1000;
+    const contribution = (daysSinceContact / 30) * significance;
+    breakdown.push({ donorId: d.id, donorName: d.name, totalGiving, daysSinceContact, contribution });
   }
-  return Math.round(debt);
+  breakdown.sort((a, b) => b.contribution - a.contribution);
+  return breakdown;
+}
+
+async function computeStewardshipDebt(orgId) {
+  const breakdown = await computeStewardshipDebtBreakdown(orgId);
+  return Math.round(breakdown.reduce((sum, d) => sum + d.contribution, 0));
 }
 
 async function computeFirstTouchDelay(orgId) {

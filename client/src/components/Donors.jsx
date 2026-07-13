@@ -23,7 +23,7 @@ class ErrorBoundary extends Component {
   }
 }
 import { T, fmt, fmtFull, daysDiff, SC, askClaude, STAGES, STAGE_ACTION, TIER_COLOR, donorScore, moveUrgency, Spin, Pill, Card, AIBtn, AIPanel, PageTitle, EmptyState, GivingHistoryChart, TpField, TpYesNo, TouchpointTimeline } from "./shared";
-import { computeStageConversions, computeStageWeights } from "./FunnelChart";
+import { computeStagePipelineShare, computeStageWeights } from "./FunnelChart";
 // SHELVED — voice capture works but unproven adoption assumption, revisit
 // later. Code intact, re-enable by uncommenting (see showVoiceMemo state,
 // profile button, and modal render below, and add `VoiceMemoModal` back to
@@ -3063,19 +3063,23 @@ function DonorKanban({donors,onStageChange,onLogTouchpoint,onSelectDonor}){
   const weights=useMemo(()=>computeStageWeights(counts,STAGES,"count").weights,[counts]);
   const gridCols=STAGES.map(s=>`minmax(140px, ${weights[s.id]}fr)`).join(" ");
 
-  // Same stage-to-stage conversion math as <FunnelChart> (shared helper —
-  // computed once in FunnelChart.jsx, not reimplemented here).
+  // Same "share of pipeline" math as <FunnelChart> (shared helper — computed
+  // once in FunnelChart.jsx, not reimplemented here). This replaced an
+  // earlier "conversion rate" framing (nextCount/currentCount) that wasn't a
+  // real conversion — donor stage is a snapshot, not tracked cohort history —
+  // and routinely showed >100% since downstream stages like Cultivate hold
+  // donors long-term and often outnumber a faster-moving upstream stage.
   const coreStages=useMemo(()=>STAGES.filter(s=>s.id!=="lapsed"),[]);
-  const conversions=useMemo(()=>computeStageConversions(counts,coreStages),[counts,coreStages]);
+  const pipelineShare=useMemo(()=>computeStagePipelineShare(counts,coreStages),[counts,coreStages]);
 
   return(
     <div style={{width:"100%"}}>
       <div className="donor-kanban-conv" style={{display:"grid",gridTemplateColumns:gridCols,gap:8,marginBottom:6,padding:"0 2px"}}>
-        {STAGES.map((stage,i)=>stage.id==="lapsed"?(
+        {STAGES.map(stage=>stage.id==="lapsed"?(
           <div key={stage.id} style={{fontSize:9,fontWeight:800,color:"#ef4444",textAlign:"center",letterSpacing:"0.06em",textTransform:"uppercase"}}>↘ Leak</div>
         ):(
-          <div key={stage.id} style={{fontSize:9,fontWeight:700,color:"#8fa896",textAlign:"right",paddingRight:4}}>
-            {conversions[i]?`${conversions[i].pct==null?"—":conversions[i].pct+"%"} →`:""}
+          <div key={stage.id} style={{fontSize:9,fontWeight:700,color:"#8fa896",textAlign:"center"}}>
+            {pipelineShare[stage.id]}% of pipeline
           </div>
         ))}
       </div>
@@ -3727,7 +3731,7 @@ function FilterBar({filters,onChange,customFields,cfFilters,onCfChange}){
 }
 
 // ── Donors ─────────────────────────────────────────────────────────────────
-export function Donors({data,setData,isReadOnly=false,initialView,initialLogDonorId,initialStageFilter,onIntentConsumed}){
+export function Donors({data,setData,isReadOnly=false,initialView,initialLogDonorId,initialStageFilter,initialSelectDonorId,onIntentConsumed}){
   const{auth}=useAuth();
   const isAdmin=auth?.user?.role==="admin";
   const userId=auth?.user?.id||"";
@@ -3735,7 +3739,7 @@ export function Donors({data,setData,isReadOnly=false,initialView,initialLogDono
   const lapsedCount=data.donors.filter(d=>d.stage==="lapsed"||(d.lastGift&&daysDiff(d.lastGift)>365)).length;
   const[view,setView]=useState(initialView||"directory");
   const[search,setSearch]=useState("");
-  const[selected,setSelected]=useState(null);
+  const[selected,setSelected]=useState(()=>initialSelectDonorId?data.donors.find(d=>d.id===initialSelectDonorId)||null:null);
   const[logTarget,setLogTarget]=useState(()=>initialLogDonorId?data.donors.find(d=>d.id===initialLogDonorId)||null:null);
   const[editTarget,setEditTarget]=useState(null);
   const[followUpTarget,setFollowUpTarget]=useState(null);
@@ -3757,7 +3761,7 @@ export function Donors({data,setData,isReadOnly=false,initialView,initialLogDono
   const[sampleLoading,setSampleLoading]=useState(false);
 
   useEffect(()=>{
-    if((initialView||initialLogDonorId||initialStageFilter)&&onIntentConsumed)onIntentConsumed();
+    if((initialView||initialLogDonorId||initialStageFilter||initialSelectDonorId)&&onIntentConsumed)onIntentConsumed();
   },[]);
 
   const filtered=data.donors

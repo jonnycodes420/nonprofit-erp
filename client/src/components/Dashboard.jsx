@@ -3,6 +3,7 @@ import { apiFetch } from "../api";
 import { useAuth } from "../main";
 import { T, fmt, fmtFull, daysUntil, askClaude, buildContext, Spin, AIBtn } from "./shared";
 import FunnelChart from "./FunnelChart";
+import MetricBreakdownPanel from "./MetricBreakdownPanel";
 
 // ── Dashboard / Home ─────────────────────────────────────────────────────────
 export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
@@ -29,6 +30,24 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
   const [stewardMetrics,setStewardMetrics]=useState(null);
   const [recurringHealth,setRecurringHealth]=useState(null);
   const [resentIds,setResentIds]=useState(()=>new Set());
+
+  const [debtBreakdownOpen,setDebtBreakdownOpen]=useState(false);
+  const [debtBreakdown,setDebtBreakdown]=useState(null);
+  const [debtBreakdownLoading,setDebtBreakdownLoading]=useState(false);
+
+  const openDebtBreakdown=()=>{
+    setDebtBreakdownOpen(true);
+    if(debtBreakdown)return;
+    setDebtBreakdownLoading(true);
+    apiFetch("/dashboard/stewardship-debt/breakdown")
+      .then(r=>setDebtBreakdown(r))
+      .catch(()=>setDebtBreakdown({total:0,count:0,rows:[]}))
+      .finally(()=>setDebtBreakdownLoading(false));
+  };
+  const goToDonorFromBreakdown=row=>{
+    setDebtBreakdownOpen(false);
+    onNavigate("donors",{selectDonorId:row.donorId});
+  };
 
   const loadGoal=()=>apiFetch("/goals/active").then(r=>setGoal(r)).catch(()=>setGoal(null));
 
@@ -208,21 +227,23 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
       {/* Stewardship debt — headline metric, not a buried stat */}
       {stewardMetrics&&(
         <div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:16,padding:"20px 24px",display:"flex",flexWrap:"wrap",gap:24,alignItems:"center"}}>
-          <div style={{flex:"1 1 220px"}}>
-            <div style={{fontSize:10,fontWeight:800,letterSpacing:"0.1em",textTransform:"uppercase",color:T.ink3,marginBottom:6}}>Stewardship Debt</div>
-            <div style={{display:"flex",alignItems:"baseline",gap:10,flexWrap:"wrap"}}>
-              <div style={{fontSize:36,fontWeight:800,fontFamily:"'DM Serif Display',serif",color:T.ink,lineHeight:1}}>{stewardMetrics.stewardshipDebt.current.toLocaleString()}</div>
-              {stewardMetrics.stewardshipDebt.deltaVsTrendStart!=null&&(
-                <span style={{fontSize:13,fontWeight:700,color:stewardMetrics.stewardshipDebt.deltaVsTrendStart>0?"#ef4444":"#1a6b4a"}}>
-                  {stewardMetrics.stewardshipDebt.deltaVsTrendStart>0?"↑":"↓"} {Math.abs(stewardMetrics.stewardshipDebt.deltaVsTrendStart).toLocaleString()} vs 3 weeks ago
-                </span>
-              )}
+          <div onClick={openDebtBreakdown} className="card-click" style={{flex:"1 1 220px",display:"flex",alignItems:"center",gap:20,cursor:"pointer",borderRadius:12,margin:-4,padding:4}}>
+            <div style={{flex:1,minWidth:0}}>
+              <div style={{fontSize:10,fontWeight:800,letterSpacing:"0.1em",textTransform:"uppercase",color:T.ink3,marginBottom:6}}>Stewardship Debt</div>
+              <div style={{display:"flex",alignItems:"baseline",gap:10,flexWrap:"wrap"}}>
+                <div style={{fontSize:36,fontWeight:800,fontFamily:"'DM Serif Display',serif",color:T.ink,lineHeight:1}}>{stewardMetrics.stewardshipDebt.current.toLocaleString()}</div>
+                {stewardMetrics.stewardshipDebt.deltaVsTrendStart!=null&&(
+                  <span style={{fontSize:13,fontWeight:700,color:stewardMetrics.stewardshipDebt.deltaVsTrendStart>0?"#ef4444":"#1a6b4a"}}>
+                    {stewardMetrics.stewardshipDebt.deltaVsTrendStart>0?"↑":"↓"} {Math.abs(stewardMetrics.stewardshipDebt.deltaVsTrendStart).toLocaleString()} vs 3 weeks ago
+                  </span>
+                )}
+              </div>
+              <div style={{fontSize:11,color:T.ink3,marginTop:4}}>Donors weighted by days since last personal contact × giving significance, summed — <span style={{fontWeight:700,color:T.greenDk}}>see who's driving it →</span></div>
             </div>
-            <div style={{fontSize:11,color:T.ink3,marginTop:4}}>Donors weighted by days since last personal contact × giving significance, summed</div>
+            {stewardMetrics.stewardshipDebt.trend.length>=2&&(
+              <Sparkline trend={stewardMetrics.stewardshipDebt.trend} color={stewardMetrics.stewardshipDebt.deltaVsTrendStart>0?"#ef4444":"#1a6b4a"} width={120} height={36}/>
+            )}
           </div>
-          {stewardMetrics.stewardshipDebt.trend.length>=2&&(
-            <Sparkline trend={stewardMetrics.stewardshipDebt.trend} color={stewardMetrics.stewardshipDebt.deltaVsTrendStart>0?"#ef4444":"#1a6b4a"} width={120} height={36}/>
-          )}
           <div style={{width:1,alignSelf:"stretch",background:T.bg3,minHeight:44}}/>
           <div style={{flex:"1 1 200px"}}>
             <div style={{fontSize:10,fontWeight:800,letterSpacing:"0.1em",textTransform:"uppercase",color:T.ink3,marginBottom:6}}>First-Touch Delay</div>
@@ -444,6 +465,25 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
           </div>
         </div>
       )}
+
+      <MetricBreakdownPanel
+        open={debtBreakdownOpen}
+        onClose={()=>setDebtBreakdownOpen(false)}
+        title="Stewardship Debt"
+        explanation="Donors weighted by how long it's been since a real conversation, multiplied by how much they've given. The list below is ranked by who's contributing most to that number right now."
+        loading={debtBreakdownLoading}
+        total={debtBreakdown?.total?.toLocaleString()}
+        totalLabel="Debt score"
+        totalCount={debtBreakdown?.count}
+        rows={(debtBreakdown?.rows||[]).map(r=>({
+          donorId:r.donorId,
+          donorName:r.donorName,
+          detail:`${fmtFull(r.totalGiving)} total · ${r.daysSinceContact}d since contact`,
+          value:r.contribution.toLocaleString(),
+          percentOfTotal:r.percentOfTotal,
+        }))}
+        onSelectDonor={goToDonorFromBreakdown}
+      />
     </div>
   );
 }
