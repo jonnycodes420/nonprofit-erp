@@ -24,6 +24,7 @@ export default function Donate() {
   const [pageLoading, setPageLoading] = useState(true);
   const [pageError, setPageError] = useState("");
   const [donated, setDonated] = useState(false);
+  const [cardUpdated, setCardUpdated] = useState(false);
 
   const [preset, setPreset] = useState(100);
   const [customAmt, setCustomAmt] = useState("");
@@ -40,6 +41,10 @@ export default function Donate() {
     const params = new URLSearchParams(window.location.search);
     if (params.get("donated") === "true") {
       setDonated(true);
+      window.history.replaceState({}, "", `/give/${orgSlug}`);
+    }
+    if (params.get("card_updated") === "true") {
+      setCardUpdated(true);
       window.history.replaceState({}, "", `/give/${orgSlug}`);
     }
     fetch(`${API}/org/${orgSlug}/public`)
@@ -115,6 +120,21 @@ export default function Donate() {
       </div>
       <div style={{ fontSize: 14, color: T.ink3, maxWidth: 360, lineHeight: 1.6 }}>
         A receipt will be sent to your email. Thank you for your generosity — it makes a real difference.
+      </div>
+    </div>
+  );
+
+  if (cardUpdated) return (
+    <div style={{ ...BASE, justifyContent: "center", textAlign: "center" }}>
+      <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=DM+Serif+Display:ital@0;1&display=swap" rel="stylesheet" />
+      <div style={{ width: 64, height: 64, background: T.greenDk, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", marginBottom: 24 }}>
+        <span style={{ fontSize: 28, color: "#fff" }}>✓</span>
+      </div>
+      <div style={{ fontSize: 28, fontWeight: 800, color: T.ink, marginBottom: 10, fontFamily: "'DM Serif Display', serif" }}>
+        Card updated — thank you!
+      </div>
+      <div style={{ fontSize: 14, color: T.ink3, maxWidth: 360, lineHeight: 1.6 }}>
+        Your recurring gift to <strong>{org.name}</strong> will continue as scheduled. We're grateful for your ongoing support.
       </div>
     </div>
   );

@@ -284,16 +284,213 @@ app.post("/stripe/webhook", express.raw({ type: "application/json" }), async (re
             }
             const frequency = session.metadata?.frequency || "monthly";
             await run(
-              `UPDATE donors SET stripe_subscription_id=$1, stripe_subscription_status='active',
+              `UPDATE donors SET stripe_subscription_id=$1, stripe_subscription_status='active', stripe_customer_id=$2,
                stage = CASE WHEN stage IN ('prospect','cultivate','lapsed') THEN 'steward' ELSE stage END
-               WHERE id=$2`,
-              [session.subscription, donorId]
+               WHERE id=$3`,
+              [session.subscription, session.customer || null, donorId]
             );
             const taskId = "t_" + uuid().slice(0, 8);
             await run(
               `INSERT INTO tasks (id, org_id, title, priority, done, created_at) VALUES ($1,$2,$3,'high',false,NOW())`,
               [taskId, orgId, `Welcome ${donorName} as a ${frequency} recurring donor — send personal thank-you`]
             );
+            // Health record for the failed-payment recovery system — created
+            // 'active' up front so every recurring gift has one from day one,
+            // not just the ones that eventually fail (see recurring_subscriptions
+            // in CLAUDE.md). ON CONFLICT covers a redelivered webhook.
+            const recurAmount = session.amount_total != null ? session.amount_total / 100 : null;
+            await run(
+              `INSERT INTO recurring_subscriptions (id, org_id, donor_id, stripe_subscription_id, stripe_customer_id, amount, interval, status)
+               VALUES ($1,$2,$3,$4,$5,$6,$7,'active')
+               ON CONFLICT (stripe_subscription_id) DO NOTHING`,
+              ["rsub_" + uuid().slice(0, 8), orgId, donorId, session.subscription, session.customer || null, recurAmount, frequency === "annual" ? "year" : "month"]
+            );
+          }
+        }
+      }
+
+      // Donor card-update flow completing (mode:"setup" — see GET
+      // /recurring/update-card). Chose Checkout setup mode over the Stripe
+      // Billing Customer Portal because the Portal requires its own
+      // per-connected-account configuration across 100+ orgs; a setup-mode
+      // Checkout Session is self-contained, so this branch handles it
+      // directly rather than routing through the Portal's own webhook shape.
+      if (session.mode === "setup" && session.setup_intent && event.account
+          && !(await recoveryEventAlreadyProcessed(event.id))) {
+        try {
+          const setupIntent = await stripe.setupIntents.retrieve(session.setup_intent, { stripeAccount: event.account });
+          const subscriptionId = setupIntent.metadata?.subscription_id;
+          const recOrgId = setupIntent.metadata?.org_id;
+          const paymentMethodId = setupIntent.payment_method;
+          if (subscriptionId && recOrgId && paymentMethodId) {
+            // Attach the new card as the subscription's default so future
+            // renewals use it, then try to pay the currently open invoice
+            // right away — this is what makes "update card" feel instant to
+            // the donor instead of waiting for Stripe's next scheduled retry.
+            await stripe.subscriptions.update(subscriptionId, { default_payment_method: paymentMethodId }, { stripeAccount: event.account });
+
+            const rsRows = await query("SELECT donor_id FROM recurring_subscriptions WHERE stripe_subscription_id=$1 AND org_id=$2", [subscriptionId, recOrgId]);
+            await logRecoveryEvent(recOrgId, rsRows[0]?.donor_id || null, subscriptionId, "card_updated", event.id, {});
+
+            try {
+              const subObj = await stripe.subscriptions.retrieve(subscriptionId, { stripeAccount: event.account });
+              if (subObj.latest_invoice) {
+                const invoice = await stripe.invoices.retrieve(subObj.latest_invoice, { stripeAccount: event.account });
+                if (invoice.status === "open") {
+                  // The resulting invoice.payment_succeeded event (if this
+                  // succeeds) flows through the handler below and does the
+                  // recovered/thank-you bookkeeping — nothing else to do here.
+                  await stripe.invoices.pay(subObj.latest_invoice, {}, { stripeAccount: event.account });
+                }
+              }
+            } catch (e) { console.error("[recovery] invoice pay-now after card update failed:", e.message); }
+          }
+        } catch (e) { console.error("[recovery] setup-mode checkout.session.completed error:", e.message); }
+      }
+    }
+
+    // ── Recurring gift recovery: failed-payment detection & dunning ────────
+    if (event.type === "invoice.payment_failed") {
+      const inv = event.data.object;
+      if (inv.subscription && !(await recoveryEventAlreadyProcessed(event.id))) {
+        let subMeta = null;
+        try {
+          const subObj = await stripe.subscriptions.retrieve(inv.subscription, { stripeAccount: event.account });
+          subMeta = subObj.metadata;
+        } catch (e) { console.error("[recovery] could not retrieve subscription for payment_failed:", e.message); }
+
+        const resolved = await resolveOrgAndDonorForSubscription(event.account, inv.subscription, subMeta);
+        if (resolved?.donor) {
+          const { org, donor } = resolved;
+          const amount = inv.amount_due != null ? inv.amount_due / 100 : null;
+          const interval = inv.lines?.data?.[0]?.price?.recurring?.interval || null;
+
+          const existingRows = await query("SELECT * FROM recurring_subscriptions WHERE stripe_subscription_id=?", [inv.subscription]);
+          const isNewCycle = !existingRows.length || !["past_due", "recovering"].includes(existingRows[0].status);
+
+          if (!existingRows.length) {
+            await run(
+              `INSERT INTO recurring_subscriptions
+                 (id, org_id, donor_id, stripe_subscription_id, stripe_customer_id, amount, interval, status, failure_count, first_failed_at, last_failed_at, dunning_step, next_dunning_at)
+               VALUES (?,?,?,?,?,?,?,'past_due',1,NOW(),NOW(),0,NOW())`,
+              ["rsub_" + uuid().slice(0, 8), org.id, donor.id, inv.subscription, inv.customer || null, amount, interval]
+            );
+          } else if (isNewCycle) {
+            // Previously active/recovered/canceled — this is a genuinely new
+            // failure cycle, so restart the dunning cadence from day 0.
+            await run(
+              `UPDATE recurring_subscriptions SET
+                 status='past_due', failure_count = failure_count + 1,
+                 first_failed_at = NOW(), last_failed_at = NOW(),
+                 recovered_at = NULL, canceled_at = NULL,
+                 dunning_step = 0, next_dunning_at = NOW(),
+                 amount = COALESCE(?, amount), interval = COALESCE(?, interval),
+                 stripe_customer_id = COALESCE(?, stripe_customer_id),
+                 updated_at = NOW()
+               WHERE stripe_subscription_id=?`,
+              [amount, interval, inv.customer || null, inv.subscription]
+            );
+          } else {
+            // Already mid-cycle (past_due/recovering) — this is Stripe's own
+            // retry of the same invoice, not a new problem. Track it, but
+            // don't reset our independent dunning cadence: next_dunning_at is
+            // already scheduled relative to the original first_failed_at.
+            await run(
+              `UPDATE recurring_subscriptions SET
+                 failure_count = failure_count + 1, last_failed_at = NOW(),
+                 amount = COALESCE(?, amount), interval = COALESCE(?, interval),
+                 stripe_customer_id = COALESCE(?, stripe_customer_id),
+                 updated_at = NOW()
+               WHERE stripe_subscription_id=?`,
+              [amount, interval, inv.customer || null, inv.subscription]
+            );
+          }
+          await run("UPDATE donors SET stripe_subscription_status='past_due' WHERE id=? AND org_id=?", [donor.id, org.id]);
+          await logRecoveryEvent(org.id, donor.id, inv.subscription, "payment_failed", event.id, { amount, invoiceId: inv.id });
+        }
+      }
+    }
+
+    if (event.type === "invoice.payment_succeeded") {
+      const inv = event.data.object;
+      if (inv.subscription && !(await recoveryEventAlreadyProcessed(event.id))) {
+        const existingRows = await query("SELECT * FROM recurring_subscriptions WHERE stripe_subscription_id=?", [inv.subscription]);
+        if (existingRows.length && ["past_due", "recovering"].includes(existingRows[0].status)) {
+          const rs = existingRows[0];
+          const orgRows = await query(
+            "SELECT id, name, recurring_dunning_enabled FROM orgs WHERE id=?", [rs.org_id]
+          );
+          const org = orgRows[0];
+          const donorRows = await query("SELECT id, name, email FROM donors WHERE id=? AND org_id=?", [rs.donor_id, rs.org_id]);
+          const donor = donorRows[0];
+
+          await run(
+            `UPDATE recurring_subscriptions SET status='recovered', recovered_at=NOW(), next_dunning_at=NULL, updated_at=NOW() WHERE id=?`,
+            [rs.id]
+          );
+          if (donor) await run("UPDATE donors SET stripe_subscription_status='active' WHERE id=? AND org_id=?", [donor.id, rs.org_id]);
+          await logRecoveryEvent(rs.org_id, rs.donor_id, inv.subscription, "payment_recovered", event.id, {
+            amount: inv.amount_paid != null ? inv.amount_paid / 100 : null,
+          });
+          // A recovered renewal is still a real gift — that's recorded by the
+          // existing payment_intent.succeeded handler above (fired separately
+          // by Stripe for the invoice's underlying charge), not duplicated here.
+          if (org && donor?.email && org.recurring_dunning_enabled !== false) {
+            await sendRecoveredThankYouEmail(org, donor, rs);
+          }
+        }
+      }
+    }
+
+    if (event.type === "customer.subscription.updated") {
+      const sub = event.data.object;
+      if (!(await recoveryEventAlreadyProcessed(event.id))) {
+        const existingRows = await query("SELECT * FROM recurring_subscriptions WHERE stripe_subscription_id=?", [sub.id]);
+        if (existingRows.length) {
+          const rs = existingRows[0];
+          // Stripe's subscription.status is the source of truth for whether
+          // billing itself thinks things are healthy; our own status also
+          // tracks the dunning lifecycle (recovering/recovered), which Stripe
+          // has no concept of. invoice.payment_succeeded above is the primary
+          // path for flipping past_due->recovered (and sends the thank-you
+          // email) — this is a safety net for the rare case Stripe's own
+          // retry resolves things without that event landing first, so it
+          // only updates bookkeeping/logs, never re-sends the thank-you.
+          if (sub.status === "active" && ["past_due", "recovering"].includes(rs.status)) {
+            await run(
+              `UPDATE recurring_subscriptions SET status='recovered', recovered_at=NOW(), next_dunning_at=NULL, updated_at=NOW() WHERE id=?`,
+              [rs.id]
+            );
+            await run("UPDATE donors SET stripe_subscription_status='active' WHERE id=? AND org_id=?", [rs.donor_id, rs.org_id]);
+            await logRecoveryEvent(rs.org_id, rs.donor_id, sub.id, "payment_recovered", event.id, { source: "subscription.updated" });
+          }
+          const amount = sub.items?.data?.[0]?.price?.unit_amount != null ? sub.items.data[0].price.unit_amount / 100 : null;
+          if (amount != null) {
+            await run("UPDATE recurring_subscriptions SET amount=?, updated_at=NOW() WHERE id=?", [amount, rs.id]);
+          }
+        }
+      }
+    }
+
+    if (event.type === "customer.subscription.deleted") {
+      const sub = event.data.object;
+      if (!(await recoveryEventAlreadyProcessed(event.id))) {
+        const existingRows = await query("SELECT * FROM recurring_subscriptions WHERE stripe_subscription_id=?", [sub.id]);
+        if (existingRows.length) {
+          const rs = existingRows[0];
+          await run(
+            `UPDATE recurring_subscriptions SET status='canceled', canceled_at=NOW(), next_dunning_at=NULL, updated_at=NOW() WHERE id=?`,
+            [rs.id]
+          );
+          await run("UPDATE donors SET stripe_subscription_status='canceled' WHERE id=? AND org_id=?", [rs.donor_id, rs.org_id]);
+          await logRecoveryEvent(rs.org_id, rs.donor_id, sub.id, "subscription_canceled", event.id, {});
+        } else if (event.account) {
+          // No health record ever existed (subscription never failed a
+          // payment before being canceled) — still mirror the donor-level
+          // status so the UI doesn't show a stale "active" subscription.
+          const orgRows = await query("SELECT id FROM orgs WHERE stripe_account_id=$1", [event.account]);
+          if (orgRows.length) {
+            await run("UPDATE donors SET stripe_subscription_status='canceled' WHERE org_id=? AND stripe_subscription_id=?", [orgRows[0].id, sub.id]);
           }
         }
       }
@@ -2893,6 +3090,30 @@ app.get("/dashboard/today", requireAuth, wrap(async (req, res) => {
     });
   }
 
+  // At-risk recurring gifts — failed/retrying donor subscriptions. This is
+  // real, already-identified revenue actively draining away that the
+  // nonprofit would otherwise never notice (see CLAUDE.md "Recurring gift
+  // recovery"), so it's folded into the same ranked queue rather than living
+  // only on a separate report.
+  const atRiskSubs = await query(`
+    SELECT rs.donor_id, rs.stripe_subscription_id, rs.amount, rs.interval, d.name AS donor_name, d.total_giving
+    FROM recurring_subscriptions rs
+    JOIN donors d ON d.id = rs.donor_id
+    WHERE rs.org_id = ? AND rs.status IN ('past_due','recovering')
+    ORDER BY rs.amount DESC NULLS LAST
+    LIMIT 5
+  `, [orgId]);
+  for (const rs of atRiskSubs) {
+    const amountStr = rs.amount != null ? `$${Number(rs.amount).toLocaleString()}/${rs.interval === "year" ? "yr" : "mo"}` : "a recurring gift";
+    upsertItem({
+      donorId: rs.donor_id, donorName: rs.donor_name,
+      reason: `Recurring gift failed — ${amountStr} at risk`,
+      priority: 85, action: "recurring",
+      totalGiving: parseFloat(rs.total_giving) || 0,
+      subscriptionId: rs.stripe_subscription_id,
+    });
+  }
+
   items.sort((a, b) => b.priority - a.priority);
   res.json(items.slice(0, 10));
 }));
@@ -3298,6 +3519,193 @@ app.post("/unsubscribe", wrap(async (req, res) => {
   await recordUnsubscribe(decoded.email, decoded.orgId, decoded.source);
   res.status(200).end();
 }));
+
+// ── Recurring gift recovery (failed-payment dunning) — shared helpers ──────
+// Nonprofits lose 20-30% of recurring giving to involuntary churn (expired/
+// declined cards) with nobody ever noticing. This detects it on the donor's
+// CONNECTED Stripe account (event.account below — a separate concern from
+// /billing/webhook, which is Steward's OWN platform subscription), emails the
+// donor a secure card-update link, and tracks recovery. See CLAUDE.md
+// "Recurring gift recovery" for the full design.
+//
+// Same signed, no-login HMAC pattern as the unsubscribe token above. A
+// separate secret (falling back to the same one if unset) so the two token
+// families can be rotated independently later without sharing a blast radius.
+const RECOVERY_SECRET = process.env.RECOVERY_SECRET || UNSUB_SECRET;
+
+// Dunning cadence: days since the subscription's FIRST failure at which to
+// send the next reminder — fixed checkpoints, not "N days after the last
+// send," so the schedule doesn't drift if a send is delayed. After the final
+// step, Steward stops sending; an unresolved subscription eventually reaches
+// customer.subscription.deleted, handled below as the "lost" outcome.
+const DUNNING_SCHEDULE_DAYS = [0, 3, 7, 14];
+
+// Trailing window for recovered/lost recovery-rate math (see GET /recurring/health).
+const RECOVERY_RATE_WINDOW_DAYS = 90;
+
+function signRecoveryToken(subscriptionId, orgId) {
+  const payload = Buffer.from(JSON.stringify({ subscriptionId, orgId })).toString("base64url");
+  const sig = crypto.createHmac("sha256", RECOVERY_SECRET).update(payload).digest("base64url");
+  return `${payload}.${sig}`;
+}
+
+function verifyRecoveryToken(token) {
+  if (!token || typeof token !== "string" || !token.includes(".")) return null;
+  const [payload, sig] = token.split(".");
+  if (!payload || !sig) return null;
+  const expected = crypto.createHmac("sha256", RECOVERY_SECRET).update(payload).digest("base64url");
+  const sigBuf = Buffer.from(sig), expBuf = Buffer.from(expected);
+  if (sigBuf.length !== expBuf.length || !crypto.timingSafeEqual(sigBuf, expBuf)) return null;
+  try {
+    const decoded = JSON.parse(Buffer.from(payload, "base64url").toString());
+    if (!decoded.subscriptionId || !decoded.orgId) return null;
+    return decoded;
+  } catch { return null; }
+}
+
+function buildCardUpdateUrl(subscriptionId, orgId) {
+  const backendUrl = process.env.BACKEND_URL || "https://nonprofit-erp-production.up.railway.app";
+  return `${backendUrl}/recurring/update-card?token=${signRecoveryToken(subscriptionId, orgId)}`;
+}
+
+// Idempotency for every recovery webhook path: Stripe's event.id is unique
+// per logical event (a redelivered attempt reuses the same id), so checking
+// whether it's already been logged is enough to make each handler a safe
+// no-op on a duplicate delivery — no separate "processed events" table needed
+// since payment_recovery_events already logs one row per meaningful thing
+// that happened, keyed by that same id.
+async function recoveryEventAlreadyProcessed(stripeEventId) {
+  if (!stripeEventId) return false;
+  const rows = await query("SELECT id FROM payment_recovery_events WHERE stripe_event_id=? LIMIT 1", [stripeEventId]);
+  return rows.length > 0;
+}
+
+async function logRecoveryEvent(orgId, donorId, subscriptionId, type, stripeEventId, detail) {
+  await run(
+    `INSERT INTO payment_recovery_events (id, org_id, donor_id, subscription_id, type, stripe_event_id, detail)
+     VALUES (?,?,?,?,?,?,?)`,
+    ["pre_" + uuid().slice(0, 8), orgId, donorId || null, subscriptionId || null, type, stripeEventId || null, JSON.stringify(detail || {})]
+  );
+}
+
+// Finds the org + donor for a Connect subscription/invoice event. Primary
+// match is donors.stripe_subscription_id (set at subscription creation, see
+// checkout.session.completed below); falls back to the donor_email carried
+// in the subscription's own metadata for the edge case where a subscription's
+// first-ever webhook is itself the failure (e.g. a pre-existing subscription
+// from before this feature shipped, whose donor row was never linked).
+async function resolveOrgAndDonorForSubscription(accountId, stripeSubscriptionId, subscriptionMetadata) {
+  if (!accountId) return null;
+  const orgRows = await query(
+    "SELECT id, name, org_slug, recurring_dunning_enabled, recurring_dunning_subject, recurring_dunning_body FROM orgs WHERE stripe_account_id=?",
+    [accountId]
+  );
+  if (!orgRows.length) return null;
+  const org = orgRows[0];
+
+  let donorRows = await query(
+    "SELECT id, name, email FROM donors WHERE org_id=? AND stripe_subscription_id=?",
+    [org.id, stripeSubscriptionId]
+  );
+  if (!donorRows.length && subscriptionMetadata?.donor_email) {
+    donorRows = await query(
+      "SELECT id, name, email FROM donors WHERE org_id=? AND email ILIKE ?",
+      [org.id, subscriptionMetadata.donor_email]
+    );
+  }
+  return { org, donor: donorRows[0] || null };
+}
+
+const DEFAULT_DUNNING_SUBJECT = "A quick fix to keep your support going";
+// {{donor_name}}/{{first_name}}/{{org_name}}/{{amount}}/{{update_url}} tokens,
+// same replacement convention as campaign/sequence bodies. Deliberately no
+// "tier"/"level"/"badge"/"leaderboard" language anywhere — this is a
+// stewardship touch, not a collections notice (see CLAUDE.md "Strategic pivot").
+const DEFAULT_DUNNING_BODY = `<p>Hi {{first_name}},</p>
+<p>Thank you again for your ongoing gift of {{amount}} to {{org_name}} — support like yours is what makes our work possible.</p>
+<p>We tried to process your latest gift and the card on file didn't go through. This happens most often when a card has expired or been reissued, and it only takes a minute to fix.</p>
+<p style="text-align:center;margin:28px 0;"><a href="{{update_url}}" style="background:#1a6b4a;color:#ffffff;text-decoration:none;padding:12px 28px;border-radius:8px;font-weight:700;display:inline-block;">Update my card</a></p>
+<p>If you have any questions, just reply to this email — we're glad to help.</p>
+<p>With gratitude,<br/>{{org_name}}</p>`;
+
+function applyDunningTokens(str, { donor, org, amount, updateUrl }) {
+  const firstName = donor.name ? donor.name.trim().split(/\s+/)[0] : "";
+  return (str || "")
+    .replace(/{{donor_name}}/g, donor.name || "")
+    .replace(/{{first_name}}/g, firstName)
+    .replace(/{{org_name}}/g, org.name || "")
+    .replace(/{{amount}}/g, amount != null ? `$${Number(amount).toLocaleString()}` : "your gift")
+    .replace(/{{update_url}}/g, updateUrl);
+}
+
+// Sends the dunning email if the address isn't suppressed. The
+// recurring_dunning_enabled org-level kill switch is checked by callers
+// (processDunning / the manual resend route), not here, since a manual staff
+// resend should still work even if an org has paused the automatic cadence.
+async function sendDunningEmail(org, donor, subscriptionRow) {
+  const suppressReason = await getSuppressionReason(donor.email, org.id);
+  if (suppressReason) {
+    console.log(`[dunning] skipping suppressed address ${donor.email} (${suppressReason})`);
+    return false;
+  }
+  const updateUrl = buildCardUpdateUrl(subscriptionRow.stripe_subscription_id, org.id);
+  const tokenCtx = { donor, org, amount: subscriptionRow.amount, updateUrl };
+  const subject = applyDunningTokens(org.recurring_dunning_subject || DEFAULT_DUNNING_SUBJECT, tokenCtx);
+  const bodyHtml = applyDunningTokens(org.recurring_dunning_body || DEFAULT_DUNNING_BODY, tokenCtx)
+    + unsubscribeEmailFooterHtml(donor.email, org.id, "campaign");
+  const smtpFrom = process.env.DEMO_SMTP_FROM || "noreply@stewardapp.dev";
+  if (process.env.RESEND_API_KEY) {
+    try {
+      const { error: sendErr } = await resend.emails.send({
+        from: smtpFrom, to: donor.email, subject, html: bodyHtml,
+        headers: unsubscribeHeaders(donor.email, org.id, "campaign"),
+      });
+      if (sendErr) console.error("[dunning] send error:", sendErr.message);
+    } catch (e) { console.error("[dunning] resend error:", e.message); }
+  }
+  return true;
+}
+
+// Short "you're all set" note — a warm confirmation, not another ask.
+async function sendRecoveredThankYouEmail(org, donor, subscriptionRow) {
+  const suppressReason = await getSuppressionReason(donor.email, org.id);
+  if (suppressReason) return;
+  const firstName = donor.name ? donor.name.trim().split(/\s+/)[0] : "";
+  const amountStr = subscriptionRow.amount != null ? `$${Number(subscriptionRow.amount).toLocaleString()}` : "your";
+  const subject = "You're all set — thank you!";
+  const bodyHtml = `<p>Hi ${firstName},</p>
+<p>Great news — your card on file worked, and your ${amountStr} gift to ${org.name} went through. Your recurring support is active again, and we're so grateful for it.</p>
+<p>Thank you for sticking with us.</p>
+<p>With gratitude,<br/>${org.name}</p>`
+    + unsubscribeEmailFooterHtml(donor.email, org.id, "campaign");
+  const smtpFrom = process.env.DEMO_SMTP_FROM || "noreply@stewardapp.dev";
+  if (process.env.RESEND_API_KEY) {
+    try {
+      const { error: sendErr } = await resend.emails.send({
+        from: smtpFrom, to: donor.email, subject, html: bodyHtml,
+        headers: unsubscribeHeaders(donor.email, org.id, "campaign"),
+      });
+      if (sendErr) console.error("[dunning] recovered-email send error:", sendErr.message);
+    } catch (e) { console.error("[dunning] recovered-email resend error:", e.message); }
+  }
+}
+
+// Recovered / (recovered + lost) over a trailing window, computed from the
+// append-only payment_recovery_events log — shared by GET /recurring/health
+// and the daily metric_snapshots snapshot below.
+async function computeRecoveryRate(orgId) {
+  const windowStart = new Date(Date.now() - RECOVERY_RATE_WINDOW_DAYS * 86400000).toISOString();
+  const recoveredCount = (await query(
+    "SELECT COUNT(DISTINCT subscription_id)::int AS c FROM payment_recovery_events WHERE org_id=? AND type='payment_recovered' AND created_at >= ?",
+    [orgId, windowStart]
+  ))[0]?.c || 0;
+  const lostCount = (await query(
+    "SELECT COUNT(DISTINCT subscription_id)::int AS c FROM payment_recovery_events WHERE org_id=? AND type='subscription_canceled' AND created_at >= ?",
+    [orgId, windowStart]
+  ))[0]?.c || 0;
+  const rate = (recoveredCount + lostCount) > 0 ? Math.round((recoveredCount / (recoveredCount + lostCount)) * 100) : null;
+  return { rate, recoveredCount, lostCount };
+}
 
 // ── Campaigns ──────────────────────────────────────────────────────────────
 app.get("/campaigns", requireAuth, wrap(async (req, res) => {
@@ -5962,6 +6370,173 @@ app.post("/donors/:id/custom-fields", requireAuth, wrap(async (req, res) => {
   res.json({ ok: true });
 }));
 
+// ── Recurring gift recovery: dunning engine ─────────────────────────────────
+// Follows the same shape as processSequences()/autoEnroll() above: a
+// module-level async function run on startup and on an interval, also
+// exposed as an admin-only manual-trigger route.
+async function processDunning() {
+  try {
+    const rows = await query(
+      `SELECT rs.*, d.name AS donor_name, d.email AS donor_email
+       FROM recurring_subscriptions rs
+       JOIN donors d ON d.id = rs.donor_id
+       WHERE rs.status IN ('past_due','recovering') AND rs.next_dunning_at <= NOW()`,
+      []
+    );
+    for (const rs of rows) {
+      try {
+        const orgRows = await query(
+          "SELECT id, name, recurring_dunning_enabled, recurring_dunning_subject, recurring_dunning_body FROM orgs WHERE id=?",
+          [rs.org_id]
+        );
+        const org = orgRows[0];
+        if (!org || !rs.donor_email) continue;
+        // Org turned this off — leave the cadence/step where it is (so it
+        // picks back up correctly if re-enabled) but don't send.
+        if (org.recurring_dunning_enabled === false) continue;
+
+        await sendDunningEmail(org, { name: rs.donor_name, email: rs.donor_email }, rs);
+        await logRecoveryEvent(rs.org_id, rs.donor_id, rs.stripe_subscription_id, "dunning_sent", null, { step: rs.dunning_step });
+
+        const nextStep = rs.dunning_step + 1;
+        const nextDelayDays = DUNNING_SCHEDULE_DAYS[nextStep];
+        const nextDunningAt = nextDelayDays != null
+          ? new Date(new Date(rs.first_failed_at).getTime() + nextDelayDays * 86400000).toISOString()
+          : null; // exhausted the cadence — stop sending, leave it for Stripe's own retries/eventual cancellation
+        await run(
+          `UPDATE recurring_subscriptions SET status='recovering', dunning_step=?, next_dunning_at=?, updated_at=NOW() WHERE id=?`,
+          [nextStep, nextDunningAt, rs.id]
+        );
+      } catch (e) { console.error("[dunning] subscription", rs.id, e.message); }
+    }
+  } catch (e) { console.error("[dunning] processDunning:", e.message); }
+}
+setTimeout(() => processDunning().catch(console.error), 5000);
+setInterval(() => processDunning().catch(console.error), 60 * 60 * 1000);
+
+app.post("/recurring/process-dunning", requireAuth, requireAdmin, wrap(async (req, res) => {
+  await processDunning();
+  res.json({ success: true });
+}));
+
+// Public — a donor clicking the "Update my card" button in a dunning email.
+// No login: verified via the signed recovery token. Checkout "setup" mode
+// chosen over the Stripe Billing Customer Portal because the Portal requires
+// its own per-connected-account configuration (branding, enabled features)
+// across every one of Steward's connected orgs, which isn't something
+// Steward can provision centrally at signup time; a setup-mode Checkout
+// Session is fully self-contained per request, so it's the simpler and safer
+// choice here even though the Portal is Stripe's more "official" tool for
+// letting a customer manage a payment method on file.
+app.get("/recurring/update-card", wrap(async (req, res) => {
+  if (!stripe) return res.status(503).send("Payments are not configured.");
+  const decoded = verifyRecoveryToken(req.query.token);
+  if (!decoded) return res.status(400).send("This link is invalid or has expired.");
+
+  const orgRows = await query("SELECT id, name, org_slug, stripe_account_id FROM orgs WHERE id=?", [decoded.orgId]);
+  const org = orgRows[0];
+  if (!org || !org.stripe_account_id) return res.status(404).send("This organization could not be found.");
+
+  const rsRows = await query(
+    "SELECT * FROM recurring_subscriptions WHERE stripe_subscription_id=? AND org_id=?",
+    [decoded.subscriptionId, org.id]
+  );
+  const rs = rsRows[0];
+  if (!rs) return res.status(404).send("This subscription could not be found.");
+
+  const rawFrontendUrl = process.env.FRONTEND_URL || "https://client-five-tau-13.vercel.app";
+  const frontendUrl = rawFrontendUrl.replace(/^http:\/\//i, "https://");
+
+  const session = await stripe.checkout.sessions.create({
+    mode: "setup",
+    payment_method_types: ["card"],
+    ...(rs.stripe_customer_id ? { customer: rs.stripe_customer_id } : {}),
+    setup_intent_data: { metadata: { subscription_id: rs.stripe_subscription_id, org_id: org.id } },
+    success_url: `${frontendUrl}/give/${org.org_slug}?card_updated=true`,
+    cancel_url: `${frontendUrl}/give/${org.org_slug}`,
+  }, { stripeAccount: org.stripe_account_id });
+
+  res.redirect(303, session.url);
+}));
+
+// ── Recurring gift recovery: staff-facing routes ────────────────────────────
+app.get("/recurring/health", requireAuth, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  const summaryRows = await query(
+    `SELECT
+       COUNT(*) FILTER (WHERE status IN ('active','recovering'))::int AS active_count,
+       COUNT(*) FILTER (WHERE status IN ('past_due','recovering'))::int AS at_risk_count,
+       COALESCE(SUM(amount) FILTER (WHERE status IN ('past_due','recovering')), 0) AS mrr_at_risk
+     FROM recurring_subscriptions WHERE org_id=?`,
+    [orgId]
+  );
+  const s = summaryRows[0] || {};
+
+  const { rate: recoveryRate } = await computeRecoveryRate(orgId);
+
+  const monthStart = new Date(); monthStart.setDate(1); monthStart.setHours(0, 0, 0, 0);
+  const recoveredThisMonth = (await query(
+    "SELECT COUNT(DISTINCT subscription_id)::int AS c FROM payment_recovery_events WHERE org_id=? AND type='payment_recovered' AND created_at >= ?",
+    [orgId, monthStart.toISOString()]
+  ))[0]?.c || 0;
+  const lostThisMonth = (await query(
+    "SELECT COUNT(DISTINCT subscription_id)::int AS c FROM payment_recovery_events WHERE org_id=? AND type='subscription_canceled' AND created_at >= ?",
+    [orgId, monthStart.toISOString()]
+  ))[0]?.c || 0;
+
+  res.json({
+    activeCount: s.active_count || 0,
+    atRiskCount: s.at_risk_count || 0,
+    mrrAtRisk: parseFloat(s.mrr_at_risk) || 0,
+    recoveredThisMonth,
+    lostThisMonth,
+    recoveryRate,
+  });
+}));
+
+// Everyday staff action from the home-screen queue — re-sends the CURRENT
+// dunning step's email on demand. Not gated by requireAdmin (matches
+// POST /note-reminders/:id/send, the other "queue nudge" action any staff
+// member can trigger) and doesn't touch dunning_step/next_dunning_at, so it
+// never interferes with the automatic cadence.
+app.post("/recurring/:donorId/resend", requireAuth, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  const donorRows = await query("SELECT id, name, email FROM donors WHERE id=? AND org_id=?", [req.params.donorId, orgId]);
+  if (!donorRows.length) return res.status(404).json({ error: "Donor not found" });
+  const donor = donorRows[0];
+  if (!donor.email) return res.status(400).json({ error: "This donor has no email on file." });
+
+  const rsRows = await query(
+    "SELECT * FROM recurring_subscriptions WHERE org_id=? AND donor_id=? AND status IN ('past_due','recovering') ORDER BY last_failed_at DESC LIMIT 1",
+    [orgId, donor.id]
+  );
+  if (!rsRows.length) return res.status(400).json({ error: "This donor has no recurring gift currently at risk." });
+  const rs = rsRows[0];
+
+  const suppressReason = await getSuppressionReason(donor.email, orgId);
+  if (suppressReason) return res.status(400).json({ error: `This donor's email is suppressed (${suppressReason}).` });
+
+  const orgRows = await query(
+    "SELECT id, name, recurring_dunning_subject, recurring_dunning_body FROM orgs WHERE id=?", [orgId]
+  );
+  await sendDunningEmail(orgRows[0], donor, rs);
+  await logRecoveryEvent(orgId, donor.id, rs.stripe_subscription_id, "dunning_sent", null, { manual: true });
+  res.json({ sent: true });
+}));
+
+// Per-donor health record for the DonorProfile status chip (Active/Payment
+// failed/Recovering/Recovered/Canceled) — null if this donor never had a
+// recurring gift that's failed a payment (donors.stripe_subscription_status
+// alone can't distinguish "recovering" from "past_due").
+app.get("/donors/:id/recurring-subscription", requireAuth, wrap(async (req, res) => {
+  const rows = await query(
+    `SELECT stripe_subscription_id, amount, interval, status, failure_count, first_failed_at, last_failed_at, recovered_at, canceled_at
+     FROM recurring_subscriptions WHERE donor_id=? AND org_id=? ORDER BY created_at DESC LIMIT 1`,
+    [req.params.id, req.user.orgId]
+  );
+  res.json(rows[0] || null);
+}));
+
 // ── Billing helpers ────────────────────────────────────────────────────────
 function getOrgAccessState(org) {
   const status = org.subscription_status || "trialing";
@@ -6251,6 +6826,8 @@ app.delete("/admin/orgs/:id", requireAuth, requireSuperAdmin, wrap(async (req, r
   await run("DELETE FROM note_reminders WHERE org_id=?", [orgId]).catch(() => {});
   await run("DELETE FROM donor_materials WHERE org_id=?", [orgId]).catch(() => {});
   await run("DELETE FROM planned_gifts WHERE org_id=?", [orgId]).catch(() => {});
+  await run("DELETE FROM payment_recovery_events WHERE org_id=?", [orgId]).catch(() => {});
+  await run("DELETE FROM recurring_subscriptions WHERE org_id=?", [orgId]).catch(() => {});
   await run("DELETE FROM interactions WHERE org_id=?", [orgId]).catch(() => {});
   await run("DELETE FROM gifts WHERE org_id=?", [orgId]).catch(() => {});
   await run("DELETE FROM donors WHERE org_id=?", [orgId]).catch(() => {});
@@ -7109,6 +7686,14 @@ async function snapshotMetricsForOrg(orgId) {
       `INSERT INTO metric_snapshots (id, org_id, metric_key, value, snapshot_date) VALUES (?,?,?,?,?)
        ON CONFLICT (org_id, metric_key, snapshot_date) DO UPDATE SET value = EXCLUDED.value`,
       ["ms_" + uuid().slice(0, 8), orgId, "first_touch_delay", avgDays, today]
+    );
+  }
+  const { rate: recoveryRate } = await computeRecoveryRate(orgId);
+  if (recoveryRate != null) {
+    await run(
+      `INSERT INTO metric_snapshots (id, org_id, metric_key, value, snapshot_date) VALUES (?,?,?,?,?)
+       ON CONFLICT (org_id, metric_key, snapshot_date) DO UPDATE SET value = EXCLUDED.value`,
+      ["ms_" + uuid().slice(0, 8), orgId, "recovery_rate", recoveryRate, today]
     );
   }
   return debt;

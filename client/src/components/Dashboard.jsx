@@ -26,6 +26,8 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
 
   const [stageCounts,setStageCounts]=useState([]);
   const [stewardMetrics,setStewardMetrics]=useState(null);
+  const [recurringHealth,setRecurringHealth]=useState(null);
+  const [resentIds,setResentIds]=useState(()=>new Set());
 
   const loadGoal=()=>apiFetch("/goals/active").then(r=>setGoal(r)).catch(()=>setGoal(null));
 
@@ -34,6 +36,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
     apiFetch("/dashboard/today").then(r=>setQueueItems(r||[])).catch(()=>{}).finally(()=>setQueueLoading(false));
     apiFetch("/donors/stage-counts").then(r=>setStageCounts(r||[])).catch(()=>{});
     apiFetch("/metrics/stewardship-summary").then(r=>setStewardMetrics(r)).catch(()=>{});
+    apiFetch("/recurring/health").then(r=>setRecurringHealth(r)).catch(()=>{});
     loadGoal();
   },[]);
 
@@ -82,10 +85,23 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
     setBusyDonorId(null);
   };
 
+  // Resending doesn't resolve the failure (only the donor updating their
+  // card, or Stripe's own retry, does that) — so unlike the other queue
+  // actions, the row stays put; we just confirm the send.
+  const resendCardLink=async(item)=>{
+    setBusyDonorId(item.donorId);
+    try{
+      await apiFetch(`/recurring/${item.donorId}/resend`,{method:"POST"});
+      setResentIds(prev=>new Set(prev).add(item.donorId));
+    }catch(e){alert(e.message||"Could not resend the update link");}
+    setBusyDonorId(null);
+  };
+
   const handleQueueAction=(item)=>{
     if(item.action==="note")return markNoteSent(item);
     if(item.action==="milestone")return onNavigate("communications",{subtab:"milestones",highlightDraftId:item.draftId});
     if(item.action==="lapsed")return onNavigate("donors",{view:"reengage"});
+    if(item.action==="recurring")return resendCardLink(item);
     if(item.taskId)return completeTask(item);
     return onNavigate("donors",{logDonorId:item.donorId});
   };
@@ -94,13 +110,14 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
     if(item.action==="note")return busyDonorId===item.donorId?"Saving…":"Mark sent ✓";
     if(item.action==="milestone")return "Review draft →";
     if(item.action==="lapsed")return "Re-engage →";
+    if(item.action==="recurring")return resentIds.has(item.donorId)?"Sent ✓":(busyDonorId===item.donorId?"Sending…":"Resend update link");
     if(item.taskId)return busyDonorId===item.donorId?"Saving…":"Mark done ✓";
     if(item.action==="thank")return "Log thank-you →";
     if(item.action==="email")return "Log email →";
     return "Log call →";
   };
 
-  const ROW_COLOR={note:"#8b6f47",milestone:T.gold,lapsed:T.terracotta,thank:T.green,email:"#3b82f6"};
+  const ROW_COLOR={note:"#8b6f47",milestone:T.gold,lapsed:T.terracotta,thank:T.green,email:"#3b82f6",recurring:T.red};
   const rowColor=(item)=>item.taskId?"#8b5cf6":(ROW_COLOR[item.action]||T.greenMid);
 
   const openSetGoal=()=>{
@@ -391,6 +408,33 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
               );
             })()}
           </div>
+
+          {/* Recurring gift recovery — revenue-at-risk, not buried in a report */}
+          {recurringHealth&&recurringHealth.activeCount>0&&(
+            <div style={{...cardWrap,borderColor:recurringHealth.atRiskCount>0?"#c0392b30":T.bg3}}>
+              <div className="dash-cpad" style={{...cPad,borderBottom:"1px solid "+T.bg3}}>
+                <span style={sTitle}>Recurring Gifts</span>
+              </div>
+              <div style={{padding:"14px 20px"}}>
+                {recurringHealth.atRiskCount>0?(
+                  <>
+                    <div style={{fontSize:20,fontWeight:800,fontFamily:"'DM Serif Display',serif",color:T.red,lineHeight:1}}>
+                      {fmt(recurringHealth.mrrAtRisk)}<span style={{fontSize:12,fontWeight:600,color:T.ink3}}>/mo at risk</span>
+                    </div>
+                    <div style={{fontSize:12,color:T.ink3,marginTop:4}}>
+                      {recurringHealth.atRiskCount} donor{recurringHealth.atRiskCount===1?"":"s"} with a failed card
+                      {recurringHealth.recoveryRate!=null&&` · ${recurringHealth.recoveryRate}% recovery rate`}
+                    </div>
+                  </>
+                ):(
+                  <div style={{fontSize:13,color:T.ink3}}>
+                    All {recurringHealth.activeCount} recurring gift{recurringHealth.activeCount===1?"":"s"} are current
+                    {recurringHealth.recoveryRate!=null&&` · ${recurringHealth.recoveryRate}% recovery rate`}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
         </div>
       </div>
 

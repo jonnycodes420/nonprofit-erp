@@ -2077,6 +2077,22 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
   // Campaigns for gift attribution
   const [campaigns,setCampaigns]=useState([]);
 
+  // Recurring gift recovery — health record (past_due/recovering/etc.), if any
+  const [recurringSub,setRecurringSub]=useState(null);
+  const [recurResendBusy,setRecurResendBusy]=useState(false);
+  const [recurResendSent,setRecurResendSent]=useState(false);
+  useEffect(()=>{
+    apiFetch(`/donors/${donor.id}/recurring-subscription`).then(r=>setRecurringSub(r||null)).catch(()=>setRecurringSub(null));
+  },[donor.id]);
+  const resendRecurringLink=async()=>{
+    setRecurResendBusy(true);
+    try{
+      await apiFetch(`/recurring/${donor.id}/resend`,{method:"POST"});
+      setRecurResendSent(true);
+    }catch(e){alert(e.message||"Could not resend the update link");}
+    setRecurResendBusy(false);
+  };
+
   const loadGiftsFull=()=>{
     apiFetch(`/donors/${donor.id}`).then(raw=>{
       const g=(raw.gifts||[]).map(g=>({
@@ -2400,6 +2416,37 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
                 <button onClick={()=>setAddGiftOpen(v=>!v)} disabled={isReadOnly} title={isReadOnly?"Reactivate your subscription to make changes.":undefined} style={{background:"#10b981",border:"none",borderRadius:8,padding:"7px 12px",color:"#fff",fontSize:12,fontWeight:700,cursor:isReadOnly?"not-allowed":"pointer",opacity:isReadOnly?0.45:1}}>+ Add Gift</button>
               </div>
             </div>
+
+            {/* Recurring gift health — failed-payment recovery status */}
+            {recurringSub&&(()=>{
+              const RS_META={
+                active:      {label:"Active",         color:"#1a6b4a"},
+                past_due:    {label:"Payment failed",  color:T.red},
+                recovering:  {label:"Recovering",      color:"#c9a84c"},
+                recovered:   {label:"Recovered",       color:"#10b981"},
+                canceled:    {label:"Canceled",        color:T.ink3},
+              };
+              const meta=RS_META[recurringSub.status]||{label:recurringSub.status,color:T.ink3};
+              const atRisk=["past_due","recovering"].includes(recurringSub.status);
+              return(
+                <div style={{background:T.white,border:"1px solid "+meta.color+"30",borderLeft:"3px solid "+meta.color,borderRadius:10,padding:"10px 14px",display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,flexWrap:"wrap"}}>
+                  <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+                    <span style={{background:meta.color+"15",color:meta.color,border:"1px solid "+meta.color+"40",borderRadius:99,padding:"3px 10px",fontSize:11,fontWeight:800}}>{meta.label}</span>
+                    <span style={{fontSize:12,color:T.ink3}}>
+                      Recurring gift{recurringSub.amount!=null?` · ${fmtFull(recurringSub.amount)}/${recurringSub.interval==="year"?"yr":"mo"}`:""}
+                      {atRisk&&recurringSub.failure_count>0&&` · ${recurringSub.failure_count} failed attempt${recurringSub.failure_count===1?"":"s"}`}
+                    </span>
+                  </div>
+                  {atRisk&&(
+                    <button onClick={resendRecurringLink} disabled={isReadOnly||recurResendBusy||recurResendSent}
+                      title={isReadOnly?"Reactivate your subscription to make changes.":undefined}
+                      style={{background:meta.color,border:"none",borderRadius:8,padding:"6px 12px",color:"#fff",fontSize:12,fontWeight:700,cursor:(isReadOnly||recurResendBusy||recurResendSent)?"not-allowed":"pointer",opacity:(isReadOnly||recurResendBusy||recurResendSent)?0.5:1,whiteSpace:"nowrap"}}>
+                      {recurResendSent?"Sent ✓":recurResendBusy?"Sending…":"Send card-update link"}
+                    </button>
+                  )}
+                </div>
+              );
+            })()}
 
             {addGiftOpen&&<div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:12,padding:"16px"}}>
               <div style={{fontSize:12,fontWeight:700,color:T.ink,marginBottom:12}}>New Gift</div>

@@ -746,6 +746,67 @@ async function initSchema() {
       UNIQUE(org_id, metric_key, snapshot_date)
     )
   `);
+
+  // ── Recurring gift recovery (failed-payment dunning) ────────────────────
+  // Needed to build a Stripe Checkout "setup" session for a donor's card
+  // without asking them to log in — see GET /recurring/update-card.
+  await pool.query(`ALTER TABLE donors ADD COLUMN IF NOT EXISTS stripe_customer_id TEXT`);
+
+  // Org-level kill switch + optional per-org override of the dunning email
+  // copy, mirroring how campaign/sequence templates are editable text with
+  // {{token}} placeholders rather than code. NULL subject/body = use the
+  // built-in default template (see DEFAULT_DUNNING_TEMPLATE in server.js).
+  await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS recurring_dunning_enabled BOOLEAN DEFAULT true`);
+  await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS recurring_dunning_subject TEXT`);
+  await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS recurring_dunning_body TEXT`);
+
+  // One row per donor subscription — a health record layered on top of the
+  // donors.stripe_subscription_id/stripe_subscription_status columns (which
+  // already existed for the "active" happy path). This table is what actually
+  // tracks a failure through its lifecycle: how many times it's failed, where
+  // it is in the dunning cadence, and when it resolved (recovered or lost).
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS recurring_subscriptions (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL,
+      donor_id TEXT NOT NULL,
+      stripe_subscription_id TEXT NOT NULL UNIQUE,
+      stripe_customer_id TEXT,
+      amount NUMERIC,
+      interval TEXT,
+      status TEXT NOT NULL DEFAULT 'active',
+      failure_count INTEGER NOT NULL DEFAULT 0,
+      first_failed_at TIMESTAMPTZ,
+      last_failed_at TIMESTAMPTZ,
+      recovered_at TIMESTAMPTZ,
+      canceled_at TIMESTAMPTZ,
+      dunning_step INTEGER NOT NULL DEFAULT 0,
+      next_dunning_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_recurring_subs_dunning ON recurring_subscriptions (status, next_dunning_at)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_recurring_subs_donor ON recurring_subscriptions (org_id, donor_id)`);
+
+  // Append-only log of everything that happens to a subscription's payment
+  // health — the source of truth for recovery-rate math (recovered vs. lost
+  // over a trailing window) and for webhook idempotency: stripe_event_id is
+  // checked before processing so a redelivered Stripe event is a no-op.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS payment_recovery_events (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL,
+      donor_id TEXT,
+      subscription_id TEXT,
+      type TEXT NOT NULL,
+      stripe_event_id TEXT,
+      detail JSONB,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_recovery_events_stripe_id ON payment_recovery_events (stripe_event_id)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_recovery_events_org ON payment_recovery_events (org_id, created_at)`);
 }
 
 async function seedData() {
