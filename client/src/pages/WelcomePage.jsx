@@ -475,7 +475,12 @@ export default function WelcomePage() {
 
       </div>
 
-      {showImportModal && <DonorImport onClose={() => setShowImportModal(false)} onImported={afterImportDone}/>}
+      {/* withHistory: onboarding must produce real gifts-table rows, not just
+          aggregate donor fields — otherwise Retention Rate, Stewardship Debt,
+          and Gifts YTD all render blank on Day 1 (see Donors.jsx's
+          DonorImport comment). The regular Donors tab's own "Import Donors"
+          button omits this prop, so its behavior is unchanged. */}
+      {showImportModal && <DonorImport onClose={() => setShowImportModal(false)} onImported={afterImportDone} withHistory/>}
     </div>
   );
 }

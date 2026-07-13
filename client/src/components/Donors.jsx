@@ -65,13 +65,25 @@ function guessField(header) {
   return "";
 }
 
-function inferStage(total, lastGiftStr) {
+// `days` is `null` (not Infinity) when the last-gift date is missing or
+// unparseable — deliberately distinct from "known to be a long time ago" so
+// a donor with real giving history but a bad/blank date never reads as a
+// confidently-wrong "lapsed" (that was the actual bug: Infinity > 365 is
+// true, so any donor with an unparseable date silently became "lapsed").
+// `hasContactInfo` (email or phone on file) gives a real, reachable path to
+// "qualify" for a donor with no gift history yet but some engagement signal
+// — previously "qualify" and "solicit" were structurally unreachable outputs
+// of this function regardless of input.
+function inferStage(total, lastGiftStr, hasContactInfo) {
   const amount = parseFloat(String(total || "0").replace(/[$,]/g, "")) || 0;
   const d = lastGiftStr ? new Date(lastGiftStr) : null;
-  const days = d && !isNaN(d) ? Math.floor((Date.now() - d) / 86400000) : Infinity;
-  if (!amount && days === Infinity) return "prospect";
-  if (days > 365) return "lapsed";
-  if (days < 90 && amount > 0) return "steward";
+  const days = d && !isNaN(d) ? Math.floor((Date.now() - d) / 86400000) : null;
+  if (!amount && days === null) return hasContactInfo ? "qualify" : "prospect";
+  if (days !== null && days > 365) return "lapsed";
+  if (days !== null && days < 90 && amount > 0) return "steward";
+  // A substantial gift 90–180 days ago reads as "ready for a follow-up ask"
+  // rather than folding into the generic "cultivate" bucket.
+  if (days !== null && days >= 90 && days <= 180 && amount >= 1000) return "solicit";
   if (amount > 0) return "cultivate";
   return "prospect";
 }
@@ -143,9 +155,9 @@ function normalizeStage(val) {
   const v = String(val).toLowerCase().trim();
   if (IMPORT_STAGES.includes(v)) return v;
   if (v.includes("prospect") || v.includes("lead") || v.includes("potential")) return "prospect";
-  if (v.includes("qualif")) return "qualify";
+  if (v.includes("qualif") || v.includes("engaged") || v.includes("warm")) return "qualify";
   if (v.includes("cultivat") || v.includes("nurtur")) return "cultivate";
-  if (v.includes("solicit") || v.includes("ask")) return "solicit";
+  if (v.includes("solicit") || v.includes("ask") || v.includes("pledge pending") || v.includes("ready to ask")) return "solicit";
   if (v.includes("steward") || v.includes("current") || v.includes("active donor")) return "steward";
   if (v.includes("lapsed") || v.includes("inactive") || v.includes("lost") || v.includes("former")) return "lapsed";
   return null;
@@ -259,7 +271,7 @@ function buildDonorRows(parsed, mapping) {
     }
     if (d.lastGift !== undefined && d.lastGift !== "") { const {value,warn} = normalizeDate(d.lastGift); d.lastGift=value; if(warn) warnings.push(`${rowLabel}: ${warn}`); }
     if (d.gifts !== undefined && d.gifts !== "") d.gifts = parseInt(d.gifts) || null;
-    d.stage = normalizeStage(d.stage) || inferStage(d.total, d.lastGift);
+    d.stage = normalizeStage(d.stage) || inferStage(d.total, d.lastGift, !!(d.email || d.phone));
     if (d.city)  d.city  = String(d.city).trim()  || null;
     if (d.state) d.state = String(d.state).trim()  || null;
     if (warnings.length) warned.push({ ...d, _warnings:warnings, _rowIndex:idx+2 });
@@ -304,7 +316,7 @@ function buildCombinedRows(parsed, donorMapping, yearCols) {
     }
     if (d.lastGift !== undefined && d.lastGift !== "") { const {value,warn} = normalizeDate(d.lastGift); d.lastGift=value; if(warn) warnings.push(`${rowLabel}: ${warn}`); }
     if (d.gifts !== undefined && d.gifts !== "") d.gifts = parseInt(d.gifts) || null;
-    d.stage = normalizeStage(d.stage) || inferStage(d.total, d.lastGift);
+    d.stage = normalizeStage(d.stage) || inferStage(d.total, d.lastGift, !!(d.email || d.phone));
     if (d.city)  d.city  = String(d.city).trim()  || null;
     if (d.state) d.state = String(d.state).trim()  || null;
     const gifts = activeCols.map(yc => {
@@ -320,7 +332,16 @@ function buildCombinedRows(parsed, donorMapping, yearCols) {
 // ── DonorImport component ──────────────────────────────────────────────────
 // Exported so WelcomePage's onboarding flow can reuse it directly as the
 // centerpiece "Import your donors" step, rather than forking/rebuilding it.
-export function DonorImport({ onClose, onImported }) {
+// `withHistory` (used only by onboarding — the regular Donors tab's "Import
+// Donors" button always omits it, so its behavior is unchanged): when true,
+// also derives one real `gifts` row per donor from their imported total/
+// last-gift-date and posts through /donors/import-combined instead of the
+// plain /donors/import. Without this, a brand-new org's donor records only
+// ever get aggregate fields — no queryable gifts/interactions rows — which
+// is why Retention Rate, Stewardship Debt, and Gifts YTD render blank
+// immediately after onboarding for every org that isn't shown the OTHER
+// import button, buried in the regular Donors tab, after the fact.
+export function DonorImport({ onClose, onImported, withHistory = false }) {
   const [csvText,    setCsvText]    = useState("");
   const [parsed,     setParsed]     = useState(null);       // { headers:[], rows:[] }
   const [xlsxSheets, setXlsxSheets]= useState(null);       // [{name, rowCount, headers, rows}] | null
@@ -406,7 +427,27 @@ export function DonorImport({ onClose, onImported }) {
     setLoading(true); setErr("");
     try {
       console.log("SENDING IMPORT REQUEST", toSend.length, "donors");
-      const res = await apiFetch("/donors/import", { method:"POST", body:JSON.stringify({ donors:toSend }) });
+      let res;
+      if (withHistory) {
+        // One real gift per donor, derived from their imported total/last-gift
+        // date — NOT a fabricated interaction (see Donors.jsx's inferStage
+        // comment / WelcomePage's onboarding flow): this is the same total
+        // the admin's own file already reported, just also recorded as a
+        // queryable gifts-table row instead of only an aggregate donor field.
+        // Uses `total` (not `lastAmount`) deliberately: /donors/import-combined
+        // recalculates total_giving from the sum of each donor's actual gift
+        // rows after insert, so seeding the one gift with `total` preserves
+        // the imported total exactly; seeding it with a smaller `lastAmount`
+        // would silently shrink total_giving down to just that one figure.
+        const giftsToSend = toSend.map((d, idx) => {
+          const amount = Math.round(parseFloat(d.total) || 0);
+          if (amount <= 0 || !d.lastGift) return null;
+          return { donorIndex: idx, amount, date: d.lastGift, type: "cash", campaign: "" };
+        }).filter(Boolean);
+        res = await apiFetch("/donors/import-combined", { method:"POST", body:JSON.stringify({ donors:toSend, gifts:giftsToSend }) });
+      } else {
+        res = await apiFetch("/donors/import", { method:"POST", body:JSON.stringify({ donors:toSend }) });
+      }
       console.log("IMPORT RESPONSE:", res);
       // Don't call onImported() here — result screen must render first.
       // Done button calls onImported() so the modal stays visible until user dismisses.
@@ -436,6 +477,7 @@ export function DonorImport({ onClose, onImported }) {
           </div>
           <div style={{fontSize:14,color:T.ink3,marginBottom:hasBatchErrors?12:28,lineHeight:1.8}}>
             <strong style={{color:T.ink}}>{result.created}</strong> added
+            {withHistory && result.giftsInserted > 0 && <> · <strong>{result.giftsInserted}</strong> gifts attached</>}
             {result.duplicates > 0 && <> · <strong>{result.duplicates}</strong> duplicates skipped</>}
             {result.warned > 0    && <> · <strong>{result.warned}</strong> imported with warnings</>}
             {result.skipped > 0   && <> · <strong>{result.skipped}</strong> skipped (no name or email)</>}

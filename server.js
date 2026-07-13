@@ -1635,7 +1635,6 @@ app.post("/donors/import", requireAuth, wrap(async (req, res) => {
   const existingEmails = new Set(existingEmailRows.map(r => r.e));
   const seenEmails = new Set(); // within-import dedup
 
-  const today = new Date().toISOString().split("T")[0];
   let duplicates = 0;
   const donorsToInsert = [];
 
@@ -1672,7 +1671,7 @@ app.post("/donors/import", requireAuth, wrap(async (req, res) => {
         d.stage   || "prospect",
         Math.round(parseFloat(d.total)      || 0),
         Math.round(parseFloat(d.lastAmount) || 0),
-        d.lastGift || today,
+        d.lastGift || null,
         parseInt(d.gifts) || (d.total ? 1 : 0),
         JSON.stringify(Array.isArray(d.tags) ? d.tags : []),
         d.notes || "",
@@ -1752,7 +1751,6 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrap(async (r
   );
   const existingEmails = new Set(existingEmailRows.map(r => r.e));
   const seenEmails = new Set();
-  const today = new Date().toISOString().split("T")[0];
 
   // Generate all donor IDs in JS before inserting — gifts reference these IDs directly,
   // no extra round trip needed.
@@ -1786,7 +1784,7 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrap(async (r
         d._id, orgId, String(d.name).trim(), d.email||"", d.phone||"",
         d.status||"new", d.stage||"prospect",
         Math.round(parseFloat(d.total)||0), Math.round(parseFloat(d.lastAmount)||0),
-        d.lastGift||today, parseInt(d.gifts)||(d.total?1:0),
+        d.lastGift||null, parseInt(d.gifts)||(d.total?1:0),
         JSON.stringify(Array.isArray(d.tags)?d.tags:[]),
         d.notes||"", d.city||null, d.state||null, importerId, importerName
       );
@@ -1921,18 +1919,27 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrap(async (r
   // Infer pipeline stage from recalculated giving data.
   // No prospect-only guardrail here: new donors land as 'cultivate' (DB default),
   // so the guardrail would match zero rows. Combined-import only creates NEW donors —
-  // no human-set stages to protect. SQL mirrors inferStage() exactly.
+  // no human-set stages to protect. SQL mirrors client-side inferStage() exactly,
+  // including its qualify/solicit bands — see Donors.jsx's inferStage for the
+  // reasoning (a donor with no gift history but an email/phone on file gets a
+  // reachable path to 'qualify'; a substantial gift 90-180 days ago reads as
+  // 'solicit' rather than folding into the generic 'cultivate' bucket).
   if (affectedDonorIds.size > 0) {
     try {
       await run(
         `UPDATE donors
          SET stage = CASE
+           WHEN total_giving = 0 AND last_gift_date IS NULL
+                AND (COALESCE(email,'') != '' OR COALESCE(phone,'') != '') THEN 'qualify'
            WHEN total_giving = 0 AND last_gift_date IS NULL            THEN 'prospect'
            WHEN last_gift_date IS NOT NULL
                 AND (CURRENT_DATE - last_gift_date::date) > 365        THEN 'lapsed'
            WHEN last_gift_date IS NOT NULL
                 AND (CURRENT_DATE - last_gift_date::date) < 90
                 AND total_giving > 0                                   THEN 'steward'
+           WHEN last_gift_date IS NOT NULL
+                AND (CURRENT_DATE - last_gift_date::date) BETWEEN 90 AND 180
+                AND total_giving >= 1000                                THEN 'solicit'
            WHEN total_giving > 0                                        THEN 'cultivate'
            ELSE 'prospect'
          END,
@@ -2344,18 +2351,24 @@ app.post("/gifts/import-history", requireAuth, checkWriteAccess, wrap(async (req
     } catch (e) { console.error(`[gift-import] status promotion failed:`, e.message); }
   }
 
-  // Infer pipeline stage — same logic as combined import, same guardrail.
+  // Infer pipeline stage — same logic as combined import (see its comment
+  // for the qualify/solicit reasoning), same guardrail.
   if (affectedDonorIds.size > 0) {
     try {
       await run(
         `UPDATE donors
          SET stage = CASE
+           WHEN total_giving = 0 AND last_gift_date IS NULL
+                AND (COALESCE(email,'') != '' OR COALESCE(phone,'') != '') THEN 'qualify'
            WHEN total_giving = 0 AND last_gift_date IS NULL            THEN 'prospect'
            WHEN last_gift_date IS NOT NULL
                 AND (CURRENT_DATE - last_gift_date::date) > 365        THEN 'lapsed'
            WHEN last_gift_date IS NOT NULL
                 AND (CURRENT_DATE - last_gift_date::date) < 90
                 AND total_giving > 0                                   THEN 'steward'
+           WHEN last_gift_date IS NOT NULL
+                AND (CURRENT_DATE - last_gift_date::date) BETWEEN 90 AND 180
+                AND total_giving >= 1000                                THEN 'solicit'
            WHEN total_giving > 0                                        THEN 'cultivate'
            ELSE 'prospect'
          END,
@@ -2911,13 +2924,24 @@ app.get("/dashboard/my-stats", requireAuth, wrap(async (req, res) => {
     : new Date(now.getFullYear(), 6, 1).toISOString().split("T")[0];
   const today = now.toISOString().split("T")[0];
 
-  const [portfolioRows, visitsRows, movesRows, giftsRows, pipelineRows, lapsedRows] = await Promise.all([
+  const [portfolioRows, visitsRows, movesRows, giftsRows, pipelineRows, lapsedRows, orgInteractionRows, orgGiftHistoryRows] = await Promise.all([
     query("SELECT COUNT(*) as cnt FROM donors WHERE org_id=? AND assigned_to=? AND deleted_at IS NULL", [orgId, userId]),
     query("SELECT COUNT(*) as cnt FROM interactions WHERE org_id=? AND created_by=? AND type='meeting' AND date>=?", [orgId, userId, fyStart]),
     query("SELECT COUNT(*) as cnt FROM interactions WHERE org_id=? AND created_by=? AND date>=?", [orgId, userId, fyStart]),
     query("SELECT COALESCE(SUM(g.amount),0) as total FROM gifts g JOIN donors d ON d.id=g.donor_id WHERE d.org_id=? AND d.assigned_to=? AND g.date>=?", [orgId, userId, fyStart]),
     query("SELECT COALESCE(SUM(total_giving),0) as total FROM donors WHERE org_id=? AND assigned_to=? AND stage NOT IN ('lapsed','closed') AND deleted_at IS NULL", [orgId, userId]),
     query("SELECT COUNT(*) as cnt FROM donors WHERE org_id=? AND assigned_to=? AND stage='lapsed' AND deleted_at IS NULL", [orgId, userId]),
+    // Org-wide (not user-scoped) signals for the Home dashboard's empty-state
+    // copy: distinguishes "you have real donor/gift history but genuinely
+    // haven't logged any outreach yet" (show explanatory first-run copy)
+    // from "this org has no donors at all" (a different, existing empty state).
+    // Deliberately scoped to MEANINGFUL_CONTACT_TYPES, not any interaction row:
+    // a fresh onboarding import creates 'gift' interactions as a side effect
+    // of recording each gift (see /donors/import-combined), which is real
+    // data but not outreach — counting it here would hide the "log your
+    // first call" prompt on Day 1 for every org that imported gift history.
+    query(`SELECT COUNT(*) as cnt FROM interactions WHERE org_id=? AND type IN ${MEANINGFUL_CONTACT_TYPES}`, [orgId]),
+    query("SELECT COUNT(*) as cnt FROM donors WHERE org_id=? AND deleted_at IS NULL AND gift_count>0", [orgId]),
   ]);
 
   res.json({
@@ -2927,6 +2951,8 @@ app.get("/dashboard/my-stats", requireAuth, wrap(async (req, res) => {
     giftsYtd: parseInt(giftsRows[0]?.total || 0),
     pipelineValue: parseInt(pipelineRows[0]?.total || 0),
     lapsedCount: parseInt(lapsedRows[0]?.cnt || 0),
+    orgHasInteractions: parseInt(orgInteractionRows[0]?.cnt || 0) > 0,
+    orgHasGiftHistory: parseInt(orgGiftHistoryRows[0]?.cnt || 0) > 0,
   });
 }));
 
@@ -3428,10 +3454,16 @@ app.get("/ai/donor-score", requireAuth, wrap(async (req, res) => {
     else if (d.total_giving > 1000)  score += 12;
     else                             score += 5;
 
-    const days = Math.floor((Date.now() - new Date(d.last_gift_date)) / 86_400_000);
-    if      (days < 90)  score += 30;
-    else if (days < 180) score += 22;
-    else if (days < 365) score += 12;
+    // Unguarded new Date(null) silently evaluates to the 1970 epoch (a huge,
+    // wrong "days since" value that happened to fall through all three bands
+    // below without erroring) — null-guard so a missing last_gift_date just
+    // skips the recency bonus instead of relying on that coincidence.
+    const days = d.last_gift_date ? Math.floor((Date.now() - new Date(d.last_gift_date)) / 86_400_000) : null;
+    if (days !== null) {
+      if      (days < 90)  score += 30;
+      else if (days < 180) score += 22;
+      else if (days < 365) score += 12;
+    }
 
     score += Math.min(d.gift_count * 4, 20);
 

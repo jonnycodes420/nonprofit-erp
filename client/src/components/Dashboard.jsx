@@ -284,7 +284,14 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
                 {stewardMetrics.firstTouchDelay.current!=null?`${stewardMetrics.firstTouchDelay.current}d`:"—"}
               </div>
               <div style={{fontSize:11,color:T.ink3,marginTop:4}}>
-                Avg days before a new donor gets a personal touch{stewardMetrics.firstTouchDelay.sampleSize?` (n=${stewardMetrics.firstTouchDelay.sampleSize})`:""}
+                {/* A genuine zero (no logged outreach yet) reads as expected
+                    first-day state when the org has real donor/gift history —
+                    not as a broken metric — vs. the generic description once
+                    there's actually something to describe. Never fabricates
+                    interaction data; this only changes the caption. */}
+                {stewardMetrics.firstTouchDelay.current==null && myStats?.orgHasGiftHistory && !myStats?.orgHasInteractions
+                  ? "No outreach logged yet — this is normal right after import. Log your first call from a donor's profile to start tracking this."
+                  : <>Avg days before a new donor gets a personal touch{stewardMetrics.firstTouchDelay.sampleSize?` (n=${stewardMetrics.firstTouchDelay.sampleSize})`:""}</>}
               </div>
             </div>
           </div>
@@ -316,24 +323,38 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
             </div>
             <span style={{fontSize:12,color:T.ink3}}>{portfolioOpen?"▲":"▼"}</span>
           </button>
-          {portfolioOpen&&(
-            <div style={{display:"grid",gridTemplateColumns:"repeat(6,1fr)",borderTop:"1px solid "+T.bg3}} className="portfolio-grid">
-              {[
-                {label:"Portfolio",value:myStats.portfolioCount,unit:"donors"},
-                {label:"Visits YTD",value:myStats.visitsYtd,unit:"meetings"},
-                {label:"Moves Made",value:myStats.madeYtd,unit:"interactions"},
-                {label:"Gifts YTD",value:fmt(myStats.giftsYtd),unit:"raised"},
-                {label:"Pipeline",value:fmt(myStats.pipelineValue),unit:"value"},
-                {label:"Lapsed",value:myStats.lapsedCount,unit:"in portfolio",warn:myStats.lapsedCount>0},
-              ].map((m,i)=>(
-                <div key={m.label} style={{padding:"12px 14px",borderRight:i<5?"1px solid "+T.bg3:"none",textAlign:"center"}}>
-                  <div style={{fontSize:9,fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase",color:m.warn?"#ef4444":"#3b82f6",marginBottom:4}}>{m.label}</div>
-                  <div style={{fontSize:20,fontWeight:800,color:m.warn?"#ef4444":T.ink,fontFamily:"'DM Serif Display',serif",lineHeight:1}}>{m.value}</div>
-                  <div style={{fontSize:10,color:T.ink3,marginTop:2}}>{m.unit}</div>
+          {portfolioOpen&&(() => {
+            // Genuinely zero because nobody has logged a call/meeting yet is
+            // expected first-day state, not a broken metric — but only once
+            // there's real donor/gift history to have contacted in the first
+            // place (an org with zero donors gets its own separate empty
+            // state elsewhere, not this copy). Never fabricates interaction
+            // data; this only changes how an honest zero is captioned.
+            const noOutreachYet = myStats.orgHasGiftHistory && !myStats.orgHasInteractions;
+            return (<>
+              <div style={{display:"grid",gridTemplateColumns:"repeat(6,1fr)",borderTop:"1px solid "+T.bg3}} className="portfolio-grid">
+                {[
+                  {label:"Portfolio",value:myStats.portfolioCount,unit:"donors"},
+                  {label:"Visits YTD",value:myStats.visitsYtd,unit:(noOutreachYet&&myStats.visitsYtd===0)?"not logged yet":"meetings"},
+                  {label:"Moves Made",value:myStats.madeYtd,unit:(noOutreachYet&&myStats.madeYtd===0)?"not logged yet":"interactions"},
+                  {label:"Gifts YTD",value:fmt(myStats.giftsYtd),unit:"raised"},
+                  {label:"Pipeline",value:fmt(myStats.pipelineValue),unit:"value"},
+                  {label:"Lapsed",value:myStats.lapsedCount,unit:"in portfolio",warn:myStats.lapsedCount>0},
+                ].map((m,i)=>(
+                  <div key={m.label} style={{padding:"12px 14px",borderRight:i<5?"1px solid "+T.bg3:"none",textAlign:"center"}}>
+                    <div style={{fontSize:9,fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase",color:m.warn?"#ef4444":"#3b82f6",marginBottom:4}}>{m.label}</div>
+                    <div style={{fontSize:20,fontWeight:800,color:m.warn?"#ef4444":T.ink,fontFamily:"'DM Serif Display',serif",lineHeight:1}}>{m.value}</div>
+                    <div style={{fontSize:10,color:T.ink3,marginTop:2}}>{m.unit}</div>
+                  </div>
+                ))}
+              </div>
+              {noOutreachYet&&(myStats.visitsYtd===0||myStats.madeYtd===0)&&(
+                <div style={{padding:"8px 14px",borderTop:"1px solid "+T.bg3,fontSize:11,color:T.ink3,textAlign:"center",background:T.bg}}>
+                  No outreach logged yet — this is normal right after import. Log your first call from a donor's profile to start tracking this.
                 </div>
-              ))}
-            </div>
-          )}
+              )}
+            </>);
+          })()}
         </div>
       )}
 
