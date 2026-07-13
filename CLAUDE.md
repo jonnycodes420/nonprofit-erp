@@ -1,11 +1,19 @@
 # Steward — Nonprofit ERP SaaS
 
+## Strategic pivot (2026-07-12) — READ THIS FIRST
+Steward pivoted from a full 11-tab nonprofit ERP to a focused **retention/stewardship product** built around Donors + Grants + Communications.
+
+- **What's hidden, not deleted**: Events, Volunteers, Board, Analytics, Tasks, and Finance are commented out of the nav (`TABS`/`BOTTOM_TABS`/`MORE_TABS` in App.jsx — see "Active tabs" below for the exact current arrays). Their component files, backend routes, and database tables are all still fully intact and functional — this is a UI-visibility change only, deliberately reversible by uncommenting.
+- **A donor-facing portal was explored and rejected.** A partner brief proposed a donor-facing "Lifetime Impact Dashboard" — donor login, giving tiers, badges, milestone displays. Rejected specifically because nonprofit-experienced feedback identified gamified donor-facing portals (tiers/badges/leaderboards visible to the donor) as damaging to donor trust, not building it. This is why donor login, tiers, and badges were deliberately avoided in what got built instead — see below.
+- **What got built in its place**: a staff-facing retention/stewardship engine. The system notices patterns in donor data (giving milestones, anniversaries, contact gaps) and drafts or suggests — a human always reviews and sends. Nothing donor-facing was built; there is no donor login.
+- **AI works invisibly, not as a branded feature.** The general-purpose "Ask AI" chatbot (a floating assistant you could ask anything) was **removed entirely** — not hidden, actually deleted (`AIChat`, formerly exported from Dashboard.jsx — see "Component files" below) — because a visible, brandable "AI feature" cuts against the product's actual value: staff shouldn't need to think about *which* moments are AI-touched, they should just see a good suggestion at the right time. Every specific AI-powered action (milestone drafting, LOI drafting, forecast, wealth scoring, etc.) still works exactly as before — only the standalone chat surface is gone. See "Key patterns" for the current de-branded label conventions (`AIBtn`'s default label is "Suggest", not "AI Assist"; `AIPanel`'s badge reads "Suggested", not "AI Intelligence").
+
 ## Stack
 - Frontend: React 18 + Vite → deployed on Vercel
 - Backend: Node + Express → deployed on Railway
 - Database: Supabase PostgreSQL
 - Auth: JWT written directly to localStorage (npe_token, npe_user, npe_org)
-- AI: Anthropic SDK (claude-sonnet-4-6)
+- AI: Anthropic SDK (claude-sonnet-4-6) — used for specific, narrow tasks throughout the app; there is no general-purpose chat interface (see "Strategic pivot" above)
 - Email: Resend HTTP API (noreply@stewardapp.dev)
 - Payments: Stripe Connect Express
 
@@ -46,12 +54,12 @@
 - Client: `Sentry.init()` gated on `VITE_SENTRY_DSN` (main.jsx top), with `browserTracingIntegration()`. Source maps: `vite.config.js` sets `build.sourcemap: !!process.env.SENTRY_AUTH_TOKEN` (not unconditionally `true` — a build with no token generates no maps at all, so there's never a window where maps sit in `dist` unuploaded-and-unstripped) and runs `@sentry/vite-plugin`'s `sentryVitePlugin(...)`, which uploads maps to Sentry at build time then deletes them from the `dist` output (`sourcemaps.filesToDeleteAfterUpload`) regardless of whether the upload itself succeeded — production never publicly serves raw source maps either way.
 
 ## Project structure
-- /client/src/App.jsx — AppShell + TABS + App (147 lines, imports from components/)
-- /client/src/main.jsx — router, auth context, route guards — ALL ROUTING LIVES HERE ONLY
-- /client/src/pages/Landing.jsx — public landing page (relational copy, mobile responsive)
-- /client/src/pages/LoginPage.jsx — login, writes localStorage directly
+- /client/src/App.jsx — AppShell + TABS + App, imports from components/. Header is wordmark-only (no icon-in-square logo — icon lives on the favicon only) and has no "Ask AI" button (removed, see Strategic pivot).
+- /client/src/main.jsx — router, auth context, route guards — ALL ROUTING LIVES HERE ONLY. `/today` now redirects to `/dashboard` (see Onboarding flow / Routing below) — TodayPage.jsx still exists on disk but is unrouted.
+- /client/src/pages/Landing.jsx — public landing page, rewritten for the pivot: fake testimonials removed, honest "Where Steward Is Today" section added, real product screenshot (not a mockup), Features section updated to match what's actually live (Finance & Reporting card replaced with Gmail sync)
+- /client/src/pages/LoginPage.jsx — login, writes localStorage directly; post-login redirect is `/dashboard` (was `/today`)
 - /client/src/pages/SignupPage.jsx — signup
-- /client/src/pages/WelcomePage.jsx — 3-step onboarding (focus select → animated setup → launch)
+- /client/src/pages/WelcomePage.jsx — 5-step onboarding that finishes with real data, not a blank slate (org basics → import donors → set first goal → first impact metric → finish). See "Onboarding flow" below.
 - /client/src/pages/GivePage.jsx — public donation page at /give/:orgSlug
 - /client/src/api.js — apiFetch, streamAI, adaptData helpers
 - /server.js — Express backend (all routes)
@@ -59,33 +67,35 @@
 - /db.js — Supabase client
 
 ## Key files
-- client/src/components/Donors.jsx — donor list + ALL importers
-- client/src/components/Finance.jsx
-- client/src/components/Analytics.jsx
-- client/src/components/Settings.jsx
+- client/src/components/Donors.jsx — donor list + ALL importers; `DonorImport` is now exported (was module-private) so WelcomePage's onboarding flow can reuse it directly as the import step's centerpiece
+- client/src/components/Finance.jsx — hidden from nav, code/routes/tables intact (see Strategic pivot)
+- client/src/components/Analytics.jsx — hidden from nav, code/routes/tables intact (see Strategic pivot)
+- client/src/components/Settings.jsx — includes an Impact Metrics admin panel (create/edit/delete), mirroring the existing Custom Fields UI pattern
 - client/src/components/UpgradeModal.jsx
 - server.js
 - db.js
 
-## Active tabs (App.jsx TABS array)
-dashboard → donors → grants → communications → events → finance → volunteers (earlyAccess) → board (earlyAccess) → analytics → tasks → settings
+## Active tabs (App.jsx TABS array — current, post-pivot)
+dashboard ("Home") → donors → grants → communications → settings
 
-Mobile bottom bar: dashboard, donors, grants, finance
-Mobile "More" drawer: communications, events, volunteers, board, analytics, tasks, settings
+Events/Volunteers/Board/Analytics/Tasks/Finance are commented out of `TABS` with a `// DEPRIORITIZED` marker — re-enable by uncommenting, nothing else to restore.
+
+Mobile bottom bar (`BOTTOM_TABS`): dashboard ("Home"), donors, grants, settings
+Mobile "More" drawer (`MORE_TABS`): communications only (Events/Volunteers/Board/Analytics/Tasks are commented out here too)
 
 ## Component files (client/src/components/)
-- shared.jsx — T (design tokens), fmt, fmtFull, daysDiff, daysUntil, SC, askClaude, buildContext, STAGES, STAGE_THRESH, STAGE_ACTION, TIER_COLOR, donorScore, retentionRisk, moveUrgency, GlobalStyles, Spin, Pill, Card, SectionLabel, AIBtn, AIPanel, MetricCard, EmptyState, PageTitle, GivingHistoryChart, TpField, TpYesNo, TouchpointTimeline
-- Dashboard.jsx — exports AIChat (global chat overlay), Dashboard (hero stats, AI briefing, pipeline snapshot, lapsed alert, grant deadlines, recent giving, quick actions, tasks, activity feed)
-- Donors.jsx — exports Donors (includes DonorImport, FollowUpTaskModal, LogTouchpointModal, EditDonorModal, DonorProfile, DonorKanban, ReEngageView internally)
-- Events.jsx — exports Events (EventCard, EventDetail, NewEventPanel, FollowUpModal internally)
-- Grants.jsx — exports Grants (includes GrantProfile, FindGrants internally)
-- Communications.jsx — exports Communications (email campaigns, templates, audience segmentation, Resend API, open tracking)
-- Volunteers.jsx — exports Volunteers
-- Board.jsx — exports Board
-- Finance.jsx — exports Finance (6 tabs: Overview, Transactions, Accounts, Funds, Budgets, Reports; includes fund sparklines)
-- Analytics.jsx — exports Analytics (7 charts: giving trend, donor retention, pipeline velocity, grant pipeline, email performance, event performance, top donors)
-- Tasks.jsx — exports Tasks
-- Settings.jsx — exports Settings (Stripe connect, QR code, donation widget embed, team management, invite modal)
+- shared.jsx — T (design tokens, now includes `bgDeep` and `terracotta`), fmt, fmtFull, daysDiff, daysUntil, SC, askClaude, buildContext, STAGES, STAGE_THRESH, STAGE_ACTION, TIER_COLOR, donorScore, retentionRisk, moveUrgency, GlobalStyles, Spin, Pill, Card, SectionLabel, AIBtn (default label "Suggest", not "AI Assist"), AIPanel (badge reads "Suggested", not "AI Intelligence"), MetricCard, EmptyState, PageTitle, GivingHistoryChart, TpField, TpYesNo, TouchpointTimeline, VoiceMemoModal (built but currently unused — see "Voice memo capture (shelved)" below)
+- Dashboard.jsx — exports `Dashboard` only. **`AIChat` (the global "Ask AI" chat overlay) was removed entirely**, not hidden — see Strategic pivot. `Dashboard` is now the action-queue-first home screen (goal banner, "Needs Your Attention" queue, pipeline funnel, next-grant-deadline tile, Stewardship Debt/First-Touch Delay headline metrics) — the old 4-card KPI stat row, Quick Actions sidebar, and Recent Activity feed are gone, not just restyled. See "What's built" below for the full description.
+- Donors.jsx — exports Donors, and now also exports `DonorImport` (reused directly by WelcomePage's onboarding flow) (includes FollowUpTaskModal, LogTouchpointModal, EditDonorModal, DonorProfile, DonorKanban, ReEngageView internally)
+- Events.jsx — exports Events (EventCard, EventDetail, NewEventPanel, FollowUpModal internally) — **hidden from nav**, code/routes/tables intact
+- Grants.jsx — exports Grants (includes GrantProfile, FindGrants internally). GrantProfile now accepts an `initialGrantId` prop for deep-linking (used by the home screen's next-grant-deadline tile)
+- Communications.jsx — exports Communications (email campaigns, templates, audience segmentation, Resend API, open tracking, Sequences, Milestone Drafts review queue). Accepts `initialNav`/`highlightDraftId` props for deep-linking from the home screen's queue. See "Retention & stewardship" below.
+- Volunteers.jsx — exports Volunteers — **hidden from nav**, code/routes/tables intact
+- Board.jsx — exports Board — **hidden from nav**, code/routes/tables intact
+- Finance.jsx — exports Finance (6 tabs: Overview, Transactions, Accounts, Funds, Budgets, Reports; includes fund sparklines) — **hidden from nav**, code/routes/tables intact
+- Analytics.jsx — exports Analytics (7 charts: giving trend, donor retention, pipeline velocity, grant pipeline, email performance, event performance, top donors) — **hidden from nav**, code/routes/tables intact
+- Tasks.jsx — exports Tasks — **hidden from nav**, code/routes/tables intact
+- Settings.jsx — exports Settings (Stripe connect, QR code, donation widget embed, team management, invite modal, Custom Fields manager, Impact Metrics manager — same UI pattern as Custom Fields)
 - PlanPicker.jsx — exports default PlanPicker(open, onClose) modal; Seed/Growth/Impact plan cards pulling plan data from pages/Pricing.jsx (single source of truth); selecting a plan calls POST /billing/create-checkout. Used by App.jsx banner "Reactivate"/"Choose a plan" buttons — NOT the Stripe Customer Portal (see SaaS billing section)
 
 ## Routing (IMPORTANT)
@@ -147,11 +157,19 @@ Mobile "More" drawer: communications, events, volunteers, board, analytics, task
 - AdminDashboard.jsx has its own `adminFetch()` helper (not apiFetch) and its own layout — no AppShell
 - Design tokens: `A` object (not `T`) — bg `#0a0f0a`, dark ops-tool aesthetic
 
+## Admin data integrity
+Diagnostic tooling added after manually deleting test-user rows in Supabase's Table Editor left open questions about orphaned data (see "Current priorities" — the actual investigation is still outstanding, this section documents the tooling only).
+- `GET /admin/data-integrity` (requireAuth + requireSuperAdmin) — reports orgs with no matching `users` row, plus dangling foreign-key references to deleted user IDs, without changing anything.
+  - `DANGLING_USER_REF_CHECKS` — columns that reference a user but aren't unique/required, checked for stale IDs: `interactions.created_by`, `donors.assigned_to`, `donor_materials.uploaded_by`, `milestone_drafts.reviewed_by`, `note_reminders.sent_by`, `board_reports.generated_by`, `fin_audit_log.user_id`, `ai_log.user_id`, `invites.invited_by`.
+  - `DANGLING_USER_ROW_CHECKS` — whole rows keyed to a now-missing user: `gmail_connections.user_id` (org-scoped), `password_reset_tokens.user_id` (not org-scoped).
+- `POST /admin/data-integrity/fix` (requireAuth + requireSuperAdmin) — nulls the dangling FK references found above; does NOT delete orgs or donor/gift data as a side effect (orphaned-org cleanup is a separate, deliberate action — see below).
+- **`DELETE /admin/orgs/:id` cascade fixed** — was missing `milestone_drafts`, `note_reminders`, `donor_materials`, `planned_gifts` (all ordered BEFORE the `donors` delete, since they carry `donor_id` FKs), plus `board_reports`, `fundraising_goals`, `impact_metrics`, `metric_snapshots`, `email_suppressions` (org_id only, no ordering constraint). Use this route (not manual table deletes) to remove a throwaway/test org — it deletes everything scoped to the org in FK-safe order.
+
 ## Auth (IMPORTANT)
 - Login writes npe_token, npe_user, npe_org to localStorage directly
 - LoginPage uses hardcoded fetch() to Railway URL, not apiFetch
 - onboarding_complete comes back as 1 (number) not true (boolean)
-- After login: `window.location.href = data.user.isSuperAdmin ? "/admin" : "/today"` (not `/dashboard`)
+- After login: `window.location.href = data.user.isSuperAdmin ? "/admin" : "/dashboard"`. `/today` still exists as a route in main.jsx but is now just `<Navigate to="/dashboard" replace />` — `TodayPage.jsx` is unrouted dead code on disk.
 - RequireOnboarded guard in main.jsx checks both auth AND onboarding_complete; redirects to /welcome if onboarding_complete is 0
 - `requireAuth` (auth.js) distinguishes `jwt.verify` failure modes and returns a distinct error code + message rather than one generic message: `{error:"token_expired"}` (TokenExpiredError), `{error:"invalid_token"}` (bad signature/malformed — e.g. what a server-side `JWT_SECRET` rotation looks like to every previously-issued token), `{error:"no_token"}` (missing/malformed Authorization header)
 - Client (`api.js` `apiFetch`/`streamAI`) detects any of these three codes (plus the legacy `"Invalid token"`/`"No token provided"` message strings, for compatibility during a deploy) on a 401, clears `npe_token`/`npe_user`/`npe_org`, and redirects to `/login` with a "Your session expired — please log in again" message via `sessionStorage` — instead of leaving the app on a dead-end "Failed to connect" screen with a Retry button that could never succeed on a bad token
@@ -159,10 +177,14 @@ Mobile "More" drawer: communications, events, volunteers, board, analytics, task
 
 ## Onboarding flow (IMPORTANT)
 - Signup → /welcome (RequireAuth, not RequireOnboarded)
-- WelcomePage: 3 steps — Step 0: focus selection (donors/grants/finance/all); Step 1: animated setup (calls POST /onboarding/complete); Step 2: launch
-- POST /onboarding/complete calls seedOrgData(orgId) then sets onboarding_complete=1
-- seedOrgData seeds ONLY structural data: 26-account chart of accounts + one General Operating fund (no fake donors/grants/financials)
-- New orgs get a true blank slate — no sample data
+- WelcomePage is now a **5-step flow that finishes with real, working data** — not a blank slate. Rebuilt because the new home screen (goal banner, queue, funnel) shows nothing valuable until there's real donor data, a goal, and at least one impact metric configured. There is no guided-tour step — no GuidedTour/OnboardingWizard component exists in the codebase (see "What's NOT built" note below); a comment in WelcomePage.jsx marks where one would slot in if built later.
+  1. **Org basics** — org name + mission/tagline → `PATCH /orgs/:id` (route extended to accept an optional `name` field for this; previously mission/focusArea/annualBudget/foundedYear/website only)
+  2. **Import your donors** — centerpiece step. Embeds the real `DonorImport` component (now exported from Donors.jsx, was module-private) as a modal — same CSV import used everywhere else in the app, not a simplified onboarding-only version. Only skippable step: "I don't have a list ready yet — I'll do this later." Skipping sets `importSkipped` state, checked in step 5.
+  3. **Set your first goal** — pre-fills from real imported data via `useMemo` over a `GET /donors` snapshot: if lapsed donors exist, suggests `{goalType:"lapsed_recovery", label:"Win back $X in lapsed giving"}`; otherwise suggests `{goalType:"total_raised", label:"Raise $X this quarter"}`. Calls `POST /goals`.
+  4. **First impact metric** — pre-filled template built from the org name (string concatenation, not a template literal — `{amount}`/`{n}` must appear as literal placeholder text in the saved template for the backend's own `.replace()` logic to fill in later, not be evaluated as JS). "+ Add another metric" reveals an optional second one. Calls `POST /impact-metrics` once or twice.
+  5. **Finish** — calls `POST /onboarding/complete` (seedOrgData + `onboarding_complete=1`) **at the end of the flow, not the start**, deliberately: goal/metric steps are non-skippable, so flipping the flag early would let a user who drops off mid-flow land on a half-set-up `/dashboard` on next login. Then an animated checklist, then a "ready" screen with "Go to my home screen →" always, plus a conditional "Load sample data & explore →" button shown only when `importSkipped && donorsSnapshot.length === 0`.
+- `seedOrgData` still seeds only structural data (26-account chart of accounts + one General Operating fund) — real donor/goal/metric data now comes from steps 2–4 above, not from seeding.
+- Known-fixed bug: the mount-effect that redirects an already-onboarded org straight to `/dashboard` must have an empty dependency array (`[]`, mount-only) — watching `[auth]` re-fires reactively when step 5's `refreshOrg()` updates the auth context mid-flow, force-navigating away and skipping the "ready" screen (and its conditional sample-data button) before it renders. This exact bug existed latently in the old 3-step flow too, just invisibly, since both old final-step buttons already led to `/dashboard`.
 - InvitePage: dark theme; invited staff land on /dashboard (org already onboarded)
 
 ## Database — key tables and columns
@@ -187,7 +209,22 @@ Mobile "More" drawer: communications, events, volunteers, board, analytics, task
 
 ### MGO toolkit tables
 - `planned_gifts` — id, org_id, donor_id, type (bequest/charitable_remainder_trust/charitable_lead_trust/annuity/ira_beneficiary/life_insurance/real_estate/other), estimated_value, date_indicated, notes, created_at
-- `donor_materials` — id, org_id, donor_id, file_name, file_type, file_url, file_data (base64 <1MB), notes, uploaded_by, uploaded_at
+- `donor_materials` — id, org_id, donor_id, file_name, file_type, file_url, file_data (base64 <1MB), notes, uploaded_by, uploaded_at. `donor_materials` and `planned_gifts` were missing from the org-deletion cascade (`DELETE /admin/orgs/:id`) — fixed to delete both (and `milestone_drafts`, `note_reminders`) BEFORE `donors`, since they carry `donor_id` FKs. See "Admin data integrity" below.
+
+### Retention & stewardship (goals, impact metrics, milestone detection)
+The system behind the pivot's staff-facing retention engine (see "Strategic pivot" at top) — notices patterns in donor data and drafts or suggests, a human always reviews and sends. No donor-facing surface, no donor login.
+
+- `fundraising_goals` — id, org_id, period_start, period_end, goal_type (`lapsed_recovery`|`total_raised`), goal_amount, label, created_at. Only one goal is "active" at a time: `GET /goals/active` picks the most recently created row whose period contains today — creating a new overlapping goal replaces the prior one with no delete/deactivate step needed. `lapsed_recovery` progress is reconstructed live from gift history (a gift counts if it's a donor's most recent gift in the period AND followed a >365-day gap since their prior gift), not from a stage-history table. `POST /goals` is `checkWriteAccess`-gated.
+- `impact_metrics` — id, org_id, name, dollar_threshold, outcome_template, active, created_at. Org-configured "at this cumulative giving amount, here's what it funded" copy — `dollar_threshold` doubles as cost-per-unit-of-impact used to compute `{n}` in the template (threshold=300 + donor total=1200 → n=4). Settings.jsx has a manager panel mirroring the Custom Fields UI pattern. `POST`/`PUT /impact-metrics/:id` are `checkWriteAccess`-gated.
+- `milestone_drafts` — id, org_id, donor_id, sequence_enrollment_id, milestone_key, subject, body, status (`pending_review`|`dismissed`|`sent`), created_at, reviewed_by, sent_at. AI-drafted milestone/anniversary emails land here for staff review — deliberately never auto-sent. `MILESTONE_THRESHOLDS = [10000, 5000, 2500, 1000, 500]` (fixed checkpoints, separate from `impact_metrics` which is org-configured content for what to SAY, not when to fire) plus giving anniversaries (6-month, then yearly) detected in `computeMilestoneCandidates()`. `milestoneKey` (e.g. `threshold_1000`, `anniversary_year_3`) lets `autoEnroll()` tell a genuinely new milestone apart from one already handled, without a separate tracking table. `ensureMilestoneSequences()` lazily provisions one `trigger='milestone'` sequence per org that has configured ≥1 active `impact_metrics` row — content is generated per-donor by `generateMilestoneDraft()`, not from `sequence_steps.body` like other trigger types. Routes: `GET /milestone-drafts`, edit/dismiss/send under `/milestone-drafts/:id`.
+- `note_reminders` — id, org_id, donor_id, sequence_enrollment_id, milestone_key, talking_points (JSONB), status (`pending`|`sent`|`dismissed`), created_at, sent_at, sent_by. Non-AI-drafted sibling of `milestone_drafts` — major milestones/anniversaries get a "write a personal note" nudge with real, computed talking points (`computeNoteTalkingPoints()`) instead of a drafted email. No note content is ever generated or stored — `talking_points` are reference facts only. `POST /note-reminders/:id/send` marks it sent and logs a `stewardship` interaction confirming a note went out (never writes the note's actual content); `POST /note-reminders/:id/dismiss`.
+- `metric_snapshots` — id, org_id, metric_key, value, snapshot_date, created_at. UNIQUE(org_id, metric_key, snapshot_date) — re-snapshotting the same day updates in place. Generic daily history store shared by `stewardship_debt`/`first_touch_delay` and any future metric of the same shape (see "Product design patterns" below), rather than a bespoke table per metric. `GET /metrics/stewardship-summary` computes both metrics live on every call (never served stale-only) and persists today's snapshot as a side effect, on top of a periodic background snapshot job.
+
+### Voice memo capture (shelved)
+Backend, Whisper transcription, and extraction logic are fully built and functional — **shelved from the UI only** (2026-07-12) as an unproven-adoption-assumption bet, not a broken feature. Re-enable by uncommenting the `VoiceMemoModal` import/state/button in App.jsx and Donors.jsx (marked `// SHELVED — ...` at each site).
+- Two-step, human-in-the-loop flow: `POST /voice-memos/transcribe` uploads audio + transcribes via Whisper + runs one narrow Claude extraction pass, but **saves nothing** — the officer reviews the transcript and suggestions client-side first. `POST /voice-memos/save` (checkWriteAccess) is the only route that persists anything (the interaction, and optionally the extracted detail/follow-up task, only for whichever the officer confirmed).
+- Requires `OPENAI_API_KEY` (Whisper) — was never actually added to Railway, so this was never live end-to-end even before being shelved. If unset, `/voice-memos/transcribe` returns a clear 500 rather than failing silently or stubbing a fake transcript.
+- `VoiceMemoModal` component still lives in shared.jsx, unused but intact.
 
 ### campaigns (extended)
 - briefing TEXT — strategy/talking points, editable auto-save
@@ -245,7 +282,8 @@ Mobile "More" drawer: communications, events, volunteers, board, analytics, task
   `POST /events`, `PUT /events/:id`, `POST /events/:id/attendees`, `PATCH /events/:id/attendees/:attendeeId`, `POST /events/:id/follow-up`,
   `POST /campaigns`, `PUT /campaigns/:id`, `PUT /campaigns/:id/briefing`, `POST /campaigns/:id/send`,
   `POST /board`,
-  `POST /custom-fields`, `PUT /custom-fields/reorder`, `PUT /custom-fields/:id`.
+  `POST /custom-fields`, `PUT /custom-fields/reorder`, `PUT /custom-fields/:id`,
+  `POST /goals`, `POST /impact-metrics`, `PUT /impact-metrics/:id`, `POST /voice-memos/save`.
   DELETE routes are intentionally never gated (consistent across all of the above). Never blocks GET or export.
 - `checkTrialExpiry()` job: sets trial_expired when trial_ends_at < NOW(). Runs on startup (+15s) + every 6h.
 - Multi-state banner in App.jsx: read_only=red persistent; warning+past_due=amber update payment; warning+canceled=amber with grace date; trialing≤14d=green (amber at ≤3d). Warning/read_only not dismissible. "Reactivate" (read_only + canceled/warning banners) and "Choose a plan"/"Upgrade now" (trial banner) open `PlanPicker.jsx` → `POST /billing/create-checkout`, not the Portal. "Update payment" (past_due banner) still opens the Portal, since that org has an existing subscription/payment method to fix.
@@ -270,20 +308,27 @@ Mobile "More" drawer: communications, events, volunteers, board, analytics, task
 - Resend domain verified: stewardapp.dev, sends from noreply@stewardapp.dev
 
 ## What's built
-- Auth + 3-step onboarding (blank slate — chart of accounts + General Operating fund only)
-- Dashboard — hero stat cards, AI daily briefing (pull quote + expandable), donor pipeline snapshot, lapsed donor alert, grant deadlines, recent giving, online gifts (Stripe), quick actions, tasks this week, activity feed
-- Donors — Kanban pipeline, CSV import, AI features, editing, interaction timeline (dynamic templates by type: Call/Meeting/Email/Event/Gift/Other), auto follow-up task on touchpoint save, wealth score card (5-component scoring, DB columns, recalculate button)
+- Auth + 5-step onboarding that finishes with real data (org basics → import donors → set first goal → first impact metric → finish) — see "Onboarding flow" above
+- Dashboard — now an **action-queue-first home screen**, not a KPI stat grid: goal banner (from `fundraising_goals`), "Needs Your Attention" queue (milestone drafts, note reminders, lapsed donors, never-contacted donors — mixed and prioritized), pipeline funnel, next-grant-deadline tile (deep-links into GrantProfile via `initialGrantId`), Stewardship Debt / First-Touch Delay headline metrics (see "Product design patterns"). The old hero stat cards, AI daily briefing, Quick Actions sidebar, and standalone Recent Activity feed are gone, not just restyled — deep-links go straight to Communications' Milestone Drafts queue (`initialNav`/`highlightDraftId`) or a donor profile.
+- Donors — Kanban pipeline, CSV import (now also the centerpiece of onboarding step 2 — `DonorImport` exported from Donors.jsx), AI features, editing, interaction timeline (dynamic templates by type: Call/Meeting/Email/Event/Gift/Other), auto follow-up task on touchpoint save, wealth score card (5-component scoring, DB columns, recalculate button), per-donor Impact Summary PDF download (`GET /donors/:id/impact-summary/pdf`)
 - Grants — CRUD, AI strategy, LOI drafting, grant discovery (FindGrants merged into Grants tab)
-- Communications — segmented email campaigns (Resend HTTP API), AI copy, open rate tracking via pixel, audience filters
-- Finance — 6-tab module: Overview (P&L, fund balances, AI forecast), Transactions (CRUD, filter), Accounts, Funds (sparklines), Budgets, Reports; donor gifts auto-sync to fin_transactions; full audit log
-- Volunteers — hours tracking, conversion to donor, board candidate AI
-- Board — giving levels, attendance, committees, AI board report
-- Tasks — priority queue, AI prioritization, add/complete, due dates
-- Settings — Stripe Connect Express flow, QR code generator, embeddable iframe widget, team management, invite staff (email + link fallback), NO billing/plan UI; Demo Data card (gold left border) at top
-- Sample data loader — `POST /org/load-sample-data` (refused if >5 real donors; seeds 25 donors across all stages, gifts, funds, transactions, grants, events, campaign, interactions, tasks, volunteers, board members; all tagged `is_sample=true`); `POST /org/clear-sample-data` (per-table `.catch(()=>{})` deletes); `GET /org/sample-data-status` → `{ hasSampleData, sampleDonorCount }`; DirectoryView shows inviting empty state with Load button when org has 0 donors
+- Communications — segmented email campaigns (Resend HTTP API), AI copy, open rate tracking via pixel, audience filters, Sequences, **Milestone Drafts review queue** (staff approves/edits/dismisses AI-drafted milestone emails before sending — see "Retention & stewardship")
+- Finance, Volunteers, Board, Analytics, Tasks — **hidden from nav** as of the 2026-07-12 pivot (see "Strategic pivot" at top); code/routes/tables fully intact, reversible by uncommenting. Descriptions below are the still-accurate feature list, kept for whenever these are re-enabled:
+  - Finance — 6-tab module: Overview (P&L, fund balances, AI forecast), Transactions (CRUD, filter), Accounts, Funds (sparklines), Budgets, Reports; donor gifts auto-sync to fin_transactions; full audit log
+  - Volunteers — hours tracking, conversion to donor, board candidate AI
+  - Board — giving levels, attendance, committees, AI board report
+  - Tasks — priority queue, AI prioritization, add/complete, due dates
+  - Analytics — 7 charts: giving trend, donor retention, pipeline velocity, grant pipeline, email performance, event performance, top donors
+- Settings — Stripe Connect Express flow, QR code generator, embeddable iframe widget, team management, invite staff (email + link fallback), Custom Fields manager, **Impact Metrics manager** (same UI pattern as Custom Fields), NO billing/plan UI; Demo Data card (gold left border) at top
+- Sample data loader — `POST /org/load-sample-data` (refused if >5 real donors; seeds 25 donors across all stages, gifts, funds, transactions, grants, events, campaign, interactions, tasks, volunteers, board members; all tagged `is_sample=true`); `POST /org/clear-sample-data` (per-table `.catch(()=>{})` deletes); `GET /org/sample-data-status` → `{ hasSampleData, sampleDonorCount }`; DirectoryView shows inviting empty state with Load button when org has 0 donors; also offered inline on onboarding's "ready" screen when a new org skipped CSV import and still has 0 donors
 - RBAC — requireAdmin middleware, admin/staff roles
 - Public donation page (/give/:orgSlug) — Stripe Checkout, campaign links, recurring gifts via Subscriptions, email gift request from donor profile
-- Landing page — relational copy, Steward definition section, Who We Serve, What We Do, Consulting section, announcement bar, NO pricing section; mobile: dark stats card (8+/100%/$0), hamburger nav
+- Landing page — rewritten for the pivot (2026-07-12): fake testimonials removed, honest "Where Steward Is Today" section added, real product screenshot (not a mockup), Features section updated to match what's actually live (Finance & Reporting card replaced with Gmail sync); simplified favicon (icon-only, no wordmark); mobile: dark stats card, hamburger nav; NO pricing section
+
+## What's NOT built (despite prior docs)
+- **No guided tour / OnboardingWizard component exists.** One was built and then deleted the same day (commit b9fcf7a, "Kill guided tour...", 2026-06-07) — PROGRESS.md documented the build but was never updated for the removal until this pass. Do not assume `GuidedTour`/`OnboardingWizard` exists without checking the actual file tree first.
+- **No general-purpose AI chat.** `AIChat` (the floating "Ask AI" overlay, previously exported from Dashboard.jsx) was deleted entirely, not hidden — see "Strategic pivot."
+- **No donor-facing portal, donor login, or donor-visible tiers/badges** — explored and deliberately rejected, see "Strategic pivot."
 
 ## Key patterns
 - TpField and TpYesNo MUST stay at module level (not inside components) — defined in shared.jsx. Moving them inside a component causes React to remount inputs on every keystroke.
@@ -355,11 +400,15 @@ Mobile "More" drawer: communications, events, volunteers, board, analytics, task
 - `POST /reports/board` — generate report: pulls live Finance/Donor/Grant/Comms/Task data, calls claude-sonnet-4-6 for 3-para executive summary, builds 5-page PDF via pdfkit (bufferPages: true), saves pdf_data as base64, returns PDF binary
 - pdfkit installed: `pdfkit ^0.18.0` in package.json
 - Board.jsx subtabs: "members" | "reports"; raw fetch() for binary PDF download (not apiFetch)
+- **`GET /donors/:id/impact-summary/pdf`** (requireAuth) — one-page printable/mailable per-donor PDF: cumulative giving, milestones reached, org-configured impact translations from `impact_metrics`. Reuses the same pdfkit pattern as `/reports/board` (buffer-to-Promise, page-footer loop) rather than a new rendering system.
+- **pdfkit footer bug, fixed in both routes**: footer text drawn at `y = page.height - 28` sits below pdfkit's default `maxY` (page.height − bottom margin), which silently auto-triggers a page break on each footer `.text()` call — the Impact Summary PDF was spilling onto 3 pages instead of 1, found via a live download test against the demo account (`fac46d4`), then the identical latent bug was proactively fixed in the older Board Report PDF too (`6159672`). Fix: pass an explicit `height` option on the footer `.text()` calls so pdfkit doesn't treat it as overflow.
 
 ## Current priorities
 - Stripe live mode: confirmed working (production keys active)
 - Email: Resend SPF/DKIM verified, sending from noreply@stewardapp.dev
 - Custom domain: stewardapp.dev live and routing correctly on all paths
+- **QA sweep dated 2026-07-10 (`QA_REPORT.md`) was discovery-only** — "nothing in the app was fixed" per the report itself. Two findings were flagged Blocking: #1 signup mobile overflow, #2 read-only/`checkWriteAccess` gaps across Volunteers/Tasks/Events/Campaigns/Custom Fields/Board Members. Spot-checked during this docs pass: `checkWriteAccess` IS currently present on `/volunteers`, `/tasks`, and `/events` POST routes — but client-side button-disabling state and the signup mobile CSS fix were NOT re-verified. Treat both findings as **possibly still open** until explicitly re-tested — do not assume they're resolved just because related commits happened in this range.
+- **Data integrity check requested but not completed**: after manually deleting several test-user rows from Supabase's Table Editor, the user asked for a check of orphaned orgs (no matching `users` row), specifically whether `org_ec6340db` ("SMOKE TEST — DELETE ME") still exists and needs deleting, and any dangling FK references (`created_by`/`assigned_to`/etc.) to the deleted user IDs. Tooling for this was built (see "Admin data integrity" below) but the actual queries were never run against production — blocked on missing super-admin credentials in that session. Still needs to be run.
 
 ## Org_id scoping (security)
 - All donor/grant/task/volunteer/board endpoints use AND org_id = ? on SELECT, UPDATE, DELETE
