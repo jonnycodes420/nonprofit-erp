@@ -2946,6 +2946,12 @@ app.get("/dashboard/today", requireAuth, wrap(async (req, res) => {
     else if (items[existingIdx].priority < item.priority) items[existingIdx] = item;
   };
 
+  // Single source of truth for "at risk" — shared with the 'at_risk'
+  // auto-enroll trigger (see computeAtRiskCandidates/autoEnroll in
+  // server.js) so this display flag and the real-time draft trigger can
+  // never drift into two different definitions of the same thing.
+  const atRiskDonorIds = new Set((await computeAtRiskCandidates(orgId)).map(x => x.id));
+
   // Donors in active stages with no recent contact
   const noContact = await query(`
     SELECT d.id, d.name, d.total_giving, d.last_gift_date, d.last_gift_amount, d.stage,
@@ -2967,7 +2973,7 @@ app.get("/dashboard/today", requireAuth, wrap(async (req, res) => {
     const totalGiving = parseFloat(d.total_giving) || 0;
     const lastAmt = parseFloat(d.last_gift_amount) || 0;
 
-    const isLapsing = !!(daysSinceGift && daysSinceGift > 300 && totalGiving >= 5000);
+    const isLapsing = atRiskDonorIds.has(d.id);
     let reason, action;
     if (isLapsing) {
       reason = `Gave $${lastAmt.toLocaleString()} — last gift ${daysSinceGift} days ago, lapsing risk`;
@@ -3080,6 +3086,34 @@ app.get("/dashboard/today", requireAuth, wrap(async (req, res) => {
       draftId: m.draft_id,
     };
     upsertItem(milestoneItem);
+  }
+
+  // At-risk re-engagement drafts — pending, unreviewed AI-drafted emails
+  // queued by the 'at_risk' auto-enroll trigger (see computeAtRiskCandidates
+  // / autoEnroll below) for a donor who just crossed into the earliest,
+  // most-recoverable risk window. These share the milestone_drafts table
+  // (milestone_key='at_risk') and so are already caught by the generic
+  // bucket above with the generic "Milestone email drafted" reason — this
+  // bucket re-upserts the same donor with a distinct reason and a priority
+  // just above it (81 > 80) so staff can tell "just flagged today, draft
+  // ready" apart from a plain milestone draft or a bare no-contact reason.
+  const atRiskDraftRows = await query(`
+    SELECT md.id AS draft_id, md.donor_id, d.name AS donor_name, d.total_giving
+    FROM milestone_drafts md
+    JOIN donors d ON d.id = md.donor_id
+    WHERE md.org_id = ? AND md.status = 'pending_review' AND md.milestone_key = 'at_risk'
+    ORDER BY md.created_at DESC
+    LIMIT 10
+  `, [orgId]);
+
+  for (const a of atRiskDraftRows) {
+    upsertItem({
+      donorId: a.donor_id, donorName: a.donor_name,
+      reason: "🔥 Flagged today — AI-drafted re-engagement email ready for review",
+      priority: 81, action: "milestone",
+      totalGiving: parseFloat(a.total_giving) || 0,
+      draftId: a.draft_id, isLapsing: true,
+    });
   }
 
   // Personal-note reminders — the "write a note" sibling of the milestone
@@ -5401,6 +5435,27 @@ async function processSequences() {
           await run("UPDATE sequence_enrollments SET status='completed', completed_at=NOW() WHERE id=?", [enr.id]);
           continue;
         }
+        // Same human-in-the-loop pattern as the milestone branch above:
+        // AI drafts a re-engagement email, it lands in milestone_drafts
+        // (milestone_key='at_risk') for staff review, never auto-sent. See
+        // computeAtRiskCandidates/autoEnroll's 'at_risk' branch below.
+        if (enr.seq_trigger === "at_risk") {
+          try {
+            const draft = await generateAtRiskDraft(recipient, enr.org_id);
+            if (draft) {
+              await run(
+                `INSERT INTO milestone_drafts (id, org_id, donor_id, sequence_enrollment_id, milestone_key, subject, body, status)
+                 VALUES (?,?,?,?,?,?,?,'pending_review')`,
+                ["mdraft_" + uuid().slice(0, 8), enr.org_id, enr.donor_id, enr.id, "at_risk", draft.subject, draft.body]
+              );
+              console.log(`[at-risk] queued re-engagement draft for donor ${enr.donor_id} — pending review`);
+            } else {
+              console.error(`[at-risk] draft generation returned nothing for enrollment ${enr.id}`);
+            }
+          } catch (e) { console.error("[at-risk] draft generation failed:", e.message); }
+          await run("UPDATE sequence_enrollments SET status='completed', completed_at=NOW() WHERE id=?", [enr.id]);
+          continue;
+        }
         const orgRows = await query("SELECT name FROM orgs WHERE id = ?", [enr.org_id]);
         const orgName = orgRows[0]?.name || "";
         const firstName = recipient.name ? recipient.name.trim().split(/\s+/)[0] : "";
@@ -5506,6 +5561,48 @@ async function computeMilestoneCandidates(orgId) {
     }
   }
   return candidates;
+}
+
+// Donors still in an active stage who've drifted past the earliest,
+// most-recoverable risk window — the exact rule that used to live only as
+// an inline "isLapsing" boolean in GET /dashboard/today. Promoted to a
+// shared function so the dashboard display and the 'at_risk' auto-enroll
+// trigger (see autoEnroll() below) can never drift into two different
+// definitions of "at risk". Thresholds are hardcoded to match what
+// /dashboard/today already used — not org-configurable yet. Requires an
+// email on file (like computeMilestoneCandidates) since the output feeds an
+// AI-drafted email, not just an in-app nudge.
+async function computeAtRiskCandidates(orgId) {
+  return query(
+    `SELECT id, name, email, total_giving, last_gift_date, last_gift_amount
+     FROM donors
+     WHERE org_id = ? AND deleted_at IS NULL
+       AND stage NOT IN ('prospect', 'lapsed')
+       AND email IS NOT NULL AND email != ''
+       AND last_gift_date IS NOT NULL AND last_gift_date::date < NOW() - INTERVAL '300 days'
+       AND total_giving >= 5000`,
+    [orgId]
+  );
+}
+
+// Lazily provisions one "at_risk" sequence per org — unlike milestone
+// sequences, this isn't gated on any org-level config (impact_metrics),
+// since detecting a donor who's quietly drifted needs no configured content.
+async function ensureAtRiskSequence() {
+  const orgs = await query("SELECT id FROM orgs", []);
+  for (const o of orgs) {
+    const existing = await query("SELECT id FROM sequences WHERE org_id = ? AND trigger = 'at_risk'", [o.id]);
+    if (existing.length) continue;
+    const seqId = "seq_" + uuid().slice(0, 8);
+    await run(
+      "INSERT INTO sequences (id, org_id, name, trigger, status) VALUES (?,?,?,?,'active')",
+      [seqId, o.id, "At-Risk Re-Engagement", "at_risk"]
+    );
+    await run(
+      "INSERT INTO sequence_steps (id, sequence_id, step_order, delay_days, subject, body) VALUES (?,?,?,?,?,?)",
+      ["ss_" + uuid().slice(0, 8), seqId, 0, 0, "At-risk re-engagement email (AI-drafted per donor)", ""]
+    );
+  }
 }
 
 // Lazily provisions one "milestone" sequence per org that has opted in by
@@ -5661,6 +5758,52 @@ Write the email now.`,
   }
 }
 
+// Generates a warm "thinking of you" re-engagement draft for a donor who
+// just crossed into the earliest at-risk window (see
+// computeAtRiskCandidates). Mirrors generateMilestoneDraft's shape and trust
+// model — AI drafts, staff reviews/sends, never auto-sent — just a
+// different prompt frame: a quiet drift to gently reconnect on, not a
+// milestone worth celebrating. Returns null on any failure so the caller can
+// skip gracefully rather than queue garbage.
+async function generateAtRiskDraft(recipient, orgId) {
+  const donorRows = await query("SELECT * FROM donors WHERE id = ? AND org_id = ?", [recipient.id, orgId]);
+  const donor = donorRows[0];
+  if (!donor) return null;
+  const orgRows = await query("SELECT name FROM orgs WHERE id = ?", [orgId]);
+  const orgName = orgRows[0]?.name || "";
+  const totalGiving = Number(donor.total_giving) || 0;
+  const daysSinceGift = donor.last_gift_date
+    ? Math.floor((Date.now() - new Date(donor.last_gift_date).getTime()) / 86400000) : null;
+  const firstName = donor.name ? donor.name.trim().split(/\s+/)[0] : "there";
+
+  try {
+    const client = new Anthropic();
+    const msg = await client.messages.create({
+      model: "claude-sonnet-4-6",
+      max_tokens: 400,
+      system: `You write short, warm "checking in" emails for a nonprofit development team to a longtime donor who has quietly gone a while without giving. Rules: no guilt trip, no hard ask, no gamification language — never say "tier", "level up", "unlock", "badge", "lapsed", "at risk", or "we noticed you stopped giving". Write like a staff member who genuinely thought of them and wanted to reconnect, not a system flagging inactivity. 3-5 sentences, plain language, specific, genuine. Return ONLY valid JSON: {"subject":"...","body":"..."} — no markdown, no code fences, no explanation.`,
+      messages: [{
+        role: "user",
+        content: `Donor first name: ${firstName}
+Organization: ${orgName}
+Total given to date: $${totalGiving.toLocaleString()}
+${daysSinceGift ? `Days since their last gift: ${daysSinceGift}` : ""}
+
+Write the email now.`,
+      }],
+    });
+    const text = msg.content[0].text.trim();
+    const jsonMatch = text.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) return null;
+    const parsed = JSON.parse(jsonMatch[0]);
+    if (!parsed.subject || !parsed.body) return null;
+    return { subject: String(parsed.subject), body: String(parsed.body) };
+  } catch (e) {
+    console.error("[at-risk] generateAtRiskDraft failed:", e.message);
+    return null;
+  }
+}
+
 // One-page printable/mailable "Impact Summary" for a single donor — cumulative
 // giving, milestones reached, and org-configured impact translations. Reuses
 // the pdfkit pattern from POST /reports/board (same require, buffer-to-Promise
@@ -5807,6 +5950,7 @@ app.get("/donors/:id/impact-summary/pdf", requireAuth, wrap(async (req, res) => 
 async function autoEnroll() {
   try {
     await ensureMilestoneSequences();
+    await ensureAtRiskSequence();
     const seqs = await query(
       "SELECT * FROM sequences WHERE status = 'active' AND trigger NOT IN ('manual', 'stage_change', 'onboarding')",
       []
@@ -5828,6 +5972,12 @@ async function autoEnroll() {
           `SELECT id FROM donors WHERE org_id = ? AND gift_count = 1 AND deleted_at IS NULL AND last_gift_date IS NOT NULL AND last_gift_date::date > NOW() - INTERVAL '7 days'`,
           [seq.org_id]
         );
+      } else if (seq.trigger === "at_risk") {
+        // Unlike milestone below, "at risk" isn't a repeating-with-variations
+        // event, so the plain existing-enrollment-row check + ON CONFLICT DO
+        // NOTHING in the generic loop further down (same as lapsed_90/180) is
+        // sufficient — no per-donor key tracking needed.
+        donors = await computeAtRiskCandidates(seq.org_id);
       } else if (seq.trigger === "milestone") {
         // Distinct handling: each donor can hit MANY different milestones over
         // time (crossing $500, then later $1000, then a 1-year anniversary...),
