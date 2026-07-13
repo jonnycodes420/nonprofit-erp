@@ -811,7 +811,7 @@ app.post("/auth/login", loginIpLimiter, loginAccountLimiter, wrap(async (req, re
   const { email, password } = req.body;
   if (!email || !password) return res.status(400).json({ error: "Email and password required" });
 
-  const users = await query("SELECT * FROM users WHERE email = ?", [email.toLowerCase()]);
+  const users = await query("SELECT * FROM users WHERE lower(email) = lower(btrim(?))", [email]);
   if (!users.length) return res.status(401).json({ error: "Invalid credentials" });
 
   const user = users[0];
@@ -834,8 +834,9 @@ app.post("/auth/register", registerLimiter, wrap(async (req, res) => {
   if (password.length < 8) {
     return res.status(400).json({ error: "Password must be at least 8 characters" });
   }
+  const normalizedEmail = email.trim().toLowerCase();
 
-  const existing = await query("SELECT id FROM users WHERE email = ?", [email.toLowerCase()]);
+  const existing = await query("SELECT id FROM users WHERE lower(email) = lower(btrim(?))", [email]);
   if (existing.length) return res.status(409).json({ error: "Email already registered" });
 
   const orgId = "org_" + uuid().slice(0, 8);
@@ -845,12 +846,12 @@ app.post("/auth/register", registerLimiter, wrap(async (req, res) => {
     [orgId, orgName, orgMission || "", ein || "", orgSlug]);
   const hash = bcrypt.hashSync(password, 12);
   await run("INSERT INTO users (id, org_id, email, password_hash, name, role) VALUES (?,?,?,?,?,?)",
-    [userId, orgId, email.toLowerCase(), hash, name || email, "admin"]);
+    [userId, orgId, normalizedEmail, hash, name || email, "admin"]);
 
-  const token = signToken({ userId, orgId, email: email.toLowerCase(), role: "admin" });
+  const token = signToken({ userId, orgId, email: normalizedEmail, role: "admin" });
   res.status(201).json({
     token,
-    user: { id: userId, email, name: name || email, role: "admin" },
+    user: { id: userId, email: normalizedEmail, name: name || email, role: "admin" },
     org: { id: orgId, name: orgName, onboarding_complete: 0 },
   });
 }));
@@ -860,9 +861,12 @@ app.post("/auth/forgot-password", passwordResetLimiter, wrap(async (req, res) =>
   const { email } = req.body;
   if (!email) return res.status(400).json({ error: "Email is required" });
 
-  const users = await query("SELECT * FROM users WHERE email = ?", [email.toLowerCase()]);
+  const users = await query("SELECT * FROM users WHERE lower(email) = lower(btrim(?))", [email]);
   // Always return 200 to avoid leaking whether the email exists
-  if (!users.length) return res.json({ success: true });
+  if (!users.length) {
+    console.log("[forgot-password] no matching user for submitted email — no email sent");
+    return res.json({ success: true });
+  }
 
   const user = users[0];
   const token = crypto.randomBytes(32).toString("hex");
@@ -878,7 +882,7 @@ app.post("/auth/forgot-password", passwordResetLimiter, wrap(async (req, res) =>
   if (process.env.RESEND_API_KEY) {
     const from = process.env.DEMO_SMTP_FROM || "noreply@stewardapp.dev";
     try {
-      await resend.emails.send({
+      const { data, error } = await resend.emails.send({
         from,
         to: user.email,
         subject: "Reset your Steward password",
@@ -925,9 +929,16 @@ app.post("/auth/forgot-password", passwordResetLimiter, wrap(async (req, res) =>
 </body>
 </html>`,
       });
+      if (error) {
+        console.error("[forgot-password] resend error:", error);
+      } else {
+        console.log(`[forgot-password] reset email sent, resend id=${data?.id}`);
+      }
     } catch (err) {
       console.error("[forgot-password] email send failed:", err.message);
     }
+  } else {
+    console.warn("[forgot-password] RESEND_API_KEY not set — reset email not sent");
   }
 
   res.json({ success: true });
@@ -948,7 +959,10 @@ app.post("/auth/reset-password", passwordResetLimiter, wrap(async (req, res) => 
   const prt = rows[0];
   const hash = bcrypt.hashSync(password, 12);
   await run("UPDATE users SET password_hash = ? WHERE id = ?", [hash, prt.user_id]);
-  await run("UPDATE password_reset_tokens SET used = true WHERE id = ?", [prt.id]);
+  // Invalidate this token plus any other outstanding, unused reset tokens for
+  // the same user — an old link left in an inbox shouldn't still work after
+  // the password has already been changed.
+  await run("UPDATE password_reset_tokens SET used = true WHERE user_id = ? AND used = false", [prt.user_id]);
 
   res.json({ success: true });
 }));
@@ -965,8 +979,9 @@ app.post("/auth/register-org", registerLimiter, wrap(async (req, res) => {
   if (password.length < 8) {
     return res.status(400).json({ error: "Password must be at least 8 characters" });
   }
+  const normalizedEmail = email.trim().toLowerCase();
 
-  const existing = await query("SELECT id FROM users WHERE email = ?", [email.toLowerCase()]);
+  const existing = await query("SELECT id FROM users WHERE lower(email) = lower(btrim(?))", [email]);
   if (existing.length) return res.status(409).json({ error: "An account with that email already exists" });
 
   const orgId  = "org_"  + uuid().slice(0, 8);
@@ -981,14 +996,14 @@ app.post("/auth/register-org", registerLimiter, wrap(async (req, res) => {
   const hash = bcrypt.hashSync(password, 12);
   await run(
     "INSERT INTO users (id, org_id, email, password_hash, name, role) VALUES (?,?,?,?,?,?)",
-    [userId, orgId, email.toLowerCase(), hash, userName, "admin"]
+    [userId, orgId, normalizedEmail, hash, userName, "admin"]
   );
 
   let stripeCustomerId = null;
   if (stripe) {
     try {
       const customer = await stripe.customers.create({
-        email: email.toLowerCase(),
+        email: normalizedEmail,
         name: orgName,
         metadata: { orgId },
       });
@@ -999,14 +1014,14 @@ app.post("/auth/register-org", registerLimiter, wrap(async (req, res) => {
     }
   }
 
-  const token = signToken({ userId, orgId, email: email.toLowerCase(), role: "admin" });
+  const token = signToken({ userId, orgId, email: normalizedEmail, role: "admin" });
   res.status(201).json({
     token,
-    user: { id: userId, email: email.toLowerCase(), name: userName, role: "admin" },
+    user: { id: userId, email: normalizedEmail, name: userName, role: "admin" },
     org: { id: orgId, name: orgName, onboarding_complete: 0, plan: "trial", subscription_status: "trialing", trial_ends_at: trialEndsAt },
     stripeCustomerId,
   });
-  sendOnboardingSequence(orgId, userId, userName, email.toLowerCase()).catch(e =>
+  sendOnboardingSequence(orgId, userId, userName, normalizedEmail).catch(e =>
     console.error("[onboarding] failed to start sequence:", e.message)
   );
 }));
@@ -1375,8 +1390,9 @@ app.post("/auth/invite", requireAuth, requireAdmin, wrap(async (req, res) => {
   const { email, role } = req.body;
   if (!email) return res.status(400).json({ error: "Email required" });
   const validRole = role === "admin" ? "admin" : "staff";
+  const normalizedEmail = email.trim().toLowerCase();
 
-  const existing = await query("SELECT id FROM users WHERE email = ?", [email.toLowerCase()]);
+  const existing = await query("SELECT id FROM users WHERE lower(email) = lower(btrim(?))", [email]);
   if (existing.length) return res.status(409).json({ error: "A user with that email already exists" });
 
   // Seat limit: count active users + pending unexpired invites
@@ -1402,7 +1418,7 @@ app.post("/auth/invite", requireAuth, requireAdmin, wrap(async (req, res) => {
   await run(
     `INSERT INTO invites (id, org_id, email, token, role, invited_by, expires_at)
      VALUES (?,?,?,?,?,?,?)`,
-    [id, req.user.orgId, email.toLowerCase(), token, validRole, req.user.userId, expiresAt]
+    [id, req.user.orgId, normalizedEmail, token, validRole, req.user.userId, expiresAt]
   );
 
   const FRONTEND_URL = process.env.FRONTEND_URL || "https://client-five-tau-13.vercel.app";
@@ -1418,7 +1434,7 @@ app.post("/auth/invite", requireAuth, requireAdmin, wrap(async (req, res) => {
       const from = process.env.DEMO_SMTP_FROM || "onboarding@resend.dev";
       const { error } = await resend.emails.send({
         from,
-        to: email,
+        to: normalizedEmail,
         subject: `You've been invited to join ${org.name} on Steward`,
         html: `<p>You've been invited to join <strong>${org.name}</strong> on Steward as a <strong>${validRole}</strong>.</p>
                <p><a href="${inviteLink}" style="background:#10b981;color:#fff;padding:10px 20px;border-radius:8px;text-decoration:none;font-weight:bold;display:inline-block;margin:16px 0">Accept Invitation</a></p>
@@ -1464,7 +1480,7 @@ app.post("/auth/invite/accept", wrap(async (req, res) => {
   if (invite.accepted_at) return res.status(410).json({ error: "This invite has already been accepted" });
   if (new Date(invite.expires_at) < new Date()) return res.status(410).json({ error: "This invite has expired" });
 
-  const existing = await query("SELECT id FROM users WHERE email = ?", [invite.email]);
+  const existing = await query("SELECT id FROM users WHERE lower(email) = lower(btrim(?))", [invite.email]);
   if (existing.length) return res.status(409).json({ error: "An account with this email already exists" });
 
   const userId = "user_" + uuid().slice(0, 8);

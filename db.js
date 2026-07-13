@@ -807,6 +807,30 @@ async function initSchema() {
   `);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_recovery_events_stripe_id ON payment_recovery_events (stripe_event_id)`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_recovery_events_org ON payment_recovery_events (org_id, created_at)`);
+
+  // ── Case-insensitive email lookups (2026-07-13) ──────────────────────────
+  // users.email was only ever compared exactly (WHERE email = lower($1)) —
+  // lowercasing the *input* but not the *stored* value. A row saved with any
+  // uppercase (e.g. a manual insert, or before this fix existed) silently
+  // failed every lookup: /auth/forgot-password returned {success:true} with
+  // no email sent, /auth/login returned "Invalid credentials." Normalize
+  // existing rows once, guarded against a case-insensitive collision that
+  // would violate the new unique index below.
+  const emailDupes = await pool.query(`
+    SELECT lower(btrim(email)) AS norm, COUNT(*) AS c
+    FROM users
+    GROUP BY lower(btrim(email))
+    HAVING COUNT(*) > 1
+  `);
+  if (emailDupes.rows.length) {
+    console.error(
+      "[db] Skipping email-normalization migration — case-insensitive duplicate emails found, resolve manually:",
+      emailDupes.rows.map(r => r.norm)
+    );
+  } else {
+    await pool.query(`UPDATE users SET email = lower(btrim(email)) WHERE email <> lower(btrim(email))`);
+    await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS users_email_lower_uk ON users (lower(email))`);
+  }
 }
 
 async function seedData() {
