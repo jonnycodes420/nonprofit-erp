@@ -1,5 +1,19 @@
 import React, { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import FunnelChart from "../components/FunnelChart";
+
+// Static demo numbers for the "How it works" funnel preview below — this is
+// marketing, not live data, so a realistic-looking shape is enough; a
+// logged-in user's actual Pipeline Funnel card renders through the exact
+// same <FunnelChart> component.
+const FUNNEL_PREVIEW_COUNTS = {
+  prospect:  { count: 48, total: 0 },
+  qualify:   { count: 34, total: 61000 },
+  cultivate: { count: 22, total: 148000 },
+  solicit:   { count: 11, total: 210000 },
+  steward:   { count: 64, total: 890000 },
+  lapsed:    { count: 9,  total: 42000 },
+};
 
 const C = {
   dark:    "#0f1a12",
@@ -512,6 +526,16 @@ export default function Landing() {
               }}>
                 From spreadsheet chaos to fundraising clarity — in one afternoon.
               </h2>
+            </div>
+            <div style={{
+              maxWidth: 440, margin: "0 auto 56px", background: C.white,
+              border: `1px solid ${C.cream3}`, borderRadius: 16, padding: "24px 28px",
+              boxShadow: "0 1px 4px rgba(0,0,0,0.04)",
+            }}>
+              <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: "0.1em", textTransform: "uppercase", color: C.ink3, textAlign: "center", marginBottom: 16 }}>
+                Your Pipeline, At A Glance
+              </div>
+              <FunnelChart counts={FUNNEL_PREVIEW_COUNTS} bandHeight={34}/>
             </div>
             <div className="hw-steps">
               {[

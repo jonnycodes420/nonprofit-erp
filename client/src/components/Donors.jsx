@@ -23,6 +23,7 @@ class ErrorBoundary extends Component {
   }
 }
 import { T, fmt, fmtFull, daysDiff, SC, askClaude, STAGES, STAGE_ACTION, TIER_COLOR, donorScore, moveUrgency, Spin, Pill, Card, AIBtn, AIPanel, PageTitle, EmptyState, GivingHistoryChart, TpField, TpYesNo, TouchpointTimeline } from "./shared";
+import { computeStageConversions, computeStageWeights } from "./FunnelChart";
 // SHELVED — voice capture works but unproven adoption assumption, revisit
 // later. Code intact, re-enable by uncommenting (see showVoiceMemo state,
 // profile button, and modal render below, and add `VoiceMemoModal` back to
@@ -3044,98 +3045,132 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
 function DonorKanban({donors,onStageChange,onLogTouchpoint,onSelectDonor}){
   const[draggingId,setDraggingId]=useState(null);
   const[dragOver,setDragOver]=useState(null);
-  const byStage=sid=>donors.filter(d=>(d.stage||"cultivate")===sid).sort((a,b)=>b.total-a.total);
+
+  const grouped=useMemo(()=>Object.fromEntries(
+    STAGES.map(s=>[s.id,donors.filter(d=>(d.stage||"cultivate")===s.id).sort((a,b)=>b.total-a.total)])
+  ),[donors]);
+  const byStage=sid=>grouped[sid]||[];
+  const counts=useMemo(()=>Object.fromEntries(
+    STAGES.map(s=>{
+      const rows=grouped[s.id]||[];
+      return [s.id,{count:rows.length,total:rows.reduce((sum,d)=>sum+d.total,0)}];
+    })
+  ),[grouped]);
+
+  // Column widths proportional to each stage's donor count (a 38-donor stage
+  // reads visibly wider than a 2-donor one), with a min-width floor via
+  // minmax() so a near-empty stage stays a usable, droppable target.
+  const weights=useMemo(()=>computeStageWeights(counts,STAGES,"count").weights,[counts]);
+  const gridCols=STAGES.map(s=>`minmax(140px, ${weights[s.id]}fr)`).join(" ");
+
+  // Same stage-to-stage conversion math as <FunnelChart> (shared helper —
+  // computed once in FunnelChart.jsx, not reimplemented here).
+  const coreStages=useMemo(()=>STAGES.filter(s=>s.id!=="lapsed"),[]);
+  const conversions=useMemo(()=>computeStageConversions(counts,coreStages),[counts,coreStages]);
+
   return(
-    <div className="donor-kanban-wrap" style={{display:"grid",gridTemplateColumns:"repeat(6,1fr)",gap:8,minHeight:"calc(100vh - 260px)",alignItems:"flex-start",width:"100%"}}>
-      {STAGES.map(stage=>{
-        const cols=byStage(stage.id);
-        const total=cols.reduce((s,d)=>s+d.total,0);
-        const isOver=dragOver===stage.id;
-        return(
-          <div key={stage.id} className="kanban-col" style={{display:"flex",flexDirection:"column",gap:6}}
-            onDragOver={e=>{e.preventDefault();setDragOver(stage.id);}}
-            onDragLeave={e=>{if(!e.currentTarget.contains(e.relatedTarget))setDragOver(null);}}
-            onDrop={e=>{e.preventDefault();const id=e.dataTransfer.getData("donorId");if(id)onStageChange(id,stage.id);setDragOver(null);}}>
-            <div style={{
-              background:"#0f1a12",
-              border:`1px solid ${isOver?stage.color+"50":"#1a2e1f"}`,
-              borderLeft:`3px solid ${stage.color}`,
-              borderRadius:10,padding:"10px 12px 9px",
-              transition:"background 0.12s,border-color 0.12s",
-            }}>
-              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:4}}>
-                <span style={{fontSize:9,fontWeight:800,color:"#8fa896",letterSpacing:"0.1em",textTransform:"uppercase"}}>{stage.label}</span>
-                <span style={{background:stage.color+"28",color:stage.color,fontSize:10,fontWeight:800,borderRadius:99,padding:"1px 7px",border:`1px solid ${stage.color}40`,lineHeight:"16px"}}>{cols.length}</span>
-              </div>
-              <div style={{fontSize:13,fontWeight:700,color:total>0?"#f0ede6":"#8fa896",fontFamily:"'DM Serif Display',serif",letterSpacing:"-0.01em"}}>
-                {total>0?fmt(total):"$0"}
-              </div>
-            </div>
-            <div style={{
-              display:"flex",flexDirection:"column",gap:6,flex:1,
-              borderRadius:10,
-              border:isOver?`2px dashed ${stage.color+"45"}`
-                    :cols.length===0?`1px dashed ${T.bg3}`
-                    :"1px dashed transparent",
-              background:isOver?stage.color+"05":"transparent",
-              padding:isOver?3:0,
-              transition:"border-color 0.12s,background 0.12s",
-              minHeight:cols.length===0?60:0,
-            }}>
-              {cols.map(d=>{
-                const urg=moveUrgency(d);
-                const sc=donorScore(d);
-                const thisIsDragging=draggingId===d.id;
-                const urgBg={critical:"#ef444407",due:"#f59e0b05",ok:"transparent"}[urg.level];
-                const urgBorder={critical:"#ef444428",due:"#f59e0b28",ok:T.bg2}[urg.level];
-                const scColor=sc>70?"#1a6b4a":sc>45?"#f59e0b":"#ef4444";
-                return(
-                  <div key={d.id} draggable
-                    onDragStart={e=>{e.dataTransfer.setData("donorId",d.id);setDraggingId(d.id);}}
-                    onDragEnd={()=>{setDraggingId(null);setDragOver(null);}}
-                    style={{
-                      border:`1px solid ${thisIsDragging?"transparent":urgBorder}`,
-                      borderLeft:`3px solid ${stage.color}`,
-                      borderRadius:10,padding:"13px 12px 10px",
-                      cursor:"grab",opacity:thisIsDragging?0.2:1,
-                      transition:"opacity 0.12s,box-shadow 0.12s,transform 0.12s",
-                      userSelect:"none",
-                      background:thisIsDragging?"transparent":T.white,
-                      boxShadow:thisIsDragging?"none":"0 1px 3px rgba(10,10,10,0.07)",
-                    }}>
-                    <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",gap:6,marginBottom:5}}>
-                      <div style={{flex:1,minWidth:0}}>
-                        <div style={{fontSize:13,fontWeight:700,color:T.ink,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",letterSpacing:"-0.01em"}}>{d.name}</div>
-                        <div style={{fontSize:12,color:T.greenDk,marginTop:2,fontWeight:700}}>{fmt(d.total)}</div>
-                      </div>
-                      <div style={{background:scColor+"15",border:`1px solid ${scColor}30`,borderRadius:6,padding:"4px 7px",flexShrink:0,textAlign:"center",minWidth:30}}>
-                        <div style={{fontSize:13,fontWeight:800,color:scColor,lineHeight:"1"}}>{sc}</div>
-                      </div>
-                    </div>
-                    <div style={{display:"flex",alignItems:"center",gap:5,marginBottom:8}}>
-                      <div style={{width:6,height:6,borderRadius:"50%",background:urg.urgencyColor,flexShrink:0}}/>
-                      <span style={{fontSize:10,color:urg.contactTextColor,fontWeight:600}}>{urg.days}d since contact</span>
-                    </div>
-                    <div style={{display:"flex",gap:4}}>
-                      <button onClick={e=>{e.stopPropagation();onLogTouchpoint(d);}}
-                        style={{flex:1,background:T.bg,border:"1px solid "+T.bg3,borderRadius:6,padding:"4px 0",color:T.ink3,fontSize:11,fontWeight:600,cursor:"pointer"}}>
-                        + Log
-                      </button>
-                      <button onClick={e=>{e.stopPropagation();onSelectDonor(d);}}
-                        style={{flex:1,background:T.bg,border:"1px solid "+T.bg3,borderRadius:6,padding:"4px 0",color:T.ink3,fontSize:11,fontWeight:600,cursor:"pointer"}}>
-                        View →
-                      </button>
-                    </div>
-                  </div>
-                );
-              })}
-              {isOver&&cols.length===0&&(
-                <div style={{padding:"20px 8px",textAlign:"center",color:stage.color,fontSize:11,fontWeight:600,opacity:0.75}}>Drop here</div>
-              )}
-            </div>
+    <div style={{width:"100%"}}>
+      <div className="donor-kanban-conv" style={{display:"grid",gridTemplateColumns:gridCols,gap:8,marginBottom:6,padding:"0 2px"}}>
+        {STAGES.map((stage,i)=>stage.id==="lapsed"?(
+          <div key={stage.id} style={{fontSize:9,fontWeight:800,color:"#ef4444",textAlign:"center",letterSpacing:"0.06em",textTransform:"uppercase"}}>↘ Leak</div>
+        ):(
+          <div key={stage.id} style={{fontSize:9,fontWeight:700,color:"#8fa896",textAlign:"right",paddingRight:4}}>
+            {conversions[i]?`${conversions[i].pct==null?"—":conversions[i].pct+"%"} →`:""}
           </div>
-        );
-      })}
+        ))}
+      </div>
+      <div className="donor-kanban-wrap" style={{display:"grid",gridTemplateColumns:gridCols,gap:8,minHeight:"calc(100vh - 260px)",alignItems:"flex-start",width:"100%"}}>
+        {STAGES.map(stage=>{
+          const cols=byStage(stage.id);
+          const total=counts[stage.id]?.total||0;
+          const isOver=dragOver===stage.id;
+          const isLapsed=stage.id==="lapsed";
+          return(
+            <div key={stage.id} className="kanban-col" style={{display:"flex",flexDirection:"column",gap:6}}
+              onDragOver={e=>{e.preventDefault();setDragOver(stage.id);}}
+              onDragLeave={e=>{if(!e.currentTarget.contains(e.relatedTarget))setDragOver(null);}}
+              onDrop={e=>{e.preventDefault();const id=e.dataTransfer.getData("donorId");if(id)onStageChange(id,stage.id);setDragOver(null);}}>
+              <div style={{
+                background:isLapsed?"#2a1310":"#0f1a12",
+                border:`1px solid ${isOver?stage.color+"50":isLapsed?"#3a1f1a":"#1a2e1f"}`,
+                borderLeft:`3px solid ${stage.color}`,
+                borderRadius:10,padding:"10px 12px 9px",
+                transition:"background 0.12s,border-color 0.12s",
+              }}>
+                <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:4}}>
+                  <span style={{fontSize:9,fontWeight:800,color:isLapsed?stage.color:"#8fa896",letterSpacing:"0.1em",textTransform:"uppercase"}}>{isLapsed?"↘ ":""}{stage.label}</span>
+                  <span style={{background:stage.color+"28",color:stage.color,fontSize:10,fontWeight:800,borderRadius:99,padding:"1px 7px",border:`1px solid ${stage.color}40`,lineHeight:"16px"}}>{cols.length}</span>
+                </div>
+                <div style={{fontSize:13,fontWeight:700,color:total>0?"#f0ede6":"#8fa896",fontFamily:"'DM Serif Display',serif",letterSpacing:"-0.01em"}}>
+                  {total>0?fmt(total):"$0"}
+                </div>
+              </div>
+              <div style={{
+                display:"flex",flexDirection:"column",gap:6,flex:1,
+                borderRadius:10,
+                border:isOver?`2px dashed ${stage.color+"45"}`
+                      :cols.length===0?`1px dashed ${T.bg3}`
+                      :"1px dashed transparent",
+                background:isOver?stage.color+"05":"transparent",
+                padding:isOver?3:0,
+                transition:"border-color 0.12s,background 0.12s",
+                minHeight:cols.length===0?60:0,
+              }}>
+                {cols.map(d=>{
+                  const urg=moveUrgency(d);
+                  const sc=donorScore(d);
+                  const thisIsDragging=draggingId===d.id;
+                  const urgBg={critical:"#ef444407",due:"#f59e0b05",ok:"transparent"}[urg.level];
+                  const urgBorder={critical:"#ef444428",due:"#f59e0b28",ok:T.bg2}[urg.level];
+                  const scColor=sc>70?"#1a6b4a":sc>45?"#f59e0b":"#ef4444";
+                  return(
+                    <div key={d.id} draggable
+                      onDragStart={e=>{e.dataTransfer.setData("donorId",d.id);setDraggingId(d.id);}}
+                      onDragEnd={()=>{setDraggingId(null);setDragOver(null);}}
+                      style={{
+                        border:`1px solid ${thisIsDragging?"transparent":urgBorder}`,
+                        borderLeft:`3px solid ${stage.color}`,
+                        borderRadius:10,padding:"13px 12px 10px",
+                        cursor:"grab",opacity:thisIsDragging?0.2:1,
+                        transition:"opacity 0.12s,box-shadow 0.12s,transform 0.12s",
+                        userSelect:"none",
+                        background:thisIsDragging?"transparent":T.white,
+                        boxShadow:thisIsDragging?"none":"0 1px 3px rgba(10,10,10,0.07)",
+                      }}>
+                      <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",gap:6,marginBottom:5}}>
+                        <div style={{flex:1,minWidth:0}}>
+                          <div style={{fontSize:13,fontWeight:700,color:T.ink,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",letterSpacing:"-0.01em"}}>{d.name}</div>
+                          <div style={{fontSize:12,color:T.greenDk,marginTop:2,fontWeight:700}}>{fmt(d.total)}</div>
+                        </div>
+                        <div style={{background:scColor+"15",border:`1px solid ${scColor}30`,borderRadius:6,padding:"4px 7px",flexShrink:0,textAlign:"center",minWidth:30}}>
+                          <div style={{fontSize:13,fontWeight:800,color:scColor,lineHeight:"1"}}>{sc}</div>
+                        </div>
+                      </div>
+                      <div style={{display:"flex",alignItems:"center",gap:5,marginBottom:8}}>
+                        <div style={{width:6,height:6,borderRadius:"50%",background:urg.urgencyColor,flexShrink:0}}/>
+                        <span style={{fontSize:10,color:urg.contactTextColor,fontWeight:600}}>{urg.days}d since contact</span>
+                      </div>
+                      <div style={{display:"flex",gap:4}}>
+                        <button onClick={e=>{e.stopPropagation();onLogTouchpoint(d);}}
+                          style={{flex:1,background:T.bg,border:"1px solid "+T.bg3,borderRadius:6,padding:"4px 0",color:T.ink3,fontSize:11,fontWeight:600,cursor:"pointer"}}>
+                          + Log
+                        </button>
+                        <button onClick={e=>{e.stopPropagation();onSelectDonor(d);}}
+                          style={{flex:1,background:T.bg,border:"1px solid "+T.bg3,borderRadius:6,padding:"4px 0",color:T.ink3,fontSize:11,fontWeight:600,cursor:"pointer"}}>
+                          View →
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+                {isOver&&cols.length===0&&(
+                  <div style={{padding:"20px 8px",textAlign:"center",color:stage.color,fontSize:11,fontWeight:600,opacity:0.75}}>Drop here</div>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }

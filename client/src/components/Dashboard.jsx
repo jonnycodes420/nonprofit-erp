@@ -1,7 +1,8 @@
 import { useState, useEffect } from "react";
 import { apiFetch } from "../api";
 import { useAuth } from "../main";
-import { T, fmt, fmtFull, daysUntil, askClaude, buildContext, STAGES, Spin, AIBtn } from "./shared";
+import { T, fmt, fmtFull, daysUntil, askClaude, buildContext, Spin, AIBtn } from "./shared";
+import FunnelChart from "./FunnelChart";
 
 // ── Dashboard / Home ─────────────────────────────────────────────────────────
 export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
@@ -172,12 +173,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
     return <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`} style={{display:"block"}}><polyline points={pts} fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>;
   };
 
-  const FUNNEL_STAGES=STAGES.filter(s=>s.id!=="lapsed");
-  const lapsedStageInfo=STAGES.find(s=>s.id==="lapsed");
   const countsByStage=Object.fromEntries(stageCounts.map(s=>[s.stage,s]));
-  const maxFunnelCount=Math.max(1,...FUNNEL_STAGES.map(s=>countsByStage[s.id]?.count||0));
-  const lapsedCountVal=countsByStage.lapsed?.count||0;
-  const lapsedTotalVal=countsByStage.lapsed?.total||0;
 
   return(
     <div className="dash-root dash-bleed fade-in" style={{background:T.bgDeep,margin:"-20px -24px -28px -24px",padding:"20px 24px 28px 24px",display:"flex",flexDirection:"column",gap:16,minHeight:"calc(100vh - 92px)"}}>
@@ -359,32 +355,8 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
               <span style={sTitle}>Pipeline Funnel</span>
               <button onClick={()=>onNavigate("donors")} style={sLink}>View all →</button>
             </div>
-            <div style={{padding:"16px 20px",display:"flex",flexDirection:"column",gap:10}}>
-              {FUNNEL_STAGES.map(s=>{
-                const c=countsByStage[s.id]?.count||0;
-                const t=countsByStage[s.id]?.total||0;
-                const widthPct=Math.max(8,(c/maxFunnelCount)*100);
-                return(
-                  <div key={s.id} onClick={()=>onNavigate("donors",{stageFilter:s.id})} style={{cursor:"pointer"}}>
-                    <div style={{display:"flex",justifyContent:"space-between",fontSize:10,marginBottom:3}}>
-                      <span style={{fontWeight:800,color:s.color,textTransform:"uppercase",letterSpacing:"0.06em"}}>{s.label}</span>
-                      <span style={{color:T.ink3}}>{c} · {t>0?fmt(t):"—"}</span>
-                    </div>
-                    <div style={{background:T.bg,borderRadius:6,height:16,overflow:"hidden"}}>
-                      <div style={{height:"100%",width:`${widthPct}%`,background:s.color,borderRadius:6,transition:"width 0.4s ease"}}/>
-                    </div>
-                  </div>
-                );
-              })}
-              <div onClick={()=>onNavigate("donors",{stageFilter:"lapsed"})} style={{cursor:"pointer",marginTop:4,paddingTop:12,borderTop:"1px dashed "+T.bg3}}>
-                <div style={{display:"flex",justifyContent:"space-between",fontSize:10,marginBottom:3}}>
-                  <span style={{fontWeight:800,color:lapsedStageInfo.color,textTransform:"uppercase",letterSpacing:"0.06em"}}>↘ Leaking Out — Lapsed</span>
-                  <span style={{color:T.ink3}}>{lapsedCountVal} · {lapsedTotalVal>0?fmt(lapsedTotalVal):"—"}</span>
-                </div>
-                <div style={{background:T.bg,borderRadius:6,height:16,overflow:"hidden"}}>
-                  <div style={{height:"100%",width:`${Math.max(8,(lapsedCountVal/maxFunnelCount)*100)}%`,background:lapsedStageInfo.color,borderRadius:6}}/>
-                </div>
-              </div>
+            <div style={{padding:"16px 20px"}}>
+              <FunnelChart counts={countsByStage} onStageClick={s=>onNavigate("donors",{stageFilter:s})}/>
             </div>
           </div>
 
