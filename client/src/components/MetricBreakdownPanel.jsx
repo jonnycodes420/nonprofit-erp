@@ -6,7 +6,11 @@ import { T, Spin } from "./shared";
 // or any future "name the vague anxiety as a number" metric can reuse it
 // instead of getting a bespoke one-off panel.
 //
-// rows: [{ donorId, donorName, detail, value, percentOfTotal }]
+// rows: [{ id, donorId, donorName, detail, value, percentOfTotal }]
+//   - id: optional, only needed when a donor can appear more than once (an
+//     event-log breakdown like "gifts this year" or "visits logged" — one
+//     row per gift/interaction, not per donor). Falls back to donorId, which
+//     is unique enough for the one-row-per-donor breakdowns (debt, retention).
 //   - detail: caller-formatted secondary line (e.g. "$12,500 total · 210
 //     days since contact") — metric-specific fields live here, not in props.
 //   - value: caller-formatted primary number for this row (e.g. "18.4").
@@ -43,7 +47,7 @@ export default function MetricBreakdownPanel({ open, onClose, title, explanation
             <div style={{ padding: "32px 24px", textAlign: "center", color: T.ink3, fontSize: 13 }}>Nothing to show yet.</div>
           ) : rows.map((r, i) => (
             <div
-              key={r.donorId || i}
+              key={r.id || r.donorId || i}
               onClick={onSelectDonor ? () => onSelectDonor(r) : undefined}
               style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, padding: "12px 24px", borderBottom: "1px solid " + T.bg, cursor: onSelectDonor ? "pointer" : "default" }}
             >

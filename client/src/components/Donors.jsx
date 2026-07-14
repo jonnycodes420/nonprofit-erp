@@ -3204,6 +3204,13 @@ function DonorKanban({donors,onStageChange,onLogTouchpoint,onSelectDonor}){
   const[draggingId,setDraggingId]=useState(null);
   const[dragOver,setDragOver]=useState(null);
 
+  // Click-to-focus: clicking a stage header makes that column the wide one,
+  // overriding the default proportional-by-count sizing below — an explicit
+  // "look at this stage" action, not just a passive result of it having more
+  // donors. Click the focused stage again (or a different one) to release it.
+  const[focusedStage,setFocusedStage]=useState(null);
+  const[hoveredCol,setHoveredCol]=useState(null);
+
   const grouped=useMemo(()=>Object.fromEntries(
     STAGES.map(s=>[s.id,donors.filter(d=>(d.stage||"cultivate")===s.id).sort((a,b)=>b.total-a.total)])
   ),[donors]);
@@ -3219,7 +3226,23 @@ function DonorKanban({donors,onStageChange,onLogTouchpoint,onSelectDonor}){
   // reads visibly wider than a 2-donor one), with a min-width floor via
   // minmax() so a near-empty stage stays a usable, droppable target.
   const weights=useMemo(()=>computeStageWeights(counts,STAGES,"count").weights,[counts]);
-  const gridCols=STAGES.map(s=>`minmax(140px, ${weights[s.id]}fr)`).join(" ");
+  // Focus mode overrides the count-proportional weights entirely: the
+  // focused stage gets a large fixed share, everyone else gets a small
+  // shared one — deliberately not derived from donor counts at all, since
+  // the whole point is "let me look at this column regardless of how many
+  // cards are in it."
+  const effectiveWeights=useMemo(()=>{
+    if(!focusedStage)return weights;
+    const fw={};
+    STAGES.forEach(s=>{fw[s.id]=s.id===focusedStage?3.2:0.35;});
+    return fw;
+  },[focusedStage,weights]);
+  const gridCols=STAGES.map(s=>`minmax(140px, ${effectiveWeights[s.id]}fr)`).join(" ");
+  // A column this narrow (relative to the widest one) has no room for the
+  // full label+count+total header without feeling like an empty color
+  // block — applies equally to a legitimately-low-count stage in the
+  // default layout and to any un-focused stage while another is focused.
+  const isNarrowCol=s=>effectiveWeights[s.id]<=0.3;
 
   // Same "share of pipeline" math as <FunnelChart> (shared helper — computed
   // once in FunnelChart.jsx, not reimplemented here). This replaced an
@@ -3247,25 +3270,46 @@ function DonorKanban({donors,onStageChange,onLogTouchpoint,onSelectDonor}){
           const total=counts[stage.id]?.total||0;
           const isOver=dragOver===stage.id;
           const isLapsed=stage.id==="lapsed";
+          const isFocused=focusedStage===stage.id;
+          const isHoveredCol=hoveredCol===stage.id;
+          const narrow=isNarrowCol(stage);
           return(
             <div key={stage.id} className="kanban-col" style={{display:"flex",flexDirection:"column",gap:6}}
               onDragOver={e=>{e.preventDefault();setDragOver(stage.id);}}
               onDragLeave={e=>{if(!e.currentTarget.contains(e.relatedTarget))setDragOver(null);}}
               onDrop={e=>{e.preventDefault();const id=e.dataTransfer.getData("donorId");if(id)onStageChange(id,stage.id);setDragOver(null);}}>
-              <div style={{
-                background:isLapsed?"#2a1310":"#0f1a12",
-                border:`1px solid ${isOver?stage.color+"50":isLapsed?"#3a1f1a":"#1a2e1f"}`,
-                borderLeft:`3px solid ${stage.color}`,
-                borderRadius:10,padding:"10px 12px 9px",
-                transition:"background 0.12s,border-color 0.12s",
-              }}>
-                <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:4}}>
-                  <span style={{fontSize:9,fontWeight:800,color:isLapsed?stage.color:"#8fa896",letterSpacing:"0.1em",textTransform:"uppercase"}}>{isLapsed?"↘ ":""}{stage.label}</span>
-                  <span style={{background:stage.color+"28",color:stage.color,fontSize:10,fontWeight:800,borderRadius:99,padding:"1px 7px",border:`1px solid ${stage.color}40`,lineHeight:"16px"}}>{cols.length}</span>
-                </div>
-                <div style={{fontSize:13,fontWeight:700,color:total>0?"#f0ede6":"#8fa896",fontFamily:"'DM Serif Display',serif",letterSpacing:"-0.01em"}}>
-                  {total>0?fmt(total):"$0"}
-                </div>
+              <div
+                onClick={()=>setFocusedStage(f=>f===stage.id?null:stage.id)}
+                onMouseEnter={()=>setHoveredCol(stage.id)}
+                onMouseLeave={()=>setHoveredCol(h=>h===stage.id?null:h)}
+                title={isFocused?"Click to return to default sizing":"Click to focus this stage"}
+                style={{
+                  background:isLapsed?"#2a1310":isHoveredCol?"#16241a":"#0f1a12",
+                  border:`1px solid ${isOver?stage.color+"50":isLapsed?"#3a1f1a":"#1a2e1f"}`,
+                  borderLeft:`3px solid ${stage.color}`,
+                  borderRadius:10,
+                  padding:narrow?"8px 8px 7px":"10px 12px 9px",
+                  cursor:"pointer",
+                  boxShadow:isFocused?`0 0 0 2px ${stage.color}55`:"none",
+                  transition:"background 0.12s,border-color 0.12s,box-shadow 0.15s,padding 0.15s",
+                }}>
+                {narrow?(
+                  <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:2,textAlign:"center"}}>
+                    <span style={{fontSize:8,fontWeight:800,color:isLapsed?stage.color:"#8fa896",letterSpacing:"0.08em",textTransform:"uppercase"}}>{isLapsed?"↘ ":""}{stage.label}</span>
+                    <div style={{display:"flex",alignItems:"baseline",gap:5}}>
+                      <span style={{fontSize:13,fontWeight:800,color:"#f0ede6",fontFamily:"'DM Serif Display',serif"}}>{cols.length}</span>
+                      {total>0&&<span style={{fontSize:9,color:"#8fa896"}}>{fmt(total)}</span>}
+                    </div>
+                  </div>
+                ):(<>
+                  <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:4}}>
+                    <span style={{fontSize:9,fontWeight:800,color:isLapsed?stage.color:"#8fa896",letterSpacing:"0.1em",textTransform:"uppercase"}}>{isLapsed?"↘ ":""}{stage.label}</span>
+                    <span style={{background:stage.color+"28",color:stage.color,fontSize:10,fontWeight:800,borderRadius:99,padding:"1px 7px",border:`1px solid ${stage.color}40`,lineHeight:"16px"}}>{cols.length}</span>
+                  </div>
+                  <div style={{fontSize:13,fontWeight:700,color:total>0?"#f0ede6":"#8fa896",fontFamily:"'DM Serif Display',serif",letterSpacing:"-0.01em"}}>
+                    {total>0?fmt(total):"$0"}
+                  </div>
+                </>)}
               </div>
               <div style={{
                 display:"flex",flexDirection:"column",gap:6,flex:1,

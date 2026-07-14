@@ -5,6 +5,18 @@ import { T, fmt, fmtFull, daysUntil, daysDiff, askClaude, buildContext, Spin, AI
 import FunnelChart from "./FunnelChart";
 import MetricBreakdownPanel from "./MetricBreakdownPanel";
 
+// One config-driven panel serves all 5 drillable My Portfolio stats below
+// (Portfolio itself isn't here — it navigates straight to the existing "My
+// Pipeline" Kanban view instead, per the donor-list-not-a-breakdown request)
+// rather than five near-identical state+fetch+JSX blocks.
+const PORTFOLIO_BREAKDOWNS = {
+  visits: { endpoint: "/dashboard/my-stats/visits/breakdown", title: "Visits YTD", explanation: "Meetings you've logged this fiscal year, most recent first." },
+  moves: { endpoint: "/dashboard/my-stats/moves/breakdown", title: "Moves Made", explanation: "Every meaningful contact you've logged this fiscal year — calls, meetings, emails, and stewardship touches (visits are the meeting subset of this list)." },
+  gifts: { endpoint: "/dashboard/my-stats/gifts/breakdown", title: "Gifts YTD", explanation: "Gifts received this fiscal year from donors assigned to you, largest first." },
+  pipeline: { endpoint: "/dashboard/my-stats/pipeline/breakdown", title: "Pipeline", explanation: "Your assigned donors still in an active stage, ranked by lifetime giving." },
+  lapsed: { endpoint: "/dashboard/my-stats/lapsed/breakdown", title: "Lapsed", explanation: "Donors assigned to you who've lapsed, ranked by lifetime giving." },
+};
+
 // ── Dashboard / Home ─────────────────────────────────────────────────────────
 export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
   const {auth}=useAuth();
@@ -71,6 +83,29 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
   const goToDonorFromBreakdown=row=>{
     setDebtBreakdownOpen(false);
     setRetentionBreakdownOpen(false);
+    onNavigate("donors",{selectDonorId:row.donorId});
+  };
+
+  // My Portfolio stat drill-downs — one piece of state driving whichever of
+  // the 5 PORTFOLIO_BREAKDOWNS panels is open, cached per key so re-opening
+  // the same stat doesn't re-fetch.
+  const [portfolioBreakdown,setPortfolioBreakdown]=useState({key:null,open:false,data:null,loading:false});
+  const [hoveredStat,setHoveredStat]=useState(null);
+
+  const openPortfolioBreakdown=key=>{
+    setPortfolioBreakdown(prev=>{
+      if(prev.key===key)return{...prev,open:true};
+      return{key,open:true,data:null,loading:true};
+    });
+    if(portfolioBreakdown.key===key&&portfolioBreakdown.data)return;
+    const cfg=PORTFOLIO_BREAKDOWNS[key];
+    apiFetch(cfg.endpoint)
+      .then(r=>setPortfolioBreakdown(prev=>prev.key===key?{...prev,data:r,loading:false}:prev))
+      .catch(()=>setPortfolioBreakdown(prev=>prev.key===key?{...prev,data:{count:0,rows:[]},loading:false}:prev));
+  };
+  const closePortfolioBreakdown=()=>setPortfolioBreakdown(prev=>({...prev,open:false}));
+  const goToDonorFromPortfolio=row=>{
+    closePortfolioBreakdown();
     onNavigate("donors",{selectDonorId:row.donorId});
   };
 
@@ -455,14 +490,16 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
             return (<>
               <div style={{display:"grid",gridTemplateColumns:"repeat(6,1fr)",borderTop:"1px solid "+T.bg3}} className="portfolio-grid">
                 {[
-                  {label:"Portfolio",value:myStats.portfolioCount,unit:"donors"},
-                  {label:"Visits YTD",value:myStats.visitsYtd,unit:(noOutreachYet&&myStats.visitsYtd===0)?"not logged yet":"meetings"},
-                  {label:"Moves Made",value:myStats.madeYtd,unit:(noOutreachYet&&myStats.madeYtd===0)?"not logged yet":"interactions"},
-                  {label:"Gifts YTD",value:fmt(myStats.giftsYtd),unit:"raised"},
-                  {label:"Pipeline",value:fmt(myStats.pipelineValue),unit:"value"},
-                  {label:"Lapsed",value:myStats.lapsedCount,unit:"in portfolio",warn:myStats.lapsedCount>0},
+                  {label:"Portfolio",value:myStats.portfolioCount,unit:"donors",onClick:()=>onNavigate("donors",{view:"pipeline"})},
+                  {label:"Visits YTD",value:myStats.visitsYtd,unit:(noOutreachYet&&myStats.visitsYtd===0)?"not logged yet":"meetings",onClick:()=>openPortfolioBreakdown("visits")},
+                  {label:"Moves Made",value:myStats.madeYtd,unit:(noOutreachYet&&myStats.madeYtd===0)?"not logged yet":"interactions",onClick:()=>openPortfolioBreakdown("moves")},
+                  {label:"Gifts YTD",value:fmt(myStats.giftsYtd),unit:"raised",onClick:()=>openPortfolioBreakdown("gifts")},
+                  {label:"Pipeline",value:fmt(myStats.pipelineValue),unit:"value",onClick:()=>openPortfolioBreakdown("pipeline")},
+                  {label:"Lapsed",value:myStats.lapsedCount,unit:"in portfolio",warn:myStats.lapsedCount>0,onClick:()=>openPortfolioBreakdown("lapsed")},
                 ].map((m,i)=>(
-                  <div key={m.label} style={{padding:"12px 14px",borderRight:i<5?"1px solid "+T.bg3:"none",textAlign:"center"}}>
+                  <div key={m.label} onClick={m.onClick}
+                    onMouseEnter={()=>setHoveredStat(i)} onMouseLeave={()=>setHoveredStat(h=>h===i?null:h)}
+                    style={{padding:"12px 14px",borderRight:i<5?"1px solid "+T.bg3:"none",textAlign:"center",cursor:"pointer",background:hoveredStat===i?T.bg:"transparent",transition:"background 0.12s"}}>
                     <div style={{fontSize:9,fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase",color:m.warn?"#ef4444":"#3b82f6",marginBottom:4}}>{m.label}</div>
                     <div style={{fontSize:20,fontWeight:800,color:m.warn?"#ef4444":T.ink,fontFamily:"'DM Serif Display',serif",lineHeight:1}}>{m.value}</div>
                     <div style={{fontSize:10,color:T.ink3,marginTop:2}}>{m.unit}</div>
@@ -696,6 +733,19 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
           value:fmtFull(r.lastGiftAmount),
         }))}
         onSelectDonor={goToDonorFromBreakdown}
+      />
+
+      <MetricBreakdownPanel
+        open={portfolioBreakdown.open}
+        onClose={closePortfolioBreakdown}
+        title={PORTFOLIO_BREAKDOWNS[portfolioBreakdown.key]?.title||""}
+        explanation={PORTFOLIO_BREAKDOWNS[portfolioBreakdown.key]?.explanation}
+        loading={portfolioBreakdown.loading}
+        total={portfolioBreakdown.data?.total!=null?"$"+portfolioBreakdown.data.total.toLocaleString():undefined}
+        totalLabel="Total"
+        totalCount={portfolioBreakdown.data?.count}
+        rows={portfolioBreakdown.data?.rows||[]}
+        onSelectDonor={goToDonorFromPortfolio}
       />
     </div>
   );

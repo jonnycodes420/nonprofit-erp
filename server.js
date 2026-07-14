@@ -3014,7 +3014,19 @@ app.get("/dashboard/my-stats", requireAuth, wrap(async (req, res) => {
   const [portfolioRows, visitsRows, movesRows, giftsRows, pipelineRows, lapsedRows, orgInteractionRows, orgGiftHistoryRows] = await Promise.all([
     query("SELECT COUNT(*) as cnt FROM donors WHERE org_id=? AND assigned_to=? AND deleted_at IS NULL", [orgId, userId]),
     query("SELECT COUNT(*) as cnt FROM interactions WHERE org_id=? AND created_by=? AND type='meeting' AND date>=?", [orgId, userId, fyStart]),
-    query("SELECT COUNT(*) as cnt FROM interactions WHERE org_id=? AND created_by=? AND date>=?", [orgId, userId, fyStart]),
+    // "Moves Made" = every meaningful-contact interaction (call/meeting/
+    // email/stewardship — the same MEANINGFUL_CONTACT_TYPES used by
+    // Stewardship Debt/First-Touch Delay), NOT literally every interactions
+    // row with created_by=userId. Previously unfiltered by type, which
+    // silently counted 'gift' rows (auto-logged by /donors/:id/gifts and the
+    // bulk history importer) and 'stage_change' rows (auto-logged by a
+    // Kanban drag) as if they were outreach — a bulk gift import or a stage
+    // drag inflated a fundraiser's own activity count without them actually
+    // contacting anyone. This makes Visits YTD a true subset of Moves Made
+    // (meeting ⊂ meaningful contact) instead of two counts with an unclear
+    // relationship, and lets GET /dashboard/my-stats/moves/breakdown below
+    // return a list that actually matches what's being counted.
+    query(`SELECT COUNT(*) as cnt FROM interactions WHERE org_id=? AND created_by=? AND type IN ${MEANINGFUL_CONTACT_TYPES} AND date>=?`, [orgId, userId, fyStart]),
     query("SELECT COALESCE(SUM(g.amount),0) as total FROM gifts g JOIN donors d ON d.id=g.donor_id WHERE d.org_id=? AND d.assigned_to=? AND g.date>=?", [orgId, userId, fyStart]),
     query("SELECT COALESCE(SUM(total_giving),0) as total FROM donors WHERE org_id=? AND assigned_to=? AND stage NOT IN ('lapsed','closed') AND deleted_at IS NULL", [orgId, userId]),
     query("SELECT COUNT(*) as cnt FROM donors WHERE org_id=? AND assigned_to=? AND stage='lapsed' AND deleted_at IS NULL", [orgId, userId]),
@@ -3040,6 +3052,163 @@ app.get("/dashboard/my-stats", requireAuth, wrap(async (req, res) => {
     lapsedCount: parseInt(lapsedRows[0]?.cnt || 0),
     orgHasInteractions: parseInt(orgInteractionRows[0]?.cnt || 0) > 0,
     orgHasGiftHistory: parseInt(orgGiftHistoryRows[0]?.cnt || 0) > 0,
+  });
+}));
+
+// Per-stat drill-downs behind the My Portfolio bar. Each mirrors the exact
+// filter its headline count above uses (same fyStart boundary, same type
+// filters), so the number shown and the list you get from clicking it can
+// never disagree. Rows are shaped for MetricBreakdownPanel — visits/moves/
+// gifts are one row per logged event (a donor can appear more than once, so
+// each row carries its own `id`), pipeline/lapsed are one row per donor.
+app.get("/dashboard/my-stats/visits/breakdown", requireAuth, wrap(async (req, res) => {
+  const { orgId, userId } = req.user;
+  // fyStart mirrors /dashboard/my-stats exactly: July 1 fiscal year boundary.
+  const now = new Date();
+  const fyStart = now.getMonth() < 6
+    ? new Date(now.getFullYear() - 1, 6, 1).toISOString().split("T")[0]
+    : new Date(now.getFullYear(), 6, 1).toISOString().split("T")[0];
+  const PAGE_SIZE = 50;
+  const [rows, countRow] = await Promise.all([
+    query(
+      `SELECT i.id, i.donor_id, d.name AS donor_name, i.date FROM interactions i
+       JOIN donors d ON d.id = i.donor_id
+       WHERE i.org_id=? AND i.created_by=? AND i.type='meeting' AND i.date>=? AND d.deleted_at IS NULL
+       ORDER BY i.date DESC LIMIT ?`,
+      [orgId, userId, fyStart, PAGE_SIZE]
+    ),
+    query(
+      `SELECT COUNT(*) as cnt FROM interactions i JOIN donors d ON d.id=i.donor_id
+       WHERE i.org_id=? AND i.created_by=? AND i.type='meeting' AND i.date>=? AND d.deleted_at IS NULL`,
+      [orgId, userId, fyStart]
+    ),
+  ]);
+  res.json({
+    count: parseInt(countRow[0]?.cnt || 0),
+    rows: rows.map(r => ({
+      id: r.id, donorId: r.donor_id, donorName: r.donor_name,
+      detail: "Meeting logged",
+      value: new Date(r.date).toLocaleDateString("en-US", { month: "short", day: "numeric" }),
+    })),
+  });
+}));
+
+app.get("/dashboard/my-stats/moves/breakdown", requireAuth, wrap(async (req, res) => {
+  const { orgId, userId } = req.user;
+  // fyStart mirrors /dashboard/my-stats exactly: July 1 fiscal year boundary.
+  const now = new Date();
+  const fyStart = now.getMonth() < 6
+    ? new Date(now.getFullYear() - 1, 6, 1).toISOString().split("T")[0]
+    : new Date(now.getFullYear(), 6, 1).toISOString().split("T")[0];
+  const PAGE_SIZE = 50;
+  const [rows, countRow] = await Promise.all([
+    query(
+      `SELECT i.id, i.donor_id, d.name AS donor_name, i.date, i.type FROM interactions i
+       JOIN donors d ON d.id = i.donor_id
+       WHERE i.org_id=? AND i.created_by=? AND i.type IN ${MEANINGFUL_CONTACT_TYPES} AND i.date>=? AND d.deleted_at IS NULL
+       ORDER BY i.date DESC LIMIT ?`,
+      [orgId, userId, fyStart, PAGE_SIZE]
+    ),
+    query(
+      `SELECT COUNT(*) as cnt FROM interactions i JOIN donors d ON d.id=i.donor_id
+       WHERE i.org_id=? AND i.created_by=? AND i.type IN ${MEANINGFUL_CONTACT_TYPES} AND i.date>=? AND d.deleted_at IS NULL`,
+      [orgId, userId, fyStart]
+    ),
+  ]);
+  const TYPE_LABEL = { call: "Call", meeting: "Meeting", email: "Email", stewardship: "Stewardship" };
+  res.json({
+    count: parseInt(countRow[0]?.cnt || 0),
+    rows: rows.map(r => ({
+      id: r.id, donorId: r.donor_id, donorName: r.donor_name,
+      detail: TYPE_LABEL[r.type] || r.type,
+      value: new Date(r.date).toLocaleDateString("en-US", { month: "short", day: "numeric" }),
+    })),
+  });
+}));
+
+app.get("/dashboard/my-stats/gifts/breakdown", requireAuth, wrap(async (req, res) => {
+  const { orgId, userId } = req.user;
+  // fyStart mirrors /dashboard/my-stats exactly: July 1 fiscal year boundary.
+  const now = new Date();
+  const fyStart = now.getMonth() < 6
+    ? new Date(now.getFullYear() - 1, 6, 1).toISOString().split("T")[0]
+    : new Date(now.getFullYear(), 6, 1).toISOString().split("T")[0];
+  const PAGE_SIZE = 50;
+  const [rows, totalRow] = await Promise.all([
+    query(
+      `SELECT g.id, g.donor_id, d.name AS donor_name, g.date, g.amount FROM gifts g
+       JOIN donors d ON d.id = g.donor_id
+       WHERE d.org_id=? AND d.assigned_to=? AND g.date>=? AND d.deleted_at IS NULL
+       ORDER BY g.amount DESC LIMIT ?`,
+      [orgId, userId, fyStart, PAGE_SIZE]
+    ),
+    query(
+      `SELECT COALESCE(SUM(g.amount),0) as total, COUNT(*) as cnt FROM gifts g
+       JOIN donors d ON d.id=g.donor_id
+       WHERE d.org_id=? AND d.assigned_to=? AND g.date>=? AND d.deleted_at IS NULL`,
+      [orgId, userId, fyStart]
+    ),
+  ]);
+  res.json({
+    total: Math.round(Number(totalRow[0]?.total || 0)),
+    count: parseInt(totalRow[0]?.cnt || 0),
+    rows: rows.map(r => ({
+      id: r.id, donorId: r.donor_id, donorName: r.donor_name,
+      detail: new Date(r.date).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }),
+      value: "$" + Number(r.amount).toLocaleString(),
+    })),
+  });
+}));
+
+app.get("/dashboard/my-stats/pipeline/breakdown", requireAuth, wrap(async (req, res) => {
+  const { orgId, userId } = req.user;
+  const PAGE_SIZE = 50;
+  const [rows, totalRow] = await Promise.all([
+    query(
+      `SELECT id, name, stage, total_giving FROM donors
+       WHERE org_id=? AND assigned_to=? AND stage NOT IN ('lapsed','closed') AND deleted_at IS NULL
+       ORDER BY total_giving DESC LIMIT ?`,
+      [orgId, userId, PAGE_SIZE]
+    ),
+    query(
+      `SELECT COALESCE(SUM(total_giving),0) as total, COUNT(*) as cnt FROM donors
+       WHERE org_id=? AND assigned_to=? AND stage NOT IN ('lapsed','closed') AND deleted_at IS NULL`,
+      [orgId, userId]
+    ),
+  ]);
+  res.json({
+    total: Math.round(Number(totalRow[0]?.total || 0)),
+    count: parseInt(totalRow[0]?.cnt || 0),
+    rows: rows.map(d => ({
+      donorId: d.id, donorName: d.name,
+      detail: d.stage ? d.stage[0].toUpperCase() + d.stage.slice(1) : "",
+      value: "$" + Number(d.total_giving || 0).toLocaleString(),
+    })),
+  });
+}));
+
+app.get("/dashboard/my-stats/lapsed/breakdown", requireAuth, wrap(async (req, res) => {
+  const { orgId, userId } = req.user;
+  const PAGE_SIZE = 50;
+  const [rows, countRow] = await Promise.all([
+    query(
+      `SELECT id, name, total_giving, last_gift_date FROM donors
+       WHERE org_id=? AND assigned_to=? AND stage='lapsed' AND deleted_at IS NULL
+       ORDER BY total_giving DESC LIMIT ?`,
+      [orgId, userId, PAGE_SIZE]
+    ),
+    query(
+      "SELECT COUNT(*) as cnt FROM donors WHERE org_id=? AND assigned_to=? AND stage='lapsed' AND deleted_at IS NULL",
+      [orgId, userId]
+    ),
+  ]);
+  res.json({
+    count: parseInt(countRow[0]?.cnt || 0),
+    rows: rows.map(d => ({
+      donorId: d.id, donorName: d.name,
+      detail: d.last_gift_date ? `Last gave ${new Date(d.last_gift_date).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}` : "No gift date on file",
+      value: "$" + Number(d.total_giving || 0).toLocaleString(),
+    })),
   });
 }));
 
