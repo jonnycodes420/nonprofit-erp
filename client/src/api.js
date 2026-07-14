@@ -86,6 +86,45 @@ export async function streamAI(systemPrompt, userMessage, onChunk) {
 }
 
 // ── Data adapter: API shapes → component shapes ────────────────────────────
+// Single-donor mapping, exported so any call site that receives a raw donor
+// row back from an API response (e.g. Donors.jsx's EditDonorModal save
+// handler) can re-adapt it the same way adaptData() below does, rather than
+// hand-duplicating a second, shorter field list that silently drifts out of
+// sync — that drift previously dropped assignedTo/assignedToName (among
+// other fields) from local state after every donor edit, even though the
+// database itself was never affected.
+export function adaptDonor(d) {
+  return {
+    id:             d.id,
+    name:           d.name,
+    email:          d.email || "",
+    phone:          d.phone || "",
+    total:          d.total_giving || 0,
+    lastGift:       d.last_gift_date || new Date().toISOString().split("T")[0],
+    lastAmount:     d.last_gift_amount || 0,
+    gifts:          d.gift_count || 0,
+    status:         d.status,
+    stage:          d.stage || "cultivate",
+    tags:           Array.isArray(d.tags) ? d.tags : JSON.parse(d.tags || "[]"),
+    notes:          d.notes || "",
+    lastTouchpoint: d.last_touchpoint || null,
+    interactions:   [],
+    wealthScore:           d.wealth_score ?? null,
+    capacityTier:          d.capacity_tier ?? null,
+    scoreConfidence:       d.score_confidence ?? null,
+    scoreRationale:        d.score_rationale ?? null,
+    stripeSubscriptionId:  d.stripe_subscription_id ?? null,
+    stripeSubscriptionStatus: d.stripe_subscription_status ?? null,
+    assignedTo:    d.assigned_to ?? null,
+    assignedToName: d.assigned_to_name ?? null,
+    city:          d.city ?? null,
+    state:         d.state ?? null,
+    zip:           d.zip ?? null,
+    plannedGiving: d.planned_giving ?? false,
+    employer:      d.employer ?? null,
+  };
+}
+
 export function adaptData({ org, donors, grants, volunteers, tasks, board, financials }) {
   return {
     org: {
@@ -100,36 +139,7 @@ export function adaptData({ org, donors, grants, volunteers, tasks, board, finan
       ein:        org.ein || "",
       fiscalYear: "Jan-Dec",
     },
-    donors: donors.map(d => {
-      return {
-        id:             d.id,
-        name:           d.name,
-        email:          d.email || "",
-        phone:          d.phone || "",
-        total:          d.total_giving || 0,
-        lastGift:       d.last_gift_date || new Date().toISOString().split("T")[0],
-        lastAmount:     d.last_gift_amount || 0,
-        gifts:          d.gift_count || 0,
-        status:         d.status,
-        stage:          d.stage || "cultivate",
-        tags:           Array.isArray(d.tags) ? d.tags : JSON.parse(d.tags || "[]"),
-        notes:          d.notes || "",
-        lastTouchpoint: d.last_touchpoint || null,
-        interactions:   [],
-        wealthScore:           d.wealth_score ?? null,
-        capacityTier:          d.capacity_tier ?? null,
-        scoreConfidence:       d.score_confidence ?? null,
-        scoreRationale:        d.score_rationale ?? null,
-        stripeSubscriptionId:  d.stripe_subscription_id ?? null,
-        stripeSubscriptionStatus: d.stripe_subscription_status ?? null,
-        assignedTo:    d.assigned_to ?? null,
-        assignedToName: d.assigned_to_name ?? null,
-        city:          d.city ?? null,
-        state:         d.state ?? null,
-        zip:           d.zip ?? null,
-        plannedGiving: d.planned_giving ?? false,
-      };
-    }),
+    donors: donors.map(adaptDonor),
     grants: grants.map(g => ({
       id:        g.id,
       funder:    g.funder,

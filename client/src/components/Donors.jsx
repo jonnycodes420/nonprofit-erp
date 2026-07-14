@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useMemo, Component } from "react";
 import Papa from "papaparse";
 import * as XLSX from "xlsx";
-import { apiFetch, API, getToken } from "../api";
+import { apiFetch, API, getToken, adaptDonor } from "../api";
 import { useAuth } from "../main";
 import UpgradeModal from "./UpgradeModal";
 
@@ -47,6 +47,17 @@ const CSV_FIELDS = [
 ];
 const VALID_IMPORT_KEYS = new Set([...CSV_FIELDS.map(f => f.key), "_firstName", "_lastName"]);
 const IMPORT_STAGES = ["prospect","qualify","cultivate","solicit","steward","lapsed"];
+
+// Donor-to-donor relationship types (server.js's DONOR_RELATIONSHIP_TYPES) —
+// spouse/household pool into the profile's combined household total; family
+// and employer_match are relationship context only. Manual linking only, no
+// auto-detection in this pass.
+const DONOR_RELATIONSHIP_LABELS = [
+  ["spouse","Spouse"],
+  ["household","Household"],
+  ["family","Family"],
+  ["employer_match","Employer Match"],
+];
 
 // Headers that negate a contact field — never map to that field
 const NEGATOR_PHRASES = ["do not", "don't", "opt out", "opt-out", "unsubscribe", "no email", "no phone", "no mail", "do not contact"];
@@ -1793,6 +1804,7 @@ function EditDonorModal({donor,onSave,onClose}){
     notes:donor.notes||"",tags:(donor.tags||[]).join(", "),
     stage:donor.stage||"cultivate",status:donor.status||"new",
     city:donor.city||"",state:donor.state||"",zip:donor.zip||"",
+    employer:donor.employer||"",
   });
   const[loading,setLoading]=useState(false);
   const[err,setErr]=useState("");
@@ -1815,7 +1827,7 @@ function EditDonorModal({donor,onSave,onClose}){
         <div style={{fontSize:18,fontWeight:800,color:T.ink,marginBottom:4}}>Edit Donor Profile</div>
         <div style={{fontSize:12,color:T.ink3,marginBottom:20}}>{donor.name}</div>
         <div style={{display:"flex",flexDirection:"column",gap:10}}>
-          {[["name","Full Name","text"],["email","Email","email"],["phone","Phone","tel"]].map(([k,pl,t])=>(
+          {[["name","Full Name","text"],["email","Email","email"],["phone","Phone","tel"],["employer","Employer","text"]].map(([k,pl,t])=>(
             <input key={k} type={t} value={form[k]} onChange={set(k)} placeholder={pl} style={inp}/>
           ))}
           <div style={{display:"flex",gap:8}}>
@@ -1972,12 +1984,49 @@ function GiftLinkModal({donor,orgName,onClose}){
 }
 
 // ── Donor Profile ──────────────────────────────────────────────────────────
-function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loadingKey,getAI,isAdmin,onEdit,onDelete,tasks=[],onTaskToggle,orgName="",orgTeam=[],onReassign,onCfSaved,onInteractionAdded,isReadOnly=false}){
+function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loadingKey,getAI,isAdmin,onEdit,onDelete,tasks=[],onTaskToggle,orgName="",orgTeam=[],onReassign,onCfSaved,onInteractionAdded,isReadOnly=false,allDonors=[],onSelectRelatedDonor}){
   const [gifts,setGifts]=useState([]);
   const [giftLoading,setGiftLoading]=useState(true);
   const [localInts,setLocalInts]=useState(null); // loaded lazily from GET /donors/:id
   const [sequences,setSequences]=useState([]);
   useEffect(()=>{apiFetch("/sequences").then(rows=>setSequences(Array.isArray(rows)?rows.filter(s=>s.status==="active"):[])).catch(()=>{});},[]);
+
+  // Related donors (household/spouse/family/employer_match) — manual
+  // linking only, see server.js's donor_relationships routes.
+  const [relationships,setRelationships]=useState([]);
+  const [householdTotal,setHouseholdTotal]=useState(null);
+  const [relLoading,setRelLoading]=useState(true);
+  const [relPickerOpen,setRelPickerOpen]=useState(false);
+  const [relSearch,setRelSearch]=useState("");
+  const [relType,setRelType]=useState("spouse");
+  const [relSaving,setRelSaving]=useState(false);
+  const [relErr,setRelErr]=useState("");
+  const loadRelationships=()=>{
+    setRelLoading(true);
+    apiFetch(`/donors/${donor.id}/relationships`)
+      .then(r=>{setRelationships(r.relationships||[]);setHouseholdTotal(r.householdTotal??null);})
+      .catch(()=>{setRelationships([]);setHouseholdTotal(null);})
+      .finally(()=>setRelLoading(false));
+  };
+  useEffect(()=>{loadRelationships();},[donor.id]);
+
+  const linkDonor=async(relatedDonorId)=>{
+    setRelSaving(true);setRelErr("");
+    try{
+      await apiFetch(`/donors/${donor.id}/relationships`,{method:"POST",body:JSON.stringify({relatedDonorId,relationshipType:relType})});
+      setRelPickerOpen(false);setRelSearch("");
+      loadRelationships();
+    }catch(e){setRelErr(e.message||"Could not link donor");}
+    setRelSaving(false);
+  };
+  const unlinkDonor=async(relId)=>{
+    try{await apiFetch(`/donor-relationships/${relId}`,{method:"DELETE"});loadRelationships();}
+    catch(e){console.error(e);}
+  };
+  const linkedIds=new Set(relationships.map(r=>r.relatedDonorId));
+  const relPickerResults=relSearch.trim()
+    ?allDonors.filter(d=>d.id!==donor.id&&!linkedIds.has(d.id)&&d.name.toLowerCase().includes(relSearch.trim().toLowerCase())).slice(0,8)
+    :[];
 
   const [cfData,setCfData]=useState([]);
   const [cfEditing,setCfEditing]=useState(null);
@@ -2381,10 +2430,11 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
         <div style={{overflowY:"auto",borderRight:"1px solid "+T.bg3,display:"flex",flexDirection:"column"}}>
           {/* Tab Nav */}
           <div style={{display:"flex",background:T.white,borderBottom:"1px solid "+T.bg3,flexShrink:0,overflowX:"auto"}}>
-            {[["overview","Overview"],["gifts","Gifts & Pledges"],["funds","Funds"],["materials","Materials"],["activity","Activity"]].map(([id,label])=>(
+            {[["overview","Overview"],["gifts","Gifts & Pledges"],["funds","Funds"],["related","Related"],["materials","Materials"],["activity","Activity"]].map(([id,label])=>(
               <button key={id} onClick={()=>setDpTab(id)} style={{background:"none",border:"none",borderBottom:`2px solid ${dpTab===id?T.greenDk:"transparent"}`,padding:"11px 16px",color:dpTab===id?T.greenDk:T.ink3,fontSize:13,fontWeight:dpTab===id?700:400,cursor:"pointer",whiteSpace:"nowrap",flexShrink:0}}>
                 {label}
                 {id==="gifts"&&giftsFull.length>0&&<span style={{marginLeft:5,background:T.bg2,borderRadius:99,padding:"1px 6px",fontSize:10,fontWeight:700,color:T.ink3}}>{giftsFull.length}</span>}
+                {id==="related"&&relationships.length>0&&<span style={{marginLeft:5,background:T.bg2,borderRadius:99,padding:"1px 6px",fontSize:10,fontWeight:700,color:T.ink3}}>{relationships.length}</span>}
                 {id==="materials"&&materials.length>0&&<span style={{marginLeft:5,background:T.bg2,borderRadius:99,padding:"1px 6px",fontSize:10,fontWeight:700,color:T.ink3}}>{materials.length}</span>}
               </button>
             ))}
@@ -2400,6 +2450,12 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
                 </div>
               ))}
             </div>
+
+            {householdTotal!=null&&(
+              <div style={{background:T.gold+"12",border:"1px solid "+T.gold+"40",borderRadius:12,padding:"10px 14px",fontSize:12,color:T.ink,cursor:"pointer"}} onClick={()=>setDpTab("related")}>
+                <strong>{fmtFull(donor.total)}</strong> individually · <strong style={{color:"#92700f"}}>{fmtFull(householdTotal)}</strong> household total — <span style={{color:T.greenDk,fontWeight:700}}>see who's linked →</span>
+              </div>
+            )}
 
             <div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:14,padding:"16px 18px"}}>
               <div style={{fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.1em",color:T.ink3,marginBottom:12}}>Giving History</div>
@@ -2694,6 +2750,66 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
               </>);
             })()}
             {!fundLoading&&!fundAffinity&&<div style={{fontSize:13,color:T.ink3,fontStyle:"italic",textAlign:"center",padding:24}}>Could not load fund data.</div>}
+          </div>}
+
+          {/* Related tab — manual household/spouse/family/employer_match
+              links. No auto-detection (matching last name, address, etc.) —
+              a real fast-follow idea, not built here. */}
+          {dpTab==="related"&&<div style={{padding:"20px 20px 24px 24px",display:"flex",flexDirection:"column",gap:16}}>
+            {householdTotal!=null&&(
+              <div style={{background:T.gold+"12",border:"1px solid "+T.gold+"40",borderRadius:12,padding:"12px 16px"}}>
+                <div style={{fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.08em",color:T.ink3,marginBottom:4}}>Household Giving</div>
+                <div style={{fontSize:13,color:T.ink}}><strong>{fmtFull(donor.total)}</strong> individually · <strong style={{color:"#92700f"}}>{fmtFull(householdTotal)}</strong> household total</div>
+              </div>
+            )}
+
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+              <div style={{fontSize:14,fontWeight:800,color:T.ink}}>Linked Donors</div>
+              {!isReadOnly&&<button onClick={()=>{setRelPickerOpen(v=>!v);setRelErr("");}} style={{background:"#10b981",border:"none",borderRadius:7,padding:"6px 12px",color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer"}}>+ Link to another donor</button>}
+            </div>
+
+            {relPickerOpen&&(
+              <div style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:10,padding:12,display:"flex",flexDirection:"column",gap:8}}>
+                <div style={{display:"flex",gap:8}}>
+                  {DONOR_RELATIONSHIP_LABELS.map(([v,l])=>(
+                    <button key={v} onClick={()=>setRelType(v)} style={{background:relType===v?T.greenDk+"18":T.white,border:`1px solid ${relType===v?T.greenDk:T.bg3}`,borderRadius:7,padding:"5px 10px",color:relType===v?T.greenDk:T.ink3,fontSize:11,fontWeight:600,cursor:"pointer"}}>{l}</button>
+                  ))}
+                </div>
+                <input value={relSearch} onChange={e=>setRelSearch(e.target.value)} placeholder="Search donors by name…" style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:8,padding:"8px 12px",color:T.ink,fontSize:13,outline:"none"}}/>
+                {relSearch.trim()&&(
+                  <div style={{display:"flex",flexDirection:"column",gap:4,maxHeight:180,overflowY:"auto"}}>
+                    {relPickerResults.length===0
+                      ?<div style={{fontSize:12,color:T.ink3,fontStyle:"italic",padding:"6px 4px"}}>No matching donors.</div>
+                      :relPickerResults.map(d=>(
+                        <button key={d.id} disabled={relSaving} onClick={()=>linkDonor(d.id)} style={{display:"flex",justifyContent:"space-between",alignItems:"center",background:T.white,border:"1px solid "+T.bg3,borderRadius:8,padding:"7px 10px",cursor:relSaving?"not-allowed":"pointer",textAlign:"left"}}>
+                          <span style={{fontSize:12,fontWeight:600,color:T.ink}}>{d.name}</span>
+                          <span style={{fontSize:11,color:T.ink3}}>{fmtFull(d.total)} →</span>
+                        </button>
+                      ))}
+                  </div>
+                )}
+                {relErr&&<div style={{color:"#ef4444",fontSize:12}}>{relErr}</div>}
+              </div>
+            )}
+
+            {relLoading?<div style={{padding:20,textAlign:"center"}}><Spin/></div>
+              :relationships.length===0
+                ?<div style={{fontSize:13,color:T.ink3,fontStyle:"italic",textAlign:"center",padding:24}}>No linked donors yet.</div>
+                :<div style={{display:"flex",flexDirection:"column",gap:8}}>
+                  {relationships.map(r=>(
+                    <div key={r.id} style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,background:T.white,border:"1px solid "+T.bg3,borderRadius:10,padding:"11px 14px"}}>
+                      <div onClick={()=>onSelectRelatedDonor&&onSelectRelatedDonor(r.relatedDonorId)} style={{cursor:onSelectRelatedDonor?"pointer":"default",minWidth:0}}>
+                        <div style={{fontSize:13,fontWeight:700,color:T.ink}}>{r.relatedDonorName} →</div>
+                        <div style={{fontSize:11,color:T.ink3,marginTop:2}}>{fmtFull(r.relatedDonorTotalGiving)} lifetime</div>
+                      </div>
+                      <div style={{display:"flex",alignItems:"center",gap:8,flexShrink:0}}>
+                        <Pill label={DONOR_RELATIONSHIP_LABELS.find(([v])=>v===r.relationshipType)?.[1]||r.relationshipType}/>
+                        {!isReadOnly&&<button onClick={()=>unlinkDonor(r.id)} style={{background:"transparent",border:"1px solid #ef444455",borderRadius:7,padding:"4px 9px",color:"#ef4444",fontSize:11,cursor:"pointer"}}>Remove</button>}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+            }
           </div>}
 
           {dpTab==="materials"&&<div style={{padding:"20px 20px 24px 24px",display:"flex",flexDirection:"column",gap:16}}>
@@ -3928,28 +4044,26 @@ export function Donors({data,setData,isReadOnly=false,initialView,initialLogDono
   };
 
   const reloadDonors=async()=>{
+    // Reuse the shared single-donor adapter (see api.js's adaptDonor comment)
+    // — this hand-duplicated mapping previously dropped assignedTo/
+    // assignedToName (and wealth score, city/state/zip, employer, etc.) from
+    // local state on every refresh, which is especially costly here since
+    // reloadDonors() is the general post-action refresh (import, gift log,
+    // custom field save…), not a rare path.
     try{
       const donors=await apiFetch("/donors");
-      setData(prev=>({...prev,donors:donors.map(d=>({
-        id:d.id,name:d.name,email:d.email||"",phone:d.phone||"",total:d.total_giving||0,
-        lastGift:d.last_gift_date||"",lastAmount:d.last_gift_amount||0,gifts:d.gift_count||0,
-        status:d.status,stage:d.stage||"cultivate",
-        lastTouchpoint:d.last_touchpoint||null,
-        tags:Array.isArray(d.tags)?d.tags:JSON.parse(d.tags||"[]"),
-        notes:d.notes||"",
-        interactions:[],
-      }))}));
+      setData(prev=>({...prev,donors:donors.map(adaptDonor)}));
     }catch(e){console.error(e);}
   };
 
   const handleEditSaved=(raw)=>{
+    // Reuse the same single-donor adapter adaptData() uses for the initial
+    // load — a hand-duplicated shorter field list here previously dropped
+    // assignedTo/assignedToName (and wealth score, city/state/zip, etc.)
+    // from local state after every edit, even though the database itself
+    // was untouched (see api.js's adaptDonor comment).
     const adapted={
-      id:raw.id,name:raw.name,email:raw.email||"",phone:raw.phone||"",
-      total:raw.total_giving||0,lastGift:raw.last_gift_date||"",
-      lastAmount:raw.last_gift_amount||0,gifts:raw.gift_count||0,
-      status:raw.status,stage:raw.stage||"cultivate",
-      tags:Array.isArray(raw.tags)?raw.tags:JSON.parse(raw.tags||"[]"),
-      notes:raw.notes||"",
+      ...adaptDonor(raw),
       interactions:selected?.id===raw.id?(selected.interactions||[]):[],
       lastTouchpoint:selected?.id===raw.id?selected.lastTouchpoint:null,
     };
@@ -4015,7 +4129,7 @@ export function Donors({data,setData,isReadOnly=false,initialView,initialLogDono
         isAdmin={isAdmin} onEdit={()=>setEditTarget(selected)} onDelete={deleteDonor}
         tasks={data.tasks.filter(t=>t.donorId===selected.id)} onTaskToggle={toggleTask}
         orgName={data.org?.name||""} orgTeam={orgTeam} onReassign={handleAssign} onCfSaved={reloadCfValues} onInteractionAdded={reloadDonors}
-        isReadOnly={isReadOnly}/></ErrorBoundary>
+        isReadOnly={isReadOnly} allDonors={data.donors} onSelectRelatedDonor={id=>{const d=data.donors.find(x=>x.id===id);if(d)setSelected(d);}}/></ErrorBoundary>
       ) : (<>
 
       <div className="donors-toolbar" style={{display:"flex",gap:10,flexWrap:"wrap",alignItems:"center"}}>

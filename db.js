@@ -831,6 +831,33 @@ async function initSchema() {
     await pool.query(`UPDATE users SET email = lower(btrim(email)) WHERE email <> lower(btrim(email))`);
     await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS users_email_lower_uk ON users (lower(email))`);
   }
+
+  // ── Donor-to-donor relationships (2026-07-14) ────────────────────────────
+  // employer was already tracked on volunteers/board_members but not donors —
+  // added directly on the donor record (independent of any relationship link)
+  // so matching-gift potential can be tracked even for a donor with no linked
+  // household. Manual linking only — see donor_relationships below.
+  await pool.query(`ALTER TABLE donors ADD COLUMN IF NOT EXISTS employer TEXT`);
+
+  // One row per relationship; order of donor_id_a/donor_id_b doesn't matter —
+  // callers query both directions. relationship_type is free text at the DB
+  // layer (spouse|household|family|employer_match are the ones the UI
+  // offers) rather than an enum, matching this codebase's existing
+  // convention of validating free-text stage/status columns in the app
+  // layer, not via a CHECK constraint.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS donor_relationships (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL,
+      donor_id_a TEXT NOT NULL REFERENCES donors(id) ON DELETE CASCADE,
+      donor_id_b TEXT NOT NULL REFERENCES donors(id) ON DELETE CASCADE,
+      relationship_type TEXT NOT NULL,
+      notes TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_donor_rel_a ON donor_relationships (org_id, donor_id_a)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_donor_rel_b ON donor_relationships (org_id, donor_id_b)`);
 }
 
 async function seedData() {

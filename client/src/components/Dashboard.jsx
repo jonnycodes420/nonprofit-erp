@@ -17,6 +17,14 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
   const [myStats,setMyStats]=useState(null);
   const [portfolioOpen,setPortfolioOpen]=useState(false);
 
+  // "mine" vs "all" — undefined until my-stats loads and we can decide a
+  // sensible default: a user with an actual assigned portfolio defaults to
+  // "mine" (this is their job today), a user with no assignments at all
+  // defaults to "all" (a "mine" view would just be perpetually empty).
+  // Scopes the queue + Retention Rate + Stewardship Debt together, one
+  // source of truth, not three toggles that could disagree.
+  const [scope,setScope]=useState(undefined);
+
   const [queueItems,setQueueItems]=useState([]);
   const [queueLoading,setQueueLoading]=useState(true);
   const [busyDonorId,setBusyDonorId]=useState(null);
@@ -39,7 +47,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
     setDebtBreakdownOpen(true);
     if(debtBreakdown)return;
     setDebtBreakdownLoading(true);
-    apiFetch("/dashboard/stewardship-debt/breakdown")
+    apiFetch(`/dashboard/stewardship-debt/breakdown?scope=${scope||"mine"}`)
       .then(r=>setDebtBreakdown(r))
       .catch(()=>setDebtBreakdown({total:0,count:0,rows:[]}))
       .finally(()=>setDebtBreakdownLoading(false));
@@ -52,7 +60,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
     setRetentionBreakdownOpen(true);
     if(retentionBreakdown)return;
     setRetentionBreakdownLoading(true);
-    apiFetch("/dashboard/retention/breakdown")
+    apiFetch(`/dashboard/retention/breakdown?scope=${scope||"mine"}`)
       .then(r=>setRetentionBreakdown(r))
       .catch(()=>setRetentionBreakdown({retentionRate:null,sectorAverage:43,retained:0,prevYearCount:0,nonRetainedCount:0,rows:[]}))
       .finally(()=>setRetentionBreakdownLoading(false));
@@ -69,13 +77,32 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
   const loadGoal=()=>apiFetch("/goals/active").then(r=>setGoal(r)).catch(()=>setGoal(null));
 
   useEffect(()=>{
-    apiFetch("/dashboard/my-stats").then(r=>setMyStats(r||null)).catch(()=>{});
-    apiFetch("/dashboard/today").then(r=>setQueueItems(r||[])).catch(()=>{}).finally(()=>setQueueLoading(false));
+    apiFetch("/dashboard/my-stats").then(r=>{
+      setMyStats(r||null);
+      // Decide the initial scope once, from whether this user actually has
+      // an assigned portfolio — never overrides a scope the user already
+      // picked (guarded by the `prev===undefined` check).
+      setScope(prev=>prev!==undefined?prev:((r?.portfolioCount||0)>0?"mine":"all"));
+    }).catch(()=>{setMyStats(null);setScope(prev=>prev!==undefined?prev:"all");});
     apiFetch("/donors/stage-counts").then(r=>setStageCounts(r||[])).catch(()=>{});
-    apiFetch("/metrics/stewardship-summary").then(r=>setStewardMetrics(r)).catch(()=>{});
     apiFetch("/recurring/health").then(r=>setRecurringHealth(r)).catch(()=>{});
     loadGoal();
   },[]);
+
+  // Queue + hero metrics are re-fetched whenever scope changes (including
+  // the initial "mine"/"all" decision above) — one shared scope, not three
+  // independently-toggled views that could disagree.
+  useEffect(()=>{
+    if(scope===undefined)return;
+    setQueueLoading(true);
+    apiFetch(`/dashboard/today?scope=${scope}`).then(r=>setQueueItems(r||[])).catch(()=>{}).finally(()=>setQueueLoading(false));
+    apiFetch(`/metrics/stewardship-summary?scope=${scope}`).then(r=>setStewardMetrics(r)).catch(()=>{});
+    // Cached breakdown data is scope-specific — invalidate so the next
+    // "see breakdown" click re-fetches under the new scope instead of
+    // showing stale data from the other one.
+    setDebtBreakdown(null);
+    setRetentionBreakdown(null);
+  },[scope]);
 
   // Guards against a pre-existing /dashboard/today quirk (task rows aren't
   // filtered by donor deleted_at) — if the donor isn't in the live donor
@@ -248,6 +275,23 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
         )}
       </div>
 
+      {/* Scope toggle — controls the queue below AND the Retention Rate /
+          Stewardship Debt cards together (one shared scope, not per-card
+          toggles that could disagree). Hidden until my-stats resolves the
+          initial default, so it never flashes the wrong state. */}
+      {scope!==undefined&&(
+        <div style={{display:"flex",justifyContent:"flex-end",alignItems:"center",gap:8}}>
+          <span style={{fontSize:11,color:T.ink3}}>Showing:</span>
+          <div style={{display:"flex",background:T.bg,borderRadius:99,padding:2,border:"1px solid "+T.bg3}}>
+            {[["mine","My donors"],["all","Whole org"]].map(([v,l])=>(
+              <button key={v} onClick={()=>setScope(v)} style={{background:scope===v?T.white:"transparent",border:"none",borderRadius:99,padding:"5px 14px",fontSize:12,fontWeight:700,color:scope===v?T.ink:T.ink3,cursor:"pointer",boxShadow:scope===v?T.shadow:"none",transition:"background 0.12s"}}>
+                {l}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Donor Retention Rate — the Home dashboard's primary hero metric.
           This is the number fundraisers already benchmark against (unlike
           Stewardship Debt's invented composite score, see the demoted strip
@@ -363,7 +407,10 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
         <div style={{display:"flex",flexDirection:"column",gap:14}}>
           <div style={{...cardWrap}}>
             <div className="dash-cpad" style={{...cPad,borderBottom:"1px solid "+T.bg3,...sHdr}}>
-              <span style={sTitle}>Needs Your Attention</span>
+              <span style={{display:"flex",alignItems:"center",gap:8}}>
+                <span style={sTitle}>Needs Your Attention</span>
+                {scope==="mine"&&<span style={{fontSize:9,fontWeight:800,letterSpacing:"0.06em",textTransform:"uppercase",color:"#3b82f6",background:"#3b82f610",padding:"2px 7px",borderRadius:99}}>Mine</span>}
+              </span>
               {!queueLoading&&<span style={{fontSize:11,color:T.ink3}}>{visibleQueue.length} {visibleQueue.length===1?"item":"items"}</span>}
             </div>
             {queueLoading&&<div style={{...cPad}}><Spin/></div>}

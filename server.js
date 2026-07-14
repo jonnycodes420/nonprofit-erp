@@ -1955,14 +1955,14 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrap(async (r
 }));
 
 app.put("/donors/:id", requireAuth, checkWriteAccess, wrap(async (req, res) => {
-  const { name, email, phone, status, stage, tags, notes, city, state, zip } = req.body;
+  const { name, email, phone, status, stage, tags, notes, city, state, zip, employer } = req.body;
   if (!name) return res.status(400).json({ error: "Name required" });
 
   const affected = await run(
-    `UPDATE donors SET name=?,email=?,phone=?,status=?,stage=?,tags=?,notes=?,city=?,state=?,zip=?,updated_at=NOW()
+    `UPDATE donors SET name=?,email=?,phone=?,status=?,stage=?,tags=?,notes=?,city=?,state=?,zip=?,employer=?,updated_at=NOW()
      WHERE id=? AND org_id=?`,
     [name, email || "", phone || "", status, stage || "cultivate", JSON.stringify(tags || []), notes || "",
-     city || null, state || null, zip || null,
+     city || null, state || null, zip || null, employer || null,
      req.params.id, req.user.orgId]
   );
   if (!affected.changes) return res.status(404).json({ error: "Donor not found" });
@@ -2509,6 +2509,93 @@ app.delete("/materials/:id", requireAuth, wrap(async (req, res) => {
   res.json({ ok: true });
 }));
 
+// ── Donor-to-donor relationships (household/spouse/family/employer_match) ──
+// Manual linking only — no auto-detection (matching last name, address,
+// etc.) in this pass, see CLAUDE.md. One row per pair regardless of which
+// donor is A vs B; both directions are queried here so either donor's
+// profile shows the same link.
+const DONOR_RELATIONSHIP_TYPES = ["spouse", "household", "family", "employer_match"];
+// Only these two types pool into a shared "household total" — family and
+// employer_match are relationship context, not a shared giving pool.
+const HOUSEHOLD_RELATIONSHIP_TYPES = ["spouse", "household"];
+
+app.get("/donors/:id/relationships", requireAuth, wrap(async (req, res) => {
+  const { orgId } = req.user;
+  const donorId = req.params.id;
+  const rows = await query(
+    `SELECT dr.id, dr.relationship_type, dr.notes, dr.created_at,
+            CASE WHEN dr.donor_id_a = ? THEN dr.donor_id_b ELSE dr.donor_id_a END AS related_donor_id
+     FROM donor_relationships dr
+     WHERE dr.org_id = ? AND (dr.donor_id_a = ? OR dr.donor_id_b = ?)
+     ORDER BY dr.created_at ASC`,
+    [donorId, orgId, donorId, donorId]
+  );
+  if (!rows.length) return res.json({ relationships: [], householdTotal: null });
+
+  const relatedIds = rows.map(r => r.related_donor_id);
+  const relatedDonors = await query(
+    `SELECT id, name, total_giving FROM donors WHERE org_id = ? AND id = ANY(?)`,
+    [orgId, relatedIds]
+  );
+  const donorMap = Object.fromEntries(relatedDonors.map(d => [d.id, d]));
+
+  const relationships = rows.map(r => ({
+    id: r.id,
+    relationshipType: r.relationship_type,
+    notes: r.notes,
+    relatedDonorId: r.related_donor_id,
+    relatedDonorName: donorMap[r.related_donor_id]?.name || "(deleted donor)",
+    relatedDonorTotalGiving: Number(donorMap[r.related_donor_id]?.total_giving) || 0,
+  }));
+
+  let householdTotal = null;
+  const householdLinks = relationships.filter(r => HOUSEHOLD_RELATIONSHIP_TYPES.includes(r.relationshipType));
+  if (householdLinks.length) {
+    const selfRow = await query("SELECT total_giving FROM donors WHERE id = ? AND org_id = ?", [donorId, orgId]);
+    const selfTotal = Number(selfRow[0]?.total_giving) || 0;
+    householdTotal = selfTotal + householdLinks.reduce((sum, r) => sum + r.relatedDonorTotalGiving, 0);
+  }
+
+  res.json({ relationships, householdTotal });
+}));
+
+app.post("/donors/:id/relationships", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  const { orgId } = req.user;
+  const donorId = req.params.id;
+  const { relatedDonorId, relationshipType, notes } = req.body;
+  if (!relatedDonorId || !DONOR_RELATIONSHIP_TYPES.includes(relationshipType)) {
+    return res.status(400).json({ error: "relatedDonorId and a valid relationshipType are required" });
+  }
+  if (relatedDonorId === donorId) return res.status(400).json({ error: "A donor can't be linked to themselves" });
+
+  const bothRows = await query(
+    "SELECT id FROM donors WHERE org_id = ? AND id IN (?, ?) AND deleted_at IS NULL",
+    [orgId, donorId, relatedDonorId]
+  );
+  if (bothRows.length < 2) return res.status(404).json({ error: "Donor not found" });
+
+  // Order-agnostic dedup — a link already stored as (B,A) shouldn't allow a
+  // second (A,B) row for the same pair.
+  const existing = await query(
+    `SELECT id FROM donor_relationships WHERE org_id = ?
+       AND ((donor_id_a = ? AND donor_id_b = ?) OR (donor_id_a = ? AND donor_id_b = ?))`,
+    [orgId, donorId, relatedDonorId, relatedDonorId, donorId]
+  );
+  if (existing.length) return res.status(409).json({ error: "These donors are already linked" });
+
+  const id = "drel_" + uuid().slice(0, 8);
+  await run(
+    "INSERT INTO donor_relationships (id, org_id, donor_id_a, donor_id_b, relationship_type, notes) VALUES (?,?,?,?,?,?)",
+    [id, orgId, donorId, relatedDonorId, relationshipType, notes || null]
+  );
+  res.status(201).json({ id });
+}));
+
+app.delete("/donor-relationships/:id", requireAuth, wrap(async (req, res) => {
+  await run("DELETE FROM donor_relationships WHERE id = ? AND org_id = ?", [req.params.id, req.user.orgId]);
+  res.json({ success: true });
+}));
+
 app.post("/donors/:id/score", requireAuth, wrap(async (req, res) => {
   const result = await calcWealthScore(req.params.id, req.user.orgId);
   if (!result) return res.status(404).json({ error: "Donor not found" });
@@ -2957,11 +3044,22 @@ app.get("/dashboard/my-stats", requireAuth, wrap(async (req, res) => {
 }));
 
 app.get("/dashboard/today", requireAuth, wrap(async (req, res) => {
-  const { orgId } = req.user;
+  const { orgId, userId } = req.user;
   const today = new Date();
   const todayStr = today.toISOString().split("T")[0];
   const ninetyDaysAgo = new Date(today - 90 * 86400000).toISOString().split("T")[0];
   const items = [];
+
+  // Ownership scoping — defaults to "this is MY job today" (the logged-in
+  // user's own assigned donors), matching the existing assigned_to pattern
+  // already used by GET /donors/my and /dashboard/my-stats. ?scope=all opts
+  // into the previous org-wide behavior for anyone who legitimately needs
+  // it (admins/directors) — additive, not a removal of that capability.
+  // Every donor-touching bucket below applies the same `scopeClause`/
+  // `scopeParams` fragment so the whole unified queue honors one rule.
+  const scope = req.query.scope === "all" ? "all" : "mine";
+  const scopeClause = scope === "mine" ? "AND d.assigned_to = ?" : "";
+  const scopeParams = scope === "mine" ? [userId] : [];
   // Each bucket below can produce a reason for a donor another bucket
   // already claimed. The queue is meant to be one ranked, unified list, so
   // the higher-priority reason should always win regardless of which
@@ -2984,12 +3082,12 @@ app.get("/dashboard/today", requireAuth, wrap(async (req, res) => {
            MAX(i.date) AS last_contact
     FROM donors d
     LEFT JOIN interactions i ON i.donor_id = d.id AND i.type != 'email_open'
-    WHERE d.org_id = ? AND d.deleted_at IS NULL AND d.stage NOT IN ('prospect','lapsed')
+    WHERE d.org_id = ? AND d.deleted_at IS NULL AND d.stage NOT IN ('prospect','lapsed') ${scopeClause}
     GROUP BY d.id, d.name, d.total_giving, d.last_gift_date, d.last_gift_amount, d.stage
     HAVING MAX(i.date) < ? OR MAX(i.date) IS NULL
     ORDER BY COALESCE(d.total_giving, 0) DESC
     LIMIT 20
-  `, [orgId, ninetyDaysAgo]);
+  `, [orgId, ...scopeParams, ninetyDaysAgo]);
 
   for (const d of noContact) {
     const daysSinceContact = d.last_contact
@@ -3028,11 +3126,11 @@ app.get("/dashboard/today", requireAuth, wrap(async (req, res) => {
   // need their own bucket rather than never appearing at all.
   const lapsedDonorRows = await query(`
     SELECT id, name, total_giving, last_gift_date
-    FROM donors
-    WHERE org_id = ? AND deleted_at IS NULL AND stage = 'lapsed'
+    FROM donors d
+    WHERE d.org_id = ? AND d.deleted_at IS NULL AND d.stage = 'lapsed' ${scopeClause}
     ORDER BY total_giving DESC
     LIMIT 5
-  `, [orgId]);
+  `, [orgId, ...scopeParams]);
   for (const l of lapsedDonorRows) {
     const daysSince = l.last_gift_date ? Math.floor((today - new Date(l.last_gift_date)) / 86400000) : null;
     const totalGiving = parseFloat(l.total_giving) || 0;
@@ -3052,10 +3150,10 @@ app.get("/dashboard/today", requireAuth, wrap(async (req, res) => {
     JOIN donors d ON d.id = g.donor_id
     WHERE d.org_id = ?
       AND (g.acknowledgement_sent = false OR g.acknowledgement_sent IS NULL)
-      AND g.date >= ?
+      AND g.date >= ? ${scopeClause}
     ORDER BY g.amount DESC
     LIMIT 5
-  `, [orgId, ninetyDaysAgo]);
+  `, [orgId, ninetyDaysAgo, ...scopeParams]);
 
   for (const g of unacked) {
     const giftDate = new Date(g.date).toLocaleDateString("en-US", { month: "long", day: "numeric" });
@@ -3072,10 +3170,10 @@ app.get("/dashboard/today", requireAuth, wrap(async (req, res) => {
     SELECT t.id, t.title, t.due, t.priority AS task_priority, t.type AS task_type, t.donor_id, d.name AS donor_name, d.total_giving
     FROM tasks t
     JOIN donors d ON d.id = t.donor_id
-    WHERE t.org_id = ? AND done=0 AND t.due <= ?
+    WHERE t.org_id = ? AND done=0 AND t.due <= ? ${scopeClause}
     ORDER BY t.due ASC
     LIMIT 5
-  `, [orgId, todayStr]);
+  `, [orgId, todayStr, ...scopeParams]);
 
   for (const t of dueTasks) {
     const daysOverdue = t.due && t.due < todayStr
@@ -3098,10 +3196,10 @@ app.get("/dashboard/today", requireAuth, wrap(async (req, res) => {
     SELECT md.id AS draft_id, md.donor_id, md.subject, md.created_at, d.name AS donor_name, d.total_giving
     FROM milestone_drafts md
     JOIN donors d ON d.id = md.donor_id
-    WHERE md.org_id = ? AND md.status = 'pending_review'
+    WHERE md.org_id = ? AND md.status = 'pending_review' ${scopeClause}
     ORDER BY md.created_at DESC
     LIMIT 5
-  `, [orgId]);
+  `, [orgId, ...scopeParams]);
 
   for (const m of milestoneRows) {
     const milestoneItem = {
@@ -3127,10 +3225,10 @@ app.get("/dashboard/today", requireAuth, wrap(async (req, res) => {
     SELECT md.id AS draft_id, md.donor_id, d.name AS donor_name, d.total_giving
     FROM milestone_drafts md
     JOIN donors d ON d.id = md.donor_id
-    WHERE md.org_id = ? AND md.status = 'pending_review' AND md.milestone_key = 'at_risk'
+    WHERE md.org_id = ? AND md.status = 'pending_review' AND md.milestone_key = 'at_risk' ${scopeClause}
     ORDER BY md.created_at DESC
     LIMIT 10
-  `, [orgId]);
+  `, [orgId, ...scopeParams]);
 
   for (const a of atRiskDraftRows) {
     upsertItem({
@@ -3150,10 +3248,10 @@ app.get("/dashboard/today", requireAuth, wrap(async (req, res) => {
     SELECT nr.id AS reminder_id, nr.donor_id, nr.talking_points, nr.created_at, d.name AS donor_name, d.total_giving
     FROM note_reminders nr
     JOIN donors d ON d.id = nr.donor_id
-    WHERE nr.org_id = ? AND nr.status = 'pending'
+    WHERE nr.org_id = ? AND nr.status = 'pending' ${scopeClause}
     ORDER BY nr.created_at DESC
     LIMIT 5
-  `, [orgId]);
+  `, [orgId, ...scopeParams]);
 
   for (const n of noteReminderRows) {
     const points = typeof n.talking_points === "string" ? JSON.parse(n.talking_points) : n.talking_points;
@@ -3175,10 +3273,10 @@ app.get("/dashboard/today", requireAuth, wrap(async (req, res) => {
     SELECT rs.donor_id, rs.stripe_subscription_id, rs.amount, rs.interval, d.name AS donor_name, d.total_giving
     FROM recurring_subscriptions rs
     JOIN donors d ON d.id = rs.donor_id
-    WHERE rs.org_id = ? AND rs.status IN ('past_due','recovering')
+    WHERE rs.org_id = ? AND rs.status IN ('past_due','recovering') ${scopeClause}
     ORDER BY rs.amount DESC NULLS LAST
     LIMIT 5
-  `, [orgId]);
+  `, [orgId, ...scopeParams]);
   for (const rs of atRiskSubs) {
     const amountStr = rs.amount != null ? `$${Number(rs.amount).toLocaleString()}/${rs.interval === "year" ? "yr" : "mo"}` : "a recurring gift";
     upsertItem({
@@ -3258,10 +3356,18 @@ app.post("/goals", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req,
 // gets viewed, on top of the periodic background job), and returns the
 // last 30 days of history for each.
 app.get("/metrics/stewardship-summary", requireAuth, wrap(async (req, res) => {
-  const { orgId } = req.user;
-  const debt = await snapshotMetricsForOrg(orgId);
+  const { orgId, userId } = req.user;
+  // ?scope=mine (default) scopes Debt/Retention to the logged-in user's own
+  // assigned donors, same as GET /dashboard/today; ?scope=all is org-wide.
+  // Only the "current" figures are scoped — the trend/sparkline history
+  // below stays org-wide (metric_snapshots has no per-user dimension, and
+  // building one is out of scope here), and a scoped read is never persisted
+  // as a snapshot, so one user's "mine" view can't pollute the org's daily
+  // trend. First-Touch Delay is intentionally left unscoped.
+  const scope = req.query.scope === "all" ? "all" : "mine";
+  const debt = scope === "all" ? await snapshotMetricsForOrg(orgId) : await computeStewardshipDebt(orgId, { userId });
   const firstTouch = await computeFirstTouchDelay(orgId);
-  const retention = await computeRetentionRate(orgId);
+  const retention = scope === "all" ? await computeRetentionRate(orgId) : await computeRetentionRate(orgId, { userId });
 
   const since = new Date(); since.setDate(since.getDate() - 30);
   const sinceStr = since.toISOString().slice(0, 10);
@@ -3298,9 +3404,10 @@ app.get("/metrics/stewardship-summary", requireAuth, wrap(async (req, res) => {
 // Capped at a page size since a large org could have hundreds of qualifying
 // donors; `count` is the true total so the UI can say "top 50 of 214".
 app.get("/dashboard/stewardship-debt/breakdown", requireAuth, wrap(async (req, res) => {
-  const { orgId } = req.user;
+  const { orgId, userId } = req.user;
   const PAGE_SIZE = 50;
-  const breakdown = await computeStewardshipDebtBreakdown(orgId);
+  const scope = req.query.scope === "all" ? "all" : "mine";
+  const breakdown = await computeStewardshipDebtBreakdown(orgId, scope === "mine" ? { userId } : {});
   const total = breakdown.reduce((sum, d) => sum + d.contribution, 0);
   const rows = breakdown.slice(0, PAGE_SIZE).map(d => ({
     donorId: d.donorId,
@@ -3321,9 +3428,10 @@ app.get("/dashboard/stewardship-debt/breakdown", requireAuth, wrap(async (req, r
 // prevYearCount - retained by construction (set difference vs set
 // intersection of the same two sets).
 app.get("/dashboard/retention/breakdown", requireAuth, wrap(async (req, res) => {
-  const { orgId } = req.user;
+  const { orgId, userId } = req.user;
   const PAGE_SIZE = 50;
-  const retention = await computeRetentionRate(orgId);
+  const scope = req.query.scope === "all" ? "all" : "mine";
+  const retention = await computeRetentionRate(orgId, scope === "mine" ? { userId } : {});
   const nonRetainedIds = [...retention.prevYearDonorIds].filter(id => !retention.thisYearDonorIds.has(id));
 
   let rows = [];
@@ -7903,8 +8011,10 @@ const MEANINGFUL_CONTACT_TYPES = "('call','meeting','email','stewardship')";
 // donor's exact contribution to the aggregate, sorted by who's driving it
 // most. computeStewardshipDebt() below just sums this same list, so the
 // headline number and the drill-down list (GET /dashboard/stewardship-debt/
-// breakdown) can never drift into two different computations.
-async function computeStewardshipDebtBreakdown(orgId) {
+// breakdown) can never drift into two different computations. Pass
+// `userId` to scope to just that user's assigned donors (same assigned_to
+// pattern as GET /dashboard/today) — omit for the org-wide figure.
+async function computeStewardshipDebtBreakdown(orgId, { userId } = {}) {
   const rows = await query(
     `SELECT d.id, d.name, d.total_giving,
        COALESCE(
@@ -7912,8 +8022,8 @@ async function computeStewardshipDebtBreakdown(orgId) {
          d.first_gift_date
        ) AS last_contact
      FROM donors d
-     WHERE d.org_id = ? AND d.deleted_at IS NULL AND d.total_giving > 0`,
-    [orgId]
+     WHERE d.org_id = ? AND d.deleted_at IS NULL AND d.total_giving > 0 ${userId ? "AND d.assigned_to = ?" : ""}`,
+    userId ? [orgId, userId] : [orgId]
   );
   const today = Date.now();
   const breakdown = [];
@@ -7929,8 +8039,8 @@ async function computeStewardshipDebtBreakdown(orgId) {
   return breakdown;
 }
 
-async function computeStewardshipDebt(orgId) {
-  const breakdown = await computeStewardshipDebtBreakdown(orgId);
+async function computeStewardshipDebt(orgId, opts = {}) {
+  const breakdown = await computeStewardshipDebtBreakdown(orgId, opts);
   return Math.round(breakdown.reduce((sum, d) => sum + d.contribution, 0));
 }
 
@@ -7968,10 +8078,18 @@ const SECTOR_AVG_RETENTION_RATE = 43;
 // `Date.getFullYear()`) rather than rewriting as a SQL date-range query —
 // a rewrite risks a subtle timezone-parsing mismatch that would make the two
 // callers disagree. Pass `gifts` when the caller already has the org's full
-// gift list (e.g. /annual-fund) to avoid fetching it twice.
-async function computeRetentionRate(orgId, { year = new Date().getFullYear(), gifts } = {}) {
+// gift list (e.g. /annual-fund) to avoid fetching it twice. Pass `userId` to
+// scope retention to just that user's assigned donors (same assigned_to
+// pattern as GET /dashboard/today) — /annual-fund never passes this, so its
+// behavior is unchanged.
+async function computeRetentionRate(orgId, { year = new Date().getFullYear(), gifts, userId } = {}) {
   const prevYear = year - 1;
-  const allGifts = gifts || await query("SELECT * FROM gifts WHERE org_id = ?", [orgId]);
+  let allGifts = gifts || await query("SELECT * FROM gifts WHERE org_id = ?", [orgId]);
+  if (userId) {
+    const assignedRows = await query("SELECT id FROM donors WHERE org_id = ? AND assigned_to = ? AND deleted_at IS NULL", [orgId, userId]);
+    const assignedIds = new Set(assignedRows.map(r => r.id));
+    allGifts = allGifts.filter(g => assignedIds.has(g.donor_id));
+  }
   const thisYearGifts = allGifts.filter(g => new Date(g.date).getFullYear() === year);
   const prevYearGifts = allGifts.filter(g => new Date(g.date).getFullYear() === prevYear);
   const thisYearDonorIds = new Set(thisYearGifts.map(g => g.donor_id));
