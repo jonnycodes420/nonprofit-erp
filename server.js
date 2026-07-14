@@ -4877,6 +4877,20 @@ app.put("/giving-pages/:id", requireAuth, requireAdmin, checkWriteAccess, wrap(a
   res.json(rows[0]);
 }));
 
+// Hard delete — separate from archive (status='active'|'archived' above),
+// which is the reversible day-to-day "stop accepting gifts on this page"
+// action. This is for removing a mistake/duplicate/test page outright.
+// gifts.giving_page_id has no FK constraint (see db.js), so this never
+// errors on existing gifts; a gift that already came through a deleted page
+// simply keeps a giving_page_id that no longer resolves, same tolerated
+// pattern as other dangling-reference cases in this codebase (see "Admin
+// data integrity" in CLAUDE.md). DELETE routes are intentionally never
+// checkWriteAccess-gated, consistent with every other DELETE in this app.
+app.delete("/giving-pages/:id", requireAuth, requireAdmin, wrap(async (req, res) => {
+  await run("DELETE FROM giving_pages WHERE id=? AND org_id=?", [req.params.id, req.user.orgId]);
+  res.json({ success: true });
+}));
+
 // Public — org info + giving page + real live progress. Same shape as
 // GET /org/:orgSlug/public, plus the page's own title/story/image/goal and
 // the real computed raised total (never a manually-set counter).

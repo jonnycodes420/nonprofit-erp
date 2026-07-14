@@ -181,6 +181,15 @@ function GivingPagesManager({orgSlug,isAdmin,isReadOnly}){
     }catch(e){alert(e.message||"Failed to update giving page");}
   }
 
+  async function deletePage(p){
+    if(!window.confirm(`Delete "${p.title}"? This removes the page and its shareable link permanently — gifts already given through it are not deleted. This cannot be undone.`))return;
+    try{
+      await apiFetch(`/giving-pages/${p.id}`,{method:"DELETE"});
+      setPages(prev=>prev.filter(x=>x.id!==p.id));
+      if(shareOpenId===p.id)setShareOpenId(null);
+    }catch(e){alert(e.message||"Failed to delete giving page");}
+  }
+
   const inp={width:"100%",boxSizing:"border-box",border:"1px solid "+T.bg3,borderRadius:10,padding:"10px 12px",fontSize:14,color:T.ink,background:T.bg,outline:"none",marginBottom:14,fontFamily:"inherit"};
 
   return(
@@ -234,6 +243,10 @@ function GivingPagesManager({orgSlug,isAdmin,isReadOnly}){
                   <button onClick={()=>toggleArchive(p)} disabled={isReadOnly}
                     style={{background:p.status==="active"?"#fef2f2":"#e8f5ef",border:"1px solid "+(p.status==="active"?"#fecaca":"#10b981"),borderRadius:6,padding:"5px 10px",fontSize:11,fontWeight:600,color:p.status==="active"?"#dc2626":"#1a6b4a",cursor:isReadOnly?"not-allowed":"pointer",opacity:isReadOnly?0.6:1}}>
                     {p.status==="active"?"Archive":"Reactivate"}
+                  </button>
+                  <button onClick={()=>deletePage(p)}
+                    style={{background:"transparent",border:"1px solid #fecaca",borderRadius:6,padding:"5px 10px",fontSize:11,fontWeight:600,color:"#dc2626",cursor:"pointer"}}>
+                    Delete
                   </button>
                 </>}
               </div>
