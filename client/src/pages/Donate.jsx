@@ -17,9 +17,14 @@ const inp = {
   color: T.ink, fontSize: 14, outline: "none", fontFamily: "inherit",
 };
 
+function fmtMoney(n) {
+  return "$" + Math.round(n || 0).toLocaleString();
+}
+
 export default function Donate() {
-  const { orgSlug } = useParams();
+  const { orgSlug, pageSlug } = useParams();
   const [org, setOrg] = useState(null);
+  const [givingPage, setGivingPage] = useState(null);
   const [funds, setFunds] = useState([]);
   const [pageLoading, setPageLoading] = useState(true);
   const [pageError, setPageError] = useState("");
@@ -37,25 +42,42 @@ export default function Donate() {
   const [submitting, setSubmitting] = useState(false);
   const [submitErr, setSubmitErr] = useState("");
 
+  // /give/:orgSlug/:pageSlug (a campaign-specific Giving Page) reuses this
+  // exact same component and donation form — it's not a fork. The org-wide
+  // /give/:orgSlug route (pageSlug undefined) behaves exactly as before.
+  const basePath = pageSlug ? `/give/${orgSlug}/${pageSlug}` : `/give/${orgSlug}`;
+
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     if (params.get("donated") === "true") {
       setDonated(true);
-      window.history.replaceState({}, "", `/give/${orgSlug}`);
+      window.history.replaceState({}, "", basePath);
     }
     if (params.get("card_updated") === "true") {
       setCardUpdated(true);
-      window.history.replaceState({}, "", `/give/${orgSlug}`);
+      window.history.replaceState({}, "", basePath);
     }
-    fetch(`${API}/org/${orgSlug}/public`)
+    const url = pageSlug
+      ? `${API}/org/${orgSlug}/giving-page/${pageSlug}/public`
+      : `${API}/org/${orgSlug}/public`;
+    fetch(url)
       .then(r => r.json())
       .then(d => {
         if (d.error) { setPageError(d.error); }
-        else { setOrg(d.org); setFunds(d.funds || []); }
+        else {
+          setOrg(d.org);
+          setFunds(d.funds || []);
+          if (d.givingPage) {
+            setGivingPage(d.givingPage);
+            // A giving page designated to a specific fund IS that fund's
+            // ask — no separate fund selector shown, gift goes there.
+            if (d.givingPage.fundId) setFundId(d.givingPage.fundId);
+          }
+        }
         setPageLoading(false);
       })
       .catch(() => { setPageError("Could not load this donation page."); setPageLoading(false); });
-  }, [orgSlug]);
+  }, [orgSlug, pageSlug]);
 
   const effectiveAmount = isCustom ? parseFloat(customAmt) || 0 : preset;
 
@@ -70,7 +92,7 @@ export default function Donate() {
       const r = await fetch(`${API}/donate/${orgSlug}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ amount: effectiveAmount, fundId, frequency, firstName, lastName, email }),
+        body: JSON.stringify({ amount: effectiveAmount, fundId, frequency, firstName, lastName, email, givingPageId: givingPage?.id }),
       });
       const data = await r.json();
       if (!r.ok) throw new Error(data.error || "Something went wrong.");
@@ -144,19 +166,56 @@ export default function Donate() {
       <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=DM+Serif+Display:ital@0;1&display=swap" rel="stylesheet" />
       <style>{`@keyframes sp{to{transform:rotate(360deg)}}`}</style>
 
-      {/* Header — hidden when embedded in an iframe */}
+      {/* Header — hidden when embedded in an iframe. A Giving Page gets its
+          own title/image/story/goal-progress instead of the generic org
+          header; the org-wide page (no givingPage) is unchanged. */}
       {!isEmbed && (
-        <div style={{ marginBottom: 32, textAlign: "center" }}>
-          <div style={{ width: 48, height: 48, background: T.greenDk, borderRadius: 14, display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 16px" }}>
-            <svg width="22" height="22" viewBox="0 0 16 16" fill="none"><path d="M8 2L13 5v6L8 14 3 11V5L8 2z" stroke="#fff" strokeWidth="1.5" fill="none"/><circle cx="8" cy="8" r="2" fill="#fff"/></svg>
+        givingPage ? (
+          <div style={{ width: "100%", maxWidth: 480, marginBottom: 28 }}>
+            {givingPage.imageUrl && (
+              <img src={givingPage.imageUrl} alt={givingPage.title}
+                style={{ width: "100%", maxHeight: 240, objectFit: "cover", borderRadius: 16, marginBottom: 20, display: "block" }}
+                onError={e => { e.target.style.display = "none"; }}
+              />
+            )}
+            <div style={{ textAlign: "center", marginBottom: 18 }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: T.ink3, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 6 }}>{org.name}</div>
+              <h1 style={{ margin: 0, fontSize: 26, fontWeight: 800, color: T.ink, fontFamily: "'DM Serif Display', serif", letterSpacing: "-0.02em" }}>
+                {givingPage.title}
+              </h1>
+              {givingPage.story && (
+                <p style={{ margin: "10px 0 0", fontSize: 14, color: T.ink2, lineHeight: 1.65, textAlign: "left" }}>{givingPage.story}</p>
+              )}
+            </div>
+            <div style={{ background: T.white, border: "1px solid " + T.bg3, borderRadius: 16, padding: "18px 22px" }}>
+              <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 8, marginBottom: 10 }}>
+                <div style={{ fontSize: 20, fontWeight: 800, color: T.greenDk, fontFamily: "'DM Serif Display', serif" }}>{fmtMoney(givingPage.raisedAmount)}</div>
+                {givingPage.goalAmount > 0 && <div style={{ fontSize: 13, color: T.ink3 }}>of {fmtMoney(givingPage.goalAmount)} goal</div>}
+              </div>
+              {givingPage.goalAmount > 0 && (
+                <div style={{ background: T.bg, borderRadius: 99, height: 10, overflow: "hidden" }}>
+                  <div style={{
+                    height: "100%",
+                    width: `${Math.min(100, Math.round((givingPage.raisedAmount / givingPage.goalAmount) * 100))}%`,
+                    background: T.greenDk, borderRadius: 99, transition: "width 0.6s ease",
+                  }} />
+                </div>
+              )}
+            </div>
           </div>
-          <h1 style={{ margin: 0, fontSize: 26, fontWeight: 800, color: T.ink, fontFamily: "'DM Serif Display', serif", letterSpacing: "-0.02em" }}>
-            Give to {org.name}
-          </h1>
-          {org.mission && (
-            <p style={{ margin: "8px 0 0", fontSize: 14, color: T.ink3, maxWidth: 400, lineHeight: 1.6 }}>{org.mission}</p>
-          )}
-        </div>
+        ) : (
+          <div style={{ marginBottom: 32, textAlign: "center" }}>
+            <div style={{ width: 48, height: 48, background: T.greenDk, borderRadius: 14, display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 16px" }}>
+              <svg width="22" height="22" viewBox="0 0 16 16" fill="none"><path d="M8 2L13 5v6L8 14 3 11V5L8 2z" stroke="#fff" strokeWidth="1.5" fill="none"/><circle cx="8" cy="8" r="2" fill="#fff"/></svg>
+            </div>
+            <h1 style={{ margin: 0, fontSize: 26, fontWeight: 800, color: T.ink, fontFamily: "'DM Serif Display', serif", letterSpacing: "-0.02em" }}>
+              Give to {org.name}
+            </h1>
+            {org.mission && (
+              <p style={{ margin: "8px 0 0", fontSize: 14, color: T.ink3, maxWidth: 400, lineHeight: 1.6 }}>{org.mission}</p>
+            )}
+          </div>
+        )
       )}
 
       {/* Form */}
@@ -218,8 +277,9 @@ export default function Donate() {
           )}
         </div>
 
-        {/* Fund selector */}
-        {funds.length > 0 && (
+        {/* Fund selector — hidden when this Giving Page already designates a
+            fund; the page's own goal/story IS that fund's ask. */}
+        {funds.length > 0 && !givingPage?.fundId && (
           <div style={{ background: T.white, border: "1px solid " + T.bg3, borderRadius: 16, padding: "22px 24px" }}>
             <div style={{ fontSize: 11, fontWeight: 700, color: T.ink3, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 12 }}>Designate My Gift (optional)</div>
             <select value={fundId} onChange={e => setFundId(e.target.value)}

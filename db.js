@@ -858,6 +858,39 @@ async function initSchema() {
   `);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_donor_rel_a ON donor_relationships (org_id, donor_id_a)`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_donor_rel_b ON donor_relationships (org_id, donor_id_b)`);
+
+  // ── Giving Pages (2026-07-14) ────────────────────────────────────────────
+  // Campaign-specific donation pages (gala/appeal/etc.), distinct from the
+  // one org-wide /give/:orgSlug page. Deliberately NOT the `campaigns` table
+  // — that's the email-campaign system (Communications module) and
+  // gifts.campaign_id already links a gift to the *email* campaign that
+  // drove it. giving_pages/gifts.giving_page_id is a fully independent
+  // concept: which donation page a gift came through. slug is unique per
+  // org (not globally) since the public URL is already namespaced by
+  // org_slug: /give/:orgSlug/:pageSlug.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS giving_pages (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL REFERENCES orgs(id),
+      slug TEXT NOT NULL,
+      title TEXT NOT NULL,
+      goal_amount NUMERIC,
+      story TEXT,
+      image_url TEXT,
+      fund_id TEXT REFERENCES fin_funds(id),
+      status TEXT NOT NULL DEFAULT 'active',
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS giving_pages_org_slug_uk ON giving_pages (org_id, slug)`);
+
+  // Nullable, independent of the pre-existing gifts.campaign_id (email
+  // campaign attribution) — a gift can be tagged with neither, either, or
+  // both, since "which email got them here" and "which donation page they
+  // gave through" are two different questions.
+  await pool.query(`ALTER TABLE gifts ADD COLUMN IF NOT EXISTS giving_page_id TEXT`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_gifts_giving_page ON gifts (giving_page_id)`);
 }
 
 async function seedData() {

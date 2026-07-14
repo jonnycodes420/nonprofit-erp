@@ -190,6 +190,7 @@ app.post("/stripe/webhook", express.raw({ type: "application/json" }), async (re
       const amount = pi.amount_received / 100;
       const accountId = event.account;
       const campaignId = pi.metadata?.campaign_id || null;
+      const givingPageId = pi.metadata?.giving_page_id || null;
       const donorName = pi.metadata?.donor_name || "";
 
       if (email && accountId) {
@@ -214,9 +215,9 @@ app.post("/stripe/webhook", express.raw({ type: "application/json" }), async (re
             const donorPreRow = await query("SELECT stage FROM donors WHERE id=$1", [donorId]);
             const wasLapsed = donorPreRow[0]?.stage === 'lapsed';
             await run(
-              `INSERT INTO gifts (id, org_id, donor_id, amount, date, notes, stripe_payment_id, campaign_id)
-               VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
-              [giftId, orgId, donorId, amount, today, "Online payment via Stripe", pi.id, campaignId]
+              `INSERT INTO gifts (id, org_id, donor_id, amount, date, notes, stripe_payment_id, campaign_id, giving_page_id)
+               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+              [giftId, orgId, donorId, amount, today, "Online payment via Stripe", pi.id, campaignId, givingPageId]
             );
             await run(
               `UPDATE donors SET
@@ -4780,9 +4781,135 @@ app.get("/org/:orgSlug/public", wrap(async (req, res) => {
   res.json({ org: { name: org.name, mission: org.mission, slug: req.params.orgSlug }, funds });
 }));
 
+// ── Giving Pages ────────────────────────────────────────────────────────────
+// Campaign-specific donation pages, e.g. /give/:orgSlug/:pageSlug — distinct
+// from the org-wide /give/:orgSlug page above, and NOT the same concept as
+// the `campaigns` table (email campaigns). See db.js giving_pages comment.
+function slugifyGivingPage(s) {
+  return (s || "").toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 60) || "page";
+}
+async function uniqueGivingPageSlug(orgId, base, excludeId) {
+  let slug = base, n = 1;
+  while (true) {
+    const rows = excludeId
+      ? await query("SELECT id FROM giving_pages WHERE org_id=? AND slug=? AND id<>?", [orgId, slug, excludeId])
+      : await query("SELECT id FROM giving_pages WHERE org_id=? AND slug=?", [orgId, slug]);
+    if (!rows.length) return slug;
+    n++;
+    slug = `${base}-${n}`;
+  }
+}
+
+// Admin list — includes the same real, live SUM(gifts.amount) used by the
+// public page's progress bar, so the manager list never shows a number that
+// could drift from the public one.
+app.get("/giving-pages", requireAuth, wrap(async (req, res) => {
+  const rows = await query(
+    `SELECT gp.*, f.name AS fund_name,
+       COALESCE((SELECT SUM(amount) FROM gifts WHERE giving_page_id = gp.id), 0) AS raised_amount
+     FROM giving_pages gp
+     LEFT JOIN fin_funds f ON f.id = gp.fund_id
+     WHERE gp.org_id = ?
+     ORDER BY gp.created_at DESC`,
+    [req.user.orgId]
+  );
+  res.json(rows);
+}));
+
+app.post("/giving-pages", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
+  const { title, goalAmount, story, imageUrl, fundId, slug } = req.body;
+  if (!title || !title.trim()) return res.status(400).json({ error: "title required" });
+  if (fundId) {
+    const fundRow = await query("SELECT id FROM fin_funds WHERE id=? AND org_id=?", [fundId, req.user.orgId]);
+    if (!fundRow.length) return res.status(400).json({ error: "Invalid fund" });
+  }
+  const base = slugifyGivingPage(slug || title);
+  const finalSlug = await uniqueGivingPageSlug(req.user.orgId, base);
+  const id = "gp_" + uuid().slice(0, 8);
+  await run(
+    `INSERT INTO giving_pages (id, org_id, slug, title, goal_amount, story, image_url, fund_id, status)
+     VALUES (?,?,?,?,?,?,?,?,'active')`,
+    [id, req.user.orgId, finalSlug, title.trim(), goalAmount ? parseFloat(goalAmount) : null, story || "", imageUrl || "", fundId || null]
+  );
+  const rows = await query("SELECT *, 0 AS raised_amount FROM giving_pages WHERE id=?", [id]);
+  res.status(201).json(rows[0]);
+}));
+
+app.put("/giving-pages/:id", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
+  const existingRows = await query("SELECT * FROM giving_pages WHERE id=? AND org_id=?", [req.params.id, req.user.orgId]);
+  if (!existingRows.length) return res.status(404).json({ error: "Not found" });
+  const existing = existingRows[0];
+  const { title, goalAmount, story, imageUrl, fundId, slug, status } = req.body;
+  if (fundId) {
+    const fundRow = await query("SELECT id FROM fin_funds WHERE id=? AND org_id=?", [fundId, req.user.orgId]);
+    if (!fundRow.length) return res.status(400).json({ error: "Invalid fund" });
+  }
+  // Only touches the slug when the request actually included one (the full
+  // edit form always sends it; a partial update like the archive toggle,
+  // which sends only {status}, must not silently regenerate a custom slug
+  // from the title).
+  let finalSlug = existing.slug;
+  if (slug !== undefined) {
+    const requestedSlug = slugifyGivingPage(slug || title || existing.title);
+    if (requestedSlug !== existing.slug) {
+      finalSlug = await uniqueGivingPageSlug(req.user.orgId, requestedSlug, existing.id);
+    }
+  }
+  await run(
+    `UPDATE giving_pages SET title=?, goal_amount=?, story=?, image_url=?, fund_id=?, slug=?, status=?, updated_at=NOW()
+     WHERE id=? AND org_id=?`,
+    [
+      title?.trim() || existing.title,
+      goalAmount !== undefined ? (goalAmount ? parseFloat(goalAmount) : null) : existing.goal_amount,
+      story !== undefined ? story : existing.story,
+      imageUrl !== undefined ? imageUrl : existing.image_url,
+      fundId !== undefined ? (fundId || null) : existing.fund_id,
+      finalSlug,
+      status && ["active", "archived"].includes(status) ? status : existing.status,
+      req.params.id, req.user.orgId,
+    ]
+  );
+  const rows = await query(
+    `SELECT gp.*, COALESCE((SELECT SUM(amount) FROM gifts WHERE giving_page_id = gp.id), 0) AS raised_amount
+     FROM giving_pages gp WHERE gp.id=?`,
+    [req.params.id]
+  );
+  res.json(rows[0]);
+}));
+
+// Public — org info + giving page + real live progress. Same shape as
+// GET /org/:orgSlug/public, plus the page's own title/story/image/goal and
+// the real computed raised total (never a manually-set counter).
+app.get("/org/:orgSlug/giving-page/:pageSlug/public", wrap(async (req, res) => {
+  const orgs = await query("SELECT id, name, mission FROM orgs WHERE org_slug = ?", [req.params.orgSlug]);
+  if (!orgs.length) return res.status(404).json({ error: "Organization not found" });
+  const org = orgs[0];
+  const pageRows = await query(
+    `SELECT gp.*, f.name AS fund_name,
+       COALESCE((SELECT SUM(amount) FROM gifts WHERE giving_page_id = gp.id), 0) AS raised_amount
+     FROM giving_pages gp
+     LEFT JOIN fin_funds f ON f.id = gp.fund_id
+     WHERE gp.org_id = ? AND gp.slug = ? AND gp.status = 'active'`,
+    [org.id, req.params.pageSlug]
+  );
+  if (!pageRows.length) return res.status(404).json({ error: "This giving page could not be found." });
+  const page = pageRows[0];
+  const funds = await query("SELECT id, name, restricted FROM fin_funds WHERE org_id = ? ORDER BY name ASC", [org.id]);
+  res.json({
+    org: { name: org.name, mission: org.mission, slug: req.params.orgSlug },
+    givingPage: {
+      id: page.id, slug: page.slug, title: page.title, story: page.story, imageUrl: page.image_url,
+      goalAmount: page.goal_amount != null ? parseFloat(page.goal_amount) : null,
+      raisedAmount: parseFloat(page.raised_amount) || 0,
+      fundId: page.fund_id, fundName: page.fund_name || null,
+    },
+    funds,
+  });
+}));
+
 app.post("/donate/:orgSlug", donateLimiter, wrap(async (req, res) => {
   if (!stripe) return res.status(503).json({ error: "Stripe not configured" });
-  const { amount, fundId, frequency, firstName, lastName, email, campaignId } = req.body;
+  const { amount, fundId, frequency, firstName, lastName, email, campaignId, givingPageId } = req.body;
   if (!amount || !firstName || !lastName || !email) return res.status(400).json({ error: "All fields required" });
 
   const orgs = await query(
@@ -4809,15 +4936,33 @@ app.post("/donate/:orgSlug", donateLimiter, wrap(async (req, res) => {
     if (fundRow.length) fundName = fundRow[0].name;
   }
 
-  const productName = `Donation to ${org.name}${fundName ? ` — ${fundName}` : ""}`;
+  // Independent of campaignId (email-campaign attribution) — validated
+  // against this org so a stale/foreign givingPageId can't get tagged onto
+  // a gift. Determines the return URL (back to the specific giving page,
+  // not the org-wide one) as well as the metadata thread.
+  let givingPageSlug = "";
+  let pageTitle = "";
+  if (givingPageId) {
+    const pageRow = await query("SELECT slug, title FROM giving_pages WHERE id=? AND org_id=? AND status='active'", [givingPageId, org.id]);
+    if (!pageRow.length) return res.status(400).json({ error: "This giving page is no longer available." });
+    givingPageSlug = pageRow[0].slug;
+    pageTitle = pageRow[0].title;
+  }
+
+  const productName = givingPageId
+    ? `Donation to ${org.name} — ${pageTitle}`
+    : `Donation to ${org.name}${fundName ? ` — ${fundName}` : ""}`;
   const metadata = {
     donor_email: email,
     donor_name: donorName,
     fund_id: fundId || "",
     frequency,
     campaign_id: campaignId || "",
+    giving_page_id: givingPageId || "",
     org_id: org.id,
   };
+
+  const returnPath = givingPageId ? `/give/${req.params.orgSlug}/${givingPageSlug}` : `/give/${req.params.orgSlug}`;
 
   const sessionParams = {
     payment_method_types: ["card"],
@@ -4833,8 +4978,8 @@ app.post("/donate/:orgSlug", donateLimiter, wrap(async (req, res) => {
       quantity: 1,
     }],
     metadata,
-    success_url: `${frontendUrl}/give/${req.params.orgSlug}?donated=true`,
-    cancel_url: `${frontendUrl}/give/${req.params.orgSlug}`,
+    success_url: `${frontendUrl}${returnPath}?donated=true`,
+    cancel_url: `${frontendUrl}${returnPath}`,
     ...(isRecurring
       ? { subscription_data: { metadata } }
       : {

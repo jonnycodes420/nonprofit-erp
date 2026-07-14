@@ -16,6 +16,320 @@ const BILLING_STATUS_META = {
   cancelled:     { label:"Canceled",      bg:"#1a2e1f", color:"#8fa896", border:"#2d4a35" },
 };
 
+// One QR/embed mechanism, parameterized by URL — used for both the org-wide
+// donation page and each individual Giving Page's own shareable link, rather
+// than a second QR/embed system. Module-level (not defined inside Settings)
+// so it doesn't remount and lose its own qrDataUrl state on every parent
+// re-render (see CLAUDE.md "Key patterns" re: TpField/TpYesNo).
+function QrCodeBlock({url,filenameBase}){
+  const [qrDataUrl,setQrDataUrl]=useState("");
+  const [qrLoading,setQrLoading]=useState(false);
+
+  async function generateQR(){
+    if(!url)return;
+    setQrLoading(true);
+    try{
+      const dataUrl=await QRCode.toDataURL(url,{width:300,margin:2,color:{dark:"#0f1a12",light:"#faf8f4"}});
+      setQrDataUrl(dataUrl);
+    }catch(e){console.error(e);}
+    setQrLoading(false);
+  }
+  function downloadQR(){
+    if(!qrDataUrl)return;
+    const a=document.createElement("a");
+    a.href=qrDataUrl;
+    a.download=`${filenameBase}-donation-qr.png`;
+    a.click();
+  }
+  function printQR(){
+    if(!qrDataUrl)return;
+    const w=window.open("","_blank","width=600,height=700");
+    w.document.write(`<!DOCTYPE html><html><head><title>Donation QR</title>
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{background:#fff;font-family:'DM Sans',system-ui,sans-serif;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;padding:40px}
+  img{width:280px;height:280px}
+  p{font-size:16px;color:#6b6b6b;text-align:center;margin-top:16px}
+  @media print{@page{margin:0.5in}body{padding:20px}}
+</style></head><body>
+<img src="${qrDataUrl}"/>
+<p>Scan to give</p>
+<script>window.onload=()=>{setTimeout(()=>{window.print();},400)}<\/script>
+</body></html>`);
+    w.document.close();
+  }
+
+  return(
+    <div style={{display:"flex",gap:10,flexWrap:"wrap",alignItems:"flex-start"}}>
+      <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+        {!qrDataUrl?(
+          <button onClick={generateQR} disabled={qrLoading}
+            style={{background:T.green,border:"none",borderRadius:8,padding:"9px 18px",color:"#fff",fontSize:13,fontWeight:700,cursor:qrLoading?"not-allowed":"pointer",opacity:qrLoading?0.7:1}}>
+            {qrLoading?"Generating…":"Generate QR Code"}
+          </button>
+        ):(
+          <>
+            <button onClick={downloadQR}
+              style={{background:T.greenDk,border:"none",borderRadius:8,padding:"9px 18px",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer"}}>
+              ↓ Download PNG
+            </button>
+            <button onClick={printQR}
+              style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"9px 18px",color:T.ink,fontSize:13,fontWeight:600,cursor:"pointer"}}>
+              🖨 Print
+            </button>
+            <button onClick={()=>setQrDataUrl("")}
+              style={{background:"transparent",border:"1px solid "+T.bg3,borderRadius:8,padding:"9px 14px",color:T.ink3,fontSize:13,cursor:"pointer"}}>
+              Regenerate
+            </button>
+          </>
+        )}
+      </div>
+      {qrDataUrl&&<img src={qrDataUrl} alt="Donation QR Code" style={{width:120,height:120,borderRadius:8,border:"1px solid "+T.bg3,flexShrink:0}}/>}
+    </div>
+  );
+}
+
+function EmbedCodeBlock({url}){
+  const [embedCopied,setEmbedCopied]=useState(false);
+  const embedCode = url ? `<iframe src="${url}" width="100%" height="600" frameborder="0"></iframe>` : "";
+  function copyEmbed(){
+    navigator.clipboard.writeText(embedCode).then(()=>{setEmbedCopied(true);setTimeout(()=>setEmbedCopied(false),2500);});
+  }
+  return(
+    <div style={{position:"relative"}}>
+      <pre style={{background:"#0f172a",color:"#a5f3c0",borderRadius:10,padding:"14px 16px",fontSize:12,lineHeight:1.7,overflowX:"auto",margin:0,fontFamily:"'Fira Code',monospace,monospace",whiteSpace:"pre-wrap",wordBreak:"break-all"}}>
+        {embedCode}
+      </pre>
+      <button onClick={copyEmbed}
+        style={{position:"absolute",top:10,right:10,background:embedCopied?"#10b98130":"rgba(255,255,255,0.12)",border:"1px solid rgba(255,255,255,0.2)",borderRadius:6,padding:"4px 10px",color:embedCopied?"#a5f3c0":"#e2e8f0",fontSize:11,fontWeight:700,cursor:"pointer",transition:"all 0.15s"}}>
+        {embedCopied?"✓ Copied!":"Copy Code"}
+      </button>
+    </div>
+  );
+}
+
+function slugifyPreview(s){
+  return (s||"").toLowerCase().trim().replace(/[^a-z0-9]+/g,"-").replace(/^-+|-+$/g,"").slice(0,60);
+}
+
+const GP_STATUS_META={
+  active:   {label:"Active",   bg:"#e8f5ef", color:"#1a6b4a", border:"#10b981"},
+  archived: {label:"Archived", bg:"#f3f0eb", color:"#6b6b6b", border:"#d4cfc6"},
+};
+
+// Own top-level manager component (module scope, like QrCodeBlock/
+// EmbedCodeBlock above) — a titled, storied, goal-tracked donation page
+// distinct from the org-wide /give/:orgSlug page, sharing that same QR/embed
+// mechanism per-page rather than a second system. See CLAUDE.md "Giving
+// Pages" — NOT the `campaigns` (email campaign) table/concept.
+function GivingPagesManager({orgSlug,isAdmin,isReadOnly}){
+  const [pages,setPages]=useState([]);
+  const [funds,setFunds]=useState([]);
+  const [loaded,setLoaded]=useState(false);
+  const [showAdd,setShowAdd]=useState(false);
+  const [editing,setEditing]=useState(null);
+  const [form,setForm]=useState({title:"",goalAmount:"",story:"",imageUrl:"",fundId:"",slug:"",status:"active"});
+  const [slugTouched,setSlugTouched]=useState(false);
+  const [saving,setSaving]=useState(false);
+  const [shareOpenId,setShareOpenId]=useState(null);
+
+  useEffect(()=>{
+    apiFetch("/giving-pages").then(r=>{setPages(r||[]);setLoaded(true);}).catch(()=>setLoaded(true));
+    apiFetch("/finance/funds").then(r=>setFunds(r||[])).catch(()=>{});
+  },[]);
+
+  function openAdd(){
+    setEditing(null);
+    setForm({title:"",goalAmount:"",story:"",imageUrl:"",fundId:"",slug:"",status:"active"});
+    setSlugTouched(false);
+    setShowAdd(true);
+  }
+  function openEdit(p){
+    setEditing(p);
+    setForm({title:p.title,goalAmount:p.goal_amount!=null?String(p.goal_amount):"",story:p.story||"",imageUrl:p.image_url||"",fundId:p.fund_id||"",slug:p.slug,status:p.status});
+    setSlugTouched(true);
+    setShowAdd(true);
+  }
+  function closeModal(){
+    setShowAdd(false);setEditing(null);
+    setForm({title:"",goalAmount:"",story:"",imageUrl:"",fundId:"",slug:"",status:"active"});
+    setSlugTouched(false);
+  }
+
+  async function save(){
+    if(!form.title.trim())return;
+    setSaving(true);
+    try{
+      const body={title:form.title,goalAmount:form.goalAmount,story:form.story,imageUrl:form.imageUrl,fundId:form.fundId,slug:form.slug,status:form.status};
+      if(editing){
+        const updated=await apiFetch(`/giving-pages/${editing.id}`,{method:"PUT",body:JSON.stringify(body)});
+        setPages(prev=>prev.map(p=>p.id===editing.id?updated:p));
+      }else{
+        const created=await apiFetch("/giving-pages",{method:"POST",body:JSON.stringify(body)});
+        setPages(prev=>[created,...prev]);
+      }
+      closeModal();
+    }catch(e){alert(e.message||"Failed to save giving page");}
+    setSaving(false);
+  }
+
+  async function toggleArchive(p){
+    const nextStatus=p.status==="active"?"archived":"active";
+    try{
+      const updated=await apiFetch(`/giving-pages/${p.id}`,{method:"PUT",body:JSON.stringify({status:nextStatus})});
+      setPages(prev=>prev.map(x=>x.id===p.id?updated:x));
+    }catch(e){alert(e.message||"Failed to update giving page");}
+  }
+
+  const inp={width:"100%",boxSizing:"border-box",border:"1px solid "+T.bg3,borderRadius:10,padding:"10px 12px",fontSize:14,color:T.ink,background:T.bg,outline:"none",marginBottom:14,fontFamily:"inherit"};
+
+  return(
+    <div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:16,padding:"24px 28px"}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
+        <SectionLabel>Giving Pages</SectionLabel>
+        {isAdmin&&<button onClick={openAdd} disabled={isReadOnly||!orgSlug} title={isReadOnly?"Reactivate your subscription to make changes.":(!orgSlug?"Set up your organization first.":undefined)}
+          style={{background:T.green,border:"none",borderRadius:8,padding:"7px 14px",color:"#fff",fontSize:12,fontWeight:700,cursor:(isReadOnly||!orgSlug)?"not-allowed":"pointer",opacity:(isReadOnly||!orgSlug)?0.45:1}}>
+          + New Giving Page
+        </button>}
+      </div>
+      <div style={{fontSize:13,color:T.ink3,marginBottom:pages.length?14:0,lineHeight:1.6}}>
+        {pages.length===0
+          ?"Build a titled, storied donation page for a specific campaign, gala, or appeal — with its own goal and progress bar, separate from your main donation page."
+          :"Each page has its own shareable link, goal, and progress — computed live from actual gifts, never a manually-set number."}
+      </div>
+      {!loaded&&<div style={{fontSize:13,color:T.ink3}}>Loading…</div>}
+
+      {pages.map((p,i)=>{
+        const raised=parseFloat(p.raised_amount)||0;
+        const goal=p.goal_amount!=null?parseFloat(p.goal_amount):null;
+        const pct=goal>0?Math.min(100,Math.round((raised/goal)*100)):null;
+        const url=orgSlug?`${window.location.origin}/give/${orgSlug}/${p.slug}`:"";
+        const meta=GP_STATUS_META[p.status]||GP_STATUS_META.active;
+        const shareOpen=shareOpenId===p.id;
+        return(
+          <div key={p.id} style={{padding:"14px 0",borderBottom:i<pages.length-1||shareOpen?"1px solid "+T.bg3:"none"}}>
+            <div style={{display:"flex",alignItems:"center",gap:12}}>
+              <div style={{flex:1,minWidth:0}}>
+                <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+                  <span style={{fontSize:14,fontWeight:700,color:T.ink}}>{p.title}</span>
+                  <span style={{fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:99,background:meta.bg,color:meta.color,border:"1px solid "+meta.border}}>{meta.label}</span>
+                  {p.fund_name&&<span style={{fontSize:11,color:T.ink3}}>→ {p.fund_name}</span>}
+                </div>
+                <div style={{fontSize:12,color:T.ink3,marginTop:4}}>
+                  {fmtDollars(raised)}{goal?` of ${fmtDollars(goal)} raised`:" raised"}{pct!=null?` — ${pct}%`:""}
+                </div>
+                {goal>0&&(
+                  <div style={{background:T.bg,borderRadius:99,height:6,overflow:"hidden",marginTop:6,maxWidth:320}}>
+                    <div style={{height:"100%",width:`${pct}%`,background:T.greenDk,borderRadius:99}}/>
+                  </div>
+                )}
+              </div>
+              <div style={{display:"flex",gap:6,flexShrink:0}}>
+                <button onClick={()=>setShareOpenId(shareOpen?null:p.id)}
+                  style={{background:shareOpen?T.greenDk:T.bg,border:"1px solid "+(shareOpen?T.greenDk:T.bg3),borderRadius:6,padding:"5px 10px",fontSize:11,fontWeight:600,color:shareOpen?"#fff":T.ink2,cursor:"pointer"}}>
+                  Share {shareOpen?"▲":"▼"}
+                </button>
+                {isAdmin&&<>
+                  <button onClick={()=>openEdit(p)} style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:6,padding:"5px 10px",fontSize:11,fontWeight:600,color:T.ink2,cursor:"pointer"}}>Edit</button>
+                  <button onClick={()=>toggleArchive(p)} disabled={isReadOnly}
+                    style={{background:p.status==="active"?"#fef2f2":"#e8f5ef",border:"1px solid "+(p.status==="active"?"#fecaca":"#10b981"),borderRadius:6,padding:"5px 10px",fontSize:11,fontWeight:600,color:p.status==="active"?"#dc2626":"#1a6b4a",cursor:isReadOnly?"not-allowed":"pointer",opacity:isReadOnly?0.6:1}}>
+                    {p.status==="active"?"Archive":"Reactivate"}
+                  </button>
+                </>}
+              </div>
+            </div>
+            {shareOpen&&(
+              <div style={{marginTop:14,background:T.bg,border:"1px solid "+T.bg3,borderRadius:12,padding:"16px 18px",display:"flex",flexDirection:"column",gap:14}}>
+                <div style={{background:T.white,borderRadius:10,padding:"10px 14px",fontFamily:"monospace",fontSize:12,color:T.ink2,wordBreak:"break-all",border:"1px solid "+T.bg3}}>
+                  {url}
+                </div>
+                <QrCodeBlock url={url} filenameBase={slugifyPreview(p.title)||"giving-page"}/>
+                <div>
+                  <div style={{fontSize:11,fontWeight:700,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:8}}>Embed Code</div>
+                  <EmbedCodeBlock url={url}/>
+                </div>
+              </div>
+            )}
+          </div>
+        );
+      })}
+
+      {showAdd&&(
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.45)",zIndex:500,display:"flex",alignItems:"center",justifyContent:"center",padding:16}} onClick={e=>{if(e.target===e.currentTarget)closeModal();}}>
+          <div style={{background:T.white,borderRadius:20,padding:"32px 28px",width:480,maxWidth:"calc(100vw - 32px)",maxHeight:"calc(100vh - 32px)",overflowY:"auto",boxShadow:"0 8px 40px rgba(0,0,0,0.16)"}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
+              <div style={{fontSize:17,fontWeight:700,color:T.ink}}>{editing?"Edit giving page":"New giving page"}</div>
+              <button onClick={closeModal} style={{background:"none",border:"none",fontSize:20,cursor:"pointer",color:T.ink3,lineHeight:1}}>×</button>
+            </div>
+
+            <div style={{fontSize:12,fontWeight:600,color:T.ink3,marginBottom:4}}>Title</div>
+            <input value={form.title}
+              onChange={e=>{
+                const title=e.target.value;
+                setForm(f=>({...f,title,slug:slugTouched?f.slug:slugifyPreview(title)}));
+              }}
+              placeholder="e.g. Annual Gala 2026"
+              style={inp}
+            />
+
+            <div style={{fontSize:12,fontWeight:600,color:T.ink3,marginBottom:4}}>URL slug</div>
+            <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:14}}>
+              <span style={{fontSize:12,color:T.ink3,whiteSpace:"nowrap"}}>/give/{orgSlug}/</span>
+              <input value={form.slug}
+                onChange={e=>{setSlugTouched(true);setForm(f=>({...f,slug:slugifyPreview(e.target.value)}));}}
+                placeholder="annual-gala-2026"
+                style={{...inp,marginBottom:0}}
+              />
+            </div>
+
+            <div style={{fontSize:12,fontWeight:600,color:T.ink3,marginBottom:4}}>Goal amount ($, optional)</div>
+            <input type="number" value={form.goalAmount} onChange={e=>setForm(f=>({...f,goalAmount:e.target.value}))}
+              placeholder="e.g. 25000" style={inp}
+            />
+
+            <div style={{fontSize:12,fontWeight:600,color:T.ink3,marginBottom:4}}>Story</div>
+            <textarea value={form.story} onChange={e=>setForm(f=>({...f,story:e.target.value}))}
+              placeholder="Tell donors what this campaign is for and why it matters."
+              rows={4}
+              style={{...inp,resize:"vertical"}}
+            />
+
+            <div style={{fontSize:12,fontWeight:600,color:T.ink3,marginBottom:4}}>Image URL (optional)</div>
+            <input value={form.imageUrl} onChange={e=>setForm(f=>({...f,imageUrl:e.target.value}))}
+              placeholder="https://…" style={inp}
+            />
+
+            <div style={{fontSize:12,fontWeight:600,color:T.ink3,marginBottom:4}}>Designate to a fund (optional)</div>
+            <select value={form.fundId} onChange={e=>setForm(f=>({...f,fundId:e.target.value}))} style={{...inp,cursor:"pointer"}}>
+              <option value="">Where it's needed most</option>
+              {funds.map(f=><option key={f.id} value={f.id}>{f.name}{f.restricted?" (Restricted)":""}</option>)}
+            </select>
+
+            {editing&&(
+              <label style={{display:"flex",alignItems:"center",gap:8,fontSize:13,color:T.ink,cursor:"pointer",marginBottom:20,marginTop:-4}}>
+                <input type="checkbox" checked={form.status==="archived"} onChange={e=>setForm(f=>({...f,status:e.target.checked?"archived":"active"}))} style={{width:16,height:16,cursor:"pointer"}}/>
+                Archived (hidden from the public link)
+              </label>
+            )}
+
+            <div style={{display:"flex",gap:10,marginTop:6}}>
+              <button onClick={closeModal} style={{flex:1,background:T.bg,border:"1px solid "+T.bg3,borderRadius:10,padding:"10px",color:T.ink2,fontSize:13,fontWeight:600,cursor:"pointer"}}>Cancel</button>
+              <button onClick={save} disabled={saving||!form.title.trim()}
+                style={{flex:2,background:T.green,border:"none",borderRadius:10,padding:"10px",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer",opacity:(saving||!form.title.trim())?0.7:1}}>
+                {saving?"Saving…":editing?"Save changes":"Create giving page"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function fmtDollars(n){
+  return "$"+Math.round(n||0).toLocaleString();
+}
+
 export function Settings({auth,logout}) {
   const orgName=auth?.org?.name||"Your Organization";
   const userName=auth?.user?.name||"User";
@@ -36,9 +350,6 @@ export function Settings({auth,logout}) {
   const [stripeLoading,setStripeLoading]=useState(false);
 
   const [orgSlug,setOrgSlug]=useState(auth?.org?.org_slug||"");
-  const [qrDataUrl,setQrDataUrl]=useState("");
-  const [qrLoading,setQrLoading]=useState(false);
-  const [embedCopied,setEmbedCopied]=useState(false);
 
   const [customFields,setCustomFields]=useState([]);
   const [showAddField,setShowAddField]=useState(false);
@@ -136,51 +447,6 @@ export function Settings({auth,logout}) {
   }
 
   const donationUrl = orgSlug ? `${window.location.origin}/give/${orgSlug}` : "";
-  const embedCode = orgSlug
-    ? `<iframe src="${window.location.origin}/give/${orgSlug}" width="100%" height="600" frameborder="0"></iframe>`
-    : "";
-
-  async function generateQR(){
-    if(!donationUrl) return;
-    setQrLoading(true);
-    try{
-      const url=await QRCode.toDataURL(donationUrl,{width:300,margin:2,color:{dark:"#0f1a12",light:"#faf8f4"}});
-      setQrDataUrl(url);
-    }catch(e){ console.error(e); }
-    setQrLoading(false);
-  }
-
-  function downloadQR(){
-    if(!qrDataUrl) return;
-    const a=document.createElement("a");
-    a.href=qrDataUrl;
-    a.download=`${orgName.toLowerCase().replace(/[^a-z0-9]+/g,"-")}-donation-qr.png`;
-    a.click();
-  }
-
-  function printQR(){
-    if(!qrDataUrl) return;
-    const w=window.open("","_blank","width=600,height=700");
-    w.document.write(`<!DOCTYPE html><html><head><title>Donation QR — ${orgName}</title>
-<style>
-  *{margin:0;padding:0;box-sizing:border-box}
-  body{background:#fff;font-family:'DM Sans',system-ui,sans-serif;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;padding:40px}
-  img{width:280px;height:280px}
-  h1{font-size:26px;font-weight:800;color:#0f1a12;margin:24px 0 8px;text-align:center}
-  p{font-size:16px;color:#6b6b6b;text-align:center}
-  @media print{@page{margin:0.5in}body{padding:20px}}
-</style></head><body>
-<img src="${qrDataUrl}"/>
-<h1>${orgName}</h1>
-<p>Scan to give</p>
-<script>window.onload=()=>{setTimeout(()=>{window.print();},400)}<\/script>
-</body></html>`);
-    w.document.close();
-  }
-
-  function copyEmbed(){
-    navigator.clipboard.writeText(embedCode).then(()=>{setEmbedCopied(true);setTimeout(()=>setEmbedCopied(false),2500);});
-  }
 
   async function loadSampleData(){
     setSampleLoading(true);
@@ -445,32 +711,7 @@ export function Settings({auth,logout}) {
         <div style={{background:T.bg,borderRadius:10,padding:"10px 14px",fontFamily:"monospace",fontSize:12,color:T.ink2,wordBreak:"break-all",marginBottom:14,border:"1px solid "+T.bg3}}>
           {donationUrl}
         </div>
-        <div style={{display:"flex",gap:10,flexWrap:"wrap",alignItems:"flex-start"}}>
-          <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-            {!qrDataUrl?(
-              <button onClick={generateQR} disabled={qrLoading}
-                style={{background:T.green,border:"none",borderRadius:8,padding:"9px 18px",color:"#fff",fontSize:13,fontWeight:700,cursor:qrLoading?"not-allowed":"pointer",opacity:qrLoading?0.7:1}}>
-                {qrLoading?"Generating…":"Generate QR Code"}
-              </button>
-            ):(
-              <>
-                <button onClick={downloadQR}
-                  style={{background:T.greenDk,border:"none",borderRadius:8,padding:"9px 18px",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer"}}>
-                  ↓ Download PNG
-                </button>
-                <button onClick={printQR}
-                  style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"9px 18px",color:T.ink,fontSize:13,fontWeight:600,cursor:"pointer"}}>
-                  🖨 Print
-                </button>
-                <button onClick={()=>setQrDataUrl("")}
-                  style={{background:"transparent",border:"1px solid "+T.bg3,borderRadius:8,padding:"9px 14px",color:T.ink3,fontSize:13,cursor:"pointer"}}>
-                  Regenerate
-                </button>
-              </>
-            )}
-          </div>
-          {qrDataUrl&&<img src={qrDataUrl} alt="Donation QR Code" style={{width:120,height:120,borderRadius:8,border:"1px solid "+T.bg3,flexShrink:0}}/>}
-        </div>
+        <QrCodeBlock url={donationUrl} filenameBase={orgName.toLowerCase().replace(/[^a-z0-9]+/g,"-")}/>
       </div>}
 
       {orgSlug&&<div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:16,padding:"24px 28px"}}>
@@ -478,14 +719,8 @@ export function Settings({auth,logout}) {
         <div style={{fontSize:13,color:T.ink3,marginBottom:14,lineHeight:1.6}}>
           Paste this anywhere on your website to let donors give without leaving your site.
         </div>
-        <div style={{position:"relative",marginBottom:10}}>
-          <pre style={{background:"#0f172a",color:"#a5f3c0",borderRadius:10,padding:"14px 16px",fontSize:12,lineHeight:1.7,overflowX:"auto",margin:0,fontFamily:"'Fira Code',monospace,monospace",whiteSpace:"pre-wrap",wordBreak:"break-all"}}>
-            {embedCode}
-          </pre>
-          <button onClick={copyEmbed}
-            style={{position:"absolute",top:10,right:10,background:embedCopied?"#10b98130":"rgba(255,255,255,0.12)",border:"1px solid rgba(255,255,255,0.2)",borderRadius:6,padding:"4px 10px",color:embedCopied?"#a5f3c0":"#e2e8f0",fontSize:11,fontWeight:700,cursor:"pointer",transition:"all 0.15s"}}>
-            {embedCopied?"✓ Copied!":"Copy Code"}
-          </button>
+        <div style={{marginBottom:10}}>
+          <EmbedCodeBlock url={donationUrl}/>
         </div>
         <div style={{fontSize:11,color:T.ink3,marginBottom:16}}>Width and height are customizable. Use <code style={{background:T.bg3,padding:"1px 5px",borderRadius:4}}>height="700"</code> for the full form without scrolling.</div>
         <div style={{fontSize:11,fontWeight:700,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:8}}>Live Preview</div>
@@ -500,6 +735,11 @@ export function Settings({auth,logout}) {
           />
         </div>
       </div>}
+
+      {/* ── Giving Pages ──────────────────────────────────────────────────── */}
+      <SecHead label="Giving Pages"/>
+      <GivingPagesManager orgSlug={orgSlug} isAdmin={isAdmin} isReadOnly={isReadOnly}/>
+
 
       <div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:16,padding:"24px 28px"}}>
         <SectionLabel>Gmail</SectionLabel>

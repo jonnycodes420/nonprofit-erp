@@ -111,6 +111,7 @@ function Root() {
           <Route path="/invite/:token" element={<InvitePage />} />
           <Route path="/pricing"   element={<Pricing />} />
           <Route path="/give/:orgSlug" element={<Donate />} />
+          <Route path="/give/:orgSlug/:pageSlug" element={<Donate />} />
           <Route path="/admin"             element={<RequireSuperAdmin><AdminDashboard /></RequireSuperAdmin>} />
           <Route path="/forgot-password"  element={<ForgotPasswordPage />} />
           <Route path="/reset-password"   element={<ResetPasswordPage />} />
