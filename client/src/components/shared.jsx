@@ -176,6 +176,13 @@ export function GlobalStyles() {
     .mobile-more-signout{display:flex;align-items:center;gap:16px;width:100%;background:transparent;border:none;padding:16px 24px;color:#8fa896;font-family:'DM Sans',system-ui,sans-serif;font-size:16px;font-weight:400;cursor:pointer;text-align:left;}
     .dir-stage-mobile{display:none;}
 
+    /* Directory: Assign button reveals on row hover/focus instead of sitting
+       visible on every row at all times — same click target, just quieter
+       when you're not looking at that row. Keyboard/focus-within keeps it
+       reachable without a mouse. */
+    .dir-assign-btn{opacity:0;transition:opacity 0.12s;}
+    .dir-donor-row:hover .dir-assign-btn,.dir-donor-row:focus-within .dir-assign-btn{opacity:1;}
+
     @media(max-width:768px){
       /* Root overflow kill — nothing bleeds past viewport */
       .app-root{overflow-x:hidden!important;max-width:100vw!important;}

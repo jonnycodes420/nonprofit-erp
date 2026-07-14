@@ -3525,6 +3525,11 @@ function DirectoryView({donors,totalDonors,orgTeam,isAdmin,onSelectDonor,onAssig
   const [delModal,setDelModal]=useState(false);
   const [busy,setBusy]=useState(false);
   const [toast,setToast]=useState("");
+  // Persisted across the session, not just this mount — a compact preference
+  // shouldn't reset every time you navigate away from Directory and back.
+  const [density,setDensity]=useState(()=>localStorage.getItem("steward_dir_density")||"comfortable");
+  useEffect(()=>{localStorage.setItem("steward_dir_density",density);},[density]);
+  const compact=density==="compact";
 
   const filtered=donors
     .filter(d=>!stageFilter||d.stage===stageFilter)
@@ -3619,6 +3624,15 @@ function DirectoryView({donors,totalDonors,orgTeam,isAdmin,onSelectDonor,onAssig
           {orgTeam.map(u=><option key={u.id} value={u.id}>{u.name}</option>)}
         </select>
         <span style={{fontSize:12,color:T.ink3}}>{filtered.length} donor{filtered.length!==1?"s":""}</span>
+        <div style={{flex:1}}/>
+        <div style={{display:"flex",background:T.bg,borderRadius:99,padding:2,border:"1px solid "+T.bg3}}>
+          {[["comfortable","Comfortable"],["compact","Compact"]].map(([v,l])=>(
+            <button key={v} onClick={()=>setDensity(v)} title={l+" row spacing"}
+              style={{background:density===v?T.white:"transparent",border:"none",borderRadius:99,padding:"5px 12px",fontSize:11,fontWeight:700,color:density===v?T.ink:T.ink3,cursor:"pointer",boxShadow:density===v?T.shadow:"none",transition:"background 0.12s"}}>
+              {l}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* Bulk action bar — shown when ≥1 rows selected */}
@@ -3680,16 +3694,19 @@ function DirectoryView({donors,totalDonors,orgTeam,isAdmin,onSelectDonor,onAssig
       {filtered.length===0
         ?<EmptyState icon="♦" title="No donors found" message="Try adjusting your filters or search term."/>
         :<div style={{background:T.white,borderRadius:14,overflow:"hidden",border:"1px solid "+T.bg3}}>
-          {/* Header */}
-          <div className="dir-header-row" style={{display:"grid",gridTemplateColumns:colGrid,gap:0,padding:"10px 18px",background:"#1a6b4a",alignItems:"center"}}>
+          {/* Header — light treatment (not a solid green fill) so Directory
+              reads as its own surface instead of blurring into the Kanban
+              stage headers and Home hero banner, which are both solid dark
+              green. Green identity stays via text color + underline accent. */}
+          <div className="dir-header-row" style={{display:"grid",gridTemplateColumns:colGrid,gap:0,padding:"10px 18px",background:"#f6f4ee",borderBottom:"2px solid #1a6b4a",alignItems:"center"}}>
             <div style={{display:"flex",alignItems:"center",justifyContent:"center"}}>
               <input type="checkbox" checked={allChecked} ref={el=>{if(el)el.indeterminate=someChecked;}} onChange={toggleAll}
-                style={{width:15,height:15,cursor:"pointer",accentColor:"#10b981"}}/>
+                style={{width:15,height:15,cursor:"pointer",accentColor:"#1a6b4a"}}/>
             </div>
             {["Donor","Stage","Owner","Lifetime","Last Gift","Score",...(isAdmin?[""]:[])]
               .map((h,i)=>(
                 <div key={i} className={h==="Stage"?"dir-col-stage":h==="Owner"?"dir-col-owner":h===""?"dir-col-assign":""}
-                  style={{fontSize:10,fontWeight:700,color:"#fff",textTransform:"uppercase",letterSpacing:".06em",textAlign:i>=3?"right":"left"}}>{h}</div>
+                  style={{fontSize:10,fontWeight:800,color:"#1a6b4a",textTransform:"uppercase",letterSpacing:".06em",textAlign:i>=3?"right":"left"}}>{h}</div>
               ))}
           </div>
           {/* Rows */}
@@ -3701,7 +3718,7 @@ function DirectoryView({donors,totalDonors,orgTeam,isAdmin,onSelectDonor,onAssig
             const rowBg=checked?"#f0faf4":idx%2===0?T.white:"#faf9f6";
             return(
               <div key={d.id} className="dir-donor-row" onClick={()=>onSelectDonor(d)}
-                style={{display:"grid",gridTemplateColumns:colGrid,gap:0,padding:"11px 18px",background:rowBg,borderBottom:isLast?"none":"1px solid "+T.bg3,cursor:"pointer",alignItems:"center",transition:"background 0.1s"}}
+                style={{display:"grid",gridTemplateColumns:colGrid,gap:0,padding:compact?"4px 18px":"11px 18px",background:rowBg,borderBottom:isLast?"none":"1px solid "+T.bg3,cursor:"pointer",alignItems:"center",transition:"background 0.1s, padding 0.12s"}}
                 onMouseEnter={e=>e.currentTarget.style.background=checked?"#e6f5ec":T.bg}
                 onMouseLeave={e=>e.currentTarget.style.background=rowBg}>
                 <div onClick={e=>toggleOne(d.id,e)} style={{display:"flex",alignItems:"center",justifyContent:"center",padding:"4px"}}>
@@ -3709,15 +3726,15 @@ function DirectoryView({donors,totalDonors,orgTeam,isAdmin,onSelectDonor,onAssig
                     style={{width:15,height:15,cursor:"pointer",accentColor:"#10b981"}} onClick={e=>e.stopPropagation()}/>
                 </div>
                 <div style={{display:"flex",alignItems:"center",gap:8,minWidth:0}}>
-                  <div style={{width:32,height:32,borderRadius:"50%",background:stage.color+"22",display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,fontWeight:800,color:stage.color,flexShrink:0}}>{d.name[0]}</div>
+                  <div style={{width:compact?22:32,height:compact?22:32,borderRadius:"50%",background:stage.color+"22",display:"flex",alignItems:"center",justifyContent:"center",fontSize:compact?10:12,fontWeight:800,color:stage.color,flexShrink:0,transition:"width 0.12s,height 0.12s"}}>{d.name[0]}</div>
                   <div style={{minWidth:0}}>
-                    <div style={{fontSize:13,fontWeight:700,color:T.ink,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{d.name}</div>
-                    {d.email&&<div style={{fontSize:11,color:T.ink3,marginTop:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{d.email}</div>}
+                    <div style={{fontSize:compact?12:13,fontWeight:700,color:T.ink,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{d.name}</div>
+                    {!compact&&d.email&&<div style={{fontSize:11,color:T.ink3,marginTop:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{d.email}</div>}
                     <span className="dir-stage-mobile" style={{background:stage.color+"22",color:stage.color,borderRadius:99,padding:"2px 7px",fontSize:10,fontWeight:800,letterSpacing:"0.04em",textTransform:"uppercase",marginTop:3}}>{stage.label}</span>
                   </div>
                 </div>
                 <div className="dir-col-stage">
-                  <span style={{background:stage.color+"22",color:stage.color,borderRadius:99,padding:"4px 10px",fontSize:10,fontWeight:800,letterSpacing:"0.04em",textTransform:"uppercase"}}>{stage.label}</span>
+                  <span style={{background:stage.color+"22",color:stage.color,borderRadius:99,padding:compact?"2px 8px":"4px 10px",fontSize:10,fontWeight:800,letterSpacing:"0.04em",textTransform:"uppercase"}}>{stage.label}</span>
                 </div>
                 <div className="dir-col-owner" style={{display:"flex",alignItems:"center",gap:5,minWidth:0}}>
                   <div style={{width:22,height:22,borderRadius:"50%",background:"#1a6b4a22",display:"flex",alignItems:"center",justifyContent:"center",fontSize:10,fontWeight:800,color:"#1a6b4a",flexShrink:0}}>{(d.assignedToName||"?")[0]}</div>
@@ -3726,14 +3743,14 @@ function DirectoryView({donors,totalDonors,orgTeam,isAdmin,onSelectDonor,onAssig
                 <div style={{textAlign:"right",fontSize:13,fontWeight:700,color:T.ink}}>{fmtFull(d.total)}</div>
                 <div style={{textAlign:"right"}}>
                   {d.lastGift
-                    ?<><div style={{fontSize:12,color:T.ink}}>{new Date(d.lastGift).toLocaleDateString("en-US",{month:"short",year:"numeric"})}</div><div style={{fontSize:11,color:T.ink3}}>{d.lastAmount>0?fmtFull(d.lastAmount):""}</div></>
+                    ?<><div style={{fontSize:12,color:T.ink}}>{new Date(d.lastGift).toLocaleDateString("en-US",{month:"short",year:"numeric"})}</div>{!compact&&<div style={{fontSize:11,color:T.ink3}}>{d.lastAmount>0?fmtFull(d.lastAmount):""}</div>}</>
                     :<div style={{fontSize:12,color:T.ink3}}>—</div>}
                 </div>
                 <div style={{textAlign:"right"}}>
                   <span style={{background:scColor+"18",color:scColor,borderRadius:7,padding:"3px 8px",fontSize:12,fontWeight:800}}>{sc}</span>
                 </div>
-                {isAdmin&&<div className="dir-col-assign" style={{textAlign:"right"}}>
-                  <button onClick={e=>{e.stopPropagation();onAssign(d);}} style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:7,padding:"4px 10px",color:T.ink3,fontSize:11,fontWeight:600,cursor:"pointer"}}>Assign</button>
+                {isAdmin&&<div className="dir-col-assign dir-assign-cell" style={{textAlign:"right"}}>
+                  <button onClick={e=>{e.stopPropagation();onAssign(d);}} className="dir-assign-btn" style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:7,padding:"4px 10px",color:T.ink3,fontSize:11,fontWeight:600,cursor:"pointer"}}>Assign</button>
                 </div>}
               </div>
             );

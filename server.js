@@ -3498,9 +3498,43 @@ app.get("/goals/active", requireAuth, wrap(async (req, res) => {
   }
 
   const percent = goalAmount > 0 ? Math.min(100, Math.round((currentAmount / goalAmount) * 100)) : 0;
+
+  // Trailing-7-day slice of the same real activity above — powers the Home
+  // hero banner's "what's driving this" hint with actual recent gifts
+  // instead of an invented/decorative line. Bounded to stay inside the
+  // goal's own period so it never reaches back before period_start.
+  let recentAmount = 0, recentDonorCount = 0;
+  const sevenDaysAgo = new Date();
+  sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 6);
+  const sevenDaysAgoStr = sevenDaysAgo.toISOString().split("T")[0];
+  const recentStart = sevenDaysAgoStr > goal.period_start ? sevenDaysAgoStr : goal.period_start;
+  if (recentStart <= today) {
+    if (goal.goal_type === "lapsed_recovery") {
+      const rows3 = await query(
+        `SELECT COALESCE(SUM(g.amount),0) AS total, COUNT(DISTINCT g.donor_id) AS donors
+         FROM gifts g
+         JOIN donors d ON d.id = g.donor_id
+         WHERE g.org_id = ? AND g.date >= ? AND g.date <= ? AND g.date = d.last_gift_date
+           AND (SELECT MAX(g2.date) FROM gifts g2 WHERE g2.donor_id = d.id AND g2.date < g.date) IS NOT NULL
+           AND g.date::date - (SELECT MAX(g2.date) FROM gifts g2 WHERE g2.donor_id = d.id AND g2.date < g.date)::date > 365`,
+        [req.user.orgId, recentStart, today]
+      );
+      recentAmount = parseFloat(rows3[0]?.total) || 0;
+      recentDonorCount = parseInt(rows3[0]?.donors, 10) || 0;
+    } else {
+      const rows3 = await query(
+        "SELECT COALESCE(SUM(amount),0) AS total, COUNT(DISTINCT donor_id) AS donors FROM gifts WHERE org_id = ? AND date >= ? AND date <= ?",
+        [req.user.orgId, recentStart, today]
+      );
+      recentAmount = parseFloat(rows3[0]?.total) || 0;
+      recentDonorCount = parseInt(rows3[0]?.donors, 10) || 0;
+    }
+  }
+
   res.json({
     label: goal.label, goalType: goal.goal_type, goalAmount, currentAmount, percent,
     periodStart: goal.period_start, periodEnd: goal.period_end,
+    recentAmount, recentDonorCount,
   });
 }));
 

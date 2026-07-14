@@ -301,6 +301,23 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
     </button>
   );
 
+  // My Portfolio tile icons — a real path per stat (not a generic dot) so the
+  // row reads as a designed panel rather than six plain numbers in a line.
+  // No sparklines here: none of these six stats has a metric_snapshots
+  // history (only stewardship_debt/first_touch_delay/recovery_rate do), and
+  // this pattern deliberately never fabricates a trend where none exists.
+  const STAT_PATHS={
+    portfolio:<><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></>,
+    visits:<><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/><path d="m9 16 2 2 4-4"/></>,
+    moves:<polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>,
+    gifts:<><rect x="3" y="8" width="18" height="13" rx="1"/><path d="M12 8v13M3 12h18M12 8c-1.5-3-5-4-5-1.5S9.5 8 12 8s4.5-1 4.5-2.5S13.5 5 12 8Z"/></>,
+    pipeline:<><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></>,
+    lapsed:<><path d="M12 9v4M12 17h.01"/><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L14.71 3.86a2 2 0 0 0-3.42 0Z"/></>,
+  };
+  const StatIcon=({name,color})=>(
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">{STAT_PATHS[name]}</svg>
+  );
+
   const countsByStage=Object.fromEntries(stageCounts.map(s=>[s.stage,s]));
 
   // Above sector average reads positive; below reads amber, then red the
@@ -310,28 +327,77 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
   const retentionSector=stewardMetrics?.retentionRate?.sectorAverage??43;
   const retentionColor=retentionCurrent==null?T.ink:retentionCurrent>=retentionSector?"#1a6b4a":retentionCurrent>=retentionSector-15?"#d97706":"#ef4444";
 
+  // Goal banner: greeting is real (time-of-day + the logged-in user's own
+  // name, not a canned string), pace is real math (% of the period elapsed
+  // vs. % of the goal reached — not a fabricated "on track" claim), and the
+  // driver hint below is real trailing-7-day gift activity from the backend
+  // (goal.recentAmount/recentDonorCount), never invented copy.
+  const firstName=auth?.user?.name?.split(" ")[0]||"";
+  const greetHour=new Date().getHours();
+  const greeting=greetHour<12?"Good morning":greetHour<18?"Good afternoon":"Good evening";
+  let paceLabel=null,paceColor="#8fa896";
+  if(goal){
+    const periodStartDate=new Date(goal.periodStart+"T00:00:00");
+    const periodEndDate=new Date(goal.periodEnd+"T00:00:00");
+    const totalDays=Math.max(1,Math.round((periodEndDate-periodStartDate)/86400000));
+    const elapsedDays=Math.min(totalDays,Math.max(0,Math.round((new Date()-periodStartDate)/86400000)));
+    if(elapsedDays<2){
+      paceLabel="Just getting started";
+    }else{
+      const expectedPercent=Math.round((elapsedDays/totalDays)*100);
+      const paceDelta=goal.percent-expectedPercent;
+      if(paceDelta>=8){paceLabel="Ahead of pace";paceColor=T.gold;}
+      else if(paceDelta<=-8){paceLabel="Behind pace";paceColor=T.terracotta;}
+      else{paceLabel="On pace";paceColor="#8fa896";}
+    }
+  }
+  const goalDriverHint=goal&&goal.recentAmount>0
+    ?`${fmtFull(goal.recentAmount)} ${goal.goalType==="lapsed_recovery"?"recovered from":"raised from"} ${goal.recentDonorCount} donor${goal.recentDonorCount!==1?"s":""} this week`
+    :null;
+
   return(
     <div className="dash-root dash-bleed fade-in" style={{background:T.bgDeep,margin:"-20px -24px -28px -24px",padding:"20px 24px 28px 24px",display:"flex",flexDirection:"column",gap:16,minHeight:"calc(100vh - 92px)"}}>
 
-      {/* Goal banner */}
+      {/* Goal banner — the percent-to-goal is the one thing this card exists
+          to show, so it gets real dedicated space (large, isolated, own
+          line). Greeting/pace/label are genuinely secondary: smaller, muted,
+          arranged around the hero number rather than competing with it. The
+          driver-hint strip at the bottom is real trailing-7-day gift
+          activity from the backend, shown only when there's something real
+          to say — no filler line when a week was quiet. */}
       <div className="dash-goal-banner" style={{background:"linear-gradient(135deg,#0f1a12,#152420)",border:"1px solid #1a2e1f",borderRadius:16,padding:"20px 24px",color:"#f0ede6"}}>
         {goal===undefined?(
           <div style={{display:"flex",alignItems:"center",gap:8,color:"#8fa896",fontSize:13}}><Spin/>Loading goal…</div>
         ):goal?(
           <>
-            <div style={{fontSize:10,fontWeight:800,letterSpacing:"0.12em",textTransform:"uppercase",color:"#8fa896",marginBottom:6}}>Fundraising Goal</div>
-            <div style={{fontSize:21,fontWeight:400,fontFamily:"'DM Serif Display',Georgia,serif",marginBottom:14,color:"#f8f6f0"}}>{goal.label}</div>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:8,marginBottom:18}}>
+              <span style={{fontSize:12,fontWeight:600,color:"#8fa896"}}>{greeting}{firstName?`, ${firstName}`:""}</span>
+              {paceLabel&&<span style={{fontSize:10,fontWeight:800,letterSpacing:"0.06em",textTransform:"uppercase",color:paceColor,background:paceColor+"18",border:`1px solid ${paceColor}40`,borderRadius:99,padding:"4px 10px",whiteSpace:"nowrap"}}>{paceLabel}</span>}
+            </div>
+
+            <div style={{fontSize:10,fontWeight:800,letterSpacing:"0.12em",textTransform:"uppercase",color:"#8fa896",marginBottom:5}}>Fundraising Goal</div>
+            <div style={{fontSize:16,fontWeight:600,color:"#c9c2b4",marginBottom:16,maxWidth:420}}>{goal.label}</div>
+
+            {/* Primary — isolated, dominant, the one number this card exists for */}
+            <div style={{display:"flex",alignItems:"baseline",gap:10,marginBottom:12}}>
+              <div style={{fontSize:58,fontWeight:400,fontFamily:"'DM Serif Display',Georgia,serif",color:T.gold,lineHeight:1}}>{goal.percent}%</div>
+              <div style={{fontSize:13,fontWeight:600,color:"#8fa896"}}>of goal reached</div>
+            </div>
             <div style={{background:"#0a120c",borderRadius:99,height:11,overflow:"hidden",marginBottom:10}}>
               <div style={{height:"100%",width:`${goal.percent}%`,background:`linear-gradient(90deg,${T.gold},${T.terracotta})`,borderRadius:99,transition:"width 0.6s ease"}}/>
             </div>
-            <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",flexWrap:"wrap",gap:8}}>
-              <div style={{fontSize:13,color:"#c9c2b4"}}><strong style={{fontSize:19,color:T.gold,fontFamily:"'DM Serif Display',serif",fontWeight:400}}>{fmtFull(goal.currentAmount)}</strong> of {fmtFull(goal.goalAmount)}</div>
-              <div style={{fontSize:13,fontWeight:700,color:"#8fa896"}}>{goal.percent}% there</div>
-            </div>
+            <div style={{fontSize:13,color:"#c9c2b4"}}><strong style={{fontSize:15,color:T.gold,fontFamily:"'DM Serif Display',serif",fontWeight:400}}>{fmtFull(goal.currentAmount)}</strong> of {fmtFull(goal.goalAmount)}</div>
+
+            {goalDriverHint&&(
+              <div style={{fontSize:12,color:"#8fa896",borderTop:"1px dashed #1a2e1f",marginTop:16,paddingTop:12}}>
+                ✦ {goalDriverHint}
+              </div>
+            )}
           </>
         ):(
           <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:12}}>
             <div>
+              <span style={{fontSize:12,fontWeight:600,color:"#8fa896",display:"block",marginBottom:8}}>{greeting}{firstName?`, ${firstName}`:""}</span>
               <div style={{fontSize:15,fontWeight:600,color:"#f0ede6",marginBottom:2}}>No goal set for this period.</div>
               <div style={{fontSize:12,color:"#8fa896"}}>Set a fundraising target to track progress here.</div>
             </div>
@@ -490,17 +556,20 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
             return (<>
               <div style={{display:"grid",gridTemplateColumns:"repeat(6,1fr)",borderTop:"1px solid "+T.bg3}} className="portfolio-grid">
                 {[
-                  {label:"Portfolio",value:myStats.portfolioCount,unit:"donors",onClick:()=>onNavigate("donors",{view:"pipeline"})},
-                  {label:"Visits YTD",value:myStats.visitsYtd,unit:(noOutreachYet&&myStats.visitsYtd===0)?"not logged yet":"meetings",onClick:()=>openPortfolioBreakdown("visits")},
-                  {label:"Moves Made",value:myStats.madeYtd,unit:(noOutreachYet&&myStats.madeYtd===0)?"not logged yet":"interactions",onClick:()=>openPortfolioBreakdown("moves")},
-                  {label:"Gifts YTD",value:fmt(myStats.giftsYtd),unit:"raised",onClick:()=>openPortfolioBreakdown("gifts")},
-                  {label:"Pipeline",value:fmt(myStats.pipelineValue),unit:"value",onClick:()=>openPortfolioBreakdown("pipeline")},
-                  {label:"Lapsed",value:myStats.lapsedCount,unit:"in portfolio",warn:myStats.lapsedCount>0,onClick:()=>openPortfolioBreakdown("lapsed")},
+                  {label:"Portfolio",icon:"portfolio",value:myStats.portfolioCount,unit:"donors",onClick:()=>onNavigate("donors",{view:"pipeline"})},
+                  {label:"Visits YTD",icon:"visits",value:myStats.visitsYtd,unit:(noOutreachYet&&myStats.visitsYtd===0)?"not logged yet":"meetings",onClick:()=>openPortfolioBreakdown("visits")},
+                  {label:"Moves Made",icon:"moves",value:myStats.madeYtd,unit:(noOutreachYet&&myStats.madeYtd===0)?"not logged yet":"interactions",onClick:()=>openPortfolioBreakdown("moves")},
+                  {label:"Gifts YTD",icon:"gifts",value:fmt(myStats.giftsYtd),unit:"raised",onClick:()=>openPortfolioBreakdown("gifts")},
+                  {label:"Pipeline",icon:"pipeline",value:fmt(myStats.pipelineValue),unit:"value",onClick:()=>openPortfolioBreakdown("pipeline")},
+                  {label:"Lapsed",icon:"lapsed",value:myStats.lapsedCount,unit:"in portfolio",warn:myStats.lapsedCount>0,onClick:()=>openPortfolioBreakdown("lapsed")},
                 ].map((m,i)=>(
                   <div key={m.label} onClick={m.onClick}
                     onMouseEnter={()=>setHoveredStat(i)} onMouseLeave={()=>setHoveredStat(h=>h===i?null:h)}
                     style={{padding:"12px 14px",borderRight:i<5?"1px solid "+T.bg3:"none",textAlign:"center",cursor:"pointer",background:hoveredStat===i?T.bg:"transparent",transition:"background 0.12s"}}>
-                    <div style={{fontSize:9,fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase",color:m.warn?"#ef4444":"#3b82f6",marginBottom:4}}>{m.label}</div>
+                    <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:5,marginBottom:4}}>
+                      <StatIcon name={m.icon} color={m.warn?"#ef4444":"#3b82f6"}/>
+                      <span style={{fontSize:9,fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase",color:m.warn?"#ef4444":"#3b82f6"}}>{m.label}</span>
+                    </div>
                     <div style={{fontSize:20,fontWeight:800,color:m.warn?"#ef4444":T.ink,fontFamily:"'DM Serif Display',serif",lineHeight:1}}>{m.value}</div>
                     <div style={{fontSize:10,color:T.ink3,marginTop:2}}>{m.unit}</div>
                   </div>
