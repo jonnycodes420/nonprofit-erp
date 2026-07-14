@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { apiFetch } from "../api";
 import { useAuth } from "../main";
-import { T, fmt, fmtFull, daysUntil, askClaude, buildContext, Spin, AIBtn } from "./shared";
+import { T, fmt, fmtFull, daysUntil, daysDiff, askClaude, buildContext, Spin, AIBtn } from "./shared";
 import FunnelChart from "./FunnelChart";
 import MetricBreakdownPanel from "./MetricBreakdownPanel";
 
@@ -97,11 +97,25 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
     setQueueLoading(true);
     apiFetch(`/dashboard/today?scope=${scope}`).then(r=>setQueueItems(r||[])).catch(()=>{}).finally(()=>setQueueLoading(false));
     apiFetch(`/metrics/stewardship-summary?scope=${scope}`).then(r=>setStewardMetrics(r)).catch(()=>{});
-    // Cached breakdown data is scope-specific — invalidate so the next
-    // "see breakdown" click re-fetches under the new scope instead of
-    // showing stale data from the other one.
+
+    // Breakdown data is fetched eagerly here (not lazily on click) so the
+    // hero cards can show the top few donors driving each number inline —
+    // "who" should never require a click just to discover. The full
+    // MetricBreakdownPanel (opened via openDebtBreakdown/openRetentionBreakdown)
+    // still reuses this same cached data for "see everything."
     setDebtBreakdown(null);
+    setDebtBreakdownLoading(true);
+    apiFetch(`/dashboard/stewardship-debt/breakdown?scope=${scope}`)
+      .then(r=>setDebtBreakdown(r))
+      .catch(()=>setDebtBreakdown({total:0,count:0,rows:[]}))
+      .finally(()=>setDebtBreakdownLoading(false));
+
     setRetentionBreakdown(null);
+    setRetentionBreakdownLoading(true);
+    apiFetch(`/dashboard/retention/breakdown?scope=${scope}`)
+      .then(r=>setRetentionBreakdown(r))
+      .catch(()=>setRetentionBreakdown({retentionRate:null,sectorAverage:43,retained:0,prevYearCount:0,nonRetainedCount:0,rows:[]}))
+      .finally(()=>setRetentionBreakdownLoading(false));
   },[scope]);
 
   // Guards against a pre-existing /dashboard/today quirk (task rows aren't
@@ -236,6 +250,22 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
     return <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`} style={{display:"block"}}><polyline points={pts} fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>;
   };
 
+  // The "who" behind a hero number — a clickable name+detail pill that goes
+  // straight to that donor's profile, so a metric never requires a click
+  // just to find out who it's about (see CLAUDE.md "name the vague anxiety
+  // as a number" — this is the follow-through half of that pattern).
+  const DonorChip=({name,detail,onClick})=>(
+    <button onClick={onClick} style={{display:"flex",alignItems:"baseline",gap:5,background:T.bg,border:"1px solid "+T.bg3,borderRadius:99,padding:"4px 10px",cursor:"pointer",fontSize:11,maxWidth:170}}>
+      <span style={{fontWeight:700,color:T.ink,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{name}</span>
+      {detail&&<span style={{color:T.ink3,whiteSpace:"nowrap",flexShrink:0}}>{detail}</span>}
+    </button>
+  );
+  const MoreChip=({count,onClick})=>(
+    <button onClick={onClick} style={{background:"transparent",border:"1px dashed "+T.bg3,borderRadius:99,padding:"4px 10px",cursor:"pointer",fontSize:11,fontWeight:700,color:T.greenDk,whiteSpace:"nowrap"}}>
+      +{count} more →
+    </button>
+  );
+
   const countsByStage=Object.fromEntries(stageCounts.map(s=>[s.stage,s]));
 
   // Above sector average reads positive; below reads amber, then red the
@@ -298,10 +328,15 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
           below) — the nonprofit sector average line already lived in the
           onboarding drip email before this. */}
       {stewardMetrics&&(
-        <div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:16,padding:"20px 24px",display:"flex",flexDirection:"column",gap:14}}>
-          <div style={{display:"flex",flexWrap:"wrap",gap:24,alignItems:"center"}}>
-            <div onClick={openRetentionBreakdown} className="card-click" style={{flex:"1 1 220px",display:"flex",alignItems:"center",gap:20,cursor:"pointer",borderRadius:12,margin:-4,padding:4}}>
-              <div style={{flex:1,minWidth:0}}>
+        <div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:16,padding:"20px 24px",display:"flex",flexDirection:"column",gap:16}}>
+          {/* Donor Retention Rate — the Home dashboard's primary hero metric.
+              This is the number fundraisers already benchmark against (unlike
+              Stewardship Debt's invented composite score, see the demoted strip
+              below) — the nonprofit sector average line already lived in the
+              onboarding drip email before this. */}
+          <div>
+            <div onClick={openRetentionBreakdown} className="card-click" style={{display:"flex",flexWrap:"wrap",gap:20,alignItems:"center",cursor:"pointer",borderRadius:12,margin:-4,padding:4}}>
+              <div style={{flex:"1 1 220px",minWidth:0}}>
                 <div style={{fontSize:10,fontWeight:800,letterSpacing:"0.1em",textTransform:"uppercase",color:T.ink3,marginBottom:6}}>Donor Retention Rate</div>
                 <div style={{display:"flex",alignItems:"baseline",gap:10,flexWrap:"wrap"}}>
                   <div style={{fontSize:36,fontWeight:800,fontFamily:"'DM Serif Display',serif",color:retentionColor,lineHeight:1}}>
@@ -313,47 +348,89 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
                     </span>
                   )}
                 </div>
-                <div style={{fontSize:11,color:T.ink3,marginTop:4}}>
-                  vs. {retentionSector}% sector average — <span style={{fontWeight:700,color:T.greenDk}}>see who's not renewing →</span>
-                </div>
+                <div style={{fontSize:11,color:T.ink3,marginTop:4}}>vs. {retentionSector}% sector average</div>
               </div>
               {stewardMetrics.retentionRate.trend.length>=2&&(
                 <Sparkline trend={stewardMetrics.retentionRate.trend} color={retentionColor} width={120} height={36}/>
               )}
             </div>
-            <div style={{width:1,alignSelf:"stretch",background:T.bg3,minHeight:44}}/>
-            <div style={{flex:"1 1 200px"}}>
-              <div style={{fontSize:10,fontWeight:800,letterSpacing:"0.1em",textTransform:"uppercase",color:T.ink3,marginBottom:6}}>First-Touch Delay</div>
-              <div style={{fontSize:24,fontWeight:800,fontFamily:"'DM Serif Display',serif",color:T.ink,lineHeight:1}}>
-                {stewardMetrics.firstTouchDelay.current!=null?`${stewardMetrics.firstTouchDelay.current}d`:"—"}
+            {/* Who this number is actually about — top donors who gave last
+                year but haven't renewed, right where the rate is, not one
+                click away behind a generic link. */}
+            {(retentionBreakdownLoading&&!retentionBreakdown)?(
+              <div style={{fontSize:11,color:T.ink3,marginTop:10}}>Loading who's not renewing…</div>
+            ):retentionBreakdown?.rows?.length>0&&(
+              <div style={{display:"flex",flexWrap:"wrap",gap:6,marginTop:10}}>
+                {retentionBreakdown.rows.slice(0,3).map(r=>(
+                  <DonorChip key={r.donorId} name={r.donorName} detail={fmtFull(r.lastGiftAmount)} onClick={()=>onNavigate("donors",{selectDonorId:r.donorId})}/>
+                ))}
+                {retentionBreakdown.nonRetainedCount>3&&(
+                  <MoreChip count={retentionBreakdown.nonRetainedCount-3} onClick={openRetentionBreakdown}/>
+                )}
               </div>
-              <div style={{fontSize:11,color:T.ink3,marginTop:4}}>
-                {/* A genuine zero (no logged outreach yet) reads as expected
-                    first-day state when the org has real donor/gift history —
-                    not as a broken metric — vs. the generic description once
-                    there's actually something to describe. Never fabricates
-                    interaction data; this only changes the caption. */}
-                {stewardMetrics.firstTouchDelay.current==null && myStats?.orgHasGiftHistory && !myStats?.orgHasInteractions
-                  ? "No outreach logged yet — this is normal right after import. Log your first call from a donor's profile to start tracking this."
-                  : <>Avg days before a new donor gets a personal touch{stewardMetrics.firstTouchDelay.sampleSize?` (n=${stewardMetrics.firstTouchDelay.sampleSize})`:""}</>}
-              </div>
+            )}
+          </div>
+
+          <div style={{borderTop:"1px solid "+T.bg3,paddingTop:16}}>
+            <div style={{fontSize:10,fontWeight:800,letterSpacing:"0.1em",textTransform:"uppercase",color:T.ink3,marginBottom:6}}>First-Touch Delay</div>
+            <div style={{fontSize:24,fontWeight:800,fontFamily:"'DM Serif Display',serif",color:T.ink,lineHeight:1}}>
+              {stewardMetrics.firstTouchDelay.current!=null?`${stewardMetrics.firstTouchDelay.current}d`:"—"}
             </div>
+            <div style={{fontSize:11,color:T.ink3,marginTop:4}}>
+              {/* A genuine zero (no logged outreach yet) reads as expected
+                  first-day state when the org has real donor/gift history —
+                  not as a broken metric — vs. the generic description once
+                  there's actually something to describe. Never fabricates
+                  interaction data; this only changes the caption. */}
+              {stewardMetrics.firstTouchDelay.current==null && myStats?.orgHasGiftHistory && !myStats?.orgHasInteractions
+                ? "No outreach logged yet — this is normal right after import. Log your first call from a donor's profile to start tracking this."
+                : <>Avg days before a new donor gets a personal touch{stewardMetrics.firstTouchDelay.sampleSize?` (n=${stewardMetrics.firstTouchDelay.sampleSize})`:""}</>}
+            </div>
+            {/* No "top offenders" list makes sense for an average — instead,
+                the actual newest donor(s) still waiting on a first personal
+                touch, i.e. the specific people this number is about. */}
+            {stewardMetrics.firstTouchDelay.newestUntouched?.length>0&&(
+              <div style={{display:"flex",flexWrap:"wrap",alignItems:"center",gap:6,marginTop:10}}>
+                {stewardMetrics.firstTouchDelay.newestUntouched.map(d=>(
+                  <DonorChip key={d.donorId} name={d.donorName} detail={`waiting ${daysDiff(d.firstGiftDate)}d`} onClick={()=>onNavigate("donors",{selectDonorId:d.donorId})}/>
+                ))}
+                {stewardMetrics.firstTouchDelay.untouchedCount>stewardMetrics.firstTouchDelay.newestUntouched.length&&(
+                  <span style={{fontSize:11,color:T.ink3}}>+{stewardMetrics.firstTouchDelay.untouchedCount-stewardMetrics.firstTouchDelay.newestUntouched.length} more waiting</span>
+                )}
+              </div>
+            )}
           </div>
 
           {/* Stewardship Debt — demoted from hero to a slim secondary strip.
               Still the same real, computed metric and drill-down; just no
               longer the first thing you see. */}
-          <div onClick={openDebtBreakdown} className="card-click" style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,paddingTop:14,borderTop:"1px dashed "+T.bg3,cursor:"pointer",borderRadius:8,margin:"-4px -4px -8px",padding:"4px 4px 8px"}}>
-            <div style={{fontSize:11,color:T.ink3,minWidth:0}}>
-              <span style={{fontWeight:700,color:T.ink}}>Stewardship Debt: {stewardMetrics.stewardshipDebt.current.toLocaleString()}</span>
-              {stewardMetrics.stewardshipDebt.deltaVsTrendStart!=null&&(
-                <span style={{marginLeft:6,fontWeight:700,color:stewardMetrics.stewardshipDebt.deltaVsTrendStart>0?"#ef4444":"#1a6b4a"}}>
-                  {stewardMetrics.stewardshipDebt.deltaVsTrendStart>0?"↑":"↓"} {Math.abs(stewardMetrics.stewardshipDebt.deltaVsTrendStart).toLocaleString()} vs 3 weeks ago
-                </span>
-              )}
-              <span> — donors weighted by days since contact × giving significance</span>
+          <div style={{borderTop:"1px dashed "+T.bg3,paddingTop:14}}>
+            <div onClick={openDebtBreakdown} className="card-click" style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,cursor:"pointer",borderRadius:8,margin:-4,padding:4}}>
+              <div style={{fontSize:11,color:T.ink3,minWidth:0}}>
+                <span style={{fontWeight:700,color:T.ink}}>Stewardship Debt: {stewardMetrics.stewardshipDebt.current.toLocaleString()}</span>
+                {stewardMetrics.stewardshipDebt.deltaVsTrendStart!=null&&(
+                  <span style={{marginLeft:6,fontWeight:700,color:stewardMetrics.stewardshipDebt.deltaVsTrendStart>0?"#ef4444":"#1a6b4a"}}>
+                    {stewardMetrics.stewardshipDebt.deltaVsTrendStart>0?"↑":"↓"} {Math.abs(stewardMetrics.stewardshipDebt.deltaVsTrendStart).toLocaleString()} vs 3 weeks ago
+                  </span>
+                )}
+                <span> — donors weighted by days since contact × giving significance</span>
+              </div>
             </div>
-            <span style={{fontSize:11,fontWeight:700,color:T.greenDk,flexShrink:0,whiteSpace:"nowrap"}}>see breakdown →</span>
+            {/* Top contributors to the debt score, inline — the same list
+                the full breakdown panel ranks, just the top few surfaced
+                here without requiring the click. */}
+            {(debtBreakdownLoading&&!debtBreakdown)?(
+              <div style={{fontSize:11,color:T.ink3,marginTop:10}}>Loading who's driving it…</div>
+            ):debtBreakdown?.rows?.length>0&&(
+              <div style={{display:"flex",flexWrap:"wrap",gap:6,marginTop:10}}>
+                {debtBreakdown.rows.slice(0,3).map(r=>(
+                  <DonorChip key={r.donorId} name={r.donorName} detail={`${r.daysSinceContact}d`} onClick={()=>onNavigate("donors",{selectDonorId:r.donorId})}/>
+                ))}
+                {debtBreakdown.count>3&&(
+                  <MoreChip count={debtBreakdown.count-3} onClick={openDebtBreakdown}/>
+                )}
+              </div>
+            )}
           </div>
         </div>
       )}

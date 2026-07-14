@@ -3388,7 +3388,7 @@ app.get("/metrics/stewardship-summary", requireAuth, wrap(async (req, res) => {
 
   res.json({
     stewardshipDebt: { current: debt, trend: debtTrend.map(r => ({ date: r.snapshot_date, value: Number(r.value) })), deltaVsTrendStart: trendDelta(debtTrend) },
-    firstTouchDelay: { current: firstTouch.avgDays, sampleSize: firstTouch.sampleSize, untouchedCount: firstTouch.untouchedCount, trend: touchTrend.map(r => ({ date: r.snapshot_date, value: Number(r.value) })), deltaVsTrendStart: trendDelta(touchTrend) },
+    firstTouchDelay: { current: firstTouch.avgDays, sampleSize: firstTouch.sampleSize, untouchedCount: firstTouch.untouchedCount, newestUntouched: firstTouch.newestUntouched, trend: touchTrend.map(r => ({ date: r.snapshot_date, value: Number(r.value) })), deltaVsTrendStart: trendDelta(touchTrend) },
     retentionRate: {
       current: retention.retentionRate, sectorAverage: SECTOR_AVG_RETENTION_RATE,
       retained: retention.retained, prevYearCount: retention.prevYearCount,
@@ -8046,7 +8046,7 @@ async function computeStewardshipDebt(orgId, opts = {}) {
 
 async function computeFirstTouchDelay(orgId) {
   const rows = await query(
-    `SELECT d.id, d.first_gift_date,
+    `SELECT d.id, d.name, d.first_gift_date,
        (SELECT MIN(i.date) FROM interactions i
         WHERE i.donor_id = d.id AND i.type IN ${MEANINGFUL_CONTACT_TYPES} AND i.date >= d.first_gift_date) AS first_touch_date
      FROM donors d
@@ -8054,13 +8054,28 @@ async function computeFirstTouchDelay(orgId) {
     [orgId]
   );
   let totalDays = 0, touched = 0, untouched = 0;
+  // The specific donors this average is actually about — newest first-gift
+  // first, since a brand-new donor still waiting on a human touch is more
+  // actionable than one who's been waiting for months (that's a lost cause,
+  // not a "get to them today" item).
+  const untouchedDonors = [];
   for (const d of rows) {
-    if (!d.first_touch_date) { untouched++; continue; }
+    if (!d.first_touch_date) {
+      untouched++;
+      untouchedDonors.push({ donorId: d.id, donorName: d.name, firstGiftDate: d.first_gift_date });
+      continue;
+    }
     const days = Math.max(0, Math.floor((new Date(d.first_touch_date) - new Date(d.first_gift_date)) / 86400000));
     totalDays += days;
     touched++;
   }
-  return { avgDays: touched > 0 ? Math.round(totalDays / touched) : null, sampleSize: touched, untouchedCount: untouched };
+  untouchedDonors.sort((a, b) => new Date(b.firstGiftDate) - new Date(a.firstGiftDate));
+  return {
+    avgDays: touched > 0 ? Math.round(totalDays / touched) : null,
+    sampleSize: touched,
+    untouchedCount: untouched,
+    newestUntouched: untouchedDonors.slice(0, 3),
+  };
 }
 
 // Sector benchmark line already used in the onboarding drip email (see

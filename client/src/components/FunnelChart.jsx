@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { STAGES, T, fmt } from "./shared";
 
 // ── Shared funnel math ───────────────────────────────────────────────────────
@@ -33,29 +34,61 @@ export function computeStageWeights(counts, stages, metric = "count", floor = 0.
   return { weights, max, valueOf };
 }
 
-const SHAPE_W = 88;
+// Clamped Catmull-Rom → cubic Bezier conversion: for an ordered list of
+// points, returns one bezier segment per consecutive pair, each shaped by
+// its neighbors on both sides. This is what makes the boundary between two
+// differently-sized stages read as one continuous flowing curve instead of
+// a sharp straight-edge kink — it absorbs a non-monotonic bump (a middle
+// stage smaller than both neighbors) gracefully instead of zigzagging.
+function catmullRomSegments(pts) {
+  const segs = [];
+  for (let i = 0; i < pts.length - 1; i++) {
+    const p0 = pts[i - 1] || pts[i];
+    const p1 = pts[i];
+    const p2 = pts[i + 1];
+    const p3 = pts[i + 2] || p2;
+    segs.push({
+      p1, p2,
+      cp1: { x: p1.x + (p2.x - p0.x) / 6, y: p1.y + (p2.y - p0.y) / 6 },
+      cp2: { x: p2.x - (p3.x - p1.x) / 6, y: p2.y - (p3.y - p1.y) / 6 },
+    });
+  }
+  return segs;
+}
 
-// A real tapering funnel: every band's bottom edge is exactly the next
-// band's top edge (both come from the same precomputed `edgeWidths` array,
-// not recomputed per band), and the bands are stacked with zero gap between
-// them, so the stack reads as one continuous silhouette instead of
-// independently-shaped triangles/diamonds per band. Labels live in a
-// separate column beside the shape (not inside the clipped element) so a
-// narrow taper never clips the text along with it. Lapsed is rendered as a
-// separate branch below — a leak out of the funnel, not the next step in it.
+// Widths are always centered on x=50, so a band's horizontal midpoint is
+// always inside its own fill regardless of how narrow it tapers.
+const leftX = w => (100 - w) / 2;
+const rightX = w => 100 - leftX(w);
+
+// A real tapering funnel rendered as one continuous SVG shape: every band is
+// its own <path> (so each stage keeps its own fill color), but adjacent
+// bands share bezier control points computed from the SAME global point
+// list, so the seam between them reads as a smooth curve, not a stacked
+// polygon edge — this holds even when the underlying counts aren't
+// monotonically decreasing. Labels live in a column beside the shape (not
+// overlaid on it) so a narrow taper never clips the text along with it.
+// Lapsed is rendered as a separate branch below — a leak out of the funnel,
+// not the next step in it.
 export default function FunnelChart({ counts, metric = "count", onStageClick, showLapsed = true, bandHeight = 40 }) {
+  const [hovered, setHovered] = useState(null);
   const coreStages = STAGES.filter(s => s.id !== "lapsed");
   const lapsedStage = STAGES.find(s => s.id === "lapsed");
   const { weights, max, valueOf } = computeStageWeights(counts, coreStages, metric);
   const pipelineShare = computeStagePipelineShare(counts, coreStages);
   const lapsedWidthPct = lapsedStage ? Math.round(Math.max(0.08, valueOf(lapsedStage) / max) * 100) : 0;
 
-  // One pass across the full stage list, computed before any rendering —
-  // edgeWidths[i] is stage i's own width%. Band i's top = edgeWidths[i] and
-  // its bottom = edgeWidths[i+1], the exact same value the next band uses as
-  // its own top, so adjacent bands always share a seam instead of being
-  // computed independently of their neighbor.
+  // edgeWidths[i] is stage i's own top width%. boundaryWidths has one extra
+  // entry — the bottom of the last stage repeats its own top width, since
+  // there's no next stage to taper toward.
   const edgeWidths = coreStages.map(s => Math.round(weights[s.id] * 100));
+  const boundaryWidths = [...edgeWidths, edgeWidths[edgeWidths.length - 1]];
+  const totalHeight = coreStages.length * bandHeight;
+
+  const leftPts = boundaryWidths.map((w, i) => ({ x: leftX(w), y: i * bandHeight }));
+  const rightPts = boundaryWidths.map((w, i) => ({ x: rightX(w), y: i * bandHeight }));
+  const leftSegs = catmullRomSegments(leftPts);
+  const rightSegs = catmullRomSegments(rightPts);
 
   const baseLabel = s => {
     const c = counts[s.id]?.count || 0;
@@ -64,48 +97,84 @@ export default function FunnelChart({ counts, metric = "count", onStageClick, sh
   };
   const valueLabel = s => `${baseLabel(s)} · ${pipelineShare[s.id]}% of pipeline`;
 
+  const setHover = id => onStageClick ? () => setHovered(id) : undefined;
+  const clearHover = () => setHovered(null);
+
   return (
     <div style={{ width: "100%" }}>
-      <div style={{ display: "flex", flexDirection: "column" }}>
-        {coreStages.map((s, i) => {
-          const topW = edgeWidths[i];
-          const bottomW = i < edgeWidths.length - 1 ? edgeWidths[i + 1] : topW;
-          const topInset = (100 - topW) / 2;
-          const bottomInset = (100 - bottomW) / 2;
-          const clip = `polygon(${topInset}% 0%, ${100 - topInset}% 0%, ${100 - bottomInset}% 100%, ${bottomInset}% 100%)`;
-          return (
+      <div style={{ display: "flex", alignItems: "stretch", gap: 18 }}>
+        <svg
+          width="100%" height={totalHeight} viewBox={`0 0 100 ${totalHeight}`} preserveAspectRatio="none"
+          style={{ flex: "1 1 auto", minWidth: 140, display: "block", overflow: "visible" }}
+        >
+          {coreStages.map((s, i) => {
+            const ls = leftSegs[i], rs = rightSegs[i];
+            const d = `M ${ls.p1.x} ${ls.p1.y} C ${ls.cp1.x} ${ls.cp1.y}, ${ls.cp2.x} ${ls.cp2.y}, ${ls.p2.x} ${ls.p2.y} L ${rs.p2.x} ${rs.p2.y} C ${rs.cp2.x} ${rs.cp2.y}, ${rs.cp1.x} ${rs.cp1.y}, ${rs.p1.x} ${rs.p1.y} Z`;
+            const isHover = hovered === s.id;
+            const midY = (ls.p1.y + ls.p2.y) / 2;
+            return (
+              <g
+                key={s.id}
+                onMouseEnter={setHover(s.id)}
+                onMouseLeave={onStageClick ? clearHover : undefined}
+                onClick={onStageClick ? () => onStageClick(s.id) : undefined}
+                style={{ cursor: onStageClick ? "pointer" : "default" }}
+              >
+                <path d={d} fill={s.color} opacity={isHover ? 1 : 0.88} style={{ transition: "opacity 0.15s ease" }} />
+                {isHover && <path d={d} fill="none" stroke="#fff" strokeOpacity={0.55} strokeWidth={1.5} />}
+                {onStageClick && (
+                  <text x={50} y={midY + 4} textAnchor="middle" fontSize={13} fontWeight={700} fill="#fff"
+                    opacity={isHover ? 0.95 : 0} style={{ transition: "opacity 0.15s ease", pointerEvents: "none" }}>
+                    ›
+                  </text>
+                )}
+              </g>
+            );
+          })}
+        </svg>
+
+        <div style={{ display: "flex", flexDirection: "column", flex: "0 0 180px", minWidth: 150 }}>
+          {coreStages.map(s => (
             <div
               key={s.id}
               onClick={onStageClick ? () => onStageClick(s.id) : undefined}
-              style={{ display: "flex", alignItems: "stretch", gap: 12, height: bandHeight, cursor: onStageClick ? "pointer" : "default" }}
+              onMouseEnter={setHover(s.id)}
+              onMouseLeave={onStageClick ? clearHover : undefined}
+              style={{
+                height: bandHeight, display: "flex", flexDirection: "column", justifyContent: "center",
+                cursor: onStageClick ? "pointer" : "default", borderRadius: 6, padding: "0 8px", margin: "0 -8px",
+                background: hovered === s.id ? s.color + "14" : "transparent", transition: "background 0.15s ease",
+              }}
             >
-              <div style={{ width: SHAPE_W, flexShrink: 0, position: "relative" }}>
-                <div style={{ position: "absolute", inset: 0, background: s.color, clipPath: clip, transition: "clip-path 0.4s ease" }} />
-              </div>
-              <div style={{ flex: 1, minWidth: 0, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
-                <span style={{ fontSize: 11, fontWeight: 800, color: s.color, textTransform: "uppercase", letterSpacing: "0.06em", flexShrink: 0 }}>
-                  {s.label}
-                </span>
-                <span style={{ fontSize: 11, color: T.ink3, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", minWidth: 0 }}>
-                  {valueLabel(s)}
-                </span>
-              </div>
+              <span style={{ fontSize: 11, fontWeight: 800, color: s.color, textTransform: "uppercase", letterSpacing: "0.06em" }}>
+                {s.label}
+              </span>
+              <span style={{ fontSize: 11, color: T.ink3, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                {valueLabel(s)}
+              </span>
             </div>
-          );
-        })}
+          ))}
+        </div>
       </div>
 
       {showLapsed && lapsedStage && (
         <div
           onClick={onStageClick ? () => onStageClick("lapsed") : undefined}
-          style={{ marginTop: 10, paddingTop: 12, borderTop: "1px dashed " + T.bg3, cursor: onStageClick ? "pointer" : "default" }}
+          onMouseEnter={setHover("lapsed")}
+          onMouseLeave={onStageClick ? clearHover : undefined}
+          style={{
+            marginTop: 10, paddingTop: 12, borderTop: "1px dashed " + T.bg3,
+            cursor: onStageClick ? "pointer" : "default", borderRadius: 8,
+            background: hovered === "lapsed" ? lapsedStage.color + "0d" : "transparent", transition: "background 0.15s ease",
+            padding: "12px 6px 6px",
+          }}
         >
           <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, marginBottom: 3 }}>
             <span style={{ fontWeight: 800, color: lapsedStage.color, textTransform: "uppercase", letterSpacing: "0.06em" }}>↘ Leaking Out — Lapsed</span>
             <span style={{ color: T.ink3 }}>{baseLabel(lapsedStage)}</span>
           </div>
           <div style={{ background: T.bg, borderRadius: 6, height: 16, overflow: "hidden" }}>
-            <div style={{ height: "100%", width: `${lapsedWidthPct}%`, background: lapsedStage.color, borderRadius: 6 }} />
+            <div style={{ height: "100%", width: `${lapsedWidthPct}%`, background: lapsedStage.color, borderRadius: 6, transition: "width 0.4s ease" }} />
           </div>
         </div>
       )}
