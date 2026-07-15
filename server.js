@@ -7476,7 +7476,7 @@ async function processPledgeReminders() {
     // (fires immediately, same as a fresh payment failure does).
     await run(
       `UPDATE pledges SET first_overdue_at=NOW(), next_reminder_at=NOW(), updated_at=NOW()
-       WHERE status='open' AND first_overdue_at IS NULL AND due_date < CURRENT_DATE`
+       WHERE status='open' AND first_overdue_at IS NULL AND due_date::date < CURRENT_DATE`
     );
 
     // Step 2 — send whatever's due, exactly like processDunning().

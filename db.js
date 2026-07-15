@@ -914,7 +914,7 @@ async function initSchema() {
       org_id TEXT NOT NULL REFERENCES orgs(id),
       donor_id TEXT NOT NULL REFERENCES donors(id),
       amount NUMERIC NOT NULL,
-      due_date DATE NOT NULL,
+      due_date TEXT NOT NULL,
       status TEXT NOT NULL DEFAULT 'open',
       notes TEXT,
       fulfilled_gift_id TEXT REFERENCES gifts(id),
@@ -928,6 +928,12 @@ async function initSchema() {
   `);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_pledges_org_donor ON pledges (org_id, donor_id)`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_pledges_reminder ON pledges (status, next_reminder_at)`);
+  // due_date was briefly a real DATE column, which node-pg serializes with a
+  // full timestamp ("2026-07-05T00:00:00.000Z") — inconsistent with every
+  // other date-like column in this schema (gifts.date, grants.deadline,
+  // etc. are all TEXT for exactly this reason). Fixes any row already
+  // created under the old column type; a no-op once already TEXT.
+  await pool.query(`ALTER TABLE pledges ALTER COLUMN due_date TYPE TEXT USING to_char(due_date::date, 'YYYY-MM-DD')`).catch(() => {});
 
   // Same org-level kill switch + template-override shape as
   // recurring_dunning_enabled/subject/body — no dedicated Settings UI for
