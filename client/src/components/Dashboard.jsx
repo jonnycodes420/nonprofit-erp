@@ -43,6 +43,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
 
   const [goal,setGoal]=useState(undefined); // undefined = loading, null = none set
   const [showSetGoal,setShowSetGoal]=useState(false);
+  const [goalModalMode,setGoalModalMode]=useState("create"); // "create" | "edit"
   const [goalForm,setGoalForm]=useState({label:"",goalAmount:"",goalType:"total_raised",periodStart:"",periodEnd:""});
   const [savingGoal,setSavingGoal]=useState(false);
 
@@ -232,13 +233,27 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
     return "Log call →";
   };
 
-  const ROW_COLOR={note:"#8b6f47",milestone:T.gold,lapsed:T.terracotta,thank:T.green,email:"#3b82f6",recurring:T.red,matching_gift:"#10b981"};
-  const rowColor=(item)=>item.taskId?"#8b5cf6":(ROW_COLOR[item.action]||T.greenMid);
+  const ROW_COLOR={note:T.greenMid,milestone:T.gold,lapsed:T.terracotta,thank:T.green,email:T.greenDk,recurring:T.terracotta,matching_gift:T.green};
+  const rowColor=(item)=>item.taskId?T.ink:(ROW_COLOR[item.action]||T.greenMid);
 
   const openSetGoal=()=>{
     const today=new Date();
     const in90=new Date(today);in90.setDate(in90.getDate()+90);
     setGoalForm({label:"",goalAmount:"",goalType:"total_raised",periodStart:today.toISOString().split("T")[0],periodEnd:in90.toISOString().split("T")[0]});
+    setGoalModalMode("create");
+    setShowSetGoal(true);
+  };
+
+  // Editing reuses the same POST /goals create flow — there's no PUT /goals
+  // endpoint because there doesn't need to be: GET /goals/active always
+  // returns the most-recently-created row whose period contains today, so
+  // submitting a new overlapping goal here supersedes the current one
+  // (see CLAUDE.md "fundraising_goals" — this is the documented, real
+  // source of truth, not a second place goals live).
+  const openEditGoal=()=>{
+    if(!goal)return;
+    setGoalForm({label:goal.label,goalAmount:String(goal.goalAmount),goalType:goal.goalType,periodStart:goal.periodStart,periodEnd:goal.periodEnd});
+    setGoalModalMode("edit");
     setShowSetGoal(true);
   };
 
@@ -331,12 +346,13 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
 
   const countsByStage=Object.fromEntries(stageCounts.map(s=>[s.stage,s]));
 
-  // Above sector average reads positive; below reads amber, then red the
-  // further under benchmark it falls — visually honest, not falsely
-  // encouraging (see CLAUDE.md's "name the vague anxiety as a number" pattern).
+  // Above sector average reads positive (green); below reads as needing
+  // attention (gold-tinted brown) — visually honest, not falsely encouraging,
+  // while staying inside the brand palette (see CLAUDE.md's "name the vague
+  // anxiety as a number" pattern).
   const retentionCurrent=stewardMetrics?.retentionRate?.current;
   const retentionSector=stewardMetrics?.retentionRate?.sectorAverage??43;
-  const retentionColor=retentionCurrent==null?T.ink:retentionCurrent>=retentionSector?"#1a6b4a":retentionCurrent>=retentionSector-15?"#d97706":"#ef4444";
+  const retentionColor=retentionCurrent==null?T.ink:retentionCurrent>=retentionSector?T.greenMid:T.terracotta;
 
   // Goal banner: greeting is real (time-of-day + the logged-in user's own
   // `name` field from the DB — not a role label or placeholder; an empty
@@ -350,7 +366,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
   const firstName=auth?.user?.name?.split(" ")[0]||"";
   const greetHour=new Date().getHours();
   const greeting=greetHour<12?"Good morning":greetHour<18?"Good afternoon":"Good evening";
-  let paceLabel=null,paceColor="#8fa896",paceDeltaPts=null,daysLeftInPeriod=null;
+  let paceLabel=null,paceColor="#8fa896",paceSub=null,daysLeftInPeriod=null;
   if(goal){
     const periodStartDate=new Date(goal.periodStart+"T00:00:00");
     const periodEndDate=new Date(goal.periodEnd+"T00:00:00");
@@ -359,12 +375,13 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
     daysLeftInPeriod=Math.max(0,daysUntil(goal.periodEnd));
     if(elapsedDays<2){
       paceLabel="Just getting started";
+      paceSub="too early in the period to gauge pace";
     }else{
       const expectedPercent=Math.round((elapsedDays/totalDays)*100);
-      paceDeltaPts=goal.percent-expectedPercent;
-      if(paceDeltaPts>=8){paceLabel="Ahead of pace";paceColor=T.gold;}
-      else if(paceDeltaPts<=-8){paceLabel="Behind pace";paceColor=T.terracotta;}
-      else{paceLabel="On pace";paceColor="#8fa896";}
+      const paceDeltaPts=goal.percent-expectedPercent;
+      if(paceDeltaPts>=8){paceLabel="Ahead of pace";paceColor=T.gold;paceSub=`${paceDeltaPts}pt ahead of schedule`;}
+      else if(paceDeltaPts<=-8){paceLabel="Behind pace";paceColor=T.terracotta;paceSub=`${Math.abs(paceDeltaPts)}pt behind schedule`;}
+      else{paceLabel="On pace";paceColor="#8fa896";paceSub=Math.abs(paceDeltaPts)>=1?`within ${Math.abs(paceDeltaPts)}pt of schedule`:"right on schedule";}
     }
   }
   // Trivially small vs. the goal (under 1%) reads as discouraging stated
@@ -385,6 +402,11 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
   return(
     <div className="dash-root dash-bleed fade-in" style={{background:T.bgDeep,margin:"-20px -24px -28px -24px",padding:"20px 24px 28px 24px",display:"flex",flexDirection:"column",gap:16,minHeight:"calc(100vh - 92px)"}}>
 
+      {/* Greeting lives on the page's own cream background, between the nav
+          and the goal card — not inside the dark card, where it read as a
+          stray line of card copy rather than a page-level welcome. */}
+      <div style={{fontSize:15,fontWeight:700,color:T.ink,padding:"0 2px"}}>{greeting}{firstName?`, ${firstName}`:""}</div>
+
       {/* Goal banner — restructured into a real two-column layout so its
           footprint matches its content across the card's full width,
           instead of stacking everything into a narrow left column and
@@ -398,13 +420,19 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
           <div style={{display:"flex",alignItems:"center",gap:8,color:"#8fa896",fontSize:13}}><Spin/>Loading goal…</div>
         ):goal?(
           <>
-            <div style={{fontSize:12,fontWeight:600,color:"#8fa896",marginBottom:18}}>{greeting}{firstName?`, ${firstName}`:""}</div>
-
             <div className="dash-goal-cols" style={{display:"flex",gap:32,flexWrap:"wrap"}}>
               {/* LEFT — primary */}
               <div style={{flex:"2 1 300px",minWidth:260}}>
                 <div style={{fontSize:10,fontWeight:800,letterSpacing:"0.12em",textTransform:"uppercase",color:"#8fa896",marginBottom:5}}>Fundraising Goal</div>
-                <div style={{fontSize:16,fontWeight:600,color:"#c9c2b4",marginBottom:16,maxWidth:420}}>{goal.label}</div>
+                <div style={{fontSize:16,fontWeight:600,color:"#c9c2b4",marginBottom:16,maxWidth:420,display:"flex",alignItems:"center",gap:8}}>
+                  <span>{goal.label}</span>
+                  {isAdmin&&(
+                    <button onClick={openEditGoal} disabled={isReadOnly} title={isReadOnly?"Reactivate your subscription to make changes.":"Edit goal"}
+                      style={{background:"transparent",border:"none",padding:3,margin:0,cursor:isReadOnly?"not-allowed":"pointer",color:"#8fa896",opacity:isReadOnly?0.4:1,display:"inline-flex",alignItems:"center",flexShrink:0}}>
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 3a2.85 2.85 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>
+                    </button>
+                  )}
+                </div>
 
                 <div style={{display:"flex",alignItems:"baseline",gap:10,marginBottom:12}}>
                   <div style={{fontSize:58,fontWeight:400,fontFamily:"'DM Serif Display',Georgia,serif",color:T.gold,lineHeight:1}}>{goal.percent}%</div>
@@ -418,21 +446,19 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
 
               {/* RIGHT — supporting stats, real data filling the width */}
               <div style={{flex:"1 1 200px",minWidth:180,display:"flex",flexDirection:"column",gap:10}}>
-                <GoalStat label="Pace" value={paceLabel} valueColor={paceLabel==="Ahead of pace"?T.gold:paceLabel==="Behind pace"?T.terracotta:"#f0ede6"}
-                  sub={paceDeltaPts!=null&&Math.abs(paceDeltaPts)>=1?`${Math.abs(paceDeltaPts)}pt ${paceDeltaPts>0?"ahead of":"behind"} schedule`:undefined}/>
-                <GoalStat label="Time Left" value={daysLeftInPeriod!=null?`${daysLeftInPeriod} day${daysLeftInPeriod!==1?"s":""}`:"—"} sub="in this period"/>
-                <GoalStat label="This Week" value={goalDriverHint?goalDriverHint.charAt(0).toUpperCase()+goalDriverHint.slice(1):"No gifts logged yet"}/>
+                <GoalStat label="Pace" value={paceLabel} valueColor={paceLabel==="Ahead of pace"?T.gold:paceLabel==="Behind pace"?T.terracotta:"#f0ede6"} sub={paceSub}/>
+                <GoalStat label="Time Left" value={daysLeftInPeriod!=null?`${daysLeftInPeriod} day${daysLeftInPeriod!==1?"s":""}`:"—"} sub="left to reach this goal"/>
+                <GoalStat label="This Week" value={goalDriverHint?goalDriverHint.charAt(0).toUpperCase()+goalDriverHint.slice(1):"No gifts logged yet"} sub={goalDriverHint?"recent momentum":"first gift of the period still to come"}/>
               </div>
             </div>
           </>
         ):(
           <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:12}}>
             <div>
-              <span style={{fontSize:12,fontWeight:600,color:"#8fa896",display:"block",marginBottom:8}}>{greeting}{firstName?`, ${firstName}`:""}</span>
               <div style={{fontSize:15,fontWeight:600,color:"#f0ede6",marginBottom:2}}>No goal set for this period.</div>
               <div style={{fontSize:12,color:"#8fa896"}}>Set a fundraising target to track progress here.</div>
             </div>
-            {isAdmin&&<button onClick={openSetGoal} style={{background:T.gold,border:"none",borderRadius:10,padding:"9px 18px",color:"#1a1206",fontSize:13,fontWeight:700,cursor:"pointer",whiteSpace:"nowrap"}}>Set a goal →</button>}
+            {isAdmin&&<button onClick={openSetGoal} style={{background:T.gold,border:"none",borderRadius:10,padding:"9px 18px",color:T.ink,fontSize:13,fontWeight:700,cursor:"pointer",whiteSpace:"nowrap"}}>Set a goal →</button>}
           </div>
         )}
       </div>
@@ -471,18 +497,27 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
               <div style={{flex:"1 1 220px",minWidth:0}}>
                 <div style={{fontSize:10,fontWeight:800,letterSpacing:"0.1em",textTransform:"uppercase",color:T.ink3,marginBottom:6}}>Donor Retention Rate</div>
                 <div style={{display:"flex",alignItems:"baseline",gap:10,flexWrap:"wrap"}}>
-                  <div style={{fontSize:36,fontWeight:800,fontFamily:"'DM Serif Display',serif",color:retentionColor,lineHeight:1}}>
+                  <div style={{fontSize:32,fontWeight:800,fontFamily:"'DM Serif Display',serif",color:retentionColor,lineHeight:1}}>
                     {retentionCurrent!=null?`${retentionCurrent}%`:"—"}
                   </div>
                   {stewardMetrics.retentionRate.deltaVsTrendStart!=null&&(
-                    <span style={{fontSize:13,fontWeight:700,color:stewardMetrics.retentionRate.deltaVsTrendStart===0?T.ink3:stewardMetrics.retentionRate.deltaVsTrendStart>0?"#1a6b4a":"#ef4444"}}>
+                    <span style={{fontSize:13,fontWeight:700,color:stewardMetrics.retentionRate.deltaVsTrendStart===0?T.ink3:stewardMetrics.retentionRate.deltaVsTrendStart>0?"#1a6b4a":T.terracotta}}>
                       {stewardMetrics.retentionRate.deltaVsTrendStart===0
                         ?"No change vs 3 weeks ago"
                         :`${stewardMetrics.retentionRate.deltaVsTrendStart>0?"↑":"↓"} ${Math.abs(stewardMetrics.retentionRate.deltaVsTrendStart)}pt vs 3 weeks ago`}
                     </span>
                   )}
                 </div>
-                <div style={{fontSize:11,color:T.ink3,marginTop:4}}>vs. {retentionSector}% sector average</div>
+                {/* Context line carries more of the weight here than the
+                    numeral above it — a sentence about what the number means
+                    for donor relationships, not a bare "vs. X%" field label. */}
+                <div style={{fontSize:13,fontWeight:600,color:T.ink2,marginTop:6,lineHeight:1.4,maxWidth:360}}>
+                  {retentionCurrent==null
+                    ?`The typical nonprofit retains ${retentionSector}% of its donors year over year.`
+                    :retentionCurrent>=retentionSector
+                      ?`Donors are sticking with you — ${retentionCurrent-retentionSector}pt above the ${retentionSector}% nonprofit sector average.`
+                      :`${retentionSector-retentionCurrent}pt below the ${retentionSector}% sector average — worth a closer look at who isn't renewing.`}
+                </div>
               </div>
               {stewardMetrics.retentionRate.trend.length>=2&&(
                 <Sparkline trend={stewardMetrics.retentionRate.trend} color={retentionColor} width={120} height={36}/>
@@ -510,15 +545,15 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
             <div style={{fontSize:24,fontWeight:800,fontFamily:"'DM Serif Display',serif",color:T.ink,lineHeight:1}}>
               {stewardMetrics.firstTouchDelay.current!=null?`${stewardMetrics.firstTouchDelay.current}d`:"—"}
             </div>
-            <div style={{fontSize:11,color:T.ink3,marginTop:4}}>
+            <div style={{fontSize:13,fontWeight:600,color:T.ink2,marginTop:6,lineHeight:1.4,maxWidth:360}}>
               {/* A genuine zero (no logged outreach yet) reads as expected
                   first-day state when the org has real donor/gift history —
                   not as a broken metric — vs. the generic description once
                   there's actually something to describe. Never fabricates
                   interaction data; this only changes the caption. */}
               {stewardMetrics.firstTouchDelay.current==null && myStats?.orgHasGiftHistory && !myStats?.orgHasInteractions
-                ? "No outreach logged yet — this is normal right after import. Log your first call from a donor's profile to start tracking this."
-                : <>Avg days before a new donor gets a personal touch{stewardMetrics.firstTouchDelay.sampleSize?` (n=${stewardMetrics.firstTouchDelay.sampleSize})`:""}</>}
+                ? "No outreach logged yet — that's normal right after import. Log your first call from a donor's profile to start tracking this."
+                : <>New donors wait this long, on average, before hearing from you personally{stewardMetrics.firstTouchDelay.sampleSize?` — based on ${stewardMetrics.firstTouchDelay.sampleSize} donors`:""}.</>}
             </div>
             {/* No "top offenders" list makes sense for an average — instead,
                 the actual newest donor(s) still waiting on a first personal
@@ -543,13 +578,13 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
               <div style={{fontSize:11,color:T.ink3,minWidth:0}}>
                 <span style={{fontWeight:700,color:T.ink}}>Stewardship Debt: {stewardMetrics.stewardshipDebt.current.toLocaleString()}</span>
                 {stewardMetrics.stewardshipDebt.deltaVsTrendStart!=null&&(
-                  <span style={{marginLeft:6,fontWeight:700,color:stewardMetrics.stewardshipDebt.deltaVsTrendStart===0?T.ink3:stewardMetrics.stewardshipDebt.deltaVsTrendStart>0?"#ef4444":"#1a6b4a"}}>
+                  <span style={{marginLeft:6,fontWeight:700,color:stewardMetrics.stewardshipDebt.deltaVsTrendStart===0?T.ink3:stewardMetrics.stewardshipDebt.deltaVsTrendStart>0?T.terracotta:"#1a6b4a"}}>
                     {stewardMetrics.stewardshipDebt.deltaVsTrendStart===0
                       ?"No change vs 3 weeks ago"
                       :`${stewardMetrics.stewardshipDebt.deltaVsTrendStart>0?"↑":"↓"} ${Math.abs(stewardMetrics.stewardshipDebt.deltaVsTrendStart).toLocaleString()} vs 3 weeks ago`}
                   </span>
                 )}
-                <span> — donors weighted by days since contact × giving significance</span>
+                <span> — how long donors have gone quiet, weighted by how much they've given</span>
               </div>
             </div>
             {/* Top contributors to the debt score, inline — the same list
@@ -572,10 +607,10 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
       )}
 
       {myStats&&(
-        <div style={{background:T.white,border:"1px solid #3b82f630",borderLeft:"3px solid #3b82f6",borderRadius:14,overflow:"hidden"}}>
+        <div style={{background:T.white,border:"1px solid "+T.greenDk+"30",borderLeft:"3px solid "+T.greenDk,borderRadius:14,overflow:"hidden"}}>
           <button onClick={()=>setPortfolioOpen(v=>!v)} style={{width:"100%",background:"none",border:"none",padding:"10px 16px",display:"flex",alignItems:"center",justifyContent:"space-between",cursor:"pointer",color:T.ink}}>
             <div style={{display:"flex",alignItems:"center",gap:8}}>
-              <span style={{fontSize:9,fontWeight:800,letterSpacing:"0.1em",textTransform:"uppercase",color:"#3b82f6",background:"#3b82f610",padding:"3px 8px",borderRadius:99}}>MY PORTFOLIO</span>
+              <span style={{fontSize:9,fontWeight:800,letterSpacing:"0.1em",textTransform:"uppercase",color:T.greenDk,background:T.greenDk+"10",padding:"3px 8px",borderRadius:99}}>MY PORTFOLIO</span>
               <span style={{fontSize:12,color:T.ink3}}>FY Jul–Jun</span>
             </div>
             <span style={{fontSize:12,color:T.ink3}}>{portfolioOpen?"▲":"▼"}</span>
@@ -602,10 +637,10 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
                     onMouseEnter={()=>setHoveredStat(i)} onMouseLeave={()=>setHoveredStat(h=>h===i?null:h)}
                     style={{padding:"12px 14px",borderRight:i<5?"1px solid "+T.bg3:"none",textAlign:"center",cursor:"pointer",background:hoveredStat===i?T.bg:"transparent",transition:"background 0.12s"}}>
                     <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:5,marginBottom:4}}>
-                      <StatIcon name={m.icon} color={m.warn?"#ef4444":"#3b82f6"}/>
-                      <span style={{fontSize:9,fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase",color:m.warn?"#ef4444":"#3b82f6"}}>{m.label}</span>
+                      <StatIcon name={m.icon} color={m.warn?T.terracotta:T.greenDk}/>
+                      <span style={{fontSize:9,fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase",color:m.warn?T.terracotta:T.greenDk}}>{m.label}</span>
                     </div>
-                    <div style={{fontSize:20,fontWeight:800,color:m.warn?"#ef4444":T.ink,fontFamily:"'DM Serif Display',serif",lineHeight:1}}>{m.value}</div>
+                    <div style={{fontSize:20,fontWeight:800,color:m.warn?T.terracotta:T.ink,fontFamily:"'DM Serif Display',serif",lineHeight:1}}>{m.value}</div>
                     <div style={{fontSize:10,color:T.ink3,marginTop:2}}>{m.unit}</div>
                   </div>
                 ))}
@@ -627,7 +662,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
             <div className="dash-cpad" style={{...cPad,borderBottom:"1px solid "+T.bg3,...sHdr}}>
               <span style={{display:"flex",alignItems:"center",gap:8}}>
                 <span style={sTitle}>Needs Your Attention</span>
-                {scope==="mine"&&<span style={{fontSize:9,fontWeight:800,letterSpacing:"0.06em",textTransform:"uppercase",color:"#3b82f6",background:"#3b82f610",padding:"2px 7px",borderRadius:99}}>Mine</span>}
+                {scope==="mine"&&<span style={{fontSize:9,fontWeight:800,letterSpacing:"0.06em",textTransform:"uppercase",color:T.greenDk,background:T.greenDk+"10",padding:"2px 7px",borderRadius:99}}>Mine</span>}
               </span>
               {!queueLoading&&<span style={{fontSize:11,color:T.ink3}}>{visibleQueue.length} {visibleQueue.length===1?"item":"items"}</span>}
             </div>
@@ -724,7 +759,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
             {!nextGrant&&<div style={{...cPad,fontSize:13,color:T.ink3,fontStyle:"italic"}}>No upcoming deadlines.</div>}
             {nextGrant&&(()=>{
               const d=daysUntil(nextGrant.deadline);
-              const urgColor=d<14?"#ef4444":d<30?"#f59e0b":"#1a6b4a";
+              const urgColor=d<14?T.terracotta:T.greenMid;
               return(
                 <div style={{padding:"14px 20px"}}>
                   <div style={{fontSize:13,fontWeight:700,color:T.ink,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{nextGrant.funder}</div>
@@ -740,14 +775,14 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
 
           {/* Recurring gift recovery — revenue-at-risk, not buried in a report */}
           {recurringHealth&&recurringHealth.activeCount>0&&(
-            <div style={{...cardWrap,borderColor:recurringHealth.atRiskCount>0?"#c0392b30":T.bg3}}>
+            <div style={{...cardWrap,borderColor:recurringHealth.atRiskCount>0?T.terracotta+"30":T.bg3}}>
               <div className="dash-cpad" style={{...cPad,borderBottom:"1px solid "+T.bg3}}>
                 <span style={sTitle}>Recurring Gifts</span>
               </div>
               <div style={{padding:"14px 20px"}}>
                 {recurringHealth.atRiskCount>0?(
                   <>
-                    <div style={{fontSize:20,fontWeight:800,fontFamily:"'DM Serif Display',serif",color:T.red,lineHeight:1}}>
+                    <div style={{fontSize:20,fontWeight:800,fontFamily:"'DM Serif Display',serif",color:T.terracotta,lineHeight:1}}>
                       {fmt(recurringHealth.mrrAtRisk)}<span style={{fontSize:12,fontWeight:600,color:T.ink3}}>/mo at risk</span>
                     </div>
                     <div style={{fontSize:12,color:T.ink3,marginTop:4}}>
@@ -771,7 +806,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
       {showSetGoal&&(
         <div style={{position:"fixed",inset:0,background:"#0f1a12cc",backdropFilter:"blur(4px)",zIndex:300,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
           <div className="fade-in" style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:18,width:"100%",maxWidth:420,padding:24,boxShadow:"0 4px 32px rgba(15,15,15,0.12)"}}>
-            <div style={{fontSize:16,fontWeight:800,color:T.ink,marginBottom:16}}>Set a fundraising goal</div>
+            <div style={{fontSize:16,fontWeight:800,color:T.ink,marginBottom:16}}>{goalModalMode==="edit"?"Edit fundraising goal":"Set a fundraising goal"}</div>
             <div style={{fontSize:11,fontWeight:700,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:4}}>Label</div>
             <input value={goalForm.label} onChange={e=>setGoalForm(f=>({...f,label:e.target.value}))} placeholder="e.g. Win back $50,000 in lapsed giving" style={inp}/>
             <div style={{fontSize:11,fontWeight:700,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:4}}>Target amount ($)</div>
@@ -793,8 +828,8 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
               </div>
             </div>
             <div style={{display:"flex",gap:8,marginTop:6}}>
-              <button onClick={saveGoal} disabled={savingGoal||!goalForm.label.trim()||!goalForm.goalAmount} style={{flex:1,background:(savingGoal||!goalForm.label.trim()||!goalForm.goalAmount)?T.bg2:T.gold,border:"none",borderRadius:10,padding:"11px",color:"#1a1206",fontSize:14,fontWeight:700,cursor:(savingGoal||!goalForm.label.trim()||!goalForm.goalAmount)?"not-allowed":"pointer"}}>
-                {savingGoal?"Saving…":"Set goal"}
+              <button onClick={saveGoal} disabled={savingGoal||!goalForm.label.trim()||!goalForm.goalAmount} style={{flex:1,background:(savingGoal||!goalForm.label.trim()||!goalForm.goalAmount)?T.bg2:T.gold,border:"none",borderRadius:10,padding:"11px",color:T.ink,fontSize:14,fontWeight:700,cursor:(savingGoal||!goalForm.label.trim()||!goalForm.goalAmount)?"not-allowed":"pointer"}}>
+                {savingGoal?"Saving…":goalModalMode==="edit"?"Save changes":"Set goal"}
               </button>
               <button onClick={()=>setShowSetGoal(false)} style={{background:T.bg,border:"none",borderRadius:10,padding:"11px 14px",color:T.ink3,fontSize:13,cursor:"pointer"}}>Cancel</button>
             </div>
