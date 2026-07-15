@@ -942,6 +942,56 @@ async function initSchema() {
   await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS pledge_reminder_enabled BOOLEAN DEFAULT true`);
   await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS pledge_reminder_subject TEXT`);
   await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS pledge_reminder_body TEXT`);
+
+  // ── Peer-to-peer fundraising (2026-07-15) ─────────────────────────────────
+  // A supporter starts their own personal fundraiser under an org's Giving
+  // Page — turning one donor-facing page into many supporter-facing ones.
+  // Every peer_fundraiser belongs to exactly one giving_pages row (no
+  // standalone fundraiser concept); ON DELETE CASCADE reflects that — a
+  // fundraiser cannot outlive its parent campaign. slug is unique per
+  // giving_page_id (not globally), same reasoning as giving_pages.slug being
+  // unique per org: the public URL is already namespaced by
+  // /give/:orgSlug/:pageSlug/:fundraiserSlug. No account/password system —
+  // edit_token is a long random value (same shape as invites.token) mailed
+  // to the supporter as their entire "auth" for managing the page later.
+  // org_id is denormalized from giving_page_id (redundant with the join to
+  // giving_pages) on purpose — CLAUDE.md's "Org_id scoping (security)"
+  // convention is "AND org_id = ? on SELECT, UPDATE, DELETE" directly on the
+  // scoped table itself. Without this column, every route touching
+  // peer_fundraisers has to remember the extra JOIN to enforce org
+  // isolation; with it, a future query that filters only by org_id (the
+  // codebase-wide muscle-memory pattern) is correct by default instead of
+  // silently crossing org boundaries if someone forgets the join.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS peer_fundraisers (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL REFERENCES orgs(id),
+      giving_page_id TEXT NOT NULL REFERENCES giving_pages(id) ON DELETE CASCADE,
+      name TEXT NOT NULL,
+      email TEXT NOT NULL,
+      slug TEXT NOT NULL,
+      personal_goal_amount NUMERIC,
+      story TEXT,
+      image_url TEXT,
+      status TEXT NOT NULL DEFAULT 'active',
+      edit_token TEXT NOT NULL UNIQUE,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS peer_fundraisers_page_slug_uk ON peer_fundraisers (giving_page_id, slug)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_peer_fundraisers_org ON peer_fundraisers (org_id)`);
+
+  // Nullable, alongside the existing gifts.giving_page_id — a peer-fundraiser
+  // gift always carries BOTH (see server.js /donate/:orgSlug), which is what
+  // makes rollup free: the parent page's SUM(amount) WHERE giving_page_id=?
+  // already includes every peer gift with zero extra aggregation. No FK
+  // constraint, mirroring giving_page_id's own "tolerated dangling
+  // reference" pattern (see CLAUDE.md "Admin data integrity") — a gift given
+  // through a since-deleted fundraiser simply keeps an id that no longer
+  // resolves.
+  await pool.query(`ALTER TABLE gifts ADD COLUMN IF NOT EXISTS peer_fundraiser_id TEXT`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_gifts_peer_fundraiser ON gifts (peer_fundraiser_id)`);
 }
 
 async function seedData() {

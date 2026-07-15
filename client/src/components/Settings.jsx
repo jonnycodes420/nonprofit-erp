@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
-import QRCode from "qrcode";
 import { T, Pill, SectionLabel, PageTitle } from "./shared";
+import { QrCodeBlock, EmbedCodeBlock } from "./ShareBlocks";
 import { apiFetch, API, getToken } from "../api";
 import UpgradeModal from "./UpgradeModal";
 
@@ -16,97 +16,9 @@ const BILLING_STATUS_META = {
   cancelled:     { label:"Canceled",      bg:"#1a2e1f", color:"#8fa896", border:"#2d4a35" },
 };
 
-// One QR/embed mechanism, parameterized by URL — used for both the org-wide
-// donation page and each individual Giving Page's own shareable link, rather
-// than a second QR/embed system. Module-level (not defined inside Settings)
-// so it doesn't remount and lose its own qrDataUrl state on every parent
-// re-render (see CLAUDE.md "Key patterns" re: TpField/TpYesNo).
-function QrCodeBlock({url,filenameBase}){
-  const [qrDataUrl,setQrDataUrl]=useState("");
-  const [qrLoading,setQrLoading]=useState(false);
-
-  async function generateQR(){
-    if(!url)return;
-    setQrLoading(true);
-    try{
-      const dataUrl=await QRCode.toDataURL(url,{width:300,margin:2,color:{dark:"#0f1a12",light:"#faf8f4"}});
-      setQrDataUrl(dataUrl);
-    }catch(e){console.error(e);}
-    setQrLoading(false);
-  }
-  function downloadQR(){
-    if(!qrDataUrl)return;
-    const a=document.createElement("a");
-    a.href=qrDataUrl;
-    a.download=`${filenameBase}-donation-qr.png`;
-    a.click();
-  }
-  function printQR(){
-    if(!qrDataUrl)return;
-    const w=window.open("","_blank","width=600,height=700");
-    w.document.write(`<!DOCTYPE html><html><head><title>Donation QR</title>
-<style>
-  *{margin:0;padding:0;box-sizing:border-box}
-  body{background:#fff;font-family:'DM Sans',system-ui,sans-serif;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;padding:40px}
-  img{width:280px;height:280px}
-  p{font-size:16px;color:#6b6b6b;text-align:center;margin-top:16px}
-  @media print{@page{margin:0.5in}body{padding:20px}}
-</style></head><body>
-<img src="${qrDataUrl}"/>
-<p>Scan to give</p>
-<script>window.onload=()=>{setTimeout(()=>{window.print();},400)}<\/script>
-</body></html>`);
-    w.document.close();
-  }
-
-  return(
-    <div style={{display:"flex",gap:10,flexWrap:"wrap",alignItems:"flex-start"}}>
-      <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-        {!qrDataUrl?(
-          <button onClick={generateQR} disabled={qrLoading}
-            style={{background:T.green,border:"none",borderRadius:8,padding:"9px 18px",color:"#fff",fontSize:13,fontWeight:700,cursor:qrLoading?"not-allowed":"pointer",opacity:qrLoading?0.7:1}}>
-            {qrLoading?"Generating…":"Generate QR Code"}
-          </button>
-        ):(
-          <>
-            <button onClick={downloadQR}
-              style={{background:T.greenDk,border:"none",borderRadius:8,padding:"9px 18px",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer"}}>
-              ↓ Download PNG
-            </button>
-            <button onClick={printQR}
-              style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"9px 18px",color:T.ink,fontSize:13,fontWeight:600,cursor:"pointer"}}>
-              🖨 Print
-            </button>
-            <button onClick={()=>setQrDataUrl("")}
-              style={{background:"transparent",border:"1px solid "+T.bg3,borderRadius:8,padding:"9px 14px",color:T.ink3,fontSize:13,cursor:"pointer"}}>
-              Regenerate
-            </button>
-          </>
-        )}
-      </div>
-      {qrDataUrl&&<img src={qrDataUrl} alt="Donation QR Code" style={{width:120,height:120,borderRadius:8,border:"1px solid "+T.bg3,flexShrink:0}}/>}
-    </div>
-  );
-}
-
-function EmbedCodeBlock({url}){
-  const [embedCopied,setEmbedCopied]=useState(false);
-  const embedCode = url ? `<iframe src="${url}" width="100%" height="600" frameborder="0"></iframe>` : "";
-  function copyEmbed(){
-    navigator.clipboard.writeText(embedCode).then(()=>{setEmbedCopied(true);setTimeout(()=>setEmbedCopied(false),2500);});
-  }
-  return(
-    <div style={{position:"relative"}}>
-      <pre style={{background:"#0f172a",color:"#a5f3c0",borderRadius:10,padding:"14px 16px",fontSize:12,lineHeight:1.7,overflowX:"auto",margin:0,fontFamily:"'Fira Code',monospace,monospace",whiteSpace:"pre-wrap",wordBreak:"break-all"}}>
-        {embedCode}
-      </pre>
-      <button onClick={copyEmbed}
-        style={{position:"absolute",top:10,right:10,background:embedCopied?"#10b98130":"rgba(255,255,255,0.12)",border:"1px solid rgba(255,255,255,0.2)",borderRadius:6,padding:"4px 10px",color:embedCopied?"#a5f3c0":"#e2e8f0",fontSize:11,fontWeight:700,cursor:"pointer",transition:"all 0.15s"}}>
-        {embedCopied?"✓ Copied!":"Copy Code"}
-      </button>
-    </div>
-  );
-}
+// QrCodeBlock/EmbedCodeBlock now live in ./ShareBlocks (factored out so
+// non-Settings pages, e.g. the public peer-fundraiser manage page, can
+// reuse them without importing this whole admin component tree).
 
 function slugifyPreview(s){
   return (s||"").toLowerCase().trim().replace(/[^a-z0-9]+/g,"-").replace(/^-+|-+$/g,"").slice(0,60);
@@ -133,10 +45,36 @@ function GivingPagesManager({orgSlug,isAdmin,isReadOnly}){
   const [saving,setSaving]=useState(false);
   const [shareOpenId,setShareOpenId]=useState(null);
 
+  // Peer-to-peer fundraisers nested under each page — lazily fetched on
+  // first expand and cached per page id, same "don't refetch what's already
+  // open" pattern as portfolioBreakdown in Dashboard.jsx. Anyone can spin up
+  // a public page under an org's name here, so this list is the admin
+  // safety valve: archive/take down a fundraiser immediately.
+  const [fundraisersOpenId,setFundraisersOpenId]=useState(null);
+  const [fundraisersByPage,setFundraisersByPage]=useState({});
+
   useEffect(()=>{
     apiFetch("/giving-pages").then(r=>{setPages(r||[]);setLoaded(true);}).catch(()=>setLoaded(true));
     apiFetch("/finance/funds").then(r=>setFunds(r||[])).catch(()=>{});
   },[]);
+
+  function toggleFundraisers(p){
+    const next=fundraisersOpenId===p.id?null:p.id;
+    setFundraisersOpenId(next);
+    if(next&&!fundraisersByPage[p.id]){
+      apiFetch(`/giving-pages/${p.id}/fundraisers`)
+        .then(r=>setFundraisersByPage(prev=>({...prev,[p.id]:r||[]})))
+        .catch(()=>setFundraisersByPage(prev=>({...prev,[p.id]:[]})));
+    }
+  }
+
+  async function toggleFundraiserArchive(pageId,f){
+    const nextStatus=f.status==="active"?"archived":"active";
+    try{
+      const updated=await apiFetch(`/peer-fundraisers/${f.id}`,{method:"PUT",body:JSON.stringify({status:nextStatus})});
+      setFundraisersByPage(prev=>({...prev,[pageId]:(prev[pageId]||[]).map(x=>x.id===f.id?updated:x)}));
+    }catch(e){alert(e.message||"Failed to update fundraiser");}
+  }
 
   function openAdd(){
     setEditing(null);
@@ -215,8 +153,9 @@ function GivingPagesManager({orgSlug,isAdmin,isReadOnly}){
         const url=orgSlug?`${window.location.origin}/give/${orgSlug}/${p.slug}`:"";
         const meta=GP_STATUS_META[p.status]||GP_STATUS_META.active;
         const shareOpen=shareOpenId===p.id;
+        const fundraisersOpen=fundraisersOpenId===p.id;
         return(
-          <div key={p.id} style={{padding:"14px 0",borderBottom:i<pages.length-1||shareOpen?"1px solid "+T.bg3:"none"}}>
+          <div key={p.id} style={{padding:"14px 0",borderBottom:i<pages.length-1||shareOpen||fundraisersOpen?"1px solid "+T.bg3:"none"}}>
             <div style={{display:"flex",alignItems:"center",gap:12}}>
               <div style={{flex:1,minWidth:0}}>
                 <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
@@ -237,6 +176,10 @@ function GivingPagesManager({orgSlug,isAdmin,isReadOnly}){
                 <button onClick={()=>setShareOpenId(shareOpen?null:p.id)}
                   style={{background:shareOpen?T.greenDk:T.bg,border:"1px solid "+(shareOpen?T.greenDk:T.bg3),borderRadius:6,padding:"5px 10px",fontSize:11,fontWeight:600,color:shareOpen?"#fff":T.ink2,cursor:"pointer"}}>
                   Share {shareOpen?"▲":"▼"}
+                </button>
+                <button onClick={()=>toggleFundraisers(p)}
+                  style={{background:fundraisersOpen?T.greenDk:T.bg,border:"1px solid "+(fundraisersOpen?T.greenDk:T.bg3),borderRadius:6,padding:"5px 10px",fontSize:11,fontWeight:600,color:fundraisersOpen?"#fff":T.ink2,cursor:"pointer"}}>
+                  Fundraisers{fundraisersByPage[p.id]?` (${fundraisersByPage[p.id].length})`:""} {fundraisersOpen?"▲":"▼"}
                 </button>
                 {isAdmin&&<>
                   <button onClick={()=>openEdit(p)} style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:6,padding:"5px 10px",fontSize:11,fontWeight:600,color:T.ink2,cursor:"pointer"}}>Edit</button>
@@ -263,6 +206,45 @@ function GivingPagesManager({orgSlug,isAdmin,isReadOnly}){
                 </div>
               </div>
             )}
+            {fundraisersOpen&&(()=>{
+              const list=fundraisersByPage[p.id];
+              return(
+                <div style={{marginTop:14,background:T.bg,border:"1px solid "+T.bg3,borderRadius:12,padding:"16px 18px"}}>
+                  <div style={{fontSize:12,color:T.ink3,marginBottom:list===undefined||list.length?12:0,lineHeight:1.6}}>
+                    {list===undefined
+                      ?"Loading…"
+                      :list.length===0
+                        ?"Nobody has started a personal fundraiser under this page yet. Anyone can, once you've shared the link above — this list is your safety valve to take one down if needed."
+                        :"Anyone can start a public page under your org's name from the link above — archive one immediately if it needs to come down."}
+                  </div>
+                  {list&&list.length>0&&list.map((f,fi)=>{
+                    const fRaised=parseFloat(f.raised_amount)||0;
+                    const fGoal=f.personal_goal_amount!=null?parseFloat(f.personal_goal_amount):null;
+                    const fMeta=GP_STATUS_META[f.status]||GP_STATUS_META.active;
+                    const fUrl=orgSlug?`${window.location.origin}/give/${orgSlug}/${p.slug}/${f.slug}`:"";
+                    return(
+                      <div key={f.id} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 0",borderTop:fi>0?"1px solid "+T.bg3:"none"}}>
+                        <div style={{flex:1,minWidth:0}}>
+                          <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+                            <span style={{fontSize:13,fontWeight:700,color:T.ink}}>{f.name}</span>
+                            <span style={{fontSize:9,fontWeight:700,padding:"1px 7px",borderRadius:99,background:fMeta.bg,color:fMeta.color,border:"1px solid "+fMeta.border}}>{fMeta.label}</span>
+                          </div>
+                          <div style={{fontSize:11,color:T.ink3,marginTop:2}}>
+                            {fmtDollars(fRaised)}{fGoal?` of ${fmtDollars(fGoal)} raised`:" raised"} · <a href={fUrl} target="_blank" rel="noreferrer" style={{color:T.greenDk}}>{fUrl.replace(/^https?:\/\//,"")}</a>
+                          </div>
+                        </div>
+                        {isAdmin&&(
+                          <button onClick={()=>toggleFundraiserArchive(p.id,f)} disabled={isReadOnly}
+                            style={{flexShrink:0,background:f.status==="active"?"#fef2f2":"#e8f5ef",border:"1px solid "+(f.status==="active"?"#fecaca":"#10b981"),borderRadius:6,padding:"5px 10px",fontSize:11,fontWeight:600,color:f.status==="active"?"#dc2626":"#1a6b4a",cursor:isReadOnly?"not-allowed":"pointer",opacity:isReadOnly?0.6:1}}>
+                            {f.status==="active"?"Archive":"Reactivate"}
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })()}
           </div>
         );
       })}

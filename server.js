@@ -192,6 +192,7 @@ app.post("/stripe/webhook", express.raw({ type: "application/json" }), async (re
       const accountId = event.account;
       const campaignId = pi.metadata?.campaign_id || null;
       const givingPageId = pi.metadata?.giving_page_id || null;
+      const peerFundraiserId = pi.metadata?.peer_fundraiser_id || null;
       const donorName = pi.metadata?.donor_name || "";
 
       if (email && accountId) {
@@ -216,9 +217,9 @@ app.post("/stripe/webhook", express.raw({ type: "application/json" }), async (re
             const donorPreRow = await query("SELECT stage FROM donors WHERE id=$1", [donorId]);
             const wasLapsed = donorPreRow[0]?.stage === 'lapsed';
             await run(
-              `INSERT INTO gifts (id, org_id, donor_id, amount, date, notes, stripe_payment_id, campaign_id, giving_page_id)
-               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
-              [giftId, orgId, donorId, amount, today, "Online payment via Stripe", pi.id, campaignId, givingPageId]
+              `INSERT INTO gifts (id, org_id, donor_id, amount, date, notes, stripe_payment_id, campaign_id, giving_page_id, peer_fundraiser_id)
+               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+              [giftId, orgId, donorId, amount, today, "Online payment via Stripe", pi.id, campaignId, givingPageId, peerFundraiserId]
             );
             await run(
               `UPDATE donors SET
@@ -5040,6 +5041,21 @@ app.get("/org/:orgSlug/giving-page/:pageSlug/public", wrap(async (req, res) => {
   if (!pageRows.length) return res.status(404).json({ error: "This giving page could not be found." });
   const page = pageRows[0];
   const funds = await query("SELECT id, name, restricted FROM fin_funds WHERE org_id = ? ORDER BY name ASC", [org.id]);
+
+  // Rollup + leaderboard — cheap once peer gifts always carry the parent's
+  // giving_page_id (see gifts.peer_fundraiser_id comment in db.js): the
+  // page's own raised_amount above already includes every peer gift with no
+  // extra logic, and this is just the same SUM one level down, grouped by
+  // fundraiser. Live every call, never cached, same rule as raised_amount.
+  const fundraiserRows = await query(
+    `SELECT pf.id, pf.name, pf.slug,
+       COALESCE((SELECT SUM(amount) FROM gifts WHERE peer_fundraiser_id = pf.id), 0) AS raised_amount
+     FROM peer_fundraisers pf
+     WHERE pf.giving_page_id = ? AND pf.status = 'active'
+     ORDER BY raised_amount DESC, pf.created_at ASC`,
+    [page.id]
+  );
+
   res.json({
     org: { name: org.name, mission: org.mission, slug: req.params.orgSlug },
     givingPage: {
@@ -5049,12 +5065,288 @@ app.get("/org/:orgSlug/giving-page/:pageSlug/public", wrap(async (req, res) => {
       fundId: page.fund_id, fundName: page.fund_name || null,
     },
     funds,
+    peerFundraisers: {
+      count: fundraiserRows.length,
+      leaderboard: fundraiserRows.slice(0, 10).map(f => ({ id: f.id, name: f.name, slug: f.slug, raisedAmount: parseFloat(f.raised_amount) || 0 })),
+    },
   });
+}));
+
+// ── Peer-to-peer fundraising ────────────────────────────────────────────────
+// A supporter's own personal fundraiser under a parent Giving Page — see
+// peer_fundraisers in db.js. Slug uniqueness is scoped to one giving page,
+// not the whole org (mirrors uniqueGivingPageSlug above, one level down).
+async function uniquePeerFundraiserSlug(givingPageId, base, excludeId) {
+  let slug = base, n = 1;
+  while (true) {
+    const rows = excludeId
+      ? await query("SELECT id FROM peer_fundraisers WHERE giving_page_id=? AND slug=? AND id<>?", [givingPageId, slug, excludeId])
+      : await query("SELECT id FROM peer_fundraisers WHERE giving_page_id=? AND slug=?", [givingPageId, slug]);
+    if (!rows.length) return slug;
+    n++;
+    slug = `${base}-${n}`;
+  }
+}
+
+// Same shape as invites.token (two concatenated stripped UUIDs, 64 hex
+// chars) — this codebase's existing convention for "a long random value,
+// stored and looked up directly, that IS the entire auth for one action."
+// See CLAUDE.md's recovery-token pattern for the HMAC-signed alternative;
+// this is the simpler stored-token sibling, used here because (unlike a
+// card-update link generated server-side on a schedule) this token also
+// needs to double as the durable "your account" credential the supporter
+// holds onto indefinitely, not a short-lived one-off.
+function generateEditToken() {
+  return uuid().replace(/-/g, "") + uuid().replace(/-/g, "");
+}
+
+// Caller-supplied name/story/org/page title get interpolated into a raw
+// HTML email body below — escape them so a submitted name like
+// `<img src=x onerror=...>` can't inject markup into the manage-link email.
+function escapeHtml(s) {
+  return String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+
+async function sendFundraiserManageEmail(org, fundraiser, givingPage, manageUrl) {
+  if (!process.env.RESEND_API_KEY) return false;
+  try {
+    const from = process.env.DEMO_SMTP_FROM || "onboarding@resend.dev";
+    const { error } = await resend.emails.send({
+      from,
+      to: fundraiser.email,
+      subject: `Your fundraiser for ${org.name} is live!`,
+      html: `<p>Hi ${escapeHtml(fundraiser.name)},</p>
+             <p>Thanks for starting a personal fundraiser for <strong>${escapeHtml(givingPage.title)}</strong> on behalf of <strong>${escapeHtml(org.name)}</strong>! Your page is live and ready to share.</p>
+             <p><a href="${manageUrl}" style="background:#10b981;color:#fff;padding:10px 20px;border-radius:8px;text-decoration:none;font-weight:bold;display:inline-block;margin:16px 0">Manage Your Fundraiser</a></p>
+             <p>Use that link any time to update your story, goal, or photo — bookmark it, since there's no password to reset it with.</p>`,
+    });
+    if (error) throw new Error(error.message);
+    return true;
+  } catch (err) {
+    console.error("Fundraiser manage email send failed:", err.message);
+    return false;
+  }
+}
+
+// Same dollar-figure rate-limit budget as donateLimiter (public, unauth,
+// abuse surface) but its own instance — a fundraiser owner editing their
+// own page shouldn't be able to get rate-limited out of it just because
+// other donors on the same shared/NAT'd IP have been actively giving
+// through POST /donate/:orgSlug, which would exhaust a shared limiter.
+const fundraiserManageLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  handler: rateLimitHandler,
+});
+
+// Public — a supporter starting a fundraiser from a live Giving Page. No
+// auth (this is the entire point — spur-of-the-moment, zero account setup),
+// rate-limited the same as the donation route it sits next to since it's
+// the same abuse surface (public, unauthenticated, org-costs-nothing-to-spam
+// concern). Only succeeds against an *active* parent page — same rule
+// POST /donate/:orgSlug already enforces for donations themselves.
+app.post("/org/:orgSlug/giving-page/:pageSlug/fundraisers", donateLimiter, wrap(async (req, res) => {
+  const { name, email, personalGoalAmount, story, imageUrl } = req.body;
+  if (!name || !name.trim() || !email || !email.trim()) return res.status(400).json({ error: "Name and email are required." });
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) return res.status(400).json({ error: "Please enter a valid email address." });
+  if (name.trim().length > 200) return res.status(400).json({ error: "Name is too long." });
+  if (email.trim().length > 320) return res.status(400).json({ error: "Email is too long." });
+  if (story && story.length > 5000) return res.status(400).json({ error: "Story is too long (5,000 character max)." });
+  if (imageUrl && imageUrl.length > 2000) return res.status(400).json({ error: "Image URL is too long." });
+
+  const orgs = await query("SELECT id, name FROM orgs WHERE org_slug = ?", [req.params.orgSlug]);
+  if (!orgs.length) return res.status(404).json({ error: "Organization not found" });
+  const org = orgs[0];
+
+  const pageRows = await query("SELECT * FROM giving_pages WHERE org_id=? AND slug=? AND status='active'", [org.id, req.params.pageSlug]);
+  if (!pageRows.length) return res.status(404).json({ error: "This giving page could not be found." });
+  const givingPage = pageRows[0];
+
+  const base = slugifyGivingPage(name);
+  const id = "pf_" + uuid().slice(0, 8);
+  const editToken = generateEditToken();
+
+  // uniquePeerFundraiserSlug's own SELECT check has a narrow TOCTOU window
+  // against a second near-simultaneous submission slugifying to the same
+  // base — the unique index (giving_page_id, slug) is the real guarantee,
+  // this retry loop just turns that rare race into a friendly re-slug
+  // instead of a raw 500.
+  let slug = await uniquePeerFundraiserSlug(givingPage.id, base);
+  let inserted = false;
+  for (let attempt = 0; attempt < 3 && !inserted; attempt++) {
+    try {
+      await run(
+        `INSERT INTO peer_fundraisers (id, org_id, giving_page_id, name, email, slug, personal_goal_amount, story, image_url, status, edit_token)
+         VALUES (?,?,?,?,?,?,?,?,?,'active',?)`,
+        [id, org.id, givingPage.id, name.trim(), email.trim().toLowerCase(), slug, personalGoalAmount ? parseFloat(personalGoalAmount) : null, story || "", imageUrl || "", editToken]
+      );
+      inserted = true;
+    } catch (e) {
+      if (attempt === 2) throw e;
+      slug = await uniquePeerFundraiserSlug(givingPage.id, `${base}-${Date.now().toString(36).slice(-4)}`);
+    }
+  }
+
+  const rawFrontendUrl = process.env.FRONTEND_URL || "https://client-five-tau-13.vercel.app";
+  const frontendUrl = rawFrontendUrl.replace(/^http:\/\//i, "https://");
+  const publicUrl = `${frontendUrl}/give/${req.params.orgSlug}/${req.params.pageSlug}/${slug}`;
+  const manageUrl = `${frontendUrl}/fundraiser/manage/${editToken}`;
+
+  // manageUrl/editToken are deliberately NOT returned here. invites.token
+  // is the same "long random value, stored, looked up directly" shape, but
+  // invites are minted by an authenticated admin (requireAuth+requireAdmin)
+  // for someone they're accountable for, so returning the link in that
+  // response is safe. This route is fully public and unauthenticated —
+  // returning the token directly would let anyone submit a stranger's real
+  // name+email and get durable control of a fundraiser attributed to them
+  // instantly, with the stranger left holding an unsolicited email and no
+  // recourse (no password to reset). Email is the only legitimate channel;
+  // the frontend redirects to publicUrl and surfaces emailSent so a failed
+  // send is visible instead of silently stranding the supporter.
+  const emailSent = await sendFundraiserManageEmail(org, { name: name.trim(), email: email.trim() }, givingPage, manageUrl);
+
+  res.status(201).json({ id, slug, publicUrl, emailSent });
+}));
+
+// Public — fundraiser's own page: name/image/story/goal + real live
+// progress computed the same way the parent page's is (never a manually-set
+// number). Includes the parent givingPage's fund designation so the shared
+// Donate.jsx form's "hide fund selector when the page already designates
+// one" logic keeps working unmodified one level down. A fundraiser 404s the
+// same way an archived/nonexistent giving page does (indistinguishable from
+// "never existed") if either the fundraiser OR its parent page is archived —
+// a fundraiser cannot outlive its campaign's own availability.
+app.get("/org/:orgSlug/giving-page/:pageSlug/fundraiser/:fundraiserSlug/public", wrap(async (req, res) => {
+  const orgs = await query("SELECT id, name, mission FROM orgs WHERE org_slug = ?", [req.params.orgSlug]);
+  if (!orgs.length) return res.status(404).json({ error: "Organization not found" });
+  const org = orgs[0];
+
+  const pageRows = await query(
+    `SELECT gp.*, f.name AS fund_name FROM giving_pages gp LEFT JOIN fin_funds f ON f.id = gp.fund_id
+     WHERE gp.org_id = ? AND gp.slug = ? AND gp.status = 'active'`,
+    [org.id, req.params.pageSlug]
+  );
+  if (!pageRows.length) return res.status(404).json({ error: "This giving page could not be found." });
+  const page = pageRows[0];
+
+  const fRows = await query(
+    `SELECT pf.*, COALESCE((SELECT SUM(amount) FROM gifts WHERE peer_fundraiser_id = pf.id), 0) AS raised_amount
+     FROM peer_fundraisers pf WHERE pf.giving_page_id=? AND pf.slug=? AND pf.status='active'`,
+    [page.id, req.params.fundraiserSlug]
+  );
+  if (!fRows.length) return res.status(404).json({ error: "This fundraiser could not be found." });
+  const f = fRows[0];
+
+  res.json({
+    org: { name: org.name, mission: org.mission, slug: req.params.orgSlug },
+    givingPage: { id: page.id, slug: page.slug, title: page.title, fundId: page.fund_id, fundName: page.fund_name || null },
+    peerFundraiser: {
+      id: f.id, slug: f.slug, name: f.name, story: f.story, imageUrl: f.image_url,
+      personalGoalAmount: f.personal_goal_amount != null ? parseFloat(f.personal_goal_amount) : null,
+      raisedAmount: parseFloat(f.raised_amount) || 0,
+    },
+    funds: [],
+  });
+}));
+
+// Public, token-authenticated — the entire "manage your fundraiser" auth
+// model for v1 (see db.js comment). GET loads current editable fields; PUT
+// saves them. Deliberately cannot touch status/slug/email — status is
+// admin-only (takedown, below), and slug/email changes would break the
+// link the supporter already shared or the one they received this token
+// through, defeating the point of a durable bookmarkable link.
+app.get("/peer-fundraisers/manage/:token", fundraiserManageLimiter, wrap(async (req, res) => {
+  const rows = await query(
+    `SELECT pf.*, gp.title AS giving_page_title, gp.slug AS giving_page_slug, o.name AS org_name, o.org_slug
+     FROM peer_fundraisers pf
+     JOIN giving_pages gp ON gp.id = pf.giving_page_id
+     JOIN orgs o ON o.id = gp.org_id
+     WHERE pf.edit_token = ?`,
+    [req.params.token]
+  );
+  if (!rows.length) return res.status(404).json({ error: "This link is invalid or has expired." });
+  const f = rows[0];
+  const raisedRow = await query("SELECT COALESCE(SUM(amount),0) AS total FROM gifts WHERE peer_fundraiser_id=?", [f.id]);
+  res.json({
+    name: f.name, slug: f.slug, story: f.story, imageUrl: f.image_url,
+    personalGoalAmount: f.personal_goal_amount != null ? parseFloat(f.personal_goal_amount) : null,
+    status: f.status,
+    raisedAmount: parseFloat(raisedRow[0]?.total) || 0,
+    orgName: f.org_name, givingPageTitle: f.giving_page_title,
+    publicUrl: `${(process.env.FRONTEND_URL || "https://client-five-tau-13.vercel.app").replace(/^http:\/\//i, "https://")}/give/${f.org_slug}/${f.giving_page_slug}/${f.slug}`,
+  });
+}));
+
+app.put("/peer-fundraisers/manage/:token", fundraiserManageLimiter, wrap(async (req, res) => {
+  const rows = await query("SELECT * FROM peer_fundraisers WHERE edit_token = ?", [req.params.token]);
+  if (!rows.length) return res.status(404).json({ error: "This link is invalid or has expired." });
+  const existing = rows[0];
+  const { name, personalGoalAmount, story, imageUrl } = req.body;
+  if (name !== undefined && !name.trim()) return res.status(400).json({ error: "Name cannot be empty." });
+  if (name !== undefined && name.trim().length > 200) return res.status(400).json({ error: "Name is too long." });
+  if (story && story.length > 5000) return res.status(400).json({ error: "Story is too long (5,000 character max)." });
+  if (imageUrl && imageUrl.length > 2000) return res.status(400).json({ error: "Image URL is too long." });
+  await run(
+    `UPDATE peer_fundraisers SET name=?, personal_goal_amount=?, story=?, image_url=?, updated_at=NOW() WHERE id=?`,
+    [
+      name !== undefined ? name.trim() : existing.name,
+      personalGoalAmount !== undefined ? (personalGoalAmount ? parseFloat(personalGoalAmount) : null) : existing.personal_goal_amount,
+      story !== undefined ? story : existing.story,
+      imageUrl !== undefined ? imageUrl : existing.image_url,
+      existing.id,
+    ]
+  );
+  res.json({ success: true });
+}));
+
+// Admin — list fundraisers under one Giving Page. org_id is filtered
+// directly (see db.js comment on why peer_fundraisers carries its own
+// org_id rather than relying solely on the giving_page_id join). Column
+// list is explicit and deliberately omits edit_token — that's the
+// fundraiser owner's own credential (see generateEditToken comment); the
+// admin UI never needs it and has no legitimate reason to see it, so it's
+// left out of the response rather than trusted to nobody reading pf.*.
+app.get("/giving-pages/:id/fundraisers", requireAuth, wrap(async (req, res) => {
+  const pageRows = await query("SELECT id FROM giving_pages WHERE id=? AND org_id=?", [req.params.id, req.user.orgId]);
+  if (!pageRows.length) return res.status(404).json({ error: "Not found" });
+  const rows = await query(
+    `SELECT pf.id, pf.giving_page_id, pf.name, pf.email, pf.slug, pf.personal_goal_amount, pf.story, pf.image_url, pf.status, pf.created_at, pf.updated_at,
+       COALESCE((SELECT SUM(amount) FROM gifts WHERE peer_fundraiser_id = pf.id), 0) AS raised_amount
+     FROM peer_fundraisers pf WHERE pf.giving_page_id=? AND pf.org_id=? ORDER BY raised_amount DESC, pf.created_at DESC`,
+    [req.params.id, req.user.orgId]
+  );
+  res.json(rows);
+}));
+
+// Admin takedown — the safety valve: anyone can spin up a public page under
+// an org's name, so staff need to be able to pull one down immediately.
+// Status-only by design (not a general edit route) — content edits are the
+// fundraiser owner's own business via their edit_token above; this route's
+// entire job is the active/archived switch. Archiving here has the exact
+// same effect as archiving a Giving Page itself: the public fundraiser page
+// 404s and POST /donate/:orgSlug rejects new donations against it (both
+// enforced by the WHERE status='active' clauses in the routes above).
+app.put("/peer-fundraisers/:id", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
+  const { status } = req.body;
+  if (!status || !["active", "archived"].includes(status)) return res.status(400).json({ error: "status must be 'active' or 'archived'" });
+  const rows = await query("SELECT id FROM peer_fundraisers WHERE id=? AND org_id=?", [req.params.id, req.user.orgId]);
+  if (!rows.length) return res.status(404).json({ error: "Not found" });
+  await run("UPDATE peer_fundraisers SET status=?, updated_at=NOW() WHERE id=?", [status, req.params.id]);
+  const updated = await query(
+    `SELECT pf.id, pf.giving_page_id, pf.name, pf.email, pf.slug, pf.personal_goal_amount, pf.story, pf.image_url, pf.status, pf.created_at, pf.updated_at,
+       COALESCE((SELECT SUM(amount) FROM gifts WHERE peer_fundraiser_id = pf.id), 0) AS raised_amount
+     FROM peer_fundraisers pf WHERE pf.id=?`,
+    [req.params.id]
+  );
+  res.json(updated[0]);
 }));
 
 app.post("/donate/:orgSlug", donateLimiter, wrap(async (req, res) => {
   if (!stripe) return res.status(503).json({ error: "Stripe not configured" });
-  const { amount, fundId, frequency, firstName, lastName, email, campaignId, givingPageId } = req.body;
+  const { amount, fundId, frequency, firstName, lastName, email, campaignId } = req.body;
+  let { givingPageId, peerFundraiserId } = req.body;
   if (!amount || !firstName || !lastName || !email) return res.status(400).json({ error: "All fields required" });
 
   const orgs = await query(
@@ -5081,6 +5373,30 @@ app.post("/donate/:orgSlug", donateLimiter, wrap(async (req, res) => {
     if (fundRow.length) fundName = fundRow[0].name;
   }
 
+  // Peer-fundraiser donations always resolve givingPageId from the
+  // fundraiser row itself, not whatever the client sent — the fundraiser
+  // record is the source of truth for which campaign it belongs to (see
+  // "no such thing as a fundraiser not tied to a campaign" in db.js), so
+  // this can never end up with a peer_fundraiser_id/giving_page_id pair
+  // that disagree. A fundraiser whose parent page has since been archived
+  // is treated as unavailable too — a fundraiser can't outlive its campaign.
+  let fundraiserSlug = "";
+  let fundraiserName = "";
+  if (peerFundraiserId) {
+    const fRow = await query(
+      `SELECT pf.slug, pf.name, pf.giving_page_id FROM peer_fundraisers pf
+       JOIN giving_pages gp ON gp.id = pf.giving_page_id
+       WHERE pf.id=? AND pf.status='active' AND gp.org_id=? AND gp.status='active'`,
+      [peerFundraiserId, org.id]
+    );
+    if (!fRow.length) return res.status(400).json({ error: "This fundraiser is no longer available." });
+    fundraiserSlug = fRow[0].slug;
+    fundraiserName = fRow[0].name;
+    givingPageId = fRow[0].giving_page_id;
+  } else {
+    peerFundraiserId = null;
+  }
+
   // Independent of campaignId (email-campaign attribution) — validated
   // against this org so a stale/foreign givingPageId can't get tagged onto
   // a gift. Determines the return URL (back to the specific giving page,
@@ -5094,9 +5410,11 @@ app.post("/donate/:orgSlug", donateLimiter, wrap(async (req, res) => {
     pageTitle = pageRow[0].title;
   }
 
-  const productName = givingPageId
-    ? `Donation to ${org.name} — ${pageTitle}`
-    : `Donation to ${org.name}${fundName ? ` — ${fundName}` : ""}`;
+  const productName = peerFundraiserId
+    ? `Donation to ${org.name} — ${pageTitle} (via ${fundraiserName}'s fundraiser)`
+    : givingPageId
+      ? `Donation to ${org.name} — ${pageTitle}`
+      : `Donation to ${org.name}${fundName ? ` — ${fundName}` : ""}`;
   const metadata = {
     donor_email: email,
     donor_name: donorName,
@@ -5104,10 +5422,15 @@ app.post("/donate/:orgSlug", donateLimiter, wrap(async (req, res) => {
     frequency,
     campaign_id: campaignId || "",
     giving_page_id: givingPageId || "",
+    peer_fundraiser_id: peerFundraiserId || "",
     org_id: org.id,
   };
 
-  const returnPath = givingPageId ? `/give/${req.params.orgSlug}/${givingPageSlug}` : `/give/${req.params.orgSlug}`;
+  const returnPath = peerFundraiserId
+    ? `/give/${req.params.orgSlug}/${givingPageSlug}/${fundraiserSlug}`
+    : givingPageId
+      ? `/give/${req.params.orgSlug}/${givingPageSlug}`
+      : `/give/${req.params.orgSlug}`;
 
   const sessionParams = {
     payment_method_types: ["card"],

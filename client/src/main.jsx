@@ -18,6 +18,7 @@ import InvitePage from "./pages/InvitePage";
 import App from "./App";
 import Landing from "./pages/Landing";
 import Donate from "./pages/Donate";
+import ManageFundraiser from "./pages/ManageFundraiser";
 import Pricing from "./pages/Pricing";
 import AdminDashboard from "./pages/AdminDashboard";
 import ForgotPasswordPage from "./pages/ForgotPasswordPage";
@@ -112,6 +113,8 @@ function Root() {
           <Route path="/pricing"   element={<Pricing />} />
           <Route path="/give/:orgSlug" element={<Donate />} />
           <Route path="/give/:orgSlug/:pageSlug" element={<Donate />} />
+          <Route path="/give/:orgSlug/:pageSlug/:fundraiserSlug" element={<Donate />} />
+          <Route path="/fundraiser/manage/:token" element={<ManageFundraiser />} />
           <Route path="/admin"             element={<RequireSuperAdmin><AdminDashboard /></RequireSuperAdmin>} />
           <Route path="/forgot-password"  element={<ForgotPasswordPage />} />
           <Route path="/reset-password"   element={<ResetPasswordPage />} />
