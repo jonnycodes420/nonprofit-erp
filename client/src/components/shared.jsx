@@ -69,13 +69,26 @@ OPEN TASKS: ${data.tasks.filter(t=>!t.done).map(t=>`[${t.priority}] ${t.title} d
 }
 
 // ── Stage config ───────────────────────────────────────────────────────────
+// Stage colors are drawn only from the five approved brand colors (dark
+// green shades, cream, gold, white, terracotta) — no blue/purple/amber/red.
+// Deliberately alternates green shades with the two warm accents (gold,
+// terracotta) rather than running all four greens in a row, so adjacent
+// stages in the pipeline sequence stay visually distinct at a glance
+// instead of reading as "two similar greens next to each other." lapsed
+// keeps terracotta specifically to match the "needs attention" convention
+// used everywhere else in the app (Dashboard queue rows, goal pace badge).
 export const STAGES = [
-  {id:"prospect",  label:"Prospect",  color:T.ink3, hint:"Identified, not yet engaged"},
-  {id:"qualify",   label:"Qualify",   color:"#3b82f6", hint:"Researching fit & capacity"},
-  {id:"cultivate", label:"Cultivate", color:"#8b5cf6", hint:"Building relationship"},
-  {id:"solicit",   label:"Solicit",   color:"#f59e0b", hint:"Ready for the ask"},
-  {id:"steward",   label:"Steward",   color:"#1a6b4a", hint:"Deepen post-gift relationship"},
-  {id:"lapsed",    label:"Lapsed",    color:"#ef4444", hint:"Needs re-engagement"},
+  // Prospect deliberately isn't T.ink (#0f1a12) — that's the exact literal
+  // background Donors.jsx's Kanban column headers already render on, which
+  // would make Prospect's left-border accent invisible against its own
+  // column. bgElevated is still a dark-green-family shade but visibly
+  // lighter than that background.
+  {id:"prospect",  label:"Prospect",  color:T.bgElevated, hint:"Identified, not yet engaged"},
+  {id:"qualify",   label:"Qualify",   color:T.gold, hint:"Researching fit & capacity"},
+  {id:"cultivate", label:"Cultivate", color:T.greenMid, hint:"Building relationship"},
+  {id:"solicit",   label:"Solicit",   color:T.green, hint:"Ready for the ask"},
+  {id:"steward",   label:"Steward",   color:T.greenDk, hint:"Deepen post-gift relationship"},
+  {id:"lapsed",    label:"Lapsed",    color:T.terracotta, hint:"Needs re-engagement"},
 ];
 export const STAGE_THRESH = {prospect:[60,120],qualify:[14,30],cultivate:[30,60],solicit:[7,14],steward:[30,90],lapsed:[90,180]};
 export const STAGE_ACTION = {

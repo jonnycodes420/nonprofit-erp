@@ -64,7 +64,7 @@ export function Analytics({ data }) {
   const stageData = STAGES.map(s => ({
     label: s.label,
     v: data.donors.filter(d => d.stage === s.id).length,
-    color: s.color === T.ink3 ? "#9ca3af" : s.color,
+    color: s.color,
   }));
 
   // Chart 4: Grant Pipeline by status

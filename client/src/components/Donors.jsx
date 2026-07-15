@@ -99,7 +99,7 @@ function inferStage(total, lastGiftStr, hasContactInfo) {
   return "prospect";
 }
 
-const STAGE_COLORS = {prospect:T.ink3,qualify:"#3b82f6",cultivate:"#8b5cf6",solicit:"#f59e0b",steward:"#1a6b4a",lapsed:"#ef4444"};
+const STAGE_COLORS = Object.fromEntries(STAGES.map(s => [s.id, s.color]));
 
 // ── Normalization helpers ──────────────────────────────────────────────────
 function normalizeDate(val) {
@@ -3392,7 +3392,7 @@ function DonorKanban({donors,onStageChange,onLogTouchpoint,onSelectDonor}){
     <div style={{width:"100%"}}>
       <div className="donor-kanban-conv" style={{display:"grid",gridTemplateColumns:gridCols,gap:8,marginBottom:6,padding:"0 2px"}}>
         {STAGES.map(stage=>stage.id==="lapsed"?(
-          <div key={stage.id} style={{fontSize:9,fontWeight:800,color:"#ef4444",textAlign:"center",letterSpacing:"0.06em",textTransform:"uppercase"}}>↘ Leak</div>
+          <div key={stage.id} style={{fontSize:9,fontWeight:800,color:T.terracotta,textAlign:"center",letterSpacing:"0.06em",textTransform:"uppercase"}}>↘ Leak</div>
         ):(
           <div key={stage.id} style={{fontSize:9,fontWeight:700,color:"#8fa896",textAlign:"center"}}>
             {pipelineShare[stage.id]}% of pipeline
