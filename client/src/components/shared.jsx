@@ -405,8 +405,8 @@ export function TpYesNo({val,set}){
 }
 export function TouchpointTimeline({interactions}){
   if(!interactions?.length)return<div style={{fontSize:13,color:T.ink3,textAlign:"center",padding:"16px 0"}}>No touchpoints logged yet.</div>;
-  const typeColor={call:"#3b82f6",email:"#8b5cf6",meeting:T.greenMid,gift:"#f59e0b",event:"#ec4899",note:"#6b7280",stewardship:T.gold,voice_memo:"#0ea5e9"};
-  const typeLabel={voice_memo:"Voice Memo"};
+  const typeColor={call:"#3b82f6",email:"#8b5cf6",meeting:T.greenMid,gift:"#f59e0b",event:"#ec4899",note:"#6b7280",stewardship:T.gold,voice_memo:"#0ea5e9",pledge_reminder:T.terracotta};
+  const typeLabel={voice_memo:"Voice Memo",pledge_reminder:"Pledge Reminder"};
   const sorted=[...interactions].sort((a,b)=>new Date(b.date)-new Date(a.date));
   return(
     <div style={{display:"flex",flexDirection:"column",gap:0}}>

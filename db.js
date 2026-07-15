@@ -891,6 +891,51 @@ async function initSchema() {
   // gave through" are two different questions.
   await pool.query(`ALTER TABLE gifts ADD COLUMN IF NOT EXISTS giving_page_id TEXT`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_gifts_giving_page ON gifts (giving_page_id)`);
+
+  // ── Pledges (2026-07-15) ──────────────────────────────────────────────────
+  // A donor's promise to give $X by a future date. Previously had no schema
+  // at all — "Gifts & Pledges" was only a UI tab label; `gifts` only ever
+  // represents money already received (no due date/promised-status), and
+  // `planned_gifts` is a different concept entirely (bequests/trusts/
+  // annuities — long-horizon legacy giving indications, no due date). This
+  // is the minimal model needed to identify a "promised, unfulfilled, due
+  // date passed" record — just enough for the reminder cadence below to
+  // have something to query, not a full pledge-management system.
+  //
+  // reminder_step/next_reminder_at/first_overdue_at deliberately mirror
+  // recurring_subscriptions' dunning_step/next_dunning_at/first_failed_at
+  // shape (see processDunning() in server.js, the template for
+  // processPledgeReminders()) — same fixed-offset-from-first-event cadence
+  // math, pledge-appropriate naming since there's no "failure" here, just a
+  // due date passing unfulfilled.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS pledges (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL REFERENCES orgs(id),
+      donor_id TEXT NOT NULL REFERENCES donors(id),
+      amount NUMERIC NOT NULL,
+      due_date DATE NOT NULL,
+      status TEXT NOT NULL DEFAULT 'open',
+      notes TEXT,
+      fulfilled_gift_id TEXT REFERENCES gifts(id),
+      fulfilled_at TIMESTAMPTZ,
+      first_overdue_at TIMESTAMPTZ,
+      reminder_step INTEGER NOT NULL DEFAULT 0,
+      next_reminder_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_pledges_org_donor ON pledges (org_id, donor_id)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_pledges_reminder ON pledges (status, next_reminder_at)`);
+
+  // Same org-level kill switch + template-override shape as
+  // recurring_dunning_enabled/subject/body — no dedicated Settings UI for
+  // either (recurring dunning's overrides have never had one), just the
+  // same code-level fallback-to-default pattern.
+  await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS pledge_reminder_enabled BOOLEAN DEFAULT true`);
+  await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS pledge_reminder_subject TEXT`);
+  await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS pledge_reminder_body TEXT`);
 }
 
 async function seedData() {

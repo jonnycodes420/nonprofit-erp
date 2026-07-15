@@ -2135,7 +2135,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
   const [giftsFull,setGiftsFull]=useState([]);
   const [giftEditId,setGiftEditId]=useState(null);
   const [giftEditForm,setGiftEditForm]=useState({});
-  const [addGiftForm,setAddGiftForm]=useState({amount:"",date:new Date().toISOString().split("T")[0],type:"cash",payment_method:"",notes:"",fund_id:"",acknowledgement_sent:false});
+  const [addGiftForm,setAddGiftForm]=useState({amount:"",date:new Date().toISOString().split("T")[0],type:"cash",payment_method:"",notes:"",fund_id:"",acknowledgement_sent:false,pledgeId:""});
   const [addGiftOpen,setAddGiftOpen]=useState(false);
   const [giftSaving,setGiftSaving]=useState(false);
 
@@ -2144,6 +2144,18 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
   const [pgForm,setPgForm]=useState({type:"bequest",estimated_value:"",date_indicated:"",notes:""});
   const [addPgOpen,setAddPgOpen]=useState(false);
   const [pgSaving,setPgSaving]=useState(false);
+
+  // Pledges — a promise to give $X by a future date, distinct from both
+  // gifts (money already received) and planned gifts (bequests/trusts, no
+  // due date). Past-due unfulfilled pledges get reminders on the same
+  // cadence as the recurring-gift dunning system (see processPledgeReminders
+  // in server.js).
+  const [pledges,setPledges]=useState([]);
+  const [pledgeForm,setPledgeForm]=useState({amount:"",dueDate:new Date().toISOString().split("T")[0],notes:""});
+  const [addPledgeOpen,setAddPledgeOpen]=useState(false);
+  const [pledgeSaving,setPledgeSaving]=useState(false);
+  const [pledgeResendBusyId,setPledgeResendBusyId]=useState(null);
+  const [pledgeResentIds,setPledgeResentIds]=useState(()=>new Set());
 
   // Fund affinity
   const [fundAffinity,setFundAffinity]=useState(null);
@@ -2208,6 +2220,10 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
     apiFetch(`/donors/${donor.id}/planned-gifts`).then(rows=>setPlannedGifts(Array.isArray(rows)?rows:[])).catch(()=>{});
   };
 
+  const loadPledges=()=>{
+    apiFetch(`/donors/${donor.id}/pledges`).then(rows=>setPledges(Array.isArray(rows)?rows:[])).catch(()=>{});
+  };
+
   const loadMaterials=()=>{
     setMatLoading(true);
     apiFetch(`/donors/${donor.id}/materials`).then(rows=>setMaterials(Array.isArray(rows)?rows:[])).catch(()=>{}).finally(()=>setMatLoading(false));
@@ -2244,6 +2260,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
     setGiftLoading(true);
     loadGiftsFull();
     loadPlannedGifts();
+    loadPledges();
   },[donor.id,interactionCount]);
 
   useEffect(()=>{
@@ -2282,12 +2299,50 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
         campaign:addGiftForm.campaign||"",notes:addGiftForm.notes,
         fund_id:addGiftForm.fund_id,payment_method:addGiftForm.payment_method,
         acknowledgement_sent:addGiftForm.acknowledgement_sent,
+        pledgeId:addGiftForm.pledgeId||undefined,
       })});
       setAddGiftOpen(false);
-      setAddGiftForm({amount:"",date:new Date().toISOString().split("T")[0],type:"cash",payment_method:"",notes:"",fund_id:"",acknowledgement_sent:false});
+      setAddGiftForm({amount:"",date:new Date().toISOString().split("T")[0],type:"cash",payment_method:"",notes:"",fund_id:"",acknowledgement_sent:false,pledgeId:""});
       loadGiftsFull();
+      if(addGiftForm.pledgeId)loadPledges();
     }catch(e){console.error(e);}
     setGiftSaving(false);
+  };
+
+  const addPledge=async()=>{
+    if(!pledgeForm.amount||isNaN(Number(pledgeForm.amount))||!pledgeForm.dueDate)return;
+    setPledgeSaving(true);
+    try{
+      await apiFetch(`/donors/${donor.id}/pledges`,{method:"POST",body:JSON.stringify(pledgeForm)});
+      setAddPledgeOpen(false);
+      setPledgeForm({amount:"",dueDate:new Date().toISOString().split("T")[0],notes:""});
+      loadPledges();
+    }catch(e){alert(e.message||"Could not save pledge");}
+    setPledgeSaving(false);
+  };
+
+  const setPledgeStatus=async(id,status)=>{
+    try{
+      await apiFetch(`/pledges/${id}`,{method:"PUT",body:JSON.stringify({status})});
+      loadPledges();
+    }catch(e){alert(e.message||"Could not update pledge");}
+  };
+
+  const deletePledge=async(id)=>{
+    if(!confirm("Delete this pledge? This cannot be undone."))return;
+    try{
+      await apiFetch(`/pledges/${id}`,{method:"DELETE"});
+      loadPledges();
+    }catch(e){console.error(e);}
+  };
+
+  const resendPledgeReminder=async(id)=>{
+    setPledgeResendBusyId(id);
+    try{
+      await apiFetch(`/pledges/${id}/resend`,{method:"POST"});
+      setPledgeResentIds(prev=>new Set(prev).add(id));
+    }catch(e){alert(e.message||"Could not resend the reminder");}
+    setPledgeResendBusyId(null);
   };
 
   const addPlannedGift=async()=>{
@@ -2576,6 +2631,14 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
                 <option value="">No campaign attribution</option>
                 {campaigns.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}
               </select>}
+              {pledges.filter(p=>p.status==="open").length>0&&(
+                <select value={addGiftForm.pledgeId} onChange={e=>setAddGiftForm(p=>({...p,pledgeId:e.target.value}))} style={{width:"100%",background:T.bg,border:"1px solid "+T.terracotta+"50",borderRadius:8,padding:"8px 10px",color:T.ink,fontSize:13,outline:"none",boxSizing:"border-box",marginBottom:8}}>
+                  <option value="">Not fulfilling a pledge</option>
+                  {pledges.filter(p=>p.status==="open").map(p=>(
+                    <option key={p.id} value={p.id}>Fulfills {fmtFull(p.amount)} pledge due {p.due_date}</option>
+                  ))}
+                </select>
+              )}
               <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:12}}>
                 <label style={{display:"flex",alignItems:"center",gap:6,fontSize:12,color:T.ink,cursor:"pointer"}}>
                   <input type="checkbox" checked={addGiftForm.acknowledgement_sent} onChange={e=>setAddGiftForm(p=>({...p,acknowledgement_sent:e.target.checked}))} style={{accentColor:"#1a6b4a"}}/>
@@ -2649,6 +2712,64 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
                     ))}
                   </tbody>
                 </table>
+              )}
+            </div>
+
+            {/* Pledges — a promise to give $X by a future date. Past-due
+                unfulfilled pledges get reminders on the same cadence as the
+                recurring-gift dunning system (see processPledgeReminders in
+                server.js). Distinct from both Gift History above (money
+                already received) and Planned Giving below (bequests/trusts,
+                no due date). */}
+            <div>
+              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}>
+                <div style={{fontSize:12,fontWeight:700,color:T.ink}}>Pledges</div>
+                <button onClick={()=>setAddPledgeOpen(v=>!v)} disabled={isReadOnly} title={isReadOnly?"Reactivate your subscription to make changes.":undefined} style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"5px 10px",color:T.ink3,fontSize:11,cursor:isReadOnly?"not-allowed":"pointer",opacity:isReadOnly?0.5:1}}>+ Add Pledge</button>
+              </div>
+              {addPledgeOpen&&<div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:10,padding:"14px",marginBottom:10}}>
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:8}}>
+                  <input value={pledgeForm.amount} onChange={e=>setPledgeForm(p=>({...p,amount:e.target.value}))} placeholder="Pledged amount ($)" type="number" style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"7px 10px",color:T.ink,fontSize:12,outline:"none"}}/>
+                  <input value={pledgeForm.dueDate} onChange={e=>setPledgeForm(p=>({...p,dueDate:e.target.value}))} type="date" style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"7px 10px",color:T.ink,fontSize:12,outline:"none"}}/>
+                </div>
+                <input value={pledgeForm.notes} onChange={e=>setPledgeForm(p=>({...p,notes:e.target.value}))} placeholder="Notes (optional)" style={{width:"100%",background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"7px 10px",color:T.ink,fontSize:12,outline:"none",boxSizing:"border-box",marginBottom:8}}/>
+                <div style={{display:"flex",gap:8}}>
+                  <button onClick={addPledge} disabled={pledgeSaving} style={{background:T.terracotta,border:"none",borderRadius:8,padding:"7px 14px",color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer"}}>Save</button>
+                  <button onClick={()=>setAddPledgeOpen(false)} style={{background:T.bg,border:"none",borderRadius:8,padding:"7px 12px",color:T.ink3,fontSize:12,cursor:"pointer"}}>Cancel</button>
+                </div>
+              </div>}
+              {pledges.length===0?<div style={{fontSize:12,color:T.ink3,fontStyle:"italic"}}>No pledges on file</div>:(
+                <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                  {pledges.map(pl=>{
+                    const PL_META={open:{label:"Open",color:"#3b82f6"},fulfilled:{label:"Fulfilled",color:"#1a6b4a"},written_off:{label:"Written off",color:T.ink3}};
+                    const meta=PL_META[pl.status]||PL_META.open;
+                    const isOverdue=pl.status==="open"&&pl.first_overdue_at;
+                    const daysOver=isOverdue?daysDiff(pl.due_date):null;
+                    return(
+                      <div key={pl.id} style={{background:T.white,border:`1px solid ${isOverdue?T.terracotta+"40":T.bg3}`,borderLeft:`3px solid ${isOverdue?T.terracotta:meta.color}`,borderRadius:10,padding:"10px 14px",display:"flex",alignItems:"flex-start",justifyContent:"space-between",gap:10,flexWrap:"wrap"}}>
+                        <div>
+                          <div style={{display:"flex",alignItems:"center",gap:7,flexWrap:"wrap"}}>
+                            <span style={{fontSize:14,fontWeight:800,color:T.ink}}>{fmtFull(pl.amount)}</span>
+                            <span style={{background:meta.color+"15",color:meta.color,border:"1px solid "+meta.color+"40",borderRadius:99,padding:"2px 8px",fontSize:10,fontWeight:800}}>{meta.label}</span>
+                            {isOverdue&&<span style={{fontSize:10,fontWeight:800,color:T.terracotta}}>{daysOver}d overdue · reminder {Math.min(pl.reminder_step+1,4)}/4 sent</span>}
+                          </div>
+                          <div style={{fontSize:11,color:T.ink3,marginTop:2}}>Due {pl.due_date}</div>
+                          {pl.notes&&<div style={{fontSize:12,color:T.ink3,marginTop:3,lineHeight:1.4}}>{pl.notes}</div>}
+                        </div>
+                        <div style={{display:"flex",gap:6,alignItems:"center",flexShrink:0}}>
+                          {pl.status==="open"&&<>
+                            {isOverdue&&<button onClick={()=>resendPledgeReminder(pl.id)} disabled={isReadOnly||pledgeResendBusyId===pl.id||pledgeResentIds.has(pl.id)}
+                              style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:6,padding:"5px 9px",color:T.ink2,fontSize:11,fontWeight:600,cursor:(isReadOnly||pledgeResendBusyId===pl.id||pledgeResentIds.has(pl.id))?"not-allowed":"pointer",opacity:(isReadOnly||pledgeResendBusyId===pl.id||pledgeResentIds.has(pl.id))?0.5:1}}>
+                              {pledgeResentIds.has(pl.id)?"Sent ✓":pledgeResendBusyId===pl.id?"Sending…":"Resend reminder"}
+                            </button>}
+                            <button onClick={()=>setPledgeStatus(pl.id,"fulfilled")} disabled={isReadOnly} style={{background:"#e8f5ef",border:"1px solid #10b981",borderRadius:6,padding:"5px 9px",color:"#1a6b4a",fontSize:11,fontWeight:600,cursor:isReadOnly?"not-allowed":"pointer"}}>Mark Fulfilled</button>
+                            <button onClick={()=>setPledgeStatus(pl.id,"written_off")} disabled={isReadOnly} style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:6,padding:"5px 9px",color:T.ink3,fontSize:11,fontWeight:600,cursor:isReadOnly?"not-allowed":"pointer"}}>Write Off</button>
+                          </>}
+                          <button onClick={()=>deletePledge(pl.id)} style={{background:"none",border:"none",color:"#ef4444",fontSize:14,cursor:"pointer",flexShrink:0,padding:"2px 4px"}}>×</button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
               )}
             </div>
 

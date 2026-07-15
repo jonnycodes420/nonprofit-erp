@@ -2115,7 +2115,7 @@ app.post("/donors/:id/interactions", requireAuth, wrap(async (req, res) => {
 
 // ── Gifts ──────────────────────────────────────────────────────────────────
 app.post("/donors/:id/gifts", requireAuth, checkWriteAccess, wrap(async (req, res) => {
-  const { amount, date, type, campaign, notes } = req.body;
+  const { amount, date, type, campaign, notes, pledgeId } = req.body;
   if (!amount || isNaN(Number(amount)) || Number(amount) <= 0) {
     return res.status(400).json({ error: "A positive amount is required" });
   }
@@ -2126,6 +2126,19 @@ app.post("/donors/:id/gifts", requireAuth, checkWriteAccess, wrap(async (req, re
   );
   if (!donorExists.length) return res.status(404).json({ error: "Donor not found" });
 
+  // Optional: this gift fulfills a specific open pledge — the "gift
+  // recorded against it" stop condition (see processPledgeReminders()).
+  // Validated up front so a stale/foreign pledgeId 400s before any insert.
+  let pledgeRow = null;
+  if (pledgeId) {
+    const pledgeRows = await query(
+      "SELECT * FROM pledges WHERE id=? AND donor_id=? AND org_id=? AND status='open'",
+      [pledgeId, req.params.id, req.user.orgId]
+    );
+    if (!pledgeRows.length) return res.status(400).json({ error: "This pledge is not open for this donor." });
+    pledgeRow = pledgeRows[0];
+  }
+
   const giftId = "g_" + uuid().slice(0, 8);
   const giftDate = normalizeGiftDate(date);              // enforce ISO YYYY-MM-DD
   const amt = Math.round(Number(amount));                // round, not truncate; INTEGER column
@@ -2134,6 +2147,13 @@ app.post("/donors/:id/gifts", requireAuth, checkWriteAccess, wrap(async (req, re
     "INSERT INTO gifts (id,org_id,donor_id,amount,date,type,campaign,notes) VALUES (?,?,?,?,?,?,?,?)",
     [giftId, req.user.orgId, req.params.id, amt, giftDate, type || "cash", campaign || "", notes || ""]
   );
+  if (pledgeRow) {
+    await run(
+      `UPDATE pledges SET status='fulfilled', fulfilled_gift_id=?, fulfilled_at=NOW(), next_reminder_at=NULL, updated_at=NOW()
+       WHERE id=? AND org_id=?`,
+      [giftId, pledgeRow.id, req.user.orgId]
+    );
+  }
   // Delta kept here (correct for a fresh gift) so status tier promotion fires.
   // PUT/DELETE use recalcDonorSummary instead — see those routes.
   await run(
@@ -2182,7 +2202,8 @@ app.post("/donors/:id/gifts", requireAuth, checkWriteAccess, wrap(async (req, re
     );
   } catch(e) { console.error("Gift interaction log:", e.message); }
   calcWealthScore(req.params.id, req.user.orgId).catch(e => console.error("score recalc:", e.message));
-  res.status(201).json({ gift: giftRows[0], donor: donorRows[0] });
+  const fulfilledPledgeRows = pledgeRow ? await query("SELECT * FROM pledges WHERE id=?", [pledgeRow.id]) : [];
+  res.status(201).json({ gift: giftRows[0], donor: donorRows[0], pledge: fulfilledPledgeRows[0] || null });
 }));
 
 app.put("/gifts/:id", requireAuth, wrap(async (req, res) => {
@@ -2213,6 +2234,79 @@ app.delete("/gifts/:id", requireAuth, wrap(async (req, res) => {
   await run("DELETE FROM gifts WHERE id=? AND org_id=?", [req.params.id, req.user.orgId]);
   // Full recalc: old delta left last_gift_date and last_gift_amount stale when deleting the most recent gift
   await recalcDonorSummary(g.donor_id, req.user.orgId);
+  res.json({ ok: true });
+}));
+
+// ── Pledges ──────────────────────────────────────────────────────────────
+// A donor's promise to give $X by a future date — separate from `gifts`
+// (money already received) and `planned_gifts` (bequests/trusts, no due
+// date). See db.js's pledges comment. The reminder cadence that fires
+// against these (processPledgeReminders, below) deliberately mirrors the
+// recurring-gift dunning engine's architecture.
+app.get("/donors/:id/pledges", requireAuth, wrap(async (req, res) => {
+  const rows = await query(
+    "SELECT * FROM pledges WHERE donor_id=? AND org_id=? ORDER BY due_date ASC",
+    [req.params.id, req.user.orgId]
+  );
+  res.json(rows);
+}));
+
+app.post("/donors/:id/pledges", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  const { amount, dueDate, notes } = req.body;
+  if (!amount || isNaN(Number(amount)) || Number(amount) <= 0) {
+    return res.status(400).json({ error: "A positive amount is required" });
+  }
+  if (!dueDate) return res.status(400).json({ error: "A due date is required" });
+
+  const donorExists = await query("SELECT id FROM donors WHERE id=? AND org_id=?", [req.params.id, req.user.orgId]);
+  if (!donorExists.length) return res.status(404).json({ error: "Donor not found" });
+
+  const id = "pl_" + uuid().slice(0, 8);
+  await run(
+    "INSERT INTO pledges (id,org_id,donor_id,amount,due_date,notes) VALUES (?,?,?,?,?,?)",
+    [id, req.user.orgId, req.params.id, Math.round(Number(amount)), dueDate, notes || ""]
+  );
+  const rows = await query("SELECT * FROM pledges WHERE id=?", [id]);
+  res.status(201).json(rows[0]);
+}));
+
+app.put("/pledges/:id", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  const existing = await query("SELECT * FROM pledges WHERE id=? AND org_id=?", [req.params.id, req.user.orgId]);
+  if (!existing.length) return res.status(404).json({ error: "Pledge not found" });
+  const p = existing[0];
+  const { amount, dueDate, notes, status } = req.body;
+
+  // Marking fulfilled/written_off (manually, with no specific gift to link —
+  // see POST /donors/:id/gifts' pledgeId param for the "linked a gift"
+  // path) is the same stop condition either way: clear the cadence so
+  // processPledgeReminders() has nothing left to send.
+  const validStatuses = ["open", "fulfilled", "written_off"];
+  const newStatus = status && validStatuses.includes(status) ? status : p.status;
+  const stopping = newStatus !== "open" && p.status === "open";
+  const nowFulfilled = newStatus === "fulfilled" && p.status !== "fulfilled";
+
+  await run(
+    `UPDATE pledges SET amount=?, due_date=?, notes=?, status=?,
+       fulfilled_at = CASE WHEN ? THEN NOW() ELSE fulfilled_at END,
+       next_reminder_at = CASE WHEN ? THEN NULL ELSE next_reminder_at END,
+       updated_at=NOW()
+     WHERE id=? AND org_id=?`,
+    [
+      amount !== undefined ? Math.round(Number(amount)) : p.amount,
+      dueDate || p.due_date,
+      notes !== undefined ? notes : p.notes,
+      newStatus,
+      nowFulfilled,
+      stopping,
+      req.params.id, req.user.orgId,
+    ]
+  );
+  const rows = await query("SELECT * FROM pledges WHERE id=?", [req.params.id]);
+  res.json(rows[0]);
+}));
+
+app.delete("/pledges/:id", requireAuth, wrap(async (req, res) => {
+  await run("DELETE FROM pledges WHERE id=? AND org_id=?", [req.params.id, req.user.orgId]);
   res.json({ ok: true });
 }));
 
@@ -7310,6 +7404,152 @@ app.get("/donors/:id/recurring-subscription", requireAuth, wrap(async (req, res)
     [req.params.id, req.user.orgId]
   );
   res.json(rows[0] || null);
+}));
+
+// ── Pledge fulfillment reminders ────────────────────────────────────────────
+// A pledge (donor promises $X by a future date) going unfulfilled past its
+// due date is structurally the same problem as a recurring gift's failed
+// payment: an expected payment that didn't happen, needing a proactive,
+// time-staged nudge. This deliberately reuses the recurring-dunning engine's
+// exact architecture above (same fixed-offset-from-first-event cadence math,
+// same setTimeout/setInterval cron pattern, same suppression-check +
+// unsubscribe-footer email plumbing) — only the trigger condition and the
+// copy are pledge-specific. See db.js's pledges comment for why this needed
+// its own minimal table first.
+const PLEDGE_REMINDER_SCHEDULE_DAYS = [0, 3, 7, 14];
+
+const DEFAULT_PLEDGE_REMINDER_SUBJECT = "A quick reminder about your pledge to {{org_name}}";
+// {{donor_name}}/{{first_name}}/{{org_name}}/{{amount}}/{{due_date}}/{{give_url}}
+// tokens, same replacement convention as the dunning templates. No "Update
+// my card" CTA here — a pledge has no payment method on file to fix, so the
+// call to action is simply the org's existing public donation page.
+const DEFAULT_PLEDGE_REMINDER_BODY = `<p>Hi {{first_name}},</p>
+<p>Thank you again for your generous pledge of {{amount}} to {{org_name}}. We wanted to check in — that pledge was due {{due_date}}, and we don't show a matching gift yet.</p>
+<p>If you've already sent it, thank you — please disregard this note, it may have just crossed paths with your gift. If not, you can fulfill your pledge here:</p>
+<p style="text-align:center;margin:28px 0;"><a href="{{give_url}}" style="background:#1a6b4a;color:#ffffff;text-decoration:none;padding:12px 28px;border-radius:8px;font-weight:700;display:inline-block;">Fulfill my pledge</a></p>
+<p>If you have any questions, just reply to this email — we're glad to help.</p>
+<p>With gratitude,<br/>{{org_name}}</p>`;
+
+function applyPledgeReminderTokens(str, { donor, org, amount, dueDate, giveUrl }) {
+  const firstName = donor.name ? donor.name.trim().split(/\s+/)[0] : "";
+  return (str || "")
+    .replace(/{{donor_name}}/g, donor.name || "")
+    .replace(/{{first_name}}/g, firstName)
+    .replace(/{{org_name}}/g, org.name || "")
+    .replace(/{{amount}}/g, amount != null ? `$${Number(amount).toLocaleString()}` : "your pledge")
+    .replace(/{{due_date}}/g, dueDate ? new Date(dueDate).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" }) : "")
+    .replace(/{{give_url}}/g, giveUrl);
+}
+
+async function sendPledgeReminderEmail(org, donor, pledgeRow) {
+  const suppressReason = await getSuppressionReason(donor.email, org.id);
+  if (suppressReason) {
+    console.log(`[pledge-reminder] skipping suppressed address ${donor.email} (${suppressReason})`);
+    return false;
+  }
+  const rawFrontendUrl = process.env.FRONTEND_URL || "https://client-five-tau-13.vercel.app";
+  const frontendUrl = rawFrontendUrl.replace(/^http:\/\//i, "https://");
+  const giveUrl = `${frontendUrl}/give/${org.org_slug}`;
+  const tokenCtx = { donor, org, amount: pledgeRow.amount, dueDate: pledgeRow.due_date, giveUrl };
+  const subject = applyPledgeReminderTokens(org.pledge_reminder_subject || DEFAULT_PLEDGE_REMINDER_SUBJECT, tokenCtx);
+  const bodyHtml = applyPledgeReminderTokens(org.pledge_reminder_body || DEFAULT_PLEDGE_REMINDER_BODY, tokenCtx)
+    + unsubscribeEmailFooterHtml(donor.email, org.id, "campaign");
+  const smtpFrom = process.env.DEMO_SMTP_FROM || "noreply@stewardapp.dev";
+  if (process.env.RESEND_API_KEY) {
+    try {
+      const { error: sendErr } = await resend.emails.send({
+        from: smtpFrom, to: donor.email, subject, html: bodyHtml,
+        headers: unsubscribeHeaders(donor.email, org.id, "campaign"),
+      });
+      if (sendErr) console.error("[pledge-reminder] send error:", sendErr.message);
+    } catch (e) { console.error("[pledge-reminder] resend error:", e.message); }
+  }
+  return true;
+}
+
+async function processPledgeReminders() {
+  try {
+    // Step 1 — the trigger. Recurring dunning's cadence is initialized by a
+    // Stripe webhook (invoice.payment_failed); a pledge due date has no
+    // equivalent external event, so this scan IS the trigger: any open
+    // pledge whose due date has just passed starts its cadence at "day 0"
+    // (fires immediately, same as a fresh payment failure does).
+    await run(
+      `UPDATE pledges SET first_overdue_at=NOW(), next_reminder_at=NOW(), updated_at=NOW()
+       WHERE status='open' AND first_overdue_at IS NULL AND due_date < CURRENT_DATE`
+    );
+
+    // Step 2 — send whatever's due, exactly like processDunning().
+    const rows = await query(
+      `SELECT p.*, d.name AS donor_name, d.email AS donor_email
+       FROM pledges p
+       JOIN donors d ON d.id = p.donor_id
+       WHERE p.status = 'open' AND p.next_reminder_at <= NOW()`
+    );
+    for (const p of rows) {
+      try {
+        const orgRows = await query(
+          "SELECT id, name, org_slug, pledge_reminder_enabled, pledge_reminder_subject, pledge_reminder_body FROM orgs WHERE id=?",
+          [p.org_id]
+        );
+        const org = orgRows[0];
+        if (!org || !p.donor_email) continue;
+        // Org turned this off — leave the cadence/step where it is (so it
+        // picks back up correctly if re-enabled) but don't send.
+        if (org.pledge_reminder_enabled === false) continue;
+
+        await sendPledgeReminderEmail(org, { name: p.donor_name, email: p.donor_email }, p);
+        await run(
+          "INSERT INTO interactions (id,org_id,donor_id,type,note,date,metadata) VALUES (?,?,?,?,?,?,?)",
+          ["int_" + uuid().slice(0, 8), p.org_id, p.donor_id, "pledge_reminder",
+           `Pledge reminder sent — $${Number(p.amount).toLocaleString()} pledge due ${new Date(p.due_date).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}`,
+           new Date().toISOString().split("T")[0], JSON.stringify({ pledge_id: p.id, step: p.reminder_step })]
+        );
+
+        const nextStep = p.reminder_step + 1;
+        const nextDelayDays = PLEDGE_REMINDER_SCHEDULE_DAYS[nextStep];
+        const nextReminderAt = nextDelayDays != null
+          ? new Date(new Date(p.first_overdue_at).getTime() + nextDelayDays * 86400000).toISOString()
+          : null; // exhausted the cadence — stop sending; stays 'open' until fulfilled/written off manually
+        await run(
+          `UPDATE pledges SET reminder_step=?, next_reminder_at=?, updated_at=NOW() WHERE id=?`,
+          [nextStep, nextReminderAt, p.id]
+        );
+      } catch (e) { console.error("[pledge-reminder] pledge", p.id, e.message); }
+    }
+  } catch (e) { console.error("[pledge-reminder] processPledgeReminders:", e.message); }
+}
+setTimeout(() => processPledgeReminders().catch(console.error), 5000);
+setInterval(() => processPledgeReminders().catch(console.error), 60 * 60 * 1000);
+
+app.post("/pledges/process-reminders", requireAuth, requireAdmin, wrap(async (req, res) => {
+  await processPledgeReminders();
+  res.json({ success: true });
+}));
+
+// Everyday staff action, matching POST /recurring/:donorId/resend — resends
+// the current step's reminder on demand without touching reminder_step/
+// next_reminder_at, so a manual nudge never interferes with the automatic
+// cadence.
+app.post("/pledges/:id/resend", requireAuth, wrap(async (req, res) => {
+  const rows = await query(
+    `SELECT p.*, d.name AS donor_name, d.email AS donor_email
+     FROM pledges p JOIN donors d ON d.id = p.donor_id
+     WHERE p.id=? AND p.org_id=? AND p.status='open'`,
+    [req.params.id, req.user.orgId]
+  );
+  if (!rows.length) return res.status(404).json({ error: "This pledge is not open." });
+  const p = rows[0];
+  if (!p.donor_email) return res.status(400).json({ error: "This donor has no email on file." });
+
+  const suppressReason = await getSuppressionReason(p.donor_email, req.user.orgId);
+  if (suppressReason) return res.status(400).json({ error: `This donor's email is suppressed (${suppressReason}).` });
+
+  const orgRows = await query(
+    "SELECT id, name, org_slug, pledge_reminder_subject, pledge_reminder_body FROM orgs WHERE id=?", [req.user.orgId]
+  );
+  await sendPledgeReminderEmail(orgRows[0], { name: p.donor_name, email: p.donor_email }, p);
+  res.json({ sent: true });
 }));
 
 // ── Billing helpers ────────────────────────────────────────────────────────
