@@ -50,6 +50,7 @@ const { Resend } = require("resend");
 const resend = new Resend(process.env.RESEND_API_KEY);
 const { getDb, query, run, uuid, seedOrgData, withTransaction, queryTx, runTx } = require("./db");
 const { signToken, requireAuth, requireSuperAdmin } = require("./auth");
+const { lookupMatchingGift } = require("./matchingGifts");
 const Stripe = require("stripe");
 const { google } = require("googleapis");
 const { Webhook: SvixWebhook } = require("svix");
@@ -1513,6 +1514,7 @@ app.get("/donors", requireAuth, wrap(async (req, res) => {
     ...d,
     tags: JSON.parse(d.tags || "[]"),
     last_touchpoint: tpMap[d.id] || null,
+    matching_gift: lookupMatchingGift(d.employer),
   }));
   res.json(result);
 }));
@@ -1527,6 +1529,7 @@ app.get("/donors/my", requireAuth, wrap(async (req, res) => {
     ...d,
     tags: JSON.parse(d.tags || "[]"),
     last_touchpoint: tpMap[d.id] || null,
+    matching_gift: lookupMatchingGift(d.employer),
   }));
   res.json(result);
 }));
@@ -1560,6 +1563,7 @@ app.get("/donors/:id", requireAuth, wrap(async (req, res) => {
   d.tags = JSON.parse(d.tags || "[]");
   d.interactions = await query("SELECT * FROM interactions WHERE donor_id = ? AND org_id = ? ORDER BY date DESC", [d.id, req.user.orgId]);
   d.gifts = await query("SELECT * FROM gifts WHERE donor_id = ? ORDER BY date DESC", [d.id]);
+  d.matching_gift = lookupMatchingGift(d.employer);
   res.json(d);
 }));
 
@@ -1971,6 +1975,7 @@ app.put("/donors/:id", requireAuth, checkWriteAccess, wrap(async (req, res) => {
   const rows = await query("SELECT * FROM donors WHERE id = ?", [req.params.id]);
   const d = rows[0];
   d.tags = JSON.parse(d.tags || "[]");
+  d.matching_gift = lookupMatchingGift(d.employer);
   res.json(d);
 }));
 
@@ -3456,6 +3461,38 @@ app.get("/dashboard/today", requireAuth, wrap(async (req, res) => {
       totalGiving: parseFloat(rs.total_giving) || 0,
       subscriptionId: rs.stripe_subscription_id,
     });
+  }
+
+  // Matching-gift opportunities — a recent donor whose employer has a known
+  // matching-gift program (see matchingGifts.js), real dollar upside for a
+  // simple ask. Low priority relative to everything above (failed payments,
+  // overdue tasks, drafted emails): this is a nice-to-have opportunity, not
+  // time-sensitive, so it should never crowd out those. Only considered for
+  // donors not already claimed by a higher-priority bucket above — computed
+  // as a hard exclusion (not just a priority contest), matching "isn't
+  // already flagged for something else."
+  const alreadyFlaggedIds = new Set(items.map(i => i.donorId));
+  const employerDonorRows = await query(`
+    SELECT d.id, d.name, d.employer, d.total_giving, d.last_gift_amount, d.last_gift_date
+    FROM donors d
+    WHERE d.org_id = ? AND d.deleted_at IS NULL AND d.employer IS NOT NULL AND d.employer <> '' AND d.last_gift_date >= ? ${scopeClause}
+    ORDER BY d.last_gift_date DESC
+    LIMIT 30
+  `, [orgId, ninetyDaysAgo, ...scopeParams]);
+  let matchingGiftCount = 0;
+  for (const d of employerDonorRows) {
+    if (matchingGiftCount >= 5) break;
+    if (alreadyFlaggedIds.has(d.id)) continue;
+    const match = lookupMatchingGift(d.employer);
+    if (!match) continue;
+    upsertItem({
+      donorId: d.id, donorName: d.name,
+      reason: `${match.companyName} matches employee gifts ${match.ratio} — ask about submitting a match request`,
+      priority: 30, action: "matching_gift",
+      totalGiving: parseFloat(d.total_giving) || 0,
+      matchCompany: match.companyName, matchRatio: match.ratio,
+    });
+    matchingGiftCount++;
   }
 
   items.sort((a, b) => b.priority - a.priority);

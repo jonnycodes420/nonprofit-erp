@@ -215,6 +215,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
     if(item.action==="milestone")return onNavigate("communications",{subtab:"milestones",highlightDraftId:item.draftId});
     if(item.action==="lapsed")return onNavigate("donors",{view:"reengage"});
     if(item.action==="recurring")return resendCardLink(item);
+    if(item.action==="matching_gift")return onNavigate("donors",{selectDonorId:item.donorId});
     if(item.taskId)return completeTask(item);
     return onNavigate("donors",{logDonorId:item.donorId});
   };
@@ -224,13 +225,14 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
     if(item.action==="milestone")return "Review draft →";
     if(item.action==="lapsed")return "Re-engage →";
     if(item.action==="recurring")return resentIds.has(item.donorId)?"Sent ✓":(busyDonorId===item.donorId?"Sending…":"Resend update link");
+    if(item.action==="matching_gift")return "View donor →";
     if(item.taskId)return busyDonorId===item.donorId?"Saving…":"Mark done ✓";
     if(item.action==="thank")return "Log thank-you →";
     if(item.action==="email")return "Log email →";
     return "Log call →";
   };
 
-  const ROW_COLOR={note:"#8b6f47",milestone:T.gold,lapsed:T.terracotta,thank:T.green,email:"#3b82f6",recurring:T.red};
+  const ROW_COLOR={note:"#8b6f47",milestone:T.gold,lapsed:T.terracotta,thank:T.green,email:"#3b82f6",recurring:T.red,matching_gift:"#10b981"};
   const rowColor=(item)=>item.taskId?"#8b5cf6":(ROW_COLOR[item.action]||T.greenMid);
 
   const openSetGoal=()=>{

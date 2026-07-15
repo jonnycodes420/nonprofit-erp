@@ -122,6 +122,7 @@ export function adaptDonor(d) {
     zip:           d.zip ?? null,
     plannedGiving: d.planned_giving ?? false,
     employer:      d.employer ?? null,
+    matchingGift:  d.matching_gift ?? null,
   };
 }
 
