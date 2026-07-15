@@ -330,7 +330,11 @@ export function MetricCard({label,value,sub,color,trend}) {
     <span style={{fontSize:10,fontWeight:800,letterSpacing:"0.12em",textTransform:"uppercase",color:T.ink3}}>{label}</span>
     <span style={{fontSize:28,fontWeight:800,color:color||T.ink,fontFamily:"'DM Serif Display',serif",lineHeight:1.05,letterSpacing:"-0.02em"}}>{value}</span>
     {sub&&<span style={{fontSize:11,color:T.ink3}}>{sub}</span>}
-    {trend!==undefined&&<span style={{fontSize:11,color:trend>=0?T.greenMid:T.red,fontWeight:600}}>{trend>=0?"↑":"↓"} {Math.abs(trend)}%</span>}
+    {trend!==undefined&&(
+      trend===0
+        ?<span style={{fontSize:11,color:T.ink3,fontWeight:600}}>No change</span>
+        :<span style={{fontSize:11,color:trend>0?T.greenMid:T.red,fontWeight:600}}>{trend>0?"↑":"↓"} {Math.abs(trend)}%</span>
+    )}
   </div>;
 }
 export function EmptyState({icon,title,message,action,onAction}) {

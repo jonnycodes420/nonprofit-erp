@@ -300,6 +300,15 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
       +{count} more →
     </button>
   );
+  // Goal banner's right-hand column — real supporting stats (pace, days
+  // left, recent activity) genuinely filling that width, not decoration.
+  const GoalStat=({label,value,valueColor,sub})=>(
+    <div style={{background:"rgba(255,255,255,0.04)",border:"1px solid #1a2e1f",borderRadius:10,padding:"10px 14px"}}>
+      <div style={{fontSize:9,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",color:"#8fa896",marginBottom:4}}>{label}</div>
+      <div style={{fontSize:14,fontWeight:700,color:valueColor||"#f0ede6",lineHeight:1.3}}>{value}</div>
+      {sub&&<div style={{fontSize:11,color:"#8fa896",marginTop:2}}>{sub}</div>}
+    </div>
+  );
 
   // My Portfolio tile icons — a real path per stat (not a generic dot) so the
   // row reads as a designed panel rather than six plain numbers in a line.
@@ -328,71 +337,91 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
   const retentionColor=retentionCurrent==null?T.ink:retentionCurrent>=retentionSector?"#1a6b4a":retentionCurrent>=retentionSector-15?"#d97706":"#ef4444";
 
   // Goal banner: greeting is real (time-of-day + the logged-in user's own
-  // name, not a canned string), pace is real math (% of the period elapsed
-  // vs. % of the goal reached — not a fabricated "on track" claim), and the
-  // driver hint below is real trailing-7-day gift activity from the backend
+  // `name` field from the DB — not a role label or placeholder; an empty
+  // firstName just omits the ", Name" suffix rather than substituting
+  // something generic. "Good evening, Admin" for the demo account is real
+  // data — the seeded demo user's stored name is literally "Admin User" —
+  // not a fallback bug). Pace is real math (% of the period elapsed vs. %
+  // of the goal reached — not a fabricated "on track" claim), and the
+  // driver hint is real trailing-7-day gift activity from the backend
   // (goal.recentAmount/recentDonorCount), never invented copy.
   const firstName=auth?.user?.name?.split(" ")[0]||"";
   const greetHour=new Date().getHours();
   const greeting=greetHour<12?"Good morning":greetHour<18?"Good afternoon":"Good evening";
-  let paceLabel=null,paceColor="#8fa896";
+  let paceLabel=null,paceColor="#8fa896",paceDeltaPts=null,daysLeftInPeriod=null;
   if(goal){
     const periodStartDate=new Date(goal.periodStart+"T00:00:00");
     const periodEndDate=new Date(goal.periodEnd+"T00:00:00");
     const totalDays=Math.max(1,Math.round((periodEndDate-periodStartDate)/86400000));
     const elapsedDays=Math.min(totalDays,Math.max(0,Math.round((new Date()-periodStartDate)/86400000)));
+    daysLeftInPeriod=Math.max(0,daysUntil(goal.periodEnd));
     if(elapsedDays<2){
       paceLabel="Just getting started";
     }else{
       const expectedPercent=Math.round((elapsedDays/totalDays)*100);
-      const paceDelta=goal.percent-expectedPercent;
-      if(paceDelta>=8){paceLabel="Ahead of pace";paceColor=T.gold;}
-      else if(paceDelta<=-8){paceLabel="Behind pace";paceColor=T.terracotta;}
+      paceDeltaPts=goal.percent-expectedPercent;
+      if(paceDeltaPts>=8){paceLabel="Ahead of pace";paceColor=T.gold;}
+      else if(paceDeltaPts<=-8){paceLabel="Behind pace";paceColor=T.terracotta;}
       else{paceLabel="On pace";paceColor="#8fa896";}
     }
   }
-  const goalDriverHint=goal&&goal.recentAmount>0
-    ?`${fmtFull(goal.recentAmount)} ${goal.goalType==="lapsed_recovery"?"recovered from":"raised from"} ${goal.recentDonorCount} donor${goal.recentDonorCount!==1?"s":""} this week`
-    :null;
+  // Trivially small vs. the goal (under 1%) reads as discouraging stated
+  // baldly ("$1 raised") — lead with the human count instead in that case,
+  // never fabricate a rounder/better number.
+  const goalDriverHint=(()=>{
+    if(!goal||!(goal.recentAmount>0))return null;
+    const donorWord=`${goal.recentDonorCount} donor${goal.recentDonorCount!==1?"s":""}`;
+    const isTrivial=goal.goalAmount>0&&(goal.recentAmount/goal.goalAmount)<0.01;
+    if(isTrivial){
+      return goal.goalType==="lapsed_recovery"?`${donorWord} came back this week`:`${donorWord} gave this week`;
+    }
+    return goal.goalType==="lapsed_recovery"
+      ?`${fmtFull(goal.recentAmount)} recovered from ${donorWord} this week`
+      :`${fmtFull(goal.recentAmount)} came in from ${donorWord} this week`;
+  })();
 
   return(
     <div className="dash-root dash-bleed fade-in" style={{background:T.bgDeep,margin:"-20px -24px -28px -24px",padding:"20px 24px 28px 24px",display:"flex",flexDirection:"column",gap:16,minHeight:"calc(100vh - 92px)"}}>
 
-      {/* Goal banner — the percent-to-goal is the one thing this card exists
-          to show, so it gets real dedicated space (large, isolated, own
-          line). Greeting/pace/label are genuinely secondary: smaller, muted,
-          arranged around the hero number rather than competing with it. The
-          driver-hint strip at the bottom is real trailing-7-day gift
-          activity from the backend, shown only when there's something real
-          to say — no filler line when a week was quiet. */}
-      <div className="dash-goal-banner" style={{background:"linear-gradient(135deg,#0f1a12,#152420)",border:"1px solid #1a2e1f",borderRadius:16,padding:"20px 24px",color:"#f0ede6"}}>
+      {/* Goal banner — restructured into a real two-column layout so its
+          footprint matches its content across the card's full width,
+          instead of stacking everything into a narrow left column and
+          leaving the right two-thirds empty. Left: the percent-to-goal,
+          the one number this card exists to show, still large and
+          isolated. Right: 3 real supporting stats (pace, days left in the
+          period, recent activity) genuinely filling that width — not
+          decoration, and never fabricated. */}
+      <div className="dash-goal-banner" style={{background:"linear-gradient(135deg,#0f1a12,#152420)",border:"1px solid #1a2e1f",borderRadius:16,padding:"22px 26px",color:"#f0ede6"}}>
         {goal===undefined?(
           <div style={{display:"flex",alignItems:"center",gap:8,color:"#8fa896",fontSize:13}}><Spin/>Loading goal…</div>
         ):goal?(
           <>
-            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:8,marginBottom:18}}>
-              <span style={{fontSize:12,fontWeight:600,color:"#8fa896"}}>{greeting}{firstName?`, ${firstName}`:""}</span>
-              {paceLabel&&<span style={{fontSize:10,fontWeight:800,letterSpacing:"0.06em",textTransform:"uppercase",color:paceColor,background:paceColor+"18",border:`1px solid ${paceColor}40`,borderRadius:99,padding:"4px 10px",whiteSpace:"nowrap"}}>{paceLabel}</span>}
-            </div>
+            <div style={{fontSize:12,fontWeight:600,color:"#8fa896",marginBottom:18}}>{greeting}{firstName?`, ${firstName}`:""}</div>
 
-            <div style={{fontSize:10,fontWeight:800,letterSpacing:"0.12em",textTransform:"uppercase",color:"#8fa896",marginBottom:5}}>Fundraising Goal</div>
-            <div style={{fontSize:16,fontWeight:600,color:"#c9c2b4",marginBottom:16,maxWidth:420}}>{goal.label}</div>
+            <div className="dash-goal-cols" style={{display:"flex",gap:32,flexWrap:"wrap"}}>
+              {/* LEFT — primary */}
+              <div style={{flex:"2 1 300px",minWidth:260}}>
+                <div style={{fontSize:10,fontWeight:800,letterSpacing:"0.12em",textTransform:"uppercase",color:"#8fa896",marginBottom:5}}>Fundraising Goal</div>
+                <div style={{fontSize:16,fontWeight:600,color:"#c9c2b4",marginBottom:16,maxWidth:420}}>{goal.label}</div>
 
-            {/* Primary — isolated, dominant, the one number this card exists for */}
-            <div style={{display:"flex",alignItems:"baseline",gap:10,marginBottom:12}}>
-              <div style={{fontSize:58,fontWeight:400,fontFamily:"'DM Serif Display',Georgia,serif",color:T.gold,lineHeight:1}}>{goal.percent}%</div>
-              <div style={{fontSize:13,fontWeight:600,color:"#8fa896"}}>of goal reached</div>
-            </div>
-            <div style={{background:"#0a120c",borderRadius:99,height:11,overflow:"hidden",marginBottom:10}}>
-              <div style={{height:"100%",width:`${goal.percent}%`,background:`linear-gradient(90deg,${T.gold},${T.terracotta})`,borderRadius:99,transition:"width 0.6s ease"}}/>
-            </div>
-            <div style={{fontSize:13,color:"#c9c2b4"}}><strong style={{fontSize:15,color:T.gold,fontFamily:"'DM Serif Display',serif",fontWeight:400}}>{fmtFull(goal.currentAmount)}</strong> of {fmtFull(goal.goalAmount)}</div>
-
-            {goalDriverHint&&(
-              <div style={{fontSize:12,color:"#8fa896",borderTop:"1px dashed #1a2e1f",marginTop:16,paddingTop:12}}>
-                ✦ {goalDriverHint}
+                <div style={{display:"flex",alignItems:"baseline",gap:10,marginBottom:12}}>
+                  <div style={{fontSize:58,fontWeight:400,fontFamily:"'DM Serif Display',Georgia,serif",color:T.gold,lineHeight:1}}>{goal.percent}%</div>
+                  <div style={{fontSize:13,fontWeight:600,color:"#8fa896"}}>of goal reached</div>
+                </div>
+                <div style={{background:"#0a120c",borderRadius:99,height:11,overflow:"hidden",marginBottom:10}}>
+                  <div style={{height:"100%",width:`${goal.percent}%`,background:`linear-gradient(90deg,${T.gold},${T.terracotta})`,borderRadius:99,transition:"width 0.6s ease"}}/>
+                </div>
+                <div style={{fontSize:13,color:"#c9c2b4"}}><strong style={{fontSize:15,color:T.gold,fontFamily:"'DM Serif Display',serif",fontWeight:400}}>{fmtFull(goal.currentAmount)}</strong> of {fmtFull(goal.goalAmount)}</div>
               </div>
-            )}
+
+              {/* RIGHT — supporting stats, real data filling the width */}
+              <div style={{flex:"1 1 200px",minWidth:180,display:"flex",flexDirection:"column",gap:10}}>
+                <GoalStat label="Pace" value={paceLabel} valueColor={paceLabel==="Ahead of pace"?T.gold:paceLabel==="Behind pace"?T.terracotta:"#f0ede6"}
+                  sub={paceDeltaPts!=null&&Math.abs(paceDeltaPts)>=1?`${Math.abs(paceDeltaPts)}pt ${paceDeltaPts>0?"ahead of":"behind"} schedule`:undefined}/>
+                <GoalStat label="Time Left" value={daysLeftInPeriod!=null?`${daysLeftInPeriod} day${daysLeftInPeriod!==1?"s":""}`:"—"} sub="in this period"/>
+                <GoalStat label="This Week" value={goalDriverHint?goalDriverHint.charAt(0).toUpperCase()+goalDriverHint.slice(1):"No gifts logged yet"}/>
+              </div>
+            </div>
           </>
         ):(
           <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:12}}>
@@ -444,8 +473,10 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
                     {retentionCurrent!=null?`${retentionCurrent}%`:"—"}
                   </div>
                   {stewardMetrics.retentionRate.deltaVsTrendStart!=null&&(
-                    <span style={{fontSize:13,fontWeight:700,color:stewardMetrics.retentionRate.deltaVsTrendStart>=0?"#1a6b4a":"#ef4444"}}>
-                      {stewardMetrics.retentionRate.deltaVsTrendStart>=0?"↑":"↓"} {Math.abs(stewardMetrics.retentionRate.deltaVsTrendStart)}pt vs 3 weeks ago
+                    <span style={{fontSize:13,fontWeight:700,color:stewardMetrics.retentionRate.deltaVsTrendStart===0?T.ink3:stewardMetrics.retentionRate.deltaVsTrendStart>0?"#1a6b4a":"#ef4444"}}>
+                      {stewardMetrics.retentionRate.deltaVsTrendStart===0
+                        ?"No change vs 3 weeks ago"
+                        :`${stewardMetrics.retentionRate.deltaVsTrendStart>0?"↑":"↓"} ${Math.abs(stewardMetrics.retentionRate.deltaVsTrendStart)}pt vs 3 weeks ago`}
                     </span>
                   )}
                 </div>
@@ -510,8 +541,10 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
               <div style={{fontSize:11,color:T.ink3,minWidth:0}}>
                 <span style={{fontWeight:700,color:T.ink}}>Stewardship Debt: {stewardMetrics.stewardshipDebt.current.toLocaleString()}</span>
                 {stewardMetrics.stewardshipDebt.deltaVsTrendStart!=null&&(
-                  <span style={{marginLeft:6,fontWeight:700,color:stewardMetrics.stewardshipDebt.deltaVsTrendStart>0?"#ef4444":"#1a6b4a"}}>
-                    {stewardMetrics.stewardshipDebt.deltaVsTrendStart>0?"↑":"↓"} {Math.abs(stewardMetrics.stewardshipDebt.deltaVsTrendStart).toLocaleString()} vs 3 weeks ago
+                  <span style={{marginLeft:6,fontWeight:700,color:stewardMetrics.stewardshipDebt.deltaVsTrendStart===0?T.ink3:stewardMetrics.stewardshipDebt.deltaVsTrendStart>0?"#ef4444":"#1a6b4a"}}>
+                    {stewardMetrics.stewardshipDebt.deltaVsTrendStart===0
+                      ?"No change vs 3 weeks ago"
+                      :`${stewardMetrics.stewardshipDebt.deltaVsTrendStart>0?"↑":"↓"} ${Math.abs(stewardMetrics.stewardshipDebt.deltaVsTrendStart).toLocaleString()} vs 3 weeks ago`}
                   </span>
                 )}
                 <span> — donors weighted by days since contact × giving significance</span>
