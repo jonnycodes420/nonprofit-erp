@@ -666,9 +666,26 @@ const requireAdmin = (req, res, next) => {
 };
 
 // ── Health ─────────────────────────────────────────────────────────────────
+// `sentry` is a non-secret boolean (is SENTRY_DSN configured?) so ops checks
+// can confirm error monitoring is wired without dashboard access.
 app.get("/health", (req, res) => {
-  res.json({ status: "ok", version: "1.1.0", db: dbReady });
+  res.json({ status: "ok", version: "1.1.0", db: dbReady, sentry: !!process.env.SENTRY_DSN });
 });
+
+// ── Sentry test hook (org-admin-gated) ─────────────────────────────────────
+// Fires a deliberate test error down one of the two backend reporting paths:
+//   ?mode=route      → throws inside a route handler (Express error handler → Sentry)
+//   ?mode=rejection  → fire-and-forget rejected promise (process unhandledRejection → Sentry)
+// Used to verify events actually arrive in Sentry — safe to keep: admin-only,
+// writes nothing, and each call produces exactly one error event.
+app.post("/admin/debug/sentry-test", requireAuth, requireAdmin, wrap(async (req, res) => {
+  const mode = req.query.mode || "route";
+  if (mode === "rejection") {
+    setTimeout(() => { Promise.reject(new Error(`[sentry-test] deliberate unhandledRejection by ${req.user.userId} at ${new Date().toISOString()}`)); }, 10);
+    return res.json({ ok: true, fired: "rejection" });
+  }
+  throw new Error(`[sentry-test] deliberate route error by ${req.user.userId} at ${new Date().toISOString()}`);
+}));
 
 // ── Gift date normalization ────────────────────────────────────────────────
 // Enforces ISO YYYY-MM-DD so MAX(date) string comparison = chronological order.
