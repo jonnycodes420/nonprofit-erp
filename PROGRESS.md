@@ -49,6 +49,15 @@ DONE (was item 6): Expired-token UX — see "Auth, Gmail, billing/Reactivate, an
 
 ## Earlier sessions (for reference)
 
+### BUILD-04 Strike 3 — four-KPI-card question on Home: RESOLVED, superseded (2026-07-16)
+
+A handoff flagged an unconfirmed ask for "four equally-weighted drillable KPI cards" on Home, while screenshots kept showing three hero metrics. Loop closed — **the four-equal-cards ask was not implemented, and deliberately so: it was superseded by later, explicit founder feedback.** Do not implement it; that would reverse two documented decisions:
+
+- **`436a6b5` (2026-07-13)** — founder's live reaction to the Stewardship Debt hero: "weird," "not a fan." Result: Donor Retention Rate promoted to the single hero (the number development directors actually benchmark — 43% sector average), Stewardship Debt explicitly *demoted* to a slim strip ("demote, don't delete"). Equal visual weight was abandoned there, on purpose.
+- **`d72dbd0` (2026-07-15)** — founder feedback that the page read as a "wall of cold statistics" → narrative-first metric copy (a sentence of context with the number as evidence), the opposite of an equally-weighted stat-card grid. The old dashboard's 4-card KPI stat row had already been deliberately removed in the 2026-07-12 action-queue rebuild.
+
+**What actually renders (live-screenshotted this pass, demo org, 2026-07-16)**: goal banner → scope toggle → one relationship-health card holding Donor Retention Rate (hero, sparkline, drillable → `MetricBreakdownPanel` with the real ranked non-retained donor list — verified open with real data), First-Touch Delay (secondary; deliberately no ranked breakdown since it's an average — it surfaces the actual newest-untouched donors as chips instead), and Stewardship Debt (demoted strip, drillable → its own `MetricBreakdownPanel`, verified) → My Portfolio (6 drillable stats, third `MetricBreakdownPanel`) → queue/briefing → funnel + next-grant tile + Recurring Gifts revenue-at-risk card (renders when the org has active recurring gifts — the demo org currently has none, so it's absent from the screenshot; logic confirmed in code). The "fourth KPI" the original ask would have needed (Recurring Revenue at Risk per the handoff's fallback suggestion) already exists on the page as that card — just not as an equal-weight hero, consistent with the hierarchy decision.
+
 ### BUILD-04 Strike 2 — dead code stripped: Analytics.jsx + TodayPage.jsx deleted (2026-07-16)
 
 Analytics is dead-not-paused per the documented pivot; TodayPage had been unrouted dead code since the 2026-07-12 home-screen consolidation. Both deleted outright:
