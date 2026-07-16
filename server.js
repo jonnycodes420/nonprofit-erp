@@ -9875,6 +9875,180 @@ app.get("/org/export", requireAuth, wrap(async (req, res) => {
   });
 }));
 
+// Full-file CSV builder for the org export zip — same cell encoding as the
+// report CSVs (reportCsvCell: RFC-4180 quoting + formula-injection guard),
+// plus a UTF-8 BOM so Excel opens accented donor names correctly. Columns
+// are [label, getter] pairs; a getter is a row key or a function.
+function toCsv(columns, rows) {
+  const header = columns.map(c => reportCsvCell(c[0])).join(",");
+  const lines = rows.map(r =>
+    columns.map(c => reportCsvCell(typeof c[1] === "function" ? c[1](r) : r[c[1]])).join(",")
+  );
+  return "\uFEFF" + [header, ...lines].join("\r\n") + "\r\n";
+}
+
+// The "your data is yours" export: one zip of clean, spreadsheet-openable
+// CSVs of everything, streamed (archiver pipes straight to the response, so
+// a big org never buffers a whole zip in memory). Admin-gated — this is a
+// full-org PII dump, matching the billing/org-settings convention; staff can
+// already export the per-view slices they see on screen. NEVER
+// checkWriteAccess-gated: a lapsed (read_only) org must always be able to
+// leave with its data — that's the whole point of the feature.
+// Sample rows are INCLUDED, identified by an is_sample column where the
+// table has one — honest and reversible (filter the column in a spreadsheet)
+// beats silently dropping rows from "everything".
+app.get("/org/export/csv", requireAuth, requireAdmin, wrap(async (req, res) => {
+  const { ZipArchive } = require("archiver"); // archiver v8 API — class export, not a factory function
+  const orgId = req.user.orgId;
+
+  const orgRows = await query("SELECT name, org_slug FROM orgs WHERE id=?", [orgId]);
+  const orgSlug = (orgRows[0]?.org_slug || orgId).replace(/[^a-z0-9-]/gi, "-").toLowerCase();
+  const date = new Date().toISOString().split("T")[0];
+
+  const cfDefs = await query("SELECT id, label FROM custom_fields WHERE org_id=? ORDER BY field_order", [orgId]);
+  const cfVals = await query("SELECT donor_id, field_id, value FROM custom_field_values WHERE org_id=?", [orgId]);
+  const cfByDonor = {};
+  for (const v of cfVals) {
+    if (!cfByDonor[v.donor_id]) cfByDonor[v.donor_id] = {};
+    cfByDonor[v.donor_id][v.field_id] = v.value;
+  }
+
+  const [donors, gifts, interactions, grants, pledges, plannedGifts, recurring, givingPages, peerFundraisers, receipts] = await Promise.all([
+    query("SELECT * FROM donors WHERE org_id=? AND deleted_at IS NULL ORDER BY name", [orgId]),
+    query(`SELECT g.*, d.name AS donor_name, d.email AS donor_email,
+             f.name AS fund_name, COALESCE(c.name, g.campaign) AS campaign_name,
+             gp.title AS giving_page_title, pf.name AS peer_fundraiser_name
+           FROM gifts g
+           LEFT JOIN donors d ON d.id=g.donor_id
+           LEFT JOIN fin_funds f ON f.id=g.fund_id
+           LEFT JOIN campaigns c ON c.id=g.campaign_id
+           LEFT JOIN giving_pages gp ON gp.id=g.giving_page_id
+           LEFT JOIN peer_fundraisers pf ON pf.id=g.peer_fundraiser_id
+           WHERE g.org_id=? ORDER BY g.date DESC`, [orgId]),
+    query(`SELECT i.*, d.name AS donor_name, d.email AS donor_email, i.metadata->>'direction' AS direction
+           FROM interactions i LEFT JOIN donors d ON d.id=i.donor_id
+           WHERE i.org_id=? ORDER BY i.date DESC`, [orgId]),
+    query("SELECT * FROM grants WHERE org_id=? ORDER BY deadline", [orgId]),
+    query(`SELECT p.*, d.name AS donor_name, d.email AS donor_email
+           FROM pledges p LEFT JOIN donors d ON d.id=p.donor_id
+           WHERE p.org_id=? ORDER BY p.due_date`, [orgId]),
+    query(`SELECT pg.*, d.name AS donor_name, d.email AS donor_email
+           FROM planned_gifts pg LEFT JOIN donors d ON d.id=pg.donor_id
+           WHERE pg.org_id=? ORDER BY pg.created_at DESC`, [orgId]),
+    query(`SELECT r.*, d.name AS donor_name, d.email AS donor_email
+           FROM recurring_subscriptions r LEFT JOIN donors d ON d.id=r.donor_id
+           WHERE r.org_id=? ORDER BY r.created_at DESC`, [orgId]),
+    query(`SELECT gp.*, f.name AS fund_name FROM giving_pages gp
+           LEFT JOIN fin_funds f ON f.id=gp.fund_id
+           WHERE gp.org_id=? ORDER BY gp.created_at DESC`, [orgId]),
+    // Explicit column list — edit_token is a supporter's own credential and
+    // never leaves the system (same rule as the admin fundraiser routes).
+    query(`SELECT pf.id, pf.name, pf.email, pf.slug, pf.personal_goal_amount, pf.story, pf.status, pf.created_at,
+             gp.title AS giving_page_title
+           FROM peer_fundraisers pf LEFT JOIN giving_pages gp ON gp.id=pf.giving_page_id
+           WHERE pf.org_id=? ORDER BY pf.created_at DESC`, [orgId]),
+    query(`SELECT r.receipt_number, r.type, r.tax_year, r.amount, r.deductible_amount,
+             r.sent_to, r.sent_at, r.voided_at, r.void_reason, r.created_at,
+             d.name AS donor_name, d.email AS donor_email, g.date AS gift_date
+           FROM receipts r LEFT JOIN donors d ON d.id=r.donor_id LEFT JOIN gifts g ON g.id=r.gift_id
+           WHERE r.org_id=? ORDER BY r.created_at DESC`, [orgId]),
+  ]);
+
+  const joinTags = t => { try { return (Array.isArray(t) ? t : JSON.parse(t || "[]")).join("|"); } catch { return String(t || ""); } };
+
+  const files = {
+    "donors.csv": toCsv([
+      ["Name", "name"], ["Email", "email"], ["Phone", "phone"],
+      ["City", "city"], ["State", "state"], ["Zip", "zip"], ["Country", "country"], ["Employer", "employer"],
+      ["Stage", "stage"], ["Status (giving tier)", "status"],
+      ["Total giving", "total_giving"], ["Last gift date", "last_gift_date"], ["Last gift amount", "last_gift_amount"],
+      ["Gift count", "gift_count"], ["First gift date", "first_gift_date"],
+      ["Assigned to", "assigned_to_name"], ["Planned giving", "planned_giving"],
+      ["Wealth score", "wealth_score"], ["Capacity tier", "capacity_tier"],
+      ["Tags", r => joinTags(r.tags)], ["Notes", "notes"], ["Sample data", "is_sample"], ["Created", "created_at"],
+      ...cfDefs.map(f => [f.label, r => (cfByDonor[r.id] ? cfByDonor[r.id][f.id] : null)]),
+    ], donors),
+    "gifts.csv": toCsv([
+      ["Donor name", "donor_name"], ["Donor email", "donor_email"],
+      ["Date", "date"], ["Amount", "amount"], ["Type", "type"], ["Payment method", "payment_method"],
+      ["Fund", "fund_name"], ["Campaign", "campaign_name"], ["Giving page", "giving_page_title"],
+      ["Peer fundraiser", "peer_fundraiser_name"], ["Acknowledged", "acknowledgement_sent"],
+      ["Notes", "notes"], ["Sample data", "is_sample"],
+    ], gifts),
+    "interactions.csv": toCsv([
+      ["Donor name", "donor_name"], ["Donor email", "donor_email"],
+      ["Type", "type"], ["Date", "date"], ["Note", "note"],
+      ["Logged by", "logged_by_name"], ["Direction", "direction"], ["Sample data", "is_sample"],
+    ], interactions),
+    "grants.csv": toCsv([
+      ["Funder", "funder"], ["Program", "program"], ["Amount", "amount"], ["Received", "received"],
+      ["Status", "status"], ["Deadline", "deadline"], ["Report due", "report_due"], ["Officer", "officer"],
+      ["Description", "description"], ["Requirements", "requirements"], ["Notes", "notes"],
+      ["Sample data", "is_sample"], ["Created", "created_at"],
+    ], grants),
+    "pledges.csv": toCsv([
+      ["Donor name", "donor_name"], ["Donor email", "donor_email"],
+      ["Amount", "amount"], ["Due date", "due_date"], ["Status", "status"],
+      ["Fulfilled by gift", "fulfilled_gift_id"], ["Fulfilled at", "fulfilled_at"],
+      ["Notes", "notes"], ["Created", "created_at"],
+    ], pledges),
+    "planned_gifts.csv": toCsv([
+      ["Donor name", "donor_name"], ["Donor email", "donor_email"],
+      ["Type", "type"], ["Estimated value", "estimated_value"], ["Date indicated", "date_indicated"],
+      ["Notes", "notes"], ["Created", "created_at"],
+    ], plannedGifts),
+    "recurring.csv": toCsv([
+      ["Donor name", "donor_name"], ["Donor email", "donor_email"],
+      ["Amount", "amount"], ["Interval", "interval"], ["Status", "status"],
+      ["Failure count", "failure_count"], ["First failed", "first_failed_at"],
+      ["Recovered", "recovered_at"], ["Canceled", "canceled_at"],
+      ["Stripe subscription", "stripe_subscription_id"], ["Created", "created_at"],
+    ], recurring),
+    "giving_pages.csv": toCsv([
+      ["Title", "title"], ["Slug", "slug"], ["Goal", "goal_amount"], ["Fund", "fund_name"],
+      ["Status", "status"], ["Story", "story"], ["Created", "created_at"],
+    ], givingPages),
+    "peer_fundraisers.csv": toCsv([
+      ["Name", "name"], ["Email", "email"], ["Slug", "slug"], ["Giving page", "giving_page_title"],
+      ["Personal goal", "personal_goal_amount"], ["Status", "status"], ["Story", "story"], ["Created", "created_at"],
+    ], peerFundraisers),
+    "receipts.csv": toCsv([
+      ["Receipt number", "receipt_number"], ["Type", "type"], ["Tax year", "tax_year"],
+      ["Donor name", "donor_name"], ["Donor email", "donor_email"], ["Gift date", "gift_date"],
+      ["Amount", "amount"], ["Deductible amount", "deductible_amount"],
+      ["Sent to", "sent_to"], ["Sent at", "sent_at"], ["Voided at", "voided_at"], ["Void reason", "void_reason"],
+      ["Created", "created_at"],
+    ], receipts),
+  };
+
+  const counts = { donors, gifts, interactions, grants, pledges, planned_gifts: plannedGifts, recurring, giving_pages: givingPages, peer_fundraisers: peerFundraisers, receipts };
+  const readme = [
+    `Steward data export — ${orgRows[0]?.name || orgId}`,
+    `Exported: ${new Date().toISOString()}`,
+    "",
+    "This zip contains your organization's complete data as CSV files you can",
+    "open in any spreadsheet, import into another system, or archive. Rows",
+    "flagged in a \"Sample data\" column came from Steward's demo dataset and",
+    "can be filtered out. Your data is yours — this export is available",
+    "anytime, including after a subscription ends.",
+    "",
+    "Row counts:",
+    ...Object.entries(counts).map(([k, rows]) => `  ${k}.csv: ${rows.length}`),
+    "",
+  ].join("\n");
+
+  // Headers go on only after every query has succeeded, so a DB error still
+  // returns a clean JSON 500 instead of a half-written zip.
+  res.setHeader("Content-Type", "application/zip");
+  res.setHeader("Content-Disposition", `attachment; filename="steward-export-${orgSlug}-${date}.zip"`);
+  const archive = new ZipArchive({ zlib: { level: 9 } });
+  archive.on("error", err => { console.error("[export/csv] archive error:", err); res.destroy(err); });
+  archive.pipe(res);
+  archive.append(readme, { name: "README.txt" });
+  for (const [name, csv] of Object.entries(files)) archive.append(csv, { name });
+  await archive.finalize();
+}));
+
 // ── 404 ────────────────────────────────────────────────────────────────────
 app.use((req, res) => {
   res.status(404).json({ error: "Not found" });

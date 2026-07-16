@@ -166,15 +166,19 @@ function AppShell() {
   // Same blob-download pattern as Settings.jsx's exportData — lets a
   // read_only org actually get their data out from the banner itself,
   // instead of just switching to Settings and leaving them to find it.
+  // Admins get the full CSV zip (what a departing org actually wants to
+  // open); the CSV route is admin-gated, so staff fall back to JSON.
   async function exportDataFromBanner(){
+    const isAdmin=auth?.user?.role==="admin";
     setExportingBanner(true);
     try{
-      const r=await fetch(`${API}/org/export`,{headers:{Authorization:`Bearer ${getToken()}`}});
+      const path=isAdmin?"/org/export/csv":"/org/export";
+      const r=await fetch(`${API}${path}`,{headers:{Authorization:`Bearer ${getToken()}`}});
       if(!r.ok){const e=await r.json().catch(()=>({}));throw new Error(e.error||"Export failed");}
       const blob=await r.blob();
       const url=URL.createObjectURL(blob);
       const a=document.createElement("a");
-      a.href=url; a.download="steward-export.json";
+      a.href=url; a.download=isAdmin?`steward-export-${new Date().toISOString().split("T")[0]}.zip`:"steward-export.json";
       document.body.appendChild(a); a.click();
       document.body.removeChild(a); URL.revokeObjectURL(url);
     }catch(e){ alert(e.message||"Export failed"); }

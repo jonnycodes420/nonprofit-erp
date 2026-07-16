@@ -561,6 +561,7 @@ export function Settings({auth,logout}) {
   const [sampleLoading,setSampleLoading]=useState(false);
   const [sampleClearing,setSampleClearing]=useState(false);
   const [exporting,setExporting]=useState(false);
+  const [exportingCsv,setExportingCsv]=useState(false);
 
   useEffect(()=>{
     apiFetch("/org/team").then(setTeam).catch(()=>{});
@@ -665,6 +666,21 @@ export function Settings({auth,logout}) {
       document.body.removeChild(a); URL.revokeObjectURL(url);
     }catch(e){alert(e.message||"Export failed");}
     setExporting(false);
+  }
+
+  async function exportCsv(){
+    setExportingCsv(true);
+    try{
+      const r=await fetch(`${API}/org/export/csv`,{headers:{Authorization:`Bearer ${getToken()}`}});
+      if(!r.ok){const e=await r.json().catch(()=>({}));throw new Error(e.error||"Export failed");}
+      const blob=await r.blob();
+      const url=URL.createObjectURL(blob);
+      const a=document.createElement("a");
+      a.href=url; a.download=`steward-export-${new Date().toISOString().split("T")[0]}.zip`;
+      document.body.appendChild(a); a.click();
+      document.body.removeChild(a); URL.revokeObjectURL(url);
+    }catch(e){alert(e.message||"Export failed");}
+    setExportingCsv(false);
   }
 
   async function connectStripe(){
@@ -1043,15 +1059,21 @@ export function Settings({auth,logout}) {
       <SecHead label="Your Data"/>
       <div style={{background:T.white,border:"1px solid "+T.bg3,borderLeft:"3px solid #c9a84c",borderRadius:16,padding:"24px 28px"}}>
         <SectionLabel>Export your data</SectionLabel>
-        <div style={{fontSize:15,fontWeight:700,color:T.ink,marginBottom:6}}>Your data belongs to you.</div>
+        <div style={{fontSize:15,fontWeight:700,color:T.ink,marginBottom:6}}>Your data is yours.</div>
         <div style={{fontSize:13,color:T.ink3,marginBottom:6,lineHeight:1.6,maxWidth:520}}>
-          Download everything in Steward — donors, gifts, grants, finances, and more — as a structured JSON file.
+          Export everything as CSV anytime — including if you cancel. One zip of spreadsheet-ready files: donors (with your custom fields), gifts, interactions, grants, pledges, recurring gifts, giving pages, receipts, and more.
         </div>
-        <div style={{fontSize:12,color:T.ink3,marginBottom:18}}>Exports all your data as a structured file you can open, import, or archive.</div>
-        <button onClick={exportData} disabled={exporting}
-          style={{background:"#c9a84c",color:"#fff",border:"none",borderRadius:8,padding:"10px 22px",fontSize:13,fontWeight:700,cursor:exporting?"not-allowed":"pointer",opacity:exporting?0.7:1}}>
-          {exporting?"Building export…":"Export all data"}
-        </button>
+        <div style={{fontSize:12,color:T.ink3,marginBottom:18}}>{isAdmin?"CSV opens anywhere; JSON is the machine-readable copy of the same data.":"The full CSV export is available to your organization's admins. You can still download the JSON export below."}</div>
+        <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
+          {isAdmin&&<button onClick={exportCsv} disabled={exportingCsv}
+            style={{background:"#c9a84c",color:"#fff",border:"none",borderRadius:8,padding:"10px 22px",fontSize:13,fontWeight:700,cursor:exportingCsv?"not-allowed":"pointer",opacity:exportingCsv?0.7:1}}>
+            {exportingCsv?"Building export…":"Export all data (CSV)"}
+          </button>}
+          <button onClick={exportData} disabled={exporting}
+            style={{background:"transparent",color:T.ink,border:"1px solid "+T.bg3,borderRadius:8,padding:"10px 22px",fontSize:13,fontWeight:700,cursor:exporting?"not-allowed":"pointer",opacity:exporting?0.7:1}}>
+            {exporting?"Building export…":"Export as JSON"}
+          </button>
+        </div>
       </div>
 
       {sampleStatus&&(

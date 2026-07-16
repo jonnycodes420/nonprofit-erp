@@ -3754,6 +3754,34 @@ function AssignModal({donor,orgTeam,onSave,onClose}){
 }
 
 // ── Directory View ─────────────────────────────────────────────────────────
+// Client-side CSV of exactly the rows on screen. The directory's filtering
+// (search, advanced filters, custom-field filters, stage/owner) all happens
+// client-side, so exporting the already-filtered array is the only way an
+// "Export CSV" can match what the user is looking at — a server route can't
+// see these filters. Same formula-injection guard as the server report CSVs.
+function directoryCsvCell(v){
+  if(v===null||v===undefined)return "";
+  let s=String(v);
+  if(typeof v==="string"&&/^[=+\-@]/.test(s))s="'"+s;
+  if(/[",\n\r]/.test(s))s='"'+s.replace(/"/g,'""')+'"';
+  return s;
+}
+function downloadDirectoryCsv(rows){
+  const cols=[
+    ["Name",d=>d.name],["Email",d=>d.email],["Phone",d=>d.phone],
+    ["Stage",d=>d.stage],["Status",d=>d.status],
+    ["Total giving",d=>d.total],["Last gift date",d=>d.lastGift],["Last gift amount",d=>d.lastAmount],["Gift count",d=>d.gifts],
+    ["Assigned to",d=>d.assignedToName||""],["City",d=>d.city||""],["State",d=>d.state||""],
+    ["Tags",d=>(d.tags||[]).join("|")],
+  ];
+  const body="\uFEFF"+[cols.map(c=>c[0]).join(","),...rows.map(d=>cols.map(c=>directoryCsvCell(c[1](d))).join(","))].join("\r\n")+"\r\n";
+  const blob=new Blob([body],{type:"text/csv;charset=utf-8"});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement("a");
+  a.href=url;a.download=`donors-${new Date().toISOString().split("T")[0]}.csv`;
+  document.body.appendChild(a);a.click();document.body.removeChild(a);URL.revokeObjectURL(url);
+}
+
 function DirectoryView({donors,totalDonors,orgTeam,isAdmin,onSelectDonor,onAssign,stageFilter,setStageFilter,assigneeFilter,setAssigneeFilter,onLoadSampleData,sampleLoading,hasSampleData,onAddDonor,onBulkDone}){
   const [selIds,setSelIds]=useState(new Set());
   const [stageDrop,setStageDrop]=useState(false);
@@ -3861,6 +3889,10 @@ function DirectoryView({donors,totalDonors,orgTeam,isAdmin,onSelectDonor,onAssig
         </select>
         <span style={{fontSize:12,color:T.ink3}}>{filtered.length} donor{filtered.length!==1?"s":""}</span>
         <div style={{flex:1}}/>
+        <button onClick={()=>downloadDirectoryCsv(filtered)} disabled={filtered.length===0} title="Download the current list as a CSV"
+          style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"7px 12px",color:filtered.length===0?T.ink3:T.ink,fontSize:12,fontWeight:600,cursor:filtered.length===0?"not-allowed":"pointer"}}>
+          Export CSV
+        </button>
         <div style={{display:"flex",background:T.bg,borderRadius:99,padding:2,border:"1px solid "+T.bg3}}>
           {[["comfortable","Comfortable"],["compact","Compact"]].map(([v,l])=>(
             <button key={v} onClick={()=>setDensity(v)} title={l+" row spacing"}
