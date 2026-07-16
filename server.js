@@ -258,6 +258,21 @@ app.post("/stripe/webhook", express.raw({ type: "application/json" }), async (re
                VALUES ($1,$2,$3,$4,$5,NOW())`,
               [taskId, orgId, `Send personal thank-you to ${donorName || email} for $${amount} online gift`, "high", 0]
             );
+
+            // Tax receipt — fire-and-forget, must never fail/500 the
+            // webhook itself (Stripe would retry the whole event on a
+            // 500; issueGiftReceipt's own idempotency guard already makes
+            // a retry safe regardless, so there's nothing gained by
+            // blocking the response on this). No-ops cleanly if the org
+            // hasn't enabled receipts yet.
+            (async () => {
+              try {
+                const [orgFull] = await query("SELECT * FROM orgs WHERE id=?", [orgId]);
+                const [donorFull] = await query("SELECT * FROM donors WHERE id=?", [donorId]);
+                const [giftFull] = await query("SELECT * FROM gifts WHERE id=?", [giftId]);
+                if (orgFull && donorFull && giftFull) await issueGiftReceipt(giftFull, orgFull, donorFull, { send: true });
+              } catch (e) { console.error("[receipts] webhook issueGiftReceipt failed:", e.message); }
+            })().catch(console.error);
           }
         }
       }
@@ -1054,7 +1069,8 @@ app.get("/org", requireAuth, wrap(async (req, res) => {
 
 app.patch("/orgs/:id", requireAuth, requireAdmin, wrap(async (req, res) => {
   if (req.user.orgId !== req.params.id) return res.status(403).json({ error: "Forbidden" });
-  const { name, mission, focusArea, annualBudget, foundedYear, website } = req.body;
+  const { name, mission, focusArea, annualBudget, foundedYear, website,
+          legalName, ein, receiptAddress, receiptSignatureName, receiptSignatureTitle, receiptCustomMessage, receiptsEnabled } = req.body;
   // name is optional — only the new onboarding flow's "org basics" step
   // sends it (letting a fresh org tweak the name they typed at signup);
   // Settings' org-profile form never has, so it must stay opt-in rather
@@ -1066,6 +1082,54 @@ app.patch("/orgs/:id", requireAuth, requireAdmin, wrap(async (req, res) => {
     `UPDATE orgs SET mission=?, focus_area=?, annual_budget=?, founded_year=?, website=? WHERE id=?`,
     [mission || null, focusArea || null, annualBudget || null, foundedYear ? parseInt(foundedYear, 10) : null, website || null, req.params.id]
   );
+
+  // Tax receipt settings — only touched when the request actually includes
+  // at least one of these fields (Settings' Tax Receipts panel sends them;
+  // onboarding's "org basics" step and other PATCH callers never do).
+  const touchesReceiptFields = [legalName, ein, receiptAddress, receiptSignatureName, receiptSignatureTitle, receiptCustomMessage, receiptsEnabled].some(v => v !== undefined);
+  if (touchesReceiptFields) {
+    const existingRows = await query(
+      "SELECT legal_name, ein, receipt_address, receipt_signature_name, receipt_signature_title, receipt_custom_message, receipts_enabled FROM orgs WHERE id=?",
+      [req.params.id]
+    );
+    const existing = existingRows[0] || {};
+
+    let normalizedEin = existing.ein;
+    if (ein !== undefined) {
+      if (ein) {
+        normalizedEin = normalizeEin(ein);
+        if (!normalizedEin) return res.status(400).json({ error: "EIN must be 9 digits (XX-XXXXXXX)." });
+      } else {
+        normalizedEin = null;
+      }
+    }
+    const effectiveLegalName = legalName !== undefined ? (legalName.trim() || null) : existing.legal_name;
+    const effectiveAddress = receiptAddress !== undefined ? (receiptAddress.trim() || null) : existing.receipt_address;
+
+    // Server refuses to flip receipts_enabled true unless legal_name, ein,
+    // and receipt_address are ALL present — checked against the effective
+    // (post-this-request) values, so a request that sets receiptsEnabled:
+    // true *and* fills in the missing fields in the same call works.
+    const effectiveEnabled = receiptsEnabled !== undefined ? !!receiptsEnabled : existing.receipts_enabled;
+    if (effectiveEnabled && (!effectiveLegalName || !normalizedEin || !effectiveAddress)) {
+      return res.status(400).json({ error: "Legal name, EIN, and receipt address are required before enabling tax receipts." });
+    }
+
+    await run(
+      `UPDATE orgs SET legal_name=?, ein=?, receipt_address=?, receipt_signature_name=?, receipt_signature_title=?, receipt_custom_message=?, receipts_enabled=? WHERE id=?`,
+      [
+        effectiveLegalName,
+        normalizedEin,
+        effectiveAddress,
+        receiptSignatureName !== undefined ? (receiptSignatureName.trim() || null) : existing.receipt_signature_name,
+        receiptSignatureTitle !== undefined ? (receiptSignatureTitle.trim() || null) : existing.receipt_signature_title,
+        receiptCustomMessage !== undefined ? (receiptCustomMessage || null) : existing.receipt_custom_message,
+        effectiveEnabled,
+        req.params.id,
+      ]
+    );
+  }
+
   const orgs = await query("SELECT * FROM orgs WHERE id = ?", [req.params.id]);
   res.json(orgs[0]);
 }));
@@ -1325,6 +1389,9 @@ app.post("/org/clear-sample-data", requireAuth, wrap(async (req, res) => {
   await run("DELETE FROM event_attendees WHERE org_id=? AND is_sample=true", [orgId]).catch(()=>{});
   await run("DELETE FROM events WHERE org_id=? AND is_sample=true", [orgId]).catch(()=>{});
   await run("DELETE FROM interactions WHERE org_id=? AND is_sample=true", [orgId]).catch(()=>{});
+  // Receipts never issue for is_sample gifts (issueGiftReceipt skips them
+  // outright) — this is belt-and-braces cleanup, not expected to find rows.
+  await run("DELETE FROM receipts WHERE org_id=? AND gift_id IN (SELECT id FROM gifts WHERE org_id=? AND is_sample=true)", [orgId, orgId]).catch(()=>{});
   await run("DELETE FROM gifts WHERE org_id=? AND is_sample=true", [orgId]).catch(()=>{});
   await run("DELETE FROM fin_transactions WHERE org_id=? AND is_sample=true", [orgId]).catch(()=>{});
   await run("DELETE FROM donors WHERE org_id=? AND is_sample=true", [orgId]).catch(()=>{});
@@ -2309,6 +2376,470 @@ app.put("/pledges/:id", requireAuth, checkWriteAccess, wrap(async (req, res) => 
 app.delete("/pledges/:id", requireAuth, wrap(async (req, res) => {
   await run("DELETE FROM pledges WHERE id=? AND org_id=?", [req.params.id, req.user.orgId]);
   res.json({ ok: true });
+}));
+
+// ── Tax Receipting & Year-End Giving Statements ─────────────────────────────
+// US-only v1 (IRC §170(f)(8), IRS Pub 1771) — see CLAUDE.md "Tax receipting"
+// for the full design and explicit non-goals. This is a transactional send,
+// same category as recurring-gift dunning — receipts auto-send for online
+// gifts once an org has completed its tax settings; they are not a
+// stewardship judgment call the way milestone/note drafts are.
+
+// Validates + normalizes an EIN to XX-XXXXXXX. Accepts either format on
+// input (with or without the hyphen); always stores hyphenated.
+function normalizeEin(raw) {
+  const digits = String(raw || "").replace(/[^0-9]/g, "");
+  if (digits.length !== 9) return null;
+  return `${digits.slice(0, 2)}-${digits.slice(2)}`;
+}
+
+// Atomic — UPDATE...RETURNING, never SELECT MAX(n)+1, so two concurrent
+// receipt issues for the same org can never allocate the same number.
+// Uses query() (not run()) because db.js's run() only returns rowCount and
+// discards the RETURNING data.
+async function allocateReceiptNumber(orgId) {
+  const rows = await query(
+    "UPDATE orgs SET receipt_counter = receipt_counter + 1 WHERE id = ? RETURNING receipt_counter",
+    [orgId]
+  );
+  const n = rows[0].receipt_counter;
+  return `${new Date().getFullYear()}-${String(n).padStart(5, "0")}`;
+}
+
+function applyReceiptTokens(str, org, donor) {
+  if (!str) return "";
+  return String(str).replace(/\{\{donor_name\}\}/g, donor.name || "").replace(/\{\{org_name\}\}/g, org.name || "");
+}
+
+// One PDF renderer for both a single-gift receipt and a year-end statement
+// (snapshot.type distinguishes them) rather than two near-duplicate layouts
+// — reuses the exact buffer-to-Promise + bufferedPageRange footer pattern
+// from the Board Report / Impact Summary PDFs. The footer text MUST pass an
+// explicit `height` option — text drawn at y = page.height - N without one
+// sits below pdfkit's default maxY and silently triggers an extra page
+// break per footer .text() call (bit the Impact Summary and Board Report
+// PDFs both, independently, before this).
+async function renderReceiptPdf(snapshot) {
+  const PDFDocument = require("pdfkit");
+  const doc = new PDFDocument({ margin: 50, size: "LETTER", bufferPages: true });
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    doc.on("data", c => chunks.push(c));
+    doc.on("end", () => resolve(Buffer.concat(chunks)));
+    doc.on("error", reject);
+
+    const GREEN = "#1a6b4a", INK = "#1a1a1a", INK3 = "#6b7280", BG = "#f5f5f0";
+    const PW = doc.page.width;
+    const fmtD = n => "$" + (parseFloat(n) || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const isYearEnd = snapshot.type === "year_end";
+
+    doc.rect(0, 0, PW, 90).fill(GREEN);
+    doc.font("Helvetica").fontSize(9).fillColor("#a7f3d0").text(isYearEnd ? "Y E A R - E N D   G I V I N G   S T A T E M E N T" : "D O N A T I O N   R E C E I P T", 50, 24);
+    doc.font("Helvetica-Bold").fontSize(19).fillColor("#fff").text(snapshot.orgLegalName, 50, 40, { width: PW - 100 });
+    doc.font("Helvetica").fontSize(9).fillColor("#d1fae5").text(`EIN: ${snapshot.orgEin || "—"}`, 50, 68);
+
+    let y = 112;
+    doc.font("Helvetica").fontSize(9).fillColor(INK3).text(`Receipt #${snapshot.receiptNumber}`, 50, y);
+    doc.text(`Issued ${snapshot.issueDate}`, PW - 220, y, { width: 170, align: "right" });
+    y += 22;
+
+    doc.font("Helvetica-Bold").fontSize(13).fillColor(INK).text(snapshot.donorName || "Valued Donor", 50, y); y = doc.y + 4;
+    if (snapshot.orgAddress) {
+      doc.font("Helvetica").fontSize(8).fillColor(INK3).text(snapshot.orgAddress, 50, y, { width: PW - 100 }); y = doc.y;
+    }
+    y += 14;
+
+    if (!isYearEnd) {
+      doc.rect(50, y, PW - 100, 66).fill(BG);
+      doc.font("Helvetica").fontSize(7).fillColor(INK3).text("GIFT DATE", 62, y + 10);
+      doc.font("Helvetica-Bold").fontSize(11).fillColor(INK).text(snapshot.giftDate, 62, y + 22);
+      doc.font("Helvetica").fontSize(7).fillColor(INK3).text("AMOUNT", 230, y + 10);
+      doc.font("Helvetica-Bold").fontSize(11).fillColor(GREEN).text(fmtD(snapshot.amount), 230, y + 22);
+      doc.font("Helvetica").fontSize(7).fillColor(INK3).text("PAYMENT METHOD", 390, y + 10);
+      doc.font("Helvetica-Bold").fontSize(11).fillColor(INK).text(snapshot.paymentMethod || "—", 390, y + 22);
+      y += 84;
+
+      if (snapshot.quidProQuoDesc) {
+        doc.font("Helvetica").fontSize(9).fillColor(INK).text(
+          `In exchange for this contribution, ${snapshot.orgLegalName} provided: ${snapshot.quidProQuoDesc} (estimated fair market value ${fmtD(snapshot.quidProQuoValue)}). Only the amount of your contribution in excess of that value — ${fmtD(snapshot.deductibleAmount)} — is tax-deductible.`,
+          50, y, { width: PW - 100, lineGap: 2 }
+        );
+      } else {
+        doc.font("Helvetica").fontSize(9).fillColor(INK).text("No goods or services were provided in exchange for this contribution.", 50, y, { width: PW - 100 });
+      }
+      y = doc.y + 16;
+    } else {
+      doc.font("Helvetica-Bold").fontSize(11).fillColor(INK).text(`Tax Year ${snapshot.taxYear} Giving Summary`, 50, y); y += 18;
+      doc.font("Helvetica").fontSize(7).fillColor(INK3).text("DATE", 58, y);
+      doc.text("PAYMENT METHOD", 170, y);
+      doc.text("AMOUNT", PW - 150, y, { width: 100, align: "right" });
+      y += 12;
+      snapshot.lineItems.forEach((item, i) => {
+        doc.rect(50, y, PW - 100, 18).fill(i % 2 === 0 ? "#ffffff" : BG);
+        doc.font("Helvetica").fontSize(8).fillColor(INK).text(item.date, 58, y + 5, { width: 100 });
+        doc.fillColor(INK3).text(item.paymentMethod || "—", 170, y + 5, { width: 150 });
+        doc.font("Helvetica-Bold").fillColor(GREEN).text(fmtD(item.amount), PW - 150, y + 5, { width: 100, align: "right" });
+        y += 18;
+      });
+      y += 10;
+      doc.moveTo(50, y).lineTo(PW - 50, y).strokeColor("#e5e7eb").lineWidth(0.5).stroke(); y += 12;
+      doc.font("Helvetica-Bold").fontSize(11).fillColor(INK).text("Total tax-deductible contributions", 50, y);
+      doc.font("Helvetica-Bold").fontSize(13).fillColor(GREEN).text(fmtD(snapshot.totalDeductible), PW - 200, y - 2, { width: 150, align: "right" });
+      y = doc.y + 18;
+      doc.font("Helvetica").fontSize(9).fillColor(INK).text("No goods or services were provided in exchange for these contributions, unless otherwise noted on the individual gift receipt for a specific contribution.", 50, y, { width: PW - 100, lineGap: 2 });
+      y = doc.y + 16;
+    }
+
+    if (snapshot.customMessage) {
+      doc.font("Helvetica-Oblique").fontSize(9).fillColor(INK).text(snapshot.customMessage, 50, y, { width: PW - 100, lineGap: 2 });
+      y = doc.y + 18;
+    }
+
+    y += 14;
+    if (snapshot.signatureName) {
+      doc.font("Helvetica-Bold").fontSize(10).fillColor(INK).text(snapshot.signatureName, 50, y); y = doc.y + 2;
+      if (snapshot.signatureTitle) doc.font("Helvetica").fontSize(9).fillColor(INK3).text(snapshot.signatureTitle, 50, y);
+    }
+
+    const range = doc.bufferedPageRange();
+    for (let i = range.start; i < range.start + range.count; i++) {
+      doc.switchToPage(i);
+      doc.font("Helvetica").fontSize(7).fillColor("#9ca3af").text(
+        `${snapshot.orgLegalName} is a tax-exempt organization. EIN: ${snapshot.orgEin || "—"}. This receipt is provided for your tax records. Please retain it. No portion of this document constitutes tax advice.`,
+        50, doc.page.height - 40, { width: PW - 100, height: 30, align: "left" }
+      );
+    }
+
+    doc.end();
+  });
+}
+
+async function sendReceiptEmail(org, donor, snapshot, pdfBuffer, filename) {
+  if (!process.env.RESEND_API_KEY) return false;
+  try {
+    const from = process.env.DEMO_SMTP_FROM || "noreply@stewardapp.dev";
+    const subject = `Your donation receipt from ${org.name}`;
+    const html = `<p>Hi ${escapeHtml(donor.name || "there")},</p>
+      <p>Thank you for your generous gift to <strong>${escapeHtml(org.name)}</strong> — your official ${snapshot.type === "year_end" ? "year-end giving statement" : "tax receipt"} is attached.</p>
+      <p style="color:#6b7280;font-size:13px">Receipt #${escapeHtml(snapshot.receiptNumber)}</p>`;
+    // Transactional (not a campaign/sequence send) — deliberately no
+    // unsubscribe link/List-Unsubscribe headers, but still skips suppressed
+    // addresses (below, before this is ever called) to protect the shared
+    // stewardapp.dev sending domain's reputation.
+    const { error } = await resend.emails.send({
+      from, to: donor.email, subject, html,
+      attachments: [{ filename, content: pdfBuffer }],
+    });
+    if (error) { console.error("[receipts] email send failed:", error.message || JSON.stringify(error)); return false; }
+    return true;
+  } catch (err) {
+    console.error("[receipts] email send threw:", err.message);
+    return false;
+  }
+}
+
+// Single choke point for issuing a per-gift receipt — used by both the
+// webhook (fire-and-forget) and the manual "Send receipt" route, so
+// idempotency/suppression/sample-skip logic lives in exactly one place.
+async function issueGiftReceipt(gift, org, donor, { send = true } = {}) {
+  if (!org.receipts_enabled) return { skipped: "receipts_disabled" };
+  if (gift.is_sample) return { skipped: "sample_gift" };
+
+  // Idempotency — a redelivered Stripe event (or a double-click) must never
+  // create a second active receipt for the same gift. Enforced here AND by
+  // the DB's own partial-unique index (receipts_active_gift_uk) as a
+  // second line of defense against a race between this check and the
+  // INSERT below.
+  const existing = await query("SELECT * FROM receipts WHERE gift_id=? AND voided_at IS NULL AND type='gift'", [gift.id]);
+  if (existing.length) return { skipped: "already_issued", receipt: existing[0] };
+
+  const deductibleAmount = gift.deductible_amount != null ? parseFloat(gift.deductible_amount) : parseFloat(gift.amount);
+  const receiptNumber = await allocateReceiptNumber(org.id);
+
+  const snapshot = {
+    type: "gift",
+    orgLegalName: org.legal_name || org.name,
+    orgEin: org.ein || "",
+    orgAddress: org.receipt_address || "",
+    signatureName: org.receipt_signature_name || "",
+    signatureTitle: org.receipt_signature_title || "",
+    customMessage: applyReceiptTokens(org.receipt_custom_message, org, donor),
+    receiptNumber,
+    issueDate: new Date().toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" }),
+    donorName: donor.name,
+    giftDate: gift.date ? new Date(gift.date).toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" }) : "",
+    giftDateRaw: gift.date || null, // ISO, alongside the display-formatted giftDate above — lets the /dashboard/today mismatch-detection query compare against gifts.date directly without reparsing a formatted string
+    amount: parseFloat(gift.amount),
+    deductibleAmount,
+    paymentMethod: gift.payment_method || "",
+    quidProQuoDesc: gift.quid_pro_quo_desc || null,
+    quidProQuoValue: gift.quid_pro_quo_value != null ? parseFloat(gift.quid_pro_quo_value) : null,
+  };
+
+  const pdfBuffer = await renderReceiptPdf(snapshot);
+  const id = "rcpt_" + uuid().slice(0, 8);
+  await run(
+    `INSERT INTO receipts (id, org_id, donor_id, gift_id, type, receipt_number, amount, deductible_amount, snapshot, pdf_data)
+     VALUES (?,?,?,?,?,?,?,?,?,?)`,
+    [id, org.id, donor.id, gift.id, "gift", receiptNumber, snapshot.amount, deductibleAmount, JSON.stringify(snapshot), pdfBuffer.toString("base64")]
+  );
+
+  let emailSent = false;
+  if (send && donor.email) {
+    const suppressReason = await getSuppressionReason(donor.email, org.id);
+    if (!suppressReason) {
+      emailSent = await sendReceiptEmail(org, donor, snapshot, pdfBuffer, `receipt-${receiptNumber}.pdf`);
+      if (emailSent) await run("UPDATE receipts SET sent_to=?, sent_at=NOW() WHERE id=?", [donor.email, id]);
+    }
+  }
+
+  // acknowledgement_sent reflects "a written acknowledgment now exists for
+  // this gift" (satisfying the IRS contemporaneous-acknowledgment
+  // requirement the moment the PDF is generated), not "the email definitely
+  // arrived" — even on a suppressed address or a failed send, the PDF is
+  // stored and staff can download + mail it manually from DonorProfile.
+  await run("UPDATE gifts SET acknowledgement_sent=true WHERE id=?", [gift.id]);
+
+  const rows = await query("SELECT * FROM receipts WHERE id=?", [id]);
+  return { receipt: rows[0], created: true, emailSent };
+}
+
+// Re-sends the exact already-issued PDF (never regenerates) — used by
+// POST /gifts/:id/receipt?resend and POST /donors/:id/receipts (manual
+// resend from DonorProfile), so a resend is always byte-identical to what
+// was originally issued.
+async function resendReceiptEmail(receipt, org, donor) {
+  if (!donor.email) return false;
+  const suppressReason = await getSuppressionReason(donor.email, org.id);
+  if (suppressReason) return false;
+  const pdfBuffer = Buffer.from(receipt.pdf_data, "base64");
+  const filename = receipt.type === "year_end" ? `${receipt.tax_year}-giving-statement.pdf` : `receipt-${receipt.receipt_number}.pdf`;
+  const sent = await sendReceiptEmail(org, donor, receipt.snapshot, pdfBuffer, filename);
+  if (sent) await run("UPDATE receipts SET sent_to=?, sent_at=NOW() WHERE id=?", [donor.email, receipt.id]);
+  return sent;
+}
+
+// Aggregates a donor's calendar-year gifts into one consolidated statement.
+// Supersedes (voids) any prior active statement for the same donor+year
+// before inserting the new one, since the partial-unique index only allows
+// one active statement per (org_id, donor_id, tax_year).
+async function issueYearEndStatement(org, donor, year, { send = true } = {}) {
+  const gifts = await query(
+    `SELECT * FROM gifts WHERE org_id=? AND donor_id=? AND (is_sample IS NOT TRUE)
+       AND date >= ? AND date <= ? ORDER BY date ASC`,
+    [org.id, donor.id, `${year}-01-01`, `${year}-12-31`]
+  );
+  if (!gifts.length) return { skipped: "no_gifts" };
+
+  await run(
+    `UPDATE receipts SET voided_at=NOW(), void_reason='Superseded by a newly generated statement'
+     WHERE org_id=? AND donor_id=? AND tax_year=? AND type='year_end' AND voided_at IS NULL`,
+    [org.id, donor.id, year]
+  );
+
+  const lineItems = gifts.map(g => ({
+    date: g.date ? new Date(g.date).toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" }) : "",
+    amount: parseFloat(g.amount),
+    deductibleAmount: g.deductible_amount != null ? parseFloat(g.deductible_amount) : parseFloat(g.amount),
+    paymentMethod: g.payment_method || "",
+  }));
+  const totalAmount = lineItems.reduce((s, i) => s + i.amount, 0);
+  const totalDeductible = lineItems.reduce((s, i) => s + i.deductibleAmount, 0);
+
+  const receiptNumber = await allocateReceiptNumber(org.id);
+  const snapshot = {
+    type: "year_end",
+    orgLegalName: org.legal_name || org.name,
+    orgEin: org.ein || "",
+    orgAddress: org.receipt_address || "",
+    signatureName: org.receipt_signature_name || "",
+    signatureTitle: org.receipt_signature_title || "",
+    customMessage: applyReceiptTokens(org.receipt_custom_message, org, donor),
+    receiptNumber,
+    issueDate: new Date().toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" }),
+    donorName: donor.name,
+    taxYear: year,
+    lineItems, totalAmount, totalDeductible,
+  };
+  const pdfBuffer = await renderReceiptPdf(snapshot);
+  const id = "rcpt_" + uuid().slice(0, 8);
+  await run(
+    `INSERT INTO receipts (id, org_id, donor_id, gift_id, type, tax_year, receipt_number, amount, deductible_amount, snapshot, pdf_data)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+    [id, org.id, donor.id, null, "year_end", year, receiptNumber, totalAmount, totalDeductible, JSON.stringify(snapshot), pdfBuffer.toString("base64")]
+  );
+
+  let emailSent = false;
+  if (send && donor.email) {
+    const suppressReason = await getSuppressionReason(donor.email, org.id);
+    if (!suppressReason) {
+      emailSent = await sendReceiptEmail(org, donor, snapshot, pdfBuffer, `${year}-giving-statement.pdf`);
+      if (emailSent) await run("UPDATE receipts SET sent_to=?, sent_at=NOW() WHERE id=?", [donor.email, id]);
+    }
+  }
+  const rows = await query("SELECT * FROM receipts WHERE id=?", [id]);
+  return { receipt: rows[0], created: true, emailSent, giftCount: gifts.length, totalAmount, totalDeductible };
+}
+
+// Literal routes declared before /receipts/:id/... siblings (matches the
+// existing POST /sequences/process convention) — not currently a real
+// collision risk since these have different segment counts, but kept
+// consistent with the codebase's own established defensive ordering.
+app.get("/receipts/preview", requireAuth, requireAdmin, wrap(async (req, res) => {
+  const [org] = await query("SELECT * FROM orgs WHERE id=?", [req.user.orgId]);
+  if (!org) return res.status(404).json({ error: "Org not found" });
+  // Nothing stored, nothing sent — placeholder text fills in any settings
+  // fields not yet configured, so this stays useful as a "here's what's
+  // missing" preview even before receipts_enabled can be flipped on.
+  const fakeDonor = { name: "Jordan Sample", email: null };
+  const fakeGiftDate = new Date().toISOString().slice(0, 10);
+  const snapshot = {
+    type: "gift",
+    orgLegalName: org.legal_name || org.name,
+    orgEin: org.ein || "XX-XXXXXXX",
+    orgAddress: org.receipt_address || "123 Main St, Anytown, ST 00000",
+    signatureName: org.receipt_signature_name || "",
+    signatureTitle: org.receipt_signature_title || "",
+    customMessage: applyReceiptTokens(org.receipt_custom_message, org, fakeDonor),
+    receiptNumber: `${new Date().getFullYear()}-PREVIEW`,
+    issueDate: new Date().toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" }),
+    donorName: fakeDonor.name,
+    giftDate: new Date(fakeGiftDate).toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" }),
+    amount: 250,
+    deductibleAmount: 250,
+    paymentMethod: "Credit Card",
+    quidProQuoDesc: null,
+    quidProQuoValue: null,
+  };
+  const pdfBuffer = await renderReceiptPdf(snapshot);
+  res.setHeader("Content-Type", "application/pdf");
+  res.setHeader("Content-Disposition", `inline; filename="receipt-preview.pdf"`);
+  res.setHeader("Content-Length", pdfBuffer.length);
+  res.end(pdfBuffer);
+}));
+
+// Bulk — every donor with ≥1 real gift in {year}. No cron; the org triggers
+// this deliberately each January (see CLAUDE.md "Tax receipting").
+app.post("/receipts/year-end-run", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
+  const { year, dryRun } = req.body;
+  const taxYear = parseInt(year, 10);
+  if (!taxYear) return res.status(400).json({ error: "year required" });
+  const orgId = req.user.orgId;
+  const [org] = await query("SELECT * FROM orgs WHERE id=?", [orgId]);
+  if (!org.receipts_enabled) return res.status(400).json({ error: "Tax receipts are not enabled for this org yet." });
+
+  const donorRows = await query(
+    `SELECT DISTINCT d.id, d.name, d.email FROM donors d
+     JOIN gifts g ON g.donor_id = d.id
+     WHERE d.org_id=? AND g.org_id=? AND (g.is_sample IS NOT TRUE) AND g.date >= ? AND g.date <= ? AND d.deleted_at IS NULL`,
+    [orgId, orgId, `${taxYear}-01-01`, `${taxYear}-12-31`]
+  );
+
+  if (dryRun) {
+    const missingEmailCount = donorRows.filter(d => !d.email).length;
+    const giftCountRows = await query(
+      `SELECT COUNT(*) AS count FROM gifts WHERE org_id=? AND (is_sample IS NOT TRUE) AND date >= ? AND date <= ?`,
+      [orgId, `${taxYear}-01-01`, `${taxYear}-12-31`]
+    );
+    return res.json({ dryRun: true, donorCount: donorRows.length, giftCount: parseInt(giftCountRows[0]?.count, 10) || 0, missingEmailCount });
+  }
+
+  // Real run: sequential with a small delay between sends so a large donor
+  // list doesn't blast Resend's API all at once.
+  let generated = 0, emailed = 0, skipped = 0;
+  for (const donorRow of donorRows) {
+    try {
+      const result = await issueYearEndStatement(org, donorRow, taxYear, { send: true });
+      if (result.skipped) { skipped++; continue; }
+      generated++;
+      if (result.emailSent) emailed++;
+    } catch (e) {
+      console.error(`[receipts] year-end-run failed for donor ${donorRow.id}:`, e.message);
+      skipped++;
+    }
+    await new Promise(r => setTimeout(r, 150));
+  }
+  res.json({ dryRun: false, donorCount: donorRows.length, generated, emailed, skipped });
+}));
+
+app.get("/receipts/:id/pdf", requireAuth, wrap(async (req, res) => {
+  const [receipt] = await query("SELECT id, receipt_number, type, tax_year, pdf_data FROM receipts WHERE id=? AND org_id=?", [req.params.id, req.user.orgId]);
+  if (!receipt || !receipt.pdf_data) return res.status(404).json({ error: "Receipt not found" });
+  const buf = Buffer.from(receipt.pdf_data, "base64");
+  const filename = receipt.type === "year_end" ? `${receipt.tax_year}-giving-statement.pdf` : `receipt-${receipt.receipt_number}.pdf`;
+  res.setHeader("Content-Type", "application/pdf");
+  res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+  res.setHeader("Content-Length", buf.length);
+  res.end(buf);
+}));
+
+// Void, never delete — receipts are legal artifacts. Matches the DELETE-
+// routes-stay-ungated convention everywhere else in this app; voiding is
+// this record type's equivalent removal action, so it's requireAdmin (like
+// other irreversible-ish admin actions) rather than checkWriteAccess.
+app.post("/receipts/:id/void", requireAuth, requireAdmin, wrap(async (req, res) => {
+  const { reason } = req.body;
+  const existing = await query("SELECT id FROM receipts WHERE id=? AND org_id=? AND voided_at IS NULL", [req.params.id, req.user.orgId]);
+  if (!existing.length) return res.status(404).json({ error: "Active receipt not found" });
+  await run("UPDATE receipts SET voided_at=NOW(), void_reason=? WHERE id=?", [reason || null, req.params.id]);
+  const rows = await query(
+    "SELECT id, org_id, donor_id, gift_id, type, tax_year, receipt_number, amount, deductible_amount, sent_to, sent_at, voided_at, void_reason, created_at FROM receipts WHERE id=?",
+    [req.params.id]
+  );
+  res.json(rows[0]);
+}));
+
+// Manual per-gift issue/resend — the one-click path for offline gifts
+// (which never auto-receipt) and the "Send receipt" button in DonorProfile.
+app.post("/gifts/:id/receipt", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  const [gift] = await query("SELECT * FROM gifts WHERE id=? AND org_id=?", [req.params.id, orgId]);
+  if (!gift) return res.status(404).json({ error: "Gift not found" });
+  const [org] = await query("SELECT * FROM orgs WHERE id=?", [orgId]);
+  if (!org.receipts_enabled) return res.status(400).json({ error: "Tax receipts are not enabled for this org yet — set it up in Settings first." });
+  const [donor] = await query("SELECT * FROM donors WHERE id=? AND org_id=?", [gift.donor_id, orgId]);
+  if (!donor) return res.status(404).json({ error: "Donor not found" });
+
+  const existingRows = await query("SELECT * FROM receipts WHERE gift_id=? AND voided_at IS NULL AND type='gift'", [gift.id]);
+  if (existingRows.length) {
+    if (req.query.resend !== undefined) {
+      const emailSent = await resendReceiptEmail(existingRows[0], org, donor);
+      const rows = await query("SELECT * FROM receipts WHERE id=?", [existingRows[0].id]);
+      return res.json({ receipt: rows[0], emailSent, resent: true });
+    }
+    return res.status(409).json({ error: "This gift already has an active receipt.", receipt: existingRows[0] });
+  }
+
+  const result = await issueGiftReceipt(gift, org, donor, { send: true });
+  if (result.skipped) return res.status(400).json({ error: `Could not issue receipt: ${result.skipped}` });
+  res.status(201).json(result.receipt);
+}));
+
+// List for DonorProfile's Gifts & Pledges tab — no pdf_data in the list
+// response (board_reports pattern), fetched separately via
+// GET /receipts/:id/pdf only when actually downloading one.
+app.get("/donors/:id/receipts", requireAuth, wrap(async (req, res) => {
+  const rows = await query(
+    `SELECT id, org_id, donor_id, gift_id, type, tax_year, receipt_number, amount, deductible_amount, sent_to, sent_at, voided_at, void_reason, created_at
+     FROM receipts WHERE donor_id=? AND org_id=? ORDER BY created_at DESC`,
+    [req.params.id, req.user.orgId]
+  );
+  res.json(rows);
+}));
+
+app.post("/donors/:id/year-end-statement", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  const { year, send } = req.body;
+  const taxYear = parseInt(year, 10);
+  if (!taxYear) return res.status(400).json({ error: "year required" });
+  const orgId = req.user.orgId;
+  const [org] = await query("SELECT * FROM orgs WHERE id=?", [orgId]);
+  if (!org.receipts_enabled) return res.status(400).json({ error: "Tax receipts are not enabled for this org yet — set it up in Settings first." });
+  const [donor] = await query("SELECT * FROM donors WHERE id=? AND org_id=?", [req.params.id, orgId]);
+  if (!donor) return res.status(404).json({ error: "Donor not found" });
+
+  const result = await issueYearEndStatement(org, donor, taxYear, { send: send !== false });
+  if (result.skipped) return res.status(400).json({ error: `No gifts found for ${taxYear}.` });
+  res.status(201).json(result.receipt);
 }));
 
 // ── Gift history bulk import ───────────────────────────────────────────────
@@ -3319,6 +3850,8 @@ app.get("/dashboard/today", requireAuth, wrap(async (req, res) => {
   const todayStr = today.toISOString().split("T")[0];
   const ninetyDaysAgo = new Date(today - 90 * 86400000).toISOString().split("T")[0];
   const items = [];
+  const [orgReceiptRow] = await query("SELECT receipts_enabled FROM orgs WHERE id=?", [orgId]);
+  const receiptsEnabled = !!orgReceiptRow?.receipts_enabled;
 
   // Ownership scoping — defaults to "this is MY job today" (the logged-in
   // user's own assigned donors), matching the existing assigned_to pattern
@@ -3433,6 +3966,71 @@ app.get("/dashboard/today", requireAuth, wrap(async (req, res) => {
       priority: 75, action: "thank",
       totalGiving: parseFloat(g.total_giving) || 0,
     });
+  }
+
+  // Tax receipts — $250+ gifts with no acknowledgment yet (see CLAUDE.md
+  // "Tax receipting"), org has receipts enabled, gift within the last 60
+  // days. Online gifts auto-receipt near-instantly via the webhook (which
+  // sets acknowledgement_sent=true), so in practice this bucket only ever
+  // surfaces offline/manually-entered gifts, which never auto-receipt.
+  // Deliberately priority 76, not 75 — one point above the "not yet
+  // thanked" bucket above, so a legally-required receipt wins the
+  // upsertItem tie (strict `<` — equal priorities keep whichever bucket
+  // ran first) when both could apply to the same offline gift.
+  if (receiptsEnabled) {
+    const sixtyDaysAgo = new Date(today - 60 * 86400000).toISOString().split("T")[0];
+    const needsReceipt = await query(`
+      SELECT g.id AS gift_id, g.amount, g.date, d.id AS donor_id, d.name AS donor_name, d.total_giving
+      FROM gifts g
+      JOIN donors d ON d.id = g.donor_id
+      WHERE d.org_id = ?
+        AND g.amount >= 250
+        AND (g.acknowledgement_sent = false OR g.acknowledgement_sent IS NULL)
+        AND (g.is_sample IS NOT TRUE)
+        AND g.date >= ? ${scopeClause}
+      ORDER BY g.amount DESC
+      LIMIT 5
+    `, [orgId, sixtyDaysAgo, ...scopeParams]);
+
+    for (const g of needsReceipt) {
+      const giftDate = new Date(g.date).toLocaleDateString("en-US", { month: "long", day: "numeric" });
+      upsertItem({
+        donorId: g.donor_id, donorName: g.donor_name,
+        reason: `Gift of $${Number(g.amount).toLocaleString()} on ${giftDate} needs a tax receipt`,
+        priority: 76, action: "receipt", giftId: g.gift_id,
+        totalGiving: parseFloat(g.total_giving) || 0,
+      });
+    }
+
+    // Receipt/gift mismatch — a gift was edited (amount or date) or
+    // deleted after its receipt already issued. See PUT/DELETE /gifts/:id:
+    // deliberately never auto-voided, staff reviews and voids+reissues on
+    // purpose, since a receipt is a legal record of what was actually
+    // sent — not something that should silently change to match an edit.
+    // LEFT JOIN (not JOIN) so a deleted gift (g.id IS NULL) is caught too,
+    // not just an amount/date edit on a gift that still exists.
+    const mismatched = await query(`
+      SELECT r.id AS receipt_id, r.receipt_number, r.amount AS receipt_amount,
+             g.amount AS gift_amount, d.id AS donor_id, d.name AS donor_name, d.total_giving
+      FROM receipts r
+      LEFT JOIN gifts g ON g.id = r.gift_id
+      JOIN donors d ON d.id = r.donor_id
+      WHERE r.org_id = ? AND r.type = 'gift' AND r.voided_at IS NULL
+        AND (g.id IS NULL OR r.amount != g.amount OR (r.snapshot->>'giftDateRaw') != g.date)
+        ${scopeClause}
+      LIMIT 5
+    `, [orgId, ...scopeParams]);
+
+    for (const m of mismatched) {
+      const reason = m.gift_amount == null
+        ? `Receipt #${m.receipt_number} — the gift it was issued for has been deleted — review`
+        : `Receipt #${m.receipt_number} no longer matches its gift ($${Number(m.receipt_amount).toLocaleString()} receipted vs. $${Number(m.gift_amount).toLocaleString()} now on the gift) — review`;
+      upsertItem({
+        donorId: m.donor_id, donorName: m.donor_name,
+        reason, priority: 70, action: "receipt_mismatch", receiptId: m.receipt_id,
+        totalGiving: parseFloat(m.total_giving) || 0,
+      });
+    }
   }
 
   // Overdue donor-linked tasks
@@ -8188,6 +8786,7 @@ app.delete("/admin/orgs/:id", requireAuth, requireSuperAdmin, wrap(async (req, r
   await run("DELETE FROM note_reminders WHERE org_id=?", [orgId]).catch(() => {});
   await run("DELETE FROM donor_materials WHERE org_id=?", [orgId]).catch(() => {});
   await run("DELETE FROM planned_gifts WHERE org_id=?", [orgId]).catch(() => {});
+  await run("DELETE FROM receipts WHERE org_id=?", [orgId]).catch(() => {});
   await run("DELETE FROM payment_recovery_events WHERE org_id=?", [orgId]).catch(() => {});
   await run("DELETE FROM recurring_subscriptions WHERE org_id=?", [orgId]).catch(() => {});
   await run("DELETE FROM interactions WHERE org_id=?", [orgId]).catch(() => {});

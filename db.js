@@ -992,6 +992,68 @@ async function initSchema() {
   // resolves.
   await pool.query(`ALTER TABLE gifts ADD COLUMN IF NOT EXISTS peer_fundraiser_id TEXT`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_gifts_peer_fundraiser ON gifts (peer_fundraiser_id)`);
+
+  // ── Tax Receipting & Year-End Giving Statements (2026-07-16) ─────────────
+  // US-only v1 (IRC §170(f)(8), IRS Pub 1771) — see CLAUDE.md "Tax
+  // receipting" for the full design + explicit non-goals (no CRA/Canadian
+  // receipts, no in-kind gifts, no auto-receipting historical/imported
+  // gifts, no donor-facing retrieval portal).
+  await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS legal_name TEXT`);
+  await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS ein TEXT`);
+  await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS receipt_address TEXT`);
+  await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS receipt_signature_name TEXT`);
+  await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS receipt_signature_title TEXT`);
+  await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS receipt_custom_message TEXT`);
+  // Org-level switch — server refuses to flip this true unless legal_name,
+  // ein, and receipt_address are all already present (enforced in
+  // PATCH /orgs/:id, not just a DB default).
+  await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS receipts_enabled BOOLEAN DEFAULT false`);
+  // Per-org sequence for receipt numbers, always incremented via
+  // UPDATE ... RETURNING (never SELECT MAX+1 — see allocateReceiptNumber()
+  // in server.js) so two concurrent issues can never collide on a number.
+  await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS receipt_counter INTEGER DEFAULT 0`);
+
+  // deductible_amount is null for the common case ("equals amount"); only
+  // set when it genuinely differs from gifts.amount, i.e. a quid pro quo gift.
+  await pool.query(`ALTER TABLE gifts ADD COLUMN IF NOT EXISTS deductible_amount NUMERIC`);
+  await pool.query(`ALTER TABLE gifts ADD COLUMN IF NOT EXISTS quid_pro_quo_desc TEXT`);
+  await pool.query(`ALTER TABLE gifts ADD COLUMN IF NOT EXISTS quid_pro_quo_value NUMERIC`);
+
+  // One receipt per gift (type='gift', gift_id set) or one per donor+tax_year
+  // (type='year_end', gift_id null — a statement consolidates many gifts,
+  // it isn't tied to any single one). `snapshot` freezes the org's legal
+  // info + line items at issue time so an already-issued receipt never
+  // silently changes meaning if org settings are edited later.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS receipts (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL REFERENCES orgs(id),
+      donor_id TEXT NOT NULL REFERENCES donors(id),
+      gift_id TEXT REFERENCES gifts(id),
+      type TEXT NOT NULL DEFAULT 'gift',
+      tax_year INTEGER,
+      receipt_number TEXT NOT NULL,
+      amount NUMERIC NOT NULL,
+      deductible_amount NUMERIC NOT NULL,
+      snapshot JSONB NOT NULL,
+      pdf_data TEXT,
+      sent_to TEXT,
+      sent_at TIMESTAMPTZ,
+      voided_at TIMESTAMPTZ,
+      void_reason TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+  // Partial-unique — one ACTIVE (non-voided) receipt per gift, and one
+  // active statement per donor+tax_year. Voiding + reissuing (see
+  // POST /receipts/:id/void) is the only way to correct a mistake — an
+  // issued receipt row is never updated in place, since it's a legal
+  // artifact and the whole point of `snapshot`/`pdf_data` is that they
+  // reflect exactly what was actually sent.
+  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS receipts_active_gift_uk ON receipts (gift_id) WHERE voided_at IS NULL AND type = 'gift'`);
+  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS receipts_active_statement_uk ON receipts (org_id, donor_id, tax_year) WHERE voided_at IS NULL AND type = 'year_end'`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_receipts_org_donor ON receipts (org_id, donor_id)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_receipts_org_tax_year ON receipts (org_id, tax_year)`);
 }
 
 async function seedData() {

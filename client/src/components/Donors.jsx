@@ -2197,6 +2197,54 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
     setRecurResendBusy(false);
   };
 
+  // Tax receipts — per-gift status + whether the org has receipts enabled
+  // at all (governs whether "Send receipt" is even offered, vs. a setup
+  // nudge). See CLAUDE.md "Tax receipting."
+  const [donorReceipts,setDonorReceipts]=useState([]);
+  const [receiptsEnabled,setReceiptsEnabled]=useState(false);
+  const [receiptBusyId,setReceiptBusyId]=useState(null);
+  const loadDonorReceipts=()=>apiFetch(`/donors/${donor.id}/receipts`).then(r=>setDonorReceipts(r||[])).catch(()=>setDonorReceipts([]));
+  useEffect(()=>{
+    loadDonorReceipts();
+    apiFetch("/org").then(o=>setReceiptsEnabled(!!o.receipts_enabled)).catch(()=>{});
+  },[donor.id]);
+
+  const receiptForGift=giftId=>donorReceipts.find(r=>r.gift_id===giftId&&!r.voided_at);
+
+  const sendReceipt=async giftId=>{
+    setReceiptBusyId(giftId);
+    try{
+      await apiFetch(`/gifts/${giftId}/receipt`,{method:"POST"});
+      await loadDonorReceipts();
+    }catch(e){alert(e.message||"Could not send receipt");}
+    setReceiptBusyId(null);
+  };
+
+  const downloadReceiptPdf=async(receiptId,filenameHint)=>{
+    try{
+      const resp=await fetch(`${API}/receipts/${receiptId}/pdf`,{headers:{Authorization:`Bearer ${getToken()}`}});
+      if(!resp.ok)throw new Error("Could not download receipt");
+      const blob=await resp.blob();
+      const url=URL.createObjectURL(blob);
+      const a=document.createElement("a");a.href=url;a.download=`${filenameHint}.pdf`;
+      document.body.appendChild(a);a.click();document.body.removeChild(a);URL.revokeObjectURL(url);
+    }catch(e){alert(e.message||"Could not download receipt");}
+  };
+
+  const [showYearEnd,setShowYearEnd]=useState(false);
+  const [yearEndYear,setYearEndYear]=useState(String(new Date().getFullYear()-1));
+  const [yearEndBusy,setYearEndBusy]=useState(false);
+  const [yearEndErr,setYearEndErr]=useState("");
+  const sendYearEndStatement=async()=>{
+    setYearEndBusy(true); setYearEndErr("");
+    try{
+      await apiFetch(`/donors/${donor.id}/year-end-statement`,{method:"POST",body:JSON.stringify({year:parseInt(yearEndYear,10),send:true})});
+      await loadDonorReceipts();
+      setShowYearEnd(false);
+    }catch(e){setYearEndErr(e.message||"Could not generate statement");}
+    setYearEndBusy(false);
+  };
+
   const loadGiftsFull=()=>{
     apiFetch(`/donors/${donor.id}`).then(raw=>{
       const g=(raw.gifts||[]).map(g=>({
@@ -2579,11 +2627,39 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
                   Total: <strong style={{color:"#1a6b4a"}}>{fmtFull(giftsFull.reduce((s,g)=>s+g.amount,0))}</strong> · {giftsFull.length} gifts
                 </div>
               </div>
-              <div style={{display:"flex",gap:8}}>
+              <div style={{display:"flex",gap:8,alignItems:"center"}}>
                 <button onClick={exportGiftsCSV} style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"6px 12px",color:T.ink3,fontSize:12,cursor:"pointer"}}>↓ CSV</button>
+                {receiptsEnabled&&(
+                  <button onClick={()=>setShowYearEnd(v=>!v)} disabled={isReadOnly} title={isReadOnly?"Reactivate your subscription to make changes.":undefined}
+                    style={{background:showYearEnd?T.greenDk:T.bg,border:"1px solid "+(showYearEnd?T.greenDk:T.bg3),borderRadius:8,padding:"6px 12px",color:showYearEnd?"#fff":T.ink3,fontSize:12,fontWeight:600,cursor:isReadOnly?"not-allowed":"pointer",opacity:isReadOnly?0.45:1}}>
+                    Year-end statement
+                  </button>
+                )}
                 <button onClick={()=>setAddGiftOpen(v=>!v)} disabled={isReadOnly} title={isReadOnly?"Reactivate your subscription to make changes.":undefined} style={{background:"#10b981",border:"none",borderRadius:8,padding:"7px 12px",color:"#fff",fontSize:12,fontWeight:700,cursor:isReadOnly?"not-allowed":"pointer",opacity:isReadOnly?0.45:1}}>+ Add Gift</button>
               </div>
             </div>
+
+            {!receiptsEnabled&&isAdmin&&(
+              <div style={{background:"#fef3c7",border:"1px solid #fde68a",borderRadius:10,padding:"10px 14px",fontSize:12,color:"#92400e"}}>
+                Tax receipts aren't set up yet — add your organization's legal info in Settings to send IRS-compliant receipts for gifts of $250+.
+              </div>
+            )}
+
+            {showYearEnd&&receiptsEnabled&&(
+              <div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:12,padding:"16px"}}>
+                <div style={{fontSize:12,fontWeight:700,color:T.ink,marginBottom:10}}>Year-End Giving Statement</div>
+                <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
+                  <span style={{fontSize:11,color:T.ink3}}>Tax year</span>
+                  <input type="number" value={yearEndYear} onChange={e=>setYearEndYear(e.target.value)} style={{width:100,background:T.bg,border:"1px solid "+T.bg3,borderRadius:6,padding:"6px 8px",color:T.ink,fontSize:12,outline:"none"}}/>
+                  <button onClick={sendYearEndStatement} disabled={yearEndBusy} style={{background:"#10b981",border:"none",borderRadius:6,padding:"7px 12px",color:"#fff",fontSize:12,fontWeight:700,cursor:yearEndBusy?"not-allowed":"pointer"}}>
+                    {yearEndBusy?"Generating…":"Generate & email"}
+                  </button>
+                  <button onClick={()=>setShowYearEnd(false)} style={{background:T.bg,border:"none",borderRadius:6,padding:"7px 10px",color:T.ink3,fontSize:12,cursor:"pointer"}}>Cancel</button>
+                </div>
+                {yearEndErr&&<div style={{fontSize:11,color:"#dc2626",marginTop:8}}>{yearEndErr}</div>}
+                <div style={{fontSize:11,color:T.ink3,marginTop:8,lineHeight:1.5}}>Consolidates every {yearEndYear} gift into one statement, emailed to the donor and superseding any prior statement for that year.</div>
+              </div>
+            )}
 
             {/* Recurring gift health — failed-payment recovery status */}
             {recurringSub&&(()=>{
@@ -2670,14 +2746,14 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
                 <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
                   <thead>
                     <tr style={{background:T.bg2}}>
-                      {["Date","Amount","Type","Method","Ack","Note",""].map(h=><th key={h} style={{padding:"8px 12px",textAlign:"left",fontWeight:700,color:T.ink3,fontSize:10,textTransform:"uppercase",letterSpacing:"0.08em",borderBottom:"1px solid "+T.bg3}}>{h}</th>)}
+                      {["Date","Amount","Type","Method","Ack","Receipt","Note",""].map(h=><th key={h} style={{padding:"8px 12px",textAlign:"left",fontWeight:700,color:T.ink3,fontSize:10,textTransform:"uppercase",letterSpacing:"0.08em",borderBottom:"1px solid "+T.bg3}}>{h}</th>)}
                     </tr>
                   </thead>
                   <tbody>
                     {[...giftsFull].sort((a,b)=>new Date(b.date)-new Date(a.date)).map(g=>(
                       <tr key={g.id} style={{borderBottom:"1px solid "+T.bg3}}>
                         {giftEditId===g.id?(
-                          <td colSpan={7} style={{padding:"10px 12px"}}>
+                          <td colSpan={8} style={{padding:"10px 12px"}}>
                             <div style={{display:"flex",gap:6,flexWrap:"wrap",alignItems:"center"}}>
                               <input value={giftEditForm.amount} onChange={e=>setGiftEditForm(p=>({...p,amount:e.target.value}))} placeholder="Amount" type="number" style={{width:80,background:T.bg,border:"1px solid "+T.bg3,borderRadius:6,padding:"5px 8px",color:T.ink,fontSize:12,outline:"none"}}/>
                               <input value={giftEditForm.date} onChange={e=>setGiftEditForm(p=>({...p,date:e.target.value}))} type="date" style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:6,padding:"5px 8px",color:T.ink,fontSize:12,outline:"none"}}/>
@@ -2701,6 +2777,15 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
                             <td style={{padding:"9px 12px",color:T.ink3,textTransform:"capitalize"}}>{g.type||"cash"}</td>
                             <td style={{padding:"9px 12px",color:T.ink3}}>{g.payment_method||"—"}</td>
                             <td style={{padding:"9px 12px",textAlign:"center"}}>{g.acknowledgement_sent?<span style={{color:"#1a6b4a",fontSize:13}}>✓</span>:<span style={{color:T.ink3,fontSize:13}}>—</span>}</td>
+                            <td style={{padding:"9px 12px",whiteSpace:"nowrap"}}>
+                              {(()=>{
+                                const r=receiptForGift(g.id);
+                                if(r) return <button onClick={()=>downloadReceiptPdf(r.id,`receipt-${r.receipt_number}.pdf`)} style={{background:"none",border:"none",color:"#1a6b4a",fontSize:11,fontWeight:700,cursor:"pointer",padding:"2px 4px"}}>Receipt ✓ #{r.receipt_number}</button>;
+                                if(!receiptsEnabled) return <span style={{color:T.ink3,fontSize:13}}>—</span>;
+                                const busy=receiptBusyId===g.id;
+                                return <button onClick={()=>sendReceipt(g.id)} disabled={busy||isReadOnly} title={isReadOnly?"Reactivate your subscription to make changes.":""} style={{background:"none",border:"1px solid "+T.bg3,borderRadius:6,color:isReadOnly?T.ink3:"#1a6b4a",fontSize:11,fontWeight:600,cursor:isReadOnly?"not-allowed":"pointer",padding:"3px 8px",opacity:busy?0.6:1}}>{busy?"Sending…":"Send receipt"}</button>;
+                              })()}
+                            </td>
                             <td style={{padding:"9px 12px",color:T.ink3,maxWidth:140,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{g.notes||""}</td>
                             <td style={{padding:"9px 12px",whiteSpace:"nowrap"}}>
                               <button onClick={()=>{setGiftEditId(g.id);setGiftEditForm({amount:g.amount,date:g.date,type:g.type,payment_method:g.payment_method||"",notes:g.notes||"",fund_id:g.fund_id||"",acknowledgement_sent:g.acknowledgement_sent});}} style={{background:"none",border:"none",color:T.ink3,fontSize:12,cursor:"pointer",padding:"2px 6px"}}>Edit</button>
