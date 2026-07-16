@@ -9880,9 +9880,13 @@ app.get("/org/export", requireAuth, wrap(async (req, res) => {
 // plus a UTF-8 BOM so Excel opens accented donor names correctly. Columns
 // are [label, getter] pairs; a getter is a row key or a function.
 function toCsv(columns, rows) {
-  const header = columns.map(c => reportCsvCell(c[0])).join(",");
+  // node-pg hands timestamptz columns back as Date objects, which String()
+  // as "Fri Jun 12 2026 16:53:52 GMT+0000 (...)" \u2014 ISO is what a spreadsheet
+  // (and any re-import) actually wants.
+  const cell = v => reportCsvCell(v instanceof Date ? v.toISOString() : v);
+  const header = columns.map(c => cell(c[0])).join(",");
   const lines = rows.map(r =>
-    columns.map(c => reportCsvCell(typeof c[1] === "function" ? c[1](r) : r[c[1]])).join(",")
+    columns.map(c => cell(typeof c[1] === "function" ? c[1](r) : r[c[1]])).join(",")
   );
   return "\uFEFF" + [header, ...lines].join("\r\n") + "\r\n";
 }
