@@ -1,12 +1,13 @@
 # Steward — Security Review (Multi-Tenant Isolation & Auth)
 Generated 2026-07-10 as discovery-only. **Update 2026-07-16: all four CRITICALs
-below (C1–C4) were re-verified against the current codebase and are already
-fixed** — each has org-scoping/signature-verification checks in place that
-weren't there on 2026-07-10. This file was never updated to reflect that at
-the time, so treat the CRITICAL section as historical (what was found, and
-where the fix landed) rather than an open punch list. The GAP items further
-down (org scoping edge cases, RBAC gaps, file upload validation) have **not**
-been re-verified and should still be treated as open until checked.
+(C1–C4), the RBAC gap (§2), and the file upload gap (§7) were re-verified
+against the current codebase and are all already fixed** — each has the
+exact protection this report called for. This file was never updated to
+reflect that at the time, so treat those sections as historical (what was
+found, and where the fix landed) rather than an open punch list. The
+remaining §1 org-scoping edge cases (`programs/:id/grants`, `gmail/send`→
+`interactions`, `finance/transactions`) have **not** been re-verified and
+should still be treated as open until checked.
 
 ---
 
@@ -96,12 +97,12 @@ The overwhelming majority of the ~90 routes I checked route-by-route are correct
 - **`server.js:3811-3820` `POST /finance/transactions`** — `accountId`/`fundId` from the body aren't verified to belong to the caller's org before insert; the transaction's own `org_id` is correct, but the immediate response JOIN (server.js:3821-3827) will echo back another org's account/fund *name* if a foreign ID is supplied. Low severity (leaks a label, not balances), still an IDOR. **GAP.**
 - Several routes do an unscoped follow-up `SELECT` **after** an already org-scoped `UPDATE`/existence-check has already gated the request (e.g. `donors/:id` PUT at 1638, `grants/:id` GET's `grant_interactions` at 2284, `campaigns/:id/send`, several others) — these are **not exploitable** since the ID was already confirmed org-owned earlier in the same handler, but it's worth calling out as the inconsistent pattern that made C2 possible: most of the codebase does "verify ownership → act", a few spots do "act → read back without re-verifying," and `PUT /events/:id` is the one place that dropped the ownership check entirely.
 
-### 2. RBAC enforcement — **GAP**
-`requireAdmin` is correctly applied to essentially everything that looks admin-sensitive: `POST /auth/invite`, all `custom-fields` mutation routes, `finance/accounts|funds|budgets` mutations + `transactions` delete, `campaigns` delete/send, `sequences` create/update/status/delete, `stripe/connect`, all `/admin/*` super-admin routes (via `requireSuperAdmin`), `donors` delete/assign/bulk-assign/bulk-delete, `grants`... wait, grants PUT/POST are `checkWriteAccess` not `requireAdmin` (grant edits are staff-level, consistent with MGO workflow — not a gap). Two real misses:
+### 2. RBAC enforcement — **RESOLVED** (re-verified 2026-07-16)
+`requireAdmin` is correctly applied to essentially everything that looks admin-sensitive: `POST /auth/invite`, all `custom-fields` mutation routes, `finance/accounts|funds|budgets` mutations + `transactions` delete, `campaigns` delete/send, `sequences` create/update/status/delete, `stripe/connect`, all `/admin/*` super-admin routes (via `requireSuperAdmin`), `donors` delete/assign/bulk-assign/bulk-delete, `grants`... wait, grants PUT/POST are `checkWriteAccess` not `requireAdmin` (grant edits are staff-level, consistent with MGO workflow — not a gap). The three misses originally flagged here are now all fixed:
 
-- **`server.js:5017-5026` `POST /billing/create-portal`** — `requireAuth` only. Opens the Stripe Customer Portal for the org, where the user can change payment method and (depending on portal config) cancel the subscription. Any non-admin staff account can hit this.
-- **`server.js:4989-5015` `POST /billing/create-checkout`** — `requireAuth` only. Any staff member can initiate a new subscription checkout for the org. Lower severity than the portal route (requires actually completing Stripe checkout), but still a billing action gated only by "is logged in," not "is admin."
-- **`server.js:745-754` `PATCH /orgs/:id`** — `requireAuth` only (checks `req.user.orgId === req.params.id`, not role). Any staff member can edit org mission/focus area/annual budget/founded year/website. Lower severity (no financial/PII exposure), but org profile settings are the kind of thing the audit explicitly asked about.
+- **`POST /billing/create-portal`** (`server.js:7998`) — now `requireAuth, requireAdmin`.
+- **`POST /billing/create-checkout`** (`server.js:7970`) — now `requireAuth, requireAdmin`.
+- **`PATCH /orgs/:id`** (`server.js:1055-1056`) — now `requireAuth, requireAdmin`, plus still checks `req.user.orgId === req.params.id`.
 
 `requireAdmin` itself (server.js:353-356) is correctly implemented — checks `req.user.role !== "admin"` off the verified JWT claim, nothing forgeable.
 
@@ -121,10 +122,11 @@ Checked every route not behind `requireAuth`: `/auth/login|register|register-org
 - **SQL injection:** none found. Searched every template-literal SQL fragment in the file; every `?`-based query uses proper parameterization. The handful of template-literal interpolations into SQL text are all either (a) placeholder-multiplication for bulk inserts (`"(?,?,?,?)".join(",")` — the actual data still goes through the parameterized `params` array, e.g. server.js:1547/1551/1976) or (b) `parseInt(x, 10)`-sanitized integers used in `INTERVAL '${n} days'` (server.js:4574, 4631, 4767, 5228 — matches CLAUDE.md's own documented rationale for this pattern). No raw string concatenation of user input into SQL anywhere.
 - **Over-exposure:** `/org/public-list` returns only `id, name, slug` for every org (by design, needed to route `/give/:slug` — arguably this is a public directory of every nonprofit on the platform, worth being aware of but not a data-sensitivity issue). `/org/:orgSlug/public` returns only `name, mission, slug` + fund `id/name/restricted` — no donor data, no financials, no Stripe account IDs. `/donate/:orgSlug` returns only a Stripe Checkout URL. None of the public routes leak donor PII, gift amounts, or financial totals.
 
-### 7. File upload handling (`donor_materials`) — **GAP** (currently low practical risk, but latent)
-- **Size validation:** the 1MB limit (server.js — n/a; enforced client-side only, `client/src/components/Donors.jsx:2203` `if(file.size<1024*1024)`) is **not enforced server-side at all**. `POST /donors/:id/materials` (server.js:2109-2119) accepts `file_data` with zero size check; the only backstop is the *global* `express.json({limit:"5mb"})` body cap — 5x larger than the documented/intended limit, and shared across every route, not a purpose-built file-size guard.
-- **Type validation:** `file_type` is accepted verbatim from the client (`file.type` in the browser, fully attacker-controlled if calling the API directly) with **no server-side allowlist**.
-- **Stored XSS via blob URL:** `viewMaterial()` (`client/src/components/Donors.jsx:2217-2224`) builds `new Blob([byteArray], {type: m.file_type})` from attacker-controlled `file_type` and opens it via `URL.createObjectURL` + `window.open(url, "_blank")` — if `file_type` were `text/html` (or `image/svg+xml`) and `file_data` contained a script payload, opening that blob would execute it. **This is not currently reachable end-to-end**: `GET /donors/:id/materials` (server.js:2105) and the `POST` response (server.js:2120) both explicitly exclude `file_data` from their `SELECT` — the column is written but never read back by any route. In the current code this actually looks like an unrelated functional bug (the "View" button does nothing for base64-uploaded files once the page reloads, since `m.file_data` is always `undefined` from any server response). **The moment someone "fixes" that and adds `file_data` back to a GET response — a very plausible near-term change given CLAUDE.md documents a "view/delete grid" as the intended feature — this becomes a live, cross-session stored XSS**, because nothing in the chain validates or sanitizes `file_type`/`file_data` today.
+### 7. File upload handling (`donor_materials`) — **RESOLVED** (re-verified 2026-07-16)
+All three issues are now fixed at `server.js:2548-2591`, with an inline comment explicitly walking through this exact original finding:
+- **Size validation:** `MATERIAL_MAX_BYTES = 1024*1024` (server.js:2562), enforced server-side in `POST /donors/:id/materials` via `Buffer.byteLength(file_data,"base64") > MATERIAL_MAX_BYTES` → 400 (server.js:2581-2583). No longer relying on the client's own check or the unrelated 5MB global body cap.
+- **Type validation:** `MATERIAL_ALLOWED_MIME_TYPES` allowlist (server.js:2563-2573, pdf/jpeg/png/gif/webp/doc/docx/xls/xlsx/plain-text/csv/octet-stream) — `file_type` is checked against it and rejected with 400 if not present (server.js:2578-2580).
+- **Stored XSS via blob URL:** still not reachable — confirmed via a full-file grep that `file_data` is written (`INSERT`) but never appears in any `SELECT`/response anywhere in server.js, so `viewMaterial()`'s blob-from-`file_type` path in the client stays dormant. The MIME allowlist above is now the actual defense-in-depth (closes the gap even if a future change adds `file_data` back to a read response), rather than the previous state where the only thing preventing exploitation was an unrelated accident.
 
 ### 8. Admin impersonation — **NOT IMPLEMENTED** (nothing to audit)
 Searched the entire codebase (`server.js`, `auth.js`, all of `client/src`, `AdminDashboard.jsx` specifically) for any impersonation/"login as"/"view as org" mechanism — **found none**. `AdminDashboard.jsx` (764 lines) only wires up `GET /admin/orgs`, `GET /admin/metrics`, `GET /admin/orgs/:id`, `POST /admin/orgs/:id/extend-trial`, `POST /admin/orgs/:id/change-plan`, `DELETE /admin/orgs/:id` — all correctly gated `requireAuth, requireSuperAdmin` server-side (server.js:5144-5245), with no client-forgeable path (super-admin status is a JWT claim, covered under area 5). If an impersonation feature is planned for launch, it doesn't exist yet and should be designed with its own audit trail from the start rather than retrofitted.
@@ -142,18 +144,18 @@ Searched the entire codebase (`server.js`, `auth.js`, all of `client/src`, `Admi
 | 1 | Org scoping — bulk of routes | OK |
 | 1 | Org scoping — `programs/:id/grants` (link + delete), `gmail/send`→`interactions`, `finance/transactions` | GAP |
 | 2 | RBAC — most admin-sensitive routes | OK |
-| 2 | RBAC — `billing/create-portal`, `billing/create-checkout`, `orgs/:id` PATCH | GAP |
+| 2 | RBAC — `billing/create-portal`, `billing/create-checkout`, `orgs/:id` PATCH | **FIXED** (verified 2026-07-16) |
 | 3 | Stripe webhook — `/stripe/webhook` | OK |
 | 3 | Stripe webhook — `/billing/webhook` | GAP (= C3) |
 | 4 | Resend webhook signature verification | OK |
 | 5 | JWT algorithm / claim forgery | OK (algorithm pinning recommended as hardening) |
 | 6 | Public routes — SQL injection | OK |
 | 6 | Public routes — data over-exposure | OK |
-| 7 | File upload validation (size/type) | GAP |
-| 7 | File upload stored-XSS | GAP (latent, not currently reachable) |
+| 7 | File upload validation (size/type) | **FIXED** (verified 2026-07-16) |
+| 7 | File upload stored-XSS | **FIXED** (verified 2026-07-16 — allowlist now closes it, not just the accidental `file_data` exclusion) |
 | 8 | Admin impersonation | Not implemented |
 
-**Fix priority (as of original 2026-07-10 discovery): C1–C4 first, regardless of what else is in flight** — C1, C2, and C4 are genuine cross-tenant data exposure/corruption in a system whose entire value proposition depends on tenant isolation; C3 means Stripe billing state has silently never been syncing automatically in whatever environment this has been deployed to. **All four are now fixed** (see notes inline above, verified 2026-07-16). The GAP items below (org scoping edge cases §1, RBAC gaps §2, file upload validation §7) have not been re-verified and should be treated as the current open punch list. Everything else in this report is real but lower blast-radius.
+**Fix priority (as of original 2026-07-10 discovery): C1–C4 first, regardless of what else is in flight** — C1, C2, and C4 are genuine cross-tenant data exposure/corruption in a system whose entire value proposition depends on tenant isolation; C3 means Stripe billing state has silently never been syncing automatically in whatever environment this has been deployed to. **All four, plus the RBAC gap (§2) and file upload gap (§7), are now fixed** (see notes inline above, verified 2026-07-16). The only items in this original report still unverified are the §1 org-scoping edge cases (`programs/:id/grants` link+delete, `gmail/send`→`interactions`, `finance/transactions`) — those should be treated as the current open punch list from this report.
 
 ---
 
