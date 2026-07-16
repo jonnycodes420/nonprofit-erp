@@ -4948,9 +4948,26 @@ app.get("/giving-pages", requireAuth, wrap(async (req, res) => {
   res.json(rows);
 }));
 
+// Same length/amount limits as the public peer-fundraiser creation route
+// below (POST /org/:orgSlug/giving-page/:pageSlug/fundraisers) — that
+// sibling route validates these; this one didn't, which was an
+// inconsistency within the same feature rather than a real exposure (this
+// route is admin+org-scoped, so a bad value only ever lands in the caller's
+// own org), but a negative/non-finite goalAmount would still render a
+// nonsensical progress-bar percentage on the public page.
+function validateGivingPageFields(title, story, imageUrl, goalAmount) {
+  if (title !== undefined && title.trim().length > 200) return "Title is too long.";
+  if (story && story.length > 5000) return "Story is too long (5,000 character max).";
+  if (imageUrl && imageUrl.length > 2000) return "Image URL is too long.";
+  if (goalAmount && (!Number.isFinite(parseFloat(goalAmount)) || parseFloat(goalAmount) <= 0)) return "Goal amount must be a positive number.";
+  return null;
+}
+
 app.post("/giving-pages", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
   const { title, goalAmount, story, imageUrl, fundId, slug } = req.body;
   if (!title || !title.trim()) return res.status(400).json({ error: "title required" });
+  const validationErr = validateGivingPageFields(title, story, imageUrl, goalAmount);
+  if (validationErr) return res.status(400).json({ error: validationErr });
   if (fundId) {
     const fundRow = await query("SELECT id FROM fin_funds WHERE id=? AND org_id=?", [fundId, req.user.orgId]);
     if (!fundRow.length) return res.status(400).json({ error: "Invalid fund" });
@@ -4972,6 +4989,8 @@ app.put("/giving-pages/:id", requireAuth, requireAdmin, checkWriteAccess, wrap(a
   if (!existingRows.length) return res.status(404).json({ error: "Not found" });
   const existing = existingRows[0];
   const { title, goalAmount, story, imageUrl, fundId, slug, status } = req.body;
+  const validationErr = validateGivingPageFields(title, story, imageUrl, goalAmount);
+  if (validationErr) return res.status(400).json({ error: validationErr });
   if (fundId) {
     const fundRow = await query("SELECT id FROM fin_funds WHERE id=? AND org_id=?", [fundId, req.user.orgId]);
     if (!fundRow.length) return res.status(400).json({ error: "Invalid fund" });
@@ -5155,6 +5174,7 @@ app.post("/org/:orgSlug/giving-page/:pageSlug/fundraisers", donateLimiter, wrap(
   if (email.trim().length > 320) return res.status(400).json({ error: "Email is too long." });
   if (story && story.length > 5000) return res.status(400).json({ error: "Story is too long (5,000 character max)." });
   if (imageUrl && imageUrl.length > 2000) return res.status(400).json({ error: "Image URL is too long." });
+  if (personalGoalAmount && (!Number.isFinite(parseFloat(personalGoalAmount)) || parseFloat(personalGoalAmount) <= 0)) return res.status(400).json({ error: "Personal goal must be a positive number." });
 
   const orgs = await query("SELECT id, name FROM orgs WHERE org_slug = ?", [req.params.orgSlug]);
   if (!orgs.length) return res.status(404).json({ error: "Organization not found" });
@@ -5288,6 +5308,7 @@ app.put("/peer-fundraisers/manage/:token", fundraiserManageLimiter, wrap(async (
   if (name !== undefined && name.trim().length > 200) return res.status(400).json({ error: "Name is too long." });
   if (story && story.length > 5000) return res.status(400).json({ error: "Story is too long (5,000 character max)." });
   if (imageUrl && imageUrl.length > 2000) return res.status(400).json({ error: "Image URL is too long." });
+  if (personalGoalAmount && (!Number.isFinite(parseFloat(personalGoalAmount)) || parseFloat(personalGoalAmount) <= 0)) return res.status(400).json({ error: "Personal goal must be a positive number." });
   await run(
     `UPDATE peer_fundraisers SET name=?, personal_goal_amount=?, story=?, image_url=?, updated_at=NOW() WHERE id=?`,
     [
@@ -5301,7 +5322,10 @@ app.put("/peer-fundraisers/manage/:token", fundraiserManageLimiter, wrap(async (
   res.json({ success: true });
 }));
 
-// Admin — list fundraisers under one Giving Page. org_id is filtered
+// Staff-level read (requireAuth only, matches GET /giving-pages and the
+// donor-list convention — donor/fundraiser PII is visible to any
+// authenticated staff member throughout this app, not gated to admins;
+// only the takedown mutation below is admin-only). org_id is filtered
 // directly (see db.js comment on why peer_fundraisers carries its own
 // org_id rather than relying solely on the giving_page_id join). Column
 // list is explicit and deliberately omits edit_token — that's the

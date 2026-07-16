@@ -154,3 +154,43 @@ Searched the entire codebase (`server.js`, `auth.js`, all of `client/src`, `Admi
 | 8 | Admin impersonation | Not implemented |
 
 **Fix priority (as of original 2026-07-10 discovery): C1–C4 first, regardless of what else is in flight** — C1, C2, and C4 are genuine cross-tenant data exposure/corruption in a system whose entire value proposition depends on tenant isolation; C3 means Stripe billing state has silently never been syncing automatically in whatever environment this has been deployed to. **All four are now fixed** (see notes inline above, verified 2026-07-16). The GAP items below (org scoping edge cases §1, RBAC gaps §2, file upload validation §7) have not been re-verified and should be treated as the current open punch list. Everything else in this report is real but lower blast-radius.
+
+---
+
+# Giving Pages & Peer-to-Peer Fundraising — 2026-07-16
+
+Both features were built this session, after the 2026-07-10 review above, and audited separately here using the same categories. Covers `server.js`'s `giving_pages`/`peer_fundraisers` routes, `db.js`'s table definitions, the extended `/stripe/webhook` handlers, and `Donate.jsx`/`ManageFundraiser.jsx`/`Settings.jsx`'s `GivingPagesManager`.
+
+**No CRITICAL findings.**
+
+### 1. Org scoping — **OK**
+Every admin route filters by `org_id = req.user.orgId` (`POST`/`PUT`/`DELETE /giving-pages`, `GET`/`PUT /giving-pages/:id/fundraisers` \| `/peer-fundraisers/:id`). Public routes are scoped by `org_slug` + `page_slug`/`fundraiser_slug` + `status='active'`, never by raw ID — a fundraiser can't be attached to another org's giving page (`POST /org/:orgSlug/giving-page/:pageSlug/fundraisers` derives both `org.id` and `givingPage.id` from the validated slug lookup, never from client input). `POST /donate/:orgSlug` re-derives `givingPageId` from the fundraiser's own row when a `peerFundraiserId` is present (server.js ~5395), closing off a "donate to fundraiser X, tag the gift to page Y" mismatch; foreign-org IDs 400 rather than silently succeeding.
+
+### 2. RBAC — **OK** (one stale comment fixed)
+Admin mutations (`POST`/`PUT`/`DELETE /giving-pages`, `PUT /peer-fundraisers/:id` takedown) are all `requireAdmin`(+`checkWriteAccess` where not a DELETE). `GET /giving-pages/:id/fundraisers` is `requireAuth` only — correct and consistent with donor PII being staff-visible app-wide (same as `GET /donors`), not an actual gap; its comment used to say "Admin" which was misleading given the code only required auth — fixed to describe the real (correct) staff-level intent.
+
+### 3. `edit_token` (no-login fundraiser-manage auth) — **OK**
+`generateEditToken()` is two concatenated `crypto.randomUUID()`s (~244 bits entropy) — unguessable. Never returned in any API response (the create route deliberately omits it, see inline comment), never logged, excluded via explicit column lists from every admin-facing query (never `SELECT pf.*`). Rate-limited via a dedicated `fundraiserManageLimiter`, separate from `donateLimiter`'s budget. Residual, *inherited* risk: it's a bearer token embedded in a URL path, same shape as `invites.token` and the recovery/card-update link already used elsewhere in this codebase — subject to the same class of exposure (access logs, browser history, and potentially Sentry's browser-tracing breadcrumbs, which weren't verified either way this pass). Not a regression introduced by this feature; if it's worth hardening, it's worth doing for all three token families at once, not just this one.
+
+### 4. SQL injection — **OK**. Every query is parameterized; no string concatenation of request-derived values into SQL text.
+
+### 5. Public route data exposure — **OK**. Checked every public response shape — no fundraiser email, no `edit_token`, no other-org data or donor PII leaks anywhere.
+
+### 6. XSS / stored content injection — **OK**. No `dangerouslySetInnerHTML` anywhere in the new pages; all user text renders as JSX (auto-escaped). The one place raw HTML is built server-side (`sendFundraiserManageEmail`) runs every interpolated field through `escapeHtml()`.
+
+### 7. Input validation — **was a GAP, now fixed**
+The public fundraiser-creation route was already well-validated (length caps, email format) from when it was built. The admin `POST`/`PUT /giving-pages` routes and the token-authenticated `PUT /peer-fundraisers/manage/:token` route had no equivalent — no length caps, and `goalAmount`/`personalGoalAmount` were only `parseFloat`'d with no positive/finite check (a negative or `NaN` goal would silently store or throw a raw 500 instead of a clean 400). Fixed 2026-07-16: added the same length caps (title/name ≤200, story ≤5000, imageUrl ≤2000) and a shared `validateGivingPageFields()` helper plus matching goal-amount validation on all four routes that accept these fields.
+
+### Stripe webhook trust boundary — **OK**
+`payment_intent.succeeded` reads `giving_page_id`/`peer_fundraiser_id` straight from Stripe metadata with no re-validation against `orgId` — correct, because that metadata is only ever set server-side in `POST /donate/:orgSlug` after the org check already ran, `event.account` (used to resolve `orgId`) is Stripe-controlled not metadata-derived, and there's no client-reachable path to fabricate a webhook event for another org's connected account.
+
+| # | Area | Status |
+|---|------|--------|
+| 1 | Org scoping — admin + public routes | OK |
+| 2 | RBAC — admin mutations gated, stale "Admin" comment on a correctly staff-level read | OK (comment fixed) |
+| 3 | `edit_token` — entropy, non-leakage, rate limiting | OK |
+| 3 | `edit_token` — bearer-token-in-URL exposure (Sentry/access logs/history) | Inherited pattern, not verified, shared with invites/recovery tokens |
+| 4 | SQL injection | OK — none found |
+| 5 | Public route data exposure | OK |
+| 6 | XSS / stored content injection | OK |
+| 7 | Input validation — admin giving-page routes, goal-amount sanity | Fixed 2026-07-16 |
