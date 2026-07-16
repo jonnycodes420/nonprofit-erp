@@ -110,17 +110,33 @@ export function Reports({ onNavigate }) {
   const [err, setErr] = useState("");
   const [downloading, setDownloading] = useState(false);
 
+  // The default period resolves from data, not the calendar: early in a new
+  // fiscal year "This FY" is nearly empty (e.g. two weeks in), which makes a
+  // terrible first impression — so until the current year has real volume
+  // (≥10 gifts, or ≥1% of the prior year's dollars), default to Last FY/CY.
+  // The user picking any chip overrides this permanently for the session.
+  const [autoDefault, setAutoDefault] = useState(null); // null = still resolving
+
   const setYearMode = v => { localStorage.setItem("steward_reports_yearmode", v); setYearModeState(v); setYear(null); };
 
-  const effPreset = preset || (yearMode === "fiscal" ? "thisFY" : "thisCY");
+  const effPreset = preset || autoDefault;
   const effYear = year || (yearMode === "fiscal" ? CUR_FY : CUR_CY);
   const isPeriodReport = PERIOD_REPORTS.includes(active) && !(active === "top-donors" && scope === "lifetime");
   const showFilters = PERIOD_REPORTS.includes(active) && !(active === "top-donors" && scope === "lifetime");
+  const presetPending = isPeriodReport && !effPreset;
 
   useEffect(() => {
     apiFetch("/finance/funds").then(setFunds).catch(() => {});
     apiFetch("/campaigns").then(setCampaigns).catch(() => {});
-  }, []);
+    const fiscal = yearMode === "fiscal";
+    const thisId = fiscal ? "thisFY" : "thisCY", lastId = fiscal ? "lastFY" : "lastCY";
+    apiFetch(`/reports/giving-summary?year=${fiscal ? CUR_FY : CUR_CY}&yearMode=${yearMode}`)
+      .then(d => {
+        const lowVolume = d.prior.total > 0 && d.giftCount < 10 && d.total < d.prior.total * 0.01;
+        setAutoDefault(lowVolume ? lastId : thisId);
+      })
+      .catch(() => setAutoDefault(thisId));
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps -- mount only; yearMode toggles don't re-resolve the default
 
   function buildParams() {
     const q = new URLSearchParams();
@@ -138,11 +154,11 @@ export function Reports({ onNavigate }) {
     return q;
   }
 
-  const paramsStr = buildParams().toString();
+  const paramsStr = presetPending ? "" : buildParams().toString();
   const customIncomplete = isPeriodReport && effPreset === "custom" && (!customFrom || !customTo);
 
   useEffect(() => {
-    if (customIncomplete) return;
+    if (customIncomplete || presetPending) return;
     let dead = false;
     setLoading(true); setErr("");
     apiFetch(`/reports/${active}?${paramsStr}`)
@@ -152,7 +168,7 @@ export function Reports({ onNavigate }) {
       .then(d => { if (!dead) { setData({ key: active, d }); setLoading(false); } })
       .catch(e => { if (!dead) { setErr(e.message); setLoading(false); } });
     return () => { dead = true; };
-  }, [active, paramsStr, customIncomplete]);
+  }, [active, paramsStr, customIncomplete, presetPending]);
 
   async function downloadCsv() {
     setDownloading(true);
