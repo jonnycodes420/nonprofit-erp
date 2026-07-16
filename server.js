@@ -238,7 +238,7 @@ app.post("/stripe/webhook", express.raw({ type: "application/json" }), async (re
             // Re-engagement task for previously lapsed donors
             if (wasLapsed) {
               await run(
-                "INSERT INTO tasks (id,org_id,title,priority,done,due) VALUES ($1,$2,$3,'high',false,$4)",
+                "INSERT INTO tasks (id,org_id,title,priority,done,due) VALUES ($1,$2,$3,'high',0,$4)",
                 ["t_"+uuid().slice(0,8), orgId, `Re-engaged via online gift — follow up with ${donorName||email} within 48 hours`,
                  new Date(Date.now()+2*24*60*60*1000).toISOString().slice(0,10)]
               ).catch(()=>{});
@@ -256,7 +256,7 @@ app.post("/stripe/webhook", express.raw({ type: "application/json" }), async (re
             await run(
               `INSERT INTO tasks (id, org_id, title, priority, done, created_at)
                VALUES ($1,$2,$3,$4,$5,NOW())`,
-              [taskId, orgId, `Send personal thank-you to ${donorName || email} for $${amount} online gift`, "high", false]
+              [taskId, orgId, `Send personal thank-you to ${donorName || email} for $${amount} online gift`, "high", 0]
             );
           }
         }
@@ -294,7 +294,7 @@ app.post("/stripe/webhook", express.raw({ type: "application/json" }), async (re
             );
             const taskId = "t_" + uuid().slice(0, 8);
             await run(
-              `INSERT INTO tasks (id, org_id, title, priority, done, created_at) VALUES ($1,$2,$3,'high',false,NOW())`,
+              `INSERT INTO tasks (id, org_id, title, priority, done, created_at) VALUES ($1,$2,$3,'high',0,NOW())`,
               [taskId, orgId, `Welcome ${donorName} as a ${frequency} recurring donor — send personal thank-you`]
             );
             // Health record for the failed-payment recovery system — created
@@ -2818,7 +2818,7 @@ app.put("/grants/:id", requireAuth, checkWriteAccess, wrap(async (req, res) => {
   if ((status === 'closed' || status === 'rejected') && prevStatus !== status) {
     const sixMonths = new Date(Date.now() + 180*24*60*60*1000).toISOString().slice(0, 10);
     await run(
-      "INSERT INTO tasks (id,org_id,title,priority,done,due) VALUES (?,?,?,'medium',false,?)",
+      "INSERT INTO tasks (id,org_id,title,priority,done,due) VALUES (?,?,?,'medium',0,?)",
       ["t_"+uuid().slice(0,8), orgId, `Follow up with ${funder} re: next cycle`, sixMonths]
     ).catch(() => {});
   }
@@ -2915,7 +2915,7 @@ app.put("/volunteers/:id", requireAuth, checkWriteAccess, wrap(async (req, res) 
         ["i_"+uuid().slice(0,8), orgId, donorId, "Volunteer prospect — 20+ hours logged", today]).catch(() => {});
     }
     const dueDate = new Date(Date.now() + 7*24*60*60*1000).toISOString().slice(0, 10);
-    await run("INSERT INTO tasks (id,org_id,title,priority,done,due) VALUES (?,?,?,'high',false,?)",
+    await run("INSERT INTO tasks (id,org_id,title,priority,done,due) VALUES (?,?,?,'high',0,?)",
       ["t_"+uuid().slice(0,8), orgId, `Cultivate volunteer ${name} as donor prospect — 20+ hours logged`, dueDate]).catch(() => {});
   }
 
