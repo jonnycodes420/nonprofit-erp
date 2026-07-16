@@ -49,6 +49,14 @@ DONE (was item 6): Expired-token UX — see "Auth, Gmail, billing/Reactivate, an
 
 ## Earlier sessions (for reference)
 
+### BUILD-04 Strike 4 — error monitoring verified (backend live, client NOT live) + uptime decision (2026-07-16)
+
+The GTM gap list said "no confirmed error monitoring" while CLAUDE.md documented a full Sentry setup — resolved by verification, not rebuilding. **Outcome: backend monitoring is live and exercised; client monitoring is NOT live — two named env vars missing from Vercel.**
+
+- **Backend — VERIFIED live**: added `sentry: !!process.env.SENTRY_DSN` to `GET /health` (non-secret boolean) — production Railway returns `sentry: true`, so `Sentry.init()` ran. Added `POST /admin/debug/sentry-test?mode=route|rejection` (requireAuth + requireAdmin, safe to keep) and fired both against production with the demo admin: route mode → 500 through `Sentry.setupExpressErrorHandler` as designed; rejection mode → 200 with the process confirmed still up afterward (`unhandledRejection` reports without exiting, per design). **One human step remains**: open the Sentry project and confirm the two `[sentry-test] deliberate ...` events from 2026-07-16 actually arrived — no Sentry dashboard credentials exist in the dev environment, so arrival can't be confirmed from here (everything up to the Sentry ingest boundary is confirmed).
+- **Client — NOT live, named gap**: the deployed Vercel bundle (`index-CTZozjYM.js`) contains no DSN string and zero `_sentryDebugId` markers → **`VITE_SENTRY_DSN` is not set in Vercel's build env** (browser errors currently report nowhere) **and `SENTRY_AUTH_TOKEN` isn't either** (no source maps uploaded — any future prod stack trace would be minified). Fix is config-only: set `VITE_SENTRY_DSN`, `SENTRY_AUTH_TOKEN`, `SENTRY_ORG`, `SENTRY_PROJECT` in Vercel project env vars and redeploy; the code paths are already built and gated on them.
+- **Uptime — decision documented, no code**: external ping (UptimeRobot or Better Stack free tier) on `GET /health` (keyword `"status":"ok"`) + `https://www.stewardapp.dev/give/creo-arts-creo` (public donate path, slug verified live), alerting to the founder email. Setup steps in CLAUDE.md's "Uptime monitoring" section — needs an account signup, so it's a user click-through (~5 min), not automatable from this environment.
+
 ### BUILD-04 Strike 3 — four-KPI-card question on Home: RESOLVED, superseded (2026-07-16)
 
 A handoff flagged an unconfirmed ask for "four equally-weighted drillable KPI cards" on Home, while screenshots kept showing three hero metrics. Loop closed — **the four-equal-cards ask was not implemented, and deliberately so: it was superseded by later, explicit founder feedback.** Do not implement it; that would reverse two documented decisions:
