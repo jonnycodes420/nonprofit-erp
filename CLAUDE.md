@@ -84,12 +84,12 @@ Decided 2026-07-16 (BUILD-04 Strike 4): use a free external ping service rather 
 - db.js
 
 ## Active tabs (App.jsx TABS array — current, post-pivot)
-dashboard ("Home") → donors → grants → communications → settings
+dashboard ("Home") → donors → grants → communications → reports → settings
 
-Events/Volunteers/Board/Tasks/Finance are commented out of `TABS` with a `// DEPRIORITIZED` marker — re-enable by uncommenting, nothing else to restore. (Analytics was deleted outright — see Strategic pivot.)
+Events/Volunteers/Board/Tasks/Finance are commented out of `TABS` with a `// DEPRIORITIZED` marker — re-enable by uncommenting, nothing else to restore. (Analytics was deleted outright — see Strategic pivot; the Reports tab added 2026-07-16 is its deliberate replacement — see "Reports" below.)
 
 Mobile bottom bar (`BOTTOM_TABS`): dashboard ("Home"), donors, grants, settings
-Mobile "More" drawer (`MORE_TABS`): communications only (Events/Volunteers/Board/Tasks are commented out here too)
+Mobile "More" drawer (`MORE_TABS`): communications, reports (Events/Volunteers/Board/Tasks are commented out here too)
 
 ## Component files (client/src/components/)
 - shared.jsx — T (design tokens, now includes `bgDeep` and `terracotta`), fmt, fmtFull, daysDiff, daysUntil, SC, askClaude, buildContext, STAGES, STAGE_THRESH, STAGE_ACTION, TIER_COLOR, donorScore, retentionRisk, moveUrgency, GlobalStyles, Spin, Pill, Card, SectionLabel, AIBtn (default label "Suggest", not "AI Assist"), AIPanel (badge reads "Suggested", not "AI Intelligence"), MetricCard, EmptyState, PageTitle, GivingHistoryChart, TpField, TpYesNo, TouchpointTimeline, VoiceMemoModal (built but currently unused — see "Voice memo capture (shelved)" below)
@@ -98,6 +98,7 @@ Mobile "More" drawer (`MORE_TABS`): communications only (Events/Volunteers/Board
 - Events.jsx — exports Events (EventCard, EventDetail, NewEventPanel, FollowUpModal internally) — **hidden from nav**, code/routes/tables intact
 - Grants.jsx — exports Grants (includes GrantProfile, FindGrants internally). GrantProfile now accepts an `initialGrantId` prop for deep-linking (used by the home screen's next-grant-deadline tile)
 - Communications.jsx — exports Communications (email campaigns, templates, audience segmentation, Resend API, open tracking, Sequences, Milestone Drafts review queue). Accepts `initialNav`/`highlightDraftId` props for deep-linking from the home screen's queue. See "Retention & stewardship" below.
+- Reports.jsx — exports Reports (six fixed reports: left rail with "the question this answers" subtitles, param bar, narrative summary line, sortable dense tables, CSV download — see "Reports" section below). Takes `onNavigate`; LYBUNT/SYBUNT/Top-Donors rows deep-link to the donor profile via `onNavigate("donors",{selectDonorId})`.
 - Volunteers.jsx — exports Volunteers — **hidden from nav**, code/routes/tables intact
 - Board.jsx — exports Board — **hidden from nav**, code/routes/tables intact
 - Finance.jsx — exports Finance (6 tabs: Overview, Transactions, Accounts, Funds, Budgets, Reports; includes fund sparklines) — **hidden from nav**, code/routes/tables intact
@@ -391,6 +392,7 @@ Compliant, branded tax receipts for gifts, plus consolidated calendar-year givin
 - Donors — Kanban pipeline, CSV import (now also the centerpiece of onboarding step 2 — `DonorImport` exported from Donors.jsx), AI features, editing, interaction timeline (dynamic templates by type: Call/Meeting/Email/Event/Gift/Other), auto follow-up task on touchpoint save, wealth score card (5-component scoring, DB columns, recalculate button), per-donor Impact Summary PDF download (`GET /donors/:id/impact-summary/pdf`)
 - Grants — CRUD, AI strategy, LOI drafting, grant discovery (FindGrants merged into Grants tab)
 - Communications — segmented email campaigns (Resend HTTP API), AI copy, open rate tracking via pixel, audience filters, Sequences, **Milestone Drafts review queue** (staff approves/edits/dismisses AI-drafted milestone emails before sending — see "Retention & stewardship")
+- Reports — six fixed, parameterized, CSV-downloadable reports (Giving Summary, Gifts by Fund/Campaign/Page, LYBUNT, SYBUNT, Retention, Top Donors) — the deliberate Analytics replacement, see "Reports" section
 - Finance, Volunteers, Board, Tasks — **hidden from nav** as of the 2026-07-12 pivot (see "Strategic pivot" at top); code/routes/tables fully intact, reversible by uncommenting. (Analytics was hidden by the same pivot but then deleted outright 2026-07-16 — see Strategic pivot.) Descriptions below are the still-accurate feature list, kept for whenever these are re-enabled:
   - Finance — 6-tab module: Overview (P&L, fund balances, AI forecast), Transactions (CRUD, filter), Accounts, Funds (sparklines), Budgets, Reports; donor gifts auto-sync to fin_transactions; full audit log
   - Volunteers — hours tracking, conversion to donor, board candidate AI
@@ -471,6 +473,17 @@ Compliant, branded tax receipts for gifts, plus consolidated calendar-year givin
 - `POST /donors/:id/custom-fields` — upsert a value for a field on a donor (ON CONFLICT DO UPDATE)
 - Settings.jsx: Custom Fields section between Team Members and Account Actions. Field manager with add/edit/delete. Dropdown type shows option builder.
 - DonorProfile (Donors.jsx): Custom Fields section shown only when org has custom fields (cfData.length > 0). Inline edit per field with appropriate input type.
+
+## Reports (BUILD-02 — 2026-07-16)
+The Analytics replacement that answers buyer questions — six fixed, parameterized, table-first, CSV-downloadable reports. Deliberately NOT an Analytics revival: no chart dashboard, no PDF builder (Board Report covers that), no scheduled emails, no custom report builder.
+
+- **Route family**: `GET /reports/:key` (requireAuth only — reports are read paths, never `checkWriteAccess`-gated; read_only orgs keep full access), `:key` ∈ `giving-summary | by-group | lybunt | sybunt | retention | top-donors`. Declared AFTER the `/reports/board*` routes in server.js so Express matches "board" there first — keep it that way.
+- **Shared param parser** (`parseReportParams`): `from`/`to` (YYYY-MM-DD) OR `year`+`yearMode` (`fiscal`|`calendar`, default fiscal). **Fiscal year N = Jul 1 (N-1) → Jun 30 N** — same July-1 boundary as `/dashboard/my-stats` and `/finance/summary`; a gift dated 2025-12-15 is in FY2026 AND CY2025 (verified both ways). Validates and 400s on garbage; ranges capped at 10 years. Optional `fundId`/`campaignId` filters (giving-summary, by-group, top-donors period), `groupBy` (`funds`|`campaigns`|`giving_pages`) for by-group, `scope=lifetime` + `limit` (≤100) for top-donors.
+- **All aggregation in SQL**, org-scoped, soft-deleted donors excluded (`JOIN donors … deleted_at IS NULL`), `is_sample` rows deliberately included (they're org data). Median via `PERCENTILE_CONT(0.5)`. Online = `stripe_payment_id IS NOT NULL`. "New donor" = first-ever gift (unfiltered) falls in period. LYBUNT/SYBUNT predicates live ONLY in `reportBuntList()`: LYBUNT = gift in prior year + none in selected year; SYBUNT = any gift before selected year + none in it (so SYBUNT ⊇ LYBUNT by design, per spec). Retention rows = last 3 COMPLETED years; retention % = prior-year donors who gave again; $ retention = their current-year dollars / all prior-year dollars (can exceed 100%); first-year retention = same restricted to donors whose first-ever gift was the prior year. Top Donors lifetime scope reads `donors.total_giving` (not SUM(gifts)) because imported history often has no gifts rows. by-group campaigns honors the legacy dual attribution (`campaign_id` join, falling back to the old `gifts.campaign` text column).
+- **CSV**: same route + `?format=csv` → `Content-Disposition: attachment`, proper quoting, and a formula-injection guard (leading `=`/`+`/`-`/`@` in TEXT cells gets a `'` prefix; numbers pass through). Client builds the download filename itself — `Content-Disposition` isn't CORS-exposed cross-origin (Vercel→Railway).
+- **Indexes** (db.js initSchema): `gifts(org_id,date)`, `gifts(org_id,fund_id)`, `gifts(org_id,campaign_id)`, `donors(org_id,last_gift_date)`.
+- **Frontend** (`Reports.jsx`): left rail (six reports + question subtitles), param bar (This FY/Last FY/This CY/Last CY/Custom preset chips for period reports; fiscal/calendar toggle persisted to localStorage `steward_reports_yearmode` + year select for LYBUNT/SYBUNT; toggle only for retention; period/lifetime toggle for top-donors), narrative sentence first with numbers as evidence, dense sortable table (client-side column-click sort), Download CSV. LYBUNT/SYBUNT rows are terracotta-accented (they ARE the leak) and click through to the donor profile. Five-color palette only; % shares render as thin gold bars. Fetched data is tagged `{key, d}` — between switching reports and the fetch effect firing there's one render where stale data has the wrong shape (this was a real crash, found in live testing). Mobile (GlobalStyles): rail → horizontal chip strip (subtitles hidden), tables scroll inside `.reports-table-wrap`, page never scrolls horizontally.
+- **Verified** (2026-07-16, real server.js + real local Postgres 16, no mocks): 63/63 scripted assertions — every report's numbers vs hand-computed expectations (median odd+even, new/returning splits, retention incl. 466.7% dollar-retention edge, LYBUNT/SYBUNT membership in both year modes), org-B isolation on every key, the FY2026/CY2025 boundary flip, CSV quoting + `=HYPERLINK` injection guard, param validation (400s), `/reports/board` not shadowed. Plus a live Playwright pass: all six reports screenshotted, CSV downloaded through the real UI button, LYBUNT row → donor profile deep-link confirmed, mobile viewport checked.
 
 ## Board Reports
 - `board_reports` table: id, org_id, quarter, year, generated_at, generated_by, generated_by_name, metrics (TEXT/JSON), pdf_data (TEXT/base64)

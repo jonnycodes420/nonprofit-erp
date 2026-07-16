@@ -173,6 +173,7 @@ export function GlobalStyles() {
     .card-click{transition:transform 0.15s ease,box-shadow 0.15s ease,border-color 0.15s;}
     .card-click:hover{box-shadow:0 4px 24px rgba(10,10,10,0.12)!important;transform:translateY(-1px);border-color:#0d5c3a!important;}
     .dash-row:hover{background:#f0ede6!important;box-shadow:inset 2px 0 0 #0d5c3a;}
+    .rpt-row-click:hover td{background:#f0ede6;}
     .dash-action:hover{background:#f0ede6!important;border-color:#0d5c3a!important;transform:translateY(-1px);}
 
     /* ── Mobile bottom nav (hidden on desktop) ─────────────────────────── */
@@ -301,6 +302,14 @@ export function GlobalStyles() {
       .events-grid{grid-template-columns:1fr!important;}
       .event-detail-body{grid-template-columns:1fr!important;overflow-y:auto!important;overflow-x:hidden!important;}
       .event-detail-body>div{overflow-y:visible!important;border-right:none!important;padding:14px 16px!important;}
+
+      /* Reports: rail becomes a horizontal chip strip, param bar wraps,
+         table scrolls inside its own container (page never scrolls horiz) */
+      .reports-layout{flex-direction:column!important;}
+      .reports-rail{width:100%!important;flex-direction:row!important;overflow-x:auto!important;-webkit-overflow-scrolling:touch!important;padding-bottom:6px!important;}
+      .reports-rail button{width:auto!important;flex-shrink:0!important;white-space:nowrap!important;padding:10px 14px!important;}
+      .reports-rail .rpt-sub{display:none!important;}
+      .reports-table-wrap{overflow-x:auto!important;-webkit-overflow-scrolling:touch!important;max-width:100%!important;}
 
       /* Signup: two-column hero → stacked single column */
       .signup-shell{flex-direction:column!important;min-height:auto!important;}

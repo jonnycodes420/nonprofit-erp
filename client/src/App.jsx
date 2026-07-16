@@ -10,6 +10,7 @@ import { Dashboard } from "./components/Dashboard";
 import { Donors } from "./components/Donors";
 import { Grants } from "./components/Grants";
 import { Communications } from "./components/Communications";
+import { Reports } from "./components/Reports";
 import { Volunteers } from "./components/Volunteers";
 import { Board } from "./components/Board";
 import { Finance } from "./components/Finance";
@@ -24,6 +25,7 @@ const TABS=[
   {id:"donors",label:"Donors",icon:"♦"},
   {id:"grants",label:"Grants",icon:"◉"},
   {id:"communications",label:"Communications",icon:"◑"},
+  {id:"reports",label:"Reports",icon:"▤"},
   {id:"settings",label:"Settings",icon:"⚙"},
   // DEPRIORITIZED — pivoting to donor dashboard focus, code kept intact, re-enable by uncommenting
   // {id:"finance",label:"Finance",icon:"◇"},
@@ -40,6 +42,7 @@ const BOTTOM_TABS=[
 ];
 const MORE_TABS=[
   {id:"communications",label:"Communications",icon:"◑"},
+  {id:"reports",label:"Reports",icon:"▤"},
   // DEPRIORITIZED — pivoting to donor dashboard focus, code kept intact, re-enable by uncommenting
   // {id:"events",label:"Events",icon:"◎"},
   // {id:"volunteers",label:"Volunteers",icon:"◎",earlyAccess:true},
@@ -249,6 +252,7 @@ function AppShell() {
       {tab==="donors"&&<Donors data={data} setData={setData} isReadOnly={isReadOnly} initialView={donorsIntent?.view} initialLogDonorId={donorsIntent?.logDonorId} initialStageFilter={donorsIntent?.stageFilter} initialSelectDonorId={donorsIntent?.selectDonorId} onIntentConsumed={()=>setDonorsIntent(null)}/>}
       {tab==="grants"&&<Grants data={data} setData={setData} isReadOnly={isReadOnly} initialGrantId={grantsIntent?.grantId} onIntentConsumed={()=>setGrantsIntent(null)}/>}
       {tab==="communications"&&<Communications data={data} isReadOnly={isReadOnly} initialNav={commsInitialNav} highlightDraftId={commsHighlightDraftId} onInitialNavConsumed={()=>{setCommsInitialNav(null);setCommsHighlightDraftId(null);}}/>}
+      {tab==="reports"&&<Reports onNavigate={navigateTo}/>}
       {tab==="events"&&<Events data={data} isReadOnly={isReadOnly}/>}
       {tab==="volunteers"&&<Volunteers data={data} setData={setData} isReadOnly={isReadOnly}/>}
       {tab==="board"&&<Board data={data} setData={setData} isReadOnly={isReadOnly}/>}

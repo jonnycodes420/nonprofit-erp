@@ -6893,6 +6893,337 @@ Organization: ${org.name}. Mission: ${org.mission || "not specified"}. Period: Q
   res.end(pdfBuffer);
 }));
 
+// ── Reports (BUILD-02) ──────────────────────────────────────────────────────
+// Six fixed, parameterized, table-first reports — deliberately NOT an
+// Analytics revival (no charts, no custom builder). All aggregation happens
+// in SQL, org-scoped on every query; every report also serves ?format=csv.
+// Declared AFTER the /reports/board routes above so Express matches "board"
+// there first and this :key route never shadows it.
+
+const REPORT_KEYS = ["giving-summary", "by-group", "lybunt", "sybunt", "retention", "top-donors"];
+
+// Fiscal year N = Jul 1 (N-1) through Jun 30 N — same July-1 boundary as
+// /dashboard/my-stats and /finance/summary. A gift on 2025-12-15 is FY2026
+// and CY2025.
+function reportYearBounds(year, yearMode) {
+  return yearMode === "fiscal"
+    ? { from: `${year - 1}-07-01`, to: `${year}-06-30` }
+    : { from: `${year}-01-01`, to: `${year}-12-31` };
+}
+// The year currently in progress (fiscal label year is the June-30 end year).
+function reportCurrentYear(yearMode, now = new Date()) {
+  return yearMode === "fiscal"
+    ? (now.getMonth() < 6 ? now.getFullYear() : now.getFullYear() + 1)
+    : now.getFullYear();
+}
+
+function parseReportParams(q) {
+  const bad = msg => { const e = new Error(msg); e.status = 400; return e; };
+  const p = {};
+
+  p.yearMode = q.yearMode || "fiscal";
+  if (!["fiscal", "calendar"].includes(p.yearMode)) throw bad("yearMode must be 'fiscal' or 'calendar'");
+
+  const isDate = s => /^\d{4}-\d{2}-\d{2}$/.test(s) && !isNaN(Date.parse(s + "T00:00:00Z"));
+
+  if (q.year !== undefined) {
+    p.year = parseInt(q.year, 10);
+    if (!Number.isInteger(p.year) || p.year < 1970 || p.year > 2100) throw bad("year must be an integer between 1970 and 2100");
+    const b = reportYearBounds(p.year, p.yearMode);
+    p.from = b.from; p.to = b.to;
+  } else if (q.from || q.to) {
+    if (!q.from || !isDate(q.from)) throw bad("from must be YYYY-MM-DD");
+    if (!q.to || !isDate(q.to)) throw bad("to must be YYYY-MM-DD");
+    p.from = q.from; p.to = q.to;
+    p.year = reportCurrentYear(p.yearMode); // for reports that need a year anyway
+  } else {
+    p.year = reportCurrentYear(p.yearMode);
+    const b = reportYearBounds(p.year, p.yearMode);
+    p.from = b.from; p.to = b.to;
+  }
+  if (p.from > p.to) throw bad("from must be on or before to");
+  if (Date.parse(p.to) - Date.parse(p.from) > 10 * 366 * 86400000) throw bad("Date range too large — 10 years max");
+
+  if (q.fundId) p.fundId = String(q.fundId);
+  if (q.campaignId) p.campaignId = String(q.campaignId);
+
+  p.groupBy = q.groupBy || "funds";
+  if (!["funds", "campaigns", "giving_pages"].includes(p.groupBy)) throw bad("groupBy must be funds, campaigns, or giving_pages");
+
+  p.scope = q.scope === "lifetime" ? "lifetime" : "period";
+  p.limit = Math.min(Math.max(parseInt(q.limit, 10) || 25, 1), 100);
+  p.format = q.format === "csv" ? "csv" : "json";
+  return p;
+}
+
+// Shared WHERE fragment for gift-level queries: org-scoped, soft-deleted
+// donors excluded (matching the app-wide `deleted_at IS NULL` convention),
+// optional fund/campaign filters. is_sample rows are deliberately included —
+// they're org data, and real orgs won't have any.
+function reportGiftWhere(p, orgId, params) {
+  let sql = " g.org_id = ? AND d.deleted_at IS NULL AND g.date >= ? AND g.date <= ?";
+  params.push(orgId, p.from, p.to);
+  if (p.fundId) { sql += " AND g.fund_id = ?"; params.push(p.fundId); }
+  if (p.campaignId) { sql += " AND g.campaign_id = ?"; params.push(p.campaignId); }
+  return sql;
+}
+const REPORT_GIFT_FROM = "FROM gifts g JOIN donors d ON d.id = g.donor_id WHERE";
+
+async function reportGivingSummary(orgId, p) {
+  const tParams = [];
+  const where = reportGiftWhere(p, orgId, tParams);
+  const [totals] = await query(
+    `SELECT COUNT(*)::int AS gift_count,
+            COALESCE(SUM(g.amount),0) AS total,
+            COUNT(DISTINCT g.donor_id)::int AS unique_donors,
+            COALESCE(AVG(g.amount),0) AS avg_gift,
+            COALESCE(PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY g.amount),0) AS median_gift,
+            COALESCE(SUM(CASE WHEN g.stripe_payment_id IS NOT NULL THEN g.amount ELSE 0 END),0) AS online_total,
+            COUNT(*) FILTER (WHERE g.stripe_payment_id IS NOT NULL)::int AS online_count
+     ${REPORT_GIFT_FROM} ${where}`, tParams);
+
+  // New donors = first-ever gift (any fund/campaign) falls inside the period.
+  const nParams = [];
+  const nWhere = reportGiftWhere(p, orgId, nParams);
+  const [newSplit] = await query(
+    `WITH period_donors AS (SELECT DISTINCT g.donor_id ${REPORT_GIFT_FROM} ${nWhere}),
+          firsts AS (SELECT donor_id, MIN(date) AS fg FROM gifts WHERE org_id = ? GROUP BY donor_id)
+     SELECT COUNT(*) FILTER (WHERE f.fg >= ? AND f.fg <= ?)::int AS new_donors, COUNT(*)::int AS period_donors
+     FROM period_donors pd JOIN firsts f ON f.donor_id = pd.donor_id`,
+    [...nParams, orgId, p.from, p.to]);
+
+  const mParams = [];
+  const mWhere = reportGiftWhere(p, orgId, mParams);
+  const monthly = await query(
+    `SELECT LEFT(g.date, 7) AS month, COUNT(*)::int AS gifts,
+            COALESCE(SUM(g.amount),0) AS total, COUNT(DISTINCT g.donor_id)::int AS donors
+     ${REPORT_GIFT_FROM} ${mWhere} GROUP BY 1 ORDER BY 1`, mParams);
+
+  // Prior period of equal length, for the narrative compare line.
+  const spanDays = Math.round((Date.parse(p.to) - Date.parse(p.from)) / 86400000) + 1;
+  const dayShift = (iso, days) => new Date(Date.parse(iso + "T00:00:00Z") + days * 86400000).toISOString().slice(0, 10);
+  const prior = { ...p, from: dayShift(p.from, -spanDays), to: dayShift(p.from, -1) };
+  const pParams = [];
+  const pWhere = reportGiftWhere(prior, orgId, pParams);
+  const [priorTotals] = await query(
+    `SELECT COUNT(*)::int AS gift_count, COALESCE(SUM(g.amount),0) AS total
+     ${REPORT_GIFT_FROM} ${pWhere}`, pParams);
+
+  return {
+    from: p.from, to: p.to,
+    total: Number(totals.total),
+    giftCount: totals.gift_count,
+    uniqueDonors: totals.unique_donors,
+    avgGift: Math.round(Number(totals.avg_gift) * 100) / 100,
+    medianGift: Number(totals.median_gift),
+    newDonors: newSplit.new_donors,
+    returningDonors: newSplit.period_donors - newSplit.new_donors,
+    onlineTotal: Number(totals.online_total),
+    onlineCount: totals.online_count,
+    offlineTotal: Number(totals.total) - Number(totals.online_total),
+    offlineCount: totals.gift_count - totals.online_count,
+    prior: { from: prior.from, to: prior.to, total: Number(priorTotals.total), giftCount: priorTotals.gift_count },
+    monthly: monthly.map(m => ({ month: m.month, gifts: m.gifts, total: Number(m.total), donors: m.donors })),
+  };
+}
+
+async function reportByGroup(orgId, p) {
+  // One query family, parameterized by groupBy. Campaigns honor the legacy
+  // dual attribution (gifts.campaign_id OR the older gifts.campaign name
+  // column); dangling ids (deleted fund/page) fall into the "No X" bucket —
+  // the tolerated-dangling-reference pattern.
+  const JOINS = {
+    funds: { join: "LEFT JOIN fin_funds x ON x.id = g.fund_id AND x.org_id = g.org_id", name: "COALESCE(x.name, 'No fund')" },
+    campaigns: { join: "LEFT JOIN campaigns x ON x.id = g.campaign_id AND x.org_id = g.org_id", name: "COALESCE(x.name, NULLIF(g.campaign, ''), 'No campaign')" },
+    giving_pages: { join: "LEFT JOIN giving_pages x ON x.id = g.giving_page_id AND x.org_id = g.org_id", name: "COALESCE(x.title, 'No giving page')" },
+  };
+  const cfg = JOINS[p.groupBy];
+  const params = [];
+  const where = reportGiftWhere(p, orgId, params);
+  const rows = await query(
+    `SELECT ${cfg.name} AS name, COALESCE(SUM(g.amount),0) AS total,
+            COUNT(*)::int AS gift_count, COUNT(DISTINCT g.donor_id)::int AS unique_donors
+     FROM gifts g JOIN donors d ON d.id = g.donor_id ${cfg.join}
+     WHERE ${where} GROUP BY 1 ORDER BY total DESC`, params);
+  const grand = rows.reduce((s, r) => s + Number(r.total), 0);
+  return {
+    from: p.from, to: p.to, groupBy: p.groupBy, grandTotal: grand,
+    rows: rows.map(r => ({
+      name: r.name, total: Number(r.total), giftCount: r.gift_count,
+      uniqueDonors: r.unique_donors,
+      pct: grand > 0 ? Math.round(Number(r.total) / grand * 1000) / 10 : 0,
+    })),
+  };
+}
+
+// LYBUNT = gift in the prior year, none in the selected year.
+// SYBUNT = any gift ever before the selected year, none in the selected year.
+// Both predicates live here in SQL and nowhere else.
+async function reportBuntList(orgId, p, kind) {
+  const cur = reportYearBounds(p.year, p.yearMode);
+  const prior = reportYearBounds(p.year - 1, p.yearMode);
+  const gaveBeforeSql = kind === "lybunt"
+    ? "EXISTS (SELECT 1 FROM gifts g WHERE g.org_id = d.org_id AND g.donor_id = d.id AND g.date >= ? AND g.date <= ?)"
+    : "EXISTS (SELECT 1 FROM gifts g WHERE g.org_id = d.org_id AND g.donor_id = d.id AND g.date < ?)";
+  const gaveBeforeParams = kind === "lybunt" ? [prior.from, prior.to] : [cur.from];
+  const rows = await query(
+    `SELECT d.id, d.name, d.email, d.assigned_to_name,
+            COALESCE(d.total_giving, 0) AS total_giving, d.last_gift_date, d.last_gift_amount,
+            (SELECT COALESCE(SUM(g.amount),0) FROM gifts g
+              WHERE g.org_id = d.org_id AND g.donor_id = d.id AND g.date >= ? AND g.date <= ?) AS prior_year_total
+     FROM donors d
+     WHERE d.org_id = ? AND d.deleted_at IS NULL
+       AND ${gaveBeforeSql}
+       AND NOT EXISTS (SELECT 1 FROM gifts g WHERE g.org_id = d.org_id AND g.donor_id = d.id AND g.date >= ? AND g.date <= ?)
+     ORDER BY COALESCE(d.total_giving, 0) DESC`,
+    [prior.from, prior.to, orgId, ...gaveBeforeParams, cur.from, cur.to]);
+  return {
+    year: p.year, yearMode: p.yearMode, currentPeriod: cur, priorPeriod: prior,
+    rows: rows.map(r => ({
+      id: r.id, name: r.name, email: r.email, assignedTo: r.assigned_to_name,
+      lifetimeGiving: Number(r.total_giving), lastGiftDate: r.last_gift_date,
+      lastGiftAmount: Number(r.last_gift_amount || 0), priorYearTotal: Number(r.prior_year_total),
+    })),
+  };
+}
+
+async function reportRetention(orgId, p) {
+  // Last 3 COMPLETED years (per year mode). Retention for year Y = donors
+  // who gave in Y-1 and gave again in Y; dollar retention = Y dollars from
+  // those retained donors / total Y-1 dollars; first-year retention = the
+  // same, restricted to donors whose first-ever gift was in Y-1.
+  const lastCompleted = reportCurrentYear(p.yearMode) - 1;
+  const years = [lastCompleted - 2, lastCompleted - 1, lastCompleted];
+  const rows = [];
+  for (const y of years) {
+    const cur = reportYearBounds(y, p.yearMode);
+    const prior = reportYearBounds(y - 1, p.yearMode);
+    const [r] = await query(
+      `WITH prior AS (SELECT g.donor_id, SUM(g.amount) AS amt FROM gifts g JOIN donors d ON d.id = g.donor_id
+                      WHERE g.org_id = ? AND d.deleted_at IS NULL AND g.date >= ? AND g.date <= ? GROUP BY g.donor_id),
+            cur AS (SELECT g.donor_id, SUM(g.amount) AS amt FROM gifts g JOIN donors d ON d.id = g.donor_id
+                    WHERE g.org_id = ? AND d.deleted_at IS NULL AND g.date >= ? AND g.date <= ? GROUP BY g.donor_id),
+            firsts AS (SELECT donor_id, MIN(date) AS fg FROM gifts WHERE org_id = ? GROUP BY donor_id)
+       SELECT (SELECT COUNT(*) FROM prior)::int AS prior_donors,
+              (SELECT COUNT(*) FROM prior pr WHERE EXISTS (SELECT 1 FROM cur c WHERE c.donor_id = pr.donor_id))::int AS retained_donors,
+              (SELECT COALESCE(SUM(amt),0) FROM prior) AS prior_dollars,
+              (SELECT COALESCE(SUM(c.amt),0) FROM cur c WHERE EXISTS (SELECT 1 FROM prior pr WHERE pr.donor_id = c.donor_id)) AS retained_dollars,
+              (SELECT COUNT(*) FROM prior pr JOIN firsts f ON f.donor_id = pr.donor_id WHERE f.fg >= ? AND f.fg <= ?)::int AS first_year_donors,
+              (SELECT COUNT(*) FROM prior pr JOIN firsts f ON f.donor_id = pr.donor_id
+                WHERE f.fg >= ? AND f.fg <= ? AND EXISTS (SELECT 1 FROM cur c WHERE c.donor_id = pr.donor_id))::int AS first_year_retained`,
+      [orgId, prior.from, prior.to, orgId, cur.from, cur.to, orgId, prior.from, prior.to, prior.from, prior.to]);
+    const pct = (a, b) => b > 0 ? Math.round(a / b * 1000) / 10 : null;
+    rows.push({
+      year: y, label: p.yearMode === "fiscal" ? `FY${y}` : String(y),
+      priorDonors: r.prior_donors, retainedDonors: r.retained_donors,
+      retentionRate: pct(r.retained_donors, r.prior_donors),
+      priorDollars: Number(r.prior_dollars), retainedDollars: Number(r.retained_dollars),
+      dollarRetentionRate: r.prior_dollars > 0 ? Math.round(Number(r.retained_dollars) / Number(r.prior_dollars) * 1000) / 10 : null,
+      firstYearDonors: r.first_year_donors, firstYearRetained: r.first_year_retained,
+      firstYearRetentionRate: pct(r.first_year_retained, r.first_year_donors),
+    });
+  }
+  return { yearMode: p.yearMode, rows };
+}
+
+async function reportTopDonors(orgId, p) {
+  if (p.scope === "lifetime") {
+    // Donor columns, not SUM(gifts) — imported giving history often has
+    // total_giving set with no individual gifts rows behind it.
+    const rows = await query(
+      `SELECT id, name, COALESCE(total_giving,0) AS total, COALESCE(gift_count,0) AS gift_count, last_gift_date
+       FROM donors WHERE org_id = ? AND deleted_at IS NULL AND COALESCE(total_giving,0) > 0
+       ORDER BY COALESCE(total_giving,0) DESC LIMIT ?`, [orgId, p.limit]);
+    return { scope: "lifetime", rows: rows.map((r, i) => ({ rank: i + 1, id: r.id, name: r.name, total: Number(r.total), giftCount: Number(r.gift_count), lastGiftDate: r.last_gift_date })) };
+  }
+  const params = [];
+  const where = reportGiftWhere(p, orgId, params);
+  const rows = await query(
+    `SELECT d.id, d.name, COALESCE(SUM(g.amount),0) AS total, COUNT(*)::int AS gift_count, MAX(g.date) AS last_gift_date
+     ${REPORT_GIFT_FROM} ${where} GROUP BY d.id, d.name
+     ORDER BY total DESC LIMIT ?`, [...params, p.limit]);
+  return { scope: "period", from: p.from, to: p.to, rows: rows.map((r, i) => ({ rank: i + 1, id: r.id, name: r.name, total: Number(r.total), giftCount: r.gift_count, lastGiftDate: r.last_gift_date })) };
+}
+
+// CSV with proper quoting + formula-injection guard: a leading = + - or @ in
+// a TEXT cell gets a ' prefix so Excel/Sheets treat it as literal text, not
+// a formula (numbers pass through untouched — a negative total isn't an
+// injection). These exports land in real spreadsheets at real orgs.
+function reportCsvCell(v) {
+  if (v === null || v === undefined) return "";
+  let s = String(v);
+  if (typeof v === "string" && /^[=+\-@]/.test(s)) s = "'" + s;
+  if (/[",\n\r]/.test(s)) s = '"' + s.replace(/"/g, '""') + '"';
+  return s;
+}
+function sendReportCsv(res, filename, headers, rows) {
+  const body = [headers, ...rows].map(r => r.map(reportCsvCell).join(",")).join("\r\n") + "\r\n";
+  res.setHeader("Content-Type", "text/csv; charset=utf-8");
+  res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+  res.send(body);
+}
+
+function reportToCsv(key, data) {
+  switch (key) {
+    case "giving-summary": {
+      const headers = ["Month", "Gifts", "Total", "Unique donors"];
+      const rows = data.monthly.map(m => [m.month, m.gifts, m.total, m.donors]);
+      rows.push(["TOTAL", data.giftCount, data.total, data.uniqueDonors]);
+      return { headers, rows };
+    }
+    case "by-group":
+      return {
+        headers: ["Name", "Total", "Gifts", "Unique donors", "% of total"],
+        rows: data.rows.map(r => [r.name, r.total, r.giftCount, r.uniqueDonors, r.pct]),
+      };
+    case "lybunt": case "sybunt":
+      return {
+        headers: ["Name", "Email", "Assigned to", "Last gift date", "Last gift amount", `Gave ${data.yearMode === "fiscal" ? "FY" + (data.year - 1) : data.year - 1}`, "Lifetime giving"],
+        rows: data.rows.map(r => [r.name, r.email, r.assignedTo, r.lastGiftDate, r.lastGiftAmount, r.priorYearTotal, r.lifetimeGiving]),
+      };
+    case "retention":
+      return {
+        headers: ["Year", "Prior-year donors", "Retained", "Retention %", "Prior-year dollars", "Retained dollars", "Dollar retention %", "First-year donors", "First-year retained", "First-year retention %"],
+        rows: data.rows.map(r => [r.label, r.priorDonors, r.retainedDonors, r.retentionRate, r.priorDollars, r.retainedDollars, r.dollarRetentionRate, r.firstYearDonors, r.firstYearRetained, r.firstYearRetentionRate]),
+      };
+    case "top-donors":
+      return {
+        headers: ["Rank", "Name", "Total", "Gifts", "Last gift date"],
+        rows: data.rows.map(r => [r.rank, r.name, r.total, r.giftCount, r.lastGiftDate]),
+      };
+  }
+}
+
+const REPORT_HANDLERS = {
+  "giving-summary": reportGivingSummary,
+  "by-group": reportByGroup,
+  "lybunt": (orgId, p) => reportBuntList(orgId, p, "lybunt"),
+  "sybunt": (orgId, p) => reportBuntList(orgId, p, "sybunt"),
+  "retention": reportRetention,
+  "top-donors": reportTopDonors,
+};
+
+// Reports are read paths — requireAuth only, never checkWriteAccess (a
+// read_only org keeps full report access, consistent with GETs/exports
+// everywhere else).
+app.get("/reports/:key", requireAuth, wrap(async (req, res) => {
+  const { key } = req.params;
+  if (!REPORT_HANDLERS[key]) return res.status(404).json({ error: "Unknown report" });
+  let p;
+  try { p = parseReportParams(req.query); }
+  catch (e) { return res.status(e.status === 400 ? 400 : 500).json({ error: e.message }); }
+  const data = await REPORT_HANDLERS[key](req.user.orgId, p);
+  if (p.format === "csv") {
+    const { headers, rows } = reportToCsv(key, data);
+    const suffix = key === "retention" ? p.yearMode
+      : key === "top-donors" && p.scope === "lifetime" ? "lifetime"
+      : key === "lybunt" || key === "sybunt" ? `${p.yearMode === "fiscal" ? "fy" : "cy"}${p.year}`
+      : `${p.from}_${p.to}`;
+    return sendReportCsv(res, `${key}-${suffix}.csv`, headers, rows);
+  }
+  res.json(data);
+}));
+
 // ── Sequence Engine ─────────────────────────────────────────────────────────
 async function sendOnboardingSequence(orgId, userId, userName, userEmail) {
   console.log("[onboarding] creating sequence for", orgId, userId, userEmail);

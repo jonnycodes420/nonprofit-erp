@@ -1066,6 +1066,15 @@ async function initSchema() {
   await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS receipts_active_statement_uk ON receipts (org_id, donor_id, tax_year) WHERE voided_at IS NULL AND type = 'year_end'`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_receipts_org_donor ON receipts (org_id, donor_id)`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_receipts_org_tax_year ON receipts (org_id, tax_year)`);
+
+  // ── Reports (2026-07-16) ─────────────────────────────────────────────────
+  // GET /reports/:key aggregates entirely in SQL — these cover the period
+  // scans (org+date), the by-group rollups (org+fund / org+campaign), and
+  // the LYBUNT/SYBUNT donor-side ordering (org+last_gift_date).
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_gifts_org_date ON gifts (org_id, date)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_gifts_org_fund ON gifts (org_id, fund_id)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_gifts_org_campaign ON gifts (org_id, campaign_id)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_donors_org_last_gift ON donors (org_id, last_gift_date)`);
 }
 
 async function seedData() {
