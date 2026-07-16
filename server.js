@@ -2173,6 +2173,47 @@ app.post("/donors/bulk-delete", requireAuth, requireAdmin, wrap(async (req, res)
   res.json({ deleted: result.changes });
 }));
 
+// The "permanent-purge" the comment above bulk-delete anticipated: hard-
+// deletes every trashed (deleted_at IS NOT NULL) donor in the org, plus all
+// rows that exist only because those donors did — child tables first, in
+// FK-safe order (same convention as DELETE /admin/orgs/:id). Volunteers are
+// deliberately NOT deleted: a volunteer who was linked to a purged donor
+// keeps their own row, just unlinked. event_attendees keep the attendance
+// record with the donor link nulled (ON DELETE SET NULL); donor_relationships
+// and campaign_recipients clean themselves up (ON DELETE CASCADE). One
+// transaction — a mid-purge failure leaves nothing half-deleted. Admin-only;
+// like all DELETE-shaped routes, never checkWriteAccess-gated (a lapsed org
+// can still empty its trash).
+app.post("/donors/purge-trash", requireAuth, requireAdmin, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  const trashed = await query("SELECT id FROM donors WHERE org_id=? AND deleted_at IS NOT NULL", [orgId]);
+  const ids = trashed.map(r => r.id);
+  if (!ids.length) return res.json({ purged: 0, children: {} });
+
+  // receipts/pledges first (they FK both donors AND gifts), then the rest of
+  // the donor-scoped children, then gifts, then the donors themselves.
+  // fin_transactions is deliberately absent: it has no donor_id column (only
+  // a vendor_donor text name — the CLAUDE.md claim of a donor_id there was
+  // stale), and it's org bookkeeping history either way.
+  const CHILD_TABLES = [
+    "receipts", "pledges", "milestone_drafts", "note_reminders", "donor_materials",
+    "planned_gifts", "custom_field_values", "sequence_enrollments",
+    "payment_recovery_events", "recurring_subscriptions",
+    "tasks", "interactions", "gifts",
+  ];
+  const { purged, children } = await withTransaction(async (client) => {
+    await runTx(client, "UPDATE volunteers SET donor_id=NULL WHERE org_id=? AND donor_id = ANY(?)", [orgId, ids]);
+    const children = {};
+    for (const t of CHILD_TABLES) {
+      const r = await runTx(client, `DELETE FROM ${t} WHERE org_id=? AND donor_id = ANY(?)`, [orgId, ids]);
+      if (r.changes) children[t] = r.changes;
+    }
+    const d = await runTx(client, "DELETE FROM donors WHERE org_id=? AND id = ANY(?)", [orgId, ids]);
+    return { purged: d.changes, children };
+  });
+  res.json({ purged, children });
+}));
+
 // ── Interactions ───────────────────────────────────────────────────────────
 app.post("/donors/:id/interactions", requireAuth, wrap(async (req, res) => {
   const { type, note, date, metadata } = req.body;

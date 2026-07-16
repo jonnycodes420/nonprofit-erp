@@ -213,6 +213,10 @@ Diagnostic tooling added after manually deleting test-user rows in Supabase's Ta
 - payment_method TEXT — how gift was received
 - acknowledgement_sent BOOLEAN DEFAULT false
 
+### Donor deletion (soft delete + purge)
+- `POST /donors/bulk-delete` (requireAuth + requireAdmin) — soft delete: sets `deleted_at=NOW()`. "Trash." Directory/reports/donors.csv exclude trashed donors, but their gifts/interactions stay in the DB (and appear in exports via LEFT JOINs).
+- `POST /donors/purge-trash` (requireAuth + requireAdmin, no body, API-only — no UI yet) — **permanent** hard delete of every trashed donor in the org plus all donor-scoped children, in FK-safe order inside one transaction: receipts + pledges first (they FK both donors AND gifts), then milestone_drafts/note_reminders/donor_materials/planned_gifts/custom_field_values/sequence_enrollments/payment_recovery_events/recurring_subscriptions/tasks/interactions, then gifts, then donors. Volunteers are unlinked (donor_id→NULL), not deleted; event_attendees keep the attendance record (FK is ON DELETE SET NULL); donor_relationships/campaign_recipients cascade themselves. `fin_transactions` deliberately untouched (org bookkeeping; has no donor_id column — see Finance tables note). Returns `{purged, children:{table:count}}`. Idempotent. Like all DELETE-shaped routes, never `checkWriteAccess`-gated. Built 2026-07-16 for the CREO test-donor cleanup (the "future permanent-purge" the bulk-delete comment anticipated).
+
 ### interactions
 - type: call | meeting | email | gift | event | note | stewardship | stage_change | planned_gift | material | email_open
 - created_by (user_id), logged_by_name (user name display string)
@@ -268,7 +272,7 @@ Backend, Whisper transcription, and extraction logic are fully built and functio
 - Routes: GET/POST /events, PUT/DELETE/GET /events/:id, POST /events/:id/attendees, PATCH/DELETE /events/:id/attendees/:attendeeId, POST /events/:id/follow-up, GET /donors/:id/events
 
 ### Finance tables
-- fin_transactions — id, org_id, date, description, amount, type (income/expense), category, fund_id, account_id, donor_id (nullable, set when synced from gift)
+- fin_transactions — id, org_id, date, description, vendor_donor (TEXT name, NOT a donor_id — this file previously claimed a `donor_id` column existed; it never did, verified against db.js 2026-07-16), amount, type (income/expense), account_id, fund_id, notes, receipt_url, is_sample
 - fin_accounts — id, org_id, name, type (checking/savings/credit), balance, institution
 - fin_funds — id, org_id, name, balance, target, restricted (boolean), description
 - fin_budgets — id, org_id, category, amount, period (monthly/annual), fund_id
