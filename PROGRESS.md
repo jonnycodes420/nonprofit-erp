@@ -49,6 +49,13 @@ DONE (was item 6): Expired-token UX — see "Auth, Gmail, billing/Reactivate, an
 
 ## Earlier sessions (for reference)
 
+### BUILD-04 wrap-up (2026-07-16)
+
+- **OPS_REPORT.md** (the GTM ops gap list, previously untracked) updated with a dated verification-pass table and committed: rate limiting, unsubscribe/suppression, and backend crash capture were already FIXED in the 2026-07-10–07-13 sessions (report was stale); the net remaining ops items are all dashboard-side, no code (Vercel Sentry env vars, Sentry alert-rule check, Supabase backup-tier check, uptime-monitor signup). **QA_REPORT.md** also committed for the same reason (referenced by CLAUDE.md but never tracked).
+- **Interaction-delete debt: CLOSED** (Strike 1 — route + UI + Elizabeth Butler cleanup done in production).
+- **Ops/monitoring gap item: CLOSED as far as verifiable from code/HTTP** (Strike 4) — remaining steps are named human clicks, listed in OPS_REPORT.md's update block.
+- **SECURITY_REPORT.md §1 cross-check: BLOCKED** — the parallel session handling the §1 org-scoping edge cases had not pushed to main by the end of this session (checked twice), so the report still shows §1 as the open punch list. Deliberately did not touch §1 code or the report's §1 wording here, to avoid colliding with that session. Re-check after it lands.
+
 ### BUILD-04 Strike 4 — error monitoring verified (backend live, client NOT live) + uptime decision (2026-07-16)
 
 The GTM gap list said "no confirmed error monitoring" while CLAUDE.md documented a full Sentry setup — resolved by verification, not rebuilding. **Outcome: backend monitoring is live and exercised; client monitoring is NOT live — two named env vars missing from Vercel.**
