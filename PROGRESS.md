@@ -25,31 +25,61 @@
 
 ---
 
-## KNOWN BUG — STAGE INFERENCE NOT WORKING (TOP PRIORITY NEXT SESSION)
+## RESOLVED — stage inference bug (was "TOP PRIORITY NEXT SESSION")
 
-After import, all donors still show stage 'prospect' in My Pipeline + Analytics Pipeline Velocity, even $60k donors that should be 'cultivate'. The status (tier) update may have worked but the STAGE (pipeline) update did not take.
+**Confirmed fixed** (verified by reading the current code, 2026-07-16) — this entry sat unresolved in this file for several sessions after the actual fix landed; leaving it as a record of what was wrong and where the fix lives, since the same staleness pattern (fixed in code, never marked resolved in the docs) turned out to affect `SECURITY_REPORT.md` too around the same time.
 
-**Leading hypothesis:** the combined-import INSERT writes new donors with a stage value that is NOT the literal string 'prospect' (possibly NULL or 'cultivate' from an insert-time inferStage call with no gift data). The post-recalc stage UPDATE has guardrail `WHERE stage='prospect'`, so it matches ZERO rows. The UI displays "Prospect" only because the Kanban falls back to prospect when stage is NULL/unset — the stored value differs from the displayed value, so the guardrail misses.
-
-**Next step:** cat the stage-inference block in POST /donors/import-combined. Report (a) does it exist in committed code, (b) what stage value the new-donor INSERT actually writes, (c) the UPDATE's WHERE clause, (d) whether it reads recalculated total_giving/last_gift_date. Fix direction: for NEWLY-CREATED donors, run stage inference regardless of the prospect-only guardrail (no human placement to protect on brand-new records). The guardrail (only touch stage='prospect') should apply ONLY to the history-only importer that touches EXISTING donors. We conflated new-donor vs existing-donor guardrail rules.
+`POST /donors/import-combined`'s stage-inference block (`server.js` ~1925-1958) now runs with **no `WHERE stage='prospect'` guardrail** — the fix direction this entry originally called for. Comment in the code states the reasoning directly: "No prospect-only guardrail here: new donors land as 'cultivate' (DB default), so the guardrail would match zero rows. Combined-import only creates NEW donors — no human-set stages to protect." The `CASE` expression mirrors the client-side `inferStage()` exactly (qualify/solicit bands included) and runs `WHERE org_id=? AND id = ANY(?) AND deleted_at IS NULL` — scoped to just the newly-affected donor IDs from that import batch, not a blanket update.
 
 ---
 
 ## OTHER PENDING (none blocking, none urgent)
 
-1. UI: consolidate three import buttons (Import / Giving History / Import + History) into ONE "Import" dropdown with three options. Pure polish, no logic change.
-2. Favicon revert to old dark-green-square no-gold-bar version (prompt was written earlier, deferred).
-3. CREO test-data cleanup: run `DELETE FROM donors WHERE org_id='org_creo' AND email LIKE '%@example.com';` to clear ~800+ .combo/.final test donors and restore the ~7 real demo records.
-4. /gifts/import-history still has per-row insert N+1 (minor speed; combined route is already bulk).
-5. Combined import Shape B (separate donor file + gift file chained) — deferred.
+1. UI: consolidate three import buttons (Import / Giving History / Import + History) into ONE "Import" dropdown with three options. Pure polish, no logic change. **Still open** — confirmed 2026-07-16, `Donors.jsx` still renders all 3 as separate buttons.
+2. ~~Favicon revert to old dark-green-square no-gold-bar version~~ — **DONE**, same as the "Favicon fix (2026-07-10)" entry below (dropped the gold underline bar, kept badge + "S"). This was the same ask under a different description; resolved without ever being checked off here.
+3. CREO test-data cleanup: run `DELETE FROM donors WHERE org_id='org_creo' AND email LIKE '%@example.com';` to clear ~800+ .combo/.final test donors and restore the ~7 real demo records. Not re-checked this pass.
+4. /gifts/import-history still has per-row insert N+1 (minor speed; combined route is already bulk). Not re-checked this pass.
+5. Combined import Shape B (separate donor file + gift file chained) — deferred. Not re-checked this pass.
 
 DONE (was item 6): Expired-token UX — see "Auth, Gmail, billing/Reactivate, and QA-sweep fixes" below.
-6. QA sweep (2026-07-10, `QA_REPORT.md`) was discovery-only — nothing was fixed as part of it. Two Blocking findings not confirmed resolved: #1 signup mobile overflow, #2 `checkWriteAccess`/read-only gaps across Volunteers/Tasks/Events/Campaigns/Custom Fields/Board Members. Spot-check during the 2026-07-12 docs pass confirmed `checkWriteAccess` IS present server-side on volunteers/tasks/events POST routes, but the client-side button-disabling and the signup mobile CSS were not re-verified — treat both as possibly still open.
-7. Data integrity check requested (orphaned orgs after manual Supabase row deletion, specifically `org_ec6340db`, plus dangling FK refs to deleted user IDs) — diagnostic tooling built (`GET/POST /admin/data-integrity`, see below) but never actually run against production; blocked on missing super-admin credentials in that session.
+6. QA sweep (2026-07-10, `QA_REPORT.md`) — **both Blocking findings now confirmed resolved** (2026-07-16 code-inspection pass): #1 signup mobile overflow — `GlobalStyles()`'s `@media(max-width:768px)` block has working `.signup-shell`/`.signup-left`/`.signup-right`/`.signup-card` rules matching `SignupPage.jsx`. #2 `checkWriteAccess`/read-only gaps — confirmed both server-side (already known) and client-side now too (`isReadOnly`-gated buttons present in Volunteers/Tasks/Events/Communications/Board/Settings, matching CLAUDE.md's "SaaS billing" button list). Both findings sat marked "possibly still open" in this file for several sessions after actually being fixed.
+7. Data integrity check requested (orphaned orgs after manual Supabase row deletion, specifically `org_ec6340db`, plus dangling FK refs to deleted user IDs) — diagnostic tooling built (`GET/POST /admin/data-integrity`, see below) but never actually run against production; blocked on missing super-admin credentials in that session. **Still open** as of 2026-07-16.
 
 ---
 
 ## Earlier sessions (for reference)
+
+### Security review verification pass — CRITICALs, RBAC, file upload confirmed fixed (2026-07-16)
+
+Not a fix session — the existing `SECURITY_REPORT.md` (2026-07-10, discovery-only) had 4 CRITICALs and several GAP items still marked open. Re-checked every one directly against current code rather than trusting the doc: **all 4 CRITICALs (C1 custom-fields cross-tenant write+read, C2 `PUT /events/:id` cross-tenant read, C3 `/billing/webhook` signature verification, C4 sequences enroll/enrollments donor PII leak), the RBAC gap (`billing/create-portal`, `billing/create-checkout`, `orgs/:id` PATCH), and the file-upload gap (`donor_materials` size/MIME validation) were already fixed** — someone had done the work in an earlier, undocumented pass, and the report was just never updated to say so. Updated `SECURITY_REPORT.md` in place with file:line evidence for each (rather than rewriting it), so it stops reading as an open punch list. Only remaining open item from that report: §1's org-scoping edge cases (`programs/:id/grants` link+delete, `gmail/send`→`interactions`, `finance/transactions`) and the JWT-algorithm-pinning hardening recommendation.
+
+Also ran a fresh, dedicated audit of the Giving Pages / peer-to-peer fundraising surface (built this session, not covered by the 2026-07-10 report) against the same categories — no CRITICALs. Fixed two small things found there: a stale code comment claiming `GET /giving-pages/:id/fundraisers` was admin-only when it correctly wasn't (donor/fundraiser PII is staff-visible app-wide, same as `GET /donors` — reworded the comment, no behavior change), and missing input validation (length caps, goal-amount sanity) on the admin `POST`/`PUT /giving-pages` routes and the token-authenticated `PUT /peer-fundraisers/manage/:token` route — their public-facing sibling route already had these checks, added a shared `validateGivingPageFields()` helper and matching checks to the other three.
+
+This is the second time in one week a discovery report sat stale after its findings were actually fixed (see the resolved "KNOWN BUG — stage inference" entry above, and PROGRESS.md's own outdated GuidedTour entry from 2026-06-07) — worth treating any "known issue" doc as a claim to verify against current code before acting on it, not a source of truth on its own.
+
+### Stripe test-mode payment verification + silent task-creation bug (2026-07-15/16)
+
+Ran a full real Stripe test-mode payment through the peer-to-peer donation flow end-to-end (isolated local Postgres + local backend/frontend, a genuinely onboarded test-mode Connect account, `stripe listen` forwarding real webhook events) — not a mocked/stubbed test. Confirmed: Checkout Session creation with correct product name/amount/metadata (`giving_page_id` + `peer_fundraiser_id` both present), a real 4242-card payment completing through Stripe's hosted Checkout, webhook signature verification succeeding, and the resulting gift landing with correct `org_id`/`giving_page_id`/`peer_fundraiser_id`/`stripe_payment_id`.
+
+That test surfaced a real, previously-silent bug: **`tasks.done` is `INTEGER`, not boolean**, but 5 separate auto-generated task INSERTs across the codebase were passing JS/SQL `false` — Postgres rejected every one, and since each site was wrapped in `.catch(()=>{})` or the webhook's own outer try/catch, the failures never surfaced anywhere. Fixed all 5 (changed to `0`, matching the 3 other task-creation sites that were already doing it correctly): the online-gift "send thank-you" task, the lapsed-donor re-engagement task, the recurring-donor welcome task (all three in the `/stripe/webhook` handler), the grant-closed 6-month follow-up task (`PUT /grants/:id`), and the volunteer-cultivation task (`PUT /volunteers/:id`). Verified by re-running the same payment before/after the fix — task creation went from silently throwing to succeeding with `done=0`.
+
+### Peer-to-peer fundraising (2026-07-15)
+
+Built on top of Giving Pages: a supporter can start their own personal fundraiser under any active Giving Page (name, email, goal, story, photo — zero account setup), share their own link/QR code, and every gift through it rolls up live into both their personal total and the parent campaign's total (`gifts.peer_fundraiser_id` always accompanies `gifts.giving_page_id`, never one without the other). New `peer_fundraisers` table, extended `POST /donate/:orgSlug` to accept an optional `peerFundraiserId` (re-derives `givingPageId` from the fundraiser row server-side rather than trusting the client), new public routes for creating/viewing a fundraiser page, and an admin takedown panel in Settings.
+
+No login for fundraisers — a long random `edit_token` (same shape as `invites.token`) is the entire v1 auth model, emailed as a "manage your fundraiser" link. A code-review pass before shipping caught and fixed several real issues before they went live: the token was initially being returned directly in the public creation API response (would have let anyone submit a stranger's name+email and hijack a fundraiser instantly — fixed to only ever leave the server via email), `edit_token` was leaking through the admin fundraiser-list endpoint's `SELECT *` (fixed to an explicit column list), unescaped user input was going into the confirmation email's HTML (added `escapeHtml()`), and `peer_fundraisers` was missing an `org_id` column despite the app's documented org-scoping convention (added it, denormalized from `giving_page_id`).
+
+Full design documented in CLAUDE.md's "Peer-to-peer fundraising" section under Database.
+
+### Home dashboard rework + STAGES recolor to brand palette (2026-07-15)
+
+Direct feedback after the goal-banner layout fix: the greeting was in the wrong place (inside the dark goal card), the page's colors read as "AI slop" (never actually constrained to the app's defined palette), there was no way to edit an already-set fundraising goal, and the page felt like a wall of cold statistics. Fixed all four:
+- Greeting moved out of the dark card onto the page's own cream background, between the nav and the goal card.
+- Every color on Home locked to the five-color brand palette (dark green shades, cream, gold, white, terracotta) — no red/orange/teal/blue/purple anywhere, including status coloring on hero metrics. New rule documented in CLAUDE.md's "Design system" section.
+- Admin-gated pencil/edit control added to the goal card — reuses the existing `POST /goals` create flow rather than adding a `PUT /goals/:id` (a new overlapping goal row already supersedes the old one, since `GET /goals/active` picks the most-recently-created row whose period contains today — the real source of truth was already "create wins," so editing just needed a UI entry point, not new backend logic).
+- Hero-card copy rebalanced to read as narrative sentences (a sentence of context with the number as supporting evidence) instead of a bare numeral with a small caption underneath.
+
+Follow-up, same day: recolored the shared `STAGES` array (donor pipeline stage colors) to the same five-color palette, since it was the last blue/purple/amber/red on Home's Pipeline Funnel — this cascaded automatically to the Donor Kanban and Analytics' Pipeline Velocity chart too, since all three read from the one array. Caught and fixed a real bug during this pass: Prospect's new color initially matched the exact hex the Kanban's own column-header background already renders on, making its left-border accent invisible against its own column — reassigned to a different dark-green shade. Also deduped a hand-maintained second copy of the same color palette (`Donors.jsx`'s `STAGE_COLORS`, used by the CSV-import preview) to derive from `STAGES` instead of drifting independently.
 
 ### Forgot Password fix — case-insensitive email lookups (2026-07-13)
 
