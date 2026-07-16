@@ -3,7 +3,8 @@
 ## Strategic pivot (2026-07-12) — READ THIS FIRST
 Steward pivoted from a full 11-tab nonprofit ERP to a focused **retention/stewardship product** built around Donors + Grants + Communications.
 
-- **What's hidden, not deleted**: Events, Volunteers, Board, Analytics, Tasks, and Finance are commented out of the nav (`TABS`/`BOTTOM_TABS`/`MORE_TABS` in App.jsx — see "Active tabs" below for the exact current arrays). Their component files, backend routes, and database tables are all still fully intact and functional — this is a UI-visibility change only, deliberately reversible by uncommenting.
+- **What's hidden, not deleted**: Events, Volunteers, Board, Tasks, and Finance are commented out of the nav (`TABS`/`BOTTOM_TABS`/`MORE_TABS` in App.jsx — see "Active tabs" below for the exact current arrays). Their component files, backend routes, and database tables are all still fully intact and functional — this is a UI-visibility change only, deliberately reversible by uncommenting.
+- **Analytics is dead, not paused (deleted 2026-07-16, BUILD-04 Strike 2)**: `Analytics.jsx` and the zero-caller `GET /analytics` route were deleted outright (along with the long-unrouted `TodayPage.jsx`). Analytics computed its 7 charts client-side from the shared `data` prop plus `/campaigns` + `/events` — both of those routes have other callers and remain. If analytics is ever wanted again it gets rebuilt against the retention product, not restored.
 - **A donor-facing portal was explored and rejected.** A partner brief proposed a donor-facing "Lifetime Impact Dashboard" — donor login, giving tiers, badges, milestone displays. Rejected specifically because nonprofit-experienced feedback identified gamified donor-facing portals (tiers/badges/leaderboards visible to the donor) as damaging to donor trust, not building it. This is why donor login, tiers, and badges were deliberately avoided in what got built instead — see below.
 - **What got built in its place**: a staff-facing retention/stewardship engine. The system notices patterns in donor data (giving milestones, anniversaries, contact gaps) and drafts or suggests — a human always reviews and sends. Nothing donor-facing was built; there is no donor login.
 - **AI works invisibly, not as a branded feature.** The general-purpose "Ask AI" chatbot (a floating assistant you could ask anything) was **removed entirely** — not hidden, actually deleted (`AIChat`, formerly exported from Dashboard.jsx — see "Component files" below) — because a visible, brandable "AI feature" cuts against the product's actual value: staff shouldn't need to think about *which* moments are AI-touched, they should just see a good suggestion at the right time. Every specific AI-powered action (milestone drafting, LOI drafting, forecast, wealth scoring, etc.) still works exactly as before — only the standalone chat surface is gone. See "Key patterns" for the current de-branded label conventions (`AIBtn`'s default label is "Suggest", not "AI Assist"; `AIPanel`'s badge reads "Suggested", not "AI Intelligence").
@@ -57,7 +58,7 @@ Steward pivoted from a full 11-tab nonprofit ERP to a focused **retention/stewar
 
 ## Project structure
 - /client/src/App.jsx — AppShell + TABS + App, imports from components/. Header is wordmark-only (no icon-in-square logo — icon lives on the favicon only) and has no "Ask AI" button (removed, see Strategic pivot).
-- /client/src/main.jsx — router, auth context, route guards — ALL ROUTING LIVES HERE ONLY. `/today` now redirects to `/dashboard` (see Onboarding flow / Routing below) — TodayPage.jsx still exists on disk but is unrouted.
+- /client/src/main.jsx — router, auth context, route guards — ALL ROUTING LIVES HERE ONLY. `/today` still redirects to `/dashboard` (kept for bookmarks) — `TodayPage.jsx` itself was deleted 2026-07-16 (BUILD-04 Strike 2).
 - /client/src/pages/Landing.jsx — public landing page, rewritten for the pivot: fake testimonials removed, honest "Where Steward Is Today" section added, real product screenshot (not a mockup), Features section updated to match what's actually live (Finance & Reporting card replaced with Gmail sync)
 - /client/src/pages/LoginPage.jsx — login, writes localStorage directly; post-login redirect is `/dashboard` (was `/today`)
 - /client/src/pages/SignupPage.jsx — signup
@@ -71,7 +72,6 @@ Steward pivoted from a full 11-tab nonprofit ERP to a focused **retention/stewar
 ## Key files
 - client/src/components/Donors.jsx — donor list + ALL importers; `DonorImport` is now exported (was module-private) so WelcomePage's onboarding flow can reuse it directly as the import step's centerpiece
 - client/src/components/Finance.jsx — hidden from nav, code/routes/tables intact (see Strategic pivot)
-- client/src/components/Analytics.jsx — hidden from nav, code/routes/tables intact (see Strategic pivot)
 - client/src/components/Settings.jsx — includes an Impact Metrics admin panel (create/edit/delete), mirroring the existing Custom Fields UI pattern
 - client/src/components/UpgradeModal.jsx
 - server.js
@@ -80,10 +80,10 @@ Steward pivoted from a full 11-tab nonprofit ERP to a focused **retention/stewar
 ## Active tabs (App.jsx TABS array — current, post-pivot)
 dashboard ("Home") → donors → grants → communications → settings
 
-Events/Volunteers/Board/Analytics/Tasks/Finance are commented out of `TABS` with a `// DEPRIORITIZED` marker — re-enable by uncommenting, nothing else to restore.
+Events/Volunteers/Board/Tasks/Finance are commented out of `TABS` with a `// DEPRIORITIZED` marker — re-enable by uncommenting, nothing else to restore. (Analytics was deleted outright — see Strategic pivot.)
 
 Mobile bottom bar (`BOTTOM_TABS`): dashboard ("Home"), donors, grants, settings
-Mobile "More" drawer (`MORE_TABS`): communications only (Events/Volunteers/Board/Analytics/Tasks are commented out here too)
+Mobile "More" drawer (`MORE_TABS`): communications only (Events/Volunteers/Board/Tasks are commented out here too)
 
 ## Component files (client/src/components/)
 - shared.jsx — T (design tokens, now includes `bgDeep` and `terracotta`), fmt, fmtFull, daysDiff, daysUntil, SC, askClaude, buildContext, STAGES, STAGE_THRESH, STAGE_ACTION, TIER_COLOR, donorScore, retentionRisk, moveUrgency, GlobalStyles, Spin, Pill, Card, SectionLabel, AIBtn (default label "Suggest", not "AI Assist"), AIPanel (badge reads "Suggested", not "AI Intelligence"), MetricCard, EmptyState, PageTitle, GivingHistoryChart, TpField, TpYesNo, TouchpointTimeline, VoiceMemoModal (built but currently unused — see "Voice memo capture (shelved)" below)
@@ -95,7 +95,6 @@ Mobile "More" drawer (`MORE_TABS`): communications only (Events/Volunteers/Board
 - Volunteers.jsx — exports Volunteers — **hidden from nav**, code/routes/tables intact
 - Board.jsx — exports Board — **hidden from nav**, code/routes/tables intact
 - Finance.jsx — exports Finance (6 tabs: Overview, Transactions, Accounts, Funds, Budgets, Reports; includes fund sparklines) — **hidden from nav**, code/routes/tables intact
-- Analytics.jsx — exports Analytics (7 charts: giving trend, donor retention, pipeline velocity, grant pipeline, email performance, event performance, top donors) — **hidden from nav**, code/routes/tables intact
 - Tasks.jsx — exports Tasks — **hidden from nav**, code/routes/tables intact
 - Settings.jsx — exports Settings (Stripe connect, QR code, donation widget embed, team management, invite modal, Custom Fields manager, Impact Metrics manager — same UI pattern as Custom Fields)
 - PlanPicker.jsx — exports default PlanPicker(open, onClose) modal; Seed/Growth/Impact plan cards pulling plan data from pages/Pricing.jsx (single source of truth); selecting a plan calls POST /billing/create-checkout. Used by App.jsx banner "Reactivate"/"Choose a plan" buttons — NOT the Stripe Customer Portal (see SaaS billing section)
@@ -113,7 +112,7 @@ Mobile "More" drawer (`MORE_TABS`): communications only (Events/Volunteers/Board
 
 ## CRITICAL WORKING RULES
 - After every change, run: git add -A && git commit -m "..." && git push origin main. Always run `git status` and `git log --oneline -3` to CONFIRM the commit landed — do not report work as "done" until git confirms it's committed and pushed.
-- IMPORTANT donor table distinction: there are TWO separate columns: `status` (giving-tier: new/mid/major/lapsed) and `stage` (pipeline: prospect/qualify/cultivate/solicit/steward/lapsed). The UI Kanban/Directory/Analytics Pipeline Velocity read `stage`. Analytics major-donor/retention reads `status`. They are NOT the same and must not be conflated.
+- IMPORTANT donor table distinction: there are TWO separate columns: `status` (giving-tier: new/mid/major/lapsed) and `stage` (pipeline: prospect/qualify/cultivate/solicit/steward/lapsed). The UI Kanban/Directory pipeline views read `stage`; giving-tier/retention logic reads `status`. They are NOT the same and must not be conflated.
 - inferStage outputs only: 'prospect' (no data), 'cultivate' (gift exists, not recent), 'steward' (gift <90 days), 'lapsed' (last gift >365 days). It never produces 'qualify' or 'solicit' (those are human-only).
 - Fiscal year = July 1 boundary (reuse fyStart logic from /dashboard/my-stats). Finance has a fiscal/calendar toggle (localStorage key "steward_fin_yearmode", default fiscal).
 
@@ -173,7 +172,7 @@ Diagnostic tooling added after manually deleting test-user rows in Supabase's Ta
 - Login writes npe_token, npe_user, npe_org to localStorage directly
 - LoginPage uses hardcoded fetch() to Railway URL, not apiFetch
 - onboarding_complete comes back as 1 (number) not true (boolean)
-- After login: `window.location.href = data.user.isSuperAdmin ? "/admin" : "/dashboard"`. `/today` still exists as a route in main.jsx but is now just `<Navigate to="/dashboard" replace />` — `TodayPage.jsx` is unrouted dead code on disk.
+- After login: `window.location.href = data.user.isSuperAdmin ? "/admin" : "/dashboard"`. `/today` still exists as a route in main.jsx but is now just `<Navigate to="/dashboard" replace />` (kept for bookmarks) — `TodayPage.jsx` was deleted 2026-07-16.
 - RequireOnboarded guard in main.jsx checks both auth AND onboarding_complete; redirects to /welcome if onboarding_complete is 0
 - `requireAuth` (auth.js) distinguishes `jwt.verify` failure modes and returns a distinct error code + message rather than one generic message: `{error:"token_expired"}` (TokenExpiredError), `{error:"invalid_token"}` (bad signature/malformed — e.g. what a server-side `JWT_SECRET` rotation looks like to every previously-issued token), `{error:"no_token"}` (missing/malformed Authorization header)
 - Client (`api.js` `apiFetch`/`streamAI`) detects any of these three codes (plus the legacy `"Invalid token"`/`"No token provided"` message strings, for compatibility during a deploy) on a 401, clears `npe_token`/`npe_user`/`npe_org`, and redirects to `/login` with a "Your session expired — please log in again" message via `sessionStorage` — instead of leaving the app on a dead-end "Failed to connect" screen with a Retry button that could never succeed on a bad token
@@ -386,12 +385,11 @@ Compliant, branded tax receipts for gifts, plus consolidated calendar-year givin
 - Donors — Kanban pipeline, CSV import (now also the centerpiece of onboarding step 2 — `DonorImport` exported from Donors.jsx), AI features, editing, interaction timeline (dynamic templates by type: Call/Meeting/Email/Event/Gift/Other), auto follow-up task on touchpoint save, wealth score card (5-component scoring, DB columns, recalculate button), per-donor Impact Summary PDF download (`GET /donors/:id/impact-summary/pdf`)
 - Grants — CRUD, AI strategy, LOI drafting, grant discovery (FindGrants merged into Grants tab)
 - Communications — segmented email campaigns (Resend HTTP API), AI copy, open rate tracking via pixel, audience filters, Sequences, **Milestone Drafts review queue** (staff approves/edits/dismisses AI-drafted milestone emails before sending — see "Retention & stewardship")
-- Finance, Volunteers, Board, Analytics, Tasks — **hidden from nav** as of the 2026-07-12 pivot (see "Strategic pivot" at top); code/routes/tables fully intact, reversible by uncommenting. Descriptions below are the still-accurate feature list, kept for whenever these are re-enabled:
+- Finance, Volunteers, Board, Tasks — **hidden from nav** as of the 2026-07-12 pivot (see "Strategic pivot" at top); code/routes/tables fully intact, reversible by uncommenting. (Analytics was hidden by the same pivot but then deleted outright 2026-07-16 — see Strategic pivot.) Descriptions below are the still-accurate feature list, kept for whenever these are re-enabled:
   - Finance — 6-tab module: Overview (P&L, fund balances, AI forecast), Transactions (CRUD, filter), Accounts, Funds (sparklines), Budgets, Reports; donor gifts auto-sync to fin_transactions; full audit log
   - Volunteers — hours tracking, conversion to donor, board candidate AI
   - Board — giving levels, attendance, committees, AI board report
   - Tasks — priority queue, AI prioritization, add/complete, due dates
-  - Analytics — 7 charts: giving trend, donor retention, pipeline velocity, grant pipeline, email performance, event performance, top donors
 - Settings — Stripe Connect Express flow, QR code generator, embeddable iframe widget, team management, invite staff (email + link fallback), Custom Fields manager, **Impact Metrics manager** (same UI pattern as Custom Fields), NO billing/plan UI; Demo Data card (gold left border) at top
 - Sample data loader — `POST /org/load-sample-data` (refused if >5 real donors; seeds 25 donors across all stages, gifts, funds, transactions, grants, events, campaign, interactions, tasks, volunteers, board members; all tagged `is_sample=true`); `POST /org/clear-sample-data` (per-table `.catch(()=>{})` deletes); `GET /org/sample-data-status` → `{ hasSampleData, sampleDonorCount }`; DirectoryView shows inviting empty state with Load button when org has 0 donors; also offered inline on onboarding's "ready" screen when a new org skipped CSV import and still has 0 donors
 - RBAC — requireAdmin middleware, admin/staff roles
@@ -410,7 +408,7 @@ Compliant, branded tax receipts for gifts, plus consolidated calendar-year givin
 - Donor wealth score: POST /donors/:id/wealth-score → calcWealthScore() uses 5 components (giving history, recency, frequency, capacity signals, engagement). DB columns: wealth_score, capacity_tier, score_confidence, score_last_updated, score_rationale. TIER_COLOR maps tier → hex color.
 - Finance sync: every gift saved via POST /donors/:id/gifts also inserts a row in fin_transactions with donor_id set — one-way sync, no double-write on edit.
 - Sample data flag: `is_sample BOOLEAN DEFAULT false` column exists on donors, gifts, grants, events, event_attendees, campaigns, interactions, tasks, fin_transactions, fin_funds, volunteers, board_members. Clear route deletes in FK-safe order (children before parents). Sample funds use hardcoded IDs: `fund_smpl_general`, `fund_smpl_edu`, `fund_smpl_capital`.
-- STAGES in shared.jsx is an object array (with color/label). Communications.jsx uses a plain string array called STAGE_LIST — kept separate to avoid shadowing. **(2026-07-15)** Stage colors are locked to the five-color palette (see "Design system"): prospect=bgElevated, qualify=gold, cultivate=greenMid, solicit=green(accent), steward=greenDk, lapsed=terracotta — deliberately alternating green shades with gold/terracotta rather than four greens in a row, so adjacent pipeline stages stay visually distinct. prospect specifically avoids `T.ink` because that's the literal hex the Donor Kanban's column-header background already renders on (`Donors.jsx`'s `DonorKanban`), which would make prospect's left-border accent invisible against its own column. This cascades automatically to the Pipeline Funnel (Home), Donor Kanban, Analytics' Pipeline Velocity chart, and the CSV-import stage-assignment preview (`Donors.jsx`'s `STAGE_COLORS`, now derived from `STAGES` instead of a separate hand-maintained palette).
+- STAGES in shared.jsx is an object array (with color/label). Communications.jsx uses a plain string array called STAGE_LIST — kept separate to avoid shadowing. **(2026-07-15)** Stage colors are locked to the five-color palette (see "Design system"): prospect=bgElevated, qualify=gold, cultivate=greenMid, solicit=green(accent), steward=greenDk, lapsed=terracotta — deliberately alternating green shades with gold/terracotta rather than four greens in a row, so adjacent pipeline stages stay visually distinct. prospect specifically avoids `T.ink` because that's the literal hex the Donor Kanban's column-header background already renders on (`Donors.jsx`'s `DonorKanban`), which would make prospect's left-border accent invisible against its own column. This cascades automatically to the Pipeline Funnel (Home), Donor Kanban, and the CSV-import stage-assignment preview (`Donors.jsx`'s `STAGE_COLORS`, now derived from `STAGES` instead of a separate hand-maintained palette). (It previously also cascaded to Analytics' Pipeline Velocity chart — Analytics deleted 2026-07-16.)
 - All AI features stream through /ai/stream on backend via askClaude (= streamAI from api.js).
 - Stripe Connect: POST /stripe/connect returns a Stripe account link URL; /stripe/webhook handles payment_intent.succeeded and checkout.session.completed.
 - Activity log templates: LogTouchpointModal in Donors.jsx has per-type prompt templates. On save, if type is Call/Meeting, a follow-up task is silently created and a toast shown.

@@ -302,9 +302,6 @@ export function GlobalStyles() {
       .event-detail-body{grid-template-columns:1fr!important;overflow-y:auto!important;overflow-x:hidden!important;}
       .event-detail-body>div{overflow-y:visible!important;border-right:none!important;padding:14px 16px!important;}
 
-      /* Analytics grid */
-      .analytics-grid{grid-template-columns:1fr!important;}
-
       /* Signup: two-column hero → stacked single column */
       .signup-shell{flex-direction:column!important;min-height:auto!important;}
       .signup-left{width:100%!important;min-width:unset!important;padding:28px 20px 20px!important;flex-shrink:unset!important;}

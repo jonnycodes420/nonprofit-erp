@@ -49,6 +49,14 @@ DONE (was item 6): Expired-token UX — see "Auth, Gmail, billing/Reactivate, an
 
 ## Earlier sessions (for reference)
 
+### BUILD-04 Strike 2 — dead code stripped: Analytics.jsx + TodayPage.jsx deleted (2026-07-16)
+
+Analytics is dead-not-paused per the documented pivot; TodayPage had been unrouted dead code since the 2026-07-12 home-screen consolidation. Both deleted outright:
+- `client/src/components/Analytics.jsx` and `client/src/pages/TodayPage.jsx` removed; App.jsx's Analytics import, render branch, and commented-out `TABS`/`MORE_TABS` entries removed; shared.jsx's `.analytics-grid` mobile CSS rule (only consumer was Analytics.jsx) removed.
+- **Server endpoints checked for other callers before deleting**: Analytics.jsx computed all 7 charts client-side from the shared `data` prop plus `GET /campaigns` and `GET /events` — both have other callers (Communications, Events) and were kept. The only zero-caller route was `GET /analytics` itself (no client reference anywhere — not even Analytics.jsx used it); deleted.
+- Deliberately untouched: `STAGES` (drives Kanban/Funnel), hidden-but-alive modules (Finance/Volunteers/Board/Tasks/Events), shelved-by-design `VoiceMemoModal`, the `/today` → `/dashboard` redirect in main.jsx (bookmarks; it imports nothing dead — it's a bare `<Navigate>`), main.jsx's `<Analytics />` (that's `@vercel/analytics`, unrelated), and Communications' own internal Analytics subtab.
+- Verified: `vite build` passes, `node --check server.js` passes, live click-through of Home/Donors/Grants/Communications/Settings on the deployed app + `/today` still redirecting (see commit).
+
 ### BUILD-04 Strike 1 — DELETE /interactions/:id + Gmail resync exclusions (2026-07-16)
 
 Twice now, test/mistaken interaction log entries could only be removed by manual DB surgery — staff will mis-log touchpoints forever, so this is a permanent need, not a one-off cleanup.
@@ -324,7 +332,7 @@ Prompted by a live incident (401s on every authenticated route) plus a full pre-
 ## Full feature list
 
 - Auth + 3-step onboarding (blank slate — chart of accounts + General Operating fund)
-- Today flow — prioritized daily follow-up page; default landing for org users
+- ~~Today flow~~ (superseded 2026-07-12 by the action-queue home screen; `/today` now redirects to `/dashboard`, `TodayPage.jsx` deleted 2026-07-16)
 - Guided tour — 5-stop tooltip overlay on first login after onboarding
 - Dashboard — hero stats, AI briefing, pipeline snapshot, lapsed alert, grant deadlines, recent giving, Stripe gifts, quick actions, tasks, activity feed
 - Donors — Kanban pipeline, CSV import, AI features, wealth scoring, donor profile (5 tabs: Overview, Gifts & Pledges, Funds, Materials, Activity), stewardship timeline, planned giving, donor materials, custom fields, MGO toolkit
@@ -335,7 +343,7 @@ Prompted by a live incident (401s on every authenticated route) plus a full pre-
 - Volunteers — hours tracking, board candidate AI
 - Board — giving levels, attendance, committees, AI board report + PDF export
 - Tasks — priority queue, AI prioritization
-- Analytics — 7 charts: giving trend, retention, pipeline velocity, grant pipeline, email performance, event performance, top donors
+- ~~Analytics — 7 charts~~ (deleted 2026-07-16, BUILD-04 Strike 2 — was hidden by the pivot, now removed outright)
 - Settings — Stripe Connect, QR code, embed widget, team management, invite staff, custom fields, demo data loader
 - Public donation page (/give/:orgSlug) — Stripe Checkout, recurring gifts
 - SaaS billing — trial → seed/growth/impact; 4-state access model; Stripe webhooks

@@ -15,7 +15,6 @@ import { Board } from "./components/Board";
 import { Finance } from "./components/Finance";
 import { Tasks } from "./components/Tasks";
 import { Settings } from "./components/Settings";
-import { Analytics } from "./components/Analytics";
 import { Events } from "./components/Events";
 import PlanPicker from "./components/PlanPicker";
 
@@ -29,7 +28,6 @@ const TABS=[
   // DEPRIORITIZED — pivoting to donor dashboard focus, code kept intact, re-enable by uncommenting
   // {id:"finance",label:"Finance",icon:"◇"},
   // {id:"events",label:"Events",icon:"◎"},
-  // {id:"analytics",label:"Analytics",icon:"◈"},
   // {id:"tasks",label:"Tasks",icon:"◻"},
   // {id:"volunteers",label:"Volunteers",icon:"◎",earlyAccess:true},
   // {id:"board",label:"Board",icon:"◆",earlyAccess:true},
@@ -46,7 +44,6 @@ const MORE_TABS=[
   // {id:"events",label:"Events",icon:"◎"},
   // {id:"volunteers",label:"Volunteers",icon:"◎",earlyAccess:true},
   // {id:"board",label:"Board",icon:"◆",earlyAccess:true},
-  // {id:"analytics",label:"Analytics",icon:"◈"},
   // {id:"tasks",label:"Tasks",icon:"◻"},
 ];
 
@@ -256,7 +253,6 @@ function AppShell() {
       {tab==="volunteers"&&<Volunteers data={data} setData={setData} isReadOnly={isReadOnly}/>}
       {tab==="board"&&<Board data={data} setData={setData} isReadOnly={isReadOnly}/>}
       {tab==="finance"&&<Finance data={data}/>}
-      {tab==="analytics"&&<Analytics data={data}/>}
       {tab==="tasks"&&<Tasks data={data} setData={setData} isReadOnly={isReadOnly}/>}
       {tab==="settings"&&<Settings auth={auth} logout={logout}/>}
     </div>

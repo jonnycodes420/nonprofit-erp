@@ -3608,43 +3608,6 @@ app.post("/financials/month", requireAuth, requireAdmin, wrap(async (req, res) =
   res.status(201).json({ success: true });
 }));
 
-// ── Analytics ──────────────────────────────────────────────────────────────
-app.get("/analytics", requireAuth, wrap(async (req, res) => {
-  const { orgId } = req.user;
-  const donors     = await query("SELECT * FROM donors     WHERE org_id = ? AND deleted_at IS NULL", [orgId]);
-  const grants     = await query("SELECT * FROM grants     WHERE org_id = ?", [orgId]);
-  const tasks      = await query("SELECT * FROM tasks      WHERE org_id = ?", [orgId]);
-  const financials = await query("SELECT * FROM financials WHERE org_id = ?", [orgId]);
-
-  const totalRaised   = donors.reduce((s, d) => s + d.total_giving, 0);
-  const avgGift       = donors.length
-    ? Math.round(donors.reduce((s, d) => s + d.last_gift_amount, 0) / donors.length)
-    : 0;
-  const retentionRate = donors.length
-    ? Math.round(donors.filter(d => d.status !== "lapsed").length / donors.length * 100)
-    : 0;
-
-  const submittedGrants  = grants.filter(g => g.status !== "prospecting");
-  const wonGrants        = grants.filter(g => ["active", "closed"].includes(g.status));
-  const grantSuccessRate = submittedGrants.length
-    ? Math.round(wonGrants.length / submittedGrants.length * 100)
-    : 0;
-
-  const ytdRevenue  = financials.reduce((s, m) => s + m.individual + m.grants + m.events + m.other_revenue, 0);
-  const ytdExpenses = financials.reduce((s, m) => s + m.programs + m.admin + m.fundraising, 0);
-
-  res.json({
-    totalRaised, avgGift, retentionRate, grantSuccessRate, ytdRevenue, ytdExpenses,
-    donorCount:       donors.length,
-    lapsedCount:      donors.filter(d => d.status === "lapsed").length,
-    majorDonorCount:  donors.filter(d => d.status === "major").length,
-    activeGrantValue: grants.filter(g => g.status === "active").reduce((s, g) => s + g.amount, 0),
-    pipelineValue:    grants.filter(g => ["pending", "prospecting"].includes(g.status)).reduce((s, g) => s + g.amount, 0),
-    openTasks:        tasks.filter(t => !t.done).length,
-    urgentTasks:      tasks.filter(t => !t.done && t.priority === "high").length,
-  });
-}));
-
 // ── Dashboard ──────────────────────────────────────────────────────────────
 // GET /donors (the list route App.jsx's loadData() uses) never embeds
 // interactions — only GET /donors/:id does, joined lazily when a profile
