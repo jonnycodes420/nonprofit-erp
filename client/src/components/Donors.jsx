@@ -2282,6 +2282,19 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
     apiFetch(`/donors/${donor.id}/fund-affinity`).then(r=>setFundAffinity(r||null)).catch(()=>{}).finally(()=>setFundLoading(false));
   };
 
+  // Optimistic delete: drop the entry locally right away; on failure, refetch
+  // the profile (restores the row) and surface the error.
+  const deleteInteraction=async(int)=>{
+    const prev=localInts??donor.interactions??[];
+    setLocalInts(prev.filter(x=>x.id!==int.id));
+    try{
+      await apiFetch(`/interactions/${int.id}`,{method:"DELETE"});
+    }catch(e){
+      loadGiftsFull();
+      alert("Could not delete this entry: "+(e.message||"unknown error"));
+    }
+  };
+
   const saveStewardship=async()=>{
     if(!stwForm.type)return;
     setStwSaving(true);
@@ -2614,7 +2627,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
                 <div style={{fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.1em",color:T.ink3}}>Touchpoint Timeline</div>
                 <button onClick={onLogTouchpoint} style={{background:"#10b981",border:"none",borderRadius:7,padding:"5px 12px",color:"#fff",fontSize:11,fontWeight:700,cursor:"pointer"}}>+ Log</button>
               </div>
-              <TouchpointTimeline interactions={localInts??donor.interactions??[]}/>
+              <TouchpointTimeline interactions={localInts??donor.interactions??[]} onDelete={deleteInteraction}/>
             </div>
           </div>}
 
@@ -3113,7 +3126,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
                 {(localInts??donor.interactions??[]).filter(i=>actFilter==="all"||i.type===actFilter).map(i=>{
                   const typeIcon={call:"📞",meeting:"🤝",email:"✉️",gift:"🎁",event:"🎟️",stewardship:"💌",note:"📝",stage_change:"📈",planned_gift:"⭐",material:"📄"}[i.type]||"•";
                   const typeColor={call:"#3b82f6",meeting:"#1a6b4a",email:"#8b5cf6",gift:"#c9a84c",event:"#ec4899",stewardship:"#10b981",stage_change:"#3b82f6",planned_gift:"#f59e0b",material:"#6b7280"}[i.type]||T.ink3;
-                  return(<div key={i.id||i.date} style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:10,padding:"10px 14px",display:"flex",gap:10,alignItems:"flex-start"}}>
+                  return(<div key={i.id||i.date} className="tp-row" style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:10,padding:"10px 14px",display:"flex",gap:10,alignItems:"flex-start"}}>
                     <div style={{fontSize:16,flexShrink:0,marginTop:1}}>{typeIcon}</div>
                     <div style={{flex:1,minWidth:0}}>
                       <div style={{display:"flex",alignItems:"baseline",gap:8,flexWrap:"wrap"}}>
@@ -3123,6 +3136,9 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
                       </div>
                       {i.note&&<div style={{fontSize:12,color:T.ink,marginTop:3,lineHeight:1.5,whiteSpace:"pre-wrap"}}>{i.note}</div>}
                     </div>
+                    {i.id&&<button className="tp-del-btn" title="Delete this entry" aria-label="Delete this entry"
+                      onClick={()=>{if(window.confirm("Delete this timeline entry? This can't be undone."))deleteInteraction(i);}}
+                      style={{background:"transparent",border:"none",cursor:"pointer",color:T.terracotta,fontSize:14,padding:"2px 4px",flexShrink:0,lineHeight:1}}>🗑</button>}
                   </div>);
                 })}
                 {(localInts??donor.interactions??[]).filter(i=>actFilter==="all"||i.type===actFilter).length===0&&<div style={{fontSize:12,color:T.ink3,fontStyle:"italic",textAlign:"center",padding:16}}>No activity logged yet</div>}

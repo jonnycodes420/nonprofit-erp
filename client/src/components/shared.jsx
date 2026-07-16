@@ -196,7 +196,16 @@ export function GlobalStyles() {
     .dir-assign-btn{opacity:0;transition:opacity 0.12s;}
     .dir-donor-row:hover .dir-assign-btn,.dir-donor-row:focus-within .dir-assign-btn{opacity:1;}
 
+    /* Timeline/activity delete: hover-reveal like .dir-assign-btn (always
+       visible on mobile — see the media block below — since there's no hover) */
+    .tp-del-btn{opacity:0;transition:opacity 0.12s;}
+    .tp-row:hover .tp-del-btn,.tp-row:focus-within .tp-del-btn{opacity:1;}
+
     @media(max-width:768px){
+      /* No hover on touch — delete icon stays visible (small target, guarded
+         by the confirm dialog) */
+      .tp-del-btn{opacity:1!important;}
+
       /* Root overflow kill — nothing bleeds past viewport */
       .app-root{overflow-x:hidden!important;max-width:100vw!important;}
       .app-content{padding:20px 16px calc(68px + env(safe-area-inset-bottom,0px)) 16px!important;max-width:100%!important;overflow-x:hidden!important;}
@@ -416,7 +425,10 @@ export function TpYesNo({val,set}){
     {["yes","no"].map(v=><button key={v} onClick={()=>set(v)} style={{background:val===v?"#10b981":T.bg,border:`1px solid ${val===v?"#10b981":T.bg3}`,borderRadius:7,padding:"7px 20px",color:val===v?"#fff":T.ink3,fontSize:13,fontWeight:600,cursor:"pointer"}}>{v}</button>)}
   </div>;
 }
-export function TouchpointTimeline({interactions}){
+// onDelete (optional): called with the interaction after the user confirms —
+// only passed where entries are actual `interactions` rows (DonorProfile);
+// Grants renders grant_interactions through this too and passes nothing.
+export function TouchpointTimeline({interactions,onDelete}){
   if(!interactions?.length)return<div style={{fontSize:13,color:T.ink3,textAlign:"center",padding:"16px 0"}}>No touchpoints logged yet.</div>;
   const typeColor={call:"#3b82f6",email:"#8b5cf6",meeting:T.greenMid,gift:"#f59e0b",event:"#ec4899",note:"#6b7280",stewardship:T.gold,voice_memo:"#0ea5e9",pledge_reminder:T.terracotta};
   const typeLabel={voice_memo:"Voice Memo",pledge_reminder:"Pledge Reminder"};
@@ -438,7 +450,7 @@ export function TouchpointTimeline({interactions}){
         if(meta?.direction)direction=meta.direction;
 
         return(
-          <div key={i} style={{display:"flex",gap:12,paddingBottom:16,position:"relative"}}>
+          <div key={int.id||i} className="tp-row" style={{display:"flex",gap:12,paddingBottom:16,position:"relative"}}>
             {i<sorted.length-1&&<div style={{position:"absolute",left:12,top:26,width:2,bottom:0,background:T.bg3}}/>}
             <div style={{width:26,height:26,borderRadius:"50%",background:c+"28",border:`2px solid ${c}`,flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",zIndex:1,marginTop:2}}>
               {int.type==="email"
@@ -469,6 +481,13 @@ export function TouchpointTimeline({interactions}){
                 <div style={{fontSize:13,color:T.ink2,lineHeight:1.5}}>{int.note}</div>
               )}
             </div>
+            {onDelete&&int.id&&(
+              <button className="tp-del-btn" title="Delete this entry" aria-label="Delete this entry"
+                onClick={()=>{if(window.confirm("Delete this timeline entry? This can't be undone."))onDelete(int);}}
+                style={{background:"transparent",border:"none",cursor:"pointer",color:T.terracotta,fontSize:14,padding:"2px 4px",alignSelf:"flex-start",flexShrink:0,lineHeight:1}}>
+                🗑
+              </button>
+            )}
           </div>
         );
       })}

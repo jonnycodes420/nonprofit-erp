@@ -122,6 +122,7 @@ Mobile "More" drawer (`MORE_TABS`): communications only (Events/Volunteers/Board
 ### Tables
 - `gmail_connections` — id, org_id, user_id (UNIQUE), email, access_token, refresh_token, token_expiry, last_synced_at, history_id, status (`active`|`disconnected`)
 - `interactions.metadata JSONB` — added column; Gmail interactions store `{ gmail_message_id, from, to, subject, direction: 'inbound'|'outbound' }`
+- `gmail_sync_exclusions` — id, org_id, gmail_message_id, created_at, UNIQUE(org_id, gmail_message_id). Written by `DELETE /interactions/:id` when the deleted row was Gmail-synced; checked by `syncGmail` (loaded into a Set per org at sync start, before the per-message dedup query) so a staff-deleted email interaction never resyncs — without it, deletion would only last until the next 15-min pass
 
 ### Auth flow
 - `POST /gmail/auth-url` (requireAuth) → returns `{ url }` for frontend to redirect to
@@ -210,6 +211,7 @@ Diagnostic tooling added after manually deleting test-user rows in Supabase's Ta
 - type: call | meeting | email | gift | event | note | stewardship | stage_change | planned_gift | material | email_open
 - created_by (user_id), logged_by_name (user name display string)
 - metadata JSONB — Gmail interactions store `{gmail_message_id, from, to, subject, direction}`; stewardship stores `{stewardship_type, detail}`
+- `DELETE /interactions/:id` (requireAuth, org-scoped, 404 on zero rows; no `checkWriteAccess` per the DELETE-routes convention) — removes a mis-logged touchpoint. Everything is deliberately deletable, including Gmail-synced rows: the route records the message id in `gmail_sync_exclusions` first (see Gmail integration → Tables) so the deletion sticks across sync passes. UI: hover-reveal 🗑 (class `tp-del-btn`, always visible ≤768px) on `TouchpointTimeline` entries (Overview tab) and the Activity Log cards in Donors.jsx — browser-confirm, optimistic removal, refetch on error. Grants.jsx also renders `TouchpointTimeline` but for `grant_interactions` rows — it passes no `onDelete`, so no icon there (this route only handles `interactions`)
 
 ### MGO toolkit tables
 - `planned_gifts` — id, org_id, donor_id, type (bequest/charitable_remainder_trust/charitable_lead_trust/annuity/ira_beneficiary/life_insurance/real_estate/other), estimated_value, date_indicated, notes, created_at

@@ -2181,6 +2181,35 @@ app.post("/donors/:id/interactions", requireAuth, wrap(async (req, res) => {
   res.status(201).json(rows[0]);
 }));
 
+// DELETE /interactions/:id — remove a mis-logged touchpoint. Per convention,
+// DELETE routes get no checkWriteAccess. Gmail-synced rows are deliberately
+// deletable too: the message id is recorded in gmail_sync_exclusions first so
+// syncGmail's dedup step doesn't re-insert the same message on its next pass.
+app.delete("/interactions/:id", requireAuth, wrap(async (req, res) => {
+  const rows = await query(
+    "SELECT id, metadata FROM interactions WHERE id = ? AND org_id = ?",
+    [req.params.id, req.user.orgId]
+  );
+  if (!rows.length) return res.status(404).json({ error: "Interaction not found" });
+
+  const meta = typeof rows[0].metadata === "string"
+    ? JSON.parse(rows[0].metadata || "null")
+    : rows[0].metadata;
+  if (meta?.gmail_message_id) {
+    await run(
+      "INSERT INTO gmail_sync_exclusions (id, org_id, gmail_message_id) VALUES (?,?,?) ON CONFLICT (org_id, gmail_message_id) DO NOTHING",
+      ["gse_" + uuid().slice(0, 8), req.user.orgId, meta.gmail_message_id]
+    );
+  }
+
+  const result = await run(
+    "DELETE FROM interactions WHERE id = ? AND org_id = ?",
+    [req.params.id, req.user.orgId]
+  );
+  if (!result.changes) return res.status(404).json({ error: "Interaction not found" });
+  res.json({ deleted: result.changes });
+}));
+
 // ── Gifts ──────────────────────────────────────────────────────────────────
 app.post("/donors/:id/gifts", requireAuth, checkWriteAccess, wrap(async (req, res) => {
   const { amount, date, type, campaign, notes, pledgeId } = req.body;
@@ -8949,6 +8978,14 @@ async function syncGmail(userId, orgId) {
   donors.forEach(d => { donorByEmail[d.email.toLowerCase().trim()] = d; });
   const donorEmails = Object.keys(donorByEmail);
 
+  // Messages whose interaction a staff member deleted — never re-insert
+  // (see DELETE /interactions/:id).
+  const exclusionRows = await query(
+    "SELECT gmail_message_id FROM gmail_sync_exclusions WHERE org_id=?",
+    [orgId]
+  );
+  const excludedMsgIds = new Set(exclusionRows.map(r => r.gmail_message_id));
+
   // Process in chunks of 20 emails to stay within query length limits
   const CHUNK = 20;
   for (let i = 0; i < donorEmails.length; i += CHUNK) {
@@ -8981,6 +9018,8 @@ async function syncGmail(userId, orgId) {
       fetched += messages.length;
 
       for (const { id: msgId } of messages) {
+        // Staff-deleted message — deletion sticks, never resync
+        if (excludedMsgIds.has(msgId)) continue;
         // Idempotency: skip if already logged
         const existing = await query(
           "SELECT id FROM interactions WHERE org_id=? AND metadata->>'gmail_message_id'=?",

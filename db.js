@@ -513,6 +513,18 @@ async function initSchema() {
       UNIQUE(user_id)
     )
   `);
+  // Deleted Gmail-synced interactions land here so syncGmail's dedup step
+  // never re-inserts them — without this, deleting a synced email only lasts
+  // until the next 15-minute sync pass.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS gmail_sync_exclusions (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL,
+      gmail_message_id TEXT NOT NULL,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      UNIQUE(org_id, gmail_message_id)
+    )
+  `);
   await pool.query(`ALTER TABLE interactions ADD COLUMN IF NOT EXISTS metadata JSONB`);
   await pool.query(`ALTER TABLE custom_fields ADD COLUMN IF NOT EXISTS show_in_directory BOOLEAN DEFAULT false`);
   await pool.query(`ALTER TABLE donors ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ`);
