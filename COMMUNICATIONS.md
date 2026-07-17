@@ -54,7 +54,18 @@ email** (transactional; the recipient themselves just requested it).
    already exist in `orgs.receipt_address` — threading them into
    `unsubscribeEmailFooterHtml` is a contained follow-up, deliberately not
    rushed at night across nine send paths. Flagged as the top compliance
-   follow-up.
+   follow-up. **FIXED 2026-07-17:** `unsubscribeEmailFooterHtml` is now async
+   and looks up `legal_name`/`name` + `receipt_address` itself (one pk lookup
+   per send — no send path can miss the address by forgetting a column in its
+   org SELECT), rendering an HTML-escaped "Legal Name · address" line above
+   the unsubscribe link at every call site (campaigns, sequences, milestone
+   drafts, dunning, recovery thank-you, pledge reminders, onboarding drip).
+   An org without `receipt_address` degrades to the old unsubscribe-only
+   footer, and Communications shows a terracotta "Add your mailing address"
+   prompt (admins get an Open Settings → button) until it's set. Verified by
+   real test sends through the actual campaign route against a local stack
+   with a Resend-API capture server: address + unsubscribe present, address-
+   less org unchanged, markup in address/legal name escaped.
 2. **Bounce webhook production config unconfirmed** (see table above).
 3. Open rates are directional (pixel mechanics), and pre-2026-07-17 counts
    may be inflated by the repeat-count bug fixed tonight.

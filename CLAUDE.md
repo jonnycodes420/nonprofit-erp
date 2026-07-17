@@ -384,6 +384,7 @@ Compliant, branded tax receipts for gifts, plus consolidated calendar-year givin
 ### Email campaigns
 - email_campaigns — id, org_id, name, subject, body, audience, status, sent_at, open_count
 - email_opens — id, campaign_id, opened_at, donor_id (nullable)
+- **CAN-SPAM footer (2026-07-17)**: `unsubscribeEmailFooterHtml(email, orgId, source)` is **async** — it looks up the org's `legal_name`/`name` + `receipt_address` (the tax-receipt settings address) itself and renders an HTML-escaped "Legal Name · address" line above the unsubscribe link; every call site (campaigns, sequences, milestone drafts, dunning, recovery thank-you, pledge reminders, onboarding drip) `await`s it. No `receipt_address` → unsubscribe-only footer (sends are never blocked), and Communications.jsx shows an "Add your mailing address" prompt (checks `GET /me`; admins get an `onNavigate("settings")` button — App.jsx now passes `onNavigate` to Communications) until it's set.
 
 ## Vercel config
 - Root directory: blank (not "client")

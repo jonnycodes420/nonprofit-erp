@@ -53,6 +53,9 @@ Note: `/health` reports `db:true` before `initSchema` finishes — wait for the
 node tests/donors-pagination.test.js   # BUILD-06 Phase A: pagination/filters/summaries/export parity + perf
 node tests/reports.test.js             # BUILD-02 debt: report numbers vs hand-computed fixture
 node tests/export-zip.test.js          # BUILD-03 debt: zip contents, edit_token, injection guard, access matrix
+node tests/email-footer.test.js        # CAN-SPAM postal address in email footers (real campaign sends
+                                       # captured by a mock Resend on :5602 — boot the server with
+                                       # RESEND_BASE_URL=http://localhost:5602 DEMO_SMTP_FROM=noreply@stewardapp.dev)
 ```
 
 Each exits 0 on all-pass, 1 otherwise. Env: `BASE` (default

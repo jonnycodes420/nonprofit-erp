@@ -759,9 +759,19 @@ function MilestoneDraftsPanel({ highlightDraftId }) {
 }
 
 // ── Main component ────────────────────────────────────────────────────────────
-export function Communications({ data, isReadOnly, initialNav, onInitialNavConsumed, highlightDraftId }) {
+export function Communications({ data, isReadOnly, initialNav, onInitialNavConsumed, highlightDraftId, onNavigate }) {
   const { auth } = useAuth();
   const isAdmin = auth?.user?.role === "admin";
+
+  // CAN-SPAM: every campaign/sequence footer carries the org's postal address
+  // (sourced from Settings → Tax Receipts' receipt_address). Until it's set,
+  // surface a prompt here — sends still work, they just go out without the
+  // legally required address line. null = confirmed missing; undefined =
+  // loading/fetch failed (no banner either way, never a false alarm).
+  const [orgPostalAddress, setOrgPostalAddress] = useState(undefined);
+  useEffect(() => {
+    apiFetch("/me").then(({ org }) => setOrgPostalAddress(org?.receipt_address || null)).catch(() => {});
+  }, []);
 
   // Sidebar nav
   const [nav, setNav] = useState(initialNav || "campaigns");
@@ -1125,6 +1135,21 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
 
       {/* Main content */}
       <div className="comm-main" style={{ flex: 1, padding: 24, overflowY: "auto", minHeight: 0 }}>
+
+        {/* CAN-SPAM postal-address prompt — terracotta = needs-attention */}
+        {orgPostalAddress === null && (
+          <div style={{ background: T.white, border: "1px solid " + T.bg3, borderLeft: "3px solid " + T.terracotta, borderRadius: 12, padding: "12px 16px", marginBottom: 18, display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+            <div style={{ flex: "1 1 320px", fontSize: 13, color: T.ink2, lineHeight: 1.45 }}>
+              <span style={{ fontWeight: 800, color: T.ink }}>Add your mailing address. </span>
+              Commercial email is required to include your organization's postal address (CAN-SPAM). Set it once under Settings → Tax Receipts and it appears in every campaign and sequence footer automatically{isAdmin ? "" : " — ask an admin to add it"}.
+            </div>
+            {isAdmin && onNavigate && (
+              <button onClick={() => onNavigate("settings")} style={{ background: "transparent", border: "1px solid " + T.bg3, borderRadius: 8, padding: "7px 14px", fontSize: 13, fontWeight: 700, color: T.ink, cursor: "pointer", whiteSpace: "nowrap" }}>
+                Open Settings →
+              </button>
+            )}
+          </div>
+        )}
 
         {/* ── CAMPAIGNS ────────────────────────────────────────────────────── */}
         {nav === "campaigns" && (

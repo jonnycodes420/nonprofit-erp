@@ -163,6 +163,7 @@ const registerLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   handler: rateLimitHandler,
+  skip: rateLimitDisabled, // local scripted suites create fixture orgs (see tests/)
 });
 
 const passwordResetLimiter = rateLimit({
@@ -4817,10 +4818,27 @@ function buildUnsubscribeUrl(email, orgId, source) {
   return `${backendUrl}/unsubscribe?token=${signUnsubscribeToken(email, orgId, source)}`;
 }
 
-function unsubscribeEmailFooterHtml(email, orgId, source) {
+// CAN-SPAM requires the sender's physical postal address in commercial email,
+// so the footer carries it alongside the unsubscribe link. Sourced live from
+// the org's tax-receipt settings (orgs.receipt_address, BUILD-01) so there is
+// exactly one address to maintain; async because it looks the org up itself —
+// one pk lookup per send, trivial next to the Resend HTTP call, and it means
+// no send path can miss the address by forgetting a column in its org SELECT.
+// An org that hasn't filled in receipt_address yet degrades to the old
+// unsubscribe-only footer (Communications shows admins a Settings prompt
+// until they add it).
+async function unsubscribeEmailFooterHtml(email, orgId, source) {
   const url = buildUnsubscribeUrl(email, orgId, source);
+  let addressLine = "";
+  const orgRows = await query("SELECT name, legal_name, receipt_address FROM orgs WHERE id = ?", [orgId]);
+  const org = orgRows[0];
+  if (org?.receipt_address) {
+    const esc = s => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    const address = esc(org.receipt_address).replace(/\r?\n+/g, ", ");
+    addressLine = `<div style="margin-bottom:6px;">${esc(org.legal_name || org.name || "")} · ${address}</div>`;
+  }
   return `<div style="margin-top:32px;padding-top:16px;border-top:1px solid #e5e0d5;font-family:'DM Sans',Helvetica,Arial,sans-serif;font-size:12px;color:#8fa896;">
-    <a href="${url}" style="color:#8fa896;text-decoration:underline;">Unsubscribe</a> from these emails.
+    ${addressLine}<a href="${url}" style="color:#8fa896;text-decoration:underline;">Unsubscribe</a> from these emails.
   </div>`;
 }
 
@@ -5064,7 +5082,7 @@ async function sendDunningEmail(org, donor, subscriptionRow) {
   const tokenCtx = { donor, org, amount: subscriptionRow.amount, updateUrl };
   const subject = applyDunningTokens(org.recurring_dunning_subject || DEFAULT_DUNNING_SUBJECT, tokenCtx);
   const bodyHtml = applyDunningTokens(org.recurring_dunning_body || DEFAULT_DUNNING_BODY, tokenCtx)
-    + unsubscribeEmailFooterHtml(donor.email, org.id, "campaign");
+    + await unsubscribeEmailFooterHtml(donor.email, org.id, "campaign");
   const smtpFrom = process.env.DEMO_SMTP_FROM || "noreply@stewardapp.dev";
   if (process.env.RESEND_API_KEY) {
     try {
@@ -5089,7 +5107,7 @@ async function sendRecoveredThankYouEmail(org, donor, subscriptionRow) {
 <p>Great news — your card on file worked, and your ${amountStr} gift to ${org.name} went through. Your recurring support is active again, and we're so grateful for it.</p>
 <p>Thank you for sticking with us.</p>
 <p>With gratitude,<br/>${org.name}</p>`
-    + unsubscribeEmailFooterHtml(donor.email, org.id, "campaign");
+    + await unsubscribeEmailFooterHtml(donor.email, org.id, "campaign");
   const smtpFrom = process.env.DEMO_SMTP_FROM || "noreply@stewardapp.dev";
   if (process.env.RESEND_API_KEY) {
     try {
@@ -5343,7 +5361,7 @@ async function runCampaignSend(campaign, org, donors) {
           .replace(/{{year}}/g,         year);
 
         const pixel    = `<img src="${BACKEND_URL}/track/${recipientId}/open.gif" width="1" height="1" style="display:none">`;
-        const footer   = unsubscribeEmailFooterHtml(donor.email, org.id, "campaign");
+        const footer   = await unsubscribeEmailFooterHtml(donor.email, org.id, "campaign");
         const htmlFull = bodyHtml + footer + pixel;
         const textBody = bodyHtml.replace(/<[^>]+>/g, "");
 
@@ -7555,7 +7573,7 @@ async function sendOnboardingSequence(orgId, userId, userName, userEmail) {
     const step0 = steps[0];
     const subject0 = applyTokens(step0.subject);
     const body0 = applyTokens(step0.body);
-    const bodyHtml0 = `<p>${body0.replace(/\n\n+/g, "</p><p>").replace(/\n/g, "<br>")}</p>` + unsubscribeEmailFooterHtml(userEmail, orgId, "sequence");
+    const bodyHtml0 = `<p>${body0.replace(/\n\n+/g, "</p><p>").replace(/\n/g, "<br>")}</p>` + await unsubscribeEmailFooterHtml(userEmail, orgId, "sequence");
     const founderEmail = process.env.FOUNDER_EMAIL || "noreply@stewardapp.dev";
     const suppressReason0 = await getSuppressionReason(userEmail, orgId);
     if (suppressReason0) {
@@ -7718,7 +7736,7 @@ async function processSequences() {
         const bodyRaw = applyTokens(step.body);
         const bodyHtml = (bodyRaw.includes("<") ? bodyRaw
           : `<p>${bodyRaw.replace(/\n\n+/g, "</p><p>").replace(/\n/g, "<br>")}</p>`)
-          + unsubscribeEmailFooterHtml(recipient.email, enr.org_id, "sequence");
+          + await unsubscribeEmailFooterHtml(recipient.email, enr.org_id, "sequence");
         const founderEmail = process.env.FOUNDER_EMAIL || "noreply@stewardapp.dev";
         const smtpFrom = enr.seq_trigger === "onboarding"
           ? founderEmail
@@ -8521,7 +8539,7 @@ app.post("/milestone-drafts/:id/send", requireAuth, requireAdmin, checkWriteAcce
   const smtpFrom = process.env.DEMO_SMTP_FROM || "noreply@stewardapp.dev";
   if (process.env.RESEND_API_KEY) {
     const bodyHtml = `<p>${draft.body.replace(/\n\n+/g, "</p><p>").replace(/\n/g, "<br>")}</p>`
-      + unsubscribeEmailFooterHtml(donor.email, req.user.orgId, "sequence");
+      + await unsubscribeEmailFooterHtml(donor.email, req.user.orgId, "sequence");
     try {
       const { error: sendErr } = await resend.emails.send({
         from: smtpFrom, to: donor.email, subject: draft.subject, html: bodyHtml,
@@ -9000,7 +9018,7 @@ async function sendPledgeReminderEmail(org, donor, pledgeRow) {
   const tokenCtx = { donor, org, amount: pledgeRow.amount, dueDate: pledgeRow.due_date, giveUrl };
   const subject = applyPledgeReminderTokens(org.pledge_reminder_subject || DEFAULT_PLEDGE_REMINDER_SUBJECT, tokenCtx);
   const bodyHtml = applyPledgeReminderTokens(org.pledge_reminder_body || DEFAULT_PLEDGE_REMINDER_BODY, tokenCtx)
-    + unsubscribeEmailFooterHtml(donor.email, org.id, "campaign");
+    + await unsubscribeEmailFooterHtml(donor.email, org.id, "campaign");
   const smtpFrom = process.env.DEMO_SMTP_FROM || "noreply@stewardapp.dev";
   if (process.env.RESEND_API_KEY) {
     try {

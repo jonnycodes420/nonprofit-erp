@@ -270,7 +270,7 @@ function AppShell() {
       {tab==="dashboard"&&<Dashboard data={data} setData={setData} onNavigate={navigateTo} isReadOnly={isReadOnly}/>}
       {tab==="donors"&&<Donors data={data} setData={setData} isReadOnly={isReadOnly} initialView={donorsIntent?.view} initialLogDonorId={donorsIntent?.logDonorId} initialStageFilter={donorsIntent?.stageFilter} initialSelectDonorId={donorsIntent?.selectDonorId} onIntentConsumed={()=>setDonorsIntent(null)}/>}
       {tab==="grants"&&<Grants data={data} setData={setData} isReadOnly={isReadOnly} initialGrantId={grantsIntent?.grantId} onIntentConsumed={()=>setGrantsIntent(null)}/>}
-      {tab==="communications"&&<Communications data={data} isReadOnly={isReadOnly} initialNav={commsInitialNav} highlightDraftId={commsHighlightDraftId} onInitialNavConsumed={()=>{setCommsInitialNav(null);setCommsHighlightDraftId(null);}}/>}
+      {tab==="communications"&&<Communications data={data} isReadOnly={isReadOnly} initialNav={commsInitialNav} highlightDraftId={commsHighlightDraftId} onInitialNavConsumed={()=>{setCommsInitialNav(null);setCommsHighlightDraftId(null);}} onNavigate={navigateTo}/>}
       {tab==="reports"&&<Reports onNavigate={navigateTo}/>}
       {tab==="events"&&<Events data={data} isReadOnly={isReadOnly}/>}
       {tab==="volunteers"&&<Volunteers data={data} setData={setData} isReadOnly={isReadOnly}/>}
