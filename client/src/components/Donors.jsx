@@ -3858,7 +3858,7 @@ function DirectoryView({donors,loading,serverTotal,page,pageSize,onPage,clientFi
           </svg>
         </div>
         <div style={{fontFamily:"'DM Serif Display',Georgia,serif",fontSize:22,fontWeight:400,color:"#0f1a12",letterSpacing:"-0.01em",marginBottom:10}}>No donors yet.</div>
-        <div style={{fontSize:14,color:"#6b7280",maxWidth:280,lineHeight:1.65,marginBottom:24}}>Add your first contact and start building your relationship pipeline.</div>
+        <div style={{fontSize:14,color:"#6b7280",maxWidth:300,lineHeight:1.65,marginBottom:24}}>Every relationship in Steward starts as one row — bring in a spreadsheet from Import above, or add a single name to begin.</div>
         <div style={{display:"flex",gap:10,flexWrap:"wrap",justifyContent:"center"}}>
           {onAddDonor&&<button onClick={onAddDonor} style={{background:"#1a6b4a",color:"#fff",border:"none",borderRadius:12,padding:"12px 24px",fontSize:14,fontWeight:600,cursor:"pointer",fontFamily:"'DM Sans',system-ui,sans-serif"}}>Add a donor →</button>}
           {onLoadSampleData&&<button onClick={onLoadSampleData} disabled={sampleLoading} style={{background:"transparent",color:"#1a6b4a",border:"1.5px solid #1a6b4a",borderRadius:12,padding:"12px 24px",fontSize:14,fontWeight:600,cursor:sampleLoading?"not-allowed":"pointer",opacity:sampleLoading?0.7:1,fontFamily:"'DM Sans',system-ui,sans-serif"}}>{sampleLoading?"Loading…":"Explore with sample data"}</button>}
@@ -4774,7 +4774,7 @@ export function Donors({data,setData,isReadOnly=false,initialView,initialLogDono
             </div>
           </div>
           {myDonors.length===0
-            ?<EmptyState icon="♦" title="No donors in your pipeline" message="Donors assigned to you will appear here as a Kanban board."/>
+            ?<EmptyState icon="♦" title="Your pipeline is waiting" message="Assign yourself a few donors from the Directory (open one and pick an owner) and they'll line up here by stage, ready to move."/>
             :<DonorKanban donors={myDonors} onStageChange={moveToStage} onLogTouchpoint={d=>setLogTarget(d)} onSelectDonor={selectDonor}/>}
         </>;
       })()}

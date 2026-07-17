@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { streamAI, apiFetch } from "../api";
 
 // ── Design tokens ──────────────────────────────────────────────────────────
@@ -39,7 +39,9 @@ export const T = {
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 export const fmt = n => n>=1000?`$${(n/1000).toFixed(n%1000===0?0:1)}k`:`$${n.toLocaleString()}`;
-export const fmtFull = n => `$${n.toLocaleString()}`;
+// Whole dollars stay clean ($1,200); cents-carrying amounts (possible since
+// the cover-fees NUMERIC migration) render as money, never "$140.5".
+export const fmtFull = n => { const v = Number(n) || 0; return `$${v.toLocaleString(undefined, Number.isInteger(v) ? {} : { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`; };
 export const daysDiff = d => Math.floor((new Date()-new Date(d))/86400000);
 export const daysUntil = d => Math.floor((new Date(d)-new Date())/86400000);
 export const SC = { major:"#1a6b4a",mid:"#3b82f6",new:"#8b5cf6",lapsed:"#f59e0b",converted:"#1a6b4a",active:"#1a6b4a",pending:"#3b82f6",prospecting:"#8b5cf6",closed:"#6b7280",high:"#ef4444",medium:"#f59e0b",low:"#6b7280" };
@@ -171,6 +173,11 @@ export function GlobalStyles() {
     @keyframes slideIn{from{opacity:0;transform:translateX(16px)}to{opacity:1;transform:translateX(0)}}
     @keyframes slideup{from{opacity:0;transform:translateY(100%)}to{opacity:1;transform:translateY(0)}}
     @keyframes pulse{0%,100%{opacity:1}50%{opacity:0.4}}
+    @keyframes goldRise{from{opacity:0;transform:translateY(8px) scale(0.985)}to{opacity:1;transform:translateY(0) scale(1)}}
+    @keyframes goldSheen{0%{background-position:-200% 0}100%{background-position:200% 0}}
+    .gold-moment{animation:goldRise 0.5s cubic-bezier(0.2,0.8,0.3,1) both;}
+    .gold-moment .gold-moment-bar{background:linear-gradient(100deg,#c9a84c 40%,#e8d9a8 50%,#c9a84c 60%);background-size:200% 100%;animation:goldSheen 1.8s ease-out 0.4s 1;}
+    @media (prefers-reduced-motion: reduce){.gold-moment,.gold-moment .gold-moment-bar{animation:none;}}
     .fade-in{animation:fadeIn 0.2s ease-out both;}
     .slide-in{animation:slideIn 0.18s ease-out both;}
     .slide-up{animation:slideup 0.25s ease both;}
@@ -395,6 +402,55 @@ export function EmptyState({icon,title,message,action,onAction}) {
     {action&&<button onClick={onAction} style={{marginTop:8,background:T.greenDk,border:"none",borderRadius:10,padding:"9px 18px",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer",boxShadow:"0 2px 10px rgba(26,107,74,0.2)"}}>{action}</button>}
   </div>;
 }
+// ── Warmth pass (BUILD-08 Phase D) ─────────────────────────────────────────
+// GoldMoment: the product's one celebration pattern — a single gold moment
+// (soft rise + one sheen across the accent bar, no confetti, gone under
+// prefers-reduced-motion). Fires ONCE per org per `moment` key: the
+// localStorage flag is set the first time it renders, so it never re-greets.
+export function GoldMoment({moment,title,line,onDismiss}) {
+  const orgId = (()=>{try{return JSON.parse(localStorage.getItem("npe_org")||"{}").id||"org";}catch{return "org";}})();
+  const key = `steward_gold_${moment}_${orgId}`;
+  const [show,setShow] = useState(()=>{ try{return !localStorage.getItem(key);}catch{return false;} });
+  useEffect(()=>{ if(show){ try{localStorage.setItem(key,new Date().toISOString());}catch{} } },[]); // eslint-disable-line
+  if(!show) return null;
+  return (
+    <div className="gold-moment" style={{position:"relative",background:"linear-gradient(135deg,#fdfaf2,#faf5e6)",border:"1px solid #c9a84c55",borderRadius:14,padding:"16px 44px 16px 18px",display:"flex",gap:14,alignItems:"center",overflow:"hidden"}}>
+      <div className="gold-moment-bar" style={{position:"absolute",left:0,top:0,bottom:0,width:4,background:T.gold}}/>
+      <div style={{width:34,height:34,borderRadius:"50%",background:T.gold,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,color:T.ink,fontSize:15}}>✦</div>
+      <div style={{minWidth:0}}>
+        <div style={{fontFamily:"'DM Serif Display',Georgia,serif",fontSize:17,color:T.ink,lineHeight:1.3}}>{title}</div>
+        {line&&<div style={{fontSize:13,color:T.ink2,marginTop:3,lineHeight:1.55}}>{line}</div>}
+      </div>
+      <button onClick={()=>{setShow(false);onDismiss&&onDismiss();}} aria-label="Dismiss"
+        style={{position:"absolute",top:10,right:12,background:"none",border:"none",color:T.ink3,fontSize:16,cursor:"pointer",lineHeight:1,padding:4}}>×</button>
+    </div>
+  );
+}
+
+// StartHere: the gold signpost for first-run states — points at the one
+// thing worth doing first, in the product's narrative voice. Not a modal,
+// not a tour; one card that stops rendering once there's data (callers gate
+// it) or once dismissed when a `dismissKey` is given.
+export function StartHere({line,actionLabel,onAction,dismissKey}) {
+  const orgId = (()=>{try{return JSON.parse(localStorage.getItem("npe_org")||"{}").id||"org";}catch{return "org";}})();
+  const key = dismissKey ? `steward_seen_${dismissKey}_${orgId}` : null;
+  const [show,setShow] = useState(()=>{ if(!key) return true; try{return !localStorage.getItem(key);}catch{return true;} });
+  if(!show) return null;
+  const dismiss = ()=>{ if(key){ try{localStorage.setItem(key,"1");}catch{} } setShow(false); };
+  return (
+    <div className="fade-in" style={{background:"#fdfaf2",border:"1px solid #c9a84c55",borderLeft:"4px solid "+T.gold,borderRadius:12,padding:"14px 18px",display:"flex",alignItems:"center",gap:14,flexWrap:"wrap"}}>
+      <div style={{flex:"1 1 280px",minWidth:0}}>
+        <div style={{fontSize:10,fontWeight:800,letterSpacing:"0.12em",textTransform:"uppercase",color:"#a08434",marginBottom:4}}>Start here</div>
+        <div style={{fontSize:13.5,color:T.ink2,lineHeight:1.6}}>{line}</div>
+      </div>
+      <div style={{display:"flex",gap:10,alignItems:"center",flexShrink:0}}>
+        {actionLabel&&<button onClick={()=>{if(key){try{localStorage.setItem(key,"1");}catch{}}onAction&&onAction();}} style={{background:T.gold,border:"none",borderRadius:10,padding:"9px 16px",color:T.ink,fontSize:13,fontWeight:700,cursor:"pointer"}}>{actionLabel}</button>}
+        {dismissKey&&<button onClick={dismiss} style={{background:"none",border:"none",color:T.ink3,fontSize:12,fontWeight:600,cursor:"pointer",textDecoration:"underline"}}>Got it</button>}
+      </div>
+    </div>
+  );
+}
+
 export function PageTitle({main,accent,sub}) {
   return (
     <div style={{marginBottom:16}}>

@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
 import { apiFetch, API, getToken } from "../api";
-import { T, fmtFull, Spin, Card, EmptyState, PageTitle, SectionTabs } from "./shared";
+import { T, fmtFull, Spin, Card, EmptyState, PageTitle, SectionTabs, StartHere } from "./shared";
 
 // ── Reports (BUILD-02) ──────────────────────────────────────────────────────
 // Six fixed, parameterized, table-first, CSV-downloadable reports — each one
@@ -296,6 +296,13 @@ export function Reports({ onNavigate }) {
 
   return <div className="fade-in">
     <PageTitle main="Your" accent="Reports" sub="Six answers to the questions boards and funders actually ask — every one filters cleanly and downloads to CSV." />
+
+    {/* First-visit signpost (BUILD-08 Phase D) — shown until "Got it". */}
+    <div style={{ marginBottom: 14 }}>
+      <StartHere dismissKey="reports_intro"
+        line="If you only ever open one report, make it LYBUNT — the people who gave last year and haven't yet this year. It's where retention is won or lost, and every row clicks through to the donor."
+        actionLabel="Open LYBUNT" onAction={() => setActive("lybunt")} />
+    </div>
 
     <div className="reports-layout" style={{ display: "flex", flexDirection: "column" }}>
       {/* Report picker — horizontal tabs; the active report's question renders

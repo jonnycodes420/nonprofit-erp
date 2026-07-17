@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { apiFetch } from "../api";
 import { useAuth } from "../main";
-import { T, askClaude, Spin, fmtFull, SectionTabs } from "./shared";
+import { T, askClaude, Spin, fmtFull, SectionTabs, StartHere } from "./shared";
 
 // ── Campaign Briefing panel (rendered inside expanded row) ──────────────────
 function CampaignBriefing({ campaign }) {
@@ -573,7 +573,7 @@ function SequencesPanel({ data }) {
         <div style={{ color: T.ink3, fontSize: 13, textAlign: "center", padding: 40 }}>Loading…</div>
       ) : seqList.length === 0 ? (
         <div style={{ background: T.bg2, borderRadius: 12, padding: 40, textAlign: "center", color: T.ink3, fontSize: 14 }}>
-          No sequences yet. Create your first one above.
+          No sequences yet. A good first one: three gentle emails to donors who've gone quiet for 90 days — write it once, and it looks after them from then on.
         </div>
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
@@ -713,7 +713,7 @@ function MilestoneDraftsPanel({ highlightDraftId }) {
 
       {drafts.length === 0 && (
         <div style={{ background: T.bg2, borderRadius: 12, padding: 40, textAlign: "center", color: T.ink3, fontSize: 14 }}>
-          No drafts waiting for review right now.
+          Nothing waiting on you. When a donor crosses a milestone or a giving anniversary, the draft will be sitting right here for your eyes first — nothing ever sends itself.
         </div>
       )}
 
@@ -1179,9 +1179,11 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
             {loading ? (
               <div style={{ color: T.ink3, fontSize: 13, padding: "40px 0", textAlign: "center" }}>Loading…</div>
             ) : campaigns.length === 0 ? (
-              <div style={{ background: T.bg2, borderRadius: 12, padding: 40, textAlign: "center", color: T.ink3, fontSize: 14 }}>
-                No campaigns yet. Create your first one above.
-              </div>
+              /* First-run signpost (BUILD-08 Phase D) — the gold "start
+                 here" pattern from shared.jsx, not a bare "no data" box. */
+              <StartHere
+                line="Your first campaign doesn't need to be clever — a plain thank-you to everyone who gave this year is the highest-return email in fundraising. Three warm sentences; Steward handles the sending, the footer, and who opened it."
+                actionLabel={isReadOnly?undefined:"Write that thank-you →"} onAction={()=>openBuilder()}/>
             ) : (
               <div style={{ background: T.bg2, border: "1px solid " + T.bg3, borderRadius: 12, overflow: "hidden" }}>
                 {/* Table header */}

@@ -12,6 +12,9 @@ import { DonorImport } from "../components/Donors";
 // the finishing animation.
 const TOTAL_STEPS = 5;
 const STEP_LABELS = ["Org basics", "Import your donors", "Set your first goal", "Your first impact metric", "Launch"];
+// Honest per-step time estimates (BUILD-08 Phase D) — shown beside the step
+// label so nobody wonders how deep this rabbit hole goes. Whole flow ≈ 6 min.
+const STEP_TIMES = ["~1 min", "~2 min", "~1 min", "~1 min", "~1 min"];
 
 const FINISH_ITEMS = [
   "Standard chart of accounts (26 accounts)",
@@ -95,6 +98,10 @@ export default function WelcomePage() {
   // a meaningful conditional choice on it.
   useEffect(() => {
     if (auth?.org?.onboarding_complete) navigate("/dashboard", { replace: true });
+    // Load any donors that already exist (someone returning mid-flow, or an
+    // import from another tab) so step 2 shows the imported state instead of
+    // re-asking for a list that's already in.
+    apiFetch("/donors/summaries").then(d => setDonorsSnapshot(d || [])).catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -137,6 +144,10 @@ export default function WelcomePage() {
   }
 
   // ── Step 2: import (or skip) ──
+  // On a successful import we deliberately STAY on step 2 rather than
+  // auto-advancing (which the flow used to do — meaning the success state
+  // was never actually seen): the gold "safely home" moment renders and the
+  // user clicks Continue themselves. One beat of celebration, then onward.
   async function afterImportDone() {
     setShowImportModal(false);
     setLoadingDonors(true);
@@ -145,7 +156,6 @@ export default function WelcomePage() {
       setDonorsSnapshot(donors || []);
     } catch { setDonorsSnapshot([]); }
     setLoadingDonors(false);
-    setStep(3);
   }
   function skipImport() {
     setImportSkipped(true);
@@ -245,11 +255,10 @@ export default function WelcomePage() {
           <div style={{ textAlign: "center", marginBottom: 16 }}>
             <div style={{ fontSize: 11, fontWeight: 700, color: ink3, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 8 }}>
               Step {step} of {TOTAL_STEPS} — {STEP_LABELS[step - 1]}
+              <span style={{ color: "#a08434", marginLeft: 8, letterSpacing: "0.04em" }}>{STEP_TIMES[step - 1]}</span>
             </div>
-            <div style={{ display: "flex", justifyContent: "center", gap: 6 }}>
-              {Array.from({ length: TOTAL_STEPS }, (_, i) => (
-                <div key={i} style={{ width: 28, height: 4, borderRadius: 2, background: i < step ? greenDk : "#e5e7eb", transition: "background 0.2s" }} />
-              ))}
+            <div style={{ maxWidth: 220, margin: "0 auto", background: "#e5e7eb", borderRadius: 99, height: 5, overflow: "hidden" }}>
+              <div style={{ height: "100%", width: `${Math.round((step / TOTAL_STEPS) * 100)}%`, background: `linear-gradient(90deg, ${greenDk}, #c9a84c)`, borderRadius: 99, transition: "width 0.35s ease" }} />
             </div>
           </div>
         )}
@@ -295,9 +304,17 @@ export default function WelcomePage() {
             </p>
 
             {donorsSnapshot.length > 0 ? (
-              <div style={{ background: "#f0faf5", border: "1px solid #bbf7d0", borderRadius: 12, padding: "16px 18px", marginBottom: 20, textAlign: "center" }}>
-                <div style={{ fontSize: 15, fontWeight: 700, color: greenDk, marginBottom: 2 }}>✓ {donorsSnapshot.length.toLocaleString()} donor{donorsSnapshot.length === 1 ? "" : "s"} imported</div>
-                <div style={{ fontSize: 12, color: ink3 }}>You can import more anytime from Donors → Import.</div>
+              /* The import celebration — the product's one-gold-moment
+                 pattern (see .gold-moment in shared.jsx GlobalStyles):
+                 soft rise, one sheen on the accent bar, nothing louder. */
+              <div className="gold-moment" style={{ position: "relative", background: "linear-gradient(135deg,#fdfaf2,#faf5e6)", border: "1px solid #c9a84c55", borderRadius: 12, padding: "18px 18px 18px 22px", marginBottom: 20, textAlign: "center", overflow: "hidden" }}>
+                {/* WelcomePage renders outside the app shell (no GlobalStyles), so the gold-moment animation is declared locally */}
+                <style>{`@keyframes goldRise{from{opacity:0;transform:translateY(8px) scale(0.985)}to{opacity:1;transform:translateY(0) scale(1)}}@keyframes goldSheen{0%{background-position:-200% 0}100%{background-position:200% 0}}.gold-moment{animation:goldRise 0.5s cubic-bezier(0.2,0.8,0.3,1) both}.gold-moment .gold-moment-bar{background:linear-gradient(100deg,#c9a84c 40%,#e8d9a8 50%,#c9a84c 60%);background-size:200% 100%;animation:goldSheen 1.8s ease-out 0.4s 1}@media (prefers-reduced-motion: reduce){.gold-moment,.gold-moment .gold-moment-bar{animation:none}}`}</style>
+                <div className="gold-moment-bar" style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: 4, background: "#c9a84c" }} />
+                <div style={{ fontFamily: "'DM Serif Display',Georgia,serif", fontSize: 18, color: ink, marginBottom: 3 }}>
+                  {donorsSnapshot.length.toLocaleString()} donor{donorsSnapshot.length === 1 ? "" : "s"}, safely home.
+                </div>
+                <div style={{ fontSize: 12.5, color: ink3 }}>That was the hard part. You can import more anytime from Donors → Import.</div>
               </div>
             ) : (
               <button onClick={() => setShowImportModal(true)} style={{ ...primaryBtn(false), background: "linear-gradient(135deg,#10b981,#3b82f6)", marginBottom: 12 }}>

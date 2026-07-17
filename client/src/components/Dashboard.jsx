@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { apiFetch } from "../api";
 import { useAuth } from "../main";
-import { T, fmt, fmtFull, daysUntil, daysDiff, askClaude, buildContext, Spin, AIBtn } from "./shared";
+import { T, fmt, fmtFull, daysUntil, daysDiff, askClaude, buildContext, Spin, AIBtn, GoldMoment } from "./shared";
 import FunnelChart from "./FunnelChart";
 import MetricBreakdownPanel from "./MetricBreakdownPanel";
 
@@ -412,6 +412,21 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
           and the goal card — not inside the dark card, where it read as a
           stray line of card copy rather than a page-level welcome. */}
       <div style={{fontSize:15,fontWeight:700,color:T.ink,padding:"0 2px"}}>{greeting}{firstName?`, ${firstName}`:""}</div>
+
+      {/* One-time gold moments (BUILD-08 Phase D) — the product's only
+          celebration pattern, each fires once per org (localStorage-keyed
+          inside GoldMoment). Goal completion keys on the goal id, so a NEW
+          goal reaching 100% next quarter gets its own single moment. */}
+      {goal&&goal.percent>=100&&(
+        <GoldMoment moment={`goal100_${goal.id||goal.periodEnd||"current"}`}
+          title={`You did it — ${goal.label}.`}
+          line={`${fmtFull(goal.currentAmount)} raised against ${fmtFull(goal.goalAmount)}. Worth a minute of feeling good before the next one.`}/>
+      )}
+      {recurringHealth&&recurringHealth.recoveredThisMonth>0&&(
+        <GoldMoment moment="first_recovery"
+          title="A recurring gift came back."
+          line="A failed card was fixed and the gift resumed — money that, at most organizations, would have quietly disappeared. Steward will keep watching."/>
+      )}
 
       {/* Goal banner — restructured into a real two-column layout so its
           footprint matches its content across the card's full width,
