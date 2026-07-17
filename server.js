@@ -180,6 +180,7 @@ const donateLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   handler: rateLimitHandler,
+  skip: rateLimitDisabled, // local scripted suites exercise /donate repeatedly (tests/cover-fees.test.js)
 });
 
 // Stripe webhook must receive raw body — register BEFORE express.json()
@@ -745,7 +746,7 @@ async function recalcDonorSummary(donorId, orgId) {
        ORDER BY created_at DESC LIMIT 1`,
       [donorId, orgId, lastDate]
     );
-    lastAmt = parseInt(lr[0]?.amount, 10) || 0;
+    lastAmt = parseFloat(lr[0]?.amount) || 0; // amounts carry cents since the cover-fees migration
   }
 
   await run(
@@ -1117,10 +1118,21 @@ app.patch("/orgs/:id", requireAuth, requireAdmin, wrap(async (req, res) => {
   if (name && name.trim()) {
     await run(`UPDATE orgs SET name=? WHERE id=?`, [name.trim(), req.params.id]);
   }
-  await run(
-    `UPDATE orgs SET mission=?, focus_area=?, annual_budget=?, founded_year=?, website=? WHERE id=?`,
-    [mission || null, focusArea || null, annualBudget || null, foundedYear ? parseInt(foundedYear, 10) : null, website || null, req.params.id]
-  );
+  // Only rewrite the profile fields when the request actually carries any of
+  // them — a settings-toggle-only PATCH (e.g. coverFeesEnabled below) must
+  // not null out the org's mission/website as a side effect.
+  if ([mission, focusArea, annualBudget, foundedYear, website].some(v => v !== undefined)) {
+    await run(
+      `UPDATE orgs SET mission=?, focus_area=?, annual_budget=?, founded_year=?, website=? WHERE id=?`,
+      [mission || null, focusArea || null, annualBudget || null, foundedYear ? parseInt(foundedYear, 10) : null, website || null, req.params.id]
+    );
+  }
+
+  // Donor-covers-fees switch — only touched when the request includes it
+  // (Settings' Giving section sends it; no other PATCH caller does).
+  if (req.body.coverFeesEnabled !== undefined) {
+    await run(`UPDATE orgs SET cover_fees_enabled=? WHERE id=?`, [!!req.body.coverFeesEnabled, req.params.id]);
+  }
 
   // Tax receipt settings — only touched when the request actually includes
   // at least one of these fields (Settings' Tax Receipts panel sends them;
@@ -5800,13 +5812,13 @@ app.get("/org/public-list", wrap(async (req, res) => {
 // ── Public donation page ───────────────────────────────────────────────────
 app.get("/org/:orgSlug/public", wrap(async (req, res) => {
   const orgs = await query(
-    "SELECT id, name, mission FROM orgs WHERE org_slug = $1",
+    "SELECT id, name, mission, cover_fees_enabled FROM orgs WHERE org_slug = $1",
     [req.params.orgSlug]
   );
   if (!orgs.length) return res.status(404).json({ error: "Organization not found" });
   const org = orgs[0];
   const funds = await query("SELECT id, name, restricted FROM fin_funds WHERE org_id = $1 ORDER BY name ASC", [org.id]);
-  res.json({ org: { name: org.name, mission: org.mission, slug: req.params.orgSlug }, funds });
+  res.json({ org: { name: org.name, mission: org.mission, slug: req.params.orgSlug, coverFeesEnabled: org.cover_fees_enabled !== false }, funds });
 }));
 
 // ── Giving Pages ────────────────────────────────────────────────────────────
@@ -5942,7 +5954,7 @@ app.delete("/giving-pages/:id", requireAuth, requireAdmin, wrap(async (req, res)
 // GET /org/:orgSlug/public, plus the page's own title/story/image/goal and
 // the real computed raised total (never a manually-set counter).
 app.get("/org/:orgSlug/giving-page/:pageSlug/public", wrap(async (req, res) => {
-  const orgs = await query("SELECT id, name, mission FROM orgs WHERE org_slug = ?", [req.params.orgSlug]);
+  const orgs = await query("SELECT id, name, mission, cover_fees_enabled FROM orgs WHERE org_slug = ?", [req.params.orgSlug]);
   if (!orgs.length) return res.status(404).json({ error: "Organization not found" });
   const org = orgs[0];
   const pageRows = await query(
@@ -5972,7 +5984,7 @@ app.get("/org/:orgSlug/giving-page/:pageSlug/public", wrap(async (req, res) => {
   );
 
   res.json({
-    org: { name: org.name, mission: org.mission, slug: req.params.orgSlug },
+    org: { name: org.name, mission: org.mission, slug: req.params.orgSlug, coverFeesEnabled: org.cover_fees_enabled !== false },
     givingPage: {
       id: page.id, slug: page.slug, title: page.title, story: page.story, imageUrl: page.image_url,
       goalAmount: page.goal_amount != null ? parseFloat(page.goal_amount) : null,
@@ -6135,7 +6147,7 @@ app.post("/org/:orgSlug/giving-page/:pageSlug/fundraisers", donateLimiter, wrap(
 // "never existed") if either the fundraiser OR its parent page is archived —
 // a fundraiser cannot outlive its campaign's own availability.
 app.get("/org/:orgSlug/giving-page/:pageSlug/fundraiser/:fundraiserSlug/public", wrap(async (req, res) => {
-  const orgs = await query("SELECT id, name, mission FROM orgs WHERE org_slug = ?", [req.params.orgSlug]);
+  const orgs = await query("SELECT id, name, mission, cover_fees_enabled FROM orgs WHERE org_slug = ?", [req.params.orgSlug]);
   if (!orgs.length) return res.status(404).json({ error: "Organization not found" });
   const org = orgs[0];
 
@@ -6156,7 +6168,7 @@ app.get("/org/:orgSlug/giving-page/:pageSlug/fundraiser/:fundraiserSlug/public",
   const f = fRows[0];
 
   res.json({
-    org: { name: org.name, mission: org.mission, slug: req.params.orgSlug },
+    org: { name: org.name, mission: org.mission, slug: req.params.orgSlug, coverFeesEnabled: org.cover_fees_enabled !== false },
     givingPage: { id: page.id, slug: page.slug, title: page.title, fundId: page.fund_id, fundName: page.fund_name || null },
     peerFundraiser: {
       id: f.id, slug: f.slug, name: f.name, story: f.story, imageUrl: f.image_url,
@@ -6263,14 +6275,26 @@ app.put("/peer-fundraisers/:id", requireAuth, requireAdmin, checkWriteAccess, wr
   res.json(updated[0]);
 }));
 
+// Donor-covers-fees gross-up (BUILD-08 Phase B): the amount to charge so the
+// org nets approximately the intended gift after Stripe's standard card fee
+// (2.9% + 30¢): gross = (net + 30) / (1 - 0.029). Standard published rate
+// only — orgs on negotiated/nonprofit rates net slightly more, never less.
+// The client computes the same number for DISPLAY; this server-side
+// derivation is the one that gets charged (client math is never trusted).
+const COVER_FEES_PCT = 0.029;
+const COVER_FEES_FLAT_CENTS = 30;
+function coverFeesGrossUpCents(netCents) {
+  return Math.ceil((netCents + COVER_FEES_FLAT_CENTS) / (1 - COVER_FEES_PCT));
+}
+
 app.post("/donate/:orgSlug", donateLimiter, wrap(async (req, res) => {
   if (!stripe) return res.status(503).json({ error: "Stripe not configured" });
-  const { amount, fundId, frequency, firstName, lastName, email, campaignId } = req.body;
+  const { amount, fundId, frequency, firstName, lastName, email, campaignId, coverFees } = req.body;
   let { givingPageId, peerFundraiserId } = req.body;
   if (!amount || !firstName || !lastName || !email) return res.status(400).json({ error: "All fields required" });
 
   const orgs = await query(
-    "SELECT id, name, stripe_account_id, stripe_connected FROM orgs WHERE org_slug = $1",
+    "SELECT id, name, stripe_account_id, stripe_connected, cover_fees_enabled FROM orgs WHERE org_slug = $1",
     [req.params.orgSlug]
   );
   if (!orgs.length) return res.status(404).json({ error: "Organization not found" });
@@ -6279,8 +6303,14 @@ app.post("/donate/:orgSlug", donateLimiter, wrap(async (req, res) => {
     return res.status(400).json({ error: "This organization is not set up to accept online donations yet." });
   }
 
-  const amountCents = Math.round(parseFloat(amount) * 100);
-  if (amountCents < 100) return res.status(400).json({ error: "Minimum donation is $1" });
+  const baseCents = Math.round(parseFloat(amount) * 100);
+  if (baseCents < 100) return res.status(400).json({ error: "Minimum donation is $1" });
+
+  // Re-derived server-side from the base amount — the client sends only the
+  // boolean, never its own total. The full charged amount IS the donation
+  // (gifts + receipts record what was actually charged; no fee itemization).
+  const feesCovered = !!coverFees && org.cover_fees_enabled !== false;
+  const amountCents = feesCovered ? coverFeesGrossUpCents(baseCents) : baseCents;
 
   const donorName = `${firstName} ${lastName}`.trim();
   const isRecurring = frequency === "monthly" || frequency === "annual";
@@ -6344,6 +6374,9 @@ app.post("/donate/:orgSlug", donateLimiter, wrap(async (req, res) => {
     giving_page_id: givingPageId || "",
     peer_fundraiser_id: peerFundraiserId || "",
     org_id: org.id,
+    // Reference only — the gift/receipt record the full charged amount.
+    cover_fees: feesCovered ? "true" : "",
+    base_amount_cents: feesCovered ? String(baseCents) : "",
   };
 
   const returnPath = peerFundraiserId

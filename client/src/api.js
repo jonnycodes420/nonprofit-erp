@@ -99,9 +99,11 @@ export function adaptDonor(d) {
     name:           d.name,
     email:          d.email || "",
     phone:          d.phone || "",
-    total:          d.total_giving || 0,
+    // parseFloat: these are NUMERIC since the cover-fees migration, and pg
+    // serializes numerics as strings — "51.81" would concatenate in sums.
+    total:          parseFloat(d.total_giving) || 0,
     lastGift:       d.last_gift_date || new Date().toISOString().split("T")[0],
-    lastAmount:     d.last_gift_amount || 0,
+    lastAmount:     parseFloat(d.last_gift_amount) || 0,
     gifts:          d.gift_count || 0,
     status:         d.status,
     stage:          d.stage || "cultivate",

@@ -4,7 +4,7 @@
 
 Four phases, one commit each. Status:
 - **Phase A — Landing image quality + "How it works": DONE.** Every landing image recaptured from prod via the new committed `scripts/landing-capture.js` — tight crops at DSF 2 (hero 3), WebP q92, 1x/2x srcset, displayed at half the 2x pixels so text reads near native size (the old full-app shots displayed at ~37% scale). The receipt is now trimmed to its content (the empty white bottom half is gone). New numbered 3-step "How it works" section between the product moments and the money strip, all three step images real captures. Hero goal-bar animation geometry re-measured. Lighthouse mobile 91 (local preview build; ≥90 bar met — worth re-checking against prod CDN after deploy, BUILD-07 measured 95 there). Screenshots: `docs/landing-2026-07-17-phaseA/` incl. a 200%-zoom hero crop.
-- **Phase B — donor-covers-fees**: see its entry below.
+- **Phase B — donor-covers-fees: DONE.** Optional "Add $X to cover processing costs" checkbox on all three public donate page types (default off donor-side; org toggle in Settings → Giving Pages, default on). Gross-up derived server-side only — `ceil((base+30)/(1-0.029))` — the client's number is display-only and a parity sweep keeps them in lockstep. Verified 24/24 in **Stripe test mode** including a real 4242-card checkout: charged $51.81, gift row $51.81, auto-receipt $51.81, donor total $51.81, all consistent; toggle-off both hides the checkbox and makes the server refuse the gross-up. **Found + fixed a real pre-existing bug**: `gifts.amount`/`donors.total_giving`/`last_gift_amount` were INTEGER — any cents-carrying online gift (e.g. a $50.50 custom amount) made the webhook's gift INSERT throw and the gift was silently lost. Migrated to NUMERIC (guarded, one-time). Suite committed as `tests/cover-fees.test.js`; screenshots in `docs/cover-fees-2026-07-17/`.
 - **Phase C — duplicate merge**: see its entry below.
 - **Phase D — warmth pass**: see its entry below.
 
@@ -58,6 +58,16 @@ DONE (was item 6): Expired-token UX — see "Auth, Gmail, billing/Reactivate, an
 ---
 
 ## Earlier sessions (for reference)
+
+### BUILD-08 Phase B — Donor-covers-fees at checkout (2026-07-17)
+
+The public donate flow (all three page types — org-wide, Giving Page, peer fundraiser; one `Donate.jsx` form) now offers an optional, **always-unchecked-by-default** "Add $X to help cover card-processing costs" checkbox, with an org-level switch in Settings → Giving Pages (`orgs.cover_fees_enabled`, default on; `CoverFeesCard` → `PATCH /orgs/:id`, which now guards its profile-fields UPDATE so a toggle-only PATCH can't null mission/website).
+
+- **Server-derived math only**: the client sends `coverFees: boolean`; `POST /donate` computes `ceil((base + 30¢)/(1 − 0.029))` itself (`coverFeesGrossUpCents`) for one-time and recurring alike. The client's `grossUpCents` is display-only; the committed suite sweeps both for parity. Junk client-sent totals are provably ignored.
+- **The full charged amount is the donation** — gift row, donor totals, and the auto-issued receipt all record the grossed-up total via the webhook's `pi.amount_received`; no fee itemization anywhere (BUILD-01 receipts unchanged).
+- **Real pre-existing bug found and fixed by the suite's e2e leg**: `gifts.amount`, `donors.total_giving`, `donors.last_gift_amount` were INTEGER — the webhook INSERT for any cents-carrying gift threw `invalid input syntax for type integer: "51.81"` and the gift was **silently lost** (webhook returns 200 → Stripe never retries). This was already reachable in production via a $50.50 custom amount. db.js now migrates all three to NUMERIC via guarded DO blocks (one-time — ALTER TYPE locks + rewrites, so it's skipped once migrated); `adaptDonor`/DonorProfile parseFloat the now-string numerics; `recalcDonor`'s parseInt → parseFloat.
+- `donateLimiter` honors `DISABLE_RATE_LIMIT=1` (the suite hits /donate ~7 times per run).
+- **Verified 24/24** (`tests/cover-fees.test.js`, committed — local scratch server/Postgres + **Stripe test mode**, connected test account `acct_1TtfeL…`): covered $50 → real Checkout Session at **5181¢** confirmed via Stripe's API (and visible as "$51.81" on the real hosted checkout page — screenshot in docs), uncovered → 5000¢, recurring $25/mo → 2606¢/mo, toggle-off hides + refuses, and the FULL_E2E leg completed a real 4242-card payment through `stripe listen --forward-connect-to` → gift $51.81 → receipt $51.81 → donor total $51.81. Screenshots: `docs/cover-fees-2026-07-17/` (donate form with checkbox + the Stripe checkout page showing $51.81).
 
 ### BUILD-08 Phase A — Landing image quality + "How it works" (2026-07-17)
 

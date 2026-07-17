@@ -772,6 +772,30 @@ async function initSchema() {
   await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS recurring_dunning_subject TEXT`);
   await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS recurring_dunning_body TEXT`);
 
+  // Donor-covers-fees (BUILD-08 Phase B): org-level switch for the optional
+  // "add a little to cover processing costs" checkbox on the public donate
+  // flow. DEFAULT true = on for new setups; the donor-side checkbox itself
+  // always defaults to unchecked, so nothing is ever added silently. The
+  // gross-up math lives server-side in POST /donate (never trusted from the
+  // client) — see coverFeesGrossUpCents in server.js.
+  await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS cover_fees_enabled BOOLEAN DEFAULT true`);
+
+  // Gift money columns were INTEGER (whole dollars) since the original
+  // schema — any cents-carrying online gift (a $50.50 custom amount, or any
+  // covered-fees total like $51.81) made the webhook's gift INSERT throw
+  // "invalid input syntax for type integer" and the gift was silently lost
+  // (Stripe got a 200, so no retry). Found live by the Phase B suite.
+  // Guarded DO blocks: ALTER TYPE takes an exclusive lock + table rewrite,
+  // so only run it while the column is still integer, not on every boot.
+  for (const [tbl, col] of [["gifts", "amount"], ["donors", "total_giving"], ["donors", "last_gift_amount"]]) {
+    await pool.query(`DO $$ BEGIN
+      IF EXISTS (SELECT 1 FROM information_schema.columns
+                 WHERE table_schema='public' AND table_name='${tbl}' AND column_name='${col}' AND data_type='integer') THEN
+        ALTER TABLE ${tbl} ALTER COLUMN ${col} TYPE NUMERIC USING ${col}::numeric;
+      END IF;
+    END $$;`);
+  }
+
   // One row per donor subscription — a health record layered on top of the
   // donors.stripe_subscription_id/stripe_subscription_status columns (which
   // already existed for the "active" happy path). This table is what actually

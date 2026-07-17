@@ -5,6 +5,14 @@ import { T, fmtMoney } from "./publicTheme";
 
 const PRESETS = [25, 50, 100, 250, 500];
 
+// Donor-covers-fees display math — MUST mirror coverFeesGrossUpCents in
+// server.js (2.9% + 30¢ standard card rate). Display only: the server
+// re-derives the charged amount from the base + boolean and never trusts
+// a client-computed total.
+function grossUpCents(baseCents) {
+  return Math.ceil((baseCents + 30) / (1 - 0.029));
+}
+
 const inp = {
   width: "100%", boxSizing: "border-box",
   background: T.bg, border: "1px solid " + T.bg3,
@@ -105,6 +113,7 @@ export default function Donate() {
   const [isCustom, setIsCustom] = useState(false);
   const [fundId, setFundId] = useState("");
   const [frequency, setFrequency] = useState("one-time");
+  const [coverFees, setCoverFees] = useState(false); // always opt-in, never pre-checked
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
   const [email, setEmail] = useState("");
@@ -163,6 +172,10 @@ export default function Donate() {
   }, [orgSlug, pageSlug, fundraiserSlug]);
 
   const effectiveAmount = isCustom ? parseFloat(customAmt) || 0 : preset;
+  const baseCents = Math.round(effectiveAmount * 100);
+  const feeCents = baseCents >= 100 ? grossUpCents(baseCents) - baseCents : 0;
+  const showCoverFees = org?.coverFeesEnabled && baseCents >= 100;
+  const chargedAmount = showCoverFees && coverFees ? (baseCents + feeCents) / 100 : effectiveAmount;
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -178,6 +191,7 @@ export default function Donate() {
         body: JSON.stringify({
           amount: effectiveAmount, fundId, frequency, firstName, lastName, email,
           givingPageId: givingPage?.id, peerFundraiserId: peerFundraiser?.id,
+          coverFees: showCoverFees && coverFees,
         }),
       });
       const data = await r.json();
@@ -448,10 +462,26 @@ export default function Donate() {
           </div>
           {frequency !== "one-time" && (
             <div style={{ marginTop: 10, fontSize: 12, color: T.ink3, background: T.greenDk + "10", border: "1px solid " + T.greenDk + "25", borderRadius: 8, padding: "8px 12px" }}>
-              You'll be charged <strong>${effectiveAmount.toFixed(2)}</strong> {frequency === "monthly" ? "each month" : "each year"} until you cancel.
+              You'll be charged <strong>${chargedAmount.toFixed(2)}</strong> {frequency === "monthly" ? "each month" : "each year"} until you cancel.
             </div>
           )}
         </div>
+
+        {/* Donor-covers-fees — optional, always unchecked by default, shown
+            only when the org has it enabled. The fee shown is the standard
+            card-processing estimate so the org nets the intended gift; the
+            server re-derives this same number and never trusts ours. */}
+        {showCoverFees && (
+          <label style={{ background: T.white, border: "1px solid " + T.bg3, borderRadius: 16, padding: "16px 20px", display: "flex", alignItems: "flex-start", gap: 12, cursor: "pointer" }}>
+            <input type="checkbox" checked={coverFees} onChange={e => setCoverFees(e.target.checked)}
+              style={{ marginTop: 3, width: 16, height: 16, accentColor: T.greenDk, cursor: "pointer", flexShrink: 0 }} />
+            <span style={{ fontSize: 13, color: T.ink2, lineHeight: 1.55 }}>
+              Add <strong>${(feeCents / 100).toFixed(2)}</strong> to help cover card-processing costs
+              {frequency !== "one-time" ? ` on each ${frequency === "monthly" ? "monthly" : "annual"} gift` : ""},
+              so {org.name} receives your full ${effectiveAmount.toFixed(2)}.
+            </span>
+          </label>
+        )}
 
         {/* Fund selector — hidden when this Giving Page (or its parent, for
             a peer-fundraiser page) already designates a fund; the page's
@@ -492,7 +522,7 @@ export default function Donate() {
             letterSpacing: "-0.01em", transition: "background 0.15s",
             boxShadow: submitting ? "none" : "0 4px 20px rgba(26,107,74,0.3)",
           }}>
-          {submitting ? "Redirecting to Stripe…" : `Give $${effectiveAmount > 0 ? effectiveAmount.toFixed(2) : "—"} ${frequency !== "one-time" ? `/ ${frequency === "monthly" ? "mo" : "yr"}` : ""}`}
+          {submitting ? "Redirecting to Stripe…" : `Give $${effectiveAmount > 0 ? chargedAmount.toFixed(2) : "—"} ${frequency !== "one-time" ? `/ ${frequency === "monthly" ? "mo" : "yr"}` : ""}`}
         </button>
 
         <div style={{ textAlign: "center", fontSize: 11, color: T.ink3, lineHeight: 1.6 }}>

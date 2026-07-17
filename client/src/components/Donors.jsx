@@ -2243,7 +2243,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
   const loadGiftsFull=()=>{
     apiFetch(`/donors/${donor.id}`).then(raw=>{
       const g=(raw.gifts||[]).map(g=>({
-        id:g.id,amount:g.amount||0,date:g.date||g.created_at?.split("T")[0],
+        id:g.id,amount:parseFloat(g.amount)||0,date:g.date||g.created_at?.split("T")[0],
         type:g.type||"cash",campaign:g.campaign||"",notes:g.notes||"",
         fund_id:g.fund_id||"",payment_method:g.payment_method||"",
         acknowledgement_sent:!!g.acknowledgement_sent,
