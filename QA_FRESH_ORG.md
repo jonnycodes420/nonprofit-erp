@@ -65,6 +65,14 @@ selector issues; each did leave a throwaway org behind — cleanup file).
   on first login lands as criticism. First-Touch Delay next to it handles the
   same situation gracefully ("No outreach logged yet — that's normal right
   after import"). Retention deserves the same brand-new-org empty state.
+  **FIXED 2026-07-17:** the hero now shows "—" plus a narrative "Too early to
+  measure" line whenever there's nothing to measure — no gift history at all
+  ("import your donors to start tracking"), or prior-year history with zero
+  current-year gifts ("as this year's gifts land, you'll see how many of last
+  year's N donors stick with you"; the server now exposes `thisYearCount` so
+  the client can tell this apart from a genuine 0%). Real percentages and the
+  sector-average comparison are unchanged once current-year gifts exist —
+  verified all three states via scripted Playwright against a local stack.
 
 ### Cosmetic
 - **C1 —** LYBUNT defaults to the 17-day-old FY2027 and declares last year's

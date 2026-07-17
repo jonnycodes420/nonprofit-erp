@@ -352,7 +352,13 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
   // anxiety as a number" pattern).
   const retentionCurrent=stewardMetrics?.retentionRate?.current;
   const retentionSector=stewardMetrics?.retentionRate?.sectorAverage??43;
-  const retentionColor=retentionCurrent==null?T.ink:retentionCurrent>=retentionSector?T.greenMid:T.terracotta;
+  // "Too early to measure" (QA_FRESH_ORG R2): a day-one org isn't 0% retained,
+  // it just has nothing to measure yet — either no prior-year giving to compare
+  // against (current==null), or prior-year history exists but no gift has been
+  // logged in the current year at all (0% with thisYearCount===0). Neither is
+  // a verdict on the org, so neither gets the below-sector-average framing.
+  const retentionTooEarly=retentionCurrent==null||(retentionCurrent===0&&stewardMetrics?.retentionRate?.thisYearCount===0);
+  const retentionColor=retentionTooEarly?T.ink:retentionCurrent>=retentionSector?T.greenMid:T.terracotta;
 
   // Goal banner: greeting is real (time-of-day + the logged-in user's own
   // `name` field from the DB — not a role label or placeholder; an empty
@@ -498,9 +504,9 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
                 <div style={{fontSize:10,fontWeight:800,letterSpacing:"0.1em",textTransform:"uppercase",color:T.ink3,marginBottom:6}}>Donor Retention Rate</div>
                 <div style={{display:"flex",alignItems:"baseline",gap:10,flexWrap:"wrap"}}>
                   <div style={{fontSize:32,fontWeight:800,fontFamily:"'DM Serif Display',serif",color:retentionColor,lineHeight:1}}>
-                    {retentionCurrent!=null?`${retentionCurrent}%`:"—"}
+                    {retentionTooEarly?"—":`${retentionCurrent}%`}
                   </div>
-                  {stewardMetrics.retentionRate.deltaVsTrendStart!=null&&(
+                  {!retentionTooEarly&&stewardMetrics.retentionRate.deltaVsTrendStart!=null&&(
                     <span style={{fontSize:13,fontWeight:700,color:stewardMetrics.retentionRate.deltaVsTrendStart===0?T.ink3:stewardMetrics.retentionRate.deltaVsTrendStart>0?"#1a6b4a":T.terracotta}}>
                       {stewardMetrics.retentionRate.deltaVsTrendStart===0
                         ?"No change vs 3 weeks ago"
@@ -512,8 +518,15 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
                     numeral above it — a sentence about what the number means
                     for donor relationships, not a bare "vs. X%" field label. */}
                 <div style={{fontSize:13,fontWeight:600,color:T.ink2,marginTop:6,lineHeight:1.4,maxWidth:360}}>
-                  {retentionCurrent==null
-                    ?`The typical nonprofit retains ${retentionSector}% of its donors year over year.`
+                  {/* A brand-new org gets an expectant "too early" line, never
+                      the below-sector-average verdict (QA_FRESH_ORG R2) —
+                      mirrors First-Touch Delay's day-one handling below. */}
+                  {retentionTooEarly
+                    ?!myStats?.orgHasGiftHistory
+                      ?`Too early to measure — import your donors to start tracking. The typical nonprofit retains ${retentionSector}% of its donors year over year.`
+                      :stewardMetrics.retentionRate.prevYearCount>0
+                        ?`Too early to measure — as this year's gifts land, you'll see how many of last year's ${stewardMetrics.retentionRate.prevYearCount} donor${stewardMetrics.retentionRate.prevYearCount===1?"":"s"} stick with you.`
+                        :`Too early to measure — you'll see this once there's a prior year of giving to compare against. The typical nonprofit retains ${retentionSector}%.`
                     :retentionCurrent>=retentionSector
                       ?`Donors are sticking with you — ${retentionCurrent-retentionSector}pt above the ${retentionSector}% nonprofit sector average.`
                       :`${retentionSector-retentionCurrent}pt below the ${retentionSector}% sector average — worth a closer look at who isn't renewing.`}

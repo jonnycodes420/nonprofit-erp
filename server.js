@@ -4540,6 +4540,9 @@ app.get("/metrics/stewardship-summary", requireAuth, wrap(async (req, res) => {
     retentionRate: {
       current: retention.retentionRate, sectorAverage: SECTOR_AVG_RETENTION_RATE,
       retained: retention.retained, prevYearCount: retention.prevYearCount,
+      // Lets the client tell "0% because nothing has been logged this year
+      // yet" (day-one org, too early to measure) apart from a genuine 0%.
+      thisYearCount: retention.thisYearCount,
       trend: retentionTrend.map(r => ({ date: r.snapshot_date, value: Number(r.value) })), deltaVsTrendStart: trendDelta(retentionTrend),
     },
   });
