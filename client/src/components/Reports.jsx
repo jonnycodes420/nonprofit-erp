@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
 import { apiFetch, API, getToken } from "../api";
-import { T, fmtFull, Spin, Card, EmptyState, PageTitle } from "./shared";
+import { T, fmtFull, Spin, Card, EmptyState, PageTitle, SectionTabs } from "./shared";
 
 // ── Reports (BUILD-02) ──────────────────────────────────────────────────────
 // Six fixed, parameterized, table-first, CSV-downloadable reports — each one
@@ -297,18 +297,13 @@ export function Reports({ onNavigate }) {
   return <div className="fade-in">
     <PageTitle main="Your" accent="Reports" sub="Six answers to the questions boards and funders actually ask — every one filters cleanly and downloads to CSV." />
 
-    <div className="reports-layout" style={{ display: "flex", gap: 18, alignItems: "flex-start" }}>
-      {/* Left rail */}
-      <div className="reports-rail" style={{ width: 250, flexShrink: 0, display: "flex", flexDirection: "column", gap: 6 }}>
-        {REPORT_DEFS.map(r => {
-          const on = active === r.key;
-          return <button key={r.key} onClick={() => setActive(r.key)}
-            style={{ textAlign: "left", background: on ? T.bgDark : T.white, border: `1px solid ${on ? T.bgDark : T.bg3}`, borderRadius: 12, padding: "12px 14px", cursor: "pointer", display: "block", width: "100%" }}>
-            <div style={{ fontSize: 13, fontWeight: 800, color: on ? "#f0ede6" : T.ink }}>{r.label}</div>
-            <div className="rpt-sub" style={{ fontSize: 11, color: on ? "#8fa896" : T.ink3, marginTop: 3, lineHeight: 1.5 }}>{r.q}</div>
-          </button>;
-        })}
-      </div>
+    <div className="reports-layout" style={{ display: "flex", flexDirection: "column" }}>
+      {/* Report picker — horizontal tabs; the active report's question renders
+          as a subtitle below (the old rail showed it under every item) */}
+      <SectionTabs className="reports-tabbar"
+        tabs={REPORT_DEFS.map(r => ({ id: r.key, label: r.label }))}
+        active={active} onSelect={setActive} />
+      <div className="rpt-sub" style={{ fontSize: 13, color: T.ink3, margin: "-6px 0 14px", lineHeight: 1.5 }}>{activeDef.q}</div>
 
       {/* Main */}
       <div style={{ flex: 1, minWidth: 0 }}>

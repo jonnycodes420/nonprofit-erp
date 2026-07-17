@@ -303,12 +303,8 @@ export function GlobalStyles() {
       .event-detail-body{grid-template-columns:1fr!important;overflow-y:auto!important;overflow-x:hidden!important;}
       .event-detail-body>div{overflow-y:visible!important;border-right:none!important;padding:14px 16px!important;}
 
-      /* Reports: rail becomes a horizontal chip strip, param bar wraps,
+      /* Reports: tabs scroll horizontally at any width (SectionTabs base);
          table scrolls inside its own container (page never scrolls horiz) */
-      .reports-layout{flex-direction:column!important;}
-      .reports-rail{width:100%!important;flex-direction:row!important;overflow-x:auto!important;-webkit-overflow-scrolling:touch!important;padding-bottom:6px!important;}
-      .reports-rail button{width:auto!important;flex-shrink:0!important;white-space:nowrap!important;padding:10px 14px!important;}
-      .reports-rail .rpt-sub{display:none!important;}
       .reports-table-wrap{overflow-x:auto!important;-webkit-overflow-scrolling:touch!important;max-width:100%!important;}
 
       /* Signup: two-column hero → stacked single column */
