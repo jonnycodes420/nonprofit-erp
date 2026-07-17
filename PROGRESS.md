@@ -49,7 +49,15 @@ DONE (was item 6): Expired-token UX — see "Auth, Gmail, billing/Reactivate, an
 
 ## Earlier sessions (for reference)
 
-### BUILD-05 — Load test at 25k donors: found the cliff, fixed it, documented the ceiling (2026-07-16)
+### Sentry production-error sweep + console token leak (2026-07-16)
+
+Sentry (backend project) showed 3 real unresolved production errors + 1 advisory. All four fixed, each verified with a scripted run against real server.js + real local Postgres 16 (SSL, port 5544 — same infra recipe as BUILD-03/05: initdb + self-signed cert) — **41/41 assertions**, covering happy path AND cross-org isolation for every fix. Committed separately (`75b2138`, `85547ed`, `6a317a2`, `a5ef04c`, `3c54e44`). Sentry issues deliberately NOT resolved in the dashboard — founder will resolve after confirming they stop recurring in prod.
+
+- **`DELETE /gifts/:id` FK violation (receipts/pledges)** — deliberate policy, not a cascade: active receipt → **409** "void the receipt first" (receipts are legal artifacts); voided receipts survive with `gift_id` NULLed (frozen snapshot intact); a pledge fulfilled by the gift reopens (`status='open'`, fulfilled fields cleared, reminder state untouched — the overdue sweep re-arms it). One transaction, then donor recalc.
+- **`DELETE /donors/:id` FK violation** — was a pre-trash-model hard DELETE; now soft-deletes (`deleted_at=NOW()`) exactly like bulk-delete, 404 on unknown/cross-org/already-trashed; purge-trash owns hard deletion. Verified the full lifecycle: trash → excluded from `GET /donors` → purge-trash hard-deletes donor + children.
+- **`POST /admin/orgs/:id/extend-trial` crash** — referenced a nonexistent `pool` (dead pg-style code, crashed on every call; route had clearly never worked in production). Rewritten on db.js helpers + two semantic fixes: extends from `GREATEST(trial_ends_at, NOW())` so extending an expired trial lands in the future, and restores `trialing` from `trial_expired` so the org's accessState actually returns to `full` (verified via `/billing/status`).
+- **`GET /admin/orgs` N+1 (advisory)** — was 4 queries per org via `orgWithMetrics`; now one `GROUP BY org_id` aggregate per table. Response-shape parity asserted against direct per-org queries.
+- **Client console leak** — `App.jsx` logged the raw JWT (`console.log('APP LOADED', localStorage.getItem('npe_token'))`) on every production page load; `Donors.jsx`'s importer logged the full import API response + payload counts. All stripped (nothing worth DEV-gating — pure debug leftovers); vite build + grep of `dist/` confirms the strings are gone from the shipped bundle. Only remaining client `console.log` is main.jsx's SW registration scope (no sensitive data).: found the cliff, fixed it, documented the ceiling (2026-07-16)
 
 Seeded a synthetic mid-size org (25,000 donors / 202,561 gifts / 150,000 interactions, power-law, 6-year spread, deterministic — `scripts/seed-loadtest.js`) into rebuilt local infra (Postgres 16 w/ self-signed SSL on 5544, real server.js) and measured everything with `scripts/loadtest.js` (autocannon, committed). Full numbers in `LOADTEST_REPORT.md`; CLAUDE.md gained a "Scale" section.
 
