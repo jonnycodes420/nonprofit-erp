@@ -37,12 +37,20 @@ export function TopBar({ auth, logout, onNavigate }) {
 
   // ⌘K / Ctrl+K from anywhere in the authenticated app (desktop — the bar
   // is display:none ≤768px, where focusing a hidden input is a no-op).
+  // No-op when something covers the bar (DonorProfile's full-screen takeover
+  // at zIndex 200, modals at 300+): focusing would type into an invisible
+  // input and the dropdown would render underneath the overlay.
   useEffect(()=>{
     const onKey = e => {
       if ((e.metaKey||e.ctrlKey) && (e.key==="k"||e.key==="K")) {
+        const el = inputRef.current;
+        if (!el) return;
+        const r = el.getBoundingClientRect();
+        if (!r.width || !r.height) return; // hidden (mobile shell)
+        const top = document.elementFromPoint(r.left+r.width/2, r.top+r.height/2);
+        if (top !== el) return; // covered by a takeover/modal
         e.preventDefault();
-        inputRef.current?.focus();
-        inputRef.current?.select();
+        el.focus(); el.select();
       }
     };
     window.addEventListener("keydown",onKey);

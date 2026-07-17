@@ -102,7 +102,14 @@ async function api(pathname, token) {
     await profileHeader.isVisible().catch(() => false) &&
     (await profileHeader.textContent().catch(() => "")).includes(donor.name));
 
-  // ── Grant search → grant profile (cross-tab: currently on Donors) ────────
+  // While the profile takeover (fixed, z 200) covers the shell, ⌘K must be
+  // a no-op — the bar is underneath it.
+  await page.keyboard.press("ControlOrMeta+k");
+  t("⌘K is a no-op while a full-screen profile covers the bar", !(await searchFocused()));
+
+  // ── Grant search → grant profile (cross-tab: from Home) ──────────────────
+  await page.goto(`${BASE}/dashboard`, { waitUntil: "networkidle" });
+  await page.waitForTimeout(800);
   await page.keyboard.press("ControlOrMeta+k");
   await search.fill(grant.funder.slice(0, Math.min(grant.funder.length, 12)));
   await page.waitForTimeout(900);
