@@ -141,7 +141,7 @@ export default function WelcomePage() {
     setShowImportModal(false);
     setLoadingDonors(true);
     try {
-      const donors = await apiFetch("/donors");
+      const donors = await apiFetch("/donors/summaries");
       setDonorsSnapshot(donors || []);
     } catch { setDonorsSnapshot([]); }
     setLoadingDonors(false);

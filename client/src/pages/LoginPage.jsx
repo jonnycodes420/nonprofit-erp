@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
+import { API } from "../api";
 
 // Message set by api.js handleAuthFailure when a stale/invalid token is cleared.
 function popAuthNotice() {
@@ -33,7 +34,10 @@ export default function LoginPage() {
     e.preventDefault();
     setLoading(true); setError(""); setNotice("");
     try {
-      const res = await fetch("https://nonprofit-erp-production.up.railway.app/auth/login", {
+      // API resolves to the same Railway URL in production; the previously
+      // hardcoded prod URL ignored VITE_API_URL, which made logging in against
+      // a local backend (dev/E2E stacks) impossible.
+      const res = await fetch(`${API}/auth/login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, password }),

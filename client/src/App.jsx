@@ -107,7 +107,11 @@ function AppShell() {
     try {
       const [org,donors,grants,volunteers,tasks,board,financials] = await Promise.all([
         apiFetch("/org"),
-        apiFetch("/donors"),
+        // Lightweight whole-org list (no notes/score_rationale) — the full
+        // GET /donors payload was the last known scaling cliff (21.7MB at
+        // 25k donors). Anything needing the heavy fields (DonorProfile)
+        // fetches GET /donors/:id on demand.
+        apiFetch("/donors/summaries"),
         apiFetch("/grants"),
         apiFetch("/volunteers"),
         apiFetch("/tasks"),

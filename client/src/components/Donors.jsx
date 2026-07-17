@@ -3749,50 +3749,51 @@ function AssignModal({donor,orgTeam,onSave,onClose}){
 }
 
 // ── Directory View ─────────────────────────────────────────────────────────
-// Client-side CSV of exactly the rows on screen. The directory's filtering
-// (search, advanced filters, custom-field filters, stage/owner) all happens
-// client-side, so exporting the already-filtered array is the only way an
-// "Export CSV" can match what the user is looking at — a server route can't
-// see these filters. Same formula-injection guard as the server report CSVs.
-function directoryCsvCell(v){
-  if(v===null||v===undefined)return "";
-  let s=String(v);
-  if(typeof v==="string"&&/^[=+\-@]/.test(s))s="'"+s;
-  if(/[",\n\r]/.test(s))s='"'+s.replace(/"/g,'""')+'"';
-  return s;
-}
-function downloadDirectoryCsv(rows){
-  const cols=[
-    ["Name",d=>d.name],["Email",d=>d.email],["Phone",d=>d.phone],
-    ["Stage",d=>d.stage],["Status",d=>d.status],
-    ["Total giving",d=>d.total],["Last gift date",d=>d.lastGift],["Last gift amount",d=>d.lastAmount],["Gift count",d=>d.gifts],
-    ["Assigned to",d=>d.assignedToName||""],["City",d=>d.city||""],["State",d=>d.state||""],
-    ["Tags",d=>(d.tags||[]).join("|")],
-  ];
-  const body="\uFEFF"+[cols.map(c=>c[0]).join(","),...rows.map(d=>cols.map(c=>directoryCsvCell(c[1](d))).join(","))].join("\r\n")+"\r\n";
-  const blob=new Blob([body],{type:"text/csv;charset=utf-8"});
-  const url=URL.createObjectURL(blob);
-  const a=document.createElement("a");
-  a.href=url;a.download=`donors-${new Date().toISOString().split("T")[0]}.csv`;
-  document.body.appendChild(a);a.click();document.body.removeChild(a);URL.revokeObjectURL(url);
-}
-
-function DirectoryView({donors,totalDonors,orgTeam,isAdmin,onSelectDonor,onAssign,stageFilter,setStageFilter,assigneeFilter,setAssigneeFilter,onLoadSampleData,sampleLoading,hasSampleData,onAddDonor,onBulkDone}){
+// (The old client-side downloadDirectoryCsv/directoryCsvCell were removed in
+// BUILD-06 Phase A: with a server-paginated list, "the rows on screen" is
+// one page, so Export CSV now hits GET /donors/export/csv with the same
+// search/stage/owner query params — every matching row, same injection
+// guard, applied server-side by toCsv/reportCsvCell.)
+// Server-paginated as of BUILD-06 Phase A: `donors` is the current 50-row
+// page (already narrowed by any client-side advanced/custom-field filters —
+// see the Donors component), `serverTotal` is the query's full match count,
+// and stage/owner/search filtering happens in the GET /donors query itself.
+function DirectoryView({donors,loading,serverTotal,page,pageSize,onPage,clientFilterCount,exportParams,totalDonors,orgTeam,isAdmin,onSelectDonor,onAssign,stageFilter,setStageFilter,assigneeFilter,setAssigneeFilter,onLoadSampleData,sampleLoading,hasSampleData,onAddDonor,onBulkDone}){
   const [selIds,setSelIds]=useState(new Set());
   const [stageDrop,setStageDrop]=useState(false);
   const [assignDrop,setAssignDrop]=useState(false);
   const [delModal,setDelModal]=useState(false);
   const [busy,setBusy]=useState(false);
   const [toast,setToast]=useState("");
+  const [exporting,setExporting]=useState(false);
   // Persisted across the session, not just this mount — a compact preference
   // shouldn't reset every time you navigate away from Directory and back.
   const [density,setDensity]=useState(()=>localStorage.getItem("steward_dir_density")||"comfortable");
   useEffect(()=>{localStorage.setItem("steward_dir_density",density);},[density]);
   const compact=density==="compact";
 
-  const filtered=donors
-    .filter(d=>!stageFilter||d.stage===stageFilter)
-    .filter(d=>!assigneeFilter||d.assignedTo===assigneeFilter);
+  // Stage/owner already applied server-side; the rows arrive filtered.
+  const filtered=donors;
+  const totalPages=Math.max(1,Math.ceil(serverTotal/pageSize));
+
+  // Exports EVERY row matching the server query (search/stage/owner), not
+  // just this page — client-only advanced/custom-field filters are NOT
+  // reflected (they only narrow the loaded page; see note pill below).
+  async function exportCsv(){
+    setExporting(true);
+    try{
+      const qs=new URLSearchParams();
+      Object.entries(exportParams||{}).forEach(([k,v])=>{if(v)qs.set(k,v);});
+      const res=await fetch(`${API}/donors/export/csv?${qs.toString()}`,{headers:{Authorization:`Bearer ${getToken()}`}});
+      if(!res.ok)throw new Error("Export failed");
+      const blob=await res.blob();
+      const url=URL.createObjectURL(blob);
+      const a=document.createElement("a");
+      a.href=url;a.download=`donors-${new Date().toISOString().split("T")[0]}.csv`;
+      document.body.appendChild(a);a.click();document.body.removeChild(a);URL.revokeObjectURL(url);
+    }catch(e){flash("Export failed: "+(e.message||"unknown error"));}
+    setExporting(false);
+  }
 
   const selFiltered=filtered.filter(d=>selIds.has(d.id));
   const allChecked=filtered.length>0&&filtered.every(d=>selIds.has(d.id));
@@ -3882,11 +3883,15 @@ function DirectoryView({donors,totalDonors,orgTeam,isAdmin,onSelectDonor,onAssig
           <option value="">All owners</option>
           {orgTeam.map(u=><option key={u.id} value={u.id}>{u.name}</option>)}
         </select>
-        <span style={{fontSize:12,color:T.ink3}}>{filtered.length} donor{filtered.length!==1?"s":""}</span>
+        <span style={{fontSize:12,color:T.ink3}}>{serverTotal} donor{serverTotal!==1?"s":""}</span>
+        {clientFilterCount>0&&<span title="Advanced and custom-field filters apply within the loaded page only — server-side filtering for these is not available yet."
+          style={{fontSize:11,color:T.terracotta,fontWeight:700,background:"#b8593f14",border:"1px solid #b8593f40",borderRadius:99,padding:"3px 10px"}}>
+          filtering current page
+        </span>}
         <div style={{flex:1}}/>
-        <button onClick={()=>downloadDirectoryCsv(filtered)} disabled={filtered.length===0} title="Download the current list as a CSV"
-          style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"7px 12px",color:filtered.length===0?T.ink3:T.ink,fontSize:12,fontWeight:600,cursor:filtered.length===0?"not-allowed":"pointer"}}>
-          Export CSV
+        <button onClick={exportCsv} disabled={exporting||serverTotal===0} title="Download every donor matching the search/stage/owner filters as a CSV"
+          style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"7px 12px",color:serverTotal===0?T.ink3:T.ink,fontSize:12,fontWeight:600,cursor:exporting||serverTotal===0?"not-allowed":"pointer"}}>
+          {exporting?"Exporting…":"Export CSV"}
         </button>
         <div style={{display:"flex",background:T.bg,borderRadius:99,padding:2,border:"1px solid "+T.bg3}}>
           {[["comfortable","Comfortable"],["compact","Compact"]].map(([v,l])=>(
@@ -3954,7 +3959,11 @@ function DirectoryView({donors,totalDonors,orgTeam,isAdmin,onSelectDonor,onAssig
       )}
 
       {/* Donor table */}
-      {filtered.length===0
+      {loading
+        ?<div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:10,padding:"48px 0",color:T.ink3,fontSize:13}}>
+          <span style={{display:"inline-block",width:14,height:14,border:"2px solid "+T.bg3,borderTopColor:T.green,borderRadius:"50%",animation:"sp 0.7s linear infinite"}}/>Loading donors…
+        </div>
+        :filtered.length===0
         ?<EmptyState icon="♦" title="No donors found" message="Try adjusting your filters or search term."/>
         :<div style={{background:T.white,borderRadius:14,overflow:"hidden",border:"1px solid "+T.bg3}}>
           {/* Header — light treatment (not a solid green fill) so Directory
@@ -4020,6 +4029,21 @@ function DirectoryView({donors,totalDonors,orgTeam,isAdmin,onSelectDonor,onAssig
           })}
         </div>
       }
+
+      {/* Pagination — 50/page server-side */}
+      {!loading&&totalPages>1&&(
+        <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:14,padding:"6px 0"}}>
+          <button onClick={()=>onPage(page-1)} disabled={page===0}
+            style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"7px 14px",color:page===0?T.ink3:T.ink,fontSize:12,fontWeight:700,cursor:page===0?"not-allowed":"pointer",opacity:page===0?0.5:1}}>
+            ← Prev
+          </button>
+          <span style={{fontSize:12,color:T.ink3,fontWeight:600}}>Page {page+1} of {totalPages}</span>
+          <button onClick={()=>onPage(page+1)} disabled={page>=totalPages-1}
+            style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"7px 14px",color:page>=totalPages-1?T.ink3:T.ink,fontSize:12,fontWeight:700,cursor:page>=totalPages-1?"not-allowed":"pointer",opacity:page>=totalPages-1?0.5:1}}>
+            Next →
+          </button>
+        </div>
+      )}
 
       {/* Delete confirmation modal — never auto-confirm */}
       {delModal&&(
@@ -4241,49 +4265,95 @@ export function Donors({data,setData,isReadOnly=false,initialView,initialLogDono
   const[assignTarget,setAssignTarget]=useState(null);
   const[sampleStatus,setSampleStatus]=useState(null);
   const[sampleLoading,setSampleLoading]=useState(false);
+  // Server-paginated directory (BUILD-06 Phase A): the Directory view fetches
+  // its own 50-row pages with search/stage/owner pushed to query params;
+  // data.donors (now /donors/summaries) keeps feeding the whole-org views
+  // (pipeline/team/re-engage/map) and everything else.
+  const DIR_PAGE_SIZE=50;
+  const[dirPage,setDirPage]=useState(0);
+  const[dirRows,setDirRows]=useState(null); // null = loading
+  const[dirTotal,setDirTotal]=useState(0);
+  const[dirSearch,setDirSearch]=useState(search);
+  const[dirReloadKey,setDirReloadKey]=useState(0);
+  useEffect(()=>{const t=setTimeout(()=>setDirSearch(search),300);return()=>clearTimeout(t);},[search]);
+  useEffect(()=>{setDirPage(0);},[dirSearch,dirStage,dirAssignee]);
+  useEffect(()=>{
+    if(view!=="directory")return;
+    let cancelled=false;
+    (async()=>{
+      try{
+        const qs=new URLSearchParams({limit:String(DIR_PAGE_SIZE),offset:String(dirPage*DIR_PAGE_SIZE)});
+        if(dirSearch.trim())qs.set("search",dirSearch.trim());
+        if(dirStage)qs.set("stage",dirStage);
+        if(dirAssignee)qs.set("assignedTo",dirAssignee);
+        const r=await apiFetch(`/donors?${qs.toString()}`);
+        if(cancelled)return;
+        setDirRows((r.donors||[]).map(adaptDonor));
+        setDirTotal(r.total||0);
+      }catch(e){console.error(e);if(!cancelled)setDirRows([]);}
+    })();
+    return()=>{cancelled=true;};
+  },[view,dirPage,dirSearch,dirStage,dirAssignee,dirReloadKey]);
 
   useEffect(()=>{
     if((initialView||initialLogDonorId||initialStageFilter||initialSelectDonorId)&&onIntentConsumed)onIntentConsumed();
+    // A deep-linked selection starts from a summary row — upgrade it to the
+    // full record (selectDonor is defined below; safe to call from here).
+    if(initialSelectDonorId){
+      const d=data.donors.find(x=>x.id===initialSelectDonorId);
+      if(d)selectDonor(d);
+    }
   },[]);
+
+  // Advanced + custom-field filters as shared predicates: applied to the
+  // whole summaries list for pipeline/team/re-engage/map, and within the
+  // loaded page for the server-paginated Directory (the documented
+  // BUILD-06 compromise — full server-side custom-field querying is out of
+  // scope; DirectoryView shows a "filtering current page" note instead).
+  const matchesAdvanced=d=>{
+    if(filters.tiers.length&&!filters.tiers.includes((d.capacityTier||"").toLowerCase()))return false;
+    if(filters.stages.length&&!filters.stages.includes(d.stage||"cultivate"))return false;
+    if(filters.pattern==="one-time"&&d.gifts!==1)return false;
+    if(filters.pattern==="recurring"&&d.gifts<2)return false;
+    if(filters.pattern==="major"&&d.lastAmount<10000)return false;
+    if(filters.pattern==="lapsed"&&!(d.stage==="lapsed"||(d.lastGift&&daysDiff(d.lastGift)>365)))return false;
+    if(filters.geo.trim()&&!`${d.notes||""} ${(d.tags||[]).join(" ")}`.toLowerCase().includes(filters.geo.toLowerCase()))return false;
+    if(filters.giftFrom&&d.lastGift&&d.lastGift<filters.giftFrom)return false;
+    if(filters.giftTo&&d.lastGift&&d.lastGift>filters.giftTo)return false;
+    if(filters.totalMin!==""&&!isNaN(parseFloat(filters.totalMin))&&d.total<parseFloat(filters.totalMin))return false;
+    if(filters.totalMax!==""&&!isNaN(parseFloat(filters.totalMax))&&d.total>parseFloat(filters.totalMax))return false;
+    return true;
+  };
+  const matchesCf=d=>{
+    for(const [fieldId,fval] of Object.entries(cfFilters)){
+      if(!fval||fval==="")continue;
+      if(Array.isArray(fval)&&fval.length===0)continue;
+      if(typeof fval==="object"&&!Array.isArray(fval)&&!fval.from&&!fval.to)continue;
+      const f=customFields.find(x=>x.id===fieldId);
+      if(!f)continue;
+      const dv=(cfValues[d.id]?.[fieldId]||"").toLowerCase();
+      if(f.field_type==="dropdown"){
+        if(fval.length===0)continue;
+        if(!fval.some(opt=>dv===opt.toLowerCase()))return false;
+      }else if(f.field_type==="checkbox"){
+        if(fval&&dv!==fval.toLowerCase())return false;
+      }else if(f.field_type==="date"){
+        if(fval.from&&dv<fval.from)return false;
+        if(fval.to&&dv>fval.to)return false;
+      }else{
+        if(!dv.includes(fval.toLowerCase()))return false;
+      }
+    }
+    return true;
+  };
+  const advFilterCount=filters.tiers.length+filters.stages.length+(filters.pattern?1:0)+(filters.geo.trim()?1:0)+((filters.giftFrom||filters.giftTo)?1:0)+((filters.totalMin||filters.totalMax)?1:0);
+  const cfFilterCount=Object.entries(cfFilters).filter(([,v])=>{if(!v||v==="")return false;if(Array.isArray(v))return v.length>0;if(typeof v==="object")return v.from||v.to;return true;}).length;
 
   const filtered=data.donors
     .filter(d=>!search||(d.name+d.email).toLowerCase().includes(search.toLowerCase()))
-    .filter(d=>{
-      if(filters.tiers.length&&!filters.tiers.includes((d.capacityTier||"").toLowerCase()))return false;
-      if(filters.stages.length&&!filters.stages.includes(d.stage||"cultivate"))return false;
-      if(filters.pattern==="one-time"&&d.gifts!==1)return false;
-      if(filters.pattern==="recurring"&&d.gifts<2)return false;
-      if(filters.pattern==="major"&&d.lastAmount<10000)return false;
-      if(filters.pattern==="lapsed"&&!(d.stage==="lapsed"||(d.lastGift&&daysDiff(d.lastGift)>365)))return false;
-      if(filters.geo.trim()&&!`${d.notes||""} ${(d.tags||[]).join(" ")}`.toLowerCase().includes(filters.geo.toLowerCase()))return false;
-      if(filters.giftFrom&&d.lastGift&&d.lastGift<filters.giftFrom)return false;
-      if(filters.giftTo&&d.lastGift&&d.lastGift>filters.giftTo)return false;
-      if(filters.totalMin!==""&&!isNaN(parseFloat(filters.totalMin))&&d.total<parseFloat(filters.totalMin))return false;
-      if(filters.totalMax!==""&&!isNaN(parseFloat(filters.totalMax))&&d.total>parseFloat(filters.totalMax))return false;
-      return true;
-    })
-    .filter(d=>{
-      for(const [fieldId,fval] of Object.entries(cfFilters)){
-        if(!fval||fval==="")continue;
-        if(Array.isArray(fval)&&fval.length===0)continue;
-        if(typeof fval==="object"&&!Array.isArray(fval)&&!fval.from&&!fval.to)continue;
-        const f=customFields.find(x=>x.id===fieldId);
-        if(!f)continue;
-        const dv=(cfValues[d.id]?.[fieldId]||"").toLowerCase();
-        if(f.field_type==="dropdown"){
-          if(fval.length===0)continue;
-          if(!fval.some(opt=>dv===opt.toLowerCase()))return false;
-        }else if(f.field_type==="checkbox"){
-          if(fval&&dv!==fval.toLowerCase())return false;
-        }else if(f.field_type==="date"){
-          if(fval.from&&dv<fval.from)return false;
-          if(fval.to&&dv>fval.to)return false;
-        }else{
-          if(!dv.includes(fval.toLowerCase()))return false;
-        }
-      }
-      return true;
-    });
+    .filter(matchesAdvanced)
+    .filter(matchesCf);
+  const dirPageRows=(dirRows||[]).filter(matchesAdvanced).filter(matchesCf);
 
   useEffect(()=>{
     apiFetch("/org/sample-data-status").then(setSampleStatus).catch(()=>{});
@@ -4305,13 +4375,17 @@ export function Donors({data,setData,isReadOnly=false,initialView,initialLogDono
     }catch(e){ alert(e.message||"Failed to load sample data"); setSampleLoading(false); }
   };
 
+  const patchDirRows=(donorId,patch)=>setDirRows(prev=>prev?prev.map(d=>d.id===donorId?{...d,...patch}:d):prev);
+
   const handleAssign=(donorId,assignedToId,assignedToName)=>{
     setData(prev=>({...prev,donors:prev.donors.map(d=>d.id===donorId?{...d,assignedTo:assignedToId,assignedToName}:d)}));
+    patchDirRows(donorId,{assignedTo:assignedToId,assignedToName});
     if(selected?.id===donorId)setSelected(prev=>({...prev,assignedTo:assignedToId,assignedToName}));
   };
 
   const moveToStage=async(donorId,stage)=>{
     setData(prev=>({...prev,donors:prev.donors.map(d=>d.id===donorId?{...d,stage}:d)}));
+    patchDirRows(donorId,{stage});
     if(selected?.id===donorId)setSelected(prev=>({...prev,stage}));
     try{await apiFetch(`/donors/${donorId}/stage`,{method:"PATCH",body:JSON.stringify({stage})});}
     catch(e){console.error(e);}
@@ -4320,6 +4394,7 @@ export function Donors({data,setData,isReadOnly=false,initialView,initialLogDono
   const handleLogged=(donor,interaction)=>{
     const updated={...donor,lastTouchpoint:interaction.date,interactions:[interaction,...(donor.interactions||[])]};
     setData(prev=>({...prev,donors:prev.donors.map(d=>d.id===donor.id?updated:d)}));
+    patchDirRows(donor.id,{lastTouchpoint:interaction.date});
     if(selected?.id===donor.id)setSelected(updated);
     setLogTarget(null);
     setFollowUpTarget(donor);
@@ -4375,8 +4450,26 @@ export function Donors({data,setData,isReadOnly=false,initialView,initialLogDono
     // reloadDonors() is the general post-action refresh (import, gift log,
     // custom field save…), not a rare path.
     try{
-      const donors=await apiFetch("/donors");
+      const donors=await apiFetch("/donors/summaries");
       setData(prev=>({...prev,donors:donors.map(adaptDonor)}));
+      setDirReloadKey(k=>k+1); // refresh the Directory's server page too
+    }catch(e){console.error(e);}
+  };
+
+  // Selecting a donor from any view hands DonorProfile a summary row first
+  // (instant render), then swaps in the full record — notes, score rationale,
+  // Stripe ids — from GET /donors/:id (the summaries list deliberately omits
+  // the heavy columns; see BUILD-06 Phase A).
+  const selectDonor=async(d)=>{
+    if(!d){setSelected(null);return;}
+    setSelected(d);
+    try{
+      const full=await apiFetch(`/donors/${d.id}`);
+      setSelected(prev=>prev?.id===d.id?{
+        ...adaptDonor(full),
+        lastTouchpoint:prev.lastTouchpoint??null,
+        interactions:prev.interactions||[],
+      }:prev);
     }catch(e){console.error(e);}
   };
 
@@ -4392,6 +4485,7 @@ export function Donors({data,setData,isReadOnly=false,initialView,initialLogDono
       lastTouchpoint:selected?.id===raw.id?selected.lastTouchpoint:null,
     };
     setData(prev=>({...prev,donors:prev.donors.map(d=>d.id===raw.id?adapted:d)}));
+    setDirRows(prev=>prev?prev.map(d=>d.id===raw.id?adapted:d):prev);
     if(selected?.id===raw.id)setSelected(adapted);
     setEditTarget(null);
   };
@@ -4401,6 +4495,8 @@ export function Donors({data,setData,isReadOnly=false,initialView,initialLogDono
     try{
       await apiFetch(`/donors/${id}`,{method:"DELETE"});
       setData(prev=>({...prev,donors:prev.donors.filter(d=>d.id!==id)}));
+      setDirRows(prev=>prev?prev.filter(d=>d.id!==id):prev);
+      setDirTotal(t=>Math.max(0,t-1));
       setSelected(null);
     }catch(e){console.error(e);}
   };
@@ -4453,7 +4549,7 @@ export function Donors({data,setData,isReadOnly=false,initialView,initialLogDono
         isAdmin={isAdmin} onEdit={()=>setEditTarget(selected)} onDelete={deleteDonor}
         tasks={data.tasks.filter(t=>t.donorId===selected.id)} onTaskToggle={toggleTask}
         orgName={data.org?.name||""} orgTeam={orgTeam} onReassign={handleAssign} onCfSaved={reloadCfValues} onInteractionAdded={reloadDonors}
-        isReadOnly={isReadOnly} allDonors={data.donors} onSelectRelatedDonor={id=>{const d=data.donors.find(x=>x.id===id);if(d)setSelected(d);}}/></ErrorBoundary>
+        isReadOnly={isReadOnly} allDonors={data.donors} onSelectRelatedDonor={id=>{const d=data.donors.find(x=>x.id===id);if(d)selectDonor(d);}}/></ErrorBoundary>
       ) : (<>
 
       <div className="donors-toolbar" style={{display:"flex",gap:10,flexWrap:"wrap",alignItems:"center"}}>
@@ -4474,8 +4570,7 @@ export function Donors({data,setData,isReadOnly=false,initialView,initialLogDono
       </div>
 
       {(()=>{
-        const cfActiveCount=Object.entries(cfFilters).filter(([,v])=>{if(!v||v==="")return false;if(Array.isArray(v))return v.length>0;if(typeof v==="object")return v.from||v.to;return true;}).length;
-        const count=filters.tiers.length+filters.stages.length+(filters.pattern?1:0)+(filters.geo.trim()?1:0)+((filters.giftFrom||filters.giftTo)?1:0)+((filters.totalMin||filters.totalMax)?1:0)+cfActiveCount;
+        const count=advFilterCount+cfFilterCount;
         const pills=[];
         filters.tiers.forEach(t=>{const m=TIER_META.find(x=>x.id===t);pills.push({id:"t"+t,label:`Tier: ${m?.label||t}`,rm:()=>setFilters(f=>({...f,tiers:f.tiers.filter(v=>v!==t)}))});});
         filters.stages.forEach(s=>{const m=STAGES.find(x=>x.id===s);pills.push({id:"s"+s,label:`Stage: ${m?.label||s}`,rm:()=>setFilters(f=>({...f,stages:f.stages.filter(v=>v!==s)}))});});
@@ -4534,7 +4629,7 @@ export function Donors({data,setData,isReadOnly=false,initialView,initialLogDono
         </div>
       </Card>}
 
-      {view==="directory"&&<DirectoryView donors={filtered} totalDonors={data.donors.length} orgTeam={orgTeam} isAdmin={isAdmin} onSelectDonor={d=>setSelected(d)} onAssign={d=>setAssignTarget(d)} stageFilter={dirStage} setStageFilter={setDirStage} assigneeFilter={dirAssignee} setAssigneeFilter={setDirAssignee} onLoadSampleData={loadSampleData} sampleLoading={sampleLoading} hasSampleData={sampleStatus?.hasSampleData} onAddDonor={()=>setShowAdd(true)} onBulkDone={reloadDonors}/>}
+      {view==="directory"&&<DirectoryView donors={dirPageRows} loading={dirRows===null} serverTotal={dirTotal} page={dirPage} pageSize={DIR_PAGE_SIZE} onPage={setDirPage} clientFilterCount={advFilterCount+cfFilterCount} exportParams={{search:dirSearch.trim(),stage:dirStage,assignedTo:dirAssignee}} totalDonors={data.donors.length} orgTeam={orgTeam} isAdmin={isAdmin} onSelectDonor={selectDonor} onAssign={d=>setAssignTarget(d)} stageFilter={dirStage} setStageFilter={setDirStage} assigneeFilter={dirAssignee} setAssigneeFilter={setDirAssignee} onLoadSampleData={loadSampleData} sampleLoading={sampleLoading} hasSampleData={sampleStatus?.hasSampleData} onAddDonor={()=>setShowAdd(true)} onBulkDone={reloadDonors}/>}
 
       {view==="pipeline"&&(()=>{
         const myDonors=filtered.filter(d=>d.assignedTo===userId);
@@ -4548,14 +4643,14 @@ export function Donors({data,setData,isReadOnly=false,initialView,initialLogDono
           </div>
           {myDonors.length===0
             ?<EmptyState icon="♦" title="No donors in your pipeline" message="Donors assigned to you will appear here as a Kanban board."/>
-            :<DonorKanban donors={myDonors} onStageChange={moveToStage} onLogTouchpoint={d=>setLogTarget(d)} onSelectDonor={d=>setSelected(d)}/>}
+            :<DonorKanban donors={myDonors} onStageChange={moveToStage} onLogTouchpoint={d=>setLogTarget(d)} onSelectDonor={selectDonor}/>}
         </>;
       })()}
 
-      {view==="team"&&isAdmin&&<TeamView donors={filtered} orgTeam={orgTeam} onSelectDonor={d=>setSelected(d)}/>}
+      {view==="team"&&isAdmin&&<TeamView donors={filtered} orgTeam={orgTeam} onSelectDonor={selectDonor}/>}
 
-      {view==="reengage"&&<ReEngageView donors={filtered} org={data.org} onLogTouchpoint={d=>setLogTarget(d)} onSelectDonor={d=>setSelected(d)}/>}
-      {view==="map"&&<DonorMap donors={filtered} userId={userId} onSelectDonor={d=>setSelected(d)}/>}
+      {view==="reengage"&&<ReEngageView donors={filtered} org={data.org} onLogTouchpoint={d=>setLogTarget(d)} onSelectDonor={selectDonor}/>}
+      {view==="map"&&<DonorMap donors={filtered} userId={userId} onSelectDonor={selectDonor}/>}
       </>)}
     </div>
   );

@@ -42,6 +42,7 @@ process.on("unhandledRejection", (reason) => {
 
 const express = require("express");
 const cors = require("cors");
+const compression = require("compression");
 const { rateLimit, ipKeyGenerator } = require("express-rate-limit");
 const bcrypt = require("bcryptjs");
 const crypto = require("crypto");
@@ -658,6 +659,12 @@ app.post("/billing/webhook", express.raw({ type: "application/json" }), async (r
 // 5mb cap stays in force for every other route.
 app.use(["/donors/import-combined", "/donors/import", "/gifts/import-history"], express.json({ limit: "30mb" }));
 app.use(express.json({ limit: "5mb" }));
+
+// Gzip the heavy whole-org read payloads (BUILD-06 Phase A). Scoped to the
+// donor-list family rather than app-wide so the SSE stream (/ai/stream) and
+// webhook routes are never buffered by the compressor. Mounting on "/donors"
+// prefix-matches the whole family (list, summaries, export, :id).
+app.use("/donors", compression());
 
 // ── DB readiness guard ─────────────────────────────────────────────────────
 let dbReady = false;
@@ -1603,19 +1610,113 @@ app.post("/auth/invite/accept", wrap(async (req, res) => {
 }));
 
 // ── Donors ─────────────────────────────────────────────────────────────────
+// Server-side filtering/pagination (BUILD-06 Phase A). Shared between
+// GET /donors and GET /donors/export/csv so the export always matches the
+// same query the Directory ran. Sort is a whitelist — never interpolate
+// user input into ORDER BY.
+const DONOR_SORTS = {
+  total_giving:   "total_giving DESC",
+  name:           "lower(name) ASC",
+  last_gift_date: "last_gift_date DESC NULLS LAST",
+  created_at:     "created_at DESC",
+};
+function buildDonorListFilter(req) {
+  const where = ["org_id = ?", "deleted_at IS NULL"];
+  const params = [req.user.orgId];
+  const { search, stage, status, assignedTo } = req.query;
+  if (search && String(search).trim()) {
+    const s = "%" + String(search).trim().toLowerCase() + "%";
+    where.push("(lower(name) LIKE ? OR lower(email) LIKE ?)");
+    params.push(s, s);
+  }
+  if (stage)      { where.push("stage = ?");       params.push(String(stage)); }
+  if (status)     { where.push("status = ?");      params.push(String(status)); }
+  if (assignedTo) { where.push("assigned_to = ?"); params.push(String(assignedTo)); }
+  // ", id" tiebreak keeps page boundaries stable when many donors share a value
+  const orderBy = (DONOR_SORTS[req.query.sort] || DONOR_SORTS.total_giving) + ", id";
+  return { whereSql: where.join(" AND "), params, orderBy };
+}
+
+// GET /donors — unpaginated legacy shape (plain array) when `limit` is
+// absent, so every pre-pagination caller keeps working; `{donors, total}`
+// when `limit` is present. Filters (search/stage/status/assignedTo/sort)
+// are honored in both modes.
 app.get("/donors", requireAuth, wrap(async (req, res) => {
-  const [donors, touchpoints] = await Promise.all([
-    query("SELECT * FROM donors WHERE org_id = ? AND deleted_at IS NULL ORDER BY total_giving DESC", [req.user.orgId]),
-    query("SELECT donor_id, MAX(date) AS last_touchpoint FROM interactions WHERE org_id = ? GROUP BY donor_id", [req.user.orgId]),
-  ]);
-  const tpMap = Object.fromEntries(touchpoints.map(r => [r.donor_id, r.last_touchpoint]));
-  const result = donors.map(d => ({
+  const { whereSql, params, orderBy } = buildDonorListFilter(req);
+  const mapDonor = tpMap => d => ({
     ...d,
     tags: JSON.parse(d.tags || "[]"),
     last_touchpoint: tpMap[d.id] || null,
     matching_gift: lookupMatchingGift(d.employer),
-  }));
-  res.json(result);
+  });
+
+  if (req.query.limit === undefined) {
+    const [donors, touchpoints] = await Promise.all([
+      query(`SELECT * FROM donors WHERE ${whereSql} ORDER BY ${orderBy}`, params),
+      query("SELECT donor_id, MAX(date) AS last_touchpoint FROM interactions WHERE org_id = ? GROUP BY donor_id", [req.user.orgId]),
+    ]);
+    const tpMap = Object.fromEntries(touchpoints.map(r => [r.donor_id, r.last_touchpoint]));
+    return res.json(donors.map(mapDonor(tpMap)));
+  }
+
+  const limit  = Math.min(Math.max(parseInt(req.query.limit, 10) || 50, 1), 200);
+  const offset = Math.max(parseInt(req.query.offset, 10) || 0, 0);
+  const [donors, cnt] = await Promise.all([
+    query(`SELECT * FROM donors WHERE ${whereSql} ORDER BY ${orderBy} LIMIT ? OFFSET ?`, [...params, limit, offset]),
+    query(`SELECT COUNT(*) AS c FROM donors WHERE ${whereSql}`, params),
+  ]);
+  // Touchpoints only for the page's donors — not the org-wide GROUP BY
+  const ids = donors.map(d => d.id);
+  const touchpoints = ids.length
+    ? await query("SELECT donor_id, MAX(date) AS last_touchpoint FROM interactions WHERE org_id = ? AND donor_id = ANY(?) GROUP BY donor_id", [req.user.orgId, ids])
+    : [];
+  const tpMap = Object.fromEntries(touchpoints.map(r => [r.donor_id, r.last_touchpoint]));
+  res.json({ donors: donors.map(mapDonor(tpMap)), total: parseInt(cnt[0].c, 10) });
+}));
+
+// Lightweight whole-org list for consumers that need every donor but not the
+// heavy text columns (notes, score_rationale — the bulk of GET /donors'
+// 21.7MB payload at 25k donors). Feeds the app shell's shared donor state:
+// Kanban/team/re-engage/map views, onboarding snapshot, Communications
+// audience counts, AI context builders. Column names match GET /donors so
+// adaptDonor works unchanged on the subset.
+app.get("/donors/summaries", requireAuth, wrap(async (req, res) => {
+  const [donors, touchpoints] = await Promise.all([
+    query(`SELECT id, name, email, phone, stage, status, total_giving, last_gift_date,
+                  last_gift_amount, gift_count, assigned_to, assigned_to_name,
+                  city, state, zip, tags, wealth_score, capacity_tier, planned_giving,
+                  employer, stripe_subscription_status
+           FROM donors WHERE org_id = ? AND deleted_at IS NULL ORDER BY total_giving DESC, id`, [req.user.orgId]),
+    query("SELECT donor_id, MAX(date) AS last_touchpoint FROM interactions WHERE org_id = ? GROUP BY donor_id", [req.user.orgId]),
+  ]);
+  const tpMap = Object.fromEntries(touchpoints.map(r => [r.donor_id, r.last_touchpoint]));
+  res.json(donors.map(d => ({
+    ...d,
+    tags: JSON.parse(d.tags || "[]"),
+    last_touchpoint: tpMap[d.id] || null,
+    matching_gift: lookupMatchingGift(d.employer),
+  })));
+}));
+
+// Directory CSV export — replaces the client-side "export what's on screen"
+// now that the screen is one page: honors the same query params as
+// GET /donors, exports EVERY matching row. Staff-level (it's data staff
+// already see), never checkWriteAccess-gated (export-routes convention).
+app.get("/donors/export/csv", requireAuth, wrap(async (req, res) => {
+  const { whereSql, params, orderBy } = buildDonorListFilter(req);
+  const donors = await query(`SELECT * FROM donors WHERE ${whereSql} ORDER BY ${orderBy}`, params);
+  const columns = [
+    ["Name", "name"], ["Email", "email"], ["Phone", "phone"],
+    ["Stage", "stage"], ["Status", "status"],
+    ["Total giving", "total_giving"], ["Last gift date", "last_gift_date"],
+    ["Last gift amount", "last_gift_amount"], ["Gift count", "gift_count"],
+    ["Assigned to", d => d.assigned_to_name || ""],
+    ["City", d => d.city || ""], ["State", d => d.state || ""],
+    ["Tags", d => JSON.parse(d.tags || "[]").join("|")],
+  ];
+  res.setHeader("Content-Type", "text/csv; charset=utf-8");
+  res.setHeader("Content-Disposition", `attachment; filename="donors-${new Date().toISOString().split("T")[0]}.csv"`);
+  res.send(toCsv(columns, donors));
 }));
 
 app.get("/donors/my", requireAuth, wrap(async (req, res) => {

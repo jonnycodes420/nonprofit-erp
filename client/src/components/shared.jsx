@@ -54,8 +54,8 @@ export function buildContext(data) {
 MISSION: ${data.org.mission}
 PROGRAMS: ${data.org.programs.join(", ")}
 
-DONORS (${data.donors.length} total, ${data.donors.filter(d=>d.status==="lapsed").length} lapsed):
-${data.donors.map(d=>`- ${d.name} [${d.status}]: ${fmtFull(d.total)} lifetime, last gift ${fmtFull(d.lastAmount)} ${daysDiff(d.lastGift)}d ago. ${d.notes}`).join("\n")}
+DONORS (${data.donors.length} total, ${data.donors.filter(d=>d.status==="lapsed").length} lapsed${data.donors.length>60?"; top 60 by lifetime giving shown":""}):
+${data.donors.slice(0,60).map(d=>`- ${d.name} [${d.status}]: ${fmtFull(d.total)} lifetime, last gift ${fmtFull(d.lastAmount)} ${daysDiff(d.lastGift)}d ago.${d.notes?" "+d.notes:""}`).join("\n")}
 
 GRANTS:
 ${data.grants.map(g=>`- ${g.funder} / ${g.program}: ${fmtFull(g.amount)} [${g.status}] deadline ${g.deadline}. ${g.notes}`).join("\n")}

@@ -796,7 +796,9 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
   };
   const loadDonors = async () => {
     if (allDonors.length) return;
-    try { setAllDonors(await apiFetch("/donors")); } catch (e) { console.error(e); }
+    // Summaries carry every field the segment predicates read (email,
+    // total_giving, status, stage, capacity_tier) at a fraction of the payload
+    try { setAllDonors(await apiFetch("/donors/summaries")); } catch (e) { console.error(e); }
   };
 
   useEffect(() => { loadCampaigns(); loadDonors(); }, []);
