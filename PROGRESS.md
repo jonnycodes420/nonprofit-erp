@@ -49,6 +49,10 @@ DONE (was item 6): Expired-token UX — see "Auth, Gmail, billing/Reactivate, an
 
 ## Earlier sessions (for reference)
 
+### Sidebar shell restructure (2026-07-17, after BUILD-06)
+
+Primary nav moved from horizontal top tabs to a fixed 220px left sidebar (desktop only): dark green `#0f1a12`, wordmark top, nav items with icons, Settings + user/sign-out pinned at bottom, gold-accent active state matching the goal-card language. The old sticky header is now mobile-only; **mobile ≤768px is behaviorally unchanged** (bottom bar + More drawer exactly as before). Every section with internal navigation flipped to horizontal top tabs via the new shared `SectionTabs` (shared.jsx): Communications' EMAIL sidebar → 6 top tabs, Reports' left rail → 6 top tabs (question line as subtitle), Settings' 8 SecHead groups → top tabs with only the active group rendered. Settings sections are now deep-linkable (`navigateTo("settings",{section})` → `initialSection`); Communications' CAN-SPAM prompt lands directly on Tax Receipts. Gmail card moved into Integrations where it belonged. Four incremental commits (`44f83ec` shell, `cb6944f` comms, `e03beed` reports, `e4241d6` settings) + verification. **Verified against production** with the now-committed `scripts/screenshot-matrix.js`: 5-width × 7-screen matrix (`docs/layout-matrix-2026-07-17-sidebar/`), shell assertions (sidebar/bottom-bar visibility per breakpoint, no horizontal scroll at any desktop width), and live deep-link checks — queue "Review draft" → Milestone Drafts tab, LYBUNT row → donor profile, CAN-SPAM → Settings receipts tab — 14 passed / 0 failed (+2 data-dependent checks re-run separately, both PASS).
+
 ### BUILD-06 — MORNING SUMMARY (overnight run, 2026-07-17)
 
 **All five phases shipped** as independent pushed commits (`7d77c41` A, `665d8b9` B, `563523d` C, `515e2b4` D, `c35e875` E + a docs commit). One BLOCKED file: `BLOCKED-build06-cleanup.md` — Phase D's three production test orgs need super-admin deletion (credentials don't exist in this environment; ids + steps inside; deleting them also stops the onboarding drip to the test addresses).
