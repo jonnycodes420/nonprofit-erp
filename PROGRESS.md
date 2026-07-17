@@ -49,6 +49,22 @@ DONE (was item 6): Expired-token UX — see "Auth, Gmail, billing/Reactivate, an
 
 ## Earlier sessions (for reference)
 
+### BUILD-06 — MORNING SUMMARY (overnight run, 2026-07-17)
+
+**All five phases shipped** as independent pushed commits (`7d77c41` A, `665d8b9` B, `563523d` C, `515e2b4` D, `c35e875` E + a docs commit). One BLOCKED file: `BLOCKED-build06-cleanup.md` — Phase D's three production test orgs need super-admin deletion (credentials don't exist in this environment; ids + steps inside; deleting them also stops the onboarding drip to the test addresses).
+
+**The numbers that matter:**
+- `GET /donors?limit=50` at 25k donors/200k gifts: **p95 70ms @ 10 concurrent** (p50 41ms, single-request 20ms), 3.6KB gzipped on the wire — was 21.7MB. Whole-org `/donors/summaries`: ~300ms, 923KB gzipped.
+- Fresh-org **signup→Home on production: 21s** scripted, 0 console errors, 0 non-2xx.
+- Phase D blocking findings: **0** (2 rough, 2 cosmetic — see QA_FRESH_ORG.md).
+- Phase E screenshot matrix: **clean at all five widths** (390/768/1440/1920/2560 × 7 screens; mobile pixel-identical behavior, wide-screen dead gutters and the Home background seam gone).
+- Committed test suites now green: 31 (pagination) + 32 (reports) + 12 (export zip) = **75 assertions**, all runnable per `tests/README.md`.
+- Bonus fixes en route: scheduled campaigns actually send now; open rates count unique opens; stage-segment previews match sends; LoginPage honors VITE_API_URL; demo-org metric baselines reset post-purge (real-to-real trends).
+
+### BUILD-06 Phase E — Responsive layout + demo metric baselines (2026-07-17)
+
+Per-tab width strategy in App.jsx's `app-content`: Home stays a centered ~1200px reading column; Donors/Grants/Communications/Reports/Settings go fluid full-width with 32px padding (no dead gutters at 1920/2560). Grants Kanban columns now `flex:"1 1 260px"` (grow evenly); Donor Kanban deliberately keeps its count-proportional fr weights. Background continuity: shell background matches the tab (`T.bgDeep` on Home — Dashboard's dash-bleed used to stop at the column edge leaving lighter gutters, a seam that predated tonight). Mobile untouched (GlobalStyles 768px `!important` rules own it) — verified identical at 390px. Verified via a 5-width × 7-screen Playwright matrix — all 35 screenshots committed under `docs/layout-matrix-2026-07-17/`. Separately: `POST /metrics/reset-baselines` (admin, org-scoped) wipes + re-snapshots the org's `metric_snapshots` — run against the prod demo org so Home trends compare real data to real data instead of to snapshots of the 3,905 purged test donors.
+
 ### BUILD-06 Phase A — Donor pagination: the 21.7MB cliff is dead (2026-07-17)
 
 The last known scaling cliff from BUILD-05. `GET /donors` gained limit/offset + search/stage/status/assignedTo + a sort whitelist (legacy unpaginated array shape preserved when `limit` absent); new `GET /donors/summaries` (whole org minus notes/score_rationale — feeds App.jsx's shared donor state, Kanban/Team/Re-engage/Map, Communications audience counts, onboarding snapshot); new `GET /donors/export/csv` honoring the same query params (replaces the client-side page-limited export); Directory server-paginated at 50/page with advanced/custom-field filters client-side within the page ("filtering current page" note — documented compromise, server-side CF querying is a spec non-goal); DonorProfile upgrades summary→full record on select; `compression()` scoped to the /donors family; LoginPage un-hardcoded from the prod URL (blocks local E2E otherwise). **Measured at re-seeded 25k/200k scale**: page 20ms/3.6KB wire (was 21.7MB), summaries 183-311ms/923KB wire, EXPLAIN top-N 17ms (no new index needed), Home stack unregressed (today 108ms, stewardship 775ms). Verified: `tests/donors-pagination.test.js` 31/31 (incl. 126-page concat == full id set, zero dups) + Playwright click-through on the local demo org 11/11. Commit `7d77c41`.
