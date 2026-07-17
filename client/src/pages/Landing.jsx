@@ -347,6 +347,69 @@ export default function Landing() {
           </div>
         </section>
 
+        {/* ── 4. The money strip ── */}
+        <section className="lp-section" style={{ background: C.ink }}>
+          <div className="lp-narrow" style={{ textAlign: "center" }}>
+            <Eyebrow onDark>Where the money goes</Eyebrow>
+            <h2 className="lp-serif" style={{ fontSize: "clamp(32px, 3.6vw, 48px)", color: C.cream, lineHeight: 1.12, marginBottom: 24 }}>
+              Your donors give to you. Only you.
+            </h2>
+            <p style={{ fontSize: 16.5, color: C.sage, lineHeight: 1.85, maxWidth: 620, margin: "0 auto 22px" }}>
+              Donations settle directly into your organization's own Stripe
+              account. Steward never touches the money and takes no percentage —
+              0%, on every gift. Your donors are never asked to add a tip to
+              cover somebody's software.
+            </p>
+            <p className="lp-serif" style={{ fontSize: 20, fontStyle: "italic", color: C.gold, lineHeight: 1.6, maxWidth: 560, margin: "0 auto 22px" }}>
+              Free platforms are paid for by your donors' tips. Steward is paid
+              for by you — flatly, transparently.
+            </p>
+            <p style={{ fontSize: 12.5, color: "#6b8f7a", maxWidth: 480, margin: "0 auto" }}>
+              Stripe's standard card-processing fee still applies — that goes to
+              Stripe, not to us. Plans are $99, $249, or $499 a month, flat.{" "}
+              <a href="/pricing" style={{ color: C.sage, textDecoration: "underline", textUnderlineOffset: 3 }}>See pricing</a>.
+            </p>
+          </div>
+        </section>
+
+        {/* ── 5. Where Steward is today — the candor section stays; it IS the brand ── */}
+        <section className="lp-section" style={{ background: C.white, borderBottom: `1px solid ${C.cream2}` }}>
+          <div className="lp-narrow">
+            <Eyebrow>Where Steward is today</Eyebrow>
+            <h2 className="lp-serif" style={{ fontSize: "clamp(30px, 3.4vw, 44px)", color: C.ink, lineHeight: 1.15, marginBottom: 22 }}>
+              This is new. I'd rather tell you the truth than sell you a testimonial.
+            </h2>
+            <p style={{ fontSize: 16, color: "#2d2d2d", lineHeight: 1.8, marginBottom: 26 }}>
+              Steward is built and run by one person. There's no case-study wall
+              and no customer count on this page, because it's early and I won't
+              invent either. Here is what's actually true today:
+            </p>
+            <ul style={{ listStyle: "none", display: "flex", flexDirection: "column", gap: 12, marginBottom: 28 }}>
+              {[
+                "Live now: donor records and pipeline, Gmail sync, email campaigns and sequences, milestone drafts a human reviews before anything sends, failed-payment recovery, tax receipts and year-end statements, six board-ready reports, peer-to-peer fundraising pages.",
+                "Load-tested to 25,000 donors and 200,000 gifts per organization.",
+                "Errors are monitored in production; your data exports to a zip of clean CSVs in one click — including after you cancel. That's a promise, and it's already built.",
+              ].map((t, i) => (
+                <li key={i} style={{ display: "flex", gap: 12, fontSize: 15, color: "#2d2d2d", lineHeight: 1.7 }}>
+                  <span style={{ color: C.greenDk, fontWeight: 800, flexShrink: 0 }}>—</span>{t}
+                </li>
+              ))}
+            </ul>
+            <div style={{ background: C.cream, border: `1px solid ${C.cream3}`, borderLeft: `3px solid ${C.gold}`, borderRadius: 12, padding: "20px 24px" }}>
+              <p style={{ fontSize: 15, color: C.ink, lineHeight: 1.75 }}>
+                I'm looking for <strong>three to five founding partner
+                organizations</strong> — nonprofits who'll use Steward for real,
+                tell me what's missing, and shape what gets built next. Founding
+                partners get a locked-in price and a direct line to me.{" "}
+                <a href={`${FOUNDER_MAILTO}?subject=Founding%20partner`} style={{ color: C.greenDk, fontWeight: 700, textDecoration: "underline", textUnderlineOffset: 3 }}>
+                  Write to me
+                </a>{" "}
+                and tell me about your organization.
+              </p>
+            </div>
+          </div>
+        </section>
+
         {/* ── 7. Close ── */}
         <section className="lp-section" style={{ textAlign: "center" }}>
           <div className="lp-narrow">
