@@ -151,12 +151,31 @@ export default function Landing() {
         .lp-narrow { max-width: 720px; margin: 0 auto; }
         .lp-wide { max-width: 1140px; margin: 0 auto; }
 
+        /* Moments: alternating prose + real capture */
+        .lp-moment { display: grid; grid-template-columns: 5fr 6fr; gap: 64px; align-items: center; }
+        .lp-moment.lp-flip { grid-template-columns: 6fr 5fr; }
+        .lp-moment.lp-flip .lp-moment-text { order: 2; }
+        .lp-moment.lp-flip .lp-moment-media { order: 1; }
+        .lp-moment + .lp-moment { margin-top: 120px; }
+        .lp-moment-img { width: 100%; display: block; border-radius: 12px; border: 1px solid ${C.cream3}; box-shadow: 0 16px 48px rgba(15,26,18,0.12); }
+        .lp-caption { font-size: 12px; color: ${C.ink3}; margin-top: 12px; }
+
+        /* The real dunning email, set like an email */
+        .lp-email { background: ${C.white}; border: 1px solid ${C.cream3}; border-radius: 12px; box-shadow: 0 16px 48px rgba(15,26,18,0.12); overflow: hidden; }
+        .lp-email-head { padding: 16px 22px; border-bottom: 1px solid ${C.cream2}; font-size: 13px; color: ${C.ink3}; line-height: 1.7; }
+        .lp-email-body { padding: 22px; font-size: 14px; color: #2d2d2d; line-height: 1.75; }
+        .lp-email-body p + p { margin-top: 13px; }
+
         @media (max-width: 768px) {
           .lp-section { padding: 64px 22px; }
           .lp-hero-grid { grid-template-columns: 1fr; gap: 44px; }
           .lp-nav { padding: 0 22px !important; }
           .lp-nav-pricing { display: none; }
           .lp-h1 { font-size: 42px !important; }
+          .lp-moment, .lp-moment.lp-flip { grid-template-columns: 1fr; gap: 28px; }
+          .lp-moment.lp-flip .lp-moment-text { order: 1; }
+          .lp-moment.lp-flip .lp-moment-media { order: 2; }
+          .lp-moment + .lp-moment { margin-top: 72px; }
         }
       `}</style>
 
@@ -229,6 +248,102 @@ export default function Landing() {
             <p style={{ fontSize: 12.5, color: C.ink3, marginTop: 26 }}>
               43% is the sector-average donor retention rate published in Bloomerang's annual benchmarks.
             </p>
+          </div>
+        </section>
+
+        {/* ── 3. Three true product moments ── */}
+        <section className="lp-section">
+          <div className="lp-wide">
+
+            {/* Moment 1 — the morning queue */}
+            <div className="lp-moment">
+              <div className="lp-moment-text">
+                <Eyebrow>Tuesday, 8:04 am</Eyebrow>
+                <h2 className="lp-serif" style={{ fontSize: "clamp(28px, 3vw, 40px)", color: C.ink, lineHeight: 1.15, marginBottom: 18 }}>
+                  The morning queue
+                </h2>
+                <p style={{ fontSize: 16, color: "#2d2d2d", lineHeight: 1.8 }}>
+                  Steward opens with who needs you today: a donor about to cross a
+                  milestone worth a handwritten note, a longtime giver going quiet,
+                  a task you set for yourself last month. Each one arrives with its
+                  reasons — last gift, what their file says, how long it's been —
+                  and one action. It's rarely more than a handful. Work the list
+                  over coffee.
+                </p>
+              </div>
+              <div className="lp-moment-media">
+                <img className="lp-moment-img" src="/lp-queue.png" loading="lazy" width="1636" height="1068"
+                  alt="Steward's Needs Your Attention queue: six donors with reasons and a single action each" />
+                <div className="lp-caption">The queue on Steward's home screen — a capture of the live product with sample data.</div>
+              </div>
+            </div>
+
+            {/* Moment 2 — recovery. The money section; the email shown is the
+                real default template from the product (server.js
+                DEFAULT_DUNNING_BODY), tokens filled with visibly sample values. */}
+            <div className="lp-moment lp-flip">
+              <div className="lp-moment-text">
+                <Eyebrow>Any night, 2:11 am</Eyebrow>
+                <h2 className="lp-serif" style={{ fontSize: "clamp(28px, 3vw, 40px)", color: C.ink, lineHeight: 1.15, marginBottom: 18 }}>
+                  The gift you didn't know you were losing
+                </h2>
+                <p style={{ fontSize: 16, color: "#2d2d2d", lineHeight: 1.8, marginBottom: 14 }}>
+                  20–30% of recurring giving is lost to nothing more dramatic than
+                  an expired card. The donor never decided to stop — their bank
+                  reissued some plastic, the charge failed at two in the morning,
+                  and nobody ever asked them to fix it.
+                </p>
+                <p style={{ fontSize: 16, color: "#2d2d2d", lineHeight: 1.8 }}>
+                  When a recurring gift fails, Steward notices within the hour and
+                  sends a warm note in your organization's name with a one-click,
+                  no-login card update — then follows up on a gentle schedule until
+                  it's resolved. You see the dollars at risk on your home screen,
+                  and you see them come back.
+                </p>
+              </div>
+              <div className="lp-moment-media">
+                <div className="lp-email">
+                  <div className="lp-email-head">
+                    <div><span style={{ color: C.ink, fontWeight: 600 }}>From:</span> Riverbend Arts Collective</div>
+                    <div><span style={{ color: C.ink, fontWeight: 600 }}>Subject:</span> A quick fix to keep your support going</div>
+                  </div>
+                  <div className="lp-email-body">
+                    <p>Hi Maria,</p>
+                    <p>Thank you again for your ongoing gift of $50 to Riverbend Arts Collective — support like yours is what makes our work possible.</p>
+                    <p>We tried to process your latest gift and the card on file didn't go through. This happens most often when a card has expired or been reissued, and it only takes a minute to fix.</p>
+                    <p style={{ textAlign: "center", margin: "22px 0" }}>
+                      <span style={{ background: C.greenMd, color: "#fff", padding: "11px 26px", borderRadius: 8, fontWeight: 700, display: "inline-block" }}>Update my card</span>
+                    </p>
+                    <p>If you have any questions, just reply to this email — we're glad to help.</p>
+                    <p>With gratitude,<br />Riverbend Arts Collective</p>
+                  </div>
+                </div>
+                <div className="lp-caption">The actual email Steward sends when a card fails — its built-in template, shown with sample values. Orgs can rewrite every word.</div>
+              </div>
+            </div>
+
+            {/* Moment 3 — receipts */}
+            <div className="lp-moment">
+              <div className="lp-moment-text">
+                <Eyebrow>Audit season</Eyebrow>
+                <h2 className="lp-serif" style={{ fontSize: "clamp(28px, 3vw, 40px)", color: C.ink, lineHeight: 1.15, marginBottom: 18 }}>
+                  The receipt that sends itself
+                </h2>
+                <p style={{ fontSize: 16, color: "#2d2d2d", lineHeight: 1.8 }}>
+                  Every online gift gets an IRS-compliant receipt — numbered,
+                  recorded, and sent the moment the payment lands. Offline gifts
+                  are one click, never automatic, because you know which entries
+                  are backfill. Year-end statements consolidate a donor's whole
+                  year on demand. Your auditor stops asking.
+                </p>
+              </div>
+              <div className="lp-moment-media">
+                <img className="lp-moment-img" src="/lp-receipt.png" loading="lazy" width="1081" height="745"
+                  alt="A numbered, IRS-compliant donation receipt PDF generated by Steward" />
+                <div className="lp-caption">A receipt generated by the live product's preview endpoint — this is the real PDF, not a mock-up.</div>
+              </div>
+            </div>
+
           </div>
         </section>
 
