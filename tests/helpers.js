@@ -60,4 +60,21 @@ function wireSize(path, token) {
   });
 }
 
-module.exports = { BASE, ok, summary, login, api, wireSize };
+// Direct DB access for fixture setup — LOCAL scratch Postgres only.
+const DB_URL = process.env.DATABASE_URL || "postgresql://steward@localhost:5544/steward_loadtest";
+if (!/localhost|127\.0\.0\.1/.test(DB_URL)) {
+  console.error("Refusing to run: DATABASE_URL must be localhost (got " + DB_URL + ")");
+  process.exit(1);
+}
+let _pool = null;
+function db() {
+  if (!_pool) {
+    const { Pool } = require("pg");
+    _pool = new Pool({ connectionString: DB_URL, ssl: { rejectUnauthorized: false } });
+  }
+  return _pool;
+}
+const q = (sql, params) => db().query(sql, params).then(r => r.rows);
+async function closeDb() { if (_pool) await _pool.end(); }
+
+module.exports = { BASE, ok, summary, login, api, wireSize, q, closeDb };

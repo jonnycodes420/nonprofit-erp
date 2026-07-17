@@ -49,6 +49,14 @@ DONE (was item 6): Expired-token UX — see "Auth, Gmail, billing/Reactivate, an
 
 ## Earlier sessions (for reference)
 
+### BUILD-06 Phase A — Donor pagination: the 21.7MB cliff is dead (2026-07-17)
+
+The last known scaling cliff from BUILD-05. `GET /donors` gained limit/offset + search/stage/status/assignedTo + a sort whitelist (legacy unpaginated array shape preserved when `limit` absent); new `GET /donors/summaries` (whole org minus notes/score_rationale — feeds App.jsx's shared donor state, Kanban/Team/Re-engage/Map, Communications audience counts, onboarding snapshot); new `GET /donors/export/csv` honoring the same query params (replaces the client-side page-limited export); Directory server-paginated at 50/page with advanced/custom-field filters client-side within the page ("filtering current page" note — documented compromise, server-side CF querying is a spec non-goal); DonorProfile upgrades summary→full record on select; `compression()` scoped to the /donors family; LoginPage un-hardcoded from the prod URL (blocks local E2E otherwise). **Measured at re-seeded 25k/200k scale**: page 20ms/3.6KB wire (was 21.7MB), summaries 183-311ms/923KB wire, EXPLAIN top-N 17ms (no new index needed), Home stack unregressed (today 108ms, stewardship 775ms). Verified: `tests/donors-pagination.test.js` 31/31 (incl. 126-page concat == full id set, zero dups) + Playwright click-through on the local demo org 11/11. Commit `7d77c41`.
+
+### BUILD-06 Phase B — Test-suite debt paid (2026-07-17)
+
+BUILD-02/03 verified with throwaway scripts; BUILD-05 had to improvise capture-and-diff because of it. Now committed under `tests/` with a README (scratch-Postgres-with-SSL recipe included): `reports.test.js` (32 assertions — crafted 3-year fixture with hand-computed LYBUNT/SYBUNT membership in BOTH year modes, retention 66.7%/70%-dollar/50%-first-year, medians odd+even via PERCENTILE_CONT, FY/CY boundary flip, CSV injection guard, param 400s, org isolation), `export-zip.test.js` (12 — access matrix incl. trial_expired-admin-200, all 11 files, edit_token absent from files AND raw bytes, injection guard, two-way isolation), plus Phase A's `donors-pagination.test.js`. New CRITICAL WORKING RULE in CLAUDE.md: scripted verification is committed with the feature, not discarded after passing.
+
 ### Sentry production-error sweep + console token leak (2026-07-16)
 
 Sentry (backend project) showed 3 real unresolved production errors + 1 advisory. All four fixed, each verified with a scripted run against real server.js + real local Postgres 16 (SSL, port 5544 — same infra recipe as BUILD-03/05: initdb + self-signed cert) — **41/41 assertions**, covering happy path AND cross-org isolation for every fix. Committed separately (`75b2138`, `85547ed`, `6a317a2`, `a5ef04c`, `3c54e44`). Sentry issues deliberately NOT resolved in the dashboard — founder will resolve after confirming they stop recurring in prod.
