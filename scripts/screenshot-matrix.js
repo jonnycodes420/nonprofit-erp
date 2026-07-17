@@ -117,12 +117,13 @@ async function goTab(page, vp, tabId) {
     const sidebarVisible = await page.locator(".app-sidebar").isVisible().catch(() => false);
     const bottomBarVisible = await page.locator(".mobile-bottom-bar").isVisible().catch(() => false);
     const headerVisible = await page.locator(".app-header").isVisible().catch(() => false);
+    const topbarVisible = await page.locator(".app-topbar").isVisible().catch(() => false);
     if (vp.mobile) {
-      t(`${vp.w}: sidebar hidden, bottom bar + header visible`, !sidebarVisible && bottomBarVisible && headerVisible,
-        `sidebar=${sidebarVisible} bottomBar=${bottomBarVisible} header=${headerVisible}`);
+      t(`${vp.w}: sidebar + top bar hidden, bottom bar + header visible`, !sidebarVisible && !topbarVisible && bottomBarVisible && headerVisible,
+        `sidebar=${sidebarVisible} topbar=${topbarVisible} bottomBar=${bottomBarVisible} header=${headerVisible}`);
     } else {
-      t(`${vp.w}: sidebar visible, bottom bar + header hidden`, sidebarVisible && !bottomBarVisible && !headerVisible,
-        `sidebar=${sidebarVisible} bottomBar=${bottomBarVisible} header=${headerVisible}`);
+      t(`${vp.w}: sidebar + top bar visible, bottom bar + header hidden`, sidebarVisible && topbarVisible && !bottomBarVisible && !headerVisible,
+        `sidebar=${sidebarVisible} topbar=${topbarVisible} bottomBar=${bottomBarVisible} header=${headerVisible}`);
       const noHorizScroll = await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1);
       t(`${vp.w}: no horizontal page scroll`, noHorizScroll);
     }
