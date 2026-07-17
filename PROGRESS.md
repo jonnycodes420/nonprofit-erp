@@ -49,6 +49,17 @@ DONE (was item 6): Expired-token UX — see "Auth, Gmail, billing/Reactivate, an
 
 ## Earlier sessions (for reference)
 
+### BUILD-05 — Load test at 25k donors: found the cliff, fixed it, documented the ceiling (2026-07-16)
+
+Seeded a synthetic mid-size org (25,000 donors / 202,561 gifts / 150,000 interactions, power-law, 6-year spread, deterministic — `scripts/seed-loadtest.js`) into rebuilt local infra (Postgres 16 w/ self-signed SSL on 5544, real server.js) and measured everything with `scripts/loadtest.js` (autocannon, committed). Full numbers in `LOADTEST_REPORT.md`; CLAUDE.md gained a "Scale" section.
+
+- **The cliff was real and worse than hypothesized**: `GET /metrics/stewardship-summary` (every Home load, both scopes) **exceeded 15 minutes per request** — `interactions` had no index beyond its pkey, and the debt/first-touch metrics each ran a correlated subquery per donor (EXPLAIN cost 136M/146M; 23,832 seq scans of 150k rows). The debt breakdown endpoint took 210s; LYBUNT 69.5s / SYBUNT 112s (per-donor gift subqueries with only org-leading indexes); at 10 concurrent clients LYBUNT was 100% timeouts. Noisy-neighbor bonus: a **300-donor org's Home took 33.8s just for sharing the interactions table** with the big org. A 25k-row import was outright impossible — 12.6MB payload vs the global 5mb `express.json` cap — and the 8k-row import that did fit took 64.6s (recalc N+1 seq-scanning gifts per donor).
+- **Fixes (measurement-justified, surgical)**: 3 indexes in `initSchema` (`interactions(donor_id,date)`, `interactions(org_id,donor_id,date)`, `gifts(donor_id,date)`); LEFT JOIN + GROUP BY rewrites of `computeStewardshipDebtBreakdown()`/`computeFirstTouchDelay()`; `computeRetentionRate` fetches only `donor_id, date`; 30mb body parser mounted on the three import routes only; `DISABLE_RATE_LIMIT=1` test hook. The `gifts(donor_id,date)` index alone fixed LYBUNT/SYBUNT with zero SQL changes (69.5s→0.20s / 112s→0.27s).
+- **After**: every endpoint sub-second single-request (summary?scope=all 0.74s, breakdown 0.12s, small org 0.03s); zero errors/timeouts across the full autocannon suite; 25k import in 23.8s; job sweeps 166ms. First boot after deploy builds the indexes (~2 min one-time at this scale, 2s after).
+- **Behavior parity proven, not assumed**: SQL-level `old EXCEPT new` both directions = 0 rows across all 23,832 donors for both rewrites, plus 23 endpoint responses captured before/after and diffed (id-normalized) — the only diffs were the UTC day rolling over mid-run (daysSinceContact +1 etc., one hand-verified to the exact totalGiving/1000/30 arithmetic). The BUILD-02/03 scripted suites weren't committed (torn down with their session infra), so this capture-and-diff stood in for them.
+- **Flagged, not fixed (next cliffs, ranked in the report)**: `GET /donors` ships 21.7MB unpaginated (pagination is invasive — Directory, Kanban, onboarding, exports all read it); retention's JS date-bucketing (~150ms/call, kept for the documented tz-parity constraint); import recalc + autoEnroll N+1s (cheap now); bcrypt login throughput.
+- Infra torn down after the run (server + cluster stopped, scratch data deleted); nothing touched production.
+
 ### BUILD-03 — Full data export as CSV zip: "your data is yours" (2026-07-16)
 
 The honest answer to "what happens to our data if we leave?" was "a JSON blob" — now it's one click, a zip of clean CSVs of everything, anytime, even with a lapsed subscription. Full design in CLAUDE.md's new "Data export" section.

@@ -115,6 +115,11 @@ function rateLimitHandler(req, res) {
   res.status(429).json({ error: "rate_limited", message: "Too many requests. Please try again later." });
 }
 
+// Load-test hook only: DISABLE_RATE_LIMIT=1 turns limiters off so a local
+// benchmark measures route cost, not limiter 429s (see LOADTEST_REPORT.md).
+// Never set in production — Railway env does not define it.
+const rateLimitDisabled = () => process.env.DISABLE_RATE_LIMIT === "1";
+
 // Loose baseline across the whole API — catches scraping/volumetric abuse
 // without interfering with normal SPA usage (a dashboard load fires many
 // parallel fetches from one IP).
@@ -126,7 +131,7 @@ const generalLimiter = rateLimit({
   handler: rateLimitHandler,
   // Webhooks are server-to-server (Stripe) and health checks are polled
   // frequently by design — neither should share budget with browser traffic.
-  skip: (req) => req.path === "/health" || req.path === "/stripe/webhook" || req.path === "/billing/webhook",
+  skip: (req) => rateLimitDisabled() || req.path === "/health" || req.path === "/stripe/webhook" || req.path === "/billing/webhook",
 });
 app.use(generalLimiter);
 
@@ -138,6 +143,7 @@ const loginIpLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   handler: rateLimitHandler,
+  skip: rateLimitDisabled,
 });
 // Per-account+IP: stops repeated brute force against one specific account.
 const loginAccountLimiter = rateLimit({
@@ -147,6 +153,7 @@ const loginAccountLimiter = rateLimit({
   legacyHeaders: false,
   handler: rateLimitHandler,
   keyGenerator: (req) => `${ipKeyGenerator(req.ip)}:${String(req.body?.email || "").toLowerCase()}`,
+  skip: rateLimitDisabled,
 });
 
 const registerLimiter = rateLimit({
@@ -643,6 +650,13 @@ app.post("/billing/webhook", express.raw({ type: "application/json" }), async (r
   res.json({ received: true });
 });
 
+// Import routes accept large one-shot payloads — a 25k-donor CSV with gift
+// history serializes to ~12.6MB of JSON (measured, BUILD-05 load test), which
+// the global 5mb cap below was rejecting outright: a mid-size org could not
+// physically complete onboarding step 2. body-parser marks parsed requests
+// (req._body), so the global parser skips bodies these already handled; the
+// 5mb cap stays in force for every other route.
+app.use(["/donors/import-combined", "/donors/import", "/gifts/import-history"], express.json({ limit: "30mb" }));
 app.use(express.json({ limit: "5mb" }));
 
 // ── DB readiness guard ─────────────────────────────────────────────────────
@@ -10169,14 +10183,19 @@ const MEANINGFUL_CONTACT_TYPES = "('call','meeting','email','stewardship')";
 // `userId` to scope to just that user's assigned donors (same assigned_to
 // pattern as GET /dashboard/today) — omit for the org-wide figure.
 async function computeStewardshipDebtBreakdown(orgId, { userId } = {}) {
+  // One LEFT JOIN + GROUP BY instead of a correlated MAX() subquery per donor —
+  // at 25k donors × 150k interactions the subquery plan was 25k sequential
+  // scans (~6 min per call, measured; see LOADTEST_REPORT.md). MAX over zero
+  // joined rows is NULL, so the COALESCE fallback to first_gift_date is
+  // byte-identical to the old subquery's behavior. GROUP BY d.id is enough —
+  // the other selected columns are functionally dependent on the PK.
   const rows = await query(
-    `SELECT d.id, d.name, d.total_giving,
-       COALESCE(
-         (SELECT MAX(i.date) FROM interactions i WHERE i.donor_id = d.id AND i.type IN ${MEANINGFUL_CONTACT_TYPES}),
-         d.first_gift_date
-       ) AS last_contact
+    `SELECT d.id, d.name, d.total_giving, d.first_gift_date,
+       COALESCE(MAX(i.date), d.first_gift_date) AS last_contact
      FROM donors d
-     WHERE d.org_id = ? AND d.deleted_at IS NULL AND d.total_giving > 0 ${userId ? "AND d.assigned_to = ?" : ""}`,
+     LEFT JOIN interactions i ON i.donor_id = d.id AND i.type IN ${MEANINGFUL_CONTACT_TYPES}
+     WHERE d.org_id = ? AND d.deleted_at IS NULL AND d.total_giving > 0 ${userId ? "AND d.assigned_to = ?" : ""}
+     GROUP BY d.id`,
     userId ? [orgId, userId] : [orgId]
   );
   const today = Date.now();
@@ -10199,12 +10218,17 @@ async function computeStewardshipDebt(orgId, opts = {}) {
 }
 
 async function computeFirstTouchDelay(orgId) {
+  // Same correlated-subquery → LEFT JOIN + GROUP BY rewrite as
+  // computeStewardshipDebtBreakdown above (same reason, same measurement —
+  // see LOADTEST_REPORT.md). MIN over zero joined rows is NULL, matching the
+  // old subquery's "no first touch yet" result exactly.
   const rows = await query(
-    `SELECT d.id, d.name, d.first_gift_date,
-       (SELECT MIN(i.date) FROM interactions i
-        WHERE i.donor_id = d.id AND i.type IN ${MEANINGFUL_CONTACT_TYPES} AND i.date >= d.first_gift_date) AS first_touch_date
+    `SELECT d.id, d.name, d.first_gift_date, MIN(i.date) AS first_touch_date
      FROM donors d
-     WHERE d.org_id = ? AND d.deleted_at IS NULL AND d.first_gift_date IS NOT NULL`,
+     LEFT JOIN interactions i ON i.donor_id = d.id
+       AND i.type IN ${MEANINGFUL_CONTACT_TYPES} AND i.date >= d.first_gift_date
+     WHERE d.org_id = ? AND d.deleted_at IS NULL AND d.first_gift_date IS NOT NULL
+     GROUP BY d.id`,
     [orgId]
   );
   let totalDays = 0, touched = 0, untouched = 0;
@@ -10253,7 +10277,10 @@ const SECTOR_AVG_RETENTION_RATE = 43;
 // behavior is unchanged.
 async function computeRetentionRate(orgId, { year = new Date().getFullYear(), gifts, userId } = {}) {
   const prevYear = year - 1;
-  let allGifts = gifts || await query("SELECT * FROM gifts WHERE org_id = ?", [orgId]);
+  // Only donor_id + date are read below — SELECT * was shipping every column
+  // of 200k+ rows (~70MB heap churn per call at load-test scale). The JS
+  // year-bucketing itself deliberately stays (see comment above).
+  let allGifts = gifts || await query("SELECT donor_id, date FROM gifts WHERE org_id = ?", [orgId]);
   if (userId) {
     const assignedRows = await query("SELECT id FROM donors WHERE org_id = ? AND assigned_to = ? AND deleted_at IS NULL", [orgId, userId]);
     const assignedIds = new Set(assignedRows.map(r => r.id));

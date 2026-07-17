@@ -1075,6 +1075,16 @@ async function initSchema() {
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_gifts_org_fund ON gifts (org_id, fund_id)`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_gifts_org_campaign ON gifts (org_id, campaign_id)`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_donors_org_last_gift ON donors (org_id, last_gift_date)`);
+
+  // ── Load-test pass (BUILD-05, 2026-07-16) — see LOADTEST_REPORT.md ────────
+  // interactions had NO index beyond its pkey: every per-donor timeline fetch,
+  // stewardship-debt/first-touch aggregate, and Gmail dedup probe was a full
+  // seq scan (150k rows × 25k donors at tested scale). gifts had org-scoped
+  // indexes only — per-donor paths (profile fetch, recalcDonorSummary after
+  // import, lapsed-recovery goal math) scanned the whole table per donor.
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_interactions_donor_date ON interactions (donor_id, date)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_interactions_org_donor_date ON interactions (org_id, donor_id, date)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_gifts_donor_date ON gifts (donor_id, date)`);
 }
 
 async function seedData() {
