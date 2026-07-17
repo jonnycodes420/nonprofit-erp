@@ -2400,7 +2400,36 @@ app.delete("/gifts/:id", requireAuth, wrap(async (req, res) => {
   const existing = await query("SELECT * FROM gifts WHERE id=? AND org_id=?", [req.params.id, req.user.orgId]);
   if (!existing.length) return res.status(404).json({ error: "Gift not found" });
   const g = existing[0];
-  await run("DELETE FROM gifts WHERE id=? AND org_id=?", [req.params.id, req.user.orgId]);
+
+  // A receipt is a legal artifact — a gift with an ACTIVE receipt can't be
+  // silently deleted out from under it (was an unhandled FK violation).
+  // Void the receipt first (POST /receipts/:id/void), then delete.
+  const activeReceipts = await query(
+    "SELECT receipt_number FROM receipts WHERE gift_id=? AND org_id=? AND type='gift' AND voided_at IS NULL",
+    [req.params.id, req.user.orgId]
+  );
+  if (activeReceipts.length) {
+    return res.status(409).json({
+      error: "receipt_active",
+      message: `This gift has an issued tax receipt (#${activeReceipts[0].receipt_number}). Void the receipt first, then delete the gift.`,
+    });
+  }
+
+  await withTransaction(async (client) => {
+    // Voided receipts keep their frozen `snapshot`/`pdf_data` record — just
+    // detach the gift reference so the FK doesn't block deletion (same
+    // tolerated-dangling pattern as gifts.giving_page_id, except here the FK
+    // is real so it must be NULLed, not left dangling).
+    await runTx(client, "UPDATE receipts SET gift_id=NULL WHERE gift_id=? AND org_id=?", [req.params.id, req.user.orgId]);
+    // A pledge fulfilled by this gift is no longer fulfilled — reopen it.
+    // Reminder state is left alone: if it goes overdue later (or already
+    // was), processPledgeReminders' overdue-marking sweep handles it.
+    await runTx(client,
+      `UPDATE pledges SET status='open', fulfilled_gift_id=NULL, fulfilled_at=NULL, updated_at=NOW()
+       WHERE fulfilled_gift_id=? AND org_id=?`,
+      [req.params.id, req.user.orgId]);
+    await runTx(client, "DELETE FROM gifts WHERE id=? AND org_id=?", [req.params.id, req.user.orgId]);
+  });
   // Full recalc: old delta left last_gift_date and last_gift_amount stale when deleting the most recent gift
   await recalcDonorSummary(g.donor_id, req.user.orgId);
   res.json({ ok: true });
