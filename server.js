@@ -9087,9 +9087,27 @@ async function orgWithMetrics(org) {
 }
 
 app.get("/admin/orgs", requireAuth, requireSuperAdmin, wrap(async (req, res) => {
-  const orgs = await query("SELECT * FROM orgs ORDER BY created_at DESC", []);
-  const result = await Promise.all(orgs.map(orgWithMetrics));
-  res.json(result);
+  // One grouped aggregate per table instead of 4 queries per org (was N+1 —
+  // Promise.all(orgs.map(orgWithMetrics))). orgWithMetrics stays for the
+  // single-org GET /admin/orgs/:id, where per-org queries are fine.
+  const [orgs, donorCounts, grantCounts, userCounts, lastActives] = await Promise.all([
+    query("SELECT * FROM orgs ORDER BY created_at DESC", []),
+    query("SELECT org_id, COUNT(*) AS c FROM donors WHERE deleted_at IS NULL GROUP BY org_id", []),
+    query("SELECT org_id, COUNT(*) AS c FROM grants GROUP BY org_id", []),
+    query("SELECT org_id, COUNT(*) AS c FROM users GROUP BY org_id", []),
+    query("SELECT org_id, MAX(created_at) AS t FROM interactions GROUP BY org_id", []),
+  ]);
+  const byOrg = (rows, col) => new Map(rows.map(r => [r.org_id, r[col]]));
+  const dMap = byOrg(donorCounts, "c"), gMap = byOrg(grantCounts, "c"),
+        uMap = byOrg(userCounts, "c"), aMap = byOrg(lastActives, "t");
+  res.json(orgs.map(org => ({
+    ...org,
+    donor_count:    parseInt(dMap.get(org.id) || 0, 10),
+    grant_count:    parseInt(gMap.get(org.id) || 0, 10),
+    user_count:     parseInt(uMap.get(org.id) || 0, 10),
+    last_active:    aMap.get(org.id) || null,
+    monthly_revenue: PLAN_MRR[org.subscription_status === "active" ? org.plan : "trial"] || 0,
+  })));
 }));
 
 app.get("/admin/metrics", requireAuth, requireSuperAdmin, wrap(async (req, res) => {
