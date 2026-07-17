@@ -51,6 +51,9 @@ export default function Pricing() {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(null);
   const isAuthed = !!auth?.token;
+  // A signed-in org still on its free trial already committed by signing up —
+  // the primary path is into the product, not a card-first checkout (QA R1).
+  const onTrial = isAuthed && (auth?.org?.plan === "trial" || auth?.org?.subscription_status === "trialing");
 
   async function selectPlan(planId) {
     if (!isAuthed) { navigate("/signup"); return; }
@@ -104,6 +107,16 @@ export default function Pricing() {
           <div style={{ fontSize: 15, color: "#8fa896", maxWidth: 420, margin: "0 auto" }}>
             Every plan includes a 30-day free trial. No credit card required until you're ready.
           </div>
+          {onTrial && (
+            <div style={{ marginTop: 28, display: "flex", flexDirection: "column", alignItems: "center", gap: 10 }}>
+              <Link to="/dashboard" style={{ display: "inline-block", background: "#c9a84c", color: "#0f1a12", borderRadius: 12, padding: "14px 32px", fontSize: 15, fontWeight: 800, textDecoration: "none" }}>
+                Continue with your free trial →
+              </Link>
+              <div style={{ fontSize: 13, color: "#8fa896" }}>
+                You're already on your 30-day trial — no card needed. Pick a plan below whenever you're ready.
+              </div>
+            </div>
+          )}
         </div>
 
         <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 20, marginBottom: 40 }}>

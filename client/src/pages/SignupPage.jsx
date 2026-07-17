@@ -52,7 +52,10 @@ export default function SignupPage() {
         const checkoutData = await checkoutRes.json();
         if (checkoutRes.ok && checkoutData.url) { window.location.href = checkoutData.url; return; }
       }
-      navigate("/pricing", { replace: true });
+      // A brand-new org already committed by signing up — land them in the
+      // product (onboarding) rather than on /pricing's card-first plan wall.
+      // Plans stay one click away (in-app trial banner + /pricing itself).
+      navigate("/welcome", { replace: true });
     } catch (err) {
       setServerErr(err.message);
     }

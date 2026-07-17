@@ -52,8 +52,12 @@ selector issues; each did leave a throwaway org behind — cleanup file).
   dashboard →" link in the header. The page *says* "30-day free trial, no
   credit card required," but the layout says "pick a plan and enter a card."
   A stranger who just typed their password expects to land in the product;
-  this is the most likely drop-off point in the funnel. (Recorded, not fixed
-  — UX changes were out of scope for tonight.)
+  this is the most likely drop-off point in the funnel. **FIXED 2026-07-17:**
+  signup now lands directly on `/welcome` (onboarding), and `/pricing` shows a
+  signed-in trial org a primary "Continue with your free trial →" CTA above
+  the plan cards (plans remain the secondary option; the `?plan=` direct-
+  checkout signup path is unchanged). Verified with a scripted signup through
+  the real UI against a local stack.
 - **R2 — Fresh-org retention hero reads as a scolding.** Day-one Home with
   freshly imported history shows "**0%** — 43pt below the 43% sector average —
   worth a closer look at who isn't renewing." Retention on an org created 60
