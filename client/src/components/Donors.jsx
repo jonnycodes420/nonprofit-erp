@@ -415,7 +415,6 @@ export function DonorImport({ onClose, onImported, withHistory = false }) {
 
   // ── Submit import ──
   const doImport = async () => {
-    console.log("IMPORT CLICKED");
     // Body-build phase — wrapped in try/catch so a silent throw here is never
     // swallowed. Previously this threw before reaching the fetch with no UX feedback.
     let toSend, warnedCount, skippedCount;
@@ -424,7 +423,6 @@ export function DonorImport({ onClose, onImported, withHistory = false }) {
       warnedCount  = warned.length;
       skippedCount = skipped.length;
       toSend = [...ready, ...warned].map(({ _warnings, _rowIndex, ...d }) => d);
-      console.log("BUILD DONORS LENGTH:", toSend.length);
       if (!toSend.length) {
         setErr(skippedCount ? `All ${skippedCount} rows skipped — no usable name or email.` : "Nothing to import.");
         return;
@@ -437,7 +435,6 @@ export function DonorImport({ onClose, onImported, withHistory = false }) {
 
     setLoading(true); setErr("");
     try {
-      console.log("SENDING IMPORT REQUEST", toSend.length, "donors");
       let res;
       if (withHistory) {
         // One real gift per donor, derived from their imported total/last-gift
@@ -459,7 +456,6 @@ export function DonorImport({ onClose, onImported, withHistory = false }) {
       } else {
         res = await apiFetch("/donors/import", { method:"POST", body:JSON.stringify({ donors:toSend }) });
       }
-      console.log("IMPORT RESPONSE:", res);
       // Don't call onImported() here — result screen must render first.
       // Done button calls onImported() so the modal stays visible until user dismisses.
       setResult({ ...res, warned:warnedCount, skipped:skippedCount });
@@ -507,7 +503,6 @@ export function DonorImport({ onClose, onImported, withHistory = false }) {
 
   const { ready, warned, skipped } = built;
   const totalToImport = ready.length + warned.length;
-  console.log("IMPORT BUTTON DISABLED?:", loading||totalToImport===0, "| loading:", loading, "| totalToImport:", totalToImport);
 
   return (
     <div style={overlay} className="modal-sheet-overlay">

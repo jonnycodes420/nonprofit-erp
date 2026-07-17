@@ -327,8 +327,5 @@ function AppShell() {
 
 // ── Root ───────────────────────────────────────────────────────────────────
 export default function App() {
-  if (typeof window !== 'undefined') {
-    console.log('APP LOADED', localStorage.getItem('npe_token'));
-  }
   return <AppShell />;
 }
