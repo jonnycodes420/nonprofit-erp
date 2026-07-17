@@ -134,6 +134,10 @@ async function api(pathname, token) {
     await page.locator(".grant-profile-body").isVisible().catch(() => false));
 
   // ── Quick-nav: Reports ───────────────────────────────────────────────────
+  // GrantProfile is a full-screen takeover too — leave it first (fill()
+  // force-focuses, bypassing the covered-bar ⌘K guard).
+  await page.goto(`${BASE}/dashboard`, { waitUntil: "networkidle" });
+  await page.waitForTimeout(800);
   await page.keyboard.press("ControlOrMeta+k");
   await search.fill("reports");
   await page.waitForTimeout(400);
