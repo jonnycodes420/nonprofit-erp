@@ -5217,29 +5217,19 @@ app.get("/campaigns/:id/progress", requireAuth, wrap(async (req, res) => {
   });
 }));
 
-app.post("/campaigns/:id/send", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
-  const BACKEND_URL = process.env.BACKEND_URL || "https://nonprofit-erp-production.up.railway.app";
-
-  const campaigns = await query(
-    "SELECT * FROM campaigns WHERE id = ? AND org_id = ?",
-    [req.params.id, req.user.orgId]
-  );
-  if (!campaigns.length) return res.status(404).json({ error: "Campaign not found" });
-  const campaign = campaigns[0];
-  if (campaign.status === "sent") return res.status(400).json({ error: "Campaign already sent" });
-
-  const orgs = await query("SELECT * FROM orgs WHERE id = ?", [req.user.orgId]);
-  const org = orgs[0];
-
+// Segment → recipient list. Shared by the manual send route and the
+// scheduled-campaign job (BUILD-06 Phase C) so both resolve audiences
+// identically. Note the predicates read d.stage — the DB column — matching
+// what the client's SegmentPicker previews (fixed same pass; it read a
+// nonexistent d.pipeline_stage and showed 0 for stage segments).
+async function resolveCampaignRecipients(campaign, orgId) {
   const segment = typeof campaign.segment === "string"
     ? JSON.parse(campaign.segment || "{}")
     : (campaign.segment || {});
-
   let donors = await query(
     "SELECT * FROM donors WHERE org_id = ? AND email IS NOT NULL AND email != '' AND deleted_at IS NULL",
-    [req.user.orgId]
+    [orgId]
   );
-
   const mode = segment.mode || "legacy";
   if (mode === "major") {
     donors = donors.filter(d => Number(d.total_giving) >= 10000);
@@ -5256,12 +5246,38 @@ app.post("/campaigns/:id/send", requireAuth, requireAdmin, checkWriteAccess, wra
     if (segment.stages && segment.stages.length) donors = donors.filter(d => segment.stages.includes(d.stage));
     if (segment.statuses && segment.statuses.length) donors = donors.filter(d => segment.statuses.includes(d.status));
   }
+  return donors;
+}
+
+app.post("/campaigns/:id/send", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
+  const campaigns = await query(
+    "SELECT * FROM campaigns WHERE id = ? AND org_id = ?",
+    [req.params.id, req.user.orgId]
+  );
+  if (!campaigns.length) return res.status(404).json({ error: "Campaign not found" });
+  const campaign = campaigns[0];
+  if (campaign.status === "sent") return res.status(400).json({ error: "Campaign already sent" });
+
+  const orgs = await query("SELECT * FROM orgs WHERE id = ?", [req.user.orgId]);
+  const org = orgs[0];
+  const donors = await resolveCampaignRecipients(campaign, req.user.orgId);
 
   // Mark as sending and respond immediately (non-blocking)
   await run("UPDATE campaigns SET status='sending', updated_at=NOW() WHERE id=?", [campaign.id]);
   res.json({ queued: true, recipientCount: donors.length });
 
-  setImmediate(async () => {
+  setImmediate(() => runCampaignSend(campaign, org, donors));
+}));
+
+// The background send loop — one recipient at a time: suppression check,
+// token replacement, tracking pixel, unsubscribe footer/headers, per-row
+// campaign_recipients bookkeeping, then finalize the campaign row. Extracted
+// from the send route (BUILD-06 Phase C) so processScheduledCampaigns() can
+// use the identical path — before that job existed, a scheduled campaign
+// sat in status='scheduled' forever and never sent.
+async function runCampaignSend(campaign, org, donors) {
+  const BACKEND_URL = process.env.BACKEND_URL || "https://nonprofit-erp-production.up.railway.app";
+  {
     console.log(`[campaign:${campaign.id}] background send starting — ${donors.length} recipients`);
     let sentCount = 0;
     let failCount = 0;
@@ -5354,8 +5370,41 @@ app.post("/campaigns/:id/send", requireAuth, requireAdmin, checkWriteAccess, wra
     ).catch(e => console.error(`[campaign:${campaign.id}] final status update failed:`, e.message));
 
     console.log(`[campaign:${campaign.id}] done — sent:${sentCount} failed:${failCount}`);
-  });
-}));
+  }
+}
+
+// Fires due scheduled campaigns (status='scheduled', scheduled_at passed)
+// through the exact same send path as the manual route. The claim UPDATE is
+// conditional on status so two overlapping ticks can't double-send. A
+// read_only (lapsed) org's scheduled campaign is moved back to draft rather
+// than sent — matching checkWriteAccess on the manual route — or retried
+// forever.
+async function processScheduledCampaigns() {
+  try {
+    const due = await query(
+      "SELECT * FROM campaigns WHERE status='scheduled' AND scheduled_at IS NOT NULL AND scheduled_at <= NOW()", []
+    );
+    for (const campaign of due) {
+      try {
+        const orgs = await query("SELECT * FROM orgs WHERE id = ?", [campaign.org_id]);
+        if (!orgs.length) continue;
+        const org = orgs[0];
+        if (getOrgAccessState(org) === "read_only") {
+          await run("UPDATE campaigns SET status='draft', updated_at=NOW() WHERE id=? AND status='scheduled'", [campaign.id]);
+          console.log(`[campaign-scheduler] org ${org.id} is read_only — campaign ${campaign.id} moved back to draft`);
+          continue;
+        }
+        const claimed = await run("UPDATE campaigns SET status='sending', updated_at=NOW() WHERE id=? AND status='scheduled'", [campaign.id]);
+        if (!claimed.changes) continue; // another tick got it
+        const donors = await resolveCampaignRecipients(campaign, campaign.org_id);
+        console.log(`[campaign-scheduler] sending scheduled campaign ${campaign.id} (${donors.length} recipients, was due ${campaign.scheduled_at})`);
+        await runCampaignSend(campaign, org, donors);
+      } catch (e) { console.error("[campaign-scheduler]", campaign.id, e.message); }
+    }
+  } catch (e) { console.error("[campaign-scheduler]", e.message); }
+}
+setTimeout(() => processScheduledCampaigns().catch(console.error), 20000);
+setInterval(() => processScheduledCampaigns().catch(console.error), 5 * 60 * 1000);
 
 // ── Tracking pixel (no auth) ───────────────────────────────────────────────
 app.get("/track/:recipientId/open.gif", wrap(async (req, res) => {
@@ -5363,11 +5412,16 @@ app.get("/track/:recipientId/open.gif", wrap(async (req, res) => {
   const wasAlreadyOpen = await query("SELECT opened_at FROM campaign_recipients WHERE id=?", [recipientId]);
   const alreadyOpened = wasAlreadyOpen[0]?.opened_at != null;
   await run("UPDATE campaign_recipients SET opened_at = NOW() WHERE id = ? AND opened_at IS NULL", [recipientId]);
-  await run(
-    `UPDATE campaigns SET open_count = open_count + 1
-     WHERE id = (SELECT campaign_id FROM campaign_recipients WHERE id = ?)`,
-    [recipientId]
-  );
+  // Count UNIQUE opens only — this counter is divided by recipient_count as
+  // "open rate" in the UI, so counting every pixel refetch inflated rates
+  // (and could push them past 100%). BUILD-06 Phase C fix.
+  if (!alreadyOpened) {
+    await run(
+      `UPDATE campaigns SET open_count = open_count + 1
+       WHERE id = (SELECT campaign_id FROM campaign_recipients WHERE id = ?)`,
+      [recipientId]
+    );
+  }
 
   // Log interaction + engagement intelligence (fire-and-forget)
   if (!alreadyOpened) {

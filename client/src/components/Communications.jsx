@@ -191,7 +191,10 @@ function countSegment(donors, seg) {
   if (mode === "all") return withEmail.length;
   if (mode === "major") return withEmail.filter(d => (d.total_giving || 0) >= 10000).length;
   if (mode === "lapsed") return withEmail.filter(d => d.status === "lapsed").length;
-  if (mode === "byStage") return withEmail.filter(d => (seg.stages || []).includes(d.pipeline_stage)).length;
+  // d.stage is the DB column (pipeline stage) — this previously read a
+  // nonexistent "pipeline_stage" field, so every byStage count showed 0 while the
+  // server-side send (which filters on d.stage) worked. BUILD-06 Phase C fix.
+  if (mode === "byStage") return withEmail.filter(d => (seg.stages || []).includes(d.stage)).length;
   if (mode === "byTier") return withEmail.filter(d => (seg.tiers || []).map(t => t.toLowerCase()).includes((d.capacity_tier || "").toLowerCase())).length;
   if (mode === "manual") return (seg.donorIds || []).length;
   return 0;
@@ -1081,9 +1084,9 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
     { id: "all",     label: "All Donors",      filter: d => !!d.email },
     { id: "major",   label: "Major (>$10k)",   filter: d => d.email && (d.total_giving || 0) >= 10000 },
     { id: "lapsed",  label: "Lapsed",          filter: d => d.email && d.status === "lapsed" },
-    { id: "prospect",label: "Prospects",       filter: d => d.email && d.pipeline_stage === "prospect" },
-    { id: "steward", label: "Stewards",        filter: d => d.email && d.pipeline_stage === "steward" },
-    { id: "solicit", label: "Ready to Solicit",filter: d => d.email && d.pipeline_stage === "solicit" },
+    { id: "prospect",label: "Prospects",       filter: d => d.email && d.stage === "prospect" },
+    { id: "steward", label: "Stewards",        filter: d => d.email && d.stage === "steward" },
+    { id: "solicit", label: "Ready to Solicit",filter: d => d.email && d.stage === "solicit" },
   ];
   const activeSeg = AUDIENCE_SEGS.find(s => s.id === audienceSeg) || AUDIENCE_SEGS[0];
   const audDonors = allDonors.filter(activeSeg.filter);
@@ -1363,7 +1366,7 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
                   <div key={d.id} style={{ display: "grid", gridTemplateColumns: "1fr 180px 110px 90px", padding: "10px 16px", borderTop: "1px solid " + T.bg3, fontSize: 13, gap: 8, alignItems: "center" }}>
                     <span style={{ fontWeight: 600, color: T.ink }}>{d.name}</span>
                     <span style={{ color: T.ink3, fontSize: 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{d.email}</span>
-                    <span style={{ fontSize: 11, color: T.ink3, textTransform: "capitalize" }}>{d.pipeline_stage || "—"}</span>
+                    <span style={{ fontSize: 11, color: T.ink3, textTransform: "capitalize" }}>{d.stage || "—"}</span>
                     <span style={{ fontSize: 12, color: T.ink }}>${Number(d.total_giving || 0).toLocaleString()}</span>
                   </div>
                 ))}
