@@ -9168,11 +9168,22 @@ app.get("/admin/orgs/:id", requireAuth, requireSuperAdmin, wrap(async (req, res)
 
 app.post("/admin/orgs/:id/extend-trial", requireAuth, requireSuperAdmin, wrap(async (req, res) => {
   const { days } = req.body;
-  if (!days || isNaN(parseInt(days, 10))) return res.status(400).json({ error: "days required" });
-  await pool.query(
-    `UPDATE orgs SET trial_ends_at = COALESCE(trial_ends_at, NOW()) + INTERVAL '${parseInt(days, 10)} days' WHERE id = $1`,
+  const n = parseInt(days, 10);
+  if (!days || isNaN(n) || n <= 0) return res.status(400).json({ error: "days (positive integer) required" });
+  // Extend from whichever is later: the current trial end or now — extending
+  // a long-expired trial by 7 days must land in the future, not still in the
+  // past. If checkTrialExpiry already flipped the org to trial_expired
+  // (read_only), restore trialing so the extension actually grants access.
+  // INTERVAL template literal is safe — n is parseInt-validated (see the
+  // sequences engine's identical convention).
+  const result = await run(
+    `UPDATE orgs SET
+       trial_ends_at = GREATEST(COALESCE(trial_ends_at, NOW()), NOW()) + INTERVAL '${n} days',
+       subscription_status = CASE WHEN subscription_status = 'trial_expired' THEN 'trialing' ELSE subscription_status END
+     WHERE id = ?`,
     [req.params.id]
   );
+  if (!result.changes) return res.status(404).json({ error: "Org not found" });
   const orgs = await query("SELECT * FROM orgs WHERE id=?", [req.params.id]);
   res.json(orgs[0]);
 }));
