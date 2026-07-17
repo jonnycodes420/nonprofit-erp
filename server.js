@@ -3524,11 +3524,20 @@ app.get("/donors/:id/fund-affinity", requireAuth, wrap(async (req, res) => {
 }));
 
 // ── Grants ─────────────────────────────────────────────────────────────────
+// Optional ?search= (lower LIKE on funder/program) + ?limit= for the top-bar
+// global search; no params → unchanged full list (plain array either way).
 app.get("/grants", requireAuth, wrap(async (req, res) => {
-  const grants = await query(
-    "SELECT * FROM grants WHERE org_id = ? ORDER BY deadline ASC",
-    [req.user.orgId]
-  );
+  const where = ["org_id = ?"];
+  const params = [req.user.orgId];
+  if (req.query.search && String(req.query.search).trim()) {
+    const s = "%" + String(req.query.search).trim().toLowerCase() + "%";
+    where.push("(lower(funder) LIKE ? OR lower(program) LIKE ?)");
+    params.push(s, s);
+  }
+  let sql = `SELECT * FROM grants WHERE ${where.join(" AND ")} ORDER BY deadline ASC`;
+  const limit = parseInt(req.query.limit, 10);
+  if (limit > 0) { sql += " LIMIT ?"; params.push(Math.min(limit, 50)); }
+  const grants = await query(sql, params);
   res.json(grants.map(g => ({ ...g, history: JSON.parse(g.history || "[]") })));
 }));
 
