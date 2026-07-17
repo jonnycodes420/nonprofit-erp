@@ -118,7 +118,10 @@ export default function Landing() {
       <style>{`
         *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
         html, body { background: ${C.cream}; overflow-x: hidden; }
-        .lp { font-family: 'DM Sans', sans-serif; color: ${C.ink}; line-height: 1.65; overflow-x: hidden; }
+        /* index.html carries an inline body background (#030712, the app's
+           dark pre-paint) — inline style beats any stylesheet, so the page
+           ground must live on .lp itself. */
+        .lp { background: ${C.cream}; font-family: 'DM Sans', sans-serif; color: ${C.ink}; line-height: 1.65; overflow-x: hidden; min-height: 100vh; }
         .lp a { text-decoration: none; color: inherit; }
         .lp ::selection { background: ${C.greenDk}22; }
         .lp-serif { font-family: 'DM Serif Display', Georgia, serif; font-weight: 400; letter-spacing: -0.02em; }

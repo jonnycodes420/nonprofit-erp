@@ -11,22 +11,35 @@ if (import.meta.env.VITE_SENTRY_DSN) {
 import ReactDOM from "react-dom/client";
 import { BrowserRouter, Routes, Route, Navigate, useNavigate } from "react-router-dom";
 import { apiFetch } from "./api";
-import LoginPage from "./pages/LoginPage";
-import SignupPage from "./pages/SignupPage";
-import WelcomePage from "./pages/WelcomePage";
-import InvitePage from "./pages/InvitePage";
-import App from "./App";
+// Landing stays an eager import — it's the public entry page and must not
+// wait on a second network hop. Everything else is route-split (React.lazy)
+// so visiting "/" no longer downloads the entire authenticated app bundle
+// (the shell + Donors/Grants/Comms/etc. was ~1.5MB minified before this).
 import Landing from "./pages/Landing";
-import Donate from "./pages/Donate";
-import ManageFundraiser from "./pages/ManageFundraiser";
-import Pricing from "./pages/Pricing";
-import AdminDashboard from "./pages/AdminDashboard";
-import ForgotPasswordPage from "./pages/ForgotPasswordPage";
-import ResetPasswordPage from "./pages/ResetPasswordPage";
-import TermsPage from "./pages/TermsPage";
-import PrivacyPage from "./pages/PrivacyPage";
+const LoginPage          = React.lazy(() => import("./pages/LoginPage"));
+const SignupPage         = React.lazy(() => import("./pages/SignupPage"));
+const WelcomePage        = React.lazy(() => import("./pages/WelcomePage"));
+const InvitePage         = React.lazy(() => import("./pages/InvitePage"));
+const App                = React.lazy(() => import("./App"));
+const Donate             = React.lazy(() => import("./pages/Donate"));
+const ManageFundraiser   = React.lazy(() => import("./pages/ManageFundraiser"));
+const Pricing            = React.lazy(() => import("./pages/Pricing"));
+const AdminDashboard     = React.lazy(() => import("./pages/AdminDashboard"));
+const ForgotPasswordPage = React.lazy(() => import("./pages/ForgotPasswordPage"));
+const ResetPasswordPage  = React.lazy(() => import("./pages/ResetPasswordPage"));
+const TermsPage          = React.lazy(() => import("./pages/TermsPage"));
+const PrivacyPage        = React.lazy(() => import("./pages/PrivacyPage"));
 import { Analytics } from '@vercel/analytics/react'
 import { SpeedInsights } from '@vercel/speed-insights/react'
+
+// Matches the app shell's own loading state (cream ground, small spinner)
+// so a chunk load doesn't flash a bare white page.
+function RouteFallback() {
+  return <div style={{ minHeight: "100vh", background: "#f0ede6", display: "flex", alignItems: "center", justifyContent: "center" }}>
+    <span style={{ display: "inline-block", width: 16, height: 16, border: "2px solid #d4cfc6", borderTopColor: "#0d5c3a", borderRadius: "50%", animation: "lpsp 0.7s linear infinite" }} />
+    <style>{`@keyframes lpsp{to{transform:rotate(360deg)}}`}</style>
+  </div>;
+}
 
 const AuthCtx = createContext(null);
 export const useAuth = () => useContext(AuthCtx);
@@ -102,6 +115,7 @@ function Root() {
   return (
     <AuthProvider>
       <BrowserRouter>
+        <React.Suspense fallback={<RouteFallback />}>
         <Routes>
           <Route path="/"          element={<PublicOnly><Landing /></PublicOnly>} />
           <Route path="/login"     element={<PublicOnly><LoginPage /></PublicOnly>} />
@@ -122,6 +136,7 @@ function Root() {
           <Route path="/privacy"          element={<PrivacyPage />} />
           <Route path="*"                 element={<Navigate to="/" replace />} />
         </Routes>
+        </React.Suspense>
         <Analytics />
         <SpeedInsights />
       </BrowserRouter>
