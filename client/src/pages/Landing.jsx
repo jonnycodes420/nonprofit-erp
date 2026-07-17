@@ -5,11 +5,14 @@ import { useNavigate } from "react-router-dom";
 // Register: warm-serious, book-set, five-color palette only. Every number and
 // capability on this page is cross-checked against CLAUDE.md reality — no
 // invented testimonials, no implied scale, no marketing verbs. All product
-// images are captures of the real deployed product (lp-home / lp-queue from
-// prod at 2x; lp-receipt is the live GET /receipts/preview PDF rendered to
-// PNG). The hero's goal-bar animation overlays the REAL bar's measured
-// geometry and ends at its real value — it draws the true state, it doesn't
-// invent one.
+// images are captures of the real deployed product, recaptured for BUILD-08
+// Phase A by scripts/landing-capture.js: tight crops at deviceScaleFactor 2
+// (hero 3) so UI text displays near native size, WebP q92, 1x/2x srcset,
+// displayed at half the 2x asset's pixels. lp-receipt is the live
+// GET /receipts/preview PDF rasterized and trimmed to its content. The
+// hero's goal-bar animation overlays the REAL bar's measured geometry
+// (docs/landing-capture-manifest.json) and ends at its real value — it
+// draws the true state, it doesn't invent one.
 
 const C = {
   ink:    "#0f1a12",
@@ -30,11 +33,14 @@ const C = {
 const CALENDLY_URL = "https://calendly.com/xjca2006/new-meeting";
 const FOUNDER_MAILTO = "mailto:jonathan@stewardapp.dev";
 
-// Measured geometry of the goal progress bar inside lp-home.png (captured at
-// 1440×900): track fill region x=281 y=204 w=149 h=11 → percentages of the
-// image box. The overlay repaints exactly that region and animates the fill
-// from empty to its true 22% — see .lp-goal-overlay in the style block.
-const GOAL_OVERLAY = { left: "19.514%", top: "22.667%", width: "10.347%", height: "1.222%" };
+// Measured geometry of the goal progress bar inside lp-home.webp (BUILD-08
+// Phase A recapture: tight crop of the goal banner + retention card at an
+// 880px viewport, deviceScaleFactor 3, display 640×526). Percentages of the
+// image box, emitted by scripts/landing-capture.js — the overlay repaints
+// exactly the true fill region and animates it from empty to its real 22%.
+// (Inflated ~1px per edge over the manifest's exact numbers so the real
+// fill's rounded ends never peek out from behind the overlay mid-loop.)
+const GOAL_OVERLAY = { left: "6.25%", top: "30.6%", width: "11.22%", height: "2.47%" };
 
 function CalendlyModal({ onClose }) {
   const loaded = useRef(false);
@@ -171,8 +177,15 @@ export default function Landing() {
         .lp-email-body { padding: 22px; font-size: 14px; color: #2d2d2d; line-height: 1.75; }
         .lp-email-body p + p { margin-top: 13px; }
 
+        /* How it works: three numbered steps */
+        .lp-hiw-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 40px; align-items: stretch; }
+        .lp-hiw-step { display: flex; flex-direction: column; gap: 18px; }
+        .lp-hiw-imgbox { background: ${C.cream}; border: 1px solid ${C.cream3}; border-radius: 12px; padding: 18px; display: flex; align-items: center; justify-content: center; flex: 1; min-height: 210px; }
+        .lp-hiw-imgbox img { border-radius: 8px; box-shadow: 0 8px 26px rgba(15,26,18,0.10); }
+
         @media (max-width: 768px) {
           .lp-section { padding: 64px 22px; }
+          .lp-hiw-grid { grid-template-columns: 1fr; gap: 32px; }
           .lp-hero-grid { grid-template-columns: 1fr; gap: 44px; }
           .lp-nav { padding: 0 22px !important; }
           .lp-nav-pricing { display: none; }
@@ -229,10 +242,10 @@ export default function Landing() {
                 <img
                   className="lp-shot"
                   src="/lp-home.webp"
-                  srcSet="/lp-home.webp 1440w, /lp-home-2x.webp 2880w"
+                  srcSet="/lp-home.webp 640w, /lp-home-2x.webp 1280w"
                   sizes="(max-width: 768px) 92vw, 46vw"
-                  width="1440" height="900"
-                  alt="Steward's home screen: the quarter's fundraising goal, and a Needs Your Attention queue of donors to reach today"
+                  width="640" height="526"
+                  alt="Steward's home screen: the quarter's fundraising goal at 22%, and the donor retention rate it's noticing"
                   fetchpriority="high"
                 />
                 <div className="lp-goal-overlay" style={GOAL_OVERLAY} aria-hidden="true"><i /></div>
@@ -277,7 +290,10 @@ export default function Landing() {
                 </p>
               </div>
               <div className="lp-moment-media">
-                <img className="lp-moment-img" src="/lp-queue.webp" loading="lazy" width="1636" height="1068"
+                <img className="lp-moment-img" src="/lp-queue.webp"
+                  srcSet="/lp-queue.webp 656w, /lp-queue-2x.webp 1312w"
+                  sizes="(max-width: 768px) 92vw, 50vw"
+                  loading="lazy" width="656" height="589"
                   alt="Steward's Needs Your Attention queue: six donors with reasons and a single action each" />
                 <div className="lp-caption">The queue on Steward's home screen — a capture of the live product with sample data.</div>
               </div>
@@ -343,12 +359,61 @@ export default function Landing() {
                 </p>
               </div>
               <div className="lp-moment-media">
-                <img className="lp-moment-img" src="/lp-receipt.webp" loading="lazy" width="1081" height="745"
+                <img className="lp-moment-img" src="/lp-receipt.webp"
+                  srcSet="/lp-receipt.webp 654w, /lp-receipt-2x.webp 1308w"
+                  sizes="(max-width: 768px) 92vw, 50vw"
+                  loading="lazy" width="654" height="334"
                   alt="A numbered, IRS-compliant donation receipt PDF generated by Steward" />
                 <div className="lp-caption">A receipt generated by the live product's preview endpoint — this is the real PDF, not a mock-up.</div>
               </div>
             </div>
 
+          </div>
+        </section>
+
+        {/* ── 3.5 How it works — three numbered steps, one line + one real
+            capture each (BUILD-08 Phase A). Same honesty rule as everything
+            else on the page: all three images are crops of the live product. */}
+        <section className="lp-section" style={{ background: C.white, borderTop: `1px solid ${C.cream2}` }}>
+          <div className="lp-wide">
+            <div style={{ textAlign: "center", marginBottom: 56 }}>
+              <Eyebrow>How it works</Eyebrow>
+              <h2 className="lp-serif" style={{ fontSize: "clamp(30px, 3.4vw, 44px)", color: C.ink, lineHeight: 1.12 }}>
+                Three steps, and the first one's on me.
+              </h2>
+            </div>
+            <div className="lp-hiw-grid">
+              {[
+                {
+                  img: "/lp-import.webp", img2: "/lp-import-2x.webp", w: 700, h: 419,
+                  alt: "Steward's real CSV import screen — columns auto-mapped, stages auto-assigned",
+                  line: <><strong>Import your donors.</strong> A CSV is enough — and founding partners get it done for them.</>,
+                },
+                {
+                  img: "/lp-attention.webp", img2: "/lp-attention-2x.webp", w: 636, h: 270,
+                  alt: "Three rows from the Needs Your Attention queue, each with a reason and one action",
+                  line: <><strong>See who needs attention today.</strong> A short queue with reasons, not a database to dig through.</>,
+                },
+                {
+                  img: "/lp-climb.webp", img2: "/lp-climb-2x.webp", w: 321, h: 123,
+                  alt: "A fundraising goal's progress: 22% of goal reached, $5,501 of $25,000",
+                  line: <><strong>Watch retention and recovered gifts climb.</strong> The numbers move because someone finally noticed in time.</>,
+                },
+              ].map((s, i) => (
+                <div key={i} className="lp-hiw-step">
+                  <div className="lp-hiw-imgbox">
+                    <img src={s.img} srcSet={`${s.img} ${s.w}w, ${s.img2} ${s.w * 2}w`}
+                      sizes="(max-width: 768px) 92vw, 30vw"
+                      loading="lazy" width={s.w} height={s.h} alt={s.alt}
+                      style={{ maxWidth: "100%", height: "auto", display: "block", margin: "0 auto" }} />
+                  </div>
+                  <div style={{ display: "flex", gap: 14, alignItems: "flex-start" }}>
+                    <span className="lp-serif" style={{ fontSize: 34, color: C.gold, lineHeight: 1, flexShrink: 0 }}>{i + 1}</span>
+                    <p style={{ fontSize: 15, color: "#2d2d2d", lineHeight: 1.7 }}>{s.line}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
         </section>
 

@@ -1,0 +1,37 @@
+{
+  "capturedAt": "2026-07-17T21:13:48.218Z",
+  "base": "https://www.stewardapp.dev",
+  "images": {
+    "lp-home": {
+      "displayW": 640,
+      "displayH": 526
+    },
+    "lp-climb": {
+      "displayW": 321,
+      "displayH": 123
+    },
+    "lp-queue": {
+      "displayW": 656,
+      "displayH": 589
+    },
+    "lp-attention": {
+      "displayW": 636,
+      "displayH": 270
+    },
+    "lp-import": {
+      "displayW": 700,
+      "displayH": 419
+    },
+    "lp-receipt": {
+      "displayW": 654,
+      "displayH": 334
+    }
+  },
+  "goalOverlay": {
+    "left": "6.406%",
+    "top": "30.802%",
+    "width": "10.906%",
+    "height": "2.092%",
+    "truePercent": "22%"
+  }
+}

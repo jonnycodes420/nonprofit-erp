@@ -1,5 +1,15 @@
 # Steward — Build Progress
 
+## Morning summary — BUILD-08 overnight build (2026-07-17)
+
+Four phases, one commit each. Status:
+- **Phase A — Landing image quality + "How it works": DONE.** Every landing image recaptured from prod via the new committed `scripts/landing-capture.js` — tight crops at DSF 2 (hero 3), WebP q92, 1x/2x srcset, displayed at half the 2x pixels so text reads near native size (the old full-app shots displayed at ~37% scale). The receipt is now trimmed to its content (the empty white bottom half is gone). New numbered 3-step "How it works" section between the product moments and the money strip, all three step images real captures. Hero goal-bar animation geometry re-measured. Lighthouse mobile 91 (local preview build; ≥90 bar met — worth re-checking against prod CDN after deploy, BUILD-07 measured 95 there). Screenshots: `docs/landing-2026-07-17-phaseA/` incl. a 200%-zoom hero crop.
+- **Phase B — donor-covers-fees**: see its entry below.
+- **Phase C — duplicate merge**: see its entry below.
+- **Phase D — warmth pass**: see its entry below.
+
+Editorial calls made without asking (flagged for review): the hero now crops ABOVE the First-Touch Delay metric (demo org shows 684d — true but reads terribly on a marketing page), and the step-3 "watch it climb" image is the goal-progress region, NOT the retention report (demo retention trends down 100%→62.5%→37.5%) and NOT recurring recovery (demo org has zero recurring data). If the demo data gets better, `scripts/landing-capture.js` documents where to swap richer crops back in.
+
 ## Demo account
 - URL: https://client-five-tau-13.vercel.app (also stewardapp.dev)
 - Login: admin@creoarts.org / demo1234 (org_creo)
@@ -48,6 +58,17 @@ DONE (was item 6): Expired-token UX — see "Auth, Gmail, billing/Reactivate, an
 ---
 
 ## Earlier sessions (for reference)
+
+### BUILD-08 Phase A — Landing image quality + "How it works" (2026-07-17)
+
+The BUILD-07 landing shipped with soft product images: full-app 1440px captures displayed at ~535px (~37% scale — 14px UI text rendered ~5px effective), and the receipt image was the whole letter-size PDF page, meaning a huge empty white bottom half below the actual receipt content. Fixed by recapturing everything from the live product via a new **committed** pipeline, `scripts/landing-capture.js` (Playwright + sharp from a scratch dir, per the no-project-dep convention):
+
+- **Tight element crops, near-native display size.** Hero: goal banner + retention card captured at an 880px viewport, DSF 3, 640×526 display (was 1440×900) — text now ~0.85× native and tack-sharp. Queue: the "Needs Your Attention" card at a 1240px viewport where its column is ~620px ≈ its landing display width (~0.95× native). All images 1x + 2x WebP q92, explicit width/height attrs = half the 2x asset's pixels, srcset both. Verified crisp in a DSF-2 render of the hero (what 200% zoom shows) — `docs/landing-2026-07-17-phaseA/hero-200pct-zoom.png`.
+- **Receipt fixed**: the live `/receipts/preview` PDF is rasterized with `sips`, flattened (sips renders PDFs on a transparent background — an ink-scan/trim sees "content" everywhere otherwise, which is exactly why the first attempt kept the empty middle), then gap-scanned to cut at the first big white gap after the content block, dropping the empty middle and the bottom-pinned legal footer. 654×334 now, pure content.
+- **"How it works" section added** (was missing): three numbered steps between the product moments and the money strip — 1. Import your donors (real CSV import modal capture) / 2. See who needs attention today (three real queue rows) / 3. Watch retention and recovered gifts climb (the goal-progress region). One line + one real image each, `.lp-hiw-grid` 3-col → stacked mobile.
+- **Hero animation re-measured**: GOAL_OVERLAY percentages emitted by the script into `docs/landing-capture-manifest.json` from the live bar's bounding box, hand-inflated ~1px/edge so the real fill's rounded ends don't peek out mid-loop (visible in the 2x render).
+- **Perf**: Lighthouse mobile 91 on the local preview build (bar: ≥90; BUILD-07's 95 was measured against the prod CDN — re-check after deploy). Below-fold images all `loading="lazy"`, hero `fetchpriority="high"`; CLS 0.012.
+- Screenshots at 1440/2560/390 (lazy images force-loaded by scroll-through — Playwright fullPage screenshots don't trigger them) in `docs/landing-2026-07-17-phaseA/`.
 
 ### BUILD-08 — Global top bar: search (⌘K), help, user chip (2026-07-17)
 
