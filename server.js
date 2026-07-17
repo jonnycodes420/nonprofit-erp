@@ -2109,8 +2109,15 @@ app.patch("/donors/:id/stage", requireAuth, wrap(async (req, res) => {
   res.json({ success: true, stage });
 }));
 
+// Soft delete — same trash model as POST /donors/bulk-delete. A hard DELETE
+// here threw FK violations for any donor with gifts/interactions/etc.;
+// permanent deletion is POST /donors/purge-trash's job (FK-safe child order).
 app.delete("/donors/:id", requireAuth, requireAdmin, wrap(async (req, res) => {
-  await run("DELETE FROM donors WHERE id = ? AND org_id = ?", [req.params.id, req.user.orgId]);
+  const result = await run(
+    "UPDATE donors SET deleted_at=NOW() WHERE id = ? AND org_id = ? AND deleted_at IS NULL",
+    [req.params.id, req.user.orgId]
+  );
+  if (!result.changes) return res.status(404).json({ error: "Donor not found" });
   res.json({ success: true });
 }));
 
