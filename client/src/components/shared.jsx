@@ -291,12 +291,8 @@ export function GlobalStyles() {
       .grant-2col{grid-template-columns:1fr!important;}
       .grant-add-form-grid{grid-template-columns:1fr!important;}
 
-      /* Communications: sidebar → horizontal scroll nav bar */
-      .comm-layout{flex-direction:column!important;min-height:0!important;}
-      .comm-sidebar{width:100%!important;flex-direction:row!important;overflow-x:auto!important;-webkit-overflow-scrolling:touch!important;padding:6px 8px!important;border-right:none!important;border-bottom:1px solid #ddd9d0!important;flex-shrink:0!important;gap:0!important;}
-      .comm-sidebar-label{display:none!important;}
-      .comm-sidebar button{margin:2px 3px!important;padding:8px 12px!important;}
-      .comm-main{min-height:0!important;overflow-y:auto!important;}
+      /* Communications: section tabs already scroll horizontally (SectionTabs
+         base style) — no mobile override needed since the top-tab flip */
 
       /* Volunteers + Board: 3-col → 2-col */
       .vol-metric-grid,.board-metric-grid{grid-template-columns:repeat(2,1fr)!important;}
@@ -340,6 +336,28 @@ export function Card({children,selected,accent,onClick,style={},variant}) {
     ? {background:T.white,border:`1px solid ${selected?accent||T.greenDk:T.bg3}`,boxShadow:T.shadowMd}
     : {background:T.white,border:`1px solid ${selected?accent||T.greenDk:T.bg3}`,boxShadow:T.shadow};
   return <div onClick={onClick} className={onClick?"card-click":""} style={{...base,borderRadius:14,padding:"20px 24px",cursor:onClick?"pointer":"default",...style}}>{children}</div>;
+}
+// Horizontal section-nav tabs across the top of a tab's content area — the
+// in-section counterpart of the app sidebar (Communications, Reports,
+// Settings). tabs: [{id,label,icon?,badge?}]. Scrolls horizontally when it
+// doesn't fit (base style; no media query needed).
+export function SectionTabs({tabs,active,onSelect,className}) {
+  return <div className={className?`section-tabbar ${className}`:"section-tabbar"} style={{display:"flex",alignItems:"center",gap:2,borderBottom:"1.5px solid "+T.bg3,overflowX:"auto",flexShrink:0,marginBottom:18}}>
+    {tabs.map(t=>{
+      const on=active===t.id;
+      return <button key={t.id} onClick={()=>onSelect(t.id)} style={{
+        background:"transparent",border:"none",
+        borderBottom:`2px solid ${on?T.gold:"transparent"}`,
+        marginBottom:-1.5,padding:"10px 14px",
+        color:on?T.ink:T.ink3,fontSize:13,fontWeight:on?700:500,
+        cursor:"pointer",display:"flex",alignItems:"center",gap:7,whiteSpace:"nowrap",flexShrink:0,
+        transition:"color 0.15s,border-color 0.15s"}}>
+        {t.icon&&<span style={{fontSize:13,opacity:0.7}}>{t.icon}</span>}
+        {t.label}
+        {t.badge!=null&&<span style={{fontSize:11,fontWeight:700,background:on?T.gold+"2e":T.bg3,borderRadius:99,padding:"1px 7px",color:on?T.ink:T.ink3}}>{t.badge}</span>}
+      </button>;
+    })}
+  </div>;
 }
 export function SectionLabel({children}) {
   return <div style={{fontSize:10,fontWeight:800,letterSpacing:"0.12em",textTransform:"uppercase",color:T.ink3,marginBottom:12}}>{children}</div>;

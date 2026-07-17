@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { apiFetch } from "../api";
 import { useAuth } from "../main";
-import { T, askClaude, Spin, fmtFull } from "./shared";
+import { T, askClaude, Spin, fmtFull, SectionTabs } from "./shared";
 
 // ── Campaign Briefing panel (rendered inside expanded row) ──────────────────
 function CampaignBriefing({ campaign }) {
@@ -96,7 +96,6 @@ function CampaignBriefing({ campaign }) {
 
 // ── Design constants ──────────────────────────────────────────────────────────
 const S = {
-  sidebar: { width: 220, bg: "#e8e4db", borderRight: "1px solid #ddd9d0" },
   input: {
     background: T.bg, border: "1px solid " + T.bg3, borderRadius: 8,
     padding: "9px 12px", color: T.ink, fontSize: 13, outline: "none", width: "100%", boxSizing: "border-box",
@@ -1079,7 +1078,7 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
     );
   }
 
-  // ── Sidebar nav items ───────────────────────────────────────────────────────
+  // ── Section nav items (horizontal top tabs) ─────────────────────────────────
   const NAV = [
     { id: "campaigns",  label: "Campaigns",  icon: "✉" },
     { id: "templates",  label: "Templates",  icon: "⊞" },
@@ -1110,31 +1109,14 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
 
   // ── Main layout ─────────────────────────────────────────────────────────────
   return (
-    <div className="comm-layout" style={{ display: "flex", minHeight: 0 }}>
-      {/* Sidebar */}
-      <div className="comm-sidebar" style={{ width: S.sidebar.width, flexShrink: 0, background: S.sidebar.bg, borderRight: S.sidebar.borderRight, padding: "16px 0", display: "flex", flexDirection: "column", gap: 2 }}>
-        <div className="comm-sidebar-label" style={{ padding: "0 14px 14px", fontSize: 11, fontWeight: 800, color: T.ink3, textTransform: "uppercase", letterSpacing: "0.1em" }}>Email</div>
-        {NAV.map(n => (
-          <button key={n.id} onClick={() => setNav(n.id)}
-            style={{
-              display: "flex", alignItems: "center", gap: 10, padding: "9px 16px",
-              background: nav === n.id ? "#1a6b4a" : "transparent",
-              border: "none", borderRadius: 8, margin: "0 6px",
-              color: nav === n.id ? "#fff" : T.ink3,
-              fontSize: 13, fontWeight: nav === n.id ? 700 : 400,
-              cursor: "pointer", textAlign: "left",
-            }}>
-            <span style={{ fontSize: 14, opacity: 0.7 }}>{n.icon}</span>
-            {n.label}
-            {n.id === "campaigns" && campaigns.length > 0 && (
-              <span style={{ marginLeft: "auto", fontSize: 11, background: nav === n.id ? "#ffffff22" : T.bg3, borderRadius: 99, padding: "1px 7px", color: nav === n.id ? "#fff" : T.ink3 }}>{campaigns.length}</span>
-            )}
-          </button>
-        ))}
-      </div>
+    <div className="comm-layout" style={{ display: "flex", flexDirection: "column", minHeight: 0 }}>
+      {/* Section nav — horizontal tabs across the top of the content area */}
+      <SectionTabs className="comm-tabbar"
+        tabs={NAV.map(n => ({ ...n, badge: n.id === "campaigns" && campaigns.length > 0 ? campaigns.length : undefined }))}
+        active={nav} onSelect={setNav} />
 
       {/* Main content */}
-      <div className="comm-main" style={{ flex: 1, padding: 24, overflowY: "auto", minHeight: 0 }}>
+      <div className="comm-main" style={{ flex: 1, minHeight: 0 }}>
 
         {/* CAN-SPAM postal-address prompt — terracotta = needs-attention */}
         {orgPostalAddress === null && (
