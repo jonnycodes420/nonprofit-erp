@@ -410,6 +410,43 @@ export default function Landing() {
           </div>
         </section>
 
+        {/* ── 6. A letter from the founder ──
+            DRAFT — flagged for Jonathan's own edit before this ships as final
+            copy; it has to sound like him, not like a website. Set as a
+            letter: serif, cream, no card, no icon. */}
+        <section className="lp-section">
+          <div style={{ maxWidth: 620, margin: "0 auto" }}>
+            <Eyebrow>A letter from the founder</Eyebrow>
+            <div className="lp-serif" style={{ fontSize: 19, color: C.ink, lineHeight: 1.85 }}>
+              <p style={{ marginBottom: 18 }}>
+                I started Steward after watching a nonprofit I love run its donor
+                program out of a spreadsheet. They didn't lose donors because they
+                didn't care. They lost donors because caring at that scale needs a
+                system, and every system they could afford treated them like a
+                data-entry problem.
+              </p>
+              <p style={{ marginBottom: 18 }}>
+                So I built the thing I kept wishing existed: software that notices
+                what a good development director would notice — the anniversary,
+                the quiet stretch, the failed card — and brings it to you while
+                there's still time to do something about it.
+              </p>
+              <p style={{ marginBottom: 18 }}>
+                Two promises. Your data is yours — export everything, anytime,
+                even after you cancel. And when you email Steward, it's me who
+                answers.
+              </p>
+              <p style={{ marginBottom: 26 }}>
+                If you take care of donors for a living, I built this for you.
+              </p>
+              <p style={{ fontStyle: "italic", fontSize: 21 }}>— Jonathan</p>
+            </div>
+            <p style={{ fontSize: 13, color: C.ink3, marginTop: 18 }}>
+              <a href={FOUNDER_MAILTO} style={{ color: C.greenDk, textDecoration: "underline", textUnderlineOffset: 3 }}>jonathan@stewardapp.dev</a>
+            </p>
+          </div>
+        </section>
+
         {/* ── 7. Close ── */}
         <section className="lp-section" style={{ textAlign: "center" }}>
           <div className="lp-narrow">
