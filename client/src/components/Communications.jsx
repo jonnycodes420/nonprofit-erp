@@ -1126,7 +1126,7 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
               Commercial email is required to include your organization's postal address (CAN-SPAM). Set it once under Settings → Tax Receipts and it appears in every campaign and sequence footer automatically{isAdmin ? "" : " — ask an admin to add it"}.
             </div>
             {isAdmin && onNavigate && (
-              <button onClick={() => onNavigate("settings")} style={{ background: "transparent", border: "1px solid " + T.bg3, borderRadius: 8, padding: "7px 14px", fontSize: 13, fontWeight: 700, color: T.ink, cursor: "pointer", whiteSpace: "nowrap" }}>
+              <button onClick={() => onNavigate("settings", { section: "receipts" })} style={{ background: "transparent", border: "1px solid " + T.bg3, borderRadius: 8, padding: "7px 14px", fontSize: 13, fontWeight: 700, color: T.ink, cursor: "pointer", whiteSpace: "nowrap" }}>
                 Open Settings →
               </button>
             )}

@@ -69,6 +69,7 @@ function AppShell() {
   const [commsHighlightDraftId,setCommsHighlightDraftId]=useState(null);
   const [donorsIntent,setDonorsIntent]=useState(null);
   const [grantsIntent,setGrantsIntent]=useState(null);
+  const [settingsIntent,setSettingsIntent]=useState(null);
   // SHELVED — voice capture works but unproven adoption assumption, revisit
   // later. Code intact, re-enable by uncommenting.
   // const [showVoiceMemo,setShowVoiceMemo]=useState(false);
@@ -78,6 +79,7 @@ function AppShell() {
     setCommsHighlightDraftId(opts?.highlightDraftId||null);
     setDonorsIntent(opts?.view||opts?.logDonorId||opts?.stageFilter||opts?.selectDonorId?{view:opts.view,logDonorId:opts.logDonorId,stageFilter:opts.stageFilter,selectDonorId:opts.selectDonorId}:null);
     setGrantsIntent(opts?.grantId?{grantId:opts.grantId}:null);
+    setSettingsIntent(opts?.section?{section:opts.section}:null);
     setTab(t);
   };
 
@@ -308,7 +310,7 @@ function AppShell() {
       {tab==="board"&&<Board data={data} setData={setData} isReadOnly={isReadOnly}/>}
       {tab==="finance"&&<Finance data={data}/>}
       {tab==="tasks"&&<Tasks data={data} setData={setData} isReadOnly={isReadOnly}/>}
-      {tab==="settings"&&<Settings auth={auth} logout={logout}/>}
+      {tab==="settings"&&<Settings auth={auth} logout={logout} initialSection={settingsIntent?.section}/>}
     </div>
     </div>{/* /app-main */}
     <PlanPicker open={showPlanPicker} onClose={()=>setShowPlanPicker(false)}/>

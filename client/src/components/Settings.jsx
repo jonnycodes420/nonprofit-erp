@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { T, Pill, SectionLabel, PageTitle } from "./shared";
+import { T, Pill, SectionLabel, PageTitle, SectionTabs } from "./shared";
 import { QrCodeBlock, EmbedCodeBlock } from "./ShareBlocks";
 import { apiFetch, API, getToken } from "../api";
 import UpgradeModal from "./UpgradeModal";
@@ -514,7 +514,23 @@ function TaxReceiptsManager({orgId,isAdmin,isReadOnly}){
   );
 }
 
-export function Settings({auth,logout}) {
+// Section tabs — one per former SecHead group. ids are stable and
+// deep-linkable via navigateTo("settings",{section:id}) (App.jsx
+// settingsIntent → initialSection prop), e.g. Communications' CAN-SPAM
+// prompt lands directly on "receipts".
+const SETTINGS_TABS=[
+  {id:"org",label:"Organization"},
+  {id:"team",label:"Team"},
+  {id:"integrations",label:"Integrations"},
+  {id:"giving",label:"Giving Pages"},
+  {id:"customization",label:"Customization"},
+  {id:"receipts",label:"Tax Receipts"},
+  {id:"data",label:"Your Data"},
+  {id:"account",label:"Account"},
+];
+
+export function Settings({auth,logout,initialSection}) {
+  const [section,setSection]=useState(SETTINGS_TABS.some(t=>t.id===initialSection)?initialSection:"org");
   const orgName=auth?.org?.name||"Your Organization";
   const userName=auth?.user?.name||"User";
   const userEmail=auth?.user?.email||"";
@@ -814,20 +830,13 @@ export function Settings({auth,logout}) {
     navigator.clipboard.writeText(inviteResult.link).then(()=>{setCopied(true);setTimeout(()=>setCopied(false),2000);});
   }
 
-  const SecHead=({label})=>(
-    <div style={{display:"flex",alignItems:"center",gap:10,margin:"4px 0 -8px"}}>
-      <div style={{fontSize:10,fontWeight:800,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.12em",whiteSpace:"nowrap"}}>{label}</div>
-      <div style={{flex:1,height:1,background:T.bg3}}/>
-    </div>
-  );
-
   return(
     <div style={{display:"flex",flexDirection:"column",gap:20}}>
       <PageTitle main="Workspace" accent="settings."/>
+      <SectionTabs className="settings-tabbar" style={{marginBottom:-2}} tabs={SETTINGS_TABS} active={section} onSelect={setSection}/>
 
       {/* ── Organization ──────────────────────────────────────────────────── */}
-      <SecHead label="Organization"/>
-      <div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:16,padding:"24px 28px"}}>
+      {section==="org"&&<div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:16,padding:"24px 28px"}}>
         <SectionLabel>Your Account</SectionLabel>
         <div style={{display:"flex",alignItems:"center",gap:16,marginBottom:20}}>
           <div style={{width:52,height:52,borderRadius:"50%",background:T.greenDk+"18",border:"2px solid "+T.greenDk+"40",display:"flex",alignItems:"center",justifyContent:"center",fontSize:20,fontWeight:700,color:T.greenDk,flexShrink:0}}>
@@ -844,11 +853,10 @@ export function Settings({auth,logout}) {
           <div style={{fontSize:15,fontWeight:700,color:T.ink}}>{orgName}</div>
           {auth?.org?.mission&&<div style={{fontSize:12,color:T.ink3,marginTop:4,lineHeight:1.5}}>{auth.org.mission}</div>}
         </div>
-      </div>
+      </div>}
 
       {/* ── Team ──────────────────────────────────────────────────────────── */}
-      <SecHead label="Team"/>
-      <div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:16,padding:"24px 28px"}}>
+      {section==="team"&&<div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:16,padding:"24px 28px"}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
           <SectionLabel>Team Members</SectionLabel>
           {isAdmin&&<button onClick={()=>setShowInvite(true)} style={{background:T.green,border:"none",borderRadius:8,padding:"7px 14px",color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer"}}>+ Invite Staff</button>}
@@ -872,10 +880,10 @@ export function Settings({auth,logout}) {
           </div>
         ))}
         {team.length===0&&<div style={{fontSize:13,color:T.ink3}}>Loading…</div>}
-      </div>
+      </div>}
 
       {/* ── Integrations ──────────────────────────────────────────────────── */}
-      <SecHead label="Integrations"/>
+      {section==="integrations"&&<>
       <div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:16,padding:"24px 28px"}}>
         <SectionLabel>Payments</SectionLabel>
         {stripe?.connected?(
@@ -936,11 +944,6 @@ export function Settings({auth,logout}) {
         </div>
       </div>}
 
-      {/* ── Giving Pages ──────────────────────────────────────────────────── */}
-      <SecHead label="Giving Pages"/>
-      <GivingPagesManager orgSlug={orgSlug} isAdmin={isAdmin} isReadOnly={isReadOnly}/>
-
-
       <div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:16,padding:"24px 28px"}}>
         <SectionLabel>Gmail</SectionLabel>
         <div style={{fontSize:13,color:T.ink3,marginBottom:16,lineHeight:1.5}}>Sync donor emails automatically to your interaction timeline.</div>
@@ -996,9 +999,13 @@ export function Settings({auth,logout}) {
           </div>
         )}
       </div>
+      </>}
+
+      {/* ── Giving Pages ──────────────────────────────────────────────────── */}
+      {section==="giving"&&<GivingPagesManager orgSlug={orgSlug} isAdmin={isAdmin} isReadOnly={isReadOnly}/>}
 
       {/* ── Customization ─────────────────────────────────────────────────── */}
-      <SecHead label="Customization"/>
+      {section==="customization"&&<>
       <div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:16,padding:"24px 28px"}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
           <SectionLabel>Custom Fields</SectionLabel>
@@ -1050,13 +1057,13 @@ export function Settings({auth,logout}) {
           </div>
         ))}
       </div>
+      </>}
 
       {/* ── Tax Receipts ──────────────────────────────────────────────────── */}
-      <SecHead label="Tax Receipts"/>
-      <TaxReceiptsManager orgId={auth?.org?.id} isAdmin={isAdmin} isReadOnly={isReadOnly}/>
+      {section==="receipts"&&<TaxReceiptsManager orgId={auth?.org?.id} isAdmin={isAdmin} isReadOnly={isReadOnly}/>}
 
       {/* ── Your Data ─────────────────────────────────────────────────────── */}
-      <SecHead label="Your Data"/>
+      {section==="data"&&<>
       <div style={{background:T.white,border:"1px solid "+T.bg3,borderLeft:"3px solid #c9a84c",borderRadius:16,padding:"24px 28px"}}>
         <SectionLabel>Export your data</SectionLabel>
         <div style={{fontSize:15,fontWeight:700,color:T.ink,marginBottom:6}}>Your data is yours.</div>
@@ -1098,9 +1105,10 @@ export function Settings({auth,logout}) {
           )}
         </div>
       )}
+      </>}
 
       {/* ── Account ───────────────────────────────────────────────────────── */}
-      <SecHead label="Account"/>
+      {section==="account"&&<>
       <div style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:16,padding:"24px 28px"}}>
         <SectionLabel>Billing</SectionLabel>
         {billing ? (
@@ -1153,6 +1161,7 @@ export function Settings({auth,logout}) {
           <a href="/privacy" target="_blank" rel="noopener noreferrer" style={{fontSize:12,color:T.ink3,textDecoration:"none",borderBottom:"1px solid "+T.bg3}}>Privacy Policy</a>
         </div>
       </div>
+      </>}
 
       {showAddField&&(
         <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.45)",zIndex:500,display:"flex",alignItems:"center",justifyContent:"center"}} onClick={e=>{if(e.target===e.currentTarget)closeCfModal();}}>

@@ -337,8 +337,8 @@ export function Card({children,selected,accent,onClick,style={},variant}) {
 // in-section counterpart of the app sidebar (Communications, Reports,
 // Settings). tabs: [{id,label,icon?,badge?}]. Scrolls horizontally when it
 // doesn't fit (base style; no media query needed).
-export function SectionTabs({tabs,active,onSelect,className}) {
-  return <div className={className?`section-tabbar ${className}`:"section-tabbar"} style={{display:"flex",alignItems:"center",gap:2,borderBottom:"1.5px solid "+T.bg3,overflowX:"auto",flexShrink:0,marginBottom:18}}>
+export function SectionTabs({tabs,active,onSelect,className,style}) {
+  return <div className={className?`section-tabbar ${className}`:"section-tabbar"} style={{display:"flex",alignItems:"center",gap:2,borderBottom:"1.5px solid "+T.bg3,overflowX:"auto",flexShrink:0,marginBottom:18,...style}}>
     {tabs.map(t=>{
       const on=active===t.id;
       return <button key={t.id} onClick={()=>onSelect(t.id)} style={{
