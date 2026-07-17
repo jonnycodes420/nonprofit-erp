@@ -18,6 +18,7 @@ import { Tasks } from "./components/Tasks";
 import { Settings } from "./components/Settings";
 import { Events } from "./components/Events";
 import PlanPicker from "./components/PlanPicker";
+import { TopBar } from "./components/TopBar";
 
 // ── Tabs ───────────────────────────────────────────────────────────────────
 const TABS=[
@@ -228,25 +229,20 @@ function AppShell() {
           </button>;
         })}
       </div>
-      <div style={{borderTop:"1px solid #1a2e1f",padding:"10px 10px 12px 0",display:"flex",flexDirection:"column",gap:6,flexShrink:0}}>
+      {/* Pure nav below here — the user chip/sign-out moved to the top bar (BUILD-08) */}
+      <div style={{borderTop:"1px solid #1a2e1f",padding:"10px 10px 12px 0",flexShrink:0}}>
         <button className="side-nav-btn" onClick={()=>navigateTo("settings")} style={sideBtn(tab==="settings")}>
           <span style={{fontSize:14,width:18,textAlign:"center",color:tab==="settings"?"#c9a84c":"#6b8f7a",flexShrink:0}}>⚙</span>
           Settings
         </button>
-        <div style={{display:"flex",alignItems:"center",gap:9,padding:"4px 12px 0 16px"}}>
-          <div style={{width:28,height:28,borderRadius:8,background:T.greenDk,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
-            <span style={{fontSize:11,fontWeight:700,color:"#f0ede6"}}>{(auth?.user?.name||"U")[0].toUpperCase()}</span>
-          </div>
-          <div style={{flex:1,minWidth:0}}>
-            <div style={{fontSize:12,fontWeight:600,color:"#f0ede6",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{auth?.user?.name||"You"}</div>
-            <button onClick={logout} style={{background:"none",border:"none",padding:0,color:"#6b8f7a",fontSize:11,cursor:"pointer",textAlign:"left"}}>Sign out</button>
-          </div>
-        </div>
       </div>
     </div>
 
     {/* Main column — right of the sidebar on desktop, full width on mobile */}
     <div className="app-main" style={{marginLeft:220,display:"flex",flexDirection:"column",flex:1,minWidth:0}}>
+
+    {/* Global top bar — desktop only (GlobalStyles hides it ≤768px; mobile keeps .app-header) */}
+    <TopBar auth={auth} logout={logout} onNavigate={navigateTo}/>
 
     {/* Header — mobile only (display:none here; GlobalStyles' 768px block restores it) */}
     <div className="app-header" style={{borderBottom:"1px solid #1a2e1f",padding:"0 24px",display:"none",alignItems:"center",justifyContent:"space-between",background:"#0f1a12",position:"sticky",top:0,zIndex:100,height:52,width:"100%",boxSizing:"border-box"}}>

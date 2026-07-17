@@ -160,6 +160,9 @@ export function GlobalStyles() {
     button:not(:disabled):active{transform:scale(0.97);}
     .app-header{padding-top:env(safe-area-inset-top,0px);user-select:none;}
     .app-sidebar{user-select:none;}
+    .app-topbar{user-select:none;}
+    .topbar-search::placeholder{color:#6b8f7a;}
+    .topbar-search:focus{border-color:#c9a84c!important;box-shadow:0 0 0 3px rgba(201,168,76,0.14)!important;}
     .side-nav-btn:hover{color:#f0ede6!important;}
     .mobile-bottom-bar,.mobile-more-drawer{user-select:none;}
     @keyframes sp{to{transform:rotate(360deg)}}
@@ -213,8 +216,9 @@ export function GlobalStyles() {
       .app-root{overflow-x:hidden!important;max-width:100vw!important;}
       .app-content{padding:20px 16px calc(68px + env(safe-area-inset-bottom,0px)) 16px!important;max-width:100%!important;overflow-x:hidden!important;}
 
-      /* Navigation — desktop sidebar hidden, mobile header restored */
+      /* Navigation — desktop sidebar + top bar hidden, mobile header restored */
       .app-sidebar{display:none!important;}
+      .app-topbar{display:none!important;}
       .app-main{margin-left:0!important;}
       .app-header{display:flex!important;}
       .app-signout{display:none!important;}
