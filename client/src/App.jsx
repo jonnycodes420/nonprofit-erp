@@ -189,7 +189,12 @@ function AppShell() {
     setExportingBanner(false);
   }
 
-  return <div className="app-root" style={{...BASE,color:T.ink,display:"flex",flexDirection:"column"}}>
+  // Home paints its content on T.bgDeep via Dashboard's "dash-bleed"
+  // negative margins — with a centered max-width column that bleed stops at
+  // the column edge, leaving lighter T.bg gutters (the background seam
+  // BUILD-06 Phase E fixes). Matching the shell background to the tab makes
+  // the page one continuous surface at any viewport width.
+  return <div className="app-root" style={{...BASE,background:tab==="dashboard"?T.bgDeep:T.bg,color:T.ink,display:"flex",flexDirection:"column"}}>
     <GlobalStyles/>
     <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=DM+Serif+Display&display=swap" rel="stylesheet"/>
 
@@ -255,7 +260,13 @@ function AppShell() {
       <button onClick={()=>setBannerDismissed(true)} style={{marginLeft:"auto",background:"transparent",border:"none",color:"#3d5245",cursor:"pointer",fontSize:16,padding:"0 4px",lineHeight:1}}>✕</button>
     </div>}
 
-    <div className="app-content" style={{flex:1,padding:"20px 24px 28px 24px",maxWidth:1400,width:"100%",margin:"0 auto",boxSizing:"border-box"}}>
+    {/* Per-tab width strategy (BUILD-06 Phase E): Home stays a readable
+        centered column (~1200px) — it's a reading page. Workspace tabs
+        (Donors, Grants, Communications, Reports, Settings + the hidden
+        legacy tabs) go fluid full-width with 32px side padding so 1920px+
+        displays get working room instead of dead gutters. Mobile is
+        untouched — GlobalStyles' 768px rules override this with !important. */}
+    <div className="app-content" style={{flex:1,padding:tab==="dashboard"?"20px 24px 28px 24px":"20px 32px 28px 32px",maxWidth:tab==="dashboard"?1200:"none",width:"100%",margin:"0 auto",boxSizing:"border-box"}}>
       {tab==="dashboard"&&<Dashboard data={data} setData={setData} onNavigate={navigateTo} isReadOnly={isReadOnly}/>}
       {tab==="donors"&&<Donors data={data} setData={setData} isReadOnly={isReadOnly} initialView={donorsIntent?.view} initialLogDonorId={donorsIntent?.logDonorId} initialStageFilter={donorsIntent?.stageFilter} initialSelectDonorId={donorsIntent?.selectDonorId} onIntentConsumed={()=>setDonorsIntent(null)}/>}
       {tab==="grants"&&<Grants data={data} setData={setData} isReadOnly={isReadOnly} initialGrantId={grantsIntent?.grantId} onIntentConsumed={()=>setGrantsIntent(null)}/>}

@@ -4490,6 +4490,19 @@ app.post("/goals", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req,
 // today's snapshot for this org (so the trend line fills in as the page
 // gets viewed, on top of the periodic background job), and returns the
 // last 30 days of history for each.
+// Wipes the org's own metric-trend history and re-snapshots today from live
+// data. Built for baseline pollution (BUILD-06 Phase E): after a mass
+// purge-trash (e.g. the CREO 3,905-test-donor cleanup), the Home trends
+// compared real data against snapshots of deleted test data ("↓1,153 vs 3
+// weeks ago"). Org-scoped + admin — an org resetting its own analytics
+// baseline is its own business; trends read "no trend data yet" until real
+// history re-accumulates, which is the honest state.
+app.post("/metrics/reset-baselines", requireAuth, requireAdmin, wrap(async (req, res) => {
+  const del = await run("DELETE FROM metric_snapshots WHERE org_id = ?", [req.user.orgId]);
+  await snapshotMetricsForOrg(req.user.orgId);
+  res.json({ deleted: del.changes, resnapshotted: true });
+}));
+
 app.get("/metrics/stewardship-summary", requireAuth, wrap(async (req, res) => {
   const { orgId, userId } = req.user;
   // ?scope=mine (default) scopes Debt/Retention to the logged-in user's own

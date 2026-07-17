@@ -324,7 +324,7 @@ function GrantKanban({ grants, onUpdate, onAddClick, onSelectGrant, isReadOnly }
         const isOver = dragOver === col.id;
         return (
           <div key={col.id}
-            style={{ minWidth:260, flex:"0 0 260px", background: "#f5f2ec", border:"1px solid "+T.bg3, borderRadius:12, padding:10, transition:"background 0.12s", scrollSnapAlign:"start" }}
+            style={{ minWidth:260, flex:"1 1 260px", background: "#f5f2ec", border:"1px solid "+T.bg3, borderRadius:12, padding:10, transition:"background 0.12s", scrollSnapAlign:"start" }}
             onDragOver={e => { e.preventDefault(); setDragOver(col.id); }}
             onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget)) setDragOver(null); }}
             onDrop={() => drop(col.id)}
