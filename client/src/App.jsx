@@ -189,6 +189,18 @@ function AppShell() {
     setExportingBanner(false);
   }
 
+  // Sidebar nav button — one style for the main items and the pinned
+  // Settings item. Active = gold left accent + elevated dark green, matching
+  // the goal-card/dark-surface language (five-color palette only).
+  const sideBtn=(active)=>({
+    display:"flex",alignItems:"center",gap:10,width:"100%",textAlign:"left",
+    background:active?"#1a2e1f":"transparent",
+    border:"none",borderLeft:`3px solid ${active?"#c9a84c":"transparent"}`,
+    borderRadius:"0 10px 10px 0",padding:"10px 12px 10px 13px",
+    color:active?"#f0ede6":"#8fa896",fontSize:13,fontWeight:active?700:500,
+    cursor:"pointer",transition:"color 0.15s,background 0.15s",boxSizing:"border-box"
+  });
+
   // Home paints its content on T.bgDeep via Dashboard's "dash-bleed"
   // negative margins — with a centered max-width column that bleed stops at
   // the column edge, leaving lighter T.bg gutters (the background seam
@@ -198,8 +210,44 @@ function AppShell() {
     <GlobalStyles/>
     <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=DM+Serif+Display&display=swap" rel="stylesheet"/>
 
-    {/* Header */}
-    <div className="app-header" style={{borderBottom:"1px solid #1a2e1f",padding:"0 24px",display:"flex",alignItems:"center",justifyContent:"space-between",background:"#0f1a12",position:"sticky",top:0,zIndex:100,height:52,width:"100%",boxSizing:"border-box"}}>
+    {/* Sidebar — desktop only (hidden ≤768px; mobile keeps bottom bar + More drawer) */}
+    <div className="app-sidebar" style={{position:"fixed",left:0,top:0,bottom:0,width:220,background:"#0f1a12",borderRight:"1px solid #1a2e1f",display:"flex",flexDirection:"column",zIndex:120,boxSizing:"border-box"}}>
+      <div style={{padding:"20px 20px 16px",borderBottom:"1px solid #1a2e1f",flexShrink:0}}>
+        <span style={{fontSize:21,fontWeight:400,color:"#f0ede6",fontFamily:"'DM Serif Display',Georgia,serif",letterSpacing:"-0.02em"}}>Steward</span>
+      </div>
+      <div style={{flex:1,overflowY:"auto",padding:"14px 10px 14px 0",display:"flex",flexDirection:"column",gap:2}}>
+        {TABS.filter(t=>t.id!=="settings").map(t=>{
+          const active=tab===t.id;
+          return <button key={t.id} className="side-nav-btn" onClick={()=>navigateTo(t.id)} style={sideBtn(active)}>
+            <span style={{fontSize:14,width:18,textAlign:"center",color:active?"#c9a84c":"#6b8f7a",flexShrink:0}}>{t.icon}</span>
+            {t.label}
+            {t.earlyAccess&&<span style={{fontSize:9,fontWeight:700,letterSpacing:"0.04em",background:"#1a2e1f",color:"#8fa896",border:"1px solid #2d4a35",borderRadius:99,padding:"1px 6px",lineHeight:"14px"}}>Early Access</span>}
+            {t.id==="tasks"&&tasksDue>0&&<span style={{marginLeft:"auto",background:"#b8593f",color:"#fff",fontSize:9,fontWeight:800,borderRadius:99,padding:"1px 6px",lineHeight:"14px"}}>{tasksDue}</span>}
+          </button>;
+        })}
+      </div>
+      <div style={{borderTop:"1px solid #1a2e1f",padding:"10px 10px 12px 0",display:"flex",flexDirection:"column",gap:6,flexShrink:0}}>
+        <button className="side-nav-btn" onClick={()=>navigateTo("settings")} style={sideBtn(tab==="settings")}>
+          <span style={{fontSize:14,width:18,textAlign:"center",color:tab==="settings"?"#c9a84c":"#6b8f7a",flexShrink:0}}>⚙</span>
+          Settings
+        </button>
+        <div style={{display:"flex",alignItems:"center",gap:9,padding:"4px 12px 0 16px"}}>
+          <div style={{width:28,height:28,borderRadius:8,background:T.greenDk,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+            <span style={{fontSize:11,fontWeight:700,color:"#f0ede6"}}>{(auth?.user?.name||"U")[0].toUpperCase()}</span>
+          </div>
+          <div style={{flex:1,minWidth:0}}>
+            <div style={{fontSize:12,fontWeight:600,color:"#f0ede6",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{auth?.user?.name||"You"}</div>
+            <button onClick={logout} style={{background:"none",border:"none",padding:0,color:"#6b8f7a",fontSize:11,cursor:"pointer",textAlign:"left"}}>Sign out</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    {/* Main column — right of the sidebar on desktop, full width on mobile */}
+    <div className="app-main" style={{marginLeft:220,display:"flex",flexDirection:"column",flex:1,minWidth:0}}>
+
+    {/* Header — mobile only (display:none here; GlobalStyles' 768px block restores it) */}
+    <div className="app-header" style={{borderBottom:"1px solid #1a2e1f",padding:"0 24px",display:"none",alignItems:"center",justifyContent:"space-between",background:"#0f1a12",position:"sticky",top:0,zIndex:100,height:52,width:"100%",boxSizing:"border-box"}}>
       <div style={{display:"flex",alignItems:"center",gap:12}}>
         <span style={{fontSize:20,fontWeight:400,color:"#f0ede6",fontFamily:"'DM Serif Display',Georgia,serif",letterSpacing:"-0.02em"}}>Steward</span>
       </div>
@@ -217,23 +265,6 @@ function AppShell() {
           Sign out
         </button>
       </div>
-    </div>
-
-    {/* Tab bar */}
-    <div className="app-tabbar" style={{display:"flex",padding:"0 20px",borderBottom:"1px solid #1a2e1f",overflow:"hidden",flexShrink:0,background:"#0f1a12",width:"100%",boxSizing:"border-box"}}>
-      {TABS.filter(t=>t.id!=="settings").map(t=>{
-        const active=tab===t.id;
-        return <button key={t.id} onClick={()=>setTab(t.id)} style={{background:"transparent",border:"none",borderBottom:`2px solid ${active?"#c9a84c":"transparent"}`,padding:"8px 12px",color:active?"#f0ede6":"#8fa896",fontSize:13,fontWeight:active?700:400,cursor:"pointer",display:"flex",alignItems:"center",gap:6,whiteSpace:"nowrap",transition:"color 0.15s,border-color 0.15s",flexShrink:1,marginBottom:-1}}>
-          {t.label}
-          {t.earlyAccess&&<span style={{fontSize:9,fontWeight:700,letterSpacing:"0.04em",background:"#1a2e1f",color:"#8fa896",border:"1px solid #2d4a35",borderRadius:99,padding:"1px 6px",lineHeight:"14px"}}>Early Access</span>}
-          {t.id==="tasks"&&tasksDue>0&&<span style={{background:"#ef4444",color:"#fff",fontSize:9,fontWeight:800,borderRadius:99,padding:"1px 5px",lineHeight:"14px"}}>{tasksDue}</span>}
-        </button>;
-      })}
-      <div style={{flex:1,minWidth:8}}/>
-      <div style={{width:1,background:"#2d4a35",margin:"8px 4px",flexShrink:0}}/>
-      <button onClick={()=>setTab("settings")} style={{background:"transparent",border:"none",borderBottom:`2px solid ${tab==="settings"?"#c9a84c":"transparent"}`,padding:"8px 10px",color:tab==="settings"?"#f0ede6":"#6b8f7a",fontSize:12,fontWeight:tab==="settings"?600:400,cursor:"pointer",display:"flex",alignItems:"center",gap:5,whiteSpace:"nowrap",transition:"color 0.15s,border-color 0.15s",flexShrink:0,marginBottom:-1}}>
-        <span style={{fontSize:13}}>⚙</span>Settings
-      </button>
     </div>
 
     {showReadOnlyBanner&&<div style={{background:"#7f1d1d",borderBottom:"1px solid #991b1b",padding:"9px 24px",display:"flex",alignItems:"center",gap:12,fontSize:13,color:"#fca5a5",flexWrap:"wrap"}}>
@@ -279,6 +310,7 @@ function AppShell() {
       {tab==="tasks"&&<Tasks data={data} setData={setData} isReadOnly={isReadOnly}/>}
       {tab==="settings"&&<Settings auth={auth} logout={logout}/>}
     </div>
+    </div>{/* /app-main */}
     <PlanPicker open={showPlanPicker} onClose={()=>setShowPlanPicker(false)}/>
     {/* SHELVED — voice capture works but unproven adoption assumption, revisit later.
         Code intact, re-enable by uncommenting.
