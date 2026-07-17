@@ -734,7 +734,7 @@ async function recalcDonorSummary(donorId, orgId) {
      FROM gifts WHERE donor_id=? AND org_id=?`,
     [donorId, orgId]
   );
-  const total    = parseInt(agg[0].total, 10) || 0;
+  const total    = parseFloat(agg[0].total) || 0; // NUMERIC since the cover-fees migration
   const cnt      = parseInt(agg[0].cnt,   10) || 0;
   const lastDate = agg[0].last_date || null;
 
@@ -1711,6 +1711,94 @@ app.get("/donors/summaries", requireAuth, wrap(async (req, res) => {
   })));
 }));
 
+// ── Duplicate detection (BUILD-08 Phase C) ─────────────────────────────────
+// Staff-level, org-scoped, read-only. Two tiers: same email (case-insensitive)
+// is the confident tier; same-or-near name (normalized equality, or edit
+// distance ≤2 within a first/last-token bucket) is the "worth a look" tier.
+// Declared BEFORE /donors/:id routes (Express order) like /donors/summaries.
+function normDonorName(s) {
+  return (s || "").toLowerCase().replace(/[^a-z0-9 ]+/g, " ").replace(/\s+/g, " ").trim();
+}
+function editDistance(a, b, max) {
+  if (Math.abs(a.length - b.length) > max) return max + 1;
+  const dp = Array.from({ length: a.length + 1 }, (_, i) => i);
+  for (let j = 1; j <= b.length; j++) {
+    let prev = dp[0]; dp[0] = j;
+    for (let i = 1; i <= a.length; i++) {
+      const t = dp[i];
+      dp[i] = Math.min(dp[i] + 1, dp[i - 1] + 1, prev + (a[i - 1] === b[j - 1] ? 0 : 1));
+      prev = t;
+    }
+  }
+  return dp[a.length];
+}
+
+app.get("/donors/duplicates", requireAuth, wrap(async (req, res) => {
+  const rows = await query(
+    `SELECT id, name, email, phone, stage, status, total_giving, gift_count,
+            last_gift_date, city, state, created_at
+     FROM donors WHERE org_id = ? AND deleted_at IS NULL`,
+    [req.user.orgId]
+  );
+  const donorOut = d => ({ ...d, total_giving: parseFloat(d.total_giving) || 0 });
+  const groups = [];
+
+  // Tier 1 — same email.
+  const byEmail = new Map();
+  for (const d of rows) {
+    const e = (d.email || "").toLowerCase().trim();
+    if (!e) continue;
+    if (!byEmail.has(e)) byEmail.set(e, []);
+    byEmail.get(e).push(d);
+  }
+  const inEmailGroup = new Set();
+  for (const [e, list] of byEmail) {
+    if (list.length < 2) continue;
+    list.forEach(d => inEmailGroup.add(d.id));
+    groups.push({ tier: "email", reason: `Same email — ${e}`, donors: list.map(donorOut) });
+  }
+
+  // Tier 2 — same normalized name, or near-identical name (edit distance ≤2
+  // within a cheap first+last-token bucket so this never goes O(n²) on the
+  // whole org). Pairs fully covered by an email group aren't repeated.
+  const named = rows.filter(d => normDonorName(d.name).length >= 5);
+  const byName = new Map();
+  for (const d of named) {
+    const n = normDonorName(d.name);
+    if (!byName.has(n)) byName.set(n, []);
+    byName.get(n).push(d);
+  }
+  const inNameGroup = new Set();
+  for (const [n, list] of byName) {
+    if (list.length < 2) continue;
+    if (list.every(d => inEmailGroup.has(d.id))) continue;
+    list.forEach(d => inNameGroup.add(d.id));
+    groups.push({ tier: "name", reason: `Same name — "${list[0].name}"`, donors: list.map(donorOut) });
+  }
+  const buckets = new Map();
+  for (const d of named) {
+    if (inNameGroup.has(d.id)) continue;
+    const toks = normDonorName(d.name).split(" ");
+    const key = toks[0].slice(0, 2) + "|" + (toks[toks.length - 1] || "").slice(0, 2);
+    if (!buckets.has(key)) buckets.set(key, []);
+    buckets.get(key).push(d);
+  }
+  for (const list of buckets.values()) {
+    if (list.length < 2 || list.length > 200) continue;
+    for (let i = 0; i < list.length; i++) for (let j = i + 1; j < list.length; j++) {
+      const a = list[i], b = list[j];
+      if (inEmailGroup.has(a.id) && inEmailGroup.has(b.id)) continue;
+      const na = normDonorName(a.name), nb = normDonorName(b.name);
+      if (na.length >= 8 && nb.length >= 8 && editDistance(na, nb, 2) <= 2) {
+        groups.push({ tier: "name", reason: `Similar names — "${a.name}" / "${b.name}"`, donors: [a, b].map(donorOut) });
+      }
+    }
+  }
+
+  groups.sort((a, b) => (a.tier === b.tier ? 0 : a.tier === "email" ? -1 : 1));
+  res.json({ groups: groups.slice(0, 50), truncated: groups.length > 50 });
+}));
+
 // Directory CSV export — replaces the client-side "export what's on screen"
 // now that the screen is one page: honors the same query params as
 // GET /donors, exports EVERY matching row. Staff-level (it's data staff
@@ -2347,6 +2435,104 @@ app.post("/donors/purge-trash", requireAuth, requireAdmin, wrap(async (req, res)
     return { purged: d.changes, children };
   });
   res.json({ purged, children });
+}));
+
+// ── Duplicate merge (BUILD-08 Phase C) ─────────────────────────────────────
+// Staff-level (any staff member can clean duplicates — matches the everyday-
+// hygiene bar of POST /note-reminders/:id/send, not the admin bar of purge),
+// checkWriteAccess-gated (it's a data edit, and it soft-deletes — the DELETE-
+// routes-ungated convention covers routes whose PURPOSE is deletion; this
+// one's purpose is consolidation). Reference pattern: Givebutter Data
+// Hygiene — merge into the chosen primary, keep the non-primary's data.
+// One transaction: reassign every donor-scoped child, fill the primary's
+// blank fields from the secondary, soft-delete the secondary, log a merge
+// note as an interaction on the primary. Aggregates recalced after commit.
+app.post("/donors/merge", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  const { primaryId, secondaryId } = req.body;
+  const orgId = req.user.orgId;
+  if (!primaryId || !secondaryId) return res.status(400).json({ error: "primaryId and secondaryId required" });
+  if (primaryId === secondaryId) return res.status(400).json({ error: "Cannot merge a donor into itself" });
+
+  const rows = await query("SELECT * FROM donors WHERE org_id=? AND id = ANY(?) AND deleted_at IS NULL", [orgId, [primaryId, secondaryId]]);
+  const primary = rows.find(d => d.id === primaryId);
+  const secondary = rows.find(d => d.id === secondaryId);
+  if (!primary || !secondary) return res.status(404).json({ error: "Donor not found" });
+
+  const userRow = await query("SELECT name FROM users WHERE id=?", [req.user.userId]);
+  const userName = userRow[0]?.name || "";
+  const today = new Date().toISOString().split("T")[0];
+
+  // Straight donor_id reassigns — no unique constraint on donor_id in these.
+  const PLAIN_CHILD_TABLES = [
+    "gifts", "interactions", "pledges", "receipts", "milestone_drafts",
+    "note_reminders", "donor_materials", "planned_gifts",
+    "payment_recovery_events", "recurring_subscriptions", "tasks",
+    "volunteers", "campaign_recipients",
+  ];
+  // UNIQUE(x, donor_id) tables: the primary's own row wins a conflict, the
+  // secondary's duplicate is dropped, non-conflicting rows are reassigned.
+  const UNIQUE_CHILD_TABLES = [
+    ["custom_field_values", "field_id"],
+    ["sequence_enrollments", "sequence_id"],
+    ["event_attendees", "event_id"],
+  ];
+
+  const reassigned = {};
+  await withTransaction(async (client) => {
+    for (const t of PLAIN_CHILD_TABLES) {
+      const r = await runTx(client, `UPDATE ${t} SET donor_id=? WHERE org_id=? AND donor_id=?`, [primaryId, orgId, secondaryId]);
+      if (r.changes) reassigned[t] = r.changes;
+    }
+    for (const [t, keyCol] of UNIQUE_CHILD_TABLES) {
+      await runTx(client,
+        `DELETE FROM ${t} WHERE org_id=? AND donor_id=? AND ${keyCol} IN
+           (SELECT ${keyCol} FROM ${t} WHERE org_id=? AND donor_id=?)`,
+        [orgId, secondaryId, orgId, primaryId]);
+      const r = await runTx(client, `UPDATE ${t} SET donor_id=? WHERE org_id=? AND donor_id=?`, [primaryId, orgId, secondaryId]);
+      if (r.changes) reassigned[t] = r.changes;
+    }
+    // Relationships: both sides, then drop any now-self-referencing row.
+    await runTx(client, "UPDATE donor_relationships SET donor_id_a=? WHERE org_id=? AND donor_id_a=?", [primaryId, orgId, secondaryId]);
+    await runTx(client, "UPDATE donor_relationships SET donor_id_b=? WHERE org_id=? AND donor_id_b=?", [primaryId, orgId, secondaryId]);
+    await runTx(client, "DELETE FROM donor_relationships WHERE org_id=? AND donor_id_a=donor_id_b", [orgId]);
+
+    // Fill the primary's blanks from the secondary (never overwrite a
+    // non-empty primary value — the officer chose the primary for a reason).
+    const FILL_FIELDS = [
+      "email", "phone", "city", "state", "zip", "country", "employer",
+      "assigned_to", "assigned_to_name", "notes",
+      "stripe_customer_id", "stripe_subscription_id", "stripe_subscription_status",
+      "wealth_score", "capacity_tier", "score_confidence", "score_last_updated", "score_rationale",
+      "first_gift_date",
+    ];
+    const sets = [], vals = [];
+    for (const f of FILL_FIELDS) {
+      const pv = primary[f], sv = secondary[f];
+      if ((pv === null || pv === undefined || pv === "") && sv !== null && sv !== undefined && sv !== "") {
+        sets.push(`${f}=?`); vals.push(sv);
+      }
+    }
+    const parseTags = v => { try { const t = typeof v === "string" ? JSON.parse(v || "[]") : v; return Array.isArray(t) ? t : []; } catch { return []; } };
+    const pTags = parseTags(primary.tags), sTags = parseTags(secondary.tags);
+    const unionTags = [...new Set([...pTags, ...sTags])];
+    if (unionTags.length > pTags.length) { sets.push("tags=?"); vals.push(JSON.stringify(unionTags)); }
+    if (!primary.planned_giving && secondary.planned_giving) { sets.push("planned_giving=?"); vals.push(true); }
+    if (sets.length) await runTx(client, `UPDATE donors SET ${sets.join(", ")}, updated_at=NOW() WHERE id=? AND org_id=?`, [...vals, primaryId, orgId]);
+
+    // Soft-delete the secondary — recoverable via trash until purge, like
+    // bulk-delete. Hard deletion stays purge-trash's job.
+    await runTx(client, "UPDATE donors SET deleted_at=NOW() WHERE id=? AND org_id=?", [secondaryId, orgId]);
+
+    const movedSummary = Object.entries(reassigned).map(([t, n]) => `${n} ${t.replace(/_/g, " ")}`).join(", ") || "no linked records";
+    await runTx(client,
+      "INSERT INTO interactions (id,org_id,donor_id,type,note,date,created_by,logged_by_name) VALUES (?,?,?,?,?,?,?,?)",
+      ["int_" + uuid().slice(0, 8), orgId, primaryId, "note",
+       `Merged duplicate record "${secondary.name}"${secondary.email ? ` <${secondary.email}>` : ""} into this record (${movedSummary} reassigned).`,
+       today, req.user.userId, userName]);
+  });
+
+  await recalcDonorSummary(primaryId, orgId);
+  res.json({ merged: true, primaryId, secondaryId, reassigned });
 }));
 
 // ── Interactions ───────────────────────────────────────────────────────────
