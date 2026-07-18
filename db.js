@@ -645,6 +645,13 @@ async function initSchema() {
   await pool.query(`ALTER TABLE interactions ADD COLUMN IF NOT EXISTS is_sample BOOLEAN DEFAULT false`);
   await pool.query(`ALTER TABLE tasks ADD COLUMN IF NOT EXISTS is_sample BOOLEAN DEFAULT false`);
   await pool.query(`ALTER TABLE fin_transactions ADD COLUMN IF NOT EXISTS is_sample BOOLEAN DEFAULT false`);
+  // BUILD-09 Finance reintegration: link a ledger row back to the donor it
+  // came from (nullable — expenses/manual entries have none) and record how it
+  // entered the ledger so the unified Transactions view can badge it
+  // (online=Stripe webhook, gift=donor-profile log, import=bulk gift import,
+  // manual=direct ledger entry). Existing rows default to 'manual'.
+  await pool.query(`ALTER TABLE fin_transactions ADD COLUMN IF NOT EXISTS donor_id TEXT`);
+  await pool.query(`ALTER TABLE fin_transactions ADD COLUMN IF NOT EXISTS source TEXT DEFAULT 'manual'`);
   await pool.query(`ALTER TABLE fin_funds ADD COLUMN IF NOT EXISTS is_sample BOOLEAN DEFAULT false`);
   await pool.query(`ALTER TABLE volunteers ADD COLUMN IF NOT EXISTS is_sample BOOLEAN DEFAULT false`);
   await pool.query(`ALTER TABLE board_members ADD COLUMN IF NOT EXISTS is_sample BOOLEAN DEFAULT false`);
@@ -1109,6 +1116,14 @@ async function initSchema() {
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_interactions_donor_date ON interactions (donor_id, date)`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_interactions_org_donor_date ON interactions (org_id, donor_id, date)`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_gifts_donor_date ON gifts (donor_id, date)`);
+
+  // ── Finance reintegration (BUILD-09) ─────────────────────────────────────
+  // The unified Transactions ledger, summary, and budget-actuals all scan
+  // fin_transactions by org over a date window; the fund filter/rollups scan
+  // by (org, fund). Before this, fin_transactions had only its pkey — every
+  // Finance load seq-scanned the table.
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_fin_txns_org_date ON fin_transactions (org_id, date)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_fin_txns_org_fund ON fin_transactions (org_id, fund_id)`);
 }
 
 async function seedData() {

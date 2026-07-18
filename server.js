@@ -258,8 +258,8 @@ app.post("/stripe/webhook", express.raw({ type: "application/json" }), async (re
             if (acctRow.length) {
               const txnId = "ft_" + uuid().slice(0, 8);
               await run(
-                "INSERT INTO fin_transactions (id,org_id,date,description,vendor_donor,amount,type,account_id,fund_id) VALUES (?,?,?,?,?,?,?,?,?)",
-                [txnId, orgId, today, "Online gift via Stripe", donorName || email, amount, "income", acctRow[0].id, genFundRow.length ? genFundRow[0].id : null]
+                "INSERT INTO fin_transactions (id,org_id,date,description,vendor_donor,amount,type,account_id,fund_id,donor_id,source) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                [txnId, orgId, today, "Online gift via Stripe", donorName || email, amount, "income", acctRow[0].id, genFundRow.length ? genFundRow[0].id : null, donorId, "online"]
               );
             }
             const taskId = "t_" + uuid().slice(0, 8);
@@ -2166,8 +2166,8 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrap(async (r
       if (contribAcctId && g.date >= fyStart) {
         const dName = donorNameMap[g.donorId] || "Donor";
         ftParams.push("ft_"+uuid().slice(0,8), orgId, g.date,
-          `Gift from ${dName}`, dName, g.amount, "income", contribAcctId, genFundId);
-        ftTuples.push("(?,?,?,?,?,?,?,?,?)");
+          `Gift from ${dName}`, dName, g.amount, "income", contribAcctId, genFundId, g.donorId, "import");
+        ftTuples.push("(?,?,?,?,?,?,?,?,?,?,?)");
       }
     });
     try {
@@ -2183,7 +2183,7 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrap(async (r
         // One bulk INSERT for FY fin_transactions — same tx as gifts, rolls back together
         if (ftTuples.length) {
           await runTx(client,
-            `INSERT INTO fin_transactions (id,org_id,date,description,vendor_donor,amount,type,account_id,fund_id)
+            `INSERT INTO fin_transactions (id,org_id,date,description,vendor_donor,amount,type,account_id,fund_id,donor_id,source)
              VALUES ${ftTuples.join(",")}`,
             ftParams
           );
@@ -2658,10 +2658,10 @@ app.post("/donors/:id/gifts", requireAuth, checkWriteAccess, wrap(async (req, re
     ]);
     if (contribAcct.length) {
       await run(
-        "INSERT INTO fin_transactions (id,org_id,date,description,vendor_donor,amount,type,account_id,fund_id) VALUES (?,?,?,?,?,?,?,?,?)",
+        "INSERT INTO fin_transactions (id,org_id,date,description,vendor_donor,amount,type,account_id,fund_id,donor_id,source) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
         ["ft_"+uuid().slice(0,8), req.user.orgId, giftDate,
          `Gift from ${donorRows[0]?.name || "Donor"}`, donorRows[0]?.name || "",
-         amt, "income", contribAcct[0].id, genFund.length ? genFund[0].id : null]
+         amt, "income", contribAcct[0].id, genFund.length ? genFund[0].id : null, req.params.id, "gift"]
       );
     }
   } catch(e) { console.error("Finance sync:", e.message); }
@@ -3374,14 +3374,14 @@ app.post("/gifts/import-history", requireAuth, checkWriteAccess, wrap(async (req
           if (contribAcctId && g.date >= fyStart) {
             const dName = donorNameMap[g.donorId] || "Donor";
             ftParams.push("ft_"+uuid().slice(0,8), orgId, g.date,
-              `Gift from ${dName}`, dName, g.amount, "income", contribAcctId, genFundId);
-            ftTuples.push("(?,?,?,?,?,?,?,?,?)");
+              `Gift from ${dName}`, dName, g.amount, "income", contribAcctId, genFundId, g.donorId, "import");
+            ftTuples.push("(?,?,?,?,?,?,?,?,?,?,?)");
           }
         }
         // One bulk INSERT for all FY fin_transactions in this batch — same tx as gifts
         if (ftTuples.length) {
           await runTx(client,
-            `INSERT INTO fin_transactions (id,org_id,date,description,vendor_donor,amount,type,account_id,fund_id)
+            `INSERT INTO fin_transactions (id,org_id,date,description,vendor_donor,amount,type,account_id,fund_id,donor_id,source)
              VALUES ${ftTuples.join(",")}`,
             ftParams
           );
@@ -6668,7 +6668,7 @@ app.get("/finance/accounts", requireAuth, wrap(async (req, res) => {
   res.json(rows);
 }));
 
-app.post("/finance/accounts", requireAuth, requireAdmin, wrap(async (req, res) => {
+app.post("/finance/accounts", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
   const { code, name, type, subtype } = req.body;
   if (!code || !name || !type) return res.status(400).json({ error: "code, name, and type required" });
   const id = "acc_" + uuid().slice(0, 8);
@@ -6684,7 +6684,7 @@ app.post("/finance/accounts", requireAuth, requireAdmin, wrap(async (req, res) =
   res.status(201).json(rows[0]);
 }));
 
-app.put("/finance/accounts/:id", requireAuth, requireAdmin, wrap(async (req, res) => {
+app.put("/finance/accounts/:id", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
   const { name, subtype, active } = req.body;
   if (!name) return res.status(400).json({ error: "name required" });
   const [oldAcct] = await query("SELECT * FROM accounts WHERE id = ? AND org_id = ?", [req.params.id, req.user.orgId]);
@@ -6711,7 +6711,7 @@ app.get("/finance/funds", requireAuth, wrap(async (req, res) => {
   res.json(rows);
 }));
 
-app.post("/finance/funds", requireAuth, requireAdmin, wrap(async (req, res) => {
+app.post("/finance/funds", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
   const { name, description, restricted } = req.body;
   if (!name) return res.status(400).json({ error: "name required" });
   const id = "ff_" + uuid().slice(0, 8);
@@ -6727,7 +6727,7 @@ app.post("/finance/funds", requireAuth, requireAdmin, wrap(async (req, res) => {
   res.status(201).json(rows[0]);
 }));
 
-app.put("/finance/funds/:id", requireAuth, requireAdmin, wrap(async (req, res) => {
+app.put("/finance/funds/:id", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
   const { name, description, restricted } = req.body;
   if (!name) return res.status(400).json({ error: "name required" });
   const [oldFund] = await query("SELECT * FROM fin_funds WHERE id = ? AND org_id = ?", [req.params.id, req.user.orgId]);
@@ -6766,15 +6766,15 @@ app.get("/finance/transactions", requireAuth, wrap(async (req, res) => {
   res.json(rows);
 }));
 
-app.post("/finance/transactions", requireAuth, wrap(async (req, res) => {
-  const { date, description, vendorDonor, amount, type, accountId, fundId, notes } = req.body;
+app.post("/finance/transactions", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  const { date, description, vendorDonor, amount, type, accountId, fundId, notes, donorId } = req.body;
   if (!date || !description || !amount || !type) {
     return res.status(400).json({ error: "date, description, amount, and type required" });
   }
   const id = "ft_" + uuid().slice(0, 8);
   await run(
-    "INSERT INTO fin_transactions (id,org_id,date,description,vendor_donor,amount,type,account_id,fund_id,notes) VALUES (?,?,?,?,?,?,?,?,?,?)",
-    [id, req.user.orgId, date, description, vendorDonor || "", parseFloat(amount), type, accountId || null, fundId || null, notes || ""]
+    "INSERT INTO fin_transactions (id,org_id,date,description,vendor_donor,amount,type,account_id,fund_id,notes,donor_id,source) VALUES (?,?,?,?,?,?,?,?,?,?,?,'manual')",
+    [id, req.user.orgId, date, description, vendorDonor || "", parseFloat(amount), type, accountId || null, fundId || null, notes || "", donorId || null]
   );
   const rows = await query(`
     SELECT ft.*, a.code as account_code, a.name as account_name, a.type as account_type,
@@ -6838,7 +6838,7 @@ app.get("/finance/budgets", requireAuth, wrap(async (req, res) => {
   })));
 }));
 
-app.post("/finance/budgets", requireAuth, requireAdmin, wrap(async (req, res) => {
+app.post("/finance/budgets", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
   const { accountId, year, amount } = req.body;
   if (!accountId || !year) return res.status(400).json({ error: "accountId and year required" });
   const id = "bgt_" + uuid().slice(0, 8);
@@ -6898,6 +6898,57 @@ app.get("/finance/summary", requireAuth, wrap(async (req, res) => {
   const ytdExpenses = ytd.expense || 0;
   const cashOnHand  = (all.income || 0) - (all.expense || 0);
   res.json({ cashOnHand, ytdRevenue, ytdExpenses, netSurplus: ytdRevenue - ytdExpenses, yearMode, periodLabel });
+}));
+
+// ── Finance: Stripe summary (connected-account money in) ────────────────────
+// Live balance + recent payouts for the org's OWN connected Stripe account —
+// never Steward's platform billing (that's /billing/*). Org-scoped strictly by
+// the caller's orgs.stripe_account_id, never from client input. Cached 5 min
+// per org so a Home-adjacent load can't hammer Stripe. Degrades to
+// {connected:false} on no account / no Stripe key / any Stripe error — the
+// Finance Overview shows a warm connect prompt in that case, never an error.
+const STRIPE_SUMMARY_TTL = 5 * 60 * 1000;
+const stripeSummaryCache = new Map(); // orgId -> { at, data }
+app.get("/finance/stripe-summary", requireAuth, wrap(async (req, res) => {
+  const { orgId } = req.user;
+  const cached = stripeSummaryCache.get(orgId);
+  if (cached && Date.now() - cached.at < STRIPE_SUMMARY_TTL) return res.json(cached.data);
+
+  const [org] = await query("SELECT stripe_account_id FROM orgs WHERE id=?", [orgId]);
+  const acct = org?.stripe_account_id;
+  if (!acct || !stripe) {
+    const data = { connected: false };
+    stripeSummaryCache.set(orgId, { at: Date.now(), data });
+    return res.json(data);
+  }
+  try {
+    const [balance, payouts] = await Promise.all([
+      stripe.balance.retrieve({ stripeAccount: acct }),
+      stripe.payouts.list({ limit: 5 }, { stripeAccount: acct }),
+    ]);
+    const sumCents = arr => (arr || []).reduce((s, b) => s + (b.amount || 0), 0);
+    const data = {
+      connected: true,
+      balance: {
+        available: sumCents(balance.available) / 100,
+        pending: sumCents(balance.pending) / 100,
+      },
+      payouts: (payouts.data || []).map(p => ({
+        id: p.id,
+        amount: (p.amount || 0) / 100,
+        status: p.status,
+        arrival_date: p.arrival_date ? new Date(p.arrival_date * 1000).toISOString() : null,
+      })),
+    };
+    stripeSummaryCache.set(orgId, { at: Date.now(), data });
+    res.json(data);
+  } catch (e) {
+    console.error("[finance] stripe-summary failed:", e.message);
+    // Don't 500 the Finance tab over a Stripe hiccup — treat as not-connected.
+    const data = { connected: false, error: "stripe_unavailable" };
+    stripeSummaryCache.set(orgId, { at: Date.now(), data });
+    res.json(data);
+  }
 }));
 
 // ── Finance: Audit Log ─────────────────────────────────────────────────────
