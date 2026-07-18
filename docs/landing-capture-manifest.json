@@ -1,30 +1,36 @@
 {
-  "capturedAt": "2026-07-17T21:13:48.218Z",
+  "capturedAt": "2026-07-18T03:13:10.254Z",
   "base": "https://www.stewardapp.dev",
   "images": {
     "lp-home": {
       "displayW": 640,
-      "displayH": 526
+      "displayH": 526,
+      "natural3x": 1920
     },
     "lp-climb": {
       "displayW": 321,
-      "displayH": 123
+      "displayH": 123,
+      "natural3x": 963
     },
     "lp-queue": {
       "displayW": 656,
-      "displayH": 589
+      "displayH": 589,
+      "natural3x": 1968
     },
     "lp-attention": {
       "displayW": 636,
-      "displayH": 270
+      "displayH": 270,
+      "natural3x": 1908
     },
     "lp-import": {
       "displayW": 700,
-      "displayH": 419
+      "displayH": 419,
+      "natural3x": 2100
     },
     "lp-receipt": {
       "displayW": 654,
-      "displayH": 334
+      "displayH": 334,
+      "natural3x": 1962
     }
   },
   "goalOverlay": {

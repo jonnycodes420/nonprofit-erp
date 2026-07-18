@@ -4,10 +4,19 @@
 // Recaptures every product image on Landing.jsx from the REAL deployed
 // product, tightly cropped to the meaningful region so UI text stays near
 // native size when displayed (the BUILD-07 captures were full-app 1440px
-// shots displayed at ~535px — text at ~37% scale read soft). Encodes WebP
-// q92 at 1x + 2x, and prints a manifest (docs/landing-capture-manifest.json)
-// with each asset's display dimensions plus the re-measured goal-bar overlay
-// geometry for Landing.jsx's hero animation.
+// shots displayed at ~535px — text at ~37% scale read soft).
+//
+// BUILD-10 Part 2 — retina crispness fix. Two bugs killed sharpness on
+// high-DPI screens: (1) the srcset topped out at a 2x candidate, so a DPR-3
+// display upscaled the 2x file (hero especially); (2) everything was WebP
+// q92 — LOSSY — which softens text edges (the "grain"). Fix: capture at a
+// high deviceScaleFactor (hero dsf 5 → ≥3000px raw crops; sections dsf 4 →
+// ≥2400px) and encode LOSSLESS WebP at 1x + 2x + 3x. Lossless is deliberate:
+// these are UI screenshots (flat fills + text), where lossy compression is
+// exactly wrong. Weight is managed by the resolution tiers + lazy-loading +
+// `sizes`, never by dropping quality. Prints a manifest
+// (docs/landing-capture-manifest.json) with each asset's display dimensions,
+// its 3x natural width, and the re-measured goal-bar overlay geometry.
 //
 // macOS-only for the receipt image: the /receipts/preview PDF is rasterized
 // with `sips` (built into macOS), then trimmed to its content with sharp —
@@ -66,20 +75,27 @@ const bbox = (page, fn) => page.evaluate((fnSrc) => {
 }, fn.toString());
 
 // Crop a region (css px) out of a fullPage capture taken at `dsf`, then write
-// 2x + 1x WebP. The 2x asset keeps the crop at (up to) 2 device px per css px;
-// 1x is half that. Display size (returned) = crop css size.
+// LOSSLESS WebP at 1x / 2x / 3x of the crop's css display width. The raw crop
+// (crop.w × dsf px) is over-supplied vs the 3x tier, so every tier is a
+// DOWNSCALE (supersampled — crisp), never an enlargement. Display size
+// (returned) = crop css size; the 3x natural width is recorded so the
+// verifier can assert naturalWidth ≥ displayW × 3 without a browser.
 async function emit(pngPath, crop, dsf, name) {
-  const img = sharp(pngPath).extract({
+  const src = sharp(pngPath).extract({
     left: Math.round(crop.x * dsf), top: Math.round(crop.y * dsf),
     width: Math.round(crop.w * dsf), height: Math.round(crop.h * dsf),
   });
-  const buf = await img.png().toBuffer();
-  const w2 = Math.round(crop.w * 2), w1 = Math.round(crop.w);
-  await sharp(buf).resize({ width: w2, withoutEnlargement: true }).webp({ quality: 92 }).toFile(path.join(PUB, `${name}-2x.webp`));
-  await sharp(buf).resize({ width: w1 }).webp({ quality: 92 }).toFile(path.join(PUB, `${name}.webp`));
-  const meta1 = await sharp(path.join(PUB, `${name}.webp`)).metadata();
-  manifest.images[name] = { displayW: meta1.width, displayH: meta1.height };
-  console.log(`  ✓ ${name}: display ${meta1.width}×${meta1.height} (1x + 2x written)`);
+  const buf = await src.png().toBuffer();
+  const rawW = Math.round(crop.w * dsf);
+  const dispW = Math.round(crop.w);
+  for (const [suffix, mult] of [["", 1], ["-2x", 2], ["-3x", 3]]) {
+    const w = Math.min(dispW * mult, rawW); // never enlarge past the raw crop
+    await sharp(buf).resize({ width: w }).webp({ lossless: true }).toFile(path.join(PUB, `${name}${suffix}.webp`));
+  }
+  const m1 = await sharp(path.join(PUB, `${name}.webp`)).metadata();
+  const m3 = await sharp(path.join(PUB, `${name}-3x.webp`)).metadata();
+  manifest.images[name] = { displayW: m1.width, displayH: m1.height, natural3x: m3.width };
+  console.log(`  ✓ ${name}: display ${m1.width}×${m1.height}, 3x=${m3.width}px (lossless 1x+2x+3x)`);
 }
 
 (async () => {
@@ -90,9 +106,13 @@ async function emit(pngPath, crop, dsf, name) {
   // ── 1. Hero (lp-home): goal banner → retention card, narrow viewport so the
   //       crop width ≈ the hero column's display width (near-native text). ──
   {
-    const { ctx, page } = await appPage(browser, session, { w: 880, h: 1400, dsf: 3 });
+    // dsf 5 → a 640-css-wide crop yields a 3200px raw capture (≥3000). A
+    // viewport (not fullPage) shot keeps the PNG small enough at dsf 5; the
+    // hero crop (goal banner → retention) sits inside the first viewport
+    // height at scroll 0, so document-relative bboxes stay valid.
+    const { ctx, page } = await appPage(browser, session, { w: 880, h: 1500, dsf: 5 });
     const shot = path.join(SCRATCH, "hero.png");
-    await page.screenshot({ path: shot, fullPage: true });
+    await page.screenshot({ path: shot });
     const banner = await bbox(page, () => document.querySelector(".dash-goal-banner"));
     // Retention card: the white card containing the "Donor Retention Rate" label.
     const retention = await bbox(page, () => {
@@ -110,7 +130,7 @@ async function emit(pngPath, crop, dsf, name) {
     let bottom = retention ? retention.y + retention.h : banner.y + banner.h;
     if (ftd && ftd.y > banner.y) bottom = Math.min(bottom, ftd.y - 26);
     const crop = { x: banner.x - pad, y: banner.y - pad, w: banner.w + pad * 2, h: bottom - banner.y + pad * 2 };
-    await emit(shot, crop, 3, "lp-home");
+    await emit(shot, crop, 5, "lp-home");
 
     // Goal-bar geometry for the hero animation overlay, relative to the crop.
     const geo = await page.evaluate(() => {
@@ -145,7 +165,7 @@ async function emit(pngPath, crop, dsf, name) {
       const p = pct.getBoundingClientRect(), t = track.getBoundingClientRect();
       return { x: t.x + scrollX - 2, y: p.y + scrollY - 6, w: t.width + 4, h: (t.y + t.height + 36) - p.y + 6 };
     });
-    if (climb) await emit(shot, climb, 3, "lp-climb");
+    if (climb) await emit(shot, climb, 5, "lp-climb");
     else console.log("  ⚠ goal-progress region not found");
     await ctx.close();
   }
@@ -153,7 +173,7 @@ async function emit(pngPath, crop, dsf, name) {
   // ── 2. Queue (lp-queue) + step crops, at a wider viewport where the queue
   //       column ≈ its display width in the moment section. ──
   {
-    const { ctx, page } = await appPage(browser, session, { w: 1240, h: 1400, dsf: 2 });
+    const { ctx, page } = await appPage(browser, session, { w: 1240, h: 1400, dsf: 4 });
     const shot = path.join(SCRATCH, "main.png");
     await page.screenshot({ path: shot, fullPage: true });
 
@@ -164,12 +184,12 @@ async function emit(pngPath, crop, dsf, name) {
     }));
     // Full queue card, capped after ~6 rows so the crop stays tight.
     const capBottom = rows[5] ? rows[5].y + rows[5].h : qCard.y + qCard.h;
-    await emit(shot, { x: qCard.x - 10, y: qCard.y - 10, w: qCard.w + 20, h: Math.min(qCard.y + qCard.h, capBottom) - qCard.y + 20 }, 2, "lp-queue");
+    await emit(shot, { x: qCard.x - 10, y: qCard.y - 10, w: qCard.w + 20, h: Math.min(qCard.y + qCard.h, capBottom) - qCard.y + 20 }, 4, "lp-queue");
 
     // Step 2 image: three queue rows, no header — "see who needs attention".
     if (rows.length >= 3) {
       const top = rows[0].y, bot = rows[2].y + rows[2].h;
-      await emit(shot, { x: qCard.x, y: top - 4, w: qCard.w, h: bot - top + 8 }, 2, "lp-attention");
+      await emit(shot, { x: qCard.x, y: top - 4, w: qCard.w, h: bot - top + 8 }, 4, "lp-attention");
     }
 
     // Step 1 image: the real CSV import modal (Donors → ↑ Import).
@@ -184,7 +204,7 @@ async function emit(pngPath, crop, dsf, name) {
       await page.screenshot({ path: shot2, fullPage: true });
       // Upper portion only: title + dropzone reads as "import"; the footer's
       // empty result table doesn't.
-      await emit(shot2, { x: modal.x, y: modal.y, w: modal.w, h: Math.min(modal.h, 430) }, 2, "lp-import");
+      await emit(shot2, { x: modal.x, y: modal.y, w: modal.w, h: Math.min(modal.h, 430) }, 4, "lp-import");
     } else console.log("  ⚠ import modal not found");
     await ctx.close();
   }
@@ -218,12 +238,14 @@ async function emit(pngPath, crop, dsf, name) {
     const border = Math.round(m.width * 0.045);
     const padded = await sharp(trimmed).extend({ top: border, bottom: border, left: border, right: border, background: "#ffffff" }).toBuffer();
     const mp = await sharp(padded).metadata();
-    const w1 = Math.round(mp.width / 4); // sips render ≈4x the display size
-    await sharp(padded).resize({ width: w1 * 2 }).webp({ quality: 92 }).toFile(path.join(PUB, "lp-receipt-2x.webp"));
-    await sharp(padded).resize({ width: w1 }).webp({ quality: 92 }).toFile(path.join(PUB, "lp-receipt.webp"));
+    const w1 = Math.round(mp.width / 4); // sips render ≈4x the display size → 3x tier (0.75·raw) is still a downscale
+    for (const [suffix, mult] of [["", 1], ["-2x", 2], ["-3x", 3]]) {
+      await sharp(padded).resize({ width: Math.min(w1 * mult, mp.width) }).webp({ lossless: true }).toFile(path.join(PUB, `lp-receipt${suffix}.webp`));
+    }
     const meta1 = await sharp(path.join(PUB, "lp-receipt.webp")).metadata();
-    manifest.images["lp-receipt"] = { displayW: meta1.width, displayH: meta1.height };
-    console.log(`  ✓ lp-receipt: display ${meta1.width}×${meta1.height} (trimmed to content)`);
+    const meta3 = await sharp(path.join(PUB, "lp-receipt-3x.webp")).metadata();
+    manifest.images["lp-receipt"] = { displayW: meta1.width, displayH: meta1.height, natural3x: meta3.width };
+    console.log(`  ✓ lp-receipt: display ${meta1.width}×${meta1.height}, 3x=${meta3.width}px (trimmed, lossless 1x+2x+3x)`);
   }
 
   await browser.close();
