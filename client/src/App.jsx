@@ -211,7 +211,7 @@ function AppShell() {
   const sideBtn=(active)=>({
     display:"flex",alignItems:"center",gap:10,width:"100%",textAlign:"left",
     background:active?"#1a2e1f":"transparent",
-    border:"none",borderLeft:`3px solid ${active?"#c9a84c":"transparent"}`,
+    border:"none",borderLeft:`3px solid ${active?"var(--org-accent,#c9a84c)":"transparent"}`,
     borderRadius:"0 10px 10px 0",padding:"10px 12px 10px 13px",
     color:active?"#f0ede6":"#8fa896",fontSize:13,fontWeight:active?700:500,
     cursor:"pointer",transition:"color 0.15s,background 0.15s",boxSizing:"border-box"
@@ -222,7 +222,14 @@ function AppShell() {
   // the column edge, leaving lighter T.bg gutters (the background seam
   // BUILD-06 Phase E fixes). Matching the shell background to the tab makes
   // the page one continuous surface at any viewport width.
-  return <div className="app-root" style={{...BASE,background:tab==="dashboard"?T.bgDeep:T.bg,color:T.ink,display:"flex",flexDirection:"column"}}>
+  // BUILD-13: the org's brand accent (already normalized to an accessible
+  // range server-side) is exposed as a CSS var layered OVER the BUILD-12
+  // palette — applied only on accent moments (sidebar active bar/icon, the
+  // Dashboard greeting). Falls back to Steward gold when unset, so an org
+  // that never sets branding is visually identical to before.
+  const orgAccent=data.org?.brandAccent||"#c9a84c";
+  const orgAccentFg=data.org?.brandAccentFg||"#0f1a12";
+  return <div className="app-root" style={{...BASE,background:tab==="dashboard"?T.bgDeep:T.bg,color:T.ink,display:"flex",flexDirection:"column","--org-accent":orgAccent,"--org-accent-fg":orgAccentFg}}>
     <GlobalStyles/>
     <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=DM+Serif+Display&display=swap" rel="stylesheet"/>
 
@@ -241,7 +248,7 @@ function AppShell() {
         {TABS.filter(t=>t.id!=="settings").map(t=>{
           const active=tab===t.id;
           return <button key={t.id} className="side-nav-btn" onClick={()=>navigateTo(t.id)} style={sideBtn(active)}>
-            <span style={{fontSize:14,width:18,textAlign:"center",color:active?"#c9a84c":"#6b8f7a",flexShrink:0}}>{t.icon}</span>
+            <span style={{fontSize:14,width:18,textAlign:"center",color:active?"var(--org-accent,#c9a84c)":"#6b8f7a",flexShrink:0}}>{t.icon}</span>
             {t.label}
             {t.earlyAccess&&<span style={{fontSize:9,fontWeight:700,letterSpacing:"0.04em",background:"#1a2e1f",color:"#8fa896",border:"1px solid #2d4a35",borderRadius:99,padding:"1px 6px",lineHeight:"14px"}}>Early Access</span>}
             {t.id==="tasks"&&tasksDue>0&&<span style={{marginLeft:"auto",background:"#b8593f",color:"#fff",fontSize:9,fontWeight:800,borderRadius:99,padding:"1px 6px",lineHeight:"14px"}}>{tasksDue}</span>}
@@ -251,7 +258,7 @@ function AppShell() {
       {/* Pure nav below here — the user chip/sign-out moved to the top bar (BUILD-08) */}
       <div style={{borderTop:"1px solid #1a2e1f",padding:"10px 10px 12px 0",flexShrink:0}}>
         <button className="side-nav-btn" onClick={()=>navigateTo("settings")} style={sideBtn(tab==="settings")}>
-          <span style={{fontSize:14,width:18,textAlign:"center",color:tab==="settings"?"#c9a84c":"#6b8f7a",flexShrink:0}}>⚙</span>
+          <span style={{fontSize:14,width:18,textAlign:"center",color:tab==="settings"?"var(--org-accent,#c9a84c)":"#6b8f7a",flexShrink:0}}>⚙</span>
           Settings
         </button>
       </div>

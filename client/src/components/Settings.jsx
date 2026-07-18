@@ -325,6 +325,105 @@ function GivingPagesManager({orgSlug,isAdmin,isReadOnly}){
 // public donate flow offers the optional "add a little to cover processing
 // costs" checkbox (checkbox itself always defaults unchecked donor-side).
 // Module scope like the other managers; saves via PATCH /orgs/:id.
+// Org branding (BUILD-13 Part 2) — tasteful white-label: logo + one accent
+// color. The accent is normalized server-side to an accessible range, so the
+// server response is the source of truth (it may hand back a slightly deepened
+// color for legibility — we show a note when it does). Applied only to accent
+// moments across app/emails/receipts, never a full re-skin.
+const PRESET_ACCENTS=["#1a6b4a","#0d5c3a","#b8593f","#7c3a12","#3f5c8a","#6b3f8a","#8a5a1f","#0f1a12"];
+function BrandingManager({orgId,isAdmin,isReadOnly,onSaved}){
+  const [logo,setLogo]=useState("");        // data URI or ""
+  const [accent,setAccent]=useState("");    // hex or ""
+  const [loaded,setLoaded]=useState(false);
+  const [saving,setSaving]=useState(false);
+  const [msg,setMsg]=useState("");
+  const [err,setErr]=useState("");
+  useEffect(()=>{
+    apiFetch("/org").then(o=>{setLogo(o.logo_data||"");setAccent(o.brand_accent||"");setLoaded(true);}).catch(()=>setLoaded(true));
+  },[]);
+  const disabled=!isAdmin||isReadOnly;
+  const effAccent=accent||"#1a6b4a";
+  function onFile(e){
+    const f=e.target.files?.[0]; if(!f)return;
+    if(!/^image\/(png|jpeg|jpg|gif|webp|svg\+xml)$/.test(f.type)){setErr("Please choose a PNG, JPEG, GIF, WebP, or SVG image.");return;}
+    if(f.size>350*1024){setErr("Logo is too large — please use an image under 350KB.");return;}
+    setErr("");
+    const r=new FileReader(); r.onload=()=>setLogo(r.result); r.readAsDataURL(f);
+  }
+  async function save(){
+    if(disabled||saving)return;
+    setSaving(true);setErr("");setMsg("");
+    try{
+      const body={brandAccent:accent||"",logoData:logo||undefined,removeLogo:!logo};
+      const res=await apiFetch("/orgs/branding",{method:"PUT",body:JSON.stringify(body)});
+      setAccent(res.brand_accent||"");
+      setMsg(res.adjusted?"Saved — your color was deepened slightly so text stays readable.":"Branding saved.");
+      onSaved&&onSaved();
+    }catch(e){setErr(e.message||"Could not save branding.");}
+    setSaving(false);
+  }
+  if(!loaded)return <div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:16,padding:"24px 28px",color:T.ink3,fontSize:13}}>Loading…</div>;
+  return(
+    <div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:16,padding:"24px 28px"}}>
+      <SectionLabel>Brand Identity</SectionLabel>
+      <div style={{fontSize:13,color:T.ink3,lineHeight:1.6,marginTop:6,marginBottom:20,maxWidth:560}}>
+        Add your logo and one accent color. Steward keeps its calm layout as the frame — your color lands on the moments that matter: your dashboard welcome, primary buttons, and the header of every receipt and email your donors receive. We keep it readable automatically.
+      </div>
+      <div style={{display:"flex",gap:28,flexWrap:"wrap"}}>
+        {/* Controls */}
+        <div style={{flex:"1 1 300px",display:"flex",flexDirection:"column",gap:18}}>
+          <div>
+            <div style={{fontSize:11,fontWeight:700,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:8}}>Logo</div>
+            <div style={{display:"flex",alignItems:"center",gap:12}}>
+              <div style={{width:64,height:64,borderRadius:12,border:"1px dashed "+T.bg3,background:T.bg,display:"flex",alignItems:"center",justifyContent:"center",overflow:"hidden",flexShrink:0}}>
+                {logo?<img src={logo} alt="logo" style={{maxWidth:"100%",maxHeight:"100%",objectFit:"contain"}}/>:<span style={{fontSize:10,color:T.ink3}}>none</span>}
+              </div>
+              <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                <label style={{background:disabled?T.bg3:T.bg2,border:"1px solid "+T.bg3,borderRadius:8,padding:"7px 12px",fontSize:12,fontWeight:600,color:T.ink,cursor:disabled?"not-allowed":"pointer"}}>
+                  {logo?"Replace logo":"Upload logo"}
+                  <input type="file" accept="image/*" onChange={onFile} disabled={disabled} style={{display:"none"}}/>
+                </label>
+                {logo&&!disabled&&<button onClick={()=>setLogo("")} style={{background:"none",border:"none",color:T.terracotta,fontSize:11,fontWeight:600,cursor:"pointer",textAlign:"left",padding:0}}>Remove</button>}
+              </div>
+            </div>
+          </div>
+          <div>
+            <div style={{fontSize:11,fontWeight:700,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:8}}>Accent color</div>
+            <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+              <input type="color" value={effAccent} onChange={e=>setAccent(e.target.value)} disabled={disabled} style={{width:40,height:40,border:"1px solid "+T.bg3,borderRadius:8,background:"none",cursor:disabled?"not-allowed":"pointer",padding:2}}/>
+              <input value={accent} onChange={e=>setAccent(e.target.value)} disabled={disabled} placeholder="#1a6b4a" style={{width:110,background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"9px 12px",color:T.ink,fontSize:13,outline:"none",fontFamily:"monospace"}}/>
+              {accent&&!disabled&&<button onClick={()=>setAccent("")} style={{background:"none",border:"none",color:T.ink3,fontSize:12,cursor:"pointer",textDecoration:"underline"}}>Reset to Steward gold</button>}
+            </div>
+            <div style={{display:"flex",gap:6,marginTop:10,flexWrap:"wrap"}}>
+              {PRESET_ACCENTS.map(c=><button key={c} onClick={()=>!disabled&&setAccent(c)} title={c} style={{width:24,height:24,borderRadius:6,background:c,border:accent.toLowerCase()===c?"2px solid "+T.ink:"1px solid rgba(0,0,0,0.15)",cursor:disabled?"not-allowed":"pointer"}}/>)}
+            </div>
+          </div>
+          {isAdmin&&<div style={{display:"flex",alignItems:"center",gap:12}}>
+            <button onClick={save} disabled={disabled||saving} title={isReadOnly?"Reactivate your subscription to make changes.":undefined} style={{background:disabled?T.bg3:T.greenMid,border:"none",borderRadius:9,padding:"10px 18px",color:"#fff",fontSize:13,fontWeight:700,cursor:disabled?"not-allowed":"pointer"}}>{saving?"Saving…":"Save branding"}</button>
+            {msg&&<span style={{fontSize:12,color:T.greenMid}}>{msg}</span>}
+            {err&&<span style={{fontSize:12,color:T.terracotta}}>{err}</span>}
+          </div>}
+        </div>
+        {/* Live preview */}
+        <div style={{flex:"1 1 300px",minWidth:260}}>
+          <div style={{fontSize:11,fontWeight:700,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:8}}>Preview</div>
+          <div style={{border:"1px solid "+T.bg3,borderRadius:12,overflow:"hidden",background:T.bg}}>
+            <div style={{background:effAccent,padding:"14px 18px",display:"flex",alignItems:"center",gap:10}}>
+              {logo&&<img src={logo} alt="" style={{height:26,maxWidth:90,objectFit:"contain"}}/>}
+              <span style={{color:"#fff",fontWeight:800,fontSize:15}}>Your Organization</span>
+            </div>
+            <div style={{padding:"16px 18px",display:"flex",flexDirection:"column",gap:12}}>
+              <div style={{fontSize:13,color:T.ink3}}>Dear Jordan, thank you for your generous gift…</div>
+              <button style={{alignSelf:"flex-start",background:effAccent,border:"none",borderRadius:8,padding:"8px 16px",color:"#fff",fontSize:12,fontWeight:700}}>Primary action</button>
+              <div style={{fontSize:11,color:T.ink3}}>The dashboard welcome, receipts, and donor emails use this header.</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function CoverFeesCard({orgId,isAdmin}){
   const [enabled,setEnabled]=useState(null); // null = loading
   const [saving,setSaving]=useState(false);
@@ -562,6 +661,7 @@ function TaxReceiptsManager({orgId,isAdmin,isReadOnly}){
 // prompt lands directly on "receipts".
 const SETTINGS_TABS=[
   {id:"org",label:"Organization"},
+  {id:"branding",label:"Branding"},
   {id:"team",label:"Team"},
   {id:"integrations",label:"Integrations"},
   {id:"giving",label:"Giving Pages"},
@@ -896,6 +996,9 @@ export function Settings({auth,logout,initialSection}) {
           {auth?.org?.mission&&<div style={{fontSize:12,color:T.ink3,marginTop:4,lineHeight:1.5}}>{auth.org.mission}</div>}
         </div>
       </div>}
+
+      {/* ── Branding ─────────────────────────────────────────────────────── */}
+      {section==="branding"&&<BrandingManager orgId={auth?.org?.id} isAdmin={isAdmin} isReadOnly={isReadOnly}/>}
 
       {/* ── Team ──────────────────────────────────────────────────────────── */}
       {section==="team"&&<div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:16,padding:"24px 28px"}}>

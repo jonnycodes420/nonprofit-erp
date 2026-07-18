@@ -51,6 +51,7 @@ const { Resend } = require("resend");
 const resend = new Resend(process.env.RESEND_API_KEY);
 const { getDb, query, run, uuid, seedOrgData, withTransaction, queryTx, runTx } = require("./db");
 const { signToken, requireAuth, requireSuperAdmin } = require("./auth");
+const { normalizeAccent } = require("./branding");
 const { lookupMatchingGift } = require("./matchingGifts");
 const Stripe = require("stripe");
 const { google } = require("googleapis");
@@ -1196,6 +1197,45 @@ app.patch("/orgs/:id", requireAuth, requireAdmin, wrap(async (req, res) => {
 
   const orgs = await query("SELECT * FROM orgs WHERE id = ?", [req.params.id]);
   res.json(orgs[0]);
+}));
+
+// ── Org branding (BUILD-13 Part 2 — tasteful white-label) ───────────────────
+// Logo (base64 data-URI) + one accent color. The accent is normalized to an
+// accessible range on save (branding.js) so the UI can never render illegibly.
+// requireAdmin (org identity is an admin setting) + checkWriteAccess (a
+// read_only/lapsed org can't change branding, like any other write).
+const LOGO_MAX_BYTES = 512 * 1024; // ~512KB of data-URI text; a real logo is far smaller
+app.put("/orgs/branding", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
+  const { logoData, brandAccent, removeLogo } = req.body;
+  const sets = [], params = [];
+  let normalized = null;
+
+  if (brandAccent !== undefined) {
+    if (brandAccent === null || brandAccent === "") {
+      sets.push("brand_accent=NULL", "brand_accent_fg=NULL"); // revert to Steward default
+    } else {
+      normalized = normalizeAccent(brandAccent);
+      if (!normalized) return res.status(400).json({ error: "Accent must be a hex color like #1a6b4a." });
+      sets.push("brand_accent=?", "brand_accent_fg=?");
+      params.push(normalized.accent, normalized.fg);
+    }
+  }
+  if (removeLogo) {
+    sets.push("logo_data=NULL");
+  } else if (logoData !== undefined && logoData !== null) {
+    if (typeof logoData !== "string" || !/^data:image\/(png|jpeg|jpg|gif|webp|svg\+xml);base64,/.test(logoData))
+      return res.status(400).json({ error: "Logo must be a PNG, JPEG, GIF, WebP, or SVG image." });
+    if (Buffer.byteLength(logoData, "utf8") > LOGO_MAX_BYTES)
+      return res.status(400).json({ error: "Logo is too large — please use an image under 350KB." });
+    sets.push("logo_data=?"); params.push(logoData);
+  }
+
+  if (sets.length) {
+    params.push(req.user.orgId);
+    await run(`UPDATE orgs SET ${sets.join(", ")} WHERE id=?`, params);
+  }
+  const orgs = await query("SELECT id, name, logo_data, brand_accent, brand_accent_fg FROM orgs WHERE id=?", [req.user.orgId]);
+  res.json({ ...orgs[0], adjusted: !!(normalized && normalized.adjusted) });
 }));
 
 // ── Sample data ────────────────────────────────────────────────────────────
@@ -2881,15 +2921,28 @@ async function renderReceiptPdf(snapshot) {
     doc.on("end", () => resolve(Buffer.concat(chunks)));
     doc.on("error", reject);
 
+    // The header band uses the org's brand accent when set (BUILD-13),
+    // falling back to Steward green. The amount stays green (money = green in
+    // the palette semantics). `fg` is the accessible foreground the accent was
+    // normalized against, so header text is always legible on the band.
     const GREEN = "#1a6b4a", INK = "#1a1a1a", INK3 = "#6b7280", BG = "#f5f5f0";
+    const HEADER = snapshot.orgAccent || GREEN;
+    const HEADER_FG = snapshot.orgAccentFg || "#ffffff";
+    const HEADER_SUB = HEADER_FG === "#ffffff" ? "#ffffffcc" : "#0f1a12aa";
     const PW = doc.page.width;
     const fmtD = n => "$" + (parseFloat(n) || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     const isYearEnd = snapshot.type === "year_end";
 
-    doc.rect(0, 0, PW, 90).fill(GREEN);
-    doc.font("Helvetica").fontSize(9).fillColor("#a7f3d0").text(isYearEnd ? "Y E A R - E N D   G I V I N G   S T A T E M E N T" : "D O N A T I O N   R E C E I P T", 50, 24);
-    doc.font("Helvetica-Bold").fontSize(19).fillColor("#fff").text(snapshot.orgLegalName, 50, 40, { width: PW - 100 });
-    doc.font("Helvetica").fontSize(9).fillColor("#d1fae5").text(`EIN: ${snapshot.orgEin || "—"}`, 50, 68);
+    doc.rect(0, 0, PW, 90).fill(HEADER);
+    // Optional logo, right-aligned in the band.
+    let logoBuf = null;
+    if (snapshot.orgLogo && /^data:image\/(png|jpe?g);base64,/.test(snapshot.orgLogo)) {
+      try { logoBuf = Buffer.from(snapshot.orgLogo.split(",")[1], "base64"); } catch { logoBuf = null; }
+    }
+    if (logoBuf) { try { doc.image(logoBuf, PW - 50 - 54, 18, { fit: [54, 54], align: "right" }); } catch {} }
+    doc.font("Helvetica").fontSize(9).fillColor(HEADER_SUB).text(isYearEnd ? "Y E A R - E N D   G I V I N G   S T A T E M E N T" : "D O N A T I O N   R E C E I P T", 50, 24);
+    doc.font("Helvetica-Bold").fontSize(19).fillColor(HEADER_FG).text(snapshot.orgLegalName, 50, 40, { width: PW - 120 });
+    doc.font("Helvetica").fontSize(9).fillColor(HEADER_SUB).text(`EIN: ${snapshot.orgEin || "—"}`, 50, 68);
 
     let y = 112;
     doc.font("Helvetica").fontSize(9).fillColor(INK3).text(`Receipt #${snapshot.receiptNumber}`, 50, y);
@@ -3012,6 +3065,9 @@ async function issueGiftReceipt(gift, org, donor, { send = true } = {}) {
   const snapshot = {
     type: "gift",
     orgLegalName: org.legal_name || org.name,
+    orgAccent: org.brand_accent || null,       // BUILD-13: branded receipt header
+    orgAccentFg: org.brand_accent_fg || null,
+    orgLogo: org.logo_data || null,
     orgEin: org.ein || "",
     orgAddress: org.receipt_address || "",
     signatureName: org.receipt_signature_name || "",
@@ -3103,6 +3159,9 @@ async function issueYearEndStatement(org, donor, year, { send = true } = {}) {
   const snapshot = {
     type: "year_end",
     orgLegalName: org.legal_name || org.name,
+    orgAccent: org.brand_accent || null,       // BUILD-13: branded receipt header
+    orgAccentFg: org.brand_accent_fg || null,
+    orgLogo: org.logo_data || null,
     orgEin: org.ein || "",
     orgAddress: org.receipt_address || "",
     signatureName: org.receipt_signature_name || "",
@@ -3149,6 +3208,9 @@ app.get("/receipts/preview", requireAuth, requireAdmin, wrap(async (req, res) =>
   const snapshot = {
     type: "gift",
     orgLegalName: org.legal_name || org.name,
+    orgAccent: org.brand_accent || null,       // BUILD-13: branded receipt header
+    orgAccentFg: org.brand_accent_fg || null,
+    orgLogo: org.logo_data || null,
     orgEin: org.ein || "XX-XXXXXXX",
     orgAddress: org.receipt_address || "123 Main St, Anytown, ST 00000",
     signatureName: org.receipt_signature_name || "",
@@ -5116,6 +5178,27 @@ async function unsubscribeEmailFooterHtml(email, orgId, source) {
   </div>`;
 }
 
+// Branded email header band (BUILD-13 Part 2) — the org's logo + name on its
+// accent color, above the message body. Tasteful: one slim band, still inside
+// Steward's typographic frame. Falls back to a plain org-name band (Steward
+// green) when no accent is set, and to nothing if the org can't be resolved.
+// async (a DB lookup), like unsubscribeEmailFooterHtml — every caller awaits.
+async function brandEmailHeaderHtml(orgId) {
+  const rows = await query("SELECT name, legal_name, logo_data, brand_accent, brand_accent_fg FROM orgs WHERE id = ?", [orgId]);
+  const org = rows[0];
+  if (!org) return "";
+  const esc = s => String(s || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  const accent = org.brand_accent || "#1a6b4a";
+  const fg = org.brand_accent_fg || "#ffffff";
+  const name = esc(org.legal_name || org.name || "");
+  const logo = (org.logo_data && /^data:image\/(png|jpe?g|gif|webp);base64,/.test(org.logo_data))
+    ? `<img src="${org.logo_data}" alt="${name}" height="34" style="height:34px;max-width:150px;vertical-align:middle;border:0;display:inline-block;margin-right:10px;" />`
+    : "";
+  return `<div style="background:${accent};padding:16px 22px;border-radius:12px 12px 0 0;font-family:'DM Sans',Helvetica,Arial,sans-serif;">
+    <span style="display:inline-block;vertical-align:middle;">${logo}</span><span style="color:${fg};font-size:17px;font-weight:700;vertical-align:middle;">${name}</span>
+  </div>`;
+}
+
 // List-Unsubscribe headers (RFC 8058) so Gmail/Outlook render a native
 // one-click unsubscribe button. The mailto: address isn't monitored/processed —
 // it's included only to satisfy the two-part format some older clients expect;
@@ -5355,7 +5438,8 @@ async function sendDunningEmail(org, donor, subscriptionRow) {
   const updateUrl = buildCardUpdateUrl(subscriptionRow.stripe_subscription_id, org.id);
   const tokenCtx = { donor, org, amount: subscriptionRow.amount, updateUrl };
   const subject = applyDunningTokens(org.recurring_dunning_subject || DEFAULT_DUNNING_SUBJECT, tokenCtx);
-  const bodyHtml = applyDunningTokens(org.recurring_dunning_body || DEFAULT_DUNNING_BODY, tokenCtx)
+  const bodyHtml = await brandEmailHeaderHtml(org.id)
+    + applyDunningTokens(org.recurring_dunning_body || DEFAULT_DUNNING_BODY, tokenCtx)
     + await unsubscribeEmailFooterHtml(donor.email, org.id, "campaign");
   const smtpFrom = process.env.DEMO_SMTP_FROM || "noreply@stewardapp.dev";
   if (process.env.RESEND_API_KEY) {
@@ -5812,6 +5896,7 @@ async function runCampaignSend(campaign, org, donors) {
       }
 
       const year = String(new Date().getFullYear());
+      const brandHeader = await brandEmailHeaderHtml(org.id); // BUILD-13 — once per send, not per recipient
 
       for (const donor of donors) {
         const suppressReason = await getSuppressionReason(donor.email, org.id);
@@ -5847,7 +5932,7 @@ async function runCampaignSend(campaign, org, donors) {
 
         const pixel    = `<img src="${BACKEND_URL}/track/${recipientId}/open.gif" width="1" height="1" style="display:none">`;
         const footer   = await unsubscribeEmailFooterHtml(donor.email, org.id, "campaign");
-        const htmlFull = bodyHtml + footer + pixel;
+        const htmlFull = brandHeader + bodyHtml + footer + pixel;
         const textBody = bodyHtml.replace(/<[^>]+>/g, "");
 
         try {

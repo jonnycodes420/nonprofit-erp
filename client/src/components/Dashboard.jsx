@@ -410,8 +410,17 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
 
       {/* Greeting lives on the page's own cream background, between the nav
           and the goal card — not inside the dark card, where it read as a
-          stray line of card copy rather than a page-level welcome. */}
-      <div style={{fontSize:15,fontWeight:700,color:T.ink,padding:"0 2px"}}>{greeting}{firstName?`, ${firstName}`:""}</div>
+          stray line of card copy rather than a page-level welcome.
+          BUILD-13: when the org has set branding, the greeting leads with the
+          org's logo + name in their accent — the "this is OUR system" payoff
+          the moment they finish onboarding. Falls back to the plain greeting. */}
+      <div style={{display:"flex",alignItems:"center",gap:11,padding:"0 2px"}}>
+        {data.org?.logo&&<img src={data.org.logo} alt={data.org.name} style={{height:34,maxWidth:120,objectFit:"contain",borderRadius:6}}/>}
+        <div>
+          {data.org?.name&&<div style={{fontSize:16,fontWeight:800,color:data.org?.brandAccent||T.ink,lineHeight:1.15,letterSpacing:"-0.01em"}}>{data.org.name}</div>}
+          <div style={{fontSize:data.org?.name?12.5:15,fontWeight:data.org?.name?500:700,color:T.ink3}}>{greeting}{firstName?`, ${firstName}`:""}</div>
+        </div>
+      </div>
 
       {/* One-time gold moments (BUILD-08 Phase D) — the product's only
           celebration pattern, each fires once per org (localStorage-keyed

@@ -142,6 +142,9 @@ export function adaptData({ org, donors, grants, volunteers, tasks, board, finan
       programs:   [],
       ein:        org.ein || "",
       fiscalYear: "Jan-Dec",
+      logo:        org.logo_data || "",       // BUILD-13 branding
+      brandAccent: org.brand_accent || "",
+      brandAccentFg: org.brand_accent_fg || "",
     },
     donors: donors.map(adaptDonor),
     grants: grants.map(g => ({
