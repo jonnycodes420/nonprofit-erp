@@ -1,23 +1,47 @@
 import { useState, useEffect, Fragment } from "react";
-import { T, fmt, fmtFull, SC, askClaude, Card, AIBtn, AIPanel, EmptyState, SectionLabel, PageTitle } from "./shared";
+import { T, fmt, fmtFull, askClaude, Card, AIBtn, AIPanel, EmptyState, SectionLabel, PageTitle, SectionTabs } from "./shared";
 import { apiFetch } from "../api";
 
 // ── Constants ──────────────────────────────────────────────────────────────
+// Account-type accents, five-color palette only (dark-green shades + gold +
+// terracotta) — deliberately varied per the five-color rule so adjacent
+// categories stay visually distinct without reaching outside the set.
 const ACCT_TYPES = [
-  { id:"asset",     label:"Asset",       color:"#3b82f6" },
-  { id:"liability", label:"Liability",   color:"#f59e0b" },
-  { id:"net_asset", label:"Net Asset",   color:"#8b5cf6" },
-  { id:"revenue",   label:"Revenue",     color:T.greenDk },
-  { id:"expense",   label:"Expense",     color:"#ef4444" },
+  { id:"asset",     label:"Asset",     color:T.greenMid },
+  { id:"liability", label:"Liability", color:T.gold },
+  { id:"net_asset", label:"Net Asset", color:T.greenDk },
+  { id:"revenue",   label:"Revenue",   color:T.green },
+  { id:"expense",   label:"Expense",   color:T.terracotta },
 ];
 const TYPE_COLOR = Object.fromEntries(ACCT_TYPES.map(t => [t.id, t.color]));
 
 const REPORT_MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 
+// Money in = income (gold, positive/primary); money out = expense (terracotta,
+// needs-attention). One convention used everywhere in this tab.
+const IN = T.greenMid;
+const OUT = T.terracotta;
+
+// Where a ledger row came from — badged in the unified Transactions ledger.
+const SOURCE_META = {
+  online: { label:"Online · Stripe", color:T.greenDk, bg:T.gold+"26" },
+  gift:   { label:"Gift",            color:T.greenMid, bg:T.greenMid+"18" },
+  import:  { label:"Import",         color:T.ink3,    bg:T.bg2 },
+  manual: { label:"Manual",          color:T.ink3,    bg:T.bg2 },
+};
+const sourceMeta = s => SOURCE_META[s] || SOURCE_META.manual;
+
 // ── Shared style helpers ───────────────────────────────────────────────────
 const inp = { background:T.bg, border:"1px solid "+T.bg3, borderRadius:8, padding:"8px 11px", color:T.ink, fontSize:13, outline:"none", width:"100%", boxSizing:"border-box" };
-const btn = (bg="#10b981",fg="#fff") => ({ background:bg, border:"none", borderRadius:8, padding:"9px 16px", color:fg, fontSize:13, fontWeight:600, cursor:"pointer" });
+const btn = (bg=T.greenDk,fg="#fff") => ({ background:bg, border:"none", borderRadius:8, padding:"9px 16px", color:fg, fontSize:13, fontWeight:700, cursor:"pointer" });
 const ghostBtn = { background:T.bg, border:"1px solid "+T.bg3, borderRadius:8, padding:"8px 14px", color:T.ink3, fontSize:12, cursor:"pointer" };
+
+// Read-only gate for write buttons — matches the app-wide isReadOnly pattern.
+const RO_TIP = "Reactivate your subscription to make changes.";
+const writeBtn = (isReadOnly, style) => ({
+  ...style,
+  ...(isReadOnly ? { opacity:0.5, cursor:"not-allowed" } : {}),
+});
 
 // ── AccountModal ───────────────────────────────────────────────────────────
 function AccountModal({ account, onSave, onClose }) {
@@ -32,7 +56,7 @@ function AccountModal({ account, onSave, onClose }) {
   return (
     <div className="modal-sheet-overlay" style={overlay} onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="modal-sheet-inner" style={box}>
-        <div style={{ fontSize:15, fontWeight:700, color:T.ink }}>{account ? "Edit Account" : "New Account"}</div>
+        <div style={{ fontSize:15, fontWeight:700, color:T.ink }}>{account ? "Edit account" : "New account"}</div>
         <div style={{ display:"flex", gap:8 }}>
           <div style={{ flex:"0 0 90px" }}>
             <div style={{ fontSize:11, color:T.ink3, marginBottom:4 }}>Code</div>
@@ -83,9 +107,9 @@ function FundModal({ fund, onSave, onClose }) {
   return (
     <div className="modal-sheet-overlay" style={overlay} onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="modal-sheet-inner" style={box}>
-        <div style={{ fontSize:15, fontWeight:700, color:T.ink }}>{fund ? "Edit Fund" : "New Fund"}</div>
+        <div style={{ fontSize:15, fontWeight:700, color:T.ink }}>{fund ? "Edit fund" : "New fund"}</div>
         <div>
-          <div style={{ fontSize:11, color:T.ink3, marginBottom:4 }}>Fund Name</div>
+          <div style={{ fontSize:11, color:T.ink3, marginBottom:4 }}>Fund name</div>
           <input value={form.name} onChange={set("name")} placeholder="e.g. General Operating" style={inp}/>
         </div>
         <div>
@@ -116,12 +140,12 @@ function TransactionModal({ accounts, funds, onSave, onClose }) {
   return (
     <div className="modal-sheet-overlay" style={overlay} onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="modal-sheet-inner" style={box}>
-        <div style={{ fontSize:15, fontWeight:700, color:T.ink }}>Log Transaction</div>
+        <div style={{ fontSize:15, fontWeight:700, color:T.ink }}>Log transaction</div>
         <div style={{ display:"flex", gap:6 }}>
           {["income","expense"].map(t => (
             <button key={t} onClick={() => setForm(p => ({ ...p, type:t, accountId:"" }))}
-              style={{ flex:1, ...btn(form.type===t ? (t==="income"?"#10b981":"#ef4444") : T.bg, form.type===t?"#fff":T.ink3), border:"1px solid "+(form.type===t?"transparent":T.bg3) }}>
-              {t === "income" ? "↑ Income" : "↓ Expense"}
+              style={{ flex:1, ...btn(form.type===t ? (t==="income"?IN:OUT) : T.bg, form.type===t?"#fff":T.ink3), border:"1px solid "+(form.type===t?"transparent":T.bg3) }}>
+              {t === "income" ? "↑ Money in" : "↓ Money out"}
             </button>
           ))}
         </div>
@@ -161,9 +185,9 @@ function TransactionModal({ accounts, funds, onSave, onClose }) {
         </div>
         <div style={{ display:"flex", gap:8, justifyContent:"flex-end" }}>
           <button style={ghostBtn} onClick={onClose}>Cancel</button>
-          <button style={btn(form.type === "income" ? "#10b981" : "#ef4444")}
+          <button style={btn(form.type === "income" ? IN : OUT)}
             onClick={() => { if (!form.description || !form.amount) return; onSave(form); }}>
-            Save Transaction
+            Save transaction
           </button>
         </div>
       </div>
@@ -171,8 +195,89 @@ function TransactionModal({ accounts, funds, onSave, onClose }) {
   );
 }
 
+// ── Money in — Stripe status/balance/payouts strip (Overview) ───────────────
+function MoneyInStrip({ onNavigate }) {
+  const [s, setS] = useState(null);
+  const [loading, setLoading] = useState(true);
+  useEffect(() => {
+    let alive = true;
+    apiFetch("/finance/stripe-summary")
+      .then(r => { if (alive) { setS(r); setLoading(false); } })
+      .catch(() => { if (alive) { setS({ connected:false }); setLoading(false); } });
+    return () => { alive = false; };
+  }, []);
+
+  if (loading) return (
+    <Card><div style={{ fontSize:12, color:T.ink3 }}>Checking your Stripe balance…</div></Card>
+  );
+
+  // Not connected — warm connect prompt that deep-links to the existing
+  // Settings → Giving Pages flow (never duplicate the onboarding here).
+  if (!s?.connected) return (
+    <Card style={{ borderLeft:`3px solid ${T.gold}` }}>
+      <div style={{ display:"flex", alignItems:"center", gap:14, flexWrap:"wrap" }}>
+        <div style={{ flex:"1 1 280px" }}>
+          <SectionLabel>Money in</SectionLabel>
+          <div style={{ fontSize:14, color:T.ink, fontWeight:600, marginBottom:3 }}>Connect Stripe to accept donations online.</div>
+          <div style={{ fontSize:12, color:T.ink3, lineHeight:1.6 }}>Once you connect, every online gift lands here — and in your ledger — automatically, with 0% platform fees.</div>
+        </div>
+        {onNavigate && <button style={btn(T.gold, T.ink)} onClick={() => onNavigate("settings", { section:"giving" })}>Connect Stripe →</button>}
+      </div>
+    </Card>
+  );
+
+  const avail = s.balance?.available || 0;
+  const pending = s.balance?.pending || 0;
+  const payouts = s.payouts || [];
+  const last = payouts[0];
+  const PAYOUT_STATUS = { paid:IN, in_transit:T.gold, pending:T.gold, canceled:OUT, failed:OUT };
+  return (
+    <Card>
+      <div style={{ display:"flex", alignItems:"baseline", justifyContent:"space-between", gap:10, marginBottom:12, flexWrap:"wrap" }}>
+        <SectionLabel>Money in · Stripe</SectionLabel>
+        <span style={{ fontSize:11, color:IN, fontWeight:700, display:"flex", alignItems:"center", gap:5 }}>
+          <span style={{ width:7, height:7, borderRadius:"50%", background:IN, display:"inline-block" }}/> Connected
+        </span>
+      </div>
+      <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))", gap:12, marginBottom:payouts.length?16:0 }}>
+        <div>
+          <div style={{ fontSize:11, color:T.ink3, textTransform:"uppercase", letterSpacing:".06em", marginBottom:4 }}>Available</div>
+          <div style={{ fontSize:24, fontWeight:800, color:IN, fontFamily:"'DM Serif Display',serif" }}>{fmtFull(avail)}</div>
+        </div>
+        <div>
+          <div style={{ fontSize:11, color:T.ink3, textTransform:"uppercase", letterSpacing:".06em", marginBottom:4 }}>Pending</div>
+          <div style={{ fontSize:24, fontWeight:800, color:T.gold, fontFamily:"'DM Serif Display',serif" }}>{fmtFull(pending)}</div>
+        </div>
+        {last && (
+          <div>
+            <div style={{ fontSize:11, color:T.ink3, textTransform:"uppercase", letterSpacing:".06em", marginBottom:4 }}>Last payout</div>
+            <div style={{ fontSize:16, fontWeight:700, color:T.ink }}>{fmtFull(last.amount)}</div>
+            <div style={{ fontSize:11, color:T.ink3, marginTop:2 }}>{last.arrival_date ? new Date(last.arrival_date).toLocaleDateString("en-US",{month:"short",day:"numeric"}) : "—"} · {last.status}</div>
+          </div>
+        )}
+      </div>
+      {payouts.length > 0 && (
+        <>
+          <div style={{ fontSize:11, fontWeight:700, color:T.ink3, textTransform:"uppercase", letterSpacing:".06em", margin:"4px 0 8px" }}>Recent payouts</div>
+          <div style={{ display:"flex", flexDirection:"column" }}>
+            {payouts.map((p, i) => (
+              <div key={p.id || i} style={{ display:"flex", alignItems:"center", gap:12, padding:"9px 0", borderTop: i>0 ? "1px solid "+T.bg3 : "" }}>
+                <span style={{ width:8, height:8, borderRadius:"50%", background:PAYOUT_STATUS[p.status]||T.ink3, flexShrink:0 }}/>
+                <span style={{ fontSize:13, fontWeight:700, color:T.ink, minWidth:90 }}>{fmtFull(p.amount)}</span>
+                <span style={{ flex:1, fontSize:12, color:T.ink3 }}>{p.arrival_date ? new Date(p.arrival_date).toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"}) : "—"}</span>
+                <span style={{ fontSize:11, fontWeight:600, color:PAYOUT_STATUS[p.status]||T.ink3, textTransform:"capitalize" }}>{(p.status||"").replace(/_/g," ")}</span>
+              </div>
+            ))}
+          </div>
+          <div style={{ fontSize:11, color:T.ink3, marginTop:10, lineHeight:1.6 }}>Payouts are what Stripe deposited to your bank. Gift-level reconciliation is coming — for now, match against the online gifts in your ledger.</div>
+        </>
+      )}
+    </Card>
+  );
+}
+
 // ── Finance ────────────────────────────────────────────────────────────────
-export function Finance({ data }) {
+export function Finance({ data, isReadOnly, onNavigate }) {
   const [subtab, setSubtab] = useState("overview");
   const [accounts, setAccounts] = useState([]);
   const [funds, setFunds] = useState([]);
@@ -184,12 +289,14 @@ export function Finance({ data }) {
   const [sortCol, setSortCol] = useState("date");
   const [sortDir, setSortDir] = useState(-1);
   const [txnFilter, setTxnFilter] = useState("");
+  const [txnType, setTxnType] = useState("");     // "" | income | expense
+  const [txnSource, setTxnSource] = useState("");  // "" | online | gift | manual | import
+  const [txnFund, setTxnFund] = useState("");      // "" | fundId
   const [showTxnModal, setShowTxnModal] = useState(false);
   const [showAcctModal, setShowAcctModal] = useState(false);
   const [editAcct, setEditAcct] = useState(null);
   const [showFundModal, setShowFundModal] = useState(false);
   const [editFund, setEditFund] = useState(null);
-  const [report, setReport] = useState("income");
   const [forecastAI, setForecastAI] = useState(""); const [forecastLoading, setForecastLoading] = useState(false);
   const [riskAI, setRiskAI] = useState(""); const [riskLoading, setRiskLoading] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -233,79 +340,78 @@ export function Finance({ data }) {
     setAuditLoading(false);
   };
 
-  // ── AI (reuse live finance data — NOT the legacy data.financials.* prop,
-  // which reads from the old financials/funds tables and was contradicting
-  // every other Finance subtab that reads from fin_transactions/fin_funds) ──
+  // ── Reports & derived views (fund balances, monthly breakdown) ──
+  const allTxns = transactions; // already loaded for current year
+  const incomeByAcct = {};
+  allTxns.filter(t => t.type === "income").forEach(t => {
+    const k = t.account_name || "Uncategorized";
+    incomeByAcct[k] = (incomeByAcct[k] || 0) + parseFloat(t.amount);
+  });
+  const expenseByAcct = {};
+  allTxns.filter(t => t.type === "expense").forEach(t => {
+    const k = t.account_name || "Uncategorized";
+    expenseByAcct[k] = (expenseByAcct[k] || 0) + parseFloat(t.amount);
+  });
+
+  const fundBalances = {};
+  funds.forEach(f => { fundBalances[f.id] = { name: f.name, restricted: f.restricted, income: 0, expense: 0 }; });
+  allTxns.forEach(t => {
+    if (!t.fund_id || !fundBalances[t.fund_id]) return;
+    if (t.type === "income") fundBalances[t.fund_id].income += parseFloat(t.amount);
+    else fundBalances[t.fund_id].expense += parseFloat(t.amount);
+  });
+  const liveFundBalances = Object.values(fundBalances).map(f => ({ ...f, balance: f.income - f.expense }));
+  const totalFundBalance = liveFundBalances.reduce((s, f) => s + f.balance, 0);
+
+  const totalRev = Object.values(incomeByAcct).reduce((s, v) => s + v, 0);
+  const totalExp = Object.values(expenseByAcct).reduce((s, v) => s + v, 0);
+  const monthsElapsed = new Date().getMonth() + 1;
+  const monthsToShow = txnYear === new Date().getFullYear() ? monthsElapsed : 12;
+  const monthlyBreakdown = REPORT_MONTHS.slice(0, monthsToShow).map((month, i) => {
+    const monthTxns = allTxns.filter(t => new Date(t.date).getMonth() === i);
+    return {
+      month,
+      income: monthTxns.filter(t => t.type === "income").reduce((s, t) => s + parseFloat(t.amount), 0),
+      expense: monthTxns.filter(t => t.type === "expense").reduce((s, t) => s + parseFloat(t.amount), 0),
+    };
+  });
+
+  // ── AI (reuse live finance data) ──
   const ytdRev = summary?.ytdRevenue || 0;
   const ytdExp = summary?.ytdExpenses || 0;
-
   const getForecast = async () => {
     setForecastLoading(true); setForecastAI("");
     await askClaude("You are a nonprofit CFO. Specific, data-driven. Max 200 words.",
-      `Generate a 6-month revenue forecast.\nYTD Revenue: ${fmtFull(ytdRev)} | YTD Expenses: ${fmtFull(ytdExp)} | Net: ${fmtFull(ytdRev - ytdExp)}\nActive grants: ${data.grants.filter(g => g.status === "active").map(g => `${g.funder} ${fmtFull(g.amount)} ends ${g.deadline}`).join(", ")}\nFund balances: ${Object.values(fundBalances).map(f => `${f.name}: ${fmtFull(f.income - f.expense)}`).join(", ")}\n\nQ3-Q4 projection, 3 financial risks, 2 opportunities.`,
+      `Generate a 6-month revenue forecast.\nYTD Revenue: ${fmtFull(ytdRev)} | YTD Expenses: ${fmtFull(ytdExp)} | Net: ${fmtFull(ytdRev - ytdExp)}\nActive grants: ${data.grants.filter(g => g.status === "active").map(g => `${g.funder} ${fmtFull(g.amount)} ends ${g.deadline}`).join(", ")}\nFund balances: ${liveFundBalances.map(f => `${f.name}: ${fmtFull(f.balance)}`).join(", ")}\n\nQ3-Q4 projection, 3 financial risks, 2 opportunities.`,
       chunk => setForecastAI(chunk));
     setForecastLoading(false);
   };
   const getRisks = async () => {
     setRiskLoading(true); setRiskAI("");
     await askClaude("You are a nonprofit financial auditor. Direct, specific. Max 150 words.",
-      `Identify financial risks.\nYTD Net: ${fmtFull(ytdRev - ytdExp)}\nRestricted funds: ${Object.values(fundBalances).filter(f => f.restricted).map(f => `${f.name}: ${fmtFull(f.income - f.expense)}`).join(", ")}\nGrant concentration: ${data.grants.filter(g => g.status === "active").map(g => `${g.funder}: ${fmtFull(g.amount)}`).join(", ")}\nLapsed donors: ${data.donors.filter(d => d.status === "lapsed").length}\n\nTop 3 risks with severity and mitigation.`,
+      `Identify financial risks.\nYTD Net: ${fmtFull(ytdRev - ytdExp)}\nRestricted funds: ${liveFundBalances.filter(f => f.restricted).map(f => `${f.name}: ${fmtFull(f.balance)}`).join(", ")}\nGrant concentration: ${data.grants.filter(g => g.status === "active").map(g => `${g.funder}: ${fmtFull(g.amount)}`).join(", ")}\nLapsed donors: ${data.donors.filter(d => d.status === "lapsed").length}\n\nTop 3 risks with severity and mitigation.`,
       chunk => setRiskAI(chunk));
     setRiskLoading(false);
   };
 
-  // ── Revenue breakdown from transactions ─────────────────────────────────
-  const donorRevenue = transactions.filter(t => t.type === "income" && t.donor_id).reduce((s, t) => s + parseFloat(t.amount), 0);
-  const grantRevenue = transactions.filter(t => t.type === "income" && (t.category === "Grants" || t.description?.toLowerCase().startsWith("grant"))).reduce((s, t) => s + parseFloat(t.amount), 0);
-  const totalIncome = transactions.filter(t => t.type === "income").reduce((s, t) => s + parseFloat(t.amount), 0);
-  const donorPct = totalIncome > 0 ? Math.round(donorRevenue / totalIncome * 100) : 0;
-  const grantPct = totalIncome > 0 ? Math.round(grantRevenue / totalIncome * 100) : 0;
-
-  // ── Donor lookup for transactions ────────────────────────────────────────
+  // ── Donor lookup for transactions ──
   const donorById = Object.fromEntries((data.donors || []).map(d => [d.id, d]));
 
-  // ── Summary bar ──────────────────────────────────────────────────────────
-  const isFiscal = yearMode === "fiscal";
-  const SummaryCard = () => summary ? (
-    <div>
-      {summary.periodLabel && (
-        <div style={{ fontSize:11, color:T.ink3, marginBottom:6, textAlign:"right" }}>
-          {isFiscal ? "Fiscal Year" : "Calendar Year"} &nbsp;·&nbsp; {summary.periodLabel}
-        </div>
-      )}
-      <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(160px,1fr))", gap:10, marginBottom:4 }}>
-      {[
-        ["Cash on Hand",                         fmt(summary.cashOnHand),  summary.cashOnHand >= 0 ? "#1a6b4a" : "#ef4444"],
-        [isFiscal ? "FY Revenue" : "YTD Revenue", fmt(summary.ytdRevenue),  "#1a6b4a"],
-        [isFiscal ? "FY Expenses" : "YTD Expenses", fmt(summary.ytdExpenses), "#ef4444"],
-        ["Net Surplus",                           fmt(summary.netSurplus),  summary.netSurplus >= 0 ? "#1a6b4a" : "#ef4444"],
-      ].map(([label, value, color]) => (
-        <div key={label} style={{ background:T.white, border:"1px solid "+T.bg3, borderRadius:12, padding:"14px 16px" }}>
-          <div style={{ fontSize:11, color:T.ink3, textTransform:"uppercase", letterSpacing:".06em", marginBottom:4 }}>{label}</div>
-          <div style={{ fontSize:22, fontWeight:800, color, fontFamily:"'DM Serif Display',serif" }}>{value}</div>
-        </div>
-      ))}
-      {totalIncome > 0 && <>
-        <div style={{ background:T.white, border:"1px solid "+T.bg3, borderRadius:12, padding:"14px 16px" }}>
-          <div style={{ fontSize:11, color:T.ink3, textTransform:"uppercase", letterSpacing:".06em", marginBottom:4 }}>Donor Revenue</div>
-          <div style={{ fontSize:22, fontWeight:800, color:"#1a6b4a", fontFamily:"'DM Serif Display',serif" }}>{fmt(donorRevenue)}</div>
-          <div style={{ fontSize:11, color:T.ink3, marginTop:3 }}>{donorPct}% of total income</div>
-        </div>
-        <div style={{ background:T.white, border:"1px solid "+T.bg3, borderRadius:12, padding:"14px 16px" }}>
-          <div style={{ fontSize:11, color:T.ink3, textTransform:"uppercase", letterSpacing:".06em", marginBottom:4 }}>Grant Revenue</div>
-          <div style={{ fontSize:22, fontWeight:800, color:"#8b5cf6", fontFamily:"'DM Serif Display',serif" }}>{fmt(grantRevenue)}</div>
-          <div style={{ fontSize:11, color:T.ink3, marginTop:3 }}>{grantPct}% of total income</div>
-        </div>
-      </>}
-      </div>
-    </div>
-  ) : null;
+  // ── Sub-tabs (SectionTabs) ──
+  const SUBTABS = [
+    { id:"overview",     label:"Overview" },
+    { id:"transactions", label:"Transactions" },
+    { id:"funds",        label:"Funds" },
+    { id:"budgets",      label:"Budgets" },
+    { id:"accounts",     label:"Accounts" },
+    { id:"audit",        label:"Audit Log" },
+  ];
 
-  // ── Sub-tab bar ──────────────────────────────────────────────────────────
-  const subTabs = [["overview","Overview"],["donors","Donor Giving"],["transactions","Transactions"],["accounts","Accounts"],["funds","Funds"],["budgets","Budgets"],["reports","Reports"],["audit","Audit Log"]];
-
-  // ── Transactions tab ─────────────────────────────────────────────────────
+  // ── Transactions filtering + sort ──
   const sortedTxns = [...transactions]
+    .filter(t => !txnType || t.type === txnType)
+    .filter(t => !txnSource || (t.source || "manual") === txnSource)
+    .filter(t => !txnFund || t.fund_id === txnFund)
     .filter(t => !txnFilter || (t.description + t.vendor_donor + t.account_name + t.fund_name).toLowerCase().includes(txnFilter.toLowerCase()))
     .sort((a, b) => {
       let va = a[sortCol === "date" ? "date" : sortCol === "amount" ? "amount" : "account_name"];
@@ -323,10 +429,8 @@ export function Finance({ data }) {
   const handleAddTxn = async (form) => {
     try {
       const created = await apiFetch("/finance/transactions", { method:"POST", body: JSON.stringify(form) });
-      // Update transactions immediately so all derived views (reports, fund balances) refresh without a round-trip
       const thisYear = new Date(created.date).getFullYear() === txnYear;
       if (thisYear) setTransactions(prev => [created, ...prev]);
-      // Reload summary + budgets actuals (server-computed)
       await Promise.all([reloadSummary(), reloadBudgets(budgetYear)]);
       setShowTxnModal(false);
     } catch(e) { console.error(e); }
@@ -341,7 +445,6 @@ export function Finance({ data }) {
     } catch(e) { console.error(e); }
   };
 
-  // ── Accounts tab ─────────────────────────────────────────────────────────
   const handleSaveAcct = async (form) => {
     try {
       if (editAcct) {
@@ -350,7 +453,6 @@ export function Finance({ data }) {
       } else {
         const created = await apiFetch("/finance/accounts", { method:"POST", body: JSON.stringify(form) });
         setAccounts(prev => [...prev, created].sort((a,b) => a.code.localeCompare(b.code)));
-        // New account shows up in budget table immediately
         if (created.type === "revenue" || created.type === "expense") {
           setBudgets(prev => [...prev, { accountId:created.id, accountCode:created.code, accountName:created.name, accountType:created.type, subtype:created.subtype||"", budget:0, actual:0, variance:0 }]);
         }
@@ -359,12 +461,10 @@ export function Finance({ data }) {
     } catch(e) { console.error(e); }
   };
 
-  // ── Funds tab ─────────────────────────────────────────────────────────────
   const handleSaveFund = async (form) => {
     try {
       if (editFund) {
         const updated = await apiFetch(`/finance/funds/${editFund.id}`, { method:"PUT", body: JSON.stringify(form) });
-        // Update funds state — fundBalances is derived from funds+transactions so it re-renders immediately
         setFunds(prev => prev.map(f => f.id === editFund.id ? updated : f));
       } else {
         const created = await apiFetch("/finance/funds", { method:"POST", body: JSON.stringify(form) });
@@ -374,95 +474,11 @@ export function Finance({ data }) {
     } catch(e) { console.error(e); }
   };
 
-  // ── Budget tab ────────────────────────────────────────────────────────────
   const handleBudgetChange = async (accountId, amount) => {
     try {
       await apiFetch("/finance/budgets", { method:"POST", body: JSON.stringify({ accountId, year: budgetYear, amount }) });
       setBudgets(prev => prev.map(b => b.accountId === accountId ? { ...b, budget: parseFloat(amount) || 0, variance: (parseFloat(amount)||0) - b.actual } : b));
     } catch(e) { console.error(e); }
-  };
-
-  // ── Reports ───────────────────────────────────────────────────────────────
-  const allTxns = transactions; // already loaded for current year
-  const reportRevenue = allTxns.filter(t => t.type === "income");
-  const reportExpense = allTxns.filter(t => t.type === "expense");
-
-  // Income statement: group by account, totals by month
-  const incomeByAcct = {};
-  reportRevenue.forEach(t => {
-    const k = t.account_name || "Uncategorized";
-    incomeByAcct[k] = (incomeByAcct[k] || 0) + parseFloat(t.amount);
-  });
-  const expenseByAcct = {};
-  reportExpense.forEach(t => {
-    const k = t.account_name || "Uncategorized";
-    expenseByAcct[k] = (expenseByAcct[k] || 0) + parseFloat(t.amount);
-  });
-
-  // Fund summary: balance per fund
-  const fundBalances = {};
-  funds.forEach(f => { fundBalances[f.id] = { name: f.name, restricted: f.restricted, income: 0, expense: 0 }; });
-  allTxns.forEach(t => {
-    if (!t.fund_id || !fundBalances[t.fund_id]) return;
-    if (t.type === "income") fundBalances[t.fund_id].income += parseFloat(t.amount);
-    else fundBalances[t.fund_id].expense += parseFloat(t.amount);
-  });
-
-  const totalRev = Object.values(incomeByAcct).reduce((s, v) => s + v, 0);
-  const totalExp = Object.values(expenseByAcct).reduce((s, v) => s + v, 0);
-  const monthsElapsed = new Date().getMonth() + 1;
-
-  // Overview cards — derived from the SAME live funds/transactions used by
-  // the rest of this module (not the legacy data.financials.* prop, which
-  // reads from the old financials/funds tables and was showing numbers that
-  // contradicted every other Finance subtab for the same org).
-  const liveFundBalances = Object.values(fundBalances).map(f => ({ ...f, balance: f.income - f.expense }));
-  const monthsToShow = txnYear === new Date().getFullYear() ? monthsElapsed : 12;
-  const monthlyBreakdown = REPORT_MONTHS.slice(0, monthsToShow).map((month, i) => {
-    const monthTxns = allTxns.filter(t => new Date(t.date).getMonth() === i);
-    return {
-      month,
-      income: monthTxns.filter(t => t.type === "income").reduce((s, t) => s + parseFloat(t.amount), 0),
-      expense: monthTxns.filter(t => t.type === "expense").reduce((s, t) => s + parseFloat(t.amount), 0),
-    };
-  });
-
-  const export990CSV = () => {
-    const p8Lines = [
-      ["1a","Federated campaigns",""],
-      ["1b","Membership dues",""],
-      ["1c","Fundraising events (Gross)", expenseByAcct["Fundraising — Events"]||0],
-      ["1d","Related organizations",""],
-      ["1e","Government grants", incomeByAcct["Government Grants"]||0],
-      ["1f","All other contributions", (incomeByAcct["Individual Contributions"]||0)+(incomeByAcct["Foundation Grants"]||0)],
-      ["2","Program service revenue", incomeByAcct["Program Revenue"]||0],
-      ["7","Other revenue", incomeByAcct["Other Revenue"]||0],
-      ["12","Total Revenue", totalRev],
-    ];
-    const p9Lines = [
-      ["Program services", ["Program Services — Salaries","Program Services — Supplies","Program Services — Contractors","Program Services — Occupancy"].reduce((s,k)=>s+(expenseByAcct[k]||0),0)],
-      ["Management & general", ["Management & General — Salaries","Management & General — Admin","Management & General — Technology"].reduce((s,k)=>s+(expenseByAcct[k]||0),0)],
-      ["Fundraising", ["Fundraising — Salaries","Fundraising — Events","Fundraising — Marketing"].reduce((s,k)=>s+(expenseByAcct[k]||0),0)],
-      ["Total Expenses (Line 25)", totalExp],
-    ];
-    const esc = v => `"${String(v).replace(/"/g,'""')}"`;
-    const rows = [
-      [`Form 990 Prep Export — Year ${txnYear}`, `Generated ${new Date().toLocaleDateString()}`],
-      [],
-      ["PART VIII — REVENUE"],
-      ["Line","Description","Amount"],
-      ...p8Lines.map(([line,desc,amt]) => [line, desc, amt === "" ? "" : Number(amt).toFixed(2)]),
-      [],
-      ["PART IX — FUNCTIONAL EXPENSES"],
-      ["Category","Amount"],
-      ...p9Lines.map(([cat,amt]) => [cat, Number(amt).toFixed(2)]),
-    ];
-    const csv = rows.map(r => r.map(esc).join(",")).join("\r\n");
-    const blob = new Blob([csv], { type:"text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url; a.download = `990-prep-${txnYear}.csv`; a.click();
-    URL.revokeObjectURL(url);
   };
 
   const getFundSparkline = (fundId) => {
@@ -507,6 +523,15 @@ export function Finance({ data }) {
     URL.revokeObjectURL(url);
   };
 
+  // ── Narrative headline ──
+  const netThisPeriod = (summary?.ytdRevenue || 0) - (summary?.ytdExpenses || 0);
+  const periodWord = yearMode === "fiscal" ? "this fiscal year" : "this year";
+  const narrative = summary
+    ? funds.length
+      ? `You're operating on ${fmtFull(totalFundBalance)} across ${funds.length} ${funds.length === 1 ? "fund" : "funds"}, ${netThisPeriod >= 0 ? "up" : "down"} ${fmtFull(Math.abs(netThisPeriod))} ${periodWord}.`
+      : `${netThisPeriod >= 0 ? "You're net positive" : "You're running a deficit"} ${periodWord} — ${fmtFull(Math.abs(netThisPeriod))} ${netThisPeriod >= 0 ? "surplus" : "shortfall"} so far.`
+    : "";
+
   if (loading) return (
     <div style={{ display:"flex", flexDirection:"column", gap:16 }}>
       <PageTitle main="Your" accent="finances."/>
@@ -514,41 +539,58 @@ export function Finance({ data }) {
     </div>
   );
 
+  const addBtnHandler = (fn) => isReadOnly ? undefined : fn;
+
   return (
-    <div style={{ display:"flex", flexDirection:"column", gap:12 }}>
-      <PageTitle main="Your" accent="finances."/>
+    <div style={{ display:"flex", flexDirection:"column", gap:14 }}>
+      <PageTitle main="Your" accent="finances." sub={narrative}/>
 
       {/* Modals */}
       {showTxnModal && <TransactionModal accounts={accounts} funds={funds} onSave={handleAddTxn} onClose={() => setShowTxnModal(false)}/>}
       {(showAcctModal || editAcct) && <AccountModal account={editAcct} onSave={handleSaveAcct} onClose={() => { setShowAcctModal(false); setEditAcct(null); }}/>}
       {(showFundModal || editFund) && <FundModal fund={editFund} onSave={handleSaveFund} onClose={() => { setShowFundModal(false); setEditFund(null); }}/>}
 
-      {/* Fiscal / calendar year toggle */}
+      {/* Year basis + summary stat row */}
       <div style={{ display:"flex", justifyContent:"flex-end", alignItems:"center", gap:8 }}>
         <span style={{ fontSize:11, color:T.ink3 }}>Year basis:</span>
         <div style={{ display:"flex", background:T.bg, border:"1px solid "+T.bg3, borderRadius:8, overflow:"hidden" }}>
           {[["fiscal","Fiscal Year"],["calendar","Calendar Year"]].map(([v,l]) => (
             <button key={v} onClick={() => handleYearModeChange(v)}
-              style={{ background:yearMode===v?"#1a6b4a":"transparent", border:"none", padding:"6px 14px", color:yearMode===v?"#fff":T.ink3, fontSize:12, fontWeight:yearMode===v?700:400, cursor:"pointer", whiteSpace:"nowrap" }}>
+              style={{ background:yearMode===v?T.greenMid:"transparent", border:"none", padding:"6px 14px", color:yearMode===v?"#fff":T.ink3, fontSize:12, fontWeight:yearMode===v?700:400, cursor:"pointer", whiteSpace:"nowrap" }}>
               {l}
             </button>
           ))}
         </div>
       </div>
 
-      <SummaryCard/>
+      {summary && (
+        <>
+          {summary.periodLabel && (
+            <div style={{ fontSize:11, color:T.ink3, textAlign:"right", marginTop:-6 }}>
+              {yearMode === "fiscal" ? "Fiscal Year" : "Calendar Year"} &nbsp;·&nbsp; {summary.periodLabel}
+            </div>
+          )}
+          <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(160px,1fr))", gap:10 }}>
+            {[
+              ["Cash on Hand", fmt(summary.cashOnHand), summary.cashOnHand >= 0 ? IN : OUT],
+              [yearMode==="fiscal" ? "FY Revenue" : "YTD Revenue", fmt(summary.ytdRevenue), IN],
+              [yearMode==="fiscal" ? "FY Expenses" : "YTD Expenses", fmt(summary.ytdExpenses), OUT],
+              ["Net Surplus", fmt(summary.netSurplus), summary.netSurplus >= 0 ? IN : OUT],
+            ].map(([label, value, color]) => (
+              <div key={label} style={{ background:T.white, border:"1px solid "+T.bg3, borderRadius:12, padding:"14px 16px" }}>
+                <div style={{ fontSize:11, color:T.ink3, textTransform:"uppercase", letterSpacing:".06em", marginBottom:4 }}>{label}</div>
+                <div style={{ fontSize:22, fontWeight:800, color, fontFamily:"'DM Serif Display',serif" }}>{value}</div>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
 
-      {/* Sub-tab nav */}
-      <div className="finance-subtab-bar" style={{ display:"flex", background:"#0f1a12", border:"1px solid #1a2e1f", borderRadius:10, overflow:"hidden", flexWrap:"wrap" }}>
-        {subTabs.map(([id, label]) => (
-          <button key={id} onClick={() => setSubtab(id)} style={{ background:"transparent", border:"none", borderRight:"1px solid #1a2e1f", borderBottom:`2px solid ${subtab===id?"#c9a84c":"transparent"}`, padding:"10px 16px", color:subtab===id?"#f0ede6":"#8fa896", fontSize:13, fontWeight:subtab===id?700:400, cursor:"pointer", transition:"color 0.15s,border-color 0.15s" }}>
-            {label}
-          </button>
-        ))}
-      </div>
+      <SectionTabs tabs={SUBTABS} active={subtab} onSelect={setSubtab} className="finance-tabbar"/>
 
       {/* ── Overview ── */}
       {subtab === "overview" && <>
+        <MoneyInStrip onNavigate={onNavigate}/>
         <div style={{ display:"flex", gap:10, flexWrap:"wrap" }}>
           <AIBtn onClick={getForecast} loading={forecastLoading} label="✦ 6-Month Forecast"/>
           <AIBtn onClick={getRisks} loading={riskLoading} label="✦ Risk Analysis"/>
@@ -558,7 +600,7 @@ export function Finance({ data }) {
         <Card>
           <SectionLabel>Monthly Breakdown ({txnYear})</SectionLabel>
           {monthlyBreakdown.every(m => m.income === 0 && m.expense === 0)
-            ? <EmptyState icon="◇" title="No financial data" message="Log transactions to see trends."/>
+            ? <EmptyState icon="◇" title="No money has moved yet" message="Log your first transaction — or connect Stripe above — and your month-by-month income and spending will chart here."/>
             : monthlyBreakdown.map((m) => {
                 const net = m.income - m.expense;
                 const maxBar = Math.max(...monthlyBreakdown.map(m2 => m2.income), 1);
@@ -567,106 +609,76 @@ export function Finance({ data }) {
                     <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:6 }}>
                       <span style={{ fontSize:13, fontWeight:700, color:T.ink }}>{m.month}</span>
                       <div style={{ display:"flex", gap:12 }}>
-                        <span style={{ fontSize:11, color:T.greenDk }}>↑ {fmtFull(m.income)}</span>
-                        <span style={{ fontSize:11, color:"#ef4444" }}>↓ {fmtFull(m.expense)}</span>
-                        <span style={{ fontSize:12, fontWeight:700, color:net>=0?"#1a6b4a":"#ef4444" }}>{net>=0?"+":""}{fmtFull(net)}</span>
+                        <span style={{ fontSize:11, color:IN }}>↑ {fmtFull(m.income)}</span>
+                        <span style={{ fontSize:11, color:OUT }}>↓ {fmtFull(m.expense)}</span>
+                        <span style={{ fontSize:12, fontWeight:700, color:net>=0?IN:OUT }}>{net>=0?"+":""}{fmtFull(net)}</span>
                       </div>
                     </div>
                     <div style={{ height:5, background:T.bg2, borderRadius:99, overflow:"hidden", marginBottom:3 }}>
-                      <div style={{ height:"100%", width:`${(m.income/maxBar)*100}%`, background:"linear-gradient(90deg,#1a6b4a,#3b82f6)", borderRadius:99 }}/>
+                      <div style={{ height:"100%", width:`${(m.income/maxBar)*100}%`, background:IN, borderRadius:99 }}/>
                     </div>
                     <div style={{ height:4, background:T.bg2, borderRadius:99, overflow:"hidden" }}>
-                      <div style={{ height:"100%", width:`${(m.expense/maxBar)*100}%`, background:"linear-gradient(90deg,#ef444488,#dc2626)", borderRadius:99, opacity:0.7 }}/>
+                      <div style={{ height:"100%", width:`${(m.expense/maxBar)*100}%`, background:OUT, borderRadius:99, opacity:0.85 }}/>
                     </div>
                   </div>
                 );
               })}
         </Card>
         <Card>
-          <SectionLabel>Fund Balances</SectionLabel>
-          {liveFundBalances.length === 0 && <EmptyState icon="◇" title="No funds" message="Add funds to track restricted and unrestricted balances."/>}
-          {liveFundBalances.map((f, i) => (
-            <div key={f.name} style={{ display:"flex", alignItems:"center", gap:12, padding:"11px 0", borderBottom: i < liveFundBalances.length - 1 ? "1px solid "+T.bg3 : "" }}>
-              <div style={{ width:10, height:10, borderRadius:"50%", background:f.restricted?"#8b5cf6":"#1a6b4a", flexShrink:0 }}/>
-              <div style={{ flex:1 }}>
-                <div style={{ fontSize:13, fontWeight:600, color:T.ink }}>{f.name}</div>
-                <div style={{ fontSize:10, color:f.restricted?"#8b5cf6":"#6b7280", fontWeight:600, textTransform:"uppercase", letterSpacing:".06em", marginTop:1 }}>{f.restricted ? "Restricted" : "Unrestricted"}</div>
+          <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", gap:10, marginBottom:4 }}>
+            <SectionLabel>Fund Balances</SectionLabel>
+            {onNavigate && funds.length > 0 && (
+              <button onClick={() => onNavigate("reports")} style={{ background:"none", border:"none", color:T.greenMid, fontSize:12, fontWeight:700, cursor:"pointer", padding:0 }}>Gifts by fund →</button>
+            )}
+          </div>
+          {liveFundBalances.length === 0
+            ? <EmptyState icon="◇" title="No funds yet" message="Funds are how you track which dollars are restricted. Add one under the Funds tab and every gift you log can be tagged to it."/>
+            : liveFundBalances.map((f, i) => (
+              <div key={f.name} style={{ display:"flex", alignItems:"center", gap:12, padding:"11px 0", borderBottom: i < liveFundBalances.length - 1 ? "1px solid "+T.bg3 : "" }}>
+                <div style={{ width:10, height:10, borderRadius:"50%", background:f.restricted?T.gold:T.greenMid, flexShrink:0 }}/>
+                <div style={{ flex:1 }}>
+                  <div style={{ fontSize:13, fontWeight:600, color:T.ink }}>{f.name}</div>
+                  <div style={{ fontSize:10, color:f.restricted?T.gold:T.greenMid, fontWeight:600, textTransform:"uppercase", letterSpacing:".06em", marginTop:1 }}>{f.restricted ? "Restricted" : "Unrestricted"}</div>
+                </div>
+                <div style={{ fontSize:18, fontWeight:800, color:f.balance>=0?T.ink:OUT, fontFamily:"'DM Serif Display',serif" }}>{fmt(f.balance)}</div>
               </div>
-              <div style={{ fontSize:18, fontWeight:800, color:T.ink, fontFamily:"'DM Serif Display',serif" }}>{fmt(f.balance)}</div>
-            </div>
-          ))}
+            ))}
         </Card>
       </>}
 
-      {/* ── Donor Giving ── */}
-      {subtab === "donors" && (() => {
-        const currentYr = new Date().getFullYear();
-        const topDonors = [...(data.donors||[])]
-          .sort((a,b) => b.total - a.total)
-          .slice(0, 10);
-        return <>
-          <Card style={{ padding:0, overflow:"hidden" }}>
-            {topDonors.length === 0
-              ? <EmptyState icon="♦" title="No donors yet" message="Import donors to see giving analysis."/>
-              : <table style={{ width:"100%", borderCollapse:"collapse", fontSize:13 }}>
-                  <thead>
-                    <tr style={{ background:"#1a6b4a" }}>
-                      {["Donor","Stage","Last Gift","Last Gift Date","Lifetime"].map(h => (
-                        <th key={h} style={{ padding:"10px 14px", textAlign:"left", fontSize:11, fontWeight:700, color:"#fff", textTransform:"uppercase", letterSpacing:".06em", whiteSpace:"nowrap" }}>{h}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {topDonors.map((d, i) => {
-                      const gifts = transactions.filter(t => t.donor_id === d.id && t.type === "income").sort((a,b) => new Date(b.date) - new Date(a.date)).slice(0,4);
-                      const max = Math.max(...gifts.map(g => parseFloat(g.amount)), 1);
-                      return (
-                        <tr key={d.id} style={{ borderTop:"1px solid "+T.bg3, background: i%2===0?T.white:"#faf9f6" }}>
-                          <td style={{ padding:"10px 14px", fontWeight:700, color:T.ink }}>{d.name}</td>
-                          <td style={{ padding:"10px 14px" }}>
-                            <span style={{ background:(SC[d.stage]||"#6b7280")+"22", color:SC[d.stage]||"#6b7280", borderRadius:99, padding:"2px 8px", fontSize:11, fontWeight:700, textTransform:"capitalize" }}>{d.stage}</span>
-                          </td>
-                          <td style={{ padding:"10px 14px", color:T.greenDk, fontWeight:700 }}>{d.lastAmount > 0 ? fmtFull(d.lastAmount) : "—"}</td>
-                          <td style={{ padding:"10px 14px", color:T.ink3 }}>{d.lastGift || "—"}</td>
-                          <td style={{ padding:"10px 14px" }}>
-                            <div style={{ display:"flex", alignItems:"center", gap:10 }}>
-                              <span style={{ fontWeight:800, color:"#1a6b4a" }}>{fmtFull(d.total)}</span>
-                              {gifts.length > 1 && (
-                                <div style={{ display:"flex", gap:2, alignItems:"flex-end", height:20 }}>
-                                  {gifts.map((g,gi) => (
-                                    <div key={gi} style={{ width:6, background:"#1a6b4a66", borderRadius:2, height:Math.max(4, Math.round(parseFloat(g.amount)/max*20)) }}/>
-                                  ))}
-                                </div>
-                              )}
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-            }
-          </Card>
-        </>;
-      })()}
-
       {/* ── Transactions ── */}
       {subtab === "transactions" && <>
-        <div style={{ display:"flex", gap:8, flexWrap:"wrap", alignItems:"center" }}>
+        <div style={{ display:"flex", gap:8, flexWrap:"wrap", alignItems:"center" }} className="filter-bar">
           <input value={txnFilter} onChange={e => setTxnFilter(e.target.value)} placeholder="Search transactions…" style={{ ...inp, flex:1, minWidth:160 }}/>
+          <select value={txnType} onChange={e => setTxnType(e.target.value)} style={{ ...inp, width:120, cursor:"pointer" }}>
+            <option value="">All types</option>
+            <option value="income">Money in</option>
+            <option value="expense">Money out</option>
+          </select>
+          <select value={txnSource} onChange={e => setTxnSource(e.target.value)} style={{ ...inp, width:130, cursor:"pointer" }}>
+            <option value="">All sources</option>
+            <option value="online">Online · Stripe</option>
+            <option value="gift">Gift</option>
+            <option value="manual">Manual</option>
+            <option value="import">Import</option>
+          </select>
+          <select value={txnFund} onChange={e => setTxnFund(e.target.value)} style={{ ...inp, width:140, cursor:"pointer" }}>
+            <option value="">All funds</option>
+            {funds.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
+          </select>
           <select value={txnYear} onChange={e => { const yr = parseInt(e.target.value); setTxnYear(yr); reloadTxns(yr); }} style={{ ...inp, width:100, cursor:"pointer" }}>
             {[2023,2024,2025,2026].map(y => <option key={y} value={y}>{y}</option>)}
           </select>
-          <button style={btn()} onClick={() => setShowTxnModal(true)}>+ Add Transaction</button>
+          <button style={writeBtn(isReadOnly, btn(IN))} onClick={addBtnHandler(() => setShowTxnModal(true))} title={isReadOnly ? RO_TIP : ""}>+ Add transaction</button>
         </div>
         <Card style={{ padding:0, overflow:"hidden" }}>
           {sortedTxns.length === 0
-            ? <EmptyState icon="◇" title="No transactions" message="Log income and expenses to build your ledger."/>
+            ? <EmptyState icon="◇" title="No transactions here" message="This is your unified ledger — every online gift, manual entry, and imported record lands here. Log one, or connect Stripe, to begin."/>
             : (
               <div style={{ overflowX:"auto" }}>
                 <table style={{ width:"100%", borderCollapse:"collapse", fontSize:13 }}>
                   <thead>
-                    <tr style={{ background:"#1a6b4a" }}>
+                    <tr style={{ background:T.greenMid }}>
                       {[["date","Date"],["amount","Amount"],["description","Description"],["account_name","Account"],["fund_name","Fund"]].map(([col, label]) => (
                         <th key={col} onClick={() => toggleSort(col)} style={{ padding:"10px 14px", textAlign:"left", fontSize:11, fontWeight:700, color:"#fff", textTransform:"uppercase", letterSpacing:".06em", cursor:"pointer", whiteSpace:"nowrap" }}>
                           {label}{sortArrow(col)}
@@ -676,33 +688,36 @@ export function Finance({ data }) {
                     </tr>
                   </thead>
                   <tbody>
-                    {sortedTxns.map((t, i) => (
+                    {sortedTxns.map((t, i) => {
+                      const sm = sourceMeta(t.source);
+                      const linkedDonor = t.donor_id && donorById[t.donor_id];
+                      return (
                       <tr key={t.id} style={{ borderTop:"1px solid "+T.bg3, background: i%2===0?T.white:"#faf9f6" }}>
                         <td style={{ padding:"10px 14px", color:T.ink3, whiteSpace:"nowrap" }}>{t.date}</td>
-                        <td style={{ padding:"10px 14px", fontWeight:700, color:t.type==="income"?T.greenDk:T.red, whiteSpace:"nowrap", textAlign:"right" }}>
+                        <td style={{ padding:"10px 14px", fontWeight:700, color:t.type==="income"?IN:OUT, whiteSpace:"nowrap", textAlign:"right" }}>
                           {t.type === "income" ? "+" : "−"}{fmtFull(parseFloat(t.amount))}
                         </td>
                         <td style={{ padding:"10px 14px" }}>
-                          <div style={{ fontWeight:600, color:T.ink }}>{t.description}</div>
-                          {t.vendor_donor && <div style={{ fontSize:11, color:T.ink3, display:"flex", alignItems:"center", gap:5 }}>
-                            {t.vendor_donor}
-                            {t.donor_id && donorById[t.donor_id] && (
-                              <span style={{ background:(SC[donorById[t.donor_id].stage]||"#6b7280")+"22", color:SC[donorById[t.donor_id].stage]||"#6b7280", borderRadius:99, padding:"1px 6px", fontSize:9, fontWeight:700, textTransform:"capitalize" }}>
-                                {donorById[t.donor_id].stage}
-                              </span>
-                            )}
+                          <div style={{ display:"flex", alignItems:"center", gap:8, flexWrap:"wrap" }}>
+                            <span style={{ fontWeight:600, color:T.ink }}>{t.description}</span>
+                            <span style={{ background:sm.bg, color:sm.color, borderRadius:99, padding:"1px 8px", fontSize:10, fontWeight:700 }}>{sm.label}</span>
+                          </div>
+                          {t.vendor_donor && <div style={{ fontSize:11, color:T.ink3, marginTop:2 }}>
+                            {linkedDonor && onNavigate
+                              ? <button onClick={() => onNavigate("donors", { selectDonorId:t.donor_id })} style={{ background:"none", border:"none", padding:0, color:T.greenMid, fontWeight:600, cursor:"pointer", fontSize:11, textDecoration:"underline" }}>{t.vendor_donor}</button>
+                              : t.vendor_donor}
                           </div>}
                         </td>
                         <td style={{ padding:"10px 14px" }}>
                           {t.account_name && (
-                            <span style={{ background:TYPE_COLOR[t.account_type]+"18", color:TYPE_COLOR[t.account_type], borderRadius:6, padding:"2px 8px", fontSize:11, fontWeight:600 }}>
+                            <span style={{ background:(TYPE_COLOR[t.account_type]||T.ink3)+"1e", color:TYPE_COLOR[t.account_type]||T.ink3, borderRadius:6, padding:"2px 8px", fontSize:11, fontWeight:600 }}>
                               {t.account_code} {t.account_name}
                             </span>
                           )}
                         </td>
                         <td style={{ padding:"10px 14px" }}>
                           {t.fund_name && (
-                            <span style={{ background:t.fund_restricted?"#8b5cf618":"#1a6b4a18", color:t.fund_restricted?"#8b5cf6":"#1a6b4a", borderRadius:6, padding:"2px 8px", fontSize:11, fontWeight:600 }}>
+                            <span style={{ background:t.fund_restricted?T.gold+"22":T.greenMid+"18", color:t.fund_restricted?"#8a6d1f":T.greenMid, borderRadius:6, padding:"2px 8px", fontSize:11, fontWeight:600 }}>
                               {t.fund_name}
                             </span>
                           )}
@@ -711,14 +726,14 @@ export function Finance({ data }) {
                           <button onClick={() => handleDeleteTxn(t.id)} style={{ background:"none", border:"none", cursor:"pointer", color:T.ink3, fontSize:14 }}>×</button>
                         </td>
                       </tr>
-                    ))}
+                    );})}
                   </tbody>
                   <tfoot>
                     <tr style={{ borderTop:"2px solid "+T.bg3, background:T.bg2 }}>
                       <td style={{ padding:"10px 14px", fontSize:12, fontWeight:700, color:T.ink3 }}>Totals</td>
-                      <td style={{ padding:"10px 14px" }}>
-                        <div style={{ fontSize:12, color:T.greenDk, fontWeight:700 }}>+{fmtFull(sortedTxns.filter(t=>t.type==="income").reduce((s,t)=>s+parseFloat(t.amount),0))}</div>
-                        <div style={{ fontSize:12, color:"#ef4444", fontWeight:700 }}>−{fmtFull(sortedTxns.filter(t=>t.type==="expense").reduce((s,t)=>s+parseFloat(t.amount),0))}</div>
+                      <td style={{ padding:"10px 14px", textAlign:"right" }}>
+                        <div style={{ fontSize:12, color:IN, fontWeight:700 }}>+{fmtFull(sortedTxns.filter(t=>t.type==="income").reduce((s,t)=>s+parseFloat(t.amount),0))}</div>
+                        <div style={{ fontSize:12, color:OUT, fontWeight:700 }}>−{fmtFull(sortedTxns.filter(t=>t.type==="expense").reduce((s,t)=>s+parseFloat(t.amount),0))}</div>
                       </td>
                       <td colSpan={4}/>
                     </tr>
@@ -729,128 +744,34 @@ export function Finance({ data }) {
         </Card>
       </>}
 
-      {/* ── Accounts ── */}
-      {subtab === "accounts" && <>
-        {drillAcct ? (
-          <>
-            <div style={{ display:"flex", alignItems:"center", gap:10 }}>
-              <button style={ghostBtn} onClick={() => setDrillAcct(null)}>← Back</button>
-              <span style={{ fontSize:14, fontWeight:700, color:T.ink }}>{drillAcct.code} {drillAcct.name}</span>
-            </div>
-            <Card style={{ padding:0, overflow:"hidden" }}>
-              {transactions.filter(t => t.account_id === drillAcct.id).length === 0
-                ? <EmptyState icon="◇" title="No transactions" message="No transactions posted to this account yet."/>
-                : (
-                  <div style={{ overflowX:"auto" }}>
-                    <table style={{ width:"100%", borderCollapse:"collapse", fontSize:13 }}>
-                      <thead>
-                        <tr style={{ background:"#1a6b4a" }}>
-                          {["Date","Amount","Description","Fund"].map(h => (
-                            <th key={h} style={{ padding:"10px 14px", textAlign:"left", fontSize:11, fontWeight:700, color:"#fff", textTransform:"uppercase", letterSpacing:".06em" }}>{h}</th>
-                          ))}
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {transactions.filter(t => t.account_id === drillAcct.id)
-                          .sort((a,b) => b.date.localeCompare(a.date))
-                          .map((t, i) => (
-                          <tr key={t.id} style={{ borderTop:"1px solid "+T.bg3, background:i%2===0?T.white:"#faf9f6" }}>
-                            <td style={{ padding:"10px 14px", color:T.ink3, whiteSpace:"nowrap" }}>{t.date}</td>
-                            <td style={{ padding:"10px 14px", fontWeight:700, color:t.type==="income"?T.greenDk:T.red, textAlign:"right" }}>
-                              {t.type==="income"?"+":"−"}{fmtFull(parseFloat(t.amount))}
-                            </td>
-                            <td style={{ padding:"10px 14px" }}>
-                              <div style={{ fontWeight:600, color:T.ink }}>{t.description}</div>
-                              {t.vendor_donor && <div style={{ fontSize:11, color:T.ink3 }}>{t.vendor_donor}</div>}
-                            </td>
-                            <td style={{ padding:"10px 14px" }}>
-                              {t.fund_name && <span style={{ fontSize:11, fontWeight:600, color:t.fund_restricted?"#8b5cf6":"#1a6b4a" }}>{t.fund_name}</span>}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                      <tfoot>
-                        <tr style={{ borderTop:"2px solid "+T.bg3, background:T.bg2 }}>
-                          <td style={{ padding:"10px 14px", fontWeight:700, fontSize:12 }}>Balance</td>
-                          <td style={{ padding:"10px 14px", fontWeight:800, color:
-                            (transactions.filter(t=>t.account_id===drillAcct.id&&t.type==="income").reduce((s,t)=>s+parseFloat(t.amount),0) -
-                            transactions.filter(t=>t.account_id===drillAcct.id&&t.type==="expense").reduce((s,t)=>s+parseFloat(t.amount),0)) >= 0 ? "#1a6b4a" : "#ef4444"
-                          }}>
-                            {fmtFull(
-                              transactions.filter(t=>t.account_id===drillAcct.id&&t.type==="income").reduce((s,t)=>s+parseFloat(t.amount),0) -
-                              transactions.filter(t=>t.account_id===drillAcct.id&&t.type==="expense").reduce((s,t)=>s+parseFloat(t.amount),0)
-                            )}
-                          </td>
-                          <td colSpan={2}/>
-                        </tr>
-                      </tfoot>
-                    </table>
-                  </div>
-                )
-              }
-            </Card>
-          </>
-        ) : (
-          <>
-            <div style={{ display:"flex", justifyContent:"flex-end" }}>
-              <button style={btn()} onClick={() => setShowAcctModal(true)}>+ Add Account</button>
-            </div>
-            {ACCT_TYPES.map(type => {
-              const group = accounts.filter(a => a.type === type.id);
-              if (!group.length) return null;
-              return (
-                <Card key={type.id}>
-                  <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:12 }}>
-                    <div style={{ width:8, height:8, borderRadius:2, background:type.color }}/>
-                    <SectionLabel style={{ marginBottom:0 }}>{type.label === "Liability" ? "Liabilities" : type.label + "s"}</SectionLabel>
-                  </div>
-                  {group.map((a, i) => {
-                    const acctBal = transactions.filter(t=>t.account_id===a.id&&t.type==="income").reduce((s,t)=>s+parseFloat(t.amount),0)
-                      - transactions.filter(t=>t.account_id===a.id&&t.type==="expense").reduce((s,t)=>s+parseFloat(t.amount),0);
-                    return (
-                      <div key={a.id} onClick={() => setDrillAcct(a)} style={{ display:"flex", alignItems:"center", gap:12, padding:"10px 0", borderTop: i > 0 ? "1px solid "+T.bg3 : "", cursor:"pointer" }}>
-                        <span style={{ fontSize:12, fontWeight:700, color:T.ink3, minWidth:40 }}>{a.code}</span>
-                        <span style={{ flex:1, fontSize:13, fontWeight:600, color:a.active===false?T.ink3:T.ink, textDecoration:a.active===false?"line-through":"none" }}>{a.name}</span>
-                        {a.active === false && <span style={{ fontSize:11, color:"#ef4444", background:"#ef444418", borderRadius:5, padding:"2px 7px" }}>Inactive</span>}
-                        <span style={{ fontSize:13, fontWeight:700, color:acctBal>=0?"#1a6b4a":"#ef4444", minWidth:80, textAlign:"right" }}>{fmtFull(acctBal)}</span>
-                        <button style={ghostBtn} onClick={e => { e.stopPropagation(); setEditAcct(a); }}>Edit</button>
-                      </div>
-                    );
-                  })}
-                </Card>
-              );
-            })}
-          </>
-        )}
-      </>}
-
       {/* ── Funds ── */}
       {subtab === "funds" && <>
         <div style={{ display:"flex", justifyContent:"flex-end" }}>
-          <button style={btn()} onClick={() => setShowFundModal(true)}>+ Add Fund</button>
+          <button style={writeBtn(isReadOnly, btn(IN))} onClick={addBtnHandler(() => setShowFundModal(true))} title={isReadOnly ? RO_TIP : ""}>+ Add fund</button>
         </div>
         <Card>
           <SectionLabel>Fund Accounting</SectionLabel>
           <div style={{ fontSize:12, color:T.ink3, marginBottom:14, lineHeight:1.6 }}>
             Every transaction is tagged to a fund. Restricted funds hold donor- or grant-restricted dollars and must be spent only for the designated purpose.
           </div>
-          {funds.length === 0 && <EmptyState icon="◈" title="No funds" message="Create funds to track where each dollar lives."/>}
-          {funds.map((f, i) => {
+          {funds.length === 0
+            ? <EmptyState icon="◇" title="No funds yet" message="Create your first fund — most orgs start with one General Operating fund and add restricted funds as grants and designated gifts come in."/>
+            : funds.map((f, i) => {
             const fb = fundBalances[f.id] || { income:0, expense:0 };
             const balance = fb.income - fb.expense;
             const sparkVals = getFundSparkline(f.id);
             return (
               <div key={f.id} style={{ display:"flex", alignItems:"center", gap:12, padding:"12px 0", borderTop: i > 0 ? "1px solid "+T.bg3 : "" }}>
-                <div style={{ width:10, height:10, borderRadius:"50%", background:f.restricted?"#8b5cf6":"#1a6b4a", flexShrink:0 }}/>
+                <div style={{ width:10, height:10, borderRadius:"50%", background:f.restricted?T.gold:T.greenMid, flexShrink:0 }}/>
                 <div style={{ flex:1 }}>
                   <div style={{ display:"flex", alignItems:"center", gap:8 }}>
                     <span style={{ fontSize:13, fontWeight:700, color:T.ink }}>{f.name}</span>
-                    <span style={{ fontSize:10, fontWeight:600, textTransform:"uppercase", letterSpacing:".06em", color:f.restricted?"#8b5cf6":"#1a6b4a" }}>{f.restricted ? "Restricted" : "Unrestricted"}</span>
+                    <span style={{ fontSize:10, fontWeight:600, textTransform:"uppercase", letterSpacing:".06em", color:f.restricted?T.gold:T.greenMid }}>{f.restricted ? "Restricted" : "Unrestricted"}</span>
                   </div>
                   {f.description && <div style={{ fontSize:12, color:T.ink3, marginTop:2 }}>{f.description}</div>}
                   <div style={{ fontSize:11, color:T.ink3, marginTop:4 }}>
-                    ↑ {fmtFull(fb.income)} income &nbsp;·&nbsp; ↓ {fmtFull(fb.expense)} expenses &nbsp;·&nbsp;
-                    <span style={{ fontWeight:700, color:balance >= 0?"#1a6b4a":"#ef4444" }}>Balance: {fmtFull(balance)}</span>
+                    ↑ {fmtFull(fb.income)} in &nbsp;·&nbsp; ↓ {fmtFull(fb.expense)} out &nbsp;·&nbsp;
+                    <span style={{ fontWeight:700, color:balance >= 0?IN:OUT }}>Balance: {fmtFull(balance)}</span>
                   </div>
                 </div>
                 <div style={{ display:"flex", flexDirection:"column", alignItems:"center", gap:2 }}>
@@ -871,8 +792,11 @@ export function Finance({ data }) {
           <select value={budgetYear} onChange={e => { const yr = parseInt(e.target.value); setBudgetYear(yr); reloadBudgets(yr); }} style={{ ...inp, width:90, cursor:"pointer" }}>
             {[2023,2024,2025,2026].map(y => <option key={y} value={y}>{y}</option>)}
           </select>
-          <span style={{ fontSize:12, color:T.ink3, marginLeft:4 }}>Click any budget cell to edit inline.</span>
+          {!isReadOnly && <span style={{ fontSize:12, color:T.ink3, marginLeft:4 }}>Click any budget cell to edit inline.</span>}
         </div>
+        {budgets.length === 0 && (
+          <Card><EmptyState icon="◇" title="No revenue or expense accounts yet" message="Budgets are built from your chart of accounts. Add a few revenue and expense accounts under the Accounts tab and they'll appear here to budget against."/></Card>
+        )}
         {["revenue","expense"].map(section => {
           const rows = budgets.filter(b => b.accountType === section);
           if (!rows.length) return null;
@@ -882,9 +806,10 @@ export function Finance({ data }) {
           return (
             <Card key={section}>
               <SectionLabel>{section === "revenue" ? "Revenue Budget" : "Expense Budget"}</SectionLabel>
+              <div style={{ overflowX:"auto" }}>
               <table style={{ width:"100%", borderCollapse:"collapse", fontSize:13 }}>
                 <thead>
-                  <tr style={{ background:"#1a6b4a" }}>
+                  <tr style={{ background:T.greenMid }}>
                     <th style={{ padding:"8px 12px", textAlign:"left", fontSize:11, fontWeight:700, color:"#fff", textTransform:"uppercase", letterSpacing:".06em" }}>Account</th>
                     <th style={{ padding:"8px 12px", textAlign:"right", fontSize:11, fontWeight:700, color:"#fff", textTransform:"uppercase", letterSpacing:".06em" }}>Budget</th>
                     <th style={{ padding:"8px 12px", textAlign:"right", fontSize:11, fontWeight:700, color:"#fff", textTransform:"uppercase", letterSpacing:".06em" }}>Actual YTD</th>
@@ -894,7 +819,7 @@ export function Finance({ data }) {
                   </tr>
                 </thead>
                 <tbody>
-                  {rows.map((b, i) => {
+                  {rows.map((b) => {
                     const pct = b.budget > 0 ? Math.round(b.actual / b.budget * 100) : 0;
                     const over = section === "expense" ? b.actual > b.budget : b.actual < b.budget * 0.5;
                     const projected = monthsElapsed > 0 && b.actual > 0 ? Math.round((b.actual / monthsElapsed) * 12) : b.actual;
@@ -906,22 +831,24 @@ export function Finance({ data }) {
                           <span style={{ fontWeight:600, color:T.ink }}>{b.accountName}</span>
                         </td>
                         <td style={{ padding:"10px 12px", textAlign:"right" }}>
-                          <BudgetInput value={b.budget} onSave={val => handleBudgetChange(b.accountId, val)}/>
+                          {isReadOnly
+                            ? <span style={{ fontWeight:600, color:T.ink }}>{fmtFull(b.budget)}</span>
+                            : <BudgetInput value={b.budget} onSave={val => handleBudgetChange(b.accountId, val)}/>}
                         </td>
                         <td style={{ padding:"10px 12px", textAlign:"right", fontWeight:600, color:T.ink }}>
                           <div>{fmtFull(b.actual)}</div>
                           {b.budget > 0 && <div style={{ fontSize:10, color:T.ink3 }}>{pct}% of budget</div>}
                         </td>
-                        <td style={{ padding:"10px 12px", textAlign:"right", fontWeight:700, color:over?"#ef4444":"#1a6b4a" }}>
+                        <td style={{ padding:"10px 12px", textAlign:"right", fontWeight:700, color:over?OUT:IN }}>
                           {b.variance >= 0 ? "+" : ""}{fmtFull(b.variance)}
                         </td>
-                        <td style={{ padding:"10px 12px", textAlign:"right", fontWeight:700, color:overProj?"#ef4444":T.ink3 }}>
+                        <td style={{ padding:"10px 12px", textAlign:"right", fontWeight:700, color:overProj?OUT:T.ink3 }}>
                           {fmtFull(projected)}
-                          {overProj && <div style={{ fontSize:10, color:"#ef4444" }}>over budget</div>}
+                          {overProj && <div style={{ fontSize:10, color:OUT }}>over budget</div>}
                         </td>
                         <td style={{ padding:"10px 12px" }}>
                           <div style={{ height:6, background:T.bg3, borderRadius:99, overflow:"hidden" }}>
-                            <div style={{ height:"100%", width:`${Math.min(pct,100)}%`, background:over?"#ef4444":"#1a6b4a", borderRadius:99 }}/>
+                            <div style={{ height:"100%", width:`${Math.min(pct,100)}%`, background:over?OUT:IN, borderRadius:99 }}/>
                           </div>
                         </td>
                       </tr>
@@ -933,191 +860,127 @@ export function Finance({ data }) {
                     <td style={{ padding:"10px 12px", fontWeight:700, fontSize:12 }}>Total</td>
                     <td style={{ padding:"10px 12px", textAlign:"right", fontWeight:700 }}>{fmtFull(totBudget)}</td>
                     <td style={{ padding:"10px 12px", textAlign:"right", fontWeight:700 }}>{fmtFull(totActual)}</td>
-                    <td style={{ padding:"10px 12px", textAlign:"right", fontWeight:700, color:totVar>=0?"#1a6b4a":"#ef4444" }}>{totVar>=0?"+":""}{fmtFull(totVar)}</td>
+                    <td style={{ padding:"10px 12px", textAlign:"right", fontWeight:700, color:totVar>=0?IN:OUT }}>{totVar>=0?"+":""}{fmtFull(totVar)}</td>
                     <td style={{ padding:"10px 12px", textAlign:"right", fontWeight:700, color:T.ink3 }}>{fmtFull(monthsElapsed>0?Math.round((totActual/monthsElapsed)*12):totActual)}</td>
                     <td/>
                   </tr>
                 </tfoot>
               </table>
+              </div>
             </Card>
           );
         })}
       </>}
 
-      {/* ── Reports ── */}
-      {subtab === "reports" && <>
-        <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
-          {[["income","Income Statement"],["balance","Balance Sheet"],["fund","Fund Summary"],["990","990 Prep"]].map(([id,label]) => (
-            <button key={id} onClick={() => setReport(id)}
-              style={{ ...btn(report===id?T.green:T.bg, report===id?"#fff":T.ink3), border:"1px solid "+(report===id?"transparent":T.bg3) }}>
-              {label}
-            </button>
-          ))}
-          <button style={{ ...ghostBtn, marginLeft:"auto" }} onClick={() => window.print()}>⎙ Print</button>
-        </div>
-
-        {report === "income" && (
-          <Card>
-            <div style={{ fontSize:16, fontWeight:800, color:T.ink, marginBottom:4 }}>Income Statement</div>
-            <div style={{ fontSize:12, color:T.ink3, marginBottom:18 }}>Year to Date {txnYear} &nbsp;·&nbsp; {new Date().toLocaleDateString()}</div>
-            <SectionLabel>Revenue</SectionLabel>
-            {Object.entries(incomeByAcct).map(([name, amt]) => (
-              <div key={name} style={{ display:"flex", justifyContent:"space-between", padding:"7px 0", borderBottom:"1px solid "+T.bg3 }}>
-                <span style={{ fontSize:13, color:T.ink }}>{name}</span>
-                <span style={{ fontSize:13, fontWeight:600, color:T.greenDk }}>{fmtFull(amt)}</span>
-              </div>
-            ))}
-            <div style={{ display:"flex", justifyContent:"space-between", padding:"10px 0", borderTop:"2px solid "+T.ink3, marginTop:4 }}>
-              <span style={{ fontWeight:700, color:T.ink }}>Total Revenue</span>
-              <span style={{ fontWeight:800, color:T.greenDk }}>{fmtFull(totalRev)}</span>
+      {/* ── Accounts ── */}
+      {subtab === "accounts" && <>
+        {drillAcct ? (
+          <>
+            <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+              <button style={ghostBtn} onClick={() => setDrillAcct(null)}>← Back</button>
+              <span style={{ fontSize:14, fontWeight:700, color:T.ink }}>{drillAcct.code} {drillAcct.name}</span>
             </div>
-            <SectionLabel style={{ marginTop:16 }}>Expenses</SectionLabel>
-            {Object.entries(expenseByAcct).map(([name, amt]) => (
-              <div key={name} style={{ display:"flex", justifyContent:"space-between", padding:"7px 0", borderBottom:"1px solid "+T.bg3 }}>
-                <span style={{ fontSize:13, color:T.ink }}>{name}</span>
-                <span style={{ fontSize:13, fontWeight:600, color:"#ef4444" }}>{fmtFull(amt)}</span>
-              </div>
-            ))}
-            <div style={{ display:"flex", justifyContent:"space-between", padding:"10px 0", borderTop:"2px solid "+T.ink3, marginTop:4 }}>
-              <span style={{ fontWeight:700, color:T.ink }}>Total Expenses</span>
-              <span style={{ fontWeight:800, color:"#ef4444" }}>{fmtFull(totalExp)}</span>
+            <Card style={{ padding:0, overflow:"hidden" }}>
+              {transactions.filter(t => t.account_id === drillAcct.id).length === 0
+                ? <EmptyState icon="◇" title="Nothing posted here yet" message="No transactions have been posted to this account. As you log gifts and expenses against it, they'll appear here."/>
+                : (
+                  <div style={{ overflowX:"auto" }}>
+                    <table style={{ width:"100%", borderCollapse:"collapse", fontSize:13 }}>
+                      <thead>
+                        <tr style={{ background:T.greenMid }}>
+                          {["Date","Amount","Description","Fund"].map(h => (
+                            <th key={h} style={{ padding:"10px 14px", textAlign:"left", fontSize:11, fontWeight:700, color:"#fff", textTransform:"uppercase", letterSpacing:".06em" }}>{h}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {transactions.filter(t => t.account_id === drillAcct.id)
+                          .sort((a,b) => b.date.localeCompare(a.date))
+                          .map((t, i) => (
+                          <tr key={t.id} style={{ borderTop:"1px solid "+T.bg3, background:i%2===0?T.white:"#faf9f6" }}>
+                            <td style={{ padding:"10px 14px", color:T.ink3, whiteSpace:"nowrap" }}>{t.date}</td>
+                            <td style={{ padding:"10px 14px", fontWeight:700, color:t.type==="income"?IN:OUT, textAlign:"right" }}>
+                              {t.type==="income"?"+":"−"}{fmtFull(parseFloat(t.amount))}
+                            </td>
+                            <td style={{ padding:"10px 14px" }}>
+                              <div style={{ fontWeight:600, color:T.ink }}>{t.description}</div>
+                              {t.vendor_donor && <div style={{ fontSize:11, color:T.ink3 }}>{t.vendor_donor}</div>}
+                            </td>
+                            <td style={{ padding:"10px 14px" }}>
+                              {t.fund_name && <span style={{ fontSize:11, fontWeight:600, color:t.fund_restricted?"#8a6d1f":T.greenMid }}>{t.fund_name}</span>}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                      <tfoot>
+                        <tr style={{ borderTop:"2px solid "+T.bg3, background:T.bg2 }}>
+                          <td style={{ padding:"10px 14px", fontWeight:700, fontSize:12 }}>Balance</td>
+                          <td style={{ padding:"10px 14px", textAlign:"right", fontWeight:800, color:
+                            (transactions.filter(t=>t.account_id===drillAcct.id&&t.type==="income").reduce((s,t)=>s+parseFloat(t.amount),0) -
+                            transactions.filter(t=>t.account_id===drillAcct.id&&t.type==="expense").reduce((s,t)=>s+parseFloat(t.amount),0)) >= 0 ? IN : OUT
+                          }}>
+                            {fmtFull(
+                              transactions.filter(t=>t.account_id===drillAcct.id&&t.type==="income").reduce((s,t)=>s+parseFloat(t.amount),0) -
+                              transactions.filter(t=>t.account_id===drillAcct.id&&t.type==="expense").reduce((s,t)=>s+parseFloat(t.amount),0)
+                            )}
+                          </td>
+                          <td colSpan={2}/>
+                        </tr>
+                      </tfoot>
+                    </table>
+                  </div>
+                )
+              }
+            </Card>
+          </>
+        ) : (
+          <>
+            <div style={{ display:"flex", justifyContent:"flex-end" }}>
+              <button style={writeBtn(isReadOnly, btn(IN))} onClick={addBtnHandler(() => setShowAcctModal(true))} title={isReadOnly ? RO_TIP : ""}>+ Add account</button>
             </div>
-            <div style={{ display:"flex", justifyContent:"space-between", padding:"14px 16px", background:totalRev-totalExp>=0?"#1a6b4a18":"#ef444418", borderRadius:10, marginTop:16 }}>
-              <span style={{ fontWeight:800, fontSize:15, color:T.ink }}>Net Surplus / (Deficit)</span>
-              <span style={{ fontWeight:800, fontSize:15, color:totalRev-totalExp>=0?"#1a6b4a":"#ef4444" }}>{fmtFull(totalRev - totalExp)}</span>
-            </div>
-          </Card>
-        )}
-
-        {report === "balance" && (
-          <Card>
-            <div style={{ fontSize:16, fontWeight:800, color:T.ink, marginBottom:4 }}>Balance Sheet</div>
-            <div style={{ fontSize:12, color:T.ink3, marginBottom:18 }}>As of {new Date().toLocaleDateString()}</div>
-            {["asset","liability","net_asset"].map(typeId => {
-              const type = ACCT_TYPES.find(t => t.id === typeId);
-              const typeAccts = accounts.filter(a => a.type === typeId && a.active !== false);
-              const netForType = typeId === "asset" ? totalRev : typeId === "liability" ? 0 : totalRev - totalExp;
+            {accounts.length === 0 && (
+              <Card><EmptyState icon="◇" title="No chart of accounts yet" message="Your chart of accounts is the backbone of every report. Add revenue and expense accounts here — a new org usually seeds these during onboarding."/></Card>
+            )}
+            {ACCT_TYPES.map(type => {
+              const group = accounts.filter(a => a.type === type.id);
+              if (!group.length) return null;
               return (
-                <div key={typeId} style={{ marginBottom:20 }}>
-                  <SectionLabel>{type.label}s</SectionLabel>
-                  {typeAccts.map(a => (
-                    <div key={a.id} style={{ display:"flex", justifyContent:"space-between", padding:"7px 0", borderBottom:"1px solid "+T.bg3 }}>
-                      <span style={{ fontSize:13, color:T.ink }}>{a.code} {a.name}</span>
-                      <span style={{ fontSize:13, fontWeight:600, color:type.color }}>—</span>
-                    </div>
-                  ))}
-                  {typeAccts.length === 0 && <div style={{ fontSize:12, color:T.ink3, padding:"8px 0" }}>No accounts</div>}
-                </div>
+                <Card key={type.id}>
+                  <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:12 }}>
+                    <div style={{ width:8, height:8, borderRadius:2, background:type.color }}/>
+                    <SectionLabel>{type.label === "Liability" ? "Liabilities" : type.label + "s"}</SectionLabel>
+                  </div>
+                  {group.map((a, i) => {
+                    const acctBal = transactions.filter(t=>t.account_id===a.id&&t.type==="income").reduce((s,t)=>s+parseFloat(t.amount),0)
+                      - transactions.filter(t=>t.account_id===a.id&&t.type==="expense").reduce((s,t)=>s+parseFloat(t.amount),0);
+                    return (
+                      <div key={a.id} onClick={() => setDrillAcct(a)} style={{ display:"flex", alignItems:"center", gap:12, padding:"10px 0", borderTop: i > 0 ? "1px solid "+T.bg3 : "", cursor:"pointer" }}>
+                        <span style={{ fontSize:12, fontWeight:700, color:T.ink3, minWidth:40 }}>{a.code}</span>
+                        <span style={{ flex:1, fontSize:13, fontWeight:600, color:a.active===false?T.ink3:T.ink, textDecoration:a.active===false?"line-through":"none" }}>{a.name}</span>
+                        {a.active === false && <span style={{ fontSize:11, color:OUT, background:OUT+"1a", borderRadius:5, padding:"2px 7px" }}>Inactive</span>}
+                        <span style={{ fontSize:13, fontWeight:700, color:acctBal>=0?IN:OUT, minWidth:80, textAlign:"right" }}>{fmtFull(acctBal)}</span>
+                        <button style={ghostBtn} onClick={e => { e.stopPropagation(); setEditAcct(a); }}>Edit</button>
+                      </div>
+                    );
+                  })}
+                </Card>
               );
             })}
-            <div style={{ padding:"12px 16px", background:T.bg2, borderRadius:10, fontSize:13, color:T.ink3 }}>
-              Full balance sheet requires opening balances. Log opening entries to populate asset/liability values.
-            </div>
-          </Card>
-        )}
-
-        {report === "fund" && (
-          <Card>
-            <div style={{ fontSize:16, fontWeight:800, color:T.ink, marginBottom:4 }}>Fund Summary</div>
-            <div style={{ fontSize:12, color:T.ink3, marginBottom:18 }}>Year to Date {txnYear} &nbsp;·&nbsp; {new Date().toLocaleDateString()}</div>
-            <table style={{ width:"100%", borderCollapse:"collapse", fontSize:13 }}>
-              <thead>
-                <tr style={{ background:"#1a6b4a" }}>
-                  {["Fund","Type","Income","Expenses","Balance"].map(h => (
-                    <th key={h} style={{ padding:"9px 12px", textAlign:"left", fontSize:11, fontWeight:700, color:"#fff", textTransform:"uppercase", letterSpacing:".06em" }}>{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {Object.values(fundBalances).map((f, i) => (
-                  <tr key={i} style={{ borderTop:"1px solid "+T.bg3 }}>
-                    <td style={{ padding:"10px 12px", fontWeight:600, color:T.ink }}>{f.name}</td>
-                    <td style={{ padding:"10px 12px" }}>
-                      <span style={{ fontSize:11, fontWeight:600, color:f.restricted?"#8b5cf6":"#1a6b4a" }}>{f.restricted?"Restricted":"Unrestricted"}</span>
-                    </td>
-                    <td style={{ padding:"10px 12px", color:T.greenDk, fontWeight:600 }}>{fmtFull(f.income)}</td>
-                    <td style={{ padding:"10px 12px", color:"#ef4444", fontWeight:600 }}>{fmtFull(f.expense)}</td>
-                    <td style={{ padding:"10px 12px", fontWeight:700, color:f.income-f.expense>=0?"#1a6b4a":"#ef4444" }}>{fmtFull(f.income-f.expense)}</td>
-                  </tr>
-                ))}
-              </tbody>
-              <tfoot>
-                <tr style={{ borderTop:"2px solid "+T.ink3, background:T.bg2 }}>
-                  <td style={{ padding:"10px 12px", fontWeight:700 }} colSpan={2}>Total</td>
-                  <td style={{ padding:"10px 12px", fontWeight:700, color:T.greenDk }}>{fmtFull(Object.values(fundBalances).reduce((s,f)=>s+f.income,0))}</td>
-                  <td style={{ padding:"10px 12px", fontWeight:700, color:"#ef4444" }}>{fmtFull(Object.values(fundBalances).reduce((s,f)=>s+f.expense,0))}</td>
-                  <td style={{ padding:"10px 12px", fontWeight:700 }}>{fmtFull(Object.values(fundBalances).reduce((s,f)=>s+(f.income-f.expense),0))}</td>
-                </tr>
-              </tfoot>
-            </table>
-          </Card>
-        )}
-
-        {report === "990" && (
-          <Card>
-            <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:4 }}>
-              <div style={{ fontSize:16, fontWeight:800, color:T.ink, flex:1 }}>Form 990 Prep Report</div>
-              <button style={ghostBtn} onClick={export990CSV}>⬇ Export CSV</button>
-            </div>
-            <div style={{ fontSize:12, color:T.ink3, marginBottom:18 }}>Year {txnYear} &nbsp;·&nbsp; For accountant use — verify all figures with audited financials.</div>
-            <SectionLabel>Part VIII — Revenue (Statement of Revenue)</SectionLabel>
-            {[
-              ["1a", "Federated campaigns", null],
-              ["1b", "Membership dues", null],
-              ["1c", "Fundraising events (Gross)", expenseByAcct["Fundraising — Events"] || 0],
-              ["1d", "Related organizations", null],
-              ["1e", "Government grants", incomeByAcct["Government Grants"] || 0],
-              ["1f", "All other contributions", (incomeByAcct["Individual Contributions"]||0) + (incomeByAcct["Foundation Grants"]||0)],
-              ["2", "Program service revenue", incomeByAcct["Program Revenue"] || 0],
-              ["7", "Other revenue", incomeByAcct["Other Revenue"] || 0],
-            ].map(([line, label, amt]) => (
-              <div key={line} style={{ display:"flex", gap:12, padding:"7px 0", borderBottom:"1px solid "+T.bg3 }}>
-                <span style={{ fontSize:12, fontWeight:700, color:T.ink3, minWidth:30 }}>{line}</span>
-                <span style={{ flex:1, fontSize:13, color:T.ink }}>{label}</span>
-                <span style={{ fontSize:13, fontWeight:600, color:T.ink }}>{amt != null ? fmtFull(amt) : "—"}</span>
-              </div>
-            ))}
-            <div style={{ display:"flex", justifyContent:"space-between", padding:"10px 0", borderTop:"2px solid "+T.ink3, marginTop:4 }}>
-              <span style={{ fontWeight:700 }}>Total Revenue (Line 12)</span>
-              <span style={{ fontWeight:800, color:T.greenDk }}>{fmtFull(totalRev)}</span>
-            </div>
-            <SectionLabel style={{ marginTop:16 }}>Part IX — Expenses (Statement of Functional Expenses)</SectionLabel>
-            {[
-              ["Program services", ["Program Services — Salaries","Program Services — Supplies","Program Services — Contractors","Program Services — Occupancy"].reduce((s,k) => s+(expenseByAcct[k]||0), 0)],
-              ["Management & general", ["Management & General — Salaries","Management & General — Admin","Management & General — Technology"].reduce((s,k) => s+(expenseByAcct[k]||0), 0)],
-              ["Fundraising", ["Fundraising — Salaries","Fundraising — Events","Fundraising — Marketing"].reduce((s,k) => s+(expenseByAcct[k]||0), 0)],
-            ].map(([label, amt]) => (
-              <div key={label} style={{ display:"flex", justifyContent:"space-between", padding:"7px 0", borderBottom:"1px solid "+T.bg3 }}>
-                <span style={{ fontSize:13, color:T.ink }}>{label}</span>
-                <span style={{ fontSize:13, fontWeight:600, color:"#ef4444" }}>{fmtFull(amt)}</span>
-              </div>
-            ))}
-            <div style={{ display:"flex", justifyContent:"space-between", padding:"10px 0", borderTop:"2px solid "+T.ink3, marginTop:4 }}>
-              <span style={{ fontWeight:700 }}>Total Expenses (Line 25)</span>
-              <span style={{ fontWeight:800, color:"#ef4444" }}>{fmtFull(totalExp)}</span>
-            </div>
-            {totalExp > 0 && (
-              <div style={{ marginTop:16, padding:"12px 16px", background:T.bg2, borderRadius:10, fontSize:12, color:T.ink3, lineHeight:1.7 }}>
-                <strong>Program ratio:</strong> {Math.round(["Program Services — Salaries","Program Services — Supplies","Program Services — Contractors","Program Services — Occupancy"].reduce((s,k) => s+(expenseByAcct[k]||0), 0) / totalExp * 100)}% &nbsp;·&nbsp;
-                <strong>M&amp;G ratio:</strong> {Math.round(["Management & General — Salaries","Management & General — Admin","Management & General — Technology"].reduce((s,k) => s+(expenseByAcct[k]||0), 0) / totalExp * 100)}% &nbsp;·&nbsp;
-                <strong>Fundraising ratio:</strong> {Math.round(["Fundraising — Salaries","Fundraising — Events","Fundraising — Marketing"].reduce((s,k) => s+(expenseByAcct[k]||0), 0) / totalExp * 100)}%
-              </div>
-            )}
-          </Card>
+          </>
         )}
       </>}
 
       {/* ── Audit Log ── */}
       {subtab === "audit" && <>
-        <div style={{ display:"flex", gap:8, alignItems:"center", flexWrap:"wrap" }}>
+        <div style={{ display:"flex", gap:8, alignItems:"center", flexWrap:"wrap" }} className="filter-bar">
           <select value={auditActionFilter} onChange={e => setAuditActionFilter(e.target.value)} style={{ ...inp, width:140, cursor:"pointer" }}>
-            <option value="">All Actions</option>
+            <option value="">All actions</option>
             <option value="created">Created</option>
             <option value="updated">Updated</option>
             <option value="deleted">Deleted</option>
           </select>
           <select value={auditEntityFilter} onChange={e => setAuditEntityFilter(e.target.value)} style={{ ...inp, width:160, cursor:"pointer" }}>
-            <option value="">All Entity Types</option>
+            <option value="">All entity types</option>
             <option value="transaction">Transaction</option>
             <option value="account">Account</option>
             <option value="fund">Fund</option>
@@ -1130,7 +993,7 @@ export function Finance({ data }) {
           {auditLoading
             ? <div style={{ padding:24, color:T.ink3, fontSize:13 }}>Loading audit log…</div>
             : filteredAudit.length === 0
-              ? <EmptyState icon="◇" title="No audit entries" message="Changes to transactions, accounts, funds, and budgets appear here."/>
+              ? <EmptyState icon="◇" title="No changes recorded yet" message="Every edit to a transaction, account, fund, or budget is logged here with who, what, and when — your paper trail for the board and auditors."/>
               : (
                 <div style={{ overflowX:"auto" }}>
                   <table style={{ width:"100%", borderCollapse:"collapse", fontSize:13 }}>
@@ -1148,9 +1011,9 @@ export function Finance({ data }) {
                         const changes = typeof entry.changes === "object" && entry.changes ? entry.changes : {};
                         const hasOldNew = (changes.old && Object.keys(changes.old).length > 0) || (changes.new && Object.keys(changes.new).length > 0);
                         const ACTION_STYLE = {
-                          created: { bg:"#1a6b4a18", color:T.greenDk },
-                          updated: { bg:"#f59e0b20", color:"#d97706" },
-                          deleted: { bg:"#ef444420", color:"#ef4444" },
+                          created: { bg:T.greenMid+"18", color:T.greenDk },
+                          updated: { bg:T.gold+"26", color:"#8a6d1f" },
+                          deleted: { bg:OUT+"20", color:OUT },
                         };
                         const as = ACTION_STYLE[entry.action] || { bg:T.bg2, color:T.ink3 };
                         return (
@@ -1183,7 +1046,7 @@ export function Finance({ data }) {
                                   <div style={{ display:"flex", gap:32 }}>
                                     {changes.old && Object.keys(changes.old).length > 0 && (
                                       <div>
-                                        <div style={{ fontSize:10, fontWeight:700, color:"#ef4444", marginBottom:6, textTransform:"uppercase", letterSpacing:".06em" }}>Before</div>
+                                        <div style={{ fontSize:10, fontWeight:700, color:OUT, marginBottom:6, textTransform:"uppercase", letterSpacing:".06em" }}>Before</div>
                                         {Object.entries(changes.old).map(([k, v]) => (
                                           <div key={k} style={{ fontSize:12, color:T.ink, marginBottom:2 }}>
                                             <span style={{ color:T.ink3 }}>{k}:</span> {String(v ?? "—")}
@@ -1222,7 +1085,7 @@ export function Finance({ data }) {
 // ── Sparkline — 8-week SVG trend line ─────────────────────────────────────
 function Sparkline({ values, width = 80, height = 28 }) {
   if (!values || values.length < 2) {
-    return <svg width={width} height={height}><line x1={0} y1={height/2} x2={width} y2={height/2} stroke="#ddd9d0" strokeWidth="1" strokeDasharray="3,2"/></svg>;
+    return <svg width={width} height={height}><line x1={0} y1={height/2} x2={width} y2={height/2} stroke={T.bg3} strokeWidth="1" strokeDasharray="3,2"/></svg>;
   }
   const min = Math.min(...values);
   const max = Math.max(...values);
@@ -1234,7 +1097,7 @@ function Sparkline({ values, width = 80, height = 28 }) {
     return `${x.toFixed(1)},${y.toFixed(1)}`;
   }).join(" ");
   const trending = values[values.length - 1] >= values[0];
-  const color = trending ? "#1a6b4a" : "#ef4444";
+  const color = trending ? T.greenMid : T.terracotta;
   return (
     <svg width={width} height={height} style={{ display:"block", overflow:"visible" }}>
       <polyline points={pts} fill="none" stroke={color} strokeWidth="1.5" strokeLinejoin="round" strokeLinecap="round"/>

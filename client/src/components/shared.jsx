@@ -290,9 +290,8 @@ export function GlobalStyles() {
       /* Ensure all cards and containers never exceed viewport */
       .fade-in,[class*="card"]{max-width:100%!important;}
 
-      /* Finance sub-tab: horizontal scroll strip */
-      .finance-subtab-bar{overflow-x:auto!important;flex-wrap:nowrap!important;-webkit-overflow-scrolling:touch!important;}
-      .finance-subtab-bar button{flex-shrink:0!important;white-space:nowrap!important;}
+      /* Finance now uses SectionTabs (.section-tabbar) which scrolls
+         horizontally on its own — no finance-specific override needed. */
 
       /* Grants pipeline + profile */
       .grants-pipeline-grid{grid-template-columns:repeat(2,1fr)!important;}

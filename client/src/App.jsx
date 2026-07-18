@@ -27,9 +27,9 @@ const TABS=[
   {id:"grants",label:"Grants",icon:"◉"},
   {id:"communications",label:"Communications",icon:"◑"},
   {id:"reports",label:"Reports",icon:"▤"},
+  {id:"finance",label:"Finance",icon:"◇"},
   {id:"settings",label:"Settings",icon:"⚙"},
   // DEPRIORITIZED — pivoting to donor dashboard focus, code kept intact, re-enable by uncommenting
-  // {id:"finance",label:"Finance",icon:"◇"},
   // {id:"events",label:"Events",icon:"◎"},
   // {id:"tasks",label:"Tasks",icon:"◻"},
   // {id:"volunteers",label:"Volunteers",icon:"◎",earlyAccess:true},
@@ -44,6 +44,7 @@ const BOTTOM_TABS=[
 const MORE_TABS=[
   {id:"communications",label:"Communications",icon:"◑"},
   {id:"reports",label:"Reports",icon:"▤"},
+  {id:"finance",label:"Finance",icon:"◇"},
   // DEPRIORITIZED — pivoting to donor dashboard focus, code kept intact, re-enable by uncommenting
   // {id:"events",label:"Events",icon:"◎"},
   // {id:"volunteers",label:"Volunteers",icon:"◎",earlyAccess:true},
@@ -311,7 +312,7 @@ function AppShell() {
       {tab==="events"&&<Events data={data} isReadOnly={isReadOnly}/>}
       {tab==="volunteers"&&<Volunteers data={data} setData={setData} isReadOnly={isReadOnly}/>}
       {tab==="board"&&<Board data={data} setData={setData} isReadOnly={isReadOnly}/>}
-      {tab==="finance"&&<Finance data={data}/>}
+      {tab==="finance"&&<Finance data={data} isReadOnly={isReadOnly} onNavigate={navigateTo}/>}
       {tab==="tasks"&&<Tasks data={data} setData={setData} isReadOnly={isReadOnly}/>}
       {tab==="settings"&&<Settings key={navNonce} auth={auth} logout={logout} initialSection={settingsIntent?.section}/>}
     </div>
