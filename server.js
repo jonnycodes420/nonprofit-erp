@@ -6856,48 +6856,110 @@ app.post("/finance/budgets", requireAuth, requireAdmin, checkWriteAccess, wrap(a
   res.json({ success: true, accountId, year, amount: parseFloat(amount) || 0 });
 }));
 
+// ── Finance: period bounds ─────────────────────────────────────────────────
+// Single source of the app's fiscal-year rule (July 1 boundary — identical to
+// /dashboard/my-stats and Reports; `now.getMonth() < 6`). offset 0 = current
+// period, -1 = the immediately-preceding period of the same basis. Returns
+// ISO date bounds + labels the client renders verbatim, so the FY definition
+// lives in exactly one place.
+const FIN_MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+function finPeriodBounds(yearMode, offset = 0) {
+  const now = new Date();
+  if (yearMode === "fiscal") {
+    const curFyStart = now.getMonth() < 6 ? now.getFullYear() - 1 : now.getFullYear();
+    const fyStart = curFyStart + offset;
+    return {
+      start: `${fyStart}-07-01`,
+      end: `${fyStart + 1}-06-30`,
+      periodLabel: `Jul ${fyStart} – Jun ${fyStart + 1}`,
+      chartLabel: `FY ${fyStart}–${String(fyStart + 1).slice(2)}`,
+      // month buckets in basis order: Jul..Dec of fyStart, then Jan..Jun of fyStart+1
+      months: [...Array(6)].map((_, i) => ({ y: fyStart, m: 6 + i }))
+        .concat([...Array(6)].map((_, i) => ({ y: fyStart + 1, m: i }))),
+    };
+  }
+  const year = now.getFullYear() + offset;
+  return {
+    start: `${year}-01-01`,
+    end: `${year}-12-31`,
+    periodLabel: `Jan – Dec ${year}`,
+    chartLabel: `${year}`,
+    months: [...Array(12)].map((_, m) => ({ y: year, m })),
+  };
+}
+
 // ── Finance: Summary ───────────────────────────────────────────────────────
+// Everything the Finance Overview needs, computed server-side so the client
+// never juggles cross-calendar-year transaction loads for the fiscal basis and
+// every number shares one period definition:
+//   cashOnHand   — ALL-TIME ledger net (Σ income − Σ expense). Reconciles with
+//                  the ledger by construction; labeled "All-time" on the card.
+//   ytd*/net     — CURRENT period (basis-aware).
+//   prior*       — the immediately-preceding period, same basis (headline delta).
+//   monthly      — current-period months in basis order (Jul-first under fiscal).
+//   fundBalances — ALL-TIME per-fund net (a fund balance is cumulative, not per-year).
+//   activeFundCount — funds with ≥1 transaction in the CURRENT period.
 app.get("/finance/summary", requireAuth, wrap(async (req, res) => {
   const { orgId } = req.user;
   const { yearMode = "calendar" } = req.query;
+  const cur = finPeriodBounds(yearMode, 0);
+  const prior = finPeriodBounds(yearMode, -1);
 
-  let dateStart, dateEnd, periodLabel;
-  if (yearMode === "fiscal") {
-    // Identical boundary to /dashboard/my-stats: July 1 fiscal year
-    const now = new Date();
-    dateStart = now.getMonth() < 6
-      ? new Date(now.getFullYear() - 1, 6, 1).toISOString().split("T")[0]
-      : new Date(now.getFullYear(), 6, 1).toISOString().split("T")[0];
-    dateEnd = now.getMonth() < 6
-      ? new Date(now.getFullYear(), 5, 30).toISOString().split("T")[0]
-      : new Date(now.getFullYear() + 1, 5, 30).toISOString().split("T")[0];
-    const fyStartYear = parseInt(dateStart.slice(0, 4));
-    periodLabel = `Jul ${fyStartYear} – Jun ${fyStartYear + 1}`;
-  } else {
-    const year = new Date().getFullYear();
-    dateStart   = `${year}-01-01`;
-    dateEnd     = `${year}-12-31`;
-    periodLabel = `Jan – Dec ${year}`;
+  const [ytdRows, priorRows, allRows, monthRows, fundRows, activeFundRows] = await Promise.all([
+    query(`SELECT type, SUM(amount) as total FROM fin_transactions
+           WHERE org_id = ? AND date >= ? AND date <= ? GROUP BY type`, [orgId, cur.start, cur.end]),
+    query(`SELECT type, SUM(amount) as total FROM fin_transactions
+           WHERE org_id = ? AND date >= ? AND date <= ? GROUP BY type`, [orgId, prior.start, prior.end]),
+    query("SELECT type, SUM(amount) as total FROM fin_transactions WHERE org_id = ? GROUP BY type", [orgId]),
+    query(`SELECT date, type, amount FROM fin_transactions
+           WHERE org_id = ? AND date >= ? AND date <= ?`, [orgId, cur.start, cur.end]),
+    query(`SELECT f.id, f.name, f.restricted,
+                  COALESCE(SUM(CASE WHEN ft.type='income' THEN ft.amount
+                                    WHEN ft.type='expense' THEN -ft.amount ELSE 0 END), 0) AS balance
+           FROM fin_funds f
+           LEFT JOIN fin_transactions ft ON ft.fund_id = f.id AND ft.org_id = f.org_id
+           WHERE f.org_id = ?
+           GROUP BY f.id, f.name, f.restricted
+           ORDER BY f.restricted ASC, f.name ASC`, [orgId]),
+    query(`SELECT COUNT(DISTINCT fund_id) AS cnt FROM fin_transactions
+           WHERE org_id = ? AND date >= ? AND date <= ? AND fund_id IS NOT NULL`, [orgId, cur.start, cur.end]),
+  ]);
+
+  const ytd   = Object.fromEntries(ytdRows.map(r => [r.type, parseFloat(r.total)]));
+  const prev  = Object.fromEntries(priorRows.map(r => [r.type, parseFloat(r.total)]));
+  const all   = Object.fromEntries(allRows.map(r => [r.type, parseFloat(r.total)]));
+
+  const ytdRevenue    = ytd.income  || 0;
+  const ytdExpenses   = ytd.expense || 0;
+  const priorRevenue  = prev.income  || 0;
+  const priorExpenses = prev.expense || 0;
+  const cashOnHand    = (all.income || 0) - (all.expense || 0);
+
+  // Bucket current-period txns into the basis-ordered month list.
+  const monthly = cur.months.map(({ y, m }) => ({
+    key: `${y}-${String(m + 1).padStart(2, "0")}`, label: FIN_MONTHS[m], income: 0, expense: 0,
+  }));
+  const monIdx = Object.fromEntries(monthly.map((mm, i) => [mm.key, i]));
+  for (const r of monthRows) {
+    const i = monIdx[(r.date || "").slice(0, 7)];
+    if (i === undefined) continue;
+    if (r.type === "income") monthly[i].income += parseFloat(r.amount);
+    else if (r.type === "expense") monthly[i].expense += parseFloat(r.amount);
   }
 
-  const [ytdRows, allRows] = await Promise.all([
-    query(
-      `SELECT type, SUM(amount) as total FROM fin_transactions
-       WHERE org_id = ? AND date >= ? AND date <= ?
-       GROUP BY type`,
-      [orgId, dateStart, dateEnd]
-    ),
-    query(
-      "SELECT type, SUM(amount) as total FROM fin_transactions WHERE org_id = ? GROUP BY type",
-      [orgId]
-    ),
-  ]);
-  const ytd = Object.fromEntries(ytdRows.map(r => [r.type, parseFloat(r.total)]));
-  const all = Object.fromEntries(allRows.map(r => [r.type, parseFloat(r.total)]));
-  const ytdRevenue  = ytd.income  || 0;
-  const ytdExpenses = ytd.expense || 0;
-  const cashOnHand  = (all.income || 0) - (all.expense || 0);
-  res.json({ cashOnHand, ytdRevenue, ytdExpenses, netSurplus: ytdRevenue - ytdExpenses, yearMode, periodLabel });
+  res.json({
+    cashOnHand,
+    ytdRevenue, ytdExpenses, netSurplus: ytdRevenue - ytdExpenses,
+    priorRevenue, priorExpenses, priorNet: priorRevenue - priorExpenses,
+    yearMode,
+    periodLabel: cur.periodLabel,
+    monthlyLabel: cur.chartLabel,
+    monthly,
+    activeFundCount: parseInt(activeFundRows[0]?.cnt || 0),
+    fundBalances: fundRows.map(f => ({
+      id: f.id, name: f.name, restricted: f.restricted, balance: parseFloat(f.balance) || 0,
+    })),
+  });
 }));
 
 // ── Finance: Stripe summary (connected-account money in) ────────────────────

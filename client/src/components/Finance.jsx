@@ -15,7 +15,31 @@ const ACCT_TYPES = [
 ];
 const TYPE_COLOR = Object.fromEntries(ACCT_TYPES.map(t => [t.id, t.color]));
 
-const REPORT_MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+// Narrative headline for the Overview. Period-scoped figure + a period-over-period
+// delta that DEGRADES GRACEFULLY: no prior history (new org / first period / prior
+// period empty) drops the comparison clause entirely, and the same number is never
+// rendered twice in one sentence. Cash on Hand is a separate, all-time figure and
+// deliberately lives only in the labeled stat card, not here.
+function financeHeadline(summary, yearMode) {
+  if (!summary) return "";
+  const rev = summary.ytdRevenue || 0;
+  const prior = summary.priorRevenue || 0;
+  const n = summary.activeFundCount || 0;
+  const periodWord = yearMode === "fiscal" ? "this fiscal year" : "this year";
+  const lastWord = yearMode === "fiscal" ? "last fiscal year" : "last year";
+  if (rev === 0 && n === 0) {
+    return `No money has moved ${periodWord} yet — log a transaction or connect Stripe above and your finances take shape here.`;
+  }
+  const fundClause = n > 0 ? ` across ${n} ${n === 1 ? "fund" : "funds"}` : "";
+  let s = `You're operating on ${fmtFull(rev)}${fundClause} ${periodWord}`;
+  const delta = rev - prior;
+  // Guard: only compare when there's real prior history AND the delta isn't just
+  // the whole figure again (which is the prior===0 no-history case in disguise).
+  if (prior > 0 && delta !== rev) {
+    s += `, ${delta >= 0 ? "up" : "down"} ${fmtFull(Math.abs(delta))} from ${lastWord}`;
+  }
+  return s + ".";
+}
 
 // Money in = income (gold, positive/primary); money out = expense (terracotta,
 // needs-attention). One convention used everywhere in this tab.
@@ -353,28 +377,23 @@ export function Finance({ data, isReadOnly, onNavigate }) {
     expenseByAcct[k] = (expenseByAcct[k] || 0) + parseFloat(t.amount);
   });
 
-  const fundBalances = {};
-  funds.forEach(f => { fundBalances[f.id] = { name: f.name, restricted: f.restricted, income: 0, expense: 0 }; });
+  // Fund balances are cumulative (all-time) — a fund balance means nothing
+  // per-calendar-year. The server computes them in /finance/summary so they
+  // reconcile with the all-time Cash on Hand; fall back to a year-filtered
+  // client computation only until the summary arrives.
+  const _fbMap = {};
+  funds.forEach(f => { _fbMap[f.id] = { name: f.name, restricted: f.restricted, income: 0, expense: 0 }; });
   allTxns.forEach(t => {
-    if (!t.fund_id || !fundBalances[t.fund_id]) return;
-    if (t.type === "income") fundBalances[t.fund_id].income += parseFloat(t.amount);
-    else fundBalances[t.fund_id].expense += parseFloat(t.amount);
+    if (!t.fund_id || !_fbMap[t.fund_id]) return;
+    if (t.type === "income") _fbMap[t.fund_id].income += parseFloat(t.amount);
+    else _fbMap[t.fund_id].expense += parseFloat(t.amount);
   });
-  const liveFundBalances = Object.values(fundBalances).map(f => ({ ...f, balance: f.income - f.expense }));
-  const totalFundBalance = liveFundBalances.reduce((s, f) => s + f.balance, 0);
+  const finFundBalances = summary?.fundBalances
+    || Object.values(_fbMap).map(f => ({ ...f, balance: f.income - f.expense }));
 
   const totalRev = Object.values(incomeByAcct).reduce((s, v) => s + v, 0);
   const totalExp = Object.values(expenseByAcct).reduce((s, v) => s + v, 0);
   const monthsElapsed = new Date().getMonth() + 1;
-  const monthsToShow = txnYear === new Date().getFullYear() ? monthsElapsed : 12;
-  const monthlyBreakdown = REPORT_MONTHS.slice(0, monthsToShow).map((month, i) => {
-    const monthTxns = allTxns.filter(t => new Date(t.date).getMonth() === i);
-    return {
-      month,
-      income: monthTxns.filter(t => t.type === "income").reduce((s, t) => s + parseFloat(t.amount), 0),
-      expense: monthTxns.filter(t => t.type === "expense").reduce((s, t) => s + parseFloat(t.amount), 0),
-    };
-  });
 
   // ── AI (reuse live finance data) ──
   const ytdRev = summary?.ytdRevenue || 0;
@@ -382,14 +401,14 @@ export function Finance({ data, isReadOnly, onNavigate }) {
   const getForecast = async () => {
     setForecastLoading(true); setForecastAI("");
     await askClaude("You are a nonprofit CFO. Specific, data-driven. Max 200 words.",
-      `Generate a 6-month revenue forecast.\nYTD Revenue: ${fmtFull(ytdRev)} | YTD Expenses: ${fmtFull(ytdExp)} | Net: ${fmtFull(ytdRev - ytdExp)}\nActive grants: ${data.grants.filter(g => g.status === "active").map(g => `${g.funder} ${fmtFull(g.amount)} ends ${g.deadline}`).join(", ")}\nFund balances: ${liveFundBalances.map(f => `${f.name}: ${fmtFull(f.balance)}`).join(", ")}\n\nQ3-Q4 projection, 3 financial risks, 2 opportunities.`,
+      `Generate a 6-month revenue forecast.\nYTD Revenue: ${fmtFull(ytdRev)} | YTD Expenses: ${fmtFull(ytdExp)} | Net: ${fmtFull(ytdRev - ytdExp)}\nActive grants: ${data.grants.filter(g => g.status === "active").map(g => `${g.funder} ${fmtFull(g.amount)} ends ${g.deadline}`).join(", ")}\nFund balances: ${finFundBalances.map(f => `${f.name}: ${fmtFull(f.balance)}`).join(", ")}\n\nQ3-Q4 projection, 3 financial risks, 2 opportunities.`,
       chunk => setForecastAI(chunk));
     setForecastLoading(false);
   };
   const getRisks = async () => {
     setRiskLoading(true); setRiskAI("");
     await askClaude("You are a nonprofit financial auditor. Direct, specific. Max 150 words.",
-      `Identify financial risks.\nYTD Net: ${fmtFull(ytdRev - ytdExp)}\nRestricted funds: ${liveFundBalances.filter(f => f.restricted).map(f => `${f.name}: ${fmtFull(f.balance)}`).join(", ")}\nGrant concentration: ${data.grants.filter(g => g.status === "active").map(g => `${g.funder}: ${fmtFull(g.amount)}`).join(", ")}\nLapsed donors: ${data.donors.filter(d => d.status === "lapsed").length}\n\nTop 3 risks with severity and mitigation.`,
+      `Identify financial risks.\nYTD Net: ${fmtFull(ytdRev - ytdExp)}\nRestricted funds: ${finFundBalances.filter(f => f.restricted).map(f => `${f.name}: ${fmtFull(f.balance)}`).join(", ")}\nGrant concentration: ${data.grants.filter(g => g.status === "active").map(g => `${g.funder}: ${fmtFull(g.amount)}`).join(", ")}\nLapsed donors: ${data.donors.filter(d => d.status === "lapsed").length}\n\nTop 3 risks with severity and mitigation.`,
       chunk => setRiskAI(chunk));
     setRiskLoading(false);
   };
@@ -523,14 +542,8 @@ export function Finance({ data, isReadOnly, onNavigate }) {
     URL.revokeObjectURL(url);
   };
 
-  // ── Narrative headline ──
-  const netThisPeriod = (summary?.ytdRevenue || 0) - (summary?.ytdExpenses || 0);
-  const periodWord = yearMode === "fiscal" ? "this fiscal year" : "this year";
-  const narrative = summary
-    ? funds.length
-      ? `You're operating on ${fmtFull(totalFundBalance)} across ${funds.length} ${funds.length === 1 ? "fund" : "funds"}, ${netThisPeriod >= 0 ? "up" : "down"} ${fmtFull(Math.abs(netThisPeriod))} ${periodWord}.`
-      : `${netThisPeriod >= 0 ? "You're net positive" : "You're running a deficit"} ${periodWord} — ${fmtFull(Math.abs(netThisPeriod))} ${netThisPeriod >= 0 ? "surplus" : "shortfall"} so far.`
-    : "";
+  // ── Narrative headline ── (degrades gracefully; see financeHeadline)
+  const narrative = financeHeadline(summary, yearMode);
 
   if (loading) return (
     <div style={{ display:"flex", flexDirection:"column", gap:16 }}>
@@ -572,14 +585,19 @@ export function Finance({ data, isReadOnly, onNavigate }) {
           )}
           <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(160px,1fr))", gap:10 }}>
             {[
-              ["Cash on Hand", fmt(summary.cashOnHand), summary.cashOnHand >= 0 ? IN : OUT],
-              [yearMode==="fiscal" ? "FY Revenue" : "YTD Revenue", fmt(summary.ytdRevenue), IN],
-              [yearMode==="fiscal" ? "FY Expenses" : "YTD Expenses", fmt(summary.ytdExpenses), OUT],
-              ["Net Surplus", fmt(summary.netSurplus), summary.netSurplus >= 0 ? IN : OUT],
-            ].map(([label, value, color]) => (
+              // Cash on Hand is ALL-TIME (Σ income − Σ expense over the whole ledger);
+              // the other three are the selected period. The captions make the scope
+              // explicit so a treasurer never reads cash and period revenue as the
+              // same kind of number.
+              ["Cash on Hand", fmt(summary.cashOnHand), summary.cashOnHand >= 0 ? IN : OUT, "All-time · income − expenses"],
+              [yearMode==="fiscal" ? "FY Revenue" : "YTD Revenue", fmt(summary.ytdRevenue), IN, summary.periodLabel],
+              [yearMode==="fiscal" ? "FY Expenses" : "YTD Expenses", fmt(summary.ytdExpenses), OUT, summary.periodLabel],
+              ["Net Surplus", fmt(summary.netSurplus), summary.netSurplus >= 0 ? IN : OUT, summary.periodLabel],
+            ].map(([label, value, color, caption]) => (
               <div key={label} style={{ background:T.white, border:"1px solid "+T.bg3, borderRadius:12, padding:"14px 16px" }}>
                 <div style={{ fontSize:11, color:T.ink3, textTransform:"uppercase", letterSpacing:".06em", marginBottom:4 }}>{label}</div>
                 <div style={{ fontSize:22, fontWeight:800, color, fontFamily:"'DM Serif Display',serif" }}>{value}</div>
+                {caption && <div style={{ fontSize:10, color:T.ink3, marginTop:4 }}>{caption}</div>}
               </div>
             ))}
           </div>
@@ -598,16 +616,24 @@ export function Finance({ data, isReadOnly, onNavigate }) {
         {(forecastLoading || forecastAI) && <AIPanel text={forecastAI} onClose={() => setForecastAI("")}/>}
         {(riskLoading || riskAI) && <AIPanel text={riskAI} onClose={() => setRiskAI("")}/>}
         <Card>
-          <SectionLabel>Monthly Breakdown ({txnYear})</SectionLabel>
-          {monthlyBreakdown.every(m => m.income === 0 && m.expense === 0)
-            ? <EmptyState icon="◇" title="No money has moved yet" message="Log your first transaction — or connect Stripe above — and your month-by-month income and spending will chart here."/>
-            : monthlyBreakdown.map((m) => {
+          {/* Follows the selected year basis (server-supplied, Jul-first under
+              fiscal) and collapses empty months into a single line instead of a
+              wall of $0 bars. */}
+          <SectionLabel>Monthly Breakdown · {summary?.monthlyLabel || ""}</SectionLabel>
+          {(() => {
+            const months = summary?.monthly || [];
+            const active = months.filter(m => m.income !== 0 || m.expense !== 0);
+            if (active.length === 0)
+              return <EmptyState icon="◇" title="No money has moved yet" message="Log your first transaction — or connect Stripe above — and your month-by-month income and spending will chart here."/>;
+            const maxBar = Math.max(...active.map(m => m.income), 1);
+            const hidden = months.length - active.length;
+            return <>
+              {active.map((m) => {
                 const net = m.income - m.expense;
-                const maxBar = Math.max(...monthlyBreakdown.map(m2 => m2.income), 1);
                 return (
-                  <div key={m.month} style={{ marginBottom:12, paddingBottom:12, borderBottom:"1px solid "+T.bg3 }}>
+                  <div key={m.key} style={{ marginBottom:12, paddingBottom:12, borderBottom:"1px solid "+T.bg3 }}>
                     <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:6 }}>
-                      <span style={{ fontSize:13, fontWeight:700, color:T.ink }}>{m.month}</span>
+                      <span style={{ fontSize:13, fontWeight:700, color:T.ink }}>{m.label}</span>
                       <div style={{ display:"flex", gap:12 }}>
                         <span style={{ fontSize:11, color:IN }}>↑ {fmtFull(m.income)}</span>
                         <span style={{ fontSize:11, color:OUT }}>↓ {fmtFull(m.expense)}</span>
@@ -623,18 +649,28 @@ export function Finance({ data, isReadOnly, onNavigate }) {
                   </div>
                 );
               })}
+              {hidden > 0 && (
+                <div style={{ fontSize:12, color:T.ink3, fontStyle:"italic", paddingTop:2 }}>
+                  No activity yet in the other {hidden} month{hidden === 1 ? "" : "s"}.
+                </div>
+              )}
+            </>;
+          })()}
         </Card>
         <Card>
           <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", gap:10, marginBottom:4 }}>
-            <SectionLabel>Fund Balances</SectionLabel>
+            <div>
+              <SectionLabel>Fund Balances</SectionLabel>
+              <div style={{ fontSize:10, color:T.ink3, marginTop:2 }}>Cumulative — all money in minus out, since inception</div>
+            </div>
             {onNavigate && funds.length > 0 && (
               <button onClick={() => onNavigate("reports")} style={{ background:"none", border:"none", color:T.greenMid, fontSize:12, fontWeight:700, cursor:"pointer", padding:0 }}>Gifts by fund →</button>
             )}
           </div>
-          {liveFundBalances.length === 0
+          {finFundBalances.length === 0
             ? <EmptyState icon="◇" title="No funds yet" message="Funds are how you track which dollars are restricted. Add one under the Funds tab and every gift you log can be tagged to it."/>
-            : liveFundBalances.map((f, i) => (
-              <div key={f.name} style={{ display:"flex", alignItems:"center", gap:12, padding:"11px 0", borderBottom: i < liveFundBalances.length - 1 ? "1px solid "+T.bg3 : "" }}>
+            : finFundBalances.map((f, i) => (
+              <div key={f.name} style={{ display:"flex", alignItems:"center", gap:12, padding:"11px 0", borderBottom: i < finFundBalances.length - 1 ? "1px solid "+T.bg3 : "" }}>
                 <div style={{ width:10, height:10, borderRadius:"50%", background:f.restricted?T.gold:T.greenMid, flexShrink:0 }}/>
                 <div style={{ flex:1 }}>
                   <div style={{ fontSize:13, fontWeight:600, color:T.ink }}>{f.name}</div>
