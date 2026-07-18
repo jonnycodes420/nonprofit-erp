@@ -16,6 +16,7 @@ import { Board } from "./components/Board";
 import { Finance } from "./components/Finance";
 import { Fundraising } from "./components/Fundraising";
 import { Tasks } from "./components/Tasks";
+import { Workflows } from "./components/Workflows";
 import { Settings } from "./components/Settings";
 import { Events } from "./components/Events";
 import PlanPicker from "./components/PlanPicker";
@@ -29,6 +30,7 @@ const TABS=[
   {id:"grants",label:"Grants",icon:"◉"},
   {id:"communications",label:"Communications",icon:"◑"},
   {id:"tasks",label:"Tasks",icon:"◻"},
+  {id:"workflows",label:"Workflows",icon:"⚡"},
   {id:"reports",label:"Reports",icon:"▤"},
   {id:"finance",label:"Finance",icon:"◇"},
   {id:"settings",label:"Settings",icon:"⚙"},
@@ -47,6 +49,7 @@ const MORE_TABS=[
   {id:"fundraising",label:"Fundraising",icon:"↗"},
   {id:"communications",label:"Communications",icon:"◑"},
   {id:"tasks",label:"Tasks",icon:"◻"},
+  {id:"workflows",label:"Workflows",icon:"⚡"},
   {id:"reports",label:"Reports",icon:"▤"},
   {id:"finance",label:"Finance",icon:"◇"},
   // DEPRIORITIZED — pivoting to donor dashboard focus, code kept intact, re-enable by uncommenting
@@ -331,6 +334,7 @@ function AppShell() {
       {tab==="board"&&<Board data={data} setData={setData} isReadOnly={isReadOnly}/>}
       {tab==="finance"&&<Finance data={data} isReadOnly={isReadOnly} onNavigate={navigateTo}/>}
       {tab==="tasks"&&<Tasks data={data} setData={setData} isReadOnly={isReadOnly} onNavigate={navigateTo}/>}
+      {tab==="workflows"&&<Workflows isReadOnly={isReadOnly} onNavigate={navigateTo}/>}
       {tab==="settings"&&<Settings key={navNonce} auth={auth} logout={logout} initialSection={settingsIntent?.section}/>}
     </div>
     </div>{/* /app-main */}

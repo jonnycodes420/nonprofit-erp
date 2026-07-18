@@ -655,6 +655,46 @@ async function initSchema() {
   await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS logo_data TEXT`);
   await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS brand_accent TEXT`);
   await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS brand_accent_fg TEXT`);
+  // BUILD-13 Part 3 — Workflows engine. Stored as DATA (trigger + conditions +
+  // actions) so a future visual builder is a UI over this same schema, not a
+  // rewrite. v1 exposes only the pre-built recipes (recipe_key). config holds
+  // light per-recipe overrides (threshold / email template / owner).
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS workflows (
+      id TEXT PRIMARY KEY,
+      org_id TEXT REFERENCES orgs(id),
+      recipe_key TEXT,
+      name TEXT NOT NULL,
+      trigger TEXT NOT NULL,
+      conditions JSONB DEFAULT '[]',
+      actions JSONB DEFAULT '[]',
+      config JSONB DEFAULT '{}',
+      enabled BOOLEAN DEFAULT false,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW()
+    );
+  `);
+  // Append-only run log + the idempotency guarantee: UNIQUE(workflow_id,
+  // dedup_key) makes re-processing the same trigger event a no-op.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS workflow_runs (
+      id TEXT PRIMARY KEY,
+      org_id TEXT REFERENCES orgs(id),
+      workflow_id TEXT REFERENCES workflows(id) ON DELETE CASCADE,
+      recipe_key TEXT,
+      trigger TEXT,
+      dedup_key TEXT NOT NULL,
+      entity_type TEXT,
+      entity_id TEXT,
+      donor_id TEXT,
+      actions_taken JSONB DEFAULT '[]',
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    );
+  `);
+  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS workflow_runs_dedup_uk ON workflow_runs(workflow_id, dedup_key)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_workflows_org_trigger ON workflows(org_id, trigger, enabled)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_workflow_runs_org ON workflow_runs(org_id, created_at DESC)`);
+  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS workflows_org_recipe_uk ON workflows(org_id, recipe_key)`);
   await pool.query(`ALTER TABLE fin_transactions ADD COLUMN IF NOT EXISTS is_sample BOOLEAN DEFAULT false`);
   // BUILD-09 Finance reintegration: link a ledger row back to the donor it
   // came from (nullable — expenses/manual entries have none) and record how it

@@ -225,8 +225,9 @@ app.post("/stripe/webhook", express.raw({ type: "application/json" }), async (re
             const giftId = "g_" + uuid().slice(0, 8);
             const today = new Date().toISOString().slice(0, 10);
             // Check if donor was lapsed before updating stage
-            const donorPreRow = await query("SELECT stage FROM donors WHERE id=$1", [donorId]);
+            const donorPreRow = await query("SELECT stage, gift_count FROM donors WHERE id=$1", [donorId]);
             const wasLapsed = donorPreRow[0]?.stage === 'lapsed';
+            const wasFirstGift = (donorPreRow[0]?.gift_count || 0) === 0;
             await run(
               `INSERT INTO gifts (id, org_id, donor_id, amount, date, notes, stripe_payment_id, campaign_id, giving_page_id, peer_fundraiser_id)
                VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
@@ -284,6 +285,14 @@ app.post("/stripe/webhook", express.raw({ type: "application/json" }), async (re
                 if (orgFull && donorFull && giftFull) await issueGiftReceipt(giftFull, orgFull, donorFull, { send: true });
               } catch (e) { console.error("[receipts] webhook issueGiftReceipt failed:", e.message); }
             })().catch(console.error);
+
+            // BUILD-13 workflows — gift_received (covers new-donor + major-gift
+            // recipes). Fire-and-forget; must never 500 the webhook (Stripe
+            // retries on 500, and fireWorkflows is idempotent per giftId anyway).
+            fireWorkflows(orgId, "gift_received", {
+              dedupKey: `gift:${giftId}`, donorId, giftId, amount, isFirstGift: wasFirstGift,
+              entityType: "gift", entityId: giftId,
+            }).catch(e => console.error("[workflow] gift_received:", e.message));
           }
         }
       }
@@ -436,6 +445,27 @@ app.post("/stripe/webhook", express.raw({ type: "application/json" }), async (re
           }
           await run("UPDATE donors SET stripe_subscription_status='past_due' WHERE id=? AND org_id=?", [donor.id, org.id]);
           await logRecoveryEvent(org.id, donor.id, inv.subscription, "payment_failed", event.id, { amount, invoiceId: inv.id });
+
+          // BUILD-13 workflows — recipe #1 (failed_recurring_recovery). Fire
+          // only on a genuinely NEW failure cycle (not each Stripe retry),
+          // deduped per subscription cycle. If the recipe is ON and sent the
+          // recovery email, advance the dunning cadence past its own day-0 so
+          // the always-on dunning engine doesn't ALSO send a day-0 email.
+          if (isNewCycle) {
+            try {
+              const [subRow] = await query("SELECT * FROM recurring_subscriptions WHERE stripe_subscription_id=?", [inv.subscription]);
+              const result = await fireWorkflows(org.id, "recurring_failed", {
+                dedupKey: `failed:${inv.subscription}:${subRow?.first_failed_at || event.id}`,
+                donorId: donor.id, amount, subscriptionRow: subRow,
+                entityType: "subscription", entityId: inv.subscription,
+              });
+              const sentRecovery = result.ran.some(r => r.actions.some(a => a.type === "send_email" && a.template === "recovery"));
+              if (sentRecovery && subRow) {
+                const next = new Date(new Date(subRow.first_failed_at || Date.now()).getTime() + DUNNING_SCHEDULE_DAYS[1] * 86400000);
+                await run("UPDATE recurring_subscriptions SET dunning_step=1, next_dunning_at=? WHERE stripe_subscription_id=?", [next.toISOString(), inv.subscription]);
+              }
+            } catch (e) { console.error("[workflow] recurring_failed:", e.message); }
+          }
         }
       }
     }
@@ -2731,6 +2761,13 @@ app.post("/donors/:id/gifts", requireAuth, checkWriteAccess, wrap(async (req, re
     );
   } catch(e) { console.error("Gift interaction log:", e.message); }
   calcWealthScore(req.params.id, req.user.orgId).catch(e => console.error("score recalc:", e.message));
+  // BUILD-13 workflows — a manually-logged gift fires gift_received too (new-
+  // donor + major-gift recipes). gift_count===1 after this insert means it was
+  // the donor's first gift. Idempotent per giftId; fire-and-forget.
+  fireWorkflows(req.user.orgId, "gift_received", {
+    dedupKey: `gift:${giftId}`, donorId: req.params.id, giftId, amount: amt,
+    isFirstGift: (donorRows[0]?.gift_count || 0) === 1, entityType: "gift", entityId: giftId,
+  }).catch(e => console.error("[workflow] gift_received:", e.message));
   const fulfilledPledgeRows = pledgeRow ? await query("SELECT * FROM pledges WHERE id=?", [pledgeRow.id]) : [];
   res.status(201).json({ gift: giftRows[0], donor: donorRows[0], pledge: fulfilledPledgeRows[0] || null });
 }));
@@ -9560,6 +9597,311 @@ async function processDunning() {
 }
 setTimeout(() => processDunning().catch(console.error), 5000);
 setInterval(() => processDunning().catch(console.error), 60 * 60 * 1000);
+
+// ════════════════════════════════════════════════════════════════════════════
+// Workflows engine (BUILD-13 Part 3) — retention recipes on a builder-ready
+// trigger → conditions → actions data model. v1 ships four pre-built recipes;
+// a future visual builder is a UI over this same schema, not a rewrite.
+// Every action keys off a dedup token (workflow_runs UNIQUE(workflow_id,
+// dedup_key)) so re-processing a trigger event is a strict no-op — an
+// automation that double-sends is a trust disaster. Every run is logged.
+// ════════════════════════════════════════════════════════════════════════════
+const WORKFLOW_RECIPES = [
+  {
+    key: "failed_recurring_recovery",
+    name: "Failed recurring gift → recovery email + task",
+    description: "When a donor's recurring card fails, email them a warm branded card-update link in your name and create a task to follow up.",
+    trigger: "recurring_failed",
+    conditions: [],
+    actions: [
+      { type: "send_email", template: "recovery" },
+      { type: "create_task", title: "Follow up: recurring gift failed for {donor}", priority: "high", dueDays: 2 },
+    ],
+    defaultConfig: {},
+  },
+  {
+    key: "new_donor_welcome",
+    name: "New donor's first gift → thank-you + task",
+    description: "The moment a brand-new donor gives for the first time, send a branded thank-you and queue a personal welcome call.",
+    trigger: "gift_received",
+    conditions: [{ field: "is_first_gift", op: "eq", value: true }],
+    actions: [
+      { type: "send_email", template: "thankyou" },
+      { type: "create_task", title: "Personal welcome call: {donor}", priority: "medium", dueDays: 5 },
+    ],
+    defaultConfig: {},
+  },
+  {
+    key: "lapsing_reengage",
+    name: "Lapsing donor → re-engagement task",
+    description: "When a donor crosses your lapse window with no gift, tag them and create a re-engagement task (optionally email them).",
+    trigger: "donor_lapsed",
+    conditions: [],
+    actions: [
+      { type: "add_tag", tag: "lapsing" },
+      { type: "create_task", title: "Re-engage {donor} — lapsing", priority: "medium", dueDays: 7 },
+    ],
+    defaultConfig: { lapseDays: 365, sendEmail: false },
+  },
+  {
+    key: "major_gift_alert",
+    name: "Major gift → stewardship alert to owner",
+    description: "When a gift lands over your major-gift threshold, alert the donor's relationship owner and create a stewardship task.",
+    trigger: "gift_received",
+    conditions: [{ field: "amount", op: "gte", value: 1000 }],
+    actions: [
+      { type: "notify_owner" },
+      { type: "create_task", title: "Steward major gift: {donor} gave {amount}", priority: "high", dueDays: 2 },
+    ],
+    defaultConfig: { threshold: 1000 },
+  },
+];
+const WORKFLOW_RECIPE_MAP = Object.fromEntries(WORKFLOW_RECIPES.map(r => [r.key, r]));
+
+// Lazily provision the recipe rows for an org (disabled by default — nothing
+// auto-runs until a human toggles it on). Idempotent via the org+recipe unique.
+async function ensureWorkflows(orgId) {
+  for (const r of WORKFLOW_RECIPES) {
+    await run(
+      `INSERT INTO workflows (id,org_id,recipe_key,name,trigger,conditions,actions,config,enabled)
+       VALUES (?,?,?,?,?,?,?,?,false)
+       ON CONFLICT (org_id,recipe_key) DO NOTHING`,
+      ["wf_" + uuid().slice(0, 8), orgId, r.key, r.name, r.trigger,
+       JSON.stringify(r.conditions), JSON.stringify(r.actions), JSON.stringify(r.defaultConfig || {})]
+    );
+  }
+}
+
+const asJson = (v, fb) => v == null ? fb : (typeof v === "object" ? v : (() => { try { return JSON.parse(v); } catch { return fb; } })());
+
+// Evaluate a workflow's conditions against the event ctx, honoring config
+// overrides (e.g. the major-gift threshold slider maps onto the amount>=X
+// condition; the lapse window onto donor_lapsed).
+function workflowConditionsPass(conditions, config, ctx) {
+  for (const c of conditions) {
+    if (c.field === "amount") {
+      const threshold = Number(config.threshold ?? c.value);
+      if (!(Number(ctx.amount) >= threshold)) return false;
+    } else if (c.field === "is_first_gift") {
+      if (Boolean(ctx.isFirstGift) !== Boolean(c.value)) return false;
+    }
+  }
+  return true;
+}
+
+const escHtmlWf = s => String(s || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
+// Send a branded one-off workflow email (thank-you / re-engagement). Reuses the
+// BUILD-13 branded header + the CAN-SPAM footer, and honors suppression. No-ops
+// cleanly without RESEND_API_KEY (local tests) — the run is still logged.
+async function sendWorkflowEmail(org, donor, subject, bodyHtml) {
+  if (!donor?.email) return false;
+  if (await getSuppressionReason(donor.email, org.id)) return false;
+  const html = await brandEmailHeaderHtml(org.id) + bodyHtml + await unsubscribeEmailFooterHtml(donor.email, org.id, "campaign");
+  const from = process.env.DEMO_SMTP_FROM || "noreply@stewardapp.dev";
+  if (process.env.RESEND_API_KEY) {
+    try {
+      const { error } = await resend.emails.send({ from, to: donor.email, subject, html, headers: unsubscribeHeaders(donor.email, org.id, "campaign") });
+      if (error) console.error("[workflow] email error:", error.message);
+    } catch (e) { console.error("[workflow] email threw:", e.message); }
+  }
+  return true;
+}
+
+// Execute one action. Returns a summary object for the run log, or null.
+async function runWorkflowAction(action, { org, donor, ctx, config }) {
+  const firstName = donor?.name ? donor.name.trim().split(/\s+/)[0] : "there";
+  const amtStr = ctx.amount != null ? `$${Number(ctx.amount).toLocaleString()}` : "";
+  const fill = s => String(s || "").replace(/{donor}/g, donor?.name || "the donor").replace(/{amount}/g, amtStr);
+  switch (action.type) {
+    case "create_task":
+    case "notify_owner": {
+      const isOwner = action.type === "notify_owner";
+      const owner = isOwner && donor?.assigned_to ? { id: donor.assigned_to, name: donor.assigned_to_name || "" } : null;
+      const title = isOwner
+        ? `Stewardship alert: ${donor?.name || "a major donor"} gave ${amtStr || "a major gift"}`
+        : fill(action.title || "Follow up");
+      const due = action.dueDays != null ? new Date(Date.now() + action.dueDays * 86400000).toISOString().slice(0, 10) : "";
+      const taskId = "t_" + uuid().slice(0, 8);
+      await run(
+        "INSERT INTO tasks (id,org_id,title,due,priority,type,done,donor_id,assigned_to,assigned_to_name,updated_at) VALUES (?,?,?,?,?,'donor',0,?,?,?,NOW())",
+        [taskId, org.id, title, due, action.priority || "medium", donor?.id || null, owner?.id || null, owner?.name || null]
+      );
+      return { type: action.type, taskId, title };
+    }
+    case "add_tag": {
+      if (!donor?.id) return null;
+      const tags = asJson(donor.tags, []);
+      if (!tags.includes(action.tag)) {
+        tags.push(action.tag);
+        await run("UPDATE donors SET tags=?, updated_at=NOW() WHERE id=? AND org_id=?", [JSON.stringify(tags), donor.id, org.id]);
+      }
+      return { type: "add_tag", tag: action.tag };
+    }
+    case "send_email": {
+      if (!donor) return null;
+      if (action.template === "recovery") {
+        if (ctx.subscriptionRow) await sendDunningEmail(org, donor, ctx.subscriptionRow);
+        return { type: "send_email", template: "recovery" };
+      }
+      if (action.template === "thankyou") {
+        const body = `<p>Hi ${escHtmlWf(firstName)},</p>
+<p>Thank you for your first gift to ${escHtmlWf(org.name)} — welcome to our community. Gifts like yours are exactly what make our work possible, and we're so glad you're part of it.</p>
+<p>You'll hear from a real person here soon. In the meantime, just reply if there's anything you'd like to know.</p>
+<p>With gratitude,<br/>${escHtmlWf(org.name)}</p>`;
+        await sendWorkflowEmail(org, donor, `Thank you from ${org.name}`, body);
+        return { type: "send_email", template: "thankyou" };
+      }
+      if (action.template === "reengage") {
+        const body = `<p>Hi ${escHtmlWf(firstName)},</p>
+<p>It's been a while, and we've missed you at ${escHtmlWf(org.name)}. Your past support made a real difference — and there's more good work ahead we'd love for you to be part of.</p>
+<p>If now's a good time to come back, we'd be grateful. And if not, thank you all the same.</p>
+<p>Warmly,<br/>${escHtmlWf(org.name)}</p>`;
+        await sendWorkflowEmail(org, donor, `We've missed you at ${org.name}`, body);
+        return { type: "send_email", template: "reengage" };
+      }
+      return null;
+    }
+    default:
+      return null;
+  }
+}
+
+// Fire all enabled workflows for (org, trigger). ctx: { dedupKey, donorId,
+// giftId, amount, isFirstGift, subscriptionRow, entityType, entityId,
+// extraActions }. Idempotent per (workflow, dedupKey). Returns what ran so a
+// caller (the dunning webhook) can coordinate — e.g. avoid a double day-0 send.
+async function fireWorkflows(orgId, trigger, ctx) {
+  const wfs = await query("SELECT * FROM workflows WHERE org_id=? AND trigger=? AND enabled=true", [orgId, trigger]);
+  const ran = [];
+  if (!wfs.length) return { ran };
+  const [org] = await query("SELECT * FROM orgs WHERE id=?", [orgId]);
+  if (!org) return { ran };
+  const donorRows = ctx.donorId ? await query("SELECT * FROM donors WHERE id=? AND org_id=?", [ctx.donorId, orgId]) : [];
+  const donor = donorRows[0] || null;
+
+  for (const wf of wfs) {
+    const conditions = asJson(wf.conditions, []);
+    let actions = asJson(wf.actions, []);
+    const config = asJson(wf.config, {});
+    if (!workflowConditionsPass(conditions, config, ctx)) continue;
+    // Config can toggle the optional re-engagement email on the lapse recipe.
+    if (wf.recipe_key === "lapsing_reengage" && config.sendEmail && !actions.some(a => a.type === "send_email")) {
+      actions = [...actions, { type: "send_email", template: "reengage" }];
+    }
+
+    // Reserve the run row FIRST — the unique (workflow_id, dedup_key) makes a
+    // redelivered event a no-op (RETURNING is empty on conflict).
+    const runId = "wfr_" + uuid().slice(0, 8);
+    const reserved = await query(
+      `INSERT INTO workflow_runs (id,org_id,workflow_id,recipe_key,trigger,dedup_key,entity_type,entity_id,donor_id,actions_taken)
+       VALUES (?,?,?,?,?,?,?,?,?,'[]')
+       ON CONFLICT (workflow_id,dedup_key) DO NOTHING
+       RETURNING id`,
+      [runId, orgId, wf.id, wf.recipe_key, trigger, ctx.dedupKey, ctx.entityType || null, ctx.entityId || null, ctx.donorId || null]
+    );
+    if (!reserved.length) continue; // already ran for this event
+
+    const taken = [];
+    for (const a of actions) {
+      try { const res = await runWorkflowAction(a, { org, donor, ctx, config }); if (res) taken.push(res); }
+      catch (e) { console.error(`[workflow:${wf.recipe_key}] action ${a.type} failed:`, e.message); }
+    }
+    await run("UPDATE workflow_runs SET actions_taken=? WHERE id=?", [JSON.stringify(taken), runId]);
+    ran.push({ workflowId: wf.id, recipeKey: wf.recipe_key, actions: taken });
+  }
+  return { ran };
+}
+
+// Scheduled sweep for the donor_lapsed trigger (no webhook fires it). Runs on
+// the existing 5-min tick. Only touches orgs that have the recipe enabled;
+// dedup is per donor + their current last_gift_date so a given lapse fires once.
+async function processWorkflowSweeps() {
+  const orgRows = await query("SELECT DISTINCT org_id FROM workflows WHERE trigger='donor_lapsed' AND enabled=true");
+  for (const { org_id: orgId } of orgRows) {
+    try {
+      const wfRows = await query("SELECT config FROM workflows WHERE org_id=? AND recipe_key='lapsing_reengage' AND enabled=true", [orgId]);
+      const lapseDays = Number(asJson(wfRows[0]?.config, {}).lapseDays ?? 365);
+      const cutoff = new Date(Date.now() - lapseDays * 86400000).toISOString().slice(0, 10);
+      const lapsing = await query(
+        `SELECT id, last_gift_date FROM donors
+          WHERE org_id=? AND deleted_at IS NULL AND gift_count > 0
+            AND last_gift_date IS NOT NULL AND last_gift_date <> '' AND last_gift_date < ?
+          LIMIT 200`,
+        [orgId, cutoff]
+      );
+      for (const d of lapsing) {
+        await fireWorkflows(orgId, "donor_lapsed", {
+          dedupKey: `lapsed:${d.id}:${d.last_gift_date}`,
+          donorId: d.id, entityType: "donor", entityId: d.id,
+        });
+      }
+    } catch (e) { console.error("[workflow-sweep] org", orgId, e.message); }
+  }
+}
+setTimeout(() => processWorkflowSweeps().catch(console.error), 25000);
+setInterval(() => processWorkflowSweeps().catch(console.error), 5 * 60 * 1000);
+
+// ── Workflow routes ─────────────────────────────────────────────────────────
+app.get("/workflows", requireAuth, wrap(async (req, res) => {
+  await ensureWorkflows(req.user.orgId);
+  const rows = await query("SELECT * FROM workflows WHERE org_id=? ORDER BY created_at ASC", [req.user.orgId]);
+  // Attach recent run counts + last run per workflow.
+  const runCounts = await query(
+    "SELECT workflow_id, COUNT(*)::int AS n, MAX(created_at) AS last FROM workflow_runs WHERE org_id=? GROUP BY workflow_id",
+    [req.user.orgId]
+  );
+  const byWf = Object.fromEntries(runCounts.map(r => [r.workflow_id, r]));
+  res.json(rows.map(w => ({
+    ...w,
+    conditions: asJson(w.conditions, []), actions: asJson(w.actions, []), config: asJson(w.config, {}),
+    description: WORKFLOW_RECIPE_MAP[w.recipe_key]?.description || "",
+    runCount: byWf[w.id]?.n || 0, lastRun: byWf[w.id]?.last || null,
+  })));
+}));
+
+app.get("/workflows/:id/runs", requireAuth, wrap(async (req, res) => {
+  if (!(await orgOwns("workflows", req.params.id, req.user.orgId))) return res.status(404).json({ error: "Workflow not found" });
+  const runs = await query(
+    "SELECT * FROM workflow_runs WHERE workflow_id=? AND org_id=? ORDER BY created_at DESC LIMIT 50",
+    [req.params.id, req.user.orgId]
+  );
+  res.json(runs.map(r => ({ ...r, actions_taken: asJson(r.actions_taken, []) })));
+}));
+
+app.put("/workflows/:id", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
+  const rows = await query("SELECT * FROM workflows WHERE id=? AND org_id=?", [req.params.id, req.user.orgId]);
+  if (!rows.length) return res.status(404).json({ error: "Workflow not found" });
+  const { enabled, config } = req.body;
+  const sets = [], params = [];
+  if (enabled !== undefined) { sets.push("enabled=?"); params.push(!!enabled); }
+  if (config !== undefined && config && typeof config === "object") {
+    // Merge onto existing config; validate the two numeric knobs.
+    const merged = { ...asJson(rows[0].config, {}), ...config };
+    if (merged.threshold !== undefined) merged.threshold = Math.max(0, Number(merged.threshold) || 0);
+    if (merged.lapseDays !== undefined) merged.lapseDays = Math.max(1, parseInt(merged.lapseDays, 10) || 365);
+    sets.push("config=?"); params.push(JSON.stringify(merged));
+  }
+  if (!sets.length) return res.status(400).json({ error: "Nothing to update" });
+  sets.push("updated_at=NOW()");
+  params.push(req.params.id, req.user.orgId);
+  await run(`UPDATE workflows SET ${sets.join(", ")} WHERE id=? AND org_id=?`, params);
+  const updated = await query("SELECT * FROM workflows WHERE id=?", [req.params.id]);
+  const w = updated[0];
+  res.json({ ...w, conditions: asJson(w.conditions, []), actions: asJson(w.actions, []), config: asJson(w.config, {}) });
+}));
+
+// Manual trigger for tests/ops — simulate one trigger event (admin-only).
+app.post("/workflows/simulate", requireAuth, requireAdmin, wrap(async (req, res) => {
+  const { trigger, donorId, amount, isFirstGift, dedupKey } = req.body || {};
+  if (!trigger) return res.status(400).json({ error: "trigger required" });
+  if (donorId && !(await orgOwns("donors", donorId, req.user.orgId))) return res.status(404).json({ error: "Donor not found" });
+  const result = await fireWorkflows(req.user.orgId, trigger, {
+    dedupKey: dedupKey || `${trigger}:${donorId || "none"}:${Date.now()}`,
+    donorId: donorId || null, amount, isFirstGift, entityType: donorId ? "donor" : null, entityId: donorId || null,
+  });
+  res.json(result);
+}));
 
 app.post("/recurring/process-dunning", requireAuth, requireAdmin, wrap(async (req, res) => {
   await processDunning();
