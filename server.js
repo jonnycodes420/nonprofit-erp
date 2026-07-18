@@ -728,6 +728,19 @@ function normalizeGiftDate(raw) {
 // Note: amounts stored as INTEGER (whole dollars, no cents). If sub-dollar
 // precision is ever needed, gifts.amount and donors.total_giving would need
 // a schema migration to NUMERIC.
+// Tenant-isolation guard (SECURITY §1): confirms a client-supplied foreign-key
+// id belongs to the caller's org BEFORE it's stored or joined. Closes the
+// cross-tenant IDOR class where a foreign account/fund/etc. id supplied in a
+// request body is accepted and its label echoed back (or planted into the
+// caller's own ledger). `table` is always an internal constant, never user
+// input, so the interpolation is safe. A null/blank id is allowed (these
+// columns are nullable) and passes.
+async function orgOwns(table, id, orgId) {
+  if (id === undefined || id === null || id === "") return true;
+  const rows = await query(`SELECT 1 FROM ${table} WHERE id = ? AND org_id = ?`, [id, orgId]);
+  return rows.length > 0;
+}
+
 async function recalcDonorSummary(donorId, orgId) {
   const agg = await query(
     `SELECT COALESCE(SUM(amount),0) AS total, COUNT(*) AS cnt, MAX(date) AS last_date
@@ -2686,6 +2699,9 @@ app.put("/gifts/:id", requireAuth, wrap(async (req, res) => {
   const { amount, date, type, campaign, notes, fund_id, payment_method, acknowledgement_sent } = req.body;
   const existing = await query("SELECT * FROM gifts WHERE id=? AND org_id=?", [req.params.id, req.user.orgId]);
   if (!existing.length) return res.status(404).json({ error: "Gift not found" });
+  // §1 tenant isolation: a foreign fund id must not be pinned onto this gift
+  // (it would surface another org's fund name in fund-affinity/reports JOINs).
+  if (!(await orgOwns("fin_funds", fund_id, req.user.orgId))) return res.status(404).json({ error: "Fund not found" });
   const g = existing[0];
   const newAmt  = amount !== undefined ? Math.round(Number(amount)) : g.amount; // round, not truncate
   const newDate = date ? normalizeGiftDate(date) : g.date;                       // enforce ISO
@@ -6982,6 +6998,12 @@ app.post("/finance/transactions", requireAuth, checkWriteAccess, wrap(async (req
   if (!date || !description || !amount || !type) {
     return res.status(400).json({ error: "date, description, amount, and type required" });
   }
+  // §1 tenant isolation: a foreign account/fund/donor id must not be accepted
+  // (would echo another org's label back in the response JOIN and pin a
+  // cross-org reference into this org's ledger).
+  if (!(await orgOwns("accounts", accountId, req.user.orgId))) return res.status(404).json({ error: "Account not found" });
+  if (!(await orgOwns("fin_funds", fundId, req.user.orgId))) return res.status(404).json({ error: "Fund not found" });
+  if (!(await orgOwns("donors", donorId, req.user.orgId))) return res.status(404).json({ error: "Donor not found" });
   const id = "ft_" + uuid().slice(0, 8);
   await run(
     "INSERT INTO fin_transactions (id,org_id,date,description,vendor_donor,amount,type,account_id,fund_id,notes,donor_id,source) VALUES (?,?,?,?,?,?,?,?,?,?,?,'manual')",
@@ -7052,6 +7074,9 @@ app.get("/finance/budgets", requireAuth, wrap(async (req, res) => {
 app.post("/finance/budgets", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
   const { accountId, year, amount } = req.body;
   if (!accountId || !year) return res.status(400).json({ error: "accountId and year required" });
+  // §1 tenant isolation: reject a foreign account id (would leak another org's
+  // account code/name into this org's audit log).
+  if (!(await orgOwns("accounts", accountId, req.user.orgId))) return res.status(404).json({ error: "Account not found" });
   const id = "bgt_" + uuid().slice(0, 8);
   await run(
     `INSERT INTO budgets (id,org_id,account_id,year,amount)

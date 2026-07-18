@@ -4,10 +4,45 @@ Generated 2026-07-10 as discovery-only. **Update 2026-07-16: all four CRITICALs
 against the current codebase and are all already fixed** — each has the
 exact protection this report called for. This file was never updated to
 reflect that at the time, so treat those sections as historical (what was
-found, and where the fix landed) rather than an open punch list. The
-remaining §1 org-scoping edge cases (`programs/:id/grants`, `gmail/send`→
-`interactions`, `finance/transactions`) have **not** been re-verified and
-should still be treated as open until checked.
+found, and where the fix landed) rather than an open punch list.
+
+**Update 2026-07-18 (§1 org-scoping CLOSED — see the commit adding `orgOwns()` + `tests/tenant-isolation.test.js`):** the whole
+§1 tenant-isolation class is now verified closed and covered by a committed
+two-org cross-tenant suite, `tests/tenant-isolation.test.js` (21 assertions
+incl. IDOR cases; it is a true differential detector — 6 assertions fail on the
+pre-fix server, 0 on the fixed one). Verified against a local scratch
+server + Postgres. Per-item state established from the *actual current code*,
+not this report:
+- **`programs/:id/grants` (link + delete) and `GET /programs` JOIN — were
+  already fixed** (server.js:5982-6014, 5928-5934): link validates both the
+  program AND the grant against the caller's org (404 otherwise), the JOIN
+  filters `g.org_id`+`pg.org_id`, and delete is `AND org_id`-scoped. No commit
+  in git history flags when — the report simply predated the fix.
+- **`gmail/send`→`interactions` — was already fixed** (server.js:10373-10376):
+  the donor is verified `id=? AND org_id=?` (404) before any send/insert, and
+  the previously-flagged unscoped `GET /donors/:id` interactions read now
+  filters `AND org_id` (server.js:1865).
+- **`finance/transactions` — WAS genuinely open; fixed here.** `POST
+  /finance/transactions` accepted a foreign `accountId`/`fundId`/`donorId` from
+  the body and echoed the other org's account/fund *name* back in the response
+  JOIN (and pinned a cross-org reference into this org's ledger, inflating its
+  cash-on-hand). Same class also found in **`POST /finance/budgets`** (foreign
+  `accountId` → other org's code/name leaked into the audit log) and **`PUT
+  /gifts/:id`** (foreign `fund_id` pinned onto a gift → surfaces in
+  fund-affinity/reports JOINs). All three now call a shared `orgOwns(table, id,
+  orgId)` guard (server.js, next to `recalcDonorSummary`) that 404s a foreign
+  FK before storing/joining it.
+- **Reviewed and benign (not an isolation violation, left as-is):** `POST
+  /tasks` stores an unvalidated body `donorId`, but `GET /tasks` does no donor
+  JOIN and no other read echoes it — the foreign id is an opaque, never-
+  displayed self-reference in the caller's *own* org row; org B's data is
+  neither read, written, nor leaked. Documented rather than "fixed" to keep the
+  change targeted.
+
+Independent second-pass sweep of every body-supplied FK write (accountId,
+fundId, fund_id, donorId, grantId, campaignId, giving_page_id,
+peerFundraiserId, relatedDonorId, fieldId, event attendee donorIds) confirmed
+the rest already validate org ownership before acting.
 
 ---
 
@@ -88,7 +123,7 @@ An attacker enrolls a guessed/known donor ID from a different org into one of th
 
 ## Findings by area
 
-### 1. Org scoping (multi-tenant isolation) — **GAP** (beyond the two CRITICALs above)
+### 1. Org scoping (multi-tenant isolation) — **CLOSED 2026-07-18** (see header note; details below are the original 2026-07-10 discovery, now all resolved)
 The overwhelming majority of the ~90 routes I checked route-by-route are correctly scoped (`donors`, `grants` core CRUD, `volunteers`, `tasks`, `campaigns`, `planned_gifts`, `donor_materials` CRUD itself, `finance/accounts|funds|budgets|transactions` core CRUD, `custom_fields` definitions, `events` core CRUD besides C2, `gmail/thread/:donorId`, `reports/board/:id/pdf`). `calcWealthScore()` (server.js:411-417), specifically called out in CLAUDE.md, is genuinely double-scoped by `donor_id AND org_id` on every query. Beyond C1/C2/C4, two more real gaps:
 
 - **`server.js:3343-3361` `POST /programs/:id/grants`** — `grantId` from the body is never checked against the caller's org before being linked. `GET /programs` (server.js:3288-3297) then `JOIN grants g ON g.id = pg.grant_id` with no `g.org_id` filter — a linked cross-org `grantId` will show that other org's funder/program name in the response. **GAP.**
@@ -142,7 +177,8 @@ Searched the entire codebase (`server.js`, `auth.js`, all of `client/src`, `Admi
 | — | **C3** `/billing/webhook` raw body destroyed → verification always fails | **FIXED** (verified 2026-07-16) |
 | — | **C4** `POST/GET /sequences/:id/enroll|enrollments` donor PII leak | **FIXED** (verified 2026-07-16) |
 | 1 | Org scoping — bulk of routes | OK |
-| 1 | Org scoping — `programs/:id/grants` (link + delete), `gmail/send`→`interactions`, `finance/transactions` | GAP |
+| 1 | Org scoping — `programs/:id/grants` (link + delete), `gmail/send`→`interactions` | ~~GAP~~ **CLOSED** (already fixed in code; verified 2026-07-18) |
+| 1 | Org scoping — `finance/transactions` + `finance/budgets` + `gifts` foreign-FK IDOR | ~~GAP~~ **FIXED 2026-07-18** (`orgOwns` guard; `tests/tenant-isolation.test.js`) |
 | 2 | RBAC — most admin-sensitive routes | OK |
 | 2 | RBAC — `billing/create-portal`, `billing/create-checkout`, `orgs/:id` PATCH | **FIXED** (verified 2026-07-16) |
 | 3 | Stripe webhook — `/stripe/webhook` | OK |
@@ -155,7 +191,7 @@ Searched the entire codebase (`server.js`, `auth.js`, all of `client/src`, `Admi
 | 7 | File upload stored-XSS | **FIXED** (verified 2026-07-16 — allowlist now closes it, not just the accidental `file_data` exclusion) |
 | 8 | Admin impersonation | Not implemented |
 
-**Fix priority (as of original 2026-07-10 discovery): C1–C4 first, regardless of what else is in flight** — C1, C2, and C4 are genuine cross-tenant data exposure/corruption in a system whose entire value proposition depends on tenant isolation; C3 means Stripe billing state has silently never been syncing automatically in whatever environment this has been deployed to. **All four, plus the RBAC gap (§2) and file upload gap (§7), are now fixed** (see notes inline above, verified 2026-07-16). The only items in this original report still unverified are the §1 org-scoping edge cases (`programs/:id/grants` link+delete, `gmail/send`→`interactions`, `finance/transactions`) — those should be treated as the current open punch list from this report.
+**Fix priority (as of original 2026-07-10 discovery): C1–C4 first, regardless of what else is in flight** — C1, C2, and C4 are genuine cross-tenant data exposure/corruption in a system whose entire value proposition depends on tenant isolation; C3 means Stripe billing state has silently never been syncing automatically in whatever environment this has been deployed to. **All four, plus the RBAC gap (§2) and file upload gap (§7), are now fixed** (see notes inline above, verified 2026-07-16). **The §1 org-scoping edge cases are now also closed (2026-07-18)** — `programs/:id/grants` link+delete and `gmail/send`→`interactions` were found already fixed in current code; `finance/transactions` (+ the sibling `finance/budgets` and `gifts` foreign-FK IDORs surfaced by the second-pass sweep) were genuinely open and are now fixed via the shared `orgOwns()` guard, all covered by `tests/tenant-isolation.test.js` (21 assertions, IDOR cases, two-org, differential-verified). Nothing from this report's original punch list remains open.
 
 ---
 
