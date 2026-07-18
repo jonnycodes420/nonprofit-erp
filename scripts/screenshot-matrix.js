@@ -18,8 +18,10 @@
 //             deliberately NOT a project dep; install it in a scratch dir)
 //
 // Matrix: 390 / 768 / 1440 / 1920 / 2560 × home, donors-directory,
-// donors-kanban, grants, communications, reports, settings. ≤768 uses the
-// mobile shell (bottom bar + More drawer); >768 the desktop sidebar.
+// donors-kanban, grants, communications, reports, finance, settings. ≤768 uses
+// the mobile shell (bottom bar + More drawer); >768 the desktop sidebar.
+// (Finance added BUILD-10 — the owed BUILD-09 mobile check; it's in the More
+// drawer on mobile, a direct sidebar item on desktop.)
 
 const path = require("path");
 const fs = require("fs");
@@ -71,10 +73,10 @@ async function newPage(browser, vp, session) {
 
 // Navigate to an app tab through the same chrome a user would use.
 async function goTab(page, vp, tabId) {
-  const labels = { dashboard: "Home", donors: "Donors", grants: "Grants", communications: "Communications", reports: "Reports", settings: "Settings" };
+  const labels = { dashboard: "Home", donors: "Donors", grants: "Grants", communications: "Communications", reports: "Reports", finance: "Finance", settings: "Settings" };
   if (!vp.mobile) {
     await page.click(`.app-sidebar button:has-text("${labels[tabId]}")`);
-  } else if (["communications", "reports"].includes(tabId)) {
+  } else if (["communications", "reports", "finance"].includes(tabId)) {
     await page.click(`.mobile-bottom-bar button:has-text("More")`);
     await page.waitForTimeout(250);
     await page.click(`.mobile-more-drawer button:has-text("${labels[tabId]}")`);
@@ -110,6 +112,8 @@ async function goTab(page, vp, tabId) {
     await shot("communications");
     await goTab(page, vp, "reports");
     await shot("reports");
+    await goTab(page, vp, "finance");
+    await shot("finance");
     await goTab(page, vp, "settings");
     await shot("settings");
 

@@ -13,8 +13,13 @@
 // opens the right donor profile; a grant search opens the grant profile
 // (including from the Grants tab itself — the navNonce remount case); the
 // "Reports" quick-nav lands on Reports; Settings→Tax Receipts quick-nav
-// deep-links to the receipts section; the bar is 52px, sticky above the
-// content with no horizontal overflow.
+// deep-links to the receipts section.
+//
+// BUILD-10 geometry: the bar is now full-width (fixed, x=0, spans the whole
+// viewport), 52px tall, above the sidebar (which starts at y=52); the content
+// carries a single 52px top offset (no double-offset); full-screen takeovers
+// (DonorProfile/GrantProfile) render BELOW the bar (y≈52) so it stays visible,
+// and ⌘K works even while a takeover is open.
 
 const path = require("path");
 if (process.env.PLAYWRIGHT_DIR) module.paths.unshift(path.join(process.env.PLAYWRIGHT_DIR, "node_modules"));
@@ -79,13 +84,26 @@ async function api(pathname, token) {
     await page.keyboard.press("Escape");
   }
 
-  // ── Bar geometry / layout ────────────────────────────────────────────────
+  // ── Bar geometry / layout (BUILD-10: full-width, fixed, above the sidebar) ─
   const barBox = await page.locator(".app-topbar").boundingBox();
+  const sideBox = await page.locator(".app-sidebar").boundingBox();
   const contentBox = await page.locator(".app-content").boundingBox();
-  t("top bar is ~52px tall and starts at content-area left edge (x=220)",
-    barBox && Math.round(barBox.height) === 52 && Math.round(barBox.x) === 220,
-    JSON.stringify(barBox));
-  t("content sits below the bar (no overlap)", contentBox && barBox && contentBox.y >= barBox.y + barBox.height - 1,
+  const vw = await page.evaluate(() => window.innerWidth);
+  const barCount = await page.locator(".app-topbar").count();
+  const barPosition = await page.locator(".app-topbar").evaluate(el => getComputedStyle(el).position);
+  t("exactly one top bar, position:fixed", barCount === 1 && barPosition === "fixed",
+    `count=${barCount} position=${barPosition}`);
+  t("top bar is 52px tall and spans the full viewport width (x=0)",
+    barBox && Math.round(barBox.height) === 52 && Math.round(barBox.x) === 0 && Math.round(barBox.width) >= vw - 1,
+    JSON.stringify(barBox) + ` vw=${vw}`);
+  t("wordmark lives in the bar and links to Home",
+    (await page.locator('[data-testid="topbar-wordmark"]').count()) === 1 &&
+    !(await page.locator('.app-sidebar :text("Steward")').count()),
+    "wordmark should be in the bar, not the sidebar");
+  t("sidebar starts beneath the bar (y=52)", sideBox && Math.round(sideBox.y) === 52, JSON.stringify(sideBox));
+  t("content carries a single 52px offset (no double-offset)",
+    contentBox && barBox && contentBox.y >= barBox.y + barBox.height - 1 &&
+    contentBox.y < barBox.y + barBox.height + 160,
     `content.y=${contentBox?.y} bar bottom=${barBox ? barBox.y + barBox.height : "?"}`);
   t("no horizontal page scroll", await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1));
 
@@ -102,10 +120,15 @@ async function api(pathname, token) {
     await profileHeader.isVisible().catch(() => false) &&
     (await profileHeader.textContent().catch(() => "")).includes(donor.name));
 
-  // While the profile takeover (fixed, z 200) covers the shell, ⌘K must be
-  // a no-op — the bar is underneath it.
+  // BUILD-10: the takeover (fixed, z 200) now renders BELOW the full-width
+  // bar (z 250) — the bar stays visible and ⌘K works over it.
+  const takeoverBox = await page.locator(".fullscreen-takeover").boundingBox();
+  t("full-screen takeover renders below the bar (y≈52)",
+    takeoverBox && Math.round(takeoverBox.y) === 52, JSON.stringify(takeoverBox));
+  t("bar stays visible over the takeover", await page.locator(".app-topbar").isVisible());
   await page.keyboard.press("ControlOrMeta+k");
-  t("⌘K is a no-op while a full-screen profile covers the bar", !(await searchFocused()));
+  t("⌘K focuses search even while a full-screen takeover is open", await searchFocused());
+  await page.keyboard.press("Escape");
 
   // ── Grant search → grant profile (cross-tab: from Home) ──────────────────
   await page.goto(`${BASE}/dashboard`, { waitUntil: "networkidle" });
@@ -134,8 +157,6 @@ async function api(pathname, token) {
     await page.locator(".grant-profile-body").isVisible().catch(() => false));
 
   // ── Quick-nav: Reports ───────────────────────────────────────────────────
-  // GrantProfile is a full-screen takeover too — leave it first (fill()
-  // force-focuses, bypassing the covered-bar ⌘K guard).
   await page.goto(`${BASE}/dashboard`, { waitUntil: "networkidle" });
   await page.waitForTimeout(800);
   await page.keyboard.press("ControlOrMeta+k");

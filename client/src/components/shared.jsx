@@ -226,8 +226,11 @@ export function GlobalStyles() {
       /* Navigation — desktop sidebar + top bar hidden, mobile header restored */
       .app-sidebar{display:none!important;}
       .app-topbar{display:none!important;}
-      .app-main{margin-left:0!important;}
+      .app-main{margin-left:0!important;margin-top:0!important;}
       .app-header{display:flex!important;}
+      /* Full-screen takeovers cover the whole screen on mobile (no fixed bar
+         to sit under) — reset the desktop top:52 offset. */
+      .fullscreen-takeover{top:0!important;}
       .app-signout{display:none!important;}
       .mobile-bottom-bar{display:flex!important;}
       .mobile-more-overlay{display:flex!important;}

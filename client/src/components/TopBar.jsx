@@ -2,12 +2,14 @@ import { useState, useEffect, useRef, useMemo } from "react";
 import { apiFetch } from "../api";
 import { T } from "./shared";
 
-// ── Global top bar (desktop shell only, BUILD-08) ──────────────────────────
-// Slim 52px bar spanning the content area right of the sidebar. Ink
-// background (one layer darker than the sidebar surface language), hairline
-// elevated-green bottom border. Left: global search (⌘K). Right: help menu +
-// user chip/sign-out (moved here from the sidebar bottom — the sidebar is
-// pure nav now). Hidden ≤768px by GlobalStyles; mobile keeps its own header.
+// ── Global top bar (desktop shell only, BUILD-08; full-width BUILD-10) ──────
+// Slim 52px bar spanning the FULL viewport width (fixed, top:0/left:0/right:0),
+// above the sidebar (which starts at top:52). Ink background, hairline
+// elevated-green bottom border. Left→right: wordmark (over the 220px rail
+// zone, links to Home), global search (⌘K, cap ~560px), help menu, user
+// chip/sign-out. zIndex 250 sits above the z-200 full-screen takeovers so the
+// bar stays visible over DonorProfile/GrantProfile. Hidden ≤768px by
+// GlobalStyles; mobile keeps its own header.
 
 // V1 search scope: donors (name/email via GET /donors?search=&limit=),
 // grants (funder/program via GET /grants?search=&limit=), plus static
@@ -37,9 +39,9 @@ export function TopBar({ auth, logout, onNavigate }) {
 
   // ⌘K / Ctrl+K from anywhere in the authenticated app (desktop — the bar
   // is display:none ≤768px, where focusing a hidden input is a no-op).
-  // No-op when something covers the bar (DonorProfile's full-screen takeover
-  // at zIndex 200, modals at 300+): focusing would type into an invisible
-  // input and the dropdown would render underneath the overlay.
+  // BUILD-10: the bar is now full-width at zIndex 250, above the z-200
+  // full-screen takeovers (DonorProfile/GrantProfile), so it's always
+  // visible and clickable — the old elementFromPoint occlusion guard is gone.
   useEffect(()=>{
     const onKey = e => {
       if ((e.metaKey||e.ctrlKey) && (e.key==="k"||e.key==="K")) {
@@ -47,8 +49,6 @@ export function TopBar({ auth, logout, onNavigate }) {
         if (!el) return;
         const r = el.getBoundingClientRect();
         if (!r.width || !r.height) return; // hidden (mobile shell)
-        const top = document.elementFromPoint(r.left+r.width/2, r.top+r.height/2);
-        if (top !== el) return; // covered by a takeover/modal
         e.preventDefault();
         el.focus(); el.select();
       }
@@ -138,10 +138,17 @@ export function TopBar({ auth, logout, onNavigate }) {
 
   const userName = auth?.user?.name || "You";
 
-  return <div className="app-topbar" style={{height:52,flexShrink:0,background:"#0f1a12",borderBottom:"1px solid "+T.bgElevated,display:"flex",alignItems:"center",gap:14,padding:"0 20px",position:"sticky",top:0,zIndex:110,boxSizing:"border-box"}}>
+  return <div className="app-topbar" style={{height:52,background:"#0f1a12",borderBottom:"1px solid "+T.bgElevated,display:"flex",alignItems:"center",gap:14,padding:"0 20px 0 0",position:"fixed",top:0,left:0,right:0,zIndex:250,boxSizing:"border-box"}}>
+
+    {/* Wordmark — over the 220px sidebar rail zone (20px inset matches the
+        old sidebar wordmark), links to Home */}
+    <button data-testid="topbar-wordmark" onClick={()=>onNavigate("dashboard")} title="Steward — Home"
+      style={{width:220,flexShrink:0,textAlign:"left",padding:"0 20px",background:"transparent",border:"none",cursor:"pointer",boxSizing:"border-box"}}>
+      <span style={{fontSize:21,fontWeight:400,color:"#f0ede6",fontFamily:"'DM Serif Display',Georgia,serif",letterSpacing:"-0.02em"}}>Steward</span>
+    </button>
 
     {/* Global search */}
-    <div ref={rootRef} style={{position:"relative",width:"min(460px, 60%)"}}>
+    <div ref={rootRef} style={{position:"relative",flex:"0 1 560px",minWidth:0}}>
       <span style={{position:"absolute",left:11,top:"50%",transform:"translateY(-50%)",color:"#6b8f7a",fontSize:13,pointerEvents:"none"}}>⌕</span>
       <input
         ref={inputRef}

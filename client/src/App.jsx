@@ -221,11 +221,17 @@ function AppShell() {
     <GlobalStyles/>
     <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=DM+Serif+Display&display=swap" rel="stylesheet"/>
 
-    {/* Sidebar — desktop only (hidden ≤768px; mobile keeps bottom bar + More drawer) */}
-    <div className="app-sidebar" style={{position:"fixed",left:0,top:0,bottom:0,width:220,background:"#0f1a12",borderRight:"1px solid #1a2e1f",display:"flex",flexDirection:"column",zIndex:120,boxSizing:"border-box"}}>
-      <div style={{padding:"20px 20px 16px",borderBottom:"1px solid #1a2e1f",flexShrink:0}}>
-        <span style={{fontSize:21,fontWeight:400,color:"#f0ede6",fontFamily:"'DM Serif Display',Georgia,serif",letterSpacing:"-0.02em"}}>Steward</span>
-      </div>
+    {/* Global top bar — full-width, fixed, spans the whole viewport ABOVE the
+        sidebar (BUILD-10). Carries the wordmark, search, help menu, user chip
+        + sign-out. Desktop only (GlobalStyles hides it ≤768px; mobile keeps
+        the .app-header inside app-main below). zIndex sits above the z-200
+        full-screen takeovers so the bar stays visible over them. */}
+    <TopBar auth={auth} logout={logout} onNavigate={navigateTo}/>
+
+    {/* Sidebar — desktop only (hidden ≤768px; mobile keeps bottom bar + More
+        drawer). Starts BENEATH the 52px bar (top:52); pure nav now — wordmark
+        moved into the bar's left edge, user chip/sign-out live in the bar. */}
+    <div className="app-sidebar" style={{position:"fixed",left:0,top:52,bottom:0,width:220,background:"#0f1a12",borderRight:"1px solid #1a2e1f",display:"flex",flexDirection:"column",zIndex:120,boxSizing:"border-box"}}>
       <div style={{flex:1,overflowY:"auto",padding:"14px 10px 14px 0",display:"flex",flexDirection:"column",gap:2}}>
         {TABS.filter(t=>t.id!=="settings").map(t=>{
           const active=tab===t.id;
@@ -246,11 +252,9 @@ function AppShell() {
       </div>
     </div>
 
-    {/* Main column — right of the sidebar on desktop, full width on mobile */}
-    <div className="app-main" style={{marginLeft:220,display:"flex",flexDirection:"column",flex:1,minWidth:0}}>
-
-    {/* Global top bar — desktop only (GlobalStyles hides it ≤768px; mobile keeps .app-header) */}
-    <TopBar auth={auth} logout={logout} onNavigate={navigateTo}/>
+    {/* Main column — right of the sidebar (marginLeft) and below the fixed bar
+        (marginTop) on desktop; both offsets reset to 0 ≤768px in GlobalStyles. */}
+    <div className="app-main" style={{marginLeft:220,marginTop:52,display:"flex",flexDirection:"column",flex:1,minWidth:0}}>
 
     {/* Header — mobile only (display:none here; GlobalStyles' 768px block restores it) */}
     <div className="app-header" style={{borderBottom:"1px solid #1a2e1f",padding:"0 24px",display:"none",alignItems:"center",justifyContent:"space-between",background:"#0f1a12",position:"sticky",top:0,zIndex:100,height:52,width:"100%",boxSizing:"border-box"}}>

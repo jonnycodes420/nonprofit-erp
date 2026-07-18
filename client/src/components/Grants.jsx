@@ -108,7 +108,7 @@ function GrantProfile({grant,onClose,onUpdate,onDelete,isAdmin,org}){
   const ta={...inp,resize:"vertical",lineHeight:1.5};
 
   return(
-    <div className="fade-in" style={{position:"fixed",inset:0,background:T.bg,zIndex:200,display:"flex",flexDirection:"column",overflow:"hidden"}}>
+    <div className="fade-in fullscreen-takeover" style={{position:"fixed",top:52,left:0,right:0,bottom:0,background:T.bg,zIndex:200,display:"flex",flexDirection:"column",overflow:"hidden"}}>
       {logOpen&&<GrantLogModal grant={grant} onSave={handleLogged} onClose={()=>setLogOpen(false)}/>}
 
       <div style={{background:T.white,borderBottom:"1px solid "+T.bg3,padding:"10px 24px",display:"flex",alignItems:"center",gap:12,flexShrink:0}}>
