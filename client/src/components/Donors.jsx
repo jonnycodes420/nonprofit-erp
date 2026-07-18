@@ -2192,6 +2192,47 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
     setRecurResendBusy(false);
   };
 
+  // Households / soft credit / designations (BUILD-14)
+  const [household,setHousehold]=useState(null);
+  const [softCredit,setSoftCredit]=useState(null);
+  const [designations,setDesignations]=useState([]);
+  const [hhModalOpen,setHhModalOpen]=useState(false);
+  const [hhPick,setHhPick]=useState(new Set());
+  const [hhSearch,setHhSearch]=useState("");
+  const refreshSoftCredit=()=>apiFetch(`/donors/${donor.id}/soft-credit`).then(sc=>{
+    setSoftCredit(sc);
+    if(sc&&sc.householdId)apiFetch(`/households/${sc.householdId}`).then(setHousehold).catch(()=>setHousehold(null));
+    else setHousehold(null);
+  }).catch(()=>{setSoftCredit(null);setHousehold(null);});
+  useEffect(()=>{
+    refreshSoftCredit();
+    apiFetch(`/donors/${donor.id}/designations`).then(d=>setDesignations(Array.isArray(d)?d:[])).catch(()=>setDesignations([]));
+  },[donor.id]);
+  const hasDesignation=k=>designations.some(d=>d.kind===k);
+  const toggleDesignation=async(kind)=>{
+    try{
+      if(hasDesignation(kind))await apiFetch(`/donors/${donor.id}/designations/${kind}`,{method:"DELETE"});
+      else await apiFetch(`/donors/${donor.id}/designations`,{method:"POST",body:JSON.stringify({kind})});
+      const d=await apiFetch(`/donors/${donor.id}/designations`);setDesignations(Array.isArray(d)?d:[]);
+    }catch(e){alert(e.message||"Could not update designation");}
+  };
+  const createHousehold=async()=>{
+    const ids=[...hhPick];if(!ids.length)return;
+    try{
+      const hh=await apiFetch("/households",{method:"POST",body:JSON.stringify({memberIds:[donor.id,...ids],primaryDonorId:donor.id})});
+      setHousehold(hh);setHhModalOpen(false);setHhPick(new Set());setHhSearch("");refreshSoftCredit();
+    }catch(e){alert(e.message||"Could not create household");}
+  };
+  const removeFromHousehold=async()=>{
+    if(!household)return;
+    const remaining=household.members.filter(m=>m.id!==donor.id).map(m=>m.id);
+    try{
+      if(remaining.length<2)await apiFetch(`/households/${household.id}`,{method:"DELETE"});
+      else await apiFetch(`/households/${household.id}`,{method:"PUT",body:JSON.stringify({memberIds:remaining})});
+      setHousehold(null);refreshSoftCredit();
+    }catch(e){alert(e.message||"Could not update household");}
+  };
+
   // Tax receipts — per-gift status + whether the org has receipts enabled
   // at all (governs whether "Send receipt" is even offered, vs. a setup
   // nudge). See CLAUDE.md "Tax receipting."
@@ -2589,6 +2630,74 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
 
             {donor.tags?.length>0&&<div style={{display:"flex",gap:5,flexWrap:"wrap"}}>{donor.tags.map(t=><Pill key={t} label={t}/>)}</div>}
             {donor.notes&&<div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:10,padding:"12px 14px",fontSize:13,color:T.ink3,lineHeight:1.6}}>{donor.notes}</div>}
+
+            {/* Household & planned giving (BUILD-14) */}
+            <div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:12,padding:"14px 16px",display:"flex",flexDirection:"column",gap:12}}>
+              <div style={{display:"flex",alignItems:"center",gap:8}}>
+                <span style={{fontSize:10,fontWeight:800,textTransform:"uppercase",letterSpacing:"0.1em",color:"#1a6b4a"}}>Household</span>
+                {household
+                  ?<span style={{fontSize:12,color:T.ink,fontWeight:700}}>{household.name}</span>
+                  :<span style={{fontSize:12,color:T.ink3,fontStyle:"italic"}}>Not in a household</span>}
+                {household
+                  ?!isReadOnly&&<button onClick={removeFromHousehold} style={{marginLeft:"auto",background:"transparent",border:"1px solid "+T.bg3,borderRadius:7,padding:"3px 9px",color:T.terracotta,fontSize:11,fontWeight:700,cursor:"pointer"}}>Remove</button>
+                  :!isReadOnly&&<button onClick={()=>setHhModalOpen(true)} style={{marginLeft:"auto",background:"transparent",border:"1px solid "+T.bg3,borderRadius:7,padding:"3px 9px",color:T.greenMid,fontSize:11,fontWeight:700,cursor:"pointer"}}>+ Group into household</button>}
+              </div>
+              {household&&(
+                <>
+                  <div style={{display:"flex",gap:18,flexWrap:"wrap"}}>
+                    <div><div style={{fontSize:10,color:T.ink3,textTransform:"uppercase",letterSpacing:".05em"}}>Hard credit</div><div style={{fontSize:16,fontWeight:800,color:T.ink}}>{fmtFull(softCredit?.hardCredit||0)}</div></div>
+                    <div><div style={{fontSize:10,color:T.ink3,textTransform:"uppercase",letterSpacing:".05em"}}>Soft credit</div><div style={{fontSize:16,fontWeight:800,color:"#a97f22"}}>{fmtFull(softCredit?.softCredit||0)}</div></div>
+                    <div style={{borderLeft:"1px solid "+T.bg3,paddingLeft:18}}><div style={{fontSize:10,color:T.ink3,textTransform:"uppercase",letterSpacing:".05em"}}>Household combined</div><div style={{fontSize:16,fontWeight:800,color:"#1a6b4a"}}>{fmtFull(household.combined_giving)}</div></div>
+                  </div>
+                  <div style={{display:"flex",flexDirection:"column",gap:5}}>
+                    {household.members.map(m=>(
+                      <div key={m.id} onClick={()=>m.id!==donor.id&&onSelectRelatedDonor&&onSelectRelatedDonor(m.id)} style={{display:"flex",alignItems:"center",gap:8,fontSize:12,padding:"6px 8px",borderRadius:8,background:m.id===donor.id?"#1a6b4a10":"transparent",cursor:m.id!==donor.id?"pointer":"default"}}>
+                        <span style={{fontWeight:m.id===donor.id?800:600,color:T.ink}}>{m.name}</span>
+                        {m.is_primary&&<span style={{background:"#c9a84c",color:"#0f1a12",borderRadius:99,padding:"1px 7px",fontSize:9,fontWeight:800,textTransform:"uppercase"}}>Primary</span>}
+                        <span style={{marginLeft:"auto",color:T.ink3}}>{fmtFull(m.total_giving)}</span>
+                      </div>
+                    ))}
+                  </div>
+                  <div style={{fontSize:11,color:T.ink3}}>Combined view only — each gift's hard credit stays with the donor who gave it.</div>
+                </>
+              )}
+              <div style={{borderTop:"1px solid "+T.bg3,paddingTop:10}}>
+                <div style={{fontSize:10,fontWeight:800,textTransform:"uppercase",letterSpacing:"0.1em",color:"#1a6b4a",marginBottom:7}}>Planned giving & designations</div>
+                <div style={{display:"flex",gap:7,flexWrap:"wrap"}}>
+                  {DESIGNATION_OPTS.map(([k,label])=>{const on=hasDesignation(k);return(
+                    <button key={k} onClick={()=>!isReadOnly&&toggleDesignation(k)} disabled={isReadOnly} title={isReadOnly?"Reactivate your subscription to make changes.":undefined}
+                      style={{background:on?"#1a6b4a":"transparent",color:on?"#fff":T.ink3,border:"1px solid "+(on?"#1a6b4a":T.bg3),borderRadius:99,padding:"4px 11px",fontSize:11,fontWeight:700,cursor:isReadOnly?"not-allowed":"pointer"}}>
+                      {on?"✓ ":""}{label}
+                    </button>
+                  );})}
+                </div>
+              </div>
+              {hhModalOpen&&(
+                <div onClick={()=>setHhModalOpen(false)} style={{position:"fixed",inset:0,background:"rgba(15,26,18,0.5)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+                  <div onClick={e=>e.stopPropagation()} style={{background:T.bg,borderRadius:16,padding:20,width:"min(440px,94vw)",maxHeight:"80vh",display:"flex",flexDirection:"column",gap:12}}>
+                    <div style={{fontFamily:"'DM Serif Display',Georgia,serif",fontSize:19,color:T.ink}}>Group {donor.name} into a household</div>
+                    <div style={{fontSize:12,color:T.ink3}}>Pick the spouse/partner(s) to combine with. {donor.name} becomes the primary. Hard credit stays with each donor — only the relationship view combines.</div>
+                    <input value={hhSearch} onChange={e=>setHhSearch(e.target.value)} placeholder="Search donors…" style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:9,padding:"9px 12px",fontSize:13,color:T.ink,outline:"none"}}/>
+                    <div style={{overflowY:"auto",display:"flex",flexDirection:"column",gap:4,flex:1}}>
+                      {allDonors.filter(x=>x.id!==donor.id&&!x.householdId&&(!hhSearch.trim()||(x.name+(x.email||"")).toLowerCase().includes(hhSearch.toLowerCase()))).slice(0,40).map(x=>{
+                        const picked=hhPick.has(x.id);
+                        return(
+                          <label key={x.id} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 10px",borderRadius:9,background:picked?"#1a6b4a12":T.white,border:"1px solid "+(picked?"#1a6b4a55":T.bg3),cursor:"pointer"}}>
+                            <input type="checkbox" checked={picked} onChange={()=>{const n=new Set(hhPick);n.has(x.id)?n.delete(x.id):n.add(x.id);setHhPick(n);}} style={{accentColor:"#1a6b4a"}}/>
+                            <span style={{fontSize:13,fontWeight:600,color:T.ink}}>{x.name}</span>
+                            <span style={{marginLeft:"auto",fontSize:11,color:T.ink3}}>{fmtFull(x.total||0)}</span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                    <div style={{display:"flex",justifyContent:"flex-end",gap:8}}>
+                      <button onClick={()=>{setHhModalOpen(false);setHhPick(new Set());}} style={{background:"transparent",border:"1px solid "+T.bg3,borderRadius:9,padding:"9px 16px",fontSize:13,fontWeight:700,color:T.ink3,cursor:"pointer"}}>Cancel</button>
+                      <button onClick={createHousehold} disabled={hhPick.size===0} style={{background:hhPick.size?"#1a6b4a":T.bg3,color:"#fff",border:"none",borderRadius:9,padding:"9px 18px",fontSize:13,fontWeight:700,cursor:hhPick.size?"pointer":"not-allowed"}}>Create household</button>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
 
             <div>
               <div style={{fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.1em",color:T.ink3,marginBottom:8,display:"flex",alignItems:"center",gap:6}}>
@@ -3759,7 +3868,8 @@ function AssignModal({donor,orgTeam,onSave,onClose}){
 // page (already narrowed by any client-side advanced/custom-field filters —
 // see the Donors component), `serverTotal` is the query's full match count,
 // and stage/owner/search filtering happens in the GET /donors query itself.
-function DirectoryView({donors,loading,serverTotal,page,pageSize,onPage,clientFilterCount,exportParams,totalDonors,orgTeam,isAdmin,onSelectDonor,onAssign,stageFilter,setStageFilter,assigneeFilter,setAssigneeFilter,onLoadSampleData,sampleLoading,hasSampleData,onAddDonor,onBulkDone}){
+const DESIGNATION_OPTS=[["planned_confirmed","Planned gift confirmed"],["planned_prospect","Planned-giving prospect"],["estate","Estate giving"]];
+function DirectoryView({donors,loading,serverTotal,page,pageSize,onPage,clientFilterCount,exportParams,totalDonors,orgTeam,isAdmin,onSelectDonor,onAssign,stageFilter,setStageFilter,assigneeFilter,setAssigneeFilter,designationFilter,setDesignationFilter,officers=[],officerColorMap={},portfolioMeta={tier:"core",single_user:true},onOfficersChanged,onLoadSampleData,sampleLoading,hasSampleData,onAddDonor,onBulkDone}){
   const [selIds,setSelIds]=useState(new Set());
   const [stageDrop,setStageDrop]=useState(false);
   const [assignDrop,setAssignDrop]=useState(false);
@@ -3843,6 +3953,13 @@ function DirectoryView({donors,loading,serverTotal,page,pageSize,onPage,clientFi
     setBusy(false);
   }
 
+  async function saveOfficerColor(userId,color){
+    try{ await apiFetch(`/portfolio/officers/${userId}/color`,{method:"PUT",body:JSON.stringify({color})}); onOfficersChanged&&onOfficersChanged(); }
+    catch(e){ flash("Could not save color: "+(e.message||"error")); }
+  }
+  const teamPortfolios=portfolioMeta.tier==="team";
+  const showPortfolios=officers.length>1; // single-user shop: no color clutter at all
+
   const filterSel={background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"7px 10px",color:T.ink,fontSize:12,outline:"none",cursor:"pointer"};
   const colGrid="36px minmax(0,2fr) minmax(0,1fr) minmax(0,1fr) 120px 110px 60px"+(isAdmin?" 80px":"");
   const dropItem={display:"block",width:"100%",textAlign:"left",background:"none",border:"none",padding:"9px 14px",fontSize:13,color:"#0f1a12",cursor:"pointer",borderBottom:"1px solid #f3f0eb",fontFamily:"'DM Sans',system-ui,sans-serif"};
@@ -3884,6 +4001,10 @@ function DirectoryView({donors,loading,serverTotal,page,pageSize,onPage,clientFi
           <option value="">All owners</option>
           {orgTeam.map(u=><option key={u.id} value={u.id}>{u.name}</option>)}
         </select>
+        <select value={designationFilter||""} onChange={e=>setDesignationFilter&&setDesignationFilter(e.target.value)} style={filterSel} title="Filter by planned-giving / estate designation">
+          <option value="">All designations</option>
+          {DESIGNATION_OPTS.map(([v,l])=><option key={v} value={v}>{l}</option>)}
+        </select>
         <span style={{fontSize:12,color:T.ink3}}>{serverTotal} donor{serverTotal!==1?"s":""}</span>
         {clientFilterCount>0&&<span title="Advanced and custom-field filters apply within the loaded page only — server-side filtering for these is not available yet."
           style={{fontSize:11,color:T.terracotta,fontWeight:700,background:"#b8593f14",border:"1px solid #b8593f40",borderRadius:99,padding:"3px 10px"}}>
@@ -3903,6 +4024,29 @@ function DirectoryView({donors,loading,serverTotal,page,pageSize,onPage,clientFi
           ))}
         </div>
       </div>
+
+      {/* Officer portfolios (BUILD-14) — color legend + rollups. Team plan
+          gets color assignment; Core sees a lock hint; a 1-person shop sees
+          nothing (graceful, no empty "assign" clutter). */}
+      {showPortfolios&&(
+        <div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:12,padding:"11px 14px",display:"flex",flexWrap:"wrap",alignItems:"center",gap:14}}>
+          <span style={{fontSize:10,fontWeight:800,color:"#1a6b4a",textTransform:"uppercase",letterSpacing:".06em"}}>Officer portfolios</span>
+          {officers.map(o=>{
+            const col=o.portfolio_color;
+            return(
+              <div key={o.id} style={{display:"flex",alignItems:"center",gap:7}}>
+                <label style={{position:"relative",display:"inline-flex",cursor:teamPortfolios&&isAdmin?"pointer":"default"}} title={teamPortfolios&&isAdmin?"Set portfolio color":undefined}>
+                  <span style={{width:14,height:14,borderRadius:"50%",background:col||"#c9beac",border:"1px solid "+(col?col+"88":"#b7ad9b"),display:"inline-block"}}/>
+                  {teamPortfolios&&isAdmin&&<input type="color" value={col||"#1a6b4a"} onChange={e=>saveOfficerColor(o.id,e.target.value)} style={{position:"absolute",inset:0,opacity:0,width:14,height:14,cursor:"pointer"}}/>}
+                </label>
+                <span style={{fontSize:12,color:T.ink,fontWeight:600}}>{o.name}</span>
+                <span style={{fontSize:11,color:T.ink3}}>{o.portfolio_count} · {fmtFull(o.portfolio_giving)}</span>
+              </div>
+            );
+          })}
+          {!teamPortfolios&&<span style={{fontSize:11,color:T.ink3,fontStyle:"italic"}}>🔒 Color-code portfolios on the Team plan</span>}
+        </div>
+      )}
 
       {/* Bulk action bar — shown when ≥1 rows selected */}
       {selIds.size>0&&(
@@ -4010,7 +4154,9 @@ function DirectoryView({donors,loading,serverTotal,page,pageSize,onPage,clientFi
                   <span style={{background:stage.color+"22",color:stage.color,borderRadius:99,padding:compact?"2px 8px":"4px 10px",fontSize:10,fontWeight:800,letterSpacing:"0.04em",textTransform:"uppercase"}}>{stage.label}</span>
                 </div>
                 <div className="dir-col-owner" style={{display:"flex",alignItems:"center",gap:5,minWidth:0}}>
-                  <div style={{width:22,height:22,borderRadius:"50%",background:"#1a6b4a22",display:"flex",alignItems:"center",justifyContent:"center",fontSize:10,fontWeight:800,color:"#1a6b4a",flexShrink:0}}>{(d.assignedToName||"?")[0]}</div>
+                  {(()=>{const oc=officerColorMap[d.assignedTo];return(
+                    <div title={d.assignedToName||"Unassigned"} style={{width:22,height:22,borderRadius:"50%",background:oc?oc:"#1a6b4a22",display:"flex",alignItems:"center",justifyContent:"center",fontSize:10,fontWeight:800,color:oc?"#fff":"#1a6b4a",flexShrink:0,boxShadow:oc?"0 0 0 2px "+oc+"33":"none"}}>{(d.assignedToName||"?")[0]}</div>
+                  );})()}
                   <span style={{fontSize:12,color:T.ink,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{d.assignedToName||"—"}</span>
                 </div>
                 <div style={{textAlign:"right",fontSize:13,fontWeight:700,color:T.ink}}>{fmtFull(d.total)}</div>
@@ -4393,6 +4539,9 @@ export function Donors({data,setData,isReadOnly=false,initialView,initialLogDono
   const[cfFilters,setCfFilters]=useState({});
   const[dirStage,setDirStage]=useState(initialStageFilter||"");
   const[dirAssignee,setDirAssignee]=useState("");
+  const[dirDesignation,setDirDesignation]=useState("");   // BUILD-14 planned-giving/estate segment
+  const[officers,setOfficers]=useState([]);               // BUILD-14 officer portfolios + color
+  const[portfolioMeta,setPortfolioMeta]=useState({tier:"core",single_user:true});
   const[assignTarget,setAssignTarget]=useState(null);
   const[sampleStatus,setSampleStatus]=useState(null);
   const[sampleLoading,setSampleLoading]=useState(false);
@@ -4407,7 +4556,7 @@ export function Donors({data,setData,isReadOnly=false,initialView,initialLogDono
   const[dirSearch,setDirSearch]=useState(search);
   const[dirReloadKey,setDirReloadKey]=useState(0);
   useEffect(()=>{const t=setTimeout(()=>setDirSearch(search),300);return()=>clearTimeout(t);},[search]);
-  useEffect(()=>{setDirPage(0);},[dirSearch,dirStage,dirAssignee]);
+  useEffect(()=>{setDirPage(0);},[dirSearch,dirStage,dirAssignee,dirDesignation]);
   useEffect(()=>{
     if(view!=="directory")return;
     let cancelled=false;
@@ -4417,6 +4566,7 @@ export function Donors({data,setData,isReadOnly=false,initialView,initialLogDono
         if(dirSearch.trim())qs.set("search",dirSearch.trim());
         if(dirStage)qs.set("stage",dirStage);
         if(dirAssignee)qs.set("assignedTo",dirAssignee);
+        if(dirDesignation)qs.set("designation",dirDesignation);
         const r=await apiFetch(`/donors?${qs.toString()}`);
         if(cancelled)return;
         setDirRows((r.donors||[]).map(adaptDonor));
@@ -4424,7 +4574,9 @@ export function Donors({data,setData,isReadOnly=false,initialView,initialLogDono
       }catch(e){console.error(e);if(!cancelled)setDirRows([]);}
     })();
     return()=>{cancelled=true;};
-  },[view,dirPage,dirSearch,dirStage,dirAssignee,dirReloadKey]);
+  },[view,dirPage,dirSearch,dirStage,dirAssignee,dirDesignation,dirReloadKey]);
+  // Officer color map — assigned_to → hex; used for portfolio color-coding.
+  const officerColorMap=useMemo(()=>Object.fromEntries(officers.filter(o=>o.portfolio_color).map(o=>[o.id,o.portfolio_color])),[officers]);
 
   useEffect(()=>{
     if((initialView||initialLogDonorId||initialStageFilter||initialSelectDonorId)&&onIntentConsumed)onIntentConsumed();
@@ -4486,9 +4638,11 @@ export function Donors({data,setData,isReadOnly=false,initialView,initialLogDono
     .filter(matchesCf);
   const dirPageRows=(dirRows||[]).filter(matchesAdvanced).filter(matchesCf);
 
+  const loadOfficers=()=>apiFetch("/portfolio/officers").then(r=>{setOfficers(r.officers||[]);setPortfolioMeta({tier:r.tier||"core",single_user:!!r.single_user});}).catch(()=>{});
   useEffect(()=>{
     apiFetch("/org/sample-data-status").then(setSampleStatus).catch(()=>{});
     apiFetch("/org/team").then(setOrgTeam).catch(()=>{});
+    loadOfficers();
     apiFetch("/custom-fields").then(rows=>setCustomFields(Array.isArray(rows)?rows:[])).catch(()=>{});
     apiFetch("/donors/custom-field-values/all").then(rows=>{
       if(!Array.isArray(rows))return;
@@ -4762,7 +4916,7 @@ export function Donors({data,setData,isReadOnly=false,initialView,initialLogDono
         </div>
       </Card>}
 
-      {view==="directory"&&<DirectoryView donors={dirPageRows} loading={dirRows===null} serverTotal={dirTotal} page={dirPage} pageSize={DIR_PAGE_SIZE} onPage={setDirPage} clientFilterCount={advFilterCount+cfFilterCount} exportParams={{search:dirSearch.trim(),stage:dirStage,assignedTo:dirAssignee}} totalDonors={data.donors.length} orgTeam={orgTeam} isAdmin={isAdmin} onSelectDonor={selectDonor} onAssign={d=>setAssignTarget(d)} stageFilter={dirStage} setStageFilter={setDirStage} assigneeFilter={dirAssignee} setAssigneeFilter={setDirAssignee} onLoadSampleData={loadSampleData} sampleLoading={sampleLoading} hasSampleData={sampleStatus?.hasSampleData} onAddDonor={()=>setShowAdd(true)} onBulkDone={reloadDonors}/>}
+      {view==="directory"&&<DirectoryView donors={dirPageRows} loading={dirRows===null} serverTotal={dirTotal} page={dirPage} pageSize={DIR_PAGE_SIZE} onPage={setDirPage} clientFilterCount={advFilterCount+cfFilterCount} exportParams={{search:dirSearch.trim(),stage:dirStage,assignedTo:dirAssignee,designation:dirDesignation}} totalDonors={data.donors.length} orgTeam={orgTeam} isAdmin={isAdmin} onSelectDonor={selectDonor} onAssign={d=>setAssignTarget(d)} stageFilter={dirStage} setStageFilter={setDirStage} assigneeFilter={dirAssignee} setAssigneeFilter={setDirAssignee} designationFilter={dirDesignation} setDesignationFilter={setDirDesignation} officers={officers} officerColorMap={officerColorMap} portfolioMeta={portfolioMeta} onOfficersChanged={loadOfficers} onLoadSampleData={loadSampleData} sampleLoading={sampleLoading} hasSampleData={sampleStatus?.hasSampleData} onAddDonor={()=>setShowAdd(true)} onBulkDone={reloadDonors}/>}
 
       {view==="pipeline"&&(()=>{
         const myDonors=filtered.filter(d=>d.assignedTo===userId);
