@@ -796,6 +796,29 @@ function requirePlan(tier) {
   };
 }
 
+// ── Moves management & prospect pipeline (BUILD-15) ────────────────────────
+// The pipeline reuses the canonical donor-stage set (no second stage field).
+// prospect→steward is the forward major-gifts pipeline; lapsed is a trailing
+// re-engagement state, not a forward stage. Per-org custom stage editing is a
+// deliberately deferred stage on this same field (like the workflow visual
+// canvas) — the enum is used app-wide (validation, Kanban, Reports), so it
+// stays fixed here.
+const PIPELINE_STAGES = ["prospect", "qualify", "cultivate", "solicit", "steward"];
+const ALL_PIPELINE_STAGES = [...PIPELINE_STAGES, "lapsed"];
+// Stage-weighted forecast: a donor's current stage is a rough close-probability
+// for their open asks. Solicit is near the ask; prospect is far off.
+const STAGE_WEIGHT = { prospect: 0.1, qualify: 0.2, cultivate: 0.4, solicit: 0.7, steward: 0.9, lapsed: 0.05 };
+
+// Insert one move row (system of record for the pipeline). Description is
+// required and validated at the route; this just writes.
+async function recordMove(orgId, donorId, officerId, officerName, fromStage, toStage, description) {
+  const id = "mv_" + uuid().slice(0, 8);
+  await run(
+    "INSERT INTO moves (id,org_id,donor_id,officer_id,officer_name,from_stage,to_stage,description) VALUES (?,?,?,?,?,?,?,?)",
+    [id, orgId, donorId, officerId || null, officerName || "", fromStage || null, toStage, description]);
+  return id;
+}
+
 async function recalcDonorSummary(donorId, orgId) {
   const agg = await query(
     `SELECT COALESCE(SUM(amount),0) AS total, COUNT(*) AS cnt, MAX(date) AS last_date
@@ -3949,6 +3972,220 @@ app.put("/portfolio/officers/:userId/color", requireAuth, requireAdmin, requireP
   if (!u.length) return res.status(404).json({ error: "Officer not found" });
   await run("UPDATE users SET portfolio_color=? WHERE id=? AND org_id=?", [color || null, req.params.userId, req.user.orgId]);
   res.json({ ok: true, userId: req.params.userId, color: color || null });
+}));
+
+// ── Moves management & prospect pipeline (BUILD-15, Team plan) ─────────────
+// The whole pipeline is a staffed-office capability → Team. Reads return a
+// `tier`/`locked` flag rather than 403'ing so a Core org renders a graceful
+// "upgrade to manage a major-gifts pipeline" state, not a broken tab. Every
+// WRITE (move, opportunity) is hard requirePlan('team') + checkWriteAccess.
+
+// GET /pipeline — the board: prospects grouped by stage, officer color map,
+// ask amount + stage age + next task per card, and the forecast. Batched
+// queries only (no N+1). Optional ?assignedTo= (portfolio) and ?designation=.
+app.get("/pipeline", requireAuth, wrap(async (req, res) => {
+  const { orgId } = req.user;
+  const orgRows = await query("SELECT plan, subscription_status FROM orgs WHERE id=?", [orgId]);
+  const tier = orgRows.length ? orgPlanTier(orgRows[0]) : "core";
+  const stages = ALL_PIPELINE_STAGES.map(id => ({ id, label: id.charAt(0).toUpperCase() + id.slice(1) }));
+  if (tier !== "team") {
+    return res.json({ tier, locked: true, stages, officers: [], columns: {}, forecast: null });
+  }
+
+  const officers = await query(
+    "SELECT id, name, portfolio_color FROM users WHERE org_id=? ORDER BY name", [orgId]);
+  const single_user = officers.length <= 1;
+
+  // Donors in a pipeline stage.
+  const filters = ["d.org_id = ?", "d.deleted_at IS NULL", "d.stage = ANY(?)"];
+  const params = [orgId, ALL_PIPELINE_STAGES];
+  if (req.query.assignedTo) { filters.push("d.assigned_to = ?"); params.push(req.query.assignedTo); }
+  if (req.query.designation) {
+    filters.push("EXISTS (SELECT 1 FROM donor_designations dd WHERE dd.donor_id = d.id AND dd.org_id = d.org_id AND dd.kind = ?)");
+    params.push(req.query.designation);
+  }
+  const donors = await query(
+    `SELECT d.id, d.name, d.stage, d.total_giving, d.assigned_to, d.assigned_to_name, d.updated_at, d.created_at
+       FROM donors d WHERE ${filters.join(" AND ")}`, params);
+
+  // Open asks aggregated per donor (org-wide, joined in JS).
+  const oppAgg = await query(
+    `SELECT donor_id, COALESCE(SUM(target_amount),0) AS ask, COUNT(*)::int AS cnt
+       FROM opportunities WHERE org_id=? AND status='open' GROUP BY donor_id`, [orgId]);
+  const askByDonor = Object.fromEntries(oppAgg.map(o => [o.donor_id, { ask: parseFloat(o.ask) || 0, cnt: o.cnt }]));
+
+  // Most recent move INTO the donor's current stage → stage age.
+  const lastMoves = await query(
+    `SELECT DISTINCT ON (donor_id, to_stage) donor_id, to_stage, created_at
+       FROM moves WHERE org_id=? ORDER BY donor_id, to_stage, created_at DESC`, [orgId]);
+  const moveInto = {};
+  for (const m of lastMoves) moveInto[m.donor_id + "|" + m.to_stage] = m.created_at;
+
+  // Next open task per donor (earliest due).
+  const nextTasks = await query(
+    `SELECT DISTINCT ON (donor_id) donor_id, title, due FROM tasks
+       WHERE org_id=? AND done=0 AND donor_id IS NOT NULL
+       ORDER BY donor_id, (NULLIF(due,'')) ASC NULLS LAST`, [orgId]);
+  const taskByDonor = Object.fromEntries(nextTasks.map(t => [t.donor_id, { title: t.title, due: t.due }]));
+
+  const now = Date.now();
+  const columns = {}; ALL_PIPELINE_STAGES.forEach(s => { columns[s] = []; });
+  let forecastOpen = 0, forecastWeighted = 0, openCount = 0;
+  for (const d of donors) {
+    const a = askByDonor[d.id] || { ask: 0, cnt: 0 };
+    forecastOpen += a.ask; openCount += a.cnt;
+    forecastWeighted += a.ask * (STAGE_WEIGHT[d.stage] || 0);
+    const enteredStage = moveInto[d.id + "|" + d.stage] || d.updated_at || d.created_at;
+    const stageAge = enteredStage ? Math.max(0, Math.floor((now - new Date(enteredStage).getTime()) / 86400000)) : null;
+    (columns[d.stage] = columns[d.stage] || []).push({
+      donorId: d.id, name: d.name, stage: d.stage,
+      totalGiving: parseFloat(d.total_giving) || 0,
+      assignedTo: d.assigned_to, assignedToName: d.assigned_to_name,
+      askAmount: a.ask, openOppCount: a.cnt, stageAge,
+      nextTask: taskByDonor[d.id] || null,
+    });
+  }
+  // Won this quarter (period) — a coarse pipeline health figure.
+  const { start } = finPeriodBounds("fiscal", 0);
+  const wonAgg = await query(
+    `SELECT COALESCE(SUM(gift_amount),0) AS amt, COUNT(*)::int AS cnt FROM opportunities
+       WHERE org_id=? AND status='won' AND closed_at >= ?`, [orgId, start]);
+  res.json({
+    tier, locked: false, single_user, stages,
+    officers: officers.map(o => ({ id: o.id, name: o.name, color: o.portfolio_color })),
+    columns,
+    forecast: {
+      open: Math.round(forecastOpen), weighted: Math.round(forecastWeighted), openCount,
+      wonThisPeriod: parseFloat(wonAgg[0].amt) || 0, wonCount: wonAgg[0].cnt,
+    },
+  });
+}));
+
+// POST /pipeline/:donorId/move — the managed stage change. Description REQUIRED.
+app.post("/pipeline/:donorId/move", requireAuth, requirePlan("team"), checkWriteAccess, wrap(async (req, res) => {
+  const { toStage, description } = req.body;
+  if (!ALL_PIPELINE_STAGES.includes(toStage)) return res.status(400).json({ error: "Invalid stage" });
+  if (!description || !String(description).trim()) return res.status(400).json({ error: "A description of the move is required." });
+  const rows = await query("SELECT stage FROM donors WHERE id=? AND org_id=? AND deleted_at IS NULL", [req.params.donorId, req.user.orgId]);
+  if (!rows.length) return res.status(404).json({ error: "Donor not found" });
+  const fromStage = rows[0].stage;
+  if (fromStage === toStage) return res.status(400).json({ error: "Donor is already in that stage." });
+
+  const userRow = await query("SELECT name FROM users WHERE id=?", [req.user.userId]);
+  const officerName = userRow[0]?.name || "";
+  await run("UPDATE donors SET stage=?, updated_at=NOW() WHERE id=? AND org_id=?", [toStage, req.params.donorId, req.user.orgId]);
+  const moveId = await recordMove(req.user.orgId, req.params.donorId, req.user.userId, officerName, fromStage, toStage, String(description).trim());
+  // Keep the donor timeline consistent with the legacy stage_change path.
+  try {
+    await run(
+      "INSERT INTO interactions (id,org_id,donor_id,type,note,date,created_by,logged_by_name) VALUES (?,?,?,?,?,?,?,?)",
+      ["int_" + uuid().slice(0, 8), req.user.orgId, req.params.donorId, "stage_change",
+       `Moved ${fromStage} → ${toStage}: ${String(description).trim()}`,
+       new Date().toISOString().split("T")[0], req.user.userId, officerName]);
+  } catch (e) { console.error("move interaction log:", e.message); }
+  res.status(201).json({ ok: true, moveId, stage: toStage, fromStage });
+}));
+
+// GET /donors/:id/moves — full move history for a constituent.
+app.get("/donors/:id/moves", requireAuth, wrap(async (req, res) => {
+  if (!(await orgOwns("donors", req.params.id, req.user.orgId))) return res.status(404).json({ error: "Donor not found" });
+  const rows = await query(
+    "SELECT id, officer_id, officer_name, from_stage, to_stage, description, created_at FROM moves WHERE org_id=? AND donor_id=? ORDER BY created_at DESC",
+    [req.user.orgId, req.params.id]);
+  res.json(rows);
+}));
+
+// GET /donors/:id/opportunities — asks on a prospect.
+app.get("/donors/:id/opportunities", requireAuth, wrap(async (req, res) => {
+  if (!(await orgOwns("donors", req.params.id, req.user.orgId))) return res.status(404).json({ error: "Donor not found" });
+  const rows = await query(
+    "SELECT * FROM opportunities WHERE org_id=? AND donor_id=? ORDER BY (status='open') DESC, created_at DESC",
+    [req.user.orgId, req.params.id]);
+  res.json(rows.map(o => ({ ...o, target_amount: parseFloat(o.target_amount) || 0, gift_amount: o.gift_amount == null ? null : parseFloat(o.gift_amount) })));
+}));
+
+app.post("/donors/:id/opportunities", requireAuth, requirePlan("team"), checkWriteAccess, wrap(async (req, res) => {
+  const { name, targetAmount, expectedClose } = req.body;
+  const amt = parseFloat(targetAmount);
+  if (!(amt > 0)) return res.status(400).json({ error: "A positive target ask amount is required." });
+  const d = await query("SELECT assigned_to, assigned_to_name FROM donors WHERE id=? AND org_id=? AND deleted_at IS NULL", [req.params.id, req.user.orgId]);
+  if (!d.length) return res.status(404).json({ error: "Donor not found" });
+  // Officer = the donor's relationship owner; falls back to the creating user.
+  let officerId = d[0].assigned_to, officerName = d[0].assigned_to_name;
+  if (!officerId) { officerId = req.user.userId; const u = await query("SELECT name FROM users WHERE id=?", [req.user.userId]); officerName = u[0]?.name || ""; }
+  const id = "opp_" + uuid().slice(0, 8);
+  await run(
+    "INSERT INTO opportunities (id,org_id,donor_id,name,target_amount,status,officer_id,officer_name,expected_close) VALUES (?,?,?,?,?,'open',?,?,?)",
+    [id, req.user.orgId, req.params.id, (name || "").trim() || "Ask", amt, officerId, officerName || "", expectedClose || null]);
+  const rows = await query("SELECT * FROM opportunities WHERE id=?", [id]);
+  res.status(201).json({ ...rows[0], target_amount: parseFloat(rows[0].target_amount) || 0 });
+}));
+
+// PUT /opportunities/:id — edit, or close won/lost. Closing 'won' links the
+// real gift and records the actual gift amount (the ask-vs-gift accountability).
+app.put("/opportunities/:id", requireAuth, requirePlan("team"), checkWriteAccess, wrap(async (req, res) => {
+  const existing = await query("SELECT * FROM opportunities WHERE id=? AND org_id=?", [req.params.id, req.user.orgId]);
+  if (!existing.length) return res.status(404).json({ error: "Opportunity not found" });
+  const { name, targetAmount, expectedClose, status, giftId, giftAmount } = req.body;
+  const sets = [], params = [];
+  if (name !== undefined) { sets.push("name=?"); params.push((name || "").trim() || "Ask"); }
+  if (targetAmount !== undefined) { const a = parseFloat(targetAmount); if (!(a > 0)) return res.status(400).json({ error: "Target ask amount must be positive." }); sets.push("target_amount=?"); params.push(a); }
+  if (expectedClose !== undefined) { sets.push("expected_close=?"); params.push(expectedClose || null); }
+  if (status !== undefined) {
+    if (!["open", "won", "lost"].includes(status)) return res.status(400).json({ error: "Invalid status" });
+    sets.push("status=?"); params.push(status);
+    if (status === "won") {
+      let amt = giftAmount != null ? parseFloat(giftAmount) : null;
+      let gId = giftId || null;
+      if (gId) {
+        const g = await query("SELECT amount FROM gifts WHERE id=? AND org_id=?", [gId, req.user.orgId]);
+        if (!g.length) return res.status(404).json({ error: "Linked gift not found" });
+        if (amt == null) amt = parseFloat(g[0].amount) || 0;
+      }
+      sets.push("gift_id=?", "gift_amount=?", "closed_at=NOW()"); params.push(gId, amt);
+    } else if (status === "lost") {
+      sets.push("gift_id=NULL", "gift_amount=NULL", "closed_at=NOW()");
+    } else { // reopen
+      sets.push("gift_id=NULL", "gift_amount=NULL", "closed_at=NULL");
+    }
+  }
+  if (!sets.length) return res.status(400).json({ error: "Nothing to update" });
+  params.push(req.params.id, req.user.orgId);
+  await run(`UPDATE opportunities SET ${sets.join(",")} WHERE id=? AND org_id=?`, params);
+  const rows = await query("SELECT * FROM opportunities WHERE id=?", [req.params.id]);
+  res.json({ ...rows[0], target_amount: parseFloat(rows[0].target_amount) || 0, gift_amount: rows[0].gift_amount == null ? null : parseFloat(rows[0].gift_amount) });
+}));
+
+app.delete("/opportunities/:id", requireAuth, wrap(async (req, res) => {
+  await run("DELETE FROM opportunities WHERE id=? AND org_id=?", [req.params.id, req.user.orgId]);
+  res.json({ success: true });
+}));
+
+// GET /pipeline/officer-activity — per-officer moves/asks/gifts over a period.
+// The raw data BUILD-17's per-officer reports read; just recorded cleanly here.
+app.get("/pipeline/officer-activity", requireAuth, wrap(async (req, res) => {
+  const { orgId } = req.user;
+  const from = req.query.from || new Date(Date.now() - 90 * 86400000).toISOString().slice(0, 10);
+  const to = req.query.to || new Date().toISOString().slice(0, 10);
+  const officers = await query("SELECT id, name, portfolio_color FROM users WHERE org_id=? ORDER BY name", [orgId]);
+  const moves = await query(
+    "SELECT officer_id, COUNT(*)::int AS cnt FROM moves WHERE org_id=? AND created_at >= ? AND created_at < (?::date + 1) GROUP BY officer_id", [orgId, from, to]);
+  const asks = await query(
+    "SELECT officer_id, COUNT(*)::int AS cnt, COALESCE(SUM(target_amount),0) AS amt FROM opportunities WHERE org_id=? AND created_at >= ? AND created_at < (?::date + 1) GROUP BY officer_id", [orgId, from, to]);
+  const won = await query(
+    "SELECT officer_id, COUNT(*)::int AS cnt, COALESCE(SUM(gift_amount),0) AS amt FROM opportunities WHERE org_id=? AND status='won' AND closed_at >= ? AND closed_at < (?::date + 1) GROUP BY officer_id", [orgId, from, to]);
+  const mv = Object.fromEntries(moves.map(r => [r.officer_id, r.cnt]));
+  const ak = Object.fromEntries(asks.map(r => [r.officer_id, r]));
+  const wn = Object.fromEntries(won.map(r => [r.officer_id, r]));
+  res.json({
+    from, to,
+    officers: officers.map(o => ({
+      officerId: o.id, name: o.name, color: o.portfolio_color,
+      movesMade: mv[o.id] || 0,
+      asksMade: ak[o.id]?.cnt || 0, asksAmount: parseFloat(ak[o.id]?.amt) || 0,
+      giftsClosed: wn[o.id]?.cnt || 0, giftsAmount: parseFloat(wn[o.id]?.amt) || 0,
+    })),
+  });
 }));
 
 // ── Donor-to-donor relationships (household/spouse/family/employer_match) ──

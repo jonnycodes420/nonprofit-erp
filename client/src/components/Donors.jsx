@@ -2204,10 +2204,32 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
     if(sc&&sc.householdId)apiFetch(`/households/${sc.householdId}`).then(setHousehold).catch(()=>setHousehold(null));
     else setHousehold(null);
   }).catch(()=>{setSoftCredit(null);setHousehold(null);});
+  // Pipeline: moves history + ask/gift opportunities (BUILD-15, Team plan)
+  const [moves,setMoves]=useState([]);
+  const [opps,setOpps]=useState([]);
+  const [planTier,setPlanTier]=useState("core");
+  const [askOpen,setAskOpen]=useState(false);
+  const [askName,setAskName]=useState("");const [askAmt,setAskAmt]=useState("");
+  const refreshPipeline=()=>{
+    apiFetch(`/donors/${donor.id}/moves`).then(m=>setMoves(Array.isArray(m)?m:[])).catch(()=>setMoves([]));
+    apiFetch(`/donors/${donor.id}/opportunities`).then(o=>setOpps(Array.isArray(o)?o:[])).catch(()=>setOpps([]));
+  };
+  const addAsk=async()=>{
+    const amt=parseFloat(askAmt);if(!(amt>0)){alert("Enter a positive target ask amount.");return;}
+    try{await apiFetch(`/donors/${donor.id}/opportunities`,{method:"POST",body:JSON.stringify({name:askName.trim()||"Ask",targetAmount:amt})});
+      setAskOpen(false);setAskName("");setAskAmt("");refreshPipeline();}catch(e){alert(e.message||"Could not add ask");}
+  };
+  const closeAsk=async(o,status)=>{
+    const body={status};
+    if(status==="won"){const amt=prompt(`Actual gift amount closed (asked ${fmtFull(o.target_amount)}):`,o.target_amount);if(amt==null)return;body.giftAmount=parseFloat(amt)||0;}
+    try{await apiFetch(`/opportunities/${o.id}`,{method:"PUT",body:JSON.stringify(body)});refreshPipeline();}catch(e){alert(e.message||"Could not update ask");}
+  };
   useEffect(()=>{
-    refreshSoftCredit();
+    refreshSoftCredit();refreshPipeline();
     apiFetch(`/donors/${donor.id}/designations`).then(d=>setDesignations(Array.isArray(d)?d:[])).catch(()=>setDesignations([]));
+    apiFetch("/portfolio/officers").then(r=>setPlanTier(r?.tier||"core")).catch(()=>{});
   },[donor.id]);
+  const isTeam=planTier==="team";
   const hasDesignation=k=>designations.some(d=>d.kind===k);
   const toggleDesignation=async(kind)=>{
     try{
@@ -2672,6 +2694,52 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
                   );})}
                 </div>
               </div>
+              {/* Pipeline: Moves & Asks (BUILD-15, Team plan) */}
+              {(isTeam||moves.length>0||opps.length>0)&&(
+                <div style={{borderTop:"1px solid "+T.bg3,paddingTop:10}}>
+                  <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:7}}>
+                    <div style={{fontSize:10,fontWeight:800,textTransform:"uppercase",letterSpacing:"0.1em",color:"#1a6b4a"}}>Pipeline — moves & asks</div>
+                    {isTeam&&!isReadOnly&&<button onClick={()=>setAskOpen(v=>!v)} style={{background:"transparent",border:"1px solid "+T.bg3,borderRadius:99,padding:"3px 10px",fontSize:11,fontWeight:700,color:"#a97f22",cursor:"pointer"}}>{askOpen?"Cancel":"+ Add ask"}</button>}
+                  </div>
+                  {askOpen&&(
+                    <div style={{display:"flex",gap:6,marginBottom:8,flexWrap:"wrap"}}>
+                      <input value={askName} onChange={e=>setAskName(e.target.value)} placeholder="What's the ask? (optional)" style={{flex:"1 1 140px",border:"1px solid "+T.bg3,borderRadius:8,padding:"6px 9px",fontSize:12}}/>
+                      <input value={askAmt} onChange={e=>setAskAmt(e.target.value)} placeholder="$ target" style={{width:100,border:"1px solid "+T.bg3,borderRadius:8,padding:"6px 9px",fontSize:12}}/>
+                      <button onClick={addAsk} style={{background:"#1a6b4a",border:"none",borderRadius:8,padding:"6px 14px",fontSize:12,fontWeight:700,color:"#fff",cursor:"pointer"}}>Save</button>
+                    </div>
+                  )}
+                  {opps.length>0&&(
+                    <div style={{display:"flex",flexDirection:"column",gap:5,marginBottom:moves.length?10:0}}>
+                      {opps.map(o=>(
+                        <div key={o.id} style={{display:"flex",alignItems:"center",gap:8,fontSize:12,padding:"6px 8px",borderRadius:8,background:o.status==="open"?"#c9a84c14":T.bg2}}>
+                          <span style={{fontWeight:700,color:T.ink}}>{o.name}</span>
+                          <span style={{color:"#a97f22",fontWeight:800}}>{fmtFull(o.target_amount)} ask</span>
+                          {o.status==="won"&&<span style={{color:"#1a6b4a",fontWeight:700}}>→ {fmtFull(o.gift_amount||0)} gift</span>}
+                          {o.status==="lost"&&<span style={{color:T.terracotta,fontWeight:700}}>lost</span>}
+                          <span style={{marginLeft:"auto",display:"flex",gap:6}}>
+                            {o.status==="open"&&isTeam&&!isReadOnly&&<>
+                              <button onClick={()=>closeAsk(o,"won")} style={{background:"#1a6b4a",border:"none",borderRadius:6,padding:"2px 9px",fontSize:11,fontWeight:700,color:"#fff",cursor:"pointer"}}>Won</button>
+                              <button onClick={()=>closeAsk(o,"lost")} style={{background:"transparent",border:"1px solid "+T.bg3,borderRadius:6,padding:"2px 9px",fontSize:11,fontWeight:700,color:T.ink3,cursor:"pointer"}}>Lost</button>
+                            </>}
+                            {o.status!=="open"&&<span style={{fontSize:10,color:T.ink3,textTransform:"uppercase"}}>{o.status}</span>}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {moves.length>0&&(
+                    <div style={{display:"flex",flexDirection:"column",gap:4}}>
+                      {moves.slice(0,6).map(m=>(
+                        <div key={m.id} style={{fontSize:12,color:T.ink2,paddingLeft:10,borderLeft:"2px solid "+T.bg3}}>
+                          <div><span style={{fontWeight:700,color:T.ink}}>{cap(m.from_stage)} → {cap(m.to_stage)}</span> <span style={{color:T.ink3}}>· {m.officer_name||"—"} · {new Date(m.created_at).toLocaleDateString("en-US",{month:"short",day:"numeric"})}</span></div>
+                          {m.description&&<div style={{color:T.ink3,fontSize:11}}>{m.description}</div>}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {isTeam&&moves.length===0&&opps.length===0&&<div style={{fontSize:11,color:T.ink3}}>No moves or asks logged yet. Move this donor on the Pipeline board, or add an ask above.</div>}
+                </div>
+              )}
               {hhModalOpen&&(
                 <div onClick={()=>setHhModalOpen(false)} style={{position:"fixed",inset:0,background:"rgba(15,26,18,0.5)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
                   <div onClick={e=>e.stopPropagation()} style={{background:T.bg,borderRadius:16,padding:20,width:"min(440px,94vw)",maxHeight:"80vh",display:"flex",flexDirection:"column",gap:12}}>
@@ -3869,6 +3937,7 @@ function AssignModal({donor,orgTeam,onSave,onClose}){
 // see the Donors component), `serverTotal` is the query's full match count,
 // and stage/owner/search filtering happens in the GET /donors query itself.
 const DESIGNATION_OPTS=[["planned_confirmed","Planned gift confirmed"],["planned_prospect","Planned-giving prospect"],["estate","Estate giving"]];
+const cap=s=>s?String(s).charAt(0).toUpperCase()+String(s).slice(1):"—";
 function DirectoryView({donors,loading,serverTotal,page,pageSize,onPage,clientFilterCount,exportParams,totalDonors,orgTeam,isAdmin,onSelectDonor,onAssign,stageFilter,setStageFilter,assigneeFilter,setAssigneeFilter,designationFilter,setDesignationFilter,officers=[],officerColorMap={},portfolioMeta={tier:"core",single_user:true},onOfficersChanged,onLoadSampleData,sampleLoading,hasSampleData,onAddDonor,onBulkDone}){
   const [selIds,setSelIds]=useState(new Set());
   const [stageDrop,setStageDrop]=useState(false);

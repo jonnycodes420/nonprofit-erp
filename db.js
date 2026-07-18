@@ -1225,6 +1225,55 @@ async function initSchema() {
   // = unset (falls back to a deterministic hue in the UI). Single-user orgs
   // never surface color UI at all.
   await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS portfolio_color TEXT`);
+
+  // ── Moves management & prospect pipeline (BUILD-15, Team plan) ────────────
+  // The major-gifts spine. Reuses the existing donors.stage field as the
+  // managed pipeline (no second stage column is forked). Every stage change
+  // made through the pipeline board is a logged MOVE: officer, from→to, and a
+  // REQUIRED description of what happened. This structured feed powers officer
+  // activity reporting (BUILD-17) — which is why it's its own table rather
+  // than stuffed into interactions.metadata JSONB (a stringly-typed tag can't
+  // be aggregated per-officer cleanly). A stage_change interaction is still
+  // logged alongside so the donor's activity timeline stays consistent.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS moves (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL,
+      donor_id TEXT NOT NULL,
+      officer_id TEXT,
+      officer_name TEXT,
+      from_stage TEXT,
+      to_stage TEXT NOT NULL,
+      description TEXT NOT NULL,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_moves_org_donor ON moves (org_id, donor_id, created_at DESC)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_moves_org_officer ON moves (org_id, officer_id, created_at DESC)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_moves_org_created ON moves (org_id, created_at DESC)`);
+
+  // Opportunities = ask vs. gift. Each solicitation on a prospect carries a
+  // target ASK amount; when it closes 'won' the actual GIFT amount (and the
+  // real gift row) are recorded. Pipeline forecast = SUM(target_amount) over
+  // open opportunities (optionally weighted by the donor's stage). This is
+  // officer accountability: asked for how much, closed how much.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS opportunities (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL,
+      donor_id TEXT NOT NULL,
+      name TEXT,
+      target_amount NUMERIC NOT NULL DEFAULT 0,
+      status TEXT NOT NULL DEFAULT 'open',
+      gift_id TEXT,
+      gift_amount NUMERIC,
+      officer_id TEXT,
+      officer_name TEXT,
+      expected_close DATE,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      closed_at TIMESTAMPTZ
+    )`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_opportunities_org_donor ON opportunities (org_id, donor_id)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_opportunities_org_status ON opportunities (org_id, status)`);
 }
 
 async function seedData() {
