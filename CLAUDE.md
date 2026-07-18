@@ -97,14 +97,16 @@ Decided 2026-07-16 (BUILD-04 Strike 4): use a free external ping service rather 
 - db.js
 
 ## Active tabs (App.jsx TABS array — current, post-pivot)
-dashboard ("Home") → donors → **fundraising** → grants → communications → reports → finance → settings
+dashboard ("Home") → donors → **fundraising** → grants → communications → **tasks** → reports → finance → settings
 
 Fundraising was **added 2026-07-18 (BUILD-11)** — see "Fundraising (BUILD-11)" below. It sits between Donors and Grants; on mobile it's the first item in the "More" drawer (`MORE_TABS`).
 
-Finance was **reintegrated 2026-07-17 (BUILD-09)** — un-hidden AND rebuilt to current design standards (see "Finance (reintegrated)" below). Events/Volunteers/Board/Tasks remain commented out of `TABS` with a `// DEPRIORITIZED` marker — re-enable by uncommenting, nothing else to restore. (Analytics was deleted outright — see Strategic pivot; the Reports tab added 2026-07-16 is its deliberate replacement — see "Reports" below.)
+Tasks was **resurrected 2026-07-18 (BUILD-13 Part 1)** — un-hidden AND rebuilt from the deprecated local-state stub into a real API-driven daily-driver surface (see "Tasks (BUILD-13)" below). It sits between Communications and Reports. Events/Volunteers/Board remain commented out of `TABS` with a `// DEPRIORITIZED` marker — re-enable by uncommenting, nothing else to restore.
+
+Finance was **reintegrated 2026-07-17 (BUILD-09)** — un-hidden AND rebuilt to current design standards (see "Finance (reintegrated)" below). (Analytics was deleted outright — see Strategic pivot; the Reports tab added 2026-07-16 is its deliberate replacement — see "Reports" below.)
 
 Mobile bottom bar (`BOTTOM_TABS`): dashboard ("Home"), donors, grants, settings
-Mobile "More" drawer (`MORE_TABS`): communications, reports, finance (Events/Volunteers/Board/Tasks are commented out here too)
+Mobile "More" drawer (`MORE_TABS`): fundraising, communications, tasks, reports, finance (Events/Volunteers/Board are commented out here too)
 
 ## Component files (client/src/components/)
 - shared.jsx — T (design tokens, now includes `bgDeep` and `terracotta`), fmt, fmtFull, daysDiff, daysUntil, SC, askClaude, buildContext, STAGES, STAGE_THRESH, STAGE_ACTION, TIER_COLOR, donorScore, retentionRisk, moveUrgency, GlobalStyles, Spin, Pill, Card, SectionLabel, AIBtn (default label "Suggest", not "AI Assist"), AIPanel (badge reads "Suggested", not "AI Intelligence"), MetricCard, EmptyState, PageTitle, GivingHistoryChart, TpField, TpYesNo, TouchpointTimeline, VoiceMemoModal (built but currently unused — see "Voice memo capture (shelved)" below)
@@ -173,6 +175,16 @@ Mobile "More" drawer (`MORE_TABS`): communications, reports, finance (Events/Vol
 - `DonorProfile` (Donors.jsx): fetches `GET /gmail/status` on mount; "✉ Send Email" button opens inline compose panel. `draftWithAI` fetches thread + streams AI; `sendEmail` replaces {{tokens}} and calls `POST /gmail/send`.
 - `getAI` in Donors component: fetches thread for "email"/"outreach" types and prepends to prompt
 - `adaptData` in api.js includes `metadata` in interactions so direction badges render from DB data
+
+## Tasks (BUILD-13 Part 1 — resurrected 2026-07-18)
+The daily-driver follow-up surface. The hidden `Tasks.jsx` was a deprecated **local-state stub** (mutated `data.tasks` in memory, never hit the API); BUILD-13 rewrote it into a real API-driven tab and un-hid it.
+- **Table `tasks`** (pre-existing, extended): id, org_id, title, due (TEXT ISO or ""), priority (high/medium/low), type (default 'donor', kept for back-compat, not surfaced), done (INTEGER 0/1), donor_id (nullable), created_at; **added BUILD-13**: `assigned_to` (owner user id), `assigned_to_name`, `updated_at`, and index `idx_tasks_org_donor(org_id, donor_id)`.
+- **Model**: title + optional due date + optional linked donor + status (open/done) + owner (defaults to the creator; may target a teammate, validated to the org). Hard delete (no soft-delete) — matches the pre-existing model.
+- **Routes** (all org-scoped): `GET /tasks` (LEFT JOINs donors for `donor_name`, so the linked donor renders without a second fetch), `GET /donors/:id/tasks` (a donor's own tasks, `orgOwns` donor guard → 404), `POST /tasks` / `PUT /tasks/:id` (`checkWriteAccess`), `POST /tasks/:id/complete` (the one-click toggle, body `{done}`, `checkWriteAccess`), `DELETE /tasks/:id` (ungated per the DELETE convention).
+- **§1 resurfacing security note (important):** §1 judged `POST /tasks`'s `donorId` a "benign opaque self-reference." Once Tasks became first-class and **renders the linked donor's name**, that no longer holds — a foreign `donorId` would leak a donor name/link across orgs. So `donorId` is now run through the `orgOwns("donors", …)` guard on **both** POST and PUT (foreign id → 404, no row planted); a foreign `assignedTo` → 404. Covered by `tests/tasks.test.js` and the task-IDOR case added to `tests/tenant-isolation.test.js`.
+- **Frontend** (`Tasks.jsx`): three time buckets — **Overdue** (terracotta), **Due today** (gold), **Upcoming** (green), plus a **No date** group and a collapsed Completed `<details>`. One-click complete (optimistic), create-task form (title/due/priority + donor `<select>` from `data.donors`). Every donor-linked row deep-links to the donor profile via `onNavigate("donors",{selectDonorId})` using the keyboard-accessible `interactive()` treatment. Local state is synced back into `data.tasks` via `setData` so the **sidebar badge stays live** — the badge (`tasksDue` in App.jsx) counts open tasks that are **overdue or due today** (was: high-priority count). `isReadOnly` gates create/complete with the standard tooltip.
+- **Donor profile surface** (Donors.jsx `DonorProfile`): the pre-existing "Follow-up Tasks" section on the Overview tab now has a **"+ Add task"** button (opens `FollowUpTaskModal`, threaded via the new `onAddTask` prop) alongside the open-task count + list. `apiFetch` bodies must be `JSON.stringify`'d (options pass straight to `fetch`) — the new Tasks.jsx follows that.
+- **Verified**: `tests/tasks.test.js` — **31/31** (create/list/bucket classification, one-click complete/reopen, per-donor read, foreign-donor + foreign-assignee IDOR 404 with no side effect, org isolation both directions, `checkWriteAccess` 402 with reads still 200 and DELETE ungated). DSF3 screenshots: docs/build13-tasks-2026-07-18/ (tasks-buckets, donor-profile-tasks).
 
 ## Super admin pattern
 - `is_super_admin BOOLEAN DEFAULT false` column on `users` table

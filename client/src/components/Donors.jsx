@@ -1979,7 +1979,7 @@ function GiftLinkModal({donor,orgName,onClose}){
 }
 
 // ── Donor Profile ──────────────────────────────────────────────────────────
-function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loadingKey,getAI,isAdmin,onEdit,onDelete,tasks=[],onTaskToggle,orgName="",orgTeam=[],onReassign,onCfSaved,onInteractionAdded,isReadOnly=false,allDonors=[],onSelectRelatedDonor}){
+function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loadingKey,getAI,isAdmin,onEdit,onDelete,tasks=[],onTaskToggle,onAddTask,orgName="",orgTeam=[],onReassign,onCfSaved,onInteractionAdded,isReadOnly=false,allDonors=[],onSelectRelatedDonor}){
   const [gifts,setGifts]=useState([]);
   const [giftLoading,setGiftLoading]=useState(true);
   const [localInts,setLocalInts]=useState(null); // loaded lazily from GET /donors/:id
@@ -2591,12 +2591,13 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
             {donor.notes&&<div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:10,padding:"12px 14px",fontSize:13,color:T.ink3,lineHeight:1.6}}>{donor.notes}</div>}
 
             <div>
-              <div style={{fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.1em",color:T.ink3,marginBottom:8}}>
+              <div style={{fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.1em",color:T.ink3,marginBottom:8,display:"flex",alignItems:"center",gap:6}}>
                 Follow-up Tasks
-                {tasks.filter(t=>!t.done).length>0&&<span style={{marginLeft:6,background:"#1a6b4a",color:"#fff",borderRadius:99,padding:"1px 6px",fontSize:9,fontWeight:800}}>{tasks.filter(t=>!t.done).length}</span>}
+                {tasks.filter(t=>!t.done).length>0&&<span style={{background:"#1a6b4a",color:"#fff",borderRadius:99,padding:"1px 6px",fontSize:9,fontWeight:800}}>{tasks.filter(t=>!t.done).length}</span>}
+                {onAddTask&&<button onClick={onAddTask} disabled={isReadOnly} title={isReadOnly?"Reactivate your subscription to make changes.":"Add a follow-up task"} style={{marginLeft:"auto",background:"transparent",border:`1px solid ${T.bg3}`,borderRadius:7,padding:"3px 9px",color:isReadOnly?T.ink3:T.greenMid,fontSize:11,fontWeight:700,cursor:isReadOnly?"not-allowed":"pointer",letterSpacing:0,textTransform:"none",opacity:isReadOnly?0.5:1}}>+ Add task</button>}
               </div>
               {tasks.length===0
-                ?<div style={{fontSize:12,color:T.ink3,fontStyle:"italic"}}>No tasks yet — create one after logging a touchpoint.</div>
+                ?<div style={{fontSize:12,color:T.ink3,fontStyle:"italic"}}>No tasks yet — add a follow-up so nothing slips.</div>
                 :<div style={{display:"flex",flexDirection:"column",gap:6}}>
                   {[...tasks].sort((a,b)=>a.done-b.done||(a.due||"").localeCompare(b.due||"")).map(t=>{
                     const overdue=t.due&&!t.done&&daysDiff(t.due)<0;
@@ -4678,7 +4679,7 @@ export function Donors({data,setData,isReadOnly=false,initialView,initialLogDono
         onStageChange={moveToStage} onLogTouchpoint={()=>{setLogTarget(selected);}}
         aiMap={aiMap} loadingKey={loadingKey} getAI={getAI}
         isAdmin={isAdmin} onEdit={()=>setEditTarget(selected)} onDelete={deleteDonor}
-        tasks={data.tasks.filter(t=>t.donorId===selected.id)} onTaskToggle={toggleTask}
+        tasks={data.tasks.filter(t=>t.donorId===selected.id)} onTaskToggle={toggleTask} onAddTask={()=>setFollowUpTarget(selected)}
         orgName={data.org?.name||""} orgTeam={orgTeam} onReassign={handleAssign} onCfSaved={reloadCfValues} onInteractionAdded={reloadDonors}
         isReadOnly={isReadOnly} allDonors={data.donors} onSelectRelatedDonor={id=>{const d=data.donors.find(x=>x.id===id);if(d)selectDonor(d);}}/></ErrorBoundary>
       ) : (<>

@@ -28,12 +28,12 @@ const TABS=[
   {id:"fundraising",label:"Fundraising",icon:"↗"},
   {id:"grants",label:"Grants",icon:"◉"},
   {id:"communications",label:"Communications",icon:"◑"},
+  {id:"tasks",label:"Tasks",icon:"◻"},
   {id:"reports",label:"Reports",icon:"▤"},
   {id:"finance",label:"Finance",icon:"◇"},
   {id:"settings",label:"Settings",icon:"⚙"},
   // DEPRIORITIZED — pivoting to donor dashboard focus, code kept intact, re-enable by uncommenting
   // {id:"events",label:"Events",icon:"◎"},
-  // {id:"tasks",label:"Tasks",icon:"◻"},
   // {id:"volunteers",label:"Volunteers",icon:"◎",earlyAccess:true},
   // {id:"board",label:"Board",icon:"◆",earlyAccess:true},
 ];
@@ -46,13 +46,13 @@ const BOTTOM_TABS=[
 const MORE_TABS=[
   {id:"fundraising",label:"Fundraising",icon:"↗"},
   {id:"communications",label:"Communications",icon:"◑"},
+  {id:"tasks",label:"Tasks",icon:"◻"},
   {id:"reports",label:"Reports",icon:"▤"},
   {id:"finance",label:"Finance",icon:"◇"},
   // DEPRIORITIZED — pivoting to donor dashboard focus, code kept intact, re-enable by uncommenting
   // {id:"events",label:"Events",icon:"◎"},
   // {id:"volunteers",label:"Volunteers",icon:"◎",earlyAccess:true},
   // {id:"board",label:"Board",icon:"◆",earlyAccess:true},
-  // {id:"tasks",label:"Tasks",icon:"◻"},
 ];
 
 // ── App Shell ──────────────────────────────────────────────────────────────
@@ -164,7 +164,9 @@ function AppShell() {
     <button onClick={()=>window.location.reload()} style={{marginTop:4,background:T.green,border:"none",borderRadius:10,padding:"9px 20px",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer"}}>Retry</button>
   </div>;
 
-  const tasksDue=data.tasks.filter(t=>!t.done&&t.priority==="high").length;
+  // Badge = tasks needing attention now: open + overdue-or-due-today.
+  const _todayISO=new Date().toISOString().slice(0,10);
+  const tasksDue=data.tasks.filter(t=>!t.done&&t.due&&Math.floor((new Date(t.due)-new Date(_todayISO))/86400000)<=0).length;
   const orgName=auth?.org?.name||data.org?.name||"Steward";
 
   const accessState=billing?.accessState||"full";
@@ -321,7 +323,7 @@ function AppShell() {
       {tab==="volunteers"&&<Volunteers data={data} setData={setData} isReadOnly={isReadOnly}/>}
       {tab==="board"&&<Board data={data} setData={setData} isReadOnly={isReadOnly}/>}
       {tab==="finance"&&<Finance data={data} isReadOnly={isReadOnly} onNavigate={navigateTo}/>}
-      {tab==="tasks"&&<Tasks data={data} setData={setData} isReadOnly={isReadOnly}/>}
+      {tab==="tasks"&&<Tasks data={data} setData={setData} isReadOnly={isReadOnly} onNavigate={navigateTo}/>}
       {tab==="settings"&&<Settings key={navNonce} auth={auth} logout={logout} initialSection={settingsIntent?.section}/>}
     </div>
     </div>{/* /app-main */}

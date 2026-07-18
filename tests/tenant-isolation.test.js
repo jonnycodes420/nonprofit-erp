@@ -21,7 +21,7 @@ const TODAY = iso(new Date());
 
 async function reset() {
   for (const org of [A, B]) {
-    for (const t of ["fin_audit_log", "program_grants", "fin_transactions", "budgets", "interactions", "gifts", "grants", "programs", "fin_funds", "accounts", "donors", "users"])
+    for (const t of ["fin_audit_log", "program_grants", "fin_transactions", "budgets", "tasks", "interactions", "gifts", "grants", "programs", "fin_funds", "accounts", "donors", "users"])
       await q(`DELETE FROM ${t} WHERE org_id=$1`, [org]).catch(() => {});
     await q(`DELETE FROM orgs WHERE id=$1`, [org]);
   }
@@ -85,6 +85,17 @@ async function seedOrg(o, tag) {
     (await q(`SELECT COUNT(*)::int AS n FROM interactions WHERE donor_id='d_org_iso_b'`))[0].n === 0);
   ok("IDOR: A GET /donors/:idB → 404 (gates the org-scoped interactions read)",
     (await api("GET", "/donors/d_org_iso_b", tokenA)).status === 404);
+
+  // ── Tasks class (BUILD-13 resurfacing — donorId is now RENDERED) ──────────
+  // A foreign donorId on a task would leak the donor's name/link cross-org, so
+  // POST/PUT /tasks verify ownership before acting.
+  const taskIdor = await api("POST", "/tasks", tokenA, { title: "leak", donorId: "d_org_iso_b" });
+  ok("A POST /tasks with B's donorId → 404 (orgOwns guard)", taskIdor.status === 404, taskIdor.status);
+  ok("no cross-org task planted with B's donor",
+    (await q(`SELECT COUNT(*)::int AS n FROM tasks WHERE donor_id='d_org_iso_b'`))[0].n === 0);
+  const taskOk = await api("POST", "/tasks", tokenA, { title: "ok", donorId: "d_org_iso_a" });
+  ok("A CAN create a task on its OWN donor → 201", taskOk.status === 201, taskOk.status);
+  await q(`DELETE FROM tasks WHERE org_id=$1`, [A]).catch(() => {});
 
   // ── Finance class ─────────────────────────────────────────────────────────
   const txnsA = (await api("GET", "/finance/transactions", tokenA)).body || [];

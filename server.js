@@ -3932,39 +3932,90 @@ app.get("/volunteers/donor-prospects", requireAuth, wrap(async (req, res) => {
 }));
 
 // ── Tasks ──────────────────────────────────────────────────────────────────
+// Tasks — the daily-driver follow-up surface (BUILD-13). A task links an
+// optional donor; the linked donor is now RENDERED in the UI, so donorId must
+// be org-verified (orgOwns) — a foreign id would otherwise leak a donor
+// name/link across tenants (the §1 resurfacing threat model note).
 app.get("/tasks", requireAuth, wrap(async (req, res) => {
   const tasks = await query(
-    `SELECT * FROM tasks WHERE org_id = ?
-     ORDER BY CASE priority WHEN 'high' THEN 0 WHEN 'medium' THEN 1 ELSE 2 END, due ASC`,
+    `SELECT t.*, d.name AS donor_name
+       FROM tasks t
+       LEFT JOIN donors d ON d.id = t.donor_id AND d.org_id = t.org_id
+      WHERE t.org_id = ?
+      ORDER BY CASE t.priority WHEN 'high' THEN 0 WHEN 'medium' THEN 1 ELSE 2 END, t.due ASC`,
     [req.user.orgId]
   );
   res.json(tasks);
 }));
 
+// A donor's own open tasks — surfaced on the donor profile.
+app.get("/donors/:id/tasks", requireAuth, wrap(async (req, res) => {
+  if (!(await orgOwns("donors", req.params.id, req.user.orgId)))
+    return res.status(404).json({ error: "Donor not found" });
+  const tasks = await query(
+    `SELECT * FROM tasks WHERE org_id = ? AND donor_id = ?
+      ORDER BY done ASC, due ASC NULLS LAST, created_at DESC`,
+    [req.user.orgId, req.params.id]
+  );
+  res.json(tasks);
+}));
+
 app.post("/tasks", requireAuth, checkWriteAccess, wrap(async (req, res) => {
-  const { title, due, priority, type, donorId } = req.body;
-  if (!title) return res.status(400).json({ error: "Title required" });
+  const { title, due, priority, type, donorId, assignedTo, assignedToName } = req.body;
+  if (!title || !String(title).trim()) return res.status(400).json({ error: "Title required" });
+  // Tenant guard: a linked donor must belong to the caller's org.
+  if (!(await orgOwns("donors", donorId, req.user.orgId)))
+    return res.status(404).json({ error: "Donor not found" });
+
+  // Owner defaults to the creator; may target a teammate (validated to the org).
+  const ownerTargetId = assignedTo || req.user.userId;
+  const u = await query("SELECT id, name FROM users WHERE id=? AND org_id=?", [ownerTargetId, req.user.orgId]);
+  if (assignedTo && !u.length) return res.status(404).json({ error: "Assignee not found" });
+  const ownerId = u.length ? u[0].id : req.user.userId;
+  const ownerName = (u.length && u[0].name) || assignedToName || "";
 
   const id = "t_" + uuid().slice(0, 8);
   await run(
-    "INSERT INTO tasks (id,org_id,title,due,priority,type,done,donor_id) VALUES (?,?,?,?,?,?,0,?)",
-    [id, req.user.orgId, title, due || "", priority || "medium", type || "donor", donorId || null]
+    "INSERT INTO tasks (id,org_id,title,due,priority,type,done,donor_id,assigned_to,assigned_to_name,updated_at) VALUES (?,?,?,?,?,?,0,?,?,?,NOW())",
+    [id, req.user.orgId, String(title).trim(), due || "", priority || "medium", type || "donor",
+     donorId || null, ownerId, ownerName]
   );
-  const rows = await query("SELECT * FROM tasks WHERE id = ?", [id]);
+  const rows = await query(
+    `SELECT t.*, d.name AS donor_name FROM tasks t
+       LEFT JOIN donors d ON d.id = t.donor_id AND d.org_id = t.org_id WHERE t.id = ?`, [id]);
   res.status(201).json(rows[0]);
 }));
 
 app.put("/tasks/:id", requireAuth, checkWriteAccess, wrap(async (req, res) => {
-  const { title, due, priority, type, done } = req.body;
-  if (!title) return res.status(400).json({ error: "Title required" });
+  const { title, due, priority, type, done, donorId } = req.body;
+  if (!title || !String(title).trim()) return res.status(400).json({ error: "Title required" });
+  if (donorId !== undefined && !(await orgOwns("donors", donorId, req.user.orgId)))
+    return res.status(404).json({ error: "Donor not found" });
+
+  const sets = ["title=?", "due=?", "priority=?", "type=?", "done=?", "updated_at=NOW()"];
+  const params = [String(title).trim(), due || "", priority || "medium", type || "donor", done ? 1 : 0];
+  if (donorId !== undefined) { sets.push("donor_id=?"); params.push(donorId || null); }
+  params.push(req.params.id, req.user.orgId);
 
   const affected = await run(
-    "UPDATE tasks SET title=?,due=?,priority=?,type=?,done=? WHERE id=? AND org_id=?",
-    [title, due || "", priority || "medium", type || "donor", done ? 1 : 0,
-     req.params.id, req.user.orgId]
-  );
+    `UPDATE tasks SET ${sets.join(",")} WHERE id=? AND org_id=?`, params);
   if (!affected.changes) return res.status(404).json({ error: "Task not found" });
-  const rows = await query("SELECT * FROM tasks WHERE id = ?", [req.params.id]);
+  const rows = await query(
+    `SELECT t.*, d.name AS donor_name FROM tasks t
+       LEFT JOIN donors d ON d.id = t.donor_id AND d.org_id = t.org_id WHERE t.id = ?`, [req.params.id]);
+  res.json(rows[0]);
+}));
+
+// One-click complete/reopen — the primary Tasks action (write-gated).
+app.post("/tasks/:id/complete", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  const done = req.body.done === false ? 0 : 1;
+  const affected = await run(
+    "UPDATE tasks SET done=?, updated_at=NOW() WHERE id=? AND org_id=?",
+    [done, req.params.id, req.user.orgId]);
+  if (!affected.changes) return res.status(404).json({ error: "Task not found" });
+  const rows = await query(
+    `SELECT t.*, d.name AS donor_name FROM tasks t
+       LEFT JOIN donors d ON d.id = t.donor_id AND d.org_id = t.org_id WHERE t.id = ?`, [req.params.id]);
   res.json(rows[0]);
 }));
 

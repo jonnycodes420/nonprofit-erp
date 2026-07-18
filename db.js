@@ -644,6 +644,11 @@ async function initSchema() {
   await pool.query(`ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS is_sample BOOLEAN DEFAULT false`);
   await pool.query(`ALTER TABLE interactions ADD COLUMN IF NOT EXISTS is_sample BOOLEAN DEFAULT false`);
   await pool.query(`ALTER TABLE tasks ADD COLUMN IF NOT EXISTS is_sample BOOLEAN DEFAULT false`);
+  // BUILD-13 Tasks resurrection: owner/assignee (defaults to creator) + updated_at.
+  await pool.query(`ALTER TABLE tasks ADD COLUMN IF NOT EXISTS assigned_to TEXT`);
+  await pool.query(`ALTER TABLE tasks ADD COLUMN IF NOT EXISTS assigned_to_name TEXT`);
+  await pool.query(`ALTER TABLE tasks ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_tasks_org_donor ON tasks(org_id, donor_id)`);
   await pool.query(`ALTER TABLE fin_transactions ADD COLUMN IF NOT EXISTS is_sample BOOLEAN DEFAULT false`);
   // BUILD-09 Finance reintegration: link a ledger row back to the donor it
   // came from (nullable — expenses/manual entries have none) and record how it
