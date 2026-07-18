@@ -1,18 +1,17 @@
 import React, { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
-// ── Landing (BUILD-07 rebuild, 2026-07-17) ─────────────────────────────────
+// ── Landing (BUILD-07 rebuild, 2026-07-17; product shots → DOM, BUILD-12) ───
 // Register: warm-serious, book-set, five-color palette only. Every number and
 // capability on this page is cross-checked against CLAUDE.md reality — no
-// invented testimonials, no implied scale, no marketing verbs. All product
-// images are captures of the real deployed product, recaptured for BUILD-08
-// Phase A by scripts/landing-capture.js: tight crops at deviceScaleFactor 2
-// (hero 3) so UI text displays near native size, WebP q92, 1x/2x srcset,
-// displayed at half the 2x asset's pixels. lp-receipt is the live
-// GET /receipts/preview PDF rasterized and trimmed to its content. The
-// hero's goal-bar animation overlays the REAL bar's measured geometry
-// (docs/landing-capture-manifest.json) and ends at its real value — it
-// draws the true state, it doesn't invent one.
+// invented testimonials, no implied scale, no marketing verbs.
+// PRODUCT VISUALS ARE LIVE DOM/SVG, NOT RASTER SCREENSHOTS (BUILD-12). Three
+// raster "fixes" couldn't beat retina blur because this is a Vite static app
+// (no image optimizer) serving downscaled bitmaps of antialiased UI text,
+// which resample soft at every non-integer DPR. The shots below are the real
+// component markup with real / clearly-sample-labeled values (see the shot
+// components + CLAUDE.md's "Landing product shots" note). Do NOT reintroduce
+// <img> screenshots for these; crispness is now structural.
 
 const C = {
   ink:    "#0f1a12",
@@ -32,15 +31,6 @@ const C = {
 
 const CALENDLY_URL = "https://calendly.com/xjca2006/new-meeting";
 const FOUNDER_MAILTO = "mailto:jonathan@stewardapp.dev";
-
-// Measured geometry of the goal progress bar inside lp-home.webp (BUILD-08
-// Phase A recapture: tight crop of the goal banner + retention card at an
-// 880px viewport, deviceScaleFactor 3, display 640×526). Percentages of the
-// image box, emitted by scripts/landing-capture.js — the overlay repaints
-// exactly the true fill region and animates it from empty to its real 22%.
-// (Inflated ~1px per edge over the manifest's exact numbers so the real
-// fill's rounded ends never peek out from behind the overlay mid-loop.)
-const GOAL_OVERLAY = { left: "6.25%", top: "30.6%", width: "11.22%", height: "2.47%" };
 
 // ── Interactive wedge (BUILD-11 Build B) ────────────────────────────────────
 // The 20–30% of recurring giving lost to failed cards, made visceral with
@@ -92,6 +82,236 @@ function RecoveryCalculator() {
           20–30% range for recurring-gift card failures. How much comes back
           depends on your donors; Steward pursues every dollar of it.
         </p>
+      </div>
+    </div>
+  );
+}
+
+// ── Product shots as LIVE DOM, not raster screenshots (BUILD-12) ────────────
+// Three raster "fixes" (BUILD-08 → BUILD-10 Part 2 → BUILD-11) could not make
+// captured UI text crisp on retina: this is a Vite STATIC app (no Vercel/Next
+// image optimizer), so prod serves the committed WebP bytes verbatim — the
+// blur was never CDN re-encoding, it was raster-of-text softness. A downscaled
+// bitmap of antialiased text resamples soft at every non-integer DPR ratio;
+// only vector text is pixel-crisp at every DPR. So the product visuals below
+// are the real component markup with real / clearly-sample-labeled values —
+// built to match the crisp "DO THE MATH" calculator card exactly (styled
+// HTML/CSS in-page, real type, Steward palette, soft elevation). They cannot
+// blur, they weigh almost nothing, and they can't drift from what ships.
+// DO NOT convert these back into <img> screenshots. See CLAUDE.md.
+
+const PencilIcon = () => (
+  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={C.sage} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+    <path d="M17 3a2.85 2.85 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" />
+  </svg>
+);
+
+const GoalStat = ({ label, value, valueColor, sub }) => (
+  <div className="lp-goalstat">
+    <div className="lp-goalstat-l">{label}</div>
+    <div className="lp-goalstat-v" style={valueColor ? { color: valueColor } : undefined}>{value}</div>
+    {sub && <div className="lp-goalstat-s">{sub}</div>}
+  </div>
+);
+
+const RetChip = ({ name, amt }) => (
+  <span className="lp-retchip"><b>{name}</b> <span style={{ color: C.ink3 }}>{amt}</span></span>
+);
+
+// The hero: the home screen's goal banner + retention card, exactly as the
+// product renders them (Dashboard.jsx). Values are the demo org's real numbers
+// (goal 22% of $25,000, retention 33% vs the 43% sector average). The one
+// deliberate motion — the goal bar filling to its true 22% — is now a REAL
+// CSS bar animating its own width, not an overlay faked onto a screenshot.
+function HeroShot() {
+  return (
+    <div className="lp-hero-shot">
+      <div className="lp-goalcard">
+        <div className="lp-goal-cols">
+          <div style={{ flex: "2 1 240px", minWidth: 0 }}>
+            <div className="lp-goal-eyebrow">Fundraising Goal</div>
+            <div className="lp-goal-label">Raise $25,000 this quarter <PencilIcon /></div>
+            <div style={{ display: "flex", alignItems: "baseline", gap: 10, margin: "2px 0 12px" }}>
+              <div className="lp-serif lp-goal-pct">22%</div>
+              <div style={{ fontSize: 13, fontWeight: 600, color: C.sage }}>of goal reached</div>
+            </div>
+            <div className="lp-goal-track"><div className="lp-goal-fill" /></div>
+            <div style={{ fontSize: 13, color: "#c9c2b4", marginTop: 10 }}>
+              <strong className="lp-serif" style={{ fontSize: 15, color: C.gold, fontWeight: 400 }}>$5,501</strong> of $25,000
+            </div>
+          </div>
+          <div style={{ flex: "1 1 180px", minWidth: 160, display: "flex", flexDirection: "column", gap: 9 }}>
+            <GoalStat label="Pace" value="Behind pace" valueColor={C.terra} sub="18pt behind schedule" />
+            <GoalStat label="Time Left" value="53 days" sub="left to reach this goal" />
+            <GoalStat label="This Week" value="1 donor gave this week" sub="recent momentum" />
+          </div>
+        </div>
+      </div>
+
+      <div className="lp-scope">
+        <span style={{ fontSize: 11, color: C.ink3 }}>Showing:</span>
+        <div className="lp-scope-toggle">
+          <span className="lp-scope-on">My donors</span>
+          <span className="lp-scope-off">Whole org</span>
+        </div>
+      </div>
+
+      <div className="lp-retcard">
+        <div className="lp-goalstat-l" style={{ color: C.ink3 }}>Donor Retention Rate</div>
+        <div style={{ display: "flex", alignItems: "baseline", gap: 12, flexWrap: "wrap", marginTop: 6 }}>
+          <div className="lp-serif" style={{ fontSize: 32, fontWeight: 400, color: C.terra, lineHeight: 1 }}>33%</div>
+          <span style={{ fontSize: 13, fontWeight: 700, color: C.ink3 }}>No change vs 3 weeks ago</span>
+        </div>
+        <div style={{ fontSize: 13, fontWeight: 600, color: "#3a3a3a", marginTop: 6, lineHeight: 1.4, maxWidth: 380 }}>
+          10pt below the 43% sector average — worth a closer look at who isn't renewing.
+        </div>
+        <div className="lp-ret-chips">
+          <RetChip name="Vanessa Cole" amt="$3,000" />
+          <RetChip name="Sunrise Foundati…" amt="$25,000" />
+          <RetChip name="Diana Torres" amt="$250" />
+          <span className="lp-ret-more">+3 more →</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// "Needs Your Attention" queue rows — the real home-screen queue (Dashboard.jsx).
+// Sample donors, clearly demo. tone → the product's real row color: task = ink,
+// note (personal-note nudge) = deep green, milestone/lapsed (AI draft) = gold.
+const QUEUE_ROWS = [
+  { initial: "M", name: "Margaret Chen", tone: "task", reason: 'Task: "Call Margaret Chen — major gift conversation"', action: "Mark done ✓" },
+  { initial: "J", name: "James Okafor", tone: "task", reason: 'Task: "Re-engage James Okafor (lapsed 18mo)"', action: "Mark done ✓" },
+  { initial: "J", name: "Julian Marsh", tone: "note", bullets: [
+      "This marks their 2-year anniversary with your organization.",
+      'From their file: "Consistent annual donor, due for this year’s ask conversation."',
+      "Most recent gift: $5,000 on February 12, 2026.",
+    ], action: "Mark sent ✓" },
+  { initial: "E", name: "Elena Marchetti", tone: "note", bullets: [
+      "Just crossed $10,000 in total lifetime giving ($12,500 total).",
+      'From their file: "Just crossed $10,000 lifetime giving. High-touch relationship, board-adjacent."',
+      "They’ve been giving for 2 years — since October 2023.",
+    ], action: "Mark sent ✓" },
+  { initial: "S", name: "Sunrise Foundation", tone: "milestone", reason: "🔥 Flagged today — AI-drafted re-engagement email ready for review", action: "Review draft →" },
+  { initial: "R", name: "Robert & Lisa Atkinson", tone: "milestone", reason: "🔥 Flagged today — AI-drafted re-engagement email ready for review", action: "Review draft →" },
+];
+const TONE_COLOR = { task: C.ink, note: C.greenDk, milestone: C.gold };
+
+function QueueRow({ r, last }) {
+  const color = TONE_COLOR[r.tone];
+  const btnText = r.tone === "milestone" ? C.ink : "#fff";
+  return (
+    <div className="lp-qrow" style={{ borderLeft: `3px solid ${color}`, borderBottom: last ? "none" : `1px solid ${C.cream2}` }}>
+      <div className="lp-qav" style={{ background: color + "22", color }}>{r.initial}</div>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontSize: 13, fontWeight: 700, color: C.ink }}>{r.name}</div>
+        {r.bullets ? (
+          <ul style={{ margin: "4px 0 0", padding: "0 0 0 16px", fontSize: 12, color: C.ink3, lineHeight: 1.5 }}>
+            {r.bullets.map((b, i) => <li key={i} style={{ marginBottom: 2 }}>{b}</li>)}
+          </ul>
+        ) : (
+          <div style={{ fontSize: 12, color: C.ink3, marginTop: 2, lineHeight: 1.4 }}>{r.reason}</div>
+        )}
+      </div>
+      <span className="lp-qbtn" style={{ background: color, color: btnText }}>{r.action}</span>
+    </div>
+  );
+}
+
+function QueueShot({ rows = QUEUE_ROWS, header = true }) {
+  return (
+    <div className="lp-qcard">
+      {header && (
+        <div className="lp-qhead">
+          <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <span className="lp-goalstat-l" style={{ color: C.ink, fontSize: 11 }}>Needs Your Attention</span>
+            <span className="lp-qmine">Mine</span>
+          </span>
+          <span style={{ fontSize: 11, color: C.ink3 }}>{rows.length} items</span>
+        </div>
+      )}
+      {rows.map((r, i) => <QueueRow key={i} r={r} last={i === rows.length - 1} />)}
+    </div>
+  );
+}
+
+// Three compact queue rows for the "How it works" step — single-line reasons.
+const ATTENTION_ROWS = [
+  { initial: "S", name: "Sunrise Foundation", tone: "milestone", reason: "🔥 Flagged today — re-engagement draft ready", action: "Review →" },
+  { initial: "J", name: "Julian Marsh", tone: "note", reason: "2-year anniversary — time for a personal note", action: "Mark sent ✓" },
+  { initial: "M", name: "Margaret Chen", tone: "task", reason: 'Task: "Call — major gift conversation"', action: "Mark done ✓" },
+];
+
+// The tax receipt, as the product's receipt renderer lays it out (server.js
+// renderReceiptPdf) — the same green header, EIN line, gift row, and the IRS
+// "no goods or services" line. Sample values (the live /receipts/preview data).
+function ReceiptShot() {
+  return (
+    <div className="lp-receipt">
+      <div className="lp-receipt-head">
+        <div className="lp-receipt-kicker">Donation Receipt</div>
+        <div className="lp-receipt-org">CREO Arts</div>
+        <div className="lp-receipt-ein">EIN: 47-1234567</div>
+      </div>
+      <div className="lp-receipt-body">
+        <div className="lp-receipt-meta">
+          <span>Receipt #2026-PREVIEW</span>
+          <span>Issued July 18, 2026</span>
+        </div>
+        <div className="lp-receipt-donor">Jordan Sample</div>
+        <div className="lp-receipt-addr">123 Main St, Anytown, ST 00000</div>
+        <div className="lp-receipt-grid">
+          <div><div className="lp-receipt-k">Gift Date</div><div className="lp-receipt-v">July 18, 2026</div></div>
+          <div><div className="lp-receipt-k">Amount</div><div className="lp-receipt-v" style={{ color: C.greenMd }}>$250.00</div></div>
+          <div><div className="lp-receipt-k">Payment Method</div><div className="lp-receipt-v">Credit Card</div></div>
+        </div>
+        <div className="lp-receipt-note">No goods or services were provided in exchange for this contribution.</div>
+      </div>
+    </div>
+  );
+}
+
+// How-it-works step 1: the CSV column-mapping the importer does automatically.
+function ImportShot() {
+  const maps = [
+    ["name", "Donor name"],
+    ["email", "Email"],
+    ["last_gift", "Last gift amount"],
+    ["city", "City"],
+  ];
+  return (
+    <div className="lp-import">
+      <div className="lp-import-head">
+        <span className="lp-goalstat-l" style={{ color: C.ink, fontSize: 11 }}>Import donors</span>
+        <span style={{ fontSize: 11, color: C.ink3 }}>donors.csv · 24 rows</span>
+      </div>
+      <div className="lp-import-body">
+        {maps.map(([csv, field]) => (
+          <div key={csv} className="lp-import-row">
+            <span className="lp-import-csv">{csv}</span>
+            <span className="lp-import-arrow">→</span>
+            <span className="lp-import-field">{field}</span>
+            <span className="lp-import-ok">✓</span>
+          </div>
+        ))}
+        <div className="lp-import-foot">24 donors ready · stages auto-assigned</div>
+      </div>
+    </div>
+  );
+}
+
+// How-it-works step 3: the compact goal-progress the numbers climb toward.
+function ClimbShot() {
+  return (
+    <div className="lp-climb">
+      <div className="lp-goal-eyebrow">Fundraising Goal</div>
+      <div style={{ display: "flex", alignItems: "baseline", gap: 8, margin: "6px 0 10px" }}>
+        <span className="lp-serif" style={{ fontSize: 42, color: C.gold, lineHeight: 1 }}>22%</span>
+        <span style={{ fontSize: 12, color: C.sage }}>of goal reached</span>
+      </div>
+      <div className="lp-goal-track"><div className="lp-goal-fill lp-goal-fill-static" /></div>
+      <div style={{ fontSize: 12, color: "#c9c2b4", marginTop: 8 }}>
+        <strong className="lp-serif" style={{ color: C.gold, fontWeight: 400 }}>$5,501</strong> of $25,000
       </div>
     </div>
   );
@@ -197,21 +417,78 @@ export default function Landing() {
 
         .lp-hero-grid { display: grid; grid-template-columns: 1.02fr 1fr; gap: 60px; align-items: center; }
 
-        /* Hero screenshot frame + the one deliberate motion on the page:
-           repaint the real goal bar's measured region and draw its fill in,
-           ending exactly at the true value in the capture. ~6s loop; fades
-           out to reveal the identical real pixels, so the loop reads as the
-           bar quietly ticking up. Gone entirely under reduced motion. */
-        /* Browser-window chrome around the hero capture — makes it read like a
-           real product, not a screenshot floating on beige. The chrome lives
-           OUTSIDE .lp-shot-wrap so the goal-overlay geometry (percentages of
-           the image box) stays exact. */
+        /* Browser-window chrome around the hero product shot — makes the live
+           DOM home screen read like a real app, not markup floating on beige.
+           The one deliberate motion on the page (the goal bar filling to its
+           true 22%) is now a real CSS bar animating its own width; see
+           .lp-goal-fill below. Gone under prefers-reduced-motion. */
         .lp-frame { border-radius: 14px; overflow: hidden; background: ${C.white}; border: 1px solid ${C.cream3}; box-shadow: 0 30px 80px rgba(15,26,18,0.20), 0 6px 22px rgba(15,26,18,0.10); }
         .lp-frame-bar { height: 36px; display: flex; align-items: center; gap: 7px; padding: 0 14px; background: ${C.cream2}; border-bottom: 1px solid ${C.cream3}; }
         .lp-frame-dot { width: 10px; height: 10px; border-radius: 50%; }
         .lp-frame-url { margin-left: 12px; font-size: 11px; color: ${C.ink3}; background: ${C.white}; border: 1px solid ${C.cream3}; border-radius: 6px; padding: 3px 12px; letter-spacing: 0.02em; }
-        .lp-shot-wrap { position: relative; line-height: 0; }
-        .lp-shot { width: 100%; display: block; }
+        /* The hero product shot is now LIVE DOM inside the window chrome —
+           the home screen's goal banner + retention card, on the app's own
+           cream ground, rendered as real markup (crisp at every DPR). */
+        .lp-shot-wrap { background: #e9e5dc; padding: 18px; }
+        .lp-hero-shot { display: flex; flex-direction: column; gap: 12px; }
+        .lp-goalcard { background: linear-gradient(135deg, #0f1a12, #152420); border: 1px solid #1a2e1f; border-radius: 14px; padding: 20px 22px; color: ${C.cream}; }
+        .lp-goal-cols { display: flex; gap: 24px; flex-wrap: wrap; }
+        .lp-goal-eyebrow { font-size: 10px; font-weight: 800; letter-spacing: 0.12em; text-transform: uppercase; color: ${C.sage}; margin-bottom: 5px; }
+        .lp-goal-label { font-size: 15px; font-weight: 600; color: #c9c2b4; margin-bottom: 14px; display: flex; align-items: center; gap: 8px; }
+        .lp-goal-pct { font-size: 52px; font-weight: 400; color: ${C.gold}; line-height: 1; }
+        .lp-goal-track { background: #0a120c; border-radius: 99px; height: 11px; overflow: hidden; }
+        .lp-goal-fill { height: 100%; width: 22%; background: linear-gradient(90deg, ${C.gold}, ${C.terra}); border-radius: 99px; animation: lpFill 1.5s ease-out both; }
+        .lp-goal-fill-static { animation: none; }
+        @keyframes lpFill { from { width: 0 } to { width: 22% } }
+        .lp-goalstat { background: rgba(255,255,255,0.04); border: 1px solid #1a2e1f; border-radius: 10px; padding: 9px 13px; }
+        .lp-goalstat-l { font-size: 9px; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; color: ${C.sage}; margin-bottom: 4px; }
+        .lp-goalstat-v { font-size: 14px; font-weight: 700; color: ${C.cream}; line-height: 1.3; }
+        .lp-goalstat-s { font-size: 11px; color: ${C.sage}; margin-top: 2px; }
+        .lp-scope { display: flex; justify-content: flex-end; align-items: center; gap: 8px; }
+        .lp-scope-toggle { display: flex; background: #ddd9d0; border-radius: 99px; padding: 2px; }
+        .lp-scope-on { background: ${C.white}; border-radius: 99px; padding: 4px 13px; font-size: 12px; font-weight: 700; color: ${C.ink}; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+        .lp-scope-off { padding: 4px 13px; font-size: 12px; font-weight: 700; color: ${C.ink3}; }
+        .lp-retcard { background: ${C.white}; border: 1px solid ${C.cream3}; border-radius: 14px; padding: 18px 22px; }
+        .lp-ret-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 14px; }
+        .lp-retchip { font-size: 12px; color: ${C.ink}; background: ${C.cream}; border: 1px solid ${C.cream3}; border-radius: 99px; padding: 5px 11px; }
+        .lp-ret-more { font-size: 12px; font-weight: 600; color: ${C.greenDk}; border: 1px dashed ${C.cream3}; border-radius: 99px; padding: 5px 11px; }
+
+        /* Queue card (the morning queue + the how-it-works attention step) */
+        .lp-qcard { background: ${C.white}; border: 1px solid ${C.cream3}; border-radius: 14px; overflow: hidden; box-shadow: 0 16px 48px rgba(15,26,18,0.12); }
+        .lp-qhead { display: flex; justify-content: space-between; align-items: center; padding: 15px 20px; border-bottom: 1px solid ${C.cream2}; }
+        .lp-qmine { font-size: 9px; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase; color: ${C.greenDk}; background: ${C.greenDk}12; padding: 2px 7px; border-radius: 99px; }
+        .lp-qrow { display: flex; align-items: flex-start; gap: 13px; padding: 13px 18px; }
+        .lp-qav { width: 36px; height: 36px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 14px; font-weight: 800; flex-shrink: 0; }
+        .lp-qbtn { border-radius: 8px; padding: 8px 13px; font-size: 12px; font-weight: 700; white-space: nowrap; flex-shrink: 0; align-self: center; }
+
+        /* Receipt (the product's receipt renderer, as DOM) */
+        .lp-receipt { background: ${C.white}; border: 1px solid ${C.cream3}; border-radius: 12px; overflow: hidden; box-shadow: 0 16px 48px rgba(15,26,18,0.12); }
+        .lp-receipt-head { background: ${C.greenMd}; padding: 20px 26px; }
+        .lp-receipt-kicker { font-size: 10px; letter-spacing: 0.22em; text-transform: uppercase; color: #cfe8dc; margin-bottom: 6px; }
+        .lp-receipt-org { font-size: 21px; font-weight: 800; color: ${C.white}; letter-spacing: -0.01em; }
+        .lp-receipt-ein { font-size: 11px; color: #d6ebe0; margin-top: 5px; }
+        .lp-receipt-body { padding: 22px 26px 26px; }
+        .lp-receipt-meta { display: flex; justify-content: space-between; font-size: 11px; color: ${C.ink3}; margin-bottom: 14px; }
+        .lp-receipt-donor { font-size: 15px; font-weight: 800; color: ${C.ink}; }
+        .lp-receipt-addr { font-size: 11px; color: ${C.ink3}; margin-top: 3px; margin-bottom: 16px; }
+        .lp-receipt-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; background: #f5f5f0; border-radius: 8px; padding: 16px 18px; }
+        .lp-receipt-k { font-size: 8.5px; letter-spacing: 0.06em; text-transform: uppercase; color: ${C.ink3}; margin-bottom: 5px; }
+        .lp-receipt-v { font-size: 13px; font-weight: 800; color: ${C.ink}; }
+        .lp-receipt-note { font-size: 11.5px; color: #2d2d2d; margin-top: 16px; }
+
+        /* CSV import mapping (how-it-works step 1) */
+        .lp-import { width: 100%; background: ${C.white}; border: 1px solid ${C.cream3}; border-radius: 12px; overflow: hidden; box-shadow: 0 8px 26px rgba(15,26,18,0.10); }
+        .lp-import-head { display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; border-bottom: 1px solid ${C.cream2}; }
+        .lp-import-body { padding: 14px 16px; }
+        .lp-import-row { display: flex; align-items: center; gap: 9px; font-size: 12px; padding: 5px 0; }
+        .lp-import-csv { font-family: ui-monospace, Menlo, monospace; font-size: 11px; color: ${C.ink3}; background: ${C.cream}; border: 1px solid ${C.cream3}; border-radius: 5px; padding: 2px 8px; }
+        .lp-import-arrow { color: ${C.sage}; }
+        .lp-import-field { color: ${C.ink}; font-weight: 600; flex: 1; }
+        .lp-import-ok { color: ${C.greenMd}; font-weight: 800; }
+        .lp-import-foot { margin-top: 10px; padding-top: 10px; border-top: 1px solid ${C.cream2}; font-size: 11px; color: ${C.greenDk}; font-weight: 700; }
+
+        /* Compact goal card (how-it-works step 3) */
+        .lp-climb { width: 100%; background: linear-gradient(135deg, #0f1a12, #152420); border: 1px solid #1a2e1f; border-radius: 12px; padding: 18px 20px; }
 
         /* Recurring-loss calculator (the interactive wedge) */
         .lp-calc { max-width: 1140px; margin: 0 auto; display: grid; grid-template-columns: 1fr 1fr; gap: 56px; align-items: center; }
@@ -219,12 +496,8 @@ export default function Landing() {
         .lp-slider { -webkit-appearance: none; appearance: none; width: 100%; height: 6px; border-radius: 99px; background: linear-gradient(90deg, ${C.terra} 0%, ${C.gold} 100%); outline: none; }
         .lp-slider::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 24px; height: 24px; border-radius: 50%; background: ${C.ink}; border: 3px solid ${C.white}; box-shadow: 0 2px 8px rgba(15,26,18,0.3); cursor: pointer; }
         .lp-slider::-moz-range-thumb { width: 22px; height: 22px; border-radius: 50%; background: ${C.ink}; border: 3px solid ${C.white}; cursor: pointer; }
-        .lp-goal-overlay { position: absolute; background: #0a120c; border-radius: 99px; overflow: hidden; animation: lpGoalFade 6s ease-in-out infinite; }
-        .lp-goal-overlay i { position: absolute; top: 0; left: 0; bottom: 0; width: 0; background: linear-gradient(90deg, ${C.gold}, #c59749); border-radius: 99px; animation: lpGoalFill 6s ease-in-out infinite; }
-        @keyframes lpGoalFade { 0% {opacity:0} 8% {opacity:1} 78% {opacity:1} 92% {opacity:0} 100% {opacity:0} }
-        @keyframes lpGoalFill { 0%, 12% {width:0} 55% {width:100%} 100% {width:100%} }
         @media (prefers-reduced-motion: reduce) {
-          .lp-goal-overlay, .lp-goal-overlay i { animation: none; display: none; }
+          .lp-goal-fill { animation: none; width: 22%; }
           .lp-goldbtn, .lp-goldbtn:hover { transform: none; }
         }
 
@@ -238,7 +511,6 @@ export default function Landing() {
         .lp-moment.lp-flip .lp-moment-text { order: 2; }
         .lp-moment.lp-flip .lp-moment-media { order: 1; }
         .lp-moment + .lp-moment { margin-top: 120px; }
-        .lp-moment-img { width: 100%; display: block; border-radius: 12px; border: 1px solid ${C.cream3}; box-shadow: 0 16px 48px rgba(15,26,18,0.12); }
         .lp-caption { font-size: 12px; color: ${C.ink3}; margin-top: 12px; }
 
         /* The real dunning email, set like an email */
@@ -251,7 +523,7 @@ export default function Landing() {
         .lp-hiw-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 40px; align-items: stretch; }
         .lp-hiw-step { display: flex; flex-direction: column; gap: 18px; }
         .lp-hiw-imgbox { background: ${C.cream}; border: 1px solid ${C.cream3}; border-radius: 12px; padding: 18px; display: flex; align-items: center; justify-content: center; flex: 1; min-height: 210px; }
-        .lp-hiw-imgbox img { border-radius: 8px; box-shadow: 0 8px 26px rgba(15,26,18,0.10); }
+        .lp-hiw-imgbox > * { width: 100%; }
 
         @media (max-width: 768px) {
           .lp-section { padding: 64px 22px; }
@@ -316,17 +588,9 @@ export default function Landing() {
                   <span className="lp-frame-dot" style={{ background: C.sage }} />
                   <span className="lp-frame-url">app.stewardapp.dev</span>
                 </div>
-                <div className="lp-shot-wrap">
-                  <img
-                    className="lp-shot"
-                    src="/lp-home.webp"
-                    srcSet="/lp-home.webp 640w, /lp-home-2x.webp 1280w, /lp-home-3x.webp 1920w"
-                    sizes="(max-width: 768px) 92vw, 46vw"
-                    width="640" height="526"
-                    alt="Steward's home screen: the quarter's fundraising goal at 22%, and the donor retention rate it's noticing"
-                    fetchpriority="high"
-                  />
-                  <div className="lp-goal-overlay" style={GOAL_OVERLAY} aria-hidden="true"><i /></div>
+                <div className="lp-shot-wrap" role="img"
+                  aria-label="Steward's home screen: the quarter's fundraising goal at 22%, and the donor retention rate it's noticing">
+                  <HeroShot />
                 </div>
               </div>
             </div>
@@ -373,13 +637,10 @@ export default function Landing() {
                   over coffee.
                 </p>
               </div>
-              <div className="lp-moment-media">
-                <img className="lp-moment-img" src="/lp-queue.webp"
-                  srcSet="/lp-queue.webp 656w, /lp-queue-2x.webp 1312w, /lp-queue-3x.webp 1968w"
-                  sizes="(max-width: 768px) 92vw, 50vw"
-                  loading="lazy" width="656" height="589"
-                  alt="Steward's Needs Your Attention queue: six donors with reasons and a single action each" />
-                <div className="lp-caption">The queue on Steward's home screen — a capture of the live product with sample data.</div>
+              <div className="lp-moment-media" role="img"
+                aria-label="Steward's Needs Your Attention queue: six donors with reasons and a single action each">
+                <QueueShot />
+                <div className="lp-caption">The queue on Steward's home screen — the live component, rendered here with sample donors.</div>
               </div>
             </div>
 
@@ -442,13 +703,10 @@ export default function Landing() {
                   year on demand. Your auditor stops asking.
                 </p>
               </div>
-              <div className="lp-moment-media">
-                <img className="lp-moment-img" src="/lp-receipt.webp"
-                  srcSet="/lp-receipt.webp 654w, /lp-receipt-2x.webp 1308w, /lp-receipt-3x.webp 1962w"
-                  sizes="(max-width: 768px) 92vw, 50vw"
-                  loading="lazy" width="654" height="334"
-                  alt="A numbered, IRS-compliant donation receipt PDF generated by Steward" />
-                <div className="lp-caption">A receipt generated by the live product's preview endpoint — this is the real PDF, not a mock-up.</div>
+              <div className="lp-moment-media" role="img"
+                aria-label="A numbered, IRS-compliant donation receipt generated by Steward">
+                <ReceiptShot />
+                <div className="lp-caption">Steward's actual receipt layout, shown with sample values — the same template the product generates and sends.</div>
               </div>
             </div>
 
@@ -469,27 +727,24 @@ export default function Landing() {
             <div className="lp-hiw-grid">
               {[
                 {
-                  img: "/lp-import.webp", img2: "/lp-import-2x.webp", img3: "/lp-import-3x.webp", w: 700, h: 419,
-                  alt: "Steward's real CSV import screen — columns auto-mapped, stages auto-assigned",
+                  shot: <ImportShot />,
+                  alt: "Steward's CSV import — columns auto-mapped, stages auto-assigned",
                   line: <><strong>Import your donors.</strong> A CSV is enough — and founding partners get it done for them.</>,
                 },
                 {
-                  img: "/lp-attention.webp", img2: "/lp-attention-2x.webp", img3: "/lp-attention-3x.webp", w: 636, h: 270,
+                  shot: <QueueShot rows={ATTENTION_ROWS} header={false} />,
                   alt: "Three rows from the Needs Your Attention queue, each with a reason and one action",
                   line: <><strong>See who needs attention today.</strong> A short queue with reasons, not a database to dig through.</>,
                 },
                 {
-                  img: "/lp-climb.webp", img2: "/lp-climb-2x.webp", img3: "/lp-climb-3x.webp", w: 321, h: 123,
+                  shot: <ClimbShot />,
                   alt: "A fundraising goal's progress: 22% of goal reached, $5,501 of $25,000",
                   line: <><strong>Watch retention and recovered gifts climb.</strong> The numbers move because someone finally noticed in time.</>,
                 },
               ].map((s, i) => (
                 <div key={i} className="lp-hiw-step">
-                  <div className="lp-hiw-imgbox">
-                    <img src={s.img} srcSet={`${s.img} ${s.w}w, ${s.img2} ${s.w * 2}w, ${s.img3} ${s.w * 3}w`}
-                      sizes="(max-width: 768px) 92vw, 30vw"
-                      loading="lazy" width={s.w} height={s.h} alt={s.alt}
-                      style={{ maxWidth: "100%", height: "auto", display: "block", margin: "0 auto" }} />
+                  <div className="lp-hiw-imgbox" role="img" aria-label={s.alt}>
+                    {s.shot}
                   </div>
                   <div style={{ display: "flex", gap: 14, alignItems: "flex-start" }}>
                     <span className="lp-serif" style={{ fontSize: 34, color: C.gold, lineHeight: 1, flexShrink: 0 }}>{i + 1}</span>
@@ -565,14 +820,12 @@ export default function Landing() {
         </section>
 
         {/* ── 6. A letter from the founder ──
-            TODO-founder-voice: this letter is a DRAFT written FOR Jonathan and
-            must be replaced with his own words before it ships as final — it
-            has to sound like him, not like a website. The three open questions
-            (why he built Steward / who he pictures using it / the promise he'd
-            be embarrassed to break) unlock the final copy. The photo slot below
-            is a placeholder — drop in a real founder photo (a genuine human
-            face is the whole point of this band); do NOT use a stock portrait
-            implying a team Steward doesn't have. */}
+            Jonathan's own words (BUILD-12). The avatar below is still a
+            PLACEHOLDER for a real founder photo — a genuine human face is the
+            point of this band; do NOT use a stock portrait implying a team
+            Steward doesn't have. "The legacy tools" stands in for the named
+            competitors in the source draft, per the no-competitor-names
+            decision. */}
         <section className="lp-section">
           <div style={{ maxWidth: 620, margin: "0 auto" }}>
             <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 26 }}>
@@ -584,27 +837,40 @@ export default function Landing() {
                 <div style={{ fontSize: 14, color: C.ink3, marginTop: -8 }}>Jonathan · founder, and the person who answers your email</div>
               </div>
             </div>
+            <h2 className="lp-serif" style={{ fontSize: "clamp(26px, 2.8vw, 34px)", color: C.ink, lineHeight: 1.15, marginBottom: 22 }}>
+              Why I built Steward
+            </h2>
             <div className="lp-serif" style={{ fontSize: 19, color: C.ink, lineHeight: 1.85 }}>
               <p style={{ marginBottom: 18 }}>
-                I started Steward after watching a nonprofit I love run its donor
-                program out of a spreadsheet. They didn't lose donors because they
-                didn't care. They lost donors because caring at that scale needs a
-                system, and every system they could afford treated them like a
-                data-entry problem.
+                My dad has spent his whole career in nonprofit development, and
+                he's raised tens of millions of dollars. He built the donor CRM
+                at the heart of Steward — and he built it to fix the things that
+                always frustrated him about the legacy tools. The legacy tools:
+                powerful, but archaic to the people actually using them every
+                day. He knew exactly what they should have done instead, so we
+                built that.
               </p>
               <p style={{ marginBottom: 18 }}>
-                So I built the thing I kept wishing existed: software that notices
-                what a good development director would notice — the anniversary,
-                the quiet stretch, the failed card — and brings it to you while
-                there's still time to do something about it.
+                Because I kept seeing the same gap everywhere: mid-sized
+                nonprofits that can't afford a $30k system, but have long
+                outgrown a Google Sheet, a phone full of contacts, and a mental
+                note to "follow up with that person someday." That gap costs orgs
+                the one thing they can least afford to lose: the donors who were
+                already leaning in, quietly drifting away because nothing was
+                built to notice.
               </p>
               <p style={{ marginBottom: 18 }}>
-                Two promises. Your data is yours — export everything, anytime,
-                even after you cancel. And when you email Steward, it's me who
-                answers.
+                Steward is for the development director doing the books at 11pm.
+                It's for the one-person shop that will grow into it, and the big
+                team that needs everything a legacy CRM does — without the legacy
+                price. And it will never charge you to reach your own donors, or
+                take a cut of a dollar meant for your mission.
               </p>
               <p style={{ marginBottom: 26 }}>
-                If you take care of donors for a living, I built this for you.
+                Here's my promise. I've lived in this world, and I actually care
+                about it. If something breaks, I'll fix it this weekend. If you
+                need something Steward doesn't do yet, I'll build it this week.
+                You'll always know the person who answers your email.
               </p>
               <p style={{ fontStyle: "italic", fontSize: 21 }}>— Jonathan</p>
             </div>
