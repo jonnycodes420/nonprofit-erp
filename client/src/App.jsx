@@ -14,6 +14,7 @@ import { Reports } from "./components/Reports";
 import { Volunteers } from "./components/Volunteers";
 import { Board } from "./components/Board";
 import { Finance } from "./components/Finance";
+import { Fundraising } from "./components/Fundraising";
 import { Tasks } from "./components/Tasks";
 import { Settings } from "./components/Settings";
 import { Events } from "./components/Events";
@@ -24,6 +25,7 @@ import { TopBar } from "./components/TopBar";
 const TABS=[
   {id:"dashboard",label:"Home",icon:"◈"},
   {id:"donors",label:"Donors",icon:"♦"},
+  {id:"fundraising",label:"Fundraising",icon:"↗"},
   {id:"grants",label:"Grants",icon:"◉"},
   {id:"communications",label:"Communications",icon:"◑"},
   {id:"reports",label:"Reports",icon:"▤"},
@@ -42,6 +44,7 @@ const BOTTOM_TABS=[
   {id:"settings",label:"Settings",icon:"⚙"},
 ];
 const MORE_TABS=[
+  {id:"fundraising",label:"Fundraising",icon:"↗"},
   {id:"communications",label:"Communications",icon:"◑"},
   {id:"reports",label:"Reports",icon:"▤"},
   {id:"finance",label:"Finance",icon:"◇"},
@@ -313,6 +316,7 @@ function AppShell() {
       {tab==="grants"&&<Grants key={navNonce} data={data} setData={setData} isReadOnly={isReadOnly} initialGrantId={grantsIntent?.grantId} onIntentConsumed={()=>setGrantsIntent(null)}/>}
       {tab==="communications"&&<Communications key={navNonce} data={data} isReadOnly={isReadOnly} initialNav={commsInitialNav} highlightDraftId={commsHighlightDraftId} onInitialNavConsumed={()=>{setCommsInitialNav(null);setCommsHighlightDraftId(null);}} onNavigate={navigateTo}/>}
       {tab==="reports"&&<Reports onNavigate={navigateTo}/>}
+      {tab==="fundraising"&&<Fundraising data={data} isReadOnly={isReadOnly} onNavigate={navigateTo}/>}
       {tab==="events"&&<Events data={data} isReadOnly={isReadOnly}/>}
       {tab==="volunteers"&&<Volunteers data={data} setData={setData} isReadOnly={isReadOnly}/>}
       {tab==="board"&&<Board data={data} setData={setData} isReadOnly={isReadOnly}/>}

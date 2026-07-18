@@ -133,6 +133,7 @@ export function adaptData({ org, donors, grants, volunteers, tasks, board, finan
     org: {
       id:         org.id,
       name:       org.name,
+      org_slug:   org.org_slug || "",
       mission:    org.mission || "",
       focus_area: org.focus_area || "",
       annual_budget: org.annual_budget || "",

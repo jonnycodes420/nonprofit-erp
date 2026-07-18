@@ -5458,6 +5458,216 @@ app.get("/campaigns/:id/progress", requireAuth, wrap(async (req, res) => {
   });
 }));
 
+// ── Fundraising (BUILD-11) ──────────────────────────────────────────────────
+// The Fundraising tab is a home over primitives that already exist: org-level
+// goals (fundraising_goals), campaigns that carry a goal (campaigns.goal_amount),
+// and giving pages. Nothing here stores a "raised" total — every figure is a
+// live SUM over gifts, so a thermometer can never drift from reality. A
+// "fundraising campaign" is simply a campaigns row with goal_amount set; the
+// email lifecycle (campaigns.status) is untouched — fundraising lifecycle is
+// derived from the campaign's dates instead.
+//
+// computeFundraisingPace: shared pace/thermometer math. Degrades gracefully —
+// no goal → no thermometer (percent null); no dates → progress with no
+// "days left"/pace; goal met → celebratory state. Never invents a number.
+function computeFundraisingPace(raised, goal, startDate, endDate) {
+  const g = parseFloat(goal) || 0;
+  const r = parseFloat(raised) || 0;
+  const percent = g > 0 ? Math.min(100, Math.round((r / g) * 100)) : null;
+  const now = new Date();
+  let daysLeft = null, lifecycle = "active";
+  if (startDate && new Date(startDate) > now) lifecycle = "upcoming";
+  if (endDate) {
+    daysLeft = Math.ceil((new Date(endDate) - now) / 86400000);
+    if (daysLeft < 0) { lifecycle = "ended"; daysLeft = 0; }
+  }
+  // Pace only when we have a goal, a start, an end, and time has elapsed.
+  let paceState = null, expected = null;
+  if (g > 0 && startDate && endDate) {
+    const total = new Date(endDate) - new Date(startDate);
+    const elapsed = Math.max(0, Math.min(total, now - new Date(startDate)));
+    if (total > 0) {
+      expected = g * (elapsed / total);
+      if (r >= g) paceState = "met";
+      else if (r >= expected * 0.98) paceState = "on_track";
+      else paceState = "behind";
+    }
+  } else if (g > 0 && r >= g) {
+    paceState = "met";
+  }
+  return { percent, daysLeft, lifecycle, paceState, expected };
+}
+
+// Live gift totals for a set of campaigns, matched the same way
+// /campaigns/:id/progress matches: campaign_id OR the legacy campaign-name text
+// column. One query, grouped, so the list view never N+1s.
+async function fundraisingCampaignRows(orgId) {
+  const campaigns = await query(
+    `SELECT id, name, goal_amount, start_date, end_date, status, type, created_at
+     FROM campaigns WHERE org_id = ? AND goal_amount IS NOT NULL AND goal_amount > 0
+     ORDER BY created_at DESC`,
+    [orgId]
+  );
+  if (!campaigns.length) return [];
+  const sums = await query(
+    `SELECT c.id AS cid,
+            COALESCE(SUM(g.amount), 0) AS raised,
+            COUNT(DISTINCT g.donor_id) AS donor_count
+       FROM campaigns c
+       LEFT JOIN gifts g ON g.org_id = c.org_id AND (g.campaign_id = c.id OR g.campaign = c.name)
+      WHERE c.org_id = ? AND c.goal_amount IS NOT NULL AND c.goal_amount > 0
+      GROUP BY c.id`,
+    [orgId]
+  );
+  const byId = Object.fromEntries(sums.map(s => [s.cid, s]));
+  return campaigns.map(c => {
+    const s = byId[c.id] || {};
+    const raised = parseFloat(s.raised) || 0;
+    const pace = computeFundraisingPace(raised, c.goal_amount, c.start_date, c.end_date);
+    return {
+      id: c.id,
+      name: c.name,
+      goalAmount: parseFloat(c.goal_amount) || 0,
+      raised,
+      donorCount: parseInt(s.donor_count, 10) || 0,
+      startDate: c.start_date,
+      endDate: c.end_date,
+      type: c.type,
+      ...pace,
+    };
+  });
+}
+
+// Overview — the money-moving command view. Everything the Fundraising home
+// needs in one call: the active org goal with pace, this-period momentum vs
+// the prior period (same FY/calendar basis as Finance — one source of truth),
+// campaign + giving-page rollups, and recent real gifts.
+app.get("/fundraising/overview", requireAuth, wrap(async (req, res) => {
+  const { orgId } = req.user;
+  const yearMode = req.query.yearMode === "calendar" ? "calendar" : "fiscal";
+  const cur = finPeriodBounds(yearMode, 0);
+  const prior = finPeriodBounds(yearMode, -1);
+  const today = new Date().toISOString().split("T")[0];
+
+  const [goalRows, curRows, priorRows, recentGifts, campaigns, givingPages] = await Promise.all([
+    query(
+      "SELECT * FROM fundraising_goals WHERE org_id = ? AND period_start <= ? AND period_end >= ? ORDER BY created_at DESC LIMIT 1",
+      [orgId, today, today]
+    ),
+    query("SELECT COALESCE(SUM(amount),0) AS total, COUNT(*) AS gifts, COUNT(DISTINCT donor_id) AS donors FROM gifts WHERE org_id = ? AND date >= ? AND date <= ?", [orgId, cur.start, cur.end]),
+    query("SELECT COALESCE(SUM(amount),0) AS total FROM gifts WHERE org_id = ? AND date >= ? AND date <= ?", [orgId, prior.start, prior.end]),
+    query(
+      `SELECT g.id, g.amount, g.date, g.stripe_payment_id, g.campaign, d.name AS donor_name
+         FROM gifts g LEFT JOIN donors d ON d.id = g.donor_id
+        WHERE g.org_id = ? ORDER BY g.date DESC, g.id DESC LIMIT 8`,
+      [orgId]
+    ),
+    fundraisingCampaignRows(orgId),
+    query(
+      `SELECT gp.id, gp.title, gp.slug, gp.goal_amount, gp.status,
+              COALESCE((SELECT SUM(amount) FROM gifts WHERE giving_page_id = gp.id), 0) AS raised
+         FROM giving_pages gp WHERE gp.org_id = ? ORDER BY gp.created_at DESC`,
+      [orgId]
+    ),
+  ]);
+
+  // Active org goal with pace (reuses the goal-progress math shape).
+  let goal = null;
+  if (goalRows.length) {
+    const gr = goalRows[0];
+    const goalAmount = parseFloat(gr.goal_amount) || 0;
+    let currentAmount = 0;
+    if (gr.goal_type === "lapsed_recovery") {
+      const r2 = await query(
+        `SELECT COALESCE(SUM(g.amount),0) AS total FROM gifts g JOIN donors d ON d.id = g.donor_id
+          WHERE g.org_id = ? AND g.date >= ? AND g.date <= ? AND g.date = d.last_gift_date
+            AND (SELECT MAX(g2.date) FROM gifts g2 WHERE g2.donor_id = d.id AND g2.date < g.date) IS NOT NULL
+            AND g.date::date - (SELECT MAX(g2.date) FROM gifts g2 WHERE g2.donor_id = d.id AND g2.date < g.date)::date > 365`,
+        [orgId, gr.period_start, gr.period_end]
+      );
+      currentAmount = parseFloat(r2[0]?.total) || 0;
+    } else {
+      const r2 = await query("SELECT COALESCE(SUM(amount),0) AS total FROM gifts WHERE org_id = ? AND date >= ? AND date <= ?", [orgId, gr.period_start, gr.period_end]);
+      currentAmount = parseFloat(r2[0]?.total) || 0;
+    }
+    const pace = computeFundraisingPace(currentAmount, goalAmount, gr.period_start, gr.period_end);
+    goal = {
+      id: gr.id, label: gr.label, goalType: gr.goal_type, goalAmount, currentAmount,
+      periodStart: gr.period_start, periodEnd: gr.period_end, ...pace,
+    };
+  }
+
+  const periodTotal = parseFloat(curRows[0]?.total) || 0;
+  const priorTotal = parseFloat(priorRows[0]?.total) || 0;
+  const activePages = givingPages.filter(p => p.status === "active");
+
+  res.json({
+    yearMode,
+    periodLabel: cur.chartLabel,
+    goal,
+    period: {
+      raised: periodTotal,
+      giftCount: parseInt(curRows[0]?.gifts, 10) || 0,
+      donorCount: parseInt(curRows[0]?.donors, 10) || 0,
+      priorRaised: priorTotal,
+      delta: periodTotal - priorTotal,
+    },
+    campaigns: {
+      count: campaigns.length,
+      activeCount: campaigns.filter(c => c.lifecycle === "active").length,
+      raised: campaigns.reduce((s, c) => s + c.raised, 0),
+      top: campaigns.slice().sort((a, b) => b.raised - a.raised)[0] || null,
+    },
+    givingPages: {
+      count: activePages.length,
+      raised: activePages.reduce((s, p) => s + (parseFloat(p.raised) || 0), 0),
+      pages: activePages.map(p => ({ id: p.id, title: p.title, slug: p.slug, goalAmount: p.goal_amount != null ? parseFloat(p.goal_amount) : null, raised: parseFloat(p.raised) || 0 })),
+    },
+    recentGifts: recentGifts.map(g => ({
+      id: g.id, amount: parseFloat(g.amount) || 0, date: g.date,
+      source: g.stripe_payment_id ? "online" : "offline", campaign: g.campaign || null,
+      donorName: g.donor_name || "Anonymous",
+    })),
+  });
+}));
+
+app.get("/fundraising/campaigns", requireAuth, wrap(async (req, res) => {
+  res.json(await fundraisingCampaignRows(req.user.orgId));
+}));
+
+app.post("/fundraising/campaigns", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  const { name, goalAmount, startDate, endDate } = req.body;
+  if (!name || !name.trim()) return res.status(400).json({ error: "Name required" });
+  const goal = parseFloat(goalAmount);
+  if (!Number.isFinite(goal) || goal <= 0) return res.status(400).json({ error: "Goal amount must be a positive number" });
+  const id = "cmp_" + uuid().slice(0, 8);
+  await run(
+    `INSERT INTO campaigns (id,org_id,name,type,subject,body,status,segment,goal_amount,start_date,end_date,recipient_count,open_count)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,0,0)`,
+    [id, req.user.orgId, name.trim(), "appeal", "", "", "draft", JSON.stringify({}), goal, startDate || null, endDate || null]
+  );
+  const rows = await fundraisingCampaignRows(req.user.orgId);
+  res.status(201).json(rows.find(r => r.id === id) || { id });
+}));
+
+app.put("/fundraising/campaigns/:id", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  const { name, goalAmount, startDate, endDate } = req.body;
+  const existing = await query("SELECT id FROM campaigns WHERE id=? AND org_id=?", [req.params.id, req.user.orgId]);
+  if (!existing.length) return res.status(404).json({ error: "Campaign not found" });
+  if (goalAmount !== undefined) {
+    const goal = parseFloat(goalAmount);
+    if (!Number.isFinite(goal) || goal <= 0) return res.status(400).json({ error: "Goal amount must be a positive number" });
+  }
+  await run(
+    `UPDATE campaigns SET name=COALESCE(?,name), goal_amount=COALESCE(?,goal_amount),
+       start_date=?, end_date=?, updated_at=NOW() WHERE id=? AND org_id=?`,
+    [name || null, goalAmount !== undefined ? parseFloat(goalAmount) : null,
+     startDate || null, endDate || null, req.params.id, req.user.orgId]
+  );
+  const rows = await fundraisingCampaignRows(req.user.orgId);
+  res.json(rows.find(r => r.id === req.params.id) || { id: req.params.id });
+}));
+
 // Segment → recipient list. Shared by the manual send route and the
 // scheduled-campaign job (BUILD-06 Phase C) so both resolve audiences
 // identically. Note the predicates read d.stage — the DB column — matching

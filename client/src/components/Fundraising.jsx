@@ -1,0 +1,438 @@
+import { useState, useEffect } from "react";
+import { apiFetch } from "../api";
+import { T, fmt, fmtFull, PageTitle, SectionTabs, EmptyState, GoldMoment, StartHere } from "./shared";
+import { QrCodeBlock, EmbedCodeBlock } from "./ShareBlocks";
+
+// ── Fundraising (BUILD-11) ──────────────────────────────────────────────────
+// The money-moving home. Everything here reads live figures from the backend
+// (/fundraising/*) — raised totals are always SUM(gifts), never a stored
+// counter, so a thermometer can't drift from reality. Five-color palette:
+// gold = on-track/primary, terracotta = behind, greens = neutral/positive.
+
+const PACE_META = {
+  met:      { label: "Goal reached",  color: T.gold,       bg: "#faf5e6" },
+  on_track: { label: "On track",      color: T.greenMid,   bg: "#e8f3ee" },
+  behind:   { label: "Behind pace",   color: T.terracotta, bg: "#f6ece8" },
+};
+
+// Horizontal thermometer. Gold fill; the fill goes celebratory (deeper gold)
+// at 100%. No goal → caller renders totals instead of this.
+function Thermometer({ raised, goal, percent, paceState, big }) {
+  const pct = percent == null ? 0 : percent;
+  const met = pct >= 100;
+  return (
+    <div style={{ width: "100%" }}>
+      <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: big ? 8 : 6, gap: 12, flexWrap: "wrap" }}>
+        <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
+          <span style={{ fontFamily: "'DM Serif Display',Georgia,serif", fontSize: big ? 30 : 20, color: T.ink, lineHeight: 1 }}>{fmtFull(raised)}</span>
+          <span style={{ fontSize: big ? 14 : 12, color: T.ink3 }}>of {fmtFull(goal)}</span>
+        </div>
+        <span style={{ fontSize: big ? 15 : 13, fontWeight: 800, color: met ? T.gold : T.ink2 }}>{pct}%</span>
+      </div>
+      <div style={{ height: big ? 14 : 9, background: T.bg3, borderRadius: 99, overflow: "hidden" }}>
+        <div style={{ width: `${Math.max(pct, pct > 0 ? 2 : 0)}%`, height: "100%", borderRadius: 99, transition: "width 0.5s cubic-bezier(.22,1,.36,1)", background: met ? "linear-gradient(90deg,#c9a84c,#e0c876)" : "linear-gradient(90deg,#b8963f,#c9a84c)" }} />
+      </div>
+      {paceState && PACE_META[paceState] && (
+        <div style={{ marginTop: big ? 10 : 8, display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 700, color: PACE_META[paceState].color, background: PACE_META[paceState].bg, borderRadius: 99, padding: "3px 11px" }}>
+          {paceState === "met" ? "✦" : paceState === "on_track" ? "↗" : "↘"} {PACE_META[paceState].label}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function StatTile({ label, value, sub, accent }) {
+  return (
+    <div style={{ background: T.white, border: "1px solid " + T.bg3, borderRadius: 14, padding: "16px 18px", borderLeft: `3px solid ${accent || T.bg3}`, boxShadow: T.shadow, display: "flex", flexDirection: "column", gap: 5, minWidth: 0 }}>
+      <span style={{ fontSize: 10, fontWeight: 800, letterSpacing: "0.12em", textTransform: "uppercase", color: T.ink3 }}>{label}</span>
+      <span style={{ fontSize: 26, fontWeight: 800, color: T.ink, fontFamily: "'DM Serif Display',serif", lineHeight: 1.05, letterSpacing: "-0.02em" }}>{value}</span>
+      {sub && <span style={{ fontSize: 12, color: T.ink3, lineHeight: 1.4 }}>{sub}</span>}
+    </div>
+  );
+}
+
+const SOURCE_BADGE = {
+  online:  { label: "Online", bg: "#e8f3ee", color: T.greenMid },
+  offline: { label: "Offline", bg: T.bg2, color: T.ink3 },
+};
+
+function daysLeftText(dl) {
+  if (dl == null) return null;
+  if (dl <= 0) return "ended";
+  if (dl === 1) return "1 day left";
+  return `${dl} days left`;
+}
+
+export function Fundraising({ data, isReadOnly, onNavigate }) {
+  const [subtab, setSubtab] = useState("overview");
+  const [overview, setOverview] = useState(null);
+  const [campaigns, setCampaigns] = useState([]);
+  const [pages, setPages] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [modal, setModal] = useState(null); // {mode:'new'|'edit', campaign}
+  const orgSlug = data?.org?.org_slug || "";
+
+  const load = () => {
+    setLoading(true);
+    Promise.all([
+      apiFetch("/fundraising/overview"),
+      apiFetch("/fundraising/campaigns"),
+      apiFetch("/giving-pages").catch(() => []),
+    ]).then(([o, c, p]) => {
+      setOverview(o); setCampaigns(c); setPages(p || []); setLoading(false);
+    }).catch(e => { console.error(e); setLoading(false); });
+  };
+  useEffect(() => { load(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const SUBTABS = [
+    { id: "overview", label: "Overview" },
+    { id: "campaigns", label: "Campaigns", badge: campaigns.length || undefined },
+    { id: "pages", label: "Giving Pages", badge: pages.filter(p => p.status === "active").length || undefined },
+    { id: "funds", label: "Funds" },
+  ];
+
+  const roTip = isReadOnly ? "Reactivate your subscription to make changes." : undefined;
+  const primaryBtn = (label, onClick, disabled) => (
+    <button onClick={onClick} disabled={disabled || isReadOnly} title={roTip}
+      style={{ background: T.gold, border: "none", borderRadius: 10, padding: "10px 18px", color: T.ink, fontSize: 13, fontWeight: 700, cursor: (disabled || isReadOnly) ? "not-allowed" : "pointer", opacity: (disabled || isReadOnly) ? 0.5 : 1, whiteSpace: "nowrap" }}>{label}</button>
+  );
+
+  const narrative = overview
+    ? (overview.period.raised > 0
+        ? `You've raised ${fmtFull(overview.period.raised)} this period across ${overview.period.giftCount} gift${overview.period.giftCount === 1 ? "" : "s"}.`
+        : "This is your fundraising command center — goals, campaigns, and giving pages in one place.")
+    : "";
+
+  return (
+    <div className="fade-in">
+      <PageTitle main="Your" accent="fundraising." sub={narrative} />
+      <SectionTabs tabs={SUBTABS} active={subtab} onSelect={setSubtab} className="finance-tabbar" />
+
+      {loading && <div style={{ padding: 48, textAlign: "center", color: T.ink3, fontSize: 13 }}>Loading…</div>}
+
+      {!loading && subtab === "overview" && (
+        <OverviewView overview={overview} campaigns={campaigns} isReadOnly={isReadOnly}
+          onNewCampaign={() => setSubtab("campaigns")} onNavigate={onNavigate} primaryBtn={primaryBtn} />
+      )}
+
+      {!loading && subtab === "campaigns" && (
+        <CampaignsView campaigns={campaigns} isReadOnly={isReadOnly} roTip={roTip}
+          onNew={() => !isReadOnly && setModal({ mode: "new" })}
+          onEdit={c => !isReadOnly && setModal({ mode: "edit", campaign: c })} />
+      )}
+
+      {!loading && subtab === "pages" && (
+        <PagesView pages={pages} orgSlug={orgSlug} onNavigate={onNavigate} />
+      )}
+
+      {!loading && subtab === "funds" && (
+        <FundsView data={data} onNavigate={onNavigate} />
+      )}
+
+      {modal && (
+        <CampaignModal mode={modal.mode} campaign={modal.campaign}
+          onClose={() => setModal(null)}
+          onSaved={() => { setModal(null); load(); }} />
+      )}
+    </div>
+  );
+}
+
+// ── Overview ────────────────────────────────────────────────────────────────
+function OverviewView({ overview, campaigns, onNavigate, primaryBtn, onNewCampaign }) {
+  if (!overview) return <EmptyState icon="◇" title="Nothing to show yet" message="Set a goal and start a campaign to see your fundraising momentum here." />;
+  const { goal, period, givingPages } = overview;
+  const gp = givingPages;
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
+      {/* Goal reached celebration — fires once per goal per org */}
+      {goal && goal.percent >= 100 && (
+        <GoldMoment moment={`fundraising_goal_${goal.id}`} title="You reached your goal. 🎉"
+          line={`${goal.label} — ${fmtFull(goal.currentAmount)} raised.`} />
+      )}
+
+      {/* Hero: the active goal thermometer, or a start-here signpost */}
+      {goal ? (
+        <div style={{ background: "linear-gradient(135deg,#0f1a12,#12251a)", borderRadius: 18, padding: "26px 28px", color: T.inkInverse, position: "relative", overflow: "hidden" }}>
+          <div style={{ position: "absolute", right: -30, top: -30, width: 160, height: 160, borderRadius: "50%", background: "radial-gradient(circle,#c9a84c22,transparent 70%)" }} />
+          <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: "0.14em", textTransform: "uppercase", color: "#c9a84c", marginBottom: 10 }}>Current goal</div>
+          <div style={{ fontFamily: "'DM Serif Display',Georgia,serif", fontSize: 22, marginBottom: 18, lineHeight: 1.25 }}>{goal.label}</div>
+          <GoalThermometerDark goal={goal} />
+          {goal.daysLeft != null && (
+            <div style={{ marginTop: 14, fontSize: 13, color: "#a9c3b2" }}>
+              {goal.daysLeft > 0 ? `${goal.daysLeft} days left in this period` : "This period has ended"}
+              {goal.paceState === "behind" && goal.expected != null && ` · ${fmtFull(Math.max(0, goal.expected - goal.currentAmount))} behind pace`}
+            </div>
+          )}
+        </div>
+      ) : (
+        <StartHere line="Set a fundraising goal to light up a live thermometer here — it tracks every gift automatically, so you always know where you stand." actionLabel="Go to Settings → set a goal" onAction={() => onNavigate && onNavigate("dashboard")} />
+      )}
+
+      {/* Momentum stat row */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(180px,1fr))", gap: 12 }}>
+        <StatTile label={`Raised · ${overview.periodLabel}`} value={fmtFull(period.raised)}
+          accent={T.gold}
+          sub={period.priorRaised > 0
+            ? `${period.delta >= 0 ? "↑" : "↓"} ${fmtFull(Math.abs(period.delta))} vs last period`
+            : `${period.donorCount} donor${period.donorCount === 1 ? "" : "s"}`} />
+        <StatTile label="Gifts this period" value={period.giftCount} accent={T.greenMid}
+          sub={`${period.donorCount} donor${period.donorCount === 1 ? "" : "s"}`} />
+        <StatTile label="Active campaigns" value={overview.campaigns.activeCount} accent={T.greenDk}
+          sub={overview.campaigns.count > 0 ? `${fmtFull(overview.campaigns.raised)} raised across all` : "No campaigns yet"} />
+        <StatTile label="Live giving pages" value={gp.count} accent={T.greenMid}
+          sub={gp.count > 0 ? `${fmtFull(gp.raised)} raised` : "None published"} />
+      </div>
+
+      {/* Two-column: top campaign + recent gifts */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(300px,1fr))", gap: 16 }}>
+        <div style={{ background: T.white, border: "1px solid " + T.bg3, borderRadius: 16, padding: "20px 22px", boxShadow: T.shadow }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
+            <span style={{ fontSize: 10, fontWeight: 800, letterSpacing: "0.12em", textTransform: "uppercase", color: T.ink3 }}>Leading campaign</span>
+            {campaigns.length > 0 && <button onClick={() => onNavigate && onNavigate("fundraising")} style={{ display: "none" }} />}
+          </div>
+          {overview.campaigns.top ? (
+            <div>
+              <div style={{ fontFamily: "'DM Serif Display',serif", fontSize: 18, color: T.ink, marginBottom: 14 }}>{overview.campaigns.top.name}</div>
+              <Thermometer raised={overview.campaigns.top.raised} goal={overview.campaigns.top.goalAmount} percent={overview.campaigns.top.percent} paceState={overview.campaigns.top.paceState} />
+              <div style={{ marginTop: 12, fontSize: 12, color: T.ink3 }}>
+                {overview.campaigns.top.donorCount} donor{overview.campaigns.top.donorCount === 1 ? "" : "s"}
+                {daysLeftText(overview.campaigns.top.daysLeft) ? ` · ${daysLeftText(overview.campaigns.top.daysLeft)}` : ""}
+              </div>
+            </div>
+          ) : (
+            <div style={{ fontSize: 13, color: T.ink3, lineHeight: 1.6, padding: "12px 0" }}>
+              No campaign with a goal yet. A campaign gives a specific appeal its own thermometer and pace.
+              <div style={{ marginTop: 12 }}>{primaryBtn("+ Start a campaign", onNewCampaign)}</div>
+            </div>
+          )}
+        </div>
+
+        <div style={{ background: T.white, border: "1px solid " + T.bg3, borderRadius: 16, padding: "20px 22px", boxShadow: T.shadow }}>
+          <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: "0.12em", textTransform: "uppercase", color: T.ink3, marginBottom: 14 }}>Recent gifts</div>
+          {overview.recentGifts.length === 0 ? (
+            <div style={{ fontSize: 13, color: T.ink3, padding: "12px 0" }}>Gifts will appear here as they come in — from your giving pages, campaigns, and offline entries.</div>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column" }}>
+              {overview.recentGifts.map((g, i) => {
+                const b = SOURCE_BADGE[g.source] || SOURCE_BADGE.offline;
+                return (
+                  <div key={g.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 0", borderTop: i === 0 ? "none" : "1px solid " + T.bg2 }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 13, fontWeight: 600, color: T.ink, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{g.donorName}</div>
+                      <div style={{ fontSize: 11, color: T.ink3 }}>{g.campaign || "General"} · {g.date}</div>
+                    </div>
+                    <span style={{ fontSize: 10, fontWeight: 700, background: b.bg, color: b.color, borderRadius: 99, padding: "2px 8px" }}>{b.label}</span>
+                    <div style={{ fontSize: 14, fontWeight: 800, color: T.greenMid, fontFamily: "'DM Serif Display',serif" }}>{fmtFull(g.amount)}</div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function GoalThermometerDark({ goal }) {
+  const met = goal.percent >= 100;
+  return (
+    <div>
+      <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 8, gap: 12, flexWrap: "wrap" }}>
+        <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
+          <span style={{ fontFamily: "'DM Serif Display',serif", fontSize: 30, color: T.inkInverse, lineHeight: 1 }}>{fmtFull(goal.currentAmount)}</span>
+          <span style={{ fontSize: 14, color: "#a9c3b2" }}>of {fmtFull(goal.goalAmount)}</span>
+        </div>
+        <span style={{ fontSize: 16, fontWeight: 800, color: T.gold }}>{goal.percent}%</span>
+      </div>
+      <div style={{ height: 14, background: "#1a2e1f", borderRadius: 99, overflow: "hidden" }}>
+        <div style={{ width: `${Math.max(goal.percent, goal.percent > 0 ? 2 : 0)}%`, height: "100%", borderRadius: 99, transition: "width 0.6s cubic-bezier(.22,1,.36,1)", background: met ? "linear-gradient(90deg,#c9a84c,#e6cf88)" : "linear-gradient(90deg,#b8963f,#c9a84c)" }} />
+      </div>
+    </div>
+  );
+}
+
+// ── Campaigns ───────────────────────────────────────────────────────────────
+function CampaignsView({ campaigns, isReadOnly, roTip, onNew, onEdit }) {
+  return (
+    <div>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16, gap: 12, flexWrap: "wrap" }}>
+        <div style={{ fontSize: 13, color: T.ink3 }}>Each campaign gives an appeal its own live thermometer and pace, computed from the gifts attributed to it.</div>
+        <button onClick={onNew} disabled={isReadOnly} title={roTip}
+          style={{ background: T.gold, border: "none", borderRadius: 10, padding: "9px 16px", color: T.ink, fontSize: 13, fontWeight: 700, cursor: isReadOnly ? "not-allowed" : "pointer", opacity: isReadOnly ? 0.5 : 1, whiteSpace: "nowrap" }}>+ New campaign</button>
+      </div>
+
+      {campaigns.length === 0 ? (
+        <>
+          <StartHere line="A campaign is a specific ask — Spring Appeal, a capital push, a year-end drive. Give it a goal and a deadline, and Steward tracks every attributed gift toward it automatically." actionLabel="+ Start your first campaign" onAction={onNew} dismissKey="fundraising_campaigns_intro" />
+          <div style={{ marginTop: 20 }}>
+            <EmptyState icon="◎" title="No campaigns yet" message="Your campaigns and their thermometers will live here. Start one to see progress and pace at a glance." />
+          </div>
+        </>
+      ) : (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(320px,1fr))", gap: 16 }}>
+          {campaigns.map(c => (
+            <div key={c.id} style={{ background: T.white, border: "1px solid " + T.bg3, borderRadius: 16, padding: "20px 22px", boxShadow: T.shadow, display: "flex", flexDirection: "column", gap: 14 }}>
+              <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 10 }}>
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ fontFamily: "'DM Serif Display',serif", fontSize: 18, color: T.ink, lineHeight: 1.25 }}>{c.name}</div>
+                  <div style={{ fontSize: 11, color: T.ink3, marginTop: 3 }}>
+                    {c.lifecycle === "upcoming" ? "Upcoming" : c.lifecycle === "ended" ? "Ended" : "Active"}
+                    {daysLeftText(c.daysLeft) && c.lifecycle === "active" ? ` · ${daysLeftText(c.daysLeft)}` : ""}
+                  </div>
+                </div>
+                {!isReadOnly && <button onClick={() => onEdit(c)} style={{ background: "none", border: "1px solid " + T.bg3, borderRadius: 8, padding: "4px 10px", fontSize: 12, color: T.ink3, cursor: "pointer", whiteSpace: "nowrap" }}>Edit</button>}
+              </div>
+              <Thermometer raised={c.raised} goal={c.goalAmount} percent={c.percent} paceState={c.paceState} />
+              <div style={{ fontSize: 12, color: T.ink3, borderTop: "1px solid " + T.bg2, paddingTop: 12 }}>
+                {c.donorCount} donor{c.donorCount === 1 ? "" : "s"}
+                {c.endDate ? ` · closes ${String(c.endDate).slice(0, 10)}` : ""}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function CampaignModal({ mode, campaign, onClose, onSaved }) {
+  const [name, setName] = useState(campaign?.name || "");
+  const [goal, setGoal] = useState(campaign?.goalAmount ? String(campaign.goalAmount) : "");
+  const [start, setStart] = useState(campaign?.startDate ? String(campaign.startDate).slice(0, 10) : "");
+  const [end, setEnd] = useState(campaign?.endDate ? String(campaign.endDate).slice(0, 10) : "");
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState("");
+
+  const save = async () => {
+    setErr("");
+    if (!name.trim()) { setErr("Give your campaign a name."); return; }
+    const g = parseFloat(goal);
+    if (!Number.isFinite(g) || g <= 0) { setErr("Enter a positive goal amount."); return; }
+    setSaving(true);
+    try {
+      const body = { name: name.trim(), goalAmount: g, startDate: start || null, endDate: end || null };
+      if (mode === "edit") await apiFetch(`/fundraising/campaigns/${campaign.id}`, { method: "PUT", body: JSON.stringify(body) });
+      else await apiFetch("/fundraising/campaigns", { method: "POST", body: JSON.stringify(body) });
+      onSaved();
+    } catch (e) { setErr(e.message || "Could not save"); setSaving(false); }
+  };
+
+  const field = { width: "100%", padding: "10px 12px", border: "1px solid " + T.bg3, borderRadius: 10, fontSize: 14, boxSizing: "border-box", fontFamily: "inherit" };
+  const lbl = { fontSize: 12, fontWeight: 700, color: T.ink2, marginBottom: 6, display: "block" };
+
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(15,26,18,0.5)", zIndex: 400, display: "flex", alignItems: "flex-start", justifyContent: "center", padding: "8vh 16px 16px", overflowY: "auto" }}>
+      <div onClick={e => e.stopPropagation()} className="modal-anim" style={{ background: T.white, borderRadius: 18, padding: "26px 28px", width: "100%", maxWidth: 460, boxShadow: T.shadowLg }}>
+        <div style={{ fontFamily: "'DM Serif Display',serif", fontSize: 22, color: T.ink, marginBottom: 4 }}>{mode === "edit" ? "Edit campaign" : "New campaign"}</div>
+        <div style={{ fontSize: 13, color: T.ink3, marginBottom: 20 }}>Raised is tracked automatically from gifts attributed to this campaign.</div>
+        <div style={{ marginBottom: 16 }}>
+          <label style={lbl}>Campaign name</label>
+          <input value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Spring Studio Scholarships" style={field} autoFocus />
+        </div>
+        <div style={{ marginBottom: 16 }}>
+          <label style={lbl}>Goal amount</label>
+          <input value={goal} onChange={e => setGoal(e.target.value.replace(/[^0-9.]/g, ""))} placeholder="15000" inputMode="decimal" style={field} />
+        </div>
+        <div style={{ display: "flex", gap: 12, marginBottom: 20 }}>
+          <div style={{ flex: 1 }}>
+            <label style={lbl}>Start date <span style={{ color: T.ink3, fontWeight: 400 }}>(optional)</span></label>
+            <input type="date" value={start} onChange={e => setStart(e.target.value)} style={field} />
+          </div>
+          <div style={{ flex: 1 }}>
+            <label style={lbl}>Deadline <span style={{ color: T.ink3, fontWeight: 400 }}>(optional)</span></label>
+            <input type="date" value={end} onChange={e => setEnd(e.target.value)} style={field} />
+          </div>
+        </div>
+        {err && <div style={{ fontSize: 13, color: T.terracotta, marginBottom: 14 }}>{err}</div>}
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 10 }}>
+          <button onClick={onClose} style={{ background: "none", border: "1px solid " + T.bg3, borderRadius: 10, padding: "10px 18px", fontSize: 13, fontWeight: 600, color: T.ink2, cursor: "pointer" }}>Cancel</button>
+          <button onClick={save} disabled={saving} style={{ background: T.gold, border: "none", borderRadius: 10, padding: "10px 20px", fontSize: 13, fontWeight: 700, color: T.ink, cursor: saving ? "wait" : "pointer", opacity: saving ? 0.6 : 1 }}>{saving ? "Saving…" : mode === "edit" ? "Save changes" : "Create campaign"}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Giving Pages ────────────────────────────────────────────────────────────
+function PagesView({ pages, orgSlug, onNavigate }) {
+  const [shareId, setShareId] = useState(null);
+  const active = pages.filter(p => p.status === "active");
+  if (active.length === 0) {
+    return (
+      <>
+        <StartHere line="Giving pages are your public, shareable donate pages — one per campaign, each with its own link, QR code, and embed. Create and design them in Settings; their live progress shows up here." actionLabel="Create a giving page →" onAction={() => onNavigate && onNavigate("settings", { section: "giving" })} dismissKey="fundraising_pages_intro" />
+        <div style={{ marginTop: 20 }}>
+          <EmptyState icon="◈" title="No live giving pages" message="Publish a giving page in Settings and it will appear here with its own thermometer and share tools." />
+        </div>
+      </>
+    );
+  }
+  return (
+    <div>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16, gap: 12, flexWrap: "wrap" }}>
+        <div style={{ fontSize: 13, color: T.ink3 }}>Your public donate pages. Create, edit, and design them in Settings → Giving Pages.</div>
+        <button onClick={() => onNavigate && onNavigate("settings", { section: "giving" })} style={{ background: "none", border: "1px solid " + T.bg3, borderRadius: 10, padding: "9px 16px", color: T.ink2, fontSize: 13, fontWeight: 600, cursor: "pointer" }}>Manage in Settings →</button>
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(320px,1fr))", gap: 16 }}>
+        {active.map(p => {
+          const raised = parseFloat(p.raised_amount) || 0;
+          const goal = p.goal_amount != null ? parseFloat(p.goal_amount) : null;
+          const pct = goal > 0 ? Math.min(100, Math.round((raised / goal) * 100)) : null;
+          const url = orgSlug ? `${window.location.origin}/give/${orgSlug}/${p.slug}` : "";
+          return (
+            <div key={p.id} style={{ background: T.white, border: "1px solid " + T.bg3, borderRadius: 16, padding: "20px 22px", boxShadow: T.shadow, display: "flex", flexDirection: "column", gap: 14 }}>
+              <div style={{ fontFamily: "'DM Serif Display',serif", fontSize: 18, color: T.ink, lineHeight: 1.25 }}>{p.title}</div>
+              {goal > 0 ? (
+                <Thermometer raised={raised} goal={goal} percent={pct} />
+              ) : (
+                <div style={{ fontSize: 15, fontWeight: 700, color: T.greenMid }}>{fmtFull(raised)} raised <span style={{ fontSize: 12, color: T.ink3, fontWeight: 400 }}>· no goal set</span></div>
+              )}
+              {url && (
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  <a href={url} target="_blank" rel="noreferrer" style={{ fontSize: 12, color: T.greenMid, fontWeight: 700, textDecoration: "none", border: "1px solid " + T.bg3, borderRadius: 8, padding: "6px 12px" }}>Open ↗</a>
+                  <button onClick={() => { navigator.clipboard?.writeText(url); }} style={{ fontSize: 12, color: T.ink2, fontWeight: 600, background: "none", border: "1px solid " + T.bg3, borderRadius: 8, padding: "6px 12px", cursor: "pointer" }}>Copy link</button>
+                  <button onClick={() => setShareId(shareId === p.id ? null : p.id)} style={{ fontSize: 12, color: T.ink2, fontWeight: 600, background: "none", border: "1px solid " + T.bg3, borderRadius: 8, padding: "6px 12px", cursor: "pointer" }}>{shareId === p.id ? "Hide share" : "QR / embed"}</button>
+                </div>
+              )}
+              {shareId === p.id && url && (
+                <div style={{ borderTop: "1px solid " + T.bg2, paddingTop: 14, display: "flex", flexDirection: "column", gap: 14 }}>
+                  <QrCodeBlock url={url} filenameBase={`giving-page-${p.slug}`} />
+                  <EmbedCodeBlock url={url} />
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ── Funds (cross-link, one source of truth is Finance) ──────────────────────
+function FundsView({ data, onNavigate }) {
+  const funds = data?.funds || [];
+  return (
+    <div>
+      <div style={{ background: "#fdfaf2", border: "1px solid #c9a84c55", borderLeft: "4px solid " + T.gold, borderRadius: 12, padding: "16px 20px", marginBottom: 20, display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
+        <div style={{ flex: "1 1 260px" }}>
+          <div style={{ fontSize: 13.5, color: T.ink2, lineHeight: 1.6 }}>Funds live in <strong>Finance</strong> — they're the accounting home for restricted and unrestricted money. Manage balances, targets, and restrictions there so there's one source of truth.</div>
+        </div>
+        <button onClick={() => onNavigate && onNavigate("finance")} style={{ background: T.gold, border: "none", borderRadius: 10, padding: "9px 16px", color: T.ink, fontSize: 13, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap" }}>Open Finance → Funds</button>
+      </div>
+      {funds.length > 0 && (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(240px,1fr))", gap: 12 }}>
+          {funds.map(f => (
+            <div key={f.id || f.name} style={{ background: T.white, border: "1px solid " + T.bg3, borderRadius: 14, padding: "16px 18px", boxShadow: T.shadow, borderLeft: `3px solid ${f.restricted ? T.gold : T.greenMid}` }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: T.ink, marginBottom: 4 }}>{f.name}</div>
+              <div style={{ fontSize: 22, fontWeight: 800, color: T.ink, fontFamily: "'DM Serif Display',serif" }}>{fmt(parseFloat(f.balance) || 0)}</div>
+              <div style={{ fontSize: 11, color: T.ink3, marginTop: 2 }}>{f.restricted ? "Restricted" : "Unrestricted"}</div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
