@@ -5557,7 +5557,7 @@ app.get("/fundraising/overview", requireAuth, wrap(async (req, res) => {
     query("SELECT COALESCE(SUM(amount),0) AS total, COUNT(*) AS gifts, COUNT(DISTINCT donor_id) AS donors FROM gifts WHERE org_id = ? AND date >= ? AND date <= ?", [orgId, cur.start, cur.end]),
     query("SELECT COALESCE(SUM(amount),0) AS total FROM gifts WHERE org_id = ? AND date >= ? AND date <= ?", [orgId, prior.start, prior.end]),
     query(
-      `SELECT g.id, g.amount, g.date, g.stripe_payment_id, g.campaign, d.name AS donor_name
+      `SELECT g.id, g.amount, g.date, g.stripe_payment_id, g.campaign, g.donor_id, d.name AS donor_name
          FROM gifts g LEFT JOIN donors d ON d.id = g.donor_id
         WHERE g.org_id = ? ORDER BY g.date DESC, g.id DESC LIMIT 8`,
       [orgId]
@@ -5626,6 +5626,7 @@ app.get("/fundraising/overview", requireAuth, wrap(async (req, res) => {
     recentGifts: recentGifts.map(g => ({
       id: g.id, amount: parseFloat(g.amount) || 0, date: g.date,
       source: g.stripe_payment_id ? "online" : "offline", campaign: g.campaign || null,
+      donorId: g.donor_id || null,
       donorName: g.donor_name || "Anonymous",
     })),
   });

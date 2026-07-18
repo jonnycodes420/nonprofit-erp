@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { apiFetch } from "../api";
-import { T, fmt, fmtFull, PageTitle, SectionTabs, EmptyState, GoldMoment, StartHere } from "./shared";
+import { T, fmt, fmtFull, PageTitle, SectionTabs, EmptyState, GoldMoment, StartHere, interactive } from "./shared";
 import { QrCodeBlock, EmbedCodeBlock } from "./ShareBlocks";
 
 // ── Fundraising (BUILD-11) ──────────────────────────────────────────────────
@@ -41,9 +41,10 @@ function Thermometer({ raised, goal, percent, paceState, big }) {
   );
 }
 
-function StatTile({ label, value, sub, accent }) {
+function StatTile({ label, value, sub, accent, onClick, ariaLabel }) {
   return (
-    <div style={{ background: T.white, border: "1px solid " + T.bg3, borderRadius: 14, padding: "16px 18px", borderLeft: `3px solid ${accent || T.bg3}`, boxShadow: T.shadow, display: "flex", flexDirection: "column", gap: 5, minWidth: 0 }}>
+    <div {...interactive(onClick, { label: ariaLabel || label })}
+      style={{ background: T.white, border: "1px solid " + T.bg3, borderRadius: 14, padding: "16px 18px", borderLeft: `3px solid ${accent || T.bg3}`, boxShadow: T.shadow, display: "flex", flexDirection: "column", gap: 5, minWidth: 0 }}>
       <span style={{ fontSize: 10, fontWeight: 800, letterSpacing: "0.12em", textTransform: "uppercase", color: T.ink3 }}>{label}</span>
       <span style={{ fontSize: 26, fontWeight: 800, color: T.ink, fontFamily: "'DM Serif Display',serif", lineHeight: 1.05, letterSpacing: "-0.02em" }}>{value}</span>
       {sub && <span style={{ fontSize: 12, color: T.ink3, lineHeight: 1.4 }}>{sub}</span>}
@@ -97,22 +98,16 @@ export function Fundraising({ data, isReadOnly, onNavigate }) {
       style={{ background: T.gold, border: "none", borderRadius: 10, padding: "10px 18px", color: T.ink, fontSize: 13, fontWeight: 700, cursor: (disabled || isReadOnly) ? "not-allowed" : "pointer", opacity: (disabled || isReadOnly) ? 0.5 : 1, whiteSpace: "nowrap" }}>{label}</button>
   );
 
-  const narrative = overview
-    ? (overview.period.raised > 0
-        ? `You've raised ${fmtFull(overview.period.raised)} this period across ${overview.period.giftCount} gift${overview.period.giftCount === 1 ? "" : "s"}.`
-        : "This is your fundraising command center — goals, campaigns, and giving pages in one place.")
-    : "";
-
   return (
     <div className="fade-in">
-      <PageTitle main="Your" accent="fundraising." sub={narrative} />
+      <PageTitle main="Your" accent="fundraising." />
       <SectionTabs tabs={SUBTABS} active={subtab} onSelect={setSubtab} className="finance-tabbar" />
 
       {loading && <div style={{ padding: 48, textAlign: "center", color: T.ink3, fontSize: 13 }}>Loading…</div>}
 
       {!loading && subtab === "overview" && (
         <OverviewView overview={overview} campaigns={campaigns} isReadOnly={isReadOnly}
-          onNewCampaign={() => setSubtab("campaigns")} onNavigate={onNavigate} primaryBtn={primaryBtn} />
+          onNewCampaign={() => setSubtab("campaigns")} onGoto={setSubtab} onNavigate={onNavigate} primaryBtn={primaryBtn} />
       )}
 
       {!loading && subtab === "campaigns" && (
@@ -139,7 +134,7 @@ export function Fundraising({ data, isReadOnly, onNavigate }) {
 }
 
 // ── Overview ────────────────────────────────────────────────────────────────
-function OverviewView({ overview, campaigns, onNavigate, primaryBtn, onNewCampaign }) {
+function OverviewView({ overview, campaigns, onNavigate, primaryBtn, onNewCampaign, onGoto }) {
   if (!overview) return <EmptyState icon="◇" title="Nothing to show yet" message="Set a goal and start a campaign to see your fundraising momentum here." />;
   const { goal, period, givingPages } = overview;
   const gp = givingPages;
@@ -154,7 +149,7 @@ function OverviewView({ overview, campaigns, onNavigate, primaryBtn, onNewCampai
 
       {/* Hero: the active goal thermometer, or a start-here signpost */}
       {goal ? (
-        <div style={{ background: "linear-gradient(135deg,#0f1a12,#12251a)", borderRadius: 18, padding: "26px 28px", color: T.inkInverse, position: "relative", overflow: "hidden" }}>
+        <div {...interactive(() => onGoto && onGoto("campaigns"), { label: "View campaigns", dark: true })} style={{ background: `linear-gradient(135deg,${T.green950},${T.green800})`, borderRadius: 18, padding: "26px 28px", color: T.inkInverse, position: "relative", overflow: "hidden", border: "1px solid transparent" }}>
           <div style={{ position: "absolute", right: -30, top: -30, width: 160, height: 160, borderRadius: "50%", background: "radial-gradient(circle,#c9a84c22,transparent 70%)" }} />
           <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: "0.14em", textTransform: "uppercase", color: "#c9a84c", marginBottom: 10 }}>Current goal</div>
           <div style={{ fontFamily: "'DM Serif Display',Georgia,serif", fontSize: 22, marginBottom: 18, lineHeight: 1.25 }}>{goal.label}</div>
@@ -174,23 +169,32 @@ function OverviewView({ overview, campaigns, onNavigate, primaryBtn, onNewCampai
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(180px,1fr))", gap: 12 }}>
         <StatTile label={`Raised · ${overview.periodLabel}`} value={fmtFull(period.raised)}
           accent={T.gold}
+          onClick={() => onNavigate && onNavigate("reports")}
+          ariaLabel="View giving summary report"
           sub={period.priorRaised > 0
             ? `${period.delta >= 0 ? "↑" : "↓"} ${fmtFull(Math.abs(period.delta))} vs last period`
             : `${period.donorCount} donor${period.donorCount === 1 ? "" : "s"}`} />
         <StatTile label="Gifts this period" value={period.giftCount} accent={T.greenMid}
+          onClick={() => onNavigate && onNavigate("reports")}
+          ariaLabel="View gifts in reports"
           sub={`${period.donorCount} donor${period.donorCount === 1 ? "" : "s"}`} />
         <StatTile label="Active campaigns" value={overview.campaigns.activeCount} accent={T.greenDk}
+          onClick={() => onGoto && onGoto("campaigns")}
+          ariaLabel="View campaigns"
           sub={overview.campaigns.count > 0 ? `${fmtFull(overview.campaigns.raised)} raised across all` : "No campaigns yet"} />
         <StatTile label="Live giving pages" value={gp.count} accent={T.greenMid}
+          onClick={() => onGoto && onGoto("pages")}
+          ariaLabel="View giving pages"
           sub={gp.count > 0 ? `${fmtFull(gp.raised)} raised` : "None published"} />
       </div>
 
       {/* Two-column: top campaign + recent gifts */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(300px,1fr))", gap: 16 }}>
-        <div style={{ background: T.white, border: "1px solid " + T.bg3, borderRadius: 16, padding: "20px 22px", boxShadow: T.shadow }}>
+        <div {...(overview.campaigns.top ? interactive(() => onGoto && onGoto("campaigns"), { label: `View campaign ${overview.campaigns.top.name}` }) : {})}
+          style={{ background: T.white, border: "1px solid " + T.bg3, borderRadius: 16, padding: "20px 22px", boxShadow: T.shadow }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
             <span style={{ fontSize: 10, fontWeight: 800, letterSpacing: "0.12em", textTransform: "uppercase", color: T.ink3 }}>Leading campaign</span>
-            {campaigns.length > 0 && <button onClick={() => onNavigate && onNavigate("fundraising")} style={{ display: "none" }} />}
+            {overview.campaigns.top && <span style={{ fontSize: 12, color: T.gold600, fontWeight: 700 }}>View →</span>}
           </div>
           {overview.campaigns.top ? (
             <div>
@@ -217,8 +221,9 @@ function OverviewView({ overview, campaigns, onNavigate, primaryBtn, onNewCampai
             <div style={{ display: "flex", flexDirection: "column" }}>
               {overview.recentGifts.map((g, i) => {
                 const b = SOURCE_BADGE[g.source] || SOURCE_BADGE.offline;
+                const go = g.donorId ? () => onNavigate && onNavigate("donors", { selectDonorId: g.donorId }) : null;
                 return (
-                  <div key={g.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 0", borderTop: i === 0 ? "none" : "1px solid " + T.bg2 }}>
+                  <div key={g.id} {...interactive(go, { label: `View ${g.donorName}` })} style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 10px", margin: "0 -10px", borderRadius: 8, borderTop: i === 0 ? "none" : "1px solid " + T.bg2 }}>
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ fontSize: 13, fontWeight: 600, color: T.ink, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{g.donorName}</div>
                       <div style={{ fontSize: 11, color: T.ink3 }}>{g.campaign || "General"} · {g.date}</div>
@@ -258,8 +263,7 @@ function GoalThermometerDark({ goal }) {
 function CampaignsView({ campaigns, isReadOnly, roTip, onNew, onEdit }) {
   return (
     <div>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16, gap: 12, flexWrap: "wrap" }}>
-        <div style={{ fontSize: 13, color: T.ink3 }}>Each campaign gives an appeal its own live thermometer and pace, computed from the gifts attributed to it.</div>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", marginBottom: 16, gap: 12, flexWrap: "wrap" }}>
         <button onClick={onNew} disabled={isReadOnly} title={roTip}
           style={{ background: T.gold, border: "none", borderRadius: 10, padding: "9px 16px", color: T.ink, fontSize: 13, fontWeight: 700, cursor: isReadOnly ? "not-allowed" : "pointer", opacity: isReadOnly ? 0.5 : 1, whiteSpace: "nowrap" }}>+ New campaign</button>
       </div>
@@ -372,8 +376,7 @@ function PagesView({ pages, orgSlug, onNavigate }) {
   }
   return (
     <div>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16, gap: 12, flexWrap: "wrap" }}>
-        <div style={{ fontSize: 13, color: T.ink3 }}>Your public donate pages. Create, edit, and design them in Settings → Giving Pages.</div>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", marginBottom: 16, gap: 12, flexWrap: "wrap" }}>
         <button onClick={() => onNavigate && onNavigate("settings", { section: "giving" })} style={{ background: "none", border: "1px solid " + T.bg3, borderRadius: 10, padding: "9px 16px", color: T.ink2, fontSize: 13, fontWeight: 600, cursor: "pointer" }}>Manage in Settings →</button>
       </div>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(320px,1fr))", gap: 16 }}>

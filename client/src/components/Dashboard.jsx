@@ -436,7 +436,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
           isolated. Right: 3 real supporting stats (pace, days left in the
           period, recent activity) genuinely filling that width — not
           decoration, and never fabricated. */}
-      <div className="dash-goal-banner" style={{background:"linear-gradient(135deg,#0f1a12,#152420)",border:"1px solid #1a2e1f",borderRadius:16,padding:"22px 26px",color:"#f0ede6"}}>
+      <div className="dash-goal-banner" style={{background:`linear-gradient(135deg,${T.green950},${T.green800})`,border:"1px solid #1a2e1f",borderRadius:16,padding:"22px 26px",color:"#f0ede6"}}>
         {goal===undefined?(
           <div style={{display:"flex",alignItems:"center",gap:8,color:"#8fa896",fontSize:13}}><Spin/>Loading goal…</div>
         ):goal?(

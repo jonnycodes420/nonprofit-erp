@@ -1,7 +1,19 @@
 import { useState, useRef, useEffect } from "react";
 import { streamAI, apiFetch } from "../api";
 
-// ── Design tokens ──────────────────────────────────────────────────────────
+// ── Design tokens (SINGLE SOURCE OF TRUTH — BUILD-12) ───────────────────────
+// This `T` object is the one place brand color is defined for the whole
+// authenticated app. New/edited UI MUST reference these tokens, never a raw
+// hex literal. (Pre-BUILD-12 inline hex still exists across components — a
+// documented backlog, see CLAUDE.md "Color tokens" — but nothing new adds to
+// it.) Semantics are locked: green = positive/up/primary, gold =
+// brand/active/highlight, terracotta = negative/attention. A treasurer needs
+// terracotta to mean "look here" — never repurpose it.
+//
+// BUILD-12 enrichment: a real green RAMP (deep pine → mist) so dark panels get
+// depth and cards get a warm hover wash, plus a small gold ramp so gold can
+// carry more of the highlights (eyebrows, active tabs, key metrics) without
+// getting gaudy. terracotta is unchanged.
 export const T = {
   // Backgrounds
   bg:         "#f0ede6",
@@ -16,17 +28,31 @@ export const T = {
   ink2:       "#2d2d2d",
   ink3:       "#6b6560",
   inkInverse: "#f0ede6",
-  // Greens
+  // Greens (legacy names — kept exactly, still valid tokens)
   green:      "#10b981",
   greenDk:    "#0d5c3a",
   greenMid:   "#1a6b4a",
   greenPale:  "#d1fae5",
+  // Green ramp (BUILD-12) — deep pine to mist. Use these for depth + hover.
+  green950:   "#0e1a13",  // sidebar / ink — deep near-black pine
+  green900:   "#102418",  // one step up from ink for layered dark panels
+  green800:   "#14352a",  // deep pine — dark panels (goal card) with real depth
+  green700:   "#1b5138",  // evergreen — hover-on-dark, secondary depth
+  green600:   "#1e6b45",  // primary / positive (≈ greenMid, AA on cream)
+  green500:   "#2f8f62",  // emerald — links, accents, active toggles
+  green200:   "#dce7df",  // sage — card hover tint, section bands
+  green100:   "#edf3ee",  // mist — subtle fills, zebra rows, hover wash
   // Accents
   gold:       "#c9a84c",
-  terracotta: "#b8593f",
+  terracotta: "#b8593f",   // negative/attention — LOCKED, do not repurpose
   red:        "#c0392b",
   amber:      "#d97706",
   blue:       "#2563eb",
+  // Gold ramp (BUILD-12) — lean on gold a touch more for highlights.
+  gold600:    "#a97f22",  // deep gold — gold text on cream (AA, ~4.5:1)
+  gold500:    "#c9a84c",  // primary gold (= legacy `gold`)
+  gold300:    "#e7cf91",  // soft gold — highlight underlines, hover accents
+  gold100:    "#f6eccf",  // gold wash — active-tab tint, callout fills
   // Surfaces
   white:      "#ffffff",
   shadow:     "0 1px 3px rgba(10,10,10,0.08), 0 4px 16px rgba(10,10,10,0.06)",
@@ -36,6 +62,29 @@ export const T = {
   radiusSm:   "8px",
   radiusLg:   "16px",
 };
+
+// interactive(onClick, {label}) — the ONE shared treatment for a card/row/stat
+// that navigates somewhere (BUILD-12 "everything clickable" rule). Returns
+// props that make a plain element a real, keyboard-activatable button: role,
+// tabIndex, Enter/Space handling, a `.click-card` class (cursor + hover wash +
+// visible focus ring, see GlobalStyles). Spread onto the element. Pass no
+// onClick (or null) and it returns {} — so a non-interactive element stays
+// non-interactive and doesn't look clickable.
+export function interactive(onClick, opts = {}) {
+  if (!onClick) return {};
+  // `dark:true` for interactive DARK panels (goal card etc.) — the light mist
+  // hover wash would clobber a dark gradient, so those get a lighter-pine
+  // hover instead. Same focus ring either way.
+  const base = opts.dark ? "click-card-dark" : "click-card";
+  return {
+    onClick,
+    onKeyDown: e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onClick(e); } },
+    role: "button",
+    tabIndex: 0,
+    "aria-label": opts.label,
+    className: base + (opts.className ? " " + opts.className : ""),
+  };
+}
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 export const fmt = n => n>=1000?`$${(n/1000).toFixed(n%1000===0?0:1)}k`:`$${n.toLocaleString()}`;
@@ -184,6 +233,21 @@ export function GlobalStyles() {
     .modal-anim{animation:slideUp 0.2s ease-out both;}
     .card-click{transition:transform 0.15s ease,box-shadow 0.15s ease,border-color 0.15s;}
     .card-click:hover{box-shadow:0 4px 24px rgba(10,10,10,0.12)!important;transform:translateY(-1px);border-color:#0d5c3a!important;}
+    /* BUILD-12 shared interactive treatment — see interactive() in shared.jsx.
+       Any aggregate/entity that navigates gets this: pointer, a warm green
+       hover wash + gold accent, and a visible keyboard focus ring. */
+    .click-card{cursor:pointer;transition:background 0.14s ease,box-shadow 0.15s ease,border-color 0.15s ease,transform 0.14s ease;outline:none;}
+    .click-card:hover{background:#edf3ee!important;border-color:#c9a84c!important;box-shadow:0 4px 20px rgba(10,10,10,0.10)!important;transform:translateY(-1px);}
+    .click-card:focus-visible{box-shadow:0 0 0 3px rgba(201,168,76,0.45)!important;border-color:#c9a84c!important;}
+    /* Dark interactive panels (goal card): NO background change — the inline
+       pine gradient must survive — just a gold edge + lift on hover, same
+       gold focus ring. Deliberately does not carry the .click-card class so
+       the light mist wash can never clobber the gradient. */
+    .click-card-dark{cursor:pointer;transition:box-shadow 0.15s ease,border-color 0.15s ease,transform 0.14s ease;outline:none;}
+    .click-card-dark:hover{border-color:#c9a84c!important;box-shadow:0 6px 26px rgba(0,0,0,0.28)!important;transform:translateY(-1px);}
+    .click-card-dark:focus-visible{box-shadow:0 0 0 3px rgba(201,168,76,0.5)!important;border-color:#c9a84c!important;}
+    /* gold wash behind an active section tab (added by SectionTabs) */
+    .section-tab-on{background:#f6eccf66!important;}
     .dash-row:hover{background:#f0ede6!important;box-shadow:inset 2px 0 0 #0d5c3a;}
     .rpt-row-click:hover td{background:#f0ede6;}
     .dash-action:hover{background:#f0ede6!important;border-color:#0d5c3a!important;transform:translateY(-1px);}
@@ -354,13 +418,14 @@ export function SectionTabs({tabs,active,onSelect,className,style}) {
   return <div className={className?`section-tabbar ${className}`:"section-tabbar"} style={{display:"flex",alignItems:"center",gap:2,borderBottom:"1.5px solid "+T.bg3,overflowX:"auto",flexShrink:0,marginBottom:18,...style}}>
     {tabs.map(t=>{
       const on=active===t.id;
-      return <button key={t.id} onClick={()=>onSelect(t.id)} style={{
+      return <button key={t.id} onClick={()=>onSelect(t.id)} className={on?"section-tab-on":undefined} style={{
         background:"transparent",border:"none",
         borderBottom:`2px solid ${on?T.gold:"transparent"}`,
+        borderRadius:on?"7px 7px 0 0":0,
         marginBottom:-1.5,padding:"10px 14px",
         color:on?T.ink:T.ink3,fontSize:13,fontWeight:on?700:500,
         cursor:"pointer",display:"flex",alignItems:"center",gap:7,whiteSpace:"nowrap",flexShrink:0,
-        transition:"color 0.15s,border-color 0.15s"}}>
+        transition:"color 0.15s,border-color 0.15s,background 0.15s"}}>
         {t.icon&&<span style={{fontSize:13,opacity:0.7}}>{t.icon}</span>}
         {t.label}
         {t.badge!=null&&<span style={{fontSize:11,fontWeight:700,background:on?T.gold+"2e":T.bg3,borderRadius:99,padding:"1px 7px",color:on?T.ink:T.ink3}}>{t.badge}</span>}

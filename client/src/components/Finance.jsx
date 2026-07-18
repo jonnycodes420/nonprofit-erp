@@ -1,5 +1,5 @@
 import { useState, useEffect, Fragment } from "react";
-import { T, fmt, fmtFull, askClaude, Card, AIBtn, AIPanel, EmptyState, SectionLabel, PageTitle, SectionTabs } from "./shared";
+import { T, fmt, fmtFull, askClaude, Card, AIBtn, AIPanel, EmptyState, SectionLabel, PageTitle, SectionTabs, interactive } from "./shared";
 import { apiFetch } from "../api";
 
 // ── Constants ──────────────────────────────────────────────────────────────
@@ -15,31 +15,11 @@ const ACCT_TYPES = [
 ];
 const TYPE_COLOR = Object.fromEntries(ACCT_TYPES.map(t => [t.id, t.color]));
 
-// Narrative headline for the Overview. Period-scoped figure + a period-over-period
-// delta that DEGRADES GRACEFULLY: no prior history (new org / first period / prior
-// period empty) drops the comparison clause entirely, and the same number is never
-// rendered twice in one sentence. Cash on Hand is a separate, all-time figure and
-// deliberately lives only in the labeled stat card, not here.
-function financeHeadline(summary, yearMode) {
-  if (!summary) return "";
-  const rev = summary.ytdRevenue || 0;
-  const prior = summary.priorRevenue || 0;
-  const n = summary.activeFundCount || 0;
-  const periodWord = yearMode === "fiscal" ? "this fiscal year" : "this year";
-  const lastWord = yearMode === "fiscal" ? "last fiscal year" : "last year";
-  if (rev === 0 && n === 0) {
-    return `No money has moved ${periodWord} yet — log a transaction or connect Stripe above and your finances take shape here.`;
-  }
-  const fundClause = n > 0 ? ` across ${n} ${n === 1 ? "fund" : "funds"}` : "";
-  let s = `You're operating on ${fmtFull(rev)}${fundClause} ${periodWord}`;
-  const delta = rev - prior;
-  // Guard: only compare when there's real prior history AND the delta isn't just
-  // the whole figure again (which is the prior===0 no-history case in disguise).
-  if (prior > 0 && delta !== rev) {
-    s += `, ${delta >= 0 ? "up" : "down"} ${fmtFull(Math.abs(delta))} from ${lastWord}`;
-  }
-  return s + ".";
-}
+// (BUILD-12) The Overview narrative headline was removed as page-subtitle
+// clutter — it duplicated the stat cards. Its one non-duplicated number, the
+// vs-prior-period revenue delta, now lives on the Revenue stat card caption
+// (`revDeltaCaption`, computed in the Finance component). The pure-function
+// guard cases still live in tests/finance-overview.test.js as a unit.
 
 // Money in = income (gold, positive/primary); money out = expense (terracotta,
 // needs-attention). One convention used everywhere in this tab.
@@ -542,8 +522,17 @@ export function Finance({ data, isReadOnly, onNavigate }) {
     URL.revokeObjectURL(url);
   };
 
-  // ── Narrative headline ── (degrades gracefully; see financeHeadline)
-  const narrative = financeHeadline(summary, yearMode);
+  // BUILD-12: the page-subtitle blurb was removed (it duplicated the stat
+  // cards). Its one non-duplicated number — the vs-prior-period delta — is
+  // surfaced on the Revenue card caption below so nothing is silently lost.
+  const revDeltaCaption = (() => {
+    if (!summary) return null;
+    const rev = summary.ytdRevenue || 0, prior = summary.priorRevenue || 0;
+    const delta = rev - prior;
+    if (!(prior > 0 && delta !== rev)) return null;
+    const lastWord = yearMode === "fiscal" ? "last FY" : "last year";
+    return `${delta >= 0 ? "↑" : "↓"} ${fmtFull(Math.abs(delta))} vs ${lastWord}`;
+  })();
 
   if (loading) return (
     <div style={{ display:"flex", flexDirection:"column", gap:16 }}>
@@ -554,9 +543,18 @@ export function Finance({ data, isReadOnly, onNavigate }) {
 
   const addBtnHandler = (fn) => isReadOnly ? undefined : fn;
 
+  // BUILD-12 clickability: drill any aggregate into the Transactions ledger,
+  // pre-filtered by type/fund where it makes sense (no month filter exists yet,
+  // so monthly rows land on the full ledger — noted gap).
+  const gotoTxns = (patch = {}) => {
+    if (patch.type !== undefined) setTxnType(patch.type);
+    if (patch.fund !== undefined) setTxnFund(patch.fund);
+    setSubtab("transactions");
+  };
+
   return (
     <div style={{ display:"flex", flexDirection:"column", gap:14 }}>
-      <PageTitle main="Your" accent="finances." sub={narrative}/>
+      <PageTitle main="Your" accent="finances."/>
 
       {/* Modals */}
       {showTxnModal && <TransactionModal accounts={accounts} funds={funds} onSave={handleAddTxn} onClose={() => setShowTxnModal(false)}/>}
@@ -589,12 +587,13 @@ export function Finance({ data, isReadOnly, onNavigate }) {
               // the other three are the selected period. The captions make the scope
               // explicit so a treasurer never reads cash and period revenue as the
               // same kind of number.
-              ["Cash on Hand", fmt(summary.cashOnHand), summary.cashOnHand >= 0 ? IN : OUT, "All-time · income − expenses"],
-              [yearMode==="fiscal" ? "FY Revenue" : "YTD Revenue", fmt(summary.ytdRevenue), IN, summary.periodLabel],
-              [yearMode==="fiscal" ? "FY Expenses" : "YTD Expenses", fmt(summary.ytdExpenses), OUT, summary.periodLabel],
-              ["Net Surplus", fmt(summary.netSurplus), summary.netSurplus >= 0 ? IN : OUT, summary.periodLabel],
-            ].map(([label, value, color, caption]) => (
-              <div key={label} style={{ background:T.white, border:"1px solid "+T.bg3, borderRadius:12, padding:"14px 16px" }}>
+              ["Cash on Hand", fmt(summary.cashOnHand), summary.cashOnHand >= 0 ? IN : OUT, "All-time · income − expenses", () => gotoTxns({ type: "" })],
+              [yearMode==="fiscal" ? "FY Revenue" : "YTD Revenue", fmt(summary.ytdRevenue), IN, revDeltaCaption || summary.periodLabel, () => gotoTxns({ type: "income" })],
+              [yearMode==="fiscal" ? "FY Expenses" : "YTD Expenses", fmt(summary.ytdExpenses), OUT, summary.periodLabel, () => gotoTxns({ type: "expense" })],
+              ["Net Surplus", fmt(summary.netSurplus), summary.netSurplus >= 0 ? IN : OUT, summary.periodLabel, () => gotoTxns({ type: "" })],
+            ].map(([label, value, color, caption, onClick]) => (
+              <div key={label} {...interactive(onClick, { label: `View ${label} in transactions` })}
+                style={{ background:T.white, border:"1px solid "+T.bg3, borderRadius:12, padding:"14px 16px" }}>
                 <div style={{ fontSize:11, color:T.ink3, textTransform:"uppercase", letterSpacing:".06em", marginBottom:4 }}>{label}</div>
                 <div style={{ fontSize:22, fontWeight:800, color, fontFamily:"'DM Serif Display',serif" }}>{value}</div>
                 {caption && <div style={{ fontSize:10, color:T.ink3, marginTop:4 }}>{caption}</div>}
@@ -631,7 +630,8 @@ export function Finance({ data, isReadOnly, onNavigate }) {
               {active.map((m) => {
                 const net = m.income - m.expense;
                 return (
-                  <div key={m.key} style={{ marginBottom:12, paddingBottom:12, borderBottom:"1px solid "+T.bg3 }}>
+                  <div key={m.key} {...interactive(() => gotoTxns({ type: "" }), { label: `View ${m.label} transactions` })}
+                    style={{ padding:"0 12px 12px", margin:"0 -12px 12px", borderRadius:8, borderBottom:"1px solid "+T.bg3 }}>
                     <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:6 }}>
                       <span style={{ fontSize:13, fontWeight:700, color:T.ink }}>{m.label}</span>
                       <div style={{ display:"flex", gap:12 }}>
@@ -670,7 +670,8 @@ export function Finance({ data, isReadOnly, onNavigate }) {
           {finFundBalances.length === 0
             ? <EmptyState icon="◇" title="No funds yet" message="Funds are how you track which dollars are restricted. Add one under the Funds tab and every gift you log can be tagged to it."/>
             : finFundBalances.map((f, i) => (
-              <div key={f.name} style={{ display:"flex", alignItems:"center", gap:12, padding:"11px 0", borderBottom: i < finFundBalances.length - 1 ? "1px solid "+T.bg3 : "" }}>
+              <div key={f.name} {...interactive(() => f.id ? gotoTxns({ fund: f.id }) : setSubtab("funds"), { label: `View ${f.name} fund` })}
+                style={{ display:"flex", alignItems:"center", gap:12, padding:"11px 12px", margin:"0 -12px", borderRadius:8, borderBottom: i < finFundBalances.length - 1 ? "1px solid "+T.bg3 : "" }}>
                 <div style={{ width:10, height:10, borderRadius:"50%", background:f.restricted?T.gold:T.greenMid, flexShrink:0 }}/>
                 <div style={{ flex:1 }}>
                   <div style={{ fontSize:13, fontWeight:600, color:T.ink }}>{f.name}</div>
@@ -814,6 +815,7 @@ export function Finance({ data, isReadOnly, onNavigate }) {
                   <Sparkline values={sparkVals}/>
                   <span style={{ fontSize:9, color:T.ink3, textTransform:"uppercase", letterSpacing:".05em" }}>8 wks</span>
                 </div>
+                <button style={ghostBtn} onClick={() => gotoTxns({ fund: f.id })}>View txns →</button>
                 <button style={ghostBtn} onClick={() => setEditFund(f)}>Edit</button>
               </div>
             );

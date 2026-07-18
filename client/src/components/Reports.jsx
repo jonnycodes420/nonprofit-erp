@@ -8,13 +8,15 @@ import { T, fmtFull, Spin, Card, EmptyState, PageTitle, SectionTabs, StartHere }
 // asks. Deliberately NOT an Analytics revival: no chart dashboard, no custom
 // report builder. All aggregation happens server-side (GET /reports/:key).
 
+// BUILD-12: the per-report `q` ("question this answers") strings were removed —
+// they rendered as a decorative grey subtitle line that Part 1 cut as clutter.
 const REPORT_DEFS = [
-  { key: "giving-summary", label: "Giving Summary", q: "How much did we raise this period, and from whom?" },
-  { key: "by-group", label: "Gifts by Fund", q: "Where did giving go — by fund, campaign, or page?" },
-  { key: "lybunt", label: "LYBUNT", q: "Who gave last year but hasn't yet this year?" },
-  { key: "sybunt", label: "SYBUNT", q: "Who has given before but not this year?" },
-  { key: "retention", label: "Retention", q: "Are donors coming back year over year?" },
-  { key: "top-donors", label: "Top Donors", q: "Who are our most generous donors?" },
+  { key: "giving-summary", label: "Giving Summary" },
+  { key: "by-group", label: "Gifts by Fund" },
+  { key: "lybunt", label: "LYBUNT" },
+  { key: "sybunt", label: "SYBUNT" },
+  { key: "retention", label: "Retention" },
+  { key: "top-donors", label: "Top Donors" },
 ];
 
 // Which reports take which controls
@@ -295,7 +297,7 @@ export function Reports({ onNavigate }) {
   const activeDef = REPORT_DEFS.find(r => r.key === active);
 
   return <div className="fade-in">
-    <PageTitle main="Your" accent="Reports" sub="Six answers to the questions boards and funders actually ask — every one filters cleanly and downloads to CSV." />
+    <PageTitle main="Your" accent="Reports" />
 
     {/* First-visit signpost (BUILD-08 Phase D) — shown until "Got it". */}
     <div style={{ marginBottom: 14 }}>
@@ -305,12 +307,11 @@ export function Reports({ onNavigate }) {
     </div>
 
     <div className="reports-layout" style={{ display: "flex", flexDirection: "column" }}>
-      {/* Report picker — horizontal tabs; the active report's question renders
-          as a subtitle below (the old rail showed it under every item) */}
+      {/* Report picker — horizontal tabs. (BUILD-12: the per-report grey
+          "question this answers" subtitle was removed as decorative clutter.) */}
       <SectionTabs className="reports-tabbar"
         tabs={REPORT_DEFS.map(r => ({ id: r.key, label: r.label }))}
-        active={active} onSelect={setActive} />
-      <div className="rpt-sub" style={{ fontSize: 13, color: T.ink3, margin: "-6px 0 14px", lineHeight: 1.5 }}>{activeDef.q}</div>
+        active={active} onSelect={setActive} style={{ marginBottom: 14 }} />
 
       {/* Main */}
       <div style={{ flex: 1, minWidth: 0 }}>
