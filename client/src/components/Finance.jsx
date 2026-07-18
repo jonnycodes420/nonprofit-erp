@@ -554,33 +554,36 @@ export function Finance({ data, isReadOnly, onNavigate }) {
 
   return (
     <div style={{ display:"flex", flexDirection:"column", gap:14 }}>
-      <PageTitle main="Your" accent="finances."/>
+      {/* Title + year-basis toggle share one row (no dead band under the title). */}
+      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", gap:16, flexWrap:"wrap" }}>
+        <PageTitle main="Your" accent="finances."/>
+        <div style={{ display:"flex", flexDirection:"column", alignItems:"flex-end", gap:4, marginTop:6 }}>
+          <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+            <span style={{ fontSize:11, color:T.ink3 }}>Year basis:</span>
+            <div style={{ display:"flex", background:T.bg, border:"1px solid "+T.bg3, borderRadius:8, overflow:"hidden" }}>
+              {[["fiscal","Fiscal Year"],["calendar","Calendar Year"]].map(([v,l]) => (
+                <button key={v} onClick={() => handleYearModeChange(v)}
+                  style={{ background:yearMode===v?T.greenMid:"transparent", border:"none", padding:"6px 14px", color:yearMode===v?"#fff":T.ink3, fontSize:12, fontWeight:yearMode===v?700:400, cursor:"pointer", whiteSpace:"nowrap" }}>
+                  {l}
+                </button>
+              ))}
+            </div>
+          </div>
+          {summary?.periodLabel && (
+            <div style={{ fontSize:11, color:T.ink3 }}>
+              {yearMode === "fiscal" ? "Fiscal Year" : "Calendar Year"} &nbsp;·&nbsp; {summary.periodLabel}
+            </div>
+          )}
+        </div>
+      </div>
 
       {/* Modals */}
       {showTxnModal && <TransactionModal accounts={accounts} funds={funds} onSave={handleAddTxn} onClose={() => setShowTxnModal(false)}/>}
       {(showAcctModal || editAcct) && <AccountModal account={editAcct} onSave={handleSaveAcct} onClose={() => { setShowAcctModal(false); setEditAcct(null); }}/>}
       {(showFundModal || editFund) && <FundModal fund={editFund} onSave={handleSaveFund} onClose={() => { setShowFundModal(false); setEditFund(null); }}/>}
 
-      {/* Year basis + summary stat row */}
-      <div style={{ display:"flex", justifyContent:"flex-end", alignItems:"center", gap:8 }}>
-        <span style={{ fontSize:11, color:T.ink3 }}>Year basis:</span>
-        <div style={{ display:"flex", background:T.bg, border:"1px solid "+T.bg3, borderRadius:8, overflow:"hidden" }}>
-          {[["fiscal","Fiscal Year"],["calendar","Calendar Year"]].map(([v,l]) => (
-            <button key={v} onClick={() => handleYearModeChange(v)}
-              style={{ background:yearMode===v?T.greenMid:"transparent", border:"none", padding:"6px 14px", color:yearMode===v?"#fff":T.ink3, fontSize:12, fontWeight:yearMode===v?700:400, cursor:"pointer", whiteSpace:"nowrap" }}>
-              {l}
-            </button>
-          ))}
-        </div>
-      </div>
-
       {summary && (
         <>
-          {summary.periodLabel && (
-            <div style={{ fontSize:11, color:T.ink3, textAlign:"right", marginTop:-6 }}>
-              {yearMode === "fiscal" ? "Fiscal Year" : "Calendar Year"} &nbsp;·&nbsp; {summary.periodLabel}
-            </div>
-          )}
           <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(160px,1fr))", gap:10 }}>
             {[
               // Cash on Hand is ALL-TIME (Σ income − Σ expense over the whole ledger);

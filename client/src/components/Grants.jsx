@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { apiFetch } from "../api";
 import { useAuth } from "../main";
-import { T, fmt, fmtFull, daysUntil, SC, askClaude, Spin, Pill, Card, SectionLabel, AIBtn, AIPanel, PageTitle, EmptyState, TouchpointTimeline } from "./shared";
+import { T, fmt, fmtFull, daysUntil, SC, askClaude, Spin, Pill, Card, SectionLabel, AIBtn, AIPanel, PageTitle, EmptyState, TouchpointTimeline, interactive } from "./shared";
 
 // ── Grant Log Modal ────────────────────────────────────────────────────────
 function GrantLogModal({grant,onSave,onClose}){
@@ -385,6 +385,7 @@ export function Grants({data,setData,isReadOnly=false,initialGrantId,onIntentCon
   const [newGrant,setNewGrant]=useState({funder:"",program:"",amount:"",status:"prospecting",deadline:"",officer:""});
   const [addLoading,setAddLoading]=useState(false);
   const [grantView,setGrantView]=useState("kanban");
+  const [statusFilter,setStatusFilter]=useState(null); // pipeline card → filter the list
   const pipeline=["prospecting","pending","active","closed"];
   const totals=pipeline.reduce((a,s)=>{a[s]=data.grants.filter(g=>g.status===s).reduce((sum,g)=>sum+g.amount,0);return a;},{});
 
@@ -492,15 +493,20 @@ export function Grants({data,setData,isReadOnly=false,initialGrantId,onIntentCon
 
     {grantView==="list"&&<>
     <div className="grants-pipeline-grid" style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:8}}>
-      {pipeline.map(s=><div key={s} style={{background:T.white,border:`1px solid ${SC[s]}25`,borderRadius:12,padding:"14px 16px",borderTop:`3px solid ${SC[s]}`}}>
+      {pipeline.map(s=>{const on=statusFilter===s;return <div key={s} {...interactive(()=>setStatusFilter(on?null:s),{label:`Filter grants to ${s}`})} style={{background:T.white,border:`1px solid ${on?SC[s]:SC[s]+"25"}`,borderRadius:12,padding:"14px 16px",borderTop:`3px solid ${SC[s]}`,boxShadow:on?`0 0 0 2px ${SC[s]}33`:"none"}}>
         <div style={{fontSize:10,fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",color:SC[s],marginBottom:8}}>{s}</div>
         <div style={{fontSize:22,fontWeight:800,color:T.ink,fontFamily:"'DM Serif Display',serif",lineHeight:1}}>{fmt(totals[s])}</div>
         <div style={{fontSize:11,color:T.ink3,marginTop:4}}>{data.grants.filter(g=>g.status===s).length} grant{data.grants.filter(g=>g.status===s).length!==1?"s":""}</div>
-      </div>)}
+      </div>;})}
     </div>
 
+    {statusFilter&&<div style={{display:"flex",alignItems:"center",gap:10,margin:"2px 0"}}>
+      <span style={{fontSize:12,color:T.ink3}}>Showing <strong style={{color:T.ink}}>{statusFilter}</strong> grants</span>
+      <button onClick={()=>setStatusFilter(null)} style={{background:"none",border:"1px solid "+T.bg3,borderRadius:8,padding:"3px 10px",fontSize:11,fontWeight:600,color:T.ink3,cursor:"pointer"}}>Clear ×</button>
+    </div>}
+
     {data.grants.length===0&&<EmptyState icon="◉" title="No grants yet" message="Start tracking your grant portfolio — add one manually or use Find Grants to discover new funders." action="+ Add your first grant" onAction={()=>setShowAdd(true)}/>}
-    {data.grants.map(g=>{
+    {data.grants.filter(g=>!statusFilter||g.status===statusFilter).map(g=>{
       const pct=g.amount>0?Math.round((g.received||0)/g.amount*100):0;
       const days=daysUntil(g.deadline);
       return <Card key={g.id} accent={SC[g.status]} onClick={()=>setSelected(g)} style={{cursor:"pointer"}}>

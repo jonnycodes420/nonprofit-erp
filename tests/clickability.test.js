@@ -23,6 +23,9 @@ const shared = read("client/src/components/shared.jsx");
 const fund   = read("client/src/components/Fundraising.jsx");
 const fin    = read("client/src/components/Finance.jsx");
 const reports= read("client/src/components/Reports.jsx");
+const grants = read("client/src/components/Grants.jsx");
+const comms  = read("client/src/components/Communications.jsx");
+const donors = read("client/src/components/Donors.jsx");
 const server = read("server.js");
 
 // ── Part 2: shared interactive() treatment ─────────────────────────────────
@@ -63,6 +66,17 @@ ok(/\.map\(\(\[label, value, color, caption, onClick\]\) => \(\s*<div key=\{labe
 ok(has(fin, "gotoTxns({ fund: f.id })"), "Fund rows drill to fund-filtered transactions");
 ok(has(fin, "View txns →"), "Funds subtab row exposes a transactions drill link");
 ok(has(fin, "View ${m.label} transactions"), "Monthly breakdown rows drill to transactions");
+
+// ── Part 2: app-wide pass — Grants + Communications + Donors ────────────────
+ok(/import \{[^}]*interactive[^}]*\} from "\.\/shared"/.test(grants), "Grants imports interactive");
+ok(has(grants, "const [statusFilter,setStatusFilter]=useState(null)"), "Grants pipeline has a status filter");
+ok(has(grants, "interactive(()=>setStatusFilter(on?null:s)"), "Grants pipeline cards toggle the filter (interactive)");
+ok(has(grants, "data.grants.filter(g=>!statusFilter||g.status===statusFilter)"), "Grant list respects the pipeline-card filter");
+ok(/import \{[^}]*interactive[^}]*\} from "\.\/shared"/.test(comms), "Communications imports interactive");
+ok(has(comms, "onClick: () => setNav(\"campaigns\")"), "Comms 'Campaigns Sent' card → Campaigns subtab");
+ok(has(comms, 'interactive(() => setNav("campaigns"), { label: `View campaign ${bestCampaign.name}`'), "Comms 'Best Campaign' card → Campaigns subtab");
+// Donors entity rows already navigate (pre-existing) — spot-check they carry onSelectDonor.
+ok(has(donors, "onClick={()=>onSelectDonor(d)}"), "Donors TeamView rows open the donor profile");
 
 // ── Part 1: no page-subtitle blurb clutter (removed strings) ────────────────
 ok(!has(fund, "sub={narrative}") && !has(fund, "This is your fundraising command center"), "Fundraising subtitle blurb removed");

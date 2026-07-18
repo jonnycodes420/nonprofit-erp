@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { apiFetch } from "../api";
 import { useAuth } from "../main";
-import { T, askClaude, Spin, fmtFull, SectionTabs, StartHere } from "./shared";
+import { T, askClaude, Spin, fmtFull, SectionTabs, StartHere, interactive } from "./shared";
 
 // ── Campaign Briefing panel (rendered inside expanded row) ──────────────────
 function CampaignBriefing({ campaign }) {
@@ -1399,11 +1399,13 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
             {/* All-time stats */}
             <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 12 }}>
               {[
+                // Total Sent / Open Rate have no filtered-list destination → static.
                 { label: "Total Emails Sent", value: allTimeSent.toLocaleString() },
                 { label: "Overall Open Rate",  value: overallRate + "%", note: "Industry avg ~20%" },
-                { label: "Campaigns Sent",     value: sentCampaigns.length },
-              ].map(({ label, value, note }) => (
-                <div key={label} style={{ background: T.bg2, border: "1px solid " + T.bg3, borderRadius: 12, padding: 18 }}>
+                { label: "Campaigns Sent",     value: sentCampaigns.length, onClick: () => setNav("campaigns") },
+              ].map(({ label, value, note, onClick }) => (
+                <div key={label} {...interactive(onClick, { label: `View ${label}` })}
+                  style={{ background: T.bg2, border: "1px solid " + T.bg3, borderRadius: 12, padding: 18 }}>
                   <div style={{ fontSize: 11, color: T.ink3, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 6 }}>{label}</div>
                   <div style={{ fontSize: 28, fontWeight: 800, color: T.ink }}>{value}</div>
                   {note && <div style={{ fontSize: 11, color: T.ink3, marginTop: 4 }}>{note}</div>}
@@ -1413,7 +1415,8 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
 
             {/* Best campaign */}
             {bestCampaign && (
-              <div style={{ background: "#10b98110", border: "1px solid #10b98130", borderRadius: 12, padding: 16, display: "flex", alignItems: "center", gap: 12 }}>
+              <div {...interactive(() => setNav("campaigns"), { label: `View campaign ${bestCampaign.name}` })}
+                style={{ background: "#10b98110", border: "1px solid #10b98130", borderRadius: 12, padding: 16, display: "flex", alignItems: "center", gap: 12 }}>
                 <span style={{ fontSize: 24 }}>🏆</span>
                 <div>
                   <div style={{ fontSize: 11, color: T.green, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em" }}>Best Campaign</div>

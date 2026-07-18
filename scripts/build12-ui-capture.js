@@ -85,12 +85,28 @@ const nav = async (page, label) => {
   await shot("reports-header", ".app-content");
   await assertNoBlurb("Reports", ["Six answers to the questions", "How much did we raise this period"]);
 
-  // ── Finance ──
+  // ── Finance (header fix: title + year-basis toggle inline, no dead band) ──
   await nav(page, "Finance");
   await shot("finance-overview", ".app-content");
   await assertNoBlurb("Finance", ["You're operating on"]);
   const finTile = await page.$('.app-content [role="button"]');
   if (finTile) { await finTile.hover(); await page.waitForTimeout(250); await shot("finance-hover-card", ".app-content"); }
+
+  // ── Grants (pipeline cards filter the list) ──
+  await nav(page, "Grants");
+  const listToggle = await page.$('button:has-text("List")');
+  if (listToggle) { await listToggle.click(); await page.waitForTimeout(600); }
+  await shot("grants-list", ".app-content");
+  const gBtns = await page.$$eval('.app-content [role="button"]', els => els.length);
+  console.log(`  · Grants interactive elements: ${gBtns}`);
+  // Click the first pipeline card to prove the list filters.
+  const gCard = await page.$('.grants-pipeline-grid [role="button"]');
+  if (gCard) { await gCard.click(); await page.waitForTimeout(500); await shot("grants-filtered", ".app-content"); }
+
+  // ── Communications (Analytics cards) ──
+  await nav(page, "Communications");
+  const anTab = await page.$('.comm-tabbar button:has-text("Analytics")');
+  if (anTab) { await anTab.click(); await page.waitForTimeout(700); await shot("comms-analytics", ".app-content"); }
 
   await browser.close();
   console.log(fails ? `\n${fails} assertion(s) FAILED` : `\nAll capture assertions passed. Screenshots → ${OUT}`);
