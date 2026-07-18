@@ -772,6 +772,30 @@ async function orgOwns(table, id, orgId) {
   return rows.length > 0;
 }
 
+// ── Plan tiers (BUILD-14) ──────────────────────────────────────────────────
+// Steward's up-market features (officer portfolios + color) gate to the "team"
+// tier. Rather than rebuild billing, tier is DERIVED from the existing plan/
+// subscription: multi-seat paid plans (growth/impact) and any live trial are
+// team-capable; seed and lapsed orgs are core. Keeps the gate a thin guard;
+// real Core/Team price wiring is a separate, deliberate billing task.
+const TEAM_PLANS = new Set(["growth", "impact"]);
+function orgPlanTier(org) {
+  if ((org.subscription_status || "trialing") === "trialing") return "team"; // full-feature trial
+  return TEAM_PLANS.has(org.plan) ? "team" : "core";
+}
+function requirePlan(tier) {
+  return async (req, res, next) => {
+    try {
+      const rows = await query("SELECT plan, subscription_status FROM orgs WHERE id=?", [req.user.orgId]);
+      if (!rows.length) return res.status(404).json({ error: "Org not found" });
+      if (tier === "team" && orgPlanTier(rows[0]) !== "team") {
+        return res.status(403).json({ error: "plan_required", requiredPlan: "team", message: "Officer portfolios are available on the Team plan." });
+      }
+    } catch (e) { console.error("requirePlan error:", e); return res.status(500).json({ error: "server_error" }); }
+    next();
+  };
+}
+
 async function recalcDonorSummary(donorId, orgId) {
   const agg = await query(
     `SELECT COALESCE(SUM(amount),0) AS total, COUNT(*) AS cnt, MAX(date) AS last_date
@@ -1719,7 +1743,7 @@ const DONOR_SORTS = {
 function buildDonorListFilter(req) {
   const where = ["org_id = ?", "deleted_at IS NULL"];
   const params = [req.user.orgId];
-  const { search, stage, status, assignedTo } = req.query;
+  const { search, stage, status, assignedTo, designation, household } = req.query;
   if (search && String(search).trim()) {
     const s = "%" + String(search).trim().toLowerCase() + "%";
     where.push("(lower(name) LIKE ? OR lower(email) LIKE ?)");
@@ -1728,6 +1752,18 @@ function buildDonorListFilter(req) {
   if (stage)      { where.push("stage = ?");       params.push(String(stage)); }
   if (status)     { where.push("status = ?");      params.push(String(status)); }
   if (assignedTo) { where.push("assigned_to = ?"); params.push(String(assignedTo)); }
+  // Designation filter (BUILD-14) — planned-giving / estate segments are
+  // first-class and filterable everywhere the donor list is. EXISTS keeps it
+  // a single query; donors.id is safe (both callers use unaliased FROM donors).
+  if (designation) {
+    where.push("EXISTS (SELECT 1 FROM donor_designations dd WHERE dd.donor_id = donors.id AND dd.kind = ?)");
+    params.push(String(designation));
+  }
+  // Household filter: `household=<id>` scopes to one household's members;
+  // `household=any` / `household=none` filter by membership presence.
+  if (household === "none")      { where.push("household_id IS NULL"); }
+  else if (household === "any")  { where.push("household_id IS NOT NULL"); }
+  else if (household)            { where.push("household_id = ?"); params.push(String(household)); }
   // ", id" tiebreak keeps page boundaries stable when many donors share a value
   const orderBy = (DONOR_SORTS[req.query.sort] || DONOR_SORTS.total_giving) + ", id";
   return { whereSql: where.join(" AND "), params, orderBy };
@@ -3691,6 +3727,228 @@ app.delete("/materials/:id", requireAuth, wrap(async (req, res) => {
   if (!existing.length) return res.status(404).json({ error: "Not found" });
   await run("DELETE FROM donor_materials WHERE id=? AND org_id=?", [req.params.id, req.user.orgId]);
   res.json({ ok: true });
+}));
+
+// ── Households / soft credit (BUILD-14) ────────────────────────────────────
+// A household groups 2+ constituents. HARD CREDIT NEVER MOVES: donors.
+// total_giving stays each donor's own gift sum, org hard total = SUM(all
+// gifts) regardless of grouping. Combined giving and soft credit are DERIVED
+// (never stored counters), so they cannot double-count. See db.js migration.
+function lastName(name) {
+  const parts = String(name || "").trim().split(/\s+/);
+  return parts.length ? parts[parts.length - 1] : "";
+}
+
+// Full derived view of a household: members (with per-member hard credit +
+// primary flag), combined giving, member count. Combined = SUM(members'
+// hard credit) — a pure aggregation over the same gift rows.
+async function householdView(householdId, orgId) {
+  const hh = await query("SELECT * FROM households WHERE id=? AND org_id=?", [householdId, orgId]);
+  if (!hh.length) return null;
+  const members = await query(
+    `SELECT id, name, email, phone, total_giving, gift_count, last_gift_date, last_gift_amount,
+            stage, status, assigned_to, assigned_to_name
+     FROM donors WHERE household_id=? AND org_id=? AND deleted_at IS NULL
+     ORDER BY total_giving DESC, id`, [householdId, orgId]);
+  const combinedGiving = members.reduce((s, m) => s + (parseFloat(m.total_giving) || 0), 0);
+  const combinedGiftCount = members.reduce((s, m) => s + (parseInt(m.gift_count, 10) || 0), 0);
+  return {
+    ...hh[0],
+    members: members.map(m => ({
+      ...m,
+      total_giving: parseFloat(m.total_giving) || 0,
+      last_gift_amount: parseFloat(m.last_gift_amount) || 0,
+      gift_count: parseInt(m.gift_count, 10) || 0,
+      is_primary: m.id === hh[0].primary_donor_id,
+      // per-member soft credit = combined − own hard credit = other members' gifts
+      soft_credit: combinedGiving - (parseFloat(m.total_giving) || 0),
+    })),
+    member_count: members.length,
+    combined_giving: combinedGiving,
+    combined_gift_count: combinedGiftCount,
+  };
+}
+
+app.get("/households", requireAuth, wrap(async (req, res) => {
+  const rows = await query(
+    `SELECT h.id, h.name, h.primary_donor_id, h.joint_acknowledgment, h.created_at,
+            COUNT(d.id)::int AS member_count, COALESCE(SUM(d.total_giving),0) AS combined_giving
+     FROM households h
+     LEFT JOIN donors d ON d.household_id = h.id AND d.org_id = h.org_id AND d.deleted_at IS NULL
+     WHERE h.org_id=?
+     GROUP BY h.id
+     ORDER BY combined_giving DESC, h.name`, [req.user.orgId]);
+  res.json(rows.map(r => ({ ...r, member_count: parseInt(r.member_count, 10) || 0, combined_giving: parseFloat(r.combined_giving) || 0 })));
+}));
+
+app.get("/households/:id", requireAuth, wrap(async (req, res) => {
+  const view = await householdView(req.params.id, req.user.orgId);
+  if (!view) return res.status(404).json({ error: "Household not found" });
+  // Combined giving history — all members' gifts merged, newest first
+  const gifts = await query(
+    `SELECT g.id, g.donor_id, d.name AS donor_name, g.amount, g.date, g.type, g.campaign
+     FROM gifts g JOIN donors d ON d.id = g.donor_id
+     WHERE d.household_id=? AND g.org_id=? AND d.deleted_at IS NULL
+     ORDER BY g.date DESC, g.id DESC LIMIT 200`, [req.params.id, req.user.orgId]);
+  view.giving_history = gifts.map(g => ({ ...g, amount: parseFloat(g.amount) || 0 }));
+  res.json(view);
+}));
+
+// Validate a proposed member set: all ids exist in this org, none already in
+// a DIFFERENT household. Returns { error } (with status) or { ids, primary }.
+async function validateHouseholdMembers(memberIds, primaryDonorId, orgId, allowHouseholdId) {
+  const ids = Array.isArray(memberIds) ? [...new Set(memberIds.filter(Boolean))] : [];
+  if (ids.length < 2) return { status: 400, error: "A household needs at least two members." };
+  const members = await query(
+    "SELECT id, household_id FROM donors WHERE id = ANY(?) AND org_id=? AND deleted_at IS NULL",
+    [ids, orgId]);
+  if (members.length !== ids.length) return { status: 404, error: "One or more donors not found in this organization." };
+  const foreign = members.find(m => m.household_id && m.household_id !== allowHouseholdId);
+  if (foreign) return { status: 400, error: "A donor is already in another household." };
+  const primary = primaryDonorId && ids.includes(primaryDonorId) ? primaryDonorId : ids[0];
+  return { ids, primary };
+}
+
+app.post("/households", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  const { name, memberIds, primaryDonorId, jointAcknowledgment } = req.body;
+  const v = await validateHouseholdMembers(memberIds, primaryDonorId, req.user.orgId, null);
+  if (v.error) return res.status(v.status).json({ error: v.error });
+  // Default name: "The {primary's last name} Household"
+  let hhName = (name && String(name).trim()) || "";
+  if (!hhName) {
+    const primaryRow = await query("SELECT name FROM donors WHERE id=? AND org_id=?", [v.primary, req.user.orgId]);
+    const ln = lastName(primaryRow[0]?.name);
+    hhName = ln ? `The ${ln} Household` : "Household";
+  }
+  const id = "hh_" + uuid().slice(0, 8);
+  await withTransaction(async (client) => {
+    await runTx(client, "INSERT INTO households (id,org_id,name,primary_donor_id,joint_acknowledgment) VALUES (?,?,?,?,?)",
+      [id, req.user.orgId, hhName, v.primary, jointAcknowledgment !== false]);
+    await runTx(client, "UPDATE donors SET household_id=? WHERE id = ANY(?) AND org_id=?", [id, v.ids, req.user.orgId]);
+  });
+  res.status(201).json(await householdView(id, req.user.orgId));
+}));
+
+app.put("/households/:id", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  const hh = await query("SELECT * FROM households WHERE id=? AND org_id=?", [req.params.id, req.user.orgId]);
+  if (!hh.length) return res.status(404).json({ error: "Household not found" });
+  const { name, memberIds, primaryDonorId, jointAcknowledgment } = req.body;
+  let ids = null, primary = hh[0].primary_donor_id;
+  if (memberIds !== undefined) {
+    const v = await validateHouseholdMembers(memberIds, primaryDonorId, req.user.orgId, req.params.id);
+    if (v.error) return res.status(v.status).json({ error: v.error });
+    ids = v.ids; primary = v.primary;
+  } else if (primaryDonorId) {
+    // primary change without member change — must be an existing member
+    const m = await query("SELECT id FROM donors WHERE id=? AND org_id=? AND household_id=?", [primaryDonorId, req.user.orgId, req.params.id]);
+    if (!m.length) return res.status(400).json({ error: "New primary must be a member of the household." });
+    primary = primaryDonorId;
+  }
+  await withTransaction(async (client) => {
+    if (ids) {
+      // drop members no longer in the set, then (re)attach the set
+      await runTx(client, "UPDATE donors SET household_id=NULL WHERE household_id=? AND org_id=? AND NOT (id = ANY(?))", [req.params.id, req.user.orgId, ids]);
+      await runTx(client, "UPDATE donors SET household_id=? WHERE id = ANY(?) AND org_id=?", [req.params.id, ids, req.user.orgId]);
+    }
+    await runTx(client,
+      "UPDATE households SET name=COALESCE(?,name), primary_donor_id=?, joint_acknowledgment=COALESCE(?,joint_acknowledgment), updated_at=NOW() WHERE id=? AND org_id=?",
+      [name && String(name).trim() ? String(name).trim() : null, primary,
+       jointAcknowledgment === undefined ? null : (jointAcknowledgment !== false), req.params.id, req.user.orgId]);
+  });
+  res.json(await householdView(req.params.id, req.user.orgId));
+}));
+
+app.delete("/households/:id", requireAuth, wrap(async (req, res) => {
+  const hh = await query("SELECT id FROM households WHERE id=? AND org_id=?", [req.params.id, req.user.orgId]);
+  if (!hh.length) return res.status(404).json({ error: "Household not found" });
+  await withTransaction(async (client) => {
+    await runTx(client, "UPDATE donors SET household_id=NULL WHERE household_id=? AND org_id=?", [req.params.id, req.user.orgId]);
+    await runTx(client, "DELETE FROM households WHERE id=? AND org_id=?", [req.params.id, req.user.orgId]);
+  });
+  res.json({ ok: true });
+}));
+
+// Per-donor soft-credit breakdown: hard = own gifts, soft = other household
+// members' gifts, combined = the household total. Derived, no stored counter.
+app.get("/donors/:id/soft-credit", requireAuth, wrap(async (req, res) => {
+  const d = await query("SELECT id, household_id, total_giving FROM donors WHERE id=? AND org_id=? AND deleted_at IS NULL", [req.params.id, req.user.orgId]);
+  if (!d.length) return res.status(404).json({ error: "Donor not found" });
+  const hardCredit = parseFloat(d[0].total_giving) || 0;
+  const householdId = d[0].household_id || null;
+  let householdCombined = hardCredit, softCredit = 0;
+  if (householdId) {
+    const agg = await query(
+      "SELECT COALESCE(SUM(total_giving),0) AS combined FROM donors WHERE household_id=? AND org_id=? AND deleted_at IS NULL",
+      [householdId, req.user.orgId]);
+    householdCombined = parseFloat(agg[0].combined) || 0;
+    softCredit = householdCombined - hardCredit;
+  }
+  res.json({ donorId: d[0].id, householdId, hardCredit, softCredit, householdCombined });
+}));
+
+// ── Constituent designations (BUILD-14) ────────────────────────────────────
+// First-class, filterable, reportable gift-vehicle / planned-giving flags.
+// Filter the donor list via GET /donors?designation=<kind>.
+const DESIGNATION_KINDS = {
+  estate: "Estate giving",
+  planned_confirmed: "Planned gift confirmed",
+  planned_prospect: "Planned-giving prospect",
+};
+
+app.get("/donors/:id/designations", requireAuth, wrap(async (req, res) => {
+  const d = await query("SELECT id FROM donors WHERE id=? AND org_id=? AND deleted_at IS NULL", [req.params.id, req.user.orgId]);
+  if (!d.length) return res.status(404).json({ error: "Donor not found" });
+  const rows = await query("SELECT kind, created_at FROM donor_designations WHERE donor_id=? AND org_id=? ORDER BY created_at", [req.params.id, req.user.orgId]);
+  res.json(rows.map(r => ({ kind: r.kind, label: DESIGNATION_KINDS[r.kind] || r.kind, created_at: r.created_at })));
+}));
+
+app.post("/donors/:id/designations", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  const { kind } = req.body;
+  if (!DESIGNATION_KINDS[kind]) return res.status(400).json({ error: "Unknown designation. Must be one of: " + Object.keys(DESIGNATION_KINDS).join(", ") });
+  if (!(await orgOwns("donors", req.params.id, req.user.orgId))) return res.status(404).json({ error: "Donor not found" });
+  await run(
+    "INSERT INTO donor_designations (id,org_id,donor_id,kind) VALUES (?,?,?,?) ON CONFLICT (donor_id, kind) DO NOTHING",
+    ["dsg_" + uuid().slice(0, 8), req.user.orgId, req.params.id, kind]);
+  res.status(201).json({ ok: true, kind, label: DESIGNATION_KINDS[kind] });
+}));
+
+app.delete("/donors/:id/designations/:kind", requireAuth, wrap(async (req, res) => {
+  if (!(await orgOwns("donors", req.params.id, req.user.orgId))) return res.status(404).json({ error: "Donor not found" });
+  await run("DELETE FROM donor_designations WHERE donor_id=? AND org_id=? AND kind=?", [req.params.id, req.user.orgId, req.params.kind]);
+  res.json({ ok: true });
+}));
+
+// ── Officer portfolios + color (BUILD-14, Team plan) ───────────────────────
+// Read is ungated (a Core org still sees its officers), but returns `tier` +
+// `single_user` so the UI locks the color feature and hides it for a
+// one-person shop. Assigning a color is Team-only and admin-gated.
+app.get("/portfolio/officers", requireAuth, wrap(async (req, res) => {
+  const orgRows = await query("SELECT plan, subscription_status FROM orgs WHERE id=?", [req.user.orgId]);
+  const tier = orgRows.length ? orgPlanTier(orgRows[0]) : "core";
+  const officers = await query(
+    `SELECT u.id, u.name, u.email, u.role, u.portfolio_color,
+            COUNT(d.id)::int AS portfolio_count, COALESCE(SUM(d.total_giving),0) AS portfolio_giving
+     FROM users u
+     LEFT JOIN donors d ON d.assigned_to = u.id AND d.org_id = u.org_id AND d.deleted_at IS NULL
+     WHERE u.org_id=? GROUP BY u.id ORDER BY portfolio_giving DESC, u.name`, [req.user.orgId]);
+  res.json({
+    tier,
+    single_user: officers.length <= 1,
+    officers: officers.map(o => ({
+      ...o,
+      portfolio_count: parseInt(o.portfolio_count, 10) || 0,
+      portfolio_giving: parseFloat(o.portfolio_giving) || 0,
+    })),
+  });
+}));
+
+app.put("/portfolio/officers/:userId/color", requireAuth, requireAdmin, requirePlan("team"), checkWriteAccess, wrap(async (req, res) => {
+  const { color } = req.body;
+  if (color && !/^#[0-9a-fA-F]{6}$/.test(String(color))) return res.status(400).json({ error: "Color must be a 6-digit hex like #1a6b4a." });
+  const u = await query("SELECT id FROM users WHERE id=? AND org_id=?", [req.params.userId, req.user.orgId]);
+  if (!u.length) return res.status(404).json({ error: "Officer not found" });
+  await run("UPDATE users SET portfolio_color=? WHERE id=? AND org_id=?", [color || null, req.params.userId, req.user.orgId]);
+  res.json({ ok: true, userId: req.params.userId, color: color || null });
 }));
 
 // ── Donor-to-donor relationships (household/spouse/family/employer_match) ──
@@ -7982,6 +8240,7 @@ function parseReportParams(q) {
 
   p.scope = q.scope === "lifetime" ? "lifetime" : "period";
   p.limit = Math.min(Math.max(parseInt(q.limit, 10) || 25, 1), 100);
+  p.view = q.view === "household" ? "household" : "individual"; // top-donors grouping (BUILD-14)
   p.format = q.format === "csv" ? "csv" : "json";
   return p;
 }
@@ -8168,11 +8427,32 @@ async function reportTopDonors(orgId, p) {
   }
   const params = [];
   const where = reportGiftWhere(p, orgId, params);
+  if (p.view === "household") {
+    // Household view: group the SAME gift rows by household (solo donors are
+    // their own group via COALESCE(household_id, donor_id)). This is a pure
+    // GROUP BY re-key — SUM over groups === SUM over individuals === org hard
+    // total, so grouping by household can NEVER inflate totals. That
+    // invariant is asserted in tests/households.test.js.
+    const rows = await query(
+      `SELECT COALESCE(d.household_id, d.id) AS group_id,
+              COALESCE(h.name, d.name) AS name,
+              (h.id IS NOT NULL) AS is_household,
+              COALESCE(SUM(g.amount),0) AS total, COUNT(*)::int AS gift_count,
+              MAX(g.date) AS last_gift_date, COUNT(DISTINCT d.id)::int AS member_count
+       FROM gifts g
+       JOIN donors d ON d.id = g.donor_id
+       LEFT JOIN households h ON h.id = d.household_id AND h.org_id = d.org_id
+       WHERE ${where}
+       GROUP BY COALESCE(d.household_id, d.id), COALESCE(h.name, d.name), h.id
+       ORDER BY total DESC LIMIT ?`, [...params, p.limit]);
+    return { scope: "period", view: "household", from: p.from, to: p.to,
+      rows: rows.map((r, i) => ({ rank: i + 1, id: r.group_id, name: r.name, isHousehold: !!r.is_household, memberCount: r.member_count, total: Number(r.total), giftCount: r.gift_count, lastGiftDate: r.last_gift_date })) };
+  }
   const rows = await query(
     `SELECT d.id, d.name, COALESCE(SUM(g.amount),0) AS total, COUNT(*)::int AS gift_count, MAX(g.date) AS last_gift_date
      ${REPORT_GIFT_FROM} ${where} GROUP BY d.id, d.name
      ORDER BY total DESC LIMIT ?`, [...params, p.limit]);
-  return { scope: "period", from: p.from, to: p.to, rows: rows.map((r, i) => ({ rank: i + 1, id: r.id, name: r.name, total: Number(r.total), giftCount: r.gift_count, lastGiftDate: r.last_gift_date })) };
+  return { scope: "period", view: "individual", from: p.from, to: p.to, rows: rows.map((r, i) => ({ rank: i + 1, id: r.id, name: r.name, total: Number(r.total), giftCount: r.gift_count, lastGiftDate: r.last_gift_date })) };
 }
 
 // CSV with proper quoting + formula-injection guard: a leading = + - or @ in

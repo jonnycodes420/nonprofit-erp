@@ -1175,6 +1175,56 @@ async function initSchema() {
   // Finance load seq-scanned the table.
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_fin_txns_org_date ON fin_transactions (org_id, date)`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_fin_txns_org_fund ON fin_transactions (org_id, fund_id)`);
+
+  // ── Constituent model: households / designations / portfolios (BUILD-14) ──
+  // Households group 2+ constituents (spouses/partners). HARD CREDIT NEVER
+  // MOVES — donors.total_giving stays the SUM of that donor's OWN gifts, and
+  // the org hard total is SUM(all gifts) regardless of grouping. A household
+  // is purely a GROUP BY key over the same gift rows: "combined giving" =
+  // SUM(gifts of all members), and a member's SOFT CREDIT = SUM(gifts of the
+  // OTHER members). Both are DERIVED at read time — there is no stored
+  // soft-credit counter anywhere, so soft credit can never double-count hard
+  // totals. This invariant is the correctness crux; tests/households.test.js
+  // proves org totals are byte-identical individual-vs-household.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS households (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL REFERENCES orgs(id),
+      name TEXT NOT NULL,
+      primary_donor_id TEXT,
+      joint_acknowledgment BOOLEAN DEFAULT true,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_households_org ON households (org_id)`);
+  // A donor belongs to at most one household. ON DELETE SET NULL: deleting a
+  // household unlinks its members, never cascades into donor/gift data.
+  await pool.query(`ALTER TABLE donors ADD COLUMN IF NOT EXISTS household_id TEXT REFERENCES households(id) ON DELETE SET NULL`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_donors_org_household ON donors (org_id, household_id)`);
+
+  // First-class, filterable, reportable constituent designations — gift-vehicle
+  // / planned-giving flags (estate, planned-confirmed, planned-prospect, major
+  // prospect). Kept out of the free-form donors.tags JSONB precisely because
+  // planned giving must be a queryable segment, not a stringly-typed tag.
+  // UNIQUE(donor_id, kind) makes add idempotent.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS donor_designations (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL REFERENCES orgs(id),
+      donor_id TEXT NOT NULL REFERENCES donors(id) ON DELETE CASCADE,
+      kind TEXT NOT NULL,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS donor_designations_uk ON donor_designations (donor_id, kind)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_donor_designations_org_kind ON donor_designations (org_id, kind)`);
+
+  // Officer portfolio color (Team plan) — each gift officer gets one assigned
+  // color; donor lists/kanban color-code constituents by their owner. Nullable
+  // = unset (falls back to a deterministic hue in the UI). Single-user orgs
+  // never surface color UI at all.
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS portfolio_color TEXT`);
 }
 
 async function seedData() {

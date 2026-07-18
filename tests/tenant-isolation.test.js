@@ -97,6 +97,21 @@ async function seedOrg(o, tag) {
   ok("A CAN create a task on its OWN donor → 201", taskOk.status === 201, taskOk.status);
   await q(`DELETE FROM tasks WHERE org_id=$1`, [A]).catch(() => {});
 
+  // ── Households / designations class (BUILD-14) ────────────────────────────
+  // Household membership and designations carry a client-supplied donorId that
+  // is joined/rendered — a foreign id would plant a cross-tenant household or
+  // leak a donor. Both run through orgOwns / org-scoped membership checks.
+  const hhIdor = await api("POST", "/households", tokenA, { memberIds: ["d_org_iso_a", "d_org_iso_b"] });
+  ok("A POST /households incl. B's donor → 404 (no cross-tenant household)", hhIdor.status === 404, hhIdor.status);
+  ok("no household planted with B's donor",
+    (await q(`SELECT COUNT(*)::int AS n FROM donors WHERE id='d_org_iso_b' AND household_id IS NOT NULL`))[0].n === 0);
+  const dsgIdor = await api("POST", "/donors/d_org_iso_b/designations", tokenA, { kind: "estate" });
+  ok("A POST designation on B's donor → 404 (orgOwns guard)", dsgIdor.status === 404, dsgIdor.status);
+  ok("no designation planted on B's donor",
+    (await q(`SELECT COUNT(*)::int AS n FROM donor_designations WHERE donor_id='d_org_iso_b'`))[0].n === 0);
+  ok("A GET soft-credit on B's donor → 404", (await api("GET", "/donors/d_org_iso_b/soft-credit", tokenA)).status === 404);
+  ok("A PUT color on B's user → 404", (await api("PUT", "/portfolio/officers/u_org_iso_b/color", tokenA, { color: "#1a6b4a" })).status === 404);
+
   // ── Finance class ─────────────────────────────────────────────────────────
   const txnsA = (await api("GET", "/finance/transactions", tokenA)).body || [];
   ok("A GET /finance/transactions excludes B's txn", !txnsA.some(t => t.id === "ft_org_iso_b"));

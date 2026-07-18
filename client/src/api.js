@@ -125,6 +125,7 @@ export function adaptDonor(d) {
     plannedGiving: d.planned_giving ?? false,
     employer:      d.employer ?? null,
     matchingGift:  d.matching_gift ?? null,
+    householdId:   d.household_id ?? null,
   };
 }
 
