@@ -5574,6 +5574,10 @@ app.get("/goals/active", requireAuth, wrap(async (req, res) => {
   }
 
   const percent = goalAmount > 0 ? Math.min(100, Math.round((currentAmount / goalAmount) * 100)) : 0;
+  // Uncapped truth + overage, so the Home hero reads a beaten goal as a win
+  // ("Goal met · 302% · $50k over") instead of a misleading flat 100%.
+  const rawPercent = goalAmount > 0 ? Math.round((currentAmount / goalAmount) * 100) : 0;
+  const over = goalAmount > 0 && currentAmount > goalAmount ? currentAmount - goalAmount : 0;
 
   // Trailing-7-day slice of the same real activity above — powers the Home
   // hero banner's "what's driving this" hint with actual recent gifts
@@ -5608,7 +5612,7 @@ app.get("/goals/active", requireAuth, wrap(async (req, res) => {
   }
 
   res.json({
-    label: goal.label, goalType: goal.goal_type, goalAmount, currentAmount, percent,
+    label: goal.label, goalType: goal.goal_type, goalAmount, currentAmount, percent, rawPercent, over,
     periodStart: goal.period_start, periodEnd: goal.period_end,
     recentAmount, recentDonorCount,
   });
@@ -6431,7 +6435,12 @@ app.get("/campaigns/:id/progress", requireAuth, wrap(async (req, res) => {
 function computeFundraisingPace(raised, goal, startDate, endDate) {
   const g = parseFloat(goal) || 0;
   const r = parseFloat(raised) || 0;
+  // `percent` stays capped at 100 (thermometer bar width). `rawPercent` is the
+  // true, UNCAPPED figure so the UI can honestly say "302% · $50k over" instead
+  // of a misleading flat 100% when a goal is exceeded. `over` = dollars past goal.
   const percent = g > 0 ? Math.min(100, Math.round((r / g) * 100)) : null;
+  const rawPercent = g > 0 ? Math.round((r / g) * 100) : null;
+  const over = g > 0 && r > g ? r - g : 0;
   const now = new Date();
   let daysLeft = null, lifecycle = "active";
   if (startDate && new Date(startDate) > now) lifecycle = "upcoming";
@@ -6453,7 +6462,7 @@ function computeFundraisingPace(raised, goal, startDate, endDate) {
   } else if (g > 0 && r >= g) {
     paceState = "met";
   }
-  return { percent, daysLeft, lifecycle, paceState, expected };
+  return { percent, rawPercent, over, daysLeft, lifecycle, paceState, expected };
 }
 
 // Live gift totals for a set of campaigns, matched the same way
@@ -6529,6 +6538,8 @@ function fundraisingGoalsPortfolio(rows) {
       childIds: kids.map(k => k.id),
       rolledRaised,
       rolledPercent: isOverarching ? rolled.percent : r.percent,
+      rolledRawPercent: isOverarching ? rolled.rawPercent : r.rawPercent,
+      rolledOver: isOverarching ? rolled.over : r.over,
       rolledPaceState: isOverarching ? rolled.paceState : r.paceState,
     };
   });
@@ -6542,6 +6553,8 @@ function fundraisingGoalsPortfolio(rows) {
   const rollup = topActive.length ? {
     totalRaised, totalGoal,
     percent: totalGoal > 0 ? Math.min(100, Math.round((totalRaised / totalGoal) * 100)) : null,
+    rawPercent: totalGoal > 0 ? Math.round((totalRaised / totalGoal) * 100) : null,
+    over: totalGoal > 0 && totalRaised > totalGoal ? totalRaised - totalGoal : 0,
     activeGoalCount: topActive.length,
   } : null;
   return { goals: goals.map(g => ({ ...g, isTopLevel: !g.parentGoalId })), rollup };

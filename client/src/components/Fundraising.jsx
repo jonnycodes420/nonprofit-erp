@@ -17,9 +17,12 @@ const PACE_META = {
 
 // Horizontal thermometer. Gold fill; the fill goes celebratory (deeper gold)
 // at 100%. No goal → caller renders totals instead of this.
-function Thermometer({ raised, goal, percent, paceState, big }) {
-  const pct = percent == null ? 0 : percent;
+function Thermometer({ raised, goal, percent, rawPercent, over, paceState, big }) {
+  const pct = percent == null ? 0 : percent;         // bar width — capped at 100
+  const shown = rawPercent == null ? pct : rawPercent; // number — true, uncapped
   const met = pct >= 100;
+  // An exceeded goal celebrates the overage rather than repeating "Goal reached".
+  const paceLabel = paceState === "met" && over > 0 ? `Goal reached · ${fmtFull(over)} over` : PACE_META[paceState]?.label;
   return (
     <div style={{ width: "100%" }}>
       <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: big ? 8 : 6, gap: 12, flexWrap: "wrap" }}>
@@ -27,14 +30,14 @@ function Thermometer({ raised, goal, percent, paceState, big }) {
           <span style={{ fontFamily: "'DM Serif Display',Georgia,serif", fontSize: big ? 30 : 20, color: T.ink, lineHeight: 1 }}>{fmtFull(raised)}</span>
           <span style={{ fontSize: big ? 14 : 12, color: T.ink3 }}>of {fmtFull(goal)}</span>
         </div>
-        <span style={{ fontSize: big ? 15 : 13, fontWeight: 800, color: met ? T.gold : T.ink2 }}>{pct}%</span>
+        <span style={{ fontSize: big ? 15 : 13, fontWeight: 800, color: met ? T.gold : T.ink2 }}>{shown}%</span>
       </div>
       <div style={{ height: big ? 14 : 9, background: T.bg3, borderRadius: 99, overflow: "hidden" }}>
         <div style={{ width: `${Math.max(pct, pct > 0 ? 2 : 0)}%`, height: "100%", borderRadius: 99, transition: "width 0.5s cubic-bezier(.22,1,.36,1)", background: met ? "linear-gradient(90deg,#c9a84c,#e0c876)" : "linear-gradient(90deg,#b8963f,#c9a84c)" }} />
       </div>
       {paceState && PACE_META[paceState] && (
         <div style={{ marginTop: big ? 10 : 8, display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 700, color: PACE_META[paceState].color, background: PACE_META[paceState].bg, borderRadius: 99, padding: "3px 11px" }}>
-          {paceState === "met" ? "✦" : paceState === "on_track" ? "↗" : "↘"} {PACE_META[paceState].label}
+          {paceState === "met" ? "✦" : paceState === "on_track" ? "↗" : "↘"} {paceLabel}
         </div>
       )}
     </div>
@@ -222,7 +225,7 @@ function OverviewView({ overview, campaigns, onNavigate, primaryBtn, onNewCampai
           {overview.campaigns.top ? (
             <div>
               <div style={{ fontFamily: "'DM Serif Display',serif", fontSize: 18, color: T.ink, marginBottom: 14 }}>{overview.campaigns.top.name}</div>
-              <Thermometer raised={overview.campaigns.top.raised} goal={overview.campaigns.top.goalAmount} percent={overview.campaigns.top.percent} paceState={overview.campaigns.top.paceState} />
+              <Thermometer raised={overview.campaigns.top.raised} goal={overview.campaigns.top.goalAmount} percent={overview.campaigns.top.percent} rawPercent={overview.campaigns.top.rawPercent} over={overview.campaigns.top.over} paceState={overview.campaigns.top.paceState} />
               <div style={{ marginTop: 12, fontSize: 12, color: T.ink3 }}>
                 {overview.campaigns.top.donorCount} donor{overview.campaigns.top.donorCount === 1 ? "" : "s"}
                 {daysLeftText(overview.campaigns.top.daysLeft) ? ` · ${daysLeftText(overview.campaigns.top.daysLeft)}` : ""}
@@ -267,15 +270,16 @@ function OverviewView({ overview, campaigns, onNavigate, primaryBtn, onNewCampai
 // Dark roll-up thermometer — total raised across active goals vs total goal.
 function RollupThermometer({ rollup }) {
   const pct = rollup.percent == null ? 0 : rollup.percent;
+  const shown = rollup.rawPercent == null ? rollup.percent : rollup.rawPercent;
   const met = pct >= 100;
   return (
     <div>
       <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 8, gap: 12, flexWrap: "wrap" }}>
         <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
           <span style={{ fontFamily: "'DM Serif Display',serif", fontSize: 30, color: T.inkInverse, lineHeight: 1 }}>{fmtFull(rollup.totalRaised)}</span>
-          <span style={{ fontSize: 14, color: "#a9c3b2" }}>of {fmtFull(rollup.totalGoal)}</span>
+          <span style={{ fontSize: 14, color: "#a9c3b2" }}>of {fmtFull(rollup.totalGoal)}{rollup.over > 0 ? ` · ${fmtFull(rollup.over)} over` : ""}</span>
         </div>
-        {rollup.percent != null && <span style={{ fontSize: 16, fontWeight: 800, color: T.gold }}>{rollup.percent}%</span>}
+        {shown != null && <span style={{ fontSize: 16, fontWeight: 800, color: T.gold }}>{shown}%</span>}
       </div>
       <div style={{ height: 14, background: "#1a2e1f", borderRadius: 99, overflow: "hidden" }}>
         <div style={{ width: `${Math.max(pct, pct > 0 ? 2 : 0)}%`, height: "100%", borderRadius: 99, transition: "width 0.6s cubic-bezier(.22,1,.36,1)", background: met ? "linear-gradient(90deg,#c9a84c,#e6cf88)" : "linear-gradient(90deg,#b8963f,#c9a84c)" }} />
@@ -290,6 +294,8 @@ function GoalCard({ g, allGoals, onClick }) {
   const cat = CATEGORY_META[g.goalCategory] || CATEGORY_META.project;
   const raised = g.isOverarching ? g.rolledRaised : g.raised;
   const percent = g.isOverarching ? g.rolledPercent : g.percent;
+  const rawPercent = g.isOverarching ? g.rolledRawPercent : g.rawPercent;
+  const over = g.isOverarching ? g.rolledOver : g.over;
   const paceState = g.isOverarching ? g.rolledPaceState : g.paceState;
   const children = g.isOverarching ? allGoals.filter(x => g.childIds.includes(x.id)) : [];
   return (
@@ -299,14 +305,14 @@ function GoalCard({ g, allGoals, onClick }) {
         <div style={{ fontFamily: "'DM Serif Display',serif", fontSize: 17, color: T.ink, lineHeight: 1.25, minWidth: 0 }}>{g.name}</div>
         <span style={{ fontSize: 10, fontWeight: 800, letterSpacing: "0.06em", textTransform: "uppercase", color: cat.color, background: cat.color + "14", borderRadius: 99, padding: "3px 9px", whiteSpace: "nowrap", flexShrink: 0 }}>{cat.label}</span>
       </div>
-      <Thermometer raised={raised} goal={g.goalAmount} percent={percent} paceState={paceState} />
+      <Thermometer raised={raised} goal={g.goalAmount} percent={percent} rawPercent={rawPercent} over={over} paceState={paceState} />
       {g.isOverarching ? (
         <div style={{ borderTop: "1px solid " + T.bg2, paddingTop: 10, display: "flex", flexDirection: "column", gap: 6 }}>
           <div style={{ fontSize: 11, fontWeight: 700, color: T.ink3, textTransform: "uppercase", letterSpacing: "0.06em" }}>Rolls up {g.childCount} goal{g.childCount === 1 ? "" : "s"}</div>
           {children.map(c => (
             <div key={c.id} style={{ display: "flex", justifyContent: "space-between", gap: 8, fontSize: 12, color: T.ink2 }}>
               <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.name}</span>
-              <span style={{ color: T.ink3, flexShrink: 0 }}>{fmtFull(c.raised)} · {c.percent ?? 0}%</span>
+              <span style={{ color: T.ink3, flexShrink: 0 }}>{fmtFull(c.raised)} · {c.rawPercent ?? c.percent ?? 0}%</span>
             </div>
           ))}
         </div>
@@ -322,14 +328,16 @@ function GoalCard({ g, allGoals, onClick }) {
 
 function GoalThermometerDark({ goal }) {
   const met = goal.percent >= 100;
+  const shown = goal.rawPercent == null ? goal.percent : goal.rawPercent;
+  const over = goal.over || 0;
   return (
     <div>
       <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 8, gap: 12, flexWrap: "wrap" }}>
         <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
           <span style={{ fontFamily: "'DM Serif Display',serif", fontSize: 30, color: T.inkInverse, lineHeight: 1 }}>{fmtFull(goal.currentAmount)}</span>
-          <span style={{ fontSize: 14, color: "#a9c3b2" }}>of {fmtFull(goal.goalAmount)}</span>
+          <span style={{ fontSize: 14, color: "#a9c3b2" }}>of {fmtFull(goal.goalAmount)}{over > 0 ? ` · ${fmtFull(over)} over` : ""}</span>
         </div>
-        <span style={{ fontSize: 16, fontWeight: 800, color: T.gold }}>{goal.percent}%</span>
+        <span style={{ fontSize: 16, fontWeight: 800, color: T.gold }}>{shown}%</span>
       </div>
       <div style={{ height: 14, background: "#1a2e1f", borderRadius: 99, overflow: "hidden" }}>
         <div style={{ width: `${Math.max(goal.percent, goal.percent > 0 ? 2 : 0)}%`, height: "100%", borderRadius: 99, transition: "width 0.6s cubic-bezier(.22,1,.36,1)", background: met ? "linear-gradient(90deg,#c9a84c,#e6cf88)" : "linear-gradient(90deg,#b8963f,#c9a84c)" }} />
@@ -372,7 +380,7 @@ function CampaignsView({ campaigns, isReadOnly, roTip, onNew, onEdit }) {
                 </div>
                 {!isReadOnly && <button onClick={() => onEdit(c)} style={{ background: "none", border: "1px solid " + T.bg3, borderRadius: 8, padding: "4px 10px", fontSize: 12, color: T.ink3, cursor: "pointer", whiteSpace: "nowrap" }}>Edit</button>}
               </div>
-              <Thermometer raised={c.raised} goal={c.goalAmount} percent={c.percent} paceState={c.paceState} />
+              <Thermometer raised={c.raised} goal={c.goalAmount} percent={c.percent} rawPercent={c.rawPercent} over={c.over} paceState={c.paceState} />
               <div style={{ fontSize: 12, color: T.ink3, borderTop: "1px solid " + T.bg2, paddingTop: 12 }}>
                 {c.donorCount} donor{c.donorCount === 1 ? "" : "s"}
                 {c.endDate ? ` · closes ${String(c.endDate).slice(0, 10)}` : ""}

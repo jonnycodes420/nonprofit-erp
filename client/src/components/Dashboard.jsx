@@ -436,6 +436,11 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
   // Faithful to computeFundraisingPace's states — no invented "ahead".
   const paceText=s=>s==="met"?"Goal met":s==="on_track"?"On pace":s==="behind"?"Behind pace":"In progress";
   const catPaceColor=s=>s==="behind"?T.terracotta:s==="met"?T.gold:"#8fa896";
+  // Exceeded-goal display rule: a beaten goal reads as a win, not a misleading
+  // flat "100%". The big number shows the TRUE (uncapped) percent; the sub line
+  // names the overage. The thermometer bar still uses the capped percent (a bar
+  // can't be more than full). Only strictly-over goals get the "over" treatment.
+  const goalHeadSub=(rawPct,over)=>rawPct>100?(over>0?`Goal met · ${fmtFull(over)} over`:"Goal met · exceeded"):"of goal reached";
 
   // NB: no `fade-in` on the dash-root below. `.fade-in`'s final keyframe retains
   // `transform: translateY(0)` (animation-fill-mode:both), which would make
@@ -500,6 +505,9 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
         const raised=many?fgRollup.totalRaised:g0.rolledRaised;
         const goalAmt=many?fgRollup.totalGoal:g0.goalAmount;
         const pct=(many?fgRollup.percent:g0.rolledPercent)||0;
+        // Uncapped truth for the headline number + overage (BUILD-21 exceeded-goal rule).
+        const rawPct=(many?fgRollup.rawPercent:g0.rolledRawPercent)??pct;
+        const overAmt=(many?fgRollup.over:g0.rolledOver)||0;
         const behindCount=activeTop.filter(g=>g.rolledPaceState==="behind").length;
         const heroPace=many?(behindCount>0?`${behindCount} behind pace`:"On pace"):paceText(g0.rolledPaceState);
         const heroPaceCol=many?(behindCount>0?T.terracotta:T.gold):catPaceColor(g0.rolledPaceState);
@@ -521,8 +529,8 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
                   )}
                 </div>
                 <div style={{display:"flex",alignItems:"baseline",gap:10,marginBottom:12}}>
-                  <div style={{fontSize:58,fontWeight:400,fontFamily:"'DM Serif Display',Georgia,serif",color:T.gold,lineHeight:1}}>{pct}%</div>
-                  <div style={{fontSize:13,fontWeight:600,color:"#8fa896"}}>of goal reached</div>
+                  <div style={{fontSize:58,fontWeight:400,fontFamily:"'DM Serif Display',Georgia,serif",color:T.gold,lineHeight:1}}>{rawPct}%</div>
+                  <div style={{fontSize:13,fontWeight:600,color:rawPct>100?T.gold:"#8fa896"}}>{goalHeadSub(rawPct,overAmt)}</div>
                 </div>
                 <div style={{background:"#0a120c",borderRadius:99,height:11,overflow:"hidden",marginBottom:10}}>
                   <div style={{height:"100%",width:`${pct}%`,background:`linear-gradient(90deg,${T.gold},${T.terracotta})`,borderRadius:99,transition:"width 0.6s ease"}}/>
@@ -551,7 +559,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
                     <div style={{background:T.bg2,borderRadius:99,height:7,overflow:"hidden"}}>
                       <div style={{height:"100%",width:`${gp}%`,background:m.color,borderRadius:99,transition:"width 0.5s ease"}}/>
                     </div>
-                    <span style={{fontSize:11,fontWeight:700,color:catPaceColor(g.rolledPaceState)}}>{paceText(g.rolledPaceState)}{g.isOverarching?` · ${g.childCount} rolled up`:""}</span>
+                    <span style={{fontSize:11,fontWeight:700,color:catPaceColor(g.rolledPaceState)}}>{paceText(g.rolledPaceState)}{g.rolledOver>0?` · ${fmtFull(g.rolledOver)} over`:""}{g.isOverarching?` · ${g.childCount} rolled up`:""}</span>
                   </div>
                 );
               })}
@@ -579,8 +587,8 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
                 </div>
 
                 <div style={{display:"flex",alignItems:"baseline",gap:10,marginBottom:12}}>
-                  <div style={{fontSize:58,fontWeight:400,fontFamily:"'DM Serif Display',Georgia,serif",color:T.gold,lineHeight:1}}>{goal.percent}%</div>
-                  <div style={{fontSize:13,fontWeight:600,color:"#8fa896"}}>of goal reached</div>
+                  <div style={{fontSize:58,fontWeight:400,fontFamily:"'DM Serif Display',Georgia,serif",color:T.gold,lineHeight:1}}>{goal.rawPercent??goal.percent}%</div>
+                  <div style={{fontSize:13,fontWeight:600,color:(goal.rawPercent??goal.percent)>100?T.gold:"#8fa896"}}>{goalHeadSub(goal.rawPercent??goal.percent,goal.over||0)}</div>
                 </div>
                 <div style={{background:"#0a120c",borderRadius:99,height:11,overflow:"hidden",marginBottom:10}}>
                   <div style={{height:"100%",width:`${goal.percent}%`,background:`linear-gradient(90deg,${T.gold},${T.terracotta})`,borderRadius:99,transition:"width 0.6s ease"}}/>

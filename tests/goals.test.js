@@ -78,6 +78,16 @@ async function gift(org, id, donor, amount, campaignName) {
   ok("Gala reads met (no dates, raised over goal)", byId.g_gala.paceState === "met", byId.g_gala.paceState);
   ok("Capital reads behind (half-elapsed, barely raised)", byId.g_capital.paceState === "behind", byId.g_capital.paceState);
 
+  // Exceeded-goal display truth (FIX 2026-07-19): Gala raised $5,500 of $5,000.
+  // `percent` (bar width) caps at 100; `rawPercent` tells the truth (110); `over`
+  // names the overage ($500) so the hero reads "Goal met · $500 over", not a
+  // misleading flat 100%.
+  ok("Gala percent capped at 100 (bar width)", byId.g_gala.percent === 100, byId.g_gala.percent);
+  ok("Gala rawPercent uncapped = 110", byId.g_gala.rawPercent === 110, byId.g_gala.rawPercent);
+  ok("Gala over = $500", byId.g_gala.over === 500, byId.g_gala.over);
+  ok("Capital (under goal) over = 0", byId.g_capital.over === 0, byId.g_capital.over);
+  ok("Spring rolledRawPercent present on a leaf", byId.g_spring.rolledRawPercent === byId.g_spring.rawPercent);
+
   // Overarching roll-up
   const annual = byId.g_annual;
   ok("Annual Fund is flagged overarching with 2 children", annual.isOverarching && annual.childCount === 2);
@@ -91,6 +101,7 @@ async function gift(org, id, donor, amount, campaignName) {
   ok("rollup.totalGoal = parent + standalone goal (70000), not children", ru.totalGoal === 70000, ru.totalGoal);
   ok("rollup.totalRaised = parent.rolledRaised + standalone.raised (10900), no double-count", ru.totalRaised === 10900, ru.totalRaised);
   ok("rollup.percent = round(10900/70000) = 16", ru.percent === Math.round(10900 / 70000 * 100));
+  ok("rollup carries rawPercent (uncapped) + over=0 when under goal", ru.rawPercent === Math.round(10900 / 70000 * 100) && ru.over === 0, ru);
 
   // Live SUM — add a gift to Spring, roll-up moves (never a stored counter)
   await gift(A, "gf_s2", `d_${A}`, 600, "Spring Appeal");
