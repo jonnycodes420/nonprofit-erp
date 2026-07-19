@@ -8862,6 +8862,178 @@ async function reportTopDonors(orgId, p) {
   return { scope: "period", view: "individual", from: p.from, to: p.to, rows: rows.map((r, i) => ({ rank: i + 1, id: r.id, name: r.name, total: Number(r.total), giftCount: r.gift_count, lastGiftDate: r.last_gift_date })) };
 }
 
+// ── BUILD-17 reporting-cadence reports ─────────────────────────────────────
+// 3-year donor giving comparison [Core]: per-donor giving this year vs last
+// vs prior (YoYoY), plus the org-level 3-year trend. Reuses reportYearBounds /
+// yearMode — one FY definition with the rest of Reports/Finance.
+async function reportThreeYear(orgId, p) {
+  const y0 = reportYearBounds(p.year, p.yearMode);       // most recent (selected) year
+  const y1 = reportYearBounds(p.year - 1, p.yearMode);
+  const y2 = reportYearBounds(p.year - 2, p.yearMode);   // oldest
+  const label = y => p.yearMode === "fiscal" ? `FY${y}` : String(y);
+  const rows = await query(
+    `SELECT d.id, d.name, d.email, d.assigned_to_name,
+            COALESCE(SUM(g.amount) FILTER (WHERE g.date >= ? AND g.date <= ?),0) AS y0,
+            COALESCE(SUM(g.amount) FILTER (WHERE g.date >= ? AND g.date <= ?),0) AS y1,
+            COALESCE(SUM(g.amount) FILTER (WHERE g.date >= ? AND g.date <= ?),0) AS y2
+     FROM donors d JOIN gifts g ON g.donor_id = d.id AND g.org_id = d.org_id
+     WHERE d.org_id = ? AND d.deleted_at IS NULL AND g.date >= ? AND g.date <= ?
+     GROUP BY d.id, d.name, d.email, d.assigned_to_name
+     ORDER BY (COALESCE(SUM(g.amount) FILTER (WHERE g.date >= ? AND g.date <= ?),0)
+             + COALESCE(SUM(g.amount) FILTER (WHERE g.date >= ? AND g.date <= ?),0)
+             + COALESCE(SUM(g.amount) FILTER (WHERE g.date >= ? AND g.date <= ?),0)) DESC`,
+    [y0.from, y0.to, y1.from, y1.to, y2.from, y2.to, orgId, y2.from, y0.to,
+     y0.from, y0.to, y1.from, y1.to, y2.from, y2.to]);
+  const donors = rows.map(r => {
+    const c0 = Number(r.y0), c1 = Number(r.y1), c2 = Number(r.y2);
+    return {
+      id: r.id, name: r.name, email: r.email, assignedTo: r.assigned_to_name,
+      y0: c0, y1: c1, y2: c2,
+      // YoY change on the two most recent years, the number that matters most.
+      changePct: c1 > 0 ? Math.round((c0 - c1) / c1 * 1000) / 10 : (c0 > 0 ? null : 0),
+      trend: c0 > c1 ? "up" : c0 < c1 ? "down" : "flat",
+    };
+  });
+  const sum = k => donors.reduce((s, d) => s + d[k], 0);
+  const t0 = sum("y0"), t1 = sum("y1"), t2 = sum("y2");
+  return {
+    yearMode: p.yearMode,
+    years: [{ year: p.year - 2, label: label(p.year - 2), total: t2, donors: donors.filter(d => d.y2 > 0).length },
+            { year: p.year - 1, label: label(p.year - 1), total: t1, donors: donors.filter(d => d.y1 > 0).length },
+            { year: p.year, label: label(p.year), total: t0, donors: donors.filter(d => d.y0 > 0).length }],
+    orgGrowthPct: t1 > 0 ? Math.round((t0 - t1) / t1 * 1000) / 10 : null,
+    labels: { y0: label(p.year), y1: label(p.year - 1), y2: label(p.year - 2) },
+    rows: donors,
+  };
+}
+
+// Annual report [Core]: the year-end summary. Total giving, gift/donor counts,
+// new vs returning, growth vs prior year, donor retention for the year, and
+// the by-fund / by-campaign breakdown — one page a board wants at year end.
+async function reportAnnual(orgId, p) {
+  const cur = reportYearBounds(p.year, p.yearMode);
+  const prior = reportYearBounds(p.year - 1, p.yearMode);
+  const [totals] = await query(
+    `SELECT COUNT(*)::int AS gift_count, COALESCE(SUM(g.amount),0) AS total,
+            COUNT(DISTINCT g.donor_id)::int AS unique_donors,
+            COALESCE(AVG(g.amount),0) AS avg_gift
+     FROM gifts g JOIN donors d ON d.id = g.donor_id
+     WHERE g.org_id = ? AND d.deleted_at IS NULL AND g.date >= ? AND g.date <= ?`,
+    [orgId, cur.from, cur.to]);
+  const [priorT] = await query(
+    `SELECT COUNT(*)::int AS gift_count, COALESCE(SUM(g.amount),0) AS total,
+            COUNT(DISTINCT g.donor_id)::int AS unique_donors
+     FROM gifts g JOIN donors d ON d.id = g.donor_id
+     WHERE g.org_id = ? AND d.deleted_at IS NULL AND g.date >= ? AND g.date <= ?`,
+    [orgId, prior.from, prior.to]);
+  const [split] = await query(
+    `WITH period_donors AS (SELECT DISTINCT g.donor_id FROM gifts g JOIN donors d ON d.id = g.donor_id
+                            WHERE g.org_id = ? AND d.deleted_at IS NULL AND g.date >= ? AND g.date <= ?),
+          firsts AS (SELECT donor_id, MIN(date) AS fg FROM gifts WHERE org_id = ? GROUP BY donor_id)
+     SELECT COUNT(*) FILTER (WHERE f.fg >= ? AND f.fg <= ?)::int AS new_donors, COUNT(*)::int AS period_donors
+     FROM period_donors pd JOIN firsts f ON f.donor_id = pd.donor_id`,
+    [orgId, cur.from, cur.to, orgId, cur.from, cur.to]);
+  // Retention: donors who gave in the prior year and gave again this year.
+  const [ret] = await query(
+    `WITH prior AS (SELECT DISTINCT g.donor_id FROM gifts g JOIN donors d ON d.id = g.donor_id
+                    WHERE g.org_id = ? AND d.deleted_at IS NULL AND g.date >= ? AND g.date <= ?)
+     SELECT (SELECT COUNT(*) FROM prior)::int AS prior_donors,
+            (SELECT COUNT(*) FROM prior pr WHERE EXISTS
+               (SELECT 1 FROM gifts g WHERE g.org_id=? AND g.donor_id=pr.donor_id AND g.date >= ? AND g.date <= ?))::int AS retained`,
+    [orgId, prior.from, prior.to, orgId, cur.from, cur.to]);
+  const byFund = await query(
+    `SELECT COALESCE(x.name,'No fund') AS name, COALESCE(SUM(g.amount),0) AS total, COUNT(*)::int AS gift_count
+     FROM gifts g JOIN donors d ON d.id = g.donor_id
+     LEFT JOIN fin_funds x ON x.id = g.fund_id AND x.org_id = g.org_id
+     WHERE g.org_id = ? AND d.deleted_at IS NULL AND g.date >= ? AND g.date <= ?
+     GROUP BY 1 ORDER BY total DESC`, [orgId, cur.from, cur.to]);
+  const byCampaign = await query(
+    `SELECT COALESCE(x.name, NULLIF(g.campaign,''), 'No campaign') AS name, COALESCE(SUM(g.amount),0) AS total, COUNT(*)::int AS gift_count
+     FROM gifts g JOIN donors d ON d.id = g.donor_id
+     LEFT JOIN campaigns x ON x.id = g.campaign_id AND x.org_id = g.org_id
+     WHERE g.org_id = ? AND d.deleted_at IS NULL AND g.date >= ? AND g.date <= ?
+     GROUP BY 1 ORDER BY total DESC`, [orgId, cur.from, cur.to]);
+  const total = Number(totals.total), priorTotal = Number(priorT.total);
+  const grand = arr => arr.reduce((s, r) => s + Number(r.total), 0);
+  return {
+    year: p.year, yearMode: p.yearMode, label: p.yearMode === "fiscal" ? `FY${p.year}` : String(p.year),
+    priorLabel: p.yearMode === "fiscal" ? `FY${p.year - 1}` : String(p.year - 1),
+    total, giftCount: totals.gift_count, uniqueDonors: totals.unique_donors,
+    avgGift: Math.round(Number(totals.avg_gift) * 100) / 100,
+    priorTotal, priorGiftCount: priorT.gift_count, priorUniqueDonors: priorT.unique_donors,
+    growthPct: priorTotal > 0 ? Math.round((total - priorTotal) / priorTotal * 1000) / 10 : null,
+    newDonors: split.new_donors, returningDonors: split.period_donors - split.new_donors,
+    priorDonors: ret.prior_donors, retainedDonors: ret.retained,
+    retentionRate: ret.prior_donors > 0 ? Math.round(ret.retained / ret.prior_donors * 1000) / 10 : null,
+    byFund: byFund.map(r => ({ name: r.name, total: Number(r.total), giftCount: r.gift_count, pct: total > 0 ? Math.round(Number(r.total) / total * 1000) / 10 : 0 })),
+    byCampaign: byCampaign.map(r => ({ name: r.name, total: Number(r.total), giftCount: r.gift_count, pct: total > 0 ? Math.round(Number(r.total) / total * 1000) / 10 : 0 })),
+  };
+}
+
+// Robust solicitations report [Team]: the marquee oversight artifact. Open
+// asks by stage + stage-weighted forecast, asks vs closes by officer over the
+// period, and aging prospects (open asks whose donor has stalled in-stage).
+async function reportSolicitations(orgId, p) {
+  // Open asks grouped by the donor's current pipeline stage.
+  const stageRows = await query(
+    `SELECT d.stage AS stage, COUNT(*)::int AS cnt, COALESCE(SUM(o.target_amount),0) AS ask
+     FROM opportunities o JOIN donors d ON d.id = o.donor_id AND d.org_id = o.org_id
+     WHERE o.org_id = ? AND o.status = 'open' AND d.deleted_at IS NULL
+     GROUP BY d.stage`, [orgId]);
+  const stageMap = Object.fromEntries(stageRows.map(r => [r.stage, r]));
+  let openTotal = 0, weightedTotal = 0;
+  const byStage = ALL_PIPELINE_STAGES.map(st => {
+    const ask = Number(stageMap[st]?.ask || 0), cnt = stageMap[st]?.cnt || 0;
+    const weight = STAGE_WEIGHT[st] ?? 0;
+    openTotal += ask; weightedTotal += ask * weight;
+    return { stage: st, count: cnt, ask, weight, weighted: Math.round(ask * weight * 100) / 100 };
+  });
+  // Asks vs closes by officer, over the report period (p.from..p.to).
+  const officers = await query("SELECT id, name, portfolio_color FROM users WHERE org_id=? ORDER BY name", [orgId]);
+  const openByOfficer = await query(
+    `SELECT officer_id, COUNT(*)::int AS cnt, COALESCE(SUM(target_amount),0) AS amt
+     FROM opportunities WHERE org_id=? AND status='open' GROUP BY officer_id`, [orgId]);
+  const madeByOfficer = await query(
+    `SELECT officer_id, COUNT(*)::int AS cnt, COALESCE(SUM(target_amount),0) AS amt
+     FROM opportunities WHERE org_id=? AND created_at >= ? AND created_at < (?::date + 1) GROUP BY officer_id`,
+    [orgId, p.from, p.to]);
+  const wonByOfficer = await query(
+    `SELECT officer_id, COUNT(*)::int AS cnt, COALESCE(SUM(gift_amount),0) AS amt
+     FROM opportunities WHERE org_id=? AND status='won' AND closed_at >= ? AND closed_at < (?::date + 1) GROUP BY officer_id`,
+    [orgId, p.from, p.to]);
+  const idx = rows => Object.fromEntries(rows.map(r => [r.officer_id, r]));
+  const op = idx(openByOfficer), md = idx(madeByOfficer), wn = idx(wonByOfficer);
+  const byOfficer = officers.map(o => {
+    const asksMade = md[o.id]?.cnt || 0, giftsClosed = wn[o.id]?.cnt || 0;
+    return {
+      officerId: o.id, name: o.name, color: o.portfolio_color,
+      openAsks: op[o.id]?.cnt || 0, openAskAmount: Number(op[o.id]?.amt || 0),
+      asksMade, asksMadeAmount: Number(md[o.id]?.amt || 0),
+      giftsClosed, giftsClosedAmount: Number(wn[o.id]?.amt || 0),
+      // Close rate = gifts closed / (gifts closed + asks still open) over the window — a rough conversion signal.
+      winRate: (giftsClosed + (op[o.id]?.cnt || 0)) > 0 ? Math.round(giftsClosed / (giftsClosed + (op[o.id]?.cnt || 0)) * 1000) / 10 : null,
+    };
+  });
+  // Aging prospects: open asks whose donor's most recent move into their
+  // current stage is oldest — the stalled solicitations that need a nudge.
+  const aging = await query(
+    `SELECT d.id, d.name, d.stage, d.assigned_to_name, o.target_amount, o.name AS opp_name,
+            (SELECT MAX(m.created_at) FROM moves m WHERE m.org_id=d.org_id AND m.donor_id=d.id AND m.to_stage=d.stage) AS last_move,
+            GREATEST(0, EXTRACT(DAY FROM NOW() - COALESCE(
+              (SELECT MAX(m.created_at) FROM moves m WHERE m.org_id=d.org_id AND m.donor_id=d.id AND m.to_stage=d.stage),
+              d.updated_at, d.created_at))::int) AS stage_age
+     FROM opportunities o JOIN donors d ON d.id = o.donor_id AND d.org_id = o.org_id
+     WHERE o.org_id = ? AND o.status='open' AND d.deleted_at IS NULL
+     ORDER BY stage_age DESC LIMIT 25`, [orgId]);
+  return {
+    from: p.from, to: p.to,
+    forecast: { open: Math.round(openTotal * 100) / 100, weighted: Math.round(weightedTotal * 100) / 100 },
+    byStage, byOfficer,
+    aging: aging.map(r => ({ id: r.id, name: r.name, stage: r.stage, assignedTo: r.assigned_to_name,
+      ask: Number(r.target_amount || 0), oppName: r.opp_name, stageAge: Number(r.stage_age) || 0 })),
+  };
+}
+
 // CSV with proper quoting + formula-injection guard: a leading = + - or @ in
 // a TEXT cell gets a ' prefix so Excel/Sheets treat it as literal text, not
 // a formula (numbers pass through untouched — a negative total isn't an
@@ -8908,6 +9080,34 @@ function reportToCsv(key, data) {
         headers: ["Rank", "Name", "Total", "Gifts", "Last gift date"],
         rows: data.rows.map(r => [r.rank, r.name, r.total, r.giftCount, r.lastGiftDate]),
       };
+    case "three-year":
+      return {
+        headers: ["Donor", "Email", "Assigned to", data.labels.y2, data.labels.y1, data.labels.y0, "YoY change %"],
+        rows: data.rows.map(r => [r.name, r.email, r.assignedTo, r.y2, r.y1, r.y0, r.changePct === null ? "new" : r.changePct]),
+      };
+    case "annual": {
+      const rows = [
+        ["Total giving", data.total], ["Gifts", data.giftCount], ["Unique donors", data.uniqueDonors],
+        ["Average gift", data.avgGift], ["New donors", data.newDonors], ["Returning donors", data.returningDonors],
+        ["Growth vs prior year %", data.growthPct === null ? "n/a" : data.growthPct],
+        ["Donor retention %", data.retentionRate === null ? "n/a" : data.retentionRate],
+        ["", ""], ["BY FUND", ""],
+        ...data.byFund.map(f => [f.name, f.total]),
+        ["", ""], ["BY CAMPAIGN", ""],
+        ...data.byCampaign.map(c => [c.name, c.total]),
+      ];
+      return { headers: ["Metric", "Value"], rows };
+    }
+    case "solicitations": {
+      const rows = [
+        ["FORECAST — open asks", data.forecast.open], ["FORECAST — stage-weighted", data.forecast.weighted],
+        ["", ""], ["OPEN ASKS BY STAGE", ""],
+        ...data.byStage.map(s => [s.stage, `${s.count} asks · ${s.ask}`]),
+        ["", ""], ["BY OFFICER (open / made / closed)", ""],
+        ...data.byOfficer.map(o => [o.name, `open ${o.openAsks} ($${o.openAskAmount}) · made ${o.asksMade} · closed ${o.giftsClosed} ($${o.giftsClosedAmount})`]),
+      ];
+      return { headers: ["", ""], rows };
+    }
   }
 }
 
@@ -8918,7 +9118,13 @@ const REPORT_HANDLERS = {
   "sybunt": (orgId, p) => reportBuntList(orgId, p, "sybunt"),
   "retention": reportRetention,
   "top-donors": reportTopDonors,
+  "three-year": reportThreeYear,
+  "annual": reportAnnual,
+  "solicitations": reportSolicitations,
 };
+// [Team]-gated reports — the pipeline/solicitation oversight artifacts. A Core
+// org gets 403 plan_required (the client renders an upgrade state).
+const TEAM_ONLY_REPORTS = new Set(["solicitations"]);
 
 // Reports are read paths — requireAuth only, never checkWriteAccess (a
 // read_only org keeps full report access, consistent with GETs/exports
@@ -8926,6 +9132,11 @@ const REPORT_HANDLERS = {
 app.get("/reports/:key", requireAuth, wrap(async (req, res) => {
   const { key } = req.params;
   if (!REPORT_HANDLERS[key]) return res.status(404).json({ error: "Unknown report" });
+  if (TEAM_ONLY_REPORTS.has(key)) {
+    const orgRows = await query("SELECT plan, subscription_status FROM orgs WHERE id=?", [req.user.orgId]);
+    if (!orgRows.length || orgPlanTier(orgRows[0]) !== "team")
+      return res.status(403).json({ error: "plan_required", requiredPlan: "team", message: "The solicitations report is available on the Team plan." });
+  }
   let p;
   try { p = parseReportParams(req.query); }
   catch (e) { return res.status(e.status === 400 ? 400 : 500).json({ error: e.message }); }
@@ -8934,11 +9145,276 @@ app.get("/reports/:key", requireAuth, wrap(async (req, res) => {
     const { headers, rows } = reportToCsv(key, data);
     const suffix = key === "retention" ? p.yearMode
       : key === "top-donors" && p.scope === "lifetime" ? "lifetime"
-      : key === "lybunt" || key === "sybunt" ? `${p.yearMode === "fiscal" ? "fy" : "cy"}${p.year}`
+      : ["lybunt", "sybunt", "annual", "three-year"].includes(key) ? `${p.yearMode === "fiscal" ? "fy" : "cy"}${p.year}`
       : `${p.from}_${p.to}`;
     return sendReportCsv(res, `${key}-${suffix}.csv`, headers, rows);
   }
   res.json(data);
+}));
+
+// ══ Development reporting cadence — digests (BUILD-17) ══════════════════════
+// The oversight rhythm that runs a development office. Two scheduled emails —
+// a weekly "Week in Review" (ED + every team member) and a monthly per-officer
+// report — composed from the BUILD-14/15/16 feeds and sent through the SAME
+// 5-min tick as scheduled campaigns/dunning (no second scheduler). Idempotent
+// per (org, digest_type, period_key, recipient) via digest_sends' unique index:
+// a row is RESERVED before sending, so re-ticking within the week never
+// double-sends. A double-send is a trust disaster; the reservation is
+// non-negotiable, exactly like workflow_runs.
+
+function digestYmd(d) { return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; }
+// Monday-based week. offset 0 = the week containing `now`; -1 = the prior
+// (most-recently-completed) week. key is stable per Monday.
+function weekBounds(offset = 0, now = new Date()) {
+  const d = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const dow = (d.getDay() + 6) % 7; // Mon=0 … Sun=6
+  const monday = new Date(d); monday.setDate(d.getDate() - dow + offset * 7);
+  const sunday = new Date(monday); sunday.setDate(monday.getDate() + 6);
+  return { start: digestYmd(monday), end: digestYmd(sunday), key: "wk:" + digestYmd(monday) };
+}
+function monthBounds(offset = 0, now = new Date()) {
+  const start = new Date(now.getFullYear(), now.getMonth() + offset, 1);
+  const end = new Date(now.getFullYear(), now.getMonth() + offset + 1, 0);
+  return { start: digestYmd(start), end: digestYmd(end),
+    key: `mo:${start.getFullYear()}-${String(start.getMonth() + 1).padStart(2, "0")}` };
+}
+
+// Compose the Week-in-Review sections for a window. officerId != null scopes
+// every section to that officer's portfolio (their assigned donors + their
+// tasks); org-wide otherwise. today gates the past-due-tasks section.
+async function composeWeekInReview(orgId, win, officerId = null) {
+  const { start, end } = win;
+  const today = digestYmd(new Date());
+  const dFilter = officerId ? "AND d.assigned_to = ?" : "";
+  const dParam = officerId ? [officerId] : [];
+  const gifts = await query(
+    `SELECT g.amount, d.name AS donor_name, d.id AS donor_id FROM gifts g
+     JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
+     WHERE g.org_id = ? AND d.deleted_at IS NULL AND g.date >= ? AND g.date <= ? ${dFilter}
+     ORDER BY g.amount DESC`, [orgId, start, end, ...dParam]);
+  const asks = await query(
+    `SELECT o.name AS opp_name, o.target_amount, o.officer_name, d.name AS donor_name, d.id AS donor_id FROM opportunities o
+     JOIN donors d ON d.id = o.donor_id AND d.org_id = o.org_id
+     WHERE o.org_id = ? AND d.deleted_at IS NULL AND o.created_at >= ? AND o.created_at < (?::date + 1) ${dFilter}
+     ORDER BY o.target_amount DESC`, [orgId, start, end, ...dParam]);
+  const moves = await query(
+    `SELECT m.from_stage, m.to_stage, m.description, m.officer_name, d.name AS donor_name, d.id AS donor_id FROM moves m
+     JOIN donors d ON d.id = m.donor_id AND d.org_id = m.org_id
+     WHERE m.org_id = ? AND d.deleted_at IS NULL AND m.created_at >= ? AND m.created_at < (?::date + 1) ${dFilter}
+     ORDER BY m.created_at DESC`, [orgId, start, end, ...dParam]);
+  const tFilter = officerId ? "AND t.assigned_to = ?" : "";
+  const pastDueTasks = await query(
+    `SELECT t.title, t.due, t.assigned_to_name, d.name AS donor_name, d.id AS donor_id FROM tasks t
+     LEFT JOIN donors d ON d.id = t.donor_id AND d.org_id = t.org_id
+     WHERE t.org_id = ? AND t.done = 0 AND t.due IS NOT NULL AND t.due <> '' AND LEFT(t.due,10) < ? ${tFilter}
+     ORDER BY t.due ASC`, [orgId, today, ...(officerId ? [officerId] : [])]);
+  return {
+    gifts: gifts.map(g => ({ donorId: g.donor_id, donorName: g.donor_name, amount: Number(g.amount) })),
+    asks: asks.map(a => ({ donorId: a.donor_id, donorName: a.donor_name, name: a.opp_name, targetAmount: Number(a.target_amount || 0), officerName: a.officer_name })),
+    moves: moves.map(m => ({ donorId: m.donor_id, donorName: m.donor_name, fromStage: m.from_stage, toStage: m.to_stage, description: m.description, officerName: m.officer_name })),
+    pastDueTasks: pastDueTasks.map(t => ({ title: t.title, due: t.due, donorName: t.donor_name, assignedToName: t.assigned_to_name })),
+    totals: {
+      giftCount: gifts.length, giftTotal: gifts.reduce((s, g) => s + Number(g.amount), 0),
+      askCount: asks.length, askTotal: asks.reduce((s, a) => s + Number(a.target_amount || 0), 0),
+      moveCount: moves.length, pastDueCount: pastDueTasks.length,
+    },
+  };
+}
+
+// Compose one officer's monthly report: asks made, moves made, gifts closed,
+// portfolio progress — the management-oversight artifact.
+async function composeOfficerMonthly(orgId, win, officer) {
+  const { start, end } = win;
+  const [made] = await query(
+    "SELECT COUNT(*)::int AS cnt, COALESCE(SUM(target_amount),0) AS amt FROM opportunities WHERE org_id=? AND officer_id=? AND created_at >= ? AND created_at < (?::date + 1)",
+    [orgId, officer.id, start, end]);
+  const [movesMade] = await query(
+    "SELECT COUNT(*)::int AS cnt FROM moves WHERE org_id=? AND officer_id=? AND created_at >= ? AND created_at < (?::date + 1)",
+    [orgId, officer.id, start, end]);
+  const [won] = await query(
+    "SELECT COUNT(*)::int AS cnt, COALESCE(SUM(gift_amount),0) AS amt FROM opportunities WHERE org_id=? AND officer_id=? AND status='won' AND closed_at >= ? AND closed_at < (?::date + 1)",
+    [orgId, officer.id, start, end]);
+  const [portfolio] = await query(
+    "SELECT COUNT(*)::int AS cnt, COALESCE(SUM(total_giving),0) AS val FROM donors WHERE org_id=? AND assigned_to=? AND deleted_at IS NULL",
+    [orgId, officer.id]);
+  return {
+    officerId: officer.id, officerName: officer.name,
+    asksMade: made.cnt, asksMadeAmount: Number(made.amt),
+    movesMade: movesMade.cnt,
+    giftsClosed: won.cnt, giftsClosedAmount: Number(won.amt),
+    portfolioCount: portfolio.cnt, portfolioValue: Number(portfolio.val),
+  };
+}
+
+// ── Digest HTML rendering (branded header + Steward frame) ──────────────────
+const digestEsc = s => String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+const digestMoney = n => "$" + Number(n || 0).toLocaleString("en-US", { maximumFractionDigits: 2 });
+function digestSectionHtml(title, rowsHtml, emptyLine) {
+  return `<div style="margin:22px 0 0;">
+    <div style="font-family:'DM Sans',Helvetica,Arial,sans-serif;font-size:12px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:#1a6b4a;margin-bottom:8px;">${digestEsc(title)}</div>
+    ${rowsHtml || `<div style="font-family:'DM Sans',Helvetica,Arial,sans-serif;font-size:13px;color:#8fa896;">${digestEsc(emptyLine)}</div>`}
+  </div>`;
+}
+function renderWeekInReviewBody(sec, win, headingName) {
+  const row = (a, b) => `<div style="font-family:'DM Sans',Helvetica,Arial,sans-serif;font-size:14px;color:#0f1a12;padding:5px 0;border-bottom:1px solid #eee7d8;">${a}${b ? `<span style="float:right;color:#0d5c3a;font-weight:700;">${b}</span>` : ""}</div>`;
+  const gifts = sec.gifts.map(g => row(digestEsc(g.donorName), digestMoney(g.amount))).join("");
+  const asks = sec.asks.map(a => row(`${digestEsc(a.donorName)}${a.name ? ` — ${digestEsc(a.name)}` : ""}`, digestMoney(a.targetAmount))).join("");
+  const moves = sec.moves.map(m => row(`${digestEsc(m.donorName)} · ${digestEsc(m.fromStage || "—")} → ${digestEsc(m.toStage)}<div style="font-size:12px;color:#6b7d70;">${digestEsc(m.description)}</div>`, "")).join("");
+  const tasks = sec.pastDueTasks.map(t => row(`${digestEsc(t.title)}${t.donorName ? ` · ${digestEsc(t.donorName)}` : ""}`, `due ${digestEsc((t.due || "").slice(0, 10))}`)).join("");
+  return `<div style="padding:22px;background:#f0ede6;font-family:'DM Sans',Helvetica,Arial,sans-serif;">
+    <div style="font-family:'DM Serif Display',Georgia,serif;font-size:22px;color:#0f1a12;">Week in Review</div>
+    <div style="font-size:13px;color:#6b7d70;margin-top:2px;">${digestEsc(win.start)} – ${digestEsc(win.end)}${headingName ? ` · ${digestEsc(headingName)}` : ""}</div>
+    <div style="margin:16px 0;padding:14px 16px;background:#fff;border-radius:12px;border:1px solid #e5e0d5;">
+      <span style="font-weight:800;color:#0d5c3a;">${digestMoney(sec.totals.giftTotal)}</span> in ${sec.totals.giftCount} gift${sec.totals.giftCount === 1 ? "" : "s"} ·
+      ${sec.totals.askCount} ask${sec.totals.askCount === 1 ? "" : "s"} ·
+      ${sec.totals.moveCount} move${sec.totals.moveCount === 1 ? "" : "s"} ·
+      <span style="color:${sec.totals.pastDueCount ? "#b8593f" : "#6b7d70"};font-weight:700;">${sec.totals.pastDueCount} past-due task${sec.totals.pastDueCount === 1 ? "" : "s"}</span>
+    </div>
+    ${digestSectionHtml("Gifts received", gifts, "No gifts recorded this week.")}
+    ${digestSectionHtml("Asks / pledges made", asks, "No new asks logged this week.")}
+    ${digestSectionHtml("Moves", moves, "No pipeline moves this week.")}
+    ${digestSectionHtml("Past-due tasks", tasks, "Nothing past due — nice.")}
+  </div>`;
+}
+function renderOfficerMonthlyBody(rep, win) {
+  const stat = (l, v) => `<div style="display:inline-block;min-width:130px;margin:6px 14px 6px 0;"><div style="font-size:10px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:#6b7d70;">${l}</div><div style="font-size:20px;font-weight:800;color:#0f1a12;">${v}</div></div>`;
+  return `<div style="padding:22px;background:#f0ede6;font-family:'DM Sans',Helvetica,Arial,sans-serif;">
+    <div style="font-family:'DM Serif Display',Georgia,serif;font-size:22px;color:#0f1a12;">Monthly Report — ${digestEsc(rep.officerName)}</div>
+    <div style="font-size:13px;color:#6b7d70;margin-top:2px;">${digestEsc(win.start)} – ${digestEsc(win.end)}</div>
+    <div style="margin-top:16px;padding:16px;background:#fff;border-radius:12px;border:1px solid #e5e0d5;">
+      ${stat("Asks made", `${rep.asksMade} · ${digestMoney(rep.asksMadeAmount)}`)}
+      ${stat("Moves made", rep.movesMade)}
+      ${stat("Gifts closed", `${rep.giftsClosed} · ${digestMoney(rep.giftsClosedAmount)}`)}
+      ${stat("Portfolio", `${rep.portfolioCount} · ${digestMoney(rep.portfolioValue)}`)}
+    </div>
+  </div>`;
+}
+
+// Reserve one recipient's digest (idempotency choke point). Returns the row id
+// if newly reserved, or null if it was already sent this period.
+async function reserveDigest(orgId, digestType, periodKey, recipientUserId, recipientEmail, scope, meta) {
+  const id = "dg_" + uuid().slice(0, 8);
+  const reserved = await query(
+    `INSERT INTO digest_sends (id,org_id,digest_type,period_key,recipient_user_id,recipient_email,scope,meta)
+     VALUES (?,?,?,?,?,?,?,?)
+     ON CONFLICT (org_id,digest_type,period_key,recipient_user_id) DO NOTHING
+     RETURNING id`,
+    [id, orgId, digestType, periodKey, recipientUserId, recipientEmail || null, scope || null, JSON.stringify(meta || {})]);
+  return reserved.length ? id : null;
+}
+
+async function sendDigestEmail(org, toEmail, subject, bodyHtml) {
+  if (!toEmail) return false;
+  const html = await brandEmailHeaderHtml(org.id) + bodyHtml; // internal staff mail — no donor unsubscribe footer
+  const from = process.env.DEMO_SMTP_FROM || "noreply@stewardapp.dev";
+  if (process.env.RESEND_API_KEY) {
+    try {
+      const { error } = await resend.emails.send({ from, to: toEmail, subject, html });
+      if (error) console.error("[digest] email error:", error.message);
+    } catch (e) { console.error("[digest] email threw:", e.message); }
+  }
+  return true;
+}
+
+// Run both digests for one org for the given windows. send=false → compose
+// only (preview/dry-run), reserving nothing. Returns what was sent + skipped.
+async function runDigestsForOrg(org, { wk, mo, types = ["weekly", "monthly"], send = true }) {
+  const tier = orgPlanTier(org);
+  const out = { weekly: { sent: [], skipped: [] }, monthly: { sent: [], skipped: [] } };
+  const users = await query("SELECT id, name, email, role FROM users WHERE org_id=? AND email IS NOT NULL", [org.id]);
+
+  // ── Weekly Week-in-Review — every user. On Team, an admin/ED sees org-wide;
+  //    an officer sees their own portfolio + a team roll-up. On Core (incl.
+  //    single-user), everyone gets the whole org-wide digest.
+  if (types.includes("weekly")) {
+    const orgWide = await composeWeekInReview(org.id, wk, null);
+    for (const u of users) {
+      const isOfficerScope = tier === "team" && u.role !== "admin";
+      const sec = isOfficerScope ? await composeWeekInReview(org.id, wk, u.id) : orgWide;
+      const scope = isOfficerScope ? "officer" : "org";
+      const teamRollup = isOfficerScope ? orgWide.totals : null;
+      const payload = { recipientUserId: u.id, email: u.email, scope, periodKey: wk.key, sections: sec, teamRollup };
+      if (!send) { out.weekly.sent.push(payload); continue; }
+      const rid = await reserveDigest(org.id, "weekly", wk.key, u.id, u.email, scope, sec.totals);
+      if (!rid) { out.weekly.skipped.push({ recipientUserId: u.id }); continue; }
+      const body = renderWeekInReviewBody(sec, wk, isOfficerScope ? u.name : null)
+        + (teamRollup ? `<div style="padding:0 22px 22px;background:#f0ede6;font-family:'DM Sans',Helvetica,Arial,sans-serif;font-size:12px;color:#6b7d70;">Team roll-up: ${digestMoney(teamRollup.giftTotal)} · ${teamRollup.giftCount} gifts · ${teamRollup.moveCount} moves org-wide.</div>` : "");
+      await sendDigestEmail(org, u.email, `Week in Review — ${org.name}`, body);
+      out.weekly.sent.push(payload);
+    }
+  }
+
+  // ── Monthly per-officer report — [Team] only. One email per officer.
+  if (types.includes("monthly") && tier === "team") {
+    for (const u of users) {
+      const rep = await composeOfficerMonthly(org.id, mo, u);
+      const payload = { recipientUserId: u.id, email: u.email, periodKey: mo.key, report: rep };
+      if (!send) { out.monthly.sent.push(payload); continue; }
+      const rid = await reserveDigest(org.id, "monthly", mo.key, u.id, u.email, "officer", { asksMade: rep.asksMade, giftsClosed: rep.giftsClosed });
+      if (!rid) { out.monthly.skipped.push({ recipientUserId: u.id }); continue; }
+      await sendDigestEmail(org, u.email, `Your Monthly Report — ${org.name}`, renderOfficerMonthlyBody(rep, mo));
+      out.monthly.sent.push(payload);
+    }
+  }
+  return out;
+}
+
+// The tick — runs both digests for every onboarded org for the most-recently-
+// COMPLETED week/month. Reuses the existing 5-min scheduler cadence (NOT a
+// second scheduler). Idempotency means a digest for a completed period goes out
+// exactly once, on the first tick after that period rolls over.
+async function processDigests(now = new Date()) {
+  try {
+    const wk = weekBounds(-1, now), mo = monthBounds(-1, now);
+    const orgs = await query("SELECT id, name, plan, subscription_status FROM orgs WHERE onboarding_complete=1", []);
+    for (const org of orgs) {
+      await runDigestsForOrg(org, { wk, mo }).catch(e => console.error("[digest]", org.id, e.message));
+    }
+  } catch (e) { console.error("[digest] processDigests:", e.message); }
+}
+setTimeout(() => processDigests().catch(console.error), 30000);
+setInterval(() => processDigests().catch(console.error), 5 * 60 * 1000);
+
+// GET /digests/preview — compose (never send) the caller's current digest, for
+// the in-app "Week in Review" view. Scope follows the caller's role/plan.
+app.get("/digests/preview", requireAuth, wrap(async (req, res) => {
+  const type = req.query.type === "monthly" ? "monthly" : "weekly";
+  const orgRows = await query("SELECT id, name, plan, subscription_status FROM orgs WHERE id=?", [req.user.orgId]);
+  const org = orgRows[0];
+  if (!org) return res.status(404).json({ error: "Org not found" });
+  const tier = orgPlanTier(org);
+  const [me] = await query("SELECT id, name, role FROM users WHERE id=?", [req.user.userId]);
+  // Preview the most-recently-completed period (what actually gets emailed),
+  // matching the tick — offset -1.
+  if (type === "monthly") {
+    if (tier !== "team") return res.status(403).json({ error: "plan_required", requiredPlan: "team", message: "Monthly officer reports are available on the Team plan." });
+    const mo = monthBounds(-1);
+    const report = await composeOfficerMonthly(org.id, mo, { id: me.id, name: me.name });
+    return res.json({ type, window: mo, report });
+  }
+  const wk = weekBounds(-1);
+  const isOfficerScope = tier === "team" && me.role !== "admin";
+  const sections = await composeWeekInReview(org.id, wk, isOfficerScope ? me.id : null);
+  const teamRollup = isOfficerScope ? (await composeWeekInReview(org.id, wk, null)).totals : null;
+  res.json({ type, window: wk, scope: isOfficerScope ? "officer" : "org", tier, sections, teamRollup });
+}));
+
+// POST /digests/run — actually reserve + send the caller's org digests now
+// (requireAuth + requireAdmin). Drives the same path the tick uses, for ops
+// and for the committed test suite. Optional window overrides pin the period
+// (so tests can seed a specific week/month); dryRun composes without sending.
+app.post("/digests/run", requireAuth, requireAdmin, wrap(async (req, res) => {
+  const orgRows = await query("SELECT id, name, plan, subscription_status FROM orgs WHERE id=?", [req.user.orgId]);
+  const org = orgRows[0];
+  if (!org) return res.status(404).json({ error: "Org not found" });
+  const { weekStart, monthStart, type, dryRun } = req.body || {};
+  const types = type === "weekly" || type === "monthly" ? [type] : ["weekly", "monthly"];
+  // Build windows: explicit override (a Monday / month-start date) or the
+  // most-recently-completed period.
+  const wk = weekStart ? weekBounds(0, new Date(weekStart + "T12:00:00")) : weekBounds(-1);
+  const mo = monthStart ? monthBounds(0, new Date(monthStart + "T12:00:00")) : monthBounds(-1);
+  const result = await runDigestsForOrg(org, { wk, mo, types, send: !dryRun });
+  res.json({ windows: { weekly: wk, monthly: mo }, ...result });
 }));
 
 // ── Sequence Engine ─────────────────────────────────────────────────────────

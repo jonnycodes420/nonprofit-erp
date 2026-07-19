@@ -17,11 +17,21 @@ const REPORT_DEFS = [
   { key: "sybunt", label: "SYBUNT" },
   { key: "retention", label: "Retention" },
   { key: "top-donors", label: "Top Donors" },
+  // BUILD-17 — the development reporting cadence.
+  { key: "week-in-review", label: "Week in Review" },
+  { key: "three-year", label: "3-Year Comparison" },
+  { key: "annual", label: "Annual Report" },
+  { key: "solicitations", label: "Solicitations", team: true },
 ];
 
 // Which reports take which controls
 const PERIOD_REPORTS = ["giving-summary", "by-group", "top-donors"];
 const YEAR_REPORTS = ["lybunt", "sybunt"];
+// Reports that take a year dropdown + fiscal/calendar toggle (BUILD-17 added
+// three-year/annual to the year-selecting family).
+const YEAR_SELECT_REPORTS = ["lybunt", "sybunt", "three-year", "annual"];
+const YEARMODE_TOGGLE_REPORTS = ["lybunt", "sybunt", "retention", "three-year", "annual", "solicitations"];
+const DIGEST_REPORTS = ["week-in-review"]; // fetched from /digests/preview, not /reports/:key
 
 const now = new Date();
 const CUR_FY = now.getMonth() < 6 ? now.getFullYear() : now.getFullYear() + 1; // FY label = its June-30 end year
@@ -110,6 +120,8 @@ export function Reports({ onNavigate }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState("");
+  const [planLocked, setPlanLocked] = useState(false); // 403 plan_required → upgrade card
+  const [digestType, setDigestType] = useState("weekly"); // week-in-review: weekly | monthly
   const [downloading, setDownloading] = useState(false);
 
   // The default period resolves from data, not the calendar: early in a new
@@ -142,8 +154,10 @@ export function Reports({ onNavigate }) {
 
   function buildParams() {
     const q = new URLSearchParams();
+    if (DIGEST_REPORTS.includes(active)) { q.set("type", digestType); return q; }
+    if (active === "solicitations") { q.set("yearMode", yearMode); return q; }
     if (active === "retention") { q.set("yearMode", yearMode); return q; }
-    if (YEAR_REPORTS.includes(active)) { q.set("year", effYear); q.set("yearMode", yearMode); return q; }
+    if (YEAR_SELECT_REPORTS.includes(active)) { q.set("year", effYear); q.set("yearMode", yearMode); return q; }
     if (active === "top-donors" && scope === "lifetime") { q.set("scope", "lifetime"); q.set("limit", 50); return q; }
     // Period reports: preset chips encode year+mode; custom sends from/to
     const pr = PRESETS.find(x => x.id === effPreset);
@@ -162,13 +176,14 @@ export function Reports({ onNavigate }) {
   useEffect(() => {
     if (customIncomplete || presetPending) return;
     let dead = false;
-    setLoading(true); setErr("");
-    apiFetch(`/reports/${active}?${paramsStr}`)
+    setLoading(true); setErr(""); setPlanLocked(false);
+    const url = DIGEST_REPORTS.includes(active) ? `/digests/preview?${paramsStr}` : `/reports/${active}?${paramsStr}`;
+    apiFetch(url)
       // Tag the payload with the report key it belongs to — between
       // switching reports and the effect firing there's one render where
       // `data` still holds the previous report's shape.
       .then(d => { if (!dead) { setData({ key: active, d }); setLoading(false); } })
-      .catch(e => { if (!dead) { setErr(e.message); setLoading(false); } });
+      .catch(e => { if (!dead) { if (e.error === "plan_required" || e.status === 403) setPlanLocked(true); setErr(e.message); setLoading(false); } });
     return () => { dead = true; };
   }, [active, paramsStr, customIncomplete, presetPending]);
 
@@ -182,9 +197,10 @@ export function Reports({ onNavigate }) {
       // filename client-side (mirrors the server's naming).
       const suffix = active === "retention" ? yearMode
         : active === "top-donors" && scope === "lifetime" ? "lifetime"
-        : YEAR_REPORTS.includes(active) ? `${yearMode === "fiscal" ? "fy" : "cy"}${effYear}`
+        : YEAR_SELECT_REPORTS.includes(active) ? `${yearMode === "fiscal" ? "fy" : "cy"}${effYear}`
+        : active === "solicitations" ? yearMode
         : effPreset === "custom" ? `${customFrom}_${customTo}`
-        : effPreset.toLowerCase();
+        : effPreset ? effPreset.toLowerCase() : "report";
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url; a.download = `${active}-${suffix}.csv`;
@@ -291,6 +307,120 @@ export function Reports({ onNavigate }) {
         { key: "giftCount", label: "Gifts", align: "right" },
         { key: "lastGiftDate", label: "Last gift", render: r => fmtDate(r.lastGiftDate) },
       ]} rows={d.rows} />;
+    } else if (active === "three-year") {
+      empty = d.years.every(y => y.total === 0);
+      const g = d.orgGrowthPct;
+      narrative = <>Across the last three years your giving went {d.years.map((y, i) => <span key={y.year}>{i ? " → " : ""}<strong>{fmtFull(y.total)}</strong> ({y.label})</span>)}
+        {g !== null && <> — {g >= 0 ? "up" : "down"} <strong>{Math.abs(g)}%</strong> year over year</>}. Each row compares a donor across the three years.</>;
+      const chg = r => r.changePct === null ? <span style={{ color: T.gold600 || "#a97f22", fontWeight: 700 }}>new</span>
+        : <span style={{ color: r.changePct > 0 ? T.greenDk : r.changePct < 0 ? T.terracotta : T.ink3, fontWeight: 700 }}>{r.changePct > 0 ? "+" : ""}{r.changePct}%</span>;
+      table = <>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 10, marginBottom: 18 }}>
+          {d.years.map(y => <div key={y.year} style={{ background: T.white, border: `1px solid ${T.bg3}`, borderRadius: 10, padding: "10px 14px" }}>
+            <div style={{ fontSize: 9, fontWeight: 800, letterSpacing: "0.1em", textTransform: "uppercase", color: T.ink3 }}>{y.label}</div>
+            <div style={{ fontSize: 18, fontWeight: 800, color: T.ink, marginTop: 2 }}>{fmtFull(y.total)}</div>
+            <div style={{ fontSize: 11, color: T.ink3 }}>{y.donors} donor{y.donors === 1 ? "" : "s"}</div>
+          </div>)}
+        </div>
+        <ReportTable onRowClick={openDonor} cols={[
+          { key: "name", label: "Donor", render: r => <span style={{ fontWeight: 700, color: T.ink }}>{r.name}</span> },
+          { key: "y2", label: d.labels.y2, align: "right", render: r => fmtFull(r.y2) },
+          { key: "y1", label: d.labels.y1, align: "right", render: r => fmtFull(r.y1) },
+          { key: "y0", label: d.labels.y0, align: "right", render: r => <strong style={{ color: T.ink }}>{fmtFull(r.y0)}</strong> },
+          { key: "changePct", label: "YoY change", align: "right", render: chg, sortVal: r => r.changePct ?? Infinity },
+          { key: "assignedTo", label: "Assigned to", render: r => r.assignedTo || "—" },
+        ]} rows={d.rows} />
+      </>;
+    } else if (active === "annual") {
+      empty = d.giftCount === 0;
+      narrative = <>In <strong>{d.label}</strong> you raised <strong>{fmtFull(d.total)}</strong> from <strong>{d.uniqueDonors}</strong> donor{d.uniqueDonors === 1 ? "" : "s"}
+        {d.growthPct !== null && <> — {d.growthPct >= 0 ? "up" : "down"} {Math.abs(d.growthPct)}% from {d.priorLabel}</>}.
+        {" "}{d.newDonors} new, {d.returningDonors} returning{d.retentionRate !== null && <>; you kept <strong>{d.retentionRate}%</strong> of {d.priorLabel}'s donors</>}.</>;
+      table = <>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(140px,1fr))", gap: 10, marginBottom: 18 }}>
+          {[["Total raised", fmtFull(d.total)], ["Gifts", d.giftCount], ["Unique donors", d.uniqueDonors], ["Average gift", fmtFull(Math.round(d.avgGift))],
+            ["Growth vs prior", d.growthPct === null ? "—" : `${d.growthPct >= 0 ? "+" : ""}${d.growthPct}%`], ["New donors", d.newDonors],
+            ["Returning donors", d.returningDonors], ["Donor retention", d.retentionRate === null ? "—" : `${d.retentionRate}%`],
+          ].map(([l, v]) => <div key={l} style={{ background: T.white, border: `1px solid ${T.bg3}`, borderRadius: 10, padding: "10px 14px" }}>
+            <div style={{ fontSize: 9, fontWeight: 800, letterSpacing: "0.1em", textTransform: "uppercase", color: T.ink3 }}>{l}</div>
+            <div style={{ fontSize: 18, fontWeight: 800, color: T.ink, marginTop: 2 }}>{v}</div>
+          </div>)}
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(280px,1fr))", gap: 18 }}>
+          <div><div style={{ fontSize: 12, fontWeight: 800, letterSpacing: "0.06em", textTransform: "uppercase", color: T.greenDk, marginBottom: 8 }}>By fund</div>
+            <ReportTable cols={[{ key: "name", label: "Fund" }, { key: "total", label: "Total", align: "right", render: r => fmtFull(r.total) }, { key: "pct", label: "% ", render: r => <PctBar pct={r.pct} /> }]} rows={d.byFund} /></div>
+          <div><div style={{ fontSize: 12, fontWeight: 800, letterSpacing: "0.06em", textTransform: "uppercase", color: T.greenDk, marginBottom: 8 }}>By campaign</div>
+            <ReportTable cols={[{ key: "name", label: "Campaign" }, { key: "total", label: "Total", align: "right", render: r => fmtFull(r.total) }, { key: "pct", label: "% ", render: r => <PctBar pct={r.pct} /> }]} rows={d.byCampaign} /></div>
+        </div>
+      </>;
+    } else if (active === "solicitations") {
+      empty = d.forecast.open === 0 && d.byOfficer.every(o => o.asksMade === 0 && o.giftsClosed === 0);
+      narrative = <>You have <strong>{fmtFull(d.forecast.open)}</strong> in open asks; the stage-weighted forecast is <strong>{fmtFull(d.forecast.weighted)}</strong>. Below: asks by stage, activity by officer, and the prospects that have stalled longest.</>;
+      const cap = s => s ? s.charAt(0).toUpperCase() + s.slice(1) : s;
+      table = <>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(180px,1fr))", gap: 10, marginBottom: 18 }}>
+          {[["Open asks", fmtFull(d.forecast.open)], ["Stage-weighted forecast", fmtFull(d.forecast.weighted)]].map(([l, v]) =>
+            <div key={l} style={{ background: T.white, border: `1px solid ${T.bg3}`, borderRadius: 10, padding: "10px 14px" }}>
+              <div style={{ fontSize: 9, fontWeight: 800, letterSpacing: "0.1em", textTransform: "uppercase", color: T.ink3 }}>{l}</div>
+              <div style={{ fontSize: 20, fontWeight: 800, color: T.greenDk, marginTop: 2 }}>{v}</div>
+            </div>)}
+        </div>
+        <div style={{ fontSize: 12, fontWeight: 800, letterSpacing: "0.06em", textTransform: "uppercase", color: T.greenDk, marginBottom: 8 }}>Open asks by stage</div>
+        <ReportTable cols={[
+          { key: "stage", label: "Stage", render: r => cap(r.stage) },
+          { key: "count", label: "Open asks", align: "right" },
+          { key: "ask", label: "Ask total", align: "right", render: r => fmtFull(r.ask) },
+          { key: "weight", label: "Close prob.", align: "right", render: r => `${Math.round(r.weight * 100)}%` },
+          { key: "weighted", label: "Weighted", align: "right", render: r => fmtFull(r.weighted) },
+        ]} rows={d.byStage} />
+        <div style={{ fontSize: 12, fontWeight: 800, letterSpacing: "0.06em", textTransform: "uppercase", color: T.greenDk, margin: "22px 0 8px" }}>Asks vs. closes by officer</div>
+        <ReportTable cols={[
+          { key: "name", label: "Officer", render: r => <span style={{ fontWeight: 700, color: T.ink }}>{r.name}</span> },
+          { key: "openAsks", label: "Open", align: "right", render: r => `${r.openAsks} · ${fmtFull(r.openAskAmount)}` },
+          { key: "asksMade", label: "Made", align: "right", render: r => `${r.asksMade} · ${fmtFull(r.asksMadeAmount)}` },
+          { key: "giftsClosed", label: "Closed", align: "right", render: r => `${r.giftsClosed} · ${fmtFull(r.giftsClosedAmount)}` },
+          { key: "winRate", label: "Close rate", align: "right", render: r => r.winRate === null ? "—" : `${r.winRate}%` },
+        ]} rows={d.byOfficer} />
+        {d.aging.length > 0 && <>
+          <div style={{ fontSize: 12, fontWeight: 800, letterSpacing: "0.06em", textTransform: "uppercase", color: T.terracotta, margin: "22px 0 8px" }}>Aging prospects</div>
+          <ReportTable accentRow onRowClick={openDonor} cols={[
+            { key: "name", label: "Prospect", render: r => <span style={{ fontWeight: 700, color: T.ink }}>{r.name}</span> },
+            { key: "stage", label: "Stage", render: r => cap(r.stage) },
+            { key: "ask", label: "Ask", align: "right", render: r => fmtFull(r.ask) },
+            { key: "stageAge", label: "Days in stage", align: "right", render: r => <strong style={{ color: r.stageAge > 60 ? T.terracotta : T.ink }}>{r.stageAge}</strong> },
+            { key: "assignedTo", label: "Officer", render: r => r.assignedTo || "—" },
+          ]} rows={d.aging} />
+        </>}
+      </>;
+    } else if (active === "week-in-review") {
+      if (d.type === "monthly") {
+        const r = d.report;
+        empty = false;
+        narrative = <>Your month at a glance — <strong>{r.officerName}</strong>, {d.window.start} to {d.window.end}.</>;
+        table = <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(150px,1fr))", gap: 10 }}>
+          {[["Asks made", `${r.asksMade} · ${fmtFull(r.asksMadeAmount)}`], ["Moves made", r.movesMade],
+            ["Gifts closed", `${r.giftsClosed} · ${fmtFull(r.giftsClosedAmount)}`], ["Portfolio", `${r.portfolioCount} · ${fmtFull(r.portfolioValue)}`]].map(([l, v]) =>
+            <div key={l} style={{ background: T.white, border: `1px solid ${T.bg3}`, borderRadius: 10, padding: "12px 16px" }}>
+              <div style={{ fontSize: 9, fontWeight: 800, letterSpacing: "0.1em", textTransform: "uppercase", color: T.ink3 }}>{l}</div>
+              <div style={{ fontSize: 20, fontWeight: 800, color: T.ink, marginTop: 2 }}>{v}</div>
+            </div>)}
+        </div>;
+      } else {
+        const s = d.sections, tt = s.totals;
+        empty = false;
+        narrative = <><strong>{d.window.start}</strong> to <strong>{d.window.end}</strong>{d.scope === "officer" ? " · your portfolio" : ""} — <strong style={{ color: T.greenDk }}>{fmtFull(tt.giftTotal)}</strong> in {tt.giftCount} gift{tt.giftCount === 1 ? "" : "s"}, {tt.askCount} ask{tt.askCount === 1 ? "" : "s"}, {tt.moveCount} move{tt.moveCount === 1 ? "" : "s"}, <strong style={{ color: tt.pastDueCount ? T.terracotta : T.ink2 }}>{tt.pastDueCount} past-due task{tt.pastDueCount === 1 ? "" : "s"}</strong>.{d.teamRollup && <> Team-wide this week: {fmtFull(d.teamRollup.giftTotal)} across {d.teamRollup.giftCount} gifts.</>}</>;
+        const Section = ({ title, items, empty: e, render }) => <div style={{ marginBottom: 18 }}>
+          <div style={{ fontSize: 12, fontWeight: 800, letterSpacing: "0.06em", textTransform: "uppercase", color: T.greenDk, marginBottom: 8 }}>{title}</div>
+          {items.length === 0 ? <div style={{ fontSize: 13, color: T.ink3 }}>{e}</div>
+            : <div style={{ border: `1px solid ${T.bg3}`, borderRadius: 10, overflow: "hidden" }}>{items.map((it, i) => <div key={i} style={{ padding: "9px 14px", borderTop: i ? `1px solid ${T.bg2}` : "none", display: "flex", justifyContent: "space-between", gap: 12, fontSize: 13.5, color: T.ink }}>{render(it)}</div>)}</div>}
+        </div>;
+        table = <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(300px,1fr))", gap: 20 }}>
+          <Section title="Gifts received" items={s.gifts} empty="No gifts this week." render={g => <><span>{g.donorName}</span><strong style={{ color: T.greenDk }}>{fmtFull(g.amount)}</strong></>} />
+          <Section title="Asks / pledges made" items={s.asks} empty="No new asks this week." render={a => <><span>{a.donorName}{a.name ? ` — ${a.name}` : ""}</span><strong>{fmtFull(a.targetAmount)}</strong></>} />
+          <Section title="Moves" items={s.moves} empty="No pipeline moves this week." render={m => <div style={{ width: "100%" }}><div style={{ fontWeight: 600 }}>{m.donorName} · {m.fromStage || "—"} → {m.toStage}</div><div style={{ fontSize: 12, color: T.ink3 }}>{m.description}</div></div>} />
+          <Section title="Past-due tasks" items={s.pastDueTasks} empty="Nothing past due — nice." render={t => <><span>{t.title}{t.donorName ? ` · ${t.donorName}` : ""}</span><span style={{ color: T.terracotta, fontSize: 12, whiteSpace: "nowrap" }}>due {(t.due || "").slice(0, 10)}</span></>} />
+        </div>;
+      }
     }
   }
 
@@ -324,10 +454,14 @@ export function Reports({ onNavigate }) {
               <span style={{ color: T.ink3, fontSize: 12 }}>to</span>
               <input type="date" value={customTo} onChange={e => setCustomTo(e.target.value)} style={selStyle} />
             </>}
-            {(YEAR_REPORTS.includes(active) || active === "retention") && yearModeToggle}
-            {YEAR_REPORTS.includes(active) && <select value={effYear} onChange={e => setYear(parseInt(e.target.value, 10))} style={{ ...selStyle, maxWidth: 230 }}>
+            {YEARMODE_TOGGLE_REPORTS.includes(active) && yearModeToggle}
+            {YEAR_SELECT_REPORTS.includes(active) && <select value={effYear} onChange={e => setYear(parseInt(e.target.value, 10))} style={{ ...selStyle, maxWidth: 230 }}>
               {yearOptions.map(y => <option key={y} value={y}>{yearMode === "fiscal" ? `FY${y} (${fyRangeLabel(y)})` : y}</option>)}
             </select>}
+            {active === "week-in-review" && <div style={{ display: "flex", border: `1.5px solid ${T.bg3}`, borderRadius: 99, overflow: "hidden" }}>
+              {["weekly", "monthly"].map(s => <button key={s} onClick={() => setDigestType(s)}
+                style={{ background: digestType === s ? T.greenDk : T.white, color: digestType === s ? "#fff" : T.ink3, border: "none", padding: "6px 14px", fontSize: 12, fontWeight: 700, cursor: "pointer", textTransform: "capitalize" }}>{s}</button>)}
+            </div>}
             {active === "by-group" && <select value={groupBy} onChange={e => setGroupBy(e.target.value)} style={selStyle}>
               <option value="funds">By fund</option>
               <option value="campaigns">By campaign</option>
@@ -346,11 +480,17 @@ export function Reports({ onNavigate }) {
               {campaigns.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
             </select>}
             <div style={{ flex: 1 }} />
-            <button onClick={downloadCsv} disabled={downloading || loading || customIncomplete}
-              style={{ background: T.white, border: `1.5px solid ${T.greenDk}`, borderRadius: 10, padding: "7px 16px", color: T.greenDk, fontSize: 12, fontWeight: 700, cursor: downloading ? "wait" : "pointer", whiteSpace: "nowrap", opacity: downloading || loading ? 0.6 : 1 }}>
+            {!DIGEST_REPORTS.includes(active) && <button onClick={downloadCsv} disabled={downloading || loading || customIncomplete || planLocked}
+              style={{ background: T.white, border: `1.5px solid ${T.greenDk}`, borderRadius: 10, padding: "7px 16px", color: T.greenDk, fontSize: 12, fontWeight: 700, cursor: downloading ? "wait" : "pointer", whiteSpace: "nowrap", opacity: downloading || loading || planLocked ? 0.6 : 1 }}>
               {downloading ? "Downloading…" : "⬇ Download CSV"}
-            </button>
+            </button>}
           </div>
+
+          {DIGEST_REPORTS.includes(active) && !planLocked && <div style={{ fontSize: 12.5, color: T.ink3, marginBottom: 14, marginTop: -4 }}>
+            {digestType === "weekly"
+              ? "This is the Week in Review that's emailed to your whole team every Monday — the last completed week's gifts, asks, moves, and past-due tasks."
+              : "This is your Monthly Report, emailed at the start of each month — your asks, moves, gifts closed, and portfolio."}
+          </div>}
 
           {customIncomplete && <div style={{ fontSize: 13, color: T.ink3, padding: "24px 0", textAlign: "center" }}>Pick a start and end date to run this report.</div>}
 
@@ -359,7 +499,17 @@ export function Reports({ onNavigate }) {
             Running {activeDef.label}…
           </div>}
 
-          {!customIncomplete && !loading && err && <div style={{ fontSize: 13, color: T.terracotta, padding: "24px 0", textAlign: "center" }}>{err}</div>}
+          {!customIncomplete && !loading && planLocked && <div style={{ padding: "28px 22px", textAlign: "center", background: T.gold100 || "#f6eccf", border: `1.5px solid ${T.gold || "#c9a84c"}`, borderRadius: 14 }}>
+            <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: "0.1em", textTransform: "uppercase", color: T.gold600 || "#a97f22", marginBottom: 6 }}>Team plan</div>
+            <div style={{ fontFamily: "'DM Serif Display', Georgia, serif", fontSize: 20, color: T.ink, marginBottom: 6 }}>Oversight for a staffed office</div>
+            <div style={{ fontSize: 13.5, color: T.ink2, lineHeight: 1.6, maxWidth: 460, margin: "0 auto" }}>
+              {active === "solicitations"
+                ? "The solicitations report — open asks by stage, a stage-weighted forecast, and asks-vs-closes by officer — is part of the Team plan, built for development offices running a managed pipeline."
+                : "Monthly per-officer reports are part of the Team plan. Weekly Week-in-Review is available to everyone."}
+            </div>
+          </div>}
+
+          {!customIncomplete && !loading && !planLocked && err && <div style={{ fontSize: 13, color: T.terracotta, padding: "24px 0", textAlign: "center" }}>{err}</div>}
 
           {!customIncomplete && !loading && !err && d && (empty
             ? <EmptyState icon="▤" title={active === "lybunt" || active === "sybunt" ? "No one — that's good news" : "No gifts in this period yet"}

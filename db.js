@@ -1280,6 +1280,28 @@ async function initSchema() {
     )`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_opportunities_org_donor ON opportunities (org_id, donor_id)`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_opportunities_org_status ON opportunities (org_id, status)`);
+
+  // ── Development reporting cadence (BUILD-17) ─────────────────────────────
+  // Append-only log of every digest email actually sent. The UNIQUE index on
+  // (org_id, digest_type, period_key, recipient_user_id) is the idempotency
+  // guarantee — the digest engine reserves a row (INSERT … ON CONFLICT DO
+  // NOTHING RETURNING id) BEFORE sending, so re-running the 5-min tick within
+  // the same week/month never double-sends. Same discipline as workflow_runs.
+  // meta JSONB stores a small composition summary (section counts) for audit.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS digest_sends (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL,
+      digest_type TEXT NOT NULL,
+      period_key TEXT NOT NULL,
+      recipient_user_id TEXT NOT NULL,
+      recipient_email TEXT,
+      scope TEXT,
+      meta JSONB,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )`);
+  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS digest_sends_uk ON digest_sends (org_id, digest_type, period_key, recipient_user_id)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_digest_sends_org ON digest_sends (org_id, created_at DESC)`);
 }
 
 async function seedData() {

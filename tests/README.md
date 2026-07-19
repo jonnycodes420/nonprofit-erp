@@ -56,6 +56,10 @@ node tests/export-zip.test.js          # BUILD-03 debt: zip contents, edit_token
 node tests/email-footer.test.js        # CAN-SPAM postal address in email footers (real campaign sends
                                        # captured by a mock Resend on :5602 — boot the server with
                                        # RESEND_BASE_URL=http://localhost:5602 DEMO_SMTP_FROM=noreply@stewardapp.dev)
+node tests/digests.test.js             # BUILD-17: Week-in-Review + monthly digests — composition, idempotent
+                                       # send (reserve-before-send), per-recipient scoping, Core grace, isolation
+node tests/reports-cadence.test.js     # BUILD-17: 3-year comparison / annual / solicitations report math,
+                                       # [Team] gating, CSV injection guard
 ```
 
 Each exits 0 on all-pass, 1 otherwise. Env: `BASE` (default
