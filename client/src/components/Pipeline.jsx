@@ -6,7 +6,7 @@
 // upgrade state, not a broken tab.
 import { useState, useEffect, useMemo } from "react";
 import { apiFetch } from "../api";
-import { T, PageTitle, EmptyState, fmt, fmtFull, interactive } from "./shared";
+import { T, PageTitle, EmptyState, fmt, fmtFull, interactive, LockedFeature } from "./shared";
 
 // Forward major-gifts pipeline + trailing re-engagement column. Mirrors
 // server's ALL_PIPELINE_STAGES ordering.
@@ -104,27 +104,13 @@ export function Pipeline({ isReadOnly, onNavigate }) {
 
   if (loading && !data) return <div style={{ padding: 40, color: T.ink3 }}>Loading pipeline…</div>;
 
-  // ── Core upgrade state ────────────────────────────────────────────────────
-  if (data && data.locked) {
-    return (
-      <div>
-        <PageTitle main="Prospect" accent="Pipeline" />
-        <div style={{ background: T.bgCard, border: `1px solid ${T.gold300}`, borderLeft: `4px solid ${T.gold}`, borderRadius: T.radiusLg, padding: "28px 28px", maxWidth: 640, boxShadow: T.shadow }}>
-          <div style={{ fontSize: 12, fontWeight: 800, letterSpacing: ".08em", textTransform: "uppercase", color: T.gold600 }}>Team plan</div>
-          <div style={{ fontFamily: "'DM Serif Display',serif", fontSize: 24, color: T.ink, margin: "6px 0 10px" }}>Manage a major-gifts pipeline</div>
-          <div style={{ fontSize: 14, color: T.ink2, lineHeight: 1.6 }}>Move prospects through Identification → Qualification → Cultivation → Solicitation → Stewardship, log every move with a note, track asks against the gifts they close, and see each officer's portfolio at a glance. Available on the Team plan.</div>
-          <button onClick={() => onNavigate && onNavigate("settings")} style={{ marginTop: 18, background: T.gold, border: "none", borderRadius: T.radiusSm, padding: "10px 20px", fontSize: 14, fontWeight: 700, color: T.ink, cursor: "pointer" }}>See plans →</button>
-        </div>
-      </div>
-    );
-  }
-
+  const locked = !!(data && data.locked);
   const f = data?.forecast;
   const officers = data?.officers || [];
   const columns = data?.columns || {};
   const totalCards = Object.values(columns).reduce((s, c) => s + c.length, 0);
 
-  return (
+  const board = (
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 12 }}>
         <PageTitle main="Prospect" accent="Pipeline" />
@@ -178,6 +164,23 @@ export function Pipeline({ isReadOnly, onNavigate }) {
       {moving && <MoveModal card={moving} onClose={() => setMoving(null)} onMoved={() => { setMoving(null); load(); }} />}
     </div>
   );
+
+  if (locked) {
+    return (
+      <div>
+        <PageTitle main="Prospect" accent="Pipeline" />
+        <LockedFeature
+          title="Manage a major-gifts pipeline"
+          blurb="Move prospects through Identification → Qualification → Cultivation → Solicitation → Stewardship, log every move with a note, track asks against the gifts they close, and see each officer's portfolio at a glance. This preview shows your own donors — unlock the board to work it."
+          onCta={() => onNavigate && onNavigate("settings")}
+        >
+          {board}
+        </LockedFeature>
+      </div>
+    );
+  }
+
+  return board;
 }
 
 const filterInp = { padding: "7px 10px", border: `1px solid ${T.bg3}`, borderRadius: T.radiusSm, fontSize: 13, fontFamily: "'DM Sans',sans-serif", background: T.bgCard, color: T.ink };

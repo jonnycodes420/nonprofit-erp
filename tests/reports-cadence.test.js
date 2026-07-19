@@ -125,8 +125,12 @@ async function seedMove(o, donorId, officerId, to, daysAgo) {
   await seedOrg(CORE, "seed", "active", "core");
   await seedUser(CORE, "u_rcc", "rcc", "admin");
   const coreTok = await login("rcc@rc.local");
+  // BUILD-20 Part 4: Core gets a READ-only locked PREVIEW (200 + locked:true,
+  // own data) instead of a bare 403 — but CSV export stays Team-only (403).
   const coreSol = await api("GET", "/reports/solicitations", coreTok);
-  ok("Core org → solicitations 403 plan_required", coreSol.status === 403 && coreSol.body.error === "plan_required", coreSol.status);
+  ok("Core org → solicitations locked preview (200 + locked:true)", coreSol.status === 200 && coreSol.body.locked === true, coreSol.status);
+  const coreSolCsv = await api("GET", "/reports/solicitations?format=csv", coreTok);
+  ok("Core org → solicitations CSV export still 403 plan_required", coreSolCsv.status === 403 && coreSolCsv.body.error === "plan_required", coreSolCsv.status);
   const coreTy = await api("GET", "/reports/three-year?year=2027", coreTok);
   ok("Core org → three-year 200 ([Core] report)", coreTy.status === 200, coreTy.status);
   const coreAn = await api("GET", "/reports/annual?year=2027", coreTok);

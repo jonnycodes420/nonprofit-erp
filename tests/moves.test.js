@@ -86,7 +86,9 @@ async function seedDesignation(o, donorId, kind) {
 
   r = await api("GET", "/pipeline", coreAdmin);
   ok("core board locked (graceful, not 403)", r.status === 200 && r.body.tier === "core" && r.body.locked === true, r.body);
-  ok("core locked board hides columns", Object.keys(r.body.columns).length === 0, r.body.columns);
+  // BUILD-20 Part 4: the Core board is a READ-only locked preview populated with
+  // the org's OWN data (columns present) — writes stay 403-gated below.
+  ok("core locked board previews own data (columns populated)", (r.body.columns.prospect || []).some(c => c.donorId === "mv_c1"), r.body.columns);
 
   r = await api("GET", "/pipeline", solo);
   ok("solo team org single_user grace", r.status === 200 && r.body.single_user === true, r.body.single_user);

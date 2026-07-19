@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { apiFetch, adaptData, API, getToken } from "./api";
 import { useAuth } from "./main";
-import { T, GlobalStyles } from "./components/shared";
+import { T, GlobalStyles, LockGlyph } from "./components/shared";
 // SHELVED — voice capture works but unproven adoption assumption, revisit later.
 // Code intact, re-enable by uncommenting (see showVoiceMemo state, header
 // button, and modal render below, and the matching import above:
@@ -60,6 +60,17 @@ const MORE_TABS=[
   // {id:"volunteers",label:"Volunteers",icon:"◎",earlyAccess:true},
   // {id:"board",label:"Board",icon:"◆",earlyAccess:true},
 ];
+
+// Desktop sidebar grouping (BUILD-20 Part 3) — Home stays ungrouped at top,
+// Settings pinned at bottom; the rest read as labeled sections. Pipeline stays
+// a TOP-LEVEL item within People (NOT nested under Donors). Team-gated items
+// (see TEAM_GATED) show a lock indicator for Core users but stay visible.
+const NAV_GROUPS=[
+  {label:"People",      ids:["donors","pipeline","tasks"]},
+  {label:"Fundraising", ids:["fundraising","grants","communications","workflows"]},
+  {label:"Insight",     ids:["reports","finance"]},
+];
+const TEAM_GATED=new Set(["pipeline"]);
 
 // ── App Shell ──────────────────────────────────────────────────────────────
 function AppShell() {
@@ -178,6 +189,12 @@ function AppShell() {
   const accessState=billing?.accessState||"full";
   const isReadOnly=accessState==="read_only";
   const subStatus=billing?.subscriptionStatus;
+  // Client-side plan tier (mirrors server orgPlanTier): Team = growth/impact OR
+  // a live trial; everything else (seed/lapsed) = Core. Drives the sidebar lock
+  // indicator on Team-gated items. Defaults to team while billing is unknown so
+  // we never flash a lock before the plan loads.
+  const planTier=(()=>{ if(!billing)return "team"; const p=billing.plan; if(p==="growth"||p==="impact")return "team"; if(subStatus==="trialing")return "team"; return "core"; })();
+  const isCoreTier=planTier==="core";
   const showTrialBanner=!bannerDismissed&&subStatus==="trialing"&&billing?.trialDaysLeft<=14;
   const showWarningBanner=accessState==="warning";
   const showReadOnlyBanner=isReadOnly;
@@ -250,16 +267,31 @@ function AppShell() {
         drawer). Starts BENEATH the 52px bar (top:52); pure nav now — wordmark
         moved into the bar's left edge, user chip/sign-out live in the bar. */}
     <div className="app-sidebar" style={{position:"fixed",left:0,top:52,bottom:0,width:220,background:"#0f1a12",borderRight:"1px solid #1a2e1f",display:"flex",flexDirection:"column",zIndex:120,boxSizing:"border-box"}}>
-      <div style={{flex:1,overflowY:"auto",padding:"14px 10px 14px 0",display:"flex",flexDirection:"column",gap:2}}>
-        {TABS.filter(t=>t.id!=="settings").map(t=>{
-          const active=tab===t.id;
-          return <button key={t.id} className="side-nav-btn" onClick={()=>navigateTo(t.id)} style={sideBtn(active)}>
-            <span style={{fontSize:14,width:18,textAlign:"center",color:active?"var(--org-accent,#c9a84c)":"#6b8f7a",flexShrink:0}}>{t.icon}</span>
-            {t.label}
-            {t.earlyAccess&&<span style={{fontSize:9,fontWeight:700,letterSpacing:"0.04em",background:"#1a2e1f",color:"#8fa896",border:"1px solid #2d4a35",borderRadius:99,padding:"1px 6px",lineHeight:"14px"}}>Early Access</span>}
-            {t.id==="tasks"&&tasksDue>0&&<span style={{marginLeft:"auto",background:"#b8593f",color:"#fff",fontSize:9,fontWeight:800,borderRadius:99,padding:"1px 6px",lineHeight:"14px"}}>{tasksDue}</span>}
-          </button>;
-        })}
+      <div style={{flex:1,overflowY:"auto",padding:"12px 10px 14px 0",display:"flex",flexDirection:"column",gap:2}}>
+        {(()=>{
+          const byId=Object.fromEntries(TABS.map(t=>[t.id,t]));
+          const navItem=(t)=>{
+            const active=tab===t.id;
+            const locked=TEAM_GATED.has(t.id)&&isCoreTier;
+            return <button key={t.id} className="side-nav-btn" onClick={()=>navigateTo(t.id)} style={sideBtn(active)}>
+              <span style={{fontSize:14,width:18,textAlign:"center",color:active?"var(--org-accent,#c9a84c)":"#6b8f7a",flexShrink:0}}>{t.icon}</span>
+              {t.label}
+              {locked&&<span title="Team plan" style={{marginLeft:"auto",display:"flex",alignItems:"center",color:"#6b8f7a"}}><LockGlyph size={11} color="#6b8f7a"/></span>}
+              {t.earlyAccess&&<span style={{fontSize:9,fontWeight:700,letterSpacing:"0.04em",background:"#1a2e1f",color:"#8fa896",border:"1px solid #2d4a35",borderRadius:99,padding:"1px 6px",lineHeight:"14px"}}>Early Access</span>}
+              {t.id==="tasks"&&tasksDue>0&&<span style={{marginLeft:locked?6:"auto",background:"#b8593f",color:"#fff",fontSize:9,fontWeight:800,borderRadius:99,padding:"1px 6px",lineHeight:"14px"}}>{tasksDue}</span>}
+            </button>;
+          };
+          const home=byId["dashboard"];
+          return <>
+            {home&&navItem(home)}
+            {NAV_GROUPS.map(g=>(
+              <div key={g.label} style={{marginTop:12}}>
+                <div style={{fontSize:9.5,fontWeight:800,letterSpacing:"0.11em",textTransform:"uppercase",color:"#5a7566",padding:"0 12px 4px 13px"}}>{g.label}</div>
+                {g.ids.map(id=>byId[id]).filter(Boolean).map(navItem)}
+              </div>
+            ))}
+          </>;
+        })()}
       </div>
       {/* Pure nav below here — the user chip/sign-out moved to the top bar (BUILD-08) */}
       <div style={{borderTop:"1px solid #1a2e1f",padding:"10px 10px 12px 0",flexShrink:0}}>

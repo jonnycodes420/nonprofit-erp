@@ -48,7 +48,9 @@ ok(has(donors, "onStageChange={moveToStage}"), "DonorProfile still exposes the s
 
 // ── Part 1: the canonical Pipeline tab is the one gated surface ─────────────
 ok(has(pipeline, "data.locked"), "Pipeline.jsx branches on the server's locked flag");
-ok(has(pipeline, "Team plan") && has(pipeline, "See plans"), "Pipeline.jsx renders the Core upgrade card");
+// BUILD-20 Part 4: the Core state is now the shared LockedFeature preview
+// (real board behind glass), not a bare upgrade card.
+ok(has(pipeline, "LockedFeature"), "Pipeline.jsx renders the Core state via the shared LockedFeature preview");
 ok(has(server, 'requirePlan("team")') || has(server, "requirePlan('team')"), "server gates the pipeline on the Team plan");
 ok(/app\.get\("\/pipeline"/.test(server), "GET /pipeline is the single board data endpoint");
 

@@ -3988,9 +3988,12 @@ app.get("/pipeline", requireAuth, wrap(async (req, res) => {
   const orgRows = await query("SELECT plan, subscription_status FROM orgs WHERE id=?", [orgId]);
   const tier = orgRows.length ? orgPlanTier(orgRows[0]) : "core";
   const stages = ALL_PIPELINE_STAGES.map(id => ({ id, label: id.charAt(0).toUpperCase() + id.slice(1) }));
-  if (tier !== "team") {
-    return res.json({ tier, locked: true, stages, officers: [], columns: {}, forecast: null });
-  }
+  // Core orgs get a READ-only locked preview populated with their OWN data
+  // (the board derives entirely from donors.stage / opportunities / moves /
+  // tasks — all org-scoped reads a Core user already has). Writes stay hard-
+  // gated on POST /pipeline/:donorId/move (requirePlan('team') → 403), so this
+  // only softens the read presentation; it does not open a write path.
+  const locked = tier !== "team";
 
   const officers = await query(
     "SELECT id, name, portfolio_color FROM users WHERE org_id=? ORDER BY name", [orgId]);
@@ -4051,7 +4054,7 @@ app.get("/pipeline", requireAuth, wrap(async (req, res) => {
     `SELECT COALESCE(SUM(gift_amount),0) AS amt, COUNT(*)::int AS cnt FROM opportunities
        WHERE org_id=? AND status='won' AND closed_at >= ?`, [orgId, start]);
   res.json({
-    tier, locked: false, single_user, stages,
+    tier, locked, single_user, stages,
     officers: officers.map(o => ({ id: o.id, name: o.name, color: o.portfolio_color })),
     columns,
     forecast: {
@@ -9132,15 +9135,23 @@ const TEAM_ONLY_REPORTS = new Set(["solicitations"]);
 app.get("/reports/:key", requireAuth, wrap(async (req, res) => {
   const { key } = req.params;
   if (!REPORT_HANDLERS[key]) return res.status(404).json({ error: "Unknown report" });
+  // Team-only reports on a Core org: return a READ-only locked preview built
+  // from the org's OWN data (a report is a pure read), flagged `locked:true`
+  // so the client dims it behind the LockedFeature glass — a bare 403 card is
+  // replaced by a real preview. CSV EXPORT of a locked report is still refused
+  // (403) — you can look, but pulling the team artifact out is Team-only.
+  let reportLocked = false;
   if (TEAM_ONLY_REPORTS.has(key)) {
     const orgRows = await query("SELECT plan, subscription_status FROM orgs WHERE id=?", [req.user.orgId]);
-    if (!orgRows.length || orgPlanTier(orgRows[0]) !== "team")
+    reportLocked = !orgRows.length || orgPlanTier(orgRows[0]) !== "team";
+    if (reportLocked && req.query.format === "csv")
       return res.status(403).json({ error: "plan_required", requiredPlan: "team", message: "The solicitations report is available on the Team plan." });
   }
   let p;
   try { p = parseReportParams(req.query); }
   catch (e) { return res.status(e.status === 400 ? 400 : 500).json({ error: e.message }); }
   const data = await REPORT_HANDLERS[key](req.user.orgId, p);
+  if (reportLocked && data && typeof data === "object" && !Array.isArray(data)) data.locked = true;
   if (p.format === "csv") {
     const { headers, rows } = reportToCsv(key, data);
     const suffix = key === "retention" ? p.yearMode
@@ -9387,10 +9398,12 @@ app.get("/digests/preview", requireAuth, wrap(async (req, res) => {
   // Preview the most-recently-completed period (what actually gets emailed),
   // matching the tick — offset -1.
   if (type === "monthly") {
-    if (tier !== "team") return res.status(403).json({ error: "plan_required", requiredPlan: "team", message: "Monthly officer reports are available on the Team plan." });
+    // Core: return the caller's own monthly report as a READ-only locked
+    // preview (their own gifts/portfolio — a pure read), flagged locked so the
+    // client dims it behind LockedFeature instead of a bare 403 card.
     const mo = monthBounds(-1);
     const report = await composeOfficerMonthly(org.id, mo, { id: me.id, name: me.name });
-    return res.json({ type, window: mo, report });
+    return res.json({ type, window: mo, report, locked: tier !== "team" });
   }
   const wk = weekBounds(-1);
   const isOfficerScope = tier === "team" && me.role !== "admin";
