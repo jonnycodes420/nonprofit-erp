@@ -1,10 +1,16 @@
-import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../main";
 
-const API = import.meta.env.VITE_API_URL || "https://nonprofit-erp-production.up.railway.app";
-
-export const PLANS = [
+// ── Live-billing plans (Stripe-wired) ──────────────────────────────────────
+// BILLING_PLANS is the source of truth for the in-app PlanPicker's real Stripe
+// Checkout (POST /billing/create-checkout maps these ids → STRIPE_PRICE_* env
+// vars). It is DELIBERATELY still the legacy seed/growth/impact set: the public
+// Core/Team model below is the new commercial offer, but the Stripe Prices for
+// $149/$299 don't exist yet, so live checkout stays on the wired plans until a
+// separate backend cutover creates those Prices and remaps the tiers. Do not
+// point PlanPicker at the public model until that cutover lands — it would
+// send an unknown plan id to create-checkout and 500 the reactivation flow.
+export const BILLING_PLANS = [
   {
     id: "seed",
     name: "Seed",
@@ -46,142 +52,221 @@ export const PLANS = [
   },
 ];
 
+// ── Public commercial model (what the /pricing page shows) ─────────────────
+// Two plans split on Brad's real line: do you have gift officers to manage?
+// Every feature listed here is LIVE in-product — except items tagged {soon},
+// which render with a "coming soon" chip so the page never advertises an
+// unbuilt capability (the landing/pricing honesty rule). Team's full
+// white-label (custom domain / brand removal) is the one deferred item.
+const PUBLIC_PLANS = [
+  {
+    id: "core",
+    name: "Core",
+    price: 149,
+    tagline: "Everything a small shop needs.",
+    forWho: "The full product for a 1–3 person development team.",
+    highlight: false,
+    features: [
+      { t: "Up to 5,000 active donors · 3 users" },
+      { t: "Full donor CRM + online giving on your own Stripe — 0% platform fee, no donor tip" },
+      { t: "IRS-compliant receipts + year-end statements" },
+      { t: "Households & soft credit, planned-giving tags" },
+      { t: "Goals — Annual / Project / Capital, with roll-up" },
+      { t: "Retention workflows — automated failed-card recovery + instant gift→thank alert" },
+      { t: "Reports — LYBUNT, SYBUNT, Retention, Top Donors, 3-year & annual" },
+      { t: "Week-in-Review weekly digest" },
+      { t: "Tasks · Finance · Communications · org branding" },
+      { t: "Priority support" },
+    ],
+  },
+  {
+    id: "team",
+    name: "Team",
+    price: 299,
+    tagline: "For staffed development offices.",
+    forWho: "Everything in Core, plus the major-gifts machine.",
+    highlight: true,
+    everythingIn: "Core",
+    features: [
+      { t: "Up to 25,000 active donors · 10 users (custom above)" },
+      { t: "Moves management — prospect pipeline, stages, moves log, ask-vs-gift" },
+      { t: "Officer portfolios + color mapping; Home Portfolio & Pipeline headers" },
+      { t: "Per-officer monthly reports + solicitations report" },
+      { t: "Multi-officer Week-in-Review breakdowns" },
+      { t: "Full white-label — custom domain, remove Steward branding", soon: true },
+      { t: "Founder-direct onboarding & support" },
+    ],
+  },
+];
+
 export default function Pricing() {
   const { auth } = useAuth();
   const navigate = useNavigate();
-  const [loading, setLoading] = useState(null);
   const isAuthed = !!auth?.token;
   // A signed-in org still on its free trial already committed by signing up —
   // the primary path is into the product, not a card-first checkout (QA R1).
   const onTrial = isAuthed && (auth?.org?.plan === "trial" || auth?.org?.subscription_status === "trialing");
 
-  async function selectPlan(planId) {
-    if (!isAuthed) { navigate("/signup"); return; }
-    setLoading(planId);
-    try {
-      const res = await fetch(API + "/billing/create-checkout", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": "Bearer " + auth.token,
-        },
-        body: JSON.stringify({ plan: planId }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Could not start checkout");
-      window.location.href = data.url;
-    } catch (err) {
-      alert(err.message);
-      setLoading(null);
-    }
+  // The public Core/Team plans aren't Stripe-wired yet (see BILLING_PLANS note),
+  // and pre-pilot every org gets founder-direct onboarding — so the CTA is the
+  // free trial for new visitors and a founder conversation for signed-in orgs,
+  // never a checkout against a price id that doesn't exist.
+  const CAL = "https://calendly.com/xjca2006/new-meeting";
+  function choosePlan() {
+    if (isAuthed) { navigate("/dashboard"); return; }
+    navigate("/signup");
   }
 
+  const cream = "#f0ede6", ink = "#0f1a12", sage = "#8fa896", gold = "#c9a84c";
+  const panel = "#1a2e1f", panelBorder = "#2d4a35", green = "#1a6b4a", emerald = "#10b981";
+
   return (
-    <div style={{ minHeight: "100vh", background: "#0f1a12", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "60px 24px", fontFamily: "'DM Sans',system-ui,sans-serif" }}>
+    <div style={{ minHeight: "100vh", background: ink, display: "flex", flexDirection: "column", alignItems: "center", padding: "60px 24px 72px", fontFamily: "'DM Sans',system-ui,sans-serif" }}>
       <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=DM+Serif+Display&display=swap" rel="stylesheet"/>
 
       {/* Nav */}
-      <div style={{ position: "fixed", top: 0, left: 0, right: 0, display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 32px", height: 56, background: "#0f1a12", borderBottom: "1px solid #1a2e1f", zIndex: 100 }}>
+      <div style={{ position: "fixed", top: 0, left: 0, right: 0, display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 32px", height: 56, background: ink, borderBottom: "1px solid #1a2e1f", zIndex: 100 }}>
         <Link to="/" style={{ display: "flex", alignItems: "center", gap: 10, textDecoration: "none" }}>
-          <div style={{ width: 28, height: 28, background: "#1a6b4a", borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center" }}>
-            <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M8 2L13 5v6L8 14 3 11V5L8 2z" stroke="#f0ede6" strokeWidth="1.5" fill="none"/><circle cx="8" cy="8" r="2" fill="#f0ede6"/></svg>
+          <div style={{ width: 28, height: 28, background: green, borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M8 2L13 5v6L8 14 3 11V5L8 2z" stroke={cream} strokeWidth="1.5" fill="none"/><circle cx="8" cy="8" r="2" fill={cream}/></svg>
           </div>
-          <span style={{ fontSize: 15, fontWeight: 700, color: "#f0ede6", fontFamily: "'DM Serif Display',Georgia,serif" }}>Steward</span>
+          <span style={{ fontSize: 15, fontWeight: 700, color: cream, fontFamily: "'DM Serif Display',Georgia,serif" }}>Steward</span>
         </Link>
         {isAuthed ? (
-          <Link to="/dashboard" style={{ fontSize: 13, color: "#8fa896", textDecoration: "none", fontWeight: 600 }}>Go to dashboard →</Link>
+          <Link to="/dashboard" style={{ fontSize: 13, color: sage, textDecoration: "none", fontWeight: 600 }}>Go to dashboard →</Link>
         ) : (
           <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
-            <Link to="/login" style={{ fontSize: 13, color: "#8fa896", textDecoration: "none" }}>Sign in</Link>
-            <Link to="/signup" style={{ fontSize: 13, color: "#0f1a12", background: "#f0ede6", borderRadius: 8, padding: "7px 16px", textDecoration: "none", fontWeight: 700 }}>Start free trial</Link>
+            <Link to="/login" style={{ fontSize: 13, color: sage, textDecoration: "none" }}>Sign in</Link>
+            <Link to="/signup" style={{ fontSize: 13, color: ink, background: cream, borderRadius: 8, padding: "7px 16px", textDecoration: "none", fontWeight: 700 }}>Start free trial</Link>
           </div>
         )}
       </div>
 
-      <div style={{ maxWidth: 960, width: "100%", marginTop: 56 }}>
-        <div style={{ textAlign: "center", marginBottom: 48 }}>
-          <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.12em", color: "#c9a84c", textTransform: "uppercase", marginBottom: 12 }}>Pricing</div>
-          <div style={{ fontSize: 36, fontWeight: 400, color: "#f0ede6", fontFamily: "'DM Serif Display',Georgia,serif", lineHeight: 1.2, marginBottom: 12 }}>
-            Choose your plan
+      <div style={{ maxWidth: 980, width: "100%", marginTop: 56 }}>
+        {/* Header */}
+        <div style={{ textAlign: "center", marginBottom: 20 }}>
+          <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.12em", color: gold, textTransform: "uppercase", marginBottom: 12 }}>Pricing</div>
+          <div style={{ fontSize: 38, fontWeight: 400, color: cream, fontFamily: "'DM Serif Display',Georgia,serif", lineHeight: 1.15, marginBottom: 14 }}>
+            Two plans, split on a real line.
           </div>
-          <div style={{ fontSize: 15, color: "#8fa896", maxWidth: 420, margin: "0 auto" }}>
-            Every plan includes a 30-day free trial. No credit card required until you're ready.
+          <div style={{ fontSize: 15, color: sage, maxWidth: 560, margin: "0 auto", lineHeight: 1.55 }}>
+            The question is simple: <span style={{ color: cream, fontWeight: 600 }}>do you have gift officers to manage?</span> If not, Core is the whole product. If you do — portfolios, a moves pipeline, per-officer oversight — that's Team.
           </div>
-          {onTrial && (
-            <div style={{ marginTop: 28, display: "flex", flexDirection: "column", alignItems: "center", gap: 10 }}>
-              <Link to="/dashboard" style={{ display: "inline-block", background: "#c9a84c", color: "#0f1a12", borderRadius: 12, padding: "14px 32px", fontSize: 15, fontWeight: 800, textDecoration: "none" }}>
-                Continue with your free trial →
-              </Link>
-              <div style={{ fontSize: 13, color: "#8fa896" }}>
-                You're already on your 30-day trial — no card needed. Pick a plan below whenever you're ready.
-              </div>
-            </div>
-          )}
         </div>
 
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 20, marginBottom: 40 }}>
-          {PLANS.map(plan => (
+        {/* Active-donor promise */}
+        <div style={{ textAlign: "center", marginBottom: 36 }}>
+          <span style={{ display: "inline-block", fontSize: 12.5, color: cream, background: panel, border: `1px solid ${panelBorder}`, borderRadius: 99, padding: "7px 16px" }}>
+            Bands count <b>active donors</b> — the donors you're actually working, not every dead record on file.
+          </span>
+        </div>
+
+        {onTrial && (
+          <div style={{ marginBottom: 36, display: "flex", flexDirection: "column", alignItems: "center", gap: 10 }}>
+            <Link to="/dashboard" style={{ display: "inline-block", background: gold, color: ink, borderRadius: 12, padding: "14px 32px", fontSize: 15, fontWeight: 800, textDecoration: "none" }}>
+              Continue with your free trial →
+            </Link>
+            <div style={{ fontSize: 13, color: sage }}>
+              You're on your free trial — no card needed. Pick a plan whenever you're ready.
+            </div>
+          </div>
+        )}
+
+        {/* Plan cards */}
+        <div className="pricing-grid" style={{ display: "grid", gridTemplateColumns: "repeat(2,1fr)", gap: 20, marginBottom: 28 }}>
+          {PUBLIC_PLANS.map(plan => (
             <div key={plan.id} style={{
-              background: plan.highlight ? "#f0ede6" : "#1a2e1f",
-              border: plan.highlight ? "2px solid #c9a84c" : "1px solid #2d4a35",
-              borderRadius: 16,
-              padding: "28px 28px 32px",
+              background: plan.highlight ? cream : panel,
+              border: plan.highlight ? `2px solid ${gold}` : `1px solid ${panelBorder}`,
+              borderRadius: 18,
+              padding: "30px 28px 32px",
               display: "flex",
               flexDirection: "column",
               position: "relative",
             }}>
               {plan.highlight && (
-                <div style={{ position: "absolute", top: -12, left: "50%", transform: "translateX(-50%)", background: "#c9a84c", color: "#0f1a12", fontSize: 10, fontWeight: 800, letterSpacing: "0.08em", textTransform: "uppercase", borderRadius: 99, padding: "4px 12px" }}>
-                  Most Popular
+                <div style={{ position: "absolute", top: -12, left: "50%", transform: "translateX(-50%)", background: gold, color: ink, fontSize: 10, fontWeight: 800, letterSpacing: "0.08em", textTransform: "uppercase", borderRadius: 99, padding: "4px 12px", whiteSpace: "nowrap" }}>
+                  Staffed offices
                 </div>
               )}
-              <div style={{ fontSize: 13, fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase", color: plan.highlight ? "#6b7c72" : "#8fa896", marginBottom: 8 }}>
+              <div style={{ fontSize: 13, fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase", color: plan.highlight ? "#6b7c72" : sage, marginBottom: 8 }}>
                 {plan.name}
               </div>
-              <div style={{ display: "flex", alignItems: "baseline", gap: 4, marginBottom: 8 }}>
-                <span style={{ fontSize: 38, fontWeight: 800, color: plan.highlight ? "#0f1a12" : "#f0ede6", fontFamily: "'DM Serif Display',Georgia,serif" }}>${plan.price}</span>
-                <span style={{ fontSize: 14, color: plan.highlight ? "#6b7c72" : "#8fa896" }}>/month</span>
+              <div style={{ display: "flex", alignItems: "baseline", gap: 5, marginBottom: 6 }}>
+                <span style={{ fontSize: 40, fontWeight: 800, color: plan.highlight ? ink : cream, fontFamily: "'DM Serif Display',Georgia,serif" }}>${plan.price}</span>
+                <span style={{ fontSize: 14, color: plan.highlight ? "#6b7c72" : sage }}>/month</span>
               </div>
-              <div style={{ fontSize: 13, color: plan.highlight ? "#6b7c72" : "#8fa896", marginBottom: 24, lineHeight: 1.4 }}>
-                {plan.tagline}
+              <div style={{ fontSize: 14, fontWeight: 600, color: plan.highlight ? ink : cream, marginBottom: 4 }}>{plan.tagline}</div>
+              <div style={{ fontSize: 13, color: plan.highlight ? "#6b7c72" : sage, marginBottom: 22, lineHeight: 1.45 }}>
+                {plan.forWho}
               </div>
-              <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 28, flex: 1 }}>
+              <div style={{ display: "flex", flexDirection: "column", gap: 11, marginBottom: 26, flex: 1 }}>
                 {plan.features.map(f => (
-                  <div key={f} style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                    <div style={{ width: 18, height: 18, background: plan.highlight ? "#e8f5ef" : "#1a2e1f", border: `1px solid ${plan.highlight ? "#10b981" : "#2d4a35"}`, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                      <svg width="9" height="7" viewBox="0 0 10 8" fill="none"><path d="M1 4l3 3 5-6" stroke="#10b981" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                  <div key={f.t} style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
+                    <div style={{ width: 18, height: 18, marginTop: 1, background: plan.highlight ? "#e8f5ef" : ink, border: `1px solid ${emerald}`, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                      <svg width="9" height="7" viewBox="0 0 10 8" fill="none"><path d="M1 4l3 3 5-6" stroke={emerald} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
                     </div>
-                    <span style={{ fontSize: 13, color: plan.highlight ? "#0f1a12" : "#8fa896" }}>{f}</span>
+                    <span style={{ fontSize: 13, color: plan.highlight ? ink : sage, lineHeight: 1.45 }}>
+                      {f.t}
+                      {f.soon && (
+                        <span style={{ marginLeft: 7, fontSize: 9.5, fontWeight: 800, letterSpacing: "0.06em", textTransform: "uppercase", color: gold, border: `1px solid ${plan.highlight ? "#d9c48a" : "#5a4d29"}`, borderRadius: 99, padding: "1px 7px", whiteSpace: "nowrap", verticalAlign: "middle" }}>Coming soon</span>
+                      )}
+                    </span>
                   </div>
                 ))}
               </div>
               <button
-                onClick={() => selectPlan(plan.id)}
-                disabled={loading === plan.id}
+                onClick={choosePlan}
                 style={{
-                  background: plan.highlight ? "#1a6b4a" : "transparent",
-                  border: plan.highlight ? "none" : "1px solid #2d4a35",
+                  background: plan.highlight ? green : "transparent",
+                  border: plan.highlight ? "none" : `1px solid ${panelBorder}`,
                   borderRadius: 10, padding: "13px 20px",
-                  color: plan.highlight ? "#fff" : "#8fa896",
-                  fontSize: 14, fontWeight: 700,
-                  cursor: loading === plan.id ? "not-allowed" : "pointer",
-                  opacity: loading === plan.id ? 0.7 : 1,
-                  transition: "all 0.15s",
+                  color: plan.highlight ? "#fff" : sage,
+                  fontSize: 14, fontWeight: 700, cursor: "pointer", transition: "all 0.15s",
                 }}
               >
-                {loading === plan.id ? "Loading…" : isAuthed ? "Start this plan →" : "Start free trial →"}
+                {isAuthed ? "Go to your workspace →" : "Start free trial →"}
               </button>
             </div>
           ))}
         </div>
 
-        <div style={{ textAlign: "center", fontSize: 13, color: "#3d5245" }}>
-          All plans include a 30-day free trial.{" "}
-          <a href="https://calendly.com/xjca2006/new-meeting" target="_blank" rel="noreferrer" style={{ color: "#8fa896", textDecoration: "none", fontWeight: 600 }}>
+        {/* Foundation Portal add-on */}
+        <div style={{ background: panel, border: `1px solid ${panelBorder}`, borderRadius: 16, padding: "22px 26px", display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: 16, marginBottom: 40 }}>
+          <div style={{ maxWidth: 620 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
+              <span style={{ fontSize: 14, fontWeight: 700, color: cream }}>Foundation Portal</span>
+              <span style={{ fontSize: 9.5, fontWeight: 800, letterSpacing: "0.06em", textTransform: "uppercase", color: gold, border: `1px solid #5a4d29`, borderRadius: 99, padding: "2px 8px" }}>Opt-in add-on · any plan</span>
+            </div>
+            <div style={{ fontSize: 13, color: sage, lineHeight: 1.5 }}>
+              Bring your own foundation records plus full grant-lifecycle management — deadlines, LOIs, requested-vs-awarded, reporting. À la carte; turn it on when you decide to pursue foundation funding.
+            </div>
+          </div>
+          <a href={CAL} target="_blank" rel="noreferrer" style={{ fontSize: 13, fontWeight: 700, color: cream, background: "transparent", border: `1px solid ${panelBorder}`, borderRadius: 10, padding: "11px 18px", textDecoration: "none", whiteSpace: "nowrap" }}>
+            Ask about the add-on →
+          </a>
+        </div>
+
+        {/* The answer to "free" */}
+        <div style={{ background: "#12241a", border: `1px solid ${panelBorder}`, borderLeft: `3px solid ${gold}`, borderRadius: 14, padding: "26px 30px", marginBottom: 32 }}>
+          <div style={{ fontSize: 15.5, color: cream, lineHeight: 1.65, fontFamily: "'DM Serif Display',Georgia,serif", fontWeight: 400 }}>
+            “Free platforms fund ‘free’ by asking your donors for a tip, or by locking the CRM you actually need behind an upgrade. Steward is a flat monthly price with everything a small shop needs included, cheaper than the real CRMs, your gifts land in your own account, and we count the donors you're actually working — not every dead record on file.”
+          </div>
+          <div style={{ fontSize: 14, color: gold, marginTop: 14, fontWeight: 700 }}>
+            You keep every dollar. We just help you keep every donor.
+          </div>
+        </div>
+
+        {/* Footer note */}
+        <div style={{ textAlign: "center", fontSize: 13, color: sage }}>
+          Every plan starts with a free trial — no card required.{" "}
+          <a href={CAL} target="_blank" rel="noreferrer" style={{ color: cream, textDecoration: "none", fontWeight: 600 }}>
             Questions? Book a demo →
           </a>
         </div>
       </div>
+
+      <style>{`@media (max-width: 720px){ .pricing-grid{ grid-template-columns: 1fr !important; } }`}</style>
     </div>
   );
 }
