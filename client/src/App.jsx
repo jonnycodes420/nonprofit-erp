@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { apiFetch, adaptData, API, getToken } from "./api";
 import { useAuth } from "./main";
-import { T, GlobalStyles, LockGlyph } from "./components/shared";
+import { T, GlobalStyles, LockGlyph, ErrorBoundary } from "./components/shared";
 // SHELVED — voice capture works but unproven adoption assumption, revisit later.
 // Code intact, re-enable by uncommenting (see showVoiceMemo state, header
 // button, and modal render below, and the matching import above:
@@ -355,6 +355,11 @@ function AppShell() {
         displays get working room instead of dead gutters. Mobile is
         untouched — GlobalStyles' 768px rules override this with !important. */}
     <div className="app-content" style={{flex:1,padding:tab==="dashboard"?"20px 24px 28px 24px":"20px 32px 28px 32px",maxWidth:tab==="dashboard"?1200:"none",width:"100%",margin:"0 auto",boxSizing:"border-box"}}>
+      {/* Per-surface crash insurance (BUILD-21 Part 2): a render error in one tab
+          shows a graceful fallback in the content area — the sidebar/top bar stay
+          usable and switching tabs (resetKey=tab) recovers — instead of a black
+          screen. The shell itself is wrapped app-level in the App export below. */}
+    <ErrorBoundary label={tab} resetKey={tab} onHome={()=>setTab("dashboard")}>
       {tab==="dashboard"&&<Dashboard data={data} setData={setData} onNavigate={navigateTo} isReadOnly={isReadOnly}/>}
       {tab==="donors"&&<Donors key={navNonce} data={data} setData={setData} isReadOnly={isReadOnly} initialView={donorsIntent?.view} initialLogDonorId={donorsIntent?.logDonorId} initialStageFilter={donorsIntent?.stageFilter} initialSelectDonorId={donorsIntent?.selectDonorId} onIntentConsumed={()=>setDonorsIntent(null)}/>}
       {tab==="grants"&&<Grants key={navNonce} data={data} setData={setData} isReadOnly={isReadOnly} initialGrantId={grantsIntent?.grantId} onIntentConsumed={()=>setGrantsIntent(null)}/>}
@@ -369,6 +374,7 @@ function AppShell() {
       {tab==="tasks"&&<Tasks data={data} setData={setData} isReadOnly={isReadOnly} onNavigate={navigateTo}/>}
       {tab==="workflows"&&<Workflows isReadOnly={isReadOnly} onNavigate={navigateTo}/>}
       {tab==="settings"&&<Settings key={navNonce} auth={auth} logout={logout} initialSection={settingsIntent?.section}/>}
+    </ErrorBoundary>
     </div>
     </div>{/* /app-main */}
     <PlanPicker open={showPlanPicker} onClose={()=>setShowPlanPicker(false)}/>
@@ -432,5 +438,8 @@ function AppShell() {
 
 // ── Root ───────────────────────────────────────────────────────────────────
 export default function App() {
-  return <AppShell />;
+  // App-level crash insurance (BUILD-21 Part 2): catches a throw anywhere in the
+  // shell (TopBar, sidebar, data adapt) that a per-tab boundary wouldn't cover,
+  // so nothing can black-screen the whole authenticated app.
+  return <ErrorBoundary label="the app"><AppShell /></ErrorBoundary>;
 }

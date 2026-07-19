@@ -489,9 +489,9 @@ export function Finance({ data, isReadOnly, onNavigate }) {
       weekStart.setDate(weekStart.getDate() - 7);
       const s = weekStart.toISOString().split("T")[0];
       const e = weekEnd.toISOString().split("T")[0];
-      return allTxns
-        .filter(t => t.fund_id === fundId && t.date >= s && t.date <= e)
-        .reduce((sum, t) => sum + (t.type === "income" ? 1 : -1) * parseFloat(t.amount), 0);
+      return (Array.isArray(allTxns) ? allTxns : [])
+        .filter(t => t && t.fund_id === fundId && t.date >= s && t.date <= e)
+        .reduce((sum, t) => sum + (t.type === "income" ? 1 : -1) * (parseFloat(t.amount) || 0), 0);
     }).reverse();
     let running = 0;
     return pts.map(v => { running += v; return running; });
@@ -1125,6 +1125,9 @@ export function Finance({ data, isReadOnly, onNavigate }) {
 
 // ── Sparkline — 8-week SVG trend line ─────────────────────────────────────
 function Sparkline({ values, width = 80, height = 28 }) {
+  // Drop any non-finite point (a null/NaN amount upstream) so bad data degrades
+  // to a flat/short line instead of emitting "NaN,NaN" SVG coords (BUILD-21).
+  values = (Array.isArray(values) ? values : []).filter(v => Number.isFinite(v));
   if (!values || values.length < 2) {
     return <svg width={width} height={height}><line x1={0} y1={height/2} x2={width} y2={height/2} stroke={T.bg3} strokeWidth="1" strokeDasharray="3,2"/></svg>;
   }

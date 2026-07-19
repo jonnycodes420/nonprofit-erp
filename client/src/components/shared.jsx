@@ -1,4 +1,5 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, Component } from "react";
+import * as Sentry from "@sentry/react";
 import { streamAI, apiFetch } from "../api";
 
 // ── Design tokens (SINGLE SOURCE OF TRUTH — BUILD-12) ───────────────────────
@@ -87,12 +88,58 @@ export function interactive(onClick, opts = {}) {
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────
-export const fmt = n => n>=1000?`$${(n/1000).toFixed(n%1000===0?0:1)}k`:`$${n.toLocaleString()}`;
-// Whole dollars stay clean ($1,200); cents-carrying amounts (possible since
-// the cover-fees NUMERIC migration) render as money, never "$140.5".
-export const fmtFull = n => { const v = Number(n) || 0; return `$${v.toLocaleString(undefined, Number.isInteger(v) ? {} : { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`; };
+// Null-safe money formatters live in ../lib/money.js (JSX-free so the Node test
+// suite can import them directly) — re-exported here so every existing
+// `import { fmt, fmtFull } from "./shared"` keeps working. See BUILD-21 Part 2.
+export { fmt, fmtFull } from "../lib/money";
 export const daysDiff = d => Math.floor((new Date()-new Date(d))/86400000);
 export const daysUntil = d => Math.floor((new Date(d)-new Date())/86400000);
+
+// ── Error boundary (BUILD-21 Part 2 — crash insurance) ──────────────────────
+// No component render crash should ever black-screen the app. This catches a
+// throw in its subtree, reports it to Sentry (already live in prod), and shows
+// a graceful "reload this view / go Home" fallback instead of a blank page — in
+// front of a live demo a caught view is survivable, a black screen is not.
+// Wrapped app-level (whole shell) AND per major surface/tab (App.jsx), plus at
+// the router root (main.jsx). `resetKey` clears a caught error when it changes
+// (e.g. the user switches tabs), so navigating away recovers automatically.
+function ErrorFallback({ label, onReload, onHome, onRetry }) {
+  return (
+    <div style={{ minHeight: 240, display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
+      <div style={{ maxWidth: 440, textAlign: "center", background: T.white, border: "1px solid " + T.bg3, borderRadius: 16, padding: "28px 26px", boxShadow: T.shadow }}>
+        <div style={{ fontSize: 22, color: T.terracotta, fontFamily: "'DM Serif Display',serif", marginBottom: 6 }}>Something went wrong</div>
+        <div style={{ fontSize: 13.5, color: T.ink3, lineHeight: 1.6, marginBottom: 18 }}>
+          This view hit an unexpected error{label ? ` while loading ${label}` : ""}. Your data is safe — the issue has been reported. Try reloading, or head back Home.
+        </div>
+        <div style={{ display: "flex", gap: 10, justifyContent: "center", flexWrap: "wrap" }}>
+          {onRetry && <button onClick={onRetry} style={{ background: "transparent", border: "1px solid " + T.bg3, borderRadius: 10, padding: "9px 16px", color: T.ink, fontSize: 13, fontWeight: 700, cursor: "pointer" }}>Try again</button>}
+          <button onClick={onReload} style={{ background: T.greenMid, border: "none", borderRadius: 10, padding: "9px 18px", color: "#fff", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>Reload</button>
+          {onHome && <button onClick={onHome} style={{ background: T.gold, border: "none", borderRadius: 10, padding: "9px 18px", color: T.ink, fontSize: 13, fontWeight: 700, cursor: "pointer" }}>Go Home</button>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export class ErrorBoundary extends Component {
+  constructor(props) { super(props); this.state = { error: null }; }
+  static getDerivedStateFromError(error) { return { error }; }
+  componentDidCatch(error, info) {
+    console.error(`[ErrorBoundary${this.props.label ? " · " + this.props.label : ""}]`, error, info);
+    try { Sentry.captureException(error, { tags: { boundary: this.props.label || "app" }, extra: { componentStack: info?.componentStack } }); } catch (_) {}
+  }
+  componentDidUpdate(prev) {
+    if (this.state.error && prev.resetKey !== this.props.resetKey) this.setState({ error: null });
+  }
+  render() {
+    if (this.state.error) {
+      const retry = () => this.setState({ error: null });
+      if (this.props.fallback) return this.props.fallback(this.state.error, retry);
+      return <ErrorFallback label={this.props.label} onRetry={retry} onReload={() => window.location.reload()} onHome={this.props.onHome} />;
+    }
+    return this.props.children;
+  }
+}
 export const SC = { major:"#1a6b4a",mid:"#3b82f6",new:"#8b5cf6",lapsed:"#f59e0b",converted:"#1a6b4a",active:"#1a6b4a",pending:"#3b82f6",prospecting:"#8b5cf6",closed:"#6b7280",high:"#ef4444",medium:"#f59e0b",low:"#6b7280" };
 export const askClaude = (system, user, onChunk) => streamAI(system, user, onChunk);
 

@@ -111,10 +111,28 @@ function RequireSuperAdmin({ children }) {
   return children;
 }
 
+// Root-level crash insurance (BUILD-21 Part 2): the last line of defense for a
+// render throw the App/per-tab boundaries don't cover (a public page, a lazy
+// route). Uses Sentry.ErrorBoundary (already imported) so this stays in the lean
+// eager entry chunk — importing components/shared here would pull that whole
+// module out of route-split. Inline fallback, no external deps.
+function RootErrorFallback() {
+  return (
+    <div style={{ minHeight: "100vh", background: "#f0ede6", display: "flex", alignItems: "center", justifyContent: "center", padding: 24, fontFamily: "'DM Sans',system-ui,sans-serif" }}>
+      <div style={{ maxWidth: 420, textAlign: "center", background: "#fff", border: "1px solid #e0dccf", borderRadius: 16, padding: "30px 26px" }}>
+        <div style={{ fontSize: 22, color: "#b8593f", fontFamily: "'DM Serif Display',Georgia,serif", marginBottom: 8 }}>Something went wrong</div>
+        <div style={{ fontSize: 13.5, color: "#5b6b60", lineHeight: 1.6, marginBottom: 18 }}>The app hit an unexpected error and it's been reported. Reloading usually clears it.</div>
+        <button onClick={() => window.location.reload()} style={{ background: "#1a6b4a", border: "none", borderRadius: 10, padding: "10px 20px", color: "#fff", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>Reload</button>
+      </div>
+    </div>
+  );
+}
+
 function Root() {
   return (
     <AuthProvider>
       <BrowserRouter>
+        <Sentry.ErrorBoundary fallback={<RootErrorFallback />}>
         <React.Suspense fallback={<RouteFallback />}>
         <Routes>
           <Route path="/"          element={<PublicOnly><Landing /></PublicOnly>} />
@@ -137,6 +155,7 @@ function Root() {
           <Route path="*"                 element={<Navigate to="/" replace />} />
         </Routes>
         </React.Suspense>
+        </Sentry.ErrorBoundary>
         <Analytics />
         <SpeedInsights />
       </BrowserRouter>

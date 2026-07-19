@@ -1,4 +1,8 @@
-const CACHE_NAME = 'steward-v2';
+// Bumped v2→v3 (BUILD-21 Part 2): the activate handler deletes every cache name
+// != CACHE_NAME, so bumping forces a one-time purge of any stale precache on
+// each client's next load — belt-and-suspenders against a poisoned bundle
+// (the SW is already network-first, and Vite content-hashes JS/CSS).
+const CACHE_NAME = 'steward-v3';
 const STATIC_ASSETS = ['/', '/index.html', '/offline.html'];
 
 self.addEventListener('install', event => {
