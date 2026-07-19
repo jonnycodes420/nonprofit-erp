@@ -114,6 +114,39 @@ async function gift(org, id, donor, amount, campaignName) {
   const ov = (await api("GET", "/fundraising/overview", tokA)).body;
   ok("overview exposes rollup + goals for the header rework", ov.rollup && Array.isArray(ov.goals) && ov.goals.length === 4);
 
+  // ── Display consistency across the three surfaces (FIX 2026-07-19) ─────────
+  // Home + Overview + the Campaigns sub-tab must tell the SAME story about the
+  // umbrella. Home & Overview read /fundraising/overview.goals; Campaigns now
+  // reads that same enriched portfolio (it used to read the FLAT
+  // /fundraising/campaigns, where the umbrella showed its own $0 direct gifts
+  // and "behind pace" while its children funded it — the reported bug).
+  const goalsEp = (await api("GET", "/fundraising/goals", tokA)).body.goals;   // /fundraising/goals
+  const flatRows = (await api("GET", "/fundraising/campaigns", tokA)).body;    // the OLD Campaigns source
+  const uOv = ov.goals.find(g => g.id === "g_annual");                          // Home/Overview/Campaigns source
+  const uGe = goalsEp.find(g => g.id === "g_annual");
+  const uFlat = flatRows.find(r => r.id === "g_annual");
+  // The umbrella's roll-up figures are byte-identical wherever a surface reads
+  // the portfolio — raised, percent (capped + uncapped), and pace all agree.
+  ok("umbrella raised identical across surfaces (roll-up = Σ children, not $0)",
+    uOv.rolledRaised === uGe.rolledRaised && uOv.rolledRaised === (uOv.childRaised) && uOv.rolledRaised > 0, uOv.rolledRaised);
+  ok("umbrella percent identical across surfaces",
+    uOv.rolledPercent === uGe.rolledPercent && uOv.rolledRawPercent === uGe.rolledRawPercent);
+  ok("umbrella pace identical across surfaces (never 'behind' while children fund it)",
+    uOv.rolledPaceState === uGe.rolledPaceState && uOv.rolledPaceState !== "behind", uOv.rolledPaceState);
+  // Why we switched the Campaigns tab off the flat rows: the flat row shows the
+  // umbrella at its OWN direct gifts ($0), which would render "$0 · behind".
+  ok("flat campaign row exposes the umbrella at its own $0 direct gifts (the bug source)",
+    uFlat.raised === 0 && uOv.rolledRaised !== uFlat.raised, { flat: uFlat.raised, rolled: uOv.rolledRaised });
+  // Every surface renders TOP-LEVEL goals; the card count equals the header
+  // count, and children are nested INSIDE the umbrella (never flat peers).
+  const activeTop = ov.goals.filter(g => g.isTopLevel && g.lifecycle !== "ended");
+  ok("top-level active card count == rollup.activeGoalCount (cards match header)",
+    activeTop.length === ov.rollup.activeGoalCount && activeTop.length === 2, activeTop.length);
+  ok("children are NOT top-level (nested under umbrella, not counted as peers)",
+    ov.goals.filter(g => g.parentGoalId).every(g => !g.isTopLevel) && ov.goals.filter(g => g.parentGoalId).length === 2);
+  ok("umbrella carries its child ids for nesting under one card",
+    uOv.isOverarching && uOv.childCount === 2 && uOv.childIds.length === 2);
+
   // ── Category + parent validation via the API ──────────────────────────────
   ok("POST goal with bad category → falls back to project (still 201)",
     (await api("POST", "/fundraising/campaigns", tokA, { name: "Bad Cat", goalAmount: 100, goalCategory: "nonsense" })).body.goalCategory === "project");

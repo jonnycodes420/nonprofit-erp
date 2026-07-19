@@ -497,11 +497,10 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
         const period=fundOverview.period||{};
         const many=fgRollup.activeGoalCount>=2;
         const g0=activeTop[0];
-        // The typed breakdown shows the LEAF campaigns (the actual money-movers,
-        // which carry the Annual/Capital/Project categories) — an overarching
-        // goal is summarized in the roll-up header, not repeated as a card. No
-        // double-count: the header sums top-level only; the cards are the detail.
-        const leaves=fgGoals.filter(g=>!g.isOverarching&&g.lifecycle!=="ended");
+        // The typed breakdown shows the TOP-LEVEL goals — the umbrella (with its
+        // children nested/rolled beneath it) and any standalone goal — so the
+        // card count matches the header count, exactly like the Overview tab.
+        // Children live INSIDE their umbrella, never as flat peers alongside it.
         const raised=many?fgRollup.totalRaised:g0.rolledRaised;
         const goalAmt=many?fgRollup.totalGoal:g0.goalAmount;
         const pct=(many?fgRollup.percent:g0.rolledPercent)||0;
@@ -520,7 +519,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
               <div style={{flex:"2 1 300px",minWidth:260}}>
                 <div style={{fontSize:10,fontWeight:800,letterSpacing:"0.12em",textTransform:"uppercase",color:"#8fa896",marginBottom:5}}>{many?"Fundraising — All Active Goals":"Fundraising Goal"}</div>
                 <div style={{fontSize:16,fontWeight:600,color:"#c9c2b4",marginBottom:16,maxWidth:440,display:"flex",alignItems:"center",gap:8}}>
-                  <span>{many?`${fgRollup.activeGoalCount} campaigns toward ${fmtFull(goalAmt)}`:g0.name}</span>
+                  <span>{many?`${fgRollup.activeGoalCount} goals toward ${fmtFull(goalAmt)}`:g0.name}</span>
                   {isAdmin&&(
                     <button onClick={e=>{e.stopPropagation();onNavigate("fundraising");}} title="Edit goals in Fundraising"
                       style={{background:"transparent",border:"none",padding:3,margin:0,cursor:"pointer",color:"#8fa896",display:"inline-flex",alignItems:"center",flexShrink:0}}>
@@ -535,31 +534,49 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
                 <div style={{background:"#0a120c",borderRadius:99,height:11,overflow:"hidden",marginBottom:10}}>
                   <div style={{height:"100%",width:`${pct}%`,background:`linear-gradient(90deg,${T.gold},${T.terracotta})`,borderRadius:99,transition:"width 0.6s ease"}}/>
                 </div>
-                <div style={{fontSize:13,color:"#c9c2b4"}}><strong style={{fontSize:15,color:T.gold,fontFamily:"'DM Serif Display',serif",fontWeight:400}}>{fmtFull(raised)}</strong> of {fmtFull(goalAmt)}{many?` · ${fgRollup.activeGoalCount} active campaigns`:""}</div>
+                <div style={{fontSize:13,color:"#c9c2b4"}}><strong style={{fontSize:15,color:T.gold,fontFamily:"'DM Serif Display',serif",fontWeight:400}}>{fmtFull(raised)}</strong> of {fmtFull(goalAmt)}{many?` · ${fgRollup.activeGoalCount} active goals`:""}</div>
               </div>
               {/* RIGHT — real supporting stats */}
               <div style={{flex:"1 1 200px",minWidth:180,display:"flex",flexDirection:"column",gap:10}}>
                 <GoalStat label="Pace" value={heroPace} valueColor={heroPaceCol} sub={many?"across active goals":"vs the period elapsed"}/>
                 <GoalStat label={`This ${fundOverview.periodLabel||"period"}`} value={fmtFull(period.raised||0)} sub={deltaTxt}/>
-                <GoalStat label="Active Goals" value={String(fgRollup.activeGoalCount)} sub={fgRollup.activeGoalCount===1?"campaign with a target":"campaigns with a target"}/>
+                <GoalStat label="Active Goals" value={String(fgRollup.activeGoalCount)} sub={fgRollup.activeGoalCount===1?"goal with a target":"goals with a target"}/>
               </div>
             </div>
           </div>
-          {/* Typed campaign breakdown — Annual / Capital / Project */}
-          {leaves.length>=2&&(
-            <div className="dash-goals-grid" style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(240px,1fr))",gap:12}}>
-              {leaves.map(g=>{
-                const m=catMeta(g.goalCategory);const gp=g.rolledPercent||0;
+          {/* Top-level goal breakdown — umbrella (children nested) + standalone.
+              Card count matches the header's top-level count; children live
+              inside their umbrella, not as flat peers (display-consistency FIX). */}
+          {(activeTop.length>=2||activeTop.some(g=>g.isOverarching))&&(
+            <div className="dash-goals-grid" style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(260px,1fr))",gap:12}}>
+              {activeTop.map(g=>{
+                const over=g.isOverarching;
+                const m=catMeta(g.goalCategory);
+                const gp=g.rolledPercent||0;
+                const kids=over?fgGoals.filter(x=>g.childIds.includes(x.id)):[];
                 return(
                   <div key={g.id} {...interactive(()=>onNavigate("fundraising"),{label:`Open ${g.name}`})}
-                    style={{background:T.white,border:"1px solid "+T.bg3,borderTop:`3px solid ${m.color}`,borderRadius:14,padding:"14px 16px",boxShadow:T.shadow,display:"flex",flexDirection:"column",gap:7,minWidth:0}}>
-                    <span style={{alignSelf:"flex-start",fontSize:9,fontWeight:800,letterSpacing:".08em",textTransform:"uppercase",color:m.color,background:m.color+"1e",padding:"3px 8px",borderRadius:99}}>{m.label}</span>
+                    style={{background:T.white,border:"1px solid "+T.bg3,borderTop:`3px solid ${over?T.gold:m.color}`,borderRadius:14,padding:"14px 16px",boxShadow:T.shadow,display:"flex",flexDirection:"column",gap:7,minWidth:0}}>
+                    {over
+                      ?<span style={{alignSelf:"flex-start",fontSize:9,fontWeight:800,letterSpacing:".08em",textTransform:"uppercase",color:T.ink2,background:T.bg2,padding:"3px 8px",borderRadius:99}}>Overarching</span>
+                      :<span style={{alignSelf:"flex-start",fontSize:9,fontWeight:800,letterSpacing:".08em",textTransform:"uppercase",color:m.color,background:m.color+"1e",padding:"3px 8px",borderRadius:99}}>{m.label}</span>}
                     <span style={{fontSize:13.5,fontWeight:700,color:T.ink,lineHeight:1.25,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{g.name}</span>
                     <span style={{fontSize:12,color:T.ink3}}><b style={{color:T.ink,fontSize:14}}>{fmtFull(g.rolledRaised)}</b> of {fmtFull(g.goalAmount)}</span>
                     <div style={{background:T.bg2,borderRadius:99,height:7,overflow:"hidden"}}>
-                      <div style={{height:"100%",width:`${gp}%`,background:m.color,borderRadius:99,transition:"width 0.5s ease"}}/>
+                      <div style={{height:"100%",width:`${gp}%`,background:over?T.gold:m.color,borderRadius:99,transition:"width 0.5s ease"}}/>
                     </div>
-                    <span style={{fontSize:11,fontWeight:700,color:catPaceColor(g.rolledPaceState)}}>{paceText(g.rolledPaceState)}{g.rolledOver>0?` · ${fmtFull(g.rolledOver)} over`:""}{g.isOverarching?` · ${g.childCount} rolled up`:""}</span>
+                    <span style={{fontSize:11,fontWeight:700,color:catPaceColor(g.rolledPaceState)}}>{paceText(g.rolledPaceState)}{g.rolledOver>0?` · ${fmtFull(g.rolledOver)} over`:""}</span>
+                    {over&&(
+                      <div style={{borderTop:"1px solid "+T.bg2,marginTop:2,paddingTop:7,display:"flex",flexDirection:"column",gap:5}}>
+                        <span style={{fontSize:10,fontWeight:800,letterSpacing:".06em",textTransform:"uppercase",color:T.ink3}}>Rolls up {g.childCount} goal{g.childCount===1?"":"s"}</span>
+                        {kids.map(c=>(
+                          <div key={c.id} style={{display:"flex",justifyContent:"space-between",gap:8,fontSize:11.5,color:T.ink2}}>
+                            <span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.name}</span>
+                            <span style={{color:T.ink3,flexShrink:0}}>{fmtFull(c.raised)} · {c.rawPercent??c.percent??0}%</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 );
               })}

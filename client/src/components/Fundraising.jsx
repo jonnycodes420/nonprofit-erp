@@ -114,7 +114,7 @@ export function Fundraising({ data, isReadOnly, onNavigate }) {
       )}
 
       {!loading && subtab === "campaigns" && (
-        <CampaignsView campaigns={campaigns} isReadOnly={isReadOnly} roTip={roTip}
+        <CampaignsView goals={overview?.goals || []} isReadOnly={isReadOnly} roTip={roTip}
           onNew={() => !isReadOnly && setModal({ mode: "new" })}
           onEdit={c => !isReadOnly && setModal({ mode: "edit", campaign: c })} />
       )}
@@ -144,6 +144,18 @@ const CATEGORY_META = {
   project: { label: "Project", color: T.gold600 },
   capital: { label: "Capital", color: T.greenDk },
 };
+
+// An overarching (umbrella) goal is a STRUCTURE, not a category — it rolls up
+// its typed children. It gets its own neutral designation everywhere so it
+// never reads as a duplicate of one of its children's categories (e.g. an
+// umbrella typed "annual" sitting next to a child "Annual Fund").
+function CategoryBadge({ g, style }) {
+  if (g.isOverarching) {
+    return <span style={{ fontSize: 10, fontWeight: 800, letterSpacing: "0.06em", textTransform: "uppercase", color: T.ink2, background: T.bg2, borderRadius: 99, padding: "3px 9px", whiteSpace: "nowrap", flexShrink: 0, ...style }}>Overarching</span>;
+  }
+  const cat = CATEGORY_META[g.goalCategory] || CATEGORY_META.project;
+  return <span style={{ fontSize: 10, fontWeight: 800, letterSpacing: "0.06em", textTransform: "uppercase", color: cat.color, background: cat.color + "14", borderRadius: 99, padding: "3px 9px", whiteSpace: "nowrap", flexShrink: 0, ...style }}>{cat.label}</span>;
+}
 
 function OverviewView({ overview, campaigns, onNavigate, primaryBtn, onNewCampaign, onGoto }) {
   if (!overview) return <EmptyState icon="◇" title="Nothing to show yet" message="Set a goal and start a campaign to see your fundraising momentum here." />;
@@ -292,6 +304,7 @@ function RollupThermometer({ rollup }) {
 // progress and list their children; leaf goals show their own SUM(gifts).
 function GoalCard({ g, allGoals, onClick }) {
   const cat = CATEGORY_META[g.goalCategory] || CATEGORY_META.project;
+  const accent = g.isOverarching ? T.gold600 : cat.color;
   const raised = g.isOverarching ? g.rolledRaised : g.raised;
   const percent = g.isOverarching ? g.rolledPercent : g.percent;
   const rawPercent = g.isOverarching ? g.rolledRawPercent : g.rawPercent;
@@ -300,10 +313,10 @@ function GoalCard({ g, allGoals, onClick }) {
   const children = g.isOverarching ? allGoals.filter(x => g.childIds.includes(x.id)) : [];
   return (
     <div {...interactive(onClick, { label: `View ${g.name}` })}
-      style={{ background: T.white, border: "1px solid " + T.bg3, borderLeft: `3px solid ${cat.color}`, borderRadius: 16, padding: "18px 20px", boxShadow: T.shadow, display: "flex", flexDirection: "column", gap: 12 }}>
+      style={{ background: T.white, border: "1px solid " + T.bg3, borderLeft: `3px solid ${accent}`, borderRadius: 16, padding: "18px 20px", boxShadow: T.shadow, display: "flex", flexDirection: "column", gap: 12 }}>
       <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 10 }}>
         <div style={{ fontFamily: "'DM Serif Display',serif", fontSize: 17, color: T.ink, lineHeight: 1.25, minWidth: 0 }}>{g.name}</div>
-        <span style={{ fontSize: 10, fontWeight: 800, letterSpacing: "0.06em", textTransform: "uppercase", color: cat.color, background: cat.color + "14", borderRadius: 99, padding: "3px 9px", whiteSpace: "nowrap", flexShrink: 0 }}>{cat.label}</span>
+        <CategoryBadge g={g} />
       </div>
       <Thermometer raised={raised} goal={g.goalAmount} percent={percent} rawPercent={rawPercent} over={over} paceState={paceState} />
       {g.isOverarching ? (
@@ -347,7 +360,15 @@ function GoalThermometerDark({ goal }) {
 }
 
 // ── Campaigns ───────────────────────────────────────────────────────────────
-function CampaignsView({ campaigns, isReadOnly, roTip, onNew, onEdit }) {
+// Renders the same enriched goal portfolio the Overview reads (top-level goals,
+// children nested under their umbrella) — NOT the flat campaign rows — so an
+// umbrella shows its roll-up here too, never "$0 · Behind pace" while its
+// children fund it. Top-level count == cards shown.
+function CampaignsView({ goals, isReadOnly, roTip, onNew, onEdit }) {
+  const editBtn = c => !isReadOnly ? (
+    <button onClick={() => onEdit(c)} style={{ background: "none", border: "1px solid " + T.bg3, borderRadius: 8, padding: "4px 10px", fontSize: 12, color: T.ink3, cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0 }}>Edit</button>
+  ) : null;
+  const topGoals = goals.filter(g => g.isTopLevel);
   return (
     <div>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", marginBottom: 16, gap: 12, flexWrap: "wrap" }}>
@@ -355,7 +376,7 @@ function CampaignsView({ campaigns, isReadOnly, roTip, onNew, onEdit }) {
           style={{ background: T.gold, border: "none", borderRadius: 10, padding: "9px 16px", color: T.ink, fontSize: 13, fontWeight: 700, cursor: isReadOnly ? "not-allowed" : "pointer", opacity: isReadOnly ? 0.5 : 1, whiteSpace: "nowrap" }}>+ New campaign</button>
       </div>
 
-      {campaigns.length === 0 ? (
+      {goals.length === 0 ? (
         <>
           <StartHere line="A campaign is a specific ask — Spring Appeal, a capital push, a year-end drive. Give it a goal and a deadline, and Steward tracks every attributed gift toward it automatically." actionLabel="+ Start your first campaign" onAction={onNew} dismissKey="fundraising_campaigns_intro" />
           <div style={{ marginTop: 20 }}>
@@ -363,30 +384,64 @@ function CampaignsView({ campaigns, isReadOnly, roTip, onNew, onEdit }) {
           </div>
         </>
       ) : (
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(320px,1fr))", gap: 16 }}>
-          {campaigns.map(c => (
-            <div key={c.id} style={{ background: T.white, border: "1px solid " + T.bg3, borderRadius: 16, padding: "20px 22px", boxShadow: T.shadow, display: "flex", flexDirection: "column", gap: 14 }}>
-              <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 10 }}>
-                <div style={{ minWidth: 0 }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                    <div style={{ fontFamily: "'DM Serif Display',serif", fontSize: 18, color: T.ink, lineHeight: 1.25 }}>{c.name}</div>
-                    {CATEGORY_META[c.goalCategory] && <span style={{ fontSize: 10, fontWeight: 800, letterSpacing: "0.06em", textTransform: "uppercase", color: CATEGORY_META[c.goalCategory].color, background: CATEGORY_META[c.goalCategory].color + "14", borderRadius: 99, padding: "2px 8px" }}>{CATEGORY_META[c.goalCategory].label}</span>}
-                  </div>
-                  <div style={{ fontSize: 11, color: T.ink3, marginTop: 3 }}>
-                    {c.lifecycle === "upcoming" ? "Upcoming" : c.lifecycle === "ended" ? "Ended" : "Active"}
-                    {daysLeftText(c.daysLeft) && c.lifecycle === "active" ? ` · ${daysLeftText(c.daysLeft)}` : ""}
-                    {c.parentGoalId ? " · rolls up" : ""}
-                  </div>
-                </div>
-                {!isReadOnly && <button onClick={() => onEdit(c)} style={{ background: "none", border: "1px solid " + T.bg3, borderRadius: 8, padding: "4px 10px", fontSize: 12, color: T.ink3, cursor: "pointer", whiteSpace: "nowrap" }}>Edit</button>}
-              </div>
-              <Thermometer raised={c.raised} goal={c.goalAmount} percent={c.percent} rawPercent={c.rawPercent} over={c.over} paceState={c.paceState} />
-              <div style={{ fontSize: 12, color: T.ink3, borderTop: "1px solid " + T.bg2, paddingTop: 12 }}>
-                {c.donorCount} donor{c.donorCount === 1 ? "" : "s"}
-                {c.endDate ? ` · closes ${String(c.endDate).slice(0, 10)}` : ""}
-              </div>
-            </div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(340px,1fr))", gap: 16 }}>
+          {topGoals.map(g => (
+            <CampaignCard key={g.id} g={g} allGoals={goals} editBtn={editBtn} />
           ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// One top-level campaign card. An umbrella shows its ROLL-UP thermometer (raised
+// = Σ children, pace off that total) + its children nested beneath, each still
+// editable. A standalone goal shows its own SUM(gifts).
+function CampaignCard({ g, allGoals, editBtn }) {
+  const over = g.isOverarching;
+  const children = over ? allGoals.filter(x => g.childIds.includes(x.id)) : [];
+  return (
+    <div style={{ background: T.white, border: "1px solid " + T.bg3, borderRadius: 16, padding: "20px 22px", boxShadow: T.shadow, display: "flex", flexDirection: "column", gap: 14 }}>
+      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 10 }}>
+        <div style={{ minWidth: 0 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+            <div style={{ fontFamily: "'DM Serif Display',serif", fontSize: 18, color: T.ink, lineHeight: 1.25 }}>{g.name}</div>
+            <CategoryBadge g={g} />
+          </div>
+          <div style={{ fontSize: 11, color: T.ink3, marginTop: 3 }}>
+            {over ? `Rolls up ${g.childCount} goal${g.childCount === 1 ? "" : "s"}` : (g.lifecycle === "upcoming" ? "Upcoming" : g.lifecycle === "ended" ? "Ended" : "Active")}
+            {!over && daysLeftText(g.daysLeft) && g.lifecycle === "active" ? ` · ${daysLeftText(g.daysLeft)}` : ""}
+          </div>
+        </div>
+        {editBtn(g)}
+      </div>
+      {over ? (
+        <Thermometer raised={g.rolledRaised} goal={g.goalAmount} percent={g.rolledPercent} rawPercent={g.rolledRawPercent} over={g.rolledOver} paceState={g.rolledPaceState} />
+      ) : (
+        <Thermometer raised={g.raised} goal={g.goalAmount} percent={g.percent} rawPercent={g.rawPercent} over={g.over} paceState={g.paceState} />
+      )}
+      {over ? (
+        <div style={{ borderTop: "1px solid " + T.bg2, paddingTop: 12, display: "flex", flexDirection: "column", gap: 10 }}>
+          {children.map(c => {
+            const cat = CATEGORY_META[c.goalCategory] || CATEGORY_META.project;
+            return (
+              <div key={c.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+                <div style={{ minWidth: 0, display: "flex", flexDirection: "column", gap: 2 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>
+                    <span style={{ width: 7, height: 7, borderRadius: 99, background: cat.color, flexShrink: 0 }} />
+                    <span style={{ fontSize: 13, fontWeight: 600, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.name}</span>
+                  </div>
+                  <span style={{ fontSize: 11.5, color: T.ink3 }}>{fmtFull(c.raised)} of {fmtFull(c.goalAmount)} · {c.rawPercent ?? c.percent ?? 0}%</span>
+                </div>
+                {editBtn(c)}
+              </div>
+            );
+          })}
+        </div>
+      ) : (
+        <div style={{ fontSize: 12, color: T.ink3, borderTop: "1px solid " + T.bg2, paddingTop: 12 }}>
+          {g.donorCount} donor{g.donorCount === 1 ? "" : "s"}
+          {g.endDate ? ` · closes ${String(g.endDate).slice(0, 10)}` : ""}
         </div>
       )}
     </div>
