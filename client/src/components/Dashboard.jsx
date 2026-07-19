@@ -487,6 +487,11 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
         const period=fundOverview.period||{};
         const many=fgRollup.activeGoalCount>=2;
         const g0=activeTop[0];
+        // The typed breakdown shows the LEAF campaigns (the actual money-movers,
+        // which carry the Annual/Capital/Project categories) — an overarching
+        // goal is summarized in the roll-up header, not repeated as a card. No
+        // double-count: the header sums top-level only; the cards are the detail.
+        const leaves=fgGoals.filter(g=>!g.isOverarching&&g.lifecycle!=="ended");
         const raised=many?fgRollup.totalRaised:g0.rolledRaised;
         const goalAmt=many?fgRollup.totalGoal:g0.goalAmount;
         const pct=(many?fgRollup.percent:g0.rolledPercent)||0;
@@ -528,9 +533,9 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
             </div>
           </div>
           {/* Typed campaign breakdown — Annual / Capital / Project */}
-          {many&&(
+          {leaves.length>=2&&(
             <div className="dash-goals-grid" style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(240px,1fr))",gap:12}}>
-              {activeTop.map(g=>{
+              {leaves.map(g=>{
                 const m=catMeta(g.goalCategory);const gp=g.rolledPercent||0;
                 return(
                   <div key={g.id} {...interactive(()=>onNavigate("fundraising"),{label:`Open ${g.name}`})}

@@ -1,9 +1,13 @@
 // BUILD-21 Part 2 — Funds view crash insurance.
 // Local scratch server + Postgres (tests/README.md recipe). No external creds.
 //
-// The Funds view black-screened when a money formatter met a null/negative/
-// empty value (fmt(null) → null.toLocaleString() threw). This proves the two
-// layers of the fix that ARE node-testable:
+// The Funds view black-screened on a ReferenceError — the subtab read a
+// variable `fundBalances` that was never defined (the real map is `_fbMap`);
+// fmt(null) throwing was a second latent hazard. Both are fixed. This proves
+// the layers that ARE node-testable:
+//   0. source guard: the Funds subtab references a DEFINED balance map, not the
+//      bare `fundBalances` that caused the crash (a render-time ReferenceError
+//      can't be caught by this API suite, so this guards the exact regression)
 //   1. the money formatters (client/src/lib/money.js) are null-safe — never
 //      throw, always return a finite "$…" string — for null/undefined/NaN/
 //      empty/string/negative/large-negative/cents inputs (the crash root cause)
@@ -15,6 +19,8 @@
 // verified in-browser at DSF3 — see docs/build21-*; a class error boundary can't
 // be exercised without a DOM renderer, which this suite deliberately isn't.)
 
+const fs = require("fs");
+const path = require("path");
 const bcrypt = require("bcryptjs");
 const { ok, summary, login, api, q, closeDb } = require("./helpers");
 
@@ -70,7 +76,18 @@ async function testMoneyHelpers() {
   ok("fmtFull renders zero", fmtFull(0) === "$0", fmtFull(0));
 }
 
+function testFundsSourceGuard() {
+  const src = fs.readFileSync(path.join(__dirname, "..", "client", "src", "components", "Finance.jsx"), "utf8");
+  // The crash was `const fb = fundBalances[f.id]` — `fundBalances` is undefined
+  // (the real map is `_fbMap`). Guard the exact regression.
+  // `finFundBalances` uses a capital F, so a lowercase-f `fundBalances[` match is
+  // unambiguously the buggy bare reference.
+  ok("Funds subtab does not reference the undefined `fundBalances[` map", !/fundBalances\[/.test(src), (src.match(/.{0,14}fundBalances\[/g) || []));
+  ok("Funds subtab reads the defined `_fbMap[f.id]`", src.includes("_fbMap[f.id]"));
+}
+
 async function run() {
+  testFundsSourceGuard();
   await testMoneyHelpers();
   await fixture();
   const a = await login("funds-a@test.local");

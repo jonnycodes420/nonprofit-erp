@@ -363,10 +363,10 @@ export function Finance({ data, isReadOnly, onNavigate }) {
   // client computation only until the summary arrives.
   const _fbMap = {};
   funds.forEach(f => { _fbMap[f.id] = { name: f.name, restricted: f.restricted, income: 0, expense: 0 }; });
-  allTxns.forEach(t => {
-    if (!t.fund_id || !_fbMap[t.fund_id]) return;
-    if (t.type === "income") _fbMap[t.fund_id].income += parseFloat(t.amount);
-    else _fbMap[t.fund_id].expense += parseFloat(t.amount);
+  (Array.isArray(allTxns) ? allTxns : []).forEach(t => {
+    if (!t || !t.fund_id || !_fbMap[t.fund_id]) return;
+    if (t.type === "income") _fbMap[t.fund_id].income += (parseFloat(t.amount) || 0);
+    else _fbMap[t.fund_id].expense += (parseFloat(t.amount) || 0);
   });
   const finFundBalances = summary?.fundBalances
     || Object.values(_fbMap).map(f => ({ ...f, balance: f.income - f.expense }));
@@ -797,7 +797,7 @@ export function Finance({ data, isReadOnly, onNavigate }) {
           {funds.length === 0
             ? <EmptyState icon="◇" title="No funds yet" message="Create your first fund — most orgs start with one General Operating fund and add restricted funds as grants and designated gifts come in."/>
             : funds.map((f, i) => {
-            const fb = fundBalances[f.id] || { income:0, expense:0 };
+            const fb = _fbMap[f.id] || { income:0, expense:0 };
             const balance = fb.income - fb.expense;
             const sparkVals = getFundSparkline(f.id);
             return (
