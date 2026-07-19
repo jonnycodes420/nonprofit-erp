@@ -47,9 +47,36 @@ DATABASE_URL="postgresql://steward@localhost:5544/steward_loadtest" node scripts
 Note: `/health` reports `db:true` before `initSchema` finishes — wait for the
 "✅ Database ready" log line, not the health endpoint.
 
-## Run
+## The standard run (BUILD-23)
+
+`bash tests/run-all.sh` (or `npm test`) runs every self-contained suite — the
+ones needing only the scratch server + scratch Postgres — and **fails if any
+fail**. This is the gate a future build must keep green. It includes
+`consistency-e2e.test.js`, the forward guardrail against the gift/webhook
+**duplication class**. Boot the server with a known webhook secret first so the
+online-gift path is drivable:
 
 ```bash
+DATABASE_URL="postgresql://steward@localhost:5544/steward_loadtest" \
+  JWT_SECRET=local-test-secret PORT=5601 DISABLE_RATE_LIMIT=1 \
+  RESEND_API_KEY=re_dummy_local STRIPE_SECRET_KEY=sk_test_dummy \
+  STRIPE_WEBHOOK_SECRET=whsec_localtest node server.js
+bash tests/run-all.sh
+```
+
+Four suites are **not** in the standard run (extra setup — run individually):
+`donors-pagination` + `reports` (`node scripts/seed-loadtest.js` first),
+`email-footer` (mock Resend on :5602), `export-zip` (`unzip` + loadtest org),
+`cover-fees` (real Stripe test creds).
+
+## Run (individual)
+
+```bash
+node tests/consistency-e2e.test.js    # BUILD-23: one gift flows SINGLY through
+                                       # every surface; webhook/digest/workflow
+                                       # idempotency; pipeline; empty/negative
+                                       # render; org isolation. THE duplication
+                                       # guardrail. Needs STRIPE_WEBHOOK_SECRET.
 node tests/donors-pagination.test.js   # BUILD-06 Phase A: pagination/filters/summaries/export parity + perf
 node tests/reports.test.js             # BUILD-02 debt: report numbers vs hand-computed fixture
 node tests/export-zip.test.js          # BUILD-03 debt: zip contents, edit_token, injection guard, access matrix

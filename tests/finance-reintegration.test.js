@@ -33,7 +33,7 @@ const YEAR = new Date().getFullYear();
 
 async function fixture() {
   for (const org of [ORG_A, ORG_B]) {
-    for (const t of ["fin_transactions", "budgets", "accounts", "fin_funds", "gifts", "interactions", "donors", "users"])
+    for (const t of ["fin_audit_log", "fin_transactions", "budgets", "accounts", "fin_funds", "gifts", "interactions", "donors", "users"])
       await q(`DELETE FROM ${t} WHERE org_id=$1`, [org]).catch(() => {});
     await q(`DELETE FROM orgs WHERE id=$1`, [org]);
   }

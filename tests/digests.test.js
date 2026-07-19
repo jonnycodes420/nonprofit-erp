@@ -154,7 +154,11 @@ async function seedTask(o, title, donorId, due, assignedTo = null, assignedName 
   ok("Core weekly composes its own gift", coreRun.weekly.sent[0].sections.totals.giftTotal === 300, coreRun.weekly.sent[0].sections.totals);
   ok("Core monthly per-officer report is suppressed ([Team] only)", coreRun.monthly.sent.length === 0, coreRun.monthly.sent);
   const corePrev = await api("GET", "/digests/preview?type=monthly", coreTok);
-  ok("Core monthly preview → 403 plan_required", corePrev.status === 403 && corePrev.body.error === "plan_required", corePrev.status);
+  // BUILD-20 Part 4 changed team-gated READS from a bare 403 to visible-but-locked:
+  // Core's monthly preview now returns 200 with locked:true (its own report as a
+  // pure read), matching reports-cadence.test.js. (Updated in BUILD-23 — the old
+  // 403 assertion had drifted from the product; the standard run now catches this.)
+  ok("Core monthly preview → 200 locked (visible-but-locked read)", corePrev.status === 200 && corePrev.body.locked === true, { status: corePrev.status, locked: corePrev.body?.locked });
   const coreWkPrev = await api("GET", "/digests/preview?type=weekly", coreTok);
   ok("Core weekly preview → 200 (org scope)", coreWkPrev.status === 200 && coreWkPrev.body.scope === "org", coreWkPrev.status);
 
