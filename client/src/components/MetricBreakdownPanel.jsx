@@ -1,3 +1,5 @@
+import { useEffect, useRef } from "react";
+import { createPortal } from "react-dom";
 import { T, Spin } from "./shared";
 
 // Generic "click a summary metric → ranked, donor-linked drill-down" modal.
@@ -15,15 +17,45 @@ import { T, Spin } from "./shared";
 //     days since contact") — metric-specific fields live here, not in props.
 //   - value: caller-formatted primary number for this row (e.g. "18.4").
 export default function MetricBreakdownPanel({ open, onClose, title, explanation, total, totalLabel, totalCount, rows = [], loading = false, onSelectDonor }) {
+  const cardRef = useRef(null);
+  const returnFocusRef = useRef(null);
+
+  // Esc-to-close + focus management. The panel is portalled to <body> (below)
+  // so it escapes the Dashboard's `fade-in` root — whose retained
+  // `transform: translateY(0)` (animation-fill-mode:both) makes it the
+  // containing block for position:fixed, which used to drop this modal at the
+  // vertical middle of the whole tall page (below the fold). Portalling to
+  // body restores true viewport-centred `position:fixed`.
+  useEffect(() => {
+    if (!open) return;
+    returnFocusRef.current = document.activeElement;
+    const onKey = e => { if (e.key === "Escape") { e.stopPropagation(); onClose(); } };
+    window.addEventListener("keydown", onKey);
+    // Focus the panel so Esc/tab land here and screen readers announce it.
+    const id = requestAnimationFrame(() => cardRef.current?.focus());
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      cancelAnimationFrame(id);
+      // Return focus to whatever opened the panel.
+      const el = returnFocusRef.current;
+      if (el && typeof el.focus === "function") el.focus();
+    };
+  }, [open, onClose]);
+
   if (!open) return null;
-  return (
+  return createPortal((
     <div
       onClick={onClose}
-      style={{ position: "fixed", inset: 0, background: "rgba(15,26,18,0.5)", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}
+      role="dialog"
+      aria-modal="true"
+      aria-label={title || "Details"}
+      style={{ position: "fixed", inset: 0, background: "rgba(15,26,18,0.5)", zIndex: 400, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}
     >
       <div
+        ref={cardRef}
+        tabIndex={-1}
         onClick={e => e.stopPropagation()}
-        style={{ background: T.white, borderRadius: T.radiusLg, maxWidth: 640, width: "100%", maxHeight: "82vh", display: "flex", flexDirection: "column", overflow: "hidden", boxShadow: T.shadowLg }}
+        style={{ background: T.white, borderRadius: T.radiusLg, maxWidth: 640, width: "100%", maxHeight: "82vh", display: "flex", flexDirection: "column", overflow: "hidden", boxShadow: T.shadowLg, outline: "none" }}
       >
         <div style={{ padding: "20px 24px", borderBottom: "1px solid " + T.bg3 }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
@@ -67,5 +99,5 @@ export default function MetricBreakdownPanel({ open, onClose, title, explanation
         </div>
       </div>
     </div>
-  );
+  ), document.body);
 }

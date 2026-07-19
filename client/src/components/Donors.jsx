@@ -2204,10 +2204,28 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
   const [planTier,setPlanTier]=useState("core");
   const [askOpen,setAskOpen]=useState(false);
   const [askName,setAskName]=useState("");const [askAmt,setAskAmt]=useState("");
+  // Smart-move suggestions (BUILD-22): surfaced, never auto-applied. `dismissed`
+  // is per-session local; accept applies via the move route (logged on Team) or
+  // the Core-safe stage PATCH.
+  const [moveSuggestions,setMoveSuggestions]=useState([]);
+  const [dismissedSug,setDismissedSug]=useState([]);
   const refreshPipeline=()=>{
     apiFetch(`/donors/${donor.id}/moves`).then(m=>setMoves(Array.isArray(m)?m:[])).catch(()=>setMoves([]));
     apiFetch(`/donors/${donor.id}/opportunities`).then(o=>setOpps(Array.isArray(o)?o:[])).catch(()=>setOpps([]));
+    apiFetch(`/donors/${donor.id}/move-suggestions`).then(r=>setMoveSuggestions(r?.suggestions||[])).catch(()=>setMoveSuggestions([]));
   };
+  const acceptSuggestion=async(sug)=>{
+    setDismissedSug(s=>[...s,sug.signal]);
+    if(!sug.toStage) return; // advisory-only signal (e.g. "going quiet")
+    if(planTier==="team"){
+      // Logs a move (from original stage → toStage) with the signal as its
+      // description. Core → this route 403s, so the PATCH below carries it.
+      try{ await apiFetch(`/pipeline/${donor.id}/move`,{method:"POST",body:JSON.stringify({toStage:sug.toStage,description:`Accepted suggestion — ${sug.reason}`})}); }catch(_){}
+    }
+    onStageChange&&onStageChange(donor.id,sug.toStage); // parent UI + Core-safe stage PATCH
+    refreshPipeline();
+  };
+  const dismissSuggestion=sug=>setDismissedSug(s=>[...s,sug.signal]);
   const addAsk=async()=>{
     const amt=parseFloat(askAmt);if(!(amt>0)){alert("Enter a positive target ask amount.");return;}
     try{await apiFetch(`/donors/${donor.id}/opportunities`,{method:"POST",body:JSON.stringify({name:askName.trim()||"Ask",targetAmount:amt})});
@@ -3506,6 +3524,34 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
               })}
             </div>
           </div>}
+
+          {(() => {
+            // Smart-move suggestions (BUILD-22) — surfaced, never auto-applied.
+            // Lapsed is set automatically elsewhere; these are the judgment
+            // moves the officer owns, offered one-click.
+            const shown=moveSuggestions.filter(s=>!dismissedSug.includes(s.signal));
+            if(!shown.length) return null;
+            return (
+              <div>
+                <div style={{fontSize:10,fontWeight:800,textTransform:"uppercase",letterSpacing:"0.12em",color:"#c9a84c",marginBottom:8}}>Suggested Move</div>
+                <div style={{display:"flex",flexDirection:"column",gap:8}}>
+                  {shown.map(s=>(
+                    <div key={s.signal} style={{background:"#1a2e1f",border:"1px solid #4a3f1f",borderLeft:"3px solid #c9a84c",borderRadius:10,padding:"10px 12px"}}>
+                      <div style={{fontSize:12,color:"#f0ede6",lineHeight:1.5,marginBottom:8}}>{s.reason}</div>
+                      <div style={{display:"flex",gap:6}}>
+                        {s.toStage&&!isReadOnly&&(
+                          <button onClick={()=>acceptSuggestion(s)} style={{background:"#c9a84c",border:"none",borderRadius:7,padding:"5px 12px",color:"#0f1a12",fontSize:11,fontWeight:800,cursor:"pointer",fontFamily:"inherit"}}>
+                            Accept → {STAGES.find(st=>st.id===s.toStage)?.label||s.toStage}
+                          </button>
+                        )}
+                        <button onClick={()=>dismissSuggestion(s)} style={{background:"transparent",border:"1px solid #2d4a35",borderRadius:7,padding:"5px 12px",color:"#8fa896",fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>Dismiss</button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            );
+          })()}
 
           <div>
             <div style={{fontSize:10,fontWeight:800,textTransform:"uppercase",letterSpacing:"0.12em",color:"#8fa896",marginBottom:8}}>Move Stage</div>

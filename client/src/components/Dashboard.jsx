@@ -437,8 +437,13 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
   const paceText=s=>s==="met"?"Goal met":s==="on_track"?"On pace":s==="behind"?"Behind pace":"In progress";
   const catPaceColor=s=>s==="behind"?T.terracotta:s==="met"?T.gold:"#8fa896";
 
+  // NB: no `fade-in` on the dash-root below. `.fade-in`'s final keyframe retains
+  // `transform: translateY(0)` (animation-fill-mode:both), which would make
+  // dash-root the containing block for every position:fixed descendant —
+  // dropping the set-goal modal (and any drill-down not portalled to body) at
+  // the vertical middle of the whole tall page, below the fold (BUILD-22 Part 2).
   return(
-    <div className="dash-root dash-bleed fade-in" style={{background:T.bgDeep,margin:"-20px -24px -28px -24px",padding:"20px 24px 28px 24px",display:"flex",flexDirection:"column",gap:16,minHeight:"calc(100vh - 92px)"}}>
+    <div className="dash-root dash-bleed" style={{background:T.bgDeep,margin:"-20px -24px -28px -24px",padding:"20px 24px 28px 24px",display:"flex",flexDirection:"column",gap:16,minHeight:"calc(100vh - 92px)"}}>
 
       {/* Greeting lives on the page's own cream background, between the nav
           and the goal card — not inside the dark card, where it read as a

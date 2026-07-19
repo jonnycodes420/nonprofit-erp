@@ -239,7 +239,7 @@ app.post("/stripe/webhook", express.raw({ type: "application/json" }), async (re
                  gift_count = gift_count + 1,
                  last_gift_date = GREATEST(COALESCE(last_gift_date,'0001-01-01')::date, $2::date)::text,
                  last_gift_amount = CASE WHEN ($2::date >= COALESCE(last_gift_date,'0001-01-01')::date) THEN $3 ELSE last_gift_amount END,
-                 stage = CASE WHEN stage = 'lapsed' THEN 'qualify' WHEN stage IN ('prospect','cultivate') THEN 'steward' ELSE stage END
+                 stage = CASE WHEN stage = 'lapsed' THEN 'steward' WHEN stage IN ('prospect','cultivate') THEN 'steward' ELSE stage END
                WHERE id = $4`,
               [amount, today, amount, donorId]
             );
@@ -247,6 +247,11 @@ app.post("/stripe/webhook", express.raw({ type: "application/json" }), async (re
             await run("INSERT INTO interactions (id,org_id,donor_id,type,note,date) VALUES ($1,$2,$3,'gift',$4,$5)",
               ["i_"+uuid().slice(0,8), orgId, donorId, `Online donation: $${amount} via Steward Giving Page`, today]
             ).catch(()=>{});
+            // BUILD-22 — auto-unlapse is logged as a move + timeline entry so a
+            // lapsed→steward jump on an online gift is transparent, not silent.
+            if (wasLapsed) {
+              await recordAutoMove(orgId, donorId, "lapsed", "steward", "Auto: re-engaged — new gift").catch(e => console.error("[smart-move] webhook unlapse:", e.message));
+            }
             // Re-engagement task for previously lapsed donors
             if (wasLapsed) {
               await run(
@@ -817,6 +822,129 @@ async function recordMove(orgId, donorId, officerId, officerName, fromStage, toS
     "INSERT INTO moves (id,org_id,donor_id,officer_id,officer_name,from_stage,to_stage,description) VALUES (?,?,?,?,?,?,?,?)",
     [id, orgId, donorId, officerId || null, officerName || "", fromStage || null, toStage, description]);
   return id;
+}
+
+// ── Smart moves (BUILD-22) ─────────────────────────────────────────────────
+// Jonathan's rule: the officer owns stage. The software SUGGESTS every stage
+// move and never auto-advances a judgment stage — with ONE exception. Lapsed is
+// a fact about giving recency, not a judgment, so it's set automatically (and
+// stays editable). LAPSE_DAYS is the SINGLE lapse definition, matching
+// inferStage's `> 365` band and the pipeline "Lapsed" column — do not invent a
+// second lapse rule.
+const LAPSE_DAYS = 365;
+// System-authored moves (auto-lapse / auto-unlapse) carry a null officer_id and
+// this name, so they're visibly automatic in the timeline and distinguishable
+// from human moves (the override-wins guard keys off officer_id IS NOT NULL).
+const AUTO_MOVE_OFFICER = "Steward (automatic)";
+
+// Log an auto-move: a moves row (transparent history) + a stage_change
+// interaction (donor timeline), never a silent stage change.
+async function recordAutoMove(orgId, donorId, fromStage, toStage, description) {
+  await recordMove(orgId, donorId, null, AUTO_MOVE_OFFICER, fromStage, toStage, description);
+  try {
+    await run(
+      "INSERT INTO interactions (id,org_id,donor_id,type,note,date,logged_by_name) VALUES (?,?,?,?,?,?,?)",
+      ["int_" + uuid().slice(0, 8), orgId, donorId, "stage_change",
+       `Moved ${fromStage} → ${toStage}: ${description}`,
+       new Date().toISOString().slice(0, 10), AUTO_MOVE_OFFICER]);
+  } catch (e) { console.error("[smart-move] interaction log:", e.message); }
+}
+
+// Auto-un-lapse: a lapsed donor just gave, so move them out of Lapsed to
+// Steward automatically ("they just gave"), logged, editable. Called from every
+// gift-insert path with the donor's PRE-gift stage. No-op unless they were
+// lapsed. The UPDATE is guarded on stage='lapsed' so a concurrent human move
+// can't be clobbered.
+async function autoUnlapseOnGift(orgId, donorId, preStage) {
+  if (preStage !== "lapsed") return false;
+  const upd = await query(
+    "UPDATE donors SET stage='steward', updated_at=NOW() WHERE id=? AND org_id=? AND stage='lapsed' RETURNING id",
+    [donorId, orgId]);
+  if (!upd.length) return false; // someone moved them first — respect it
+  await recordAutoMove(orgId, donorId, "lapsed", "steward", "Auto: re-engaged — new gift");
+  return true;
+}
+
+// Auto-lapse sweep for ONE org. Automatic (no suggestion) — Lapsed is a fact.
+// Guards make it safe: only donors with PRIOR GIVING (a no-gift prospect is a
+// prospect, not lapsed); never a donor being actively solicited (stage
+// 'solicit') or with an OPEN ASK (mid-cultivation); and never one an officer
+// has deliberately placed forward SINCE their last gift (officer override
+// wins). Returns the count moved. Editable afterward regardless.
+async function autoLapseOrg(orgId) {
+  const cutoff = new Date(Date.now() - LAPSE_DAYS * 86400000).toISOString().slice(0, 10);
+  const rows = await query(
+    `SELECT d.id, d.stage, d.last_gift_date FROM donors d
+      WHERE d.org_id=? AND d.deleted_at IS NULL
+        AND d.gift_count > 0
+        AND d.last_gift_date IS NOT NULL AND d.last_gift_date <> ''
+        AND d.last_gift_date::date < ?::date
+        AND d.stage NOT IN ('lapsed','solicit')
+        AND NOT EXISTS (SELECT 1 FROM opportunities o
+                          WHERE o.org_id=d.org_id AND o.donor_id=d.id AND o.status='open')
+        AND NOT EXISTS (SELECT 1 FROM moves m
+                          WHERE m.org_id=d.org_id AND m.donor_id=d.id
+                            AND m.officer_id IS NOT NULL AND m.to_stage <> 'lapsed'
+                            AND m.created_at::date > d.last_gift_date::date)
+      LIMIT 200`,
+    [orgId, cutoff]);
+  let moved = 0;
+  const months = Math.round(LAPSE_DAYS / 30);
+  for (const d of rows) {
+    // Guard on stage again in the UPDATE so a human move landing between the
+    // SELECT and here isn't clobbered.
+    const upd = await query(
+      "UPDATE donors SET stage='lapsed', updated_at=NOW() WHERE id=? AND org_id=? AND stage=? RETURNING id",
+      [d.id, orgId, d.stage]);
+    if (!upd.length) continue;
+    await recordAutoMove(orgId, d.id, d.stage, "lapsed", `Auto: lapsed — no gift in ${months} months`);
+    moved++;
+  }
+  return moved;
+}
+
+// Scheduled sweep — runs on the existing 5-min cadence (same pattern as
+// processWorkflowSweeps / processDigests; NOT a second scheduler). Auto-lapse
+// applies to EVERY onboarded org (it's a core smart-move, not gated on a
+// workflow recipe being enabled).
+async function processSmartMoves() {
+  try {
+    const orgs = await query("SELECT id FROM orgs WHERE onboarding_complete=1");
+    for (const { id } of orgs) {
+      try { await autoLapseOrg(id); }
+      catch (e) { console.error("[smart-move] org", id, e.message); }
+    }
+  } catch (e) { console.error("[smart-move] sweep:", e.message); }
+}
+setTimeout(() => processSmartMoves().catch(console.error), 40000);
+setInterval(() => processSmartMoves().catch(console.error), 5 * 60 * 1000);
+
+// Signal-based move SUGGESTIONS for a donor (never auto-applied). The officer
+// reviews and one-click accepts (which applies via the normal move route) or
+// dismisses. Pure function over the donor row + light context.
+function computeMoveSuggestions(donor, ctx = {}) {
+  const out = [];
+  const stage = donor.stage;
+  const giftCount = Number(donor.gift_count) || 0;
+  const lastGift = donor.last_gift_date && donor.last_gift_date !== "" ? donor.last_gift_date : null;
+  const daysSinceGift = lastGift ? Math.floor((Date.now() - new Date(lastGift)) / 86400000) : null;
+  // First gift in hand but still parked at prospect → qualify them.
+  if (giftCount >= 1 && stage === "prospect") {
+    out.push({ signal: "first_gift", toStage: "qualify",
+      reason: "First gift received — qualify this donor and start cultivating." });
+  }
+  // A gift landed while being solicited → the ask effectively closed; steward.
+  if (stage === "solicit" && daysSinceGift != null && daysSinceGift <= 90) {
+    out.push({ signal: "gift_after_solicit", toStage: "steward",
+      reason: "A gift landed after your solicitation — move to Stewardship." });
+  }
+  // In active cultivation but gone quiet (not yet lapsed) → take a look.
+  if (["qualify", "cultivate"].includes(stage) && daysSinceGift != null
+      && daysSinceGift > 180 && daysSinceGift < LAPSE_DAYS) {
+    out.push({ signal: "going_quiet", toStage: null,
+      reason: `No gift in ${Math.round(daysSinceGift / 30)} months — reach out before they lapse.` });
+  }
+  return out;
 }
 
 async function recalcDonorSummary(donorId, orgId) {
@@ -2741,10 +2869,11 @@ app.post("/donors/:id/gifts", requireAuth, checkWriteAccess, wrap(async (req, re
   }
 
   const donorExists = await query(
-    "SELECT id FROM donors WHERE id = ? AND org_id = ?",
+    "SELECT id, stage FROM donors WHERE id = ? AND org_id = ?",
     [req.params.id, req.user.orgId]
   );
   if (!donorExists.length) return res.status(404).json({ error: "Donor not found" });
+  const preGiftStage = donorExists[0].stage;  // BUILD-22 auto-unlapse
 
   // Optional fund designation (the client's "Finance Fund" selector). Validated
   // org-scoped so a foreign fund id can't be pinned onto this gift's ledger row.
@@ -2834,6 +2963,9 @@ app.post("/donors/:id/gifts", requireAuth, checkWriteAccess, wrap(async (req, re
     );
   } catch(e) { console.error("Gift interaction log:", e.message); }
   calcWealthScore(req.params.id, req.user.orgId).catch(e => console.error("score recalc:", e.message));
+  // BUILD-22 — a lapsed donor who just gave auto-moves out of Lapsed to Steward
+  // (logged move + timeline entry, editable). No-op unless they were lapsed.
+  await autoUnlapseOnGift(req.user.orgId, req.params.id, preGiftStage).catch(e => console.error("[smart-move] unlapse:", e.message));
   // BUILD-13 workflows — a manually-logged gift fires gift_received too (new-
   // donor + major-gift recipes). gift_count===1 after this insert means it was
   // the donor's first gift. Idempotent per giftId; fire-and-forget.
@@ -4102,6 +4234,23 @@ app.post("/pipeline/:donorId/move", requireAuth, requirePlan("team"), checkWrite
        new Date().toISOString().split("T")[0], req.user.userId, officerName]);
   } catch (e) { console.error("move interaction log:", e.message); }
   res.status(201).json({ ok: true, moveId, stage: toStage, fromStage });
+}));
+
+// GET /donors/:id/move-suggestions — signal-based suggestions (BUILD-22).
+// A read: never changes stage. The officer accepts (→ POST /pipeline/:id/move)
+// or dismisses. Org-scoped; foreign donor → 404.
+app.get("/donors/:id/move-suggestions", requireAuth, wrap(async (req, res) => {
+  const rows = await query("SELECT * FROM donors WHERE id=? AND org_id=? AND deleted_at IS NULL", [req.params.id, req.user.orgId]);
+  if (!rows.length) return res.status(404).json({ error: "Donor not found" });
+  res.json({ suggestions: computeMoveSuggestions(rows[0]) });
+}));
+
+// POST /pipeline/run-auto-lapse — run the auto-lapse sweep for the caller's org
+// now (drives the exact scheduled path; for ops + tests). Admin-only, same bar
+// as /sequences/process and /recurring/process-dunning.
+app.post("/pipeline/run-auto-lapse", requireAuth, requireAdmin, wrap(async (req, res) => {
+  const moved = await autoLapseOrg(req.user.orgId);
+  res.json({ moved });
 }));
 
 // GET /donors/:id/moves — full move history for a constituent.
