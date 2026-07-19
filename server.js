@@ -4757,6 +4757,92 @@ app.get("/dashboard/my-stats", requireAuth, wrap(async (req, res) => {
   });
 }));
 
+// BUILD-16 Part 1 — the Home command center. Four headers a fundraiser opens
+// the app to see: Portfolio [Team], Tasks [Core], Need to Do [Core], Pipeline
+// [Team]. First-touch-delay / stewardship-debt are demoted to secondary chips
+// (still served by /metrics/stewardship-summary), never headline cards. Plan-
+// graceful: a Core org gets Tasks + a giving snapshot, no broken Team headers.
+// The Need-to-do LIST itself is the existing /dashboard/today queue (the client
+// already fetches it) — this endpoint returns the four headers' summary data.
+app.get("/dashboard/home", requireAuth, wrap(async (req, res) => {
+  const { orgId, userId } = req.user;
+  const scope = req.query.scope === "all" ? "all" : "mine";
+  const today = new Date().toISOString().split("T")[0];
+
+  const orgRows = await query("SELECT plan, subscription_status FROM orgs WHERE id=?", [orgId]);
+  const tier = orgRows.length ? orgPlanTier(orgRows[0]) : "core";
+
+  // Tasks buckets [Core] — open tasks, scoped to the user (mine) or org (all).
+  const taskScope = scope === "mine" ? "AND assigned_to=?" : "";
+  const taskRows = await query(
+    `SELECT
+       COUNT(*) FILTER (WHERE due <> '' AND due IS NOT NULL AND due < ?) AS overdue,
+       COUNT(*) FILTER (WHERE due <> '' AND due IS NOT NULL AND left(due,10) = ?) AS today,
+       COUNT(*) FILTER (WHERE due <> '' AND due IS NOT NULL AND due > ? AND left(due,10) <> ?) AS upcoming,
+       COUNT(*) FILTER (WHERE due = '' OR due IS NULL) AS no_date,
+       COUNT(*) AS total
+     FROM tasks WHERE org_id=? AND done=0 ${taskScope}`,
+    scope === "mine" ? [today, today, today, today, orgId, userId] : [today, today, today, today, orgId]
+  );
+  const tRow = taskRows[0] || {};
+  const tasks = {
+    overdue: parseInt(tRow.overdue, 10) || 0,
+    today: parseInt(tRow.today, 10) || 0,
+    upcoming: parseInt(tRow.upcoming, 10) || 0,
+    noDate: parseInt(tRow.no_date, 10) || 0,
+    total: parseInt(tRow.total, 10) || 0,
+  };
+
+  // Portfolio [Team] — the officer's assigned constituents + their lifetime
+  // value + the officer's color. Null on Core (the header is hidden).
+  let portfolio = null;
+  if (tier === "team") {
+    const [pRows, cRows] = await Promise.all([
+      query("SELECT COUNT(*) AS cnt, COALESCE(SUM(total_giving),0) AS val FROM donors WHERE org_id=? AND assigned_to=? AND deleted_at IS NULL", [orgId, userId]),
+      query("SELECT portfolio_color FROM users WHERE id=? AND org_id=?", [userId, orgId]),
+    ]);
+    portfolio = {
+      count: parseInt(pRows[0]?.cnt, 10) || 0,
+      value: parseFloat(pRows[0]?.val) || 0,
+      color: cRows[0]?.portfolio_color || null,
+    };
+  }
+
+  // Pipeline [Team] — compact stage summary: count + value per stage, plus the
+  // open-ask forecast. Scoped to the user (mine) or org (all). Null on Core.
+  let pipeline = null;
+  if (tier === "team") {
+    const stageScope = scope === "mine" ? "AND assigned_to=?" : "";
+    const stageParams = scope === "mine" ? [orgId, ALL_PIPELINE_STAGES, userId] : [orgId, ALL_PIPELINE_STAGES];
+    const stageRows = await query(
+      `SELECT stage, COUNT(*) AS cnt, COALESCE(SUM(total_giving),0) AS val
+         FROM donors WHERE org_id=? AND deleted_at IS NULL AND stage = ANY(?) ${stageScope}
+        GROUP BY stage`, stageParams);
+    const byStage = Object.fromEntries(stageRows.map(r => [r.stage, r]));
+    const stages = ALL_PIPELINE_STAGES.map(s => ({
+      stage: s,
+      count: parseInt(byStage[s]?.cnt, 10) || 0,
+      value: parseFloat(byStage[s]?.val) || 0,
+    }));
+    const oppScope = scope === "mine"
+      ? "AND donor_id IN (SELECT id FROM donors WHERE org_id=? AND assigned_to=?)"
+      : "";
+    const oppParams = scope === "mine" ? [orgId, orgId, userId] : [orgId];
+    const oppRows = await query(
+      `SELECT COALESCE(SUM(target_amount),0) AS ask, COUNT(*) AS cnt
+         FROM opportunities WHERE org_id=? AND status='open' ${oppScope}`, oppParams);
+    pipeline = {
+      total: stages.reduce((s, x) => s + x.count, 0),
+      value: stages.reduce((s, x) => s + x.value, 0),
+      stages,
+      forecastOpen: Math.round(parseFloat(oppRows[0]?.ask) || 0),
+      openOppCount: parseInt(oppRows[0]?.cnt, 10) || 0,
+    };
+  }
+
+  res.json({ tier, scope, portfolio, tasks, pipeline });
+}));
+
 // Per-stat drill-downs behind the My Portfolio bar. Each mirrors the exact
 // filter its headline count above uses (same fyStart boundary, same type
 // filters), so the number shown and the list you get from clicking it can
@@ -6186,7 +6272,7 @@ function computeFundraisingPace(raised, goal, startDate, endDate) {
 // column. One query, grouped, so the list view never N+1s.
 async function fundraisingCampaignRows(orgId) {
   const campaigns = await query(
-    `SELECT id, name, goal_amount, start_date, end_date, status, type, created_at
+    `SELECT id, name, goal_amount, start_date, end_date, status, type, goal_category, parent_goal_id, created_at
      FROM campaigns WHERE org_id = ? AND goal_amount IS NOT NULL AND goal_amount > 0
      ORDER BY created_at DESC`,
     [orgId]
@@ -6216,9 +6302,60 @@ async function fundraisingCampaignRows(orgId) {
       startDate: c.start_date,
       endDate: c.end_date,
       type: c.type,
+      goalCategory: GOAL_CATEGORIES.includes(c.goal_category) ? c.goal_category : "project",
+      parentGoalId: c.parent_goal_id || null,
       ...pace,
     };
   });
+}
+
+// BUILD-16 Part 2 — typed, multiple, roll-up goals. A "goal" is a goal'd
+// campaign; several run at once, each with its own category (annual/project/
+// capital). An overarching goal is a campaign that other campaigns name as
+// their parent_goal_id — its progress rolls up its children's live raised. The
+// roll-up is a live SUM over the same gift rows (never a stored counter), so it
+// can't drift. Returns the goal portfolio + an org-wide roll-up header figure.
+const GOAL_CATEGORIES = ["annual", "project", "capital"];
+function fundraisingGoalsPortfolio(rows) {
+  // rows = fundraisingCampaignRows output.
+  // Child raised/goal rolled up onto each parent.
+  const childrenByParent = {};
+  for (const r of rows) {
+    if (r.parentGoalId) (childrenByParent[r.parentGoalId] = childrenByParent[r.parentGoalId] || []).push(r);
+  }
+  const goals = rows.map(r => {
+    const kids = childrenByParent[r.id] || [];
+    const isOverarching = kids.length > 0;
+    const childRaised = kids.reduce((s, k) => s + k.raised, 0);
+    const childGoal = kids.reduce((s, k) => s + k.goalAmount, 0);
+    // An overarching goal shows its children's combined progress toward its own
+    // target (the roll-up); a leaf goal shows its own SUM(gifts).
+    const rolledRaised = isOverarching ? childRaised : r.raised;
+    const rolled = isOverarching ? computeFundraisingPace(childRaised, r.goalAmount, r.startDate, r.endDate) : null;
+    return {
+      ...r,
+      isOverarching,
+      childCount: kids.length,
+      childRaised, childGoal,
+      childIds: kids.map(k => k.id),
+      rolledRaised,
+      rolledPercent: isOverarching ? rolled.percent : r.percent,
+      rolledPaceState: isOverarching ? rolled.paceState : r.paceState,
+    };
+  });
+  // Org roll-up header: total raised vs total goal across ACTIVE top-level goals
+  // only (a child's raised is already inside its parent's roll-up — counting
+  // both would double-count). Top-level = has no parent_goal_id; active = not
+  // ended. Computed over the ENRICHED goals (so rolledRaised is present).
+  const topActive = goals.filter(g => !g.parentGoalId && g.lifecycle !== "ended");
+  const totalGoal = topActive.reduce((s, g) => s + g.goalAmount, 0);
+  const totalRaised = topActive.reduce((s, g) => s + g.rolledRaised, 0);
+  const rollup = topActive.length ? {
+    totalRaised, totalGoal,
+    percent: totalGoal > 0 ? Math.min(100, Math.round((totalRaised / totalGoal) * 100)) : null,
+    activeGoalCount: topActive.length,
+  } : null;
+  return { goals: goals.map(g => ({ ...g, isTopLevel: !g.parentGoalId })), rollup };
 }
 
 // Overview — the money-moving command view. Everything the Fundraising home
@@ -6284,10 +6421,16 @@ app.get("/fundraising/overview", requireAuth, wrap(async (req, res) => {
   const priorTotal = parseFloat(priorRows[0]?.total) || 0;
   const activePages = givingPages.filter(p => p.status === "active");
 
+  // BUILD-16 Part 2 — the goal portfolio + roll-up header replaces the single
+  // org goal as the Fundraising Overview centerpiece.
+  const portfolio = fundraisingGoalsPortfolio(campaigns);
+
   res.json({
     yearMode,
     periodLabel: cur.chartLabel,
     goal,
+    rollup: portfolio.rollup,
+    goals: portfolio.goals,
     period: {
       raised: periodTotal,
       giftCount: parseInt(curRows[0]?.gifts, 10) || 0,
@@ -6319,34 +6462,61 @@ app.get("/fundraising/campaigns", requireAuth, wrap(async (req, res) => {
   res.json(await fundraisingCampaignRows(req.user.orgId));
 }));
 
+// BUILD-16 Part 2 — the typed goal portfolio + org roll-up header.
+app.get("/fundraising/goals", requireAuth, wrap(async (req, res) => {
+  const rows = await fundraisingCampaignRows(req.user.orgId);
+  res.json(fundraisingGoalsPortfolio(rows));
+}));
+
 app.post("/fundraising/campaigns", requireAuth, checkWriteAccess, wrap(async (req, res) => {
-  const { name, goalAmount, startDate, endDate } = req.body;
+  const { name, goalAmount, startDate, endDate, goalCategory, parentGoalId } = req.body;
   if (!name || !name.trim()) return res.status(400).json({ error: "Name required" });
   const goal = parseFloat(goalAmount);
   if (!Number.isFinite(goal) || goal <= 0) return res.status(400).json({ error: "Goal amount must be a positive number" });
+  const category = GOAL_CATEGORIES.includes(goalCategory) ? goalCategory : "project";
+  // A parent goal, if given, must be another goal'd campaign in this org.
+  let parent = null;
+  if (parentGoalId) {
+    const p = await query("SELECT id FROM campaigns WHERE id=? AND org_id=? AND goal_amount IS NOT NULL AND goal_amount > 0", [parentGoalId, req.user.orgId]);
+    if (!p.length) return res.status(400).json({ error: "parentGoalId must be an existing goal in this org" });
+    parent = parentGoalId;
+  }
   const id = "cmp_" + uuid().slice(0, 8);
   await run(
-    `INSERT INTO campaigns (id,org_id,name,type,subject,body,status,segment,goal_amount,start_date,end_date,recipient_count,open_count)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?,0,0)`,
-    [id, req.user.orgId, name.trim(), "appeal", "", "", "draft", JSON.stringify({}), goal, startDate || null, endDate || null]
+    `INSERT INTO campaigns (id,org_id,name,type,subject,body,status,segment,goal_amount,start_date,end_date,goal_category,parent_goal_id,recipient_count,open_count)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,0,0)`,
+    [id, req.user.orgId, name.trim(), "appeal", "", "", "draft", JSON.stringify({}), goal, startDate || null, endDate || null, category, parent]
   );
   const rows = await fundraisingCampaignRows(req.user.orgId);
   res.status(201).json(rows.find(r => r.id === id) || { id });
 }));
 
 app.put("/fundraising/campaigns/:id", requireAuth, checkWriteAccess, wrap(async (req, res) => {
-  const { name, goalAmount, startDate, endDate } = req.body;
+  const { name, goalAmount, startDate, endDate, goalCategory, parentGoalId } = req.body;
   const existing = await query("SELECT id FROM campaigns WHERE id=? AND org_id=?", [req.params.id, req.user.orgId]);
   if (!existing.length) return res.status(404).json({ error: "Campaign not found" });
   if (goalAmount !== undefined) {
     const goal = parseFloat(goalAmount);
     if (!Number.isFinite(goal) || goal <= 0) return res.status(400).json({ error: "Goal amount must be a positive number" });
   }
+  if (goalCategory !== undefined && !GOAL_CATEGORIES.includes(goalCategory)) {
+    return res.status(400).json({ error: "goalCategory must be annual, project, or capital" });
+  }
+  // A goal can't be its own parent, and the parent must exist in this org.
+  let parentUpdate = null, parentProvided = parentGoalId !== undefined;
+  if (parentProvided && parentGoalId) {
+    if (parentGoalId === req.params.id) return res.status(400).json({ error: "A goal cannot be its own parent" });
+    const p = await query("SELECT id FROM campaigns WHERE id=? AND org_id=? AND goal_amount IS NOT NULL AND goal_amount > 0", [parentGoalId, req.user.orgId]);
+    if (!p.length) return res.status(400).json({ error: "parentGoalId must be an existing goal in this org" });
+    parentUpdate = parentGoalId;
+  }
   await run(
     `UPDATE campaigns SET name=COALESCE(?,name), goal_amount=COALESCE(?,goal_amount),
-       start_date=?, end_date=?, updated_at=NOW() WHERE id=? AND org_id=?`,
+       start_date=?, end_date=?, goal_category=COALESCE(?,goal_category),
+       parent_goal_id=CASE WHEN ? THEN ? ELSE parent_goal_id END, updated_at=NOW() WHERE id=? AND org_id=?`,
     [name || null, goalAmount !== undefined ? parseFloat(goalAmount) : null,
-     startDate || null, endDate || null, req.params.id, req.user.orgId]
+     startDate || null, endDate || null, goalCategory || null,
+     parentProvided, parentUpdate, req.params.id, req.user.orgId]
   );
   const rows = await fundraisingCampaignRows(req.user.orgId);
   res.json(rows.find(r => r.id === req.params.id) || { id: req.params.id });
@@ -10172,6 +10342,22 @@ const WORKFLOW_RECIPES = [
     ],
     defaultConfig: { threshold: 1000 },
   },
+  // BUILD-16 Part 3 — real-time stewardship: the instant ANY gift lands, alert
+  // the people who thank donors (ED and/or the assigned officer) in-app AND by
+  // email, so thanks go out fast. Different from major_gift_alert (which only
+  // fires over a big threshold and only pings the owner) — this is the
+  // every-gift "someone just gave, thank them now" signal. Idempotent per gift.
+  {
+    key: "instant_gift_thanks",
+    name: "Gift received → notify the team to thank them",
+    description: "The instant a gift comes in, alert the executive director and/or the donor's assigned officer — in-app and by email — so a thank-you goes out fast. Set an amount threshold to only be pinged above a certain size.",
+    trigger: "gift_received",
+    conditions: [{ field: "amount", op: "gte", value: 0 }],
+    actions: [
+      { type: "notify_gift" },
+    ],
+    defaultConfig: { notify: "both", threshold: 0 },
+  },
 ];
 const WORKFLOW_RECIPE_MAP = Object.fromEntries(WORKFLOW_RECIPES.map(r => [r.key, r]));
 
@@ -10225,6 +10411,23 @@ async function sendWorkflowEmail(org, donor, subject, bodyHtml) {
   return true;
 }
 
+// Internal staff notification (BUILD-16 Part 3) — a gift-alert email to a team
+// member (ED / assigned officer), NOT the donor. So it carries the branded
+// header but never the donor unsubscribe/CAN-SPAM footer (that's for donor
+// mail). No-ops cleanly without RESEND_API_KEY; the run is still logged.
+async function sendGiftAlertEmail(org, toEmail, subject, bodyHtml) {
+  if (!toEmail) return false;
+  const html = await brandEmailHeaderHtml(org.id) + bodyHtml;
+  const from = process.env.DEMO_SMTP_FROM || "noreply@stewardapp.dev";
+  if (process.env.RESEND_API_KEY) {
+    try {
+      const { error } = await resend.emails.send({ from, to: toEmail, subject, html });
+      if (error) console.error("[workflow] gift-alert email error:", error.message);
+    } catch (e) { console.error("[workflow] gift-alert email threw:", e.message); }
+  }
+  return true;
+}
+
 // Execute one action. Returns a summary object for the run log, or null.
 async function runWorkflowAction(action, { org, donor, ctx, config }) {
   const firstName = donor?.name ? donor.name.trim().split(/\s+/)[0] : "there";
@@ -10245,6 +10448,43 @@ async function runWorkflowAction(action, { org, donor, ctx, config }) {
         [taskId, org.id, title, due, action.priority || "medium", donor?.id || null, owner?.id || null, owner?.name || null]
       );
       return { type: action.type, taskId, title };
+    }
+    case "notify_gift": {
+      // Resolve who to notify: ED = org admins, owner = the donor's assigned
+      // officer. config.notify ∈ ed|owner|both (default both).
+      const mode = ["ed", "owner", "both"].includes(config.notify) ? config.notify : "both";
+      const wantEd = mode === "ed" || mode === "both";
+      const wantOwner = mode === "owner" || mode === "both";
+      const recipients = []; // { id, name, email }
+      const seen = new Set();
+      const push = u => { if (u && u.id && !seen.has(u.id)) { seen.add(u.id); recipients.push(u); } };
+      let owner = null;
+      if (wantOwner && donor?.assigned_to) {
+        const or = await query("SELECT id, name, email FROM users WHERE id=? AND org_id=?", [donor.assigned_to, org.id]);
+        if (or.length) { owner = or[0]; push(or[0]); }
+      }
+      if (wantEd) {
+        const admins = await query("SELECT id, name, email FROM users WHERE org_id=? AND role='admin' ORDER BY created_at ASC", [org.id]);
+        admins.forEach(push);
+      }
+      // The task lands with whoever should own the thank-you: the assigned
+      // officer if there is one, else the first admin (the ED).
+      const taskOwner = owner || recipients[0] || null;
+      const title = `Thank ${donor?.name || "a donor"} — ${amtStr || "a gift"} just came in`;
+      const due = new Date(Date.now() + 1 * 86400000).toISOString().slice(0, 10);
+      const taskId = "t_" + uuid().slice(0, 8);
+      await run(
+        "INSERT INTO tasks (id,org_id,title,due,priority,type,done,donor_id,assigned_to,assigned_to_name,updated_at) VALUES (?,?,?,?,?,'donor',0,?,?,?,NOW())",
+        [taskId, org.id, title, due, "high", donor?.id || null, taskOwner?.id || null, taskOwner?.name || null]
+      );
+      // Email each distinct recipient (internal, no donor footer).
+      const emailBody = `<p>A gift just came in — a good moment to say thank you.</p>
+<p style="font-size:16px"><strong>${escHtmlWf(donor?.name || "A donor")}</strong> gave <strong>${escHtmlWf(amtStr || "a gift")}</strong> to ${escHtmlWf(org.name)}.</p>
+<p>Open Steward to send a thank-you while it's fresh — a fast, personal thank-you is the single biggest driver of a donor giving again.</p>`;
+      for (const r of recipients) {
+        if (r.email) await sendGiftAlertEmail(org, r.email, `New gift: ${donor?.name || "a donor"} gave ${amtStr || "a gift"}`, emailBody);
+      }
+      return { type: "notify_gift", taskId, notified: recipients.map(r => r.name || r.email).filter(Boolean), mode };
     }
     case "add_tag": {
       if (!donor?.id) return null;
@@ -10397,6 +10637,7 @@ app.put("/workflows/:id", requireAuth, requireAdmin, checkWriteAccess, wrap(asyn
     const merged = { ...asJson(rows[0].config, {}), ...config };
     if (merged.threshold !== undefined) merged.threshold = Math.max(0, Number(merged.threshold) || 0);
     if (merged.lapseDays !== undefined) merged.lapseDays = Math.max(1, parseInt(merged.lapseDays, 10) || 365);
+    if (merged.notify !== undefined && !["ed", "owner", "both"].includes(merged.notify)) merged.notify = "both";
     sets.push("config=?"); params.push(JSON.stringify(merged));
   }
   if (!sets.length) return res.status(400).json({ error: "Nothing to update" });

@@ -53,16 +53,17 @@ const runCount = async (wfId) => (await q(`SELECT COUNT(*)::int AS n FROM workfl
 
   // ── Provisioning ──────────────────────────────────────────────────────────
   const list = (await api("GET", "/workflows", tokenA)).body;
-  ok("GET /workflows provisions 4 recipes", list.length === 4, list.length);
+  ok("GET /workflows provisions 5 recipes", list.length === 5, list.length);
   ok("recipes disabled by default (nothing auto-runs)", list.every(w => !w.enabled));
   ok("recipes carry trigger/conditions/actions data (builder-ready)",
     list.every(w => w.trigger && Array.isArray(w.conditions) && Array.isArray(w.actions)));
-  ok("recipe keys present", ["failed_recurring_recovery", "new_donor_welcome", "lapsing_reengage", "major_gift_alert"].every(k => wfByKey(list, k)));
+  ok("recipe keys present", ["failed_recurring_recovery", "new_donor_welcome", "lapsing_reengage", "major_gift_alert", "instant_gift_thanks"].every(k => wfByKey(list, k)));
 
   const wfNew = wfByKey(list, "new_donor_welcome");
   const wfMajor = wfByKey(list, "major_gift_alert");
   const wfFailed = wfByKey(list, "failed_recurring_recovery");
   const wfLapse = wfByKey(list, "lapsing_reengage");
+  const wfThanks = wfByKey(list, "instant_gift_thanks");
 
   // ── Access control on the write route ─────────────────────────────────────
   ok("staff PUT /workflows/:id → 403", (await api("PUT", `/workflows/${wfNew.id}`, tokenStaff, { enabled: true })).status === 403);
@@ -129,6 +130,44 @@ const runCount = async (wfId) => (await q(`SELECT COUNT(*)::int AS n FROM workfl
   // ── Run log ───────────────────────────────────────────────────────────────
   const runs = (await api("GET", `/workflows/${wfNew.id}/runs`, tokenA)).body;
   ok("GET /workflows/:id/runs returns the logged run w/ actions_taken", runs.length === 1 && Array.isArray(runs[0].actions_taken) && runs[0].actions_taken.length >= 1);
+
+  // ── Recipe 5 (BUILD-16 Part 3): gift received → notify ED &/or owner ───────
+  // A second admin (ED) plus a donor owned by the non-admin staff officer, so
+  // ED and owner are distinct users we can tell apart in the notified list.
+  await q(`INSERT INTO users (id,org_id,email,password_hash,name,role) VALUES ('u_wf_a_ed',$1,'ed@wf.local',$2,'ED A','admin')`, [A, hash]);
+  await q(`INSERT INTO donors (id,org_id,name,email,status,stage,total_giving,gift_count,tags,assigned_to,assigned_to_name) VALUES ('d_gift_a',$1,'Gift Donor','gd@wf.local','mid','cultivate',0,0,'[]','u_wf_a_staff','Staff A')`, [A]);
+  const thxTasks = async () => (await q(`SELECT * FROM tasks WHERE org_id=$1 AND donor_id='d_gift_a'`, [A]));
+
+  await enable(tokenA, wfThanks.id, { notify: "both", threshold: 0 });
+  // amount 50 (< major threshold 100, not first gift) → ONLY instant_gift_thanks fires
+  const thx1 = await api("POST", "/workflows/simulate", tokenA, { trigger: "gift_received", donorId: "d_gift_a", amount: 50, isFirstGift: false, dedupKey: "gift:thx1" });
+  const thxRun = thx1.body.ran.find(r => r.recipeKey === "instant_gift_thanks");
+  ok("instant_gift_thanks fires on any gift → notify_gift action", !!thxRun && thxRun.actions.some(a => a.type === "notify_gift"));
+  const notifyAction = thxRun.actions.find(a => a.type === "notify_gift");
+  ok("notify='both' notifies BOTH the owner and the ED", notifyAction.notified.includes("Staff A") && notifyAction.notified.includes("ED A"));
+  const t1 = await thxTasks();
+  ok("instant_gift_thanks created 1 thank task assigned to the owner (officer)", t1.length === 1 && t1[0].assigned_to === "u_wf_a_staff");
+
+  // idempotency — same gift again is a strict no-op (no double-thank)
+  const thx1again = await api("POST", "/workflows/simulate", tokenA, { trigger: "gift_received", donorId: "d_gift_a", amount: 50, isFirstGift: false, dedupKey: "gift:thx1" });
+  ok("re-firing same gift → instant_gift_thanks 0 ran (idempotent)", !thx1again.body.ran.some(r => r.recipeKey === "instant_gift_thanks") && (await thxTasks()).length === 1);
+
+  // threshold — only ping above config.threshold
+  await api("PUT", `/workflows/${wfThanks.id}`, tokenA, { config: { threshold: 100 } });
+  const thxBelow = await api("POST", "/workflows/simulate", tokenA, { trigger: "gift_received", donorId: "d_gift_a", amount: 50, isFirstGift: false, dedupKey: "gift:thx2" });
+  ok("instant_gift_thanks does NOT fire below its threshold ($50 < $100)", !thxBelow.body.ran.some(r => r.recipeKey === "instant_gift_thanks"));
+  const thxAbove = await api("POST", "/workflows/simulate", tokenA, { trigger: "gift_received", donorId: "d_gift_a", amount: 150, isFirstGift: false, dedupKey: "gift:thx3" });
+  ok("instant_gift_thanks fires at/above its threshold ($150 ≥ $100)", thxAbove.body.ran.some(r => r.recipeKey === "instant_gift_thanks"));
+
+  // recipient modes — ed only, then owner only
+  await api("PUT", `/workflows/${wfThanks.id}`, tokenA, { config: { notify: "ed", threshold: 0 } });
+  const thxEd = await api("POST", "/workflows/simulate", tokenA, { trigger: "gift_received", donorId: "d_gift_a", amount: 50, isFirstGift: false, dedupKey: "gift:thx4" });
+  const edAction = thxEd.body.ran.find(r => r.recipeKey === "instant_gift_thanks").actions.find(a => a.type === "notify_gift");
+  ok("notify='ed' notifies admins only (not the officer)", edAction.notified.includes("ED A") && edAction.notified.includes("User a") && !edAction.notified.includes("Staff A"));
+  await api("PUT", `/workflows/${wfThanks.id}`, tokenA, { config: { notify: "owner", threshold: 0 } });
+  const thxOwner = await api("POST", "/workflows/simulate", tokenA, { trigger: "gift_received", donorId: "d_gift_a", amount: 50, isFirstGift: false, dedupKey: "gift:thx5" });
+  const ownerAction = thxOwner.body.ran.find(r => r.recipeKey === "instant_gift_thanks").actions.find(a => a.type === "notify_gift");
+  ok("notify='owner' notifies the officer only (not the ED)", ownerAction.notified.includes("Staff A") && !ownerAction.notified.includes("ED A"));
 
   // ── Org isolation ─────────────────────────────────────────────────────────
   // B enables its own new-donor recipe; A's donor must never be touched by B.

@@ -17,6 +17,7 @@ const ACTION_LABEL = {
   create_task: "Create task",
   add_tag: "Add tag",
   notify_owner: "Alert owner",
+  notify_gift: "Notify team",
 };
 const fmtWhen = ts => { if (!ts) return "never"; const d = new Date(ts); const mins = Math.floor((Date.now() - d) / 60000); if (mins < 1) return "just now"; if (mins < 60) return `${mins}m ago`; if (mins < 1440) return `${Math.floor(mins / 60)}h ago`; return d.toLocaleDateString("en-US", { month: "short", day: "numeric" }); };
 
@@ -90,6 +91,21 @@ function RecipeCard({ w, isReadOnly, onToggle, onConfig, expanded, onOpenRuns, r
       {w.recipe_key === "major_gift_alert" && (
         <ConfigRow label="Major-gift threshold" prefix="$" value={w.config?.threshold ?? 1000} isReadOnly={isReadOnly}
           onSave={v => onConfig({ threshold: Number(v) })} />
+      )}
+      {w.recipe_key === "instant_gift_thanks" && (
+        <div style={{ display: "flex", gap: 20, flexWrap: "wrap", alignItems: "center", marginTop: 12 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <span style={{ fontSize: 12.5, color: T.ink3, fontWeight: 600 }}>Notify</span>
+            <select value={w.config?.notify || "both"} disabled={isReadOnly}
+              onChange={e => onConfig({ notify: e.target.value })}
+              style={{ background: T.bg, border: `1px solid ${T.bg3}`, borderRadius: 8, padding: "5px 8px", fontSize: 13, color: T.ink, cursor: isReadOnly ? "not-allowed" : "pointer" }}>
+              <option value="both">ED &amp; assigned officer</option>
+              <option value="ed">Executive director only</option>
+              <option value="owner">Assigned officer only</option>
+            </select>
+          </div>
+          <ConfigRow inline label="Only above" prefix="$" value={w.config?.threshold ?? 0} isReadOnly={isReadOnly} onSave={v => onConfig({ threshold: Number(v) })} />
+        </div>
       )}
       {w.recipe_key === "lapsing_reengage" && (
         <div style={{ display: "flex", gap: 20, flexWrap: "wrap", alignItems: "center", marginTop: 12 }}>

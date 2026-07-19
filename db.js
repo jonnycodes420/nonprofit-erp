@@ -581,6 +581,12 @@ async function initSchema() {
   await pool.query(`ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS raised_amount NUMERIC DEFAULT 0`);
   await pool.query(`ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS start_date DATE`);
   await pool.query(`ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS end_date DATE`);
+  // BUILD-16 Part 2 — typed, multiple, roll-up fundraising goals. goal_category
+  // classifies a goal'd campaign (annual/project/capital); parent_goal_id lets a
+  // campaign roll up under an overarching goal (another campaigns row). Both
+  // nullable → un-set is identical to the pre-BUILD-16 single-goal behavior.
+  await pool.query(`ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS goal_category TEXT`);
+  await pool.query(`ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS parent_goal_id TEXT`);
   await pool.query(`ALTER TABLE interactions ADD COLUMN IF NOT EXISTS logged_by_name TEXT`);
 
   // ── MGO toolkit ───────────────────────────────────────────────────────────

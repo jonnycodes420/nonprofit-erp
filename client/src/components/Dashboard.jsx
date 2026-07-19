@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { apiFetch } from "../api";
 import { useAuth } from "../main";
-import { T, fmt, fmtFull, daysUntil, daysDiff, askClaude, buildContext, Spin, AIBtn, GoldMoment } from "./shared";
+import { T, fmt, fmtFull, daysUntil, daysDiff, askClaude, buildContext, Spin, AIBtn, GoldMoment, interactive } from "./shared";
 import FunnelChart from "./FunnelChart";
 import MetricBreakdownPanel from "./MetricBreakdownPanel";
 
@@ -51,6 +51,10 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
   const [stewardMetrics,setStewardMetrics]=useState(null);
   const [recurringHealth,setRecurringHealth]=useState(null);
   const [resentIds,setResentIds]=useState(()=>new Set());
+  // BUILD-16 Part 1 — the Home command center's four headers (Portfolio/Tasks/
+  // Need-to-do/Pipeline), plan-graceful (Core hides the Team headers).
+  const [homeData,setHomeData]=useState(null);
+  const [firstTouchOpen,setFirstTouchOpen]=useState(false);
 
   const [debtBreakdownOpen,setDebtBreakdownOpen]=useState(false);
   const [debtBreakdown,setDebtBreakdown]=useState(null);
@@ -133,6 +137,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
     setQueueLoading(true);
     apiFetch(`/dashboard/today?scope=${scope}`).then(r=>setQueueItems(r||[])).catch(()=>{}).finally(()=>setQueueLoading(false));
     apiFetch(`/metrics/stewardship-summary?scope=${scope}`).then(r=>setStewardMetrics(r)).catch(()=>{});
+    apiFetch(`/dashboard/home?scope=${scope}`).then(r=>setHomeData(r)).catch(()=>{});
 
     // Breakdown data is fetched eagerly here (not lazily on click) so the
     // hero cards can show the top few donors driving each number inline —
@@ -510,6 +515,51 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
         </div>
       )}
 
+      {/* ── Command center (BUILD-16 Part 1) ──────────────────────────────
+          The four headers a fundraiser opens the app to see: Portfolio [Team],
+          Tasks [Core], Need to Do [Core], Pipeline [Team]. Plan-graceful — a
+          Core org sees Tasks + Need-to-do only (the goal banner above is its
+          giving snapshot); Team adds Portfolio + Pipeline. First-touch-delay
+          and stewardship-debt are demoted to the small "Signals" chips below —
+          never headline cards. */}
+      {homeData&&(()=>{
+        const isTeam=homeData.tier==="team";
+        const t=homeData.tasks||{overdue:0,today:0,upcoming:0,total:0};
+        const needCount=visibleQueue.length;
+        const scrollToQueue=()=>{document.getElementById("dash-needtodo")?.scrollIntoView({behavior:"smooth",block:"start"});};
+        const cards=[];
+        if(isTeam&&homeData.portfolio){
+          const pc=homeData.portfolio;
+          cards.push({key:"portfolio",label:"Portfolio",accent:pc.color||T.greenDk,value:pc.count,unit:"donors",
+            sub:`${fmt(pc.value)} lifetime giving`,onClick:()=>onNavigate("donors",{view:"pipeline"}),aria:"View your portfolio"});
+        }
+        cards.push({key:"tasks",label:"Tasks",accent:t.overdue>0?T.terracotta:T.gold,value:t.total,unit:t.total===1?"open task":"open tasks",
+          sub:(<span>{t.overdue>0&&<b style={{color:T.terracotta}}>{t.overdue} overdue</b>}{t.overdue>0&&(t.today>0||t.upcoming>0)?" · ":""}{t.today>0&&<b style={{color:T.gold600}}>{t.today} today</b>}{t.today>0&&t.upcoming>0?" · ":""}{t.upcoming>0&&<span style={{color:T.greenMid}}>{t.upcoming} upcoming</span>}{t.total===0&&"All clear"}</span>),
+          onClick:()=>onNavigate("tasks"),aria:"View tasks"});
+        cards.push({key:"needtodo",label:"Need to Do",accent:needCount>0?T.terracotta:T.greenMid,value:needCount,unit:needCount===1?"needs you":"need you",
+          sub:needCount>0?"gifts to thank, moves due, receipts & more":"you're all caught up",onClick:scrollToQueue,aria:"Jump to what needs your attention"});
+        if(isTeam&&homeData.pipeline){
+          const pl=homeData.pipeline;
+          cards.push({key:"pipeline",label:"Pipeline",accent:T.greenDk,value:pl.total,unit:pl.total===1?"prospect":"prospects",
+            sub:pl.forecastOpen>0?`${fmt(pl.forecastOpen)} in open asks`:`${fmt(pl.value)} lifetime`,onClick:()=>onNavigate("pipeline"),aria:"View pipeline board"});
+        }
+        return(
+          <div className="dash-cmd-grid" style={{display:"grid",gridTemplateColumns:`repeat(${cards.length},minmax(0,1fr))`,gap:12}}>
+            {cards.map(c=>(
+              <div key={c.key} {...interactive(c.onClick,{label:c.aria})}
+                style={{background:T.white,border:"1px solid "+T.bg3,borderLeft:`3px solid ${c.accent}`,borderRadius:14,padding:"15px 18px",boxShadow:T.shadow,display:"flex",flexDirection:"column",gap:4,minWidth:0}}>
+                <span style={{fontSize:10,fontWeight:800,letterSpacing:"0.1em",textTransform:"uppercase",color:T.ink3}}>{c.label}</span>
+                <span style={{display:"flex",alignItems:"baseline",gap:6}}>
+                  <span style={{fontSize:28,fontWeight:800,fontFamily:"'DM Serif Display',serif",color:c.accent,lineHeight:1}}>{c.value}</span>
+                  <span style={{fontSize:11,color:T.ink3}}>{c.unit}</span>
+                </span>
+                <span style={{fontSize:11.5,color:T.ink3,lineHeight:1.4,minHeight:16}}>{c.sub}</span>
+              </div>
+            ))}
+          </div>
+        );
+      })()}
+
       {/* Donor Retention Rate — the Home dashboard's primary hero metric.
           This is the number fundraisers already benchmark against (unlike
           Stewardship Debt's invented composite score, see the demoted strip
@@ -577,69 +627,54 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
             )}
           </div>
 
-          <div style={{borderTop:"1px solid "+T.bg3,paddingTop:16}}>
-            <div style={{fontSize:10,fontWeight:800,letterSpacing:"0.1em",textTransform:"uppercase",color:T.ink3,marginBottom:6}}>First-Touch Delay</div>
-            <div style={{fontSize:24,fontWeight:800,fontFamily:"'DM Serif Display',serif",color:T.ink,lineHeight:1}}>
-              {stewardMetrics.firstTouchDelay.current!=null?`${stewardMetrics.firstTouchDelay.current}d`:"—"}
-            </div>
-            <div style={{fontSize:13,fontWeight:600,color:T.ink2,marginTop:6,lineHeight:1.4,maxWidth:360}}>
-              {/* A genuine zero (no logged outreach yet) reads as expected
-                  first-day state when the org has real donor/gift history —
-                  not as a broken metric — vs. the generic description once
-                  there's actually something to describe. Never fabricates
-                  interaction data; this only changes the caption. */}
-              {stewardMetrics.firstTouchDelay.current==null && myStats?.orgHasGiftHistory && !myStats?.orgHasInteractions
-                ? "No outreach logged yet — that's normal right after import. Log your first call from a donor's profile to start tracking this."
-                : <>New donors wait this long, on average, before hearing from you personally{stewardMetrics.firstTouchDelay.sampleSize?` — based on ${stewardMetrics.firstTouchDelay.sampleSize} donors`:""}.</>}
-            </div>
-            {/* No "top offenders" list makes sense for an average — instead,
-                the actual newest donor(s) still waiting on a first personal
-                touch, i.e. the specific people this number is about. */}
-            {stewardMetrics.firstTouchDelay.newestUntouched?.length>0&&(
-              <div style={{display:"flex",flexWrap:"wrap",alignItems:"center",gap:6,marginTop:10}}>
-                {stewardMetrics.firstTouchDelay.newestUntouched.map(d=>(
-                  <DonorChip key={d.donorId} name={d.donorName} detail={`waiting ${daysDiff(d.firstGiftDate)}d`} onClick={()=>onNavigate("donors",{selectDonorId:d.donorId})}/>
-                ))}
-                {stewardMetrics.firstTouchDelay.untouchedCount>stewardMetrics.firstTouchDelay.newestUntouched.length&&(
-                  <span style={{fontSize:11,color:T.ink3}}>+{stewardMetrics.firstTouchDelay.untouchedCount-stewardMetrics.firstTouchDelay.newestUntouched.length} more waiting</span>
-                )}
-              </div>
-            )}
+          {/* Signals (BUILD-16 Part 1) — First-Touch Delay and Stewardship
+              Debt are demoted from headline sections to small clickable chips.
+              They're clever composite metrics, not what a fundraiser opens the
+              app to see (that's the command center above) — so they sit here as
+              secondary signals that expand into their detail on click. */}
+          <div style={{borderTop:"1px solid "+T.bg3,paddingTop:14,display:"flex",gap:8,flexWrap:"wrap"}}>
+            <button onClick={()=>setFirstTouchOpen(v=>!v)}
+              aria-expanded={firstTouchOpen} aria-label="First-touch delay detail"
+              style={{display:"flex",alignItems:"baseline",gap:7,background:firstTouchOpen?T.bg2:T.bg,border:"1px solid "+T.bg3,borderRadius:99,padding:"7px 14px",cursor:"pointer"}}>
+              <span style={{fontSize:11,fontWeight:700,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.05em"}}>First-touch delay</span>
+              <span style={{fontSize:15,fontWeight:800,fontFamily:"'DM Serif Display',serif",color:T.ink}}>{stewardMetrics.firstTouchDelay.current!=null?`${stewardMetrics.firstTouchDelay.current}d`:"—"}</span>
+              <span style={{fontSize:11,color:T.ink3}}>{firstTouchOpen?"▲":"▼"}</span>
+            </button>
+            <button onClick={openDebtBreakdown}
+              aria-label="Stewardship debt detail"
+              style={{display:"flex",alignItems:"baseline",gap:7,background:T.bg,border:"1px solid "+T.bg3,borderRadius:99,padding:"7px 14px",cursor:"pointer"}}>
+              <span style={{fontSize:11,fontWeight:700,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.05em"}}>Stewardship debt</span>
+              <span style={{fontSize:15,fontWeight:800,fontFamily:"'DM Serif Display',serif",color:T.ink}}>{stewardMetrics.stewardshipDebt.current.toLocaleString()}</span>
+              {stewardMetrics.stewardshipDebt.deltaVsTrendStart!=null&&stewardMetrics.stewardshipDebt.deltaVsTrendStart!==0&&(
+                <span style={{fontSize:11,fontWeight:700,color:stewardMetrics.stewardshipDebt.deltaVsTrendStart>0?T.terracotta:"#1a6b4a"}}>
+                  {stewardMetrics.stewardshipDebt.deltaVsTrendStart>0?"↑":"↓"}{Math.abs(stewardMetrics.stewardshipDebt.deltaVsTrendStart).toLocaleString()}
+                </span>
+              )}
+              <span style={{fontSize:11,color:T.greenDk,fontWeight:700}}>→</span>
+            </button>
           </div>
 
-          {/* Stewardship Debt — demoted from hero to a slim secondary strip.
-              Still the same real, computed metric and drill-down; just no
-              longer the first thing you see. */}
-          <div style={{borderTop:"1px dashed "+T.bg3,paddingTop:14}}>
-            <div onClick={openDebtBreakdown} className="card-click" style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,cursor:"pointer",borderRadius:8,margin:-4,padding:4}}>
-              <div style={{fontSize:11,color:T.ink3,minWidth:0}}>
-                <span style={{fontWeight:700,color:T.ink}}>Stewardship Debt: {stewardMetrics.stewardshipDebt.current.toLocaleString()}</span>
-                {stewardMetrics.stewardshipDebt.deltaVsTrendStart!=null&&(
-                  <span style={{marginLeft:6,fontWeight:700,color:stewardMetrics.stewardshipDebt.deltaVsTrendStart===0?T.ink3:stewardMetrics.stewardshipDebt.deltaVsTrendStart>0?T.terracotta:"#1a6b4a"}}>
-                    {stewardMetrics.stewardshipDebt.deltaVsTrendStart===0
-                      ?"No change vs 3 weeks ago"
-                      :`${stewardMetrics.stewardshipDebt.deltaVsTrendStart>0?"↑":"↓"} ${Math.abs(stewardMetrics.stewardshipDebt.deltaVsTrendStart).toLocaleString()} vs 3 weeks ago`}
-                  </span>
-                )}
-                <span> — how long donors have gone quiet, weighted by how much they've given</span>
+          {/* First-touch delay — expands inline to its real detail: the average
+              plus the newest donor(s) still waiting on a first personal touch. */}
+          {firstTouchOpen&&(
+            <div style={{borderTop:"1px dashed "+T.bg3,paddingTop:14}}>
+              <div style={{fontSize:13,fontWeight:600,color:T.ink2,lineHeight:1.4,maxWidth:420}}>
+                {stewardMetrics.firstTouchDelay.current==null && myStats?.orgHasGiftHistory && !myStats?.orgHasInteractions
+                  ? "No outreach logged yet — that's normal right after import. Log your first call from a donor's profile to start tracking this."
+                  : <>New donors wait <b>{stewardMetrics.firstTouchDelay.current!=null?`${stewardMetrics.firstTouchDelay.current} days`:"—"}</b> on average before hearing from you personally{stewardMetrics.firstTouchDelay.sampleSize?` — based on ${stewardMetrics.firstTouchDelay.sampleSize} donors`:""}.</>}
               </div>
+              {stewardMetrics.firstTouchDelay.newestUntouched?.length>0&&(
+                <div style={{display:"flex",flexWrap:"wrap",alignItems:"center",gap:6,marginTop:10}}>
+                  {stewardMetrics.firstTouchDelay.newestUntouched.map(d=>(
+                    <DonorChip key={d.donorId} name={d.donorName} detail={`waiting ${daysDiff(d.firstGiftDate)}d`} onClick={()=>onNavigate("donors",{selectDonorId:d.donorId})}/>
+                  ))}
+                  {stewardMetrics.firstTouchDelay.untouchedCount>stewardMetrics.firstTouchDelay.newestUntouched.length&&(
+                    <span style={{fontSize:11,color:T.ink3}}>+{stewardMetrics.firstTouchDelay.untouchedCount-stewardMetrics.firstTouchDelay.newestUntouched.length} more waiting</span>
+                  )}
+                </div>
+              )}
             </div>
-            {/* Top contributors to the debt score, inline — the same list
-                the full breakdown panel ranks, just the top few surfaced
-                here without requiring the click. */}
-            {(debtBreakdownLoading&&!debtBreakdown)?(
-              <div style={{fontSize:11,color:T.ink3,marginTop:10}}>Loading who's driving it…</div>
-            ):debtBreakdown?.rows?.length>0&&(
-              <div style={{display:"flex",flexWrap:"wrap",gap:6,marginTop:10}}>
-                {debtBreakdown.rows.slice(0,3).map(r=>(
-                  <DonorChip key={r.donorId} name={r.donorName} detail={`${r.daysSinceContact}d`} onClick={()=>onNavigate("donors",{selectDonorId:r.donorId})}/>
-                ))}
-                {debtBreakdown.count>3&&(
-                  <MoreChip count={debtBreakdown.count-3} onClick={openDebtBreakdown}/>
-                )}
-              </div>
-            )}
-          </div>
+          )}
         </div>
       )}
 
@@ -693,9 +728,9 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
       )}
 
       <div className="dash-main-grid" style={{display:"grid",gridTemplateColumns:"minmax(0,1fr) 320px",gap:16,alignItems:"start"}}>
-        {/* LEFT: the queue is the hero */}
+        {/* LEFT: the queue is the hero (the "Need to Do" command card scrolls here) */}
         <div style={{display:"flex",flexDirection:"column",gap:14}}>
-          <div style={{...cardWrap}}>
+          <div id="dash-needtodo" style={{...cardWrap,scrollMarginTop:64}}>
             <div className="dash-cpad" style={{...cPad,borderBottom:"1px solid "+T.bg3,...sHdr}}>
               <span style={{display:"flex",alignItems:"center",gap:8}}>
                 <span style={sTitle}>Needs Your Attention</span>

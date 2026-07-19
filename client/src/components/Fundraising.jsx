@@ -125,7 +125,7 @@ export function Fundraising({ data, isReadOnly, onNavigate }) {
       )}
 
       {modal && (
-        <CampaignModal mode={modal.mode} campaign={modal.campaign}
+        <CampaignModal mode={modal.mode} campaign={modal.campaign} campaigns={campaigns}
           onClose={() => setModal(null)}
           onSaved={() => { setModal(null); load(); }} />
       )}
@@ -134,35 +134,58 @@ export function Fundraising({ data, isReadOnly, onNavigate }) {
 }
 
 // ── Overview ────────────────────────────────────────────────────────────────
+// Category metadata for typed goals (BUILD-16 Part 2) — Annual / Project /
+// Capital. Colors stay inside the five-color palette.
+const CATEGORY_META = {
+  annual: { label: "Annual", color: T.greenMid },
+  project: { label: "Project", color: T.gold600 },
+  capital: { label: "Capital", color: T.greenDk },
+};
+
 function OverviewView({ overview, campaigns, onNavigate, primaryBtn, onNewCampaign, onGoto }) {
   if (!overview) return <EmptyState icon="◇" title="Nothing to show yet" message="Set a goal and start a campaign to see your fundraising momentum here." />;
-  const { goal, period, givingPages } = overview;
+  const { period, givingPages, rollup, goals = [] } = overview;
   const gp = givingPages;
+  const topGoals = goals.filter(g => g.isTopLevel);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
-      {/* Goal reached celebration — fires once per goal per org */}
-      {goal && goal.percent >= 100 && (
-        <GoldMoment moment={`fundraising_goal_${goal.id}`} title="You reached your goal. 🎉"
-          line={`${goal.label} — ${fmtFull(goal.currentAmount)} raised.`} />
-      )}
+      {/* Goal-reached celebration — fires once per goal reaching 100% */}
+      {topGoals.filter(g => (g.rolledPercent ?? g.percent) >= 100).slice(0, 1).map(g => (
+        <GoldMoment key={g.id} moment={`fundraising_goal_${g.id}`} title="You reached a goal. 🎉"
+          line={`${g.name} — ${fmtFull(g.isOverarching ? g.rolledRaised : g.raised)} raised.`} />
+      ))}
 
-      {/* Hero: the active goal thermometer, or a start-here signpost */}
-      {goal ? (
+      {/* Roll-up header: total raised across active goals + combined pace.
+          Degrades gracefully — no goals → a start-here signpost; one goal →
+          that single goal reads as the hero via the portfolio below. */}
+      {rollup ? (
         <div {...interactive(() => onGoto && onGoto("campaigns"), { label: "View campaigns", dark: true })} style={{ background: `linear-gradient(135deg,${T.green950},${T.green800})`, borderRadius: 18, padding: "26px 28px", color: T.inkInverse, position: "relative", overflow: "hidden", border: "1px solid transparent" }}>
           <div style={{ position: "absolute", right: -30, top: -30, width: 160, height: 160, borderRadius: "50%", background: "radial-gradient(circle,#c9a84c22,transparent 70%)" }} />
-          <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: "0.14em", textTransform: "uppercase", color: "#c9a84c", marginBottom: 10 }}>Current goal</div>
-          <div style={{ fontFamily: "'DM Serif Display',Georgia,serif", fontSize: 22, marginBottom: 18, lineHeight: 1.25 }}>{goal.label}</div>
-          <GoalThermometerDark goal={goal} />
-          {goal.daysLeft != null && (
+          <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: "0.14em", textTransform: "uppercase", color: "#c9a84c", marginBottom: 10 }}>
+            {rollup.activeGoalCount === 1 ? "Active goal" : `All active goals · ${rollup.activeGoalCount}`}
+          </div>
+          <RollupThermometer rollup={rollup} />
+          {rollup.activeGoalCount > 1 && (
             <div style={{ marginTop: 14, fontSize: 13, color: "#a9c3b2" }}>
-              {goal.daysLeft > 0 ? `${goal.daysLeft} days left in this period` : "This period has ended"}
-              {goal.paceState === "behind" && goal.expected != null && ` · ${fmtFull(Math.max(0, goal.expected - goal.currentAmount))} behind pace`}
+              Combined progress across {rollup.activeGoalCount} goals — each tracks its own gifts automatically.
             </div>
           )}
         </div>
       ) : (
-        <StartHere line="Set a fundraising goal to light up a live thermometer here — it tracks every gift automatically, so you always know where you stand." actionLabel="Go to Settings → set a goal" onAction={() => onNavigate && onNavigate("dashboard")} />
+        <StartHere line="Start a campaign with a goal to light up a live thermometer here — Annual funds, a Project push, a Capital campaign — each tracks every gift automatically, and they roll up into one number." actionLabel="+ Start a campaign" onAction={onNewCampaign} />
+      )}
+
+      {/* The typed goal portfolio — one card per goal, its own thermometer + pace */}
+      {topGoals.length > 0 && (
+        <div>
+          <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: "0.12em", textTransform: "uppercase", color: T.ink3, marginBottom: 10 }}>Your goals</div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(320px,1fr))", gap: 16 }}>
+            {topGoals.map(g => (
+              <GoalCard key={g.id} g={g} allGoals={goals} onClick={() => onGoto && onGoto("campaigns")} />
+            ))}
+          </div>
+        </div>
       )}
 
       {/* Momentum stat row */}
@@ -241,6 +264,62 @@ function OverviewView({ overview, campaigns, onNavigate, primaryBtn, onNewCampai
   );
 }
 
+// Dark roll-up thermometer — total raised across active goals vs total goal.
+function RollupThermometer({ rollup }) {
+  const pct = rollup.percent == null ? 0 : rollup.percent;
+  const met = pct >= 100;
+  return (
+    <div>
+      <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 8, gap: 12, flexWrap: "wrap" }}>
+        <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
+          <span style={{ fontFamily: "'DM Serif Display',serif", fontSize: 30, color: T.inkInverse, lineHeight: 1 }}>{fmtFull(rollup.totalRaised)}</span>
+          <span style={{ fontSize: 14, color: "#a9c3b2" }}>of {fmtFull(rollup.totalGoal)}</span>
+        </div>
+        {rollup.percent != null && <span style={{ fontSize: 16, fontWeight: 800, color: T.gold }}>{rollup.percent}%</span>}
+      </div>
+      <div style={{ height: 14, background: "#1a2e1f", borderRadius: 99, overflow: "hidden" }}>
+        <div style={{ width: `${Math.max(pct, pct > 0 ? 2 : 0)}%`, height: "100%", borderRadius: 99, transition: "width 0.6s cubic-bezier(.22,1,.36,1)", background: met ? "linear-gradient(90deg,#c9a84c,#e6cf88)" : "linear-gradient(90deg,#b8963f,#c9a84c)" }} />
+      </div>
+    </div>
+  );
+}
+
+// One goal card in the portfolio. Overarching goals show their rolled-up child
+// progress and list their children; leaf goals show their own SUM(gifts).
+function GoalCard({ g, allGoals, onClick }) {
+  const cat = CATEGORY_META[g.goalCategory] || CATEGORY_META.project;
+  const raised = g.isOverarching ? g.rolledRaised : g.raised;
+  const percent = g.isOverarching ? g.rolledPercent : g.percent;
+  const paceState = g.isOverarching ? g.rolledPaceState : g.paceState;
+  const children = g.isOverarching ? allGoals.filter(x => g.childIds.includes(x.id)) : [];
+  return (
+    <div {...interactive(onClick, { label: `View ${g.name}` })}
+      style={{ background: T.white, border: "1px solid " + T.bg3, borderLeft: `3px solid ${cat.color}`, borderRadius: 16, padding: "18px 20px", boxShadow: T.shadow, display: "flex", flexDirection: "column", gap: 12 }}>
+      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 10 }}>
+        <div style={{ fontFamily: "'DM Serif Display',serif", fontSize: 17, color: T.ink, lineHeight: 1.25, minWidth: 0 }}>{g.name}</div>
+        <span style={{ fontSize: 10, fontWeight: 800, letterSpacing: "0.06em", textTransform: "uppercase", color: cat.color, background: cat.color + "14", borderRadius: 99, padding: "3px 9px", whiteSpace: "nowrap", flexShrink: 0 }}>{cat.label}</span>
+      </div>
+      <Thermometer raised={raised} goal={g.goalAmount} percent={percent} paceState={paceState} />
+      {g.isOverarching ? (
+        <div style={{ borderTop: "1px solid " + T.bg2, paddingTop: 10, display: "flex", flexDirection: "column", gap: 6 }}>
+          <div style={{ fontSize: 11, fontWeight: 700, color: T.ink3, textTransform: "uppercase", letterSpacing: "0.06em" }}>Rolls up {g.childCount} goal{g.childCount === 1 ? "" : "s"}</div>
+          {children.map(c => (
+            <div key={c.id} style={{ display: "flex", justifyContent: "space-between", gap: 8, fontSize: 12, color: T.ink2 }}>
+              <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.name}</span>
+              <span style={{ color: T.ink3, flexShrink: 0 }}>{fmtFull(c.raised)} · {c.percent ?? 0}%</span>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div style={{ fontSize: 12, color: T.ink3, borderTop: "1px solid " + T.bg2, paddingTop: 10 }}>
+          {g.donorCount} donor{g.donorCount === 1 ? "" : "s"}
+          {daysLeftText(g.daysLeft) && g.lifecycle === "active" ? ` · ${daysLeftText(g.daysLeft)}` : g.lifecycle === "upcoming" ? " · upcoming" : g.lifecycle === "ended" ? " · ended" : ""}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function GoalThermometerDark({ goal }) {
   const met = goal.percent >= 100;
   return (
@@ -281,10 +360,14 @@ function CampaignsView({ campaigns, isReadOnly, roTip, onNew, onEdit }) {
             <div key={c.id} style={{ background: T.white, border: "1px solid " + T.bg3, borderRadius: 16, padding: "20px 22px", boxShadow: T.shadow, display: "flex", flexDirection: "column", gap: 14 }}>
               <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 10 }}>
                 <div style={{ minWidth: 0 }}>
-                  <div style={{ fontFamily: "'DM Serif Display',serif", fontSize: 18, color: T.ink, lineHeight: 1.25 }}>{c.name}</div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                    <div style={{ fontFamily: "'DM Serif Display',serif", fontSize: 18, color: T.ink, lineHeight: 1.25 }}>{c.name}</div>
+                    {CATEGORY_META[c.goalCategory] && <span style={{ fontSize: 10, fontWeight: 800, letterSpacing: "0.06em", textTransform: "uppercase", color: CATEGORY_META[c.goalCategory].color, background: CATEGORY_META[c.goalCategory].color + "14", borderRadius: 99, padding: "2px 8px" }}>{CATEGORY_META[c.goalCategory].label}</span>}
+                  </div>
                   <div style={{ fontSize: 11, color: T.ink3, marginTop: 3 }}>
                     {c.lifecycle === "upcoming" ? "Upcoming" : c.lifecycle === "ended" ? "Ended" : "Active"}
                     {daysLeftText(c.daysLeft) && c.lifecycle === "active" ? ` · ${daysLeftText(c.daysLeft)}` : ""}
+                    {c.parentGoalId ? " · rolls up" : ""}
                   </div>
                 </div>
                 {!isReadOnly && <button onClick={() => onEdit(c)} style={{ background: "none", border: "1px solid " + T.bg3, borderRadius: 8, padding: "4px 10px", fontSize: 12, color: T.ink3, cursor: "pointer", whiteSpace: "nowrap" }}>Edit</button>}
@@ -302,22 +385,28 @@ function CampaignsView({ campaigns, isReadOnly, roTip, onNew, onEdit }) {
   );
 }
 
-function CampaignModal({ mode, campaign, onClose, onSaved }) {
+function CampaignModal({ mode, campaign, campaigns = [], onClose, onSaved }) {
   const [name, setName] = useState(campaign?.name || "");
   const [goal, setGoal] = useState(campaign?.goalAmount ? String(campaign.goalAmount) : "");
+  const [category, setCategory] = useState(campaign?.goalCategory || "project");
+  const [parentId, setParentId] = useState(campaign?.parentGoalId || "");
   const [start, setStart] = useState(campaign?.startDate ? String(campaign.startDate).slice(0, 10) : "");
   const [end, setEnd] = useState(campaign?.endDate ? String(campaign.endDate).slice(0, 10) : "");
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState("");
 
+  // Eligible parents: any other goal in this org that isn't itself a child
+  // (keep the roll-up one level deep for a legible portfolio).
+  const parentOptions = campaigns.filter(c => c.id !== campaign?.id && !c.parentGoalId);
+
   const save = async () => {
     setErr("");
-    if (!name.trim()) { setErr("Give your campaign a name."); return; }
+    if (!name.trim()) { setErr("Give your goal a name."); return; }
     const g = parseFloat(goal);
     if (!Number.isFinite(g) || g <= 0) { setErr("Enter a positive goal amount."); return; }
     setSaving(true);
     try {
-      const body = { name: name.trim(), goalAmount: g, startDate: start || null, endDate: end || null };
+      const body = { name: name.trim(), goalAmount: g, goalCategory: category, parentGoalId: parentId || null, startDate: start || null, endDate: end || null };
       if (mode === "edit") await apiFetch(`/fundraising/campaigns/${campaign.id}`, { method: "PUT", body: JSON.stringify(body) });
       else await apiFetch("/fundraising/campaigns", { method: "POST", body: JSON.stringify(body) });
       onSaved();
@@ -340,6 +429,24 @@ function CampaignModal({ mode, campaign, onClose, onSaved }) {
           <label style={lbl}>Goal amount</label>
           <input value={goal} onChange={e => setGoal(e.target.value.replace(/[^0-9.]/g, ""))} placeholder="15000" inputMode="decimal" style={field} />
         </div>
+        <div style={{ marginBottom: 16 }}>
+          <label style={lbl}>Type</label>
+          <div style={{ display: "flex", gap: 8 }}>
+            {[["annual", "Annual"], ["project", "Project"], ["capital", "Capital"]].map(([v, l]) => (
+              <button key={v} type="button" onClick={() => setCategory(v)}
+                style={{ flex: 1, background: category === v ? (CATEGORY_META[v].color + "18") : T.bg, border: `1px solid ${category === v ? CATEGORY_META[v].color : T.bg3}`, borderRadius: 10, padding: "9px", fontSize: 13, fontWeight: 700, color: category === v ? CATEGORY_META[v].color : T.ink3, cursor: "pointer" }}>{l}</button>
+            ))}
+          </div>
+        </div>
+        {parentOptions.length > 0 && (
+          <div style={{ marginBottom: 16 }}>
+            <label style={lbl}>Rolls up under <span style={{ color: T.ink3, fontWeight: 400 }}>(optional overarching goal)</span></label>
+            <select value={parentId} onChange={e => setParentId(e.target.value)} style={field}>
+              <option value="">— None (stands alone) —</option>
+              {parentOptions.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </select>
+          </div>
+        )}
         <div style={{ display: "flex", gap: 12, marginBottom: 20 }}>
           <div style={{ flex: 1 }}>
             <label style={lbl}>Start date <span style={{ color: T.ink3, fontWeight: 400 }}>(optional)</span></label>

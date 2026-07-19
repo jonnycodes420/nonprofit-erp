@@ -303,6 +303,8 @@ export function GlobalStyles() {
          below it (DOM order: queue+briefing first, funnel+grant-tile second) */
       .dash-main-grid{grid-template-columns:1fr!important;}
       .dash-main-grid>div{min-width:0!important;width:100%!important;}
+      /* BUILD-16 command-center headers stack 2-up on phones */
+      .dash-cmd-grid{grid-template-columns:1fr 1fr!important;}
       /* Dashboard mobile comprehensive */
       .dash-root{font-size:14px!important;}
       .dash-bleed{margin:-20px -16px calc(-68px - env(safe-area-inset-bottom,0px)) -16px!important;padding:16px 16px calc(84px + env(safe-area-inset-bottom,0px)) 16px!important;}
