@@ -74,7 +74,7 @@ export function QrCodeBlock({url,filenameBase}){
             </button>
             <button onClick={printQR}
               style={{background:bg,border:"1px solid "+bg3,borderRadius:8,padding:"9px 18px",color:ink,fontSize:13,fontWeight:600,cursor:"pointer"}}>
-              🖨 Print
+              Print
             </button>
             <button onClick={()=>setQrDataUrl("")}
               style={{background:"transparent",border:"1px solid "+bg3,borderRadius:8,padding:"9px 14px",color:ink3,fontSize:13,cursor:"pointer"}}>

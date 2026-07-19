@@ -477,7 +477,7 @@ export function DonorImport({ onClose, onImported, withHistory = false }) {
     return (
       <div style={overlay} className="modal-sheet-overlay">
         <div style={{...modal,textAlign:"center"}} className="modal-sheet-inner">
-          <div style={{fontSize:36,marginBottom:12}}>{hasBatchErrors?"⚠":"✓"}</div>
+          <div style={{fontSize:36,marginBottom:12}}>{hasBatchErrors?"✕":"✓"}</div>
           <div style={{fontFamily:"'DM Serif Display',Georgia,serif",fontSize:22,fontWeight:400,color:T.ink,marginBottom:12,letterSpacing:"-0.01em"}}>
             {hasBatchErrors ? "Import finished with errors." : "Import complete."}
           </div>
@@ -597,7 +597,7 @@ export function DonorImport({ onClose, onImported, withHistory = false }) {
                 : <span style={{color:T.ink3}}>No rows ready — map at least one column to <em>name</em> or <em>email</em>.</span>}
             </div>
             {warned.slice(0,5).flatMap(d=>d._warnings).slice(0,6).map((w,i)=>(
-              <div key={i} style={{fontSize:11,color:"#92400e",background:"#fef3c7",borderRadius:5,padding:"3px 8px",marginTop:4,display:"inline-block",marginRight:4}}>⚠ {w}</div>
+              <div key={i} style={{fontSize:11,color:"#92400e",background:"#fef3c7",borderRadius:5,padding:"3px 8px",marginTop:4,display:"inline-block",marginRight:4}}>{w}</div>
             ))}
             {warned.length>5&&<div style={{fontSize:11,color:T.ink3,marginTop:6}}>{warned.length-5} more rows with warnings — they will still import.</div>}
             {skipped.length>0&&<div style={{fontSize:11,color:T.ink3,marginTop:4}}>Skipped: {skipped.slice(0,3).map(s=>`row ${s.row}`).join(", ")}{skipped.length>3?` +${skipped.length-3} more`:""}</div>}
@@ -1135,7 +1135,7 @@ function GiftHistoryImport({ donors, onClose, onImported }) {
             <div style={{marginBottom:14}}>
               <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8}}>
                 <div style={{fontSize:12,fontWeight:700,color:"#92400e",textTransform:"uppercase",letterSpacing:"0.08em"}}>
-                  ⚠ Low Confidence — {stats.lowPending} pending review
+                  Low Confidence — {stats.lowPending} pending review
                 </div>
                 {stats.lowPending>0&&(
                   <button onClick={skipAllPending} style={{fontSize:11,color:T.ink3,background:"none",border:"1px solid "+T.bg3,borderRadius:6,padding:"3px 10px",cursor:"pointer"}}>
@@ -1532,7 +1532,7 @@ function CombinedImport({ onClose, onImported }) {
                   <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:cr.gifts.length?5:0,flexWrap:"wrap"}}>
                     <span style={{fontSize:13,fontWeight:700,color:T.ink}}>{cr.donor.name}</span>
                     {cr.donor.email&&<span style={{fontSize:11,color:T.ink3}}>{cr.donor.email}</span>}
-                    {cr.warnings.length>0&&<span style={{fontSize:11,color:"#92400e",background:"#fef3c7",borderRadius:4,padding:"1px 6px"}}>⚠ {cr.warnings[0]}</span>}
+                    {cr.warnings.length>0&&<span style={{fontSize:11,color:"#92400e",background:"#fef3c7",borderRadius:4,padding:"1px 6px"}}>{cr.warnings[0]}</span>}
                   </div>
                   {cr.gifts.length>0&&(
                     <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
@@ -2582,12 +2582,12 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
         </div>
         <div className="dph-actions" style={{display:"flex",gap:6,flexShrink:0,alignItems:"center"}}>
           <button onClick={()=>setShowGiftModal(true)} style={{background:T.green,border:"none",borderRadius:8,padding:"7px 14px",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer"}}>
-            💳 Request Gift
+            Request Gift
           </button>
           {/* SHELVED — voice capture works but unproven adoption assumption, revisit later.
               Code intact, re-enable by uncommenting.
           <button onClick={()=>setShowVoiceMemo(true)} style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"7px 14px",color:T.ink3,fontSize:13,cursor:"pointer"}}>
-            🎙 Voice memo
+            Voice memo
           </button>
           */}
           <button onClick={downloadImpactSummary} disabled={impactPdfLoading} style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"7px 14px",color:T.ink3,fontSize:13,cursor:impactPdfLoading?"not-allowed":"pointer",opacity:impactPdfLoading?0.6:1}}>
@@ -2636,7 +2636,6 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
             {donor.matchingGift&&(
               <div title={`${donor.matchingGift.sourceNote} List curated ${donor.matchingGift.lastVerified}.`}
                 style={{background:"#10b98112",border:"1px solid #10b98140",borderRadius:12,padding:"10px 14px",fontSize:12,color:T.ink,display:"flex",alignItems:"flex-start",gap:8}}>
-                <span style={{fontSize:14,lineHeight:1.4}}>🤝</span>
                 <div>
                   <div><strong>{donor.matchingGift.companyName}</strong> matches employee gifts {donor.matchingGift.ratio} — ask {donor.name.split(" ")[0]} to submit a match request.</div>
                   <div style={{fontSize:10,color:T.ink3,marginTop:2}}>Curated list, not a live feed — verify current terms before outreach.</div>
@@ -3139,7 +3138,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
 
                 {affinity.length>0&&(
                   <div style={{background:"#c9a84c10",border:"1px solid #c9a84c40",borderRadius:12,padding:"14px 16px"}}>
-                    <div style={{fontSize:12,fontWeight:700,color:"#c9a84c",marginBottom:8}}>💡 Suggested Asks</div>
+                    <div style={{fontSize:12,fontWeight:700,color:"#c9a84c",marginBottom:8}}>Suggested Asks</div>
                     {affinity.slice(0,2).map(f=>(
                       <div key={f.fundId} style={{fontSize:12,color:T.ink,marginBottom:4}}>
                         This donor has given {fmtFull(f.total)} to <strong>{f.fundName}</strong>. Consider them for {f.fundName} campaign appeals.
@@ -3227,7 +3226,6 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
               onDrop={async e=>{e.preventDefault();setMatDragging(false);const file=e.dataTransfer.files[0];if(file)uploadMaterial(file);}}
               onClick={()=>fileInputRef.current?.click()}
               style={{border:`2px dashed ${matDragging?"#10b981":T.bg3}`,borderRadius:12,padding:"28px 20px",textAlign:"center",cursor:"pointer",transition:"border-color 0.15s",background:matDragging?"#10b98108":T.bg}}>
-              <div style={{fontSize:28,marginBottom:6}}>📎</div>
               <div style={{fontSize:13,color:T.ink3}}>{matUploading?"Uploading…":"Drop a file here or click to browse"}</div>
               <div style={{fontSize:11,color:T.ink3,marginTop:4}}>Proposals, letters, research — any file type</div>
               <input ref={fileInputRef} type="file" style={{display:"none"}} onChange={e=>{const f=e.target.files[0];if(f)uploadMaterial(f);e.target.value="";}}/>
@@ -3237,7 +3235,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
                 {materials.map(m=>(
                   <div key={m.id} style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:10,padding:"12px 14px",display:"flex",alignItems:"center",gap:12}}>
                     <div style={{fontSize:22,flexShrink:0}}>
-                      {m.file_type?.includes("pdf")?"📄":m.file_type?.includes("image")?"🖼️":m.file_type?.includes("word")?"📝":"📎"}
+                      ▤
                     </div>
                     <div style={{flex:1,minWidth:0}}>
                       <div style={{fontSize:13,fontWeight:600,color:T.ink,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{m.file_name}</div>
@@ -3275,7 +3273,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
                   ))}
                 </div>
                 <div style={{display:"flex",gap:6}}>
-                  <button onClick={()=>setStwOpen(v=>!v)} style={{background:"#10b98110",border:"1px solid #10b98130",borderRadius:8,padding:"7px 12px",color:"#10b981",fontSize:12,fontWeight:700,cursor:"pointer"}}>💌 Log Stewardship</button>
+                  <button onClick={()=>setStwOpen(v=>!v)} style={{background:"#10b98110",border:"1px solid #10b98130",borderRadius:8,padding:"7px 12px",color:"#10b981",fontSize:12,fontWeight:700,cursor:"pointer"}}>Log Stewardship</button>
                   <button onClick={onLogTouchpoint} style={{background:"#10b981",border:"none",borderRadius:8,padding:"7px 12px",color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer"}}>+ Log Touchpoint</button>
                 </div>
               </div>
@@ -3296,10 +3294,10 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
               </div>}
               <div style={{display:"flex",flexDirection:"column",gap:8}}>
                 {(localInts??donor.interactions??[]).filter(i=>actFilter==="all"||i.type===actFilter).map(i=>{
-                  const typeIcon={call:"📞",meeting:"🤝",email:"✉️",gift:"🎁",event:"🎟️",stewardship:"💌",note:"📝",stage_change:"📈",planned_gift:"⭐",material:"📄"}[i.type]||"•";
+                  const typeIcon="•";
                   const typeColor={call:"#3b82f6",meeting:"#1a6b4a",email:"#8b5cf6",gift:"#c9a84c",event:"#ec4899",stewardship:"#10b981",stage_change:"#3b82f6",planned_gift:"#f59e0b",material:"#6b7280"}[i.type]||T.ink3;
                   return(<div key={i.id||i.date} className="tp-row" style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:10,padding:"10px 14px",display:"flex",gap:10,alignItems:"flex-start"}}>
-                    <div style={{fontSize:16,flexShrink:0,marginTop:1}}>{typeIcon}</div>
+                    <div style={{fontSize:16,flexShrink:0,marginTop:1,color:typeColor}}>{typeIcon}</div>
                     <div style={{flex:1,minWidth:0}}>
                       <div style={{display:"flex",alignItems:"baseline",gap:8,flexWrap:"wrap"}}>
                         <span style={{fontSize:11,fontWeight:700,color:typeColor,textTransform:"capitalize"}}>{(i.type||"note").replace(/_/g," ")}</span>
@@ -3310,7 +3308,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
                     </div>
                     {i.id&&<button className="tp-del-btn" title="Delete this entry" aria-label="Delete this entry"
                       onClick={()=>{if(window.confirm("Delete this timeline entry? This can't be undone."))deleteInteraction(i);}}
-                      style={{background:"transparent",border:"none",cursor:"pointer",color:T.terracotta,fontSize:14,padding:"2px 4px",flexShrink:0,lineHeight:1}}>🗑</button>}
+                      style={{background:"transparent",border:"none",cursor:"pointer",color:T.terracotta,fontSize:14,padding:"2px 4px",flexShrink:0,lineHeight:1}}>✕</button>}
                   </div>);
                 })}
                 {(localInts??donor.interactions??[]).filter(i=>actFilter==="all"||i.type===actFilter).length===0&&<div style={{fontSize:12,color:T.ink3,fontStyle:"italic",textAlign:"center",padding:16}}>No activity logged yet</div>}
@@ -3323,24 +3321,24 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
               const firstGiftDate=sortedGiftsForTimeline[0]?.date;
               const largestGift=sortedGiftsForTimeline.reduce((m,g)=>g.amount>m.amount?g:m,{amount:0,date:""});
               const milestones=[];
-              if(firstGiftDate)milestones.push({date:firstGiftDate,icon:"⭐",label:"First gift",desc:`$${sortedGiftsForTimeline[0]?.amount?.toLocaleString()} — relationship began`,color:"#c9a84c",big:true});
-              if(largestGift.amount>0&&largestGift.date!==firstGiftDate)milestones.push({date:largestGift.date,icon:"⭐",label:"Largest gift",desc:`$${largestGift.amount.toLocaleString()} — record gift`,color:"#c9a84c",big:true});
+              if(firstGiftDate)milestones.push({date:firstGiftDate,icon:"✦",label:"First gift",desc:`$${sortedGiftsForTimeline[0]?.amount?.toLocaleString()} — relationship began`,color:"#c9a84c",big:true});
+              if(largestGift.amount>0&&largestGift.date!==firstGiftDate)milestones.push({date:largestGift.date,icon:"✦",label:"Largest gift",desc:`$${largestGift.amount.toLocaleString()} — record gift`,color:"#c9a84c",big:true});
               if(firstGiftDate){
                 const ann=new Date(firstGiftDate);ann.setFullYear(ann.getFullYear()+1);
                 const annStr=ann.toISOString().split("T")[0];
-                if(new Date(annStr)<=new Date())milestones.push({date:annStr,icon:"⭐",label:"1-year anniversary",desc:"One year as a donor",color:"#c9a84c",big:true});
+                if(new Date(annStr)<=new Date())milestones.push({date:annStr,icon:"✦",label:"1-year anniversary",desc:"One year as a donor",color:"#c9a84c",big:true});
               }
               let cumulative=0;
               sortedGiftsForTimeline.forEach(g=>{
                 const prev=cumulative;cumulative+=g.amount;
                 const crossed=[10000,25000,50000,100000,250000].filter(t=>prev<t&&cumulative>=t);
-                crossed.forEach(t=>milestones.push({date:g.date,icon:"⭐",label:`$${(t/1000)}k milestone`,desc:`Lifetime giving crossed $${(t/1000)}k`,color:"#c9a84c",big:true}));
+                crossed.forEach(t=>milestones.push({date:g.date,icon:"✦",label:`$${(t/1000)}k milestone`,desc:`Lifetime giving crossed $${(t/1000)}k`,color:"#c9a84c",big:true}));
               });
 
               const events=[
                 ...ints.filter(i=>["call","meeting","email","gift","event","stewardship","stage_change","planned_gift"].includes(i.type)).map(i=>({
                   date:i.date,
-                  icon:{call:"📞",meeting:"🤝",email:"✉️",gift:"🎁",event:"🎟️",stewardship:"💌",stage_change:"📈",planned_gift:"⭐"}[i.type]||"•",
+                  icon:"•",
                   label:(i.type||"note").replace(/_/g," "),
                   desc:i.note||"",
                   color:{call:"#3b82f6",meeting:"#1a6b4a",email:"#8b5cf6",gift:"#c9a84c",event:"#ec4899",stewardship:"#10b981",stage_change:"#3b82f6",planned_gift:"#f59e0b"}[i.type]||T.ink3,
@@ -3378,7 +3376,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
         <div style={{overflowY:"auto",padding:"22px 24px 24px 20px",display:"flex",flexDirection:"column",gap:18,background:"#0f1a12"}}>
           {donor.stripeSubscriptionStatus==="active"&&(
             <div style={{background:"#10b98110",border:"1px solid #10b98130",borderRadius:12,padding:"12px 14px",display:"flex",alignItems:"center",gap:8}}>
-              <span style={{fontSize:16}}>🔁</span>
+              <span style={{fontSize:16}}>↻</span>
               <div>
                 <div style={{fontSize:12,fontWeight:700,color:"#1a6b4a"}}>Recurring Donor</div>
                 <div style={{fontSize:11,color:"#15803d",marginTop:1}}>Active {donor.stripeSubscriptionId?"subscription":"recurring gift"}</div>
@@ -3494,10 +3492,10 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
             <div style={{fontSize:10,fontWeight:800,textTransform:"uppercase",letterSpacing:"0.12em",color:"#8fa896",marginBottom:8}}>Events</div>
             <div style={{display:"flex",flexDirection:"column",gap:4}}>
               {donorEvents.slice(0,5).map(e=>{
-                const EVT_ICONS={gala:"🎭",cultivation:"🍽️",site_visit:"🏢",board_meeting:"🏛️",volunteer:"🤝",webinar:"💻",other:"📅"};
+                const EVT_ICONS={gala:"•",cultivation:"•",site_visit:"•",board_meeting:"•",volunteer:"•",webinar:"•",other:"•"};
                 const EVT_COLORS={gala:"#8b5cf6",cultivation:"#10b981",site_visit:"#3b82f6",board_meeting:"#0d5c3a",volunteer:"#f59e0b",webinar:"#ec4899",other:"#6b7280"};
                 const ATT_COL={invited:"#6b7280",confirmed:"#3b82f6",attended:"#10b981",no_show:"#ef4444",cancelled:"#6b7280"};
-                const icon=EVT_ICONS[e.event_type]||"📅";
+                const icon=EVT_ICONS[e.event_type]||"•";
                 const attCol=ATT_COL[e.attendee_status]||"#6b7280";
                 const d=e.date?new Date(e.date+"T12:00:00").toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"}):"";
                 return(
@@ -3930,7 +3928,7 @@ function DirectoryView({donors,loading,serverTotal,page,pageSize,onPage,clientFi
               </div>
             );
           })}
-          {!teamPortfolios&&<span style={{fontSize:11,color:T.ink3,fontStyle:"italic"}}>🔒 Color-code portfolios on the Team plan</span>}
+          {!teamPortfolios&&<span style={{fontSize:11,color:T.ink3,fontStyle:"italic"}}>Color-code portfolios on the Team plan</span>}
         </div>
       )}
 

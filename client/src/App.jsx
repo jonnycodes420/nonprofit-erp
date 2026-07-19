@@ -32,7 +32,7 @@ const TABS=[
   {id:"grants",label:"Grants",icon:"◉"},
   {id:"communications",label:"Communications",icon:"◑"},
   {id:"tasks",label:"Tasks",icon:"◻"},
-  {id:"workflows",label:"Workflows",icon:"⚡"},
+  {id:"workflows",label:"Workflows",icon:"◧"},
   {id:"reports",label:"Reports",icon:"▤"},
   {id:"finance",label:"Finance",icon:"◇"},
   {id:"settings",label:"Settings",icon:"⚙"},
@@ -52,7 +52,7 @@ const MORE_TABS=[
   {id:"fundraising",label:"Fundraising",icon:"↗"},
   {id:"communications",label:"Communications",icon:"◑"},
   {id:"tasks",label:"Tasks",icon:"◻"},
-  {id:"workflows",label:"Workflows",icon:"⚡"},
+  {id:"workflows",label:"Workflows",icon:"◧"},
   {id:"reports",label:"Reports",icon:"▤"},
   {id:"finance",label:"Finance",icon:"◇"},
   // DEPRIORITIZED — pivoting to donor dashboard focus, code kept intact, re-enable by uncommenting
@@ -283,7 +283,7 @@ function AppShell() {
         {/* SHELVED — voice capture works but unproven adoption assumption, revisit later.
             Code intact, re-enable by uncommenting.
         <button onClick={()=>setShowVoiceMemo(true)} title="Record a voice memo" style={{background:"#1a2e1f",border:"1px solid #2d4a35",borderRadius:10,padding:"7px 12px",color:"#c9a84c",fontSize:12,fontWeight:700,cursor:"pointer",display:"flex",alignItems:"center",gap:6}}>
-          🎙 Voice memo
+          Voice memo
         </button>
         */}
         <div className="app-avatar" style={{width:30,height:30,borderRadius:8,background:T.greenDk,display:"flex",alignItems:"center",justifyContent:"center"}}>
@@ -296,18 +296,15 @@ function AppShell() {
     </div>
 
     {showReadOnlyBanner&&<div style={{background:"#7f1d1d",borderBottom:"1px solid #991b1b",padding:"9px 24px",display:"flex",alignItems:"center",gap:12,fontSize:13,color:"#fca5a5",flexWrap:"wrap"}}>
-      <span>🔒</span>
       <span style={{flex:1,minWidth:200}}><strong style={{color:"#fef2f2"}}>Your account is read-only.</strong> {subStatus==="trial_expired"?"Your free trial has ended.":"Your subscription has ended."} Export your data or reactivate to continue.</span>
       <button onClick={exportDataFromBanner} disabled={exportingBanner} style={{background:"none",border:"1px solid #fca5a5",borderRadius:8,color:"#fca5a5",fontSize:12,fontWeight:700,cursor:exportingBanner?"not-allowed":"pointer",padding:"4px 12px",whiteSpace:"nowrap",opacity:exportingBanner?0.7:1}}>{exportingBanner?"Exporting…":"Export data →"}</button>
       <button onClick={()=>setShowPlanPicker(true)} style={{background:"#fef2f2",border:"none",borderRadius:8,color:"#7f1d1d",fontSize:12,fontWeight:700,cursor:"pointer",padding:"4px 12px",whiteSpace:"nowrap"}}>Reactivate →</button>
     </div>}
     {!showReadOnlyBanner&&showWarningBanner&&subStatus==="past_due"&&<div style={{background:"#451a03",borderBottom:"1px solid #92400e",padding:"9px 24px",display:"flex",alignItems:"center",gap:12,fontSize:13,color:"#fbbf24",flexWrap:"wrap"}}>
-      <span>⚠️</span>
       <span style={{flex:1,minWidth:200}}><strong style={{color:"#fef3c7"}}>Your last payment didn't go through.</strong> Update your payment method to keep Steward active.</span>
       <button onClick={openPortal} style={{background:"#f59e0b",border:"none",borderRadius:8,color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer",padding:"4px 12px",whiteSpace:"nowrap"}}>Update payment →</button>
     </div>}
     {!showReadOnlyBanner&&showWarningBanner&&(subStatus==="canceled"||subStatus==="cancelled")&&<div style={{background:"#451a03",borderBottom:"1px solid #92400e",padding:"9px 24px",display:"flex",alignItems:"center",gap:12,fontSize:13,color:"#fbbf24",flexWrap:"wrap"}}>
-      <span>⚠️</span>
       <span style={{flex:1,minWidth:200}}><strong style={{color:"#fef3c7"}}>Your subscription is canceled.</strong> You have until {billing?.graceUntil?new Date(billing.graceUntil).toLocaleDateString("en-US",{month:"short",day:"numeric"}):"soon"} to export your data or reactivate.</span>
       <button onClick={exportDataFromBanner} disabled={exportingBanner} style={{background:"none",border:"1px solid #fbbf24",borderRadius:8,color:"#fbbf24",fontSize:12,fontWeight:700,cursor:exportingBanner?"not-allowed":"pointer",padding:"4px 12px",whiteSpace:"nowrap",opacity:exportingBanner?0.7:1}}>{exportingBanner?"Exporting…":"Export data"}</button>
       <button onClick={()=>setShowPlanPicker(true)} style={{background:"#f59e0b",border:"none",borderRadius:8,color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer",padding:"4px 12px",whiteSpace:"nowrap"}}>Reactivate →</button>
@@ -348,7 +345,6 @@ function AppShell() {
     {showVoiceMemo&&<VoiceMemoModal donors={data.donors} onClose={()=>setShowVoiceMemo(false)} onSaved={()=>loadData()}/>}
     */}
     {stripeToast&&<div style={{position:"fixed",bottom:24,right:24,zIndex:9999,background:T.greenDk,color:"#fff",borderRadius:14,padding:"14px 20px",fontSize:13,fontWeight:600,boxShadow:"0 8px 32px rgba(26,107,74,0.35)",display:"flex",alignItems:"center",gap:10,maxWidth:340}}>
-      <span style={{fontSize:18}}>💳</span>
       <div>
         <div style={{fontWeight:700,marginBottom:2}}>Stripe connected!</div>
         <div style={{fontWeight:400,opacity:0.85}}>You can now accept online donations.</div>
@@ -381,7 +377,6 @@ function AppShell() {
 
     {/* Install prompt — mobile browsers only */}
     {showInstallPrompt&&deferredPrompt&&<div style={{position:"fixed",bottom:"calc(60px + env(safe-area-inset-bottom,0px))",left:0,right:0,zIndex:145,background:"#0f1a12",borderTop:"1px solid #1a2e1f",padding:"10px 16px",display:"flex",alignItems:"center",gap:12,boxShadow:"0 -4px 20px rgba(0,0,0,0.3)"}}>
-      <span style={{fontSize:18,lineHeight:1,flexShrink:0}}>📱</span>
       <span style={{flex:1,fontSize:13,color:"#f0ede6",fontWeight:500}}>Add Steward to your home screen</span>
       <button onClick={async()=>{deferredPrompt.prompt();setShowInstallPrompt(false);}} style={{background:"#10b981",border:"none",borderRadius:8,padding:"6px 14px",color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer",flexShrink:0}}>Add</button>
       <button onClick={()=>{setShowInstallPrompt(false);localStorage.setItem('installDismissed','true');}} style={{background:"transparent",border:"none",color:"#8fa896",fontSize:18,cursor:"pointer",padding:"0 4px",lineHeight:1,flexShrink:0}}>×</button>

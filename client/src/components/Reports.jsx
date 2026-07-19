@@ -482,7 +482,7 @@ export function Reports({ onNavigate }) {
             <div style={{ flex: 1 }} />
             {!DIGEST_REPORTS.includes(active) && <button onClick={downloadCsv} disabled={downloading || loading || customIncomplete || planLocked}
               style={{ background: T.white, border: `1.5px solid ${T.greenDk}`, borderRadius: 10, padding: "7px 16px", color: T.greenDk, fontSize: 12, fontWeight: 700, cursor: downloading ? "wait" : "pointer", whiteSpace: "nowrap", opacity: downloading || loading || planLocked ? 0.6 : 1 }}>
-              {downloading ? "Downloading…" : "⬇ Download CSV"}
+              {downloading ? "Downloading…" : "Download CSV"}
             </button>}
           </div>
 

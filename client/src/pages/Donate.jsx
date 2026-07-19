@@ -283,11 +283,11 @@ export default function Donate() {
             {justCreatedEmailSent !== null && (
               justCreatedEmailSent ? (
                 <div style={{ background: T.greenDk + "10", border: "1px solid " + T.greenDk + "30", borderRadius: 12, padding: "10px 14px", fontSize: 12, color: T.ink2, marginBottom: 14 }}>
-                  🎉 Your fundraiser is live! Check your email for a link to manage it later — bookmark it, there's no password.
+                  Your fundraiser is live! Check your email for a link to manage it later — bookmark it, there's no password.
                 </div>
               ) : (
                 <div style={{ background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 12, padding: "10px 14px", fontSize: 12, color: "#dc2626", marginBottom: 14 }}>
-                  🎉 Your fundraiser is live! We couldn't send your management email though — contact {org.name} directly if you need to update your page later.
+                  Your fundraiser is live! We couldn't send your management email though — contact {org.name} directly if you need to update your page later.
                 </div>
               )
             )}

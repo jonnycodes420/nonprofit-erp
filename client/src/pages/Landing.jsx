@@ -192,8 +192,8 @@ const QUEUE_ROWS = [
       'From their file: "Just crossed $10,000 lifetime giving. High-touch relationship, board-adjacent."',
       "They’ve been giving for 2 years — since October 2023.",
     ], action: "Mark sent ✓" },
-  { initial: "S", name: "Sunrise Foundation", tone: "milestone", reason: "🔥 Flagged today — AI-drafted re-engagement email ready for review", action: "Review draft →" },
-  { initial: "R", name: "Robert & Lisa Atkinson", tone: "milestone", reason: "🔥 Flagged today — AI-drafted re-engagement email ready for review", action: "Review draft →" },
+  { initial: "S", name: "Sunrise Foundation", tone: "milestone", reason: "Flagged today — AI-drafted re-engagement email ready for review", action: "Review draft →" },
+  { initial: "R", name: "Robert & Lisa Atkinson", tone: "milestone", reason: "Flagged today — AI-drafted re-engagement email ready for review", action: "Review draft →" },
 ];
 const TONE_COLOR = { task: C.ink, note: C.greenDk, milestone: C.gold };
 
@@ -237,7 +237,7 @@ function QueueShot({ rows = QUEUE_ROWS, header = true }) {
 
 // Three compact queue rows for the "How it works" step — single-line reasons.
 const ATTENTION_ROWS = [
-  { initial: "S", name: "Sunrise Foundation", tone: "milestone", reason: "🔥 Flagged today — re-engagement draft ready", action: "Review →" },
+  { initial: "S", name: "Sunrise Foundation", tone: "milestone", reason: "Flagged today — re-engagement draft ready", action: "Review →" },
   { initial: "J", name: "Julian Marsh", tone: "note", reason: "2-year anniversary — time for a personal note", action: "Mark sent ✓" },
   { initial: "M", name: "Margaret Chen", tone: "task", reason: 'Task: "Call — major gift conversation"', action: "Mark done ✓" },
 ];

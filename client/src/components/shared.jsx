@@ -638,7 +638,7 @@ export function TouchpointTimeline({interactions,onDelete}){
               <button className="tp-del-btn" title="Delete this entry" aria-label="Delete this entry"
                 onClick={()=>{if(window.confirm("Delete this timeline entry? This can't be undone."))onDelete(int);}}
                 style={{background:"transparent",border:"none",cursor:"pointer",color:T.terracotta,fontSize:14,padding:"2px 4px",alignSelf:"flex-start",flexShrink:0,lineHeight:1}}>
-                🗑
+                ✕
               </button>
             )}
           </div>
@@ -777,7 +777,7 @@ export function VoiceMemoModal({donor,donors,onClose,onSaved}){
     <div style={{position:"fixed",inset:0,background:"#0f1a12cc",backdropFilter:"blur(4px)",zIndex:400,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
       <div className="fade-in" style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:18,width:"100%",maxWidth:460,padding:24,boxShadow:"0 4px 32px rgba(15,15,15,0.12)"}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
-          <div style={{fontSize:16,fontWeight:800,color:T.ink}}>🎙 Voice memo</div>
+          <div style={{fontSize:16,fontWeight:800,color:T.ink}}>Voice memo</div>
           <button onClick={close} style={{background:"none",border:"none",fontSize:20,cursor:"pointer",color:T.ink3,lineHeight:1}}>×</button>
         </div>
 

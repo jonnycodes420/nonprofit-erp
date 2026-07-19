@@ -1034,7 +1034,6 @@ export function Settings({auth,logout,initialSection}) {
         {stripe?.connected?(
           <div style={{display:"flex",alignItems:"center",gap:14,flexWrap:"wrap"}}>
             <div style={{display:"flex",alignItems:"center",gap:8,background:"#f0fdf4",border:"1px solid #bbf7d0",borderRadius:10,padding:"10px 16px"}}>
-              <span style={{fontSize:16}}>💳</span>
               <div>
                 <div style={{fontSize:13,fontWeight:700,color:"#166534"}}>Stripe Connected</div>
                 <div style={{fontSize:11,color:"#15803d",marginTop:1}}>Account: {stripe.accountId}</div>
@@ -1094,7 +1093,7 @@ export function Settings({auth,logout,initialSection}) {
         <div style={{fontSize:13,color:T.ink3,marginBottom:16,lineHeight:1.5}}>Sync donor emails automatically to your interaction timeline.</div>
         <div style={{display:"flex",alignItems:"center",gap:16,padding:"16px",background:T.bg,borderRadius:12,border:"1px solid "+T.bg3,flexWrap:"wrap"}}>
           <div style={{width:40,height:40,borderRadius:10,background:"#fff",border:"1px solid "+T.bg3,display:"flex",alignItems:"center",justifyContent:"center",fontSize:22,flexShrink:0}}>
-            📧
+            @
           </div>
           <div style={{flex:1,minWidth:180}}>
             <div style={{fontSize:14,fontWeight:700,color:T.ink,marginBottom:2}}>Gmail</div>

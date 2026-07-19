@@ -152,7 +152,7 @@ function OverviewView({ overview, campaigns, onNavigate, primaryBtn, onNewCampai
     <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
       {/* Goal-reached celebration — fires once per goal reaching 100% */}
       {topGoals.filter(g => (g.rolledPercent ?? g.percent) >= 100).slice(0, 1).map(g => (
-        <GoldMoment key={g.id} moment={`fundraising_goal_${g.id}`} title="You reached a goal. 🎉"
+        <GoldMoment key={g.id} moment={`fundraising_goal_${g.id}`} title="You reached a goal."
           line={`${g.name} — ${fmtFull(g.isOverarching ? g.rolledRaised : g.raised)} raised.`} />
       ))}
 

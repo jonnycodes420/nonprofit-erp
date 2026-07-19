@@ -1028,7 +1028,7 @@ export function Finance({ data, isReadOnly, onNavigate }) {
             <option value="budget">Budget</option>
           </select>
           <span style={{ fontSize:12, color:T.ink3, marginLeft:4 }}>{filteredAudit.length} entries</span>
-          <button style={{ ...ghostBtn, marginLeft:"auto" }} onClick={exportAuditCSV}>⬇ Export CSV</button>
+          <button style={{ ...ghostBtn, marginLeft:"auto" }} onClick={exportAuditCSV}>Export CSV</button>
         </div>
         <Card style={{ padding:0, overflow:"hidden" }}>
           {auditLoading

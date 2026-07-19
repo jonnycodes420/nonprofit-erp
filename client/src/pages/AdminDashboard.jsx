@@ -686,9 +686,9 @@ export default function AdminDashboard() {
   }
 
   const NAV = [
-    { id: "overview", label: "Overview",       icon: "📊" },
-    { id: "orgs",     label: "Organizations",  icon: "🏢" },
-    { id: "metrics",  label: "Metrics",        icon: "📈" },
+    { id: "overview", label: "Overview",       icon: "◈" },
+    { id: "orgs",     label: "Organizations",  icon: "◉" },
+    { id: "metrics",  label: "Metrics",        icon: "▤" },
   ];
 
   const currentPage = NAV.find(n => n.id === page)?.label || "";

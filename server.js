@@ -702,8 +702,8 @@ app.use("/donors", compression());
 // ── DB readiness guard ─────────────────────────────────────────────────────
 let dbReady = false;
 getDb()
-  .then(() => { dbReady = true; console.log("✅ Database ready"); })
-  .catch(err => { console.error("❌ Database init failed:", err); process.exit(1); });
+  .then(() => { dbReady = true; console.log("Database ready"); })
+  .catch(err => { console.error("Database init failed:", err); process.exit(1); });
 
 app.use((req, res, next) => {
   if (!dbReady) return res.status(503).json({ error: "Database initializing" });
@@ -5257,7 +5257,7 @@ app.get("/dashboard/today", requireAuth, wrap(async (req, res) => {
   for (const a of atRiskDraftRows) {
     upsertItem({
       donorId: a.donor_id, donorName: a.donor_name,
-      reason: "🔥 Flagged today — AI-drafted re-engagement email ready for review",
+      reason: "Flagged today — AI-drafted re-engagement email ready for review",
       priority: 81, action: "milestone",
       totalGiving: parseFloat(a.total_giving) || 0,
       draftId: a.draft_id, isLapsing: true,
@@ -12667,7 +12667,7 @@ app.use((err, req, res, next) => {
 // ── Start ──────────────────────────────────────────────────────────────────
 const PORT = parseInt(process.env.PORT || "3001", 10);
 app.listen(PORT, () => {
-  console.log(`🚀 Steward backend running on port ${PORT}`);
+  console.log(`Steward backend running on port ${PORT}`);
   console.log(`   Demo login: admin@creoarts.org / demo1234`);
   if (!process.env.RESEND_DOMAIN_VERIFIED) {
     console.warn("[email] WARNING: RESEND_DOMAIN_VERIFIED not set — emails may land in spam");

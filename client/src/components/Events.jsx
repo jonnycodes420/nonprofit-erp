@@ -3,13 +3,13 @@ import { apiFetch } from "../api";
 import { T, fmt, fmtFull, SC, Pill, Card, SectionLabel, PageTitle } from "./shared";
 
 const EVENT_TYPES = {
-  gala:          { label: "Gala",           icon: "🎭", color: "#8b5cf6" },
-  cultivation:   { label: "Cultivation",    icon: "🍽️", color: "#10b981" },
-  site_visit:    { label: "Site Visit",     icon: "🏢", color: "#3b82f6" },
-  board_meeting: { label: "Board Meeting",  icon: "🏛️", color: "#0d5c3a" },
-  volunteer:     { label: "Volunteer Day",  icon: "🤝", color: "#f59e0b" },
-  webinar:       { label: "Webinar",        icon: "💻", color: "#ec4899" },
-  other:         { label: "Other",          icon: "📅", color: "#6b7280" },
+  gala:          { label: "Gala",           icon: "•", color: "#8b5cf6" },
+  cultivation:   { label: "Cultivation",    icon: "•", color: "#10b981" },
+  site_visit:    { label: "Site Visit",     icon: "•", color: "#3b82f6" },
+  board_meeting: { label: "Board Meeting",  icon: "•", color: "#0d5c3a" },
+  volunteer:     { label: "Volunteer Day",  icon: "•", color: "#f59e0b" },
+  webinar:       { label: "Webinar",        icon: "•", color: "#ec4899" },
+  other:         { label: "Other",          icon: "•", color: "#6b7280" },
 };
 
 const STATUS_COLORS = { upcoming: "#3b82f6", completed: "#10b981", cancelled: "#6b7280" };
@@ -175,7 +175,7 @@ function EventCard({ event, onManage, onAddAttendees }) {
 
         {revenue > 0 && (
           <div style={{ fontSize: 12, color: "#1a6b4a", fontWeight: 700, marginBottom: 6 }}>
-            💰 {fmtFull(revenue)} raised
+            {fmtFull(revenue)} raised
           </div>
         )}
       </div>
@@ -799,7 +799,6 @@ export function Events({ data, isReadOnly }) {
         <div style={{ fontSize: 13, color: T.ink3, padding: "32px 0", textAlign: "center" }}>Loading events…</div>
       ) : filtered.length === 0 ? (
         <div style={{ background: T.white, border: "1px solid " + T.bg3, borderRadius: 16, padding: "48px 24px", textAlign: "center" }}>
-          <div style={{ fontSize: 32, marginBottom: 12, opacity: 0.3 }}>📅</div>
           <div style={{ fontSize: 15, fontWeight: 700, color: T.ink, marginBottom: 6 }}>No {filter === "all" ? "" : filter} events yet</div>
           <div style={{ fontSize: 13, color: T.ink3, marginBottom: 20 }}>Track galas, cultivation dinners, site visits, and more.</div>
           <button onClick={() => setShowNew(true)} disabled={isReadOnly} title={isReadOnly?"Reactivate your subscription to make changes.":undefined} style={{ background: T.greenDk, border: "none", borderRadius: 10, padding: "10px 24px", color: "#fff", fontSize: 13, fontWeight: 700, cursor: isReadOnly?"not-allowed":"pointer", opacity: isReadOnly?0.45:1 }}>Create Your First Event</button>

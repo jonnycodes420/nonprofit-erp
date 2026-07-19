@@ -129,32 +129,32 @@ function StatusBadge({ status }) {
 // ── Templates ─────────────────────────────────────────────────────────────────
 const TEMPLATES = [
   {
-    id: "yearend", name: "Year End Appeal", emoji: "🎁",
+    id: "yearend", name: "Year End Appeal",
     subject: "Your year-end gift makes a difference, {{first_name}}",
     body: `<p>Dear {{first_name}},</p><p>As the year draws to a close, we're reflecting on everything we've accomplished together — and it wouldn't be possible without you.</p><p>Your support of {{org_name}} has helped us create real, lasting change. Your previous gift of {{gift_amount}} made a direct impact on the lives we serve.</p><p>This year-end, would you consider renewing your commitment with a gift? Every dollar goes directly to our programs.</p><p>With gratitude,<br>The {{org_name}} Team</p>`,
   },
   {
-    id: "event", name: "Event Invitation", emoji: "🎉",
+    id: "event", name: "Event Invitation",
     subject: "You're invited — join us for a special evening",
     body: `<p>Dear {{first_name}},</p><p>We'd love to have you join us for an exclusive evening with {{org_name}}. As one of our valued supporters, you'll get an inside look at our programs and the impact your generosity is creating.</p><p><strong>Date:</strong> [Date]<br><strong>Time:</strong> [Time]<br><strong>Location:</strong> [Venue]</p><p>Space is limited — please RSVP by [Date].</p><p>We hope to see you there!<br>The {{org_name}} Team</p>`,
   },
   {
-    id: "volunteer", name: "Volunteer Thank You", emoji: "🙌",
+    id: "volunteer", name: "Volunteer Thank You",
     subject: "Thank you for giving your time, {{first_name}}",
     body: `<p>Dear {{first_name}},</p><p>We wanted to take a moment to say a sincere thank you for volunteering with {{org_name}}. Your time and dedication mean everything to us and to the people we serve.</p><p>Volunteers like you are the backbone of our mission. Because of your generosity with your time, we've been able to expand our reach and deepen our impact.</p><p>With heartfelt thanks,<br>The {{org_name}} Team</p>`,
   },
   {
-    id: "grant", name: "Grant Announcement", emoji: "📣",
+    id: "grant", name: "Grant Announcement",
     subject: "Exciting news from {{org_name}}",
     body: `<p>Dear {{first_name}},</p><p>We have exciting news to share! {{org_name}} has recently been awarded a significant grant that will allow us to expand our work in meaningful ways.</p><p>This milestone is a testament to the strength of our community — supporters like you who believe in our mission and make our work possible.</p><p>Thank you for being part of this journey with us.</p><p>Warmly,<br>The {{org_name}} Team</p>`,
   },
   {
-    id: "newsletter", name: "Monthly Newsletter", emoji: "📰",
+    id: "newsletter", name: "Monthly Newsletter",
     subject: "{{org_name}} — [Month] Update",
     body: `<p>Dear {{first_name}},</p><h2>What We've Been Up To</h2><p>[Highlight 1 — program update, milestone, or story]</p><h2>By the Numbers</h2><p>[Key stat or metric from this month]</p><h2>Coming Up</h2><p>[Upcoming event or opportunity to get involved]</p><p>Thank you for staying connected with {{org_name}}. Your support makes all of this possible.</p><p>Until next month,<br>The {{org_name}} Team</p>`,
   },
   {
-    id: "lapsed", name: "Lapsed Donor Re-engagement", emoji: "💌",
+    id: "lapsed", name: "Lapsed Donor Re-engagement",
     subject: "We miss you, {{first_name}}",
     body: `<p>Dear {{first_name}},</p><p>It's been a while since we've heard from you, and we wanted to reach out personally. Your past gift of {{gift_amount}} to {{org_name}} made a real difference, and we'd love to reconnect.</p><p>A lot has changed since your last gift — and there's so much we'd love to share with you about where your support went and the impact it created.</p><p>If you're open to it, we'd love to have you back. Even a small gift goes a long way.</p><p>With hope,<br>The {{org_name}} Team</p>`,
   },
@@ -353,7 +353,7 @@ function CampaignLinkBtn({ campaignId, campaignName }) {
   return (
     <button onClick={generate} disabled={loading}
       style={{ background: copied ? T.greenDk : T.greenDk + "14", border: "1px solid " + T.greenDk + "30", borderRadius: 8, padding: "8px 14px", color: copied ? "#fff" : T.greenDk, fontSize: 12, fontWeight: 700, cursor: loading ? "not-allowed" : "pointer", display: "flex", alignItems: "center", gap: 6 }}>
-      {loading ? <><Spin /> Generating…</> : copied ? "✓ Link copied!" : "💳 Copy Donation Link"}
+      {loading ? <><Spin /> Generating…</> : copied ? "✓ Link copied!" : "Copy Donation Link"}
     </button>
   );
 }
@@ -993,7 +993,7 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
             </button>
             <button onClick={addDonationLink} disabled={linkLoading}
               style={{ background: linkLoading ? T.bg3 : T.greenDk + "14", border: "1px solid " + T.greenDk + "30", borderRadius: 8, padding: "8px 14px", color: linkLoading ? T.ink3 : T.greenDk, fontSize: 13, fontWeight: 700, cursor: linkLoading ? "not-allowed" : "pointer", display: "flex", alignItems: "center", gap: 6 }}>
-              {linkLoading ? <><Spin /> Generating…</> : "💳 Donation Link"}
+              {linkLoading ? <><Spin /> Generating…</> : "Donation Link"}
             </button>
             <button onClick={() => setShowPreview(true)} style={S.btn("ghost")}>Preview</button>
             <button onClick={saveDraft} style={S.btn("subtle")}>Save Draft</button>
@@ -1315,7 +1315,7 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
                 <div key={t.id} style={{ background: T.bg2, border: "1px solid " + T.bg3, borderRadius: 12, padding: 18, display: "flex", flexDirection: "column", gap: 10 }}>
                   {/* Thumbnail */}
                   <div style={{ background: T.bg3, borderRadius: 8, height: 100, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 36 }}>
-                    {t.emoji}
+                    {t.name[0]}
                   </div>
                   <div>
                     <div style={{ fontSize: 14, fontWeight: 700, color: T.ink }}>{t.name}</div>
@@ -1417,7 +1417,6 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
             {bestCampaign && (
               <div {...interactive(() => setNav("campaigns"), { label: `View campaign ${bestCampaign.name}` })}
                 style={{ background: "#10b98110", border: "1px solid #10b98130", borderRadius: 12, padding: 16, display: "flex", alignItems: "center", gap: 12 }}>
-                <span style={{ fontSize: 24 }}>🏆</span>
                 <div>
                   <div style={{ fontSize: 11, color: T.green, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em" }}>Best Campaign</div>
                   <div style={{ fontSize: 14, fontWeight: 700, color: T.ink, marginTop: 2 }}>{bestCampaign.name}</div>
