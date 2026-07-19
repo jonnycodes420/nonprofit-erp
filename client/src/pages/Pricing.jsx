@@ -1,15 +1,47 @@
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../main";
 
-// ── Live-billing plans (Stripe-wired) ──────────────────────────────────────
-// BILLING_PLANS is the source of truth for the in-app PlanPicker's real Stripe
-// Checkout (POST /billing/create-checkout maps these ids → STRIPE_PRICE_* env
-// vars). It is DELIBERATELY still the legacy seed/growth/impact set: the public
-// Core/Team model below is the new commercial offer, but the Stripe Prices for
-// $149/$299 don't exist yet, so live checkout stays on the wired plans until a
-// separate backend cutover creates those Prices and remaps the tiers. Do not
-// point PlanPicker at the public model until that cutover lands — it would
-// send an unknown plan id to create-checkout and 500 the reactivation flow.
+// ── Live-billing plans (BUILD-24 cutover) ──────────────────────────────────
+// CHECKOUT_PLANS is the source of truth for the in-app PlanPicker's real Stripe
+// Checkout (POST /billing/create-checkout maps these ids → STRIPE_PRICE_CORE /
+// STRIPE_PRICE_TEAM env vars). BUILD-24 repointed the in-app checkout at the
+// Core/Team commercial model. Checkout goes live once those Stripe Prices exist
+// and the env vars are set (scripts/create-billing-products.js provisions them);
+// until then create-checkout returns a clean `plan_not_configured` message
+// instead of 500-ing. The founding-partner $99 price is deliberately NOT here —
+// it's off-menu, assigned privately by a super-admin.
+export const CHECKOUT_PLANS = [
+  {
+    id: "core",
+    name: "Core",
+    price: 149,
+    tagline: "Everything a small shop needs.",
+    highlight: false,
+    features: [
+      "Full donor CRM + 0%-fee online giving",
+      "Receipts + year-end statements",
+      "Households, soft credit, planned-giving",
+      "Retention workflows + reports",
+    ],
+  },
+  {
+    id: "team",
+    name: "Team",
+    price: 299,
+    tagline: "For staffed development offices.",
+    highlight: true,
+    features: [
+      "Everything in Core",
+      "Moves management + prospect pipeline",
+      "Officer portfolios + per-officer reports",
+      "Solicitations report + multi-officer digests",
+    ],
+  },
+];
+
+// Legacy Stripe-wired set (seed/growth/impact) — retained for reference and any
+// pre-cutover org reactivating on its old price. The in-app PlanPicker now uses
+// CHECKOUT_PLANS (Core/Team) above; do NOT reintroduce these into the modal.
 export const BILLING_PLANS = [
   {
     id: "seed",

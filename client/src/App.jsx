@@ -189,11 +189,12 @@ function AppShell() {
   const accessState=billing?.accessState||"full";
   const isReadOnly=accessState==="read_only";
   const subStatus=billing?.subscriptionStatus;
-  // Client-side plan tier (mirrors server orgPlanTier): Team = growth/impact OR
-  // a live trial; everything else (seed/lapsed) = Core. Drives the sidebar lock
-  // indicator on Team-gated items. Defaults to team while billing is unknown so
-  // we never flash a lock before the plan loads.
-  const planTier=(()=>{ if(!billing)return "team"; const p=billing.plan; if(p==="growth"||p==="impact")return "team"; if(subStatus==="trialing")return "team"; return "core"; })();
+  // Plan tier drives the sidebar lock indicator on Team-gated items. Prefer the
+  // server's authoritative planTier (BUILD-24); fall back to the local mirror of
+  // orgPlanTier: Team = team/growth/impact OR a live trial; everything else
+  // (core/seed/founding/lapsed) = Core. Defaults to team while billing is
+  // unknown so we never flash a lock before the plan loads.
+  const planTier=(()=>{ if(!billing)return "team"; if(billing.planTier)return billing.planTier; const p=billing.plan; if(p==="team"||p==="growth"||p==="impact")return "team"; if(subStatus==="trialing")return "team"; return "core"; })();
   const isCoreTier=planTier==="core";
   const showTrialBanner=!bannerDismissed&&subStatus==="trialing"&&billing?.trialDaysLeft<=14;
   const showWarningBanner=accessState==="warning";

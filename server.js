@@ -641,6 +641,43 @@ app.post("/resend/webhook", express.raw({ type: "application/json" }), async (re
 // route's own express.raw() ran: stripe.webhooks.constructEvent() received a
 // parsed object instead of a Buffer and threw on every real delivery. Moved
 // here so it's registered before the global parser, matching /stripe/webhook.
+// ── Platform billing webhook (BUILD-24) ────────────────────────────────────
+// Steward's OWN subscription (the org pays Steward $149/$299). This is a
+// SEPARATE integration from donation processing: donations flow through each
+// org's CONNECTED Stripe account on the /stripe/webhook endpoint (with its own
+// idempotency + gift recording). The two never cross — different endpoints,
+// different signing secrets, different Stripe accounts (platform vs connect).
+// Do not merge them.
+//
+// Plan values a subscription may set (metadata.plan). Core/Team are the live
+// commercial model; seed/growth/impact are legacy (recognized for back-compat);
+// founding is the private $99 founding-partner price (core tier). orgPlanTier()
+// resolves whichever of these to core/team.
+const BILLING_PLAN_VALUES = new Set(["core", "team", "founding", "seed", "growth", "impact"]);
+
+// Idempotency: reserve the Stripe event id BEFORE mutating anything. Returns
+// true if this event was already processed (redelivery/retry) → caller no-ops.
+async function billingEventAlreadyProcessed(eventId, type, orgId) {
+  if (!eventId) return false;
+  const rows = await query(
+    "INSERT INTO billing_webhook_events (event_id, type, org_id) VALUES (?,?,?) ON CONFLICT (event_id) DO NOTHING RETURNING event_id",
+    [eventId, type || null, orgId || null]
+  );
+  return rows.length === 0; // no row returned = conflict = already processed
+}
+
+// Resolve the org this platform event belongs to: prefer metadata.orgId
+// (we stamp it on both the checkout session and the subscription), fall back to
+// customer-id lookup for invoice events that carry neither.
+async function resolveBillingOrgId(obj) {
+  if (obj?.metadata?.orgId) return obj.metadata.orgId;
+  if (obj?.customer) {
+    const rows = await query("SELECT id FROM orgs WHERE stripe_customer_id=?", [obj.customer]);
+    if (rows.length) return rows[0].id;
+  }
+  return null;
+}
+
 app.post("/billing/webhook", express.raw({ type: "application/json" }), async (req, res) => {
   if (!stripe) return res.status(503).json({ error: "Stripe not configured" });
   const sig = req.headers["stripe-signature"];
@@ -651,49 +688,85 @@ app.post("/billing/webhook", express.raw({ type: "application/json" }), async (r
     return res.status(400).json({ error: `Webhook signature failed: ${err.message}` });
   }
 
+  // We only care about a small set of platform-subscription events. Anything
+  // else (including any donation event type that somehow lands here) is ignored
+  // WITHOUT reserving an idempotency row — belt-and-braces separation from the
+  // donation flow.
+  const HANDLED = new Set([
+    "checkout.session.completed", "invoice.payment_succeeded",
+    "invoice.payment_failed", "customer.subscription.updated",
+    "customer.subscription.deleted",
+  ]);
+  if (!HANDLED.has(event.type)) return res.json({ received: true, ignored: event.type });
+
+  const obj = event.data.object;
+  const orgId = await resolveBillingOrgId(obj);
+
+  // Idempotency gate — redelivered/retried events no-op.
+  if (await billingEventAlreadyProcessed(event.id, event.type, orgId)) {
+    return res.json({ received: true, duplicate: true });
+  }
+
   try {
     if (event.type === "checkout.session.completed") {
-      const session = event.data.object;
-      if (session.metadata?.orgId) {
+      if (orgId) {
+        const plan = BILLING_PLAN_VALUES.has(obj.metadata?.plan) ? obj.metadata.plan : "core";
         let periodEnd = null;
-        if (session.subscription && stripe) {
+        if (obj.subscription) {
           try {
-            const sub = await stripe.subscriptions.retrieve(session.subscription);
+            const sub = await stripe.subscriptions.retrieve(obj.subscription);
             periodEnd = sub.current_period_end ? new Date(sub.current_period_end * 1000).toISOString() : null;
           } catch {}
         }
         await run(
           "UPDATE orgs SET plan=?, subscription_status='active', stripe_subscription_id=?, current_period_end=?, grace_until=NULL WHERE id=?",
-          [session.metadata.plan || "growth", session.subscription, periodEnd, session.metadata.orgId]
+          [plan, obj.subscription || null, periodEnd, orgId]
         );
       }
     } else if (event.type === "invoice.payment_succeeded") {
-      const inv = event.data.object;
-      const orgRow = await query("SELECT id FROM orgs WHERE stripe_customer_id=?", [inv.customer]);
-      if (orgRow.length) {
-        const periodEnd = inv.lines?.data?.[0]?.period?.end
-          ? new Date(inv.lines.data[0].period.end * 1000).toISOString()
+      if (orgId) {
+        const periodEnd = obj.lines?.data?.[0]?.period?.end
+          ? new Date(obj.lines.data[0].period.end * 1000).toISOString()
           : null;
         await run(
           "UPDATE orgs SET subscription_status='active', current_period_end=?, grace_until=NULL WHERE id=?",
-          [periodEnd, orgRow[0].id]
+          [periodEnd, orgId]
         );
       }
     } else if (event.type === "invoice.payment_failed") {
-      const inv = event.data.object;
-      const orgRow = await query("SELECT id FROM orgs WHERE stripe_customer_id=?", [inv.customer]);
-      if (orgRow.length) {
-        await run(
-          "UPDATE orgs SET subscription_status='past_due', grace_until=NOW() + INTERVAL '7 days' WHERE id=?",
-          [orgRow[0].id]
-        );
-      }
-    } else if (event.type === "customer.subscription.deleted") {
-      const sub = event.data.object;
-      const orgId = sub.metadata?.orgId;
       if (orgId) {
         await run(
-          "UPDATE orgs SET subscription_status='canceled', plan='trial', grace_until=NOW() + INTERVAL '3 days' WHERE id=?",
+          "UPDATE orgs SET subscription_status='past_due', grace_until=NOW() + INTERVAL '7 days' WHERE id=?",
+          [orgId]
+        );
+      }
+    } else if (event.type === "customer.subscription.updated") {
+      // Sync plan (metadata) + status on plan changes / cancel-at-period-end.
+      // Stripe statuses we care about: active/trialing (→ active), past_due,
+      // canceled/unpaid (→ downgrade + re-lock, mirrors .deleted).
+      if (orgId) {
+        const s = obj.status;
+        const periodEnd = obj.current_period_end ? new Date(obj.current_period_end * 1000).toISOString() : null;
+        if (s === "active" || s === "trialing") {
+          const plan = BILLING_PLAN_VALUES.has(obj.metadata?.plan) ? obj.metadata.plan : null;
+          if (plan) {
+            await run("UPDATE orgs SET plan=?, subscription_status='active', current_period_end=?, grace_until=NULL WHERE id=?", [plan, periodEnd, orgId]);
+          } else {
+            await run("UPDATE orgs SET subscription_status='active', current_period_end=?, grace_until=NULL WHERE id=?", [periodEnd, orgId]);
+          }
+        } else if (s === "past_due") {
+          await run("UPDATE orgs SET subscription_status='past_due', grace_until=NOW() + INTERVAL '7 days' WHERE id=?", [orgId]);
+        } else if (s === "canceled" || s === "unpaid") {
+          // Downgrade to core so Team features re-lock on read surfaces too
+          // (planTier is plan-driven once status is not trialing).
+          await run("UPDATE orgs SET subscription_status='canceled', plan='core', grace_until=NOW() + INTERVAL '3 days' WHERE id=?", [orgId]);
+        }
+      }
+    } else if (event.type === "customer.subscription.deleted") {
+      if (orgId) {
+        // Revert tier + re-lock: plan → core (base tier), read-only after grace.
+        await run(
+          "UPDATE orgs SET subscription_status='canceled', plan='core', grace_until=NOW() + INTERVAL '3 days' WHERE id=?",
           [orgId]
         );
       }
@@ -793,13 +866,18 @@ async function orgOwns(table, id, orgId) {
   return rows.length > 0;
 }
 
-// ── Plan tiers (BUILD-14) ──────────────────────────────────────────────────
-// Steward's up-market features (officer portfolios + color) gate to the "team"
-// tier. Rather than rebuild billing, tier is DERIVED from the existing plan/
-// subscription: multi-seat paid plans (growth/impact) and any live trial are
-// team-capable; seed and lapsed orgs are core. Keeps the gate a thin guard;
-// real Core/Team price wiring is a separate, deliberate billing task.
-const TEAM_PLANS = new Set(["growth", "impact"]);
+// ── Plan tiers (BUILD-14, cutover BUILD-24) ────────────────────────────────
+// Steward's up-market features (officer portfolios, moves/major-gifts, per-
+// officer reports) gate to the "team" tier. Tier is DERIVED from the org's
+// plan + subscription. BUILD-24 made Core/Team first-class plan values (the
+// $149/$299 commercial model actually charged via Stripe); the legacy
+// seed/growth/impact enum is still recognized so pre-cutover orgs and any
+// in-flight subscription keep their tier without a destructive migration:
+//   team  = { team, growth, impact }  OR any live trial (full-feature trial)
+//   core  = { core, seed, founding }  OR lapsed/canceled (team features re-lock)
+// `founding` is the private $99 founding-partner price — a core-tier discount,
+// so it maps to core. See "Platform billing (BUILD-24)" in CLAUDE.md.
+const TEAM_PLANS = new Set(["team", "growth", "impact"]);
 function orgPlanTier(org) {
   if ((org.subscription_status || "trialing") === "trialing") return "team"; // full-feature trial
   return TEAM_PLANS.has(org.plan) ? "team" : "core";
@@ -11683,23 +11761,36 @@ app.get("/billing/status", requireAuth, wrap(async (req, res) => {
     currentPeriodEnd: org.current_period_end,
     accessState: getOrgAccessState(org),
     limits: effectivePlanLimits(org),
-    planLimits: PLAN_LIMITS[plan] || PLAN_LIMITS.seed,
+    planLimits: PLAN_LIMITS[plan] || PLAN_LIMITS.core,
+    planTier: orgPlanTier(org),
     usage: { seats: Number(seatRow?.c) || 0, records: Number(recordRow?.c) || 0 },
     isTrial,
   });
 }));
 
 app.post("/billing/create-checkout", requireAuth, requireAdmin, wrap(async (req, res) => {
-  if (!stripe) return res.status(503).json({ error: "Stripe not configured" });
   const { plan } = req.body;
+  // Live commercial model (BUILD-24). `founding` is the private $99 founding-
+  // partner price — off-menu, super-admin only, never in the public UI. Legacy
+  // seed/growth/impact stay mapped so a pre-cutover org can still reactivate on
+  // its old price if that env is still set.
   const priceMap = {
-    seed:   process.env.STRIPE_PRICE_SEED,
-    growth: process.env.STRIPE_PRICE_GROWTH,
-    impact: process.env.STRIPE_PRICE_IMPACT,
+    core:     process.env.STRIPE_PRICE_CORE,
+    team:     process.env.STRIPE_PRICE_TEAM,
+    founding: process.env.STRIPE_PRICE_FOUNDING,
+    seed:     process.env.STRIPE_PRICE_SEED,
+    growth:   process.env.STRIPE_PRICE_GROWTH,
+    impact:   process.env.STRIPE_PRICE_IMPACT,
   };
+  // Validation ordered BEFORE any Stripe API call so it's testable without keys.
+  if (!(plan in priceMap)) return res.status(400).json({ error: "Invalid plan. Must be core or team." });
+  if (plan === "founding" && !req.user.isSuperAdmin) {
+    return res.status(403).json({ error: "founding_forbidden", message: "The founding-partner plan is assigned privately." });
+  }
   const priceId = priceMap[plan];
-  if (!priceId) return res.status(400).json({ error: "Invalid plan. Must be seed, growth, or impact." });
+  if (!priceId) return res.status(400).json({ error: "plan_not_configured", message: `No Stripe price is configured for the ${plan} plan yet.` });
 
+  if (!stripe) return res.status(503).json({ error: "Stripe not configured" });
   const customerId = await ensureStripeCustomer(req.user.orgId, req.user.email);
   if (!customerId) return res.status(404).json({ error: "Org not found" });
 
@@ -11729,22 +11820,34 @@ app.post("/billing/create-portal", requireAuth, requireAdmin, wrap(async (req, r
 }));
 
 // ── Admin (super admin only) ───────────────────────────────────────────────
-const PLAN_MRR = { seed: 99, growth: 249, impact: 499, trial: 0 };
+const PLAN_MRR = { core: 149, team: 299, founding: 99, seed: 99, growth: 249, impact: 499, trial: 0 };
 
 // 999999999 used for "unlimited" — Infinity serializes to null in JSON
-// trial gets Growth limits: limits only engage once trial converts to paid
+// trial gets Team limits: limits only engage once trial converts to paid.
+// Core/Team bands (BUILD-24) are INFORMATIONAL for launch — the numbers shown
+// on the pricing page — but NOT hard-enforced (see SOFT_BAND_PLANS below).
+// When bands are eventually enforced they must count ACTIVE donors (gave within
+// ~3 years), not every record, or the pricing page's claim becomes false.
 const PLAN_LIMITS = {
-  seed:   { seats: 1,         records: 1000,      extraSeatPrice: null },
-  growth: { seats: 5,         records: 10000,     extraSeatPrice: 25   },
-  impact: { seats: 999999999, records: 999999999, extraSeatPrice: null },
-  trial:  { seats: 5,         records: 10000,     extraSeatPrice: null },
+  core:     { seats: 3,         records: 5000,      extraSeatPrice: null },
+  team:     { seats: 10,        records: 25000,     extraSeatPrice: null },
+  founding: { seats: 3,         records: 5000,      extraSeatPrice: null },
+  seed:     { seats: 1,         records: 1000,      extraSeatPrice: null },
+  growth:   { seats: 5,         records: 10000,     extraSeatPrice: 25   },
+  impact:   { seats: 999999999, records: 999999999, extraSeatPrice: null },
+  trial:    { seats: 10,        records: 25000,     extraSeatPrice: null },
 };
+
+// Core/Team/founding bands are kept SOFT for launch — informational only, never
+// a hard 403. Legacy seed/growth/impact keep their existing hard enforcement so
+// no pre-cutover org's behavior changes.
+const SOFT_BAND_PLANS = new Set(["core", "team", "founding"]);
 
 // Returns the limits actually in effect for an org, accounting for trial state
 function effectivePlanLimits(org) {
   const status = org.subscription_status || "trialing";
-  if (status === "trialing") return PLAN_LIMITS.trial; // Growth limits during trial
-  return PLAN_LIMITS[org.plan] || PLAN_LIMITS.seed;
+  if (status === "trialing") return PLAN_LIMITS.trial; // Team limits during trial
+  return PLAN_LIMITS[org.plan] || PLAN_LIMITS.core;
 }
 
 async function checkPlanLimit(org, dimension) {
@@ -11759,6 +11862,9 @@ async function checkPlanLimit(org, dimension) {
     current = Number(rows[0]?.c) || 0;
   }
   const isTrial = (org.subscription_status || "trialing") === "trialing";
+  // Soft bands: a paid Core/Team org is never hard-blocked at the band for
+  // launch (brief BUILD-24 §5). Still returns current/limit for display.
+  if (!isTrial && SOFT_BAND_PLANS.has(org.plan)) return { allowed: true, current, limit, isTrial: false, soft: true };
   return { allowed: current < limit, current, limit, isTrial };
 }
 
@@ -11846,10 +11952,13 @@ app.get("/admin/metrics", requireAuth, requireSuperAdmin, wrap(async (req, res) 
     total_grants: parseInt(grants[0].c, 10),
     total_interactions: parseInt(interactions[0].c, 10),
     plan_breakdown: {
-      trial:  orgs.filter(o => !o.plan || o.plan === "trial").length,
-      seed:   orgs.filter(o => o.plan === "seed" && o.subscription_status === "active").length,
-      growth: orgs.filter(o => o.plan === "growth" && o.subscription_status === "active").length,
-      impact: orgs.filter(o => o.plan === "impact" && o.subscription_status === "active").length,
+      trial:    orgs.filter(o => !o.plan || o.plan === "trial").length,
+      core:     orgs.filter(o => o.plan === "core" && o.subscription_status === "active").length,
+      team:     orgs.filter(o => o.plan === "team" && o.subscription_status === "active").length,
+      founding: orgs.filter(o => o.plan === "founding" && o.subscription_status === "active").length,
+      seed:     orgs.filter(o => o.plan === "seed" && o.subscription_status === "active").length,
+      growth:   orgs.filter(o => o.plan === "growth" && o.subscription_status === "active").length,
+      impact:   orgs.filter(o => o.plan === "impact" && o.subscription_status === "active").length,
     },
   });
 }));
@@ -11901,7 +12010,7 @@ app.post("/admin/orgs/:id/extend-trial", requireAuth, requireSuperAdmin, wrap(as
 
 app.post("/admin/orgs/:id/change-plan", requireAuth, requireSuperAdmin, wrap(async (req, res) => {
   const { plan } = req.body;
-  const valid = ["trial", "seed", "growth", "impact"];
+  const valid = ["trial", "core", "team", "founding", "seed", "growth", "impact"];
   if (!valid.includes(plan)) return res.status(400).json({ error: "Invalid plan" });
   const status = plan === "trial" ? "trialing" : "active";
   await run("UPDATE orgs SET plan=?, subscription_status=? WHERE id=?", [plan, status, req.params.id]);

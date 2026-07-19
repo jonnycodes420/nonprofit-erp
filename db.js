@@ -701,6 +701,22 @@ async function initSchema() {
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_workflows_org_trigger ON workflows(org_id, trigger, enabled)`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_workflow_runs_org ON workflow_runs(org_id, created_at DESC)`);
   await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS workflows_org_recipe_uk ON workflows(org_id, recipe_key)`);
+  // BUILD-24 — platform-billing (Steward's OWN subscription) webhook idempotency.
+  // Stripe redelivers/retries subscription events routinely; the /billing/webhook
+  // handler reserves the event id here BEFORE mutating org plan/status, so a
+  // redelivered event is a strict no-op (same discipline as the donation
+  // payment_intent guard, BUILD-23, and workflow_runs). event_id is the Stripe
+  // event id (evt_…), globally unique on Steward's platform account. This is the
+  // PLATFORM account's events only — connect/donation events go through the
+  // separate /stripe/webhook endpoint and never touch this table.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS billing_webhook_events (
+      event_id TEXT PRIMARY KEY,
+      type TEXT,
+      org_id TEXT,
+      processed_at TIMESTAMPTZ DEFAULT NOW()
+    );
+  `);
   await pool.query(`ALTER TABLE fin_transactions ADD COLUMN IF NOT EXISTS is_sample BOOLEAN DEFAULT false`);
   // BUILD-09 Finance reintegration: link a ledger row back to the donor it
   // came from (nullable — expenses/manual entries have none) and record how it

@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { apiFetch } from "../api";
 import { T } from "./shared";
-import { BILLING_PLANS } from "../pages/Pricing";
+import { CHECKOUT_PLANS } from "../pages/Pricing";
 
 // In-app plan-selection modal used by "Reactivate" — launches a real Stripe
 // Checkout session for the chosen plan. This is deliberately separate from
@@ -9,8 +9,9 @@ import { BILLING_PLANS } from "../pages/Pricing";
 // "Manage billing" for orgs that already have a subscription): the Portal
 // only manages an existing subscription and shows empty states ("No payment
 // method", "No invoice history") for an org with none — the wrong flow for
-// picking a first/new plan. Reuses BILLING_PLANS (the Stripe-wired set) — same data the public
-// /pricing page so pricing/features never drift between the two surfaces.
+// picking a first/new plan. Renders CHECKOUT_PLANS (Core/Team, the Stripe-wired
+// commercial model as of BUILD-24) so pricing/features never drift from the
+// public /pricing page.
 export default function PlanPicker({ open, onClose }) {
   const [loading, setLoading] = useState(null);
 
@@ -55,7 +56,7 @@ export default function PlanPicker({ open, onClose }) {
         </div>
 
         <div style={{ display:"grid",gridTemplateColumns:"repeat(auto-fit, minmax(220px, 1fr))",gap:16 }}>
-          {BILLING_PLANS.map(plan => (
+          {CHECKOUT_PLANS.map(plan => (
             <div key={plan.id} style={{
               background: plan.highlight ? T.white : T.bg2,
               border: plan.highlight ? `2px solid ${T.gold}` : `1px solid ${T.bg3}`,
