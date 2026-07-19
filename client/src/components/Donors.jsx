@@ -22,7 +22,7 @@ class ErrorBoundary extends Component {
     return this.props.children;
   }
 }
-import { T, fmt, fmtFull, daysDiff, SC, askClaude, STAGES, STAGE_ACTION, TIER_COLOR, donorScore, moveUrgency, Spin, Pill, Card, AIBtn, AIPanel, PageTitle, EmptyState, GivingHistoryChart, TpField, TpYesNo, TouchpointTimeline } from "./shared";
+import { T, fmt, fmtFull, daysDiff, SC, askClaude, STAGES, STAGE_ACTION, TIER_COLOR, donorScore, moveUrgency, Spin, Pill, Card, AIBtn, AIPanel, PageTitle, EmptyState, GivingHistoryChart, TpField, TpYesNo, TouchpointTimeline, LockedFeature } from "./shared";
 // SHELVED — voice capture works but unproven adoption assumption, revisit
 // later. Code intact, re-enable by uncommenting (see showVoiceMemo state,
 // profile button, and modal render below, and add `VoiceMemoModal` back to
@@ -1973,7 +1973,7 @@ function GiftLinkModal({donor,orgName,onClose}){
 }
 
 // ── Donor Profile ──────────────────────────────────────────────────────────
-function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loadingKey,getAI,isAdmin,onEdit,onDelete,tasks=[],onTaskToggle,onAddTask,orgName="",orgTeam=[],onReassign,onCfSaved,onInteractionAdded,isReadOnly=false,allDonors=[],onSelectRelatedDonor}){
+function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loadingKey,getAI,isAdmin,onEdit,onDelete,tasks=[],onTaskToggle,onAddTask,orgName="",orgTeam=[],onReassign,onCfSaved,onInteractionAdded,isReadOnly=false,allDonors=[],onSelectRelatedDonor,onNavigate}){
   const [gifts,setGifts]=useState([]);
   const [giftLoading,setGiftLoading]=useState(true);
   const [localInts,setLocalInts]=useState(null); // loaded lazily from GET /donors/:id
@@ -2242,6 +2242,17 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
     apiFetch("/portfolio/officers").then(r=>setPlanTier(r?.tier||"core")).catch(()=>{});
   },[donor.id]);
   const isTeam=planTier==="team";
+  // Donor-profile Core/Team split (FIX): the CRM core stays fully available to
+  // Core; only the major-gifts LAYER (moves & asks, move-stage, wealth score,
+  // suggested actions, sequences, reassign) is Team. `lockMajor` reuses the ONE
+  // shared LockedFeature wrapper (same treatment as the Pipeline tab / BUILD-20)
+  // — Core sees the real panel with its own data behind frosted glass + an
+  // "Unlock with Team" CTA; writes stay server-gated (requirePlan('team')→403).
+  // A plain function (not a `<Component>`) so Team never remounts the subtree.
+  const lockMajor=(children,opts={})=>isTeam?children:(
+    <LockedFeature title={opts.title||"A Team-plan feature"} blurb={opts.blurb} minHeight={opts.minHeight||220}
+      onCta={onNavigate?()=>onNavigate("settings"):undefined}>{children}</LockedFeature>
+  );
   const hasDesignation=k=>designations.some(d=>d.kind===k);
   const toggleDesignation=async(kind)=>{
     try{
@@ -2705,8 +2716,9 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
                   );})}
                 </div>
               </div>
-              {/* Pipeline: Moves & Asks (BUILD-15, Team plan) */}
-              {(isTeam||moves.length>0||opps.length>0)&&(
+              {/* Pipeline: Moves & Asks (BUILD-15, Team plan). Core sees the real
+                  panel behind glass + an Unlock-with-Team CTA (lockMajor). */}
+              {lockMajor(
                 <div style={{borderTop:"1px solid "+T.bg3,paddingTop:10}}>
                   <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:7}}>
                     <div style={{fontSize:10,fontWeight:800,textTransform:"uppercase",letterSpacing:"0.1em",color:"#1a6b4a"}}>Pipeline — moves & asks</div>
@@ -2749,7 +2761,8 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
                     </div>
                   )}
                   {isTeam&&moves.length===0&&opps.length===0&&<div style={{fontSize:11,color:T.ink3}}>No moves or asks logged yet. Move this donor on the Pipeline board, or add an ask above.</div>}
-                </div>
+                </div>,
+                {title:"Track asks & moves",blurb:"Log every ask against the gift it closes and keep this donor's full move history. Part of the Team major-gifts toolkit.",minHeight:170}
               )}
               {hhModalOpen&&(
                 <div onClick={()=>setHhModalOpen(false)} style={{position:"fixed",inset:0,background:"rgba(15,26,18,0.5)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
@@ -3402,9 +3415,11 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
               <div style={{display:"flex",alignItems:"center",gap:8}}>
                 <div style={{width:28,height:28,borderRadius:"50%",background:T.greenDk+"44",display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:800,color:"#10b981",flexShrink:0}}>{(donor.assignedToName||"?")[0]}</div>
                 <div style={{flex:1,fontSize:13,fontWeight:600,color:"#f0ede6"}}>{donor.assignedToName||"Unassigned"}</div>
-                {isAdmin&&<button onClick={()=>setShowReassign(v=>!v)} style={{background:"#0f1a12",border:"1px solid #2d4a35",borderRadius:7,padding:"3px 10px",color:"#8fa896",fontSize:11,cursor:"pointer"}}>{showReassign?"Cancel":"Reassign"}</button>}
+                {/* Reassigning a relationship owner is portfolio management → Team.
+                    Core sees the owner read-only; the server 403s the assign route. */}
+                {isAdmin&&isTeam&&<button onClick={()=>setShowReassign(v=>!v)} style={{background:"#0f1a12",border:"1px solid #2d4a35",borderRadius:7,padding:"3px 10px",color:"#8fa896",fontSize:11,cursor:"pointer"}}>{showReassign?"Cancel":"Reassign"}</button>}
               </div>
-              {showReassign&&isAdmin&&<div style={{marginTop:10,display:"flex",flexDirection:"column",gap:8}}>
+              {showReassign&&isAdmin&&isTeam&&<div style={{marginTop:10,display:"flex",flexDirection:"column",gap:8}}>
                 <select value={reassignId} onChange={e=>setReassignId(e.target.value)} style={{width:"100%",background:"#0f1a12",border:"1px solid #2d4a35",borderRadius:8,padding:"8px 10px",color:"#f0ede6",fontSize:12,outline:"none",cursor:"pointer"}}>
                   <option value="">Select team member…</option>
                   {orgTeam.map(u=><option key={u.id} value={u.id}>{u.name} ({u.role})</option>)}
@@ -3416,7 +3431,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
             </div>
           </div>
 
-          {sequences.length>0&&<div>
+          {sequences.length>0&&lockMajor(<div>
             <div style={{fontSize:10,fontWeight:800,textTransform:"uppercase",letterSpacing:"0.12em",color:"#8fa896",marginBottom:8}}>Sequences</div>
             {seqToast&&<div style={{background:"#0d5c3a22",border:"1px solid #10b981",borderRadius:8,padding:"8px 12px",fontSize:12,color:"#10b981",fontWeight:600,marginBottom:8}}>{seqToast}</div>}
             <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
@@ -3441,7 +3456,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
                 <button onClick={()=>{setSeqOpen(false);setSeqId("");}} style={{background:"transparent",border:"none",padding:"6px 8px",color:"#8fa896",fontSize:12,cursor:"pointer"}}>✕</button>
               </>}
             </div>
-          </div>}
+          </div>,{title:"Email sequences",blurb:"Enroll this donor in an automated stewardship sequence. Part of the Team portfolio toolkit.",minHeight:120})}
 
           {cfData.length>0&&<div>
             <div style={{fontSize:10,fontWeight:800,textTransform:"uppercase",letterSpacing:"0.12em",color:"#8fa896",marginBottom:8}}>Custom Fields</div>
@@ -3525,6 +3540,11 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
             </div>
           </div>}
 
+          {/* Major-gifts rail — Suggested Move + Move Stage + Wealth Score +
+              Suggested Actions. Locked as ONE preview for Core (lockMajor): the
+              real panels (with the org's own data) render behind frosted glass
+              with a single Unlock-with-Team CTA; writes are server-gated. */}
+          {lockMajor(<>
           {(() => {
             // Smart-move suggestions (BUILD-22) — surfaced, never auto-applied.
             // Lapsed is set automatically elsewhere; these are the judgment
@@ -3640,6 +3660,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
               </div>
             )}
           </div>
+          </>,{title:"Major-gift tools",blurb:"Suggested moves, stage management, capacity scoring, and outreach drafting — the Team major-gifts layer. This preview shows your own donor; unlock the tools with the Team plan.",minHeight:520})}
         </div>
       </div>
     </div>
@@ -3980,8 +4001,8 @@ function DirectoryView({donors,loading,serverTotal,page,pageSize,onPage,clientFi
           <button onClick={()=>setSelIds(new Set())} style={{background:"none",border:"none",color:"#a1b5a8",fontSize:12,cursor:"pointer",padding:0,textDecoration:"underline",whiteSpace:"nowrap"}}>Clear</button>
           <div style={{flex:1,minWidth:8}}/>
 
-          {/* Move to stage */}
-          <div style={{position:"relative"}}>
+          {/* Move to stage — managed stage changes are Team (major-gifts). */}
+          {teamPortfolios&&<div style={{position:"relative"}}>
             <button onClick={()=>{setStageDrop(v=>!v);setAssignDrop(false);}} disabled={busy}
               style={{background:"#1a6b4a",border:"none",borderRadius:8,padding:"7px 12px",color:"#fff",fontSize:12,fontWeight:600,cursor:"pointer",whiteSpace:"nowrap",opacity:busy?0.6:1}}>
               Move to stage ▾
@@ -3996,10 +4017,10 @@ function DirectoryView({donors,loading,serverTotal,page,pageSize,onPage,clientFi
                 ))}
               </div>
             )}
-          </div>
+          </div>}
 
-          {/* Assign to (admin only) */}
-          {isAdmin&&orgTeam.length>0&&(
+          {/* Assign to (admin only) — relationship-owner assignment is Team. */}
+          {isAdmin&&teamPortfolios&&orgTeam.length>0&&(
             <div style={{position:"relative"}}>
               <button onClick={()=>{setAssignDrop(v=>!v);setStageDrop(false);}} disabled={busy}
                 style={{background:"#1a6b4a",border:"none",borderRadius:8,padding:"7px 12px",color:"#fff",fontSize:12,fontWeight:600,cursor:"pointer",whiteSpace:"nowrap",opacity:busy?0.6:1}}>
@@ -4094,7 +4115,8 @@ function DirectoryView({donors,loading,serverTotal,page,pageSize,onPage,clientFi
                   <span style={{background:scColor+"18",color:scColor,borderRadius:7,padding:"3px 8px",fontSize:12,fontWeight:800}}>{sc}</span>
                 </div>
                 {isAdmin&&<div className="dir-col-assign dir-assign-cell" style={{textAlign:"right"}}>
-                  <button onClick={e=>{e.stopPropagation();onAssign(d);}} className="dir-assign-btn" style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:7,padding:"4px 10px",color:T.ink3,fontSize:11,fontWeight:600,cursor:"pointer"}}>Assign</button>
+                  {/* Reassigning the owner is Team (server 403s for Core). */}
+                  {teamPortfolios&&<button onClick={e=>{e.stopPropagation();onAssign(d);}} className="dir-assign-btn" style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:7,padding:"4px 10px",color:T.ink3,fontSize:11,fontWeight:600,cursor:"pointer"}}>Assign</button>}
                 </div>}
               </div>
             );
@@ -4439,7 +4461,7 @@ function MergeDuplicatesModal({onClose,onMerged,isReadOnly}){
 }
 
 // ── Donors ─────────────────────────────────────────────────────────────────
-export function Donors({data,setData,isReadOnly=false,initialView,initialLogDonorId,initialStageFilter,initialSelectDonorId,onIntentConsumed}){
+export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,initialLogDonorId,initialStageFilter,initialSelectDonorId,onIntentConsumed}){
   const{auth}=useAuth();
   const isAdmin=auth?.user?.role==="admin";
   const userId=auth?.user?.id||"";
@@ -4760,6 +4782,7 @@ export function Donors({data,setData,isReadOnly=false,initialView,initialLogDono
         isAdmin={isAdmin} onEdit={()=>setEditTarget(selected)} onDelete={deleteDonor}
         tasks={data.tasks.filter(t=>t.donorId===selected.id)} onTaskToggle={toggleTask} onAddTask={()=>setFollowUpTarget(selected)}
         orgName={data.org?.name||""} orgTeam={orgTeam} onReassign={handleAssign} onCfSaved={reloadCfValues} onInteractionAdded={reloadDonors}
+        onNavigate={onNavigate}
         isReadOnly={isReadOnly} allDonors={data.donors} onSelectRelatedDonor={id=>{const d=data.donors.find(x=>x.id===id);if(d)selectDonor(d);}}/></ErrorBoundary>
       ) : (<>
 

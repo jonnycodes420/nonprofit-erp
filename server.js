@@ -2568,7 +2568,11 @@ app.put("/donors/:id", requireAuth, checkWriteAccess, wrap(async (req, res) => {
   res.json(d);
 }));
 
-app.patch("/donors/:id/stage", requireAuth, wrap(async (req, res) => {
+// Managed-stage changes are a Team (major-gifts) capability — the pipeline is
+// purely Team (BUILD-19; donor-profile Core/Team split FIX). Core sees stage
+// read-only; changing it (single or bulk) requires the Team plan. This
+// reverses the earlier "per-donor stage dropdown is Core-fine" note.
+app.patch("/donors/:id/stage", requireAuth, requirePlan("team"), wrap(async (req, res) => {
   const { stage, prevStage } = req.body;
   const valid = ["prospect","qualify","cultivate","solicit","steward","lapsed"];
   if (!valid.includes(stage)) return res.status(400).json({ error: "Invalid stage" });
@@ -2611,7 +2615,7 @@ app.delete("/donors/:id", requireAuth, requireAdmin, wrap(async (req, res) => {
   res.json({ success: true });
 }));
 
-app.patch("/donors/:id/assign", requireAuth, requireAdmin, wrap(async (req, res) => {
+app.patch("/donors/:id/assign", requireAuth, requireAdmin, requirePlan("team"), wrap(async (req, res) => {
   const { assignedTo, assignedToName } = req.body;
   const affected = await run(
     `UPDATE donors SET assigned_to=?, assigned_to_name=?, updated_at=NOW() WHERE id=? AND org_id=?`,
@@ -2625,7 +2629,7 @@ app.patch("/donors/:id/assign", requireAuth, requireAdmin, wrap(async (req, res)
 // Future: restore-from-trash view + permanent-purge scheduled job can be
 // built on deleted_at — the column is stable and org-scoped.
 
-app.patch("/donors/bulk-stage", requireAuth, wrap(async (req, res) => {
+app.patch("/donors/bulk-stage", requireAuth, requirePlan("team"), wrap(async (req, res) => {
   const { ids, stage } = req.body;
   const VALID = ["prospect","qualify","cultivate","solicit","steward","lapsed"];
   if (!Array.isArray(ids) || ids.length === 0) return res.status(400).json({ error: "ids array required" });
@@ -2645,7 +2649,7 @@ app.patch("/donors/bulk-stage", requireAuth, wrap(async (req, res) => {
   res.json({ updated: result.changes });
 }));
 
-app.patch("/donors/bulk-assign", requireAuth, requireAdmin, wrap(async (req, res) => {
+app.patch("/donors/bulk-assign", requireAuth, requireAdmin, requirePlan("team"), wrap(async (req, res) => {
   const { ids, assignedTo } = req.body;
   if (!Array.isArray(ids) || ids.length === 0) return res.status(400).json({ error: "ids array required" });
   if (!assignedTo) return res.status(400).json({ error: "assignedTo required" });
@@ -4458,7 +4462,9 @@ app.delete("/donor-relationships/:id", requireAuth, wrap(async (req, res) => {
   res.json({ success: true });
 }));
 
-app.post("/donors/:id/score", requireAuth, wrap(async (req, res) => {
+// Wealth/capacity scoring is part of the Team major-gifts layer — Core sees a
+// stored score read-only (behind glass) but can't compute/recompute it.
+app.post("/donors/:id/score", requireAuth, requirePlan("team"), wrap(async (req, res) => {
   const result = await calcWealthScore(req.params.id, req.user.orgId);
   if (!result) return res.status(404).json({ error: "Donor not found" });
   res.json(result);
@@ -10474,7 +10480,10 @@ app.get("/sequences/:id/enrollments", requireAuth, wrap(async (req, res) => {
   res.json(rows);
 }));
 
-app.post("/sequences/:id/enroll", requireAuth, wrap(async (req, res) => {
+// Enrolling a donor in a sequence from the profile is part of the Team
+// portfolio/officer layer (donor-profile Core/Team split FIX). Viewing/CRUD of
+// sequences in Communications is unaffected; only the per-donor enroll is gated.
+app.post("/sequences/:id/enroll", requireAuth, requirePlan("team"), wrap(async (req, res) => {
   const { donorId } = req.body;
   if (!donorId) return res.status(400).json({ error: "donorId required" });
   const seq = await query("SELECT id FROM sequences WHERE id = ? AND org_id = ?", [req.params.id, req.user.orgId]);

@@ -19,7 +19,7 @@ const today = new Date().toISOString().slice(0, 10);
 
 async function reset() {
   for (const org of [TEAM, CORE, RO, SOLO, T2]) {
-    for (const t of ["moves", "opportunities", "donor_designations", "interactions", "gifts", "tasks", "donors", "users"])
+    for (const t of ["moves", "opportunities", "donor_designations", "sequence_enrollments", "sequences", "interactions", "gifts", "tasks", "donors", "users"])
       await q(`DELETE FROM ${t} WHERE org_id=$1`, [org]).catch(() => {});
     await q(`DELETE FROM orgs WHERE id=$1`, [org]);
   }
@@ -205,6 +205,53 @@ async function seedDesignation(o, donorId, kind) {
   r = await api("GET", "/pipeline", t2Admin);
   const t2cards = Object.values(r.body.columns).flat();
   ok("team2 board only shows its own donors", t2cards.every(c => c.donorId === "mv_t2d1"), t2cards.map(c => c.donorId));
+
+  // ── Donor-profile Core/Team split (FIX) ─────────────────────────────────
+  // The major-gifts LAYER on the donor profile is Team: move stage (single +
+  // bulk), reassign owner (single + bulk), wealth score, and sequence enroll
+  // all 403 for Core (requirePlan('team')); Team succeeds. The READS that feed
+  // the locked previews (moves/opportunities/suggestions) stay visible for Core
+  // so it sees its own data behind the frosted glass (BUILD-19/20 guardrail).
+  await q(`INSERT INTO sequences (id,org_id,name,trigger,status) VALUES ($1,$2,$3,'manual','active') ON CONFLICT DO NOTHING`, ["seq_mv_team", TEAM, "Team Seq"]);
+  await q(`INSERT INTO sequences (id,org_id,name,trigger,status) VALUES ($1,$2,$3,'manual','active') ON CONFLICT DO NOTHING`, ["seq_mv_core", CORE, "Core Seq"]);
+
+  r = await api("PATCH", "/donors/mv_c1/stage", coreAdmin, { stage: "qualify" });
+  ok("Core single-stage move → 403 plan_required", r.status === 403 && r.body.error === "plan_required", r.body);
+  r = await api("PATCH", "/donors/mv_d1/stage", admin, { stage: "qualify" });
+  ok("Team single-stage move → 200", r.status === 200, r.body);
+
+  r = await api("PATCH", "/donors/bulk-stage", coreAdmin, { ids: ["mv_c1"], stage: "cultivate" });
+  ok("Core bulk-stage → 403 plan_required", r.status === 403 && r.body.error === "plan_required", r.body);
+  r = await api("PATCH", "/donors/bulk-stage", admin, { ids: ["mv_d1"], stage: "cultivate" });
+  ok("Team bulk-stage → 200", r.status === 200, r.body);
+
+  r = await api("PATCH", "/donors/mv_c1/assign", coreAdmin, { assignedTo: "u_mvc_admin", assignedToName: "User coreadmin" });
+  ok("Core reassign → 403 plan_required", r.status === 403 && r.body.error === "plan_required", r.body);
+  r = await api("PATCH", "/donors/mv_d1/assign", admin, { assignedTo: "u_mv_off2", assignedToName: "User off2" });
+  ok("Team reassign → 200", r.status === 200, r.body);
+
+  r = await api("PATCH", "/donors/bulk-assign", coreAdmin, { ids: ["mv_c1"], assignedTo: "u_mvc_admin" });
+  ok("Core bulk-assign → 403 plan_required", r.status === 403 && r.body.error === "plan_required", r.body);
+  r = await api("PATCH", "/donors/bulk-assign", admin, { ids: ["mv_d1"], assignedTo: "u_mv_admin" });
+  ok("Team bulk-assign → 200", r.status === 200, r.body);
+
+  r = await api("POST", "/donors/mv_c1/score", coreAdmin);
+  ok("Core wealth-score compute → 403 plan_required", r.status === 403 && r.body.error === "plan_required", r.body);
+  r = await api("POST", "/donors/mv_d1/score", admin);
+  ok("Team wealth-score compute → 200", r.status === 200 && typeof r.body.wealthScore !== "undefined", r.body);
+
+  r = await api("POST", "/sequences/seq_mv_core/enroll", coreAdmin, { donorId: "mv_c1" });
+  ok("Core sequence enroll → 403 plan_required", r.status === 403 && r.body.error === "plan_required", r.body);
+  r = await api("POST", "/sequences/seq_mv_team/enroll", admin, { donorId: "mv_d1" });
+  ok("Team sequence enroll → 200", r.status === 200, r.body);
+
+  // Reads powering the locked previews stay OPEN for Core (visible behind glass).
+  r = await api("GET", "/donors/mv_c1/moves", coreAdmin);
+  ok("Core CAN read moves (locked-preview data visible)", r.status === 200 && Array.isArray(r.body), r.body);
+  r = await api("GET", "/donors/mv_c1/opportunities", coreAdmin);
+  ok("Core CAN read opportunities (locked-preview data visible)", r.status === 200 && Array.isArray(r.body), r.body);
+  r = await api("GET", "/donors/mv_c1/move-suggestions", coreAdmin);
+  ok("Core CAN read move-suggestions (locked-preview data visible)", r.status === 200, r.body);
 
   await closeDb();
   summary();
