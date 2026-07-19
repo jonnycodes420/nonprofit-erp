@@ -531,7 +531,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
         if(isTeam&&homeData.portfolio){
           const pc=homeData.portfolio;
           cards.push({key:"portfolio",label:"Portfolio",accent:pc.color||T.greenDk,value:pc.count,unit:"donors",
-            sub:`${fmt(pc.value)} lifetime giving`,onClick:()=>onNavigate("donors",{view:"pipeline"}),aria:"View your portfolio"});
+            sub:`${fmt(pc.value)} lifetime giving`,onClick:()=>onNavigate("pipeline"),aria:"View your portfolio"});
         }
         cards.push({key:"tasks",label:"Tasks",accent:t.overdue>0?T.terracotta:T.gold,value:t.total,unit:t.total===1?"open task":"open tasks",
           sub:(<span>{t.overdue>0&&<b style={{color:T.terracotta}}>{t.overdue} overdue</b>}{t.overdue>0&&(t.today>0||t.upcoming>0)?" · ":""}{t.today>0&&<b style={{color:T.gold600}}>{t.today} today</b>}{t.today>0&&t.upcoming>0?" · ":""}{t.upcoming>0&&<span style={{color:T.greenMid}}>{t.upcoming} upcoming</span>}{t.total===0&&"All clear"}</span>),
@@ -698,7 +698,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
             return (<>
               <div style={{display:"grid",gridTemplateColumns:"repeat(6,1fr)",borderTop:"1px solid "+T.bg3}} className="portfolio-grid">
                 {[
-                  {label:"Portfolio",icon:"portfolio",value:myStats.portfolioCount,unit:"donors",onClick:()=>onNavigate("donors",{view:"pipeline"})},
+                  {label:"Portfolio",icon:"portfolio",value:myStats.portfolioCount,unit:"donors",onClick:()=>onNavigate("pipeline")},
                   {label:"Visits YTD",icon:"visits",value:myStats.visitsYtd,unit:(noOutreachYet&&myStats.visitsYtd===0)?"not logged yet":"meetings",onClick:()=>openPortfolioBreakdown("visits")},
                   {label:"Moves Made",icon:"moves",value:myStats.madeYtd,unit:(noOutreachYet&&myStats.madeYtd===0)?"not logged yet":"interactions",onClick:()=>openPortfolioBreakdown("moves")},
                   {label:"Gifts YTD",icon:"gifts",value:fmt(myStats.giftsYtd),unit:"raised",onClick:()=>openPortfolioBreakdown("gifts")},

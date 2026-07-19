@@ -23,7 +23,6 @@ class ErrorBoundary extends Component {
   }
 }
 import { T, fmt, fmtFull, daysDiff, SC, askClaude, STAGES, STAGE_ACTION, TIER_COLOR, donorScore, moveUrgency, Spin, Pill, Card, AIBtn, AIPanel, PageTitle, EmptyState, GivingHistoryChart, TpField, TpYesNo, TouchpointTimeline } from "./shared";
-import { computeStagePipelineShare, computeStageWeights } from "./FunnelChart";
 // SHELVED — voice capture works but unproven adoption assumption, revisit
 // later. Code intact, re-enable by uncommenting (see showVoiceMemo state,
 // profile button, and modal render below, and add `VoiceMemoModal` back to
@@ -3608,188 +3607,6 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
   );
 }
 
-// ── Donor Kanban ───────────────────────────────────────────────────────────
-function DonorKanban({donors,onStageChange,onLogTouchpoint,onSelectDonor}){
-  const[draggingId,setDraggingId]=useState(null);
-  const[dragOver,setDragOver]=useState(null);
-
-  // Click-to-focus: clicking a stage header makes that column the wide one,
-  // overriding the default proportional-by-count sizing below — an explicit
-  // "look at this stage" action, not just a passive result of it having more
-  // donors. Click the focused stage again (or a different one) to release it.
-  const[focusedStage,setFocusedStage]=useState(null);
-  const[hoveredCol,setHoveredCol]=useState(null);
-
-  const grouped=useMemo(()=>Object.fromEntries(
-    STAGES.map(s=>[s.id,donors.filter(d=>(d.stage||"cultivate")===s.id).sort((a,b)=>b.total-a.total)])
-  ),[donors]);
-  const byStage=sid=>grouped[sid]||[];
-  const counts=useMemo(()=>Object.fromEntries(
-    STAGES.map(s=>{
-      const rows=grouped[s.id]||[];
-      return [s.id,{count:rows.length,total:rows.reduce((sum,d)=>sum+d.total,0)}];
-    })
-  ),[grouped]);
-
-  // Column widths proportional to each stage's donor count (a 38-donor stage
-  // reads visibly wider than a 2-donor one), with a min-width floor via
-  // minmax() so a near-empty stage stays a usable, droppable target.
-  const weights=useMemo(()=>computeStageWeights(counts,STAGES,"count").weights,[counts]);
-  // Focus mode overrides the count-proportional weights entirely: the
-  // focused stage gets a large fixed share, everyone else gets a small
-  // shared one — deliberately not derived from donor counts at all, since
-  // the whole point is "let me look at this column regardless of how many
-  // cards are in it."
-  const effectiveWeights=useMemo(()=>{
-    if(!focusedStage)return weights;
-    const fw={};
-    STAGES.forEach(s=>{fw[s.id]=s.id===focusedStage?3.2:0.35;});
-    return fw;
-  },[focusedStage,weights]);
-  const gridCols=STAGES.map(s=>`minmax(140px, ${effectiveWeights[s.id]}fr)`).join(" ");
-  // A column this narrow (relative to the widest one) has no room for the
-  // full label+count+total header without feeling like an empty color
-  // block — applies equally to a legitimately-low-count stage in the
-  // default layout and to any un-focused stage while another is focused.
-  const isNarrowCol=s=>effectiveWeights[s.id]<=0.3;
-
-  // Same "share of pipeline" math as <FunnelChart> (shared helper — computed
-  // once in FunnelChart.jsx, not reimplemented here). This replaced an
-  // earlier "conversion rate" framing (nextCount/currentCount) that wasn't a
-  // real conversion — donor stage is a snapshot, not tracked cohort history —
-  // and routinely showed >100% since downstream stages like Cultivate hold
-  // donors long-term and often outnumber a faster-moving upstream stage.
-  const coreStages=useMemo(()=>STAGES.filter(s=>s.id!=="lapsed"),[]);
-  const pipelineShare=useMemo(()=>computeStagePipelineShare(counts,coreStages),[counts,coreStages]);
-
-  return(
-    <div style={{width:"100%"}}>
-      <div className="donor-kanban-conv" style={{display:"grid",gridTemplateColumns:gridCols,gap:8,marginBottom:6,padding:"0 2px"}}>
-        {STAGES.map(stage=>stage.id==="lapsed"?(
-          <div key={stage.id} style={{fontSize:9,fontWeight:800,color:T.terracotta,textAlign:"center",letterSpacing:"0.06em",textTransform:"uppercase"}}>↘ Leak</div>
-        ):(
-          <div key={stage.id} style={{fontSize:9,fontWeight:700,color:"#8fa896",textAlign:"center"}}>
-            {pipelineShare[stage.id]}% of pipeline
-          </div>
-        ))}
-      </div>
-      <div className="donor-kanban-wrap" style={{display:"grid",gridTemplateColumns:gridCols,gap:8,minHeight:"calc(100vh - 260px)",alignItems:"flex-start",width:"100%"}}>
-        {STAGES.map(stage=>{
-          const cols=byStage(stage.id);
-          const total=counts[stage.id]?.total||0;
-          const isOver=dragOver===stage.id;
-          const isLapsed=stage.id==="lapsed";
-          const isFocused=focusedStage===stage.id;
-          const isHoveredCol=hoveredCol===stage.id;
-          const narrow=isNarrowCol(stage);
-          return(
-            <div key={stage.id} className="kanban-col" style={{display:"flex",flexDirection:"column",gap:6}}
-              onDragOver={e=>{e.preventDefault();setDragOver(stage.id);}}
-              onDragLeave={e=>{if(!e.currentTarget.contains(e.relatedTarget))setDragOver(null);}}
-              onDrop={e=>{e.preventDefault();const id=e.dataTransfer.getData("donorId");if(id)onStageChange(id,stage.id);setDragOver(null);}}>
-              <div
-                onClick={()=>setFocusedStage(f=>f===stage.id?null:stage.id)}
-                onMouseEnter={()=>setHoveredCol(stage.id)}
-                onMouseLeave={()=>setHoveredCol(h=>h===stage.id?null:h)}
-                title={isFocused?"Click to return to default sizing":"Click to focus this stage"}
-                style={{
-                  background:isLapsed?"#2a1310":isHoveredCol?"#16241a":"#0f1a12",
-                  border:`1px solid ${isOver?stage.color+"50":isLapsed?"#3a1f1a":"#1a2e1f"}`,
-                  borderLeft:`3px solid ${stage.color}`,
-                  borderRadius:10,
-                  padding:narrow?"8px 8px 7px":"10px 12px 9px",
-                  cursor:"pointer",
-                  boxShadow:isFocused?`0 0 0 2px ${stage.color}55`:"none",
-                  transition:"background 0.12s,border-color 0.12s,box-shadow 0.15s,padding 0.15s",
-                }}>
-                {narrow?(
-                  <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:2,textAlign:"center"}}>
-                    <span style={{fontSize:8,fontWeight:800,color:isLapsed?stage.color:"#8fa896",letterSpacing:"0.08em",textTransform:"uppercase"}}>{isLapsed?"↘ ":""}{stage.label}</span>
-                    <div style={{display:"flex",alignItems:"baseline",gap:5}}>
-                      <span style={{fontSize:13,fontWeight:800,color:"#f0ede6",fontFamily:"'DM Serif Display',serif"}}>{cols.length}</span>
-                      {total>0&&<span style={{fontSize:9,color:"#8fa896"}}>{fmt(total)}</span>}
-                    </div>
-                  </div>
-                ):(<>
-                  <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:4}}>
-                    <span style={{fontSize:9,fontWeight:800,color:isLapsed?stage.color:"#8fa896",letterSpacing:"0.1em",textTransform:"uppercase"}}>{isLapsed?"↘ ":""}{stage.label}</span>
-                    <span style={{background:stage.color+"28",color:stage.color,fontSize:10,fontWeight:800,borderRadius:99,padding:"1px 7px",border:`1px solid ${stage.color}40`,lineHeight:"16px"}}>{cols.length}</span>
-                  </div>
-                  <div style={{fontSize:13,fontWeight:700,color:total>0?"#f0ede6":"#8fa896",fontFamily:"'DM Serif Display',serif",letterSpacing:"-0.01em"}}>
-                    {total>0?fmt(total):"$0"}
-                  </div>
-                </>)}
-              </div>
-              <div style={{
-                display:"flex",flexDirection:"column",gap:6,flex:1,
-                borderRadius:10,
-                border:isOver?`2px dashed ${stage.color+"45"}`
-                      :cols.length===0?`1px dashed ${T.bg3}`
-                      :"1px dashed transparent",
-                background:isOver?stage.color+"05":"transparent",
-                padding:isOver?3:0,
-                transition:"border-color 0.12s,background 0.12s",
-                minHeight:cols.length===0?60:0,
-              }}>
-                {cols.map(d=>{
-                  const urg=moveUrgency(d);
-                  const sc=donorScore(d);
-                  const thisIsDragging=draggingId===d.id;
-                  const urgBg={critical:"#ef444407",due:"#f59e0b05",ok:"transparent"}[urg.level];
-                  const urgBorder={critical:"#ef444428",due:"#f59e0b28",ok:T.bg2}[urg.level];
-                  const scColor=sc>70?"#1a6b4a":sc>45?"#f59e0b":"#ef4444";
-                  return(
-                    <div key={d.id} draggable
-                      onDragStart={e=>{e.dataTransfer.setData("donorId",d.id);setDraggingId(d.id);}}
-                      onDragEnd={()=>{setDraggingId(null);setDragOver(null);}}
-                      style={{
-                        border:`1px solid ${thisIsDragging?"transparent":urgBorder}`,
-                        borderLeft:`3px solid ${stage.color}`,
-                        borderRadius:10,padding:"13px 12px 10px",
-                        cursor:"grab",opacity:thisIsDragging?0.2:1,
-                        transition:"opacity 0.12s,box-shadow 0.12s,transform 0.12s",
-                        userSelect:"none",
-                        background:thisIsDragging?"transparent":T.white,
-                        boxShadow:thisIsDragging?"none":"0 1px 3px rgba(10,10,10,0.07)",
-                      }}>
-                      <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",gap:6,marginBottom:5}}>
-                        <div style={{flex:1,minWidth:0}}>
-                          <div style={{fontSize:13,fontWeight:700,color:T.ink,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",letterSpacing:"-0.01em"}}>{d.name}</div>
-                          <div style={{fontSize:12,color:T.greenDk,marginTop:2,fontWeight:700}}>{fmt(d.total)}</div>
-                        </div>
-                        <div style={{background:scColor+"15",border:`1px solid ${scColor}30`,borderRadius:6,padding:"4px 7px",flexShrink:0,textAlign:"center",minWidth:30}}>
-                          <div style={{fontSize:13,fontWeight:800,color:scColor,lineHeight:"1"}}>{sc}</div>
-                        </div>
-                      </div>
-                      <div style={{display:"flex",alignItems:"center",gap:5,marginBottom:8}}>
-                        <div style={{width:6,height:6,borderRadius:"50%",background:urg.urgencyColor,flexShrink:0}}/>
-                        <span style={{fontSize:10,color:urg.contactTextColor,fontWeight:600}}>{urg.days}d since contact</span>
-                      </div>
-                      <div style={{display:"flex",gap:4}}>
-                        <button onClick={e=>{e.stopPropagation();onLogTouchpoint(d);}}
-                          style={{flex:1,background:T.bg,border:"1px solid "+T.bg3,borderRadius:6,padding:"4px 0",color:T.ink3,fontSize:11,fontWeight:600,cursor:"pointer"}}>
-                          + Log
-                        </button>
-                        <button onClick={e=>{e.stopPropagation();onSelectDonor(d);}}
-                          style={{flex:1,background:T.bg,border:"1px solid "+T.bg3,borderRadius:6,padding:"4px 0",color:T.ink3,fontSize:11,fontWeight:600,cursor:"pointer"}}>
-                          View →
-                        </button>
-                      </div>
-                    </div>
-                  );
-                })}
-                {isOver&&cols.length===0&&(
-                  <div style={{padding:"20px 8px",textAlign:"center",color:stage.color,fontSize:11,fontWeight:600,opacity:0.75}}>Drop here</div>
-                )}
-              </div>
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
 // ── Re-engage View ─────────────────────────────────────────────────────────
 function ReEngageView({donors,org,onLogTouchpoint,onSelectDonor}){
   const lapsed=[...donors].filter(d=>d.stage==="lapsed"||(d.lastGift&&daysDiff(d.lastGift)>365)).sort((a,b)=>b.total-a.total);
@@ -4910,7 +4727,7 @@ export function Donors({data,setData,isReadOnly=false,initialView,initialLogDono
       <div className="donors-toolbar" style={{display:"flex",gap:10,flexWrap:"wrap",alignItems:"center"}}>
         <input className="donors-search" value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search donors…" style={{flex:1,minWidth:160,background:T.bg,border:"1px solid "+T.bg3,borderRadius:10,padding:"10px 14px",color:T.ink,fontSize:13,outline:"none"}}/>
         <div className="donors-view-toggle" style={{display:"flex",background:T.bg,border:"1px solid "+T.bg3,borderRadius:10,overflow:"hidden"}}>
-          {[["directory","Directory"],["pipeline","My Pipeline"],...(isAdmin?[["team","Team"]]:[]),["reengage","Re-engage"],["map","Map"]].map(([v,l])=>(
+          {[["directory","Directory"],...(isAdmin?[["team","Team"]]:[]),["reengage","Re-engage"],["map","Map"]].map(([v,l])=>(
             <button key={v} onClick={()=>setView(v)} style={{background:view===v?T.bg2:"transparent",border:"none",padding:"9px 14px",color:view===v?T.ink:"#6b7280",fontSize:13,fontWeight:view===v?700:400,cursor:"pointer",display:"flex",alignItems:"center",gap:5}}>
               {l}
               {v==="reengage"&&lapsedCount>0&&<span style={{background:"#1a6b4a",color:"#fff",borderRadius:99,padding:"1px 6px",fontSize:10,fontWeight:800,lineHeight:1.4}}>{lapsedCount}</span>}
@@ -4986,22 +4803,6 @@ export function Donors({data,setData,isReadOnly=false,initialView,initialLogDono
       </Card>}
 
       {view==="directory"&&<DirectoryView donors={dirPageRows} loading={dirRows===null} serverTotal={dirTotal} page={dirPage} pageSize={DIR_PAGE_SIZE} onPage={setDirPage} clientFilterCount={advFilterCount+cfFilterCount} exportParams={{search:dirSearch.trim(),stage:dirStage,assignedTo:dirAssignee,designation:dirDesignation}} totalDonors={data.donors.length} orgTeam={orgTeam} isAdmin={isAdmin} onSelectDonor={selectDonor} onAssign={d=>setAssignTarget(d)} stageFilter={dirStage} setStageFilter={setDirStage} assigneeFilter={dirAssignee} setAssigneeFilter={setDirAssignee} designationFilter={dirDesignation} setDesignationFilter={setDirDesignation} officers={officers} officerColorMap={officerColorMap} portfolioMeta={portfolioMeta} onOfficersChanged={loadOfficers} onLoadSampleData={loadSampleData} sampleLoading={sampleLoading} hasSampleData={sampleStatus?.hasSampleData} onAddDonor={()=>setShowAdd(true)} onBulkDone={reloadDonors}/>}
-
-      {view==="pipeline"&&(()=>{
-        const myDonors=filtered.filter(d=>d.assignedTo===userId);
-        const myTotal=myDonors.reduce((s,d)=>s+d.total,0);
-        return<>
-          <div style={{display:"flex",gap:10,flexWrap:"wrap",alignItems:"center",padding:"4px 0"}}>
-            <div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:10,padding:"10px 16px",display:"flex",gap:16}}>
-              <div><div style={{fontSize:9,fontWeight:700,color:T.ink3,textTransform:"uppercase",letterSpacing:".06em"}}>Assigned to me</div><div style={{fontSize:18,fontWeight:800,color:T.ink,fontFamily:"'DM Serif Display',serif"}}>{myDonors.length}</div></div>
-              <div><div style={{fontSize:9,fontWeight:700,color:T.ink3,textTransform:"uppercase",letterSpacing:".06em"}}>Portfolio value</div><div style={{fontSize:18,fontWeight:800,color:"#1a6b4a",fontFamily:"'DM Serif Display',serif"}}>{fmtFull(myTotal)}</div></div>
-            </div>
-          </div>
-          {myDonors.length===0
-            ?<EmptyState icon="♦" title="Your pipeline is waiting" message="Assign yourself a few donors from the Directory (open one and pick an owner) and they'll line up here by stage, ready to move."/>
-            :<DonorKanban donors={myDonors} onStageChange={moveToStage} onLogTouchpoint={d=>setLogTarget(d)} onSelectDonor={selectDonor}/>}
-        </>;
-      })()}
 
       {view==="team"&&isAdmin&&<TeamView donors={filtered} orgTeam={orgTeam} onSelectDonor={selectDonor}/>}
 
