@@ -260,8 +260,8 @@ app.post("/stripe/webhook", express.raw({ type: "application/json" }), async (re
             if (acctRow.length) {
               const txnId = "ft_" + uuid().slice(0, 8);
               await run(
-                "INSERT INTO fin_transactions (id,org_id,date,description,vendor_donor,amount,type,account_id,fund_id,donor_id,source) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
-                [txnId, orgId, today, "Online gift via Stripe", donorName || email, amount, "income", acctRow[0].id, genFundRow.length ? genFundRow[0].id : null, donorId, "online"]
+                "INSERT INTO fin_transactions (id,org_id,date,description,vendor_donor,amount,type,account_id,fund_id,donor_id,source,gift_id) VALUES (?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT (gift_id) WHERE gift_id IS NOT NULL DO NOTHING",
+                [txnId, orgId, today, "Online gift via Stripe", donorName || email, amount, "income", acctRow[0].id, genFundRow.length ? genFundRow[0].id : null, donorId, "online", giftId]
               );
             }
             const taskId = "t_" + uuid().slice(0, 8);
@@ -2298,18 +2298,20 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrap(async (r
     const giftParams = [], intParams = [], giftTuples = [], intTuples = [];
     const ftParams = [], ftTuples = [];
     batch.forEach(g => {
+      const gid = "g_"+uuid().slice(0,8);
       const intNote = `Gift received: $${g.amount.toLocaleString()} (${g.type})${g.notes?" — "+g.notes:""}`;
-      giftParams.push("g_"+uuid().slice(0,8), orgId, g.donorId, g.amount, g.date, g.type, g.campaign, null, g.notes);
+      giftParams.push(gid, orgId, g.donorId, g.amount, g.date, g.type, g.campaign, null, g.notes);
       giftTuples.push("(?,?,?,?,?,?,?,?,?)");
       intParams.push("int_"+uuid().slice(0,8), orgId, g.donorId, "gift", intNote, g.date, importerId, importerName);
       intTuples.push("(?,?,?,?,?,?,?,?)");
       affectedDonorIds.add(g.donorId);
-      // Accumulate fin_transactions for current-FY gifts — same shape as single-gift route
+      // Accumulate fin_transactions for current-FY gifts — same shape as single-gift
+      // route, carrying gift_id so the stamp is idempotent (BUILD-21 Part 3).
       if (contribAcctId && g.date >= fyStart) {
         const dName = donorNameMap[g.donorId] || "Donor";
         ftParams.push("ft_"+uuid().slice(0,8), orgId, g.date,
-          `Gift from ${dName}`, dName, g.amount, "income", contribAcctId, genFundId, g.donorId, "import");
-        ftTuples.push("(?,?,?,?,?,?,?,?,?,?,?)");
+          `Gift from ${dName}`, dName, g.amount, "income", contribAcctId, genFundId, g.donorId, "import", gid);
+        ftTuples.push("(?,?,?,?,?,?,?,?,?,?,?,?)");
       }
     });
     try {
@@ -2325,8 +2327,8 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrap(async (r
         // One bulk INSERT for FY fin_transactions — same tx as gifts, rolls back together
         if (ftTuples.length) {
           await runTx(client,
-            `INSERT INTO fin_transactions (id,org_id,date,description,vendor_donor,amount,type,account_id,fund_id,donor_id,source)
-             VALUES ${ftTuples.join(",")}`,
+            `INSERT INTO fin_transactions (id,org_id,date,description,vendor_donor,amount,type,account_id,fund_id,donor_id,source,gift_id)
+             VALUES ${ftTuples.join(",")} ON CONFLICT (gift_id) WHERE gift_id IS NOT NULL DO NOTHING`,
             ftParams
           );
         }
@@ -2733,7 +2735,7 @@ app.delete("/interactions/:id", requireAuth, wrap(async (req, res) => {
 
 // ── Gifts ──────────────────────────────────────────────────────────────────
 app.post("/donors/:id/gifts", requireAuth, checkWriteAccess, wrap(async (req, res) => {
-  const { amount, date, type, campaign, notes, pledgeId } = req.body;
+  const { amount, date, type, campaign, notes, pledgeId, fundId } = req.body;
   if (!amount || isNaN(Number(amount)) || Number(amount) <= 0) {
     return res.status(400).json({ error: "A positive amount is required" });
   }
@@ -2743,6 +2745,15 @@ app.post("/donors/:id/gifts", requireAuth, checkWriteAccess, wrap(async (req, re
     [req.params.id, req.user.orgId]
   );
   if (!donorExists.length) return res.status(404).json({ error: "Donor not found" });
+
+  // Optional fund designation (the client's "Finance Fund" selector). Validated
+  // org-scoped so a foreign fund id can't be pinned onto this gift's ledger row.
+  // BUILD-21 Part 3: the gift carries its own fund and stamps the ledger ONCE
+  // with it — replacing the old client behavior that logged the gift AND made a
+  // second manual /finance/transactions call (the double-stamp bug).
+  if (fundId && !(await orgOwns("fin_funds", fundId, req.user.orgId))) {
+    return res.status(404).json({ error: "Fund not found" });
+  }
 
   // Optional: this gift fulfills a specific open pledge — the "gift
   // recorded against it" stop condition (see processPledgeReminders()).
@@ -2762,8 +2773,8 @@ app.post("/donors/:id/gifts", requireAuth, checkWriteAccess, wrap(async (req, re
   const amt = Math.round(Number(amount));                // round, not truncate; INTEGER column
 
   await run(
-    "INSERT INTO gifts (id,org_id,donor_id,amount,date,type,campaign,notes) VALUES (?,?,?,?,?,?,?,?)",
-    [giftId, req.user.orgId, req.params.id, amt, giftDate, type || "cash", campaign || "", notes || ""]
+    "INSERT INTO gifts (id,org_id,donor_id,amount,date,type,campaign,notes,fund_id) VALUES (?,?,?,?,?,?,?,?,?)",
+    [giftId, req.user.orgId, req.params.id, amt, giftDate, type || "cash", campaign || "", notes || "", fundId || null]
   );
   if (pledgeRow) {
     await run(
@@ -2798,12 +2809,15 @@ app.post("/donors/:id/gifts", requireAuth, checkWriteAccess, wrap(async (req, re
       query("SELECT id FROM accounts WHERE org_id = ? AND code = '4010' LIMIT 1", [req.user.orgId]),
       query("SELECT id FROM fin_funds WHERE org_id = ? AND restricted = false ORDER BY created_at ASC LIMIT 1", [req.user.orgId]),
     ]);
+    // The gift's own fund (if the officer chose one) wins; otherwise the general
+    // unrestricted fund. ON CONFLICT makes the stamp idempotent per gift.
+    const stampFund = fundId || (genFund.length ? genFund[0].id : null);
     if (contribAcct.length) {
       await run(
-        "INSERT INTO fin_transactions (id,org_id,date,description,vendor_donor,amount,type,account_id,fund_id,donor_id,source) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+        "INSERT INTO fin_transactions (id,org_id,date,description,vendor_donor,amount,type,account_id,fund_id,donor_id,source,gift_id) VALUES (?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT (gift_id) WHERE gift_id IS NOT NULL DO NOTHING",
         ["ft_"+uuid().slice(0,8), req.user.orgId, giftDate,
          `Gift from ${donorRows[0]?.name || "Donor"}`, donorRows[0]?.name || "",
-         amt, "income", contribAcct[0].id, genFund.length ? genFund[0].id : null, req.params.id, "gift"]
+         amt, "income", contribAcct[0].id, stampFund, req.params.id, "gift", giftId]
       );
     }
   } catch(e) { console.error("Finance sync:", e.message); }
@@ -3544,19 +3558,20 @@ app.post("/gifts/import-history", requireAuth, checkWriteAccess, wrap(async (req
             ["int_"+uuid().slice(0,8), orgId, g.donorId, "gift", intNote, g.date, importerId, importerName]
           );
           affectedDonorIds.add(g.donorId);
-          // Accumulate fin_transactions for current-FY gifts — same shape as single-gift route
+          // Accumulate fin_transactions for current-FY gifts — same shape as single-gift
+          // route, carrying gift_id so the stamp is idempotent (BUILD-21 Part 3).
           if (contribAcctId && g.date >= fyStart) {
             const dName = donorNameMap[g.donorId] || "Donor";
             ftParams.push("ft_"+uuid().slice(0,8), orgId, g.date,
-              `Gift from ${dName}`, dName, g.amount, "income", contribAcctId, genFundId, g.donorId, "import");
-            ftTuples.push("(?,?,?,?,?,?,?,?,?,?,?)");
+              `Gift from ${dName}`, dName, g.amount, "income", contribAcctId, genFundId, g.donorId, "import", id);
+            ftTuples.push("(?,?,?,?,?,?,?,?,?,?,?,?)");
           }
         }
         // One bulk INSERT for all FY fin_transactions in this batch — same tx as gifts
         if (ftTuples.length) {
           await runTx(client,
-            `INSERT INTO fin_transactions (id,org_id,date,description,vendor_donor,amount,type,account_id,fund_id,donor_id,source)
-             VALUES ${ftTuples.join(",")}`,
+            `INSERT INTO fin_transactions (id,org_id,date,description,vendor_donor,amount,type,account_id,fund_id,donor_id,source,gift_id)
+             VALUES ${ftTuples.join(",")} ON CONFLICT (gift_id) WHERE gift_id IS NOT NULL DO NOTHING`,
             ftParams
           );
         }
@@ -12362,9 +12377,10 @@ app.patch("/events/:id/attendees/:attendeeId", requireAuth, checkWriteAccess, as
       const accts = await query("SELECT id FROM accounts WHERE org_id=$1 AND type='revenue' LIMIT 1", [orgId]);
       if (funds.length && accts.length) {
         await run(
-          `INSERT INTO fin_transactions (id, org_id, date, description, vendor_donor, amount, type, account_id, fund_id)
-           VALUES ($1,$2,$3,$4,$5,$6,'income',$7,$8)`,
-          ["ft_" + uuid().slice(0,8), orgId, today, `Event Gift — ${evt?.name||"event"}`, att.name, newGift, accts[0].id, funds[0].id]
+          `INSERT INTO fin_transactions (id, org_id, date, description, vendor_donor, amount, type, account_id, fund_id, donor_id, source, gift_id)
+           VALUES ($1,$2,$3,$4,$5,$6,'income',$7,$8,$9,'gift',$10)
+           ON CONFLICT (gift_id) WHERE gift_id IS NOT NULL DO NOTHING`,
+          ["ft_" + uuid().slice(0,8), orgId, today, `Event Gift — ${evt?.name||"event"}`, att.name, newGift, accts[0].id, funds[0].id, att.donor_id, giftId]
         );
       }
     }

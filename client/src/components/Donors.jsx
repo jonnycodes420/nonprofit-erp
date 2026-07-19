@@ -1683,15 +1683,10 @@ function LogTouchpointModal({donor,onSave,onClose}){
       await apiFetch(`/donors/${donor.id}/interactions`,{method:"POST",body:JSON.stringify({type:saveType,note,date})});
       const giftAmt=type==="gift"?(parseFloat(String(amount).replace(/[$,]/g,""))||0):0;
       if(type==="gift"&&giftAmt>0){
-        await apiFetch(`/donors/${donor.id}/gifts`,{method:"POST",body:JSON.stringify({amount:giftAmt,date,notes:note})});
-        if(finAcctId){
-          try{
-            await apiFetch("/finance/transactions",{method:"POST",body:JSON.stringify({
-              date,description:`Gift from ${donor.name}`,vendorDonor:donor.name,
-              amount:giftAmt,type:"income",accountId:finAcctId,fundId:finFundId||"",notes:note,
-            })});
-          }catch(e){console.error("Finance sync:",e);}
-        }
+        // The gift route auto-stamps the Finance ledger exactly once (source=gift,
+        // carrying the chosen fund). The old separate /finance/transactions call
+        // was removed — it double-stamped the ledger (BUILD-21 Part 3).
+        await apiFetch(`/donors/${donor.id}/gifts`,{method:"POST",body:JSON.stringify({amount:giftAmt,date,notes:note,fundId:finFundId||undefined})});
       }
       onSave({type:saveType,note,date,amount:giftAmt});
     }catch(e){console.error(e);}

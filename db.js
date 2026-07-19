@@ -709,6 +709,14 @@ async function initSchema() {
   // manual=direct ledger entry). Existing rows default to 'manual'.
   await pool.query(`ALTER TABLE fin_transactions ADD COLUMN IF NOT EXISTS donor_id TEXT`);
   await pool.query(`ALTER TABLE fin_transactions ADD COLUMN IF NOT EXISTS source TEXT DEFAULT 'manual'`);
+  // BUILD-21 Part 3 — the gift this ledger row was auto-stamped from (nullable;
+  // manual/expense/grant rows have none). The invariant is "every gift stamps
+  // fin_transactions exactly once" — a partial UNIQUE index over gift_id makes
+  // that DB-enforced, so no path (donor-profile log, import, Stripe webhook,
+  // event gift) can ever double-insert. Gift-stamp inserts use
+  // ON CONFLICT (gift_id) WHERE gift_id IS NOT NULL DO NOTHING.
+  await pool.query(`ALTER TABLE fin_transactions ADD COLUMN IF NOT EXISTS gift_id TEXT`);
+  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS uq_fin_txns_gift ON fin_transactions (gift_id) WHERE gift_id IS NOT NULL`);
   await pool.query(`ALTER TABLE fin_funds ADD COLUMN IF NOT EXISTS is_sample BOOLEAN DEFAULT false`);
   await pool.query(`ALTER TABLE volunteers ADD COLUMN IF NOT EXISTS is_sample BOOLEAN DEFAULT false`);
   await pool.query(`ALTER TABLE board_members ADD COLUMN IF NOT EXISTS is_sample BOOLEAN DEFAULT false`);
