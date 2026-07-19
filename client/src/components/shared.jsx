@@ -91,7 +91,12 @@ export function interactive(onClick, opts = {}) {
 // Null-safe money formatters live in ../lib/money.js (JSX-free so the Node test
 // suite can import them directly) — re-exported here so every existing
 // `import { fmt, fmtFull } from "./shared"` keeps working. See BUILD-21 Part 2.
-export { fmt, fmtFull } from "../lib/money";
+// NB: import (not a bare `export … from`) so fmt/fmtFull are also bound in THIS
+// module's scope — shared.jsx itself calls fmt()/fmtFull() (GivingHistoryChart,
+// buildContext). A re-export alone left them undefined here and crashed the
+// donor profile with "Can't find variable: fmt" (the BUILD-21 fmt regression).
+import { fmt, fmtFull } from "../lib/money";
+export { fmt, fmtFull };
 export const daysDiff = d => Math.floor((new Date()-new Date(d))/86400000);
 export const daysUntil = d => Math.floor((new Date(d)-new Date())/86400000);
 
