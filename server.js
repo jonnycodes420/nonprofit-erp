@@ -210,6 +210,22 @@ app.post("/stripe/webhook", express.raw({ type: "application/json" }), async (re
         const orgRow = await query("SELECT id FROM orgs WHERE stripe_account_id=$1", [accountId]);
         if (orgRow.length) {
           const orgId = orgRow[0].id;
+          // BUILD-23 — idempotency guard. Stripe redelivers/retries webhook events
+          // (on any non-2xx, timeout, or at-least-once redelivery), and this
+          // handler previously inserted a fresh gift on every call — so a single
+          // online donation could be recorded 2+ times (doubling the gift row,
+          // the fin_transactions stamp, and donor total_giving/gift_count). The
+          // payment_intent id is Stripe's natural per-charge key: if a gift for
+          // this pi.id already exists in the org, this is a redelivery — no-op
+          // (still 200 so Stripe stops retrying). Mirrors the
+          // recoveryEventAlreadyProcessed(event.id) guard used elsewhere here.
+          if (pi.id) {
+            const dupGift = await query("SELECT id FROM gifts WHERE org_id=$1 AND stripe_payment_id=$2 LIMIT 1", [orgId, pi.id]);
+            if (dupGift.length) {
+              console.log(`[stripe] payment_intent.succeeded ${pi.id} already recorded (gift ${dupGift[0].id}) — skipping duplicate`);
+              return res.json({ received: true, duplicate: true });
+            }
+          }
           let donorRow = await query("SELECT id FROM donors WHERE org_id=$1 AND email ILIKE $2", [orgId, email]);
           if (!donorRow.length && donorName) {
             const newDonorId = "d_" + uuid().slice(0, 8);
