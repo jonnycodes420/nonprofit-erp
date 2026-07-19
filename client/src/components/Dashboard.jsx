@@ -27,7 +27,10 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
   const [briefLoading,setBriefLoading]=useState(false);
   const [briefOpen,setBriefOpen]=useState(false);
   const [myStats,setMyStats]=useState(null);
-  const [portfolioOpen,setPortfolioOpen]=useState(false);
+  // My Portfolio is the daily driver — it leads the Home and opens expanded by
+  // default (BUILD-19 Home tweak). The collapse toggle is kept for anyone who
+  // wants it; only the initial state flipped to open.
+  const [portfolioOpen,setPortfolioOpen]=useState(true);
 
   // "mine" vs "all" — undefined until my-stats loads and we can decide a
   // sensible default: a user with an actual assigned portfolio defaults to
@@ -560,6 +563,55 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
         );
       })()}
 
+      {myStats&&(
+        <div style={{background:T.white,border:"1px solid "+T.greenDk+"30",borderLeft:"3px solid "+T.greenDk,borderRadius:14,overflow:"hidden"}}>
+          <button onClick={()=>setPortfolioOpen(v=>!v)} style={{width:"100%",background:"none",border:"none",padding:"10px 16px",display:"flex",alignItems:"center",justifyContent:"space-between",cursor:"pointer",color:T.ink}}>
+            <div style={{display:"flex",alignItems:"center",gap:8}}>
+              <span style={{fontSize:9,fontWeight:800,letterSpacing:"0.1em",textTransform:"uppercase",color:T.greenDk,background:T.greenDk+"10",padding:"3px 8px",borderRadius:99}}>MY PORTFOLIO</span>
+              <span style={{fontSize:12,color:T.ink3}}>FY Jul–Jun</span>
+            </div>
+            <span style={{fontSize:12,color:T.ink3}}>{portfolioOpen?"▲":"▼"}</span>
+          </button>
+          {portfolioOpen&&(() => {
+            // Genuinely zero because nobody has logged a call/meeting yet is
+            // expected first-day state, not a broken metric — but only once
+            // there's real donor/gift history to have contacted in the first
+            // place (an org with zero donors gets its own separate empty
+            // state elsewhere, not this copy). Never fabricates interaction
+            // data; this only changes how an honest zero is captioned.
+            const noOutreachYet = myStats.orgHasGiftHistory && !myStats.orgHasInteractions;
+            return (<>
+              <div style={{display:"grid",gridTemplateColumns:"repeat(6,1fr)",borderTop:"1px solid "+T.bg3}} className="portfolio-grid">
+                {[
+                  {label:"Portfolio",icon:"portfolio",value:myStats.portfolioCount,unit:"donors",onClick:()=>onNavigate("pipeline")},
+                  {label:"Visits YTD",icon:"visits",value:myStats.visitsYtd,unit:(noOutreachYet&&myStats.visitsYtd===0)?"not logged yet":"meetings",onClick:()=>openPortfolioBreakdown("visits")},
+                  {label:"Moves Made",icon:"moves",value:myStats.madeYtd,unit:(noOutreachYet&&myStats.madeYtd===0)?"not logged yet":"interactions",onClick:()=>openPortfolioBreakdown("moves")},
+                  {label:"Gifts YTD",icon:"gifts",value:fmt(myStats.giftsYtd),unit:"raised",onClick:()=>openPortfolioBreakdown("gifts")},
+                  {label:"Pipeline",icon:"pipeline",value:fmt(myStats.pipelineValue),unit:"value",onClick:()=>openPortfolioBreakdown("pipeline")},
+                  {label:"Lapsed",icon:"lapsed",value:myStats.lapsedCount,unit:"in portfolio",warn:myStats.lapsedCount>0,onClick:()=>openPortfolioBreakdown("lapsed")},
+                ].map((m,i)=>(
+                  <div key={m.label} onClick={m.onClick}
+                    onMouseEnter={()=>setHoveredStat(i)} onMouseLeave={()=>setHoveredStat(h=>h===i?null:h)}
+                    style={{padding:"12px 14px",borderRight:i<5?"1px solid "+T.bg3:"none",textAlign:"center",cursor:"pointer",background:hoveredStat===i?T.bg:"transparent",transition:"background 0.12s"}}>
+                    <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:5,marginBottom:4}}>
+                      <StatIcon name={m.icon} color={m.warn?T.terracotta:T.greenDk}/>
+                      <span style={{fontSize:9,fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase",color:m.warn?T.terracotta:T.greenDk}}>{m.label}</span>
+                    </div>
+                    <div style={{fontSize:20,fontWeight:800,color:m.warn?T.terracotta:T.ink,fontFamily:"'DM Serif Display',serif",lineHeight:1}}>{m.value}</div>
+                    <div style={{fontSize:10,color:T.ink3,marginTop:2}}>{m.unit}</div>
+                  </div>
+                ))}
+              </div>
+              {noOutreachYet&&(myStats.visitsYtd===0||myStats.madeYtd===0)&&(
+                <div style={{padding:"8px 14px",borderTop:"1px solid "+T.bg3,fontSize:11,color:T.ink3,textAlign:"center",background:T.bg}}>
+                  No outreach logged yet — this is normal right after import. Log your first call from a donor's profile to start tracking this.
+                </div>
+              )}
+            </>);
+          })()}
+        </div>
+      )}
+
       {/* Donor Retention Rate — the Home dashboard's primary hero metric.
           This is the number fundraisers already benchmark against (unlike
           Stewardship Debt's invented composite score, see the demoted strip
@@ -675,55 +727,6 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
               )}
             </div>
           )}
-        </div>
-      )}
-
-      {myStats&&(
-        <div style={{background:T.white,border:"1px solid "+T.greenDk+"30",borderLeft:"3px solid "+T.greenDk,borderRadius:14,overflow:"hidden"}}>
-          <button onClick={()=>setPortfolioOpen(v=>!v)} style={{width:"100%",background:"none",border:"none",padding:"10px 16px",display:"flex",alignItems:"center",justifyContent:"space-between",cursor:"pointer",color:T.ink}}>
-            <div style={{display:"flex",alignItems:"center",gap:8}}>
-              <span style={{fontSize:9,fontWeight:800,letterSpacing:"0.1em",textTransform:"uppercase",color:T.greenDk,background:T.greenDk+"10",padding:"3px 8px",borderRadius:99}}>MY PORTFOLIO</span>
-              <span style={{fontSize:12,color:T.ink3}}>FY Jul–Jun</span>
-            </div>
-            <span style={{fontSize:12,color:T.ink3}}>{portfolioOpen?"▲":"▼"}</span>
-          </button>
-          {portfolioOpen&&(() => {
-            // Genuinely zero because nobody has logged a call/meeting yet is
-            // expected first-day state, not a broken metric — but only once
-            // there's real donor/gift history to have contacted in the first
-            // place (an org with zero donors gets its own separate empty
-            // state elsewhere, not this copy). Never fabricates interaction
-            // data; this only changes how an honest zero is captioned.
-            const noOutreachYet = myStats.orgHasGiftHistory && !myStats.orgHasInteractions;
-            return (<>
-              <div style={{display:"grid",gridTemplateColumns:"repeat(6,1fr)",borderTop:"1px solid "+T.bg3}} className="portfolio-grid">
-                {[
-                  {label:"Portfolio",icon:"portfolio",value:myStats.portfolioCount,unit:"donors",onClick:()=>onNavigate("pipeline")},
-                  {label:"Visits YTD",icon:"visits",value:myStats.visitsYtd,unit:(noOutreachYet&&myStats.visitsYtd===0)?"not logged yet":"meetings",onClick:()=>openPortfolioBreakdown("visits")},
-                  {label:"Moves Made",icon:"moves",value:myStats.madeYtd,unit:(noOutreachYet&&myStats.madeYtd===0)?"not logged yet":"interactions",onClick:()=>openPortfolioBreakdown("moves")},
-                  {label:"Gifts YTD",icon:"gifts",value:fmt(myStats.giftsYtd),unit:"raised",onClick:()=>openPortfolioBreakdown("gifts")},
-                  {label:"Pipeline",icon:"pipeline",value:fmt(myStats.pipelineValue),unit:"value",onClick:()=>openPortfolioBreakdown("pipeline")},
-                  {label:"Lapsed",icon:"lapsed",value:myStats.lapsedCount,unit:"in portfolio",warn:myStats.lapsedCount>0,onClick:()=>openPortfolioBreakdown("lapsed")},
-                ].map((m,i)=>(
-                  <div key={m.label} onClick={m.onClick}
-                    onMouseEnter={()=>setHoveredStat(i)} onMouseLeave={()=>setHoveredStat(h=>h===i?null:h)}
-                    style={{padding:"12px 14px",borderRight:i<5?"1px solid "+T.bg3:"none",textAlign:"center",cursor:"pointer",background:hoveredStat===i?T.bg:"transparent",transition:"background 0.12s"}}>
-                    <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:5,marginBottom:4}}>
-                      <StatIcon name={m.icon} color={m.warn?T.terracotta:T.greenDk}/>
-                      <span style={{fontSize:9,fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase",color:m.warn?T.terracotta:T.greenDk}}>{m.label}</span>
-                    </div>
-                    <div style={{fontSize:20,fontWeight:800,color:m.warn?T.terracotta:T.ink,fontFamily:"'DM Serif Display',serif",lineHeight:1}}>{m.value}</div>
-                    <div style={{fontSize:10,color:T.ink3,marginTop:2}}>{m.unit}</div>
-                  </div>
-                ))}
-              </div>
-              {noOutreachYet&&(myStats.visitsYtd===0||myStats.madeYtd===0)&&(
-                <div style={{padding:"8px 14px",borderTop:"1px solid "+T.bg3,fontSize:11,color:T.ink3,textAlign:"center",background:T.bg}}>
-                  No outreach logged yet — this is normal right after import. Log your first call from a donor's profile to start tracking this.
-                </div>
-              )}
-            </>);
-          })()}
         </div>
       )}
 
