@@ -45,6 +45,13 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
   const [busyDonorId,setBusyDonorId]=useState(null);
 
   const [goal,setGoal]=useState(undefined); // undefined = loading, null = none set
+  // BUILD-21 Part 1 — the typed/roll-up goal model (BUILD-16) now leads the Home
+  // hero, reusing the SAME source the Fundraising Overview reads
+  // (/fundraising/overview → {rollup, goals, period}). undefined = loading.
+  // When the org has ≥1 active goal'd campaign this supersedes the single
+  // fundraising_goals banner below; with none, we fall back to that banner
+  // (today's behavior — don't regress).
+  const [fundOverview,setFundOverview]=useState(undefined);
   const [showSetGoal,setShowSetGoal]=useState(false);
   const [goalModalMode,setGoalModalMode]=useState("create"); // "create" | "edit"
   const [goalForm,setGoalForm]=useState({label:"",goalAmount:"",goalType:"total_raised",periodStart:"",periodEnd:""});
@@ -129,6 +136,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
     }).catch(()=>{setMyStats(null);setScope(prev=>prev!==undefined?prev:"all");});
     apiFetch("/donors/stage-counts").then(r=>setStageCounts(r||[])).catch(()=>{});
     apiFetch("/recurring/health").then(r=>setRecurringHealth(r)).catch(()=>{});
+    apiFetch("/fundraising/overview").then(r=>setFundOverview(r||null)).catch(()=>setFundOverview(null));
     loadGoal();
   },[]);
 
@@ -413,6 +421,22 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
       :`${fmtFull(goal.recentAmount)} came in from ${donorWord} this week`;
   })();
 
+  // ── BUILD-21 Part 1 — typed/roll-up goal hero (reuses BUILD-16's model) ──
+  // Active TOP-LEVEL goals only (a child's raised is already inside its parent's
+  // roll-up — never double-count). The org roll-up header comes straight from
+  // the same /fundraising/overview the Fundraising tab uses; nothing recomputed.
+  const fgGoals=fundOverview?.goals||[];
+  const fgRollup=fundOverview?.rollup||null;
+  const activeTop=fgGoals.filter(g=>g.isTopLevel&&g.lifecycle!=="ended");
+  const hasCampaignGoals=!!(fgRollup&&fgRollup.activeGoalCount>=1&&activeTop.length);
+  // Category colors are LOCKED (task/BUILD-12): Annual=gold, Capital=green,
+  // Project=terracotta — all T tokens, no raw hex.
+  const CAT_META={annual:{label:"Annual",color:T.gold},capital:{label:"Capital",color:T.greenMid},project:{label:"Project",color:T.terracotta}};
+  const catMeta=c=>CAT_META[c]||CAT_META.project;
+  // Faithful to computeFundraisingPace's states — no invented "ahead".
+  const paceText=s=>s==="met"?"Goal met":s==="on_track"?"On pace":s==="behind"?"Behind pace":"In progress";
+  const catPaceColor=s=>s==="behind"?T.terracotta:s==="met"?T.gold:"#8fa896";
+
   return(
     <div className="dash-root dash-bleed fade-in" style={{background:T.bgDeep,margin:"-20px -24px -28px -24px",padding:"20px 24px 28px 24px",display:"flex",flexDirection:"column",gap:16,minHeight:"calc(100vh - 92px)"}}>
 
@@ -453,6 +477,78 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
           isolated. Right: 3 real supporting stats (pace, days left in the
           period, recent activity) genuinely filling that width — not
           decoration, and never fabricated. */}
+      {/* BUILD-21 Part 1 — the typed/roll-up hero leads when the org runs goal'd
+          campaigns; otherwise fall back to the single-goal banner (unchanged).
+          Graceful: loading → skeleton; 0 goals → banner; 1 → that goal leads,
+          no empty roll-up; many → roll-up header + typed breakdown. */}
+      {fundOverview===undefined?(
+        <div className="dash-goal-banner" style={{background:`linear-gradient(135deg,${T.green950},${T.green800})`,border:"1px solid #1a2e1f",borderRadius:16,padding:"22px 26px",color:"#8fa896",fontSize:13,display:"flex",alignItems:"center",gap:8}}><Spin/>Loading goals…</div>
+      ):hasCampaignGoals?(()=>{
+        const period=fundOverview.period||{};
+        const many=fgRollup.activeGoalCount>=2;
+        const g0=activeTop[0];
+        const raised=many?fgRollup.totalRaised:g0.rolledRaised;
+        const goalAmt=many?fgRollup.totalGoal:g0.goalAmount;
+        const pct=(many?fgRollup.percent:g0.rolledPercent)||0;
+        const behindCount=activeTop.filter(g=>g.rolledPaceState==="behind").length;
+        const heroPace=many?(behindCount>0?`${behindCount} behind pace`:"On pace"):paceText(g0.rolledPaceState);
+        const heroPaceCol=many?(behindCount>0?T.terracotta:T.gold):catPaceColor(g0.rolledPaceState);
+        const delta=period.delta||0;
+        const deltaTxt=delta>0?`up ${fmtFull(delta)} vs last`:delta<0?`down ${fmtFull(Math.abs(delta))} vs last`:"level vs last";
+        return(<>
+          <div className="dash-goal-banner" style={{background:`linear-gradient(135deg,${T.green950},${T.green800})`,border:"1px solid #1a2e1f",borderRadius:16,padding:"22px 26px",color:"#f0ede6"}}>
+            <div className="dash-goal-cols" style={{display:"flex",gap:32,flexWrap:"wrap"}}>
+              {/* LEFT — the roll-up (or the single goal) */}
+              <div style={{flex:"2 1 300px",minWidth:260}}>
+                <div style={{fontSize:10,fontWeight:800,letterSpacing:"0.12em",textTransform:"uppercase",color:"#8fa896",marginBottom:5}}>{many?"Fundraising — All Active Goals":"Fundraising Goal"}</div>
+                <div style={{fontSize:16,fontWeight:600,color:"#c9c2b4",marginBottom:16,maxWidth:440,display:"flex",alignItems:"center",gap:8}}>
+                  <span>{many?`${fgRollup.activeGoalCount} campaigns toward ${fmtFull(goalAmt)}`:g0.name}</span>
+                  {isAdmin&&(
+                    <button onClick={e=>{e.stopPropagation();onNavigate("fundraising");}} title="Edit goals in Fundraising"
+                      style={{background:"transparent",border:"none",padding:3,margin:0,cursor:"pointer",color:"#8fa896",display:"inline-flex",alignItems:"center",flexShrink:0}}>
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 3a2.85 2.85 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>
+                    </button>
+                  )}
+                </div>
+                <div style={{display:"flex",alignItems:"baseline",gap:10,marginBottom:12}}>
+                  <div style={{fontSize:58,fontWeight:400,fontFamily:"'DM Serif Display',Georgia,serif",color:T.gold,lineHeight:1}}>{pct}%</div>
+                  <div style={{fontSize:13,fontWeight:600,color:"#8fa896"}}>of goal reached</div>
+                </div>
+                <div style={{background:"#0a120c",borderRadius:99,height:11,overflow:"hidden",marginBottom:10}}>
+                  <div style={{height:"100%",width:`${pct}%`,background:`linear-gradient(90deg,${T.gold},${T.terracotta})`,borderRadius:99,transition:"width 0.6s ease"}}/>
+                </div>
+                <div style={{fontSize:13,color:"#c9c2b4"}}><strong style={{fontSize:15,color:T.gold,fontFamily:"'DM Serif Display',serif",fontWeight:400}}>{fmtFull(raised)}</strong> of {fmtFull(goalAmt)}{many?` · ${fgRollup.activeGoalCount} active campaigns`:""}</div>
+              </div>
+              {/* RIGHT — real supporting stats */}
+              <div style={{flex:"1 1 200px",minWidth:180,display:"flex",flexDirection:"column",gap:10}}>
+                <GoalStat label="Pace" value={heroPace} valueColor={heroPaceCol} sub={many?"across active goals":"vs the period elapsed"}/>
+                <GoalStat label={`This ${fundOverview.periodLabel||"period"}`} value={fmtFull(period.raised||0)} sub={deltaTxt}/>
+                <GoalStat label="Active Goals" value={String(fgRollup.activeGoalCount)} sub={fgRollup.activeGoalCount===1?"campaign with a target":"campaigns with a target"}/>
+              </div>
+            </div>
+          </div>
+          {/* Typed campaign breakdown — Annual / Capital / Project */}
+          {many&&(
+            <div className="dash-goals-grid" style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(240px,1fr))",gap:12}}>
+              {activeTop.map(g=>{
+                const m=catMeta(g.goalCategory);const gp=g.rolledPercent||0;
+                return(
+                  <div key={g.id} {...interactive(()=>onNavigate("fundraising"),{label:`Open ${g.name}`})}
+                    style={{background:T.white,border:"1px solid "+T.bg3,borderTop:`3px solid ${m.color}`,borderRadius:14,padding:"14px 16px",boxShadow:T.shadow,display:"flex",flexDirection:"column",gap:7,minWidth:0}}>
+                    <span style={{alignSelf:"flex-start",fontSize:9,fontWeight:800,letterSpacing:".08em",textTransform:"uppercase",color:m.color,background:m.color+"1e",padding:"3px 8px",borderRadius:99}}>{m.label}</span>
+                    <span style={{fontSize:13.5,fontWeight:700,color:T.ink,lineHeight:1.25,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{g.name}</span>
+                    <span style={{fontSize:12,color:T.ink3}}><b style={{color:T.ink,fontSize:14}}>{fmtFull(g.rolledRaised)}</b> of {fmtFull(g.goalAmount)}</span>
+                    <div style={{background:T.bg2,borderRadius:99,height:7,overflow:"hidden"}}>
+                      <div style={{height:"100%",width:`${gp}%`,background:m.color,borderRadius:99,transition:"width 0.5s ease"}}/>
+                    </div>
+                    <span style={{fontSize:11,fontWeight:700,color:catPaceColor(g.rolledPaceState)}}>{paceText(g.rolledPaceState)}{g.isOverarching?` · ${g.childCount} rolled up`:""}</span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </>);
+      })():(
       <div className="dash-goal-banner" style={{background:`linear-gradient(135deg,${T.green950},${T.green800})`,border:"1px solid #1a2e1f",borderRadius:16,padding:"22px 26px",color:"#f0ede6"}}>
         {goal===undefined?(
           <div style={{display:"flex",alignItems:"center",gap:8,color:"#8fa896",fontSize:13}}><Spin/>Loading goal…</div>
@@ -500,6 +596,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
           </div>
         )}
       </div>
+      )}
 
       {/* Scope toggle — controls the queue below AND the Retention Rate /
           Stewardship Debt cards together (one shared scope, not per-card

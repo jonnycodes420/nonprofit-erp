@@ -22,10 +22,23 @@ const TODAY = iso(new Date());
 
 async function reset() {
   for (const org of [TEAM, CORE]) {
-    for (const t of ["opportunities", "tasks", "donors", "users"]) await q(`DELETE FROM ${t} WHERE org_id=$1`, [org]).catch(() => {});
+    for (const t of ["opportunities", "tasks", "gifts", "campaigns", "donors", "users"]) await q(`DELETE FROM ${t} WHERE org_id=$1`, [org]).catch(() => {});
     await q(`DELETE FROM orgs WHERE id=$1`, [org]);
   }
 }
+// BUILD-21 Part 1 — a goal'd campaign is the hero's unit. parent = an
+// overarching goal it rolls up under.
+async function seedGoalCampaign(o, id, name, goal, category, parent = null) {
+  const start = dayOffset(-30), end = dayOffset(30); // active + pace computable
+  await q(`INSERT INTO campaigns (id,org_id,name,type,subject,body,status,segment,goal_amount,start_date,end_date,goal_category,parent_goal_id,recipient_count,open_count)
+           VALUES ($1,$2,$3,'email','','','draft','all',$4,$5,$6,$7,$8,0,0)`,
+    [id, o, name, goal, start, end, category, parent]);
+}
+async function seedGift(o, donor, amount, campaignId) {
+  await q(`INSERT INTO gifts (id,org_id,donor_id,amount,date,campaign_id) VALUES ($1,$2,$3,$4,$5,$6)`,
+    [`g_${id6()}`, o, donor, amount, TODAY, campaignId]);
+}
+let _gc = 0; const id6 = () => `${Date.now().toString(36)}${(_gc++).toString(36)}`;
 async function seedOrg(o, plan, sub, tag) {
   await q(`INSERT INTO orgs (id,name,org_slug,onboarding_complete,subscription_status,plan) VALUES ($1,$2,$3,1,$4,$5)`, [o, `Home ${tag}`, `home-${tag}`, sub, plan]);
 }
@@ -88,6 +101,36 @@ async function seedTask(o, id, owner, due, done = 0) {
   ok("cultivate stage shows my 1 donor / $500", cult.count === 1 && cult.value === 500);
   ok("pipeline.forecastOpen = my open asks (5000)", mine.pipeline.forecastOpen === 5000, mine.pipeline.forecastOpen);
 
+  // ── Home hero: typed/roll-up goals (BUILD-21 Part 1) ──────────────────────
+  // The hero reads /fundraising/overview (same source as the Fundraising tab).
+  // Overarching goal G ($100k) with two children A (project $40k) + B (capital
+  // $60k); a standalone leaf S (project $20k). Gifts: A=$10k, B=$15k, S=$5k.
+  await seedGoalCampaign(TEAM, "cg_over", "Annual Fund 2027", 100000, "annual");
+  await seedGoalCampaign(TEAM, "cg_a", "Spring Appeal", 40000, "project", "cg_over");
+  await seedGoalCampaign(TEAM, "cg_b", "New Building", 60000, "capital", "cg_over");
+  await seedGoalCampaign(TEAM, "cg_solo", "Scholarships", 20000, "project");
+  await seedGift(TEAM, "hd1", 10000, "cg_a");
+  await seedGift(TEAM, "hd2", 15000, "cg_b");
+  await seedGift(TEAM, "hd1", 5000, "cg_solo");
+  {
+    const ov = (await api("GET", "/fundraising/overview", tok)).body;
+    ok("hero: rollup present with 2 active TOP-LEVEL goals (children excluded)", ov.rollup && ov.rollup.activeGoalCount === 2, ov.rollup);
+    ok("hero: rollup.totalRaised = Σ top-level rolled (25k + 5k = 30k), no double-count", ov.rollup.totalRaised === 30000, ov.rollup);
+    ok("hero: rollup.totalGoal = Σ top-level goals (100k + 20k = 120k)", ov.rollup.totalGoal === 120000, ov.rollup);
+    ok("hero: rollup.percent = round(30000/120000) = 25", ov.rollup.percent === 25, ov.rollup);
+    const G = (ov.goals || []).find(g => g.id === "cg_over");
+    ok("hero: overarching goal isOverarching + 2 children + rolledRaised 25k", G && G.isOverarching && G.childCount === 2 && G.rolledRaised === 25000, G);
+    ok("hero: overarching rolls up its children, not its own gifts", G && G.rolledRaised === 25000 && G.raised === 0, { rolled: G && G.rolledRaised, own: G && G.raised });
+    const A = (ov.goals || []).find(g => g.id === "cg_a");
+    ok("hero: a child is NOT top-level (kept out of the header sum)", A && A.isTopLevel === false, A);
+    ok("hero: typed categories preserved (annual / project / capital)", G.goalCategory === "annual" && A.goalCategory === "project" && (ov.goals.find(g => g.id === "cg_b").goalCategory) === "capital");
+    const S = (ov.goals || []).find(g => g.id === "cg_solo");
+    ok("hero: leaf goal shows its own progress + a pace state", S && S.rolledRaised === 5000 && ["on_track", "behind", "met", null].includes(S.rolledPaceState ?? S.paceState ?? null), S);
+    // No double-count: Σ top-level rolledRaised === rollup.totalRaised.
+    const topSum = ov.goals.filter(g => g.isTopLevel && g.lifecycle !== "ended").reduce((s, g) => s + g.rolledRaised, 0);
+    ok("hero: Σ top-level rolledRaised === rollup.totalRaised (invariant)", topSum === ov.rollup.totalRaised, { topSum, rollup: ov.rollup.totalRaised });
+  }
+
   // scope=all widens tasks + pipeline to the whole org
   const all = (await api("GET", "/dashboard/home?scope=all", tok)).body;
   ok("scope=all tasks.today = 2 (admin + staff)", all.tasks.today === 2, all.tasks);
@@ -107,6 +150,17 @@ async function seedTask(o, id, owner, due, done = 0) {
   ok("PLAN GRACE: portfolio hidden (null) on Core", core.portfolio === null);
   ok("PLAN GRACE: pipeline hidden (null) on Core", core.pipeline === null);
   ok("Core still gets Tasks (overdue 1, today 1, total 2)", core.tasks.overdue === 1 && core.tasks.today === 1 && core.tasks.total === 2, core.tasks);
+
+  // Hero degradation — 0 goals then exactly 1 (goals are [Core], hero shows for all)
+  {
+    const ov0 = (await api("GET", "/fundraising/overview", tokC)).body;
+    ok("hero degradation: 0 goal'd campaigns → rollup null (falls back to banner)", ov0.rollup === null && (ov0.goals || []).length === 0, ov0.rollup);
+    await seedGoalCampaign(CORE, "cc_one", "Year-End Push", 10000, "annual");
+    await seedGift(CORE, "cd1", 4000, "cc_one");
+    const ov1 = (await api("GET", "/fundraising/overview", tokC)).body;
+    ok("hero degradation: exactly 1 goal → activeGoalCount 1, that goal leads (no roll-up of many)", ov1.rollup.activeGoalCount === 1 && ov1.rollup.totalRaised === 4000, ov1.rollup);
+    ok("hero degradation: the single goal is top-level, its own progress", (ov1.goals || []).some(g => g.id === "cc_one" && g.isTopLevel && g.raised === 4000));
+  }
 
   // ── Org isolation ─────────────────────────────────────────────────────────
   ok("core org's numbers never include team org's donors", core.tasks.total === 2);
