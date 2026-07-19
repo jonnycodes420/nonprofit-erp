@@ -532,7 +532,7 @@ export function GoldMoment({moment,title,line,onDismiss}) {
   const orgId = (()=>{try{return JSON.parse(localStorage.getItem("npe_org")||"{}").id||"org";}catch{return "org";}})();
   const key = `steward_gold_${moment}_${orgId}`;
   const [show,setShow] = useState(()=>{ try{return !localStorage.getItem(key);}catch{return false;} });
-  useEffect(()=>{ if(show){ try{localStorage.setItem(key,new Date().toISOString());}catch{} } },[]); // eslint-disable-line
+  useEffect(()=>{ if(show){ try{localStorage.setItem(key,new Date().toISOString());}catch{} } },[]);
   if(!show) return null;
   return (
     <div className="gold-moment" style={{position:"relative",background:"linear-gradient(135deg,#fdfaf2,#faf5e6)",border:"1px solid #c9a84c55",borderRadius:14,padding:"16px 44px 16px 18px",display:"flex",gap:14,alignItems:"center",overflow:"hidden"}}>

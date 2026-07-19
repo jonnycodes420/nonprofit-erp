@@ -1,4 +1,4 @@
-import React, { useState, useEffect, createContext, useContext } from "react";
+import React, { useState, createContext, useContext } from "react";
 import * as Sentry from "@sentry/react";
 if (import.meta.env.VITE_SENTRY_DSN) {
   Sentry.init({
@@ -9,7 +9,7 @@ if (import.meta.env.VITE_SENTRY_DSN) {
   });
 }
 import ReactDOM from "react-dom/client";
-import { BrowserRouter, Routes, Route, Navigate, useNavigate } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { apiFetch } from "./api";
 // Landing stays an eager import — it's the public entry page and must not
 // wait on a second network hop. Everything else is route-split (React.lazy)

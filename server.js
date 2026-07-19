@@ -12884,7 +12884,6 @@ app.use((err, req, res, next) => {
 const PORT = parseInt(process.env.PORT || "3001", 10);
 app.listen(PORT, () => {
   console.log(`Steward backend running on port ${PORT}`);
-  console.log(`   Demo login: admin@creoarts.org / demo1234`);
   if (!process.env.RESEND_DOMAIN_VERIFIED) {
     console.warn("[email] WARNING: RESEND_DOMAIN_VERIFIED not set — emails may land in spam");
   }

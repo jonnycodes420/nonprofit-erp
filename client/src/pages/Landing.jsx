@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 // ── Landing (BUILD-07 rebuild, 2026-07-17; product shots → DOM, BUILD-12) ───

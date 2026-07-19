@@ -326,8 +326,8 @@ export function Finance({ data, isReadOnly, onNavigate }) {
     }).catch(e => { console.error(e); setLoading(false); });
   };
 
-  useEffect(() => { loadAll(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
-  useEffect(() => { if (subtab === "audit") reloadAuditLog(); }, [subtab]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { loadAll(); }, []);
+  useEffect(() => { if (subtab === "audit") reloadAuditLog(); }, [subtab]);
 
   const reloadTxns = (yr) => apiFetch(`/finance/transactions?year=${yr}`).then(setTransactions);
   const reloadBudgets = (yr) => apiFetch(`/finance/budgets?year=${yr}`).then(setBudgets);

@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
 import { apiFetch, API, getToken } from "../api";
-import { T, fmtFull, Spin, Card, EmptyState, PageTitle, SectionTabs, StartHere, LockedFeature } from "./shared";
+import { T, fmtFull, Card, EmptyState, PageTitle, SectionTabs, StartHere, LockedFeature } from "./shared";
 
 // ── Reports (BUILD-02) ──────────────────────────────────────────────────────
 // Six fixed, parameterized, table-first, CSV-downloadable reports — each one
@@ -150,7 +150,7 @@ export function Reports({ onNavigate }) {
         setAutoDefault(lowVolume ? lastId : thisId);
       })
       .catch(() => setAutoDefault(thisId));
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps -- mount only; yearMode toggles don't re-resolve the default
+  }, []);
 
   function buildParams() {
     const q = new URLSearchParams();

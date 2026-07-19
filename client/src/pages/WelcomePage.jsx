@@ -102,7 +102,7 @@ export default function WelcomePage() {
     // import from another tab) so step 2 shows the imported state instead of
     // re-asking for a list that's already in.
     apiFetch("/donors/summaries").then(d => setDonorsSnapshot(d || [])).catch(() => {});
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+
   }, []);
 
   // A suggested goal, computed from whatever just got imported — donors who

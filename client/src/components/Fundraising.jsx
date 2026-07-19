@@ -11,7 +11,7 @@ import { QrCodeBlock, EmbedCodeBlock } from "./ShareBlocks";
 
 const PACE_META = {
   met:      { label: "Goal reached",  color: T.gold,       bg: "#faf5e6" },
-  on_track: { label: "On track",      color: T.greenMid,   bg: "#e8f3ee" },
+  on_track: { label: "On pace",       color: T.greenMid,   bg: "#e8f3ee" },
   behind:   { label: "Behind pace",   color: T.terracotta, bg: "#f6ece8" },
 };
 
@@ -86,7 +86,7 @@ export function Fundraising({ data, isReadOnly, onNavigate }) {
       setOverview(o); setCampaigns(c); setPages(p || []); setLoading(false);
     }).catch(e => { console.error(e); setLoading(false); });
   };
-  useEffect(() => { load(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { load(); }, []);
 
   const SUBTABS = [
     { id: "overview", label: "Overview" },

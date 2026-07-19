@@ -43,9 +43,18 @@ async function fixture() {
     [ORG_A, daysFromNow(-60), daysFromNow(60)]);
 
   // Campaigns:
-  //  C1 goal+dates, half-elapsed → should read on_track when raised == expected
+  //  C1 goal+dates, on_track. DETERMINISTIC (not clock-of-day sensitive): the
+  //  start/end are DATE columns (time truncated to UTC midnight) and pace is
+  //  computed server-side against a live `new Date()`, so the elapsed fraction
+  //  drifts up to a full day over the course of "today" — a knife-edge window
+  //  (raised == expected at exactly 50%) flips on_track↔behind depending on the
+  //  wall-clock time the suite runs. The window below is deliberately WIDE
+  //  (raised $2,500 of $5,000 with ~1/3 elapsed) so `expected` stays well below
+  //  `raised` all day → on_track is stable regardless of when the test runs,
+  //  while raised < goal keeps it out of the 'met' state. raised/percent/
+  //  donorCount are unaffected by the window, so their hardcoded assertions hold.
   await q(`INSERT INTO campaigns (id,org_id,name,type,status,goal_amount,start_date,end_date,recipient_count,open_count) VALUES ('c_fr_1',$1,'Spring Appeal A','appeal','draft',5000,$2,$3,0,0)`,
-    [ORG_A, daysFromNow(-30), daysFromNow(30)]);
+    [ORG_A, daysFromNow(-30), daysFromNow(60)]);
   //  C2 goal, no dates, raised > goal → 'met'
   await q(`INSERT INTO campaigns (id,org_id,name,type,status,goal_amount,recipient_count,open_count) VALUES ('c_fr_2',$1,'Met Goal Camp','appeal','draft',1000,0,0)`, [ORG_A]);
   //  C3 goal, no dates, raised < goal → paceState null (no dates, not met)
@@ -105,7 +114,7 @@ async function fixture() {
     ok("no-goal campaign excluded", !byId["c_fr_4"], Object.keys(byId));
     ok("C1 raised = Σ attributed gifts (2500)", byId["c_fr_1"]?.raised === 2500, byId["c_fr_1"]?.raised);
     ok("C1 percent = 50", byId["c_fr_1"]?.percent === 50, byId["c_fr_1"]?.percent);
-    ok("C1 pace on_track (dates, half-elapsed, on pace)", byId["c_fr_1"]?.paceState === "on_track", byId["c_fr_1"]?.paceState);
+    ok("C1 pace on_track (wide window, raised>expected all day — deterministic)", byId["c_fr_1"]?.paceState === "on_track", byId["c_fr_1"]?.paceState);
     ok("C1 donorCount = 2", byId["c_fr_1"]?.donorCount === 2, byId["c_fr_1"]?.donorCount);
     ok("C2 percent capped at 100", byId["c_fr_2"]?.percent === 100, byId["c_fr_2"]?.percent);
     ok("C2 pace 'met' (raised > goal)", byId["c_fr_2"]?.paceState === "met", byId["c_fr_2"]?.paceState);

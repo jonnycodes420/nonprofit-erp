@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { apiFetch } from "../api";
-import { T, fmt, fmtFull, SC, Pill, Card, SectionLabel, PageTitle } from "./shared";
+import { T, fmtFull, SC, Pill, Card, PageTitle } from "./shared";
 
 const EVENT_TYPES = {
   gala:          { label: "Gala",           icon: "•", color: "#8b5cf6" },
