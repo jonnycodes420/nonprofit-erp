@@ -34,7 +34,7 @@ CORE=(
   finance-reintegration fundraising goals home households import-stage
   locked-features
   moves no-emoji palette pipeline-gating portfolios reports-cadence
-  smart-moves tasks tenant-isolation workflows
+  smart-moves tasks tenant-isolation upgrade-checkout workflows
 )
 
 pass=0; fail=0; failed=()

@@ -1,5 +1,7 @@
+import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../main";
+import { apiFetch } from "../api";
 
 // ── Live-billing plans (BUILD-24 cutover) ──────────────────────────────────
 // CHECKOUT_PLANS is the source of truth for the in-app PlanPicker's real Stripe
@@ -136,18 +138,50 @@ export default function Pricing() {
   const navigate = useNavigate();
   const isAuthed = !!auth?.token;
   // A signed-in org still on its free trial already committed by signing up —
-  // the primary path is into the product, not a card-first checkout (QA R1).
+  // the primary path is into the product, not a card-first checkout (QA R1) —
+  // but they can still pick a plan whenever they're ready (the plan buttons
+  // start checkout below).
   const onTrial = isAuthed && (auth?.org?.plan === "trial" || auth?.org?.subscription_status === "trialing");
 
-  // The public Core/Team plans aren't Stripe-wired yet (see BILLING_PLANS note),
-  // and pre-pilot every org gets founder-direct onboarding — so the CTA is the
-  // free trial for new visitors and a founder conversation for signed-in orgs,
-  // never a checkout against a price id that doesn't exist.
-  const CAL = "https://calendly.com/xjca2006/new-meeting";
-  function choosePlan() {
-    if (isAuthed) { navigate("/dashboard"); return; }
-    navigate("/signup");
+  // Current commercial tier (for the "Current plan" state). seed/founding roll
+  // up to core; growth/impact to team — same mapping as orgPlanTier server-side.
+  // Only an ACTIVE subscription counts as "current" — a canceled/read_only org
+  // on the core plan should still be able to check out to reactivate it.
+  const orgPlan = auth?.org?.plan;
+  const currentTier = (orgPlan === "team" || orgPlan === "growth" || orgPlan === "impact") ? "team"
+    : (orgPlan === "core" || orgPlan === "seed" || orgPlan === "founding") ? "core" : null;
+  const subActive = auth?.org?.subscription_status === "active";
+  const isCurrentPlan = (id) => subActive && currentTier === id;
+
+  // ── Checkout wiring (BUILD-24 → this FIX) ──────────────────────────────────
+  // A plan button starts a REAL Stripe Checkout (POST /billing/create-checkout,
+  // which maps core→STRIPE_PRICE_CORE / team→STRIPE_PRICE_TEAM) and redirects
+  // the browser to the returned session URL. success_url/cancel_url are set
+  // server-side (→ /dashboard?subscribed=true / back to /pricing); the org's
+  // tier actually flips via the billing webhook, not here.
+  const [checkingOut, setCheckingOut] = useState(null); // plan id in flight
+  const [checkoutErr, setCheckoutErr] = useState("");    // {id, msg}
+  async function startCheckout(planId) {
+    setCheckoutErr("");
+    setCheckingOut(planId);
+    try {
+      const r = await apiFetch("/billing/create-checkout", { method: "POST", body: JSON.stringify({ plan: planId }) });
+      if (!r?.url) throw new Error("Checkout is not available yet — please contact us.");
+      window.location.href = r.url;
+    } catch (e) {
+      const raw = e?.message || "";
+      // Turn the known backend states into human copy; never a dead button.
+      const msg = /plan_not_configured|No Stripe price/i.test(raw)
+        ? "Checkout for this plan isn't switched on yet — reach out and we'll get you set up."
+        : /admin/i.test(raw)
+        ? "Only an admin can change the plan. Ask your workspace admin to upgrade."
+        : (raw || "Could not start checkout. Please try again.");
+      setCheckoutErr({ id: planId, msg });
+      setCheckingOut(null);
+    }
   }
+
+  const CAL = "https://calendly.com/xjca2006/new-meeting";
 
   const cream = "#f0ede6", ink = "#0f1a12", sage = "#8fa896", gold = "#c9a84c";
   const panel = "#1a2e1f", panelBorder = "#2d4a35", green = "#1a6b4a", emerald = "#10b981";
@@ -247,18 +281,42 @@ export default function Pricing() {
                   </div>
                 ))}
               </div>
-              <button
-                onClick={choosePlan}
-                style={{
+              {(() => {
+                const base = {
                   background: plan.highlight ? green : "transparent",
                   border: plan.highlight ? "none" : `1px solid ${panelBorder}`,
                   borderRadius: 10, padding: "13px 20px",
                   color: plan.highlight ? "#fff" : sage,
                   fontSize: 14, fontWeight: 700, cursor: "pointer", transition: "all 0.15s",
-                }}
-              >
-                {isAuthed ? "Go to your workspace →" : "Start free trial →"}
-              </button>
+                };
+                if (!isAuthed) {
+                  return <button onClick={() => navigate("/signup")} style={base}>Start free trial →</button>;
+                }
+                if (isCurrentPlan(plan.id)) {
+                  return (
+                    <button disabled style={{ ...base, background: plan.highlight ? "#dfe8e2" : "transparent", color: plan.highlight ? "#6b7c72" : sage, cursor: "default", opacity: 0.85 }}>
+                      Current plan
+                    </button>
+                  );
+                }
+                const busy = checkingOut === plan.id;
+                const label = plan.id === "team" ? "Upgrade to Team →" : `Choose ${plan.name} →`;
+                const err = checkoutErr && checkoutErr.id === plan.id ? checkoutErr.msg : null;
+                return (
+                  <>
+                    <button
+                      onClick={() => startCheckout(plan.id)}
+                      disabled={busy}
+                      style={{ ...base, cursor: busy ? "not-allowed" : "pointer", opacity: busy ? 0.7 : 1 }}
+                    >
+                      {busy ? "Starting checkout…" : label}
+                    </button>
+                    {err && (
+                      <div style={{ fontSize: 12, color: plan.highlight ? "#b8593f" : "#e0a893", marginTop: 10, lineHeight: 1.45 }}>{err}</div>
+                    )}
+                  </>
+                );
+              })()}
             </div>
           ))}
         </div>

@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { apiFetch, adaptData, API, getToken } from "./api";
 import { useAuth } from "./main";
-import { T, GlobalStyles, LockGlyph, ErrorBoundary } from "./components/shared";
+import { T, GlobalStyles, LockGlyph, ErrorBoundary, goToPricing } from "./components/shared";
 // SHELVED — voice capture works but unproven adoption assumption, revisit later.
 // Code intact, re-enable by uncommenting (see showVoiceMemo state, header
 // button, and modal render below, and the matching import above:
@@ -80,6 +80,7 @@ function AppShell() {
   const [loading,setLoading]=useState(true);
   const [loadErr,setLoadErr]=useState("");
   const [stripeToast,setStripeToast]=useState(false);
+  const [subscribedToast,setSubscribedToast]=useState(false);
   const [moreOpen,setMoreOpen]=useState(false);
   const [billing,setBilling]=useState(null);
   const [bannerDismissed,setBannerDismissed]=useState(false);
@@ -119,6 +120,18 @@ function AppShell() {
       setStripeToast(true);
       window.history.replaceState({},"","/dashboard");
       setTimeout(()=>setStripeToast(false),6000);
+    }
+    // Returned from a successful platform-subscription checkout (BUILD-24 →
+    // this FIX). The org's tier flips via the billing webhook, which may not
+    // have landed yet — so we just acknowledge ("finishing up…") and refetch
+    // /billing/status a couple times so the new plan (and unlocked panels)
+    // appear once the webhook processes.
+    if(params.get("subscribed")==="true"){
+      setSubscribedToast(true);
+      window.history.replaceState({},"","/dashboard");
+      const refetch=()=>apiFetch("/billing/status").then(setBilling).catch(()=>{});
+      refetch(); setTimeout(refetch,4000); setTimeout(refetch,10000);
+      setTimeout(()=>setSubscribedToast(false),9000);
     }
   },[]);
 
@@ -345,7 +358,7 @@ function AppShell() {
     {showTrialBanner&&<div style={{background:billing.trialDaysLeft<=3?"#451a03":"#1a2e1f",borderBottom:`1px solid ${billing.trialDaysLeft<=3?"#92400e":"#0d5c3a"}`,padding:"9px 24px",display:"flex",alignItems:"center",gap:12,fontSize:13,color:billing.trialDaysLeft<=3?"#fbbf24":"#8fa896"}}>
       <span>⏳</span>
       <span><strong style={{color:"#f0ede6"}}>{billing.trialDaysLeft} days</strong> left in your trial —</span>
-      <button onClick={openPortal} style={{background:"none",border:"none",color:billing.trialDaysLeft<=3?"#f59e0b":"#c9a84c",fontSize:13,fontWeight:700,cursor:"pointer",padding:0,textDecoration:"underline"}}>{billing.trialDaysLeft<=3?"Choose a plan →":"Upgrade now →"}</button>
+      <button onClick={goToPricing} style={{background:"none",border:"none",color:billing.trialDaysLeft<=3?"#f59e0b":"#c9a84c",fontSize:13,fontWeight:700,cursor:"pointer",padding:0,textDecoration:"underline"}}>{billing.trialDaysLeft<=3?"Choose a plan →":"Upgrade now →"}</button>
       <button onClick={()=>setBannerDismissed(true)} style={{marginLeft:"auto",background:"transparent",border:"none",color:"#3d5245",cursor:"pointer",fontSize:16,padding:"0 4px",lineHeight:1}}>✕</button>
     </div>}
 
@@ -389,6 +402,13 @@ function AppShell() {
         <div style={{fontWeight:400,opacity:0.85}}>You can now accept online donations.</div>
       </div>
       <button onClick={()=>setStripeToast(false)} style={{marginLeft:"auto",background:"rgba(255,255,255,0.2)",border:"none",borderRadius:6,color:"#fff",cursor:"pointer",padding:"2px 8px",fontSize:13,fontWeight:700}}>✕</button>
+    </div>}
+    {subscribedToast&&<div style={{position:"fixed",bottom:24,right:24,zIndex:9999,background:T.greenDk,color:"#fff",borderRadius:14,padding:"14px 20px",fontSize:13,fontWeight:600,boxShadow:"0 8px 32px rgba(26,107,74,0.35)",display:"flex",alignItems:"center",gap:10,maxWidth:340}}>
+      <div>
+        <div style={{fontWeight:700,marginBottom:2}}>Payment received — thank you!</div>
+        <div style={{fontWeight:400,opacity:0.85}}>Finishing up… your new plan will be active in a moment.</div>
+      </div>
+      <button onClick={()=>setSubscribedToast(false)} style={{marginLeft:"auto",background:"rgba(255,255,255,0.2)",border:"none",borderRadius:6,color:"#fff",cursor:"pointer",padding:"2px 8px",fontSize:13,fontWeight:700}}>✕</button>
     </div>}
 
     {/* More drawer — mobile only */}

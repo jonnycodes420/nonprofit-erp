@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
 import { apiFetch, API, getToken } from "../api";
-import { T, fmtFull, Card, EmptyState, PageTitle, SectionTabs, StartHere, LockedFeature } from "./shared";
+import { T, fmtFull, Card, EmptyState, PageTitle, SectionTabs, StartHere, LockedFeature, goToPricing } from "./shared";
 
 // ── Reports (BUILD-02) ──────────────────────────────────────────────────────
 // Six fixed, parameterized, table-first, CSV-downloadable reports — each one
@@ -517,7 +517,7 @@ export function Reports({ onNavigate }) {
                 </> : null);
             if (customIncomplete || loading) return null;
             if (planLocked) return (
-              <LockedFeature minHeight={d ? 420 : 300} title={lockMeta.title} blurb={lockMeta.blurb} onCta={() => onNavigate && onNavigate("settings")}>
+              <LockedFeature minHeight={d ? 420 : 300} title={lockMeta.title} blurb={lockMeta.blurb} onCta={goToPricing}>
                 {body}
               </LockedFeature>
             );

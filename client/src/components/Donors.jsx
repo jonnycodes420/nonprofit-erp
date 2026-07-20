@@ -22,7 +22,7 @@ class ErrorBoundary extends Component {
     return this.props.children;
   }
 }
-import { T, fmt, fmtFull, daysDiff, SC, askClaude, STAGES, STAGE_ACTION, TIER_COLOR, donorScore, moveUrgency, Spin, Pill, Card, AIBtn, AIPanel, PageTitle, EmptyState, GivingHistoryChart, TpField, TpYesNo, TouchpointTimeline, LockedFeature } from "./shared";
+import { T, fmt, fmtFull, daysDiff, SC, askClaude, STAGES, STAGE_ACTION, TIER_COLOR, donorScore, moveUrgency, Spin, Pill, Card, AIBtn, AIPanel, PageTitle, EmptyState, GivingHistoryChart, TpField, TpYesNo, TouchpointTimeline, LockedFeature, goToPricing } from "./shared";
 // SHELVED — voice capture works but unproven adoption assumption, revisit
 // later. Code intact, re-enable by uncommenting (see showVoiceMemo state,
 // profile button, and modal render below, and add `VoiceMemoModal` back to
@@ -2283,7 +2283,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
   // A plain function (not a `<Component>`) so Team never remounts the subtree.
   const lockMajor=(children,opts={})=>isTeam?children:(
     <LockedFeature title={opts.title||"A Team-plan feature"} blurb={opts.blurb} minHeight={opts.minHeight||220}
-      onCta={onNavigate?()=>onNavigate("settings"):undefined}>{children}</LockedFeature>
+      onCta={goToPricing}>{children}</LockedFeature>
   );
   const hasDesignation=k=>designations.some(d=>d.kind===k);
   const toggleDesignation=async(kind)=>{

@@ -6,7 +6,7 @@
 // upgrade state, not a broken tab.
 import { useState, useEffect, useMemo } from "react";
 import { apiFetch } from "../api";
-import { T, PageTitle, EmptyState, fmt, fmtFull, interactive, LockedFeature } from "./shared";
+import { T, PageTitle, EmptyState, fmt, fmtFull, interactive, LockedFeature, goToPricing } from "./shared";
 
 // Forward major-gifts pipeline + trailing re-engagement column. Mirrors
 // server's ALL_PIPELINE_STAGES ordering.
@@ -172,7 +172,7 @@ export function Pipeline({ isReadOnly, onNavigate }) {
         <LockedFeature
           title="Manage a major-gifts pipeline"
           blurb="Move prospects through Identification → Qualification → Cultivation → Solicitation → Stewardship, log every move with a note, track asks against the gifts they close, and see each officer's portfolio at a glance. This preview shows your own donors — unlock the board to work it."
-          onCta={() => onNavigate && onNavigate("settings")}
+          onCta={goToPricing}
         >
           {board}
         </LockedFeature>

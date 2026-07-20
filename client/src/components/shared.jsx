@@ -592,6 +592,13 @@ export const LockGlyph=({size=12,color="currentColor",style})=>(
   </svg>
 );
 
+// The ONE upgrade destination. Every "See plans / Unlock with Team / Upgrade"
+// CTA routes here — the in-app /pricing page, where a plan button starts a real
+// Stripe Checkout (POST /billing/create-checkout). Full navigation (not SPA
+// navigate) is deliberate: /pricing lives outside the AppShell tab router, and
+// it matches the codebase's other billing redirects (openPortal, Stripe URLs).
+export const goToPricing=()=>{ window.location.href="/pricing"; };
+
 // LockedFeature — the reusable "Givebutter-style" locked preview. Renders the
 // REAL surface (the org's own data) dimmed behind frosted glass, non-
 // interactive, with an "Unlock with Team" overlay. Writes are still server-
