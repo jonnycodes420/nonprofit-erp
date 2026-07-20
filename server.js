@@ -657,11 +657,10 @@ app.post("/resend/webhook", express.raw({ type: "application/json" }), async (re
 // different signing secrets, different Stripe accounts (platform vs connect).
 // Do not merge them.
 //
-// Plan values a subscription may set (metadata.plan). Core/Team are the live
-// commercial model; seed/growth/impact are legacy (recognized for back-compat);
-// founding is the private $99 founding-partner price (core tier). orgPlanTier()
-// resolves whichever of these to core/team.
-const BILLING_PLAN_VALUES = new Set(["core", "team", "founding", "seed", "growth", "impact"]);
+// Plan values + Stripe-price → plan mapping. Extracted to a pure module so the
+// portal-switch case (price changes, metadata.plan goes stale) is unit-testable
+// without a live server — see billingPlans.js.
+const { BILLING_PLAN_VALUES, planFromSubscription } = require("./billingPlans");
 
 // Idempotency: reserve the Stripe event id BEFORE mutating anything. Returns
 // true if this event was already processed (redelivery/retry) → caller no-ops.
@@ -759,7 +758,9 @@ app.post("/billing/webhook", express.raw({ type: "application/json" }), async (r
         const s = obj.status;
         const periodEnd = obj.current_period_end ? new Date(obj.current_period_end * 1000).toISOString() : null;
         if (s === "active" || s === "trialing") {
-          const plan = BILLING_PLAN_VALUES.has(obj.metadata?.plan) ? obj.metadata.plan : null;
+          // Derive from the live price so a Customer-Portal plan switch
+          // (Core ↔ Team) flips the tier even though metadata.plan is stale.
+          const plan = planFromSubscription(obj);
           if (plan) {
             await run("UPDATE orgs SET plan=?, subscription_status='active', current_period_end=?, grace_until=NULL WHERE id=?", [plan, periodEnd, orgId]);
           } else {

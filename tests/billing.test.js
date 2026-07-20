@@ -126,6 +126,35 @@ const future = ts => ts && new Date(ts).getTime() > Date.now();
   b = await orgRow(B);
   ok("event targeting A leaves B alone", b.plan === "seed" && b.subscription_status === "active", b);
 
+  // ── Change plan via Customer Portal: subscription.updated active flips tier ─
+  // A is team/active after evt_bill_7. A portal switch fires an active
+  // subscription.updated; the handler re-sets the plan (→ re-lock / unlock).
+  a = await orgRow(A);
+  ok("precondition: A is team after reactivation", a.plan === "team", a);
+  // Switch Team → Core: metadata carries the new plan (price env isn't set on the
+  // scratch server, so the price path degrades to the metadata fallback here; the
+  // price-override itself is asserted as a pure unit below).
+  r = await fireBilling("evt_bill_sw1", "customer.subscription.updated",
+    { metadata: { orgId: A, plan: "core" }, status: "active", customer: "cus_bill_a", current_period_end: null });
+  a = await orgRow(A);
+  ok("portal switch Team→Core → plan=core (Team re-locks)", a.plan === "core", a);
+  ok("portal switch Team→Core → status stays active", a.subscription_status === "active", a);
+  st = await api("GET", "/billing/status", aAdmin);
+  ok("billing/status planTier=core after portal downgrade", st.body.planTier === "core", st.body);
+  // Switch Core → Team: unlocks again.
+  r = await fireBilling("evt_bill_sw2", "customer.subscription.updated",
+    { metadata: { orgId: A, plan: "team" }, status: "active", customer: "cus_bill_a", current_period_end: null });
+  a = await orgRow(A);
+  ok("portal switch Core→Team → plan=team (unlocks)", a.plan === "team", a);
+  st = await api("GET", "/billing/status", aAdmin);
+  ok("billing/status planTier=team after portal upgrade", st.body.planTier === "team", st.body);
+  // Idempotent: redeliver the same switch event → no-op, plan unchanged.
+  r = await fireBilling("evt_bill_sw2", "customer.subscription.updated",
+    { metadata: { orgId: A, plan: "core" }, status: "active", customer: "cus_bill_a", current_period_end: null });
+  a = await orgRow(A);
+  ok("portal switch redelivered → duplicate:true", r.body.duplicate === true, r.body);
+  ok("portal switch redelivered → plan STILL team (no-op)", a.plan === "team", a);
+
   // ── donation-event separation: payment_intent is IGNORED, never reserved ─
   r = await fireBilling("evt_bill_pi", "payment_intent.succeeded",
     { id: "pi_x", amount_received: 5000, customer: "cus_bill_b", metadata: { orgId: B } });
@@ -200,6 +229,30 @@ const future = ts => ts && new Date(ts).getTime() > Date.now();
   const modeRow = (await q(`SELECT stripe_customer_id, stripe_customer_id_test FROM orgs WHERE id=$1`, [A]))[0];
   ok("mode columns independent: live + test customer ids coexist without clobbering",
     modeRow.stripe_customer_id === "cus_live_x" && modeRow.stripe_customer_id_test === "cus_test_x");
+
+  // ── Portal plan switch reads the LIVE price, not stale metadata (FIX) ──────
+  // The Customer Portal changes a subscription's price but leaves metadata.plan
+  // as it was at checkout. planFromSubscription must trust the price so a
+  // Core→Team switch actually flips the tier. Pure unit — no live server needed.
+  const { planForPriceId, planFromSubscription } = require("../billingPlans");
+  const PENV = { STRIPE_PRICE_CORE: "price_core", STRIPE_PRICE_TEAM: "price_team", STRIPE_PRICE_FOUNDING: "price_found" };
+  ok("planForPriceId: Core price → core", planForPriceId("price_core", PENV) === "core");
+  ok("planForPriceId: Team price → team", planForPriceId("price_team", PENV) === "team");
+  ok("planForPriceId: unknown price → null", planForPriceId("price_zzz", PENV) === null);
+  ok("planForPriceId: null price → null", planForPriceId(null, PENV) === null);
+  // The crux: subscription now on the TEAM price but metadata.plan still 'core'
+  // (stamped at the original Core checkout) → plan resolves to TEAM off the price.
+  const switchedSub = { items: { data: [{ price: { id: "price_team" } }] }, metadata: { plan: "core" } };
+  ok("planFromSubscription: live Team price beats stale core metadata → team",
+    planFromSubscription(switchedSub, PENV) === "team");
+  // And a downgrade the same way: on the Core price, stale 'team' metadata → core.
+  const downgradedSub = { items: { data: [{ price: { id: "price_core" } }] }, metadata: { plan: "team" } };
+  ok("planFromSubscription: live Core price beats stale team metadata → core",
+    planFromSubscription(downgradedSub, PENV) === "core");
+  // Unrecognized price → fall back to metadata (checkout path, metadata reliable).
+  const noPriceSub = { items: { data: [{ price: { id: "price_unknown" } }] }, metadata: { plan: "team" } };
+  ok("planFromSubscription: unknown price falls back to metadata → team",
+    planFromSubscription(noPriceSub, PENV) === "team");
 
   await closeDb();
   summary();

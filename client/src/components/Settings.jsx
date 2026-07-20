@@ -1282,16 +1282,30 @@ export function Settings({auth,logout,initialSection}) {
                 </div>
               )}
             </div>
-            <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
-              <button onClick={openBillingPortal} disabled={portalLoading} style={{background:"#0f1a12",border:"none",borderRadius:8,padding:"9px 18px",color:"#f0ede6",fontSize:13,fontWeight:600,cursor:portalLoading?"not-allowed":"pointer",opacity:portalLoading?0.7:1}}>
-                {portalLoading?"Opening…":"Manage billing →"}
-              </button>
-              {(billing.plan==="trial"||billing.plan==="seed")&&(
-                <a href="/pricing" style={{display:"inline-block",background:"#1a6b4a",border:"none",borderRadius:8,padding:"9px 18px",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer",textDecoration:"none"}}>
-                  Upgrade plan →
-                </a>
+            {(()=>{const isSubscriber=["core","team","growth","impact","founding"].includes(billing.plan); return (
+            <div style={{display:"flex",flexDirection:"column",gap:8}}>
+              <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
+                {isSubscriber&&(
+                  <button onClick={openBillingPortal} disabled={portalLoading} style={{background:"#1a6b4a",border:"none",borderRadius:8,padding:"9px 18px",color:"#fff",fontSize:13,fontWeight:700,cursor:portalLoading?"not-allowed":"pointer",opacity:portalLoading?0.7:1}}>
+                    {portalLoading?"Opening…":"Change plan →"}
+                  </button>
+                )}
+                <button onClick={openBillingPortal} disabled={portalLoading} style={{background:"#0f1a12",border:"none",borderRadius:8,padding:"9px 18px",color:"#f0ede6",fontSize:13,fontWeight:600,cursor:portalLoading?"not-allowed":"pointer",opacity:portalLoading?0.7:1}}>
+                  {portalLoading?"Opening…":"Manage billing →"}
+                </button>
+                {(billing.plan==="trial"||billing.plan==="seed")&&(
+                  <a href="/pricing" style={{display:"inline-block",background:"#1a6b4a",border:"none",borderRadius:8,padding:"9px 18px",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer",textDecoration:"none"}}>
+                    Upgrade plan →
+                  </a>
+                )}
+              </div>
+              {isSubscriber&&(
+                <div style={{fontSize:12,color:T.ink3,lineHeight:1.5}}>
+                  Switch between Core and Team, update your payment method, or cancel — all in Stripe's secure portal. Plan changes are prorated automatically.
+                </div>
               )}
             </div>
+            );})()}
           </div>
         ) : (
           <div style={{fontSize:13,color:T.ink3}}>Loading billing information…</div>
