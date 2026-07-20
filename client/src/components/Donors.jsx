@@ -281,7 +281,13 @@ function buildDonorRows(parsed, mapping) {
     }
     if (d.lastGift !== undefined && d.lastGift !== "") { const {value,warn} = normalizeDate(d.lastGift); d.lastGift=value; if(warn) warnings.push(`${rowLabel}: ${warn}`); }
     if (d.gifts !== undefined && d.gifts !== "") d.gifts = parseInt(d.gifts) || null;
-    d.stage = normalizeStage(d.stage) || inferStage(d.total, d.lastGift, !!(d.email || d.phone));
+    // Initial pipeline stage: an explicit stage column always wins; otherwise
+    // infer from giving history (this donor-only flow's history IS the aggregate
+    // total/last-gift columns). `_stageExplicit` tells the server not to
+    // re-infer over it in the combined/history import paths.
+    const _explicitStage = normalizeStage(d.stage);
+    d.stage = _explicitStage || inferStage(d.total, d.lastGift, !!(d.email || d.phone));
+    d._stageExplicit = !!_explicitStage;
     if (d.city)  d.city  = String(d.city).trim()  || null;
     if (d.state) d.state = String(d.state).trim()  || null;
     if (warnings.length) warned.push({ ...d, _warnings:warnings, _rowIndex:idx+2 });
@@ -326,14 +332,24 @@ function buildCombinedRows(parsed, donorMapping, yearCols) {
     }
     if (d.lastGift !== undefined && d.lastGift !== "") { const {value,warn} = normalizeDate(d.lastGift); d.lastGift=value; if(warn) warnings.push(`${rowLabel}: ${warn}`); }
     if (d.gifts !== undefined && d.gifts !== "") d.gifts = parseInt(d.gifts) || null;
-    d.stage = normalizeStage(d.stage) || inferStage(d.total, d.lastGift, !!(d.email || d.phone));
     if (d.city)  d.city  = String(d.city).trim()  || null;
     if (d.state) d.state = String(d.state).trim()  || null;
+    // Derive the year-column gifts BEFORE inferring stage, so stage reflects the
+    // real giving history (sum + latest gift date) — not the mapped total/
+    // last-gift columns, which a wide year-column file usually doesn't have.
+    // The server re-infers from the recalculated gift rows on import too; doing
+    // it here keeps the preview honest and matching what actually gets saved.
     const gifts = activeCols.map(yc => {
       const {value:amtVal} = normalizeMoney(row[yc.col]);
       const amt = Math.round(amtVal || 0);
       return amt > 0 ? { amount:amt, date:yc.date, type:"cash", campaign:"" } : null;
     }).filter(Boolean);
+    const _giftTotal = gifts.reduce((s,g) => s + g.amount, 0);
+    // Gift dates are ISO YYYY-MM-DD, so lexicographic max === chronological max.
+    const _lastGiftDate = gifts.length ? gifts.reduce((m,g) => g.date > m ? g.date : m, gifts[0].date) : null;
+    const _explicitStage = normalizeStage(d.stage);
+    d.stage = _explicitStage || inferStage(_giftTotal || d.total, _lastGiftDate || d.lastGift, !!(d.email || d.phone));
+    d._stageExplicit = !!_explicitStage;
     results.push({ rowIdx:idx, donor:d, gifts, warnings, skipped:false });
   });
   return results;
@@ -634,7 +650,7 @@ export function DonorImport({ onClose, onImported, withHistory = false }) {
                 </tr></thead>
                 <tbody>{parsed.rows.slice(0,5).map((row,i)=>{
                   const d={};Object.entries(mapping).forEach(([h,f])=>{if(f)d[f]=row[h];});
-                  const st=inferStage(d.total,d.lastGift);
+                  const st=normalizeStage(d.stage)||inferStage(d.total,d.lastGift,!!(d.email||d.phone));
                   return(
                     <tr key={i} style={{borderBottom:"1px solid "+T.bg2}}>
                       {parsed.headers.filter(h=>mapping[h]).map(h=><td key={h} style={{padding:"6px 10px",color:T.ink,maxWidth:150,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{row[h]}</td>)}
@@ -1339,7 +1355,9 @@ function CombinedImport({ onClose, onImported }) {
     const skipped = combinedRows.filter(r => r.skipped).length;
     const warned  = valid.filter(r => r.warnings.length > 0).length;
     const gifts   = valid.reduce((s,r) => s + r.gifts.length, 0);
-    return { donors:valid.length, gifts, warned, skipped };
+    const stageCounts = {};
+    valid.forEach(r => { const s = r.donor.stage; if (s) stageCounts[s] = (stageCounts[s] || 0) + 1; });
+    return { donors:valid.length, gifts, warned, skipped, stageCounts };
   }, [combinedRows]);
 
   const doImport = async () => {
@@ -1521,6 +1539,19 @@ function CombinedImport({ onClose, onImported }) {
             <div style={{fontSize:12,color:T.ink3}}>No data is written until you click the confirm button below.</div>
           </div>
 
+          {/* Smart stage assignment — inferred from each donor's giving history */}
+          {Object.keys(stats.stageCounts).length>0 && (
+            <div style={{background:T.bg,borderRadius:10,padding:"10px 14px",marginBottom:16}}>
+              <div style={{fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.1em",color:T.ink3,marginBottom:6}}>Smart Stage Assignment</div>
+              <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+                {Object.entries(stats.stageCounts).map(([s,n])=>(
+                  <span key={s} style={{fontSize:12,fontWeight:600,padding:"3px 10px",borderRadius:99,background:(STAGE_COLORS[s]||T.ink3)+"22",color:STAGE_COLORS[s]||T.ink3,border:`1px solid ${(STAGE_COLORS[s]||T.ink3)}30`,textTransform:"capitalize"}}>{s} × {n}</span>
+                ))}
+              </div>
+              <div style={{fontSize:11,color:T.ink3,marginTop:6}}>Inferred from each donor's imported giving history. Editable anytime after import.</div>
+            </div>
+          )}
+
           {/* Row preview */}
           <div style={{marginBottom:14}}>
             <div style={{fontSize:11,fontWeight:700,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:8}}>
@@ -1532,6 +1563,7 @@ function CombinedImport({ onClose, onImported }) {
                   <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:cr.gifts.length?5:0,flexWrap:"wrap"}}>
                     <span style={{fontSize:13,fontWeight:700,color:T.ink}}>{cr.donor.name}</span>
                     {cr.donor.email&&<span style={{fontSize:11,color:T.ink3}}>{cr.donor.email}</span>}
+                    {cr.donor.stage&&<span style={{fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:99,background:(STAGE_COLORS[cr.donor.stage]||T.ink3)+"22",color:STAGE_COLORS[cr.donor.stage]||T.ink3,textTransform:"capitalize"}}>{cr.donor.stage}</span>}
                     {cr.warnings.length>0&&<span style={{fontSize:11,color:"#92400e",background:"#fef3c7",borderRadius:4,padding:"1px 6px"}}>{cr.warnings[0]}</span>}
                   </div>
                   {cr.gifts.length>0&&(

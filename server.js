@@ -2427,6 +2427,7 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrap(async (r
   let duplicates = 0;
   const donorsToInsert = [];
   const indexToId = {}; // donorIndex → pre-generated id (only non-deduped donors)
+  const explicitStageIds = []; // donors whose file had an explicit stage column — never re-inferred over
 
   donors.forEach((d, idx) => {
     if (!d.name || !String(d.name).trim()) return;
@@ -2438,6 +2439,7 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrap(async (r
     const id = "d_" + uuid().slice(0, 8);
     indexToId[idx] = id;
     donorsToInsert.push({ ...d, _id: id });
+    if (d._stageExplicit) explicitStageIds.push(id);
   });
 
   // ── Bulk-insert donors (500/batch, one multi-row INSERT per batch) ──
@@ -2588,16 +2590,21 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrap(async (r
     } catch (e) { console.error(`[combined-import] status promotion failed:`, e.message); }
   }
 
-  // Infer pipeline stage from recalculated giving data.
-  // No prospect-only guardrail here: new donors land as 'cultivate' (DB default),
-  // so the guardrail would match zero rows. Combined-import only creates NEW donors —
-  // no human-set stages to protect. SQL mirrors client-side inferStage() exactly,
-  // including its qualify/solicit bands — see Donors.jsx's inferStage for the
-  // reasoning (a donor with no gift history but an email/phone on file gets a
-  // reachable path to 'qualify'; a substantial gift 90-180 days ago reads as
-  // 'solicit' rather than folding into the generic 'cultivate' bucket).
+  // Infer pipeline stage from recalculated giving data — the authoritative
+  // inference happens HERE (after gifts load + totals recalc), not on the client
+  // guess, so a wide file with year-column gifts but no total/last-gift column is
+  // still staged correctly. An EXPLICIT stage column in the file always wins:
+  // donors flagged `_stageExplicit` are excluded so their mapped stage survives.
+  // SQL mirrors client-side inferStage() exactly, including its qualify/solicit
+  // bands — see Donors.jsx's inferStage for the reasoning (a donor with no gift
+  // history but an email/phone on file gets a reachable path to 'qualify'; a
+  // substantial gift 90-180 days ago reads as 'solicit' rather than folding into
+  // the generic 'cultivate' bucket).
   if (affectedDonorIds.size > 0) {
     try {
+      const stageParams = [orgId, [...affectedDonorIds]];
+      let excludeClause = "";
+      if (explicitStageIds.length) { excludeClause = " AND id <> ALL(?)"; stageParams.push(explicitStageIds); }
       await run(
         `UPDATE donors
          SET stage = CASE
@@ -2616,9 +2623,9 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrap(async (r
            ELSE 'prospect'
          END,
          updated_at = NOW()
-         WHERE org_id = ? AND id = ANY(?)
+         WHERE org_id = ? AND id = ANY(?)${excludeClause}
            AND deleted_at IS NULL`,
-        [orgId, [...affectedDonorIds]]
+        stageParams
       );
     } catch (e) { console.error(`[combined-import] stage inference failed:`, e.message); }
   }
