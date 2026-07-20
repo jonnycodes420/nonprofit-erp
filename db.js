@@ -491,6 +491,11 @@ async function initSchema() {
   await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS plan TEXT DEFAULT 'trial'`);
   await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS trial_ends_at TIMESTAMPTZ DEFAULT NOW() + INTERVAL '30 days'`);
   await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS stripe_customer_id TEXT`);
+  // Platform billing customer is per Stripe MODE: a cus_… created in live mode
+  // doesn't exist under a test key. stripe_customer_id holds the LIVE customer
+  // (existing prod values are live); the test-mode customer lives here. Switching
+  // STRIPE_BILLING_SECRET_KEY between test/live uses the matching column.
+  await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS stripe_customer_id_test TEXT`);
   await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS stripe_subscription_id TEXT`);
   await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS subscription_status TEXT DEFAULT 'trialing'`);
   await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS current_period_end TIMESTAMPTZ`);

@@ -158,7 +158,7 @@ const future = ts => ts && new Date(ts).getTime() > Date.now();
   // ── Stripe key separation (FIX): platform billing gets its own key ─────────
   // Pure resolver used by server.js for `stripe` (donations) vs `billingStripe`
   // (platform subscription). Asserted directly so it needs no live Stripe.
-  const { donationStripeKey, billingStripeKey } = require("../stripeKeys");
+  const { donationStripeKey, billingStripeKey, billingStripeMode } = require("../stripeKeys");
   const LIVE = "sk_live_donation", TEST = "sk_test_billing";
 
   // Billing uses its OWN key when set…
@@ -181,6 +181,25 @@ const future = ts => ts && new Date(ts).getTime() > Date.now();
   ok("key separation: billing test key + live donation key resolve to different clients",
     billingStripeKey({ STRIPE_BILLING_SECRET_KEY: TEST, STRIPE_SECRET_KEY: LIVE })
       !== donationStripeKey({ STRIPE_BILLING_SECRET_KEY: TEST, STRIPE_SECRET_KEY: LIVE }));
+
+  // ── Mode-aware billing customer (FIX): store the platform customer per Stripe
+  // MODE so a live cus_… is never reused under a test key. billingStripeMode maps
+  // the active billing key → the column ensureStripeCustomer reads/writes.
+  ok("billing mode: sk_test_ key → test", billingStripeMode("sk_test_abc") === "test");
+  ok("billing mode: rk_test_ (restricted) key → test", billingStripeMode("rk_test_abc") === "test");
+  ok("billing mode: sk_live_ key → live", billingStripeMode("sk_live_abc") === "live");
+  ok("billing mode: rk_live_ key → live", billingStripeMode("rk_live_abc") === "live");
+  // Same event separation guarantee: a test billing key + live donation key put
+  // the platform customer in the test column while donations stay live.
+  ok("billing mode: reflects the resolved billing key, not the donation key",
+    billingStripeMode(billingStripeKey({ STRIPE_BILLING_SECRET_KEY: TEST, STRIPE_SECRET_KEY: LIVE })) === "test"
+      && billingStripeMode(donationStripeKey({ STRIPE_BILLING_SECRET_KEY: TEST, STRIPE_SECRET_KEY: LIVE })) === "live");
+
+  // The two mode columns are independent — writing one never touches the other.
+  await q(`UPDATE orgs SET stripe_customer_id='cus_live_x', stripe_customer_id_test='cus_test_x' WHERE id=$1`, [A]);
+  const modeRow = (await q(`SELECT stripe_customer_id, stripe_customer_id_test FROM orgs WHERE id=$1`, [A]))[0];
+  ok("mode columns independent: live + test customer ids coexist without clobbering",
+    modeRow.stripe_customer_id === "cus_live_x" && modeRow.stripe_customer_id_test === "cus_test_x");
 
   await closeDb();
   summary();

@@ -16,4 +16,14 @@ function donationStripeKey(env = process.env) {
 function billingStripeKey(env = process.env) {
   return env.STRIPE_BILLING_SECRET_KEY || env.STRIPE_SECRET_KEY || null;
 }
-module.exports = { donationStripeKey, billingStripeKey };
+// Stripe mode ("test" | "live") the billing key runs in. A Stripe customer
+// created in one mode does NOT exist in the other — reusing a live cus_… under a
+// test key (or vice-versa) throws `resource_missing`. So the platform customer
+// must be stored per mode; this tells callers which mode is active. Secret and
+// restricted keys both encode the mode: sk_test_… / rk_test_… = test, else live.
+function billingStripeMode(key) {
+  const k = key || billingStripeKey();
+  if (!k) return null;
+  return /^(sk|rk)_test_/.test(k) ? "test" : "live";
+}
+module.exports = { donationStripeKey, billingStripeKey, billingStripeMode };

@@ -56,7 +56,7 @@ const { lookupMatchingGift } = require("./matchingGifts");
 const Stripe = require("stripe");
 const { google } = require("googleapis");
 const { Webhook: SvixWebhook } = require("svix");
-const { donationStripeKey, billingStripeKey } = require("./stripeKeys");
+const { donationStripeKey, billingStripeKey, billingStripeMode } = require("./stripeKeys");
 
 // `stripe` = DONATION processing (connected accounts + /stripe/webhook), on the
 // LIVE STRIPE_SECRET_KEY. `billingStripe` = PLATFORM subscription billing
@@ -680,7 +680,10 @@ async function billingEventAlreadyProcessed(eventId, type, orgId) {
 async function resolveBillingOrgId(obj) {
   if (obj?.metadata?.orgId) return obj.metadata.orgId;
   if (obj?.customer) {
-    const rows = await query("SELECT id FROM orgs WHERE stripe_customer_id=?", [obj.customer]);
+    // The customer id may live in either mode's column (test vs live).
+    const rows = await query(
+      "SELECT id FROM orgs WHERE stripe_customer_id=? OR stripe_customer_id_test=?",
+      [obj.customer, obj.customer]);
     if (rows.length) return rows[0].id;
   }
   return null;
@@ -1387,7 +1390,9 @@ app.post("/auth/register-org", registerLimiter, wrap(async (req, res) => {
         metadata: { orgId },
       });
       stripeCustomerId = customer.id;
-      await run("UPDATE orgs SET stripe_customer_id=? WHERE id=?", [stripeCustomerId, orgId]);
+      // Persist to the column for the current billing mode (test vs live) so it
+      // isn't reused cross-mode later — see ensureStripeCustomer.
+      await run(`UPDATE orgs SET ${billingCustomerColumn()}=? WHERE id=?`, [stripeCustomerId, orgId]);
     } catch (err) {
       console.error("Stripe customer creation failed:", err.message);
     }
@@ -11740,16 +11745,41 @@ async function checkWriteAccess(req, res, next) {
 
 // ── Billing ────────────────────────────────────────────────────────────────
 
-// Returns the org's stripe_customer_id, creating and persisting one on the
-// fly if missing (e.g. orgs created via the legacy /auth/register route,
-// which predates Stripe billing, or ones where inline creation at signup
-// failed silently). Returns null only if the org itself doesn't exist.
+// The orgs column that holds the platform billing customer for the CURRENT
+// Stripe mode. A customer created in test mode doesn't exist under a live key
+// (and vice-versa), so each mode gets its own column — stripe_customer_id is the
+// LIVE customer (existing prod values are live), stripe_customer_id_test the
+// test one. Never overwrite the other mode's column.
+function billingCustomerColumn() {
+  return billingStripeMode() === "test" ? "stripe_customer_id_test" : "stripe_customer_id";
+}
+
+// Returns the org's billing customer id for the current Stripe MODE, creating
+// and persisting one on the fly if missing (e.g. legacy /auth/register orgs, a
+// silently-failed signup creation, or the first checkout after switching the
+// billing key to a new mode). Self-heals: if the stored id belongs to the other
+// mode or was deleted, Stripe rejects it with `resource_missing` and we mint a
+// fresh customer in the current mode. Returns null only if the org doesn't exist.
 async function ensureStripeCustomer(orgId, email) {
-  const orgs = await query("SELECT name, stripe_customer_id FROM orgs WHERE id=?", [orgId]);
+  const col = billingCustomerColumn();
+  const orgs = await query(`SELECT name, ${col} AS customer_id FROM orgs WHERE id=?`, [orgId]);
   if (!orgs.length) return null;
-  if (orgs[0].stripe_customer_id) return orgs[0].stripe_customer_id;
+
+  let stored = orgs[0].customer_id;
+  if (stored) {
+    try {
+      const existing = await billingStripe.customers.retrieve(stored);
+      if (!existing.deleted) return stored;   // deleted:true → fall through, re-create
+    } catch (err) {
+      // Cross-mode reuse ("a similar object exists in live mode…") and deleted
+      // customers both surface as resource_missing — re-create for this mode.
+      if (err && (err.code === "resource_missing" || err.statusCode === 404)) stored = null;
+      else throw err;
+    }
+  }
+
   const customer = await billingStripe.customers.create({ email, name: orgs[0].name, metadata: { orgId } });
-  await run("UPDATE orgs SET stripe_customer_id=? WHERE id=?", [customer.id, orgId]);
+  await run(`UPDATE orgs SET ${col}=? WHERE id=?`, [customer.id, orgId]);
   return customer.id;
 }
 
