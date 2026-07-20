@@ -14,15 +14,18 @@
 // existing product/price with the same plan+amount+interval instead of making a
 // duplicate. Refuses to run against a live key unless --live is passed.
 //
-// Usage (TEST first — always):
-//   STRIPE_SECRET_KEY=sk_test_… node scripts/create-billing-products.js
+// Usage (TEST first — always). Prefers STRIPE_BILLING_SECRET_KEY (the platform-
+// billing key), falling back to STRIPE_SECRET_KEY — so it provisions prices with
+// the SAME key the running server's billing client uses:
+//   STRIPE_BILLING_SECRET_KEY=sk_test_… node scripts/create-billing-products.js
 //   # then paste the printed STRIPE_PRICE_* lines into your env and redeploy
 //
 // Go-live (only after the full test-mode flow is green):
-//   STRIPE_SECRET_KEY=sk_live_… node scripts/create-billing-products.js --live
+//   STRIPE_BILLING_SECRET_KEY=sk_live_… node scripts/create-billing-products.js --live
 
-const key = process.env.STRIPE_SECRET_KEY;
-if (!key) { console.error("Set STRIPE_SECRET_KEY (use a sk_test_… key first)."); process.exit(1); }
+const { billingStripeKey } = require("../stripeKeys");
+const key = billingStripeKey();
+if (!key) { console.error("Set STRIPE_BILLING_SECRET_KEY (or STRIPE_SECRET_KEY) — use a sk_test_… key first."); process.exit(1); }
 const isLive = key.startsWith("sk_live");
 if (isLive && !process.argv.includes("--live")) {
   console.error("Refusing to run against a LIVE key without --live. Provision + verify in TEST mode first.");

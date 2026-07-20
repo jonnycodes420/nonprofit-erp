@@ -56,8 +56,16 @@ const { lookupMatchingGift } = require("./matchingGifts");
 const Stripe = require("stripe");
 const { google } = require("googleapis");
 const { Webhook: SvixWebhook } = require("svix");
+const { donationStripeKey, billingStripeKey } = require("./stripeKeys");
 
-const stripe = process.env.STRIPE_SECRET_KEY ? new Stripe(process.env.STRIPE_SECRET_KEY) : null;
+// `stripe` = DONATION processing (connected accounts + /stripe/webhook), on the
+// LIVE STRIPE_SECRET_KEY. `billingStripe` = PLATFORM subscription billing
+// (create-checkout/portal, the platform customer, /billing/webhook), on
+// STRIPE_BILLING_SECRET_KEY when set — so billing can run in Stripe TEST mode
+// without disturbing live donations — falling back to STRIPE_SECRET_KEY when it
+// isn't. The two clients are deliberately independent; do not cross-wire them.
+const stripe = donationStripeKey() ? new Stripe(donationStripeKey()) : null;
+const billingStripe = billingStripeKey() ? new Stripe(billingStripeKey()) : null;
 
 function makeOAuth2Client() {
   return new google.auth.OAuth2(
@@ -679,11 +687,11 @@ async function resolveBillingOrgId(obj) {
 }
 
 app.post("/billing/webhook", express.raw({ type: "application/json" }), async (req, res) => {
-  if (!stripe) return res.status(503).json({ error: "Stripe not configured" });
+  if (!billingStripe) return res.status(503).json({ error: "Stripe not configured" });
   const sig = req.headers["stripe-signature"];
   let event;
   try {
-    event = stripe.webhooks.constructEvent(req.body, sig, process.env.STRIPE_BILLING_WEBHOOK_SECRET || process.env.STRIPE_WEBHOOK_SECRET);
+    event = billingStripe.webhooks.constructEvent(req.body, sig, process.env.STRIPE_BILLING_WEBHOOK_SECRET || process.env.STRIPE_WEBHOOK_SECRET);
   } catch (err) {
     return res.status(400).json({ error: `Webhook signature failed: ${err.message}` });
   }
@@ -714,7 +722,7 @@ app.post("/billing/webhook", express.raw({ type: "application/json" }), async (r
         let periodEnd = null;
         if (obj.subscription) {
           try {
-            const sub = await stripe.subscriptions.retrieve(obj.subscription);
+            const sub = await billingStripe.subscriptions.retrieve(obj.subscription);
             periodEnd = sub.current_period_end ? new Date(sub.current_period_end * 1000).toISOString() : null;
           } catch {}
         }
@@ -1371,9 +1379,9 @@ app.post("/auth/register-org", registerLimiter, wrap(async (req, res) => {
   );
 
   let stripeCustomerId = null;
-  if (stripe) {
+  if (billingStripe) {
     try {
-      const customer = await stripe.customers.create({
+      const customer = await billingStripe.customers.create({
         email: normalizedEmail,
         name: orgName,
         metadata: { orgId },
@@ -11740,7 +11748,7 @@ async function ensureStripeCustomer(orgId, email) {
   const orgs = await query("SELECT name, stripe_customer_id FROM orgs WHERE id=?", [orgId]);
   if (!orgs.length) return null;
   if (orgs[0].stripe_customer_id) return orgs[0].stripe_customer_id;
-  const customer = await stripe.customers.create({ email, name: orgs[0].name, metadata: { orgId } });
+  const customer = await billingStripe.customers.create({ email, name: orgs[0].name, metadata: { orgId } });
   await run("UPDATE orgs SET stripe_customer_id=? WHERE id=?", [customer.id, orgId]);
   return customer.id;
 }
@@ -11797,7 +11805,7 @@ app.post("/billing/create-checkout", requireAuth, requireAdmin, wrap(async (req,
   const priceId = priceMap[plan];
   if (!priceId) return res.status(400).json({ error: "plan_not_configured", message: `No Stripe price is configured for the ${plan} plan yet.` });
 
-  if (!stripe) return res.status(503).json({ error: "Stripe not configured" });
+  if (!billingStripe) return res.status(503).json({ error: "Stripe not configured" });
   const customerId = await ensureStripeCustomer(req.user.orgId, req.user.email);
   if (!customerId) return res.status(404).json({ error: "Org not found" });
 
@@ -11811,15 +11819,15 @@ app.post("/billing/create-checkout", requireAuth, requireAdmin, wrap(async (req,
     customer: customerId,
   };
 
-  const session = await stripe.checkout.sessions.create(sessionParams);
+  const session = await billingStripe.checkout.sessions.create(sessionParams);
   res.json({ url: session.url });
 }));
 
 app.post("/billing/create-portal", requireAuth, requireAdmin, wrap(async (req, res) => {
-  if (!stripe) return res.status(503).json({ error: "Stripe not configured" });
+  if (!billingStripe) return res.status(503).json({ error: "Stripe not configured" });
   const customerId = await ensureStripeCustomer(req.user.orgId, req.user.email);
   if (!customerId) return res.status(404).json({ error: "Org not found" });
-  const session = await stripe.billingPortal.sessions.create({
+  const session = await billingStripe.billingPortal.sessions.create({
     customer: customerId,
     return_url: (process.env.FRONTEND_URL || "https://stewardapp.dev") + "/dashboard",
   });

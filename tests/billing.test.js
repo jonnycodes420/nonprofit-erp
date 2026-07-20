@@ -155,6 +155,33 @@ const future = ts => ts && new Date(ts).getTime() > Date.now();
   ok("create-checkout core, no price env → plan_not_configured (not 500)",
     r.status === 400 && r.body.error === "plan_not_configured", r);
 
+  // ── Stripe key separation (FIX): platform billing gets its own key ─────────
+  // Pure resolver used by server.js for `stripe` (donations) vs `billingStripe`
+  // (platform subscription). Asserted directly so it needs no live Stripe.
+  const { donationStripeKey, billingStripeKey } = require("../stripeKeys");
+  const LIVE = "sk_live_donation", TEST = "sk_test_billing";
+
+  // Billing uses its OWN key when set…
+  ok("billing key: uses STRIPE_BILLING_SECRET_KEY when set",
+    billingStripeKey({ STRIPE_BILLING_SECRET_KEY: TEST, STRIPE_SECRET_KEY: LIVE }) === TEST);
+  // …and falls back to the donation key when its own is unset.
+  ok("billing key: falls back to STRIPE_SECRET_KEY when its own is unset",
+    billingStripeKey({ STRIPE_SECRET_KEY: LIVE }) === LIVE);
+  ok("billing key: null when neither is set",
+    billingStripeKey({}) === null);
+
+  // Donations ALWAYS use STRIPE_SECRET_KEY — never the billing key. No cross-wiring:
+  // even with a test billing key present, donation stays on the live donation key.
+  ok("donation key: always STRIPE_SECRET_KEY, ignores billing key (no cross-wire)",
+    donationStripeKey({ STRIPE_BILLING_SECRET_KEY: TEST, STRIPE_SECRET_KEY: LIVE }) === LIVE);
+  ok("donation key: unaffected by billing key alone",
+    donationStripeKey({ STRIPE_BILLING_SECRET_KEY: TEST }) === null);
+  // The whole point of the fix: a separate test billing key does NOT change the
+  // live donation key — the two resolve independently.
+  ok("key separation: billing test key + live donation key resolve to different clients",
+    billingStripeKey({ STRIPE_BILLING_SECRET_KEY: TEST, STRIPE_SECRET_KEY: LIVE })
+      !== donationStripeKey({ STRIPE_BILLING_SECRET_KEY: TEST, STRIPE_SECRET_KEY: LIVE }));
+
   await closeDb();
   summary();
 })().catch(e => { console.error(e); process.exit(1); });
