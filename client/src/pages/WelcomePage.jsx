@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { apiFetch } from "../api";
 import { useAuth } from "../main";
 import { DonorImport } from "../components/Donors";
+import { T } from "../components/shared";
 
 // 5 real, numbered steps. A guided-tour step is intentionally NOT included
 // here — there is currently no tour component in this codebase (it was
@@ -210,20 +211,27 @@ export default function WelcomePage() {
     navigate("/dashboard", { replace: true });
   }
 
-  const ink = "#0f1a12";
-  const ink3 = "#6b7280";
-  const greenDk = "#1a6b4a";
-  const green = "#10b981";
-  const gold = "#c9a84c";
+  // Steward brand system (BUILD-12 tokens) — cream / forest green / gold, no
+  // gradients, no off-palette blue. `greenDk` keeps its name (points at the
+  // brand green) to limit churn across the existing green accent/toggle refs.
+  const ink = T.ink;
+  const ink3 = T.ink3;
+  const greenDk = T.greenMid;   // green links, toggles, secondary accents
+  const green = T.green;        // ✓ marks / positive
+  const gold = T.gold500;
 
-  const card = { background: "#fff", borderRadius: 20, padding: "36px 36px 32px", boxShadow: "0 4px 24px rgba(15,26,18,0.08)" };
-  const inp = { width: "100%", boxSizing: "border-box", border: "1px solid #e5e7eb", borderRadius: 10, padding: "11px 14px", fontSize: 14, color: ink, background: "#f9f8f6", outline: "none", fontFamily: "inherit" };
+  const card = { background: T.white, borderRadius: 20, padding: "36px 36px 32px", boxShadow: T.shadowMd };
+  const inp = { width: "100%", boxSizing: "border-box", border: `1px solid ${T.bg3}`, borderRadius: 10, padding: "11px 14px", fontSize: 14, color: ink, background: T.bg, outline: "none", fontFamily: "inherit" };
   const label = { fontSize: 12, fontWeight: 700, color: ink3, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 6 };
+  // Primary CTA — solid gold with ink text on every step (matches the landing's
+  // "Start free"). No gradient, ever.
   const primaryBtn = (disabled) => ({
-    width: "100%", background: disabled ? "#e5e7eb" : greenDk, border: "none", borderRadius: 12,
-    padding: "14px 16px", color: disabled ? "#9ca3af" : "#fff", fontSize: 15, fontWeight: 700,
+    width: "100%", background: disabled ? T.bg3 : gold, border: "none", borderRadius: 12,
+    padding: "14px 16px", color: disabled ? T.ink3 : ink, fontSize: 15, fontWeight: 700,
     cursor: disabled ? "not-allowed" : "pointer", fontFamily: "inherit", transition: "all 0.15s",
   });
+  // Errors ride terracotta (the locked attention color) — never red/pink.
+  const errBox = { background: T.terracotta + "14", border: `1px solid ${T.terracotta}44`, borderRadius: 8, padding: "10px 14px", fontSize: 13, color: T.terracotta, marginBottom: 16 };
 
   return (
     <div style={{
@@ -234,18 +242,9 @@ export default function WelcomePage() {
       <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=DM+Serif+Display&display=swap" rel="stylesheet" />
       <div style={{ width: "100%", maxWidth: 500 }}>
 
-        {/* Logo */}
+        {/* Wordmark — the serif "Steward" only, no glyph (matches the landing) */}
         <div style={{ textAlign: "center", marginBottom: 24 }}>
-          <div style={{
-            width: 48, height: 48, background: greenDk, borderRadius: 14,
-            display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 14px",
-          }}>
-            <svg width="22" height="22" viewBox="0 0 16 16" fill="none">
-              <path d="M8 2L13 5v6L8 14 3 11V5L8 2z" stroke="#f0ede6" strokeWidth="1.5" fill="none"/>
-              <circle cx="8" cy="8" r="2" fill="#f0ede6"/>
-            </svg>
-          </div>
-          <span style={{ fontSize: 17, fontWeight: 700, color: ink, letterSpacing: "-0.02em", fontFamily: "'DM Serif Display',Georgia,serif" }}>
+          <span style={{ fontSize: 26, fontWeight: 400, color: ink, letterSpacing: "-0.02em", fontFamily: "'DM Serif Display',Georgia,serif" }}>
             Steward
           </span>
         </div>
@@ -255,10 +254,10 @@ export default function WelcomePage() {
           <div style={{ textAlign: "center", marginBottom: 16 }}>
             <div style={{ fontSize: 11, fontWeight: 700, color: ink3, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 8 }}>
               Step {step} of {TOTAL_STEPS} — {STEP_LABELS[step - 1]}
-              <span style={{ color: "#a08434", marginLeft: 8, letterSpacing: "0.04em" }}>{STEP_TIMES[step - 1]}</span>
+              <span style={{ color: T.gold600, marginLeft: 8, letterSpacing: "0.04em" }}>{STEP_TIMES[step - 1]}</span>
             </div>
-            <div style={{ maxWidth: 220, margin: "0 auto", background: "#e5e7eb", borderRadius: 99, height: 5, overflow: "hidden" }}>
-              <div style={{ height: "100%", width: `${Math.round((step / TOTAL_STEPS) * 100)}%`, background: `linear-gradient(90deg, ${greenDk}, #c9a84c)`, borderRadius: 99, transition: "width 0.35s ease" }} />
+            <div style={{ maxWidth: 220, margin: "0 auto", background: T.bg2, borderRadius: 99, height: 5, overflow: "hidden" }}>
+              <div style={{ height: "100%", width: `${Math.round((step / TOTAL_STEPS) * 100)}%`, background: greenDk, borderRadius: 99, transition: "width 0.35s ease" }} />
             </div>
           </div>
         )}
@@ -282,7 +281,7 @@ export default function WelcomePage() {
               <div style={{ fontSize: 11, color: ink3, marginTop: 5 }}>Used to personalize your AI-drafted communications and reports.</div>
             </div>
 
-            {error && <div style={{ background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 8, padding: "10px 14px", fontSize: 13, color: "#dc2626", marginBottom: 16 }}>{error}</div>}
+            {error && <div style={errBox}>{error}</div>}
 
             <button onClick={submitBasics} disabled={savingBasics || !orgName.trim()} style={primaryBtn(savingBasics || !orgName.trim())}>
               {savingBasics ? "Saving…" : "Continue →"}
@@ -307,22 +306,22 @@ export default function WelcomePage() {
               /* The import celebration — the product's one-gold-moment
                  pattern (see .gold-moment in shared.jsx GlobalStyles):
                  soft rise, one sheen on the accent bar, nothing louder. */
-              <div className="gold-moment" style={{ position: "relative", background: "linear-gradient(135deg,#fdfaf2,#faf5e6)", border: "1px solid #c9a84c55", borderRadius: 12, padding: "18px 18px 18px 22px", marginBottom: 20, textAlign: "center", overflow: "hidden" }}>
+              <div className="gold-moment" style={{ position: "relative", background: T.gold100, border: `1px solid ${T.gold500}55`, borderRadius: 12, padding: "18px 18px 18px 22px", marginBottom: 20, textAlign: "center", overflow: "hidden" }}>
                 {/* WelcomePage renders outside the app shell (no GlobalStyles), so the gold-moment animation is declared locally */}
                 <style>{`@keyframes goldRise{from{opacity:0;transform:translateY(8px) scale(0.985)}to{opacity:1;transform:translateY(0) scale(1)}}@keyframes goldSheen{0%{background-position:-200% 0}100%{background-position:200% 0}}.gold-moment{animation:goldRise 0.5s cubic-bezier(0.2,0.8,0.3,1) both}.gold-moment .gold-moment-bar{background:linear-gradient(100deg,#c9a84c 40%,#e8d9a8 50%,#c9a84c 60%);background-size:200% 100%;animation:goldSheen 1.8s ease-out 0.4s 1}@media (prefers-reduced-motion: reduce){.gold-moment,.gold-moment .gold-moment-bar{animation:none}}`}</style>
-                <div className="gold-moment-bar" style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: 4, background: "#c9a84c" }} />
+                <div className="gold-moment-bar" style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: 4, background: T.gold500 }} />
                 <div style={{ fontFamily: "'DM Serif Display',Georgia,serif", fontSize: 18, color: ink, marginBottom: 3 }}>
                   {donorsSnapshot.length.toLocaleString()} donor{donorsSnapshot.length === 1 ? "" : "s"}, safely home.
                 </div>
                 <div style={{ fontSize: 12.5, color: ink3 }}>That was the hard part. You can import more anytime from Donors → Import.</div>
               </div>
             ) : (
-              <button onClick={() => setShowImportModal(true)} style={{ ...primaryBtn(false), background: "linear-gradient(135deg,#10b981,#3b82f6)", marginBottom: 12 }}>
+              <button onClick={() => setShowImportModal(true)} style={{ ...primaryBtn(false), marginBottom: 12 }}>
                 Import a CSV or Excel file →
               </button>
             )}
 
-            {error && <div style={{ background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 8, padding: "10px 14px", fontSize: 13, color: "#dc2626", marginBottom: 12 }}>{error}</div>}
+            {error && <div style={{ ...errBox, marginBottom: 12 }}>{error}</div>}
 
             {donorsSnapshot.length > 0 ? (
               <button onClick={() => setStep(3)} style={primaryBtn(false)}>Continue →</button>
@@ -361,7 +360,7 @@ export default function WelcomePage() {
               <div style={{ display: "flex", gap: 8 }}>
                 {[["total_raised", "Total raised"], ["lapsed_recovery", "Lapsed recovery"]].map(([v, l]) => (
                   <button key={v} onClick={() => setGoalForm(f => ({ ...f, goalType: v }))}
-                    style={{ flex: 1, background: goalForm.goalType === v ? greenDk + "18" : "#f9f8f6", border: `1px solid ${goalForm.goalType === v ? greenDk : "#e5e7eb"}`, borderRadius: 8, padding: "9px", color: goalForm.goalType === v ? greenDk : ink3, fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
+                    style={{ flex: 1, background: goalForm.goalType === v ? greenDk + "18" : T.bg, border: `1px solid ${goalForm.goalType === v ? greenDk : T.bg3}`, borderRadius: 8, padding: "9px", color: goalForm.goalType === v ? greenDk : ink3, fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
                     {l}
                   </button>
                 ))}
@@ -378,7 +377,7 @@ export default function WelcomePage() {
               </div>
             </div>
 
-            {error && <div style={{ background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 8, padding: "10px 14px", fontSize: 13, color: "#dc2626", marginBottom: 16 }}>{error}</div>}
+            {error && <div style={errBox}>{error}</div>}
 
             <button onClick={submitGoal} disabled={savingGoal || !goalForm.label.trim() || !goalForm.goalAmount} style={primaryBtn(savingGoal || !goalForm.label.trim() || !goalForm.goalAmount)}>
               {savingGoal ? "Saving…" : "Continue →"}
@@ -419,7 +418,7 @@ export default function WelcomePage() {
                 + Add another metric (optional)
               </button>
             ) : (
-              <div style={{ background: "#f9f8f6", border: "1px solid #e5e7eb", borderRadius: 12, padding: 16, marginBottom: 20 }}>
+              <div style={{ background: T.bg, border: `1px solid ${T.bg3}`, borderRadius: 12, padding: 16, marginBottom: 20 }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
                   <div style={{ fontSize: 12, fontWeight: 700, color: ink, textTransform: "uppercase", letterSpacing: "0.06em" }}>Second metric (optional)</div>
                   <button onClick={() => setShowMetric2(false)} style={{ background: "none", border: "none", color: ink3, fontSize: 16, cursor: "pointer", lineHeight: 1 }}>×</button>
@@ -430,7 +429,7 @@ export default function WelcomePage() {
               </div>
             )}
 
-            {error && <div style={{ background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 8, padding: "10px 14px", fontSize: 13, color: "#dc2626", marginBottom: 16 }}>{error}</div>}
+            {error && <div style={errBox}>{error}</div>}
 
             <button onClick={submitMetrics} disabled={savingMetrics || !metric1.name.trim() || !metric1.dollarThreshold || !metric1.outcomeTemplate.trim()}
               style={primaryBtn(savingMetrics || !metric1.name.trim() || !metric1.dollarThreshold || !metric1.outcomeTemplate.trim())}>
@@ -466,9 +465,9 @@ export default function WelcomePage() {
         {step === 5 && phase === "ready" && (
           <div style={card}>
             <div style={{ textAlign: "center", marginBottom: 30 }}>
-              <div style={{ width: 56, height: 56, background: "#f0faf5", border: `2px solid ${green}`, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 18px", fontSize: 22, color: green }}>✓</div>
+              <div style={{ width: 56, height: 56, background: T.green100, border: `2px solid ${green}`, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 18px", fontSize: 22, color: green }}>✓</div>
               <h1 style={{ fontFamily: "'DM Serif Display',Georgia,serif", fontSize: 30, fontWeight: 400, color: ink, margin: "0 0 8px", letterSpacing: "-0.01em" }}>You're ready.</h1>
-              <p style={{ fontSize: 14, fontStyle: "italic", color: gold, margin: 0 }}>Every great organization starts here.</p>
+              <p style={{ fontSize: 14, fontStyle: "italic", color: T.gold600, margin: 0 }}>Every great organization starts here.</p>
               <div style={{ fontSize: 13, color: ink3, marginTop: 14, lineHeight: 1.7 }}>
                 {donorsSnapshot.length > 0
                   ? <>{donorsSnapshot.length.toLocaleString()} donor{donorsSnapshot.length === 1 ? "" : "s"} imported · 1 goal set · {showMetric2 ? "2 impact metrics" : "1 impact metric"} configured</>
@@ -478,12 +477,11 @@ export default function WelcomePage() {
 
             <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
               {importSkipped && donorsSnapshot.length === 0 && (
-                <button onClick={handleLoadSample} disabled={loadingSample} style={{ width: "100%", background: gold, border: "none", borderRadius: 12, padding: "14px 16px", color: "#fff", fontSize: 14, fontWeight: 700, cursor: loadingSample ? "not-allowed" : "pointer", opacity: loadingSample ? 0.7 : 1, fontFamily: "inherit" }}>
+                <button onClick={handleLoadSample} disabled={loadingSample} style={{ width: "100%", background: "transparent", border: `1.5px solid ${greenDk}`, borderRadius: 12, padding: "13px 16px", color: greenDk, fontSize: 14, fontWeight: 700, cursor: loadingSample ? "not-allowed" : "pointer", opacity: loadingSample ? 0.7 : 1, fontFamily: "inherit" }}>
                   {loadingSample ? "Loading sample data…" : "Load sample data & explore →"}
                 </button>
               )}
-              <button onClick={() => navigate("/dashboard", { replace: true })}
-                style={{ width: "100%", background: greenDk, border: "none", borderRadius: 12, padding: "14px 16px", color: "#fff", fontSize: 14, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
+              <button onClick={() => navigate("/dashboard", { replace: true })} style={primaryBtn(false)}>
                 Go to my home screen →
               </button>
             </div>
