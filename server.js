@@ -1082,6 +1082,42 @@ async function recalcDonorSummary(donorId, orgId) {
   );
 }
 
+// Set-based recalc for MANY donors in ONE query — the import hang fix. The
+// per-donor recalcDonorSummary loop was ~2 round trips per donor; at 1,500+
+// donors that's thousands of sequential queries whose latency (small locally,
+// large against a remote Supabase) made a big import appear to hang on
+// "Importing…". This computes total/count/last-gift-date and the amount of the
+// most-recent gift (tie-break by created_at) for the whole set at once, matching
+// recalcDonorSummary's semantics exactly. No-op on an empty set.
+async function recalcDonorSummaryBatch(donorIds, orgId) {
+  const ids = [...new Set(donorIds)].filter(Boolean);
+  if (!ids.length) return;
+  await run(
+    `WITH agg AS (
+       SELECT donor_id,
+              COALESCE(SUM(amount),0) AS total,
+              COUNT(*) AS cnt,
+              MAX(date) AS last_date
+       FROM gifts WHERE org_id=? AND donor_id = ANY(?)
+       GROUP BY donor_id
+     ),
+     last_amt AS (
+       SELECT DISTINCT ON (donor_id) donor_id, amount
+       FROM gifts WHERE org_id=? AND donor_id = ANY(?)
+       ORDER BY donor_id, date DESC, created_at DESC
+     )
+     UPDATE donors d
+        SET total_giving     = agg.total,
+            gift_count       = agg.cnt,
+            last_gift_date   = agg.last_date,
+            last_gift_amount = COALESCE(last_amt.amount, 0),
+            updated_at       = NOW()
+       FROM agg LEFT JOIN last_amt ON last_amt.donor_id = agg.donor_id
+      WHERE d.id = agg.donor_id AND d.org_id = ?`,
+    [orgId, ids, orgId, ids, orgId]
+  );
+}
+
 // ── Wealth Score ────────────────────────────────────────────────────────────
 async function calcWealthScore(donorId, orgId) {
   try {
@@ -2579,10 +2615,11 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrap(async (r
     }
   }
 
-  // recalcDonorSummary for every donor that had gifts inserted
-  for (const donorId of affectedDonorIds) {
-    try { await recalcDonorSummary(donorId, orgId); }
-    catch (e) { console.error(`[combined-import] recalc failed for ${donorId}:`, e.message); }
+  // Recalc every donor that had gifts inserted — ONE set-based query (import
+  // hang fix), not a per-donor loop.
+  if (affectedDonorIds.size) {
+    try { await recalcDonorSummaryBatch([...affectedDonorIds], orgId); }
+    catch (e) { console.error(`[combined-import] batch recalc failed:`, e.message); }
   }
 
   // Gap 2: Promote donor status — same thresholds as single-gift route
@@ -3835,10 +3872,11 @@ app.post("/gifts/import-history", requireAuth, checkWriteAccess, wrap(async (req
     }
   }
 
-  // Recalc donor summaries — always full recalc from gifts table, never delta
-  for (const donorId of affectedDonorIds) {
-    try { await recalcDonorSummary(donorId, orgId); }
-    catch (e) { console.error(`[gift-import] recalc failed for ${donorId}:`, e.message); }
+  // Recalc donor summaries — always full recalc from gifts table, never delta.
+  // ONE set-based query (import hang fix), not a per-donor loop.
+  if (affectedDonorIds.size) {
+    try { await recalcDonorSummaryBatch([...affectedDonorIds], orgId); }
+    catch (e) { console.error(`[gift-import] batch recalc failed:`, e.message); }
   }
 
   // Gap 2: Promote donor status — same thresholds as single-gift route

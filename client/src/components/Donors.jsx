@@ -28,6 +28,7 @@ import { T, fmt, fmtFull, daysDiff, SC, askClaude, STAGES, STAGE_ACTION, TIER_CO
 // profile button, and modal render below, and add `VoiceMemoModal` back to
 // the import above).
 import { DonorMap } from "./DonorMap";
+import { detectImportShape, groupTransactions, shapeLabel, YEAR_HDR_PAT } from "../lib/importShape";
 
 // ── CSV Import helpers ─────────────────────────────────────────────────────
 // ── Import field registry ──────────────────────────────────────────────────
@@ -355,6 +356,119 @@ function buildCombinedRows(parsed, donorMapping, yearCols) {
   return results;
 }
 
+// ── Shape-aware payload builders ───────────────────────────────────────────
+// All three return a common { donors, gifts, warnedCount, skippedCount }.
+// `gifts` carry a `donorIndex` into `donors` — the exact { donors, gifts } shape
+// /donors/import-combined consumes (server dedupes, attaches, recalcs, re-infers
+// stage). This is what makes one uploaded file → donors + their giving history.
+
+// AGGREGATE: one row per donor. `seedHistory` derives one real gift from the
+// imported total + last-gift date so a brand-new org gets queryable gifts rows
+// (not just aggregate donor fields) — same rationale as DonorImport's old
+// `withHistory` flag, now the default for the magical one-file path.
+function buildAggregatePayload(parsed, mapping, seedHistory) {
+  const { ready, warned, skipped } = buildDonorRows(parsed, mapping);
+  const donors = [...ready, ...warned].map(({ _warnings, _rowIndex, ...d }) => d);
+  const gifts = [];
+  if (seedHistory) {
+    donors.forEach((d, idx) => {
+      const amount = Math.round(parseFloat(d.total) || 0);
+      if (amount > 0 && d.lastGift) gifts.push({ donorIndex: idx, amount, date: d.lastGift, type: "cash", campaign: "" });
+    });
+  }
+  return { donors, gifts, warnedCount: warned.length, skippedCount: skipped.length };
+}
+
+// TRANSACTION: one row per GIFT, donor repeated. Group by donor (email-first,
+// else name), create each donor once, attach every row as an individual gift.
+function buildTransactionPayload(parsed, txMap) {
+  if (!parsed) return { donors: [], gifts: [], warnedCount: 0, skippedCount: 0 };
+  const items = [];
+  let skippedCount = 0, warnedCount = 0;
+  parsed.rows.forEach(row => {
+    const rawName  = txMap.donorName  ? String(row[txMap.donorName]  || "").trim() : "";
+    const rawEmail = txMap.donorEmail ? String(row[txMap.donorEmail] || "").trim() : "";
+    if (!rawName && !rawEmail) { skippedCount++; return; }
+    const { value: emailVal, warn: emailWarn } = normalizeEmail(rawEmail);
+    if (emailWarn) warnedCount++;
+    const email = emailVal || "";
+    const name  = rawName || email || rawEmail;
+    const donor = { name, email, stage: "prospect" };
+    if (txMap.phone && row[txMap.phone]) donor.phone = String(row[txMap.phone]).trim() || null;
+    if (txMap.city  && row[txMap.city])  donor.city  = String(row[txMap.city]).trim()  || null;
+    if (txMap.state && row[txMap.state]) donor.state = String(row[txMap.state]).trim()  || null;
+    let gift = null;
+    if (txMap.amount) {
+      const { value: amtVal } = normalizeMoney(row[txMap.amount]);
+      const amt = Math.round(amtVal || 0);
+      if (amt > 0) {
+        const { value: parsedDate } = normalizeDate(txMap.date ? row[txMap.date] : "");
+        gift = {
+          amount: amt,
+          date: parsedDate || new Date().toISOString().split("T")[0],
+          type: txMap.type ? (String(row[txMap.type] || "").toLowerCase() || "cash") : "cash",
+          campaign: txMap.campaign ? String(row[txMap.campaign] || "") : "",
+          notes: txMap.notes ? String(row[txMap.notes] || "") : "",
+        };
+      }
+    }
+    const key = (email && email.includes("@")) ? email.toLowerCase() : name.toLowerCase();
+    items.push({ key, donor, gift });
+  });
+  const { donors, gifts } = groupTransactions(items);
+  return { donors, gifts, warnedCount, skippedCount };
+}
+
+// WIDE: one row per donor, year columns → one gift per funded year.
+function buildWidePayload(parsed, donorMapping, yearCols) {
+  const rows = buildCombinedRows(parsed, donorMapping, yearCols);
+  const valid = rows.filter(r => !r.skipped);
+  const donors = valid.map(({ donor }) => { const { _warnings, _rowIndex, ...d } = donor; return d; });
+  const gifts = [];
+  valid.forEach(({ gifts: rg }, idx) => rg.forEach(g => gifts.push({ ...g, donorIndex: idx })));
+  return { donors, gifts, warnedCount: valid.filter(r => r.warnings.length).length, skippedCount: rows.filter(r => r.skipped).length };
+}
+
+// Chunked submit with progress — the other half of the hang fix. Donors are
+// sent 500 at a time so each request returns fast (real progress, and no single
+// request long enough to hit a platform timeout). Each chunk is self-contained:
+// its gifts are re-indexed to the chunk's local donor positions. Cross-chunk
+// email dedup is handled server-side (chunk N sees chunk N-1's committed rows).
+async function submitImportChunked(donors, gifts, onProgress) {
+  const CHUNK = 500;
+  const hasGifts = gifts.length > 0;
+  const giftsByDonor = new Map();
+  for (const g of gifts) {
+    if (!giftsByDonor.has(g.donorIndex)) giftsByDonor.set(g.donorIndex, []);
+    giftsByDonor.get(g.donorIndex).push(g);
+  }
+  const totals = { created: 0, giftsInserted: 0, duplicates: 0, donorsUpdated: 0, financeSynced: 0, batchErrors: [] };
+  const total = donors.length;
+  if (!total) return totals;
+  for (let start = 0; start < total; start += CHUNK) {
+    const slice = donors.slice(start, start + CHUNK);
+    let res;
+    if (hasGifts) {
+      const chunkGifts = [];
+      slice.forEach((_, localIdx) => {
+        const gg = giftsByDonor.get(start + localIdx);
+        if (gg) gg.forEach(g => { const { donorIndex, ...rest } = g; chunkGifts.push({ ...rest, donorIndex: localIdx }); });
+      });
+      res = await apiFetch("/donors/import-combined", { method: "POST", body: JSON.stringify({ donors: slice, gifts: chunkGifts }) });
+    } else {
+      res = await apiFetch("/donors/import", { method: "POST", body: JSON.stringify({ donors: slice }) });
+    }
+    totals.created       += res.created       || 0;
+    totals.giftsInserted += res.giftsInserted || 0;
+    totals.duplicates    += res.duplicates    || 0;
+    totals.donorsUpdated += res.donorsUpdated || 0;
+    totals.financeSynced += res.financeSynced || 0;
+    if (res.batchErrors?.length) totals.batchErrors.push(...res.batchErrors);
+    if (onProgress) onProgress(Math.min(start + CHUNK, total), total);
+  }
+  return totals;
+}
+
 // ── DonorImport component ──────────────────────────────────────────────────
 // Exported so WelcomePage's onboarding flow can reuse it directly as the
 // centerpiece "Import your donors" step, rather than forking/rebuilding it.
@@ -371,15 +485,30 @@ export function DonorImport({ onClose, onImported, withHistory = false }) {
   const [csvText,    setCsvText]    = useState("");
   const [parsed,     setParsed]     = useState(null);       // { headers:[], rows:[] }
   const [xlsxSheets, setXlsxSheets]= useState(null);       // [{name, rowCount, headers, rows}] | null
-  const [mapping,    setMapping]    = useState({});
+  const [mapping,    setMapping]    = useState({});         // aggregate + wide donor-field mapping
+  const [txMap,      setTxMap]      = useState({ donorName:"",donorEmail:"",amount:"",date:"",type:"",campaign:"",notes:"",phone:"",city:"",state:"" });
+  const [yearCols,   setYearCols]   = useState([]);         // wide year columns
+  const [yearConvention, setYearConvention] = useState("dec31");
+  const [shape,      setShape]      = useState("aggregate");// auto-detected file shape
+  const [shapeOverride, setShapeOverride] = useState(null); // user override, if any
   const [loading,    setLoading]    = useState(false);
+  const [progress,   setProgress]   = useState(null);       // { done, total } during chunked submit
   const [aiLoading,  setAiLoading]  = useState(false);
-  const [result,     setResult]     = useState(null);       // {created,duplicates,warned,skipped,batchErrors}
+  const [result,     setResult]     = useState(null);       // {created,giftsInserted,duplicates,warned,skipped,batchErrors}
   const [err,        setErr]        = useState("");
   const [upgradeInfo,setUpgradeInfo]= useState(null);
 
+  const effectiveShape = shapeOverride || shape;
+
   const applyParsed = (headers, rows) => {
-    setMapping(buildAutoMapping(headers, rows));
+    const det = detectImportShape(headers, rows);
+    setShape(det.shape); setShapeOverride(null);
+    // Donor-field mapping is over the non-year columns (year columns are gifts,
+    // configured separately) so a wide file's donor grid stays clean.
+    setMapping(buildAutoMapping(headers.filter(h => !YEAR_HDR_PAT.test(String(h))), rows));
+    setTxMap(autoDetectTxMapping(headers, rows));
+    const cfg = autoDetectWideConfig(headers, rows);
+    setYearCols(cfg.yearCols.map(col => ({ col, date: yearColToDate(col, "dec31"), enabled: true })));
     setParsed({ headers, rows });
     setXlsxSheets(null);
     setErr("");
@@ -407,7 +536,7 @@ export function DonorImport({ onClose, onImported, withHistory = false }) {
     });
   };
 
-  // ── AI column mapping ──
+  // ── AI column mapping (aggregate/wide donor fields only) ──
   const doAiMap = async () => {
     if (!parsed) return;
     setAiLoading(true);
@@ -425,61 +554,68 @@ export function DonorImport({ onClose, onImported, withHistory = false }) {
     setAiLoading(false);
   };
 
-  // ── Normalized donor build (memoized — calls the extracted buildDonorRows) ──
-  const built = useMemo(() => buildDonorRows(parsed, mapping), [parsed, mapping]);
+  const onConventionChange = (val) => {
+    setYearConvention(val);
+    setYearCols(cols => cols.map(yc => ({ ...yc, date: yearColToDate(yc.col, val) })));
+  };
 
-  // ── Submit import ──
-  const doImport = async () => {
-    // Body-build phase — wrapped in try/catch so a silent throw here is never
-    // swallowed. Previously this threw before reaching the fetch with no UX feedback.
-    let toSend, warnedCount, skippedCount;
+  // ── Shape-aware payload build (memoized) ──
+  // aggregate → donors (+ one seeded gift/donor from total+lastGift when
+  // withHistory, so onboarding gets real gifts rows); transaction → group the
+  // gift ledger into donors + a gift per row; wide → donors + a gift per year.
+  const payload = useMemo(() => {
+    if (!parsed) return { donors:[], gifts:[], warnedCount:0, skippedCount:0 };
     try {
-      const { ready, warned, skipped } = built;
-      warnedCount  = warned.length;
-      skippedCount = skipped.length;
-      toSend = [...ready, ...warned].map(({ _warnings, _rowIndex, ...d }) => d);
-      if (!toSend.length) {
-        setErr(skippedCount ? `All ${skippedCount} rows skipped — no usable name or email.` : "Nothing to import.");
-        return;
-      }
+      if (effectiveShape === "transaction") return buildTransactionPayload(parsed, txMap);
+      if (effectiveShape === "wide")        return buildWidePayload(parsed, mapping, yearCols);
+      return buildAggregatePayload(parsed, mapping, withHistory);
     } catch (e) {
-      console.error("[import] failed preparing donor payload:", e);
-      setErr("Failed to prepare import data — " + (e.message || "unknown error") + ". Check the browser console.");
+      console.error("[import] payload build failed:", e);
+      return { donors:[], gifts:[], warnedCount:0, skippedCount:0, error:e.message };
+    }
+  }, [parsed, effectiveShape, mapping, txMap, yearCols, withHistory]);
+
+  // Stage-count preview from the built payload (aggregate donors carry a client
+  // stage; transaction/wide donors are re-staged server-side from their gifts,
+  // so preview those from the grouped gift totals).
+  const stagePreview = useMemo(() => {
+    const counts = {};
+    if (effectiveShape === "aggregate") {
+      payload.donors.forEach(d => { const s = d.stage || "prospect"; counts[s] = (counts[s]||0)+1; });
+    } else {
+      const giftsByDonor = {};
+      payload.gifts.forEach(g => { (giftsByDonor[g.donorIndex] ||= []).push(g); });
+      payload.donors.forEach((d, idx) => {
+        const gg = giftsByDonor[idx] || [];
+        const total = gg.reduce((s,g)=>s+g.amount,0);
+        const last = gg.length ? gg.reduce((m,g)=>g.date>m?g.date:m, gg[0].date) : null;
+        const s = last ? inferStage(total, last, !!(d.email||d.phone)) : inferStage(0, null, !!(d.email||d.phone));
+        counts[s] = (counts[s]||0)+1;
+      });
+    }
+    return counts;
+  }, [payload, effectiveShape]);
+
+  // ── Submit import (chunked, with progress — the hang fix) ──
+  const doImport = async () => {
+    const { donors, gifts, warnedCount, skippedCount, error } = payload;
+    if (error) { setErr("Failed to prepare import data — " + error + ". Check the browser console."); return; }
+    if (!donors.length) {
+      setErr(skippedCount ? `All ${skippedCount} rows skipped — no usable name or email.` : "Nothing to import — map a name or email column.");
       return;
     }
-
-    setLoading(true); setErr("");
+    setLoading(true); setErr(""); setProgress({ done:0, total:donors.length });
     try {
-      let res;
-      if (withHistory) {
-        // One real gift per donor, derived from their imported total/last-gift
-        // date — NOT a fabricated interaction (see Donors.jsx's inferStage
-        // comment / WelcomePage's onboarding flow): this is the same total
-        // the admin's own file already reported, just also recorded as a
-        // queryable gifts-table row instead of only an aggregate donor field.
-        // Uses `total` (not `lastAmount`) deliberately: /donors/import-combined
-        // recalculates total_giving from the sum of each donor's actual gift
-        // rows after insert, so seeding the one gift with `total` preserves
-        // the imported total exactly; seeding it with a smaller `lastAmount`
-        // would silently shrink total_giving down to just that one figure.
-        const giftsToSend = toSend.map((d, idx) => {
-          const amount = Math.round(parseFloat(d.total) || 0);
-          if (amount <= 0 || !d.lastGift) return null;
-          return { donorIndex: idx, amount, date: d.lastGift, type: "cash", campaign: "" };
-        }).filter(Boolean);
-        res = await apiFetch("/donors/import-combined", { method:"POST", body:JSON.stringify({ donors:toSend, gifts:giftsToSend }) });
-      } else {
-        res = await apiFetch("/donors/import", { method:"POST", body:JSON.stringify({ donors:toSend }) });
-      }
-      // Don't call onImported() here — result screen must render first.
-      // Done button calls onImported() so the modal stays visible until user dismisses.
-      setResult({ ...res, warned:warnedCount, skipped:skippedCount });
+      const totals = await submitImportChunked(donors, gifts, (done,total) => setProgress({ done, total }));
+      // Don't call onImported() here — the result screen must render first; its
+      // Done button calls onImported() so the modal stays until dismissed.
+      setResult({ ...totals, warned:warnedCount, skipped:skippedCount, shape:effectiveShape });
     } catch (e) {
       console.error("IMPORT FAILED:", e);
       if (e.error === "record_limit") { setUpgradeInfo(e); }
       else { setErr(e.message || "Import failed. See browser console."); }
     }
-    setLoading(false);
+    setLoading(false); setProgress(null);
   };
 
   // ── Shared styles ──
@@ -498,8 +634,8 @@ export function DonorImport({ onClose, onImported, withHistory = false }) {
             {hasBatchErrors ? "Import finished with errors." : "Import complete."}
           </div>
           <div style={{fontSize:14,color:T.ink3,marginBottom:hasBatchErrors?12:28,lineHeight:1.8}}>
-            <strong style={{color:T.ink}}>{result.created}</strong> added
-            {withHistory && result.giftsInserted > 0 && <> · <strong>{result.giftsInserted}</strong> gifts attached</>}
+            <strong style={{color:T.ink}}>{result.created}</strong> donors added
+            {result.giftsInserted > 0 && <> · <strong>{result.giftsInserted}</strong> gifts attached</>}
             {result.duplicates > 0 && <> · <strong>{result.duplicates}</strong> duplicates skipped</>}
             {result.warned > 0    && <> · <strong>{result.warned}</strong> imported with warnings</>}
             {result.skipped > 0   && <> · <strong>{result.skipped}</strong> skipped (no name or email)</>}
@@ -516,8 +652,13 @@ export function DonorImport({ onClose, onImported, withHistory = false }) {
     );
   }
 
-  const { ready, warned, skipped } = built;
-  const totalToImport = ready.length + warned.length;
+  const donorCount = payload.donors.length;
+  const giftCount  = payload.gifts.length;
+  const donorHeaders = parsed ? parsed.headers.filter(h => !YEAR_HDR_PAT.test(String(h))) : [];
+  const TX_ROLES = [
+    ["donorName","Donor name"],["donorEmail","Email"],["amount","Gift amount"],["date","Gift date"],
+    ["type","Type"],["campaign","Campaign / fund"],["notes","Notes"],["phone","Phone"],["city","City"],["state","State"],
+  ];
 
   return (
     <div style={overlay} className="modal-sheet-overlay">
@@ -527,7 +668,7 @@ export function DonorImport({ onClose, onImported, withHistory = false }) {
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:20}}>
           <div>
             <div style={{fontSize:18,fontWeight:800,color:T.ink}}>Import Donors</div>
-            <div style={{fontSize:13,color:T.ink3,marginTop:2}}>CSV, TSV, or Excel · columns auto-mapped · stages auto-assigned</div>
+            <div style={{fontSize:13,color:T.ink3,marginTop:2}}>One file — donors and their giving history · shape auto-detected · stages auto-assigned</div>
           </div>
           <button onClick={onClose} style={{background:T.bg3,border:"none",borderRadius:8,padding:"6px 12px",color:T.ink3,cursor:"pointer",fontSize:13,flexShrink:0}}>✕ Close</button>
         </div>
@@ -537,7 +678,7 @@ export function DonorImport({ onClose, onImported, withHistory = false }) {
           <div style={{marginBottom:14}}>
             <div style={{fontSize:11,fontWeight:700,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:6}}>Upload file</div>
             <input type="file" accept=".csv,.tsv,.xlsx,.xls" onChange={handleFile} style={{fontSize:13,color:T.ink3}}/>
-            <div style={{fontSize:11,color:T.ink3,marginTop:5}}>Supports .csv, .tsv, .xlsx, .xls — multi-tab Excel files will let you pick the right sheet.</div>
+            <div style={{fontSize:11,color:T.ink3,marginTop:5}}>Drop a donor list OR a raw gift export — we detect the shape and build donors + their giving history. .csv, .tsv, .xlsx, .xls.</div>
           </div>
           <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:14}}>
             <div style={{flex:1,height:1,background:T.bg3}}/><span style={{fontSize:12,color:T.ink3}}>or paste CSV text</span><div style={{flex:1,height:1,background:T.bg3}}/>
@@ -547,7 +688,7 @@ export function DonorImport({ onClose, onImported, withHistory = false }) {
             style={{...inp,resize:"vertical",lineHeight:1.5,marginBottom:12}}/>
           {err && <div style={{color:"#f87171",fontSize:12,marginBottom:10}}>{err}</div>}
           <button onClick={doParse} disabled={!csvText.trim()}
-            style={{background:csvText.trim()?"linear-gradient(135deg,#10b981,#3b82f6)":T.bg2,border:"none",borderRadius:10,padding:"11px 20px",color:"#fff",fontSize:14,fontWeight:700,cursor:csvText.trim()?"pointer":"not-allowed",opacity:csvText.trim()?1:0.5}}>
+            style={{background:csvText.trim()?T.green600:T.bg2,border:"none",borderRadius:10,padding:"11px 20px",color:"#fff",fontSize:14,fontWeight:700,cursor:csvText.trim()?"pointer":"not-allowed",opacity:csvText.trim()?1:0.5}}>
             Parse →
           </button>
         </>)}
@@ -573,104 +714,136 @@ export function DonorImport({ onClose, onImported, withHistory = false }) {
           <button onClick={()=>setXlsxSheets(null)} style={{background:"transparent",border:"1px solid "+T.bg3,borderRadius:10,padding:"9px 16px",color:T.ink3,fontSize:13,cursor:"pointer"}}>← Back</button>
         </>)}
 
-        {/* ── Step 2: Column mapping + validation preview ── */}
+        {/* ── Step 2: Detection + shape-specific mapping + preview ── */}
         {parsed && (<>
 
-          {/* Column mapper */}
-          <div style={{marginBottom:14}}>
-            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}>
-              <div style={{fontSize:13,fontWeight:700,color:T.ink}}>
-                Map Columns <span style={{fontSize:11,color:T.ink3,fontWeight:400}}>({parsed.headers.length} columns · {parsed.rows.length.toLocaleString()} rows)</span>
-              </div>
-              <button onClick={doAiMap} disabled={aiLoading}
-                style={{background:aiLoading?"#1a2235":"linear-gradient(135deg,#1a6b4a,#2563eb)",border:"none",borderRadius:8,padding:"6px 14px",color:"#fff",fontSize:12,fontWeight:700,cursor:aiLoading?"not-allowed":"pointer",display:"flex",alignItems:"center",gap:6,opacity:aiLoading?0.7:1}}>
-                {aiLoading?<><Spin/>Mapping…</>:<>✦ Auto-map</>}
-              </button>
+          {/* Detection banner + override */}
+          <div style={{background:T.gold100||"#f6eccf",border:`1px solid ${T.gold300||"#e7cf91"}`,borderRadius:10,padding:"11px 14px",marginBottom:14,display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,flexWrap:"wrap"}}>
+            <div style={{fontSize:12.5,color:T.ink,lineHeight:1.5}}>
+              <span style={{fontWeight:700}}>We detected:</span> {shapeLabel(effectiveShape)}.
             </div>
-            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6}}>
-              {parsed.headers.map(h => (
-                <div key={h} style={{display:"flex",alignItems:"center",gap:6,background:mapping[h]?T.bg:"transparent",borderRadius:7,padding:"5px 8px",border:`1px solid ${mapping[h]?T.bg3:"transparent"}`}}>
-                  <span style={{fontSize:12,color:mapping[h]?T.ink:T.ink3,flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",minWidth:0}} title={h||"(blank)"}>{h||"(blank)"}</span>
-                  <select value={mapping[h]||""} onChange={e=>setMapping(p=>({...p,[h]:e.target.value}))}
-                    style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:6,padding:"4px 6px",color:T.ink,fontSize:11,outline:"none",flexShrink:0}}>
-                    <option value="">— skip —</option>
-                    <option value="_firstName">firstName</option>
-                    <option value="_lastName">lastName</option>
-                    {CSV_FIELDS.map(f=><option key={f.key} value={f.key}>{f.key}</option>)}
-                  </select>
-                </div>
-              ))}
-            </div>
+            <select value={effectiveShape} onChange={e=>setShapeOverride(e.target.value)}
+              style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:7,padding:"5px 8px",color:T.ink,fontSize:12,outline:"none",cursor:"pointer"}}>
+              <option value="aggregate">One row per donor (totals)</option>
+              <option value="transaction">One row per gift (build history)</option>
+              <option value="wide">Year columns (build history)</option>
+            </select>
           </div>
+
+          {/* Column mapper — aggregate/wide use the donor-field grid; transaction uses gift roles */}
+          {effectiveShape === "transaction" ? (
+            <div style={{marginBottom:14}}>
+              <div style={{fontSize:13,fontWeight:700,color:T.ink,marginBottom:10}}>
+                Map gift columns <span style={{fontSize:11,color:T.ink3,fontWeight:400}}>({parsed.headers.length} columns · {parsed.rows.length.toLocaleString()} rows)</span>
+              </div>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6}}>
+                {TX_ROLES.map(([role,label]) => (
+                  <div key={role} style={{display:"flex",alignItems:"center",gap:6,background:txMap[role]?T.bg:"transparent",borderRadius:7,padding:"5px 8px",border:`1px solid ${txMap[role]?T.bg3:"transparent"}`}}>
+                    <span style={{fontSize:12,color:txMap[role]?T.ink:T.ink3,flex:1,minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{label}</span>
+                    <select value={txMap[role]||""} onChange={e=>setTxMap(p=>({...p,[role]:e.target.value}))}
+                      style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:6,padding:"4px 6px",color:T.ink,fontSize:11,outline:"none",flexShrink:0,maxWidth:150}}>
+                      <option value="">— none —</option>
+                      {parsed.headers.map(h=><option key={h} value={h}>{h||"(blank)"}</option>)}
+                    </select>
+                  </div>
+                ))}
+              </div>
+              <div style={{fontSize:11,color:T.ink3,marginTop:8}}>Rows are grouped by donor (email, else name); each row becomes one gift.</div>
+            </div>
+          ) : (
+            <div style={{marginBottom:14}}>
+              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}>
+                <div style={{fontSize:13,fontWeight:700,color:T.ink}}>
+                  Map columns <span style={{fontSize:11,color:T.ink3,fontWeight:400}}>({donorHeaders.length} donor columns{effectiveShape==="wide"?` · ${yearCols.length} year columns`:""} · {parsed.rows.length.toLocaleString()} rows)</span>
+                </div>
+                <button onClick={doAiMap} disabled={aiLoading}
+                  style={{background:aiLoading?"#1a2235":T.green600,border:"none",borderRadius:8,padding:"6px 14px",color:"#fff",fontSize:12,fontWeight:700,cursor:aiLoading?"not-allowed":"pointer",display:"flex",alignItems:"center",gap:6,opacity:aiLoading?0.7:1}}>
+                  {aiLoading?<><Spin/>Mapping…</>:<>✦ Auto-map</>}
+                </button>
+              </div>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6}}>
+                {donorHeaders.map(h => (
+                  <div key={h} style={{display:"flex",alignItems:"center",gap:6,background:mapping[h]?T.bg:"transparent",borderRadius:7,padding:"5px 8px",border:`1px solid ${mapping[h]?T.bg3:"transparent"}`}}>
+                    <span style={{fontSize:12,color:mapping[h]?T.ink:T.ink3,flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",minWidth:0}} title={h||"(blank)"}>{h||"(blank)"}</span>
+                    <select value={mapping[h]||""} onChange={e=>setMapping(p=>({...p,[h]:e.target.value}))}
+                      style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:6,padding:"4px 6px",color:T.ink,fontSize:11,outline:"none",flexShrink:0}}>
+                      <option value="">— skip —</option>
+                      <option value="_firstName">firstName</option>
+                      <option value="_lastName">lastName</option>
+                      {CSV_FIELDS.map(f=><option key={f.key} value={f.key}>{f.key}</option>)}
+                    </select>
+                  </div>
+                ))}
+              </div>
+
+              {/* Wide: year → gift-date convention */}
+              {effectiveShape === "wide" && yearCols.length > 0 && (
+                <div style={{marginTop:10,background:T.bg,borderRadius:10,padding:"10px 14px"}}>
+                  <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10}}>
+                    <div style={{fontSize:11,fontWeight:700,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.08em"}}>Gift date per year column</div>
+                    <select value={yearConvention} onChange={e=>onConventionChange(e.target.value)}
+                      style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:6,padding:"4px 8px",color:T.ink,fontSize:11,outline:"none"}}>
+                      <option value="dec31">End of year (Dec 31)</option>
+                      <option value="first">Start of year (Jan 1)</option>
+                    </select>
+                  </div>
+                  <div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:8}}>
+                    {yearCols.map((yc,i)=>(
+                      <span key={yc.col} onClick={()=>setYearCols(cols=>cols.map((c,j)=>j===i?{...c,enabled:!c.enabled}:c))}
+                        style={{fontSize:11,fontWeight:600,padding:"3px 10px",borderRadius:99,cursor:"pointer",background:yc.enabled?T.green600+"22":"transparent",color:yc.enabled?T.green600:T.ink3,border:`1px solid ${yc.enabled?T.green600+"55":T.bg3}`}}>
+                        {yc.col} {yc.enabled?`→ ${yc.date}`:"(off)"}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Validation summary */}
           <div style={{background:T.bg,borderRadius:10,padding:"12px 14px",marginBottom:12}}>
-            <div style={{fontSize:13,fontWeight:700,color:T.ink,marginBottom:warned.length||skipped.length?8:0}}>
-              {totalToImport>0
-                ? <>{" "}<span style={{color:"#10b981"}}>{totalToImport.toLocaleString()}</span>{" ready"}
-                    {warned.length>0&&<>{" · "}<span style={{color:"#f59e0b"}}>{warned.length}</span>{" with warnings"}</>}
-                    {skipped.length>0&&<>{" · "}<span style={{color:T.ink3}}>{skipped.length}</span>{" skipped (no name or email)"}</>}</>
+            <div style={{fontSize:13,fontWeight:700,color:T.ink}}>
+              {donorCount>0
+                ? <>{" "}<span style={{color:T.green600}}>{donorCount.toLocaleString()}</span>{" donors ready"}
+                    {giftCount>0&&<>{" · "}<span style={{color:T.green600}}>{giftCount.toLocaleString()}</span>{" gifts"}</>}
+                    {payload.warnedCount>0&&<>{" · "}<span style={{color:T.gold600||"#a97f22"}}>{payload.warnedCount}</span>{" with warnings"}</>}
+                    {payload.skippedCount>0&&<>{" · "}<span style={{color:T.ink3}}>{payload.skippedCount}</span>{" skipped (no name or email)"}</>}</>
                 : <span style={{color:T.ink3}}>No rows ready — map at least one column to <em>name</em> or <em>email</em>.</span>}
             </div>
-            {warned.slice(0,5).flatMap(d=>d._warnings).slice(0,6).map((w,i)=>(
-              <div key={i} style={{fontSize:11,color:"#92400e",background:"#fef3c7",borderRadius:5,padding:"3px 8px",marginTop:4,display:"inline-block",marginRight:4}}>{w}</div>
-            ))}
-            {warned.length>5&&<div style={{fontSize:11,color:T.ink3,marginTop:6}}>{warned.length-5} more rows with warnings — they will still import.</div>}
-            {skipped.length>0&&<div style={{fontSize:11,color:T.ink3,marginTop:4}}>Skipped: {skipped.slice(0,3).map(s=>`row ${s.row}`).join(", ")}{skipped.length>3?` +${skipped.length-3} more`:""}</div>}
           </div>
 
           {/* Smart stage assignment preview */}
-          {(()=>{
-            const all=[...ready,...warned];
-            const stageCounts={};
-            all.forEach(d=>{stageCounts[d.stage]=(stageCounts[d.stage]||0)+1;});
-            return Object.keys(stageCounts).length>0&&(
-              <div style={{background:T.bg,borderRadius:10,padding:"10px 14px",marginBottom:12}}>
-                <div style={{fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.1em",color:T.ink3,marginBottom:6}}>Smart Stage Assignment Preview</div>
-                <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
-                  {Object.entries(stageCounts).map(([s,n])=>(
-                    <span key={s} style={{fontSize:12,fontWeight:600,padding:"3px 10px",borderRadius:99,background:(STAGE_COLORS[s]||T.ink3)+"22",color:STAGE_COLORS[s]||T.ink3,border:`1px solid ${(STAGE_COLORS[s]||T.ink3)}30`}}>
-                      {s} × {n}
-                    </span>
-                  ))}
-                </div>
-                <div style={{fontSize:11,color:T.ink3,marginTop:6}}>Based on last gift date + amount. Override after import by dragging in the Kanban.</div>
+          {Object.keys(stagePreview).length>0 && (
+            <div style={{background:T.bg,borderRadius:10,padding:"10px 14px",marginBottom:12}}>
+              <div style={{fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.1em",color:T.ink3,marginBottom:6}}>Smart Stage Assignment Preview</div>
+              <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+                {Object.entries(stagePreview).map(([s,n])=>(
+                  <span key={s} style={{fontSize:12,fontWeight:600,padding:"3px 10px",borderRadius:99,background:(STAGE_COLORS[s]||T.ink3)+"22",color:STAGE_COLORS[s]||T.ink3,border:`1px solid ${(STAGE_COLORS[s]||T.ink3)}30`}}>
+                    {s} × {n}
+                  </span>
+                ))}
               </div>
-            );
-          })()}
-
-          {/* Row preview table */}
-          <div style={{marginBottom:14}}>
-            <div style={{fontSize:11,fontWeight:600,color:T.ink3,marginBottom:6}}>{parsed.rows.length.toLocaleString()} rows · showing first 5</div>
-            <div style={{overflowX:"auto",border:"1px solid "+T.bg3,borderRadius:8}}>
-              <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
-                <thead><tr style={{background:T.bg}}>
-                  {parsed.headers.filter(h=>mapping[h]).map(h=><th key={h} style={{padding:"6px 10px",textAlign:"left",color:T.ink3,fontWeight:600,borderBottom:"1px solid "+T.bg3,whiteSpace:"nowrap"}}>{mapping[h]}</th>)}
-                  <th style={{padding:"6px 10px",textAlign:"left",color:T.ink3,fontWeight:600,borderBottom:"1px solid "+T.bg3}}>stage</th>
-                </tr></thead>
-                <tbody>{parsed.rows.slice(0,5).map((row,i)=>{
-                  const d={};Object.entries(mapping).forEach(([h,f])=>{if(f)d[f]=row[h];});
-                  const st=normalizeStage(d.stage)||inferStage(d.total,d.lastGift,!!(d.email||d.phone));
-                  return(
-                    <tr key={i} style={{borderBottom:"1px solid "+T.bg2}}>
-                      {parsed.headers.filter(h=>mapping[h]).map(h=><td key={h} style={{padding:"6px 10px",color:T.ink,maxWidth:150,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{row[h]}</td>)}
-                      <td style={{padding:"6px 10px"}}>
-                        <span style={{fontSize:11,fontWeight:600,padding:"2px 8px",borderRadius:99,background:(STAGE_COLORS[st]||T.ink3)+"22",color:STAGE_COLORS[st]||T.ink3}}>{st}</span>
-                      </td>
-                    </tr>
-                  );
-                })}</tbody>
-              </table>
+              <div style={{fontSize:11,color:T.ink3,marginTop:6}}>Based on giving history. Override after import by dragging in the Kanban.</div>
             </div>
-          </div>
+          )}
+
+          {/* Progress bar during a chunked import */}
+          {progress && (
+            <div style={{marginBottom:12}}>
+              <div style={{fontSize:12,color:T.ink,fontWeight:600,marginBottom:6}}>Importing {progress.done.toLocaleString()} of {progress.total.toLocaleString()}…</div>
+              <div style={{height:8,background:T.bg3,borderRadius:99,overflow:"hidden"}}>
+                <div style={{height:"100%",width:`${progress.total?Math.round(progress.done/progress.total*100):0}%`,background:T.green600,transition:"width 0.2s"}}/>
+              </div>
+            </div>
+          )}
 
           {err&&<div style={{color:"#f87171",fontSize:12,marginBottom:10}}>{err}</div>}
           <div style={{display:"flex",gap:10}}>
-            <button onClick={()=>{setParsed(null);setErr("");}}
-              style={{background:"transparent",border:"1px solid "+T.bg3,borderRadius:10,padding:"11px 18px",color:T.ink3,fontSize:13,cursor:"pointer"}}>← Back</button>
-            <button onClick={doImport} disabled={loading||totalToImport===0}
-              style={{flex:1,background:loading||totalToImport===0?T.bg2:"linear-gradient(135deg,#10b981,#3b82f6)",border:"none",borderRadius:10,padding:"11px 20px",color:"#fff",fontSize:14,fontWeight:700,cursor:loading||totalToImport===0?"not-allowed":"pointer",opacity:loading||totalToImport===0?0.6:1}}>
-              {loading?"Importing…":`Import ${totalToImport.toLocaleString()} Donors →`}
+            <button onClick={()=>{setParsed(null);setErr("");}} disabled={loading}
+              style={{background:"transparent",border:"1px solid "+T.bg3,borderRadius:10,padding:"11px 18px",color:T.ink3,fontSize:13,cursor:loading?"not-allowed":"pointer",opacity:loading?0.5:1}}>← Back</button>
+            <button onClick={doImport} disabled={loading||donorCount===0}
+              style={{flex:1,background:loading||donorCount===0?T.bg2:T.green600,border:"none",borderRadius:10,padding:"11px 20px",color:"#fff",fontSize:14,fontWeight:700,cursor:loading||donorCount===0?"not-allowed":"pointer",opacity:loading||donorCount===0?0.6:1}}>
+              {loading?"Importing…":`Import ${donorCount.toLocaleString()} donor${donorCount!==1?"s":""}${giftCount>0?` + ${giftCount.toLocaleString()} gifts`:""} →`}
             </button>
           </div>
         </>)}
@@ -681,8 +854,6 @@ export function DonorImport({ onClose, onImported, withHistory = false }) {
 }
 
 // ── Gift History Import helpers ────────────────────────────────────────────
-const YEAR_HDR_PAT = /(19|20)\d{2}|fy[\s_-]?\d{2,4}|(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\w*[\s\-]+(19|20)\d{2}/i;
-
 function detectGiftFormat(headers) {
   const yearCols = headers.filter(h => YEAR_HDR_PAT.test(String(h)));
   const hasDateCol = headers.some(h => /\bdate\b|\bwhen\b/i.test(String(h)));
