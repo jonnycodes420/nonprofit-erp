@@ -2397,8 +2397,8 @@ app.post("/donors/import", requireAuth, wrap(async (req, res) => {
         d.notes || "",
         d.city  || null,
         d.state || null,
-        req.user.userId,
-        importerName
+        null,   // assigned_to — import lands in the Directory UNASSIGNED (pipeline
+        null    // assigned_to_name — is a curated portfolio; assignment is deliberate)
       );
       return "(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)";
     });
@@ -2508,7 +2508,8 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrap(async (r
         Math.round(parseFloat(d.total)||0), Math.round(parseFloat(d.lastAmount)||0),
         d.lastGift||null, parseInt(d.gifts)||(d.total?1:0),
         JSON.stringify(Array.isArray(d.tags)?d.tags:[]),
-        d.notes||"", d.city||null, d.state||null, importerId, importerName
+        d.notes||"", d.city||null, d.state||null,
+        null, null   // assigned_to / assigned_to_name — import → Directory unassigned
       );
       return "(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)";
     });
@@ -2753,9 +2754,11 @@ app.delete("/donors/:id", requireAuth, requireAdmin, wrap(async (req, res) => {
 
 app.patch("/donors/:id/assign", requireAuth, requireAdmin, requirePlan("team"), wrap(async (req, res) => {
   const { assignedTo, assignedToName } = req.body;
+  // Assigning an officer is a deliberate act → the donor joins the working
+  // board (in_pipeline). Unassigning (assignedTo null) leaves membership as-is.
   const affected = await run(
-    `UPDATE donors SET assigned_to=?, assigned_to_name=?, updated_at=NOW() WHERE id=? AND org_id=?`,
-    [assignedTo || null, assignedToName || null, req.params.id, req.user.orgId]
+    `UPDATE donors SET assigned_to=?, assigned_to_name=?, in_pipeline = (in_pipeline OR ?), updated_at=NOW() WHERE id=? AND org_id=?`,
+    [assignedTo || null, assignedToName || null, !!assignedTo, req.params.id, req.user.orgId]
   );
   if (!affected.changes) return res.status(404).json({ error: "Donor not found" });
   res.json({ success: true });
@@ -2800,8 +2803,9 @@ app.patch("/donors/bulk-assign", requireAuth, requireAdmin, requirePlan("team"),
   );
   if (owned.length !== ids.length) return res.status(403).json({ error: "One or more donors not found in your org" });
 
+  // Bulk-assigning to an officer puts the batch on the working board too.
   const result = await run(
-    "UPDATE donors SET assigned_to=?, assigned_to_name=?, updated_at=NOW() WHERE id = ANY(?) AND org_id = ? AND deleted_at IS NULL",
+    "UPDATE donors SET assigned_to=?, assigned_to_name=?, in_pipeline=TRUE, updated_at=NOW() WHERE id = ANY(?) AND org_id = ? AND deleted_at IS NULL",
     [assignedTo, assignedToName, ids, req.user.orgId]
   );
   res.json({ updated: result.changes });
@@ -4288,7 +4292,7 @@ app.put("/portfolio/officers/:userId/color", requireAuth, requireAdmin, requireP
 // ask amount + stage age + next task per card, and the forecast. Batched
 // queries only (no N+1). Optional ?assignedTo= (portfolio) and ?designation=.
 app.get("/pipeline", requireAuth, wrap(async (req, res) => {
-  const { orgId } = req.user;
+  const { orgId, userId } = req.user;
   const orgRows = await query("SELECT plan, subscription_status FROM orgs WHERE id=?", [orgId]);
   const tier = orgRows.length ? orgPlanTier(orgRows[0]) : "core";
   const stages = ALL_PIPELINE_STAGES.map(id => ({ id, label: id.charAt(0).toUpperCase() + id.slice(1) }));
@@ -4303,16 +4307,33 @@ app.get("/pipeline", requireAuth, wrap(async (req, res) => {
     "SELECT id, name, portfolio_color FROM users WHERE org_id=? ORDER BY name", [orgId]);
   const single_user = officers.length <= 1;
 
-  // Donors in a pipeline stage.
-  const filters = ["d.org_id = ?", "d.deleted_at IS NULL", "d.stage = ANY(?)"];
-  const params = [orgId, ALL_PIPELINE_STAGES];
-  if (req.query.assignedTo) { filters.push("d.assigned_to = ?"); params.push(req.query.assignedTo); }
+  // ── The board is a PORTFOLIO, not the donor list ─────────────────────────
+  // Membership is the explicit `in_pipeline` marker — set only by a deliberate
+  // act (assign an officer, or "add to pipeline"). Import + the (removed) legacy
+  // backfill never set it, so bulk-imported donors live in the Directory with
+  // their stage LABEL and never flood this board. `scope` defaults to the
+  // caller's own portfolio; a specific `assignedTo` overrides scope.
+  const scope = req.query.scope === "all" ? "all" : "mine";
+  const filters = ["d.org_id = ?", "d.deleted_at IS NULL", "d.in_pipeline = TRUE"];
+  const params = [orgId];
+  if (req.query.assignedTo) {
+    filters.push("d.assigned_to = ?"); params.push(req.query.assignedTo);
+  } else if (scope === "mine") {
+    // My working set: donors I own, plus on-board prospects nobody owns yet.
+    filters.push("(d.assigned_to = ? OR d.assigned_to IS NULL)"); params.push(userId);
+  }
   if (req.query.designation) {
     filters.push("EXISTS (SELECT 1 FROM donor_designations dd WHERE dd.donor_id = d.id AND dd.org_id = d.org_id AND dd.kind = ?)");
     params.push(req.query.designation);
   }
+  if (req.query.search && String(req.query.search).trim()) {
+    filters.push("LOWER(d.name) LIKE ?"); params.push("%" + String(req.query.search).trim().toLowerCase() + "%");
+  }
+  const minGiving = parseFloat(req.query.minGiving);
+  if (Number.isFinite(minGiving) && minGiving > 0) { filters.push("d.total_giving >= ?"); params.push(minGiving); }
+
   const donors = await query(
-    `SELECT d.id, d.name, d.stage, d.total_giving, d.assigned_to, d.assigned_to_name, d.updated_at, d.created_at
+    `SELECT d.id, d.name, d.stage, d.total_giving, d.last_gift_date, d.assigned_to, d.assigned_to_name, d.updated_at, d.created_at
        FROM donors d WHERE ${filters.join(" AND ")}`, params);
 
   // Open asks aggregated per donor (org-wide, joined in JS).
@@ -4347,25 +4368,84 @@ app.get("/pipeline", requireAuth, wrap(async (req, res) => {
     (columns[d.stage] = columns[d.stage] || []).push({
       donorId: d.id, name: d.name, stage: d.stage,
       totalGiving: parseFloat(d.total_giving) || 0,
+      lastGiftDate: d.last_gift_date || null,
       assignedTo: d.assigned_to, assignedToName: d.assigned_to_name,
       askAmount: a.ask, openOppCount: a.cnt, stageAge,
       nextTask: taskByDonor[d.id] || null,
     });
   }
+
+  // Sort each column + cap the payload so a large portfolio never ships (or
+  // renders) hundreds of cards. counts[stage] carries the TRUE size so the UI
+  // can show "showing N of M". Sorts: value (default), last gift, stage age.
+  const sort = ["value", "last_gift", "stage_age"].includes(req.query.sort) ? req.query.sort : "value";
+  const cmp = {
+    value: (a, b) => (b.totalGiving - a.totalGiving) || (b.askAmount - a.askAmount),
+    last_gift: (a, b) => (b.lastGiftDate ? Date.parse(b.lastGiftDate) : 0) - (a.lastGiftDate ? Date.parse(a.lastGiftDate) : 0),
+    stage_age: (a, b) => (b.stageAge || 0) - (a.stageAge || 0),
+  }[sort];
+  const PER_COLUMN_CAP = 200;
+  const counts = {};
+  for (const s of ALL_PIPELINE_STAGES) {
+    counts[s] = columns[s].length;
+    columns[s].sort(cmp);
+    if (columns[s].length > PER_COLUMN_CAP) columns[s] = columns[s].slice(0, PER_COLUMN_CAP);
+  }
+
   // Won this quarter (period) — a coarse pipeline health figure.
   const { start } = finPeriodBounds("fiscal", 0);
   const wonAgg = await query(
     `SELECT COALESCE(SUM(gift_amount),0) AS amt, COUNT(*)::int AS cnt FROM opportunities
        WHERE org_id=? AND status='won' AND closed_at >= ?`, [orgId, start]);
   res.json({
-    tier, locked, single_user, stages,
+    tier, locked, single_user, stages, scope, sort,
     officers: officers.map(o => ({ id: o.id, name: o.name, color: o.portfolio_color })),
-    columns,
+    columns, counts, total: donors.length, cap: PER_COLUMN_CAP,
     forecast: {
       open: Math.round(forecastOpen), weighted: Math.round(forecastWeighted), openCount,
       wonThisPeriod: parseFloat(wonAgg[0].amt) || 0, wonCount: wonAgg[0].cnt,
     },
   });
+}));
+
+// POST /pipeline/add — the deliberate act that puts prospects on the working
+// board (single or bulk via `ids`). This is how a donor enters the pipeline:
+// sets in_pipeline=true and, for donors nobody owns yet, assigns them to the
+// caller (so they land on the caller's own "my portfolio" board). Cross-officer
+// assignment stays the admin `/donors/bulk-assign` route. Team + write-gated.
+app.post("/pipeline/add", requireAuth, requirePlan("team"), checkWriteAccess, wrap(async (req, res) => {
+  const ids = Array.isArray(req.body.ids) ? req.body.ids.filter(Boolean) : [];
+  if (!ids.length) return res.status(400).json({ error: "ids array required" });
+  const owned = await query(
+    "SELECT id FROM donors WHERE id = ANY(?) AND org_id = ? AND deleted_at IS NULL", [ids, req.user.orgId]);
+  if (owned.length !== ids.length) return res.status(404).json({ error: "One or more donors not found in your org" });
+  const userRow = await query("SELECT name FROM users WHERE id=?", [req.user.userId]);
+  const myName = userRow[0]?.name || "";
+  const result = await run(
+    `UPDATE donors
+        SET in_pipeline = TRUE,
+            assigned_to      = COALESCE(assigned_to, ?),
+            assigned_to_name = COALESCE(assigned_to_name, ?),
+            updated_at = NOW()
+      WHERE id = ANY(?) AND org_id = ? AND deleted_at IS NULL`,
+    [req.user.userId, myName, ids, req.user.orgId]);
+  res.json({ added: result.changes });
+}));
+
+// POST /pipeline/remove — take a donor OFF the working board (single or bulk).
+// Clears in_pipeline and the owner; the donor stays in the Directory with its
+// stage label untouched. Team + write-gated (a curation write, not a delete).
+app.post("/pipeline/remove", requireAuth, requirePlan("team"), checkWriteAccess, wrap(async (req, res) => {
+  const ids = Array.isArray(req.body.ids) ? req.body.ids.filter(Boolean) : [];
+  if (!ids.length) return res.status(400).json({ error: "ids array required" });
+  const owned = await query(
+    "SELECT id FROM donors WHERE id = ANY(?) AND org_id = ? AND deleted_at IS NULL", [ids, req.user.orgId]);
+  if (owned.length !== ids.length) return res.status(404).json({ error: "One or more donors not found in your org" });
+  const result = await run(
+    `UPDATE donors SET in_pipeline = FALSE, assigned_to = NULL, assigned_to_name = NULL, updated_at = NOW()
+      WHERE id = ANY(?) AND org_id = ? AND deleted_at IS NULL`,
+    [ids, req.user.orgId]);
+  res.json({ removed: result.changes });
 }));
 
 // POST /pipeline/:donorId/move — the managed stage change. Description REQUIRED.

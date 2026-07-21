@@ -83,24 +83,41 @@ function ProspectCard({ card, colorMap, onOpen, onMove, isReadOnly }) {
   );
 }
 
+const VALUE_BANDS = [["", "Any value"], ["1000", "$1k+"], ["10000", "$10k+"], ["25000", "$25k+"], ["100000", "$100k+"]];
+const SORTS = [["value", "Value"], ["last_gift", "Last gift"], ["stage_age", "Time in stage"]];
+const COL_PAGE = 30; // render this many cards/column at a time (never hundreds)
+
 export function Pipeline({ isReadOnly, onNavigate }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [scope, setScope] = useState("mine");
   const [assignedTo, setAssignedTo] = useState("");
   const [designation, setDesignation] = useState("");
+  const [minGiving, setMinGiving] = useState("");
+  const [sort, setSort] = useState("value");
+  const [search, setSearch] = useState("");
+  const [dSearch, setDSearch] = useState("");   // debounced
+  const [shown, setShown] = useState({});         // per-stage visible count
   const [moving, setMoving] = useState(null);
+
+  useEffect(() => { const t = setTimeout(() => setDSearch(search.trim()), 220); return () => clearTimeout(t); }, [search]);
 
   const load = () => {
     const qs = new URLSearchParams();
+    qs.set("scope", scope);
     if (assignedTo) qs.set("assignedTo", assignedTo);
     if (designation) qs.set("designation", designation);
+    if (minGiving) qs.set("minGiving", minGiving);
+    if (sort) qs.set("sort", sort);
+    if (dSearch) qs.set("search", dSearch);
     setLoading(true);
-    apiFetch("/pipeline" + (qs.toString() ? "?" + qs : "")).then(d => { setData(d); setLoading(false); }).catch(() => setLoading(false));
+    apiFetch("/pipeline?" + qs).then(d => { setData(d); setShown({}); setLoading(false); }).catch(() => setLoading(false));
   };
-  useEffect(load, [assignedTo, designation]);
+  useEffect(load, [scope, assignedTo, designation, minGiving, sort, dSearch]);
 
   const colorMap = useMemo(() => Object.fromEntries((data?.officers || []).filter(o => o.color).map(o => [o.id, o.color])), [data]);
   const openDonor = id => onNavigate && onNavigate("donors", { selectDonorId: id });
+  const goAddProspects = () => onNavigate && onNavigate("donors");
 
   if (loading && !data) return <div style={{ padding: 40, color: T.ink3 }}>Loading pipeline…</div>;
 
@@ -108,7 +125,9 @@ export function Pipeline({ isReadOnly, onNavigate }) {
   const f = data?.forecast;
   const officers = data?.officers || [];
   const columns = data?.columns || {};
-  const totalCards = Object.values(columns).reduce((s, c) => s + c.length, 0);
+  const counts = data?.counts || {};
+  const totalCards = data?.total ?? Object.values(columns).reduce((s, c) => s + c.length, 0);
+  const anyFilter = !!(assignedTo || designation || minGiving || dSearch);
 
   const board = (
     <div>
@@ -121,16 +140,34 @@ export function Pipeline({ isReadOnly, onNavigate }) {
         </div>}
       </div>
 
+      {/* Scope toggle + add-prospects */}
+      <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center", margin: "6px 0 10px" }}>
+        <div style={{ display: "flex", background: T.bg2, borderRadius: T.radiusSm, padding: 3 }}>
+          {[["mine", "My portfolio"], ["all", "All portfolios"]].map(([v, l]) => (
+            <button key={v} onClick={() => { setScope(v); if (v === "mine") setAssignedTo(""); }}
+              style={{ background: scope === v && !assignedTo ? T.bgCard : "transparent", border: "none", borderRadius: 6, padding: "6px 12px", fontSize: 12.5, fontWeight: 700, color: scope === v && !assignedTo ? T.ink : T.ink3, cursor: "pointer", boxShadow: scope === v && !assignedTo ? T.shadow : "none" }}>{l}</button>
+          ))}
+        </div>
+        <span style={{ fontSize: 12.5, color: T.ink3 }}>{totalCards} on the board{anyFilter ? " (filtered)" : ""}</span>
+        <button onClick={goAddProspects} style={{ marginLeft: "auto", background: T.greenMid, border: "none", borderRadius: T.radiusSm, padding: "8px 14px", fontSize: 13, fontWeight: 700, color: "#fff", cursor: "pointer" }}>+ Add prospects from your donors</button>
+      </div>
+
       {/* Filters */}
-      <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center", margin: "4px 0 16px" }}>
-        <select value={assignedTo} onChange={e => setAssignedTo(e.target.value)} style={filterInp}>
-          <option value="">All portfolios</option>
+      <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center", margin: "0 0 16px" }}>
+        <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search prospects…" style={{ ...filterInp, minWidth: 170 }} />
+        {officers.length > 1 && <select value={assignedTo} onChange={e => setAssignedTo(e.target.value)} style={filterInp}>
+          <option value="">Any officer</option>
           {officers.map(o => <option key={o.id} value={o.id}>{o.name}</option>)}
+        </select>}
+        <select value={minGiving} onChange={e => setMinGiving(e.target.value)} style={filterInp}>
+          {VALUE_BANDS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
         </select>
         <select value={designation} onChange={e => setDesignation(e.target.value)} style={filterInp}>
           {DESIGNATIONS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
         </select>
-        {/* Officer legend */}
+        <select value={sort} onChange={e => setSort(e.target.value)} style={filterInp} title="Sort within each column">
+          {SORTS.map(([v, l]) => <option key={v} value={v}>Sort: {l}</option>)}
+        </select>
         {officers.some(o => o.color) && <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginLeft: "auto", alignItems: "center" }}>
           {officers.filter(o => o.color).map(o => <span key={o.id} style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 12, color: T.ink3 }}>
             <span style={{ width: 11, height: 11, borderRadius: 3, background: o.color }} />{o.name}
@@ -139,22 +176,39 @@ export function Pipeline({ isReadOnly, onNavigate }) {
       </div>
 
       {totalCards === 0 ? (
-        <EmptyState icon="◇" title="No prospects in the pipeline yet" message="Prospects appear here as you assign donors and set their stage. Open a donor and move them into the pipeline to start tracking cultivation and asks." />
+        <EmptyState icon="◇"
+          title={anyFilter ? "No prospects match these filters" : (scope === "mine" ? "Your pipeline is empty — and that's the point" : "No prospects on the board yet")}
+          message={anyFilter
+            ? "Clear a filter, or switch to All portfolios."
+            : "The pipeline holds the prospects you're actively working — not your whole donor list. Open your Donors directory, pick the major-gift prospects worth cultivating, and add them here."}
+          action={anyFilter ? undefined : "Go to Donors →"} onAction={goAddProspects} />
       ) : (
         <div style={{ display: "flex", gap: 14, overflowX: "auto", paddingBottom: 8 }}>
           {STAGE_META.map(s => {
             const cards = columns[s.id] || [];
+            const trueCount = counts[s.id] ?? cards.length;
             const colAsk = cards.reduce((a, c) => a + c.askAmount, 0);
+            const visible = shown[s.id] || COL_PAGE;
+            const showCards = cards.slice(0, visible);
             return (
               <div key={s.id} style={{ flex: "1 1 230px", minWidth: 220, background: T.bg2, borderRadius: T.radius, padding: 10 }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 4 }}>
                   <div style={{ fontSize: 13, fontWeight: 800, color: T.ink }}>{s.label}</div>
-                  <div style={{ fontSize: 12, color: T.ink3 }}>{cards.length}</div>
+                  <div style={{ fontSize: 12, color: T.ink3 }}>{trueCount}</div>
                 </div>
                 <div style={{ fontSize: 11, color: T.ink3, marginBottom: 8 }}>{s.hint}{colAsk > 0 ? ` · ${fmt(colAsk)} asks` : ""}</div>
                 <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                  {cards.map(c => <ProspectCard key={c.donorId} card={c} colorMap={colorMap} onOpen={openDonor} onMove={setMoving} isReadOnly={isReadOnly} />)}
+                  {showCards.map(c => <ProspectCard key={c.donorId} card={c} colorMap={colorMap} onOpen={openDonor} onMove={setMoving} isReadOnly={isReadOnly} />)}
                   {cards.length === 0 && <div style={{ fontSize: 12, color: T.ink3, textAlign: "center", padding: "12px 0" }}>—</div>}
+                  {cards.length > visible && (
+                    <button onClick={() => setShown(p => ({ ...p, [s.id]: visible + COL_PAGE }))}
+                      style={{ background: "none", border: `1px dashed ${T.bg3}`, borderRadius: 6, padding: "6px 0", fontSize: 12, fontWeight: 700, color: T.greenMid, cursor: "pointer" }}>
+                      Show more ({cards.length - visible} of {trueCount})
+                    </button>
+                  )}
+                  {trueCount > cards.length && cards.length <= visible && (
+                    <div style={{ fontSize: 11, color: T.ink3, textAlign: "center", paddingTop: 4 }}>Showing top {cards.length} of {trueCount} — narrow with search or value.</div>
+                  )}
                 </div>
               </div>
             );

@@ -315,15 +315,14 @@ async function initSchema() {
 
   await pool.query(`ALTER TABLE donors ADD COLUMN IF NOT EXISTS assigned_to TEXT DEFAULT NULL`);
   await pool.query(`ALTER TABLE donors ADD COLUMN IF NOT EXISTS assigned_to_name TEXT DEFAULT NULL`);
-  await pool.query(`
-    UPDATE donors d
-    SET assigned_to = u.id, assigned_to_name = u.name
-    FROM (
-      SELECT DISTINCT ON (org_id) id, org_id, name
-      FROM users WHERE role = 'admin' ORDER BY org_id, created_at ASC
-    ) u
-    WHERE d.org_id = u.org_id AND d.assigned_to IS NULL
-  `);
+  // NOTE: an old boot-time backfill here auto-assigned EVERY unassigned donor to
+  // the org's first admin. Removed (pipeline-is-a-portfolio FIX): assignment is a
+  // deliberate act now, and auto-assigning the whole base is exactly what dumped
+  // 1,490 imported donors onto the working board. `in_pipeline` below is the real
+  // board-membership marker; a donor being assigned no longer implies "worked".
+  await pool.query(`ALTER TABLE donors ADD COLUMN IF NOT EXISTS in_pipeline BOOLEAN DEFAULT false`);
+  // The Pipeline board reads only in_pipeline donors, org-scoped, often by owner.
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_donors_pipeline ON donors(org_id, assigned_to) WHERE in_pipeline = true AND deleted_at IS NULL`);
 
   await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS stripe_account_id TEXT`);
   await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS stripe_connected BOOLEAN DEFAULT FALSE`);

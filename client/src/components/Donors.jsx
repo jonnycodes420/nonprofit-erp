@@ -2456,6 +2456,12 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
     <LockedFeature title={opts.title||"A Team-plan feature"} blurb={opts.blurb} minHeight={opts.minHeight||220}
       onCta={goToPricing}>{children}</LockedFeature>
   );
+  // Add this donor to the working Pipeline board (deliberate act; idempotent).
+  const [pipelineAdded,setPipelineAdded]=useState(false);
+  const addToPipeline=async()=>{
+    try{ await apiFetch("/pipeline/add",{method:"POST",body:JSON.stringify({ids:[donor.id]})}); setPipelineAdded(true); }
+    catch(e){ alert(e.message||"Could not add to pipeline"); }
+  };
   const hasDesignation=k=>designations.some(d=>d.kind===k);
   const toggleDesignation=async(kind)=>{
     try{
@@ -2925,7 +2931,10 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
                 <div style={{borderTop:"1px solid "+T.bg3,paddingTop:10}}>
                   <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:7}}>
                     <div style={{fontSize:10,fontWeight:800,textTransform:"uppercase",letterSpacing:"0.1em",color:"#1a6b4a"}}>Pipeline — moves & asks</div>
-                    {isTeam&&!isReadOnly&&<button onClick={()=>setAskOpen(v=>!v)} style={{background:"transparent",border:"1px solid "+T.bg3,borderRadius:99,padding:"3px 10px",fontSize:11,fontWeight:700,color:"#a97f22",cursor:"pointer"}}>{askOpen?"Cancel":"+ Add ask"}</button>}
+                    <div style={{display:"flex",gap:6}}>
+                      {isTeam&&!isReadOnly&&<button onClick={addToPipeline} disabled={pipelineAdded} style={{background:pipelineAdded?"transparent":"#c9a84c",border:pipelineAdded?"1px solid "+T.bg3:"none",borderRadius:99,padding:"3px 10px",fontSize:11,fontWeight:700,color:pipelineAdded?T.ink3:"#0f1a12",cursor:pipelineAdded?"default":"pointer"}}>{pipelineAdded?"✓ In pipeline":"+ Add to pipeline"}</button>}
+                      {isTeam&&!isReadOnly&&<button onClick={()=>setAskOpen(v=>!v)} style={{background:"transparent",border:"1px solid "+T.bg3,borderRadius:99,padding:"3px 10px",fontSize:11,fontWeight:700,color:"#a97f22",cursor:"pointer"}}>{askOpen?"Cancel":"+ Add ask"}</button>}
+                    </div>
                   </div>
                   {askOpen&&(
                     <div style={{display:"flex",gap:6,marginBottom:8,flexWrap:"wrap"}}>
@@ -4091,6 +4100,18 @@ function DirectoryView({donors,loading,serverTotal,page,pageSize,onPage,clientFi
     setBusy(false);setAssignDrop(false);
   }
 
+  // The deliberate act that puts prospects on the working Pipeline board.
+  async function bulkAddPipeline(){
+    const ids=selFiltered.map(d=>d.id);
+    setBusy(true);
+    try{
+      const r=await apiFetch("/pipeline/add",{method:"POST",body:JSON.stringify({ids})});
+      flash(`${r.added} added to your pipeline`);
+      setSelIds(new Set());if(onBulkDone)onBulkDone();
+    }catch(e){flash("Error: "+e.message);}
+    setBusy(false);
+  }
+
   async function bulkDelete(){
     const ids=selFiltered.map(d=>d.id);
     setBusy(true);
@@ -4203,6 +4224,12 @@ function DirectoryView({donors,loading,serverTotal,page,pageSize,onPage,clientFi
           <span style={{fontSize:13,fontWeight:700,color:"#f0ede6",whiteSpace:"nowrap"}}>{selFiltered.length} selected</span>
           <button onClick={()=>setSelIds(new Set())} style={{background:"none",border:"none",color:"#a1b5a8",fontSize:12,cursor:"pointer",padding:0,textDecoration:"underline",whiteSpace:"nowrap"}}>Clear</button>
           <div style={{flex:1,minWidth:8}}/>
+
+          {/* Add to pipeline — the deliberate act that puts prospects on the board (Team). */}
+          {teamPortfolios&&<button onClick={bulkAddPipeline} disabled={busy}
+            style={{background:"#c9a84c",border:"none",borderRadius:8,padding:"7px 12px",color:"#0f1a12",fontSize:12,fontWeight:700,cursor:"pointer",whiteSpace:"nowrap",opacity:busy?0.6:1}}>
+            + Add to pipeline
+          </button>}
 
           {/* Move to stage — managed stage changes are Team (major-gifts). */}
           {teamPortfolios&&<div style={{position:"relative"}}>

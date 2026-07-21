@@ -34,8 +34,10 @@ async function seedUser(o, id, tag, role = "admin", color = null) {
     [id, o, `${tag}@mv.local`, hash, `User ${tag}`, role, color]);
 }
 async function seedDonor(o, id, name, stage, owner, ownerName, total) {
-  await q(`INSERT INTO donors (id,org_id,name,email,status,stage,total_giving,gift_count,last_gift_date,assigned_to,assigned_to_name)
-           VALUES ($1,$2,$3,$4,'mid',$5,$6,1,$7,$8,$9)`,
+  // in_pipeline=true: these are deliberately-worked prospects (the pipeline is a
+  // curated portfolio now — a donor must be added/assigned to appear on the board).
+  await q(`INSERT INTO donors (id,org_id,name,email,status,stage,total_giving,gift_count,last_gift_date,assigned_to,assigned_to_name,in_pipeline)
+           VALUES ($1,$2,$3,$4,'mid',$5,$6,1,$7,$8,$9,true)`,
     [id, o, name, `${id}@mv.local`, stage, total, today, owner, ownerName]);
 }
 async function seedDesignation(o, donorId, kind) {
@@ -138,7 +140,9 @@ async function seedDesignation(o, donorId, kind) {
   ok("Core ask → 403 plan_required", r.status === 403, r.body);
 
   // ── Forecast math (raw + stage-weighted, self-consistent with board) ────
-  r = await api("GET", "/pipeline", admin);
+  // scope=all: forecast spans BOTH officers' portfolios (the default board is
+  // now the caller's own portfolio; the whole-shop view is scope=all).
+  r = await api("GET", "/pipeline?scope=all", admin);
   const cards = Object.values(r.body.columns).flat();
   const expectOpen = cards.reduce((s, c) => s + c.askAmount, 0);
   const expectWeighted = Math.round(cards.reduce((s, c) => s + c.askAmount * (STAGE_WEIGHT[c.stage] || 0), 0));
@@ -153,14 +157,14 @@ async function seedDesignation(o, donorId, kind) {
   ok("close won links gift + records actual amount", r.status === 200 && r.body.status === "won"
     && r.body.gift_id === "g_mv_1" && Number(r.body.gift_amount) === 42500 && !!r.body.closed_at, r.body);
   ok("ask ≠ gift preserved (asked 50k, closed 42.5k)", Number(r.body.target_amount) === 50000 && Number(r.body.gift_amount) === 42500, r.body);
-  r = await api("GET", "/pipeline", admin);
+  r = await api("GET", "/pipeline?scope=all", admin);
   ok("won ask leaves open forecast", r.body.forecast.open === 10000 && r.body.forecast.openCount === 1, r.body.forecast);
   ok("won ask counts toward wonThisPeriod", r.body.forecast.wonThisPeriod === 42500 && r.body.forecast.wonCount === 1, r.body.forecast);
 
   // Close lost + reopen
   r = await api("PUT", `/opportunities/${opp2}`, off2, { status: "lost" });
   ok("close lost", r.status === 200 && r.body.status === "lost" && r.body.gift_id === null, r.body);
-  r = await api("GET", "/pipeline", admin);
+  r = await api("GET", "/pipeline?scope=all", admin);
   ok("lost ask drops from forecast", r.body.forecast.open === 0 && r.body.forecast.openCount === 0, r.body.forecast);
   r = await api("PUT", `/opportunities/${opp2}`, off2, { status: "open" });
   ok("reopen restores open ask", r.status === 200 && r.body.status === "open" && r.body.closed_at === null, r.body);
