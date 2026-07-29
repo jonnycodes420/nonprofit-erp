@@ -4323,7 +4323,7 @@ function ReEngageView({donors,org,onLogTouchpoint,onSelectDonor}){
     setAiLoading(false);
   };
 
-  if(!lapsed.length)return<EmptyState icon="♦" title="No lapsed donors" message="All your donors are active — great work!"/>;
+  if(!lapsed.length)return<EmptyState title="No lapsed donors" message="All your donors are active — great work!"/>;
 
   const fmtGiftDate=s=>{
     if(!s)return null;
@@ -4709,7 +4709,7 @@ function DirectoryView({donors,loading,serverTotal,page,pageSize,onPage,clientFi
           <span style={{display:"inline-block",width:14,height:14,border:"2px solid "+T.bg3,borderTopColor:T.green,borderRadius:"50%",animation:"sp 0.7s linear infinite"}}/>Loading donors…
         </div>
         :filtered.length===0
-        ?<EmptyState icon="♦" title="No donors found" message="Try adjusting your filters or search term."/>
+        ?<EmptyState title="No donors found" message="Try adjusting your filters or search term."/>
         :<div style={{background:T.white,borderRadius:14,overflow:"hidden",border:"1px solid "+T.bg3}}>
           {/* Header — light treatment (not a solid green fill) so Directory
               reads as its own surface instead of blurring into the Kanban

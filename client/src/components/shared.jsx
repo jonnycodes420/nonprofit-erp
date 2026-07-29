@@ -515,9 +515,12 @@ export function MetricCard({label,value,sub,color,trend}) {
     )}
   </div>;
 }
-export function EmptyState({icon,title,message,action,onAction}) {
+// Empty-state ornament is a restrained on-palette gold rule — NOT a diamond/
+// hexagon logo-ish glyph (retired brand mark, 2026-07-29). A legacy `icon` prop
+// some call sites still pass is ignored (no longer a decorative glyph).
+export function EmptyState({title,message,action,onAction}) {
   return <div className="fade-in" style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:"52px 24px",gap:12,textAlign:"center"}}>
-    <div style={{fontSize:36,marginBottom:4,opacity:0.25,color:T.greenDk}}>{icon||"◇"}</div>
+    <div aria-hidden style={{width:32,height:3,borderRadius:2,background:T.gold500,opacity:0.9,marginBottom:6}}/>
     <div style={{fontSize:15,fontWeight:700,color:T.ink2}}>{title||"Nothing here yet"}</div>
     <div style={{fontSize:13,color:T.ink3,maxWidth:340,lineHeight:1.65}}>{message||"Nothing here yet — this is where the magic starts."}</div>
     {action&&<button onClick={onAction} style={{marginTop:8,background:T.greenDk,border:"none",borderRadius:10,padding:"9px 18px",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer",boxShadow:"0 2px 10px rgba(26,107,74,0.2)"}}>{action}</button>}

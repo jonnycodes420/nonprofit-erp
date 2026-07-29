@@ -647,7 +647,7 @@ export function Finance({ data, isReadOnly, onNavigate }) {
             const months = summary?.monthly || [];
             const active = months.filter(m => m.income !== 0 || m.expense !== 0);
             if (active.length === 0)
-              return <EmptyState icon="◇" title="No money has moved yet" message="Log your first transaction — or connect Stripe above — and your month-by-month income and spending will chart here."/>;
+              return <EmptyState title="No money has moved yet" message="Log your first transaction — or connect Stripe above — and your month-by-month income and spending will chart here."/>;
             const maxBar = Math.max(...active.map(m => m.income), 1);
             const hidden = months.length - active.length;
             return <>
@@ -692,7 +692,7 @@ export function Finance({ data, isReadOnly, onNavigate }) {
             )}
           </div>
           {finFundBalances.length === 0
-            ? <EmptyState icon="◇" title="No funds yet" message="Funds are how you track which dollars are restricted. Add one under the Funds tab and every gift you log can be tagged to it."/>
+            ? <EmptyState title="No funds yet" message="Funds are how you track which dollars are restricted. Add one under the Funds tab and every gift you log can be tagged to it."/>
             : finFundBalances.map((f, i) => (
               <div key={f.name} {...interactive(() => f.id ? gotoTxns({ fund: f.id }) : setSubtab("funds"), { label: `View ${f.name} fund` })}
                 style={{ display:"flex", alignItems:"center", gap:12, padding:"11px 12px", margin:"0 -12px", borderRadius:8, borderBottom: i < finFundBalances.length - 1 ? "1px solid "+T.bg3 : "" }}>
@@ -734,7 +734,7 @@ export function Finance({ data, isReadOnly, onNavigate }) {
         </div>
         <Card style={{ padding:0, overflow:"hidden" }}>
           {sortedTxns.length === 0
-            ? <EmptyState icon="◇" title="No transactions here" message="This is your unified ledger — every online gift, manual entry, and imported record lands here. Log one, or connect Stripe, to begin."/>
+            ? <EmptyState title="No transactions here" message="This is your unified ledger — every online gift, manual entry, and imported record lands here. Log one, or connect Stripe, to begin."/>
             : (
               <div style={{ overflowX:"auto" }}>
                 <table style={{ width:"100%", borderCollapse:"collapse", fontSize:13 }}>
@@ -816,7 +816,7 @@ export function Finance({ data, isReadOnly, onNavigate }) {
             Every transaction is tagged to a fund. Restricted funds hold donor- or grant-restricted dollars and must be spent only for the designated purpose.
           </div>
           {funds.length === 0
-            ? <EmptyState icon="◇" title="No funds yet" message="Create your first fund — most orgs start with one General Operating fund and add restricted funds as grants and designated gifts come in."/>
+            ? <EmptyState title="No funds yet" message="Create your first fund — most orgs start with one General Operating fund and add restricted funds as grants and designated gifts come in."/>
             : funds.map((f, i) => {
             const fb = _fbMap[f.id] || { income:0, expense:0 };
             const balance = fb.income - fb.expense;
@@ -857,7 +857,7 @@ export function Finance({ data, isReadOnly, onNavigate }) {
           {!isReadOnly && <span style={{ fontSize:12, color:T.ink3, marginLeft:4 }}>Click any budget cell to edit inline.</span>}
         </div>
         {budgets.length === 0 && (
-          <Card><EmptyState icon="◇" title="No revenue or expense accounts yet" message="Budgets are built from your chart of accounts. Add a few revenue and expense accounts under the Accounts tab and they'll appear here to budget against."/></Card>
+          <Card><EmptyState title="No revenue or expense accounts yet" message="Budgets are built from your chart of accounts. Add a few revenue and expense accounts under the Accounts tab and they'll appear here to budget against."/></Card>
         )}
         {["revenue","expense"].map(section => {
           const rows = budgets.filter(b => b.accountType === section);
@@ -944,7 +944,7 @@ export function Finance({ data, isReadOnly, onNavigate }) {
             </div>
             <Card style={{ padding:0, overflow:"hidden" }}>
               {transactions.filter(t => t.account_id === drillAcct.id).length === 0
-                ? <EmptyState icon="◇" title="Nothing posted here yet" message="No transactions have been posted to this account. As you log gifts and expenses against it, they'll appear here."/>
+                ? <EmptyState title="Nothing posted here yet" message="No transactions have been posted to this account. As you log gifts and expenses against it, they'll appear here."/>
                 : (
                   <div style={{ overflowX:"auto" }}>
                     <table style={{ width:"100%", borderCollapse:"collapse", fontSize:13 }}>
@@ -1001,7 +1001,7 @@ export function Finance({ data, isReadOnly, onNavigate }) {
               <button style={writeBtn(isReadOnly, btn(IN))} onClick={addBtnHandler(() => setShowAcctModal(true))} title={isReadOnly ? RO_TIP : ""}>+ Add account</button>
             </div>
             {accounts.length === 0 && (
-              <Card><EmptyState icon="◇" title="No chart of accounts yet" message="Your chart of accounts is the backbone of every report. Add revenue and expense accounts here — a new org usually seeds these during onboarding."/></Card>
+              <Card><EmptyState title="No chart of accounts yet" message="Your chart of accounts is the backbone of every report. Add revenue and expense accounts here — a new org usually seeds these during onboarding."/></Card>
             )}
             {ACCT_TYPES.map(type => {
               const group = accounts.filter(a => a.type === type.id);
@@ -1055,7 +1055,7 @@ export function Finance({ data, isReadOnly, onNavigate }) {
           {auditLoading
             ? <div style={{ padding:24, color:T.ink3, fontSize:13 }}>Loading audit log…</div>
             : filteredAudit.length === 0
-              ? <EmptyState icon="◇" title="No changes recorded yet" message="Every edit to a transaction, account, fund, or budget is logged here with who, what, and when — your paper trail for the board and auditors."/>
+              ? <EmptyState title="No changes recorded yet" message="Every edit to a transaction, account, fund, or budget is logged here with who, what, and when — your paper trail for the board and auditors."/>
               : (
                 <div style={{ overflowX:"auto" }}>
                   <table style={{ width:"100%", borderCollapse:"collapse", fontSize:13 }}>

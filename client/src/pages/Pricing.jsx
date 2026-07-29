@@ -169,12 +169,22 @@ export default function Pricing() {
       if (!r?.url) throw new Error("Checkout is not available yet — please contact us.");
       window.location.href = r.url;
     } catch (e) {
+      const code = e?.error || "";
       const raw = e?.message || "";
-      // Turn the known backend states into human copy; never a dead button.
-      const msg = /plan_not_configured|No Stripe price/i.test(raw)
-        ? "Checkout for this plan isn't switched on yet — reach out and we'll get you set up."
-        : /admin/i.test(raw)
+      // Turn the known backend states into human copy; never a dead button and
+      // NEVER a raw 500 / Stripe internals. The typed billing-config errors
+      // (plan_mode_mismatch / plan_not_configured) already carry clean,
+      // admin-facing copy from the server — prefer it verbatim.
+      const isConfig = code === "plan_mode_mismatch" || code === "plan_not_configured"
+        || /plan_mode_mismatch|plan_not_configured|No Stripe price/i.test(raw);
+      const msg = isConfig
+        ? (raw || "Billing isn't configured correctly yet — reach out and we'll get you set up.")
+        : code === "founding_forbidden"
+        ? "That plan is assigned privately."
+        : (e?.status === 403 || /admin/i.test(raw))
         ? "Only an admin can change the plan. Ask your workspace admin to upgrade."
+        : /internal server error/i.test(raw)
+        ? "Something went wrong starting checkout. Please try again, or reach out if it keeps happening."
         : (raw || "Could not start checkout. Please try again.");
       setCheckoutErr({ id: planId, msg });
       setCheckingOut(null);
@@ -192,11 +202,8 @@ export default function Pricing() {
 
       {/* Nav */}
       <div style={{ position: "fixed", top: 0, left: 0, right: 0, display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 32px", height: 56, background: ink, borderBottom: "1px solid #1a2e1f", zIndex: 100 }}>
-        <Link to="/" style={{ display: "flex", alignItems: "center", gap: 10, textDecoration: "none" }}>
-          <div style={{ width: 28, height: 28, background: green, borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center" }}>
-            <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M8 2L13 5v6L8 14 3 11V5L8 2z" stroke={cream} strokeWidth="1.5" fill="none"/><circle cx="8" cy="8" r="2" fill={cream}/></svg>
-          </div>
-          <span style={{ fontSize: 15, fontWeight: 700, color: cream, fontFamily: "'DM Serif Display',Georgia,serif" }}>Steward</span>
+        <Link to="/" style={{ display: "flex", alignItems: "center", textDecoration: "none" }}>
+          <span style={{ fontSize: 20, fontWeight: 400, color: cream, fontFamily: "'DM Serif Display',Georgia,serif", letterSpacing: "-0.02em" }}>Steward</span>
         </Link>
         {isAuthed ? (
           <Link to="/dashboard" style={{ fontSize: 13, color: sage, textDecoration: "none", fontWeight: 600 }}>Go to dashboard →</Link>

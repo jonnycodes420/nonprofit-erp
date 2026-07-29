@@ -12,6 +12,23 @@ function isAuthError(err) {
   return AUTH_ERROR_CODES.includes(err?.error) || LEGACY_AUTH_MESSAGES.includes(err?.error);
 }
 
+// Human, admin-facing copy for a failed billing call (create-checkout /
+// create-portal). The server returns TYPED billing-config errors
+// (plan_mode_mismatch / plan_not_configured / portal_not_configured) with clean
+// messages already — prefer those verbatim; for anything else (incl. a raw
+// "Internal server error") show a safe fallback so we never surface a 500 or
+// Stripe internals to the user. `err` is what apiFetch throws (has .error/.message/.status).
+const BILLING_CONFIG_CODES = ["plan_mode_mismatch", "plan_not_configured", "portal_not_configured"];
+export function billingErrorMessage(err, fallback = "Something went wrong with billing. Please try again, or reach out if it keeps happening.") {
+  const code = err?.error || "";
+  const raw = err?.message || "";
+  if (BILLING_CONFIG_CODES.includes(code)) return raw || fallback;
+  if (code === "founding_forbidden") return "That plan is assigned privately.";
+  if (err?.status === 403 || /admin/i.test(raw)) return "Only an admin can change billing. Ask your workspace admin.";
+  if (!raw || /internal server error/i.test(raw)) return fallback;
+  return raw;
+}
+
 // A present-but-unusable token can never succeed on retry. Clear the stale
 // session and send the user to /login with an explanation, instead of leaving
 // them on a dead-end "Failed to connect / Retry" screen.

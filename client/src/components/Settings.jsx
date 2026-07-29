@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { T, Pill, SectionLabel, PageTitle, SectionTabs, fmt } from "./shared";
 import { QrCodeBlock, EmbedCodeBlock } from "./ShareBlocks";
-import { apiFetch, API, getToken } from "../api";
+import { apiFetch, API, getToken, billingErrorMessage } from "../api";
 import UpgradeModal from "./UpgradeModal";
 
 // Billing status badge styling, keyed by orgs.subscription_status.
@@ -789,7 +789,7 @@ export function Settings({auth,logout,initialSection}) {
     try{
       const r=await apiFetch("/billing/create-portal",{method:"POST"});
       window.location.href=r.url;
-    }catch(e){ alert(e.message||"Could not open billing portal"); setPortalLoading(false); }
+    }catch(e){ alert(billingErrorMessage(e, "Could not open billing portal. Please try again.")); setPortalLoading(false); }
   }
 
   const donationUrl = orgSlug ? `${window.location.origin}/give/${orgSlug}` : "";

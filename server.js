@@ -56,7 +56,7 @@ const { lookupMatchingGift } = require("./matchingGifts");
 const Stripe = require("stripe");
 const { google } = require("googleapis");
 const { Webhook: SvixWebhook } = require("svix");
-const { donationStripeKey, billingStripeKey, billingStripeMode } = require("./stripeKeys");
+const { donationStripeKey, billingStripeKey, billingStripeMode, billingConfigError, otherBillingMode } = require("./stripeKeys");
 
 // `stripe` = DONATION processing (connected accounts + /stripe/webhook), on the
 // LIVE STRIPE_SECRET_KEY. `billingStripe` = PLATFORM subscription billing
@@ -855,7 +855,14 @@ const requireAdmin = (req, res, next) => {
 // `sentry` is a non-secret boolean (is SENTRY_DSN configured?) so ops checks
 // can confirm error monitoring is wired without dashboard access.
 app.get("/health", (req, res) => {
-  res.json({ status: "ok", version: "1.1.0", db: dbReady, sentry: !!process.env.SENTRY_DSN });
+  // billing.ok is the cached mode-consistency result (booleans/mode only — no
+  // secrets): true = all configured prices resolve under the billing key's mode,
+  // false = a test/live mismatch (loud warning already logged), null = not yet
+  // checked or nothing to check. Full detail is at /admin/billing-diagnostic.
+  res.json({
+    status: "ok", version: "1.1.0", db: dbReady, sentry: !!process.env.SENTRY_DSN,
+    billing: { mode: billingModeStatus.mode, ok: billingModeStatus.ok, checked: billingModeStatus.checked },
+  });
 });
 
 // ── Sentry test hook (org-admin-gated) ─────────────────────────────────────
@@ -1368,19 +1375,9 @@ app.post("/auth/forgot-password", passwordResetLimiter, wrap(async (req, res) =>
   <table width="100%" cellpadding="0" cellspacing="0" style="background:#f0ede6;padding:40px 16px;">
     <tr><td align="center">
       <table width="100%" cellpadding="0" cellspacing="0" style="max-width:520px;">
-        <!-- Header -->
+        <!-- Header: serif Steward wordmark (no glyph; Georgia stack for email) -->
         <tr><td style="padding-bottom:24px;text-align:center;">
-          <table cellpadding="0" cellspacing="0" style="display:inline-flex;align-items:center;gap:8px;margin:0 auto;">
-            <tr>
-              <td style="width:32px;height:32px;background:#0f1a12;border-radius:9px;text-align:center;vertical-align:middle;">
-                <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" style="display:inline-block;vertical-align:middle;">
-                  <path d="M8 2L13 5v6L8 14 3 11V5L8 2z" stroke="#f0ede6" stroke-width="1.5" fill="none"/>
-                  <circle cx="8" cy="8" r="2" fill="#f0ede6"/>
-                </svg>
-              </td>
-              <td style="padding-left:8px;font-size:17px;font-weight:700;color:#0f1a12;letter-spacing:-0.02em;">Steward</td>
-            </tr>
-          </table>
+          <span style="font-family:Georgia,'Times New Roman',serif;font-size:24px;font-weight:700;color:#0f1a12;letter-spacing:-0.02em;">Steward</span>
         </td></tr>
         <!-- Card -->
         <tr><td style="background:#ffffff;border-radius:16px;padding:40px 40px 36px;box-shadow:0 2px 20px rgba(15,26,18,0.08);">
@@ -6470,17 +6467,13 @@ function unsubscribeHtml({ ok, email }) {
   h1 { font-family:'DM Serif Display',Georgia,serif; font-size:26px; font-weight:400; margin:0 0 12px; letter-spacing:-0.02em; }
   p { font-size:15px; color:#6b7c72; line-height:1.6; margin:0; }
   .badge { width:48px; height:48px; background:#0f1a12; border-radius:12px; margin:0 auto 20px; display:flex; align-items:center; justify-content:center; }
+  .badge span { font-family:'DM Serif Display',Georgia,'Times New Roman',serif; font-size:28px; font-weight:400; color:#f0ede6; line-height:1; }
 </style>
 </head>
 <body>
   <div class="wrap">
     <div class="card">
-      <div class="badge">
-        <svg width="22" height="22" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
-          <path d="M8 2L13 5v6L8 14 3 11V5L8 2z" stroke="#f0ede6" stroke-width="1.5" fill="none"/>
-          <circle cx="8" cy="8" r="2" fill="#f0ede6"/>
-        </svg>
-      </div>
+      <div class="badge"><span>S</span></div>
       ${message}
     </div>
   </div>
@@ -12213,6 +12206,77 @@ async function ensureStripeCustomer(orgId, email) {
   return customer.id;
 }
 
+// ── Billing mode-consistency self-diagnosis ─────────────────────────────────
+// This class (billing key in one Stripe mode + STRIPE_PRICE_* ids from the
+// OTHER mode) has now bitten twice and 500'd upgrades, so make it self-
+// diagnosing: verify every configured price actually resolves under the current
+// billing key's mode, log a LOUD warning on a mismatch, cache the result for
+// /health, and expose a live re-check at /admin/billing-diagnostic.
+//
+// A price id doesn't encode its mode, so the only reliable check is to retrieve
+// it with the billing key — `resource_missing` means it lives in the other mode
+// (or doesn't exist). Runs once at boot; never on the hot /health path.
+let billingModeStatus = { mode: billingStripeMode(), checked: false, ok: null, prices: [], checkedAt: null };
+
+async function checkBillingPriceModes() {
+  const mode = billingStripeMode();
+  const configured = Object.entries(PLAN_PRICE_ENV)
+    .map(([plan, envName]) => ({ plan, envName, id: process.env[envName] }))
+    .filter(p => p.id);
+  const status = { mode, checked: false, ok: null, prices: [], checkedAt: new Date().toISOString() };
+  if (!billingStripe || !mode || !configured.length) { billingModeStatus = status; return status; }
+  status.checked = true;
+  let anyMismatch = false;
+  for (const p of configured) {
+    try {
+      await billingStripe.prices.retrieve(p.id);
+      status.prices.push({ plan: p.plan, env: p.envName, ok: true });
+    } catch (err) {
+      const cls = billingConfigError(err);
+      const reason = cls ? cls.type : (err.code || err.type || "error");
+      if (cls) anyMismatch = true;               // resource_missing on the price = wrong mode / bad id
+      status.prices.push({ plan: p.plan, env: p.envName, ok: false, reason });
+    }
+  }
+  status.ok = !anyMismatch;
+  billingModeStatus = status;
+  return status;
+}
+
+// Run the check once shortly after boot (non-blocking) and log loudly on a mismatch.
+function scheduleBillingModeCheck() {
+  if (!billingStripe) return;
+  setTimeout(() => {
+    checkBillingPriceModes().then(s => {
+      if (!s.checked) return;
+      if (s.ok) {
+        console.log(`[billing] mode check OK — billing key is ${String(s.mode).toUpperCase()}; all ${s.prices.length} configured price(s) resolve.`);
+      } else {
+        const bad = s.prices.filter(p => !p.ok).map(p => `${p.env} (${p.reason})`).join(", ");
+        console.error(
+          `[billing] ============================================================\n` +
+          `[billing] MODE MISMATCH: billing key is ${String(s.mode).toUpperCase()} but these ` +
+          `price ids do NOT resolve in that mode: ${bad}.\n` +
+          `[billing] Align STRIPE_BILLING_SECRET_KEY, the STRIPE_PRICE_* ids, the billing ` +
+          `webhook secret, and the Customer Portal config to the SAME Stripe mode, or upgrades will fail.\n` +
+          `[billing] ============================================================`
+        );
+      }
+    }).catch(e => console.error("[billing] mode check failed:", e && e.message));
+  }, 8000);
+}
+
+app.get("/admin/billing-diagnostic", requireAuth, requireSuperAdmin, wrap(async (req, res) => {
+  const status = await checkBillingPriceModes();
+  res.json({
+    billingConfigured: !!billingStripe,
+    ...status,
+    hint: status.ok === false
+      ? "The billing key and price IDs are in different Stripe modes. Align them (all test or all live)."
+      : undefined,
+  });
+}));
+
 app.get("/billing/status", requireAuth, wrap(async (req, res) => {
   const orgs = await query("SELECT plan, subscription_status, trial_ends_at, stripe_customer_id, grace_until, current_period_end FROM orgs WHERE id=?", [req.user.orgId]);
   if (!orgs.length) return res.status(404).json({ error: "Org not found" });
@@ -12243,6 +12307,50 @@ app.get("/billing/status", requireAuth, wrap(async (req, res) => {
   });
 }));
 
+// Which STRIPE_PRICE_* env var backs each plan — used only for a precise server
+// log ("billing key is TEST but STRIPE_PRICE_TEAM is a LIVE price").
+const PLAN_PRICE_ENV = {
+  core: "STRIPE_PRICE_CORE", team: "STRIPE_PRICE_TEAM", founding: "STRIPE_PRICE_FOUNDING",
+  seed: "STRIPE_PRICE_SEED", growth: "STRIPE_PRICE_GROWTH", impact: "STRIPE_PRICE_IMPACT",
+};
+
+// Turn a thrown Stripe error on a billing path into a typed, actionable HTTP
+// response instead of a raw 500. Returns true if it handled the error (response
+// sent); false if it's not a billing-config error and should bubble up. The UI
+// shows a clean admin-facing message; Stripe internals are logged, never sent.
+function handleBillingConfigError(err, res, { plan, surface } = {}) {
+  const cls = billingConfigError(err);
+  if (!cls) return false;
+  const mode = billingStripeMode();
+  const envName = plan ? PLAN_PRICE_ENV[plan] : null;
+  if (cls.type === "mode_mismatch") {
+    const other = otherBillingMode(mode);
+    // Loud, specific server log naming which mode the key is in vs the price.
+    console.error(
+      `[billing] MODE MISMATCH on ${surface}: billing key is ${String(mode).toUpperCase()} ` +
+      `but ${envName || "the configured price"} is a ${String(other).toUpperCase()} price. ` +
+      `Align STRIPE_BILLING_SECRET_KEY and the STRIPE_PRICE_* ids (and the Stripe Customer ` +
+      `Portal config) to the SAME mode. Stripe said: ${err && err.message}`
+    );
+    res.status(400).json({
+      error: "plan_mode_mismatch",
+      message: "Billing isn't configured correctly — the Stripe key and price IDs are in different modes (test vs live). Ask your Steward admin to align them.",
+    });
+    return true;
+  }
+  // A configured price id that doesn't resolve in this mode (typo/deleted) —
+  // still a config problem, surfaced as "not configured for this mode", not a 500.
+  console.error(
+    `[billing] PRICE NOT FOUND on ${surface}: ${envName || "the configured price"} did not resolve ` +
+    `under the ${String(mode).toUpperCase()} billing key. Check the id. Stripe said: ${err && err.message}`
+  );
+  res.status(400).json({
+    error: "plan_not_configured",
+    message: "Billing isn't configured correctly — a plan's Stripe price ID couldn't be found. Ask your Steward admin to check it.",
+  });
+  return true;
+}
+
 app.post("/billing/create-checkout", requireAuth, requireAdmin, wrap(async (req, res) => {
   const { plan } = req.body;
   // Live commercial model (BUILD-24). `founding` is the private $99 founding-
@@ -12266,32 +12374,56 @@ app.post("/billing/create-checkout", requireAuth, requireAdmin, wrap(async (req,
   if (!priceId) return res.status(400).json({ error: "plan_not_configured", message: `No Stripe price is configured for the ${plan} plan yet.` });
 
   if (!billingStripe) return res.status(503).json({ error: "Stripe not configured" });
-  const customerId = await ensureStripeCustomer(req.user.orgId, req.user.email);
-  if (!customerId) return res.status(404).json({ error: "Org not found" });
+  try {
+    const customerId = await ensureStripeCustomer(req.user.orgId, req.user.email);
+    if (!customerId) return res.status(404).json({ error: "Org not found" });
 
-  const sessionParams = {
-    mode: "subscription",
-    line_items: [{ price: priceId, quantity: 1 }],
-    success_url: (process.env.FRONTEND_URL || "https://stewardapp.dev") + "/dashboard?subscribed=true",
-    cancel_url:  (process.env.FRONTEND_URL || "https://stewardapp.dev") + "/pricing",
-    metadata: { orgId: req.user.orgId, plan },
-    subscription_data: { metadata: { orgId: req.user.orgId, plan } },
-    customer: customerId,
-  };
+    const sessionParams = {
+      mode: "subscription",
+      line_items: [{ price: priceId, quantity: 1 }],
+      success_url: (process.env.FRONTEND_URL || "https://stewardapp.dev") + "/dashboard?subscribed=true",
+      cancel_url:  (process.env.FRONTEND_URL || "https://stewardapp.dev") + "/pricing",
+      metadata: { orgId: req.user.orgId, plan },
+      subscription_data: { metadata: { orgId: req.user.orgId, plan } },
+      customer: customerId,
+    };
 
-  const session = await billingStripe.checkout.sessions.create(sessionParams);
-  res.json({ url: session.url });
+    const session = await billingStripe.checkout.sessions.create(sessionParams);
+    res.json({ url: session.url });
+  } catch (err) {
+    // A test-key + live-price (or vice-versa) mismatch must never surface as a
+    // raw 500 — return a typed, actionable error instead. Anything else re-throws.
+    if (handleBillingConfigError(err, res, { plan, surface: "create-checkout" })) return;
+    throw err;
+  }
 }));
 
 app.post("/billing/create-portal", requireAuth, requireAdmin, wrap(async (req, res) => {
   if (!billingStripe) return res.status(503).json({ error: "Stripe not configured" });
-  const customerId = await ensureStripeCustomer(req.user.orgId, req.user.email);
-  if (!customerId) return res.status(404).json({ error: "Org not found" });
-  const session = await billingStripe.billingPortal.sessions.create({
-    customer: customerId,
-    return_url: (process.env.FRONTEND_URL || "https://stewardapp.dev") + "/dashboard",
-  });
-  res.json({ url: session.url });
+  try {
+    const customerId = await ensureStripeCustomer(req.user.orgId, req.user.email);
+    if (!customerId) return res.status(404).json({ error: "Org not found" });
+    const session = await billingStripe.billingPortal.sessions.create({
+      customer: customerId,
+      return_url: (process.env.FRONTEND_URL || "https://stewardapp.dev") + "/dashboard",
+    });
+    res.json({ url: session.url });
+  } catch (err) {
+    // The Customer Portal must be configured in the SAME Stripe mode as the key;
+    // a mode mismatch or an unconfigured portal comes back as a config error, not a 500.
+    if (handleBillingConfigError(err, res, { surface: "create-portal" })) return;
+    // Stripe throws a distinct invalid_request when the portal itself isn't set
+    // up for this mode ("No configuration provided…"). Surface it cleanly too.
+    const msg = String((err && err.message) || "");
+    if (/portal|configuration/i.test(msg) && (err.type === "StripeInvalidRequestError" || err.statusCode === 400)) {
+      console.error(`[billing] Customer Portal not configured for the ${String(billingStripeMode()).toUpperCase()} mode: ${msg}`);
+      return res.status(400).json({
+        error: "portal_not_configured",
+        message: "The billing portal isn't set up yet — ask your Steward admin to configure the Stripe Customer Portal.",
+      });
+    }
+    throw err;
+  }
 }));
 
 // ── Admin (super admin only) ───────────────────────────────────────────────
@@ -13479,6 +13611,8 @@ app.listen(PORT, () => {
   if (!process.env.RESEND_DOMAIN_VERIFIED) {
     console.warn("[email] WARNING: RESEND_DOMAIN_VERIFIED not set — emails may land in spam");
   }
+  // Self-diagnose a billing key/price Stripe-mode mismatch on boot (non-blocking).
+  scheduleBillingModeCheck();
 });
 
 // Run sequence engine on startup (5s delay) then every hour

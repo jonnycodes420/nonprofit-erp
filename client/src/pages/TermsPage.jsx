@@ -5,11 +5,8 @@ const LAST_UPDATED = "June 2, 2025";
 function Nav() {
   return (
     <nav style={{ background: "#0f1a12", padding: "16px 32px", display: "flex", alignItems: "center", justifyContent: "space-between", position: "sticky", top: 0, zIndex: 10 }}>
-      <Link to="/" style={{ display: "flex", alignItems: "center", gap: 10, textDecoration: "none" }}>
-        <div style={{ width: 30, height: 30, background: "#1a6b4a", borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center" }}>
-          <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M8 2L13 5v6L8 14 3 11V5L8 2z" stroke="#f0ede6" strokeWidth="1.5" fill="none"/><circle cx="8" cy="8" r="2" fill="#f0ede6"/></svg>
-        </div>
-        <span style={{ fontSize: 15, fontWeight: 700, color: "#f0ede6", fontFamily: "'DM Serif Display',Georgia,serif" }}>Steward</span>
+      <Link to="/" style={{ display: "flex", alignItems: "center", textDecoration: "none" }}>
+        <span style={{ fontSize: 20, fontWeight: 400, color: "#f0ede6", fontFamily: "'DM Serif Display',Georgia,serif", letterSpacing: "-0.02em" }}>Steward</span>
       </Link>
       <Link to="/" style={{ fontSize: 13, color: "#8fa896", textDecoration: "none" }}>← Back to home</Link>
     </nav>

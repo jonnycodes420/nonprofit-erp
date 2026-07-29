@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { apiFetch, adaptData, API, getToken } from "./api";
+import { apiFetch, adaptData, API, getToken, billingErrorMessage } from "./api";
 import { useAuth } from "./main";
 import { T, GlobalStyles, LockGlyph, ErrorBoundary, goToPricing } from "./components/shared";
 // SHELVED — voice capture works but unproven adoption assumption, revisit later.
@@ -180,7 +180,7 @@ function AppShell() {
     <GlobalStyles/>
     <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=DM+Serif+Display&display=swap" rel="stylesheet"/>
     <div style={{width:40,height:40,background:T.green,borderRadius:14,display:"flex",alignItems:"center",justifyContent:"center"}}>
-      <svg width="20" height="20" viewBox="0 0 16 16" fill="none"><path d="M8 2L13 5v6L8 14 3 11V5L8 2z" stroke="#fff" strokeWidth="1.5" fill="none"/><circle cx="8" cy="8" r="2" fill="#fff"/></svg>
+      <span style={{fontFamily:"'DM Serif Display',Georgia,serif",fontSize:24,fontWeight:400,color:"#fff",lineHeight:1}}>S</span>
     </div>
     <div style={{display:"flex",alignItems:"center",gap:10,color:T.ink3,fontSize:13}}><span style={{display:"inline-block",width:14,height:14,border:"2px solid "+T.bg3,borderTopColor:T.green,borderRadius:"50%",animation:"sp 0.7s linear infinite"}}/>Loading your workspace…</div>
   </div>;
@@ -188,7 +188,7 @@ function AppShell() {
   if(loadErr||!data) return <div style={{...BASE,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:12}}>
     <GlobalStyles/>
     <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=DM+Serif+Display&display=swap" rel="stylesheet"/>
-    <div style={{fontSize:32,opacity:0.2,color:T.ink}}>◈</div>
+    <div style={{fontFamily:"'DM Serif Display',Georgia,serif",fontSize:24,fontWeight:400,color:T.ink,letterSpacing:"-0.02em",opacity:0.85}}>Steward</div>
     <div style={{fontSize:15,fontWeight:700,color:"#dc2626"}}>Failed to connect</div>
     <div style={{fontSize:13,color:T.ink3,maxWidth:300,textAlign:"center"}}>{loadErr||"Could not load your workspace. Check your connection and try again."}</div>
     <button onClick={()=>window.location.reload()} style={{marginTop:4,background:T.green,border:"none",borderRadius:10,padding:"9px 20px",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer"}}>Retry</button>
@@ -217,7 +217,7 @@ function AppShell() {
     try{
       const r=await apiFetch("/billing/create-portal",{method:"POST"});
       window.location.href=r.url;
-    }catch(e){ alert(e.message); }
+    }catch(e){ alert(billingErrorMessage(e, "Couldn't open billing right now. Please try again.")); }
   }
 
   // Same blob-download pattern as Settings.jsx's exportData — lets a

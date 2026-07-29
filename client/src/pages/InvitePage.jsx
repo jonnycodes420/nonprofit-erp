@@ -85,7 +85,7 @@ export default function InvitePage() {
     return (
       <div style={wrap}>
         <div style={{ ...card, textAlign:"center" }}>
-          <div style={{ width:48, height:48, background:"#10b98118", border:"1px solid #10b98140", borderRadius:"50%", display:"flex", alignItems:"center", justifyContent:"center", margin:"0 auto 16px", fontSize:22, color:"#10b981" }}>◈</div>
+          <div style={{ width:48, height:48, background:"#10b98118", border:"1px solid #10b98140", borderRadius:"50%", display:"flex", alignItems:"center", justifyContent:"center", margin:"0 auto 16px", fontSize:22, color:"#10b981" }}>✓</div>
           <div style={{ fontSize:18, fontWeight:700, color:"#f9fafb", marginBottom:8 }}>Welcome aboard!</div>
           <div style={{ fontSize:14, color:"#6b7280" }}>Redirecting you to the dashboard…</div>
         </div>
@@ -97,7 +97,7 @@ export default function InvitePage() {
     <div style={wrap}>
       <div style={card}>
         <div style={{ marginBottom:28, textAlign:"center" }}>
-          <div style={{ width:48, height:48, background:"linear-gradient(135deg,#10b981,#3b82f6)", borderRadius:14, display:"flex", alignItems:"center", justifyContent:"center", margin:"0 auto 16px", fontSize:22 }}>◈</div>
+          <div style={{ fontFamily:"'DM Serif Display',Georgia,serif", fontSize:26, fontWeight:400, color:"#f0ede6", letterSpacing:"-0.02em", marginBottom:16 }}>Steward</div>
           <div style={{ fontSize:22, fontWeight:800, color:"#f9fafb", letterSpacing:"-0.02em", lineHeight:1.2 }}>
             You've been invited
           </div>
@@ -130,7 +130,7 @@ export default function InvitePage() {
           <button
             type="submit"
             disabled={submitting}
-            style={{ background: submitting ? "#1f2937" : "linear-gradient(135deg,#10b981,#3b82f6)", border:"none", borderRadius:12, padding:"13px 16px", color:"#fff", fontSize:15, fontWeight:700, cursor: submitting ? "not-allowed" : "pointer", opacity: submitting ? 0.7 : 1 }}
+            style={{ background: submitting ? "#1f2937" : "#1a6b4a", border:"none", borderRadius:12, padding:"13px 16px", color:"#fff", fontSize:15, fontWeight:700, cursor: submitting ? "not-allowed" : "pointer", opacity: submitting ? 0.7 : 1 }}
           >
             {submitting ? "Creating account…" : "Accept invitation →"}
           </button>

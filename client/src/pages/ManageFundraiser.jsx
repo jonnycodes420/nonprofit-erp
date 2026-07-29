@@ -83,7 +83,7 @@ export default function ManageFundraiser() {
   if (error && !data) return (
     <div style={{ ...BASE, justifyContent: "center", textAlign: "center" }}>
       <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
-      <div style={{ fontSize: 32, marginBottom: 12, opacity: 0.2 }}>◈</div>
+      <div style={{ fontFamily: "'DM Serif Display',Georgia,serif", fontSize: 24, marginBottom: 12, opacity: 0.6, letterSpacing: "-0.02em", color: T.ink }}>Steward</div>
       <div style={{ fontSize: 16, fontWeight: 700, color: "#dc2626", marginBottom: 8 }}>Link not found</div>
       <div style={{ fontSize: 13, color: T.ink3 }}>{error}</div>
     </div>

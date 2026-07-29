@@ -222,7 +222,7 @@ export default function Donate() {
   if (pageError) return (
     <div style={{ ...BASE, justifyContent: "center", textAlign: "center" }}>
       <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
-      <div style={{ fontSize: 32, marginBottom: 12, opacity: 0.2 }}>◈</div>
+      <div style={{ fontFamily: "'DM Serif Display',Georgia,serif", fontSize: 24, marginBottom: 12, opacity: 0.6, letterSpacing: "-0.02em", color: T.ink }}>Steward</div>
       <div style={{ fontSize: 16, fontWeight: 700, color: "#dc2626", marginBottom: 8 }}>Page not found</div>
       <div style={{ fontSize: 13, color: T.ink3 }}>{pageError}</div>
     </div>
@@ -396,7 +396,7 @@ export default function Donate() {
         ) : (
           <div style={{ marginBottom: 32, textAlign: "center" }}>
             <div style={{ width: 48, height: 48, background: T.greenDk, borderRadius: 14, display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 16px" }}>
-              <svg width="22" height="22" viewBox="0 0 16 16" fill="none"><path d="M8 2L13 5v6L8 14 3 11V5L8 2z" stroke="#fff" strokeWidth="1.5" fill="none"/><circle cx="8" cy="8" r="2" fill="#fff"/></svg>
+              <span style={{ fontFamily: "'DM Serif Display',Georgia,serif", fontSize: 28, fontWeight: 400, color: "#fff", lineHeight: 1 }}>S</span>
             </div>
             <h1 style={{ margin: 0, fontSize: 26, fontWeight: 800, color: T.ink, fontFamily: "'DM Serif Display', serif", letterSpacing: "-0.02em" }}>
               Give to {org.name}

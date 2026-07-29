@@ -34,7 +34,7 @@ cd "$(dirname "$0")/.."
 
 # Self-contained suites (server + scratch DB only). Alphabetical.
 CORE=(
-  billing branding clickability consistency-e2e designations digests
+  billing billing-config-error brand-glyph branding clickability consistency-e2e designations digests
   donor-merge finance-funds finance-gift-stamp finance-overview
   finance-reintegration fundraising goals home households impact
   import-assign import-both import-combined import-shape import-stage

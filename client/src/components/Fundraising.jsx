@@ -158,7 +158,7 @@ function CategoryBadge({ g, style }) {
 }
 
 function OverviewView({ overview, campaigns, onNavigate, primaryBtn, onNewCampaign, onGoto }) {
-  if (!overview) return <EmptyState icon="◇" title="Nothing to show yet" message="Set a goal and start a campaign to see your fundraising momentum here." />;
+  if (!overview) return <EmptyState title="Nothing to show yet" message="Set a goal and start a campaign to see your fundraising momentum here." />;
   const { period, givingPages, rollup, goals = [] } = overview;
   const gp = givingPages;
   const topGoals = goals.filter(g => g.isTopLevel);
@@ -539,7 +539,7 @@ function PagesView({ pages, orgSlug, onNavigate }) {
       <>
         <StartHere line="Giving pages are your public, shareable donate pages — one per campaign, each with its own link, QR code, and embed. Create and design them in Settings; their live progress shows up here." actionLabel="Create a giving page →" onAction={() => onNavigate && onNavigate("settings", { section: "giving" })} dismissKey="fundraising_pages_intro" />
         <div style={{ marginTop: 20 }}>
-          <EmptyState icon="◈" title="No live giving pages" message="Publish a giving page in Settings and it will appear here with its own thermometer and share tools." />
+          <EmptyState title="No live giving pages" message="Publish a giving page in Settings and it will appear here with its own thermometer and share tools." />
         </div>
       </>
     );

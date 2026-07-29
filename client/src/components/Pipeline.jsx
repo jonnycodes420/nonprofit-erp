@@ -176,8 +176,7 @@ export function Pipeline({ isReadOnly, onNavigate }) {
       </div>
 
       {totalCards === 0 ? (
-        <EmptyState icon="◇"
-          title={anyFilter ? "No prospects match these filters" : (scope === "mine" ? "Your pipeline is empty — and that's the point" : "No prospects on the board yet")}
+        <EmptyState           title={anyFilter ? "No prospects match these filters" : (scope === "mine" ? "Your pipeline is empty — and that's the point" : "No prospects on the board yet")}
           message={anyFilter
             ? "Clear a filter, or switch to All portfolios."
             : "The pipeline holds the prospects you're actively working — not your whole donor list. Open your Donors directory, pick the major-gift prospects worth cultivating, and add them here."}

@@ -83,11 +83,8 @@ export default function SignupPage() {
 
       {/* Left panel */}
       <div className="signup-left" style={{ width: "40%", minWidth: 280, display: "flex", flexDirection: "column", padding: "48px 40px", flexShrink: 0 }}>
-        <div className="signup-left-top" style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: "auto" }}>
-          <div style={{ width: 32, height: 32, background: "#1a6b4a", borderRadius: 9, display: "flex", alignItems: "center", justifyContent: "center" }}>
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M8 2L13 5v6L8 14 3 11V5L8 2z" stroke="#f0ede6" strokeWidth="1.5" fill="none"/><circle cx="8" cy="8" r="2" fill="#f0ede6"/></svg>
-          </div>
-          <Link to="/" style={{ fontSize: 16, fontWeight: 700, color: "#f0ede6", textDecoration: "none", fontFamily: "'DM Serif Display',Georgia,serif" }}>Steward</Link>
+        <div className="signup-left-top" style={{ display: "flex", alignItems: "center", marginBottom: "auto" }}>
+          <Link to="/" style={{ fontSize: 22, fontWeight: 400, color: "#f0ede6", textDecoration: "none", fontFamily: "'DM Serif Display',Georgia,serif", letterSpacing: "-0.02em" }}>Steward</Link>
         </div>
 
         <div className="signup-left-hero" style={{ marginBottom: 48 }}>

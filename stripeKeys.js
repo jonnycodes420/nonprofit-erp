@@ -26,4 +26,40 @@ function billingStripeMode(key) {
   if (!k) return null;
   return /^(sk|rk)_test_/.test(k) ? "test" : "live";
 }
-module.exports = { donationStripeKey, billingStripeKey, billingStripeMode };
+
+// Classify a thrown Stripe error on a PLATFORM-BILLING path (create-checkout /
+// create-portal) as a configuration problem so the route can return a typed,
+// actionable error instead of letting it bubble up as a raw 500. The class this
+// exists for: a billing key in one Stripe mode (e.g. sk_test_…) with a
+// STRIPE_PRICE_* id created in the OTHER mode — Stripe rejects it with
+// `resource_missing` + "a similar object exists in live mode, but a test mode
+// key was used". Returns:
+//   { type: "mode_mismatch" } — the price exists, but in the other mode (the
+//        cross-mode symptom above) → actionable "align key + prices to one mode".
+//   { type: "price_missing" } — a configured price id doesn't resolve at all in
+//        this mode (typo/deleted) → still a config problem, not a server bug.
+//   null — not a recognizable billing-config error (let it 500 as before).
+// Reads `.raw` too because the Stripe SDK nests the real code/param/message there.
+function billingConfigError(err) {
+  if (!err) return null;
+  const raw = err.raw || {};
+  const code = err.code || raw.code;
+  const statusCode = err.statusCode || raw.statusCode;
+  // Concatenate err+raw text — the SDK sometimes carries the real message/param
+  // only on `.raw`, so checking one or the other can miss the cross-mode phrase.
+  const msg = [err.message, raw.message].filter(Boolean).join(" ");
+  const param = [err.param, raw.param].filter(Boolean).join(" ");
+  const isResourceMissing = code === "resource_missing" || statusCode === 404;
+  if (!isResourceMissing) return null;
+  const priceRelated = /price/i.test(param) || /price/i.test(msg);
+  if (!priceRelated) return null;                       // customer-missing etc. handled elsewhere
+  const crossMode = /similar object exists in (live|test) mode/i.test(msg);
+  return { type: crossMode ? "mode_mismatch" : "price_missing" };
+}
+
+// The Stripe mode a billing key is NOT in ("test" → "live", "live" → "test").
+function otherBillingMode(mode) {
+  return mode === "test" ? "live" : mode === "live" ? "test" : null;
+}
+
+module.exports = { donationStripeKey, billingStripeKey, billingStripeMode, billingConfigError, otherBillingMode };

@@ -58,14 +58,8 @@ export default function LoginPage() {
     <div style={{ minHeight: "100vh", background: T.cream, display: "flex", flexDirection: "column", fontFamily: "'DM Sans',system-ui,sans-serif" }}>
       {/* Nav */}
       <nav style={{ padding: "20px 32px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-        <Link to="/" style={{ textDecoration: "none", display: "flex", alignItems: "center", gap: 10 }}>
-          <div style={{ width: 32, height: 32, background: T.green, borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center" }}>
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-              <path d="M8 2L13 5v6L8 14 3 11V5L8 2z" stroke="#fff" strokeWidth="1.5" fill="none" />
-              <circle cx="8" cy="8" r="2" fill="#fff" />
-            </svg>
-          </div>
-          <span style={{ fontWeight: 700, fontSize: 16, color: T.ink, letterSpacing: "-0.02em" }}>Steward</span>
+        <Link to="/" style={{ textDecoration: "none", display: "flex", alignItems: "center" }}>
+          <span style={{ fontFamily: "'DM Serif Display',Georgia,serif", fontWeight: 400, fontSize: 21, color: T.ink, letterSpacing: "-0.02em" }}>Steward</span>
         </Link>
         <Link to="/signup" style={{ fontSize: 14, color: T.ink2, textDecoration: "none" }}>
           No account? <span style={{ color: T.green, fontWeight: 600 }}>Sign up free</span>

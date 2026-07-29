@@ -26,7 +26,16 @@ export default function PlanPicker({ open, onClose }) {
       });
       window.location.href = r.url;
     } catch (e) {
-      alert(e.message || "Could not start checkout");
+      const code = e?.error || "";
+      const raw = e?.message || "";
+      // Never surface a raw 500 / Stripe internals. Typed billing-config errors
+      // (plan_mode_mismatch / plan_not_configured) carry clean admin-facing copy.
+      const clean = (code === "plan_mode_mismatch" || code === "plan_not_configured")
+        ? raw
+        : /internal server error/i.test(raw) || !raw
+        ? "Something went wrong starting checkout. Please try again, or reach out if it keeps happening."
+        : raw;
+      alert(clean);
       setLoading(null);
     }
   }
