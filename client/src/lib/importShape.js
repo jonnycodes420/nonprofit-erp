@@ -11,6 +11,32 @@
 
 export const YEAR_HDR_PAT = /(19|20)\d{2}|fy[\s_-]?\d{2,4}|(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\w*[\s\-]+(19|20)\d{2}/i;
 
+// B2 (BUILD-26) — normalize a messy imported name for the preview (shown, still
+// fully editable before submit). Three safe transforms: collapse whitespace,
+// flip a single "Last, First" → "First Last", and re-case a name ONLY when the
+// whole string is entirely upper or entirely lower (ELEANOR FITZGERALD →
+// Eleanor Fitzgerald); any internal mixed case is preserved verbatim (McKinney,
+// O'Brien, van der Berg). Roman-numeral suffixes stay upper. MUST stay in
+// lock-step with normalizeName in server.js (tests/name-normalize.test.js parity).
+const _ROMAN_SUFFIX = /^(?:i{1,3}|iv|vi{0,3}|ix|xi{0,3}|x)$/i;
+const _CORP_SUFFIX = /^(inc|llc|l\.l\.c|llp|ltd|co|corp|company|foundation|fdn|trust|fund|society|assn|association|partners|group|plc|gmbh|nfp)\.?$/i;
+const _titleCaseWord = w => _ROMAN_SUFFIX.test(w)
+  ? w.toUpperCase()
+  : w.toLowerCase().replace(/(^|[’'\-.])([a-zà-ÿ])/g, (m, sep, ch) => sep + ch.toUpperCase());
+export function normalizeName(raw) {
+  if (raw == null) return raw;
+  let s = String(raw).replace(/\s+/g, " ").trim();
+  if (!s) return s;
+  const parts = s.split(",");
+  if (parts.length === 2 && parts[0].trim() && parts[1].trim() && !_CORP_SUFFIX.test(parts[1].trim()))
+    s = parts[1].trim() + " " + parts[0].trim();
+  const letters = s.replace(/[^A-Za-zÀ-ÿ]/g, "");
+  const allUpper = letters && letters === letters.toUpperCase();
+  const allLower = letters && letters === letters.toLowerCase();
+  if (allUpper || allLower) s = s.replace(/[A-Za-zÀ-ÿ][A-Za-zÀ-ÿ'’.\-]*/g, w => _titleCaseWord(w));
+  return s;
+}
+
 const numlike = v => {
   if (v === null || v === undefined || v === "") return false;
   return !isNaN(parseFloat(String(v).replace(/[$,\s]/g, "")));

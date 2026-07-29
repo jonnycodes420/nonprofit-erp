@@ -483,9 +483,11 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
     if(isTrivial){
       return goal.goalType==="lapsed_recovery"?`${donorWord} came back this week`:`${donorWord} gave this week`;
     }
-    return goal.goalType==="lapsed_recovery"
-      ?`${fmtFull(goal.recentAmount)} recovered from ${donorWord} this week`
-      :`${fmtFull(goal.recentAmount)} came in from ${donorWord} this week`;
+    // B3 — "recovered" is reserved for tracked recovery-workflow dollars only.
+    // This figure is incoming giving toward the win-back goal, NOT money the
+    // recovery workflow attributably won back, so it must read "came in", never
+    // "recovered" (which would overclaim what Steward did).
+    return `${fmtFull(goal.recentAmount)} came in from ${donorWord} this week`;
   })();
 
   // ── BUILD-21 Part 1 — typed/roll-up goal hero (reuses BUILD-16's model) ──

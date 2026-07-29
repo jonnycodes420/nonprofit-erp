@@ -28,7 +28,7 @@ import { T, fmt, fmtFull, daysDiff, SC, askClaude, STAGES, STAGE_ACTION, TIER_CO
 // profile button, and modal render below, and add `VoiceMemoModal` back to
 // the import above).
 import { DonorMap } from "./DonorMap";
-import { detectImportShape, groupTransactions, shapeLabel, YEAR_HDR_PAT, detectWorkbookRoles, pickMatchKey, linkGiftsToDonors, detectOwnerColumn, matchOwnersToUsers, applyOwnerAssignment, groupOwnerMatches } from "../lib/importShape";
+import { detectImportShape, groupTransactions, shapeLabel, YEAR_HDR_PAT, detectWorkbookRoles, pickMatchKey, linkGiftsToDonors, detectOwnerColumn, matchOwnersToUsers, applyOwnerAssignment, groupOwnerMatches, normalizeName } from "../lib/importShape";
 
 // ── CSV Import helpers ─────────────────────────────────────────────────────
 // ── Import field registry ──────────────────────────────────────────────────
@@ -275,7 +275,7 @@ function buildDonorRows(parsed, mapping) {
     const hasEmail = !!(d.email && String(d.email).trim());
     if (!hasName && !hasEmail) { skipped.push({ row:idx+2, reason:"no name or email" }); return; }
     if (!hasName) { d.name = String(d.email).trim(); warnings.push(`${rowLabel}: no name — using email as name`); }
-    else d.name = String(d.name).trim();
+    else d.name = normalizeName(d.name); // B2 — tidy Last,First / ALL-CAPS in the preview (editable)
     if (d.email !== undefined) { const {value,warn} = normalizeEmail(d.email); d.email=value; if(warn) warnings.push(`${rowLabel}: ${warn}`); }
     if (d.phone) d.phone = String(d.phone).trim() || null;
     if (d.total !== undefined && d.total !== "") { const {value,warn} = normalizeMoney(d.total); d.total=value; if(warn) warnings.push(`${rowLabel}: ${warn}`); }
@@ -326,7 +326,7 @@ function buildCombinedRows(parsed, donorMapping, yearCols) {
     const hasEmail = !!(d.email && String(d.email).trim());
     if (!hasName && !hasEmail) { results.push({ rowIdx:idx, donor:null, gifts:[], warnings:[], skipped:true }); return; }
     if (!hasName) { d.name = String(d.email).trim(); warnings.push(`${rowLabel}: no name`); }
-    else d.name = String(d.name).trim();
+    else d.name = normalizeName(d.name); // B2 — tidy Last,First / ALL-CAPS in the preview (editable)
     if (d.email !== undefined) { const {value,warn} = normalizeEmail(d.email); d.email=value; if(warn) warnings.push(`${rowLabel}: ${warn}`); }
     if (d.phone) d.phone = String(d.phone).trim() || null;
     if (d.total !== undefined && d.total !== "") { const {value,warn} = normalizeMoney(d.total); d.total=value; if(warn) warnings.push(`${rowLabel}: ${warn}`); }

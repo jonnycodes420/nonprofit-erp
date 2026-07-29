@@ -865,6 +865,36 @@ function normalizeGiftDate(raw) {
   return new Date().toISOString().split("T")[0];          // fallback to today
 }
 
+// B2 (BUILD-26) — tidy a name arriving from a messy spreadsheet WITHOUT destroying
+// signal. Three safe, reversible transforms: (1) collapse runs of whitespace +
+// trim; (2) flip a single "Last, First" into "First Last"; (3) re-case a name ONLY
+// when the WHOLE string is entirely upper OR entirely lower (ELEANOR FITZGERALD →
+// Eleanor Fitzgerald) — any internal mixed case means a human already cased it, so
+// it is preserved verbatim (McKinney, O'Brien, van der Berg). Roman-numeral
+// suffixes (II/III/IV…) stay upper. The value stays fully editable after import.
+// MUST stay in lock-step with normalizeName in client/src/lib/importShape.js
+// (asserted by tests/name-normalize.test.js parity sweep).
+const _ROMAN_SUFFIX = /^(?:i{1,3}|iv|vi{0,3}|ix|xi{0,3}|x)$/i;
+// A "Last, First" flip must NOT eat a corporate name like "Acme, Inc." → "Inc. Acme".
+const _CORP_SUFFIX = /^(inc|llc|l\.l\.c|llp|ltd|co|corp|company|foundation|fdn|trust|fund|society|assn|association|partners|group|plc|gmbh|nfp)\.?$/i;
+function _titleCaseWord(w) {
+  if (_ROMAN_SUFFIX.test(w)) return w.toUpperCase();               // III, IV, VIII…
+  return w.toLowerCase().replace(/(^|[’'\-.])([a-zà-ÿ])/g, (m, sep, ch) => sep + ch.toUpperCase());
+}
+function normalizeName(raw) {
+  if (raw == null) return raw;
+  let s = String(raw).replace(/\s+/g, " ").trim();
+  if (!s) return s;
+  const parts = s.split(",");
+  if (parts.length === 2 && parts[0].trim() && parts[1].trim() && !_CORP_SUFFIX.test(parts[1].trim()))
+    s = parts[1].trim() + " " + parts[0].trim();
+  const letters = s.replace(/[^A-Za-zÀ-ÿ]/g, "");
+  const allUpper = letters && letters === letters.toUpperCase();
+  const allLower = letters && letters === letters.toLowerCase();
+  if (allUpper || allLower) s = s.replace(/[A-Za-zÀ-ÿ][A-Za-zÀ-ÿ'’.\-]*/g, w => _titleCaseWord(w));
+  return s;
+}
+
 // ── Donor summary recalculation ────────────────────────────────────────────
 // Recomputes total_giving, gift_count, last_gift_date, last_gift_amount
 // from the gifts table (source of truth). Replace delta adjustments on
@@ -2473,7 +2503,7 @@ app.post("/donors/import", requireAuth, wrap(async (req, res) => {
       const a = resolveAssignee(d);
       params.push(
         "d_" + uuid().slice(0, 8), req.user.orgId,
-        String(d.name).trim(),
+        normalizeName(d.name),
         d.email   || "",
         d.phone   || "",
         d.status  || "new",
@@ -2603,7 +2633,7 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrap(async (r
     const tuples = batch.map(d => {
       const a = resolveAssignee(d);
       params.push(
-        d._id, orgId, String(d.name).trim(), d.email||"", d.phone||"",
+        d._id, orgId, normalizeName(d.name), d.email||"", d.phone||"",
         d.status||"new", d.stage||"prospect",
         Math.round(parseFloat(d.total)||0), Math.round(parseFloat(d.lastAmount)||0),
         d.lastGift||null, parseInt(d.gifts)||(d.total?1:0),
@@ -8512,7 +8542,7 @@ app.get("/finance/summary", requireAuth, wrap(async (req, res) => {
   const cur = finPeriodBounds(yearMode, 0);
   const prior = finPeriodBounds(yearMode, -1);
 
-  const [ytdRows, priorRows, allRows, monthRows, fundRows, activeFundRows] = await Promise.all([
+  const [ytdRows, priorRows, allRows, monthRows, fundRows, activeFundRows, giftHistRows, ledgerGiftRows] = await Promise.all([
     query(`SELECT type, SUM(amount) as total FROM fin_transactions
            WHERE org_id = ? AND date >= ? AND date <= ? GROUP BY type`, [orgId, cur.start, cur.end]),
     query(`SELECT type, SUM(amount) as total FROM fin_transactions
@@ -8530,6 +8560,14 @@ app.get("/finance/summary", requireAuth, wrap(async (req, res) => {
            ORDER BY f.restricted ASC, f.name ASC`, [orgId]),
     query(`SELECT COUNT(DISTINCT fund_id) AS cnt FROM fin_transactions
            WHERE org_id = ? AND date >= ? AND date <= ? AND fund_id IS NOT NULL`, [orgId, cur.start, cur.end]),
+    // B1 — the org's whole giving history (all gifts) vs what actually reached the
+    // ledger as gift income. Imported HISTORICAL giving deliberately never stamps
+    // fin_transactions (it's records being loaded, not money moving through
+    // Steward — see "Imported gifts vs the ledger" in CLAUDE.md). The gap is real
+    // and must be EXPLAINED, never left to read as "$0 raised" next to a Reports
+    // page showing years of giving.
+    query("SELECT COALESCE(SUM(amount),0) AS total, COUNT(*)::int AS n FROM gifts WHERE org_id = ?", [orgId]),
+    query("SELECT COALESCE(SUM(amount),0) AS total FROM fin_transactions WHERE org_id = ? AND type='income' AND source IN ('gift','import','online','event')", [orgId]),
   ]);
 
   const ytd   = Object.fromEntries(ytdRows.map(r => [r.type, parseFloat(r.total)]));
@@ -8554,6 +8592,16 @@ app.get("/finance/summary", requireAuth, wrap(async (req, res) => {
     else if (r.type === "expense") monthly[i].expense += parseFloat(r.amount);
   }
 
+  // Giving history vs ledger. `unledgeredGiving` = giving that lives in Reports
+  // but NOT in the ledger (imported historical gifts). `hasUnledgeredGiving` tells
+  // the Finance UI to render the "your giving history lives in Reports" explainer
+  // + cross-link instead of implying $0 was ever raised. $1 epsilon so cent-level
+  // rounding never trips it.
+  const giftHistoryTotal = parseFloat(giftHistRows[0]?.total || 0);
+  const giftHistoryCount = parseInt(giftHistRows[0]?.n || 0);
+  const ledgerGiftTotal  = parseFloat(ledgerGiftRows[0]?.total || 0);
+  const unledgeredGiving = Math.max(0, giftHistoryTotal - ledgerGiftTotal);
+
   res.json({
     cashOnHand,
     ytdRevenue, ytdExpenses, netSurplus: ytdRevenue - ytdExpenses,
@@ -8566,6 +8614,8 @@ app.get("/finance/summary", requireAuth, wrap(async (req, res) => {
     fundBalances: fundRows.map(f => ({
       id: f.id, name: f.name, restricted: f.restricted, balance: parseFloat(f.balance) || 0,
     })),
+    giftHistoryTotal, giftHistoryCount, ledgerGiftTotal,
+    unledgeredGiving, hasUnledgeredGiving: unledgeredGiving > 1,
   });
 }));
 

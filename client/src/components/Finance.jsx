@@ -610,6 +610,27 @@ export function Finance({ data, isReadOnly, onNavigate }) {
 
       {/* ── Overview ── */}
       {subtab === "overview" && <>
+        {/* B1 — never let Finance read as "$0 raised" next to a Reports page
+            showing years of giving. When imported historical giving lives in
+            Reports but not the ledger, say so plainly and cross-link, so a
+            treasurer can reconcile the two numbers instead of distrusting both. */}
+        {summary?.hasUnledgeredGiving && (
+          <div style={{ background:T.gold100, border:"1px solid "+T.gold300, borderRadius:12, padding:"14px 16px", display:"flex", gap:14, alignItems:"flex-start", flexWrap:"wrap" }}>
+            <div style={{ flex:"1 1 320px", minWidth:260 }}>
+              <div style={{ fontSize:13, fontWeight:700, color:T.ink, marginBottom:3 }}>
+                Your giving history lives in Reports
+              </div>
+              <div style={{ fontSize:12, color:T.ink2, lineHeight:1.5 }}>
+                {fmtFull(summary.unledgeredGiving)} of imported giving{summary.giftHistoryCount ? ` across ${summary.giftHistoryCount.toLocaleString()} gifts` : ""} isn't in this ledger.
+                The ledger tracks <strong>money moving through Steward</strong> — connect Stripe or log a transaction. Your full giving record is in Reports.
+              </div>
+            </div>
+            <button onClick={() => onNavigate("reports")}
+              style={{ background:T.greenMid, color:"#fff", border:"none", borderRadius:8, padding:"9px 14px", fontSize:12, fontWeight:700, cursor:"pointer", whiteSpace:"nowrap" }}>
+              View giving in Reports →
+            </button>
+          </div>
+        )}
         <MoneyInStrip onNavigate={onNavigate}/>
         <div style={{ display:"flex", gap:10, flexWrap:"wrap" }}>
           <AIBtn onClick={getForecast} loading={forecastLoading} label="✦ 6-Month Forecast"/>
