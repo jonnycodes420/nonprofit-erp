@@ -41,7 +41,7 @@ CORE=(
   locked-features
   moves no-emoji onboarding-brand palette pipeline pipeline-gating portfolios reports-cadence
   smart-moves tasks tenant-isolation upgrade-checkout workflows workflows-e2e
-  finance-reports-consistency name-normalize reserved-recovered
+  finance-reports-consistency name-normalize reserved-recovered concurrency
 )
 
 pass=0; fail=0; failed=()

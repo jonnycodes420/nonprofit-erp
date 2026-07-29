@@ -45,6 +45,26 @@ async function withTransaction(fn) {
   }
 }
 
+// BUILD-27 Part C — serialize a critical section per key across concurrent
+// requests using a Postgres SESSION-level advisory lock on a DEDICATED pooled
+// client (acquire + release MUST be the same session). Different keys proceed in
+// parallel; the same key serializes. Used to make check-then-insert dedup
+// (parallel imports, the webhook donor resolve-or-create) race-safe WITHOUT a hard
+// unique constraint — donor emails are legitimately non-unique in this product
+// (the duplicate-merge tool exists precisely for that), so a UNIQUE(email) is the
+// wrong primitive; an advisory lock closes the race without forbidding dupes or
+// risking boot failure on already-duplicated data.
+async function withAdvisoryLock(key, fn) {
+  const client = await pool.connect();
+  try {
+    await client.query("SELECT pg_advisory_lock(hashtext($1))", [String(key)]);
+    return await fn();
+  } finally {
+    try { await client.query("SELECT pg_advisory_unlock(hashtext($1))", [String(key)]); } catch {}
+    client.release();
+  }
+}
+
 // Like query() / run() but bound to a specific pg client (for use inside withTransaction)
 function queryTx(client, sql, params = []) {
   let i = 0;
@@ -742,6 +762,16 @@ async function initSchema() {
   // ON CONFLICT (gift_id) WHERE gift_id IS NOT NULL DO NOTHING.
   await pool.query(`ALTER TABLE fin_transactions ADD COLUMN IF NOT EXISTS gift_id TEXT`);
   await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS uq_fin_txns_gift ON fin_transactions (gift_id) WHERE gift_id IS NOT NULL`);
+  // BUILD-27 Part C (scenario 2): the Stripe payment_intent id is the natural
+  // per-charge key — one payment_intent = one online gift, ALWAYS. The webhook's
+  // old check-then-insert dedup on stripe_payment_id lost the race under a PARALLEL
+  // redelivery (both handlers SELECT-nothing, both INSERT → a doubled online gift +
+  // ledger row, since each racer minted a different gift_id so uq_fin_txns_gift
+  // couldn't catch it). This DB-level unique makes the exactly-once guarantee win
+  // under a real race: the webhook now INSERTs ON CONFLICT DO NOTHING and only runs
+  // the money side-effects if a row was actually reserved. Safe by construction —
+  // two real gifts never share a Stripe pi.id.
+  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS uq_gifts_stripe_pi ON gifts (org_id, stripe_payment_id) WHERE stripe_payment_id IS NOT NULL`);
   await pool.query(`ALTER TABLE fin_funds ADD COLUMN IF NOT EXISTS is_sample BOOLEAN DEFAULT false`);
   await pool.query(`ALTER TABLE volunteers ADD COLUMN IF NOT EXISTS is_sample BOOLEAN DEFAULT false`);
   await pool.query(`ALTER TABLE board_members ADD COLUMN IF NOT EXISTS is_sample BOOLEAN DEFAULT false`);
@@ -1965,4 +1995,4 @@ async function seedOrgData(orgId) {
   );
 }
 
-module.exports = { getDb, query, run, uuid, seedOrgData, withTransaction, queryTx, runTx };
+module.exports = { getDb, query, run, uuid, seedOrgData, withTransaction, withAdvisoryLock, queryTx, runTx };

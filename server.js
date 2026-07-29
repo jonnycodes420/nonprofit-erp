@@ -49,7 +49,7 @@ const crypto = require("crypto");
 const Anthropic = require("@anthropic-ai/sdk");
 const { Resend } = require("resend");
 const resend = new Resend(process.env.RESEND_API_KEY);
-const { getDb, query, run, uuid, seedOrgData, withTransaction, queryTx, runTx } = require("./db");
+const { getDb, query, run, uuid, seedOrgData, withTransaction, withAdvisoryLock, queryTx, runTx } = require("./db");
 const { signToken, requireAuth, requireSuperAdmin } = require("./auth");
 const { normalizeAccent } = require("./branding");
 const { lookupMatchingGift } = require("./matchingGifts");
@@ -227,23 +227,24 @@ app.post("/stripe/webhook", express.raw({ type: "application/json" }), async (re
           // this pi.id already exists in the org, this is a redelivery — no-op
           // (still 200 so Stripe stops retrying). Mirrors the
           // recoveryEventAlreadyProcessed(event.id) guard used elsewhere here.
-          if (pi.id) {
-            const dupGift = await query("SELECT id FROM gifts WHERE org_id=$1 AND stripe_payment_id=$2 LIMIT 1", [orgId, pi.id]);
-            if (dupGift.length) {
-              console.log(`[stripe] payment_intent.succeeded ${pi.id} already recorded (gift ${dupGift[0].id}) — skipping duplicate`);
-              return res.json({ received: true, duplicate: true });
+          // BUILD-27 Part C (scenario 2): resolve-or-create the donor under a
+          // per-(org,email) advisory lock so two PARALLEL webhooks for the SAME new
+          // donor email can't both SELECT-nothing and both INSERT a donor (which
+          // would split the gift/total across two rows). The lock serializes only
+          // same-email concurrent creates; everything else stays parallel.
+          let donorRow = await withAdvisoryLock(`donor:${orgId}:${(email || "").toLowerCase()}`, async () => {
+            let dr = await query("SELECT id FROM donors WHERE org_id=$1 AND email ILIKE $2", [orgId, email]);
+            if (!dr.length && donorName) {
+              const newDonorId = "d_" + uuid().slice(0, 8);
+              await run(
+                `INSERT INTO donors (id, org_id, name, email, status, stage, total_giving, gift_count)
+                 VALUES ($1,$2,$3,$4,'active','steward',0,0)`,
+                [newDonorId, orgId, donorName, email.toLowerCase()]
+              );
+              dr = [{ id: newDonorId }];
             }
-          }
-          let donorRow = await query("SELECT id FROM donors WHERE org_id=$1 AND email ILIKE $2", [orgId, email]);
-          if (!donorRow.length && donorName) {
-            const newDonorId = "d_" + uuid().slice(0, 8);
-            await run(
-              `INSERT INTO donors (id, org_id, name, email, status, stage, total_giving, gift_count)
-               VALUES ($1,$2,$3,$4,'active','steward',0,0)`,
-              [newDonorId, orgId, donorName, email.toLowerCase()]
-            );
-            donorRow = [{ id: newDonorId }];
-          }
+            return dr;
+          });
           if (donorRow.length) {
             const donorId = donorRow[0].id;
             const giftId = "g_" + uuid().slice(0, 8);
@@ -252,11 +253,29 @@ app.post("/stripe/webhook", express.raw({ type: "application/json" }), async (re
             const donorPreRow = await query("SELECT stage, gift_count FROM donors WHERE id=$1", [donorId]);
             const wasLapsed = donorPreRow[0]?.stage === 'lapsed';
             const wasFirstGift = (donorPreRow[0]?.gift_count || 0) === 0;
-            await run(
-              `INSERT INTO gifts (id, org_id, donor_id, amount, date, notes, stripe_payment_id, campaign_id, giving_page_id, peer_fundraiser_id)
-               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
-              [giftId, orgId, donorId, amount, today, "Online payment via Stripe", pi.id, campaignId, givingPageId, peerFundraiserId]
-            );
+            // BUILD-27 Part C (scenario 2): RESERVE the gift by its Stripe pi.id
+            // atomically. Under a PARALLEL webhook redelivery, exactly one INSERT
+            // wins the uq_gifts_stripe_pi unique; the loser's RETURNING is empty and
+            // it does ZERO money side-effects (no donor total bump, no ledger row).
+            // Replaces the old check-then-insert dedup that raced. Still 200 so
+            // Stripe stops retrying.
+            const reservedGift = pi.id
+              ? await query(
+                  `INSERT INTO gifts (id, org_id, donor_id, amount, date, notes, stripe_payment_id, campaign_id, giving_page_id, peer_fundraiser_id)
+                   VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+                   ON CONFLICT (org_id, stripe_payment_id) WHERE stripe_payment_id IS NOT NULL DO NOTHING
+                   RETURNING id`,
+                  [giftId, orgId, donorId, amount, today, "Online payment via Stripe", pi.id, campaignId, givingPageId, peerFundraiserId]
+                )
+              : await query(
+                  `INSERT INTO gifts (id, org_id, donor_id, amount, date, notes, stripe_payment_id, campaign_id, giving_page_id, peer_fundraiser_id)
+                   VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING id`,
+                  [giftId, orgId, donorId, amount, today, "Online payment via Stripe", pi.id, campaignId, givingPageId, peerFundraiserId]
+                );
+            if (!reservedGift.length) {
+              console.log(`[stripe] payment_intent.succeeded ${pi.id} already recorded — skipping duplicate (race-safe)`);
+              return res.json({ received: true, duplicate: true });
+            }
             await run(
               `UPDATE donors SET
                  total_giving = total_giving + $1,
@@ -2593,6 +2612,23 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrap(async (r
   const isTeamOrg = orgForLimit.length ? orgPlanTier(orgForLimit[0]) === "team" : false;
   const resolveAssignee = await buildAssigneeResolver(donors, orgId, isTeamOrg);
 
+  // BUILD-27 Part C (scenario 3): serialize the email dedup + donor insert for
+  // THIS org so two parallel imports can't both pre-load the email set, both miss
+  // each other's in-flight rows, and both insert an overlapping donor. The
+  // advisory lock makes the check-then-insert dedup atomic per org (different orgs
+  // still import fully in parallel) WITHOUT a hard UNIQUE(email) the product can't
+  // have — duplicate emails are legitimately possible and the merge tool handles
+  // them. Shared results are hoisted out so the gift-attach step below can use them.
+  let duplicates = 0;
+  let created = 0;
+  const donorsToInsert = [];
+  const indexToId = {}; // donorIndex → pre-generated id (only non-deduped donors)
+  const explicitStageIds = []; // donors whose file had an explicit stage column — never re-inferred over
+  const batchErrors = [];
+  const failedIds = new Set(); // IDs whose batch failed — drop their gifts too
+  const DONOR_BATCH = 500;
+
+  await withAdvisoryLock(`import:${orgId}`, async () => {
   // Email dedup (same bulk-Set approach as /donors/import)
   const existingEmailRows = await query(
     "SELECT LOWER(email) AS e FROM donors WHERE org_id=? AND email IS NOT NULL AND email != '' AND deleted_at IS NULL",
@@ -2603,11 +2639,6 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrap(async (r
 
   // Generate all donor IDs in JS before inserting — gifts reference these IDs directly,
   // no extra round trip needed.
-  let duplicates = 0;
-  const donorsToInsert = [];
-  const indexToId = {}; // donorIndex → pre-generated id (only non-deduped donors)
-  const explicitStageIds = []; // donors whose file had an explicit stage column — never re-inferred over
-
   donors.forEach((d, idx) => {
     if (!d.name || !String(d.name).trim()) return;
     const emailLower = (d.email || "").toLowerCase().trim();
@@ -2622,11 +2653,6 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrap(async (r
   });
 
   // ── Bulk-insert donors (500/batch, one multi-row INSERT per batch) ──
-  const DONOR_BATCH = 500;
-  let created = 0;
-  const batchErrors = [];
-  const failedIds = new Set(); // IDs whose batch failed — drop their gifts too
-
   for (let bi = 0; bi < donorsToInsert.length; bi += DONOR_BATCH) {
     const batch = donorsToInsert.slice(bi, bi + DONOR_BATCH);
     const params = [];
@@ -2662,6 +2688,7 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrap(async (r
       batch.forEach(d => failedIds.add(d._id));
     }
   }
+  }); // end withAdvisoryLock(import:orgId) — donor dedup+insert now atomic per org
 
   // ── Build gift+interaction records ──
   // Filter to gifts whose donor was actually inserted (not deduped or batch-failed).
