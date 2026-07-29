@@ -28,7 +28,7 @@ import { T, fmt, fmtFull, daysDiff, SC, askClaude, STAGES, STAGE_ACTION, TIER_CO
 // profile button, and modal render below, and add `VoiceMemoModal` back to
 // the import above).
 import { DonorMap } from "./DonorMap";
-import { detectImportShape, groupTransactions, shapeLabel, YEAR_HDR_PAT, detectWorkbookRoles, pickMatchKey, linkGiftsToDonors } from "../lib/importShape";
+import { detectImportShape, groupTransactions, shapeLabel, YEAR_HDR_PAT, detectWorkbookRoles, pickMatchKey, linkGiftsToDonors, detectOwnerColumn, matchOwnersToUsers, applyOwnerAssignment } from "../lib/importShape";
 
 // ── CSV Import helpers ─────────────────────────────────────────────────────
 // ── Import field registry ──────────────────────────────────────────────────
@@ -44,6 +44,10 @@ const CSV_FIELDS = [
   { key:"city",      labels:["city","town"] },
   { key:"state",     labels:["state","province","region"] },
   { key:"notes",     labels:["notes","note","comments","memo"] },
+  // owner = the gift officer this donor is assigned to (Team import routing). The
+  // raw cell value is matched to an org user (email→name) before submit; on Core
+  // it's ignored server-side. Labels mirror importShape.js's OWNER_HDR_PAT.
+  { key:"owner",     labels:["assigned officer","assigned to","owner","solicitor","gift officer","relationship manager","account manager","managed by","assigned fundraiser"] },
 ];
 const VALID_IMPORT_KEYS = new Set([...CSV_FIELDS.map(f => f.key), "_firstName", "_lastName"]);
 const IMPORT_STAGES = ["prospect","qualify","cultivate","solicit","steward","lapsed"];
@@ -397,6 +401,7 @@ function buildTransactionPayload(parsed, txMap) {
     if (txMap.phone && row[txMap.phone]) donor.phone = String(row[txMap.phone]).trim() || null;
     if (txMap.city  && row[txMap.city])  donor.city  = String(row[txMap.city]).trim()  || null;
     if (txMap.state && row[txMap.state]) donor.state = String(row[txMap.state]).trim()  || null;
+    if (txMap.owner && row[txMap.owner]) donor.owner = String(row[txMap.owner]).trim()  || undefined;
     let gift = null;
     if (txMap.amount) {
       const { value: amtVal } = normalizeMoney(row[txMap.amount]);
@@ -539,7 +544,7 @@ export function DonorImport({ onClose, onImported, withHistory = false }) {
   const [parsed,     setParsed]     = useState(null);       // { headers:[], rows:[] }
   const [xlsxSheets, setXlsxSheets]= useState(null);       // [{name, rowCount, headers, rows}] | null
   const [mapping,    setMapping]    = useState({});         // aggregate + wide donor-field mapping
-  const [txMap,      setTxMap]      = useState({ donorName:"",donorEmail:"",amount:"",date:"",type:"",campaign:"",notes:"",phone:"",city:"",state:"" });
+  const [txMap,      setTxMap]      = useState({ donorName:"",donorEmail:"",amount:"",date:"",type:"",campaign:"",notes:"",phone:"",city:"",state:"",owner:"" });
   const [yearCols,   setYearCols]   = useState([]);         // wide year columns
   const [yearConvention, setYearConvention] = useState("dec31");
   const [shape,      setShape]      = useState("aggregate");// auto-detected file shape
@@ -552,6 +557,31 @@ export function DonorImport({ onClose, onImported, withHistory = false }) {
   const [result,     setResult]     = useState(null);       // {created,giftsInserted,duplicates,warned,skipped,batchErrors}
   const [err,        setErr]        = useState("");
   const [upgradeInfo,setUpgradeInfo]= useState(null);
+
+  // ── Officer routing (Team) — map an owner/officer column to org users so each
+  // donor lands in the right officer's portfolio on import (pairs with the
+  // pipeline-portfolio model). Core orgs never see this (isTeam=false → the
+  // panel is hidden and the server ignores any assignment). ────────────────────
+  const { auth } = useAuth();
+  const [orgUsers,   setOrgUsers]   = useState([]);   // [{id,name,email,role}]
+  const [isTeam,     setIsTeam]     = useState(false);
+  const [ownerMap,   setOwnerMap]   = useState({});   // rawOwnerValue → userId | "" (unassigned)
+  const [bulkAssign, setBulkAssign] = useState("");   // no-owner-column case: "" | "__me__" | userId
+  const [inviteFor,  setInviteFor]  = useState(null); // owner value being invited
+  const [inviteEmail,setInviteEmail]= useState("");
+  const [inviteBusy, setInviteBusy] = useState(false);
+  const [inviteErr,  setInviteErr]  = useState("");
+  const [invitedValues,setInvitedValues]= useState({}); // owner value → true once invited
+  const myId = auth?.user?.id || "";
+  const myName = auth?.user?.name || auth?.user?.email || "";
+
+  useEffect(() => {
+    // Tier probe + officer list (same source the pipeline/donor-profile use).
+    apiFetch("/portfolio/officers").then(r => {
+      setIsTeam(r?.tier === "team");
+      setOrgUsers((r?.officers || []).map(o => ({ id:o.id, name:o.name, email:o.email, role:o.role })));
+    }).catch(()=>{});
+  }, []);
 
   const effectiveShape = shapeOverride || shape;
 
@@ -669,12 +699,13 @@ export function DonorImport({ onClose, onImported, withHistory = false }) {
 
   // ── Submit import (chunked, with progress — the hang fix) ──
   const doImport = async () => {
-    const { donors, gifts, warnedCount, skippedCount, error } = payload;
+    const { donors: rawDonors, gifts, warnedCount, skippedCount, error } = payload;
     if (error) { setErr("Failed to prepare import data — " + error + ". Check the browser console."); return; }
-    if (!donors.length) {
+    if (!rawDonors.length) {
       setErr(skippedCount ? `All ${skippedCount} rows skipped — no usable name or email.` : "Nothing to import — map a name or email column.");
       return;
     }
+    const donors = assignPayloadDonors(rawDonors); // stamp assignedTo from the owner mapping (Team)
     setLoading(true); setErr(""); setProgress({ done:0, total:donors.length });
     try {
       const totals = await submitImportChunked(donors, gifts, (done,total) => setProgress({ done, total }));
@@ -719,9 +750,10 @@ export function DonorImport({ onClose, onImported, withHistory = false }) {
 
   const doImportBoth = async () => {
     if (!bothPayload) return;
-    const { donors, gifts, error } = bothPayload;
+    const { donors: rawDonors, gifts, error } = bothPayload;
     if (error) { setErr("Failed to prepare import data — " + error + ". Check the browser console."); return; }
-    if (!donors.length) { setErr("Nothing to import — no usable donor rows."); return; }
+    if (!rawDonors.length) { setErr("Nothing to import — no usable donor rows."); return; }
+    const donors = assignPayloadDonors(rawDonors); // stamp assignedTo from the owner mapping (Team)
     setLoading(true); setErr(""); setProgress({ done:0, total:donors.length });
     try {
       const totals = await submitImportChunked(donors, gifts, (done,total) => setProgress({ done, total }));
@@ -740,6 +772,130 @@ export function DonorImport({ onClose, onImported, withHistory = false }) {
     }
     setLoading(false); setProgress(null);
   };
+
+  // ── Officer routing: which column carries the owner, and its distinct values ─
+  const effectiveOwnerCol = useMemo(() => {
+    if (bothMode) return detectOwnerColumn(bothMode.donorSheet.headers || []);
+    if (!parsed) return "";
+    if (effectiveShape === "transaction") return txMap.owner || detectOwnerColumn(parsed.headers);
+    const mapped = Object.keys(mapping).find(h => mapping[h] === "owner");
+    return mapped || detectOwnerColumn(parsed.headers);
+  }, [bothMode, parsed, effectiveShape, txMap.owner, mapping]);
+
+  const ownerMatches = useMemo(() => {
+    if (!isTeam || !effectiveOwnerCol || !orgUsers.length) return [];
+    const rows = bothMode ? (bothMode.donorSheet.rows || []) : (parsed?.rows || []);
+    const values = rows.map(r => r[effectiveOwnerCol]);
+    return matchOwnersToUsers(values, orgUsers); // [{value,count,userId,userName,matchType}]
+  }, [isTeam, effectiveOwnerCol, orgUsers, bothMode, parsed]);
+
+  // Seed ownerMap from the auto-match whenever the set of owner values changes.
+  const ownerValuesKey = ownerMatches.map(m => m.value).join("|");
+  useEffect(() => {
+    if (!ownerMatches.length) return;
+    const init = {};
+    ownerMatches.forEach(m => { init[m.value] = m.userId || ""; });
+    setOwnerMap(init);
+  }, [ownerValuesKey]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Apply the confirmed routing to a payload's donors (strips the raw `owner`
+  // field either way). Core (isTeam=false) → always unassigned.
+  const assignPayloadDonors = (donors) => {
+    if (!isTeam) return donors.map(({ owner, ...d }) => d);
+    if (effectiveOwnerCol && ownerMatches.length) {
+      const resolved = {};
+      for (const m of ownerMatches) {
+        const uid = ownerMap[m.value];
+        if (uid) { const u = orgUsers.find(x => x.id === uid); resolved[String(m.value).toLowerCase().trim()] = { userId: uid, userName: u?.name || null }; }
+      }
+      return applyOwnerAssignment(donors, resolved);
+    }
+    if (bulkAssign === "__me__" && myId) return donors.map(({ owner, ...d }) => ({ ...d, assignedTo: myId, assignedToName: myName || null }));
+    if (bulkAssign && bulkAssign !== "__me__") { const u = orgUsers.find(x => x.id === bulkAssign); return donors.map(({ owner, ...d }) => ({ ...d, assignedTo: bulkAssign, assignedToName: u?.name || null })); }
+    return donors.map(({ owner, ...d }) => d);
+  };
+
+  async function sendOfficerInvite() {
+    if (!inviteEmail.trim()) return;
+    setInviteBusy(true); setInviteErr("");
+    try {
+      await apiFetch("/auth/invite", { method:"POST", body: JSON.stringify({ email: inviteEmail.trim(), role: "staff" }) });
+      const val = inviteFor;
+      setInvitedValues(p => ({ ...p, [val]: true }));
+      setInviteFor(null); setInviteEmail("");
+    } catch (e) {
+      setInviteErr(e.error === "seat_limit" ? (e.message || "You've reached your seat limit.") : (e.message || "Could not send invite."));
+    }
+    setInviteBusy(false);
+  }
+
+  // The Team officer-routing panel (an owner-column map, or bulk options when
+  // there's no owner column). A plain function (not a nested component) so the
+  // invite input never remounts on keystroke.
+  function ownerRoutingUI() {
+    if (!isTeam) return null;
+    const panel = { background:T.bg, borderRadius:10, padding:"12px 14px", marginBottom:12, border:`1px solid ${T.bg3}` };
+    const eyebrow = { fontSize:11, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.08em", color:T.ink3, marginBottom:6 };
+    if (effectiveOwnerCol && ownerMatches.length) {
+      return (
+        <div style={panel}>
+          <div style={eyebrow}>Route donors to officers</div>
+          <div style={{fontSize:12,color:T.ink3,marginBottom:10}}>
+            We found an <strong style={{color:T.ink}}>{effectiveOwnerCol}</strong> column — confirm who each value is. Matched donors land in that officer's portfolio.
+          </div>
+          <div style={{display:"flex",flexDirection:"column",gap:7}}>
+            {ownerMatches.map(mm => {
+              const invited = invitedValues[mm.value];
+              const badge = mm.matchType === "email" ? "matched by email" : mm.matchType === "name" ? "matched by name" : "no match";
+              return (
+                <div key={mm.value} style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+                  <span style={{fontSize:12.5,color:T.ink,fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",maxWidth:160}} title={mm.value}>{mm.value}</span>
+                  <span style={{fontSize:10.5,color:mm.matchType==="none"?(T.gold600||"#a97f22"):T.green600,fontWeight:600}}>{badge} · ×{mm.count}</span>
+                  <span style={{flex:1}}/>
+                  <select value={ownerMap[mm.value] ?? ""} onChange={e=>setOwnerMap(p=>({...p,[mm.value]:e.target.value}))}
+                    style={{background:T.white,border:`1px solid ${ownerMap[mm.value]?T.green600:T.bg3}`,borderRadius:7,padding:"5px 8px",color:T.ink,fontSize:12,outline:"none",cursor:"pointer",maxWidth:210}}>
+                    <option value="">Leave unassigned</option>
+                    {orgUsers.map(u => <option key={u.id} value={u.id}>{u.name}{u.email?` (${u.email})`:""}</option>)}
+                  </select>
+                  {!ownerMap[mm.value] && !invited && (
+                    <button onClick={()=>{ setInviteFor(mm.value); setInviteEmail(mm.value.includes("@")?mm.value:""); setInviteErr(""); }}
+                      style={{background:"transparent",border:`1px solid ${T.gold500}`,borderRadius:7,padding:"4px 10px",color:T.gold600||"#a97f22",fontSize:11,fontWeight:700,cursor:"pointer"}}>Invite</button>
+                  )}
+                  {invited && <span style={{fontSize:11,color:T.green600,fontWeight:700}}>✓ invited</span>}
+                </div>
+              );
+            })}
+          </div>
+          <div style={{fontSize:11,color:T.ink3,marginTop:8}}>Unmatched officers → invite them (their donors stay unassigned until they accept) or leave unassigned. Never silently mis-assigned.</div>
+          {inviteFor && (
+            <div style={{marginTop:10,background:T.white,border:`1px solid ${T.bg3}`,borderRadius:8,padding:"10px 12px"}}>
+              <div style={{fontSize:12,color:T.ink,marginBottom:6}}>Invite <strong>{inviteFor}</strong> as a gift officer</div>
+              <div style={{display:"flex",gap:6}}>
+                <input value={inviteEmail} onChange={e=>setInviteEmail(e.target.value)} placeholder="officer@email.org" style={{...inp,flex:1}}/>
+                <button onClick={sendOfficerInvite} disabled={!inviteEmail.trim()||inviteBusy}
+                  style={{background:inviteEmail.trim()?T.green600:T.bg2,border:"none",borderRadius:8,padding:"8px 14px",color:"#fff",fontSize:12,fontWeight:700,cursor:inviteEmail.trim()?"pointer":"not-allowed"}}>{inviteBusy?"Sending…":"Send invite"}</button>
+                <button onClick={()=>{setInviteFor(null);setInviteEmail("");setInviteErr("");}} style={{background:"transparent",border:`1px solid ${T.bg3}`,borderRadius:8,padding:"8px 10px",color:T.ink3,fontSize:12,cursor:"pointer"}}>Cancel</button>
+              </div>
+              {inviteErr && <div style={{color:T.terracotta,fontSize:11,marginTop:6}}>{inviteErr}</div>}
+            </div>
+          )}
+        </div>
+      );
+    }
+    // No owner column → bulk options.
+    return (
+      <div style={panel}>
+        <div style={eyebrow}>Assign these donors to an officer</div>
+        <div style={{fontSize:12,color:T.ink3,marginBottom:10}}>No owner/officer column detected. Route them all now, or leave unassigned and split them from the Directory later.</div>
+        <select value={bulkAssign} onChange={e=>setBulkAssign(e.target.value)}
+          style={{background:T.white,border:`1px solid ${bulkAssign?T.green600:T.bg3}`,borderRadius:8,padding:"7px 10px",color:T.ink,fontSize:13,outline:"none",cursor:"pointer",width:"100%"}}>
+          <option value="">Leave unassigned (assign later from the Directory)</option>
+          {myId && <option value="__me__">Assign all to me</option>}
+          {orgUsers.filter(u=>u.id!==myId).map(u => <option key={u.id} value={u.id}>Assign all to {u.name}</option>)}
+        </select>
+      </div>
+    );
+  }
 
   // ── Shared styles ──
   const overlay = { position:"fixed",inset:0,background:"rgba(15,26,18,0.72)",zIndex:300,display:"flex",alignItems:"center",justifyContent:"center",padding:20 };
@@ -782,6 +938,7 @@ export function DonorImport({ onClose, onImported, withHistory = false }) {
   const TX_ROLES = [
     ["donorName","Donor name"],["donorEmail","Email"],["amount","Gift amount"],["date","Gift date"],
     ["type","Type"],["campaign","Campaign / fund"],["notes","Notes"],["phone","Phone"],["city","City"],["state","State"],
+    ...(isTeam ? [["owner","Assigned officer"]] : []),
   ];
 
   return (
@@ -909,6 +1066,9 @@ export function DonorImport({ onClose, onImported, withHistory = false }) {
             </div>
           )}
 
+          {/* Officer routing (Team) — owner column on the donor sheet → teammates */}
+          {ownerRoutingUI()}
+
           {/* Progress bar */}
           {progress && (
             <div style={{marginBottom:12}}>
@@ -1015,6 +1175,9 @@ export function DonorImport({ onClose, onImported, withHistory = false }) {
               )}
             </div>
           )}
+
+          {/* Officer routing (Team) — owner column → teammates, or bulk options */}
+          {ownerRoutingUI()}
 
           {/* Validation summary */}
           <div style={{background:T.bg,borderRadius:10,padding:"12px 14px",marginBottom:12}}>
@@ -1151,7 +1314,7 @@ function autoDetectWideConfig(headers, rows) {
 }
 
 function autoDetectTxMapping(headers, rows) {
-  const map = { donorName:"",donorEmail:"",amount:"",date:"",type:"",campaign:"",notes:"" };
+  const map = { donorName:"",donorEmail:"",amount:"",date:"",type:"",campaign:"",notes:"",owner:"" };
   const sample = rows.slice(0,10);
   for (const h of headers) {
     const hl = h.toLowerCase().trim();
@@ -1164,6 +1327,7 @@ function autoDetectTxMapping(headers, rows) {
     if (!map.type     && /^(type|gift.?type|payment.?type|method|payment)$/.test(hl)) map.type     = h;
     if (!map.campaign && /^(campaign|fund|appeal|designation)$/.test(hl))              map.campaign = h;
     if (!map.notes    && /^(notes?|memo|comments?)$/.test(hl))                         map.notes    = h;
+    if (!map.owner)   map.owner = detectOwnerColumn([h]) ? h : map.owner;
   }
   return map;
 }

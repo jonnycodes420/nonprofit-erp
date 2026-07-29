@@ -32,7 +32,7 @@ CORE=(
   billing branding clickability consistency-e2e designations digests
   donor-merge finance-funds finance-gift-stamp finance-overview
   finance-reintegration fundraising goals home households
-  import-both import-combined import-shape import-stage
+  import-assign import-both import-combined import-shape import-stage
   locked-features
   moves no-emoji onboarding-brand palette pipeline pipeline-gating portfolios reports-cadence
   smart-moves tasks tenant-isolation upgrade-checkout workflows

@@ -2314,6 +2314,28 @@ app.post("/donors", requireAuth, checkWriteAccess, wrap(async (req, res) => {
   res.status(201).json(rows[0]);
 }));
 
+// buildAssigneeResolver — for a Team org, validate the per-donor `assignedTo`
+// user ids the import payload carries (from the client's owner-column mapping)
+// and return a resolver donor→{id,name}. Core/lapsed orgs (not team tier) get a
+// no-op resolver, so a Core import always lands UNASSIGNED regardless of what
+// the payload claims — assignment is a Team (officer-portfolio) capability.
+// A donor whose `assignedTo` isn't a real user in THIS org resolves to null
+// (never silently mis-assigns across orgs or to a stale id).
+async function buildAssigneeResolver(donors, orgId, isTeam) {
+  if (!isTeam) return () => ({ id: null, name: null });
+  const ids = [...new Set(donors.map(d => d && d.assignedTo).filter(Boolean).map(String))];
+  const validNames = new Map();
+  if (ids.length) {
+    const rows = await query("SELECT id, name FROM users WHERE id = ANY(?) AND org_id = ?", [ids, orgId]);
+    rows.forEach(r => validNames.set(r.id, r.name));
+  }
+  return (d) => {
+    const id = d && d.assignedTo ? String(d.assignedTo) : null;
+    if (!id || !validNames.has(id)) return { id: null, name: null };
+    return { id, name: d.assignedToName || validNames.get(id) || null };
+  };
+}
+
 app.post("/donors/import", requireAuth, wrap(async (req, res) => {
   const { donors } = req.body;
   if (!Array.isArray(donors) || donors.length === 0)
@@ -2342,9 +2364,12 @@ app.post("/donors/import", requireAuth, wrap(async (req, res) => {
     }
   }
 
-  // ── Importer identity (assigned_to default) ──
-  const importerRow = await query("SELECT name FROM users WHERE id=?", [req.user.userId]);
-  const importerName = importerRow[0]?.name || "";
+  // ── Owner-column assignment (Team only) ──
+  // A Team org's import may carry per-donor `assignedTo` (mapped from an owner/
+  // officer column on the client). Validate + resolve; Core orgs → no-op (land
+  // unassigned). An assigned donor also joins the working board (in_pipeline).
+  const isTeamOrg = orgForLimit.length ? orgPlanTier(orgForLimit[0]) === "team" : false;
+  const resolveAssignee = await buildAssigneeResolver(donors, req.user.orgId, isTeamOrg);
 
   // ── Dedup by email against existing donors (case-insensitive) ──
   // Comment: future option is merge/update rather than skip.
@@ -2382,6 +2407,7 @@ app.post("/donors/import", requireAuth, wrap(async (req, res) => {
     // so column order and param order are always in sync.
     const params = [];
     const tuples = batch.map(d => {
+      const a = resolveAssignee(d);
       params.push(
         "d_" + uuid().slice(0, 8), req.user.orgId,
         String(d.name).trim(),
@@ -2397,10 +2423,11 @@ app.post("/donors/import", requireAuth, wrap(async (req, res) => {
         d.notes || "",
         d.city  || null,
         d.state || null,
-        null,   // assigned_to — import lands in the Directory UNASSIGNED (pipeline
-        null    // assigned_to_name — is a curated portfolio; assignment is deliberate)
+        a.id,          // assigned_to — from a mapped owner column (Team) else null
+        a.name,        // assigned_to_name
+        !!a.id         // in_pipeline — an assigned donor joins the officer's board
       );
-      return "(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)";
+      return "(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)";
     });
 
     try {
@@ -2408,7 +2435,7 @@ app.post("/donors/import", requireAuth, wrap(async (req, res) => {
         await runTx(client,
           `INSERT INTO donors
              (id,org_id,name,email,phone,status,stage,total_giving,last_gift_amount,
-              last_gift_date,gift_count,tags,notes,city,state,assigned_to,assigned_to_name)
+              last_gift_date,gift_count,tags,notes,city,state,assigned_to,assigned_to_name,in_pipeline)
            VALUES ${tuples.join(",")}`,
           params
         );
@@ -2464,6 +2491,12 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrap(async (r
   const importerName = importerRow[0]?.name || "";
   const importerId   = req.user.userId;
 
+  // Owner-column assignment (Team only) — mirrors /donors/import. Per-donor
+  // `assignedTo` from a mapped owner column routes each donor to its officer's
+  // portfolio (in_pipeline). Core orgs → no-op (imported unassigned).
+  const isTeamOrg = orgForLimit.length ? orgPlanTier(orgForLimit[0]) === "team" : false;
+  const resolveAssignee = await buildAssigneeResolver(donors, orgId, isTeamOrg);
+
   // Email dedup (same bulk-Set approach as /donors/import)
   const existingEmailRows = await query(
     "SELECT LOWER(email) AS e FROM donors WHERE org_id=? AND email IS NOT NULL AND email != '' AND deleted_at IS NULL",
@@ -2502,6 +2535,7 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrap(async (r
     const batch = donorsToInsert.slice(bi, bi + DONOR_BATCH);
     const params = [];
     const tuples = batch.map(d => {
+      const a = resolveAssignee(d);
       params.push(
         d._id, orgId, String(d.name).trim(), d.email||"", d.phone||"",
         d.status||"new", d.stage||"prospect",
@@ -2509,16 +2543,16 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrap(async (r
         d.lastGift||null, parseInt(d.gifts)||(d.total?1:0),
         JSON.stringify(Array.isArray(d.tags)?d.tags:[]),
         d.notes||"", d.city||null, d.state||null,
-        null, null   // assigned_to / assigned_to_name — import → Directory unassigned
+        a.id, a.name, !!a.id   // assigned_to / assigned_to_name / in_pipeline (Team owner-column routing)
       );
-      return "(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)";
+      return "(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)";
     });
     try {
       await withTransaction(async (client) => {
         await runTx(client,
           `INSERT INTO donors
              (id,org_id,name,email,phone,status,stage,total_giving,last_gift_amount,
-              last_gift_date,gift_count,tags,notes,city,state,assigned_to,assigned_to_name)
+              last_gift_date,gift_count,tags,notes,city,state,assigned_to,assigned_to_name,in_pipeline)
            VALUES ${tuples.join(",")}`,
           params
         );

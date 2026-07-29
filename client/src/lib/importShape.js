@@ -193,6 +193,128 @@ export function linkGiftsToDonors(donors = [], giftItems = [], matchKey = "email
   return { donors: outDonors, gifts, matchedGifts, unmatchedGifts, newDonors, skippedGifts };
 }
 
+// ── Owner / assigned-officer column → org-user mapping (Team import routing) ──
+// A real CRM export usually names the gift officer working each donor in an
+// "Assigned Officer" / "Owner" / "Solicitor" / "Portfolio" column. On a Team
+// import we detect that column and map its values to org users — by EMAIL first,
+// then by NAME (fuzzy-tolerant) — so each donor lands in the right officer's
+// portfolio. Pure/JSX-free so tests/import-assign.test.js drives it directly.
+// (Core imports ignore this — the server only applies assignment for Team.)
+
+// Header probe for an owner/officer column (loose — a human can override in the
+// UI). Deliberately anchored so it doesn't grab "email"/"phone"/"employer".
+const OWNER_HDR_PAT = /^(assigned\s*(officer|to|staff|rep)?|owner|solicitor|portfolio|gift\s*officer|relationship\s*(manager|officer)|account\s*(manager|owner)|managed\s*by|steward(ed)?\s*by|mgo|officer|fundraiser|assigned\s*fundraiser)$/i;
+
+export function detectOwnerColumn(headers = []) {
+  return headers.map(h => String(h)).find(h => OWNER_HDR_PAT.test(String(h).trim())) || "";
+}
+
+// Normalize a person name for fuzzy matching: lowercase, collapse spaces, and
+// flip "Last, First" → "First Last" so an export's sort order can't miss.
+function normPersonName(v) {
+  let s = String(v == null ? "" : v).toLowerCase().trim().replace(/\s+/g, " ");
+  const ci = s.indexOf(",");
+  if (ci > 0) s = (s.slice(ci + 1).trim() + " " + s.slice(0, ci).trim()).trim();
+  return s.replace(/[.,]/g, "").replace(/\s+/g, " ").trim();
+}
+
+// Small bounded Levenshtein (early-outs past `max`) — for tolerating a typo or a
+// middle initial in an officer name. Never used to force an ambiguous match.
+function boundedLev(a, b, max = 2) {
+  if (a === b) return 0;
+  if (Math.abs(a.length - b.length) > max) return max + 1;
+  const prev = new Array(b.length + 1);
+  for (let j = 0; j <= b.length; j++) prev[j] = j;
+  for (let i = 1; i <= a.length; i++) {
+    let cur = [i];
+    let best = i;
+    for (let j = 1; j <= b.length; j++) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + cost);
+      if (cur[j] < best) best = cur[j];
+    }
+    if (best > max) return max + 1;
+    for (let j = 0; j <= b.length; j++) prev[j] = cur[j];
+  }
+  return prev[b.length];
+}
+
+// tokenSubset — every token of the shorter name appears in the longer (handles
+// "Sarah Lee" vs "Sarah A. Lee", or a bare first name matching one unique user).
+function tokenSubset(a, b) {
+  const ta = a.split(" ").filter(Boolean), tb = b.split(" ").filter(Boolean);
+  if (!ta.length || !tb.length) return false;
+  const [short, long] = ta.length <= tb.length ? [ta, tb] : [tb, ta];
+  return short.every(t => long.includes(t));
+}
+
+// matchOwnerValue(value, users, idx) → { userId, userName, matchType }.
+// matchType ∈ 'email' | 'name' | 'none'. Email is exact (case-insensitive);
+// name is exact-normalized, else a UNIQUE fuzzy hit (token-subset or Lev≤2).
+// Ambiguity (a value that fits >1 user) resolves to 'none' — never mis-assign.
+function matchOwnerValue(value, users, idx) {
+  const raw = String(value == null ? "" : value).trim();
+  if (!raw) return { userId: null, userName: null, matchType: "none" };
+  const lower = raw.toLowerCase();
+  // 1 — email (only meaningful when the value looks like an address)
+  if (lower.includes("@") && idx.byEmail.has(lower)) {
+    const u = idx.byEmail.get(lower);
+    return { userId: u.id, userName: u.name, matchType: "email" };
+  }
+  const nn = normPersonName(raw);
+  if (!nn) return { userId: null, userName: null, matchType: "none" };
+  // 2 — exact normalized name (unique)
+  const exact = idx.byName.get(nn);
+  if (exact && exact.length === 1) return { userId: exact[0].id, userName: exact[0].name, matchType: "name" };
+  if (exact && exact.length > 1) return { userId: null, userName: null, matchType: "none" }; // ambiguous
+  // 3 — unique fuzzy: token-subset OR Lev≤2 against a single user
+  const fuzzy = users.filter(u => {
+    const un = normPersonName(u.name);
+    return un && (tokenSubset(nn, un) || boundedLev(nn, un, 2) <= 2);
+  });
+  if (fuzzy.length === 1) return { userId: fuzzy[0].id, userName: fuzzy[0].name, matchType: "name" };
+  return { userId: null, userName: null, matchType: "none" };
+}
+
+// matchOwnersToUsers(values, users) — map the distinct owner-cell values to org
+// users. `values` is the full per-row list (may repeat / be blank). Returns one
+// entry per DISTINCT non-blank value: { value, count, userId, userName, matchType }.
+export function matchOwnersToUsers(values = [], users = []) {
+  const counts = new Map();
+  for (const v of values) {
+    const key = String(v == null ? "" : v).trim();
+    if (!key) continue;
+    counts.set(key, (counts.get(key) || 0) + 1);
+  }
+  const idx = { byEmail: new Map(), byName: new Map() };
+  for (const u of users) {
+    if (u.email) idx.byEmail.set(String(u.email).toLowerCase().trim(), u);
+    const nn = normPersonName(u.name);
+    if (nn) { if (!idx.byName.has(nn)) idx.byName.set(nn, []); idx.byName.get(nn).push(u); }
+  }
+  const out = [];
+  for (const [value, count] of counts) {
+    const m = matchOwnerValue(value, users, idx);
+    out.push({ value, count, userId: m.userId, userName: m.userName, matchType: m.matchType });
+  }
+  return out;
+}
+
+// applyOwnerAssignment(donors, resolved) — stamp assignedTo/assignedToName onto
+// each donor from its raw `owner` cell, then strip `owner`. `resolved` maps the
+// lowercased+trimmed owner value → { userId, userName } (only the values the
+// admin confirmed to a real teammate). Donors whose owner is blank/unresolved
+// come back UNASSIGNED — never silently mis-routed.
+export function applyOwnerAssignment(donors = [], resolved = {}) {
+  return donors.map(d => {
+    const { owner, ...rest } = d;
+    const key = String(owner == null ? "" : owner).toLowerCase().trim();
+    const hit = key ? resolved[key] : null;
+    if (hit && hit.userId) { rest.assignedTo = hit.userId; rest.assignedToName = hit.userName || null; }
+    return rest;
+  });
+}
+
 // groupTransactions(items) — the core "group a raw gift ledger by donor" step.
 // items: [{ key, donor, gift }]  (key = dedup key, gift may be null).
 // The FIRST occurrence of a key defines the canonical donor; later rows only
@@ -213,7 +335,7 @@ export function groupTransactions(items = []) {
     } else {
       const canon = donors[di];
       if ((!canon.name || !String(canon.name).trim()) && donor.name) canon.name = donor.name;
-      for (const k of ["email", "phone", "city", "state", "notes"]) {
+      for (const k of ["email", "phone", "city", "state", "notes", "owner"]) {
         if ((canon[k] == null || canon[k] === "") && donor[k]) canon[k] = donor[k];
       }
     }

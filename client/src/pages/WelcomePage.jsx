@@ -5,17 +5,22 @@ import { useAuth } from "../main";
 import { DonorImport } from "../components/Donors";
 import { T } from "../components/shared";
 
-// 5 real, numbered steps. A guided-tour step is intentionally NOT included
-// here — there is currently no tour component in this codebase (it was
-// deleted in an earlier session; see PROGRESS.md's superseded "Guided tour"
-// entry) and rebuilding one is out of scope for this change. If/when a tour
-// is rebuilt, it slots in here as step 6, after impact metrics and before
-// the finishing animation.
-const TOTAL_STEPS = 5;
-const STEP_LABELS = ["Org basics", "Import your donors", "Set your first goal", "Your first impact metric", "Launch"];
-// Honest per-step time estimates (BUILD-08 Phase D) — shown beside the step
-// label so nobody wonders how deep this rabbit hole goes. Whole flow ≈ 6 min.
-const STEP_TIMES = ["~1 min", "~2 min", "~1 min", "~1 min", "~1 min"];
+// The onboarding flow is a KEYED sequence, not a fixed numeric ladder, so a
+// Team org can slot in an extra "Invite your team" step while Core skips it
+// (plan gating). The active flow is computed from `isTeam` in the component.
+// A guided-tour step is intentionally NOT included — there is no tour component
+// in this codebase (deleted in an earlier session; see PROGRESS.md's superseded
+// "Guided tour" entry). If/when one is rebuilt it slots in before "launch".
+// Honest per-step time estimates (BUILD-08 Phase D) — shown beside the label so
+// nobody wonders how deep this rabbit hole goes.
+const STEP_META = {
+  basics: { label: "Org basics",               time: "~1 min" },
+  invite: { label: "Invite your team",         time: "~1 min" }, // Team plan only
+  import: { label: "Import your donors",       time: "~2 min" },
+  goal:   { label: "Set your first goal",      time: "~1 min" },
+  metric: { label: "Your first impact metric", time: "~1 min" },
+  launch: { label: "Launch",                   time: "~1 min" },
+};
 
 const FINISH_ITEMS = [
   "Standard chart of accounts (26 accounts)",
@@ -56,9 +61,27 @@ export default function WelcomePage() {
   const { auth, refreshOrg } = useAuth();
   const navigate = useNavigate();
 
-  const [step, setStep] = useState(1);
-  const [phase, setPhase] = useState("form"); // step 5 only: "finishing" | "ready"
+  const [stepKey, setStepKey] = useState("basics");
+  const [phase, setPhase] = useState("form"); // launch step only: "finishing" | "ready"
   const [error, setError] = useState("");
+
+  // Plan gating: Team orgs get the "Invite your team" step; Core skips it. Tier
+  // is probed on mount (the same `/portfolio/officers` source the app uses); a
+  // fresh trial reads as Team (full-feature trial), so a Team evaluator sees it.
+  const [isTeam, setIsTeam] = useState(false);
+  const flow = useMemo(
+    () => ["basics", ...(isTeam ? ["invite"] : []), "import", "goal", "metric", "launch"],
+    [isTeam]
+  );
+  const stepIdx = Math.max(0, flow.indexOf(stepKey));
+  const go = (key) => { setError(""); setStepKey(key); };
+  const goNext = () => { const i = flow.indexOf(stepKey); go(flow[Math.min(i + 1, flow.length - 1)]); };
+
+  // Step: Invite your team (Team only)
+  const [officerEmails, setOfficerEmails] = useState([""]);
+  const [invSending, setInvSending] = useState(false);
+  const [invited, setInvited] = useState(null);   // [{email, ok, error}] once sent
+  const [seatMsg, setSeatMsg] = useState("");
 
   // Step 1 — org basics
   const [orgName, setOrgName] = useState(auth?.org?.name || "");
@@ -100,9 +123,11 @@ export default function WelcomePage() {
   useEffect(() => {
     if (auth?.org?.onboarding_complete) navigate("/dashboard", { replace: true });
     // Load any donors that already exist (someone returning mid-flow, or an
-    // import from another tab) so step 2 shows the imported state instead of
-    // re-asking for a list that's already in.
+    // import from another tab) so the import step shows the imported state
+    // instead of re-asking for a list that's already in.
     apiFetch("/donors/summaries").then(d => setDonorsSnapshot(d || [])).catch(() => {});
+    // Plan tier → whether the Team "Invite your team" step is in the flow.
+    apiFetch("/portfolio/officers").then(r => setIsTeam(r?.tier === "team")).catch(() => {});
 
   }, []);
 
@@ -125,11 +150,11 @@ export default function WelcomePage() {
   }, [donorsSnapshot]);
 
   useEffect(() => {
-    if (step === 3 && suggestion && !goalPrefilled) {
+    if (stepKey === "goal" && suggestion && !goalPrefilled) {
       setGoalForm(f => ({ ...f, label: suggestion.label, goalAmount: String(suggestion.amount), goalType: suggestion.goalType }));
       setGoalPrefilled(true);
     }
-  }, [step, suggestion, goalPrefilled]);
+  }, [stepKey, suggestion, goalPrefilled]);
 
   // ── Step 1: org basics ──
   async function submitBasics() {
@@ -139,9 +164,32 @@ export default function WelcomePage() {
       await apiFetch(`/orgs/${auth.org.id}`, { method: "PATCH", body: JSON.stringify({ name: orgName.trim(), mission: mission.trim() }) });
       await refreshOrg();
       setMetric1(m => ({ ...m, outcomeTemplate: defaultOutcomeTemplate(orgName) }));
-      setStep(2);
+      goNext();
     } catch (e) { setError(e.message || "Could not save — please try again."); }
     setSavingBasics(false);
+  }
+
+  // ── Step: Invite your team (Team only) ──
+  // Reuses the SAME Settings › Team invite path (POST /auth/invite), so there's
+  // one invite mechanism, not a fork. Officers are invited as "staff"; each gets
+  // an org seat + a portfolio when they accept. Seat-limited (Team = up to 10);
+  // fully skippable ("invite later from Settings › Team").
+  async function sendInvites() {
+    const emails = officerEmails.map(e => e.trim()).filter(Boolean);
+    if (!emails.length) { goNext(); return; }
+    setInvSending(true); setError(""); setSeatMsg("");
+    const results = [];
+    for (const email of emails) {
+      try {
+        await apiFetch("/auth/invite", { method: "POST", body: JSON.stringify({ email, role: "staff" }) });
+        results.push({ email, ok: true });
+      } catch (e) {
+        if (e.error === "seat_limit") { setSeatMsg(e.message || "You've reached your seat limit — Team includes up to 10 users."); results.push({ email, ok: false, error: "seat limit" }); }
+        else results.push({ email, ok: false, error: e.message || "couldn't send" });
+      }
+    }
+    setInvited(results);
+    setInvSending(false);
   }
 
   // ── Step 2: import (or skip) ──
@@ -160,7 +208,7 @@ export default function WelcomePage() {
   }
   function skipImport() {
     setImportSkipped(true);
-    setStep(3);
+    goNext();
   }
 
   // ── Step 3: goal ──
@@ -169,7 +217,7 @@ export default function WelcomePage() {
     setSavingGoal(true); setError("");
     try {
       await apiFetch("/goals", { method: "POST", body: JSON.stringify(goalForm) });
-      setStep(4);
+      goNext();
     } catch (e) { setError(e.message || "Could not save — please try again."); }
     setSavingGoal(false);
   }
@@ -185,7 +233,7 @@ export default function WelcomePage() {
       if (showMetric2 && metric2.name.trim() && metric2.dollarThreshold && metric2.outcomeTemplate.trim()) {
         await apiFetch("/impact-metrics", { method: "POST", body: JSON.stringify(metric2) });
       }
-      setStep(5);
+      go("launch");
       runFinish();
     } catch (e) { setError(e.message || "Could not save — please try again."); }
     setSavingMetrics(false);
@@ -250,20 +298,20 @@ export default function WelcomePage() {
         </div>
 
         {/* Progress: Step X of 5 */}
-        {!(step === 5 && phase === "ready") && (
+        {!(stepKey === "launch" && phase === "ready") && (
           <div style={{ textAlign: "center", marginBottom: 16 }}>
             <div style={{ fontSize: 11, fontWeight: 700, color: ink3, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 8 }}>
-              Step {step} of {TOTAL_STEPS} — {STEP_LABELS[step - 1]}
-              <span style={{ color: T.gold600, marginLeft: 8, letterSpacing: "0.04em" }}>{STEP_TIMES[step - 1]}</span>
+              Step {stepIdx + 1} of {flow.length} — {STEP_META[stepKey].label}
+              <span style={{ color: T.gold600, marginLeft: 8, letterSpacing: "0.04em" }}>{STEP_META[stepKey].time}</span>
             </div>
             <div style={{ maxWidth: 220, margin: "0 auto", background: T.bg2, borderRadius: 99, height: 5, overflow: "hidden" }}>
-              <div style={{ height: "100%", width: `${Math.round((step / TOTAL_STEPS) * 100)}%`, background: greenDk, borderRadius: 99, transition: "width 0.35s ease" }} />
+              <div style={{ height: "100%", width: `${Math.round(((stepIdx + 1) / flow.length) * 100)}%`, background: greenDk, borderRadius: 99, transition: "width 0.35s ease" }} />
             </div>
           </div>
         )}
 
-        {/* Step 1 — Org basics */}
-        {step === 1 && (
+        {/* Step — Org basics */}
+        {stepKey === "basics" && (
           <div style={card}>
             <h1 style={{ fontFamily: "'DM Serif Display',Georgia,serif", fontSize: 26, fontWeight: 400, color: ink, margin: "0 0 6px", letterSpacing: "-0.01em" }}>
               Tell us about your organization
@@ -289,8 +337,66 @@ export default function WelcomePage() {
           </div>
         )}
 
-        {/* Step 2 — Import donors */}
-        {step === 2 && (
+        {/* Step — Invite your team (Team plan only) */}
+        {stepKey === "invite" && (
+          <div style={card}>
+            <h1 style={{ fontFamily: "'DM Serif Display',Georgia,serif", fontSize: 26, fontWeight: 400, color: ink, margin: "0 0 6px", letterSpacing: "-0.01em" }}>
+              Invite your team
+            </h1>
+            <p style={{ fontSize: 14, color: ink3, margin: "0 0 20px", lineHeight: 1.6 }}>
+              Add the gift officers who'll each work their own portfolio. They get an invite by email — when they accept, they become a user in {orgName.trim() || "your organization"} with their own portfolio. Team includes up to 10 users. You can always do this later from Settings › Team.
+            </p>
+
+            {invited ? (
+              <>
+                <div style={{ marginBottom: 20 }}>
+                  {invited.map((r, i) => (
+                    <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 0", borderBottom: i < invited.length - 1 ? `1px solid ${T.bg2}` : "none" }}>
+                      <span style={{ color: r.ok ? green : T.terracotta, fontWeight: 800, fontSize: 14 }}>{r.ok ? "✓" : "✕"}</span>
+                      <span style={{ fontSize: 14, color: ink, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.email}</span>
+                      <span style={{ fontSize: 12, color: r.ok ? ink3 : T.terracotta }}>{r.ok ? "invite sent" : r.error}</span>
+                    </div>
+                  ))}
+                </div>
+                {seatMsg && <div style={errBox}>{seatMsg}</div>}
+                <button onClick={goNext} style={primaryBtn(false)}>Continue →</button>
+              </>
+            ) : (
+              <>
+                {officerEmails.map((em, i) => (
+                  <div key={i} style={{ display: "flex", gap: 8, marginBottom: 8 }}>
+                    <input value={em} onChange={e => setOfficerEmails(list => list.map((v, j) => j === i ? e.target.value : v))}
+                      style={{ ...inp, flex: 1 }} placeholder="officer@email.org" type="email" />
+                    {officerEmails.length > 1 && (
+                      <button onClick={() => setOfficerEmails(list => list.filter((_, j) => j !== i))}
+                        style={{ background: "none", border: `1px solid ${T.bg3}`, borderRadius: 10, color: ink3, fontSize: 16, cursor: "pointer", padding: "0 12px", lineHeight: 1 }}>×</button>
+                    )}
+                  </div>
+                ))}
+                <button onClick={() => setOfficerEmails(list => [...list, ""])}
+                  style={{ background: "none", border: "none", color: greenDk, fontSize: 13, fontWeight: 700, cursor: "pointer", padding: 0, marginBottom: 20 }}>
+                  + Add another officer
+                </button>
+
+                {seatMsg && <div style={errBox}>{seatMsg}</div>}
+                {error && <div style={errBox}>{error}</div>}
+
+                <button onClick={sendInvites} disabled={invSending} style={primaryBtn(invSending)}>
+                  {invSending ? "Sending invites…" : officerEmails.some(e => e.trim()) ? "Send invites →" : "Continue →"}
+                </button>
+                <div style={{ textAlign: "center", marginTop: 12 }}>
+                  <button onClick={goNext} disabled={invSending}
+                    style={{ background: "none", border: "none", color: ink3, fontSize: 13, fontWeight: 600, cursor: "pointer", textDecoration: "underline" }}>
+                    I'll invite them later from Settings › Team
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        )}
+
+        {/* Step — Import donors */}
+        {stepKey === "import" && (
           <div style={card}>
             <h1 style={{ fontFamily: "'DM Serif Display',Georgia,serif", fontSize: 26, fontWeight: 400, color: ink, margin: "0 0 6px", letterSpacing: "-0.01em" }}>
               Import your donors
@@ -324,7 +430,7 @@ export default function WelcomePage() {
             {error && <div style={{ ...errBox, marginBottom: 12 }}>{error}</div>}
 
             {donorsSnapshot.length > 0 ? (
-              <button onClick={() => setStep(3)} style={primaryBtn(false)}>Continue →</button>
+              <button onClick={goNext} style={primaryBtn(false)}>Continue →</button>
             ) : (
               <div style={{ textAlign: "center" }}>
                 <button onClick={skipImport} disabled={loadingDonors} style={{ background: "none", border: "none", color: ink3, fontSize: 13, fontWeight: 600, cursor: "pointer", textDecoration: "underline" }}>
@@ -335,8 +441,8 @@ export default function WelcomePage() {
           </div>
         )}
 
-        {/* Step 3 — Set first goal */}
-        {step === 3 && (
+        {/* Step — Set first goal */}
+        {stepKey === "goal" && (
           <div style={card}>
             <h1 style={{ fontFamily: "'DM Serif Display',Georgia,serif", fontSize: 26, fontWeight: 400, color: ink, margin: "0 0 6px", letterSpacing: "-0.01em" }}>
               Set your first goal
@@ -385,8 +491,8 @@ export default function WelcomePage() {
           </div>
         )}
 
-        {/* Step 4 — First impact metric */}
-        {step === 4 && (
+        {/* Step — First impact metric */}
+        {stepKey === "metric" && (
           <div style={card}>
             <h1 style={{ fontFamily: "'DM Serif Display',Georgia,serif", fontSize: 26, fontWeight: 400, color: ink, margin: "0 0 6px", letterSpacing: "-0.01em" }}>
               Define your first impact metric
@@ -438,8 +544,8 @@ export default function WelcomePage() {
           </div>
         )}
 
-        {/* Step 5 — Finishing animation, then ready */}
-        {step === 5 && phase === "finishing" && (
+        {/* Step — Finishing animation, then ready */}
+        {stepKey === "launch" && phase === "finishing" && (
           <div style={card}>
             <h1 style={{ fontFamily: "'DM Serif Display',Georgia,serif", fontSize: 24, fontWeight: 400, color: ink, margin: "0 0 6px", letterSpacing: "-0.01em", textAlign: "center" }}>
               Finishing setup…
@@ -462,7 +568,7 @@ export default function WelcomePage() {
           </div>
         )}
 
-        {step === 5 && phase === "ready" && (
+        {stepKey === "launch" && phase === "ready" && (
           <div style={card}>
             <div style={{ textAlign: "center", marginBottom: 30 }}>
               <div style={{ width: 56, height: 56, background: T.green100, border: `2px solid ${green}`, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 18px", fontSize: 22, color: green }}>✓</div>
