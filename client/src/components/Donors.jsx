@@ -28,7 +28,7 @@ import { T, fmt, fmtFull, daysDiff, SC, askClaude, STAGES, STAGE_ACTION, TIER_CO
 // profile button, and modal render below, and add `VoiceMemoModal` back to
 // the import above).
 import { DonorMap } from "./DonorMap";
-import { detectImportShape, groupTransactions, shapeLabel, YEAR_HDR_PAT } from "../lib/importShape";
+import { detectImportShape, groupTransactions, shapeLabel, YEAR_HDR_PAT, detectWorkbookRoles, pickMatchKey, linkGiftsToDonors } from "../lib/importShape";
 
 // ── CSV Import helpers ─────────────────────────────────────────────────────
 // ── Import field registry ──────────────────────────────────────────────────
@@ -469,6 +469,59 @@ async function submitImportChunked(donors, gifts, onProgress) {
   return totals;
 }
 
+// ── "Import both" payload builder ──────────────────────────────────────────
+// A multi-sheet workbook that carries a Donors sheet AND a Gift History sheet:
+// build donor rows from the donor sheet, one gift item per gift-ledger row, then
+// link the gifts to the donors by the chosen match column (email/name/donor-id).
+// Returns the common { donors, gifts:[{donorIndex}] } shape the chunked submit +
+// /donors/import-combined already consume, plus the counts the preview shows.
+function buildBothPayload(donorSheet, giftSheet, matchInfo, matchKey) {
+  // Donor rows from the donor sheet. Year columns (if any) stay out of the donor
+  // grid; the real history comes from the gift sheet, so we do NOT seed history
+  // from the donor sheet's totals here (that would double-count).
+  const donorHeaders = (donorSheet.headers || []).filter(h => !YEAR_HDR_PAT.test(String(h)));
+  const donorMapping = buildAutoMapping(donorHeaders, donorSheet.rows);
+  if (matchInfo.donorIdCol) donorMapping[matchInfo.donorIdCol] = "_donorId";
+  const { ready, warned, skipped } = buildDonorRows({ headers: donorSheet.headers, rows: donorSheet.rows }, donorMapping);
+  // Keep _stageExplicit (server honors it) + _donorId (linkGiftsToDonors strips it).
+  const donors = [...ready, ...warned].map(({ _warnings, _rowIndex, ...d }) => d);
+
+  // One gift item per gift-ledger row.
+  const tx = autoDetectTxMapping(giftSheet.headers, giftSheet.rows);
+  const idCol = matchInfo.giftIdCol;
+  const items = (giftSheet.rows || []).map(row => {
+    const rawEmail = tx.donorEmail ? String(row[tx.donorEmail] || "").trim() : "";
+    const name     = tx.donorName  ? String(row[tx.donorName]  || "").trim() : "";
+    const donorId  = idCol ? String(row[idCol] || "").trim() : "";
+    let gift = null;
+    if (tx.amount) {
+      const { value: amtVal } = normalizeMoney(row[tx.amount]);
+      const amt = Math.round(amtVal || 0);
+      if (amt > 0) {
+        const { value: parsedDate } = normalizeDate(tx.date ? row[tx.date] : "");
+        gift = {
+          amount: amt,
+          date: parsedDate || new Date().toISOString().split("T")[0],
+          type: tx.type ? (String(row[tx.type] || "").toLowerCase() || "cash") : "cash",
+          campaign: tx.campaign ? String(row[tx.campaign] || "") : "",
+          notes: tx.notes ? String(row[tx.notes] || "") : "",
+        };
+      }
+    }
+    const { value: email } = normalizeEmail(rawEmail);
+    return { email: email || "", name, donorId, gift };
+  });
+
+  const linked = linkGiftsToDonors(donors, items, matchKey);
+  return {
+    ...linked,                                   // donors, gifts, matchedGifts, unmatchedGifts, newDonors, skippedGifts
+    donorSheetRows: donors.length,               // donors that came from the donor sheet
+    donorWarned: warned.length,
+    donorSkipped: skipped.length,
+    giftRows: (giftSheet.rows || []).length,
+  };
+}
+
 // ── DonorImport component ──────────────────────────────────────────────────
 // Exported so WelcomePage's onboarding flow can reuse it directly as the
 // centerpiece "Import your donors" step, rather than forking/rebuilding it.
@@ -491,6 +544,8 @@ export function DonorImport({ onClose, onImported, withHistory = false }) {
   const [yearConvention, setYearConvention] = useState("dec31");
   const [shape,      setShape]      = useState("aggregate");// auto-detected file shape
   const [shapeOverride, setShapeOverride] = useState(null); // user override, if any
+  const [bothMode,   setBothMode]   = useState(null);       // { donorSheet, giftSheet, matchInfo } when "Import both" is chosen
+  const [matchKey,   setMatchKey]   = useState("email");    // gift→donor link column in both-mode
   const [loading,    setLoading]    = useState(false);
   const [progress,   setProgress]   = useState(null);       // { done, total } during chunked submit
   const [aiLoading,  setAiLoading]  = useState(false);
@@ -499,6 +554,22 @@ export function DonorImport({ onClose, onImported, withHistory = false }) {
   const [upgradeInfo,setUpgradeInfo]= useState(null);
 
   const effectiveShape = shapeOverride || shape;
+
+  // Multi-sheet workbook: detect a "Donors + Gift History" pair so we can offer
+  // "Import both" above the per-sheet options. Runs detectImportShape per sheet.
+  const workbookRoles = useMemo(
+    () => (xlsxSheets && xlsxSheets.length >= 2 ? detectWorkbookRoles(xlsxSheets) : null),
+    [xlsxSheets]
+  );
+
+  // Enter "Import both": pick the default link column (email → name → donor-id).
+  const startImportBoth = () => {
+    if (!workbookRoles?.isBoth) return;
+    const matchInfo = pickMatchKey(workbookRoles.donorSheet, workbookRoles.giftSheet);
+    setMatchKey(matchInfo.key);
+    setBothMode({ donorSheet: workbookRoles.donorSheet, giftSheet: workbookRoles.giftSheet, matchInfo });
+    setErr("");
+  };
 
   const applyParsed = (headers, rows) => {
     const det = detectImportShape(headers, rows);
@@ -618,6 +689,58 @@ export function DonorImport({ onClose, onImported, withHistory = false }) {
     setLoading(false); setProgress(null);
   };
 
+  // ── "Import both" — donor sheet + gift-history sheet linked in one pass ──
+  const bothPayload = useMemo(() => {
+    if (!bothMode) return null;
+    try {
+      return buildBothPayload(bothMode.donorSheet, bothMode.giftSheet, bothMode.matchInfo, matchKey);
+    } catch (e) {
+      console.error("[import-both] payload build failed:", e);
+      return { donors:[], gifts:[], matchedGifts:0, unmatchedGifts:0, newDonors:0, skippedGifts:0, error:e.message };
+    }
+  }, [bothMode, matchKey]);
+
+  // Smart-stage preview over the linked history (donors are re-staged server-side
+  // from their attached gifts, so preview from the grouped gift totals).
+  const bothStagePreview = useMemo(() => {
+    const counts = {};
+    if (!bothPayload) return counts;
+    const giftsByDonor = {};
+    bothPayload.gifts.forEach(g => { (giftsByDonor[g.donorIndex] ||= []).push(g); });
+    bothPayload.donors.forEach((d, idx) => {
+      const gg = giftsByDonor[idx] || [];
+      const total = gg.reduce((s,g)=>s+g.amount,0);
+      const last = gg.length ? gg.reduce((m,g)=>g.date>m?g.date:m, gg[0].date) : null;
+      const s = last ? inferStage(total, last, !!(d.email||d.phone)) : inferStage(0, null, !!(d.email||d.phone));
+      counts[s] = (counts[s]||0)+1;
+    });
+    return counts;
+  }, [bothPayload]);
+
+  const doImportBoth = async () => {
+    if (!bothPayload) return;
+    const { donors, gifts, error } = bothPayload;
+    if (error) { setErr("Failed to prepare import data — " + error + ". Check the browser console."); return; }
+    if (!donors.length) { setErr("Nothing to import — no usable donor rows."); return; }
+    setLoading(true); setErr(""); setProgress({ done:0, total:donors.length });
+    try {
+      const totals = await submitImportChunked(donors, gifts, (done,total) => setProgress({ done, total }));
+      setResult({
+        ...totals,
+        warned: bothPayload.donorWarned,
+        skipped: bothPayload.donorSkipped + bothPayload.skippedGifts,
+        shape: "both",
+        unmatched: bothPayload.unmatchedGifts,
+        newDonors: bothPayload.newDonors,
+      });
+    } catch (e) {
+      console.error("IMPORT-BOTH FAILED:", e);
+      if (e.error === "record_limit") { setUpgradeInfo(e); }
+      else { setErr(e.message || "Import failed. See browser console."); }
+    }
+    setLoading(false); setProgress(null);
+  };
+
   // ── Shared styles ──
   const overlay = { position:"fixed",inset:0,background:"rgba(15,26,18,0.72)",zIndex:300,display:"flex",alignItems:"center",justifyContent:"center",padding:20 };
   const modal   = { background:T.white,border:"1px solid "+T.bg3,borderRadius:20,width:"100%",maxWidth:700,maxHeight:"90vh",overflowY:"auto",padding:28,boxSizing:"border-box" };
@@ -637,6 +760,7 @@ export function DonorImport({ onClose, onImported, withHistory = false }) {
             <strong style={{color:T.ink}}>{result.created}</strong> donors added
             {result.giftsInserted > 0 && <> · <strong>{result.giftsInserted}</strong> gifts attached</>}
             {result.duplicates > 0 && <> · <strong>{result.duplicates}</strong> duplicates skipped</>}
+            {result.newDonors > 0 && <> · <strong>{result.newDonors}</strong> created from unmatched gifts</>}
             {result.warned > 0    && <> · <strong>{result.warned}</strong> imported with warnings</>}
             {result.skipped > 0   && <> · <strong>{result.skipped}</strong> skipped (no name or email)</>}
           </div>
@@ -694,9 +818,28 @@ export function DonorImport({ onClose, onImported, withHistory = false }) {
         </>)}
 
         {/* ── Step 1b: Multi-sheet picker (xlsx with 2+ data sheets) ── */}
-        {!parsed && xlsxSheets && (<>
+        {!parsed && xlsxSheets && !bothMode && (<>
           <div style={{fontSize:14,fontWeight:700,color:T.ink,marginBottom:4}}>This workbook has {xlsxSheets.length} sheets with data.</div>
           <div style={{fontSize:13,color:T.ink3,marginBottom:16}}>Pick the sheet to import. You can import the others separately afterward.</div>
+
+          {/* Primary CTA — a Donors + Gift History workbook: import both, linked */}
+          {workbookRoles?.isBoth && (
+            <div style={{background:`linear-gradient(180deg, ${T.green100||"#edf3ee"}, ${T.white})`,border:`1.5px solid ${T.green600||"#1e6b45"}`,borderRadius:12,padding:"14px 16px",marginBottom:16}}>
+              <div style={{fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.1em",color:T.green600||"#1e6b45",marginBottom:4}}>Donors + gift history detected</div>
+              <div style={{fontSize:13.5,color:T.ink,lineHeight:1.5,marginBottom:10}}>
+                <strong>{workbookRoles.donorSheet.name}</strong> ({workbookRoles.donorSheet.rowCount.toLocaleString()} donors) and{" "}
+                <strong>{workbookRoles.giftSheet.name}</strong> ({workbookRoles.giftSheet.rowCount.toLocaleString()} gifts) — we can link the gifts to their donors in one pass.
+              </div>
+              <button onClick={startImportBoth}
+                style={{width:"100%",background:T.green600||"#1e6b45",border:"none",borderRadius:10,padding:"12px 20px",color:"#fff",fontSize:14,fontWeight:700,cursor:"pointer"}}>
+                Import both — donors + their gift history →
+              </button>
+            </div>
+          )}
+
+          {workbookRoles?.isBoth && (
+            <div style={{fontSize:11,fontWeight:700,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:8}}>Or import one sheet at a time</div>
+          )}
           <div style={{display:"flex",flexDirection:"column",gap:8,marginBottom:16}}>
             {xlsxSheets.map((s,i) => (
               <div key={s.name} style={{display:"flex",alignItems:"center",justifyContent:"space-between",background:T.bg,border:"1px solid "+T.bg3,borderRadius:10,padding:"12px 16px"}}>
@@ -712,6 +855,79 @@ export function DonorImport({ onClose, onImported, withHistory = false }) {
             ))}
           </div>
           <button onClick={()=>setXlsxSheets(null)} style={{background:"transparent",border:"1px solid "+T.bg3,borderRadius:10,padding:"9px 16px",color:T.ink3,fontSize:13,cursor:"pointer"}}>← Back</button>
+        </>)}
+
+        {/* ── Import-both preview: two linked sheets, match column, counts ── */}
+        {bothMode && bothPayload && (<>
+          <div style={{background:T.gold100||"#f6eccf",border:`1px solid ${T.gold300||"#e7cf91"}`,borderRadius:10,padding:"11px 14px",marginBottom:14}}>
+            <div style={{fontSize:12.5,color:T.ink,lineHeight:1.5}}>
+              <span style={{fontWeight:700}}>Importing both sheets:</span> donors from <strong>{bothMode.donorSheet.name}</strong>, giving history from <strong>{bothMode.giftSheet.name}</strong> — each gift attached to its donor.
+            </div>
+          </div>
+
+          {/* Match column selector — which shared field links a gift to its donor */}
+          <div style={{marginBottom:14}}>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,flexWrap:"wrap"}}>
+              <div style={{fontSize:13,fontWeight:700,color:T.ink}}>Link gifts to donors by</div>
+              <select value={matchKey} onChange={e=>setMatchKey(e.target.value)}
+                style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:7,padding:"5px 10px",color:T.ink,fontSize:12,outline:"none",cursor:"pointer"}}>
+                {(bothMode.matchInfo.available.length ? bothMode.matchInfo.available : ["name"]).map(k => (
+                  <option key={k} value={k}>{k === "email" ? "Email" : k === "donorId" ? "Donor ID column" : "Donor name"}</option>
+                ))}
+              </select>
+            </div>
+            <div style={{fontSize:11,color:T.ink3,marginTop:6}}>
+              Matched on{" "}
+              <strong>{matchKey === "email" ? (bothMode.matchInfo.giftEmailCol || "email") : matchKey === "donorId" ? (bothMode.matchInfo.giftIdCol || "donor id") : (bothMode.matchInfo.giftNameCol || "name")}</strong>.
+              {" "}Unmatched gifts become new donor records — never dropped.
+            </div>
+          </div>
+
+          {/* Counts */}
+          <div style={{background:T.bg,borderRadius:10,padding:"12px 14px",marginBottom:12}}>
+            <div style={{fontSize:13,fontWeight:700,color:T.ink,lineHeight:1.7}}>
+              <span style={{color:T.green600}}>{(bothPayload.matchedGifts + bothPayload.unmatchedGifts).toLocaleString()}</span> gifts →{" "}
+              <span style={{color:T.green600}}>{bothPayload.donors.length.toLocaleString()}</span> donors
+              {bothPayload.unmatchedGifts > 0 && <> · <span style={{color:T.gold600||"#a97f22"}}>{bothPayload.unmatchedGifts.toLocaleString()}</span> unmatched → {bothPayload.newDonors.toLocaleString()} new donor{bothPayload.newDonors!==1?"s":""}</>}
+              {bothPayload.donorWarned > 0 && <> · <span style={{color:T.gold600||"#a97f22"}}>{bothPayload.donorWarned.toLocaleString()}</span> warnings</>}
+              {bothPayload.skippedGifts > 0 && <> · <span style={{color:T.ink3}}>{bothPayload.skippedGifts.toLocaleString()}</span> gift rows skipped (no amount / no donor)</>}
+            </div>
+          </div>
+
+          {/* Smart stage preview over the real linked history */}
+          {Object.keys(bothStagePreview).length > 0 && (
+            <div style={{background:T.bg,borderRadius:10,padding:"10px 14px",marginBottom:12}}>
+              <div style={{fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.1em",color:T.ink3,marginBottom:6}}>Smart Stage Assignment Preview</div>
+              <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+                {Object.entries(bothStagePreview).map(([s,n]) => (
+                  <span key={s} style={{fontSize:12,fontWeight:600,padding:"3px 10px",borderRadius:99,background:(STAGE_COLORS[s]||T.ink3)+"22",color:STAGE_COLORS[s]||T.ink3,border:`1px solid ${(STAGE_COLORS[s]||T.ink3)}30`}}>
+                    {s} × {n}
+                  </span>
+                ))}
+              </div>
+              <div style={{fontSize:11,color:T.ink3,marginTop:6}}>Based on the linked giving history. Override after import by dragging in the Kanban.</div>
+            </div>
+          )}
+
+          {/* Progress bar */}
+          {progress && (
+            <div style={{marginBottom:12}}>
+              <div style={{fontSize:12,color:T.ink,fontWeight:600,marginBottom:6}}>Importing {progress.done.toLocaleString()} of {progress.total.toLocaleString()}…</div>
+              <div style={{height:8,background:T.bg3,borderRadius:99,overflow:"hidden"}}>
+                <div style={{height:"100%",width:`${progress.total?Math.round(progress.done/progress.total*100):0}%`,background:T.green600,transition:"width 0.2s"}}/>
+              </div>
+            </div>
+          )}
+
+          {err && <div style={{color:"#f87171",fontSize:12,marginBottom:10}}>{err}</div>}
+          <div style={{display:"flex",gap:10}}>
+            <button onClick={()=>{setBothMode(null);setErr("");}} disabled={loading}
+              style={{background:"transparent",border:"1px solid "+T.bg3,borderRadius:10,padding:"11px 18px",color:T.ink3,fontSize:13,cursor:loading?"not-allowed":"pointer",opacity:loading?0.5:1}}>← Back</button>
+            <button onClick={doImportBoth} disabled={loading||bothPayload.donors.length===0}
+              style={{flex:1,background:loading||bothPayload.donors.length===0?T.bg2:T.green600,border:"none",borderRadius:10,padding:"11px 20px",color:"#fff",fontSize:14,fontWeight:700,cursor:loading||bothPayload.donors.length===0?"not-allowed":"pointer",opacity:loading||bothPayload.donors.length===0?0.6:1}}>
+              {loading?"Importing…":`Import ${bothPayload.donors.length.toLocaleString()} donors + ${(bothPayload.matchedGifts+bothPayload.unmatchedGifts).toLocaleString()} gifts →`}
+            </button>
+          </div>
         </>)}
 
         {/* ── Step 2: Detection + shape-specific mapping + preview ── */}
