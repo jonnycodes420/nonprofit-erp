@@ -322,7 +322,9 @@ async function initSchema() {
   // board-membership marker; a donor being assigned no longer implies "worked".
   await pool.query(`ALTER TABLE donors ADD COLUMN IF NOT EXISTS in_pipeline BOOLEAN DEFAULT false`);
   // The Pipeline board reads only in_pipeline donors, org-scoped, often by owner.
-  await pool.query(`CREATE INDEX IF NOT EXISTS idx_donors_pipeline ON donors(org_id, assigned_to) WHERE in_pipeline = true AND deleted_at IS NULL`);
+  // NOTE: the supporting partial index references donors.deleted_at, which is
+  // added further down (see "ADD COLUMN IF NOT EXISTS deleted_at"); the index is
+  // created there, after that column exists, so a FRESH schema init doesn't fail.
 
   await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS stripe_account_id TEXT`);
   await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS stripe_connected BOOLEAN DEFAULT FALSE`);
@@ -532,6 +534,9 @@ async function initSchema() {
   await pool.query(`ALTER TABLE interactions ADD COLUMN IF NOT EXISTS metadata JSONB`);
   await pool.query(`ALTER TABLE custom_fields ADD COLUMN IF NOT EXISTS show_in_directory BOOLEAN DEFAULT false`);
   await pool.query(`ALTER TABLE donors ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ`);
+  // Pipeline board membership index (see in_pipeline above) — created here because
+  // its WHERE clause references deleted_at, which only exists as of this line.
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_donors_pipeline ON donors(org_id, assigned_to) WHERE in_pipeline = true AND deleted_at IS NULL`);
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS password_reset_tokens (
