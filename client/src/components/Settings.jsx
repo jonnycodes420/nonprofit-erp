@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { T, Pill, SectionLabel, PageTitle, SectionTabs } from "./shared";
+import { T, Pill, SectionLabel, PageTitle, SectionTabs, fmt } from "./shared";
 import { QrCodeBlock, EmbedCodeBlock } from "./ShareBlocks";
 import { apiFetch, API, getToken } from "../api";
 import UpgradeModal from "./UpgradeModal";
@@ -707,6 +707,8 @@ export function Settings({auth,logout,initialSection}) {
   const [imSaving,setImSaving]=useState(false);
 
   const [billing,setBilling]=useState(null);
+  const [impact,setImpact]=useState(null);
+  const [impactOpen,setImpactOpen]=useState(false);
   const [portalLoading,setPortalLoading]=useState(false);
   const [upgradeModal,setUpgradeModal]=useState(null);
   const isReadOnly=billing?.accessState==="read_only";
@@ -725,6 +727,7 @@ export function Settings({auth,logout,initialSection}) {
     apiFetch("/org/team").then(setTeam).catch(()=>{});
     apiFetch("/stripe/status").then(setStripe).catch(()=>{});
     apiFetch("/billing/status").then(setBilling).catch(()=>{});
+    apiFetch("/impact").then(setImpact).catch(()=>{});
     if(!auth?.org?.org_slug){
       apiFetch("/org").then(r=>{ if(r.org_slug) setOrgSlug(r.org_slug); }).catch(()=>{});
     }
@@ -1282,6 +1285,49 @@ export function Settings({auth,logout,initialSection}) {
                 </div>
               )}
             </div>
+            {/* ROI / impact line (FIX) — the retention moment: what Steward has
+                actually recovered for you, next to what the plan costs. Honest,
+                attributable amounts only (never total giving); click for the
+                provenance breakdown + the assumption on the one estimate. */}
+            {impact&&(impact.recoveredAmount>0||impact.watchingRecurringCount>0||impact.onlineGivingProcessed>0)&&(()=>{
+              const recovered=impact.recoveredAmount||0, cost=impact.planMonthlyCost, watching=impact.watchingRecurringCount||0, online=impact.onlineGivingProcessed||0;
+              const head=recovered>0
+                ? <>Steward has recovered <strong style={{color:T.green600}}>{fmt(recovered)}</strong> in lapsing gifts{cost!=null&&<> · your plan is <strong style={{color:T.ink}}>${cost}/mo</strong></>}. You keep 100% of every dollar.</>
+                : watching>0
+                  ? <>Steward is watching <strong style={{color:T.ink}}>{watching}</strong> recurring donor{watching===1?"":"s"} for failed cards — money most orgs lose silently{cost!=null&&<>, on a <strong style={{color:T.ink}}>${cost}/mo</strong> plan</>}. You keep 100% of every gift.</>
+                  : <>You keep 100% of every gift — <strong style={{color:T.green600}}>$0</strong> in platform fees{cost!=null&&<>, on a <strong style={{color:T.ink}}>${cost}/mo</strong> plan</>}.</>;
+              const brow=(label,value,note)=>(
+                <div style={{display:"flex",alignItems:"baseline",justifyContent:"space-between",gap:12,padding:"7px 0",borderTop:"1px solid "+T.bg3}}>
+                  <div style={{flex:1}}>
+                    <div style={{fontSize:12.5,fontWeight:700,color:T.ink}}>{label}</div>
+                    <div style={{fontSize:11.5,color:T.ink3,lineHeight:1.45,marginTop:1}}>{note}</div>
+                  </div>
+                  <div style={{fontSize:14,fontWeight:800,color:T.ink,whiteSpace:"nowrap"}}>{value}</div>
+                </div>
+              );
+              return (
+                <div style={{border:"1px solid "+T.bg3,borderLeft:"3px solid "+T.gold500,borderRadius:12,overflow:"hidden",background:T.white}}>
+                  <div role="button" tabIndex={0} onClick={()=>setImpactOpen(o=>!o)} onKeyDown={e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();setImpactOpen(o=>!o);}}}
+                    style={{display:"flex",alignItems:"center",gap:10,padding:"11px 16px",cursor:"pointer"}}>
+                    <span aria-hidden style={{color:T.gold500,fontSize:14,lineHeight:1}}>◈</span>
+                    <span style={{flex:1,fontSize:13,color:T.ink2,lineHeight:1.5}}>{head}</span>
+                    <span style={{fontSize:11,fontWeight:700,color:T.green600,whiteSpace:"nowrap"}}>{impactOpen?"Hide":"Details"}</span>
+                  </div>
+                  {impactOpen&&(
+                    <div style={{padding:"2px 16px 12px",background:T.green100}}>
+                      {recovered>0&&brow("Recovered recurring giving",fmt(recovered),
+                        `${impact.recoveredCount} gift${impact.recoveredCount===1?"":"s"} the failed-card recovery workflow won back — money that would have quietly lapsed. 100% attributable, tracked per gift.`)}
+                      {brow("Platform fees you paid Steward","$0",
+                        "Donations run on your own Stripe at a 0% platform fee — you kept 100% of every gift.")}
+                      {online>0&&brow(
+                        <>What you'd likely have paid elsewhere <span style={{fontSize:10,fontWeight:700,color:T.gold600,textTransform:"uppercase",letterSpacing:"0.05em"}}>· estimate</span></>,
+                        "~"+fmt(impact.estimatedFeesElsewhere),
+                        `Estimate — assumes ~${impact.feeAssumptionPct}% in platform/processing fees a typical platform charges, on the ${fmt(online)} in online giving you processed through Steward.`)}
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
             {(()=>{const isSubscriber=["core","team","growth","impact","founding"].includes(billing.plan); return (
             <div style={{display:"flex",flexDirection:"column",gap:8}}>
               <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>

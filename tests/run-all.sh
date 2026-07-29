@@ -31,7 +31,7 @@ cd "$(dirname "$0")/.."
 CORE=(
   billing branding clickability consistency-e2e designations digests
   donor-merge finance-funds finance-gift-stamp finance-overview
-  finance-reintegration fundraising goals home households
+  finance-reintegration fundraising goals home households impact
   import-assign import-both import-combined import-shape import-stage
   locked-features
   moves no-emoji onboarding-brand palette pipeline pipeline-gating portfolios reports-cadence

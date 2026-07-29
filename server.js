@@ -550,7 +550,14 @@ app.post("/stripe/webhook", express.raw({ type: "application/json" }), async (re
               [rs.id]
             );
             await run("UPDATE donors SET stripe_subscription_status='active' WHERE id=? AND org_id=?", [rs.donor_id, rs.org_id]);
-            await logRecoveryEvent(rs.org_id, rs.donor_id, sub.id, "payment_recovered", event.id, { source: "subscription.updated" });
+            // Record the recurring gift amount so the recovered-dollars figure
+            // (GET /impact) stays complete even when recovery lands via this
+            // safety-net path (no invoice, so we use the subscription's own
+            // tracked amount — the gift that was actually won back).
+            await logRecoveryEvent(rs.org_id, rs.donor_id, sub.id, "payment_recovered", event.id, {
+              source: "subscription.updated",
+              amount: rs.amount != null ? parseFloat(rs.amount) : null,
+            });
           }
           const amount = sub.items?.data?.[0]?.price?.unit_amount != null ? sub.items.data[0].price.unit_amount / 100 : null;
           if (amount != null) {
@@ -11683,6 +11690,90 @@ app.get("/recurring/health", requireAuth, wrap(async (req, res) => {
   });
 }));
 
+// GET /impact — the honest "what Steward has done for you" number, for
+// retention (the subscription visibly pays for itself) and the sales demo.
+// NON-NEGOTIABLE: only ATTRIBUTABLE amounts. We never present total giving as
+// "Steward raised" — that would betray the whole honest-design brand. Two real
+// figures + one clearly-labeled estimate:
+//
+//   (1) recoveredAmount — the hero, a HARD number: dollars the failed-card
+//       recovery workflow actually won back, computed ONLY from the
+//       payment_recovery_events the workflow itself recorded (type=
+//       'payment_recovered', summing the tracked per-event amount). These are
+//       recurring gifts that were in a failed/dunning state and then charged
+//       successfully — money that, at most orgs, would have silently lapsed.
+//       100% attributable, never estimated. Reconciles with the recovery log.
+//   (2) platformFeesPaid — FACTUAL, 0 by construction: Steward processes
+//       donations on the org's OWN Stripe account at a 0% platform fee, so the
+//       org kept 100% of every gift. Not an assumption.
+//   (3) estimatedFeesElsewhere — OPTIONAL, secondary, ALWAYS carries its
+//       assumption inline (feeAssumptionPct): what a typical platform charging
+//       ~3% would have skimmed off that same online giving. An estimate about
+//       the counterfactual, clearly labeled — never a claim about Steward.
+//
+// Org-scoped. New org with nothing recovered yet → recoveredAmount 0 +
+// watchingRecurringCount, so the client can show a forward-looking line
+// ("watching N recurring donors for failed cards") instead of a fake number.
+app.get("/impact", requireAuth, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+
+  // (1) Recovered recurring giving — tracked recoveries ONLY, never total gifts.
+  // Sum the per-event amount recorded by the recovery workflow. Each
+  // payment_recovered event is one real gift won back from a failed state; a
+  // subscription can appear across multiple failure/recovery cycles over time,
+  // and every one of those is genuinely-recovered money, so we sum all of them
+  // (not COUNT DISTINCT subscription like the recovery-RATE math).
+  const recRows = await query(
+    `SELECT COUNT(*)::int AS c,
+            COALESCE(SUM((detail->>'amount')::numeric), 0) AS amt
+       FROM payment_recovery_events
+      WHERE org_id=? AND type='payment_recovered' AND (detail->>'amount') IS NOT NULL`,
+    [orgId]
+  );
+  const recoveredCount = recRows[0]?.c || 0;
+  const recoveredAmount = parseFloat(recRows[0]?.amt) || 0;
+
+  // (2) Fees kept — factual. Base = online giving processed through Steward
+  // (own-Stripe donations, stripe_payment_id set), which the org kept 100% of.
+  const givingRows = await query(
+    `SELECT COALESCE(SUM(amount), 0) AS total
+       FROM gifts WHERE org_id=? AND stripe_payment_id IS NOT NULL`,
+    [orgId]
+  );
+  const onlineGivingProcessed = parseFloat(givingRows[0]?.total) || 0;
+
+  // (3) Optional labeled estimate — assumption shown inline, secondary.
+  const FEE_ASSUMPTION_PCT = 3;
+  const estimatedFeesElsewhere =
+    Math.round(onlineGivingProcessed * (FEE_ASSUMPTION_PCT / 100) * 100) / 100;
+
+  // Forward-looking honest empty state: how many recurring donors Steward is
+  // actively watching for failed cards (so a new org sees a real promise, not
+  // a fabricated $0-dressed-as-something number).
+  const watchRows = await query(
+    `SELECT COUNT(*)::int AS c FROM recurring_subscriptions
+      WHERE org_id=? AND status IN ('active', 'recovering', 'past_due')`,
+    [orgId]
+  );
+  const watchingRecurringCount = watchRows[0]?.c || 0;
+
+  const orgRows = await query("SELECT plan FROM orgs WHERE id=?", [orgId]);
+  const plan = orgRows[0]?.plan || "trial";
+  const planMonthlyCost = PLAN_MONTHLY_COST[plan] ?? null;
+
+  res.json({
+    recoveredAmount,               // hero, hard, attributable
+    recoveredCount,
+    platformFeesPaid: 0,           // factual — 0% platform fee, own Stripe
+    onlineGivingProcessed,         // base for the fee estimate
+    estimatedFeesElsewhere,        // ESTIMATE — see feeAssumptionPct
+    feeAssumptionPct: FEE_ASSUMPTION_PCT,
+    watchingRecurringCount,        // forward-looking empty state
+    plan,
+    planMonthlyCost,
+  });
+}));
+
 // Everyday staff action from the home-screen queue — re-sends the CURRENT
 // dunning step's email on demand. Not gated by requireAdmin (matches
 // POST /note-reminders/:id/send, the other "queue nudge" action any staff
@@ -12040,6 +12131,14 @@ const PLAN_LIMITS = {
 // a hard 403. Legacy seed/growth/impact keep their existing hard enforcement so
 // no pre-cutover org's behavior changes.
 const SOFT_BAND_PLANS = new Set(["core", "team", "founding"]);
+
+// Published monthly price per plan (USD) — mirrors pages/Pricing.jsx's
+// CHECKOUT_PLANS/BILLING_PLANS. Used ONLY to render the ROI comparison
+// ("your plan is $149/mo") next to Steward's recovered-dollars figure; not a
+// billing source of truth. trial → null (nothing charged yet).
+const PLAN_MONTHLY_COST = {
+  core: 149, team: 299, founding: 99, seed: 99, growth: 249, impact: 499,
+};
 
 // Returns the limits actually in effect for an org, accounting for trial state
 function effectivePlanLimits(org) {

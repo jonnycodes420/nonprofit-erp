@@ -17,6 +17,71 @@ const PORTFOLIO_BREAKDOWNS = {
   lapsed: { endpoint: "/dashboard/my-stats/lapsed/breakdown", title: "Lapsed", explanation: "Donors assigned to you who've lapsed, ranked by lifetime giving." },
 };
 
+// The honest impact line (FIX) — a quiet "what Steward has done for you" stat,
+// on-palette and not shouting. ATTRIBUTABLE amounts only: recovered recurring
+// giving (a hard, tracked number) + the factual 0% platform fee. NEVER total
+// giving as "Steward raised." Click to expand a provenance breakdown that shows
+// exactly what's counted and the assumption on the one estimate. Empty/new org
+// → a forward-looking line ("watching N donors for failed cards"), never a fake
+// number. See GET /impact in server.js for the honesty guarantees.
+function ImpactLine({ impact }) {
+  const [open, setOpen] = useState(false);
+  if (!impact) return null;
+  const recovered = impact.recoveredAmount || 0;
+  const watching = impact.watchingRecurringCount || 0;
+  const online = impact.onlineGivingProcessed || 0;
+  const hasRecovered = recovered > 0;
+  // Truly nothing to say yet (no recoveries, no giving, nothing watched) →
+  // stay silent rather than manufacture a line.
+  if (!hasRecovered && watching <= 0 && online <= 0) return null;
+
+  const head = hasRecovered
+    ? <>Steward has recovered <strong style={{ color: T.green600 }}>{fmt(recovered)}</strong> in lapsing gifts and kept you 100% of every dollar.</>
+    : watching > 0
+      ? <>Steward is watching <strong style={{ color: T.ink }}>{watching}</strong> recurring donor{watching === 1 ? "" : "s"} for failed cards — and you keep 100% of every gift.</>
+      : <>You keep 100% of every gift — <strong style={{ color: T.green600 }}>$0</strong> paid in platform fees.</>;
+
+  const row = (label, value, note) => (
+    <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 12, padding: "7px 0", borderTop: "1px solid " + T.bg3 }}>
+      <div style={{ flex: 1 }}>
+        <div style={{ fontSize: 12.5, fontWeight: 700, color: T.ink }}>{label}</div>
+        <div style={{ fontSize: 11.5, color: T.ink3, lineHeight: 1.45, marginTop: 1 }}>{note}</div>
+      </div>
+      <div style={{ fontSize: 14, fontWeight: 800, color: T.ink, whiteSpace: "nowrap", fontFamily: "'DM Serif Display',serif" }}>{value}</div>
+    </div>
+  );
+
+  return (
+    <div style={{ background: T.white, border: "1px solid " + T.bg3, borderRadius: 14, overflow: "hidden" }}>
+      <div {...interactive(() => setOpen(o => !o), { label: "Show what Steward has done for you" })}
+        style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 18px" }}>
+        <span aria-hidden style={{ color: T.gold500, fontSize: 14, lineHeight: 1 }}>◈</span>
+        <span style={{ flex: 1, fontSize: 13, color: T.ink2, lineHeight: 1.5 }}>{head}</span>
+        <span style={{ fontSize: 11, fontWeight: 700, color: T.green600, whiteSpace: "nowrap" }}>{open ? "Hide" : "Details"}</span>
+      </div>
+      {open && (
+        <div style={{ padding: "2px 18px 14px", background: T.green100 }}>
+          {hasRecovered && row(
+            "Recovered recurring giving",
+            fmt(recovered),
+            `${impact.recoveredCount} gift${impact.recoveredCount === 1 ? "" : "s"} the failed-card recovery workflow won back — money that would have quietly lapsed. 100% attributable, tracked per gift.`
+          )}
+          {row(
+            "Platform fees you paid Steward",
+            "$0",
+            "You process donations on your own Stripe at a 0% platform fee — you kept 100% of every gift."
+          )}
+          {online > 0 && row(
+            <>What you'd likely have paid elsewhere <span style={{ fontSize: 10, fontWeight: 700, color: T.gold600, textTransform: "uppercase", letterSpacing: "0.05em" }}>· estimate</span></>,
+            "~" + fmt(impact.estimatedFeesElsewhere),
+            `Estimate — assumes ~${impact.feeAssumptionPct}% in platform/processing fees a typical platform charges, on the ${fmt(online)} in online giving you processed through Steward.`
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Dashboard / Home ─────────────────────────────────────────────────────────
 export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
   const {auth}=useAuth();
@@ -60,6 +125,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
   const [stageCounts,setStageCounts]=useState([]);
   const [stewardMetrics,setStewardMetrics]=useState(null);
   const [recurringHealth,setRecurringHealth]=useState(null);
+  const [impact,setImpact]=useState(null);
   const [resentIds,setResentIds]=useState(()=>new Set());
   // BUILD-16 Part 1 — the Home command center's four headers (Portfolio/Tasks/
   // Need-to-do/Pipeline), plan-graceful (Core hides the Team headers).
@@ -136,6 +202,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
     }).catch(()=>{setMyStats(null);setScope(prev=>prev!==undefined?prev:"all");});
     apiFetch("/donors/stage-counts").then(r=>setStageCounts(r||[])).catch(()=>{});
     apiFetch("/recurring/health").then(r=>setRecurringHealth(r)).catch(()=>{});
+    apiFetch("/impact").then(r=>setImpact(r)).catch(()=>{});
     apiFetch("/fundraising/overview").then(r=>setFundOverview(r||null)).catch(()=>setFundOverview(null));
     loadGoal();
   },[]);
@@ -1008,6 +1075,10 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
           )}
         </div>
       </div>
+
+      {/* Honest impact line (FIX) — quiet ROI stat, attributable amounts only.
+          Sits at the foot of the home column, small and on-palette. */}
+      <ImpactLine impact={impact}/>
 
       {/* Set-goal modal */}
       {showSetGoal&&(
