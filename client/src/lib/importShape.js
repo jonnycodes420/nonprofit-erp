@@ -300,6 +300,32 @@ export function matchOwnersToUsers(values = [], users = []) {
   return out;
 }
 
+// groupOwnerMatches(matches) — collapse the per-DISTINCT-value rows from
+// matchOwnersToUsers() onto the PEOPLE they resolve to, so the mapping UI shows
+// "Jonathan — 2,190 donors, from 4 spellings" once instead of four separate
+// rows. `matches` = matchOwnersToUsers() output. Returns { groups, unmatched }:
+//   groups  = [{ userId, userName, matchType, totalCount, spellingCount,
+//               values:[{value,count,matchType}] }]  — one per resolved user
+//             (email preferred as the headline matchType); always overridable.
+//   unmatched = [{ value, count }]  (matchType 'none' — keep Invite / Leave).
+// Pure/JSX-free so tests/import-assign.test.js drives it directly.
+export function groupOwnerMatches(matches = []) {
+  const byUser = new Map();
+  const unmatched = [];
+  for (const m of matches) {
+    if (!m.userId) { unmatched.push({ value: m.value, count: m.count || 0 }); continue; }
+    if (!byUser.has(m.userId)) byUser.set(m.userId, { userId: m.userId, userName: m.userName, matchType: m.matchType, totalCount: 0, values: [] });
+    const g = byUser.get(m.userId);
+    g.totalCount += m.count || 0;
+    g.values.push({ value: m.value, count: m.count || 0, matchType: m.matchType });
+    if (m.matchType === "email") g.matchType = "email"; // email is the strongest headline signal
+  }
+  const groups = [...byUser.values()]
+    .map(g => ({ ...g, spellingCount: g.values.length, values: g.values.sort((a, b) => b.count - a.count) }))
+    .sort((a, b) => b.totalCount - a.totalCount);
+  return { groups, unmatched: unmatched.sort((a, b) => b.count - a.count) };
+}
+
 // applyOwnerAssignment(donors, resolved) — stamp assignedTo/assignedToName onto
 // each donor from its raw `owner` cell, then strip `owner`. `resolved` maps the
 // lowercased+trimmed owner value → { userId, userName } (only the values the

@@ -1977,7 +1977,10 @@ app.post("/auth/invite", requireAuth, requireAdmin, wrap(async (req, res) => {
     }
   }
 
-  res.json({ success: true, inviteLink, emailSent });
+  // Return the invite id/email/derived name so the caller (e.g. the import
+  // officer-mapping screen) can make the newly-invited officer immediately
+  // selectable + assignable as PENDING, without re-running the import.
+  res.json({ success: true, inviteLink, emailSent, id, email: normalizedEmail, name: inviteeDisplayName(normalizedEmail) });
 }));
 
 app.get("/auth/invite/:token", wrap(async (req, res) => {
@@ -2020,6 +2023,24 @@ app.post("/auth/invite/accept", wrap(async (req, res) => {
     [userId, invite.org_id, invite.email, hash, name, invite.role]
   );
   await run("UPDATE invites SET accepted_at = NOW() WHERE id = ?", [invite.id]);
+
+  // Resolve any donors an import routed to this (previously pending) officer —
+  // their portfolio is populated the moment they log in (the magic moment for a
+  // new gift officer). assigned_to fills in, they join the board (in_pipeline),
+  // and the pending pointer clears. Matched by EMAIL across every invite for this
+  // address in the org (org-scoped) — so donors held against an earlier invite
+  // that expired and was re-sent are still claimed, nothing orphans.
+  const claimed = await run(
+    `UPDATE donors
+        SET assigned_to = ?, assigned_to_name = ?, in_pipeline = TRUE,
+            pending_assignee_invite_id = NULL, pending_assignee_name = NULL
+      WHERE org_id = ?
+        AND pending_assignee_invite_id IN (
+          SELECT id FROM invites WHERE org_id = ? AND lower(email) = lower(?)
+        )`,
+    [userId, name, invite.org_id, invite.org_id, invite.email]
+  );
+  if (claimed?.changes) console.log(`[invite-accept] populated ${claimed.changes} donor(s) into ${invite.email}'s portfolio`);
 
   const orgs = await query("SELECT * FROM orgs WHERE id = ?", [invite.org_id]);
   const org = orgs[0];
@@ -2118,6 +2139,7 @@ app.get("/donors/summaries", requireAuth, wrap(async (req, res) => {
   const [donors, touchpoints] = await Promise.all([
     query(`SELECT id, name, email, phone, stage, status, total_giving, last_gift_date,
                   last_gift_amount, gift_count, assigned_to, assigned_to_name,
+                  pending_assignee_invite_id, pending_assignee_name,
                   city, state, zip, tags, wealth_score, capacity_tier, planned_giving,
                   employer, stripe_subscription_status
            FROM donors WHERE org_id = ? AND deleted_at IS NULL ORDER BY total_giving DESC, id`, [req.user.orgId]),
@@ -2321,25 +2343,59 @@ app.post("/donors", requireAuth, checkWriteAccess, wrap(async (req, res) => {
   res.status(201).json(rows[0]);
 }));
 
+// Display name for a pending invitee (no users row yet) — derived from the
+// invite email's local-part ("jonathan.atkinson@x" → "Jonathan Atkinson") so the
+// officer-mapping UI can collapse "jonathan"/"Jonathan Atkinson"/"jonathan@x"
+// spellings onto ONE person, and the Directory can show "· pending" with a real
+// name. Falls back to the raw email if the local-part is empty.
+function inviteeDisplayName(email) {
+  const local = String(email || "").split("@")[0] || "";
+  const words = local.replace(/[._-]+/g, " ").trim().split(/\s+/).filter(Boolean);
+  if (!words.length) return String(email || "").trim() || null;
+  return words.map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(" ");
+}
+
 // buildAssigneeResolver — for a Team org, validate the per-donor `assignedTo`
-// user ids the import payload carries (from the client's owner-column mapping)
-// and return a resolver donor→{id,name}. Core/lapsed orgs (not team tier) get a
-// no-op resolver, so a Core import always lands UNASSIGNED regardless of what
-// the payload claims — assignment is a Team (officer-portfolio) capability.
-// A donor whose `assignedTo` isn't a real user in THIS org resolves to null
-// (never silently mis-assigns across orgs or to a stale id).
+// the import payload carries (from the client's owner-column mapping) and return
+// a resolver donor→{ id, name, pendingInviteId, pendingName }. Two kinds of
+// assignee are honored:
+//   - a real user id in THIS org → { id, name }               (lands on the board)
+//   - "invite:<id>" for a PENDING invite in this org → { pendingInviteId,
+//     pendingName } (held until the officer accepts — see /auth/invite/accept)
+// Core/lapsed orgs (not team tier) get a no-op resolver, so a Core import always
+// lands UNASSIGNED regardless of payload. An `assignedTo` that matches neither a
+// real user nor a live pending invite resolves to all-null (never silently
+// mis-assigns across orgs or to a stale/expired id).
 async function buildAssigneeResolver(donors, orgId, isTeam) {
-  if (!isTeam) return () => ({ id: null, name: null });
-  const ids = [...new Set(donors.map(d => d && d.assignedTo).filter(Boolean).map(String))];
-  const validNames = new Map();
-  if (ids.length) {
-    const rows = await query("SELECT id, name FROM users WHERE id = ANY(?) AND org_id = ?", [ids, orgId]);
-    rows.forEach(r => validNames.set(r.id, r.name));
+  const NONE = { id: null, name: null, pendingInviteId: null, pendingName: null };
+  if (!isTeam) return () => NONE;
+  const raw = [...new Set(donors.map(d => d && d.assignedTo).filter(Boolean).map(String))];
+  const userIds = raw.filter(v => !v.startsWith("invite:"));
+  const inviteIds = raw.filter(v => v.startsWith("invite:")).map(v => v.slice("invite:".length)).filter(Boolean);
+
+  const validUsers = new Map();
+  if (userIds.length) {
+    const rows = await query("SELECT id, name FROM users WHERE id = ANY(?) AND org_id = ?", [userIds, orgId]);
+    rows.forEach(r => validUsers.set(r.id, r.name));
+  }
+  const validInvites = new Map();
+  if (inviteIds.length) {
+    const rows = await query(
+      "SELECT id, email FROM invites WHERE id = ANY(?) AND org_id = ? AND accepted_at IS NULL AND expires_at > NOW()",
+      [inviteIds, orgId]
+    );
+    rows.forEach(r => validInvites.set(r.id, inviteeDisplayName(r.email)));
   }
   return (d) => {
-    const id = d && d.assignedTo ? String(d.assignedTo) : null;
-    if (!id || !validNames.has(id)) return { id: null, name: null };
-    return { id, name: d.assignedToName || validNames.get(id) || null };
+    const v = d && d.assignedTo ? String(d.assignedTo) : null;
+    if (!v) return NONE;
+    if (v.startsWith("invite:")) {
+      const inviteId = v.slice("invite:".length);
+      if (!validInvites.has(inviteId)) return NONE;
+      return { id: null, name: null, pendingInviteId: inviteId, pendingName: d.assignedToName || validInvites.get(inviteId) || null };
+    }
+    if (!validUsers.has(v)) return NONE;
+    return { id: v, name: d.assignedToName || validUsers.get(v) || null, pendingInviteId: null, pendingName: null };
   };
 }
 
@@ -2430,11 +2486,13 @@ app.post("/donors/import", requireAuth, wrap(async (req, res) => {
         d.notes || "",
         d.city  || null,
         d.state || null,
-        a.id,          // assigned_to — from a mapped owner column (Team) else null
-        a.name,        // assigned_to_name
-        !!a.id         // in_pipeline — an assigned donor joins the officer's board
+        a.id,               // assigned_to — a mapped owner column → real user (Team), else null
+        a.name,             // assigned_to_name
+        !!a.id,             // in_pipeline — a REALLY-assigned donor joins the officer's board
+        a.pendingInviteId,  // pending_assignee_invite_id — held for an invited-but-not-accepted officer
+        a.pendingName       // pending_assignee_name — display label until they accept
       );
-      return "(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)";
+      return "(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)";
     });
 
     try {
@@ -2442,7 +2500,8 @@ app.post("/donors/import", requireAuth, wrap(async (req, res) => {
         await runTx(client,
           `INSERT INTO donors
              (id,org_id,name,email,phone,status,stage,total_giving,last_gift_amount,
-              last_gift_date,gift_count,tags,notes,city,state,assigned_to,assigned_to_name,in_pipeline)
+              last_gift_date,gift_count,tags,notes,city,state,assigned_to,assigned_to_name,in_pipeline,
+              pending_assignee_invite_id,pending_assignee_name)
            VALUES ${tuples.join(",")}`,
           params
         );
@@ -2550,16 +2609,18 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrap(async (r
         d.lastGift||null, parseInt(d.gifts)||(d.total?1:0),
         JSON.stringify(Array.isArray(d.tags)?d.tags:[]),
         d.notes||"", d.city||null, d.state||null,
-        a.id, a.name, !!a.id   // assigned_to / assigned_to_name / in_pipeline (Team owner-column routing)
+        a.id, a.name, !!a.id,   // assigned_to / assigned_to_name / in_pipeline (Team owner-column routing)
+        a.pendingInviteId, a.pendingName   // pending assignment held for an invited-but-not-accepted officer
       );
-      return "(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)";
+      return "(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)";
     });
     try {
       await withTransaction(async (client) => {
         await runTx(client,
           `INSERT INTO donors
              (id,org_id,name,email,phone,status,stage,total_giving,last_gift_amount,
-              last_gift_date,gift_count,tags,notes,city,state,assigned_to,assigned_to_name,in_pipeline)
+              last_gift_date,gift_count,tags,notes,city,state,assigned_to,assigned_to_name,in_pipeline,
+              pending_assignee_invite_id,pending_assignee_name)
            VALUES ${tuples.join(",")}`,
           params
         );
@@ -4303,6 +4364,17 @@ app.get("/portfolio/officers", requireAuth, wrap(async (req, res) => {
      FROM users u
      LEFT JOIN donors d ON d.assigned_to = u.id AND d.org_id = u.org_id AND d.deleted_at IS NULL
      WHERE u.org_id=? GROUP BY u.id ORDER BY portfolio_giving DESC, u.name`, [req.user.orgId]);
+  // Pending invitees (invited, not yet accepted, unexpired) are surfaced too so
+  // the import officer-mapping screen can match + assign donors to them BEFORE
+  // they accept (the assignment resolves into their portfolio on acceptance).
+  // Includes each invite's held pending-donor count so the UI can show it.
+  const invites = await query(
+    `SELECT i.id, i.email,
+            COUNT(d.id)::int AS pending_count
+       FROM invites i
+       LEFT JOIN donors d ON d.pending_assignee_invite_id = i.id AND d.org_id = i.org_id AND d.deleted_at IS NULL
+      WHERE i.org_id=? AND i.accepted_at IS NULL AND i.expires_at > NOW()
+      GROUP BY i.id, i.email ORDER BY i.created_at DESC`, [req.user.orgId]);
   res.json({
     tier,
     single_user: officers.length <= 1,
@@ -4311,6 +4383,7 @@ app.get("/portfolio/officers", requireAuth, wrap(async (req, res) => {
       portfolio_count: parseInt(o.portfolio_count, 10) || 0,
       portfolio_giving: parseFloat(o.portfolio_giving) || 0,
     })),
+    invites: invites.map(i => ({ id: i.id, email: i.email, name: inviteeDisplayName(i.email), pending_count: parseInt(i.pending_count, 10) || 0 })),
   });
 }));
 

@@ -119,6 +119,8 @@ export function adaptDonor(d) {
     stripeSubscriptionStatus: d.stripe_subscription_status ?? null,
     assignedTo:    d.assigned_to ?? null,
     assignedToName: d.assigned_to_name ?? null,
+    pendingAssigneeInviteId: d.pending_assignee_invite_id ?? null,
+    pendingAssigneeName: d.pending_assignee_name ?? null,
     city:          d.city ?? null,
     state:         d.state ?? null,
     zip:           d.zip ?? null,

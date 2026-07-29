@@ -37,7 +37,7 @@ async function seedUser(o, id, email, name, role = "staff") {
   // ══════════════════════════════════════════════════════════════════════════
   // 1 — PURE LIB: owner detection + matching
   // ══════════════════════════════════════════════════════════════════════════
-  const { detectOwnerColumn, matchOwnersToUsers, applyOwnerAssignment } =
+  const { detectOwnerColumn, matchOwnersToUsers, applyOwnerAssignment, groupOwnerMatches } =
     await import("../client/src/lib/importShape.js");
 
   ok("detectOwnerColumn — 'Assigned Officer'", detectOwnerColumn(["Name", "Email", "Assigned Officer"]) === "Assigned Officer");
@@ -81,6 +81,36 @@ async function seedUser(o, id, email, name, role = "staff") {
   ok("applyOwnerAssignment — owner field stripped", !("owner" in applied[0]));
   ok("applyOwnerAssignment — unresolved donor unassigned", applied[1].assignedTo === undefined && !("owner" in applied[1]));
   ok("applyOwnerAssignment — blank owner unassigned", applied[2].assignedTo === undefined);
+
+  // ── Pending invitees are first-class in matching (FIX 2026-07-28) ──
+  // A pseudo-user with id "invite:<id>" (a pending invitee) matches by exact
+  // email AND by name/first-name, so the exact address never reads "no match".
+  const withPending = [
+    { id: "u1", name: "Sarah Lee", email: "sarah@org.org" },
+    { id: "invite:inv_j", name: "Jonathan", email: "jonathan@creo.org", pending: true },
+    { id: "invite:inv_b", name: "Benjamin", email: "benjamin@creo.org", pending: true },
+  ];
+  const pm = matchOwnersToUsers(
+    ["jonathan@creo.org", "JONATHAN@CREO.ORG", "Jonathan Atkinson", "jonathan", "benjamin@creo.org", "Benjamin Reed", "sarah@unknown.org"],
+    withPending
+  );
+  const pv = Object.fromEntries(pm.map(x => [x.value, x]));
+  ok("pending invite matched by EXACT email (never 'no match')", pv["jonathan@creo.org"].userId === "invite:inv_j" && pv["jonathan@creo.org"].matchType === "email");
+  ok("pending invite matched by UPPERCASE email", pv["JONATHAN@CREO.ORG"].userId === "invite:inv_j");
+  ok("pending invite matched by full-name variant", pv["Jonathan Atkinson"].userId === "invite:inv_j" && pv["Jonathan Atkinson"].matchType === "name");
+  ok("pending invite matched by first-name/local-part", pv["jonathan"].userId === "invite:inv_j");
+  ok("second pending invite matched (Benjamin variants)", pv["benjamin@creo.org"].userId === "invite:inv_b" && pv["Benjamin Reed"].userId === "invite:inv_b");
+  ok("genuinely unknown value still → none (Invite / Leave)", pv["sarah@unknown.org"].userId === null && pv["sarah@unknown.org"].matchType === "none");
+
+  // groupOwnerMatches collapses the 4 Jonathan spellings + 2 Benjamin onto 2 people.
+  const grouped = groupOwnerMatches(pm);
+  const gj = grouped.groups.find(g => g.userId === "invite:inv_j");
+  const gb = grouped.groups.find(g => g.userId === "invite:inv_b");
+  ok("group: Jonathan collapses 4 spellings into one person", gj && gj.spellingCount === 4 && gj.totalCount === 4);
+  ok("group: email is the headline matchType when any spelling matched by email", gj.matchType === "email");
+  ok("group: Benjamin collapses 2 spellings", gb && gb.spellingCount === 2);
+  ok("group: unknown value stays in unmatched (keeps Invite/Leave)", grouped.unmatched.length === 1 && grouped.unmatched[0].value === "sarah@unknown.org");
+  ok("group: no user is double-listed", new Set(grouped.groups.map(g => g.userId)).size === grouped.groups.length);
 
   // ══════════════════════════════════════════════════════════════════════════
   // 2 — SERVER contract
@@ -189,6 +219,85 @@ async function seedUser(o, id, email, name, role = "staff") {
   for (let i = 5; i <= 10; i++) await seedUser(TEAM, `ia_fill_${i}`, `fill${i}@ia.local`, `Fill ${i}`, "staff"); // → 10 users
   const overInv = await api("POST", "/auth/invite", teamAdmin, { email: "eleven@ia.local", role: "staff" });
   ok("invite past 10-seat Team limit → 403 seat_limit", overInv.status === 403 && overInv.body.error === "seat_limit", overInv.body);
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // 4 — PENDING INVITEE assignment on import + resolution on accept (FIX)
+  // ══════════════════════════════════════════════════════════════════════════
+  await reset();
+  await seedOrg(TEAM, "team", "active", "team");
+  await seedUser(TEAM, "ia_admin", "iaadmin@ia.local", "Ada Admin", "admin");
+  await seedOrg(OTHER, "team", "active", "other");
+  await seedUser(OTHER, "other_admin", "otheradmin@ia.local", "Otto Other", "admin");
+  const admin2 = await login("iaadmin@ia.local");
+  const otherAdmin2 = await login("otheradmin@ia.local");
+
+  // Invite two officers (unaccepted) — they are PENDING.
+  const invJ = await api("POST", "/auth/invite", admin2, { email: "jonathan@creo.org", role: "staff" });
+  const invB = await api("POST", "/auth/invite", admin2, { email: "benjamin@creo.org", role: "staff" });
+  ok("invite response carries id + derived display name (for mapping)", !!invJ.body.id && invJ.body.name === "Jonathan", invJ.body);
+
+  // /portfolio/officers surfaces pending invitees (with derived names) so the
+  // mapping screen can match + assign to them before they accept.
+  const officers = (await api("GET", "/portfolio/officers", admin2)).body;
+  ok("officers payload lists both pending invites with derived names",
+    (officers.invites || []).length === 2 && officers.invites.some(i => i.email === "jonathan@creo.org" && i.name === "Jonathan"), officers.invites);
+
+  // Import donors routed to the pending invites (client sends assignedTo="invite:<id>").
+  const pendImp = await api("POST", "/donors/import-combined", admin2, {
+    donors: [
+      { name: "Alice A", email: "alice@d.org", total: 1000, assignedTo: "invite:" + invJ.body.id, assignedToName: "Jonathan" },
+      { name: "Aaron A", email: "aaron@d.org", total: 800,  assignedTo: "invite:" + invJ.body.id, assignedToName: "Jonathan" },
+      { name: "Bella B", email: "bella@d.org", total: 600,  assignedTo: "invite:" + invB.body.id, assignedToName: "Benjamin" },
+      { name: "Ghost G", email: "ghost@d.org", total: 100,  assignedTo: "invite:inv_nonexistent" },
+    ],
+    gifts: [],
+  });
+  ok("pending-assignment import → 200 / 4 created", pendImp.status === 200 && pendImp.body.created === 4, pendImp.body);
+
+  const alice = (await q("SELECT assigned_to, in_pipeline, pending_assignee_invite_id, pending_assignee_name FROM donors WHERE org_id=$1 AND email='alice@d.org'", [TEAM]))[0];
+  ok("Alice → held PENDING for Jonathan (assigned_to null, NOT on board, pending set)",
+    alice.assigned_to === null && alice.in_pipeline === false && alice.pending_assignee_invite_id === invJ.body.id && alice.pending_assignee_name === "Jonathan", alice);
+  const ghost = (await q("SELECT assigned_to, pending_assignee_invite_id FROM donors WHERE org_id=$1 AND email='ghost@d.org'", [TEAM]))[0];
+  ok("unknown invite id → unassigned, no pending (never mis-route)", ghost.assigned_to === null && ghost.pending_assignee_invite_id === null, ghost);
+
+  // Officer accepts → their portfolio is populated, nothing lost in the transition.
+  const jToken = (await q("SELECT token FROM invites WHERE id=$1", [invJ.body.id]))[0].token;
+  const acc = await api("POST", "/auth/invite/accept", null, { token: jToken, name: "Jonathan Atkinson", password: "password12" });
+  ok("Jonathan accepts → 201", acc.status === 201, acc.body);
+  const jUser = (await q("SELECT id FROM users WHERE org_id=$1 AND email='jonathan@creo.org'", [TEAM]))[0];
+  const aliceAfter = (await q("SELECT assigned_to, in_pipeline, pending_assignee_invite_id FROM donors WHERE org_id=$1 AND email='alice@d.org'", [TEAM]))[0];
+  ok("on accept → Alice assigned to the new user + on board + pending cleared",
+    aliceAfter.assigned_to === jUser.id && aliceAfter.in_pipeline === true && aliceAfter.pending_assignee_invite_id === null, aliceAfter);
+  const aaronAfter = (await q("SELECT assigned_to FROM donors WHERE org_id=$1 AND email='aaron@d.org'", [TEAM]))[0];
+  ok("both of Jonathan's donors resolved (nothing lost)", aaronAfter.assigned_to === jUser.id, aaronAfter);
+  const jPortfolio = (await api("GET", "/donors?assignedTo=" + jUser.id, admin2)).body;
+  ok("Jonathan logs in to a populated portfolio (2 donors)", jPortfolio.length === 2, jPortfolio.map(d => d.email));
+
+  // Benjamin's assignment is independent — still pending until HE accepts.
+  const bellaStill = (await q("SELECT assigned_to, pending_assignee_invite_id FROM donors WHERE org_id=$1 AND email='bella@d.org'", [TEAM]))[0];
+  ok("Benjamin still pending until he accepts (independent)", bellaStill.assigned_to === null && bellaStill.pending_assignee_invite_id === invB.body.id, bellaStill);
+
+  // Org isolation: another org can't assign to TEAM's (still-pending) invite id.
+  await api("POST", "/donors/import-combined", otherAdmin2, {
+    donors: [{ name: "Cross C", email: "cross@d.org", total: 100, assignedTo: "invite:" + invB.body.id }],
+    gifts: [],
+  });
+  const cross = (await q("SELECT assigned_to, pending_assignee_invite_id FROM donors WHERE org_id=$1 AND email='cross@d.org'", [OTHER]))[0];
+  ok("cross-org invite id → unassigned/no pending in the other org", cross.assigned_to === null && cross.pending_assignee_invite_id === null, cross);
+
+  // Re-invite resilience: Bella is held on invB. Expire it, re-invite the same
+  // email, and accept the NEW invite — Bella (pending on the expired invite) is
+  // still claimed by email match, nothing orphans.
+  await q("UPDATE invites SET expires_at = NOW() - INTERVAL '1 day' WHERE id=$1", [invB.body.id]);
+  const invB2 = await api("POST", "/auth/invite", admin2, { email: "benjamin@creo.org", role: "staff" });
+  ok("re-invite same email after expiry → a fresh invite", !!invB2.body.id && invB2.body.id !== invB.body.id, invB2.body);
+  const bToken = (await q("SELECT token FROM invites WHERE id=$1", [invB2.body.id]))[0].token;
+  const accB = await api("POST", "/auth/invite/accept", null, { token: bToken, name: "Benjamin Reed", password: "password12" });
+  ok("Benjamin accepts the re-invite → 201", accB.status === 201, accB.body);
+  const bUser = (await q("SELECT id FROM users WHERE org_id=$1 AND email='benjamin@creo.org'", [TEAM]))[0];
+  const bellaAfter = (await q("SELECT assigned_to, in_pipeline, pending_assignee_invite_id FROM donors WHERE org_id=$1 AND email='bella@d.org'", [TEAM]))[0];
+  ok("donor pending on the EXPIRED invite is still claimed by email (no orphan)",
+    bellaAfter.assigned_to === bUser.id && bellaAfter.in_pipeline === true && bellaAfter.pending_assignee_invite_id === null, bellaAfter);
 
   await closeDb();
   summary();

@@ -28,7 +28,7 @@ import { T, fmt, fmtFull, daysDiff, SC, askClaude, STAGES, STAGE_ACTION, TIER_CO
 // profile button, and modal render below, and add `VoiceMemoModal` back to
 // the import above).
 import { DonorMap } from "./DonorMap";
-import { detectImportShape, groupTransactions, shapeLabel, YEAR_HDR_PAT, detectWorkbookRoles, pickMatchKey, linkGiftsToDonors, detectOwnerColumn, matchOwnersToUsers, applyOwnerAssignment } from "../lib/importShape";
+import { detectImportShape, groupTransactions, shapeLabel, YEAR_HDR_PAT, detectWorkbookRoles, pickMatchKey, linkGiftsToDonors, detectOwnerColumn, matchOwnersToUsers, applyOwnerAssignment, groupOwnerMatches } from "../lib/importShape";
 
 // ── CSV Import helpers ─────────────────────────────────────────────────────
 // ── Import field registry ──────────────────────────────────────────────────
@@ -575,13 +575,18 @@ export function DonorImport({ onClose, onImported, withHistory = false }) {
   const myId = auth?.user?.id || "";
   const myName = auth?.user?.name || auth?.user?.email || "";
 
-  useEffect(() => {
-    // Tier probe + officer list (same source the pipeline/donor-profile use).
-    apiFetch("/portfolio/officers").then(r => {
-      setIsTeam(r?.tier === "team");
-      setOrgUsers((r?.officers || []).map(o => ({ id:o.id, name:o.name, email:o.email, role:o.role })));
-    }).catch(()=>{});
-  }, []);
+  const loadOfficers = () => apiFetch("/portfolio/officers").then(r => {
+    setIsTeam(r?.tier === "team");
+    // Active users AND pending invitees, so an owner value can match/assign to
+    // someone who's only been invited. A pending invitee's synthetic id is
+    // "invite:<id>" — the server resolver holds the assignment until they accept.
+    const active = (r?.officers || []).map(o => ({ id:o.id, name:o.name, email:o.email, role:o.role, pending:false }));
+    const pending = (r?.invites || []).map(i => ({ id:"invite:"+i.id, name:i.name, email:i.email, pending:true }));
+    setOrgUsers([...active, ...pending]);
+    return { active, pending };
+  }).catch(()=>({ active:[], pending:[] }));
+
+  useEffect(() => { loadOfficers(); }, []);  // eslint-disable-line react-hooks/exhaustive-deps
 
   const effectiveShape = shapeOverride || shape;
 
@@ -819,15 +824,30 @@ export function DonorImport({ onClose, onImported, withHistory = false }) {
     if (!inviteEmail.trim()) return;
     setInviteBusy(true); setInviteErr("");
     try {
-      await apiFetch("/auth/invite", { method:"POST", body: JSON.stringify({ email: inviteEmail.trim(), role: "staff" }) });
+      const r = await apiFetch("/auth/invite", { method:"POST", body: JSON.stringify({ email: inviteEmail.trim(), role: "staff" }) });
       const val = inviteFor;
       setInvitedValues(p => ({ ...p, [val]: true }));
+      // Make the just-invited officer immediately selectable AND assigned to
+      // this owner value as PENDING — no re-import needed (task #4). The invite
+      // resolves into their portfolio when they accept.
+      if (r?.id) {
+        const pseudo = { id:"invite:"+r.id, name:r.name || r.email, email:r.email, pending:true };
+        setOrgUsers(prev => prev.some(u=>u.id===pseudo.id) ? prev : [...prev, pseudo]);
+        setOwnerMap(p => ({ ...p, [val]: pseudo.id }));
+      }
+      loadOfficers();  // refresh from server (pending list + counts)
       setInviteFor(null); setInviteEmail("");
     } catch (e) {
       setInviteErr(e.error === "seat_limit" ? (e.message || "You've reached your seat limit.") : (e.message || "Could not send invite."));
     }
     setInviteBusy(false);
   }
+
+  // Label for an officer <option> — pending invitees are clearly marked so an
+  // admin knows the assignment is held until acceptance.
+  const officerOptionLabel = (u) => u.pending ? `${u.name} (invited — pending)` : `${u.name}${u.email?` (${u.email})`:""}`;
+  // Re-point every spelling in a collapsed group at once (still overridable).
+  const setGroupOwner = (g, id) => setOwnerMap(p => { const n={...p}; g.values.forEach(v => { n[v.value] = id; }); return n; });
 
   // The Team officer-routing panel (an owner-column map, or bulk options when
   // there's no owner column). A plain function (not a nested component) so the
@@ -837,25 +857,49 @@ export function DonorImport({ onClose, onImported, withHistory = false }) {
     const panel = { background:T.bg, borderRadius:10, padding:"12px 14px", marginBottom:12, border:`1px solid ${T.bg3}` };
     const eyebrow = { fontSize:11, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.08em", color:T.ink3, marginBottom:6 };
     if (effectiveOwnerCol && ownerMatches.length) {
+      // Collapse the messy spellings onto the people they resolve to
+      // ("Jonathan — 2,190 donors, from 4 spellings") — always overridable.
+      const { groups, unmatched } = groupOwnerMatches(ownerMatches);
       return (
         <div style={panel}>
           <div style={eyebrow}>Route donors to officers</div>
           <div style={{fontSize:12,color:T.ink3,marginBottom:10}}>
-            We found an <strong style={{color:T.ink}}>{effectiveOwnerCol}</strong> column — confirm who each value is. Matched donors land in that officer's portfolio.
+            We found an <strong style={{color:T.ink}}>{effectiveOwnerCol}</strong> column — confirm who each value is. Spelling variants are grouped onto one person; matched donors land in that officer's portfolio.
           </div>
           <div style={{display:"flex",flexDirection:"column",gap:7}}>
-            {ownerMatches.map(mm => {
+            {groups.map(g => {
+              const cur = ownerMap[g.values[0].value] ?? "";
+              const groupPending = String(g.userId).startsWith("invite:");
+              const badge = g.matchType === "email" ? "matched by email" : "matched by name";
+              return (
+                <div key={g.userId} style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+                  <span style={{fontSize:12.5,color:T.ink,fontWeight:700,whiteSpace:"nowrap"}}>{g.userName}{groupPending&&<span style={{color:T.gold600||"#a97f22",fontWeight:600}}> · pending</span>}</span>
+                  <span style={{fontSize:10.5,color:T.green600,fontWeight:600}}>{g.totalCount} donor{g.totalCount===1?"":"s"} · {badge}{g.spellingCount>1?` · from ${g.spellingCount} spellings`:""}</span>
+                  {g.spellingCount>1 && (
+                    <span style={{fontSize:10.5,color:T.ink3,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",maxWidth:230}} title={g.values.map(v=>v.value).join(", ")}>
+                      ({g.values.map(v=>v.value).join(", ")})
+                    </span>
+                  )}
+                  <span style={{flex:1}}/>
+                  <select value={cur} onChange={e=>setGroupOwner(g, e.target.value)}
+                    style={{background:T.white,border:`1px solid ${cur?T.green600:T.bg3}`,borderRadius:7,padding:"5px 8px",color:T.ink,fontSize:12,outline:"none",cursor:"pointer",maxWidth:230}}>
+                    <option value="">Leave unassigned</option>
+                    {orgUsers.map(u => <option key={u.id} value={u.id}>{officerOptionLabel(u)}</option>)}
+                  </select>
+                </div>
+              );
+            })}
+            {unmatched.map(mm => {
               const invited = invitedValues[mm.value];
-              const badge = mm.matchType === "email" ? "matched by email" : mm.matchType === "name" ? "matched by name" : "no match";
               return (
                 <div key={mm.value} style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
                   <span style={{fontSize:12.5,color:T.ink,fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",maxWidth:160}} title={mm.value}>{mm.value}</span>
-                  <span style={{fontSize:10.5,color:mm.matchType==="none"?(T.gold600||"#a97f22"):T.green600,fontWeight:600}}>{badge} · ×{mm.count}</span>
+                  <span style={{fontSize:10.5,color:(T.gold600||"#a97f22"),fontWeight:600}}>no match · ×{mm.count}</span>
                   <span style={{flex:1}}/>
                   <select value={ownerMap[mm.value] ?? ""} onChange={e=>setOwnerMap(p=>({...p,[mm.value]:e.target.value}))}
-                    style={{background:T.white,border:`1px solid ${ownerMap[mm.value]?T.green600:T.bg3}`,borderRadius:7,padding:"5px 8px",color:T.ink,fontSize:12,outline:"none",cursor:"pointer",maxWidth:210}}>
+                    style={{background:T.white,border:`1px solid ${ownerMap[mm.value]?T.green600:T.bg3}`,borderRadius:7,padding:"5px 8px",color:T.ink,fontSize:12,outline:"none",cursor:"pointer",maxWidth:230}}>
                     <option value="">Leave unassigned</option>
-                    {orgUsers.map(u => <option key={u.id} value={u.id}>{u.name}{u.email?` (${u.email})`:""}</option>)}
+                    {orgUsers.map(u => <option key={u.id} value={u.id}>{officerOptionLabel(u)}</option>)}
                   </select>
                   {!ownerMap[mm.value] && !invited && (
                     <button onClick={()=>{ setInviteFor(mm.value); setInviteEmail(mm.value.includes("@")?mm.value:""); setInviteErr(""); }}
@@ -866,7 +910,7 @@ export function DonorImport({ onClose, onImported, withHistory = false }) {
               );
             })}
           </div>
-          <div style={{fontSize:11,color:T.ink3,marginTop:8}}>Unmatched officers → invite them (their donors stay unassigned until they accept) or leave unassigned. Never silently mis-assigned.</div>
+          <div style={{fontSize:11,color:T.ink3,marginTop:8}}>Unmatched officers → invite them (they become assignable as pending; donors resolve to their portfolio when they accept) or leave unassigned. Never silently mis-assigned.</div>
           {inviteFor && (
             <div style={{marginTop:10,background:T.white,border:`1px solid ${T.bg3}`,borderRadius:8,padding:"10px 12px"}}>
               <div style={{fontSize:12,color:T.ink,marginBottom:6}}>Invite <strong>{inviteFor}</strong> as a gift officer</div>
@@ -891,7 +935,7 @@ export function DonorImport({ onClose, onImported, withHistory = false }) {
           style={{background:T.white,border:`1px solid ${bulkAssign?T.green600:T.bg3}`,borderRadius:8,padding:"7px 10px",color:T.ink,fontSize:13,outline:"none",cursor:"pointer",width:"100%"}}>
           <option value="">Leave unassigned (assign later from the Directory)</option>
           {myId && <option value="__me__">Assign all to me</option>}
-          {orgUsers.filter(u=>u.id!==myId).map(u => <option key={u.id} value={u.id}>Assign all to {u.name}</option>)}
+          {orgUsers.filter(u=>u.id!==myId).map(u => <option key={u.id} value={u.id}>Assign all to {u.name}{u.pending?" (invited — pending)":""}</option>)}
         </select>
       </div>
     );
@@ -4710,10 +4754,18 @@ function DirectoryView({donors,loading,serverTotal,page,pageSize,onPage,clientFi
                   <span style={{background:stage.color+"22",color:stage.color,borderRadius:99,padding:compact?"2px 8px":"4px 10px",fontSize:10,fontWeight:800,letterSpacing:"0.04em",textTransform:"uppercase"}}>{stage.label}</span>
                 </div>
                 <div className="dir-col-owner" style={{display:"flex",alignItems:"center",gap:5,minWidth:0}}>
-                  {(()=>{const oc=officerColorMap[d.assignedTo];return(
-                    <div title={d.assignedToName||"Unassigned"} style={{width:22,height:22,borderRadius:"50%",background:oc?oc:"#1a6b4a22",display:"flex",alignItems:"center",justifyContent:"center",fontSize:10,fontWeight:800,color:oc?"#fff":"#1a6b4a",flexShrink:0,boxShadow:oc?"0 0 0 2px "+oc+"33":"none"}}>{(d.assignedToName||"?")[0]}</div>
-                  );})()}
-                  <span style={{fontSize:12,color:T.ink,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{d.assignedToName||"—"}</span>
+                  {(()=>{
+                    // A donor assigned to an invited-but-not-yet-accepted officer
+                    // shows their name with a "· pending" tag — clearly held, not
+                    // lost, not silently unassigned. Resolves on acceptance.
+                    const pending = !d.assignedTo && d.pendingAssigneeName;
+                    const label = d.assignedToName || d.pendingAssigneeName || "";
+                    const oc=officerColorMap[d.assignedTo];
+                    return(<>
+                      <div title={label||"Unassigned"} style={{width:22,height:22,borderRadius:"50%",background:pending?(T.gold500+"33"):(oc?oc:"#1a6b4a22"),display:"flex",alignItems:"center",justifyContent:"center",fontSize:10,fontWeight:800,color:pending?(T.gold600||"#a97f22"):(oc?"#fff":"#1a6b4a"),flexShrink:0,boxShadow:oc&&!pending?"0 0 0 2px "+oc+"33":"none"}}>{(label||"?")[0]}</div>
+                      <span style={{fontSize:12,color:T.ink,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{label||"—"}{pending&&<span style={{color:T.gold600||"#a97f22",fontWeight:600}}> · pending</span>}</span>
+                    </>);
+                  })()}
                 </div>
                 <div style={{textAlign:"right",fontSize:13,fontWeight:700,color:T.ink}}>{fmtFull(d.total)}</div>
                 <div style={{textAlign:"right"}}>

@@ -861,6 +861,16 @@ async function initSchema() {
   // without asking them to log in — see GET /recurring/update-card.
   await pool.query(`ALTER TABLE donors ADD COLUMN IF NOT EXISTS stripe_customer_id TEXT`);
 
+  // Pending officer assignment (FIX 2026-07-28) — an import can route a donor to
+  // an officer who's only been INVITED, not yet accepted (no users row exists).
+  // We hold the assignment against the invite here (assigned_to stays NULL, the
+  // donor is NOT yet on anyone's board) and resolve it on /auth/invite/accept:
+  // the new user's portfolio is populated the moment they log in. pending_name
+  // is the display label ("assigned to Jonathan · pending") until then.
+  await pool.query(`ALTER TABLE donors ADD COLUMN IF NOT EXISTS pending_assignee_invite_id TEXT`);
+  await pool.query(`ALTER TABLE donors ADD COLUMN IF NOT EXISTS pending_assignee_name TEXT`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_donors_pending_assignee ON donors (org_id, pending_assignee_invite_id)`);
+
   // Org-level kill switch + optional per-org override of the dunning email
   // copy, mirroring how campaign/sequence templates are editable text with
   // {{token}} placeholders rather than code. NULL subject/body = use the
