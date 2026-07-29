@@ -11459,7 +11459,19 @@ async function runWorkflowAction(action, { org, donor, ctx, config }) {
     case "create_task":
     case "notify_owner": {
       const isOwner = action.type === "notify_owner";
-      const owner = isOwner && donor?.assigned_to ? { id: donor.assigned_to, name: donor.assigned_to_name || "" } : null;
+      // The alert lands with the donor's relationship owner. BUILD-25 A1.4: a
+      // major-gift donor with NO assigned owner must degrade gracefully — the
+      // alert falls back to the ED (first org admin) rather than becoming an
+      // orphaned, unassigned task nobody sees. A silently dropped major-gift
+      // alert is exactly the failure mode this recipe exists to prevent. The
+      // fallback is recorded in the run summary (assignedFallback) so the run
+      // log tells the truth about who was actually alerted.
+      let owner = isOwner && donor?.assigned_to ? { id: donor.assigned_to, name: donor.assigned_to_name || "" } : null;
+      let assignedFallback = false;
+      if (isOwner && !owner) {
+        const admins = await query("SELECT id, name FROM users WHERE org_id=? AND role='admin' ORDER BY created_at ASC LIMIT 1", [org.id]);
+        if (admins.length) { owner = { id: admins[0].id, name: admins[0].name || "" }; assignedFallback = true; }
+      }
       const title = isOwner
         ? `Stewardship alert: ${donor?.name || "a major donor"} gave ${amtStr || "a major gift"}`
         : fill(action.title || "Follow up");
@@ -11469,7 +11481,7 @@ async function runWorkflowAction(action, { org, donor, ctx, config }) {
         "INSERT INTO tasks (id,org_id,title,due,priority,type,done,donor_id,assigned_to,assigned_to_name,updated_at) VALUES (?,?,?,?,?,'donor',0,?,?,?,NOW())",
         [taskId, org.id, title, due, action.priority || "medium", donor?.id || null, owner?.id || null, owner?.name || null]
       );
-      return { type: action.type, taskId, title };
+      return { type: action.type, taskId, title, ...(isOwner ? { assignedTo: owner?.id || null, assignedFallback } : {}) };
     }
     case "notify_gift": {
       // Resolve who to notify: ED = org admins, owner = the donor's assigned
@@ -11595,17 +11607,32 @@ async function fireWorkflows(orgId, trigger, ctx) {
 // Scheduled sweep for the donor_lapsed trigger (no webhook fires it). Runs on
 // the existing 5-min tick. Only touches orgs that have the recipe enabled;
 // dedup is per donor + their current last_gift_date so a given lapse fires once.
-async function processWorkflowSweeps() {
-  const orgRows = await query("SELECT DISTINCT org_id FROM workflows WHERE trigger='donor_lapsed' AND enabled=true");
+// Optional onlyOrgId scopes the sweep to one org (the ops/test trigger route).
+async function processWorkflowSweeps(onlyOrgId = null) {
+  const orgRows = onlyOrgId
+    ? await query("SELECT DISTINCT org_id FROM workflows WHERE trigger='donor_lapsed' AND enabled=true AND org_id=?", [onlyOrgId])
+    : await query("SELECT DISTINCT org_id FROM workflows WHERE trigger='donor_lapsed' AND enabled=true");
   for (const { org_id: orgId } of orgRows) {
     try {
       const wfRows = await query("SELECT config FROM workflows WHERE org_id=? AND recipe_key='lapsing_reengage' AND enabled=true", [orgId]);
       const lapseDays = Number(asJson(wfRows[0]?.config, {}).lapseDays ?? 365);
       const cutoff = new Date(Date.now() - lapseDays * 86400000).toISOString().slice(0, 10);
+      // BUILD-25 A0 (P0): the lapse sweep fires ONLY for a lapse that crossed the
+      // window WHILE the donor was live in Steward — never for a historical record
+      // imported (or backfilled) already-lapsed. A donor whose last gift predates
+      // their own created_at by more than the lapse window was loaded already-past
+      // the boundary; that is history, not a live event, so it must not blast a
+      // re-engagement email/task. The crossing date = last_gift_date + lapseDays;
+      // we fire only when that date is on/after created_at (the transition happened
+      // in-system). A donor imported while still active who later crosses the
+      // window DOES fire — that's a genuine live transition. This is the
+      // "recipes act on new live events, not records being loaded" guarantee,
+      // enforced in SQL so no import path can slip past it.
       const lapsing = await query(
         `SELECT id, last_gift_date FROM donors
           WHERE org_id=? AND deleted_at IS NULL AND gift_count > 0
             AND last_gift_date IS NOT NULL AND last_gift_date <> '' AND last_gift_date < ?
+            AND created_at::date <= (last_gift_date::date + INTERVAL '${parseInt(lapseDays, 10)} days')
           LIMIT 200`,
         [orgId, cutoff]
       );
@@ -11685,6 +11712,15 @@ app.post("/workflows/simulate", requireAuth, requireAdmin, wrap(async (req, res)
 
 app.post("/recurring/process-dunning", requireAuth, requireAdmin, wrap(async (req, res) => {
   await processDunning();
+  res.json({ success: true });
+}));
+
+// Ops/test hook — run the donor_lapsed workflow sweep for the caller's org NOW
+// (drives the exact scheduled path; same bar as /pipeline/run-auto-lapse and
+// /sequences/process). Lets the P0 "imports fire zero workflows" guarantee be
+// verified deterministically instead of waiting on the 5-min tick.
+app.post("/workflows/run-sweeps", requireAuth, requireAdmin, wrap(async (req, res) => {
+  await processWorkflowSweeps(req.user.orgId);
   res.json({ success: true });
 }));
 

@@ -59,10 +59,17 @@ online-gift path is drivable:
 ```bash
 DATABASE_URL="postgresql://steward@localhost:5544/steward_loadtest" \
   JWT_SECRET=local-test-secret PORT=5601 DISABLE_RATE_LIMIT=1 \
-  RESEND_API_KEY=re_dummy_local STRIPE_SECRET_KEY=sk_test_dummy \
+  RESEND_API_KEY=re_dummy_local RESEND_BASE_URL=http://localhost:5602 \
+  DEMO_SMTP_FROM=noreply@stewardapp.dev STRIPE_SECRET_KEY=sk_test_dummy \
   STRIPE_WEBHOOK_SECRET=whsec_localtest node server.js
 bash tests/run-all.sh
 ```
+
+`RESEND_BASE_URL=http://localhost:5602` redirects all outbound email to a local
+port so `workflows-e2e` (BUILD-25 Part A) can capture the recipe emails it asserts
+on; that suite starts its own capture server there for its run, and every other
+suite's send simply fails-and-logs against the unbound port — no real email ever
+leaves either way.
 
 Four suites are **not** in the standard run (extra setup — run individually):
 `donors-pagination` + `reports` (`node scripts/seed-loadtest.js` first),

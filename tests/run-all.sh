@@ -10,11 +10,16 @@
 # Prereqs (see tests/README.md):
 #   1. scratch Postgres 16 up on :5544
 #   2. server booted with a KNOWN webhook secret so consistency-e2e can drive the
-#      online-gift path:
+#      online-gift path, AND with RESEND_BASE_URL pointing at a local sink port so
+#      workflows-e2e can capture (never send) the recipe emails:
 #        DATABASE_URL=…:5544/steward_loadtest JWT_SECRET=local-test-secret \
 #        PORT=5601 DISABLE_RATE_LIMIT=1 RESEND_API_KEY=re_dummy_local \
+#        RESEND_BASE_URL=http://localhost:5602 DEMO_SMTP_FROM=noreply@stewardapp.dev \
 #        STRIPE_SECRET_KEY=sk_test_dummy STRIPE_WEBHOOK_SECRET=whsec_localtest \
 #        node server.js
+#      (RESEND_BASE_URL just redirects mail to a local port; workflows-e2e starts
+#      its own capture server there for its run, and other suites' sends simply
+#      fail-and-log against the unbound port — no real email ever leaves.)
 #
 # Usage:  bash tests/run-all.sh
 #
@@ -35,7 +40,7 @@ CORE=(
   import-assign import-both import-combined import-shape import-stage
   locked-features
   moves no-emoji onboarding-brand palette pipeline pipeline-gating portfolios reports-cadence
-  smart-moves tasks tenant-isolation upgrade-checkout workflows
+  smart-moves tasks tenant-isolation upgrade-checkout workflows workflows-e2e
 )
 
 pass=0; fail=0; failed=()

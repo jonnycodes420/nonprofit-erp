@@ -1,0 +1,123 @@
+{
+  "new_donor_runs": [
+    {
+      "id": "wfr_79787059",
+      "org_id": "org_cap25",
+      "workflow_id": "wf_84b7d708",
+      "recipe_key": "new_donor_welcome",
+      "trigger": "gift_received",
+      "dedup_key": "gift:g_332704a9",
+      "entity_type": "gift",
+      "entity_id": "g_332704a9",
+      "donor_id": "d_cap_gift",
+      "actions_taken": [
+        {
+          "type": "send_email",
+          "template": "thankyou"
+        },
+        {
+          "type": "create_task",
+          "title": "Personal welcome call: Marcus Webb",
+          "taskId": "t_bdb46bbd"
+        }
+      ],
+      "created_at": "2026-07-29T04:01:09.054Z"
+    },
+    {
+      "id": "wfr_ce666cfd",
+      "org_id": "org_cap25",
+      "workflow_id": "wf_84b7d708",
+      "recipe_key": "new_donor_welcome",
+      "trigger": "gift_received",
+      "dedup_key": "gift:g_52c99c5c",
+      "entity_type": "gift",
+      "entity_id": "g_52c99c5c",
+      "donor_id": "d_c51f2371",
+      "actions_taken": [
+        {
+          "type": "send_email",
+          "template": "thankyou"
+        },
+        {
+          "type": "create_task",
+          "title": "Personal welcome call: Priya Anand",
+          "taskId": "t_83414f24"
+        }
+      ],
+      "created_at": "2026-07-29T04:01:08.992Z"
+    }
+  ],
+  "all_runs_this_org": [
+    {
+      "recipe_key": "new_donor_welcome",
+      "trigger": "gift_received",
+      "dedup_key": "gift:g_52c99c5c",
+      "donor_id": "d_c51f2371",
+      "actions_taken": [
+        {
+          "type": "send_email",
+          "template": "thankyou"
+        },
+        {
+          "type": "create_task",
+          "title": "Personal welcome call: Priya Anand",
+          "taskId": "t_83414f24"
+        }
+      ],
+      "created_at": "2026-07-29T04:01:08.992Z"
+    },
+    {
+      "recipe_key": "new_donor_welcome",
+      "trigger": "gift_received",
+      "dedup_key": "gift:g_332704a9",
+      "donor_id": "d_cap_gift",
+      "actions_taken": [
+        {
+          "type": "send_email",
+          "template": "thankyou"
+        },
+        {
+          "type": "create_task",
+          "title": "Personal welcome call: Marcus Webb",
+          "taskId": "t_bdb46bbd"
+        }
+      ],
+      "created_at": "2026-07-29T04:01:09.054Z"
+    },
+    {
+      "recipe_key": "instant_gift_thanks",
+      "trigger": "gift_received",
+      "dedup_key": "gift:g_332704a9",
+      "donor_id": "d_cap_gift",
+      "actions_taken": [
+        {
+          "mode": "ed",
+          "type": "notify_gift",
+          "taskId": "t_672d9766",
+          "notified": [
+            "Dana Director"
+          ]
+        }
+      ],
+      "created_at": "2026-07-29T04:01:09.058Z"
+    },
+    {
+      "recipe_key": "failed_recurring_recovery",
+      "trigger": "recurring_failed",
+      "dedup_key": "failed:sub_cap_1:Wed Jul 29 2026 00:01:09 GMT-0400 (Eastern Daylight Time)",
+      "donor_id": "d_cap_recur",
+      "actions_taken": [
+        {
+          "type": "send_email",
+          "template": "recovery"
+        },
+        {
+          "type": "create_task",
+          "title": "Follow up: recurring gift failed for Grace Lindqvist",
+          "taskId": "t_95dd9008"
+        }
+      ],
+      "created_at": "2026-07-29T04:01:09.337Z"
+    }
+  ]
+}
