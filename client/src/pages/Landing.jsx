@@ -428,9 +428,8 @@ export default function Landing() {
 
   return (
     <>
-      <link rel="preconnect" href="https://fonts.googleapis.com" />
-      <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
-      <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+      {/* Fonts load from index.html <head> with display=optional (BUILD-28) —
+          no mid-load swap → no hero-headline layout shift. Not injected here. */}
       <style>{`
         *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
         html, body { background: ${C.cream}; overflow-x: hidden; }
