@@ -32,6 +32,39 @@ const C = {
 const CALENDLY_URL = "https://calendly.com/xjca2006/new-meeting";
 const FOUNDER_MAILTO = "mailto:jonathan@stewardapp.dev";
 
+// ── BUILD-28: image-forward, nonprofit-native landing ────────────────────────
+// The page's top third is photography + words; the DOM product shots (BUILD-12,
+// still live/vector — never rasterized) are demoted below the calculator as
+// proof. The hero photo is ILLUSTRATIVE arts/community work, NOT a Steward
+// customer — never captioned as one. All photography is free-tier Unsplash;
+// provenance + license is recorded in client/public/ASSETS.md.
+//
+// Hero image is a ONE-LINE swap: change HERO_SRC (the responsive WebP set lives
+// at `${HERO_SRC}-{960,1280,1920,2560}.webp` + the index.html preload). The
+// scrim is a FLAT rgba wash, never a gradient (gradients are banned).
+const HERO_SRC = "/hero-choir";
+
+// "Built for orgs like yours" — the who-it's-for band. Each vertical named in
+// its own language. A slot with no cleared photo ships a graceful on-palette
+// fallback (Rescue is blocked on a clean licensed file; Faith awaits one).
+const VERTICALS = [
+  {
+    title: "Arts & culture",
+    blurb: "Season subscribers, gala tables, patron circles — the giving that quietly lapses between shows.",
+    img: "/card-arts",
+  },
+  {
+    title: "Rescue & relief",
+    blurb: "Monthly givers who quietly stop giving when a card expires, and no one was watching.",
+    img: null,
+  },
+  {
+    title: "Faith & community",
+    blurb: "One staffer wearing every hat, keeping a whole community's giving on track.",
+    img: null,
+  },
+];
+
 // ── Interactive wedge (BUILD-11 Build B) ────────────────────────────────────
 // The 20–30% of recurring giving lost to failed cards, made visceral with
 // HONEST math the visitor drives themselves: annual involuntary loss =
@@ -415,6 +448,32 @@ export default function Landing() {
         .lp-navlink { font-size: 14px; color: ${C.ink3}; transition: color .15s; }
         .lp-navlink:hover { color: ${C.ink}; }
 
+        /* ── BUILD-28: image-forward hero. Full-bleed photo + a FLAT rgba
+           scrim (never a gradient). Headline sits over the dark, quiet
+           upper-left; the choir reads center/right. object-position keeps
+           the quiet area behind the type at every breakpoint. ── */
+        .lp-hero-photo { position: relative; min-height: min(90vh, 760px); display: flex; align-items: flex-start; overflow: hidden; background: ${C.ink}; }
+        .lp-hero-img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: 60% 30%; z-index: 0; }
+        .lp-hero-scrim { position: absolute; inset: 0; background: rgba(15,26,18,0.58); z-index: 1; }
+        .lp-hero-content { position: relative; z-index: 2; width: 100%; max-width: 1140px; margin: 0 auto; padding: clamp(76px, 13vh, 150px) 64px 72px; }
+        .lp-hero-copy { max-width: 620px; }
+        .lp-hero-trust { font-size: 13px; color: rgba(240,237,230,0.72); }
+
+        /* Verticals band — "this is a tool for you" */
+        .lp-vert-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 28px; }
+        .lp-vert-card { background: ${C.white}; border: 1px solid ${C.cream3}; border-radius: 14px; overflow: hidden; box-shadow: 0 12px 36px rgba(15,26,18,0.08); display: flex; flex-direction: column; }
+        .lp-vert-media, .lp-vert-fallback { height: 220px; width: 100%; }
+        .lp-vert-media { object-fit: cover; display: block; background: ${C.cream2}; }
+        .lp-vert-fallback { background: ${C.cream2}; display: flex; align-items: center; justify-content: center; }
+        .lp-vert-rule { width: 46px; height: 3px; border-radius: 2px; background: ${C.gold}; opacity: 0.85; }
+        .lp-vert-body { padding: 22px 24px 26px; flex: 1; }
+
+        /* Full-width studio atmosphere band — no type over it */
+        .lp-band-img { display: block; width: 100%; height: clamp(200px, 32vw, 420px); object-fit: cover; object-position: center 42%; }
+
+        /* Product proof — the real home screen, framed as evidence */
+        .lp-proof { max-width: 720px; margin: 0 auto; }
+
         .lp-hero-grid { display: grid; grid-template-columns: 1.02fr 1fr; gap: 60px; align-items: center; }
 
         /* Browser-window chrome around the hero product shot — makes the live
@@ -529,6 +588,13 @@ export default function Landing() {
           .lp-section { padding: 64px 22px; }
           .lp-hiw-grid { grid-template-columns: 1fr; gap: 32px; }
           .lp-hero-grid { grid-template-columns: 1fr; gap: 44px; }
+          /* Keep the dark, quiet area behind the headline on portrait screens
+             and darken the flat scrim so type stays AA-legible. */
+          .lp-hero-photo { min-height: 82vh; }
+          .lp-hero-img { object-position: 30% 28%; }
+          .lp-hero-scrim { background: rgba(15,26,18,0.66); }
+          .lp-hero-content { padding: 92px 22px 56px; }
+          .lp-vert-grid { grid-template-columns: 1fr; gap: 20px; }
           .lp-nav { padding: 0 22px !important; }
           .lp-nav-pricing { display: none; }
           .lp-h1 { font-size: 42px !important; }
@@ -557,42 +623,75 @@ export default function Landing() {
           </div>
         </nav>
 
-        {/* ── 1. Hero ── */}
-        <section className="lp-section" style={{ paddingTop: 88, paddingBottom: 96 }}>
+        {/* ── 1. Image-forward hero (BUILD-28). Full-bleed photo + a FLAT rgba
+            scrim; headline over the dark, quiet upper-left; the choir reads
+            center/right. The photo is ILLUSTRATIVE arts/community work, NOT a
+            Steward customer — aria-hidden, never captioned as one. Swapping the
+            image is a one-line change to HERO_SRC (+ the index.html preload). ── */}
+        <section className="lp-hero-photo">
+          <img
+            className="lp-hero-img"
+            src={`${HERO_SRC}-1280.webp`}
+            srcSet={`${HERO_SRC}-960.webp 960w, ${HERO_SRC}-1280.webp 1280w, ${HERO_SRC}-1920.webp 1920w, ${HERO_SRC}-2560.webp 2560w`}
+            sizes="100vw"
+            width="2560" height="1417"
+            alt="" aria-hidden="true" fetchpriority="high" decoding="async"
+          />
+          <div className="lp-hero-scrim" aria-hidden="true" />
+          <div className="lp-hero-content">
+            <div className="lp-hero-copy">
+              <Eyebrow onDark>For the people who keep the giving going</Eyebrow>
+              <h1 className="lp-serif lp-h1" style={{ fontSize: "clamp(44px, 4.8vw, 72px)", lineHeight: 1.06, color: C.cream, marginBottom: 24 }}>
+                Donors don't leave.<br />
+                They drift.<br />
+                Steward{" "}
+                <span style={{ borderBottom: `4px solid ${C.gold}`, paddingBottom: 2 }}>notices.</span>
+              </h1>
+              <p style={{ fontSize: 17.5, color: "rgba(240,237,230,0.94)", lineHeight: 1.75, maxWidth: 520, marginBottom: 32 }}>
+                A donor CRM built by fundraisers. <strong style={{ color: C.cream }}>Keep 100%</strong>{" "}
+                of every gift — 0% platform fees, gifts settle in your own Stripe — and{" "}
+                <strong style={{ color: C.cream }}>stop losing donors you already earned</strong>{" "}
+                to failed cards and silence.
+              </p>
+              <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 16 }}>
+                <GoldBtn big onClick={() => navigate("/signup")}>Start free</GoldBtn>
+                <QuietBtn big onDark onClick={() => setShowCal(true)}>Talk to the founder</QuietBtn>
+              </div>
+              <p className="lp-hero-trust">30-day trial · no credit card · your data exports anytime</p>
+            </div>
+          </div>
+        </section>
+
+        {/* ── 1.1 "Built for orgs like yours" — the who-it's-for band (BUILD-28).
+            On cream, serif card titles. Signals "a tool FOR you", never a
+            nonprofit's own site. Slots with no cleared photo ship a graceful
+            on-palette fallback. ── */}
+        <section className="lp-section" style={{ background: C.cream, paddingTop: 84, paddingBottom: 84 }}>
           <div className="lp-wide">
-            <div className="lp-hero-grid">
-              <div>
-                <h1 className="lp-serif lp-h1" style={{ fontSize: "clamp(44px, 4.8vw, 72px)", lineHeight: 1.06, color: C.ink, marginBottom: 26 }}>
-                  Donors don't leave.<br />
-                  They drift.<br />
-                  Steward{" "}
-                  <span style={{ borderBottom: `4px solid ${C.gold}`, paddingBottom: 2 }}>notices.</span>
-                </h1>
-                <p style={{ fontSize: 17.5, color: "#2d2d2d", lineHeight: 1.75, maxWidth: 480, marginBottom: 34 }}>
-                  <strong>0% platform fees</strong> — gifts settle in your own Stripe account.{" "}
-                  <strong>One flat monthly price.</strong> And the <strong>20–30% of recurring giving</strong>{" "}
-                  most nonprofits silently lose to failed cards — noticed, and recovered.
-                </p>
-                <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 18 }}>
-                  <GoldBtn big onClick={() => navigate("/signup")}>Start free</GoldBtn>
-                  <QuietBtn big onClick={() => setShowCal(true)}>Talk to the founder</QuietBtn>
+            <div style={{ textAlign: "center", marginBottom: 46 }}>
+              <Eyebrow>Built for orgs like yours</Eyebrow>
+              <h2 className="lp-serif" style={{ fontSize: "clamp(28px, 3.2vw, 42px)", color: C.ink, lineHeight: 1.14 }}>
+                You know your donors. Steward notices when they're slipping.
+              </h2>
+            </div>
+            <div className="lp-vert-grid">
+              {VERTICALS.map(v => (
+                <div key={v.title} className="lp-vert-card">
+                  {v.img ? (
+                    <img className="lp-vert-media" alt="" aria-hidden="true"
+                      src={`${v.img}-800.webp`}
+                      srcSet={`${v.img}-400.webp 400w, ${v.img}-800.webp 800w`}
+                      sizes="(max-width: 768px) 100vw, 360px"
+                      width="800" height="533" loading="lazy" decoding="async" />
+                  ) : (
+                    <div className="lp-vert-fallback" aria-hidden="true"><span className="lp-vert-rule" /></div>
+                  )}
+                  <div className="lp-vert-body">
+                    <h3 className="lp-serif" style={{ fontSize: 23, color: C.ink, marginBottom: 8 }}>{v.title}</h3>
+                    <p style={{ fontSize: 15, color: "#2d2d2d", lineHeight: 1.65 }}>{v.blurb}</p>
+                  </div>
                 </div>
-                <p style={{ fontSize: 13, color: C.ink3 }}>
-                  30-day trial · no credit card · your data exports anytime
-                </p>
-              </div>
-              <div className="lp-frame">
-                <div className="lp-frame-bar" aria-hidden="true">
-                  <span className="lp-frame-dot" style={{ background: C.terra, opacity: 0.7 }} />
-                  <span className="lp-frame-dot" style={{ background: C.gold, opacity: 0.8 }} />
-                  <span className="lp-frame-dot" style={{ background: C.sage }} />
-                  <span className="lp-frame-url">app.stewardapp.dev</span>
-                </div>
-                <div className="lp-shot-wrap" role="img"
-                  aria-label="Steward's home screen: the quarter's fundraising goal at 22%, and the donor retention rate it's noticing">
-                  <HeroShot />
-                </div>
-              </div>
+              ))}
             </div>
           </div>
         </section>
@@ -614,6 +713,33 @@ export default function Landing() {
             <p style={{ fontSize: 12.5, color: C.ink3, marginTop: 26 }}>
               43% is the sector-average donor retention rate published in Bloomerang's annual benchmarks.
             </p>
+          </div>
+        </section>
+
+        {/* ── 2.5 Proof: the real home screen (BUILD-28 relocated the product
+            shot here, below the wedge, as EVIDENCE — no longer the page's
+            visual identity). Live DOM + browser chrome, crisp at every DPR
+            (BUILD-12; do not rasterize). ── */}
+        <section className="lp-section" style={{ background: C.white, borderTop: `1px solid ${C.cream2}` }}>
+          <div className="lp-proof">
+            <div style={{ textAlign: "center", marginBottom: 40 }}>
+              <Eyebrow>The actual product</Eyebrow>
+              <h2 className="lp-serif" style={{ fontSize: "clamp(28px, 3.2vw, 42px)", color: C.ink, lineHeight: 1.14 }}>
+                Not a mockup. This is the home screen.
+              </h2>
+            </div>
+            <div className="lp-frame">
+              <div className="lp-frame-bar" aria-hidden="true">
+                <span className="lp-frame-dot" style={{ background: C.terra, opacity: 0.7 }} />
+                <span className="lp-frame-dot" style={{ background: C.gold, opacity: 0.8 }} />
+                <span className="lp-frame-dot" style={{ background: C.sage }} />
+                <span className="lp-frame-url">app.stewardapp.dev</span>
+              </div>
+              <div className="lp-shot-wrap" role="img"
+                aria-label="Steward's home screen: the quarter's fundraising goal at 22%, and the donor retention rate it's noticing">
+                <HeroShot />
+              </div>
+            </div>
           </div>
         </section>
 
@@ -818,6 +944,14 @@ export default function Landing() {
             </div>
           </div>
         </section>
+
+        {/* ── Studio atmosphere band (BUILD-28) — full-bleed working studio,
+            high-key/centered, so NO type over it. Illustrative arts/community
+            work, not a customer; aria-hidden. ── */}
+        <img className="lp-band-img" alt="" aria-hidden="true"
+          src="/band-studio-1920.webp"
+          srcSet="/band-studio-1280.webp 1280w, /band-studio-1920.webp 1920w"
+          sizes="100vw" width="1920" height="1280" loading="lazy" decoding="async" />
 
         {/* ── 6. A letter from the founder ──
             Jonathan's own words (BUILD-12). The avatar below is still a

@@ -1,0 +1,37 @@
+# Landing photography — sources & licenses (BUILD-28)
+
+The image-forward landing (`client/src/pages/Landing.jsx`) uses three photographs.
+All are **free-tier Unsplash** downloads, user-confirmed for commercial use. The
+[Unsplash License](https://unsplash.com/license) grants free use for commercial
+and non-commercial purposes **with no permission or attribution required**
+(attribution appreciated, not obligatory — so no footer credit line is needed;
+this file is the audit record). None are Unsplash+ / editorial-only.
+
+The photos are **illustrative arts/community work — NOT Steward customers** and
+must never be captioned as such (they render `aria-hidden`, no caption).
+
+| Role | Served files | Photographer | Unsplash photo | License |
+|------|--------------|--------------|----------------|---------|
+| **Hero** — community choir mid-performance | `hero-choir-{960,1280,1920,2560}.webp` | Omar Flores | https://unsplash.com/photos/AndwyJNdk1k | Unsplash (free, commercial OK, no attribution required) |
+| **Mid-page band** — working pottery studio | `band-studio-{1280,1920}.webp` | Earl Wilcox | https://unsplash.com/photos/pSo0u53FF10 | Unsplash (free, commercial OK, no attribution required) |
+| **Verticals card — Arts & culture** — patrons at an arts space | `card-arts-{400,800}.webp` | Dillon Wanner | https://unsplash.com/photos/EeAL5G9HDV0 | Unsplash (free, commercial OK, no attribution required) |
+
+## Slots shipped WITHOUT a photo (graceful on-palette fallback)
+- **Rescue & relief card** — blocked on a cleanly-licensed file. The candidate
+  `dogs.avif` is a **watermarked Unsplash+** comp (paid tier) → disqualified.
+  Prefer a *hopeful* shot (volunteer with an animal / adoption moment) when a
+  clean file is sourced.
+- **Faith & community card** — awaiting a cleared replacement. The candidate
+  `blackchoir.jpg` is the **Morgan State University Choir** (identifiable
+  institution + ~30 identifiable people, reads editorial) → not shipped.
+
+Both render a warm cream panel + gold rule until a licensed file is dropped in.
+
+## Regenerating / swapping
+- Responsive WebP variants are produced by `scripts/build28-prepare-images.js`
+  (edit the `JOBS` table, re-run). Outputs go to `client/public/` and are
+  committed. Deliberately **no `lp-` prefix** so they never trip the landing
+  crispness/image guards (which forbid any `/lp-` product `<img>`).
+- **Swapping the hero image is one line**: change `HERO_SRC` in `Landing.jsx`
+  and the matching preload `href`/`imagesrcset` in `client/index.html`. If a new
+  image is used under **CC BY** (not Unsplash), add a footer attribution line.
