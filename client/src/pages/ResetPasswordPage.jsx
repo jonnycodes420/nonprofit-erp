@@ -90,9 +90,9 @@ export default function ResetPasswordPage() {
         <div style={{ width: "100%", maxWidth: 440, background: "#fff", borderRadius: 20, padding: "36px 40px", boxShadow: "0 24px 64px rgba(0,0,0,0.3)" }}>
           {success ? (
             <div style={{ textAlign: "center", padding: "8px 0" }}>
-              <div style={{ width: 48, height: 48, background: "#f0fdf4", border: "2px solid #bbf7d0", borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 20px" }}>
+              <div style={{ width: 48, height: 48, background: "#e8f5ef", border: "2px solid #0d5c3a33", borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 20px" }}>
                 <svg width="22" height="18" viewBox="0 0 22 18" fill="none">
-                  <path d="M1 9l7 7L21 1" stroke="#10b981" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/>
+                  <path d="M1 9l7 7L21 1" stroke="#0d5c3a" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/>
                 </svg>
               </div>
               <div style={{ fontSize: 18, fontWeight: 700, color: "#0f1a12", marginBottom: 10 }}>Password updated!</div>

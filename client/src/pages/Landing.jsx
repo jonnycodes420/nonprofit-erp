@@ -470,9 +470,6 @@ export default function Landing() {
         .lp-vert-rule { width: 46px; height: 3px; border-radius: 2px; background: ${C.gold}; opacity: 0.85; }
         .lp-vert-body { padding: 22px 24px 26px; flex: 1; }
 
-        /* Full-width studio atmosphere band — no type over it */
-        .lp-band-img { display: block; width: 100%; height: clamp(200px, 32vw, 420px); object-fit: cover; object-position: center 42%; }
-
         /* Product proof — the real home screen, framed as evidence */
         .lp-proof { max-width: 720px; margin: 0 auto; }
 
@@ -948,13 +945,13 @@ export default function Landing() {
           </div>
         </section>
 
-        {/* ── Studio atmosphere band (BUILD-28) — full-bleed working studio,
-            high-key/centered, so NO type over it. Illustrative arts/community
-            work, not a customer; aria-hidden. ── */}
-        <img className="lp-band-img" alt="" aria-hidden="true"
-          src="/band-studio-1920.webp"
-          srcSet="/band-studio-1280.webp 1280w, /band-studio-1920.webp 1920w"
-          sizes="100vw" width="1920" height="1280" loading="lazy" decoding="async" />
+        {/* ── The mid-page pottery/studio band was removed (FIX 2026-07-30):
+            a tight macro crop read as texture, not a place, and left an
+            orphaned white gap. The candor section (white, closing hairline)
+            now flows straight into the founder letter (cream) — a deliberate
+            tone shift, no decorative slab between them. If a mid-page breath
+            is ever wanted, use the wide art-studio ROOM shot (reads as a
+            place) at ~half height — not a macro. ── */}
 
         {/* ── 6. A letter from the founder ──
             Jonathan's own words (BUILD-12). The avatar below is still a

@@ -75,7 +75,7 @@ export default function InvitePage() {
         <div style={{ ...card, textAlign:"center" }}>
           <div style={{ fontSize:18, fontWeight:700, color:"#f9fafb", marginBottom:8 }}>Invite unavailable</div>
           <div style={{ fontSize:14, color:"#6b7280", marginBottom:24 }}>{errMsg}</div>
-          <a href="/login" style={{ color:"#10b981", fontSize:14, fontWeight:600, textDecoration:"none" }}>Go to login →</a>
+          <a href="/login" style={{ color:"#c9a84c", fontSize:14, fontWeight:600, textDecoration:"none" }}>Go to login →</a>
         </div>
       </div>
     );
@@ -85,7 +85,7 @@ export default function InvitePage() {
     return (
       <div style={wrap}>
         <div style={{ ...card, textAlign:"center" }}>
-          <div style={{ width:48, height:48, background:"#10b98118", border:"1px solid #10b98140", borderRadius:"50%", display:"flex", alignItems:"center", justifyContent:"center", margin:"0 auto 16px", fontSize:22, color:"#10b981" }}>✓</div>
+          <div style={{ width:48, height:48, background:"#c9a84c1f", border:"1px solid #c9a84c55", borderRadius:"50%", display:"flex", alignItems:"center", justifyContent:"center", margin:"0 auto 16px", fontSize:22, color:"#c9a84c" }}>✓</div>
           <div style={{ fontSize:18, fontWeight:700, color:"#f9fafb", marginBottom:8 }}>Welcome aboard!</div>
           <div style={{ fontSize:14, color:"#6b7280" }}>Redirecting you to the dashboard…</div>
         </div>
@@ -102,9 +102,9 @@ export default function InvitePage() {
             You've been invited
           </div>
           <div style={{ fontSize:14, color:"#6b7280", marginTop:6 }}>
-            to join <span style={{ color:"#10b981", fontWeight:600 }}>{invite.orgName}</span>
+            to join <span style={{ color:"#c9a84c", fontWeight:600 }}>{invite.orgName}</span>
           </div>
-          <div style={{ marginTop:12, display:"inline-block", background:"#10b98118", border:"1px solid #10b98140", borderRadius:20, padding:"3px 12px", fontSize:12, color:"#34d399", fontWeight:600 }}>
+          <div style={{ marginTop:12, display:"inline-block", background:"#c9a84c1f", border:"1px solid #c9a84c55", borderRadius:20, padding:"3px 12px", fontSize:12, color:"#e7cf91", fontWeight:600 }}>
             {invite.email} · {invite.role}
           </div>
         </div>
@@ -138,7 +138,7 @@ export default function InvitePage() {
 
         <div style={{ marginTop:20, textAlign:"center", fontSize:12, color:"#6b7280" }}>
           Already have an account?{" "}
-          <a href="/login" style={{ color:"#10b981", fontWeight:600, textDecoration:"none" }}>Sign in</a>
+          <a href="/login" style={{ color:"#c9a84c", fontWeight:600, textDecoration:"none" }}>Sign in</a>
         </div>
       </div>
     </div>

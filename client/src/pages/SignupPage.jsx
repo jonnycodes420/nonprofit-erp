@@ -99,7 +99,7 @@ export default function SignupPage() {
             ].map(t => (
               <div key={t} style={{ display: "flex", alignItems: "center", gap: 10 }}>
                 <div style={{ width: 20, height: 20, background: "#1a2e1f", border: "1px solid #2d4a35", borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                  <svg width="10" height="8" viewBox="0 0 10 8" fill="none"><path d="M1 4l3 3 5-6" stroke="#10b981" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                  <svg width="10" height="8" viewBox="0 0 10 8" fill="none"><path d="M1 4l3 3 5-6" stroke="#c9a84c" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
                 </div>
                 <span style={{ fontSize: 14, color: "#8fa896" }}>{t}</span>
               </div>

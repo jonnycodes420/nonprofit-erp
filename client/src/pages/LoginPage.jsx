@@ -11,6 +11,11 @@ function popAuthNotice() {
   } catch { return ""; }
 }
 
+// Brand tokens (BUILD-12 palette). Public auth pages follow the PUBLIC brand
+// convention — gold primary action + gold title underline (matching the
+// landing's "Start free" and the onboarding CTA), forest-green links/accents.
+// The off-brand Tailwind emerald-500 was retired here (FIX 2026-07-30);
+// it's grep-guarded by tests/brand-glyph.test.js so it can't return.
 const T = {
   cream:  "#f0ede6",
   cream2: "#e8e4db",
@@ -18,7 +23,8 @@ const T = {
   ink:    "#0f0f0f",
   ink2:   "#2a2a2a",
   ink3:   "#6b6b6b",
-  green:  "#10b981",
+  gold:   "#c9a84c",   // gold500 — primary action + title underline (ink text on it)
+  forest: "#0d5c3a",   // greenDk — standard link/accent, WCAG AA on cream
   greenDark: "#1a6b4a",
   red:    "#dc2626",
 };
@@ -62,7 +68,7 @@ export default function LoginPage() {
           <span style={{ fontFamily: "'DM Serif Display',Georgia,serif", fontWeight: 400, fontSize: 21, color: T.ink, letterSpacing: "-0.02em" }}>Steward</span>
         </Link>
         <Link to="/signup" style={{ fontSize: 14, color: T.ink2, textDecoration: "none" }}>
-          No account? <span style={{ color: T.green, fontWeight: 600 }}>Sign up free</span>
+          No account? <span style={{ color: T.forest, fontWeight: 600 }}>Sign up free</span>
         </Link>
       </nav>
 
@@ -82,7 +88,7 @@ export default function LoginPage() {
             }}>
               Welcome{" "}
               <span style={{
-                borderBottom: `3px solid ${T.green}`,
+                borderBottom: `3px solid ${T.gold}`,
                 paddingBottom: 2,
               }}>
                 back
@@ -160,11 +166,11 @@ export default function LoginPage() {
                 disabled={loading}
                 style={{
                   marginTop: 4,
-                  background: loading ? T.cream3 : T.green,
+                  background: loading ? T.cream3 : T.gold,
                   border: "none",
                   borderRadius: 10,
                   padding: "13px 20px",
-                  color: loading ? T.ink3 : "#fff",
+                  color: loading ? T.ink3 : T.ink,
                   fontSize: 15,
                   fontWeight: 700,
                   cursor: loading ? "not-allowed" : "pointer",
@@ -177,11 +183,16 @@ export default function LoginPage() {
             </form>
           </div>
 
-          {/* Demo hint */}
-          <p style={{ marginTop: 20, fontSize: 12, color: T.ink3, textAlign: "center" }}>
-            Demo: <span style={{ fontFamily: "monospace", background: T.cream2, padding: "2px 6px", borderRadius: 4 }}>admin@creoarts.org</span>{" "}
-            / <span style={{ fontFamily: "monospace", background: T.cream2, padding: "2px 6px", borderRadius: 4 }}>demo1234</span>
-          </p>
+          {/* Demo hint — LOCAL DEV ONLY. This is the public front door; beta
+              users land here, so the demo credentials must never render in a
+              production build (same reason demo-cred logging was pulled from
+              server startup). Vite strips this branch from prod bundles. */}
+          {import.meta.env.DEV && (
+            <p style={{ marginTop: 20, fontSize: 12, color: T.ink3, textAlign: "center" }}>
+              Demo: <span style={{ fontFamily: "monospace", background: T.cream2, padding: "2px 6px", borderRadius: 4 }}>admin@creoarts.org</span>{" "}
+              / <span style={{ fontFamily: "monospace", background: T.cream2, padding: "2px 6px", borderRadius: 4 }}>demo1234</span>
+            </p>
+          )}
         </div>
       </div>
     </div>

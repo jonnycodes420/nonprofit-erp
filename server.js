@@ -1384,8 +1384,8 @@ app.post("/auth/forgot-password", passwordResetLimiter, wrap(async (req, res) =>
           <h1 style="margin:0 0 12px;font-size:26px;font-weight:700;color:#0f1a12;letter-spacing:-0.02em;line-height:1.2;">Reset your password</h1>
           <p style="margin:0 0 28px;font-size:15px;color:#6b7c72;line-height:1.6;">Click the button below to reset your password. This link expires in <strong style="color:#0f1a12;">1 hour</strong>.</p>
           <table cellpadding="0" cellspacing="0" style="margin-bottom:28px;">
-            <tr><td style="border-radius:10px;background:#10b981;">
-              <a href="${resetLink}" style="display:inline-block;padding:13px 28px;font-size:15px;font-weight:700;color:#ffffff;text-decoration:none;letter-spacing:-0.01em;">Reset Password →</a>
+            <tr><td style="border-radius:10px;background:#c9a84c;">
+              <a href="${resetLink}" style="display:inline-block;padding:13px 28px;font-size:15px;font-weight:700;color:#0f1a12;text-decoration:none;letter-spacing:-0.01em;">Reset Password →</a>
             </td></tr>
           </table>
           <p style="margin:0 0 8px;font-size:13px;color:#8fa896;line-height:1.5;">If you didn't request this, you can safely ignore this email. Your password won't change.</p>
@@ -2013,7 +2013,7 @@ app.post("/auth/invite", requireAuth, requireAdmin, wrap(async (req, res) => {
         to: normalizedEmail,
         subject: `You've been invited to join ${org.name} on Steward`,
         html: `<p>You've been invited to join <strong>${org.name}</strong> on Steward as a <strong>${validRole}</strong>.</p>
-               <p><a href="${inviteLink}" style="background:#10b981;color:#fff;padding:10px 20px;border-radius:8px;text-decoration:none;font-weight:bold;display:inline-block;margin:16px 0">Accept Invitation</a></p>
+               <p><a href="${inviteLink}" style="background:#c9a84c;color:#0f1a12;padding:10px 20px;border-radius:8px;text-decoration:none;font-weight:bold;display:inline-block;margin:16px 0">Accept Invitation</a></p>
                <p>This link expires in 7 days.</p>`,
       });
       if (error) throw new Error(error.message);
@@ -7878,7 +7878,7 @@ async function sendFundraiserManageEmail(org, fundraiser, givingPage, manageUrl)
       subject: `Your fundraiser for ${org.name} is live!`,
       html: `<p>Hi ${escapeHtml(fundraiser.name)},</p>
              <p>Thanks for starting a personal fundraiser for <strong>${escapeHtml(givingPage.title)}</strong> on behalf of <strong>${escapeHtml(org.name)}</strong>! Your page is live and ready to share.</p>
-             <p><a href="${manageUrl}" style="background:#10b981;color:#fff;padding:10px 20px;border-radius:8px;text-decoration:none;font-weight:bold;display:inline-block;margin:16px 0">Manage Your Fundraiser</a></p>
+             <p><a href="${manageUrl}" style="background:#c9a84c;color:#0f1a12;padding:10px 20px;border-radius:8px;text-decoration:none;font-weight:bold;display:inline-block;margin:16px 0">Manage Your Fundraiser</a></p>
              <p>Use that link any time to update your story, goal, or photo — bookmark it, since there's no password to reset it with.</p>`,
     });
     if (error) throw new Error(error.message);

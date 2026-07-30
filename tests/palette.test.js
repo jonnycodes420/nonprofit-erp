@@ -69,5 +69,15 @@ check("terracotta on cream (large/accent)", RAMP.terracotta, CREAM, LARGE);
 // (documents WHY gold highlights live on non-text surfaces / large text.)
 ok(contrast(RAMP.gold500, CREAM) < BODY, "gold500 correctly NOT used as body text (fails 4.5:1 by nature)");
 
+// ── 4. Public auth-page brand convention (FIX 2026-07-30) ───────────────────
+// The sign-in page's off-brand emerald was replaced with gold (primary action)
+// + forest green (links). Both new pairings must pass WCAG AA.
+const INK = "#0f1a12"; // ink text used on the gold Sign In button
+// The gold Sign In button carries INK text (not white) — this is why it passes.
+check("ink on gold500 button (body)", INK, RAMP.gold500, BODY);
+// The forest-green "Sign up free" link (greenDk) on cream — a body-size link.
+const FOREST = "#0d5c3a";
+check("forest (greenDk) link on cream (body)", FOREST, CREAM, BODY);
+
 console.log(`\npalette.test.js — ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

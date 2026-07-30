@@ -29,11 +29,7 @@ fs.mkdirSync(OUT, { recursive: true });
     await el.scrollIntoViewIfNeeded(); await dp.waitForTimeout(400);
     await el.screenshot({ path: path.join(OUT, "product-proof.png") });
   });
-  await save("studio-band", async () => {
-    const el = await dp.$(".lp-band-img");
-    await el.scrollIntoViewIfNeeded(); await dp.waitForTimeout(300);
-    await el.screenshot({ path: path.join(OUT, "studio-band.png") });
-  });
+  // (The mid-page studio band was removed FIX 2026-07-30 — no capture.)
   await dp.close();
 
   // Mobile (390, DSF3): hero — type legible, composition intact

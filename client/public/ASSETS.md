@@ -1,7 +1,7 @@
 # Landing photography — sources & licenses (BUILD-28)
 
-The image-forward landing (`client/src/pages/Landing.jsx`) uses three photographs.
-All are **free-tier Unsplash** downloads, user-confirmed for commercial use. The
+The image-forward landing (`client/src/pages/Landing.jsx`) uses four photographs
+(hero + three verticals cards). All are **free-tier Unsplash** downloads, user-confirmed for commercial use. The
 [Unsplash License](https://unsplash.com/license) grants free use for commercial
 and non-commercial purposes **with no permission or attribution required**
 (attribution appreciated, not obligatory — so no footer credit line is needed;
@@ -13,13 +13,21 @@ must never be captioned as such (they render `aria-hidden`, no caption).
 | Role | Served files | Photographer | Unsplash photo | License |
 |------|--------------|--------------|----------------|---------|
 | **Hero** — community choir mid-performance | `hero-choir-{960,1280,1920,2560}.webp` | Omar Flores | https://unsplash.com/photos/AndwyJNdk1k | Unsplash (free, commercial OK, no attribution required) |
-| **Mid-page band** — working pottery studio | `band-studio-{1280,1920}.webp` | Earl Wilcox | https://unsplash.com/photos/pSo0u53FF10 | Unsplash (free, commercial OK, no attribution required) |
 | **Verticals card — Arts & culture** — patrons at an arts space | `card-arts-{400,800}.webp` | Dillon Wanner | https://unsplash.com/photos/EeAL5G9HDV0 | Unsplash (free, commercial OK, no attribution required) |
 | **Verticals card — Rescue & relief** — shelter dogs | `card-rescue-{400,800}.webp` | Sasha Sashina | https://unsplash.com/photos/Xcscr_sNSEY | Unsplash (free, commercial OK, no attribution required) |
 | **Verticals card — Faith & community** — hillside chapel at dusk | `card-faith-{400,800}.webp` | Kevin Mueller | https://unsplash.com/photos/8IbeGOj9AGA | Unsplash (free, commercial OK, no attribution required) |
 
 All three verticals cards now carry a photo — the graceful cream-panel + gold-rule
 fallback (still in `Landing.jsx` for any `img: null` slot) is currently unused.
+
+**Retired (FIX 2026-07-30):** the mid-page full-bleed **studio band**
+(`band-studio-{1280,1920}.webp`, working pottery studio, Earl Wilcox,
+https://unsplash.com/photos/pSo0u53FF10) was removed from the landing — a tight
+macro read as *texture*, not a place, and left an orphaned white gap between the
+founding-partner ask and the founder letter. The served files were deleted and
+the `band-studio` job dropped from `scripts/build28-prepare-images.js`. If a
+mid-page breath is ever wanted, use a wide art-studio **room** shot (reads as a
+place) at ~half height — not a macro.
 
 Note on the Rescue image: it's a caged-kennel framing. The original BUILD-28
 brief preferred a *hopeful* shot (volunteer with an animal / adoption moment)

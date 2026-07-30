@@ -82,5 +82,49 @@ ok(!/linear-gradient\([^)]*#(3b82f6|2563eb)/i.test(invite), "invite page: no AI 
 ok(!fs.existsSync(path.join(root, "client", "src", "Login.jsx")),
   "dead client/src/Login.jsx (stale off-brand mark) removed");
 
+// 6 — The off-brand "AI green" (Tailwind emerald-500 #10b981, + its mint
+//     sibling #34d399) appears NOWHERE on the public front-door surfaces or in
+//     the server-rendered email templates (FIX 2026-07-30). Sign-in survived
+//     the BUILD-20/brand-glyph public-surface sweep; this closes it. The
+//     convention: public auth pages use GOLD for the primary action + the page-
+//     title underline (like the landing's "Start free" / onboarding CTA) and
+//     FOREST-green for links/accents.
+//     Scope note: this guard covers the PUBLIC/auth + email surfaces only. The
+//     authenticated app still uses #10b981 as its documented "accent green"
+//     (the ~1300-literal BUILD-12 backlog); migrating that is a separate,
+//     deliberate pass — CLAUDE.md explicitly warns against a repo-wide sed on
+//     the live app — so it is intentionally NOT scanned here.
+const EMERALD = /#10b981|#34d399/i;
+const publicSurfaces = [
+  "client/src/pages/LoginPage.jsx",
+  "client/src/pages/SignupPage.jsx",
+  "client/src/pages/ForgotPasswordPage.jsx",
+  "client/src/pages/ResetPasswordPage.jsx",
+  "client/src/pages/InvitePage.jsx",
+  "client/src/pages/publicTheme.js",
+  "server.js", // password-reset / invite / manage-fundraiser email CTAs
+];
+for (const f of publicSurfaces) {
+  ok(!EMERALD.test(read(f)),
+    `${path.relative(".", f)}: no off-brand emerald (#10b981 / #34d399)`);
+}
+
+// 7 — Sign-in follows the brand convention: gold primary button + gold title
+//     underline + forest-green "Sign up free" link.
+const login = read("client/src/pages/LoginPage.jsx");
+ok(/gold:\s*"#c9a84c"/.test(login), "sign-in: gold token = gold500 #c9a84c");
+ok(/forest:\s*"#0d5c3a"/.test(login), "sign-in: forest token = greenDk #0d5c3a");
+ok(/background:\s*loading\s*\?\s*T\.cream3\s*:\s*T\.gold/.test(login),
+  "sign-in: Sign In button background is gold");
+ok(/borderBottom:\s*`3px solid \$\{T\.gold\}`/.test(login),
+  "sign-in: 'Welcome back' underline is gold");
+ok(/color:\s*T\.forest[^]{0,40}Sign up free/.test(login),
+  "sign-in: 'Sign up free' link is forest green");
+
+// 8 — The public sign-in page carries NO demo credentials (it's the front door;
+//     any demo shortcut is gated to non-production via import.meta.env.DEV).
+ok(/import\.meta\.env\.DEV\s*&&[^]{0,400}admin@creoarts\.org/.test(login),
+  "sign-in: demo credentials are DEV-gated (never in a production build)");
+
 console.log(`\nbrand-glyph: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

@@ -26,9 +26,9 @@ const JOBS = [
   // Hero — community choir mid-performance (Omar Flores). LCP element, 16:9,
   // near-black upper-left for the headline. Served responsive at 100vw.
   ["omar-flores-AndwyJNdk1k-unsplash.jpg", "hero-choir", [960, 1280, 1920, 2560], 80],
-  // Mid-page atmosphere band — a real working pottery studio (Earl Wilcox),
-  // centered/warm. No type over it.
-  ["earl-wilcox-pSo0u53FF10-unsplash.jpg", "band-studio", [1280, 1920], 80],
+  // (Retired FIX 2026-07-30: the mid-page pottery/studio band was removed from
+  // the landing — a tight macro read as texture, not a place. Do not regenerate
+  // band-studio-*. If a mid-page breath returns, use a wide art-studio ROOM shot.)
   // Arts & culture vertical card — patrons at an arts space (Dillon Wanner).
   // ~360px displayed, so lower-res is fine at 2x.
   ["dillon-wanner-EeAL5G9HDV0-unsplash.jpg", "card-arts", [400, 800], 80],

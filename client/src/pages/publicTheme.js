@@ -9,7 +9,10 @@
 export const T = {
   bg: "#f0ede6", bg2: "#e8e4db", bg3: "#e8e2d9",
   white: "#faf8f4", ink: "#1a1a1a", ink2: "#2a2a2a", ink3: "#6b6b6b",
-  green: "#10b981", greenDk: "#1a6b4a", gold: "#c9a84c",
+  // Note: the off-brand Tailwind emerald was removed (FIX 2026-07-30). Public
+  // pages use the brand forest green (greenDk) + gold; nothing here referenced
+  // the old emerald token.
+  greenDk: "#1a6b4a", gold: "#c9a84c",
 };
 
 export function fmtMoney(n) {
