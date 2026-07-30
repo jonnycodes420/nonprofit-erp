@@ -10,16 +10,13 @@
     <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
     <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
     <link rel="manifest" href="/site.webmanifest">
-    <!-- BUILD-28: fonts loaded EARLY (static <head>) with display=optional so
-         the brand serif never SWAPS in mid-load — that swap was the landing's
-         only layout shift (hero headline reflow). optional = paint the fallback
-         if the font isn't ready in the block window and don't swap it in on that
-         load → CLS≈0; most connections still get DM Serif within the window, and
-         repeat visits always do. The authenticated app injects its own
-         display=swap link (App.jsx), parsed later, so app routes are unchanged. -->
+    <!-- BUILD-28: preconnect to the font hosts so the (non-render-blocking,
+         JS-injected) font stylesheet resolves fast. The stylesheet itself is
+         injected by Landing.jsx with display=OPTIONAL — NOT a render-blocking
+         <link> in <head> (that spiked FCP/LCP). optional = no mid-load swap, so
+         the hero headline never reflows → CLS≈0, while first paint stays fast. -->
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Sans:wght@400;500;600;700;800&display=optional" />
     <!-- BUILD-28: the landing hero is now an image-forward PHOTO (the LCP
          element), so we preload the hero source — but ONLY on the landing
          route ("/"), so the app/auth routes (which share this static shell)

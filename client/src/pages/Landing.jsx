@@ -428,8 +428,10 @@ export default function Landing() {
 
   return (
     <>
-      {/* Fonts load from index.html <head> with display=optional (BUILD-28) —
-          no mid-load swap → no hero-headline layout shift. Not injected here. */}
+      {/* Fonts: injected here (non-render-blocking, so first paint stays fast)
+          with display=OPTIONAL — the brand serif never swaps in mid-load, so the
+          hero headline never reflows (CLS≈0). preconnects live in index.html. */}
+      <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Sans:wght@400;500;600;700;800&display=optional" rel="stylesheet" />
       <style>{`
         *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
         html, body { background: ${C.cream}; overflow-x: hidden; }
