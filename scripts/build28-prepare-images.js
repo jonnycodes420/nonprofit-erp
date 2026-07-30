@@ -32,6 +32,8 @@ const JOBS = [
   // Arts & culture vertical card — patrons at an arts space (Dillon Wanner).
   // ~360px displayed, so lower-res is fine at 2x.
   ["dillon-wanner-EeAL5G9HDV0-unsplash.jpg", "card-arts", [400, 800], 80],
+  // Rescue & relief vertical card — shelter dogs (Sasha Sashina). ~360px.
+  ["sasha-sashina-Xcscr_sNSEY-unsplash.jpg", "card-rescue", [400, 800], 80],
 ];
 
 (async () => {

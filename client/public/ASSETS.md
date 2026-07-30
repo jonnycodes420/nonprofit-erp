@@ -15,12 +15,14 @@ must never be captioned as such (they render `aria-hidden`, no caption).
 | **Hero** — community choir mid-performance | `hero-choir-{960,1280,1920,2560}.webp` | Omar Flores | https://unsplash.com/photos/AndwyJNdk1k | Unsplash (free, commercial OK, no attribution required) |
 | **Mid-page band** — working pottery studio | `band-studio-{1280,1920}.webp` | Earl Wilcox | https://unsplash.com/photos/pSo0u53FF10 | Unsplash (free, commercial OK, no attribution required) |
 | **Verticals card — Arts & culture** — patrons at an arts space | `card-arts-{400,800}.webp` | Dillon Wanner | https://unsplash.com/photos/EeAL5G9HDV0 | Unsplash (free, commercial OK, no attribution required) |
+| **Verticals card — Rescue & relief** — shelter dogs | `card-rescue-{400,800}.webp` | Sasha Sashina | https://unsplash.com/photos/Xcscr_sNSEY | Unsplash (free, commercial OK, no attribution required) |
+
+Note on the Rescue image: it's a caged-kennel framing. The original BUILD-28
+brief preferred a *hopeful* shot (volunteer with an animal / adoption moment)
+over caged/pity framing — user-selected this file regardless; swap later if a
+more hopeful licensed shot is sourced.
 
 ## Slots shipped WITHOUT a photo (graceful on-palette fallback)
-- **Rescue & relief card** — blocked on a cleanly-licensed file. The candidate
-  `dogs.avif` is a **watermarked Unsplash+** comp (paid tier) → disqualified.
-  Prefer a *hopeful* shot (volunteer with an animal / adoption moment) when a
-  clean file is sourced.
 - **Faith & community card** — awaiting a cleared replacement. The candidate
   `blackchoir.jpg` is the **Morgan State University Choir** (identifiable
   institution + ~30 identifiable people, reads editorial) → not shipped.

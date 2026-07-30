@@ -56,7 +56,7 @@ const VERTICALS = [
   {
     title: "Rescue & relief",
     blurb: "Monthly givers who quietly stop giving when a card expires, and no one was watching.",
-    img: null,
+    img: "/card-rescue",
   },
   {
     title: "Faith & community",
