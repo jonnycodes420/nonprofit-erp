@@ -61,7 +61,8 @@ const VERTICALS = [
   {
     title: "Faith & community",
     blurb: "One staffer wearing every hat, keeping a whole community's giving on track.",
-    img: null,
+    img: "/card-faith",
+    pos: "center 60%", // portrait source — keep the lit chapel in the landscape crop
   },
 ];
 
@@ -683,7 +684,8 @@ export default function Landing() {
                       src={`${v.img}-800.webp`}
                       srcSet={`${v.img}-400.webp 400w, ${v.img}-800.webp 800w`}
                       sizes="(max-width: 768px) 100vw, 360px"
-                      width="800" height="533" loading="lazy" decoding="async" />
+                      width="800" height="533" loading="lazy" decoding="async"
+                      style={v.pos ? { objectPosition: v.pos } : undefined} />
                   ) : (
                     <div className="lp-vert-fallback" aria-hidden="true"><span className="lp-vert-rule" /></div>
                   )}

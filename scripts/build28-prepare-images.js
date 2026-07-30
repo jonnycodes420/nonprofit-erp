@@ -34,6 +34,9 @@ const JOBS = [
   ["dillon-wanner-EeAL5G9HDV0-unsplash.jpg", "card-arts", [400, 800], 80],
   // Rescue & relief vertical card — shelter dogs (Sasha Sashina). ~360px.
   ["sasha-sashina-Xcscr_sNSEY-unsplash.jpg", "card-rescue", [400, 800], 80],
+  // Faith & community vertical card — hillside chapel at dusk (Kevin Mueller).
+  // Portrait source; cropped to the card via object-position (see Landing.jsx).
+  ["kevin-mueller-8IbeGOj9AGA-unsplash.jpg", "card-faith", [400, 800], 80],
 ];
 
 (async () => {

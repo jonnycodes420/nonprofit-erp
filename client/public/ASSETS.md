@@ -16,18 +16,18 @@ must never be captioned as such (they render `aria-hidden`, no caption).
 | **Mid-page band** — working pottery studio | `band-studio-{1280,1920}.webp` | Earl Wilcox | https://unsplash.com/photos/pSo0u53FF10 | Unsplash (free, commercial OK, no attribution required) |
 | **Verticals card — Arts & culture** — patrons at an arts space | `card-arts-{400,800}.webp` | Dillon Wanner | https://unsplash.com/photos/EeAL5G9HDV0 | Unsplash (free, commercial OK, no attribution required) |
 | **Verticals card — Rescue & relief** — shelter dogs | `card-rescue-{400,800}.webp` | Sasha Sashina | https://unsplash.com/photos/Xcscr_sNSEY | Unsplash (free, commercial OK, no attribution required) |
+| **Verticals card — Faith & community** — hillside chapel at dusk | `card-faith-{400,800}.webp` | Kevin Mueller | https://unsplash.com/photos/8IbeGOj9AGA | Unsplash (free, commercial OK, no attribution required) |
+
+All three verticals cards now carry a photo — the graceful cream-panel + gold-rule
+fallback (still in `Landing.jsx` for any `img: null` slot) is currently unused.
 
 Note on the Rescue image: it's a caged-kennel framing. The original BUILD-28
 brief preferred a *hopeful* shot (volunteer with an animal / adoption moment)
 over caged/pity framing — user-selected this file regardless; swap later if a
 more hopeful licensed shot is sourced.
 
-## Slots shipped WITHOUT a photo (graceful on-palette fallback)
-- **Faith & community card** — awaiting a cleared replacement. The candidate
-  `blackchoir.jpg` is the **Morgan State University Choir** (identifiable
-  institution + ~30 identifiable people, reads editorial) → not shipped.
-
-Both render a warm cream panel + gold rule until a licensed file is dropped in.
+Note on the Faith image: portrait source, cropped to the landscape card via
+`object-position: center 60%` (keeps the lit chapel framed).
 
 ## Regenerating / swapping
 - Responsive WebP variants are produced by `scripts/build28-prepare-images.js`
