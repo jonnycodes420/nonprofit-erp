@@ -109,6 +109,27 @@ const BANNED = [
   // The candor line that makes the honesty explicit is present
   ok("candor line present ('no case-study wall / customer count')", /no case-study wall|won't invent/i.test(bodyText));
 
+  // ── 3.5 BUILD-29: order + pricing + no pottery band ──
+  // The founder letter must precede the founding-partner ASK (the letter earns
+  // the ask). The ask now lives in its own "founding partner organizations"
+  // section AFTER the letter.
+  const letterIdx = hay.indexOf("letter from the founder");
+  const askIdx = hay.indexOf("founding partner organizations");
+  ok("founder letter present", letterIdx !== -1);
+  ok("founding-partner ask present", askIdx !== -1);
+  ok("founder letter PRECEDES the founding-partner ask", letterIdx !== -1 && askIdx !== -1 && letterIdx < askIdx, { letterIdx, askIdx });
+  // Pricing signal present near the CTA and linked to /pricing.
+  ok("pricing signal present ('$149/month' or '$149/mo')", /\$149\s*\/\s*(month|mo)/i.test(bodyText), bodyText.match(/\$149[^\n]{0,12}/));
+  const pricingLinked = await page.evaluate(() =>
+    [...document.querySelectorAll("a[href='/pricing']")].length >= 1
+  );
+  ok("a /pricing link exists in the page body (not just the footer)", pricingLinked);
+  // The mid-page pottery/studio band is gone.
+  const bandImgs = await page.evaluate(() =>
+    [...document.querySelectorAll("img")].filter(i => /band-studio|\blp-band-img\b/.test((i.getAttribute("src") || "") + " " + i.className)).length
+  );
+  ok("no pottery/studio band image on the page", bandImgs === 0, bandImgs);
+
   // ── 4. CTAs live ──
   ok("Start free CTA present", await page.locator('button:has-text("Start free")').count() >= 1);
   ok("Talk to the founder CTA present", await page.locator('button:has-text("Talk to the founder")').count() >= 1);

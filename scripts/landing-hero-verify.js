@@ -117,6 +117,40 @@ async function heroContrastAt(page, width) {
     ok(`${label} (${w}px): subhead AA over the photo (≥4.5:1)`, c.subhead != null && c.subhead >= 4.5, c.subhead && +c.subhead.toFixed(2));
   }
 
+  // ── 5. BUILD-29 hero product card: a single DOM/vector card floated over the
+  //     photo (clarity that this is SOFTWARE), never a raster <img>, and it
+  //     must NOT collide with the headline/subhead/CTAs at 1280 & 1024. On
+  //     mobile it's dropped (hidden), never crowding the type.
+  const card = async (width) => {
+    await page.setViewportSize({ width, height: 860 });
+    await page.goto(BASE, { waitUntil: "networkidle" });
+    await page.waitForTimeout(400);
+    return page.evaluate(() => {
+      const c = document.querySelector(".lp-hero-card");
+      if (!c) return { present: false };
+      const cs = getComputedStyle(c);
+      const shown = cs.display !== "none" && cs.visibility !== "hidden";
+      const cr = c.getBoundingClientRect();
+      const overlaps = (sel) => {
+        const el = document.querySelector(sel); if (!el) return false;
+        const r = el.getBoundingClientRect();
+        return !(cr.right <= r.left || cr.left >= r.right || cr.bottom <= r.top || cr.top >= r.bottom);
+      };
+      const hitsType = shown && (overlaps(".lp-hero-copy h1") || overlaps(".lp-hero-copy p:not(.lp-hero-trust)") || overlaps(".lp-hero-copy button"));
+      const isImg = !!c.querySelector("img");
+      return { present: true, shown, hitsType, isImg, tag: c.tagName };
+    });
+  };
+  const c1280 = await card(1280);
+  ok("hero product card present in DOM", c1280.present);
+  ok("hero product card shown at 1280px", c1280.present && c1280.shown);
+  ok("hero product card is DOM/vector (no raster <img>)", c1280.present && !c1280.isImg);
+  ok("hero product card does NOT collide with type at 1280px", c1280.present && !c1280.hitsType);
+  const c1024 = await card(1024);
+  ok("hero product card does NOT collide with type at 1024px (hidden or clear)", c1024.present && !c1024.hitsType);
+  const c390 = await card(390);
+  ok("hero product card dropped on mobile (390px)", c390.present && !c390.shown);
+
   await browser.close();
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exit(fail ? 1 : 0);

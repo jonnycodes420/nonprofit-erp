@@ -157,6 +157,28 @@ const RetChip = ({ name, amt }) => (
 // (goal 22% of $25,000, retention 33% vs the 43% sector average). The one
 // deliberate motion — the goal bar filling to its true 22% — is now a REAL
 // CSS bar animating its own width, not an overlay faked onto a screenshot.
+// A single restrained product signal floated over the hero photo (BUILD-29).
+// DOM/vector only (never raster — the crispness guards apply). It reuses the
+// BUILD-12 goal-thermometer language so a first-time visitor instantly reads
+// "fundraising software," resolving the "is this an arts org?" ambiguity. It's
+// a signal, not a demo — one card, decorative (aria-hidden).
+function HeroFloatCard() {
+  return (
+    <div className="lp-hero-card" aria-hidden="true">
+      <div className="lp-hcard-eyebrow">Fundraising Goal</div>
+      <div className="lp-hcard-label">Raise $25,000 this quarter</div>
+      <div className="lp-hcard-row">
+        <span className="lp-serif lp-hcard-pct">22%</span>
+        <span className="lp-hcard-sub">of goal reached</span>
+      </div>
+      <div className="lp-hcard-track"><div className="lp-hcard-fill" /></div>
+      <div className="lp-hcard-foot">
+        <strong className="lp-serif">$5,501</strong> of $25,000 · 53 days left
+      </div>
+    </div>
+  );
+}
+
 function HeroShot() {
   return (
     <div className="lp-hero-shot">
@@ -403,6 +425,26 @@ export default function Landing() {
     return () => { document.body.style.overflow = ""; };
   }, [showCal]);
 
+  // Premium scroll reveals (BUILD-29). Each `.lp-reveal` section fades + rises
+  // once as it enters view. prefers-reduced-motion (or no IntersectionObserver)
+  // reveals everything immediately — the no-motion path is non-negotiable.
+  useEffect(() => {
+    const els = Array.from(document.querySelectorAll(".lp-reveal"));
+    if (!els.length) return;
+    const reduce = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (reduce || !("IntersectionObserver" in window)) {
+      els.forEach(el => el.classList.add("is-visible"));
+      return;
+    }
+    const io = new IntersectionObserver((entries, obs) => {
+      for (const e of entries) {
+        if (e.isIntersecting) { e.target.classList.add("is-visible"); obs.unobserve(e.target); }
+      }
+    }, { threshold: 0.12, rootMargin: "0px 0px -6% 0px" });
+    els.forEach(el => io.observe(el));
+    return () => io.disconnect();
+  }, []);
+
   const GoldBtn = ({ children, onClick, big }) => (
     <button onClick={onClick} className="lp-goldbtn" style={{
       background: C.gold, color: C.ink, border: "none",
@@ -456,10 +498,40 @@ export default function Landing() {
            the quiet area behind the type at every breakpoint. ── */
         .lp-hero-photo { position: relative; min-height: min(90vh, 760px); display: flex; align-items: flex-start; overflow: hidden; background: ${C.ink}; }
         .lp-hero-img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: 60% 30%; z-index: 0; }
-        .lp-hero-scrim { position: absolute; inset: 0; background: rgba(15,26,18,0.58); z-index: 1; }
+        .lp-hero-scrim { position: absolute; inset: 0; background: rgba(15,26,18,0.60); z-index: 1; }
         .lp-hero-content { position: relative; z-index: 2; width: 100%; max-width: 1140px; margin: 0 auto; padding: clamp(76px, 13vh, 150px) 64px 72px; }
         .lp-hero-copy { max-width: 620px; }
         .lp-hero-trust { font-size: 13px; color: rgba(240,237,230,0.72); }
+
+        /* ── BUILD-29: the single floated product card (see HeroFloatCard).
+           White card + real elevation over the lower-right of the photo. Shown
+           only ≥1140px, where it clears the upper-left copy at every width;
+           hidden below so it never crowds the type (mobile: dropped entirely). */
+        .lp-hero-card {
+          position: absolute; z-index: 3;
+          right: clamp(28px, 5vw, 88px); bottom: clamp(40px, 8vh, 76px);
+          width: 320px;
+          background: ${C.white}; border: 1px solid rgba(255,255,255,0.55);
+          border-radius: 16px; padding: 18px 20px;
+          box-shadow: 0 34px 74px rgba(15,26,18,0.42), 0 8px 22px rgba(15,26,18,0.28);
+        }
+        .lp-hcard-eyebrow { font-size: 9.5px; font-weight: 800; letter-spacing: 0.12em; text-transform: uppercase; color: ${C.greenDk}; margin-bottom: 6px; }
+        .lp-hcard-label { font-size: 14px; font-weight: 700; color: ${C.ink}; margin-bottom: 8px; }
+        .lp-hcard-row { display: flex; align-items: baseline; gap: 9px; margin-bottom: 11px; }
+        .lp-hcard-pct { font-size: 40px; font-weight: 400; color: ${C.gold}; line-height: 1; }
+        .lp-hcard-sub { font-size: 12px; font-weight: 600; color: ${C.ink3}; }
+        .lp-hcard-track { background: ${C.cream2}; border-radius: 99px; height: 9px; overflow: hidden; }
+        .lp-hcard-fill { height: 100%; width: 22%; background: linear-gradient(90deg, ${C.gold}, ${C.terra}); border-radius: 99px; animation: lpFill 1.5s ease-out both; }
+        .lp-hcard-foot { font-size: 12px; color: ${C.ink3}; margin-top: 10px; }
+        .lp-hcard-foot strong { font-size: 14px; color: ${C.gold}; font-weight: 400; }
+        @media (max-width: 1139px) { .lp-hero-card { display: none; } }
+
+        /* ── BUILD-29: premium scroll reveals. Fade + a small rise as a section
+           enters view — fast + subtle (~380ms / 16px, ease-out). Opacity and
+           transform only, so there is ZERO layout shift (CLS unaffected). The
+           reduced-motion block below renders everything immediately. */
+        .lp-reveal { opacity: 0; transform: translateY(16px); transition: opacity .38s ease-out, transform .38s ease-out; }
+        .lp-reveal.is-visible { opacity: 1; transform: none; }
 
         /* Verticals band — "this is a tool for you" */
         .lp-vert-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 28px; }
@@ -556,10 +628,13 @@ export default function Landing() {
         .lp-slider::-moz-range-thumb { width: 22px; height: 22px; border-radius: 50%; background: ${C.ink}; border: 3px solid ${C.white}; cursor: pointer; }
         @media (prefers-reduced-motion: reduce) {
           .lp-goal-fill { animation: none; width: 22%; }
+          .lp-hcard-fill { animation: none; width: 22%; }
           .lp-goldbtn, .lp-goldbtn:hover { transform: none; }
+          /* Accessibility: no fade/rise — content is present immediately. */
+          .lp-reveal { opacity: 1 !important; transform: none !important; transition: none !important; }
         }
 
-        .lp-section { padding: 104px 64px; }
+        .lp-section { padding: 116px 64px; }
         .lp-narrow { max-width: 720px; margin: 0 auto; }
         .lp-wide { max-width: 1140px; margin: 0 auto; }
 
@@ -639,14 +714,17 @@ export default function Landing() {
           <div className="lp-hero-scrim" aria-hidden="true" />
           <div className="lp-hero-content">
             <div className="lp-hero-copy">
-              <Eyebrow onDark>For the people who keep the giving going</Eyebrow>
+              {/* Eyebrow's one job is orientation — say plainly what this IS. */}
+              <Eyebrow onDark>Donor CRM for small nonprofits</Eyebrow>
               <h1 className="lp-serif lp-h1" style={{ fontSize: "clamp(44px, 4.8vw, 72px)", lineHeight: 1.06, color: C.cream, marginBottom: 24 }}>
                 Donors don't leave.<br />
                 They drift.<br />
                 Steward{" "}
                 <span style={{ borderBottom: `4px solid ${C.gold}`, paddingBottom: 2 }}>notices.</span>
               </h1>
-              <p style={{ fontSize: 17.5, color: "rgba(240,237,230,0.94)", lineHeight: 1.75, maxWidth: 520, marginBottom: 32 }}>
+              {/* maxWidth trimmed so every line stays inside the dark scrim area
+                  (was crossing into the lit choir, the weakest-contrast point). */}
+              <p style={{ fontSize: 17.5, color: "rgba(240,237,230,0.94)", lineHeight: 1.75, maxWidth: 496, marginBottom: 32 }}>
                 A donor CRM built by fundraisers. <strong style={{ color: C.cream }}>Keep 100%</strong>{" "}
                 of every gift — 0% platform fees, gifts settle in your own Stripe — and{" "}
                 <strong style={{ color: C.cream }}>stop losing donors you already earned</strong>{" "}
@@ -659,13 +737,18 @@ export default function Landing() {
               <p className="lp-hero-trust">30-day trial · no credit card · your data exports anytime</p>
             </div>
           </div>
+          {/* A single DOM/vector product card floated over the empty lower-right
+              quadrant (BUILD-29) — a stranger reads "software FOR nonprofits,"
+              not "an arts org." Real elevation (shadow + border) = layered over
+              the photo. Hidden ≤1139px so it never crowds the type. */}
+          <HeroFloatCard />
         </section>
 
         {/* ── 1.1 "Built for orgs like yours" — the who-it's-for band (BUILD-28).
             On cream, serif card titles. Signals "a tool FOR you", never a
             nonprofit's own site. Slots with no cleared photo ship a graceful
             on-palette fallback. ── */}
-        <section className="lp-section" style={{ background: C.cream, paddingTop: 84, paddingBottom: 84 }}>
+        <section className="lp-section lp-reveal" style={{ background: C.cream, paddingTop: 84, paddingBottom: 84 }}>
           <div className="lp-wide">
             <div style={{ textAlign: "center", marginBottom: 46 }}>
               <Eyebrow>Built for orgs like yours</Eyebrow>
@@ -697,12 +780,12 @@ export default function Landing() {
         </section>
 
         {/* ── 1.5 The wedge, made visceral + interactive ── */}
-        <section className="lp-section" style={{ background: C.white, borderTop: `1px solid ${C.cream2}` }}>
+        <section className="lp-section lp-reveal" style={{ background: C.white, borderTop: `1px solid ${C.cream2}` }}>
           <RecoveryCalculator />
         </section>
 
         {/* ── 2. The problem, told plainly ── */}
-        <section className="lp-section" style={{ background: C.cream, borderBottom: `1px solid ${C.cream2}` }}>
+        <section className="lp-section lp-reveal" style={{ background: C.cream, borderBottom: `1px solid ${C.cream2}` }}>
           <div className="lp-narrow" style={{ textAlign: "center" }}>
             <p className="lp-serif" style={{ fontSize: "clamp(24px, 2.6vw, 33px)", lineHeight: 1.5, color: C.ink }}>
               The average nonprofit keeps 43% of its donors from one year to the
@@ -720,7 +803,7 @@ export default function Landing() {
             shot here, below the wedge, as EVIDENCE — no longer the page's
             visual identity). Live DOM + browser chrome, crisp at every DPR
             (BUILD-12; do not rasterize). ── */}
-        <section className="lp-section" style={{ background: C.white, borderTop: `1px solid ${C.cream2}` }}>
+        <section className="lp-section lp-reveal" style={{ background: C.white, borderTop: `1px solid ${C.cream2}` }}>
           <div className="lp-proof">
             <div style={{ textAlign: "center", marginBottom: 40 }}>
               <Eyebrow>The actual product</Eyebrow>
@@ -744,7 +827,7 @@ export default function Landing() {
         </section>
 
         {/* ── 3. Three true product moments ── */}
-        <section className="lp-section">
+        <section className="lp-section lp-reveal">
           <div className="lp-wide">
 
             {/* Moment 1 — the morning queue */}
@@ -842,7 +925,7 @@ export default function Landing() {
         {/* ── 3.5 How it works — three numbered steps, one line + one real
             capture each (BUILD-08 Phase A). Same honesty rule as everything
             else on the page: all three images are crops of the live product. */}
-        <section className="lp-section" style={{ background: C.white, borderTop: `1px solid ${C.cream2}` }}>
+        <section className="lp-section lp-reveal" style={{ background: C.white, borderTop: `1px solid ${C.cream2}` }}>
           <div className="lp-wide">
             <div style={{ textAlign: "center", marginBottom: 56 }}>
               <Eyebrow>How it works</Eyebrow>
@@ -883,7 +966,7 @@ export default function Landing() {
         </section>
 
         {/* ── 4. The money strip ── */}
-        <section className="lp-section" style={{ background: C.ink }}>
+        <section className="lp-section lp-reveal" style={{ background: C.ink }}>
           <div className="lp-narrow" style={{ textAlign: "center" }}>
             <Eyebrow onDark>Where the money goes</Eyebrow>
             <h2 className="lp-serif" style={{ fontSize: "clamp(32px, 3.6vw, 48px)", color: C.cream, lineHeight: 1.12, marginBottom: 24 }}>
@@ -908,7 +991,7 @@ export default function Landing() {
         </section>
 
         {/* ── 5. Where Steward is today — the candor section stays; it IS the brand ── */}
-        <section className="lp-section" style={{ background: C.white, borderBottom: `1px solid ${C.cream2}` }}>
+        <section className="lp-section lp-reveal" style={{ background: C.white, borderBottom: `1px solid ${C.cream2}` }}>
           <div className="lp-narrow">
             <Eyebrow>Where Steward is today</Eyebrow>
             <h2 className="lp-serif" style={{ fontSize: "clamp(30px, 3.4vw, 44px)", color: C.ink, lineHeight: 1.15, marginBottom: 22 }}>
@@ -930,18 +1013,8 @@ export default function Landing() {
                 </li>
               ))}
             </ul>
-            <div style={{ background: C.cream, border: `1px solid ${C.cream3}`, borderLeft: `3px solid ${C.gold}`, borderRadius: 12, padding: "20px 24px" }}>
-              <p style={{ fontSize: 15, color: C.ink, lineHeight: 1.75 }}>
-                I'm looking for <strong>three to five founding partner
-                organizations</strong> — nonprofits who'll use Steward for real,
-                tell me what's missing, and shape what gets built next. Founding
-                partners get a locked-in price and a direct line to me.{" "}
-                <a href={`${FOUNDER_MAILTO}?subject=Founding%20partner`} style={{ color: C.greenDk, fontWeight: 700, textDecoration: "underline", textUnderlineOffset: 3 }}>
-                  Write to me
-                </a>{" "}
-                and tell me about your organization.
-              </p>
-            </div>
+            {/* The founding-partner ASK moved to its own section AFTER the
+                founder letter (BUILD-29) — the letter is what earns the ask. */}
           </div>
         </section>
 
@@ -960,7 +1033,7 @@ export default function Landing() {
             Steward doesn't have. "The legacy tools" stands in for the named
             competitors in the source draft, per the no-competitor-names
             decision. */}
-        <section className="lp-section">
+        <section className="lp-section lp-reveal">
           <div style={{ maxWidth: 620, margin: "0 auto" }}>
             <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 26 }}>
               <div aria-hidden="true" style={{ width: 64, height: 64, borderRadius: "50%", flexShrink: 0, background: `linear-gradient(135deg, ${C.dark2}, ${C.ink})`, border: `2px solid ${C.gold}`, display: "flex", alignItems: "center", justifyContent: "center" }}>
@@ -1014,8 +1087,33 @@ export default function Landing() {
           </div>
         </section>
 
+        {/* ── 6.5 Founding-partner CTA — the ask, now AFTER the letter that
+            earns it (BUILD-29 reorder). Carries the quiet pricing signal so a
+            visitor never has to click through to /pricing to learn the range. ── */}
+        <section className="lp-section lp-reveal" style={{ background: C.white, borderTop: `1px solid ${C.cream2}`, borderBottom: `1px solid ${C.cream2}`, textAlign: "center" }}>
+          <div className="lp-narrow">
+            <Eyebrow>Founding partners</Eyebrow>
+            <h2 className="lp-serif" style={{ fontSize: "clamp(30px, 3.4vw, 44px)", color: C.ink, lineHeight: 1.15, marginBottom: 20 }}>
+              Be one of the first five.
+            </h2>
+            <p style={{ fontSize: 17, color: "#2d2d2d", lineHeight: 1.8, maxWidth: 560, margin: "0 auto 22px" }}>
+              I'm looking for <strong>three to five founding partner organizations</strong> —
+              nonprofits who'll use Steward for real, tell me what's missing, and shape
+              what gets built next. Founding partners get a locked-in price and a direct
+              line to me.
+            </p>
+            <p style={{ fontSize: 14, color: C.ink3, marginBottom: 28 }}>
+              From <strong style={{ color: C.ink }}>$149/month</strong> · keep 100% of every gift ·{" "}
+              <a href="/pricing" style={{ color: C.greenDk, fontWeight: 600, textDecoration: "underline", textUnderlineOffset: 3 }}>See pricing</a>
+            </p>
+            <div style={{ display: "flex", gap: 12, justifyContent: "center", flexWrap: "wrap" }}>
+              <QuietBtn big onClick={() => { window.location.href = `${FOUNDER_MAILTO}?subject=Founding%20partner`; }}>Write to me →</QuietBtn>
+            </div>
+          </div>
+        </section>
+
         {/* ── 7. Close ── */}
-        <section className="lp-section" style={{ textAlign: "center" }}>
+        <section className="lp-section lp-reveal" style={{ textAlign: "center" }}>
           <div className="lp-narrow">
             <h2 className="lp-serif" style={{ fontSize: "clamp(34px, 4vw, 52px)", color: C.ink, marginBottom: 30, lineHeight: 1.12 }}>
               See who needs you today.
