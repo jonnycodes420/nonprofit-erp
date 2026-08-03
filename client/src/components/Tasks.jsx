@@ -27,23 +27,27 @@ const BUCKETS = [
   { key: "someday",  label: "No date",   accent: T.ink3,       empty: null },
 ];
 
-export function Tasks({ data, setData, isReadOnly, onNavigate }) {
+export function Tasks({ data, setData, isReadOnly, onNavigate, initialScope }) {
   const [tasks, setTasks] = useState(() => data?.tasks ? null : []); // null = loading
   const [showAdd, setShowAdd] = useState(false);
   const [form, setForm] = useState({ title: "", due: "", priority: "medium", donorId: "" });
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState("");
+  // Scope: "mine" (my own tasks) matches Home's Tasks command-card count exactly,
+  // so "Tasks: N" on Home lands on N here (BUILD-30 class audit). "all" = the whole
+  // org, one toggle away. Default "mine" — the daily-driver, and the Home default.
+  const [scope, setScope] = useState(initialScope === "all" ? "all" : "mine");
 
-  // Fetch the authoritative list on mount (includes donor_name join).
+  // Fetch the authoritative list (includes donor_name join), re-fetch on scope.
   useEffect(() => {
     let alive = true;
-    apiFetch("/tasks").then(rows => {
+    apiFetch(`/tasks?scope=${scope}`).then(rows => {
       if (!alive) return;
       setTasks(rows);
-      syncBadge(rows);
+      if (scope === "mine") syncBadge(rows); // the sidebar badge = the user's own tasks
     }).catch(() => { if (alive) setTasks([]); });
     return () => { alive = false; };
-  }, []);
+  }, [scope]);
 
   // Keep App.jsx's data.tasks (sidebar badge source) in sync with the truth.
   const syncBadge = rows => setData(prev => prev ? { ...prev, tasks: rows.map(t => ({
@@ -109,10 +113,17 @@ export function Tasks({ data, setData, isReadOnly, onNavigate }) {
         </button>
       </div>
 
-      <div style={{ display: "flex", gap: 16, fontSize: 12.5, color: T.ink3, marginTop: -6 }}>
+      <div style={{ display: "flex", gap: 16, fontSize: 12.5, color: T.ink3, marginTop: -6, alignItems: "center", flexWrap: "wrap" }}>
         <span><strong style={{ color: overdueCount ? T.terracotta : T.ink }}>{overdueCount}</strong> need attention</span>
         <span><strong style={{ color: T.ink }}>{openCount}</strong> open</span>
         <span><strong style={{ color: T.ink }}>{doneTasks.length}</strong> done</span>
+        {/* Mine/All — "mine" is the default so the count matches Home's Tasks card. */}
+        <div style={{ display: "flex", background: T.bg2, borderRadius: 8, padding: 3, marginLeft: "auto" }}>
+          {[["mine", "Mine"], ["all", "All"]].map(([v, l]) => (
+            <button key={v} onClick={() => setScope(v)}
+              style={{ background: scope === v ? T.white : "transparent", border: "none", borderRadius: 6, padding: "4px 12px", fontSize: 12, fontWeight: 700, color: scope === v ? T.ink : T.ink3, cursor: "pointer", boxShadow: scope === v ? T.shadow : "none" }}>{l}</button>
+          ))}
+        </div>
       </div>
 
       {showAdd && (

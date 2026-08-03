@@ -38,7 +38,12 @@ async function seedOrg(o, tag, subStatus = "active") {
   await seedOrg(B, "b");
   await seedOrg(RO, "ro", "trial_expired");
 
+  // A second officer in org A — for the scope=mine test (BUILD-30 class audit).
+  await q(`INSERT INTO users (id,org_id,email,password_hash,name,role) VALUES ($1,$2,$3,$4,$5,'staff')`,
+    [`u2_${A}`, A, `a2@task.local`, bcrypt.hashSync("loadtest1234", 10), "Officer a2"]);
+
   const tokenA = await login("a@task.local");
+  const tokenA2 = await login("a2@task.local");
   const tokenB = await login("b@task.local");
   const tokenRO = await login("ro@task.local");
 
@@ -115,6 +120,21 @@ async function seedOrg(o, tag, subStatus = "active") {
   ok("read_only org POST complete → 402", (await api("POST", "/tasks/t_ro1/complete", tokenRO, {})).status === 402);
   ok("read_only org DELETE still allowed (ungated)", (await api("DELETE", "/tasks/t_ro1", tokenRO)).status === 200);
   ok("DELETE actually removed it", !(await taskExists("t_ro1")));
+
+  // ── scope=mine vs all (BUILD-30 class audit: the Tasks card lands on its N) ──
+  // A2 owns one task; A owns several. GET /tasks?scope=mine is per-caller. Runs
+  // before the end-of-suite reset() below (org A must still exist here).
+  const a2Task = await api("POST", "/tasks", tokenA2, { title: "A2's own task" });
+  ok("A2 creates a task → 201", a2Task.status === 201, a2Task.status);
+  const allA = (await api("GET", "/tasks", tokenA)).body || [];
+  const mineA = (await api("GET", "/tasks?scope=mine", tokenA)).body || [];
+  const mineA2 = (await api("GET", "/tasks?scope=mine", tokenA2)).body || [];
+  ok("scope=all (default) returns the whole org's tasks incl. A2's", allA.some(t => t.id === a2Task.body.id), allA.length);
+  ok("A's scope=mine excludes A2's task", !mineA.some(t => t.id === a2Task.body.id), mineA.map(t => t.assigned_to));
+  ok("A's scope=mine = only tasks assigned to A", mineA.every(t => t.assigned_to === `u_${A}`), mineA.map(t => t.assigned_to));
+  ok("A2's scope=mine = exactly A2's one task", mineA2.length === 1 && mineA2[0].id === a2Task.body.id, mineA2.length);
+  ok("scope=mine is a strict subset of all", mineA.length < allA.length, { mine: mineA.length, all: allA.length });
+  ok("scope=mine stays org-scoped (B never sees A's tasks)", ((await api("GET", "/tasks?scope=mine", tokenB)).body || []).every(t => t.org_id === B), true);
 
   await reset();
   await closeDb();

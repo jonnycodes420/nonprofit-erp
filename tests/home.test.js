@@ -83,8 +83,11 @@ async function seedTask(o, id, owner, due, done = 0) {
   ok("team org → tier is team", mine.tier === "team");
   // Portfolio
   ok("portfolio present on team", mine.portfolio !== null);
-  ok("portfolio.count = all my assigned donors (4)", mine.portfolio.count === 4, mine.portfolio.count);
-  ok("portfolio.value = Σ my donors' giving (1050)", mine.portfolio.value === 1050, mine.portfolio.value);
+  // BUILD-30: portfolio = pipeline = board, ONE definition (assigned + in a
+  // pipeline stage). The non-pipeline-stage 'closed' donor is excluded from ALL
+  // three identically, so portfolio.count === pipeline.total by construction.
+  ok("portfolio.count = my portfolio (3, 'closed' excluded, == pipeline.total)", mine.portfolio.count === 3, mine.portfolio.count);
+  ok("portfolio.value = Σ my portfolio (1000, == pipeline.value)", mine.portfolio.value === 1000, mine.portfolio.value);
   ok("portfolio.color = my officer color", mine.portfolio.color === "#1a6b4a");
   // Tasks buckets (mine)
   ok("tasks.overdue = 1", mine.tasks.overdue === 1, mine.tasks);

@@ -1,9 +1,9 @@
 // FIX — the pipeline is a portfolio, not the whole donor list.
-// The board shows only donors deliberately on it (in_pipeline), scoped to the
+// The board shows only donors ASSIGNED to an officer (assignment = membership,
 // caller's portfolio by default; bulk-imported donors land in the Directory with
 // a stage LABEL and never flood the board. Local scratch server + Postgres.
 //
-// Covers: board membership = in_pipeline (not "every donor with a stage"); import
+// Covers: board membership = ASSIGNMENT (BUILD-30, not a separate flag); import
 // does NOT put donors on the board; add-to-pipeline + assign put them on;
 // remove takes them off; scope mine/all; search/value-band/designation/officer
 // filters; sort by value/last-gift; per-column counts; Core-graceful locked
@@ -31,10 +31,13 @@ async function seedUser(o, id, tag, role = "admin") {
   await q(`INSERT INTO users (id,org_id,email,password_hash,name,role) VALUES ($1,$2,$3,$4,$5,$6)`,
     [id, o, `${tag}@pl.local`, bcrypt.hashSync("loadtest1234", 10), `User ${tag}`, role]);
 }
+// BUILD-30: board membership = ASSIGNMENT. A donor is on the board iff it has an
+// owner (assigned_to). There is no separate in_pipeline flag — an owner is the
+// one and only "on the board" state.
 async function seedDonor(o, id, name, stage, opts = {}) {
-  await q(`INSERT INTO donors (id,org_id,name,email,status,stage,total_giving,gift_count,last_gift_date,assigned_to,assigned_to_name,in_pipeline)
-           VALUES ($1,$2,$3,$4,'mid',$5,$6,1,$7,$8,$9,$10)`,
-    [id, o, name, `${id}@pl.local`, stage, opts.total || 0, opts.last || today, opts.owner || null, opts.ownerName || null, !!opts.inPipeline]);
+  await q(`INSERT INTO donors (id,org_id,name,email,status,stage,total_giving,gift_count,last_gift_date,assigned_to,assigned_to_name)
+           VALUES ($1,$2,$3,$4,'mid',$5,$6,1,$7,$8,$9)`,
+    [id, o, name, `${id}@pl.local`, stage, opts.total || 0, opts.last || today, opts.owner || null, opts.ownerName || null]);
 }
 const boardIds = body => Object.values(body.columns).flat().map(c => c.donorId);
 
@@ -51,18 +54,18 @@ const boardIds = body => Object.values(body.columns).flat().map(c => c.donorId);
   await seedUser(T2, "u_plt2", "t2-admin", "admin");
 
   // TEAM donors:
-  //  - imported set (in_pipeline=false, unassigned) — must NEVER be on the board
+  //  - imported set (unassigned) — must NEVER be on the board (Directory only)
   await seedDonor(TEAM, "pl_imp1", "Imported One",   "cultivate", { total: 500 });
   await seedDonor(TEAM, "pl_imp2", "Imported Two",   "prospect",  { total: 0 });
   await seedDonor(TEAM, "pl_imp3", "Imported Three", "steward",   { total: 9000 });
-  //  - portfolio set (in_pipeline=true)
-  await seedDonor(TEAM, "pl_a1", "Alice Big",   "cultivate", { total: 25000, last: daysAgo(10),  owner: "u_pl_a", ownerName: "User a-admin", inPipeline: true });
-  await seedDonor(TEAM, "pl_a2", "Aaron Small", "cultivate", { total: 800,   last: daysAgo(400), owner: "u_pl_a", ownerName: "User a-admin", inPipeline: true });
-  await seedDonor(TEAM, "pl_b1", "Bella Owned", "solicit",   { total: 12000, last: daysAgo(30),  owner: "u_pl_b", ownerName: "User b-off",   inPipeline: true });
-  await seedDonor(TEAM, "pl_u1", "Unowned Added","prospect", { total: 3000,  last: daysAgo(60),  inPipeline: true }); // on board, no owner
-  await seedDonor(CORE, "plc_1", "Core Prospect", "prospect", { total: 0, owner: "u_plc", ownerName: "User c-admin", inPipeline: true });
-  await seedDonor(RO,   "plr_1", "RO Prospect",   "prospect", { total: 0, owner: "u_plro", ownerName: "User ro-admin", inPipeline: true });
-  await seedDonor(T2,   "plt2_1","Foreign",       "prospect", { total: 0, owner: "u_plt2", ownerName: "User t2-admin", inPipeline: true });
+  //  - portfolio set (assigned = on the board, BUILD-30)
+  await seedDonor(TEAM, "pl_a1", "Alice Big",   "cultivate", { total: 25000, last: daysAgo(10),  owner: "u_pl_a", ownerName: "User a-admin" });
+  await seedDonor(TEAM, "pl_a2", "Aaron Small", "cultivate", { total: 800,   last: daysAgo(400), owner: "u_pl_a", ownerName: "User a-admin" });
+  await seedDonor(TEAM, "pl_b1", "Bella Owned", "solicit",   { total: 12000, last: daysAgo(30),  owner: "u_pl_b", ownerName: "User b-off" });
+  await seedDonor(TEAM, "pl_u1", "Uma Assigned","prospect",  { total: 3000,  last: daysAgo(60),  owner: "u_pl_a", ownerName: "User a-admin" }); // A's third
+  await seedDonor(CORE, "plc_1", "Core Prospect", "prospect", { total: 0, owner: "u_plc", ownerName: "User c-admin" });
+  await seedDonor(RO,   "plr_1", "RO Prospect",   "prospect", { total: 0, owner: "u_plro", ownerName: "User ro-admin" });
+  await seedDonor(T2,   "plt2_1","Foreign",       "prospect", { total: 0, owner: "u_plt2", ownerName: "User t2-admin" });
   // A designation for filter test
   await q(`INSERT INTO donor_designations (id,org_id,donor_id,kind) VALUES ($1,$2,$3,'planned_confirmed') ON CONFLICT DO NOTHING`, ["dsg_pl", TEAM, "pl_a1"]);
 
@@ -76,7 +79,7 @@ const boardIds = body => Object.values(body.columns).flat().map(c => c.donorId);
   let r = await api("GET", "/pipeline?scope=all", A);
   ok("board unlocked for team", r.status === 200 && r.body.locked === false, r.body);
   const allBoard = boardIds(r.body);
-  ok("board excludes imported (in_pipeline=false) donors", !allBoard.includes("pl_imp1") && !allBoard.includes("pl_imp2") && !allBoard.includes("pl_imp3"), allBoard);
+  ok("board excludes imported (unassigned) donors", !allBoard.includes("pl_imp1") && !allBoard.includes("pl_imp2") && !allBoard.includes("pl_imp3"), allBoard);
   ok("board includes only the 4 curated prospects", allBoard.sort().join() === ["pl_a1", "pl_a2", "pl_b1", "pl_u1"].sort().join(), allBoard);
   ok("board total = 4 (not the 7 donors in the org)", r.body.total === 4, r.body.total);
 
@@ -84,10 +87,10 @@ const boardIds = body => Object.values(body.columns).flat().map(c => c.donorId);
   r = await api("GET", "/pipeline", A);
   const mine = boardIds(r.body);
   ok("default scope = mine", r.body.scope === "mine", r.body.scope);
-  ok("my board = my assigned + unowned-on-board (not b's)", mine.sort().join() === ["pl_a1", "pl_a2", "pl_u1"].sort().join(), mine);
+  ok("my board = donors assigned to me (not b's)", mine.sort().join() === ["pl_a1", "pl_a2", "pl_u1"].sort().join(), mine);
   ok("my board excludes another officer's prospect", !mine.includes("pl_b1"), mine);
   r = await api("GET", "/pipeline", B);
-  ok("officer B sees only their own + unowned", boardIds(r.body).sort().join() === ["pl_b1", "pl_u1"].sort().join(), boardIds(r.body));
+  ok("officer B sees only donors assigned to them", boardIds(r.body).sort().join() === ["pl_b1"].join(), boardIds(r.body));
 
   // ── 3. Import does NOT flood the board ───────────────────────────────────
   const imp = await api("POST", "/donors/import", A, {
@@ -97,34 +100,35 @@ const boardIds = body => Object.values(body.columns).flat().map(c => c.donorId);
     ],
   });
   ok("import 200", imp.status === 200 && imp.body.created === 2, imp.body);
-  const freshRows = await q(`SELECT id, in_pipeline, assigned_to FROM donors WHERE org_id=$1 AND email LIKE 'fresh%@pl.local'`, [TEAM]);
-  ok("imported donors are in_pipeline=false", freshRows.every(d => d.in_pipeline === false), freshRows);
-  ok("imported donors are unassigned (no auto-owner)", freshRows.every(d => d.assigned_to === null), freshRows);
+  const freshRows = await q(`SELECT id, assigned_to FROM donors WHERE org_id=$1 AND email LIKE 'fresh%@pl.local'`, [TEAM]);
+  ok("imported donors are unassigned (no auto-owner) → Directory only, not on the board", freshRows.every(d => d.assigned_to === null), freshRows);
   r = await api("GET", "/pipeline?scope=all", A);
+  const afterImport = boardIds(r.body);
+  ok("imported donors never appear on any board", !freshRows.some(d => afterImport.includes(d.id)), afterImport);
   ok("board still 4 after import (no flood)", r.body.total === 4, r.body.total);
 
   // ── 4. Add-to-pipeline is the deliberate act that puts a donor on the board ─
   const fresh1 = freshRows.find(d => d.id && true) && (await q(`SELECT id FROM donors WHERE org_id=$1 AND email='fresh1@pl.local'`, [TEAM]))[0].id;
   r = await api("POST", "/pipeline/add", A, { ids: [fresh1] });
   ok("add-to-pipeline 200", r.status === 200 && r.body.added === 1, r.body);
-  const added = await q(`SELECT in_pipeline, assigned_to FROM donors WHERE id=$1`, [fresh1]);
-  ok("added donor now in_pipeline + assigned to caller", added[0].in_pipeline === true && added[0].assigned_to === "u_pl_a", added[0]);
+  const added = await q(`SELECT assigned_to FROM donors WHERE id=$1`, [fresh1]);
+  ok("add-to-pipeline assigns the donor to the caller (assignment = membership)", added[0].assigned_to === "u_pl_a", added[0]);
   r = await api("GET", "/pipeline", A);
   ok("added donor appears on my board", boardIds(r.body).includes(fresh1), boardIds(r.body));
 
   // ── 5. Assign (bulk) also puts a donor on the board ──────────────────────
   r = await api("PATCH", "/donors/bulk-assign", A, { ids: ["pl_imp3"], assignedTo: "u_pl_b" });
   ok("bulk-assign 200", r.status === 200, r.body);
-  const assigned = await q(`SELECT in_pipeline, assigned_to FROM donors WHERE id='pl_imp3'`);
-  ok("assigning an officer puts donor on board (in_pipeline=true)", assigned[0].in_pipeline === true && assigned[0].assigned_to === "u_pl_b", assigned[0]);
+  const assigned = await q(`SELECT assigned_to FROM donors WHERE id='pl_imp3'`);
+  ok("assigning an officer puts a formerly-Directory-only donor on the board", assigned[0].assigned_to === "u_pl_b", assigned[0]);
   r = await api("GET", "/pipeline?assignedTo=u_pl_b", A);
   ok("officer filter shows the newly-assigned donor", boardIds(r.body).includes("pl_imp3"), boardIds(r.body));
 
   // ── 6. Remove takes a donor off the board (stays in Directory) ───────────
   r = await api("POST", "/pipeline/remove", A, { ids: [fresh1] });
   ok("remove 200", r.status === 200 && r.body.removed === 1, r.body);
-  const removed = await q(`SELECT in_pipeline, assigned_to, deleted_at FROM donors WHERE id=$1`, [fresh1]);
-  ok("removed: off board, unassigned, NOT deleted", removed[0].in_pipeline === false && removed[0].assigned_to === null && removed[0].deleted_at === null, removed[0]);
+  const removed = await q(`SELECT assigned_to, deleted_at FROM donors WHERE id=$1`, [fresh1]);
+  ok("removed: unassigned (off board), NOT deleted (stays in Directory)", removed[0].assigned_to === null && removed[0].deleted_at === null, removed[0]);
   r = await api("GET", "/pipeline?scope=all", A);
   ok("removed donor gone from board", !boardIds(r.body).includes(fresh1), boardIds(r.body));
 
@@ -150,7 +154,7 @@ const boardIds = body => Object.values(body.columns).flat().map(c => c.donorId);
   ok("counts present per stage", r.body.counts && typeof r.body.counts.cultivate === "number", r.body.counts);
   ok("cultivate count matches column length", r.body.counts.cultivate === (r.body.columns.cultivate || []).length, { c: r.body.counts.cultivate });
 
-  // ── 10. Core-graceful locked preview (own in_pipeline data, still locked) ─
+  // ── 10. Core-graceful locked preview (own portfolio data, still locked) ─
   r = await api("GET", "/pipeline", C);
   ok("core board locked but previews own portfolio", r.status === 200 && r.body.locked === true && boardIds(r.body).includes("plc_1"), r.body);
 
@@ -165,8 +169,8 @@ const boardIds = body => Object.values(body.columns).flat().map(c => c.donorId);
   // ── 12. Org isolation ────────────────────────────────────────────────────
   r = await api("POST", "/pipeline/add", A, { ids: ["plt2_1"] });
   ok("cannot add a foreign org's donor (404)", r.status === 404, r.body);
-  const foreign = await q(`SELECT in_pipeline FROM donors WHERE id='plt2_1'`);
-  ok("foreign donor unchanged (still its own state)", foreign[0].in_pipeline === true, foreign[0]);
+  const foreign = await q(`SELECT assigned_to FROM donors WHERE id='plt2_1'`);
+  ok("foreign donor unchanged (still assigned to its own org's officer)", foreign[0].assigned_to === "u_plt2", foreign[0]);
   r = await api("GET", "/pipeline?scope=all", T2U);
   ok("t2 board only its own donor", boardIds(r.body).join() === "plt2_1", boardIds(r.body));
 

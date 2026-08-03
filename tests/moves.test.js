@@ -34,10 +34,10 @@ async function seedUser(o, id, tag, role = "admin", color = null) {
     [id, o, `${tag}@mv.local`, hash, `User ${tag}`, role, color]);
 }
 async function seedDonor(o, id, name, stage, owner, ownerName, total) {
-  // in_pipeline=true: these are deliberately-worked prospects (the pipeline is a
-  // curated portfolio now — a donor must be added/assigned to appear on the board).
-  await q(`INSERT INTO donors (id,org_id,name,email,status,stage,total_giving,gift_count,last_gift_date,assigned_to,assigned_to_name,in_pipeline)
-           VALUES ($1,$2,$3,$4,'mid',$5,$6,1,$7,$8,$9,true)`,
+  // BUILD-30: board membership = ASSIGNMENT. These are assigned (have an owner),
+  // so they're on that officer's board — no separate in_pipeline flag.
+  await q(`INSERT INTO donors (id,org_id,name,email,status,stage,total_giving,gift_count,last_gift_date,assigned_to,assigned_to_name)
+           VALUES ($1,$2,$3,$4,'mid',$5,$6,1,$7,$8,$9)`,
     [id, o, name, `${id}@mv.local`, stage, total, today, owner, ownerName]);
 }
 async function seedDesignation(o, donorId, kind) {

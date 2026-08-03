@@ -93,6 +93,10 @@ function AppShell() {
   const [donorsIntent,setDonorsIntent]=useState(null);
   const [grantsIntent,setGrantsIntent]=useState(null);
   const [settingsIntent,setSettingsIntent]=useState(null);
+  // BUILD-30: the Home Tasks/Pipeline cards pass their scope so the destination
+  // opens on the SAME scope — the count you clicked lands on exactly that view.
+  const [tasksIntent,setTasksIntent]=useState(null);
+  const [pipelineIntent,setPipelineIntent]=useState(null);
   // SHELVED — voice capture works but unproven adoption assumption, revisit
   // later. Code intact, re-enable by uncommenting.
   // const [showVoiceMemo,setShowVoiceMemo]=useState(false);
@@ -109,6 +113,8 @@ function AppShell() {
     setDonorsIntent(opts?.view||opts?.logDonorId||opts?.stageFilter||opts?.selectDonorId?{view:opts.view,logDonorId:opts.logDonorId,stageFilter:opts.stageFilter,selectDonorId:opts.selectDonorId}:null);
     setGrantsIntent(opts?.grantId?{grantId:opts.grantId}:null);
     setSettingsIntent(opts?.section?{section:opts.section}:null);
+    setTasksIntent(opts?.scope&&t==="tasks"?{scope:opts.scope}:null);
+    setPipelineIntent(opts?.scope&&t==="pipeline"?{scope:opts.scope}:null);
     if(opts&&Object.keys(opts).some(k=>opts[k]!=null))setNavNonce(n=>n+1);
     setTab(t);
   };
@@ -379,13 +385,13 @@ function AppShell() {
       {tab==="grants"&&<Grants key={navNonce} data={data} setData={setData} isReadOnly={isReadOnly} initialGrantId={grantsIntent?.grantId} onIntentConsumed={()=>setGrantsIntent(null)}/>}
       {tab==="communications"&&<Communications key={navNonce} data={data} isReadOnly={isReadOnly} initialNav={commsInitialNav} highlightDraftId={commsHighlightDraftId} onInitialNavConsumed={()=>{setCommsInitialNav(null);setCommsHighlightDraftId(null);}} onNavigate={navigateTo}/>}
       {tab==="reports"&&<Reports onNavigate={navigateTo}/>}
-      {tab==="pipeline"&&<Pipeline key={navNonce} isReadOnly={isReadOnly} onNavigate={navigateTo}/>}
+      {tab==="pipeline"&&<Pipeline key={navNonce} isReadOnly={isReadOnly} onNavigate={navigateTo} initialScope={pipelineIntent?.scope}/>}
       {tab==="fundraising"&&<Fundraising data={data} isReadOnly={isReadOnly} onNavigate={navigateTo}/>}
       {tab==="events"&&<Events data={data} isReadOnly={isReadOnly}/>}
       {tab==="volunteers"&&<Volunteers data={data} setData={setData} isReadOnly={isReadOnly}/>}
       {tab==="board"&&<Board data={data} setData={setData} isReadOnly={isReadOnly}/>}
       {tab==="finance"&&<Finance data={data} isReadOnly={isReadOnly} onNavigate={navigateTo}/>}
-      {tab==="tasks"&&<Tasks data={data} setData={setData} isReadOnly={isReadOnly} onNavigate={navigateTo}/>}
+      {tab==="tasks"&&<Tasks key={navNonce} data={data} setData={setData} isReadOnly={isReadOnly} onNavigate={navigateTo} initialScope={tasksIntent?.scope}/>}
       {tab==="workflows"&&<Workflows isReadOnly={isReadOnly} onNavigate={navigateTo}/>}
       {tab==="settings"&&<Settings key={navNonce} auth={auth} logout={logout} initialSection={settingsIntent?.section}/>}
     </ErrorBoundary>

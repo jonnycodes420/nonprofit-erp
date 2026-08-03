@@ -337,14 +337,22 @@ async function initSchema() {
   await pool.query(`ALTER TABLE donors ADD COLUMN IF NOT EXISTS assigned_to_name TEXT DEFAULT NULL`);
   // NOTE: an old boot-time backfill here auto-assigned EVERY unassigned donor to
   // the org's first admin. Removed (pipeline-is-a-portfolio FIX): assignment is a
-  // deliberate act now, and auto-assigning the whole base is exactly what dumped
-  // 1,490 imported donors onto the working board. `in_pipeline` below is the real
-  // board-membership marker; a donor being assigned no longer implies "worked".
+  // deliberate act, and auto-assigning the whole base is exactly what dumped
+  // 1,490 imported donors onto the working board.
+  //
+  // BUILD-30 — `in_pipeline` is RETIRED (dormant column). It was a SECOND board-
+  // membership state that drifted from `assigned_to` (Home counted assignment,
+  // the board counted in_pipeline → "Portfolio: 16" over an empty board). The ONE
+  // definition is now ASSIGNMENT: a donor assigned to an officer IS in that
+  // officer's portfolio AND on their pipeline board (server `portfolioMembership`
+  // helper). Nothing reads or writes in_pipeline anymore. The physical column is
+  // kept (not dropped) to avoid a destructive live-prod migration — it just holds
+  // frozen historical values nobody reads. Do NOT reintroduce a separate flag.
   await pool.query(`ALTER TABLE donors ADD COLUMN IF NOT EXISTS in_pipeline BOOLEAN DEFAULT false`);
-  // The Pipeline board reads only in_pipeline donors, org-scoped, often by owner.
-  // NOTE: the supporting partial index references donors.deleted_at, which is
-  // added further down (see "ADD COLUMN IF NOT EXISTS deleted_at"); the index is
-  // created there, after that column exists, so a FRESH schema init doesn't fail.
+  // The Pipeline board reads assigned donors, org-scoped, often by owner — see the
+  // supporting index below. NOTE: it references donors.deleted_at, added further
+  // down (see "ADD COLUMN IF NOT EXISTS deleted_at"); the index is created there,
+  // after that column exists, so a FRESH schema init doesn't fail.
 
   await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS stripe_account_id TEXT`);
   await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS stripe_connected BOOLEAN DEFAULT FALSE`);
@@ -554,9 +562,12 @@ async function initSchema() {
   await pool.query(`ALTER TABLE interactions ADD COLUMN IF NOT EXISTS metadata JSONB`);
   await pool.query(`ALTER TABLE custom_fields ADD COLUMN IF NOT EXISTS show_in_directory BOOLEAN DEFAULT false`);
   await pool.query(`ALTER TABLE donors ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ`);
-  // Pipeline board membership index (see in_pipeline above) — created here because
-  // its WHERE clause references deleted_at, which only exists as of this line.
-  await pool.query(`CREATE INDEX IF NOT EXISTS idx_donors_pipeline ON donors(org_id, assigned_to) WHERE in_pipeline = true AND deleted_at IS NULL`);
+  // Pipeline board / portfolio membership index (BUILD-30: membership = ASSIGNMENT).
+  // Created here because its WHERE clause references deleted_at, which only exists
+  // as of this line. Covers the board query (assigned donors, org-scoped, by owner)
+  // and Home's Portfolio/Pipeline card counts, which now share one definition.
+  await pool.query(`DROP INDEX IF EXISTS idx_donors_pipeline`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_donors_pipeline ON donors(org_id, assigned_to) WHERE assigned_to IS NOT NULL AND deleted_at IS NULL`);
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS password_reset_tokens (

@@ -983,6 +983,41 @@ const ALL_PIPELINE_STAGES = [...PIPELINE_STAGES, "lapsed"];
 // for their open asks. Solicit is near the ask; prospect is far off.
 const STAGE_WEIGHT = { prospect: 0.1, qualify: 0.2, cultivate: 0.4, solicit: 0.7, steward: 0.9, lapsed: 0.05 };
 
+// ── assignment = portfolio = pipeline membership (BUILD-30, the ONE definition) ─
+// A donor assigned to an officer IS in that officer's portfolio, and a donor in
+// a portfolio IS on that officer's pipeline board. Assignment is the single
+// membership state — there is NO separate "on the board" flag (the old
+// `in_pipeline` column is retired/dormant; nothing reads or writes it). Every
+// count, label, and board render for portfolio/pipeline derives from this one
+// helper, so Home's Portfolio card, Home's Pipeline card, the Pipeline board,
+// and the Donors "My Pipeline"/Team views can never disagree again.
+//
+// Returns a SQL WHERE fragment (using the given table alias) + params selecting
+// an officer's portfolio, org-scoped. Unassigned donors match NOTHING here —
+// they live in the Directory only and never appear on any board (preserving the
+// "the board is not the whole donor list" guarantee). scope:
+//   'mine'      → the caller's own assigned donors (assigned_to = userId)
+//   'all'       → every assigned donor in the org (assigned_to IS NOT NULL)
+//   assignedTo  → one specific officer's portfolio (overrides scope)
+function portfolioMembership({ orgId, userId, scope = "mine", assignedTo = null, alias = "d" }) {
+  const a = alias ? alias + "." : "";
+  // stage ∈ the 6 canonical pipeline stages — every real donor has one (validation
+  // only permits these), so for real data "assigned" ⟺ "member". The clause is a
+  // belt-and-braces guard so a donor in some non-pipeline stage can never make the
+  // Portfolio card, the Pipeline card, and the board disagree — all three exclude
+  // it identically. It also keeps the board's per-stage columns exhaustive.
+  const clauses = [`${a}org_id = ?`, `${a}deleted_at IS NULL`, `${a}stage = ANY(?)`];
+  const params = [orgId, ALL_PIPELINE_STAGES];
+  if (assignedTo) {
+    clauses.push(`${a}assigned_to = ?`); params.push(String(assignedTo));
+  } else if (scope === "all") {
+    clauses.push(`${a}assigned_to IS NOT NULL`);
+  } else {
+    clauses.push(`${a}assigned_to = ?`); params.push(String(userId));
+  }
+  return { where: clauses.join(" AND "), params };
+}
+
 // Insert one move row (system of record for the pipeline). Description is
 // required and validated at the route; this just writes.
 async function recordMove(orgId, donorId, officerId, officerName, fromStage, toStage, description) {
@@ -2072,13 +2107,14 @@ app.post("/auth/invite/accept", wrap(async (req, res) => {
 
   // Resolve any donors an import routed to this (previously pending) officer —
   // their portfolio is populated the moment they log in (the magic moment for a
-  // new gift officer). assigned_to fills in, they join the board (in_pipeline),
-  // and the pending pointer clears. Matched by EMAIL across every invite for this
-  // address in the org (org-scoped) — so donors held against an earlier invite
-  // that expired and was re-sent are still claimed, nothing orphans.
+  // new gift officer). assigned_to fills in → they're in this officer's portfolio
+  // AND on their pipeline board (assignment IS membership, BUILD-30), and the
+  // pending pointer clears. Matched by EMAIL across every invite for this address
+  // in the org (org-scoped) — so donors held against an earlier invite that
+  // expired and was re-sent are still claimed, nothing orphans.
   const claimed = await run(
     `UPDATE donors
-        SET assigned_to = ?, assigned_to_name = ?, in_pipeline = TRUE,
+        SET assigned_to = ?, assigned_to_name = ?,
             pending_assignee_invite_id = NULL, pending_assignee_name = NULL
       WHERE org_id = ?
         AND pending_assignee_invite_id IN (
@@ -2532,13 +2568,13 @@ app.post("/donors/import", requireAuth, wrap(async (req, res) => {
         d.notes || "",
         d.city  || null,
         d.state || null,
-        a.id,               // assigned_to — a mapped owner column → real user (Team), else null
-        a.name,             // assigned_to_name
-        !!a.id,             // in_pipeline — a REALLY-assigned donor joins the officer's board
+        a.id,               // assigned_to — a mapped owner column → real user (Team), else null.
+        a.name,             // assigned_to_name. Assignment IS board membership (BUILD-30) —
+                            // an assigned donor is in the officer's portfolio AND on their board.
         a.pendingInviteId,  // pending_assignee_invite_id — held for an invited-but-not-accepted officer
         a.pendingName       // pending_assignee_name — display label until they accept
       );
-      return "(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)";
+      return "(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)";
     });
 
     try {
@@ -2546,7 +2582,7 @@ app.post("/donors/import", requireAuth, wrap(async (req, res) => {
         await runTx(client,
           `INSERT INTO donors
              (id,org_id,name,email,phone,status,stage,total_giving,last_gift_amount,
-              last_gift_date,gift_count,tags,notes,city,state,assigned_to,assigned_to_name,in_pipeline,
+              last_gift_date,gift_count,tags,notes,city,state,assigned_to,assigned_to_name,
               pending_assignee_invite_id,pending_assignee_name)
            VALUES ${tuples.join(",")}`,
           params
@@ -2662,17 +2698,18 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrap(async (r
         d.lastGift||null, parseInt(d.gifts)||(d.total?1:0),
         JSON.stringify(Array.isArray(d.tags)?d.tags:[]),
         d.notes||"", d.city||null, d.state||null,
-        a.id, a.name, !!a.id,   // assigned_to / assigned_to_name / in_pipeline (Team owner-column routing)
+        a.id, a.name,   // assigned_to / assigned_to_name — Team owner-column routing.
+        // Assignment IS board membership (BUILD-30): no separate in_pipeline flag.
         a.pendingInviteId, a.pendingName   // pending assignment held for an invited-but-not-accepted officer
       );
-      return "(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)";
+      return "(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)";
     });
     try {
       await withTransaction(async (client) => {
         await runTx(client,
           `INSERT INTO donors
              (id,org_id,name,email,phone,status,stage,total_giving,last_gift_amount,
-              last_gift_date,gift_count,tags,notes,city,state,assigned_to,assigned_to_name,in_pipeline,
+              last_gift_date,gift_count,tags,notes,city,state,assigned_to,assigned_to_name,
               pending_assignee_invite_id,pending_assignee_name)
            VALUES ${tuples.join(",")}`,
           params
@@ -2910,11 +2947,12 @@ app.delete("/donors/:id", requireAuth, requireAdmin, wrap(async (req, res) => {
 
 app.patch("/donors/:id/assign", requireAuth, requireAdmin, requirePlan("team"), wrap(async (req, res) => {
   const { assignedTo, assignedToName } = req.body;
-  // Assigning an officer is a deliberate act → the donor joins the working
-  // board (in_pipeline). Unassigning (assignedTo null) leaves membership as-is.
+  // Assignment IS pipeline membership (BUILD-30): assigning an officer puts the
+  // donor in that officer's portfolio AND on their board immediately; unassigning
+  // (assignedTo null) removes them from the board and back to the Directory only.
   const affected = await run(
-    `UPDATE donors SET assigned_to=?, assigned_to_name=?, in_pipeline = (in_pipeline OR ?), updated_at=NOW() WHERE id=? AND org_id=?`,
-    [assignedTo || null, assignedToName || null, !!assignedTo, req.params.id, req.user.orgId]
+    `UPDATE donors SET assigned_to=?, assigned_to_name=?, updated_at=NOW() WHERE id=? AND org_id=?`,
+    [assignedTo || null, assignedToName || null, req.params.id, req.user.orgId]
   );
   if (!affected.changes) return res.status(404).json({ error: "Donor not found" });
   res.json({ success: true });
@@ -2959,9 +2997,10 @@ app.patch("/donors/bulk-assign", requireAuth, requireAdmin, requirePlan("team"),
   );
   if (owned.length !== ids.length) return res.status(403).json({ error: "One or more donors not found in your org" });
 
-  // Bulk-assigning to an officer puts the batch on the working board too.
+  // Bulk-assigning to an officer puts the batch in that officer's portfolio AND
+  // on their board — assignment IS membership (BUILD-30), no separate flag.
   const result = await run(
-    "UPDATE donors SET assigned_to=?, assigned_to_name=?, in_pipeline=TRUE, updated_at=NOW() WHERE id = ANY(?) AND org_id = ? AND deleted_at IS NULL",
+    "UPDATE donors SET assigned_to=?, assigned_to_name=?, updated_at=NOW() WHERE id = ANY(?) AND org_id = ? AND deleted_at IS NULL",
     [assignedTo, assignedToName, ids, req.user.orgId]
   );
   res.json({ updated: result.changes });
@@ -4412,12 +4451,15 @@ app.delete("/donors/:id/designations/:kind", requireAuth, wrap(async (req, res) 
 app.get("/portfolio/officers", requireAuth, wrap(async (req, res) => {
   const orgRows = await query("SELECT plan, subscription_status FROM orgs WHERE id=?", [req.user.orgId]);
   const tier = orgRows.length ? orgPlanTier(orgRows[0]) : "core";
+  // portfolio_count/giving use the SAME definition as Home's cards + the board
+  // (BUILD-30): assigned donors in a pipeline stage. The stage guard lives in the
+  // JOIN so a non-pipeline-stage donor can't inflate the legend past the board.
   const officers = await query(
     `SELECT u.id, u.name, u.email, u.role, u.portfolio_color,
             COUNT(d.id)::int AS portfolio_count, COALESCE(SUM(d.total_giving),0) AS portfolio_giving
      FROM users u
-     LEFT JOIN donors d ON d.assigned_to = u.id AND d.org_id = u.org_id AND d.deleted_at IS NULL
-     WHERE u.org_id=? GROUP BY u.id ORDER BY portfolio_giving DESC, u.name`, [req.user.orgId]);
+     LEFT JOIN donors d ON d.assigned_to = u.id AND d.org_id = u.org_id AND d.deleted_at IS NULL AND d.stage = ANY(?)
+     WHERE u.org_id=? GROUP BY u.id ORDER BY portfolio_giving DESC, u.name`, [ALL_PIPELINE_STAGES, req.user.orgId]);
   // Pending invitees (invited, not yet accepted, unexpired) are surfaced too so
   // the import officer-mapping screen can match + assign donors to them BEFORE
   // they accept (the assignment resolves into their portfolio on acceptance).
@@ -4476,20 +4518,17 @@ app.get("/pipeline", requireAuth, wrap(async (req, res) => {
   const single_user = officers.length <= 1;
 
   // ── The board is a PORTFOLIO, not the donor list ─────────────────────────
-  // Membership is the explicit `in_pipeline` marker — set only by a deliberate
-  // act (assign an officer, or "add to pipeline"). Import + the (removed) legacy
-  // backfill never set it, so bulk-imported donors live in the Directory with
-  // their stage LABEL and never flood this board. `scope` defaults to the
-  // caller's own portfolio; a specific `assignedTo` overrides scope.
+  // Membership = ASSIGNMENT (BUILD-30): a donor assigned to an officer is on
+  // that officer's board, full stop. There is no separate "on the board" flag.
+  // Unassigned (e.g. bulk-imported) donors match nothing here — they live in
+  // the Directory with their stage LABEL and never flood this board. `scope`
+  // defaults to the caller's own portfolio; a specific `assignedTo` overrides.
+  // The exact same `portfolioMembership` helper feeds Home's Portfolio and
+  // Pipeline cards, so all three counts are one number by construction.
   const scope = req.query.scope === "all" ? "all" : "mine";
-  const filters = ["d.org_id = ?", "d.deleted_at IS NULL", "d.in_pipeline = TRUE"];
-  const params = [orgId];
-  if (req.query.assignedTo) {
-    filters.push("d.assigned_to = ?"); params.push(req.query.assignedTo);
-  } else if (scope === "mine") {
-    // My working set: donors I own, plus on-board prospects nobody owns yet.
-    filters.push("(d.assigned_to = ? OR d.assigned_to IS NULL)"); params.push(userId);
-  }
+  const membership = portfolioMembership({ orgId, userId, scope, assignedTo: req.query.assignedTo || null, alias: "d" });
+  const filters = [membership.where];
+  const params = [...membership.params];
   if (req.query.designation) {
     filters.push("EXISTS (SELECT 1 FROM donor_designations dd WHERE dd.donor_id = d.id AND dd.org_id = d.org_id AND dd.kind = ?)");
     params.push(req.query.designation);
@@ -4577,10 +4616,11 @@ app.get("/pipeline", requireAuth, wrap(async (req, res) => {
 }));
 
 // POST /pipeline/add — the deliberate act that puts prospects on the working
-// board (single or bulk via `ids`). This is how a donor enters the pipeline:
-// sets in_pipeline=true and, for donors nobody owns yet, assigns them to the
-// caller (so they land on the caller's own "my portfolio" board). Cross-officer
-// assignment stays the admin `/donors/bulk-assign` route. Team + write-gated.
+// board (single or bulk via `ids`). Assignment IS membership (BUILD-30), so
+// "add to my pipeline" = assign to the caller (donors nobody owns yet land on
+// the caller's own board; already-owned donors stay with their owner). No
+// separate flag. Cross-officer assignment stays the admin `/donors/bulk-assign`.
+// Team + write-gated.
 app.post("/pipeline/add", requireAuth, requirePlan("team"), checkWriteAccess, wrap(async (req, res) => {
   const ids = Array.isArray(req.body.ids) ? req.body.ids.filter(Boolean) : [];
   if (!ids.length) return res.status(400).json({ error: "ids array required" });
@@ -4591,8 +4631,7 @@ app.post("/pipeline/add", requireAuth, requirePlan("team"), checkWriteAccess, wr
   const myName = userRow[0]?.name || "";
   const result = await run(
     `UPDATE donors
-        SET in_pipeline = TRUE,
-            assigned_to      = COALESCE(assigned_to, ?),
+        SET assigned_to      = COALESCE(assigned_to, ?),
             assigned_to_name = COALESCE(assigned_to_name, ?),
             updated_at = NOW()
       WHERE id = ANY(?) AND org_id = ? AND deleted_at IS NULL`,
@@ -4601,8 +4640,9 @@ app.post("/pipeline/add", requireAuth, requirePlan("team"), checkWriteAccess, wr
 }));
 
 // POST /pipeline/remove — take a donor OFF the working board (single or bulk).
-// Clears in_pipeline and the owner; the donor stays in the Directory with its
-// stage label untouched. Team + write-gated (a curation write, not a delete).
+// Assignment IS membership (BUILD-30), so removing from the board = unassigning;
+// the donor stays in the Directory with its stage label untouched. Team +
+// write-gated (a curation write, not a delete).
 app.post("/pipeline/remove", requireAuth, requirePlan("team"), checkWriteAccess, wrap(async (req, res) => {
   const ids = Array.isArray(req.body.ids) ? req.body.ids.filter(Boolean) : [];
   if (!ids.length) return res.status(400).json({ error: "ids array required" });
@@ -4610,7 +4650,7 @@ app.post("/pipeline/remove", requireAuth, requirePlan("team"), checkWriteAccess,
     "SELECT id FROM donors WHERE id = ANY(?) AND org_id = ? AND deleted_at IS NULL", [ids, req.user.orgId]);
   if (owned.length !== ids.length) return res.status(404).json({ error: "One or more donors not found in your org" });
   const result = await run(
-    `UPDATE donors SET in_pipeline = FALSE, assigned_to = NULL, assigned_to_name = NULL, updated_at = NOW()
+    `UPDATE donors SET assigned_to = NULL, assigned_to_name = NULL, updated_at = NOW()
       WHERE id = ANY(?) AND org_id = ? AND deleted_at IS NULL`,
     [ids, req.user.orgId]);
   res.json({ removed: result.changes });
@@ -5105,13 +5145,18 @@ app.get("/volunteers/donor-prospects", requireAuth, wrap(async (req, res) => {
 // be org-verified (orgOwns) — a foreign id would otherwise leak a donor
 // name/link across tenants (the §1 resurfacing threat model note).
 app.get("/tasks", requireAuth, wrap(async (req, res) => {
+  // scope=mine → only the caller's own tasks (assigned_to = me), matching Home's
+  // Tasks command-card count exactly so "Tasks: N" always lands on N (BUILD-30
+  // class audit: every stat card lands on a view showing its number). Default
+  // (no scope / scope=all) is the whole org, unchanged.
+  const mine = req.query.scope === "mine";
   const tasks = await query(
     `SELECT t.*, d.name AS donor_name
        FROM tasks t
        LEFT JOIN donors d ON d.id = t.donor_id AND d.org_id = t.org_id
-      WHERE t.org_id = ?
+      WHERE t.org_id = ? ${mine ? "AND t.assigned_to = ?" : ""}
       ORDER BY CASE t.priority WHEN 'high' THEN 0 WHEN 'medium' THEN 1 ELSE 2 END, t.due ASC`,
-    [req.user.orgId]
+    mine ? [req.user.orgId, req.user.userId] : [req.user.orgId]
   );
   res.json(tasks);
 }));
@@ -5371,8 +5416,10 @@ app.get("/dashboard/home", requireAuth, wrap(async (req, res) => {
   // value + the officer's color. Null on Core (the header is hidden).
   let portfolio = null;
   if (tier === "team") {
+    // The officer's own portfolio (always "mine"), via the ONE membership helper.
+    const m = portfolioMembership({ orgId, userId, scope: "mine", alias: "" });
     const [pRows, cRows] = await Promise.all([
-      query("SELECT COUNT(*) AS cnt, COALESCE(SUM(total_giving),0) AS val FROM donors WHERE org_id=? AND assigned_to=? AND deleted_at IS NULL", [orgId, userId]),
+      query(`SELECT COUNT(*) AS cnt, COALESCE(SUM(total_giving),0) AS val FROM donors WHERE ${m.where}`, m.params),
       query("SELECT portfolio_color FROM users WHERE id=? AND org_id=?", [userId, orgId]),
     ]);
     portfolio = {
@@ -5382,32 +5429,36 @@ app.get("/dashboard/home", requireAuth, wrap(async (req, res) => {
     };
   }
 
-  // Pipeline [Team] — compact stage summary: count + value per stage, plus the
-  // open-ask forecast. Scoped to the user (mine) or org (all). Null on Core.
+  // Pipeline [Team] — SAME membership as the board + Portfolio card (the ONE
+  // definition via portfolioMembership), broken out per stage for the compact
+  // summary. total/value are computed over the whole portfolio so they equal the
+  // Portfolio card and the board exactly; the per-stage rows are the display
+  // breakdown. The open-ask forecast is scoped to the SAME portfolio donors the
+  // board sums, so Home's forecast and the board's asks agree. Null on Core.
   let pipeline = null;
   if (tier === "team") {
-    const stageScope = scope === "mine" ? "AND assigned_to=?" : "";
-    const stageParams = scope === "mine" ? [orgId, ALL_PIPELINE_STAGES, userId] : [orgId, ALL_PIPELINE_STAGES];
-    const stageRows = await query(
-      `SELECT stage, COUNT(*) AS cnt, COALESCE(SUM(total_giving),0) AS val
-         FROM donors WHERE org_id=? AND deleted_at IS NULL AND stage = ANY(?) ${stageScope}
-        GROUP BY stage`, stageParams);
+    const m = portfolioMembership({ orgId, userId, scope, alias: "" });
+    const [totRows, stageRows] = await Promise.all([
+      query(`SELECT COUNT(*) AS cnt, COALESCE(SUM(total_giving),0) AS val FROM donors WHERE ${m.where}`, m.params),
+      query(`SELECT stage, COUNT(*) AS cnt, COALESCE(SUM(total_giving),0) AS val
+               FROM donors WHERE ${m.where} GROUP BY stage`, m.params),
+    ]);
     const byStage = Object.fromEntries(stageRows.map(r => [r.stage, r]));
     const stages = ALL_PIPELINE_STAGES.map(s => ({
       stage: s,
       count: parseInt(byStage[s]?.cnt, 10) || 0,
       value: parseFloat(byStage[s]?.val) || 0,
     }));
-    const oppScope = scope === "mine"
-      ? "AND donor_id IN (SELECT id FROM donors WHERE org_id=? AND assigned_to=?)"
-      : "";
-    const oppParams = scope === "mine" ? [orgId, orgId, userId] : [orgId];
+    // Open asks belonging to THIS portfolio's donors only (matches the board).
+    const owner = scope === "mine" ? "assigned_to = ?" : "assigned_to IS NOT NULL";
+    const oppParams = scope === "mine" ? [orgId, orgId, userId] : [orgId, orgId];
     const oppRows = await query(
       `SELECT COALESCE(SUM(target_amount),0) AS ask, COUNT(*) AS cnt
-         FROM opportunities WHERE org_id=? AND status='open' ${oppScope}`, oppParams);
+         FROM opportunities WHERE org_id=? AND status='open'
+           AND donor_id IN (SELECT id FROM donors WHERE org_id=? AND deleted_at IS NULL AND ${owner})`, oppParams);
     pipeline = {
-      total: stages.reduce((s, x) => s + x.count, 0),
-      value: stages.reduce((s, x) => s + x.value, 0),
+      total: parseInt(totRows[0]?.cnt, 10) || 0,
+      value: parseFloat(totRows[0]?.val) || 0,
       stages,
       forecastOpen: Math.round(parseFloat(oppRows[0]?.ask) || 0),
       openOppCount: parseInt(oppRows[0]?.cnt, 10) || 0,

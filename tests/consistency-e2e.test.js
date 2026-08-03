@@ -115,9 +115,19 @@ const giftIntsFor = donor => q(`SELECT id FROM interactions WHERE donor_id=$1 AN
     ok(`${label}: Reports FY total == expected`, close(repTotal, expected), { repTotal });
     ok(`${label}: Fundraising raised == expected`, close(frRaised, expected), { frRaised });
     ok(`${label}: all surfaces AGREE (cash==reports==fundraising)`, close(cash, repTotal) && close(repTotal, frRaised), { cash, repTotal, frRaised });
-    // pipeline value == Σ(donor lifetime) — same donors regrouped by stage.
-    const orgGiving = (await q(`SELECT COALESCE(SUM(total_giving),0) s FROM donors WHERE org_id=$1 AND deleted_at IS NULL`, [A]))[0].s;
-    ok(`${label}: Home pipeline value == Σ(donor lifetime)`, close(pipeVal, orgGiving), { pipeVal, orgGiving });
+    // BUILD-30: pipeline = portfolio = the board = ASSIGNED donors only (the
+    // board is NOT the whole donor list). An online gift can create a NEW,
+    // UNASSIGNED donor (Directory-only), so the Home pipeline value sums the
+    // PORTFOLIO (assigned donors in a pipeline stage), not every donor — and it
+    // must equal the board's own value exactly (one shared definition).
+    const STAGES = ["prospect", "qualify", "cultivate", "solicit", "steward", "lapsed"];
+    const portfolioGiving = (await q(
+      `SELECT COALESCE(SUM(total_giving),0) s FROM donors WHERE org_id=$1 AND deleted_at IS NULL AND assigned_to IS NOT NULL AND stage = ANY($2)`,
+      [A, STAGES]))[0].s;
+    ok(`${label}: Home pipeline value == Σ(assigned/portfolio lifetime)`, close(pipeVal, portfolioGiving), { pipeVal, portfolioGiving });
+    const board = await api("GET", "/pipeline?scope=all", tA);
+    const boardVal = Object.values(board.body?.columns || {}).flat().reduce((s, c) => s + num(c.totalGiving), 0);
+    ok(`${label}: Home pipeline value == the board's value (one definition)`, close(pipeVal, boardVal), { pipeVal, boardVal });
   }
 
   // ════ 1a. Entry point: donor-profile gift ════

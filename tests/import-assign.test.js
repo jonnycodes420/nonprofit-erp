@@ -5,7 +5,7 @@
 //      applyOwnerAssignment.
 //   2. SERVER contract (local scratch server + Postgres): a Team import that
 //      carries per-donor assignedTo routes each donor to the right officer's
-//      portfolio (assigned_to + in_pipeline=true); unknown/foreign ids never
+//      portfolio (assigned_to = board membership, BUILD-30); unknown/foreign ids never
 //      mis-assign; a CORE import ignores assignment (lands unassigned); plan
 //      gating; plus team-invite coverage (create/seat-limit/accept).
 //
@@ -145,21 +145,21 @@ async function seedUser(o, id, email, name, role = "staff") {
   ok("team import-combined → 200", teamImp.status === 200, teamImp.body);
   ok("team import created 5 donors", teamImp.body.created === 5, teamImp.body);
 
-  const jane = (await q("SELECT assigned_to, assigned_to_name, in_pipeline FROM donors WHERE org_id=$1 AND email='jane@d.org'", [TEAM]))[0];
-  ok("Jane → assigned to Sarah + on board", jane.assigned_to === "ia_sarah" && jane.assigned_to_name === "Sarah Lee" && jane.in_pipeline === true, jane);
-  const bob = (await q("SELECT assigned_to, in_pipeline FROM donors WHERE org_id=$1 AND email='bob@d.org'", [TEAM]))[0];
-  ok("Bob → assigned to Marcus + on board", bob.assigned_to === "ia_marcus" && bob.in_pipeline === true, bob);
-  const amy = (await q("SELECT assigned_to, in_pipeline FROM donors WHERE org_id=$1 AND email='amy@d.org'", [TEAM]))[0];
-  ok("Amy → unassigned, not on board", amy.assigned_to === null && amy.in_pipeline === false, amy);
-  const ed = (await q("SELECT assigned_to, in_pipeline FROM donors WHERE org_id=$1 AND email='ed@d.org'", [TEAM]))[0];
-  ok("Ed (unknown officer id) → unassigned, not on board (never mis-assign)", ed.assigned_to === null && ed.in_pipeline === false, ed);
-  const ivy = (await q("SELECT assigned_to, in_pipeline FROM donors WHERE org_id=$1 AND email='ivy@d.org'", [TEAM]))[0];
-  ok("Ivy (foreign-org officer id) → unassigned (org-scoped, never cross-org)", ivy.assigned_to === null && ivy.in_pipeline === false, ivy);
+  const jane = (await q("SELECT assigned_to, assigned_to_name FROM donors WHERE org_id=$1 AND email='jane@d.org'", [TEAM]))[0];
+  ok("Jane → assigned to Sarah (assignment = on the board)", jane.assigned_to === "ia_sarah" && jane.assigned_to_name === "Sarah Lee", jane);
+  const bob = (await q("SELECT assigned_to FROM donors WHERE org_id=$1 AND email='bob@d.org'", [TEAM]))[0];
+  ok("Bob → assigned to Marcus (assignment = on the board)", bob.assigned_to === "ia_marcus", bob);
+  const amy = (await q("SELECT assigned_to FROM donors WHERE org_id=$1 AND email='amy@d.org'", [TEAM]))[0];
+  ok("Amy → unassigned, not on board", amy.assigned_to === null, amy);
+  const ed = (await q("SELECT assigned_to FROM donors WHERE org_id=$1 AND email='ed@d.org'", [TEAM]))[0];
+  ok("Ed (unknown officer id) → unassigned, not on board (never mis-assign)", ed.assigned_to === null, ed);
+  const ivy = (await q("SELECT assigned_to FROM donors WHERE org_id=$1 AND email='ivy@d.org'", [TEAM]))[0];
+  ok("Ivy (foreign-org officer id) → unassigned (org-scoped, never cross-org)", ivy.assigned_to === null, ivy);
 
   // Assigned donors populate the officer's portfolio (GET /donors?assignedTo=)
   const sarahPortfolio = (await api("GET", "/donors?assignedTo=ia_sarah", teamAdmin)).body;
   ok("Sarah's portfolio = her 1 assigned donor", sarahPortfolio.length === 1 && sarahPortfolio[0].email === "jane@d.org", sarahPortfolio.map(d => d.email));
-  // …and the pipeline board (in_pipeline members only)
+  // …and the pipeline board (assigned donors = board members, BUILD-30)
   const board = (await api("GET", "/pipeline?scope=all", teamAdmin)).body;
   const boardNames = Object.values(board.columns || {}).flat().map(c => c.name).sort();
   ok("board holds exactly the 2 assigned donors", board.tier === "team" && boardNames.join() === ["Bob Donor", "Jane Prospect"].join(), boardNames);
@@ -170,16 +170,16 @@ async function seedUser(o, id, email, name, role = "staff") {
     gifts: [],
   });
   ok("core import-combined → 200", coreImp.status === 200, coreImp.body);
-  const cy = (await q("SELECT assigned_to, in_pipeline FROM donors WHERE org_id=$1 AND email='cy@core.org'", [CORE]))[0];
-  ok("Core import → donor unassigned + not on board (assignment is Team-only)", cy.assigned_to === null && cy.in_pipeline === false, cy);
+  const cy = (await q("SELECT assigned_to FROM donors WHERE org_id=$1 AND email='cy@core.org'", [CORE]))[0];
+  ok("Core import → donor unassigned + not on board (assignment is Team-only)", cy.assigned_to === null, cy);
 
   // ── /donors/import (aggregate, no history) honors assignment on Team too ──
   const aggImp = await api("POST", "/donors/import", teamAdmin, {
     donors: [{ name: "Agg Donor", email: "agg@d.org", total: 700, assignedTo: "ia_marcus", assignedToName: "Marcus Chen" }],
   });
   ok("team /donors/import → 200", aggImp.status === 200, aggImp.body);
-  const agg = (await q("SELECT assigned_to, in_pipeline FROM donors WHERE org_id=$1 AND email='agg@d.org'", [TEAM]))[0];
-  ok("aggregate import → assigned + on board", agg.assigned_to === "ia_marcus" && agg.in_pipeline === true, agg);
+  const agg = (await q("SELECT assigned_to FROM donors WHERE org_id=$1 AND email='agg@d.org'", [TEAM]))[0];
+  ok("aggregate import → assigned (assignment = on the board)", agg.assigned_to === "ia_marcus", agg);
 
   // ── Org isolation: the other team's import can't touch TEAM's donors/users ──
   const otherImp = await api("POST", "/donors/import-combined", otherAdmin, {
@@ -254,9 +254,9 @@ async function seedUser(o, id, email, name, role = "staff") {
   });
   ok("pending-assignment import → 200 / 4 created", pendImp.status === 200 && pendImp.body.created === 4, pendImp.body);
 
-  const alice = (await q("SELECT assigned_to, in_pipeline, pending_assignee_invite_id, pending_assignee_name FROM donors WHERE org_id=$1 AND email='alice@d.org'", [TEAM]))[0];
+  const alice = (await q("SELECT assigned_to, pending_assignee_invite_id, pending_assignee_name FROM donors WHERE org_id=$1 AND email='alice@d.org'", [TEAM]))[0];
   ok("Alice → held PENDING for Jonathan (assigned_to null, NOT on board, pending set)",
-    alice.assigned_to === null && alice.in_pipeline === false && alice.pending_assignee_invite_id === invJ.body.id && alice.pending_assignee_name === "Jonathan", alice);
+    alice.assigned_to === null && alice.pending_assignee_invite_id === invJ.body.id && alice.pending_assignee_name === "Jonathan", alice);
   const ghost = (await q("SELECT assigned_to, pending_assignee_invite_id FROM donors WHERE org_id=$1 AND email='ghost@d.org'", [TEAM]))[0];
   ok("unknown invite id → unassigned, no pending (never mis-route)", ghost.assigned_to === null && ghost.pending_assignee_invite_id === null, ghost);
 
@@ -265,9 +265,9 @@ async function seedUser(o, id, email, name, role = "staff") {
   const acc = await api("POST", "/auth/invite/accept", null, { token: jToken, name: "Jonathan Atkinson", password: "password12" });
   ok("Jonathan accepts → 201", acc.status === 201, acc.body);
   const jUser = (await q("SELECT id FROM users WHERE org_id=$1 AND email='jonathan@creo.org'", [TEAM]))[0];
-  const aliceAfter = (await q("SELECT assigned_to, in_pipeline, pending_assignee_invite_id FROM donors WHERE org_id=$1 AND email='alice@d.org'", [TEAM]))[0];
-  ok("on accept → Alice assigned to the new user + on board + pending cleared",
-    aliceAfter.assigned_to === jUser.id && aliceAfter.in_pipeline === true && aliceAfter.pending_assignee_invite_id === null, aliceAfter);
+  const aliceAfter = (await q("SELECT assigned_to, pending_assignee_invite_id FROM donors WHERE org_id=$1 AND email='alice@d.org'", [TEAM]))[0];
+  ok("on accept → Alice assigned to the new user (= on the board) + pending cleared",
+    aliceAfter.assigned_to === jUser.id && aliceAfter.pending_assignee_invite_id === null, aliceAfter);
   const aaronAfter = (await q("SELECT assigned_to FROM donors WHERE org_id=$1 AND email='aaron@d.org'", [TEAM]))[0];
   ok("both of Jonathan's donors resolved (nothing lost)", aaronAfter.assigned_to === jUser.id, aaronAfter);
   const jPortfolio = (await api("GET", "/donors?assignedTo=" + jUser.id, admin2)).body;
@@ -295,9 +295,9 @@ async function seedUser(o, id, email, name, role = "staff") {
   const accB = await api("POST", "/auth/invite/accept", null, { token: bToken, name: "Benjamin Reed", password: "password12" });
   ok("Benjamin accepts the re-invite → 201", accB.status === 201, accB.body);
   const bUser = (await q("SELECT id FROM users WHERE org_id=$1 AND email='benjamin@creo.org'", [TEAM]))[0];
-  const bellaAfter = (await q("SELECT assigned_to, in_pipeline, pending_assignee_invite_id FROM donors WHERE org_id=$1 AND email='bella@d.org'", [TEAM]))[0];
+  const bellaAfter = (await q("SELECT assigned_to, pending_assignee_invite_id FROM donors WHERE org_id=$1 AND email='bella@d.org'", [TEAM]))[0];
   ok("donor pending on the EXPIRED invite is still claimed by email (no orphan)",
-    bellaAfter.assigned_to === bUser.id && bellaAfter.in_pipeline === true && bellaAfter.pending_assignee_invite_id === null, bellaAfter);
+    bellaAfter.assigned_to === bUser.id && bellaAfter.pending_assignee_invite_id === null, bellaAfter);
 
   await closeDb();
   summary();

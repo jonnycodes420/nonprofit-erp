@@ -735,17 +735,17 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
         if(isTeam&&homeData.portfolio){
           const pc=homeData.portfolio;
           cards.push({key:"portfolio",label:"Portfolio",accent:pc.color||T.greenDk,value:pc.count,unit:"donors",
-            sub:`${fmt(pc.value)} lifetime giving`,onClick:()=>onNavigate("pipeline"),aria:"View your portfolio"});
+            sub:`${fmt(pc.value)} lifetime giving`,onClick:()=>onNavigate("pipeline",{scope:"mine"}),aria:"View your portfolio"});
         }
         cards.push({key:"tasks",label:"Tasks",accent:t.overdue>0?T.terracotta:T.gold,value:t.total,unit:t.total===1?"open task":"open tasks",
           sub:(<span>{t.overdue>0&&<b style={{color:T.terracotta}}>{t.overdue} overdue</b>}{t.overdue>0&&(t.today>0||t.upcoming>0)?" · ":""}{t.today>0&&<b style={{color:T.gold600}}>{t.today} today</b>}{t.today>0&&t.upcoming>0?" · ":""}{t.upcoming>0&&<span style={{color:T.greenMid}}>{t.upcoming} upcoming</span>}{t.total===0&&"All clear"}</span>),
-          onClick:()=>onNavigate("tasks"),aria:"View tasks"});
+          onClick:()=>onNavigate("tasks",{scope}),aria:"View tasks"});
         cards.push({key:"needtodo",label:"Need to Do",accent:needCount>0?T.terracotta:T.greenMid,value:needCount,unit:needCount===1?"needs you":"need you",
           sub:needCount>0?"gifts to thank, moves due, receipts & more":"you're all caught up",onClick:scrollToQueue,aria:"Jump to what needs your attention"});
         if(isTeam&&homeData.pipeline){
           const pl=homeData.pipeline;
           cards.push({key:"pipeline",label:"Pipeline",accent:T.greenDk,value:pl.total,unit:pl.total===1?"prospect":"prospects",
-            sub:pl.forecastOpen>0?`${fmt(pl.forecastOpen)} in open asks`:`${fmt(pl.value)} lifetime`,onClick:()=>onNavigate("pipeline"),aria:"View pipeline board"});
+            sub:pl.forecastOpen>0?`${fmt(pl.forecastOpen)} in open asks`:`${fmt(pl.value)} lifetime`,onClick:()=>onNavigate("pipeline",{scope}),aria:"View pipeline board"});
         }
         return(
           <div className="dash-cmd-grid" style={{display:"grid",gridTemplateColumns:`repeat(${cards.length},minmax(0,1fr))`,gap:12}}>
