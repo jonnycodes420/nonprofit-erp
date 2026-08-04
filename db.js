@@ -1325,6 +1325,13 @@ async function initSchema() {
   // never surface color UI at all.
   await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS portfolio_color TEXT`);
 
+  // Per-user Home layout (BUILD-34) — the saved [{id,visible}] section config
+  // behind Home's edit mode (reorder + show/hide, section-level only). JSON
+  // text; NULL = the canonical default order. Per USER, deliberately not
+  // per-org: admins don't control other users' layouts, and the preference
+  // follows the user across devices because it lives here, not localStorage.
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS home_layout TEXT`);
+
   // ── Moves management & prospect pipeline (BUILD-15, Team plan) ────────────
   // The major-gifts spine. Reuses the existing donors.stage field as the
   // managed pipeline (no second stage column is forked). Every stage change

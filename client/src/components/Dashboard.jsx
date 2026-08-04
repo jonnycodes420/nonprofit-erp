@@ -1,9 +1,21 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, Fragment } from "react";
 import { apiFetch } from "../api";
 import { useAuth } from "../main";
 import { T, fmt, fmtFull, daysUntil, daysDiff, askClaude, buildContext, Spin, AIBtn, GoldMoment, interactive } from "./shared";
+import { mergeLayout, sectionMeta, isDefaultLayout } from "../lib/homeLayout";
 import FunnelChart from "./FunnelChart";
 import MetricBreakdownPanel from "./MetricBreakdownPanel";
+
+// BUILD-34 — customizable Home. Sections render from a per-user ordered
+// [{id,visible}] config (client/src/lib/homeLayout.js is the canonical list +
+// merge rule; GET/PUT /me/home-layout is the server-side per-user store).
+// Edit mode is reorder + show/hide of WHOLE sections only — deliberately not a
+// widget grid. The 150ms drag lift is the only motion, off under
+// prefers-reduced-motion.
+const REDUCED_MOTION = typeof window !== "undefined" && window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+// The shared scope toggle renders above the FIRST visible section that reads
+// it, wherever the user put that section.
+const SCOPED_SECTION_IDS = ["commandCenter", "retention", "work"];
 
 // One config-driven panel serves all 5 drillable My Portfolio stats below
 // (Portfolio itself isn't here — it navigates straight to the existing "My
@@ -140,6 +152,80 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
   // Need-to-do/Pipeline), plan-graceful (Core hides the Team headers).
   const [homeData,setHomeData]=useState(null);
   const [firstTouchOpen,setFirstTouchOpen]=useState(false);
+
+  // ── BUILD-34: per-user section layout + edit mode ─────────────────────────
+  const [layout,setLayout]=useState(undefined);       // undefined = loading; then the MERGED [{id,visible}]
+  const [editMode,setEditMode]=useState(false);
+  const [preEditLayout,setPreEditLayout]=useState(null); // rollback target for Esc / a failed save
+  const [dragSectionId,setDragSectionId]=useState(null);
+  const [layoutError,setLayoutError]=useState("");
+
+  useEffect(()=>{
+    apiFetch("/me/home-layout")
+      .then(r=>setLayout(mergeLayout(r?.layout)))
+      .catch(()=>setLayout(mergeLayout(null))); // offline/error → default order, still usable
+  },[]);
+
+  const moveSection=(id,delta)=>setLayout(l=>{
+    const i=l.findIndex(r=>r.id===id), j=i+delta;
+    if(i<0||j<0||j>=l.length)return l;
+    const n=[...l]; const [row]=n.splice(i,1); n.splice(j,0,row); return n;
+  });
+  const setSectionVisible=(id,visible)=>setLayout(l=>l.map(r=>
+    r.id===id?{...r,visible:sectionMeta(id)?.hideable===false?true:visible}:r));
+
+  const enterEdit=()=>{setPreEditLayout(layout);setEditMode(true);};
+  const cancelEdit=()=>{if(preEditLayout)setLayout(preEditLayout);setEditMode(false);setDragSectionId(null);};
+  const resetLayout=()=>setLayout(mergeLayout(null));
+  const saveEdit=async()=>{
+    // Optimistic: the new order is already on screen — exit edit mode now,
+    // roll back to the pre-edit layout only if the server rejects the save.
+    const prev=preEditLayout, next=layout;
+    setEditMode(false);setDragSectionId(null);
+    try{
+      // Saving the canonical default clears the row (NULL) instead of freezing
+      // today's default order into it — future default changes then apply.
+      if(isDefaultLayout(next))await apiFetch("/me/home-layout",{method:"DELETE"});
+      else await apiFetch("/me/home-layout",{method:"PUT",body:JSON.stringify({layout:next})});
+    }catch(e){
+      if(prev)setLayout(prev);
+      setLayoutError(e.message||"Couldn't save your Home layout — your changes were undone.");
+      setTimeout(()=>setLayoutError(""),6000);
+    }
+  };
+
+  // Esc cancels edit mode (same key contract as the pipeline's drop prompt).
+  useEffect(()=>{
+    if(!editMode)return;
+    const onKey=e=>{if(e.key==="Escape")cancelEdit();};
+    window.addEventListener("keydown",onKey);
+    return()=>window.removeEventListener("keydown",onKey);
+  });
+
+  // Drag-to-reorder (native HTML5, same machinery as the pipeline board).
+  // Midpoint rule: the dragged section slots before/after the hovered one
+  // depending on which half of it the cursor is in — stable, no thrash.
+  const onSectionDragStart=(e,id)=>{
+    setDragSectionId(id);
+    try{e.dataTransfer.effectAllowed="move";e.dataTransfer.setData("text/plain",id);}catch{/* older browsers */}
+  };
+  const onSectionDragEnd=()=>setDragSectionId(null);
+  const onSectionDragOver=(e,overId)=>{
+    if(!dragSectionId||dragSectionId===overId)return;
+    e.preventDefault();
+    const rect=e.currentTarget.getBoundingClientRect();
+    const after=e.clientY>rect.top+rect.height/2;
+    setLayout(l=>{
+      const from=l.findIndex(r=>r.id===dragSectionId);
+      let to=l.findIndex(r=>r.id===overId);
+      if(from<0||to<0)return l;
+      if(after)to+=1;
+      if(to>from)to-=1;
+      if(to===from)return l;
+      const n=[...l]; const [row]=n.splice(from,1); n.splice(to,0,row); return n;
+    });
+  };
+  const onSectionDrop=e=>{e.preventDefault();setDragSectionId(null);};
 
   const [debtBreakdownOpen,setDebtBreakdownOpen]=useState(false);
   // Re-engaged hero chip drill-down (attribution FIX) — reads impact.reengagedDonors.
@@ -549,77 +635,44 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
       ? {label:"Recovered",value:fmtFull(recovAmt),valueColor:T.gold,sub:"failed-card gifts won back"}
       : {label:"Re-engaged",value:"—",sub:"lapsed donors who return",onClick:()=>setReengBreakdownOpen(true)};
 
-  // NB: no `fade-in` on the dash-root below. `.fade-in`'s final keyframe retains
-  // `transform: translateY(0)` (animation-fill-mode:both), which would make
-  // dash-root the containing block for every position:fixed descendant —
-  // dropping the set-goal modal (and any drill-down not portalled to body) at
-  // the vertical middle of the whole tall page, below the fold (BUILD-22 Part 2).
-  return(
-    <div className="dash-root dash-bleed" style={{background:T.bgDeep,margin:"-20px -24px -28px -24px",padding:"20px 24px 28px 24px",display:"flex",flexDirection:"column",gap:16,minHeight:"calc(100vh - 92px)"}}>
-
-      {/* Greeting lives on the page's own cream background, between the nav
-          and the goal card — not inside the dark card, where it read as a
-          stray line of card copy rather than a page-level welcome.
-          BUILD-13: when the org has set branding, the greeting leads with the
-          org's logo + name in their accent — the "this is OUR system" payoff
-          the moment they finish onboarding. Falls back to the plain greeting. */}
-      <div style={{display:"flex",alignItems:"center",gap:11,padding:"0 2px"}}>
-        {data.org?.logo&&<img src={data.org.logo} alt={data.org.name} style={{height:34,maxWidth:120,objectFit:"contain",borderRadius:6}}/>}
-        <div>
-          {data.org?.name&&<div style={{fontSize:16,fontWeight:800,color:data.org?.brandAccent||T.ink,lineHeight:1.15,letterSpacing:"-0.01em"}}>{data.org.name}</div>}
-          <div style={{fontSize:data.org?.name?12.5:15,fontWeight:data.org?.name?500:700,color:T.ink3}}>{greeting}{firstName?`, ${firstName}`:""}</div>
-        </div>
-      </div>
-
-      {/* One-time gold moments (BUILD-08 Phase D) — the product's only
-          celebration pattern, each fires once per org (localStorage-keyed
-          inside GoldMoment). Goal completion keys on the goal id, so a NEW
-          goal reaching 100% next quarter gets its own single moment. */}
-      {goal&&goal.percent>=100&&(
-        <GoldMoment moment={`goal100_${goal.id||goal.periodEnd||"current"}`}
-          title={`You did it — ${goal.label}.`}
-          line={`${fmtFull(goal.currentAmount)} raised against ${fmtFull(goal.goalAmount)}. Worth a minute of feeling good before the next one.`}/>
-      )}
-      {recurringHealth&&recurringHealth.recoveredThisMonth>0&&(
-        <GoldMoment moment="first_recovery"
-          title="A recurring gift came back."
-          line="A failed card was fixed and the gift resumed — money that, at most organizations, would have quietly disappeared. Steward will keep watching."/>
-      )}
-
-      {/* Goal banner — restructured into a real two-column layout so its
+      /* Goal banner — restructured into a real two-column layout so its
           footprint matches its content across the card's full width,
           instead of stacking everything into a narrow left column and
           leaving the right two-thirds empty. Left: the percent-to-goal,
           the one number this card exists to show, still large and
           isolated. Right: 3 real supporting stats (pace, days left in the
           period, recent activity) genuinely filling that width — not
-          decoration, and never fabricated. */}
-      {/* BUILD-21 Part 1 — the typed/roll-up hero leads when the org runs goal'd
+          decoration, and never fabricated. */
+      /* BUILD-21 Part 1 — the typed/roll-up hero leads when the org runs goal'd
           campaigns; otherwise fall back to the single-goal banner (unchanged).
           Graceful: loading → skeleton; 0 goals → banner; 1 → that goal leads,
-          no empty roll-up; many → roll-up header + typed breakdown. */}
-      {fundOverview===undefined?(
+          no empty roll-up; many → roll-up header + typed breakdown. */
+  // ── BUILD-34: hero context, hoisted from the old inline IIFE so the banner
+  // and the per-goal breakdown grid can be two separately orderable sections.
+  // Values are IDENTICAL to before — active TOP-LEVEL goals only, never
+  // double-counted (see the BUILD-21 notes above).
+  const heroCtx=hasCampaignGoals?(()=>{
+    const period=fundOverview.period||{};
+    const many=fgRollup.activeGoalCount>=2;
+    const g0=activeTop[0];
+    const raised=many?fgRollup.totalRaised:g0.rolledRaised;
+    const goalAmt=many?fgRollup.totalGoal:g0.goalAmount;
+    const pct=(many?fgRollup.percent:g0.rolledPercent)||0;
+    // Uncapped truth for the headline number + overage (BUILD-21 exceeded-goal rule).
+    const rawPct=(many?fgRollup.rawPercent:g0.rolledRawPercent)??pct;
+    const overAmt=(many?fgRollup.over:g0.rolledOver)||0;
+    const behindCount=activeTop.filter(g=>g.rolledPaceState==="behind").length;
+    const heroPace=many?(behindCount>0?`${behindCount} behind pace`:"On pace"):paceText(g0.rolledPaceState);
+    const heroPaceCol=many?(behindCount>0?T.terracotta:T.gold):catPaceColor(g0.rolledPaceState);
+    const delta=period.delta||0;
+    const deltaTxt=delta>0?`up ${fmtFull(delta)} vs last`:delta<0?`down ${fmtFull(Math.abs(delta))} vs last`:"level vs last";
+    return {period,many,g0,raised,goalAmt,pct,rawPct,overAmt,heroPace,heroPaceCol,deltaTxt};
+  })():null;
+  const {period={},many,g0,raised,goalAmt,pct,rawPct,overAmt,heroPace,heroPaceCol,deltaTxt}=heroCtx||{};
+
+  const heroSection=fundOverview===undefined?(
         <div className="dash-goal-banner" style={{background:`linear-gradient(135deg,${T.green950},${T.green800})`,border:"1px solid #1a2e1f",borderRadius:16,padding:"16px 22px",color:"#8fa896",fontSize:13,display:"flex",alignItems:"center",gap:8}}><Spin/>Loading goals…</div>
-      ):hasCampaignGoals?(()=>{
-        const period=fundOverview.period||{};
-        const many=fgRollup.activeGoalCount>=2;
-        const g0=activeTop[0];
-        // The typed breakdown shows the TOP-LEVEL goals — the umbrella (with its
-        // children nested/rolled beneath it) and any standalone goal — so the
-        // card count matches the header count, exactly like the Overview tab.
-        // Children live INSIDE their umbrella, never as flat peers alongside it.
-        const raised=many?fgRollup.totalRaised:g0.rolledRaised;
-        const goalAmt=many?fgRollup.totalGoal:g0.goalAmount;
-        const pct=(many?fgRollup.percent:g0.rolledPercent)||0;
-        // Uncapped truth for the headline number + overage (BUILD-21 exceeded-goal rule).
-        const rawPct=(many?fgRollup.rawPercent:g0.rolledRawPercent)??pct;
-        const overAmt=(many?fgRollup.over:g0.rolledOver)||0;
-        const behindCount=activeTop.filter(g=>g.rolledPaceState==="behind").length;
-        const heroPace=many?(behindCount>0?`${behindCount} behind pace`:"On pace"):paceText(g0.rolledPaceState);
-        const heroPaceCol=many?(behindCount>0?T.terracotta:T.gold):catPaceColor(g0.rolledPaceState);
-        const delta=period.delta||0;
-        const deltaTxt=delta>0?`up ${fmtFull(delta)} vs last`:delta<0?`down ${fmtFull(Math.abs(delta))} vs last`:"level vs last";
-        return(<>
+      ):heroCtx?(<>
           <div className="dash-goal-banner" style={{background:`linear-gradient(135deg,${T.green950},${T.green800})`,border:"1px solid #1a2e1f",borderRadius:16,padding:"16px 22px",color:"#f0ede6"}}>
             <div className="dash-goal-cols" style={{display:"flex",gap:32,flexWrap:"wrap"}}>
               {/* LEFT — the roll-up (or the single goal) */}
@@ -655,46 +708,8 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
               </div>
             </div>
           </div>
-          {/* Top-level goal breakdown — umbrella (children nested) + standalone.
-              Card count matches the header's top-level count; children live
-              inside their umbrella, not as flat peers (display-consistency FIX). */}
-          {(activeTop.length>=2||activeTop.some(g=>g.isOverarching))&&(
-            <div className="dash-goals-grid" style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(260px,1fr))",gap:12}}>
-              {activeTop.map(g=>{
-                const over=g.isOverarching;
-                const m=catMeta(g.goalCategory);
-                const gp=g.rolledPercent||0;
-                const kids=over?fgGoals.filter(x=>g.childIds.includes(x.id)):[];
-                return(
-                  <div key={g.id} {...interactive(()=>onNavigate("fundraising"),{label:`Open ${g.name}`})}
-                    style={{background:T.white,border:"1px solid "+T.bg3,borderTop:`3px solid ${over?T.gold:m.color}`,borderRadius:14,padding:"14px 16px",boxShadow:T.shadow,display:"flex",flexDirection:"column",gap:7,minWidth:0}}>
-                    {over
-                      ?<span style={{alignSelf:"flex-start",fontSize:9,fontWeight:800,letterSpacing:".08em",textTransform:"uppercase",color:T.ink2,background:T.bg2,padding:"3px 8px",borderRadius:99}}>Overarching</span>
-                      :<span style={{alignSelf:"flex-start",fontSize:9,fontWeight:800,letterSpacing:".08em",textTransform:"uppercase",color:m.color,background:m.color+"1e",padding:"3px 8px",borderRadius:99}}>{m.label}</span>}
-                    <span style={{fontSize:13.5,fontWeight:700,color:T.ink,lineHeight:1.25,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{g.name}</span>
-                    <span style={{fontSize:12,color:T.ink3}}><b style={{color:T.ink,fontSize:14}}>{fmtFull(g.rolledRaised)}</b> of {fmtFull(g.goalAmount)}</span>
-                    <div style={{background:T.bg2,borderRadius:99,height:7,overflow:"hidden"}}>
-                      <div style={{height:"100%",width:`${gp}%`,background:over?T.gold:m.color,borderRadius:99,transition:"width 0.5s ease"}}/>
-                    </div>
-                    <span style={{fontSize:11,fontWeight:700,color:catPaceColor(g.rolledPaceState)}}>{paceText(g.rolledPaceState)}{g.rolledOver>0?` · ${fmtFull(g.rolledOver)} over`:""}</span>
-                    {over&&(
-                      <div style={{borderTop:"1px solid "+T.bg2,marginTop:2,paddingTop:7,display:"flex",flexDirection:"column",gap:5}}>
-                        <span style={{fontSize:10,fontWeight:800,letterSpacing:".06em",textTransform:"uppercase",color:T.ink3}}>Rolls up {g.childCount} goal{g.childCount===1?"":"s"}</span>
-                        {kids.map(c=>(
-                          <div key={c.id} style={{display:"flex",justifyContent:"space-between",gap:8,fontSize:11.5,color:T.ink2}}>
-                            <span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.name}</span>
-                            <span style={{color:T.ink3,flexShrink:0}}>{fmtFull(c.raised)} · {c.rawPercent??c.percent??0}%</span>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </>);
-      })():(
+        </>
+      ):(
       <div className="dash-goal-banner" style={{background:`linear-gradient(135deg,${T.green950},${T.green800})`,border:"1px solid #1a2e1f",borderRadius:16,padding:"16px 22px",color:"#f0ede6"}}>
         {goal===undefined?(
           <div style={{display:"flex",alignItems:"center",gap:8,color:"#8fa896",fontSize:13}}><Spin/>Loading goal…</div>
@@ -745,15 +760,55 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
           </div>
         )}
       </div>
-      )}
+      );
 
-      {/* Scope toggle — controls the queue below AND the Retention Rate /
+  /* Top-level goal breakdown — umbrella (children nested) + standalone.
+     Card count matches the header's top-level count; children live inside
+     their umbrella, not as flat peers (display-consistency FIX). BUILD-34:
+     its own orderable/hideable section, split from the hero banner. */
+  const goalCardsSection=heroCtx&&(activeTop.length>=2||activeTop.some(g=>g.isOverarching))?(
+            <div className="dash-goals-grid" style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(260px,1fr))",gap:12}}>
+              {activeTop.map(g=>{
+                const over=g.isOverarching;
+                const m=catMeta(g.goalCategory);
+                const gp=g.rolledPercent||0;
+                const kids=over?fgGoals.filter(x=>g.childIds.includes(x.id)):[];
+                return(
+                  <div key={g.id} {...interactive(()=>onNavigate("fundraising"),{label:`Open ${g.name}`})}
+                    style={{background:T.white,border:"1px solid "+T.bg3,borderTop:`3px solid ${over?T.gold:m.color}`,borderRadius:14,padding:"14px 16px",boxShadow:T.shadow,display:"flex",flexDirection:"column",gap:7,minWidth:0}}>
+                    {over
+                      ?<span style={{alignSelf:"flex-start",fontSize:9,fontWeight:800,letterSpacing:".08em",textTransform:"uppercase",color:T.ink2,background:T.bg2,padding:"3px 8px",borderRadius:99}}>Overarching</span>
+                      :<span style={{alignSelf:"flex-start",fontSize:9,fontWeight:800,letterSpacing:".08em",textTransform:"uppercase",color:m.color,background:m.color+"1e",padding:"3px 8px",borderRadius:99}}>{m.label}</span>}
+                    <span style={{fontSize:13.5,fontWeight:700,color:T.ink,lineHeight:1.25,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{g.name}</span>
+                    <span style={{fontSize:12,color:T.ink3}}><b style={{color:T.ink,fontSize:14}}>{fmtFull(g.rolledRaised)}</b> of {fmtFull(g.goalAmount)}</span>
+                    <div style={{background:T.bg2,borderRadius:99,height:7,overflow:"hidden"}}>
+                      <div style={{height:"100%",width:`${gp}%`,background:over?T.gold:m.color,borderRadius:99,transition:"width 0.5s ease"}}/>
+                    </div>
+                    <span style={{fontSize:11,fontWeight:700,color:catPaceColor(g.rolledPaceState)}}>{paceText(g.rolledPaceState)}{g.rolledOver>0?` · ${fmtFull(g.rolledOver)} over`:""}</span>
+                    {over&&(
+                      <div style={{borderTop:"1px solid "+T.bg2,marginTop:2,paddingTop:7,display:"flex",flexDirection:"column",gap:5}}>
+                        <span style={{fontSize:10,fontWeight:800,letterSpacing:".06em",textTransform:"uppercase",color:T.ink3}}>Rolls up {g.childCount} goal{g.childCount===1?"":"s"}</span>
+                        {kids.map(c=>(
+                          <div key={c.id} style={{display:"flex",justifyContent:"space-between",gap:8,fontSize:11.5,color:T.ink2}}>
+                            <span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.name}</span>
+                            <span style={{color:T.ink3,flexShrink:0}}>{fmtFull(c.raised)} · {c.rawPercent??c.percent??0}%</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+  ):null;
+
+      /* Scope toggle — controls the queue below AND the Retention Rate /
           Stewardship Debt cards together (one shared scope, not per-card
           toggles that could disagree). Hidden until my-stats resolves the
           initial default, so it never flashes the wrong state. BUILD-32 Part 4:
           also hidden unless 2+ officers have assigned donors — otherwise "My
-          donors" and "Whole org" are the same list (a single-value picker). */}
-      {scope!==undefined&&homeData?.multiOfficer&&(
+          donors" and "Whole org" are the same list (a single-value picker). */
+  const scopeToggle=scope!==undefined&&homeData?.multiOfficer?(
         <div style={{display:"flex",justifyContent:"flex-end",alignItems:"center",gap:8}}>
           <span style={{fontSize:11,color:T.ink3}}>Showing:</span>
           <div style={{display:"flex",background:T.bg,borderRadius:99,padding:2,border:"1px solid "+T.bg3}}>
@@ -764,16 +819,16 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
             ))}
           </div>
         </div>
-      )}
+      ):null;
 
-      {/* ── Command center (BUILD-16 Part 1) ──────────────────────────────
+      /* ── Command center (BUILD-16 Part 1) ──────────────────────────────
           The four headers a fundraiser opens the app to see: Portfolio [Team],
           Tasks [Core], Need to Do [Core], Pipeline [Team]. Plan-graceful — a
           Core org sees Tasks + Need-to-do only (the goal banner above is its
           giving snapshot); Team adds Portfolio + Pipeline. First-touch-delay
           and stewardship-debt are demoted to the small "Signals" chips below —
-          never headline cards. */}
-      {homeData&&(()=>{
+          never headline cards. */
+  const commandCenterSection=homeData?(()=>{
         const isTeam=homeData.tier==="team";
         const t=homeData.tasks||{overdue:0,today:0,upcoming:0,total:0};
         const needCount=visibleQueue.length;
@@ -814,9 +869,9 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
             ))}
           </div>
         );
-      })()}
+      })():null;
 
-      {myStats&&(
+  const myPortfolioSection=myStats?(
         // De-emphasized wrapper (BUILD-31 Part 5.3): no colored left-accent box —
         // the "MY PORTFOLIO" heading + spacing define the group. A neutral hairline
         // only, so it reads as a quiet section, not a decorated template card.
@@ -866,14 +921,14 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
             </>);
           })()}
         </div>
-      )}
+      ):null;
 
-      {/* Donor Retention Rate — the Home dashboard's primary hero metric.
+      /* Donor Retention Rate — the Home dashboard's primary hero metric.
           This is the number fundraisers already benchmark against (unlike
           Stewardship Debt's invented composite score, see the demoted strip
           below) — the nonprofit sector average line already lived in the
-          onboarding drip email before this. */}
-      {stewardMetrics&&(
+          onboarding drip email before this. */
+  const retentionSection=stewardMetrics?(
         <div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:16,padding:"20px 24px",display:"flex",flexDirection:"column",gap:16}}>
           {/* Donor Retention Rate — the Home dashboard's primary hero metric.
               This is the number fundraisers already benchmark against (unlike
@@ -984,8 +1039,10 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
             </div>
           )}
         </div>
-      )}
+      ):null;
 
+  // The two-column queue/briefing + funnel/grant/recurring grid — one section.
+  const workSection=(
       <div className="dash-main-grid" style={{display:"grid",gridTemplateColumns:"minmax(0,1fr) 320px",gap:16,alignItems:"start"}}>
         {/* LEFT: the queue is the hero (the "Need to Do" command card scrolls here) */}
         <div style={{display:"flex",flexDirection:"column",gap:14}}>
@@ -1132,10 +1189,144 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
           )}
         </div>
       </div>
+  );
 
-      {/* Honest impact line (FIX) — quiet ROI stat, attributable amounts only.
-          Sits at the foot of the home column, small and on-palette. */}
-      <ImpactLine impact={impact}/>
+      /* Honest impact line (FIX) — quiet ROI stat, attributable amounts only.
+          Sits at the foot of the home column, small and on-palette. */
+  // Nothing-to-say guard mirrored from ImpactLine's own early return, so the
+  // section reads as absent (not an empty edit-mode shell) when silent.
+  const impactVisible=!!impact&&((impact.recoveredAmount||0)>0||(impact.reengagedAmount||0)>0||(impact.watchingRecurringCount||0)>0||(impact.onlineGivingProcessed||0)>0);
+  const impactSection=impactVisible?<ImpactLine impact={impact}/>:null;
+
+
+  // NB: no `fade-in` on the dash-root below. `.fade-in`'s final keyframe retains
+  // `transform: translateY(0)` (animation-fill-mode:both), which would make
+  // dash-root the containing block for every position:fixed descendant —
+  // dropping the set-goal modal (and any drill-down not portalled to body) at
+  // the vertical middle of the whole tall page, below the fold (BUILD-22 Part 2).
+  return(
+    <div className="dash-root dash-bleed" style={{background:T.bgDeep,margin:"-20px -24px -28px -24px",padding:"20px 24px 28px 24px",display:"flex",flexDirection:"column",gap:16,minHeight:"calc(100vh - 92px)"}}>
+
+      {/* Greeting lives on the page's own cream background, between the nav
+          and the goal card — not inside the dark card, where it read as a
+          stray line of card copy rather than a page-level welcome.
+          BUILD-13: when the org has set branding, the greeting leads with the
+          org's logo + name in their accent — the "this is OUR system" payoff
+          the moment they finish onboarding. Falls back to the plain greeting. */}
+      <div style={{display:"flex",alignItems:"center",gap:11,padding:"0 2px"}}>
+        {data.org?.logo&&<img src={data.org.logo} alt={data.org.name} style={{height:34,maxWidth:120,objectFit:"contain",borderRadius:6}}/>}
+        <div>
+          {data.org?.name&&<div style={{fontSize:16,fontWeight:800,color:data.org?.brandAccent||T.ink,lineHeight:1.15,letterSpacing:"-0.01em"}}>{data.org.name}</div>}
+          <div style={{fontSize:data.org?.name?12.5:15,fontWeight:data.org?.name?500:700,color:T.ink3}}>{greeting}{firstName?`, ${firstName}`:""}</div>
+        </div>
+        {/* BUILD-34 edit affordance — a quiet on-palette text button by the
+            greeting, not a floating pencil. Done saves optimistically
+            (rollback on error); Esc cancels; Reset restores the default. */}
+        {layout!==undefined&&(
+          <div style={{marginLeft:"auto",display:"flex",alignItems:"center",gap:16,flexShrink:0}}>
+            {editMode?(
+              <>
+                <button onClick={resetLayout} style={{background:"transparent",border:"none",padding:0,color:T.ink3,fontSize:12,fontWeight:700,cursor:"pointer"}}>Reset to default</button>
+                <button onClick={cancelEdit} style={{background:"transparent",border:"none",padding:0,color:T.ink3,fontSize:12,fontWeight:700,cursor:"pointer"}}>Cancel</button>
+                <button onClick={saveEdit} style={{background:"transparent",border:"none",padding:0,color:T.greenDk,fontSize:12,fontWeight:800,cursor:"pointer"}}>Done</button>
+              </>
+            ):(
+              <button onClick={enterEdit} aria-label="Edit Home layout — reorder or hide sections"
+                style={{background:"transparent",border:"none",padding:0,color:T.greenDk,fontSize:12,fontWeight:700,cursor:"pointer"}}>Edit</button>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* One-time gold moments (BUILD-08 Phase D) — the product's only
+          celebration pattern, each fires once per org (localStorage-keyed
+          inside GoldMoment). Goal completion keys on the goal id, so a NEW
+          goal reaching 100% next quarter gets its own single moment. */}
+      {goal&&goal.percent>=100&&(
+        <GoldMoment moment={`goal100_${goal.id||goal.periodEnd||"current"}`}
+          title={`You did it — ${goal.label}.`}
+          line={`${fmtFull(goal.currentAmount)} raised against ${fmtFull(goal.goalAmount)}. Worth a minute of feeling good before the next one.`}/>
+      )}
+      {recurringHealth&&recurringHealth.recoveredThisMonth>0&&(
+        <GoldMoment moment="first_recovery"
+          title="A recurring gift came back."
+          line="A failed card was fixed and the gift resumed — money that, at most organizations, would have quietly disappeared. Steward will keep watching."/>
+      )}
+
+      {/* ── The section stack (BUILD-34) ─────────────────────────────────
+          Renders from the per-user ordered [{id,visible}] config (see
+          ../lib/homeLayout.js for the canonical list + stale-config merge).
+          Sections with no data render nothing and aren't offered in edit
+          mode; explicitly hidden ones collect in the tray below. Edit-mode
+          chrome is absolutely positioned (outline + floating pill) so
+          entering/leaving edit mode causes zero layout shift. */}
+      {layout!==undefined&&(()=>{
+        const sections={hero:heroSection,goalCards:goalCardsSection,commandCenter:commandCenterSection,myPortfolio:myPortfolioSection,retention:retentionSection,work:workSection,impact:impactSection};
+        const rendered=layout.filter(r=>r.visible&&sections[r.id]!=null);
+        const firstScopedId=rendered.find(r=>SCOPED_SECTION_IDS.includes(r.id))?.id;
+        const hiddenRows=layout.filter(r=>!r.visible);
+        return(<>
+          {rendered.map((row,idx)=>{
+            const content=sections[row.id];
+            const toggle=!editMode&&row.id===firstScopedId?scopeToggle:null;
+            if(!editMode)return <Fragment key={row.id}>{toggle}{content}</Fragment>;
+            const meta=sectionMeta(row.id);
+            const dragging=dragSectionId===row.id;
+            return(
+              <div key={row.id} draggable
+                onDragStart={e=>onSectionDragStart(e,row.id)}
+                onDragEnd={onSectionDragEnd}
+                onDragOver={e=>onSectionDragOver(e,row.id)}
+                onDrop={onSectionDrop}
+                style={{position:"relative",borderRadius:16,cursor:"grab",
+                  outline:`1.5px dashed ${dragging?T.gold:T.bg3}`,outlineOffset:4,
+                  boxShadow:dragging?T.shadowLg:"none",
+                  transform:dragging&&!REDUCED_MOTION?"translateY(-2px)":"none",
+                  transition:REDUCED_MOTION?"none":"box-shadow .15s ease,transform .15s ease"}}>
+                <div style={{opacity:0.55,pointerEvents:"none"}} aria-hidden>{content}</div>
+                <div style={{position:"absolute",top:8,right:8,display:"flex",gap:6,zIndex:5}}>
+                  <button
+                    onKeyDown={e=>{
+                      if(e.key==="ArrowUp"){e.preventDefault();moveSection(row.id,-1);}
+                      else if(e.key==="ArrowDown"){e.preventDefault();moveSection(row.id,1);}
+                      else if(e.key==="Enter"){e.preventDefault();saveEdit();}
+                    }}
+                    aria-label={`Reorder ${meta?.label||row.id} — position ${idx+1} of ${rendered.length}. Arrow keys move it, Enter saves.`}
+                    title="Drag, or focus and use arrow keys, to reorder"
+                    style={{display:"flex",alignItems:"center",gap:6,background:T.white,border:"1px solid "+T.bg3,borderRadius:8,padding:"5px 10px",fontSize:12,fontWeight:700,color:T.ink2,cursor:"grab",boxShadow:T.shadow}}>
+                    <span aria-hidden="true">{"⠿"}</span>{meta?.label||row.id}
+                  </button>
+                  {meta?.hideable===false?(
+                    <span title="Home always shows the fundraising hero" style={{display:"flex",alignItems:"center",background:T.white,border:"1px solid "+T.bg3,borderRadius:8,padding:"5px 10px",fontSize:11,fontWeight:700,color:T.ink3,boxShadow:T.shadow}}>Always shown</span>
+                  ):(
+                    <button onClick={()=>setSectionVisible(row.id,false)}
+                      aria-label={`Hide ${meta?.label||row.id}`}
+                      style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:8,padding:"5px 10px",fontSize:12,fontWeight:700,color:T.terracotta,cursor:"pointer",boxShadow:T.shadow}}>Hide</button>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+          {editMode&&hiddenRows.length>0&&(
+            <div style={{background:T.bg,border:"1.5px dashed "+T.bg3,borderRadius:14,padding:"12px 16px"}}>
+              <div style={{fontSize:10,fontWeight:800,letterSpacing:"0.1em",textTransform:"uppercase",color:T.ink3,marginBottom:8}}>Hidden — not shown on your Home</div>
+              <div style={{display:"flex",flexWrap:"wrap",gap:8}}>
+                {hiddenRows.map(r=>{
+                  const m=sectionMeta(r.id);
+                  return(
+                    <button key={r.id} onClick={()=>setSectionVisible(r.id,true)}
+                      aria-label={`Show ${m?.label||r.id} again`}
+                      style={{display:"inline-flex",alignItems:"baseline",gap:7,background:T.white,border:"1px solid "+T.bg3,borderRadius:99,padding:"6px 12px",fontSize:12,fontWeight:700,color:T.ink2,cursor:"pointer"}}>
+                      {m?.label||r.id}<span style={{color:T.greenDk}}>Show</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </>);
+      })()}
+      {layoutError&&<div role="alert" style={{position:"fixed",bottom:20,left:"50%",transform:"translateX(-50%)",background:T.terracotta,color:"#fff",padding:"10px 16px",borderRadius:8,fontSize:13,fontWeight:600,zIndex:500,boxShadow:T.shadowLg,maxWidth:"90vw"}}>{layoutError}</div>}
 
       {/* Set-goal modal */}
       {showSetGoal&&(

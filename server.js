@@ -1678,6 +1678,50 @@ app.get("/me", requireAuth, wrap(async (req, res) => {
   res.json({ user: users[0], org: orgs[0] });
 }));
 
+// ── Per-user Home layout (BUILD-34) ────────────────────────────────────────
+// Storage for Home's edit mode (reorder + show/hide, section-level only).
+// Per USER (keyed on req.user.userId — org admins don't control other users'
+// layouts; org isolation is inherent). The CANONICAL section list + the
+// stale-config merge live client-side in client/src/lib/homeLayout.js — the
+// server only validates shape and enforces the one hard rail it knows: the
+// hero section ("hero") can never be stored hidden, so Home can't be blanked.
+const HOME_HERO_SECTION_ID = "hero";
+function normalizeHomeLayout(layout) {
+  if (!Array.isArray(layout) || layout.length > 32) return null;
+  const seen = new Set();
+  const out = [];
+  for (const row of layout) {
+    if (!row || typeof row.id !== "string" || !row.id || row.id.length > 40) return null;
+    if (typeof row.visible !== "boolean") return null;
+    if (seen.has(row.id)) continue;
+    seen.add(row.id);
+    out.push({ id: row.id, visible: row.id === HOME_HERO_SECTION_ID ? true : row.visible });
+  }
+  return out;
+}
+
+app.get("/me/home-layout", requireAuth, wrap(async (req, res) => {
+  const rows = await query("SELECT home_layout FROM users WHERE id = ?", [req.user.userId]);
+  if (!rows.length) return res.status(404).json({ error: "Not found" });
+  let layout = null;
+  try { layout = rows[0].home_layout ? JSON.parse(rows[0].home_layout) : null; } catch { layout = null; }
+  res.json({ layout: normalizeHomeLayout(layout) });
+}));
+
+app.put("/me/home-layout", requireAuth, wrap(async (req, res) => {
+  const layout = normalizeHomeLayout(req.body?.layout);
+  if (!layout) return res.status(400).json({ error: "layout must be an array of {id, visible}" });
+  await run("UPDATE users SET home_layout = ? WHERE id = ?", [JSON.stringify(layout), req.user.userId]);
+  res.json({ layout });
+}));
+
+// Reset = back to the canonical default (NULL, so future default-order changes
+// apply automatically instead of freezing today's order into the row).
+app.delete("/me/home-layout", requireAuth, wrap(async (req, res) => {
+  await run("UPDATE users SET home_layout = NULL WHERE id = ?", [req.user.userId]);
+  res.json({ layout: null });
+}));
+
 // ── Onboarding ─────────────────────────────────────────────────────────────
 app.post("/onboarding/complete", requireAuth, wrap(async (req, res) => {
   await seedOrgData(req.user.orgId);
