@@ -92,7 +92,8 @@ function GrantProfile({grant,onClose,onUpdate,onDelete,isAdmin,org}){
 
   const changeStatus=async(status)=>{
     const g=grant;
-    await apiFetch(`/grants/${g.id}`,{method:"PUT",body:JSON.stringify({funder:g.funder,program:g.program,amount:g.amount,received:g.received||0,status,deadline:g.deadline||"",reportDue:g.reportDue||"",officer:g.officer,notes:g.notes,description:g.description||"",requirements:g.requirements||""})});
+    const adoptTxnId=await resolveAwardAdoption(g.id,g.status,status);
+    await apiFetch(`/grants/${g.id}`,{method:"PUT",body:JSON.stringify({funder:g.funder,program:g.program,amount:g.amount,received:g.received||0,status,deadline:g.deadline||"",reportDue:g.reportDue||"",officer:g.officer,notes:g.notes,description:g.description||"",requirements:g.requirements||"",adoptTxnId})});
     onUpdate({...g,status});
   };
 
@@ -103,7 +104,8 @@ function GrantProfile({grant,onClose,onUpdate,onDelete,isAdmin,org}){
   };
 
   const saveEdit=async()=>{
-    const raw=await apiFetch(`/grants/${grant.id}`,{method:"PUT",body:JSON.stringify({funder:ef.funder,program:ef.program,amount:Number(ef.amount)||0,received:Number(ef.received)||0,status:ef.status,deadline:ef.deadline||"",reportDue:ef.reportDue||"",officer:ef.officer,notes:grant.notes,description:ef.description||"",requirements:ef.requirements||"",campaignId:ef.campaignId||""})});
+    const adoptTxnId=await resolveAwardAdoption(grant.id,grant.status,ef.status);
+    const raw=await apiFetch(`/grants/${grant.id}`,{method:"PUT",body:JSON.stringify({funder:ef.funder,program:ef.program,amount:Number(ef.amount)||0,received:Number(ef.received)||0,status:ef.status,deadline:ef.deadline||"",reportDue:ef.reportDue||"",officer:ef.officer,notes:grant.notes,description:ef.description||"",requirements:ef.requirements||"",campaignId:ef.campaignId||"",adoptTxnId})});
     const adapted={id:raw.id,funder:raw.funder,program:raw.program||"",amount:raw.amount||0,received:raw.received||0,status:raw.status,deadline:raw.deadline||"",reportDue:raw.report_due||null,officer:raw.officer||"",notes:raw.notes||"",description:raw.description||"",requirements:raw.requirements||"",campaignId:raw.campaign_id||null,history:Array.isArray(raw.history)?raw.history:JSON.parse(raw.history||"[]")};
     onUpdate(adapted);setEditing(false);
   };
@@ -324,6 +326,29 @@ const statusToCol = s => {
   return KANBAN_COLS.find(c => c.id === s) ? s : "prospecting";
 };
 
+// Finance entity-routing FIX (2026-08-04) — award-side double-count guard.
+// Marking a grant Awarded auto-stamps the ledger (BUILD-09); if the same money
+// was ALREADY logged as a manual money-in, that would book it twice. Before an
+// award transition, ask the server for a recent matching manual transaction
+// and offer to LINK it (the existing row becomes the award's single ledger
+// booking via PUT adoptTxnId) instead of double-booking. Returns the txn id to
+// adopt, or "" to book separately. Every award-transition path (profile status
+// change, edit-form save, kanban drop) calls this.
+async function resolveAwardAdoption(grantId, prevStatus, nextStatus) {
+  if (nextStatus !== "awarded" || prevStatus === "awarded") return "";
+  try {
+    const r = await apiFetch(`/grants/${grantId}/manual-match`);
+    const m = r?.matches?.[0];
+    if (!m) return "";
+    const link = window.confirm(
+      `A ${fmtFull(m.amount)} manual transaction${m.vendor_donor ? ` from "${m.vendor_donor}"` : ""} (${m.date}) is already in the ledger.\n\n` +
+      "Link it to this award so the money books once, not twice?\n\n" +
+      "OK — link the existing entry (recommended)\nCancel — book the award as a separate ledger entry"
+    );
+    return link ? m.id : "";
+  } catch { return ""; }
+}
+
 // Deadline chip for a grant card/row: null when it shouldn't render.
 const deadlineMeta = g => {
   if (!g.deadline || !GRANT_ACTIONABLE.has(g.status)) return null;
@@ -344,10 +369,12 @@ function GrantKanban({ grants, onUpdate, onAddClick, onSelectGrant, isReadOnly }
     const g = dragging;
     setDragging(null); setDragOver(null);
     try {
+      const adoptTxnId = await resolveAwardAdoption(g.id, g.status, colId);
       await apiFetch(`/grants/${g.id}`, { method:"PUT", body: JSON.stringify({
         funder:g.funder, program:g.program, amount:g.amount, received:g.received||0,
         status:colId, deadline:g.deadline||"", reportDue:g.reportDue||"",
         officer:g.officer||"", notes:g.notes||"", description:g.description||"", requirements:g.requirements||"",
+        adoptTxnId,
       })});
       onUpdate({ ...g, status: colId });
     } catch(e) { console.error(e); }

@@ -5191,6 +5191,32 @@ app.get("/grants", requireAuth, wrap(async (req, res) => {
   res.json(grants.map(g => ({ ...g, history: JSON.parse(g.history || "[]") })));
 }));
 
+// Finance entity-routing FIX (2026-08-04) — the ONE grant-award → ledger stamp.
+// source='grant' (badged in the unified ledger), grant_id + the partial-unique
+// uq_fin_txns_grant (db.js) make it idempotent BY CONSTRUCTION: re-award after
+// un-award, a redundant awarded→awarded PUT, or a manual row already adopted as
+// this grant's stamp (grant_id taken) can never double-insert. Fund matching is
+// the original BUILD-09 heuristic (funder/program-named fund, else the first
+// unrestricted fund).
+async function stampGrantAward(orgId, grantId, funder, program, amount) {
+  const matchFund = await query(
+    "SELECT id FROM fin_funds WHERE org_id=? AND (name ILIKE ? OR name ILIKE ?) LIMIT 1",
+    [orgId, `%${funder}%`, `%${program || ""}%`]
+  );
+  const genFund = matchFund.length ? matchFund : await query(
+    "SELECT id FROM fin_funds WHERE org_id=? AND restricted=false ORDER BY created_at ASC LIMIT 1", [orgId]
+  );
+  const acct = await query("SELECT id FROM accounts WHERE org_id=? LIMIT 1", [orgId]);
+  await run(
+    `INSERT INTO fin_transactions (id,org_id,date,description,vendor_donor,amount,type,account_id,fund_id,grant_id,source)
+     VALUES (?,?,?,?,?,?,'income',?,?,?,'grant')
+     ON CONFLICT (grant_id) WHERE grant_id IS NOT NULL DO NOTHING`,
+    ["ft_" + uuid().slice(0, 8), orgId, new Date().toISOString().slice(0, 10),
+     `Grant awarded: ${funder} — ${program || ""}`, funder,
+     parseFloat(amount) || 0, acct[0]?.id || null, genFund[0]?.id || null, grantId]
+  ).catch(() => {});
+}
+
 app.post("/grants", requireAuth, checkWriteAccess, wrap(async (req, res) => {
   const { funder, program, amount, status, deadline, reportDue, officer, notes } = req.body;
   const campaignId = req.body.campaignId || req.body.campaign_id || null;
@@ -5212,12 +5238,15 @@ app.post("/grants", requireAuth, checkWriteAccess, wrap(async (req, res) => {
      status || "prospecting", deadline || "", reportDue || "", officer || "", notes || "",
      campaignId, isAwarded ? new Date().toISOString() : null]
   );
+  // A grant created directly IN 'awarded' books its income too (this path
+  // previously never stamped the ledger — only the PUT transition did).
+  if (isAwarded) await stampGrantAward(req.user.orgId, id, funder, program, amount);
   const rows = await query("SELECT * FROM grants WHERE id = ?", [id]);
   res.status(201).json(rows[0]);
 }));
 
 app.put("/grants/:id", requireAuth, checkWriteAccess, wrap(async (req, res) => {
-  const { funder, program, amount, received, status, deadline, reportDue, officer, notes, description, requirements } = req.body;
+  const { funder, program, amount, received, status, deadline, reportDue, officer, notes, description, requirements, adoptTxnId } = req.body;
   if (!funder) return res.status(400).json({ error: "Funder required" });
   const orgId = req.user.orgId;
 
@@ -5225,6 +5254,22 @@ app.put("/grants/:id", requireAuth, checkWriteAccess, wrap(async (req, res) => {
   const prevRows = await query("SELECT status, campaign_id, awarded_at FROM grants WHERE id=? AND org_id=?", [req.params.id, orgId]);
   if (!prevRows.length) return res.status(404).json({ error: "Grant not found" });
   const prevStatus = prevRows[0]?.status;
+
+  // Finance entity-routing FIX — the award-side double-count guard's "link,
+  // don't double-book" arm. `adoptTxnId` names an EXISTING manual money-in row
+  // (org-scoped, source='manual', type='income', not already a grant's stamp)
+  // that IS this award's money: instead of inserting a second income row, that
+  // row becomes the award stamp (grant_id set, source→'grant'). Validated up
+  // front so a foreign/wrong-shaped id 404s before any state changes — never
+  // silently double-books.
+  if (adoptTxnId !== undefined && adoptTxnId !== null && adoptTxnId !== "") {
+    if (status !== "awarded") return res.status(400).json({ error: "adoptTxnId only applies when marking a grant awarded" });
+    const adoptRows = await query(
+      "SELECT id FROM fin_transactions WHERE id=? AND org_id=? AND source='manual' AND type='income' AND grant_id IS NULL",
+      [adoptTxnId, orgId]
+    );
+    if (!adoptRows.length) return res.status(404).json({ error: "Transaction not found or not adoptable" });
+  }
 
   // Attribution FIX — set / change / clear (campaignId:"" → NULL), org-scoped.
   const campaignIdRaw = req.body.campaignId !== undefined ? req.body.campaignId
@@ -5259,23 +5304,39 @@ app.put("/grants/:id", requireAuth, checkWriteAccess, wrap(async (req, res) => {
   );
   if (!affected.changes) return res.status(404).json({ error: "Grant not found" });
 
-  const today = new Date().toISOString().slice(0, 10);
-
-  // Grant awarded → auto-post fin_transaction
+  // Grant awarded → the ledger income books EXACTLY ONCE (uq_fin_txns_grant).
+  // Either by adopting the caller-named manual row as the stamp (the money was
+  // already logged — link it, don't double-book) or by inserting the auto
+  // stamp. Adoption keeps the treasurer's own date/fund/account and re-badges
+  // the row source='grant'.
   if (status === 'awarded' && prevStatus !== 'awarded') {
-    const matchFund = await query(
-      "SELECT id FROM fin_funds WHERE org_id=? AND (name ILIKE ? OR name ILIKE ?) LIMIT 1",
-      [orgId, `%${funder}%`, `%${program||""}%`]
-    );
-    const genFund = matchFund.length ? matchFund : await query(
-      "SELECT id FROM fin_funds WHERE org_id=? AND restricted=false ORDER BY created_at ASC LIMIT 1", [orgId]
-    );
-    const acct = await query("SELECT id FROM accounts WHERE org_id=? LIMIT 1", [orgId]);
-    await run(
-      "INSERT INTO fin_transactions (id,org_id,date,description,vendor_donor,amount,type,account_id,fund_id) VALUES (?,?,?,?,?,?,'income',?,?)",
-      ["ft_"+uuid().slice(0,8), orgId, today, `Grant awarded: ${funder} — ${program||""}`, funder,
-       parseFloat(amount)||0, acct[0]?.id||null, genFund[0]?.id||null]
-    ).catch(() => {});
+    let adopted = false;
+    if (adoptTxnId) {
+      // Adoption keeps source='manual' (it stays the treasurer's own entry —
+      // un-award UNLINKS it rather than deleting user-entered data); grant_id
+      // is what marks it as the award's single ledger booking.
+      const upd = await run(
+        `UPDATE fin_transactions SET grant_id=?
+         WHERE id=? AND org_id=? AND source='manual' AND type='income' AND grant_id IS NULL`,
+        [req.params.id, adoptTxnId, orgId]
+      ).catch(() => ({ changes: 0 }));
+      adopted = !!upd.changes;
+      if (adopted) writeAuditLog(orgId, req.user.userId, req.user.email, "updated", "transaction", adoptTxnId, {
+        description: `Linked existing manual income to grant award: ${funder} — ${program || ""} (books once, not twice)`,
+        new: { grant_id: req.params.id },
+      }).catch(() => {});
+    }
+    if (!adopted) await stampGrantAward(orgId, req.params.id, funder, program, amount);
+  }
+
+  // Un-award (awarded_at cleared — the grant moved BACK to a pursuing or
+  // rejected status): the income reverses out of the ledger too, same
+  // discipline as a voided/refunded gift removing its stamp. The AUTO stamp
+  // (source='grant') is deleted; an ADOPTED manual row is unlinked back to a
+  // plain manual entry (never delete treasurer-entered data on a status move).
+  if (newAwardedAt === null && prevRows[0]?.awarded_at) {
+    await run("DELETE FROM fin_transactions WHERE org_id=? AND grant_id=? AND source='grant'", [orgId, req.params.id]).catch(() => {});
+    await run("UPDATE fin_transactions SET grant_id=NULL WHERE org_id=? AND grant_id=?", [orgId, req.params.id]).catch(() => {});
   }
 
   // Grant closed/rejected → follow-up task in 6 months
@@ -5291,6 +5352,34 @@ app.put("/grants/:id", requireAuth, checkWriteAccess, wrap(async (req, res) => {
   const g = rows[0];
   g.history = JSON.parse(g.history || "[]");
   res.json(g);
+}));
+
+// Finance entity-routing FIX — award-side double-count guard, the DETECTION
+// arm. Before marking a grant awarded, the client asks: is there a recent
+// MANUAL money-in already in the ledger that looks like this grant's money
+// (funder name in vendor/description, or the exact grant amount)? Read-only,
+// org-scoped (foreign grant → 404); the human decides via the prompt whether
+// to link (PUT adoptTxnId) or book separately. 180-day window, newest first.
+app.get("/grants/:id/manual-match", requireAuth, wrap(async (req, res) => {
+  const rows = await query("SELECT id, funder, program, amount, status FROM grants WHERE id=? AND org_id=?", [req.params.id, req.user.orgId]);
+  if (!rows.length) return res.status(404).json({ error: "Grant not found" });
+  const g = rows[0];
+  const cutoff = new Date(Date.now() - 180 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  const funder = String(g.funder || "").trim().toLowerCase();
+  const amt = parseFloat(g.amount) || 0;
+  const matches = await query(
+    `SELECT id, date, description, vendor_donor, amount, fund_id
+     FROM fin_transactions
+     WHERE org_id=? AND source='manual' AND type='income' AND grant_id IS NULL AND date >= ?
+       AND (
+         (vendor_donor <> '' AND (lower(vendor_donor) LIKE ? OR ? LIKE '%' || lower(vendor_donor) || '%'))
+         OR lower(description) LIKE ?
+         OR (? > 0 AND amount = ?)
+       )
+     ORDER BY date DESC LIMIT 5`,
+    [req.user.orgId, cutoff, `%${funder}%`, funder, `%${funder}%`, amt, amt]
+  );
+  res.json({ grantId: g.id, funder: g.funder, program: g.program || "", amount: amt, matches: matches.map(m => ({ ...m, amount: parseFloat(m.amount) })) });
 }));
 
 app.delete("/grants/:id", requireAuth, wrap(async (req, res) => {

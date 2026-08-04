@@ -395,7 +395,7 @@ function AppShell() {
       {tab==="events"&&<Events data={data} isReadOnly={isReadOnly}/>}
       {tab==="volunteers"&&<Volunteers data={data} setData={setData} isReadOnly={isReadOnly}/>}
       {tab==="board"&&<Board data={data} setData={setData} isReadOnly={isReadOnly}/>}
-      {tab==="finance"&&<Finance data={data} isReadOnly={isReadOnly} onNavigate={navigateTo}/>}
+      {tab==="finance"&&<Finance data={data} setData={setData} isReadOnly={isReadOnly} onNavigate={navigateTo}/>}
       {tab==="tasks"&&<Tasks key={navNonce} data={data} setData={setData} isReadOnly={isReadOnly} onNavigate={navigateTo} initialScope={tasksIntent?.scope}/>}
       {tab==="workflows"&&<Workflows isReadOnly={isReadOnly} onNavigate={navigateTo}/>}
       {tab==="settings"&&<Settings key={navNonce} auth={auth} logout={logout} initialSection={settingsIntent?.section}/>}

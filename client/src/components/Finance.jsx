@@ -1,6 +1,7 @@
 import { useState, useEffect, Fragment } from "react";
 import { T, fmt, fmtFull, askClaude, Card, AIBtn, AIPanel, EmptyState, SectionLabel, PageTitle, SectionTabs, interactive } from "./shared";
 import { apiFetch } from "../api";
+import { OPEN_GRANT_STATUSES, findOpenGrantMatch, findDonorMatch } from "../lib/financeMatch";
 
 // ── Constants ──────────────────────────────────────────────────────────────
 // Account-type accents, five-color palette only (dark-green shades + gold +
@@ -32,8 +33,11 @@ const SOURCE_META = {
   gift:   { label:"Gift",            color:T.greenMid, bg:T.greenMid+"18" },
   import:  { label:"Import",         color:T.ink3,    bg:T.bg2 },
   manual: { label:"Manual",          color:T.ink3,    bg:T.bg2 },
+  grant:  { label:"Grant · Award",   color:T.greenDk, bg:T.gold+"26" },
 };
-const sourceMeta = s => SOURCE_META[s] || SOURCE_META.manual;
+// A row carrying grant_id IS a grant award's single ledger booking — badge it
+// as such even when it entered as a manual row later adopted by the award.
+const sourceMeta = (s, grantId) => (grantId ? SOURCE_META.grant : (SOURCE_META[s] || SOURCE_META.manual));
 
 // ── Shared style helpers ───────────────────────────────────────────────────
 const inp = { background:T.bg, border:"1px solid "+T.bg3, borderRadius:8, padding:"8px 11px", color:T.ink, fontSize:13, outline:"none", width:"100%", boxSizing:"border-box" };
@@ -134,13 +138,159 @@ function FundModal({ fund, onSave, onClose }) {
 }
 
 // ── TransactionModal ───────────────────────────────────────────────────────
-function TransactionModal({ accounts, funds, onSave, onClose }) {
+// Entity-routing FIX (2026-08-04): the Vendor/Donor field is entity-aware.
+// Type-ahead searches this org's donors AND open grant asks; money-in that
+// names a foundation with an open ask routes to the EXISTING grant-award flow
+// (the award stamp IS the ledger entry — no manual row inserted), money-in
+// from a known donor offers the gift flow (the gift chain stamps the ledger
+// once). Free text stays for true vendors. Declining a prompt logs the manual
+// row as typed.
+function TransactionModal({ accounts, funds, onSave, onRouted, onClose }) {
   const today = new Date().toISOString().split("T")[0];
   const [form, setForm] = useState({ date:today, description:"", vendorDonor:"", amount:"", type:"income", accountId:"", fundId:"", notes:"" });
+  const [linked, setLinked] = useState(null);           // { kind:'donor'|'grant', entity }
+  const [sugs, setSugs] = useState(null);               // { donors, grants } | null
+  const [sugsOpen, setSugsOpen] = useState(false);
+  const [routing, setRouting] = useState(null);         // { kind:'grant'|'donor', entity } | null
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
   const set = k => e => setForm(p => ({ ...p, [k]: e.target.value }));
   const filtered = accounts.filter(a => a.active !== false && a.type === (form.type === "income" ? "revenue" : "expense"));
+
+  // Debounced org-scoped lookup (donors + open grants) as the name is typed.
+  useEffect(() => {
+    const q = form.vendorDonor.trim();
+    if (linked || q.length < 2) { setSugs(null); setSugsOpen(false); return; }
+    let alive = true;
+    const t = setTimeout(() => {
+      Promise.all([
+        apiFetch(`/donors?search=${encodeURIComponent(q)}&limit=5`).catch(() => null),
+        apiFetch(`/grants?search=${encodeURIComponent(q)}&limit=8`).catch(() => []),
+      ]).then(([d, g]) => {
+        if (!alive) return;
+        const donors = Array.isArray(d) ? d : (d?.donors || []);
+        const grants = (Array.isArray(g) ? g : []).filter(x => OPEN_GRANT_STATUSES.has(x.status));
+        setSugs({ donors, grants });
+        setSugsOpen(donors.length > 0 || grants.length > 0);
+      });
+    }, 220);
+    return () => { alive = false; clearTimeout(t); };
+  }, [form.vendorDonor, linked]);
+
+  const pickDonor = d => { setLinked({ kind:"donor", entity:d }); setForm(p => ({ ...p, vendorDonor:d.name })); setSugsOpen(false); };
+  const pickGrant = g => { setLinked({ kind:"grant", entity:g }); setForm(p => ({ ...p, vendorDonor:g.funder })); setSugsOpen(false); };
+  const clearLink = () => setLinked(null);
+  const editName = e => { if (linked) setLinked(null); set("vendorDonor")(e); };
+
+  // Save: expenses (and unrecognized income) log as typed; income naming an
+  // open-ask foundation or a known donor gets ONE routing prompt first.
+  const trySave = async () => {
+    if (!form.description || !form.amount || busy) return;
+    setErr("");
+    const payload = { ...form, donorId: linked?.kind === "donor" ? linked.entity.id : undefined };
+    if (form.type !== "income") { onSave(payload); return; }
+    if (linked?.kind === "grant") { setRouting({ kind:"grant", entity:linked.entity }); return; }
+    if (linked?.kind === "donor") { setRouting({ kind:"donor", entity:linked.entity }); return; }
+    const q = form.vendorDonor.trim();
+    if (q.length >= 2) {
+      setBusy(true);
+      try {
+        const [d, g] = await Promise.all([
+          apiFetch(`/donors?search=${encodeURIComponent(q)}&limit=10`).catch(() => null),
+          apiFetch(`/grants?search=${encodeURIComponent(q)}&limit=20`).catch(() => []),
+        ]);
+        const grant = findOpenGrantMatch(q, Array.isArray(g) ? g : []);
+        if (grant) { setRouting({ kind:"grant", entity:grant }); setBusy(false); return; }
+        const donor = findDonorMatch(q, Array.isArray(d) ? d : (d?.donors || []));
+        if (donor) { setRouting({ kind:"donor", entity:donor }); setBusy(false); return; }
+      } catch { /* lookup failure never blocks a manual save */ }
+      setBusy(false);
+    }
+    onSave(payload);
+  };
+
+  // Accept the grant prompt → the EXISTING award flow (PUT status:'awarded').
+  // The award stamps the ledger exactly once (uq_fin_txns_grant) — the manual
+  // transaction is NOT separately inserted, so a double-count is impossible.
+  const acceptGrant = async () => {
+    const g = routing.entity;
+    setBusy(true); setErr("");
+    try {
+      const updated = await apiFetch(`/grants/${g.id}`, { method:"PUT", body: JSON.stringify({
+        funder:g.funder, program:g.program || "", amount:Number(form.amount) || g.amount,
+        received:Number(form.amount) || 0, status:"awarded",
+        deadline:g.deadline || "", reportDue:g.report_due || g.reportDue || "", officer:g.officer || "",
+        notes:g.notes || "", description:g.description || "", requirements:g.requirements || "",
+        campaignId:g.campaign_id || g.campaignId || "",
+      })});
+      onRouted({ kind:"grant", name:g.funder, grant:updated });
+    } catch(e) { setErr(e?.message || "Could not mark the grant awarded."); setBusy(false); }
+  };
+
+  // Accept the donor prompt → the EXISTING gift flow (POST /donors/:id/gifts),
+  // which stamps the ledger once and runs the whole gift chain.
+  const acceptGift = async () => {
+    const d = routing.entity;
+    setBusy(true); setErr("");
+    try {
+      await apiFetch(`/donors/${d.id}/gifts`, { method:"POST", body: JSON.stringify({
+        amount:Number(form.amount), date:form.date, type:"cash",
+        notes:form.description, fundId:form.fundId || undefined,
+      })});
+      onRouted({ kind:"gift", name:d.name });
+    } catch(e) { setErr(e?.message || "Could not log the gift."); setBusy(false); }
+  };
+
+  // Decline → it's genuinely different money; log the manual row as typed
+  // (a linked donor keeps the donor_id FK — deliberate ledger-only income).
+  const decline = () => {
+    const donorId = routing?.kind === "donor" ? routing.entity.id : (linked?.kind === "donor" ? linked.entity.id : undefined);
+    setRouting(null);
+    onSave({ ...form, donorId });
+  };
+
   const overlay = { position:"fixed", inset:0, background:"rgba(0,0,0,0.4)", zIndex:1000, display:"flex", alignItems:"center", justifyContent:"center" };
   const box = { background:T.white, borderRadius:16, padding:28, width:460, display:"flex", flexDirection:"column", gap:14 };
+  const sugBtn = { display:"block", width:"100%", textAlign:"left", background:"none", border:"none", padding:"8px 11px", fontSize:13, color:T.ink, cursor:"pointer" };
+
+  // Routing prompt view — replaces the form until answered.
+  if (routing) {
+    const isGrant = routing.kind === "grant";
+    const g = routing.entity;
+    return (
+      <div className="modal-sheet-overlay" style={overlay} onClick={e => { if (e.target === e.currentTarget && !busy) onClose(); }}>
+        <div className="modal-sheet-inner" style={{ ...box, width:480 }}>
+          <div style={{ fontSize:15, fontWeight:700, color:T.ink }}>
+            {isGrant ? "This looks like a grant arriving" : "This looks like a donor's money"}
+          </div>
+          <div style={{ fontSize:13, color:T.ink, lineHeight:1.6 }}>
+            {isGrant ? (
+              <>
+                <b>{g.funder}</b> has a {fmtFull(parseFloat(g.amount) || 0)} open ask{g.program ? <> (<i>{g.program}</i>)</> : null}. Is this that grant?
+                Marking it awarded books {fmtFull(Number(form.amount) || 0)} into the ledger once, moves the board, and clears the open ask —
+                no separate manual entry.
+              </>
+            ) : (
+              <>
+                Log this as a <b>gift from {g.name}</b> instead? A gift updates their lifetime giving, receipts, and campaign attribution —
+                and lands in this ledger automatically. A ledger-only entry does none of that.
+              </>
+            )}
+          </div>
+          {err && <div style={{ fontSize:12, color:T.terracotta }}>{err}</div>}
+          <div style={{ display:"flex", gap:8, justifyContent:"flex-end", flexWrap:"wrap" }}>
+            <button style={ghostBtn} disabled={busy} onClick={decline}>
+              {isGrant ? "No — different money, log as typed" : "No — keep as a ledger entry"}
+            </button>
+            <button style={btn(T.gold, T.ink)} disabled={busy} onClick={isGrant ? acceptGrant : acceptGift}>
+              {busy ? "Working…" : isGrant ? "Yes — mark awarded" : "Log as a gift"}
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="modal-sheet-overlay" style={overlay} onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="modal-sheet-inner" style={box}>
@@ -167,9 +317,49 @@ function TransactionModal({ accounts, funds, onSave, onClose }) {
           <div style={{ fontSize:11, color:T.ink3, marginBottom:4 }}>Description</div>
           <input value={form.description} onChange={set("description")} placeholder="What is this for?" style={inp}/>
         </div>
-        <div>
+        <div style={{ position:"relative" }}>
           <div style={{ fontSize:11, color:T.ink3, marginBottom:4 }}>Vendor / Donor</div>
-          <input value={form.vendorDonor} onChange={set("vendorDonor")} placeholder="Name of payer or payee" style={inp}/>
+          <input value={form.vendorDonor} onChange={editName} placeholder="Start typing — donors and open grants link automatically"
+            onFocus={() => { if (sugs && (sugs.donors.length || sugs.grants.length)) setSugsOpen(true); }}
+            onBlur={() => setTimeout(() => setSugsOpen(false), 150)}
+            style={inp}/>
+          {linked && (
+            <div style={{ display:"flex", alignItems:"center", gap:6, marginTop:5, fontSize:12, color:T.greenDk, fontWeight:600 }}>
+              {linked.kind === "donor" ? "Linked donor" : "Open grant"} · {linked.kind === "donor" ? linked.entity.name : linked.entity.funder}
+              <button onClick={clearLink} aria-label="Unlink" style={{ background:"none", border:"none", color:T.ink3, cursor:"pointer", fontSize:12, padding:0 }}>✕</button>
+            </div>
+          )}
+          {!linked && (
+            <div style={{ fontSize:11, color:T.ink3, marginTop:5, lineHeight:1.5 }}>
+              Donor or grant money enters as a gift or award — free text is for true vendors (the hardware store).
+            </div>
+          )}
+          {sugsOpen && !linked && (
+            <div style={{ position:"absolute", top:"100%", left:0, right:0, zIndex:10, background:T.white, border:"1px solid "+T.bg3, borderRadius:10, boxShadow:"0 8px 24px rgba(15,26,18,0.14)", overflow:"hidden", marginTop:2 }}>
+              {form.type === "income" && sugs.grants.length > 0 && (
+                <>
+                  <div style={{ fontSize:10, color:T.ink3, textTransform:"uppercase", letterSpacing:".06em", padding:"7px 11px 2px" }}>Open grant asks</div>
+                  {sugs.grants.map(g => (
+                    <button key={g.id} style={sugBtn} onClick={() => pickGrant(g)}
+                      onMouseDown={e => e.preventDefault()}>
+                      <b>{g.funder}</b>{g.program ? ` — ${g.program}` : ""} · {fmtFull(parseFloat(g.amount) || 0)} · {g.status}
+                    </button>
+                  ))}
+                </>
+              )}
+              {sugs.donors.length > 0 && (
+                <>
+                  <div style={{ fontSize:10, color:T.ink3, textTransform:"uppercase", letterSpacing:".06em", padding:"7px 11px 2px" }}>Donors</div>
+                  {sugs.donors.map(d => (
+                    <button key={d.id} style={sugBtn} onClick={() => pickDonor(d)}
+                      onMouseDown={e => e.preventDefault()}>
+                      {d.name}{d.email ? <span style={{ color:T.ink3 }}> · {d.email}</span> : null}
+                    </button>
+                  ))}
+                </>
+              )}
+            </div>
+          )}
         </div>
         <div style={{ display:"flex", gap:8 }}>
           <div style={{ flex:1 }}>
@@ -189,9 +379,8 @@ function TransactionModal({ accounts, funds, onSave, onClose }) {
         </div>
         <div style={{ display:"flex", gap:8, justifyContent:"flex-end" }}>
           <button style={ghostBtn} onClick={onClose}>Cancel</button>
-          <button style={btn(form.type === "income" ? IN : OUT)}
-            onClick={() => { if (!form.description || !form.amount) return; onSave(form); }}>
-            Save transaction
+          <button style={btn(form.type === "income" ? IN : OUT)} disabled={busy} onClick={trySave}>
+            {busy ? "Checking…" : "Save transaction"}
           </button>
         </div>
       </div>
@@ -281,7 +470,7 @@ function MoneyInStrip({ onNavigate }) {
 }
 
 // ── Finance ────────────────────────────────────────────────────────────────
-export function Finance({ data, isReadOnly, onNavigate }) {
+export function Finance({ data, setData, isReadOnly, onNavigate }) {
   const [subtab, setSubtab] = useState("overview");
   const [accounts, setAccounts] = useState([]);
   const [funds, setFunds] = useState([]);
@@ -435,6 +624,21 @@ export function Finance({ data, isReadOnly, onNavigate }) {
     } catch(e) { console.error(e); }
   };
 
+  // A money-in routed to the grant-award or gift flow: the ledger was stamped
+  // by that flow (exactly once) — reload everything, no manual insert here.
+  // A routed award also updates the shared data.grants so the Grants board
+  // reads Awarded immediately, not on the next full app load.
+  const handleRouted = async (info) => {
+    setShowTxnModal(false);
+    if (info?.kind === "grant" && info.grant && setData) {
+      const raw = info.grant;
+      setData(prev => prev ? { ...prev, grants: (prev.grants || []).map(g => g.id === raw.id ? {
+        ...g, status: raw.status, amount: raw.amount || 0, received: raw.received || 0,
+      } : g) } : prev);
+    }
+    loadAll();
+  };
+
   const handleDeleteTxn = async (id) => {
     if (!window.confirm("Delete this transaction?")) return;
     try {
@@ -578,7 +782,7 @@ export function Finance({ data, isReadOnly, onNavigate }) {
       </div>
 
       {/* Modals */}
-      {showTxnModal && <TransactionModal accounts={accounts} funds={funds} onSave={handleAddTxn} onClose={() => setShowTxnModal(false)}/>}
+      {showTxnModal && <TransactionModal accounts={accounts} funds={funds} onSave={handleAddTxn} onRouted={handleRouted} onClose={() => setShowTxnModal(false)}/>}
       {(showAcctModal || editAcct) && <AccountModal account={editAcct} onSave={handleSaveAcct} onClose={() => { setShowAcctModal(false); setEditAcct(null); }}/>}
       {(showFundModal || editFund) && <FundModal fund={editFund} onSave={handleSaveFund} onClose={() => { setShowFundModal(false); setEditFund(null); }}/>}
 
@@ -750,7 +954,7 @@ export function Finance({ data, isReadOnly, onNavigate }) {
                   </thead>
                   <tbody>
                     {sortedTxns.map((t, i) => {
-                      const sm = sourceMeta(t.source);
+                      const sm = sourceMeta(t.source, t.grant_id);
                       const linkedDonor = t.donor_id && donorById[t.donor_id];
                       return (
                       <tr key={t.id} style={{ borderTop:"1px solid "+T.bg3, background: i%2===0?T.white:"#faf9f6" }}>

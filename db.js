@@ -773,6 +773,15 @@ async function initSchema() {
   // ON CONFLICT (gift_id) WHERE gift_id IS NOT NULL DO NOTHING.
   await pool.query(`ALTER TABLE fin_transactions ADD COLUMN IF NOT EXISTS gift_id TEXT`);
   await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS uq_fin_txns_gift ON fin_transactions (gift_id) WHERE gift_id IS NOT NULL`);
+  // Finance entity-routing FIX (2026-08-04) — the grant this ledger row books
+  // the award income for (nullable; gifts/manual/expense rows have none). Same
+  // invariant family as gift_id: "a grant award stamps the ledger exactly
+  // once", DB-enforced by a partial UNIQUE so the award path can never
+  // double-insert (re-award after un-award, redundant PUTs, or a manual row
+  // adopted as the award stamp). Award inserts use
+  // ON CONFLICT (grant_id) WHERE grant_id IS NOT NULL DO NOTHING.
+  await pool.query(`ALTER TABLE fin_transactions ADD COLUMN IF NOT EXISTS grant_id TEXT`);
+  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS uq_fin_txns_grant ON fin_transactions (grant_id) WHERE grant_id IS NOT NULL`);
   // BUILD-27 Part C (scenario 2): the Stripe payment_intent id is the natural
   // per-charge key — one payment_intent = one online gift, ALWAYS. The webhook's
   // old check-then-insert dedup on stripe_payment_id lost the race under a PARALLEL
