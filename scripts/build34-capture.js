@@ -98,6 +98,45 @@ const check = (name, cond, extra) => { checks++; if (cond) console.log("  PASS  
   saved = await (await page.request.get(`${API}/me/home-layout`, authed)).json();
   check("saving the default clears the stored pref (layout:null)", saved.layout === null, saved);
 
+  // ── "Move to top" (FIX 2026-08-04): mouse + keyboard + hero rail + persist ─
+  await page.getByRole("button", { name: "Edit Home layout — reorder or hide sections" }).click(); await sleep(400);
+  check("hero offers no Top button (it IS the top)", await page.getByRole("button", { name: "Move Fundraising goal to the top" }).count() === 0);
+  check("the section already under the hero offers no Top button (no-op hidden)", await page.getByRole("button", { name: "Move Goal breakdown to the top" }).count() === 0);
+  // Mouse path: send a lower section straight to the top.
+  await page.getByRole("button", { name: "Move Donor retention & signals to the top" }).click(); await sleep(300);
+  check("aria-live announces the landing position", /moved to top — position 2 of/.test(await page.getByRole("status").filter({ hasText: "moved to top" }).textContent().catch(() => "")));
+  check("moved section's handle now reads position 2 (directly under the hero)",
+    /position 2 of/.test(await page.getByRole("button", { name: /^Reorder Donor retention/ }).getAttribute("aria-label")));
+  await page.screenshot({ path: path.join(OUT, "edit-move-to-top.png"), fullPage: true });
+  console.log("  ✓ edit-move-to-top");
+  // Keyboard path: it's a button — focus + Enter.
+  const topBtn = page.getByRole("button", { name: "Move Needs attention & outreach to the top" });
+  await topBtn.focus(); await page.keyboard.press("Enter"); await sleep(300);
+  check("keyboard Enter on the Top button moves the section under the hero",
+    /position 2 of/.test(await page.getByRole("button", { name: /^Reorder Needs attention/ }).getAttribute("aria-label")));
+  // Done persists via the same save; reload proves it.
+  await page.getByRole("button", { name: "Done", exact: true }).click(); await sleep(800);
+  saved = await (await page.request.get(`${API}/me/home-layout`, authed)).json();
+  check("server stored the move-to-top order (hero, work, retention, …)",
+    saved.layout?.[0]?.id === "hero" && saved.layout?.[1]?.id === "work" && saved.layout?.[2]?.id === "retention", saved);
+  await page.reload(); await sleep(3200);
+  const order2 = await page.evaluate(() => {
+    const root = document.querySelector(".dash-root");
+    const marks = [];
+    for (const el of root.querySelectorAll(":scope > *")) {
+      if (el.querySelector(".dash-goal-banner") || el.classList.contains("dash-goal-banner")) marks.push("hero");
+      else if (el.querySelector("#dash-needtodo")) marks.push("work");
+      else if (/Donor Retention Rate/.test(el.textContent) && /Stewardship debt/.test(el.textContent)) marks.push("retention");
+      else if (el.querySelector(".dash-cmd-grid")) marks.push("commandCenter");
+    }
+    return marks;
+  });
+  check("after reload: hero first, moved section directly under it", order2[0] === "hero" && order2[1] === "work", order2);
+  await page.screenshot({ path: path.join(OUT, "home-move-to-top-persisted.png"), fullPage: true });
+  console.log("  ✓ home-move-to-top-persisted");
+  // Leave the demo user on the default layout.
+  await page.request.delete(`${API}/me/home-layout`, authed);
+
   await browser.close();
   console.log(`\n${checks - bad}/${checks} checks passed → ${OUT}`);
   process.exit(bad ? 1 : 0);

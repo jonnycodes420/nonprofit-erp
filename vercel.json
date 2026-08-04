@@ -1,5 +1,9 @@
 {
   "buildCommand": "npm --prefix client install && npm --prefix client run build",
   "outputDirectory": "client/dist",
-  "rewrites": [{ "source": "/(.*)", "destination": "/index.html" }]
+  "rewrites": [
+    { "source": "/unsubscribe", "destination": "https://nonprofit-erp-production.up.railway.app/unsubscribe" },
+    { "source": "/recurring/update-card", "destination": "https://nonprofit-erp-production.up.railway.app/recurring/update-card" },
+    { "source": "/(.*)", "destination": "/index.html" }
+  ]
 }

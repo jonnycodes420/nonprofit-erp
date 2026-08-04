@@ -57,6 +57,7 @@ const Stripe = require("stripe");
 const { google } = require("googleapis");
 const { Webhook: SvixWebhook } = require("svix");
 const { donationStripeKey, billingStripeKey, billingStripeMode, billingConfigError, otherBillingMode } = require("./stripeKeys");
+const { CANONICAL_APP_URL, resolvePublicAppUrl, publicAppUrl } = require("./publicUrl");
 
 // `stripe` = DONATION processing (connected accounts + /stripe/webhook), on the
 // LIVE STRIPE_SECRET_KEY. `billingStripe` = PLATFORM subscription billing
@@ -994,9 +995,15 @@ app.get("/health", (req, res) => {
   // secrets): true = all configured prices resolve under the billing key's mode,
   // false = a test/live mismatch (loud warning already logged), null = not yet
   // checked or nothing to check. Full detail is at /admin/billing-diagnostic.
+  // publicUrl: the resolved base every outbound email link uses (non-secret).
+  // fromEnv:false means FRONTEND_URL is unset or was rejected as a deployment
+  // host and links are riding the canonical fallback — post-deploy this is the
+  // one-glance check that reset/invite links carry stewardapp.dev.
+  const pu = resolvePublicAppUrl();
   res.json({
     status: "ok", version: "1.1.0", db: dbReady, sentry: !!process.env.SENTRY_DSN,
     billing: { mode: billingModeStatus.mode, ok: billingModeStatus.ok, checked: billingModeStatus.checked },
+    publicUrl: { url: pu.url, fromEnv: pu.fromEnv },
   });
 });
 
@@ -1528,7 +1535,7 @@ app.post("/auth/forgot-password", passwordResetLimiter, wrap(async (req, res) =>
     [id, user.id, token]
   );
 
-  const frontendUrl = process.env.FRONTEND_URL || "https://client-five-tau-13.vercel.app";
+  const frontendUrl = publicAppUrl();
   const resetLink = `${frontendUrl}/reset-password?token=${token}`;
 
   if (process.env.RESEND_API_KEY) {
@@ -2211,8 +2218,7 @@ app.post("/auth/invite", requireAuth, requireAdmin, wrap(async (req, res) => {
     [id, req.user.orgId, normalizedEmail, token, validRole, req.user.userId, expiresAt]
   );
 
-  const FRONTEND_URL = process.env.FRONTEND_URL || "https://client-five-tau-13.vercel.app";
-  const inviteLink = `${FRONTEND_URL}/invite/${token}`;
+  const inviteLink = `${publicAppUrl()}/invite/${token}`;
 
   const orgs = await query("SELECT * FROM orgs WHERE id = ?", [req.user.orgId]);
   const org = orgs[0];
@@ -6801,8 +6807,10 @@ function verifyUnsubscribeToken(token) {
 }
 
 function buildUnsubscribeUrl(email, orgId, source) {
-  const backendUrl = process.env.BACKEND_URL || "https://nonprofit-erp-production.up.railway.app";
-  return `${backendUrl}/unsubscribe?token=${signUnsubscribeToken(email, orgId, source)}`;
+  // The canonical domain, NOT the raw API host: /unsubscribe is proxied to
+  // this server by the vercel.json rewrite, so the link a donor sees (and
+  // hovers) is stewardapp.dev. Same rule as every other email link.
+  return `${publicAppUrl()}/unsubscribe?token=${signUnsubscribeToken(email, orgId, source)}`;
 }
 
 // CAN-SPAM requires the sender's physical postal address in commercial email,
@@ -6998,8 +7006,10 @@ function verifyRecoveryToken(token) {
 }
 
 function buildCardUpdateUrl(subscriptionId, orgId) {
-  const backendUrl = process.env.BACKEND_URL || "https://nonprofit-erp-production.up.railway.app";
-  return `${backendUrl}/recurring/update-card?token=${signRecoveryToken(subscriptionId, orgId)}`;
+  // Canonical domain via the vercel.json /recurring/update-card proxy rewrite
+  // — the failed-card recovery email is exactly where a suspicious-looking
+  // host would cost a recovery. See buildUnsubscribeUrl.
+  return `${publicAppUrl()}/recurring/update-card?token=${signRecoveryToken(subscriptionId, orgId)}`;
 }
 
 // Idempotency for every recovery webhook path: Stripe's event.id is unique
@@ -8074,13 +8084,8 @@ app.post("/annual-fund/goal", requireAuth, requireAdmin, wrap(async (req, res) =
 app.post("/stripe/connect", requireAuth, requireAdmin, wrap(async (req, res) => {
   if (!stripe) return res.status(503).json({ error: "Stripe not configured" });
 
-  const rawFrontendUrl = process.env.FRONTEND_URL || process.env.CORS_ORIGIN || "https://client-five-tau-13.vercel.app";
-  const frontendUrl = rawFrontendUrl.replace(/^http:\/\//i, "https://");
+  const frontendUrl = publicAppUrl();
   console.log("[stripe/connect] frontendUrl resolved to:", frontendUrl);
-
-  if (!frontendUrl.startsWith("https://")) {
-    return res.status(500).json({ error: `Invalid FRONTEND_URL: "${frontendUrl}" — must start with https://` });
-  }
 
   let account;
   try {
@@ -8512,8 +8517,7 @@ app.post("/org/:orgSlug/giving-page/:pageSlug/fundraisers", donateLimiter, wrap(
     }
   }
 
-  const rawFrontendUrl = process.env.FRONTEND_URL || "https://client-five-tau-13.vercel.app";
-  const frontendUrl = rawFrontendUrl.replace(/^http:\/\//i, "https://");
+  const frontendUrl = publicAppUrl();
   const publicUrl = `${frontendUrl}/give/${req.params.orgSlug}/${req.params.pageSlug}/${slug}`;
   const manageUrl = `${frontendUrl}/fundraiser/manage/${editToken}`;
 
@@ -8598,7 +8602,7 @@ app.get("/peer-fundraisers/manage/:token", fundraiserManageLimiter, wrap(async (
     status: f.status,
     raisedAmount: parseFloat(raisedRow[0]?.total) || 0,
     orgName: f.org_name, givingPageTitle: f.giving_page_title,
-    publicUrl: `${(process.env.FRONTEND_URL || "https://client-five-tau-13.vercel.app").replace(/^http:\/\//i, "https://")}/give/${f.org_slug}/${f.giving_page_slug}/${f.slug}`,
+    publicUrl: `${publicAppUrl()}/give/${f.org_slug}/${f.giving_page_slug}/${f.slug}`,
   });
 }));
 
@@ -8709,8 +8713,7 @@ app.post("/donate/:orgSlug", donateLimiter, wrap(async (req, res) => {
 
   const donorName = `${firstName} ${lastName}`.trim();
   const isRecurring = frequency === "monthly" || frequency === "annual";
-  const rawFrontendUrl = process.env.FRONTEND_URL || "https://client-five-tau-13.vercel.app";
-  const frontendUrl = rawFrontendUrl.replace(/^http:\/\//i, "https://");
+  const frontendUrl = publicAppUrl();
 
   let fundName = "";
   if (fundId) {
@@ -12402,8 +12405,7 @@ app.get("/recurring/update-card", wrap(async (req, res) => {
   const rs = rsRows[0];
   if (!rs) return res.status(404).send("This subscription could not be found.");
 
-  const rawFrontendUrl = process.env.FRONTEND_URL || "https://client-five-tau-13.vercel.app";
-  const frontendUrl = rawFrontendUrl.replace(/^http:\/\//i, "https://");
+  const frontendUrl = publicAppUrl();
 
   const session = await stripe.checkout.sessions.create({
     mode: "setup",
@@ -12664,8 +12666,7 @@ async function sendPledgeReminderEmail(org, donor, pledgeRow) {
     console.log(`[pledge-reminder] skipping suppressed address ${donor.email} (${suppressReason})`);
     return false;
   }
-  const rawFrontendUrl = process.env.FRONTEND_URL || "https://client-five-tau-13.vercel.app";
-  const frontendUrl = rawFrontendUrl.replace(/^http:\/\//i, "https://");
+  const frontendUrl = publicAppUrl();
   const giveUrl = `${frontendUrl}/give/${org.org_slug}`;
   const tokenCtx = { donor, org, amount: pledgeRow.amount, dueDate: pledgeRow.due_date, giveUrl };
   const subject = applyPledgeReminderTokens(org.pledge_reminder_subject || DEFAULT_PLEDGE_REMINDER_SUBJECT, tokenCtx);
@@ -13013,8 +13014,8 @@ app.post("/billing/create-checkout", requireAuth, requireAdmin, wrap(async (req,
     const sessionParams = {
       mode: "subscription",
       line_items: [{ price: priceId, quantity: 1 }],
-      success_url: (process.env.FRONTEND_URL || "https://stewardapp.dev") + "/dashboard?subscribed=true",
-      cancel_url:  (process.env.FRONTEND_URL || "https://stewardapp.dev") + "/pricing",
+      success_url: publicAppUrl() + "/dashboard?subscribed=true",
+      cancel_url:  publicAppUrl() + "/pricing",
       metadata: { orgId: req.user.orgId, plan },
       subscription_data: { metadata: { orgId: req.user.orgId, plan } },
       customer: customerId,
@@ -13037,7 +13038,7 @@ app.post("/billing/create-portal", requireAuth, requireAdmin, wrap(async (req, r
     if (!customerId) return res.status(404).json({ error: "Org not found" });
     const session = await billingStripe.billingPortal.sessions.create({
       customer: customerId,
-      return_url: (process.env.FRONTEND_URL || "https://stewardapp.dev") + "/dashboard",
+      return_url: publicAppUrl() + "/dashboard",
     });
     res.json({ url: session.url });
   } catch (err) {
@@ -13591,7 +13592,7 @@ app.post("/gmail/auth-url", requireAuth, wrap(async (req, res) => {
 // GET /gmail/callback — OAuth callback from Google (public)
 app.get("/gmail/callback", wrap(async (req, res) => {
   const { code, state: userId, error } = req.query;
-  const frontendUrl = process.env.FRONTEND_URL || "https://client-five-tau-13.vercel.app";
+  const frontendUrl = publicAppUrl();
   if (error || !code) return res.redirect(`${frontendUrl}/dashboard?gmailError=access_denied`);
 
   try {
@@ -14242,6 +14243,21 @@ app.listen(PORT, () => {
   console.log(`Steward backend running on port ${PORT}`);
   if (!process.env.RESEND_DOMAIN_VERIFIED) {
     console.warn("[email] WARNING: RESEND_DOMAIN_VERIFIED not set — emails may land in spam");
+  }
+  // Boot check for the canonical public URL every email link derives from.
+  // Deliberately loud-but-not-fatal: the code-level fallback IS the canonical
+  // domain, so links are correct even unset — crashing the API (donations,
+  // webhooks) over a missing env var would be worse than the warning. The
+  // same state is exposed at /health.publicUrl for post-deploy verification.
+  {
+    const pu = resolvePublicAppUrl();
+    if (pu.rejected) {
+      console.error(`[public-url] CRITICAL: FRONTEND_URL is set to a deployment host ("${pu.rejected}") — REJECTED. Email links use ${pu.url}. Set FRONTEND_URL=${CANONICAL_APP_URL}.`);
+    } else if (!pu.fromEnv) {
+      console.error(`[public-url] WARNING: FRONTEND_URL is unset — email links fall back to ${pu.url}. Set FRONTEND_URL=${CANONICAL_APP_URL} explicitly in production.`);
+    } else {
+      console.log(`[public-url] email/link base: ${pu.url}`);
+    }
   }
   // Self-diagnose a billing key/price Stripe-mode mismatch on boot (non-blocking).
   scheduleBillingModeCheck();

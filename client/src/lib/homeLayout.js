@@ -54,6 +54,28 @@ export function mergeLayout(saved) {
   return out;
 }
 
+// "Move to top" (one click/keypress from edit mode) — respects the
+// unhideable-hero rail: when the hero is the first VISIBLE section, "top" for
+// any other section means directly under the hero; if the user moved the hero
+// down, top is genuinely first. Moving the hero itself always lands it first.
+// Returns the SAME array reference when the move is a no-op (already at top /
+// unknown id) — the UI uses that to decide whether to offer the button.
+export function moveToTop(layout, id) {
+  if (!Array.isArray(layout)) return layout;
+  const from = layout.findIndex(r => r && r.id === id);
+  if (from < 0) return layout;
+  const firstVisible = layout.find(r => r && r.visible !== false);
+  const heroIsFirst = !!firstVisible && firstVisible.id === HERO_ID;
+  const to = (id !== HERO_ID && heroIsFirst)
+    ? layout.findIndex(r => r.id === HERO_ID) + 1
+    : 0;
+  if (from === to) return layout;
+  const next = [...layout];
+  const [row] = next.splice(from, 1);
+  next.splice(from < to ? to - 1 : to, 0, row);
+  return next;
+}
+
 export const isDefaultLayout = layout =>
   layout.length === DEFAULT_LAYOUT.length &&
   layout.every((row, i) => row.id === DEFAULT_LAYOUT[i].id && row.visible === true);

@@ -2,7 +2,7 @@ import { useState, useEffect, Fragment } from "react";
 import { apiFetch } from "../api";
 import { useAuth } from "../main";
 import { T, fmt, fmtFull, daysUntil, daysDiff, askClaude, buildContext, Spin, AIBtn, GoldMoment, interactive } from "./shared";
-import { mergeLayout, sectionMeta, isDefaultLayout } from "../lib/homeLayout";
+import { mergeLayout, sectionMeta, isDefaultLayout, moveToTop } from "../lib/homeLayout";
 import FunnelChart from "./FunnelChart";
 import MetricBreakdownPanel from "./MetricBreakdownPanel";
 
@@ -173,6 +173,18 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
   });
   const setSectionVisible=(id,visible)=>setLayout(l=>l.map(r=>
     r.id===id?{...r,visible:sectionMeta(id)?.hideable===false?true:visible}:r));
+  // "Move to top" (edit mode): one click sends the section to the top of the
+  // stack, respecting the hero rail (top = under the hero while the hero is
+  // first — see moveToTop in ../lib/homeLayout). The aria-live message tells a
+  // screen-reader user where the section landed.
+  const [layoutLiveMsg,setLayoutLiveMsg]=useState("");
+  const moveSectionToTop=id=>{
+    const next=moveToTop(layout,id);
+    if(next===layout)return;
+    setLayout(next);
+    const vis=next.filter(r=>r.visible);
+    setLayoutLiveMsg(`${sectionMeta(id)?.label||id} moved to top — position ${vis.findIndex(r=>r.id===id)+1} of ${vis.length}`);
+  };
 
   const enterEdit=()=>{setPreEditLayout(layout);setEditMode(true);};
   const cancelEdit=()=>{if(preEditLayout)setLayout(preEditLayout);setEditMode(false);setDragSectionId(null);};
@@ -1296,6 +1308,14 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
                     style={{display:"flex",alignItems:"center",gap:6,background:T.white,border:"1px solid "+T.bg3,borderRadius:8,padding:"5px 10px",fontSize:12,fontWeight:700,color:T.ink2,cursor:"grab",boxShadow:T.shadow}}>
                     <span aria-hidden="true">{"⠿"}</span>{meta?.label||row.id}
                   </button>
+                  {moveToTop(layout,row.id)!==layout&&(
+                    <button onClick={()=>moveSectionToTop(row.id)}
+                      aria-label={`Move ${meta?.label||row.id} to the top`}
+                      title="Send this section to the top"
+                      style={{display:"flex",alignItems:"center",gap:4,background:T.white,border:"1px solid "+T.bg3,borderRadius:8,padding:"5px 10px",fontSize:12,fontWeight:700,color:T.greenDk,cursor:"pointer",boxShadow:T.shadow}}>
+                      <span aria-hidden="true">↑</span>Top
+                    </button>
+                  )}
                   {meta?.hideable===false?(
                     <span title="Home always shows the fundraising hero" style={{display:"flex",alignItems:"center",background:T.white,border:"1px solid "+T.bg3,borderRadius:8,padding:"5px 10px",fontSize:11,fontWeight:700,color:T.ink3,boxShadow:T.shadow}}>Always shown</span>
                   ):(
@@ -1307,6 +1327,9 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
               </div>
             );
           })}
+          {editMode&&(
+            <span role="status" aria-live="polite" style={{position:"absolute",width:1,height:1,padding:0,margin:-1,overflow:"hidden",clip:"rect(0 0 0 0)",whiteSpace:"nowrap",border:0}}>{layoutLiveMsg}</span>
+          )}
           {editMode&&hiddenRows.length>0&&(
             <div style={{background:T.bg,border:"1.5px dashed "+T.bg3,borderRadius:14,padding:"12px 16px"}}>
               <div style={{fontSize:10,fontWeight:800,letterSpacing:"0.1em",textTransform:"uppercase",color:T.ink3,marginBottom:8}}>Hidden — not shown on your Home</div>

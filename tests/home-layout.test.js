@@ -96,7 +96,7 @@ async function seedUser(o, id, tag) {
   ok("after reset, GET → null again", r.status === 200 && r.body.layout === null, r.body);
 
   // ── The client merge rule (the canonical list + stale-config guarantee) ──
-  const { mergeLayout, DEFAULT_LAYOUT, HOME_SECTIONS, isDefaultLayout, sectionMeta } =
+  const { mergeLayout, DEFAULT_LAYOUT, HOME_SECTIONS, isDefaultLayout, sectionMeta, moveToTop } =
     await import("../client/src/lib/homeLayout.js");
 
   ok("canonical list has the hero first and 7 sections", HOME_SECTIONS.length === 7 && HOME_SECTIONS[0].id === "hero", HOME_SECTIONS.map(s => s.id));
@@ -129,6 +129,36 @@ async function seedUser(o, id, tag) {
   ok("merge survives garbage rows + dedupes (first wins)", m3.length === DEFAULT_LAYOUT.length && m3.find(x => x.id === "work").visible === false, m3);
   ok("isDefaultLayout flags a reorder as non-default", !isDefaultLayout(mergeLayout(stale)));
   ok("sectionMeta resolves labels for the tray", sectionMeta("myPortfolio")?.label === "My Portfolio" && sectionMeta("nope") === null);
+
+  // ── moveToTop (the edit-mode "↑ Top" affordance) ─────────────────────────
+  // Hero rail: while the hero is the first VISIBLE section, "top" for any
+  // other section means directly under the hero; hero moved down → genuinely
+  // first. A no-op returns the SAME reference (the UI hides the button on it).
+  const heroFirst = mergeLayout(null); // hero, goalCards, commandCenter, ...
+  const t1 = moveToTop(heroFirst, "impact");
+  ok("hero first → moved section lands directly UNDER the hero", t1.map(x => x.id).slice(0, 2).join(",") === "hero,impact", t1.map(x => x.id));
+  ok("moveToTop keeps every section exactly once", t1.length === DEFAULT_LAYOUT.length && new Set(t1.map(x => x.id)).size === t1.length);
+  const t2 = moveToTop(t1, "impact");
+  ok("already at top → no-op returns the same reference", t2 === t1);
+  ok("hero itself at position 1 → its Top affordance is a no-op", moveToTop(heroFirst, "hero") === heroFirst);
+
+  const heroDown = mergeLayout([
+    { id: "work", visible: true }, { id: "goalCards", visible: true }, { id: "hero", visible: true },
+  ]);
+  const t3 = moveToTop(heroDown, "impact");
+  ok("hero moved down → moved section goes GENUINELY first", t3[0].id === "impact" && t3.map(x => x.id).indexOf("hero") > 0, t3.map(x => x.id));
+  const t4 = moveToTop(heroDown, "hero");
+  ok("hero itself moves to genuinely first", t4[0].id === "hero", t4.map(x => x.id));
+
+  // A hidden section sitting above the hero in the ARRAY doesn't break the
+  // rail — "first" means first VISIBLE.
+  const hiddenAbove = mergeLayout([
+    { id: "goalCards", visible: false }, { id: "hero", visible: true }, { id: "work", visible: true },
+  ]);
+  const t5 = moveToTop(hiddenAbove, "impact");
+  const t5vis = t5.filter(x => x.visible).map(x => x.id);
+  ok("hidden row above the hero: visible order is still hero-then-moved", t5vis[0] === "hero" && t5vis[1] === "impact", t5vis);
+  ok("moveToTop tolerates junk input", moveToTop(null, "work") === null && moveToTop(heroFirst, "nope") === heroFirst);
 
   await reset();
   await closeDb();
