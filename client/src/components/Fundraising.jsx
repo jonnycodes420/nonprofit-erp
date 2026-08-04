@@ -302,6 +302,17 @@ function RollupThermometer({ rollup }) {
 
 // One goal card in the portfolio. Overarching goals show their rolled-up child
 // progress and list their children; leaf goals show their own SUM(gifts).
+// Committed-but-not-yet-raised money beside a campaign's raised figure:
+// open pledges + (already inside raised) awarded grants. "raised = payments
+// received + awarded grants"; "$X pledged" is SEPARATE, never summed in —
+// summing a pledge and its payments into one number double-counts.
+function committedText(g) {
+  const parts = [];
+  if ((g.pledged || 0) > 0) parts.push(`${fmtFull(g.pledged)} pledged`);
+  if ((g.grantAwarded || 0) > 0) parts.push(`incl. ${fmtFull(g.grantAwarded)} in awarded grants`);
+  return parts.join(" · ");
+}
+
 function GoalCard({ g, allGoals, onClick }) {
   const cat = CATEGORY_META[g.goalCategory] || CATEGORY_META.project;
   const accent = g.isOverarching ? T.gold600 : cat.color;
@@ -333,6 +344,7 @@ function GoalCard({ g, allGoals, onClick }) {
         <div style={{ fontSize: 12, color: T.ink3, borderTop: "1px solid " + T.bg2, paddingTop: 10 }}>
           {g.donorCount} donor{g.donorCount === 1 ? "" : "s"}
           {daysLeftText(g.daysLeft) && g.lifecycle === "active" ? ` · ${daysLeftText(g.daysLeft)}` : g.lifecycle === "upcoming" ? " · upcoming" : g.lifecycle === "ended" ? " · ended" : ""}
+          {committedText(g) ? ` · ${committedText(g)}` : ""}
         </div>
       )}
     </div>
@@ -442,6 +454,7 @@ function CampaignCard({ g, allGoals, editBtn }) {
         <div style={{ fontSize: 12, color: T.ink3, borderTop: "1px solid " + T.bg2, paddingTop: 12 }}>
           {g.donorCount} donor{g.donorCount === 1 ? "" : "s"}
           {g.endDate ? ` · closes ${String(g.endDate).slice(0, 10)}` : ""}
+          {committedText(g) ? ` · ${committedText(g)}` : ""}
         </div>
       )}
     </div>
@@ -551,13 +564,20 @@ function PagesView({ pages, orgSlug, onNavigate }) {
       </div>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(320px,1fr))", gap: 16 }}>
         {active.map(p => {
-          const raised = parseFloat(p.raised_amount) || 0;
-          const goal = p.goal_amount != null ? parseFloat(p.goal_amount) : null;
+          // One goal concept: a page linked to a campaign tracks toward THAT
+          // campaign — its thermometer shows the campaign's live figures, not a
+          // separate page-local goal. An unlinked page keeps its own goal.
+          const linked = !!p.campaign_id;
+          const raised = linked ? (parseFloat(p.campaign_raised) || 0) : (parseFloat(p.raised_amount) || 0);
+          const goal = linked ? (p.campaign_goal != null ? parseFloat(p.campaign_goal) : null) : (p.goal_amount != null ? parseFloat(p.goal_amount) : null);
           const pct = goal > 0 ? Math.min(100, Math.round((raised / goal) * 100)) : null;
           const url = orgSlug ? `${window.location.origin}/give/${orgSlug}/${p.slug}` : "";
           return (
             <div key={p.id} style={{ background: T.white, border: "1px solid " + T.bg3, borderRadius: 16, padding: "20px 22px", boxShadow: T.shadow, display: "flex", flexDirection: "column", gap: 14 }}>
-              <div style={{ fontFamily: "'DM Serif Display',serif", fontSize: 18, color: T.ink, lineHeight: 1.25 }}>{p.title}</div>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                <div style={{ fontFamily: "'DM Serif Display',serif", fontSize: 18, color: T.ink, lineHeight: 1.25 }}>{p.title}</div>
+                {linked && p.campaign_name && <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 99, background: T.gold100, color: T.gold700, border: "1px solid " + T.gold300 }}>Counts toward {p.campaign_name}</span>}
+              </div>
               {goal > 0 ? (
                 <Thermometer raised={raised} goal={goal} percent={pct} />
               ) : (

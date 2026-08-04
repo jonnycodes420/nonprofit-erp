@@ -90,5 +90,28 @@ ok(/<PageTitle main="Your" accent="finances."\/>/.test(fin.replace(/\n/g, " ")) 
 // Part 1 information-not-lost: the one unique number (vs-prior delta) survives
 ok(has(fin, "revDeltaCaption"), "Finance vs-prior-period delta surfaced on a stat card caption (not dropped)");
 
+// ── Attribution FIX — Home hero chips are drillable ─────────────────────────
+// The four dark-hero chips (Pace · This FY · This week · Re-engaged) route
+// through the ONE shared interactive() treatment (dark variant — keyboard
+// focus/activation included) to destinations that show the SAME number the
+// chip claimed (the count-matches-destination rule; the live agreement
+// assertions run in tests/attribution-completeness.test.js Part 6).
+const dash = read("client/src/components/Dashboard.jsx");
+ok(/const GoalStat=\(\{label,value,valueColor,sub,onClick\}\)/.test(dash), "GoalStat accepts onClick");
+ok(has(dash, "interactive(onClick,{label:onClick?`Open ${label}`:undefined,dark:true})"), "GoalStat routes through interactive() (dark variant, keyboard-accessible)");
+ok(count(dash, 'onClick={()=>onNavigate("fundraising")}/>') >= 2, "Pace chip → Fundraising Overview (both hero branches)");
+ok(has(dash, 'onNavigate("reports",{report:"giving-summary",preset:"thisFY",yearMode:"fiscal"})'), "This-FY chip → Reports Giving Summary (current FY, fiscal)");
+ok(has(dash, 'onNavigate("reports",{report:"giving-summary",from:tw.start,to:tw.end})'), "This-week chip → Giving Summary filtered to the chip's exact week");
+ok(has(dash, "setReengBreakdownOpen(true)"), "Re-engaged chip opens its donor drill-down");
+ok(has(dash, "impact?.reengagedDonors"), "Re-engaged drill-down lists the donors behind the number");
+// Time Left has no destination — it must stay visibly static (no dead click).
+ok(/label="Time Left"[^/]*sub="left to reach this goal"\/>/.test(dash), "Time Left chip stays static (no onClick — no dead click)");
+// The Reports deep-link intent is real (App threads it, Reports consumes it).
+const appSrc = read("client/src/App.jsx");
+ok(has(appSrc, "setReportsIntent"), "App.jsx carries a reports intent");
+ok(has(appSrc, "initialReport={reportsIntent?.report}"), "Reports receives initialReport");
+ok(has(reports, "initialReport, initialParams"), "Reports consumes initialReport/initialParams");
+ok(has(reports, 'initialParams?.from && initialParams?.to) ? "custom"'), "Reports maps a from/to intent onto the custom preset");
+
 console.log(`\nclickability.test.js — ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

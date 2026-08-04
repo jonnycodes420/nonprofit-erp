@@ -2789,7 +2789,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
   // cadence as the recurring-gift dunning system (see processPledgeReminders
   // in server.js).
   const [pledges,setPledges]=useState([]);
-  const [pledgeForm,setPledgeForm]=useState({amount:"",dueDate:new Date().toISOString().split("T")[0],notes:""});
+  const [pledgeForm,setPledgeForm]=useState({amount:"",dueDate:new Date().toISOString().split("T")[0],notes:"",campaignId:""});
   const [addPledgeOpen,setAddPledgeOpen]=useState(false);
   const [pledgeSaving,setPledgeSaving]=useState(false);
   const [pledgeResendBusyId,setPledgeResendBusyId]=useState(null);
@@ -3119,7 +3119,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
     try{
       await apiFetch(`/donors/${donor.id}/pledges`,{method:"POST",body:JSON.stringify(pledgeForm)});
       setAddPledgeOpen(false);
-      setPledgeForm({amount:"",dueDate:new Date().toISOString().split("T")[0],notes:""});
+      setPledgeForm({amount:"",dueDate:new Date().toISOString().split("T")[0],notes:"",campaignId:""});
       loadPledges();
     }catch(e){alert(e.message||"Could not save pledge");}
     setPledgeSaving(false);
@@ -3692,6 +3692,16 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
                   <input value={pledgeForm.amount} onChange={e=>setPledgeForm(p=>({...p,amount:e.target.value}))} placeholder="Pledged amount ($)" type="number" style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"7px 10px",color:T.ink,fontSize:12,outline:"none"}}/>
                   <input value={pledgeForm.dueDate} onChange={e=>setPledgeForm(p=>({...p,dueDate:e.target.value}))} type="date" style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"7px 10px",color:T.ink,fontSize:12,outline:"none"}}/>
                 </div>
+                {/* Attribution FIX — a pledge attributes at pledge time (capital
+                    campaigns are mostly pledges). Payments against it inherit the
+                    campaign; the campaign shows this as "pledged" until paid. */}
+                {campaigns.length>0&&(
+                  <select value={pledgeForm.campaignId} onChange={e=>setPledgeForm(p=>({...p,campaignId:e.target.value}))}
+                    style={{width:"100%",boxSizing:"border-box",background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"7px 10px",color:T.ink,fontSize:12,outline:"none",marginBottom:8,cursor:"pointer"}}>
+                    <option value="">No campaign — general pledge</option>
+                    {campaigns.map(c=><option key={c.id} value={c.id}>Counts toward: {c.name}</option>)}
+                  </select>
+                )}
                 <input value={pledgeForm.notes} onChange={e=>setPledgeForm(p=>({...p,notes:e.target.value}))} placeholder="Notes (optional)" style={{width:"100%",background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"7px 10px",color:T.ink,fontSize:12,outline:"none",boxSizing:"border-box",marginBottom:8}}/>
                 <div style={{display:"flex",gap:8}}>
                   <button onClick={addPledge} disabled={pledgeSaving} style={{background:T.terracotta,border:"none",borderRadius:8,padding:"7px 14px",color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer"}}>Save</button>
@@ -3713,7 +3723,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
                             <span style={{background:meta.color+"15",color:meta.color,border:"1px solid "+meta.color+"40",borderRadius:99,padding:"2px 8px",fontSize:10,fontWeight:800}}>{meta.label}</span>
                             {isOverdue&&<span style={{fontSize:10,fontWeight:800,color:T.terracotta}}>{daysOver}d overdue · reminder {Math.min(pl.reminder_step+1,4)}/4 sent</span>}
                           </div>
-                          <div style={{fontSize:11,color:T.ink3,marginTop:2}}>Due {pl.due_date}</div>
+                          <div style={{fontSize:11,color:T.ink3,marginTop:2}}>Due {pl.due_date}{pl.campaign_id?(()=>{const c=campaigns.find(x=>x.id===pl.campaign_id);return c?` · counts toward ${c.name}`:"";})():""}</div>
                           {pl.notes&&<div style={{fontSize:12,color:T.ink3,marginTop:3,lineHeight:1.4}}>{pl.notes}</div>}
                         </div>
                         <div style={{display:"flex",gap:6,alignItems:"center",flexShrink:0}}>

@@ -53,8 +53,13 @@ function GrantProfile({grant,onClose,onUpdate,onDelete,isAdmin,org}){
     funder:grant.funder,program:grant.program,amount:grant.amount,received:grant.received||0,
     status:grant.status,deadline:grant.deadline||"",reportDue:grant.reportDue||"",officer:grant.officer||"",
     description:grant.description||"",requirements:grant.requirements||"",
+    campaignId:grant.campaignId||"",
   });
   const[interactions,setInteractions]=useState([]);
+  // Goal'd fundraising campaigns for the optional "counts toward" link — an
+  // awarded grant's amount can attribute to a campaign (attribution FIX).
+  const[fundCampaigns,setFundCampaigns]=useState([]);
+  useEffect(()=>{apiFetch("/fundraising/campaigns").then(r=>setFundCampaigns(Array.isArray(r)?r:[])).catch(()=>{});},[]);
   const[logOpen,setLogOpen]=useState(false);
 
   useEffect(()=>{
@@ -98,8 +103,8 @@ function GrantProfile({grant,onClose,onUpdate,onDelete,isAdmin,org}){
   };
 
   const saveEdit=async()=>{
-    const raw=await apiFetch(`/grants/${grant.id}`,{method:"PUT",body:JSON.stringify({funder:ef.funder,program:ef.program,amount:Number(ef.amount)||0,received:Number(ef.received)||0,status:ef.status,deadline:ef.deadline||"",reportDue:ef.reportDue||"",officer:ef.officer,notes:grant.notes,description:ef.description||"",requirements:ef.requirements||""})});
-    const adapted={id:raw.id,funder:raw.funder,program:raw.program||"",amount:raw.amount||0,received:raw.received||0,status:raw.status,deadline:raw.deadline||"",reportDue:raw.report_due||null,officer:raw.officer||"",notes:raw.notes||"",description:raw.description||"",requirements:raw.requirements||"",history:Array.isArray(raw.history)?raw.history:JSON.parse(raw.history||"[]")};
+    const raw=await apiFetch(`/grants/${grant.id}`,{method:"PUT",body:JSON.stringify({funder:ef.funder,program:ef.program,amount:Number(ef.amount)||0,received:Number(ef.received)||0,status:ef.status,deadline:ef.deadline||"",reportDue:ef.reportDue||"",officer:ef.officer,notes:grant.notes,description:ef.description||"",requirements:ef.requirements||"",campaignId:ef.campaignId||""})});
+    const adapted={id:raw.id,funder:raw.funder,program:raw.program||"",amount:raw.amount||0,received:raw.received||0,status:raw.status,deadline:raw.deadline||"",reportDue:raw.report_due||null,officer:raw.officer||"",notes:raw.notes||"",description:raw.description||"",requirements:raw.requirements||"",campaignId:raw.campaign_id||null,history:Array.isArray(raw.history)?raw.history:JSON.parse(raw.history||"[]")};
     onUpdate(adapted);setEditing(false);
   };
 
@@ -155,6 +160,16 @@ function GrantProfile({grant,onClose,onUpdate,onDelete,isAdmin,org}){
               {statuses.map(s=><option key={s} value={s}>{s}</option>)}
             </select>
           </div>
+          {fundCampaigns.length>0&&<div>
+            <div style={{fontSize:11,color:T.ink3,marginBottom:4}}>Counts toward campaign (optional)</div>
+            <select value={ef.campaignId} onChange={e=>setEf(p=>({...p,campaignId:e.target.value}))} style={{...inp,cursor:"pointer"}}>
+              <option value="">No campaign — general operating</option>
+              {fundCampaigns.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}
+            </select>
+            <div style={{fontSize:11,color:T.ink3,marginTop:4,lineHeight:1.5}}>
+              Once this grant is marked Awarded, its amount counts toward the campaign's raised total. If the foundation's money is also logged as a gift on their donor record, attribute only ONE of the two — never both.
+            </div>
+          </div>}
           <div>
             <div style={{fontSize:11,color:T.ink3,marginBottom:4}}>Grant Description</div>
             <textarea value={ef.description} onChange={e=>setEf(p=>({...p,description:e.target.value}))} rows={3} placeholder="What does this grant fund? What is the funder's focus area?" style={{...ta,boxSizing:"border-box"}}/>

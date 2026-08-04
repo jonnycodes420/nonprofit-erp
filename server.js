@@ -209,10 +209,20 @@ app.post("/stripe/webhook", express.raw({ type: "application/json" }), async (re
       const email = pi.receipt_email || pi.metadata?.donor_email;
       const amount = pi.amount_received / 100;
       const accountId = event.account;
-      const campaignId = pi.metadata?.campaign_id || null;
-      const givingPageId = pi.metadata?.giving_page_id || null;
+      let campaignId = pi.metadata?.campaign_id || null;
+      let givingPageId = pi.metadata?.giving_page_id || null;
       const peerFundraiserId = pi.metadata?.peer_fundraiser_id || null;
       const donorName = pi.metadata?.donor_name || "";
+      // Donor-covers-fees (attribution FIX): the charged total IS the gift
+      // (receipt/ledger/donor totals record it), but the cover portion is
+      // remembered so campaign/page goal progress can count what the donor
+      // intended for the mission (amount − cover_fee_amount). Server-derived
+      // at /donate; here we just read back our own metadata.
+      let coverFeeAmount = 0;
+      if (pi.metadata?.cover_fees === "true" && pi.metadata?.base_amount_cents) {
+        const base = parseInt(pi.metadata.base_amount_cents, 10);
+        if (Number.isFinite(base) && base > 0 && amount > base / 100) coverFeeAmount = amount - base / 100;
+      }
 
       if (email && accountId) {
         const orgRow = await query("SELECT id FROM orgs WHERE stripe_account_id=$1", [accountId]);
@@ -249,6 +259,46 @@ app.post("/stripe/webhook", express.raw({ type: "application/json" }), async (re
             const donorId = donorRow[0].id;
             const giftId = "g_" + uuid().slice(0, 8);
             const today = new Date().toISOString().slice(0, 10);
+            // Recurring RENEWAL attribution (attribution FIX): an invoice-generated
+            // PI carries none of the checkout metadata, so a renewal charge through
+            // a giving page used to land unattributed after the first month. The
+            // subscription's own recurring_subscriptions row remembers its
+            // page/campaign (stamped at checkout.session.completed). Resolve the
+            // exact subscription via the PI's invoice when Stripe is reachable;
+            // otherwise fall back to the donor's single attributed subscription —
+            // ambiguity (2+ subs with different attributions) attributes nothing
+            // rather than guessing (same never-mis-assign discipline as imports).
+            if (!campaignId && !givingPageId && pi.invoice) {
+              try {
+                let rsRow = null;
+                try {
+                  const invObj = await stripe.invoices.retrieve(pi.invoice, { stripeAccount: accountId });
+                  if (invObj?.subscription) {
+                    const rows = await query(
+                      "SELECT campaign_id, giving_page_id, cover_fee_amount FROM recurring_subscriptions WHERE stripe_subscription_id=$1 AND org_id=$2",
+                      [invObj.subscription, orgId]
+                    );
+                    rsRow = rows[0] || null;
+                  }
+                } catch { /* unreachable Stripe (local/test) — donor-level fallback below */ }
+                if (!rsRow) {
+                  const rows = await query(
+                    `SELECT campaign_id, giving_page_id, cover_fee_amount FROM recurring_subscriptions
+                      WHERE org_id=$1 AND donor_id=$2 AND status <> 'canceled'
+                        AND (campaign_id IS NOT NULL OR giving_page_id IS NOT NULL)`,
+                    [orgId, donorId]
+                  );
+                  const distinct = new Set(rows.map(r => `${r.campaign_id || ""}|${r.giving_page_id || ""}`));
+                  if (distinct.size === 1) rsRow = rows[0];
+                }
+                if (rsRow) {
+                  campaignId = rsRow.campaign_id || null;
+                  givingPageId = rsRow.giving_page_id || null;
+                  const rsCover = parseFloat(rsRow.cover_fee_amount) || 0;
+                  if (!coverFeeAmount && rsCover > 0 && rsCover < amount) coverFeeAmount = rsCover;
+                }
+              } catch (e) { console.error("[stripe] renewal attribution lookup failed:", e.message); }
+            }
             // Check if donor was lapsed before updating stage
             const donorPreRow = await query("SELECT stage, gift_count FROM donors WHERE id=$1", [donorId]);
             const wasLapsed = donorPreRow[0]?.stage === 'lapsed';
@@ -261,16 +311,16 @@ app.post("/stripe/webhook", express.raw({ type: "application/json" }), async (re
             // Stripe stops retrying.
             const reservedGift = pi.id
               ? await query(
-                  `INSERT INTO gifts (id, org_id, donor_id, amount, date, notes, stripe_payment_id, campaign_id, giving_page_id, peer_fundraiser_id)
-                   VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+                  `INSERT INTO gifts (id, org_id, donor_id, amount, date, notes, stripe_payment_id, campaign_id, giving_page_id, peer_fundraiser_id, cover_fee_amount)
+                   VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
                    ON CONFLICT (org_id, stripe_payment_id) WHERE stripe_payment_id IS NOT NULL DO NOTHING
                    RETURNING id`,
-                  [giftId, orgId, donorId, amount, today, "Online payment via Stripe", pi.id, campaignId, givingPageId, peerFundraiserId]
+                  [giftId, orgId, donorId, amount, today, "Online payment via Stripe", pi.id, campaignId, givingPageId, peerFundraiserId, coverFeeAmount]
                 )
               : await query(
-                  `INSERT INTO gifts (id, org_id, donor_id, amount, date, notes, stripe_payment_id, campaign_id, giving_page_id, peer_fundraiser_id)
-                   VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING id`,
-                  [giftId, orgId, donorId, amount, today, "Online payment via Stripe", pi.id, campaignId, givingPageId, peerFundraiserId]
+                  `INSERT INTO gifts (id, org_id, donor_id, amount, date, notes, stripe_payment_id, campaign_id, giving_page_id, peer_fundraiser_id, cover_fee_amount)
+                   VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING id`,
+                  [giftId, orgId, donorId, amount, today, "Online payment via Stripe", pi.id, campaignId, givingPageId, peerFundraiserId, coverFeeAmount]
                 );
             if (!reservedGift.length) {
               console.log(`[stripe] payment_intent.succeeded ${pi.id} already recorded — skipping duplicate (race-safe)`);
@@ -385,11 +435,23 @@ app.post("/stripe/webhook", express.raw({ type: "application/json" }), async (re
             // not just the ones that eventually fail (see recurring_subscriptions
             // in CLAUDE.md). ON CONFLICT covers a redelivered webhook.
             const recurAmount = session.amount_total != null ? session.amount_total / 100 : null;
+            // Attribution FIX — remember the subscription's page/campaign (and
+            // any donor-covered-fee portion) so RENEWAL charges attribute too:
+            // an invoice-generated PI carries no checkout metadata, so the
+            // payment_intent.succeeded handler reads these columns back for
+            // every renewal (see the renewal-attribution block above).
+            const subCampaignId = session.metadata?.campaign_id || null;
+            const subGivingPageId = session.metadata?.giving_page_id || null;
+            let subCoverFee = 0;
+            if (session.metadata?.cover_fees === "true" && session.metadata?.base_amount_cents && recurAmount != null) {
+              const base = parseInt(session.metadata.base_amount_cents, 10);
+              if (Number.isFinite(base) && base > 0 && recurAmount > base / 100) subCoverFee = recurAmount - base / 100;
+            }
             await run(
-              `INSERT INTO recurring_subscriptions (id, org_id, donor_id, stripe_subscription_id, stripe_customer_id, amount, interval, status)
-               VALUES ($1,$2,$3,$4,$5,$6,$7,'active')
+              `INSERT INTO recurring_subscriptions (id, org_id, donor_id, stripe_subscription_id, stripe_customer_id, amount, interval, status, campaign_id, giving_page_id, cover_fee_amount)
+               VALUES ($1,$2,$3,$4,$5,$6,$7,'active',$8,$9,$10)
                ON CONFLICT (stripe_subscription_id) DO NOTHING`,
-              ["rsub_" + uuid().slice(0, 8), orgId, donorId, session.subscription, session.customer || null, recurAmount, frequency === "annual" ? "year" : "month"]
+              ["rsub_" + uuid().slice(0, 8), orgId, donorId, session.subscription, session.customer || null, recurAmount, frequency === "annual" ? "year" : "month", subCampaignId, subGivingPageId, subCoverFee]
             );
           }
         }
@@ -432,6 +494,79 @@ app.post("/stripe/webhook", express.raw({ type: "application/json" }), async (re
             } catch (e) { console.error("[recovery] invoice pay-now after card update failed:", e.message); }
           }
         } catch (e) { console.error("[recovery] setup-mode checkout.session.completed error:", e.message); }
+      }
+    }
+
+    // ── Refunds reverse attribution everywhere (attribution FIX) ───────────
+    // A refunded online gift must move every surface BACK — campaign raised,
+    // roll-up, Home hero, this-week, Reports, Finance. Because every one of
+    // those is a live SUM over gift rows (never a stored counter), reversing
+    // the gift row reverses them all at once. Idempotent BY CONSTRUCTION: the
+    // remaining amount is recomputed from the charge itself (amount −
+    // amount_refunded), so a redelivered event converges on the same state,
+    // and a fully-reversed gift simply no longer resolves (no-op).
+    if (event.type === "charge.refunded") {
+      const ch = event.data.object;
+      const accountId = event.account;
+      const piId = ch.payment_intent;
+      if (piId && accountId) {
+        const orgRow = await query("SELECT id FROM orgs WHERE stripe_account_id=$1", [accountId]);
+        if (orgRow.length) {
+          const orgId = orgRow[0].id;
+          const giftRows = await query("SELECT * FROM gifts WHERE org_id=$1 AND stripe_payment_id=$2", [orgId, piId]);
+          if (giftRows.length) {
+            const g = giftRows[0];
+            const remaining = Math.max(0, ((ch.amount || 0) - (ch.amount_refunded || 0)) / 100);
+            const refunded = (ch.amount_refunded || 0) / 100;
+            const today = new Date().toISOString().slice(0, 10);
+            if (remaining <= 0) {
+              // FULL refund — the gift's net effect becomes zero everywhere,
+              // exactly once. A refund is a fact about the money, so an active
+              // receipt is auto-VOIDED (the acknowledgment no longer describes a
+              // real gift), never left active; the voided record survives.
+              await withTransaction(async (client) => {
+                await runTx(client,
+                  `UPDATE receipts SET voided_at=NOW(), void_reason='Gift refunded via Stripe', gift_id=NULL
+                   WHERE gift_id=$1 AND org_id=$2 AND type='gift' AND voided_at IS NULL`,
+                  [g.id, orgId]);
+                await runTx(client, "UPDATE receipts SET gift_id=NULL WHERE gift_id=$1 AND org_id=$2", [g.id, orgId]);
+                await runTx(client,
+                  `UPDATE pledges SET status='open', fulfilled_gift_id=NULL, fulfilled_at=NULL, updated_at=NOW()
+                   WHERE fulfilled_gift_id=$1 AND org_id=$2`,
+                  [g.id, orgId]);
+                await runTx(client, "DELETE FROM fin_transactions WHERE gift_id=$1 AND org_id=$2", [g.id, orgId]);
+                await runTx(client, "DELETE FROM gifts WHERE id=$1 AND org_id=$2", [g.id, orgId]);
+              });
+              if (g.donor_id) {
+                await recalcDonorSummary(g.donor_id, orgId);
+                await run("INSERT INTO interactions (id,org_id,donor_id,type,note,date) VALUES ($1,$2,$3,'note',$4,$5)",
+                  ["i_" + uuid().slice(0, 8), orgId, g.donor_id, `Refund: $${refunded.toLocaleString()} online gift fully refunded via Stripe — gift reversed`, today]
+                ).catch(() => {});
+              }
+              console.log(`[stripe] charge.refunded ${ch.id} — gift ${g.id} fully reversed ($${refunded})`);
+            } else if (parseFloat(g.amount) !== remaining) {
+              // PARTIAL refund — the gift shrinks to what the org actually kept;
+              // its single ledger stamp shrinks with it. The cover-fee portion is
+              // capped at the new amount so net attribution never goes negative.
+              // An issued receipt is deliberately NOT auto-edited (a receipt is a
+              // legal record of what was sent) — the existing receipt_mismatch
+              // queue surfaces it for a human, same as a manual gift edit.
+              await withTransaction(async (client) => {
+                await runTx(client,
+                  "UPDATE gifts SET amount=$1, cover_fee_amount=LEAST(COALESCE(cover_fee_amount,0), $1) WHERE id=$2 AND org_id=$3",
+                  [remaining, g.id, orgId]);
+                await runTx(client, "UPDATE fin_transactions SET amount=$1 WHERE gift_id=$2 AND org_id=$3", [remaining, g.id, orgId]);
+              });
+              if (g.donor_id) {
+                await recalcDonorSummary(g.donor_id, orgId);
+                await run("INSERT INTO interactions (id,org_id,donor_id,type,note,date) VALUES ($1,$2,$3,'note',$4,$5)",
+                  ["i_" + uuid().slice(0, 8), orgId, g.donor_id, `Refund: $${refunded.toLocaleString()} of an online gift refunded via Stripe — gift adjusted to $${remaining.toLocaleString()}`, today]
+                ).catch(() => {});
+              }
+              console.log(`[stripe] charge.refunded ${ch.id} — gift ${g.id} adjusted to $${remaining}`);
+            }
+          }
+        }
       }
     }
 
@@ -3250,11 +3385,7 @@ app.post("/donors/:id/gifts", requireAuth, checkWriteAccess, wrap(async (req, re
   // unattributed). We also copy the campaign NAME into the legacy `campaign`
   // text column so name-based reports/exports stay consistent.
   let campaignName = campaign || "";
-  if (campaignId) {
-    const camp = await query("SELECT id, name FROM campaigns WHERE id=? AND org_id=?", [campaignId, req.user.orgId]);
-    if (!camp.length) return res.status(404).json({ error: "Campaign not found" });
-    campaignName = camp[0].name;
-  }
+  let effectiveCampaignId = campaignId;
 
   // Optional: this gift fulfills a specific open pledge — the "gift
   // recorded against it" stop condition (see processPledgeReminders()).
@@ -3267,6 +3398,18 @@ app.post("/donors/:id/gifts", requireAuth, checkWriteAccess, wrap(async (req, re
     );
     if (!pledgeRows.length) return res.status(400).json({ error: "This pledge is not open for this donor." });
     pledgeRow = pledgeRows[0];
+    // Attribution FIX — a payment against a campaign-attributed pledge
+    // inherits the pledge's campaign automatically (an explicit campaignId on
+    // the gift still wins). This is how a pledge converts from the campaign's
+    // "pledged" figure into its "raised" figure as payments arrive — the
+    // pledge itself is never summed into raised.
+    if (!effectiveCampaignId && pledgeRow.campaign_id) effectiveCampaignId = pledgeRow.campaign_id;
+  }
+
+  if (effectiveCampaignId) {
+    const camp = await query("SELECT id, name FROM campaigns WHERE id=? AND org_id=?", [effectiveCampaignId, req.user.orgId]);
+    if (!camp.length) return res.status(404).json({ error: "Campaign not found" });
+    campaignName = camp[0].name;
   }
 
   const giftId = "g_" + uuid().slice(0, 8);
@@ -3275,7 +3418,7 @@ app.post("/donors/:id/gifts", requireAuth, checkWriteAccess, wrap(async (req, re
 
   await run(
     "INSERT INTO gifts (id,org_id,donor_id,amount,date,type,campaign,campaign_id,notes,fund_id) VALUES (?,?,?,?,?,?,?,?,?,?)",
-    [giftId, req.user.orgId, req.params.id, amt, giftDate, type || "cash", campaignName || "", campaignId || null, notes || "", fundId || null]
+    [giftId, req.user.orgId, req.params.id, amt, giftDate, type || "cash", campaignName || "", effectiveCampaignId || null, notes || "", fundId || null]
   );
   if (pledgeRow) {
     await run(
@@ -3449,6 +3592,7 @@ app.get("/donors/:id/pledges", requireAuth, wrap(async (req, res) => {
 
 app.post("/donors/:id/pledges", requireAuth, checkWriteAccess, wrap(async (req, res) => {
   const { amount, dueDate, notes } = req.body;
+  const campaignId = req.body.campaignId || req.body.campaign_id || null;
   if (!amount || isNaN(Number(amount)) || Number(amount) <= 0) {
     return res.status(400).json({ error: "A positive amount is required" });
   }
@@ -3457,10 +3601,19 @@ app.post("/donors/:id/pledges", requireAuth, checkWriteAccess, wrap(async (req, 
   const donorExists = await query("SELECT id FROM donors WHERE id=? AND org_id=?", [req.params.id, req.user.orgId]);
   if (!donorExists.length) return res.status(404).json({ error: "Donor not found" });
 
+  // Attribution FIX — a pledge attributes at pledge time (capital campaigns
+  // are mostly pledges). Org-scoped: a foreign campaign id 404s, no row
+  // planted. The campaign's "pledged" figure shows this while open; payments
+  // against it inherit the campaign and count toward raised as they arrive.
+  if (campaignId) {
+    const camp = await query("SELECT id FROM campaigns WHERE id=? AND org_id=?", [campaignId, req.user.orgId]);
+    if (!camp.length) return res.status(404).json({ error: "Campaign not found" });
+  }
+
   const id = "pl_" + uuid().slice(0, 8);
   await run(
-    "INSERT INTO pledges (id,org_id,donor_id,amount,due_date,notes) VALUES (?,?,?,?,?,?)",
-    [id, req.user.orgId, req.params.id, Math.round(Number(amount)), dueDate, notes || ""]
+    "INSERT INTO pledges (id,org_id,donor_id,amount,due_date,notes,campaign_id) VALUES (?,?,?,?,?,?,?)",
+    [id, req.user.orgId, req.params.id, Math.round(Number(amount)), dueDate, notes || "", campaignId]
   );
   const rows = await query("SELECT * FROM pledges WHERE id=?", [id]);
   res.status(201).json(rows[0]);
@@ -3471,6 +3624,19 @@ app.put("/pledges/:id", requireAuth, checkWriteAccess, wrap(async (req, res) => 
   if (!existing.length) return res.status(404).json({ error: "Pledge not found" });
   const p = existing[0];
   const { amount, dueDate, notes, status } = req.body;
+  // Attribution FIX — set / change / clear (campaignId:"" → NULL), org-scoped.
+  const campaignIdRaw = req.body.campaignId !== undefined ? req.body.campaignId
+    : req.body.campaign_id !== undefined ? req.body.campaign_id : undefined;
+  let newCampaignId = p.campaign_id;
+  if (campaignIdRaw !== undefined) {
+    if (campaignIdRaw) {
+      const camp = await query("SELECT id FROM campaigns WHERE id=? AND org_id=?", [campaignIdRaw, req.user.orgId]);
+      if (!camp.length) return res.status(404).json({ error: "Campaign not found" });
+      newCampaignId = campaignIdRaw;
+    } else {
+      newCampaignId = null;
+    }
+  }
 
   // Marking fulfilled/written_off (manually, with no specific gift to link —
   // see POST /donors/:id/gifts' pledgeId param for the "linked a gift"
@@ -3482,7 +3648,7 @@ app.put("/pledges/:id", requireAuth, checkWriteAccess, wrap(async (req, res) => 
   const nowFulfilled = newStatus === "fulfilled" && p.status !== "fulfilled";
 
   await run(
-    `UPDATE pledges SET amount=?, due_date=?, notes=?, status=?,
+    `UPDATE pledges SET amount=?, due_date=?, notes=?, status=?, campaign_id=?,
        fulfilled_at = CASE WHEN ? THEN NOW() ELSE fulfilled_at END,
        next_reminder_at = CASE WHEN ? THEN NULL ELSE next_reminder_at END,
        updated_at=NOW()
@@ -3492,6 +3658,7 @@ app.put("/pledges/:id", requireAuth, checkWriteAccess, wrap(async (req, res) => 
       dueDate || p.due_date,
       notes !== undefined ? notes : p.notes,
       newStatus,
+      newCampaignId,
       nowFulfilled,
       stopping,
       req.params.id, req.user.orgId,
@@ -5026,13 +5193,24 @@ app.get("/grants", requireAuth, wrap(async (req, res) => {
 
 app.post("/grants", requireAuth, checkWriteAccess, wrap(async (req, res) => {
   const { funder, program, amount, status, deadline, reportDue, officer, notes } = req.body;
+  const campaignId = req.body.campaignId || req.body.campaign_id || null;
   if (!funder) return res.status(400).json({ error: "Funder required" });
 
+  // Attribution FIX — optional campaign link (org-scoped; foreign → 404).
+  // The awarded amount counts toward the linked campaign's raised once the
+  // grant is AWARDED (awarded_at) — general-operating grants stay unattributed.
+  if (campaignId) {
+    const camp = await query("SELECT id FROM campaigns WHERE id=? AND org_id=?", [campaignId, req.user.orgId]);
+    if (!camp.length) return res.status(404).json({ error: "Campaign not found" });
+  }
+
   const id = "gr_" + uuid().slice(0, 8);
+  const isAwarded = (status || "prospecting") === "awarded";
   await run(
-    "INSERT INTO grants (id,org_id,funder,program,amount,status,deadline,report_due,officer,notes) VALUES (?,?,?,?,?,?,?,?,?,?)",
+    "INSERT INTO grants (id,org_id,funder,program,amount,status,deadline,report_due,officer,notes,campaign_id,awarded_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
     [id, req.user.orgId, funder, program || "", amount || 0,
-     status || "prospecting", deadline || "", reportDue || "", officer || "", notes || ""]
+     status || "prospecting", deadline || "", reportDue || "", officer || "", notes || "",
+     campaignId, isAwarded ? new Date().toISOString() : null]
   );
   const rows = await query("SELECT * FROM grants WHERE id = ?", [id]);
   res.status(201).json(rows[0]);
@@ -5043,16 +5221,40 @@ app.put("/grants/:id", requireAuth, checkWriteAccess, wrap(async (req, res) => {
   if (!funder) return res.status(400).json({ error: "Funder required" });
   const orgId = req.user.orgId;
 
-  // Capture previous status before update
-  const prevRows = await query("SELECT status FROM grants WHERE id=? AND org_id=?", [req.params.id, orgId]);
+  // Capture previous status/attribution before update
+  const prevRows = await query("SELECT status, campaign_id, awarded_at FROM grants WHERE id=? AND org_id=?", [req.params.id, orgId]);
+  if (!prevRows.length) return res.status(404).json({ error: "Grant not found" });
   const prevStatus = prevRows[0]?.status;
+
+  // Attribution FIX — set / change / clear (campaignId:"" → NULL), org-scoped.
+  const campaignIdRaw = req.body.campaignId !== undefined ? req.body.campaignId
+    : req.body.campaign_id !== undefined ? req.body.campaign_id : undefined;
+  let newCampaignId = prevRows[0]?.campaign_id || null;
+  if (campaignIdRaw !== undefined) {
+    if (campaignIdRaw) {
+      const camp = await query("SELECT id FROM campaigns WHERE id=? AND org_id=?", [campaignIdRaw, orgId]);
+      if (!camp.length) return res.status(404).json({ error: "Campaign not found" });
+      newCampaignId = campaignIdRaw;
+    } else {
+      newCampaignId = null;
+    }
+  }
+
+  // awarded_at is the attribution fact (see db.js): stamped entering
+  // 'awarded' (the same moment as the ledger income stamp below), kept while
+  // the grant moves through active/closed, cleared if it moves BACK to a
+  // still-pursuing or rejected status (an un-award — the thermometer reverses).
+  let newAwardedAt = prevRows[0]?.awarded_at || null;
+  if (status === "awarded" && prevStatus !== "awarded" && !newAwardedAt) newAwardedAt = new Date().toISOString();
+  if (["prospecting", "loi", "applied", "submitted", "draft", "pending", "rejected"].includes(status)) newAwardedAt = null;
 
   const affected = await run(
     `UPDATE grants
-     SET funder=?,program=?,amount=?,received=?,status=?,deadline=?,report_due=?,officer=?,notes=?,description=?,requirements=?,updated_at=NOW()
+     SET funder=?,program=?,amount=?,received=?,status=?,deadline=?,report_due=?,officer=?,notes=?,description=?,requirements=?,campaign_id=?,awarded_at=?,updated_at=NOW()
      WHERE id=? AND org_id=?`,
     [funder, program || "", amount || 0, received || 0, status, deadline || "",
      reportDue || "", officer || "", notes || "", description || "", requirements || "",
+     newCampaignId, newAwardedAt,
      req.params.id, orgId]
   );
   if (!affected.changes) return res.status(404).json({ error: "Grant not found" });
@@ -6902,17 +7104,26 @@ app.get("/campaigns/:id/progress", requireAuth, wrap(async (req, res) => {
   const rows = await query("SELECT * FROM campaigns WHERE id=? AND org_id=?", [req.params.id, req.user.orgId]);
   if (!rows.length) return res.status(404).json({ error: "Campaign not found" });
   const c = rows[0];
-  // Sum gifts attributed to this campaign by campaign name match
-  const giftSum = await query(
-    `SELECT COALESCE(SUM(amount),0) as total, COUNT(DISTINCT donor_id) as donor_count FROM gifts WHERE org_id=? AND (campaign=? OR campaign_id=?)`,
-    [req.user.orgId, c.name, c.id]
-  );
-  const raised = parseFloat(giftSum[0]?.total || 0);
+  // Same raised definition as fundraisingCampaignRows (one definition):
+  // gift payments net of donor-covered fees + awarded grants; open pledges
+  // are a SEPARATE pledged figure, never summed into raised.
+  const [giftSum, pledgeSum, grantSum] = await Promise.all([
+    query(
+      `SELECT COALESCE(SUM(amount - COALESCE(cover_fee_amount,0)),0) as total, COUNT(DISTINCT donor_id) as donor_count FROM gifts WHERE org_id=? AND (campaign=? OR campaign_id=?)`,
+      [req.user.orgId, c.name, c.id]
+    ),
+    query(`SELECT COALESCE(SUM(amount),0) AS total FROM pledges WHERE org_id=? AND campaign_id=? AND status='open'`, [req.user.orgId, c.id]),
+    query(`SELECT COALESCE(SUM(amount),0) AS total FROM grants WHERE org_id=? AND campaign_id=? AND awarded_at IS NOT NULL`, [req.user.orgId, c.id]),
+  ]);
+  const grantAwarded = parseFloat(grantSum[0]?.total || 0);
+  const raised = parseFloat(giftSum[0]?.total || 0) + grantAwarded;
   const donorCount = parseInt(giftSum[0]?.donor_count || 0);
   const daysRemaining = c.end_date ? Math.ceil((new Date(c.end_date) - new Date()) / 86400000) : null;
   res.json({
     goal: parseFloat(c.goal_amount || 0),
     raised,
+    grantAwarded,
+    pledged: parseFloat(pledgeSum[0]?.total || 0),
     donorCount,
     daysRemaining,
     startDate: c.start_date,
@@ -6966,9 +7177,25 @@ function computeFundraisingPace(raised, goal, startDate, endDate) {
   return { percent, rawPercent, over, daysLeft, lifecycle, paceState, expected };
 }
 
-// Live gift totals for a set of campaigns, matched the same way
+// Live totals for a set of campaigns, matched the same way
 // /campaigns/:id/progress matches: campaign_id OR the legacy campaign-name text
-// column. One query, grouped, so the list view never N+1s.
+// column. One query per component, grouped, so the list view never N+1s.
+//
+// Attribution completeness (FIX, 2026-08-04) — what "raised" MEANS here:
+//   raised = giftRaised + grantAwarded
+//   · giftRaised   = Σ attributed gift PAYMENTS RECEIVED, net of any donor-
+//     covered fee portion (amount − cover_fee_amount): goal progress counts
+//     what the donor intended for the mission; the charged total stays in
+//     Reports/Finance/receipts.
+//   · grantAwarded = Σ attributed grants' amounts once AWARDED (awarded_at
+//     set) — a real capital campaign counts foundation money toward its
+//     target. If grant money ALSO arrives as a gift from the foundation
+//     donor, attribute ONE of the two, never both (documented, surfaced in
+//     the grant UI helper text).
+//   · pledged      = Σ attributed OPEN pledges — committed-but-unpaid, a
+//     SEPARATE figure. NEVER summed into raised: a pledge's payments arrive
+//     as gifts (which inherit the pledge's campaign), so pledge+payments in
+//     one number would double-count and a treasurer would catch it.
 async function fundraisingCampaignRows(orgId) {
   const campaigns = await query(
     `SELECT id, name, goal_amount, start_date, end_date, status, type, goal_category, parent_goal_id, created_at
@@ -6977,26 +7204,50 @@ async function fundraisingCampaignRows(orgId) {
     [orgId]
   );
   if (!campaigns.length) return [];
-  const sums = await query(
-    `SELECT c.id AS cid,
-            COALESCE(SUM(g.amount), 0) AS raised,
-            COUNT(DISTINCT g.donor_id) AS donor_count
-       FROM campaigns c
-       LEFT JOIN gifts g ON g.org_id = c.org_id AND (g.campaign_id = c.id OR g.campaign = c.name)
-      WHERE c.org_id = ? AND c.goal_amount IS NOT NULL AND c.goal_amount > 0
-      GROUP BY c.id`,
-    [orgId]
-  );
+  const [sums, pledgeSums, grantSums] = await Promise.all([
+    query(
+      `SELECT c.id AS cid,
+              COALESCE(SUM(g.amount - COALESCE(g.cover_fee_amount, 0)), 0) AS raised,
+              COUNT(DISTINCT g.donor_id) AS donor_count
+         FROM campaigns c
+         LEFT JOIN gifts g ON g.org_id = c.org_id AND (g.campaign_id = c.id OR g.campaign = c.name)
+        WHERE c.org_id = ? AND c.goal_amount IS NOT NULL AND c.goal_amount > 0
+        GROUP BY c.id`,
+      [orgId]
+    ),
+    query(
+      `SELECT campaign_id AS cid, COALESCE(SUM(amount), 0) AS pledged, COUNT(*) AS pledge_count
+         FROM pledges WHERE org_id = ? AND campaign_id IS NOT NULL AND status = 'open'
+        GROUP BY campaign_id`,
+      [orgId]
+    ),
+    query(
+      `SELECT campaign_id AS cid, COALESCE(SUM(amount), 0) AS grant_awarded, COUNT(*) AS grant_count
+         FROM grants WHERE org_id = ? AND campaign_id IS NOT NULL AND awarded_at IS NOT NULL
+        GROUP BY campaign_id`,
+      [orgId]
+    ),
+  ]);
   const byId = Object.fromEntries(sums.map(s => [s.cid, s]));
+  const pledgeById = Object.fromEntries(pledgeSums.map(s => [s.cid, s]));
+  const grantById = Object.fromEntries(grantSums.map(s => [s.cid, s]));
   return campaigns.map(c => {
     const s = byId[c.id] || {};
-    const raised = parseFloat(s.raised) || 0;
+    const giftRaised = parseFloat(s.raised) || 0;
+    const grantAwarded = parseFloat(grantById[c.id]?.grant_awarded) || 0;
+    const raised = giftRaised + grantAwarded;
+    const pledged = parseFloat(pledgeById[c.id]?.pledged) || 0;
     const pace = computeFundraisingPace(raised, c.goal_amount, c.start_date, c.end_date);
     return {
       id: c.id,
       name: c.name,
       goalAmount: parseFloat(c.goal_amount) || 0,
       raised,
+      giftRaised,
+      grantAwarded,
+      grantCount: parseInt(grantById[c.id]?.grant_count, 10) || 0,
+      pledged,
+      pledgeCount: parseInt(pledgeById[c.id]?.pledge_count, 10) || 0,
       donorCount: parseInt(s.donor_count, 10) || 0,
       startDate: c.start_date,
       endDate: c.end_date,
@@ -7037,6 +7288,9 @@ function fundraisingGoalsPortfolio(rows) {
       childCount: kids.length,
       childRaised, childGoal,
       childIds: kids.map(k => k.id),
+      // Pledged rolls up alongside raised but stays a SEPARATE figure —
+      // committed-but-unpaid is never summed into a raised number.
+      rolledPledged: (r.pledged || 0) + kids.reduce((s, k) => s + (k.pledged || 0), 0),
       rolledRaised,
       rolledPercent: isOverarching ? rolled.percent : r.percent,
       rolledRawPercent: isOverarching ? rolled.rawPercent : r.rawPercent,
@@ -7098,7 +7352,7 @@ app.get("/fundraising/overview", requireAuth, wrap(async (req, res) => {
     fundraisingCampaignRows(orgId),
     query(
       `SELECT gp.id, gp.title, gp.slug, gp.goal_amount, gp.status,
-              COALESCE((SELECT SUM(amount) FROM gifts WHERE giving_page_id = gp.id), 0) AS raised
+              COALESCE((SELECT SUM(amount - COALESCE(cover_fee_amount,0)) FROM gifts WHERE giving_page_id = gp.id), 0) AS raised
          FROM giving_pages gp WHERE gp.org_id = ? ORDER BY gp.created_at DESC`,
       [orgId]
     ),
@@ -7154,6 +7408,11 @@ app.get("/fundraising/overview", requireAuth, wrap(async (req, res) => {
     thisWeek: {
       raised: parseFloat(weekRows[0]?.total) || 0,
       giftCount: parseInt(weekRows[0]?.gifts, 10) || 0,
+      // Week bounds exposed so the Home hero's "This week" chip can deep-link
+      // to a gifts view filtered to EXACTLY this window (the chip's number and
+      // its destination must agree — count-matches-destination rule).
+      start: wk.start,
+      end: wk.end,
     },
     campaigns: {
       count: campaigns.length,
@@ -7812,11 +8071,20 @@ async function uniqueGivingPageSlug(orgId, base, excludeId) {
 // public page's progress bar, so the manager list never shows a number that
 // could drift from the public one.
 app.get("/giving-pages", requireAuth, wrap(async (req, res) => {
+  // raised_amount counts what donors INTENDED for the page's ask (amount −
+  // cover_fee_amount) — the donor-covers-fees rule; the charged total lives in
+  // Reports/Finance/receipts. campaign_* expose the "counts toward" linkage
+  // (attribution FIX): a linked page's public thermometer tracks the CAMPAIGN's
+  // progress (one goal concept), so the manager list carries the same figures.
   const rows = await query(
-    `SELECT gp.*, f.name AS fund_name,
-       COALESCE((SELECT SUM(amount) FROM gifts WHERE giving_page_id = gp.id), 0) AS raised_amount
+    `SELECT gp.*, f.name AS fund_name, c.name AS campaign_name, c.goal_amount AS campaign_goal,
+       COALESCE((SELECT SUM(amount - COALESCE(cover_fee_amount,0)) FROM gifts WHERE giving_page_id = gp.id), 0) AS raised_amount,
+       CASE WHEN gp.campaign_id IS NOT NULL THEN
+         COALESCE((SELECT SUM(g.amount - COALESCE(g.cover_fee_amount,0)) FROM gifts g WHERE g.org_id = gp.org_id AND (g.campaign_id = gp.campaign_id OR g.campaign = c.name)), 0)
+       END AS campaign_raised
      FROM giving_pages gp
      LEFT JOIN fin_funds f ON f.id = gp.fund_id
+     LEFT JOIN campaigns c ON c.id = gp.campaign_id AND c.org_id = gp.org_id
      WHERE gp.org_id = ?
      ORDER BY gp.created_at DESC`,
     [req.user.orgId]
@@ -7840,7 +8108,7 @@ function validateGivingPageFields(title, story, imageUrl, goalAmount) {
 }
 
 app.post("/giving-pages", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
-  const { title, goalAmount, story, imageUrl, fundId, slug } = req.body;
+  const { title, goalAmount, story, imageUrl, fundId, slug, campaignId } = req.body;
   if (!title || !title.trim()) return res.status(400).json({ error: "title required" });
   const validationErr = validateGivingPageFields(title, story, imageUrl, goalAmount);
   if (validationErr) return res.status(400).json({ error: validationErr });
@@ -7848,13 +8116,19 @@ app.post("/giving-pages", requireAuth, requireAdmin, checkWriteAccess, wrap(asyn
     const fundRow = await query("SELECT id FROM fin_funds WHERE id=? AND org_id=?", [fundId, req.user.orgId]);
     if (!fundRow.length) return res.status(400).json({ error: "Invalid fund" });
   }
+  // Attribution FIX — org-scoped validation so a page from org A can never
+  // attribute to org B's campaign. Optional: a general page stays unattributed.
+  if (campaignId) {
+    const campRow = await query("SELECT id FROM campaigns WHERE id=? AND org_id=?", [campaignId, req.user.orgId]);
+    if (!campRow.length) return res.status(400).json({ error: "Invalid campaign" });
+  }
   const base = slugifyGivingPage(slug || title);
   const finalSlug = await uniqueGivingPageSlug(req.user.orgId, base);
   const id = "gp_" + uuid().slice(0, 8);
   await run(
-    `INSERT INTO giving_pages (id, org_id, slug, title, goal_amount, story, image_url, fund_id, status)
-     VALUES (?,?,?,?,?,?,?,?,'active')`,
-    [id, req.user.orgId, finalSlug, title.trim(), goalAmount ? parseFloat(goalAmount) : null, story || "", imageUrl || "", fundId || null]
+    `INSERT INTO giving_pages (id, org_id, slug, title, goal_amount, story, image_url, fund_id, status, campaign_id)
+     VALUES (?,?,?,?,?,?,?,?,'active',?)`,
+    [id, req.user.orgId, finalSlug, title.trim(), goalAmount ? parseFloat(goalAmount) : null, story || "", imageUrl || "", fundId || null, campaignId || null]
   );
   const rows = await query("SELECT *, 0 AS raised_amount FROM giving_pages WHERE id=?", [id]);
   res.status(201).json(rows[0]);
@@ -7864,12 +8138,17 @@ app.put("/giving-pages/:id", requireAuth, requireAdmin, checkWriteAccess, wrap(a
   const existingRows = await query("SELECT * FROM giving_pages WHERE id=? AND org_id=?", [req.params.id, req.user.orgId]);
   if (!existingRows.length) return res.status(404).json({ error: "Not found" });
   const existing = existingRows[0];
-  const { title, goalAmount, story, imageUrl, fundId, slug, status } = req.body;
+  const { title, goalAmount, story, imageUrl, fundId, slug, status, campaignId } = req.body;
   const validationErr = validateGivingPageFields(title, story, imageUrl, goalAmount);
   if (validationErr) return res.status(400).json({ error: validationErr });
   if (fundId) {
     const fundRow = await query("SELECT id FROM fin_funds WHERE id=? AND org_id=?", [fundId, req.user.orgId]);
     if (!fundRow.length) return res.status(400).json({ error: "Invalid fund" });
+  }
+  // Attribution FIX — set / change / clear (campaignId:"" → NULL), org-scoped.
+  if (campaignId) {
+    const campRow = await query("SELECT id FROM campaigns WHERE id=? AND org_id=?", [campaignId, req.user.orgId]);
+    if (!campRow.length) return res.status(400).json({ error: "Invalid campaign" });
   }
   // Only touches the slug when the request actually included one (the full
   // edit form always sends it; a partial update like the archive toggle,
@@ -7883,7 +8162,7 @@ app.put("/giving-pages/:id", requireAuth, requireAdmin, checkWriteAccess, wrap(a
     }
   }
   await run(
-    `UPDATE giving_pages SET title=?, goal_amount=?, story=?, image_url=?, fund_id=?, slug=?, status=?, updated_at=NOW()
+    `UPDATE giving_pages SET title=?, goal_amount=?, story=?, image_url=?, fund_id=?, slug=?, status=?, campaign_id=?, updated_at=NOW()
      WHERE id=? AND org_id=?`,
     [
       title?.trim() || existing.title,
@@ -7893,11 +8172,12 @@ app.put("/giving-pages/:id", requireAuth, requireAdmin, checkWriteAccess, wrap(a
       fundId !== undefined ? (fundId || null) : existing.fund_id,
       finalSlug,
       status && ["active", "archived"].includes(status) ? status : existing.status,
+      campaignId !== undefined ? (campaignId || null) : existing.campaign_id,
       req.params.id, req.user.orgId,
     ]
   );
   const rows = await query(
-    `SELECT gp.*, COALESCE((SELECT SUM(amount) FROM gifts WHERE giving_page_id = gp.id), 0) AS raised_amount
+    `SELECT gp.*, COALESCE((SELECT SUM(amount - COALESCE(cover_fee_amount,0)) FROM gifts WHERE giving_page_id = gp.id), 0) AS raised_amount
      FROM giving_pages gp WHERE gp.id=?`,
     [req.params.id]
   );
@@ -7925,11 +8205,19 @@ app.get("/org/:orgSlug/giving-page/:pageSlug/public", wrap(async (req, res) => {
   const orgs = await query("SELECT id, name, mission, cover_fees_enabled FROM orgs WHERE org_slug = ?", [req.params.orgSlug]);
   if (!orgs.length) return res.status(404).json({ error: "Organization not found" });
   const org = orgs[0];
+  // raised_amount counts the donor-intended amount (net of covered fees) —
+  // the goal-progress rule; campaign_* carry the "counts toward" linkage so a
+  // linked page's thermometer tracks the CAMPAIGN's live progress (one goal
+  // concept — the page never maintains a second goal system beside it).
   const pageRows = await query(
-    `SELECT gp.*, f.name AS fund_name,
-       COALESCE((SELECT SUM(amount) FROM gifts WHERE giving_page_id = gp.id), 0) AS raised_amount
+    `SELECT gp.*, f.name AS fund_name, c.name AS campaign_name, c.goal_amount AS campaign_goal,
+       COALESCE((SELECT SUM(amount - COALESCE(cover_fee_amount,0)) FROM gifts WHERE giving_page_id = gp.id), 0) AS raised_amount,
+       CASE WHEN gp.campaign_id IS NOT NULL THEN
+         COALESCE((SELECT SUM(g.amount - COALESCE(g.cover_fee_amount,0)) FROM gifts g WHERE g.org_id = gp.org_id AND (g.campaign_id = gp.campaign_id OR g.campaign = c.name)), 0)
+       END AS campaign_raised
      FROM giving_pages gp
      LEFT JOIN fin_funds f ON f.id = gp.fund_id
+     LEFT JOIN campaigns c ON c.id = gp.campaign_id AND c.org_id = gp.org_id
      WHERE gp.org_id = ? AND gp.slug = ? AND gp.status = 'active'`,
     [org.id, req.params.pageSlug]
   );
@@ -7944,7 +8232,7 @@ app.get("/org/:orgSlug/giving-page/:pageSlug/public", wrap(async (req, res) => {
   // fundraiser. Live every call, never cached, same rule as raised_amount.
   const fundraiserRows = await query(
     `SELECT pf.id, pf.name, pf.slug,
-       COALESCE((SELECT SUM(amount) FROM gifts WHERE peer_fundraiser_id = pf.id), 0) AS raised_amount
+       COALESCE((SELECT SUM(amount - COALESCE(cover_fee_amount,0)) FROM gifts WHERE peer_fundraiser_id = pf.id), 0) AS raised_amount
      FROM peer_fundraisers pf
      WHERE pf.giving_page_id = ? AND pf.status = 'active'
      ORDER BY raised_amount DESC, pf.created_at ASC`,
@@ -7958,6 +8246,12 @@ app.get("/org/:orgSlug/giving-page/:pageSlug/public", wrap(async (req, res) => {
       goalAmount: page.goal_amount != null ? parseFloat(page.goal_amount) : null,
       raisedAmount: parseFloat(page.raised_amount) || 0,
       fundId: page.fund_id, fundName: page.fund_name || null,
+      // "Counts toward" linkage (attribution FIX) — when set, the public
+      // thermometer shows the campaign's progress, not a second page-local goal.
+      campaignId: page.campaign_id || null,
+      campaignName: page.campaign_name || null,
+      campaignGoal: page.campaign_goal != null ? parseFloat(page.campaign_goal) : null,
+      campaignRaised: page.campaign_raised != null ? parseFloat(page.campaign_raised) : null,
     },
     funds,
     peerFundraisers: {
@@ -8128,7 +8422,7 @@ app.get("/org/:orgSlug/giving-page/:pageSlug/fundraiser/:fundraiserSlug/public",
   const page = pageRows[0];
 
   const fRows = await query(
-    `SELECT pf.*, COALESCE((SELECT SUM(amount) FROM gifts WHERE peer_fundraiser_id = pf.id), 0) AS raised_amount
+    `SELECT pf.*, COALESCE((SELECT SUM(amount - COALESCE(cover_fee_amount,0)) FROM gifts WHERE peer_fundraiser_id = pf.id), 0) AS raised_amount
      FROM peer_fundraisers pf WHERE pf.giving_page_id=? AND pf.slug=? AND pf.status='active'`,
     [page.id, req.params.fundraiserSlug]
   );
@@ -8213,7 +8507,7 @@ app.get("/giving-pages/:id/fundraisers", requireAuth, wrap(async (req, res) => {
   if (!pageRows.length) return res.status(404).json({ error: "Not found" });
   const rows = await query(
     `SELECT pf.id, pf.giving_page_id, pf.name, pf.email, pf.slug, pf.personal_goal_amount, pf.story, pf.image_url, pf.status, pf.created_at, pf.updated_at,
-       COALESCE((SELECT SUM(amount) FROM gifts WHERE peer_fundraiser_id = pf.id), 0) AS raised_amount
+       COALESCE((SELECT SUM(amount - COALESCE(cover_fee_amount,0)) FROM gifts WHERE peer_fundraiser_id = pf.id), 0) AS raised_amount
      FROM peer_fundraisers pf WHERE pf.giving_page_id=? AND pf.org_id=? ORDER BY raised_amount DESC, pf.created_at DESC`,
     [req.params.id, req.user.orgId]
   );
@@ -8236,7 +8530,7 @@ app.put("/peer-fundraisers/:id", requireAuth, requireAdmin, checkWriteAccess, wr
   await run("UPDATE peer_fundraisers SET status=?, updated_at=NOW() WHERE id=?", [status, req.params.id]);
   const updated = await query(
     `SELECT pf.id, pf.giving_page_id, pf.name, pf.email, pf.slug, pf.personal_goal_amount, pf.story, pf.image_url, pf.status, pf.created_at, pf.updated_at,
-       COALESCE((SELECT SUM(amount) FROM gifts WHERE peer_fundraiser_id = pf.id), 0) AS raised_amount
+       COALESCE((SELECT SUM(amount - COALESCE(cover_fee_amount,0)) FROM gifts WHERE peer_fundraiser_id = pf.id), 0) AS raised_amount
      FROM peer_fundraisers pf WHERE pf.id=?`,
     [req.params.id]
   );
@@ -8321,12 +8615,23 @@ app.post("/donate/:orgSlug", donateLimiter, wrap(async (req, res) => {
   // not the org-wide one) as well as the metadata thread.
   let givingPageSlug = "";
   let pageTitle = "";
+  let pageCampaignId = null;
   if (givingPageId) {
-    const pageRow = await query("SELECT slug, title FROM giving_pages WHERE id=? AND org_id=? AND status='active'", [givingPageId, org.id]);
+    const pageRow = await query("SELECT slug, title, campaign_id FROM giving_pages WHERE id=? AND org_id=? AND status='active'", [givingPageId, org.id]);
     if (!pageRow.length) return res.status(400).json({ error: "This giving page is no longer available." });
     givingPageSlug = pageRow[0].slug;
     pageTitle = pageRow[0].title;
+    pageCampaignId = pageRow[0].campaign_id || null;
   }
+
+  // Attribution FIX — a page configured to count toward a campaign stamps that
+  // campaign into the charge metadata, so the webhook writes gifts.campaign_id
+  // and the thermometer moves with no human touch. The page's own configured
+  // campaign WINS over any client-sent campaignId (an email-campaign ref):
+  // the admin explicitly declared where this page's money counts. Validated by
+  // construction — pageCampaignId was written through the org-scoped
+  // POST/PUT /giving-pages validation, never trusted raw from this request.
+  const effectiveCampaignId = pageCampaignId || campaignId || "";
 
   const productName = peerFundraiserId
     ? `Donation to ${org.name} — ${pageTitle} (via ${fundraiserName}'s fundraiser)`
@@ -8338,7 +8643,7 @@ app.post("/donate/:orgSlug", donateLimiter, wrap(async (req, res) => {
     donor_name: donorName,
     fund_id: fundId || "",
     frequency,
-    campaign_id: campaignId || "",
+    campaign_id: effectiveCampaignId,
     giving_page_id: givingPageId || "",
     peer_fundraiser_id: peerFundraiserId || "",
     org_id: org.id,
@@ -9765,9 +10070,17 @@ async function reportSolicitations(orgId, p) {
      FROM opportunities o JOIN donors d ON d.id = o.donor_id AND d.org_id = o.org_id
      WHERE o.org_id = ? AND o.status='open' AND d.deleted_at IS NULL
      ORDER BY stage_age DESC LIMIT 25`, [orgId]);
+  // Attribution FIX — open PLEDGES alongside open asks: both are
+  // committed-but-unpaid forward-looking money (the ask-vs-gift model), so the
+  // oversight artifact shows them side by side. Never merged into a raised
+  // figure anywhere — a pledge's payments count when they arrive, as gifts.
+  const pledgeRow = await query(
+    `SELECT COUNT(*)::int AS cnt, COALESCE(SUM(amount),0) AS amt
+     FROM pledges WHERE org_id=? AND status='open'`, [orgId]);
   return {
     from: p.from, to: p.to,
     forecast: { open: Math.round(openTotal * 100) / 100, weighted: Math.round(weightedTotal * 100) / 100 },
+    openPledges: { count: pledgeRow[0]?.cnt || 0, total: Number(pledgeRow[0]?.amt || 0) },
     byStage, byOfficer,
     aging: aging.map(r => ({ id: r.id, name: r.name, stage: r.stage, assignedTo: r.assigned_to_name,
       ask: Number(r.target_amount || 0), oppName: r.opp_name, stageAge: Number(r.stage_age) || 0 })),
@@ -12070,6 +12383,23 @@ app.get("/impact", requireAuth, wrap(async (req, res) => {
   const reengagedAmount = parseFloat(reengRows[0]?.amt) || 0;
   const reengagedDonorCount = reengRows[0]?.donors || 0;
 
+  // (1c) The donors BEHIND the re-engaged number — the Home hero chip drills
+  // into exactly these rows (every aggregate drills into its source; the
+  // destination must show the same count/amount the chip claimed). Same
+  // >365-day-gap predicate as (1b), grouped per donor, capped at 50.
+  const reengagedDonors = await query(
+    `SELECT g.donor_id AS id, d.name, COALESCE(SUM(g.amount),0) AS amount,
+            COUNT(*)::int AS gift_count, MAX(g.date) AS last_return_date
+       FROM gifts g JOIN donors d ON d.id = g.donor_id
+      WHERE g.org_id = ?
+        AND (SELECT MAX(g2.date) FROM gifts g2 WHERE g2.donor_id = g.donor_id AND g2.date < g.date) IS NOT NULL
+        AND g.date::date - (SELECT MAX(g2.date) FROM gifts g2 WHERE g2.donor_id = g.donor_id AND g2.date < g.date)::date > 365
+      GROUP BY g.donor_id, d.name
+      ORDER BY amount DESC
+      LIMIT 50`,
+    [orgId]
+  );
+
   // (2) Fees kept — factual. Base = online giving processed through Steward
   // (own-Stripe donations, stripe_payment_id set), which the org kept 100% of.
   const givingRows = await query(
@@ -12103,6 +12433,10 @@ app.get("/impact", requireAuth, wrap(async (req, res) => {
     recoveredCount,
     reengagedAmount,               // SURFACED, separate — lapsed donors who came back
     reengagedDonorCount,
+    reengagedDonors: reengagedDonors.map(r => ({
+      id: r.id, name: r.name, amount: parseFloat(r.amount) || 0,
+      giftCount: r.gift_count, lastReturnDate: r.last_return_date,
+    })),
     platformFeesPaid: 0,           // factual — 0% platform fee, own Stripe
     onlineGivingProcessed,         // base for the fee estimate
     estimatedFeesElsewhere,        // ESTIMATE — see feeAssumptionPct

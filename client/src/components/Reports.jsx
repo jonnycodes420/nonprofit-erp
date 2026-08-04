@@ -104,12 +104,17 @@ function PctBar({ pct }) {
   </div>;
 }
 
-export function Reports({ onNavigate }) {
-  const [active, setActive] = useState("giving-summary");
-  const [yearMode, setYearModeState] = useState(() => localStorage.getItem("steward_reports_yearmode") || "fiscal");
-  const [preset, setPreset] = useState(null); // null → default per yearMode
-  const [customFrom, setCustomFrom] = useState("");
-  const [customTo, setCustomTo] = useState("");
+// initialReport/initialParams (attribution FIX): the Home hero chips deep-link
+// here — "This FY" lands on Giving Summary for the current fiscal year,
+// "This week" lands on Giving Summary with a custom from/to matching the
+// chip's exact Monday-based week, so the destination shows the SAME number
+// the chip claimed. Consumed on mount only (App remounts via navNonce).
+export function Reports({ onNavigate, initialReport, initialParams }) {
+  const [active, setActive] = useState(initialReport || "giving-summary");
+  const [yearMode, setYearModeState] = useState(() => initialParams?.yearMode || localStorage.getItem("steward_reports_yearmode") || "fiscal");
+  const [preset, setPreset] = useState(() => (initialParams?.from && initialParams?.to) ? "custom" : (initialParams?.preset || null)); // null → default per yearMode
+  const [customFrom, setCustomFrom] = useState(initialParams?.from || "");
+  const [customTo, setCustomTo] = useState(initialParams?.to || "");
   const [year, setYear] = useState(null); // LYBUNT/SYBUNT; null → current per yearMode
   const [groupBy, setGroupBy] = useState("funds");
   const [scope, setScope] = useState("period");

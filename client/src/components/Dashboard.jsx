@@ -142,6 +142,8 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
   const [firstTouchOpen,setFirstTouchOpen]=useState(false);
 
   const [debtBreakdownOpen,setDebtBreakdownOpen]=useState(false);
+  // Re-engaged hero chip drill-down (attribution FIX) — reads impact.reengagedDonors.
+  const [reengBreakdownOpen,setReengBreakdownOpen]=useState(false);
   const [debtBreakdown,setDebtBreakdown]=useState(null);
   const [debtBreakdownLoading,setDebtBreakdownLoading]=useState(false);
 
@@ -411,8 +413,14 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
   );
   // Goal banner's right-hand column — real supporting stats (pace, days
   // left, recent activity) genuinely filling that width, not decoration.
-  const GoalStat=({label,value,valueColor,sub})=>(
-    <div style={{background:"rgba(255,255,255,0.04)",border:"1px solid #1a2e1f",borderRadius:10,padding:"8px 12px"}}>
+  // Hero chips are drillable (attribution FIX, per the standing rule: every
+  // aggregate drills into its source, and the destination must show the same
+  // number the chip claimed). onClick routes through the ONE shared
+  // interactive() treatment (dark variant — hover/cursor/focus ring/keyboard);
+  // a chip with no destination (e.g. Time Left) stays visibly static.
+  const GoalStat=({label,value,valueColor,sub,onClick})=>(
+    <div {...interactive(onClick,{label:onClick?`Open ${label}`:undefined,dark:true})}
+      style={{background:"rgba(255,255,255,0.04)",border:"1px solid #1a2e1f",borderRadius:10,padding:"8px 12px"}}>
       <div style={{fontSize:9,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",color:"#8fa896",marginBottom:3}}>{label}</div>
       <div style={{fontSize:14,fontWeight:700,color:valueColor||"#f0ede6",lineHeight:1.25}}>{value}</div>
       {sub&&<div style={{fontSize:11,color:"#8fa896",marginTop:2}}>{sub}</div>}
@@ -526,13 +534,20 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
   // /impact). Both real, both move week to week — replacing the static "Active
   // Goals" count, which never changed week to week.
   const tw=fundOverview?.thisWeek||{raised:0,giftCount:0};
-  const twStat={label:"This week",value:fmtFull(tw.raised||0),sub:`${tw.giftCount||0} gift${(tw.giftCount||0)===1?"":"s"} logged`};
+  // "This week" lands on Giving Summary filtered to the chip's EXACT
+  // Monday-based week (tw.start/tw.end from the server) — same predicate both
+  // sides, so the destination total equals the chip's number.
+  const twStat={label:"This week",value:fmtFull(tw.raised||0),sub:`${tw.giftCount||0} gift${(tw.giftCount||0)===1?"":"s"} logged`,
+    onClick:tw.start&&tw.end?()=>onNavigate("reports",{report:"giving-summary",from:tw.start,to:tw.end}):undefined};
   const reengAmt=impact?.reengagedAmount||0, recovAmt=impact?.recoveredAmount||0, reengDonors=impact?.reengagedDonorCount||0;
+  // "Re-engaged" drills into the donors BEHIND the number (impact.reengagedDonors)
+  // via the standard MetricBreakdownPanel — the panel shows the same amount +
+  // donor count the chip claimed, each row linking to the donor profile.
   const reengStat=reengAmt>0
-    ? {label:"Re-engaged",value:fmtFull(reengAmt),valueColor:T.gold,sub:`${reengDonors} lapsed donor${reengDonors===1?"":"s"} came back`}
+    ? {label:"Re-engaged",value:fmtFull(reengAmt),valueColor:T.gold,sub:`${reengDonors} lapsed donor${reengDonors===1?"":"s"} came back`,onClick:()=>setReengBreakdownOpen(true)}
     : recovAmt>0
       ? {label:"Recovered",value:fmtFull(recovAmt),valueColor:T.gold,sub:"failed-card gifts won back"}
-      : {label:"Re-engaged",value:"—",sub:"lapsed donors who return"};
+      : {label:"Re-engaged",value:"—",sub:"lapsed donors who return",onClick:()=>setReengBreakdownOpen(true)};
 
   // NB: no `fade-in` on the dash-root below. `.fade-in`'s final keyframe retains
   // `transform: translateY(0)` (animation-fill-mode:both), which would make
@@ -633,8 +648,8 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
                   BUILD-32 figures (both move week to week). "Active Goals" (a
                   static count) was dropped — density here must be information. */}
               <div style={{flex:"1 1 260px",minWidth:230,display:"grid",gridTemplateColumns:"1fr 1fr",gap:"8px 18px",alignContent:"start"}}>
-                <GoalStat label="Pace" value={heroPace} valueColor={heroPaceCol} sub={many?"across active goals":"vs the period elapsed"}/>
-                <GoalStat label={`This ${fundOverview.periodLabel||"period"}`} value={fmtFull(period.raised||0)} sub={deltaTxt}/>
+                <GoalStat label="Pace" value={heroPace} valueColor={heroPaceCol} sub={many?"across active goals":"vs the period elapsed"} onClick={()=>onNavigate("fundraising")}/>
+                <GoalStat label={`This ${fundOverview.periodLabel||"period"}`} value={fmtFull(period.raised||0)} sub={deltaTxt} onClick={()=>onNavigate("reports",{report:"giving-summary",preset:"thisFY",yearMode:"fiscal"})}/>
                 <GoalStat {...twStat}/>
                 <GoalStat {...reengStat}/>
               </div>
@@ -713,7 +728,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
                   + re-engaged/recovered (BUILD-32) are the two live added figures,
                   replacing the vaguer "recent momentum" text line. */}
               <div style={{flex:"1 1 260px",minWidth:230,display:"grid",gridTemplateColumns:"1fr 1fr",gap:"8px 18px",alignContent:"start"}}>
-                <GoalStat label="Pace" value={paceLabel} valueColor={paceLabel==="Ahead of pace"?T.gold:paceLabel==="Behind pace"?T.terracotta:"#f0ede6"} sub={paceSub}/>
+                <GoalStat label="Pace" value={paceLabel} valueColor={paceLabel==="Ahead of pace"?T.gold:paceLabel==="Behind pace"?T.terracotta:"#f0ede6"} sub={paceSub} onClick={()=>onNavigate("fundraising")}/>
                 <GoalStat label="Time Left" value={daysLeftInPeriod!=null?`${daysLeftInPeriod} day${daysLeftInPeriod!==1?"s":""}`:"—"} sub="left to reach this goal"/>
                 <GoalStat {...twStat}/>
                 <GoalStat {...reengStat}/>
@@ -1190,6 +1205,24 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
           donorName:r.donorName,
           detail:r.lastGiftDate?`Last gave ${new Date(r.lastGiftDate).toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"})}`:"No gift date on file",
           value:fmtFull(r.lastGiftAmount),
+        }))}
+        onSelectDonor={goToDonorFromBreakdown}
+      />
+
+      <MetricBreakdownPanel
+        open={reengBreakdownOpen}
+        onClose={()=>setReengBreakdownOpen(false)}
+        title="Re-engaged giving"
+        explanation="Donors who were lapsed (a gap of more than a year) and gave again — every genuine return gift counted, the same lapse definition the pipeline uses. This is surfaced giving, distinct from the failed-card recovery workflow's recovered dollars."
+        loading={false}
+        total={impact?.reengagedAmount!=null?fmtFull(impact.reengagedAmount):"—"}
+        totalLabel="Re-engaged"
+        totalCount={impact?.reengagedDonorCount}
+        rows={(impact?.reengagedDonors||[]).map(r=>({
+          donorId:r.id,
+          donorName:r.name,
+          detail:`${r.giftCount} return gift${r.giftCount===1?"":"s"}${r.lastReturnDate?` · last ${new Date(r.lastReturnDate).toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"})}`:""}`,
+          value:fmtFull(r.amount),
         }))}
         onSelectDonor={goToDonorFromBreakdown}
       />

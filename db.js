@@ -1386,6 +1386,39 @@ async function initSchema() {
     )`);
   await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS digest_sends_uk ON digest_sends (org_id, digest_type, period_key, recipient_user_id)`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_digest_sends_org ON digest_sends (org_id, created_at DESC)`);
+
+  // ── Attribution completeness (FIX, 2026-08-04) ───────────────────────────
+  // Every money path attributes to a campaign, reverses, and reconciles.
+  // giving_pages.campaign_id — "gifts through this page count toward this
+  // campaign". Optional (a general page stays unattributed). No FK — same
+  // tolerated-dangling pattern as gifts.giving_page_id; org-scoped validation
+  // lives in the POST/PUT routes.
+  await pool.query(`ALTER TABLE giving_pages ADD COLUMN IF NOT EXISTS campaign_id TEXT`);
+  // pledges.campaign_id — a pledge attributes at pledge time; payments against
+  // it inherit the campaign. Campaign "raised" NEVER counts an open pledge —
+  // pledged (committed-but-unpaid) is a separate figure, never summed in.
+  await pool.query(`ALTER TABLE pledges ADD COLUMN IF NOT EXISTS campaign_id TEXT`);
+  // grants.campaign_id + awarded_at — an awarded grant's amount can count
+  // toward a linked campaign. awarded_at (not raw status) is the attribution
+  // fact: stamped on the transition INTO 'awarded' (the same moment the
+  // existing fin_transactions income stamp fires), kept through active/closed,
+  // cleared if the grant moves back to a pursuing/rejected status — so a
+  // campaign thermometer never drops just because a won grant's status moved on.
+  await pool.query(`ALTER TABLE grants ADD COLUMN IF NOT EXISTS campaign_id TEXT`);
+  await pool.query(`ALTER TABLE grants ADD COLUMN IF NOT EXISTS awarded_at TIMESTAMPTZ`);
+  // gifts.cover_fee_amount — the donor-covers-fees portion of a grossed-up
+  // online gift (charged − intended). The gift row / receipt / ledger keep the
+  // FULL charged amount (what actually moved, what the IRS acknowledgment must
+  // state); campaign/page goal progress counts amount − cover_fee_amount (what
+  // the donor intended for the mission). 0 for every non-grossed-up gift.
+  await pool.query(`ALTER TABLE gifts ADD COLUMN IF NOT EXISTS cover_fee_amount NUMERIC DEFAULT 0`);
+  // recurring_subscriptions attribution — a subscription started through a
+  // giving page remembers its page/campaign (from the checkout session
+  // metadata) so every RENEWAL charge attributes too, not just the first.
+  // cover_fee_amount mirrors gifts.cover_fee_amount for renewal stamping.
+  await pool.query(`ALTER TABLE recurring_subscriptions ADD COLUMN IF NOT EXISTS campaign_id TEXT`);
+  await pool.query(`ALTER TABLE recurring_subscriptions ADD COLUMN IF NOT EXISTS giving_page_id TEXT`);
+  await pool.query(`ALTER TABLE recurring_subscriptions ADD COLUMN IF NOT EXISTS cover_fee_amount NUMERIC DEFAULT 0`);
 }
 
 async function seedData() {

@@ -97,6 +97,10 @@ function AppShell() {
   // opens on the SAME scope — the count you clicked lands on exactly that view.
   const [tasksIntent,setTasksIntent]=useState(null);
   const [pipelineIntent,setPipelineIntent]=useState(null);
+  // Attribution FIX — the Home hero chips deep-link into Reports (This FY →
+  // Giving Summary current FY; This week → Giving Summary custom week range),
+  // so Reports is now intent-carrying too (same remount-on-intent pattern).
+  const [reportsIntent,setReportsIntent]=useState(null);
   // SHELVED — voice capture works but unproven adoption assumption, revisit
   // later. Code intact, re-enable by uncommenting.
   // const [showVoiceMemo,setShowVoiceMemo]=useState(false);
@@ -115,6 +119,7 @@ function AppShell() {
     setSettingsIntent(opts?.section?{section:opts.section}:null);
     setTasksIntent(opts?.scope&&t==="tasks"?{scope:opts.scope}:null);
     setPipelineIntent(opts?.scope&&t==="pipeline"?{scope:opts.scope}:null);
+    setReportsIntent(opts?.report&&t==="reports"?{report:opts.report,preset:opts.preset,from:opts.from,to:opts.to,yearMode:opts.yearMode}:null);
     if(opts&&Object.keys(opts).some(k=>opts[k]!=null))setNavNonce(n=>n+1);
     setTab(t);
   };
@@ -384,7 +389,7 @@ function AppShell() {
       {tab==="donors"&&<Donors key={navNonce} data={data} setData={setData} isReadOnly={isReadOnly} onNavigate={navigateTo} initialView={donorsIntent?.view} initialLogDonorId={donorsIntent?.logDonorId} initialStageFilter={donorsIntent?.stageFilter} initialSelectDonorId={donorsIntent?.selectDonorId} onIntentConsumed={()=>setDonorsIntent(null)}/>}
       {tab==="grants"&&<Grants key={navNonce} data={data} setData={setData} isReadOnly={isReadOnly} initialGrantId={grantsIntent?.grantId} onIntentConsumed={()=>setGrantsIntent(null)}/>}
       {tab==="communications"&&<Communications key={navNonce} data={data} isReadOnly={isReadOnly} initialNav={commsInitialNav} highlightDraftId={commsHighlightDraftId} onInitialNavConsumed={()=>{setCommsInitialNav(null);setCommsHighlightDraftId(null);}} onNavigate={navigateTo}/>}
-      {tab==="reports"&&<Reports onNavigate={navigateTo}/>}
+      {tab==="reports"&&<Reports key={navNonce} onNavigate={navigateTo} initialReport={reportsIntent?.report} initialParams={reportsIntent}/>}
       {tab==="pipeline"&&<Pipeline key={navNonce} isReadOnly={isReadOnly} onNavigate={navigateTo} initialScope={pipelineIntent?.scope}/>}
       {tab==="fundraising"&&<Fundraising data={data} isReadOnly={isReadOnly} onNavigate={navigateTo}/>}
       {tab==="events"&&<Events data={data} isReadOnly={isReadOnly}/>}

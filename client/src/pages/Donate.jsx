@@ -344,21 +344,35 @@ export default function Donate() {
                 <p style={{ margin: "10px 0 0", fontSize: 14, color: T.ink2, lineHeight: 1.65, textAlign: "left" }}>{givingPage.story}</p>
               )}
             </div>
-            <div style={{ background: T.white, border: "1px solid " + T.bg3, borderRadius: 16, padding: "18px 22px" }}>
-              <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 8, marginBottom: 10 }}>
-                <div style={{ fontSize: 20, fontWeight: 800, color: T.greenDk, fontFamily: "'DM Serif Display', serif" }}>{fmtMoney(givingPage.raisedAmount)}</div>
-                {givingPage.goalAmount > 0 && <div style={{ fontSize: 13, color: T.ink3 }}>of {fmtMoney(givingPage.goalAmount)} goal</div>}
-              </div>
-              {givingPage.goalAmount > 0 && (
-                <div style={{ background: T.bg, borderRadius: 99, height: 10, overflow: "hidden" }}>
-                  <div style={{
-                    height: "100%",
-                    width: `${Math.min(100, Math.round((givingPage.raisedAmount / givingPage.goalAmount) * 100))}%`,
-                    background: T.greenDk, borderRadius: 99, transition: "width 0.6s ease",
-                  }} />
+            {/* One goal concept (attribution FIX): a page linked to a campaign
+                tracks toward THAT campaign — thermometer shows the campaign's
+                live raised/goal, not a second page-local goal system. An
+                unlinked page keeps its own goal_amount as before. */}
+            {(() => {
+              const linked = !!givingPage.campaignId;
+              const shownRaised = linked && givingPage.campaignRaised != null ? givingPage.campaignRaised : givingPage.raisedAmount;
+              const shownGoal = linked ? givingPage.campaignGoal : givingPage.goalAmount;
+              return (
+                <div style={{ background: T.white, border: "1px solid " + T.bg3, borderRadius: 16, padding: "18px 22px" }}>
+                  <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 8, marginBottom: 10 }}>
+                    <div style={{ fontSize: 20, fontWeight: 800, color: T.greenDk, fontFamily: "'DM Serif Display', serif" }}>{fmtMoney(shownRaised)}</div>
+                    {shownGoal > 0 && <div style={{ fontSize: 13, color: T.ink3 }}>of {fmtMoney(shownGoal)} goal</div>}
+                  </div>
+                  {shownGoal > 0 && (
+                    <div style={{ background: T.bg, borderRadius: 99, height: 10, overflow: "hidden" }}>
+                      <div style={{
+                        height: "100%",
+                        width: `${Math.min(100, Math.round((shownRaised / shownGoal) * 100))}%`,
+                        background: T.greenDk, borderRadius: 99, transition: "width 0.6s ease",
+                      }} />
+                    </div>
+                  )}
+                  {linked && givingPage.campaignName && (
+                    <div style={{ fontSize: 12, color: T.ink3, marginTop: 8 }}>Gifts here count toward <strong style={{ color: T.ink2 }}>{givingPage.campaignName}</strong>.</div>
+                  )}
                 </div>
-              )}
-            </div>
+              );
+            })()}
 
             {/* Start-your-own-fundraiser CTA — Giving Pages only (never the
                 org-wide page, never an existing personal fundraiser page).

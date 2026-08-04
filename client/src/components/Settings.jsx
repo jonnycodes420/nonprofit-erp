@@ -37,10 +37,13 @@ const GP_STATUS_META={
 function GivingPagesManager({orgSlug,isAdmin,isReadOnly}){
   const [pages,setPages]=useState([]);
   const [funds,setFunds]=useState([]);
+  // Goal'd campaigns (the ones with thermometers) — the "gifts through this
+  // page count toward" selector. Same source as the gift forms' selector.
+  const [campaigns,setCampaigns]=useState([]);
   const [loaded,setLoaded]=useState(false);
   const [showAdd,setShowAdd]=useState(false);
   const [editing,setEditing]=useState(null);
-  const [form,setForm]=useState({title:"",goalAmount:"",story:"",imageUrl:"",fundId:"",slug:"",status:"active"});
+  const [form,setForm]=useState({title:"",goalAmount:"",story:"",imageUrl:"",fundId:"",slug:"",status:"active",campaignId:""});
   const [slugTouched,setSlugTouched]=useState(false);
   const [saving,setSaving]=useState(false);
   const [shareOpenId,setShareOpenId]=useState(null);
@@ -56,6 +59,7 @@ function GivingPagesManager({orgSlug,isAdmin,isReadOnly}){
   useEffect(()=>{
     apiFetch("/giving-pages").then(r=>{setPages(r||[]);setLoaded(true);}).catch(()=>setLoaded(true));
     apiFetch("/finance/funds").then(r=>setFunds(r||[])).catch(()=>{});
+    apiFetch("/fundraising/campaigns").then(r=>setCampaigns(Array.isArray(r)?r:[])).catch(()=>{});
   },[]);
 
   function toggleFundraisers(p){
@@ -78,19 +82,19 @@ function GivingPagesManager({orgSlug,isAdmin,isReadOnly}){
 
   function openAdd(){
     setEditing(null);
-    setForm({title:"",goalAmount:"",story:"",imageUrl:"",fundId:"",slug:"",status:"active"});
+    setForm({title:"",goalAmount:"",story:"",imageUrl:"",fundId:"",slug:"",status:"active",campaignId:""});
     setSlugTouched(false);
     setShowAdd(true);
   }
   function openEdit(p){
     setEditing(p);
-    setForm({title:p.title,goalAmount:p.goal_amount!=null?String(p.goal_amount):"",story:p.story||"",imageUrl:p.image_url||"",fundId:p.fund_id||"",slug:p.slug,status:p.status});
+    setForm({title:p.title,goalAmount:p.goal_amount!=null?String(p.goal_amount):"",story:p.story||"",imageUrl:p.image_url||"",fundId:p.fund_id||"",slug:p.slug,status:p.status,campaignId:p.campaign_id||""});
     setSlugTouched(true);
     setShowAdd(true);
   }
   function closeModal(){
     setShowAdd(false);setEditing(null);
-    setForm({title:"",goalAmount:"",story:"",imageUrl:"",fundId:"",slug:"",status:"active"});
+    setForm({title:"",goalAmount:"",story:"",imageUrl:"",fundId:"",slug:"",status:"active",campaignId:""});
     setSlugTouched(false);
   }
 
@@ -98,7 +102,7 @@ function GivingPagesManager({orgSlug,isAdmin,isReadOnly}){
     if(!form.title.trim())return;
     setSaving(true);
     try{
-      const body={title:form.title,goalAmount:form.goalAmount,story:form.story,imageUrl:form.imageUrl,fundId:form.fundId,slug:form.slug,status:form.status};
+      const body={title:form.title,goalAmount:form.goalAmount,story:form.story,imageUrl:form.imageUrl,fundId:form.fundId,slug:form.slug,status:form.status,campaignId:form.campaignId};
       if(editing){
         const updated=await apiFetch(`/giving-pages/${editing.id}`,{method:"PUT",body:JSON.stringify(body)});
         setPages(prev=>prev.map(p=>p.id===editing.id?updated:p));
@@ -147,8 +151,12 @@ function GivingPagesManager({orgSlug,isAdmin,isReadOnly}){
       {!loaded&&<div style={{fontSize:13,color:T.ink3}}>Loading…</div>}
 
       {pages.map((p,i)=>{
-        const raised=parseFloat(p.raised_amount)||0;
-        const goal=p.goal_amount!=null?parseFloat(p.goal_amount):null;
+        // One goal concept: a page linked to a campaign tracks toward THAT
+        // campaign — its progress line/bar shows the campaign's live figures,
+        // not a second page-local goal system. An unlinked page keeps its own.
+        const linked=!!p.campaign_id;
+        const raised=linked?(parseFloat(p.campaign_raised)||0):(parseFloat(p.raised_amount)||0);
+        const goal=linked?(p.campaign_goal!=null?parseFloat(p.campaign_goal):null):(p.goal_amount!=null?parseFloat(p.goal_amount):null);
         const pct=goal>0?Math.min(100,Math.round((raised/goal)*100)):null;
         const url=orgSlug?`${window.location.origin}/give/${orgSlug}/${p.slug}`:"";
         const meta=GP_STATUS_META[p.status]||GP_STATUS_META.active;
@@ -162,6 +170,7 @@ function GivingPagesManager({orgSlug,isAdmin,isReadOnly}){
                   <span style={{fontSize:14,fontWeight:700,color:T.ink}}>{p.title}</span>
                   <span style={{fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:99,background:meta.bg,color:meta.color,border:"1px solid "+meta.border}}>{meta.label}</span>
                   {p.fund_name&&<span style={{fontSize:11,color:T.ink3}}>→ {p.fund_name}</span>}
+                  {p.campaign_name&&<span style={{fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:99,background:T.gold100,color:T.gold700,border:"1px solid "+T.gold300}}>Counts toward {p.campaign_name}</span>}
                 </div>
                 <div style={{fontSize:12,color:T.ink3,marginTop:4}}>
                   {fmtDollars(raised)}{goal?` of ${fmtDollars(goal)} raised`:" raised"}{pct!=null?` — ${pct}%`:""}
@@ -299,6 +308,15 @@ function GivingPagesManager({orgSlug,isAdmin,isReadOnly}){
               <option value="">Where it's needed most</option>
               {funds.map(f=><option key={f.id} value={f.id}>{f.name}{f.restricted?" (Restricted)":""}</option>)}
             </select>
+
+            <div style={{fontSize:12,fontWeight:600,color:T.ink3,marginBottom:4}}>Gifts through this page count toward (optional)</div>
+            <select value={form.campaignId} onChange={e=>setForm(f=>({...f,campaignId:e.target.value}))} style={{...inp,marginBottom:4,cursor:"pointer"}}>
+              <option value="">No campaign — a general page</option>
+              {campaigns.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}
+            </select>
+            <div style={{fontSize:11,color:T.ink3,marginBottom:14,lineHeight:1.5}}>
+              Online gifts through this page attribute to the chosen campaign automatically — its thermometer moves with no manual step, and this page tracks the campaign's goal instead of keeping a separate one.
+            </div>
 
             {editing&&(
               <label style={{display:"flex",alignItems:"center",gap:8,fontSize:13,color:T.ink,cursor:"pointer",marginBottom:20,marginTop:-4}}>

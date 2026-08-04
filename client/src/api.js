@@ -178,6 +178,7 @@ export function adaptData({ org, donors, grants, volunteers, tasks, board, finan
       reportDue: g.report_due || null,
       officer:   g.officer || "",
       notes:     g.notes || "",
+      campaignId: g.campaign_id || null,   // attribution FIX — awarded amount counts toward this campaign
       history:   Array.isArray(g.history) ? g.history : JSON.parse(g.history || "[]"),
     })),
     volunteers: volunteers.map(v => ({
