@@ -75,6 +75,16 @@ const future = ts => ts && new Date(ts).getTime() > Date.now();
   let st = await api("GET", "/billing/status", aAdmin);
   ok("billing/status planTier=team after Team checkout", st.body.planTier === "team", st.body);
 
+  // hasSubscription (BUILD-31 Part 1): whether a REAL Stripe subscription backs
+  // the plan. A manual/super-admin grant has none → the UI explains that in-app
+  // instead of opening an empty portal. Driven directly, independent of the fixture.
+  await q(`UPDATE orgs SET stripe_subscription_id='sub_test_a' WHERE id=$1`, [A]);
+  st = await api("GET", "/billing/status", aAdmin);
+  ok("billing/status hasSubscription true with a real subscription id", st.body.hasSubscription === true, st.body.hasSubscription);
+  await q(`UPDATE orgs SET stripe_subscription_id=NULL WHERE id=$1`, [A]);
+  st = await api("GET", "/billing/status", aAdmin);
+  ok("billing/status hasSubscription false for a manual grant (no subscription)", st.body.hasSubscription === false, st.body.hasSubscription);
+
   // ── idempotency: redeliver SAME event id (different plan) → no-op ─────────
   r = await fireBilling("evt_bill_1", "checkout.session.completed",
     { metadata: { orgId: A, plan: "core" }, subscription: null, customer: "cus_bill_a" });

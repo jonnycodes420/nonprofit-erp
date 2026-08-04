@@ -521,7 +521,7 @@ export default function Landing() {
         .lp-hcard-pct { font-size: 40px; font-weight: 400; color: ${C.gold}; line-height: 1; }
         .lp-hcard-sub { font-size: 12px; font-weight: 600; color: ${C.ink3}; }
         .lp-hcard-track { background: ${C.cream2}; border-radius: 99px; height: 9px; overflow: hidden; }
-        .lp-hcard-fill { height: 100%; width: 22%; background: linear-gradient(90deg, ${C.gold}, ${C.terra}); border-radius: 99px; animation: lpFill 1.5s ease-out both; }
+        .lp-hcard-fill { height: 100%; width: 22%; background: ${C.gold}; border-radius: 99px; animation: lpFill 1.5s ease-out both; }
         .lp-hcard-foot { font-size: 12px; color: ${C.ink3}; margin-top: 10px; }
         .lp-hcard-foot strong { font-size: 14px; color: ${C.gold}; font-weight: 400; }
         @media (max-width: 1139px) { .lp-hero-card { display: none; } }
@@ -567,7 +567,7 @@ export default function Landing() {
         .lp-goal-label { font-size: 15px; font-weight: 600; color: #c9c2b4; margin-bottom: 14px; display: flex; align-items: center; gap: 8px; }
         .lp-goal-pct { font-size: 52px; font-weight: 400; color: ${C.gold}; line-height: 1; }
         .lp-goal-track { background: #0a120c; border-radius: 99px; height: 11px; overflow: hidden; }
-        .lp-goal-fill { height: 100%; width: 22%; background: linear-gradient(90deg, ${C.gold}, ${C.terra}); border-radius: 99px; animation: lpFill 1.5s ease-out both; }
+        .lp-goal-fill { height: 100%; width: 22%; background: ${C.gold}; border-radius: 99px; animation: lpFill 1.5s ease-out both; }
         .lp-goal-fill-static { animation: none; }
         @keyframes lpFill { from { width: 0 } to { width: 22% } }
         .lp-goalstat { background: rgba(255,255,255,0.04); border: 1px solid #1a2e1f; border-radius: 10px; padding: 9px 13px; }

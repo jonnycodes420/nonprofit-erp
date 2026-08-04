@@ -33,7 +33,7 @@ function Thermometer({ raised, goal, percent, rawPercent, over, paceState, big }
         <span style={{ fontSize: big ? 15 : 13, fontWeight: 800, color: met ? T.gold : T.ink2 }}>{shown}%</span>
       </div>
       <div style={{ height: big ? 14 : 9, background: T.bg3, borderRadius: 99, overflow: "hidden" }}>
-        <div style={{ width: `${Math.max(pct, pct > 0 ? 2 : 0)}%`, height: "100%", borderRadius: 99, transition: "width 0.5s cubic-bezier(.22,1,.36,1)", background: met ? "linear-gradient(90deg,#c9a84c,#e0c876)" : "linear-gradient(90deg,#b8963f,#c9a84c)" }} />
+        <div style={{ width: `${Math.max(pct, pct > 0 ? 2 : 0)}%`, height: "100%", borderRadius: 99, transition: "width 0.5s cubic-bezier(.22,1,.36,1)", background: met ? T.gold500 : T.gold600 }} />
       </div>
       {paceState && PACE_META[paceState] && (
         <div style={{ marginTop: big ? 10 : 8, display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 700, color: PACE_META[paceState].color, background: PACE_META[paceState].bg, borderRadius: 99, padding: "3px 11px" }}>
@@ -294,7 +294,7 @@ function RollupThermometer({ rollup }) {
         {shown != null && <span style={{ fontSize: 16, fontWeight: 800, color: T.gold }}>{shown}%</span>}
       </div>
       <div style={{ height: 14, background: "#1a2e1f", borderRadius: 99, overflow: "hidden" }}>
-        <div style={{ width: `${Math.max(pct, pct > 0 ? 2 : 0)}%`, height: "100%", borderRadius: 99, transition: "width 0.6s cubic-bezier(.22,1,.36,1)", background: met ? "linear-gradient(90deg,#c9a84c,#e6cf88)" : "linear-gradient(90deg,#b8963f,#c9a84c)" }} />
+        <div style={{ width: `${Math.max(pct, pct > 0 ? 2 : 0)}%`, height: "100%", borderRadius: 99, transition: "width 0.6s cubic-bezier(.22,1,.36,1)", background: met ? T.gold500 : T.gold600 }} />
       </div>
     </div>
   );
@@ -353,7 +353,7 @@ function GoalThermometerDark({ goal }) {
         <span style={{ fontSize: 16, fontWeight: 800, color: T.gold }}>{shown}%</span>
       </div>
       <div style={{ height: 14, background: "#1a2e1f", borderRadius: 99, overflow: "hidden" }}>
-        <div style={{ width: `${Math.max(goal.percent, goal.percent > 0 ? 2 : 0)}%`, height: "100%", borderRadius: 99, transition: "width 0.6s cubic-bezier(.22,1,.36,1)", background: met ? "linear-gradient(90deg,#c9a84c,#e6cf88)" : "linear-gradient(90deg,#b8963f,#c9a84c)" }} />
+        <div style={{ width: `${Math.max(goal.percent, goal.percent > 0 ? 2 : 0)}%`, height: "100%", borderRadius: 99, transition: "width 0.6s cubic-bezier(.22,1,.36,1)", background: met ? T.gold500 : T.gold600 }} />
       </div>
     </div>
   );

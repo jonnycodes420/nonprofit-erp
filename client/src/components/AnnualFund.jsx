@@ -94,7 +94,7 @@ export function AnnualFund({data}) {
             const h=maxMonth>0?Math.round(m.raised/maxMonth*120):0;
             return <div key={m.month} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:4}}>
               <div style={{fontSize:9,color:T.ink3}}>{m.raised>0?fmt(m.raised):""}</div>
-              <div style={{width:"100%",height:h,background:m.raised>0?"linear-gradient(180deg,#1a6b4a,#0f4a33)":T.bg2,borderRadius:"4px 4px 0 0",minHeight:3}}/>
+              <div style={{width:"100%",height:h,background:m.raised>0?(T.green600||"#1a6b4a"):T.bg2,borderRadius:"4px 4px 0 0",minHeight:3}}/>
               <div style={{fontSize:9,color:T.ink3}}>{m.month.slice(0,3)}</div>
             </div>;
           })}

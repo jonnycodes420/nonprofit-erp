@@ -601,7 +601,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
                   <div style={{fontSize:13,fontWeight:600,color:rawPct>100?T.gold:"#8fa896"}}>{goalHeadSub(rawPct,overAmt)}</div>
                 </div>
                 <div style={{background:"#0a120c",borderRadius:99,height:11,overflow:"hidden",marginBottom:10}}>
-                  <div style={{height:"100%",width:`${pct}%`,background:`linear-gradient(90deg,${T.gold},${T.terracotta})`,borderRadius:99,transition:"width 0.6s ease"}}/>
+                  <div style={{height:"100%",width:`${pct}%`,background:T.gold500,borderRadius:99,transition:"width 0.6s ease"}}/>
                 </div>
                 <div style={{fontSize:13,color:"#c9c2b4"}}><strong style={{fontSize:15,color:T.gold,fontFamily:"'DM Serif Display',serif",fontWeight:400}}>{fmtFull(raised)}</strong> of {fmtFull(goalAmt)}{many?` · ${fgRollup.activeGoalCount} active goals`:""}</div>
               </div>
@@ -677,7 +677,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
                   <div style={{fontSize:13,fontWeight:600,color:(goal.rawPercent??goal.percent)>100?T.gold:"#8fa896"}}>{goalHeadSub(goal.rawPercent??goal.percent,goal.over||0)}</div>
                 </div>
                 <div style={{background:"#0a120c",borderRadius:99,height:11,overflow:"hidden",marginBottom:10}}>
-                  <div style={{height:"100%",width:`${goal.percent}%`,background:`linear-gradient(90deg,${T.gold},${T.terracotta})`,borderRadius:99,transition:"width 0.6s ease"}}/>
+                  <div style={{height:"100%",width:`${goal.percent}%`,background:T.gold500,borderRadius:99,transition:"width 0.6s ease"}}/>
                 </div>
                 <div style={{fontSize:13,color:"#c9c2b4"}}><strong style={{fontSize:15,color:T.gold,fontFamily:"'DM Serif Display',serif",fontWeight:400}}>{fmtFull(goal.currentAmount)}</strong> of {fmtFull(goal.goalAmount)}</div>
               </div>
@@ -747,14 +747,19 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
           cards.push({key:"pipeline",label:"Pipeline",accent:T.greenDk,value:pl.total,unit:pl.total===1?"prospect":"prospects",
             sub:pl.forecastOpen>0?`${fmt(pl.forecastOpen)} in open asks`:`${fmt(pl.value)} lifetime`,onClick:()=>onNavigate("pipeline",{scope}),aria:"View pipeline board"});
         }
+        // De-templated (BUILD-31 Part 5.2): no per-stat boxes / colored left
+        // borders / shadows — the four stats read as TYPOGRAPHY separated by
+        // whitespace, the accent carried by the NUMBER, not a decorative border.
+        // Still clickable + keyboard-accessible via interactive() (hover wash +
+        // gold focus ring). Hierarchy comes from type weight + space, not boxes.
         return(
-          <div className="dash-cmd-grid" style={{display:"grid",gridTemplateColumns:`repeat(${cards.length},minmax(0,1fr))`,gap:12}}>
+          <div className="dash-cmd-grid" style={{display:"grid",gridTemplateColumns:`repeat(${cards.length},minmax(0,1fr))`,gap:6,margin:"2px 0"}}>
             {cards.map(c=>(
               <div key={c.key} {...interactive(c.onClick,{label:c.aria})}
-                style={{background:T.white,border:"1px solid "+T.bg3,borderLeft:`3px solid ${c.accent}`,borderRadius:14,padding:"15px 18px",boxShadow:T.shadow,display:"flex",flexDirection:"column",gap:4,minWidth:0}}>
+                style={{padding:"10px 14px",borderRadius:10,display:"flex",flexDirection:"column",gap:3,minWidth:0}}>
                 <span style={{fontSize:10,fontWeight:800,letterSpacing:"0.1em",textTransform:"uppercase",color:T.ink3}}>{c.label}</span>
                 <span style={{display:"flex",alignItems:"baseline",gap:6}}>
-                  <span style={{fontSize:28,fontWeight:800,fontFamily:"'DM Serif Display',serif",color:c.accent,lineHeight:1}}>{c.value}</span>
+                  <span style={{fontSize:32,fontWeight:800,fontFamily:"'DM Serif Display',serif",color:c.accent,lineHeight:1}}>{c.value}</span>
                   <span style={{fontSize:11,color:T.ink3}}>{c.unit}</span>
                 </span>
                 <span style={{fontSize:11.5,color:T.ink3,lineHeight:1.4,minHeight:16}}>{c.sub}</span>
@@ -765,7 +770,10 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
       })()}
 
       {myStats&&(
-        <div style={{background:T.white,border:"1px solid "+T.greenDk+"30",borderLeft:"3px solid "+T.greenDk,borderRadius:14,overflow:"hidden"}}>
+        // De-emphasized wrapper (BUILD-31 Part 5.3): no colored left-accent box —
+        // the "MY PORTFOLIO" heading + spacing define the group. A neutral hairline
+        // only, so it reads as a quiet section, not a decorated template card.
+        <div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:14,overflow:"hidden"}}>
           <button onClick={()=>setPortfolioOpen(v=>!v)} style={{width:"100%",background:"none",border:"none",padding:"10px 16px",display:"flex",alignItems:"center",justifyContent:"space-between",cursor:"pointer",color:T.ink}}>
             <div style={{display:"flex",alignItems:"center",gap:8}}>
               <span style={{fontSize:9,fontWeight:800,letterSpacing:"0.1em",textTransform:"uppercase",color:T.greenDk,background:T.greenDk+"10",padding:"3px 8px",borderRadius:99}}>MY PORTFOLIO</span>

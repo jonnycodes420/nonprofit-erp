@@ -126,5 +126,29 @@ ok(/color:\s*T\.forest[^]{0,40}Sign up free/.test(login),
 ok(/import\.meta\.env\.DEV\s*&&[^]{0,400}admin@creoarts\.org/.test(login),
   "sign-in: demo credentials are DEV-gated (never in a production build)");
 
+// 9 — No gradient fills on progress bars / thermometers / charts anywhere in the
+//     app (BUILD-31 Part 5). The gold→terracotta fade on the Home goal bar was
+//     the single most AI-template-looking element; bars now carry meaning by
+//     LENGTH + a SOLID gold fill. Gradients were already banned on the landing;
+//     this extends the ban app-wide. The `linear-gradient(90deg` (horizontal)
+//     signature is exactly the progress-bar/thermometer fill pattern — forbidden
+//     across every component. The gold-moment celebration sheen is the ONE
+//     documented exception and uses `linear-gradient(100deg` (a moving highlight,
+//     not a bar fill), so it is not matched here.
+const componentsDir = path.join(root, "client/src/components");
+const walkComponents = dir => fs.readdirSync(dir, { withFileTypes: true }).flatMap(d => {
+  const p = path.join(dir, d.name);
+  return d.isDirectory() ? walkComponents(p) : (/\.jsx?$/.test(d.name) ? [p] : []);
+});
+for (const file of walkComponents(componentsDir)) {
+  const src = fs.readFileSync(file, "utf8");
+  const rel = path.relative(root, file);
+  ok(!/linear-gradient\(90deg/i.test(src),
+    `${rel}: no gradient progress-bar/thermometer fill (linear-gradient(90deg…) — use a solid gold fill, length carries the meaning`);
+}
+// The celebration sheen (the ONE allowed gradient bar effect) is still present.
+const shared9 = read("client/src/components/shared.jsx");
+ok(/linear-gradient\(100deg/i.test(shared9), "gold-moment celebration sheen (the documented exception) is intact");
+
 console.log(`\nbrand-glyph: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

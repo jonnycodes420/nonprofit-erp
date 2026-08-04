@@ -661,7 +661,6 @@ function TaxReceiptsManager({orgId,isAdmin,isReadOnly}){
 // prompt lands directly on "receipts".
 const SETTINGS_TABS=[
   {id:"org",label:"Organization"},
-  {id:"branding",label:"Branding"},
   {id:"team",label:"Team"},
   {id:"integrations",label:"Integrations"},
   {id:"giving",label:"Giving Pages"},
@@ -710,6 +709,8 @@ export function Settings({auth,logout,initialSection}) {
   const [impact,setImpact]=useState(null);
   const [impactOpen,setImpactOpen]=useState(false);
   const [portalLoading,setPortalLoading]=useState(false);
+  const [portalError,setPortalError]=useState("");
+  const [portalUrl,setPortalUrl]=useState("");   // fallback link when the pop-up is blocked
   const [upgradeModal,setUpgradeModal]=useState(null);
   const isReadOnly=billing?.accessState==="read_only";
 
@@ -785,11 +786,17 @@ export function Settings({auth,logout,initialSection}) {
   }
 
   async function openBillingPortal(){
-    setPortalLoading(true);
+    // Open the portal in a NEW TAB so Settings stays put, and ALWAYS reset the
+    // loading state (the old same-tab redirect left the button stuck on
+    // "Opening…" whenever the nav didn't happen). Pop-up-blocked and error cases
+    // surface a clear message + a direct fallback link / retry (BUILD-31 Part 1).
+    setPortalLoading(true); setPortalError(""); setPortalUrl("");
     try{
       const r=await apiFetch("/billing/create-portal",{method:"POST"});
-      window.location.href=r.url;
-    }catch(e){ alert(billingErrorMessage(e, "Could not open billing portal. Please try again.")); setPortalLoading(false); }
+      const w=window.open(r.url,"_blank","noopener,noreferrer");
+      if(!w){ setPortalUrl(r.url); setPortalError("Your browser blocked the pop-up. Allow pop-ups for this site, or open the portal directly:"); }
+    }catch(e){ setPortalError(billingErrorMessage(e, "Couldn't open the billing portal. Please try again.")); }
+    finally{ setPortalLoading(false); }
   }
 
   const donationUrl = orgSlug ? `${window.location.origin}/give/${orgSlug}` : "";
@@ -978,6 +985,24 @@ export function Settings({auth,logout,initialSection}) {
   return(
     <div style={{display:"flex",flexDirection:"column",gap:20}}>
       <PageTitle main="Workspace" accent="settings."/>
+      {/* Value-first landing (BUILD-31 Part 2.1): the first thing an org sees is
+          what Steward has done for them, not a near-empty Organization card.
+          Honest numbers only — forward-looking copy when there's nothing yet. */}
+      {impact&&(()=>{
+        const recovered=impact.recoveredAmount||0;
+        const watching=impact.watchingRecurringCount||0;
+        const msg = recovered>0
+          ? <>Steward has recovered <strong style={{color:T.green600}}>{fmt(recovered)}</strong> in lapsing gifts — and kept you <strong style={{color:T.ink}}>100% of every dollar</strong> (0 platform fees).</>
+          : watching>0
+            ? <>Steward is watching <strong style={{color:T.ink}}>{watching}</strong> recurring gift{watching===1?"":"s"} for failed cards — and you keep <strong style={{color:T.ink}}>100% of every dollar</strong> (0 platform fees).</>
+            : <>You keep <strong style={{color:T.ink}}>100% of every gift</strong> — 0 platform fees. Your recovered-giving and impact numbers appear here as you use Steward.</>;
+        return (
+          <div style={{background:T.white,border:"1px solid "+T.bg3,borderLeft:"3px solid "+T.gold500,borderRadius:12,padding:"12px 16px",display:"flex",alignItems:"center",gap:10}}>
+            <span aria-hidden style={{color:T.gold500,fontSize:14,lineHeight:1}}>◈</span>
+            <span style={{flex:1,fontSize:13,color:T.ink2,lineHeight:1.5}}>{msg}</span>
+          </div>
+        );
+      })()}
       <SectionTabs className="settings-tabbar" style={{marginBottom:-2}} tabs={SETTINGS_TABS} active={section} onSelect={setSection}/>
 
       {/* ── Organization ──────────────────────────────────────────────────── */}
@@ -1000,8 +1025,8 @@ export function Settings({auth,logout,initialSection}) {
         </div>
       </div>}
 
-      {/* ── Branding ─────────────────────────────────────────────────────── */}
-      {section==="branding"&&<BrandingManager orgId={auth?.org?.id} isAdmin={isAdmin} isReadOnly={isReadOnly}/>}
+      {/* ── Branding — merged into the Organization tab (BUILD-31 Part 2.4) ── */}
+      {section==="org"&&<div style={{marginTop:16}}><BrandingManager orgId={auth?.org?.id} isAdmin={isAdmin} isReadOnly={isReadOnly}/></div>}
 
       {/* ── Team ──────────────────────────────────────────────────────────── */}
       {section==="team"&&<div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:16,padding:"24px 28px"}}>
@@ -1161,8 +1186,9 @@ export function Settings({auth,logout,initialSection}) {
           <SectionLabel>Custom Fields</SectionLabel>
           {isAdmin&&<button onClick={openAddField} disabled={isReadOnly} title={isReadOnly?"Reactivate your subscription to make changes.":undefined} style={{background:T.green,border:"none",borderRadius:8,padding:"7px 14px",color:"#fff",fontSize:12,fontWeight:700,cursor:isReadOnly?"not-allowed":"pointer",opacity:isReadOnly?0.45:1}}>+ Add Field</button>}
         </div>
-        <div style={{fontSize:13,color:T.ink3,marginBottom:customFields.length?14:0,lineHeight:1.6}}>
-          {customFields.length===0?"No custom fields yet. Add fields to capture extra donor data specific to your organization.":""}
+        {/* Purpose + example + payoff (BUILD-31 Part 3): make the value obvious. */}
+        <div style={{fontSize:12.5,color:T.ink3,marginBottom:14,lineHeight:1.6,background:T.bg,border:"1px solid "+T.bg3,borderRadius:10,padding:"10px 12px"}}>
+          Extra donor data specific to your org — e.g. <strong style={{color:T.ink2}}>Board Connection</strong>, <strong style={{color:T.ink2}}>Alma Mater</strong>, or <strong style={{color:T.ink2}}>Preferred Name</strong>. Every field you add shows up on <strong style={{color:T.ink2}}>each donor's profile</strong>, can appear as a <strong style={{color:T.ink2}}>Directory column</strong>, and is included in your <strong style={{color:T.ink2}}>CSV export</strong>.{customFields.length===0?" Add your first below.":""}
         </div>
         {customFields.map((f,i)=>(
           <div key={f.id}
@@ -1188,8 +1214,9 @@ export function Settings({auth,logout,initialSection}) {
           <SectionLabel>Impact Metrics</SectionLabel>
           {isAdmin&&<button onClick={openAddMetric} disabled={isReadOnly} title={isReadOnly?"Reactivate your subscription to make changes.":undefined} style={{background:T.green,border:"none",borderRadius:8,padding:"7px 14px",color:"#fff",fontSize:12,fontWeight:700,cursor:isReadOnly?"not-allowed":"pointer",opacity:isReadOnly?0.45:1}}>+ Add Metric</button>}
         </div>
-        <div style={{fontSize:13,color:T.ink3,marginBottom:impactMetrics.length?14:0,lineHeight:1.6}}>
-          {impactMetrics.length===0?"No impact metrics yet. Add giving thresholds that translate a donor's cumulative gifts into concrete outcomes for milestone emails.":"Cumulative giving thresholds used to translate a donor's total giving into concrete outcomes in milestone emails."}
+        {/* Purpose + example + payoff (BUILD-31 Part 3): make the value obvious. */}
+        <div style={{fontSize:12.5,color:T.ink3,marginBottom:14,lineHeight:1.6,background:T.bg,border:"1px solid "+T.bg3,borderRadius:10,padding:"10px 12px"}}>
+          Turn a donor's cumulative giving into a concrete outcome — e.g. <strong style={{color:T.ink2}}>"$100 = 40 meals served"</strong> or <strong style={{color:T.ink2}}>"$250 = a week of after-school tutoring"</strong>. These appear in <strong style={{color:T.ink2}}>milestone thank-you emails</strong> and each donor's <strong style={{color:T.ink2}}>Impact Summary PDF</strong>, so a major donor sees exactly what their giving funded.{impactMetrics.length===0?" Add your first below.":""}
         </div>
         {impactMetrics.map((m,i)=>(
           <div key={m.id}
@@ -1328,40 +1355,62 @@ export function Settings({auth,logout,initialSection}) {
                 </div>
               );
             })()}
-            {(()=>{const isSubscriber=["core","team","growth","impact","founding"].includes(billing.plan); return (
-            <div style={{display:"flex",flexDirection:"column",gap:8}}>
-              <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
-                {isSubscriber&&(
-                  <button onClick={openBillingPortal} disabled={portalLoading} style={{background:"#1a6b4a",border:"none",borderRadius:8,padding:"9px 18px",color:"#fff",fontSize:13,fontWeight:700,cursor:portalLoading?"not-allowed":"pointer",opacity:portalLoading?0.7:1}}>
-                    {portalLoading?"Opening…":"Change plan →"}
-                  </button>
-                )}
-                <button onClick={openBillingPortal} disabled={portalLoading} style={{background:"#0f1a12",border:"none",borderRadius:8,padding:"9px 18px",color:"#f0ede6",fontSize:13,fontWeight:600,cursor:portalLoading?"not-allowed":"pointer",opacity:portalLoading?0.7:1}}>
-                  {portalLoading?"Opening…":"Manage billing →"}
-                </button>
-                {(billing.plan==="trial"||billing.plan==="seed")&&(
-                  <a href="/pricing" style={{display:"inline-block",background:"#1a6b4a",border:"none",borderRadius:8,padding:"9px 18px",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer",textDecoration:"none"}}>
-                    Upgrade plan →
-                  </a>
+            {(()=>{
+              // ONE canonical destination — Stripe's Customer Portal — never two
+              // identically-acting buttons (BUILD-31 Part 1). The portal itself
+              // handles plan change, payment method, invoices, and cancel, so a
+              // single "Manage billing" is enough. Expectation-setting copy sits
+              // ABOVE the action. A manual-grant plan (no Stripe subscription)
+              // would open an EMPTY portal → we explain that in-app instead.
+              const isSubscriber=["core","team","growth","impact","founding"].includes(billing.plan);
+              const hasSub=!!billing.hasSubscription;
+              const isUpgradable=billing.plan==="trial"||billing.plan==="seed";
+              const planLabel={core:"Core",team:"Team",growth:"Team",impact:"Team",founding:"Core"}[billing.plan]||billing.plan;
+              return (
+              <div style={{display:"flex",flexDirection:"column",gap:10}}>
+                <div style={{fontSize:12.5,color:T.ink3,lineHeight:1.5}}>
+                  {isSubscriber&&hasSub
+                    ? "Change your plan, update your payment method, download invoices, or cancel — all in Stripe's secure billing portal. Opens in a new tab; plan changes are prorated automatically."
+                    : isSubscriber&&!hasSub
+                      ? <>You're on <strong style={{color:T.ink}}>{planLabel}</strong> via a manual grant from Steward — there's <strong style={{color:T.ink}}>no active subscription</strong> to manage, and nothing to pay. To move to self-serve billing, choose a plan.</>
+                      : "Start a subscription any time — opens Stripe's secure checkout."}
+                </div>
+                <div style={{display:"flex",gap:10,flexWrap:"wrap",alignItems:"center"}}>
+                  {isSubscriber&&hasSub&&(
+                    <button onClick={openBillingPortal} disabled={portalLoading} style={{background:T.greenMid,border:"none",borderRadius:8,padding:"9px 18px",color:"#fff",fontSize:13,fontWeight:700,cursor:portalLoading?"wait":"pointer",opacity:portalLoading?0.7:1}}>
+                      {portalLoading?"Opening…":"Manage billing →"}
+                    </button>
+                  )}
+                  {(isUpgradable||(isSubscriber&&!hasSub))&&(
+                    <a href="/pricing" style={{display:"inline-block",background:T.greenMid,border:"none",borderRadius:8,padding:"9px 18px",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer",textDecoration:"none"}}>
+                      Choose a plan →
+                    </a>
+                  )}
+                </div>
+                {portalError&&(
+                  <div role="alert" style={{fontSize:12.5,color:T.terracotta,lineHeight:1.5}}>
+                    {portalError}{" "}
+                    {portalUrl
+                      ? <a href={portalUrl} target="_blank" rel="noopener noreferrer" style={{color:T.greenDk,fontWeight:700,textDecoration:"underline"}}>Open billing portal →</a>
+                      : <button onClick={openBillingPortal} style={{background:"none",border:"none",padding:0,color:T.greenDk,fontWeight:700,cursor:"pointer",textDecoration:"underline",fontSize:12.5}}>Try again</button>}
+                  </div>
                 )}
               </div>
-              {isSubscriber&&(
-                <div style={{fontSize:12,color:T.ink3,lineHeight:1.5}}>
-                  Switch between Core and Team, update your payment method, or cancel — all in Stripe's secure portal. Plan changes are prorated automatically.
-                </div>
-              )}
-            </div>
-            );})()}
+              );})()}
           </div>
         ) : (
           <div style={{fontSize:13,color:T.ink3}}>Loading billing information…</div>
         )}
       </div>
 
-      <div style={{background:"#1a0a0a",border:"1px solid #3d1515",borderRadius:16,padding:"24px 28px"}}>
-        <SectionLabel>Account Actions</SectionLabel>
-        <button onClick={logout} style={{background:"#2d0a0a",border:"1px solid #3d1515",borderRadius:8,padding:"9px 18px",color:"#f87171",fontSize:13,fontWeight:600,cursor:"pointer"}}>
-          Sign out of Steward
+      {/* On-brand Account panel (BUILD-31 Part 2.3): plain white/cream section,
+          ink label, sign-out as a QUIET terracotta outline (destructive-but-not-
+          alarming) — not a near-black block with alarm-red text that read as an
+          error state. Terms/Privacy are ordinary links. */}
+      <div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:16,padding:"24px 28px"}}>
+        <SectionLabel>Account</SectionLabel>
+        <button onClick={logout} style={{background:"none",border:"1px solid "+T.terracotta,borderRadius:8,padding:"9px 18px",color:T.terracotta,fontSize:13,fontWeight:600,cursor:"pointer"}}>
+          Sign out
         </button>
         <div style={{marginTop:20,display:"flex",gap:20}}>
           <a href="/terms" target="_blank" rel="noopener noreferrer" style={{fontSize:12,color:T.ink3,textDecoration:"none",borderBottom:"1px solid "+T.bg3}}>Terms of Service</a>

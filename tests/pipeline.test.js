@@ -185,6 +185,21 @@ const boardIds = body => Object.values(body.columns).flat().map(c => c.donorId);
   r = await api("GET", "/pipeline?scope=all", T2U);
   ok("t2 board only its own donor", boardIds(r.body).join() === "plt2_1", boardIds(r.body));
 
+  // ── 13. Cross-officer visibility is ADMIN-only (BUILD-31 Part 4) ──────────
+  // Admin A can see all portfolios; a non-admin officer (B) is scoped to their
+  // OWN, server-enforced — scope=all and a foreign assignedTo are downgraded.
+  // (By now pl_imp3 was bulk-assigned to B in section 5, so B owns pl_b1 + pl_imp3.)
+  r = await api("GET", "/pipeline?scope=all", A);
+  ok("admin: canViewAll true", r.body.canViewAll === true, r.body.canViewAll);
+  ok("admin scope=all sees every assigned portfolio", boardIds(r.body).sort().join() === ["pl_a1", "pl_a2", "pl_b1", "pl_imp3", "pl_u1"].sort().join(), boardIds(r.body));
+  const bOwn = ["pl_b1", "pl_imp3"].sort().join();
+  r = await api("GET", "/pipeline?scope=all", B);
+  ok("officer (non-admin): canViewAll false", r.body.canViewAll === false, r.body.canViewAll);
+  ok("officer scope=all DOWNGRADED to own portfolio (server-enforced, not just hidden)", r.body.scope === "mine" && boardIds(r.body).sort().join() === bOwn, { scope: r.body.scope, ids: boardIds(r.body) });
+  ok("officer scope=all excludes A's donors", !boardIds(r.body).includes("pl_a1") && !boardIds(r.body).includes("pl_u1"), boardIds(r.body));
+  r = await api("GET", "/pipeline?assignedTo=u_pl_a", B);
+  ok("officer cannot peek at another officer's portfolio via assignedTo", boardIds(r.body).sort().join() === bOwn, boardIds(r.body));
+
   await closeDb();
   summary();
 })().catch(e => { console.error(e); process.exit(1); });

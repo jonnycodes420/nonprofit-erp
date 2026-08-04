@@ -4525,8 +4525,19 @@ app.get("/pipeline", requireAuth, wrap(async (req, res) => {
   // defaults to the caller's own portfolio; a specific `assignedTo` overrides.
   // The exact same `portfolioMembership` helper feeds Home's Portfolio and
   // Pipeline cards, so all three counts are one number by construction.
-  const scope = req.query.scope === "all" ? "all" : "mine";
-  const membership = portfolioMembership({ orgId, userId, scope, assignedTo: req.query.assignedTo || null, alias: "d" });
+  // Cross-officer visibility ("All portfolios", or filtering to another officer)
+  // is an ADMIN/ED oversight view — the whole-shop forecast Team sells. An
+  // individual officer only ever sees their OWN portfolio (BUILD-31 Part 4).
+  // Enforced server-side, not just hidden in the UI: a non-admin's scope=all or
+  // foreign assignedTo is downgraded to their own portfolio.
+  const isAdmin = req.user.role === "admin";
+  let scope = req.query.scope === "all" ? "all" : "mine";
+  let assignedTo = req.query.assignedTo || null;
+  if (!isAdmin) {
+    scope = "mine";
+    if (assignedTo && assignedTo !== userId) assignedTo = null;
+  }
+  const membership = portfolioMembership({ orgId, userId, scope, assignedTo, alias: "d" });
   const filters = [membership.where];
   const params = [...membership.params];
   if (req.query.designation) {
@@ -4605,7 +4616,7 @@ app.get("/pipeline", requireAuth, wrap(async (req, res) => {
     `SELECT COALESCE(SUM(gift_amount),0) AS amt, COUNT(*)::int AS cnt FROM opportunities
        WHERE org_id=? AND status='won' AND closed_at >= ?`, [orgId, start]);
   res.json({
-    tier, locked, single_user, stages, scope, sort,
+    tier, locked, single_user, stages, scope, sort, canViewAll: isAdmin,
     officers: officers.map(o => ({ id: o.id, name: o.name, color: o.portfolio_color })),
     columns, counts, total: donors.length, cap: PER_COLUMN_CAP,
     forecast: {
@@ -12329,7 +12340,7 @@ app.get("/admin/billing-diagnostic", requireAuth, requireSuperAdmin, wrap(async 
 }));
 
 app.get("/billing/status", requireAuth, wrap(async (req, res) => {
-  const orgs = await query("SELECT plan, subscription_status, trial_ends_at, stripe_customer_id, grace_until, current_period_end FROM orgs WHERE id=?", [req.user.orgId]);
+  const orgs = await query("SELECT plan, subscription_status, trial_ends_at, stripe_customer_id, stripe_subscription_id, grace_until, current_period_end FROM orgs WHERE id=?", [req.user.orgId]);
   if (!orgs.length) return res.status(404).json({ error: "Org not found" });
   const org = orgs[0];
   const plan = org.plan || "trial";
@@ -12355,6 +12366,11 @@ app.get("/billing/status", requireAuth, wrap(async (req, res) => {
     planTier: orgPlanTier(org),
     usage: { seats: Number(seatRow?.c) || 0, records: Number(recordRow?.c) || 0 },
     isTrial,
+    // Whether there's a REAL Stripe subscription behind the plan. A plan set by a
+    // manual/super-admin grant (e.g. flagged Team) has no stripe_subscription_id →
+    // the Customer Portal would open EMPTY. The UI uses this to explain that
+    // in-app instead of sending the admin to a blank portal (BUILD-31 Part 1).
+    hasSubscription: !!org.stripe_subscription_id,
   });
 }));
 

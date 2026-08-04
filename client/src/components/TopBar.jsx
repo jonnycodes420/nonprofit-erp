@@ -196,12 +196,17 @@ export function TopBar({ auth, logout, onNavigate }) {
       </div>}
     </div>
 
-    {/* User chip + sign out (moved from sidebar bottom) */}
+    {/* User chip + sign out (moved from sidebar bottom). The chip (avatar + name)
+        is a REAL button → Settings › Account (BUILD-31 Part 2.2): it reads as one
+        and every user tries it, so it now behaves as one — keyboard-accessible. */}
     <div style={{display:"flex",alignItems:"center",gap:9}}>
-      <div style={{width:28,height:28,borderRadius:8,background:T.greenDk,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
-        <span style={{fontSize:11,fontWeight:700,color:"#f0ede6"}}>{userName[0].toUpperCase()}</span>
-      </div>
-      <span style={{fontSize:12.5,fontWeight:600,color:"#f0ede6",maxWidth:150,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{userName}</span>
+      <button onClick={()=>onNavigate("settings",{section:"account"})} title="Account settings"
+        style={{display:"flex",alignItems:"center",gap:9,background:"transparent",border:"none",padding:"3px 5px",borderRadius:8,cursor:"pointer"}}>
+        <div style={{width:28,height:28,borderRadius:8,background:T.greenDk,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+          <span style={{fontSize:11,fontWeight:700,color:"#f0ede6"}}>{userName[0].toUpperCase()}</span>
+        </div>
+        <span style={{fontSize:12.5,fontWeight:600,color:"#f0ede6",maxWidth:150,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{userName}</span>
+      </button>
       <button onClick={logout} style={{background:"transparent",border:"1px solid #2d4a35",borderRadius:8,padding:"5px 11px",color:"#8fa896",fontSize:12,cursor:"pointer"}}>Sign out</button>
     </div>
   </div>;

@@ -239,6 +239,10 @@ export function Pipeline({ isReadOnly, onNavigate, initialScope }) {
   const counts = data?.counts || {};
   const totalCards = data?.total ?? Object.values(columns).reduce((s, c) => s + c.length, 0);
   const anyFilter = !!(assignedTo || designation || minGiving || dSearch);
+  // Cross-officer visibility ("All portfolios" + the officer filter) is admin-only
+  // (BUILD-31 Part 4) — the server reports it and also enforces it. An individual
+  // officer sees only their own portfolio, with the toggle hidden.
+  const canViewAll = !!(data && data.canViewAll);
   // Drag-and-drop is a Team write path: off in the locked Core preview and for
   // read-only orgs. The keyboard/button "Move →" path stays available regardless.
   const dndEnabled = !isReadOnly && !locked;
@@ -254,22 +258,24 @@ export function Pipeline({ isReadOnly, onNavigate, initialScope }) {
         </div>}
       </div>
 
-      {/* Scope toggle + add-prospects */}
+      {/* Scope toggle + add-prospects. The My/All toggle is ADMIN-only oversight. */}
       <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center", margin: "6px 0 10px" }}>
-        <div style={{ display: "flex", background: T.bg2, borderRadius: T.radiusSm, padding: 3 }}>
-          {[["mine", "My portfolio"], ["all", "All portfolios"]].map(([v, l]) => (
-            <button key={v} onClick={() => { setScope(v); if (v === "mine") setAssignedTo(""); }}
-              style={{ background: scope === v && !assignedTo ? T.bgCard : "transparent", border: "none", borderRadius: 6, padding: "6px 12px", fontSize: 12.5, fontWeight: 700, color: scope === v && !assignedTo ? T.ink : T.ink3, cursor: "pointer", boxShadow: scope === v && !assignedTo ? T.shadow : "none" }}>{l}</button>
-          ))}
-        </div>
-        <span style={{ fontSize: 12.5, color: T.ink3 }}>{totalCards} on the board{anyFilter ? " (filtered)" : ""}</span>
+        {canViewAll && (
+          <div style={{ display: "flex", background: T.bg2, borderRadius: T.radiusSm, padding: 3 }}>
+            {[["mine", "My portfolio"], ["all", "All portfolios"]].map(([v, l]) => (
+              <button key={v} onClick={() => { setScope(v); if (v === "mine") setAssignedTo(""); }}
+                style={{ background: scope === v && !assignedTo ? T.bgCard : "transparent", border: "none", borderRadius: 6, padding: "6px 12px", fontSize: 12.5, fontWeight: 700, color: scope === v && !assignedTo ? T.ink : T.ink3, cursor: "pointer", boxShadow: scope === v && !assignedTo ? T.shadow : "none" }}>{l}</button>
+            ))}
+          </div>
+        )}
+        <span style={{ fontSize: 12.5, color: T.ink3 }}>{totalCards} {canViewAll ? "on the board" : "in your portfolio"}{anyFilter ? " (filtered)" : ""}</span>
         <button onClick={goAddProspects} style={{ marginLeft: "auto", background: T.greenMid, border: "none", borderRadius: T.radiusSm, padding: "8px 14px", fontSize: 13, fontWeight: 700, color: "#fff", cursor: "pointer" }}>+ Add prospects from your donors</button>
       </div>
 
       {/* Filters */}
       <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center", margin: "0 0 16px" }}>
         <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search prospects…" style={{ ...filterInp, minWidth: 170 }} />
-        {officers.length > 1 && <select value={assignedTo} onChange={e => setAssignedTo(e.target.value)} style={filterInp}>
+        {canViewAll && officers.length > 1 && <select value={assignedTo} onChange={e => setAssignedTo(e.target.value)} style={filterInp}>
           <option value="">Any officer</option>
           {officers.map(o => <option key={o.id} value={o.id}>{o.name}</option>)}
         </select>}
@@ -292,7 +298,7 @@ export function Pipeline({ isReadOnly, onNavigate, initialScope }) {
       {totalCards === 0 ? (
         <EmptyState           title={anyFilter ? "No prospects match these filters" : (scope === "mine" ? "Your pipeline is empty — and that's the point" : "No prospects on the board yet")}
           message={anyFilter
-            ? "Clear a filter, or switch to All portfolios."
+            ? (canViewAll ? "Clear a filter, or switch to All portfolios." : "Clear a filter to see your whole portfolio.")
             : "The pipeline holds the prospects you're actively working — not your whole donor list. Open your Donors directory, pick the major-gift prospects worth cultivating, and add them here."}
           action={anyFilter ? undefined : "Go to Donors →"} onAction={goAddProspects} />
       ) : (
