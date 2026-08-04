@@ -26,7 +26,7 @@ const T = {
   gold:   "#c9a84c",   // gold500 — primary action + title underline (ink text on it)
   forest: "#0d5c3a",   // greenDk — standard link/accent, WCAG AA on cream
   greenDark: "#1a6b4a",
-  red:    "#dc2626",
+  red:    "#8a3a24",  // deep terracotta — errors ride terracotta, never library red
 };
 
 export default function LoginPage() {
@@ -109,8 +109,8 @@ export default function LoginPage() {
           }}>
             {notice && (
               <div style={{
-                background: "#ecfdf5",
-                border: `1px solid #a7f3d0`,
+                background: "#edf3ee",
+                border: `1px solid #dce7df`,
                 borderRadius: 8,
                 padding: "10px 14px",
                 fontSize: 13,
@@ -150,8 +150,8 @@ export default function LoginPage() {
 
               {error && (
                 <div style={{
-                  background: "#fef2f2",
-                  border: `1px solid #fecaca`,
+                  background: "#f6e3dd",
+                  border: `1px solid #eac6b8`,
                   borderRadius: 8,
                   padding: "10px 14px",
                   fontSize: 13,

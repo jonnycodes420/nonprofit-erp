@@ -3420,6 +3420,12 @@ app.delete("/gifts/:id", requireAuth, wrap(async (req, res) => {
       `UPDATE pledges SET status='open', fulfilled_gift_id=NULL, fulfilled_at=NULL, updated_at=NOW()
        WHERE fulfilled_gift_id=? AND org_id=?`,
       [req.params.id, req.user.orgId]);
+    // BUILD-33: the gift's own ledger stamp goes with it. "Every gift stamps
+    // fin_transactions exactly once" (uq_fin_txns_gift) — zero gifts, zero
+    // stamps; leaving the row would inflate Cash on Hand with money from a
+    // gift that no longer exists anywhere. Manual/expense rows (gift_id NULL)
+    // are untouched.
+    await runTx(client, "DELETE FROM fin_transactions WHERE gift_id=? AND org_id=?", [req.params.id, req.user.orgId]);
     await runTx(client, "DELETE FROM gifts WHERE id=? AND org_id=?", [req.params.id, req.user.orgId]);
   });
   // Full recalc: old delta left last_gift_date and last_gift_amount stale when deleting the most recent gift
@@ -7075,13 +7081,18 @@ app.get("/fundraising/overview", requireAuth, wrap(async (req, res) => {
       "SELECT * FROM fundraising_goals WHERE org_id = ? AND period_start <= ? AND period_end >= ? ORDER BY created_at DESC LIMIT 1",
       [orgId, today, today]
     ),
-    query("SELECT COALESCE(SUM(amount),0) AS total, COUNT(*) AS gifts, COUNT(DISTINCT donor_id) AS donors FROM gifts WHERE org_id = ? AND date >= ? AND date <= ?", [orgId, cur.start, cur.end]),
-    query("SELECT COALESCE(SUM(amount),0) AS total FROM gifts WHERE org_id = ? AND date >= ? AND date <= ?", [orgId, prior.start, prior.end]),
-    query("SELECT COALESCE(SUM(amount),0) AS total, COUNT(*) AS gifts FROM gifts WHERE org_id = ? AND date >= ? AND date <= ?", [orgId, wk.start, wk.end]),
+    // BUILD-33: period totals exclude soft-deleted (trashed) donors' gifts —
+    // same JOIN + deleted_at IS NULL predicate as Reports' giving-summary, so
+    // Fundraising and Reports report the SAME period number (the BUILD-23
+    // cross-surface invariant). Trashing a donor hides them from Reports; the
+    // Fundraising header must not keep counting them.
+    query("SELECT COALESCE(SUM(g.amount),0) AS total, COUNT(*) AS gifts, COUNT(DISTINCT g.donor_id) AS donors FROM gifts g JOIN donors d ON d.id = g.donor_id WHERE g.org_id = ? AND d.deleted_at IS NULL AND g.date >= ? AND g.date <= ?", [orgId, cur.start, cur.end]),
+    query("SELECT COALESCE(SUM(g.amount),0) AS total FROM gifts g JOIN donors d ON d.id = g.donor_id WHERE g.org_id = ? AND d.deleted_at IS NULL AND g.date >= ? AND g.date <= ?", [orgId, prior.start, prior.end]),
+    query("SELECT COALESCE(SUM(g.amount),0) AS total, COUNT(*) AS gifts FROM gifts g JOIN donors d ON d.id = g.donor_id WHERE g.org_id = ? AND d.deleted_at IS NULL AND g.date >= ? AND g.date <= ?", [orgId, wk.start, wk.end]),
     query(
       `SELECT g.id, g.amount, g.date, g.stripe_payment_id, g.campaign, g.donor_id, d.name AS donor_name
          FROM gifts g LEFT JOIN donors d ON d.id = g.donor_id
-        WHERE g.org_id = ? ORDER BY g.date DESC, g.id DESC LIMIT 8`,
+        WHERE g.org_id = ? AND d.deleted_at IS NULL ORDER BY g.date DESC, g.id DESC LIMIT 8`,
       [orgId]
     ),
     fundraisingCampaignRows(orgId),
@@ -8709,7 +8720,10 @@ app.get("/finance/summary", requireAuth, wrap(async (req, res) => {
     // Steward — see "Imported gifts vs the ledger" in CLAUDE.md). The gap is real
     // and must be EXPLAINED, never left to read as "$0 raised" next to a Reports
     // page showing years of giving.
-    query("SELECT COALESCE(SUM(amount),0) AS total, COUNT(*)::int AS n FROM gifts WHERE org_id = ?", [orgId]),
+    // BUILD-33: same deleted_at IS NULL predicate as Reports — this figure's
+    // whole job is "your giving history lives in Reports", so it must equal
+    // what Reports actually shows (trashed donors' gifts excluded).
+    query("SELECT COALESCE(SUM(g.amount),0) AS total, COUNT(*)::int AS n FROM gifts g JOIN donors d ON d.id = g.donor_id WHERE g.org_id = ? AND d.deleted_at IS NULL", [orgId]),
     query("SELECT COALESCE(SUM(amount),0) AS total FROM fin_transactions WHERE org_id = ? AND type='income' AND source IN ('gift','import','online','event')", [orgId]),
   ]);
 

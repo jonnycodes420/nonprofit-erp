@@ -84,7 +84,7 @@ export default function ManageFundraiser() {
     <div style={{ ...BASE, justifyContent: "center", textAlign: "center" }}>
       <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
       <div style={{ fontFamily: "'DM Serif Display',Georgia,serif", fontSize: 24, marginBottom: 12, opacity: 0.6, letterSpacing: "-0.02em", color: T.ink }}>Steward</div>
-      <div style={{ fontSize: 16, fontWeight: 700, color: "#dc2626", marginBottom: 8 }}>Link not found</div>
+      <div style={{ fontSize: 16, fontWeight: 700, color: "#8a3a24", marginBottom: 8 }}>Link not found</div>
       <div style={{ fontSize: 13, color: T.ink3 }}>{error}</div>
     </div>
   );
@@ -108,7 +108,7 @@ export default function ManageFundraiser() {
           <div style={{ fontSize: 12, color: T.ink3 }}>raised so far</div>
         </div>
         {data.status === "archived" && (
-          <div style={{ marginTop: 8, fontSize: 12, color: "#dc2626", background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 8, padding: "8px 12px" }}>
+          <div style={{ marginTop: 8, fontSize: 12, color: "#8a3a24", background: "#f6e3dd", border: "1px solid #eac6b8", borderRadius: 8, padding: "8px 12px" }}>
             This fundraiser has been archived by {data.orgName} and is no longer visible to the public. You can still update your story below.
           </div>
         )}
@@ -125,7 +125,7 @@ export default function ManageFundraiser() {
         <div style={{ fontSize: 12, fontWeight: 600, color: T.ink3, marginBottom: 4 }}>Photo URL (optional)</div>
         <input value={form.imageUrl} onChange={e => setForm(f => ({ ...f, imageUrl: e.target.value }))} placeholder="https://…" style={{ ...inp, marginBottom: 6 }} />
 
-        {error && <div style={{ background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 10, padding: "10px 14px", fontSize: 13, color: "#dc2626", marginBottom: 14 }}>{error}</div>}
+        {error && <div style={{ background: "#f6e3dd", border: "1px solid #eac6b8", borderRadius: 10, padding: "10px 14px", fontSize: 13, color: "#8a3a24", marginBottom: 14 }}>{error}</div>}
 
         <button type="submit" disabled={saving || !form.name.trim()}
           style={{

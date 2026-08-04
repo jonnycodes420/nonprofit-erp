@@ -93,7 +93,7 @@ export default function PlanPicker({ open, onClose }) {
               <div style={{ display:"flex",flexDirection:"column",gap:9,marginBottom:22,flex:1 }}>
                 {plan.features.map(f => (
                   <div key={f} style={{ display:"flex",alignItems:"center",gap:9 }}>
-                    <div style={{ width:16,height:16,background:T.greenPale,border:`1px solid ${T.green}`,borderRadius:"50%",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0 }}>
+                    <div style={{ width:16,height:16,background:T.green100,border:`1px solid ${T.green500}`,borderRadius:"50%",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0 }}>
                       <svg width="8" height="6" viewBox="0 0 10 8" fill="none"><path d="M1 4l3 3 5-6" stroke={T.greenDk} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
                     </div>
                     <span style={{ fontSize:12.5,color:T.ink2 }}>{f}</span>

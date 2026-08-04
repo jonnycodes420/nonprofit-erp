@@ -66,15 +66,15 @@ export default function SignupPage() {
     value: form[k],
     onChange: set(k),
     style: {
-      width: "100%", background: errors[k] ? "#fff8f8" : "#f8f6f0",
-      border: `1px solid ${errors[k] ? "#ef4444" : "#e8e4da"}`,
+      width: "100%", background: errors[k] ? "#faf6f3" : "#f8f6f0",
+      border: `1px solid ${errors[k] ? "#b8593f" : "#e8e4da"}`,
       borderRadius: 10, padding: "11px 14px", fontSize: 14, color: "#0f1a12",
       outline: "none", boxSizing: "border-box", fontFamily: "'DM Sans',system-ui,sans-serif",
     }
   });
 
   const LBL = { display: "block", fontSize: 11, fontWeight: 700, letterSpacing: "0.07em", textTransform: "uppercase", color: "#6b7c72", marginBottom: 5 };
-  const ERR = { fontSize: 12, color: "#ef4444", marginTop: 4 };
+  const ERR = { fontSize: 12, color: "#b8593f", marginTop: 4 };
 
   return (
     <div className="signup-shell" style={{ minHeight: "100vh", background: "#0f1a12", display: "flex", fontFamily: "'DM Sans',system-ui,sans-serif" }}>
@@ -147,7 +147,7 @@ export default function SignupPage() {
             </div>
 
             {serverErr && (
-              <div style={{ background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 8, padding: "10px 14px", fontSize: 13, color: "#dc2626" }}>
+              <div style={{ background: "#f6e3dd", border: "1px solid #eac6b8", borderRadius: 8, padding: "10px 14px", fontSize: 13, color: "#8a3a24" }}>
                 {serverErr}
               </div>
             )}

@@ -67,7 +67,7 @@ export default function ForgotPasswordPage() {
         <div style={{ width: "100%", maxWidth: 440, background: "#fff", borderRadius: 20, padding: "36px 40px", boxShadow: "0 24px 64px rgba(0,0,0,0.3)" }}>
           {sent ? (
             <div style={{ textAlign: "center", padding: "8px 0" }}>
-              <div style={{ width: 48, height: 48, background: "#e8f5ef", border: "2px solid #0d5c3a33", borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 20px" }}>
+              <div style={{ width: 48, height: 48, background: "#edf3ee", border: "2px solid #0d5c3a33", borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 20px" }}>
                 <svg width="22" height="18" viewBox="0 0 22 18" fill="none">
                   <path d="M1 9l7 7L21 1" stroke="#0d5c3a" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/>
                 </svg>
@@ -104,7 +104,7 @@ export default function ForgotPasswordPage() {
                 </div>
 
                 {error && (
-                  <div style={{ background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 8, padding: "10px 14px", fontSize: 13, color: "#dc2626" }}>
+                  <div style={{ background: "#f6e3dd", border: "1px solid #eac6b8", borderRadius: 8, padding: "10px 14px", fontSize: 13, color: "#8a3a24" }}>
                     {error}
                   </div>
                 )}

@@ -78,7 +78,7 @@ function StartFundraiserModal({ orgSlug, pageSlug, onClose, onCreated }) {
         <div style={{ fontSize: 12, fontWeight: 600, color: T.ink3, marginBottom: 4 }}>Photo URL (optional)</div>
         <input value={form.imageUrl} onChange={e => setForm(f => ({ ...f, imageUrl: e.target.value }))} placeholder="https://…" style={{ ...inp, marginBottom: 6 }} />
 
-        {err && <div style={{ background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 10, padding: "10px 14px", fontSize: 13, color: "#dc2626", marginTop: 10 }}>{err}</div>}
+        {err && <div style={{ background: "#f6e3dd", border: "1px solid #eac6b8", borderRadius: 10, padding: "10px 14px", fontSize: 13, color: "#8a3a24", marginTop: 10 }}>{err}</div>}
 
         <button type="submit" disabled={saving}
           style={{ width: "100%", marginTop: 14, background: saving ? T.bg3 : T.greenDk, border: "none", borderRadius: 12, padding: "13px", color: "#fff", fontSize: 14, fontWeight: 800, cursor: saving ? "not-allowed" : "pointer" }}>
@@ -223,7 +223,7 @@ export default function Donate() {
     <div style={{ ...BASE, justifyContent: "center", textAlign: "center" }}>
       <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
       <div style={{ fontFamily: "'DM Serif Display',Georgia,serif", fontSize: 24, marginBottom: 12, opacity: 0.6, letterSpacing: "-0.02em", color: T.ink }}>Steward</div>
-      <div style={{ fontSize: 16, fontWeight: 700, color: "#dc2626", marginBottom: 8 }}>Page not found</div>
+      <div style={{ fontSize: 16, fontWeight: 700, color: "#8a3a24", marginBottom: 8 }}>Page not found</div>
       <div style={{ fontSize: 13, color: T.ink3 }}>{pageError}</div>
     </div>
   );
@@ -286,7 +286,7 @@ export default function Donate() {
                   Your fundraiser is live! Check your email for a link to manage it later — bookmark it, there's no password.
                 </div>
               ) : (
-                <div style={{ background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 12, padding: "10px 14px", fontSize: 12, color: "#dc2626", marginBottom: 14 }}>
+                <div style={{ background: "#f6e3dd", border: "1px solid #eac6b8", borderRadius: 12, padding: "10px 14px", fontSize: 12, color: "#8a3a24", marginBottom: 14 }}>
                   Your fundraiser is live! We couldn't send your management email though — contact {org.name} directly if you need to update your page later.
                 </div>
               )
@@ -510,7 +510,7 @@ export default function Donate() {
         </div>
 
         {submitErr && (
-          <div style={{ background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 10, padding: "10px 14px", fontSize: 13, color: "#dc2626" }}>{submitErr}</div>
+          <div style={{ background: "#f6e3dd", border: "1px solid #eac6b8", borderRadius: 10, padding: "10px 14px", fontSize: 13, color: "#8a3a24" }}>{submitErr}</div>
         )}
 
         <button type="submit" disabled={submitting}

@@ -5,7 +5,8 @@
   "scripts": {
     "dev": "vite",
     "lint": "eslint src",
-    "build": "eslint src && vite build",
+    "build": "node ../tests/brand-allowlist.test.js && eslint src && vite build",
+    "brand-guard": "node ../tests/brand-allowlist.test.js",
     "preview": "vite preview"
   },
   "dependencies": {

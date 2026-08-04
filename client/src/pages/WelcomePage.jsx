@@ -414,7 +414,7 @@ export default function WelcomePage() {
                  soft rise, one sheen on the accent bar, nothing louder. */
               <div className="gold-moment" style={{ position: "relative", background: T.gold100, border: `1px solid ${T.gold500}55`, borderRadius: 12, padding: "18px 18px 18px 22px", marginBottom: 20, textAlign: "center", overflow: "hidden" }}>
                 {/* WelcomePage renders outside the app shell (no GlobalStyles), so the gold-moment animation is declared locally */}
-                <style>{`@keyframes goldRise{from{opacity:0;transform:translateY(8px) scale(0.985)}to{opacity:1;transform:translateY(0) scale(1)}}@keyframes goldSheen{0%{background-position:-200% 0}100%{background-position:200% 0}}.gold-moment{animation:goldRise 0.5s cubic-bezier(0.2,0.8,0.3,1) both}.gold-moment .gold-moment-bar{background:linear-gradient(100deg,#c9a84c 40%,#e8d9a8 50%,#c9a84c 60%);background-size:200% 100%;animation:goldSheen 1.8s ease-out 0.4s 1}@media (prefers-reduced-motion: reduce){.gold-moment,.gold-moment .gold-moment-bar{animation:none}}`}</style>
+                <style>{`@keyframes goldRise{from{opacity:0;transform:translateY(8px) scale(0.985)}to{opacity:1;transform:translateY(0) scale(1)}}@keyframes goldSheen{0%{background-position:-200% 0}100%{background-position:200% 0}}.gold-moment{animation:goldRise 0.5s cubic-bezier(0.2,0.8,0.3,1) both}.gold-moment .gold-moment-bar{background:linear-gradient(100deg,#c9a84c 40%,#e7cf91 50%,#c9a84c 60%);background-size:200% 100%;animation:goldSheen 1.8s ease-out 0.4s 1}@media (prefers-reduced-motion: reduce){.gold-moment,.gold-moment .gold-moment-bar{animation:none}}`}</style>
                 <div className="gold-moment-bar" style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: 4, background: T.gold500 }} />
                 <div style={{ fontFamily: "'DM Serif Display',Georgia,serif", fontSize: 18, color: ink, marginBottom: 3 }}>
                   {donorsSnapshot.length.toLocaleString()} donor{donorsSnapshot.length === 1 ? "" : "s"}, safely home.
@@ -553,7 +553,7 @@ export default function WelcomePage() {
             <p style={{ fontSize: 13, color: ink3, margin: "0 0 28px", textAlign: "center" }}>Just a moment.</p>
             <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
               {setupItems.map((item, i) => (
-                <div key={i} style={{ display: "flex", gap: 12, alignItems: "center", padding: "11px 0", borderBottom: i < setupItems.length - 1 ? "1px solid #f3f4f6" : "none" }}>
+                <div key={i} style={{ display: "flex", gap: 12, alignItems: "center", padding: "11px 0", borderBottom: i < setupItems.length - 1 ? "1px solid #e8e4dc" : "none" }}>
                   <span style={{ color: green, fontWeight: 800, fontSize: 14, flexShrink: 0 }}>✓</span>
                   <span style={{ fontSize: 14, color: ink }}>{item}</span>
                 </div>

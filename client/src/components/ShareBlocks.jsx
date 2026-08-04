@@ -19,7 +19,7 @@ import QRCode from "qrcode";
 // Settings. Small literal constants here, close enough to both palettes to
 // look intentional in either context, are the fix — not a third import path
 // or a props-based theme override for two buttons and an image border.
-const green = "#10b981", greenDk = "#1a6b4a", bg = "#f0ede6", bg3 = "#ded7ca", ink = "#171717", ink3 = "#6b6b6b";
+const green = "#10b981", greenDk = "#1a6b4a", bg = "#f0ede6", bg3 = "#d4cfc6", ink = "#0f1a12", ink3 = "#6b6b6b";
 export function QrCodeBlock({url,filenameBase}){
   const [qrDataUrl,setQrDataUrl]=useState("");
   const [qrLoading,setQrLoading]=useState(false);
@@ -96,11 +96,11 @@ export function EmbedCodeBlock({url}){
   }
   return(
     <div style={{position:"relative"}}>
-      <pre style={{background:"#0f172a",color:"#a5f3c0",borderRadius:10,padding:"14px 16px",fontSize:12,lineHeight:1.7,overflowX:"auto",margin:0,fontFamily:"'Fira Code',monospace,monospace",whiteSpace:"pre-wrap",wordBreak:"break-all"}}>
+      <pre style={{background:"#102418",color:"#dce7df",borderRadius:10,padding:"14px 16px",fontSize:12,lineHeight:1.7,overflowX:"auto",margin:0,fontFamily:"'Fira Code',monospace,monospace",whiteSpace:"pre-wrap",wordBreak:"break-all"}}>
         {embedCode}
       </pre>
       <button onClick={copyEmbed}
-        style={{position:"absolute",top:10,right:10,background:embedCopied?"#10b98130":"rgba(255,255,255,0.12)",border:"1px solid rgba(255,255,255,0.2)",borderRadius:6,padding:"4px 10px",color:embedCopied?"#a5f3c0":"#e2e8f0",fontSize:11,fontWeight:700,cursor:"pointer",transition:"all 0.15s"}}>
+        style={{position:"absolute",top:10,right:10,background:embedCopied?"#10b98130":"rgba(255,255,255,0.12)",border:"1px solid rgba(255,255,255,0.2)",borderRadius:6,padding:"4px 10px",color:embedCopied?"#dce7df":"#edf3ee",fontSize:11,fontWeight:700,cursor:"pointer",transition:"all 0.15s"}}>
         {embedCopied?"✓ Copied!":"Copy Code"}
       </button>
     </div>

@@ -59,8 +59,8 @@ function CampaignBriefing({ campaign }) {
             </div>
           </div>
           <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 8 }}>
-            {saved && <span style={{ fontSize: 11, color: "#10b981" }}>✓ Saved</span>}
-            <button onClick={save} disabled={saving} style={{ background: "#10b981", border: "none", borderRadius: 8, padding: "7px 14px", color: "#fff", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+            {saved && <span style={{ fontSize: 11, color: T.green500 }}>✓ Saved</span>}
+            <button onClick={save} disabled={saving} style={{ background: T.gold500, border: "none", borderRadius: 8, padding: "7px 14px", color: T.ink, fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
               {saving ? "Saving…" : "Save"}
             </button>
           </div>
@@ -78,11 +78,11 @@ function CampaignBriefing({ campaign }) {
                 <span style={{ fontSize: 12, color: T.ink3 }}>of {fmtFull(goalAmt)} goal · {pct}%</span>
               </div>
               <div style={{ height: 8, background: T.bg3, borderRadius: 99, overflow: "hidden" }}>
-                <div style={{ height: "100%", width: `${pct}%`, background: pct >= 100 ? "#1a6b4a" : "#10b981", borderRadius: 99, transition: "width 0.4s" }} />
+                <div style={{ height: "100%", width: `${pct}%`, background: pct >= 100 ? T.greenDk : T.greenMid, borderRadius: 99, transition: "width 0.4s" }} />
               </div>
               {progress?.donorCount > 0 && <div style={{ fontSize: 11, color: T.ink3, marginTop: 6 }}>{progress.donorCount} donor{progress.donorCount !== 1 ? "s" : ""} contributed</div>}
               {progress?.daysRemaining !== null && progress?.daysRemaining !== undefined && (
-                <div style={{ fontSize: 11, color: progress.daysRemaining < 0 ? "#ef4444" : T.ink3, marginTop: 4, fontWeight: progress.daysRemaining < 7 ? 700 : 400 }}>
+                <div style={{ fontSize: 11, color: progress.daysRemaining < 0 ? T.terracotta : T.ink3, marginTop: 4, fontWeight: progress.daysRemaining < 7 ? 700 : 400 }}>
                   {progress.daysRemaining < 0 ? `Ended ${Math.abs(progress.daysRemaining)} days ago` : progress.daysRemaining === 0 ? "Ends today" : `${progress.daysRemaining} days remaining`}
                 </div>
               )}
@@ -103,19 +103,19 @@ const S = {
   label: { fontSize: 11, color: T.ink3, textTransform: "uppercase", letterSpacing: "0.06em", display: "block", marginBottom: 4 },
   btn: (variant = "ghost") => ({
     ghost:   { background: "transparent", border: "1px solid " + T.bg3, borderRadius: 8, padding: "8px 14px", color: T.ink2, fontSize: 13, cursor: "pointer" },
-    primary: { background: T.green, border: "none", borderRadius: 8, padding: "9px 18px", color: "#fff", fontSize: 13, fontWeight: 700, cursor: "pointer" },
-    danger:  { background: "transparent", border: "1px solid #ef4444", borderRadius: 8, padding: "8px 14px", color: "#ef4444", fontSize: 13, cursor: "pointer" },
-    amber:   { background: "#f59e0b", border: "none", borderRadius: 8, padding: "9px 18px", color: "#fff", fontSize: 13, fontWeight: 700, cursor: "pointer" },
+    primary: { background: T.gold500, border: "none", borderRadius: 8, padding: "9px 18px", color: T.ink, fontSize: 13, fontWeight: 700, cursor: "pointer" },
+    danger:  { background: "transparent", border: "1px solid " + T.terracotta, borderRadius: 8, padding: "8px 14px", color: T.terracotta, fontSize: 13, cursor: "pointer" },
+    amber:   { background: T.gold600, border: "none", borderRadius: 8, padding: "9px 18px", color: "#fff", fontSize: 13, fontWeight: 700, cursor: "pointer" },
     subtle:  { background: T.bg2, border: "1px solid " + T.bg3, borderRadius: 8, padding: "8px 14px", color: T.ink, fontSize: 13, cursor: "pointer" },
   })[variant],
 };
 
 // ── Status badge ──────────────────────────────────────────────────────────────
 const STATUS_META = {
-  draft:     { label: "Draft",     color: "#6b7280", bg: "#6b728018" },
-  scheduled: { label: "Scheduled", color: "#3b82f6", bg: "#3b82f618" },
-  sending:   { label: "Sending",   color: "#f59e0b", bg: "#f59e0b18" },
-  sent:      { label: "Sent",      color: "#fff",    bg: "#1a6b4a" },
+  draft:     { label: "Draft",     color: T.ink3, bg: T.ink3 + "18" },
+  scheduled: { label: "Scheduled", color: T.green500, bg: T.green500 + "18" },
+  sending:   { label: "Sending",   color: T.gold600, bg: T.gold600 + "18" },
+  sent:      { label: "Sent",      color: "#fff",    bg: T.greenMid },
 };
 function StatusBadge({ status }) {
   const m = STATUS_META[status] || STATUS_META.draft;
@@ -227,7 +227,7 @@ function SegmentPicker({ seg, onChange, allDonors }) {
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
           {STAGE_OPTS.map(s => (
             <button key={s} onClick={() => tog("stages", s)}
-              style={{ background: (seg.stages || []).includes(s) ? "#8b5cf6" : T.bg2, border: "none", borderRadius: 99, padding: "4px 10px", fontSize: 11, color: (seg.stages || []).includes(s) ? "#fff" : T.ink3, cursor: "pointer" }}>
+              style={{ background: (seg.stages || []).includes(s) ? T.greenDk : T.bg2, border: "none", borderRadius: 99, padding: "4px 10px", fontSize: 11, color: (seg.stages || []).includes(s) ? "#fff" : T.ink3, cursor: "pointer" }}>
               {s}
             </button>
           ))}
@@ -237,7 +237,7 @@ function SegmentPicker({ seg, onChange, allDonors }) {
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
           {TIER_OPTS.map(t => (
             <button key={t} onClick={() => tog("tiers", t)}
-              style={{ background: (seg.tiers || []).includes(t) ? "#f59e0b" : T.bg2, border: "none", borderRadius: 99, padding: "4px 10px", fontSize: 11, color: (seg.tiers || []).includes(t) ? "#fff" : T.ink3, cursor: "pointer" }}>
+              style={{ background: (seg.tiers || []).includes(t) ? T.gold600 : T.bg2, border: "none", borderRadius: 99, padding: "4px 10px", fontSize: 11, color: (seg.tiers || []).includes(t) ? "#fff" : T.ink3, cursor: "pointer" }}>
               {t}
             </button>
           ))}
@@ -304,7 +304,7 @@ function RichEditor({ editorRef, initialHtml }) {
         {TAGS.map(([tag, lbl]) => (
           <button key={tag} title={tag}
             onMouseDown={e => { e.preventDefault(); editorRef.current?.focus(); document.execCommand("insertText", false, tag); }}
-            style={{ background: "#10b98114", border: "1px solid #10b98130", borderRadius: 4, padding: "2px 7px", fontSize: 10, color: T.green, cursor: "pointer" }}>
+            style={{ background: T.green100, border: "1px solid " + T.green200, borderRadius: 4, padding: "2px 7px", fontSize: 10, color: T.greenDk, cursor: "pointer" }}>
             {lbl}
           </button>
         ))}
@@ -379,10 +379,10 @@ function SeqStep({ step, index, total, onChange, onRemove, onAI, aiLoading }) {
         <div style={{ fontSize: 12, fontWeight: 700, color: T.ink3 }}>Step {index + 1}</div>
         <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
           <button onClick={onAI} disabled={aiLoading}
-            style={{ background: aiLoading ? T.bg3 : "#8b5cf614", border: "1px solid #8b5cf630", borderRadius: 7, padding: "4px 10px", color: aiLoading ? T.ink3 : "#8b5cf6", fontSize: 11, fontWeight: 700, cursor: aiLoading ? "not-allowed" : "pointer", display: "flex", alignItems: "center", gap: 5 }}>
+            style={{ background: aiLoading ? T.bg3 : T.gold100, border: "1px solid " + T.gold300, borderRadius: 7, padding: "4px 10px", color: aiLoading ? T.ink3 : T.gold700, fontSize: 11, fontWeight: 700, cursor: aiLoading ? "not-allowed" : "pointer", display: "flex", alignItems: "center", gap: 5 }}>
             {aiLoading ? <><Spin/> Writing…</> : "✦ Write with AI"}
           </button>
-          {total > 1 && <button onClick={onRemove} style={{ background: "transparent", border: "1px solid #ef444440", borderRadius: 7, padding: "4px 9px", color: "#ef4444", fontSize: 11, cursor: "pointer" }}>Remove</button>}
+          {total > 1 && <button onClick={onRemove} style={{ background: "transparent", border: "1px solid " + T.terracotta + "66", borderRadius: 7, padding: "4px 9px", color: T.terracotta, fontSize: 11, cursor: "pointer" }}>Remove</button>}
         </div>
       </div>
       <div style={{ display: "grid", gridTemplateColumns: "80px 1fr", gap: 10 }}>
@@ -581,16 +581,16 @@ function SequencesPanel({ data }) {
             const isActive = seq.status === "active";
             const enrList = enrollmentsMap[seq.id] || [];
             return (
-              <div key={seq.id} style={{ background: "#0f1a12", borderRadius: 12, border: "1px solid #1a2e1f", overflow: "hidden", boxShadow: T.shadow }}>
+              <div key={seq.id} style={{ background: T.white, borderRadius: 12, border: "1px solid " + T.bg3, overflow: "hidden", boxShadow: T.shadow }}>
                 <div style={{ padding: "14px 16px" }}>
                   <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
                     <div style={{ flex: 1 }}>
                       <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                        <div style={{ fontSize: 15, fontWeight: 700, color: "#f0ede6" }}>{seq.name}</div>
-                        <span style={{ fontSize: 10, fontWeight: 700, borderRadius: 99, padding: "3px 9px", background: isActive ? "#10b98120" : "#ffffff12", color: isActive ? "#10b981" : "#8fa896", letterSpacing:"0.04em", textTransform:"uppercase" }}>{isActive ? "Active" : "Paused"}</span>
+                        <div style={{ fontSize: 15, fontWeight: 700, color: T.ink }}>{seq.name}</div>
+                        <span style={{ fontSize: 10, fontWeight: 700, borderRadius: 99, padding: "3px 9px", background: isActive ? T.green100 : T.bg2, color: isActive ? T.greenDk : T.ink3, letterSpacing:"0.04em", textTransform:"uppercase" }}>{isActive ? "Active" : "Paused"}</span>
                       </div>
-                      <div style={{ fontSize: 12, color: "#8fa896", marginTop: 4 }}>
-                        {trigLabel(seq.trigger)} · <span style={{ color: "#c9a84c", fontWeight: 700 }}>{seq.step_count} step{seq.step_count != 1 ? "s" : ""}</span> · {seq.active_enrollments} active
+                      <div style={{ fontSize: 12, color: T.ink3, marginTop: 4 }}>
+                        {trigLabel(seq.trigger)} · <span style={{ color: T.gold700, fontWeight: 700 }}>{seq.step_count} step{seq.step_count != 1 ? "s" : ""}</span> · {seq.active_enrollments} active
                       </div>
                     </div>
                     <div style={{ display: "flex", gap: 6, flexShrink: 0, flexWrap: "wrap" }}>
@@ -607,23 +607,23 @@ function SequencesPanel({ data }) {
                 </div>
 
                 {expandedEnr === seq.id && (
-                  <div style={{ borderTop: "1px solid #1a2e1f", padding: "12px 16px" }}>
+                  <div style={{ borderTop: "1px solid " + T.bg3, padding: "12px 16px", background: T.bg }}>
                     {enrList.length === 0 ? (
-                      <div style={{ fontSize: 12, color: "#8fa896", textAlign: "center", padding: "8px 0" }}>No enrollments yet.</div>
+                      <div style={{ fontSize: 12, color: T.ink3, textAlign: "center", padding: "8px 0" }}>No enrollments yet.</div>
                     ) : (
                       <div>
-                        <div style={{ display: "grid", gridTemplateColumns: "1fr 160px 80px 100px 100px 80px", gap: 8, padding: "5px 0", fontSize: 10, fontWeight: 700, color: "#8fa896", textTransform: "uppercase", letterSpacing: "0.06em", borderBottom: "1px solid #1a2e1f", marginBottom: 4 }}>
+                        <div style={{ display: "grid", gridTemplateColumns: "1fr 160px 80px 100px 100px 80px", gap: 8, padding: "5px 0", fontSize: 10, fontWeight: 700, color: T.ink3, textTransform: "uppercase", letterSpacing: "0.06em", borderBottom: "1px solid " + T.bg3, marginBottom: 4 }}>
                           <span>Donor</span><span>Email</span><span>Step</span><span>Next Send</span><span>Status</span><span></span>
                         </div>
                         {enrList.map(e => (
-                          <div key={e.id} style={{ display: "grid", gridTemplateColumns: "1fr 160px 80px 100px 100px 80px", gap: 8, padding: "7px 0", borderBottom: "1px solid #1a2e1f", alignItems: "center" }}>
-                            <span style={{ fontSize: 13, fontWeight: 600, color: "#f0ede6", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{e.donor_name}</span>
-                            <span style={{ fontSize: 11, color: "#8fa896", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{e.donor_email}</span>
-                            <span style={{ fontSize: 12, color: "#c9a84c", fontWeight: 700 }}>{e.current_step}/{e.total_steps}</span>
+                          <div key={e.id} style={{ display: "grid", gridTemplateColumns: "1fr 160px 80px 100px 100px 80px", gap: 8, padding: "7px 0", borderBottom: "1px solid " + T.bg2, alignItems: "center" }}>
+                            <span style={{ fontSize: 13, fontWeight: 600, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{e.donor_name}</span>
+                            <span style={{ fontSize: 11, color: T.ink3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{e.donor_email}</span>
+                            <span style={{ fontSize: 12, color: T.gold700, fontWeight: 700 }}>{e.current_step}/{e.total_steps}</span>
                             <span style={{ fontSize: 11, color: T.ink3 }}>{e.next_send_at ? new Date(e.next_send_at).toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "—"}</span>
-                            <span style={{ fontSize: 10, fontWeight: 700, borderRadius: 99, padding: "2px 7px", background: e.status === "active" ? "#10b98120" : "#6b728020", color: e.status === "active" ? T.green : T.ink3, display: "inline-block" }}>{e.status}</span>
+                            <span style={{ fontSize: 10, fontWeight: 700, borderRadius: 99, padding: "2px 7px", background: e.status === "active" ? T.green100 : T.bg2, color: e.status === "active" ? T.greenDk : T.ink3, display: "inline-block" }}>{e.status}</span>
                             {e.status === "active" && (
-                              <button onClick={() => unenroll(seq.id, e.donor_id)} style={{ fontSize: 10, background: "transparent", border: "1px solid #ef444440", borderRadius: 6, padding: "2px 7px", color: "#ef4444", cursor: "pointer" }}>Unenroll</button>
+                              <button onClick={() => unenroll(seq.id, e.donor_id)} style={{ fontSize: 10, background: "transparent", border: "1px solid " + T.terracotta + "66", borderRadius: 6, padding: "2px 7px", color: T.terracotta, cursor: "pointer" }}>Unenroll</button>
                             )}
                           </div>
                         ))}
@@ -988,7 +988,7 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
           <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
             {/* Draft campaign copy */}
             <button onClick={draftAI} disabled={aiLoading}
-              style={{ background: aiLoading ? T.bg3 : "#8b5cf614", border: "1px solid #8b5cf630", borderRadius: 8, padding: "8px 14px", color: aiLoading ? T.ink3 : "#8b5cf6", fontSize: 13, fontWeight: 700, cursor: aiLoading ? "not-allowed" : "pointer", display: "flex", alignItems: "center", gap: 6 }}>
+              style={{ background: aiLoading ? T.bg3 : T.gold100, border: "1px solid " + T.gold300, borderRadius: 8, padding: "8px 14px", color: aiLoading ? T.ink3 : T.gold700, fontSize: 13, fontWeight: 700, cursor: aiLoading ? "not-allowed" : "pointer", display: "flex", alignItems: "center", gap: 6 }}>
               {aiLoading ? <><Spin /> Drafting…</> : "✦ Draft Copy"}
             </button>
             <button onClick={addDonationLink} disabled={linkLoading}
@@ -1021,7 +1021,7 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
             <div>
               <label style={S.label}>
                 Subject Line
-                <span style={{ float: "right", color: subjLen > 60 ? "#ef4444" : T.ink3 }}>{subjLen}/60</span>
+                <span style={{ float: "right", color: subjLen > 60 ? T.terracotta : T.ink3 }}>{subjLen}/60</span>
               </label>
               <input value={form.subject} onChange={e => setForm(f => ({ ...f, subject: e.target.value }))}
                 placeholder="A message from {{org_name}}" style={S.input} />
@@ -1042,8 +1042,8 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
             </div>
 
             {aiDraft && (
-              <div style={{ background: "#8b5cf608", border: "1px solid #8b5cf630", borderRadius: 10, padding: 14 }}>
-                <div style={{ fontSize: 10, fontWeight: 700, color: "#8b5cf6", letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 8 }}>✦ Suggested Draft</div>
+              <div style={{ background: T.gold50, border: "1px solid " + T.gold300, borderRadius: 10, padding: 14 }}>
+                <div style={{ fontSize: 10, fontWeight: 700, color: T.gold700, letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 8 }}>✦ Suggested Draft</div>
                 <div style={{ fontSize: 12, color: T.ink2, lineHeight: 1.7, whiteSpace: "pre-wrap", marginBottom: 10 }}>{aiDraft}</div>
                 <button onClick={applyAIDraft} style={{ ...S.btn("primary"), padding: "7px 12px", fontSize: 12 }}>Apply to editor</button>
               </div>
@@ -1063,13 +1063,13 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
             onClick={() => setShowPreview(false)}>
             <div style={{ background: "#fff", borderRadius: 16, padding: 32, maxWidth: 600, width: "90%", maxHeight: "80vh", overflowY: "auto" }}
               onClick={e => e.stopPropagation()}>
-              <div style={{ fontSize: 11, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 4 }}>Subject</div>
+              <div style={{ fontSize: 11, color: T.ink3, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 4 }}>Subject</div>
               <div style={{ fontSize: 16, fontWeight: 700, color: "#0f1a12", marginBottom: 16 }}>
                 {form.subject.replace(/{{org_name}}/g, data?.org?.name || "Org").replace(/{{first_name}}/g, "Margaret")}
               </div>
-              <hr style={{ border: "none", borderTop: "1px solid #e5e7eb", marginBottom: 16 }} />
+              <hr style={{ border: "none", borderTop: "1px solid " + T.bg3, marginBottom: 16 }} />
               <div style={{ fontSize: 14, color: "#0f1a12", lineHeight: 1.8 }} dangerouslySetInnerHTML={{ __html: getPreviewHtml() }} />
-              <div style={{ marginTop: 10, fontSize: 11, color: "#9ca3af" }}>Preview — merge tags replaced with sample data when sent.</div>
+              <div style={{ marginTop: 10, fontSize: 11, color: T.ink3 }}>Preview — merge tags replaced with sample data when sent.</div>
               <button onClick={() => setShowPreview(false)} style={{ marginTop: 16, ...S.btn("subtle") }}>Close</button>
             </div>
           </div>
@@ -1144,7 +1144,7 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
                 onMouseLeave={() => setNewBtnHover(false)}
                 disabled={isReadOnly}
                 title={isReadOnly?"Reactivate your subscription to make changes.":undefined}
-                style={{ ...S.btn("primary"), background: newBtnHover && !isReadOnly ? "#0d9e6e" : T.green, cursor: isReadOnly?"not-allowed":"pointer", opacity: isReadOnly?0.45:1 }}>
+                style={{ ...S.btn("primary"), background: newBtnHover && !isReadOnly ? T.gold600 : T.gold500, cursor: isReadOnly?"not-allowed":"pointer", opacity: isReadOnly?0.45:1 }}>
                 + New Campaign
               </button>
             </div>
@@ -1156,22 +1156,22 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
                 { label: "Avg Open Rate", value: overallRate + "%" },
                 { label: "Active", value: stats.active },
               ].map(({ label, value }) => (
-                <div key={label} style={{ background: T.bg2, border: "1px solid #1a6b4a", borderRadius: 99, padding: "7px 16px", display: "flex", gap: 8, alignItems: "center" }}>
+                <div key={label} style={{ background: T.bg2, border: "1px solid " + T.bg3, borderRadius: 99, padding: "7px 16px", display: "flex", gap: 8, alignItems: "center" }}>
                   <span style={{ fontSize: 11, color: T.ink3 }}>{label}</span>
-                  <span style={{ fontSize: 14, fontWeight: 800, color: "#1a6b4a" }}>{value}</span>
+                  <span style={{ fontSize: 14, fontWeight: 800, color: T.greenMid }}>{value}</span>
                 </div>
               ))}
             </div>
 
             {/* Send result toast */}
             {sendResult && (
-              <div style={{ background: "#052e16", border: "1px solid " + T.green, borderRadius: 10, padding: "12px 16px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <span style={{ color: T.green, fontWeight: 700, fontSize: 14 }}>
+              <div style={{ background: T.green100, border: "1px solid " + T.green200, borderRadius: 10, padding: "12px 16px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <span style={{ color: T.greenDk, fontWeight: 700, fontSize: 14 }}>
                   {sendResult.queued
                     ? `✓ Queued — sending to ${sendResult.recipientCount} recipient${sendResult.recipientCount === 1 ? "" : "s"}`
                     : `✓ Sent to ${sendResult.sent} donors`}
                 </span>
-                <button onClick={() => setSendResult(null)} style={{ background: "transparent", border: "none", color: T.green, cursor: "pointer", fontSize: 20 }}>×</button>
+                <button onClick={() => setSendResult(null)} style={{ background: "transparent", border: "none", color: T.greenDk, cursor: "pointer", fontSize: 20 }}>×</button>
               </div>
             )}
 
@@ -1187,7 +1187,7 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
             ) : (
               <div style={{ background: T.bg2, border: "1px solid " + T.bg3, borderRadius: 12, overflow: "hidden" }}>
                 {/* Table header */}
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 140px 100px 70px 90px 100px 100px", padding: "10px 16px", background: "#0f1a12", fontSize: 10, fontWeight: 700, color: "#8fa896", textTransform: "uppercase", letterSpacing: "0.06em", gap: 8 }}>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 140px 100px 70px 90px 100px 100px", padding: "10px 16px", background: T.bg2, borderBottom: "1px solid " + T.bg3, fontSize: 10, fontWeight: 700, color: T.ink3, textTransform: "uppercase", letterSpacing: "0.06em", gap: 8 }}>
                   <span>Campaign</span>
                   <span>Segment</span>
                   <span>Status</span>
@@ -1223,9 +1223,9 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
                         <div>
                           {sentCt > 0 ? (
                             <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
-                              <span style={{ fontSize: 12, fontWeight: 700, color: openRate >= 25 ? T.green : openRate >= 15 ? "#f59e0b" : T.ink3 }}>{openRate}%</span>
+                              <span style={{ fontSize: 12, fontWeight: 700, color: openRate >= 25 ? T.greenMid : openRate >= 15 ? T.gold600 : T.ink3 }}>{openRate}%</span>
                               <div style={{ height: 3, background: T.bg3, borderRadius: 99 }}>
-                                <div style={{ height: "100%", width: `${Math.min(openRate, 100)}%`, background: openRate >= 25 ? "#1a6b4a" : "#f59e0b", borderRadius: 99 }} />
+                                <div style={{ height: "100%", width: `${Math.min(openRate, 100)}%`, background: openRate >= 25 ? T.greenMid : T.gold500, borderRadius: 99 }} />
                               </div>
                             </div>
                           ) : <span style={{ fontSize: 11, color: T.ink3 }}>—</span>}
@@ -1241,7 +1241,7 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
                             style={{ background: "transparent", border: "none", color: T.ink3, cursor: "pointer", fontSize: 14, padding: "2px 4px", borderRadius: 4 }}>⊕</button>
                           {isAdmin && c.status !== "sending" && (
                             <button title="Delete" onClick={() => { if (window.confirm(`Delete "${c.name}"?`)) deleteCampaign(c.id); }}
-                              style={{ background: "transparent", border: "none", color: "#ef4444", cursor: "pointer", fontSize: 14, padding: "2px 4px", borderRadius: 4 }}>✕</button>
+                              style={{ background: "transparent", border: "none", color: T.terracotta, cursor: "pointer", fontSize: 14, padding: "2px 4px", borderRadius: 4 }}>✕</button>
                           )}
                         </div>
                       </div>
@@ -1254,7 +1254,7 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
                           {/* Stats */}
                           {c.status === "sent" && sentCt > 0 && (
                             <div style={{ display: "flex", gap: 10, marginBottom: 14 }}>
-                              {[["Sent", sentCt, T.ink], ["Opened", openCt, T.green], ["Open Rate", openRate + "%", openRate >= 25 ? T.green : "#f59e0b"], ["Failed", recs.filter(r => r.failure_reason).length, "#ef4444"]].map(([lbl, val, col]) => (
+                              {[["Sent", sentCt, T.ink], ["Opened", openCt, T.greenMid], ["Open Rate", openRate + "%", openRate >= 25 ? T.greenMid : T.gold600], ["Failed", recs.filter(r => r.failure_reason).length, T.terracotta]].map(([lbl, val, col]) => (
                                 <div key={lbl} style={{ background: T.bg2, borderRadius: 8, padding: "10px 14px", flex: 1 }}>
                                   <div style={{ fontSize: 10, color: T.ink3, textTransform: "uppercase", letterSpacing: "0.06em" }}>{lbl}</div>
                                   <div style={{ fontSize: 20, fontWeight: 800, color: col, marginTop: 2 }}>{val}</div>
@@ -1282,7 +1282,7 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
                               {recs.slice(0, 30).map(r => (
                                 <div key={r.id} style={{ display: "grid", gridTemplateColumns: "1fr 80px 80px", padding: "8px 12px", borderTop: "1px solid " + T.bg2, fontSize: 12, gap: 8, alignItems: "center" }}>
                                   <span style={{ color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.donor_name || r.email}</span>
-                                  <span style={{ color: r.opened_at ? T.green : r.failure_reason ? "#ef4444" : r.sent_at ? T.ink3 : "#f59e0b" }}
+                                  <span style={{ color: r.opened_at ? T.greenMid : r.failure_reason ? T.terracotta : r.sent_at ? T.ink3 : T.gold600 }}
                                     title={r.failure_reason || undefined}>
                                     {r.opened_at ? "Opened" : r.failure_reason ? "Failed" : r.sent_at ? "Delivered" : "Pending"}
                                   </span>
@@ -1312,14 +1312,16 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
             <p style={{ margin: 0, fontSize: 13, color: T.ink3 }}>One-click to load into the campaign builder with placeholder content.</p>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: 14 }}>
               {TEMPLATES.map(t => (
-                <div key={t.id} style={{ background: T.bg2, border: "1px solid " + T.bg3, borderRadius: 12, padding: 18, display: "flex", flexDirection: "column", gap: 10 }}>
-                  {/* Thumbnail */}
-                  <div style={{ background: T.bg3, borderRadius: 8, height: 100, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 36 }}>
-                    {t.name[0]}
+                <div key={t.id} style={{ background: T.white, border: "1px solid " + T.bg3, borderRadius: 12, padding: 18, display: "flex", flexDirection: "column", gap: 10 }}>
+                  {/* Thumbnail — a type sample on cream (serif name, subject
+                      line, gold rule), never a grey letter block (BUILD-33). */}
+                  <div style={{ background: T.gold50, border: "1px solid " + T.bg2, borderRadius: 8, minHeight: 100, padding: "16px 16px 14px", display: "flex", flexDirection: "column", justifyContent: "center", gap: 8 }}>
+                    <div style={{ fontFamily: "'DM Serif Display',serif", fontSize: 19, color: T.ink, lineHeight: 1.15 }}>{t.name}</div>
+                    <div style={{ width: 34, height: 3, background: T.gold500, borderRadius: 2 }} />
+                    <div style={{ fontSize: 11.5, color: T.ink3, lineHeight: 1.45, overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" }}>{t.subject}</div>
                   </div>
                   <div>
-                    <div style={{ fontSize: 14, fontWeight: 700, color: T.ink }}>{t.name}</div>
-                    <div style={{ fontSize: 11, color: T.ink3, marginTop: 3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.subject}</div>
+                    <div style={{ fontSize: 11, color: T.ink3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.subject}</div>
                   </div>
                   <button
                     onClick={() => {
@@ -1416,7 +1418,7 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
             {/* Best campaign */}
             {bestCampaign && (
               <div {...interactive(() => setNav("campaigns"), { label: `View campaign ${bestCampaign.name}` })}
-                style={{ background: "#10b98110", border: "1px solid #10b98130", borderRadius: 12, padding: 16, display: "flex", alignItems: "center", gap: 12 }}>
+                style={{ background: T.green100, border: "1px solid " + T.green200, borderRadius: 12, padding: 16, display: "flex", alignItems: "center", gap: 12 }}>
                 <div>
                   <div style={{ fontSize: 11, color: T.green, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em" }}>Best Campaign</div>
                   <div style={{ fontSize: 14, fontWeight: 700, color: T.ink, marginTop: 2 }}>{bestCampaign.name}</div>
@@ -1445,9 +1447,9 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
                       <div style={{ fontSize: 11, color: T.ink3 }}>{c.recipient_count} sent · {new Date(c.sent_at).toLocaleDateString()}</div>
                     </div>
                     <div style={{ textAlign: "right" }}>
-                      <div style={{ fontSize: 16, fontWeight: 800, color: c.rate >= 25 ? T.green : "#f59e0b" }}>{c.rate}%</div>
+                      <div style={{ fontSize: 16, fontWeight: 800, color: c.rate >= 25 ? T.greenMid : T.gold600 }}>{c.rate}%</div>
                       <div style={{ height: 3, width: 60, background: T.bg3, borderRadius: 99, marginTop: 3 }}>
-                        <div style={{ height: "100%", width: `${Math.min(c.rate, 100)}%`, background: c.rate >= 25 ? "#1a6b4a" : "#f59e0b", borderRadius: 99 }} />
+                        <div style={{ height: "100%", width: `${Math.min(c.rate, 100)}%`, background: c.rate >= 25 ? T.greenMid : T.gold500, borderRadius: 99 }} />
                       </div>
                     </div>
                   </div>

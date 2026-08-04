@@ -15,7 +15,7 @@ L.Icon.Default.mergeOptions({
 const STAGE_COLOR = Object.fromEntries(STAGES.map(s => [s.id, s.color]));
 
 function stageIcon(stage) {
-  const color = STAGE_COLOR[stage] || "#6b7280";
+  const color = STAGE_COLOR[stage] || "#6b6560";
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="26" height="34" viewBox="0 0 26 34">
     <path d="M13 0C5.8 0 0 5.8 0 13c0 9.1 13 21 13 21S26 22.1 26 13C26 5.8 20.2 0 13 0z" fill="${color}" opacity="0.9"/>
     <circle cx="13" cy="13" r="5" fill="white" opacity="0.85"/>
@@ -103,7 +103,7 @@ export function DonorMap({ donors, userId, onSelectDonor }) {
           ))}
           <div style={{ borderTop: "1px solid " + T.bg3, marginTop: 8, paddingTop: 8 }}>
             <label style={{ display: "flex", alignItems: "center", gap: 7, cursor: "pointer", fontSize: 12, color: T.ink }}>
-              <input type="checkbox" checked={myOnly} onChange={e => setMyOnly(e.target.checked)} style={{ accentColor: "#3b82f6" }} />
+              <input type="checkbox" checked={myOnly} onChange={e => setMyOnly(e.target.checked)} style={{ accentColor: "#2f8f62" }} />
               My portfolio only
             </label>
           </div>
@@ -136,9 +136,9 @@ export function DonorMap({ donors, userId, onSelectDonor }) {
               <Popup>
                 <div style={{ minWidth: 160 }}>
                   <div style={{ fontWeight: 700, marginBottom: 4, fontSize: 13 }}>{d.name}</div>
-                  {d.city && <div style={{ fontSize: 11, color: "#555" }}>{[d.city, d.state].filter(Boolean).join(", ")}</div>}
-                  <div style={{ fontSize: 11, color: "#555", marginTop: 2 }}>Total: {fmt(d.total)}</div>
-                  <div style={{ fontSize: 11, color: STAGE_COLOR[d.stage] || "#6b7280", marginTop: 2, fontWeight: 600, textTransform: "capitalize" }}>{d.stage}</div>
+                  {d.city && <div style={{ fontSize: 11, color: "#6b6560" }}>{[d.city, d.state].filter(Boolean).join(", ")}</div>}
+                  <div style={{ fontSize: 11, color: "#6b6560", marginTop: 2 }}>Total: {fmt(d.total)}</div>
+                  <div style={{ fontSize: 11, color: STAGE_COLOR[d.stage] || "#6b6560", marginTop: 2, fontWeight: 600, textTransform: "capitalize" }}>{d.stage}</div>
                   <button onClick={() => onSelectDonor(d)} style={{ marginTop: 8, background: "#10b981", border: "none", borderRadius: 6, padding: "5px 10px", color: "#fff", fontSize: 11, cursor: "pointer", fontWeight: 600 }}>
                     Open profile →
                   </button>

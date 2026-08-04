@@ -13,9 +13,9 @@ class ErrorBoundary extends Component {
   render() {
     if (this.state.error) {
       return (
-        <div style={{padding:"32px 24px",textAlign:"center",color:"#ef4444",fontSize:14}}>
+        <div style={{padding:"32px 24px",textAlign:"center",color:"#b8593f",fontSize:14}}>
           <div style={{fontWeight:700,marginBottom:8}}>Something went wrong loading this profile.</div>
-          <div style={{color:"#6b7280",marginBottom:16}}>{this.state.error?.message}</div>
+          <div style={{color:"#6b6560",marginBottom:16}}>{this.state.error?.message}</div>
           <button onClick={()=>this.setState({error:null})} style={{background:"#10b981",border:"none",borderRadius:8,padding:"8px 18px",color:"#fff",fontSize:13,fontWeight:600,cursor:"pointer"}}>Try again</button>
         </div>
       );
@@ -966,7 +966,7 @@ export function DonorImport({ onClose, onImported, withHistory = false }) {
             {result.skipped > 0   && <> · <strong>{result.skipped}</strong> skipped (no name or email)</>}
           </div>
           {hasBatchErrors && (
-            <div style={{background:"#fef2f2",border:"1px solid #fca5a5",borderRadius:10,padding:"10px 14px",marginBottom:24,textAlign:"left",fontSize:12,color:"#991b1b"}}>
+            <div style={{background:"#f6e3dd",border:"1px solid #eac6b8",borderRadius:10,padding:"10px 14px",marginBottom:24,textAlign:"left",fontSize:12,color:"#8a3a24"}}>
               <strong>Batch errors — some rows may not have been inserted:</strong>
               {result.batchErrors.map((e,i) => <div key={i} style={{marginTop:4}}>Rows {e.rows}: {e.error}</div>)}
             </div>
@@ -1012,7 +1012,7 @@ export function DonorImport({ onClose, onImported, withHistory = false }) {
           <textarea value={csvText} onChange={e=>setCsvText(e.target.value)} rows={6}
             placeholder={"Name,Email,Total Giving,Last Gift Date\nJane Smith,jane@example.com,5000,2024-11-01"}
             style={{...inp,resize:"vertical",lineHeight:1.5,marginBottom:12}}/>
-          {err && <div style={{color:"#f87171",fontSize:12,marginBottom:10}}>{err}</div>}
+          {err && <div style={{color:"#b8593f",fontSize:12,marginBottom:10}}>{err}</div>}
           <button onClick={doParse} disabled={!csvText.trim()}
             style={{background:csvText.trim()?T.green600:T.bg2,border:"none",borderRadius:10,padding:"11px 20px",color:"#fff",fontSize:14,fontWeight:700,cursor:csvText.trim()?"pointer":"not-allowed",opacity:csvText.trim()?1:0.5}}>
             Parse →
@@ -1124,7 +1124,7 @@ export function DonorImport({ onClose, onImported, withHistory = false }) {
             </div>
           )}
 
-          {err && <div style={{color:"#f87171",fontSize:12,marginBottom:10}}>{err}</div>}
+          {err && <div style={{color:"#b8593f",fontSize:12,marginBottom:10}}>{err}</div>}
           <div style={{display:"flex",gap:10}}>
             <button onClick={()=>{setBothMode(null);setErr("");}} disabled={loading}
               style={{background:"transparent",border:"1px solid "+T.bg3,borderRadius:10,padding:"11px 18px",color:T.ink3,fontSize:13,cursor:loading?"not-allowed":"pointer",opacity:loading?0.5:1}}>← Back</button>
@@ -1178,7 +1178,7 @@ export function DonorImport({ onClose, onImported, withHistory = false }) {
                   Map columns <span style={{fontSize:11,color:T.ink3,fontWeight:400}}>({donorHeaders.length} donor columns{effectiveShape==="wide"?` · ${yearCols.length} year columns`:""} · {parsed.rows.length.toLocaleString()} rows)</span>
                 </div>
                 <button onClick={doAiMap} disabled={aiLoading}
-                  style={{background:aiLoading?"#1a2235":T.green600,border:"none",borderRadius:8,padding:"6px 14px",color:"#fff",fontSize:12,fontWeight:700,cursor:aiLoading?"not-allowed":"pointer",display:"flex",alignItems:"center",gap:6,opacity:aiLoading?0.7:1}}>
+                  style={{background:aiLoading?"#14352a":T.green600,border:"none",borderRadius:8,padding:"6px 14px",color:"#fff",fontSize:12,fontWeight:700,cursor:aiLoading?"not-allowed":"pointer",display:"flex",alignItems:"center",gap:6,opacity:aiLoading?0.7:1}}>
                   {aiLoading?<><Spin/>Mapping…</>:<>✦ Auto-map</>}
                 </button>
               </div>
@@ -1261,7 +1261,7 @@ export function DonorImport({ onClose, onImported, withHistory = false }) {
             </div>
           )}
 
-          {err&&<div style={{color:"#f87171",fontSize:12,marginBottom:10}}>{err}</div>}
+          {err&&<div style={{color:"#b8593f",fontSize:12,marginBottom:10}}>{err}</div>}
           <div style={{display:"flex",gap:10}}>
             <button onClick={()=>{setParsed(null);setErr("");}} disabled={loading}
               style={{background:"transparent",border:"1px solid "+T.bg3,borderRadius:10,padding:"11px 18px",color:T.ink3,fontSize:13,cursor:loading?"not-allowed":"pointer",opacity:loading?0.5:1}}>← Back</button>
@@ -1584,9 +1584,9 @@ function GiftHistoryImport({ donors, onClose, onImported }) {
           <textarea value={csvText} onChange={e=>setCsvText(e.target.value)} rows={5}
             placeholder={"Donor,Email,2021 Gift,2022 Gift,2023 Gift\nJane Smith,jane@example.com,500,750,1000"}
             style={{...inp,resize:"vertical",lineHeight:1.5,marginBottom:12}}/>
-          {err&&<div style={{color:"#f87171",fontSize:12,marginBottom:10}}>{err}</div>}
+          {err&&<div style={{color:"#b8593f",fontSize:12,marginBottom:10}}>{err}</div>}
           <button onClick={doPaste} disabled={!csvText.trim()}
-            style={{background:csvText.trim()?"linear-gradient(135deg,#10b981,#3b82f6)":T.bg2,border:"none",borderRadius:10,padding:"11px 20px",color:"#fff",fontSize:14,fontWeight:700,cursor:csvText.trim()?"pointer":"not-allowed",opacity:csvText.trim()?1:0.5}}>
+            style={{background:csvText.trim()?T.gold500:T.bg2,border:"none",borderRadius:10,padding:"11px 20px",color:csvText.trim()?T.ink:T.ink3,fontSize:14,fontWeight:700,cursor:csvText.trim()?"pointer":"not-allowed",opacity:csvText.trim()?1:0.5}}>
             Parse →
           </button>
         </>)}
@@ -1619,7 +1619,7 @@ function GiftHistoryImport({ donors, onClose, onImported }) {
           <div style={{background:T.bg,borderRadius:10,padding:"12px 14px",marginBottom:16,display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:8}}>
             <div>
               <div style={{fontSize:12,fontWeight:700,color:T.ink}}>
-                Detected: <span style={{color:effectiveFormat==="wide"?"#8b5cf6":"#10b981"}}>
+                Detected: <span style={{color:effectiveFormat==="wide"?T.gold600:T.green600}}>
                   {effectiveFormat==="wide"?"Wide format (one row/donor, year columns)":"Transactional format (one row/gift)"}
                 </span>
               </div>
@@ -1666,7 +1666,7 @@ function GiftHistoryImport({ donors, onClose, onImported }) {
                 Gift Year Columns — {yearCols.filter(yc=>yc.enabled).length}/{yearCols.length} enabled
               </div>
               {yearCols.length===0&&(
-                <div style={{color:"#f59e0b",fontSize:13,background:"#fef3c7",borderRadius:8,padding:"10px 12px"}}>
+                <div style={{color:"#a97f22",fontSize:13,background:"#f6eccf",borderRadius:8,padding:"10px 12px"}}>
                   No year-like columns detected. Switch to Transactional format.
                 </div>
               )}
@@ -1713,12 +1713,12 @@ function GiftHistoryImport({ donors, onClose, onImported }) {
             </div>
           )}
 
-          {err&&<div style={{color:"#f87171",fontSize:12,marginBottom:10}}>{err}</div>}
+          {err&&<div style={{color:"#b8593f",fontSize:12,marginBottom:10}}>{err}</div>}
           <div style={{display:"flex",gap:10}}>
             <button onClick={()=>{setParsed(null);setStep("upload");setErr("");}}
               style={{background:"transparent",border:"1px solid "+T.bg3,borderRadius:10,padding:"11px 18px",color:T.ink3,fontSize:13,cursor:"pointer"}}>← Back</button>
             <button onClick={buildPreview}
-              style={{flex:1,background:"linear-gradient(135deg,#1a6b4a,#2563eb)",border:"none",borderRadius:10,padding:"11px 20px",color:"#fff",fontSize:14,fontWeight:700,cursor:"pointer"}}>
+              style={{flex:1,background:T.gold500,border:"none",borderRadius:10,padding:"11px 20px",color:T.ink,fontSize:14,fontWeight:700,cursor:"pointer"}}>
               Match Donors & Preview →
             </button>
           </div>
@@ -1732,11 +1732,11 @@ function GiftHistoryImport({ donors, onClose, onImported }) {
             <div style={{fontSize:15,fontWeight:700,color:T.ink,marginBottom:8}}>
               <span style={{color:"#10b981"}}>{stats.toImportCount}</span> gifts ready to import, attaching to{" "}
               <span style={{color:T.ink}}>{stats.donorCount}</span> donors
-              {stats.lowPending>0&&<> · <span style={{color:"#f59e0b"}}>{stats.lowPending} need review</span></>}
+              {stats.lowPending>0&&<> · <span style={{color:"#a97f22"}}>{stats.lowPending} need review</span></>}
               {stats.unmatched>0&&<> · <span style={{color:T.ink3}}>{stats.unmatched} unmatched (will skip)</span></>}
             </div>
             <div style={{display:"flex",gap:16,flexWrap:"wrap"}}>
-              {[[stats.high,"#10b981","high confidence (email)"],[stats.medium,"#3b82f6","medium (name match)"],[stats.low,"#f59e0b","low (review)"],[stats.unmatched,T.ink3,"unmatched"]].filter(([n])=>n>0).map(([n,color,label])=>(
+              {[[stats.high,T.greenMid,"high confidence (email)"],[stats.medium,T.green500,"medium (name match)"],[stats.low,T.gold600,"low (review)"],[stats.unmatched,T.ink3,"unmatched"]].filter(([n])=>n>0).map(([n,color,label])=>(
                 <span key={label} style={{fontSize:12}}><span style={{color,fontWeight:700}}>{n}</span> <span style={{color:T.ink3}}>{label}</span></span>
               ))}
             </div>
@@ -1746,7 +1746,7 @@ function GiftHistoryImport({ donors, onClose, onImported }) {
           {stats.low > 0 && (
             <div style={{marginBottom:14}}>
               <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8}}>
-                <div style={{fontSize:12,fontWeight:700,color:"#92400e",textTransform:"uppercase",letterSpacing:"0.08em"}}>
+                <div style={{fontSize:12,fontWeight:700,color:"#8a6d1f",textTransform:"uppercase",letterSpacing:"0.08em"}}>
                   Low Confidence — {stats.lowPending} pending review
                 </div>
                 {stats.lowPending>0&&(
@@ -1760,7 +1760,7 @@ function GiftHistoryImport({ donors, onClose, onImported }) {
                   if (g.confidence !== "low") return null;
                   const ov = overrides[i];
                   return (
-                    <div key={i} style={{background:ov?.action==="skip"?T.bg:"#fef9f0",border:`1px solid ${ov?.action==="skip"?T.bg3:"#fde68a"}`,borderRadius:10,padding:"10px 12px",opacity:ov?.action==="skip"?0.55:1}}>
+                    <div key={i} style={{background:ov?.action==="skip"?T.bg:"#fdfaf2",border:`1px solid ${ov?.action==="skip"?T.bg3:"#e7cf91"}`,borderRadius:10,padding:"10px 12px",opacity:ov?.action==="skip"?0.55:1}}>
                       <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:5,flexWrap:"wrap"}}>
                         <span style={{fontSize:13,fontWeight:700,color:T.ink}}>${g.amount.toLocaleString()}</span>
                         <span style={{fontSize:12,color:T.ink3}}>{g.date}</span>
@@ -1769,7 +1769,7 @@ function GiftHistoryImport({ donors, onClose, onImported }) {
                       </div>
                       {!ov&&g.ambiguousDonors&&(
                         <div style={{marginBottom:6}}>
-                          <div style={{fontSize:11,color:"#92400e",marginBottom:4}}>Multiple donors with this name — select one:</div>
+                          <div style={{fontSize:11,color:"#8a6d1f",marginBottom:4}}>Multiple donors with this name — select one:</div>
                           <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
                             {g.ambiguousDonors.map(d=>(
                               <button key={d.id} onClick={()=>setOverrides(p=>({...p,[i]:{action:"pick",donorId:d.id,donorName:d.name}}))}
@@ -1784,7 +1784,7 @@ function GiftHistoryImport({ donors, onClose, onImported }) {
                         <div style={{fontSize:12,color:T.ink3,marginBottom:5}}>
                           Suggested: <strong style={{color:T.ink}}>{g.suggestedDonor.name}</strong>
                           {g.suggestedDonor.email&&<span> ({g.suggestedDonor.email})</span>}
-                          <span style={{color:"#f59e0b",marginLeft:4}}>— partial match</span>
+                          <span style={{color:"#a97f22",marginLeft:4}}>— partial match</span>
                         </div>
                       )}
                       {(ov?.action==="confirm"||ov?.action==="pick")&&(
@@ -1856,23 +1856,23 @@ function GiftHistoryImport({ donors, onClose, onImported }) {
               <div style={{fontSize:11,color:T.ink3,marginBottom:6}}>
                 These donors don't exist yet — import them first via donor import, or use combined mode later.
               </div>
-              <div style={{background:"#fef2f2",border:"1px solid #fca5a5",borderRadius:8,padding:"8px 12px"}}>
+              <div style={{background:"#f6e3dd",border:"1px solid #eac6b8",borderRadius:8,padding:"8px 12px"}}>
                 {matchedGifts.filter(g=>g.confidence==="unmatched").slice(0,8).map((g,i)=>(
-                  <div key={i} style={{fontSize:12,color:"#991b1b",padding:"2px 0"}}>
+                  <div key={i} style={{fontSize:12,color:"#8a3a24",padding:"2px 0"}}>
                     · {g.rawName||g.rawEmail} — ${g.amount.toLocaleString()} on {g.date}
                   </div>
                 ))}
-                {stats.unmatched>8&&<div style={{fontSize:12,color:"#991b1b",marginTop:4}}>…and {stats.unmatched-8} more</div>}
+                {stats.unmatched>8&&<div style={{fontSize:12,color:"#8a3a24",marginTop:4}}>…and {stats.unmatched-8} more</div>}
               </div>
             </div>
           )}
 
-          {err&&<div style={{color:"#f87171",fontSize:12,marginBottom:10}}>{err}</div>}
+          {err&&<div style={{color:"#b8593f",fontSize:12,marginBottom:10}}>{err}</div>}
           <div style={{display:"flex",gap:10,marginTop:4}}>
             <button onClick={()=>setStep("configure")}
               style={{background:"transparent",border:"1px solid "+T.bg3,borderRadius:10,padding:"11px 18px",color:T.ink3,fontSize:13,cursor:"pointer"}}>← Back</button>
             <button onClick={doImport} disabled={loading||stats.toImportCount===0}
-              style={{flex:1,background:loading||stats.toImportCount===0?T.bg2:"linear-gradient(135deg,#10b981,#3b82f6)",border:"none",borderRadius:10,padding:"11px 20px",color:"#fff",fontSize:14,fontWeight:700,cursor:loading||stats.toImportCount===0?"not-allowed":"pointer",opacity:loading||stats.toImportCount===0?0.6:1}}>
+              style={{flex:1,background:loading||stats.toImportCount===0?T.bg2:T.gold500,border:"none",borderRadius:10,padding:"11px 20px",color:loading||stats.toImportCount===0?T.ink3:T.ink,fontSize:14,fontWeight:700,cursor:loading||stats.toImportCount===0?"not-allowed":"pointer",opacity:loading||stats.toImportCount===0?0.6:1}}>
               {loading?"Importing…":`Import ${stats.toImportCount} Gifts →`}
             </button>
           </div>
@@ -2018,9 +2018,9 @@ function CombinedImport({ onClose, onImported }) {
           <textarea value={csvText} onChange={e=>setCsvText(e.target.value)} rows={5}
             placeholder={"Name,Email,2021 Gift,2022 Gift,2023 Gift\nJane Smith,jane@example.com,500,750,1000"}
             style={{...inp,resize:"vertical",lineHeight:1.5,marginBottom:12}}/>
-          {err&&<div style={{color:"#f87171",fontSize:12,marginBottom:10}}>{err}</div>}
+          {err&&<div style={{color:"#b8593f",fontSize:12,marginBottom:10}}>{err}</div>}
           <button onClick={doPaste} disabled={!csvText.trim()}
-            style={{background:csvText.trim()?"linear-gradient(135deg,#10b981,#3b82f6)":T.bg2,border:"none",borderRadius:10,padding:"11px 20px",color:"#fff",fontSize:14,fontWeight:700,cursor:csvText.trim()?"pointer":"not-allowed",opacity:csvText.trim()?1:0.5}}>
+            style={{background:csvText.trim()?T.gold500:T.bg2,border:"none",borderRadius:10,padding:"11px 20px",color:csvText.trim()?T.ink:T.ink3,fontSize:14,fontWeight:700,cursor:csvText.trim()?"pointer":"not-allowed",opacity:csvText.trim()?1:0.5}}>
             Parse →
           </button>
         </>)}
@@ -2060,7 +2060,7 @@ function CombinedImport({ onClose, onImported }) {
               Donor Field Mapping
             </div>
             {donorHeaders.length === 0
-              ? <div style={{fontSize:13,color:"#f59e0b",background:"#fef3c7",borderRadius:8,padding:"10px 12px"}}>No non-year columns detected. This file may be gift-only — use "↑ Giving History" instead.</div>
+              ? <div style={{fontSize:13,color:"#a97f22",background:"#f6eccf",borderRadius:8,padding:"10px 12px"}}>No non-year columns detected. This file may be gift-only — use "↑ Giving History" instead.</div>
               : <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6}}>
                   {donorHeaders.map(h => (
                     <div key={h} style={{display:"flex",alignItems:"center",gap:6,background:donorMapping[h]?T.bg:"transparent",borderRadius:7,padding:"5px 8px",border:`1px solid ${donorMapping[h]?T.bg3:"transparent"}`}}>
@@ -2110,12 +2110,12 @@ function CombinedImport({ onClose, onImported }) {
             }
           </div>
 
-          {err&&<div style={{color:"#f87171",fontSize:12,marginBottom:10}}>{err}</div>}
+          {err&&<div style={{color:"#b8593f",fontSize:12,marginBottom:10}}>{err}</div>}
           <div style={{display:"flex",gap:10}}>
             <button onClick={()=>{setParsed(null);setStep("upload");setErr("");}}
               style={{background:"transparent",border:"1px solid "+T.bg3,borderRadius:10,padding:"11px 18px",color:T.ink3,fontSize:13,cursor:"pointer"}}>← Back</button>
             <button onClick={buildPreview}
-              style={{flex:1,background:"linear-gradient(135deg,#1a6b4a,#2563eb)",border:"none",borderRadius:10,padding:"11px 20px",color:"#fff",fontSize:14,fontWeight:700,cursor:"pointer"}}>
+              style={{flex:1,background:T.gold500,border:"none",borderRadius:10,padding:"11px 20px",color:T.ink,fontSize:14,fontWeight:700,cursor:"pointer"}}>
               Preview →
             </button>
           </div>
@@ -2128,8 +2128,8 @@ function CombinedImport({ onClose, onImported }) {
           <div style={{background:T.bg,borderRadius:12,padding:"14px 16px",marginBottom:16}}>
             <div style={{fontSize:15,fontWeight:700,color:T.ink,marginBottom:6}}>
               <span style={{color:"#10b981"}}>{stats.donors}</span> donors to create &nbsp;·&nbsp;
-              <span style={{color:"#3b82f6"}}>{stats.gifts}</span> gifts to attach
-              {stats.warned>0&&<> &nbsp;·&nbsp; <span style={{color:"#f59e0b"}}>{stats.warned}</span> with warnings</>}
+              <span style={{color:T.greenMid}}>{stats.gifts}</span> gifts to attach
+              {stats.warned>0&&<> &nbsp;·&nbsp; <span style={{color:"#a97f22"}}>{stats.warned}</span> with warnings</>}
               {stats.skipped>0&&<> &nbsp;·&nbsp; <span style={{color:T.ink3}}>{stats.skipped}</span> skipped</>}
             </div>
             <div style={{fontSize:12,color:T.ink3}}>No data is written until you click the confirm button below.</div>
@@ -2155,12 +2155,12 @@ function CombinedImport({ onClose, onImported }) {
             </div>
             <div style={{display:"flex",flexDirection:"column",gap:6}}>
               {combinedRows.filter(r=>!r.skipped).slice(0,6).map((cr,i) => (
-                <div key={i} style={{background:cr.warnings.length?`#fef9f0`:"#f8fdf8",border:`1px solid ${cr.warnings.length?"#fde68a":T.bg3}`,borderRadius:9,padding:"10px 12px"}}>
+                <div key={i} style={{background:cr.warnings.length?`#fdfaf2`:"#edf3ee",border:`1px solid ${cr.warnings.length?"#e7cf91":T.bg3}`,borderRadius:9,padding:"10px 12px"}}>
                   <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:cr.gifts.length?5:0,flexWrap:"wrap"}}>
                     <span style={{fontSize:13,fontWeight:700,color:T.ink}}>{cr.donor.name}</span>
                     {cr.donor.email&&<span style={{fontSize:11,color:T.ink3}}>{cr.donor.email}</span>}
                     {cr.donor.stage&&<span style={{fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:99,background:(STAGE_COLORS[cr.donor.stage]||T.ink3)+"22",color:STAGE_COLORS[cr.donor.stage]||T.ink3,textTransform:"capitalize"}}>{cr.donor.stage}</span>}
-                    {cr.warnings.length>0&&<span style={{fontSize:11,color:"#92400e",background:"#fef3c7",borderRadius:4,padding:"1px 6px"}}>{cr.warnings[0]}</span>}
+                    {cr.warnings.length>0&&<span style={{fontSize:11,color:"#8a6d1f",background:"#f6eccf",borderRadius:4,padding:"1px 6px"}}>{cr.warnings[0]}</span>}
                   </div>
                   {cr.gifts.length>0&&(
                     <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
@@ -2182,12 +2182,12 @@ function CombinedImport({ onClose, onImported }) {
             </div>
           )}
 
-          {err&&<div style={{color:"#f87171",fontSize:12,marginBottom:10}}>{err}</div>}
+          {err&&<div style={{color:"#b8593f",fontSize:12,marginBottom:10}}>{err}</div>}
           <div style={{display:"flex",gap:10,marginTop:4}}>
             <button onClick={()=>setStep("configure")}
               style={{background:"transparent",border:"1px solid "+T.bg3,borderRadius:10,padding:"11px 18px",color:T.ink3,fontSize:13,cursor:"pointer"}}>← Back</button>
             <button onClick={doImport} disabled={loading||stats.donors===0}
-              style={{flex:1,background:loading||stats.donors===0?T.bg2:"linear-gradient(135deg,#10b981,#3b82f6)",border:"none",borderRadius:10,padding:"11px 20px",color:"#fff",fontSize:14,fontWeight:700,cursor:loading||stats.donors===0?"not-allowed":"pointer",opacity:loading||stats.donors===0?0.6:1}}>
+              style={{flex:1,background:loading||stats.donors===0?T.bg2:T.gold500,border:"none",borderRadius:10,padding:"11px 20px",color:loading||stats.donors===0?T.ink3:T.ink,fontSize:14,fontWeight:700,cursor:loading||stats.donors===0?"not-allowed":"pointer",opacity:loading||stats.donors===0?0.6:1}}>
               {loading?"Importing…":`Import ${stats.donors} Donor${stats.donors!==1?"s":""} + ${stats.gifts} Gift${stats.gifts!==1?"s":""} →`}
             </button>
           </div>
@@ -2492,7 +2492,7 @@ function EditDonorModal({donor,onSave,onClose}){
             <div style={{fontSize:11,fontWeight:700,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:6}}>Notes</div>
             <textarea value={form.notes} onChange={set("notes")} rows={3} style={{...inp,resize:"vertical",lineHeight:1.5}}/>
           </div>
-          {err&&<div style={{color:"#f87171",fontSize:12}}>{err}</div>}
+          {err&&<div style={{color:"#b8593f",fontSize:12}}>{err}</div>}
           <div style={{display:"flex",gap:8,marginTop:4}}>
             <button onClick={save} disabled={loading} style={{flex:1,background:loading?T.bg2:"#10b981",border:"none",borderRadius:10,padding:"11px",color:"#fff",fontSize:14,fontWeight:700,cursor:loading?"not-allowed":"pointer"}}>
               {loading?"Saving…":"Save Changes"}
@@ -2561,7 +2561,7 @@ function GiftLinkModal({donor,orgName,onClose}){
               <button onClick={onClose} style={{background:"none",border:"none",fontSize:20,cursor:"pointer",color:T.ink3}}>×</button>
             </div>
             {loading&&<div style={{padding:"24px 0",textAlign:"center",color:T.ink3,fontSize:13}}>Generating payment link…</div>}
-            {err&&<div style={{color:"#dc2626",fontSize:13,background:"#fef2f2",border:"1px solid #fecaca",borderRadius:8,padding:"10px 12px",marginBottom:14}}>{err}</div>}
+            {err&&<div style={{color:"#8a3a24",fontSize:13,background:"#f6e3dd",border:"1px solid #eac6b8",borderRadius:8,padding:"10px 12px",marginBottom:14}}>{err}</div>}
             {url&&!loading&&(
               <>
                 <div style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:10,padding:"10px 14px",fontSize:12,color:T.ink3,wordBreak:"break-all",lineHeight:1.5,marginBottom:16}}>{url}</div>
@@ -2605,7 +2605,7 @@ function GiftLinkModal({donor,orgName,onClose}){
                       style={{...inp,resize:"vertical",lineHeight:1.55,fontSize:12}}/>
                   </div>
                 </div>
-                {sendErr&&<div style={{color:"#dc2626",fontSize:13,background:"#fef2f2",border:"1px solid #fecaca",borderRadius:8,padding:"8px 12px",marginBottom:12}}>{sendErr}</div>}
+                {sendErr&&<div style={{color:"#8a3a24",fontSize:13,background:"#f6e3dd",border:"1px solid #eac6b8",borderRadius:8,padding:"8px 12px",marginBottom:12}}>{sendErr}</div>}
                 <div style={{display:"flex",gap:8}}>
                   <button onClick={sendEmail} disabled={sending} style={{flex:1,background:sending?T.bg3:T.greenDk,border:"none",borderRadius:10,padding:"11px",color:"#fff",fontSize:13,fontWeight:700,cursor:sending?"not-allowed":"pointer"}}>
                     {sending?"Sending…":"Send Email"}
@@ -2679,7 +2679,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
   const [localRationale,setLocalRationale]=useState(donor.scoreRationale??null);
   const [scoreLoading,setScoreLoading]=useState(false);
 
-  const wsc=localScore===null?T.ink3:localScore<=3?"#6b7280":localScore<=5?"#3b82f6":localScore<=7?"#1a6b4a":localScore<=9?"#8b5cf6":"#f59e0b";
+  const wsc=localScore===null?T.ink3:localScore<=3?T.ink3:localScore<=5?T.green500:localScore<=7?T.greenMid:localScore<=9?T.greenDk:T.gold600;
 
   const recalcScore=async()=>{
     setScoreLoading(true);
@@ -3049,7 +3049,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
   };
 
   const stage=STAGES.find(s=>s.id===(donor.stage||"cultivate"))||STAGES[2];
-  const sc=donorScore(donor);const scoreColor=sc>70?"#1a6b4a":sc>45?"#f59e0b":"#ef4444";
+  const sc=donorScore(donor);const scoreColor=sc>70?"#1a6b4a":sc>45?"#a97f22":"#b8593f";
   const urg=moveUrgency(donor);
 
   const interactionCount=donor.interactions?.length||0;
@@ -3280,7 +3280,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
             {impactPdfLoading?"Generating…":"↓ Impact Summary"}
           </button>
           <button onClick={onEdit} style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"7px 14px",color:T.ink3,fontSize:13,cursor:"pointer"}}>Edit</button>
-          {isAdmin&&<button onClick={()=>onDelete(donor.id)} style={{background:"transparent",border:"1px solid #ef444455",borderRadius:8,padding:"7px 14px",color:"#ef4444",fontSize:13,cursor:"pointer"}}>Delete</button>}
+          {isAdmin&&<button onClick={()=>onDelete(donor.id)} style={{background:"transparent",border:"1px solid #b8593f55",borderRadius:8,padding:"7px 14px",color:"#b8593f",fontSize:13,cursor:"pointer"}}>Delete</button>}
         </div>
       </div>
 
@@ -3312,7 +3312,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
 
             {householdTotal!=null&&(
               <div style={{background:T.gold+"12",border:"1px solid "+T.gold+"40",borderRadius:12,padding:"10px 14px",fontSize:12,color:T.ink,cursor:"pointer"}} onClick={()=>setDpTab("related")}>
-                <strong>{fmtFull(donor.total)}</strong> individually · <strong style={{color:"#92700f"}}>{fmtFull(householdTotal)}</strong> household total — <span style={{color:T.greenDk,fontWeight:700}}>see who's linked →</span>
+                <strong>{fmtFull(donor.total)}</strong> individually · <strong style={{color:"#8a6d1f"}}>{fmtFull(householdTotal)}</strong> household total — <span style={{color:T.greenDk,fontWeight:700}}>see who's linked →</span>
               </div>
             )}
 
@@ -3467,13 +3467,13 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
                 :<div style={{display:"flex",flexDirection:"column",gap:6}}>
                   {[...tasks].sort((a,b)=>a.done-b.done||(a.due||"").localeCompare(b.due||"")).map(t=>{
                     const overdue=t.due&&!t.done&&daysDiff(t.due)<0;
-                    return <div key={t.id} onClick={()=>onTaskToggle(t)} style={{background:T.white,border:`1px solid ${t.done?"#1a6b4a30":overdue?"#ef444430":T.bg3}`,borderRadius:10,padding:"10px 14px",cursor:"pointer",display:"flex",alignItems:"center",gap:10}}>
+                    return <div key={t.id} onClick={()=>onTaskToggle(t)} style={{background:T.white,border:`1px solid ${t.done?"#1a6b4a30":overdue?"#b8593f30":T.bg3}`,borderRadius:10,padding:"10px 14px",cursor:"pointer",display:"flex",alignItems:"center",gap:10}}>
                       <div style={{width:18,height:18,borderRadius:5,border:`2px solid ${t.done?"#1a6b4a":SC[t.priority]}`,background:t.done?"#1a6b4a":"transparent",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center"}}>
                         {t.done&&<span style={{color:"#fff",fontSize:10,lineHeight:1}}>✓</span>}
                       </div>
                       <div style={{flex:1,minWidth:0}}>
                         <div style={{fontSize:12,fontWeight:500,color:t.done?T.ink3:T.ink,textDecoration:t.done?"line-through":"none",lineHeight:1.3}}>{t.title}</div>
-                        {t.due&&<div style={{fontSize:11,color:overdue?"#ef4444":T.ink3,marginTop:2,fontWeight:overdue?700:400}}>
+                        {t.due&&<div style={{fontSize:11,color:overdue?"#b8593f":T.ink3,marginTop:2,fontWeight:overdue?700:400}}>
                           {overdue?"Overdue — was ":""}{new Date(t.due).toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"})}
                         </div>}
                       </div>
@@ -3515,7 +3515,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
             </div>
 
             {!receiptsEnabled&&isAdmin&&(
-              <div style={{background:"#fef3c7",border:"1px solid #fde68a",borderRadius:10,padding:"10px 14px",fontSize:12,color:"#92400e"}}>
+              <div style={{background:"#f6eccf",border:"1px solid #e7cf91",borderRadius:10,padding:"10px 14px",fontSize:12,color:"#8a6d1f"}}>
                 Tax receipts aren't set up yet — add your organization's legal info in Settings to send IRS-compliant receipts for gifts of $250+.
               </div>
             )}
@@ -3531,7 +3531,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
                   </button>
                   <button onClick={()=>setShowYearEnd(false)} style={{background:T.bg,border:"none",borderRadius:6,padding:"7px 10px",color:T.ink3,fontSize:12,cursor:"pointer"}}>Cancel</button>
                 </div>
-                {yearEndErr&&<div style={{fontSize:11,color:"#dc2626",marginTop:8}}>{yearEndErr}</div>}
+                {yearEndErr&&<div style={{fontSize:11,color:"#8a3a24",marginTop:8}}>{yearEndErr}</div>}
                 <div style={{fontSize:11,color:T.ink3,marginTop:8,lineHeight:1.5}}>Consolidates every {yearEndYear} gift into one statement, emailed to the donor and superseding any prior statement for that year.</div>
               </div>
             )}
@@ -3540,7 +3540,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
             {recurringSub&&(()=>{
               const RS_META={
                 active:      {label:"Active",         color:"#1a6b4a"},
-                past_due:    {label:"Payment failed",  color:T.red},
+                past_due:    {label:"Payment failed",  color:T.terracotta},
                 recovering:  {label:"Recovering",      color:"#c9a84c"},
                 recovered:   {label:"Recovered",       color:"#10b981"},
                 canceled:    {label:"Canceled",        color:T.ink3},
@@ -3612,7 +3612,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
                     </svg>
                   </div>
                   <div style={{fontFamily:"'DM Serif Display',Georgia,serif",fontSize:20,fontWeight:400,color:"#0f1a12",letterSpacing:"-0.01em",marginBottom:8}}>No gifts recorded yet.</div>
-                  <div style={{fontSize:13,color:"#6b7280",maxWidth:260,lineHeight:1.65,marginBottom:20}}>Log your first gift to start tracking acknowledgments and giving history.</div>
+                  <div style={{fontSize:13,color:"#6b6560",maxWidth:260,lineHeight:1.65,marginBottom:20}}>Log your first gift to start tracking acknowledgments and giving history.</div>
                   <button onClick={()=>setAddGiftOpen(true)} disabled={isReadOnly} title={isReadOnly?"Reactivate your subscription to make changes.":undefined}
                     style={{background:"#1a6b4a",color:"#fff",border:"none",borderRadius:10,padding:"10px 22px",fontSize:13,fontWeight:600,cursor:isReadOnly?"not-allowed":"pointer",opacity:isReadOnly?0.45:1,fontFamily:"'DM Sans',system-ui,sans-serif"}}>
                     Record a gift →
@@ -3665,7 +3665,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
                             <td style={{padding:"9px 12px",color:T.ink3,maxWidth:140,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{g.notes||""}</td>
                             <td style={{padding:"9px 12px",whiteSpace:"nowrap"}}>
                               <button onClick={()=>{setGiftEditId(g.id);setGiftEditForm({amount:g.amount,date:g.date,type:g.type,payment_method:g.payment_method||"",notes:g.notes||"",fund_id:g.fund_id||"",acknowledgement_sent:g.acknowledgement_sent});}} style={{background:"none",border:"none",color:T.ink3,fontSize:12,cursor:"pointer",padding:"2px 6px"}}>Edit</button>
-                              <button onClick={()=>deleteGift(g.id)} style={{background:"none",border:"none",color:"#ef4444",fontSize:12,cursor:"pointer",padding:"2px 6px"}}>Delete</button>
+                              <button onClick={()=>deleteGift(g.id)} style={{background:"none",border:"none",color:"#b8593f",fontSize:12,cursor:"pointer",padding:"2px 6px"}}>Delete</button>
                             </td>
                           </>
                         )}
@@ -3701,7 +3701,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
               {pledges.length===0?<div style={{fontSize:12,color:T.ink3,fontStyle:"italic"}}>No pledges on file</div>:(
                 <div style={{display:"flex",flexDirection:"column",gap:6}}>
                   {pledges.map(pl=>{
-                    const PL_META={open:{label:"Open",color:"#3b82f6"},fulfilled:{label:"Fulfilled",color:"#1a6b4a"},written_off:{label:"Written off",color:T.ink3}};
+                    const PL_META={open:{label:"Open",color:T.green500},fulfilled:{label:"Fulfilled",color:T.greenMid},written_off:{label:"Written off",color:T.ink3}};
                     const meta=PL_META[pl.status]||PL_META.open;
                     const isOverdue=pl.status==="open"&&pl.first_overdue_at;
                     const daysOver=isOverdue?daysDiff(pl.due_date):null;
@@ -3722,10 +3722,10 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
                               style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:6,padding:"5px 9px",color:T.ink2,fontSize:11,fontWeight:600,cursor:(isReadOnly||pledgeResendBusyId===pl.id||pledgeResentIds.has(pl.id))?"not-allowed":"pointer",opacity:(isReadOnly||pledgeResendBusyId===pl.id||pledgeResentIds.has(pl.id))?0.5:1}}>
                               {pledgeResentIds.has(pl.id)?"Sent ✓":pledgeResendBusyId===pl.id?"Sending…":"Resend reminder"}
                             </button>}
-                            <button onClick={()=>setPledgeStatus(pl.id,"fulfilled")} disabled={isReadOnly} style={{background:"#e8f5ef",border:"1px solid #10b981",borderRadius:6,padding:"5px 9px",color:"#1a6b4a",fontSize:11,fontWeight:600,cursor:isReadOnly?"not-allowed":"pointer"}}>Mark Fulfilled</button>
+                            <button onClick={()=>setPledgeStatus(pl.id,"fulfilled")} disabled={isReadOnly} style={{background:"#edf3ee",border:"1px solid #10b981",borderRadius:6,padding:"5px 9px",color:"#1a6b4a",fontSize:11,fontWeight:600,cursor:isReadOnly?"not-allowed":"pointer"}}>Mark Fulfilled</button>
                             <button onClick={()=>setPledgeStatus(pl.id,"written_off")} disabled={isReadOnly} style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:6,padding:"5px 9px",color:T.ink3,fontSize:11,fontWeight:600,cursor:isReadOnly?"not-allowed":"pointer"}}>Write Off</button>
                           </>}
-                          <button onClick={()=>deletePledge(pl.id)} style={{background:"none",border:"none",color:"#ef4444",fontSize:14,cursor:"pointer",flexShrink:0,padding:"2px 4px"}}>×</button>
+                          <button onClick={()=>deletePledge(pl.id)} style={{background:"none",border:"none",color:"#b8593f",fontSize:14,cursor:"pointer",flexShrink:0,padding:"2px 4px"}}>×</button>
                         </div>
                       </div>
                     );
@@ -3739,7 +3739,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
               <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}>
                 <div style={{fontSize:12,fontWeight:700,color:T.ink,display:"flex",alignItems:"center",gap:7}}>
                   Planned Giving
-                  {donor.plannedGiving&&<span style={{background:"#8b5cf610",color:"#8b5cf6",border:"1px solid #8b5cf640",borderRadius:99,padding:"2px 8px",fontSize:10,fontWeight:700}}>Indicated</span>}
+                  {donor.plannedGiving&&<span style={{background:T.green100,color:T.greenDk,border:"1px solid "+T.green200,borderRadius:99,padding:"2px 8px",fontSize:10,fontWeight:700}}>Indicated</span>}
                 </div>
                 <button onClick={()=>setAddPgOpen(v=>!v)} style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"5px 10px",color:T.ink3,fontSize:11,cursor:"pointer"}}>+ Add</button>
               </div>
@@ -3753,21 +3753,21 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
                   <input value={pgForm.notes} onChange={e=>setPgForm(p=>({...p,notes:e.target.value}))} placeholder="Notes" style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"7px 10px",color:T.ink,fontSize:12,outline:"none"}}/>
                 </div>
                 <div style={{display:"flex",gap:8}}>
-                  <button onClick={addPlannedGift} disabled={pgSaving} style={{background:"#8b5cf6",border:"none",borderRadius:8,padding:"7px 14px",color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer"}}>Save</button>
+                  <button onClick={addPlannedGift} disabled={pgSaving} style={{background:T.gold500,border:"none",borderRadius:8,padding:"7px 14px",color:T.ink,fontSize:12,fontWeight:700,cursor:"pointer"}}>Save</button>
                   <button onClick={()=>setAddPgOpen(false)} style={{background:T.bg,border:"none",borderRadius:8,padding:"7px 12px",color:T.ink3,fontSize:12,cursor:"pointer"}}>Cancel</button>
                 </div>
               </div>}
               {plannedGifts.length===0?<div style={{fontSize:12,color:T.ink3,fontStyle:"italic"}}>No planned giving on file</div>:(
                 <div style={{display:"flex",flexDirection:"column",gap:6}}>
                   {plannedGifts.map(pg=>(
-                    <div key={pg.id} style={{background:T.white,border:"1px solid #8b5cf620",borderRadius:10,padding:"10px 14px",display:"flex",alignItems:"flex-start",justifyContent:"space-between",gap:10}}>
+                    <div key={pg.id} style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:10,padding:"10px 14px",display:"flex",alignItems:"flex-start",justifyContent:"space-between",gap:10}}>
                       <div>
-                        <div style={{fontSize:13,fontWeight:700,color:"#8b5cf6",textTransform:"capitalize"}}>{(pg.type||"").replace(/_/g," ")}</div>
+                        <div style={{fontSize:13,fontWeight:700,color:T.greenDk,textTransform:"capitalize"}}>{(pg.type||"").replace(/_/g," ")}</div>
                         {pg.estimated_value&&<div style={{fontSize:12,color:T.ink3,marginTop:2}}>Est. {fmtFull(pg.estimated_value)}</div>}
                         {pg.date_indicated&&<div style={{fontSize:11,color:T.ink3,marginTop:1}}>Indicated {pg.date_indicated}</div>}
                         {pg.notes&&<div style={{fontSize:12,color:T.ink3,marginTop:3,lineHeight:1.4}}>{pg.notes}</div>}
                       </div>
-                      <button onClick={()=>deletePlannedGift(pg.id)} style={{background:"none",border:"none",color:"#ef4444",fontSize:12,cursor:"pointer",flexShrink:0,padding:"2px 4px"}}>×</button>
+                      <button onClick={()=>deletePlannedGift(pg.id)} style={{background:"none",border:"none",color:"#b8593f",fontSize:12,cursor:"pointer",flexShrink:0,padding:"2px 4px"}}>×</button>
                     </div>
                   ))}
                 </div>
@@ -3793,7 +3793,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
                           <div style={{display:"flex",alignItems:"baseline",justifyContent:"space-between",marginBottom:6}}>
                             <div>
                               <span style={{fontSize:13,fontWeight:700,color:T.ink}}>{f.fundName}</span>
-                              {f.restricted&&<span style={{marginLeft:6,fontSize:10,fontWeight:700,color:"#8b5cf6",background:"#8b5cf610",borderRadius:99,padding:"2px 7px"}}>Restricted</span>}
+                              {f.restricted&&<span style={{marginLeft:6,fontSize:10,fontWeight:700,color:T.gold700,background:T.gold100,borderRadius:99,padding:"2px 7px"}}>Restricted</span>}
                             </div>
                             <div style={{textAlign:"right"}}>
                               <div style={{fontSize:14,fontWeight:800,color:"#1a6b4a"}}>{fmtFull(f.total)}</div>
@@ -3817,11 +3817,11 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
                     const uPct=100-rPct;
                     return(<>
                       <div style={{height:10,borderRadius:99,overflow:"hidden",display:"flex",marginBottom:8}}>
-                        <div style={{width:`${rPct}%`,background:"#8b5cf6",transition:"width 0.4s"}}/>
+                        <div style={{width:`${rPct}%`,background:T.gold500,transition:"width 0.4s"}}/>
                         <div style={{flex:1,background:"#10b981"}}/>
                       </div>
                       <div style={{display:"flex",gap:16,fontSize:12}}>
-                        <div style={{display:"flex",alignItems:"center",gap:5}}><span style={{width:10,height:10,borderRadius:2,background:"#8b5cf6",display:"inline-block"}}/>Restricted: {fmtFull(restrictedTotal)} ({rPct}%)</div>
+                        <div style={{display:"flex",alignItems:"center",gap:5}}><span style={{width:10,height:10,borderRadius:2,background:T.gold500,display:"inline-block"}}/>Restricted: {fmtFull(restrictedTotal)} ({rPct}%)</div>
                         <div style={{display:"flex",alignItems:"center",gap:5}}><span style={{width:10,height:10,borderRadius:2,background:"#10b981",display:"inline-block"}}/>Unrestricted: {fmtFull(unrestrictedTotal)} ({uPct}%)</div>
                       </div>
                     </>);
@@ -3855,7 +3855,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
             {householdTotal!=null&&(
               <div style={{background:T.gold+"12",border:"1px solid "+T.gold+"40",borderRadius:12,padding:"12px 16px"}}>
                 <div style={{fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.08em",color:T.ink3,marginBottom:4}}>Household Giving</div>
-                <div style={{fontSize:13,color:T.ink}}><strong>{fmtFull(donor.total)}</strong> individually · <strong style={{color:"#92700f"}}>{fmtFull(householdTotal)}</strong> household total</div>
+                <div style={{fontSize:13,color:T.ink}}><strong>{fmtFull(donor.total)}</strong> individually · <strong style={{color:"#8a6d1f"}}>{fmtFull(householdTotal)}</strong> household total</div>
               </div>
             )}
 
@@ -3884,7 +3884,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
                       ))}
                   </div>
                 )}
-                {relErr&&<div style={{color:"#ef4444",fontSize:12}}>{relErr}</div>}
+                {relErr&&<div style={{color:"#b8593f",fontSize:12}}>{relErr}</div>}
               </div>
             )}
 
@@ -3900,7 +3900,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
                       </div>
                       <div style={{display:"flex",alignItems:"center",gap:8,flexShrink:0}}>
                         <Pill label={DONOR_RELATIONSHIP_LABELS.find(([v])=>v===r.relationshipType)?.[1]||r.relationshipType}/>
-                        {!isReadOnly&&<button onClick={()=>unlinkDonor(r.id)} style={{background:"transparent",border:"1px solid #ef444455",borderRadius:7,padding:"4px 9px",color:"#ef4444",fontSize:11,cursor:"pointer"}}>Remove</button>}
+                        {!isReadOnly&&<button onClick={()=>unlinkDonor(r.id)} style={{background:"transparent",border:"1px solid #b8593f55",borderRadius:7,padding:"4px 9px",color:"#b8593f",fontSize:11,cursor:"pointer"}}>Remove</button>}
                       </div>
                     </div>
                   ))}
@@ -3936,7 +3936,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
                     </div>
                     <div style={{display:"flex",gap:6,flexShrink:0}}>
                       {(m.file_data||m.file_url)&&<button onClick={()=>viewMaterial(m)} style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:7,padding:"5px 10px",color:T.ink3,fontSize:11,cursor:"pointer"}}>View</button>}
-                      <button onClick={()=>deleteMaterial(m.id)} style={{background:"none",border:"1px solid #ef444430",borderRadius:7,padding:"5px 10px",color:"#ef4444",fontSize:11,cursor:"pointer"}}>Delete</button>
+                      <button onClick={()=>deleteMaterial(m.id)} style={{background:"none",border:"1px solid #b8593f30",borderRadius:7,padding:"5px 10px",color:"#b8593f",fontSize:11,cursor:"pointer"}}>Delete</button>
                     </div>
                   </div>
                 ))}
@@ -3987,7 +3987,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
               <div style={{display:"flex",flexDirection:"column",gap:8}}>
                 {(localInts??donor.interactions??[]).filter(i=>actFilter==="all"||i.type===actFilter).map(i=>{
                   const typeIcon="•";
-                  const typeColor={call:"#3b82f6",meeting:"#1a6b4a",email:"#8b5cf6",gift:"#c9a84c",event:"#ec4899",stewardship:"#10b981",stage_change:"#3b82f6",planned_gift:"#f59e0b",material:"#6b7280"}[i.type]||T.ink3;
+                  const typeColor={call:T.green500,meeting:T.greenMid,email:T.greenDk,gift:T.gold600,event:T.gold500,stewardship:T.green,stage_change:T.green500,planned_gift:T.gold700,material:T.ink3}[i.type]||T.ink3;
                   return(<div key={i.id||i.date} className="tp-row" style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:10,padding:"10px 14px",display:"flex",gap:10,alignItems:"flex-start"}}>
                     <div style={{fontSize:16,flexShrink:0,marginTop:1,color:typeColor}}>{typeIcon}</div>
                     <div style={{flex:1,minWidth:0}}>
@@ -4033,7 +4033,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
                   icon:"•",
                   label:(i.type||"note").replace(/_/g," "),
                   desc:i.note||"",
-                  color:{call:"#3b82f6",meeting:"#1a6b4a",email:"#8b5cf6",gift:"#c9a84c",event:"#ec4899",stewardship:"#10b981",stage_change:"#3b82f6",planned_gift:"#f59e0b"}[i.type]||T.ink3,
+                  color:{call:T.green500,meeting:T.greenMid,email:T.greenDk,gift:T.gold600,event:T.gold500,stewardship:T.green,stage_change:T.green500,planned_gift:T.gold700}[i.type]||T.ink3,
                   big:false,
                   loggedBy:i.logged_by_name,
                 })),
@@ -4071,7 +4071,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
               <span style={{fontSize:16}}>↻</span>
               <div>
                 <div style={{fontSize:12,fontWeight:700,color:"#1a6b4a"}}>Recurring Donor</div>
-                <div style={{fontSize:11,color:"#15803d",marginTop:1}}>Active {donor.stripeSubscriptionId?"subscription":"recurring gift"}</div>
+                <div style={{fontSize:11,color:"#0d5c3a",marginTop:1}}>Active {donor.stripeSubscriptionId?"subscription":"recurring gift"}</div>
               </div>
             </div>
           )}
@@ -4129,7 +4129,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
             <div style={{display:"flex",flexDirection:"column",gap:8}}>
               {cfData.map(f=>(
                 <div key={f.fieldId} style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8}}>
-                  <div style={{fontSize:12,color:"#8fa896",fontWeight:600,minWidth:90,flexShrink:0}}>{f.label}{f.required&&<span style={{color:"#f87171",marginLeft:2}}>*</span>}</div>
+                  <div style={{fontSize:12,color:"#8fa896",fontWeight:600,minWidth:90,flexShrink:0}}>{f.label}{f.required&&<span style={{color:"#b8593f",marginLeft:2}}>*</span>}</div>
                   {cfEditing===f.fieldId?(
                     <div style={{display:"flex",gap:6,flex:1}}>
                       {f.fieldType==="checkbox"?(
@@ -4187,10 +4187,10 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
             <div style={{display:"flex",flexDirection:"column",gap:4}}>
               {donorEvents.slice(0,5).map(e=>{
                 const EVT_ICONS={gala:"•",cultivation:"•",site_visit:"•",board_meeting:"•",volunteer:"•",webinar:"•",other:"•"};
-                const EVT_COLORS={gala:"#8b5cf6",cultivation:"#10b981",site_visit:"#3b82f6",board_meeting:"#0d5c3a",volunteer:"#f59e0b",webinar:"#ec4899",other:"#6b7280"};
-                const ATT_COL={invited:"#6b7280",confirmed:"#3b82f6",attended:"#10b981",no_show:"#ef4444",cancelled:"#6b7280"};
+                const EVT_COLORS={gala:T.greenDk,cultivation:T.green,site_visit:T.green500,board_meeting:T.greenDk,volunteer:T.gold600,webinar:T.gold500,other:T.ink3};
+                const ATT_COL={invited:T.ink3,confirmed:T.green500,attended:T.green,no_show:T.terracotta,cancelled:T.ink3};
                 const icon=EVT_ICONS[e.event_type]||"•";
-                const attCol=ATT_COL[e.attendee_status]||"#6b7280";
+                const attCol=ATT_COL[e.attendee_status]||"#6b6560";
                 const d=e.date?new Date(e.date+"T12:00:00").toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"}):"";
                 return(
                   <div key={e.id} style={{background:"#1a2e1f",border:"1px solid #2d4a35",borderRadius:8,padding:"8px 10px",display:"flex",alignItems:"center",gap:8}}>
@@ -4222,7 +4222,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
                 <div style={{fontSize:10,fontWeight:800,textTransform:"uppercase",letterSpacing:"0.12em",color:"#c9a84c",marginBottom:8}}>Suggested Move</div>
                 <div style={{display:"flex",flexDirection:"column",gap:8}}>
                   {shown.map(s=>(
-                    <div key={s.signal} style={{background:"#1a2e1f",border:"1px solid #4a3f1f",borderLeft:"3px solid #c9a84c",borderRadius:10,padding:"10px 12px"}}>
+                    <div key={s.signal} style={{background:"#1a2e1f",border:"1px solid #8a6d1f",borderLeft:"3px solid #c9a84c",borderRadius:10,padding:"10px 12px"}}>
                       <div style={{fontSize:12,color:"#f0ede6",lineHeight:1.5,marginBottom:8}}>{s.reason}</div>
                       <div style={{display:"flex",gap:6}}>
                         {s.toStage&&!isReadOnly&&(
@@ -4315,8 +4315,8 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
                     <input value={composeSubject} onChange={e=>setComposeSubject(e.target.value)} placeholder="Subject…" style={{background:"#0f1a12",border:"1px solid #2d4a35",borderRadius:7,padding:"8px 10px",color:"#f0ede6",fontSize:13,outline:"none",fontFamily:"inherit",boxSizing:"border-box",width:"100%"}}/>
                     <textarea value={composeBody} onChange={e=>setComposeBody(e.target.value)} placeholder="Write your message…" style={{background:"#0f1a12",border:"1px solid #2d4a35",borderRadius:7,padding:"8px 10px",color:"#f0ede6",fontSize:13,outline:"none",fontFamily:"inherit",resize:"vertical",minHeight:120,width:"100%",boxSizing:"border-box"}}/>
                     <div style={{fontSize:11,color:"#8fa896"}}>Use <code style={{background:"#0f1a12",padding:"1px 5px",borderRadius:4,fontFamily:"monospace"}}>{"{{donor_name}}"}</code> and <code style={{background:"#0f1a12",padding:"1px 5px",borderRadius:4,fontFamily:"monospace"}}>{"{{org_name}}"}</code></div>
-                    {composeErr&&<div style={{fontSize:12,color:"#ef4444",background:"#1a0a0a",border:"1px solid #3d1515",borderRadius:7,padding:"8px 10px"}}>{composeErr}</div>}
-                    {composeSent&&<div style={{fontSize:12,color:"#10b981",background:"#0a1a0f",border:"1px solid #1a4a2a",borderRadius:7,padding:"8px 10px"}}>✓ Sent and logged to timeline</div>}
+                    {composeErr&&<div style={{fontSize:12,color:T.terra200,background:T.green950,border:"1px solid "+T.terracotta+"66",borderRadius:7,padding:"8px 10px"}}>{composeErr}</div>}
+                    {composeSent&&<div style={{fontSize:12,color:T.green,background:T.green900,border:"1px solid "+T.green650,borderRadius:7,padding:"8px 10px"}}>✓ Sent and logged to timeline</div>}
                     <div style={{display:"flex",gap:8}}>
                       <button onClick={draftWithAI} disabled={draftLoading} style={{flex:1,background:"#0f1a12",border:"1px solid #2d4a35",borderRadius:8,padding:"9px",color:"#c9a84c",fontSize:12,fontWeight:700,cursor:draftLoading?"not-allowed":"pointer",fontFamily:"inherit"}}>{draftLoading?"Drafting…":"✦ Draft this email"}</button>
                       <button onClick={sendEmail} disabled={composeSending||!composeTo||!composeSubject} style={{flex:1,background:composeSending||!composeTo||!composeSubject?"#2d4a35":"#10b981",border:"none",borderRadius:8,padding:"9px",color:"#fff",fontSize:12,fontWeight:700,cursor:composeSending||!composeTo||!composeSubject?"not-allowed":"pointer",fontFamily:"inherit"}}>{composeSending?"Sending…":"Send →"}</button>
@@ -4370,7 +4370,7 @@ function ReEngageView({donors,org,onLogTouchpoint,onSelectDonor}){
         {[
           ["Lapsed donors",lapsed.length,T.ink],
           ["Total lapsed value",fmtFull(totalValue),T.ink],
-          ["Avg days lapsed",`${avgDays}d`,"#ef4444"],
+          ["Avg days lapsed",`${avgDays}d`,"#b8593f"],
         ].map(([label,val,color])=>(
           <div key={label} style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:12,padding:"10px 18px",display:"flex",flexDirection:"column",gap:2}}>
             <div style={{fontSize:10,fontWeight:700,color:T.ink3,textTransform:"uppercase",letterSpacing:".06em"}}>{label}</div>
@@ -4394,10 +4394,10 @@ function ReEngageView({donors,org,onLogTouchpoint,onSelectDonor}){
         {lapsed.map((d,idx)=>{
           const days=daysDiff(d.lastGift||d.lastTouchpoint||new Date().toISOString());
           const sc=donorScore(d);
-          const scColor=sc>70?"#1a6b4a":sc>45?"#f59e0b":"#ef4444";
-          const rowBg=days>730?"#ef444409":days>365?"#f59e0b09":"#eab30809";
-          const rowBorderColor=days>730?"#ef444425":days>365?"#f59e0b25":"#eab30825";
-          const daysColor=days>730?"#ef4444":days>365?"#f59e0b":"#ca8a04";
+          const scColor=sc>70?"#1a6b4a":sc>45?"#a97f22":"#b8593f";
+          const rowBg=days>730?"#b8593f09":days>365?"#a97f2209":"#a97f2209";
+          const rowBorderColor=days>730?"#b8593f25":days>365?"#a97f2225":"#a97f2225";
+          const daysColor=days>730?"#b8593f":days>365?"#a97f22":"#8a6d1f";
           const urgencyLabel=days>730?"Critical":days>365?"At Risk":"Watch";
           const giftDate=fmtGiftDate(d.lastGift);
           return(
@@ -4600,7 +4600,7 @@ function DirectoryView({donors,loading,serverTotal,page,pageSize,onPage,clientFi
           </svg>
         </div>
         <div style={{fontFamily:"'DM Serif Display',Georgia,serif",fontSize:22,fontWeight:400,color:"#0f1a12",letterSpacing:"-0.01em",marginBottom:10}}>No donors yet.</div>
-        <div style={{fontSize:14,color:"#6b7280",maxWidth:300,lineHeight:1.65,marginBottom:24}}>Every relationship in Steward starts as one row — bring in a spreadsheet from Import above, or add a single name to begin.</div>
+        <div style={{fontSize:14,color:"#6b6560",maxWidth:300,lineHeight:1.65,marginBottom:24}}>Every relationship in Steward starts as one row — bring in a spreadsheet from Import above, or add a single name to begin.</div>
         <div style={{display:"flex",gap:10,flexWrap:"wrap",justifyContent:"center"}}>
           {onAddDonor&&<button onClick={onAddDonor} style={{background:"#1a6b4a",color:"#fff",border:"none",borderRadius:12,padding:"12px 24px",fontSize:14,fontWeight:600,cursor:"pointer",fontFamily:"'DM Sans',system-ui,sans-serif"}}>Add a donor →</button>}
           {onLoadSampleData&&<button onClick={onLoadSampleData} disabled={sampleLoading} style={{background:"transparent",color:"#1a6b4a",border:"1.5px solid #1a6b4a",borderRadius:12,padding:"12px 24px",fontSize:14,fontWeight:600,cursor:sampleLoading?"not-allowed":"pointer",opacity:sampleLoading?0.7:1,fontFamily:"'DM Sans',system-ui,sans-serif"}}>{sampleLoading?"Loading…":"Explore with sample data"}</button>}
@@ -4726,7 +4726,7 @@ function DirectoryView({donors,loading,serverTotal,page,pageSize,onPage,clientFi
           {/* Delete (admin only) */}
           {isAdmin&&(
             <button onClick={()=>setDelModal(true)} disabled={busy}
-              style={{background:"#ef4444",border:"none",borderRadius:8,padding:"7px 12px",color:"#fff",fontSize:12,fontWeight:600,cursor:"pointer",whiteSpace:"nowrap",opacity:busy?0.6:1}}>
+              style={{background:"#b8593f",border:"none",borderRadius:8,padding:"7px 12px",color:"#fff",fontSize:12,fontWeight:600,cursor:"pointer",whiteSpace:"nowrap",opacity:busy?0.6:1}}>
               Delete
             </button>
           )}
@@ -4759,14 +4759,14 @@ function DirectoryView({donors,loading,serverTotal,page,pageSize,onPage,clientFi
           {/* Rows */}
           {filtered.map((d,idx)=>{
             const stage=STAGES.find(s=>s.id===(d.stage||"cultivate"))||STAGES[2];
-            const sc=donorScore(d);const scColor=sc>70?"#1a6b4a":sc>45?"#f59e0b":"#ef4444";
+            const sc=donorScore(d);const scColor=sc>70?"#1a6b4a":sc>45?"#a97f22":"#b8593f";
             const isLast=idx===filtered.length-1;
             const checked=selIds.has(d.id);
-            const rowBg=checked?"#f0faf4":idx%2===0?T.white:"#faf9f6";
+            const rowBg=checked?"#edf3ee":idx%2===0?T.white:"#faf9f6";
             return(
               <div key={d.id} className="dir-donor-row" onClick={()=>onSelectDonor(d)}
                 style={{display:"grid",gridTemplateColumns:colGrid,gap:0,padding:compact?"4px 18px":"11px 18px",background:rowBg,borderBottom:isLast?"none":"1px solid "+T.bg3,cursor:"pointer",alignItems:"center",transition:"background 0.1s, padding 0.12s"}}
-                onMouseEnter={e=>e.currentTarget.style.background=checked?"#e6f5ec":T.bg}
+                onMouseEnter={e=>e.currentTarget.style.background=checked?"#edf3ee":T.bg}
                 onMouseLeave={e=>e.currentTarget.style.background=rowBg}>
                 <div onClick={e=>toggleOne(d.id,e)} style={{display:"flex",alignItems:"center",justifyContent:"center",padding:"4px"}}>
                   <input type="checkbox" checked={checked} onChange={e=>{e.stopPropagation();toggleOne(d.id,e);}}
@@ -4848,7 +4848,7 @@ function DirectoryView({donors,loading,serverTotal,page,pageSize,onPage,clientFi
                 Cancel
               </button>
               <button onClick={bulkDelete} disabled={busy}
-                style={{flex:1,background:"#ef4444",border:"none",borderRadius:10,padding:"11px 16px",color:"#fff",fontSize:13,fontWeight:700,cursor:busy?"not-allowed":"pointer",opacity:busy?0.7:1,minWidth:100}}>
+                style={{flex:1,background:"#b8593f",border:"none",borderRadius:10,padding:"11px 16px",color:"#fff",fontSize:13,fontWeight:700,cursor:busy?"not-allowed":"pointer",opacity:busy?0.7:1,minWidth:100}}>
                 {busy?"Deleting…":`Delete ${selFiltered.length} donor${selFiltered.length!==1?"s":""}`}
               </button>
             </div>
@@ -4901,11 +4901,11 @@ function TeamView({donors,orgTeam,onSelectDonor}){
 
 // ── Donor Segmentation ─────────────────────────────────────────────────────
 const TIER_META=[
-  {id:"micro",    label:"Micro",     color:"#6b7280"},
-  {id:"small",    label:"Small",     color:"#3b82f6"},
-  {id:"mid",      label:"Mid",       color:"#8b5cf6"},
-  {id:"major",    label:"Major",     color:"#f59e0b"},
-  {id:"principal",label:"Principal", color:"#1a6b4a"},
+  {id:"micro",    label:"Micro",     color:T.ink3},
+  {id:"small",    label:"Small",     color:T.green500},
+  {id:"mid",      label:"Mid",       color:T.greenMid},
+  {id:"major",    label:"Major",     color:T.gold600},
+  {id:"principal",label:"Principal", color:T.greenDk},
 ];
 const PATTERN_META=[
   {id:"one-time", label:"One-time"},
@@ -5080,8 +5080,8 @@ function MergeDuplicatesModal({onClose,onMerged,isReadOnly}){
           <button onClick={onClose} style={{background:T.bg3,border:"none",borderRadius:8,padding:"6px 12px",color:T.ink3,cursor:"pointer",fontSize:13,flexShrink:0}}>✕ Close</button>
         </div>
 
-        {done&&<div style={{background:"#f0fdf4",border:"1px solid #bbf7d0",borderRadius:10,padding:"10px 14px",fontSize:13,color:"#166534",fontWeight:600,margin:"10px 0"}}>✓ {done}</div>}
-        {err&&<div style={{background:"#fef2f2",border:"1px solid #fecaca",borderRadius:10,padding:"10px 14px",fontSize:13,color:"#dc2626",margin:"10px 0"}}>{err}</div>}
+        {done&&<div style={{background:"#edf3ee",border:"1px solid #dce7df",borderRadius:10,padding:"10px 14px",fontSize:13,color:"#0d5c3a",fontWeight:600,margin:"10px 0"}}>✓ {done}</div>}
+        {err&&<div style={{background:"#f6e3dd",border:"1px solid #eac6b8",borderRadius:10,padding:"10px 14px",fontSize:13,color:"#8a3a24",margin:"10px 0"}}>{err}</div>}
 
         {groups===null&&<div style={{display:"flex",alignItems:"center",gap:8,color:T.ink3,fontSize:13,padding:"24px 0"}}><Spin/>Checking your donor list…</div>}
 
@@ -5167,7 +5167,7 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
   const[followUpTarget,setFollowUpTarget]=useState(null);
   const[aiMap,setAiMap]=useState({});const[loadingKey,setLoadingKey]=useState(null);
   const[callList,setCallList]=useState("");const[callLoading,setCallLoading]=useState(false);
-  const[showAdd,setShowAdd]=useState(false);const[showImport,setShowImport]=useState(false);const[showGiftImport,setShowGiftImport]=useState(false);const[showCombinedImport,setShowCombinedImport]=useState(false);const[showMerge,setShowMerge]=useState(false);
+  const[showAdd,setShowAdd]=useState(false);const[showImport,setShowImport]=useState(false);const[showGiftImport,setShowGiftImport]=useState(false);const[showCombinedImport,setShowCombinedImport]=useState(false);const[showMerge,setShowMerge]=useState(false);const[toolsOpen,setToolsOpen]=useState(false);
   const[upgradeModal,setUpgradeModal]=useState(null);
   const[newDonor,setNewDonor]=useState({name:"",email:"",phone:"",lastAmount:"",stage:"prospect"});
   const[filtersOpen,setFiltersOpen]=useState(false);
@@ -5482,18 +5482,41 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
         <input className="donors-search" value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search donors…" style={{flex:1,minWidth:160,background:T.bg,border:"1px solid "+T.bg3,borderRadius:10,padding:"10px 14px",color:T.ink,fontSize:13,outline:"none"}}/>
         <div className="donors-view-toggle" style={{display:"flex",background:T.bg,border:"1px solid "+T.bg3,borderRadius:10,overflow:"hidden"}}>
           {[["directory","Directory"],...(isAdmin?[["team","Team"]]:[]),["reengage","Re-engage"],["map","Map"]].map(([v,l])=>(
-            <button key={v} onClick={()=>setView(v)} style={{background:view===v?T.bg2:"transparent",border:"none",padding:"9px 14px",color:view===v?T.ink:"#6b7280",fontSize:13,fontWeight:view===v?700:400,cursor:"pointer",display:"flex",alignItems:"center",gap:5}}>
+            <button key={v} onClick={()=>setView(v)} style={{background:view===v?T.bg2:"transparent",border:"none",padding:"9px 14px",color:view===v?T.ink:"#6b6560",fontSize:13,fontWeight:view===v?700:400,cursor:"pointer",display:"flex",alignItems:"center",gap:5}}>
               {l}
               {v==="reengage"&&lapsedCount>0&&<span style={{background:"#1a6b4a",color:"#fff",borderRadius:99,padding:"1px 6px",fontSize:10,fontWeight:800,lineHeight:1.4}}>{lapsedCount}</span>}
             </button>
           ))}
         </div>
         <AIBtn onClick={generateCallList} loading={callLoading} label="✦ Call List"/>
-        <button onClick={()=>setShowAdd(!showAdd)} disabled={isReadOnly} title={isReadOnly?"Reactivate your subscription to make changes.":undefined} style={{background:"#10b981",border:"none",borderRadius:10,padding:"10px 14px",color:"#fff",fontSize:13,fontWeight:600,cursor:isReadOnly?"not-allowed":"pointer",opacity:isReadOnly?0.45:1}}>+ Add</button>
-        <button onClick={()=>setShowImport(true)} style={{background:T.bg3,border:"1px solid "+T.bg3,borderRadius:10,padding:"10px 14px",color:T.ink3,fontSize:13,cursor:"pointer"}}>↑ Import</button>
-        <button onClick={()=>setShowGiftImport(true)} style={{background:T.bg3,border:"1px solid "+T.bg3,borderRadius:10,padding:"10px 14px",color:T.ink3,fontSize:13,cursor:"pointer"}}>↑ Giving History</button>
-        <button onClick={()=>setShowCombinedImport(true)} style={{background:T.bg3,border:"1px solid "+T.bg3,borderRadius:10,padding:"10px 14px",color:T.ink3,fontSize:13,cursor:"pointer"}}>↑ Import + History</button>
-        <button onClick={()=>setShowMerge(true)} style={{background:T.bg3,border:"1px solid "+T.bg3,borderRadius:10,padding:"10px 14px",color:T.ink3,fontSize:13,cursor:"pointer"}}>⇆ Merge duplicates</button>
+        <button onClick={()=>setShowAdd(!showAdd)} disabled={isReadOnly} title={isReadOnly?"Reactivate your subscription to make changes.":undefined} style={{background:T.gold500,border:"none",borderRadius:10,padding:"10px 14px",color:T.ink,fontSize:13,fontWeight:700,cursor:isReadOnly?"not-allowed":"pointer",opacity:isReadOnly?0.45:1}}>+ Add</button>
+        {/* BUILD-33 Part 3 — ONE "Import & tools" menu instead of four sibling
+            buttons. "Import + History" is the recommended default (the magical
+            one-file path); the others are labeled as the specific cases they
+            serve. Every path stays reachable. */}
+        <div style={{position:"relative"}}>
+          <button onClick={()=>setToolsOpen(v=>!v)} aria-haspopup="menu" aria-expanded={toolsOpen} style={{background:toolsOpen?T.bg2:T.bg,border:"1px solid "+T.bg3,borderRadius:10,padding:"10px 14px",color:T.ink2,fontSize:13,fontWeight:600,cursor:"pointer",display:"flex",alignItems:"center",gap:6}}>↑ Import &amp; tools <span style={{fontSize:10,color:T.ink3}}>▾</span></button>
+          {toolsOpen&&<>
+            <div onClick={()=>setToolsOpen(false)} style={{position:"fixed",inset:0,zIndex:180}}/>
+            <div role="menu" style={{position:"absolute",right:0,top:"calc(100% + 6px)",zIndex:181,background:T.white,border:"1px solid "+T.bg3,borderRadius:12,boxShadow:T.shadowMd,minWidth:280,padding:6,display:"flex",flexDirection:"column"}}>
+              {[
+                {label:"Import + History",hint:"One file in, donors + full gift history out",badge:"Recommended",act:()=>setShowCombinedImport(true)},
+                {label:"Import donors only",hint:"A contact list with no gift rows",act:()=>setShowImport(true)},
+                {label:"Add giving history",hint:"Attach a gift export to donors already here",act:()=>setShowGiftImport(true)},
+                {divider:true},
+                {label:"Merge duplicates",hint:"Fold repeated records into one",act:()=>setShowMerge(true)},
+              ].map((it,i)=>it.divider?<div key={i} style={{height:1,background:T.bg3,margin:"4px 8px"}}/>:(
+                <button key={i} role="menuitem" onClick={()=>{setToolsOpen(false);it.act();}} className="click-card" style={{background:"none",border:"none",borderRadius:8,padding:"9px 10px",textAlign:"left",cursor:"pointer",display:"block",width:"100%"}}>
+                  <div style={{display:"flex",alignItems:"center",gap:8}}>
+                    <span style={{fontSize:13,fontWeight:700,color:T.ink}}>{it.label}</span>
+                    {it.badge&&<span style={{background:T.gold100,color:T.gold700,border:"1px solid "+T.gold300,borderRadius:99,padding:"1px 8px",fontSize:10,fontWeight:800,letterSpacing:"0.04em",textTransform:"uppercase"}}>{it.badge}</span>}
+                  </div>
+                  <div style={{fontSize:11.5,color:T.ink3,marginTop:2}}>{it.hint}</div>
+                </button>
+              ))}
+            </div>
+          </>}
+        </div>
       </div>
 
       {(()=>{

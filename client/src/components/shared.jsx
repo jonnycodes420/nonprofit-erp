@@ -33,27 +33,34 @@ export const T = {
   green:      "#10b981",
   greenDk:    "#0d5c3a",
   greenMid:   "#1a6b4a",
-  greenPale:  "#d1fae5",
   // Green ramp (BUILD-12) — deep pine to mist. Use these for depth + hover.
   green950:   "#0e1a13",  // sidebar / ink — deep near-black pine
   green900:   "#102418",  // one step up from ink for layered dark panels
   green800:   "#14352a",  // deep pine — dark panels (goal card) with real depth
   green700:   "#1b5138",  // evergreen — hover-on-dark, secondary depth
+  green650:   "#2d4a35",  // hairline borders + input edges on dark panels
   green600:   "#1e6b45",  // primary / positive (≈ greenMid, AA on cream)
   green500:   "#2f8f62",  // emerald — links, accents, active toggles
   green200:   "#dce7df",  // sage — card hover tint, section bands
   green100:   "#edf3ee",  // mist — subtle fills, zebra rows, hover wash
+  // Sage — muted green-greys for text/labels ON dark panels (BUILD-33).
+  sage400:    "#8fa896",  // section labels / secondary text on dark
+  sage600:    "#6b8f7a",  // placeholder / tertiary text on dark
   // Accents
   gold:       "#c9a84c",
   terracotta: "#b8593f",   // negative/attention — LOCKED, do not repurpose
-  red:        "#c0392b",
-  amber:      "#d97706",
-  blue:       "#2563eb",
+  // Terracotta ramp (BUILD-33) — the product's ONLY red family. Errors,
+  // destructive outlines, overdue states. Never bright library red.
+  terra700:   "#8a3a24",  // deep terracotta — error TEXT on the wash (AA)
+  terra200:   "#eac6b8",  // terracotta hairline / border on the wash
+  terra100:   "#f6e3dd",  // terracotta wash — error/overdue backgrounds
   // Gold ramp (BUILD-12) — lean on gold a touch more for highlights.
+  gold700:    "#8a6d1f",  // deepest gold — small gold text on cream (AA+)
   gold600:    "#a97f22",  // deep gold — gold text on cream (AA, ~4.5:1)
   gold500:    "#c9a84c",  // primary gold (= legacy `gold`)
   gold300:    "#e7cf91",  // soft gold — highlight underlines, hover accents
   gold100:    "#f6eccf",  // gold wash — active-tab tint, callout fills
+  gold50:     "#fdfaf2",  // gold-tinted white — gold-moment / StartHere cards
   // Surfaces
   white:      "#ffffff",
   shadow:     "0 1px 3px rgba(10,10,10,0.08), 0 4px 16px rgba(10,10,10,0.06)",
@@ -145,7 +152,11 @@ export class ErrorBoundary extends Component {
     return this.props.children;
   }
 }
-export const SC = { major:"#1a6b4a",mid:"#3b82f6",new:"#8b5cf6",lapsed:"#f59e0b",converted:"#1a6b4a",active:"#1a6b4a",pending:"#3b82f6",prospecting:"#8b5cf6",closed:"#6b7280",high:"#ef4444",medium:"#f59e0b",low:"#6b7280" };
+// Status colors — LOCKED to the five-color palette (BUILD-33 closed the
+// blue/purple/amber pill backlog): green shades deliberately varied for
+// adjacent statuses, gold = active attention, terracotta = needs attention,
+// warm grey = closed/low. No library blue/purple/red/amber, ever.
+export const SC = { major:T.greenDk,mid:T.greenMid,new:T.gold500,lapsed:T.terracotta,converted:T.greenMid,active:T.greenMid,pending:T.gold600,prospecting:T.green500,closed:T.ink3,high:T.terracotta,medium:T.gold600,low:T.ink3 };
 export const askClaude = (system, user, onChunk) => streamAI(system, user, onChunk);
 
 // ── Org Context Builder ────────────────────────────────────────────────────
@@ -202,7 +213,7 @@ export const STAGE_ACTION = {
   steward: "Send personalized impact update or thank you",
   lapsed:  "Personal outreach — acknowledge lapse, invite back",
 };
-export const TIER_COLOR = {Micro:"#6b7280",Small:"#3b82f6",Mid:"#1a6b4a",Major:"#8b5cf6",Principal:"#f59e0b"};
+export const TIER_COLOR = {Micro:T.ink3,Small:T.green500,Mid:T.greenMid,Major:T.greenDk,Principal:T.gold600};
 
 // ── Score helpers ──────────────────────────────────────────────────────────
 export function donorScore(d) {
@@ -240,8 +251,8 @@ export function moveUrgency(d) {
   const days=lastContact?daysDiff(lastContact):999;
   const [warn,crit]=STAGE_THRESH[d.stage||"cultivate"]||[30,60];
   const level=days>crit?"critical":days>warn?"due":"ok";
-  const urgencyColor={critical:"#ef4444",due:"#f59e0b",ok:"#1a6b4a"}[level];
-  const contactTextColor=days>365?"#ef4444":days>180?"#f59e0b":T.ink3;
+  const urgencyColor={critical:T.terracotta,due:T.gold600,ok:T.greenMid}[level];
+  const contactTextColor=days>365?T.terracotta:days>180?T.gold600:T.ink3;
   return{days,level,urgencyColor,contactTextColor};
 }
 
@@ -255,16 +266,16 @@ export function GlobalStyles() {
     ::-webkit-scrollbar{width:5px;height:5px;}
     ::-webkit-scrollbar-track{background:#e8e4dc;}
     ::-webkit-scrollbar-thumb{background:#c9a84c;border-radius:99px;}
-    ::-webkit-scrollbar-thumb:hover{background:#b8933c;}
+    ::-webkit-scrollbar-thumb:hover{background:#a97f22;}
     ::selection{background:#0d5c3a22;color:#0f1a12;}
-    input,textarea,select{background:#f8f6f2;border:1.5px solid #d4cfc6;border-radius:8px;color:#0f1a12;transition:border-color 0.15s,box-shadow 0.15s;}
+    input,textarea,select{background:#fdfaf2;border:1.5px solid #d4cfc6;border-radius:8px;color:#0f1a12;transition:border-color 0.15s,box-shadow 0.15s;}
     input:focus,textarea:focus,select:focus{border-color:#0d5c3a!important;box-shadow:0 0 0 3px rgba(13,92,58,0.12)!important;outline:none!important;}
     button{transition:all 0.15s ease;touch-action:manipulation;}
     button:not(:disabled):active{transform:scale(0.97);}
     .app-header{padding-top:env(safe-area-inset-top,0px);user-select:none;}
     .app-sidebar{user-select:none;}
     .app-topbar{user-select:none;}
-    .topbar-search::placeholder{color:#6b8f7a;}
+    .topbar-search::placeholder{color:#8fa896;}
     .topbar-search:focus{border-color:#c9a84c!important;box-shadow:0 0 0 3px rgba(201,168,76,0.14)!important;}
     .side-nav-btn:hover{color:#f0ede6!important;}
     .mobile-bottom-bar,.mobile-more-drawer{user-select:none;}
@@ -277,7 +288,7 @@ export function GlobalStyles() {
     @keyframes goldRise{from{opacity:0;transform:translateY(8px) scale(0.985)}to{opacity:1;transform:translateY(0) scale(1)}}
     @keyframes goldSheen{0%{background-position:-200% 0}100%{background-position:200% 0}}
     .gold-moment{animation:goldRise 0.5s cubic-bezier(0.2,0.8,0.3,1) both;}
-    .gold-moment .gold-moment-bar{background:linear-gradient(100deg,#c9a84c 40%,#e8d9a8 50%,#c9a84c 60%);background-size:200% 100%;animation:goldSheen 1.8s ease-out 0.4s 1;}
+    .gold-moment .gold-moment-bar{background:linear-gradient(100deg,#c9a84c 40%,#e7cf91 50%,#c9a84c 60%);background-size:200% 100%;animation:goldSheen 1.8s ease-out 0.4s 1;}
     @media (prefers-reduced-motion: reduce){.gold-moment,.gold-moment .gold-moment-bar{animation:none;}}
     .fade-in{animation:fadeIn 0.2s ease-out both;}
     .slide-in{animation:slideIn 0.18s ease-out both;}
@@ -500,7 +511,7 @@ export function AIPanel({text,onClose}) {
   return <div className="fade-in modal-anim" style={{background:"#0f1a12",border:"1px solid #1a2e1f",borderLeft:"3px solid #c9a84c",borderRadius:14,padding:"18px 20px",position:"relative",marginTop:12}}>
     <div style={{fontSize:10,fontWeight:800,letterSpacing:"0.12em",textTransform:"uppercase",color:"#c9a84c",marginBottom:10,display:"flex",alignItems:"center",gap:6}}><span>✦</span> Suggested</div>
     <div style={{fontSize:13,color:"#e8e4dc",lineHeight:1.8,whiteSpace:"pre-wrap"}}>{text}</div>
-    {onClose&&<button onClick={onClose} style={{position:"absolute",top:12,right:14,background:"#1a2e1f",border:"1px solid #2d4a35",borderRadius:6,color:"#8fa896",cursor:"pointer",fontSize:14,lineHeight:1,width:24,height:24,display:"flex",alignItems:"center",justifyContent:"center",padding:0}}>×</button>}
+    {onClose&&<button onClick={onClose} style={{position:"absolute",top:12,right:14,background:T.bgElevated,border:"1px solid "+T.green650,borderRadius:6,color:T.sage400,cursor:"pointer",fontSize:14,lineHeight:1,width:24,height:24,display:"flex",alignItems:"center",justifyContent:"center",padding:0}}>×</button>}
   </div>;
 }
 export function MetricCard({label,value,sub,color,trend}) {
@@ -511,7 +522,7 @@ export function MetricCard({label,value,sub,color,trend}) {
     {trend!==undefined&&(
       trend===0
         ?<span style={{fontSize:11,color:T.ink3,fontWeight:600}}>No change</span>
-        :<span style={{fontSize:11,color:trend>0?T.greenMid:T.red,fontWeight:600}}>{trend>0?"↑":"↓"} {Math.abs(trend)}%</span>
+        :<span style={{fontSize:11,color:trend>0?T.greenMid:T.terracotta,fontWeight:600}}>{trend>0?"↑":"↓"} {Math.abs(trend)}%</span>
     )}
   </div>;
 }
@@ -538,7 +549,7 @@ export function GoldMoment({moment,title,line,onDismiss}) {
   useEffect(()=>{ if(show){ try{localStorage.setItem(key,new Date().toISOString());}catch{} } },[]);
   if(!show) return null;
   return (
-    <div className="gold-moment" style={{position:"relative",background:"linear-gradient(135deg,#fdfaf2,#faf5e6)",border:"1px solid #c9a84c55",borderRadius:14,padding:"16px 44px 16px 18px",display:"flex",gap:14,alignItems:"center",overflow:"hidden"}}>
+    <div className="gold-moment" style={{position:"relative",background:`linear-gradient(135deg,${T.gold50},${T.gold100})`,border:"1px solid #c9a84c55",borderRadius:14,padding:"16px 44px 16px 18px",display:"flex",gap:14,alignItems:"center",overflow:"hidden"}}>
       <div className="gold-moment-bar" style={{position:"absolute",left:0,top:0,bottom:0,width:4,background:T.gold}}/>
       <div style={{width:34,height:34,borderRadius:"50%",background:T.gold,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,color:T.ink,fontSize:15}}>✦</div>
       <div style={{minWidth:0}}>
@@ -562,9 +573,9 @@ export function StartHere({line,actionLabel,onAction,dismissKey}) {
   if(!show) return null;
   const dismiss = ()=>{ if(key){ try{localStorage.setItem(key,"1");}catch{} } setShow(false); };
   return (
-    <div className="fade-in" style={{background:"#fdfaf2",border:"1px solid #c9a84c55",borderLeft:"4px solid "+T.gold,borderRadius:12,padding:"14px 18px",display:"flex",alignItems:"center",gap:14,flexWrap:"wrap"}}>
+    <div className="fade-in" style={{background:T.gold50,border:"1px solid #c9a84c55",borderLeft:"4px solid "+T.gold,borderRadius:12,padding:"14px 18px",display:"flex",alignItems:"center",gap:14,flexWrap:"wrap"}}>
       <div style={{flex:"1 1 280px",minWidth:0}}>
-        <div style={{fontSize:10,fontWeight:800,letterSpacing:"0.12em",textTransform:"uppercase",color:"#a08434",marginBottom:4}}>Start here</div>
+        <div style={{fontSize:10,fontWeight:800,letterSpacing:"0.12em",textTransform:"uppercase",color:T.gold600,marginBottom:4}}>Start here</div>
         <div style={{fontSize:13.5,color:T.ink2,lineHeight:1.6}}>{line}</div>
       </div>
       <div style={{display:"flex",gap:10,alignItems:"center",flexShrink:0}}>
@@ -681,13 +692,13 @@ export function TpYesNo({val,set}){
 // Grants renders grant_interactions through this too and passes nothing.
 export function TouchpointTimeline({interactions,onDelete}){
   if(!interactions?.length)return<div style={{fontSize:13,color:T.ink3,textAlign:"center",padding:"16px 0"}}>No touchpoints logged yet.</div>;
-  const typeColor={call:"#3b82f6",email:"#8b5cf6",meeting:T.greenMid,gift:"#f59e0b",event:"#ec4899",note:"#6b7280",stewardship:T.gold,voice_memo:"#0ea5e9",pledge_reminder:T.terracotta};
+  const typeColor={call:T.green500,email:T.greenDk,meeting:T.greenMid,gift:T.gold600,event:T.gold500,note:T.ink3,stewardship:T.gold,voice_memo:T.green500,pledge_reminder:T.terracotta};
   const typeLabel={voice_memo:"Voice Memo",pledge_reminder:"Pledge Reminder"};
   const sorted=[...interactions].sort((a,b)=>new Date(b.date)-new Date(a.date));
   return(
     <div style={{display:"flex",flexDirection:"column",gap:0}}>
       {sorted.map((int,i)=>{
-        const c=typeColor[int.type]||"#6b7280";
+        const c=typeColor[int.type]||T.ink3;
         const dAgo=daysDiff(int.date);
         const when=dAgo===0?"Today":dAgo===1?"Yesterday":`${dAgo}d ago`;
 
@@ -713,9 +724,9 @@ export function TouchpointTimeline({interactions,onDelete}){
                 <span style={{fontSize:11,fontWeight:700,textTransform:"capitalize",color:c}}>{typeLabel[int.type]||int.type}</span>
                 {direction&&(
                   <span style={{fontSize:10,fontWeight:700,padding:"1px 7px",borderRadius:99,
-                    background:direction==="inbound"?"#f0fdf4":"#eff6ff",
-                    color:direction==="inbound"?"#166534":"#1d4ed8",
-                    border:"1px solid "+(direction==="inbound"?"#bbf7d0":"#bfdbfe")}}>
+                    background:direction==="inbound"?T.green100:T.gold100,
+                    color:direction==="inbound"?T.greenDk:T.gold700,
+                    border:"1px solid "+(direction==="inbound"?T.green200:T.gold300)}}>
                     {direction==="inbound"?"Received":"Sent"}
                   </span>
                 )}
@@ -898,7 +909,7 @@ export function VoiceMemoModal({donor,donors,onClose,onSaved}){
           <>
             <div style={{fontSize:12,color:T.ink3,marginBottom:14}}>About <strong style={{color:T.ink}}>{selectedDonor.name}</strong>{!donor&&<button onClick={()=>setSelectedDonor(null)} style={{marginLeft:8,background:"none",border:"none",color:T.greenDk,fontSize:12,fontWeight:600,cursor:"pointer",padding:0}}>Change</button>}</div>
 
-            {error&&<div style={{marginBottom:12,fontSize:13,color:"#dc2626",background:"#fef2f2",border:"1px solid #fecaca",borderRadius:8,padding:"8px 12px"}}>{error}</div>}
+            {error&&<div style={{marginBottom:12,fontSize:13,color:T.terra700,background:T.terra100,border:"1px solid "+T.terra200,borderRadius:8,padding:"8px 12px"}}>{error}</div>}
 
             {(phase==="idle")&&(
               <div style={{textAlign:"center",padding:"24px 0"}}>
@@ -909,7 +920,7 @@ export function VoiceMemoModal({donor,donors,onClose,onSaved}){
 
             {phase==="recording"&&(
               <div style={{textAlign:"center",padding:"24px 0"}}>
-                <button onClick={stopRecording} style={{width:64,height:64,borderRadius:12,background:"#dc2626",border:"none",color:"#fff",fontSize:20,cursor:"pointer",boxShadow:"0 4px 16px rgba(220,38,38,0.35)"}}>■</button>
+                <button onClick={stopRecording} style={{width:64,height:64,borderRadius:12,background:T.terracotta,border:"none",color:"#fff",fontSize:20,cursor:"pointer",boxShadow:"0 4px 16px rgba(184,89,63,0.35)"}}>■</button>
                 <div style={{fontSize:18,fontWeight:700,color:T.ink,marginTop:12,fontFamily:"monospace"}}>{mm}:{ss}</div>
                 <div style={{fontSize:12,color:T.ink3,marginTop:4}}>Recording — tap to stop</div>
               </div>
@@ -938,8 +949,8 @@ export function VoiceMemoModal({donor,donors,onClose,onSaved}){
                   style={{width:"100%",boxSizing:"border-box",border:"1px solid "+T.bg3,borderRadius:10,padding:"10px 12px",fontSize:13,color:T.ink,background:T.bg,outline:"none",marginBottom:14,resize:"vertical",fontFamily:"inherit",lineHeight:1.55}}/>
 
                 {(suggestedDetail||suggestedAction)&&(
-                  <div style={{background:"#f0fdf4",border:"1px solid #bbf7d0",borderRadius:10,padding:"12px 14px",marginBottom:14}}>
-                    <div style={{fontSize:10,fontWeight:800,color:"#166534",textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:8}}>Worth saving? (your call)</div>
+                  <div style={{background:T.green100,border:"1px solid "+T.green200,borderRadius:10,padding:"12px 14px",marginBottom:14}}>
+                    <div style={{fontSize:10,fontWeight:800,color:T.greenDk,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:8}}>Worth saving? (your call)</div>
                     {suggestedDetail&&(
                       <label style={{display:"flex",alignItems:"flex-start",gap:8,fontSize:13,color:T.ink,cursor:"pointer",marginBottom:suggestedAction?8:0}}>
                         <input type="checkbox" checked={includeDetail} onChange={e=>setIncludeDetail(e.target.checked)} style={{marginTop:3,width:15,height:15,cursor:"pointer",flexShrink:0}}/>

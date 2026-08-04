@@ -8,10 +8,10 @@ import UpgradeModal from "./UpgradeModal";
 // "cancelled" (2 l's) is included alongside "canceled" (1 l) because old
 // rows may have been written with either spelling (see server.js).
 const BILLING_STATUS_META = {
-  active:        { label:"Active",        bg:"#e8f5ef", color:"#1a6b4a", border:"#10b981" },
+  active:        { label:"Active",        bg:"#edf3ee", color:"#1a6b4a", border:"#10b981" },
   trialing:      { label:"Trialing",      bg:"#1a2e1f", color:"#8fa896", border:"#2d4a35" },
-  past_due:      { label:"Past Due",      bg:"#fef2f2", color:"#dc2626", border:"#fecaca" },
-  trial_expired: { label:"Trial Expired", bg:"#fef2f2", color:"#dc2626", border:"#fecaca" },
+  past_due:      { label:"Past Due",      bg:"#f6e3dd", color:"#8a3a24", border:"#eac6b8" },
+  trial_expired: { label:"Trial Expired", bg:"#f6e3dd", color:"#8a3a24", border:"#eac6b8" },
   canceled:      { label:"Canceled",      bg:"#1a2e1f", color:"#8fa896", border:"#2d4a35" },
   cancelled:     { label:"Canceled",      bg:"#1a2e1f", color:"#8fa896", border:"#2d4a35" },
 };
@@ -25,7 +25,7 @@ function slugifyPreview(s){
 }
 
 const GP_STATUS_META={
-  active:   {label:"Active",   bg:"#e8f5ef", color:"#1a6b4a", border:"#10b981"},
+  active:   {label:"Active",   bg:"#edf3ee", color:"#1a6b4a", border:"#10b981"},
   archived: {label:"Archived", bg:"#f3f0eb", color:"#6b6b6b", border:"#d4cfc6"},
 };
 
@@ -184,11 +184,11 @@ function GivingPagesManager({orgSlug,isAdmin,isReadOnly}){
                 {isAdmin&&<>
                   <button onClick={()=>openEdit(p)} style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:6,padding:"5px 10px",fontSize:11,fontWeight:600,color:T.ink2,cursor:"pointer"}}>Edit</button>
                   <button onClick={()=>toggleArchive(p)} disabled={isReadOnly}
-                    style={{background:p.status==="active"?"#fef2f2":"#e8f5ef",border:"1px solid "+(p.status==="active"?"#fecaca":"#10b981"),borderRadius:6,padding:"5px 10px",fontSize:11,fontWeight:600,color:p.status==="active"?"#dc2626":"#1a6b4a",cursor:isReadOnly?"not-allowed":"pointer",opacity:isReadOnly?0.6:1}}>
+                    style={{background:p.status==="active"?"#f6e3dd":"#edf3ee",border:"1px solid "+(p.status==="active"?"#eac6b8":"#10b981"),borderRadius:6,padding:"5px 10px",fontSize:11,fontWeight:600,color:p.status==="active"?"#8a3a24":"#1a6b4a",cursor:isReadOnly?"not-allowed":"pointer",opacity:isReadOnly?0.6:1}}>
                     {p.status==="active"?"Archive":"Reactivate"}
                   </button>
                   <button onClick={()=>deletePage(p)}
-                    style={{background:"transparent",border:"1px solid #fecaca",borderRadius:6,padding:"5px 10px",fontSize:11,fontWeight:600,color:"#dc2626",cursor:"pointer"}}>
+                    style={{background:"transparent",border:"1px solid #eac6b8",borderRadius:6,padding:"5px 10px",fontSize:11,fontWeight:600,color:"#8a3a24",cursor:"pointer"}}>
                     Delete
                   </button>
                 </>}
@@ -235,7 +235,7 @@ function GivingPagesManager({orgSlug,isAdmin,isReadOnly}){
                         </div>
                         {isAdmin&&(
                           <button onClick={()=>toggleFundraiserArchive(p.id,f)} disabled={isReadOnly}
-                            style={{flexShrink:0,background:f.status==="active"?"#fef2f2":"#e8f5ef",border:"1px solid "+(f.status==="active"?"#fecaca":"#10b981"),borderRadius:6,padding:"5px 10px",fontSize:11,fontWeight:600,color:f.status==="active"?"#dc2626":"#1a6b4a",cursor:isReadOnly?"not-allowed":"pointer",opacity:isReadOnly?0.6:1}}>
+                            style={{flexShrink:0,background:f.status==="active"?"#f6e3dd":"#edf3ee",border:"1px solid "+(f.status==="active"?"#eac6b8":"#10b981"),borderRadius:6,padding:"5px 10px",fontSize:11,fontWeight:600,color:f.status==="active"?"#8a3a24":"#1a6b4a",cursor:isReadOnly?"not-allowed":"pointer",opacity:isReadOnly?0.6:1}}>
                             {f.status==="active"?"Archive":"Reactivate"}
                           </button>
                         )}
@@ -564,7 +564,7 @@ function TaxReceiptsManager({orgId,isAdmin,isReadOnly}){
       <div>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
           <SectionLabel>Tax Receipts</SectionLabel>
-          <span style={{fontSize:10,fontWeight:700,padding:"3px 9px",borderRadius:99,background:form.receiptsEnabled?"#e8f5ef":"#f3f0eb",color:form.receiptsEnabled?"#1a6b4a":"#6b6b6b",border:"1px solid "+(form.receiptsEnabled?"#10b981":"#d4cfc6")}}>
+          <span style={{fontSize:10,fontWeight:700,padding:"3px 9px",borderRadius:99,background:form.receiptsEnabled?"#edf3ee":"#f3f0eb",color:form.receiptsEnabled?"#1a6b4a":"#6b6b6b",border:"1px solid "+(form.receiptsEnabled?"#10b981":"#d4cfc6")}}>
             {form.receiptsEnabled?"Enabled":"Not enabled"}
           </span>
         </div>
@@ -595,9 +595,9 @@ function TaxReceiptsManager({orgId,isAdmin,isReadOnly}){
         <div style={lbl}>Custom message (optional)</div>
         <textarea value={form.receiptCustomMessage} onChange={e=>setForm(f=>({...f,receiptCustomMessage:e.target.value}))} placeholder="A warm line or two for {{donor_name}}, added to every receipt." rows={3} style={{...inp,resize:"vertical",marginBottom:6}} disabled={!isAdmin||isReadOnly}/>
 
-        {!canEnable&&<div style={{fontSize:12,color:"#92400e",background:"#fef3c7",borderRadius:8,padding:"8px 12px",marginBottom:12}}>Legal name, EIN, and receipt address are all required before receipts can be enabled.</div>}
+        {!canEnable&&<div style={{fontSize:12,color:"#8a6d1f",background:"#f6eccf",borderRadius:8,padding:"8px 12px",marginBottom:12}}>Legal name, EIN, and receipt address are all required before receipts can be enabled.</div>}
 
-        {saveErr&&<div style={{fontSize:12,color:"#dc2626",background:"#fef2f2",borderRadius:8,padding:"8px 12px",marginBottom:12}}>{saveErr}</div>}
+        {saveErr&&<div style={{fontSize:12,color:"#8a3a24",background:"#f6e3dd",borderRadius:8,padding:"8px 12px",marginBottom:12}}>{saveErr}</div>}
 
         {isAdmin&&(
           <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}>
@@ -607,7 +607,7 @@ function TaxReceiptsManager({orgId,isAdmin,isReadOnly}){
             </button>
             <button onClick={()=>save(!form.receiptsEnabled)} disabled={saving||isReadOnly||(!form.receiptsEnabled&&!canEnable)}
               title={isReadOnly?"Reactivate your subscription to make changes.":(!form.receiptsEnabled&&!canEnable)?"Fill in legal name, EIN, and receipt address first.":undefined}
-              style={{background:form.receiptsEnabled?"#fef2f2":T.green,border:"1px solid "+(form.receiptsEnabled?"#fecaca":T.green),borderRadius:8,padding:"9px 16px",color:form.receiptsEnabled?"#dc2626":"#fff",fontSize:12,fontWeight:700,cursor:(saving||isReadOnly||(!form.receiptsEnabled&&!canEnable))?"not-allowed":"pointer",opacity:(saving||isReadOnly||(!form.receiptsEnabled&&!canEnable))?0.6:1}}>
+              style={{background:form.receiptsEnabled?"#f6e3dd":T.green,border:"1px solid "+(form.receiptsEnabled?"#eac6b8":T.green),borderRadius:8,padding:"9px 16px",color:form.receiptsEnabled?"#8a3a24":"#fff",fontSize:12,fontWeight:700,cursor:(saving||isReadOnly||(!form.receiptsEnabled&&!canEnable))?"not-allowed":"pointer",opacity:(saving||isReadOnly||(!form.receiptsEnabled&&!canEnable))?0.6:1}}>
               {form.receiptsEnabled?"Disable receipts":"Enable receipts"}
             </button>
             <button onClick={downloadPreview} disabled={previewLoading} style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"9px 16px",color:T.ink2,fontSize:12,fontWeight:600,cursor:previewLoading?"not-allowed":"pointer"}}>
@@ -632,11 +632,11 @@ function TaxReceiptsManager({orgId,isAdmin,isReadOnly}){
             </button>
           </div>
           {!form.receiptsEnabled&&<div style={{fontSize:12,color:T.ink3}}>Enable tax receipts above first.</div>}
-          {runErr&&<div style={{fontSize:12,color:"#dc2626",background:"#fef2f2",borderRadius:8,padding:"8px 12px",marginBottom:10}}>{runErr}</div>}
+          {runErr&&<div style={{fontSize:12,color:"#8a3a24",background:"#f6e3dd",borderRadius:8,padding:"8px 12px",marginBottom:10}}>{runErr}</div>}
           {dryRunResult&&(
             <div style={{background:T.bg,borderRadius:10,padding:"12px 16px",marginBottom:12,fontSize:13,color:T.ink}}>
               <strong>{dryRunResult.donorCount}</strong> donor{dryRunResult.donorCount===1?"":"s"} · <strong>{dryRunResult.giftCount}</strong> gift{dryRunResult.giftCount===1?"":"s"} in {yearEndYear}
-              {dryRunResult.missingEmailCount>0&&<span style={{color:"#92400e"}}> · {dryRunResult.missingEmailCount} donor{dryRunResult.missingEmailCount===1?" has":"s have"} no email on file (statement generated but not sent)</span>}
+              {dryRunResult.missingEmailCount>0&&<span style={{color:"#8a6d1f"}}> · {dryRunResult.missingEmailCount} donor{dryRunResult.missingEmailCount===1?" has":"s have"} no email on file (statement generated but not sent)</span>}
               <div style={{marginTop:10}}>
                 <button onClick={generateAndSend} disabled={runLoading} style={{background:T.greenDk,border:"none",borderRadius:8,padding:"9px 16px",color:"#fff",fontSize:12,fontWeight:700,cursor:runLoading?"not-allowed":"pointer"}}>
                   {runLoading?"Generating & sending…":"Generate & send"}
@@ -645,7 +645,7 @@ function TaxReceiptsManager({orgId,isAdmin,isReadOnly}){
             </div>
           )}
           {runResult&&(
-            <div style={{background:"#e8f5ef",border:"1px solid #10b981",borderRadius:10,padding:"12px 16px",fontSize:13,color:"#1a6b4a"}}>
+            <div style={{background:"#edf3ee",border:"1px solid #10b981",borderRadius:10,padding:"12px 16px",fontSize:13,color:"#1a6b4a"}}>
               ✓ Generated <strong>{runResult.generated}</strong> statement{runResult.generated===1?"":"s"}, emailed <strong>{runResult.emailed}</strong>{runResult.skipped>0?`, skipped ${runResult.skipped}`:""}.
             </div>
           )}
@@ -1026,7 +1026,7 @@ export function Settings({auth,logout,initialSection}) {
           <div>
             <div style={{fontSize:18,fontWeight:700,color:T.ink,letterSpacing:"-0.01em"}}>{userName}</div>
             <div style={{fontSize:13,color:T.ink3,marginTop:2}}>{userEmail}</div>
-            <div style={{marginTop:6}}><Pill label={userRole} color={userRole==="admin"?T.greenDk:"#6b7280"}/></div>
+            <div style={{marginTop:6}}><Pill label={userRole} color={userRole==="admin"?T.greenDk:"#6b6560"}/></div>
           </div>
         </div>
         <div style={{background:T.bg,borderRadius:10,padding:"14px 16px"}}>
@@ -1060,7 +1060,7 @@ export function Settings({auth,logout,initialSection}) {
               <div style={{fontSize:13,fontWeight:600,color:T.ink}}>{m.name}{m.id===auth?.user?.id&&<span style={{fontSize:11,color:T.ink3,marginLeft:6}}>(you)</span>}</div>
               <div style={{fontSize:11,color:T.ink3,marginTop:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{m.email}</div>
             </div>
-            <Pill label={m.role} color={m.role==="admin"?T.greenDk:"#6b7280"}/>
+            <Pill label={m.role} color={m.role==="admin"?T.greenDk:"#6b6560"}/>
           </div>
         ))}
         {team.length===0&&<div style={{fontSize:13,color:T.ink3}}>Loading…</div>}
@@ -1072,10 +1072,10 @@ export function Settings({auth,logout,initialSection}) {
         <SectionLabel>Payments</SectionLabel>
         {stripe?.connected?(
           <div style={{display:"flex",alignItems:"center",gap:14,flexWrap:"wrap"}}>
-            <div style={{display:"flex",alignItems:"center",gap:8,background:"#f0fdf4",border:"1px solid #bbf7d0",borderRadius:10,padding:"10px 16px"}}>
+            <div style={{display:"flex",alignItems:"center",gap:8,background:"#edf3ee",border:"1px solid #dce7df",borderRadius:10,padding:"10px 16px"}}>
               <div>
-                <div style={{fontSize:13,fontWeight:700,color:"#166534"}}>Stripe Connected</div>
-                <div style={{fontSize:11,color:"#15803d",marginTop:1}}>Account: {stripe.accountId}</div>
+                <div style={{fontSize:13,fontWeight:700,color:"#0d5c3a"}}>Stripe Connected</div>
+                <div style={{fontSize:11,color:"#0d5c3a",marginTop:1}}>Account: {stripe.accountId}</div>
               </div>
             </div>
             <div style={{fontSize:12,color:T.ink3}}>Connected {stripe.connectedAt?new Date(stripe.connectedAt).toLocaleDateString():""}</div>
@@ -1150,16 +1150,16 @@ export function Settings({auth,logout,initialSection}) {
           <div style={{display:"flex",gap:8,alignItems:"center",flexShrink:0,flexWrap:"wrap"}}>
             {gmailStatus?.connected ? (
               <>
-                <div style={{display:"flex",alignItems:"center",gap:5,background:"#f0fdf4",border:"1px solid #bbf7d0",borderRadius:8,padding:"5px 10px"}}>
-                  <div style={{width:7,height:7,borderRadius:"50%",background:"#16a34a"}}/>
-                  <span style={{fontSize:12,fontWeight:600,color:"#166534"}}>Connected</span>
+                <div style={{display:"flex",alignItems:"center",gap:5,background:"#edf3ee",border:"1px solid #dce7df",borderRadius:8,padding:"5px 10px"}}>
+                  <div style={{width:7,height:7,borderRadius:"50%",background:"#1e6b45"}}/>
+                  <span style={{fontSize:12,fontWeight:600,color:"#0d5c3a"}}>Connected</span>
                 </div>
                 <button onClick={syncGmailNow} disabled={gmailSyncing}
                   style={{background:T.green,border:"none",borderRadius:8,padding:"7px 14px",color:"#fff",fontSize:12,fontWeight:700,cursor:gmailSyncing?"not-allowed":"pointer",opacity:gmailSyncing?0.7:1}}>
                   {gmailSyncing?"Syncing…":"Sync now"}
                 </button>
                 <button onClick={disconnectGmail}
-                  style={{background:"transparent",border:"none",fontSize:12,color:"#dc2626",cursor:"pointer",fontWeight:500,padding:"7px 4px"}}>
+                  style={{background:"transparent",border:"none",fontSize:12,color:"#8a3a24",cursor:"pointer",fontWeight:500,padding:"7px 4px"}}>
                   Disconnect
                 </button>
               </>
@@ -1177,7 +1177,7 @@ export function Settings({auth,logout,initialSection}) {
           </div>
         </div>
         {gmailToast&&(
-          <div style={{marginTop:12,background:"#f0fdf4",border:"1px solid #bbf7d0",borderRadius:8,padding:"10px 14px",fontSize:13,color:"#166534",fontWeight:600}}>
+          <div style={{marginTop:12,background:"#edf3ee",border:"1px solid #dce7df",borderRadius:8,padding:"10px 14px",fontSize:13,color:"#0d5c3a",fontWeight:600}}>
             ✓ {gmailToast}
           </div>
         )}
@@ -1213,7 +1213,7 @@ export function Settings({auth,logout,initialSection}) {
             </div>
             {isAdmin&&<div style={{display:"flex",gap:6,flexShrink:0}}>
               <button onClick={()=>openEditField(f)} style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:6,padding:"5px 10px",fontSize:11,fontWeight:600,color:T.ink2,cursor:"pointer"}}>Edit</button>
-              <button onClick={()=>deleteCfField(f.id)} style={{background:"#fef2f2",border:"1px solid #fecaca",borderRadius:6,padding:"5px 10px",fontSize:11,fontWeight:600,color:"#dc2626",cursor:"pointer"}}>Delete</button>
+              <button onClick={()=>deleteCfField(f.id)} style={{background:"#f6e3dd",border:"1px solid #eac6b8",borderRadius:6,padding:"5px 10px",fontSize:11,fontWeight:600,color:"#8a3a24",cursor:"pointer"}}>Delete</button>
             </div>}
           </div>
         ))}
@@ -1240,7 +1240,7 @@ export function Settings({auth,logout,initialSection}) {
             </div>
             {isAdmin&&<div style={{display:"flex",gap:6,flexShrink:0}}>
               <button onClick={()=>openEditMetric(m)} style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:6,padding:"5px 10px",fontSize:11,fontWeight:600,color:T.ink2,cursor:"pointer"}}>Edit</button>
-              <button onClick={()=>deleteImMetric(m.id)} style={{background:"#fef2f2",border:"1px solid #fecaca",borderRadius:6,padding:"5px 10px",fontSize:11,fontWeight:600,color:"#dc2626",cursor:"pointer"}}>Delete</button>
+              <button onClick={()=>deleteImMetric(m.id)} style={{background:"#f6e3dd",border:"1px solid #eac6b8",borderRadius:6,padding:"5px 10px",fontSize:11,fontWeight:600,color:"#8a3a24",cursor:"pointer"}}>Delete</button>
             </div>}
           </div>
         ))}
@@ -1281,7 +1281,7 @@ export function Settings({auth,logout,initialSection}) {
             <div style={{display:"flex",alignItems:"center",gap:14,flexWrap:"wrap"}}>
               <span style={{fontSize:13,color:T.ink3,background:T.bg,borderRadius:8,padding:"6px 12px"}}>{sampleStatus.sampleDonorCount} sample donors loaded</span>
               <button onClick={clearSampleData} disabled={sampleClearing}
-                style={{background:"#fee2e2",color:"#dc2626",border:"1px solid #fca5a5",borderRadius:8,padding:"8px 16px",fontSize:13,fontWeight:600,cursor:sampleClearing?"not-allowed":"pointer",opacity:sampleClearing?0.7:1}}>
+                style={{background:"#f6e3dd",color:"#8a3a24",border:"1px solid #eac6b8",borderRadius:8,padding:"8px 16px",fontSize:13,fontWeight:600,cursor:sampleClearing?"not-allowed":"pointer",opacity:sampleClearing?0.7:1}}>
                 {sampleClearing?"Clearing…":"Clear sample data"}
               </button>
             </div>
@@ -1316,7 +1316,7 @@ export function Settings({auth,logout,initialSection}) {
               {billing.subscriptionStatus==="trialing"&&billing.trialEndsAt&&(
                 <div>
                   <div style={{fontSize:11,fontWeight:700,letterSpacing:"0.07em",textTransform:"uppercase",color:T.ink3,marginBottom:4}}>Trial Ends</div>
-                  <div style={{fontSize:14,fontWeight:600,color:billing.trialDaysLeft<=7?"#ef4444":T.ink}}>
+                  <div style={{fontSize:14,fontWeight:600,color:billing.trialDaysLeft<=7?"#b8593f":T.ink}}>
                     {new Date(billing.trialEndsAt).toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"})}
                     {billing.trialDaysLeft!=null&&<span style={{fontSize:12,color:T.ink3,fontWeight:400,marginLeft:6}}>({billing.trialDaysLeft} days left)</span>}
                   </div>
@@ -1549,7 +1549,7 @@ export function Settings({auth,logout,initialSection}) {
                   <option value="staff">Staff — can view and edit data</option>
                   <option value="admin">Admin — full access including settings</option>
                 </select>
-                {invErr&&<div style={{marginBottom:12,fontSize:13,color:"#dc2626",background:"#fef2f2",border:"1px solid #fecaca",borderRadius:8,padding:"8px 12px"}}>{invErr}</div>}
+                {invErr&&<div style={{marginBottom:12,fontSize:13,color:"#8a3a24",background:"#f6e3dd",border:"1px solid #eac6b8",borderRadius:8,padding:"8px 12px"}}>{invErr}</div>}
                 <div style={{display:"flex",gap:10}}>
                   <button onClick={closeInvite} style={{flex:1,background:T.bg,border:"1px solid "+T.bg3,borderRadius:10,padding:"10px",color:T.ink2,fontSize:13,fontWeight:600,cursor:"pointer"}}>Cancel</button>
                   <button onClick={sendInvite} disabled={inviting} style={{flex:2,background:T.green,border:"none",borderRadius:10,padding:"10px",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer",opacity:inviting?0.7:1}}>
@@ -1559,11 +1559,11 @@ export function Settings({auth,logout,initialSection}) {
               </>
             ):(
               <>
-                <div style={{background:"#f0fdf4",border:"1px solid #bbf7d0",borderRadius:12,padding:"14px 16px",marginBottom:16}}>
-                  <div style={{fontSize:13,fontWeight:700,color:"#166534",marginBottom:4}}>
+                <div style={{background:"#edf3ee",border:"1px solid #dce7df",borderRadius:12,padding:"14px 16px",marginBottom:16}}>
+                  <div style={{fontSize:13,fontWeight:700,color:"#0d5c3a",marginBottom:4}}>
                     {inviteResult.emailSent?"Invite sent! You can also share the link below:":"Share this invite link:"}
                   </div>
-                  <div style={{fontSize:12,color:"#15803d",wordBreak:"break-all",lineHeight:1.5}}>{inviteResult.link}</div>
+                  <div style={{fontSize:12,color:"#0d5c3a",wordBreak:"break-all",lineHeight:1.5}}>{inviteResult.link}</div>
                 </div>
                 {!inviteResult.emailSent&&<div style={{fontSize:12,color:T.ink3,marginBottom:14,lineHeight:1.5}}>
                   SMTP not configured — copy and share this link directly. It expires in 7 days.

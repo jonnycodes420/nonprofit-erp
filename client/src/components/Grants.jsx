@@ -25,7 +25,7 @@ function GrantLogModal({grant,onSave,onClose}){
         <div style={{fontSize:16,fontWeight:800,color:T.ink,marginBottom:2}}>Log Touchpoint</div>
         <div style={{fontSize:12,color:T.ink3,marginBottom:16}}>{grant.funder} — {grant.program}</div>
         <div style={{display:"flex",gap:5,flexWrap:"wrap",marginBottom:14}}>
-          {TYPES.map(([v,l])=><button key={v} onClick={()=>setType(v)} style={{background:type===v?"#10b981":T.bg2,border:`1px solid ${type===v?"#10b981":T.bg3}`,borderRadius:7,padding:"5px 12px",color:type===v?"#fff":T.ink3,fontSize:12,fontWeight:600,cursor:"pointer"}}>{l}</button>)}
+          {TYPES.map(([v,l])=><button key={v} onClick={()=>setType(v)} style={{background:type===v?T.greenDk:T.bg2,border:`1px solid ${type===v?T.greenDk:T.bg3}`,borderRadius:7,padding:"5px 12px",color:type===v?"#fff":T.ink3,fontSize:12,fontWeight:600,cursor:"pointer"}}>{l}</button>)}
         </div>
         <div style={{marginBottom:12}}>
           <div style={{fontSize:11,fontWeight:700,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:5}}>Date</div>
@@ -36,7 +36,7 @@ function GrantLogModal({grant,onSave,onClose}){
           <textarea value={note} onChange={e=>setNote(e.target.value)} rows={4} placeholder="What happened? Key takeaways, next steps…" style={{...inp,resize:"vertical",lineHeight:1.55}}/>
         </div>
         <div style={{display:"flex",gap:8}}>
-          <button onClick={save} disabled={loading||!note.trim()} style={{flex:1,background:note.trim()?"#10b981":T.bg2,border:"none",borderRadius:10,padding:"12px",color:"#fff",fontSize:14,fontWeight:700,cursor:note.trim()?"pointer":"not-allowed"}}>{loading?"Saving…":"Save Touchpoint"}</button>
+          <button onClick={save} disabled={loading||!note.trim()} style={{flex:1,background:note.trim()?T.gold500:T.bg2,border:"none",borderRadius:10,padding:"12px",color:note.trim()?T.ink:T.ink3,fontSize:14,fontWeight:700,cursor:note.trim()?"pointer":"not-allowed"}}>{loading?"Saving…":"Save Touchpoint"}</button>
           <button onClick={onClose} style={{background:T.bg,border:"none",borderRadius:10,padding:"12px 16px",color:T.ink3,fontSize:13,cursor:"pointer"}}>Cancel</button>
         </div>
       </div>
@@ -65,6 +65,10 @@ function GrantProfile({grant,onClose,onUpdate,onDelete,isAdmin,org}){
 
   const pct=grant.amount>0?Math.round((grant.received||0)/grant.amount*100):0;
   const days=daysUntil(grant.deadline);
+  // A deadline only carries urgency while the grant is still being pursued —
+  // an awarded/active/closed grant's application deadline has passed by
+  // definition, so "Overdue" there is noise, not information (BUILD-33).
+  const actionable=GRANT_ACTIONABLE.has(grant.status);
   const reportDays=grant.reportDue?daysUntil(grant.reportDue):null;
   const statuses=["prospecting","pending","active","closed"];
 
@@ -122,7 +126,7 @@ function GrantProfile({grant,onClose,onUpdate,onDelete,isAdmin,org}){
         </div>
         <div style={{display:"flex",gap:6,flexShrink:0}}>
           <button onClick={()=>setEditing(true)} style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"7px 14px",color:T.ink3,fontSize:13,cursor:"pointer"}}>Edit</button>
-          {isAdmin&&<button onClick={()=>onDelete(grant.id)} style={{background:"transparent",border:"1px solid #ef444455",borderRadius:8,padding:"7px 14px",color:"#ef4444",fontSize:13,cursor:"pointer"}}>Delete</button>}
+          {isAdmin&&<button onClick={()=>onDelete(grant.id)} style={{background:"transparent",border:"1px solid "+T.terracotta,borderRadius:8,padding:"7px 14px",color:T.terracotta,fontSize:13,cursor:"pointer"}}>Delete</button>}
         </div>
       </div>
 
@@ -160,7 +164,7 @@ function GrantProfile({grant,onClose,onUpdate,onDelete,isAdmin,org}){
             <textarea value={ef.requirements} onChange={e=>setEf(p=>({...p,requirements:e.target.value}))} rows={3} placeholder="Key eligibility criteria, required attachments, page limits…" style={{...ta,boxSizing:"border-box"}}/>
           </div>
           <div style={{display:"flex",gap:8,marginTop:4}}>
-            <button onClick={saveEdit} style={{background:"#10b981",border:"none",borderRadius:8,padding:"9px 16px",color:"#fff",fontSize:13,fontWeight:600,cursor:"pointer"}}>Save Changes</button>
+            <button onClick={saveEdit} style={{background:T.gold500,border:"none",borderRadius:8,padding:"9px 16px",color:T.ink,fontSize:13,fontWeight:600,cursor:"pointer"}}>Save Changes</button>
             <button onClick={()=>setEditing(false)} style={{background:T.bg,border:"none",borderRadius:8,padding:"9px 16px",color:T.ink3,fontSize:13,cursor:"pointer"}}>Cancel</button>
           </div>
         </div>
@@ -172,9 +176,9 @@ function GrantProfile({grant,onClose,onUpdate,onDelete,isAdmin,org}){
           <div className="grant-stat-grid" style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10}}>
             {[
               ["Amount Requested",fmtFull(grant.amount),T.ink],
-              ["Amount Awarded",fmtFull(grant.received||0),"#1a6b4a"],
-              ["% Funded",pct+"%",pct>75?"#1a6b4a":pct>40?"#f59e0b":"#6b7280"],
-              ["Days to Deadline",grant.deadline?(days<0?"Overdue":days+"d"):"—",days<0?"#ef4444":days<14?"#ef4444":days<30?"#f59e0b":T.ink],
+              ["Amount Awarded",fmtFull(grant.received||0),T.greenMid],
+              ["% Funded",pct+"%",pct>75?T.greenMid:pct>40?T.gold600:T.ink3],
+              ["Days to Deadline",grant.deadline?(actionable?(days<0?"Overdue":days+"d"):"Passed"):"—",actionable&&days<14?T.terracotta:actionable&&days<30?T.gold600:T.ink],
             ].map(([l,v,c])=>(
               <div key={l} style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:12,padding:"12px 14px"}}>
                 <div style={{fontSize:9,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.1em",color:T.ink3,marginBottom:4}}>{l}</div>
@@ -189,14 +193,14 @@ function GrantProfile({grant,onClose,onUpdate,onDelete,isAdmin,org}){
               <div style={{fontSize:11,color:T.ink3}}>{fmtFull(grant.received||0)} of {fmtFull(grant.amount)}</div>
             </div>
             <div style={{height:8,background:T.bg3,borderRadius:99}}>
-              <div style={{height:"100%",width:`${Math.min(pct,100)}%`,background:"#1a6b4a",borderRadius:99,transition:"width 0.4s"}}/>
+              <div style={{height:"100%",width:`${Math.min(pct,100)}%`,background:T.greenMid,borderRadius:99,transition:"width 0.4s"}}/>
             </div>
           </div>}
 
           <div className="grant-2col" style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
             <div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:12,padding:"12px 14px"}}>
               <div style={{fontSize:9,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.1em",color:T.ink3,marginBottom:4}}>Application Deadline</div>
-              <div style={{fontSize:14,fontWeight:600,color:days<14?"#ef4444":days<30?"#f59e0b":T.ink}}>{grant.deadline?new Date(grant.deadline).toLocaleDateString("en-US",{month:"long",day:"numeric",year:"numeric"}):"—"}</div>
+              <div style={{fontSize:14,fontWeight:600,color:actionable&&days<14?T.terracotta:actionable&&days<30?T.gold600:T.ink}}>{grant.deadline?new Date(grant.deadline).toLocaleDateString("en-US",{month:"long",day:"numeric",year:"numeric"}):"—"}</div>
             </div>
             <div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:12,padding:"12px 14px"}}>
               <div style={{fontSize:9,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.1em",color:T.ink3,marginBottom:4}}>Program Officer</div>
@@ -204,7 +208,7 @@ function GrantProfile({grant,onClose,onUpdate,onDelete,isAdmin,org}){
             </div>
             {grant.reportDue&&<div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:12,padding:"12px 14px"}}>
               <div style={{fontSize:9,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.1em",color:T.ink3,marginBottom:4}}>Report Due</div>
-              <div style={{fontSize:14,fontWeight:600,color:reportDays!==null&&reportDays<14?"#ef4444":reportDays!==null&&reportDays<30?"#f59e0b":T.ink}}>{new Date(grant.reportDue).toLocaleDateString("en-US",{month:"long",day:"numeric",year:"numeric"})}</div>
+              <div style={{fontSize:14,fontWeight:600,color:reportDays!==null&&reportDays<14?T.terracotta:reportDays!==null&&reportDays<30?T.gold600:T.ink}}>{new Date(grant.reportDue).toLocaleDateString("en-US",{month:"long",day:"numeric",year:"numeric"})}</div>
             </div>}
           </div>
 
@@ -229,7 +233,7 @@ function GrantProfile({grant,onClose,onUpdate,onDelete,isAdmin,org}){
           {grant.history&&grant.history.length>0&&<div>
             <div style={{fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.1em",color:T.ink3,marginBottom:8}}>Prior Awards</div>
             <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
-              {grant.history.map((h,i)=><Pill key={i} label={h} color="#1a6b4a"/>)}
+              {grant.history.map((h,i)=><Pill key={i} label={h} color={T.greenMid}/>)}
             </div>
           </div>}
         </div>
@@ -237,11 +241,11 @@ function GrantProfile({grant,onClose,onUpdate,onDelete,isAdmin,org}){
         {/* RIGHT */}
         <div style={{overflowY:"auto",padding:"22px 24px 24px 20px",display:"flex",flexDirection:"column",gap:18,background:"#0f1a12"}}>
           <div>
-            <div style={{fontSize:10,fontWeight:800,textTransform:"uppercase",letterSpacing:"0.1em",color:"#8fa896",marginBottom:8}}>Move Stage</div>
+            <div style={{fontSize:10,fontWeight:800,textTransform:"uppercase",letterSpacing:"0.1em",color:T.sage400,marginBottom:8}}>Move Stage</div>
             <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
               {statuses.map(s=>(
                 <button key={s} onClick={()=>changeStatus(s)}
-                  style={{background:grant.status===s?SC[s]+"22":"#1a2e1f",border:`1px solid ${grant.status===s?SC[s]:"#2d4a35"}`,borderRadius:8,padding:"6px 12px",color:grant.status===s?SC[s]:"#8fa896",fontSize:12,fontWeight:600,cursor:"pointer",textTransform:"capitalize"}}>
+                  style={{background:grant.status===s?T.gold500:T.bgElevated,border:`1px solid ${grant.status===s?T.gold500:T.green650}`,borderRadius:8,padding:"6px 12px",color:grant.status===s?T.ink:T.sage400,fontSize:12,fontWeight:600,cursor:"pointer",textTransform:"capitalize"}}>
                   {s}
                 </button>
               ))}
@@ -249,7 +253,7 @@ function GrantProfile({grant,onClose,onUpdate,onDelete,isAdmin,org}){
           </div>
 
           <div>
-            <div style={{fontSize:10,fontWeight:800,textTransform:"uppercase",letterSpacing:"0.1em",color:"#8fa896",marginBottom:8}}>Grant Strategy</div>
+            <div style={{fontSize:10,fontWeight:800,textTransform:"uppercase",letterSpacing:"0.1em",color:T.sage400,marginBottom:8}}>Grant Strategy</div>
             <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:12}}>
               <AIBtn onClick={()=>getAI("analyze")} loading={loadingKey===`${grant.id}_analyze`} label="✦ Analyze Grant Fit" small/>
               {grant.status!=="closed"&&<AIBtn onClick={()=>getAI("strategy")} loading={loadingKey===`${grant.id}_strategy`} label="✦ Strategy" small/>}
@@ -261,16 +265,16 @@ function GrantProfile({grant,onClose,onUpdate,onDelete,isAdmin,org}){
 
           <div>
             <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8}}>
-              <div style={{fontSize:10,fontWeight:800,textTransform:"uppercase",letterSpacing:"0.1em",color:"#8fa896"}}>Notes</div>
-              {notes!==grant.notes&&<button onClick={saveNotes} disabled={savingNotes} style={{background:"#10b981",border:"none",borderRadius:7,padding:"4px 10px",color:"#fff",fontSize:11,fontWeight:700,cursor:"pointer"}}>{savingNotes?"Saving…":"Save"}</button>}
+              <div style={{fontSize:10,fontWeight:800,textTransform:"uppercase",letterSpacing:"0.1em",color:T.sage400}}>Notes</div>
+              {notes!==grant.notes&&<button onClick={saveNotes} disabled={savingNotes} style={{background:T.gold500,border:"none",borderRadius:7,padding:"4px 10px",color:T.ink,fontSize:11,fontWeight:700,cursor:"pointer"}}>{savingNotes?"Saving…":"Save"}</button>}
             </div>
-            <textarea value={notes} onChange={e=>setNotes(e.target.value)} placeholder="Add notes about this grant…" style={{width:"100%",boxSizing:"border-box",background:"#1a2e1f",border:"1px solid #2d4a35",borderRadius:10,padding:"10px 12px",color:"#f0ede6",fontSize:13,lineHeight:1.6,outline:"none",resize:"vertical",minHeight:90}}/>
+            <textarea value={notes} onChange={e=>setNotes(e.target.value)} placeholder="Add notes about this grant…" style={{width:"100%",boxSizing:"border-box",background:T.bgElevated,border:"1px solid "+T.green650,borderRadius:10,padding:"10px 12px",color:T.inkInverse,fontSize:13,lineHeight:1.6,outline:"none",resize:"vertical",minHeight:90}}/>
           </div>
 
           <div>
             <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12}}>
-              <div style={{fontSize:10,fontWeight:800,textTransform:"uppercase",letterSpacing:"0.1em",color:"#8fa896"}}>Activity Timeline</div>
-              <button onClick={()=>setLogOpen(true)} style={{background:"#10b981",border:"none",borderRadius:7,padding:"5px 12px",color:"#fff",fontSize:11,fontWeight:700,cursor:"pointer"}}>+ Log</button>
+              <div style={{fontSize:10,fontWeight:800,textTransform:"uppercase",letterSpacing:"0.1em",color:T.sage400}}>Activity Timeline</div>
+              <button onClick={()=>setLogOpen(true)} style={{background:T.gold500,border:"none",borderRadius:7,padding:"5px 12px",color:T.ink,fontSize:11,fontWeight:700,cursor:"pointer"}}>+ Log</button>
             </div>
             <TouchpointTimeline interactions={interactions}/>
           </div>
@@ -281,19 +285,37 @@ function GrantProfile({grant,onClose,onUpdate,onDelete,isAdmin,org}){
 }
 
 // ── Grant Kanban ───────────────────────────────────────────────────────────
+// Column accents are LOCKED to the Steward palette (BUILD-33) — green ramp +
+// gold for the working stages, deep green for the win, warm grey for closed.
+// Same deliberately-varied logic as the donor STAGES set; no blue/purple/amber.
 const KANBAN_COLS = [
-  { id:"prospecting", label:"Prospecting",  color:"#8b5cf6" },
-  { id:"loi",         label:"LOI",          color:"#6366f1" },
-  { id:"applied",     label:"Applied",      color:"#3b82f6" },
-  { id:"pending",     label:"Under Review", color:"#f59e0b" },
-  { id:"awarded",     label:"Awarded",      color:"#10b981" },
-  { id:"closed",      label:"Closed",       color:"#6b7280" },
+  { id:"prospecting", label:"Prospecting",  color:T.green500 },
+  { id:"loi",         label:"LOI",          color:T.gold500 },
+  { id:"applied",     label:"Applied",      color:T.greenMid },
+  { id:"pending",     label:"Under Review", color:T.gold600 },
+  { id:"awarded",     label:"Awarded",      color:T.greenDk },
+  { id:"closed",      label:"Closed",       color:T.ink3 },
 ];
 
+// Statuses still being pursued — the only ones where a deadline carries
+// urgency. Awarded/active/closed grants' application deadlines have passed by
+// definition, so they never show "Overdue" (the BUILD-33 honest-overdue rule).
+const GRANT_ACTIONABLE = new Set(["prospecting","loi","applied","submitted","draft","pending"]);
+
 const statusToCol = s => {
-  if (s === "active" || s === "applied") return "applied";
+  if (s === "active" || s === "applied" || s === "submitted") return "applied";
+  if (s === "draft") return "loi";
   if (s === "rejected") return "closed";
   return KANBAN_COLS.find(c => c.id === s) ? s : "prospecting";
+};
+
+// Deadline chip for a grant card/row: null when it shouldn't render.
+const deadlineMeta = g => {
+  if (!g.deadline || !GRANT_ACTIONABLE.has(g.status)) return null;
+  const days = Math.round((new Date(g.deadline) - new Date()) / 86400000);
+  if (days < 0) return { label: "Overdue", color: T.terracotta };
+  if (days === 0) return { label: "Due today", color: T.terracotta };
+  return { label: `${days}d`, color: days < 30 ? T.gold600 : T.ink3 };
 };
 
 function GrantKanban({ grants, onUpdate, onAddClick, onSelectGrant, isReadOnly }) {
@@ -324,37 +346,34 @@ function GrantKanban({ grants, onUpdate, onAddClick, onSelectGrant, isReadOnly }
         const isOver = dragOver === col.id;
         return (
           <div key={col.id}
-            style={{ minWidth:260, flex:"1 1 260px", background: "#f5f2ec", border:"1px solid "+T.bg3, borderRadius:12, padding:10, transition:"background 0.12s", scrollSnapAlign:"start" }}
+            style={{ minWidth:260, flex:"1 1 260px", background: isOver?T.green100:T.bg2, borderRadius:12, padding:10, outline:isOver?`2px dashed ${T.green600}`:"2px dashed transparent", outlineOffset:-2, transition:"background 0.15s, outline-color 0.15s", scrollSnapAlign:"start" }}
             onDragOver={e => { e.preventDefault(); setDragOver(col.id); }}
             onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget)) setDragOver(null); }}
             onDrop={() => drop(col.id)}
           >
-            <div style={{ background:"#0f1a12", borderLeft:`3px solid ${col.color}`, borderRadius:8, padding:"8px 12px", marginBottom:10 }}>
-              <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between" }}>
-                <div style={{ fontSize:9, fontWeight:800, textTransform:"uppercase", letterSpacing:"0.1em", color:"#8fa896" }}>{col.label}</div>
-                <div style={{ display:"flex", alignItems:"center", gap:6 }}>
-                  {colTotal > 0 && <div style={{ fontSize:10, color:"#f0ede6", fontWeight:700, fontFamily:"'DM Serif Display',serif" }}>{fmt(colTotal)}</div>}
-                  <div style={{ fontSize:10, background:col.color+"28", color:col.color, borderRadius:99, padding:"1px 7px", fontWeight:800 }}>{items.length}</div>
-                </div>
+            <div style={{ display:"flex", alignItems:"baseline", justifyContent:"space-between", padding:"2px 4px", marginBottom:8 }}>
+              <div style={{ fontSize:13, fontWeight:800, color:T.ink }}>{col.label}</div>
+              <div style={{ display:"flex", alignItems:"baseline", gap:8 }}>
+                {colTotal > 0 && <div style={{ fontSize:11, color:T.ink3, fontWeight:700 }}>{fmt(colTotal)}</div>}
+                <div style={{ fontSize:12, color:T.ink3 }}>{items.length}</div>
               </div>
             </div>
             <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
               {items.map(g => {
-                const days = g.deadline ? Math.round((new Date(g.deadline)-new Date())/86400000) : null;
-                const dColor = days === null ? T.ink3 : days < 0 ? "#ef4444" : days < 14 ? "#ef4444" : days < 30 ? "#f59e0b" : "#1a6b4a";
+                const dl = deadlineMeta(g);
                 return (
                   <div key={g.id}
                     draggable
                     onDragStart={() => setDragging(g)}
                     onDragEnd={() => { setDragging(null); setDragOver(null); }}
                     onClick={() => onSelectGrant(g)}
-                    style={{ background:T.white, border:"1px solid "+T.bg3, borderLeft:`3px solid ${dColor}`, borderRadius:10, padding:"10px 12px", cursor:"grab", userSelect:"none", opacity:dragging?.id===g.id?0.45:1, transition:"opacity 0.12s,box-shadow 0.12s", boxShadow:"0 1px 3px rgba(10,10,10,0.06)" }}
+                    style={{ background:T.white, border:"1px solid "+T.bg3, borderRadius:10, padding:"10px 12px", cursor:"grab", userSelect:"none", opacity:dragging?.id===g.id?0.45:1, transition:"opacity 0.12s,box-shadow 0.12s", boxShadow:"0 1px 3px rgba(10,10,10,0.06)" }}
                   >
                     <div style={{ fontSize:13, fontWeight:700, color:T.ink, marginBottom:2 }}>{g.funder}</div>
                     {g.program && <div style={{ fontSize:11, color:T.ink3, marginBottom:6 }}>{g.program}</div>}
                     <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between" }}>
-                      <div style={{ fontSize:13, fontWeight:800, color:"#1a6b4a" }}>{fmt(g.amount)}</div>
-                      {days !== null && <div style={{ fontSize:10, fontWeight:600, color:dColor }}>{days < 0 ? "Overdue" : days === 0 ? "Due today" : `${days}d`}</div>}
+                      <div style={{ fontSize:13, fontWeight:800, color:T.greenMid }}>{fmt(g.amount)}</div>
+                      {dl && <div style={{ fontSize:10, fontWeight:700, color:dl.color }}>{dl.label}</div>}
                     </div>
                   </div>
                 );
@@ -446,6 +465,23 @@ export function Grants({data,setData,isReadOnly=false,initialGrantId,onIntentCon
     </div>
     {subTab==="findgrants"&&<FindGrants data={data}/>}
     {subTab==="pipeline"&&<>
+    {data.grants.length>0&&(()=>{
+      const open=data.grants.filter(g=>GRANT_ACTIONABLE.has(g.status));
+      const openAsk=open.reduce((t,g)=>t+(g.amount||0),0);
+      const received=data.grants.reduce((t,g)=>t+(g.received||0),0);
+      const next=open.filter(g=>g.deadline&&daysUntil(g.deadline)>=0).sort((a,b)=>a.deadline<b.deadline?-1:1)[0];
+      const stat=(label,value,sub2,color)=>(
+        <div key={label} style={{textAlign:"left"}}>
+          <div style={{fontSize:10,fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",color:T.ink3}}>{label}</div>
+          <div style={{fontSize:22,fontWeight:800,color,fontFamily:"'DM Serif Display',serif",lineHeight:1.2}}>{value}</div>
+          <div style={{fontSize:11,color:T.ink3}}>{sub2}</div>
+        </div>);
+      return <div className="grants-summary-strip" style={{display:"flex",gap:36,flexWrap:"wrap",alignItems:"flex-start",padding:"2px 2px 0"}}>
+        {stat("In the works",fmt(openAsk),`${open.length} open ask${open.length!==1?"s":""}`,T.gold600)}
+        {stat("Received",fmt(received),"across all grants",T.greenMid)}
+        {stat("Next deadline",next?new Date(next.deadline).toLocaleDateString("en-US",{month:"short",day:"numeric"}):"—",next?next.funder:"nothing pending",T.ink)}
+      </div>;
+    })()}
     <div style={{display:"flex",gap:10,flexWrap:"wrap",alignItems:"center"}}>
       <AIBtn onClick={findProspects} loading={prospectLoading} label="✦ Prospect Research"/>
       <div style={{display:"flex",gap:2,background:T.bg2,borderRadius:8,padding:2}}>
@@ -453,7 +489,7 @@ export function Grants({data,setData,isReadOnly=false,initialGrantId,onIntentCon
           <button key={id} onClick={()=>setGrantView(id)} style={{background:grantView===id?T.white:"transparent",border:grantView===id?"1px solid "+T.bg3:"1px solid transparent",borderRadius:7,padding:"5px 13px",fontSize:12,fontWeight:600,color:grantView===id?T.ink:T.ink3,cursor:"pointer",transition:"all 0.12s"}}>{label}</button>
         ))}
       </div>
-      {grantView==="list"&&<button onClick={()=>setShowAdd(v=>!v)} disabled={isReadOnly} title={isReadOnly?"Reactivate your subscription to make changes.":undefined} style={{background:T.greenDk,border:"none",borderRadius:10,padding:"10px 16px",color:"#fff",fontSize:13,fontWeight:600,cursor:isReadOnly?"not-allowed":"pointer",marginLeft:"auto",boxShadow:"0 2px 8px rgba(26,107,74,0.2)",opacity:isReadOnly?0.45:1}}>+ Add Grant</button>}
+      {grantView==="list"&&<button onClick={()=>setShowAdd(v=>!v)} disabled={isReadOnly} title={isReadOnly?"Reactivate your subscription to make changes.":undefined} style={{background:T.gold500,border:"none",borderRadius:10,padding:"10px 16px",color:T.ink,fontSize:13,fontWeight:700,cursor:isReadOnly?"not-allowed":"pointer",marginLeft:"auto",boxShadow:"0 2px 8px rgba(201,168,76,0.25)",opacity:isReadOnly?0.45:1}}>+ Add Grant</button>}
     </div>
     {(prospectLoading||prospectAI)&&<AIPanel text={prospectAI} onClose={()=>setProspectAI("")}/>}
 
@@ -480,7 +516,7 @@ export function Grants({data,setData,isReadOnly=false,initialGrantId,onIntentCon
           </div>
         </div>
         <div style={{display:"flex",gap:8}}>
-          <button onClick={addGrant} disabled={addLoading||!newGrant.funder.trim()} style={{background:newGrant.funder.trim()?"#10b981":T.bg2,border:"none",borderRadius:8,padding:"9px 18px",color:"#fff",fontSize:13,fontWeight:600,cursor:newGrant.funder.trim()?"pointer":"not-allowed"}}>{addLoading?"Saving…":"Save Grant"}</button>
+          <button onClick={addGrant} disabled={addLoading||!newGrant.funder.trim()} style={{background:newGrant.funder.trim()?T.gold500:T.bg2,border:"none",borderRadius:8,padding:"9px 18px",color:newGrant.funder.trim()?T.ink:T.ink3,fontSize:13,fontWeight:600,cursor:newGrant.funder.trim()?"pointer":"not-allowed"}}>{addLoading?"Saving…":"Save Grant"}</button>
           <button onClick={()=>setShowAdd(false)} style={{background:T.bg,border:"none",borderRadius:8,padding:"9px 14px",color:T.ink3,fontSize:13,cursor:"pointer"}}>Cancel</button>
         </div>
       </Card>;
@@ -493,8 +529,8 @@ export function Grants({data,setData,isReadOnly=false,initialGrantId,onIntentCon
 
     {grantView==="list"&&<>
     <div className="grants-pipeline-grid" style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:8}}>
-      {pipeline.map(s=>{const on=statusFilter===s;return <div key={s} {...interactive(()=>setStatusFilter(on?null:s),{label:`Filter grants to ${s}`})} style={{background:T.white,border:`1px solid ${on?SC[s]:SC[s]+"25"}`,borderRadius:12,padding:"14px 16px",borderTop:`3px solid ${SC[s]}`,boxShadow:on?`0 0 0 2px ${SC[s]}33`:"none"}}>
-        <div style={{fontSize:10,fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",color:SC[s],marginBottom:8}}>{s}</div>
+      {pipeline.map(s=>{const on=statusFilter===s;return <div key={s} {...interactive(()=>setStatusFilter(on?null:s),{label:`Filter grants to ${s}`})} style={{background:on?T.gold100:T.white,border:`1px solid ${on?T.gold500:T.bg3}`,borderRadius:12,padding:"14px 16px"}}>
+        <div style={{fontSize:10,fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",color:T.ink3,marginBottom:8}}>{s}</div>
         <div style={{fontSize:22,fontWeight:800,color:T.ink,fontFamily:"'DM Serif Display',serif",lineHeight:1}}>{fmt(totals[s])}</div>
         <div style={{fontSize:11,color:T.ink3,marginTop:4}}>{data.grants.filter(g=>g.status===s).length} grant{data.grants.filter(g=>g.status===s).length!==1?"s":""}</div>
       </div>;})}
@@ -519,11 +555,11 @@ export function Grants({data,setData,isReadOnly=false,initialGrantId,onIntentCon
           <div style={{textAlign:"right"}}>
             <div style={{fontSize:16,fontWeight:800,color:T.ink}}>{fmt(g.amount)}</div>
             {g.status==="active"&&<div style={{fontSize:11,color:T.ink3}}>{pct}% received</div>}
-            {g.deadline&&days<=60&&<div style={{fontSize:11,color:days<14?"#ef4444":"#f59e0b",marginTop:2,fontWeight:600}}>{days<0?"Overdue":days+"d left"}</div>}
+            {(()=>{const dl=deadlineMeta(g);return dl&&(dl.label==="Overdue"||days<=60)?<div style={{fontSize:11,color:dl.color,marginTop:2,fontWeight:600}}>{dl.label==="Overdue"?"Overdue":days+"d left"}</div>:null;})()}
           </div>
           <Pill label={g.status} color={SC[g.status]}/>
         </div>
-        {g.status==="active"&&<div style={{marginTop:10,height:4,background:T.bg3,borderRadius:99}}><div style={{height:"100%",width:`${pct}%`,background:"#1a6b4a",borderRadius:99}}/></div>}
+        {g.status==="active"&&<div style={{marginTop:10,height:4,background:T.bg3,borderRadius:99}}><div style={{height:"100%",width:`${pct}%`,background:T.greenMid,borderRadius:99}}/></div>}
       </Card>;
     })}
     </>}
@@ -579,15 +615,15 @@ Focus on grants under $200K that match this org's size and mission. Include a mi
             <div style={{fontSize:13,color:T.ink}}>{activeGrants}</div></div>
         </div>
       </div>
-      <button onClick={find} disabled={loading} style={{background:loading?T.bg2:"linear-gradient(135deg,#8b5cf6,#3b82f6)",border:"none",borderRadius:12,padding:"13px 22px",color:"#fff",fontSize:14,fontWeight:700,cursor:loading?"not-allowed":"pointer",display:"flex",alignItems:"center",gap:8,opacity:loading?0.7:1}}>
+      <button onClick={find} disabled={loading} style={{background:loading?T.bg2:T.gold500,border:"none",borderRadius:12,padding:"13px 22px",color:loading?T.ink3:T.ink,fontSize:14,fontWeight:700,cursor:loading?"not-allowed":"pointer",display:"flex",alignItems:"center",gap:8,opacity:loading?0.7:1}}>
         {loading?<><Spin/>Scanning grant landscape…</>:"✦ Find Matching Grants"}
       </button>
     </Card>
 
-    {(loading||results)&&<Card style={{background:"linear-gradient(135deg,#0f0c29,#0f172a)",border:"1px solid #1a6b4a44"}}>
-      <div style={{fontSize:11,fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",color:"#8b5cf6",marginBottom:14}}>✦ Grant Matches — Ranked by Alignment</div>
-      {loading&&!results&&<div style={{display:"flex",alignItems:"center",gap:10,color:T.ink3,fontSize:13}}><Spin/>Analyzing your org and searching grant landscape…</div>}
-      {results&&<div style={{fontSize:13,color:T.ink2,lineHeight:1.85,whiteSpace:"pre-wrap"}}>{results}</div>}
+    {(loading||results)&&<Card style={{background:`linear-gradient(135deg,${T.green950},${T.green800})`,border:"1px solid "+T.green650}}>
+      <div style={{fontSize:11,fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",color:T.gold500,marginBottom:14}}>✦ Grant Matches — Ranked by Alignment</div>
+      {loading&&!results&&<div style={{display:"flex",alignItems:"center",gap:10,color:T.sage400,fontSize:13}}><Spin/>Analyzing your org and searching grant landscape…</div>}
+      {results&&<div style={{fontSize:13,color:T.inkInverse,lineHeight:1.85,whiteSpace:"pre-wrap"}}>{results}</div>}
     </Card>}
 
     {ran&&!loading&&!results&&<div style={{fontSize:13,color:T.ink3,textAlign:"center",padding:20}}>No results yet — try again.</div>}

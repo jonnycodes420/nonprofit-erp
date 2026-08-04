@@ -124,7 +124,7 @@ export default function InvitePage() {
           </div>
 
           {formErr && (
-            <div style={{ background:"#ef444422", border:"1px solid #ef444444", borderRadius:8, padding:"10px 14px", fontSize:13, color:"#f87171" }}>{formErr}</div>
+            <div style={{ background:"#b8593f22", border:"1px solid #b8593f44", borderRadius:8, padding:"10px 14px", fontSize:13, color:"#b8593f" }}>{formErr}</div>
           )}
 
           <button

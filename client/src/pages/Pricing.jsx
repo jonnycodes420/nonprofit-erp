@@ -276,7 +276,7 @@ export default function Pricing() {
               <div style={{ display: "flex", flexDirection: "column", gap: 11, marginBottom: 26, flex: 1 }}>
                 {plan.features.map(f => (
                   <div key={f.t} style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
-                    <div style={{ width: 18, height: 18, marginTop: 1, background: plan.highlight ? "#e8f5ef" : ink, border: `1px solid ${emerald}`, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                    <div style={{ width: 18, height: 18, marginTop: 1, background: plan.highlight ? "#edf3ee" : ink, border: `1px solid ${emerald}`, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
                       <svg width="9" height="7" viewBox="0 0 10 8" fill="none"><path d="M1 4l3 3 5-6" stroke={emerald} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
                     </div>
                     <span style={{ fontSize: 13, color: plan.highlight ? ink : sage, lineHeight: 1.45 }}>
