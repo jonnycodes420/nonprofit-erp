@@ -28,15 +28,19 @@ function ImpactLine({ impact }) {
   const [open, setOpen] = useState(false);
   if (!impact) return null;
   const recovered = impact.recoveredAmount || 0;
+  const reeng = impact.reengagedAmount || 0;
+  const reengDonors = impact.reengagedDonorCount || 0;
   const watching = impact.watchingRecurringCount || 0;
   const online = impact.onlineGivingProcessed || 0;
   const hasRecovered = recovered > 0;
-  // Truly nothing to say yet (no recoveries, no giving, nothing watched) →
-  // stay silent rather than manufacture a line.
-  if (!hasRecovered && watching <= 0 && online <= 0) return null;
+  // Truly nothing to say yet (no recoveries, no re-engagement, no giving,
+  // nothing watched) → stay silent rather than manufacture a line.
+  if (!hasRecovered && reeng <= 0 && watching <= 0 && online <= 0) return null;
 
-  const head = hasRecovered
-    ? <>Steward has recovered <strong style={{ color: T.green600 }}>{fmt(recovered)}</strong> in lapsing gifts and kept you 100% of every dollar.</>
+  // Recovered (automated failed-card workflow) and re-engaged (lapsed donors who
+  // came back) are DISTINCT numbers — never merged into one "recovered".
+  const head = (hasRecovered || reeng > 0)
+    ? <>Steward has {hasRecovered && <>recovered <strong style={{ color: T.green600 }}>{fmt(recovered)}</strong> in failed-card gifts</>}{hasRecovered && reeng > 0 && " and "}{reeng > 0 && <>re-engaged <strong style={{ color: T.green600 }}>{fmt(reeng)}</strong> from {reengDonors} lapsed donor{reengDonors === 1 ? "" : "s"}</>}, and kept you 100% of every dollar.</>
     : watching > 0
       ? <>Steward is watching <strong style={{ color: T.ink }}>{watching}</strong> recurring donor{watching === 1 ? "" : "s"} for failed cards — and you keep 100% of every gift.</>
       : <>You keep 100% of every gift — <strong style={{ color: T.green600 }}>$0</strong> paid in platform fees.</>;
@@ -62,9 +66,14 @@ function ImpactLine({ impact }) {
       {open && (
         <div style={{ padding: "2px 18px 14px", background: T.green100 }}>
           {hasRecovered && row(
-            "Recovered recurring giving",
+            "Recovered (automated)",
             fmt(recovered),
             `${impact.recoveredCount} gift${impact.recoveredCount === 1 ? "" : "s"} the failed-card recovery workflow won back — money that would have quietly lapsed. 100% attributable, tracked per gift.`
+          )}
+          {reeng > 0 && row(
+            "Re-engaged (surfaced)",
+            fmt(reeng),
+            `${fmt(reeng)} from ${reengDonors} lapsed donor${reengDonors === 1 ? "" : "s"} who came back — a gift after a 365-day gap. Counted separately from automated recovery, never merged into it.`
           )}
           {row(
             "Platform fees you paid Steward",
@@ -403,9 +412,9 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
   // Goal banner's right-hand column — real supporting stats (pace, days
   // left, recent activity) genuinely filling that width, not decoration.
   const GoalStat=({label,value,valueColor,sub})=>(
-    <div style={{background:"rgba(255,255,255,0.04)",border:"1px solid #1a2e1f",borderRadius:10,padding:"10px 14px"}}>
-      <div style={{fontSize:9,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",color:"#8fa896",marginBottom:4}}>{label}</div>
-      <div style={{fontSize:14,fontWeight:700,color:valueColor||"#f0ede6",lineHeight:1.3}}>{value}</div>
+    <div style={{background:"rgba(255,255,255,0.04)",border:"1px solid #1a2e1f",borderRadius:10,padding:"8px 12px"}}>
+      <div style={{fontSize:9,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",color:"#8fa896",marginBottom:3}}>{label}</div>
+      <div style={{fontSize:14,fontWeight:700,color:valueColor||"#f0ede6",lineHeight:1.25}}>{value}</div>
       {sub&&<div style={{fontSize:11,color:"#8fa896",marginTop:2}}>{sub}</div>}
     </div>
   );
@@ -511,6 +520,20 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
   // can't be more than full). Only strictly-over goals get the "over" treatment.
   const goalHeadSub=(rawPct,over)=>rawPct>100?(over>0?`Goal met · ${fmtFull(over)} over`:"Goal met · exceeded"):"of goal reached";
 
+  // BUILD-32 Part 3 — two LIVE figures for the hero's right-hand stack, added as
+  // information (not decoration): this week's giving (a true Monday-based week
+  // from /fundraising/overview) and re-engaged/recovered giving (Part 2, from
+  // /impact). Both real, both move week to week — replacing the static "Active
+  // Goals" count, which never changed week to week.
+  const tw=fundOverview?.thisWeek||{raised:0,giftCount:0};
+  const twStat={label:"This week",value:fmtFull(tw.raised||0),sub:`${tw.giftCount||0} gift${(tw.giftCount||0)===1?"":"s"} logged`};
+  const reengAmt=impact?.reengagedAmount||0, recovAmt=impact?.recoveredAmount||0, reengDonors=impact?.reengagedDonorCount||0;
+  const reengStat=reengAmt>0
+    ? {label:"Re-engaged",value:fmtFull(reengAmt),valueColor:T.gold,sub:`${reengDonors} lapsed donor${reengDonors===1?"":"s"} came back`}
+    : recovAmt>0
+      ? {label:"Recovered",value:fmtFull(recovAmt),valueColor:T.gold,sub:"failed-card gifts won back"}
+      : {label:"Re-engaged",value:"—",sub:"lapsed donors who return"};
+
   // NB: no `fade-in` on the dash-root below. `.fade-in`'s final keyframe retains
   // `transform: translateY(0)` (animation-fill-mode:both), which would make
   // dash-root the containing block for every position:fixed descendant —
@@ -561,7 +584,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
           Graceful: loading → skeleton; 0 goals → banner; 1 → that goal leads,
           no empty roll-up; many → roll-up header + typed breakdown. */}
       {fundOverview===undefined?(
-        <div className="dash-goal-banner" style={{background:`linear-gradient(135deg,${T.green950},${T.green800})`,border:"1px solid #1a2e1f",borderRadius:16,padding:"22px 26px",color:"#8fa896",fontSize:13,display:"flex",alignItems:"center",gap:8}}><Spin/>Loading goals…</div>
+        <div className="dash-goal-banner" style={{background:`linear-gradient(135deg,${T.green950},${T.green800})`,border:"1px solid #1a2e1f",borderRadius:16,padding:"16px 22px",color:"#8fa896",fontSize:13,display:"flex",alignItems:"center",gap:8}}><Spin/>Loading goals…</div>
       ):hasCampaignGoals?(()=>{
         const period=fundOverview.period||{};
         const many=fgRollup.activeGoalCount>=2;
@@ -582,12 +605,12 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
         const delta=period.delta||0;
         const deltaTxt=delta>0?`up ${fmtFull(delta)} vs last`:delta<0?`down ${fmtFull(Math.abs(delta))} vs last`:"level vs last";
         return(<>
-          <div className="dash-goal-banner" style={{background:`linear-gradient(135deg,${T.green950},${T.green800})`,border:"1px solid #1a2e1f",borderRadius:16,padding:"22px 26px",color:"#f0ede6"}}>
+          <div className="dash-goal-banner" style={{background:`linear-gradient(135deg,${T.green950},${T.green800})`,border:"1px solid #1a2e1f",borderRadius:16,padding:"16px 22px",color:"#f0ede6"}}>
             <div className="dash-goal-cols" style={{display:"flex",gap:32,flexWrap:"wrap"}}>
               {/* LEFT — the roll-up (or the single goal) */}
               <div style={{flex:"2 1 300px",minWidth:260}}>
-                <div style={{fontSize:10,fontWeight:800,letterSpacing:"0.12em",textTransform:"uppercase",color:"#8fa896",marginBottom:5}}>{many?"Fundraising — All Active Goals":"Fundraising Goal"}</div>
-                <div style={{fontSize:16,fontWeight:600,color:"#c9c2b4",marginBottom:16,maxWidth:440,display:"flex",alignItems:"center",gap:8}}>
+                <div style={{fontSize:10,fontWeight:800,letterSpacing:"0.12em",textTransform:"uppercase",color:"#8fa896",marginBottom:4}}>{many?"Fundraising — All Active Goals":"Fundraising Goal"}</div>
+                <div style={{fontSize:15,fontWeight:600,color:"#c9c2b4",marginBottom:10,maxWidth:440,display:"flex",alignItems:"center",gap:8}}>
                   <span>{many?`${fgRollup.activeGoalCount} goals toward ${fmtFull(goalAmt)}`:g0.name}</span>
                   {isAdmin&&(
                     <button onClick={e=>{e.stopPropagation();onNavigate("fundraising");}} title="Edit goals in Fundraising"
@@ -596,20 +619,24 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
                     </button>
                   )}
                 </div>
-                <div style={{display:"flex",alignItems:"baseline",gap:10,marginBottom:12}}>
-                  <div style={{fontSize:58,fontWeight:400,fontFamily:"'DM Serif Display',Georgia,serif",color:T.gold,lineHeight:1}}>{rawPct}%</div>
+                <div style={{display:"flex",alignItems:"baseline",gap:10,marginBottom:8}}>
+                  <div style={{fontSize:44,fontWeight:400,fontFamily:"'DM Serif Display',Georgia,serif",color:T.gold,lineHeight:1}}>{rawPct}%</div>
                   <div style={{fontSize:13,fontWeight:600,color:rawPct>100?T.gold:"#8fa896"}}>{goalHeadSub(rawPct,overAmt)}</div>
                 </div>
-                <div style={{background:"#0a120c",borderRadius:99,height:11,overflow:"hidden",marginBottom:10}}>
+                <div style={{background:"#0a120c",borderRadius:99,height:9,overflow:"hidden",marginBottom:8}}>
                   <div style={{height:"100%",width:`${pct}%`,background:T.gold500,borderRadius:99,transition:"width 0.6s ease"}}/>
                 </div>
                 <div style={{fontSize:13,color:"#c9c2b4"}}><strong style={{fontSize:15,color:T.gold,fontFamily:"'DM Serif Display',serif",fontWeight:400}}>{fmtFull(raised)}</strong> of {fmtFull(goalAmt)}{many?` · ${fgRollup.activeGoalCount} active goals`:""}</div>
               </div>
-              {/* RIGHT — real supporting stats */}
-              <div style={{flex:"1 1 200px",minWidth:180,display:"flex",flexDirection:"column",gap:10}}>
+              {/* RIGHT — real supporting stats. Pace + the FY comparison are kept;
+                  this-week giving + re-engaged/recovered giving are the two live
+                  BUILD-32 figures (both move week to week). "Active Goals" (a
+                  static count) was dropped — density here must be information. */}
+              <div style={{flex:"1 1 260px",minWidth:230,display:"grid",gridTemplateColumns:"1fr 1fr",gap:"8px 18px",alignContent:"start"}}>
                 <GoalStat label="Pace" value={heroPace} valueColor={heroPaceCol} sub={many?"across active goals":"vs the period elapsed"}/>
                 <GoalStat label={`This ${fundOverview.periodLabel||"period"}`} value={fmtFull(period.raised||0)} sub={deltaTxt}/>
-                <GoalStat label="Active Goals" value={String(fgRollup.activeGoalCount)} sub={fgRollup.activeGoalCount===1?"goal with a target":"goals with a target"}/>
+                <GoalStat {...twStat}/>
+                <GoalStat {...reengStat}/>
               </div>
             </div>
           </div>
@@ -653,7 +680,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
           )}
         </>);
       })():(
-      <div className="dash-goal-banner" style={{background:`linear-gradient(135deg,${T.green950},${T.green800})`,border:"1px solid #1a2e1f",borderRadius:16,padding:"22px 26px",color:"#f0ede6"}}>
+      <div className="dash-goal-banner" style={{background:`linear-gradient(135deg,${T.green950},${T.green800})`,border:"1px solid #1a2e1f",borderRadius:16,padding:"16px 22px",color:"#f0ede6"}}>
         {goal===undefined?(
           <div style={{display:"flex",alignItems:"center",gap:8,color:"#8fa896",fontSize:13}}><Spin/>Loading goal…</div>
         ):goal?(
@@ -661,8 +688,8 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
             <div className="dash-goal-cols" style={{display:"flex",gap:32,flexWrap:"wrap"}}>
               {/* LEFT — primary */}
               <div style={{flex:"2 1 300px",minWidth:260}}>
-                <div style={{fontSize:10,fontWeight:800,letterSpacing:"0.12em",textTransform:"uppercase",color:"#8fa896",marginBottom:5}}>Fundraising Goal</div>
-                <div style={{fontSize:16,fontWeight:600,color:"#c9c2b4",marginBottom:16,maxWidth:420,display:"flex",alignItems:"center",gap:8}}>
+                <div style={{fontSize:10,fontWeight:800,letterSpacing:"0.12em",textTransform:"uppercase",color:"#8fa896",marginBottom:4}}>Fundraising Goal</div>
+                <div style={{fontSize:15,fontWeight:600,color:"#c9c2b4",marginBottom:10,maxWidth:420,display:"flex",alignItems:"center",gap:8}}>
                   <span>{goal.label}</span>
                   {isAdmin&&(
                     <button onClick={openEditGoal} disabled={isReadOnly} title={isReadOnly?"Reactivate your subscription to make changes.":"Edit goal"}
@@ -672,21 +699,24 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
                   )}
                 </div>
 
-                <div style={{display:"flex",alignItems:"baseline",gap:10,marginBottom:12}}>
-                  <div style={{fontSize:58,fontWeight:400,fontFamily:"'DM Serif Display',Georgia,serif",color:T.gold,lineHeight:1}}>{goal.rawPercent??goal.percent}%</div>
+                <div style={{display:"flex",alignItems:"baseline",gap:10,marginBottom:8}}>
+                  <div style={{fontSize:44,fontWeight:400,fontFamily:"'DM Serif Display',Georgia,serif",color:T.gold,lineHeight:1}}>{goal.rawPercent??goal.percent}%</div>
                   <div style={{fontSize:13,fontWeight:600,color:(goal.rawPercent??goal.percent)>100?T.gold:"#8fa896"}}>{goalHeadSub(goal.rawPercent??goal.percent,goal.over||0)}</div>
                 </div>
-                <div style={{background:"#0a120c",borderRadius:99,height:11,overflow:"hidden",marginBottom:10}}>
+                <div style={{background:"#0a120c",borderRadius:99,height:9,overflow:"hidden",marginBottom:8}}>
                   <div style={{height:"100%",width:`${goal.percent}%`,background:T.gold500,borderRadius:99,transition:"width 0.6s ease"}}/>
                 </div>
                 <div style={{fontSize:13,color:"#c9c2b4"}}><strong style={{fontSize:15,color:T.gold,fontFamily:"'DM Serif Display',serif",fontWeight:400}}>{fmtFull(goal.currentAmount)}</strong> of {fmtFull(goal.goalAmount)}</div>
               </div>
 
-              {/* RIGHT — supporting stats, real data filling the width */}
-              <div style={{flex:"1 1 200px",minWidth:180,display:"flex",flexDirection:"column",gap:10}}>
+              {/* RIGHT — supporting stats. Pace + Time Left kept; this-week giving
+                  + re-engaged/recovered (BUILD-32) are the two live added figures,
+                  replacing the vaguer "recent momentum" text line. */}
+              <div style={{flex:"1 1 260px",minWidth:230,display:"grid",gridTemplateColumns:"1fr 1fr",gap:"8px 18px",alignContent:"start"}}>
                 <GoalStat label="Pace" value={paceLabel} valueColor={paceLabel==="Ahead of pace"?T.gold:paceLabel==="Behind pace"?T.terracotta:"#f0ede6"} sub={paceSub}/>
                 <GoalStat label="Time Left" value={daysLeftInPeriod!=null?`${daysLeftInPeriod} day${daysLeftInPeriod!==1?"s":""}`:"—"} sub="left to reach this goal"/>
-                <GoalStat label="This Week" value={goalDriverHint?goalDriverHint.charAt(0).toUpperCase()+goalDriverHint.slice(1):"No gifts logged yet"} sub={goalDriverHint?"recent momentum":"first gift of the period still to come"}/>
+                <GoalStat {...twStat}/>
+                <GoalStat {...reengStat}/>
               </div>
             </div>
           </>
@@ -705,8 +735,10 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
       {/* Scope toggle — controls the queue below AND the Retention Rate /
           Stewardship Debt cards together (one shared scope, not per-card
           toggles that could disagree). Hidden until my-stats resolves the
-          initial default, so it never flashes the wrong state. */}
-      {scope!==undefined&&(
+          initial default, so it never flashes the wrong state. BUILD-32 Part 4:
+          also hidden unless 2+ officers have assigned donors — otherwise "My
+          donors" and "Whole org" are the same list (a single-value picker). */}
+      {scope!==undefined&&homeData?.multiOfficer&&(
         <div style={{display:"flex",justifyContent:"flex-end",alignItems:"center",gap:8}}>
           <span style={{fontSize:11,color:T.ink3}}>Showing:</span>
           <div style={{display:"flex",background:T.bg,borderRadius:99,padding:2,border:"1px solid "+T.bg3}}>

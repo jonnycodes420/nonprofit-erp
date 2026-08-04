@@ -200,6 +200,15 @@ const boardIds = body => Object.values(body.columns).flat().map(c => c.donorId);
   r = await api("GET", "/pipeline?assignedTo=u_pl_a", B);
   ok("officer cannot peek at another officer's portfolio via assignedTo", boardIds(r.body).sort().join() === bOwn, boardIds(r.body));
 
+  // ── 14. multiOfficer drives hiding the My/All toggle (BUILD-32 Part 4) ─────
+  // The toggle is meaningless in a single-officer org. TEAM has 2 officers with
+  // assigned pipeline donors (A + B) → multiOfficer true; CORE has 1 → false.
+  r = await api("GET", "/pipeline?scope=all", A);
+  ok("TEAM board: multiOfficer true (2 officers with assigned donors → toggle shown)", r.body.multiOfficer === true, r.body.multiOfficer);
+  const cAdmin = await login("c-admin@pl.local");
+  r = await api("GET", "/pipeline", cAdmin);
+  ok("CORE board: multiOfficer false (single officer → toggle hidden)", r.body.multiOfficer === false, r.body.multiOfficer);
+
   await closeDb();
   summary();
 })().catch(e => { console.error(e); process.exit(1); });

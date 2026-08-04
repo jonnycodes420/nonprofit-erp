@@ -87,8 +87,25 @@ async function seedLost(o, donor) {
   await seedSub(A, "da1", 50, "active");
   await seedSub(A, "da2", 10, "past_due");
 
+  // Re-engaged giving (BUILD-32 Part 2) — a LAPSED donor who came back. da3 gave
+  // $200 ~400 days ago, then $15,000 today → the $15k is a re-engagement gift
+  // (a gift after a >365-day gap). da1/da2 each have only a single gift (no prior
+  // gift), so they are first-time/repeat, NOT re-engaged. This is a SEPARATE,
+  // precisely-labelled number from recovered (the failed-card workflow) — proving
+  // the two never merge.
+  await seedDonor(A, "da3");
+  const d400 = new Date(); d400.setDate(d400.getDate() - 400);
+  await q(`INSERT INTO gifts (id,org_id,donor_id,amount,date) VALUES ($1,$2,'da3',200,$3)`, [uid("g"), A, d400.toISOString().slice(0, 10)]);
+  await q(`INSERT INTO gifts (id,org_id,donor_id,amount,date) VALUES ($1,$2,'da3',15000,$3)`, [uid("g"), A, TODAY]);
+
   const tokA = await login("admin@impact-a.local");
   const imp = (await api("GET", "/impact", tokA)).body;
+
+  // (1b) Re-engaged giving — separate from recovered.
+  ok("reengagedAmount = the returned gift after a >365-day gap (15000)", imp.reengagedAmount === 15000, imp.reengagedAmount);
+  ok("reengagedDonorCount = 1 lapsed donor who came back", imp.reengagedDonorCount === 1, imp.reengagedDonorCount);
+  ok("re-engaged is SEPARATE from recovered — both present, not merged", imp.recoveredAmount === 75 && imp.reengagedAmount === 15000, { r: imp.recoveredAmount, e: imp.reengagedAmount });
+  ok("re-engaged excludes first-time gifts (da1/da2 have no prior gift)", imp.reengagedAmount === 15000);
 
   // (1) Hero — recovered dollars = tracked recoveries ONLY.
   ok("recoveredAmount = Σ tracked recovery amounts (25+50=75)", imp.recoveredAmount === 75, imp.recoveredAmount);
@@ -119,6 +136,8 @@ async function seedLost(o, donor) {
   const impB = (await api("GET", "/impact", tokB)).body;
   ok("empty org → recoveredAmount is honestly 0 (no fake number)", impB.recoveredAmount === 0, impB.recoveredAmount);
   ok("empty org → recoveredCount 0", impB.recoveredCount === 0, impB.recoveredCount);
+  ok("empty org → reengagedAmount honestly 0", impB.reengagedAmount === 0, impB.reengagedAmount);
+  ok("empty org → reengagedDonorCount 0", impB.reengagedDonorCount === 0, impB.reengagedDonorCount);
   ok("empty org → onlineGivingProcessed 0, estimate 0", impB.onlineGivingProcessed === 0 && impB.estimatedFeesElsewhere === 0);
   ok("empty org → forward-looking watching count is real (1)", impB.watchingRecurringCount === 1, impB.watchingRecurringCount);
   ok("empty org → platformFeesPaid still factually 0", impB.platformFeesPaid === 0);
@@ -127,6 +146,7 @@ async function seedLost(o, donor) {
   // ── Org isolation both directions ─────────────────────────────────────────
   ok("A does not see B's data (A recovered still 75)", imp.recoveredAmount === 75);
   ok("B does not see A's recoveries (B recovered 0)", impB.recoveredAmount === 0);
+  ok("B does not see A's re-engaged giving (B reengaged 0)", impB.reengagedAmount === 0);
 
   await closeDb();
   summary();

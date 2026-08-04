@@ -243,6 +243,12 @@ export function Pipeline({ isReadOnly, onNavigate, initialScope }) {
   // (BUILD-31 Part 4) — the server reports it and also enforces it. An individual
   // officer sees only their own portfolio, with the toggle hidden.
   const canViewAll = !!(data && data.canViewAll);
+  // BUILD-32 Part 4 — a "My/All portfolios" toggle (and an officer filter) is a
+  // single-value picker in a one-officer org: both views show the same board.
+  // Show them only when 2+ officers actually have assigned donors (server's
+  // `multiOfficer`). Standing UI rule: hide single-value pickers.
+  const multiOfficer = !!(data && data.multiOfficer);
+  const showPortfolioToggle = canViewAll && multiOfficer;
   // Drag-and-drop is a Team write path: off in the locked Core preview and for
   // read-only orgs. The keyboard/button "Move →" path stays available regardless.
   const dndEnabled = !isReadOnly && !locked;
@@ -260,7 +266,7 @@ export function Pipeline({ isReadOnly, onNavigate, initialScope }) {
 
       {/* Scope toggle + add-prospects. The My/All toggle is ADMIN-only oversight. */}
       <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center", margin: "6px 0 10px" }}>
-        {canViewAll && (
+        {showPortfolioToggle && (
           <div style={{ display: "flex", background: T.bg2, borderRadius: T.radiusSm, padding: 3 }}>
             {[["mine", "My portfolio"], ["all", "All portfolios"]].map(([v, l]) => (
               <button key={v} onClick={() => { setScope(v); if (v === "mine") setAssignedTo(""); }}
@@ -275,7 +281,7 @@ export function Pipeline({ isReadOnly, onNavigate, initialScope }) {
       {/* Filters */}
       <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center", margin: "0 0 16px" }}>
         <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search prospects…" style={{ ...filterInp, minWidth: 170 }} />
-        {canViewAll && officers.length > 1 && <select value={assignedTo} onChange={e => setAssignedTo(e.target.value)} style={filterInp}>
+        {showPortfolioToggle && <select value={assignedTo} onChange={e => setAssignedTo(e.target.value)} style={filterInp}>
           <option value="">Any officer</option>
           {officers.map(o => <option key={o.id} value={o.id}>{o.name}</option>)}
         </select>}

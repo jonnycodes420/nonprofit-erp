@@ -4,6 +4,7 @@ import * as XLSX from "xlsx";
 import { apiFetch, API, getToken, adaptDonor } from "../api";
 import { useAuth } from "../main";
 import UpgradeModal from "./UpgradeModal";
+import { bestCampaignMatch } from "../lib/campaignMatch";
 
 class ErrorBoundary extends Component {
   constructor(props) { super(props); this.state = { error: null }; }
@@ -2263,15 +2264,23 @@ function LogTouchpointModal({donor,onSave,onClose}){
   const[otherNotes,setOtherNotes]=useState("");
   const[finFunds,setFinFunds]=useState([]);const[finFundId,setFinFundId]=useState("");const[finAcctId,setFinAcctId]=useState("");
   const[orgEvents,setOrgEvents]=useState([]);
+  // BUILD-32 — real campaign attribution: a Campaign selector (writes campaign_id)
+  // + a "Did you mean <Campaign>?" suggestion when the typed Designation matches
+  // an existing campaign name. `finCampaigns` = the org's goal'd campaigns.
+  const[finCampaigns,setFinCampaigns]=useState([]);const[campaignId,setCampaignId]=useState("");
   useEffect(()=>{
-    Promise.all([apiFetch("/finance/funds"),apiFetch("/finance/accounts"),apiFetch("/events")]).then(([fds,accts,evts])=>{
+    Promise.all([apiFetch("/finance/funds"),apiFetch("/finance/accounts"),apiFetch("/events"),apiFetch("/fundraising/campaigns").catch(()=>[])]).then(([fds,accts,evts,camps])=>{
       setFinFunds(fds);
       const def=fds.find(f=>!f.restricted)||fds[0];if(def)setFinFundId(def.id);
       const ca=accts.find(a=>a.type==="revenue"&&(a.code==="4010"||a.name.toLowerCase().includes("contribution")))||accts.find(a=>a.type==="revenue");
       if(ca)setFinAcctId(ca.id);
       setOrgEvents(Array.isArray(evts)?evts.slice(0,20):[]);
+      setFinCampaigns(Array.isArray(camps)?camps:[]);
     }).catch(()=>{});
   },[]);
+  // Only suggest when the user typed a designation, hasn't already picked a
+  // campaign, and it fuzzy-matches an existing one.
+  const campaignSuggestion=(!campaignId&&designation.trim())?bestCampaignMatch(designation,finCampaigns):null;
 
   const TYPES=[["call","Call"],["meeting","Meeting"],["email","Email"],["event","Event"],["gift","Gift/Pledge"],["other","Other"]];
 
@@ -2313,7 +2322,7 @@ function LogTouchpointModal({donor,onSave,onClose}){
         // The gift route auto-stamps the Finance ledger exactly once (source=gift,
         // carrying the chosen fund). The old separate /finance/transactions call
         // was removed — it double-stamped the ledger (BUILD-21 Part 3).
-        await apiFetch(`/donors/${donor.id}/gifts`,{method:"POST",body:JSON.stringify({amount:giftAmt,date,notes:note,fundId:finFundId||undefined})});
+        await apiFetch(`/donors/${donor.id}/gifts`,{method:"POST",body:JSON.stringify({amount:giftAmt,date,notes:note,fundId:finFundId||undefined,campaignId:campaignId||undefined})});
       }
       onSave({type:saveType,note,date,amount:giftAmt});
     }catch(e){console.error(e);}
@@ -2322,6 +2331,7 @@ function LogTouchpointModal({donor,onSave,onClose}){
 
   const inp={width:"100%",background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"10px 12px",color:T.ink,fontSize:13,outline:"none",fontFamily:"inherit",boxSizing:"border-box"};
   const ta={...inp,resize:"vertical",lineHeight:1.55};
+  const fieldHint={fontSize:11,color:T.ink3,marginTop:4,lineHeight:1.4};
   const canSave=buildNote().trim().length>0;
 
   return(
@@ -2385,7 +2395,18 @@ function LogTouchpointModal({donor,onSave,onClose}){
           </>}
           {type==="gift"&&<>
             <TpField label="Amount"><input type="text" value={amount} onChange={e=>setAmount(e.target.value)} placeholder="e.g. 5,000" style={inp}/></TpField>
-            <TpField label="Designation"><input value={designation} onChange={e=>setDesignation(e.target.value)} placeholder="e.g. General Operating, Arts Education…" style={inp}/></TpField>
+            <TpField label="Designation">
+              <input value={designation} onChange={e=>setDesignation(e.target.value)} placeholder="e.g. General Operating, Arts Education…" style={inp}/>
+              <div style={fieldHint}>What the donor said it's for (free text). To count it toward a goal, pick a Campaign below.</div>
+              {campaignSuggestion&&<button type="button" onClick={()=>setCampaignId(campaignSuggestion.id)} style={{marginTop:6,background:T.gold100||"#f6eccf",border:"1px solid "+(T.gold500||"#c9a84c"),borderRadius:7,padding:"5px 10px",color:T.ink,fontSize:12,fontWeight:600,cursor:"pointer",textAlign:"left"}}>Did you mean the campaign “{campaignSuggestion.name}”? <span style={{color:T.greenDk||"#0d5c3a",fontWeight:700}}>Attribute →</span></button>}
+            </TpField>
+            {finCampaigns.length>0&&<TpField label="Campaign">
+              <select value={campaignId} onChange={e=>setCampaignId(e.target.value)} style={{...inp,cursor:"pointer"}}>
+                <option value="">— not attributed —</option>
+                {finCampaigns.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
+              <div style={fieldHint}>Which goal this counts toward — updates that campaign's thermometer live.</div>
+            </TpField>}
             <TpField label="Payment Method"><input value={payMethod} onChange={e=>setPayMethod(e.target.value)} placeholder="Check, ACH, Credit Card, Stock…" style={inp}/></TpField>
             <TpField label="Acknowledgement Sent?"><TpYesNo val={ackSent} set={setAckSent}/></TpField>
             {finFunds.length>0&&<TpField label="Finance Fund">
@@ -2393,6 +2414,7 @@ function LogTouchpointModal({donor,onSave,onClose}){
                 <option value="">— no fund —</option>
                 {finFunds.map(f=><option key={f.id} value={f.id}>{f.name}{f.restricted?" (Restricted)":""}</option>)}
               </select>
+              <div style={fieldHint}>Which ledger fund it posts to in Finance.</div>
             </TpField>}
             <TpField label="Next Steps"><textarea value={nextStep} onChange={e=>setNextStep(e.target.value)} placeholder="Specific actions planned…" rows={3} style={ta}/></TpField>
           </>}
@@ -3044,7 +3066,14 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
   },[dpTab,donor.id]);
 
   useEffect(()=>{
-    apiFetch("/campaigns").then(r=>setCampaigns(Array.isArray(r)?r:[])).catch(()=>{});
+    // BUILD-32 — attribute gifts to goal'd fundraising campaigns (the ones with
+    // thermometers), not pure email blasts, so a picked campaign actually moves
+    // a goal. Falls back to the email-campaign list if fundraising has none yet.
+    apiFetch("/fundraising/campaigns").then(r=>{
+      const camps=Array.isArray(r)?r:[];
+      if(camps.length)setCampaigns(camps);
+      else apiFetch("/campaigns").then(r2=>setCampaigns(Array.isArray(r2)?r2:[])).catch(()=>{});
+    }).catch(()=>apiFetch("/campaigns").then(r2=>setCampaigns(Array.isArray(r2)?r2:[])).catch(()=>{}));
   },[]);
 
   const saveGiftEdit=async(giftId)=>{
@@ -3071,7 +3100,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
     try{
       await apiFetch(`/donors/${donor.id}/gifts`,{method:"POST",body:JSON.stringify({
         amount:Number(addGiftForm.amount),date:addGiftForm.date,type:addGiftForm.type,
-        campaign:addGiftForm.campaign||"",notes:addGiftForm.notes,
+        campaignId:addGiftForm.campaign_id||undefined,notes:addGiftForm.notes,
         fund_id:addGiftForm.fund_id,payment_method:addGiftForm.payment_method,
         acknowledgement_sent:addGiftForm.acknowledgement_sent,
         pledgeId:addGiftForm.pledgeId||undefined,
@@ -3549,10 +3578,11 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
                 <input value={addGiftForm.payment_method} onChange={e=>setAddGiftForm(p=>({...p,payment_method:e.target.value}))} placeholder="Payment method" style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"8px 10px",color:T.ink,fontSize:13,outline:"none"}}/>
               </div>
               <input value={addGiftForm.notes} onChange={e=>setAddGiftForm(p=>({...p,notes:e.target.value}))} placeholder="Notes" style={{width:"100%",background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"8px 10px",color:T.ink,fontSize:13,outline:"none",boxSizing:"border-box",marginBottom:8}}/>
-              {campaigns.length>0&&<select value={addGiftForm.campaign_id||""} onChange={e=>setAddGiftForm(p=>({...p,campaign_id:e.target.value}))} style={{width:"100%",background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"8px 10px",color:T.ink,fontSize:13,outline:"none",boxSizing:"border-box",marginBottom:8}}>
-                <option value="">No campaign attribution</option>
+              {campaigns.length>0&&<><select value={addGiftForm.campaign_id||""} onChange={e=>setAddGiftForm(p=>({...p,campaign_id:e.target.value}))} style={{width:"100%",background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"8px 10px",color:T.ink,fontSize:13,outline:"none",boxSizing:"border-box",marginBottom:2}}>
+                <option value="">Campaign — not attributed</option>
                 {campaigns.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}
-              </select>}
+              </select>
+              <div style={{fontSize:11,color:T.ink3,marginBottom:8,lineHeight:1.4}}>Which goal this counts toward — updates that campaign's thermometer live.</div></>}
               {pledges.filter(p=>p.status==="open").length>0&&(
                 <select value={addGiftForm.pledgeId} onChange={e=>setAddGiftForm(p=>({...p,pledgeId:e.target.value}))} style={{width:"100%",background:T.bg,border:"1px solid "+T.terracotta+"50",borderRadius:8,padding:"8px 10px",color:T.ink,fontSize:13,outline:"none",boxSizing:"border-box",marginBottom:8}}>
                   <option value="">Not fulfilling a pledge</option>

@@ -989,13 +989,24 @@ export function Settings({auth,logout,initialSection}) {
           what Steward has done for them, not a near-empty Organization card.
           Honest numbers only — forward-looking copy when there's nothing yet. */}
       {impact&&(()=>{
+        // BUILD-32 Part 2 — recovered (failed-card workflow) and re-engaged
+        // (lapsed donors who came back) are TWO separate, precisely-labelled
+        // numbers. Never merged — merging would overclaim "recovered".
         const recovered=impact.recoveredAmount||0;
+        const reeng=impact.reengagedAmount||0;
+        const reengDonors=impact.reengagedDonorCount||0;
         const watching=impact.watchingRecurringCount||0;
-        const msg = recovered>0
-          ? <>Steward has recovered <strong style={{color:T.green600}}>{fmt(recovered)}</strong> in lapsing gifts — and kept you <strong style={{color:T.ink}}>100% of every dollar</strong> (0 platform fees).</>
-          : watching>0
-            ? <>Steward is watching <strong style={{color:T.ink}}>{watching}</strong> recurring gift{watching===1?"":"s"} for failed cards — and you keep <strong style={{color:T.ink}}>100% of every dollar</strong> (0 platform fees).</>
-            : <>You keep <strong style={{color:T.ink}}>100% of every gift</strong> — 0 platform fees. Your recovered-giving and impact numbers appear here as you use Steward.</>;
+        const clauses=[];
+        if(recovered>0)clauses.push(<>recovered <strong style={{color:T.green600}}>{fmt(recovered)}</strong> in failed-card gifts</>);
+        if(reeng>0)clauses.push(<>re-engaged <strong style={{color:T.green600}}>{fmt(reeng)}</strong> from <strong style={{color:T.ink}}>{reengDonors}</strong> lapsed donor{reengDonors===1?"":"s"} who came back</>);
+        let msg;
+        if(clauses.length){
+          msg=<>Steward has {clauses.map((c,i)=><span key={i}>{i>0?(i===clauses.length-1?" and ":", "):""}{c}</span>)} — and kept you <strong style={{color:T.ink}}>100% of every dollar</strong> (0 platform fees).</>;
+        }else if(watching>0){
+          msg=<>Steward is watching <strong style={{color:T.ink}}>{watching}</strong> recurring gift{watching===1?"":"s"} for failed cards — and you keep <strong style={{color:T.ink}}>100% of every dollar</strong> (0 platform fees).</>;
+        }else{
+          msg=<>You keep <strong style={{color:T.ink}}>100% of every gift</strong> — 0 platform fees. Your recovered-giving and re-engaged-giving numbers appear here as you use Steward.</>;
+        }
         return (
           <div style={{background:T.white,border:"1px solid "+T.bg3,borderLeft:"3px solid "+T.gold500,borderRadius:12,padding:"12px 16px",display:"flex",alignItems:"center",gap:10}}>
             <span aria-hidden style={{color:T.gold500,fontSize:14,lineHeight:1}}>◈</span>
@@ -1316,10 +1327,13 @@ export function Settings({auth,logout,initialSection}) {
                 actually recovered for you, next to what the plan costs. Honest,
                 attributable amounts only (never total giving); click for the
                 provenance breakdown + the assumption on the one estimate. */}
-            {impact&&(impact.recoveredAmount>0||impact.watchingRecurringCount>0||impact.onlineGivingProcessed>0)&&(()=>{
+            {impact&&(impact.recoveredAmount>0||impact.reengagedAmount>0||impact.watchingRecurringCount>0||impact.onlineGivingProcessed>0)&&(()=>{
               const recovered=impact.recoveredAmount||0, cost=impact.planMonthlyCost, watching=impact.watchingRecurringCount||0, online=impact.onlineGivingProcessed||0;
-              const head=recovered>0
-                ? <>Steward has recovered <strong style={{color:T.green600}}>{fmt(recovered)}</strong> in lapsing gifts{cost!=null&&<> · your plan is <strong style={{color:T.ink}}>${cost}/mo</strong></>}. You keep 100% of every dollar.</>
+              const reeng=impact.reengagedAmount||0, reengDonors=impact.reengagedDonorCount||0;
+              // Recovered (automated failed-card workflow) and re-engaged (lapsed
+              // donors who came back) are DISTINCT — never merged into "recovered".
+              const head=(recovered>0||reeng>0)
+                ? <>Steward has {recovered>0&&<>recovered <strong style={{color:T.green600}}>{fmt(recovered)}</strong> in failed-card gifts</>}{recovered>0&&reeng>0&&" and "}{reeng>0&&<>re-engaged <strong style={{color:T.green600}}>{fmt(reeng)}</strong> from {reengDonors} lapsed donor{reengDonors===1?"":"s"}</>}{cost!=null&&<> · your plan is <strong style={{color:T.ink}}>${cost}/mo</strong></>}. You keep 100% of every dollar.</>
                 : watching>0
                   ? <>Steward is watching <strong style={{color:T.ink}}>{watching}</strong> recurring donor{watching===1?"":"s"} for failed cards — money most orgs lose silently{cost!=null&&<>, on a <strong style={{color:T.ink}}>${cost}/mo</strong> plan</>}. You keep 100% of every gift.</>
                   : <>You keep 100% of every gift — <strong style={{color:T.green600}}>$0</strong> in platform fees{cost!=null&&<>, on a <strong style={{color:T.ink}}>${cost}/mo</strong> plan</>}.</>;
@@ -1342,8 +1356,10 @@ export function Settings({auth,logout,initialSection}) {
                   </div>
                   {impactOpen&&(
                     <div style={{padding:"2px 16px 12px",background:T.green100}}>
-                      {recovered>0&&brow("Recovered recurring giving",fmt(recovered),
+                      {recovered>0&&brow("Recovered (automated)",fmt(recovered),
                         `${impact.recoveredCount} gift${impact.recoveredCount===1?"":"s"} the failed-card recovery workflow won back — money that would have quietly lapsed. 100% attributable, tracked per gift.`)}
+                      {reeng>0&&brow("Re-engaged (surfaced)",fmt(reeng),
+                        `${fmt(reeng)} from ${reengDonors} lapsed donor${reengDonors===1?"":"s"} who came back — a gift after a 365-day gap. Counted separately from automated recovery, never merged into it.`)}
                       {brow("Platform fees you paid Steward","$0",
                         "Donations run on your own Stripe at a 0% platform fee — you kept 100% of every gift.")}
                       {online>0&&brow(

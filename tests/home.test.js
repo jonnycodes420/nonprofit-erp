@@ -103,6 +103,9 @@ async function seedTask(o, id, owner, due, done = 0) {
   const cult = mine.pipeline.stages.find(s => s.stage === "cultivate");
   ok("cultivate stage shows my 1 donor / $500", cult.count === 1 && cult.value === 500);
   ok("pipeline.forecastOpen = my open asks (5000)", mine.pipeline.forecastOpen === 5000, mine.pipeline.forecastOpen);
+  // BUILD-32 Part 4 — multiOfficer drives whether the Home scope toggle shows.
+  // TEAM has 2 officers with assigned pipeline donors (admin + staff) → true.
+  ok("home: multiOfficer true (2 officers with assigned pipeline donors)", mine.multiOfficer === true, mine.multiOfficer);
 
   // ── Home hero: typed/roll-up goals (BUILD-21 Part 1) ──────────────────────
   // The hero reads /fundraising/overview (same source as the Fundraising tab).
@@ -132,6 +135,9 @@ async function seedTask(o, id, owner, due, done = 0) {
     // No double-count: Σ top-level rolledRaised === rollup.totalRaised.
     const topSum = ov.goals.filter(g => g.isTopLevel && g.lifecycle !== "ended").reduce((s, g) => s + g.rolledRaised, 0);
     ok("hero: Σ top-level rolledRaised === rollup.totalRaised (invariant)", topSum === ov.rollup.totalRaised, { topSum, rollup: ov.rollup.totalRaised });
+    // BUILD-32 Part 3 — the hero's "this week's giving" figure. All 3 TEAM gifts
+    // are dated today (this Monday-based week) → raised 30k, giftCount 3.
+    ok("hero: thisWeek present with raised + giftCount", ov.thisWeek && ov.thisWeek.raised === 30000 && ov.thisWeek.giftCount === 3, ov.thisWeek);
   }
 
   // scope=all widens tasks + pipeline to the whole org
@@ -153,6 +159,8 @@ async function seedTask(o, id, owner, due, done = 0) {
   ok("PLAN GRACE: portfolio hidden (null) on Core", core.portfolio === null);
   ok("PLAN GRACE: pipeline hidden (null) on Core", core.pipeline === null);
   ok("Core still gets Tasks (overdue 1, today 1, total 2)", core.tasks.overdue === 1 && core.tasks.today === 1 && core.tasks.total === 2, core.tasks);
+  // BUILD-32 Part 4 — single-officer org → toggle hidden (single-value picker).
+  ok("core home: multiOfficer false (single officer)", core.multiOfficer === false, core.multiOfficer);
 
   // Hero degradation — 0 goals then exactly 1 (goals are [Core], hero shows for all)
   {

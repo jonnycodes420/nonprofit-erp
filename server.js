@@ -3218,7 +3218,11 @@ app.delete("/interactions/:id", requireAuth, wrap(async (req, res) => {
 
 // ── Gifts ──────────────────────────────────────────────────────────────────
 app.post("/donors/:id/gifts", requireAuth, checkWriteAccess, wrap(async (req, res) => {
-  const { amount, date, type, campaign, notes, pledgeId, fundId } = req.body;
+  const { amount, date, type, campaign, notes, pledgeId } = req.body;
+  // Accept both spellings for back-compat: the touchpoint modal sends `fundId`,
+  // the Add-Gift form sends `fund_id`. Same for the campaign reference.
+  const fundId = req.body.fundId || req.body.fund_id || null;
+  const campaignId = req.body.campaignId || req.body.campaign_id || null;
   if (!amount || isNaN(Number(amount)) || Number(amount) <= 0) {
     return res.status(400).json({ error: "A positive amount is required" });
   }
@@ -3239,6 +3243,19 @@ app.post("/donors/:id/gifts", requireAuth, checkWriteAccess, wrap(async (req, re
     return res.status(404).json({ error: "Fund not found" });
   }
 
+  // BUILD-32 — real campaign attribution. `campaign_id` is the structured
+  // reference a thermometer/roll-up reads (fundraisingCampaignRows matches
+  // campaign_id OR the legacy free-text campaign name). Validated org-scoped so
+  // a foreign campaign id can't be pinned on. Optional (a gift may be
+  // unattributed). We also copy the campaign NAME into the legacy `campaign`
+  // text column so name-based reports/exports stay consistent.
+  let campaignName = campaign || "";
+  if (campaignId) {
+    const camp = await query("SELECT id, name FROM campaigns WHERE id=? AND org_id=?", [campaignId, req.user.orgId]);
+    if (!camp.length) return res.status(404).json({ error: "Campaign not found" });
+    campaignName = camp[0].name;
+  }
+
   // Optional: this gift fulfills a specific open pledge — the "gift
   // recorded against it" stop condition (see processPledgeReminders()).
   // Validated up front so a stale/foreign pledgeId 400s before any insert.
@@ -3257,8 +3274,8 @@ app.post("/donors/:id/gifts", requireAuth, checkWriteAccess, wrap(async (req, re
   const amt = Math.round(Number(amount));                // round, not truncate; INTEGER column
 
   await run(
-    "INSERT INTO gifts (id,org_id,donor_id,amount,date,type,campaign,notes,fund_id) VALUES (?,?,?,?,?,?,?,?,?)",
-    [giftId, req.user.orgId, req.params.id, amt, giftDate, type || "cash", campaign || "", notes || "", fundId || null]
+    "INSERT INTO gifts (id,org_id,donor_id,amount,date,type,campaign,campaign_id,notes,fund_id) VALUES (?,?,?,?,?,?,?,?,?,?)",
+    [giftId, req.user.orgId, req.params.id, amt, giftDate, type || "cash", campaignName || "", campaignId || null, notes || "", fundId || null]
   );
   if (pledgeRow) {
     await run(
@@ -3334,17 +3351,32 @@ app.post("/donors/:id/gifts", requireAuth, checkWriteAccess, wrap(async (req, re
 
 app.put("/gifts/:id", requireAuth, wrap(async (req, res) => {
   const { amount, date, type, campaign, notes, fund_id, payment_method, acknowledgement_sent } = req.body;
+  const campaignId = req.body.campaignId !== undefined ? req.body.campaignId
+                   : req.body.campaign_id !== undefined ? req.body.campaign_id : undefined;
   const existing = await query("SELECT * FROM gifts WHERE id=? AND org_id=?", [req.params.id, req.user.orgId]);
   if (!existing.length) return res.status(404).json({ error: "Gift not found" });
   // §1 tenant isolation: a foreign fund id must not be pinned onto this gift
   // (it would surface another org's fund name in fund-affinity/reports JOINs).
   if (!(await orgOwns("fin_funds", fund_id, req.user.orgId))) return res.status(404).json({ error: "Fund not found" });
   const g = existing[0];
+  // BUILD-32 — campaign attribution editable. A non-null campaignId is validated
+  // org-scoped; passing "" / null explicitly clears attribution. Undefined leaves
+  // the existing value untouched. When set, the legacy name column is kept in sync.
+  let newCampaignId = g.campaign_id, newCampaign = campaign !== undefined ? campaign : g.campaign;
+  if (campaignId !== undefined) {
+    if (campaignId) {
+      const camp = await query("SELECT id, name FROM campaigns WHERE id=? AND org_id=?", [campaignId, req.user.orgId]);
+      if (!camp.length) return res.status(404).json({ error: "Campaign not found" });
+      newCampaignId = camp[0].id; newCampaign = camp[0].name;
+    } else {
+      newCampaignId = null;
+    }
+  }
   const newAmt  = amount !== undefined ? Math.round(Number(amount)) : g.amount; // round, not truncate
   const newDate = date ? normalizeGiftDate(date) : g.date;                       // enforce ISO
   await run(
-    `UPDATE gifts SET amount=?,date=?,type=?,campaign=?,notes=?,fund_id=?,payment_method=?,acknowledgement_sent=? WHERE id=? AND org_id=?`,
-    [newAmt, newDate, type||g.type, campaign!==undefined?campaign:g.campaign,
+    `UPDATE gifts SET amount=?,date=?,type=?,campaign=?,campaign_id=?,notes=?,fund_id=?,payment_method=?,acknowledgement_sent=? WHERE id=? AND org_id=?`,
+    [newAmt, newDate, type||g.type, newCampaign, newCampaignId,
      notes!==undefined?notes:g.notes, fund_id!==undefined?fund_id:g.fund_id,
      payment_method!==undefined?payment_method:g.payment_method,
      acknowledgement_sent!==undefined?acknowledgement_sent:g.acknowledgement_sent,
@@ -4517,6 +4549,18 @@ app.get("/pipeline", requireAuth, wrap(async (req, res) => {
     "SELECT id, name, portfolio_color FROM users WHERE org_id=? ORDER BY name", [orgId]);
   const single_user = officers.length <= 1;
 
+  // BUILD-32 Part 4 — the "My portfolio / All portfolios" toggle (and the
+  // officer filter) is meaningless unless 2+ officers actually have donors to
+  // work. Count distinct officers with ≥1 ASSIGNED donor in a pipeline stage
+  // (the same membership definition the board uses). `multiOfficer` drives
+  // hiding the single-value pickers client-side; `canViewAll` still gates on
+  // admin (a lone admin sees no toggle even though they could "view all").
+  const distinctOfficers = await query(
+    `SELECT COUNT(DISTINCT assigned_to)::int AS c FROM donors
+       WHERE org_id=? AND assigned_to IS NOT NULL AND deleted_at IS NULL
+         AND stage = ANY(?)`, [orgId, ALL_PIPELINE_STAGES]);
+  const multiOfficer = (distinctOfficers[0]?.c || 0) >= 2;
+
   // ── The board is a PORTFOLIO, not the donor list ─────────────────────────
   // Membership = ASSIGNMENT (BUILD-30): a donor assigned to an officer is on
   // that officer's board, full stop. There is no separate "on the board" flag.
@@ -4616,7 +4660,7 @@ app.get("/pipeline", requireAuth, wrap(async (req, res) => {
     `SELECT COALESCE(SUM(gift_amount),0) AS amt, COUNT(*)::int AS cnt FROM opportunities
        WHERE org_id=? AND status='won' AND closed_at >= ?`, [orgId, start]);
   res.json({
-    tier, locked, single_user, stages, scope, sort, canViewAll: isAdmin,
+    tier, locked, single_user, multiOfficer, stages, scope, sort, canViewAll: isAdmin,
     officers: officers.map(o => ({ id: o.id, name: o.name, color: o.portfolio_color })),
     columns, counts, total: donors.length, cap: PER_COLUMN_CAP,
     forecast: {
@@ -5402,6 +5446,14 @@ app.get("/dashboard/home", requireAuth, wrap(async (req, res) => {
   const orgRows = await query("SELECT plan, subscription_status FROM orgs WHERE id=?", [orgId]);
   const tier = orgRows.length ? orgPlanTier(orgRows[0]) : "core";
 
+  // BUILD-32 Part 4 — the Home "My donors / Whole org" scope toggle is a single-
+  // value picker unless 2+ officers actually have assigned donors (then "mine"
+  // and "all" differ). Same signal the Pipeline board uses; drives hiding it.
+  const distinctOfficers = await query(
+    `SELECT COUNT(DISTINCT assigned_to)::int AS c FROM donors
+       WHERE org_id=? AND assigned_to IS NOT NULL AND deleted_at IS NULL`, [orgId]);
+  const multiOfficer = (distinctOfficers[0]?.c || 0) >= 2;
+
   // Tasks buckets [Core] — open tasks, scoped to the user (mine) or org (all).
   const taskScope = scope === "mine" ? "AND assigned_to=?" : "";
   const taskRows = await query(
@@ -5476,7 +5528,7 @@ app.get("/dashboard/home", requireAuth, wrap(async (req, res) => {
     };
   }
 
-  res.json({ tier, scope, portfolio, tasks, pipeline });
+  res.json({ tier, scope, portfolio, tasks, pipeline, multiOfficer });
 }));
 
 // Per-stat drill-downs behind the My Portfolio bar. Each mirrors the exact
@@ -7013,14 +7065,19 @@ app.get("/fundraising/overview", requireAuth, wrap(async (req, res) => {
   const cur = finPeriodBounds(yearMode, 0);
   const prior = finPeriodBounds(yearMode, -1);
   const today = new Date().toISOString().split("T")[0];
+  // BUILD-32 Part 3 — the Home hero's "this week's giving" figure. A true
+  // Monday-based calendar week (weekBounds), independent of the fiscal/calendar
+  // period above, so the hero shows a number that genuinely moves week to week.
+  const wk = weekBounds(0);
 
-  const [goalRows, curRows, priorRows, recentGifts, campaigns, givingPages] = await Promise.all([
+  const [goalRows, curRows, priorRows, weekRows, recentGifts, campaigns, givingPages] = await Promise.all([
     query(
       "SELECT * FROM fundraising_goals WHERE org_id = ? AND period_start <= ? AND period_end >= ? ORDER BY created_at DESC LIMIT 1",
       [orgId, today, today]
     ),
     query("SELECT COALESCE(SUM(amount),0) AS total, COUNT(*) AS gifts, COUNT(DISTINCT donor_id) AS donors FROM gifts WHERE org_id = ? AND date >= ? AND date <= ?", [orgId, cur.start, cur.end]),
     query("SELECT COALESCE(SUM(amount),0) AS total FROM gifts WHERE org_id = ? AND date >= ? AND date <= ?", [orgId, prior.start, prior.end]),
+    query("SELECT COALESCE(SUM(amount),0) AS total, COUNT(*) AS gifts FROM gifts WHERE org_id = ? AND date >= ? AND date <= ?", [orgId, wk.start, wk.end]),
     query(
       `SELECT g.id, g.amount, g.date, g.stripe_payment_id, g.campaign, g.donor_id, d.name AS donor_name
          FROM gifts g LEFT JOIN donors d ON d.id = g.donor_id
@@ -7082,6 +7139,10 @@ app.get("/fundraising/overview", requireAuth, wrap(async (req, res) => {
       donorCount: parseInt(curRows[0]?.donors, 10) || 0,
       priorRaised: priorTotal,
       delta: periodTotal - priorTotal,
+    },
+    thisWeek: {
+      raised: parseFloat(weekRows[0]?.total) || 0,
+      giftCount: parseInt(weekRows[0]?.gifts, 10) || 0,
     },
     campaigns: {
       count: campaigns.length,
@@ -11974,6 +12035,27 @@ app.get("/impact", requireAuth, wrap(async (req, res) => {
   const recoveredCount = recRows[0]?.c || 0;
   const recoveredAmount = parseFloat(recRows[0]?.amt) || 0;
 
+  // (1b) BUILD-32 Part 2 — RE-ENGAGED giving: gifts from donors who were LAPSED
+  // and gave again. This is a SEPARATE, precisely-labelled number — it is NOT
+  // "recovered" (that word is reserved for the failed-card recovery workflow
+  // above; overclaiming it would betray the honest-design brand). "Re-engaged"
+  // is a gift that followed a >365-day gap since the donor's prior gift — the
+  // SAME lapse definition (LAPSE_DAYS) as inferStage / the auto-lapse sweep /
+  // the win-back goal, so it's a real, measurable event, not an estimate. We
+  // count EVERY such re-engagement gift (not only a donor's current last gift),
+  // so a donor who lapsed, came back, then lapsed and came back again is counted
+  // for each genuine return. reengagedDonorCount = distinct donors who came back.
+  const reengRows = await query(
+    `SELECT COALESCE(SUM(g.amount),0) AS amt, COUNT(DISTINCT g.donor_id)::int AS donors
+       FROM gifts g
+      WHERE g.org_id = ?
+        AND (SELECT MAX(g2.date) FROM gifts g2 WHERE g2.donor_id = g.donor_id AND g2.date < g.date) IS NOT NULL
+        AND g.date::date - (SELECT MAX(g2.date) FROM gifts g2 WHERE g2.donor_id = g.donor_id AND g2.date < g.date)::date > 365`,
+    [orgId]
+  );
+  const reengagedAmount = parseFloat(reengRows[0]?.amt) || 0;
+  const reengagedDonorCount = reengRows[0]?.donors || 0;
+
   // (2) Fees kept — factual. Base = online giving processed through Steward
   // (own-Stripe donations, stripe_payment_id set), which the org kept 100% of.
   const givingRows = await query(
@@ -12003,8 +12085,10 @@ app.get("/impact", requireAuth, wrap(async (req, res) => {
   const planMonthlyCost = PLAN_MONTHLY_COST[plan] ?? null;
 
   res.json({
-    recoveredAmount,               // hero, hard, attributable
+    recoveredAmount,               // hero, hard, attributable (failed-card workflow)
     recoveredCount,
+    reengagedAmount,               // SURFACED, separate — lapsed donors who came back
+    reengagedDonorCount,
     platformFeesPaid: 0,           // factual — 0% platform fee, own Stripe
     onlineGivingProcessed,         // base for the fee estimate
     estimatedFeesElsewhere,        // ESTIMATE — see feeAssumptionPct
