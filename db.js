@@ -1332,6 +1332,15 @@ async function initSchema() {
   // follows the user across devices because it lives here, not localStorage.
   await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS home_layout TEXT`);
 
+  // ── BUILD-35: "Set up Steward" activation checklist card state ────────────
+  // The card's ITEMS are never stored — each done-state is computed live from
+  // org data (donor count, stripe_account_id, receipt_address, live giving
+  // page, enabled workflow, team members). Only the card's dismissal
+  // preference persists, per ORG (admins share it): NULL = show while
+  // incomplete, 'collapsed' = the small "Finish setup" chip, 'hidden' =
+  // explicitly never show again.
+  await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS setup_card_state TEXT`);
+
   // ── Moves management & prospect pipeline (BUILD-15, Team plan) ────────────
   // The major-gifts spine. Reuses the existing donors.stage field as the
   // managed pipeline (no second stage column is forked). Every stage change

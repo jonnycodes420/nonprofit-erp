@@ -5163,7 +5163,7 @@ function MergeDuplicatesModal({onClose,onMerged,isReadOnly}){
 }
 
 // ── Donors ─────────────────────────────────────────────────────────────────
-export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,initialLogDonorId,initialStageFilter,initialSelectDonorId,onIntentConsumed}){
+export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,initialLogDonorId,initialStageFilter,initialSelectDonorId,initialOpenImport,onIntentConsumed}){
   const{auth}=useAuth();
   const isAdmin=auth?.user?.role==="admin";
   const userId=auth?.user?.id||"";
@@ -5228,7 +5228,11 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
   const officerColorMap=useMemo(()=>Object.fromEntries(officers.filter(o=>o.portfolio_color).map(o=>[o.id,o.portfolio_color])),[officers]);
 
   useEffect(()=>{
-    if((initialView||initialLogDonorId||initialStageFilter||initialSelectDonorId)&&onIntentConsumed)onIntentConsumed();
+    if((initialView||initialLogDonorId||initialStageFilter||initialSelectDonorId||initialOpenImport)&&onIntentConsumed)onIntentConsumed();
+    // The setup checklist's "Import your donors" deep link lands with the
+    // one-file magical import (Import + History) already open — the exact
+    // spot, not the tab root.
+    if(initialOpenImport&&!isReadOnly)setShowCombinedImport(true);
     // A deep-linked selection starts from a summary row — upgrade it to the
     // full record (selectDonor is defined below; safe to call from here).
     if(initialSelectDonorId){

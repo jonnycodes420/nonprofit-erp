@@ -99,7 +99,7 @@ async function seedUser(o, id, tag) {
   const { mergeLayout, DEFAULT_LAYOUT, HOME_SECTIONS, isDefaultLayout, sectionMeta, moveToTop } =
     await import("../client/src/lib/homeLayout.js");
 
-  ok("canonical list has the hero first and 7 sections", HOME_SECTIONS.length === 7 && HOME_SECTIONS[0].id === "hero", HOME_SECTIONS.map(s => s.id));
+  ok("canonical list has the hero first and 8 sections (setup added by BUILD-35)", HOME_SECTIONS.length === 8 && HOME_SECTIONS[0].id === "hero" && HOME_SECTIONS[1].id === "setup", HOME_SECTIONS.map(s => s.id));
   ok("hero is the ONLY unhideable section", HOME_SECTIONS.filter(s => s.hideable === false).map(s => s.id).join(",") === "hero");
 
   const m0 = mergeLayout(null);
@@ -119,7 +119,7 @@ async function seedUser(o, id, tag) {
   const m1 = mergeLayout(stale);
   ok("merge keeps the user's order for known ids", m1.slice(0, 5).map(x => x.id).join(",") === "work,hero,commandCenter,myPortfolio,goalCards", m1);
   ok("merge drops retired/unknown ids", !m1.some(x => x.id === "retiredSection"));
-  ok("NEW section ids appear for a stale config, visible, in canonical order", m1.slice(5).map(x => `${x.id}:${x.visible}`).join(",") === "retention:true,impact:true", m1);
+  ok("NEW section ids appear for a stale config, visible, in canonical order", m1.slice(5).map(x => `${x.id}:${x.visible}`).join(",") === "setup:true,retention:true,impact:true", m1);
   ok("merge preserves saved hidden flags", m1.find(x => x.id === "commandCenter").visible === false);
   ok("merged stale config is a full layout", m1.length === DEFAULT_LAYOUT.length);
 

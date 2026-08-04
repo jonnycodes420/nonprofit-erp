@@ -36,11 +36,11 @@ cd "$(dirname "$0")/.."
 CORE=(
   attribution-completeness
   billing billing-config-error brand-glyph branding clickability consistency-e2e designations digests
-  donor-merge email-links finance-entity-routing finance-funds finance-gift-stamp finance-overview
+  donor-merge email-links email-polish finance-entity-routing finance-funds finance-gift-stamp finance-overview
   finance-reintegration fundraising gift-attribution goals home home-layout households impact
   import-assign import-both import-combined import-shape import-stage
   locked-features
-  brand-allowlist moves no-emoji onboarding-brand palette pipeline pipeline-gating portfolios portfolio-pipeline-consistency reports-cadence
+  brand-allowlist moves no-emoji onboarding-brand palette pipeline pipeline-gating portfolios portfolio-pipeline-consistency reports-cadence setup-checklist
   report-truth
   smart-moves tasks tenant-isolation upgrade-checkout workflows workflows-e2e
   finance-reports-consistency name-normalize reserved-recovered concurrency

@@ -103,6 +103,87 @@ function ImpactLine({ impact }) {
   );
 }
 
+// ── BUILD-35: "Set up Steward" activation checklist ──────────────────────────
+// Each row's done-state comes computed live from GET /org/setup-status — never
+// stored per-step — so an item checks itself off however the underlying thing
+// became true (wizard, Settings, a teammate). The server owns the computation;
+// this map owns the words and the EXACT deep link per item (a specific screen,
+// never a tab root). The `team` key only arrives on Team tier (plan-graceful:
+// hidden on Core, not shown-and-locked).
+const SETUP_ITEM_META = {
+  donors:     { label: "Import your donors",             why: "Steward can only watch donors it knows about",                                cta: "Import",  nav: ["donors", { openImport: true }] },
+  stripe:     { label: "Connect Stripe",                 why: "unlocks online giving and failed-card recovery — you keep 100% of every gift", cta: "Connect", nav: ["settings", { section: "giving" }] },
+  address:    { label: "Add your mailing address",       why: "goes in every email footer (CAN-SPAM) and clears the reminder banner",         cta: "Add",     nav: ["settings", { section: "receipts" }] },
+  givingPage: { label: "Publish a giving page",          why: "a shareable page your donors can give through today",                          cta: "Publish", nav: ["settings", { section: "giving" }] },
+  workflow:   { label: "Turn on your first automation",  why: "automations are how Steward watches your donors while you work",               cta: "Turn on", nav: ["workflows", undefined] },
+  team:       { label: "Invite your team",               why: "portfolios and pipelines start when your gift officers are in",                cta: "Invite",  nav: ["settings", { section: "team" }] },
+};
+
+function SetupChecklist({ status, onNavigate, isAdmin, onSetCardState }) {
+  const { items, doneCount, totalCount, cardState } = status;
+
+  if (cardState === "collapsed") {
+    return (
+      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+        <button onClick={() => onSetCardState(null)}
+          aria-label={`Finish setting up Steward — ${doneCount} of ${totalCount} done`}
+          style={{ display: "inline-flex", alignItems: "center", gap: 8, background: T.white, border: "1px solid " + T.bg3, borderRadius: 99, padding: "7px 14px", fontSize: 12.5, fontWeight: 700, color: T.ink2, cursor: "pointer" }}>
+          <span aria-hidden style={{ color: T.gold500 }}>◈</span>
+          Finish setup · {doneCount}/{totalCount}
+        </button>
+        {isAdmin && (
+          <button onClick={() => onSetCardState("hidden")} aria-label="Don't show the setup checklist again"
+            title="Don't show this again"
+            style={{ background: "none", border: "none", color: T.ink3, fontSize: 15, cursor: "pointer", padding: 4, lineHeight: 1 }}>×</button>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ background: T.white, border: "1px solid " + T.bg3, borderRadius: 14, padding: "16px 18px" }}>
+      <div style={{ display: "flex", alignItems: "baseline", gap: 12, marginBottom: 4 }}>
+        <div style={{ fontSize: 10.5, fontWeight: 800, letterSpacing: "0.1em", textTransform: "uppercase", color: T.ink3 }}>Set up Steward</div>
+        <div style={{ fontSize: 12, fontWeight: 700, color: T.ink2 }}>{doneCount} of {totalCount}</div>
+        <div style={{ flex: 1 }} />
+        {isAdmin && (
+          <button onClick={() => onSetCardState("collapsed")}
+            style={{ background: "none", border: "none", color: T.ink3, fontSize: 12, fontWeight: 600, cursor: "pointer", textDecoration: "underline", padding: 2 }}>
+            I'll finish later
+          </button>
+        )}
+      </div>
+      {/* solid gold fill — bar LENGTH carries the meaning (no gradients) */}
+      <div aria-hidden style={{ height: 4, borderRadius: 2, background: T.bg3, overflow: "hidden", marginBottom: 10 }}>
+        <div style={{ height: "100%", width: `${totalCount ? Math.round((doneCount / totalCount) * 100) : 0}%`, background: T.gold500, borderRadius: 2 }} />
+      </div>
+      {items.map(item => {
+        const meta = SETUP_ITEM_META[item.key];
+        if (!meta) return null;
+        if (item.done) {
+          return (
+            <div key={item.key} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 2px", borderTop: "1px solid " + T.bg2 }}>
+              <span aria-hidden style={{ width: 20, height: 20, borderRadius: "50%", background: T.green600, color: T.white, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, flexShrink: 0 }}>✓</span>
+              <span style={{ fontSize: 13, fontWeight: 600, color: T.ink3 }}>{meta.label}</span>
+            </div>
+          );
+        }
+        return (
+          <div key={item.key} {...interactive(() => onNavigate(meta.nav[0], meta.nav[1]), { label: `${meta.label} — ${meta.why}` })}
+            style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 2px", borderTop: "1px solid " + T.bg2, borderRadius: 8 }}>
+            <span aria-hidden style={{ width: 20, height: 20, borderRadius: "50%", border: "1.5px solid " + T.bg3, flexShrink: 0 }} />
+            <span style={{ flex: 1, minWidth: 0 }}>
+              <span style={{ fontSize: 13, fontWeight: 700, color: T.ink }}>{meta.label}</span>
+              <span style={{ display: "block", fontSize: 11.5, color: T.ink3, lineHeight: 1.45 }}>{meta.why}</span>
+            </span>
+            <span style={{ fontSize: 12, fontWeight: 700, color: T.green600, whiteSpace: "nowrap" }}>{meta.cta} →</span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 // ── Dashboard / Home ─────────────────────────────────────────────────────────
 export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
   const {auth}=useAuth();
@@ -152,6 +233,32 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
   // Need-to-do/Pipeline), plan-graceful (Core hides the Team headers).
   const [homeData,setHomeData]=useState(null);
   const [firstTouchOpen,setFirstTouchOpen]=useState(false);
+
+  // ── BUILD-35: activation checklist state ──────────────────────────────────
+  const setupOrgId=(()=>{try{return JSON.parse(localStorage.getItem("npe_org")||"{}").id||"org";}catch{return "org";}})();
+  const [setupStatus,setSetupStatus]=useState(null);
+  // Whether THIS load is the completion moment. Decided ONCE at fetch time —
+  // GoldMoment stamps its once-ever localStorage flag on mount, so a render
+  // gate that re-read the flag would kill the banner on the very next
+  // re-render (it did, in the live drive).
+  const [setupCelebrate,setSetupCelebrate]=useState(false);
+  useEffect(()=>{
+    apiFetch("/org/setup-status").then(s=>{
+      let seen=false,fired=false;
+      try{seen=!!localStorage.getItem(`steward_setup_seen_${setupOrgId}`);fired=!!localStorage.getItem(`steward_gold_setup_complete_${setupOrgId}`);}catch{/* private mode */}
+      // Remember this org was ever seen INCOMPLETE — it gates the completion
+      // GoldMoment, so an org that was already fully set up before the card
+      // existed never gets congratulated for it (don't nag, don't flatter).
+      if(s&&!s.complete){try{localStorage.setItem(`steward_setup_seen_${setupOrgId}`,"1");}catch{/* private mode */}}
+      if(s&&s.complete&&seen&&!fired)setSetupCelebrate(true);
+      setSetupStatus(s);
+    }).catch(()=>{}); // offline/error → no card, Home unaffected
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[]);
+  const setSetupCardState=async(state)=>{
+    setSetupStatus(s=>s?{...s,cardState:state}:s); // optimistic
+    try{await apiFetch("/org/setup-card",{method:"PUT",body:JSON.stringify({state})});}catch{/* keep optimistic view; recomputed next load */}
+  };
 
   // ── BUILD-34: per-user section layout + edit mode ─────────────────────────
   const [layout,setLayout]=useState(undefined);       // undefined = loading; then the MERGED [{id,visible}]
@@ -1273,7 +1380,22 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
           chrome is absolutely positioned (outline + floating pill) so
           entering/leaving edit mode causes zero layout shift. */}
       {layout!==undefined&&(()=>{
-        const sections={hero:heroSection,goalCards:goalCardsSection,commandCenter:commandCenterSection,myPortfolio:myPortfolioSection,retention:retentionSection,work:workSection,impact:impactSection};
+        // BUILD-35: the setup card renders only while the org is genuinely
+        // un-activated (and not explicitly hidden). On the completion
+        // TRANSITION — complete now, but previously seen incomplete — it
+        // renders one GoldMoment (self-gated once-per-org), then nothing,
+        // forever. An always-been-complete org never sees any of it.
+        const setupSection=(()=>{
+          if(!setupStatus)return null;
+          if(setupStatus.cardState==="hidden")return null;
+          if(setupStatus.complete){
+            if(!setupCelebrate)return null;
+            return <GoldMoment moment="setup_complete" title="Steward is set up."
+              line="Donors in, giving connected, automations watching. This card retires itself — everything it linked to lives in Settings."/>;
+          }
+          return <SetupChecklist status={setupStatus} onNavigate={onNavigate} isAdmin={isAdmin} onSetCardState={setSetupCardState}/>;
+        })();
+        const sections={hero:heroSection,setup:setupSection,goalCards:goalCardsSection,commandCenter:commandCenterSection,myPortfolio:myPortfolioSection,retention:retentionSection,work:workSection,impact:impactSection};
         const rendered=layout.filter(r=>r.visible&&sections[r.id]!=null);
         const firstScopedId=rendered.find(r=>SCOPED_SECTION_IDS.includes(r.id))?.id;
         const hiddenRows=layout.filter(r=>!r.visible);

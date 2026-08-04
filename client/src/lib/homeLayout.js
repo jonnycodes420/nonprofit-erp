@@ -15,6 +15,10 @@ export const HERO_ID = "hero";
 // `label` is what edit mode + the hidden tray call the section.
 export const HOME_SECTIONS = [
   { id: "hero", label: "Fundraising goal", hideable: false },
+  // BUILD-35: the activation checklist — renders nothing once the org is set
+  // up (or has hidden it), so for activated orgs this slot simply doesn't
+  // exist on screen. Normal hideable rules (don't fight the layout system).
+  { id: "setup", label: "Set up Steward", hideable: true },
   { id: "goalCards", label: "Goal breakdown", hideable: true },
   { id: "commandCenter", label: "Today at a glance", hideable: true },
   { id: "myPortfolio", label: "My Portfolio", hideable: true },

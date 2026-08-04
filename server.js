@@ -1063,6 +1063,25 @@ function normalizeName(raw) {
   return s;
 }
 
+// Display-name casing for EMAIL headers/subjects (BUILD-35 Part 2). The
+// conservative HALF of normalizeName: re-case ONLY a wholly-lower/upper string
+// ("atkinson" → "Atkinson", "jon" → "Jon"); any internal mixed case means a
+// human already cased it ("CREO Arts", "McKinney") and is preserved verbatim.
+// Deliberately NO "Last, First" flip — this is for org/user display strings,
+// not imported donor rows. Applied where org/user names enter outbound email
+// (branded header, digest subjects/headings, invites) so raw signup casing
+// never renders in a big green band.
+function displayNameCase(raw) {
+  if (raw == null) return raw;
+  const s = String(raw).replace(/\s+/g, " ").trim();
+  if (!s) return s;
+  const letters = s.replace(/[^A-Za-zÀ-ÿ]/g, "");
+  const allUpper = letters && letters === letters.toUpperCase();
+  const allLower = letters && letters === letters.toLowerCase();
+  if (allUpper || allLower) return s.replace(/[A-Za-zÀ-ÿ][A-Za-zÀ-ÿ'’.\-]*/g, w => _titleCaseWord(w));
+  return s;
+}
+
 // ── Donor summary recalculation ────────────────────────────────────────────
 // Recomputes total_giving, gift_count, last_gift_date, last_gift_amount
 // from the gifts table (source of truth). Replace delta adjustments on
@@ -1744,6 +1763,65 @@ app.get("/org", requireAuth, wrap(async (req, res) => {
   res.json({ ...org, accessState: getOrgAccessState(org) });
 }));
 
+// ── BUILD-35: "Set up Steward" activation checklist ─────────────────────────
+// Every item's done-state is COMPUTED live from the actual org data — never
+// stored per-step — so an item checks itself off however the underlying thing
+// became true (wizard, Settings, a teammate). No checklist state can drift
+// out of sync with reality (the count-matches-destination lesson applied to
+// setup). Only the card's dismissal preference is stored (orgs.setup_card_state).
+const SETUP_DONOR_THRESHOLD = 5; // >5 real donors = "imported" (matches the sample-data loader's real-org bar)
+
+app.get("/org/setup-status", requireAuth, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  const orgs = await query("SELECT * FROM orgs WHERE id = ?", [orgId]);
+  if (!orgs.length) return res.status(404).json({ error: "Org not found" });
+  const org = orgs[0];
+  const tier = orgPlanTier(org);
+
+  const [donorRow, pageRow, wfRow, userRow, inviteRow] = await Promise.all([
+    query(`SELECT COUNT(*)::int AS n FROM donors WHERE org_id = ? AND deleted_at IS NULL AND is_sample IS NOT TRUE`, [orgId]),
+    query(`SELECT COUNT(*)::int AS n FROM giving_pages WHERE org_id = ? AND status = 'active'`, [orgId]),
+    query(`SELECT COUNT(*)::int AS n FROM workflows WHERE org_id = ? AND enabled = TRUE`, [orgId]),
+    query(`SELECT COUNT(*)::int AS n FROM users WHERE org_id = ?`, [orgId]),
+    query(`SELECT COUNT(*)::int AS n FROM invites WHERE org_id = ? AND accepted_at IS NULL AND expires_at > NOW()`, [orgId]),
+  ]);
+  const donorCount = donorRow[0].n;
+
+  // In value order. `key` is stable (the client owns labels/why-lines/deep
+  // links); `done` is the live computation. The invite item exists only on
+  // Team tier — plan-graceful means HIDDEN on Core, not shown-and-locked.
+  const items = [
+    { key: "donors", done: donorCount > SETUP_DONOR_THRESHOLD, count: donorCount },
+    { key: "stripe", done: !!org.stripe_account_id },
+    { key: "address", done: !!(org.receipt_address && String(org.receipt_address).trim()) },
+    { key: "givingPage", done: pageRow[0].n > 0 },
+    { key: "workflow", done: wfRow[0].n > 0 },
+    ...(tier === "team" ? [{ key: "team", done: userRow[0].n >= 2 || inviteRow[0].n > 0 }] : []),
+  ];
+  const doneCount = items.filter(i => i.done).length;
+  res.json({
+    items,
+    doneCount,
+    totalCount: items.length,
+    complete: doneCount === items.length,
+    cardState: org.setup_card_state || null,
+    tier,
+  });
+}));
+
+// The card's dismissal preference — per ORG (admins share it), requireAdmin.
+// Deliberately NOT checkWriteAccess-gated: collapsing a setup card is a
+// display preference, not org data; a read_only org may still tidy its Home.
+app.put("/org/setup-card", requireAuth, requireAdmin, wrap(async (req, res) => {
+  const { state } = req.body || {};
+  const normalized = state === "" || state == null ? null : state;
+  if (normalized !== null && normalized !== "collapsed" && normalized !== "hidden") {
+    return res.status(400).json({ error: "state must be null, 'collapsed', or 'hidden'" });
+  }
+  await run(`UPDATE orgs SET setup_card_state = ? WHERE id = ?`, [normalized, req.user.orgId]);
+  res.json({ success: true, cardState: normalized });
+}));
+
 app.patch("/orgs/:id", requireAuth, requireAdmin, wrap(async (req, res) => {
   if (req.user.orgId !== req.params.id) return res.status(403).json({ error: "Forbidden" });
   const { name, mission, focusArea, annualBudget, foundedYear, website,
@@ -2231,8 +2309,8 @@ app.post("/auth/invite", requireAuth, requireAdmin, wrap(async (req, res) => {
       const { error } = await resend.emails.send({
         from,
         to: normalizedEmail,
-        subject: `You've been invited to join ${org.name} on Steward`,
-        html: `<p>You've been invited to join <strong>${org.name}</strong> on Steward as a <strong>${validRole}</strong>.</p>
+        subject: `You've been invited to join ${displayNameCase(org.name)} on Steward`,
+        html: `<p>You've been invited to join <strong>${displayNameCase(org.name)}</strong> on Steward as a <strong>${validRole}</strong>.</p>
                <p><a href="${inviteLink}" style="background:#c9a84c;color:#0f1a12;padding:10px 20px;border-radius:8px;text-decoration:none;font-weight:bold;display:inline-block;margin:16px 0">Accept Invitation</a></p>
                <p>This link expires in 7 days.</p>`,
       });
@@ -3876,7 +3954,7 @@ async function sendReceiptEmail(org, donor, snapshot, pdfBuffer, filename) {
   if (!process.env.RESEND_API_KEY) return false;
   try {
     const from = process.env.DEMO_SMTP_FROM || "noreply@stewardapp.dev";
-    const subject = `Your donation receipt from ${org.name}`;
+    const subject = `Your donation receipt from ${displayNameCase(org.name)}`;
     const html = `<p>Hi ${escapeHtml(donor.name || "there")},</p>
       <p>Thank you for your generous gift to <strong>${escapeHtml(org.name)}</strong> — your official ${snapshot.type === "year_end" ? "year-end giving statement" : "tax receipt"} is attached.</p>
       <p style="color:#6b7280;font-size:13px">Receipt #${escapeHtml(snapshot.receiptNumber)}</p>`;
@@ -6849,7 +6927,7 @@ async function brandEmailHeaderHtml(orgId) {
   const esc = s => String(s || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
   const accent = org.brand_accent || "#1a6b4a";
   const fg = org.brand_accent_fg || "#ffffff";
-  const name = esc(org.legal_name || org.name || "");
+  const name = esc(displayNameCase(org.legal_name || org.name || ""));
   const logo = (org.logo_data && /^data:image\/(png|jpe?g|gif|webp);base64,/.test(org.logo_data))
     ? `<img src="${org.logo_data}" alt="${name}" height="34" style="height:34px;max-width:150px;vertical-align:middle;border:0;display:inline-block;margin-right:10px;" />`
     : "";
@@ -8441,7 +8519,7 @@ async function sendFundraiserManageEmail(org, fundraiser, givingPage, manageUrl)
     const { error } = await resend.emails.send({
       from,
       to: fundraiser.email,
-      subject: `Your fundraiser for ${org.name} is live!`,
+      subject: `Your fundraiser for ${displayNameCase(org.name)} is live!`,
       html: `<p>Hi ${escapeHtml(fundraiser.name)},</p>
              <p>Thanks for starting a personal fundraiser for <strong>${escapeHtml(givingPage.title)}</strong> on behalf of <strong>${escapeHtml(org.name)}</strong>! Your page is live and ready to share.</p>
              <p><a href="${manageUrl}" style="background:#c9a84c;color:#0f1a12;padding:10px 20px;border-radius:8px;text-decoration:none;font-weight:bold;display:inline-block;margin:16px 0">Manage Your Fundraiser</a></p>
@@ -10476,7 +10554,7 @@ function renderWeekInReviewBody(sec, win, headingName) {
 function renderOfficerMonthlyBody(rep, win) {
   const stat = (l, v) => `<div style="display:inline-block;min-width:130px;margin:6px 14px 6px 0;"><div style="font-size:10px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:#6b7d70;">${l}</div><div style="font-size:20px;font-weight:800;color:#0f1a12;">${v}</div></div>`;
   return `<div style="padding:22px;background:#f0ede6;font-family:'DM Sans',Helvetica,Arial,sans-serif;">
-    <div style="font-family:'DM Serif Display',Georgia,serif;font-size:22px;color:#0f1a12;">Monthly Report — ${digestEsc(rep.officerName)}</div>
+    <div style="font-family:'DM Serif Display',Georgia,serif;font-size:22px;color:#0f1a12;">Monthly Report — ${digestEsc(displayNameCase(rep.officerName))}</div>
     <div style="font-size:13px;color:#6b7d70;margin-top:2px;">${digestEsc(win.start)} – ${digestEsc(win.end)}</div>
     <div style="margin-top:16px;padding:16px;background:#fff;border-radius:12px;border:1px solid #e5e0d5;">
       ${stat("Asks made", `${rep.asksMade} · ${digestMoney(rep.asksMadeAmount)}`)}
@@ -10486,6 +10564,28 @@ function renderOfficerMonthlyBody(rep, win) {
     </div>
   </div>`;
 }
+
+// "Due for a touch" — the real-data nudge behind an otherwise-empty digest
+// (BUILD-35 Part 2): assigned (or org-wide) donors with no interaction in the
+// last 30 days. An all-zero stat row shames and spams; a computed nudge tells
+// the officer the one useful thing their data actually says.
+async function countDonorsDueForTouch(orgId, officerId = null) {
+  const cutoff = new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10);
+  const oFilter = officerId ? "AND d.assigned_to = ?" : "";
+  const [row] = await query(
+    `SELECT COUNT(*)::int AS n FROM donors d
+     WHERE d.org_id = ? AND d.deleted_at IS NULL AND d.is_sample IS NOT TRUE ${oFilter}
+       AND NOT EXISTS (SELECT 1 FROM interactions i
+                       WHERE i.donor_id = d.id AND i.org_id = d.org_id AND LEFT(i.date,10) >= ?)`,
+    officerId ? [orgId, officerId, cutoff] : [orgId, cutoff]);
+  return row.n;
+}
+
+const digestNudgeHtml = (line, linkLabel) =>
+  `<div style="margin-top:16px;padding:16px;background:#fff;border-radius:12px;border:1px solid #e5e0d5;font-family:'DM Sans',Helvetica,Arial,sans-serif;font-size:14px;color:#0f1a12;line-height:1.6;">
+    ${line}
+    <div style="margin-top:10px;"><a href="${publicAppUrl()}/dashboard" style="color:#0d5c3a;font-weight:700;text-decoration:underline;">${linkLabel} →</a></div>
+  </div>`;
 
 // Reserve one recipient's digest (idempotency choke point). Returns the row id
 // if newly reserved, or null if it was already sent this period.
@@ -10532,11 +10632,24 @@ async function runDigestsForOrg(org, { wk, mo, types = ["weekly", "monthly"], se
       const teamRollup = isOfficerScope ? orgWide.totals : null;
       const payload = { recipientUserId: u.id, email: u.email, scope, periodKey: wk.key, sections: sec, teamRollup };
       if (!send) { out.weekly.sent.push(payload); continue; }
-      const rid = await reserveDigest(org.id, "weekly", wk.key, u.id, u.email, scope, sec.totals);
+      // A fully-empty week never sends four "No X this week" sections
+      // (BUILD-35 Part 2): if real data offers a nudge (donors due for a
+      // touch), send that instead; if there's genuinely nothing actionable,
+      // reserve the period (so the tick never retries) and send nothing.
+      const wkEmpty = sec.totals.giftCount === 0 && sec.totals.askCount === 0 && sec.totals.moveCount === 0 && sec.totals.pastDueCount === 0;
+      const wkDue = wkEmpty ? await countDonorsDueForTouch(org.id, isOfficerScope ? u.id : null) : 0;
+      const rid = await reserveDigest(org.id, "weekly", wk.key, u.id, u.email, scope, wkEmpty ? { ...sec.totals, empty: true, dueForTouch: wkDue, suppressed: wkDue === 0 } : sec.totals);
       if (!rid) { out.weekly.skipped.push({ recipientUserId: u.id }); continue; }
-      const body = renderWeekInReviewBody(sec, wk, isOfficerScope ? u.name : null)
-        + (teamRollup ? `<div style="padding:0 22px 22px;background:#f0ede6;font-family:'DM Sans',Helvetica,Arial,sans-serif;font-size:12px;color:#6b7d70;">Team roll-up: ${digestMoney(teamRollup.giftTotal)} · ${teamRollup.giftCount} gifts · ${teamRollup.moveCount} moves org-wide.</div>` : "");
-      await sendDigestEmail(org, u.email, `Week in Review — ${org.name}`, body);
+      if (wkEmpty && wkDue === 0) { out.weekly.skipped.push({ recipientUserId: u.id, suppressed: true }); continue; }
+      const rollupLine = teamRollup ? `<div style="padding:0 22px 22px;background:#f0ede6;font-family:'DM Sans',Helvetica,Arial,sans-serif;font-size:12px;color:#6b7d70;">Team roll-up: ${digestMoney(teamRollup.giftTotal)} · ${teamRollup.giftCount} gifts · ${teamRollup.moveCount} moves org-wide.</div>` : "";
+      const body = wkEmpty
+        ? `<div style="padding:22px;background:#f0ede6;font-family:'DM Sans',Helvetica,Arial,sans-serif;">
+            <div style="font-family:'DM Serif Display',Georgia,serif;font-size:22px;color:#0f1a12;">Week in Review</div>
+            <div style="font-size:13px;color:#6b7d70;margin-top:2px;">${digestEsc(wk.start)} – ${digestEsc(wk.end)}${isOfficerScope ? ` · ${digestEsc(displayNameCase(u.name))}` : ""}</div>
+            ${digestNudgeHtml(`A quiet week — nothing logged. <strong>${wkDue}</strong> donor${wkDue === 1 ? "" : "s"} ${isOfficerScope ? "in your portfolio " : ""}${wkDue === 1 ? "is" : "are"} due for a touch — a call or note this week keeps them from drifting.`, "Open Steward")}
+          </div>` + rollupLine
+        : renderWeekInReviewBody(sec, wk, isOfficerScope ? displayNameCase(u.name) : null) + rollupLine;
+      await sendDigestEmail(org, u.email, `Week in Review — ${displayNameCase(org.name)}`, body);
       out.weekly.sent.push(payload);
     }
   }
@@ -10547,9 +10660,24 @@ async function runDigestsForOrg(org, { wk, mo, types = ["weekly", "monthly"], se
       const rep = await composeOfficerMonthly(org.id, mo, u);
       const payload = { recipientUserId: u.id, email: u.email, periodKey: mo.key, report: rep };
       if (!send) { out.monthly.sent.push(payload); continue; }
-      const rid = await reserveDigest(org.id, "monthly", mo.key, u.id, u.email, "officer", { asksMade: rep.asksMade, giftsClosed: rep.giftsClosed });
+      // An all-zero month must never render "0 asks · 0 moves · 0 gifts" at an
+      // officer (BUILD-35 Part 2). If their portfolio offers a real nudge,
+      // send that; if nothing is actionable either, reserve the period (no
+      // tick retries) and send nothing this month.
+      const allZero = rep.asksMade === 0 && rep.movesMade === 0 && rep.giftsClosed === 0;
+      const moDue = allZero ? await countDonorsDueForTouch(org.id, u.id) : 0;
+      const rid = await reserveDigest(org.id, "monthly", mo.key, u.id, u.email, "officer",
+        allZero ? { asksMade: 0, giftsClosed: 0, empty: true, dueForTouch: moDue, suppressed: moDue === 0 } : { asksMade: rep.asksMade, giftsClosed: rep.giftsClosed });
       if (!rid) { out.monthly.skipped.push({ recipientUserId: u.id }); continue; }
-      await sendDigestEmail(org, u.email, `Your Monthly Report — ${org.name}`, renderOfficerMonthlyBody(rep, mo));
+      if (allZero && moDue === 0) { out.monthly.skipped.push({ recipientUserId: u.id, suppressed: true }); continue; }
+      const body = allZero
+        ? `<div style="padding:22px;background:#f0ede6;font-family:'DM Sans',Helvetica,Arial,sans-serif;">
+            <div style="font-family:'DM Serif Display',Georgia,serif;font-size:22px;color:#0f1a12;">Monthly Report — ${digestEsc(displayNameCase(rep.officerName))}</div>
+            <div style="font-size:13px;color:#6b7d70;margin-top:2px;">${digestEsc(mo.start)} – ${digestEsc(mo.end)}</div>
+            ${digestNudgeHtml(`No moves logged this month — <strong>${moDue}</strong> prospect${moDue === 1 ? "" : "s"} in your portfolio ${moDue === 1 ? "is" : "are"} due for a touch. One conversation this week is next month's ask.`, "Open your pipeline")}
+          </div>`
+        : renderOfficerMonthlyBody(rep, mo);
+      await sendDigestEmail(org, u.email, `Your Monthly Report — ${displayNameCase(org.name)}`, body);
       out.monthly.sent.push(payload);
     }
   }
