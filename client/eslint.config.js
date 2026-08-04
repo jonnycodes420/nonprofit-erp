@@ -11,10 +11,6 @@ import reactHooks from "eslint-plugin-react-hooks";
 export default [
   {
     files: ["src/**/*.{js,jsx}"],
-    // Registered so the codebase's existing `// eslint-disable-next-line
-    // react-hooks/exhaustive-deps` directives resolve to a real rule (an
-    // unknown rule in a disable directive is itself an error). The hooks rules
-    // are left at their defaults — this guard is about no-undef, not hooks.
     plugins: { "react-hooks": reactHooks },
     languageOptions: {
       ecmaVersion: "latest",
@@ -28,6 +24,17 @@ export default [
       // Surfaces dead imports (like a stale `fmt` import) without blocking the
       // build — warnings don't change eslint's exit code.
       "no-unused-vars": ["warn", { args: "none", varsIgnorePattern: "^_" }],
+      // The SECOND crash class this gate now catches: a hook called
+      // CONDITIONALLY (after an early return / inside an if / &&) throws
+      // "Rendered more hooks than during the previous render" in production —
+      // exactly the Pipeline crash a locked/loading early return + a DnD useMemo
+      // caused. As an error it FAILS THE BUILD instead. Enforced, not just
+      // registered-for-disable-directives.
+      "react-hooks/rules-of-hooks": "error",
+      // Noisy but real — surfaces stale-closure bugs. A warning (non-blocking)
+      // so it informs without breaking the deploy; existing `// eslint-disable-
+      // next-line react-hooks/exhaustive-deps` directives still resolve.
+      "react-hooks/exhaustive-deps": "warn",
     },
   },
 ];

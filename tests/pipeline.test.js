@@ -8,6 +8,17 @@
 // remove takes them off; scope mine/all; search/value-band/designation/officer
 // filters; sort by value/last-gift; per-column counts; Core-graceful locked
 // preview; team/write gating; org isolation.
+//
+// REGRESSION NOTE (client crash, 2026-08-03): Pipeline.jsx once threw "Rendered
+// more hooks than during the previous render" in production (Sentry, a team
+// officer on Safari) because BUILD-30's drag-and-drop `displayColumns` useMemo
+// was placed AFTER the loading/locked early returns — a CONDITIONAL hook. Fixed
+// by moving every hook above every early return. A server suite can't exercise a
+// client RENDER crash, so the guard for this class is client-side:
+// `react-hooks/rules-of-hooks` is now an ERROR in client/eslint.config.js and
+// runs in the deploy gate (`eslint src && vite build`), so a conditional hook
+// fails the build, not production. Do NOT add a hook below an early return here
+// or in any sibling with a locked-preview/plan-gated return.
 
 const bcrypt = require("bcryptjs");
 const { ok, summary, login, api, q, closeDb } = require("./helpers");

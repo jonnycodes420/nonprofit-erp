@@ -659,11 +659,11 @@ export default function AdminDashboard() {
 
   const rawUser = localStorage.getItem("npe_user");
   const storedUser = rawUser ? JSON.parse(rawUser) : null;
-  if (!storedUser?.isSuperAdmin) {
-    navigate("/dashboard", { replace: true });
-    return null;
-  }
+  const isSuperAdmin = !!storedUser?.isSuperAdmin;
 
+  // Hooks stay ABOVE the non-super-admin early return below and run
+  // unconditionally (react-hooks/rules-of-hooks) — the "only fetch for a super
+  // admin" condition lives INSIDE the effect, not around the hook.
   const load = useCallback(async () => {
     setLoadingOrgs(true);
     try {
@@ -676,7 +676,12 @@ export default function AdminDashboard() {
     setLoadingOrgs(false);
   }, []);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { if (isSuperAdmin) load(); }, [load, isSuperAdmin]);
+
+  if (!isSuperAdmin) {
+    navigate("/dashboard", { replace: true });
+    return null;
+  }
 
   function logout() {
     localStorage.removeItem("npe_token");

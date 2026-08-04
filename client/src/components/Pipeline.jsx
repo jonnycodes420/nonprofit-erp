@@ -165,6 +165,25 @@ export function Pipeline({ isReadOnly, onNavigate, initialScope }) {
   useEffect(load, [scope, assignedTo, designation, minGiving, sort, dSearch]);
 
   const colorMap = useMemo(() => Object.fromEntries((data?.officers || []).filter(o => o.color).map(o => [o.id, o.color])), [data]);
+  // Apply pending optimistic moves so a dragged card shows in its new column
+  // instantly (reverted on cancel/reject). Membership count is unchanged — only
+  // which column a card sits in — so per-stage headers reconcile on reload.
+  // MUST stay ABOVE every early return below (loading / locked / empty) — a hook
+  // called conditionally throws "Rendered more hooks…" (react-hooks/rules-of-hooks).
+  const displayColumns = useMemo(() => {
+    const cols = data?.columns || {};
+    if (!Object.keys(optimistic).length) return cols;
+    const clone = {}; STAGE_META.forEach(s => { clone[s.id] = [...(cols[s.id] || [])]; });
+    for (const [donorId, toStage] of Object.entries(optimistic)) {
+      let moved = null;
+      for (const sid of Object.keys(clone)) {
+        const idx = clone[sid].findIndex(c => c.donorId === donorId);
+        if (idx >= 0) { moved = clone[sid][idx]; clone[sid].splice(idx, 1); break; }
+      }
+      if (moved && clone[toStage]) clone[toStage] = [{ ...moved, stage: toStage }, ...clone[toStage]];
+    }
+    return clone;
+  }, [data, optimistic]);
   const openDonor = id => onNavigate && onNavigate("donors", { selectDonorId: id });
   const goAddProspects = () => onNavigate && onNavigate("donors");
 
@@ -223,23 +242,6 @@ export function Pipeline({ isReadOnly, onNavigate, initialScope }) {
   // Drag-and-drop is a Team write path: off in the locked Core preview and for
   // read-only orgs. The keyboard/button "Move →" path stays available regardless.
   const dndEnabled = !isReadOnly && !locked;
-
-  // Apply pending optimistic moves so a dragged card shows in its new column
-  // instantly (reverted on cancel/reject). Membership count is unchanged — only
-  // which column a card sits in — so per-stage headers reconcile on reload.
-  const displayColumns = useMemo(() => {
-    if (!Object.keys(optimistic).length) return columns;
-    const clone = {}; STAGE_META.forEach(s => { clone[s.id] = [...(columns[s.id] || [])]; });
-    for (const [donorId, toStage] of Object.entries(optimistic)) {
-      let moved = null;
-      for (const sid of Object.keys(clone)) {
-        const idx = clone[sid].findIndex(c => c.donorId === donorId);
-        if (idx >= 0) { moved = clone[sid][idx]; clone[sid].splice(idx, 1); break; }
-      }
-      if (moved && clone[toStage]) clone[toStage] = [{ ...moved, stage: toStage }, ...clone[toStage]];
-    }
-    return clone;
-  }, [columns, optimistic]);
 
   const board = (
     <div>
