@@ -150,5 +150,58 @@ for (const file of walkComponents(componentsDir)) {
 const shared9 = read("client/src/components/shared.jsx");
 ok(/linear-gradient\(100deg/i.test(shared9), "gold-moment celebration sheen (the documented exception) is intact");
 
+// 10 — The AUTH-ADJACENT bucket is on the CREAM palette, not a dark navy theme
+//      (BUILD-36 B1). WHY THE GUARD MISSED THE INVITE PAGE: §6 only scanned for
+//      two SPECIFIC off-brand hexes (emerald #10b981, AI-blue #3b82f6). The
+//      invite card wasn't emerald or AI-blue — it was a whole DARK NAVY Tailwind
+//      theme (#030712 page, #111827 card, slate borders, a solid green button
+//      with white text). No rule checked the auth bucket for the DARK palette,
+//      so it sailed through — the same class as the reset-email leak (a surface
+//      outside the swept set). This closes it: the public auth pages must carry
+//      NONE of the dark-navy/slate Tailwind palette.
+const DARK_NAVY = /#030712|#111827|#0d1117|#1f2937|#374151|#0f172a|#1e293b|#334155|#6b7280|#9ca3af|#f9fafb|#f3f4f6/i;
+const authBucket = [
+  "client/src/pages/InvitePage.jsx",
+  "client/src/pages/LoginPage.jsx",
+  "client/src/pages/SignupPage.jsx",
+  "client/src/pages/ForgotPasswordPage.jsx",
+  "client/src/pages/ResetPasswordPage.jsx",
+];
+for (const f of authBucket) {
+  ok(!DARK_NAVY.test(read(f)),
+    `${path.relative(".", f)}: no dark-navy/slate Tailwind palette (auth pages are cream)`);
+}
+
+// The invite page now follows the public auth convention (cream/serif/gold),
+// exactly like sign-in (§7): serif wordmark, gold primary action + gold title
+// underline, forest links. This is the rebuild B1 asked for.
+const invitePage = read("client/src/pages/InvitePage.jsx");
+ok(/gold:\s*"#c9a84c"/.test(invitePage), "invite page: gold token = gold500 #c9a84c");
+ok(/forest:\s*"#0d5c3a"/.test(invitePage), "invite page: forest token = greenDk #0d5c3a");
+ok(/background:\s*T\.cream\b/.test(invitePage), "invite page: page background is cream");
+ok(/background:\s*submitting\s*\?\s*T\.cream3\s*:\s*T\.gold/.test(invitePage),
+  "invite page: Accept-invitation button background is gold");
+ok(/borderBottom:\s*`3px solid \$\{T\.gold\}`/.test(invitePage),
+  "invite page: headline underline is gold");
+ok(/'DM Serif Display',Georgia,serif[^]{0,80}Steward/.test(invitePage),
+  "invite page: serif 'Steward' wordmark present");
+// The retired treatment is gone: no full green button fill with white text.
+ok(!/background:\s*("|`|')?#1a6b4a[^]{0,60}color:\s*("|`|')?#fff/i.test(invitePage),
+  "invite page: no retired solid-green button with white text");
+
+// 11 — The server-rendered SIBLING (the unsubscribe/expired-link page) is on the
+//      SAME cream/serif convention (it was swept clean already; the guard now
+//      pins it so it can't drift back to a dark theme). Scoped to the
+//      unsubscribeHtml template so the dark board-report PDF elsewhere in
+//      server.js isn't mis-scanned.
+const serverSrc = read("server.js");
+const unsubStart = serverSrc.indexOf("function unsubscribeHtml");
+const unsubEnd = serverSrc.indexOf('app.get("/unsubscribe"', unsubStart);
+const unsubRegion = unsubStart >= 0 && unsubEnd > unsubStart ? serverSrc.slice(unsubStart, unsubEnd) : "";
+ok(unsubRegion.length > 0, "unsubscribe page: template region located");
+ok(/background:#f0ede6/.test(unsubRegion), "unsubscribe page: cream background (on-brand)");
+ok(/DM Serif Display/.test(unsubRegion), "unsubscribe page: serif headline");
+ok(!DARK_NAVY.test(unsubRegion), "unsubscribe page: no dark-navy/slate palette");
+
 console.log(`\nbrand-glyph: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
