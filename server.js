@@ -3954,10 +3954,15 @@ async function sendReceiptEmail(org, donor, snapshot, pdfBuffer, filename) {
   if (!process.env.RESEND_API_KEY) return false;
   try {
     const from = process.env.DEMO_SMTP_FROM || "noreply@stewardapp.dev";
-    const subject = `Your donation receipt from ${displayNameCase(org.name)}`;
-    const html = `<p>Hi ${escapeHtml(donor.name || "there")},</p>
-      <p>Thank you for your generous gift to <strong>${escapeHtml(org.name)}</strong> — your official ${snapshot.type === "year_end" ? "year-end giving statement" : "tax receipt"} is attached.</p>
-      <p style="color:#6b7280;font-size:13px">Receipt #${escapeHtml(snapshot.receiptNumber)}</p>`;
+    // Subject names the artifact honestly (a year-end statement is not a
+    // "donation receipt") and the cover carries the branded org header like
+    // every other donor-facing email — both live-test findings, 2026-08-05.
+    const artifact = snapshot.type === "year_end" ? "year-end giving statement" : "donation receipt";
+    const subject = `Your ${artifact} from ${displayNameCase(org.name)}`;
+    const html = await brandEmailHeaderHtml(org.id)
+      + `<p>Hi ${escapeHtml(donor.name || "there")},</p>
+      <p>Thank you for your generous gift to <strong>${escapeHtml(displayNameCase(org.name))}</strong> — your official ${snapshot.type === "year_end" ? "year-end giving statement" : "tax receipt"} is attached.</p>
+      <p style="color:#8fa896;font-size:13px">Receipt #${escapeHtml(snapshot.receiptNumber)}</p>`;
     // Transactional (not a campaign/sequence send) — deliberately no
     // unsubscribe link/List-Unsubscribe headers, but still skips suppressed
     // addresses (below, before this is ever called) to protect the shared
@@ -7155,7 +7160,7 @@ function applyDunningTokens(str, { donor, org, amount, updateUrl }) {
   return (str || "")
     .replace(/{{donor_name}}/g, donor.name || "")
     .replace(/{{first_name}}/g, firstName)
-    .replace(/{{org_name}}/g, org.name || "")
+    .replace(/{{org_name}}/g, displayNameCase(org.name) || "")
     .replace(/{{amount}}/g, amount != null ? `$${Number(amount).toLocaleString()}` : "your gift")
     .replace(/{{update_url}}/g, updateUrl);
 }
@@ -7824,7 +7829,7 @@ async function runCampaignSend(campaign, org, donors) {
           .replace(/{{first_name}}/g,   firstName)
           .replace(/{{last_name}}/g,    lastName)
           .replace(/{{donor_name}}/g,   donor.name)
-          .replace(/{{org_name}}/g,     org.name)
+          .replace(/{{org_name}}/g,     displayNameCase(org.name))
           .replace(/{{gift_amount}}/g,  giftAmount)
           .replace(/{{total_giving}}/g, totalGiving)
           .replace(/{{year}}/g,         year);
@@ -10965,7 +10970,7 @@ async function processSequences() {
           continue;
         }
         const orgRows = await query("SELECT name FROM orgs WHERE id = ?", [enr.org_id]);
-        const orgName = orgRows[0]?.name || "";
+        const orgName = displayNameCase(orgRows[0]?.name) || "";
         const firstName = recipient.name ? recipient.name.trim().split(/\s+/)[0] : "";
         const applyTokens = str => (str || "")
           .replace(/{{donor_name}}/g, recipient.name)
@@ -11214,7 +11219,7 @@ async function generateMilestoneDraft(recipient, orgId, meta) {
   const donor = donorRows[0];
   if (!donor) return null;
   const orgRows = await query("SELECT name FROM orgs WHERE id = ?", [orgId]);
-  const orgName = orgRows[0]?.name || "";
+  const orgName = displayNameCase(orgRows[0]?.name) || "";
   const totalGiving = Number(donor.total_giving) || 0;
 
   const metricRows = await query(
@@ -11278,7 +11283,7 @@ async function generateAtRiskDraft(recipient, orgId) {
   const donor = donorRows[0];
   if (!donor) return null;
   const orgRows = await query("SELECT name FROM orgs WHERE id = ?", [orgId]);
-  const orgName = orgRows[0]?.name || "";
+  const orgName = displayNameCase(orgRows[0]?.name) || "";
   const totalGiving = Number(donor.total_giving) || 0;
   const daysSinceGift = donor.last_gift_date
     ? Math.floor((Date.now() - new Date(donor.last_gift_date).getTime()) / 86400000) : null;
@@ -12297,7 +12302,7 @@ async function runWorkflowAction(action, { org, donor, ctx, config }) {
       );
       // Email each distinct recipient (internal, no donor footer).
       const emailBody = `<p>A gift just came in — a good moment to say thank you.</p>
-<p style="font-size:16px"><strong>${escHtmlWf(donor?.name || "A donor")}</strong> gave <strong>${escHtmlWf(amtStr || "a gift")}</strong> to ${escHtmlWf(org.name)}.</p>
+<p style="font-size:16px"><strong>${escHtmlWf(donor?.name || "A donor")}</strong> gave <strong>${escHtmlWf(amtStr || "a gift")}</strong> to ${escHtmlWf(displayNameCase(org.name))}.</p>
 <p>Open Steward to send a thank-you while it's fresh — a fast, personal thank-you is the single biggest driver of a donor giving again.</p>`;
       for (const r of recipients) {
         if (r.email) await sendGiftAlertEmail(org, r.email, `New gift: ${donor?.name || "a donor"} gave ${amtStr || "a gift"}`, emailBody);
@@ -12321,18 +12326,18 @@ async function runWorkflowAction(action, { org, donor, ctx, config }) {
       }
       if (action.template === "thankyou") {
         const body = `<p>Hi ${escHtmlWf(firstName)},</p>
-<p>Thank you for your first gift to ${escHtmlWf(org.name)} — welcome to our community. Gifts like yours are exactly what make our work possible, and we're so glad you're part of it.</p>
+<p>Thank you for your first gift to ${escHtmlWf(displayNameCase(org.name))} — welcome to our community. Gifts like yours are exactly what make our work possible, and we're so glad you're part of it.</p>
 <p>You'll hear from a real person here soon. In the meantime, just reply if there's anything you'd like to know.</p>
-<p>With gratitude,<br/>${escHtmlWf(org.name)}</p>`;
-        await sendWorkflowEmail(org, donor, `Thank you from ${org.name}`, body);
+<p>With gratitude,<br/>${escHtmlWf(displayNameCase(org.name))}</p>`;
+        await sendWorkflowEmail(org, donor, `Thank you from ${displayNameCase(org.name)}`, body);
         return { type: "send_email", template: "thankyou" };
       }
       if (action.template === "reengage") {
         const body = `<p>Hi ${escHtmlWf(firstName)},</p>
-<p>It's been a while, and we've missed you at ${escHtmlWf(org.name)}. Your past support made a real difference — and there's more good work ahead we'd love for you to be part of.</p>
+<p>It's been a while, and we've missed you at ${escHtmlWf(displayNameCase(org.name))}. Your past support made a real difference — and there's more good work ahead we'd love for you to be part of.</p>
 <p>If now's a good time to come back, we'd be grateful. And if not, thank you all the same.</p>
-<p>Warmly,<br/>${escHtmlWf(org.name)}</p>`;
-        await sendWorkflowEmail(org, donor, `We've missed you at ${org.name}`, body);
+<p>Warmly,<br/>${escHtmlWf(displayNameCase(org.name))}</p>`;
+        await sendWorkflowEmail(org, donor, `We've missed you at ${displayNameCase(org.name)}`, body);
         return { type: "send_email", template: "reengage" };
       }
       return null;
@@ -12782,7 +12787,7 @@ function applyPledgeReminderTokens(str, { donor, org, amount, dueDate, giveUrl }
   return (str || "")
     .replace(/{{donor_name}}/g, donor.name || "")
     .replace(/{{first_name}}/g, firstName)
-    .replace(/{{org_name}}/g, org.name || "")
+    .replace(/{{org_name}}/g, displayNameCase(org.name) || "")
     .replace(/{{amount}}/g, amount != null ? `$${Number(amount).toLocaleString()}` : "your pledge")
     .replace(/{{due_date}}/g, dueDate ? new Date(dueDate).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" }) : "")
     .replace(/{{give_url}}/g, giveUrl);

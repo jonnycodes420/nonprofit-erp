@@ -10,7 +10,11 @@ const pool = new Pool({
 
 async function getDb() {
   await initSchema();
-  await seedData();
+  // The demo seed must never take the API down: schema is required to serve,
+  // org_creo's demo sugar is not. A seed failure logs CRITICAL and the server
+  // boots anyway (found live 2026-08-05: a seed 23505 crash-looped boot).
+  try { await seedData(); }
+  catch (err) { console.error("[seed] CRITICAL: demo seed failed (server continues):", err.message); }
   return pool;
 }
 
@@ -2003,12 +2007,20 @@ async function seedData() {
       // data-derived values to actually replace them, not be skipped.
       `INSERT INTO metric_snapshots (id,org_id,metric_key,value,snapshot_date) VALUES ($1,$2,$3,$4,$5)
        ON CONFLICT (org_id, metric_key, snapshot_date) DO UPDATE SET value = EXCLUDED.value`,
-      [`msseed_debt_${daysAgo}`, orgId, "stewardship_debt", debtValue, date]
+      // Date-stable id (was msseed_debt_${daysAgo}): with a fixed id and a
+      // day-shifting date, the FIRST boot of a new day found no
+      // (org,key,date) conflict-target match and fell through to the id
+      // PRIMARY KEY → 23505 → db init failed → process exit. A crash-loop
+      // time bomb on any deploy/restart crossing a date boundary (found
+      // live 2026-08-05 on the scratch stack at local midnight). With the
+      // date IN the id, an id collision implies a target match — idempotent
+      // by construction, every day.
+      [`msseed_debt_${date}`, orgId, "stewardship_debt", debtValue, date]
     );
     await pool.query(
       `INSERT INTO metric_snapshots (id,org_id,metric_key,value,snapshot_date) VALUES ($1,$2,$3,$4,$5)
        ON CONFLICT (org_id, metric_key, snapshot_date) DO UPDATE SET value = EXCLUDED.value`,
-      [`msseed_touch_${daysAgo}`, orgId, "first_touch_delay", touchValue, date]
+      [`msseed_touch_${date}`, orgId, "first_touch_delay", touchValue, date]
     );
   }
 }

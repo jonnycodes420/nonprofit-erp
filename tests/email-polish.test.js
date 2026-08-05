@@ -36,7 +36,7 @@ const mock = http.createServer((req, res) => {
 const mailTo = to => captured.filter(e => e.path === "/emails" && (e.body?.to === to || e.body?.to?.includes?.(to)));
 
 async function reset() {
-  for (const t of ["digest_sends", "interactions", "opportunities", "moves", "gifts", "donors", "users"]) {
+  for (const t of ["digest_sends", "workflow_runs", "workflows", "receipts", "tasks", "interactions", "opportunities", "moves", "gifts", "donors", "users"]) {
     await q(`DELETE FROM ${t} WHERE org_id=$1`, [ORG]).catch(() => {});
   }
   await q(`DELETE FROM orgs WHERE id=$1`, [ORG]);
@@ -120,6 +120,39 @@ async function reset() {
   r = await api("POST", "/digests/run", tok, { type: "weekly", weekStart: "2026-06-08" });
   const busyWk = mailTo("busy@ep.local");
   ok("normal week unchanged (sections render)", busyWk.length === 1 && /Gifts received/.test(busyWk[0].body.html), busyWk[0]?.body?.subject);
+
+  // ── Receipt cover + workflow emails (live-test findings, 2026-08-05) ─────
+  // The receipt cover email must be branded, title-cased in subject AND body,
+  // and a year-end statement must not call itself a "donation receipt".
+  await api("PATCH", `/orgs/${ORG}`, tok, { legalName: "Creo Arts Collective", ein: "987654321", receiptAddress: "9 Front St, Fairhope, AL", receiptsEnabled: true });
+  const nd = await api("POST", "/donors", tok, { name: "Receipt Donor", email: "receipt-donor@ep.local" });
+  const ndId = nd.body.id;
+  const ng = await api("POST", `/donors/${ndId}/gifts`, tok, { amount: 300, date: "2026-06-20", type: "cash" });
+  captured = [];
+  r = await api("POST", `/gifts/${ng.body.gift.id}/receipt`, tok, { send: true });
+  ok("receipt issued", r.status >= 200 && r.status < 300 && !!r.body.receipt_number, r.status);
+  const rc = mailTo("receipt-donor@ep.local");
+  ok("receipt cover: ONE email", rc.length === 1, rc.length);
+  ok("receipt cover subject title-cased", /^Your donation receipt from Creo Arts Collective$/.test(rc[0]?.body?.subject || ""), rc[0]?.body?.subject);
+  ok("receipt cover BODY title-cased (not raw lowercase org name)", /gift to <strong>Creo Arts Collective<\/strong>/.test(rc[0]?.body?.html || ""), (rc[0]?.body?.html || "").slice(0, 300));
+  ok("receipt cover carries the branded org header band", /Creo Arts Collective<\/span>/.test(rc[0]?.body?.html || "") && /border-radius:12px 12px 0 0/.test(rc[0]?.body?.html || ""));
+  ok("receipt cover uses on-palette grey, not #6b7280", !/#6b7280/.test(rc[0]?.body?.html || ""));
+  captured = [];
+  r = await api("POST", `/donors/${ndId}/year-end-statement`, tok, { year: 2026, send: true });
+  const ye = mailTo("receipt-donor@ep.local");
+  ok("year-end subject says statement, not receipt", /^Your year-end giving statement from Creo Arts Collective$/.test(ye[0]?.body?.subject || ""), ye[0]?.body?.subject);
+
+  // Workflow welcome email: subject + body + signature all title-cased.
+  const wfs = await api("GET", "/workflows", tok);
+  const welcomeWf = (wfs.body.workflows || wfs.body).find(w => w.recipe_key === "new_donor_welcome");
+  await api("PUT", `/workflows/${welcomeWf.id}`, tok, { enabled: true });
+  captured = [];
+  r = await api("POST", "/workflows/simulate", tok, { trigger: "gift_received", donorId: ndId, amount: 300, isFirstGift: true });
+  ok("welcome simulate ran", r.status === 200 && (r.body.ran || []).length >= 1, r.body);
+  const wm = mailTo("receipt-donor@ep.local");
+  ok("welcome subject title-cased", /^Thank you from Creo Arts Collective$/.test(wm[0]?.body?.subject || ""), wm[0]?.body?.subject);
+  ok("welcome body + signature title-cased ({{org_name}} class)", /first gift to Creo Arts Collective/.test(wm[0]?.body?.html || "") && /With gratitude,<br\/>Creo Arts Collective/.test(wm[0]?.body?.html || ""), (wm[0]?.body?.html || "").slice(0, 400));
+  ok("welcome keeps the CAN-SPAM footer + unsubscribe", /Unsubscribe/.test(wm[0]?.body?.html || "") && /9 Front St, Fairhope/.test(wm[0]?.body?.html || ""));
 
   await reset();
   await closeDb();
