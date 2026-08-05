@@ -3,6 +3,7 @@ import { apiFetch } from "../api";
 import { useAuth } from "../main";
 import { T, fmt, fmtFull, daysUntil, daysDiff, askClaude, buildContext, Spin, AIBtn, GoldMoment, interactive } from "./shared";
 import { mergeLayout, sectionMeta, isDefaultLayout, moveToTop } from "../lib/homeLayout";
+import { greetingForHour } from "../lib/greeting";
 import FunnelChart from "./FunnelChart";
 import MetricBreakdownPanel from "./MetricBreakdownPanel";
 
@@ -675,8 +676,10 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
   // driver hint is real trailing-7-day gift activity from the backend
   // (goal.recentAmount/recentDonorCount), never invented copy.
   const firstName=auth?.user?.name?.split(" ")[0]||"";
-  const greetHour=new Date().getHours();
-  const greeting=greetHour<12?"Good morning":greetHour<18?"Good afternoon":"Good evening";
+  // Greeting windows are the single source of truth in ../lib/greeting.js
+  // (evening 5 PM–4 AM · morning 4 AM–noon · afternoon noon–5 PM) — a bare
+  // `hour<12` used to say "Good morning" at 12:23 AM (BUILD-36 B3).
+  const greeting=greetingForHour(new Date().getHours());
   let paceLabel=null,paceColor="#8fa896",paceSub=null,daysLeftInPeriod=null;
   if(goal){
     const periodStartDate=new Date(goal.periodStart+"T00:00:00");
