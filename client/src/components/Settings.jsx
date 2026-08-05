@@ -727,6 +727,18 @@ export function Settings({auth,logout,initialSection}) {
   const [impact,setImpact]=useState(null);
   const [impactOpen,setImpactOpen]=useState(false);
   const [portalLoading,setPortalLoading]=useState(false);
+
+  // BUILD-36 A4 — per-user email notification toggles (default on).
+  const [notifyPrefs,setNotifyPrefs]=useState(null);
+  const [notifySaving,setNotifySaving]=useState("");
+  async function toggleNotifyPref(key){
+    if(!notifyPrefs) return;
+    const next={...notifyPrefs,[key]:!notifyPrefs[key]};
+    setNotifyPrefs(next); setNotifySaving(key);
+    try{ const r=await apiFetch("/me/notification-prefs",{method:"PUT",body:JSON.stringify({[key]:next[key]})}); if(r?.notifications) setNotifyPrefs(r.notifications); }
+    catch{ setNotifyPrefs(notifyPrefs); } // rollback
+    finally{ setNotifySaving(""); }
+  }
   const [portalError,setPortalError]=useState("");
   const [portalUrl,setPortalUrl]=useState("");   // fallback link when the pop-up is blocked
   const [upgradeModal,setUpgradeModal]=useState(null);
@@ -746,6 +758,7 @@ export function Settings({auth,logout,initialSection}) {
     apiFetch("/org/team").then(setTeam).catch(()=>{});
     apiFetch("/stripe/status").then(setStripe).catch(()=>{});
     apiFetch("/billing/status").then(setBilling).catch(()=>{});
+    apiFetch("/me").then(r=>{ if(r?.notifications) setNotifyPrefs(r.notifications); }).catch(()=>{});
     apiFetch("/impact").then(setImpact).catch(()=>{});
     if(!auth?.org?.org_slug){
       apiFetch("/org").then(r=>{ if(r.org_slug) setOrgSlug(r.org_slug); }).catch(()=>{});
@@ -1435,6 +1448,30 @@ export function Settings({auth,logout,initialSection}) {
         ) : (
           <div style={{fontSize:13,color:T.ink3}}>Loading billing information…</div>
         )}
+      </div>
+
+      {/* Email notifications (BUILD-36 A4) — per-user toggles, default on. An
+          officer hears about their donors and tasks without logging in, and can
+          turn any stream off here. */}
+      <div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:16,padding:"24px 28px",marginBottom:20}}>
+        <SectionLabel>Email notifications</SectionLabel>
+        <div style={{fontSize:12.5,color:T.ink3,marginTop:-4,marginBottom:14}}>Email me about:</div>
+        {[
+          {key:"portfolioGifts",label:"Gifts to my donors",hint:"A gift lands for a donor you own — or anywhere in your org."},
+          {key:"taskAssignments",label:"Task assignments",hint:"Someone assigns you a task (or an automation does)."},
+          {key:"dailyTasks",label:"Daily task reminder",hint:"A morning summary of tasks due today and overdue."},
+        ].map(row=>(
+          <label key={row.key} style={{display:"flex",alignItems:"flex-start",gap:12,padding:"10px 0",borderTop:"1px solid "+T.bg2,cursor:notifyPrefs?"pointer":"default"}}>
+            <input type="checkbox" disabled={!notifyPrefs||notifySaving===row.key}
+              checked={notifyPrefs?!!notifyPrefs[row.key]:true}
+              onChange={()=>toggleNotifyPref(row.key)}
+              style={{width:16,height:16,marginTop:2,cursor:notifyPrefs?"pointer":"default",accentColor:T.greenMid}}/>
+            <div>
+              <div style={{fontSize:14,fontWeight:600,color:T.ink}}>{row.label}</div>
+              <div style={{fontSize:12,color:T.ink3,marginTop:1}}>{row.hint}</div>
+            </div>
+          </label>
+        ))}
       </div>
 
       {/* On-brand Account panel (BUILD-31 Part 2.3): plain white/cream section,

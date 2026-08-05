@@ -40,7 +40,7 @@ CORE=(
   finance-reintegration fundraising gift-attribution goals home home-layout households impact
   import-assign import-both import-combined import-shape import-stage
   locked-features
-  brand-allowlist moves no-emoji onboarding-brand palette pipeline pipeline-gating portfolios portfolio-pipeline-consistency reports-cadence setup-checklist
+  brand-allowlist moves no-emoji notifications onboarding-brand palette pipeline pipeline-gating portfolios portfolio-pipeline-consistency reports-cadence setup-checklist
   report-truth
   smart-moves tasks tenant-isolation upgrade-checkout workflows workflows-e2e
   finance-reports-consistency name-normalize reserved-recovered concurrency

@@ -1336,6 +1336,19 @@ async function initSchema() {
   // follows the user across devices because it lives here, not localStorage.
   await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS home_layout TEXT`);
 
+  // ── BUILD-36 A4: per-user email notification toggles ──────────────────────
+  // An officer must hear about their donors and tasks without logging in, but
+  // must also be able to turn any of the three notification streams off. Three
+  // booleans, DEFAULT true (on for everyone unless deliberately turned off);
+  // NULL is treated as ON by userWantsEmail (server.js) so pre-existing rows
+  // and any missed default keep receiving mail.
+  //   notify_portfolio_gifts   — "a gift landed for a donor I own / in my org"
+  //   notify_task_assignments  — "someone assigned me a task"
+  //   notify_daily_tasks       — the daily due/overdue task reminder digest
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS notify_portfolio_gifts BOOLEAN DEFAULT true`);
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS notify_task_assignments BOOLEAN DEFAULT true`);
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS notify_daily_tasks BOOLEAN DEFAULT true`);
+
   // ── BUILD-35: "Set up Steward" activation checklist card state ────────────
   // The card's ITEMS are never stored — each done-state is computed live from
   // org data (donor count, stripe_account_id, receipt_address, live giving
@@ -1415,6 +1428,30 @@ async function initSchema() {
     )`);
   await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS digest_sends_uk ON digest_sends (org_id, digest_type, period_key, recipient_user_id)`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_digest_sends_org ON digest_sends (org_id, created_at DESC)`);
+
+  // ── BUILD-36 A4: one internal email per person per event ──────────────────
+  // The idempotency + cross-recipe dedup ledger for INTERNAL staff
+  // notifications (gift alerts, task-assignment emails). event_key is the
+  // notification's natural cycle id: gift:<giftId> for anything a single gift
+  // triggers (so gift-notify and the major-gift owner alert can NEVER both
+  // email one person for the same gift — the whole point of A4), or
+  // taskassign:<taskId>:<userId> for a manual task assignment. The UNIQUE
+  // deliberately does NOT include channel: a person gets AT MOST ONE email per
+  // (event, recipient), whichever recipe reserves first. notifyUserOnce()
+  // (server.js) reserves the row BEFORE sending — same discipline as
+  // workflow_runs / digest_sends. A pref opt-out reserves NOTHING (so a
+  // different, opted-in notification for the same event can still win).
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS notification_sends (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL,
+      event_key TEXT NOT NULL,
+      recipient_user_id TEXT NOT NULL,
+      channel TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )`);
+  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS notification_sends_uk ON notification_sends (org_id, event_key, recipient_user_id)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_notification_sends_org ON notification_sends (org_id, created_at DESC)`);
 
   // ── Attribution completeness (FIX, 2026-08-04) ───────────────────────────
   // Every money path attributes to a campaign, reverses, and reconciles.

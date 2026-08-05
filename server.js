@@ -1525,6 +1525,8 @@ app.post("/auth/register", registerLimiter, wrap(async (req, res) => {
   const hash = bcrypt.hashSync(password, 12);
   await run("INSERT INTO users (id, org_id, email, password_hash, name, role) VALUES (?,?,?,?,?,?)",
     [userId, orgId, normalizedEmail, hash, name || email, "admin"]);
+  // BUILD-36 A1: new org → instant_gift_thanks ON by default.
+  await provisionNewOrgWorkflows(orgId).catch(e => console.error("[org] provision workflows:", e.message));
 
   const token = signToken({ userId, orgId, email: normalizedEmail, role: "admin" });
   res.status(201).json({
@@ -1684,6 +1686,10 @@ app.post("/auth/register-org", registerLimiter, wrap(async (req, res) => {
     }
   }
 
+  // BUILD-36 A1: a new org hears about gifts out of the box (instant_gift_thanks
+  // ON, ED & assigned officer). Existing orgs are never re-created, so untouched.
+  await provisionNewOrgWorkflows(orgId).catch(e => console.error("[org] provision workflows:", e.message));
+
   const token = signToken({ userId, orgId, email: normalizedEmail, role: "admin" });
   res.status(201).json({
     token,
@@ -1698,10 +1704,31 @@ app.post("/auth/register-org", registerLimiter, wrap(async (req, res) => {
 
 // ── Me ─────────────────────────────────────────────────────────────────────
 app.get("/me", requireAuth, wrap(async (req, res) => {
-  const users = await query("SELECT id, email, name, role FROM users WHERE id = ?", [req.user.userId]);
+  const users = await query("SELECT id, email, name, role, notify_portfolio_gifts, notify_task_assignments, notify_daily_tasks FROM users WHERE id = ?", [req.user.userId]);
   const orgs  = await query("SELECT * FROM orgs WHERE id = ?", [req.user.orgId]);
   if (!users.length || !orgs.length) return res.status(404).json({ error: "Not found" });
-  res.json({ user: users[0], org: orgs[0] });
+  const u = users[0];
+  res.json({
+    user: { id: u.id, email: u.email, name: u.name, role: u.role },
+    org: orgs[0],
+    notifications: mapNotifyPrefs(u),
+  });
+}));
+
+// PUT /me/notification-prefs (BUILD-36 A4) — per-user email toggles: "Email me
+// about: portfolio gifts / task assignments / daily task reminder". Default on.
+app.put("/me/notification-prefs", requireAuth, wrap(async (req, res) => {
+  const b = req.body || {};
+  const map = { portfolioGifts: "notify_portfolio_gifts", taskAssignments: "notify_task_assignments", dailyTasks: "notify_daily_tasks" };
+  const sets = [], params = [];
+  for (const [k, col] of Object.entries(map)) {
+    if (typeof b[k] === "boolean") { sets.push(`${col}=?`); params.push(b[k]); }
+  }
+  if (!sets.length) return res.status(400).json({ error: "No valid preferences provided" });
+  params.push(req.user.userId);
+  await run(`UPDATE users SET ${sets.join(",")} WHERE id=?`, params);
+  const rows = await query("SELECT notify_portfolio_gifts, notify_task_assignments, notify_daily_tasks FROM users WHERE id=?", [req.user.userId]);
+  res.json({ notifications: mapNotifyPrefs(rows[0]) });
 }));
 
 // ── Per-user Home layout (BUILD-34) ────────────────────────────────────────
@@ -5681,18 +5708,38 @@ app.post("/tasks", requireAuth, checkWriteAccess, wrap(async (req, res) => {
   const rows = await query(
     `SELECT t.*, d.name AS donor_name FROM tasks t
        LEFT JOIN donors d ON d.id = t.donor_id AND d.org_id = t.org_id WHERE t.id = ?`, [id]);
+  // BUILD-36 A2: if this task was assigned to someone OTHER than the creator,
+  // email the assignee (no email for a self-assigned task). Fire-and-forget.
+  if (rows[0]?.assigned_to && rows[0].assigned_to !== req.user.userId) {
+    queueTaskAssignmentEmail(rows[0], req.user.userId).catch(e => console.error("[task] assign email:", e.message));
+  }
   res.status(201).json(rows[0]);
 }));
 
 app.put("/tasks/:id", requireAuth, checkWriteAccess, wrap(async (req, res) => {
-  const { title, due, priority, type, done, donorId } = req.body;
+  const { title, due, priority, type, done, donorId, assignedTo } = req.body;
   if (!title || !String(title).trim()) return res.status(400).json({ error: "Title required" });
   if (donorId !== undefined && !(await orgOwns("donors", donorId, req.user.orgId)))
     return res.status(404).json({ error: "Donor not found" });
 
+  // Reassignment (BUILD-36 A2): validate a new assignee to the org, capture the
+  // prior owner so we only notify on a genuine change to a NEW person.
+  const priorRows = await query("SELECT assigned_to FROM tasks WHERE id=? AND org_id=?", [req.params.id, req.user.orgId]);
+  if (!priorRows.length) return res.status(404).json({ error: "Task not found" });
+  const priorAssignee = priorRows[0].assigned_to;
+  let newAssignee, newAssigneeName;
+  if (assignedTo !== undefined) {
+    if (assignedTo) {
+      const u = await query("SELECT id, name FROM users WHERE id=? AND org_id=?", [assignedTo, req.user.orgId]);
+      if (!u.length) return res.status(404).json({ error: "Assignee not found" });
+      newAssignee = u[0].id; newAssigneeName = u[0].name || "";
+    } else { newAssignee = null; newAssigneeName = null; }
+  }
+
   const sets = ["title=?", "due=?", "priority=?", "type=?", "done=?", "updated_at=NOW()"];
   const params = [String(title).trim(), due || "", priority || "medium", type || "donor", done ? 1 : 0];
   if (donorId !== undefined) { sets.push("donor_id=?"); params.push(donorId || null); }
+  if (assignedTo !== undefined) { sets.push("assigned_to=?", "assigned_to_name=?"); params.push(newAssignee, newAssigneeName); }
   params.push(req.params.id, req.user.orgId);
 
   const affected = await run(
@@ -5701,6 +5748,10 @@ app.put("/tasks/:id", requireAuth, checkWriteAccess, wrap(async (req, res) => {
   const rows = await query(
     `SELECT t.*, d.name AS donor_name FROM tasks t
        LEFT JOIN donors d ON d.id = t.donor_id AND d.org_id = t.org_id WHERE t.id = ?`, [req.params.id]);
+  // Notify only on a genuine reassignment to a NEW person who isn't the actor.
+  if (assignedTo !== undefined && newAssignee && newAssignee !== priorAssignee && newAssignee !== req.user.userId) {
+    queueTaskAssignmentEmail(rows[0], req.user.userId).catch(e => console.error("[task] reassign email:", e.message));
+  }
   res.json(rows[0]);
 }));
 
@@ -10705,6 +10756,96 @@ async function processDigests(now = new Date()) {
 setTimeout(() => processDigests().catch(console.error), 30000);
 setInterval(() => processDigests().catch(console.error), 5 * 60 * 1000);
 
+// ── BUILD-36 A3 — the daily due/overdue task reminder ────────────────────────
+// One email per user per day (digest_sends idempotency: digest_type
+// 'daily_tasks', period_key day:YYYY-MM-DD), listing their OPEN tasks due today
+// + overdue, deep-linked. Sends ONLY when non-empty — no tasks, no email, and
+// nothing reserved, so if tasks appear later the same morning it still goes.
+// Gated to a morning window so it reads as a morning brief, not a 2 AM ping.
+// Reuses the existing 5-min tick — NOT a second scheduler.
+const DAILY_REMINDER_WINDOW = [6, 12]; // send when the local hour is in [6, 12)
+function inDailyReminderWindow(now) { const h = now.getHours(); return h >= DAILY_REMINDER_WINDOW[0] && h < DAILY_REMINDER_WINDOW[1]; }
+function localDateKey(now) {
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+}
+
+async function composeDailyTaskReminder(orgId, userId, today) {
+  const rows = await query(
+    `SELECT t.*, d.name AS donor_name FROM tasks t
+       LEFT JOIN donors d ON d.id=t.donor_id AND d.org_id=t.org_id
+      WHERE t.org_id=? AND t.assigned_to=? AND t.done=0
+        AND t.due IS NOT NULL AND t.due <> '' AND LEFT(t.due,10) <= ?
+      ORDER BY t.due ASC`,
+    [orgId, userId, today]);
+  const overdue = rows.filter(r => String(r.due).slice(0, 10) < today);
+  const dueToday = rows.filter(r => String(r.due).slice(0, 10) === today);
+  return { rows, overdue, dueToday, count: rows.length };
+}
+
+function renderDailyTaskReminderBody(digest, org, user, today) {
+  const li = t => {
+    const badge = String(t.due).slice(0, 10) < today
+      ? `<span style="color:#8a3a24;font-weight:700;">Overdue</span>`
+      : `<span style="color:#8a6d1f;font-weight:700;">Today</span>`;
+    const donor = t.donor_name ? ` · ${digestEsc(displayNameCase(t.donor_name))}` : "";
+    return `<li style="margin:6px 0;color:#0f1a12;">${digestEsc(t.title)} <span style="color:#6b7d70;">— ${badge}<span style="color:#6b7d70;"> ${digestEsc(String(t.due).slice(0, 10))}${donor}</span></span></li>`;
+  };
+  const overdueBlock = digest.overdue.length
+    ? `<div style="font-weight:700;color:#8a3a24;margin-top:12px;">Overdue (${digest.overdue.length})</div><ul style="margin:4px 0 0;padding-left:18px;">${digest.overdue.map(li).join("")}</ul>` : "";
+  const todayBlock = digest.dueToday.length
+    ? `<div style="font-weight:700;color:#8a6d1f;margin-top:12px;">Due today (${digest.dueToday.length})</div><ul style="margin:4px 0 0;padding-left:18px;">${digest.dueToday.map(li).join("")}</ul>` : "";
+  return `<div style="padding:22px;background:#f0ede6;font-family:'DM Sans',Helvetica,Arial,sans-serif;">
+      <div style="font-family:'DM Serif Display',Georgia,serif;font-size:22px;color:#0f1a12;">Your tasks for today</div>
+      <div style="font-size:13px;color:#6b7d70;margin-top:2px;">${digestEsc(displayNameCase(user.name || ""))} · ${digestEsc(today)}</div>
+      ${overdueBlock}${todayBlock}
+      <div style="margin-top:16px;"><a href="${publicAppUrl()}/dashboard" style="color:#0d5c3a;font-weight:700;text-decoration:underline;">Open your tasks →</a></div>
+    </div>`;
+}
+
+// Run the daily reminder for one org. send=false → compose only (preview),
+// reserving nothing. Non-empty is required to send. Returns sent/skipped.
+async function runDailyTaskRemindersForOrg(org, { today, send = true }) {
+  const out = { sent: [], skipped: [] };
+  const users = await query("SELECT id, name, email FROM users WHERE org_id=? AND email IS NOT NULL", [org.id]);
+  for (const u of users) {
+    const digest = await composeDailyTaskReminder(org.id, u.id, today);
+    if (digest.count === 0) { out.skipped.push({ recipientUserId: u.id, reason: "empty" }); continue; }
+    const payload = { recipientUserId: u.id, email: u.email, count: digest.count, overdue: digest.overdue.length, dueToday: digest.dueToday.length };
+    if (!send) { out.sent.push(payload); continue; }
+    if (!(await userWantsEmail(u.id, "daily_tasks"))) { out.skipped.push({ recipientUserId: u.id, reason: "opted_out" }); continue; }
+    const rid = await reserveDigest(org.id, "daily_tasks", "day:" + today, u.id, u.email, "user", { count: digest.count, overdue: digest.overdue.length });
+    if (!rid) { out.skipped.push({ recipientUserId: u.id, reason: "already_sent" }); continue; }
+    const subject = `${digest.count} task${digest.count === 1 ? "" : "s"} need${digest.count === 1 ? "s" : ""} you today — ${displayNameCase(org.name)}`;
+    await sendDigestEmail(org, u.email, subject, renderDailyTaskReminderBody(digest, org, u, today));
+    out.sent.push(payload);
+  }
+  return out;
+}
+
+async function processDailyTaskReminders(now = new Date(), { force = false } = {}) {
+  try {
+    if (!force && !inDailyReminderWindow(now)) return;
+    const today = localDateKey(now);
+    const orgs = await query("SELECT id, name FROM orgs WHERE onboarding_complete=1", []);
+    for (const org of orgs) {
+      await runDailyTaskRemindersForOrg(org, { today }).catch(e => console.error("[daily-tasks]", org.id, e.message));
+    }
+  } catch (e) { console.error("[daily-tasks] processDailyTaskReminders:", e.message); }
+}
+setTimeout(() => processDailyTaskReminders().catch(console.error), 45000);
+setInterval(() => processDailyTaskReminders().catch(console.error), 5 * 60 * 1000);
+
+// POST /digests/run-daily (requireAuth + requireAdmin) — drive the daily
+// reminder for the caller's org NOW (ops/test hook, same bar as /digests/run).
+// {today?, dryRun?} pin the date / preview without sending.
+app.post("/digests/run-daily", requireAuth, requireAdmin, wrap(async (req, res) => {
+  const [org] = await query("SELECT id, name FROM orgs WHERE id=?", [req.user.orgId]);
+  if (!org) return res.status(404).json({ error: "Org not found" });
+  const today = (req.body && req.body.today) || localDateKey(new Date());
+  const out = await runDailyTaskRemindersForOrg(org, { today, send: !(req.body && req.body.dryRun) });
+  res.json({ today, ...out });
+}));
+
 // GET /digests/preview — compose (never send) the caller's current digest, for
 // the in-app "Week in Review" view. Scope follows the caller's role/plan.
 app.get("/digests/preview", requireAuth, wrap(async (req, res) => {
@@ -12239,6 +12380,106 @@ async function sendGiftAlertEmail(org, toEmail, subject, bodyHtml) {
   return true;
 }
 
+// ── BUILD-36 A4: internal-notification dedup + per-user email toggles ────────
+// prefKind → the users.notify_* column. NULL / missing column is treated as ON
+// (default true) — a pre-existing user keeps hearing about their donors/tasks.
+const NOTIFY_PREF_COLUMN = {
+  portfolio_gifts: "notify_portfolio_gifts",
+  task_assignments: "notify_task_assignments",
+  daily_tasks: "notify_daily_tasks",
+};
+async function userWantsEmail(userId, prefKind) {
+  const col = NOTIFY_PREF_COLUMN[prefKind];
+  if (!col) return true;
+  const rows = await query(`SELECT ${col} AS p FROM users WHERE id=?`, [userId]);
+  return rows.length ? rows[0].p !== false : true; // NULL → ON
+}
+function mapNotifyPrefs(row) {
+  return {
+    portfolioGifts: row?.notify_portfolio_gifts !== false,
+    taskAssignments: row?.notify_task_assignments !== false,
+    dailyTasks: row?.notify_daily_tasks !== false,
+  };
+}
+
+// Send AT MOST ONE internal email to (org, eventKey, userId). Reserves the
+// notification_sends row FIRST (the cross-recipe, per-event dedup — so
+// gift-notify and the major-gift owner alert can never both email one person
+// for the same gift, A4), then sends. A pref opt-out reserves NOTHING, so a
+// different, opted-in notification for the same event can still win. Internal
+// staff mail via sendGiftAlertEmail (branded header, NEVER a donor footer).
+async function notifyUserOnce({ org, userId, email, eventKey, channel, prefKind, subject, bodyHtml }) {
+  if (!org || !userId || !email || !eventKey) return { sent: false, reason: "no_recipient" };
+  if (prefKind && !(await userWantsEmail(userId, prefKind))) return { sent: false, reason: "opted_out" };
+  const id = "ns_" + uuid().slice(0, 8);
+  const reserved = await query(
+    `INSERT INTO notification_sends (id,org_id,event_key,recipient_user_id,channel)
+     VALUES (?,?,?,?,?)
+     ON CONFLICT (org_id,event_key,recipient_user_id) DO NOTHING
+     RETURNING id`,
+    [id, org.id, eventKey, userId, channel || null]);
+  if (!reserved.length) return { sent: false, reason: "duplicate" };
+  await sendGiftAlertEmail(org, email, subject, bodyHtml);
+  return { sent: true };
+}
+
+// BUILD-36 A2 — email a task's assignee when someone ELSE (or a workflow)
+// assigned it. NO email for a self-assigned task. Deduped/idempotent via
+// notifyUserOnce: default eventKey = taskassign:<taskId>:<assigneeId> (so
+// reassigning to a NEW person notifies once), but a gift-fired workflow passes
+// the gift event key so the assignment email collapses with gift-notify (A4).
+async function notifyTaskAssignment(task, { org, actorUserId = null, eventKey = null }) {
+  const assigneeId = task && task.assigned_to;
+  if (!assigneeId) return { sent: false, reason: "unassigned" };
+  if (actorUserId && assigneeId === actorUserId) return { sent: false, reason: "self_assigned" };
+  const urows = await query("SELECT id, name, email FROM users WHERE id=? AND org_id=?", [assigneeId, org.id]);
+  if (!urows.length || !urows[0].email) return { sent: false, reason: "no_recipient" };
+  const assignee = urows[0];
+  const donorName = task.donor_id
+    ? (await query("SELECT name FROM donors WHERE id=? AND org_id=?", [task.donor_id, org.id]))[0]?.name
+    : null;
+  let actorName = null;
+  if (actorUserId) {
+    const ar = await query("SELECT name FROM users WHERE id=? AND org_id=?", [actorUserId, org.id]);
+    actorName = ar[0]?.name || null;
+  }
+  const context = actorName
+    ? `${displayNameCase(actorName)} assigned you a task`
+    : `A new task is waiting for you`;
+  const donorLine = donorName ? `<p style="margin:4px 0;color:#0f1a12;">Donor: <strong>${escHtmlWf(displayNameCase(donorName))}</strong></p>` : "";
+  const dueLine = task.due ? `<p style="margin:4px 0;color:#6b7d70;">Due ${escHtmlWf(String(task.due).slice(0, 10))}</p>` : "";
+  const body = `<p>${escHtmlWf(context)} in ${escHtmlWf(displayNameCase(org.name))}.</p>
+<p style="font-size:16px;margin:12px 0 2px;color:#0f1a12;"><strong>${escHtmlWf(task.title)}</strong></p>
+${donorLine}${dueLine}
+<p style="margin-top:14px;"><a href="${publicAppUrl()}/dashboard" style="color:#0d5c3a;font-weight:700;text-decoration:underline;">Open Steward →</a></p>`;
+  return notifyUserOnce({
+    org, userId: assignee.id, email: assignee.email,
+    eventKey: eventKey || `taskassign:${task.id}:${assignee.id}`,
+    channel: "task_assignment", prefKind: "task_assignments",
+    subject: `New task: ${task.title}`, bodyHtml: body,
+  });
+}
+
+// Fire-and-forget wrapper for the task routes: load the org + fire the
+// assignment email. actorUserId = who triggered the assignment (null = workflow).
+async function queueTaskAssignmentEmail(task, actorUserId, eventKey = null) {
+  if (!task || !task.assigned_to) return;
+  const [org] = await query("SELECT id, name FROM orgs WHERE id=?", [task.org_id]);
+  if (!org) return;
+  await notifyTaskAssignment(task, { org, actorUserId, eventKey });
+}
+
+// BUILD-36 A1 — provision a NEW org's workflow recipes with instant_gift_thanks
+// ON by default (ED & assigned officer). Hearing about a gift is the product
+// working, not a setting to discover. Called only at org creation, so existing
+// orgs are never re-created and their toggles stay untouched.
+async function provisionNewOrgWorkflows(orgId) {
+  await ensureWorkflows(orgId);
+  await run(
+    "UPDATE workflows SET enabled=true, config=? WHERE org_id=? AND recipe_key='instant_gift_thanks'",
+    [JSON.stringify({ notify: "both", threshold: 0 }), orgId]);
+}
+
 // Execute one action. Returns a summary object for the run log, or null.
 async function runWorkflowAction(action, { org, donor, ctx, config }) {
   const firstName = donor?.name ? donor.name.trim().split(/\s+/)[0] : "there";
@@ -12270,6 +12511,16 @@ async function runWorkflowAction(action, { org, donor, ctx, config }) {
         "INSERT INTO tasks (id,org_id,title,due,priority,type,done,donor_id,assigned_to,assigned_to_name,updated_at) VALUES (?,?,?,?,?,'donor',0,?,?,?,NOW())",
         [taskId, org.id, title, due, action.priority || "medium", donor?.id || null, owner?.id || null, owner?.name || null]
       );
+      // BUILD-36 A2/A4: a workflow that assigns a task to someone emails them.
+      // For a gift-fired workflow the event key is the gift, so this collapses
+      // with gift-notify (one email per person per gift). notify_owner is the
+      // "major-gift owner alert" A4 names explicitly.
+      if (owner?.id) {
+        await notifyTaskAssignment(
+          { id: taskId, org_id: org.id, title, due, donor_id: donor?.id || null, assigned_to: owner.id, assigned_to_name: owner.name },
+          { org, actorUserId: null, eventKey: ctx.giftId ? `gift:${ctx.giftId}` : `taskwf:${taskId}` }
+        ).catch(e => console.error("[workflow] task-assign email:", e.message));
+      }
       return { type: action.type, taskId, title, ...(isOwner ? { assignedTo: owner?.id || null, assignedFallback } : {}) };
     }
     case "notify_gift": {
@@ -12304,8 +12555,16 @@ async function runWorkflowAction(action, { org, donor, ctx, config }) {
       const emailBody = `<p>A gift just came in — a good moment to say thank you.</p>
 <p style="font-size:16px"><strong>${escHtmlWf(donor?.name || "A donor")}</strong> gave <strong>${escHtmlWf(amtStr || "a gift")}</strong> to ${escHtmlWf(displayNameCase(org.name))}.</p>
 <p>Open Steward to send a thank-you while it's fresh — a fast, personal thank-you is the single biggest driver of a donor giving again.</p>`;
+      // BUILD-36 A4: route through notifyUserOnce — respects the recipient's
+      // per-user toggle AND dedups per gift event, so this gift-notify and the
+      // major-gift owner alert never both email the same person for one gift.
+      const giftEventKey = ctx.giftId ? `gift:${ctx.giftId}` : `giftnotify:${ctx.dedupKey}`;
       for (const r of recipients) {
-        if (r.email) await sendGiftAlertEmail(org, r.email, `New gift: ${donor?.name || "a donor"} gave ${amtStr || "a gift"}`, emailBody);
+        if (r.email) await notifyUserOnce({
+          org, userId: r.id, email: r.email, eventKey: giftEventKey, channel: "gift",
+          prefKind: "portfolio_gifts",
+          subject: `New gift: ${donor?.name || "a donor"} gave ${amtStr || "a gift"}`, bodyHtml: emailBody,
+        });
       }
       return { type: "notify_gift", taskId, notified: recipients.map(r => r.name || r.email).filter(Boolean), mode };
     }
