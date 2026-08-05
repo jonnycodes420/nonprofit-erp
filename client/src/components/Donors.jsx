@@ -4491,7 +4491,7 @@ function AssignModal({donor,orgTeam,onSave,onClose}){
 // and stage/owner/search filtering happens in the GET /donors query itself.
 const DESIGNATION_OPTS=[["planned_confirmed","Planned gift confirmed"],["planned_prospect","Planned-giving prospect"],["estate","Estate giving"]];
 const cap=s=>s?String(s).charAt(0).toUpperCase()+String(s).slice(1):"—";
-function DirectoryView({donors,loading,serverTotal,page,pageSize,onPage,clientFilterCount,exportParams,totalDonors,orgTeam,isAdmin,onSelectDonor,onAssign,stageFilter,setStageFilter,assigneeFilter,setAssigneeFilter,designationFilter,setDesignationFilter,officers=[],officerColorMap={},portfolioMeta={tier:"core",single_user:true},onOfficersChanged,onLoadSampleData,sampleLoading,hasSampleData,onAddDonor,onBulkDone}){
+function DirectoryView({donors,loading,serverTotal,page,pageSize,onPage,clientFilterCount,exportParams,totalDonors,orgTeam,isAdmin,onSelectDonor,onAssign,stageFilter,setStageFilter,assigneeFilter,setAssigneeFilter,designationFilter,setDesignationFilter,officers=[],officerColorMap={},portfolioMeta={tier:"core",single_user:true},pendingInvites=[],onOfficersChanged,onLoadSampleData,sampleLoading,hasSampleData,onAddDonor,onBulkDone}){
   const [selIds,setSelIds]=useState(new Set());
   const [stageDrop,setStageDrop]=useState(false);
   const [assignDrop,setAssignDrop]=useState(false);
@@ -4558,7 +4558,7 @@ function DirectoryView({donors,loading,serverTotal,page,pageSize,onPage,clientFi
     setBusy(true);
     try{
       const r=await apiFetch("/donors/bulk-assign",{method:"PATCH",body:JSON.stringify({ids,assignedTo:userId})});
-      flash(`${r.updated} donor${r.updated!==1?"s":""} assigned to ${name}`);
+      flash(`${r.updated} donor${r.updated!==1?"s":""} assigned to ${name}${r.pending?" (held until they accept)":""}`);
       setSelIds(new Set());if(onBulkDone)onBulkDone();
     }catch(e){flash("Error: "+e.message);}
     setBusy(false);setAssignDrop(false);
@@ -4713,19 +4713,29 @@ function DirectoryView({donors,loading,serverTotal,page,pageSize,onPage,clientFi
             )}
           </div>}
 
-          {/* Assign to (admin only) — relationship-owner assignment is Team. */}
-          {isAdmin&&teamPortfolios&&orgTeam.length>0&&(
+          {/* Assign owner (admin only) — relationship-owner assignment is Team,
+              and admin-only by design (BUILD-31 pipeline role scoping: cross-
+              officer ownership is the oversight Team sells; staff never see this
+              control). An officer may be active OR a pending invite — the latter
+              is HELD until they accept (BUILD-36 B2), same as import owner-routing. */}
+          {isAdmin&&teamPortfolios&&(orgTeam.length>0||pendingInvites.length>0)&&(
             <div style={{position:"relative"}}>
               <button onClick={()=>{setAssignDrop(v=>!v);setStageDrop(false);}} disabled={busy}
                 style={{background:"#1a6b4a",border:"none",borderRadius:8,padding:"7px 12px",color:"#fff",fontSize:12,fontWeight:600,cursor:"pointer",whiteSpace:"nowrap",opacity:busy?0.6:1}}>
-                Assign to ▾
+                Assign owner ▾
               </button>
               {assignDrop&&(
-                <div style={{position:"absolute",top:"calc(100% + 6px)",right:0,background:"#f0ede6",border:"1px solid #d4cfc6",borderRadius:12,boxShadow:"0 8px 28px rgba(0,0,0,0.15)",zIndex:500,minWidth:160,overflow:"hidden"}}>
+                <div style={{position:"absolute",top:"calc(100% + 6px)",right:0,background:"#f0ede6",border:"1px solid #d4cfc6",borderRadius:12,boxShadow:"0 8px 28px rgba(0,0,0,0.15)",zIndex:500,minWidth:180,overflow:"hidden",maxHeight:320,overflowY:"auto"}}>
                   {orgTeam.map(u=>(
                     <button key={u.id} onClick={()=>bulkAssign(u.id,u.name)} style={dropItem}
                       onMouseEnter={e=>e.target.style.background="#e8e4db"} onMouseLeave={e=>e.target.style.background="none"}>
                       {u.name}
+                    </button>
+                  ))}
+                  {pendingInvites.map(u=>(
+                    <button key={u.id} onClick={()=>bulkAssign(u.id,u.name)} style={{...dropItem,color:"#8a6d1f"}}
+                      onMouseEnter={e=>e.target.style.background="#e8e4db"} onMouseLeave={e=>e.target.style.background="none"}>
+                      {u.name} — invited
                     </button>
                   ))}
                 </div>
@@ -5191,6 +5201,7 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
   const[dirDesignation,setDirDesignation]=useState("");   // BUILD-14 planned-giving/estate segment
   const[officers,setOfficers]=useState([]);               // BUILD-14 officer portfolios + color
   const[portfolioMeta,setPortfolioMeta]=useState({tier:"core",single_user:true});
+  const[pendingInvites,setPendingInvites]=useState([]); // [{id:"invite:<id>",name,email,pending}] — bulk assign-owner to a not-yet-accepted officer (B2)
   const[assignTarget,setAssignTarget]=useState(null);
   const[sampleStatus,setSampleStatus]=useState(null);
   const[sampleLoading,setSampleLoading]=useState(false);
@@ -5291,7 +5302,7 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
     .filter(matchesCf);
   const dirPageRows=(dirRows||[]).filter(matchesAdvanced).filter(matchesCf);
 
-  const loadOfficers=()=>apiFetch("/portfolio/officers").then(r=>{setOfficers(r.officers||[]);setPortfolioMeta({tier:r.tier||"core",single_user:!!r.single_user});}).catch(()=>{});
+  const loadOfficers=()=>apiFetch("/portfolio/officers").then(r=>{setOfficers(r.officers||[]);setPortfolioMeta({tier:r.tier||"core",single_user:!!r.single_user});setPendingInvites((r.invites||[]).map(i=>({id:"invite:"+i.id,name:i.name,email:i.email,pending:true})));}).catch(()=>{});
   useEffect(()=>{
     apiFetch("/org/sample-data-status").then(setSampleStatus).catch(()=>{});
     apiFetch("/org/team").then(setOrgTeam).catch(()=>{});
@@ -5593,7 +5604,7 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
         </div>
       </Card>}
 
-      {view==="directory"&&<DirectoryView donors={dirPageRows} loading={dirRows===null} serverTotal={dirTotal} page={dirPage} pageSize={DIR_PAGE_SIZE} onPage={setDirPage} clientFilterCount={advFilterCount+cfFilterCount} exportParams={{search:dirSearch.trim(),stage:dirStage,assignedTo:dirAssignee,designation:dirDesignation}} totalDonors={data.donors.length} orgTeam={orgTeam} isAdmin={isAdmin} onSelectDonor={selectDonor} onAssign={d=>setAssignTarget(d)} stageFilter={dirStage} setStageFilter={setDirStage} assigneeFilter={dirAssignee} setAssigneeFilter={setDirAssignee} designationFilter={dirDesignation} setDesignationFilter={setDirDesignation} officers={officers} officerColorMap={officerColorMap} portfolioMeta={portfolioMeta} onOfficersChanged={loadOfficers} onLoadSampleData={loadSampleData} sampleLoading={sampleLoading} hasSampleData={sampleStatus?.hasSampleData} onAddDonor={()=>setShowAdd(true)} onBulkDone={reloadDonors}/>}
+      {view==="directory"&&<DirectoryView donors={dirPageRows} loading={dirRows===null} serverTotal={dirTotal} page={dirPage} pageSize={DIR_PAGE_SIZE} onPage={setDirPage} clientFilterCount={advFilterCount+cfFilterCount} exportParams={{search:dirSearch.trim(),stage:dirStage,assignedTo:dirAssignee,designation:dirDesignation}} totalDonors={data.donors.length} orgTeam={orgTeam} isAdmin={isAdmin} onSelectDonor={selectDonor} onAssign={d=>setAssignTarget(d)} stageFilter={dirStage} setStageFilter={setDirStage} assigneeFilter={dirAssignee} setAssigneeFilter={setDirAssignee} designationFilter={dirDesignation} setDesignationFilter={setDirDesignation} officers={officers} officerColorMap={officerColorMap} portfolioMeta={portfolioMeta} pendingInvites={pendingInvites} onOfficersChanged={loadOfficers} onLoadSampleData={loadSampleData} sampleLoading={sampleLoading} hasSampleData={sampleStatus?.hasSampleData} onAddDonor={()=>setShowAdd(true)} onBulkDone={reloadDonors}/>}
 
       {view==="team"&&isAdmin&&<TeamView donors={filtered} orgTeam={orgTeam} onSelectDonor={selectDonor}/>}
 

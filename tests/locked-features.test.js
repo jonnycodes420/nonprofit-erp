@@ -93,7 +93,10 @@ ok(/isAdmin&&isTeam&&<button onClick=\{\(\)=>setShowReassign/.test(donors), "the
 ok(/showReassign&&isAdmin&&isTeam&&/.test(donors), "the Reassign form is Team-gated too");
 // Directory write controls (same capabilities) are hidden for Core
 ok(/teamPortfolios&&<div style=\{\{position:"relative"\}\}>[\s\S]{0,300}Move to stage/.test(donors), "directory bulk 'Move to stage' is Team-only");
-ok(/\{isAdmin&&teamPortfolios&&orgTeam\.length>0&&\(/.test(donors), "directory bulk 'Assign to' is Team-only");
+// Bulk "Assign owner" is admin-only AND Team-only (BUILD-36 B2 added pending
+// invitees to the dropdown; the admin+Team gate is unchanged).
+ok(/\{isAdmin&&teamPortfolios&&\(orgTeam\.length>0\|\|pendingInvites\.length>0\)&&\(/.test(donors), "directory bulk 'Assign owner' is admin-only + Team-only");
+ok(/Assign owner ▾/.test(donors), "directory bulk control is labeled 'Assign owner'");
 ok(/teamPortfolios&&<button[\s\S]{0,120}onAssign\(d\)/.test(donors), "directory per-row 'Assign' is Team-only");
 // CRM core is NOT gated — still fully available to Core
 ok(has(donors, "GivingHistoryChart") && has(donors, "Gifts & Pledges") && has(donors, "Materials"), "CRM core (giving history, Gifts & Pledges, Materials tabs) stays present/ungated");

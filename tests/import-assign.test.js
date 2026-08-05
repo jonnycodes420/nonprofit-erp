@@ -299,6 +299,47 @@ async function seedUser(o, id, email, name, role = "staff") {
   ok("donor pending on the EXPIRED invite is still claimed by email (no orphan)",
     bellaAfter.assigned_to === bUser.id && bellaAfter.pending_assignee_invite_id === null, bellaAfter);
 
+  // ══════════════════════════════════════════════════════════════════════════
+  // 5 — Bulk "Assign owner" in the Directory (BUILD-36 B2)
+  //     Same pending-invitee rules as import: an active officer lands the donor
+  //     on their board; a pending invite is HELD until accept; admin-only.
+  // ══════════════════════════════════════════════════════════════════════════
+  const bulkDonors = ["ba_1", "ba_2", "ba_3"];
+  for (const id of bulkDonors) await q(`INSERT INTO donors (id,org_id,name,stage,total_giving) VALUES ($1,$2,$3,'cultivate',500)`, [id, TEAM, id]);
+
+  // (a) assign all three to an ACTIVE officer → assignment IS portfolio+board membership.
+  let rb = await api("PATCH", "/donors/bulk-assign", admin2, { ids: bulkDonors, assignedTo: jUser.id });
+  ok("B2: bulk assign-owner to an active officer → 200 / updated 3", rb.status === 200 && rb.body.updated === 3, rb.body);
+  const owned3 = (await q(`SELECT COUNT(*)::int n FROM donors WHERE org_id=$1 AND assigned_to=$2 AND id = ANY($3)`, [TEAM, jUser.id, bulkDonors]))[0];
+  ok("B2: all 3 now owned by the officer (on their board — counts consistent)", owned3.n === 3, owned3.n);
+
+  // (b) assign to a PENDING invite → held (assigned_to null, not on board, pending set).
+  const invC = await api("POST", "/auth/invite", admin2, { email: "carol@creo.org", role: "staff" });
+  rb = await api("PATCH", "/donors/bulk-assign", admin2, { ids: ["ba_1"], assignedTo: "invite:" + invC.body.id });
+  ok("B2: bulk assign-owner to a PENDING invite → 200 + pending:true", rb.status === 200 && rb.body.pending === true, rb.body);
+  const held = (await q(`SELECT assigned_to, pending_assignee_invite_id, pending_assignee_name FROM donors WHERE id='ba_1'`))[0];
+  ok("B2: pending assignee HELD (assigned_to null, NOT on board, pending set)",
+    held.assigned_to === null && held.pending_assignee_invite_id === invC.body.id && held.pending_assignee_name === "Carol", held);
+
+  // accept → the held donor resolves to the new officer (same path as import).
+  const cToken = (await q(`SELECT token FROM invites WHERE id=$1`, [invC.body.id]))[0].token;
+  await api("POST", "/auth/invite/accept", null, { token: cToken, name: "Carol Carter", password: "password12" });
+  const cUser = (await q(`SELECT id FROM users WHERE org_id=$1 AND email='carol@creo.org'`, [TEAM]))[0];
+  const ba1After = (await q(`SELECT assigned_to, pending_assignee_invite_id FROM donors WHERE id='ba_1'`))[0];
+  ok("B2: on accept the held donor resolves to the new officer (on board), pending cleared",
+    ba1After.assigned_to === cUser.id && ba1After.pending_assignee_invite_id === null, ba1After);
+
+  // (c) admin-only by design: a staff (non-admin) can't bulk-assign owners.
+  const staffTok = await login("jonathan@creo.org", "password12"); // Jonathan accepted as staff
+  const staffAssign = await api("PATCH", "/donors/bulk-assign", staffTok, { ids: ["ba_2"], assignedTo: jUser.id });
+  ok("B2: staff (non-admin) bulk assign-owner → 403 (control hidden + server-enforced)", staffAssign.status === 403, staffAssign.status);
+
+  // (d) a bogus pending invite id → 400, never a silent mis-assign.
+  rb = await api("PATCH", "/donors/bulk-assign", admin2, { ids: ["ba_2"], assignedTo: "invite:inv_bogus" });
+  ok("B2: bogus pending invite → 400, no state change", rb.status === 400, rb.body);
+  const ba2 = (await q(`SELECT assigned_to, pending_assignee_invite_id FROM donors WHERE id='ba_2'`))[0];
+  ok("B2: the bogus-target donor is untouched", ba2.assigned_to === jUser.id && ba2.pending_assignee_invite_id === null, ba2);
+
   await closeDb();
   summary();
 })().catch(e => { console.error(e); process.exit(1); });

@@ -3277,23 +3277,45 @@ app.patch("/donors/bulk-assign", requireAuth, requireAdmin, requirePlan("team"),
   if (!Array.isArray(ids) || ids.length === 0) return res.status(400).json({ error: "ids array required" });
   if (!assignedTo) return res.status(400).json({ error: "assignedTo required" });
 
-  const userRow = await query("SELECT id, name FROM users WHERE id=? AND org_id=?", [assignedTo, req.user.orgId]);
-  if (!userRow.length) return res.status(400).json({ error: "User not found in your org" });
-  const assignedToName = userRow[0].name;
-
   const owned = await query(
     "SELECT id FROM donors WHERE id = ANY(?) AND org_id = ? AND deleted_at IS NULL",
     [ids, req.user.orgId]
   );
   if (owned.length !== ids.length) return res.status(403).json({ error: "One or more donors not found in your org" });
 
+  // BUILD-36 B2: the owner is either a real active user in this org, or a PENDING
+  // invite ("invite:<id>") — held until that officer accepts, exactly like the
+  // import owner-routing (pending-invitee rules). A pending assignment clears any
+  // real owner and does NOT put the donor on a board yet (assigned_to stays NULL);
+  // /auth/invite/accept later resolves it to the new user + their board.
+  if (String(assignedTo).startsWith("invite:")) {
+    const inviteId = String(assignedTo).slice("invite:".length);
+    const inv = await query(
+      "SELECT id, email FROM invites WHERE id=? AND org_id=? AND accepted_at IS NULL AND expires_at > NOW()",
+      [inviteId, req.user.orgId]);
+    if (!inv.length) return res.status(400).json({ error: "Invite not found or no longer pending" });
+    const pendingName = inviteeDisplayName(inv[0].email);
+    const result = await run(
+      `UPDATE donors SET assigned_to=NULL, assigned_to_name=NULL,
+         pending_assignee_invite_id=?, pending_assignee_name=?, updated_at=NOW()
+       WHERE id = ANY(?) AND org_id = ? AND deleted_at IS NULL`,
+      [inviteId, pendingName, ids, req.user.orgId]);
+    return res.json({ updated: result.changes, pending: true, assignedToName: pendingName });
+  }
+
+  const userRow = await query("SELECT id, name FROM users WHERE id=? AND org_id=?", [assignedTo, req.user.orgId]);
+  if (!userRow.length) return res.status(400).json({ error: "User not found in your org" });
+  const assignedToName = userRow[0].name;
+
   // Bulk-assigning to an officer puts the batch in that officer's portfolio AND
-  // on their board — assignment IS membership (BUILD-30), no separate flag.
+  // on their board — assignment IS membership (BUILD-30), no separate flag. Any
+  // prior pending-invite hold is cleared.
   const result = await run(
-    "UPDATE donors SET assigned_to=?, assigned_to_name=?, updated_at=NOW() WHERE id = ANY(?) AND org_id = ? AND deleted_at IS NULL",
-    [assignedTo, assignedToName, ids, req.user.orgId]
-  );
-  res.json({ updated: result.changes });
+    `UPDATE donors SET assigned_to=?, assigned_to_name=?,
+       pending_assignee_invite_id=NULL, pending_assignee_name=NULL, updated_at=NOW()
+     WHERE id = ANY(?) AND org_id = ? AND deleted_at IS NULL`,
+    [assignedTo, assignedToName, ids, req.user.orgId]);
+  res.json({ updated: result.changes, assignedToName });
 }));
 
 app.post("/donors/bulk-delete", requireAuth, requireAdmin, wrap(async (req, res) => {
