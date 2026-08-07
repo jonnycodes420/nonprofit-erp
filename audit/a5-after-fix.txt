@@ -1,0 +1,7 @@
+registered userId= user_da104a62 role= admin
+[BEFORE demote] POST /auth/invite -> 200 (admin OK)
+DB role now = staff
+[AFTER demote] POST /auth/invite (same token) -> 403 Admin access required
+[AFTER user DELETED] GET /me (same token) -> 404 {"error":"Not found"}
+[user active] GET /donors -> 200
+[user DELETED] GET /donors (same token, org-scoped route) -> 200 (!!! removed user still reads org data for up to 7d)

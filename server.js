@@ -50,7 +50,7 @@ const Anthropic = require("@anthropic-ai/sdk");
 const { Resend } = require("resend");
 const resend = new Resend(process.env.RESEND_API_KEY);
 const { getDb, query, run, uuid, seedOrgData, withTransaction, withAdvisoryLock, queryTx, runTx } = require("./db");
-const { signToken, requireAuth, requireSuperAdmin } = require("./auth");
+const { signToken, requireAuth, requireSuperAdmin: requireSuperAdminJwt } = require("./auth");
 const { normalizeAccent } = require("./branding");
 const { lookupMatchingGift } = require("./matchingGifts");
 const Stripe = require("stripe");
@@ -982,10 +982,31 @@ app.use((req, res, next) => {
 const wrap = fn => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
 
 // ── Admin guard ────────────────────────────────────────────────────────────
-const requireAdmin = (req, res, next) => {
-  if (req.user.role !== "admin") return res.status(403).json({ error: "Admin access required" });
+// Revalidates the caller's role against the DB, NOT the (stateless, 7-day) JWT.
+// The token bakes `role` in at login, so a demoted or removed user would keep
+// admin power until the token expired — up to a week. Re-reading the live row
+// makes a role revocation or account removal take effect on the next request.
+// (Audit BUILD-37 §A5/§C4 — stale-JWT privilege retention; proven exploitable.)
+// Admin routes are low-frequency, so the extra indexed lookup is not on the
+// read hot path.
+const requireAdmin = wrap(async (req, res, next) => {
+  const rows = await query("SELECT role FROM users WHERE id = ?", [req.user.userId]);
+  if (!rows.length) return res.status(401).json({ error: "user_not_found", message: "Your account no longer exists" });
+  if (rows[0].role !== "admin") return res.status(403).json({ error: "Admin access required" });
   next();
-};
+});
+
+// ── Super-admin guard ──────────────────────────────────────────────────────
+// Same reasoning as requireAdmin, but the blast radius is worse: is_super_admin
+// is baked into the JWT and grants CROSS-ORG access to every tenant. A revoked
+// super-admin must lose that on the next request, not in up to 7 days. The JWT
+// check runs first (cheap reject), then the live `is_super_admin` flag is
+// re-read. (Audit BUILD-37 §A5/§B10.) All /admin/* usages call this wrapper.
+const requireSuperAdmin = [requireSuperAdminJwt, wrap(async (req, res, next) => {
+  const rows = await query("SELECT is_super_admin FROM users WHERE id = ?", [req.user.userId]);
+  if (!rows.length || rows[0].is_super_admin !== true) return res.status(403).json({ error: "Forbidden" });
+  next();
+})];
 
 // ── Health ─────────────────────────────────────────────────────────────────
 // `sentry` is a non-secret boolean (is SENTRY_DSN configured?) so ops checks

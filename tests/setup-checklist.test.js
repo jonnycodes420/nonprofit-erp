@@ -114,7 +114,13 @@ const item = (body, key) => (body.items || []).find(i => i.key === key);
   ok("a live pending invite → team item done (inviting counts, before accept)", item(r.body, "team").done === true);
 
   // ── Card state: admin-only, org-wide, validated, org-scoped ──────────────
-  r = await api("PUT", "/org/setup-card", tokStaff, { state: "collapsed" });
+  // Re-seed a LIVE staff user: the team-item step above deleted every ORG_T
+  // user but u_su_t1, and requireAdmin now revalidates the caller against the
+  // DB (BUILD-37 §A5) — a deleted user's stale token is 401, not a staff 403.
+  // Re-seeding keeps this assertion about the staff ROLE being denied.
+  await seedUser(ORG_T, "u_su_staff2", "tstaff2", "staff");
+  const tokStaff2 = await login("tstaff2@su.local");
+  r = await api("PUT", "/org/setup-card", tokStaff2, { state: "collapsed" });
   ok("staff cannot set the org card state → 403", r.status === 403, r.status);
   r = await api("PUT", "/org/setup-card", tokT, { state: "bogus" });
   ok("invalid state → 400", r.status === 400, r.body);

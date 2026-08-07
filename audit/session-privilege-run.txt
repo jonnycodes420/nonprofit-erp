@@ -1,0 +1,9 @@
+  PASS  fresh admin token can hit a requireAdmin route
+  PASS  (fails pre-fix) demoted admin's SAME token is now rejected
+  PASS  removed user's token cannot hit a requireAdmin route
+  PASS  super-admin JWT issued at login
+  PASS  super-admin token can hit an /admin route
+  PASS  (fails pre-fix) revoked super-admin's SAME token is now 403
+  PASS  an unchanged admin is NOT locked out by the revalidation
+
+7 passed, 0 failed
