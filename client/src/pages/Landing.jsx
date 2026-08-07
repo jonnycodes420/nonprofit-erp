@@ -432,24 +432,58 @@ export default function Landing() {
     return () => { document.body.style.overflow = ""; };
   }, [showCal]);
 
-  // Premium scroll reveals (BUILD-29). Each `.lp-reveal` section fades + rises
-  // once as it enters view. prefers-reduced-motion (or no IntersectionObserver)
-  // reveals everything immediately — the no-motion path is non-negotiable.
+  // Premium scroll reveals (BUILD-29; rebuilt FAIL-OPEN in BUILD-40 P0-1).
+  // The old design was fail-closed: base CSS hid every `.lp-reveal` and
+  // visibility depended on an IntersectionObserver callback arriving. A
+  // momentum flick on a phone, an anchor jump, or back-navigation scroll
+  // restoration moved sections through the viewport BETWEEN callbacks — they
+  // never got `is-visible` and stayed blank forever (eight sections measured
+  // at opacity 0 in a live 390px walk, 2026-08-06). Now:
+  //   - the hidden state only exists while `html.reveal-ready` is set (armed
+  //     HERE, after this code owns recovery) and only ≥768px (see the CSS) —
+  //     with JS broken/slow/blocked, everything renders. Content visibility
+  //     must never depend on an animation succeeding.
+  //   - reveals are OFF at phone width: scroll animations add nothing on a
+  //     phone and cost everything.
+  //   - every observer callback also runs a recovery sweep (reveal anything
+  //     whose top is already above the viewport bottom, regardless of
+  //     isIntersecting), plus an idle pass after load for the fold.
   useEffect(() => {
     const els = Array.from(document.querySelectorAll(".lp-reveal"));
     if (!els.length) return;
-    const reduce = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    if (reduce || !("IntersectionObserver" in window)) {
+    const mm = q => window.matchMedia && window.matchMedia(q).matches;
+    const noMotion = mm("(prefers-reduced-motion: reduce)") || mm("(max-width: 767px)") || !("IntersectionObserver" in window);
+    if (noMotion) {
+      // Never armed → the CSS hidden state never applies. is-visible is added
+      // anyway as a belt (and so class-based checks read one consistent state).
       els.forEach(el => el.classList.add("is-visible"));
       return;
     }
+    const reveal = el => el.classList.add("is-visible");
+    // Reveal everything already in the first viewport BEFORE arming the hidden
+    // state, so arming can never blank content the visitor is looking at.
+    els.forEach(el => { if (el.getBoundingClientRect().top < window.innerHeight) reveal(el); });
+    document.documentElement.classList.add("reveal-ready");
+    const sweep = () => {
+      for (const el of els) {
+        if (!el.classList.contains("is-visible") && el.getBoundingClientRect().top < window.innerHeight) {
+          reveal(el); io.unobserve(el);
+        }
+      }
+    };
     const io = new IntersectionObserver((entries, obs) => {
       for (const e of entries) {
-        if (e.isIntersecting) { e.target.classList.add("is-visible"); obs.unobserve(e.target); }
+        if (e.isIntersecting) { reveal(e.target); obs.unobserve(e.target); }
       }
-    }, { threshold: 0.12, rootMargin: "0px 0px -6% 0px" });
+      // Recovery: a fast jump generates callbacks for sections it skipped
+      // PAST (isIntersecting false) — sweep them visible instead of stranding.
+      sweep();
+    }, { threshold: 0.12, rootMargin: "0px 0px -10% 0px" });
     els.forEach(el => io.observe(el));
-    return () => io.disconnect();
+    const idle = window.requestIdleCallback || (fn => setTimeout(fn, 1200));
+    const cancelIdle = window.cancelIdleCallback || clearTimeout;
+    const idleId = idle(sweep);
+    return () => { io.disconnect(); cancelIdle(idleId); document.documentElement.classList.remove("reveal-ready"); };
   }, []);
 
   const GoldBtn = ({ children, onClick, big }) => (
@@ -503,7 +537,10 @@ export default function Landing() {
            scrim (never a gradient). Headline sits over the dark, quiet
            upper-left; the choir reads center/right. object-position keeps
            the quiet area behind the type at every breakpoint. ── */
-        .lp-hero-photo { position: relative; min-height: min(90vh, 760px); display: flex; align-items: flex-start; overflow: hidden; background: ${C.ink}; }
+        /* aspect-ratio (BUILD-40 P0-2) gives the container an intrinsic size
+           from the photo's own 2560×1417 ratio, so the layout can never shift
+           when the image lands; min-height still wins where it's larger. */
+        .lp-hero-photo { position: relative; aspect-ratio: 2560 / 1417; min-height: min(90vh, 760px); display: flex; align-items: flex-start; overflow: hidden; background: ${C.ink}; }
         .lp-hero-img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: 60% 30%; z-index: 0; }
         .lp-hero-scrim { position: absolute; inset: 0; background: rgba(15,26,18,0.60); z-index: 1; }
         .lp-hero-content { position: relative; z-index: 2; width: 100%; max-width: 1140px; margin: 0 auto; padding: clamp(76px, 13vh, 150px) 64px 72px; }
@@ -533,12 +570,16 @@ export default function Landing() {
         .lp-hcard-foot strong { font-size: 14px; color: ${C.gold}; font-weight: 400; }
         @media (max-width: 1139px) { .lp-hero-card { display: none; } }
 
-        /* ── BUILD-29: premium scroll reveals. Fade + a small rise as a section
-           enters view — fast + subtle (~380ms / 16px, ease-out). Opacity and
-           transform only, so there is ZERO layout shift (CLS unaffected). The
-           reduced-motion block below renders everything immediately. */
-        .lp-reveal { opacity: 0; transform: translateY(16px); transition: opacity .38s ease-out, transform .38s ease-out; }
-        .lp-reveal.is-visible { opacity: 1; transform: none; }
+        /* ── BUILD-29 scroll reveals, FAIL-OPEN since BUILD-40 P0-1. The
+           hidden base state is scoped to html.reveal-ready (set by JS only
+           after the recovery sweeps are armed) AND to ≥768px — a phone never
+           hides content behind an animation, and neither does broken/blocked
+           JS. Opacity and transform only, so ZERO layout shift. The
+           reduced-motion block below stays as a belt. */
+        @media (min-width: 768px) {
+          html.reveal-ready .lp-reveal { opacity: 0; transform: translateY(16px); transition: opacity .38s ease-out, transform .38s ease-out; }
+          html.reveal-ready .lp-reveal.is-visible { opacity: 1; transform: none; }
+        }
 
         /* Verticals band — "this is a tool for you" */
         .lp-vert-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 28px; }
@@ -666,24 +707,100 @@ export default function Landing() {
         .lp-hiw-imgbox > * { width: 100%; }
 
         @media (max-width: 768px) {
-          .lp-section { padding: 64px 22px; }
-          .lp-hiw-grid { grid-template-columns: 1fr; gap: 32px; }
+          /* ── BUILD-40 P1: compress vertical rhythm. The page measured
+             ~15,000px tall at 390px (seventeen phone screens); section and
+             moment spacing was inheriting desktop air nearly whole. ── */
+          .lp-section { padding: 56px 22px; }
+          .lp-hiw-grid { grid-template-columns: 1fr; gap: 28px; }
           .lp-hero-grid { grid-template-columns: 1fr; gap: 44px; }
-          /* Keep the dark, quiet area behind the headline on portrait screens
-             and darken the flat scrim so type stays AA-legible. */
-          .lp-hero-photo { min-height: 82vh; }
+          /* Hero: height comes from the CONTENT, not 82vh of photograph —
+             the ~180px of empty image between nav and eyebrow is cut so the
+             headline and both CTAs clear a real iPhone's ~700px usable fold
+             (browser chrome eats ~140px the test frame doesn't show). Scrim
+             darkened for AA over the tighter crop. */
+          .lp-hero-photo { min-height: 0; aspect-ratio: auto; }
           .lp-hero-img { object-position: 30% 28%; }
           .lp-hero-scrim { background: rgba(15,26,18,0.66); }
-          .lp-hero-content { padding: 92px 22px 56px; }
-          .lp-vert-grid { grid-template-columns: 1fr; gap: 20px; }
-          .lp-nav { padding: 0 22px !important; }
-          .lp-nav-pricing { display: none; }
+          .lp-hero-content { padding: 72px 22px 44px; }
           .lp-h1 { font-size: 42px !important; }
-          .lp-moment, .lp-moment.lp-flip { grid-template-columns: 1fr; gap: 28px; }
+          /* CTA pairs: equal, full-width, primary first — the 250px/370px
+             stacked mismatch read as a mistake. */
+          .lp-cta-row { flex-direction: column; align-items: stretch; gap: 14px !important; }
+          .lp-cta-row button { width: 100%; min-height: 52px; }
+          /* Verticals: a horizontal snap carousel instead of three stacked
+             image cards (three full screens of scrolling for three
+             sentences). Scrolls INSIDE its own container — the page never
+             scrolls horizontally. */
+          .lp-vert-grid { display: flex; overflow-x: auto; scroll-snap-type: x mandatory; gap: 14px; margin: 0 -22px; padding: 4px 22px 16px; -webkit-overflow-scrolling: touch; }
+          .lp-vert-card { flex: 0 0 80%; scroll-snap-align: center; }
+          .lp-vert-media, .lp-vert-fallback { height: 150px; }
+          .lp-vert-body { padding: 18px 20px 20px; }
+          /* Nav: Pricing must stay reachable on mobile (it was display:none,
+             leaving it footer-only). "Log in" moves to the footer instead;
+             the gold CTA compacts to fit 390px. */
+          .lp-nav { padding: 0 18px !important; gap: 10px; }
+          .lp-nav-login { display: none; }
+          .lp-nav .lp-goldbtn { padding: 11px 13px !important; font-size: 13px !important; }
+          /* Long centered serif paragraphs don't work at 390px — left-align
+             body-length text; centering is for short headings. */
+          .lp-problem { text-align: left !important; }
+          .lp-statement { font-size: 27px !important; line-height: 1.35 !important; }
+          /* The product shot drops the DESKTOP browser chrome (traffic
+             lights + address bar undercut "this is the home screen" on a
+             phone) — the UI shows edge-to-edge in the rounded card. */
+          .lp-frame-bar { display: none; }
+          .lp-shot-wrap { padding: 12px; }
+          .lp-moment, .lp-moment.lp-flip { grid-template-columns: 1fr; gap: 24px; }
           .lp-moment.lp-flip .lp-moment-text { order: 1; }
           .lp-moment.lp-flip .lp-moment-media { order: 2; }
-          .lp-moment + .lp-moment { margin-top: 72px; }
-          .lp-calc { grid-template-columns: 1fr; gap: 32px; }
+          .lp-moment + .lp-moment { margin-top: 56px; }
+          .lp-calc { grid-template-columns: 1fr; gap: 28px; }
+          .lp-calc-card { padding: 22px 20px; }
+          /* ── BUILD-40 P2: touch + type. Body copy ≥16px (this audience
+             skews 45+ and reads on phones in bad light); 44px tap targets;
+             a thumb-sized slider with a tall hit area; safe-area padding so
+             nothing sits under the iPhone home indicator. ── */
+          .lp-vert-body p, .lp-hiw-grid p, .lp-moment-text p, .lp-candor-list li { font-size: 16px !important; }
+          .lp-nav .lp-navlink { display: inline-block; padding: 12px 6px; }
+          footer .lp-navlink { display: inline-block; padding: 12px 8px; }
+          .lp footer { padding: 36px 22px calc(36px + env(safe-area-inset-bottom, 0px)) !important; }
+          .lp-slider { height: 6px; padding: 14px 0; background-clip: content-box; box-sizing: content-box; }
+          .lp-slider::-webkit-slider-thumb { width: 30px; height: 30px; }
+          .lp-slider::-moz-range-thumb { width: 28px; height: 28px; }
+          /* ── BUILD-40 P1 (continued): the tallest blocks at 390px were the
+             moments (3,428px), the founder letter (1,615px), how-it-works
+             (1,423px) and the product shots' inherited desktop air. Compact
+             the shot internals; the how-it-works ILLUSTRATIONS drop at phone
+             width (the numbered step text carries the meaning, the shots
+             still show >=768px, and two of the three shots also appear
+             full-size elsewhere on the page). ── */
+          .lp-hiw-imgbox { display: none; }
+          .lp-qrow { padding: 10px 13px; gap: 10px; }
+          .lp-qav { width: 30px; height: 30px; font-size: 12px; }
+          .lp-qhead { padding: 12px 14px; }
+          .lp-email-head { padding: 12px 16px; font-size: 12px; }
+          .lp-email-body { padding: 16px; font-size: 13px; line-height: 1.65; }
+          .lp-receipt-head { padding: 14px 18px; }
+          .lp-receipt-body { padding: 16px 18px 18px; }
+          .lp-receipt-grid { padding: 12px 14px; gap: 8px; }
+          .lp-goalcard { padding: 16px 16px; }
+          .lp-goal-pct { font-size: 40px; }
+          .lp-retcard { padding: 14px 16px; }
+          .lp-shot-wrap { padding: 10px; }
+          .lp-founder-letter { font-size: 17px !important; line-height: 1.7 !important; }
+          .lp-founder-letter p { margin-bottom: 14px !important; }
+          .lp-section { padding: 48px 22px; }
+          /* Queue card: drop the near-duplicate of each row pair (Elena
+             mirrors Julian's note row; Robert mirrors Sunrise's milestone
+             row) — all three row tones stay represented in four rows. The
+             item-count chip goes with them so the header never contradicts
+             what's shown. */
+          .lp-qcard > .lp-qrow:nth-of-type(4), .lp-qcard > .lp-qrow:nth-of-type(6) { display: none; }
+          .lp-qhead > span:last-child { display: none; }
+          /* Proof shot: the goal thermometer + retention card carry the
+             message; the secondary stat boxes + scope toggle are desktop
+             depth. */
+          .lp-shot-wrap .lp-goalstat, .lp-shot-wrap .lp-scope { display: none; }
         }
       `}</style>
 
@@ -699,7 +816,7 @@ export default function Landing() {
           <span className="lp-serif" style={{ fontSize: 22, color: C.ink }}>Steward</span>
           <div style={{ display: "flex", alignItems: "center", gap: 22 }}>
             <a href="/pricing" className="lp-navlink lp-nav-pricing">Pricing</a>
-            <a href="/login" className="lp-navlink">Log in</a>
+            <a href="/login" className="lp-navlink lp-nav-login">Log in</a>
             <GoldBtn onClick={() => navigate("/invitation")}>Request an invitation</GoldBtn>
           </div>
         </nav>
@@ -713,7 +830,7 @@ export default function Landing() {
           <img
             className="lp-hero-img"
             src={`${HERO_SRC}-1280.webp`}
-            srcSet={`${HERO_SRC}-960.webp 960w, ${HERO_SRC}-1280.webp 1280w, ${HERO_SRC}-1920.webp 1920w, ${HERO_SRC}-2560.webp 2560w`}
+            srcSet={`${HERO_SRC}-640.webp 640w, ${HERO_SRC}-960.webp 960w, ${HERO_SRC}-1280.webp 1280w, ${HERO_SRC}-1920.webp 1920w, ${HERO_SRC}-2560.webp 2560w`}
             sizes="100vw"
             width="2560" height="1417"
             alt="" aria-hidden="true" fetchpriority="high" decoding="async"
@@ -740,7 +857,7 @@ export default function Landing() {
                 — and stops you losing the donors you already earned to failed
                 cards and silence.
               </p>
-              <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 16 }}>
+              <div className="lp-cta-row" style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 16 }}>
                 <GoldBtn big onClick={() => navigate("/invitation")}>Request an invitation</GoldBtn>
                 <QuietBtn big onDark onClick={() => setShowCal(true)}>Talk to the founder</QuietBtn>
               </div>
@@ -796,8 +913,8 @@ export default function Landing() {
 
         {/* ── 2. The problem, told plainly ── */}
         <section className="lp-section lp-reveal" style={{ background: C.cream, borderBottom: `1px solid ${C.cream2}` }}>
-          <div className="lp-narrow" style={{ textAlign: "center" }}>
-            <p className="lp-serif" style={{ fontSize: "clamp(24px, 2.6vw, 33px)", lineHeight: 1.5, color: C.ink }}>
+          <div className="lp-narrow lp-problem" style={{ textAlign: "center" }}>
+            <p className="lp-serif lp-statement" style={{ fontSize: "clamp(24px, 2.6vw, 33px)", lineHeight: 1.5, color: C.ink }}>
               The average nonprofit keeps 43% of its donors from one year to the
               next. Not because people stop caring — because nobody noticed them
               going quiet. Every CRM can store your donors.{" "}
@@ -1015,7 +1132,7 @@ export default function Landing() {
               and no customer count on this page, because it's early and I won't
               invent either. Here is what's actually true today:
             </p>
-            <ul style={{ listStyle: "none", display: "flex", flexDirection: "column", gap: 12, marginBottom: 28 }}>
+            <ul className="lp-candor-list" style={{ listStyle: "none", display: "flex", flexDirection: "column", gap: 12, marginBottom: 28 }}>
               {[
                 "Live now: donor records and pipeline, Gmail sync, email campaigns and sequences, milestone drafts a human reviews before anything sends, failed-payment recovery, tax receipts and year-end statements, six board-ready reports, peer-to-peer fundraising pages.",
                 "Load-tested to 25,000 donors and 200,000 gifts per organization.",
@@ -1060,7 +1177,7 @@ export default function Landing() {
             <h2 className="lp-serif" style={{ fontSize: "clamp(26px, 2.8vw, 34px)", color: C.ink, lineHeight: 1.15, marginBottom: 22 }}>
               Why I built Steward
             </h2>
-            <div className="lp-serif" style={{ fontSize: 19, color: C.ink, lineHeight: 1.85 }}>
+            <div className="lp-serif lp-founder-letter" style={{ fontSize: 19, color: C.ink, lineHeight: 1.85 }}>
               <p style={{ marginBottom: 18 }}>
                 My dad has spent his whole career in nonprofit development, and
                 he's raised tens of millions of dollars. He built the donor CRM
@@ -1116,7 +1233,7 @@ export default function Landing() {
             <h2 className="lp-serif" style={{ fontSize: "clamp(34px, 4vw, 52px)", color: C.ink, marginBottom: 30, lineHeight: 1.12 }}>
               See who needs you today.
             </h2>
-            <div style={{ display: "flex", gap: 12, justifyContent: "center", flexWrap: "wrap", marginBottom: 18 }}>
+            <div className="lp-cta-row" style={{ display: "flex", gap: 12, justifyContent: "center", flexWrap: "wrap", marginBottom: 18 }}>
               <GoldBtn big onClick={() => navigate("/invitation")}>Request an invitation</GoldBtn>
               <QuietBtn big onClick={() => setShowCal(true)}>Talk to the founder</QuietBtn>
             </div>

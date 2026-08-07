@@ -94,6 +94,13 @@ export function InvitationSection({ headline }) {
       <style>{`
         .inv-input:focus { box-shadow: 0 0 0 2px ${C.gold}; border-color: ${C.gold} !important; }
         .inv-btn:hover { filter: brightness(1.05); }
+        /* BUILD-40 P1: compress the section's desktop air at phone width.
+           Inputs keep >=44px height and 16px type (no iOS zoom-on-focus). */
+        @media (max-width: 768px) {
+          #invitation { padding: 56px 22px !important; }
+          #invitation form label { margin-bottom: 14px !important; }
+          .inv-input { padding: 12px 13px !important; }
+        }
       `}</style>
       <div style={{ maxWidth: 560, margin: "0 auto", textAlign: "center" }}>
         <div style={{
