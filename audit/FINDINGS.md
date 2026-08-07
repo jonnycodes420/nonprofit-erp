@@ -26,7 +26,7 @@ This is the exact failure §1's preamble names: privilege that survives the even
 
 **Fix (committed, contained).** `requireAdmin` and `requireSuperAdmin` (`server.js:985`, `:997`) now revalidate the caller's live `role` / `is_super_admin` and existence against the DB on each privileged request. A demoted/removed admin is now **403/401 on the next request** (re-proven in `audit/a5-after-fix.txt`). This is deliberately scoped to the **privileged middleware only** — it is NOT added to `requireAuth` (the read hot path), to avoid a per-request DB read across all ~260 authed routes and regressing the 25k-donor latency budget. Regression test: `tests/session-privilege.test.js` (7 assertions; the two marked `(fails pre-fix)` returned 200 before the fix). Full suite re-run green.
 
-**Residual (see `BLOCKED-session-revocation.md`).** A removed *non-admin* user can still hit plain `requireAuth` **read** routes, and a password change/reset does not kill other live sessions. Closing those needs revocation at the `requireAuth` layer (a session-epoch/token-version check = one DB read per request) — an architectural decision left for a deliberate call, not an unattended hot-path change.
+**Residual — NOW FIXED in BUILD-38.** BUILD-37 left the `requireAuth` read path unrevoked (a removed non-admin kept read access; a password reset didn't kill other sessions). **BUILD-38 Part 1 closed it:** `users.sessions_valid_after` + a revocation-aware `requireAuth` (reject if the user row is gone, or the token predates `sessions_valid_after`), fronted by a 30s-TTL LRU cache so it isn't a per-request DB read. Password reset now bumps the timestamp and evicts the cache. **Residual window is now up to 30 seconds (the cache TTL), not 7 days** — near-instant on the instance that handles the change. Evidence: `audit/session-privilege-run.txt` re-run; guards `tests/session-privilege.test.js` (+deleted/removed/reset/overlay) and `tests/session-cache.test.js`.
 
 ---
 
@@ -35,7 +35,7 @@ This is the exact failure §1's preamble names: privilege that survives the even
 | ID | Check | Verdict | Evidence | Sev |
 |----|-------|---------|----------|-----|
 | **B4 / B5** | DB-level RLS on tenant tables | **FAIL (documented)** | `grep -ci 'row level security' db.js` → **0**; connection is a privileged direct `pg.Pool` on `DATABASE_URL` (`db.js:6`) | **P2** |
-| **A5 (residual)** | Removed staff / password-reset don't kill sessions | **BLOCKED** | `audit/a5-after-fix.txt` (removed user `GET /donors` → 200); `BLOCKED-session-revocation.md` | **P2** |
+| **A5 (residual)** | Removed staff / password-reset don't kill sessions | **FIXED (BUILD-38)** | `sessions_valid_after` + revocation-aware `requireAuth`; `tests/session-privilege.test.js`, `tests/session-cache.test.js` | ~~P2~~ |
 | **G7** | Security headers (CSP, nosniff, HSTS, Referrer-Policy, X-Frame-Options) | **FAIL** | no `helmet`/no header middleware in `server.js` (only `Content-Type`/`Disposition` on downloads) | **P2** |
 | **D11** | Card-testing abuse on public donate | **PARTIAL** | `donateLimiter` = 15 / 15 min **per-IP only** (`server.js:187`); card entry is on **Stripe-hosted Checkout**, not Steward's origin | **P2** |
 | **I1** | `ip-address` SSRF-misclassification (transitive via `express-rate-limit`) | **OPEN** | `npm audit`; non-breaking `npm audit fix` available | **P2** |
@@ -53,8 +53,8 @@ This is the exact failure §1's preamble names: privilege that survives the even
 |----|-------|---------|----------|-----|
 | **G1 / G3** | HTML-escaping of donor free-text in emails | **PARTIAL** | `server.js:3883,7234,7902` replace `{{donor_name}}`/`{{first_name}}` **unescaped** into HTML bodies; `:4012,:10615,:12471` (receipt/digest/workflow) **do** escape | **P3** |
 | **B10** | Super-admin actions written to an audit log | **FAIL** | no `admin_audit`/actor-log write on `/admin/orgs/:id/extend-trial`, `/change-plan`, `DELETE /admin/orgs/:id`, `/admin/data-integrity/fix` | **P3** |
-| **I1** | `nodemailer` (3 HIGH advisories) | **N/A-unused** | direct dep in `package.json`, **not imported anywhere** (`grep require nodemailer` → none); app sends via Resend HTTP | **P3** |
-| **I2** | CI installs with `npm ci`; audit gate | **FAIL** | no `.github/workflows`; lockfile *is* committed | **P3** |
+| **I1** | `nodemailer` (HIGH advisories) | **FIXED (BUILD-38)** | confirmed unused across all source/config, `npm uninstall nodemailer`; audit **before 7 (3 high) → after 6 (2 high)** | ~~P3~~ |
+| **I2** | CI installs with `npm ci`; audit gate | **FIXED (BUILD-38)** | `.github/workflows/ci.yml` (npm ci + lint guards + full suite on push/PR) + `.githooks/pre-push` + `MANUAL-STEPS.md` for branch-protection/Vercel gate | ~~P3~~ |
 | **E5** | CSV formula-injection neutralization | **PARTIAL** | `reportCsvCell` (`server.js:10407`) guards leading `= + - @` but **not** leading TAB (`\t`) / CR (`\r`) | **P3** |
 | **F2** | 500 responses leak internals | **PARTIAL** | global handler is safe (`{error:"Internal server error"}`), but `server.js:14210,14226,14252,14259,9554,11513` return raw `err.message` | **P3** |
 | **DB TLS** | DB connection verifies cert | **FAIL** | `db.js:8` `ssl:{ rejectUnauthorized:false }` (no cert verification → MITM window on the DB link) | **P3** |
@@ -103,7 +103,7 @@ The **tenant isolation is better than most SaaS at this stage** — the app-laye
 What still keeps me up:
 
 1. **There is no floor under the app-layer isolation.** No RLS, a privileged DB connection, and no CI lint that fails an un-scoped query. Isolation holds today because every query author remembered `org_id`; the day someone writes `SELECT … WHERE id = $1` without it on a new route, nothing catches it — not the DB, not CI, not a test (the differential sweep is by-inspection, not exhaustive). This is the single most likely place a future P0 is born.
-2. **The removed-employee window is still 7 days on read routes.** A fired staffer keeps reading donor PII until their token expires. The admin/super-admin paths are now closed; the read path is not.
+2. ~~**The removed-employee window is still 7 days on read routes.**~~ **CLOSED in BUILD-38.** A deleted/removed user's token is now rejected on the next request (worst case 30s, the auth-cache TTL; near-instant on the instance handling the change), and a password reset kills all of that user's live sessions. The 7-day-until-token-expiry hole is gone.
 3. **No super-admin audit trail.** If a super-admin account is ever compromised, there is no record of what it touched across which orgs.
 4. **No security review by a second party.** The same intelligence wrote and audited this. The §11 human engagement is not optional — this pass exists to make it cheap, not to replace it. Prioritize auth + tenant isolation + the RLS gap for that reviewer.
 5. **Not everything was hit.** The full 283-route two-org differential sweep, the availability/alerting section, and destructive-action drills were sampled or inspected, not exhaustively exercised. Absence of a finding in those rows means "not disproven," not "proven safe."

@@ -1,30 +1,32 @@
-# BLOCKED — full session revocation at the `requireAuth` layer (BUILD-37 §A5 residual)
+# RESOLVED — session revocation (was: BUILD-37 §A5 residual → closed by BUILD-38)
 
-## What's already fixed (this pass)
+This is no longer blocked. BUILD-38 Part 1 implemented full session revocation.
 
-`requireAdmin` and `requireSuperAdmin` now revalidate the caller's live `role` / `is_super_admin` / existence against the DB (`server.js:985`, `:997`). So **role revocation, super-admin revocation, and account removal take effect on the next privileged request** — proven in `audit/a5-after-fix.txt`, guarded by `tests/session-privilege.test.js`.
+**What shipped (the design the follow-up build decided, not the epoch-counter
+sketch this file originally proposed):**
+- `users.sessions_valid_after TIMESTAMPTZ NOT NULL DEFAULT now()` (db.js migration).
+- `requireAuth` (auth.js) rejects a token whose `iat` predates the user's
+  `sessions_valid_after` (1s skew), and rejects when the user row is gone —
+  **no missing row is ever treated as pass-through.**
+- A 30s-TTL, 10k-entry LRU cache (`sessionCache.js`) keeps this off the
+  per-request DB path; worst-case revocation lag is the TTL, not the 7-day token
+  lifetime. Per-process (multi-instance safe; instances expire independently).
+- `invalidateUserSessions(userId)` (server.js) bumps the timestamp and evicts the
+  local cache entry; called on password reset. **A future role-change / removal /
+  deactivation route MUST call it** (there are none today — roles are set at
+  invite/register, and the deleted-user case is covered by the missing-row → 401
+  check regardless of how the row was removed).
+- `requireAdmin` / `requireSuperAdmin` keep BUILD-37's UNcached live revalidation
+  (small route set, correctness over latency).
 
-## What's still open
+**Residual (accepted, documented):** up to a 30-second window (the cache TTL) in
+a multi-instance deploy; near-instant on the instance handling the change. In
+prod, ids are uuids and deletions permanent, so there is no stale-after-recreate
+concern. The scripted suites boot with `SESSION_CACHE_TTL_MS=0` for determinism.
 
-Plain `requireAuth` **read** routes (e.g. `GET /donors`, `GET /me`'s data) trust the JWT alone. Proven this pass: a **deleted non-admin user still read org data** (`GET /donors` → 200 with the removed user's token). Also: a **password change/reset does not invalidate other live sessions** — a stolen token survives the reset the victim just did (the exact scenario §1's preamble calls the most common real breach).
+**Guards:** `tests/session-cache.test.js` (14 — query-spy/TTL/LRU/evict, in-process)
+and `tests/session-privilege.test.js` (18 — deleted→401, removed→401, password
+reset kills two concurrent sessions, role overlay reflects the live row). Every
+BUILD-38 assertion fails against pre-fix code. Full suite: 56 green.
 
-## Why it's blocked (a genuine architectural decision, not a quick fix)
-
-Closing this means revalidating on **every authenticated request**, not just admin ones. Any correct design adds server-side state to a currently-stateless auth path:
-
-- **Option A — session epoch / token version.** Add `users.session_epoch INT DEFAULT 0`, embed it in the JWT at sign time, and in `requireAuth` read the live epoch and reject on mismatch. Bump the epoch on password change/reset, role change, and removal. Cost: **one indexed DB read per authenticated request** (~all 260 routes).
-- **Option B — short access tokens + refresh tokens.** 15-min access JWT + a revocable refresh token in the DB. Bigger client change.
-- **Option C — a revocation/denylist** checked per request (Redis or a table). New infra.
-
-The blocker is **Option A's per-request DB read on the hot path.** This app deliberately kept auth zero-DB, and the 25k-donor load test (LOADTEST_REPORT.md) tuned per-request cost carefully. Adding a lookup to `requireAuth` is defensible (every real route already hits Postgres, so the marginal cost is small and indexed), **but it changes the performance profile of the entire API and touches the single most-used code path** — exactly the kind of change the BUILD-37 rules say to escalate rather than land unattended.
-
-## Recommendation
-
-Implement **Option A**, in a supervised session with the load test re-run:
-1. `ALTER TABLE users ADD COLUMN session_epoch INT NOT NULL DEFAULT 0;`
-2. `signToken` includes `se: user.session_epoch`.
-3. `requireAuth`: after `jwt.verify`, `SELECT session_epoch, role, is_super_admin FROM users WHERE id=$1`; reject if the row is gone or `se` ≠ token's. (This also lets `requireAdmin`/`requireSuperAdmin` drop their now-redundant extra lookup and read from `req.user` refreshed here.)
-4. Bump `session_epoch` in: `/auth/reset-password`, any password-change route, role-change (`/auth/invite` promotions, admin role edits), and account removal.
-5. Re-run `scripts/loadtest.js` at 25k donors; confirm per-request latency budget holds.
-
-**Estimate:** ~0.5–1 day incl. the load-test re-run and a `session-privilege.test.js` extension covering the removed-staff and password-reset cases.
+See `audit/FINDINGS.md` (A5 rows now FIXED) and `audit/post-deploy-smoke.md`.

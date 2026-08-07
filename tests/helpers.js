@@ -70,7 +70,7 @@ let _pool = null;
 function db() {
   if (!_pool) {
     const { Pool } = require("pg");
-    _pool = new Pool({ connectionString: DB_URL, ssl: { rejectUnauthorized: false } });
+    _pool = new Pool({ connectionString: DB_URL, ssl: process.env.DB_SSL === "disable" ? false : { rejectUnauthorized: false } });
   }
   return _pool;
 }

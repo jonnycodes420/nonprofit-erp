@@ -5,7 +5,9 @@ const bcrypt = require("bcryptjs");
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  ssl: { rejectUnauthorized: false },
+  // Default keeps prod behavior (Supabase requires SSL). DB_SSL=disable turns it
+  // off for a plain, non-SSL Postgres — the stock image CI uses (BUILD-38 Part 2).
+  ssl: process.env.DB_SSL === "disable" ? false : { rejectUnauthorized: false },
 });
 
 async function getDb() {
@@ -1348,6 +1350,14 @@ async function initSchema() {
   await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS notify_portfolio_gifts BOOLEAN DEFAULT true`);
   await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS notify_task_assignments BOOLEAN DEFAULT true`);
   await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS notify_daily_tasks BOOLEAN DEFAULT true`);
+
+  // BUILD-38 Part 1 — session revocation. A JWT issued before this timestamp is
+  // rejected by requireAuth (auth.js). Bumped to now() on password reset/change,
+  // role change, removal, and deactivation, killing all of that user's live
+  // sessions within the auth cache TTL. NOTE: adding it stamps every existing
+  // row with now(), so already-issued tokens are invalidated on first deploy —
+  // a one-time forced re-login, which is the correct behavior for this rollout.
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS sessions_valid_after TIMESTAMPTZ NOT NULL DEFAULT now()`);
 
   // ── BUILD-35: "Set up Steward" activation checklist card state ────────────
   // The card's ITEMS are never stored — each done-state is computed live from

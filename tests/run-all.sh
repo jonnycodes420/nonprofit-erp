@@ -13,10 +13,13 @@
 #      online-gift path, AND with RESEND_BASE_URL pointing at a local sink port so
 #      workflows-e2e can capture (never send) the recipe emails:
 #        DATABASE_URL=…:5544/steward_loadtest JWT_SECRET=local-test-secret \
-#        PORT=5601 DISABLE_RATE_LIMIT=1 RESEND_API_KEY=re_dummy_local \
+#        PORT=5601 DISABLE_RATE_LIMIT=1 SESSION_CACHE_TTL_MS=0 RESEND_API_KEY=re_dummy_local \
 #        RESEND_BASE_URL=http://localhost:5602 DEMO_SMTP_FROM=noreply@stewardapp.dev \
 #        STRIPE_SECRET_KEY=sk_test_dummy STRIPE_WEBHOOK_SECRET=whsec_localtest \
 #        node server.js
+#      (SESSION_CACHE_TTL_MS=0 disables the auth session cache so the suites —
+#       which reuse fixed user ids and delete/recreate rapidly — see fresh state
+#       every request; BUILD-38 Part 1. Prod leaves it unset → the 30s cache.)
 #      (RESEND_BASE_URL just redirects mail to a local port; workflows-e2e starts
 #      its own capture server there for its run, and other suites' sends simply
 #      fail-and-log against the unbound port — no real email ever leaves.)
@@ -42,7 +45,7 @@ CORE=(
   locked-features
   brand-allowlist moves no-emoji notifications onboarding-brand palette pipeline pipeline-gating portfolios portfolio-pipeline-consistency reports-cadence setup-checklist
   report-truth
-  session-privilege smart-moves tasks tenant-isolation upgrade-checkout workflows workflows-e2e
+  session-cache session-privilege smart-moves tasks tenant-isolation upgrade-checkout workflows workflows-e2e
   finance-reports-consistency name-normalize reserved-recovered concurrency
 )
 

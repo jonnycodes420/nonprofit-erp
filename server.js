@@ -51,6 +51,16 @@ const { Resend } = require("resend");
 const resend = new Resend(process.env.RESEND_API_KEY);
 const { getDb, query, run, uuid, seedOrgData, withTransaction, withAdvisoryLock, queryTx, runTx } = require("./db");
 const { signToken, requireAuth, requireSuperAdmin: requireSuperAdminJwt } = require("./auth");
+const { sessionCache } = require("./sessionCache");
+// BUILD-38 Part 1 — kill all of a user's live sessions: stamp sessions_valid_after
+// (auth.js rejects any token issued before it) and evict this instance's cache
+// entry so revocation is immediate locally (other instances expire within TTL).
+// Call on password reset/change, role change, removal, and deactivation. A future
+// role-change/removal/deactivation route MUST call this.
+async function invalidateUserSessions(userId) {
+  await run("UPDATE users SET sessions_valid_after = NOW() WHERE id = ?", [userId]);
+  sessionCache.evict(userId);
+}
 const { normalizeAccent } = require("./branding");
 const { lookupMatchingGift } = require("./matchingGifts");
 const Stripe = require("stripe");
@@ -182,6 +192,7 @@ const passwordResetLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   handler: rateLimitHandler,
+  skip: rateLimitDisabled, // consistent with the other limiters; local suites drive the reset flow
 });
 
 const donateLimiter = rateLimit({
@@ -1654,6 +1665,9 @@ app.post("/auth/reset-password", passwordResetLimiter, wrap(async (req, res) => 
   // the same user — an old link left in an inbox shouldn't still work after
   // the password has already been changed.
   await run("UPDATE password_reset_tokens SET used = true WHERE user_id = ? AND used = false", [prt.user_id]);
+  // BUILD-38 Part 1 — a password reset kills every live session for this user
+  // (a stolen/older token must not survive the reset the victim just performed).
+  await invalidateUserSessions(prt.user_id);
 
   res.json({ success: true });
 }));

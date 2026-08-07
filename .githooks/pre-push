@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+# BUILD-38 Part 2 — the gate that actually precedes deploy in solo auto-mode.
+# CI-on-push races Vercel/Railway's auto-deploy; this pre-push hook runs the full
+# suite locally FIRST and blocks the push if anything is red.
+#
+# Enable once with:  npm run setup:hooks
+# Bypass in a true emergency with:  git push --no-verify   (don't make it a habit)
+#
+# Assumes the local scratch stack is up (scratch Postgres :5544 + the API server
+# booted per tests/README.md, with SESSION_CACHE_TTL_MS=0). If the server isn't
+# up the suite fails loudly — which is the correct outcome for "don't push blind".
+set -u
+repo_root="$(git rev-parse --show-toplevel)"
+cd "$repo_root" || exit 1
+
+echo "[pre-push] running full verification suite before push…"
+if ! bash tests/run-all.sh; then
+  echo ""
+  echo "[pre-push] BLOCKED: tests failed. Fix them, or 'git push --no-verify' only if you truly mean to."
+  exit 1
+fi
+echo "[pre-push] all suites green — pushing."

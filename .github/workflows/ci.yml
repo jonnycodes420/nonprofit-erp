@@ -1,0 +1,80 @@
+# BUILD-38 Part 2 — the gate. Runs the full suite on every push + PR to main.
+# Any failure fails the job; pair this with branch protection (see MANUAL-STEPS.md)
+# so a red run blocks merge, and with Vercel's Ignored Build Step so it blocks
+# deploy. Action versions are pinned to tags here; convert to commit SHAs per
+# MANUAL-STEPS.md ("Pin actions to SHAs") once you can resolve them online.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: steward
+          POSTGRES_PASSWORD: steward
+          POSTGRES_DB: steward_loadtest
+        ports:
+          - 5544:5432
+        options: >-
+          --health-cmd "pg_isready -U steward"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      # Matches tests/run-all.sh's documented boot recipe.
+      DATABASE_URL: postgresql://steward:steward@localhost:5544/steward_loadtest
+      DB_SSL: disable                 # stock postgres image has no SSL (db.js honors this)
+      JWT_SECRET: local-test-secret
+      PORT: "5601"
+      DISABLE_RATE_LIMIT: "1"
+      SESSION_CACHE_TTL_MS: "0"       # deterministic: suites reuse fixed user ids (BUILD-38)
+      RESEND_API_KEY: re_dummy_local
+      RESEND_BASE_URL: http://localhost:5602
+      DEMO_SMTP_FROM: noreply@stewardapp.dev
+      STRIPE_SECRET_KEY: sk_test_dummy
+      STRIPE_WEBHOOK_SECRET: whsec_localtest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install server deps (locked)
+        run: npm ci
+
+      - name: Install client deps (locked)
+        run: npm ci --prefix client
+
+      # ── Guards: no-undef + rules-of-hooks (client ESLint) ──────────────────
+      # emoji / brand-color allowlist / gradient-bar guards run as suites inside
+      # run-all.sh (no-emoji, brand-allowlist, brand-glyph).
+      - name: Lint guards (no-undef, rules-of-hooks)
+        run: npm run lint --prefix client
+
+      - name: Boot the API server
+        run: |
+          node server.js > /tmp/server.log 2>&1 &
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:5601/health >/dev/null; then echo "server up"; exit 0; fi
+            sleep 1
+          done
+          echo "server failed to start"; cat /tmp/server.log; exit 1
+
+      - name: Full verification suite
+        run: bash tests/run-all.sh
+
+      - name: Server log on failure
+        if: failure()
+        run: cat /tmp/server.log || true

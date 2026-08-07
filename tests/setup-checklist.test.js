@@ -118,15 +118,21 @@ const item = (body, key) => (body.items || []).find(i => i.key === key);
   // user but u_su_t1, and requireAdmin now revalidates the caller against the
   // DB (BUILD-37 §A5) — a deleted user's stale token is 401, not a staff 403.
   // Re-seeding keeps this assertion about the staff ROLE being denied.
+  // The team-item step deleted every ORG_T user but u_su_t1, and requireAuth now
+  // revalidates the caller against the DB (BUILD-38 §Part1) — a deleted user's
+  // token is 401, not a stale pass-through. Re-seed the live staff AND second
+  // admin these assertions need.
   await seedUser(ORG_T, "u_su_staff2", "tstaff2", "staff");
+  await seedUser(ORG_T, "u_su_t2adm2", "tadm2b", "admin");
   const tokStaff2 = await login("tstaff2@su.local");
+  const tokT2b = await login("tadm2b@su.local");
   r = await api("PUT", "/org/setup-card", tokStaff2, { state: "collapsed" });
   ok("staff cannot set the org card state → 403", r.status === 403, r.status);
   r = await api("PUT", "/org/setup-card", tokT, { state: "bogus" });
   ok("invalid state → 400", r.status === 400, r.body);
   r = await api("PUT", "/org/setup-card", tokT, { state: "collapsed" });
   ok("admin collapses the card", r.status === 200 && r.body.cardState === "collapsed", r.body);
-  r = await api("GET", "/org/setup-status", tokT2);
+  r = await api("GET", "/org/setup-status", tokT2b);
   ok("a SECOND admin of the same org sees the shared collapsed state", r.body.cardState === "collapsed", r.body.cardState);
   r = await api("GET", "/org/setup-status", tokC);
   ok("org B's card state is untouched (org-scoped)", r.body.cardState === null, r.body.cardState);
