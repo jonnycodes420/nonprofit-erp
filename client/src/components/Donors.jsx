@@ -4226,7 +4226,13 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
                 const ATT_COL={invited:T.ink3,confirmed:T.green500,attended:T.green,no_show:T.terracotta,cancelled:T.ink3};
                 const icon=EVT_ICONS[e.event_type]||"•";
                 const attCol=ATT_COL[e.attendee_status]||"#6b6560";
-                const d=e.date?new Date(e.date+"T12:00:00").toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"}):"";
+                // e.date may be bare YYYY-MM-DD OR a full ISO timestamp (the
+                // sample seed writes timestamps) — blindly appending T12:00:00
+                // to the latter produced "Invalid Date" on the profile card.
+                const _raw=e.date?String(e.date):"";
+                const _iso=_raw.match(/^\d{4}-\d{2}-\d{2}/);
+                const _dt=_raw?(_iso?new Date(_iso[0]+"T12:00:00"):new Date(_raw)):null;
+                const d=_dt&&!isNaN(_dt)?_dt.toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"}):"";
                 return(
                   <div key={e.id} style={{background:"#1a2e1f",border:"1px solid #2d4a35",borderRadius:8,padding:"8px 10px",display:"flex",alignItems:"center",gap:8}}>
                     <span style={{fontSize:14,flexShrink:0}}>{icon}</span>
