@@ -115,8 +115,15 @@ async function run() {
   // clear attribution
   const putClear = await api("PUT", `/gifts/${g1.body.gift.id}`, tokA, { campaignId: "", fund_id: "fund_ga_gen" });
   ok("PUT clear attribution → 200", putClear.status === 200);
-  const cleared = (await q(`SELECT campaign_id FROM gifts WHERE id=$1`, [g1.body.gift.id]))[0];
+  const cleared = (await q(`SELECT campaign_id, campaign FROM gifts WHERE id=$1`, [g1.body.gift.id]))[0];
   ok("gift.campaign_id cleared to NULL", cleared.campaign_id === null, cleared);
+  // BUILD-43 fix: clearing must clear the synced legacy NAME too — the read
+  // side matches campaign_id OR name, so a left-behind name kept the "cleared"
+  // gift counting toward the thermometer forever (this suite used to pin that
+  // bug implicitly: Annual stayed at $6,000 after the clear).
+  ok("gift.campaign (legacy name) cleared with it", cleared.campaign === null, cleared);
+  camps = (await api("GET", "/fundraising/campaigns", tokA)).body;
+  ok("cleared gift STOPS counting (Annual back to $1,000)", raisedFor(camps, "c_ga_2") === 1000, raisedFor(camps, "c_ga_2"));
   // PUT foreign campaign → 404
   const putForeign = await api("PUT", `/gifts/${g3.body.gift.id}`, tokA, { campaignId: "c_ga_b1", fund_id: null });
   ok("PUT foreign campaign → 404", putForeign.status === 404);
@@ -130,7 +137,7 @@ async function run() {
   const webhookOk = await fireWebhookGift(ORG_A, "acct_ga_a", "d_ga_a1", 4000, "c_ga_2");
   if (webhookOk !== "skipped") {
     camps = (await api("GET", "/fundraising/campaigns", tokA)).body;
-    ok("online gift (PI metadata campaign_id) rolls up: Annual +$4,000", raisedFor(camps, "c_ga_2") === 10000, raisedFor(camps, "c_ga_2"));
+    ok("online gift (PI metadata campaign_id) rolls up: Annual $1,000 + $4,000", raisedFor(camps, "c_ga_2") === 5000, raisedFor(camps, "c_ga_2"));
   } else {
     ok("online gift webhook path (skipped — no signing secret)", true);
   }

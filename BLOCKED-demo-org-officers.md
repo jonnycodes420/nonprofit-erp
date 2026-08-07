@@ -1,5 +1,11 @@
 # BLOCKED — demo-org duplicate officers ("Jonathan 0 · $0" ×2)
 
+> **DECISION MADE (Jonathan, 2026-08-06):** keep `user_jonathan`
+> (xjca2006@gmail.com — his login), **delete `user_0a9d3327`**, then run the
+> integrity fix. Still blocked on execution from the dev environment: no
+> remove-user route, no prod DB credentials or super-admin login here (checked
+> — no local .env). Execution = the Supabase steps below, ~2 minutes.
+
 BUILD-41 P2 asked for the demo org's Officer Portfolios legend to be cleaned
 before Sunday: it shows **Jonathan · 0 · $0** and **Jonathan Atkinson · 0 · $0**
 beside the real demo officer. Verified live on prod (2026-08-06, demo admin

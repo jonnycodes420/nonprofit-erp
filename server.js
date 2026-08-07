@@ -3779,7 +3779,13 @@ app.put("/gifts/:id", requireAuth, wrap(async (req, res) => {
       if (!camp.length) return res.status(404).json({ error: "Campaign not found" });
       newCampaignId = camp[0].id; newCampaign = camp[0].name;
     } else {
+      // BUILD-43 (state-diff harness finding): an explicit clear must clear
+      // the legacy NAME column too — the read side matches `campaign_id OR
+      // campaign=name`, so leaving the synced name behind kept the gift
+      // attributed forever and made clearing impossible. A caller that
+      // deliberately sends a free-text `campaign` name alongside keeps it.
       newCampaignId = null;
+      if (campaign === undefined) newCampaign = null;
     }
   }
   const newAmt  = amount !== undefined ? Math.round(Number(amount)) : g.amount; // round, not truncate
@@ -3794,6 +3800,16 @@ app.put("/gifts/:id", requireAuth, wrap(async (req, res) => {
   );
   // Full recalc replaces the old delta — delta was wrong when editing a non-latest gift's amount
   await recalcDonorSummary(g.donor_id, req.user.orgId);
+  // BUILD-43 (state-diff harness finding): the gift's LEDGER STAMP must move
+  // with it. Editing a stamped gift's amount/date left fin_transactions at the
+  // old figures — Cash on Hand permanently disagreed with the gift record and
+  // (unlike receipts) no mismatch queue ever surfaced it. Same sync the
+  // partial-refund webhook already does by hand; fund follows when provided.
+  await run(
+    `UPDATE fin_transactions SET amount=?, date=?, fund_id=COALESCE(?, fund_id)
+      WHERE gift_id=? AND org_id=?`,
+    [newAmt, newDate, fund_id !== undefined ? fund_id : null, req.params.id, req.user.orgId]
+  );
   const rows = await query("SELECT * FROM gifts WHERE id=?", [req.params.id]);
   res.json(rows[0]);
 }));
