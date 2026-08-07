@@ -2768,6 +2768,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
 
   // Tabs
   const [dpTab,setDpTab]=useState("overview");
+  const [dpMoreOpen,setDpMoreOpen]=useState(false); // BUILD-41: mobile overflow menu (Impact Summary / Edit)
 
   // Full gift data for Gifts & Pledges tab
   const [giftsFull,setGiftsFull]=useState([]);
@@ -3250,7 +3251,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
       {showVoiceMemo&&<VoiceMemoModal donor={donor} onClose={()=>setShowVoiceMemo(false)} onSaved={()=>{setShowVoiceMemo(false);if(onInteractionAdded)onInteractionAdded();}}/>}
       */}
       <div className="donor-profile-header" style={{background:T.white,borderBottom:"1px solid "+T.bg3,padding:"10px 24px",display:"flex",alignItems:"center",gap:12,flexShrink:0}}>
-        <button onClick={onClose} style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"7px 14px",color:T.ink3,fontSize:13,cursor:"pointer",whiteSpace:"nowrap"}}>← Back</button>
+        <button onClick={onClose} className="dph-back" aria-label="Back to donors" style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"7px 14px",color:T.ink3,fontSize:13,cursor:"pointer",whiteSpace:"nowrap"}}>←<span className="dph-back-word"> Back</span></button>
         <div className="dph-identity" style={{display:"flex",alignItems:"center",gap:10,flex:1,minWidth:0}}>
           <div style={{width:34,height:34,borderRadius:"50%",background:stage.color+"33",display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,fontWeight:800,color:stage.color,flexShrink:0}}>{donor.name[0]}</div>
           <div style={{minWidth:0}}>
@@ -3266,8 +3267,14 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
             </div>
           </div>
         </div>
-        <div className="dph-actions" style={{display:"flex",gap:6,flexShrink:0,alignItems:"center"}}>
-          <button onClick={()=>setShowGiftModal(true)} style={{background:T.green,border:"none",borderRadius:8,padding:"7px 14px",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer"}}>
+        {/* BUILD-41: Request Gift is THE action; Impact Summary/Edit collapse
+            into a "⋯" overflow on phones (four buttons across 390px wrapped
+            and misaligned). Delete left the top row entirely — a destructive
+            action at thumb height beside Edit is a mis-tap waiting to happen;
+            it now lives at the bottom of the Overview record (still behind
+            the existing confirm). */}
+        <div className="dph-actions" style={{display:"flex",gap:6,flexShrink:0,alignItems:"center",position:"relative"}}>
+          <button onClick={()=>setShowGiftModal(true)} className="dph-primary" style={{background:T.green,border:"none",borderRadius:8,padding:"7px 14px",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer"}}>
             Request Gift
           </button>
           {/* SHELVED — voice capture works but unproven adoption assumption, revisit later.
@@ -3276,11 +3283,19 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
             Voice memo
           </button>
           */}
-          <button onClick={downloadImpactSummary} disabled={impactPdfLoading} style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"7px 14px",color:T.ink3,fontSize:13,cursor:impactPdfLoading?"not-allowed":"pointer",opacity:impactPdfLoading?0.6:1}}>
+          <button onClick={downloadImpactSummary} disabled={impactPdfLoading} className="dph-desktop-act" style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"7px 14px",color:T.ink3,fontSize:13,cursor:impactPdfLoading?"not-allowed":"pointer",opacity:impactPdfLoading?0.6:1}}>
             {impactPdfLoading?"Generating…":"↓ Impact Summary"}
           </button>
-          <button onClick={onEdit} style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"7px 14px",color:T.ink3,fontSize:13,cursor:"pointer"}}>Edit</button>
-          {isAdmin&&<button onClick={()=>onDelete(donor.id)} style={{background:"transparent",border:"1px solid #b8593f55",borderRadius:8,padding:"7px 14px",color:"#b8593f",fontSize:13,cursor:"pointer"}}>Delete</button>}
+          <button onClick={onEdit} className="dph-desktop-act" style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"7px 14px",color:T.ink3,fontSize:13,cursor:"pointer"}}>Edit</button>
+          <button onClick={()=>setDpMoreOpen(o=>!o)} className="dph-more" aria-label="More actions" aria-expanded={dpMoreOpen} style={{display:"none",background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,color:T.ink,fontSize:20,fontWeight:700,cursor:"pointer",lineHeight:1}}>⋯</button>
+          {dpMoreOpen&&(
+            <div className="dph-more-menu" style={{position:"absolute",top:"calc(100% + 6px)",right:0,zIndex:60,background:T.white,border:"1px solid "+T.bg3,borderRadius:10,boxShadow:"0 12px 32px rgba(15,26,18,0.18)",minWidth:200,overflow:"hidden"}}>
+              <button onClick={()=>{setDpMoreOpen(false);downloadImpactSummary();}} disabled={impactPdfLoading} style={{display:"block",width:"100%",textAlign:"left",background:"none",border:"none",borderBottom:"1px solid "+T.bg3,padding:"13px 16px",color:T.ink,fontSize:14,fontWeight:600,cursor:"pointer"}}>
+                {impactPdfLoading?"Generating…":"↓ Impact Summary"}
+              </button>
+              <button onClick={()=>{setDpMoreOpen(false);onEdit();}} style={{display:"block",width:"100%",textAlign:"left",background:"none",border:"none",padding:"13px 16px",color:T.ink,fontSize:14,fontWeight:600,cursor:"pointer"}}>Edit</button>
+            </div>
+          )}
         </div>
       </div>
 
@@ -3288,7 +3303,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
         {/* LEFT */}
         <div style={{overflowY:"auto",borderRight:"1px solid "+T.bg3,display:"flex",flexDirection:"column"}}>
           {/* Tab Nav */}
-          <div style={{display:"flex",background:T.white,borderBottom:"1px solid "+T.bg3,flexShrink:0,overflowX:"auto"}}>
+          <div className="dp-tabs" style={{display:"flex",background:T.white,borderBottom:"1px solid "+T.bg3,flexShrink:0,overflowX:"auto"}}>
             {[["overview","Overview"],["gifts","Gifts & Pledges"],["funds","Funds"],["related","Related"],["materials","Materials"],["activity","Activity"]].map(([id,label])=>(
               <button key={id} onClick={()=>setDpTab(id)} style={{background:"none",border:"none",borderBottom:`2px solid ${dpTab===id?T.greenDk:"transparent"}`,padding:"11px 16px",color:dpTab===id?T.greenDk:T.ink3,fontSize:13,fontWeight:dpTab===id?700:400,cursor:"pointer",whiteSpace:"nowrap",flexShrink:0}}>
                 {label}
@@ -3491,6 +3506,16 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
               </div>
               <TouchpointTimeline interactions={localInts??donor.interactions??[]} onDelete={deleteInteraction}/>
             </div>
+
+            {/* BUILD-41: Delete lives at the BOTTOM of the record, not in the
+                top action row (a destructive action at thumb height beside
+                Edit was a mis-tap risk). Quiet terracotta outline; the confirm
+                lives in the parent deleteDonor handler. */}
+            {isAdmin&&(
+              <div style={{marginTop:8,paddingTop:16,borderTop:"1px solid "+T.bg3,display:"flex",justifyContent:"flex-end"}}>
+                <button onClick={()=>onDelete(donor.id)} style={{background:"transparent",border:"1px solid #b8593f55",borderRadius:8,padding:"9px 16px",color:"#b8593f",fontSize:13,fontWeight:600,cursor:"pointer"}}>Delete donor</button>
+              </div>
+            )}
           </div>}
 
           {/* Gifts & Pledges tab */}
@@ -4493,6 +4518,7 @@ const DESIGNATION_OPTS=[["planned_confirmed","Planned gift confirmed"],["planned
 const cap=s=>s?String(s).charAt(0).toUpperCase()+String(s).slice(1):"—";
 function DirectoryView({donors,loading,serverTotal,page,pageSize,onPage,clientFilterCount,exportParams,totalDonors,orgTeam,isAdmin,onSelectDonor,onAssign,stageFilter,setStageFilter,assigneeFilter,setAssigneeFilter,designationFilter,setDesignationFilter,officers=[],officerColorMap={},portfolioMeta={tier:"core",single_user:true},pendingInvites=[],onOfficersChanged,onLoadSampleData,sampleLoading,hasSampleData,onAddDonor,onBulkDone}){
   const [selIds,setSelIds]=useState(new Set());
+  const [selectMode,setSelectMode]=useState(false); // BUILD-41: mobile rows show checkboxes only in explicit Select mode
   const [stageDrop,setStageDrop]=useState(false);
   const [assignDrop,setAssignDrop]=useState(false);
   const [delModal,setDelModal]=useState(false);
@@ -4645,6 +4671,10 @@ function DirectoryView({donors,loading,serverTotal,page,pageSize,onPage,clientFi
           filtering current page
         </span>}
         <div style={{flex:1}}/>
+        <button onClick={()=>{setSelectMode(m=>{if(m)setSelIds(new Set());return !m;});}} className="dir-select-toggle"
+          style={{background:selectMode?T.ink:T.bg,border:"1px solid "+(selectMode?T.ink:T.bg3),borderRadius:8,padding:"7px 14px",color:selectMode?"#f0ede6":T.ink,fontSize:12,fontWeight:700,cursor:"pointer",minHeight:40,alignItems:"center"}}>
+          {selectMode?"Done":"Select"}
+        </button>
         <button onClick={exportCsv} disabled={exporting||serverTotal===0} title="Download every donor matching the search/stage/owner filters as a CSV"
           style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"7px 12px",color:serverTotal===0?T.ink3:T.ink,fontSize:12,fontWeight:600,cursor:exporting||serverTotal===0?"not-allowed":"pointer"}}>
           {exporting?"Exporting…":"Export CSV"}
@@ -4783,7 +4813,7 @@ function DirectoryView({donors,loading,serverTotal,page,pageSize,onPage,clientFi
             const isLast=idx===filtered.length-1;
             const checked=selIds.has(d.id);
             const rowBg=checked?"#edf3ee":idx%2===0?T.white:"#faf9f6";
-            return(
+            return[
               <div key={d.id} className="dir-donor-row" onClick={()=>onSelectDonor(d)}
                 style={{display:"grid",gridTemplateColumns:colGrid,gap:0,padding:compact?"4px 18px":"11px 18px",background:rowBg,borderBottom:isLast?"none":"1px solid "+T.bg3,cursor:"pointer",alignItems:"center",transition:"background 0.1s, padding 0.12s"}}
                 onMouseEnter={e=>e.currentTarget.style.background=checked?"#edf3ee":T.bg}
@@ -4830,8 +4860,31 @@ function DirectoryView({donors,loading,serverTotal,page,pageSize,onPage,clientFi
                   {/* Reassigning the owner is Team (server 403s for Core). */}
                   {teamPortfolios&&<button onClick={e=>{e.stopPropagation();onAssign(d);}} className="dir-assign-btn" style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:7,padding:"4px 10px",color:T.ink3,fontSize:11,fontWeight:600,cursor:"pointer"}}>Assign</button>}
                 </div>}
+              </div>,
+              /* BUILD-41: the phone row (shown <768px; the grid row above is
+                 hidden there). Full name at 17px that WRAPS — a donor list
+                 where no name is readable is not usable — inline stage chip,
+                 muted meta line, score badge centered right. Tapping opens
+                 the donor; in Select mode tapping toggles selection. */
+              <div key={d.id+"-m"} className="dir-row-mobile"
+                onClick={e=>selectMode?toggleOne(d.id,e):onSelectDonor(d)}
+                style={{display:"none",alignItems:"center",gap:12,padding:"13px 14px",background:checked?"#edf3ee":idx%2===0?T.white:"#faf9f6",borderBottom:isLast?"none":"1px solid "+T.bg3,cursor:"pointer",minHeight:64}}>
+                {selectMode&&<input type="checkbox" checked={checked} onChange={e=>{e.stopPropagation();toggleOne(d.id,e);}} onClick={e=>e.stopPropagation()}
+                  style={{width:20,height:20,cursor:"pointer",accentColor:"#1a6b4a",flexShrink:0}}/>}
+                <div style={{width:34,height:34,borderRadius:"50%",background:stage.color+"22",display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,fontWeight:800,color:stage.color,flexShrink:0}}>{d.name[0]}</div>
+                <div style={{flex:1,minWidth:0}}>
+                  <div className="dir-m-name" style={{fontSize:17,fontWeight:700,color:T.ink,lineHeight:1.25,overflowWrap:"anywhere"}}>
+                    {d.name}
+                    <span style={{background:stage.color+"22",color:stage.color,borderRadius:99,padding:"2px 8px",fontSize:9.5,fontWeight:800,letterSpacing:"0.04em",textTransform:"uppercase",marginLeft:8,verticalAlign:"2px",whiteSpace:"nowrap"}}>{stage.label}</span>
+                  </div>
+                  <div style={{fontSize:14,color:T.ink3,marginTop:3}}>
+                    {fmtFull(d.total)}
+                    {d.lastGift?<>{" · "}{d.lastAmount>0?fmtFull(d.lastAmount)+" ":""}{new Date(d.lastGift).toLocaleDateString("en-US",{month:"short",year:"numeric"})}</>:" · no gifts yet"}
+                  </div>
+                </div>
+                <span style={{background:scColor+"18",color:scColor,borderRadius:8,padding:"5px 10px",fontSize:13,fontWeight:800,flexShrink:0}}>{sc}</span>
               </div>
-            );
+            ];
           })}
         </div>
       }

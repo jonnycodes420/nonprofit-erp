@@ -328,6 +328,9 @@ export function GlobalStyles() {
     .mobile-more-row.active{color:#c9a84c;font-weight:700;}
     .mobile-more-signout{display:flex;align-items:center;gap:16px;width:100%;background:transparent;border:none;padding:16px 24px;color:#8fa896;font-family:'DM Sans',system-ui,sans-serif;font-size:16px;font-weight:400;cursor:pointer;text-align:left;}
     .dir-stage-mobile{display:none;}
+    /* BUILD-41 mobile donor rows + Select toggle — desktop never shows them */
+    .dir-row-mobile{display:none;}
+    .dir-select-toggle{display:none;}
 
     /* Directory: Assign button reveals on row hover/focus instead of sitting
        visible on every row at all times — same click target, just quieter
@@ -393,18 +396,44 @@ export function GlobalStyles() {
       .donor-kanban-wrap{display:flex!important;flex-direction:row!important;overflow-x:auto!important;overflow-y:visible!important;-webkit-overflow-scrolling:touch!important;scroll-snap-type:x mandatory!important;align-items:flex-start!important;min-height:auto!important;padding-bottom:12px!important;gap:10px!important;width:100%!important;}
       .kanban-col{min-width:268px!important;width:268px!important;max-width:268px!important;flex-shrink:0!important;scroll-snap-align:start!important;}
 
-      /* Donor profile: single column, 2×2 stat mini-cards */
-      .donor-profile-body{grid-template-columns:1fr!important;overflow:auto!important;}
-      .donor-profile-header{flex-direction:column!important;align-items:stretch!important;padding:10px 16px!important;gap:6px!important;}
-      .dph-identity{flex:none!important;}
-      .dph-actions{width:100%!important;flex-shrink:unset!important;gap:6px!important;}
-      .dph-actions>button{flex:1!important;justify-content:center!important;font-size:12px!important;padding:8px 4px!important;}
+      /* Donor profile: single column with ONE scroller (BUILD-41). The left
+         column used to keep its own overflowY:auto inside the stacked grid,
+         so it height-capped and SLICED the Giving History card mid-render
+         with the dark rail starting straight through it. The body is now the
+         only scroll container; both columns grow to their content. */
+      .donor-profile-body{grid-template-columns:1fr!important;overflow-y:auto!important;overflow-x:hidden!important;}
+      /* min-width:0 matters: with overflow:visible a grid item's auto min
+         size is its content's min-content (the 537px tab row) — without it
+         the whole column blows out sideways. */
+      .donor-profile-body>div{overflow:visible!important;height:auto!important;border-right:none!important;min-width:0!important;max-width:100%!important;}
+      .dp-tabs{overflow-x:auto!important;}
+      /* Header stays ONE row: compact "←" back (word hidden) beside the donor
+         name — the full-width Back bar wasted ~60px of a 700px fold. */
+      .donor-profile-header{flex-wrap:wrap!important;padding:10px 14px!important;gap:8px!important;}
+      .dph-back{padding:8px 12px!important;font-size:16px!important;min-width:40px!important;min-height:40px!important;}
+      .dph-back-word{display:none!important;}
+      .dph-identity{flex:1 1 auto!important;min-width:0!important;}
+      /* Action row: Request Gift is the full-width primary; Impact Summary +
+         Edit live behind the "⋯" overflow (they wrapped and misaligned at
+         four-across on 390px). Delete is gone from this row entirely. */
+      .dph-actions{width:100%!important;flex-shrink:unset!important;gap:8px!important;}
+      .dph-primary{flex:1!important;min-height:48px!important;font-size:14px!important;}
+      .dph-desktop-act{display:none!important;}
+      .dph-more{display:flex!important;align-items:center!important;justify-content:center!important;min-width:48px!important;min-height:48px!important;}
       .donor-stat-grid{grid-template-columns:repeat(2,1fr)!important;}
+      /* Profile tab row: right-edge fade = "there's more" affordance (a MASK,
+         not a color fill — the §9 gradient ban is about bars/thermometers). */
+      /* mask stops only use ALPHA — ink stands in for opaque (allowlist-clean) */
+      .dp-tabs{-webkit-mask-image:linear-gradient(to right,#0f1a12 88%,transparent);mask-image:linear-gradient(to right,#0f1a12 88%,transparent);}
 
-      /* Directory donor list: collapse to 4 columns, hide Stage/Owner/Assign */
-      .dir-header-row,.dir-donor-row{grid-template-columns:2fr 68px 68px 44px!important;padding-left:12px!important;padding-right:12px!important;}
-      .dir-col-stage,.dir-col-owner,.dir-col-assign{display:none!important;}
-      .dir-stage-mobile{display:inline-flex!important;align-items:center!important;margin-top:3px!important;}
+      /* Directory donor list (BUILD-41): the desktop table is GONE under
+         768px — it crushed names to a 68px cell ("M…", "Ju…"). One tappable
+         row per donor instead: full 17px name (wraps, never truncates),
+         inline stage chip, muted meta line, right-aligned score badge.
+         Checkboxes exist only in explicit Select mode. */
+      .dir-header-row,.dir-donor-row{display:none!important;}
+      .dir-row-mobile{display:flex!important;}
+      .dir-select-toggle{display:inline-flex!important;}
 
       /* ReEngage table: hide non-essential columns, fix grid template */
       .reEngage-header{grid-template-columns:1fr 90px 100px!important;}

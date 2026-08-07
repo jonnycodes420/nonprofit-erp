@@ -1,4 +1,28 @@
-# BUILD-40 — mobile perf + layout, before/after (2026-08-06)
+# BUILD-40/41 — mobile perf + layout, before/after (2026-08-06)
+
+## BUILD-41 Part 1 addendum — the hero photograph is GONE
+
+The hero is now a solid ink field (`#0f1a12`): image, srcset, scrim,
+`aspect-ratio` container, index.html preload, and the `hero-choir-*.webp`
+assets are all deleted — there is no hero LCP asset left to optimize. The
+subhead is the one-clause promise ("Steward tells you who to call today, and
+what to say."). Re-measured at 390×844 against a local serve of the new build:
+
+| 390px viewport | BUILD-40 (photo hero) | BUILD-41 (solid hero) |
+|---|---|---|
+| FCP (local serve, warm) | 96 ms | **92 ms** |
+| Hero image bytes | 37,614 B | **0 B** |
+| Total page bytes (encoded) | 359,683 B | **319,572 B** (−11%) |
+| Document height | 11,568 px | 11,507 px |
+
+The prod FCP story changes qualitatively: first paint no longer waits on any
+photograph at all — the dark rectangle the audit saw on slow networks cannot
+happen, because the ink field IS the design, not a placeholder for a late
+image. The remaining prod FCP cost is bundle parse + fonts only (see
+`BLOCKED-mobile-height.md` on prerendering). `landing-hero-verify.js` was
+rewritten to pin the solid design: no `<img>`/background-image/scrim in the
+hero, ink background, computed cream-on-ink contrast (15.1:1 headline), the
+one-clause subhead, and the unchanged floated-card rules.
 
 Measured at a TRUE 390×844 Playwright viewport against a local static serve of
 `client/dist` (Chrome's minimum window is 500px — a plain resize silently gives

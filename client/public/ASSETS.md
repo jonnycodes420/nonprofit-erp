@@ -12,7 +12,7 @@ must never be captioned as such (they render `aria-hidden`, no caption).
 
 | Role | Served files | Photographer | Unsplash photo | License |
 |------|--------------|--------------|----------------|---------|
-| **Hero** — community choir mid-performance | `hero-choir-{960,1280,1920,2560}.webp` | Omar Flores | https://unsplash.com/photos/AndwyJNdk1k | Unsplash (free, commercial OK, no attribution required) |
+| **Hero** — RETIRED (BUILD-41, 2026-08-06): the choir photo (`hero-choir-*.webp`, Omar Flores, Unsplash) was deleted — the hero is a solid ink field; the image muddied the type and was the LCP bottleneck | — | — | — | — |
 | **Verticals card — Arts & culture** — patrons at an arts space | `card-arts-{400,800}.webp` | Dillon Wanner | https://unsplash.com/photos/EeAL5G9HDV0 | Unsplash (free, commercial OK, no attribution required) |
 | **Verticals card — Rescue & relief** — shelter dogs | `card-rescue-{400,800}.webp` | Sasha Sashina | https://unsplash.com/photos/Xcscr_sNSEY | Unsplash (free, commercial OK, no attribution required) |
 | **Verticals card — Faith & community** — hillside chapel at dusk | `card-faith-{400,800}.webp` | Kevin Mueller | https://unsplash.com/photos/8IbeGOj9AGA | Unsplash (free, commercial OK, no attribution required) |

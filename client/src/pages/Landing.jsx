@@ -40,10 +40,8 @@ const FOUNDER_MAILTO = "mailto:jonathan@stewardapp.dev";
 // customer — never captioned as one. All photography is free-tier Unsplash;
 // provenance + license is recorded in client/public/ASSETS.md.
 //
-// Hero image is a ONE-LINE swap: change HERO_SRC (the responsive WebP set lives
-// at `${HERO_SRC}-{960,1280,1920,2560}.webp` + the index.html preload). The
-// scrim is a FLAT rgba wash, never a gradient (gradients are banned).
-const HERO_SRC = "/hero-choir";
+// The hero PHOTO was retired in BUILD-41 (solid ink field — the image was
+// the LCP problem and muddied the type). The verticals band photos remain.
 
 // "Built for orgs like yours" — the who-it's-for band. Each vertical named in
 // its own language. A slot with no cleared photo ships a graceful on-palette
@@ -537,12 +535,10 @@ export default function Landing() {
            scrim (never a gradient). Headline sits over the dark, quiet
            upper-left; the choir reads center/right. object-position keeps
            the quiet area behind the type at every breakpoint. ── */
-        /* aspect-ratio (BUILD-40 P0-2) gives the container an intrinsic size
-           from the photo's own 2560×1417 ratio, so the layout can never shift
-           when the image lands; min-height still wins where it's larger. */
-        .lp-hero-photo { position: relative; aspect-ratio: 2560 / 1417; min-height: min(90vh, 760px); display: flex; align-items: flex-start; overflow: hidden; background: ${C.ink}; }
-        .lp-hero-img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: 60% 30%; z-index: 0; }
-        .lp-hero-scrim { position: absolute; inset: 0; background: rgba(15,26,18,0.60); z-index: 1; }
+        /* Solid ink field (BUILD-41) — no photo, no scrim, nothing for the
+           type to wait on. min-height keeps the hero its stage on desktop;
+           mobile takes its height from the content. */
+        .lp-hero-photo { position: relative; min-height: min(78vh, 680px); display: flex; align-items: flex-start; overflow: hidden; background: ${C.ink}; }
         .lp-hero-content { position: relative; z-index: 2; width: 100%; max-width: 1140px; margin: 0 auto; padding: clamp(76px, 13vh, 150px) 64px 72px; }
         .lp-hero-copy { max-width: 620px; }
         .lp-hero-trust { font-size: 13px; color: rgba(240,237,230,0.72); }
@@ -718,9 +714,7 @@ export default function Landing() {
              headline and both CTAs clear a real iPhone's ~700px usable fold
              (browser chrome eats ~140px the test frame doesn't show). Scrim
              darkened for AA over the tighter crop. */
-          .lp-hero-photo { min-height: 0; aspect-ratio: auto; }
-          .lp-hero-img { object-position: 30% 28%; }
-          .lp-hero-scrim { background: rgba(15,26,18,0.66); }
+          .lp-hero-photo { min-height: 0; }
           .lp-hero-content { padding: 72px 22px 44px; }
           .lp-h1 { font-size: 42px !important; }
           /* CTA pairs: equal, full-width, primary first — the 250px/370px
@@ -821,21 +815,13 @@ export default function Landing() {
           </div>
         </nav>
 
-        {/* ── 1. Image-forward hero (BUILD-28). Full-bleed photo + a FLAT rgba
-            scrim; headline over the dark, quiet upper-left; the choir reads
-            center/right. The photo is ILLUSTRATIVE arts/community work, NOT a
-            Steward customer — aria-hidden, never captioned as one. Swapping the
-            image is a one-line change to HERO_SRC (+ the index.html preload). ── */}
+        {/* ── 1. The hero is a SOLID INK field (BUILD-41 — the photograph is
+            retired). The choir photo muddied the type, was the LCP problem,
+            and painted seconds after the words; cream serif on deep green
+            with the brass rule carries itself. Do NOT reintroduce a hero
+            image without new direction — the index.html preload and the
+            hero-choir assets were deleted with it. ── */}
         <section className="lp-hero-photo">
-          <img
-            className="lp-hero-img"
-            src={`${HERO_SRC}-1280.webp`}
-            srcSet={`${HERO_SRC}-640.webp 640w, ${HERO_SRC}-960.webp 960w, ${HERO_SRC}-1280.webp 1280w, ${HERO_SRC}-1920.webp 1920w, ${HERO_SRC}-2560.webp 2560w`}
-            sizes="100vw"
-            width="2560" height="1417"
-            alt="" aria-hidden="true" fetchpriority="high" decoding="async"
-          />
-          <div className="lp-hero-scrim" aria-hidden="true" />
           <div className="lp-hero-content">
             <div className="lp-hero-copy">
               {/* Eyebrow's one job is orientation — say plainly what this IS. */}
@@ -846,16 +832,12 @@ export default function Landing() {
                 Steward{" "}
                 <span style={{ borderBottom: `4px solid ${C.gold}`, paddingBottom: 2 }}>notices.</span>
               </h1>
-              {/* maxWidth trimmed so every line stays inside the dark scrim area
-                  (was crossing into the lit choir, the weakest-contrast point).
-                  The subhead leads with the PROMISE (who to call today, and
-                  what to say) — fees are a feature and live in the trust line
-                  below and the money strip, not in the hero's best real estate. */}
+              {/* ONE clause (BUILD-41). The promise, whole, in two lines —
+                  fees live in the trust line below and the money strip, and
+                  the failed-cards story has the calculator + moment 2. */}
               <p style={{ fontSize: 17.5, color: "rgba(240,237,230,0.94)", lineHeight: 1.75, maxWidth: 496, marginBottom: 32 }}>
                 Steward tells you{" "}
-                <strong style={{ color: C.cream }}>who to call today, and what to say</strong>{" "}
-                — and stops you losing the donors you already earned to failed
-                cards and silence.
+                <strong style={{ color: C.cream }}>who to call today, and what to say.</strong>
               </p>
               <div className="lp-cta-row" style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 16 }}>
                 <GoldBtn big onClick={() => navigate("/invitation")}>Request an invitation</GoldBtn>
@@ -864,10 +846,10 @@ export default function Landing() {
               <p className="lp-hero-trust">No platform fee · no donor tip · gifts settle in your own Stripe</p>
             </div>
           </div>
-          {/* A single DOM/vector product card floated over the empty lower-right
-              quadrant (BUILD-29) — a stranger reads "software FOR nonprofits,"
-              not "an arts org." Real elevation (shadow + border) = layered over
-              the photo. Hidden ≤1139px so it never crowds the type. */}
+          {/* A single DOM/vector product card floated in the lower-right
+              (BUILD-29) — a stranger reads "software FOR nonprofits." Real
+              elevation over the ink field. Hidden ≤1139px so it never crowds
+              the type. */}
           <HeroFloatCard />
         </section>
 

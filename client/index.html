@@ -17,23 +17,8 @@
          the hero headline never reflows → CLS≈0, while first paint stays fast. -->
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <!-- BUILD-28: the landing hero is now an image-forward PHOTO (the LCP
-         element), so we preload the hero source — but ONLY on the landing
-         route ("/"), so the app/auth routes (which share this static shell)
-         never fetch a hero they don't render and the BUILD-07 route-split
-         payload win still holds. The product SHOTS stay DOM/SVG (BUILD-12) —
-         do NOT preload or rasterize those. -->
-    <script>
-      if (location.pathname === "/") {
-        var l = document.createElement("link");
-        l.rel = "preload"; l.as = "image";
-        l.href = "/hero-choir-1280.webp";
-        l.setAttribute("imagesrcset", "/hero-choir-640.webp 640w, /hero-choir-960.webp 960w, /hero-choir-1280.webp 1280w, /hero-choir-1920.webp 1920w, /hero-choir-2560.webp 2560w");
-        l.setAttribute("imagesizes", "100vw");
-        l.setAttribute("fetchpriority", "high");
-        document.head.appendChild(l);
-      }
-    </script>
+    <!-- BUILD-41: the hero photo (and its route-scoped preload that lived
+         here) was retired — the hero is a solid ink field; nothing to preload. -->
     <meta name="theme-color" content="#0f1a12">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
