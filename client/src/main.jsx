@@ -24,6 +24,9 @@ const App                = React.lazy(() => import("./App"));
 const Donate             = React.lazy(() => import("./pages/Donate"));
 const ManageFundraiser   = React.lazy(() => import("./pages/ManageFundraiser"));
 const Pricing            = React.lazy(() => import("./pages/Pricing"));
+// NB: Invitation.jsx is also imported eagerly by Landing (the on-page form
+// section), so this lazy route resolves from the already-loaded entry chunk.
+const InvitationPage     = React.lazy(() => import("./pages/Invitation"));
 const AdminDashboard     = React.lazy(() => import("./pages/AdminDashboard"));
 const ForgotPasswordPage = React.lazy(() => import("./pages/ForgotPasswordPage"));
 const ResetPasswordPage  = React.lazy(() => import("./pages/ResetPasswordPage"));
@@ -143,6 +146,7 @@ function Root() {
           <Route path="/dashboard" element={<RequireOnboarded><App /></RequireOnboarded>} />
           <Route path="/invite/:token" element={<InvitePage />} />
           <Route path="/pricing"   element={<Pricing />} />
+          <Route path="/invitation" element={<InvitationPage />} />
           <Route path="/give/:orgSlug" element={<Donate />} />
           <Route path="/give/:orgSlug/:pageSlug" element={<Donate />} />
           <Route path="/give/:orgSlug/:pageSlug/:fundraiserSlug" element={<Donate />} />

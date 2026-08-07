@@ -210,7 +210,7 @@ export default function Pricing() {
         ) : (
           <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
             <Link to="/login" style={{ fontSize: 13, color: sage, textDecoration: "none" }}>Sign in</Link>
-            <Link to="/signup" style={{ fontSize: 13, color: ink, background: cream, borderRadius: 8, padding: "7px 16px", textDecoration: "none", fontWeight: 700 }}>Start free trial</Link>
+            <Link to="/invitation" style={{ fontSize: 13, color: ink, background: cream, borderRadius: 8, padding: "7px 16px", textDecoration: "none", fontWeight: 700 }}>Request an invitation</Link>
           </div>
         )}
       </div>
@@ -225,6 +225,19 @@ export default function Pricing() {
           <div style={{ fontSize: 15, color: sage, maxWidth: 560, margin: "0 auto", lineHeight: 1.55 }}>
             The question is simple: <span style={{ color: cream, fontWeight: 600 }}>do you have gift officers to manage?</span> If not, Core is the whole product. If you do — portfolios, a moves pipeline, per-officer oversight — that's Team.
           </div>
+        </div>
+
+        {/* Founding-partner framing (invitation pivot, 2026-08-06): prices stay
+            PUBLISHED — hiding them reads as Blackbaud-shaped opacity, the exact
+            thing Steward positions against — but they're framed future-tense:
+            this is what plans become when Steward opens; founding partners lock
+            in below them. Transparency AND scarcity, not opacity. */}
+        <div style={{ textAlign: "center", marginBottom: 22 }}>
+          <span style={{ display: "inline-block", fontSize: 13, color: cream, background: panel, border: `1px solid ${gold}`, borderRadius: 12, padding: "12px 20px", lineHeight: 1.6, maxWidth: 560 }}>
+            Steward is currently <b style={{ color: gold }}>invitation-only</b> while the five founding
+            partner organizations are chosen. These are the prices when Steward opens in
+            January — <b>founding partners lock in below them</b>, for as long as they stay.
+          </span>
         </div>
 
         {/* Active-donor promise */}
@@ -297,7 +310,9 @@ export default function Pricing() {
                   fontSize: 14, fontWeight: 700, cursor: "pointer", transition: "all 0.15s",
                 };
                 if (!isAuthed) {
-                  return <button onClick={() => navigate("/signup")} style={base}>Start free trial →</button>;
+                  // Invitation pivot: no self-serve signup — a visitor requests
+                  // an invitation; existing orgs (authed) keep live checkout.
+                  return <button onClick={() => navigate("/invitation")} style={base}>Request an invitation →</button>;
                 }
                 if (isCurrentPlan(plan.id)) {
                   return (
@@ -349,16 +364,24 @@ export default function Pricing() {
           <div style={{ fontSize: 15.5, color: cream, lineHeight: 1.65, fontFamily: "'DM Serif Display',Georgia,serif", fontWeight: 400 }}>
             “Free platforms fund ‘free’ by asking your donors for a tip, or by locking the CRM you actually need behind an upgrade. Steward is a flat monthly price with everything a small shop needs included, cheaper than the real CRMs, your gifts land in your own account, and we count the donors you're actually working — not every dead record on file.”
           </div>
+          {/* "Keep every dollar" was an overclaim — Stripe's processing fee
+              still applies (and Zeffy is genuinely 0% total, so the overclaim
+              was also WEAKER than the truth). The truth is the differentiator:
+              no platform fee, no donor tip, gifts in the org's own Stripe. */}
           <div style={{ fontSize: 14, color: gold, marginTop: 14, fontWeight: 700 }}>
-            You keep every dollar. We just help you keep every donor.
+            No platform fee. No donor tip. Every gift settles in your own Stripe
+            account — and we help you keep every donor.
           </div>
         </div>
 
         {/* Footer note */}
         <div style={{ textAlign: "center", fontSize: 13, color: sage }}>
-          Every plan starts with a free trial — no card required.{" "}
+          <Link to="/invitation" style={{ color: cream, textDecoration: "underline", textUnderlineOffset: 3, fontWeight: 600 }}>
+            Request an invitation →
+          </Link>{" "}
+          or{" "}
           <a href={CAL} target="_blank" rel="noreferrer" style={{ color: cream, textDecoration: "none", fontWeight: 600 }}>
-            Questions? Book a demo →
+            book a call with the founder →
           </a>
         </div>
       </div>

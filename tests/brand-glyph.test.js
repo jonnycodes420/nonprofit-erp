@@ -118,8 +118,10 @@ ok(/background:\s*loading\s*\?\s*T\.cream3\s*:\s*T\.gold/.test(login),
   "sign-in: Sign In button background is gold");
 ok(/borderBottom:\s*`3px solid \$\{T\.gold\}`/.test(login),
   "sign-in: 'Welcome back' underline is gold");
-ok(/color:\s*T\.forest[^]{0,40}Sign up free/.test(login),
-  "sign-in: 'Sign up free' link is forest green");
+// (Invitation pivot 2026-08-06: the self-serve "Sign up free" link became
+// "Request an invitation" → /invitation, same forest-green treatment.)
+ok(/color:\s*T\.forest[^]{0,40}Request an invitation/.test(login),
+  "sign-in: 'Request an invitation' link is forest green");
 
 // 8 — The public sign-in page carries NO demo credentials (it's the front door;
 //     any demo shortcut is gated to non-production via import.meta.env.DEV).

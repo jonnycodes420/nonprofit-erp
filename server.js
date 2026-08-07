@@ -204,6 +204,17 @@ const donateLimiter = rateLimit({
   skip: rateLimitDisabled, // local scripted suites exercise /donate repeatedly (tests/cover-fees.test.js)
 });
 
+// Public "Request an invitation" form (invitation pivot, 2026-08-06). A human
+// fills this once; anything past this budget from one IP is a bot.
+const invitationLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  handler: rateLimitHandler,
+  skip: rateLimitDisabled,
+});
+
 // Stripe webhook must receive raw body — register BEFORE express.json()
 app.post("/stripe/webhook", express.raw({ type: "application/json" }), async (req, res) => {
   if (!stripe) return res.status(503).json({ error: "Stripe not configured" });
@@ -1038,6 +1049,50 @@ app.get("/health", (req, res) => {
     publicUrl: { url: pu.url, fromEnv: pu.fromEnv },
   });
 });
+
+// ── Request an invitation (public — invitation pivot, 2026-08-06) ──────────
+// The landing/invitation form. No CAPTCHA by design (trust cost on a
+// credibility page): a hidden honeypot field + a minimum-fill-time check
+// stand in for it. Both bot signals return the SAME success response as a
+// real submission — never tip a bot off that it was filtered — they just
+// store nothing and email no one.
+app.post("/invitation-request", invitationLimiter, wrap(async (req, res) => {
+  const { name, email, organization, role, donorBand, hardestPart, website, elapsedMs } = req.body || {};
+  const clean = (v, max) => (typeof v === "string" ? v.trim().slice(0, max) : "");
+  const n = clean(name, 120), e = clean(email, 200), org = clean(organization, 200);
+  if (!n || !e || !org) return res.status(400).json({ error: "name, email, and organization are required" });
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e)) return res.status(400).json({ error: "That email doesn't look right" });
+
+  // Honeypot: `website` is a visually-hidden field no human sees. Timing: the
+  // client reports ms since the form rendered; a sub-3s fill is not a person.
+  const isBot = !!clean(website, 500) || (elapsedMs !== undefined && Number(elapsedMs) < 3000);
+  if (!isBot) {
+    const id = "invreq_" + uuid().slice(0, 8);
+    await run(
+      `INSERT INTO invitation_requests (id, name, email, organization, role, donor_band, hardest_part)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      [id, n, e, org, clean(role, 120) || null, clean(donorBand, 40) || null, clean(hardestPart, 2000) || null]
+    );
+    // Notify the founder — fire-and-forget; the stored row is the source of
+    // truth, a mail failure must never fail the request.
+    if (process.env.RESEND_API_KEY) {
+      const founderEmail = process.env.FOUNDER_EMAIL || "jonathan@stewardapp.dev";
+      const esc = s => String(s || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+      resend.emails.send({
+        from: "Steward <noreply@stewardapp.dev>",
+        to: founderEmail,
+        reply_to: e,
+        subject: `Invitation request — ${org}`,
+        html: `<div style="font-family:Georgia,serif;line-height:1.7;color:#0f1a12">
+          <p><strong>${esc(n)}</strong> (${esc(e)})<br/>${esc(org)}${role ? " · " + esc(clean(role, 120)) : ""}</p>
+          <p>Donor database: ${esc(clean(donorBand, 40) || "not answered")}</p>
+          <p>Hardest part of keeping donors: ${esc(clean(hardestPart, 2000) || "—")}</p>
+        </div>`,
+      }).catch(err => console.error("invitation-request notify failed:", err?.message || err));
+    }
+  }
+  res.json({ received: true });
+}));
 
 // ── Sentry test hook (org-admin-gated) ─────────────────────────────────────
 // Fires a deliberate test error down one of the two backend reporting paths:

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { InvitationSection } from "./Invitation";
 
 // ── Landing (BUILD-07 rebuild, 2026-07-17; product shots → DOM, BUILD-12) ───
 // Register: warm-serious, book-set, five-color palette only. Every number and
@@ -66,13 +67,17 @@ const VERTICALS = [
   },
 ];
 
-// ── Interactive wedge (BUILD-11 Build B) ────────────────────────────────────
-// The 20–30% of recurring giving lost to failed cards, made visceral with
-// HONEST math the visitor drives themselves: annual involuntary loss =
-// monthly recurring × 12 × 24% (midpoint of the industry 20–30% range, shown).
+// ── Interactive wedge (BUILD-11 Build B; re-sourced 2026-08-06) ─────────────
+// The monthly giving lost to lapsing sustainers, made visceral with HONEST
+// math the visitor drives themselves: annual loss = monthly recurring × 12 ×
+// 29%. The rate is PRIMARY-SOURCED, not the recycled "widely-cited 20–30%"
+// payments-literature range the sector passes around: M+R Benchmarks 2026
+// (2025 data, 180 nonprofits) reports monthly sustainer retention of 71% at
+// twelve months → 29% annual attrition, with about one in ten monthly gifts
+// failing inside the first two months (heavily card/processing driven).
 // Client-side only, no backend, no invented recovery figure — the point is
 // the size of the leak, not a flattering promise.
-const CHURN_RATE = 0.24; // midpoint of the industry 20–30% involuntary-churn range
+const CHURN_RATE = 0.29; // 1 − 0.71 twelve-month sustainer retention (M+R Benchmarks 2026)
 const fmtMoney = n => "$" + Math.round(n).toLocaleString();
 
 function RecoveryCalculator() {
@@ -104,7 +109,8 @@ function RecoveryCalculator() {
           <div style={{ fontSize: 12, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", color: C.ink3, marginBottom: 6 }}>Silently lost each year</div>
           <div className="lp-calc-loss lp-serif" style={{ fontSize: "clamp(34px, 4.5vw, 46px)", color: C.terra, lineHeight: 1 }}>{fmtMoney(annualLoss)}</div>
           <div style={{ fontSize: 13, color: "#2d2d2d", lineHeight: 1.6, marginTop: 8 }}>
-            from donors who never decided to stop giving.
+            much of it from cards that simply failed — donors who never decided
+            to stop giving.
           </div>
         </div>
         <div style={{ fontSize: 14, color: C.greenDk, fontWeight: 600, lineHeight: 1.6 }}>
@@ -112,9 +118,10 @@ function RecoveryCalculator() {
           win the gift back — in your name, no login for the donor.
         </div>
         <p style={{ fontSize: 11.5, color: C.ink3, marginTop: 16, lineHeight: 1.6 }}>
-          Assumes 24% annual involuntary churn — the midpoint of the widely-cited
-          20–30% range for recurring-gift card failures. How much comes back
-          depends on your donors; Steward pursues every dollar of it.
+          Assumes 29% annual attrition on monthly giving — M+R Benchmarks 2026
+          (2025 data): sustainer retention is 71% at twelve months, and about
+          one in ten monthly gifts fails within the first two months. How much
+          comes back depends on your donors; Steward pursues every dollar of it.
         </p>
       </div>
     </div>
@@ -693,7 +700,7 @@ export default function Landing() {
           <div style={{ display: "flex", alignItems: "center", gap: 22 }}>
             <a href="/pricing" className="lp-navlink lp-nav-pricing">Pricing</a>
             <a href="/login" className="lp-navlink">Log in</a>
-            <GoldBtn onClick={() => navigate("/signup")}>Start free</GoldBtn>
+            <GoldBtn onClick={() => navigate("/invitation")}>Request an invitation</GoldBtn>
           </div>
         </nav>
 
@@ -723,18 +730,21 @@ export default function Landing() {
                 <span style={{ borderBottom: `4px solid ${C.gold}`, paddingBottom: 2 }}>notices.</span>
               </h1>
               {/* maxWidth trimmed so every line stays inside the dark scrim area
-                  (was crossing into the lit choir, the weakest-contrast point). */}
+                  (was crossing into the lit choir, the weakest-contrast point).
+                  The subhead leads with the PROMISE (who to call today, and
+                  what to say) — fees are a feature and live in the trust line
+                  below and the money strip, not in the hero's best real estate. */}
               <p style={{ fontSize: 17.5, color: "rgba(240,237,230,0.94)", lineHeight: 1.75, maxWidth: 496, marginBottom: 32 }}>
-                A donor CRM built by fundraisers. <strong style={{ color: C.cream }}>Keep 100%</strong>{" "}
-                of every gift — 0% platform fees, gifts settle in your own Stripe — and{" "}
-                <strong style={{ color: C.cream }}>stop losing donors you already earned</strong>{" "}
-                to failed cards and silence.
+                Steward tells you{" "}
+                <strong style={{ color: C.cream }}>who to call today, and what to say</strong>{" "}
+                — and stops you losing the donors you already earned to failed
+                cards and silence.
               </p>
               <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 16 }}>
-                <GoldBtn big onClick={() => navigate("/signup")}>Start free</GoldBtn>
+                <GoldBtn big onClick={() => navigate("/invitation")}>Request an invitation</GoldBtn>
                 <QuietBtn big onDark onClick={() => setShowCal(true)}>Talk to the founder</QuietBtn>
               </div>
-              <p className="lp-hero-trust">30-day trial · no credit card · your data exports anytime</p>
+              <p className="lp-hero-trust">No platform fee · no donor tip · gifts settle in your own Stripe</p>
             </div>
           </div>
           {/* A single DOM/vector product card floated over the empty lower-right
@@ -793,8 +803,11 @@ export default function Landing() {
               going quiet. Every CRM can store your donors.{" "}
               <span style={{ borderBottom: `3px solid ${C.gold}` }}>Steward watches over them.</span>
             </p>
+            {/* Attribution goes to the PRIMARY source (the FEP produces this
+                number; others republish it) — never to a competitor. */}
             <p style={{ fontSize: 12.5, color: C.ink3, marginTop: 26 }}>
-              43% is the sector-average donor retention rate published in Bloomerang's annual benchmarks.
+              43.3% is the full-year 2025 donor retention rate published by the
+              Fundraising Effectiveness Project (AFP Foundation for Philanthropy).
             </p>
           </div>
         </section>
@@ -984,7 +997,7 @@ export default function Landing() {
             </p>
             <p style={{ fontSize: 12.5, color: "#6b8f7a", maxWidth: 480, margin: "0 auto" }}>
               Stripe's standard card-processing fee still applies — that goes to
-              Stripe, not to us. Plans are $99, $249, or $499 a month, flat.{" "}
+              Stripe, not to us. Plans are $149 or $299 a month, flat.{" "}
               <a href="/pricing" style={{ color: C.sage, textDecoration: "underline", textUnderlineOffset: 3 }}>See pricing</a>.
             </p>
           </div>
@@ -1087,30 +1100,15 @@ export default function Landing() {
           </div>
         </section>
 
-        {/* ── 6.5 Founding-partner CTA — the ask, now AFTER the letter that
-            earns it (BUILD-29 reorder). Carries the quiet pricing signal so a
+        {/* ── 6.5 The invitation — the ask, now AFTER the letter that earns it
+            (BUILD-29 order kept). The mailto ask became a real request form
+            (invitation pivot, 2026-08-06): Steward is invitation-only while
+            the five founding partners are chosen. Same form as /invitation;
+            the section carries the quiet future-tense pricing signal so a
             visitor never has to click through to /pricing to learn the range. ── */}
-        <section className="lp-section lp-reveal" style={{ background: C.white, borderTop: `1px solid ${C.cream2}`, borderBottom: `1px solid ${C.cream2}`, textAlign: "center" }}>
-          <div className="lp-narrow">
-            <Eyebrow>Founding partners</Eyebrow>
-            <h2 className="lp-serif" style={{ fontSize: "clamp(30px, 3.4vw, 44px)", color: C.ink, lineHeight: 1.15, marginBottom: 20 }}>
-              Be one of the first five.
-            </h2>
-            <p style={{ fontSize: 17, color: "#2d2d2d", lineHeight: 1.8, maxWidth: 560, margin: "0 auto 22px" }}>
-              I'm looking for <strong>three to five founding partner organizations</strong> —
-              nonprofits who'll use Steward for real, tell me what's missing, and shape
-              what gets built next. Founding partners get a locked-in price and a direct
-              line to me.
-            </p>
-            <p style={{ fontSize: 14, color: C.ink3, marginBottom: 28 }}>
-              From <strong style={{ color: C.ink }}>$149/month</strong> · keep 100% of every gift ·{" "}
-              <a href="/pricing" style={{ color: C.greenDk, fontWeight: 600, textDecoration: "underline", textUnderlineOffset: 3 }}>See pricing</a>
-            </p>
-            <div style={{ display: "flex", gap: 12, justifyContent: "center", flexWrap: "wrap" }}>
-              <QuietBtn big onClick={() => { window.location.href = `${FOUNDER_MAILTO}?subject=Founding%20partner`; }}>Write to me →</QuietBtn>
-            </div>
-          </div>
-        </section>
+        <div className="lp-reveal">
+          <InvitationSection headline="Be one of the first five." />
+        </div>
 
         {/* ── 7. Close ── */}
         <section className="lp-section lp-reveal" style={{ textAlign: "center" }}>
@@ -1119,11 +1117,11 @@ export default function Landing() {
               See who needs you today.
             </h2>
             <div style={{ display: "flex", gap: 12, justifyContent: "center", flexWrap: "wrap", marginBottom: 18 }}>
-              <GoldBtn big onClick={() => navigate("/signup")}>Start free</GoldBtn>
+              <GoldBtn big onClick={() => navigate("/invitation")}>Request an invitation</GoldBtn>
               <QuietBtn big onClick={() => setShowCal(true)}>Talk to the founder</QuietBtn>
             </div>
             <p style={{ fontSize: 13, color: C.ink3 }}>
-              30-day trial · no credit card · import your donors this afternoon
+              Five founding organizations · donors imported for you · your data exports anytime
             </p>
           </div>
         </section>

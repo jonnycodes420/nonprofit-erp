@@ -315,6 +315,23 @@ async function initSchema() {
     )
   `);
 
+  // Invitation-pivot (2026-08-06): the public "Request an invitation" form on
+  // the landing + /invitation page. NOT the staff-invite system (that's
+  // `invites` above) — these are prospective founding-partner orgs writing in.
+  // Rows are read by a human (Jonathan), never rendered back into the app.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS invitation_requests (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      email TEXT NOT NULL,
+      organization TEXT NOT NULL,
+      role TEXT,
+      donor_band TEXT,
+      hardest_part TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+
   await pool.query(`
     CREATE TABLE IF NOT EXISTS grant_interactions (
       id TEXT PRIMARY KEY,

@@ -4,10 +4,17 @@
 //   1. the funnel sections render in order (hero → wedge calculator → problem
 //      → product moments → how it works → money → candor → founder → close)
 //   2. the interactive recurring-loss calculator computes correctly for
-//      multiple inputs AND shows its assumption
+//      multiple inputs AND shows its assumption (29% / M+R Benchmarks — the
+//      primary-sourced rate, 2026-08-06; never the unsourced "widely-cited
+//      20–30%")
 //   3. NO fabricated social proof (grep guard: no fake logos / testimonials /
 //      star ratings / "trusted by" / invented user counts)
-//   4. every primary CTA links live (Start free → /signup; real footer links)
+//   4. every primary CTA links live (Request an invitation → /invitation;
+//      real footer links) and NO self-serve signup path survives (invitation
+//      pivot, 2026-08-06: no "Start free", no free-trial microcopy, and never
+//      the word "waitlist" — Steward is choosing five orgs, not running a queue)
+//   5. the stat attribution is the PRIMARY source (Fundraising Effectiveness
+//      Project), never a competitor's republication
 //
 // Run against the deployed landing OR a local vite preview:
 //   PLAYWRIGHT_DIR=/path/with/playwright BASE=http://localhost:4173 \
@@ -90,11 +97,13 @@ const BANNED = [
     return Number(txt.replace(/[^\d]/g, ""));
   };
   for (const monthly of [1500, 5000, 800]) {
-    const expected = Math.round(monthly * 12 * 0.24);
+    const expected = Math.round(monthly * 12 * 0.29);
     const shown = await setAndRead(monthly);
     ok(`calculator: $${monthly}/mo → $${expected.toLocaleString()} annual loss`, shown === expected, { shown, expected });
   }
-  ok("calculator states its assumption (20–30% / 24%)", /24%|20[–-]30%/.test(bodyText));
+  ok("calculator states its assumption (29% / 71% retention)", /29%/.test(bodyText) && /71%/.test(bodyText));
+  ok("calculator cites its primary source (M+R Benchmarks)", /M\+R Benchmarks/.test(bodyText));
+  ok("the unsourced 'widely-cited' hedge is gone", !/widely[- ]cited/i.test(bodyText));
 
   // ── 3. No fabricated proof ──
   for (const re of BANNED) {
@@ -111,13 +120,18 @@ const BANNED = [
 
   // ── 3.5 BUILD-29: order + pricing + no pottery band ──
   // The founder letter must precede the founding-partner ASK (the letter earns
-  // the ask). The ask now lives in its own "founding partner organizations"
-  // section AFTER the letter.
+  // the ask). The ask is now the on-page invitation form section ("Be one of
+  // the first five." — invitation pivot, 2026-08-06) AFTER the letter.
   const letterIdx = hay.indexOf("letter from the founder");
-  const askIdx = hay.indexOf("founding partner organizations");
+  const askIdx = hay.indexOf("be one of the first five");
   ok("founder letter present", letterIdx !== -1);
-  ok("founding-partner ask present", askIdx !== -1);
+  ok("founding-partner ask present ('Be one of the first five')", askIdx !== -1);
   ok("founder letter PRECEDES the founding-partner ask", letterIdx !== -1 && askIdx !== -1 && letterIdx < askIdx, { letterIdx, askIdx });
+  // The stat attribution is the primary source, never a competitor.
+  ok("43% stat attributed to the Fundraising Effectiveness Project", /fundraising effectiveness project/i.test(bodyText));
+  ok("no competitor attribution (Bloomerang)", !/bloomerang/i.test(bodyText));
+  // "Keep 100%" was an overclaim (Stripe's processing fee still applies).
+  ok("no 'keep 100%' overclaim", !/keep 100%|100% of every gift/i.test(bodyText));
   // Pricing signal present near the CTA and linked to /pricing.
   ok("pricing signal present ('$149/month' or '$149/mo')", /\$149\s*\/\s*(month|mo)/i.test(bodyText), bodyText.match(/\$149[^\n]{0,12}/));
   const pricingLinked = await page.evaluate(() =>
@@ -130,9 +144,18 @@ const BANNED = [
   );
   ok("no pottery/studio band image on the page", bandImgs === 0, bandImgs);
 
-  // ── 4. CTAs live ──
-  ok("Start free CTA present", await page.locator('button:has-text("Start free")').count() >= 1);
+  // ── 4. CTAs live + the invitation pivot holds ──
+  ok("Request an invitation CTA present", await page.locator('button:has-text("Request an invitation")').count() >= 1);
   ok("Talk to the founder CTA present", await page.locator('button:has-text("Talk to the founder")').count() >= 1);
+  // No self-serve path survives: no Start-free CTA, no trial microcopy, and
+  // never the word "waitlist" (this is choosing five orgs, not a queue).
+  ok("no 'Start free' CTA anywhere", !/start free/i.test(bodyText));
+  ok("no free-trial / no-credit-card microcopy", !/free trial|no credit card|30-day trial/i.test(bodyText));
+  ok("the word 'waitlist' never appears", !/waitlist/i.test(bodyText));
+  // The on-page invitation form is real: labeled fields + the donor-band ask.
+  ok("invitation form present on the landing", await page.locator('#invitation form').count() === 1);
+  ok("invitation form asks the donor-band question", /how many donors are in your database/i.test(bodyText));
+  ok("invitation form carries the honesty line ('I read every one of these myself')", /i read every one of these myself/i.test(bodyText));
   const footerLinks = await page.evaluate(() =>
     [...document.querySelectorAll("footer a")].map(a => a.getAttribute("href"))
   );
@@ -141,10 +164,10 @@ const BANNED = [
   }
   ok("footer has a contact mailto", footerLinks.some(h => h && h.startsWith("mailto:")));
 
-  // Start free actually navigates to /signup
-  await page.locator('button:has-text("Start free")').first().click();
+  // The nav CTA actually navigates to /invitation
+  await page.locator('button:has-text("Request an invitation")').first().click();
   await page.waitForTimeout(600);
-  ok("Start free → /signup", page.url().endsWith("/signup"), page.url());
+  ok("Request an invitation → /invitation", page.url().endsWith("/invitation"), page.url());
 
   await browser.close();
   console.log(`\n${pass} passed, ${fail} failed`);
