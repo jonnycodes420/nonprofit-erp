@@ -8,7 +8,19 @@ a deliberate manifest/matrix update). Ranked by severity.
 
 ---
 
-## F-1 · HIGH — read-only (lapsed) orgs can still perform Team-layer WRITES
+## F-1 · HIGH — read-only (lapsed) orgs can still perform Team-layer WRITES — **FIXED (BUILD-45, 2026-08-07)**
+
+**Fix:** `checkWriteAccess` added to all five routes (`/donors/:id/stage`,
+`/donors/:id/assign`, `/donors/bulk-stage`, `/donors/bulk-assign`,
+`/donors/:id/score`), positioned AFTER `requirePlan("team")` so a Core caller
+still gets 403 `plan_required` and a read_only Team org now gets 402. Verified
+by `tests/permissions-matrix.test.js` (the three `roAdmin: "open"` rows flipped
+to `402`, and the two previously-uncovered routes — per-donor stage change and
+bulk-assign — were added; 94/94). `/auth/invite` staying write-ungated is left
+as a deliberate product decision (a reactivating org may need to invite) — not
+part of this fix.
+
+<details><summary>Original finding (kept for the record)</summary>
 
 **Suite:** `tests/permissions-matrix.test.js` (rows tagged F-4 in-code) ·
 **Repro:** org `plan='team'`, `subscription_status='trial_expired'` → admin
@@ -30,8 +42,29 @@ PR.
 **Related (Low):** `POST /auth/invite` is also write-ungated — a read_only
 org can invite new users (seat-limited). May be deliberate (rejoining after
 reactivation?) — decide, then encode.
+</details>
 
-## F-2 · MEDIUM — a failed notification send is lost FOREVER (no retry, no surfacing)
+## F-2 · MEDIUM — a failed notification send is lost FOREVER (no retry, no surfacing) — **FIXED (BUILD-45, 2026-08-07)**
+
+**Fix:** three parts. (1) `sendGiftAlertEmail` now returns real success/failure
+instead of swallowing every provider error and returning `true`. (2) On a real
+send failure, `notifyUserOnce` **releases** the `notification_sends` dedup
+reservation (so the alert is not reserved-to-silence) and durably queues the
+send — recipient + subject + body — in a new `notification_failures` table.
+(3) `retryFailedNotifications()` re-sends queued rows on the existing 5-min tick
+(and via `POST /admin/notifications/retry` for ops/tests), deletes them on
+success (re-reserving the dedup row so a later same-event trigger still dedups),
+and after 5 attempts leaves a permanent record. `/health.notifications.failedPending`
+surfaces the count (cached — the health path stays synchronous). Verified by
+`tests/notify-delivery.test.js` (outage → reservation released + queued +
+surfaced on /health; retry while down → attempts grow, nothing delivered; retry
+after recovery → the once-lost alert ARRIVES, queue clears, dedup restored; 27/27).
+The send failure still never fails the triggering action (that part was already
+correct). NB: this made every state-diff suite need a live capture sink so the
+notification path succeeds deterministically — a sink-less env now legitimately
+fails+queues sends (`startMailSink` added to `state-diff.lib.js`).
+
+<details><summary>Original finding (kept for the record)</summary>
 
 **Suite:** `tests/notify-delivery.test.js` ("outage" block). **Repro:** point
 `RESEND_BASE_URL` at a 500-ing sink → assign a task to a teammate → the send
@@ -47,6 +80,12 @@ triggering action — correct; the gap is purely delivery robustness.
 **Fix shape:** reserve → send → on failure DELETE the reservation (the
 UNIQUE key already makes a concurrent duplicate safe) + a retry sweep on the
 existing 5-min tick; `/health` gains a `failedSends` counter.
+</details>
+
+---
+
+**Remaining findings below (F-3 … F-9) are NOT fixed** — documented and
+encoded as current behavior, awaiting a product decision.
 
 ## F-3 · MEDIUM — no idempotency on manual gift entry: a double-tap records the gift twice
 

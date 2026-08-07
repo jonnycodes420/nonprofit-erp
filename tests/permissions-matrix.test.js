@@ -75,17 +75,21 @@ async function mkOrg(id, plan, status) {
       exp: { teamStaff: "open", teamAdmin: "open", coreAdmin: 403, roAdmin: 402 } },
     { name: "log ask (opportunity)", m: "POST", p: o => `/donors/${donor(o)}/opportunities`, b: () => ({ name: "PM Ask", targetAmount: 500 }),
       exp: { teamStaff: "open", teamAdmin: "open", coreAdmin: 403, roAdmin: 402 } },
-    // FINDINGS F-4: these three carry requirePlan("team") but NO
-    // checkWriteAccess — a READ_ONLY (lapsed/trial-expired) Team org can
-    // still reassign owners, bulk-change stages, and run wealth scoring.
-    // Expected 402; encoded as the CURRENT "open" so the matrix is the
-    // reviewed record of the hole. Fix = one middleware per route, post-review.
+    // BUILD-45 fixed F-1: these Team-layer writes now carry checkWriteAccess,
+    // so a READ_ONLY (lapsed/trial-expired) Team org gets 402 — the plan gate
+    // still 403s a Core caller (requirePlan runs first). assign is admin-gated
+    // (BUILD-31 oversight model), so staff → 403.
     { name: "assign owner (admin-gated per BUILD-31 oversight model)", m: "PATCH", p: o => `/donors/${donor(o)}/assign`, b: o => ({ assignedTo: `u_${o}_s` }),
-      exp: { teamStaff: 403, teamAdmin: "open", coreAdmin: 403, roAdmin: "open" } },
+      exp: { teamStaff: 403, teamAdmin: "open", coreAdmin: 403, roAdmin: 402 } },
     { name: "bulk stage", m: "PATCH", p: () => "/donors/bulk-stage", b: o => ({ ids: [donor(o)], stage: "steward" }),
-      exp: { teamStaff: "open", teamAdmin: "open", coreAdmin: 403, roAdmin: "open" } },
+      exp: { teamStaff: "open", teamAdmin: "open", coreAdmin: 403, roAdmin: 402 } },
     { name: "wealth score", m: "POST", p: o => `/donors/${donor(o)}/score`, b: () => ({}),
-      exp: { teamStaff: "open", teamAdmin: "open", coreAdmin: 403, roAdmin: "open" } },
+      exp: { teamStaff: "open", teamAdmin: "open", coreAdmin: 403, roAdmin: 402 } },
+    // and the two F-1 routes the matrix didn't previously cover — now gated too
+    { name: "per-donor stage change", m: "PATCH", p: o => `/donors/${donor(o)}/stage`, b: () => ({ stage: "qualify" }),
+      exp: { teamStaff: "open", teamAdmin: "open", coreAdmin: 403, roAdmin: 402 } },
+    { name: "bulk assign owner", m: "PATCH", p: () => "/donors/bulk-assign", b: o => ({ ids: [donor(o)], assignedTo: `u_${o}_s` }),
+      exp: { teamStaff: 403, teamAdmin: "open", coreAdmin: 403, roAdmin: 402 } },
 
     // ── admin-only org surface: staff must be rejected server-side ──
     { name: "org branding", m: "PUT", p: () => "/orgs/branding", b: () => ({ brandAccent: "#8a3a24" }),

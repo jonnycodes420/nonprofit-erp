@@ -25,19 +25,28 @@ let received = [];       // captured sends
 let sinkMode = "ok";     // "ok" | "fail"
 let attempts = 0;        // every POST, including failed ones
 
+// The sink accepts ALL sends (so the server considers them delivered) but only
+// COUNTS ones addressed to THIS suite's users. In run-all, earlier browser
+// suites queue failed notifications (no sink was up), and the server's 5-min
+// background retry sweep can replay those OTHER orgs' mail into this sink while
+// it's open — scoping `received` to n44 recipients keeps the exact-count
+// assertions immune to that (BUILD-45: the retry sweep working as designed).
+const MINE = new Set([ADMIN, OFFICER]);
+const forMe = m => [].concat(m.to || []).some(a => MINE.has(a));
 function startSink() {
   return new Promise(resolve => {
     const srv = http.createServer((req, res) => {
       let body = "";
       req.on("data", c => body += c);
       req.on("end", () => {
-        attempts++;
-        if (sinkMode === "fail") { res.statusCode = 500; return res.end(JSON.stringify({ error: "sink down" })); }
-        try { received.push(JSON.parse(body)); } catch { received.push({ raw: body.slice(0, 200) }); }
+        if (sinkMode === "fail") { attempts++; res.statusCode = 500; return res.end(JSON.stringify({ error: "sink down" })); }
+        let parsed = null; try { parsed = JSON.parse(body); } catch { parsed = { raw: body.slice(0, 200) }; }
+        if (forMe(parsed)) { attempts++; received.push(parsed); } // count only OUR mail
         res.setHeader("Content-Type", "application/json");
-        res.end(JSON.stringify({ id: "sunk_" + attempts }));
+        res.end(JSON.stringify({ id: "sunk" }));
       });
     });
+    srv.on("error", () => resolve(null));
     srv.listen(SINK_PORT, () => resolve(srv));
   });
 }
@@ -111,24 +120,49 @@ const toList = m => [].concat(m.to || []);
     ok("daily reminder: rerun same day sends NOTHING (period reserved)", received.length === before, received.length);
   }
 
-  // ── 4. provider FAILURE: is the alert retried or silently lost? ──────────
-  //    (documents current behavior — see FINDINGS)
+  // ── 4. provider FAILURE is NOT swallowed — released, queued, retried ─────
+  //    (BUILD-45 fixed F-2; this now proves the corrected behavior)
   {
     sinkMode = "fail"; received = []; attempts = 0;
     await q(`DELETE FROM notification_sends WHERE org_id=$1 AND event_key LIKE 'taskassign:%'`, [ORG]);
+    // clear ALL queued failures (scratch DB) — a forced retry processes every
+    // org's rows, and earlier browser suites in run-all leave their own; this
+    // keeps "delivered exactly 1" about OUR alert only.
+    await q(`DELETE FROM notification_failures`).catch(() => {});
     const r = await api("POST", "/tasks", token, { title: "Doomed delivery", due: "2026-10-02", priority: "high", assignedTo: OFFICER_ID });
-    ok("task create during outage: 200/201 (send failure never fails the action — correct)", r.status === 200 || r.status === 201, r.body);
+    ok("task create during outage: 200/201 (send failure never fails the action)", r.status === 200 || r.status === 201, r.body);
     await settle(1200);
-    const firstAttempts = attempts;
-    ok("outage: the send WAS attempted", firstAttempts >= 1, firstAttempts);
-    await settle(2500);
-    // CURRENT BEHAVIOR (finding): no retry — attempts don't grow after failure
-    ok("outage: NO retry occurs (current behavior — FINDINGS F-2: the alert is lost)", attempts === firstAttempts, { firstAttempts, attempts });
-    const rows = await q(`SELECT event_key FROM notification_sends WHERE org_id=$1 AND event_key LIKE 'taskassign:%'`, [ORG]);
-    // CURRENT BEHAVIOR (finding): the dedup row was reserved BEFORE the failed
-    // send, so even a manual re-trigger would dedup to silence.
-    ok("outage: dedup row reserved despite the failed send (FINDINGS F-2)", rows.length === 1, rows);
-    sinkMode = "ok";
+    ok("outage: the send WAS attempted", attempts >= 1, attempts);
+    // FIXED: the dedup reservation is RELEASED (not reserved-to-silence)…
+    const sends = await q(`SELECT event_key FROM notification_sends WHERE org_id=$1 AND event_key LIKE 'taskassign:%'`, [ORG]);
+    ok("outage: dedup reservation RELEASED after the failed send (F-2 fixed)", sends.length === 0, sends);
+    // …and the send is durably QUEUED for retry, with the payload preserved
+    const failed = await q(`SELECT event_key,recipient_email,subject,body_html,attempts FROM notification_failures WHERE org_id=$1`, [ORG]);
+    ok("outage: send queued in notification_failures for retry", failed.length === 1, failed);
+    ok("outage: queued row carries recipient + payload", failed[0] && failed[0].recipient_email === OFFICER && /Doomed delivery/.test((failed[0].subject || "") + (failed[0].body_html || "")), failed[0]);
+    // …and /health SURFACES it (the visibility F-2 was missing)
+    const h = await (await fetch("http://localhost:5601/health")).json();
+    ok("outage: /health surfaces failedPending ≥ 1", (h.notifications?.failedPending ?? 0) >= 1, h.notifications);
+
+    // retry while the provider is STILL down → attempts grow, nothing delivered
+    received = [];
+    const r1 = await api("POST", "/admin/notifications/retry", token, { force: true });
+    ok("retry (still down): 200, nothing delivered", r1.status === 200 && r1.body.delivered === 0, r1.body);
+    ok("retry (still down): message still NOT received", received.length === 0, received.length);
+    const mid = await q(`SELECT attempts FROM notification_failures WHERE org_id=$1`, [ORG]);
+    ok("retry (still down): attempt count incremented", mid[0] && mid[0].attempts >= 2, mid[0]);
+
+    // provider recovers → retry DELIVERS the once-lost alert, clears the queue
+    sinkMode = "ok"; received = [];
+    const r2 = await api("POST", "/admin/notifications/retry", token, { force: true });
+    ok("retry (recovered): delivered exactly 1", r2.status === 200 && r2.body.delivered === 1, r2.body);
+    ok("retry (recovered): the alert ARRIVES (right recipient + payload)",
+      received.length === 1 && toList(received[0]).includes(OFFICER) && /Doomed delivery/.test((received[0].subject || "") + (received[0].html || "")), received[0]);
+    const cleared = await q(`SELECT COUNT(*) c FROM notification_failures WHERE org_id=$1`, [ORG]);
+    ok("retry (recovered): failure queue cleared", Number(cleared[0].c) === 0, cleared);
+    // the dedup row is re-reserved so a later same-event trigger still dedups
+    const reReserved = await q(`SELECT COUNT(*) c FROM notification_sends WHERE org_id=$1 AND event_key LIKE 'taskassign:%'`, [ORG]);
+    ok("retry (recovered): dedup reservation restored (no future double-send)", Number(reReserved[0].c) === 1, reReserved);
   }
 
   sink.close();

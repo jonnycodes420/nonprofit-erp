@@ -16,7 +16,7 @@
 // DISCOVER=1 prints raw diffs instead of asserting (manifest authoring).
 
 const { ok, summary, login, api, q } = require("./helpers");
-const { DISCOVER, makeSnapshotter, diffState, makeAsserters, buildFixtureOrg, makeWebhookFirer, settle } = require("./state-diff.lib");
+const { DISCOVER, makeSnapshotter, diffState, makeAsserters, buildFixtureOrg, makeWebhookFirer, settle, startMailSink } = require("./state-diff.lib");
 const { FIX2, buildManifests2 } = require("./state-diff2.manifests");
 
 const ORG = "org_wap2";
@@ -30,6 +30,7 @@ const fireWebhook = makeWebhookFirer(ACCT);
 
 (async () => {
   const t0 = Date.now();
+  const sink = await startMailSink(); // accept notification sends (F-2)
   const ctx = await buildFixtureOrg({ ORG, ACCT, ADMIN_ID, ADMIN, OFFICER_ID, OFFICER, FIX: FIX2, enableGiftThanks: false });
   const { token, idByEmail, campaignId, em, recipes } = ctx;
   console.log(`fixture: ${FIX2.N_DONORS} donors / ${FIX2.N_GIFTS} gifts built in ${Math.round((Date.now() - t0) / 1000)}s\n`);
@@ -277,5 +278,6 @@ const fireWebhook = makeWebhookFirer(ACCT);
   }
 
   console.log(`\ntotal runtime ${Math.round((Date.now() - t0) / 1000)}s`);
+  if (sink) sink.close();
   if (!DISCOVER) summary(); else process.exit(0);
 })().catch(e => { console.error(e); process.exit(1); });

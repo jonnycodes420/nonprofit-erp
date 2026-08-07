@@ -1480,6 +1480,32 @@ async function initSchema() {
   await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS notification_sends_uk ON notification_sends (org_id, event_key, recipient_user_id)`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_notification_sends_org ON notification_sends (org_id, created_at DESC)`);
 
+  // BUILD-45 (fixes BUILD-44 F-2) — durable retry queue for internal-notification
+  // sends that the email provider REJECTED. notifyUserOnce reserves the
+  // notification_sends dedup row, sends, and on a real send failure RELEASES
+  // that reservation and records the send here (with enough payload to retry).
+  // A sweep on the existing 5-min tick re-attempts due rows and deletes them on
+  // success; after MAX attempts a row is left as a permanent, surfaced record
+  // (counted on /health). Before this, a failed send was reserved-to-silence
+  // and lost forever — the class behind "the alert that never landed".
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS notification_failures (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL,
+      event_key TEXT NOT NULL,
+      recipient_user_id TEXT NOT NULL,
+      recipient_email TEXT NOT NULL,
+      channel TEXT,
+      subject TEXT,
+      body_html TEXT,
+      attempts INTEGER DEFAULT 1,
+      last_error TEXT,
+      next_retry_at TIMESTAMPTZ DEFAULT NOW(),
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_notification_failures_due ON notification_failures (next_retry_at)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_notification_failures_org ON notification_failures (org_id, created_at DESC)`);
+
   // ── Attribution completeness (FIX, 2026-08-04) ───────────────────────────
   // Every money path attributes to a campaign, reverses, and reconciles.
   // giving_pages.campaign_id — "gifts through this page count toward this

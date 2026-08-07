@@ -1047,6 +1047,12 @@ app.get("/health", (req, res) => {
     status: "ok", version: "1.1.0", db: dbReady, sentry: !!process.env.SENTRY_DSN,
     billing: { mode: billingModeStatus.mode, ok: billingModeStatus.ok, checked: billingModeStatus.checked },
     publicUrl: { url: pu.url, fromEnv: pu.fromEnv },
+    // BUILD-45 (F-2): non-secret count of internal notifications the email
+    // provider rejected and that are pending retry (or exhausted). A non-zero
+    // value that stays high = a delivery problem to look at — this figure is
+    // the SURFACING that F-2 was missing. Cached (refreshed by the retry sweep),
+    // so /health stays a cheap synchronous check.
+    notifications: { failedPending: notifyFailedPending },
   });
 });
 
@@ -1092,6 +1098,16 @@ app.post("/invitation-request", invitationLimiter, wrap(async (req, res) => {
     }
   }
   res.json({ received: true });
+}));
+
+// ── Notification retry (ops/test hook — BUILD-45 / F-2) ────────────────────
+// Drives retryFailedNotifications NOW for the caller (drives the exact
+// scheduled path; same bar as /pipeline/run-auto-lapse, /workflows/run-sweeps).
+// `force` retries due-or-not (for a deterministic test); otherwise honors the
+// backoff window.
+app.post("/admin/notifications/retry", requireAuth, requireAdmin, wrap(async (req, res) => {
+  const result = await retryFailedNotifications({ force: !!(req.body && req.body.force) });
+  res.json(result);
 }));
 
 // ── Sentry test hook (org-admin-gated) ─────────────────────────────────────
@@ -3282,7 +3298,7 @@ app.put("/donors/:id", requireAuth, checkWriteAccess, wrap(async (req, res) => {
 // purely Team (BUILD-19; donor-profile Core/Team split FIX). Core sees stage
 // read-only; changing it (single or bulk) requires the Team plan. This
 // reverses the earlier "per-donor stage dropdown is Core-fine" note.
-app.patch("/donors/:id/stage", requireAuth, requirePlan("team"), wrap(async (req, res) => {
+app.patch("/donors/:id/stage", requireAuth, requirePlan("team"), checkWriteAccess, wrap(async (req, res) => {
   const { stage, prevStage } = req.body;
   const valid = ["prospect","qualify","cultivate","solicit","steward","lapsed"];
   if (!valid.includes(stage)) return res.status(400).json({ error: "Invalid stage" });
@@ -3325,7 +3341,7 @@ app.delete("/donors/:id", requireAuth, requireAdmin, wrap(async (req, res) => {
   res.json({ success: true });
 }));
 
-app.patch("/donors/:id/assign", requireAuth, requireAdmin, requirePlan("team"), wrap(async (req, res) => {
+app.patch("/donors/:id/assign", requireAuth, requireAdmin, requirePlan("team"), checkWriteAccess, wrap(async (req, res) => {
   const { assignedTo, assignedToName } = req.body;
   // Assignment IS pipeline membership (BUILD-30): assigning an officer puts the
   // donor in that officer's portfolio AND on their board immediately; unassigning
@@ -3342,7 +3358,7 @@ app.patch("/donors/:id/assign", requireAuth, requireAdmin, requirePlan("team"), 
 // Future: restore-from-trash view + permanent-purge scheduled job can be
 // built on deleted_at — the column is stable and org-scoped.
 
-app.patch("/donors/bulk-stage", requireAuth, requirePlan("team"), wrap(async (req, res) => {
+app.patch("/donors/bulk-stage", requireAuth, requirePlan("team"), checkWriteAccess, wrap(async (req, res) => {
   const { ids, stage } = req.body;
   const VALID = ["prospect","qualify","cultivate","solicit","steward","lapsed"];
   if (!Array.isArray(ids) || ids.length === 0) return res.status(400).json({ error: "ids array required" });
@@ -3362,7 +3378,7 @@ app.patch("/donors/bulk-stage", requireAuth, requirePlan("team"), wrap(async (re
   res.json({ updated: result.changes });
 }));
 
-app.patch("/donors/bulk-assign", requireAuth, requireAdmin, requirePlan("team"), wrap(async (req, res) => {
+app.patch("/donors/bulk-assign", requireAuth, requireAdmin, requirePlan("team"), checkWriteAccess, wrap(async (req, res) => {
   const { ids, assignedTo } = req.body;
   if (!Array.isArray(ids) || ids.length === 0) return res.status(400).json({ error: "ids array required" });
   if (!assignedTo) return res.status(400).json({ error: "assignedTo required" });
@@ -5405,7 +5421,7 @@ app.delete("/donor-relationships/:id", requireAuth, wrap(async (req, res) => {
 
 // Wealth/capacity scoring is part of the Team major-gifts layer — Core sees a
 // stored score read-only (behind glass) but can't compute/recompute it.
-app.post("/donors/:id/score", requireAuth, requirePlan("team"), wrap(async (req, res) => {
+app.post("/donors/:id/score", requireAuth, requirePlan("team"), checkWriteAccess, wrap(async (req, res) => {
   const result = await calcWealthScore(req.params.id, req.user.orgId);
   if (!result) return res.status(404).json({ error: "Donor not found" });
   res.json(result);
@@ -12495,17 +12511,20 @@ async function sendWorkflowEmail(org, donor, subject, bodyHtml) {
 // member (ED / assigned officer), NOT the donor. So it carries the branded
 // header but never the donor unsubscribe/CAN-SPAM footer (that's for donor
 // mail). No-ops cleanly without RESEND_API_KEY; the run is still logged.
+// Returns TRUE only when the send actually succeeded (BUILD-45 / F-2 fix — it
+// used to swallow every provider error and always return true, so callers
+// could never tell a delivery failed). No RESEND_API_KEY configured = "nothing
+// to deliver" is a success (don't queue retries in an env with no email).
 async function sendGiftAlertEmail(org, toEmail, subject, bodyHtml) {
   if (!toEmail) return false;
   const html = await brandEmailHeaderHtml(org.id) + bodyHtml;
   const from = process.env.DEMO_SMTP_FROM || "noreply@stewardapp.dev";
-  if (process.env.RESEND_API_KEY) {
-    try {
-      const { error } = await resend.emails.send({ from, to: toEmail, subject, html });
-      if (error) console.error("[workflow] gift-alert email error:", error.message);
-    } catch (e) { console.error("[workflow] gift-alert email threw:", e.message); }
-  }
-  return true;
+  if (!process.env.RESEND_API_KEY) return true; // email not configured — no failure to record
+  try {
+    const { error } = await resend.emails.send({ from, to: toEmail, subject, html });
+    if (error) { console.error("[notify] gift-alert email error:", error.message); return false; }
+    return true;
+  } catch (e) { console.error("[notify] gift-alert email threw:", e.message); return false; }
 }
 
 // ── BUILD-36 A4: internal-notification dedup + per-user email toggles ────────
@@ -12536,6 +12555,12 @@ function mapNotifyPrefs(row) {
 // for the same gift, A4), then sends. A pref opt-out reserves NOTHING, so a
 // different, opted-in notification for the same event can still win. Internal
 // staff mail via sendGiftAlertEmail (branded header, NEVER a donor footer).
+//
+// BUILD-45 (fixes F-2): a REAL send failure is no longer swallowed — the
+// reservation is RELEASED (so the alert is not reserved-to-silence) and the
+// send is queued in notification_failures for retry on the 5-min tick. Before
+// this, a provider outage lost the alert permanently AND any re-trigger of the
+// same event deduped to nothing.
 async function notifyUserOnce({ org, userId, email, eventKey, channel, prefKind, subject, bodyHtml }) {
   if (!org || !userId || !email || !eventKey) return { sent: false, reason: "no_recipient" };
   if (prefKind && !(await userWantsEmail(userId, prefKind))) return { sent: false, reason: "opted_out" };
@@ -12547,8 +12572,84 @@ async function notifyUserOnce({ org, userId, email, eventKey, channel, prefKind,
      RETURNING id`,
     [id, org.id, eventKey, userId, channel || null]);
   if (!reserved.length) return { sent: false, reason: "duplicate" };
-  await sendGiftAlertEmail(org, email, subject, bodyHtml);
+  const ok = await sendGiftAlertEmail(org, email, subject, bodyHtml);
+  if (!ok) {
+    // Release the dedup reservation and durably queue the send for retry. Best
+    // effort: if the release/queue itself fails we still don't crash the caller
+    // (notifications are fire-and-forget), but the loud log makes it visible.
+    try {
+      await run(`DELETE FROM notification_sends WHERE id=?`, [reserved[0].id]);
+      await run(
+        `INSERT INTO notification_failures (id,org_id,event_key,recipient_user_id,recipient_email,channel,subject,body_html,attempts,last_error,next_retry_at)
+         VALUES (?,?,?,?,?,?,?,?,1,?,NOW())`,
+        ["nf_" + uuid().slice(0, 8), org.id, eventKey, userId, email, channel || null, subject || null, bodyHtml || null, "send_rejected"]);
+      notifyFailedPending++;
+    } catch (e) { console.error("[notify] failed to queue a failed send for retry:", e.message); }
+    return { sent: false, reason: "send_failed" };
+  }
   return { sent: true };
+}
+
+// BUILD-45 (F-2) — retry queued notification sends. Runs on the existing 5-min
+// tick (NOT a second scheduler) and via POST /admin/notifications/retry (ops/
+// test hook). Re-reserves the dedup row and re-sends; deletes the failure row
+// on success. After MAX_NOTIFY_ATTEMPTS it stops retrying and leaves the row as
+// a permanent, surfaced record (counted on /health.notifications.failedPending)
+// so a delivery problem is visible instead of silent. Backoff is coarse
+// (attempts × 5 min) — internal alerts are time-sensitive but not sub-minute.
+const MAX_NOTIFY_ATTEMPTS = 5;
+// Cached count of pending/exhausted failed notifications, surfaced on /health
+// so the read path stays synchronous. Refreshed by every retry sweep (incl.
+// the 50s-after-boot one) and bumped when a new failure is queued.
+let notifyFailedPending = 0;
+async function refreshNotifyFailedCount() {
+  try { notifyFailedPending = Number((await query(`SELECT COUNT(*) c FROM notification_failures`))[0]?.c || 0); }
+  catch { /* table not ready yet — leave the last known value */ }
+}
+async function retryFailedNotifications({ force = false } = {}) {
+  const due = await query(
+    `SELECT * FROM notification_failures
+       WHERE attempts < ? AND (? OR next_retry_at <= NOW())
+       ORDER BY next_retry_at ASC LIMIT 100`,
+    [MAX_NOTIFY_ATTEMPTS, force]);
+  let delivered = 0, stillFailing = 0;
+  for (const f of due) {
+    const orgRows = await query("SELECT id, name FROM orgs WHERE id=?", [f.org_id]);
+    if (!orgRows.length) { await run(`DELETE FROM notification_failures WHERE id=?`, [f.id]).catch(() => {}); continue; }
+    const org = orgRows[0];
+    const ok = await sendGiftAlertEmail(org, f.recipient_email, f.subject, f.body_html);
+    if (ok) {
+      // re-reserve the dedup row (so a later same-event trigger still dedups),
+      // then clear the failure. The re-reserve is best-effort — the ON CONFLICT
+      // makes a concurrent reservation a no-op.
+      await run(
+        `INSERT INTO notification_sends (id,org_id,event_key,recipient_user_id,channel)
+         VALUES (?,?,?,?,?) ON CONFLICT (org_id,event_key,recipient_user_id) DO NOTHING`,
+        ["ns_" + uuid().slice(0, 8), f.org_id, f.event_key, f.recipient_user_id, f.channel || null]).catch(() => {});
+      await run(`DELETE FROM notification_failures WHERE id=?`, [f.id]);
+      delivered++;
+    } else {
+      const attempts = (f.attempts || 1) + 1;
+      await run(
+        `UPDATE notification_failures SET attempts=?, last_error=?, next_retry_at = NOW() + (INTERVAL '5 minutes' * ?) WHERE id=?`,
+        [attempts, "send_rejected", attempts, f.id]);
+      stillFailing++;
+    }
+  }
+  await refreshNotifyFailedCount();
+  return { delivered, stillFailing, considered: due.length };
+}
+// The AUTOMATIC retry timers are disabled under DISABLE_RATE_LIMIT (the
+// local/test-env signal the rate limiters already use): during a deterministic
+// test run this background sweep would otherwise replay previously-failed
+// notifications into whichever suite's capture sink is currently listening on
+// the shared mail port, skewing exact-count assertions. The function and the
+// POST /admin/notifications/retry ops hook stay fully live, so notify-delivery
+// drives retry explicitly and production (DISABLE_RATE_LIMIT unset) retries on
+// the tick as designed.
+if (!rateLimitDisabled()) {
+  setTimeout(() => retryFailedNotifications().catch(console.error), 50000);
+  setInterval(() => retryFailedNotifications().catch(console.error), 5 * 60 * 1000);
 }
 
 // BUILD-36 A2 — email a task's assignee when someone ELSE (or a workflow)

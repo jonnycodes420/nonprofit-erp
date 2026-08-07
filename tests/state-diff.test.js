@@ -29,7 +29,7 @@
 
 const { ok, summary, login, api, q } = require("./helpers");
 const { buildManifests, FIX } = require("./state-diff.manifests");
-const { DISCOVER, makeSnapshotter, diffState, makeAsserters, buildFixtureOrg, makeWebhookFirer, settle: settleMs } = require("./state-diff.lib");
+const { DISCOVER, makeSnapshotter, diffState, makeAsserters, buildFixtureOrg, makeWebhookFirer, settle: settleMs, startMailSink } = require("./state-diff.lib");
 
 const ORG = "org_wap";
 const ACCT = "acct_wap_test";
@@ -47,6 +47,7 @@ async function buildFixture() {
 // ── the run ────────────────────────────────────────────────────────────────
 (async () => {
   const t0 = Date.now();
+  const sink = await startMailSink(); // accept notification sends so counts are deterministic (F-2)
   const ctx = await buildFixture();
   const { token, idByEmail, campaignId, fixture } = ctx;
   console.log(`fixture: ${FIX.N_DONORS} donors / ${FIX.N_GIFTS} gifts built in ${Math.round((Date.now() - t0) / 1000)}s\n`);
@@ -263,5 +264,6 @@ async function buildFixture() {
   }
 
   console.log(`\ntotal runtime ${Math.round((Date.now() - t0) / 1000)}s`);
+  if (sink) sink.close();
   if (!DISCOVER) summary(); else process.exit(0);
 })().catch(e => { console.error(e); process.exit(1); });

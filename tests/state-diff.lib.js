@@ -324,4 +324,23 @@ function makeWebhookFirer(ACCT) {
 
 const settle = (ms = 400) => new Promise(r => setTimeout(r, ms));
 
-module.exports = { N, FY, DISCOVER, makeSnapshotter, flatten, diffState, makeAsserters, makeFixture, buildFixtureOrg, makeWebhookFirer, settle };
+// A minimal capture sink on :5602 (the server's RESEND_BASE_URL). Internal
+// notifications now report real success/failure (BUILD-45 / F-2), so a suite
+// that expects notification_sends to increment must have a sink ACCEPTING the
+// sends — otherwise they legitimately fail against the unbound port, release
+// their reservation, and queue for retry (correct product behavior, but it
+// would break a manifest that counts the send). Start this at suite top,
+// close it at the end.
+const http = require("http");
+function startMailSink(port = 5602) {
+  return new Promise(resolve => {
+    const srv = http.createServer((req, res) => {
+      let b = ""; req.on("data", c => b += c);
+      req.on("end", () => { res.setHeader("Content-Type", "application/json"); res.end(JSON.stringify({ id: "sunk" })); });
+    });
+    srv.on("error", () => resolve(null)); // a sink already running (e.g. vite/another suite) — fine
+    srv.listen(port, () => resolve(srv));
+  });
+}
+
+module.exports = { N, FY, DISCOVER, makeSnapshotter, flatten, diffState, makeAsserters, makeFixture, buildFixtureOrg, makeWebhookFirer, settle, startMailSink };
