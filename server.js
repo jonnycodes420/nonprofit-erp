@@ -547,6 +547,12 @@ app.post("/stripe/webhook", express.raw({ type: "application/json" }), async (re
               // exactly once. A refund is a fact about the money, so an active
               // receipt is auto-VOIDED (the acknowledgment no longer describes a
               // real gift), never left active; the voided record survives.
+              // BUILD-27 concurrency: serialize this refund's gift/ledger mutation
+              // + donor recalc under the SAME per-gift lock PUT/DELETE take, so a
+              // refund landing while the same gift is being edited can't tear the
+              // donor total apart from the ledger stamp (rare — the webhook is
+              // idempotent on the Stripe id — but on the same recalc+stamp path).
+              await withAdvisoryLock(`gift:${g.id}`, async () => {
               await withTransaction(async (client) => {
                 await runTx(client,
                   `UPDATE receipts SET voided_at=NOW(), void_reason='Gift refunded via Stripe', gift_id=NULL
@@ -566,6 +572,7 @@ app.post("/stripe/webhook", express.raw({ type: "application/json" }), async (re
                   ["i_" + uuid().slice(0, 8), orgId, g.donor_id, `Refund: $${refunded.toLocaleString()} online gift fully refunded via Stripe — gift reversed`, today]
                 ).catch(() => {});
               }
+              }); // end withAdvisoryLock(gift:…) — full-refund reversal serialized per gift
               console.log(`[stripe] charge.refunded ${ch.id} — gift ${g.id} fully reversed ($${refunded})`);
             } else if (parseFloat(g.amount) !== remaining) {
               // PARTIAL refund — the gift shrinks to what the org actually kept;
@@ -574,6 +581,9 @@ app.post("/stripe/webhook", express.raw({ type: "application/json" }), async (re
               // An issued receipt is deliberately NOT auto-edited (a receipt is a
               // legal record of what was sent) — the existing receipt_mismatch
               // queue surfaces it for a human, same as a manual gift edit.
+              // BUILD-27 concurrency: same per-gift lock as the full-refund branch
+              // and PUT/DELETE — serialize the shrink + ledger sync + recalc.
+              await withAdvisoryLock(`gift:${g.id}`, async () => {
               await withTransaction(async (client) => {
                 await runTx(client,
                   "UPDATE gifts SET amount=$1, cover_fee_amount=LEAST(COALESCE(cover_fee_amount,0), $1) WHERE id=$2 AND org_id=$3",
@@ -586,6 +596,7 @@ app.post("/stripe/webhook", express.raw({ type: "application/json" }), async (re
                   ["i_" + uuid().slice(0, 8), orgId, g.donor_id, `Refund: $${refunded.toLocaleString()} of an online gift refunded via Stripe — gift adjusted to $${remaining.toLocaleString()}`, today]
                 ).catch(() => {});
               }
+              }); // end withAdvisoryLock(gift:…) — partial-refund adjust serialized per gift
               console.log(`[stripe] charge.refunded ${ch.id} — gift ${g.id} adjusted to $${remaining}`);
             }
           }
@@ -3806,27 +3817,40 @@ app.put("/gifts/:id", requireAuth, wrap(async (req, res) => {
   }
   const newAmt  = amount !== undefined ? Math.round(Number(amount)) : g.amount; // round, not truncate
   const newDate = date ? normalizeGiftDate(date) : g.date;                       // enforce ISO
-  await run(
-    `UPDATE gifts SET amount=?,date=?,type=?,campaign=?,campaign_id=?,notes=?,fund_id=?,payment_method=?,acknowledgement_sent=? WHERE id=? AND org_id=?`,
-    [newAmt, newDate, type||g.type, newCampaign, newCampaignId,
-     notes!==undefined?notes:g.notes, fund_id!==undefined?fund_id:g.fund_id,
-     payment_method!==undefined?payment_method:g.payment_method,
-     acknowledgement_sent!==undefined?acknowledgement_sent:g.acknowledgement_sent,
-     req.params.id, req.user.orgId]
-  );
-  // Full recalc replaces the old delta — delta was wrong when editing a non-latest gift's amount
-  await recalcDonorSummary(g.donor_id, req.user.orgId);
-  // BUILD-43 (state-diff harness finding): the gift's LEDGER STAMP must move
-  // with it. Editing a stamped gift's amount/date left fin_transactions at the
-  // old figures — Cash on Hand permanently disagreed with the gift record and
-  // (unlike receipts) no mismatch queue ever surfaced it. Same sync the
-  // partial-refund webhook already does by hand; fund follows when provided.
-  await run(
-    `UPDATE fin_transactions SET amount=?, date=?, fund_id=COALESCE(?, fund_id)
-      WHERE gift_id=? AND org_id=?`,
-    [newAmt, newDate, fund_id !== undefined ? fund_id : null, req.params.id, req.user.orgId]
-  );
-  const rows = await query("SELECT * FROM gifts WHERE id=?", [req.params.id]);
+  // BUILD-27 concurrency (concurrency2 "torn write" fix): serialize this gift's
+  // edit → donor-recalc → ledger-stamp trio under a per-gift advisory lock, the
+  // same primitive the import/webhook-donor dedup paths use. recalcDonorSummary
+  // is a read-modify-write (SELECT SUM → UPDATE donors) and the ledger UPDATE is
+  // a bare write, so two simultaneous edits to the SAME gift could interleave
+  // into gift=900 / donor=900 / ledger=700 (the three writes torn apart). With
+  // the lock the last writer wins all three, so donor total AND the ledger stamp
+  // always equal the winning gift amount. NB a single user's double-tapped Save
+  // is safe without this (both requests carry the same amount → they converge);
+  // the torn state needs two DIFFERENT target amounts, i.e. two concurrent
+  // editors — a P1 coherence race, not P0 single-user corruption.
+  const rows = await withAdvisoryLock(`gift:${req.params.id}`, async () => {
+    await run(
+      `UPDATE gifts SET amount=?,date=?,type=?,campaign=?,campaign_id=?,notes=?,fund_id=?,payment_method=?,acknowledgement_sent=? WHERE id=? AND org_id=?`,
+      [newAmt, newDate, type||g.type, newCampaign, newCampaignId,
+       notes!==undefined?notes:g.notes, fund_id!==undefined?fund_id:g.fund_id,
+       payment_method!==undefined?payment_method:g.payment_method,
+       acknowledgement_sent!==undefined?acknowledgement_sent:g.acknowledgement_sent,
+       req.params.id, req.user.orgId]
+    );
+    // Full recalc replaces the old delta — delta was wrong when editing a non-latest gift's amount
+    await recalcDonorSummary(g.donor_id, req.user.orgId);
+    // BUILD-43 (state-diff harness finding): the gift's LEDGER STAMP must move
+    // with it. Editing a stamped gift's amount/date left fin_transactions at the
+    // old figures — Cash on Hand permanently disagreed with the gift record and
+    // (unlike receipts) no mismatch queue ever surfaced it. Same sync the
+    // partial-refund webhook already does by hand; fund follows when provided.
+    await run(
+      `UPDATE fin_transactions SET amount=?, date=?, fund_id=COALESCE(?, fund_id)
+        WHERE gift_id=? AND org_id=?`,
+      [newAmt, newDate, fund_id !== undefined ? fund_id : null, req.params.id, req.user.orgId]
+    );
+    return query("SELECT * FROM gifts WHERE id=?", [req.params.id]);
+  });
   res.json(rows[0]);
 }));
 
@@ -3849,6 +3873,10 @@ app.delete("/gifts/:id", requireAuth, wrap(async (req, res) => {
     });
   }
 
+  // BUILD-27 concurrency: serialize the whole delete → donor-recalc under the
+  // SAME per-gift advisory lock PUT /gifts/:id takes, so a concurrent edit and
+  // delete of the SAME gift can't tear the donor total apart from the ledger.
+  await withAdvisoryLock(`gift:${req.params.id}`, async () => {
   await withTransaction(async (client) => {
     // Voided receipts keep their frozen `snapshot`/`pdf_data` record — just
     // detach the gift reference so the FK doesn't block deletion (same
@@ -3872,6 +3900,7 @@ app.delete("/gifts/:id", requireAuth, wrap(async (req, res) => {
   });
   // Full recalc: old delta left last_gift_date and last_gift_amount stale when deleting the most recent gift
   await recalcDonorSummary(g.donor_id, req.user.orgId);
+  }); // end withAdvisoryLock(gift:…) — delete + recalc serialized per gift
   res.json({ ok: true });
 }));
 
