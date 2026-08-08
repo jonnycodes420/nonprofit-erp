@@ -5,8 +5,8 @@ screen with old green + old 'S' mark" is NOT the pre-hydration splash in
 index.html (index.html has no splash markup). It is the **App shell's own
 "Loading your workspace…" splash** (`client/src/App.jsx`), whose "S" badge
 background and spinner used `T.green` = **`#10b981`** — the retired off-brand
-"AI green". Fixed to match the favicon exactly (Ink badge + Cream serif S) with
-an Emerald spinner.
+"AI green". Fixed to the OG-badge treatment (Emerald `#0d5c3a` badge + Cream
+serif S) with an Emerald spinner.
 
 ## Method
 Per the brief, the old green was **not** hunted by value. Every color literal
@@ -58,8 +58,7 @@ on the briefed list, but the same asset class and first-impression surface).
 
 ### 5. route-transition / Suspense fallbacks / skeletons — **FIXED + CONFIRMED-CLEAN**
 - **App splash** ("Loading your workspace…", App.jsx): `T.green` `#10b981` badge
-  + white S + `#10b981` spinner → **Ink `#0f1a12` badge + Cream `#f0ede6` serif
-  S (favicon-identical) + Emerald `#0d5c3a` spinner**. This is the reported
+  + white S + `#10b981` spinner → **Emerald `#0d5c3a` badge + Cream `#f0ede6` serif S (matching the OG) + Emerald spinner**. This is the reported
   loading screen. **PRESENT-AND-FIXED.**
 - **Suspense `RouteFallback`** (main.jsx): cream `#f0ede6` + `#d4cfc6` track +
   `#0d5c3a` Emerald spinner. **CONFIRMED-CLEAN.**
@@ -92,5 +91,4 @@ on the briefed list, but the same asset class and first-impression surface).
 ## Verification
 `eslint src` clean (Vercel build gate); brand-glyph 66/66, brand-allowlist
 27/27, palette 26/26, no-emoji green. Splash + OG rendered and eyeballed:
-`docs/build46-brand-2026-08-08/` (loading-splash.png = Ink+Cream S + Emerald
-spinner; the OG = Emerald badge, Sage tagline, no old green).
+`docs/build46-brand-2026-08-08/` (loading-splash.png = Emerald badge + Cream serif S + Emerald spinner; the OG = Emerald badge, Sage tagline, no old green).
