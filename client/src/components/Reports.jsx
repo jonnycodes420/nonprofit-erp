@@ -383,9 +383,13 @@ export function Reports({ onNavigate, initialReport, initialParams }) {
           { key: "name", label: "Officer", render: r => <span style={{ fontWeight: 700, color: T.ink }}>{r.name}</span> },
           { key: "openAsks", label: "Open", align: "right", render: r => `${r.openAsks} · ${fmtFull(r.openAskAmount)}` },
           { key: "asksMade", label: "Made", align: "right", render: r => `${r.asksMade} · ${fmtFull(r.asksMadeAmount)}` },
-          { key: "giftsClosed", label: "Closed", align: "right", render: r => `${r.giftsClosed} · ${fmtFull(r.giftsClosedAmount)}` },
-          { key: "winRate", label: "Close rate", align: "right", render: r => r.winRate === null ? "—" : `${r.winRate}%` },
+          { key: "giftsClosed", label: "Won", align: "right", render: r => `${r.giftsClosed} · ${fmtFull(r.giftsClosedAmount)}` },
+          { key: "lostAsks", label: "Lost", align: "right", render: r => `${r.lostAsks ?? 0}` },
+          { key: "winRate", label: "Win rate", align: "right", render: r => r.winRate === null
+            ? <span title="No decided asks yet" style={{ color: T.ink3 }}>—</span>
+            : `${r.winRate}%` },
         ]} rows={d.byOfficer} />
+        <div style={{ fontSize: 11, color: T.ink3, marginTop: 6 }}>Win rate = won ÷ (won + lost) — decided asks only. Open asks aren't losses; “—” means no decided asks yet.</div>
         {d.aging.length > 0 && <>
           <div style={{ fontSize: 12, fontWeight: 800, letterSpacing: "0.06em", textTransform: "uppercase", color: T.terracotta, margin: "22px 0 8px" }}>Aging prospects</div>
           <ReportTable accentRow onRowClick={openDonor} cols={[

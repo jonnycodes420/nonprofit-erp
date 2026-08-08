@@ -10489,17 +10489,28 @@ async function reportSolicitations(orgId, p) {
     `SELECT officer_id, COUNT(*)::int AS cnt, COALESCE(SUM(gift_amount),0) AS amt
      FROM opportunities WHERE org_id=? AND status='won' AND closed_at >= ? AND closed_at < (?::date + 1) GROUP BY officer_id`,
     [orgId, p.from, p.to]);
+  // Lost asks decided in the window — the OTHER half of the win-rate denominator.
+  // Symmetric with won (marking an ask lost stamps closed_at=NOW(), like won).
+  const lostByOfficer = await query(
+    `SELECT officer_id, COUNT(*)::int AS cnt, COALESCE(SUM(target_amount),0) AS amt
+     FROM opportunities WHERE org_id=? AND status='lost' AND closed_at >= ? AND closed_at < (?::date + 1) GROUP BY officer_id`,
+    [orgId, p.from, p.to]);
   const idx = rows => Object.fromEntries(rows.map(r => [r.officer_id, r]));
-  const op = idx(openByOfficer), md = idx(madeByOfficer), wn = idx(wonByOfficer);
+  const op = idx(openByOfficer), md = idx(madeByOfficer), wn = idx(wonByOfficer), ls = idx(lostByOfficer);
   const byOfficer = officers.map(o => {
-    const asksMade = md[o.id]?.cnt || 0, giftsClosed = wn[o.id]?.cnt || 0;
+    const asksMade = md[o.id]?.cnt || 0, giftsClosed = wn[o.id]?.cnt || 0, giftsLost = ls[o.id]?.cnt || 0;
+    const decided = giftsClosed + giftsLost;
     return {
       officerId: o.id, name: o.name, color: o.portfolio_color,
       openAsks: op[o.id]?.cnt || 0, openAskAmount: Number(op[o.id]?.amt || 0),
       asksMade, asksMadeAmount: Number(md[o.id]?.amt || 0),
       giftsClosed, giftsClosedAmount: Number(wn[o.id]?.amt || 0),
-      // Close rate = gifts closed / (gifts closed + asks still open) over the window — a rough conversion signal.
-      winRate: (giftsClosed + (op[o.id]?.cnt || 0)) > 0 ? Math.round(giftsClosed / (giftsClosed + (op[o.id]?.cnt || 0)) * 1000) / 10 : null,
+      lostAsks: giftsLost, lostAskAmount: Number(ls[o.id]?.amt || 0),
+      decidedAsks: decided,
+      // Win rate = won / (won + lost) — DECIDED asks only. Open asks are NOT
+      // losses (an unclosed ask isn't a loss), so they never dilute the rate.
+      // null when nothing is decided yet → the UI shows "—"/"No decided asks yet".
+      winRate: decided > 0 ? Math.round(giftsClosed / decided * 1000) / 10 : null,
     };
   });
   // Aging prospects: open asks whose donor's most recent move into their

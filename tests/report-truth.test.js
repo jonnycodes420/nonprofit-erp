@@ -300,7 +300,11 @@ async function seedOpp(o, donorId, officerId, name, target, status = "open", gif
   const off = sol.byOfficer.find(o => o.officerId === "u_rt");
   ok("officer asks-vs-closes: 2 open ($10k), 3 made ($13k), 1 closed ($3.5k)",
     off.openAsks === 2 && off.openAskAmount === 10000 && off.asksMade === 3 && off.asksMadeAmount === 13000 && off.giftsClosed === 1 && off.giftsClosedAmount === 3500, off);
-  ok("officer win rate = 1 closed / (1 closed + 2 open) = 33.3%", off.winRate === 33.3, off.winRate);
+  // Win rate = won ÷ (won + lost) — DECIDED asks only. This officer has 1 won,
+  // 0 lost, 2 open → 1/(1+0) = 100%. Open asks are NOT losses (the old buggy
+  // formula gave 1/(1+2)=33.3%). See tests/solicitations-winrate.test.js.
+  ok("officer win rate = 1 won / (1 won + 0 lost) = 100% (open asks excluded)", off.winRate === 100, off.winRate);
+  ok("officer lostAsks = 0, decidedAsks = 1", off.lostAsks === 0 && off.decidedAsks === 1, off);
 
   // ── 11) Cross-surface reconciliation — the same number everywhere ─────────
   // Independent second computation straight from the DB, written HERE (the
