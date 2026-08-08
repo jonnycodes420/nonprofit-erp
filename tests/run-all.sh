@@ -45,7 +45,7 @@ CORE=(
   locked-features
   brand-allowlist moves no-emoji notifications onboarding-brand palette pipeline pipeline-gating portfolios portfolio-pipeline-consistency reports-cadence setup-checklist
   report-truth
-  session-cache session-privilege smart-moves state-diff state-diff2 tasks tenant-isolation upgrade-checkout workflows workflows-e2e
+  session-cache session-privilege smart-moves state-diff state-diff2 tasks task-due tenant-isolation upgrade-checkout workflows workflows-e2e
   empty-states presentation-wiring notify-delivery concurrency2 permissions-matrix
   finance-reports-consistency name-normalize reserved-recovered concurrency
 )

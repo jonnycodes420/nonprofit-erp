@@ -5,6 +5,7 @@ import { apiFetch, API, getToken, adaptDonor } from "../api";
 import { useAuth } from "../main";
 import UpgradeModal from "./UpgradeModal";
 import { bestCampaignMatch } from "../lib/campaignMatch";
+import { dueBadge } from "../lib/taskDue";
 
 class ErrorBoundary extends Component {
   constructor(props) { super(props); this.state = { error: null }; }
@@ -3481,15 +3482,23 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
                 ?<div style={{fontSize:12,color:T.ink3,fontStyle:"italic"}}>No tasks yet — add a follow-up so nothing slips.</div>
                 :<div style={{display:"flex",flexDirection:"column",gap:6}}>
                   {[...tasks].sort((a,b)=>a.done-b.done||(a.due||"").localeCompare(b.due||"")).map(t=>{
-                    const overdue=t.due&&!t.done&&daysDiff(t.due)<0;
+                    // Due-date badge: overdue ONLY when strictly before today
+                    // (local/org tz, calendar dates). Future → warm grey "Due X",
+                    // today → brass "Due today", past → terracotta "Overdue · was due X".
+                    const badge=t.due&&!t.done?dueBadge(t.due):null;
+                    const overdue=badge?.state==="overdue";
+                    const badgeColor=overdue?T.terracotta:badge?.state==="today"?T.gold500:T.ink3;
                     return <div key={t.id} onClick={()=>onTaskToggle(t)} style={{background:T.white,border:`1px solid ${t.done?"#1a6b4a30":overdue?"#b8593f30":T.bg3}`,borderRadius:10,padding:"10px 14px",cursor:"pointer",display:"flex",alignItems:"center",gap:10}}>
                       <div style={{width:18,height:18,borderRadius:5,border:`2px solid ${t.done?"#1a6b4a":SC[t.priority]}`,background:t.done?"#1a6b4a":"transparent",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center"}}>
                         {t.done&&<span style={{color:"#fff",fontSize:10,lineHeight:1}}>✓</span>}
                       </div>
                       <div style={{flex:1,minWidth:0}}>
                         <div style={{fontSize:12,fontWeight:500,color:t.done?T.ink3:T.ink,textDecoration:t.done?"line-through":"none",lineHeight:1.3}}>{t.title}</div>
-                        {t.due&&<div style={{fontSize:11,color:overdue?"#b8593f":T.ink3,marginTop:2,fontWeight:overdue?700:400}}>
-                          {overdue?"Overdue — was ":""}{new Date(t.due).toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"})}
+                        {badge&&<div style={{fontSize:11,color:badgeColor,marginTop:2,fontWeight:overdue?700:400}}>
+                          {badge.label}
+                        </div>}
+                        {t.due&&t.done&&<div style={{fontSize:11,color:T.ink3,marginTop:2}}>
+                          {new Date(t.due).toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"})}
                         </div>}
                       </div>
                       <Pill label={t.priority} color={SC[t.priority]}/>
