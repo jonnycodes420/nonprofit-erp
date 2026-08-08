@@ -125,7 +125,7 @@ function ErrorFallback({ label, onReload, onHome, onRetry }) {
         </div>
         <div style={{ display: "flex", gap: 10, justifyContent: "center", flexWrap: "wrap" }}>
           {onRetry && <button onClick={onRetry} style={{ background: "transparent", border: "1px solid " + T.bg3, borderRadius: 10, padding: "9px 16px", color: T.ink, fontSize: 13, fontWeight: 700, cursor: "pointer" }}>Try again</button>}
-          <button onClick={onReload} style={{ background: T.greenMid, border: "none", borderRadius: 10, padding: "9px 18px", color: "#fff", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>Reload</button>
+          <button onClick={onReload} style={{ background: T.greenDk, border: "none", borderRadius: 10, padding: "9px 18px", color: "#fff", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>Reload</button>
           {onHome && <button onClick={onHome} style={{ background: T.gold, border: "none", borderRadius: 10, padding: "9px 18px", color: T.ink, fontSize: 13, fontWeight: 700, cursor: "pointer" }}>Go Home</button>}
         </div>
       </div>

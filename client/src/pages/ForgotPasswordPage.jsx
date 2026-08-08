@@ -77,7 +77,7 @@ export default function ForgotPasswordPage() {
                 We sent a reset link to <strong style={{ color: "#0f1a12" }}>{email}</strong>.<br/>
                 It expires in 1 hour.
               </div>
-              <Link to="/login" style={{ fontSize: 13, color: "#1a6b4a", textDecoration: "none", fontWeight: 600 }}>
+              <Link to="/login" style={{ fontSize: 13, color: "#0d5c3a", textDecoration: "none", fontWeight: 600 }}>
                 ← Back to login
               </Link>
             </div>
@@ -112,7 +112,7 @@ export default function ForgotPasswordPage() {
                 <button
                   type="submit"
                   disabled={loading}
-                  style={{ background: loading ? "#6b7c72" : "#1a6b4a", border: "none", borderRadius: 12, padding: "13px 24px", color: "#fff", fontSize: 15, fontWeight: 700, cursor: loading ? "not-allowed" : "pointer", marginTop: 4 }}
+                  style={{ background: loading ? "#6b7c72" : "#0d5c3a", border: "none", borderRadius: 12, padding: "13px 24px", color: "#fff", fontSize: 15, fontWeight: 700, cursor: loading ? "not-allowed" : "pointer", marginTop: 4 }}
                 >
                   {loading ? "Sending…" : "Send reset link →"}
                 </button>

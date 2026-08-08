@@ -18,7 +18,7 @@ const T = {
   ink3:   "#6b6b6b",
   gold:   "#c9a84c",   // gold500 — primary action + title underline (ink text on it)
   forest: "#0d5c3a",   // greenDk — standard link/accent, WCAG AA on cream
-  greenDark: "#1a6b4a",
+  greenDark: "#0d5c3a",
   red:    "#8a3a24",   // deep terracotta — errors ride terracotta, never library red
 };
 

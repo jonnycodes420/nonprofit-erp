@@ -198,10 +198,13 @@ function AppShell() {
   if(loading) return <div style={{...BASE,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:16}}>
     <GlobalStyles/>
     <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=DM+Serif+Display&display=swap" rel="stylesheet"/>
-    <div style={{width:40,height:40,background:T.green,borderRadius:14,display:"flex",alignItems:"center",justifyContent:"center"}}>
-      <span style={{fontFamily:"'DM Serif Display',Georgia,serif",fontSize:24,fontWeight:400,color:"#fff",lineHeight:1}}>S</span>
+    {/* Splash mark = the favicon exactly: Ink badge + Cream serif S (was the
+        retired off-brand green #10b981 badge with a white S). Spinner accent =
+        Emerald (Phase 2 brand green), not the old green. */}
+    <div style={{width:40,height:40,background:T.ink,borderRadius:14,display:"flex",alignItems:"center",justifyContent:"center"}}>
+      <span style={{fontFamily:"'DM Serif Display',Georgia,serif",fontSize:24,fontWeight:400,color:T.inkInverse,lineHeight:1}}>S</span>
     </div>
-    <div style={{display:"flex",alignItems:"center",gap:10,color:T.ink3,fontSize:13}}><span style={{display:"inline-block",width:14,height:14,border:"2px solid "+T.bg3,borderTopColor:T.green,borderRadius:"50%",animation:"sp 0.7s linear infinite"}}/>Loading your workspace…</div>
+    <div style={{display:"flex",alignItems:"center",gap:10,color:T.ink3,fontSize:13}}><span style={{display:"inline-block",width:14,height:14,border:"2px solid "+T.bg3,borderTopColor:T.greenDk,borderRadius:"50%",animation:"sp 0.7s linear infinite"}}/>Loading your workspace…</div>
   </div>;
 
   if(loadErr||!data) return <div style={{...BASE,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:12}}>

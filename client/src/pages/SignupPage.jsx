@@ -152,7 +152,7 @@ export default function SignupPage() {
               </div>
             )}
 
-            <button type="submit" disabled={loading} style={{ background: loading ? "#6b7c72" : "#1a6b4a", border: "none", borderRadius: 12, padding: "14px 24px", color: "#fff", fontSize: 15, fontWeight: 700, cursor: loading ? "not-allowed" : "pointer", marginTop: 4 }}>
+            <button type="submit" disabled={loading} style={{ background: loading ? "#6b7c72" : "#0d5c3a", border: "none", borderRadius: 12, padding: "14px 24px", color: "#fff", fontSize: 15, fontWeight: 700, cursor: loading ? "not-allowed" : "pointer", marginTop: 4 }}>
               {loading ? "Creating account…" : "Create your account →"}
             </button>
           </form>

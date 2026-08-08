@@ -130,7 +130,7 @@ export default function ResetPasswordPage() {
                 <button
                   type="submit"
                   disabled={loading || !token}
-                  style={{ background: loading || !token ? "#6b7c72" : "#1a6b4a", border: "none", borderRadius: 12, padding: "13px 24px", color: "#fff", fontSize: 15, fontWeight: 700, cursor: loading || !token ? "not-allowed" : "pointer", marginTop: 4 }}
+                  style={{ background: loading || !token ? "#6b7c72" : "#0d5c3a", border: "none", borderRadius: 12, padding: "13px 24px", color: "#fff", fontSize: 15, fontWeight: 700, cursor: loading || !token ? "not-allowed" : "pointer", marginTop: 4 }}
                 >
                   {loading ? "Updating…" : "Set new password →"}
                 </button>
