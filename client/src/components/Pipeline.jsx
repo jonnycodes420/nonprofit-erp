@@ -257,11 +257,25 @@ export function Pipeline({ isReadOnly, onNavigate, initialScope }) {
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 12 }}>
         <PageTitle main="Prospect" accent="Pipeline" />
-        {f && <div style={{ display: "flex", gap: 20, flexWrap: "wrap" }}>
-          <Stat label="Open asks" value={fmtFull(f.open)} sub={`${f.openCount} open`} color={T.gold600} />
-          <Stat label="Weighted forecast" value={fmtFull(f.weighted)} sub="by stage" color={T.greenMid} />
-          <Stat label="Closed this FY" value={fmtFull(f.wonThisPeriod)} sub={`${f.wonCount} won`} color={T.greenDk} />
-        </div>}
+        {/* D-2 Fix A (BUILD-45): a board can hold a $100k donor while no asks
+            have been logged yet. Render "—" (not a misleading $0) for an empty
+            tile, and one explainer line when the whole ask side is empty —
+            "nothing has been recorded yet" is a different statement than "$0". */}
+        {f && (() => {
+          const noOpen = f.openCount === 0;   // Open asks + Weighted both derive from open opps
+          const noWon = f.wonCount === 0;
+          const allEmpty = noOpen && noWon;
+          return (
+            <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6 }}>
+              <div style={{ display: "flex", gap: 20, flexWrap: "wrap" }}>
+                <Stat label="Open asks" value={fmtFull(f.open)} sub={`${f.openCount} open`} color={T.gold600} empty={noOpen} />
+                <Stat label="Weighted forecast" value={fmtFull(f.weighted)} sub="by stage" color={T.greenMid} empty={noOpen} />
+                <Stat label="Closed this FY" value={fmtFull(f.wonThisPeriod)} sub={`${f.wonCount} won`} color={T.greenDk} empty={noWon} />
+              </div>
+              {allEmpty && <div style={{ fontSize: 12, color: T.ink3, textAlign: "right", maxWidth: 360 }}>No asks recorded — the board tracks people, asks track money.</div>}
+            </div>
+          );
+        })()}
       </div>
 
       {/* Scope toggle + add-prospects. The My/All toggle is ADMIN-only oversight. */}
@@ -370,12 +384,14 @@ export function Pipeline({ isReadOnly, onNavigate, initialScope }) {
 }
 
 const filterInp = { padding: "7px 10px", border: `1px solid ${T.bg3}`, borderRadius: T.radiusSm, fontSize: 13, fontFamily: "'DM Sans',sans-serif", background: T.bgCard, color: T.ink };
-function Stat({ label, value, sub, color }) {
+function Stat({ label, value, sub, color, empty }) {
+  // D-2 Fix A (BUILD-45): an empty tile shows an em dash in warm grey (T.ink3 =
+  // #6b6560) + "No asks logged yet" — never a $0 that asserts "you have nothing."
   return (
     <div style={{ textAlign: "right" }}>
       <div style={{ fontSize: 11, color: T.ink3, textTransform: "uppercase", letterSpacing: ".04em", fontWeight: 700 }}>{label}</div>
-      <div style={{ fontSize: 22, fontWeight: 800, color, lineHeight: 1.1 }}>{value}</div>
-      <div style={{ fontSize: 11, color: T.ink3 }}>{sub}</div>
+      <div style={{ fontSize: 22, fontWeight: 800, color: empty ? T.ink3 : color, lineHeight: 1.1 }}>{empty ? "—" : value}</div>
+      <div style={{ fontSize: 11, color: T.ink3 }}>{empty ? "No asks logged yet" : sub}</div>
     </div>
   );
 }

@@ -126,6 +126,14 @@ function AppShell() {
 
 
   useEffect(()=>{
+    // D-1 (BUILD-45): a fresh load / cmd-click / open-in-new-tab on
+    // /donors/:id lands here — open that donor's profile, then normalize the
+    // URL back to /dashboard (the app doesn't otherwise sync tab↔URL).
+    const donorMatch=window.location.pathname.match(/^\/donors\/([^/]+)\/?$/);
+    if(donorMatch){
+      navigateTo("donors",{selectDonorId:decodeURIComponent(donorMatch[1])});
+      window.history.replaceState({},"","/dashboard");
+    }
     const params=new URLSearchParams(window.location.search);
     if(params.get("stripe_connected")==="true"){
       setStripeToast(true);

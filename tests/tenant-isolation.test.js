@@ -86,6 +86,19 @@ async function seedOrg(o, tag) {
   ok("IDOR: A GET /donors/:idB → 404 (gates the org-scoped interactions read)",
     (await api("GET", "/donors/d_org_iso_b", tokenA)).status === 404);
 
+  // ── BUILD-45 D-1 deep-link route /donors/:donorId (matrix coverage) ───────
+  // The new client route /donors/:donorId (main.jsx) is a RequireOnboarded SPA
+  // shell that, on mount, opens the donor via GET /donors/:id — so the ROUTE's
+  // entire cross-tenant surface IS that API. Pin it here permanently: a foreign
+  // id yields 404 (never 200 = a leak, never 500 = the id reached logic), and
+  // the same route serves A's OWN donor (the deep-link must still work).
+  const dlForeign = await api("GET", "/donors/d_org_iso_b", tokenA);
+  ok("D-1 deep-link: A opening /donors/:idB resolves to GET /donors/:id → 404 (not 200/500)",
+    dlForeign.status === 404, dlForeign.status);
+  const dlOwn = await api("GET", "/donors/d_org_iso_a", tokenA);
+  ok("D-1 deep-link: A opening /donors/:idA (own donor) → 200 (route not over-blocked)",
+    dlOwn.status === 200 && dlOwn.body && dlOwn.body.id === "d_org_iso_a", dlOwn.status);
+
   // ── Tasks class (BUILD-13 resurfacing — donorId is now RENDERED) ──────────
   // A foreign donorId on a task would leak the donor's name/link cross-org, so
   // POST/PUT /tasks verify ownership before acting.

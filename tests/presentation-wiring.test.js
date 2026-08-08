@@ -110,6 +110,17 @@ const rendersMoney = (text, n) => text.includes(fmtFull(n)) || text.includes(fmt
   const topDonor = (dsum.body || []).map(d => ({
     name: d.name, total: Number(d.total_giving ?? d.total ?? 0), lastAmount: Number(d.last_gift_amount ?? d.lastAmount ?? 0),
   })).sort((a, b) => b.total - a.total)[0];
+  // D-1 (BUILD-45): map donor name → id so we can assert each attention row's
+  // <a href> equals /donors/<that donor's id>.
+  const nameToId = Object.fromEntries((dsum.body || []).map(d => [d.name, d.id]));
+  // Replicate the client's scope decision (Dashboard.jsx: portfolio>0 → "mine",
+  // else "all") so we know how many attention rows SHOULD render (the queue is
+  // filtered to loaded donors + sliced to 6, matching `visibleQueue`).
+  const myStats = await api("GET", "/dashboard/my-stats", token);
+  const attnScope = (Number(myStats.body?.portfolioCount) || 0) > 0 ? "mine" : "all";
+  const todayItems = (await api("GET", `/dashboard/today?scope=${attnScope}`, token)).body || [];
+  const donorIdSet = new Set((dsum.body || []).map(d => d.id));
+  const expectedAttnCount = todayItems.filter(i => donorIdSet.has(i.donorId)).slice(0, 6).length;
   const lr = await fetch("http://localhost:5601/auth/login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email: EMAIL, password: "loadtest1234" }) });
   const j = await lr.json();
 
@@ -118,6 +129,7 @@ const rendersMoney = (text, n) => text.includes(fmtFull(n)) || text.includes(fmt
 
   async function drive(width, height, label) {
     const page = await browser.newPage({ viewport: { width, height } });
+    page.on("dialog", d => d.dismiss().catch(() => {}));
     await page.addInitScript(([t, u, o]) => {
       localStorage.setItem("npe_token", t); localStorage.setItem("npe_user", u); localStorage.setItem("npe_org", o);
     }, [j.token, JSON.stringify(j.user), JSON.stringify(j.org)]);
@@ -157,6 +169,53 @@ const rendersMoney = (text, n) => text.includes(fmtFull(n)) || text.includes(fmt
           new RegExp(`(^|\\n)\\s*${A.tasksTotal}\\s*($|\\n)`).test(text) || text.includes(`${A.tasksTotal} task`) || new RegExp(`Tasks[\\s\\S]{0,40}\\b${A.tasksTotal}\\b`).test(text),
           null);
       }
+    }
+
+    // ── D-1 (BUILD-45): "Needs your attention" rows are REAL donor links ──
+    // Every row's left region is <a href="/donors/:id"> (the exact donor id
+    // from the API), the action button is a SIBLING of the anchor (never a
+    // descendant → keyboard/new-tab safe), and clicking the button performs
+    // its action WITHOUT navigating (pathname stays /dashboard).
+    {
+      // The queue loads after /dashboard/my-stats resolves the scope, so wait
+      // for it to settle (a row, or the "all caught up" empty state).
+      if (expectedAttnCount > 0) await page.waitForSelector(".attn-row", { timeout: 9000 }).catch(() => {});
+      else await page.waitForTimeout(1000);
+      const attn = await page.evaluate(() => {
+        return [...document.querySelectorAll(".attn-row")].map(r => {
+          const main = r.querySelector(".attn-row-main");
+          const nameEl = r.querySelector(".attn-donor-name");
+          const btn = r.querySelector(".attn-row-action");
+          return {
+            mainTag: main ? main.tagName : null,
+            href: main ? main.getAttribute("href") : null,
+            name: nameEl ? nameEl.innerText.trim() : null,
+            hasBtn: !!btn,
+            btnInsideAnchor: btn ? !!btn.closest("a") : null,
+          };
+        });
+      });
+      ok(`${label} attention: rows rendered match the API (${expectedAttnCount})`, attn.length === expectedAttnCount, { rendered: attn.length, expected: expectedAttnCount });
+      // every row main is a real anchor to /donors/:id
+      const badMain = attn.filter(r => r.mainTag !== "A" || !/^\/donors\/[^/]+$/.test(r.href || ""));
+      ok(`${label} attention: every row main is <a href="/donors/:id">`, badMain.length === 0, badMain);
+      // href equals /donors/ + the donor id the API returns for that row
+      const hrefMismatch = attn.filter(r => r.name && nameToId[r.name] && r.href !== `/donors/${nameToId[r.name]}`);
+      ok(`${label} attention: each href === /donors/ + the API donor id`, hrefMismatch.length === 0,
+        hrefMismatch.map(r => ({ name: r.name, href: r.href, expect: `/donors/${nameToId[r.name]}` })));
+      // action button is a sibling of the anchor, never nested inside it
+      ok(`${label} attention: action button is NOT a descendant of any <a>`,
+        attn.every(r => r.hasBtn && r.btnInsideAnchor === false), attn.filter(r => r.btnInsideAnchor !== false));
+      // clicking the action button does not navigate (in-app action, URL steady)
+      const before = await page.evaluate(() => location.pathname);
+      await page.evaluate(() => { const b = document.querySelector(".attn-row-action"); if (b) b.click(); });
+      await page.waitForTimeout(400);
+      const after = await page.evaluate(() => location.pathname);
+      ok(`${label} attention: action click does not navigate (pathname unchanged)`, before === after, { before, after });
+      // The action may have opened a modal / switched tabs — reset to a clean
+      // Home so the following tab assertions aren't blocked.
+      await page.goto(`${FRONT}/dashboard`, { waitUntil: "networkidle" });
+      await page.waitForTimeout(800);
     }
 
     // ── Finance: Cash on Hand ──
@@ -216,6 +275,29 @@ const rendersMoney = (text, n) => text.includes(fmtFull(n)) || text.includes(fmt
         } else {
           ok(`${label} Donor profile: top donor row found`, false, topDonor.name);
         }
+      }
+    }
+
+    // ── D-2 Fix A (BUILD-45): Pipeline header tiles render "—" (not $0) when
+    // no asks are logged. The fixture is a fresh Team org with zero
+    // opportunities → all three tiles empty + the explainer line. ──
+    {
+      const reachable = await goTab("Pipeline");
+      if (reachable) {
+        await page.waitForTimeout(1400);
+        const pf = (await api("GET", "/pipeline?scope=all", token)).body?.forecast || {};
+        const text = await bodyText();
+        if ((pf.openCount || 0) === 0 && (pf.wonCount || 0) === 0) {
+          ok(`${label} Pipeline: empty ask tiles show "—" + "No asks logged yet" (not $0)`,
+            text.includes("—") && text.includes("No asks logged yet"),
+            (text.match(/OPEN ASKS[\s\S]{0,40}/i) || [])[0]);
+          ok(`${label} Pipeline: all-empty explainer line rendered`,
+            text.includes("No asks recorded — the board tracks people, asks track money."), null);
+        } else {
+          ok(`${label} Pipeline: has asks (API openCount ${pf.openCount}) — em-dash case N/A`, true);
+        }
+      } else {
+        ok(`${label} Pipeline tab reachable`, true, "not reachable (skipped em-dash check)");
       }
     }
 

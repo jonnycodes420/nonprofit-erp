@@ -49,6 +49,10 @@ const EXTRAS = [
   // Settings › Branding PRESET_ACCENTS — customer-choice org accent colors
   // (data an org picks for ITS brand, normalized on save — not Steward chrome):
   "#7c3a12", "#3f5c8a", "#6b3f8a", "#8a5a1f",
+  // D-1 (BUILD-45): "Cream alt" hover wash on the Home "Needs your attention"
+  // row link (GlobalStyles a.attn-row-main:hover) — a warm neutral in the cream
+  // family, one surface, gives the row a clickable affordance:
+  "#e8e4db",
 ];
 for (const v of EXTRAS) ALLOWED.add(v.toLowerCase());
 

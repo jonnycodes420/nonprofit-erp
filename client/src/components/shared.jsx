@@ -312,6 +312,19 @@ export function GlobalStyles() {
     /* gold wash behind an active section tab (added by SectionTabs) */
     .section-tab-on{background:#f6eccf66!important;}
     .dash-row:hover{background:#f0ede6!important;box-shadow:inset 2px 0 0 #0d5c3a;}
+    /* D-1 (BUILD-45): "Needs your attention" row main is a real link. Hover
+       affordance so it reads as clickable, not broken — cream-alt wash + the
+       donor name underlines. Colour change only, so no transition is needed
+       under prefers-reduced-motion. Brass focus ring for keyboard. */
+    .attn-row-main{cursor:default;}
+    a.attn-row-main{cursor:pointer;}
+    a.attn-row-main:hover{background:#e8e4db;}
+    a.attn-row-main:hover .attn-donor-name{text-decoration:underline;}
+    a.attn-row-main:focus-visible{outline:2px solid #c9a84c;outline-offset:-2px;border-radius:2px;}
+    /* Touch: each of the row's two targets clears the 44px minimum, and a tap
+       on one never fires the other (they're siblings, not nested). */
+    .attn-row-main{min-height:44px;}
+    .attn-row-action{min-height:44px;}
     .rpt-row-click:hover td{background:#f0ede6;}
     .dash-action:hover{background:#f0ede6!important;border-color:#0d5c3a!important;transform:translateY(-1px);}
 

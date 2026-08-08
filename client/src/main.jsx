@@ -144,6 +144,11 @@ function Root() {
           <Route path="/welcome"   element={<RequireAuth><WelcomePage /></RequireAuth>} />
           <Route path="/today"     element={<Navigate to="/dashboard" replace />} />
           <Route path="/dashboard" element={<RequireOnboarded><App /></RequireOnboarded>} />
+          {/* D-1 (BUILD-45): a real, linkable donor URL so the Home "Needs your
+              attention" rows can be genuine <a href="/donors/:id"> anchors that
+              survive cmd/middle-click + open-in-new-tab. Renders the same shell;
+              App reads the :donorId on mount and opens that profile. */}
+          <Route path="/donors/:donorId" element={<RequireOnboarded><App /></RequireOnboarded>} />
           <Route path="/invite/:token" element={<InvitePage />} />
           <Route path="/pricing"   element={<Pricing />} />
           <Route path="/invitation" element={<InvitationPage />} />

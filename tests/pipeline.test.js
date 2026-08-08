@@ -209,6 +209,28 @@ const boardIds = body => Object.values(body.columns).flat().map(c => c.donorId);
   r = await api("GET", "/pipeline", cAdmin);
   ok("CORE board: multiOfficer false (single officer → toggle hidden)", r.body.multiOfficer === false, r.body.multiOfficer);
 
+  // ── D-2 (BUILD-45): a board with no asks logged reports openCount/wonCount 0
+  // (the data behind the header tiles). This TEAM fixture seeds donors but no
+  // opportunities, so the forecast is genuinely empty — the tiles must render
+  // "—" (Fix A), NEVER a misleading $0. ──────────────────────────────────────
+  r = await api("GET", "/pipeline?scope=all", A);
+  ok("D-2 diagnosis: no opportunities → forecast open 0 / weighted 0 / openCount 0 / wonCount 0",
+    r.body.forecast && r.body.forecast.open === 0 && r.body.forecast.weighted === 0 && r.body.forecast.openCount === 0 && r.body.forecast.wonCount === 0,
+    r.body.forecast);
+
+  // ── D-2 Fix A source-guard: the header tiles render an em dash (not $0) when
+  // a tile's ask count is zero, plus the all-empty explainer line. ───────────
+  {
+    const fs = require("fs");
+    const pipe = fs.readFileSync(require("path").join(__dirname, "..", "client", "src", "components", "Pipeline.jsx"), "utf8");
+    ok("Fix A: Stat takes an `empty` prop and renders an em dash + 'No asks logged yet'",
+      /function Stat\(\{[^}]*\bempty\b/.test(pipe) && pipe.includes('"—"') && pipe.includes("No asks logged yet"), null);
+    ok("Fix A: empty tiles are driven by the API counts (openCount/wonCount === 0)",
+      /empty=\{noOpen\}/.test(pipe) && /empty=\{noWon\}/.test(pipe) && pipe.includes("f.openCount === 0") && pipe.includes("f.wonCount === 0"), null);
+    ok("Fix A: all-empty explainer line present (no invented route/action)",
+      pipe.includes("No asks recorded — the board tracks people, asks track money."), null);
+  }
+
   await closeDb();
   summary();
 })().catch(e => { console.error(e); process.exit(1); });

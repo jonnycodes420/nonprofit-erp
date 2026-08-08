@@ -461,6 +461,14 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
     .filter(item=>data.donors.some(d=>d.id===item.donorId))
     .slice(0,6);
   const milestoneCount=queueItems.filter(i=>i.action==="milestone").length;
+  // D-1 (BUILD-45): an attention item with no resolvable donor (an orphaned
+  // task) is never rendered as a dead link — its row main falls back to a
+  // <span>. Surface the count in dev only so orphans don't hide silently.
+  const orphanQueueCount=queueItems.filter(i=>!i.donorId||!data.donors.some(d=>d.id===i.donorId)).length;
+  useEffect(()=>{
+    if(import.meta.env.DEV&&orphanQueueCount>0)
+      console.log(`[dashboard] Needs-attention: ${orphanQueueCount} item(s) with no resolvable donor (rendered non-navigable).`);
+  },[orphanQueueCount]);
 
   const nextGrant=[...data.grants]
     .filter(g=>g.status!=="closed"&&g.deadline&&daysUntil(g.deadline)>=-7)
@@ -1178,38 +1186,63 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
             </div>
             {queueLoading&&<div style={{...cPad}}><Spin/></div>}
             {!queueLoading&&visibleQueue.length===0&&<MiniEmpty icon="✓" text="You're all caught up — nothing needs attention right now."/>}
-            {!queueLoading&&visibleQueue.map((item,i)=>{
-              const color=rowColor(item);
-              const busy=busyDonorId===item.donorId;
-              return(
-                <div key={item.donorId+"_"+item.action} className="dash-row dash-queue-row" style={{
-                  display:"flex",alignItems:"flex-start",gap:14,padding:"14px 20px",
-                  borderBottom:i<visibleQueue.length-1?"1px solid "+T.bg3:"none",
-                  borderLeft:"3px solid "+color,
-                }}>
-                  <div style={{width:38,height:38,borderRadius:"50%",background:color+"22",display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,fontWeight:800,color,flexShrink:0}}>
-                    {(item.donorName||"?")[0]}
-                  </div>
-                  <div style={{flex:1,minWidth:0}}>
-                    <div style={{fontSize:13,fontWeight:700,color:T.ink}}>{item.donorName}</div>
-                    {item.action==="note"&&Array.isArray(item.talkingPoints)?(
-                      <ul style={{margin:"4px 0 0",padding:"0 0 0 16px",fontSize:12,color:T.ink3,lineHeight:1.5}}>
-                        {item.talkingPoints.map((p,pi)=><li key={pi} style={{marginBottom:2}}>{p}</li>)}
-                      </ul>
-                    ):(
-                      <div style={{fontSize:12,color:T.ink3,marginTop:2,lineHeight:1.4}}>{item.reason}</div>
-                    )}
-                  </div>
-                  <button onClick={()=>handleQueueAction(item)} disabled={busy||(item.taskId&&isReadOnly)}
-                    title={item.taskId&&isReadOnly?"Reactivate your subscription to make changes.":undefined}
-                    className="dash-queue-action" style={{
-                      background:color,border:"none",borderRadius:8,padding:"8px 14px",color:"#fff",fontSize:12,fontWeight:700,
-                      cursor:(busy||(item.taskId&&isReadOnly))?"not-allowed":"pointer",whiteSpace:"nowrap",flexShrink:0,
-                      opacity:(busy||(item.taskId&&isReadOnly))?0.45:1,
-                    }}>{actionLabel(item)}</button>
-                </div>
-              );
-            })}
+            {/* D-1 (BUILD-45): each row's left region is a REAL <a href="/donors/:id">
+                (cmd/middle-click open the donor in a new tab), NOT an onClick div.
+                The action button is a SIBLING of the anchor — never nested — so
+                keyboard traversal and open-in-new-tab both work. Orphaned rows
+                (no resolvable donor) render the main as a <span>, never a dead link. */}
+            {!queueLoading&&visibleQueue.length>0&&(
+              <ul className="attn-list" style={{listStyle:"none",margin:0,padding:0}}>
+                {visibleQueue.map((item,i)=>{
+                  const color=rowColor(item);
+                  const busy=busyDonorId===item.donorId;
+                  const href=item.donorId?`/donors/${item.donorId}`:null;
+                  const mainInner=(
+                    <>
+                      <div style={{width:38,height:38,borderRadius:"50%",background:color+"22",display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,fontWeight:800,color,flexShrink:0}}>
+                        {(item.donorName||"?")[0]}
+                      </div>
+                      <div style={{flex:1,minWidth:0}}>
+                        <div className="attn-donor-name" style={{fontSize:13,fontWeight:700,color:T.ink}}>{item.donorName}</div>
+                        {item.action==="note"&&Array.isArray(item.talkingPoints)?(
+                          <ul style={{margin:"4px 0 0",padding:"0 0 0 16px",fontSize:12,color:T.ink3,lineHeight:1.5}}>
+                            {item.talkingPoints.map((p,pi)=><li key={pi} style={{marginBottom:2}}>{p}</li>)}
+                          </ul>
+                        ):(
+                          <div style={{fontSize:12,color:T.ink3,marginTop:2,lineHeight:1.4}}>{item.reason}</div>
+                        )}
+                      </div>
+                    </>
+                  );
+                  const mainStyle={flex:1,minWidth:0,display:"flex",alignItems:"flex-start",gap:14,padding:"14px 20px",textDecoration:"none",color:"inherit"};
+                  return(
+                    <li key={item.donorId+"_"+item.action} className="attn-row" style={{
+                      display:"flex",alignItems:"stretch",
+                      borderBottom:i<visibleQueue.length-1?"1px solid "+T.bg3:"none",
+                      borderLeft:"3px solid "+color,
+                    }}>
+                      {href?(
+                        <a className="attn-row-main" href={href} style={mainStyle}
+                          onClick={e=>{ if(e.metaKey||e.ctrlKey||e.shiftKey||e.altKey)return; e.preventDefault(); onNavigate("donors",{selectDonorId:item.donorId}); }}>
+                          {mainInner}
+                        </a>
+                      ):(
+                        <span className="attn-row-main" style={mainStyle}>{mainInner}</span>
+                      )}
+                      <div style={{display:"flex",alignItems:"center",padding:"8px 20px 8px 8px",flexShrink:0}}>
+                        <button onClick={e=>{e.stopPropagation();handleQueueAction(item);}} disabled={busy||(item.taskId&&isReadOnly)}
+                          title={item.taskId&&isReadOnly?"Reactivate your subscription to make changes.":undefined}
+                          className="attn-row-action dash-queue-action" style={{
+                            background:color,border:"none",borderRadius:8,padding:"8px 14px",color:"#fff",fontSize:12,fontWeight:700,
+                            cursor:(busy||(item.taskId&&isReadOnly))?"not-allowed":"pointer",whiteSpace:"nowrap",
+                            opacity:(busy||(item.taskId&&isReadOnly))?0.45:1,
+                          }}>{actionLabel(item)}</button>
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
           </div>
 
           {/* Today's Suggested Outreach */}
