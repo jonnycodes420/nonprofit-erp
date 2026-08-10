@@ -4710,7 +4710,10 @@ function DirectoryView({donors,loading,serverTotal,page,pageSize,onPage,clientFi
       {showPortfolios&&(
         <div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:12,padding:"11px 14px",display:"flex",flexWrap:"wrap",alignItems:"center",gap:14}}>
           <span style={{fontSize:10,fontWeight:800,color:"#1a6b4a",textTransform:"uppercase",letterSpacing:".06em"}}>Officer portfolios</span>
-          {officers.map(o=>{
+          {/* Chip row shows only officers who actually hold donors — an officer
+              with 0 assigned donors is noise here. They remain in Settings → Team
+              and in every owner/assign dropdown (those read a different list). */}
+          {officers.filter(o=>Number(o.portfolio_count)>0).map(o=>{
             const col=o.portfolio_color;
             return(
               <div key={o.id} style={{display:"flex",alignItems:"center",gap:7}}>

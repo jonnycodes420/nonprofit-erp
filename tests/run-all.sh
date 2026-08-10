@@ -43,7 +43,7 @@ CORE=(
   finance-reintegration fundraising gift-attribution goals home home-layout households impact
   import-assign import-both import-combined import-shape import-stage invitation landing-reveal
   locked-features
-  brand-allowlist moves no-emoji notifications onboarding-brand palette pipeline pipeline-gating portfolios portfolio-pipeline-consistency reports-cadence setup-checklist solicitations-winrate
+  brand-allowlist moves no-emoji notifications officer-chip onboarding-brand palette pipeline pipeline-gating portfolios portfolio-pipeline-consistency reports-cadence setup-checklist solicitations-winrate
   report-truth
   session-cache session-privilege smart-moves state-diff state-diff2 tasks task-due tenant-isolation trial-end upgrade-checkout workflows workflows-e2e
   empty-states presentation-wiring notify-delivery concurrency2 permissions-matrix
