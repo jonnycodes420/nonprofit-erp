@@ -1,5 +1,13 @@
 // Invitation pivot (2026-08-06) — live drive + DSF3 screenshots.
 //
+// PARTIALLY SUPERSEDED by BUILD-49 (2026-08-09): public self-serve signup was
+// reopened, so the landing no longer embeds the invitation form and /pricing no
+// longer shows the founding-partner / invitation-only framing (steps 3 and 4
+// below will fail). The standalone /invitation route + POST /invitation-request
+// backend are KEPT (so old links don't 404) — steps 1–2 still hold, and the API
+// contract is covered by tests/invitation.test.js. Do not treat steps 3–4 as
+// current.
+//
 // Drives the REAL flow end to end against a local preview + scratch server
 // (the committed tests/invitation.test.js covers the API contract; this
 // exercises the browser path a real visitor takes):

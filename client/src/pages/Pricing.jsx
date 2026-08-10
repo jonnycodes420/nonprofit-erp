@@ -87,48 +87,43 @@ export const BILLING_PLANS = [
 ];
 
 // ── Public commercial model (what the /pricing page shows) ─────────────────
-// Two plans split on Brad's real line: do you have gift officers to manage?
-// Every feature listed here is LIVE in-product — except items tagged {soon},
-// which render with a "coming soon" chip so the page never advertises an
-// unbuilt capability (the landing/pricing honesty rule). Team's full
-// white-label (custom domain / brand removal) is the one deferred item.
+// Two plans split on the real line: do you have gift officers to manage?
+// Cards are PARALLEL so the eye can diff them (BUILD-49 rewrite). Core lists
+// what's included; Team is "Everything in Core" + the major-gifts layer. The
+// old Team white-label "COMING SOON" bullet is removed — a coming-soon badge
+// inside a paid feature list is a promise attached to a price.
 const PUBLIC_PLANS = [
   {
     id: "core",
     name: "Core",
     price: 149,
-    tagline: "Everything a small shop needs.",
-    forWho: "The full product for a 1–3 person development team.",
+    forWho: "For a 1–3 person development team.",
     highlight: false,
     features: [
       { t: "Up to 5,000 active donors · 3 users" },
-      { t: "Full donor CRM + online giving on your own Stripe — 0% platform fee, no donor tip" },
-      { t: "IRS-compliant receipts + year-end statements" },
-      { t: "Households & soft credit, planned-giving tags" },
-      { t: "Goals — Annual / Project / Capital, with roll-up" },
-      { t: "Retention workflows — automated failed-card recovery + instant gift→thank alert" },
-      { t: "Reports — LYBUNT, SYBUNT, Retention, Top Donors, 3-year & annual" },
+      { t: "Full donor CRM, gift history, households, planned-giving tags" },
+      { t: "Online giving on your own Stripe — no platform fee, no donor tip" },
+      { t: "IRS-compliant receipts and year-end statements" },
+      { t: "Goals and campaigns — Annual, Project, Capital, with roll-up" },
+      { t: "Retention workflows — failed-card recovery, instant gift thank-you" },
+      { t: "Reports — LYBUNT, SYBUNT, retention, top donors, 3-year, annual" },
       { t: "Week-in-Review weekly digest" },
-      { t: "Tasks · Finance · Communications · org branding" },
-      { t: "Priority support" },
     ],
   },
   {
     id: "team",
     name: "Team",
     price: 299,
-    tagline: "For staffed development offices.",
-    forWho: "Everything in Core, plus the major-gifts machine.",
+    forWho: "For staffed offices with gift officers.",
     highlight: true,
-    everythingIn: "Core",
     features: [
-      { t: "Up to 25,000 active donors · 10 users (custom above)" },
-      { t: "Moves management — prospect pipeline, stages, moves log, ask-vs-gift" },
-      { t: "Officer portfolios + color mapping; Home Portfolio & Pipeline headers" },
-      { t: "Per-officer monthly reports + solicitations report" },
+      { t: "Up to 25,000 active donors · 10 users" },
+      { t: "Everything in Core" },
+      { t: "Moves management — prospect pipeline, stages, moves log, ask vs. gift" },
+      { t: "Officer portfolios and assignment" },
+      { t: "Per-officer monthly reports and the solicitations report" },
       { t: "Multi-officer Week-in-Review breakdowns" },
-      { t: "Full white-label — custom domain, remove Steward branding", soon: true },
-      { t: "Founder-direct onboarding & support" },
+      { t: "Founder-direct onboarding and support" },
     ],
   },
 ];
@@ -210,41 +205,24 @@ export default function Pricing() {
         ) : (
           <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
             <Link to="/login" style={{ fontSize: 13, color: sage, textDecoration: "none" }}>Sign in</Link>
-            <Link to="/invitation" style={{ fontSize: 13, color: ink, background: cream, borderRadius: 8, padding: "7px 16px", textDecoration: "none", fontWeight: 700 }}>Request an invitation</Link>
+            <Link to="/signup" style={{ fontSize: 13, color: ink, background: cream, borderRadius: 8, padding: "7px 16px", textDecoration: "none", fontWeight: 700 }}>Start free</Link>
           </div>
         )}
       </div>
 
       <div style={{ maxWidth: 980, width: "100%", marginTop: 56 }}>
         {/* Header */}
-        <div style={{ textAlign: "center", marginBottom: 20 }}>
+        <div style={{ textAlign: "center", marginBottom: 40 }}>
           <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.12em", color: gold, textTransform: "uppercase", marginBottom: 12 }}>Pricing</div>
           <div style={{ fontSize: 38, fontWeight: 400, color: cream, fontFamily: "'DM Serif Display',Georgia,serif", lineHeight: 1.15, marginBottom: 14 }}>
             Two plans, split on a real line.
           </div>
           <div style={{ fontSize: 15, color: sage, maxWidth: 560, margin: "0 auto", lineHeight: 1.55 }}>
-            The question is simple: <span style={{ color: cream, fontWeight: 600 }}>do you have gift officers to manage?</span> If not, Core is the whole product. If you do — portfolios, a moves pipeline, per-officer oversight — that's Team.
+            Do you have gift officers to manage? If not, <span style={{ color: cream, fontWeight: 600 }}>Core</span> is the whole product. If you do, that's <span style={{ color: cream, fontWeight: 600 }}>Team</span>.
           </div>
-        </div>
-
-        {/* Founding-partner framing (invitation pivot, 2026-08-06): prices stay
-            PUBLISHED — hiding them reads as Blackbaud-shaped opacity, the exact
-            thing Steward positions against — but they're framed future-tense:
-            this is what plans become when Steward opens; founding partners lock
-            in below them. Transparency AND scarcity, not opacity. */}
-        <div style={{ textAlign: "center", marginBottom: 22 }}>
-          <span style={{ display: "inline-block", fontSize: 13, color: cream, background: panel, border: `1px solid ${gold}`, borderRadius: 12, padding: "12px 20px", lineHeight: 1.6, maxWidth: 560 }}>
-            Steward is currently <b style={{ color: gold }}>invitation-only</b> while the five founding
-            partner organizations are chosen. These are the prices when Steward opens in
-            January — <b>founding partners lock in below them</b>, for as long as they stay.
-          </span>
-        </div>
-
-        {/* Active-donor promise */}
-        <div style={{ textAlign: "center", marginBottom: 36 }}>
-          <span style={{ display: "inline-block", fontSize: 12.5, color: cream, background: panel, border: `1px solid ${panelBorder}`, borderRadius: 99, padding: "7px 16px" }}>
-            Bands count <b>active donors</b> — the donors you're actually working, not every dead record on file.
-          </span>
+          <div style={{ fontSize: 13.5, color: gold, maxWidth: 560, margin: "16px auto 0", lineHeight: 1.55, fontWeight: 600 }}>
+            Free through December 31, 2026. Prices below start January 1, 2027.
+          </div>
         </div>
 
         {onTrial && (
@@ -282,8 +260,7 @@ export default function Pricing() {
                 <span style={{ fontSize: 40, fontWeight: 800, color: plan.highlight ? ink : cream, fontFamily: "'DM Serif Display',Georgia,serif" }}>${plan.price}</span>
                 <span style={{ fontSize: 14, color: plan.highlight ? "#6b7c72" : sage }}>/month</span>
               </div>
-              <div style={{ fontSize: 14, fontWeight: 600, color: plan.highlight ? ink : cream, marginBottom: 4 }}>{plan.tagline}</div>
-              <div style={{ fontSize: 13, color: plan.highlight ? "#6b7c72" : sage, marginBottom: 22, lineHeight: 1.45 }}>
+              <div style={{ fontSize: 14, fontWeight: 600, color: plan.highlight ? ink : cream, marginBottom: 22, lineHeight: 1.45 }}>
                 {plan.forWho}
               </div>
               <div style={{ display: "flex", flexDirection: "column", gap: 11, marginBottom: 26, flex: 1 }}>
@@ -294,9 +271,6 @@ export default function Pricing() {
                     </div>
                     <span style={{ fontSize: 13, color: plan.highlight ? ink : sage, lineHeight: 1.45 }}>
                       {f.t}
-                      {f.soon && (
-                        <span style={{ marginLeft: 7, fontSize: 9.5, fontWeight: 800, letterSpacing: "0.06em", textTransform: "uppercase", color: gold, border: `1px solid ${plan.highlight ? "#d9c48a" : "#5a4d29"}`, borderRadius: 99, padding: "1px 7px", whiteSpace: "nowrap", verticalAlign: "middle" }}>Coming soon</span>
-                      )}
                     </span>
                   </div>
                 ))}
@@ -310,9 +284,9 @@ export default function Pricing() {
                   fontSize: 14, fontWeight: 700, cursor: "pointer", transition: "all 0.15s",
                 };
                 if (!isAuthed) {
-                  // Invitation pivot: no self-serve signup — a visitor requests
-                  // an invitation; existing orgs (authed) keep live checkout.
-                  return <button onClick={() => navigate("/invitation")} style={base}>Request an invitation →</button>;
+                  // Public signup reopened (BUILD-49): a visitor starts free →
+                  // /signup. Existing orgs (authed) keep live Stripe checkout.
+                  return <button onClick={() => navigate("/signup")} style={base}>Start free →</button>;
                 }
                 if (isCurrentPlan(plan.id)) {
                   return (
@@ -343,46 +317,30 @@ export default function Pricing() {
           ))}
         </div>
 
-        {/* Foundation Portal add-on */}
-        <div style={{ background: panel, border: `1px solid ${panelBorder}`, borderRadius: 16, padding: "22px 26px", display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: 16, marginBottom: 40 }}>
-          <div style={{ maxWidth: 620 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
-              <span style={{ fontSize: 14, fontWeight: 700, color: cream }}>Foundation Portal</span>
-              <span style={{ fontSize: 9.5, fontWeight: 800, letterSpacing: "0.06em", textTransform: "uppercase", color: gold, border: `1px solid #5a4d29`, borderRadius: 99, padding: "2px 8px" }}>Opt-in add-on · any plan</span>
-            </div>
-            <div style={{ fontSize: 13, color: sage, lineHeight: 1.5 }}>
-              Bring your own foundation records plus full grant-lifecycle management — deadlines, LOIs, requested-vs-awarded, reporting. À la carte; turn it on when you decide to pursue foundation funding.
-            </div>
+        {/* One line under the cards (BUILD-49): what the bands count. */}
+        <div style={{ textAlign: "center", fontSize: 13.5, color: sage, marginBottom: 32, lineHeight: 1.55, maxWidth: 620, marginLeft: "auto", marginRight: "auto" }}>
+          Bands count active donors — the ones you're actually working, not every dead record on file.
+        </div>
+
+        {/* Foundation Portal add-on — one line, real CTA (not a Calendly link
+            dressed as prose). */}
+        <div style={{ background: panel, border: `1px solid ${panelBorder}`, borderRadius: 16, padding: "20px 26px", display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: 16, marginBottom: 40 }}>
+          <div style={{ maxWidth: 660, fontSize: 13.5, color: sage, lineHeight: 1.55 }}>
+            <b style={{ color: cream }}>Foundation Portal</b> — add-on, any plan. Foundation records and full grant lifecycle: deadlines, LOIs, requested vs. awarded, reporting. Turn it on when you start pursuing foundation funding.
           </div>
           <a href={CAL} target="_blank" rel="noreferrer" style={{ fontSize: 13, fontWeight: 700, color: cream, background: "transparent", border: `1px solid ${panelBorder}`, borderRadius: 10, padding: "11px 18px", textDecoration: "none", whiteSpace: "nowrap" }}>
-            Ask about the add-on →
+            Ask about it →
           </a>
         </div>
 
-        {/* The answer to "free" */}
-        <div style={{ background: "#12241a", border: `1px solid ${panelBorder}`, borderLeft: `3px solid ${gold}`, borderRadius: 14, padding: "26px 30px", marginBottom: 32 }}>
-          <div style={{ fontSize: 15.5, color: cream, lineHeight: 1.65, fontFamily: "'DM Serif Display',Georgia,serif", fontWeight: 400 }}>
-            “Free platforms fund ‘free’ by asking your donors for a tip, or by locking the CRM you actually need behind an upgrade. Steward is a flat monthly price with everything a small shop needs included, cheaper than the real CRMs, your gifts land in your own account, and we count the donors you're actually working — not every dead record on file.”
-          </div>
-          {/* "Keep every dollar" was an overclaim — Stripe's processing fee
-              still applies (and Zeffy is genuinely 0% total, so the overclaim
-              was also WEAKER than the truth). The truth is the differentiator:
-              no platform fee, no donor tip, gifts in the org's own Stripe. */}
-          <div style={{ fontSize: 14, color: gold, marginTop: 14, fontWeight: 700 }}>
-            No platform fee. No donor tip. Every gift settles in your own Stripe
-            account — and we help you keep every donor.
-          </div>
-        </div>
-
-        {/* Footer note */}
-        <div style={{ textAlign: "center", fontSize: 13, color: sage }}>
-          <Link to="/invitation" style={{ color: cream, textDecoration: "underline", textUnderlineOffset: 3, fontWeight: 600 }}>
-            Request an invitation →
-          </Link>{" "}
-          or{" "}
-          <a href={CAL} target="_blank" rel="noreferrer" style={{ color: cream, textDecoration: "none", fontWeight: 600 }}>
-            book a call with the founder →
-          </a>
+        {/* Footer strip — short items, no sentences (BUILD-49). */}
+        <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "center", alignItems: "center", gap: "8px 14px", fontSize: 13, color: sage }}>
+          {["No platform fee", "No donor tip", "Gifts settle in your own Stripe", "Export your data anytime", "Month to month, cancel anytime"].map((item, i) => (
+            <span key={item} style={{ display: "inline-flex", alignItems: "center", gap: "14px" }}>
+              {i > 0 && <span aria-hidden="true" style={{ color: panelBorder }}>·</span>}
+              {item}
+            </span>
+          ))}
         </div>
       </div>
 

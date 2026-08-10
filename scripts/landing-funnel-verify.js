@@ -2,17 +2,17 @@
 //
 // Asserts:
 //   1. the funnel sections render in order (hero → wedge calculator → problem
-//      → product moments → how it works → money → candor → founder → close)
+//      → product moments → how it works → money → close). The candor and
+//      founder-letter sections were removed in BUILD-49.
 //   2. the interactive recurring-loss calculator computes correctly for
 //      multiple inputs AND shows its assumption (29% / M+R Benchmarks — the
 //      primary-sourced rate, 2026-08-06; never the unsourced "widely-cited
 //      20–30%")
 //   3. NO fabricated social proof (grep guard: no fake logos / testimonials /
 //      star ratings / "trusted by" / invented user counts)
-//   4. every primary CTA links live (Request an invitation → /invitation;
-//      real footer links) and NO self-serve signup path survives (invitation
-//      pivot, 2026-08-06: no "Start free", no free-trial microcopy, and never
-//      the word "waitlist" — Steward is choosing five orgs, not running a queue)
+//   4. every primary CTA is "Start free" → /signup (BUILD-49 reopened public
+//      self-serve signup; the /invitation route is kept but NOT linked from the
+//      landing, and no "invitation-only"/founding-partner copy remains)
 //   5. the stat attribution is the PRIMARY source (Fundraising Effectiveness
 //      Project), never a competitor's republication
 //
@@ -42,8 +42,6 @@ const ORDER = [
   "receipt that sends itself",        // product moment 3
   "How it works",                     // how it works
   "Your donors give to you",          // money strip
-  "Where Steward is today",           // candor
-  "letter from the founder",          // founder band
   "See who needs you today",          // close
 ];
 
@@ -115,25 +113,18 @@ const BANNED = [
     [...document.querySelectorAll("img")].filter(i => /logo|client|partner-logo/i.test((i.getAttribute("src") || "") + (i.getAttribute("alt") || ""))).length
   );
   ok("no logo-bar images", logoImgs === 0, logoImgs);
-  // The candor line that makes the honesty explicit is present
-  ok("candor line present ('no case-study wall / customer count')", /no case-study wall|won't invent/i.test(bodyText));
-
-  // ── 3.5 BUILD-29: order + pricing + no pottery band ──
-  // The founder letter must precede the founding-partner ASK (the letter earns
-  // the ask). The ask is now the on-page invitation form section ("Be one of
-  // the first five." — invitation pivot, 2026-08-06) AFTER the letter.
-  const letterIdx = hay.indexOf("letter from the founder");
-  const askIdx = hay.indexOf("be one of the first five");
-  ok("founder letter present", letterIdx !== -1);
-  ok("founding-partner ask present ('Be one of the first five')", askIdx !== -1);
-  ok("founder letter PRECEDES the founding-partner ask", letterIdx !== -1 && askIdx !== -1 && letterIdx < askIdx, { letterIdx, askIdx });
+  // ── 3.5 BUILD-49: candor + founder-letter sections removed; no pottery band ──
+  ok("candor 'Where Steward is today' section removed", !/where steward is today/i.test(bodyText));
+  ok("founder-letter section removed", !/letter from the founder/i.test(bodyText) && !/why i built steward/i.test(bodyText));
+  ok("unverified 'load-tested to 25,000' claim removed", !/load[- ]tested to 25,000/i.test(bodyText));
   // The stat attribution is the primary source, never a competitor.
   ok("43% stat attributed to the Fundraising Effectiveness Project", /fundraising effectiveness project/i.test(bodyText));
   ok("no competitor attribution (Bloomerang)", !/bloomerang/i.test(bodyText));
   // "Keep 100%" was an overclaim (Stripe's processing fee still applies).
   ok("no 'keep 100%' overclaim", !/keep 100%|100% of every gift/i.test(bodyText));
-  // Pricing signal present near the CTA and linked to /pricing.
-  ok("pricing signal present ('$149/month' or '$149/mo')", /\$149\s*\/\s*(month|mo)/i.test(bodyText), bodyText.match(/\$149[^\n]{0,12}/));
+  // Pricing signal present on the page and linked to /pricing. (Post-BUILD-49
+  // the $149 lives in the money strip: "$149 or $299 a month, flat.")
+  ok("pricing signal present ('$149')", /\$149\b/.test(bodyText), bodyText.match(/\$149[^\n]{0,16}/));
   const pricingLinked = await page.evaluate(() =>
     [...document.querySelectorAll("a[href='/pricing']")].length >= 1
   );
@@ -144,18 +135,16 @@ const BANNED = [
   );
   ok("no pottery/studio band image on the page", bandImgs === 0, bandImgs);
 
-  // ── 4. CTAs live + the invitation pivot holds ──
-  ok("Request an invitation CTA present", await page.locator('button:has-text("Request an invitation")').count() >= 1);
+  // ── 4. CTAs live + public signup reopened (BUILD-49) ──
+  ok("'Start free' CTA present", await page.locator('button:has-text("Start free")').count() >= 1);
   ok("Talk to the founder CTA present", await page.locator('button:has-text("Talk to the founder")').count() >= 1);
-  // No self-serve path survives: no Start-free CTA, no trial microcopy, and
-  // never the word "waitlist" (this is choosing five orgs, not a queue).
-  ok("no 'Start free' CTA anywhere", !/start free/i.test(bodyText));
-  ok("no free-trial / no-credit-card microcopy", !/free trial|no credit card|30-day trial/i.test(bodyText));
-  ok("the word 'waitlist' never appears", !/waitlist/i.test(bodyText));
-  // The on-page invitation form is real: labeled fields + the donor-band ask.
-  ok("invitation form present on the landing", await page.locator('#invitation form').count() === 1);
-  ok("invitation form asks the donor-band question", /how many donors are in your database/i.test(bodyText));
-  ok("invitation form carries the honesty line ('I read every one of these myself')", /i read every one of these myself/i.test(bodyText));
+  // The invitation funnel is de-linked from the landing: no invitation CTA, no
+  // invitation-only / founding-partner copy, no link to /invitation.
+  ok("no 'Request an invitation' CTA on the landing", await page.locator('button:has-text("Request an invitation")').count() === 0);
+  ok("no 'invitation-only' copy", !/invitation-only/i.test(bodyText));
+  ok("no 'founding partner' / 'five founding' copy", !/founding partner|five founding/i.test(bodyText));
+  const invLinks = await page.evaluate(() => [...document.querySelectorAll('a[href*="/invitation"]')].length);
+  ok("no link to /invitation from the landing", invLinks === 0, invLinks);
   const footerLinks = await page.evaluate(() =>
     [...document.querySelectorAll("footer a")].map(a => a.getAttribute("href"))
   );
@@ -164,10 +153,10 @@ const BANNED = [
   }
   ok("footer has a contact mailto", footerLinks.some(h => h && h.startsWith("mailto:")));
 
-  // The nav CTA actually navigates to /invitation
-  await page.locator('button:has-text("Request an invitation")').first().click();
+  // The nav CTA actually navigates to /signup
+  await page.locator('button:has-text("Start free")').first().click();
   await page.waitForTimeout(600);
-  ok("Request an invitation → /invitation", page.url().endsWith("/invitation"), page.url());
+  ok("Start free → /signup", page.url().endsWith("/signup"), page.url());
 
   await browser.close();
   console.log(`\n${pass} passed, ${fail} failed`);

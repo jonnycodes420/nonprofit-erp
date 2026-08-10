@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { InvitationSection } from "./Invitation";
 
 // ── Landing (BUILD-07 rebuild, 2026-07-17; product shots → DOM, BUILD-12) ───
 // Register: warm-serious, book-set, five-color palette only. Every number and
@@ -754,7 +753,7 @@ export default function Landing() {
              skews 45+ and reads on phones in bad light); 44px tap targets;
              a thumb-sized slider with a tall hit area; safe-area padding so
              nothing sits under the iPhone home indicator. ── */
-          .lp-vert-body p, .lp-hiw-grid p, .lp-moment-text p, .lp-candor-list li { font-size: 16px !important; }
+          .lp-vert-body p, .lp-hiw-grid p, .lp-moment-text p { font-size: 16px !important; }
           .lp-nav .lp-navlink { display: inline-block; padding: 12px 6px; }
           footer .lp-navlink { display: inline-block; padding: 12px 8px; }
           .lp footer { padding: 36px 22px calc(36px + env(safe-area-inset-bottom, 0px)) !important; }
@@ -762,12 +761,11 @@ export default function Landing() {
           .lp-slider::-webkit-slider-thumb { width: 30px; height: 30px; }
           .lp-slider::-moz-range-thumb { width: 28px; height: 28px; }
           /* ── BUILD-40 P1 (continued): the tallest blocks at 390px were the
-             moments (3,428px), the founder letter (1,615px), how-it-works
-             (1,423px) and the product shots' inherited desktop air. Compact
-             the shot internals; the how-it-works ILLUSTRATIONS drop at phone
-             width (the numbered step text carries the meaning, the shots
-             still show >=768px, and two of the three shots also appear
-             full-size elsewhere on the page). ── */
+             moments (3,428px), how-it-works (1,423px) and the product shots'
+             inherited desktop air. Compact the shot internals; the
+             how-it-works ILLUSTRATIONS drop at phone width (the numbered step
+             text carries the meaning, the shots still show >=768px, and two of
+             the three shots also appear full-size elsewhere on the page). ── */
           .lp-hiw-imgbox { display: none; }
           .lp-qrow { padding: 10px 13px; gap: 10px; }
           .lp-qav { width: 30px; height: 30px; font-size: 12px; }
@@ -781,8 +779,6 @@ export default function Landing() {
           .lp-goal-pct { font-size: 40px; }
           .lp-retcard { padding: 14px 16px; }
           .lp-shot-wrap { padding: 10px; }
-          .lp-founder-letter { font-size: 17px !important; line-height: 1.7 !important; }
-          .lp-founder-letter p { margin-bottom: 14px !important; }
           .lp-section { padding: 48px 22px; }
           /* Queue card: drop the near-duplicate of each row pair (Elena
              mirrors Julian's note row; Robert mirrors Sunrise's milestone
@@ -811,7 +807,7 @@ export default function Landing() {
           <div style={{ display: "flex", alignItems: "center", gap: 22 }}>
             <a href="/pricing" className="lp-navlink lp-nav-pricing">Pricing</a>
             <a href="/login" className="lp-navlink lp-nav-login">Log in</a>
-            <GoldBtn onClick={() => navigate("/invitation")}>Request an invitation</GoldBtn>
+            <GoldBtn onClick={() => navigate("/signup")}>Start free</GoldBtn>
           </div>
         </nav>
 
@@ -840,7 +836,7 @@ export default function Landing() {
                 <strong style={{ color: C.cream }}>who to call today, and what to say.</strong>
               </p>
               <div className="lp-cta-row" style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 16 }}>
-                <GoldBtn big onClick={() => navigate("/invitation")}>Request an invitation</GoldBtn>
+                <GoldBtn big onClick={() => navigate("/signup")}>Start free</GoldBtn>
                 <QuietBtn big onDark onClick={() => setShowCal(true)}>Talk to the founder</QuietBtn>
               </div>
               <p className="lp-hero-trust">No platform fee · no donor tip · gifts settle in your own Stripe</p>
@@ -1050,7 +1046,7 @@ export default function Landing() {
                 {
                   shot: <ImportShot />,
                   alt: "Steward's CSV import — columns auto-mapped, stages auto-assigned",
-                  line: <><strong>Import your donors.</strong> A CSV is enough — and founding partners get it done for them.</>,
+                  line: <><strong>Import your donors.</strong> A CSV is enough — columns auto-map and stages auto-assign.</>,
                 },
                 {
                   shot: <QueueShot rows={ATTENTION_ROWS} header={false} />,
@@ -1102,112 +1098,13 @@ export default function Landing() {
           </div>
         </section>
 
-        {/* ── 5. Where Steward is today — the candor section stays; it IS the brand ── */}
-        <section className="lp-section lp-reveal" style={{ background: C.white, borderBottom: `1px solid ${C.cream2}` }}>
-          <div className="lp-narrow">
-            <Eyebrow>Where Steward is today</Eyebrow>
-            <h2 className="lp-serif" style={{ fontSize: "clamp(30px, 3.4vw, 44px)", color: C.ink, lineHeight: 1.15, marginBottom: 22 }}>
-              This is new. I'd rather tell you the truth than sell you a testimonial.
-            </h2>
-            <p style={{ fontSize: 16, color: "#2d2d2d", lineHeight: 1.8, marginBottom: 26 }}>
-              Steward is built and run by one person. There's no case-study wall
-              and no customer count on this page, because it's early and I won't
-              invent either. Here is what's actually true today:
-            </p>
-            <ul className="lp-candor-list" style={{ listStyle: "none", display: "flex", flexDirection: "column", gap: 12, marginBottom: 28 }}>
-              {[
-                "Live now: donor records and pipeline, Gmail sync, email campaigns and sequences, milestone drafts a human reviews before anything sends, failed-payment recovery, tax receipts and year-end statements, six board-ready reports, peer-to-peer fundraising pages.",
-                "Load-tested to 25,000 donors and 200,000 gifts per organization.",
-                "Errors are monitored in production; your data exports to a zip of clean CSVs in one click — including after you cancel. That's a promise, and it's already built.",
-              ].map((t, i) => (
-                <li key={i} style={{ display: "flex", gap: 12, fontSize: 15, color: "#2d2d2d", lineHeight: 1.7 }}>
-                  <span style={{ color: C.greenDk, fontWeight: 800, flexShrink: 0 }}>—</span>{t}
-                </li>
-              ))}
-            </ul>
-            {/* The founding-partner ASK moved to its own section AFTER the
-                founder letter (BUILD-29) — the letter is what earns the ask. */}
-          </div>
-        </section>
-
-        {/* ── The mid-page pottery/studio band was removed (FIX 2026-07-30):
-            a tight macro crop read as texture, not a place, and left an
-            orphaned white gap. The candor section (white, closing hairline)
-            now flows straight into the founder letter (cream) — a deliberate
-            tone shift, no decorative slab between them. If a mid-page breath
-            is ever wanted, use the wide art-studio ROOM shot (reads as a
-            place) at ~half height — not a macro. ── */}
-
-        {/* ── 6. A letter from the founder ──
-            Jonathan's own words (BUILD-12). The avatar below is still a
-            PLACEHOLDER for a real founder photo — a genuine human face is the
-            point of this band; do NOT use a stock portrait implying a team
-            Steward doesn't have. "The legacy tools" stands in for the named
-            competitors in the source draft, per the no-competitor-names
-            decision. */}
-        <section className="lp-section lp-reveal">
-          <div style={{ maxWidth: 620, margin: "0 auto" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 26 }}>
-              <div aria-hidden="true" style={{ width: 64, height: 64, borderRadius: "50%", flexShrink: 0, background: `linear-gradient(135deg, ${C.dark2}, ${C.ink})`, border: `2px solid ${C.gold}`, display: "flex", alignItems: "center", justifyContent: "center" }}>
-                <span className="lp-serif" style={{ fontSize: 26, color: C.gold }}>J</span>
-              </div>
-              <div>
-                <Eyebrow>A letter from the founder</Eyebrow>
-                <div style={{ fontSize: 14, color: C.ink3, marginTop: -8 }}>Jonathan · founder, and the person who answers your email</div>
-              </div>
-            </div>
-            <h2 className="lp-serif" style={{ fontSize: "clamp(26px, 2.8vw, 34px)", color: C.ink, lineHeight: 1.15, marginBottom: 22 }}>
-              Why I built Steward
-            </h2>
-            <div className="lp-serif lp-founder-letter" style={{ fontSize: 19, color: C.ink, lineHeight: 1.85 }}>
-              <p style={{ marginBottom: 18 }}>
-                My dad has spent his whole career in nonprofit development, and
-                he's raised tens of millions of dollars. He built the donor CRM
-                at the heart of Steward — and he built it to fix the things that
-                always frustrated him about the legacy tools. The legacy tools:
-                powerful, but archaic to the people actually using them every
-                day. He knew exactly what they should have done instead, so we
-                built that.
-              </p>
-              <p style={{ marginBottom: 18 }}>
-                Because I kept seeing the same gap everywhere: mid-sized
-                nonprofits that can't afford a $30k system, but have long
-                outgrown a Google Sheet, a phone full of contacts, and a mental
-                note to "follow up with that person someday." That gap costs orgs
-                the one thing they can least afford to lose: the donors who were
-                already leaning in, quietly drifting away because nothing was
-                built to notice.
-              </p>
-              <p style={{ marginBottom: 18 }}>
-                Steward is for the development director doing the books at 11pm.
-                It's for the one-person shop that will grow into it, and the big
-                team that needs everything a legacy CRM does — without the legacy
-                price. And it will never charge you to reach your own donors, or
-                take a cut of a dollar meant for your mission.
-              </p>
-              <p style={{ marginBottom: 26 }}>
-                Here's my promise. I've lived in this world, and I actually care
-                about it. If something breaks, I'll fix it this weekend. If you
-                need something Steward doesn't do yet, I'll build it this week.
-                You'll always know the person who answers your email.
-              </p>
-              <p style={{ fontStyle: "italic", fontSize: 21 }}>— Jonathan</p>
-            </div>
-            <p style={{ fontSize: 13, color: C.ink3, marginTop: 18 }}>
-              <a href={FOUNDER_MAILTO} style={{ color: C.greenDk, textDecoration: "underline", textUnderlineOffset: 3 }}>jonathan@stewardapp.dev</a>
-            </p>
-          </div>
-        </section>
-
-        {/* ── 6.5 The invitation — the ask, now AFTER the letter that earns it
-            (BUILD-29 order kept). The mailto ask became a real request form
-            (invitation pivot, 2026-08-06): Steward is invitation-only while
-            the five founding partners are chosen. Same form as /invitation;
-            the section carries the quiet future-tense pricing signal so a
-            visitor never has to click through to /pricing to learn the range. ── */}
-        <div className="lp-reveal">
-          <InvitationSection headline="Be one of the first five." />
-        </div>
+        {/* ── 5 + 6 + invitation section REMOVED (BUILD-49) ──
+            The "Where Steward is today" candor section and the "A letter from
+            the founder" section were deleted in full (Part 5). The embedded
+            founding-partner invitation form was removed with them (Part 1 —
+            public signup is reopened; the landing CTAs are "Start free" →
+            /signup, and the standalone /invitation route is kept only so old
+            links don't 404). The money strip (§4) now flows into the close. ── */}
 
         {/* ── 7. Close ── */}
         <section className="lp-section lp-reveal" style={{ textAlign: "center" }}>
@@ -1216,11 +1113,11 @@ export default function Landing() {
               See who needs you today.
             </h2>
             <div className="lp-cta-row" style={{ display: "flex", gap: 12, justifyContent: "center", flexWrap: "wrap", marginBottom: 18 }}>
-              <GoldBtn big onClick={() => navigate("/invitation")}>Request an invitation</GoldBtn>
+              <GoldBtn big onClick={() => navigate("/signup")}>Start free</GoldBtn>
               <QuietBtn big onClick={() => setShowCal(true)}>Talk to the founder</QuietBtn>
             </div>
             <p style={{ fontSize: 13, color: C.ink3 }}>
-              Five founding organizations · donors imported for you · your data exports anytime
+              No platform fee · no donor tip · your data exports anytime
             </p>
           </div>
         </section>

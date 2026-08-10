@@ -1032,11 +1032,11 @@ export function Settings({auth,logout,initialSection}) {
         if(reeng>0)clauses.push(<>re-engaged <strong style={{color:T.green600}}>{fmt(reeng)}</strong> from <strong style={{color:T.ink}}>{reengDonors}</strong> lapsed donor{reengDonors===1?"":"s"} who came back</>);
         let msg;
         if(clauses.length){
-          msg=<>Steward has {clauses.map((c,i)=><span key={i}>{i>0?(i===clauses.length-1?" and ":", "):""}{c}</span>)} — and kept you <strong style={{color:T.ink}}>100% of every dollar</strong> (0 platform fees).</>;
+          msg=<>Steward has {clauses.map((c,i)=><span key={i}>{i>0?(i===clauses.length-1?" and ":", "):""}{c}</span>)} — with <strong style={{color:T.ink}}>no platform fee and no donor tip</strong>; gifts settle in your own Stripe.</>;
         }else if(watching>0){
-          msg=<>Steward is watching <strong style={{color:T.ink}}>{watching}</strong> recurring gift{watching===1?"":"s"} for failed cards — and you keep <strong style={{color:T.ink}}>100% of every dollar</strong> (0 platform fees).</>;
+          msg=<>Steward is watching <strong style={{color:T.ink}}>{watching}</strong> recurring gift{watching===1?"":"s"} for failed cards — <strong style={{color:T.ink}}>no platform fee, no donor tip</strong>; gifts settle in your own Stripe.</>;
         }else{
-          msg=<>You keep <strong style={{color:T.ink}}>100% of every gift</strong> — 0 platform fees. Your recovered-giving and re-engaged-giving numbers appear here as you use Steward.</>;
+          msg=<><strong style={{color:T.ink}}>No platform fee, no donor tip</strong> — your gifts settle in your own Stripe. Your recovered-giving and re-engaged-giving numbers appear here as you use Steward.</>;
         }
         return (
           <div style={{background:T.white,border:"1px solid "+T.bg3,borderLeft:"3px solid "+T.gold500,borderRadius:12,padding:"12px 16px",display:"flex",alignItems:"center",gap:10}}>
@@ -1364,10 +1364,10 @@ export function Settings({auth,logout,initialSection}) {
               // Recovered (automated failed-card workflow) and re-engaged (lapsed
               // donors who came back) are DISTINCT — never merged into "recovered".
               const head=(recovered>0||reeng>0)
-                ? <>Steward has {recovered>0&&<>recovered <strong style={{color:T.green600}}>{fmt(recovered)}</strong> in failed-card gifts</>}{recovered>0&&reeng>0&&" and "}{reeng>0&&<>re-engaged <strong style={{color:T.green600}}>{fmt(reeng)}</strong> from {reengDonors} lapsed donor{reengDonors===1?"":"s"}</>}{cost!=null&&<> · your plan is <strong style={{color:T.ink}}>${cost}/mo</strong></>}. You keep 100% of every dollar.</>
+                ? <>Steward has {recovered>0&&<>recovered <strong style={{color:T.green600}}>{fmt(recovered)}</strong> in failed-card gifts</>}{recovered>0&&reeng>0&&" and "}{reeng>0&&<>re-engaged <strong style={{color:T.green600}}>{fmt(reeng)}</strong> from {reengDonors} lapsed donor{reengDonors===1?"":"s"}</>}{cost!=null&&<> · your plan is <strong style={{color:T.ink}}>${cost}/mo</strong></>}. No platform fee, no donor tip.</>
                 : watching>0
-                  ? <>Steward is watching <strong style={{color:T.ink}}>{watching}</strong> recurring donor{watching===1?"":"s"} for failed cards — money most orgs lose silently{cost!=null&&<>, on a <strong style={{color:T.ink}}>${cost}/mo</strong> plan</>}. You keep 100% of every gift.</>
-                  : <>You keep 100% of every gift — <strong style={{color:T.green600}}>$0</strong> in platform fees{cost!=null&&<>, on a <strong style={{color:T.ink}}>${cost}/mo</strong> plan</>}.</>;
+                  ? <>Steward is watching <strong style={{color:T.ink}}>{watching}</strong> recurring donor{watching===1?"":"s"} for failed cards — money most orgs lose silently{cost!=null&&<>, on a <strong style={{color:T.ink}}>${cost}/mo</strong> plan</>}. No platform fee, no donor tip.</>
+                  : <>No platform fee, no donor tip — <strong style={{color:T.green600}}>$0</strong> to Steward on every gift{cost!=null&&<>, on a <strong style={{color:T.ink}}>${cost}/mo</strong> plan</>}.</>;
               const brow=(label,value,note)=>(
                 <div style={{display:"flex",alignItems:"baseline",justifyContent:"space-between",gap:12,padding:"7px 0",borderTop:"1px solid "+T.bg3}}>
                   <div style={{flex:1}}>
@@ -1392,7 +1392,7 @@ export function Settings({auth,logout,initialSection}) {
                       {reeng>0&&brow("Re-engaged (surfaced)",fmt(reeng),
                         `${fmt(reeng)} from ${reengDonors} lapsed donor${reengDonors===1?"":"s"} who came back — a gift after a 365-day gap. Counted separately from automated recovery, never merged into it.`)}
                       {brow("Platform fees you paid Steward","$0",
-                        "Donations run on your own Stripe at a 0% platform fee — you kept 100% of every gift.")}
+                        "Donations run on your own Stripe — no platform fee, no donor tip. (Stripe's standard card fee still applies, and goes to Stripe, not to us.)")}
                       {online>0&&brow(
                         <>What you'd likely have paid elsewhere <span style={{fontSize:10,fontWeight:700,color:T.gold600,textTransform:"uppercase",letterSpacing:"0.05em"}}>· estimate</span></>,
                         "~"+fmt(impact.estimatedFeesElsewhere),

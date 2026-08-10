@@ -53,10 +53,10 @@ function ImpactLine({ impact }) {
   // Recovered (automated failed-card workflow) and re-engaged (lapsed donors who
   // came back) are DISTINCT numbers — never merged into one "recovered".
   const head = (hasRecovered || reeng > 0)
-    ? <>Steward has {hasRecovered && <>recovered <strong style={{ color: T.green600 }}>{fmt(recovered)}</strong> in failed-card gifts</>}{hasRecovered && reeng > 0 && " and "}{reeng > 0 && <>re-engaged <strong style={{ color: T.green600 }}>{fmt(reeng)}</strong> from {reengDonors} lapsed donor{reengDonors === 1 ? "" : "s"}</>}, and kept you 100% of every dollar.</>
+    ? <>Steward has {hasRecovered && <>recovered <strong style={{ color: T.green600 }}>{fmt(recovered)}</strong> in failed-card gifts</>}{hasRecovered && reeng > 0 && " and "}{reeng > 0 && <>re-engaged <strong style={{ color: T.green600 }}>{fmt(reeng)}</strong> from {reengDonors} lapsed donor{reengDonors === 1 ? "" : "s"}</>} — with no platform fee and no donor tip.</>
     : watching > 0
-      ? <>Steward is watching <strong style={{ color: T.ink }}>{watching}</strong> recurring donor{watching === 1 ? "" : "s"} for failed cards — and you keep 100% of every gift.</>
-      : <>You keep 100% of every gift — <strong style={{ color: T.green600 }}>$0</strong> paid in platform fees.</>;
+      ? <>Steward is watching <strong style={{ color: T.ink }}>{watching}</strong> recurring donor{watching === 1 ? "" : "s"} for failed cards — no platform fee, no donor tip, gifts settle in your own Stripe.</>
+      : <>No platform fee, no donor tip — <strong style={{ color: T.green600 }}>$0</strong> to Steward on every gift, settled in your own Stripe.</>;
 
   const row = (label, value, note) => (
     <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 12, padding: "7px 0", borderTop: "1px solid " + T.bg3 }}>
@@ -91,7 +91,7 @@ function ImpactLine({ impact }) {
           {row(
             "Platform fees you paid Steward",
             "$0",
-            "You process donations on your own Stripe at a 0% platform fee — you kept 100% of every gift."
+            "You process donations on your own Stripe — no platform fee, no donor tip. (Stripe's standard card fee still applies, and goes to Stripe, not to us.)"
           )}
           {online > 0 && row(
             <>What you'd likely have paid elsewhere <span style={{ fontSize: 10, fontWeight: 700, color: T.gold600, textTransform: "uppercase", letterSpacing: "0.05em" }}>· estimate</span></>,
@@ -113,7 +113,7 @@ function ImpactLine({ impact }) {
 // hidden on Core, not shown-and-locked).
 const SETUP_ITEM_META = {
   donors:     { label: "Import your donors",             why: "Steward can only watch donors it knows about",                                cta: "Import",  nav: ["donors", { openImport: true }] },
-  stripe:     { label: "Connect Stripe",                 why: "unlocks online giving and failed-card recovery — you keep 100% of every gift", cta: "Connect", nav: ["settings", { section: "giving" }] },
+  stripe:     { label: "Connect Stripe",                 why: "unlocks online giving and failed-card recovery — no platform fee, no donor tip", cta: "Connect", nav: ["settings", { section: "giving" }] },
   address:    { label: "Add your mailing address",       why: "goes in every email footer (CAN-SPAM) and clears the reminder banner",         cta: "Add",     nav: ["settings", { section: "receipts" }] },
   givingPage: { label: "Publish a giving page",          why: "a shareable page your donors can give through today",                          cta: "Publish", nav: ["settings", { section: "giving" }] },
   workflow:   { label: "Turn on your first automation",  why: "automations are how Steward watches your donors while you work",               cta: "Turn on", nav: ["workflows", undefined] },

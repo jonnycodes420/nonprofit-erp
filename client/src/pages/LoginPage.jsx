@@ -67,12 +67,10 @@ export default function LoginPage() {
         <Link to="/" style={{ textDecoration: "none", display: "flex", alignItems: "center" }}>
           <span style={{ fontFamily: "'DM Serif Display',Georgia,serif", fontWeight: 400, fontSize: 21, color: T.ink, letterSpacing: "-0.02em" }}>Steward</span>
         </Link>
-        {/* Invitation pivot (2026-08-06): no self-serve signup link — Steward
-            is invitation-only while the founding-partner group is chosen. The
-            /signup route itself stays live for accepted partners Jonathan
-            links directly. */}
-        <Link to="/invitation" style={{ fontSize: 14, color: T.ink2, textDecoration: "none" }}>
-          No account? <span style={{ color: T.forest, fontWeight: 600 }}>Request an invitation</span>
+        {/* Public signup reopened (BUILD-49): the "No account?" link points at
+            the self-serve /signup path again. */}
+        <Link to="/signup" style={{ fontSize: 14, color: T.ink2, textDecoration: "none" }}>
+          No account? <span style={{ color: T.forest, fontWeight: 600 }}>Start free</span>
         </Link>
       </nav>
 
