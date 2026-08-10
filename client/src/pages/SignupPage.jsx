@@ -88,13 +88,17 @@ export default function SignupPage() {
         </div>
 
         <div className="signup-left-hero" style={{ marginBottom: 48 }}>
-          <div style={{ fontSize: 30, fontWeight: 400, color: "#f0ede6", fontFamily: "'DM Serif Display',Georgia,serif", lineHeight: 1.25, marginBottom: 16 }}>
-            Start your free<br/>30-day trial.
+          <div style={{ fontSize: 30, fontWeight: 400, color: "#f0ede6", fontFamily: "'DM Serif Display',Georgia,serif", lineHeight: 1.25, marginBottom: 12 }}>
+            Free through<br/>December 31, 2026.
+          </div>
+          {/* Say EXACTLY what /pricing says (BUILD-50 item 1) — one offer, two surfaces. */}
+          <div style={{ fontSize: 15, color: "#c9a84c", fontWeight: 700, marginBottom: 22 }}>
+            then $149/month. No card required.
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
             {[
-              "No credit card required to start",
               "Import your donors in minutes",
+              "No platform fee · no donor tip",
               "Cancel anytime",
             ].map(t => (
               <div key={t} style={{ display: "flex", alignItems: "center", gap: 10 }}>

@@ -55,7 +55,7 @@ export default function TermsPage() {
         <p style={S.p}>You must be at least 18 years old to use the Service. Accounts may not be shared between organizations.</p>
 
         <h2 style={S.h2}>4. Payment and Billing</h2>
-        <p style={S.p}><strong>Free Trial.</strong> New accounts receive a 30-day free trial with full access to the Service. No credit card is required to start a trial.</p>
+        <p style={S.p}><strong>Free Trial.</strong> Accounts created on or before December 31, 2026 have full access to the Service free of charge through December 31, 2026. Accounts created afterward receive a 30-day free trial. No credit card is required to start.</p>
         <p style={S.p}><strong>Subscription Plans.</strong> After your trial, continued use requires a paid subscription. Current plans and pricing are displayed at <a href="/pricing" style={S.a}>stewardapp.dev/pricing</a>. Prices are in USD and billed monthly.</p>
         <p style={S.p}><strong>Billing.</strong> Subscriptions are billed in advance on a monthly basis. You authorize us to charge your payment method for all fees incurred. All fees are non-refundable except as required by law or expressly stated herein.</p>
         <p style={S.p}><strong>Cancellation.</strong> You may cancel your subscription at any time through the billing portal in Settings. Cancellation takes effect at the end of the current billing period. You retain access to the Service until that date.</p>

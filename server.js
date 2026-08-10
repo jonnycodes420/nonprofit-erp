@@ -68,6 +68,7 @@ const { google } = require("googleapis");
 const { Webhook: SvixWebhook } = require("svix");
 const { donationStripeKey, billingStripeKey, billingStripeMode, billingConfigError, otherBillingMode } = require("./stripeKeys");
 const { CANONICAL_APP_URL, resolvePublicAppUrl, publicAppUrl } = require("./publicUrl");
+const { computeTrialEnd } = require("./trialEnd");
 
 // `stripe` = DONATION processing (connected accounts + /stripe/webhook), on the
 // LIVE STRIPE_SECRET_KEY. `billingStripe` = PLATFORM subscription billing
@@ -1634,8 +1635,12 @@ app.post("/auth/register", registerLimiter, wrap(async (req, res) => {
   const orgId = "org_" + uuid().slice(0, 8);
   const userId = "user_" + uuid().slice(0, 8);
   const orgSlug = orgName.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") + "-" + orgId.slice(4, 10);
-  await run("INSERT INTO orgs (id, name, mission, ein, onboarding_complete, org_slug) VALUES (?,?,?,?,0,?)",
-    [orgId, orgName, orgMission || "", ein || "", orgSlug]);
+  // BUILD-50 item 1: this legacy route previously set no trial_ends_at (→ NULL →
+  // never expires). Give it the same free-through-2026 trial as register-org so
+  // every self-serve path honors the public promise consistently.
+  const trialEndsAt = computeTrialEnd(Date.now()).toISOString();
+  await run("INSERT INTO orgs (id, name, mission, ein, onboarding_complete, org_slug, plan, subscription_status, trial_ends_at) VALUES (?,?,?,?,0,?,'trial','trialing',?)",
+    [orgId, orgName, orgMission || "", ein || "", orgSlug, trialEndsAt]);
   const hash = bcrypt.hashSync(password, 12);
   await run("INSERT INTO users (id, org_id, email, password_hash, name, role) VALUES (?,?,?,?,?,?)",
     [userId, orgId, normalizedEmail, hash, name || email, "admin"]);
@@ -1774,7 +1779,10 @@ app.post("/auth/register-org", registerLimiter, wrap(async (req, res) => {
   const orgId  = "org_"  + uuid().slice(0, 8);
   const userId = "user_" + uuid().slice(0, 8);
   const orgSlug = orgName.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") + "-" + orgId.slice(4, 10);
-  const trialEndsAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+  // BUILD-50 item 1: honor the public "Free through December 31, 2026" promise.
+  // Orgs created in 2026 get a trial ending EOD 2026-12-31 (UTC fallback — no
+  // per-org timezone column yet); orgs created 2027+ get the standard 30 days.
+  const trialEndsAt = computeTrialEnd(Date.now()).toISOString();
 
   await run(
     "INSERT INTO orgs (id, name, onboarding_complete, org_slug, plan, subscription_status, trial_ends_at) VALUES (?,?,0,?,'trial','trialing',?)",
@@ -11116,8 +11124,8 @@ async function sendOnboardingSequence(orgId, userId, userName, userEmail) {
       },
       {
         delay_days: 28,
-        subject: "Your trial ends in 2 days",
-        body: `Hi {{first_name}},\n\nYour 30-day Steward trial ends in 2 days.\n\nIf Steward has saved you time, helped you stay on top of your donors, or made one thing easier — I'd love for you to keep using it.\n\nPlans start at $99/month. For context: that's less than what most nonprofits spend on office supplies in a month, and a fraction of what Bloomerang or Salesforce charge.\n\nhttps://stewardapp.dev/pricing\n\nIf the timing isn't right or you have questions, just reply to this email. I'm happy to extend your trial or hop on a 15-minute call.\n\nEither way — thank you for trying Steward. Building software for people doing meaningful work is the best job I've ever had.\n\n— Jonathan\nFounder, Steward\nstewardapp.dev`,
+        subject: "A month in with Steward",
+        body: `Hi {{first_name}},\n\nYou've been using Steward for about a month now.\n\nHere's the deal on cost, plainly: Steward is free for you through December 31, 2026. After that, plans are $149/month — no platform fee on your donations, no donor tips, and your gifts always settle in your own Stripe account.\n\nhttps://stewardapp.dev/pricing\n\nIf Steward has saved you time, helped you stay on top of your donors, or made one thing easier — I'd love for you to keep using it. If the timing isn't right or you have questions, just reply to this email. I read every one.\n\nEither way — thank you for trying Steward. Building software for people doing meaningful work is the best job I've ever had.\n\n— Jonathan\nFounder, Steward\nstewardapp.dev`,
       },
     ];
     for (let i = 0; i < steps.length; i++) {
@@ -13672,13 +13680,28 @@ app.post("/billing/create-checkout", requireAuth, requireAdmin, wrap(async (req,
     const customerId = await ensureStripeCustomer(req.user.orgId, req.user.email);
     if (!customerId) return res.status(404).json({ error: "Org not found" });
 
+    // BUILD-50 item 1: the Stripe subscription's trial_end MUST match what the app
+    // shows. An org that picks a plan while still inside the free period (through
+    // 2026-12-31) must not be charged until that free period ends, or an eager
+    // early checkout would silently break the public "Free through Dec 31, 2026"
+    // promise. So carry the org's app-level trial_ends_at onto the subscription as
+    // Stripe's trial_end. (This sets a trial on the SUBSCRIPTION only — it does
+    // NOT change any Stripe product or price object, so it's a code change, not a
+    // money-configuration change.) If the trial is already past, bill immediately.
+    const orgRows = await query("SELECT trial_ends_at FROM orgs WHERE id=?", [req.user.orgId]);
+    const trialEndsAtMs = orgRows[0] && orgRows[0].trial_ends_at ? new Date(orgRows[0].trial_ends_at).getTime() : null;
+    const trialEndSec = trialEndsAtMs ? Math.floor(trialEndsAtMs / 1000) : null;
+    const subData = { metadata: { orgId: req.user.orgId, plan } };
+    // Stripe requires trial_end strictly in the future; guard with a small margin.
+    if (trialEndSec && trialEndSec > Math.floor(Date.now() / 1000) + 60) subData.trial_end = trialEndSec;
+
     const sessionParams = {
       mode: "subscription",
       line_items: [{ price: priceId, quantity: 1 }],
       success_url: publicAppUrl() + "/dashboard?subscribed=true",
       cancel_url:  publicAppUrl() + "/pricing",
       metadata: { orgId: req.user.orgId, plan },
-      subscription_data: { metadata: { orgId: req.user.orgId, plan } },
+      subscription_data: subData,
       customer: customerId,
     };
 
