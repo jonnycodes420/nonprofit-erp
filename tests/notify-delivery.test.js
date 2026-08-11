@@ -108,14 +108,20 @@ const toList = m => [].concat(m.to || []);
   // ── 3. daily task reminder → once per user, once per day ──
   {
     received = []; attempts = 0;
-    await q(`UPDATE tasks SET due=$2 WHERE org_id=$1`, [ORG, new Date().toISOString().slice(0, 10)]);
-    const r1 = await api("POST", "/digests/run-daily", token, {});
+    // Pin ONE date for both the task due and the run's `today` — after ~8 PM
+    // EDT the UTC calendar date is already tomorrow, so letting the server
+    // derive its own local `today` made this leg a time-of-day flake (the
+    // BUILD-49 boundary class): due(UTC) > today(local) → nothing due → no
+    // send. The ops hook takes {today} for exactly this.
+    const dueDay = new Date().toISOString().slice(0, 10);
+    await q(`UPDATE tasks SET due=$2 WHERE org_id=$1`, [ORG, dueDay]);
+    const r1 = await api("POST", "/digests/run-daily", token, { today: dueDay });
     ok("run-daily 200", r1.status === 200, r1.body);
     await settle();
     ok("daily reminder: exactly ONE message (one user has due tasks)", received.length === 1, received.map(m => m.to));
     ok("daily reminder: recipient is the user with due tasks", toList(received[0] || {}).includes(OFFICER), received[0]?.to);
     const before = received.length;
-    await api("POST", "/digests/run-daily", token, {});
+    await api("POST", "/digests/run-daily", token, { today: dueDay });
     await settle();
     ok("daily reminder: rerun same day sends NOTHING (period reserved)", received.length === before, received.length);
   }
