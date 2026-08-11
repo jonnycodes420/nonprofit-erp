@@ -17,9 +17,12 @@ import { fmtFull } from "../lib/money";
 
 // Same-origin in production via the vercel.json /portal-api proxy (the cookie
 // must be first-party); direct in dev (localhost ports are same-site).
-const PORTAL_BASE = import.meta.env.PROD
-  ? "/portal-api"
-  : (import.meta.env.VITE_API_URL || "http://localhost:3001") + "/portal";
+// VITE_PORTAL_API is the local-capture override (a `vite build` for the
+// scratch stack is still PROD to Vite, but has no /portal-api proxy).
+const PORTAL_BASE = import.meta.env.VITE_PORTAL_API
+  || (import.meta.env.PROD
+    ? "/portal-api"
+    : (import.meta.env.VITE_API_URL || "http://localhost:3001") + "/portal");
 
 async function pfetch(path, opts = {}) {
   const r = await fetch(PORTAL_BASE + path, {

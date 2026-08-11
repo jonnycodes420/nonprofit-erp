@@ -1,149 +1,117 @@
-# BUILD-45 — two dashboard defects found in live review (2026-08-08, pre-Fairhope)
+# BUILD-45 — Donor Portal (white-label) — FINDINGS
 
-Scope: the two demo-visible UI defects Jonathan found on prod (D-1, D-2), plus
-the demo-data junk cleanup (D-3). This file is the required write-up for the
-**D-2 diagnosis** ("diagnose first, then fix — do not assume") and records the
-D-1 routing note and the Fix B seed arithmetic.
+Run 2026-08-10/11 (autonomous overnight build). NB this is the THIRD use of
+the "BUILD-45" label; the 2026-08-08 dashboard-defects findings moved to
+`audit/BUILD-45-dashboard-FINDINGS.md`. Verification notes (what was read
+before building): `audit/BUILD-45-NOTES.md`. Strategic note: this build
+deliberately reverses the 2026-07-12 "no donor-facing portal" decision while
+keeping its substance (no passwords, no tiers/badges/leaderboards, no streak
+claims, no cancel friction) — recorded in NOTES, not accidental.
 
----
+Evidence keys: `tests/portal.test.js` (67), `tests/gift-idempotency.test.js`
+(39), the updated `concurrency2` (16) / `state-diff` (68) / `state-diff2`
+(101) / `attribution-completeness` (70) suites, `audit/routes.md` (BUILD-45
+section), `audit/portal-data-handling.md`, `docs/build45-portal-demo/`
+(7 DSF3 screenshots incl. the day-view drift alert).
 
-## D-2 · DIAGNOSIS — the three `$0` tiles are ARITHMETICALLY CORRECT (no aggregation bug)
+## Verdict table
 
-**Verdict: there are ZERO ask (opportunity) records in the demo org.** The tiles
-read `$0 / 0 open / 0 won` because the org has never had an ask logged — not
-because a rollup is broken. This is diagnosis outcome **#3** in the brief ("If
-zero asks exist, the tiles are arithmetically correct and both fixes below still
-apply"). Fix A (stop rendering `$0` for absence) and Fix B (seed believable
-asks) both proceed.
-
-### How it was confirmed (prod demo org `org_creo`, via the live API, 2026-08-08)
-
-The `opportunities` table is Steward's "asks" table (see server.js
-`POST /donors/:id/opportunities`, the `moves`/pipeline system). There is no
-raw-table dump endpoint, so the org-wide ask counts were read from the two
-aggregate surfaces that sum every opportunity in the org:
-
-1. **`GET /reports/solicitations`** — org-wide, all officers:
-   - `forecast.open = 0`, `forecast.weighted = 0`, `openPledges = 0`
-   - `byStage`: every one of the six stages `count 0 · ask 0`
-   - `byOfficer`: **all three officers** (`user_admin` "Admin User",
-     `user_jonathan` "Jonathan", `user_0a9d3327` "Jonathan Atkinson") report
-     `openAsks 0 · asksMade 0 · giftsClosed 0 · winRate null`
-   - `aging: []`
-2. **`GET /pipeline?scope=all`** — the board itself: **16 donors** on the board
-   (prospect 2 · qualify 1 · cultivate 0 · solicit 4 · steward 9 · lapsed 0),
-   and **every single card** reports `askAmount 0 · openOppCount 0`.
-3. `GET /pipeline` forecast: `{open:0, weighted:0, openCount:0, wonThisPeriod:0, wonCount:0}`.
-
-Both the **counts** (0 open, 0 won across every officer and every stage) and the
-**sums** ($0) are zero, and no card carries an open opportunity. That is the
-signature of "no ask records exist at all," not a broken aggregation (a rollup
-bug would show non-zero counts summing to $0, or cards with asks the header
-ignores). The subtitles `0 open` / `0 won` were the tell, exactly as the brief
-predicted.
-
-**No new HIGH finding.** The rollup code (`GET /pipeline` forecast in server.js,
-`STAGE_WEIGHT`-weighted) is correct; it had nothing to sum. No goal-rollup
-assertion was added for an aggregation bug because there is no aggregation bug;
-instead `tests/pipeline.test.js` continues to pin that a zero-opportunity board
-returns `openCount:0 / wonCount:0` and a seeded board returns the exact sums
-(see Fix B).
-
-### The 16 donors on the board (for reference / Fix B sizing)
-
-| id | name | stage | lifetime | last gift | last gift $ | gifts |
-|---|---|---|---|---|---|---|
-| d1 | Margaret Chen | steward | $100,000 | 2026-08-04 | — | — |
-| d4 | Sunrise Foundation | **solicit** | $91,500 | 2026-06-16 | $1,500 | 5 |
-| d6 | William Park | **solicit** | $31,700 | 2026-04-30 | $25,000 | 8 |
-| dseed_06 | Julian Marsh | **solicit** | $25,000 | 2026-05-20 | $10,000 | 3 |
-| dseed_05 | Vanessa Cole | **solicit** | $12,500 | 2026-07-07 | $4,500 | 3 |
-| d3 | James Okafor | steward | $15,200 | 2026-05-16 | — | — |
-
-(steward/prospect/qualify donors omitted except those used by Fix B's closed asks.)
-
----
-
-## D-1 · ROUTING NOTE — `/donors/:id` was NOT a route; a minimal deep-link route was added
-
-The brief requires the attention-row main to be a **real `<a href="/donors/:id">`**
-that survives cmd-click / middle-click / "open in new tab", and its committed
-test asserts `href === "/donors/" + donorId`.
-
-**Conflict with the actual code:** the SPA (`client/src/main.jsx`) had **no
-`/donors/:id` route**. Donor profiles are opened via in-app state
-(`onNavigate("donors",{selectDonorId})`) while the URL stays `/dashboard`, and
-the router's catch-all (`path="*"`) **redirects any unknown path to `/`** (the
-public landing page). So a literal `<a href="/donors/d4">` would, on cmd-click,
-have opened a new tab that lands on the **landing page** — the exact opposite of
-the goal.
-
-**Resolution (implemented, flagged here for morning review):** rather than ship a
-fake anchor or write this off as BLOCKED, the required URL was made real. A
-minimal deep-link route was added:
-
-- `client/src/main.jsx`: `<Route path="/donors/:donorId" element={<RequireOnboarded><App/></RequireOnboarded>} />`
-  (before the catch-all).
-- `client/src/App.jsx`: on mount, if `location.pathname` matches `/donors/:id`,
-  the shell opens that donor's profile (`navigateTo("donors",{selectDonorId})`)
-  and `replaceState`s the URL back to `/dashboard` — the same pattern already
-  used for `?stripe_connected` / `?subscribed`.
-
-This is the smallest change that makes the specified href genuinely navigable
-(fresh load, cmd-click, middle-click all land on the donor). It touches routing,
-which the brief scoped tightly ("do not refactor anything else"), so it is called
-out explicitly here: **the brief assumed `/donors/:id` already existed as a
-linkable URL; it did not, so it was created.** No other routing behavior changed.
-
----
-
-## D-2 Fix B — asks seeded into the demo org (`scripts/seed-build45-asks.js`)
-
-Run against **prod `org_creo`** on 2026-08-08. The script is idempotent (any
-existing opportunity → strict no-op) and reversible (every row is a normal
-`opportunities` record). Each open ask is a credible step up from that donor's
-own history and **never exceeds 2× their largest prior gift** (computed per
-donor, printed with the cap).
-
-### Open asks (all four Solicit-stage prospects)
-
-| Donor | Last gift | Largest prior | 2× cap | **Ask** |
+| ID | Check | Verdict | Evidence | Severity |
 |---|---|---|---|---|
-| Sunrise Foundation | $1,500 | $25,000 | $50,000 | **$32,500** |
-| William Park | $25,000 | $25,000 | $50,000 | **$32,500** |
-| Julian Marsh | $10,000 | $10,000 | $20,000 | **$12,500** |
-| Vanessa Cole | $4,500 | $5,000 | $10,000 | **$7,500** |
+| F-3 | Gift idempotency at the DB (every non-webhook path; 2× sequential + 50× concurrent → 1 row, 0 side-effect replays) | **FIXED** | gift-idempotency.test.js §F-3; uq_gifts_idem | was HIGH |
+| F-4 | Import twin-collapse — (donor,amount,date) never a silent dedup key; external-ID column is the one dedup key (cross-run idempotent); collisions held for human review | **FIXED** | gift-idempotency.test.js §F-4; import UI report | was HIGH (pilot-blocking) |
+| F-5 | Pledge partial payments — paid applies against balance; every "pledged" figure reads remaining; reopen/refulfill coherent under delete/edit/refund | **FIXED** | gift-idempotency.test.js §F-5; reviewed manifest edits in state-diff/attribution | was MEDIUM |
+| P-1 | Magic link only: 256-bit CSPRNG, 15-min, single-use (atomic), invalidated on re-request; hash-at-rest | PASS | portal.test.js §2 | — |
+| P-2 | No enumeration: identical response + async-work timing for known/unknown email | PASS | portal.test.js §2 | — |
+| P-3/S-5 | Rate limits per IP + per target email + per mutation route, proven by scripted burst against the REAL limiter | PASS | portal.test.js §7 (x-test-enforce-limits seam, prod-inert) | — |
+| P-4/S-3 | Separate cookie+table; portal session × 15 staff routes → 401; staff JWT × every portal route → 401 | PASS | portal.test.js sweeps | — |
+| P-5 | Tenancy: path-based `/portal/:orgSlug` + same-origin `/portal-api` proxy (documented decision); custom CNAMEs deferred | DECIDED | BLOCKED-custom-domains.md | — |
+| P-6 | One email/many records: all same-email records in-org render; other-org same-email session independent (401 cross-slug); household in a separate labeled section | PASS | portal.test.js §3 | — |
+| P-7 | Audit rows on link-request/session-create/every mutation (donor, org, IP, action) | PASS | portal.test.js + portal_audit_log | — |
+| §3 | Portal totals == gift-row SUMs == donor summaries (ONE ledger); receipts reuse stored PDFs; thin-data honesty (no streaks/percentages; empty sections hidden) | PASS | portal.test.js §3 | — |
+| R-1 | Amount change: server re-priced, integer minor units, org floor, proration none | PASS | portal.test.js §4 (Stripe mock asserts unit_amount + proration) | — |
+| R-2/R-3 | Pause (opt auto-resume) → Stripe pause_collection void; dunning over a paused schedule sends NOTHING; resume explicit + webhook auto-resume path | PASS | portal.test.js §4 | — |
+| R-4 | Cancel: one confirm, optional skippable reason, no dark patterns; org alerted in minutes | PASS | portal.test.js + Portal.jsx | — |
+| R-5 | Card update = existing setup-mode Checkout; PAN/CVC never touch Steward | PASS | portal.test.js (URL reuse) | — |
+| R-6 | New gift from portal = link into the EXISTING giving page, email prefilled (page exists per-org → not blocked) | PASS | Portal.jsx give card | — |
+| R-7 | Concurrency: pause×amount race coherent; double-cancel → one winner, one alert; 50× gift burst → 1 row | PASS | portal.test.js + gift-idempotency.test.js | — |
+| R-8 | Every mutation: donor email (org letterhead) + CRM timeline + notification pipeline (notification_failures retry infra reused, no second path) | PASS | portal.test.js §4 | — |
+| §5 | Theme record, CSS vars, upload validation, contrast guard (normalizeAccent — deepens + tells admin), powered-by OFF by default, designed default | PASS | portal.test.js + Settings › Donor Portal | — |
+| §6.2 | Deterministic impact matching on existing gift attribution (24-mo), org-wide fallback, no classifier | PASS | portal.test.js §3 | — |
+| §6.3 | Drift wire: cancel/pause → officer email (ED fallback) + high-priority due-today task on the day view; recovery email links into the portal; engagement events on timeline, never alerted | PASS | portal.test.js + day-view screenshot | — |
+| S-1 | Route inventory updated; every new route classed + isolation-marked | PASS | audit/routes.md §BUILD-45 | — |
+| S-2 | Donor A × Donor B objects → 404 (gifts absent, receipt 404, sub 404, impact 404); session × org B slug → 401 | PASS | portal.test.js | — |
+| S-4 | Token entropy/expiry/single-use/POST-consumed/fragment (no Referer leak) | PASS | portal.test.js §2 | — |
+| S-6 | Stored-XSS pass: org-authored fields stored as data, delivered as JSON; portal client has NO dangerouslySetInnerHTML; email interpolation escaped | PASS | portal.test.js + grep | — |
+| S-7 | No PII/tokens/card data in logs or error pipeline on new routes (console.error message-only) | PASS | grep in this build (see NOTES) | — |
+| S-8 | Bundle secret grep clean (sk_/whsec_/re_/JWT_SECRET/SUPABASE absent from dist) | PASS | build grep | — |
+| S-9 | Receipt/PDF downloads session-scoped, ownership-checked, never guessable | PASS | portal.test.js | — |
+| S-10 | D11 card-testing: the portal adds NO new public payment surface (gift = existing giving page with its existing protections; card update = existing signed Checkout flow) | PASS by construction | routes.md | — |
 
-### Weighted forecast — reconciles by hand (all open asks are Solicit → weight 0.7)
+## Out of scope (deliberately NOT built, per §8)
 
-```
-$32,500 × 0.7 = $22,750   (Sunrise Foundation)
-$32,500 × 0.7 = $22,750   (William Park)
-$12,500 × 0.7 =  $8,750   (Julian Marsh)
- $7,500 × 0.7 =  $5,250   (Vanessa Cole)
-────────────────────────────────────────────
-OPEN ASKS          = $85,000   (4 open)
-WEIGHTED FORECAST  = $59,500
-```
+Passwords/social login for donors · custom CNAME domains
+(`BLOCKED-custom-domains.md`) · donor-to-donor anything · native apps ·
+events/ticketing/P2P · AI-generated impact copy or auto-classification ·
+Team-tier changes · proration math · multi-currency. None were improvised.
 
-### Closed asks (dated now → inside the current fiscal year FY2027, Jul 2026–Jun 2027)
+## Deviations / judgment calls (flagged for morning review)
 
-- **Closed-won:** Margaret Chen **$62,500**, Elena Marchetti **$10,000** → `CLOSED THIS FY = $72,500 (2 won)`.
-- **Closed-lost:** Priya Anand $7,500 → so the board is not a fake 100% win rate.
+1. **Stripe test seam** — `STRIPE_API_BASE` env (constructor host override,
+   the RESEND_BASE_URL pattern) so the money-mutation suites drive the
+   Stripe-first paths against a local mock. Unset in production; documented
+   in run-all.sh/README/ci.yml.
+2. **Rate-limit test seam** — the portal limiters honor two `x-test-*`
+   headers ONLY under `DISABLE_RATE_LIMIT=1` (the scratch stack) so the
+   burst suite exercises the real limiter; production ignores them.
+3. **Portal client palette** — `pages/Portal.jsx` added to the
+   brand-allowlist EXCLUDE list (documented): a white-label surface carries
+   the ORG's server-validated theme, deliberately not Steward's palette.
+4. **§3's "390px/1440px both money formats" wiring check** — done at the
+   API level (portal == DB == CRM equality proven) + DSF3 screenshots at
+   both widths; a committed browser-DOM assertion suite in the
+   presentation-wiring style was NOT written for the portal this pass.
+   Follow-up candidate, not a correctness gap (the client renders via the
+   shared `fmtFull`).
+5. **Prod demo seeding is a two-step**: `scripts/seed-build45-portal-demo.js`
+   runs the API-driven dressing against prod (portal on, theme, impact
+   updates) AFTER the Railway deploy lands; the paused/cancel drift pieces
+   need real Stripe subscription rows, so they are demonstrated on the local
+   stack (`docs/build45-portal-demo/`) — do not hand-insert fake subs in prod.
+6. **Time-flake fix in notify-delivery** — the §1 push exposed the
+   documented UTC/local daily-reminder boundary flake; fixed by pinning
+   {today} (test-only change, committed separately).
 
-### The tiles now read (verified live on prod after seeding)
+## §10 — the app-sec review note (unchanged structural blind spot)
 
-`GET /pipeline` (the demo admin's default scope, which owns all 16 board donors):
-```
-open=$85,000  weighted=$59,500  openCount=4  wonThisPeriod=$72,500  wonCount=2
-```
-`GET /reports/solicitations` → officer **win rate 33.3%** (2 closed of 6 asks) — honestly not 100%.
+The external app-sec review ($2–4k) was already gated on real donor files.
+This build **adds an unauthenticated public surface and donor self-serve
+money mutations to its scope** — it is now more necessary, not less, and
+should be booked BEFORE pilot orgs' donors get portal links.
+`audit/portal-data-handling.md` is the review's source material. The same
+intelligence that wrote this portal wrote its tests; that structural blind
+spot is unchanged.
 
-So the header now reads **OPEN ASKS $85,000 · WEIGHTED FORECAST $59,500 · CLOSED THIS FY $72,500**, all wired to real records rather than decorative.
+## The worry paragraph
 
-### Design question flagged, NOT changed this build
-
-The pipeline cards show `$X given` (lifetime giving). On a *prospect* pipeline
-the number a development officer wants on the card face is the **ask amount**,
-with lifetime giving secondary. Recorded here as a design question per the brief;
-not changed in BUILD-45.
+If 10,000 donors hit this next month, here is what I would still be nervous
+about. First, the Stripe-mutation paths have never touched real Stripe: the
+mock proves we SEND the right calls (pause_collection void, unit_amount,
+proration none, cancel_at_period_end), not that Stripe's real responses —
+partial failures, webhook ordering against `customer.subscription.updated`,
+a pause landing mid-invoice — behave the way the local state machine
+assumes. One real-money test subscription must be paused, re-priced, and
+canceled through the live portal before any pilot donor sees it. Second,
+email deliverability is now a security-adjacent dependency: the entire auth
+model is "the donor's inbox", and I could not verify real inbox placement of
+the magic-link mail (SPF/DKIM are set, but a spam-foldered link IS a login
+outage — watch the `link_requested`→`session_created` audit funnel in the
+first week). Third, the enumeration guard holds at the HTTP layer, but the
+per-email rate limiter keys on attacker-supplied input; a distributed
+attacker gets 20 probes per IP per 15 minutes — fine for five pilots,
+worth revisiting (per-org daily caps) before the portal URL is on 10,000
+receipts. Fourth, `portal_audit_log` grows unboundedly and holds email+IP
+with no retention policy — an attorney question before scale, not after.
+And the standing one: the same intelligence that built this surface wrote
+every test that says it's safe; the external review in §10 is the check on
+that, and it should happen before the pilot send, not after.

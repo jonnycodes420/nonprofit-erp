@@ -311,3 +311,52 @@ Extracted from `server.js` — **283 routes**. Auth = strongest guard on the rou
 | DELETE | `/admin/orgs/:id` | requireSuperAdmin | yes |
 | POST | `/admin/orgs/:id/change-plan` | requireSuperAdmin | yes |
 | POST | `/admin/orgs/:id/extend-trial` | requireSuperAdmin | yes |
+
+---
+
+## BUILD-45 (2026-08-10) — Donor Portal routes
+
+A NEW auth class exists: **PORTAL** — donor sessions in a separate HttpOnly
+SameSite=Lax cookie (`portal_sessions` table, hash-at-rest), read ONLY by
+`requirePortalSession`, which ignores `Authorization` entirely; every staff
+route ignores the cookie. Proven both directions by `tests/portal.test.js`'s
+differential sweep (portal cookie × 15 staff routes → 401; staff JWT × every
+portal session route → 401). Tenancy is path-based (`/portal/:orgSlug`);
+a session is pinned to ONE org — a valid session against another org's slug
+is a 401. In production these routes are reached same-origin through the
+vercel.json `/portal-api/*` proxy.
+
+### PUBLIC (portal, 4) — enumeration-safe, rate-limited
+
+| Method | Path | Middleware | Isolation coverage |
+|---|---|---|---|
+| GET | `/portal/:orgSlug/config` | - | slug→enabled-portal only; theme data is org-authored public content |
+| POST | `/portal/:orgSlug/request-link` | portalLinkIpLimiter+portalLinkEmailLimiter | P-2 identical response/timing known-vs-unknown email (tested); S-5 burst-tested per IP AND per target email |
+| POST | `/portal/:orgSlug/verify` | portalLinkIpLimiter | S-4: POST-consumed, atomic single-use UPDATE…RETURNING, 15-min expiry, re-request invalidates (all tested) |
+| POST | `/portal/:orgSlug/logout` | - | revokes by cookie hash only |
+
+### PORTAL (donor session, 9)
+
+| Method | Path | Middleware | Isolation coverage |
+|---|---|---|---|
+| GET | `/portal/:orgSlug/session` | requirePortalSession | org-pinned session |
+| GET | `/portal/:orgSlug/me` | requirePortalSession | donors = exact-email match in session org only (P-6); Donor B's data proven absent |
+| GET | `/portal/:orgSlug/receipts/:id/pdf` | requirePortalSession | S-9: session-scoped, donor-ownership checked; foreign receipt → 404 (tested) |
+| POST | `/portal/:orgSlug/impact/:updateId/viewed` | requirePortalSession | org-scoped update lookup → 404 foreign (tested) |
+| POST | `/portal/:orgSlug/recurring/:subId/pause` | portalMutationLimiter+requirePortalSession | ownership via donor-email match → foreign 404 (tested); per-sub advisory lock (R-7 tested) |
+| POST | `/portal/:orgSlug/recurring/:subId/resume` | portalMutationLimiter+requirePortalSession | same |
+| POST | `/portal/:orgSlug/recurring/:subId/amount` | portalMutationLimiter+requirePortalSession | same + server-authoritative repricing |
+| POST | `/portal/:orgSlug/recurring/:subId/cancel` | portalMutationLimiter+requirePortalSession | same; double-cancel race → one winner (tested) |
+| POST | `/portal/:orgSlug/recurring/:subId/update-card` | portalMutationLimiter+requirePortalSession | foreign sub 404 (tested); returns the EXISTING signed setup-Checkout URL |
+
+### Staff-side portal admin (7)
+
+| Method | Path | Auth | Notes |
+|---|---|---|---|
+| GET | `/portal-settings` | AUTH | org-scoped read |
+| PUT | `/portal-settings` | ADMIN+checkWriteAccess | color contrast guard (normalizeAccent), image mime/size validation |
+| GET | `/impact-updates` | AUTH | org-scoped |
+| POST | `/impact-updates` | ADMIN+checkWriteAccess | targets validated org-owned (fund/campaign) → foreign 404 |
+| PUT | `/impact-updates/:id` | ADMIN+checkWriteAccess | org-scoped, same validation |
+| DELETE | `/impact-updates/:id` | ADMIN | DELETE convention (ungated by write access) |
+| GET | `/portal-audit` | ADMIN | org-scoped audit trail read |

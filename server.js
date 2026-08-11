@@ -136,7 +136,7 @@ const extraCorsOrigins = process.env.CORS_ORIGIN
   : [];
 const corsOrigins = [...new Set([...DEFAULT_CORS_ORIGINS, ...extraCorsOrigins])];
 // credentials:true is required for the donor portal's HttpOnly session cookie
-// in LOCAL dev (SPA on :4173 → API on :5601 — same-site on localhost, but the
+// in LOCAL dev (SPA on :4173 → API on :5601 — same-site on loopback, but the
 // fetch must opt in). In production the portal API is SAME-ORIGIN via the
 // vercel.json /portal-api proxy, so no cross-origin cookie ever flows. The
 // origin list stays the explicit allowlist — never "*" with credentials.
@@ -15169,10 +15169,11 @@ function parsePortalCookies(req) {
 function setPortalCookie(res, token, maxAgeSec) {
   // HttpOnly + Secure + SameSite=Lax, 30-day max-age (P-4). Path=/ because in
   // production the browser-visible path is /portal-api/* (the proxy prefix).
-  const parts = [`${PORTAL_COOKIE}=${encodeURIComponent(token)}`, "HttpOnly", "SameSite=Lax", "Path=/",
-    `Max-Age=${maxAgeSec}`];
-  if (process.env.NODE_ENV !== "development" && !String(process.env.CORS_ORIGIN || "").includes("localhost")) parts.push("Secure");
-  res.append("Set-Cookie", parts.join("; "));
+  // Secure is unconditional: browsers treat the loopback origin as trustworthy,
+  // so local dev still works, and production can never downgrade.
+  res.append("Set-Cookie",
+    [`${PORTAL_COOKIE}=${encodeURIComponent(token)}`, "HttpOnly", "Secure", "SameSite=Lax", "Path=/",
+     `Max-Age=${maxAgeSec}`].join("; "));
 }
 
 // One org lookup for every portal route: slug → org row + portal settings.
