@@ -72,11 +72,15 @@ ok("EXTRAS never smuggles a banned library color", BANNED.every(v => !EXTRAS.inc
 // ── 4) Scan scope ──
 // Excluded, documented:
 //   pages/AdminDashboard.jsx — super-admin ops tool with its own `A` palette
+//   pages/Portal.jsx — BUILD-45 donor portal: a deliberately WHITE-LABEL
+//     public surface that carries the ORG's server-validated theme (CSS vars
+//     + warm neutrals), never Steward's palette — Steward-invisible by design
 //   components/{Events,Board,Volunteers,Programs,AnnualFund}.jsx — hidden/
 //     deprecated surfaces (pivot backlog, not in any nav; AnnualFund and
 //     Programs are not even imported)
 const EXCLUDE = new Set([
   "pages/AdminDashboard.jsx",
+  "pages/Portal.jsx",
   "components/Events.jsx", "components/Board.jsx", "components/Volunteers.jsx",
   "components/Programs.jsx", "components/AnnualFund.jsx",
 ]);

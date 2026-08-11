@@ -43,6 +43,7 @@ jobs:
       DEMO_SMTP_FROM: noreply@stewardapp.dev
       STRIPE_SECRET_KEY: sk_test_dummy
       STRIPE_WEBHOOK_SECRET: whsec_localtest
+      STRIPE_API_BASE: http://localhost:5603   # BUILD-45 — donation Stripe client → the portal suite's local mock
 
     steps:
       - uses: actions/checkout@v4

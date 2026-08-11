@@ -76,7 +76,16 @@ const { computeTrialEnd } = require("./trialEnd");
 // STRIPE_BILLING_SECRET_KEY when set — so billing can run in Stripe TEST mode
 // without disturbing live donations — falling back to STRIPE_SECRET_KEY when it
 // isn't. The two clients are deliberately independent; do not cross-wire them.
-const stripe = donationStripeKey() ? new Stripe(donationStripeKey()) : null;
+// BUILD-45 — STRIPE_API_BASE is a LOCAL-TEST seam only (the RESEND_BASE_URL
+// pattern): when set, the donation client talks to a local mock so the portal
+// money-mutation suites can drive Stripe-first paths without credentials or
+// network. Never set in production — Railway env does not define it.
+const stripeTestBaseOpts = (() => {
+  if (!process.env.STRIPE_API_BASE) return {};
+  const u = new URL(process.env.STRIPE_API_BASE);
+  return { host: u.hostname, port: u.port || (u.protocol === "https:" ? "443" : "80"), protocol: u.protocol.replace(":", "") };
+})();
+const stripe = donationStripeKey() ? new Stripe(donationStripeKey(), stripeTestBaseOpts) : null;
 const billingStripe = billingStripeKey() ? new Stripe(billingStripeKey()) : null;
 
 function makeOAuth2Client() {
@@ -126,7 +135,12 @@ const extraCorsOrigins = process.env.CORS_ORIGIN
   ? process.env.CORS_ORIGIN.split(",").map(o => o.trim()).filter(Boolean)
   : [];
 const corsOrigins = [...new Set([...DEFAULT_CORS_ORIGINS, ...extraCorsOrigins])];
-app.use(cors({ origin: corsOrigins }));
+// credentials:true is required for the donor portal's HttpOnly session cookie
+// in LOCAL dev (SPA on :4173 → API on :5601 — same-site on localhost, but the
+// fetch must opt in). In production the portal API is SAME-ORIGIN via the
+// vercel.json /portal-api proxy, so no cross-origin cookie ever flows. The
+// origin list stays the explicit allowlist — never "*" with credentials.
+app.use(cors({ origin: corsOrigins, credentials: true }));
 
 // ── Rate limiting ────────────────────────────────────────────────────────
 // Shared 429 handler: explicit Retry-After header + a body shape that can't be
@@ -697,6 +711,17 @@ app.post("/stripe/webhook", express.raw({ type: "application/json" }), async (re
       const inv = event.data.object;
       if (inv.subscription && !(await recoveryEventAlreadyProcessed(event.id))) {
         const existingRows = await query("SELECT * FROM recurring_subscriptions WHERE stripe_subscription_id=?", [inv.subscription]);
+        // BUILD-45 R-3: a PAUSED schedule that charges again means Stripe's
+        // pause_collection auto-resume (resumes_at) fired — flip it active and
+        // clear the pause bookkeeping. Not a "recovery" (no failure cycle).
+        if (existingRows.length && existingRows[0].status === "paused") {
+          const rsP = existingRows[0];
+          await run(
+            `UPDATE recurring_subscriptions SET status='active', paused_at=NULL, resume_at=NULL, updated_at=NOW() WHERE id=?`,
+            [rsP.id]);
+          await run("UPDATE donors SET stripe_subscription_status='active' WHERE id=? AND org_id=?", [rsP.donor_id, rsP.org_id]).catch(() => {});
+          await portalTimeline(rsP.org_id, rsP.donor_id, "Portal: paused recurring gift auto-resumed on schedule", "recurring_autoresume").catch(() => {});
+        }
         if (existingRows.length && ["past_due", "recovering"].includes(existingRows[0].status)) {
           const rs = existingRows[0];
           const orgRows = await query(
@@ -6816,6 +6841,34 @@ app.get("/dashboard/today", requireAuth, wrap(async (req, res) => {
     });
   }
 
+  // BUILD-45 §6.3 drift wire — a donor who canceled or paused their recurring
+  // gift FROM THE PORTAL in the last 7 days is a "needs you today" item. A
+  // cancellation the org learns about in minutes is a save opportunity; one it
+  // discovers at month-end is a lapse statistic. Outranks the failed-card
+  // bucket (85): this donor made a deliberate choice minutes-to-days ago.
+  const portalDrift = await query(`
+    SELECT DISTINCT ON (pal.donor_id) pal.donor_id, pal.action, pal.created_at,
+           d.name AS donor_name, d.total_giving,
+           rs.amount, rs.interval
+    FROM portal_audit_log pal
+    JOIN donors d ON d.id = pal.donor_id AND d.org_id = pal.org_id AND d.deleted_at IS NULL
+    LEFT JOIN recurring_subscriptions rs ON rs.id = (pal.meta->>'subId') AND rs.org_id = pal.org_id
+    WHERE pal.org_id = ? AND pal.action IN ('recurring_cancel','recurring_pause')
+      AND pal.created_at > NOW() - INTERVAL '7 days' ${scopeClause}
+    ORDER BY pal.donor_id, pal.created_at DESC
+    LIMIT 5
+  `, [orgId, ...scopeParams]).catch(() => []);
+  for (const pd of portalDrift) {
+    const verb = pd.action === "recurring_cancel" ? "canceled" : "paused";
+    const amountStr = pd.amount != null ? `$${Number(pd.amount).toLocaleString()}/${pd.interval === "year" ? "yr" : "mo"}` : "their recurring gift";
+    upsertItem({
+      donorId: pd.donor_id, donorName: pd.donor_name,
+      reason: `${verb === "canceled" ? "Canceled" : "Paused"} ${amountStr} via the portal — reach out today, thank them, learn what changed`,
+      priority: 88, action: "call",
+      totalGiving: parseFloat(pd.total_giving) || 0,
+    });
+  }
+
   // Matching-gift opportunities — a recent donor whose employer has a known
   // matching-gift program (see matchingGifts.js), real dollar upside for a
   // simple ask. Low priority relative to everything above (failed payments,
@@ -7564,8 +7617,19 @@ async function sendDunningEmail(org, donor, subscriptionRow) {
   const updateUrl = buildCardUpdateUrl(subscriptionRow.stripe_subscription_id, org.id);
   const tokenCtx = { donor, org, amount: subscriptionRow.amount, updateUrl };
   const subject = applyDunningTokens(org.recurring_dunning_subject || DEFAULT_DUNNING_SUBJECT, tokenCtx);
+  // BUILD-45 §6.3 — when the org's donor portal is enabled, the recovery email
+  // also links the donor into their portal (magic-link sign-in — no staff, no
+  // password) so they can fix the card or manage the gift themselves.
+  let portalLine = "";
+  try {
+    const [ps] = await query(`SELECT ps.enabled, o.org_slug FROM portal_settings ps JOIN orgs o ON o.id = ps.org_id WHERE ps.org_id = ?`, [org.id]);
+    if (ps && ps.enabled === true && ps.org_slug) {
+      portalLine = `<p style="font-size:13px;color:#555;text-align:center;">Prefer to manage everything yourself? <a href="${publicAppUrl()}/portal/${ps.org_slug}">Sign in to your donor portal</a> — no password needed.</p>`;
+    }
+  } catch { /* portal line is optional */ }
   const bodyHtml = await brandEmailHeaderHtml(org.id)
     + applyDunningTokens(org.recurring_dunning_body || DEFAULT_DUNNING_BODY, tokenCtx)
+    + portalLine
     + await unsubscribeEmailFooterHtml(donor.email, org.id, "campaign");
   const smtpFrom = process.env.DEMO_SMTP_FROM || "noreply@stewardapp.dev";
   if (process.env.RESEND_API_KEY) {
@@ -15075,6 +15139,770 @@ app.get("/org/export/csv", requireAuth, requireAdmin, wrap(async (req, res) => {
   for (const [name, csv] of Object.entries(files)) archive.append(csv, { name });
   await archive.finalize();
 }));
+
+// ══════════════════════════════════════════════════════════════════════════
+// BUILD-45 — DONOR PORTAL (public, money-moving, PII-bearing; §2–§6)
+//
+// Tenancy is path-based: /portal/:orgSlug (production reaches these routes
+// same-origin through the vercel.json /portal-api proxy, so the SameSite=Lax
+// HttpOnly session cookie flows; custom CNAME domains are BLOCKED-custom-
+// domains.md). Donors never get passwords — magic link only (P-1). Portal
+// sessions are a separate cookie + separate table from staff JWTs (P-4):
+// requirePortalSession reads ONLY the cookie (never Authorization), and every
+// staff route reads ONLY Authorization (never a cookie), so neither credential
+// can cross. Every session-create, link-request, and mutation writes a
+// portal_audit_log row (P-7). No donor-facing route ever logs email/token to
+// console (S-7).
+// ══════════════════════════════════════════════════════════════════════════
+
+const PORTAL_COOKIE = "steward_portal";
+const sha256hex = (s) => crypto.createHash("sha256").update(String(s)).digest("hex");
+
+function parsePortalCookies(req) {
+  const out = {};
+  for (const part of String(req.headers.cookie || "").split(";")) {
+    const i = part.indexOf("=");
+    if (i > 0) out[part.slice(0, i).trim()] = decodeURIComponent(part.slice(i + 1).trim());
+  }
+  return out;
+}
+function setPortalCookie(res, token, maxAgeSec) {
+  // HttpOnly + Secure + SameSite=Lax, 30-day max-age (P-4). Path=/ because in
+  // production the browser-visible path is /portal-api/* (the proxy prefix).
+  const parts = [`${PORTAL_COOKIE}=${encodeURIComponent(token)}`, "HttpOnly", "SameSite=Lax", "Path=/",
+    `Max-Age=${maxAgeSec}`];
+  if (process.env.NODE_ENV !== "development" && !String(process.env.CORS_ORIGIN || "").includes("localhost")) parts.push("Secure");
+  res.append("Set-Cookie", parts.join("; "));
+}
+
+// One org lookup for every portal route: slug → org row + portal settings.
+// Returns null for unknown slug OR a disabled portal (indistinguishable).
+async function portalOrgBySlug(slug) {
+  if (!slug || typeof slug !== "string" || slug.length > 120) return null;
+  const rows = await query(
+    `SELECT o.*, ps.enabled AS portal_enabled, ps.display_name AS portal_display_name,
+            ps.logo_data AS portal_logo, ps.header_image_data AS portal_header_image,
+            ps.primary_color, ps.accent_color, ps.footer_text AS portal_footer,
+            ps.contact_email AS portal_contact, ps.ein_line AS portal_ein,
+            ps.powered_by, ps.min_recurring_cents
+     FROM orgs o JOIN portal_settings ps ON ps.org_id = o.id
+     WHERE o.org_slug = ? AND ps.enabled = true`, [slug]);
+  return rows[0] || null;
+}
+
+// §5 — the theme a donor's browser receives. Colors are normalized to WCAG-
+// legible values at SAVE time (normalizeAccent, the one contrast impl shared
+// with org branding); this re-checks at render and falls back to the designed
+// neutral default rather than ever shipping an unreadable portal.
+const PORTAL_DEFAULT_THEME = { primary: "#1a6b4a", primaryFg: "#ffffff", accent: "#c9a84c", accentFg: "#0f1a12" };
+function portalThemePayload(org) {
+  const clean = (v, cap) => (typeof v === "string" ? v.slice(0, cap) : null);
+  const prim = org.primary_color ? normalizeAccent(org.primary_color) : null;
+  const acc = org.accent_color ? normalizeAccent(org.accent_color) : null;
+  return {
+    orgSlug: org.org_slug,
+    displayName: clean(org.portal_display_name, 120) || displayNameCase(org.name),
+    logo: org.portal_logo || org.logo_data || null,
+    headerImage: org.portal_header_image || null,
+    primary: prim ? prim.accent : PORTAL_DEFAULT_THEME.primary,
+    primaryFg: prim ? prim.fg : PORTAL_DEFAULT_THEME.primaryFg,
+    accent: acc ? acc.accent : PORTAL_DEFAULT_THEME.accent,
+    accentFg: acc ? acc.fg : PORTAL_DEFAULT_THEME.accentFg,
+    footerText: clean(org.portal_footer, 500),
+    contactEmail: clean(org.portal_contact, 200),
+    einLine: clean(org.portal_ein, 200),
+    poweredBy: org.powered_by === true,
+    minRecurringCents: Number(org.min_recurring_cents) || 500,
+    giveSlug: org.stripe_account_id ? org.org_slug : null, // R-6: reuse the existing public giving page
+  };
+}
+
+async function portalAudit(orgId, donorId, email, action, req, meta) {
+  await run(
+    `INSERT INTO portal_audit_log (id,org_id,donor_id,email,action,ip,meta) VALUES (?,?,?,?,?,?,?)`,
+    ["pal_" + uuid().slice(0, 12), orgId, donorId || null, email || null, action,
+     (req && req.ip) || null, meta ? JSON.stringify(meta) : null]
+  ).catch(e => console.error("[portal] audit write failed:", e.message));
+}
+
+// The donor records a portal session may see: exact-email matches in THAT org
+// only (P-6). Multiple records for one email all belong to the session.
+async function portalDonorsFor(orgId, email) {
+  return query(
+    `SELECT * FROM donors WHERE org_id = ? AND LOWER(email) = ? AND deleted_at IS NULL ORDER BY created_at ASC`,
+    [orgId, String(email).toLowerCase()]);
+}
+
+// ── Rate limits (P-3/S-5) ──────────────────────────────────────────────────
+// The x-test-* headers are honored ONLY under DISABLE_RATE_LIMIT=1 (the local
+// scratch stack): they let the scripted-burst suite exercise the REAL limiter
+// while every other suite stays unthrottled. Production ignores them entirely.
+const portalLimiterSkip = (req) => rateLimitDisabled() && !req.headers["x-test-enforce-limits"];
+const portalLimiterIpKey = (req) =>
+  (rateLimitDisabled() && req.headers["x-test-limit-bucket"])
+    ? String(req.headers["x-test-limit-bucket"]) : ipKeyGenerator(req.ip);
+const portalLinkIpLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, max: 20, standardHeaders: true, legacyHeaders: false,
+  handler: rateLimitHandler, skip: portalLimiterSkip,
+  keyGenerator: (req) => "plink-ip:" + portalLimiterIpKey(req),
+});
+const portalLinkEmailLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, max: 6, standardHeaders: true, legacyHeaders: false,
+  handler: rateLimitHandler, skip: portalLimiterSkip,
+  keyGenerator: (req) => "plink-em:" + String(req.body?.email || "").toLowerCase().trim().slice(0, 200),
+});
+const portalMutationLimiter = rateLimit({
+  windowMs: 10 * 60 * 1000, max: 40, standardHeaders: true, legacyHeaders: false,
+  handler: rateLimitHandler, skip: portalLimiterSkip,
+  keyGenerator: (req) => "pmut:" + portalLimiterIpKey(req),
+});
+
+// ── Session middleware (P-4) ───────────────────────────────────────────────
+// Cookie-only. A staff JWT in Authorization is IGNORED here, exactly as the
+// portal cookie is ignored by requireAuth — proven by the differential sweep.
+function requirePortalSession(req, res, next) {
+  (async () => {
+    const raw = parsePortalCookies(req)[PORTAL_COOKIE];
+    if (!raw || raw.length > 300) return res.status(401).json({ error: "portal_auth" });
+    const rows = await query(
+      `SELECT * FROM portal_sessions WHERE token_hash = ? AND revoked_at IS NULL AND expires_at > NOW()`,
+      [sha256hex(raw)]);
+    if (!rows.length) return res.status(401).json({ error: "portal_auth" });
+    const sess = rows[0];
+    const org = await portalOrgBySlug(req.params.orgSlug);
+    // Tenant pinning: a session is scoped to ONE org — a valid session used
+    // against another org's slug is a 401, never a data leak (S-2).
+    if (!org || org.id !== sess.org_id) return res.status(401).json({ error: "portal_auth" });
+    req.portal = { session: sess, org, email: sess.email };
+    run(`UPDATE portal_sessions SET last_seen_at = NOW() WHERE id = ?`, [sess.id]).catch(() => {});
+    next();
+  })().catch(next);
+}
+
+// ── Magic-link email ───────────────────────────────────────────────────────
+async function sendPortalMagicLinkEmail(org, email, token) {
+  const theme = portalThemePayload(org);
+  const link = `${publicAppUrl()}/portal/${org.org_slug}/verify#token=${token}`; // fragment: never sent in Referer (S-4)
+  const orgName = escHtmlWf(theme.displayName);
+  const html = await brandEmailHeaderHtml(org.id) + `
+    <div style="font-family:Georgia,'Times New Roman',serif;max-width:520px;margin:0 auto;padding:24px;color:#0f1a12;">
+      <p>Here is your secure sign-in link for your giving history with ${orgName}:</p>
+      <p style="text-align:center;margin:28px 0;">
+        <a href="${link}" style="background:${theme.primary};color:${theme.primaryFg};text-decoration:none;padding:12px 28px;border-radius:8px;font-weight:700;display:inline-block;">View my giving</a>
+      </p>
+      <p style="font-size:13px;color:#555;">This link works once and expires in 15 minutes. If you didn't request it, you can safely ignore this email.</p>
+      ${theme.contactEmail ? `<p style="font-size:13px;color:#555;">Questions? Write to <a href="mailto:${escHtmlWf(theme.contactEmail)}">${escHtmlWf(theme.contactEmail)}</a>.</p>` : ""}
+    </div>`;
+  if (!process.env.RESEND_API_KEY) return;
+  try {
+    const { error: sendErr } = await resend.emails.send({
+      from: process.env.DEMO_SMTP_FROM || "noreply@stewardapp.dev",
+      to: email, subject: `Your sign-in link — ${theme.displayName}`, html,
+    });
+    if (sendErr) console.error("[portal] magic-link send error:", sendErr.message);
+  } catch (e) { console.error("[portal] magic-link send failed:", e.message); }
+}
+
+// Donor-facing confirmation for every money mutation (R-8). Transactional —
+// sent on the ORG's letterhead, no unsubscribe footer, suppression does not
+// block it (a donor must always learn their schedule changed).
+async function sendPortalMutationEmail(org, email, subject, bodyText) {
+  if (!process.env.RESEND_API_KEY) return;
+  const theme = portalThemePayload(org);
+  const html = await brandEmailHeaderHtml(org.id) + `
+    <div style="font-family:Georgia,'Times New Roman',serif;max-width:520px;margin:0 auto;padding:24px;color:#0f1a12;">
+      <p>${escHtmlWf(bodyText)}</p>
+      <p style="font-size:13px;color:#555;">You can review your giving anytime: <a href="${publicAppUrl()}/portal/${org.org_slug}">${escHtmlWf(theme.displayName)} donor portal</a>.</p>
+      ${theme.contactEmail ? `<p style="font-size:13px;color:#555;">Questions? Write to <a href="mailto:${escHtmlWf(theme.contactEmail)}">${escHtmlWf(theme.contactEmail)}</a>.</p>` : ""}
+    </div>`;
+  try {
+    const { error: sendErr } = await resend.emails.send({
+      from: process.env.DEMO_SMTP_FROM || "noreply@stewardapp.dev",
+      to: email, subject: `${subject} — ${theme.displayName}`, html,
+    });
+    if (sendErr) console.error("[portal] mutation email error:", sendErr.message);
+  } catch (e) { console.error("[portal] mutation email failed:", e.message); }
+}
+
+// ── §6.3 drift wire — cancel/pause → the org hears about it in minutes ─────
+async function portalDriftAlert(org, donor, sub, action, detail) {
+  try {
+    const officers = await query(
+      `SELECT id, name, email FROM users WHERE org_id = ? AND id = ?`, [org.id, donor.assigned_to || ""]);
+    let officer = officers[0];
+    if (!officer) {
+      const admins = await query(
+        `SELECT id, name, email FROM users WHERE org_id = ? AND role = 'admin' ORDER BY created_at ASC LIMIT 1`, [org.id]);
+      officer = admins[0];
+    }
+    if (!officer) return;
+    const verb = action === "recurring_cancel" ? "canceled" : "paused";
+    const amt = sub.amount != null ? `$${Number(sub.amount).toLocaleString()}/${sub.interval || "month"}` : "a recurring gift";
+    // High-priority task due TODAY, donor-linked — the "needs you today" item.
+    await run(
+      `INSERT INTO tasks (id,org_id,title,due,priority,type,donor_id,assigned_to,assigned_to_name)
+       VALUES (?,?,?,?,?,?,?,?,?)`,
+      ["t_" + uuid().slice(0, 8), org.id,
+       `${donor.name} ${verb} their ${amt} recurring gift — reach out today`,
+       localDateKey(new Date()), "high", "donor", donor.id, officer.id, officer.name || ""]);
+    const subj = `${donor.name} ${verb} their recurring gift`;
+    const body = `<p><strong>${escHtmlWf(donor.name)}</strong> just ${verb} their ${escHtmlWf(amt)} recurring gift from the donor portal${detail ? " — " + escHtmlWf(detail) : ""}.</p>
+      <p>A cancellation the org learns about in minutes is a save opportunity. Suggested next step: a personal call or note today — thank them for their giving, ask nothing, and learn what changed.</p>`;
+    await notifyUserOnce({
+      org, userId: officer.id, email: officer.email,
+      eventKey: `portal:${action}:${sub.id}`, channel: "portal_drift",
+      prefKind: "notify_portfolio_gifts", subject: subj, bodyHtml: body,
+    });
+  } catch (e) { console.error("[portal] drift alert:", e.message); }
+}
+
+// CRM timeline event for every portal action that matters (low-priority
+// signal — recorded, never alerted, per §6.3).
+async function portalTimeline(orgId, donorId, note, portalEvent) {
+  await run(
+    `INSERT INTO interactions (id,org_id,donor_id,type,note,date,logged_by_name,metadata)
+     VALUES (?,?,?,?,?,?,?,?)`,
+    ["int_" + uuid().slice(0, 8), orgId, donorId, "note", note,
+     new Date().toISOString().slice(0, 10), "Donor portal", JSON.stringify({ portal_event: portalEvent })]
+  ).catch(e => console.error("[portal] timeline:", e.message));
+}
+
+// ── Public: portal config (the login page's theme) ─────────────────────────
+app.get("/portal/:orgSlug/config", wrap(async (req, res) => {
+  const org = await portalOrgBySlug(req.params.orgSlug);
+  if (!org) return res.status(404).json({ error: "portal_not_found" });
+  res.json({ theme: portalThemePayload(org) });
+}));
+
+// ── P-1/P-2/P-3: request a magic link ──────────────────────────────────────
+app.post("/portal/:orgSlug/request-link", portalLinkIpLimiter, portalLinkEmailLimiter, wrap(async (req, res) => {
+  const org = await portalOrgBySlug(req.params.orgSlug);
+  if (!org) return res.status(404).json({ error: "portal_not_found" });
+  const email = String(req.body?.email || "").trim().toLowerCase();
+  // P-2 — identical response AND timing for known and unknown emails: respond
+  // first, do the lookup + send asynchronously.
+  res.json({ received: true, message: "If we have this address on file, a sign-in link is on its way." });
+  if (!email || email.length > 320 || !email.includes("@")) return;
+  (async () => {
+    const donors = await portalDonorsFor(org.id, email);
+    await portalAudit(org.id, donors[0]?.id || null, email, "link_requested", req, { matched: donors.length > 0 });
+    if (!donors.length) return;
+    // Re-request invalidates any live prior link (P-1).
+    await run(
+      `UPDATE portal_magic_links SET superseded_at = NOW()
+       WHERE org_id = ? AND email = ? AND used_at IS NULL AND superseded_at IS NULL`, [org.id, email]);
+    const token = crypto.randomBytes(32).toString("base64url"); // 256-bit CSPRNG
+    await run(
+      `INSERT INTO portal_magic_links (id,org_id,email,token_hash,expires_at,requested_ip)
+       VALUES (?,?,?,?, NOW() + INTERVAL '15 minutes', ?)`,
+      ["pml_" + uuid().slice(0, 10), org.id, email, sha256hex(token), req.ip || null]);
+    await sendPortalMagicLinkEmail(org, email, token);
+  })().catch(e => console.error("[portal] link request failed:", e.message));
+}));
+
+// ── S-4: token is POST-consumed, atomically single-use ─────────────────────
+app.post("/portal/:orgSlug/verify", portalLinkIpLimiter, wrap(async (req, res) => {
+  const org = await portalOrgBySlug(req.params.orgSlug);
+  if (!org) return res.status(404).json({ error: "portal_not_found" });
+  const token = String(req.body?.token || "");
+  if (!token || token.length > 300) return res.status(400).json({ error: "invalid_link" });
+  // Atomic consume: UPDATE … RETURNING wins exactly once even under a
+  // parallel replay of the same link.
+  const rows = await query(
+    `UPDATE portal_magic_links SET used_at = NOW()
+     WHERE token_hash = ? AND org_id = ? AND used_at IS NULL AND superseded_at IS NULL AND expires_at > NOW()
+     RETURNING email`,
+    [sha256hex(token), org.id]);
+  if (!rows.length) return res.status(400).json({ error: "invalid_link", message: "That link has expired or was already used. Request a fresh one." });
+  const email = rows[0].email;
+  const sessToken = crypto.randomBytes(32).toString("base64url");
+  const maxAgeSec = 30 * 24 * 3600;
+  await run(
+    `INSERT INTO portal_sessions (id,org_id,email,token_hash,expires_at,ip)
+     VALUES (?,?,?,?, NOW() + INTERVAL '30 days', ?)`,
+    ["psn_" + uuid().slice(0, 10), org.id, email, sha256hex(sessToken), req.ip || null]);
+  setPortalCookie(res, sessToken, maxAgeSec);
+  const donors = await portalDonorsFor(org.id, email);
+  await portalAudit(org.id, donors[0]?.id || null, email, "session_created", req);
+  for (const d of donors) await portalTimeline(org.id, d.id, "Portal: donor signed in", "login");
+  res.json({ ok: true });
+}));
+
+app.post("/portal/:orgSlug/logout", wrap(async (req, res) => {
+  const raw = parsePortalCookies(req)[PORTAL_COOKIE];
+  if (raw) await run(`UPDATE portal_sessions SET revoked_at = NOW() WHERE token_hash = ?`, [sha256hex(raw)]).catch(() => {});
+  res.append("Set-Cookie", `${PORTAL_COOKIE}=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0`);
+  res.json({ ok: true });
+}));
+
+app.get("/portal/:orgSlug/session", requirePortalSession, wrap(async (req, res) => {
+  res.json({ email: req.portal.email });
+}));
+
+// ── §3 — the dashboard: every figure from the SAME gifts ledger the CRM
+//    reports read (org-scoped, live SUMs; no parallel computation) ──────────
+app.get("/portal/:orgSlug/me", requirePortalSession, wrap(async (req, res) => {
+  const { org, email } = req.portal;
+  const donors = await portalDonorsFor(org.id, email);
+  if (!donors.length) return res.json({ email, theme: portalThemePayload(org), empty: true });
+  const donorIds = donors.map(d => d.id);
+
+  const [byYearRows, totalsRow, gifts, receipts, recurring, pledges, household] = await Promise.all([
+    query(
+      `SELECT LEFT(date, 4) AS year, COALESCE(SUM(amount),0) AS total, COUNT(*)::int AS count
+       FROM gifts WHERE org_id = ? AND donor_id = ANY(?) GROUP BY LEFT(date, 4) ORDER BY year DESC`,
+      [org.id, donorIds]),
+    query(
+      `SELECT COALESCE(SUM(amount),0) AS lifetime, COUNT(*)::int AS count,
+              MIN(date) AS first_gift, MAX(amount) AS largest
+       FROM gifts WHERE org_id = ? AND donor_id = ANY(?)`,
+      [org.id, donorIds]),
+    query(
+      `SELECT g.id, g.date, g.amount, g.type, COALESCE(c.name, g.campaign) AS campaign,
+              f.name AS fund, g.stripe_payment_id IS NOT NULL AS online,
+              r.id AS receipt_id, r.receipt_number
+       FROM gifts g
+       LEFT JOIN campaigns c ON c.id = g.campaign_id AND c.org_id = g.org_id
+       LEFT JOIN fin_funds f ON f.id = g.fund_id AND f.org_id = g.org_id
+       LEFT JOIN receipts r ON r.gift_id = g.id AND r.org_id = g.org_id AND r.voided_at IS NULL AND r.type = 'gift'
+       WHERE g.org_id = ? AND g.donor_id = ANY(?)
+       ORDER BY g.date DESC, g.id DESC LIMIT 500`,
+      [org.id, donorIds]),
+    query(
+      `SELECT id, type, receipt_number, amount, tax_year, created_at, gift_id
+       FROM receipts WHERE org_id = ? AND donor_id = ANY(?) AND voided_at IS NULL
+       ORDER BY created_at DESC LIMIT 100`,
+      [org.id, donorIds]),
+    query(
+      `SELECT id, donor_id, amount, interval, status, failure_count, paused_at, resume_at,
+              canceled_at, stripe_subscription_id, created_at
+       FROM recurring_subscriptions WHERE org_id = ? AND donor_id = ANY(?) ORDER BY created_at DESC`,
+      [org.id, donorIds]),
+    query(
+      `SELECT p.id, p.amount, p.due_date, p.status, p.notes,
+              COALESCE(pp.paid,0) AS paid_amount, GREATEST(p.amount - COALESCE(pp.paid,0), 0) AS balance
+       FROM pledges p
+       LEFT JOIN (SELECT pledge_id, SUM(amount) AS paid FROM gifts WHERE org_id = ? AND pledge_id IS NOT NULL GROUP BY pledge_id) pp
+         ON pp.pledge_id = p.id
+       WHERE p.org_id = ? AND p.donor_id = ANY(?) ORDER BY p.due_date ASC`,
+      [org.id, org.id, donorIds]),
+    (async () => {
+      // P-6 — household/soft-credit renders in a SEPARATE labeled section:
+      // the family's combined giving, never mixed into the donor's own totals.
+      const hhIds = [...new Set(donors.map(d => d.household_id).filter(Boolean))];
+      if (!hhIds.length) return null;
+      const [hh] = await query(`SELECT id, name FROM households WHERE id = ? AND org_id = ?`, [hhIds[0], org.id]);
+      if (!hh) return null;
+      const [sum] = await query(
+        `SELECT COALESCE(SUM(g.amount),0) AS combined
+         FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
+         WHERE g.org_id = ? AND d.household_id = ? AND d.deleted_at IS NULL`,
+        [org.id, hh.id]);
+      return { name: hh.name, combined: parseFloat(sum.combined) || 0 };
+    })(),
+  ]);
+
+  // Stripe display details (card last-4, next charge) — display-only, and the
+  // dashboard degrades gracefully when Stripe is unreachable.
+  const recurringOut = [];
+  for (const s of recurring) {
+    let last4 = null, nextCharge = null;
+    if (stripe && org.stripe_account_id && ["active", "past_due", "recovering", "recovered", "paused"].includes(s.status)) {
+      try {
+        const sub = await stripe.subscriptions.retrieve(s.stripe_subscription_id,
+          { expand: ["default_payment_method"] }, { stripeAccount: org.stripe_account_id });
+        last4 = sub.default_payment_method?.card?.last4 || null;
+        if (sub.current_period_end && !["canceled", "paused"].includes(s.status)) {
+          nextCharge = new Date(sub.current_period_end * 1000).toISOString().slice(0, 10);
+        }
+      } catch { /* display-only — omit */ }
+    }
+    recurringOut.push({
+      id: s.id, amount: parseFloat(s.amount) || 0, interval: s.interval || "month",
+      status: s.status, pausedAt: s.paused_at, resumeAt: s.resume_at, canceledAt: s.canceled_at,
+      cardLast4: last4, nextChargeDate: nextCharge,
+      paymentHistory: gifts.filter(g => g.online).slice(0, 12)
+        .map(g => ({ date: g.date, amount: parseFloat(g.amount) || 0 })),
+    });
+  }
+
+  const t = totalsRow[0] || {};
+  const nowYear = String(new Date().getFullYear());
+  const byYear = byYearRows.map(r => ({ year: r.year, total: parseFloat(r.total) || 0, count: r.count }));
+  await portalAudit(org.id, donorIds[0], email, "dashboard_viewed", req);
+  res.json({
+    email,
+    theme: portalThemePayload(org),
+    donorName: displayNameCase(donors[0].name),
+    giving: {
+      ytd: byYear.find(y => y.year === nowYear)?.total || 0,
+      byYear,
+      lifetime: parseFloat(t.lifetime) || 0,
+      giftCount: t.count || 0,
+      firstGiftDate: t.first_gift || null,
+      largestGift: parseFloat(t.largest) || 0,
+    },
+    gifts: gifts.map(g => ({
+      id: g.id, date: g.date, amount: parseFloat(g.amount) || 0, type: g.type,
+      campaign: g.campaign || null, fund: g.fund || null, online: g.online === true,
+      receiptId: g.receipt_id || null, receiptNumber: g.receipt_number || null,
+    })),
+    receipts: receipts.map(r => ({
+      id: r.id, type: r.type, number: r.receipt_number, amount: parseFloat(r.amount) || 0,
+      taxYear: r.tax_year, date: r.created_at,
+    })),
+    recurring: recurringOut,
+    pledges: pledges.map(p => ({
+      id: p.id, amount: parseFloat(p.amount) || 0, dueDate: p.due_date, status: p.status,
+      paid: parseFloat(p.paid_amount) || 0, balance: parseFloat(p.balance) || 0,
+    })),
+    household,
+    impact: await matchImpactUpdates(org.id, donorIds),
+  });
+}));
+
+// ── §6.2 — deterministic impact matching over EXISTING gift attribution ────
+async function matchImpactUpdates(orgId, donorIds) {
+  const updates = await query(
+    `SELECT id, title, body, photos, targets, org_wide, created_at
+     FROM impact_updates WHERE org_id = ? AND status = 'published' ORDER BY created_at DESC LIMIT 50`, [orgId]);
+  if (!updates.length) return [];
+  const attrib = await query(
+    `SELECT DISTINCT fund_id, campaign_id FROM gifts
+     WHERE org_id = ? AND donor_id = ANY(?) AND date >= (CURRENT_DATE - INTERVAL '24 months')::text`,
+    [orgId, donorIds]);
+  const funds = new Set(attrib.map(a => a.fund_id).filter(Boolean));
+  const camps = new Set(attrib.map(a => a.campaign_id).filter(Boolean));
+  const targeted = [], orgWide = [];
+  for (const u of updates) {
+    const targets = Array.isArray(u.targets) ? u.targets : [];
+    const hit = targets.some(tg => (tg.kind === "fund" && funds.has(tg.id)) || (tg.kind === "campaign" && camps.has(tg.id)));
+    const row = { id: u.id, title: u.title, body: u.body, photos: Array.isArray(u.photos) ? u.photos : [], date: u.created_at, matched: hit };
+    if (hit) targeted.push(row);
+    else if (u.org_wide) orgWide.push(row);
+  }
+  return [...targeted, ...orgWide].slice(0, 12);
+}
+
+// Engagement signal: viewed an impact update — timeline only, never an alert.
+app.post("/portal/:orgSlug/impact/:updateId/viewed", requirePortalSession, wrap(async (req, res) => {
+  const { org, email } = req.portal;
+  const [u] = await query(`SELECT id, title FROM impact_updates WHERE id = ? AND org_id = ?`, [req.params.updateId, org.id]);
+  if (!u) return res.status(404).json({ error: "not_found" });
+  const donors = await portalDonorsFor(org.id, email);
+  for (const d of donors) await portalTimeline(org.id, d.id, `Portal: viewed impact update — ${u.title}`, "impact_view");
+  res.json({ ok: true });
+}));
+
+// ── S-9 — receipts stream the EXISTING stored PDF, session-scoped ──────────
+app.get("/portal/:orgSlug/receipts/:id/pdf", requirePortalSession, wrap(async (req, res) => {
+  const { org, email } = req.portal;
+  const donors = await portalDonorsFor(org.id, email);
+  const donorIds = donors.map(d => d.id);
+  const [r] = await query(
+    `SELECT * FROM receipts WHERE id = ? AND org_id = ? AND donor_id = ANY(?) AND voided_at IS NULL`,
+    [req.params.id, org.id, donorIds.length ? donorIds : [""]]);
+  if (!r || !r.pdf_data) return res.status(404).json({ error: "not_found" });
+  await portalAudit(org.id, r.donor_id, email, "receipt_downloaded", req, { receiptId: r.id });
+  const buf = Buffer.from(r.pdf_data, "base64");
+  res.setHeader("Content-Type", "application/pdf");
+  res.setHeader("Content-Disposition", `attachment; filename="receipt-${r.receipt_number || r.id}.pdf"`);
+  res.send(buf);
+}));
+
+// ── §4 — recurring self-service. Every mutation is a D-series money path:
+//    Stripe-FIRST (if Stripe fails the mutation fails — Steward must never
+//    claim a schedule changed while Stripe keeps charging), serialized per
+//    subscription (R-7), audit-logged, confirmed by email, mirrored into the
+//    CRM timeline, drift-wired to the org (§6.3). ─────────────────────────
+async function portalOwnedSub(req) {
+  const { org, email } = req.portal;
+  const donors = await portalDonorsFor(org.id, email);
+  const donorIds = donors.map(d => d.id);
+  if (!donorIds.length) return { error: 404 };
+  const [sub] = await query(
+    `SELECT * FROM recurring_subscriptions WHERE id = ? AND org_id = ? AND donor_id = ANY(?)`,
+    [req.params.subId, org.id, donorIds]);
+  if (!sub) return { error: 404 }; // foreign/unknown → indistinguishable 404 (S-2)
+  const donor = donors.find(d => d.id === sub.donor_id) || donors[0];
+  return { sub, donor };
+}
+
+// R-2 — pause (optional auto-resume date). Stripe pause_collection produces
+// zero charges while paused; dunning already excludes non-past_due statuses.
+app.post("/portal/:orgSlug/recurring/:subId/pause", portalMutationLimiter, requirePortalSession, wrap(async (req, res) => {
+  const { org, email } = req.portal;
+  const found = await portalOwnedSub(req);
+  if (found.error) return res.status(404).json({ error: "not_found" });
+  const { sub, donor } = found;
+  let resumeAt = null;
+  if (req.body?.resumeDate) {
+    const d = new Date(String(req.body.resumeDate));
+    if (isNaN(d) || d <= new Date() || d > new Date(Date.now() + 366 * 86400e3)) {
+      return res.status(400).json({ error: "bad_resume_date", message: "Resume date must be in the next 12 months." });
+    }
+    resumeAt = d;
+  }
+  await withAdvisoryLock(`portal-sub:${sub.id}`, async () => {
+    const [cur] = await query(`SELECT status FROM recurring_subscriptions WHERE id = ?`, [sub.id]);
+    if (!cur || !["active", "recovered", "past_due", "recovering"].includes(cur.status)) {
+      return res.status(409).json({ error: "not_pausable", message: "This gift can't be paused in its current state." });
+    }
+    if (!stripe || !org.stripe_account_id) return res.status(503).json({ error: "stripe_unavailable" });
+    await stripe.subscriptions.update(sub.stripe_subscription_id, {
+      pause_collection: { behavior: "void", ...(resumeAt ? { resumes_at: Math.floor(resumeAt.getTime() / 1000) } : {}) },
+    }, { stripeAccount: org.stripe_account_id });
+    await run(
+      `UPDATE recurring_subscriptions SET status='paused', paused_at=NOW(), resume_at=?, next_dunning_at=NULL, updated_at=NOW() WHERE id=?`,
+      [resumeAt, sub.id]);
+    await portalAudit(org.id, donor.id, email, "recurring_pause", req, { subId: sub.id, resumeAt });
+    await portalTimeline(org.id, donor.id, `Portal: paused their $${Number(sub.amount).toLocaleString()}/${sub.interval || "month"} recurring gift${resumeAt ? ` until ${resumeAt.toISOString().slice(0, 10)}` : ""}`, "recurring_pause");
+    portalDriftAlert(org, donor, sub, "recurring_pause", resumeAt ? `auto-resumes ${resumeAt.toISOString().slice(0, 10)}` : "no resume date set").catch(() => {});
+    sendPortalMutationEmail(org, email, "Your recurring gift is paused",
+      `Your $${Number(sub.amount).toLocaleString()}/${sub.interval || "month"} recurring gift is paused${resumeAt ? ` and will resume automatically on ${resumeAt.toISOString().slice(0, 10)}` : ""}. No charges will occur while paused.`).catch(() => {});
+    res.json({ ok: true, status: "paused", resumeAt });
+  });
+}));
+
+// R-3 — resume (explicit; Stripe-side auto-resume also lands here via webhook).
+app.post("/portal/:orgSlug/recurring/:subId/resume", portalMutationLimiter, requirePortalSession, wrap(async (req, res) => {
+  const { org, email } = req.portal;
+  const found = await portalOwnedSub(req);
+  if (found.error) return res.status(404).json({ error: "not_found" });
+  const { sub, donor } = found;
+  await withAdvisoryLock(`portal-sub:${sub.id}`, async () => {
+    const [cur] = await query(`SELECT status FROM recurring_subscriptions WHERE id = ?`, [sub.id]);
+    if (!cur || cur.status !== "paused") return res.status(409).json({ error: "not_paused" });
+    if (!stripe || !org.stripe_account_id) return res.status(503).json({ error: "stripe_unavailable" });
+    await stripe.subscriptions.update(sub.stripe_subscription_id, { pause_collection: "" }, { stripeAccount: org.stripe_account_id });
+    await run(`UPDATE recurring_subscriptions SET status='active', paused_at=NULL, resume_at=NULL, updated_at=NOW() WHERE id=?`, [sub.id]);
+    await portalAudit(org.id, donor.id, email, "recurring_resume", req, { subId: sub.id });
+    await portalTimeline(org.id, donor.id, `Portal: resumed their $${Number(sub.amount).toLocaleString()}/${sub.interval || "month"} recurring gift`, "recurring_resume");
+    sendPortalMutationEmail(org, email, "Your recurring gift has resumed",
+      `Your $${Number(sub.amount).toLocaleString()}/${sub.interval || "month"} recurring gift is active again. Thank you for your continued support.`).catch(() => {});
+    res.json({ ok: true, status: "active" });
+  });
+}));
+
+// R-1 — change amount. Server re-prices authoritatively: integer minor units
+// end-to-end, floored at the org's configured minimum; effective next charge
+// (proration_behavior none — no proration in v1).
+app.post("/portal/:orgSlug/recurring/:subId/amount", portalMutationLimiter, requirePortalSession, wrap(async (req, res) => {
+  const { org, email } = req.portal;
+  const found = await portalOwnedSub(req);
+  if (found.error) return res.status(404).json({ error: "not_found" });
+  const { sub, donor } = found;
+  const cents = Number(req.body?.amountCents);
+  const minCents = Number(org.min_recurring_cents) || 500;
+  if (!Number.isInteger(cents) || cents < minCents || cents > 10000000) {
+    return res.status(400).json({ error: "bad_amount", message: `Amount must be at least $${(minCents / 100).toFixed(2)}.` });
+  }
+  await withAdvisoryLock(`portal-sub:${sub.id}`, async () => {
+    const [cur] = await query(`SELECT status, amount FROM recurring_subscriptions WHERE id = ?`, [sub.id]);
+    if (!cur || !["active", "recovered", "paused"].includes(cur.status)) {
+      return res.status(409).json({ error: "not_editable", message: "This gift can't be changed in its current state." });
+    }
+    if (!stripe || !org.stripe_account_id) return res.status(503).json({ error: "stripe_unavailable" });
+    const stripeSub = await stripe.subscriptions.retrieve(sub.stripe_subscription_id, {}, { stripeAccount: org.stripe_account_id });
+    const item = stripeSub.items?.data?.[0];
+    if (!item) return res.status(409).json({ error: "not_editable" });
+    await stripe.subscriptions.update(sub.stripe_subscription_id, {
+      items: [{ id: item.id, price_data: {
+        currency: item.price?.currency || "usd",
+        product_data: { name: `${displayNameCase(org.name)} recurring gift` },
+        recurring: { interval: (sub.interval === "year" ? "year" : "month") },
+        unit_amount: cents,
+      } }],
+      proration_behavior: "none",
+    }, { stripeAccount: org.stripe_account_id });
+    const oldAmt = parseFloat(cur.amount) || 0;
+    const newAmt = cents / 100;
+    await run(`UPDATE recurring_subscriptions SET amount=?, updated_at=NOW() WHERE id=?`, [newAmt, sub.id]);
+    await portalAudit(org.id, donor.id, email, "recurring_amount", req, { subId: sub.id, from: oldAmt, to: newAmt });
+    await portalTimeline(org.id, donor.id, `Portal: changed their recurring gift from $${oldAmt.toLocaleString()} to $${newAmt.toLocaleString()}/${sub.interval || "month"}`, "recurring_amount");
+    sendPortalMutationEmail(org, email, "Your recurring gift amount changed",
+      `Your recurring gift is now $${newAmt.toLocaleString()}/${sub.interval || "month"} (was $${oldAmt.toLocaleString()}). The new amount takes effect on your next scheduled charge.`).catch(() => {});
+    res.json({ ok: true, amount: newAmt });
+  });
+}));
+
+// R-4 — cancel. One optional, skippable reason; NO retention dark patterns.
+// The org hears about it in minutes (§6.3) — that is the retention mechanism.
+app.post("/portal/:orgSlug/recurring/:subId/cancel", portalMutationLimiter, requirePortalSession, wrap(async (req, res) => {
+  const { org, email } = req.portal;
+  const found = await portalOwnedSub(req);
+  if (found.error) return res.status(404).json({ error: "not_found" });
+  const { sub, donor } = found;
+  const reason = String(req.body?.reason || "").trim().slice(0, 500) || null;
+  await withAdvisoryLock(`portal-sub:${sub.id}`, async () => {
+    const [cur] = await query(`SELECT status FROM recurring_subscriptions WHERE id = ?`, [sub.id]);
+    if (!cur || cur.status === "canceled") return res.status(409).json({ error: "already_canceled" });
+    if (!stripe || !org.stripe_account_id) return res.status(503).json({ error: "stripe_unavailable" });
+    await stripe.subscriptions.update(sub.stripe_subscription_id, { cancel_at_period_end: true }, { stripeAccount: org.stripe_account_id });
+    await run(
+      `UPDATE recurring_subscriptions SET status='canceled', canceled_at=NOW(), next_dunning_at=NULL, updated_at=NOW() WHERE id=?`,
+      [sub.id]);
+    await run(`UPDATE donors SET stripe_subscription_status='canceled', updated_at=NOW() WHERE id=? AND org_id=?`, [donor.id, org.id]).catch(() => {});
+    await portalAudit(org.id, donor.id, email, "recurring_cancel", req, { subId: sub.id, reason });
+    await portalTimeline(org.id, donor.id, `Portal: canceled their $${Number(sub.amount).toLocaleString()}/${sub.interval || "month"} recurring gift${reason ? ` — reason: ${reason}` : ""}`, "recurring_cancel");
+    portalDriftAlert(org, donor, sub, "recurring_cancel", reason).catch(() => {});
+    sendPortalMutationEmail(org, email, "Your recurring gift is canceled",
+      `Your $${Number(sub.amount).toLocaleString()}/${sub.interval || "month"} recurring gift is canceled. You won't be charged again. Thank you for everything you've given.`).catch(() => {});
+    res.json({ ok: true, status: "canceled" });
+  });
+}));
+
+// R-5 — update payment method: the EXISTING setup-mode Checkout flow (card
+// data never touches Steward). Returns the signed card-update URL.
+app.post("/portal/:orgSlug/recurring/:subId/update-card", portalMutationLimiter, requirePortalSession, wrap(async (req, res) => {
+  const { org, email } = req.portal;
+  const found = await portalOwnedSub(req);
+  if (found.error) return res.status(404).json({ error: "not_found" });
+  const { sub, donor } = found;
+  await portalAudit(org.id, donor.id, email, "card_update_started", req, { subId: sub.id });
+  res.json({ url: buildCardUpdateUrl(sub.stripe_subscription_id, org.id) });
+}));
+
+// ══ Staff-side portal admin (portal settings + impact updates) ═════════════
+// Org admins configure the portal in the existing CRM (staff JWT auth — the
+// OTHER side of the P-4 wall).
+
+app.get("/portal-settings", requireAuth, wrap(async (req, res) => {
+  await run(`INSERT INTO portal_settings (org_id) VALUES (?) ON CONFLICT (org_id) DO NOTHING`, [req.user.orgId]);
+  const [ps] = await query(`SELECT * FROM portal_settings WHERE org_id = ?`, [req.user.orgId]);
+  const [org] = await query(`SELECT org_slug FROM orgs WHERE id = ?`, [req.user.orgId]);
+  res.json({ ...ps, org_slug: org?.org_slug || null, portal_url: `${publicAppUrl()}/portal/${org?.org_slug}` });
+}));
+
+const PORTAL_IMG_MIMES = ["image/png", "image/jpeg", "image/gif", "image/webp", "image/svg+xml"];
+function validPortalImage(dataUri, capBytes) {
+  if (dataUri == null || dataUri === "") return true;
+  if (typeof dataUri !== "string" || dataUri.length > capBytes) return false;
+  const m = dataUri.match(/^data:([^;]+);base64,/);
+  return !!m && PORTAL_IMG_MIMES.includes(m[1]);
+}
+
+app.put("/portal-settings", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
+  const b = req.body || {};
+  await run(`INSERT INTO portal_settings (org_id) VALUES (?) ON CONFLICT (org_id) DO NOTHING`, [req.user.orgId]);
+  const updates = [], params = [];
+  const setStr = (col, v, cap) => { updates.push(`${col} = ?`); params.push(v == null || v === "" ? null : String(v).slice(0, cap)); };
+  let adjusted = false;
+  if (b.enabled !== undefined) { updates.push("enabled = ?"); params.push(b.enabled === true); }
+  if (b.poweredBy !== undefined) { updates.push("powered_by = ?"); params.push(b.poweredBy === true); }
+  if (b.displayName !== undefined) setStr("display_name", b.displayName, 120);
+  if (b.footerText !== undefined) setStr("footer_text", b.footerText, 500);
+  if (b.contactEmail !== undefined) setStr("contact_email", b.contactEmail, 200);
+  if (b.einLine !== undefined) setStr("ein_line", b.einLine, 200);
+  if (b.minRecurringCents !== undefined) {
+    const c = Number(b.minRecurringCents);
+    if (!Number.isInteger(c) || c < 100 || c > 1000000) return res.status(400).json({ error: "bad_min" });
+    updates.push("min_recurring_cents = ?"); params.push(c);
+  }
+  // §5 contrast guard — the ONE normalizeAccent implementation (branding.js):
+  // an illegible brand color is deepened along its own hue to WCAG AA, and the
+  // admin is told why, rather than shipping an unreadable portal.
+  for (const [key, col] of [["primaryColor", "primary_color"], ["accentColor", "accent_color"]]) {
+    if (b[key] !== undefined) {
+      if (b[key] === "" || b[key] == null) { updates.push(`${col} = NULL`); continue; }
+      const norm = normalizeAccent(String(b[key]));
+      if (!norm) return res.status(400).json({ error: "bad_color", message: `${key} is not a valid hex color.` });
+      if (norm.adjusted) adjusted = true;
+      updates.push(`${col} = ?`); params.push(norm.accent);
+    }
+  }
+  for (const [key, col] of [["logoData", "logo_data"], ["headerImageData", "header_image_data"]]) {
+    if (b[key] !== undefined) {
+      if (!validPortalImage(b[key], 500000)) return res.status(400).json({ error: "bad_image", message: "Images must be PNG/JPEG/GIF/WebP/SVG under ~350KB." });
+      updates.push(`${col} = ?`); params.push(b[key] || null);
+    }
+  }
+  if (updates.length) {
+    updates.push("updated_at = NOW()");
+    await run(`UPDATE portal_settings SET ${updates.join(", ")} WHERE org_id = ?`, [...params, req.user.orgId]);
+  }
+  const [ps] = await query(`SELECT * FROM portal_settings WHERE org_id = ?`, [req.user.orgId]);
+  res.json({ ...ps, adjusted, ...(adjusted ? { message: "Your color was deepened slightly so text stays readable (WCAG AA)." } : {}) });
+}));
+
+// Impact Updates CRUD (§6.1) — same upload validation + org-scoping rules.
+app.get("/impact-updates", requireAuth, wrap(async (req, res) => {
+  res.json(await query(`SELECT * FROM impact_updates WHERE org_id = ? ORDER BY created_at DESC`, [req.user.orgId]));
+}));
+
+async function validImpactTargets(targets, orgId) {
+  if (targets === undefined) return [];
+  if (!Array.isArray(targets) || targets.length > 20) return null;
+  const out = [];
+  for (const t of targets) {
+    if (!t || typeof t !== "object") return null;
+    if (t.kind === "fund") {
+      if (!(await orgOwns("fin_funds", t.id, orgId))) return null;
+    } else if (t.kind === "campaign") {
+      if (!(await orgOwns("campaigns", t.id, orgId))) return null;
+    } else return null;
+    out.push({ kind: t.kind, id: t.id });
+  }
+  return out;
+}
+
+app.post("/impact-updates", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
+  const b = req.body || {};
+  const title = String(b.title || "").trim().slice(0, 200);
+  if (!title) return res.status(400).json({ error: "title_required" });
+  const body = String(b.body || "").slice(0, 20000);
+  const photos = Array.isArray(b.photos) ? b.photos.slice(0, 4) : [];
+  for (const p of photos) if (!validPortalImage(p, 500000)) return res.status(400).json({ error: "bad_image" });
+  const targets = await validImpactTargets(b.targets, req.user.orgId);
+  if (targets === null) return res.status(404).json({ error: "bad_targets", message: "Each target must be a fund or campaign in your organization." });
+  const id = "imp_" + uuid().slice(0, 8);
+  await run(
+    `INSERT INTO impact_updates (id,org_id,title,body,photos,targets,org_wide,status,created_by)
+     VALUES (?,?,?,?,?,?,?,?,?)`,
+    [id, req.user.orgId, title, body, JSON.stringify(photos), JSON.stringify(targets),
+     b.orgWide === true || targets.length === 0, b.status === "draft" ? "draft" : "published", req.user.userId]);
+  res.status(201).json((await query(`SELECT * FROM impact_updates WHERE id = ?`, [id]))[0]);
+}));
+
+app.put("/impact-updates/:id", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
+  const [ex] = await query(`SELECT * FROM impact_updates WHERE id = ? AND org_id = ?`, [req.params.id, req.user.orgId]);
+  if (!ex) return res.status(404).json({ error: "not_found" });
+  const b = req.body || {};
+  const title = b.title !== undefined ? String(b.title || "").trim().slice(0, 200) : ex.title;
+  if (!title) return res.status(400).json({ error: "title_required" });
+  const body = b.body !== undefined ? String(b.body || "").slice(0, 20000) : ex.body;
+  let photos = ex.photos;
+  if (b.photos !== undefined) {
+    photos = Array.isArray(b.photos) ? b.photos.slice(0, 4) : [];
+    for (const p of photos) if (!validPortalImage(p, 500000)) return res.status(400).json({ error: "bad_image" });
+  }
+  let targets = ex.targets;
+  if (b.targets !== undefined) {
+    targets = await validImpactTargets(b.targets, req.user.orgId);
+    if (targets === null) return res.status(404).json({ error: "bad_targets" });
+  }
+  await run(
+    `UPDATE impact_updates SET title=?, body=?, photos=?, targets=?, org_wide=?, status=?, updated_at=NOW()
+     WHERE id=? AND org_id=?`,
+    [title, body, JSON.stringify(photos), JSON.stringify(targets),
+     b.orgWide !== undefined ? b.orgWide === true : ex.org_wide,
+     b.status !== undefined ? (b.status === "draft" ? "draft" : "published") : ex.status,
+     req.params.id, req.user.orgId]);
+  res.json((await query(`SELECT * FROM impact_updates WHERE id = ?`, [req.params.id]))[0]);
+}));
+
+app.delete("/impact-updates/:id", requireAuth, requireAdmin, wrap(async (req, res) => {
+  const result = await run(`DELETE FROM impact_updates WHERE id = ? AND org_id = ?`, [req.params.id, req.user.orgId]);
+  if (!result.changes) return res.status(404).json({ error: "not_found" });
+  res.json({ ok: true });
+}));
+
+// Staff read of the portal audit trail (P-7 visibility).
+app.get("/portal-audit", requireAuth, requireAdmin, wrap(async (req, res) => {
+  res.json(await query(
+    `SELECT * FROM portal_audit_log WHERE org_id = ? ORDER BY created_at DESC LIMIT 200`, [req.user.orgId]));
+}));
+
 
 // ── 404 ────────────────────────────────────────────────────────────────────
 app.use((req, res) => {

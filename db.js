@@ -1558,6 +1558,110 @@ async function initSchema() {
   await pool.query(`ALTER TABLE recurring_subscriptions ADD COLUMN IF NOT EXISTS campaign_id TEXT`);
   await pool.query(`ALTER TABLE recurring_subscriptions ADD COLUMN IF NOT EXISTS giving_page_id TEXT`);
   await pool.query(`ALTER TABLE recurring_subscriptions ADD COLUMN IF NOT EXISTS cover_fee_amount NUMERIC DEFAULT 0`);
+
+  // ══ BUILD-45 — DONOR PORTAL ══════════════════════════════════════════════
+  // A public, money-adjacent surface for people who are NOT Steward users.
+  // Every table here is org-scoped; tokens are stored as SHA-256 HASHES only
+  // (a DB leak must never leak a live magic link or session).
+
+  // Per-org portal switch + white-label theme (§5). enabled defaults FALSE —
+  // a public PII surface is opt-in per org, never on by construction.
+  // powered_by defaults FALSE (the promise is Steward-invisible by default).
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS portal_settings (
+      org_id TEXT PRIMARY KEY REFERENCES orgs(id),
+      enabled BOOLEAN NOT NULL DEFAULT false,
+      display_name TEXT,
+      logo_data TEXT,
+      header_image_data TEXT,
+      primary_color TEXT,
+      accent_color TEXT,
+      footer_text TEXT,
+      contact_email TEXT,
+      ein_line TEXT,
+      powered_by BOOLEAN NOT NULL DEFAULT false,
+      min_recurring_cents INTEGER NOT NULL DEFAULT 500,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+
+  // Magic links (P-1): ≥128-bit CSPRNG token, 15-minute expiry, single-use
+  // (used_at), invalidated on re-request (superseded_at). Hash-at-rest.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS portal_magic_links (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL,
+      email TEXT NOT NULL,
+      token_hash TEXT NOT NULL UNIQUE,
+      expires_at TIMESTAMPTZ NOT NULL,
+      used_at TIMESTAMPTZ,
+      superseded_at TIMESTAMPTZ,
+      requested_ip TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_portal_links_org_email ON portal_magic_links (org_id, email)`);
+
+  // Portal sessions (P-4): a SEPARATE table and a separate HttpOnly cookie —
+  // never the staff JWT system. A session is (org, email): P-6's one-email/
+  // many-donor-records case resolves donor rows at read time, always scoped
+  // to the session's org.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS portal_sessions (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL,
+      email TEXT NOT NULL,
+      token_hash TEXT NOT NULL UNIQUE,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      expires_at TIMESTAMPTZ NOT NULL,
+      last_seen_at TIMESTAMPTZ,
+      revoked_at TIMESTAMPTZ,
+      ip TEXT
+    )
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_portal_sessions_org_email ON portal_sessions (org_id, email)`);
+
+  // P-7: append-only audit of every session-create, link-request, and
+  // portal mutation.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS portal_audit_log (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL,
+      donor_id TEXT,
+      email TEXT,
+      action TEXT NOT NULL,
+      ip TEXT,
+      meta JSONB,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_portal_audit_org ON portal_audit_log (org_id, created_at DESC)`);
+
+  // Impact Updates (§6.1) — org-authored, attached to funds/campaigns (or
+  // org-wide). Matching is deterministic over existing gift attribution
+  // (§6.2) — no classifier, no AI.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS impact_updates (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL REFERENCES orgs(id),
+      title TEXT NOT NULL,
+      body TEXT,
+      photos JSONB DEFAULT '[]',
+      targets JSONB DEFAULT '[]',
+      org_wide BOOLEAN NOT NULL DEFAULT false,
+      status TEXT NOT NULL DEFAULT 'published',
+      created_by TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_impact_updates_org ON impact_updates (org_id, created_at DESC)`);
+
+  // R-2/R-3 pause state (BUILD-44 F-6): a paused schedule produces zero
+  // charges (Stripe pause_collection) and is excluded from dunning.
+  await pool.query(`ALTER TABLE recurring_subscriptions ADD COLUMN IF NOT EXISTS paused_at TIMESTAMPTZ`);
+  await pool.query(`ALTER TABLE recurring_subscriptions ADD COLUMN IF NOT EXISTS resume_at TIMESTAMPTZ`);
 }
 
 async function seedData() {

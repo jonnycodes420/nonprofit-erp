@@ -16,7 +16,12 @@
 #        PORT=5601 DISABLE_RATE_LIMIT=1 SESSION_CACHE_TTL_MS=0 RESEND_API_KEY=re_dummy_local \
 #        RESEND_BASE_URL=http://localhost:5602 DEMO_SMTP_FROM=noreply@stewardapp.dev \
 #        STRIPE_SECRET_KEY=sk_test_dummy STRIPE_WEBHOOK_SECRET=whsec_localtest \
+#        STRIPE_API_BASE=http://localhost:5603 \
 #        node server.js
+#      (STRIPE_API_BASE points the donation Stripe client at the local mock the
+#      portal suite starts on :5603 — BUILD-45's Stripe seam, same pattern as
+#      RESEND_BASE_URL. Other suites never call the Stripe API outbound, so an
+#      unbound :5603 is equivalent to the dummy key's auth failure.)
 #      (SESSION_CACHE_TTL_MS=0 disables the auth session cache so the suites —
 #       which reuse fixed user ids and delete/recreate rapidly — see fresh state
 #       every request; BUILD-38 Part 1. Prod leaves it unset → the 30s cache.)
@@ -47,7 +52,7 @@ CORE=(
   report-truth
   session-cache session-privilege smart-moves state-diff state-diff2 tasks task-due tenant-isolation trial-end upgrade-checkout workflows workflows-e2e
   empty-states presentation-wiring notify-delivery concurrency2 permissions-matrix
-  gift-idempotency
+  gift-idempotency portal
   finance-reports-consistency name-normalize reserved-recovered concurrency
 )
 

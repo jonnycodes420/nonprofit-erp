@@ -677,12 +677,235 @@ function TaxReceiptsManager({orgId,isAdmin,isReadOnly}){
 // deep-linkable via navigateTo("settings",{section:id}) (App.jsx
 // settingsIntent → initialSection prop), e.g. Communications' CAN-SPAM
 // prompt lands directly on "receipts".
+
+// ── BUILD-45 — Donor Portal manager (Settings › Donor Portal) ──────────────
+// The org's public, white-label donor surface: enable switch, theme, and the
+// Impact Updates donors see. Colors are server-normalized to WCAG-legible
+// values (the org is told when a color was deepened); images validated
+// server-side too (type + size).
+function PortalManager({isAdmin,isReadOnly}){
+  const [ps,setPs]=useState(null);
+  const [saving,setSaving]=useState(false);
+  const [msg,setMsg]=useState("");const [err,setErr]=useState("");
+  const disabled=!isAdmin||isReadOnly;
+  const load=()=>apiFetch("/portal-settings").then(setPs).catch(()=>setPs(null));
+  useEffect(()=>{load();},[]);
+  const set=(k,v)=>setPs(p=>({...p,[k]:v}));
+  function onImg(field){return e=>{
+    const f=e.target.files?.[0];if(!f)return;
+    if(!/^image\/(png|jpeg|jpg|gif|webp|svg\+xml)$/.test(f.type)){setErr("Use a PNG, JPEG, GIF, WebP, or SVG image.");return;}
+    if(f.size>350*1024){setErr("Image too large — keep it under 350KB.");return;}
+    setErr("");const r=new FileReader();r.onload=()=>set(field,r.result);r.readAsDataURL(f);
+  };}
+  async function save(){
+    if(disabled||saving||!ps)return;
+    setSaving(true);setErr("");setMsg("");
+    try{
+      const res=await apiFetch("/portal-settings",{method:"PUT",body:JSON.stringify({
+        enabled:ps.enabled===true,poweredBy:ps.powered_by===true,
+        displayName:ps.display_name||"",footerText:ps.footer_text||"",
+        contactEmail:ps.contact_email||"",einLine:ps.ein_line||"",
+        primaryColor:ps.primary_color||"",accentColor:ps.accent_color||"",
+        logoData:ps.logo_data||"",headerImageData:ps.header_image_data||"",
+        minRecurringCents:Number(ps.min_recurring_cents)||500,
+      })});
+      setPs(p=>({...p,...res}));
+      setMsg(res.adjusted?res.message:"Portal settings saved.");
+    }catch(e){setErr(e.message||"Could not save portal settings.");}
+    setSaving(false);
+  }
+  if(!ps)return <div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:16,padding:"24px 28px",color:T.ink3,fontSize:13}}>Loading…</div>;
+  const inp={width:"100%",boxSizing:"border-box",background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"9px 12px",color:T.ink,fontSize:13,outline:"none",fontFamily:"inherit"};
+  const lbl={fontSize:11,fontWeight:700,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:6};
+  return(
+    <div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:16,padding:"24px 28px"}}>
+      <SectionLabel>Donor Portal</SectionLabel>
+      <div style={{fontSize:13,color:T.ink3,lineHeight:1.6,marginTop:6,marginBottom:16,maxWidth:600}}>
+        A private page where your donors see their own giving history, download tax receipts, and manage
+        their recurring gifts — signed in by email link, never a password. It carries your identity, not ours.
+      </div>
+      <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:16}}>
+        <label style={{display:"flex",alignItems:"center",gap:8,fontSize:14,fontWeight:600,color:T.ink,cursor:disabled?"not-allowed":"pointer"}}>
+          <input type="checkbox" checked={ps.enabled===true} disabled={disabled} onChange={e=>set("enabled",e.target.checked)}/>
+          Portal is {ps.enabled?"ON":"OFF"}
+        </label>
+        {ps.enabled&&ps.portal_url&&<a href={ps.portal_url} target="_blank" rel="noreferrer" style={{fontSize:13,color:T.greenDk,fontWeight:600}}>{ps.portal_url} ↗</a>}
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(240px,1fr))",gap:14,marginBottom:16}}>
+        <div><div style={lbl}>Display name</div><input style={inp} value={ps.display_name||""} disabled={disabled} onChange={e=>set("display_name",e.target.value)} placeholder="Your organization's public name"/></div>
+        <div><div style={lbl}>Contact email (shown to donors)</div><input style={inp} value={ps.contact_email||""} disabled={disabled} onChange={e=>set("contact_email",e.target.value)} placeholder="hello@yourorg.org"/></div>
+        <div><div style={lbl}>Footer text</div><input style={inp} value={ps.footer_text||""} disabled={disabled} onChange={e=>set("footer_text",e.target.value)} placeholder="Your mission line or mailing address"/></div>
+        <div><div style={lbl}>EIN line (for receipts context)</div><input style={inp} value={ps.ein_line||""} disabled={disabled} onChange={e=>set("ein_line",e.target.value)} placeholder="Tax ID (EIN): 12-3456789"/></div>
+        <div><div style={lbl}>Minimum recurring amount ($)</div><input style={inp} inputMode="numeric" value={(Number(ps.min_recurring_cents)||500)/100} disabled={disabled}
+          onChange={e=>set("min_recurring_cents",Math.round((parseFloat(e.target.value)||5)*100))}/></div>
+      </div>
+      <div style={{display:"flex",gap:24,flexWrap:"wrap",marginBottom:16}}>
+        <div>
+          <div style={lbl}>Primary color</div>
+          <div style={{display:"flex",gap:8,alignItems:"center"}}>
+            <input type="color" value={ps.primary_color||"#1a6b4a"} disabled={disabled} onChange={e=>set("primary_color",e.target.value)} style={{width:36,height:36,border:"1px solid "+T.bg3,borderRadius:8,background:"none",padding:2,cursor:disabled?"not-allowed":"pointer"}}/>
+            <input style={{...inp,width:110,fontFamily:"monospace"}} value={ps.primary_color||""} disabled={disabled} onChange={e=>set("primary_color",e.target.value)} placeholder="#1a6b4a"/>
+          </div>
+        </div>
+        <div>
+          <div style={lbl}>Accent color</div>
+          <div style={{display:"flex",gap:8,alignItems:"center"}}>
+            <input type="color" value={ps.accent_color||"#c9a84c"} disabled={disabled} onChange={e=>set("accent_color",e.target.value)} style={{width:36,height:36,border:"1px solid "+T.bg3,borderRadius:8,background:"none",padding:2,cursor:disabled?"not-allowed":"pointer"}}/>
+            <input style={{...inp,width:110,fontFamily:"monospace"}} value={ps.accent_color||""} disabled={disabled} onChange={e=>set("accent_color",e.target.value)} placeholder="#c9a84c"/>
+          </div>
+        </div>
+        <div>
+          <div style={lbl}>Logo</div>
+          <label style={{display:"inline-block",background:disabled?T.bg3:T.bg2,border:"1px solid "+T.bg3,borderRadius:8,padding:"7px 12px",fontSize:12,fontWeight:600,color:T.ink,cursor:disabled?"not-allowed":"pointer"}}>
+            {ps.logo_data?"Replace logo":"Upload logo"}
+            <input type="file" accept="image/*" onChange={onImg("logo_data")} disabled={disabled} style={{display:"none"}}/>
+          </label>
+          {ps.logo_data&&<img src={ps.logo_data} alt="" style={{display:"block",maxHeight:36,marginTop:6}}/>}
+        </div>
+        <div>
+          <div style={lbl}>Header image (optional)</div>
+          <label style={{display:"inline-block",background:disabled?T.bg3:T.bg2,border:"1px solid "+T.bg3,borderRadius:8,padding:"7px 12px",fontSize:12,fontWeight:600,color:T.ink,cursor:disabled?"not-allowed":"pointer"}}>
+            {ps.header_image_data?"Replace image":"Upload image"}
+            <input type="file" accept="image/*" onChange={onImg("header_image_data")} disabled={disabled} style={{display:"none"}}/>
+          </label>
+        </div>
+      </div>
+      <label style={{display:"flex",alignItems:"center",gap:8,fontSize:13,color:T.ink3,marginBottom:16,cursor:disabled?"not-allowed":"pointer"}}>
+        <input type="checkbox" checked={ps.powered_by===true} disabled={disabled} onChange={e=>set("powered_by",e.target.checked)}/>
+        Show a small "Powered by Steward" line in the footer (off by default — the portal is yours)
+      </label>
+      {isAdmin&&<button onClick={save} disabled={disabled||saving} title={isReadOnly?"Reactivate your subscription to make changes.":undefined}
+        style={{background:disabled?T.bg3:T.gold500,border:"none",borderRadius:9,padding:"10px 18px",color:T.ink,fontSize:13,fontWeight:700,cursor:disabled?"not-allowed":"pointer"}}>{saving?"Saving…":"Save portal settings"}</button>}
+      {msg&&<div style={{marginTop:10,fontSize:13,color:T.greenDk,fontWeight:600}}>{msg}</div>}
+      {err&&<div style={{marginTop:10,fontSize:13,color:T.terracotta,fontWeight:600}}>{err}</div>}
+    </div>
+  );
+}
+
+// Impact Updates (§6.1) — what donors see in "What your giving made possible".
+// Attached to funds/campaigns; matching is deterministic on gift attribution.
+function ImpactUpdatesManager({isAdmin,isReadOnly}){
+  const [rows,setRows]=useState([]);
+  const [funds,setFunds]=useState([]);
+  const [camps,setCamps]=useState([]);
+  const [form,setForm]=useState(null); // null | {id?,title,body,photos,targets,orgWide}
+  const [busy,setBusy]=useState(false);
+  const [err,setErr]=useState("");
+  const disabled=!isAdmin||isReadOnly;
+  const load=()=>{
+    apiFetch("/impact-updates").then(setRows).catch(()=>{});
+    apiFetch("/finance/funds").then(f=>setFunds(Array.isArray(f)?f:[])).catch(()=>{});
+    apiFetch("/fundraising/campaigns").then(c=>setCamps(Array.isArray(c)?c:[])).catch(()=>{});
+  };
+  useEffect(()=>{load();},[]);
+  const inp={width:"100%",boxSizing:"border-box",background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"9px 12px",color:T.ink,fontSize:13,outline:"none",fontFamily:"inherit"};
+  const lbl={fontSize:11,fontWeight:700,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:6};
+  function addPhoto(e){
+    const f=e.target.files?.[0];if(!f)return;
+    if(!/^image\/(png|jpeg|jpg|gif|webp)$/.test(f.type)){setErr("Photos must be PNG, JPEG, GIF, or WebP.");return;}
+    if(f.size>350*1024){setErr("Photo too large — keep each under 350KB.");return;}
+    setErr("");const r=new FileReader();
+    r.onload=()=>setForm(fm=>({...fm,photos:[...(fm.photos||[]),r.result].slice(0,4)}));
+    r.readAsDataURL(f);
+  }
+  async function save(){
+    if(disabled||busy||!form?.title?.trim())return;
+    setBusy(true);setErr("");
+    try{
+      const body=JSON.stringify({title:form.title,body:form.body||"",photos:form.photos||[],
+        targets:form.targets||[],orgWide:form.orgWide===true});
+      if(form.id)await apiFetch(`/impact-updates/${form.id}`,{method:"PUT",body});
+      else await apiFetch("/impact-updates",{method:"POST",body});
+      setForm(null);load();
+    }catch(e){setErr(e.message||"Could not save.");}
+    setBusy(false);
+  }
+  const toggleTarget=(kind,id)=>setForm(fm=>{
+    const targets=fm.targets||[];
+    const has=targets.some(t=>t.kind===kind&&t.id===id);
+    return {...fm,targets:has?targets.filter(t=>!(t.kind===kind&&t.id===id)):[...targets,{kind,id}]};
+  });
+  return(
+    <div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:16,padding:"24px 28px",marginTop:18}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+        <SectionLabel>Impact Updates</SectionLabel>
+        {isAdmin&&!form&&<button onClick={()=>setForm({title:"",body:"",photos:[],targets:[],orgWide:false})} disabled={disabled}
+          style={{background:disabled?T.bg3:T.gold500,border:"none",borderRadius:9,padding:"8px 16px",color:T.ink,fontSize:13,fontWeight:700,cursor:disabled?"not-allowed":"pointer"}}>+ New update</button>}
+      </div>
+      <div style={{fontSize:13,color:T.ink3,lineHeight:1.6,marginTop:6,marginBottom:14,maxWidth:600}}>
+        Short updates donors see in their portal. Attach one to a fund or campaign and it shows to donors
+        who gave there in the last two years; org-wide updates show to everyone. A donor who gave to the
+        food bank fund sees food bank updates — that's the whole feature.
+      </div>
+      {form&&(
+        <div style={{border:"1px solid "+T.bg3,borderRadius:12,padding:16,marginBottom:16}}>
+          <div style={lbl}>Title</div>
+          <input style={inp} value={form.title} onChange={e=>setForm(f=>({...f,title:e.target.value}))} placeholder="Food bank served 400 families this spring"/>
+          <div style={{...lbl,marginTop:12}}>Story</div>
+          <textarea style={{...inp,minHeight:90,resize:"vertical",lineHeight:1.6}} value={form.body} onChange={e=>setForm(f=>({...f,body:e.target.value}))}/>
+          <div style={{...lbl,marginTop:12}}>Photos (up to 4, each under 350KB)</div>
+          <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
+            {(form.photos||[]).map((p,i)=>(
+              <div key={i} style={{position:"relative"}}>
+                <img src={p} alt="" style={{height:56,borderRadius:8}}/>
+                <button onClick={()=>setForm(f=>({...f,photos:f.photos.filter((_,j)=>j!==i)}))}
+                  style={{position:"absolute",top:-6,right:-6,background:T.ink,color:T.bg,border:"none",borderRadius:"50%",width:18,height:18,fontSize:10,cursor:"pointer",lineHeight:1}}>✕</button>
+              </div>
+            ))}
+            {(form.photos||[]).length<4&&<label style={{background:T.bg2,border:"1px solid "+T.bg3,borderRadius:8,padding:"7px 12px",fontSize:12,fontWeight:600,cursor:"pointer"}}>
+              Add photo<input type="file" accept="image/*" onChange={addPhoto} style={{display:"none"}}/>
+            </label>}
+          </div>
+          <div style={{...lbl,marginTop:12}}>Shows to donors who gave to</div>
+          <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+            {funds.map(f=>(
+              <button key={f.id} onClick={()=>toggleTarget("fund",f.id)}
+                style={{border:"1px solid "+((form.targets||[]).some(t=>t.id===f.id)?T.greenDk:T.bg3),background:(form.targets||[]).some(t=>t.id===f.id)?T.green100:T.bg,borderRadius:20,padding:"5px 12px",fontSize:12,cursor:"pointer"}}>{f.name}</button>
+            ))}
+            {camps.map(c=>(
+              <button key={c.id} onClick={()=>toggleTarget("campaign",c.id)}
+                style={{border:"1px solid "+((form.targets||[]).some(t=>t.id===c.id)?T.greenDk:T.bg3),background:(form.targets||[]).some(t=>t.id===c.id)?T.green100:T.bg,borderRadius:20,padding:"5px 12px",fontSize:12,cursor:"pointer"}}>{c.name}</button>
+            ))}
+          </div>
+          <label style={{display:"flex",alignItems:"center",gap:8,fontSize:13,color:T.ink3,marginTop:10}}>
+            <input type="checkbox" checked={form.orgWide===true} onChange={e=>setForm(f=>({...f,orgWide:e.target.checked}))}/>
+            Also show org-wide (every portal donor)
+          </label>
+          <div style={{display:"flex",gap:8,marginTop:14}}>
+            <button onClick={save} disabled={busy||!form.title.trim()}
+              style={{background:T.gold500,border:"none",borderRadius:9,padding:"9px 16px",color:T.ink,fontSize:13,fontWeight:700,cursor:"pointer"}}>{busy?"Saving…":form.id?"Save changes":"Publish update"}</button>
+            <button onClick={()=>setForm(null)} style={{background:"none",border:"1px solid "+T.bg3,borderRadius:9,padding:"9px 16px",fontSize:13,cursor:"pointer",color:T.ink}}>Cancel</button>
+          </div>
+        </div>
+      )}
+      {rows.length===0&&!form&&<div style={{fontSize:13,color:T.ink3}}>No impact updates yet — the first one you publish shows up in your donors' portals.</div>}
+      {rows.map(u=>(
+        <div key={u.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 0",borderBottom:"1px solid "+T.bg2}}>
+          <div>
+            <div style={{fontSize:14,fontWeight:700,color:T.ink}}>{u.title}</div>
+            <div style={{fontSize:12,color:T.ink3}}>
+              {u.org_wide?"Org-wide":`${(Array.isArray(u.targets)?u.targets.length:0)} target${(Array.isArray(u.targets)?u.targets.length:0)===1?"":"s"}`} · {String(u.created_at).slice(0,10)}
+            </div>
+          </div>
+          {isAdmin&&<div style={{display:"flex",gap:8}}>
+            <button onClick={()=>setForm({id:u.id,title:u.title,body:u.body||"",photos:Array.isArray(u.photos)?u.photos:[],targets:Array.isArray(u.targets)?u.targets:[],orgWide:u.org_wide===true})}
+              style={{background:"none",border:"1px solid "+T.bg3,borderRadius:8,padding:"5px 12px",fontSize:12,cursor:"pointer",color:T.ink}}>Edit</button>
+            <button onClick={async()=>{if(confirm("Delete this impact update?")){await apiFetch(`/impact-updates/${u.id}`,{method:"DELETE"});load();}}}
+              style={{background:"none",border:"1px solid "+T.terra200,borderRadius:8,padding:"5px 12px",fontSize:12,cursor:"pointer",color:T.terra700}}>Delete</button>
+          </div>}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 const SETTINGS_TABS=[
   {id:"org",label:"Organization"},
   {id:"team",label:"Team"},
   {id:"integrations",label:"Integrations"},
   {id:"giving",label:"Giving Pages"},
   {id:"customization",label:"Customization"},
+  {id:"portal",label:"Donor Portal"},
   {id:"receipts",label:"Tax Receipts"},
   {id:"data",label:"Your Data"},
   {id:"account",label:"Account"},
@@ -1219,6 +1442,12 @@ export function Settings({auth,logout,initialSection}) {
       {section==="giving"&&<>
         <CoverFeesCard orgId={auth?.org?.id} isAdmin={isAdmin}/>
         <GivingPagesManager orgSlug={orgSlug} isAdmin={isAdmin} isReadOnly={isReadOnly}/>
+      </>}
+
+      {/* ── Donor Portal (BUILD-45) ───────────────────────────────────────── */}
+      {section==="portal"&&<>
+        <PortalManager isAdmin={isAdmin} isReadOnly={isReadOnly}/>
+        <ImpactUpdatesManager isAdmin={isAdmin} isReadOnly={isReadOnly}/>
       </>}
 
       {/* ── Customization ─────────────────────────────────────────────────── */}

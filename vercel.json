@@ -2,8 +2,21 @@
   "buildCommand": "npm --prefix client install && npm --prefix client run build",
   "outputDirectory": "client/dist",
   "rewrites": [
-    { "source": "/unsubscribe", "destination": "https://nonprofit-erp-production.up.railway.app/unsubscribe" },
-    { "source": "/recurring/update-card", "destination": "https://nonprofit-erp-production.up.railway.app/recurring/update-card" },
-    { "source": "/(.*)", "destination": "/index.html" }
+    {
+      "source": "/portal-api/:path*",
+      "destination": "https://nonprofit-erp-production.up.railway.app/portal/:path*"
+    },
+    {
+      "source": "/unsubscribe",
+      "destination": "https://nonprofit-erp-production.up.railway.app/unsubscribe"
+    },
+    {
+      "source": "/recurring/update-card",
+      "destination": "https://nonprofit-erp-production.up.railway.app/recurring/update-card"
+    },
+    {
+      "source": "/(.*)",
+      "destination": "/index.html"
+    }
   ]
 }

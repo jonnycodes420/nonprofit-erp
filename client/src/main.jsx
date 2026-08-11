@@ -23,6 +23,7 @@ const InvitePage         = React.lazy(() => import("./pages/InvitePage"));
 const App                = React.lazy(() => import("./App"));
 const Donate             = React.lazy(() => import("./pages/Donate"));
 const ManageFundraiser   = React.lazy(() => import("./pages/ManageFundraiser"));
+const Portal             = React.lazy(() => import("./pages/Portal")); // BUILD-45 donor portal (public, white-label)
 const Pricing            = React.lazy(() => import("./pages/Pricing"));
 // NB: Invitation.jsx is also imported eagerly by Landing (the on-page form
 // section), so this lazy route resolves from the already-loaded entry chunk.
@@ -152,6 +153,10 @@ function Root() {
           <Route path="/invite/:token" element={<InvitePage />} />
           <Route path="/pricing"   element={<Pricing />} />
           <Route path="/invitation" element={<InvitationPage />} />
+          {/* BUILD-45 — donor portal (magic-link auth; org-themed; /verify
+              consumes the fragment token). */}
+          <Route path="/portal/:orgSlug" element={<Portal />} />
+          <Route path="/portal/:orgSlug/verify" element={<Portal />} />
           <Route path="/give/:orgSlug" element={<Donate />} />
           <Route path="/give/:orgSlug/:pageSlug" element={<Donate />} />
           <Route path="/give/:orgSlug/:pageSlug/:fundraiserSlug" element={<Donate />} />

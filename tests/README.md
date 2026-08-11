@@ -61,7 +61,8 @@ DATABASE_URL="postgresql://steward@localhost:5544/steward_loadtest" \
   JWT_SECRET=local-test-secret PORT=5601 DISABLE_RATE_LIMIT=1 \
   RESEND_API_KEY=re_dummy_local RESEND_BASE_URL=http://localhost:5602 \
   DEMO_SMTP_FROM=noreply@stewardapp.dev STRIPE_SECRET_KEY=sk_test_dummy \
-  STRIPE_WEBHOOK_SECRET=whsec_localtest node server.js
+  STRIPE_WEBHOOK_SECRET=whsec_localtest STRIPE_API_BASE=http://localhost:5603 \
+  node server.js
 bash tests/run-all.sh
 ```
 
