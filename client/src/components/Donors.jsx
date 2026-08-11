@@ -416,6 +416,7 @@ function buildTransactionPayload(parsed, txMap) {
           type: txMap.type ? (String(row[txMap.type] || "").toLowerCase() || "cash") : "cash",
           campaign: txMap.campaign ? String(row[txMap.campaign] || "") : "",
           notes: txMap.notes ? String(row[txMap.notes] || "") : "",
+          externalId: txMap.externalId ? (String(row[txMap.externalId] || "").trim() || undefined) : undefined,
         };
       }
     }
@@ -449,7 +450,7 @@ async function submitImportChunked(donors, gifts, onProgress) {
     if (!giftsByDonor.has(g.donorIndex)) giftsByDonor.set(g.donorIndex, []);
     giftsByDonor.get(g.donorIndex).push(g);
   }
-  const totals = { created: 0, giftsInserted: 0, duplicates: 0, donorsUpdated: 0, financeSynced: 0, batchErrors: [] };
+  const totals = { created: 0, giftsInserted: 0, duplicates: 0, donorsUpdated: 0, financeSynced: 0, batchErrors: [], twinCandidates: 0 };
   const total = donors.length;
   if (!total) return totals;
   for (let start = 0; start < total; start += CHUNK) {
@@ -468,6 +469,7 @@ async function submitImportChunked(donors, gifts, onProgress) {
     totals.created       += res.created       || 0;
     totals.giftsInserted += res.giftsInserted || 0;
     totals.duplicates    += res.duplicates    || 0;
+    totals.twinCandidates += (res.duplicateCandidates && res.duplicateCandidates.withinFile) || 0;
     totals.donorsUpdated += res.donorsUpdated || 0;
     totals.financeSynced += res.financeSynced || 0;
     if (res.batchErrors?.length) totals.batchErrors.push(...res.batchErrors);
@@ -546,7 +548,7 @@ export function DonorImport({ onClose, onImported, withHistory = false }) {
   const [parsed,     setParsed]     = useState(null);       // { headers:[], rows:[] }
   const [xlsxSheets, setXlsxSheets]= useState(null);       // [{name, rowCount, headers, rows}] | null
   const [mapping,    setMapping]    = useState({});         // aggregate + wide donor-field mapping
-  const [txMap,      setTxMap]      = useState({ donorName:"",donorEmail:"",amount:"",date:"",type:"",campaign:"",notes:"",phone:"",city:"",state:"",owner:"" });
+  const [txMap,      setTxMap]      = useState({ donorName:"",donorEmail:"",amount:"",date:"",type:"",campaign:"",notes:"",phone:"",city:"",state:"",owner:"",externalId:"" });
   const [yearCols,   setYearCols]   = useState([]);         // wide year columns
   const [yearConvention, setYearConvention] = useState("dec31");
   const [shape,      setShape]      = useState("aggregate");// auto-detected file shape
@@ -962,6 +964,7 @@ export function DonorImport({ onClose, onImported, withHistory = false }) {
             <strong style={{color:T.ink}}>{result.created}</strong> donors added
             {result.giftsInserted > 0 && <> · <strong>{result.giftsInserted}</strong> gifts attached</>}
             {result.duplicates > 0 && <> · <strong>{result.duplicates}</strong> duplicates skipped</>}
+            {result.twinCandidates > 0 && <> · <strong>{result.twinCandidates}</strong> same-day/same-amount twins imported (reviewable)</>}
             {result.newDonors > 0 && <> · <strong>{result.newDonors}</strong> created from unmatched gifts</>}
             {result.warned > 0    && <> · <strong>{result.warned}</strong> imported with warnings</>}
             {result.skipped > 0   && <> · <strong>{result.skipped}</strong> skipped (no name or email)</>}
@@ -983,7 +986,7 @@ export function DonorImport({ onClose, onImported, withHistory = false }) {
   const donorHeaders = parsed ? parsed.headers.filter(h => !YEAR_HDR_PAT.test(String(h))) : [];
   const TX_ROLES = [
     ["donorName","Donor name"],["donorEmail","Email"],["amount","Gift amount"],["date","Gift date"],
-    ["type","Type"],["campaign","Campaign / fund"],["notes","Notes"],["phone","Phone"],["city","City"],["state","State"],
+    ["type","Type"],["campaign","Campaign / fund"],["notes","Notes"],["externalId","Gift / transaction ID"],["phone","Phone"],["city","City"],["state","State"],
     ...(isTeam ? [["owner","Assigned officer"]] : []),
   ];
 
@@ -1360,12 +1363,16 @@ function autoDetectWideConfig(headers, rows) {
 }
 
 function autoDetectTxMapping(headers, rows) {
-  const map = { donorName:"",donorEmail:"",amount:"",date:"",type:"",campaign:"",notes:"",owner:"" };
+  const map = { donorName:"",donorEmail:"",amount:"",date:"",type:"",campaign:"",notes:"",owner:"",externalId:"" };
   const sample = rows.slice(0,10);
   for (const h of headers) {
     const hl = h.toLowerCase().trim();
     if (!map.donorName  && /^(name|full.?name|donor.?name|donor|contact|first.?name)$/.test(hl)) map.donorName  = h;
     if (!map.donorEmail && /^(email|email.?address|e-?mail)$/.test(hl))                          map.donorEmail = h;
+    // BUILD-45 §1.2 F-4 — a source-system gift/transaction id is the ONLY safe
+    // gift dedup key; (donor, amount, date) never is. Anchored so a bare "ID"
+    // (usually the donor id) or "Donor ID" is never grabbed.
+    if (!map.externalId && /^(gift.?id|transaction.?id|txn.?id|payment.?id|external.?id|reference(.?(no|number|id))?)$/.test(hl)) map.externalId = h;
     if (!map.amount     && /^(amount|gift.?amount|donation.?amount|gift|giving|sum)$/.test(hl)) {
       if (sample.some(r => !isNaN(parseFloat(String(r[h]||"").replace(/[$,]/g,""))))) map.amount = h;
     }
@@ -1395,7 +1402,7 @@ function GiftHistoryImport({ donors, onClose, onImported }) {
   const [wideDonorNameCol, setWideDonorNameCol]   = useState("");
   const [wideDonorEmailCol, setWideDonorEmailCol] = useState("");
 
-  const [txMap, setTxMap] = useState({ donorName:"",donorEmail:"",amount:"",date:"",type:"",campaign:"",notes:"" });
+  const [txMap, setTxMap] = useState({ donorName:"",donorEmail:"",amount:"",date:"",type:"",campaign:"",notes:"",externalId:"" });
 
   const [matchedGifts, setMatchedGifts] = useState([]);
   const [overrides, setOverrides]       = useState({});
@@ -1486,6 +1493,7 @@ function GiftHistoryImport({ donors, onClose, onImported }) {
           type:     txMap.type     ? (String(row[txMap.type]    ||"").toLowerCase() || "cash") : "cash",
           campaign: txMap.campaign ? String(row[txMap.campaign] ||"") : "",
           notes:    txMap.notes    ? String(row[txMap.notes]    ||"") : "",
+          externalId: txMap.externalId ? (String(row[txMap.externalId]||"").trim() || undefined) : undefined,
           rawName, rawEmail, rawSource:`row ${i+2}`, ...match,
         });
       }
@@ -1528,13 +1536,25 @@ function GiftHistoryImport({ donors, onClose, onImported }) {
       if (g.confidence === "low" && !ov)      return null;
       const donorId = ov?.donorId || g.suggestedDonor?.id;
       if (!donorId)                           return null;
-      return { donorId, amount:g.amount, date:g.date, type:g.type, campaign:g.campaign, notes:g.notes };
+      return { donorId, amount:g.amount, date:g.date, type:g.type, campaign:g.campaign, notes:g.notes, externalId:g.externalId };
     }).filter(Boolean);
     if (!toSend.length) { setErr("No gifts to import."); return; }
     setLoading(true); setErr("");
     try {
       const res = await apiFetch("/gifts/import-history", { method:"POST", body:JSON.stringify({ gifts:toSend }) });
       setResult(res); setStep("result");
+    } catch(e) { setErr(e.message || "Import failed."); }
+    setLoading(false);
+  };
+
+  // §1.2 F-4 — the human decided: import the rows held as possible duplicates.
+  const importHeld = async () => {
+    if (!result || !Array.isArray(result.heldForReview) || !result.heldForReview.length) return;
+    setLoading(true);
+    try {
+      const res = await apiFetch("/gifts/import-history", { method:"POST",
+        body:JSON.stringify({ includeDuplicates:true, gifts:result.heldForReview }) });
+      setResult(r => ({ ...r, inserted:(r.inserted||0)+(res.inserted||0), heldForReview:[] }));
     } catch(e) { setErr(e.message || "Import failed."); }
     setLoading(false);
   };
@@ -1550,8 +1570,27 @@ function GiftHistoryImport({ donors, onClose, onImported }) {
           <div style={{fontSize:14,color:T.ink3,marginBottom:16,lineHeight:1.8}}>
             <strong style={{color:T.ink}}>{result.inserted}</strong> gifts imported across{" "}
             <strong style={{color:T.ink}}>{result.donorsUpdated}</strong> donors
-            {result.duplicates > 0 && <> · <strong>{result.duplicates}</strong> duplicates skipped</>}
+            {result.externalIdDupes > 0 && <> · <strong>{result.externalIdDupes}</strong> already imported (matched by transaction ID)</>}
           </div>
+          {Array.isArray(result.heldForReview) && result.heldForReview.length > 0 && (
+            <div style={{fontSize:13,color:T.ink,background:T.gold100,border:"1px solid "+T.gold300,borderRadius:10,padding:"12px 16px",marginBottom:16,textAlign:"left",lineHeight:1.6}}>
+              <strong>{result.heldForReview.length}</strong> row{result.heldForReview.length===1?"":"s"} matched a gift already on file
+              (same donor, amount, and date) and {result.heldForReview.length===1?"was":"were"} held for your review — nothing was
+              silently dropped. If these are genuinely separate gifts (e.g. two identical checks the same day), import them.
+              <div style={{marginTop:10}}>
+                <button disabled={loading} onClick={importHeld}
+                  style={{background:T.gold500,border:"none",borderRadius:8,padding:"8px 16px",color:T.ink,fontSize:13,fontWeight:700,cursor:"pointer"}}>
+                  {loading?"Importing…":`Import ${result.heldForReview.length} held row${result.heldForReview.length===1?"":"s"}`}
+                </button>
+              </div>
+            </div>
+          )}
+          {result.duplicateCandidates && result.duplicateCandidates.withinFile > 0 && (
+            <div style={{fontSize:12,color:T.ink3,marginBottom:12}}>
+              {result.duplicateCandidates.withinFile} same-day/same-amount twin{result.duplicateCandidates.withinFile===1?" was":"s were"} imported
+              from within this file (they are treated as real, separate gifts — map a Gift/Transaction ID column for exact dedup).
+            </div>
+          )}
           <div style={{fontSize:12,color:T.ink3,marginBottom:28}}>Donor giving totals have been recalculated from the gifts table.</div>
           <button onClick={onImported} style={{background:"#10b981",border:"none",borderRadius:10,padding:"12px 28px",color:"#fff",fontSize:14,fontWeight:700,cursor:"pointer"}}>Done</button>
         </div>
@@ -1698,6 +1737,7 @@ function GiftHistoryImport({ donors, onClose, onImported }) {
                   ["Gift Type","type","cash, check, online…"],
                   ["Campaign / Fund","campaign",""],
                   ["Notes","notes",""],
+                  ["Gift / Transaction ID","externalId","dedupes re-imports safely"],
                 ].map(([label,key,hint])=>(
                   <div key={key}>
                     <div style={{fontSize:11,fontWeight:700,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:4}}>
@@ -2253,6 +2293,9 @@ function LogTouchpointModal({donor,onSave,onClose}){
   const[type,setType]=useState("call");
   const[date,setDate]=useState(new Date().toISOString().split("T")[0]);
   const[loading,setLoading]=useState(false);
+  // BUILD-45 §1.1 F-3 — one idempotency key per modal open: a double-tapped
+  // Save replays the SAME key and the server records exactly one gift.
+  const giftIdemRef=useRef(crypto.randomUUID());
   const[kt1,setKt1]=useState("");const[kt2,setKt2]=useState("");const[kt3,setKt3]=useState("");
   const[history,setHistory]=useState("");const[spouse,setSpouse]=useState("");const[nextStep,setNextStep]=useState("");
   const[answered,setAnswered]=useState("yes");const[duration,setDuration]=useState("");const[objections,setObjections]=useState("");
@@ -2323,7 +2366,7 @@ function LogTouchpointModal({donor,onSave,onClose}){
         // The gift route auto-stamps the Finance ledger exactly once (source=gift,
         // carrying the chosen fund). The old separate /finance/transactions call
         // was removed — it double-stamped the ledger (BUILD-21 Part 3).
-        await apiFetch(`/donors/${donor.id}/gifts`,{method:"POST",body:JSON.stringify({amount:giftAmt,date,notes:note,fundId:finFundId||undefined,campaignId:campaignId||undefined})});
+        await apiFetch(`/donors/${donor.id}/gifts`,{method:"POST",body:JSON.stringify({amount:giftAmt,date,notes:note,fundId:finFundId||undefined,campaignId:campaignId||undefined,idempotencyKey:giftIdemRef.current})});
       }
       onSave({type:saveType,note,date,amount:giftAmt});
     }catch(e){console.error(e);}
@@ -2776,6 +2819,10 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
   const [giftEditId,setGiftEditId]=useState(null);
   const [giftEditForm,setGiftEditForm]=useState({});
   const [addGiftForm,setAddGiftForm]=useState({amount:"",date:new Date().toISOString().split("T")[0],type:"cash",payment_method:"",notes:"",fund_id:"",acknowledgement_sent:false,pledgeId:""});
+  // BUILD-45 §1.1 F-3 — idempotency key minted lazily per submit attempt and
+  // cleared only on SUCCESS: a double-tap (or retry after a network error)
+  // replays the same key and the server records exactly one gift.
+  const addGiftIdemRef=useRef(null);
   const [addGiftOpen,setAddGiftOpen]=useState(false);
   const [giftSaving,setGiftSaving]=useState(false);
 
@@ -3099,6 +3146,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
   const addGift=async()=>{
     if(!addGiftForm.amount||isNaN(Number(addGiftForm.amount)))return;
     setGiftSaving(true);
+    if(!addGiftIdemRef.current)addGiftIdemRef.current=crypto.randomUUID();
     try{
       await apiFetch(`/donors/${donor.id}/gifts`,{method:"POST",body:JSON.stringify({
         amount:Number(addGiftForm.amount),date:addGiftForm.date,type:addGiftForm.type,
@@ -3106,7 +3154,9 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
         fund_id:addGiftForm.fund_id,payment_method:addGiftForm.payment_method,
         acknowledgement_sent:addGiftForm.acknowledgement_sent,
         pledgeId:addGiftForm.pledgeId||undefined,
+        idempotencyKey:addGiftIdemRef.current,
       })});
+      addGiftIdemRef.current=null;
       setAddGiftOpen(false);
       setAddGiftForm({amount:"",date:new Date().toISOString().split("T")[0],type:"cash",payment_method:"",notes:"",fund_id:"",acknowledgement_sent:false,pledgeId:""});
       loadGiftsFull();

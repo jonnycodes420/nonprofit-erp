@@ -240,7 +240,7 @@ function makeFixture(FIX) {
       const month = year === 2025 ? 1 + Math.floor(rnd() * 6) : 1 + Math.floor(rnd() * 12);
       const amount = 25 + Math.floor(rnd() * 40) * 25;
       const campaign = rnd() < 1 / 3 ? FIX.CAMPAIGN : null;
-      // day varies per gift: the import dedupes identical (donor,amount,date)
+      // day varies per gift (determinism; since BUILD-45 §1.2 the import no longer collapses identical (donor,amount,date) rows)
       donors[i].gifts.push({ amount, date: `${year}-${String(month).padStart(2, "0")}-${10 + g}`, campaign });
       total++;
     }

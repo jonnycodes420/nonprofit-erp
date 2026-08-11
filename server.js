@@ -561,12 +561,15 @@ app.post("/stripe/webhook", express.raw({ type: "application/json" }), async (re
                   [g.id, orgId]);
                 await runTx(client, "UPDATE receipts SET gift_id=NULL WHERE gift_id=$1 AND org_id=$2", [g.id, orgId]);
                 await runTx(client,
-                  `UPDATE pledges SET status='open', fulfilled_gift_id=NULL, fulfilled_at=NULL, updated_at=NOW()
+                  `UPDATE pledges SET fulfilled_gift_id=NULL, updated_at=NOW()
                    WHERE fulfilled_gift_id=$1 AND org_id=$2`,
                   [g.id, orgId]);
                 await runTx(client, "DELETE FROM fin_transactions WHERE gift_id=$1 AND org_id=$2", [g.id, orgId]);
                 await runTx(client, "DELETE FROM gifts WHERE id=$1 AND org_id=$2", [g.id, orgId]);
               });
+              // F-5: recompute the pledge this gift was paying down (reopens
+              // only if the remaining payments no longer cover it).
+              if (g.pledge_id) await recalcPledgePayment(g.pledge_id, orgId).catch(() => {});
               if (g.donor_id) {
                 await recalcDonorSummary(g.donor_id, orgId);
                 await run("INSERT INTO interactions (id,org_id,donor_id,type,note,date) VALUES ($1,$2,$3,'note',$4,$5)",
@@ -591,6 +594,8 @@ app.post("/stripe/webhook", express.raw({ type: "application/json" }), async (re
                   [remaining, g.id, orgId]);
                 await runTx(client, "UPDATE fin_transactions SET amount=$1 WHERE gift_id=$2 AND org_id=$3", [remaining, g.id, orgId]);
               });
+              // F-5: a shrunk payment may drop a pledge back below fulfilled.
+              if (g.pledge_id) await recalcPledgePayment(g.pledge_id, orgId).catch(() => {});
               if (g.donor_id) {
                 await recalcDonorSummary(g.donor_id, orgId);
                 await run("INSERT INTO interactions (id,org_id,donor_id,type,note,date) VALUES ($1,$2,$3,'note',$4,$5)",
@@ -3141,19 +3146,40 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrap(async (r
 
   // ── Build gift+interaction records ──
   // Filter to gifts whose donor was actually inserted (not deduped or batch-failed).
-  const giftFingerprints = new Set(); // within-import dedup
+  // §1.2 F-4 — (donor, amount, date) is NEVER a dedup key: forty $100 Sunday
+  // gifts in a transaction export are forty gifts, and the old silent collapse
+  // here dropped 39 of them. The ONLY gift-level dedup is an explicit
+  // external-ID column from the source system (unique per org at the DB —
+  // uq_gifts_external — so a re-run with IDs is also cross-run idempotent).
+  // Same-(donor,amount,date) twins WITHOUT an external ID are all inserted and
+  // COUNTED into duplicateCandidates so a human can review the report — never
+  // silently collapsed.
+  const seenExternalIds = new Set(); // within-file external-ID dedup
+  const fpCounts = new Map();        // informational twin report, NOT a filter
   const giftsToInsert = [];
+  let externalIdDupes = 0;
   for (const g of gifts) {
     const donorId = indexToId[g.donorIndex];
     if (!donorId || failedIds.has(donorId)) continue;
     const amt  = Math.round(Number(g.amount) || 0);
     if (amt <= 0) continue;
     const date = normalizeGiftDate(g.date);
-    const fp   = `${donorId}|${amt}|${date}`;
-    if (giftFingerprints.has(fp)) continue;
-    giftFingerprints.add(fp);
-    giftsToInsert.push({ donorId, amount:amt, date, type:g.type||"cash", campaign:g.campaign||"", notes:g.notes||"" });
+    const externalId = (g.externalId || g.external_id || "").toString().trim().slice(0, 128) || null;
+    if (externalId) {
+      if (seenExternalIds.has(externalId)) { externalIdDupes++; continue; }
+      seenExternalIds.add(externalId);
+    } else {
+      const fp = `${donorId}|${amt}|${date}`;
+      fpCounts.set(fp, (fpCounts.get(fp) || 0) + 1);
+    }
+    giftsToInsert.push({ donorId, amount:amt, date, type:g.type||"cash", campaign:g.campaign||"", notes:g.notes||"", externalId });
   }
+  const duplicateCandidates = {
+    withinFile: [...fpCounts.values()].filter(n => n > 1).reduce((s, n) => s + (n - 1), 0),
+    samples: [...fpCounts.entries()].filter(([, n]) => n > 1).slice(0, 10)
+      .map(([fp, n]) => { const [dId, amount, date] = fp.split("|"); return { donor: donorNameById(dId), amount: Number(amount), date, count: n }; }),
+  };
+  function donorNameById(dId) { const d = donorsToInsert.find(x => x._id === dId); return d ? String(d.name).trim() : dId; }
 
   // ── Finance sync setup (Gap 1) ───────────────────────────────────────────
   // fyStart mirrors /dashboard/my-stats exactly: July 1 fiscal year boundary.
@@ -3178,35 +3204,52 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrap(async (r
 
   for (let bi = 0; bi < giftsToInsert.length; bi += GIFT_BATCH) {
     const batch = giftsToInsert.slice(bi, bi + GIFT_BATCH);
-    const giftParams = [], intParams = [], giftTuples = [], intTuples = [];
-    const ftParams = [], ftTuples = [];
+    const giftParams = [], giftTuples = [];
+    const rowByGid = new Map();
     batch.forEach(g => {
       const gid = "g_"+uuid().slice(0,8);
-      const intNote = `Gift received: $${g.amount.toLocaleString()} (${g.type})${g.notes?" — "+g.notes:""}`;
-      giftParams.push(gid, orgId, g.donorId, g.amount, g.date, g.type, g.campaign, null, g.notes);
-      giftTuples.push("(?,?,?,?,?,?,?,?,?)");
-      intParams.push("int_"+uuid().slice(0,8), orgId, g.donorId, "gift", intNote, g.date, importerId, importerName);
-      intTuples.push("(?,?,?,?,?,?,?,?)");
+      rowByGid.set(gid, g);
+      giftParams.push(gid, orgId, g.donorId, g.amount, g.date, g.type, g.campaign, null, g.notes, g.externalId || null);
+      giftTuples.push("(?,?,?,?,?,?,?,?,?,?)");
       affectedDonorIds.add(g.donorId);
-      // Accumulate fin_transactions for current-FY gifts — same shape as single-gift
-      // route, carrying gift_id so the stamp is idempotent (BUILD-21 Part 3).
-      if (contribAcctId && g.date >= fyStart) {
-        const dName = donorNameMap[g.donorId] || "Donor";
-        ftParams.push("ft_"+uuid().slice(0,8), orgId, g.date,
-          `Gift from ${dName}`, dName, g.amount, "income", contribAcctId, genFundId, g.donorId, "import", gid);
-        ftTuples.push("(?,?,?,?,?,?,?,?,?,?,?,?)");
-      }
     });
     try {
+      let keptCount = 0, ftCount = 0;
       await withTransaction(async (client) => {
-        await runTx(client,
-          `INSERT INTO gifts (id,org_id,donor_id,amount,date,type,campaign,fund_id,notes) VALUES ${giftTuples.join(",")}`,
+        // F-4: the external-ID partial unique (uq_gifts_external) is the ONE
+        // cross-run gift dedup — a re-imported file with source IDs is a
+        // strict no-op at the DB. RETURNING tells us which rows genuinely
+        // landed so interactions + ledger stamps are only written for those
+        // (a skipped gift must not orphan an interaction or a ledger row).
+        const kept = await queryTx(client,
+          `INSERT INTO gifts (id,org_id,donor_id,amount,date,type,campaign,fund_id,notes,external_id)
+           VALUES ${giftTuples.join(",")}
+           ON CONFLICT (org_id, external_id) WHERE external_id IS NOT NULL DO NOTHING
+           RETURNING id`,
           giftParams
         );
-        await runTx(client,
-          `INSERT INTO interactions (id,org_id,donor_id,type,note,date,created_by,logged_by_name) VALUES ${intTuples.join(",")}`,
-          intParams
-        );
+        const intParams = [], intTuples = [], ftParams = [], ftTuples = [];
+        for (const r of kept) {
+          const g = rowByGid.get(r.id);
+          if (!g) continue;
+          const intNote = `Gift received: $${g.amount.toLocaleString()} (${g.type})${g.notes?" — "+g.notes:""}`;
+          intParams.push("int_"+uuid().slice(0,8), orgId, g.donorId, "gift", intNote, g.date, importerId, importerName);
+          intTuples.push("(?,?,?,?,?,?,?,?)");
+          // Accumulate fin_transactions for current-FY gifts — same shape as single-gift
+          // route, carrying gift_id so the stamp is idempotent (BUILD-21 Part 3).
+          if (contribAcctId && g.date >= fyStart) {
+            const dName = donorNameMap[g.donorId] || "Donor";
+            ftParams.push("ft_"+uuid().slice(0,8), orgId, g.date,
+              `Gift from ${dName}`, dName, g.amount, "income", contribAcctId, genFundId, g.donorId, "import", r.id);
+            ftTuples.push("(?,?,?,?,?,?,?,?,?,?,?,?)");
+          }
+        }
+        if (intTuples.length) {
+          await runTx(client,
+            `INSERT INTO interactions (id,org_id,donor_id,type,note,date,created_by,logged_by_name) VALUES ${intTuples.join(",")}`,
+            intParams
+          );
+        }
         // One bulk INSERT for FY fin_transactions — same tx as gifts, rolls back together
         if (ftTuples.length) {
           await runTx(client,
@@ -3215,9 +3258,10 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrap(async (r
             ftParams
           );
         }
+        keptCount = kept.length; ftCount = ftTuples.length;
       });
-      giftsInserted += batch.length;
-      financeSynced += ftTuples.length;
+      giftsInserted += keptCount;
+      financeSynced += ftCount;
     } catch (e) {
       console.error(`[combined-import] gift batch ${bi}–${bi+batch.length} failed:`, e.message);
       batchErrors.push({ error: e.message });
@@ -3290,7 +3334,8 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrap(async (r
     } catch (e) { console.error(`[combined-import] stage inference failed:`, e.message); }
   }
 
-  res.json({ created, giftsInserted, duplicates, donorsUpdated: affectedDonorIds.size, financeSynced, batchErrors });
+  res.json({ created, giftsInserted, duplicates, donorsUpdated: affectedDonorIds.size, financeSynced, batchErrors,
+             duplicateCandidates, externalIdDupes });
 }));
 
 app.put("/donors/:id", requireAuth, checkWriteAccess, wrap(async (req, res) => {
@@ -3654,6 +3699,48 @@ app.delete("/interactions/:id", requireAuth, wrap(async (req, res) => {
 }));
 
 // ── Gifts ──────────────────────────────────────────────────────────────────
+// §1.2 F-5 — the ONE pledge-payment reconciler. Paid = Σ gifts linked by
+// gifts.pledge_id (derived, never a stored counter — race-safe: two parallel
+// payments both recompute and converge on the same SUM). Fulfills only when
+// paid ≥ pledge amount; a partial payment leaves the pledge OPEN with an
+// honest remaining balance. Reopens a fulfilled pledge whose payments fell
+// back below the amount (gift deleted/refunded/shrunk). Canceled pledges are
+// never resurrected. Returns {paid, balance} or null.
+async function recalcPledgePayment(pledgeId, orgId) {
+  const rows = await query("SELECT * FROM pledges WHERE id=? AND org_id=?", [pledgeId, orgId]);
+  if (!rows.length) return null;
+  const p = rows[0];
+  const paidRows = await query(
+    "SELECT COALESCE(SUM(amount),0) AS paid FROM gifts WHERE pledge_id=? AND org_id=?",
+    [pledgeId, orgId]);
+  const paid = parseFloat(paidRows[0].paid) || 0;
+  const amount = parseFloat(p.amount) || 0;
+  if (paid >= amount && amount > 0) {
+    const lastGift = await query(
+      "SELECT id FROM gifts WHERE pledge_id=? AND org_id=? ORDER BY date DESC, id DESC LIMIT 1",
+      [pledgeId, orgId]);
+    await run(
+      `UPDATE pledges SET status='fulfilled', fulfilled_gift_id=?, fulfilled_at=COALESCE(fulfilled_at, NOW()),
+              next_reminder_at=NULL, updated_at=NOW()
+       WHERE id=? AND org_id=? AND status IN ('open','fulfilled')`,
+      [lastGift[0]?.id || null, pledgeId, orgId]);
+  } else {
+    await run(
+      `UPDATE pledges SET status=CASE WHEN status='fulfilled' THEN 'open' ELSE status END,
+              fulfilled_gift_id=NULL, fulfilled_at=NULL, updated_at=NOW()
+       WHERE id=? AND org_id=?`,
+      [pledgeId, orgId]);
+  }
+  return { paid, balance: Math.max(0, amount - paid) };
+}
+
+// Reusable "open pledges with honest remaining balances" aggregate — remaining
+// = amount − paid, so a partially-paid pledge counts only what is still
+// committed-but-unpaid (F-5). Every "pledged" figure reads this, not SUM(amount).
+const OPEN_PLEDGE_REMAINING_JOIN = `
+  LEFT JOIN (SELECT pledge_id, SUM(amount) AS paid FROM gifts WHERE org_id = ? AND pledge_id IS NOT NULL GROUP BY pledge_id) pledge_paid
+    ON pledge_paid.pledge_id = pledges.id`;
+
 app.post("/donors/:id/gifts", requireAuth, checkWriteAccess, wrap(async (req, res) => {
   const { amount, date, type, campaign, notes, pledgeId } = req.body;
   // Accept both spellings for back-compat: the touchpoint modal sends `fundId`,
@@ -3718,16 +3805,32 @@ app.post("/donors/:id/gifts", requireAuth, checkWriteAccess, wrap(async (req, re
   const giftDate = normalizeGiftDate(date);              // enforce ISO YYYY-MM-DD
   const amt = Math.round(Number(amount));                // round, not truncate; INTEGER column
 
-  await run(
-    "INSERT INTO gifts (id,org_id,donor_id,amount,date,type,campaign,campaign_id,notes,fund_id) VALUES (?,?,?,?,?,?,?,?,?,?)",
-    [giftId, req.user.orgId, req.params.id, amt, giftDate, type || "cash", campaignName || "", effectiveCampaignId || null, notes || "", fundId || null]
+  // §1.1 F-3 — client-generated idempotency key, enforced by uq_gifts_idem at
+  // the DATABASE (not an app-layer check). A double-tapped Save, a replayed
+  // request, or 50 parallel identical submits produce exactly one gift row;
+  // every replay returns the original gift with duplicate:true and runs ZERO
+  // side effects (no donor delta, no ledger stamp, no interaction, no
+  // workflow fire, no pledge application).
+  const idemKey = typeof req.body.idempotencyKey === "string" && req.body.idempotencyKey.trim()
+    ? req.body.idempotencyKey.trim().slice(0, 128) : null;
+
+  const insertedRows = await query(
+    `INSERT INTO gifts (id,org_id,donor_id,amount,date,type,campaign,campaign_id,notes,fund_id,pledge_id,idempotency_key)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+     ON CONFLICT (org_id, idempotency_key) WHERE idempotency_key IS NOT NULL DO NOTHING
+     RETURNING id`,
+    [giftId, req.user.orgId, req.params.id, amt, giftDate, type || "cash", campaignName || "",
+     effectiveCampaignId || null, notes || "", fundId || null, pledgeRow ? pledgeRow.id : null, idemKey]
   );
+  if (!insertedRows.length) {
+    const dupGift = await query("SELECT * FROM gifts WHERE org_id=? AND idempotency_key=?", [req.user.orgId, idemKey]);
+    const dupDonor = await query("SELECT * FROM donors WHERE id=? AND org_id=?", [req.params.id, req.user.orgId]);
+    return res.status(200).json({ gift: dupGift[0] || null, donor: dupDonor[0] || null, duplicate: true });
+  }
   if (pledgeRow) {
-    await run(
-      `UPDATE pledges SET status='fulfilled', fulfilled_gift_id=?, fulfilled_at=NOW(), next_reminder_at=NULL, updated_at=NOW()
-       WHERE id=? AND org_id=?`,
-      [giftId, pledgeRow.id, req.user.orgId]
-    );
+    // §1.2 F-5 — apply the PAID amount against the pledge balance; a partial
+    // payment leaves the pledge open with an honest remaining balance.
+    await recalcPledgePayment(pledgeRow.id, req.user.orgId);
   }
   // Delta kept here (correct for a fresh gift) so status tier promotion fires.
   // PUT/DELETE use recalcDonorSummary instead — see those routes.
@@ -3790,7 +3893,12 @@ app.post("/donors/:id/gifts", requireAuth, checkWriteAccess, wrap(async (req, re
     dedupKey: `gift:${giftId}`, donorId: req.params.id, giftId, amount: amt,
     isFirstGift: (donorRows[0]?.gift_count || 0) === 1, entityType: "gift", entityId: giftId,
   }).catch(e => console.error("[workflow] gift_received:", e.message));
-  const fulfilledPledgeRows = pledgeRow ? await query("SELECT * FROM pledges WHERE id=?", [pledgeRow.id]) : [];
+  const fulfilledPledgeRows = pledgeRow ? await query(
+    `SELECT p.*, COALESCE(pp.paid,0) AS paid_amount, GREATEST(p.amount - COALESCE(pp.paid,0), 0) AS balance
+     FROM pledges p
+     LEFT JOIN (SELECT pledge_id, SUM(amount) AS paid FROM gifts WHERE org_id=? AND pledge_id IS NOT NULL GROUP BY pledge_id) pp
+       ON pp.pledge_id = p.id
+     WHERE p.id=?`, [req.user.orgId, pledgeRow.id]) : [];
   res.status(201).json({ gift: giftRows[0], donor: donorRows[0], pledge: fulfilledPledgeRows[0] || null });
 }));
 
@@ -3857,6 +3965,9 @@ app.put("/gifts/:id", requireAuth, wrap(async (req, res) => {
         WHERE gift_id=? AND org_id=?`,
       [newAmt, newDate, fund_id !== undefined ? fund_id : null, req.params.id, req.user.orgId]
     );
+    // F-5: an amount edit on a pledge-linked payment changes the pledge's paid
+    // total — recompute (may fulfill, may reopen; canceled never resurrected).
+    if (g.pledge_id) await recalcPledgePayment(g.pledge_id, req.user.orgId);
     return query("SELECT * FROM gifts WHERE id=?", [req.params.id]);
   });
   res.json(rows[0]);
@@ -3891,11 +4002,11 @@ app.delete("/gifts/:id", requireAuth, wrap(async (req, res) => {
     // tolerated-dangling pattern as gifts.giving_page_id, except here the FK
     // is real so it must be NULLed, not left dangling).
     await runTx(client, "UPDATE receipts SET gift_id=NULL WHERE gift_id=? AND org_id=?", [req.params.id, req.user.orgId]);
-    // A pledge fulfilled by this gift is no longer fulfilled — reopen it.
-    // Reminder state is left alone: if it goes overdue later (or already
-    // was), processPledgeReminders' overdue-marking sweep handles it.
+    // Clear the fulfilled_gift_id FK before the gift row goes (F-5: whether
+    // the pledge actually reopens is decided AFTER the delete by
+    // recalcPledgePayment — remaining payments may still cover it).
     await runTx(client,
-      `UPDATE pledges SET status='open', fulfilled_gift_id=NULL, fulfilled_at=NULL, updated_at=NOW()
+      `UPDATE pledges SET fulfilled_gift_id=NULL, updated_at=NOW()
        WHERE fulfilled_gift_id=? AND org_id=?`,
       [req.params.id, req.user.orgId]);
     // BUILD-33: the gift's own ledger stamp goes with it. "Every gift stamps
@@ -3908,6 +4019,9 @@ app.delete("/gifts/:id", requireAuth, wrap(async (req, res) => {
   });
   // Full recalc: old delta left last_gift_date and last_gift_amount stale when deleting the most recent gift
   await recalcDonorSummary(g.donor_id, req.user.orgId);
+  // F-5: this gift may have been paying down a pledge — recompute honestly
+  // (reopens only if remaining payments no longer cover the pledge amount).
+  if (g.pledge_id) await recalcPledgePayment(g.pledge_id, req.user.orgId);
   }); // end withAdvisoryLock(gift:…) — delete + recalc serialized per gift
   res.json({ ok: true });
 }));
@@ -3919,9 +4033,14 @@ app.delete("/gifts/:id", requireAuth, wrap(async (req, res) => {
 // against these (processPledgeReminders, below) deliberately mirrors the
 // recurring-gift dunning engine's architecture.
 app.get("/donors/:id/pledges", requireAuth, wrap(async (req, res) => {
+  // F-5: every pledge read carries the honest paid/balance figures, derived
+  // live from linked payment gifts — never a stored counter.
   const rows = await query(
-    "SELECT * FROM pledges WHERE donor_id=? AND org_id=? ORDER BY due_date ASC",
-    [req.params.id, req.user.orgId]
+    `SELECT p.*, COALESCE(pp.paid,0) AS paid_amount, GREATEST(p.amount - COALESCE(pp.paid,0), 0) AS balance
+     FROM pledges p
+     LEFT JOIN (SELECT pledge_id, SUM(amount) AS paid FROM gifts WHERE org_id=? AND pledge_id IS NOT NULL GROUP BY pledge_id) pp ON pp.pledge_id=p.id
+     WHERE p.donor_id=? AND p.org_id=? ORDER BY p.due_date ASC`,
+    [req.user.orgId, req.params.id, req.user.orgId]
   );
   res.json(rows);
 }));
@@ -4522,30 +4641,56 @@ app.post("/gifts/import-history", requireAuth, checkWriteAccess, wrap(async (req
   );
   const validDonorIds = new Set(orgDonors.map(d => d.id));
 
-  // Pre-load existing fingerprints for dedup check
+  // §1.2 F-4 — (donor, amount, date) is NEVER a silent dedup key. The rules:
+  //   · A row with an explicit external ID (source-system gift/transaction id)
+  //     dedupes on THAT — within the file here, cross-run at the DB
+  //     (uq_gifts_external, ON CONFLICT DO NOTHING below).
+  //   · A row WITHOUT an external ID that matches an EXISTING gift on
+  //     (donor, amount, date) is HELD for human review — returned in
+  //     heldForReview, not inserted, never silently dropped. Re-submitting
+  //     with includeDuplicates:true imports the held rows (the human decided).
+  //   · Same-(donor,amount,date) twins WITHIN the file are all inserted
+  //     (forty $100 Sunday gifts are forty gifts) and counted in
+  //     duplicateCandidates.withinFile as an informational report.
+  const includeDuplicates = req.body.includeDuplicates === true;
   const existingRows = await query(
     "SELECT donor_id, amount, date FROM gifts WHERE org_id = ? AND donor_id = ANY(?)",
     [orgId, donorIds]
   );
-  const fingerprints = new Set(existingRows.map(g => `${g.donor_id}|${g.amount}|${g.date}`));
+  const existingFps = new Set(existingRows.map(g => `${g.donor_id}|${Math.round(parseFloat(g.amount))}|${g.date}`));
 
   // Importer identity — used in interaction logged_by_name, same pattern as single-gift route
   const importerRow = await query("SELECT name FROM users WHERE id=?", [req.user.userId]);
   const importerName = importerRow[0]?.name || "";
   const importerId   = req.user.userId;
 
-  let duplicates = 0, invalid = 0;
+  let invalid = 0, externalIdDupes = 0;
+  const seenExternalIds = new Set();
+  const fileFpCounts = new Map();
+  const heldForReview = [];
   const toInsert = [];
   for (const g of gifts) {
     if (!g.donorId || !validDonorIds.has(g.donorId)) { invalid++; continue; }
     const amt = Math.round(Number(g.amount) || 0);
     if (amt <= 0) { invalid++; continue; }
     const date = normalizeGiftDate(g.date);
-    const fp   = `${g.donorId}|${amt}|${date}`;
-    if (fingerprints.has(fp)) { duplicates++; continue; }
-    fingerprints.add(fp); // within-import dedup
-    toInsert.push({ donorId:g.donorId, amount:amt, date, type:g.type||"cash", campaign:g.campaign||"", fund_id:g.fund_id||null, notes:g.notes||"" });
+    const externalId = (g.externalId || g.external_id || "").toString().trim().slice(0, 128) || null;
+    if (externalId) {
+      if (seenExternalIds.has(externalId)) { externalIdDupes++; continue; }
+      seenExternalIds.add(externalId);
+    } else {
+      const fp = `${g.donorId}|${amt}|${date}`;
+      if (existingFps.has(fp) && !includeDuplicates) {
+        heldForReview.push({ donorId: g.donorId, amount: amt, date, type: g.type || "cash", notes: g.notes || "" });
+        continue;
+      }
+      fileFpCounts.set(fp, (fileFpCounts.get(fp) || 0) + 1);
+    }
+    toInsert.push({ donorId:g.donorId, amount:amt, date, type:g.type||"cash", campaign:g.campaign||"", fund_id:g.fund_id||null, notes:g.notes||"", externalId });
   }
+  const duplicateCandidates = {
+    withinFile: [...fileFpCounts.values()].filter(n => n > 1).reduce((s, n) => s + (n - 1), 0),
+  };
 
   // ── Finance sync setup (Gap 1) ───────────────────────────────────────────
   // fyStart mirrors /dashboard/my-stats exactly: July 1 fiscal year boundary.
@@ -4577,14 +4722,21 @@ app.post("/gifts/import-history", requireAuth, checkWriteAccess, wrap(async (req
   for (let bi = 0; bi < toInsert.length; bi += BATCH) {
     const batch = toInsert.slice(bi, bi + BATCH);
     const ftParams = [], ftTuples = []; // fin_transactions rows for current-FY gifts in this batch
+    let keptInBatch = 0;
     try {
       await withTransaction(async (client) => {
         for (const g of batch) {
           const id = "g_" + uuid().slice(0, 8);
-          await runTx(client,
-            "INSERT INTO gifts (id,org_id,donor_id,amount,date,type,campaign,fund_id,notes) VALUES (?,?,?,?,?,?,?,?,?)",
-            [id, orgId, g.donorId, g.amount, g.date, g.type, g.campaign, g.fund_id, g.notes]
+          // F-4: external-ID rows are cross-run idempotent at the DB — a
+          // conflicted (already-imported) row inserts nothing, and its
+          // interaction + ledger stamp are skipped with it.
+          const kept = await queryTx(client,
+            `INSERT INTO gifts (id,org_id,donor_id,amount,date,type,campaign,fund_id,notes,external_id) VALUES (?,?,?,?,?,?,?,?,?,?)
+             ON CONFLICT (org_id, external_id) WHERE external_id IS NOT NULL DO NOTHING RETURNING id`,
+            [id, orgId, g.donorId, g.amount, g.date, g.type, g.campaign, g.fund_id, g.notes, g.externalId || null]
           );
+          if (!kept.length) { externalIdDupes++; continue; }
+          keptInBatch++;
           const intNote = `Gift received: $${g.amount.toLocaleString()} (${g.type})${g.notes ? " — " + g.notes : ""}`;
           await runTx(client,
             "INSERT INTO interactions (id,org_id,donor_id,type,note,date,created_by,logged_by_name) VALUES (?,?,?,?,?,?,?,?)",
@@ -4609,7 +4761,7 @@ app.post("/gifts/import-history", requireAuth, checkWriteAccess, wrap(async (req
           );
         }
       });
-      inserted += batch.length;
+      inserted += keptInBatch;
       financeSynced += ftTuples.length;
     } catch (e) {
       console.error(`[gift-import] batch ${bi}–${bi+batch.length} failed:`, e.message);
@@ -4673,7 +4825,9 @@ app.post("/gifts/import-history", requireAuth, checkWriteAccess, wrap(async (req
     } catch (e) { console.error(`[gift-import] stage inference failed:`, e.message); }
   }
 
-  res.json({ inserted, duplicates, invalid, donorsUpdated: affectedDonorIds.size, financeSynced, batchErrors });
+  res.json({ inserted, duplicates: heldForReview.length + externalIdDupes, invalid,
+             donorsUpdated: affectedDonorIds.size, financeSynced, batchErrors,
+             heldForReview, duplicateCandidates, externalIdDupes });
 }));
 
 app.get("/donors/:id/planned-gifts", requireAuth, wrap(async (req, res) => {
@@ -7570,7 +7724,15 @@ app.get("/campaigns/:id/progress", requireAuth, wrap(async (req, res) => {
       `SELECT COALESCE(SUM(amount - COALESCE(cover_fee_amount,0)),0) as total, COUNT(DISTINCT donor_id) as donor_count FROM gifts WHERE org_id=? AND (campaign=? OR campaign_id=?)`,
       [req.user.orgId, c.name, c.id]
     ),
-    query(`SELECT COALESCE(SUM(amount),0) AS total FROM pledges WHERE org_id=? AND campaign_id=? AND status='open'`, [req.user.orgId, c.id]),
+    // F-5: pledged = honest REMAINING balance (amount − payments already
+    // linked via gifts.pledge_id), so a partially-paid pledge counts only
+    // what is still committed-but-unpaid.
+    query(
+      `SELECT COALESCE(SUM(p.amount - COALESCE(pp.paid,0)),0) AS total
+       FROM pledges p
+       LEFT JOIN (SELECT pledge_id, SUM(amount) AS paid FROM gifts WHERE org_id=? AND pledge_id IS NOT NULL GROUP BY pledge_id) pp ON pp.pledge_id=p.id
+       WHERE p.org_id=? AND p.campaign_id=? AND p.status='open'`,
+      [req.user.orgId, req.user.orgId, c.id]),
     query(`SELECT COALESCE(SUM(amount),0) AS total FROM grants WHERE org_id=? AND campaign_id=? AND awarded_at IS NOT NULL`, [req.user.orgId, c.id]),
   ]);
   const grantAwarded = parseFloat(grantSum[0]?.total || 0);
@@ -7674,10 +7836,14 @@ async function fundraisingCampaignRows(orgId) {
       [orgId]
     ),
     query(
-      `SELECT campaign_id AS cid, COALESCE(SUM(amount), 0) AS pledged, COUNT(*) AS pledge_count
-         FROM pledges WHERE org_id = ? AND campaign_id IS NOT NULL AND status = 'open'
-        GROUP BY campaign_id`,
-      [orgId]
+      `SELECT p.campaign_id AS cid,
+              COALESCE(SUM(p.amount - COALESCE(pp.paid,0)), 0) AS pledged,
+              COUNT(*) AS pledge_count
+         FROM pledges p
+         LEFT JOIN (SELECT pledge_id, SUM(amount) AS paid FROM gifts WHERE org_id = ? AND pledge_id IS NOT NULL GROUP BY pledge_id) pp ON pp.pledge_id = p.id
+        WHERE p.org_id = ? AND p.campaign_id IS NOT NULL AND p.status = 'open'
+        GROUP BY p.campaign_id`,
+      [orgId, orgId]
     ),
     query(
       `SELECT campaign_id AS cid, COALESCE(SUM(amount), 0) AS grant_awarded, COUNT(*) AS grant_count
@@ -10537,8 +10703,10 @@ async function reportSolicitations(orgId, p) {
   // oversight artifact shows them side by side. Never merged into a raised
   // figure anywhere — a pledge's payments count when they arrive, as gifts.
   const pledgeRow = await query(
-    `SELECT COUNT(*)::int AS cnt, COALESCE(SUM(amount),0) AS amt
-     FROM pledges WHERE org_id=? AND status='open'`, [orgId]);
+    `SELECT COUNT(*)::int AS cnt, COALESCE(SUM(p.amount - COALESCE(pp.paid,0)),0) AS amt
+     FROM pledges p
+     LEFT JOIN (SELECT pledge_id, SUM(amount) AS paid FROM gifts WHERE org_id=? AND pledge_id IS NOT NULL GROUP BY pledge_id) pp ON pp.pledge_id=p.id
+     WHERE p.org_id=? AND p.status='open'`, [orgId, orgId]);
   return {
     from: p.from, to: p.to,
     forecast: { open: Math.round(openTotal * 100) / 100, weighted: Math.round(weightedTotal * 100) / 100 },

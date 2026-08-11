@@ -203,11 +203,16 @@ async function run() {
   const pay1 = await api("POST", "/donors/d_ac_a1/gifts", tokA, { amount: 4000, date: TODAY, pledgeId: pl1.body.id });
   ok("P2 payment against pledge → 201", pay1.status === 201, pay1.body);
   ok("P2 payment INHERITED the pledge's campaign", pay1.body.gift.campaign_id === "c_ac_2" && pay1.body.gift.campaign === "Capital Push 2026", pay1.body.gift);
-  ok("P2 pledge fulfilled by the payment", pay1.body.pledge && pay1.body.pledge.status === "fulfilled", pay1.body.pledge);
+  // BUILD-45 §1.2 F-5 (corrected contract): a $4,000 payment against a
+  // $10,000 pledge leaves it OPEN with an honest $6,000 balance — pledged
+  // converts to raised only as money arrives, never all-at-once.
+  ok("P2 pledge stays OPEN with a partial balance (F-5)",
+    pay1.body.pledge && pay1.body.pledge.status === "open" &&
+    Number(pay1.body.pledge.paid_amount) === 4000 && Number(pay1.body.pledge.balance) === 6000, pay1.body.pledge);
   camps = (await api("GET", "/fundraising/campaigns", tokA)).body;
   c2 = campRow(camps, "c_ac_2");
   ok("P2 raised = the payment only ($4,000) — no pledge+payment double-count", c2.raised === 4000, c2);
-  ok("P2 pledged dropped to $0 once fulfilled", c2.pledged === 0, c2.pledged);
+  ok("P2 pledged dropped to the $6,000 REMAINING balance", c2.pledged === 6000, c2.pledged);
 
   // PUT set/clear attribution on a fresh pledge.
   const pl2 = await api("POST", "/donors/d_ac_a2/pledges", tokA, { amount: 2000, dueDate: "2027-01-31" });
@@ -221,7 +226,9 @@ async function run() {
   await api("PUT", `/pledges/${pl2.body.id}`, tokA, { campaignId: "c_ac_2" }); // leave attributed+open for solicitations
 
   const sol = await api("GET", "/reports/solicitations", tokA);
-  ok("P2 solicitations reports openPledges (1 open, $2,000)", sol.status === 200 && sol.body.openPledges && sol.body.openPledges.count === 1 && sol.body.openPledges.total === 2000, sol.body.openPledges);
+  // F-5: both pledges are open — the partially-paid $10,000 one at its $6,000
+  // remaining, plus the fresh $2,000 → 2 open / $8,000 remaining total.
+  ok("P2 solicitations reports openPledges (2 open, $8,000 remaining)", sol.status === 200 && sol.body.openPledges && sol.body.openPledges.count === 2 && sol.body.openPledges.total === 8000, sol.body.openPledges);
 
   // ════ Part 3 — refunds/voids reverse attribution ════
   const donorBefore = (await q(`SELECT total_giving, gift_count FROM donors WHERE id='d_ac_a1'`))[0];
@@ -310,7 +317,7 @@ async function run() {
   ok("P5 award created NO gift row (no double-count mechanism)", giftCountAfter === giftCountBefore, { giftCountBefore, giftCountAfter });
 
   const prog = (await api("GET", "/campaigns/c_ac_2/progress", tokA)).body;
-  ok("P5 /campaigns/:id/progress agrees (raised, grantAwarded, pledged)", prog.raised === 29000 && prog.grantAwarded === 25000 && prog.pledged === 2000, prog);
+  ok("P5 /campaigns/:id/progress agrees (raised, grantAwarded, pledged = $8,000 remaining)", prog.raised === 29000 && prog.grantAwarded === 25000 && prog.pledged === 8000, prog);
 
   // Un-award (moved back to pending) → thermometer reverses.
   await api("PUT", `/grants/${gr1.body.id}`, tokA, { funder: "Bright Futures Foundation", program: "Capital", amount: 25000, status: "pending" });

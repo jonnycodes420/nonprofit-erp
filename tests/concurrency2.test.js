@@ -7,10 +7,11 @@
 //      portfolio counts reconcile to the donor table exactly
 //   3. duplicate imports of the same file IN PARALLEL → each donor once, each
 //      gift once (the advisory-lock guarantee, driven head-on)
-//   4. a DOUBLE-SUBMITTED pledge payment (two identical gift POSTs racing) —
-//      documents CURRENT behavior: manual gift POSTs carry no idempotency
-//      key, so a double-tap records TWO gifts (FINDINGS F-3). The pledge
-//      itself must still fulfill exactly once.
+//   4. a DOUBLE-SUBMITTED pledge payment (two identical gift POSTs racing
+//      with the SAME idempotency key) — BUILD-45 §1.1 fixed FINDINGS F-3:
+//      the key is enforced by uq_gifts_idem at the DB, so a double-tap now
+//      records exactly ONE gift, and (§1.2 F-5) a $400 payment against a
+//      $1,000 pledge leaves it OPEN with a $600 balance, applied once.
 // Each racy scenario runs N times (races are probabilistic).
 
 const bcrypt = require("bcryptjs");
@@ -106,20 +107,30 @@ const N = 6;
     const pl = await api("POST", "/donors/d_c44_pl/pledges", token, { amount: 1000, dueDate: "2026-12-01" });
     ok("pledge created", pl.status === 200 || pl.status === 201, pl.body);
     const pid = (await q(`SELECT id FROM pledges WHERE org_id=$1 AND donor_id='d_c44_pl'`, [ORG]))[0].id;
-    const pay = () => api("POST", "/donors/d_c44_pl/gifts", token, { amount: 400, date: TODAY, type: "one-time", pledgeId: pid, notes: "double-tap" });
+    // BUILD-45 §1.1 (F-3 FIXED): the client mints one idempotency key per
+    // form-open — a double-tap replays the SAME key, and uq_gifts_idem at the
+    // DB guarantees exactly one gift no matter how the race lands.
+    const idemKey = "c44-doubletap-" + Date.now();
+    const pay = () => api("POST", "/donors/d_c44_pl/gifts", token, { amount: 400, date: TODAY, type: "one-time", pledgeId: pid, notes: "double-tap", idempotencyKey: idemKey });
     const [p1, p2] = await Promise.all([pay(), pay()]);
-    ok("double-tap: both POSTs accepted (no idempotency key exists — FINDINGS F-3)",
+    ok("double-tap: both POSTs answered cleanly (one 201, one duplicate)",
       (p1.status === 200 || p1.status === 201) && (p2.status === 200 || p2.status === 201), [p1.status, p2.status]);
+    ok("double-tap: exactly one CREATED, the other flagged duplicate",
+      [p1, p2].filter(p => p.status === 201).length === 1 &&
+      [p1, p2].filter(p => p.status === 200 && p.body && p.body.duplicate === true).length === 1,
+      [p1.status, p2.status]);
     const gifts = await q(`SELECT amount FROM gifts WHERE org_id=$1 AND donor_id='d_c44_pl'`, [ORG]);
     const total = Number((await q(`SELECT total_giving FROM donors WHERE id='d_c44_pl'`, []))[0].total_giving);
     const stamps = Number((await q(`SELECT COUNT(*) c FROM fin_transactions WHERE org_id=$1 AND donor_id='d_c44_pl'`, [ORG]))[0].c);
-    // CURRENT BEHAVIOR: two gifts land — a real double-count hazard on a
-    // double-tap (F-3). Each gift is internally consistent (one stamp each).
-    ok("double-tap: TWO gifts recorded (current behavior — F-3)", gifts.length === 2, gifts.length);
-    ok("double-tap: donor total reflects both (consistent, but doubled)", total === 800, total);
-    ok("double-tap: one ledger stamp PER gift (never more)", stamps === 2, stamps);
-    const pstat = (await q(`SELECT status FROM pledges WHERE id=$1`, [pid]))[0].status;
-    ok("double-tap: the pledge fulfills exactly ONCE", pstat === "fulfilled", pstat);
+    ok("double-tap: exactly ONE gift recorded (F-3 fixed at the DB)", gifts.length === 1, gifts.length);
+    ok("double-tap: donor total moved once ($400)", total === 400, total);
+    ok("double-tap: exactly one ledger stamp", stamps === 1, stamps);
+    // §1.2 F-5: a $400 payment against the $1,000 pledge leaves it OPEN with
+    // an honest $600 balance — applied exactly once despite the race.
+    const prow = (await q(`SELECT status FROM pledges WHERE id=$1`, [pid]))[0];
+    ok("double-tap: pledge stays OPEN with a partial balance (F-5)", prow.status === "open", prow);
+    const paid = Number((await q(`SELECT COALESCE(SUM(amount),0) s FROM gifts WHERE pledge_id=$1`, [pid]))[0].s);
+    ok("double-tap: pledge paid exactly $400 once", paid === 400, paid);
   }
 
   summary();

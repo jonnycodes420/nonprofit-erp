@@ -815,6 +815,26 @@ async function initSchema() {
   // the money side-effects if a row was actually reserved. Safe by construction —
   // two real gifts never share a Stripe pi.id.
   await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS uq_gifts_stripe_pi ON gifts (org_id, stripe_payment_id) WHERE stripe_payment_id IS NOT NULL`);
+  // BUILD-45 (portal) §1.1 F-3 — gift idempotency at the DATABASE, not app-layer.
+  // Every non-webhook gift-create path takes a client-generated idempotency key
+  // (the webhook's key is stripe_payment_id, guarded above). A double-tapped
+  // Save, a double-submitted portal form, or a replayed request lands on the
+  // partial unique and produces exactly one gift row.
+  await pool.query(`ALTER TABLE gifts ADD COLUMN IF NOT EXISTS idempotency_key TEXT`);
+  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS uq_gifts_idem ON gifts (org_id, idempotency_key) WHERE idempotency_key IS NOT NULL`);
+  // §1.2 F-4 — an import file's explicit external-ID column (gift/transaction id
+  // from the source CRM) is the ONLY safe cross-run gift dedup key. (date,
+  // amount, donor) alone is never a dedup key — forty $100 Sunday gifts are
+  // forty gifts.
+  await pool.query(`ALTER TABLE gifts ADD COLUMN IF NOT EXISTS external_id TEXT`);
+  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS uq_gifts_external ON gifts (org_id, external_id) WHERE external_id IS NOT NULL`);
+  // §1.2 F-5 — pledge payments are LINKED to their pledge so the paid amount is
+  // DERIVED (Σ gifts WHERE pledge_id), never a stored counter — same invariant
+  // as every other money figure. Backfill from the legacy single-payment model
+  // (pledges.fulfilled_gift_id) so history keeps its linkage.
+  await pool.query(`ALTER TABLE gifts ADD COLUMN IF NOT EXISTS pledge_id TEXT`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_gifts_pledge ON gifts (pledge_id) WHERE pledge_id IS NOT NULL`);
+  await pool.query(`UPDATE gifts g SET pledge_id = p.id FROM pledges p WHERE p.fulfilled_gift_id = g.id AND g.pledge_id IS NULL`).catch(() => {});
   await pool.query(`ALTER TABLE fin_funds ADD COLUMN IF NOT EXISTS is_sample BOOLEAN DEFAULT false`);
   await pool.query(`ALTER TABLE volunteers ADD COLUMN IF NOT EXISTS is_sample BOOLEAN DEFAULT false`);
   await pool.query(`ALTER TABLE board_members ADD COLUMN IF NOT EXISTS is_sample BOOLEAN DEFAULT false`);

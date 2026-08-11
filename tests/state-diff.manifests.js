@@ -442,19 +442,18 @@ function buildManifests(ctx) {
   // ── A9b: a $400 payment against the $1,200 pledge — the gift INHERITS the
   //        pledge's campaign; pledged → raised converts exactly once ──
   const a9 = FIX.A9, a9email = em(a9.donor);
-  // DISCOVERY FACT: a linked payment fulfills the WHOLE pledge regardless of
-  // amount — the product's pledge model is single-payment (a $400 gift against
-  // a $1,200 pledge closes it; there is no partial-payment tracking). The
-  // pledge leaves every "open" figure and the campaign's pledged column.
+  // BUILD-45 §1.2 F-5 (REVIEWED MANIFEST EDIT — money-contract change): a
+  // partial payment applies against the pledge BALANCE. The $400 gift leaves
+  // the $1,200 pledge OPEN with an honest $800 remaining — open-pledge COUNT
+  // and face-amount total don't move; every "pledged" figure (solicitations
+  // openPledgeTotal, campaign pledged) drops by exactly the $400 paid, so
+  // pledged → raised converts as money arrives, never all-at-once. (The old
+  // manifest encoded the single-payment model this fix retires: any payment
+  // fulfilled the whole pledge.)
   M.A9b = {
     expect: {
-      "counts.pledgesOpen": { d: -1 },
-      "counts.pledgesOpenTotal": { d: -a9.pledge },
-      "counts.pledgesFulfilled": { d: 1 },
-      "reports.solicitations.openPledges": { d: -1 },
-      "reports.solicitations.openPledgeTotal": { d: -a9.pledge },
-      [`fundraising.goals.${FIX.CAMPAIGN}.pledged`]: { d: -a9.pledge },
-      [`fundraising.goals.${FIX.CAMPAIGN}.pledgeCount`]: { d: -1 },
+      "reports.solicitations.openPledgeTotal": { d: -a9.payment },
+      [`fundraising.goals.${FIX.CAMPAIGN}.pledged`]: { d: -a9.payment },
       [`donors.perDonor.${a9email}.total`]: { d: a9.payment },
       [`donors.perDonor.${a9email}.gifts`]: { d: 1 },
       "donors.totalGiving": { d: a9.payment },

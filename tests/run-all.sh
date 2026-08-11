@@ -47,6 +47,7 @@ CORE=(
   report-truth
   session-cache session-privilege smart-moves state-diff state-diff2 tasks task-due tenant-isolation trial-end upgrade-checkout workflows workflows-e2e
   empty-states presentation-wiring notify-delivery concurrency2 permissions-matrix
+  gift-idempotency
   finance-reports-consistency name-normalize reserved-recovered concurrency
 )
 
