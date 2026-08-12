@@ -3,5 +3,3 @@ node_modules/
 .env.local
 *.log
 client/dist
-# Deploy stamp written by the Actions deploy job before `railway up` — never committed
-.build-sha

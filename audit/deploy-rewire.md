@@ -92,12 +92,13 @@ gate. GitHub Actions is now the OUTER gate.
 
 - [x] 2026-08-11: BEFORE state documented (this file).
 - [x] RAILWAY_TOKEN secret set (HTTP 201).
-- [ ] CI log fix proven on a scratch branch (intentional failure, full output visible).
+- [x] CI log fix proven on scratch branch `ci-logfix-proof` (run 31551766829): the intentionally-failed greeting assertion's FULL suite output appears inline in the CI log, `suite-logs` artifact (51KB) uploaded, and the deploy jobs correctly SKIPPED on the non-main ref. Branch deleted after.
 - [ ] deploy-railway proven end-to-end (tests → deploy → healthy at HEAD SHA).
 - [ ] Railway GitHub auto-deploy trigger DISCONNECTED (only after the line above).
 - [ ] Post-disconnect proof: trivial commit → Actions-only deploy → healthy.
 - [ ] Rollback drill (redeploy previous deployment, verify, roll forward, timed).
-- [ ] Vercel: dormant job in place; BLOCKED-vercel-gate.md written (token needs dashboard).
+- [x] Vercel: dormant job in place; BLOCKED-vercel-gate.md written (token needs dashboard).
+- [x] Branch protection: ruleset `main-protection` (id 20722943) created via API — blocks force pushes + branch deletion, requires check-run `test` (strict up-to-date policy). NB: carries a repository-admin bypass (bypass_mode always) because a ruleset-required status check would otherwise reject ALL direct pushes to main (a check can't pass before the push exists) and this repo's workflow is direct-push. The deploy gate does not depend on it (deploys are `needs: [test]` in the workflow). Drop the bypass if/when the workflow moves to PRs.
 
 ## Break-glass — deploying when GitHub Actions is down
 
@@ -109,8 +110,13 @@ Backend (Railway):
    git rev-parse HEAD > .build-sha        # keep /health buildSha truthful
    railway up --service nonprofit-erp --ci
    curl -s https://nonprofit-erp-production.up.railway.app/health   # confirm buildSha
-   rm .build-sha
+   rm .build-sha                          # untracked on purpose — do NOT commit it
    ```
+   GOTCHA (cost one failed verify on the first proof run): `railway up` honors
+   .gitignore when building its upload, so `.build-sha` must NOT be gitignored —
+   the first attempt ignored it, the stamp never reached the image, and /health
+   kept serving buildSha:null while the verify step timed out. The file is
+   simply left untracked instead.
 2. The pre-push hook still guarantees local tests ran before the code reached
    main; break-glass skips only the Actions leg, never the test gate.
 

@@ -238,9 +238,16 @@ async function fireWebhook(type, object, evtId, account = ACCT_A) {
   const fbTask = await q(`SELECT * FROM tasks WHERE org_id=$1 AND donor_id='d_major_noowner' AND title ILIKE 'Stewardship alert%'`, [A]);
   ok("A1.4: no-owner alert falls back to the ED/admin (assigned, not orphaned)",
     fbTask.length === 1 && fbTask[0].assigned_to && ["u_a_admin", "u_a_ed"].includes(fbTask[0].assigned_to), fbTask.map(t => t.assigned_to));
-  const fbRun = (await api("GET", `/workflows/${wfMajor.id}/runs`, tA)).body.find(r => r.donor_id === "d_major_noowner");
+  // The engine RESERVES the run row before executing actions and writes
+  // actions_taken afterwards — so poll until the write lands, not just until
+  // the row exists (the row-exists-but-actions-empty window stretched under
+  // full-run load and blocked two pushes on 2026-08-11).
+  let fbRun;
   ok("A1.4: run log records the fallback truthfully (assignedFallback:true)",
-    fbRun && fbRun.actions_taken.some(a => a.type === "notify_owner" && a.assignedFallback === true), fbRun?.actions_taken);
+    await waitFor(async () => {
+      fbRun = (await api("GET", `/workflows/${wfMajor.id}/runs`, tA)).body.find(r => r.donor_id === "d_major_noowner");
+      return !!(fbRun && (fbRun.actions_taken || []).some(a => a.type === "notify_owner" && a.assignedFallback === true));
+    }), fbRun?.actions_taken);
   await disable(tA, wfMajor.id);
 
   // ── A1.1 failed_recurring_recovery — genuine invoice.payment_failed webhook ──
