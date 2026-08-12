@@ -123,8 +123,17 @@ jobs:
         with:
           node-version: "22"
 
+      # Retried: the postinstall downloads a binary from GitHub releases and a
+      # runner-side TLS/network blip failed a whole deploy once (2026-08-12,
+      # run 31558654336) — three attempts with a pause absorbs that class.
       - name: Install Railway CLI
-        run: npm install -g @railway/cli
+        run: |
+          for i in 1 2 3; do
+            npm install -g @railway/cli && break
+            echo "install attempt $i failed; retrying in 10s"; sleep 10
+            [ "$i" = "3" ] && exit 1
+          done
+          railway --version
 
       # server.js reads .build-sha at boot and reports it on /health — the
       # verify step below asserts prod is actually serving THIS commit.
