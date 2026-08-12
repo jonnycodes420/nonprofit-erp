@@ -23,6 +23,7 @@ Steward pivoted from a full 11-tab nonprofit ERP to a focused **retention/stewar
 - Backend: https://nonprofit-erp-production.up.railway.app
 - GitHub: github.com/jonnycodes420/nonprofit-erp
 - Demo login: admin@creoarts.org / demo1234 (org_creo)
+- Demo DONOR (portal): xjca2006+demo@gmail.com = Renee Castillo (`dseed_03`, $2,500 lifetime, quiet mid-level) in org_creo — request a magic link at https://www.stewardapp.dev/portal/creo-arts-creo (set up 2026-08-11; proof shots in docs/demo-donor-2026-08-11/)
 
 ## Design system
 - Colors: cream #f0ede6, dark green #0f1a12, primary green #1a6b4a, accent green #10b981, gold #c9a84c, terracotta (gold-tinted brown accent) #b8593f
@@ -994,11 +995,20 @@ Compliant, branded tax receipts for gifts, plus consolidated calendar-year givin
 - email_opens — id, campaign_id, opened_at, donor_id (nullable)
 - **CAN-SPAM footer (2026-07-17)**: `unsubscribeEmailFooterHtml(email, orgId, source)` is **async** — it looks up the org's `legal_name`/`name` + `receipt_address` (the tax-receipt settings address) itself and renders an HTML-escaped "Legal Name · address" line above the unsubscribe link; every call site (campaigns, sequences, milestone drafts, dunning, recovery thank-you, pledge reminders, onboarding drip) `await`s it. No `receipt_address` → unsubscribe-only footer (sends are never blocked), and Communications.jsx shows an "Add your mailing address" prompt (checks `GET /me`; admins get an `onNavigate("settings")` button — App.jsx now passes `onNavigate` to Communications) until it's set.
 
+## Deploys — gated behind green CI (deploy rewire, 2026-08-11)
+Full before/after + break-glass: `audit/deploy-rewire.md`. The shape:
+- **Railway (backend) deploys ONLY from GitHub Actions** — the `deploy-railway` job in `.github/workflows/ci.yml` (push to main, `needs: [test]`, concurrency group `deploy-main` no-cancel) runs `railway up` with the project-scoped `RAILWAY_TOKEN` secret, then polls `/health` until `status:ok` AND `buildSha == $GITHUB_SHA` (5-min timeout, loud failure). **Railway's GitHub auto-deploy trigger is DISCONNECTED** — pushing to main does NOT deploy the backend by itself; the Actions job is the one path. Break-glass when Actions is down: manual `railway up --service nonprofit-erp --ci` from an authed checkout with `git rev-parse HEAD > .build-sha` first (rm it after; it's untracked ON PURPOSE — `railway up` honors .gitignore, so ignoring it would strip the stamp from the upload. That exact mistake cost the first proof run).
+- **Deploy verification surfaces**: `GET /health` → `buildSha` (from `.build-sha`, else `RAILWAY_GIT_COMMIT_SHA`/`BUILD_SHA`, else null — NB Railway does NOT expose the git SHA at runtime, so the stamp file is the real mechanism); the built client carries `<meta name="build-sha">` (vite.config.js, from `VERCEL_GIT_COMMIT_SHA`/`GITHUB_SHA`/`BUILD_SHA`/git). "What commit is live?" is now one curl per side — never guess from route probes again.
+- **Vercel (frontend) still auto-builds pushes to main** (deliberately, ordering rule: prove-then-disconnect). The `deploy-vercel` job is wired identically but DORMANT behind the `VERCEL_DEPLOY_ENABLED` repo variable (renders SKIPPED) until a Vercel token exists — activation + cutover steps: `BLOCKED-vercel-gate.md` (then `git.deploymentEnabled:{main:false}` in vercel.json, NEVER the ignored-build-step).
+- **CI failure logs**: `tests/run-all.sh` keeps every suite's full output in `/tmp/steward-suite-logs/` and dumps a failing suite's entire output inline under its FAIL line; CI uploads the dir as artifact `suite-logs` on failure. A red run names the assertion, not just the suite.
+- **Branch protection**: ruleset `main-protection` (id 20722943) — no force pushes, no branch deletion, requires check-run `test` (strict). Carries a repo-admin bypass so the documented direct-push-to-main workflow keeps working (a ruleset-required check would otherwise reject all direct pushes); the deploy gate does not depend on it. Drop the bypass if the workflow ever moves to PRs.
+- The pre-push hook (full local suite) is unchanged — the INNER gate; Actions is the OUTER gate and the only deployer.
+
 ## Vercel config
 - Root directory: blank (not "client")
 - vercel.json at project root handles build
 - client/vercel.json has VITE_API_URL env var
-- GitHub connected: auto-deploys on push to main
+- GitHub connected: auto-builds push to main (frontend ONLY — see "Deploys" above; backend auto-deploy is disconnected)
 - Custom domain: stewardapp.dev → DNS via Vercel nameservers
 - Resend domain verified: stewardapp.dev, sends from noreply@stewardapp.dev
 

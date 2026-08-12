@@ -89,7 +89,15 @@ const enable = (tok, id, config) => api("PUT", `/workflows/${id}`, tok, { enable
 const disable = (tok, id) => api("PUT", `/workflows/${id}`, tok, { enabled: false });
 const wfByKey = (list, key) => list.find(w => w.recipe_key === key);
 const runCountOrg = async org => (await q(`SELECT COUNT(*)::int n FROM workflow_runs WHERE org_id=$1`, [org]))[0].n;
-const runCountWf = async id => (await q(`SELECT COUNT(*)::int n FROM workflow_runs WHERE workflow_id=$1`, [id]))[0].n;
+// COMPLETE runs only: the engine reserves the row with actions_taken='[]' and
+// writes the real array AFTER all actions execute — so counting only completed
+// runs makes every "fired → N runs" wait mean "N runs fully executed", and the
+// side-effect asserts that follow (task rows, sink mail, run-log contents) can
+// read immediately. Counting bare rows let those asserts read mid-pipeline on
+// a loaded runner — the whole A1.2/A1.4/A2 intermittent family (three local
+// pre-push blocks + two CI runs, 2026-08-11/12) was this one window.
+const runCountWf = async id => (await q(
+  `SELECT COUNT(*)::int n FROM workflow_runs WHERE workflow_id=$1 AND actions_taken::text <> '[]'`, [id]))[0].n;
 const taskCount = async (org, donorId) => (await q(`SELECT COUNT(*)::int n FROM tasks WHERE org_id=$1${donorId ? ` AND donor_id='${donorId}'` : ""}`, [org]))[0].n;
 
 // Fire a signed Stripe connect webhook of an arbitrary type/object.
