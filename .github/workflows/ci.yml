@@ -1,8 +1,15 @@
 # BUILD-38 Part 2 — the gate. Runs the full suite on every push + PR to main.
 # Any failure fails the job; pair this with branch protection (see MANUAL-STEPS.md)
-# so a red run blocks merge, and with Vercel's Ignored Build Step so it blocks
-# deploy. Action versions are pinned to tags here; convert to commit SHAs per
-# MANUAL-STEPS.md ("Pin actions to SHAs") once you can resolve them online.
+# so a red run blocks merge. Action versions are pinned to tags here; convert to
+# commit SHAs per MANUAL-STEPS.md ("Pin actions to SHAs") once you can resolve
+# them online.
+#
+# Deploy rewire (2026-08-11): production deploys run FROM this workflow, gated
+# on a green `test` job — Railway's GitHub auto-deploy is disconnected and the
+# `deploy-railway` job below is the one path to the backend. `deploy-vercel`
+# is wired the same way but stays dormant until the VERCEL_TOKEN secret exists
+# (see BLOCKED-vercel-gate.md); until then Vercel's git auto-build still owns
+# the frontend. Break-glass + full before/after: audit/deploy-rewire.md.
 name: CI
 
 on:
@@ -79,3 +86,113 @@ jobs:
       - name: Server log on failure
         if: failure()
         run: cat /tmp/server.log || true
+
+      # run-all.sh keeps every suite's full output in /tmp/steward-suite-logs
+      # (and already dumps a failing suite's output inline in the step log).
+      # Upload the whole dir so a red run's assertions are downloadable even
+      # when the inline log is long.
+      - name: Upload suite logs (on failure)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: suite-logs
+          path: /tmp/steward-suite-logs/
+          if-no-files-found: ignore
+
+  # ── Deploy gate: Railway backend (deploy rewire, 2026-08-11) ──────────────
+  # Runs ONLY on push to main, ONLY after a green test job. The shared
+  # "deploy-main" concurrency group with cancel-in-progress:false means
+  # deploys queue and never overlap (a superseded queued deploy is dropped in
+  # favor of the newest — deploys always converge on the latest green main).
+  # RAILWAY_TOKEN is a project-scoped token ("github-actions-deploy") in
+  # Actions secrets. Break-glass if Actions is down: manual `railway up` from
+  # a local checkout — see audit/deploy-rewire.md.
+  deploy-railway:
+    runs-on: ubuntu-latest
+    needs: [test]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    concurrency:
+      group: deploy-main
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install Railway CLI
+        run: npm install -g @railway/cli
+
+      # server.js reads .build-sha at boot and reports it on /health — the
+      # verify step below asserts prod is actually serving THIS commit.
+      - name: Stamp build SHA
+        run: printf '%s' "$GITHUB_SHA" > .build-sha
+
+      - name: Deploy to Railway
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+        run: railway up --service nonprofit-erp --ci
+
+      - name: Verify prod is healthy at this commit (timeout 5 min)
+        run: |
+          echo "Polling /health for status:ok + buildSha == $GITHUB_SHA …"
+          for i in $(seq 1 60); do
+            body=$(curl -sf --max-time 10 https://nonprofit-erp-production.up.railway.app/health || true)
+            sha=$(printf '%s' "$body" | node -e "let d='';process.stdin.on('data',c=>d+=c).on('end',()=>{try{const j=JSON.parse(d);console.log(j.buildSha||'')}catch{console.log('')}})")
+            ok=$(printf '%s' "$body" | grep -c '"status":"ok"' || true)
+            if [ "$ok" -ge 1 ] && [ "$sha" = "$GITHUB_SHA" ]; then
+              echo "OK: prod healthy at $sha"; exit 0
+            fi
+            echo "  [$i/60] status-ok=$ok buildSha=${sha:-none}"
+            sleep 5
+          done
+          echo "FAIL: prod never became healthy at $GITHUB_SHA within 5 minutes."
+          echo "Prod may still be serving the previous deploy — check Railway deployments."
+          exit 1
+
+  # ── Deploy gate: Vercel frontend (same rules, DORMANT until token exists) ─
+  # No ignored-build-step (it evaluates while CI is pending and never retries).
+  # Instead: this job deploys via Vercel CLI after green tests; once proven,
+  # Vercel's git auto-build gets disabled (vercel.json git.deploymentEnabled).
+  # Until the VERCEL_TOKEN secret is set (needs dashboard access — see
+  # BLOCKED-vercel-gate.md) this job logs loudly and exits 0, and Vercel's git
+  # auto-build continues to own production so the frontend can always deploy.
+  deploy-vercel:
+    runs-on: ubuntu-latest
+    needs: [test]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    concurrency:
+      group: deploy-main
+      cancel-in-progress: false
+    env:
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+      VERCEL_ORG_ID: team_bmpIjp9a9Cji8y2NqHsEuewv
+      VERCEL_PROJECT_ID: prj_OCO0p927wc7CszoQS9PEEnDg7mIy
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Deploy to Vercel (or skip loudly without the token)
+        run: |
+          if [ -z "$VERCEL_TOKEN" ]; then
+            echo "::notice::VERCEL_TOKEN secret is not set — SKIPPING the Vercel deploy."
+            echo "Vercel's git auto-build still owns the frontend. To activate this job:"
+            echo "see BLOCKED-vercel-gate.md (mint token -> gh secret set VERCEL_TOKEN -> prove -> disable auto-build)."
+            exit 0
+          fi
+          # BUILD_SHA is the meta-tag fallback: the remote Vercel build has no
+          # .git and no GITHUB_SHA, so the SHA rides in as an explicit build env.
+          npx vercel@latest deploy --prod --yes --token "$VERCEL_TOKEN" --build-env BUILD_SHA="$GITHUB_SHA"
+
+      - name: Verify live site serves this commit (timeout 5 min)
+        run: |
+          if [ -z "$VERCEL_TOKEN" ]; then echo "skipped (no token)"; exit 0; fi
+          echo "Polling https://www.stewardapp.dev for build-sha == $GITHUB_SHA …"
+          for i in $(seq 1 60); do
+            sha=$(curl -sf --max-time 10 https://www.stewardapp.dev/ | grep -o 'name="build-sha" content="[0-9a-f]*"' | grep -o '[0-9a-f]\{40\}' || true)
+            if [ "$sha" = "$GITHUB_SHA" ]; then echo "OK: live site serving $sha"; exit 0; fi
+            echo "  [$i/60] build-sha=${sha:-none}"
+            sleep 5
+          done
+          echo "FAIL: live site never served build-sha $GITHUB_SHA within 5 minutes."
+          exit 1

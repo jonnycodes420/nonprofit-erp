@@ -1075,6 +1075,17 @@ const requireSuperAdmin = [requireSuperAdminJwt, wrap(async (req, res, next) => 
 // ── Health ─────────────────────────────────────────────────────────────────
 // `sentry` is a non-secret boolean (is SENTRY_DSN configured?) so ops checks
 // can confirm error monitoring is wired without dashboard access.
+// `buildSha` (deploy rewire, 2026-08-11): the exact commit this build came
+// from, resolved once at boot. The Actions deploy job writes .build-sha into
+// the upload before `railway up`; a git-triggered Railway build carries
+// RAILWAY_GIT_COMMIT_SHA instead. null = an unstamped local/dev boot.
+const BUILD_SHA = (() => {
+  try {
+    const stamped = require("fs").readFileSync(__dirname + "/.build-sha", "utf8").trim();
+    if (stamped) return stamped;
+  } catch { /* no stamp file — fall through to env */ }
+  return process.env.RAILWAY_GIT_COMMIT_SHA || process.env.BUILD_SHA || null;
+})();
 app.get("/health", (req, res) => {
   // billing.ok is the cached mode-consistency result (booleans/mode only — no
   // secrets): true = all configured prices resolve under the billing key's mode,
@@ -1086,7 +1097,7 @@ app.get("/health", (req, res) => {
   // one-glance check that reset/invite links carry stewardapp.dev.
   const pu = resolvePublicAppUrl();
   res.json({
-    status: "ok", version: "1.1.0", db: dbReady, sentry: !!process.env.SENTRY_DSN,
+    status: "ok", version: "1.1.0", buildSha: BUILD_SHA, db: dbReady, sentry: !!process.env.SENTRY_DSN,
     billing: { mode: billingModeStatus.mode, ok: billingModeStatus.ok, checked: billingModeStatus.checked },
     publicUrl: { url: pu.url, fromEnv: pu.fromEnv },
     // BUILD-45 (F-2): non-secret count of internal notifications the email

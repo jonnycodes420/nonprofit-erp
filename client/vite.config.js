@@ -1,6 +1,19 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import { sentryVitePlugin } from "@sentry/vite-plugin";
+import { execSync } from "node:child_process";
+
+// Deploy verification (deploy rewire, 2026-08-11): stamp the built page with
+// the exact commit it was built from, so `curl | grep build-sha` against the
+// live site proves which commit is deployed. Vercel git builds carry
+// VERCEL_GIT_COMMIT_SHA, the Actions deploy job carries GITHUB_SHA, and a
+// local build falls back to `git rev-parse` (or "unstamped").
+const buildSha = (() => {
+  const env = process.env.VERCEL_GIT_COMMIT_SHA || process.env.GITHUB_SHA || process.env.BUILD_SHA;
+  if (env) return env;
+  try { return execSync("git rev-parse HEAD", { stdio: ["ignore", "pipe", "ignore"] }).toString().trim(); }
+  catch { return "unstamped"; }
+})();
 
 export default defineConfig({
   build: {
@@ -15,6 +28,12 @@ export default defineConfig({
   },
   plugins: [
     react(),
+    {
+      name: "build-sha-meta",
+      transformIndexHtml() {
+        return [{ tag: "meta", attrs: { name: "build-sha", content: buildSha }, injectTo: "head" }];
+      },
+    },
     // Uploads source maps to Sentry at build time so production stack traces
     // resolve to real file/line instead of minified output. Requires
     // SENTRY_ORG / SENTRY_PROJECT / SENTRY_AUTH_TOKEN (see CLAUDE.md env vars);

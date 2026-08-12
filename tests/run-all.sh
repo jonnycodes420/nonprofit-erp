@@ -56,16 +56,29 @@ CORE=(
   finance-reports-consistency name-normalize reserved-recovered concurrency
 )
 
+# Each suite's FULL output is kept in $SUITE_LOG_DIR (default /tmp/steward-suite-logs),
+# and a failing suite's entire output is dumped inline under its FAIL line — so a
+# red run (local or CI) shows the failing assertion, not just the suite name.
+# CI also uploads the whole log dir as an artifact on failure (ci.yml).
+LOGDIR="${SUITE_LOG_DIR:-/tmp/steward-suite-logs}"
+mkdir -p "$LOGDIR"
+rm -f "$LOGDIR"/*.log 2>/dev/null || true
+
 pass=0; fail=0; failed=()
 for name in "${CORE[@]}"; do
   file="tests/${name}.test.js"
   [ -f "$file" ] || { echo "  SKIP  $name (missing)"; continue; }
-  last=$(node "$file" 2>&1 | tail -1)
+  log="$LOGDIR/${name}.log"
+  node "$file" >"$log" 2>&1
+  last=$(tail -1 "$log")
   if [[ "$last" == *"0 failed"* ]]; then
     printf "  \033[32mPASS\033[0m  %-24s %s\n" "$name" "$last"
     pass=$((pass+1))
   else
     printf "  \033[31mFAIL\033[0m  %-24s %s\n" "$name" "$last"
+    echo "  ──── $name: full output ($log) ────"
+    cat "$log"
+    echo "  ──── end $name output ────"
     fail=$((fail+1)); failed+=("$name")
   fi
 done
