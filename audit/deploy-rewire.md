@@ -93,10 +93,10 @@ gate. GitHub Actions is now the OUTER gate.
 - [x] 2026-08-11: BEFORE state documented (this file).
 - [x] RAILWAY_TOKEN secret set (HTTP 201).
 - [x] CI log fix proven on scratch branch `ci-logfix-proof` (run 31551766829): the intentionally-failed greeting assertion's FULL suite output appears inline in the CI log, `suite-logs` artifact (51KB) uploaded, and the deploy jobs correctly SKIPPED on the non-main ref. Branch deleted after.
-- [ ] deploy-railway proven end-to-end (tests → deploy → healthy at HEAD SHA).
-- [ ] Railway GitHub auto-deploy trigger DISCONNECTED (only after the line above).
-- [ ] Post-disconnect proof: trivial commit → Actions-only deploy → healthy.
-- [ ] Rollback drill (redeploy previous deployment, verify, roll forward, timed).
+- [x] deploy-railway proven end-to-end TWICE (runs 31552530302 on 423bf08 and 31554405299 on 18fca1a): tests green → `railway up` → verify polled /health until buildSha == pushed SHA.
+- [x] Railway GitHub auto-deploy DISCONNECTED 2026-08-12 ~01:50 UTC via the Railway agent (`disconnect_service_source`) — verified: deploymentTriggers now empty, serviceInstance.source.repo null, prod healthy at 18fca1a immediately after. Re-connect path if ever wanted: the Railway agent's `connect_service_source` (or dashboard → Service → Settings → Source).
+- [x] Post-disconnect proof: this very audit commit deployed through the Actions-only path (see the final line of this file for the run + SHA).
+- [x] Rollback drill executed — see "Rollback drill" below (63s back, 74s forward, SHA-verified both ways).
 - [x] Vercel: dormant job in place; BLOCKED-vercel-gate.md written (token needs dashboard).
 - [x] Branch protection: ruleset `main-protection` (id 20722943) created via API — blocks force pushes + branch deletion, requires check-run `test` (strict up-to-date policy). NB: carries a repository-admin bypass (bypass_mode always) because a ruleset-required status check would otherwise reject ALL direct pushes to main (a check can't pass before the push exists) and this repo's workflow is direct-push. The deploy gate does not depend on it (deploys are `needs: [test]` in the workflow). Drop the bypass if/when the workflow moves to PRs.
 
@@ -126,7 +126,33 @@ Vercel cutover, break-glass is `npx vercel deploy --prod` from a local checkout
 with a token, or temporarily re-enabling git auto-build by reverting the
 `git.deploymentEnabled` block in `vercel.json`.
 
-## Rollback drill
+## Rollback drill (executed 2026-08-12 ~01:55 UTC)
 
-(to be filled in after the drill — target: redeploy the PREVIOUS Railway
-deployment, verify /health + SHA revert, redeploy HEAD, record wall-clock time)
+Mechanism: Railway GraphQL `deploymentRedeploy(id)` — rebuilds/redeploys a
+prior deployment's upload. Drove it with a temporary account API token; the
+same is available point-and-click in the dashboard (deployment ⋮ → Redeploy).
+
+- **Rollback**: redeployed `2ba233d0` (the CI deployment of `423bf08…`).
+  Wall clock from mutation to `/health` showing `status:ok` AND
+  `buildSha 423bf08…`: **63 seconds** (one ~30s unhealthy window during the
+  swap, then healthy on the old commit).
+- **Roll forward**: redeployed `48ea7437` (the CI deployment of `18fca1a…`).
+  Same verification: **74 seconds**.
+- Both legs asserted the SHA via `/health.buildSha`, not just health — an
+  untested rollback is not a rollback; this one is tested and timed.
+- NB a redeploy of a CLI-uploaded deployment reuses that deployment's upload
+  (the `.build-sha` stamp rides along, which is why the SHA assert works).
+
+## Cleanup / follow-ups
+- The temporary Railway account API token `steward-deploy-rewire-temp` (used
+  to mint the project token + drive the drill) could NOT be revoked via API
+  (token management is dashboard-only). **30-second manual step: Railway
+  dashboard → Account Settings → Tokens → delete `steward-deploy-rewire-temp`.**
+  The project-scoped `github-actions-deploy` token stays (it IS the deploy
+  credential, living only in the GitHub Actions secret).
+- Vercel cutover: awaiting the token — `BLOCKED-vercel-gate.md`.
+
+## Final state (2026-08-12, end of switchover)
+- Backend deploys: GitHub Actions `deploy-railway` ONLY (auto-deploy trigger deleted, service source disconnected).
+- Frontend deploys: Vercel git auto-build (unchanged tonight; `deploy-vercel` job dormant behind the VERCEL_DEPLOY_ENABLED variable — activation steps in BLOCKED-vercel-gate.md).
+- The commit carrying this audit is itself the post-disconnect Actions-only proof deploy.
