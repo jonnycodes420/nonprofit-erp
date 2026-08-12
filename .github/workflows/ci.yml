@@ -151,17 +151,21 @@ jobs:
           echo "Prod may still be serving the previous deploy — check Railway deployments."
           exit 1
 
-  # ── Deploy gate: Vercel frontend (same rules, DORMANT until token exists) ─
+  # ── Deploy gate: Vercel frontend (same rules, DORMANT until activated) ────
   # No ignored-build-step (it evaluates while CI is pending and never retries).
   # Instead: this job deploys via Vercel CLI after green tests; once proven,
   # Vercel's git auto-build gets disabled (vercel.json git.deploymentEnabled).
-  # Until the VERCEL_TOKEN secret is set (needs dashboard access — see
-  # BLOCKED-vercel-gate.md) this job logs loudly and exits 0, and Vercel's git
-  # auto-build continues to own production so the frontend can always deploy.
+  # DORMANT GATE: the job-level `if` reads the repository VARIABLE
+  # VERCEL_DEPLOY_ENABLED, so until it is set to 'true' the job renders as
+  # SKIPPED (grey) — never a misleading green "success" that deployed nothing.
+  # Activation (see BLOCKED-vercel-gate.md): set the VERCEL_TOKEN secret AND
+  # `gh variable set VERCEL_DEPLOY_ENABLED --body true`. Until then Vercel's
+  # git auto-build continues to own production so the frontend can always
+  # deploy. Enabled-but-no-token is a misconfiguration and fails loudly.
   deploy-vercel:
     runs-on: ubuntu-latest
     needs: [test]
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.VERCEL_DEPLOY_ENABLED == 'true'
     concurrency:
       group: deploy-main
       cancel-in-progress: false
@@ -172,13 +176,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Deploy to Vercel (or skip loudly without the token)
+      - name: Deploy to Vercel
         run: |
           if [ -z "$VERCEL_TOKEN" ]; then
-            echo "::notice::VERCEL_TOKEN secret is not set — SKIPPING the Vercel deploy."
-            echo "Vercel's git auto-build still owns the frontend. To activate this job:"
-            echo "see BLOCKED-vercel-gate.md (mint token -> gh secret set VERCEL_TOKEN -> prove -> disable auto-build)."
-            exit 0
+            echo "::error::VERCEL_DEPLOY_ENABLED is true but the VERCEL_TOKEN secret is not set — refusing."
+            echo "See BLOCKED-vercel-gate.md."
+            exit 1
           fi
           # BUILD_SHA is the meta-tag fallback: the remote Vercel build has no
           # .git and no GITHUB_SHA, so the SHA rides in as an explicit build env.
@@ -186,7 +189,6 @@ jobs:
 
       - name: Verify live site serves this commit (timeout 5 min)
         run: |
-          if [ -z "$VERCEL_TOKEN" ]; then echo "skipped (no token)"; exit 0; fi
           echo "Polling https://www.stewardapp.dev for build-sha == $GITHUB_SHA …"
           for i in $(seq 1 60); do
             sha=$(curl -sf --max-time 10 https://www.stewardapp.dev/ | grep -o 'name="build-sha" content="[0-9a-f]*"' | grep -o '[0-9a-f]\{40\}' || true)

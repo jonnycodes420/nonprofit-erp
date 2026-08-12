@@ -212,7 +212,11 @@ async function fireWebhook(type, object, evtId, account = ACCT_A) {
     await waitFor(() => mailTo("newdonor@wfe.local").length === 1), mailTo("newdonor@wfe.local").length);
   const thxHtml = mailTo("newdonor@wfe.local")[0]?.body?.html || "";
   ok("A1.2: thank-you names the donor's first gift + org", /first gift/i.test(thxHtml) && /WFE wfe-a/.test(thxHtml), thxHtml.slice(0, 200));
-  ok("A1.2: new_donor created a welcome-call task", (await taskCount(A, ndId)) === 1);
+  // Poll: the task insert is a separate async action that can land after the
+  // email (same reserve-then-execute window as the A1.4 fix; flaked on CI
+  // 2026-08-12 run 31551766829).
+  ok("A1.2: new_donor created a welcome-call task",
+    await waitFor(async () => (await taskCount(A, ndId)) === 1), await taskCount(A, ndId));
   // Second gift to the SAME donor is not a first gift — must NOT fire new_donor.
   clearMail();
   await api("POST", `/donors/${ndId}/gifts`, tA, { amount: 75, date: daysAgo(0) });
@@ -386,7 +390,13 @@ async function fireWebhook(type, object, evtId, account = ACCT_A) {
   await api("POST", `/donors/d_provfail/gifts`, tA, { amount: 55, date: daysAgo(0) });
   ok("A2: provider failure still records the run (never silently lost)",
     await waitFor(async () => (await q(`SELECT COUNT(*)::int n FROM workflow_runs WHERE workflow_id=$1 AND donor_id='d_provfail'`, [wfNew2.id]))[0].n === 1), "run recorded");
-  ok("A2: the failed send was attempted exactly once (no crash, no silent success)", mailTo("d_provfail@wfe.local").length === 1, mailTo("d_provfail@wfe.local").length);
+  // Poll: the run row is reserved BEFORE the send attempt executes, so the
+  // attempt can land after the previous waitFor resolves. Without the poll,
+  // this read 0 on a loaded runner AND the late send then landed after the
+  // clearMail() below, cascading into a false "double-send" failure (both
+  // seen on CI 2026-08-12 run 31551766829).
+  ok("A2: the failed send was attempted exactly once (no crash, no silent success)",
+    await waitFor(() => mailTo("d_provfail@wfe.local").length === 1), mailTo("d_provfail@wfe.local").length);
   // Re-firing the SAME gift event is a no-op — so a retry never double-sends.
   const gRow = (await q(`SELECT id FROM gifts WHERE donor_id='d_provfail'`))[0];
   clearMail(); failNext = 0;

@@ -18,11 +18,15 @@ cannot be minted via API — dashboard only), so these steps are yours:
    `client` project, expiration: your call (1 year is fine — note it somewhere).
 3. Copy the token (shown once).
 
-## Step 2 — set the Actions secret (~30 s)
+## Step 2 — set the Actions secret + enable the job (~30 s)
 ```sh
 gh secret set VERCEL_TOKEN -R jonnycodes420/nonprofit-erp
 # paste the token at the prompt
+gh variable set VERCEL_DEPLOY_ENABLED -R jonnycodes420/nonprofit-erp --body true
 ```
+(The job-level gate is the VERCEL_DEPLOY_ENABLED repository variable — until
+it's `true` the deploy-vercel job renders as SKIPPED. Enabled without the
+token secret fails loudly.)
 (Or paste it to me in a session — I can set it via the API the same way
 RAILWAY_TOKEN was set, without it touching a log.)
 
