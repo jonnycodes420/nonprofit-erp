@@ -45,7 +45,7 @@ const sha = (s) => crypto.createHash("sha256").update(s).digest("hex").slice(0, 
   // sidecar when a staff login exists.)
 
   // 1) Create + verify the demo account (the sink catches the verify email).
-  await j("POST", "/account/signup", { email: EMAIL, password: "alexdemo999" });
+  await j("POST", "/account/signup", { email: EMAIL, password: "alexdemo999", consent: true });
   await new Promise(r => setTimeout(r, 900));
   const verifyMail = mails.find(m => m.to === EMAIL && /verify#token=/.test(m.html || ""));
   ok("verification email captured", !!verifyMail);

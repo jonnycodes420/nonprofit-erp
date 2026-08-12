@@ -11,7 +11,7 @@ import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { T, fmtMoney } from "./publicTheme";
 
-export const CONSUMER_BRAND = "Steward — Your Giving";
+export const CONSUMER_BRAND = "Steward"; // plain Steward (go-live 2026-08-12); rename = one commit (BLOCKED-consumer-brand.md)
 
 // Same-origin in production via the vercel.json /account-api proxy (the
 // session cookie must stay first-party); VITE_ACCOUNT_API is the local-
@@ -65,6 +65,7 @@ function AuthCard({ onSignedIn }) {
   const [mode, setMode] = useState("login"); // login | signup | reset
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [consent, setConsent] = useState(false);
   const [msg, setMsg] = useState("");
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
@@ -76,7 +77,7 @@ function AuthCard({ onSignedIn }) {
         if (r.status === 200) return onSignedIn();
         setErr(r.body?.message || "That email and password don't match.");
       } else if (mode === "signup") {
-        const r = await afetch("/signup", { method: "POST", body: { email, password } });
+        const r = await afetch("/signup", { method: "POST", body: { email, password, consent } });
         if (r.status === 200) setMsg("Check your email to verify your account.");
         else setErr(r.body?.error || "Something went wrong.");
       } else {
@@ -107,8 +108,14 @@ function AuthCard({ onSignedIn }) {
         <input style={S.input} type="password" value={password} onChange={e => setPassword(e.target.value)}
           autoComplete={mode === "signup" ? "new-password" : "current-password"} />
       </>)}
+      {mode === "signup" && (
+        <label style={{ display: "flex", alignItems: "flex-start", gap: 8, marginTop: 12, fontSize: 13, color: T.ink3, cursor: "pointer" }}>
+          <input type="checkbox" checked={consent} onChange={e => setConsent(e.target.checked)} style={{ marginTop: 2 }} />
+          <span>I agree to the <a href="/terms" target="_blank" rel="noreferrer" style={{ color: T.greenDk }}>Terms</a> and <a href="/privacy" target="_blank" rel="noreferrer" style={{ color: T.greenDk }}>Privacy Policy</a>.</span>
+        </label>
+      )}
       <div style={{ marginTop: 16 }}>
-        <button style={S.btn} disabled={busy} onClick={go}>
+        <button style={{ ...S.btn, opacity: mode === "signup" && !consent ? 0.5 : 1 }} disabled={busy || (mode === "signup" && !consent)} onClick={go}>
           {busy ? "Working…" : mode === "login" ? "Sign in" : mode === "signup" ? "Create account" : "Email me a link"}
         </button>
       </div>

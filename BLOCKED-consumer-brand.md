@@ -21,3 +21,5 @@ place the string lives:
 Recommendation: decide before any donor-facing launch (the flags are OFF in
 prod, so nothing is public yet); the name lands in emailed subjects, which are
 the hardest thing to re-teach donors later.
+
+**GO-LIVE DECISION (2026-08-12): the consumer surface launches as plain "Steward"** (CONSUMER_BRAND both places; the header keeps a small "Your Giving" descriptor label, which is a function label, not a brand). A future rename remains one commit across the locations above.

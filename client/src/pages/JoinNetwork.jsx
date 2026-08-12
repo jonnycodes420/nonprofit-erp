@@ -27,6 +27,7 @@ const S = {
 export default function JoinNetwork() {
   const [flags, setFlags] = useState(null);
   const [f, setF] = useState({ orgName: "", ein: "", email: "", password: "", website: "" });
+  const [consent, setConsent] = useState(false);
   const [done, setDone] = useState(null);
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
@@ -41,7 +42,7 @@ export default function JoinNetwork() {
     setBusy(true); setErr("");
     try {
       const r = await fetch(NETWORK_BASE + "/signup", {
-        method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(f),
+        method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ ...f, consent }),
       });
       const body = await r.json().catch(() => null);
       if (r.status === 201) {
@@ -90,7 +91,11 @@ export default function JoinNetwork() {
             <input style={S.input} type="email" value={f.email} onChange={set("email")} />
             <div style={S.label}>Password</div>
             <input style={S.input} type="password" value={f.password} onChange={set("password")} autoComplete="new-password" />
-            <button style={S.btn} disabled={busy} onClick={submit}>{busy ? "Submitting…" : "Apply to join"}</button>
+            <label style={{ display: "flex", alignItems: "flex-start", gap: 8, marginTop: 14, fontSize: 13, color: T.ink3, cursor: "pointer" }}>
+              <input type="checkbox" checked={consent} onChange={e => setConsent(e.target.checked)} style={{ marginTop: 2 }} />
+              <span>I am authorized to act for this organization and agree to the <a href="/terms" target="_blank" rel="noreferrer" style={{ color: T.greenDk }}>Terms</a> and <a href="/privacy" target="_blank" rel="noreferrer" style={{ color: T.greenDk }}>Privacy Policy</a>.</span>
+            </label>
+            <button style={{ ...S.btn, opacity: consent ? 1 : 0.5 }} disabled={busy || !consent} onClick={submit}>{busy ? "Submitting…" : "Apply to join"}</button>
             {err && <p style={S.err}>{err}</p>}
             <p style={{ ...S.muted, fontSize: 13, marginTop: 12 }}>
               Your listing goes live only after EIN verification, Stripe

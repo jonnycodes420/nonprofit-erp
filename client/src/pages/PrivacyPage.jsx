@@ -118,7 +118,19 @@ export default function PrivacyPage() {
         <h2 style={S.h2}>12. Governing Law</h2>
         <p style={S.p}>This Privacy Policy is governed by the laws of the Commonwealth of Kentucky, United States. Any disputes arising from this policy shall be resolved in the state or federal courts located in Kentucky.</p>
 
-        <h2 style={S.h2}>13. Contact</h2>
+        {/* INTERIM — attorney replacement pending per BLOCKED-legal-network.md.
+            Scoped to the donor-account + network-signup surfaces; written
+            plainly from audit/portal-data-handling.md. */}
+        <h2 style={S.h2}>13. Donor Accounts &amp; the Giving Network</h2>
+        <p style={S.p}>This section applies if you create a personal donor account at stewardapp.dev/giving, or if your nonprofit joins the Steward network through self-serve signup.</p>
+        <p style={S.p}><strong>What we collect for a donor account:</strong> your email address(es), a password (stored only as a one-way hash), and the links between your account and your giving records at organizations that use Steward. Your account is linked to an organization's records only when you prove control of the email address on those records — by clicking a link we send to that exact address. We never link records by name, address, or any guess.</p>
+        <p style={S.p}><strong>Who sees what:</strong> Each nonprofit sees only its own relationship with you. We never share your giving at one organization with another. Your combined giving totals are computed for your eyes only, when you look at them, and are never stored where an organization could see them, and never shown to any organization. An organization cannot tell whether you have a donor account or where else you give.</p>
+        <p style={S.p}><strong>Your controls:</strong> You can hide any organization from your dashboard at any time (this does not delete that organization's own records of your giving — their records of their donors are theirs). You can delete your account at any time from the Account tab: your account, its email addresses, and all its links are deleted. Each organization's own records of its donors are unaffected.</p>
+        <p style={S.p}><strong>No data sale:</strong> We do not sell your personal information, and we do not use your cross-organization giving for advertising, recommendations, or any purpose other than showing it to you.</p>
+        <p style={S.p}><strong>For nonprofits joining the network:</strong> we collect your organization's name, EIN, website, and a contact email; we verify your EIN against the IRS's published tax-exempt organization list and record the verification result and our listing decisions.</p>
+        <p style={S.p}>Questions about any of this: <a href="mailto:privacy@stewardapp.dev" style={S.a}>privacy@stewardapp.dev</a>.</p>
+
+        <h2 style={S.h2}>14. Contact</h2>
         <p style={S.p}>For questions about this Privacy Policy or to exercise your privacy rights, contact us at <a href="mailto:privacy@stewardapp.dev" style={S.a}>privacy@stewardapp.dev</a>.</p>
         <p style={S.p}>For general legal inquiries, contact <a href="mailto:legal@stewardapp.dev" style={S.a}>legal@stewardapp.dev</a>.</p>
       </div>

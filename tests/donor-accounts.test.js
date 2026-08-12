@@ -93,11 +93,13 @@ async function fixture() {
 
   // ── signup: identical response, queued email, verification ───────────────
   mail = [];
-  const s1 = await raw("POST", "/account/signup", { body: { email: EMAIL, password: "firstpass99" } });
+  ok("signup without consent → 400 consent_required (go-live legal posture)",
+    (await raw("POST", "/account/signup", { body: { email: EMAIL, password: "firstpass99" } })).body?.error === "consent_required");
+  const s1 = await raw("POST", "/account/signup", { body: { email: EMAIL, password: "firstpass99", consent: true } });
   await settle();
   ok("signup 200 with a neutral body", s1.status === 200 && s1.body.received === true, s1.body);
   ok("verification email sent to the address", mailTo(EMAIL).length === 1, mailTo(EMAIL).length);
-  const s2 = await raw("POST", "/account/signup", { body: { email: EMAIL, password: "differentpw1" } });
+  const s2 = await raw("POST", "/account/signup", { body: { email: EMAIL, password: "differentpw1", consent: true } });
   await settle();
   ok("second signup for the SAME email: byte-identical response (no enumeration)",
     JSON.stringify(s2.body) === JSON.stringify(s1.body) && s2.status === s1.status);
@@ -124,7 +126,7 @@ async function fixture() {
     wrongPw.status === 401 && unknown.status === 401 && JSON.stringify(wrongPw.body) === JSON.stringify(unknown.body));
   // unverified account failure is byte-identical too
   mail = [];
-  await raw("POST", "/account/signup", { body: { email: "unverified@da46.test", password: "meantwell99" } });
+  await raw("POST", "/account/signup", { body: { email: "unverified@da46.test", password: "meantwell99", consent: true } });
   await settle();
   const unverified = await raw("POST", "/account/login", { body: { email: "unverified@da46.test", password: "meantwell99" } });
   ok("unverified-email login failure is byte-identical to the others",
@@ -243,7 +245,7 @@ async function fixture() {
     return limited;
   };
   ok("S-11: login burst rate-limits by IP bucket", (await burst("/account/login", i => ({ email: `b${i}@giver.test`, password: "xxxxxxxxx" }), 40)) > 0);
-  ok("S-11: signup burst rate-limits", (await burst("/account/signup", i => ({ email: `burst${i}@giver.test`, password: "xxxxxxxxx" }), 40)) > 0);
+  ok("S-11: signup burst rate-limits", (await burst("/account/signup", i => ({ email: `burst${i}@giver.test`, password: "xxxxxxxxx", consent: true }), 40)) > 0);
   ok("S-11: per-EMAIL reset burst rate-limits (account-keyed, not just IP)",
     (await (async () => {
       let limited = 0;

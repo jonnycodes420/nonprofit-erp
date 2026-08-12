@@ -107,7 +107,13 @@ export default function TermsPage() {
         <h2 style={S.h2}>13. Changes to Terms</h2>
         <p style={S.p}>We may update these Terms from time to time. We will notify you of material changes via email or a notice within the Service at least 14 days before they take effect. Continued use after the effective date constitutes acceptance.</p>
 
-        <h2 style={S.h2}>14. Contact</h2>
+        {/* INTERIM — attorney replacement pending per BLOCKED-legal-network.md.
+            Scoped to the donor-account + network-signup surfaces. */}
+        <h2 style={S.h2}>14. Donor Accounts &amp; the Nonprofit Network</h2>
+        <p style={S.p}><strong>Donor accounts</strong> are personal, free, and optional. You agree to register only email addresses you control. You may delete your account at any time; deletion removes your account and its links but does not alter any nonprofit's own records of its donors. Each nonprofit sees only its own relationship with you — we never share your giving at one organization with another.</p>
+        <p style={S.p}><strong>Nonprofit network signup (Portal tier):</strong> by applying you represent that the information you provide — organization name, EIN, website, contact email — is truthful and that you are authorized to act for the organization. Listings are granted only after EIN verification against the IRS tax-exempt list, completed Stripe onboarding (donations settle only into your organization's own Stripe account — Steward never holds funds), and human review. We may decline, hold, or remove a listing at any time, and listings are automatically suspended if an EIN leaves the IRS list or a Stripe account is disconnected or restricted. Content you publish to donor-facing surfaces (impact updates, branding) must be truthful and yours to publish. The Portal tier covers the donor portal, gift recording, receipts, and impact updates; it does not include the Steward CRM.</p>
+
+        <h2 style={S.h2}>15. Contact</h2>
         <p style={S.p}>For questions about these Terms, contact us at <a href="mailto:legal@stewardapp.dev" style={S.a}>legal@stewardapp.dev</a>.</p>
       </div>
     </div>

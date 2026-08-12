@@ -104,7 +104,7 @@ async function fixture() {
 
   // account: signup + verify → links both orgs
   mail = [];
-  await raw("POST", "/account/signup", { body: { email: EMAIL, password: "harperpw999" } });
+  await raw("POST", "/account/signup", { body: { email: EMAIL, password: "harperpw999", consent: true } });
   await settle();
   const v = await raw("POST", "/account/verify", { body: { token: tokenFrom(mailTo(EMAIL)[0], "verify") } });
   const cookie = cookieOf(v);

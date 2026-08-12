@@ -16076,7 +16076,7 @@ const requireFlag = (on) => (req, res, next) => on ? next() : res.status(404).js
 
 // Consumer-surface brand string — placeholder pending the founder decision
 // (BLOCKED-consumer-brand.md lists every place this lives).
-const CONSUMER_BRAND = "Steward — Your Giving";
+const CONSUMER_BRAND = "Steward"; // consumer surface = plain Steward (go-live decision 2026-08-12; rename stays one commit — BLOCKED-consumer-brand.md)
 const foldEmail = (e) => String(e || "").trim().toLowerCase();
 const EMAIL_RX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -16206,6 +16206,10 @@ app.post("/account/signup", requireFlag(DONOR_ACCOUNTS_ENABLED), accountIpLimite
   const password = String(req.body?.password || "");
   if (!EMAIL_RX.test(email) || email.length > 320) return res.status(400).json({ error: "That email doesn't look right" });
   if (password.length < 8 || password.length > 200) return res.status(400).json({ error: "Password must be at least 8 characters" });
+  // Interim legal posture (go-live 2026-08-12): explicit consent to the Terms
+  // + Privacy Policy is required and audit-recorded. INTERIM pages pending the
+  // attorney pass (BLOCKED-legal-network.md).
+  if (req.body?.consent !== true) return res.status(400).json({ error: "consent_required", message: "Please agree to the Terms and Privacy Policy." });
   // Identical response whether or not the account exists (P-2 discipline).
   res.json({ received: true, message: "Check your email to verify your account." });
   (async () => {
@@ -16223,7 +16227,7 @@ app.post("/account/signup", requireFlag(DONOR_ACCOUNTS_ENABLED), accountIpLimite
       `INSERT INTO donor_accounts (id,email,password_hash,verify_token_hash,verify_expires_at)
        VALUES (?,?,?,?, NOW() + INTERVAL '60 minutes')`,
       [id, email, bcrypt.hashSync(password, 12), sha256hex(token)]);
-    await donorAudit(id, email, "signup", req);
+    await donorAudit(id, email, "signup", req, { consent: true, consentAt: new Date().toISOString() });
     const link = `${publicAppUrl()}/giving/verify#token=${token}`;
     await sendDonorLifecycleEmail("verify", email, `Verify your email — ${CONSUMER_BRAND}`,
       consumerEmailHtml(`<p>Welcome. Confirm this email address to see your giving in one place:</p>
@@ -16645,6 +16649,7 @@ app.post("/network/signup", requireFlag(NETWORK_SIGNUP_ENABLED), networkSignupLi
   const em = foldEmail(email);
   if (!name || !EMAIL_RX.test(em) || String(password || "").length < 8) return res.status(400).json({ error: "Name, email, and a password of 8+ characters are required" });
   if (ein.length !== 9) return res.status(400).json({ error: "EIN must be 9 digits" });
+  if (req.body?.consent !== true) return res.status(400).json({ error: "consent_required", message: "Please agree to the Terms and Privacy Policy." });
   const existingUser = await query(`SELECT id FROM users WHERE email = ?`, [em]);
   if (existingUser.length) return res.status(409).json({ error: "email_in_use", message: "That email already has a Steward login." });
 
@@ -16681,7 +16686,7 @@ app.post("/network/signup", requireFlag(NETWORK_SIGNUP_ENABLED), networkSignupLi
      ON CONFLICT (org_id) DO NOTHING`, [orgId, name]);
   const appId = "napp_" + uuid().slice(0, 8);
   const status = einHolder.length ? "dispute" : "pending";
-  const decision = [{ at: new Date().toISOString(), by: "system", action: "created", detail: einHolder.length ? `EIN already claimed by ${einHolder[0].org_id} — routed to dispute queue` : "application created" }];
+  const decision = [{ at: new Date().toISOString(), by: "system", action: "created", consent: true, detail: einHolder.length ? `EIN already claimed by ${einHolder[0].org_id} — routed to dispute queue` : "application created" }];
   await run(
     `INSERT INTO network_applications (id, org_id, ein, status, ein_result, domain_check, website, disputed_org_id, decisions)
      VALUES (?,?,?,?,?,?,?,?,?)`,

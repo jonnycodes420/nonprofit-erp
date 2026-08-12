@@ -1,4 +1,5 @@
 {
+  "git": { "deploymentEnabled": { "main": false } },
   "buildCommand": "npm --prefix client install && npm --prefix client run build",
   "outputDirectory": "client/dist",
   "rewrites": [

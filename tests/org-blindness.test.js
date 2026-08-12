@@ -125,7 +125,7 @@ async function captureBattery(tokenA) {
 
   // ── the account: create, verify, alias, link BOTH orgs, USE the dashboard ─
   mail = [];
-  await raw("POST", "/account/signup", { body: { email: "wren@ob46.test", password: "wrenpass999" } });
+  await raw("POST", "/account/signup", { body: { email: "wren@ob46.test", password: "wrenpass999", consent: true } });
   await settle();
   const v = await raw("POST", "/account/verify", { body: { token: tokenFrom(mailTo("wren@ob46.test")[0], "verify") } });
   const cookie = cookieOf(v);

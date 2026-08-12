@@ -82,8 +82,10 @@ async function cleanup() {
   const superTok = (await api("POST", "/auth/login", null, { email: "ng-super@test.local", password: "loadtest1234" })).body.token;
 
   // ── signup creates a fully-gated org ─────────────────────────────────────
+  ok("network signup without consent → 400 consent_required",
+    (await raw("POST", "/network/signup", { body: { orgName: "X", ein: "812345679", email: "x@ng46.test", password: "xxxxxxxxx" } })).body?.error === "consent_required");
   const su = await raw("POST", "/network/signup", {
-    body: { orgName: "River Bend Shelter", ein: "81-2345679", email: "director@riverbend.ng46.test", password: "shelterpw99", website: "https://riverbend.ng46.test" },
+    body: { orgName: "River Bend Shelter", ein: "81-2345679", email: "director@riverbend.ng46.test", password: "shelterpw99", website: "https://riverbend.ng46.test", consent: true },
   });
   ok("network signup 201 with a staff token + pending application", su.status === 201 && !!su.body.token && su.body.application.status === "pending", su.body.application);
   const orgTok = su.body.token;
@@ -148,7 +150,7 @@ async function cleanup() {
 
   // ── org-joins-network linking: existing verified account gets the new org ─
   mail = [];
-  await raw("POST", "/account/signup", { body: { email: "joiner@ng46.test", password: "joinerpw99" } });
+  await raw("POST", "/account/signup", { body: { email: "joiner@ng46.test", password: "joinerpw99", consent: true } });
   await settle(1000);
   const vTok = /verify#token=([A-Za-z0-9_-]+)/.exec(mail.find(m => m.to === "joiner@ng46.test")?.html || "")?.[1];
   const jv = await raw("POST", "/account/verify", { body: { token: vTok } });
@@ -163,7 +165,7 @@ async function cleanup() {
 
   // ── S-15: EIN dispute can't hijack the existing listing ──────────────────
   const su2 = await raw("POST", "/network/signup", {
-    body: { orgName: "River Bend Shelter (imposter)", ein: EIN_GOOD, email: "fake@imposter.ng46.test", password: "imposterpw9", website: "https://imposter.ng46.test" },
+    body: { orgName: "River Bend Shelter (imposter)", ein: EIN_GOOD, email: "fake@imposter.ng46.test", password: "imposterpw9", website: "https://imposter.ng46.test", consent: true },
   });
   ok("S-15: a second signup on a claimed EIN lands in the DISPUTE queue", su2.status === 201 && su2.body.application.status === "dispute", su2.body.application);
   ok("S-15: the original holder's listing is untouched",
@@ -203,7 +205,7 @@ async function cleanup() {
   let limited = 0;
   for (let i = 0; i < 8; i++) {
     const r = await raw("POST", "/network/signup", {
-      body: { orgName: "Burst Org " + i, ein: "81234512" + i, email: `burst${i}@ng46.test`, password: "burstpw999" },
+      body: { orgName: "Burst Org " + i, ein: "81234512" + i, email: `burst${i}@ng46.test`, password: "burstpw999", consent: true },
       headers: { "x-test-enforce-limits": "1", "x-test-limit-bucket": "ng-burst" },
     });
     if (r.status === 429) limited++;

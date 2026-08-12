@@ -43,7 +43,7 @@ async function raw(method, path, { cookie, body, headers } = {}) {
 }
 async function makeVerifiedAccount(email, password) {
   mail = [];
-  await raw("POST", "/account/signup", { body: { email, password } });
+  await raw("POST", "/account/signup", { body: { email, password, consent: true } });
   await settle();
   const tok = tokenFrom(mailTo(email)[0], "verify");
   const v = await raw("POST", "/account/verify", { body: { token: tok } });

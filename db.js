@@ -1731,6 +1731,11 @@ async function initSchema() {
     )
   `);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_donor_links_account ON donor_account_links (account_id)`);
+  // The link matcher's hot path (verify/alias/lazy dashboard reads) matches
+  // LOWER(d.email) across every portal org — the functional index keeps that
+  // from scanning all donor rows as the network grows (FINDINGS worry #3,
+  // shipped pre-flag per the go-live order).
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_donors_lower_email ON donors (LOWER(email)) WHERE deleted_at IS NULL`);
 
   // Password resets: ≥128-bit CSPRNG, ≤60 min, single-use, hash-at-rest,
   // invalidated (superseded) on password change and on re-request.
