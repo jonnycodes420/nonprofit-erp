@@ -7,6 +7,14 @@
       "destination": "https://nonprofit-erp-production.up.railway.app/portal/:path*"
     },
     {
+      "source": "/account-api/:path*",
+      "destination": "https://nonprofit-erp-production.up.railway.app/account/:path*"
+    },
+    {
+      "source": "/network-api/:path*",
+      "destination": "https://nonprofit-erp-production.up.railway.app/network/:path*"
+    },
+    {
       "source": "/unsubscribe",
       "destination": "https://nonprofit-erp-production.up.railway.app/unsubscribe"
     },

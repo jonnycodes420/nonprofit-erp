@@ -703,6 +703,7 @@ function PortalManager({isAdmin,isReadOnly}){
     try{
       const res=await apiFetch("/portal-settings",{method:"PUT",body:JSON.stringify({
         enabled:ps.enabled===true,poweredBy:ps.powered_by===true,
+        networkListed:ps.network_listed===true,
         displayName:ps.display_name||"",footerText:ps.footer_text||"",
         contactEmail:ps.contact_email||"",einLine:ps.ein_line||"",
         primaryColor:ps.primary_color||"",accentColor:ps.accent_color||"",
@@ -773,6 +774,13 @@ function PortalManager({isAdmin,isReadOnly}){
       <label style={{display:"flex",alignItems:"center",gap:8,fontSize:13,color:T.ink3,marginBottom:16,cursor:disabled?"not-allowed":"pointer"}}>
         <input type="checkbox" checked={ps.powered_by===true} disabled={disabled} onChange={e=>set("powered_by",e.target.checked)}/>
         Show a small "Powered by Steward" line in the footer (off by default — the portal is yours)
+      </label>
+      {/* BUILD-46 §2.2 — the second switch: donor-dashboard listing. Off by
+          default for existing orgs; entirely separate from the portal itself
+          (opting out keeps the standalone portal working unchanged). */}
+      <label style={{display:"flex",alignItems:"center",gap:8,fontSize:13,color:T.ink3,marginBottom:16,cursor:disabled?"not-allowed":"pointer"}}>
+        <input type="checkbox" checked={ps.network_listed===true} disabled={disabled} onChange={e=>set("network_listed",e.target.checked)}/>
+        List this organization in donor dashboards (donors who verify an email you have on file see their giving with you alongside their other giving; you see nothing new)
       </label>
       {isAdmin&&<button onClick={save} disabled={disabled||saving} title={isReadOnly?"Reactivate your subscription to make changes.":undefined}
         style={{background:disabled?T.bg3:T.gold500,border:"none",borderRadius:9,padding:"10px 18px",color:T.ink,fontSize:13,fontWeight:700,cursor:disabled?"not-allowed":"pointer"}}>{saving?"Saving…":"Save portal settings"}</button>}

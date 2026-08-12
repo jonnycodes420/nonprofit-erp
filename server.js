@@ -295,6 +295,10 @@ app.post("/stripe/webhook", express.raw({ type: "application/json" }), async (re
           });
           if (donorRow.length) {
             const donorId = donorRow[0].id;
+            // BUILD-46 §1.2 — a gift under an email a verified donor account
+            // holds attaches to that account (idempotent, fire-and-forget;
+            // no-op with accounts off or no matching account).
+            linkEmailToAccounts(orgId, email).catch(() => {});
             const giftId = "g_" + uuid().slice(0, 8);
             const today = new Date().toISOString().slice(0, 10);
             // Recurring RENEWAL attribution (attribution FIX): an invoice-generated
@@ -1271,6 +1275,10 @@ async function orgOwns(table, id, orgId) {
 // so it maps to core. See "Platform billing (BUILD-24)" in CLAUDE.md.
 const TEAM_PLANS = new Set(["team", "growth", "impact"]);
 function orgPlanTier(org) {
+  // BUILD-46: the network Portal tier is its own tier and is NEVER
+  // trial-elevated — a network signup gets the portal product, not a free
+  // Team trial of the CRM. Checked before the trialing shortcut on purpose.
+  if (org.plan === "portal") return "portal";
   if ((org.subscription_status || "trialing") === "trialing") return "team"; // full-feature trial
   return TEAM_PLANS.has(org.plan) ? "team" : "core";
 }
@@ -1286,6 +1294,35 @@ function requirePlan(tier) {
     next();
   };
 }
+
+// ── BUILD-46 §3.1 — the Portal tier is NOT the CRM ─────────────────────────
+// A plan='portal' org gets: its donor portal, gift recording, receipts, and
+// impact updates. The CRM route families below are gated here with ONE
+// middleware (mounted before the routes) instead of touching ~40 route
+// definitions. Team-only surfaces are already excluded by requirePlan("team")
+// (orgPlanTier('portal') !== 'team'). The one carve-out: the basic
+// giving-summary report stays available ("no reports beyond basic giving").
+// Enforced-and-pinned by tests/network-gate.test.js.
+const PORTAL_TIER_BLOCKED_PREFIXES = [
+  "/reports", "/campaigns", "/sequences", "/workflows", "/gmail",
+  "/board", "/events", "/volunteers", "/grants", "/milestone-drafts",
+  "/note-reminders", "/digests",
+];
+const jwt46 = require("jsonwebtoken");
+app.use(PORTAL_TIER_BLOCKED_PREFIXES, wrap(async (req, res, next) => {
+  const auth = req.headers.authorization;
+  if (!auth || !auth.startsWith("Bearer ")) return next(); // route's own auth 401s
+  let payload;
+  try { payload = jwt46.verify(auth.slice(7), process.env.JWT_SECRET); } catch { return next(); }
+  if (!payload || !payload.orgId) return next();
+  const rows = await query("SELECT plan FROM orgs WHERE id=?", [payload.orgId]);
+  if (!rows.length || rows[0].plan !== "portal") return next();
+  if (req.baseUrl === "/reports" && req.path.startsWith("/giving-summary")) return next();
+  return res.status(403).json({
+    error: "portal_tier",
+    message: "This is part of the Steward CRM. Your Portal plan covers the donor portal, gift recording, receipts, and impact updates — upgrade to Core to unlock the CRM.",
+  });
+}));
 
 // ── Moves management & prospect pipeline (BUILD-15) ────────────────────────
 // The pipeline reuses the canonical donor-stage set (no second stage field).
@@ -9249,13 +9286,23 @@ app.post("/donate/:orgSlug", donateLimiter, wrap(async (req, res) => {
   if (!amount || !firstName || !lastName || !email) return res.status(400).json({ error: "All fields required" });
 
   const orgs = await query(
-    "SELECT id, name, stripe_account_id, stripe_connected, cover_fees_enabled FROM orgs WHERE org_slug = $1",
+    "SELECT id, name, plan, stripe_account_id, stripe_connected, cover_fees_enabled FROM orgs WHERE org_slug = $1",
     [req.params.orgSlug]
   );
   if (!orgs.length) return res.status(404).json({ error: "Organization not found" });
   const org = orgs[0];
   if (!org.stripe_connected || !org.stripe_account_id) {
     return res.status(400).json({ error: "This organization is not set up to accept online donations yet." });
+  }
+  // BUILD-46 S-14: a network (Portal-tier) org is un-giftable until a human
+  // approved its application — indistinguishable from a not-set-up org. An
+  // auto-delisted org is blocked the same way (portal stays up, new gifts
+  // stop). CRM orgs (any other plan) are untouched.
+  if (org.plan === "portal") {
+    const appRows = await query(`SELECT status FROM network_applications WHERE org_id = ?`, [org.id]);
+    if (!appRows.length || appRows[0].status !== "approved") {
+      return res.status(400).json({ error: "This organization is not set up to accept online donations yet." });
+    }
   }
 
   const baseCents = Math.round(parseFloat(amount) * 100);
@@ -12888,6 +12935,40 @@ async function notifyUserOnce({ org, userId, email, eventKey, channel, prefKind,
 // a permanent, surfaced record (counted on /health.notifications.failedPending)
 // so a delivery problem is visible instead of silent. Backoff is coarse
 // (attempts × 5 min) — internal alerts are time-sensitive but not sub-minute.
+// ── BUILD-46 §1.1 — donor-account emails ride the SAME failure-visible path ─
+// Rows queued with this sentinel org_id are donor-facing lifecycle emails
+// (verification, reset, alias/email-change confirmation, magic links): the
+// stored body_html is the FINAL rendered email, so the retry resends it raw —
+// no org lookup, no notification_sends dedup (these are per-request emails).
+const DONOR_EMAIL_ORG = "donor-network";
+async function sendRawEmail(toEmail, subject, html) {
+  if (!toEmail) return false;
+  if (!process.env.RESEND_API_KEY) return true; // no email configured — nothing to deliver
+  const from = process.env.DEMO_SMTP_FROM || "noreply@stewardapp.dev";
+  try {
+    const { error } = await resend.emails.send({ from, to: toEmail, subject, html });
+    if (error) { console.error("[donor-email] send error:", error.message); return false; }
+    return true;
+  } catch (e) { console.error("[donor-email] send threw:", e.message); return false; }
+}
+// Send-or-queue: every donor-account lifecycle email goes through here. A
+// failed send lands in notification_failures (retried on the 5-min tick,
+// surfaced on /health.notifications.failedPending) — never fire-and-forget:
+// a silently-lost reset email locks a donor out.
+async function sendDonorLifecycleEmail(kind, toEmail, subject, html) {
+  const ok = await sendRawEmail(toEmail, subject, html);
+  if (ok) return true;
+  try {
+    await run(
+      `INSERT INTO notification_failures (id,org_id,event_key,recipient_user_id,recipient_email,channel,subject,body_html,attempts,last_error,next_retry_at)
+       VALUES (?,?,?,?,?,?,?,?,1,?,NOW())`,
+      ["nf_" + uuid().slice(0, 8), DONOR_EMAIL_ORG, kind + ":" + Date.now(), "donor", toEmail,
+       "donor_" + kind, subject, html, "send_rejected"]);
+    notifyFailedPending++;
+  } catch (e) { console.error("[donor-email] failed to queue for retry:", e.message); }
+  return false;
+}
+
 const MAX_NOTIFY_ATTEMPTS = 5;
 // Cached count of pending/exhausted failed notifications, surfaced on /health
 // so the read path stays synchronous. Refreshed by every retry sweep (incl.
@@ -12905,6 +12986,20 @@ async function retryFailedNotifications({ force = false } = {}) {
     [MAX_NOTIFY_ATTEMPTS, force]);
   let delivered = 0, stillFailing = 0;
   for (const f of due) {
+    // Donor-account lifecycle rows: resend the stored html raw (no org
+    // context, no staff dedup reservation) — see DONOR_EMAIL_ORG above.
+    if (f.org_id === DONOR_EMAIL_ORG) {
+      const okD = await sendRawEmail(f.recipient_email, f.subject, f.body_html);
+      if (okD) { await run(`DELETE FROM notification_failures WHERE id=?`, [f.id]); delivered++; }
+      else {
+        const attemptsD = (f.attempts || 1) + 1;
+        await run(
+          `UPDATE notification_failures SET attempts=?, last_error=?, next_retry_at = NOW() + (INTERVAL '5 minutes' * ?) WHERE id=?`,
+          [attemptsD, "send_rejected", attemptsD, f.id]);
+        stillFailing++;
+      }
+      continue;
+    }
     const orgRows = await query("SELECT id, name FROM orgs WHERE id=?", [f.org_id]);
     if (!orgRows.length) { await run(`DELETE FROM notification_failures WHERE id=?`, [f.id]).catch(() => {}); continue; }
     const org = orgRows[0];
@@ -14003,12 +14098,13 @@ const PLAN_LIMITS = {
   growth:   { seats: 5,         records: 10000,     extraSeatPrice: 25   },
   impact:   { seats: 999999999, records: 999999999, extraSeatPrice: null },
   trial:    { seats: 10,        records: 25000,     extraSeatPrice: null },
+  portal:   { seats: 3,         records: 25000,     extraSeatPrice: null }, // BUILD-46 network tier (soft)
 };
 
 // Core/Team/founding bands are kept SOFT for launch — informational only, never
 // a hard 403. Legacy seed/growth/impact keep their existing hard enforcement so
 // no pre-cutover org's behavior changes.
-const SOFT_BAND_PLANS = new Set(["core", "team", "founding"]);
+const SOFT_BAND_PLANS = new Set(["core", "team", "founding", "portal"]);
 
 // Published monthly price per plan (USD) — mirrors pages/Pricing.jsx's
 // CHECKOUT_PLANS/BILLING_PLANS. Used ONLY to render the ROI comparison
@@ -15196,7 +15292,7 @@ async function portalOrgBySlug(slug) {
             ps.logo_data AS portal_logo, ps.header_image_data AS portal_header_image,
             ps.primary_color, ps.accent_color, ps.footer_text AS portal_footer,
             ps.contact_email AS portal_contact, ps.ein_line AS portal_ein,
-            ps.powered_by, ps.min_recurring_cents
+            ps.powered_by, ps.min_recurring_cents, ps.network_listed
      FROM orgs o JOIN portal_settings ps ON ps.org_id = o.id
      WHERE o.org_slug = ? AND ps.enabled = true`, [slug]);
   return rows[0] || null;
@@ -15282,10 +15378,28 @@ function requirePortalSession(req, res, next) {
     if (!rows.length) return res.status(401).json({ error: "portal_auth" });
     const sess = rows[0];
     const org = await portalOrgBySlug(req.params.orgSlug);
-    // Tenant pinning: a session is scoped to ONE org — a valid session used
-    // against another org's slug is a 401, never a data leak (S-2).
-    if (!org || org.id !== sess.org_id) return res.status(401).json({ error: "portal_auth" });
-    req.portal = { session: sess, org, email: sess.email };
+    if (!org) return res.status(401).json({ error: "portal_auth" });
+    if (sess.org_id) {
+      // Tenant pinning: an org-scoped session is scoped to ONE org — a valid
+      // session used against another org's slug is a 401, never a data leak (S-2).
+      if (org.id !== sess.org_id) return res.status(401).json({ error: "portal_auth" });
+      req.portal = { session: sess, org, email: sess.email };
+    } else if (sess.donor_account_id && DONOR_ACCOUNTS_ENABLED) {
+      // BUILD-46: an account-wide session (org_id NULL) opens an org's portal
+      // ONLY when (a) the account holds an ACTIVE link to that org and (b) the
+      // org is network-listed (an opted-out org keeps its standalone portal —
+      // reachable by magic link — but is invisible to dashboard sessions).
+      // The link's via_email drives the same donor resolution the org-scoped
+      // path uses, so the org portal behaves identically either way.
+      const links = await query(
+        `SELECT via_email FROM donor_account_links
+         WHERE account_id = ? AND org_id = ? AND unlinked_at IS NULL LIMIT 1`,
+        [sess.donor_account_id, org.id]);
+      if (!links.length || org.network_listed !== true) return res.status(401).json({ error: "portal_auth" });
+      req.portal = { session: sess, org, email: links[0].via_email, accountId: sess.donor_account_id };
+    } else {
+      return res.status(401).json({ error: "portal_auth" });
+    }
     run(`UPDATE portal_sessions SET last_seen_at = NOW() WHERE id = ?`, [sess.id]).catch(() => {});
     next();
   })().catch(next);
@@ -15305,14 +15419,11 @@ async function sendPortalMagicLinkEmail(org, email, token) {
       <p style="font-size:13px;color:#555;">This link works once and expires in 15 minutes. If you didn't request it, you can safely ignore this email.</p>
       ${theme.contactEmail ? `<p style="font-size:13px;color:#555;">Questions? Write to <a href="mailto:${escHtmlWf(theme.contactEmail)}">${escHtmlWf(theme.contactEmail)}</a>.</p>` : ""}
     </div>`;
-  if (!process.env.RESEND_API_KEY) return;
-  try {
-    const { error: sendErr } = await resend.emails.send({
-      from: process.env.DEMO_SMTP_FROM || "noreply@stewardapp.dev",
-      to: email, subject: `Your sign-in link — ${theme.displayName}`, html,
-    });
-    if (sendErr) console.error("[portal] magic-link send error:", sendErr.message);
-  } catch (e) { console.error("[portal] magic-link send failed:", e.message); }
+  // BUILD-46 §1.1: magic-link sends ride the queued, failure-visible path
+  // (retried on the tick, surfaced on /health) — no more console-only failure.
+  // The stored html is final-rendered, so a retry resends it verbatim; a link
+  // that expires before a retry lands is harmless (the donor re-requests).
+  await sendDonorLifecycleEmail("magic_link", email, `Your sign-in link — ${theme.displayName}`, html);
 }
 
 // Donor-facing confirmation for every money mutation (R-8). Transactional —
@@ -15429,10 +15540,23 @@ app.post("/portal/:orgSlug/verify", portalLinkIpLimiter, wrap(async (req, res) =
   const email = rows[0].email;
   const sessToken = crypto.randomBytes(32).toString("base64url");
   const maxAgeSec = 30 * 24 * 3600;
+  // BUILD-46: both auth paths mint the same session — a magic-link sign-in by
+  // an email that belongs to a verified donor account (primary or verified
+  // alias) carries the account id, so the one cookie also opens the dashboard.
+  // Flag-gated; with accounts off this is exactly the BUILD-45 session.
+  let sessAccountId = null;
+  if (DONOR_ACCOUNTS_ENABLED) {
+    const acct = await query(
+      `SELECT id FROM donor_accounts WHERE email = ? AND email_verified_at IS NOT NULL
+       UNION
+       SELECT account_id AS id FROM donor_account_aliases WHERE email = ? AND verified_at IS NOT NULL
+       LIMIT 1`, [email, email]);
+    sessAccountId = acct[0]?.id || null;
+  }
   await run(
-    `INSERT INTO portal_sessions (id,org_id,email,token_hash,expires_at,ip)
-     VALUES (?,?,?,?, NOW() + INTERVAL '30 days', ?)`,
-    ["psn_" + uuid().slice(0, 10), org.id, email, sha256hex(sessToken), req.ip || null]);
+    `INSERT INTO portal_sessions (id,org_id,email,token_hash,expires_at,ip,donor_account_id)
+     VALUES (?,?,?,?, NOW() + INTERVAL '30 days', ?, ?)`,
+    ["psn_" + uuid().slice(0, 10), org.id, email, sha256hex(sessToken), req.ip || null, sessAccountId]);
   setPortalCookie(res, sessToken, maxAgeSec);
   const donors = await portalDonorsFor(org.id, email);
   await portalAudit(org.id, donors[0]?.id || null, email, "session_created", req);
@@ -15570,6 +15694,17 @@ app.get("/portal/:orgSlug/me", requirePortalSession, wrap(async (req, res) => {
     })),
     household,
     impact: await matchImpactUpdates(org.id, donorIds),
+    // BUILD-46 §1.3 — the migration nudge, never a wall: a magic-link donor is
+    // PROMPTED to create an account/password; ignoring it forever is fine.
+    // null when the flag is off (prod default) so BUILD-45 clients see nothing.
+    account: DONOR_ACCOUNTS_ENABLED ? await (async () => {
+      const em = foldEmail(email);
+      const acct = await query(
+        `SELECT id, password_hash FROM donor_accounts WHERE email = ? AND email_verified_at IS NOT NULL
+         UNION SELECT a.id, a.password_hash FROM donor_accounts a JOIN donor_account_aliases al ON al.account_id = a.id
+         WHERE al.email = ? AND al.verified_at IS NOT NULL LIMIT 1`, [em, em]);
+      return { exists: acct.length > 0, hasPassword: !!acct[0]?.password_hash };
+    })() : null,
   });
 }));
 
@@ -15802,6 +15937,9 @@ app.put("/portal-settings", requireAuth, requireAdmin, checkWriteAccess, wrap(as
   let adjusted = false;
   if (b.enabled !== undefined) { updates.push("enabled = ?"); params.push(b.enabled === true); }
   if (b.poweredBy !== undefined) { updates.push("powered_by = ?"); params.push(b.poweredBy === true); }
+  // BUILD-46 §2.2 — "list this organization in donor dashboards". Default OFF
+  // for existing CRM orgs (opt-in); the network-approval path flips it on.
+  if (b.networkListed !== undefined) { updates.push("network_listed = ?"); params.push(b.networkListed === true); }
   if (b.displayName !== undefined) setStr("display_name", b.displayName, 120);
   if (b.footerText !== undefined) setStr("footer_text", b.footerText, 500);
   if (b.contactEmail !== undefined) setStr("contact_email", b.contactEmail, 200);
@@ -15913,6 +16051,756 @@ app.delete("/impact-updates/:id", requireAuth, requireAdmin, wrap(async (req, re
 app.get("/portal-audit", requireAuth, requireAdmin, wrap(async (req, res) => {
   res.json(await query(
     `SELECT * FROM portal_audit_log WHERE org_id = ? ORDER BY created_at DESC LIMIT 200`, [req.user.orgId]));
+}));
+
+// ═══════════════════════════════════════════════════════════════════════════
+// BUILD-46 — GLOBAL DONOR ACCOUNTS & THE GIVING NETWORK
+//
+// THE WALL (the whole build's safety invariant): a donor may see across orgs;
+// an org may never see across orgs. Nothing in this section may ever be
+// reachable from an org-side (requireAuth) code path, and no org-side route
+// may read donor_accounts / aliases / links / resets / donor_account_audit.
+// Enforced by tests/org-blindness.test.js (S-13 byte-equality).
+//
+// FEATURE FLAGS (mid-run rule, 2026-08-12): everything donor-visible or
+// signup-visible in this build is OFF in prod by default — built ≠ launched.
+//   DONOR_ACCOUNTS_ENABLED=1  → /account/* routes + account-stamped sessions
+//   NETWORK_SIGNUP_ENABLED=1  → POST /network/signup (the §3 surface)
+// With both unset, prod behavior is byte-identical to BUILD-45.
+// ═══════════════════════════════════════════════════════════════════════════
+const DONOR_ACCOUNTS_ENABLED = process.env.DONOR_ACCOUNTS_ENABLED === "1";
+const NETWORK_SIGNUP_ENABLED = process.env.NETWORK_SIGNUP_ENABLED === "1";
+// A disabled surface is INVISIBLE, not "403 coming soon" — same body as the
+// global 404 so the routes' existence leaks nothing pre-launch.
+const requireFlag = (on) => (req, res, next) => on ? next() : res.status(404).json({ error: "Not found" });
+
+// Consumer-surface brand string — placeholder pending the founder decision
+// (BLOCKED-consumer-brand.md lists every place this lives).
+const CONSUMER_BRAND = "Steward — Your Giving";
+const foldEmail = (e) => String(e || "").trim().toLowerCase();
+const EMAIL_RX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+// Minimal consumer-branded email shell (serif wordmark, no org header — these
+// are Steward's emails, not an org's). No emoji, wordmark not glyph.
+function consumerEmailHtml(bodyHtml) {
+  return `<div style="background:#0f1a12;padding:16px 22px;border-radius:12px 12px 0 0;">
+      <span style="color:#f0ede6;font-family:Georgia,'Times New Roman',serif;font-size:18px;font-weight:400;letter-spacing:-0.02em;">Steward</span>
+      <span style="color:#8fa896;font-family:Helvetica,Arial,sans-serif;font-size:12px;margin-left:10px;">Your Giving</span>
+    </div>
+    <div style="font-family:Georgia,'Times New Roman',serif;max-width:520px;margin:0 auto;padding:24px;color:#0f1a12;">${bodyHtml}</div>`;
+}
+
+async function donorAudit(accountId, email, action, req, meta) {
+  await run(
+    `INSERT INTO donor_account_audit (id,account_id,email,action,ip,meta) VALUES (?,?,?,?,?,?)`,
+    ["daa_" + uuid().slice(0, 10), accountId || null, email || null, action,
+     (req && req.ip) || null, meta ? JSON.stringify(meta) : null]
+  ).catch(e => console.error("[account] audit:", e.message));
+}
+
+// ── §1.2 the linking job — exact match on VERIFIED emails, nothing else ────
+// Idempotent by construction (unique (account_id, donor_id) + ON CONFLICT DO
+// NOTHING). An unlinked row (unlinked_at set) is NEVER silently re-linked —
+// the conflict target keeps it exactly as the donor left it. Matches only
+// portal-ENABLED orgs (the network's population); listing (network_listed)
+// gates display, not linking, so an org that lists later appears instantly.
+async function linkAccountEmail(accountId, email) {
+  const em = foldEmail(email);
+  if (!em) return 0;
+  const rows = await query(
+    `SELECT d.id AS donor_id, d.org_id FROM donors d
+     JOIN portal_settings ps ON ps.org_id = d.org_id AND ps.enabled = true
+     WHERE LOWER(d.email) = ? AND d.deleted_at IS NULL`, [em]);
+  let linked = 0;
+  for (const r of rows) {
+    const ins = await query(
+      `INSERT INTO donor_account_links (id,account_id,org_id,donor_id,via_email)
+       VALUES (?,?,?,?,?) ON CONFLICT (account_id, donor_id) DO NOTHING RETURNING id`,
+      ["dal_" + uuid().slice(0, 10), accountId, r.org_id, r.donor_id, em]);
+    if (ins.length) { linked++; await donorAudit(accountId, em, "link_created", null, { orgId: r.org_id, donorId: r.donor_id }); }
+  }
+  return linked;
+}
+// All of an account's verified emails (primary + verified aliases).
+async function accountVerifiedEmails(accountId) {
+  const a = await query(`SELECT email, email_verified_at FROM donor_accounts WHERE id = ?`, [accountId]);
+  if (!a.length) return [];
+  const out = a[0].email_verified_at ? [a[0].email] : [];
+  const al = await query(`SELECT email FROM donor_account_aliases WHERE account_id = ? AND verified_at IS NOT NULL`, [accountId]);
+  return out.concat(al.map(r => r.email));
+}
+async function linkDonorAccount(accountId) {
+  let n = 0;
+  for (const em of await accountVerifiedEmails(accountId)) n += await linkAccountEmail(accountId, em);
+  return n;
+}
+// Reverse direction — "runs on gift-create and on org-joins-network": given an
+// org+email that just gained a donor record/gift, attach it to any verified
+// account holding that email. Fire-and-forget at call sites.
+async function linkEmailToAccounts(orgId, email) {
+  const em = foldEmail(email);
+  if (!em || !DONOR_ACCOUNTS_ENABLED) return;
+  const accts = await query(
+    `SELECT id FROM donor_accounts WHERE email = ? AND email_verified_at IS NOT NULL
+     UNION SELECT account_id AS id FROM donor_account_aliases WHERE email = ? AND verified_at IS NOT NULL`,
+    [em, em]);
+  for (const a of accts) await linkAccountEmail(a.id, em);
+}
+async function linkOrgJoinsNetwork(orgId) {
+  // Org just became portal-enabled/approved: link every verified account whose
+  // email matches one of this org's donor records.
+  const rows = await query(
+    `SELECT DISTINCT LOWER(d.email) AS em FROM donors d
+     WHERE d.org_id = ? AND d.deleted_at IS NULL AND d.email IS NOT NULL AND d.email <> ''`, [orgId]);
+  for (const r of rows) await linkEmailToAccounts(orgId, r.em);
+}
+
+// ── §1.1 rate limits (same x-test seam discipline as the portal limiters) ──
+const accountIpLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, max: 30, standardHeaders: true, legacyHeaders: false,
+  handler: rateLimitHandler, skip: portalLimiterSkip,
+  keyGenerator: (req) => "acct-ip:" + portalLimiterIpKey(req),
+});
+const accountEmailLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, max: 8, standardHeaders: true, legacyHeaders: false,
+  handler: rateLimitHandler, skip: portalLimiterSkip,
+  keyGenerator: (req) => "acct-em:" + foldEmail(req.body?.email).slice(0, 200),
+});
+
+// ── session helpers ────────────────────────────────────────────────────────
+async function mintAccountSession(res, accountId, email, req) {
+  const sessToken = crypto.randomBytes(32).toString("base64url");
+  await run(
+    `INSERT INTO portal_sessions (id,org_id,email,token_hash,expires_at,ip,donor_account_id)
+     VALUES (?,NULL,?,?, NOW() + INTERVAL '30 days', ?, ?)`,
+    ["psn_" + uuid().slice(0, 10), email, sha256hex(sessToken), (req && req.ip) || null, accountId]);
+  setPortalCookie(res, sessToken, 30 * 24 * 3600);
+}
+async function revokeAccountSessions(accountId, exceptTokenHash) {
+  await run(
+    `UPDATE portal_sessions SET revoked_at = NOW()
+     WHERE donor_account_id = ? AND revoked_at IS NULL ${exceptTokenHash ? "AND token_hash <> ?" : ""}`,
+    exceptTokenHash ? [accountId, exceptTokenHash] : [accountId]);
+}
+function requireDonorAccount(req, res, next) {
+  (async () => {
+    if (!DONOR_ACCOUNTS_ENABLED) return res.status(404).json({ error: "Not found" });
+    const raw = parsePortalCookies(req)[PORTAL_COOKIE];
+    if (!raw || raw.length > 300) return res.status(401).json({ error: "account_auth" });
+    const rows = await query(
+      `SELECT * FROM portal_sessions WHERE token_hash = ? AND revoked_at IS NULL AND expires_at > NOW()`,
+      [sha256hex(raw)]);
+    if (!rows.length || !rows[0].donor_account_id) return res.status(401).json({ error: "account_auth" });
+    const acct = await query(`SELECT * FROM donor_accounts WHERE id = ?`, [rows[0].donor_account_id]);
+    if (!acct.length) return res.status(401).json({ error: "account_auth" });
+    req.donorAccount = acct[0];
+    req.donorSession = rows[0];
+    run(`UPDATE portal_sessions SET last_seen_at = NOW() WHERE id = ?`, [rows[0].id]).catch(() => {});
+    next();
+  })().catch(next);
+}
+
+// ── §1.1 signup — no enumeration anywhere (identical response + async work) ─
+app.post("/account/signup", requireFlag(DONOR_ACCOUNTS_ENABLED), accountIpLimiter, accountEmailLimiter, wrap(async (req, res) => {
+  const email = foldEmail(req.body?.email);
+  const password = String(req.body?.password || "");
+  if (!EMAIL_RX.test(email) || email.length > 320) return res.status(400).json({ error: "That email doesn't look right" });
+  if (password.length < 8 || password.length > 200) return res.status(400).json({ error: "Password must be at least 8 characters" });
+  // Identical response whether or not the account exists (P-2 discipline).
+  res.json({ received: true, message: "Check your email to verify your account." });
+  (async () => {
+    const existing = await query(`SELECT id, email_verified_at FROM donor_accounts WHERE email = ?`, [email]);
+    if (existing.length) {
+      await donorAudit(existing[0].id, email, "signup_existing", req);
+      await sendDonorLifecycleEmail("signup_existing", email, `Your ${CONSUMER_BRAND} account`,
+        consumerEmailHtml(`<p>Someone (hopefully you) tried to create a ${escHtmlWf(CONSUMER_BRAND)} account with this address — but you already have one.</p>
+          <p>You can sign in at <a href="${publicAppUrl()}/giving">${publicAppUrl()}/giving</a>. Forgot your password? Use "Reset password" there. If this wasn't you, you can safely ignore this email.</p>`));
+      return;
+    }
+    const id = "da_" + uuid().slice(0, 10);
+    const token = crypto.randomBytes(32).toString("base64url");
+    await run(
+      `INSERT INTO donor_accounts (id,email,password_hash,verify_token_hash,verify_expires_at)
+       VALUES (?,?,?,?, NOW() + INTERVAL '60 minutes')`,
+      [id, email, bcrypt.hashSync(password, 12), sha256hex(token)]);
+    await donorAudit(id, email, "signup", req);
+    const link = `${publicAppUrl()}/giving/verify#token=${token}`;
+    await sendDonorLifecycleEmail("verify", email, `Verify your email — ${CONSUMER_BRAND}`,
+      consumerEmailHtml(`<p>Welcome. Confirm this email address to see your giving in one place:</p>
+        <p style="text-align:center;margin:28px 0;"><a href="${link}" style="background:#c9a84c;color:#0f1a12;text-decoration:none;padding:12px 28px;border-radius:8px;font-weight:700;display:inline-block;">Verify my email</a></p>
+        <p style="font-size:13px;color:#555;">This link works once and expires in 60 minutes. Each nonprofit sees only its own relationship with you — we never share your giving at one organization with another.</p>`));
+  })().catch(e => console.error("[account] signup async failed:", e.message));
+}));
+
+// Verification is proof of email control — linking happens HERE, never before.
+app.post("/account/verify", requireFlag(DONOR_ACCOUNTS_ENABLED), accountIpLimiter, wrap(async (req, res) => {
+  const token = String(req.body?.token || "");
+  if (!token || token.length > 300) return res.status(400).json({ error: "invalid_link" });
+  const rows = await query(
+    `UPDATE donor_accounts SET email_verified_at = NOW(), verify_token_hash = NULL, verify_expires_at = NULL
+     WHERE verify_token_hash = ? AND verify_expires_at > NOW() AND email_verified_at IS NULL
+     RETURNING id, email`, [sha256hex(token)]);
+  if (!rows.length) return res.status(400).json({ error: "invalid_link", message: "That link has expired or was already used." });
+  const acct = rows[0];
+  await donorAudit(acct.id, acct.email, "email_verified", req);
+  const linked = await linkAccountEmail(acct.id, acct.email);
+  await mintAccountSession(res, acct.id, acct.email, req);
+  res.json({ ok: true, linkedOrgs: linked });
+}));
+
+app.post("/account/login", requireFlag(DONOR_ACCOUNTS_ENABLED), accountIpLimiter, accountEmailLimiter, wrap(async (req, res) => {
+  const email = foldEmail(req.body?.email);
+  const password = String(req.body?.password || "");
+  const fail = () => res.status(401).json({ error: "invalid_credentials", message: "That email and password don't match." });
+  if (!EMAIL_RX.test(email) || !password) return fail();
+  const rows = await query(`SELECT * FROM donor_accounts WHERE email = ?`, [email]);
+  // One generic failure for: unknown email, wrong password, passwordless
+  // account, unverified email — never an enumeration oracle. The unverified
+  // case quietly re-sends the verification email.
+  if (!rows.length || !rows[0].password_hash || !bcrypt.compareSync(password, rows[0].password_hash)) {
+    await donorAudit(rows[0]?.id || null, email, "login_failed", req);
+    return fail();
+  }
+  const acct = rows[0];
+  if (!acct.email_verified_at) {
+    (async () => {
+      const token = crypto.randomBytes(32).toString("base64url");
+      await run(`UPDATE donor_accounts SET verify_token_hash=?, verify_expires_at=NOW()+INTERVAL '60 minutes' WHERE id=?`, [sha256hex(token), acct.id]);
+      await sendDonorLifecycleEmail("verify", email, `Verify your email — ${CONSUMER_BRAND}`,
+        consumerEmailHtml(`<p>Confirm this email address to sign in:</p>
+          <p style="text-align:center;margin:28px 0;"><a href="${publicAppUrl()}/giving/verify#token=${token}" style="background:#c9a84c;color:#0f1a12;text-decoration:none;padding:12px 28px;border-radius:8px;font-weight:700;display:inline-block;">Verify my email</a></p>`));
+    })().catch(() => {});
+    return fail();
+  }
+  await donorAudit(acct.id, email, "login", req);
+  await mintAccountSession(res, acct.id, email, req);
+  res.json({ ok: true });
+}));
+
+app.post("/account/logout", requireFlag(DONOR_ACCOUNTS_ENABLED), wrap(async (req, res) => {
+  const raw = parsePortalCookies(req)[PORTAL_COOKIE];
+  if (raw) await run(`UPDATE portal_sessions SET revoked_at = NOW() WHERE token_hash = ?`, [sha256hex(raw)]).catch(() => {});
+  res.append("Set-Cookie", `${PORTAL_COOKIE}=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0`);
+  res.json({ ok: true });
+}));
+
+// ── §1.1 password reset (BUILD-37 §1 checklist) ────────────────────────────
+app.post("/account/request-reset", requireFlag(DONOR_ACCOUNTS_ENABLED), accountIpLimiter, accountEmailLimiter, wrap(async (req, res) => {
+  const email = foldEmail(req.body?.email);
+  res.json({ received: true, message: "If that address has an account, a reset link is on its way." });
+  if (!EMAIL_RX.test(email)) return;
+  (async () => {
+    const rows = await query(`SELECT id FROM donor_accounts WHERE email = ?`, [email]);
+    if (!rows.length) return;
+    const acct = rows[0];
+    await run(`UPDATE donor_account_resets SET superseded_at = NOW() WHERE account_id = ? AND used_at IS NULL AND superseded_at IS NULL`, [acct.id]);
+    const token = crypto.randomBytes(32).toString("base64url"); // 256-bit CSPRNG
+    await run(
+      `INSERT INTO donor_account_resets (id,account_id,token_hash,expires_at)
+       VALUES (?,?,?, NOW() + INTERVAL '60 minutes')`,
+      ["dar_" + uuid().slice(0, 10), acct.id, sha256hex(token)]);
+    await donorAudit(acct.id, email, "reset_requested", req);
+    await sendDonorLifecycleEmail("reset", email, `Reset your password — ${CONSUMER_BRAND}`,
+      consumerEmailHtml(`<p>Set a new password for your giving account:</p>
+        <p style="text-align:center;margin:28px 0;"><a href="${publicAppUrl()}/giving/reset#token=${token}" style="background:#c9a84c;color:#0f1a12;text-decoration:none;padding:12px 28px;border-radius:8px;font-weight:700;display:inline-block;">Reset password</a></p>
+        <p style="font-size:13px;color:#555;">This link works once and expires in 60 minutes. If you didn't request it, you can safely ignore this email.</p>`));
+  })().catch(e => console.error("[account] reset request failed:", e.message));
+}));
+
+app.post("/account/reset", requireFlag(DONOR_ACCOUNTS_ENABLED), accountIpLimiter, wrap(async (req, res) => {
+  const token = String(req.body?.token || "");
+  const password = String(req.body?.password || "");
+  if (password.length < 8 || password.length > 200) return res.status(400).json({ error: "Password must be at least 8 characters" });
+  if (!token || token.length > 300) return res.status(400).json({ error: "invalid_link" });
+  const rows = await query(
+    `UPDATE donor_account_resets SET used_at = NOW()
+     WHERE token_hash = ? AND used_at IS NULL AND superseded_at IS NULL AND expires_at > NOW()
+     RETURNING account_id`, [sha256hex(token)]);
+  if (!rows.length) return res.status(400).json({ error: "invalid_link", message: "That link has expired or was already used." });
+  const accountId = rows[0].account_id;
+  // A reset by email-receipt is ALSO proof of email control — it verifies the
+  // account (the BUILD-45 magic-link-only migration path: request a reset,
+  // set a password, done).
+  await run(
+    `UPDATE donor_accounts SET password_hash = ?, email_verified_at = COALESCE(email_verified_at, NOW()), updated_at = NOW() WHERE id = ?`,
+    [bcrypt.hashSync(password, 12), accountId]);
+  // Invalidate every outstanding reset token AND every session (password change).
+  await run(`UPDATE donor_account_resets SET superseded_at = NOW() WHERE account_id = ? AND used_at IS NULL AND superseded_at IS NULL`, [accountId]);
+  await revokeAccountSessions(accountId, null);
+  const [acct] = await query(`SELECT email FROM donor_accounts WHERE id = ?`, [accountId]);
+  await donorAudit(accountId, acct?.email, "password_reset", req);
+  await linkDonorAccount(accountId);
+  await mintAccountSession(res, accountId, acct.email, req);
+  res.json({ ok: true });
+}));
+
+app.post("/account/change-password", requireDonorAccount, wrap(async (req, res) => {
+  const acct = req.donorAccount;
+  const current = String(req.body?.current || "");
+  const next = String(req.body?.next || "");
+  if (next.length < 8 || next.length > 200) return res.status(400).json({ error: "Password must be at least 8 characters" });
+  // An account with a password requires it; a passwordless (magic-link-era)
+  // account may set one — the session itself is proof of email control.
+  if (acct.password_hash && !bcrypt.compareSync(current, acct.password_hash)) {
+    return res.status(401).json({ error: "invalid_credentials", message: "Current password is incorrect." });
+  }
+  await run(`UPDATE donor_accounts SET password_hash = ?, updated_at = NOW() WHERE id = ?`, [bcrypt.hashSync(next, 12), acct.id]);
+  await revokeAccountSessions(acct.id, req.donorSession.token_hash); // every OTHER session dies
+  await donorAudit(acct.id, acct.email, "password_changed", req);
+  res.json({ ok: true });
+}));
+
+// ── §1.1 email change — confirmed at the OLD address first, then the new
+// address must independently verify before it links anything.
+app.post("/account/change-email", requireDonorAccount, accountIpLimiter, wrap(async (req, res) => {
+  const acct = req.donorAccount;
+  const newEmail = foldEmail(req.body?.email);
+  if (!EMAIL_RX.test(newEmail) || newEmail.length > 320) return res.status(400).json({ error: "That email doesn't look right" });
+  res.json({ received: true, message: "Check your CURRENT email address to confirm this change." });
+  (async () => {
+    const token = crypto.randomBytes(32).toString("base64url");
+    await run(
+      `UPDATE donor_accounts SET pending_email = ?, email_change_token_hash = ?, email_change_expires_at = NOW() + INTERVAL '60 minutes' WHERE id = ?`,
+      [newEmail, sha256hex(token), acct.id]);
+    await donorAudit(acct.id, acct.email, "email_change_requested", req, { to: newEmail });
+    await sendDonorLifecycleEmail("email_change", acct.email, `Confirm your email change — ${CONSUMER_BRAND}`,
+      consumerEmailHtml(`<p>You asked to change your account email to <strong>${escHtmlWf(newEmail)}</strong>. To confirm, use this link (sent to your CURRENT address on purpose):</p>
+        <p style="text-align:center;margin:28px 0;"><a href="${publicAppUrl()}/giving/confirm-email#token=${token}" style="background:#c9a84c;color:#0f1a12;text-decoration:none;padding:12px 28px;border-radius:8px;font-weight:700;display:inline-block;">Confirm change</a></p>
+        <p style="font-size:13px;color:#555;">If this wasn't you, change your password now — this link expires in 60 minutes and works once.</p>`));
+  })().catch(e => console.error("[account] email change failed:", e.message));
+}));
+
+app.post("/account/change-email/confirm", requireFlag(DONOR_ACCOUNTS_ENABLED), accountIpLimiter, wrap(async (req, res) => {
+  const token = String(req.body?.token || "");
+  if (!token || token.length > 300) return res.status(400).json({ error: "invalid_link" });
+  const rows = await query(
+    `SELECT id, email, pending_email FROM donor_accounts
+     WHERE email_change_token_hash = ? AND email_change_expires_at > NOW()`, [sha256hex(token)]);
+  if (!rows.length || !rows[0].pending_email) return res.status(400).json({ error: "invalid_link", message: "That link has expired or was already used." });
+  const acct = rows[0];
+  const taken = await query(
+    `SELECT id FROM donor_accounts WHERE email = ? UNION SELECT account_id FROM donor_account_aliases WHERE email = ? AND verified_at IS NOT NULL`,
+    [acct.pending_email, acct.pending_email]);
+  if (taken.length) return res.status(400).json({ error: "email_taken", message: "That address is already in use on another account." });
+  const verifyToken = crypto.randomBytes(32).toString("base64url");
+  // The new email is NOT verified yet — links only after its own verification.
+  await run(
+    `UPDATE donor_accounts SET email = ?, pending_email = NULL, email_change_token_hash = NULL, email_change_expires_at = NULL,
+       email_verified_at = NULL, verify_token_hash = ?, verify_expires_at = NOW() + INTERVAL '60 minutes', updated_at = NOW()
+     WHERE id = ?`,
+    [acct.pending_email, sha256hex(verifyToken), acct.id]);
+  await revokeAccountSessions(acct.id, null); // email changed → every session dies
+  await donorAudit(acct.id, acct.pending_email, "email_changed", req, { from: acct.email });
+  await sendDonorLifecycleEmail("verify", acct.pending_email, `Verify your new email — ${CONSUMER_BRAND}`,
+    consumerEmailHtml(`<p>Almost done — verify your new address to finish the change:</p>
+      <p style="text-align:center;margin:28px 0;"><a href="${publicAppUrl()}/giving/verify#token=${verifyToken}" style="background:#c9a84c;color:#0f1a12;text-decoration:none;padding:12px 28px;border-radius:8px;font-weight:700;display:inline-block;">Verify my email</a></p>`));
+  res.json({ ok: true, message: "Confirmed. Now verify the new address from its own inbox." });
+}));
+
+// ── §1.2 aliases — proof of control of the ALIAS address, single-use, no
+// enumeration, no cross-account claim (S-12).
+app.post("/account/aliases", requireDonorAccount, accountIpLimiter, accountEmailLimiter, wrap(async (req, res) => {
+  const acct = req.donorAccount;
+  const email = foldEmail(req.body?.email);
+  if (!EMAIL_RX.test(email) || email.length > 320) return res.status(400).json({ error: "That email doesn't look right" });
+  res.json({ received: true, message: "Check that inbox for a confirmation link." });
+  (async () => {
+    const taken = await query(
+      `SELECT id FROM donor_accounts WHERE email = ? UNION SELECT account_id FROM donor_account_aliases WHERE email = ? AND verified_at IS NOT NULL`,
+      [email, email]);
+    if (taken.length && !(taken.length === 1 && taken[0].id === acct.id)) {
+      await donorAudit(acct.id, email, "alias_conflict", req);
+      return; // identical outward response — no oracle for "someone else owns this"
+    }
+    const token = crypto.randomBytes(32).toString("base64url");
+    await run(
+      `INSERT INTO donor_account_aliases (id,account_id,email,token_hash,token_expires_at)
+       VALUES (?,?,?,?, NOW() + INTERVAL '60 minutes')
+       ON CONFLICT (account_id,email) DO UPDATE SET token_hash = EXCLUDED.token_hash, token_expires_at = EXCLUDED.token_expires_at`,
+      ["dal_" + uuid().slice(0, 10), acct.id, email, sha256hex(token)]);
+    await donorAudit(acct.id, email, "alias_requested", req);
+    await sendDonorLifecycleEmail("alias", email, `Confirm this email — ${CONSUMER_BRAND}`,
+      consumerEmailHtml(`<p>Confirm that this address is yours to see the giving recorded under it in your dashboard:</p>
+        <p style="text-align:center;margin:28px 0;"><a href="${publicAppUrl()}/giving/confirm-alias#token=${token}" style="background:#c9a84c;color:#0f1a12;text-decoration:none;padding:12px 28px;border-radius:8px;font-weight:700;display:inline-block;">Yes, this is my email</a></p>
+        <p style="font-size:13px;color:#555;">This link works once and expires in 60 minutes. If you didn't request it, ignore this email — nothing will be linked.</p>`));
+  })().catch(e => console.error("[account] alias request failed:", e.message));
+}));
+
+app.post("/account/aliases/verify", requireFlag(DONOR_ACCOUNTS_ENABLED), accountIpLimiter, wrap(async (req, res) => {
+  const token = String(req.body?.token || "");
+  if (!token || token.length > 300) return res.status(400).json({ error: "invalid_link" });
+  // Atomic single-use consume; the partial-unique index on verified emails is
+  // the last line against a cross-account race.
+  const rows = await query(
+    `UPDATE donor_account_aliases SET verified_at = NOW(), token_hash = NULL, token_expires_at = NULL
+     WHERE token_hash = ? AND token_expires_at > NOW() AND verified_at IS NULL
+     RETURNING id, account_id, email`, [sha256hex(token)]).catch(() => []);
+  if (!rows.length) return res.status(400).json({ error: "invalid_link", message: "That link has expired or was already used." });
+  const al = rows[0];
+  await donorAudit(al.account_id, al.email, "alias_verified", req);
+  const linked = await linkAccountEmail(al.account_id, al.email);
+  res.json({ ok: true, linkedOrgs: linked });
+}));
+
+app.delete("/account/aliases/:id", requireDonorAccount, wrap(async (req, res) => {
+  const r = await run(`DELETE FROM donor_account_aliases WHERE id = ? AND account_id = ?`, [req.params.id, req.donorAccount.id]);
+  if (!r.changes) return res.status(404).json({ error: "not_found" });
+  await donorAudit(req.donorAccount.id, req.donorAccount.email, "alias_removed", req, { aliasId: req.params.id });
+  res.json({ ok: true });
+}));
+
+// ── §1.2 unlink / relink — donor-initiated, immediate, audit-rowed ─────────
+app.post("/account/links/:id/unlink", requireDonorAccount, wrap(async (req, res) => {
+  const r = await query(
+    `UPDATE donor_account_links SET unlinked_at = NOW()
+     WHERE id = ? AND account_id = ? AND unlinked_at IS NULL RETURNING org_id`, [req.params.id, req.donorAccount.id]);
+  if (!r.length) return res.status(404).json({ error: "not_found" });
+  await donorAudit(req.donorAccount.id, req.donorAccount.email, "unlinked", req, { orgId: r[0].org_id });
+  res.json({ ok: true });
+}));
+app.post("/account/links/:id/relink", requireDonorAccount, wrap(async (req, res) => {
+  const r = await query(
+    `UPDATE donor_account_links SET unlinked_at = NULL
+     WHERE id = ? AND account_id = ? AND unlinked_at IS NOT NULL RETURNING org_id`, [req.params.id, req.donorAccount.id]);
+  if (!r.length) return res.status(404).json({ error: "not_found" });
+  await donorAudit(req.donorAccount.id, req.donorAccount.email, "relinked", req, { orgId: r[0].org_id });
+  res.json({ ok: true });
+}));
+
+// ── account deletion — links + account PII gone; each org's own donor
+// records untouched (their data about their donor is theirs).
+app.delete("/account", requireDonorAccount, wrap(async (req, res) => {
+  const acct = req.donorAccount;
+  await revokeAccountSessions(acct.id, null);
+  await donorAudit(acct.id, null, "account_deleted", req);
+  await run(`UPDATE donor_account_audit SET email = NULL WHERE account_id = ?`, [acct.id]); // PII scrub, trail kept
+  await run(`DELETE FROM donor_accounts WHERE id = ?`, [acct.id]); // CASCADE: aliases, links, resets
+  res.append("Set-Cookie", `${PORTAL_COOKIE}=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0`);
+  res.json({ ok: true });
+}));
+
+// ── §2 the dashboard — read-time aggregation, donor's eyes only ────────────
+// No cross-org rollup is ever stored; every figure is a live SUM over the same
+// per-org ledgers the org portal reads. Display filter: linked AND listed.
+app.get("/account/me", requireDonorAccount, wrap(async (req, res) => {
+  const acct = req.donorAccount;
+  await linkDonorAccount(acct.id); // lazy idempotent re-link (freshness)
+  const aliases = await query(`SELECT id, email, verified_at FROM donor_account_aliases WHERE account_id = ? ORDER BY created_at`, [acct.id]);
+  const links = await query(
+    `SELECT l.id, l.org_id, l.donor_id, l.via_email, l.unlinked_at, o.name AS org_name, o.org_slug,
+            ps.network_listed, ps.display_name, ps.primary_color, ps.accent_color, ps.logo_data
+     FROM donor_account_links l
+     JOIN orgs o ON o.id = l.org_id
+     JOIN portal_settings ps ON ps.org_id = l.org_id AND ps.enabled = true
+     WHERE l.account_id = ?`, [acct.id]);
+  res.json({
+    brand: CONSUMER_BRAND,
+    email: acct.email,
+    verified: !!acct.email_verified_at,
+    hasPassword: !!acct.password_hash,
+    aliases: aliases.map(a => ({ id: a.id, email: a.email, verified: !!a.verified_at })),
+    links: links.map(l => ({
+      id: l.id, orgSlug: l.org_slug, orgName: displayNameCase(l.display_name || l.org_name),
+      viaEmail: l.via_email, unlinked: !!l.unlinked_at, listed: l.network_listed === true,
+      accent: l.accent_color || null, primary: l.primary_color || null, logo: l.logo_data || null,
+    })),
+  });
+}));
+
+app.get("/account/dashboard", requireDonorAccount, wrap(async (req, res) => {
+  const acct = req.donorAccount;
+  await linkDonorAccount(acct.id);
+  const links = await query(
+    `SELECT l.org_id, l.donor_id, l.via_email, o.name AS org_name, o.org_slug,
+            ps.display_name, ps.primary_color, ps.accent_color, ps.logo_data
+     FROM donor_account_links l
+     JOIN orgs o ON o.id = l.org_id
+     JOIN portal_settings ps ON ps.org_id = l.org_id AND ps.enabled = true AND ps.network_listed = true
+     WHERE l.account_id = ? AND l.unlinked_at IS NULL`, [acct.id]);
+  const nowYear = String(new Date().getFullYear());
+  const byOrg = new Map(); // org_id → { donorIds, meta }
+  for (const l of links) {
+    if (!byOrg.has(l.org_id)) byOrg.set(l.org_id, { donorIds: [], meta: l });
+    byOrg.get(l.org_id).donorIds.push(l.donor_id);
+  }
+  const orgCards = [];
+  let totalYtd = 0, totalLifetime = 0;
+  const impactMerged = [];
+  for (const [orgId, { donorIds, meta }] of byOrg) {
+    const [t] = await query(
+      `SELECT COALESCE(SUM(amount),0) AS lifetime,
+              COALESCE(SUM(amount) FILTER (WHERE LEFT(date,4) = ?),0) AS ytd,
+              MAX(date) AS last_gift
+       FROM gifts WHERE org_id = ? AND donor_id = ANY(?)`, [nowYear, orgId, donorIds]);
+    const rec = await query(
+      `SELECT COUNT(*)::int n FROM recurring_subscriptions
+       WHERE org_id = ? AND donor_id = ANY(?) AND status IN ('active','past_due','recovering','recovered','paused')`,
+      [orgId, donorIds]);
+    const card = {
+      orgSlug: meta.org_slug,
+      orgName: displayNameCase(meta.display_name || meta.org_name),
+      primary: meta.primary_color || null, accent: meta.accent_color || null, logo: meta.logo_data || null,
+      ytd: parseFloat(t.ytd) || 0, lifetime: parseFloat(t.lifetime) || 0,
+      lastGiftDate: t.last_gift || null, recurringCount: rec[0]?.n || 0,
+    };
+    totalYtd += card.ytd; totalLifetime += card.lifetime;
+    orgCards.push(card);
+    const impact = await matchImpactUpdates(orgId, donorIds);
+    for (const u of impact) impactMerged.push({ ...u, orgSlug: meta.org_slug, orgName: card.orgName, logo: card.logo });
+  }
+  orgCards.sort((a, b) => b.ytd - a.ytd || b.lifetime - a.lifetime);
+  impactMerged.sort((a, b) => String(b.date).localeCompare(String(a.date)));
+  await donorAudit(acct.id, acct.email, "dashboard_viewed", req);
+  res.json({
+    brand: CONSUMER_BRAND,
+    totals: { ytd: totalYtd, lifetime: totalLifetime, orgCount: orgCards.length },
+    orgs: orgCards,
+    impact: impactMerged.slice(0, 20),
+  });
+}));
+
+app.get("/account/recurring", requireDonorAccount, wrap(async (req, res) => {
+  const acct = req.donorAccount;
+  const rows = await query(
+    `SELECT rs.id, rs.org_id, rs.amount, rs.interval, rs.status, rs.paused_at, rs.resume_at, rs.canceled_at,
+            o.org_slug, COALESCE(ps.display_name, o.name) AS org_name
+     FROM recurring_subscriptions rs
+     JOIN donor_account_links l ON l.org_id = rs.org_id AND l.donor_id = rs.donor_id
+       AND l.account_id = ? AND l.unlinked_at IS NULL
+     JOIN orgs o ON o.id = rs.org_id
+     JOIN portal_settings ps ON ps.org_id = rs.org_id AND ps.enabled = true AND ps.network_listed = true
+     ORDER BY rs.created_at DESC`, [acct.id]);
+  res.json({
+    recurring: rows.map(r => ({
+      id: r.id, orgSlug: r.org_slug, orgName: displayNameCase(r.org_name),
+      amount: parseFloat(r.amount) || 0, interval: r.interval || "month", status: r.status,
+      pausedAt: r.paused_at, resumeAt: r.resume_at, canceledAt: r.canceled_at,
+    })),
+  });
+}));
+
+// Tax-summary: per-year totals per org + receipt pointers. "For your records —
+// consult your tax preparer" — nothing tax-specific beyond ledger totals.
+app.get("/account/tax-summary", requireDonorAccount, wrap(async (req, res) => {
+  const acct = req.donorAccount;
+  const rows = await query(
+    `SELECT LEFT(g.date,4) AS year, g.org_id, o.org_slug, COALESCE(ps.display_name, o.name) AS org_name,
+            SUM(g.amount) AS total, COUNT(*)::int AS gifts
+     FROM gifts g
+     JOIN donor_account_links l ON l.org_id = g.org_id AND l.donor_id = g.donor_id
+       AND l.account_id = ? AND l.unlinked_at IS NULL
+     JOIN orgs o ON o.id = g.org_id
+     JOIN portal_settings ps ON ps.org_id = g.org_id AND ps.enabled = true AND ps.network_listed = true
+     GROUP BY LEFT(g.date,4), g.org_id, o.org_slug, org_name
+     ORDER BY year DESC, total DESC`, [acct.id]);
+  const receipts = await query(
+    `SELECT r.id, r.org_id, r.type, r.receipt_number, r.amount, r.tax_year, r.created_at, o.org_slug
+     FROM receipts r
+     JOIN donor_account_links l ON l.org_id = r.org_id AND l.donor_id = r.donor_id
+       AND l.account_id = ? AND l.unlinked_at IS NULL
+     JOIN orgs o ON o.id = r.org_id
+     JOIN portal_settings ps ON ps.org_id = r.org_id AND ps.enabled = true AND ps.network_listed = true
+     WHERE r.voided_at IS NULL ORDER BY r.created_at DESC LIMIT 300`, [acct.id]);
+  res.json({
+    note: "For your records — consult your tax preparer.",
+    years: rows.map(r => ({ year: r.year, orgSlug: r.org_slug, orgName: displayNameCase(r.org_name), total: parseFloat(r.total) || 0, gifts: r.gifts })),
+    receipts: receipts.map(r => ({ id: r.id, orgSlug: r.org_slug, type: r.type, number: r.receipt_number, amount: parseFloat(r.amount) || 0, taxYear: r.tax_year, date: r.created_at })),
+  });
+}));
+
+// ═══ §3 — nonprofit self-serve signup, GATED ═══════════════════════════════
+const einDigits = (raw) => String(raw || "").replace(/\D/g, "").slice(0, 9); // registry stores digits-only (distinct from receipts' XX-XXXXXXX normalizeEin)
+async function einLookup(ein) {
+  const rows = await query(`SELECT ein, name, status FROM ein_registry WHERE ein = ?`, [ein]);
+  if (!rows.length) return { found: false };
+  return { found: true, name: rows[0].name, status: rows[0].status };
+}
+// Informational name-similarity for the review screen — token overlap only,
+// NEVER an auto-approve signal (nothing auto-approves in v1).
+function einNameScore(a, b) {
+  const toks = s => new Set(String(s || "").toLowerCase().replace(/[^a-z0-9 ]/g, " ").split(/\s+/).filter(w => w.length > 2));
+  const A = toks(a), B = toks(b);
+  if (!A.size || !B.size) return 0;
+  let hit = 0; for (const w of A) if (B.has(w)) hit++;
+  return Math.round((hit / Math.min(A.size, B.size)) * 100);
+}
+const networkSignupLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000, max: 5, standardHeaders: true, legacyHeaders: false,
+  handler: rateLimitHandler, skip: portalLimiterSkip,
+  keyGenerator: (req) => "netsignup:" + portalLimiterIpKey(req),
+});
+
+app.get("/network/config", (req, res) => {
+  // Non-secret feature-flag booleans for the client surfaces.
+  res.json({ donorAccounts: DONOR_ACCOUNTS_ENABLED, networkSignup: NETWORK_SIGNUP_ENABLED });
+});
+
+app.post("/network/signup", requireFlag(NETWORK_SIGNUP_ENABLED), networkSignupLimiter, wrap(async (req, res) => {
+  const { orgName, ein: rawEin, email, password, website } = req.body || {};
+  const name = String(orgName || "").trim().slice(0, 200);
+  const ein = einDigits(rawEin);
+  const em = foldEmail(email);
+  if (!name || !EMAIL_RX.test(em) || String(password || "").length < 8) return res.status(400).json({ error: "Name, email, and a password of 8+ characters are required" });
+  if (ein.length !== 9) return res.status(400).json({ error: "EIN must be 9 digits" });
+  const existingUser = await query(`SELECT id FROM users WHERE email = ?`, [em]);
+  if (existingUser.length) return res.status(409).json({ error: "email_in_use", message: "That email already has a Steward login." });
+
+  const einResult = await einLookup(ein);
+  const emailDomain = em.split("@")[1] || "";
+  const siteDomain = String(website || "").replace(/^https?:\/\//, "").replace(/^www\./, "").split("/")[0].toLowerCase();
+  const domainCheck = {
+    emailDomain, websiteDomain: siteDomain || null,
+    plausible: !!siteDomain && (emailDomain === siteDomain || emailDomain.endsWith("." + siteDomain) || siteDomain.endsWith("." + emailDomain)),
+    freeMail: ["gmail.com", "yahoo.com", "outlook.com", "hotmail.com", "aol.com", "icloud.com"].includes(emailDomain),
+  };
+
+  // S-15: a second signup on a claimed EIN becomes a DISPUTE row that touches
+  // nothing about the existing holder — never a duplicate listing, and the
+  // dispute can only ever be resolved by a human in the review queue.
+  const einHolder = await query(
+    `SELECT id, org_id, status FROM network_applications WHERE ein = ? AND status IN ('pending','approved','held') LIMIT 1`, [ein]);
+
+  const orgId = "org_" + uuid().slice(0, 8);
+  const slugBase = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40) || "org";
+  const orgSlug = `${slugBase}-${uuid().slice(0, 4)}`;
+  await run(
+    `INSERT INTO orgs (id, name, org_slug, plan, subscription_status, onboarding_complete, ein)
+     VALUES (?,?,?,?,?,1,?)`,
+    [orgId, name, orgSlug, "portal", "active", ein]);
+  const userId = "user_" + uuid().slice(0, 8);
+  await run(
+    `INSERT INTO users (id, org_id, email, password_hash, name, role) VALUES (?,?,?,?,?,'admin')`,
+    [userId, orgId, em, bcrypt.hashSync(String(password), 12), name + " admin"]);
+  // Portal row exists but DISABLED + unlisted: an unapproved org is invisible
+  // and un-giftable on every route (S-14) until a human approves.
+  await run(
+    `INSERT INTO portal_settings (org_id, enabled, network_listed, display_name) VALUES (?, false, false, ?)
+     ON CONFLICT (org_id) DO NOTHING`, [orgId, name]);
+  const appId = "napp_" + uuid().slice(0, 8);
+  const status = einHolder.length ? "dispute" : "pending";
+  const decision = [{ at: new Date().toISOString(), by: "system", action: "created", detail: einHolder.length ? `EIN already claimed by ${einHolder[0].org_id} — routed to dispute queue` : "application created" }];
+  await run(
+    `INSERT INTO network_applications (id, org_id, ein, status, ein_result, domain_check, website, disputed_org_id, decisions)
+     VALUES (?,?,?,?,?,?,?,?,?)`,
+    [appId, orgId, ein, status, JSON.stringify({ ...einResult, nameScore: einResult.found ? einNameScore(name, einResult.name) : null }),
+     JSON.stringify(domainCheck), String(website || "").slice(0, 300) || null,
+     einHolder[0]?.org_id || null, JSON.stringify(decision)]);
+
+  // Same staff JWT the normal login mints — the org admin proceeds to Stripe
+  // Connect onboarding from Settings; the listing stays gated regardless.
+  const token = signToken({ userId, orgId, email: em, role: "admin" });
+  res.status(201).json({
+    token,
+    user: { id: userId, email: em, role: "admin", orgId },
+    org: { id: orgId, name, org_slug: orgSlug, plan: "portal" },
+    application: { id: appId, status },
+    nextSteps: ["Complete Stripe onboarding (Settings → Giving)", "We verify your EIN against the IRS list", "A human reviews and approves your listing"],
+  });
+}));
+
+// The org's own gate checklist (staff view of where they stand).
+app.get("/network/application", requireAuth, wrap(async (req, res) => {
+  const [appRow] = await query(`SELECT * FROM network_applications WHERE org_id = ?`, [req.user.orgId]);
+  if (!appRow) return res.status(404).json({ error: "not_found" });
+  const [org] = await query(`SELECT stripe_account_id, stripe_connected FROM orgs WHERE id = ?`, [req.user.orgId]);
+  res.json({
+    status: appRow.status, ein: appRow.ein, einResult: appRow.ein_result, domainCheck: appRow.domain_check,
+    stripeConnected: !!(org?.stripe_connected && org?.stripe_account_id),
+    website: appRow.website,
+  });
+}));
+
+// ── Admin review queue — a human approves EVERYTHING (auto-approve nothing) ─
+app.get("/admin/network/applications", requireAuth, requireSuperAdmin, wrap(async (req, res) => {
+  const status = String(req.query.status || "pending");
+  const rows = await query(
+    `SELECT na.*, o.name AS org_name, o.org_slug, o.stripe_account_id, o.stripe_connected, u.email AS admin_email
+     FROM network_applications na
+     JOIN orgs o ON o.id = na.org_id
+     LEFT JOIN users u ON u.org_id = na.org_id AND u.role = 'admin'
+     WHERE na.status = ? ORDER BY na.created_at ASC LIMIT 100`, [status]);
+  res.json(rows);
+}));
+
+app.post("/admin/network/applications/:id/decide", requireAuth, requireSuperAdmin, wrap(async (req, res) => {
+  const action = String(req.body?.action || "");
+  const reason = String(req.body?.reason || "").slice(0, 500);
+  if (!["approve", "hold", "reject"].includes(action)) return res.status(400).json({ error: "action must be approve | hold | reject" });
+  const [appRow] = await query(`SELECT * FROM network_applications WHERE id = ?`, [req.params.id]);
+  if (!appRow) return res.status(404).json({ error: "not_found" });
+  if (action === "approve") {
+    // The gate holds even against the approver: EIN verified-and-ok AND
+    // Stripe onboarding complete, or the approve is refused. The EIN is
+    // re-checked LIVE (the registry refreshes monthly — the signup-time
+    // snapshot is display evidence, never the gate).
+    const liveEin = await einLookup(appRow.ein);
+    const [org] = await query(`SELECT stripe_account_id, stripe_connected FROM orgs WHERE id = ?`, [appRow.org_id]);
+    const gate = {
+      einFound: liveEin.found === true && (liveEin.status || "ok") === "ok",
+      stripe: !!(org?.stripe_connected && org?.stripe_account_id),
+      notDispute: appRow.status !== "dispute" || !!req.body?.resolveDispute,
+    };
+    if (!gate.einFound || !gate.stripe || !gate.notDispute) {
+      // A refused approval is a decision too — log it (§3.2 "log every decision").
+      const refused = (typeof appRow.decisions === "string" ? JSON.parse(appRow.decisions || "[]") : (appRow.decisions || []));
+      refused.push({ at: new Date().toISOString(), by: req.user.userId, action: "approve_refused", gate });
+      await run(`UPDATE network_applications SET decisions = ?, updated_at = NOW() WHERE id = ?`, [JSON.stringify(refused), req.params.id]);
+      return res.status(400).json({ error: "gate_unmet", gate, message: "EIN verification, Stripe onboarding, and dispute resolution must all pass before approval." });
+    }
+    // Refresh the stored evidence with the live result the approval relied on.
+    await run(`UPDATE network_applications SET ein_result = ? WHERE id = ?`,
+      [JSON.stringify({ ...liveEin, checkedAt: new Date().toISOString() }), req.params.id]);
+  }
+  const newStatus = action === "approve" ? "approved" : action === "hold" ? "held" : "rejected";
+  const decisions = (typeof appRow.decisions === "string" ? JSON.parse(appRow.decisions || "[]") : (appRow.decisions || []));
+  decisions.push({ at: new Date().toISOString(), by: req.user.userId, action, reason: reason || null });
+  await run(`UPDATE network_applications SET status = ?, decisions = ?, updated_at = NOW() WHERE id = ?`,
+    [newStatus, JSON.stringify(decisions), req.params.id]);
+  if (action === "approve") {
+    await run(
+      `UPDATE portal_settings SET enabled = true, network_listed = true, updated_at = NOW() WHERE org_id = ?`, [appRow.org_id]);
+    linkOrgJoinsNetwork(appRow.org_id).catch(e => console.error("[network] join-link job:", e.message));
+  } else {
+    await run(`UPDATE portal_settings SET enabled = false, network_listed = false, updated_at = NOW() WHERE org_id = ?`, [appRow.org_id]);
+  }
+  res.json({ ok: true, status: newStatus });
+}));
+
+// ── §3.2(5) auto-delist sweep — EIN dropped/revoked or Stripe gone ─────────
+// Portal stays up for existing donors; the listing and NEW gifts stop; the
+// admin is alerted through the queued path. Registry-empty guard: an unloaded
+// registry delists nobody (no data ≠ everyone revoked).
+async function processNetworkGate() {
+  const approved = await query(
+    `SELECT na.id, na.org_id, na.ein, na.decisions, o.name, o.stripe_account_id, o.stripe_connected
+     FROM network_applications na JOIN orgs o ON o.id = na.org_id WHERE na.status = 'approved'`);
+  if (!approved.length) return { checked: 0, delisted: 0 };
+  const [{ c: registryCount }] = await query(`SELECT COUNT(*)::int c FROM ein_registry`);
+  let delisted = 0;
+  for (const a of approved) {
+    let reason = null;
+    if (Number(registryCount) > 0) {
+      const found = await einLookup(a.ein);
+      if (!found.found || found.status !== "ok") reason = `EIN ${a.ein} ${found.found ? "status: " + found.status : "no longer on the IRS list"}`;
+    }
+    if (!reason && (!a.stripe_account_id || a.stripe_connected === false)) reason = "Stripe account disconnected/restricted";
+    if (!reason) continue;
+    const decisions = (typeof a.decisions === "string" ? JSON.parse(a.decisions || "[]") : (a.decisions || []));
+    decisions.push({ at: new Date().toISOString(), by: "system", action: "delisted", reason });
+    await run(`UPDATE network_applications SET status = 'delisted', decisions = ?, updated_at = NOW() WHERE id = ?`, [JSON.stringify(decisions), a.id]);
+    await run(`UPDATE portal_settings SET network_listed = false, updated_at = NOW() WHERE org_id = ?`, [a.org_id]);
+    delisted++;
+    await sendDonorLifecycleEmail("admin_delist", process.env.FOUNDER_EMAIL || "jonathan@stewardapp.dev",
+      `Network delisting — ${a.name}`,
+      consumerEmailHtml(`<p><strong>${escHtmlWf(a.name)}</strong> (org ${escHtmlWf(a.org_id)}) was auto-delisted from donor dashboards.</p><p>Reason: ${escHtmlWf(reason)}.</p><p>Its portal stays up for existing donors; new gifts are blocked until re-approval.</p>`));
+  }
+  return { checked: approved.length, delisted };
+}
+if (!rateLimitDisabled()) {
+  setInterval(() => processNetworkGate().catch(console.error), 6 * 60 * 60 * 1000);
+}
+app.post("/admin/network/run-gate-sweep", requireAuth, requireSuperAdmin, wrap(async (req, res) => {
+  res.json(await processNetworkGate());
 }));
 
 

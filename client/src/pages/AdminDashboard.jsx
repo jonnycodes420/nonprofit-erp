@@ -650,6 +650,87 @@ function Metrics({ metrics, orgs }) {
 }
 
 // ── Root ───────────────────────────────────────────────────────────────────
+// BUILD-46 §3.2(4) — the human review queue. One screen: EIN match result,
+// Stripe status, website, domain plausibility → approve / hold / reject.
+// NOTHING auto-approves; the server refuses an approve whose gate (live EIN
+// check + Stripe onboarding + dispute resolution) doesn't pass, even from here.
+function NetworkReview() {
+  const [status, setStatus] = useState("pending");
+  const [apps, setApps] = useState(null);
+  const [busyId, setBusyId] = useState(null);
+  const [err, setErr] = useState("");
+  const load = useCallback(async () => {
+    try { setApps(await adminFetch(`/admin/network/applications?status=${status}`)); }
+    catch (e) { setErr(String(e.message || e)); }
+  }, [status]);
+  useEffect(() => { load(); }, [load]);
+  const decide = async (id, action) => {
+    const reason = action === "approve" ? (window.prompt("Reason (logged with the decision):") || "") : (window.prompt(`Reason to ${action}:`) || "");
+    setBusyId(id); setErr("");
+    try {
+      await adminFetch(`/admin/network/applications/${id}/decide`, { method: "POST", body: JSON.stringify({ action, reason }) });
+      await load();
+    } catch (e) { setErr(String(e.message || e)); }
+    setBusyId(null);
+  };
+  const chip = (on, label) => (
+    <span style={{ fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 20, marginRight: 6,
+      background: on ? "rgba(52,168,83,0.15)" : "rgba(234,67,53,0.12)", color: on ? A.green : "#e07a5f" }}>{label}</span>
+  );
+  return (
+    <div>
+      <div style={{ marginBottom: 14 }}>
+        {["pending", "dispute", "held", "approved", "delisted", "rejected"].map(st => (
+          <button key={st} onClick={() => setStatus(st)}
+            style={{ background: status === st ? A.green : "transparent", color: status === st ? "#fff" : A.muted,
+              border: `1px solid ${status === st ? A.green : A.border}`, borderRadius: 20, padding: "5px 14px", marginRight: 8, fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
+            {st}
+          </button>
+        ))}
+      </div>
+      {err && <div style={{ color: "#e07a5f", fontSize: 13, marginBottom: 10 }}>{err}</div>}
+      {!apps ? <div style={{ color: A.muted }}>Loading…</div> : apps.length === 0 ? <div style={{ color: A.muted }}>Nothing {status}.</div> :
+        apps.map(a => {
+          const einR = typeof a.ein_result === "string" ? JSON.parse(a.ein_result || "{}") : (a.ein_result || {});
+          const dom = typeof a.domain_check === "string" ? JSON.parse(a.domain_check || "{}") : (a.domain_check || {});
+          const decisions = typeof a.decisions === "string" ? JSON.parse(a.decisions || "[]") : (a.decisions || []);
+          return (
+            <div key={a.id} style={{ background: A.card, border: `1px solid ${A.border}`, borderRadius: 10, padding: 16, marginBottom: 12 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+                <div style={{ fontSize: 15, fontWeight: 700, color: A.ink }}>{a.org_name} <span style={{ color: A.muted, fontWeight: 400, fontSize: 12 }}>({a.org_id})</span></div>
+                <div style={{ color: A.muted, fontSize: 12 }}>{String(a.created_at).slice(0, 10)}</div>
+              </div>
+              <div style={{ margin: "8px 0", fontSize: 13, color: A.muted }}>
+                EIN {a.ein} · {a.admin_email} · {a.website ? <a href={a.website} target="_blank" rel="noreferrer" style={{ color: A.green }}>{a.website}</a> : "no website"}
+                {a.disputed_org_id && <span> · DISPUTES {a.disputed_org_id}</span>}
+              </div>
+              <div style={{ marginBottom: 10 }}>
+                {chip(einR.found === true && (einR.status || "ok") === "ok", einR.found ? `IRS: ${einR.name || "found"}${einR.nameScore != null ? ` (${einR.nameScore}% name match)` : ""}` : "IRS: not found")}
+                {chip(!!(a.stripe_connected && a.stripe_account_id), a.stripe_connected ? "Stripe onboarded" : "Stripe missing")}
+                {chip(dom.plausible === true, dom.plausible ? `domain: ${dom.emailDomain}` : dom.freeMail ? `free mail: ${dom.emailDomain}` : `domain mismatch: ${dom.emailDomain || "?"}`)}
+              </div>
+              {["pending", "dispute", "held"].includes(a.status) && (
+                <div>
+                  <button disabled={busyId === a.id} onClick={() => decide(a.id, "approve")}
+                    style={{ background: A.green, color: "#fff", border: "none", borderRadius: 7, padding: "7px 16px", fontSize: 12, fontWeight: 700, cursor: "pointer", marginRight: 8 }}>Approve</button>
+                  <button disabled={busyId === a.id} onClick={() => decide(a.id, "hold")}
+                    style={{ background: "transparent", color: A.muted, border: `1px solid ${A.border}`, borderRadius: 7, padding: "7px 16px", fontSize: 12, fontWeight: 600, cursor: "pointer", marginRight: 8 }}>Hold</button>
+                  <button disabled={busyId === a.id} onClick={() => decide(a.id, "reject")}
+                    style={{ background: "transparent", color: "#e07a5f", border: "1px solid #e07a5f", borderRadius: 7, padding: "7px 16px", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>Reject</button>
+                </div>
+              )}
+              {decisions.length > 0 && (
+                <div style={{ marginTop: 10, fontSize: 11, color: A.muted }}>
+                  {decisions.map((d, i) => <div key={i}>{String(d.at).slice(0, 16)} · {d.by} · {d.action}{d.reason ? ` — ${d.reason}` : ""}</div>)}
+                </div>
+              )}
+            </div>
+          );
+        })}
+    </div>
+  );
+}
+
 export default function AdminDashboard() {
   const navigate = useNavigate();
   const [page, setPage] = useState("overview");
@@ -694,6 +775,7 @@ export default function AdminDashboard() {
     { id: "overview", label: "Overview",       icon: "◈" },
     { id: "orgs",     label: "Organizations",  icon: "◉" },
     { id: "metrics",  label: "Metrics",        icon: "▤" },
+    { id: "network",  label: "Network Review", icon: "◫" },
   ];
 
   const currentPage = NAV.find(n => n.id === page)?.label || "";
@@ -762,6 +844,7 @@ export default function AdminDashboard() {
           {page === "overview"  && <Overview metrics={metrics} orgs={orgs} />}
           {page === "orgs"      && <Organizations orgs={orgs} loading={loadingOrgs} onRefresh={load} />}
           {page === "metrics"   && <Metrics metrics={metrics} orgs={orgs} />}
+          {page === "network"   && <NetworkReview />}
         </div>
       </div>
     </div>

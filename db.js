@@ -1662,6 +1662,149 @@ async function initSchema() {
   // charges (Stripe pause_collection) and is excluded from dunning.
   await pool.query(`ALTER TABLE recurring_subscriptions ADD COLUMN IF NOT EXISTS paused_at TIMESTAMPTZ`);
   await pool.query(`ALTER TABLE recurring_subscriptions ADD COLUMN IF NOT EXISTS resume_at TIMESTAMPTZ`);
+
+  // ═══ BUILD-46 (network) — global donor accounts ════════════════════════════
+  // THE WALL: everything in this block that is account-scoped is GLOBAL (no
+  // org_id on donor_accounts/aliases/resets/audit) and must NEVER be joined
+  // into an org-side query. A donor may see across orgs; an org may never see
+  // across orgs. No org-side route may read these tables — enforced by
+  // tests/org-blindness.test.js (S-13 byte-equality).
+
+  // The account: email is stored case-folded (lower). password_hash nullable —
+  // a magic-link-only BUILD-45 donor may never set one (§1.3 prompt, never
+  // forced). bcryptjs cost 12 (matches staff auth; argon2id was rejected only
+  // because it adds a native dep to a zero-native-deps deploy — documented
+  // decision per the build brief). MFA columns are nullable placeholders —
+  // TOTP is specced in BLOCKED-donor-mfa.md, not silently skipped.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS donor_accounts (
+      id TEXT PRIMARY KEY,
+      email TEXT NOT NULL UNIQUE,
+      password_hash TEXT,
+      email_verified_at TIMESTAMPTZ,
+      verify_token_hash TEXT,
+      verify_expires_at TIMESTAMPTZ,
+      pending_email TEXT,
+      email_change_token_hash TEXT,
+      email_change_expires_at TIMESTAMPTZ,
+      mfa_secret TEXT,
+      mfa_enabled_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+
+  // Verified alias emails: proof-of-control only (confirmation link to the
+  // alias address, hash-at-rest, single-use). A VERIFIED alias is globally
+  // unique across accounts (partial unique) — S-12: one email can never be
+  // claimed by two accounts.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS donor_account_aliases (
+      id TEXT PRIMARY KEY,
+      account_id TEXT NOT NULL REFERENCES donor_accounts(id) ON DELETE CASCADE,
+      email TEXT NOT NULL,
+      token_hash TEXT UNIQUE,
+      token_expires_at TIMESTAMPTZ,
+      verified_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      UNIQUE(account_id, email)
+    )
+  `);
+  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS uq_donor_alias_verified_email
+    ON donor_account_aliases (email) WHERE verified_at IS NOT NULL`);
+
+  // Account ↔ per-org donor record. Created ONLY by exact match on a VERIFIED
+  // email (never name/address/fuzzy — wrong-linking is a P0 privacy breach by
+  // construction). unlinked_at = donor-initiated unlink: hides the org from
+  // the dashboard, never deletes the org's own record, and the idempotent
+  // link job never silently re-links an unlinked row.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS donor_account_links (
+      id TEXT PRIMARY KEY,
+      account_id TEXT NOT NULL REFERENCES donor_accounts(id) ON DELETE CASCADE,
+      org_id TEXT NOT NULL,
+      donor_id TEXT NOT NULL,
+      via_email TEXT NOT NULL,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      unlinked_at TIMESTAMPTZ,
+      UNIQUE(account_id, donor_id)
+    )
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_donor_links_account ON donor_account_links (account_id)`);
+
+  // Password resets: ≥128-bit CSPRNG, ≤60 min, single-use, hash-at-rest,
+  // invalidated (superseded) on password change and on re-request.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS donor_account_resets (
+      id TEXT PRIMARY KEY,
+      account_id TEXT NOT NULL REFERENCES donor_accounts(id) ON DELETE CASCADE,
+      token_hash TEXT NOT NULL UNIQUE,
+      expires_at TIMESTAMPTZ NOT NULL,
+      used_at TIMESTAMPTZ,
+      superseded_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+
+  // Account-level audit (signup, login, link/unlink, alias, resets, email
+  // change, deletion). GLOBAL — never surfaced to any org.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS donor_account_audit (
+      id TEXT PRIMARY KEY,
+      account_id TEXT,
+      email TEXT,
+      action TEXT NOT NULL,
+      ip TEXT,
+      meta JSONB,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_donor_audit_account ON donor_account_audit (account_id, created_at DESC)`);
+
+  // Sessions: the ONE portal_sessions table gains donor_account_id (both auth
+  // paths mint the same session). An account-wide session has org_id NULL —
+  // guarded migration drops the NOT NULL that BUILD-45 shipped with.
+  await pool.query(`ALTER TABLE portal_sessions ADD COLUMN IF NOT EXISTS donor_account_id TEXT`);
+  await pool.query(`ALTER TABLE portal_sessions ALTER COLUMN org_id DROP NOT NULL`).catch(() => {});
+
+  // §2.2 second switch: "list this organization in donor dashboards".
+  // Default FALSE — existing CRM orgs stay invisible to the network until
+  // they opt in; the network-signup approval path flips it on explicitly.
+  await pool.query(`ALTER TABLE portal_settings ADD COLUMN IF NOT EXISTS network_listed BOOLEAN NOT NULL DEFAULT false`);
+
+  // ── §3 the gate ───────────────────────────────────────────────────────────
+  // IRS Pub 78 / BMF snapshot (loaded by scripts/load-irs-ein-registry.js;
+  // refresh cadence: monthly, documented there). ein stored digits-only.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS ein_registry (
+      ein TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'ok',
+      loaded_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+
+  // Network applications: one per org, every decision logged (decisions is an
+  // append-only JSONB array). status: pending | approved | held | rejected |
+  // dispute | delisted. UNIQUE(ein) among non-dispute applications is enforced
+  // in the route (a second signup on a claimed EIN becomes a dispute row,
+  // never a duplicate listing — S-15).
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS network_applications (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL UNIQUE,
+      ein TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending',
+      ein_result JSONB,
+      domain_check JSONB,
+      website TEXT,
+      disputed_org_id TEXT,
+      decisions JSONB DEFAULT '[]',
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_network_apps_status ON network_applications (status, created_at DESC)`);
 }
 
 async function seedData() {

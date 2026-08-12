@@ -1,0 +1,7 @@
+BUILD-46 demo — org-side unchanged evidence (2026-08-12T02:41:18.597Z)
+
+The authoritative byte-equality proof is tests/org-blindness.test.js (41 asserts,
+in run-all + CI): ten org-staff routes byte-identical before/after the donor
+account exists, plus the cross-org marker sweep.
+
+This demo run: org public config hash before dashboard use 8cc1e99056438c3b, after 8cc1e99056438c3b — IDENTICAL

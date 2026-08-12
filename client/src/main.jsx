@@ -24,6 +24,13 @@ const App                = React.lazy(() => import("./App"));
 const Donate             = React.lazy(() => import("./pages/Donate"));
 const ManageFundraiser   = React.lazy(() => import("./pages/ManageFundraiser"));
 const Portal             = React.lazy(() => import("./pages/Portal")); // BUILD-45 donor portal (public, white-label)
+// BUILD-46 — the cross-org donor dashboard (Steward's consumer surface) + the
+// gated nonprofit network signup. Both flag-gated server-side; the pages
+// render a quiet unavailable state when the flags are off.
+const GivingDashboard    = React.lazy(() => import("./pages/GivingDashboard"));
+const JoinNetwork        = React.lazy(() => import("./pages/JoinNetwork"));
+const GivingOrgShell     = React.lazy(() => import("./pages/GivingDashboard").then(m => ({ default: m.GivingOrgShell })));
+function GivingOrgWrap() { return <GivingOrgShell><Portal /></GivingOrgShell>; }
 const Pricing            = React.lazy(() => import("./pages/Pricing"));
 // NB: Invitation.jsx is also imported eagerly by Landing (the on-page form
 // section), so this lazy route resolves from the already-loaded entry chunk.
@@ -157,6 +164,16 @@ function Root() {
               consumes the fragment token). */}
           <Route path="/portal/:orgSlug" element={<Portal />} />
           <Route path="/portal/:orgSlug/verify" element={<Portal />} />
+          {/* BUILD-46 — donor dashboard: home + emailed-token landings + the
+              org drill-down (the UNFORKED BUILD-45 Portal under a consumer
+              back bar — same :orgSlug param, same component). */}
+          <Route path="/giving" element={<GivingDashboard />} />
+          <Route path="/giving/verify" element={<GivingDashboard landing="verify" />} />
+          <Route path="/giving/reset" element={<GivingDashboard landing="reset" />} />
+          <Route path="/giving/confirm-email" element={<GivingDashboard landing="confirm-email" />} />
+          <Route path="/giving/confirm-alias" element={<GivingDashboard landing="confirm-alias" />} />
+          <Route path="/giving/orgs/:orgSlug" element={<GivingOrgWrap />} />
+          <Route path="/join" element={<JoinNetwork />} />
           <Route path="/give/:orgSlug" element={<Donate />} />
           <Route path="/give/:orgSlug/:pageSlug" element={<Donate />} />
           <Route path="/give/:orgSlug/:pageSlug/:fundraiserSlug" element={<Donate />} />

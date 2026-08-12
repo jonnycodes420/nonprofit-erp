@@ -288,6 +288,16 @@ function Dashboard({ slug, me, reload }) {
         <div style={{ fontSize: 15 }}>Welcome back{me.donorName ? `, ${me.donorName.split(" ")[0]}` : ""}.</div>
         <button style={{ ...S.btnQuiet, padding: "6px 14px", fontSize: 13 }} onClick={logout}>Sign out</button>
       </div>
+      {/* BUILD-46 §1.3 — the migration nudge: prompted, never forced. Renders
+          only when the server says accounts are live (me.account non-null)
+          and this donor hasn't finished setting one up. */}
+      {me.account && !(me.account.exists && me.account.hasPassword) && (
+        <div style={{ fontSize: 13, color: "#555", margin: "0 0 10px" }}>
+          {me.account.exists
+            ? <>Add a password to your giving account for one-step sign-in — use "Reset password" at <a href="/giving" style={{ color: "var(--pt-primary)" }}>your giving dashboard</a>.</>
+            : <>Support more than one organization? <a href="/giving" style={{ color: "var(--pt-primary)" }}>Create a free account</a> to see all your giving in one place. This page keeps working exactly as it does now.</>}
+        </div>
+      )}
 
       {/* Giving summary — honest at every data size (§3.2): totals and real
           dates only; no streaks, no percentages, no invented milestones. */}

@@ -84,3 +84,68 @@ Portal server paths log only error `.message` strings — never email
 addresses, tokens, or card data (grep-verified over the portal module).
 Audit PII (email, IP) lives in the org-scoped `portal_audit_log` table, not
 in process logs or the error pipeline.
+
+---
+
+# Network section (BUILD-46, 2026-08-12) — global donor accounts & the giving network
+
+## What the dashboard aggregates (and how)
+A donor account (`donor_accounts`, GLOBAL — no org_id) aggregates, at READ
+time only, the per-org ledgers of the donor records it is linked to: YTD/
+lifetime totals, per-org cards, unified recurring list, per-year tax totals,
+merged impact feed. **No cross-org rollup is ever stored** — there is no
+table an org-side query could reach that contains another org's figures.
+Dashboard reads filter to orgs that are portal-enabled AND `network_listed`.
+
+## The org-blindness wall
+An org may never see across orgs. Enforced structurally (account tables are
+global and joined only in /account/* handlers; no org-side route reads them)
+and tested as BYTE-EQUALITY: `tests/org-blindness.test.js` captures a battery
+of Org-A staff responses (profile, lists, search, CSV export, reports, portal
+audit, recurring) before any account exists and again after the donor has an
+account linked to two orgs and has used every dashboard surface — the bodies
+must be identical, and no Org-A body may contain any Org-B marker or any
+account-table artifact. The org-side notification pipeline is asserted
+untouched. Org A's view of its donor is the same whether or not that donor
+has a dashboard account or other linked orgs.
+
+## Identity linking
+Links are created ONLY by exact match on a VERIFIED email (signup
+verification, verified alias, or magic-link receipt — all proof of control of
+that inbox). Never name/address/fuzzy — wrong-linking would show one person
+another person's giving. Alias verification tokens are single-use,
+hash-at-rest, 60-minute, and a verified email is globally unique across
+accounts (partial unique index) — one email can never be claimed twice.
+
+## Unlink semantics
+Donor-initiated, immediate, audit-rowed (`donor_account_audit`, global —
+never surfaced to any org). Unlinking hides the org from every dashboard
+surface; it does not delete or alter the org's own donor record, and the
+idempotent link job never silently re-links an unlinked row. Relink is an
+explicit donor action.
+
+## Deletion
+Donor deletes account → the account row, aliases, links, and reset tokens are
+deleted (CASCADE) and the audit trail sheds the email (actions retained,
+PII gone). **Each organization's own records of its donors are unaffected —
+their data about their donor is theirs.** That sentence appears verbatim in
+the donor-facing copy.
+
+## The network gate (who becomes donor-visible)
+Self-serve orgs (Portal tier) are invisible and un-giftable until: EIN
+verified live against the IRS Pub 78 snapshot (`ein_registry`, refreshed
+monthly by scripts/load-irs-ein-registry.js) + Stripe Connect onboarding
+complete (gifts settle only in the org's own verified account) + a HUMAN
+approves in the admin review queue (nothing auto-approves). Approved orgs are
+re-checked by a 6-hour sweep and auto-delisted (listing off, new gifts
+blocked, portal stays up for existing donors, admin alerted) if their EIN
+drops/revokes or Stripe disconnects. Every decision — including refused
+approvals and system delistings — is appended to the application's decision
+log. A second signup on a claimed EIN becomes a dispute-queue entry that
+cannot touch the existing holder's listing.
+
+## Feature flags (launch posture)
+`DONOR_ACCOUNTS_ENABLED` and `NETWORK_SIGNUP_ENABLED` are UNSET in prod:
+every surface in this section 404s (indistinguishable from nonexistent) and
+sessions carry no account stamp — prod behavior is byte-identical to
+BUILD-45 until a deliberate launch flips the flags.

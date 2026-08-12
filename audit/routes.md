@@ -360,3 +360,14 @@ vercel.json `/portal-api/*` proxy.
 | PUT | `/impact-updates/:id` | ADMIN+checkWriteAccess | org-scoped, same validation |
 | DELETE | `/impact-updates/:id` | ADMIN | DELETE convention (ungated by write access) |
 | GET | `/portal-audit` | ADMIN | org-scoped audit trail read |
+
+## BUILD-46 (network) — donor accounts + giving network (all flag-gated in prod)
+| Route | Auth | Notes |
+|---|---|---|
+| POST /account/signup, /login, /logout, /verify, /request-reset, /reset, /aliases/verify, /change-email/confirm | public (flag) | no-enumeration, rate-limited, queued emails |
+| GET /account/me, /dashboard, /recurring, /tax-summary | account session | donor-eyes-only cross-org reads |
+| POST /account/change-password, /change-email, /aliases, /links/:id/unlink, /links/:id/relink; DELETE /account, /account/aliases/:id | account session | audited (donor_account_audit, global) |
+| GET /network/config | public | non-secret feature-flag booleans |
+| POST /network/signup | public (flag) | mints gated Portal-tier org |
+| GET /network/application | staff | own gate checklist |
+| GET /admin/network/applications, POST …/:id/decide, POST /admin/network/run-gate-sweep | super admin | human review queue; every decision logged |

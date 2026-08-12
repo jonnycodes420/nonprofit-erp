@@ -51,6 +51,8 @@ jobs:
       STRIPE_SECRET_KEY: sk_test_dummy
       STRIPE_WEBHOOK_SECRET: whsec_localtest
       STRIPE_API_BASE: http://localhost:5603   # BUILD-45 — donation Stripe client → the portal suite's local mock
+      DONOR_ACCOUNTS_ENABLED: "1"              # BUILD-46 feature flags — ON in CI so the suites drive them;
+      NETWORK_SIGNUP_ENABLED: "1"              # OFF in prod (unset) until launch
 
     steps:
       - uses: actions/checkout@v4

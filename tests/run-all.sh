@@ -17,6 +17,7 @@
 #        RESEND_BASE_URL=http://localhost:5602 DEMO_SMTP_FROM=noreply@stewardapp.dev \
 #        STRIPE_SECRET_KEY=sk_test_dummy STRIPE_WEBHOOK_SECRET=whsec_localtest \
 #        STRIPE_API_BASE=http://localhost:5603 \
+#        DONOR_ACCOUNTS_ENABLED=1 NETWORK_SIGNUP_ENABLED=1 \
 #        node server.js
 #      (STRIPE_API_BASE points the donation Stripe client at the local mock the
 #      portal suite starts on :5603 — BUILD-45's Stripe seam, same pattern as
@@ -53,6 +54,7 @@ CORE=(
   session-cache session-privilege smart-moves state-diff state-diff2 tasks task-due tenant-isolation trial-end upgrade-checkout workflows workflows-e2e
   empty-states presentation-wiring notify-delivery concurrency2 permissions-matrix
   gift-idempotency portal
+  donor-accounts donor-linking org-blindness network-gate donor-dashboard
   finance-reports-consistency name-normalize reserved-recovered concurrency
 )
 
