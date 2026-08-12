@@ -113,7 +113,7 @@ function RequestLink({ slug, theme }) {
   );
 }
 
-function Verify({ slug }) {
+function Verify({ slug, onVerified }) {
   const navigate = useNavigate();
   const [err, setErr] = useState("");
   useEffect(() => {
@@ -125,9 +125,14 @@ function Verify({ slug }) {
     if (!token) { setErr("This link is incomplete — request a fresh one."); return; }
     (async () => {
       const r = await pfetch(`/${slug}/verify`, { method: "POST", body: { token } });
-      if (r.status === 200) navigate(`/portal/${slug}`, { replace: true });
+      // Refetch the session BEFORE navigating: /verify and the dashboard are
+      // the same <Portal> instance (its mount effect keys on orgSlug only), so
+      // an in-SPA navigate alone never re-ran loadMe and a freshly signed-in
+      // donor landed back on the login form (found live on prod, 2026-08-11).
+      if (r.status === 200) { if (onVerified) await onVerified(); navigate(`/portal/${slug}`, { replace: true }); }
       else setErr((r.body && r.body.message) || "That link has expired or was already used. Request a fresh one.");
     })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [slug, navigate]);
   return (
     <div style={S.card}>
@@ -403,7 +408,7 @@ export default function Portal() {
       <div style={S.wrap}>
         <PortalHeader theme={theme} />
         {isVerify
-          ? <Verify slug={orgSlug} />
+          ? <Verify slug={orgSlug} onVerified={loadMe} />
           : me && !me.empty
             ? <Dashboard slug={orgSlug} me={me} reload={loadMe} />
             : <RequestLink slug={orgSlug} theme={theme} />}
