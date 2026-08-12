@@ -143,7 +143,7 @@ function TokenLanding({ kind, onDone }) {
     const path = kind === "verify" ? "/verify" : kind === "reset" ? "/reset"
       : kind === "confirm-email" ? "/change-email/confirm" : "/aliases/verify";
     const r = await afetch(path, { method: "POST", body: kind === "reset" ? { token, password: pw } : { token } });
-    if (r.status === 200) onDone();
+    if (r.status === 200) await onDone();
     else setErr(r.body?.message || "That link has expired or was already used.");
   };
   useEffect(() => { if (!needPw && token) submit(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, []);
@@ -334,7 +334,12 @@ export default function GivingDashboard({ landing }) {
     </div></div>;
   }
   const signOut = async () => { await afetch("/logout", { method: "POST" }); setMe(null); };
-  const done = () => { loadMe(); navigate("/giving", { replace: true }); };
+  // Await the session refetch BEFORE navigating away from the token landing —
+  // the component doesn't remount across the landing→home route change, so an
+  // un-awaited loadMe let the dashboard render its signed-out AuthCard after a
+  // successful verify/reset (found in the go-live prod drive, 2026-08-12; same
+  // class as the Portal.jsx onVerified fix).
+  const done = async () => { await loadMe(); navigate("/giving", { replace: true }); };
   return (
     <div style={S.page}>
       <div style={S.wrap}>
