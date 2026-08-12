@@ -16549,7 +16549,10 @@ app.get("/account/dashboard", requireDonorAccount, wrap(async (req, res) => {
     for (const u of impact) impactMerged.push({ ...u, orgSlug: meta.org_slug, orgName: card.orgName, logo: card.logo });
   }
   orgCards.sort((a, b) => b.ytd - a.ytd || b.lifetime - a.lifetime);
-  impactMerged.sort((a, b) => String(b.date).localeCompare(String(a.date)));
+  // Millisecond-precision newest-first: String(Date) stringifies at SECOND
+  // precision, so a string sort tie-broke same-second updates arbitrarily and
+  // the deterministic-order assertion caught it on CI (2026-08-12).
+  impactMerged.sort((a, b) => new Date(b.date) - new Date(a.date));
   await donorAudit(acct.id, acct.email, "dashboard_viewed", req);
   res.json({
     brand: CONSUMER_BRAND,
