@@ -704,6 +704,9 @@ function PortalManager({isAdmin,isReadOnly}){
       const res=await apiFetch("/portal-settings",{method:"PUT",body:JSON.stringify({
         enabled:ps.enabled===true,poweredBy:ps.powered_by===true,
         networkListed:ps.network_listed===true,
+        directoryDescription:ps.directory_description||"",
+        directoryCity:ps.directory_city||"",
+        directoryState:ps.directory_state||"",
         displayName:ps.display_name||"",footerText:ps.footer_text||"",
         contactEmail:ps.contact_email||"",einLine:ps.ein_line||"",
         primaryColor:ps.primary_color||"",accentColor:ps.accent_color||"",
@@ -785,6 +788,25 @@ function PortalManager({isAdmin,isReadOnly}){
         <input type="checkbox" checked={ps.network_listed===true} disabled={disabled} onChange={e=>set("network_listed",e.target.checked)}/>
         List this organization in donor dashboards (donors who verify an email you have on file see their giving with you alongside their other giving; you see nothing new). When listed, your signed-in portal also shows donors one quiet line offering that optional account; unlisted, it never mentions it.
       </label>
+      {/* BUILD-47 — the directory card donors see when they SEARCH for you.
+          Only shown while listed; reveals only what you type here. */}
+      {ps.network_listed===true&&(
+        <div style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:10,padding:"14px 16px",marginBottom:16}}>
+          <div style={{fontSize:12,fontWeight:700,color:T.ink,marginBottom:4}}>Your directory listing</div>
+          <div style={{fontSize:12,color:T.ink3,lineHeight:1.5,marginBottom:10}}>
+            Donors can find you by name, city, or EIN and add you to their dashboard. This card shows only
+            what you enter below — never anything about any donor.
+          </div>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(200px,1fr))",gap:12}}>
+            <div style={{gridColumn:"1 / -1"}}><div style={lbl}>One-line description</div>
+              <input style={inp} maxLength={160} value={ps.directory_description||""} disabled={disabled} onChange={e=>set("directory_description",e.target.value)} placeholder="What you do, in one sentence"/></div>
+            <div><div style={lbl}>City</div>
+              <input style={inp} maxLength={80} value={ps.directory_city||""} disabled={disabled} onChange={e=>set("directory_city",e.target.value)} placeholder="Fairhope"/></div>
+            <div><div style={lbl}>State</div>
+              <input style={inp} maxLength={40} value={ps.directory_state||""} disabled={disabled} onChange={e=>set("directory_state",e.target.value)} placeholder="AL"/></div>
+          </div>
+        </div>
+      )}
       {isAdmin&&<button onClick={save} disabled={disabled||saving} title={isReadOnly?"Reactivate your subscription to make changes.":undefined}
         style={{background:disabled?T.bg3:T.gold500,border:"none",borderRadius:9,padding:"10px 18px",color:T.ink,fontSize:13,fontWeight:700,cursor:disabled?"not-allowed":"pointer"}}>{saving?"Saving…":"Save portal settings"}</button>}
       {msg&&<div style={{marginTop:10,fontSize:13,color:T.greenDk,fontWeight:600}}>{msg}</div>}

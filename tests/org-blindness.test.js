@@ -22,7 +22,9 @@ const ORG_A = "org_ob_a", SLUG_A = "blind-a";
 const ORG_B = "org_ob_b", SLUG_B = "blind-b";
 // Markers that exist ONLY in Org B — any appearance in an Org-A body is a leak.
 const B_MARKERS = ["org_ob_b", "blind-b", "Blind Probe Org B", "d_obB", "777.77", "B-Secret-Fund"];
-const ACCOUNT_MARKERS = ["donor_account", "wren-alias@ob46.test"];
+// dof_ / donor_org_follows: BUILD-47 follow artifacts — a follow is
+// dashboard-side state and must be as invisible to the org as the account.
+const ACCOUNT_MARKERS = ["donor_account", "wren-alias@ob46.test", "dof_", "donor_org_follows"];
 const THIS_YEAR = String(new Date().getFullYear());
 
 let mail = [];
@@ -69,6 +71,7 @@ async function fixture() {
     for (const t of ["donors", "fin_funds", "users"]) await q(`DELETE FROM ${t} WHERE org_id=$1`, [org]).catch(() => {});
     await q(`DELETE FROM orgs WHERE id=$1`, [org]).catch(() => {});
   }
+  await q(`DELETE FROM donor_org_follows WHERE org_id IN ($1,$2)`, [ORG_A, ORG_B]).catch(() => {});
   const hash = bcrypt.hashSync("loadtest1234", 10);
   await q(`INSERT INTO orgs (id,name,org_slug,onboarding_complete,subscription_status,plan) VALUES ($1,'Blind Org A','${SLUG_A}',1,'active','team')`, [ORG_A]);
   await q(`INSERT INTO orgs (id,name,org_slug,onboarding_complete,subscription_status,plan) VALUES ($1,'Blind Probe Org B','${SLUG_B}',1,'active','team')`, [ORG_B]);
@@ -129,12 +132,27 @@ async function captureBattery(tokenA) {
   await settle();
   const v = await raw("POST", "/account/verify", { body: { token: tokenFrom(mailTo("wren@ob46.test")[0], "verify") } });
   const cookie = cookieOf(v);
+  // BUILD-47 follow scenario (§2.4 battery extension): before any alias
+  // exists, the donor SEARCHES the directory — including for org B by name —
+  // and ADDS org B. No verified email matches org B yet, so this is a FOLLOW:
+  // it must show zero history donor-side, and must be utterly invisible to
+  // both orgs' staff (the battery + marker sweep below prove it).
+  await raw("GET", "/network/directory?q=Blind%20Probe%20Org%20B", { cookie });
+  await raw("GET", "/network/directory?q=Blind", { cookie });
+  await raw("POST", "/account/orgs/add", { cookie, body: { orgSlug: SLUG_B } });
+  const followDash = JSON.parse((await raw("GET", "/account/dashboard", { cookie })).text);
+  ok("the follow shows a card for org B with ZERO history figures",
+    followDash.followed?.some(f => f.orgSlug === SLUG_B) && !JSON.stringify(followDash.followed).includes("777.77"),
+    followDash.followed);
+  ok("the follow does NOT put org B in the history list", !followDash.orgs.some(o => o.orgSlug === SLUG_B));
   mail = [];
   await raw("POST", "/account/aliases", { cookie, body: { email: "wren-alias@ob46.test" } });
   await settle();
   await raw("POST", "/account/aliases/verify", { body: { token: tokenFrom(mailTo("wren-alias@ob46.test")[0], "confirm-alias") } });
   const me = JSON.parse((await raw("GET", "/account/me", { cookie })).text);
   ok("precondition: the donor is linked to BOTH orgs", me.links.length === 2, me.links);
+  ok("the org-B follow converted to a link on alias verify",
+    me.follows?.find(f => f.orgSlug === SLUG_B)?.converted === true, me.follows);
   // exercise every cross-org read surface
   const dash = await raw("GET", "/account/dashboard", { cookie });
   const rec = await raw("GET", "/account/recurring", { cookie });

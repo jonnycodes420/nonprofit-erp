@@ -1777,6 +1777,31 @@ async function initSchema() {
   // they opt in; the network-signup approval path flips it on explicitly.
   await pool.query(`ALTER TABLE portal_settings ADD COLUMN IF NOT EXISTS network_listed BOOLEAN NOT NULL DEFAULT false`);
 
+  // ── BUILD-47 — find your nonprofits (directory + follows) ────────────────
+  // Directory listing card fields — org-editable in Settings › Donor Portal,
+  // empty until the org sets them. Only ever shown for LISTED orgs.
+  await pool.query(`ALTER TABLE portal_settings ADD COLUMN IF NOT EXISTS directory_description TEXT`);
+  await pool.query(`ALTER TABLE portal_settings ADD COLUMN IF NOT EXISTS directory_city TEXT`);
+  await pool.query(`ALTER TABLE portal_settings ADD COLUMN IF NOT EXISTS directory_state TEXT`);
+
+  // A follow is DASHBOARD-SIDE state only: a donor added a listed org whose
+  // records don't (yet) match a verified email. Zero giving history rides it,
+  // and it is INVISIBLE to the org — same WALL rule as donor_account* tables:
+  // no org-side route may ever read donor_org_follows (org-blindness battery
+  // covers follows since BUILD-47). History appears only when the existing
+  // verified-email link machinery creates a donor_account_links row; display
+  // precedence (link beats follow) is the follow→link conversion.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS donor_org_follows (
+      id TEXT PRIMARY KEY,
+      account_id TEXT NOT NULL REFERENCES donor_accounts(id) ON DELETE CASCADE,
+      org_id TEXT NOT NULL,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      UNIQUE(account_id, org_id)
+    )
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_donor_follows_account ON donor_org_follows (account_id)`);
+
   // ── §3 the gate ───────────────────────────────────────────────────────────
   // IRS Pub 78 / BMF snapshot (loaded by scripts/load-irs-ein-registry.js;
   // refresh cadence: monthly, documented there). ein stored digits-only.

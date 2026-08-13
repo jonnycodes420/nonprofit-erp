@@ -15945,6 +15945,11 @@ app.put("/portal-settings", requireAuth, requireAdmin, checkWriteAccess, wrap(as
   // for existing CRM orgs (opt-in); the network-approval path flips it on.
   if (b.networkListed !== undefined) { updates.push("network_listed = ?"); params.push(b.networkListed === true); }
   if (b.displayName !== undefined) setStr("display_name", b.displayName, 120);
+  // BUILD-47 directory card fields — shown only in the donor-side directory,
+  // only while the org is listed.
+  if (b.directoryDescription !== undefined) setStr("directory_description", b.directoryDescription, 160);
+  if (b.directoryCity !== undefined) setStr("directory_city", b.directoryCity, 80);
+  if (b.directoryState !== undefined) setStr("directory_state", b.directoryState, 40);
   if (b.footerText !== undefined) setStr("footer_text", b.footerText, 500);
   if (b.contactEmail !== undefined) setStr("contact_email", b.contactEmail, 200);
   if (b.einLine !== undefined) setStr("ein_line", b.einLine, 200);
@@ -16501,6 +16506,15 @@ app.get("/account/me", requireDonorAccount, wrap(async (req, res) => {
      JOIN orgs o ON o.id = l.org_id
      JOIN portal_settings ps ON ps.org_id = l.org_id AND ps.enabled = true
      WHERE l.account_id = ?`, [acct.id]);
+  // BUILD-47: follows the account manages (an org with any link row renders
+  // through the link, so those follows are informational here).
+  const follows = await query(
+    `SELECT f.id, f.org_id, o.org_slug, COALESCE(ps.display_name, o.name) AS name
+     FROM donor_org_follows f
+     JOIN orgs o ON o.id = f.org_id
+     JOIN portal_settings ps ON ps.org_id = f.org_id AND ps.enabled = true AND ps.network_listed = true
+     WHERE f.account_id = ? ORDER BY f.created_at DESC`, [acct.id]);
+  const linkedOrgIds = new Set(links.map(l => l.org_id));
   res.json({
     brand: CONSUMER_BRAND,
     email: acct.email,
@@ -16511,6 +16525,9 @@ app.get("/account/me", requireDonorAccount, wrap(async (req, res) => {
       id: l.id, orgSlug: l.org_slug, orgName: displayNameCase(l.display_name || l.org_name),
       viaEmail: l.via_email, unlinked: !!l.unlinked_at, listed: l.network_listed === true,
       accent: l.accent_color || null, primary: l.primary_color || null, logo: l.logo_data || null,
+    })),
+    follows: follows.map(f => ({
+      id: f.id, orgSlug: f.org_slug, orgName: displayNameCase(f.name), converted: linkedOrgIds.has(f.org_id),
     })),
   });
 }));
@@ -16557,6 +16574,33 @@ app.get("/account/dashboard", requireDonorAccount, wrap(async (req, res) => {
     for (const u of impact) impactMerged.push({ ...u, orgSlug: meta.org_slug, orgName: card.orgName, logo: card.logo });
   }
   orgCards.sort((a, b) => b.ytd - a.ytd || b.lifetime - a.lifetime);
+  // BUILD-47 followed cards — display precedence: an org with ANY link row is
+  // excluded here (an active link renders with full history above; an
+  // unlinked row means the donor hid the org, and a follow must not
+  // resurface it). A followed card carries NO history figures at all — no $0
+  // rows pretending to be history — just identity, the give path, and
+  // org-wide impact updates.
+  const followRows = await query(
+    `SELECT f.id, f.org_id, o.org_slug, COALESCE(ps.display_name, o.name) AS name,
+            ps.logo_data, ps.primary_color, ps.accent_color, ps.directory_description
+     FROM donor_org_follows f
+     JOIN orgs o ON o.id = f.org_id
+     JOIN portal_settings ps ON ps.org_id = f.org_id AND ps.enabled = true AND ps.network_listed = true
+     WHERE f.account_id = ?
+       AND NOT EXISTS (SELECT 1 FROM donor_account_links l WHERE l.account_id = f.account_id AND l.org_id = f.org_id)
+     ORDER BY f.created_at DESC`, [acct.id]);
+  const followedCards = [];
+  for (const f of followRows) {
+    followedCards.push({
+      followId: f.id, orgSlug: f.org_slug, orgName: displayNameCase(f.name),
+      primary: f.primary_color || null, accent: f.accent_color || null, logo: f.logo_data || null,
+      description: f.directory_description || null,
+    });
+    // Org-wide impact updates only — a follow has no gift attribution to
+    // match against, and must never borrow anyone else's.
+    const impact = await matchImpactUpdates(f.org_id, []);
+    for (const u of impact) impactMerged.push({ ...u, orgSlug: f.org_slug, orgName: displayNameCase(f.name), logo: f.logo_data || null });
+  }
   // Millisecond-precision newest-first: String(Date) stringifies at SECOND
   // precision, so a string sort tie-broke same-second updates arbitrarily and
   // the deterministic-order assertion caught it on CI (2026-08-12).
@@ -16566,6 +16610,7 @@ app.get("/account/dashboard", requireDonorAccount, wrap(async (req, res) => {
     brand: CONSUMER_BRAND,
     totals: { ytd: totalYtd, lifetime: totalLifetime, orgCount: orgCards.length },
     orgs: orgCards,
+    followed: followedCards,
     impact: impactMerged.slice(0, 20),
   });
 }));
@@ -16617,6 +16662,125 @@ app.get("/account/tax-summary", requireDonorAccount, wrap(async (req, res) => {
     years: rows.map(r => ({ year: r.year, orgSlug: r.org_slug, orgName: displayNameCase(r.org_name), total: parseFloat(r.total) || 0, gifts: r.gifts })),
     receipts: receipts.map(r => ({ id: r.id, orgSlug: r.org_slug, type: r.type, number: r.receipt_number, amount: parseFloat(r.amount) || 0, taxYear: r.tax_year, date: r.created_at })),
   });
+}));
+
+// ═══ BUILD-47 — find your nonprofits: directory + follows ══════════════════
+// The directory reveals ONE fact: that a LISTED org is on the network — which
+// listing opted into. Never anything about any donor, and never an unlisted,
+// pending, or delisted org (all three fail the enabled+network_listed
+// predicate by construction: pending applications ship disabled+unlisted,
+// the delist sweep clears network_listed).
+//
+// Adding an org must never, by itself, reveal or imply giving history. The
+// add flow runs ONE code path for every outcome and returns ONE response
+// shape; what the donor sees comes from the dashboard refetch, which renders
+// only what the verified-email link machinery entitles them to.
+
+const directorySearchLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, max: 120, standardHeaders: true, legacyHeaders: false,
+  handler: rateLimitHandler, skip: portalLimiterSkip,
+  keyGenerator: (req) => "dir:" + ((rateLimitDisabled() && req.headers["x-test-limit-bucket"])
+    ? String(req.headers["x-test-limit-bucket"]) : (req.donorAccount?.id || portalLimiterIpKey(req))),
+});
+const addOrgLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, max: 30, standardHeaders: true, legacyHeaders: false,
+  handler: rateLimitHandler, skip: portalLimiterSkip,
+  keyGenerator: (req) => "diradd:" + ((rateLimitDisabled() && req.headers["x-test-limit-bucket"])
+    ? String(req.headers["x-test-limit-bucket"]) : (req.donorAccount?.id || portalLimiterIpKey(req))),
+});
+
+app.get("/network/directory", requireDonorAccount, directorySearchLimiter, wrap(async (req, res) => {
+  const qRaw = String(req.query.q || "").trim().slice(0, 120);
+  const page = Math.min(200, Math.max(0, parseInt(req.query.page, 10) || 0));
+  const pageSize = 20;
+  if (qRaw.length < 2) return res.json({ results: [], total: 0, page: 0, pageSize });
+  const like = "%" + qRaw.toLowerCase().replace(/[\\%_]/g, "\\$&") + "%";
+  const einQ = qRaw.replace(/\D/g, "");
+  // EIN search is exact-9-digit only — no prefix probing of the registry.
+  const einClause = einQ.length === 9 ? "OR REGEXP_REPLACE(COALESCE(o.ein,''),'\\D','','g') = ?" : "";
+  const params = [like, like, like];
+  if (einClause) params.push(einQ);
+  const rows = await query(
+    `SELECT o.org_slug, o.id AS org_id,
+            COALESCE(ps.display_name, o.name) AS name,
+            ps.directory_description, ps.directory_city, ps.directory_state,
+            ps.logo_data, ps.primary_color, ps.accent_color,
+            COUNT(*) OVER() AS total
+     FROM portal_settings ps
+     JOIN orgs o ON o.id = ps.org_id
+     WHERE ps.enabled = true AND ps.network_listed = true
+       AND (LOWER(COALESCE(ps.display_name, o.name)) LIKE ? ESCAPE '\\'
+            OR LOWER(COALESCE(ps.directory_city,'')) LIKE ? ESCAPE '\\'
+            OR LOWER(COALESCE(ps.directory_state,'')) LIKE ? ESCAPE '\\'
+            ${einClause})
+     ORDER BY COALESCE(ps.display_name, o.name), o.org_slug
+     LIMIT ${pageSize} OFFSET ${page * pageSize}`, params);
+  // Annotate with the CALLER'S OWN state only (their links/follows) so the
+  // client can label "In your dashboard" / "Following" — donor's data, no
+  // one else's.
+  const orgIds = rows.map(r => r.org_id);
+  const mine = orgIds.length ? await query(
+    `SELECT org_id, 'link' AS kind FROM donor_account_links WHERE account_id = ? AND org_id = ANY(?) AND unlinked_at IS NULL
+     UNION SELECT org_id, 'follow' AS kind FROM donor_org_follows WHERE account_id = ? AND org_id = ANY(?)`,
+    [req.donorAccount.id, orgIds, req.donorAccount.id, orgIds]) : [];
+  const linked = new Set(mine.filter(m => m.kind === "link").map(m => m.org_id));
+  const followed = new Set(mine.filter(m => m.kind === "follow").map(m => m.org_id));
+  res.json({
+    total: rows.length ? parseInt(rows[0].total, 10) : 0, page, pageSize,
+    results: rows.map(r => ({
+      orgSlug: r.org_slug,
+      name: displayNameCase(r.name),
+      city: r.directory_city || null, state: r.directory_state || null,
+      description: r.directory_description || null,
+      logo: r.logo_data || null, primary: r.primary_color || null, accent: r.accent_color || null,
+      linked: linked.has(r.org_id), followed: followed.has(r.org_id) && !linked.has(r.org_id),
+    })),
+  });
+}));
+
+// The add flow — exactly three outcomes, decided server-side, ONE code path:
+//   1. a verified email matches a donor record there → the existing link job
+//      creates the link; the dashboard shows full history.
+//   2. no match → the follow row is what remains; the dashboard shows a
+//      followed card with zero history.
+//   3. (later) any verified email match — alias verify runs the same link
+//      job — converts the follow to a link automatically via display
+//      precedence.
+// Every branch does the same work and returns the same body — no timing or
+// shape oracle for "we found a record under another email".
+app.post("/account/orgs/add", requireDonorAccount, addOrgLimiter, wrap(async (req, res) => {
+  const acct = req.donorAccount;
+  const slug = String(req.body?.orgSlug || "").slice(0, 120);
+  const [org] = await query(
+    `SELECT o.id, o.org_slug FROM orgs o
+     JOIN portal_settings ps ON ps.org_id = o.id AND ps.enabled = true AND ps.network_listed = true
+     WHERE o.org_slug = ?`, [slug]);
+  if (!org) return res.status(404).json({ error: "not_found" });
+  await run(
+    `INSERT INTO donor_org_follows (id,account_id,org_id) VALUES (?,?,?)
+     ON CONFLICT (account_id, org_id) DO NOTHING`,
+    ["dof_" + uuid().slice(0, 10), acct.id, org.id]);
+  // An explicit re-add of an org the donor previously hid is donor-initiated
+  // — the one sanctioned relink outside the /links/:id/relink route.
+  const relinked = await query(
+    `UPDATE donor_account_links SET unlinked_at = NULL
+     WHERE account_id = ? AND org_id = ? AND unlinked_at IS NOT NULL RETURNING id`, [acct.id, org.id]);
+  // The existing idempotent link job — the same lazy pass every dashboard
+  // read runs; a verified-email match links, no match is a strict no-op.
+  await linkDonorAccount(acct.id);
+  await donorAudit(acct.id, acct.email, "org_added", req, { orgId: org.id, relinked: relinked.length > 0 });
+  res.json({ ok: true });
+}));
+
+// Unfollow — remove the card. Audit-rowed, zero org-side effect (the row is
+// dashboard-side state; no org table is touched).
+app.delete("/account/follows/:id", requireDonorAccount, wrap(async (req, res) => {
+  const r = await query(
+    `DELETE FROM donor_org_follows WHERE id = ? AND account_id = ? RETURNING org_id`,
+    [req.params.id, req.donorAccount.id]);
+  if (!r.length) return res.status(404).json({ error: "not_found" });
+  await donorAudit(req.donorAccount.id, req.donorAccount.email, "unfollowed", req, { orgId: r[0].org_id });
+  res.json({ ok: true });
 }));
 
 // ═══ §3 — nonprofit self-serve signup, GATED ═══════════════════════════════
