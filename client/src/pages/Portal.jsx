@@ -14,6 +14,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { useParams, useLocation, useNavigate } from "react-router-dom";
 import { fmtFull } from "../lib/money";
+import { resolvePairing, resolveCardStyle } from "../lib/portalTheme";
 
 // Same-origin in production via the vercel.json /portal-api proxy (the cookie
 // must be first-party); direct in dev (localhost ports are same-site).
@@ -36,17 +37,38 @@ async function pfetch(path, opts = {}) {
   return { status: r.status, body };
 }
 
+// BUILD-48 theme depth: page background, fonts, card chrome, and button/link
+// color all resolve through CSS variables set from the org's validated theme
+// (varsFor below) — the fallbacks here match the designed defaults.
 const S = {
-  page: { minHeight: "100vh", background: "#faf9f6", color: "#1c1c1a", fontFamily: "'DM Sans',system-ui,sans-serif" },
+  page: { minHeight: "100vh", background: "var(--pt-bg, #faf9f6)", color: "#1c1c1a", fontFamily: "var(--pt-sans, 'DM Sans',system-ui,sans-serif)" },
   wrap: { maxWidth: 720, margin: "0 auto", padding: "0 20px 64px" },
-  card: { background: "#fff", border: "1px solid #e7e4dc", borderRadius: 14, padding: "20px 22px", marginBottom: 18 },
-  h2: { fontFamily: "'DM Serif Display',Georgia,serif", fontWeight: 400, fontSize: 22, margin: "0 0 12px" },
+  card: { background: "#fff", border: "var(--pt-card-border, 1px solid #e7e4dc)", borderRadius: "var(--pt-card-radius, 14px)", boxShadow: "var(--pt-card-shadow, none)", padding: "20px 22px", marginBottom: 18 },
+  h2: { fontFamily: "var(--pt-serif, 'DM Serif Display',Georgia,serif)", fontWeight: 400, fontSize: 22, margin: "0 0 12px" },
   label: { fontSize: 12, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "#6b6b64", marginBottom: 6 },
   input: { width: "100%", boxSizing: "border-box", padding: "12px 14px", fontSize: 15, border: "1px solid #d8d4c9", borderRadius: 10, outline: "none", fontFamily: "inherit" },
-  btn: { background: "var(--pt-primary)", color: "var(--pt-primary-fg)", border: "none", borderRadius: 10, padding: "12px 22px", fontSize: 15, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" },
+  btn: { background: "var(--pt-button, var(--pt-primary))", color: "var(--pt-button-fg, var(--pt-primary-fg))", border: "none", borderRadius: 10, padding: "12px 22px", fontSize: 15, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" },
   btnQuiet: { background: "transparent", color: "#1c1c1a", border: "1px solid #d8d4c9", borderRadius: 10, padding: "10px 18px", fontSize: 14, cursor: "pointer", fontFamily: "inherit" },
   muted: { fontSize: 13, color: "#6b6b64", lineHeight: 1.6 },
 };
+
+// The org's validated theme → CSS variables. One implementation for the live
+// page and the from-dashboard handoff shell (no neutral flash on drill-down).
+function varsFor(theme) {
+  const pairing = resolvePairing(theme.typePairing);
+  const cs = resolveCardStyle(theme.cardStyle);
+  return {
+    "--pt-primary": theme.primary, "--pt-primary-fg": theme.primaryFg,
+    "--pt-accent": theme.accent, "--pt-accent-fg": theme.accentFg,
+    "--pt-button": theme.buttonColor || theme.primary,
+    "--pt-button-fg": theme.buttonFg || theme.primaryFg,
+    "--pt-bg": theme.backgroundTint || "#faf9f6",
+    "--pt-serif": pairing.serif, "--pt-sans": pairing.sans,
+    "--pt-card-radius": cs.radius + "px",
+    "--pt-card-border": cs.borderWidth ? `${cs.borderWidth}px solid #e7e4dc` : "none",
+    "--pt-card-shadow": cs.shadow,
+  };
+}
 
 function PortalHeader({ theme }) {
   return (
@@ -58,7 +80,7 @@ function PortalHeader({ theme }) {
       )}
       <div style={{ display: "flex", alignItems: "center", gap: 14, paddingTop: theme.headerImage ? 0 : 28 }}>
         {theme.logo && <img src={theme.logo} alt="" style={{ height: 44, maxWidth: 140, objectFit: "contain" }} />}
-        <div style={{ fontFamily: "'DM Serif Display',Georgia,serif", fontSize: 24 }}>{theme.displayName}</div>
+        <div style={{ fontFamily: "var(--pt-serif, 'DM Serif Display',Georgia,serif)", fontSize: 24 }}>{theme.displayName}</div>
       </div>
       <div style={{ height: 3, background: "var(--pt-accent)", borderRadius: 2, marginTop: 12, width: 64 }} />
     </header>
@@ -70,7 +92,7 @@ function PortalFooter({ theme }) {
     <footer style={{ ...S.muted, marginTop: 40, borderTop: "1px solid #e7e4dc", paddingTop: 18 }}>
       {theme.footerText && <div style={{ marginBottom: 6 }}>{theme.footerText}</div>}
       {theme.einLine && <div style={{ marginBottom: 6 }}>{theme.einLine}</div>}
-      {theme.contactEmail && <div style={{ marginBottom: 6 }}>Questions? <a href={`mailto:${theme.contactEmail}`} style={{ color: "var(--pt-primary)" }}>{theme.contactEmail}</a></div>}
+      {theme.contactEmail && <div style={{ marginBottom: 6 }}>Questions? <a href={`mailto:${theme.contactEmail}`} style={{ color: "var(--pt-button, var(--pt-primary))" }}>{theme.contactEmail}</a></div>}
       {theme.poweredBy && <div style={{ marginTop: 10, fontSize: 12 }}>Powered by Steward</div>}
     </footer>
   );
@@ -297,8 +319,8 @@ function Dashboard({ slug, me, reload }) {
       {me.account && !(me.account.exists && me.account.hasPassword) && (
         <div style={{ fontSize: 13, color: "#555", margin: "0 0 10px" }}>
           {me.account.exists
-            ? <>Add a password to your giving account for one-step sign-in — use "Reset password" at <a href="/giving" style={{ color: "var(--pt-primary)" }}>your giving dashboard</a>.</>
-            : <>See all your giving in one place — <a href={`/giving#signup&email=${encodeURIComponent(me.account.email || "")}`} style={{ color: "var(--pt-primary)" }}>create a free account</a>. This page keeps working exactly as it does now.</>}
+            ? <>Add a password to your giving account for one-step sign-in — use "Reset password" at <a href="/giving" style={{ color: "var(--pt-button, var(--pt-primary))" }}>your giving dashboard</a>.</>
+            : <>See all your giving in one place — <a href={`/giving#signup&email=${encodeURIComponent(me.account.email || "")}&from=${encodeURIComponent(slug)}`} style={{ color: "var(--pt-button, var(--pt-primary))" }}>create a free account</a>. This page keeps working exactly as it does now.</>}
         </div>
       )}
 
@@ -346,7 +368,7 @@ function Dashboard({ slug, me, reload }) {
           {me.receipts.map(r => (
             <div key={r.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 14, padding: "8px 0", borderBottom: "1px solid #f0ede6" }}>
               <span>{r.type === "year_end" ? `${r.taxYear} year-end statement` : `Receipt #${r.number}`} · {fmtFull(r.amount)}</span>
-              <a href={`${PORTAL_BASE}/${slug}/receipts/${r.id}/pdf`} style={{ color: "var(--pt-primary)", fontWeight: 600, fontSize: 13 }}>Download PDF</a>
+              <a href={`${PORTAL_BASE}/${slug}/receipts/${r.id}/pdf`} style={{ color: "var(--pt-button, var(--pt-primary))", fontWeight: 600, fontSize: 13 }}>Download PDF</a>
             </div>
           ))}
         </div>
@@ -387,7 +409,13 @@ export default function Portal() {
   const { orgSlug } = useParams();
   const location = useLocation();
   const isVerify = location.pathname.endsWith("/verify");
-  const [theme, setTheme] = useState(null);
+  // BUILD-48 seamless drill-down: the dashboard stashes the org's theme in
+  // sessionStorage when opening this portal, so the first paint is already
+  // the org's — no neutral flash. The /config fetch replaces + re-stashes it
+  // (the stash is presentation-only and never trusted for anything else).
+  const [theme, setTheme] = useState(() => {
+    try { return JSON.parse(sessionStorage.getItem("pt_theme_" + orgSlug) || "null"); } catch { return null; }
+  });
   const [notFound, setNotFound] = useState(false);
   const [me, setMe] = useState(null);
   const [checked, setChecked] = useState(false);
@@ -403,6 +431,7 @@ export default function Portal() {
       const r = await pfetch(`/${orgSlug}/config`);
       if (r.status !== 200) { setNotFound(true); setChecked(true); return; }
       setTheme(r.body.theme);
+      try { sessionStorage.setItem("pt_theme_" + orgSlug, JSON.stringify(r.body.theme)); } catch { /* full/blocked storage is fine */ }
       if (!isVerify) await loadMe(); else setChecked(true);
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -413,9 +442,17 @@ export default function Portal() {
       <p style={{ fontSize: 16 }}>This page isn't available.</p>
     </div></div>
   );
-  if (!theme || !checked) return <div style={S.page}><div style={{ ...S.wrap, paddingTop: 80 }}><p style={S.muted}>Loading…</p></div></div>;
+  if (!theme || !checked) {
+    if (theme) return ( // themed shell while the session check runs — the org's page from the first paint
+      <div style={{ ...S.page, ...varsFor(theme) }}><div style={S.wrap}>
+        <PortalHeader theme={theme} />
+        <p style={S.muted}>Loading…</p>
+      </div></div>
+    );
+    return <div style={S.page}><div style={{ ...S.wrap, paddingTop: 80 }}><p style={S.muted}>Loading…</p></div></div>;
+  }
 
-  const vars = { "--pt-primary": theme.primary, "--pt-primary-fg": theme.primaryFg, "--pt-accent": theme.accent, "--pt-accent-fg": theme.accentFg };
+  const vars = varsFor(theme);
   return (
     <div style={{ ...S.page, ...vars }}>
       <div style={S.wrap}>

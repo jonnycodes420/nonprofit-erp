@@ -1784,6 +1784,15 @@ async function initSchema() {
   await pool.query(`ALTER TABLE portal_settings ADD COLUMN IF NOT EXISTS directory_city TEXT`);
   await pool.query(`ALTER TABLE portal_settings ADD COLUMN IF NOT EXISTS directory_state TEXT`);
 
+  // ── BUILD-48 — theme depth (adaptive org takeover) ───────────────────────
+  // All optional with designed fallbacks; every value is validated at the
+  // write route (colors through the contrast guards, pairing/card style as
+  // ENUMS — never free CSS, never font uploads or external font URLs).
+  await pool.query(`ALTER TABLE portal_settings ADD COLUMN IF NOT EXISTS background_tint TEXT`);
+  await pool.query(`ALTER TABLE portal_settings ADD COLUMN IF NOT EXISTS button_color TEXT`);
+  await pool.query(`ALTER TABLE portal_settings ADD COLUMN IF NOT EXISTS type_pairing TEXT`);
+  await pool.query(`ALTER TABLE portal_settings ADD COLUMN IF NOT EXISTS card_style TEXT`);
+
   // A follow is DASHBOARD-SIDE state only: a donor added a listed org whose
   // records don't (yet) match a verified email. Zero giving history rides it,
   // and it is INVISIBLE to the org — same WALL rule as donor_account* tables:

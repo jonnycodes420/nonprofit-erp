@@ -70,4 +70,33 @@ function normalizeAccent(input) {
   return { accent, fg, adjusted: adjusted || accent !== original };
 }
 
-module.exports = { CREAM, WHITE, INK, hexToRgb, rgbToHex, contrast, accentPasses, normalizeAccent };
+// ── BUILD-48 — background TINT normalization ────────────────────────────────
+// A theme background is the opposite problem from an accent: text sits ON it,
+// so it must stay LIGHT. The weakest text the portal/dashboard ever places on
+// the page background is the muted grey (#6b6b64); requiring AA for it (and a
+// comfortable margin for ink) keeps every text color legible. A too-dark tint
+// is LIGHTENED toward white along its own hue (blend keeps the color family),
+// mirroring normalizeAccent's deepen-and-tell pattern.
+const MUTED_TEXT = "#6b6b64";
+
+function tintPasses(hex) {
+  return contrast(MUTED_TEXT, hex) >= 4.5 && contrast(INK, hex) >= 7.0;
+}
+
+// Validate + constrain a background tint. Returns null on malformed hex
+// (caller 400s), otherwise { tint, adjusted }.
+function normalizeTint(input) {
+  let rgb = hexToRgb(input);
+  if (!rgb) return null;
+  const original = rgbToHex(rgb);
+  let adjusted = false;
+  // Lighten toward white — white passes both invariants, so this terminates.
+  for (let i = 0; i < 120 && !tintPasses(rgbToHex(rgb)); i++) {
+    rgb = rgb.map(v => v + (255 - v) * 0.07);
+    adjusted = true;
+  }
+  const tint = rgbToHex(rgb);
+  return { tint, adjusted: adjusted || tint !== original };
+}
+
+module.exports = { CREAM, WHITE, INK, MUTED_TEXT, hexToRgb, rgbToHex, contrast, accentPasses, normalizeAccent, tintPasses, normalizeTint };

@@ -53,6 +53,12 @@ const EXTRAS = [
   // row link (GlobalStyles a.attn-row-main:hover) — a warm neutral in the cream
   // family, one surface, gives the row a clickable affordance:
   "#e8e4db",
+  // BUILD-48 (GivingDashboard takeover state): the portal's muted-text grey.
+  // In the single-org TAKEOVER the /giving page is the ORG's white-label
+  // surface (the same rule that excludes Portal.jsx); this is the one neutral
+  // it borrows from the portal so quiet chrome stays AA on any validated
+  // background tint (it is also the anchor normalizeTint guards against):
+  "#6b6b64",
 ];
 for (const v of EXTRAS) ALLOWED.add(v.toLowerCase());
 

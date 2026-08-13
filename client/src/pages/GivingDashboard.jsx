@@ -17,6 +17,7 @@
 // DONOR_ACCOUNTS_ENABLED off the page renders a quiet unavailable state.
 import React, { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { resolvePairing, cardChrome } from "../lib/portalTheme";
 
 export const CONSUMER_BRAND = "Steward"; // plain Steward (go-live 2026-08-12); rename = one commit (BLOCKED-consumer-brand.md)
 
@@ -27,6 +28,11 @@ const ACCOUNT_BASE = import.meta.env.VITE_ACCOUNT_API
   || (import.meta.env.PROD ? "/account-api" : "http://localhost:5601/account");
 const NETWORK_BASE = import.meta.env.VITE_NETWORK_API
   || (import.meta.env.PROD ? "/network-api" : "http://localhost:5601/network");
+// Read-only, public portal config — used ONLY for the pre-auth "you're
+// connecting with [org]" courtesy theming (BUILD-48; cosmetic, server
+// ignores the from= slug for all logic).
+const PORTAL_CFG_BASE = import.meta.env.VITE_PORTAL_API
+  || (import.meta.env.PROD ? "/portal-api" : "http://localhost:5601/portal");
 
 async function afetch(path, { method = "GET", body } = {}) {
   const r = await fetch(ACCOUNT_BASE + path, {
@@ -72,6 +78,17 @@ const S = {
 };
 
 function fmtMoney(n) { return "$" + Math.round(n || 0).toLocaleString(); }
+
+// Group account-wide rows (recurring, tax years) by org, preserving order —
+// the multi-org tabs render neutral chrome with per-org themed GROUPS.
+function groupBySlug(rows) {
+  const out = [], idx = {};
+  for (const r of rows) {
+    if (!(r.orgSlug in idx)) { idx[r.orgSlug] = out.length; out.push({ orgSlug: r.orgSlug, orgName: r.orgName, rows: [] }); }
+    out[idx[r.orgSlug]].rows.push(r);
+  }
+  return out;
+}
 
 // One shared stylesheet for the few things inline styles can't do (hover,
 // the 390px stat-strip stack). Values stay within the token set above.
@@ -119,9 +136,25 @@ function AuthCard({ onSignedIn }) {
     const m = /email=([^&]+)/.exec(window.location.hash || "");
     try { return m ? decodeURIComponent(m[1]) : ""; } catch { return ""; }
   });
+  // BUILD-48 — an on-ramp link from an org's portal may carry from=<org-slug>.
+  // Purely a COURTESY: we fetch that org's public portal theme to show
+  // "you're connecting with [org]". Cosmetic only — the server never reads
+  // it, and the page chrome stays Steward-neutral (pre-auth can't know your
+  // orgs; this is one contextual line, not a takeover).
+  const [fromSlug] = useState(() => (/(?:^|[#&])from=([A-Za-z0-9-]{1,120})(?:&|$)/.exec(window.location.hash || "") || [])[1] || "");
+  const [fromTheme, setFromTheme] = useState(null);
   useEffect(() => {
     if (window.location.hash) window.history.replaceState(null, "", window.location.pathname);
   }, []);
+  useEffect(() => {
+    if (!fromSlug) return;
+    (async () => {
+      try {
+        const r = await fetch(`${PORTAL_CFG_BASE}/${fromSlug}/config`);
+        if (r.ok) setFromTheme((await r.json()).theme || null);
+      } catch { /* courtesy only — silently stay neutral */ }
+    })();
+  }, [fromSlug]);
   const [password, setPassword] = useState("");
   const [consent, setConsent] = useState(false);
   const [msg, setMsg] = useState("");
@@ -147,6 +180,12 @@ function AuthCard({ onSignedIn }) {
   };
   return (
     <div style={{ ...S.card, maxWidth: 440 }}>
+      {fromTheme && mode === "signup" && (
+        <div style={{ display: "flex", alignItems: "center", gap: 10, paddingBottom: 12, marginBottom: 14, borderBottom: `2px solid ${fromTheme.accent || G.brass}` }}>
+          {fromTheme.logo && <img src={fromTheme.logo} alt="" style={{ height: 30, maxWidth: 90, objectFit: "contain" }} />}
+          <span style={{ ...S.muted, fontSize: 13 }}>You're connecting with <b style={{ color: G.ink }}>{fromTheme.displayName}</b></span>
+        </div>
+      )}
       <h2 style={{ ...S.h2, marginBottom: 10 }}>{mode === "login" ? "See all your giving in one place" : mode === "signup" ? "Create your giving account" : "Reset your password"}</h2>
       <p style={S.muted}>
         {mode === "signup"
@@ -225,23 +264,50 @@ function OrgAvatar({ org, size = 46 }) {
     : <div style={{ width: size, height: size, borderRadius: 9, background: org.primary || G.emerald, color: G.white, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: SERIF, fontSize: Math.round(size * 0.46), flexShrink: 0 }}>{(org.orgName || org.name || "?")[0]}</div>;
 }
 
-// A linked org: full history figures, the org's own accent on the card edge.
+// BUILD-48 — the small per-org theme resolution every card/section uses.
+// theme comes server-validated (colors contrast-guarded, enums checked); the
+// fallbacks here are the designed neutrals.
+function orgTheme(org) {
+  const t = org.theme || {};
+  return {
+    ...t,
+    accent: t.accent || org.accent || org.primary || G.emerald,
+    serif: resolvePairing(t.typePairing).serif,
+    sans: resolvePairing(t.typePairing).sans,
+    chrome: cardChrome(t.cardStyle, G.hair),
+    button: t.buttonColor || t.primary || G.emerald,
+    buttonFg: t.buttonFg || t.primaryFg || "#ffffff",
+  };
+}
+
+// A linked org: full history figures, the org's own FULL theme on its card —
+// header-image banner, logo, accent edge, its type pairing and card style.
+// The theme stays INSIDE this card (multi-org rule: one org's brand never
+// sits above another org's data).
 function OrgCard({ org, onOpen }) {
+  const t = orgTheme(org);
   return (
     <div role="button" tabIndex={0} onClick={onOpen} className="gd-orgcard"
       onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onOpen(); } }}
-      style={{ ...S.card, cursor: "pointer", display: "flex", alignItems: "center", gap: 16, borderLeft: `4px solid ${org.accent || org.primary || G.emerald}` }}>
-      <OrgAvatar org={org} />
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontFamily: SERIF, fontSize: 18, lineHeight: 1.25 }}>{org.orgName}</div>
-        <div style={{ ...S.muted, fontSize: 13, marginTop: 2 }}>
-          {org.lastGiftDate ? `Last gift ${org.lastGiftDate}` : "No gifts yet"}
-          {org.recurringCount > 0 && ` · ${org.recurringCount} recurring`}
+      style={{ ...S.card, ...t.chrome, padding: 0, overflow: "hidden", cursor: "pointer", borderLeft: `4px solid ${t.accent}` }}>
+      {t.headerImage && (
+        <div style={{ height: 68, overflow: "hidden" }}>
+          <img src={t.headerImage} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
         </div>
-      </div>
-      <div className="gd-orgnums" style={{ textAlign: "right" }}>
-        <div style={{ fontWeight: 700, fontSize: 16 }}>{fmtMoney(org.ytd)} <span style={{ ...S.muted, fontSize: 12 }}>this year</span></div>
-        <div style={{ ...S.muted, fontSize: 13 }}>{fmtMoney(org.lifetime)} lifetime</div>
+      )}
+      <div style={{ display: "flex", alignItems: "center", gap: 16, padding: "18px 22px" }}>
+        <OrgAvatar org={org} />
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontFamily: t.serif, fontSize: 18, lineHeight: 1.25 }}>{org.orgName}</div>
+          <div style={{ ...S.muted, fontSize: 13, marginTop: 2 }}>
+            {org.lastGiftDate ? `Last gift ${org.lastGiftDate}` : "No gifts yet"}
+            {org.recurringCount > 0 && ` · ${org.recurringCount} recurring`}
+          </div>
+        </div>
+        <div className="gd-orgnums" style={{ textAlign: "right" }}>
+          <div style={{ fontWeight: 700, fontSize: 16 }}>{fmtMoney(org.ytd)} <span style={{ ...S.muted, fontSize: 12 }}>this year</span></div>
+          <div style={{ ...S.muted, fontSize: 13 }}>{fmtMoney(org.lifetime)} lifetime</div>
+        </div>
       </div>
     </div>
   );
@@ -250,25 +316,133 @@ function OrgCard({ org, onOpen }) {
 // A followed org: identity + give path + the honest connect-your-history
 // prompt. Deliberately NO history figures — a follow has none to show.
 function FollowedCard({ org, onConnect, onUnfollow }) {
+  const t = orgTheme(org);
   return (
-    <div style={{ ...S.card, borderLeft: `4px solid ${org.accent || org.primary || G.brass}` }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
-        <OrgAvatar org={org} />
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={S.eyebrow}>Following</div>
-          <div style={{ fontFamily: SERIF, fontSize: 18, lineHeight: 1.25 }}>{org.orgName}</div>
-          {org.description && <div style={{ ...S.muted, fontSize: 13, marginTop: 2 }}>{org.description}</div>}
+    <div style={{ ...S.card, ...t.chrome, padding: 0, overflow: "hidden", borderLeft: `4px solid ${t.accent}` }}>
+      {t.headerImage && (
+        <div style={{ height: 68, overflow: "hidden" }}>
+          <img src={t.headerImage} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
         </div>
-        <a href={`/give/${org.orgSlug}`} target="_blank" rel="noreferrer" style={{ ...S.btnSm, textDecoration: "none", flexShrink: 0 }}>Give</a>
+      )}
+      <div style={{ padding: "18px 22px 14px" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+          <OrgAvatar org={org} />
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={S.eyebrow}>Following</div>
+            <div style={{ fontFamily: t.serif, fontSize: 18, lineHeight: 1.25 }}>{org.orgName}</div>
+            {org.description && <div style={{ ...S.muted, fontSize: 13, marginTop: 2 }}>{org.description}</div>}
+          </div>
+          <a href={`/give/${org.orgSlug}`} target="_blank" rel="noreferrer"
+            style={{ ...S.btnSm, background: t.button, color: t.buttonFg, textDecoration: "none", flexShrink: 0 }}>Give</a>
+        </div>
+        <div style={{ borderTop: `1px solid ${G.hair}`, marginTop: 14, paddingTop: 12, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
+          <span style={{ ...S.muted, fontSize: 13 }}>
+            If you've given to {org.orgName} before, add the email you used and we'll connect your history.
+          </span>
+          <span style={{ display: "flex", gap: 4, flexShrink: 0 }}>
+            <button style={{ ...S.ghost, color: G.emerald }} onClick={onConnect}>Connect your history</button>
+            <button style={S.ghost} onClick={onUnfollow}>Unfollow</button>
+          </span>
+        </div>
       </div>
-      <div style={{ borderTop: `1px solid ${G.hair}`, marginTop: 14, paddingTop: 12, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
-        <span style={{ ...S.muted, fontSize: 13 }}>
-          If you've given to {org.orgName} before, add the email you used and we'll connect your history.
+    </div>
+  );
+}
+
+// ── BUILD-48 — the single-org TAKEOVER ──────────────────────────────────────
+// Exactly one org (linked or followed): the org's theme owns the page.
+// Steward reduces to ONE quiet "your giving account" line + the trust
+// sentence; header image, logo, colors, fonts, card style, and footer
+// identity are all the org's. It should feel like the org's portal that
+// happens to have account nav.
+
+function TakeoverHeader({ org, onSignOut }) {
+  const t = orgTheme(org);
+  return (
+    <div>
+      {/* The ONE quiet Steward line — the only Steward brand in this state. */}
+      <div style={{ maxWidth: 840, margin: "0 auto", padding: "10px 20px 0", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <span data-testid="steward-quiet-line" style={{ fontSize: 12, color: "#6b6b64", fontFamily: SANS }}>
+          <span style={{ fontFamily: SERIF, fontSize: 13 }}>Steward</span> · your giving account
         </span>
-        <span style={{ display: "flex", gap: 4, flexShrink: 0 }}>
-          <button style={{ ...S.ghost, color: G.emerald }} onClick={onConnect}>Connect your history</button>
-          <button style={S.ghost} onClick={onUnfollow}>Unfollow</button>
-        </span>
+        {onSignOut && (
+          <button onClick={onSignOut}
+            style={{ background: "transparent", color: "#6b6b64", border: `1px solid ${G.hair}`, borderRadius: 8, padding: "5px 12px", fontSize: 12, fontWeight: 600, cursor: "pointer", fontFamily: SANS }}>
+            Sign out
+          </button>
+        )}
+      </div>
+      {/* The org's hero — header image, logo, name in ITS type pairing. */}
+      <div style={{ maxWidth: 840, margin: "0 auto", padding: "0 20px" }}>
+        {t.headerImage && (
+          <div style={{ height: 180, borderRadius: 12, overflow: "hidden", marginTop: 12 }}>
+            <img src={t.headerImage} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+          </div>
+        )}
+        <div style={{ display: "flex", alignItems: "center", gap: 14, marginTop: t.headerImage ? 16 : 26 }}>
+          {t.logo && <img src={t.logo} alt="" style={{ height: 48, maxWidth: 150, objectFit: "contain" }} />}
+          <div style={{ fontFamily: t.serif, fontSize: 30, lineHeight: 1.15 }}>{t.displayName || org.orgName}</div>
+        </div>
+        <div style={{ height: 3, background: t.accent, borderRadius: 2, marginTop: 12, width: 72 }} />
+      </div>
+    </div>
+  );
+}
+
+// The takeover Home body: the org's summary in the org's colors, its impact
+// updates, and the quiet path to adding more organizations (which flips the
+// page back to the neutral shell the moment a second org exists).
+function TakeoverHome({ org, linked, impact, onOpen, onConnect, onUnfollow, loadDash }) {
+  const t = orgTheme(org);
+  const [showDir, setShowDir] = useState(false);
+  return (
+    <div style={{ fontFamily: t.sans }}>
+      {linked ? (<>
+        <div className="gd-stats" style={{ background: t.primary || G.emerald, borderRadius: 14, padding: "26px 30px", margin: "14px 0", display: "flex", alignItems: "flex-end", gap: 44 }}>
+          <div>
+            <div style={{ ...S.eyebrow, color: t.primaryFg || "#fff", opacity: 0.8 }}>This year</div>
+            <div style={{ fontFamily: t.serif, fontSize: 42, color: t.primaryFg || "#fff", lineHeight: 1.1, marginTop: 4 }}>{fmtMoney(org.ytd)}</div>
+          </div>
+          <div className="gd-statdiv" style={{ width: 1, alignSelf: "stretch", background: t.primaryFg || "#fff", opacity: 0.25 }} />
+          <div>
+            <div style={{ ...S.eyebrow, color: t.primaryFg || "#fff", opacity: 0.8 }}>Lifetime</div>
+            <div style={{ fontFamily: t.serif, fontSize: 26, color: t.primaryFg || "#fff", lineHeight: 1.15, marginTop: 4 }}>{fmtMoney(org.lifetime)}</div>
+          </div>
+        </div>
+        <div style={{ ...S.card, ...t.chrome, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+          <div style={{ minWidth: 0 }}>
+            <div style={{ fontFamily: t.serif, fontSize: 17 }}>Your history with {t.displayName || org.orgName}</div>
+            <div style={{ ...S.muted, fontSize: 13, marginTop: 3 }}>
+              {org.lastGiftDate ? `Last gift ${org.lastGiftDate}` : "No gifts yet"}
+              {org.recurringCount > 0 && ` · ${org.recurringCount} recurring gift${org.recurringCount === 1 ? "" : "s"}`}
+            </div>
+          </div>
+          <button onClick={onOpen}
+            style={{ background: t.button, color: t.buttonFg, border: "none", borderRadius: 8, padding: "11px 20px", fontSize: 14, fontWeight: 700, cursor: "pointer", fontFamily: t.sans, flexShrink: 0 }}>
+            Gifts, receipts &amp; recurring →
+          </button>
+        </div>
+      </>) : (
+        <FollowedCard org={org} onConnect={onConnect} onUnfollow={onUnfollow} />
+      )}
+      {impact.length > 0 && (<>
+        <h2 style={{ ...S.h2, fontFamily: t.serif, marginTop: 28, marginBottom: 4 }}>What your giving made possible</h2>
+        {impact.map(u => (
+          <div key={u.orgSlug + u.id} style={{ ...S.card, ...t.chrome, borderLeft: `3px solid ${t.accent}` }}>
+            <div style={{ fontWeight: 700, margin: "0 0 4px", fontSize: 15 }}>{u.title}</div>
+            {u.body && <p style={{ ...S.muted, margin: 0 }}>{u.body}</p>}
+          </div>
+        ))}
+      </>)}
+      <div style={{ marginTop: 26 }}>
+        <button style={{ ...S.ghost, color: G.sageDeep }} onClick={() => setShowDir(v => !v)}>
+          {showDir ? "Close" : "+ Add another organization"}
+        </button>
+        {showDir && (
+          <div style={{ ...S.card, background: "transparent", border: `1px solid ${G.hair}` }}>
+            <DirectorySearch autoFocus onChanged={loadDash} />
+          </div>
+        )}
       </div>
     </div>
   );
@@ -353,15 +527,12 @@ function DirectorySearch({ autoFocus, onChanged }) {
   );
 }
 
-function Home({ me, onOpenOrg }) {
-  const [dash, setDash] = useState(null);
+function Home({ me, dash, loadDash, takeover, onOpenOrg }) {
   const [tab, setTab] = useState("home"); // home | recurring | tax | account
   const [rec, setRec] = useState(null);
   const [tax, setTax] = useState(null);
   const [showDir, setShowDir] = useState(false);
   const [connectFor, setConnectFor] = useState(null); // org name for the alias-prefill context
-  const loadDash = async () => setDash((await afetch("/dashboard")).body);
-  useEffect(() => { loadDash(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, []);
   useEffect(() => {
     if (tab === "recurring" && !rec) (async () => setRec((await afetch("/recurring")).body))();
     if (tab === "tax" && !tax) (async () => setTax((await afetch("/tax-summary")).body))();
@@ -371,13 +542,22 @@ function Home({ me, onOpenOrg }) {
   const empty = dash.orgs.length === 0 && followed.length === 0;
   const unfollow = async (f) => { await afetch(`/follows/${f.followId}`, { method: "DELETE" }); loadDash(); };
   const connect = (f) => { setConnectFor(f.orgName); setTab("account"); };
+  // In the takeover the tab chrome carries the org's accent + fonts; in the
+  // multi-org shell it stays neutral (brass) — org theming lives on the
+  // org's own sections only.
+  const tt = takeover ? orgTheme(takeover) : null;
+  const themeBySlug = {};
+  for (const o of [...(dash.orgs || []), ...followed]) themeBySlug[o.orgSlug] = orgTheme(o);
+  const tabbtn = (on) => tt
+    ? { ...S.tabbtn(on), fontFamily: tt.sans, borderBottomColor: on ? tt.accent : "transparent", color: on ? G.ink : "#6b6b64" }
+    : S.tabbtn(on);
   return (
     <div>
       <div style={{ borderBottom: `1px solid ${G.hair}`, marginBottom: 8 }}>
-        <button style={S.tabbtn(tab === "home")} onClick={() => setTab("home")}>Home</button>
-        <button style={S.tabbtn(tab === "recurring")} onClick={() => setTab("recurring")}>Recurring</button>
-        <button style={S.tabbtn(tab === "tax")} onClick={() => setTab("tax")}>Receipts &amp; tax</button>
-        <button style={S.tabbtn(tab === "account")} onClick={() => { setConnectFor(null); setTab("account"); }}>Account</button>
+        <button style={tabbtn(tab === "home")} onClick={() => setTab("home")}>Home</button>
+        <button style={tabbtn(tab === "recurring")} onClick={() => setTab("recurring")}>Recurring</button>
+        <button style={tabbtn(tab === "tax")} onClick={() => setTab("tax")}>Receipts &amp; tax</button>
+        <button style={tabbtn(tab === "account")} onClick={() => { setConnectFor(null); setTab("account"); }}>Account</button>
       </div>
       {tab === "home" && empty && (
         // The empty state IS the directory entry — search first, the
@@ -397,7 +577,12 @@ function Home({ me, onOpenOrg }) {
           </p>
         </div>
       )}
-      {tab === "home" && !empty && (<>
+      {tab === "home" && takeover && (
+        <TakeoverHome org={takeover} linked={dash.orgs.length === 1} impact={dash.impact || []}
+          onOpen={() => onOpenOrg(takeover)} onConnect={() => connect(takeover)}
+          onUnfollow={() => unfollow(takeover)} loadDash={loadDash} />
+      )}
+      {tab === "home" && !empty && !takeover && (<>
         {/* No linked orgs yet (follows only) → no strip of $0s pretending to
             be history; the strip appears with the first connected org. */}
         {dash.orgs.length > 0 && (
@@ -427,44 +612,59 @@ function Home({ me, onOpenOrg }) {
             <DirectorySearch autoFocus onChanged={loadDash} />
           </div>
         )}
-        {dash.orgs.map(o => <OrgCard key={o.orgSlug} org={o} onOpen={() => onOpenOrg(o.orgSlug)} />)}
+        {dash.orgs.map(o => <OrgCard key={o.orgSlug} org={o} onOpen={() => onOpenOrg(o)} />)}
         {followed.map(f => <FollowedCard key={f.orgSlug} org={f} onConnect={() => connect(f)} onUnfollow={() => unfollow(f)} />)}
         {dash.impact.length > 0 && (<>
           <h2 style={{ ...S.h2, marginTop: 28, marginBottom: 4 }}>What your giving made possible</h2>
-          {dash.impact.map(u => (
-            <div key={u.orgSlug + u.id} style={S.card}>
-              <div style={S.eyebrow}>{u.orgName}</div>
-              <div style={{ fontWeight: 700, margin: "4px 0", fontSize: 15 }}>{u.title}</div>
-              {u.body && <p style={{ ...S.muted, margin: 0 }}>{u.body}</p>}
-            </div>
-          ))}
+          {dash.impact.map(u => {
+            // Per-org theming stays INSIDE the update it belongs to (accent
+            // edge + that org's card chrome) — never on the shell around it.
+            const ot = themeBySlug[u.orgSlug] || {};
+            return (
+              <div key={u.orgSlug + u.id} style={{ ...S.card, ...(ot.chrome || {}), borderLeft: `3px solid ${ot.accent || G.emerald}` }}>
+                <div style={S.eyebrow}>{u.orgName}</div>
+                <div style={{ fontWeight: 700, margin: "4px 0", fontSize: 15 }}>{u.title}</div>
+                {u.body && <p style={{ ...S.muted, margin: 0 }}>{u.body}</p>}
+              </div>
+            );
+          })}
         </>)}
       </>)}
       {tab === "recurring" && (
-        <div style={S.card}>
-          <h2 style={{ ...S.h2, marginBottom: 10 }}>Recurring giving</h2>
+        <div style={{ ...S.card, ...(tt ? tt.chrome : {}) }}>
+          <h2 style={{ ...S.h2, ...(tt ? { fontFamily: tt.serif } : {}), marginBottom: 10 }}>Recurring giving</h2>
           {!rec ? <p style={S.muted}>Loading…</p> : rec.recurring.length === 0 ? <p style={S.muted}>No recurring gifts.</p> :
-            rec.recurring.map(r => (
-              <div key={r.id} style={{ display: "flex", justifyContent: "space-between", padding: "10px 0", borderBottom: `1px solid ${G.hair}` }}>
-                <div><b>{r.orgName}</b> <span style={S.muted}>· {r.status}{r.pausedAt ? " (paused)" : ""}</span></div>
-                <div>{fmtMoney(r.amount)}/{r.interval}</div>
+            groupBySlug(rec.recurring).map(grp => (
+              <div key={grp.orgSlug} style={tt ? {} : { borderLeft: `3px solid ${(themeBySlug[grp.orgSlug] || {}).accent || G.emerald}`, paddingLeft: 12, marginBottom: 14 }}>
+                {!tt && <div style={{ ...S.eyebrow, marginTop: 6 }}>{grp.orgName}</div>}
+                {grp.rows.map(r => (
+                  <div key={r.id} style={{ display: "flex", justifyContent: "space-between", padding: "10px 0", borderBottom: `1px solid ${G.hair}` }}>
+                    <div><span style={S.muted}>{r.status}{r.pausedAt ? " (paused)" : ""}</span></div>
+                    <div>{fmtMoney(r.amount)}/{r.interval}</div>
+                  </div>
+                ))}
               </div>
             ))}
           <p style={{ ...S.muted, fontSize: 13, marginTop: 10 }}>To change an amount, pause, or cancel, open that organization from Home — changes happen on its own page.</p>
         </div>
       )}
       {tab === "tax" && (
-        <div style={S.card}>
-          <h2 style={{ ...S.h2, marginBottom: 10 }}>Receipts &amp; year-end totals</h2>
+        <div style={{ ...S.card, ...(tt ? tt.chrome : {}) }}>
+          <h2 style={{ ...S.h2, ...(tt ? { fontFamily: tt.serif } : {}), marginBottom: 10 }}>Receipts &amp; year-end totals</h2>
           {!tax ? <p style={S.muted}>Loading…</p> : (<>
             <p style={{ ...S.muted, fontSize: 13 }}>{tax.note}</p>
-            {tax.years.map(y => (
-              <div key={y.year + y.orgSlug} style={{ display: "flex", justifyContent: "space-between", padding: "8px 0", borderBottom: `1px solid ${G.hair}` }}>
-                <div><b>{y.year}</b> <span style={S.muted}>· {y.orgName}</span></div>
-                <div>{fmtMoney(y.total)} <span style={S.muted}>({y.gifts} gift{y.gifts === 1 ? "" : "s"})</span></div>
+            {groupBySlug(tax.years).map(grp => (
+              <div key={grp.orgSlug} style={tt ? {} : { borderLeft: `3px solid ${(themeBySlug[grp.orgSlug] || {}).accent || G.emerald}`, paddingLeft: 12, marginBottom: 14 }}>
+                {!tt && <div style={{ ...S.eyebrow, marginTop: 6 }}>{grp.orgName}</div>}
+                {grp.rows.map(y => (
+                  <div key={y.year + y.orgSlug} style={{ display: "flex", justifyContent: "space-between", padding: "8px 0", borderBottom: `1px solid ${G.hair}` }}>
+                    <div><b>{y.year}</b>{tt ? null : <span style={S.muted}> · {y.orgName}</span>}</div>
+                    <div>{fmtMoney(y.total)} <span style={S.muted}>({y.gifts} gift{y.gifts === 1 ? "" : "s"})</span></div>
+                  </div>
+                ))}
               </div>
             ))}
-            <h2 style={{ ...S.h2, fontSize: 17, marginTop: 18 }}>Receipts</h2>
+            <h2 style={{ ...S.h2, ...(tt ? { fontFamily: tt.serif } : {}), fontSize: 17, marginTop: 18 }}>Receipts</h2>
             {tax.receipts.map(r => (
               <div key={r.id} style={{ display: "flex", justifyContent: "space-between", padding: "6px 0" }}>
                 <div style={S.muted}>#{r.number} · {String(r.date).slice(0, 10)}</div>
@@ -474,12 +674,12 @@ function Home({ me, onOpenOrg }) {
           </>)}
         </div>
       )}
-      {tab === "account" && <AccountPanel me={me} connectFor={connectFor} />}
+      {tab === "account" && <AccountPanel me={me} connectFor={connectFor} onOrgsChanged={loadDash} />}
     </div>
   );
 }
 
-function AccountPanel({ me, connectFor }) {
+function AccountPanel({ me, connectFor, onOrgsChanged }) {
   const [aliasEmail, setAliasEmail] = useState("");
   const [msg, setMsg] = useState("");
   const [info, setInfo] = useState(me);
@@ -515,6 +715,9 @@ function AccountPanel({ me, connectFor }) {
           <button style={S.quiet} onClick={async () => {
             await afetch(`/links/${l.id}/${l.unlinked ? "relink" : "unlink"}`, { method: "POST" });
             reload();
+            // Hiding/showing an org changes the org COUNT — the takeover rule
+            // must flip immediately (BUILD-48), so refresh the dashboard too.
+            if (onOrgsChanged) onOrgsChanged();
           }}>{l.unlinked ? "Show again" : "Hide"}</button>
         </div>
       ))}
@@ -532,10 +735,17 @@ export default function GivingDashboard({ landing }) {
   const [flags, setFlags] = useState(null);
   const [me, setMe] = useState(null);
   const [checked, setChecked] = useState(false);
+  // BUILD-48 — dash lives HERE (not in Home) so the takeover rule can own the
+  // whole page: header, background, fonts, footer identity. loadDash replaces
+  // state only when the fresh payload lands, so an add/remove re-renders the
+  // new state directly — no neutral flash between states.
+  const [dash, setDash] = useState(null);
+  const loadDash = async () => setDash((await afetch("/dashboard")).body);
   const loadMe = async () => {
     const r = await afetch("/me");
     setMe(r.status === 200 ? r.body : null);
     setChecked(true);
+    if (r.status === 200) await loadDash(); else setDash(null);
   };
   useEffect(() => {
     (async () => {
@@ -553,27 +763,64 @@ export default function GivingDashboard({ landing }) {
       <div style={S.card}><p style={S.muted}>This page isn't available.</p></div>
     </div></div>;
   }
-  const signOut = async () => { await afetch("/logout", { method: "POST" }); setMe(null); };
+  const signOut = async () => { await afetch("/logout", { method: "POST" }); setMe(null); setDash(null); };
   // Await the session refetch BEFORE navigating away from the token landing —
   // the component doesn't remount across the landing→home route change, so an
   // un-awaited loadMe let the dashboard render its signed-out AuthCard after a
   // successful verify/reset (found in the go-live prod drive, 2026-08-12; same
   // class as the Portal.jsx onVerified fix).
   const done = async () => { await loadMe(); navigate("/giving", { replace: true }); };
+  // ── the takeover rule (BUILD-48) ──────────────────────────────────────────
+  // 0 orgs → neutral shell · exactly 1 (linked or followed) → that org's FULL
+  // takeover · 2+ → neutral shell with per-org theming scoped to each org's
+  // own sections. Pre-auth and token landings are ALWAYS neutral (a sign-in
+  // page can't know your orgs).
+  const followed = (dash && dash.followed) || [];
+  const takeover = !landing && me && dash && (dash.orgs.length + followed.length === 1)
+    ? (dash.orgs[0] || followed[0]) : null;
+  const tt = takeover ? orgTheme(takeover) : null;
+  const pageStyle = tt
+    ? { ...S.page, background: tt.backgroundTint || "#faf9f6", fontFamily: tt.sans }
+    : S.page;
+  // Drill-down handoff: stash the org's theme so the portal's first paint is
+  // already the org's (Portal.jsx reads pt_theme_<slug>) — no neutral flash.
+  const openOrg = (org) => {
+    try {
+      sessionStorage.setItem("pt_theme_" + org.orgSlug, JSON.stringify({
+        orgSlug: org.orgSlug,
+        displayName: (org.theme && org.theme.displayName) || org.orgName,
+        logo: (org.theme && org.theme.logo) || org.logo || null,
+        ...(org.theme || {}),
+      }));
+    } catch { /* storage full/blocked — the config fetch still themes it */ }
+    navigate(`/giving/orgs/${org.orgSlug}`);
+  };
   return (
-    <div style={S.page}>
+    <div style={pageStyle}>
       <GivingStyles />
-      <Header onSignOut={me ? signOut : null} />
+      {tt
+        ? <TakeoverHeader org={takeover} onSignOut={me ? signOut : null} />
+        : <Header onSignOut={me ? signOut : null} />}
       <div style={S.wrap}>
         <div style={{ paddingTop: 16 }}>
           {landing
             ? <TokenLanding kind={landing} onDone={done} />
             : me
-              ? <Home me={me} onOpenOrg={slug => navigate(`/giving/orgs/${slug}`)} />
+              ? <Home me={me} dash={dash} loadDash={loadDash} takeover={takeover} onOpenOrg={openOrg} />
               : <AuthCard onSignedIn={loadMe} />}
         </div>
         <div style={{ borderTop: `1px solid ${G.hair}`, marginTop: 34, paddingTop: 16, textAlign: "center" }}>
-          <p style={{ ...S.muted, fontSize: 12, margin: 0 }}>
+          {/* In a takeover the footer carries the ORG's identity (its portal
+              footer text / EIN / contact) above the trust line — the page is
+              theirs; Steward stays one quiet line. */}
+          {tt && (tt.footerText || tt.einLine || tt.contactEmail) && (
+            <div style={{ marginBottom: 10 }}>
+              {tt.footerText && <p style={{ ...S.muted, fontSize: 12, margin: "0 0 4px" }}>{tt.footerText}</p>}
+              {tt.einLine && <p style={{ ...S.muted, fontSize: 12, margin: "0 0 4px" }}>{tt.einLine}</p>}
+              {tt.contactEmail && <p style={{ ...S.muted, fontSize: 12, margin: 0 }}>Questions? <a href={`mailto:${tt.contactEmail}`} style={{ color: tt.button, fontWeight: 600 }}>{tt.contactEmail}</a></p>}
+            </div>
+          )}
+          <p style={{ ...S.muted, fontSize: 12, margin: 0, ...(tt ? { color: "#6b6b64", fontFamily: tt.sans } : {}) }}>
             Each nonprofit sees only its own relationship with you. We never share
             your giving at one organization with another.
           </p>

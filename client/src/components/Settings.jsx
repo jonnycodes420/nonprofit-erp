@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { T, Pill, SectionLabel, PageTitle, SectionTabs, fmt } from "./shared";
 import { QrCodeBlock, EmbedCodeBlock } from "./ShareBlocks";
+import { TYPE_PAIRINGS, CARD_STYLES, resolvePairing, cardChrome, THEME_DEFAULTS } from "../lib/portalTheme";
 import { apiFetch, API, getToken, billingErrorMessage } from "../api";
 import UpgradeModal from "./UpgradeModal";
 
@@ -678,6 +679,82 @@ function TaxReceiptsManager({orgId,isAdmin,isReadOnly}){
 // settingsIntent → initialSection prop), e.g. Communications' CAN-SPAM
 // prompt lands directly on "receipts".
 
+// ── BUILD-48 — live theme preview (Settings › Donor Portal) ─────────────────
+// Renders the two surfaces the theme owns, straight from the UNSAVED editor
+// state: the single-org TAKEOVER of a donor's dashboard, and the org's card
+// in a multi-org dashboard. Colors here are the raw picks — the server may
+// deepen/lighten them slightly on save (the admin is told when it does).
+function PortalThemePreview({ps}){
+  const pairing=resolvePairing(ps.type_pairing);
+  const chrome=cardChrome(ps.card_style,T.bg3);
+  const primary=ps.primary_color||THEME_DEFAULTS.primary;
+  const accent=ps.accent_color||THEME_DEFAULTS.accent;
+  const button=ps.button_color||primary;
+  const tint=ps.background_tint||"#faf9f6";
+  const name=ps.display_name||"Your Organization";
+  const muted={fontSize:10,color:"#6b6b64"};
+  return(
+    <div style={{border:"1px solid "+T.bg3,borderRadius:12,padding:"16px 18px",marginBottom:16,background:T.bg}}>
+      <div style={{fontSize:12,fontWeight:700,color:T.ink,marginBottom:2}}>Live preview</div>
+      <div style={{fontSize:12,color:T.ink3,lineHeight:1.5,marginBottom:12,maxWidth:620}}>
+        Left: when yours is the only organization a donor follows, your theme owns their whole giving
+        page. Right: your card when they support several — your theme stays on your card. Colors may be
+        adjusted slightly on save so text stays readable.
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(270px,1fr))",gap:14}}>
+        <div style={{background:tint,border:"1px solid "+T.bg3,borderRadius:10,paddingBottom:14,overflow:"hidden"}}>
+          <div style={{padding:"8px 14px 0",...muted}}>Steward · your giving account</div>
+          {ps.header_image_data&&(
+            <div style={{height:54,overflow:"hidden",margin:"8px 14px 0",borderRadius:8}}>
+              <img src={ps.header_image_data} alt="" style={{width:"100%",height:"100%",objectFit:"cover",display:"block"}}/>
+            </div>
+          )}
+          <div style={{display:"flex",alignItems:"center",gap:8,padding:"10px 14px 0"}}>
+            {ps.logo_data&&<img src={ps.logo_data} alt="" style={{height:22,maxWidth:70,objectFit:"contain"}}/>}
+            <span style={{fontFamily:pairing.serif,fontSize:17,color:T.ink}}>{name}</span>
+          </div>
+          <div style={{height:2,background:accent,width:44,borderRadius:2,margin:"8px 14px 10px"}}/>
+          <div style={{background:primary,borderRadius:8,margin:"0 14px 10px",padding:"10px 12px"}}>
+            <div style={{fontSize:9,textTransform:"uppercase",letterSpacing:"0.08em",color:T.white,opacity:0.8}}>This year</div>
+            <div style={{fontFamily:pairing.serif,fontSize:20,color:T.white}}>$1,250</div>
+          </div>
+          <div style={{margin:"0 14px",...chrome,background:T.white,padding:"10px 12px",display:"flex",justifyContent:"space-between",alignItems:"center",gap:8}}>
+            <span style={{fontFamily:pairing.serif,fontSize:12,color:T.ink}}>Your history with {name}</span>
+            <span style={{background:button,color:T.white,borderRadius:6,padding:"5px 9px",fontSize:10,fontWeight:700,whiteSpace:"nowrap"}}>Gifts &amp; receipts →</span>
+          </div>
+        </div>
+        <div style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:10,padding:14}}>
+          <div style={{fontFamily:"'DM Serif Display',Georgia,serif",fontSize:13,color:T.ink,marginBottom:8}}>Your organizations</div>
+          <div style={{...chrome,background:T.white,overflow:"hidden",borderLeft:"4px solid "+accent}}>
+            {ps.header_image_data&&(
+              <div style={{height:36,overflow:"hidden"}}>
+                <img src={ps.header_image_data} alt="" style={{width:"100%",height:"100%",objectFit:"cover",display:"block"}}/>
+              </div>
+            )}
+            <div style={{display:"flex",alignItems:"center",gap:8,padding:"10px 12px"}}>
+              {ps.logo_data
+                ? <img src={ps.logo_data} alt="" style={{width:26,height:26,borderRadius:6,objectFit:"cover"}}/>
+                : <div style={{width:26,height:26,borderRadius:6,background:primary,color:T.white,display:"flex",alignItems:"center",justifyContent:"center",fontFamily:pairing.serif,fontSize:13}}>{name[0]}</div>}
+              <div style={{flex:1,minWidth:0}}>
+                <div style={{fontFamily:pairing.serif,fontSize:13,color:T.ink}}>{name}</div>
+                <div style={muted}>Last gift May 12</div>
+              </div>
+              <div style={{textAlign:"right"}}>
+                <div style={{fontSize:11,fontWeight:700,color:T.ink}}>$350 this year</div>
+                <div style={muted}>$1,250 lifetime</div>
+              </div>
+            </div>
+          </div>
+          <div style={{borderRadius:10,border:"1px solid "+T.bg3,background:T.white,opacity:0.55,marginTop:8,padding:"10px 12px"}}>
+            <div style={{fontSize:12,color:T.ink3}}>Another organization</div>
+            <div style={muted}>Their card keeps their own theme</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── BUILD-45 — Donor Portal manager (Settings › Donor Portal) ──────────────
 // The org's public, white-label donor surface: enable switch, theme, and the
 // Impact Updates donors see. Colors are server-normalized to WCAG-legible
@@ -710,6 +787,8 @@ function PortalManager({isAdmin,isReadOnly}){
         displayName:ps.display_name||"",footerText:ps.footer_text||"",
         contactEmail:ps.contact_email||"",einLine:ps.ein_line||"",
         primaryColor:ps.primary_color||"",accentColor:ps.accent_color||"",
+        backgroundTint:ps.background_tint||"",buttonColor:ps.button_color||"",
+        typePairing:ps.type_pairing||"",cardStyle:ps.card_style||"",
         logoData:ps.logo_data||"",headerImageData:ps.header_image_data||"",
         minRecurringCents:Number(ps.min_recurring_cents)||500,
       })});
@@ -777,6 +856,44 @@ function PortalManager({isAdmin,isReadOnly}){
           </label>
         </div>
       </div>
+      {/* BUILD-48 theme depth — background tint + button color (both contrast-
+          guarded server-side, like the accent), plus two ENUM choices: a
+          curated type pairing and a card style. Never free CSS, never a font
+          upload or external font URL. */}
+      <div style={{display:"flex",gap:24,flexWrap:"wrap",marginBottom:16}}>
+        <div>
+          <div style={lbl}>Background tint (optional)</div>
+          <div style={{display:"flex",gap:8,alignItems:"center"}}>
+            <input type="color" value={ps.background_tint||"#faf9f6"} disabled={disabled} onChange={e=>set("background_tint",e.target.value)} style={{width:36,height:36,border:"1px solid "+T.bg3,borderRadius:8,background:"none",padding:2,cursor:disabled?"not-allowed":"pointer"}}/>
+            <input style={{...inp,width:110,fontFamily:"monospace"}} value={ps.background_tint||""} disabled={disabled} onChange={e=>set("background_tint",e.target.value)} placeholder="#faf9f6"/>
+            {ps.background_tint&&<button style={{background:"none",border:"none",color:T.ink3,fontSize:12,cursor:"pointer"}} disabled={disabled} onClick={()=>set("background_tint","")}>Clear</button>}
+          </div>
+          <div style={{fontSize:11,color:T.ink3,marginTop:4,maxWidth:220}}>A soft page wash behind your portal. Dark colors are lightened so text stays readable.</div>
+        </div>
+        <div>
+          <div style={lbl}>Button &amp; link color (optional)</div>
+          <div style={{display:"flex",gap:8,alignItems:"center"}}>
+            <input type="color" value={ps.button_color||ps.primary_color||"#1a6b4a"} disabled={disabled} onChange={e=>set("button_color",e.target.value)} style={{width:36,height:36,border:"1px solid "+T.bg3,borderRadius:8,background:"none",padding:2,cursor:disabled?"not-allowed":"pointer"}}/>
+            <input style={{...inp,width:110,fontFamily:"monospace"}} value={ps.button_color||""} disabled={disabled} onChange={e=>set("button_color",e.target.value)} placeholder="primary"/>
+            {ps.button_color&&<button style={{background:"none",border:"none",color:T.ink3,fontSize:12,cursor:"pointer"}} disabled={disabled} onClick={()=>set("button_color","")}>Clear</button>}
+          </div>
+          <div style={{fontSize:11,color:T.ink3,marginTop:4,maxWidth:220}}>Buttons and links. Left empty, they use your primary color.</div>
+        </div>
+        <div>
+          <div style={lbl}>Type pairing</div>
+          <select style={{...inp,width:220}} value={ps.type_pairing||"dm"} disabled={disabled} onChange={e=>set("type_pairing",e.target.value)}>
+            {Object.entries(TYPE_PAIRINGS).map(([k,v])=><option key={k} value={k}>{v.label}</option>)}
+          </select>
+          <div style={{fontSize:11,color:T.ink3,marginTop:4,maxWidth:220}}>A curated set — every pairing is pre-licensed and self-hosted, so your page stays fast.</div>
+        </div>
+        <div>
+          <div style={lbl}>Card style</div>
+          <select style={{...inp,width:160}} value={ps.card_style||"rounded"} disabled={disabled} onChange={e=>set("card_style",e.target.value)}>
+            {Object.entries(CARD_STYLES).map(([k,v])=><option key={k} value={k}>{v.label}</option>)}
+          </select>
+        </div>
+      </div>
+      <PortalThemePreview ps={ps}/>
       <label style={{display:"flex",alignItems:"center",gap:8,fontSize:13,color:T.ink3,marginBottom:16,cursor:disabled?"not-allowed":"pointer"}}>
         <input type="checkbox" checked={ps.powered_by===true} disabled={disabled} onChange={e=>set("powered_by",e.target.checked)}/>
         Show a small "Powered by Steward" line in the footer (off by default — the portal is yours)

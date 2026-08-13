@@ -61,7 +61,7 @@ async function invalidateUserSessions(userId) {
   await run("UPDATE users SET sessions_valid_after = NOW() WHERE id = ?", [userId]);
   sessionCache.evict(userId);
 }
-const { normalizeAccent } = require("./branding");
+const { normalizeAccent, normalizeTint } = require("./branding");
 const { lookupMatchingGift } = require("./matchingGifts");
 const Stripe = require("stripe");
 const { google } = require("googleapis");
@@ -15296,7 +15296,8 @@ async function portalOrgBySlug(slug) {
             ps.logo_data AS portal_logo, ps.header_image_data AS portal_header_image,
             ps.primary_color, ps.accent_color, ps.footer_text AS portal_footer,
             ps.contact_email AS portal_contact, ps.ein_line AS portal_ein,
-            ps.powered_by, ps.min_recurring_cents, ps.network_listed
+            ps.powered_by, ps.min_recurring_cents, ps.network_listed,
+            ps.background_tint, ps.button_color, ps.type_pairing, ps.card_style
      FROM orgs o JOIN portal_settings ps ON ps.org_id = o.id
      WHERE o.org_slug = ? AND ps.enabled = true`, [slug]);
   return rows[0] || null;
@@ -15307,19 +15308,48 @@ async function portalOrgBySlug(slug) {
 // with org branding); this re-checks at render and falls back to the designed
 // neutral default rather than ever shipping an unreadable portal.
 const PORTAL_DEFAULT_THEME = { primary: "#1a6b4a", primaryFg: "#ffffff", accent: "#c9a84c", accentFg: "#0f1a12" };
+
+// BUILD-48 theme-depth ENUMS. Type pairing keys resolve to font stacks in
+// client/src/lib/portalTheme.js (fixed client code — the org supplies only a
+// validated KEY, never a font string/URL, so theming is not a CSS/font
+// injection surface; parity with the client map is pinned by
+// tests/theme-depth.test.js). Card style is the same shape: one enum.
+const PORTAL_TYPE_PAIRINGS = ["dm", "classic", "editorial", "literary", "modern"];
+const PORTAL_CARD_STYLES = ["rounded", "square", "soft-shadow"];
+
+// The theme fragment shared by the portal config payload and the donor
+// dashboard's per-org cards (BUILD-48 takeover). Colors are normalized at
+// SAVE time; this re-checks at render and falls back to the designed default
+// rather than ever shipping an unreadable surface. `row` carries the raw
+// portal_settings column names (background_tint, button_color, …).
+function portalCardTheme(row) {
+  const prim = row.primary_color ? normalizeAccent(row.primary_color) : null;
+  const acc = row.accent_color ? normalizeAccent(row.accent_color) : null;
+  const btn = row.button_color ? normalizeAccent(row.button_color) : null;
+  const tint = row.background_tint ? normalizeTint(row.background_tint) : null;
+  return {
+    primary: prim ? prim.accent : PORTAL_DEFAULT_THEME.primary,
+    primaryFg: prim ? prim.fg : PORTAL_DEFAULT_THEME.primaryFg,
+    accent: acc ? acc.accent : PORTAL_DEFAULT_THEME.accent,
+    accentFg: acc ? acc.fg : PORTAL_DEFAULT_THEME.accentFg,
+    // Button/link color falls back to primary — the pre-BUILD-48 button color,
+    // so existing portals render byte-identically until an org sets one.
+    buttonColor: btn ? btn.accent : (prim ? prim.accent : PORTAL_DEFAULT_THEME.primary),
+    buttonFg: btn ? btn.fg : (prim ? prim.fg : PORTAL_DEFAULT_THEME.primaryFg),
+    backgroundTint: tint ? tint.tint : null,
+    typePairing: PORTAL_TYPE_PAIRINGS.includes(row.type_pairing) ? row.type_pairing : "dm",
+    cardStyle: PORTAL_CARD_STYLES.includes(row.card_style) ? row.card_style : "rounded",
+  };
+}
+
 function portalThemePayload(org) {
   const clean = (v, cap) => (typeof v === "string" ? v.slice(0, cap) : null);
-  const prim = org.primary_color ? normalizeAccent(org.primary_color) : null;
-  const acc = org.accent_color ? normalizeAccent(org.accent_color) : null;
   return {
     orgSlug: org.org_slug,
     displayName: clean(org.portal_display_name, 120) || displayNameCase(org.name),
     logo: org.portal_logo || org.logo_data || null,
     headerImage: org.portal_header_image || null,
-    primary: prim ? prim.accent : PORTAL_DEFAULT_THEME.primary,
-    primaryFg: prim ? prim.fg : PORTAL_DEFAULT_THEME.primaryFg,
-    accent: acc ? acc.accent : PORTAL_DEFAULT_THEME.accent,
-    accentFg: acc ? acc.fg : PORTAL_DEFAULT_THEME.accentFg,
+    ...portalCardTheme(org),
     footerText: clean(org.portal_footer, 500),
     contactEmail: clean(org.portal_contact, 200),
     einLine: clean(org.portal_ein, 200),
@@ -15942,7 +15972,7 @@ app.put("/portal-settings", requireAuth, requireAdmin, checkWriteAccess, wrap(as
   await run(`INSERT INTO portal_settings (org_id) VALUES (?) ON CONFLICT (org_id) DO NOTHING`, [req.user.orgId]);
   const updates = [], params = [];
   const setStr = (col, v, cap) => { updates.push(`${col} = ?`); params.push(v == null || v === "" ? null : String(v).slice(0, cap)); };
-  let adjusted = false;
+  let adjusted = false, tintAdjusted = false;
   if (b.enabled !== undefined) { updates.push("enabled = ?"); params.push(b.enabled === true); }
   if (b.poweredBy !== undefined) { updates.push("powered_by = ?"); params.push(b.poweredBy === true); }
   // BUILD-46 §2.2 — "list this organization in donor dashboards". Default OFF
@@ -15965,13 +15995,33 @@ app.put("/portal-settings", requireAuth, requireAdmin, checkWriteAccess, wrap(as
   // §5 contrast guard — the ONE normalizeAccent implementation (branding.js):
   // an illegible brand color is deepened along its own hue to WCAG AA, and the
   // admin is told why, rather than shipping an unreadable portal.
-  for (const [key, col] of [["primaryColor", "primary_color"], ["accentColor", "accent_color"]]) {
+  for (const [key, col] of [["primaryColor", "primary_color"], ["accentColor", "accent_color"], ["buttonColor", "button_color"]]) {
     if (b[key] !== undefined) {
       if (b[key] === "" || b[key] == null) { updates.push(`${col} = NULL`); continue; }
       const norm = normalizeAccent(String(b[key]));
       if (!norm) return res.status(400).json({ error: "bad_color", message: `${key} is not a valid hex color.` });
       if (norm.adjusted) adjusted = true;
       updates.push(`${col} = ?`); params.push(norm.accent);
+    }
+  }
+  // BUILD-48 — background tint rides the mirror-image guard: a too-dark tint
+  // is LIGHTENED (text sits on it) rather than deepened, admin told either way.
+  if (b.backgroundTint !== undefined) {
+    if (b.backgroundTint === "" || b.backgroundTint == null) { updates.push("background_tint = NULL"); }
+    else {
+      const norm = normalizeTint(String(b.backgroundTint));
+      if (!norm) return res.status(400).json({ error: "bad_color", message: "backgroundTint is not a valid hex color." });
+      if (norm.adjusted) { adjusted = true; tintAdjusted = true; }
+      updates.push("background_tint = ?"); params.push(norm.tint);
+    }
+  }
+  // Type pairing + card style are ENUMS — a curated set, never free CSS or
+  // font URLs (the whole point: Wix-like without a CSS-injection surface).
+  for (const [key, col, allowed] of [["typePairing", "type_pairing", PORTAL_TYPE_PAIRINGS], ["cardStyle", "card_style", PORTAL_CARD_STYLES]]) {
+    if (b[key] !== undefined) {
+      if (b[key] === "" || b[key] == null) { updates.push(`${col} = NULL`); continue; }
+      if (!allowed.includes(b[key])) return res.status(400).json({ error: `bad_${col}`, message: `${key} must be one of: ${allowed.join(", ")}.` });
+      updates.push(`${col} = ?`); params.push(b[key]);
     }
   }
   for (const [key, col] of [["logoData", "logo_data"], ["headerImageData", "header_image_data"]]) {
@@ -15985,7 +16035,9 @@ app.put("/portal-settings", requireAuth, requireAdmin, checkWriteAccess, wrap(as
     await run(`UPDATE portal_settings SET ${updates.join(", ")} WHERE org_id = ?`, [...params, req.user.orgId]);
   }
   const [ps] = await query(`SELECT * FROM portal_settings WHERE org_id = ?`, [req.user.orgId]);
-  res.json({ ...ps, adjusted, ...(adjusted ? { message: "Your color was deepened slightly so text stays readable (WCAG AA)." } : {}) });
+  res.json({ ...ps, adjusted, ...(adjusted ? { message: tintAdjusted
+    ? "Your colors were adjusted slightly so text stays readable (WCAG AA) — light accents are deepened, dark backgrounds lightened."
+    : "Your color was deepened slightly so text stays readable (WCAG AA)." } : {}) });
 }));
 
 // Impact Updates CRUD (§6.1) — same upload validation + org-scoping rules.
@@ -16541,7 +16593,9 @@ app.get("/account/dashboard", requireDonorAccount, wrap(async (req, res) => {
   await linkDonorAccount(acct.id);
   const links = await query(
     `SELECT l.org_id, l.donor_id, l.via_email, o.name AS org_name, o.org_slug,
-            ps.display_name, ps.primary_color, ps.accent_color, ps.logo_data
+            ps.display_name, ps.primary_color, ps.accent_color, ps.logo_data,
+            ps.header_image_data, ps.background_tint, ps.button_color,
+            ps.type_pairing, ps.card_style, ps.footer_text, ps.ein_line, ps.contact_email
      FROM donor_account_links l
      JOIN orgs o ON o.id = l.org_id
      JOIN portal_settings ps ON ps.org_id = l.org_id AND ps.enabled = true AND ps.network_listed = true
@@ -16569,6 +16623,18 @@ app.get("/account/dashboard", requireDonorAccount, wrap(async (req, res) => {
       orgSlug: meta.org_slug,
       orgName: displayNameCase(meta.display_name || meta.org_name),
       primary: meta.primary_color || null, accent: meta.accent_color || null, logo: meta.logo_data || null,
+      // BUILD-48 — the full presentation theme, for the single-org TAKEOVER
+      // and the multi-org card's own theming (banner, card style, fonts).
+      // Same donor-eyes-only surface; nothing here is org-side-visible.
+      theme: {
+        ...portalCardTheme(meta),
+        headerImage: meta.header_image_data || null,
+        logo: meta.logo_data || null,
+        displayName: displayNameCase(meta.display_name || meta.org_name),
+        footerText: meta.footer_text || null,
+        einLine: meta.ein_line || null,
+        contactEmail: meta.contact_email || null,
+      },
       ytd: parseFloat(t.ytd) || 0, lifetime: parseFloat(t.lifetime) || 0,
       lastGiftDate: t.last_gift || null, recurringCount: rec[0]?.n || 0,
     };
@@ -16586,7 +16652,9 @@ app.get("/account/dashboard", requireDonorAccount, wrap(async (req, res) => {
   // org-wide impact updates.
   const followRows = await query(
     `SELECT f.id, f.org_id, o.org_slug, COALESCE(ps.display_name, o.name) AS name,
-            ps.logo_data, ps.primary_color, ps.accent_color, ps.directory_description
+            ps.logo_data, ps.primary_color, ps.accent_color, ps.directory_description,
+            ps.header_image_data, ps.background_tint, ps.button_color,
+            ps.type_pairing, ps.card_style, ps.footer_text, ps.ein_line, ps.contact_email
      FROM donor_org_follows f
      JOIN orgs o ON o.id = f.org_id
      JOIN portal_settings ps ON ps.org_id = f.org_id AND ps.enabled = true AND ps.network_listed = true
@@ -16599,6 +16667,16 @@ app.get("/account/dashboard", requireDonorAccount, wrap(async (req, res) => {
       followId: f.id, orgSlug: f.org_slug, orgName: displayNameCase(f.name),
       primary: f.primary_color || null, accent: f.accent_color || null, logo: f.logo_data || null,
       description: f.directory_description || null,
+      // BUILD-48 — identity theming only; a follow still carries ZERO history.
+      theme: {
+        ...portalCardTheme(f),
+        headerImage: f.header_image_data || null,
+        logo: f.logo_data || null,
+        displayName: displayNameCase(f.name),
+        footerText: f.footer_text || null,
+        einLine: f.ein_line || null,
+        contactEmail: f.contact_email || null,
+      },
     });
     // Org-wide impact updates only — a follow has no gift attribution to
     // match against, and must never borrow anyone else's.
