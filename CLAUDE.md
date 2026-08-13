@@ -22,7 +22,8 @@ Steward pivoted from a full 11-tab nonprofit ERP to a focused **retention/stewar
 - Frontend: https://client-five-tau-13.vercel.app (also stewardapp.dev via Vercel nameservers)
 - Backend: https://nonprofit-erp-production.up.railway.app
 - GitHub: github.com/jonnycodes420/nonprofit-erp
-- Demo login: admin@creoarts.org / demo1234 (org_creo)
+- Demo login: admin@creoarts.org / demo1234 (org_creo — staff-side org name is **"CREO Arts (Demo)"** since 2026-08-12; donor-facing surfaces read `portal_settings.display_name` = "CREO Arts" and are unaffected)
+- **org_creo is DEMO-ONLY and carries FABRICATED legal/tax identity** (invented legal name "CREO Arts Collective, Inc.", an invented NYC receipt address, invented ED signature "Maya Reyes" — set 2026-08-12 so demo receipts could be issued). **When the real CREO Arts onboards, it starts as a FRESH org record — NEVER by converting/renaming org_creo** — the fabricated identity must never appear on a real organization's receipts, and org_creo's donors/gifts/receipts are demo fiction end to end.
 - Demo DONOR (portal): xjca2006+demo@gmail.com = Renee Castillo (`dseed_03`, $2,500 lifetime, quiet mid-level) in org_creo — request a magic link at https://www.stewardapp.dev/portal/creo-arts-creo (set up 2026-08-11; proof shots in docs/demo-donor-2026-08-11/)
 
 ## Design system

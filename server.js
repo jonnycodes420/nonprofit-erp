@@ -9842,8 +9842,12 @@ app.get("/finance/stripe-summary", requireAuth, wrap(async (req, res) => {
     return res.json(data);
   }
   try {
+    // stripeAccount must ride the OPTIONS argument (second position), never
+    // params — stripe-node v22 sends a params-object key as a request field
+    // and Stripe rejects it ("Received unknown parameter: stripeAccount"),
+    // which silently broke the Money-in strip in prod (found 2026-08-12).
     const [balance, payouts] = await Promise.all([
-      stripe.balance.retrieve({ stripeAccount: acct }),
+      stripe.balance.retrieve({}, { stripeAccount: acct }),
       stripe.payouts.list({ limit: 5 }, { stripeAccount: acct }),
     ]);
     const sumCents = arr => (arr || []).reduce((s, b) => s + (b.amount || 0), 0);

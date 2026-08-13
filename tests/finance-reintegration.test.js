@@ -158,6 +158,69 @@ async function fixture() {
     ok("ledger is org-scoped both directions", !aHasBRows && !bHasARows);
   }
 
+  // ── 8. Connected-branch REGRESSION via the STRIPE_API_BASE mock seam ──
+  // Found live 2026-08-12: stripe.balance.retrieve({ stripeAccount }) passed
+  // the account in the PARAMS position — stripe-node v22 sent it as a request
+  // parameter, Stripe rejected it ("Received unknown parameter:
+  // stripeAccount"), and prod's Money-in strip silently read "not connected"
+  // for a connected org. The account must ride the OPTIONS argument (the
+  // Stripe-Account header). This leg drives the real route against a local
+  // Stripe mock (the BUILD-45 seam the server is already booted with) and
+  // asserts the header form — it fails on the params form.
+  {
+    const seen = [];
+    const mock = require("http").createServer((req, res) => {
+      let body = ""; req.on("data", c => body += c);
+      req.on("end", () => {
+        seen.push({ url: req.url, account: req.headers["stripe-account"] || null, body });
+        res.setHeader("content-type", "application/json");
+        if (req.url.startsWith("/v1/balance")) {
+          res.end(JSON.stringify({ object: "balance", available: [{ amount: 123400, currency: "usd" }], pending: [{ amount: 5600, currency: "usd" }] }));
+        } else if (req.url.startsWith("/v1/payouts")) {
+          res.end(JSON.stringify({ object: "list", data: [{ id: "po_mock47", object: "payout", amount: 50000, status: "paid", arrival_date: 1755000000 }], has_more: false }));
+        } else {
+          res.statusCode = 404; res.end(JSON.stringify({ error: { message: "mock: unexpected " + req.url } }));
+        }
+      });
+    });
+    const mockUp = await new Promise(r => { mock.on("error", () => r(false)); mock.listen(5603, () => r(true)); });
+    if (!mockUp) {
+      console.log("  SKIP  connected-branch mock leg (:5603 busy)");
+    } else {
+      // A FRESH org id every run — the route caches per org for 5 minutes in
+      // process memory, and the scratch server outlives suite runs.
+      const orgM = "org_fin_m" + Date.now().toString(36).slice(-6);
+      await q(`INSERT INTO orgs (id,name,org_slug,onboarding_complete,subscription_status,plan,stripe_account_id)
+               VALUES ($1,'Fin Mock Org',$1,1,'active','team','acct_mock47')`, [orgM]);
+      const hash2 = bcrypt.hashSync("loadtest1234", 10);
+      await q(`INSERT INTO users (id,org_id,email,password_hash,name,role) VALUES ($1,$2,$3,$4,'M Admin','admin')`,
+        [orgM + "_u", orgM, orgM + "@test.local", hash2]);
+      const m = await login(orgM + "@test.local", "loadtest1234");
+      const rm = await api("GET", "/finance/stripe-summary", m);
+      if (seen.length === 0) {
+        // The server wasn't booted with STRIPE_API_BASE=http://localhost:5603
+        // (the standard run-all/CI recipe) — the leg can't observe the wire.
+        console.log("  SKIP  connected-branch mock leg (server booted without the STRIPE_API_BASE seam)");
+        for (const t of ["users", "orgs"]) await q(`DELETE FROM ${t} WHERE ${t === "orgs" ? "id" : "org_id"}=$1`, [orgM]).catch(() => {});
+        mock.close();
+      } else {
+      ok("mock leg: connected:true through the real route", rm.status === 200 && rm.body?.connected === true, rm.body);
+      ok("mock leg: balance mapped from the mock (available 1234 / pending 56)",
+        rm.body?.balance?.available === 1234 && rm.body?.balance?.pending === 56, rm.body?.balance);
+      ok("mock leg: payout mapped (po_mock47 · $500 · paid)",
+        rm.body?.payouts?.[0]?.id === "po_mock47" && rm.body.payouts[0].amount === 500 && rm.body.payouts[0].status === "paid", rm.body?.payouts);
+      const bal = seen.find(s => s.url.startsWith("/v1/balance"));
+      const po = seen.find(s => s.url.startsWith("/v1/payouts"));
+      ok("mock leg: BOTH calls carry the Stripe-Account HEADER (options form)",
+        bal?.account === "acct_mock47" && po?.account === "acct_mock47", seen);
+      ok("mock leg: stripeAccount NEVER rides as a request parameter (the regression)",
+        seen.every(s => !s.url.includes("stripeAccount") && !s.body.includes("stripeAccount")), seen);
+      for (const t of ["users", "orgs"]) await q(`DELETE FROM ${t} WHERE ${t === "orgs" ? "id" : "org_id"}=$1`, [orgM]).catch(() => {});
+      mock.close();
+      }
+    }
+  }
+
   await closeDb();
   summary();
 })().catch(e => { console.error(e); process.exit(1); });
