@@ -199,6 +199,20 @@ async function fixture() {
   const mlv = await raw("POST", `/portal/${SLUG_A}/verify`, { body: { token: mlTok } });
   const mlCookie = cookieOf(mlv);
   ok("magic-link session works on the org portal", (await raw("GET", `/portal/${SLUG_A}/me`, { cookie: mlCookie })).status === 200);
+  // ── the discovery on-ramp gate: /me.account only for LISTED orgs ─────────
+  // (network_listed is the org's opt-in; an unlisted org's portal must never
+  // mention a cross-org account — its page stays entirely its own.)
+  {
+    const meListed = await raw("GET", `/portal/${SLUG_A}/me`, { cookie: mlCookie });
+    ok("listed org + flag on → /me.account present and carries the session email (signup prefill)",
+      !!meListed.body.account && meListed.body.account.email === EMAIL && meListed.body.account.exists === false,
+      meListed.body.account);
+    await q(`UPDATE portal_settings SET network_listed=false WHERE org_id=$1`, [ORG_A]);
+    const meUnlisted = await raw("GET", `/portal/${SLUG_A}/me`, { cookie: mlCookie });
+    ok("listing OFF → /me.account is null even with the flag on (portal stays the org's own page)",
+      meUnlisted.status === 200 && meUnlisted.body.account === null, meUnlisted.body.account);
+    await q(`UPDATE portal_settings SET network_listed=true WHERE org_id=$1`, [ORG_A]);
+  }
   // EMAIL still belongs to the account? No — the account's email CHANGED to
   // casey-new. A magic-link by the OLD address must NOT open the account.
   ok("a magic-link session for an email the account no longer holds does NOT open the dashboard",

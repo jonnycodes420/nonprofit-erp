@@ -723,7 +723,10 @@ function PortalManager({isAdmin,isReadOnly}){
       <SectionLabel>Donor Portal</SectionLabel>
       <div style={{fontSize:13,color:T.ink3,lineHeight:1.6,marginTop:6,marginBottom:16,maxWidth:600}}>
         A private page where your donors see their own giving history, download tax receipts, and manage
-        their recurring gifts — signed in by email link, never a password. It carries your identity, not ours.
+        their recurring gifts. Your portal signs donors in by email link — no password to manage here.
+        Separately, donors can choose to create their own free Steward account to see their giving across
+        every organization they support; that's optional and theirs, and it never changes what your portal
+        shows. The portal carries your identity, not ours.
       </div>
       <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:16}}>
         <label style={{display:"flex",alignItems:"center",gap:8,fontSize:14,fontWeight:600,color:T.ink,cursor:disabled?"not-allowed":"pointer"}}>
@@ -780,7 +783,7 @@ function PortalManager({isAdmin,isReadOnly}){
           (opting out keeps the standalone portal working unchanged). */}
       <label style={{display:"flex",alignItems:"center",gap:8,fontSize:13,color:T.ink3,marginBottom:16,cursor:disabled?"not-allowed":"pointer"}}>
         <input type="checkbox" checked={ps.network_listed===true} disabled={disabled} onChange={e=>set("network_listed",e.target.checked)}/>
-        List this organization in donor dashboards (donors who verify an email you have on file see their giving with you alongside their other giving; you see nothing new)
+        List this organization in donor dashboards (donors who verify an email you have on file see their giving with you alongside their other giving; you see nothing new). When listed, your signed-in portal also shows donors one quiet line offering that optional account; unlisted, it never mentions it.
       </label>
       {isAdmin&&<button onClick={save} disabled={disabled||saving} title={isReadOnly?"Reactivate your subscription to make changes.":undefined}
         style={{background:disabled?T.bg3:T.gold500,border:"none",borderRadius:9,padding:"10px 18px",color:T.ink,fontSize:13,fontWeight:700,cursor:disabled?"not-allowed":"pointer"}}>{saving?"Saving…":"Save portal settings"}</button>}

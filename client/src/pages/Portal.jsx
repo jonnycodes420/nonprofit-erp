@@ -98,8 +98,8 @@ function RequestLink({ slug, theme }) {
       ) : (
         <form onSubmit={submit}>
           <p style={{ ...S.muted, marginTop: 0 }}>
-            Enter the email address you use for giving and we'll send you a secure sign-in link.
-            No password needed — ever.
+            Enter the email address you use for giving and we'll send you a secure sign-in link —
+            this page signs you in by email, with no password to remember.
           </p>
           <div style={S.label}>Email address</div>
           <input style={S.input} type="email" value={email} onChange={e => setEmail(e.target.value)}
@@ -289,13 +289,16 @@ function Dashboard({ slug, me, reload }) {
         <button style={{ ...S.btnQuiet, padding: "6px 14px", fontSize: 13 }} onClick={logout}>Sign out</button>
       </div>
       {/* BUILD-46 §1.3 — the migration nudge: prompted, never forced. Renders
-          only when the server says accounts are live (me.account non-null)
-          and this donor hasn't finished setting one up. */}
+          only when the server says accounts are live AND this org opted into
+          donor-dashboard listing (me.account non-null — unlisted orgs' portals
+          carry no mention of a cross-org account) and this donor hasn't
+          finished setting one up. The signup link carries the donor's verified
+          email in the URL FRAGMENT (never sent to any server). */}
       {me.account && !(me.account.exists && me.account.hasPassword) && (
         <div style={{ fontSize: 13, color: "#555", margin: "0 0 10px" }}>
           {me.account.exists
             ? <>Add a password to your giving account for one-step sign-in — use "Reset password" at <a href="/giving" style={{ color: "var(--pt-primary)" }}>your giving dashboard</a>.</>
-            : <>Support more than one organization? <a href="/giving" style={{ color: "var(--pt-primary)" }}>Create a free account</a> to see all your giving in one place. This page keeps working exactly as it does now.</>}
+            : <>See all your giving in one place — <a href={`/giving#signup&email=${encodeURIComponent(me.account.email || "")}`} style={{ color: "var(--pt-primary)" }}>create a free account</a>. This page keeps working exactly as it does now.</>}
         </div>
       )}
 

@@ -62,8 +62,18 @@ function Header({ onSignOut }) {
 }
 
 function AuthCard({ onSignedIn }) {
-  const [mode, setMode] = useState("login"); // login | signup | reset
-  const [email, setEmail] = useState("");
+  // The portal's discovery link arrives as /giving#signup&email=… — the
+  // donor's already-verified address rides the URL FRAGMENT (never sent to
+  // any server, the TokenLanding convention), lands in signup mode prefilled.
+  const [mode, setMode] = useState(() =>
+    /(^|[#&])signup(&|$)/.test(window.location.hash || "") ? "signup" : "login"); // login | signup | reset
+  const [email, setEmail] = useState(() => {
+    const m = /email=([^&]+)/.exec(window.location.hash || "");
+    try { return m ? decodeURIComponent(m[1]) : ""; } catch { return ""; }
+  });
+  useEffect(() => {
+    if (window.location.hash) window.history.replaceState(null, "", window.location.pathname);
+  }, []);
   const [password, setPassword] = useState("");
   const [consent, setConsent] = useState(false);
   const [msg, setMsg] = useState("");

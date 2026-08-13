@@ -15696,14 +15696,18 @@ app.get("/portal/:orgSlug/me", requirePortalSession, wrap(async (req, res) => {
     impact: await matchImpactUpdates(org.id, donorIds),
     // BUILD-46 §1.3 — the migration nudge, never a wall: a magic-link donor is
     // PROMPTED to create an account/password; ignoring it forever is fine.
-    // null when the flag is off (prod default) so BUILD-45 clients see nothing.
-    account: DONOR_ACCOUNTS_ENABLED ? await (async () => {
+    // null when the flag is off (prod default) so BUILD-45 clients see nothing,
+    // AND null when the org hasn't opted into donor-dashboard listing
+    // (network_listed) — an unlisted org's portal stays entirely its own page,
+    // with no mention of a cross-org account. `email` is the donor's own
+    // verified session address, returned so the signup link can carry it.
+    account: DONOR_ACCOUNTS_ENABLED && org.network_listed === true ? await (async () => {
       const em = foldEmail(email);
       const acct = await query(
         `SELECT id, password_hash FROM donor_accounts WHERE email = ? AND email_verified_at IS NOT NULL
          UNION SELECT a.id, a.password_hash FROM donor_accounts a JOIN donor_account_aliases al ON al.account_id = a.id
          WHERE al.email = ? AND al.verified_at IS NOT NULL LIMIT 1`, [em, em]);
-      return { exists: acct.length > 0, hasPassword: !!acct[0]?.password_hash };
+      return { exists: acct.length > 0, hasPassword: !!acct[0]?.password_hash, email };
     })() : null,
   });
 }));
