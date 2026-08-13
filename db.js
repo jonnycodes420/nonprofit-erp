@@ -1751,6 +1751,22 @@ async function initSchema() {
     )
   `);
 
+  // BUILD-49 — account-level sign-in links (the /giving "email me a sign-in
+  // link" alternate to password auth). Same token discipline as resets and the
+  // portal magic links: CSPRNG, hash-at-rest, 15-min, single-use, superseded
+  // on re-request. Only verified accounts ever receive one.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS donor_account_signin_links (
+      id TEXT PRIMARY KEY,
+      account_id TEXT NOT NULL REFERENCES donor_accounts(id) ON DELETE CASCADE,
+      token_hash TEXT NOT NULL UNIQUE,
+      expires_at TIMESTAMPTZ NOT NULL,
+      used_at TIMESTAMPTZ,
+      superseded_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+
   // Account-level audit (signup, login, link/unlink, alias, resets, email
   // change, deletion). GLOBAL — never surfaced to any org.
   await pool.query(`

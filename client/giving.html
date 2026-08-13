@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- BUILD-49 — the donor front door's own HTML entry. /giving is the page
+         donors will Google, and social scrapers don't run JS, so its title,
+         description, and OpenGraph tags must live in served HTML, not be
+         injected client-side. Served via the vercel.json rewrite
+         "/giving" → "/giving.html" (declared before the SPA catch-all); the
+         page loads the same SPA bundle, so routing/behavior is identical. -->
+    <title>Your Giving — Steward</title>
+    <meta name="description" content="A free account for donors: your giving history, tax receipts, and recurring gifts across every organization you support — in one place. Each nonprofit sees only its own relationship with you." />
+    <link rel="canonical" href="https://www.stewardapp.dev/giving" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="icon" href="/favicon.ico" sizes="48x48" />
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
+    <link rel="manifest" href="/site.webmanifest">
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <meta name="theme-color" content="#0f1a12">
+    <meta property="og:title" content="Your Giving — Steward" />
+    <meta property="og:description" content="Your giving history, tax receipts, and recurring gifts across every organization you support — in one place. We never share your giving at one organization with another." />
+    <meta property="og:image" content="https://stewardapp.dev/og-image.png" />
+    <meta property="og:url" content="https://www.stewardapp.dev/giving" />
+    <meta property="og:type" content="website" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Your Giving — Steward" />
+    <meta name="twitter:description" content="All of your giving. One quiet place. History, receipts, and recurring gifts across every organization you support." />
+    <meta name="twitter:image" content="https://stewardapp.dev/og-image.png" />
+    <style>* { box-sizing: border-box; margin: 0; padding: 0; }</style>
+  </head>
+  <body style="background:#f0ede6">
+    <div id="root"></div>
+    <script type="module" src="/src/main.jsx"></script>
+  </body>
+</html>

@@ -170,6 +170,8 @@ function Root() {
           <Route path="/giving" element={<GivingDashboard />} />
           <Route path="/giving/verify" element={<GivingDashboard landing="verify" />} />
           <Route path="/giving/reset" element={<GivingDashboard landing="reset" />} />
+          {/* BUILD-49 — the emailed one-time sign-in link (password-free alternate). */}
+          <Route path="/giving/signin" element={<GivingDashboard landing="signin" />} />
           <Route path="/giving/confirm-email" element={<GivingDashboard landing="confirm-email" />} />
           <Route path="/giving/confirm-alias" element={<GivingDashboard landing="confirm-alias" />} />
           <Route path="/giving/orgs/:orgSlug" element={<GivingOrgWrap />} />

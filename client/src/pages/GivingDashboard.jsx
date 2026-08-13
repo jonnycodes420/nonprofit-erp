@@ -104,6 +104,19 @@ function GivingStyles() {
       .gd-orgnums { text-align: left !important; width: 100%; margin-top: 6px; padding-left: 58px; }
       .gd-sechead { flex-wrap: wrap; gap: 10px; }
     }
+    /* BUILD-49 — the signed-out landing */
+    .gd-landhero { display: flex; gap: 36px; align-items: flex-start; }
+    .gd-landhero-copy { flex: 1; min-width: 0; }
+    .gd-landcard { width: 400px; flex-shrink: 0; }
+    .gd-trio { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+    @media (max-width: 860px) {
+      .gd-landhero { flex-direction: column; }
+      .gd-landcard { width: 100%; }
+    }
+    @media (max-width: 720px) {
+      .gd-trio { grid-template-columns: 1fr; }
+      .gd-landtitle { font-size: 30px !important; }
+    }
   `}</style>;
 }
 
@@ -126,12 +139,15 @@ function Header({ onSignOut }) {
   );
 }
 
-function AuthCard({ onSignedIn }) {
-  // The portal's discovery link arrives as /giving#signup&email=… — the
-  // donor's already-verified address rides the URL FRAGMENT (never sent to
-  // any server, the TokenLanding convention), lands in signup mode prefilled.
-  const [mode, setMode] = useState(() =>
-    /(^|[#&])signup(&|$)/.test(window.location.hash || "") ? "signup" : "login"); // login | signup | reset
+// The entry links (portal nudge, receipt emails, thank-you screens) arrive as
+// /giving#signup&from=<slug>&email=… — the donor's already-verified address
+// rides the URL FRAGMENT (never sent to any server, the TokenLanding
+// convention), lands in signup mode prefilled.
+export function initialAuthMode() {
+  return /(^|[#&])signup(&|$)/.test(window.location.hash || "") ? "signup" : "login";
+}
+
+function AuthCard({ onSignedIn, mode, setMode }) {
   const [email, setEmail] = useState(() => {
     const m = /email=([^&]+)/.exec(window.location.hash || "");
     try { return m ? decodeURIComponent(m[1]) : ""; } catch { return ""; }
@@ -171,6 +187,11 @@ function AuthCard({ onSignedIn }) {
         const r = await afetch("/signup", { method: "POST", body: { email, password, consent } });
         if (r.status === 200) setMsg("Check your email to verify your account.");
         else setErr(r.body?.error || "Something went wrong.");
+      } else if (mode === "link") {
+        // BUILD-49 — the password-free alternate: a one-time emailed sign-in link.
+        const r = await afetch("/request-link", { method: "POST", body: { email } });
+        if (r.status === 200) setMsg("If that address has an account, a sign-in link is on its way.");
+        else setErr(r.body?.error || "Something went wrong.");
       } else {
         const r = await afetch("/request-reset", { method: "POST", body: { email } });
         if (r.status === 200) setMsg("If that address has an account, a reset link is on its way.");
@@ -186,11 +207,13 @@ function AuthCard({ onSignedIn }) {
           <span style={{ ...S.muted, fontSize: 13 }}>You're connecting with <b style={{ color: G.ink }}>{fromTheme.displayName}</b></span>
         </div>
       )}
-      <h2 style={{ ...S.h2, marginBottom: 10 }}>{mode === "login" ? "See all your giving in one place" : mode === "signup" ? "Create your giving account" : "Reset your password"}</h2>
+      <h2 style={{ ...S.h2, marginBottom: 10 }}>{mode === "login" ? "Sign in" : mode === "signup" ? "Create your giving account" : mode === "link" ? "Get a sign-in link" : "Reset your password"}</h2>
       <p style={S.muted}>
         {mode === "signup"
           ? "One sign-in for your giving history, receipts, and recurring gifts across every organization you support."
-          : mode === "reset" ? "We'll email you a one-time link." : "Sign in with your email and password."}
+          : mode === "reset" ? "We'll email you a one-time link."
+          : mode === "link" ? "We'll email you a one-time sign-in link — no password to type."
+          : "Sign in with your email and password."}
       </p>
       {mode === "signup" && (
         <p style={{ ...S.muted, fontSize: 13 }}>
@@ -200,7 +223,7 @@ function AuthCard({ onSignedIn }) {
       )}
       <div style={S.label}>Email address</div>
       <input style={S.input} type="email" value={email} onChange={e => setEmail(e.target.value)} autoComplete="email" />
-      {mode !== "reset" && (<>
+      {(mode === "login" || mode === "signup") && (<>
         <div style={S.label}>Password</div>
         <input style={S.input} type="password" value={password} onChange={e => setPassword(e.target.value)}
           autoComplete={mode === "signup" ? "new-password" : "current-password"} />
@@ -213,9 +236,17 @@ function AuthCard({ onSignedIn }) {
       )}
       <div style={{ marginTop: 16 }}>
         <button style={{ ...S.btn, opacity: mode === "signup" && !consent ? 0.5 : 1 }} disabled={busy || (mode === "signup" && !consent)} onClick={go}>
-          {busy ? "Working…" : mode === "login" ? "Sign in" : mode === "signup" ? "Create account" : "Email me a link"}
+          {busy ? "Working…" : mode === "login" ? "Sign in" : mode === "signup" ? "Create account" : mode === "link" ? "Email me a sign-in link" : "Email me a link"}
         </button>
       </div>
+      {/* Password is the primary path; the emailed sign-in link is the offered
+          alternate (BUILD-49) — one quiet line under the primary button. */}
+      {mode === "login" && (
+        <p style={{ ...S.muted, fontSize: 13, marginTop: 10 }}>
+          Prefer not to type a password?{" "}
+          <button style={{ ...S.ghost, color: G.emerald, padding: 0 }} onClick={() => setMode("link")}>Email me a sign-in link</button>
+        </p>
+      )}
       {msg && <p style={{ ...S.muted, marginTop: 10 }}>{msg}</p>}
       {err && <p style={S.err}>{err}</p>}
       <p style={{ ...S.muted, fontSize: 13, marginTop: 14 }}>
@@ -227,9 +258,90 @@ function AuthCard({ onSignedIn }) {
   );
 }
 
+// ── BUILD-49 — the donor front door ─────────────────────────────────────────
+// The signed-out /giving is a real landing page (the page donors will Google
+// and the target of every entry-point link), not a bare login card: what a
+// giving account is, the three concrete things it does, and the org-blindness
+// promise stated plainly. The AuthCard stays prominent beside the copy —
+// password primary, the emailed sign-in link as the alternate. Signed-in
+// visitors never see this (the parent routes them straight to the dashboard).
+function GivingLanding({ onSignedIn }) {
+  const [mode, setMode] = useState(initialAuthMode);
+  const cardRef = useRef(null);
+  const goCard = (m) => {
+    setMode(m);
+    if (cardRef.current) cardRef.current.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
+  const trio = [
+    {
+      title: "Every organization, together",
+      body: "Your giving history with each nonprofit you support, side by side — the gifts, the years, the receipts.",
+    },
+    {
+      title: "Recurring gifts, under control",
+      body: "Change an amount, pause, or cancel a monthly gift yourself, on each organization's own page — no email chains.",
+    },
+    {
+      title: "Tax time, already done",
+      body: "Year-end totals per organization and every receipt, ready to download when you need them.",
+    },
+  ];
+  return (
+    <div>
+      <div className="gd-landhero" style={{ marginTop: 26 }}>
+        <div className="gd-landhero-copy">
+          <div style={S.eyebrow}>Your giving account</div>
+          <h1 className="gd-landtitle" style={{ fontFamily: SERIF, fontSize: 38, fontWeight: 400, lineHeight: 1.15, margin: "8px 0 14px", letterSpacing: "-0.01em" }}>
+            All of your giving.<br />One quiet place.
+          </h1>
+          <p style={{ ...S.muted, fontSize: 16, maxWidth: 480 }}>
+            A free account for donors. Your giving history, tax receipts, and
+            recurring gifts — across every organization you support — under one
+            sign-in, without waiting for anyone to send you a link.
+          </p>
+          <div style={{ display: "flex", gap: 12, marginTop: 20, flexWrap: "wrap" }}>
+            <button style={S.btn} onClick={() => goCard("signup")}>Create your free account</button>
+            <button style={{ ...S.quiet, padding: "11px 22px", fontSize: 15 }} onClick={() => goCard("login")}>Sign in</button>
+          </div>
+        </div>
+        <div className="gd-landcard" ref={cardRef}>
+          <AuthCard onSignedIn={onSignedIn} mode={mode} setMode={setMode} />
+        </div>
+      </div>
+      <div className="gd-trio" style={{ marginTop: 30 }}>
+        {trio.map(t => (
+          <div key={t.title} style={{ ...S.card, margin: 0 }}>
+            <div style={{ fontFamily: SERIF, fontSize: 18, marginBottom: 6 }}>{t.title}</div>
+            <p style={{ ...S.muted, fontSize: 13.5, margin: 0 }}>{t.body}</p>
+          </div>
+        ))}
+      </div>
+      {/* The org-blindness promise, stated plainly — the trust foundation the
+          whole network rests on, so it gets its own band, not fine print. */}
+      <div style={{ background: G.ink, borderRadius: 14, padding: "30px 32px", marginTop: 30 }}>
+        <div style={{ ...S.eyebrow, color: G.brass }}>Our promise</div>
+        <div style={{ fontFamily: SERIF, fontSize: 24, color: G.cream, lineHeight: 1.3, margin: "8px 0 10px" }}>
+          Your giving is yours.
+        </div>
+        <p style={{ color: G.sage, fontSize: 14.5, lineHeight: 1.65, margin: 0, maxWidth: 620 }}>
+          Each nonprofit sees only its own relationship with you. We never share
+          your giving at one organization with another — and no organization ever
+          learns what you give anywhere else. Creating an account changes nothing
+          about what any nonprofit knows.
+        </p>
+      </div>
+      <p style={{ ...S.muted, fontSize: 13, marginTop: 22 }}>
+        Already gave to an organization on Steward? Verify the email you gave
+        under and your history connects automatically — nothing to import.
+      </p>
+    </div>
+  );
+}
+
 // One handler for every emailed-token landing: /giving/verify, /giving/reset,
-// /giving/confirm-email, /giving/confirm-alias. The token rides the URL
-// FRAGMENT (never sent in a Referer), same as the portal magic link.
+// /giving/confirm-email, /giving/confirm-alias, /giving/signin. The token
+// rides the URL FRAGMENT (never sent in a Referer), same as the portal magic
+// link.
 function TokenLanding({ kind, onDone }) {
   const [err, setErr] = useState("");
   const [needPw] = useState(kind === "reset");
@@ -238,6 +350,7 @@ function TokenLanding({ kind, onDone }) {
   useEffect(() => { window.history.replaceState(null, "", window.location.pathname); }, []);
   const submit = async () => {
     const path = kind === "verify" ? "/verify" : kind === "reset" ? "/reset"
+      : kind === "signin" ? "/link-verify" // BUILD-49 emailed sign-in link
       : kind === "confirm-email" ? "/change-email/confirm" : "/aliases/verify";
     const r = await afetch(path, { method: "POST", body: kind === "reset" ? { token, password: pw } : { token } });
     if (r.status === 200) await onDone();
@@ -757,6 +870,13 @@ export default function GivingDashboard({ landing }) {
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+  // SPA navigations don't re-read giving.html's <head>, so keep the tab title
+  // right when this page is reached client-side too (BUILD-49 SEO pass).
+  useEffect(() => {
+    const prev = document.title;
+    document.title = "Your Giving — Steward";
+    return () => { document.title = prev; };
+  }, []);
   if (!flags || !checked) return <div style={S.page}><GivingStyles /><Header /><div style={S.wrap}><p style={{ ...S.muted, marginTop: 20 }}>Loading…</p></div></div>;
   if (!flags.donorAccounts) {
     return <div style={S.page}><GivingStyles /><Header /><div style={S.wrap}>
@@ -807,7 +927,7 @@ export default function GivingDashboard({ landing }) {
             ? <TokenLanding kind={landing} onDone={done} />
             : me
               ? <Home me={me} dash={dash} loadDash={loadDash} takeover={takeover} onOpenOrg={openOrg} />
-              : <AuthCard onSignedIn={loadMe} />}
+              : <GivingLanding onSignedIn={loadMe} />}
         </div>
         <div style={{ borderTop: `1px solid ${G.hair}`, marginTop: 34, paddingTop: 16, textAlign: "center" }}>
           {/* In a takeover the footer carries the ORG's identity (its portal

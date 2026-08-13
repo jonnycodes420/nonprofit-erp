@@ -1,5 +1,9 @@
 {
-  "git": { "deploymentEnabled": { "main": false } },
+  "git": {
+    "deploymentEnabled": {
+      "main": false
+    }
+  },
   "buildCommand": "npm --prefix client install && npm --prefix client run build",
   "outputDirectory": "client/dist",
   "rewrites": [
@@ -22,6 +26,10 @@
     {
       "source": "/recurring/update-card",
       "destination": "https://nonprofit-erp-production.up.railway.app/recurring/update-card"
+    },
+    {
+      "source": "/giving",
+      "destination": "/giving.html"
     },
     {
       "source": "/(.*)",

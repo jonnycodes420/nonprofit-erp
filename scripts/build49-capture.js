@@ -1,82 +1,122 @@
-// BUILD-49 verification + screenshots.
-//   PLAYWRIGHT_DIR=$HOME/steward-qa BASE=http://localhost:4173 node scripts/build49-capture.js
-const path = require("path");
-if (process.env.PLAYWRIGHT_DIR) module.paths.unshift(path.join(process.env.PLAYWRIGHT_DIR, "node_modules"));
-const { chromium } = require("playwright");
+#!/usr/bin/env node
+// BUILD-49 — DSF2 screenshots + DOM assertions for the DONOR FRONT DOOR, at
+// 390 AND 1440:
+//   • the signed-out /giving landing page (hero + auth card + value trio +
+//     the org-blindness promise band), password primary with the emailed
+//     sign-in link offered as the alternate;
+//   • the from=<slug> courtesy theming on the signup card;
+//   • the post-donation thank-you screen entry point — present for a LISTED
+//     org, absent for an unlisted one;
+//   • Settings › Donor Portal "Put it on your website" snippet + preview.
+//
+// Local stack recipe (the BUILD-45/46/47/48 capture conventions):
+//   client built with VITE_API_URL=http://localhost:5601
+//     VITE_PORTAL_API=http://localhost:5601/portal
+//     VITE_ACCOUNT_API=http://localhost:5601/account
+//     VITE_NETWORK_API=http://localhost:5601/network
+//   `npx vite preview --port 4173` + server booted with
+//   CORS_ORIGIN=http://localhost:4173 and DONOR_ACCOUNTS_ENABLED=1.
+//   PLAYWRIGHT_DIR=$HOME/steward-qa node scripts/build49-capture.js
+//
+// Reuses the donor-front-door suite's fixture orgs (dfd-listed/dfd-unlisted);
+// run `DB_SSL=disable node tests/donor-front-door.test.js` first if absent.
 const fs = require("fs");
+const { chromium } = require(process.env.PLAYWRIGHT_DIR + "/node_modules/playwright");
 
-const BASE = process.env.BASE || "http://localhost:4173";
-const OUT = path.join(__dirname, "..", "docs", "build49-2026-08-09");
-fs.mkdirSync(OUT, { recursive: true });
+const API = process.env.BASE || "http://localhost:5601";
+const APP = process.env.APP || "http://localhost:4173";
+const OUT = process.env.OUT || (__dirname + "/../docs/build49-front-door");
+
 let pass = 0, fail = 0;
-const ok = (n, c, x) => { c ? (pass++, console.log("  PASS " + n)) : (fail++, console.log("  FAIL " + n + (x !== undefined ? " — " + JSON.stringify(x).slice(0, 200) : ""))); };
+const ok = (n, c, d) => { if (c) { pass++; console.log("  PASS  " + n); } else { fail++; console.log("  FAIL  " + n, d ?? ""); } };
+
+const LISTED = "dfd-listed", UNLISTED = "dfd-unlisted";
 
 (async () => {
+  fs.mkdirSync(OUT, { recursive: true });
+  const health = await fetch(API + "/health").then(r => r.json()).catch(() => null);
+  if (!health || health.status !== "ok") { console.error("server not up on " + API); process.exit(1); }
+  const pubL = await fetch(`${API}/org/${LISTED}/public`).then(r => r.json()).catch(() => null);
+  if (!pubL || !pubL.org) { console.error("fixture missing — run tests/donor-front-door.test.js first"); process.exit(1); }
+
   const browser = await chromium.launch();
-  for (const [w, h] of [[390, 844], [1440, 1000]]) {
-    const page = await browser.newPage({ viewport: { width: w, height: h }, deviceScaleFactor: 2 });
-    const errors = [];
-    // Ignore the Vercel analytics/speed-insights beacons (@vercel/* in main.jsx):
-    // they resolve on Vercel but 404 on local `vite preview` → SPA fallback HTML
-    // → "Unexpected token '<'". Production-only endpoints, not a page error.
-    const isVercelArtifact = t => /_vercel|vercel\/insights|speed-insights|Failed to load resource.*40\d|Unexpected token '<'/i.test(t);
-    page.on("console", m => { if (m.type() === "error" && !isVercelArtifact(m.text())) errors.push(m.text()); });
-    page.on("pageerror", e => { if (!isVercelArtifact(String(e))) errors.push(String(e)); });
+  const shoot = async (page, name) => page.screenshot({ path: `${OUT}/${name}.png`, fullPage: true });
 
-    // ── Pricing ──
-    await page.goto(BASE + "/pricing", { waitUntil: "networkidle" });
-    await page.waitForTimeout(500);
-    await page.screenshot({ path: path.join(OUT, `pricing-${w}.png`), fullPage: true });
-    const priceText = await page.evaluate(() => document.body.innerText);
-    const priceInvLinks = await page.evaluate(() => [...document.querySelectorAll('a[href*="/invitation"], button')].filter(el => /invitation/i.test(el.getAttribute("href") || el.textContent || "")).length);
-    if (w === 1440) {
-      ok("pricing: H1 'Two plans, split on a real line.'", /Two plans, split on a real line\./.test(priceText));
-      ok("pricing: line-3 free-through-Dec-31 + Jan-1 start", /Free through December 31, 2026/.test(priceText) && /start January 1, 2027/.test(priceText));
-      ok("pricing: Core $149 + Team $299", /\$149/.test(priceText) && /\$299/.test(priceText));
-      ok("pricing: no '$249' anywhere", !/\$249/.test(priceText));
-      ok("pricing: no 'invitation-only'", !/invitation-only/i.test(priceText));
-      ok("pricing: no 'founding partner'", !/founding partner/i.test(priceText));
-      ok("pricing: no 'COMING SOON' badge", !/coming soon/i.test(priceText));
-      ok("pricing: 'Start free' CTA present", /Start free/i.test(priceText));
-      ok("pricing: NO link/button referencing /invitation", priceInvLinks === 0, priceInvLinks);
-      ok("pricing: bands active-donor line present", /Bands count active donors/.test(priceText));
-      ok("pricing: Foundation Portal add-on present", /Foundation Portal/.test(priceText) && /Ask about it/.test(priceText));
-      ok("pricing: footer strip items present", /No platform fee/.test(priceText) && /No donor tip/.test(priceText) && /cancel anytime/i.test(priceText));
-      ok("pricing: quote block gone (no 'cheaper than the real CRMs')", !/cheaper than the real CRMs/i.test(priceText));
-    }
+  for (const [label, vw] of [["1440", { width: 1440, height: 960 }], ["390", { width: 390, height: 844 }]]) {
+    const ctx = await browser.newContext({ viewport: vw, deviceScaleFactor: 2 });
+    const page = await ctx.newPage();
 
-    // ── Landing ──
-    await page.goto(BASE + "/", { waitUntil: "networkidle" });
-    await page.waitForTimeout(900);
-    // scroll to trigger reveals, then to bottom
-    await page.evaluate(async () => { for (let y = 0; y <= document.body.scrollHeight; y += 600) { window.scrollTo(0, y); await new Promise(r => setTimeout(r, 40)); } window.scrollTo(0, 0); });
+    // ── the landing (signed out) ──────────────────────────────────────────
+    await page.goto(APP + "/giving", { waitUntil: "networkidle" });
+    ok(`[${label}] landing headline renders`, await page.locator("h1", { hasText: "All of your giving" }).count() === 1);
+    ok(`[${label}] auth card present with password primary`, await page.locator("input[type=password]").count() >= 1);
+    ok(`[${label}] sign-in-link alternate offered`,
+      await page.locator("button", { hasText: "Email me a sign-in link" }).count() >= 1);
+    ok(`[${label}] value trio renders`, await page.locator("text=Recurring gifts, under control").count() === 1);
+    ok(`[${label}] org-blindness promise stated`,
+      (await page.locator("text=never share").first().innerText().catch(() => "")).length > 0);
+    ok(`[${label}] no horizontal page scroll`,
+      await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1));
+    ok(`[${label}] tab title set`, (await page.title()).includes("Your Giving"));
+    await shoot(page, `giving-landing-${label}`);
+
+    // ── signup mode via an entry link with from=<slug> ────────────────────
+    // (fresh document load — an entry link is always a fresh navigation; a
+    // same-path hash change on an already-open /giving deliberately doesn't
+    // re-derive auth mode)
+    await page.goto("about:blank");
+    await page.goto(APP + `/giving#signup&from=${LISTED}`, { waitUntil: "networkidle" });
     await page.waitForTimeout(500);
-    await page.screenshot({ path: path.join(OUT, `landing-${w}.png`), fullPage: true });
-    const landText = await page.evaluate(() => document.body.innerText);
-    const meta = await page.evaluate(() => ({
-      reveal: document.querySelectorAll(".lp-reveal").length,
-      sections: document.querySelectorAll(".lp section, .lp .lp-section, .lp > section").length,
-      hiddenReveal: [...document.querySelectorAll(".lp-reveal")].filter(e => getComputedStyle(e).opacity === "0").length,
-      deadAnchors: [...document.querySelectorAll('a[href^="#"]')].filter(a => { const id = a.getAttribute("href").slice(1); return id && !document.getElementById(id) && !document.getElementsByName(id).length; }).map(a => a.getAttribute("href")),
-      invLinks: [...document.querySelectorAll('a[href*="/invitation"]')].map(a => a.getAttribute("href")),
-      invBtns: [...document.querySelectorAll("button")].filter(b => /request an invitation/i.test(b.textContent || "")).length,
-    }));
-    if (w === 1440) {
-      ok("landing: 'Where Steward is today' section GONE", !/Where Steward is today/i.test(landText));
-      ok("landing: 'A letter from the founder' section GONE", !/letter from the founder/i.test(landText) && !/Why I built Steward/i.test(landText));
-      ok("landing: 'Load-tested to 25,000' claim GONE", !/Load-tested to 25,000/i.test(landText));
-      ok("landing: 'Start free' CTA present", /Start free/i.test(landText));
-      ok("landing: no /invitation links", meta.invLinks.length === 0, meta.invLinks);
-      ok("landing: no 'Request an invitation' buttons", meta.invBtns === 0, meta.invBtns);
-      ok("landing: no 'founding' copy", !/founding/i.test(landText));
-      ok("landing: no dead in-page anchors", meta.deadAnchors.length === 0, meta.deadAnchors);
-      ok("landing: no opacity:0 stranded reveals after scroll", meta.hiddenReveal === 0, meta.hiddenReveal);
-      console.log(`  INFO landing .lp-reveal nodes = ${meta.reveal}; console errors = ${errors.length}`);
-      ok("landing: no console errors", errors.length === 0, errors.slice(0, 3));
-    }
-    await page.close();
+    ok(`[${label}] entry link lands in signup mode`,
+      await page.locator("h2", { hasText: "Create your giving account" }).count() === 1);
+    ok(`[${label}] from=<slug> courtesy line renders`,
+      (await page.locator("text=You're connecting with").count()) === 1);
+    await shoot(page, `giving-signup-from-${label}`);
+
+    // ── thank-you screen: listed shows the offer, unlisted never does ─────
+    await page.goto(APP + `/give/${LISTED}?donated=true`, { waitUntil: "networkidle" });
+    ok(`[${label}] listed thank-you offers the giving account`,
+      await page.locator("a", { hasText: "Create your free giving account" }).count() === 1);
+    ok(`[${label}] thank-you link carries from=<slug> in the fragment`,
+      (await page.locator("a", { hasText: "Create your free giving account" }).getAttribute("href")) === `/giving#signup&from=${LISTED}`);
+    await shoot(page, `thankyou-listed-${label}`);
+    await page.goto(APP + `/give/${UNLISTED}?donated=true`, { waitUntil: "networkidle" });
+    ok(`[${label}] unlisted thank-you has NO giving-account offer`,
+      await page.locator("a", { hasText: "Create your free giving account" }).count() === 0);
+    if (label === "390") await shoot(page, `thankyou-unlisted-${label}`);
+
+    await ctx.close();
   }
+
+  // ── Settings › Donor Portal snippet (desktop only) ──────────────────────
+  const login = await fetch(API + "/auth/login", {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ email: `admin@${LISTED}.test.local`, password: "loadtest1234" }),
+  }).then(r => r.json());
+  if (login.token) {
+    const ctx = await browser.newContext({ viewport: { width: 1440, height: 960 }, deviceScaleFactor: 2 });
+    const page = await ctx.newPage();
+    await page.addInitScript(([t, u, o]) => {
+      localStorage.setItem("npe_token", t);
+      localStorage.setItem("npe_user", JSON.stringify(u));
+      localStorage.setItem("npe_org", JSON.stringify(o));
+    }, [login.token, login.user, login.org]);
+    await page.goto(APP + "/dashboard", { waitUntil: "networkidle" });
+    await page.locator("button", { hasText: "Settings" }).first().click({ timeout: 5000 }).catch(() => {});
+    await page.locator("text=Donor Portal").first().click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(800);
+    const snippet = page.locator("text=Put it on your website");
+    ok("Settings snippet section renders for the listed org", await snippet.count() === 1);
+    ok("snippet contains the from=<slug> giving link",
+      (await page.locator("text=/giving#from=" + LISTED).count()) >= 1);
+    if (await snippet.count()) await snippet.first().scrollIntoViewIfNeeded();
+    await shoot(page, "settings-website-snippet-1440");
+    await ctx.close();
+  } else {
+    ok("Settings snippet capture (admin login)", false, login);
+  }
+
   await browser.close();
-  console.log(`\n${pass} passed, ${fail} failed  ·  screenshots → ${OUT}`);
+  console.log(`\n${pass} passed, ${fail} failed → ${OUT}`);
   process.exit(fail ? 1 : 0);
 })().catch(e => { console.error(e); process.exit(1); });

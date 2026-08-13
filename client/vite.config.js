@@ -25,6 +25,16 @@ export default defineConfig({
     // deleted from dist (sourcemaps.filesToDeleteAfterUpload) — the bundle
     // Vercel actually serves never has raw source maps in either case.
     sourcemap: !!process.env.SENTRY_AUTH_TOKEN,
+    // BUILD-49 — /giving gets its own HTML entry so crawlers and social
+    // scrapers (which don't run JS) see a real title/description/OG in the
+    // served bytes. Same SPA bundle either way; the vercel.json rewrite
+    // "/giving" → "/giving.html" (before the SPA catch-all) serves it.
+    rollupOptions: {
+      input: {
+        main: new URL("./index.html", import.meta.url).pathname,
+        giving: new URL("./giving.html", import.meta.url).pathname,
+      },
+    },
   },
   plugins: [
     react(),

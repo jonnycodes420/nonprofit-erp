@@ -4340,14 +4340,52 @@ async function renderReceiptPdf(snapshot) {
     const range = doc.bufferedPageRange();
     for (let i = range.start; i < range.start + range.count; i++) {
       doc.switchToPage(i);
+      // BUILD-49 entry point (b): the year-end statement PDF carries one quiet
+      // giving-account line — only when it was stamped into the snapshot at
+      // issue time (listed orgs only; an already-issued receipt never changes).
+      // The link carries from=<slug> only — no donor identifier ever rides a
+      // URL embedded in a document that may be printed or forwarded.
+      const footerY = snapshot.givingAccountUrl ? doc.page.height - 52 : doc.page.height - 40;
       doc.font("Helvetica").fontSize(7).fillColor("#9ca3af").text(
         `${snapshot.orgLegalName} is a tax-exempt organization. EIN: ${snapshot.orgEin || "—"}. This receipt is provided for your tax records. Please retain it. No portion of this document constitutes tax advice.`,
-        50, doc.page.height - 40, { width: PW - 100, height: 30, align: "left" }
+        50, footerY, { width: PW - 100, height: 30, align: "left" }
       );
+      if (snapshot.givingAccountUrl) {
+        doc.font("Helvetica").fontSize(7).fillColor("#9ca3af").text(
+          `See all your giving in one place — ${snapshot.givingAccountDisplay || "your free giving account"}`,
+          50, doc.page.height - 32, { width: PW - 100, height: 12, align: "left", link: snapshot.givingAccountUrl }
+        );
+      }
     }
 
     doc.end();
   });
+}
+
+// ── BUILD-49 — the donor front door's entry-point gate ─────────────────────
+// One predicate for every donor-touching surface that may mention the /giving
+// account: the org must be portal-enabled AND network_listed (the same
+// listing predicate as the directory/dashboard queries) and the accounts flag
+// must be on. Unlisted orgs' donors NEVER see any of it. Returns the org
+// slug for from=<slug> links, or null.
+async function givingAccountEntry(org) {
+  if (!DONOR_ACCOUNTS_ENABLED || !org || !org.org_slug) return null;
+  const rows = await query(
+    `SELECT 1 FROM portal_settings WHERE org_id = ? AND enabled = true AND network_listed = true`, [org.id]);
+  return rows.length ? { slug: org.org_slug } : null;
+}
+// The emailed entry link: from=<slug> for the cosmetic theming, and — when the
+// email address is verified-in-context (it received this very email) — the
+// existing fragment prefill convention. Everything donor-identifying rides
+// the URL FRAGMENT, never the query string (never sent to a server or in a
+// Referer).
+function givingAccountLink(slug, email) {
+  return `${publicAppUrl()}/giving#signup&from=${slug}` + (email ? `&email=${encodeURIComponent(email)}` : "");
+}
+function givingAccountEmailFooterHtml(slug, email) {
+  return `<p style="border-top:1px solid #e8e4db;margin-top:22px;padding-top:12px;color:#8fa896;font-size:12px;">
+    See all your giving in one place — receipts, recurring gifts, and year-end totals across every organization you support:
+    <a href="${givingAccountLink(slug, email)}" style="color:#0d5c3a;">create your free giving account</a>.</p>`;
 }
 
 async function sendReceiptEmail(org, donor, snapshot, pdfBuffer, filename) {
@@ -4359,10 +4397,14 @@ async function sendReceiptEmail(org, donor, snapshot, pdfBuffer, filename) {
     // every other donor-facing email — both live-test findings, 2026-08-05.
     const artifact = snapshot.type === "year_end" ? "year-end giving statement" : "donation receipt";
     const subject = `Your ${artifact} from ${displayNameCase(org.name)}`;
+    // BUILD-49 entry point (a)+(b): one quiet footer line on the receipt and
+    // year-end cover emails, only for listed orgs.
+    const entry = await givingAccountEntry(org);
     const html = await brandEmailHeaderHtml(org.id)
       + `<p>Hi ${escapeHtml(donor.name || "there")},</p>
       <p>Thank you for your generous gift to <strong>${escapeHtml(displayNameCase(org.name))}</strong> — your official ${snapshot.type === "year_end" ? "year-end giving statement" : "tax receipt"} is attached.</p>
-      <p style="color:#8fa896;font-size:13px">Receipt #${escapeHtml(snapshot.receiptNumber)}</p>`;
+      <p style="color:#8fa896;font-size:13px">Receipt #${escapeHtml(snapshot.receiptNumber)}</p>`
+      + (entry ? givingAccountEmailFooterHtml(entry.slug, donor.email) : "");
     // Transactional (not a campaign/sequence send) — deliberately no
     // unsubscribe link/List-Unsubscribe headers, but still skips suppressed
     // addresses (below, before this is ever called) to protect the shared
@@ -4508,6 +4550,14 @@ async function issueYearEndStatement(org, donor, year, { send = true } = {}) {
     taxYear: year,
     lineItems, totalAmount, totalDeductible,
   };
+  // BUILD-49 entry point (b): stamp the giving-account line into the frozen
+  // snapshot at issue time (listed orgs only). PDF link carries from=<slug>
+  // only — never a donor identifier (the document may be printed/forwarded).
+  const entry = await givingAccountEntry(org);
+  if (entry) {
+    snapshot.givingAccountUrl = `${publicAppUrl()}/giving#from=${entry.slug}`;
+    snapshot.givingAccountDisplay = `${publicAppUrl().replace(/^https?:\/\//, "")}/giving`;
+  }
   const pdfBuffer = await renderReceiptPdf(snapshot);
   const id = "rcpt_" + uuid().slice(0, 8);
   await run(
@@ -8776,7 +8826,11 @@ app.get("/org/:orgSlug/public", wrap(async (req, res) => {
   if (!orgs.length) return res.status(404).json({ error: "Organization not found" });
   const org = orgs[0];
   const funds = await query("SELECT id, name, restricted FROM fin_funds WHERE org_id = $1 ORDER BY name ASC", [org.id]);
-  res.json({ org: { name: org.name, mission: org.mission, slug: req.params.orgSlug, coverFeesEnabled: org.cover_fees_enabled !== false }, funds });
+  // BUILD-49 entry point (c): the post-donation thank-you screen offers the
+  // giving account only for listed orgs (givingAccountEntry — the one gate).
+  // Listing is already public via the directory, so this reveals nothing new.
+  const gaEntry = await givingAccountEntry({ id: org.id, org_slug: req.params.orgSlug });
+  res.json({ org: { name: org.name, mission: org.mission, slug: req.params.orgSlug, coverFeesEnabled: org.cover_fees_enabled !== false, givingAccount: !!gaEntry }, funds });
 }));
 
 // ── Giving Pages ────────────────────────────────────────────────────────────
@@ -8971,7 +9025,7 @@ app.get("/org/:orgSlug/giving-page/:pageSlug/public", wrap(async (req, res) => {
   );
 
   res.json({
-    org: { name: org.name, mission: org.mission, slug: req.params.orgSlug, coverFeesEnabled: org.cover_fees_enabled !== false },
+    org: { name: org.name, mission: org.mission, slug: req.params.orgSlug, coverFeesEnabled: org.cover_fees_enabled !== false, givingAccount: !!(await givingAccountEntry({ id: org.id, org_slug: req.params.orgSlug })) },
     givingPage: {
       id: page.id, slug: page.slug, title: page.title, story: page.story, imageUrl: page.image_url,
       goalAmount: page.goal_amount != null ? parseFloat(page.goal_amount) : null,
@@ -9160,7 +9214,7 @@ app.get("/org/:orgSlug/giving-page/:pageSlug/fundraiser/:fundraiserSlug/public",
   const f = fRows[0];
 
   res.json({
-    org: { name: org.name, mission: org.mission, slug: req.params.orgSlug, coverFeesEnabled: org.cover_fees_enabled !== false },
+    org: { name: org.name, mission: org.mission, slug: req.params.orgSlug, coverFeesEnabled: org.cover_fees_enabled !== false, givingAccount: !!(await givingAccountEntry({ id: org.id, org_slug: req.params.orgSlug })) },
     givingPage: { id: page.id, slug: page.slug, title: page.title, fundId: page.fund_id, fundName: page.fund_name || null },
     peerFundraiser: {
       id: f.id, slug: f.slug, name: f.name, story: f.story, imageUrl: f.image_url,
@@ -16350,6 +16404,68 @@ app.post("/account/logout", requireFlag(DONOR_ACCOUNTS_ENABLED), wrap(async (req
   const raw = parsePortalCookies(req)[PORTAL_COOKIE];
   if (raw) await run(`UPDATE portal_sessions SET revoked_at = NOW() WHERE token_hash = ?`, [sha256hex(raw)]).catch(() => {});
   res.append("Set-Cookie", `${PORTAL_COOKIE}=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0`);
+  res.json({ ok: true });
+}));
+
+// ── BUILD-49 — account sign-in link (the password-free alternate on /giving) ─
+// Same discipline as the portal magic link + resets: identical response for
+// known/unknown emails (work happens async), supersede-on-re-request, 15-min
+// hash-at-rest single-use token, atomic consume. A verified alias signs in to
+// the account it belongs to; an UNVERIFIED account quietly gets its
+// verification email re-sent instead (mirrors the login route) — a sign-in
+// link must never become an email-verification bypass.
+app.post("/account/request-link", requireFlag(DONOR_ACCOUNTS_ENABLED), accountIpLimiter, accountEmailLimiter, wrap(async (req, res) => {
+  const email = foldEmail(req.body?.email);
+  res.json({ received: true, message: "If that address has an account, a sign-in link is on its way." });
+  if (!EMAIL_RX.test(email)) return;
+  (async () => {
+    const accts = await query(
+      `SELECT id, email, email_verified_at FROM donor_accounts WHERE email = ?
+       UNION
+       SELECT a.id, a.email, a.email_verified_at FROM donor_accounts a
+         JOIN donor_account_aliases al ON al.account_id = a.id
+       WHERE al.email = ? AND al.verified_at IS NOT NULL
+       LIMIT 1`, [email, email]);
+    if (!accts.length) { await donorAudit(null, email, "signin_link_unknown", req); return; }
+    const acct = accts[0];
+    if (!acct.email_verified_at) {
+      const vtoken = crypto.randomBytes(32).toString("base64url");
+      await run(`UPDATE donor_accounts SET verify_token_hash=?, verify_expires_at=NOW()+INTERVAL '60 minutes' WHERE id=?`, [sha256hex(vtoken), acct.id]);
+      await sendDonorLifecycleEmail("verify", acct.email, `Verify your email — ${CONSUMER_BRAND}`,
+        consumerEmailHtml(`<p>Confirm this email address to sign in:</p>
+          <p style="text-align:center;margin:28px 0;"><a href="${publicAppUrl()}/giving/verify#token=${vtoken}" style="background:#c9a84c;color:#0f1a12;text-decoration:none;padding:12px 28px;border-radius:8px;font-weight:700;display:inline-block;">Verify my email</a></p>`));
+      return;
+    }
+    await run(`UPDATE donor_account_signin_links SET superseded_at = NOW() WHERE account_id = ? AND used_at IS NULL AND superseded_at IS NULL`, [acct.id]);
+    const token = crypto.randomBytes(32).toString("base64url"); // 256-bit CSPRNG
+    await run(
+      `INSERT INTO donor_account_signin_links (id,account_id,token_hash,expires_at)
+       VALUES (?,?,?, NOW() + INTERVAL '15 minutes')`,
+      ["dsl_" + uuid().slice(0, 10), acct.id, sha256hex(token)]);
+    await donorAudit(acct.id, email, "signin_link_requested", req);
+    const link = `${publicAppUrl()}/giving/signin#token=${token}`; // fragment: never sent in a Referer
+    await sendDonorLifecycleEmail("signin_link", email, `Your sign-in link — ${CONSUMER_BRAND}`,
+      consumerEmailHtml(`<p>Here is your secure sign-in link for your giving account:</p>
+        <p style="text-align:center;margin:28px 0;"><a href="${link}" style="background:#c9a84c;color:#0f1a12;text-decoration:none;padding:12px 28px;border-radius:8px;font-weight:700;display:inline-block;">See my giving</a></p>
+        <p style="font-size:13px;color:#555;">This link works once and expires in 15 minutes. If you didn't request it, you can safely ignore this email.</p>`));
+  })().catch(e => console.error("[account] signin-link request failed:", e.message));
+}));
+
+app.post("/account/link-verify", requireFlag(DONOR_ACCOUNTS_ENABLED), accountIpLimiter, wrap(async (req, res) => {
+  const token = String(req.body?.token || "");
+  if (!token || token.length > 300) return res.status(400).json({ error: "invalid_link" });
+  // Atomic consume — wins exactly once even under a parallel replay.
+  const rows = await query(
+    `UPDATE donor_account_signin_links SET used_at = NOW()
+     WHERE token_hash = ? AND used_at IS NULL AND superseded_at IS NULL AND expires_at > NOW()
+     RETURNING account_id`, [sha256hex(token)]);
+  if (!rows.length) return res.status(400).json({ error: "invalid_link", message: "That link has expired or was already used. Request a fresh one." });
+  const accountId = rows[0].account_id;
+  const [acct] = await query(`SELECT email FROM donor_accounts WHERE id = ?`, [accountId]);
+  if (!acct) return res.status(400).json({ error: "invalid_link" });
+  await donorAudit(accountId, acct.email, "login_link", req);
+  await linkDonorAccount(accountId); // freshness pass, same as reset
+  await mintAccountSession(res, accountId, acct.email, req);
   res.json({ ok: true });
 }));
 

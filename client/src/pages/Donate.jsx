@@ -243,6 +243,22 @@ export default function Donate() {
       <div style={{ fontSize: 14, color: T.ink3, maxWidth: 360, lineHeight: 1.6 }}>
         A receipt will be sent to your email. Thank you for your generosity — it makes a real difference.
       </div>
+      {/* BUILD-49 entry point (c) — the giving-account offer, only when the org
+          has opted into network listing (org.givingAccount from the public
+          payload). from=<slug> rides the fragment for the cosmetic theming;
+          no donor identifier is known client-side here, so no email prefill. */}
+      {org.givingAccount && (
+        <div style={{ marginTop: 28, padding: "16px 22px", background: T.white, border: `1px solid ${T.bg2}`, borderRadius: 12, maxWidth: 400 }}>
+          <div style={{ fontSize: 13.5, color: T.ink2, lineHeight: 1.6 }}>
+            Want your giving history, receipts, and recurring gifts in one place — for
+            every organization you support?
+          </div>
+          <a href={`/giving#signup&from=${org.slug}`}
+            style={{ display: "inline-block", marginTop: 10, background: T.gold, color: T.ink, textDecoration: "none", borderRadius: 8, padding: "9px 18px", fontSize: 13, fontWeight: 700 }}>
+            Create your free giving account
+          </a>
+        </div>
+      )}
     </div>
   );
 
