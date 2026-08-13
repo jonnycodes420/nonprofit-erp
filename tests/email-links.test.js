@@ -125,5 +125,14 @@ ok(cardRw >= 0 && /nonprofit-erp-production\.up\.railway\.app\/recurring\/update
   "vercel.json proxies /recurring/update-card to the backend");
 ok(spaRw > unsubRw && spaRw > cardRw, "backend proxies come BEFORE the SPA catch-all rewrite");
 
+// ── 5. Deploy gate: Vercel git auto-build stays OFF for main ──
+// Go-live cutover (887bf2e, 2026-08-12): the frontend deploys ONLY via the
+// deploy-vercel Actions job (green tests → vercel deploy → SHA-verified poll).
+// Re-enabling git auto-build here would let a red-test push ship the client —
+// a deliberate decision if ever, never a casual edit. (The ignored-build-step
+// alternative was rejected; see BLOCKED-vercel-gate.md.)
+ok(vj.git?.deploymentEnabled?.main === false,
+  "vercel.json keeps git auto-build DISABLED for main (Actions-only frontend deploys)");
+
 console.log(`\nemail-links: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
