@@ -68,6 +68,8 @@ const { google } = require("googleapis");
 const { Webhook: SvixWebhook } = require("svix");
 const { donationStripeKey, billingStripeKey, billingStripeMode, billingConfigError, otherBillingMode } = require("./stripeKeys");
 const { CANONICAL_APP_URL, resolvePublicAppUrl, publicAppUrl } = require("./publicUrl");
+const { putThemeAsset, getThemeAsset, pruneThemeAssets, ASSET_ID_RE, s3Config: assetS3Config } = require("./assetStore");
+const { imageSize } = require("image-size");
 const { computeTrialEnd } = require("./trialEnd");
 
 // `stripe` = DONATION processing (connected accounts + /stripe/webhook), on the
@@ -1110,6 +1112,10 @@ app.get("/health", (req, res) => {
     // the SURFACING that F-2 was missing. Cached (refreshed by the retry sweep),
     // so /health stays a cheap synchronous check.
     notifications: { failedPending: notifyFailedPending },
+    // BUILD-51: which theme-asset driver is live — s3:true means uploads go to
+    // the bucket; s3:false (env unset) means bytes land in Postgres. The
+    // post-deploy one-glance check that prod is actually on object storage.
+    themeAssets: { s3: !!assetS3Config() },
   });
 });
 
@@ -15347,7 +15353,7 @@ async function portalOrgBySlug(slug) {
   if (!slug || typeof slug !== "string" || slug.length > 120) return null;
   const rows = await query(
     `SELECT o.*, ps.enabled AS portal_enabled, ps.display_name AS portal_display_name,
-            ps.logo_data AS portal_logo, ps.header_image_data AS portal_header_image,
+            COALESCE(ps.logo_url, ps.logo_data) AS portal_logo, COALESCE(ps.header_image_url, ps.header_image_data) AS portal_header_image,
             ps.primary_color, ps.accent_color, ps.footer_text AS portal_footer,
             ps.contact_email AS portal_contact, ps.ein_line AS portal_ein,
             ps.powered_by, ps.min_recurring_cents, ps.network_listed,
@@ -16006,6 +16012,20 @@ app.post("/portal/:orgSlug/recurring/:subId/update-card", portalMutationLimiter,
 // Org admins configure the portal in the existing CRM (staff JWT auth — the
 // OTHER side of the P-4 wall).
 
+// BUILD-51 — the public theme-asset URL. Content-addressed ids make these
+// immutable: new bytes mint a new id, so aggressive caching can never serve
+// a stale image (the Vercel /portal-assets proxy + any CDN honor these
+// headers). Carries no donor data — theme imagery is public by definition
+// (it renders on the public portal/give pages).
+app.get("/portal-assets/:id", wrap(async (req, res) => {
+  const asset = await getThemeAsset(req.params.id);
+  if (!asset) return res.status(404).json({ error: "not_found" });
+  res.set("Content-Type", asset.contentType);
+  res.set("Cache-Control", "public, max-age=31536000, immutable");
+  res.set("ETag", `"${asset.id}"`);
+  res.send(asset.buffer);
+}));
+
 app.get("/portal-settings", requireAuth, wrap(async (req, res) => {
   await run(`INSERT INTO portal_settings (org_id) VALUES (?) ON CONFLICT (org_id) DO NOTHING`, [req.user.orgId]);
   const [ps] = await query(`SELECT * FROM portal_settings WHERE org_id = ?`, [req.user.orgId]);
@@ -16014,6 +16034,33 @@ app.get("/portal-settings", requireAuth, wrap(async (req, res) => {
 }));
 
 const PORTAL_IMG_MIMES = ["image/png", "image/jpeg", "image/gif", "image/webp", "image/svg+xml"];
+
+// BUILD-51 — server-side dimension validation for theme images. SVGs are
+// vectors (scale losslessly) and skip the raster rules; rasters must parse.
+// The header rule exists because the takeover renders it as a ~5:1 banner
+// crop: a portrait image can only decapitate its subject, so it's rejected
+// outright (with the Settings crop preview showing WHY before upload).
+function checkThemeImageDimensions(kind, contentType, buffer) {
+  if (contentType === "image/svg+xml") return { ok: true, width: null, height: null };
+  let d;
+  try { d = imageSize(buffer); } catch { d = null; }
+  if (!d || !d.width || !d.height) {
+    return { ok: false, message: "That file doesn't parse as an image — try re-exporting it as PNG or JPEG." };
+  }
+  if (kind === "header") {
+    if (d.height >= d.width) {
+      return { ok: false, message: "Header images render as a wide banner — this image is as tall as it is wide and would crop badly. Use a landscape image (at least 1200×300 works well)." };
+    }
+    if (d.width < 600) {
+      return { ok: false, message: "Header images need to be at least 600px wide to look sharp as a banner." };
+    }
+  }
+  if (d.width > 6000 || d.height > 6000) {
+    return { ok: false, message: "Images can be at most 6000px on a side." };
+  }
+  return { ok: true, width: d.width, height: d.height };
+}
+
 function validPortalImage(dataUri, capBytes) {
   if (dataUri == null || dataUri === "") return true;
   if (typeof dataUri !== "string" || dataUri.length > capBytes) return false;
@@ -16078,16 +16125,41 @@ app.put("/portal-settings", requireAuth, requireAdmin, checkWriteAccess, wrap(as
       updates.push(`${col} = ?`); params.push(b[key]);
     }
   }
-  for (const [key, col] of [["logoData", "logo_data"], ["headerImageData", "header_image_data"]]) {
-    if (b[key] !== undefined) {
-      if (!validPortalImage(b[key], 500000)) return res.status(400).json({ error: "bad_image", message: "Images must be PNG/JPEG/GIF/WebP/SVG under ~350KB." });
-      updates.push(`${col} = ?`); params.push(b[key] || null);
+  // BUILD-51 — theme images are stored as ASSETS, never in the row. A data
+  // URI upload is validated (type + size + dimensions), written through
+  // assetStore, and the row keeps only the /portal-assets/<id> URL path; the
+  // legacy *_data column is nulled. The client may echo back the stored URL
+  // on an unrelated save — that's a no-op, not a re-upload. "" clears.
+  const assetOps = []; // deferred until after the row UPDATE
+  for (const [key, colBase, kind] of [["logoData", "logo", "logo"], ["headerImageData", "header_image", "header"]]) {
+    const v = b[key];
+    if (v === undefined) continue;
+    if (typeof v === "string" && (v.startsWith("/portal-assets/") || ASSET_ID_RE.test(v.replace("/portal-assets/", "")))) continue; // echo of the stored URL — keep
+    if (v == null || v === "") {
+      updates.push(`${colBase}_data = ?`); params.push(null);
+      updates.push(`${colBase}_url = ?`); params.push(null);
+      assetOps.push({ kind, keepId: null });
+      continue;
     }
+    if (!validPortalImage(v, 500000)) return res.status(400).json({ error: "bad_image", message: "Images must be PNG/JPEG/GIF/WebP/SVG under ~350KB." });
+    const m = v.match(/^data:([^;]+);base64,(.*)$/s);
+    const contentType = m[1];
+    let buffer;
+    try { buffer = Buffer.from(m[2], "base64"); } catch { return res.status(400).json({ error: "bad_image" }); }
+    const dims = checkThemeImageDimensions(kind, contentType, buffer);
+    if (!dims.ok) return res.status(400).json({ error: "bad_image_dimensions", message: dims.message });
+    const asset = await putThemeAsset({ orgId: req.user.orgId, kind, buffer, contentType, width: dims.width, height: dims.height });
+    updates.push(`${colBase}_url = ?`); params.push(asset.path);
+    updates.push(`${colBase}_data = ?`); params.push(null);
+    assetOps.push({ kind, keepId: asset.id });
   }
   if (updates.length) {
     updates.push("updated_at = NOW()");
     await run(`UPDATE portal_settings SET ${updates.join(", ")} WHERE org_id = ?`, [...params, req.user.orgId]);
   }
+  // Prune stale assets only AFTER the row points at the replacement (a serve
+  // of the old URL during the window is fine; a dangling row URL is not).
+  for (const op of assetOps) await pruneThemeAssets(req.user.orgId, op.kind, op.keepId);
   const [ps] = await query(`SELECT * FROM portal_settings WHERE org_id = ?`, [req.user.orgId]);
   res.json({ ...ps, adjusted, ...(adjusted ? { message: tintAdjusted
     ? "Your colors were adjusted slightly so text stays readable (WCAG AA) — light accents are deepened, dark backgrounds lightened."
@@ -16673,7 +16745,7 @@ app.get("/account/me", requireDonorAccount, wrap(async (req, res) => {
   const aliases = await query(`SELECT id, email, verified_at FROM donor_account_aliases WHERE account_id = ? ORDER BY created_at`, [acct.id]);
   const links = await query(
     `SELECT l.id, l.org_id, l.donor_id, l.via_email, l.unlinked_at, o.name AS org_name, o.org_slug,
-            ps.network_listed, ps.display_name, ps.primary_color, ps.accent_color, ps.logo_data
+            ps.network_listed, ps.display_name, ps.primary_color, ps.accent_color, COALESCE(ps.logo_url, ps.logo_data) AS logo_data
      FROM donor_account_links l
      JOIN orgs o ON o.id = l.org_id
      JOIN portal_settings ps ON ps.org_id = l.org_id AND ps.enabled = true
@@ -16709,8 +16781,8 @@ app.get("/account/dashboard", requireDonorAccount, wrap(async (req, res) => {
   await linkDonorAccount(acct.id);
   const links = await query(
     `SELECT l.org_id, l.donor_id, l.via_email, o.name AS org_name, o.org_slug,
-            ps.display_name, ps.primary_color, ps.accent_color, ps.logo_data,
-            ps.header_image_data, ps.background_tint, ps.button_color,
+            ps.display_name, ps.primary_color, ps.accent_color, COALESCE(ps.logo_url, ps.logo_data) AS logo_data,
+            COALESCE(ps.header_image_url, ps.header_image_data) AS header_image_data, ps.background_tint, ps.button_color,
             ps.type_pairing, ps.card_style, ps.footer_text, ps.ein_line, ps.contact_email
      FROM donor_account_links l
      JOIN orgs o ON o.id = l.org_id
@@ -16768,8 +16840,8 @@ app.get("/account/dashboard", requireDonorAccount, wrap(async (req, res) => {
   // org-wide impact updates.
   const followRows = await query(
     `SELECT f.id, f.org_id, o.org_slug, COALESCE(ps.display_name, o.name) AS name,
-            ps.logo_data, ps.primary_color, ps.accent_color, ps.directory_description,
-            ps.header_image_data, ps.background_tint, ps.button_color,
+            COALESCE(ps.logo_url, ps.logo_data) AS logo_data, ps.primary_color, ps.accent_color, ps.directory_description,
+            COALESCE(ps.header_image_url, ps.header_image_data) AS header_image_data, ps.background_tint, ps.button_color,
             ps.type_pairing, ps.card_style, ps.footer_text, ps.ein_line, ps.contact_email
      FROM donor_org_follows f
      JOIN orgs o ON o.id = f.org_id
@@ -16902,7 +16974,7 @@ app.get("/network/directory", requireDonorAccount, directorySearchLimiter, wrap(
     `SELECT o.org_slug, o.id AS org_id,
             COALESCE(ps.display_name, o.name) AS name,
             ps.directory_description, ps.directory_city, ps.directory_state,
-            ps.logo_data, ps.primary_color, ps.accent_color,
+            COALESCE(ps.logo_url, ps.logo_data) AS logo_data, ps.primary_color, ps.accent_color,
             COUNT(*) OVER() AS total
      FROM portal_settings ps
      JOIN orgs o ON o.id = ps.org_id

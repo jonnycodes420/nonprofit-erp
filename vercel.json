@@ -20,6 +20,10 @@
       "destination": "https://nonprofit-erp-production.up.railway.app/network/:path*"
     },
     {
+      "source": "/portal-assets/:path*",
+      "destination": "https://nonprofit-erp-production.up.railway.app/portal-assets/:path*"
+    },
+    {
       "source": "/unsubscribe",
       "destination": "https://nonprofit-erp-production.up.railway.app/unsubscribe"
     },

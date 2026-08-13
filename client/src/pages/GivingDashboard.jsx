@@ -30,6 +30,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { resolvePairing, cardChrome } from "../lib/portalTheme";
+import { resolveAssetUrl } from "../lib/assetUrl";
 
 export const CONSUMER_BRAND = "Steward"; // plain Steward (go-live 2026-08-12); rename = one commit (BLOCKED-consumer-brand.md)
 
@@ -254,7 +255,7 @@ function AuthCard({ onSignedIn, mode, setMode }) {
     <div style={{ ...S.card, margin: 0, padding: "26px 28px", boxShadow: "0 18px 50px rgba(15,26,18,0.35)" }}>
       {fromTheme && mode === "signup" && (
         <div style={{ display: "flex", alignItems: "center", gap: 10, paddingBottom: 12, marginBottom: 14, borderBottom: `2px solid ${fromTheme.accent || G.brass}` }}>
-          {fromTheme.logo && <img src={fromTheme.logo} alt="" style={{ height: 30, maxWidth: 90, objectFit: "contain" }} />}
+          {fromTheme.logo && <img src={resolveAssetUrl(fromTheme.logo)} alt="" style={{ height: 30, maxWidth: 90, objectFit: "contain" }} />}
           <span style={{ ...S.muted, fontSize: 13 }}>You're connecting with <b style={{ color: G.ink }}>{fromTheme.displayName}</b></span>
         </div>
       )}
@@ -440,7 +441,7 @@ function TokenLanding({ kind, onDone }) {
 
 function OrgAvatar({ org, size = 46 }) {
   return org.logo
-    ? <img src={org.logo} alt="" style={{ width: size, height: size, borderRadius: 9, objectFit: "cover", flexShrink: 0 }} />
+    ? <img src={resolveAssetUrl(org.logo)} alt="" style={{ width: size, height: size, borderRadius: 9, objectFit: "cover", flexShrink: 0 }} />
     : <div style={{ width: size, height: size, borderRadius: 9, background: org.primary || G.emerald, color: G.white, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: SERIF, fontSize: Math.round(size * 0.46), flexShrink: 0 }}>{(org.orgName || org.name || "?")[0]}</div>;
 }
 
@@ -451,6 +452,10 @@ function orgTheme(org) {
   const t = org.theme || {};
   return {
     ...t,
+    // BUILD-51 — header/logo may be /portal-assets/<id> URL paths (or legacy
+    // data: URIs); resolve once here so every render site just uses them.
+    headerImage: resolveAssetUrl(t.headerImage),
+    logo: resolveAssetUrl(t.logo),
     accent: t.accent || org.accent || org.primary || G.emerald,
     serif: resolvePairing(t.typePairing).serif,
     sans: resolvePairing(t.typePairing).sans,

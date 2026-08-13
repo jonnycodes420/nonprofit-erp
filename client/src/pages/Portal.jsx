@@ -15,6 +15,7 @@ import { useState, useEffect, useMemo } from "react";
 import { useParams, useLocation, useNavigate } from "react-router-dom";
 import { fmtFull } from "../lib/money";
 import { resolvePairing, resolveCardStyle } from "../lib/portalTheme";
+import { resolveAssetUrl } from "../lib/assetUrl";
 
 // Same-origin in production via the vercel.json /portal-api proxy (the cookie
 // must be first-party); direct in dev (localhost ports are same-site).
@@ -75,11 +76,11 @@ function PortalHeader({ theme }) {
     <header style={{ marginBottom: 26 }}>
       {theme.headerImage && (
         <div style={{ height: 160, borderRadius: "0 0 16px 16px", overflow: "hidden", marginBottom: 18 }}>
-          <img src={theme.headerImage} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+          <img src={resolveAssetUrl(theme.headerImage)} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
         </div>
       )}
       <div style={{ display: "flex", alignItems: "center", gap: 14, paddingTop: theme.headerImage ? 0 : 28 }}>
-        {theme.logo && <img src={theme.logo} alt="" style={{ height: 44, maxWidth: 140, objectFit: "contain" }} />}
+        {theme.logo && <img src={resolveAssetUrl(theme.logo)} alt="" style={{ height: 44, maxWidth: 140, objectFit: "contain" }} />}
         <div style={{ fontFamily: "var(--pt-serif, 'DM Serif Display',Georgia,serif)", fontSize: 24 }}>{theme.displayName}</div>
       </div>
       <div style={{ height: 3, background: "var(--pt-accent)", borderRadius: 2, marginTop: 12, width: 64 }} />

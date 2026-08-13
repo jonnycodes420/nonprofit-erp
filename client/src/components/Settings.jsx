@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { T, Pill, SectionLabel, PageTitle, SectionTabs, fmt } from "./shared";
 import { QrCodeBlock, EmbedCodeBlock } from "./ShareBlocks";
 import { TYPE_PAIRINGS, CARD_STYLES, resolvePairing, cardChrome, THEME_DEFAULTS } from "../lib/portalTheme";
+import { resolveAssetUrl } from "../lib/assetUrl";
 import { apiFetch, API, getToken, billingErrorMessage } from "../api";
 import UpgradeModal from "./UpgradeModal";
 
@@ -686,6 +687,10 @@ function TaxReceiptsManager({orgId,isAdmin,isReadOnly}){
 // deepen/lighten them slightly on save (the admin is told when it does).
 function PortalThemePreview({ps}){
   const pairing=resolvePairing(ps.type_pairing);
+  // BUILD-51 — a freshly-picked file is a data URI in *_data; a saved image
+  // is a /portal-assets URL in *_url. Either renders.
+  const headerSrc=ps.header_image_data||resolveAssetUrl(ps.header_image_url);
+  const logoSrc=ps.logo_data||resolveAssetUrl(ps.logo_url);
   const chrome=cardChrome(ps.card_style,T.bg3);
   const primary=ps.primary_color||THEME_DEFAULTS.primary;
   const accent=ps.accent_color||THEME_DEFAULTS.accent;
@@ -704,13 +709,13 @@ function PortalThemePreview({ps}){
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(270px,1fr))",gap:14}}>
         <div style={{background:tint,border:"1px solid "+T.bg3,borderRadius:10,paddingBottom:14,overflow:"hidden"}}>
           <div style={{padding:"8px 14px 0",...muted}}>Steward · your giving account</div>
-          {ps.header_image_data&&(
+          {headerSrc&&(
             <div style={{height:54,overflow:"hidden",margin:"8px 14px 0",borderRadius:8}}>
-              <img src={ps.header_image_data} alt="" style={{width:"100%",height:"100%",objectFit:"cover",display:"block"}}/>
+              <img src={headerSrc} alt="" style={{width:"100%",height:"100%",objectFit:"cover",display:"block"}}/>
             </div>
           )}
           <div style={{display:"flex",alignItems:"center",gap:8,padding:"10px 14px 0"}}>
-            {ps.logo_data&&<img src={ps.logo_data} alt="" style={{height:22,maxWidth:70,objectFit:"contain"}}/>}
+            {logoSrc&&<img src={logoSrc} alt="" style={{height:22,maxWidth:70,objectFit:"contain"}}/>}
             <span style={{fontFamily:pairing.serif,fontSize:17,color:T.ink}}>{name}</span>
           </div>
           <div style={{height:2,background:accent,width:44,borderRadius:2,margin:"8px 14px 10px"}}/>
@@ -726,14 +731,14 @@ function PortalThemePreview({ps}){
         <div style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:10,padding:14}}>
           <div style={{fontFamily:"'DM Serif Display',Georgia,serif",fontSize:13,color:T.ink,marginBottom:8}}>Your organizations</div>
           <div style={{...chrome,background:T.white,overflow:"hidden",borderLeft:"4px solid "+accent}}>
-            {ps.header_image_data&&(
+            {headerSrc&&(
               <div style={{height:36,overflow:"hidden"}}>
-                <img src={ps.header_image_data} alt="" style={{width:"100%",height:"100%",objectFit:"cover",display:"block"}}/>
+                <img src={headerSrc} alt="" style={{width:"100%",height:"100%",objectFit:"cover",display:"block"}}/>
               </div>
             )}
             <div style={{display:"flex",alignItems:"center",gap:8,padding:"10px 12px"}}>
-              {ps.logo_data
-                ? <img src={ps.logo_data} alt="" style={{width:26,height:26,borderRadius:6,objectFit:"cover"}}/>
+              {logoSrc
+                ? <img src={logoSrc} alt="" style={{width:26,height:26,borderRadius:6,objectFit:"cover"}}/>
                 : <div style={{width:26,height:26,borderRadius:6,background:primary,color:T.white,display:"flex",alignItems:"center",justifyContent:"center",fontFamily:pairing.serif,fontSize:13}}>{name[0]}</div>}
               <div style={{flex:1,minWidth:0}}>
                 <div style={{fontFamily:pairing.serif,fontSize:13,color:T.ink}}>{name}</div>
@@ -768,6 +773,10 @@ function PortalManager({isAdmin,isReadOnly}){
   const load=()=>apiFetch("/portal-settings").then(setPs).catch(()=>setPs(null));
   useEffect(()=>{load();},[]);
   const set=(k,v)=>setPs(p=>({...p,[k]:v}));
+  // BUILD-51 — display refs: a new upload sits in *_data (data URI) until
+  // saved; a stored image is a /portal-assets URL in *_url.
+  const headerSrc=ps?(ps.header_image_data||resolveAssetUrl(ps.header_image_url)):null;
+  const logoSrc=ps?(ps.logo_data||resolveAssetUrl(ps.logo_url)):null;
   function onImg(field){return e=>{
     const f=e.target.files?.[0];if(!f)return;
     if(!/^image\/(png|jpeg|jpg|gif|webp|svg\+xml)$/.test(f.type)){setErr("Use a PNG, JPEG, GIF, WebP, or SVG image.");return;}
@@ -789,7 +798,7 @@ function PortalManager({isAdmin,isReadOnly}){
         primaryColor:ps.primary_color||"",accentColor:ps.accent_color||"",
         backgroundTint:ps.background_tint||"",buttonColor:ps.button_color||"",
         typePairing:ps.type_pairing||"",cardStyle:ps.card_style||"",
-        logoData:ps.logo_data||"",headerImageData:ps.header_image_data||"",
+        logoData:ps.logo_data||ps.logo_url||"",headerImageData:ps.header_image_data||ps.header_image_url||"",
         minRecurringCents:Number(ps.min_recurring_cents)||500,
       })});
       setPs(p=>({...p,...res}));
@@ -843,17 +852,31 @@ function PortalManager({isAdmin,isReadOnly}){
         <div>
           <div style={lbl}>Logo</div>
           <label style={{display:"inline-block",background:disabled?T.bg3:T.bg2,border:"1px solid "+T.bg3,borderRadius:8,padding:"7px 12px",fontSize:12,fontWeight:600,color:T.ink,cursor:disabled?"not-allowed":"pointer"}}>
-            {ps.logo_data?"Replace logo":"Upload logo"}
+            {logoSrc?"Replace logo":"Upload logo"}
             <input type="file" accept="image/*" onChange={onImg("logo_data")} disabled={disabled} style={{display:"none"}}/>
           </label>
-          {ps.logo_data&&<img src={ps.logo_data} alt="" style={{display:"block",maxHeight:36,marginTop:6}}/>}
+          {logoSrc&&<img src={logoSrc} alt="" style={{display:"block",maxHeight:36,marginTop:6}}/>}
         </div>
         <div>
           <div style={lbl}>Header image (optional)</div>
           <label style={{display:"inline-block",background:disabled?T.bg3:T.bg2,border:"1px solid "+T.bg3,borderRadius:8,padding:"7px 12px",fontSize:12,fontWeight:600,color:T.ink,cursor:disabled?"not-allowed":"pointer"}}>
-            {ps.header_image_data?"Replace image":"Upload image"}
+            {headerSrc?"Replace image":"Upload image"}
             <input type="file" accept="image/*" onChange={onImg("header_image_data")} disabled={disabled} style={{display:"none"}}/>
           </label>
+          {/* BUILD-51 — banner CROP preview: exactly the wide crop the donor
+              page renders, so a portrait upload shows its own decapitation
+              here before the server rejects it. */}
+          {headerSrc&&(
+            <div style={{marginTop:8}}>
+              <div style={{width:"100%",maxWidth:340,aspectRatio:"1200 / 250",overflow:"hidden",borderRadius:8,border:"1px solid "+T.bg3}}>
+                <img src={headerSrc} alt="" style={{width:"100%",height:"100%",objectFit:"cover",display:"block"}}/>
+              </div>
+              <div style={{fontSize:11,color:T.ink3,marginTop:4,maxWidth:340,lineHeight:1.5}}>
+                Banner crop — how the header shows on your donor page. Landscape
+                images around 1200×300 work best; portrait images are rejected.
+              </div>
+            </div>
+          )}
         </div>
       </div>
       {/* BUILD-48 theme depth — background tint + button color (both contrast-

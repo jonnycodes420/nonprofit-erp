@@ -102,6 +102,9 @@ const THIS_YEAR = String(new Date().getFullYear());
     await db.query(`INSERT INTO donor_accounts (id,email,password_hash,email_verified_at) VALUES ($1,$2,$3,NOW())`,
       [id, email, bcrypt.hashSync("b48capture999", 10)]);
   }
+  // Portal sign-ins mirror low-priority notes onto the donor timeline
+  // (BUILD-45 drift wire) — clear them or the donor delete hits the FK.
+  await db.query(`DELETE FROM interactions WHERE donor_id='d_b48cap'`);
   await db.query(`DELETE FROM gifts WHERE donor_id='d_b48cap'`);
   await db.query(`DELETE FROM donors WHERE id='d_b48cap'`);
   await db.query(`INSERT INTO donors (id,org_id,name,email,total_giving,gift_count,status,stage) VALUES ('d_b48cap','org_creo','Morgan Ellis',$1,850,2,'mid','steward')`, [CAP]);
@@ -194,8 +197,11 @@ const THIS_YEAR = String(new Date().getFullYear());
   for (const [w, vp] of VPS) {
     const { ctx, page } = await newPage(capCookie, vp);
     ok(`state2 neutral shell (${w})`, await page.locator('span:text-is("Your Giving")').count() === 1);
+    // BUILD-51: a theme saved through the guarded route now stores the image
+    // as an ASSET — the banner src is a /portal-assets URL (legacy direct-DB
+    // fixtures still render as data: URIs; both are valid generations).
     ok(`state2 CREO card has its header-image banner (${w})`, await page.evaluate(() =>
-      [...document.querySelectorAll(".gd-orgcard img")].some(i => (i.src || "").startsWith("data:image/svg"))));
+      [...document.querySelectorAll(".gd-orgcard img")].some(i => (i.src || "").includes("/portal-assets/") || (i.src || "").startsWith("data:image/svg"))));
     ok(`state2 trust line renders (${w})`, await page.locator(`text=${trustLine}`).count() > 0);
     await page.screenshot({ path: `${OUT}/state2-shell-${w}.png`, fullPage: true });
     await ctx.close();

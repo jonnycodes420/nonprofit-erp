@@ -1809,6 +1809,32 @@ async function initSchema() {
   await pool.query(`ALTER TABLE portal_settings ADD COLUMN IF NOT EXISTS type_pairing TEXT`);
   await pool.query(`ALTER TABLE portal_settings ADD COLUMN IF NOT EXISTS card_style TEXT`);
 
+  // ── BUILD-51 — theme-asset storage ───────────────────────────────────────
+  // Theme images live OUT of the portal_settings row: the row carries a
+  // content-addressed URL PATH (/portal-assets/<id>); the bytes live in
+  // portal_assets (or in the S3 bucket when PORTAL_ASSETS_S3_* is set — see
+  // assetStore.js). The legacy *_data columns are KEPT for compat: read sites
+  // do COALESCE(url, data), so an unmigrated org renders unchanged; a re-save
+  // through PUT /portal-settings migrates it.
+  await pool.query(`ALTER TABLE portal_settings ADD COLUMN IF NOT EXISTS header_image_url TEXT`);
+  await pool.query(`ALTER TABLE portal_settings ADD COLUMN IF NOT EXISTS logo_url TEXT`);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS portal_assets (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL,
+      kind TEXT NOT NULL,
+      content_type TEXT NOT NULL,
+      bytes INTEGER NOT NULL,
+      width INTEGER,
+      height INTEGER,
+      storage TEXT NOT NULL DEFAULT 'db',
+      s3_key TEXT,
+      data TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_portal_assets_org ON portal_assets(org_id, kind)`);
+
   // A follow is DASHBOARD-SIDE state only: a donor added a listed org whose
   // records don't (yet) match a verified email. Zero giving history rides it,
   // and it is INVISIBLE to the org — same WALL rule as donor_account* tables:

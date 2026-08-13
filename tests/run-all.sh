@@ -54,7 +54,7 @@ CORE=(
   session-cache session-privilege smart-moves state-diff state-diff2 tasks task-due tenant-isolation trial-end upgrade-checkout workflows workflows-e2e
   empty-states presentation-wiring notify-delivery concurrency2 permissions-matrix
   gift-idempotency portal
-  donor-accounts donor-linking org-blindness network-gate donor-dashboard network-directory theme-depth donor-front-door
+  donor-accounts donor-linking org-blindness network-gate donor-dashboard network-directory theme-depth donor-front-door theme-assets
   finance-reports-consistency name-normalize reserved-recovered concurrency
 )
 
