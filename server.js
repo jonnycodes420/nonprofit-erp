@@ -68,7 +68,7 @@ const { google } = require("googleapis");
 const { Webhook: SvixWebhook } = require("svix");
 const { donationStripeKey, billingStripeKey, billingStripeMode, billingConfigError, otherBillingMode } = require("./stripeKeys");
 const { CANONICAL_APP_URL, resolvePublicAppUrl, publicAppUrl } = require("./publicUrl");
-const { putThemeAsset, getThemeAsset, pruneThemeAssets, ASSET_ID_RE, s3Config: assetS3Config } = require("./assetStore");
+const { putThemeAsset, getThemeAsset, pruneThemeAssets, pruneUnreferencedAssets, refreshAssetFallbackCount, assetHealth, ASSET_ID_RE } = require("./assetStore");
 const { imageSize } = require("image-size");
 const { computeTrialEnd } = require("./trialEnd");
 
@@ -1113,9 +1113,12 @@ app.get("/health", (req, res) => {
     // so /health stays a cheap synchronous check.
     notifications: { failedPending: notifyFailedPending },
     // BUILD-51: which theme-asset driver is live — s3:true means uploads go to
-    // the bucket; s3:false (env unset) means bytes land in Postgres. The
-    // post-deploy one-glance check that prod is actually on object storage.
-    themeAssets: { s3: !!assetS3Config() },
+    // the bucket; s3:false (env unset) means bytes land in Postgres.
+    // BUILD-51b: dbFallbackRows counts assets sitting in Postgres WHILE S3 is
+    // configured — every one is a failed S3 put (also Sentry-reported). A
+    // non-zero value that grows = the silent-fallback failure mode; null when
+    // S3 isn't configured (DB storage is then by design).
+    themeAssets: assetHealth(),
   });
 });
 
@@ -13374,6 +13377,10 @@ async function processWorkflowSweeps(onlyOrgId = null) {
 }
 setTimeout(() => processWorkflowSweeps().catch(console.error), 25000);
 setInterval(() => processWorkflowSweeps().catch(console.error), 5 * 60 * 1000);
+// BUILD-51b — keep /health's themeAssets.dbFallbackRows fresh (failed-S3-put
+// visibility); same 5-min cadence, never a second scheduler.
+setTimeout(() => refreshAssetFallbackCount().catch(console.error), 20000);
+setInterval(() => refreshAssetFallbackCount().catch(console.error), 5 * 60 * 1000);
 
 // ── Workflow routes ─────────────────────────────────────────────────────────
 app.get("/workflows", requireAuth, wrap(async (req, res) => {
@@ -16068,6 +16075,42 @@ function validPortalImage(dataUri, capBytes) {
   return !!m && PORTAL_IMG_MIMES.includes(m[1]);
 }
 
+// BUILD-51b — impact-update photos ride the same asset seam as theme images.
+// Content-photo rules (not the 5:1 banner rule): must parse as an image (or
+// be SVG), <=6000px per side, ANY orientation. A stored /portal-assets/ path
+// passes through untouched (the Settings edit form echoes existing photos);
+// a data URI is validated + stored and becomes a path. Cap: 4 per update.
+const MAX_IMPACT_PHOTOS = 4;
+async function storeImpactPhotos(orgId, photosIn) {
+  const photos = (Array.isArray(photosIn) ? photosIn : []).filter(Boolean).slice(0, MAX_IMPACT_PHOTOS);
+  const out = [];
+  for (const p of photos) {
+    if (typeof p === "string" && p.startsWith("/portal-assets/")) { out.push(p); continue; }
+    if (!validPortalImage(p, 500000)) return { error: "bad_image", message: "Photos must be PNG/JPEG/GIF/WebP/SVG under ~350KB." };
+    const m = String(p).match(/^data:([^;]+);base64,(.*)$/s);
+    let buffer;
+    try { buffer = Buffer.from(m[2], "base64"); } catch { return { error: "bad_image" }; }
+    const dims = checkThemeImageDimensions("impact", m[1], buffer);
+    if (!dims.ok) return { error: "bad_image_dimensions", message: dims.message };
+    const asset = await putThemeAsset({ orgId, kind: "impact", buffer, contentType: m[1], width: dims.width, height: dims.height });
+    out.push(asset.path);
+  }
+  return { photos: out };
+}
+// Keep = every photo id ANY of the org's updates still references (content
+// addressing means one photo can legitimately back several updates).
+async function pruneImpactAssets(orgId) {
+  const rows = await query(`SELECT photos FROM impact_updates WHERE org_id = ?`, [orgId]);
+  const keep = [];
+  for (const r of rows) {
+    for (const p of (Array.isArray(r.photos) ? r.photos : [])) {
+      const m = /^\/portal-assets\/(pa_[a-f0-9]{24})$/.exec(String(p));
+      if (m) keep.push(m[1]);
+    }
+  }
+  await pruneUnreferencedAssets(orgId, "impact", keep);
+}
+
 app.put("/portal-settings", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
   const b = req.body || {};
   await run(`INSERT INTO portal_settings (org_id) VALUES (?) ON CONFLICT (org_id) DO NOTHING`, [req.user.orgId]);
@@ -16192,8 +16235,9 @@ app.post("/impact-updates", requireAuth, requireAdmin, checkWriteAccess, wrap(as
   const title = String(b.title || "").trim().slice(0, 200);
   if (!title) return res.status(400).json({ error: "title_required" });
   const body = String(b.body || "").slice(0, 20000);
-  const photos = Array.isArray(b.photos) ? b.photos.slice(0, 4) : [];
-  for (const p of photos) if (!validPortalImage(p, 500000)) return res.status(400).json({ error: "bad_image" });
+  const stored = await storeImpactPhotos(req.user.orgId, b.photos);
+  if (stored.error) return res.status(400).json({ error: stored.error, message: stored.message });
+  const photos = stored.photos;
   const targets = await validImpactTargets(b.targets, req.user.orgId);
   if (targets === null) return res.status(404).json({ error: "bad_targets", message: "Each target must be a fund or campaign in your organization." });
   const id = "imp_" + uuid().slice(0, 8);
@@ -16214,8 +16258,9 @@ app.put("/impact-updates/:id", requireAuth, requireAdmin, checkWriteAccess, wrap
   const body = b.body !== undefined ? String(b.body || "").slice(0, 20000) : ex.body;
   let photos = ex.photos;
   if (b.photos !== undefined) {
-    photos = Array.isArray(b.photos) ? b.photos.slice(0, 4) : [];
-    for (const p of photos) if (!validPortalImage(p, 500000)) return res.status(400).json({ error: "bad_image" });
+    const stored = await storeImpactPhotos(req.user.orgId, b.photos);
+    if (stored.error) return res.status(400).json({ error: stored.error, message: stored.message });
+    photos = stored.photos;
   }
   let targets = ex.targets;
   if (b.targets !== undefined) {
@@ -16229,12 +16274,15 @@ app.put("/impact-updates/:id", requireAuth, requireAdmin, checkWriteAccess, wrap
      b.orgWide !== undefined ? b.orgWide === true : ex.org_wide,
      b.status !== undefined ? (b.status === "draft" ? "draft" : "published") : ex.status,
      req.params.id, req.user.orgId]);
+  // Removed/replaced photos leave no orphaned assets (cross-update refs kept).
+  await pruneImpactAssets(req.user.orgId);
   res.json((await query(`SELECT * FROM impact_updates WHERE id = ?`, [req.params.id]))[0]);
 }));
 
 app.delete("/impact-updates/:id", requireAuth, requireAdmin, wrap(async (req, res) => {
   const result = await run(`DELETE FROM impact_updates WHERE id = ? AND org_id = ?`, [req.params.id, req.user.orgId]);
   if (!result.changes) return res.status(404).json({ error: "not_found" });
+  await pruneImpactAssets(req.user.orgId);
   res.json({ ok: true });
 }));
 

@@ -186,6 +186,74 @@ async function fixture() {
   ok("virtual-host style puts the bucket in the (signed) hostname",
     sigV.url === "https://b.s.example.com/k/1" && sigV.headers.host === "b.s.example.com");
 
+  // ── 9) BUILD-51b — impact-update photos ride the same seam ────────────────
+  console.log("\n— impact photos —");
+  // Content-photo rules: ANY orientation (portrait allowed — the 5:1 banner
+  // rule is a header rule), must parse, 6000px cap, 4-photo cap.
+  const mk = await api("POST", "/impact-updates", tokA, {
+    title: "Photo update", body: "Two photos.", orgWide: true,
+    photos: [pngUri(400, 800), svgUri],
+  });
+  ok("update created; photos stored as asset paths (portrait photo ACCEPTED)",
+    mk.status === 201 && Array.isArray(mk.body.photos) && mk.body.photos.length === 2
+    && mk.body.photos.every(p => /^\/portal-assets\/pa_[a-f0-9]{24}$/.test(p)), mk.body.photos);
+  const upId = mk.body.id, [ph0, ph1] = mk.body.photos;
+  const ic = await q(`SELECT * FROM portal_assets WHERE org_id=$1 AND kind='impact'`, [ORG_A]);
+  ok("impact asset rows recorded with dimensions", ic.length === 2 && ic.some(a => a.width === 400 && a.height === 800));
+  ok("photo asset serves", (await fetch(BASE + ph0)).status === 200);
+  const dash2 = await raw("GET", "/account/dashboard", { cookie });
+  const upRow = (dash2.body.impact || []).find(u => u.id === upId);
+  ok("dashboard impact carries the photo PATHS", upRow && upRow.photos.length === 2 && upRow.photos[0] === ph0, upRow?.photos);
+  ok("FULL dashboard payload: zero image base64 (theme + photos)", !JSON.stringify(dash2.body).includes(";base64,"));
+
+  // echo, add, remove, cross-update refs
+  const echo2 = await api("PUT", `/impact-updates/${upId}`, tokA, { photos: [ph0, ph1] });
+  ok("echoing stored paths on edit is a no-op", echo2.status === 200 && echo2.body.photos.join() === [ph0, ph1].join());
+  const add3 = await api("PUT", `/impact-updates/${upId}`, tokA, { photos: [ph0, ph1, pngUri(900, 600)] });
+  ok("adding a third photo stores one more asset", add3.body.photos.length === 3
+    && (await q(`SELECT COUNT(*)::int AS n FROM portal_assets WHERE org_id=$1 AND kind='impact'`, [ORG_A]))[0].n === 3);
+  const rm = await api("PUT", `/impact-updates/${upId}`, tokA, { photos: [ph0] });
+  ok("removing photos PRUNES their assets", rm.body.photos.join() === ph0
+    && (await q(`SELECT COUNT(*)::int AS n FROM portal_assets WHERE org_id=$1 AND kind='impact'`, [ORG_A]))[0].n === 1);
+  ok("removed photo URL 404s", (await fetch(BASE + ph1)).status === 404);
+  const mk2 = await api("POST", "/impact-updates", tokA, { title: "Shares a photo", orgWide: true, photos: [ph0] });
+  ok("a second update can reference the same stored photo", mk2.status === 201 && mk2.body.photos[0] === ph0);
+  await api("DELETE", `/impact-updates/${upId}`, tokA);
+  ok("deleting update 1 KEEPS the photo update 2 still references", (await fetch(BASE + ph0)).status === 200);
+  await api("DELETE", `/impact-updates/${mk2.body.id}`, tokA);
+  ok("deleting the last referencing update prunes the photo", (await fetch(BASE + ph0)).status === 404
+    && (await q(`SELECT COUNT(*)::int AS n FROM portal_assets WHERE org_id=$1 AND kind='impact'`, [ORG_A]))[0].n === 0);
+
+  // caps + validation
+  const six = await api("POST", "/impact-updates", tokA, {
+    title: "Six photos", orgWide: true,
+    photos: [1, 2, 3, 4, 5, 6].map(i => pngUri(600 + i, 400)),
+  });
+  ok("photos capped at 4 per update", six.status === 201 && six.body.photos.length === 4, six.body.photos?.length);
+  await api("DELETE", `/impact-updates/${six.body.id}`, tokA);
+  const badPhoto = await api("POST", "/impact-updates", tokA, { title: "x", orgWide: true, photos: ["data:image/png;base64," + Buffer.from("junk").toString("base64")] });
+  ok("unparseable photo rejected", badPhoto.status === 400 && badPhoto.body.error === "bad_image_dimensions");
+  const badMimeP = await api("POST", "/impact-updates", tokA, { title: "x", orgWide: true, photos: ["data:text/html;base64," + Buffer.from("<x>").toString("base64")] });
+  ok("non-image photo mime rejected", badMimeP.status === 400 && badMimeP.body.error === "bad_image");
+
+  // legacy compat + migration-by-resave (photos generation)
+  await q(`INSERT INTO impact_updates (id,org_id,title,photos,targets,org_wide,status) VALUES ('imp_ta_leg',$1,'Legacy photos',$2,'[]',true,'published')`,
+    [ORG_A, JSON.stringify([svgUri])]);
+  const dash3 = await raw("GET", "/account/dashboard", { cookie });
+  const legRow = (dash3.body.impact || []).find(u => u.id === "imp_ta_leg");
+  ok("legacy data-URI photos still render (compat passthrough)", legRow && legRow.photos[0] === svgUri);
+  const migP = await api("PUT", "/impact-updates/imp_ta_leg", tokA, { photos: [svgUri] });
+  ok("re-saving migrates legacy photos to asset paths", /^\/portal-assets\/pa_/.test(migP.body.photos[0]));
+  const dash4 = await raw("GET", "/account/dashboard", { cookie });
+  ok("post-migration: FULL dashboard payload zero base64 again", !JSON.stringify(dash4.body).includes(";base64,"));
+  await api("DELETE", "/impact-updates/imp_ta_leg", tokA);
+
+  // health surfacing for the S3-fallback alarm
+  const health = await (await fetch(BASE + "/health")).json();
+  ok("health surfaces the theme-asset driver + fallback count",
+    health.themeAssets && typeof health.themeAssets.s3 === "boolean"
+    && "dbFallbackRows" in health.themeAssets && "dbFallbackSinceBoot" in health.themeAssets, health.themeAssets);
+
   await closeDb();
   summary();
 })().catch(e => { console.error(e); process.exit(1); });

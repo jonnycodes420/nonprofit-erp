@@ -475,7 +475,7 @@ function ImpactCard({ u, t, eyebrow }) {
       {photos.length > 0 && (
         <div style={{ height: 180, overflow: "hidden", display: "flex" }}>
           {photos.slice(0, 2).map((p, i) => (
-            <img key={i} src={p} alt="" style={{ width: photos.length > 1 ? "50%" : "100%", height: "100%", objectFit: "cover", display: "block" }} />
+            <img key={i} src={resolveAssetUrl(p)} alt="" style={{ width: photos.length > 1 ? "50%" : "100%", height: "100%", objectFit: "cover", display: "block" }} />
           ))}
         </div>
       )}

@@ -20,6 +20,7 @@
 // Follows the stripeKeys.js/publicUrl.js convention: pure config resolution,
 // testable without a server.
 const crypto = require("crypto");
+const Sentry = require("@sentry/node"); // no-op if the server never init'd it
 const { query, run } = require("./db");
 
 function s3Config(env = process.env) {
@@ -107,7 +108,14 @@ async function putThemeAsset({ orgId, kind, buffer, contentType, width, height }
       await s3Put(cfg, s3Key, buffer, contentType);
       storage = "s3";
     } catch (e) {
+      // BUILD-51b — this fallback must never be silent: bytes quietly
+      // re-accumulating in Postgres is the failure nobody notices until it's
+      // large. Three alarms: CRITICAL log (Railway logs), a Sentry event
+      // (prod alerting — Sentry is live there), and the /health
+      // themeAssets.dbFallbackRows count (uptime-keyword checkable).
       console.error("[assetStore] CRITICAL: S3 put failed — falling back to DB storage:", e.message);
+      dbFallbackSinceBoot++;
+      try { Sentry.captureException(e, { tags: { area: "assetStore" }, extra: { orgId, kind, note: "S3 put failed; asset stored in Postgres" } }); } catch { /* Sentry not init'd */ }
       storage = "db"; s3Key = null;
     }
   }
@@ -137,24 +145,47 @@ async function getThemeAsset(id) {
   return { id: row.id, contentType: row.content_type, buffer };
 }
 
-// Remove every stored asset of one kind for an org except keepId (pass null
-// to remove all) — called on replace and on clear so stale assets never pile.
-async function pruneThemeAssets(orgId, kind, keepId) {
-  const rows = await query(
-    `SELECT id, storage, s3_key FROM portal_assets WHERE org_id = ? AND kind = ? ${keepId ? "AND id <> ?" : ""}`,
-    keepId ? [orgId, kind, keepId] : [orgId, kind]);
+// Remove every stored asset of one kind for an org except the ids in keep —
+// called on replace/clear (theme: keep ≤1) and after impact-update writes
+// (keep = every photo id any of the org's updates still references), so
+// stale assets never pile in either store.
+async function pruneUnreferencedAssets(orgId, kind, keepIds) {
+  const keep = new Set(keepIds || []);
+  const rows = await query(`SELECT id, storage, s3_key FROM portal_assets WHERE org_id = ? AND kind = ?`, [orgId, kind]);
   const cfg = s3Config();
+  let pruned = 0;
   for (const r of rows) {
+    if (keep.has(r.id)) continue;
     if (r.storage === "s3" && cfg && r.s3_key) {
       try { await s3Delete(cfg, r.s3_key); } catch (e) { console.error("[assetStore] S3 delete failed:", e.message); }
     }
     await run(`DELETE FROM portal_assets WHERE id = ?`, [r.id]);
+    pruned++;
   }
-  return rows.length;
+  return pruned;
+}
+const pruneThemeAssets = (orgId, kind, keepId) => pruneUnreferencedAssets(orgId, kind, keepId ? [keepId] : []);
+
+// BUILD-51b — fallback visibility for /health. dbFallbackRows counts assets
+// sitting in Postgres WHILE S3 is configured (each one is a failed S3 put);
+// null when S3 isn't configured (DB storage is then by design, not a fault).
+// Cached so /health stays synchronous; refreshed on boot + the 5-min tick +
+// bumped live by the fallback path above.
+let dbFallbackSinceBoot = 0;
+let dbFallbackRows = null;
+async function refreshAssetFallbackCount() {
+  if (!s3Config()) { dbFallbackRows = null; return null; }
+  const [r] = await query(`SELECT COUNT(*)::int AS n FROM portal_assets WHERE storage = 'db'`);
+  dbFallbackRows = r ? r.n : 0;
+  return dbFallbackRows;
+}
+function assetHealth() {
+  return { s3: !!s3Config(), dbFallbackRows, dbFallbackSinceBoot };
 }
 
 module.exports = {
-  s3Config, putThemeAsset, getThemeAsset, pruneThemeAssets,
+  s3Config, putThemeAsset, getThemeAsset, pruneThemeAssets, pruneUnreferencedAssets,
+  refreshAssetFallbackCount, assetHealth,
   assetIdFor, assetPath, ASSET_ID_RE,
   _signedS3Request: signedS3Request, // exported for the suite's determinism checks
 };

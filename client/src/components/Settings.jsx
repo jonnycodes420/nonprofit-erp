@@ -1076,7 +1076,7 @@ function ImpactUpdatesManager({isAdmin,isReadOnly}){
           <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
             {(form.photos||[]).map((p,i)=>(
               <div key={i} style={{position:"relative"}}>
-                <img src={p} alt="" style={{height:56,borderRadius:8}}/>
+                <img src={resolveAssetUrl(p)} alt="" style={{height:56,borderRadius:8}}/>
                 <button onClick={()=>setForm(f=>({...f,photos:f.photos.filter((_,j)=>j!==i)}))}
                   style={{position:"absolute",top:-6,right:-6,background:T.ink,color:T.bg,border:"none",borderRadius:"50%",width:18,height:18,fontSize:10,cursor:"pointer",lineHeight:1}}>✕</button>
               </div>

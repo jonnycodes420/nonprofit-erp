@@ -393,7 +393,7 @@ function Dashboard({ slug, me, reload }) {
               <div style={{ fontWeight: 700, fontSize: 16, marginBottom: 4 }}>{u.title}</div>
               {(u.photos || []).length > 0 && (
                 <div style={{ display: "flex", gap: 8, margin: "8px 0", flexWrap: "wrap" }}>
-                  {u.photos.map((p, i) => <img key={i} src={p} alt="" style={{ maxWidth: 200, maxHeight: 140, borderRadius: 8, objectFit: "cover" }} />)}
+                  {u.photos.map((p, i) => <img key={i} src={resolveAssetUrl(p)} alt="" style={{ maxWidth: 200, maxHeight: 140, borderRadius: 8, objectFit: "cover" }} />)}
                 </div>
               )}
               {u.body && <div style={{ fontSize: 14, lineHeight: 1.7, whiteSpace: "pre-wrap" }}>{u.body}</div>}
