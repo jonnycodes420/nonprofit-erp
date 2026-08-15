@@ -2,6 +2,9 @@ import { useState, useEffect } from "react";
 import { apiFetch } from "../api";
 import { T, fmt, fmtFull, PageTitle, SectionTabs, EmptyState, GoldMoment, StartHere, interactive } from "./shared";
 import { QrCodeBlock, EmbedCodeBlock } from "./ShareBlocks";
+import Uploader, { IMAGE_ACCEPT, IMAGE_ACCEPT_LABEL, IMAGE_MAX_BYTES } from "./Uploader";
+import { textToStory, storyToText } from "../lib/storyBlocks";
+import { resolveAssetUrl } from "../lib/assetUrl";
 
 // ── Fundraising (BUILD-11) ──────────────────────────────────────────────────
 // The money-moving home. Everything here reads live figures from the backend
@@ -468,8 +471,20 @@ function CampaignModal({ mode, campaign, campaigns = [], onClose, onSaved }) {
   const [parentId, setParentId] = useState(campaign?.parentGoalId || "");
   const [start, setStart] = useState(campaign?.startDate ? String(campaign.startDate).slice(0, 10) : "");
   const [end, setEnd] = useState(campaign?.endDate ? String(campaign.endDate).slice(0, 10) : "");
+  // BUILD-54 §2 — donor-facing content lives on the SAME form the campaign is
+  // created/edited in (no separate configuration screen to forget).
+  const [dfName, setDfName] = useState(campaign?.donorFacingName || "");
+  const [dfDesc, setDfDesc] = useState(campaign?.donorDescription || "");
+  const [dfStory, setDfStory] = useState(storyToText(campaign?.donorStory));
+  const [dfHero, setDfHero] = useState(campaign?.heroImageUrl || "");   // stored path OR fresh data URI
+  const [goalPublic, setGoalPublic] = useState(campaign?.goalProgressPublic === true);
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState("");
+  const [dirty, setDirty] = useState(false);
+  const close = () => {
+    if (dirty && !window.confirm("You have unsaved changes — discard them?")) return;
+    onClose();
+  };
 
   // Eligible parents: any other goal in this org that isn't itself a child
   // (keep the roll-up one level deep for a legible portfolio).
@@ -482,7 +497,12 @@ function CampaignModal({ mode, campaign, campaigns = [], onClose, onSaved }) {
     if (!Number.isFinite(g) || g <= 0) { setErr("Enter a positive goal amount."); return; }
     setSaving(true);
     try {
-      const body = { name: name.trim(), goalAmount: g, goalCategory: category, parentGoalId: parentId || null, startDate: start || null, endDate: end || null };
+      const body = {
+        name: name.trim(), goalAmount: g, goalCategory: category, parentGoalId: parentId || null, startDate: start || null, endDate: end || null,
+        donorFacingName: dfName.trim(), donorDescription: dfDesc.trim(),
+        donorStory: textToStory(dfStory), heroImageData: dfHero || "",
+        goalProgressPublic: goalPublic,
+      };
       if (mode === "edit") await apiFetch(`/fundraising/campaigns/${campaign.id}`, { method: "PUT", body: JSON.stringify(body) });
       else await apiFetch("/fundraising/campaigns", { method: "POST", body: JSON.stringify(body) });
       onSaved();
@@ -493,8 +513,8 @@ function CampaignModal({ mode, campaign, campaigns = [], onClose, onSaved }) {
   const lbl = { fontSize: 12, fontWeight: 700, color: T.ink2, marginBottom: 6, display: "block" };
 
   return (
-    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(15,26,18,0.5)", zIndex: 400, display: "flex", alignItems: "flex-start", justifyContent: "center", padding: "8vh 16px 16px", overflowY: "auto" }}>
-      <div onClick={e => e.stopPropagation()} className="modal-anim" style={{ background: T.white, borderRadius: 18, padding: "26px 28px", width: "100%", maxWidth: 460, boxShadow: T.shadowLg }}>
+    <div onClick={close} style={{ position: "fixed", inset: 0, background: "rgba(15,26,18,0.5)", zIndex: 400, display: "flex", alignItems: "flex-start", justifyContent: "center", padding: "8vh 16px 16px", overflowY: "auto" }}>
+      <div onClick={e => e.stopPropagation()} onChangeCapture={() => setDirty(true)} className="modal-anim" style={{ background: T.white, borderRadius: 18, padding: "26px 28px", width: "100%", maxWidth: 460, boxShadow: T.shadowLg }}>
         <div style={{ fontFamily: "'DM Serif Display',serif", fontSize: 22, color: T.ink, marginBottom: 4 }}>{mode === "edit" ? "Edit campaign" : "New campaign"}</div>
         <div style={{ fontSize: 13, color: T.ink3, marginBottom: 20 }}>Raised is tracked automatically from gifts attributed to this campaign.</div>
         <div style={{ marginBottom: 16 }}>
@@ -533,9 +553,56 @@ function CampaignModal({ mode, campaign, campaigns = [], onClose, onSaved }) {
             <input type="date" value={end} onChange={e => setEnd(e.target.value)} style={field} />
           </div>
         </div>
+        {/* BUILD-54 §2 — donor-facing content, org-authored only. Honest empty
+            state: no filler is ever generated for the donor side. */}
+        <div style={{ borderTop: "1px solid " + T.bg3, margin: "4px 0 16px", paddingTop: 16 }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: T.ink, marginBottom: 4 }}>What donors see</div>
+          <div style={{ fontSize: 12, color: T.ink3, lineHeight: 1.5, marginBottom: 12 }}>
+            Donors will see this campaign by name on their gifts. Add a description and photo so their gift means something.
+          </div>
+          <div style={{ marginBottom: 14 }}>
+            <label style={lbl}>Donor-facing name <span style={{ color: T.ink3, fontWeight: 400 }}>(optional — defaults to the campaign name)</span></label>
+            <input value={dfName} onChange={e => setDfName(e.target.value)} placeholder={name.trim() || "e.g. Steeples and Studios Campaign"} style={field} />
+          </div>
+          <div style={{ marginBottom: 14 }}>
+            <label style={lbl}>Short description <span style={{ color: T.ink3, fontWeight: 400 }}>(shown on gifts, receipts, and the donor page)</span></label>
+            <textarea value={dfDesc} onChange={e => setDfDesc(e.target.value)} rows={2} maxLength={600}
+              placeholder="One or two sentences, in your own words, on what this campaign is doing." style={{ ...field, resize: "vertical" }} />
+          </div>
+          <div style={{ marginBottom: 14 }}>
+            <label style={lbl}>Story <span style={{ color: T.ink3, fontWeight: 400 }}>(optional — blank line = new paragraph, "## " = heading, "- " = list)</span></label>
+            <textarea value={dfStory} onChange={e => setDfStory(e.target.value)} rows={5}
+              placeholder="The longer story donors read on their giving page." style={{ ...field, resize: "vertical" }} />
+          </div>
+          <div style={{ marginBottom: 14 }}>
+            <label style={lbl}>Campaign photo</label>
+            <Uploader accept={IMAGE_ACCEPT} acceptLabel={IMAGE_ACCEPT_LABEL} maxBytes={IMAGE_MAX_BYTES} compact
+              label={dfHero ? "Replace photo" : "Add a photo"}
+              onFile={({ dataUrl }) => { setDfHero(dataUrl); setDirty(true); }}>
+              {dfHero && (
+                <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 8 }}>
+                  <img src={dfHero.startsWith("data:") ? dfHero : resolveAssetUrl(dfHero)} alt="" style={{ maxHeight: 64, borderRadius: 8 }} />
+                  <button type="button" onClick={() => { setDfHero(""); setDirty(true); }}
+                    style={{ background: "none", border: "1px solid " + T.terra200, color: T.terra700, borderRadius: 8, padding: "6px 12px", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>Remove</button>
+                </div>
+              )}
+            </Uploader>
+          </div>
+          <label style={{ display: "flex", alignItems: "flex-start", gap: 8, fontSize: 13, color: T.ink, cursor: "pointer" }}>
+            <input type="checkbox" checked={goalPublic} onChange={e => setGoalPublic(e.target.checked)} style={{ marginTop: 2 }} />
+            <span>
+              <strong>Show goal progress to donors</strong>
+              <span style={{ display: "block", fontSize: 12, color: T.ink3, marginTop: 2 }}>
+                Off by default. When on, donors who gave to this campaign see the goal, amount raised, and percent —
+                never donor counts and never anyone else's gifts.
+              </span>
+            </span>
+          </label>
+        </div>
         {err && <div style={{ fontSize: 13, color: T.terracotta, marginBottom: 14 }}>{err}</div>}
-        <div style={{ display: "flex", justifyContent: "flex-end", gap: 10 }}>
-          <button onClick={onClose} style={{ background: "none", border: "1px solid " + T.bg3, borderRadius: 10, padding: "10px 18px", fontSize: 13, fontWeight: 600, color: T.ink2, cursor: "pointer" }}>Cancel</button>
+        <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 10 }}>
+          {dirty && !saving && <span style={{ fontSize: 12, color: T.ink3, marginRight: "auto" }}>Unsaved changes</span>}
+          <button onClick={close} style={{ background: "none", border: "1px solid " + T.bg3, borderRadius: 10, padding: "10px 18px", fontSize: 13, fontWeight: 600, color: T.ink2, cursor: "pointer" }}>Cancel</button>
           <button onClick={save} disabled={saving} style={{ background: T.gold, border: "none", borderRadius: 10, padding: "10px 20px", fontSize: 13, fontWeight: 700, color: T.ink, cursor: saving ? "wait" : "pointer", opacity: saving ? 0.6 : 1 }}>{saving ? "Saving…" : mode === "edit" ? "Save changes" : "Create campaign"}</button>
         </div>
       </div>

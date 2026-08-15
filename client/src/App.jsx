@@ -19,6 +19,8 @@ import { Tasks } from "./components/Tasks";
 import { Workflows } from "./components/Workflows";
 import { Pipeline } from "./components/Pipeline";
 import { Settings } from "./components/Settings";
+import { DonorPortalHub } from "./components/DonorPortalHub";
+import { confirmIfDirty } from "./lib/dirtyGuard";
 import { Events } from "./components/Events";
 import PlanPicker from "./components/PlanPicker";
 import { TopBar } from "./components/TopBar";
@@ -31,6 +33,7 @@ const TABS=[
   {id:"fundraising",label:"Fundraising",icon:"↗"},
   {id:"grants",label:"Grants",icon:"◉"},
   {id:"communications",label:"Communications",icon:"◑"},
+  {id:"portal",label:"Donor Portal",icon:"◫"},
   {id:"tasks",label:"Tasks",icon:"◻"},
   {id:"workflows",label:"Workflows",icon:"◧"},
   {id:"reports",label:"Reports",icon:"▤"},
@@ -51,6 +54,7 @@ const MORE_TABS=[
   {id:"pipeline",label:"Pipeline",icon:"◫"},
   {id:"fundraising",label:"Fundraising",icon:"↗"},
   {id:"communications",label:"Communications",icon:"◑"},
+  {id:"portal",label:"Donor Portal",icon:"◫"},
   {id:"tasks",label:"Tasks",icon:"◻"},
   {id:"workflows",label:"Workflows",icon:"◧"},
   {id:"reports",label:"Reports",icon:"▤"},
@@ -67,7 +71,7 @@ const MORE_TABS=[
 // (see TEAM_GATED) show a lock indicator for Core users but stay visible.
 const NAV_GROUPS=[
   {label:"People",      ids:["donors","pipeline","tasks"]},
-  {label:"Fundraising", ids:["fundraising","grants","communications","workflows"]},
+  {label:"Fundraising", ids:["fundraising","grants","communications","portal","workflows"]},
   {label:"Insight",     ids:["reports","finance"]},
 ];
 const TEAM_GATED=new Set(["pipeline"]);
@@ -112,6 +116,7 @@ function AppShell() {
   // on the Grants tab). Plain nav (no opts) never remounts.
   const [navNonce,setNavNonce]=useState(0);
   const navigateTo=(t,opts)=>{
+    if(t!==tab&&!confirmIfDirty())return;   // BUILD-54 §6 — unsaved-state guard
     setCommsInitialNav(opts?.subtab||null);
     setCommsHighlightDraftId(opts?.highlightDraftId||null);
     setDonorsIntent(opts?.view||opts?.logDonorId||opts?.stageFilter||opts?.selectDonorId||opts?.openImport?{view:opts.view,logDonorId:opts.logDonorId,stageFilter:opts.stageFilter,selectDonorId:opts.selectDonorId,openImport:opts.openImport}:null);
@@ -408,7 +413,8 @@ function AppShell() {
       {tab==="finance"&&<Finance data={data} setData={setData} isReadOnly={isReadOnly} onNavigate={navigateTo}/>}
       {tab==="tasks"&&<Tasks key={navNonce} data={data} setData={setData} isReadOnly={isReadOnly} onNavigate={navigateTo} initialScope={tasksIntent?.scope}/>}
       {tab==="workflows"&&<Workflows isReadOnly={isReadOnly} onNavigate={navigateTo}/>}
-      {tab==="settings"&&<Settings key={navNonce} auth={auth} logout={logout} initialSection={settingsIntent?.section}/>}
+      {tab==="portal"&&<DonorPortalHub auth={auth} isReadOnly={isReadOnly} onNavigate={navigateTo}/>}
+      {tab==="settings"&&<Settings key={navNonce} auth={auth} logout={logout} initialSection={settingsIntent?.section} onNavigate={navigateTo}/>}
     </ErrorBoundary>
     </div>
     </div>{/* /app-main */}

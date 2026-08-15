@@ -675,6 +675,19 @@ async function initSchema() {
   // nullable → un-set is identical to the pre-BUILD-16 single-goal behavior.
   await pool.query(`ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS goal_category TEXT`);
   await pool.query(`ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS parent_goal_id TEXT`);
+  // ── BUILD-54 §2 — donor-facing campaign content, org-authored ONLY (never
+  // generated, never estimated). donor_facing_name labels the donor's gift
+  // history; donor_story is SANITIZED STRUCTURED TEXT (validated block array —
+  // {type:'p'|'h2'|'ul', ...} — never raw HTML/CSS/JS; see validateStoryBlocks
+  // in server.js). hero_image_url rides the BUILD-51 asset seam (kind
+  // 'campaign'). goal_progress_public is the per-campaign donor-visible
+  // thermometer OPT-IN — default OFF; when ON a donor sees goal/raised/percent
+  // and NEVER donor counts or other donors' gifts.
+  await pool.query(`ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS donor_facing_name TEXT`);
+  await pool.query(`ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS donor_description TEXT`);
+  await pool.query(`ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS donor_story JSONB`);
+  await pool.query(`ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS hero_image_url TEXT`);
+  await pool.query(`ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS goal_progress_public BOOLEAN NOT NULL DEFAULT false`);
   await pool.query(`ALTER TABLE interactions ADD COLUMN IF NOT EXISTS logged_by_name TEXT`);
 
   // ── MGO toolkit ───────────────────────────────────────────────────────────

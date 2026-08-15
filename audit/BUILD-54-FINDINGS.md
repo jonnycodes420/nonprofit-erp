@@ -157,6 +157,91 @@ call server-side, cold) · single-query endpoints (/tasks, /impact-updates,
 4. **XLSX out of the Donors chunk** (dynamic import at the actual parse site):
    Donors 799KB → 464KB + a 429KB xlsx chunk loaded only when a spreadsheet is dropped.
 
-### AFTER numbers — see the re-measure at the end of Stage 4 (spec §1.6) and the
-post-deploy verification in the Stage 1 report.
+### AFTER numbers (prod, post-deploy bf868e9, same methodology)
+
+| Metric | Before | After |
+|---|---|---|
+| `/dashboard/today` TTFB (steady) | 1,206–1,220ms | **231–327ms** |
+| portal `/me` TTFB (steady, signed in) | 819–1,735ms | **524–623ms** |
+| `/dashboard/home` | 501–587ms | 241ms warm |
+| `/impact` | 501–606ms | 166–306ms |
+| `/metrics/stewardship-summary` | 630–721ms | 219–292ms |
+| `/recurring/health` | 466–524ms | 309–344ms |
+| CRM /dashboard warm: greeting / settle | 884ms / 2,220ms | **339ms / 1,411ms** |
+| CRM /dashboard cold: greeting / settle | 1,511ms / 3,317ms | 1,511ms / 2,762ms |
+| Hashed assets cache-control | max-age=0, must-revalidate | **immutable** (verified live) |
+| Donors route chunk | 799KB | 464KB (+429KB xlsx on demand) |
+
+Portal `/me`'s remaining ~520ms = the network floor (~170ms) + the still-serial
+session-middleware → org-lookup → portalDonorsFor chain (~4 round trips) — acceptable;
+candidates if Stage 4's re-measure wants more. `/workflows` and `/pipeline` (~650ms,
+their own tabs, not on the Home path) were deliberately left as-is — same class of fix
+if ever needed. The schema-init fast path could not be observed on THIS deploy (db.js
+changed → full init by construction); Stage 2 ALSO changes db.js (campaign columns),
+so the live fast-path observation lands on the Stage 3 push.
+
+---
+
+## Stage 2 — §2 campaign impact · §3 nav promotion · §6 uploader/unsaved/buttons
+
+### §2 shipped
+- `campaigns` gained org-authored donor-facing fields (db.js): `donor_facing_name`,
+  `donor_description`, `donor_story` (JSONB **sanitized structured blocks** —
+  p/h2/ul typed data validated by `validateStoryBlocks`; hostile strings are inert
+  text, bad shapes 400; never HTML/embeds), `hero_image_url` (BUILD-51 asset seam,
+  kind `campaign`, reference-counted pruning), `goal_progress_public` (default
+  **false** — the opt-in thermometer).
+- The fields ride the EXISTING CRM campaign routes (`POST/PUT /fundraising/campaigns`
+  via `parseDonorFacingCampaignFields`) and the CampaignModal form gained a "What
+  donors see" section with the honest empty-state copy — setup happens where the
+  campaign is created, no separate screen.
+- Portal `/me` now: labels gifts `COALESCE(donor_facing_name, name, legacy text)`;
+  carries `campaigns` spotlights (same 24-month + campaign_id-OR-name rule as the
+  impact matcher — extended, not forked; content-less campaigns NEVER appear) and
+  `thankYou` (most recent ≤30-day attributed gift, only when org-authored copy
+  exists). Goal figures appear ONLY when opted public: goal/raised/percent, never
+  donor counts. The receipt cover email carries the campaign's copy, frozen into the
+  receipt snapshot at issue time.
+- Already shipped pre-BUILD-54 (reconciliation §0): impact updates attachable to
+  campaigns, and the matcher's campaign leg.
+
+### §3 shipped
+- **"Donor Portal" is a top-level CRM nav item** (Fundraising group; mobile More
+  drawer) → `DonorPortalHub.jsx`: status + live-link (semantic `<a>` styled as a
+  button), campaign-stories card, the theme + impact editors (exported from
+  Settings.jsx — ONE implementation, ONE rendered home), and an engagement card on
+  the NEW `GET /portal-engagement` (aggregates the existing `portal_audit_log`
+  quiet signals; `recent` only includes rows resolved to this org's own donors — a
+  stranger's link-request email is never surfaced). Settings' old Donor Portal tab
+  is a pointer, not a second editor. The §4 edit-mode button lands here in Stage 3.
+
+### §6 shipped
+- **Shared `Uploader.jsx`** (drop + hover/active + click-to-browse + keyboard +
+  paste-from-clipboard + multi-file + type/size mirror checks + caller-side preview),
+  replacing every file input. **Inventory (all converted):**
+  1. Donors.jsx importer inputs ×3 (CSV/TSV/XLSX — Import, Giving History, Import+History)
+  2. Donors.jsx donor-materials drop zone (was a one-off; also retired an off-brand `#10b981` literal)
+  3. Settings.jsx BrandingManager logo
+  4. Settings.jsx PortalManager logo + header (header keeps the banner-crop preview
+     AND gained a client-side landscape/≥600px mirror of the server rule)
+  5. Settings.jsx ImpactUpdatesManager photos (multi-file)
+  6. Fundraising.jsx campaign hero (new with §2)
+  Hard rule held: the drop path is the same endpoint — server-parity asserted in the
+  suite (rejected drops stay rejected, stored value untouched).
+- **Unsaved state**: `lib/dirtyGuard.js` (registry + `useDirtyGuard` + beforeunload)
+  wired into PortalManager (sticky save bar + "Unsaved changes" chip), BrandingManager,
+  CampaignModal (confirm-on-discard), with `confirmIfDirty()` at both navigation choke
+  points (App tab switches, Settings section switches).
+- **Buttons vs links**: survey found the CRM already semantically correct — actions are
+  `<button>` (some deliberately styled as quiet underlined text: Clear/Reset/Got-it
+  tertiary actions — recorded as the deliberate exceptions), navigation is `<a>`
+  (billing-portal fallback, portal live link). No `href="#"`, no href-less
+  `<a onClick>` anywhere in client source — now pinned by the suite's source check.
+
+### Stage 2 tests
+`tests/campaign-impact.test.js` (35, in run-all + the client build's guard chain):
+field round-trip, story sanitization battery, §6 server-parity, donor-facing labeling,
+spotlight/never-fabricate, goal opt-in OFF/ON (no goal data when OFF, no donor counts
+ever), thank-you state, campaign-targeted impact matching, receipt-email content
+present/absent, org isolation, §3 engagement scoping, §6 anchor-semantics source check.
 

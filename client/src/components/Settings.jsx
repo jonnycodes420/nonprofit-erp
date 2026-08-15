@@ -5,6 +5,8 @@ import { TYPE_PAIRINGS, CARD_STYLES, resolvePairing, cardChrome, THEME_DEFAULTS 
 import { resolveAssetUrl } from "../lib/assetUrl";
 import { apiFetch, API, getToken, billingErrorMessage } from "../api";
 import UpgradeModal from "./UpgradeModal";
+import Uploader, { IMAGE_ACCEPT, IMAGE_ACCEPT_LABEL, IMAGE_MAX_BYTES } from "./Uploader";
+import { useDirtyGuard, confirmIfDirty } from "../lib/dirtyGuard";
 
 // Billing status badge styling, keyed by orgs.subscription_status.
 // "cancelled" (2 l's) is included alongside "canceled" (1 l) because old
@@ -358,18 +360,13 @@ function BrandingManager({orgId,isAdmin,isReadOnly,onSaved}){
   const [saving,setSaving]=useState(false);
   const [msg,setMsg]=useState("");
   const [err,setErr]=useState("");
+  const [dirty,setDirty]=useState(false);   // BUILD-54 §6
+  useDirtyGuard(dirty);
   useEffect(()=>{
     apiFetch("/org").then(o=>{setLogo(o.logo_data||"");setAccent(o.brand_accent||"");setLoaded(true);}).catch(()=>setLoaded(true));
   },[]);
   const disabled=!isAdmin||isReadOnly;
   const effAccent=accent||"#1a6b4a";
-  function onFile(e){
-    const f=e.target.files?.[0]; if(!f)return;
-    if(!/^image\/(png|jpeg|jpg|gif|webp|svg\+xml)$/.test(f.type)){setErr("Please choose a PNG, JPEG, GIF, WebP, or SVG image.");return;}
-    if(f.size>350*1024){setErr("Logo is too large — please use an image under 350KB.");return;}
-    setErr("");
-    const r=new FileReader(); r.onload=()=>setLogo(r.result); r.readAsDataURL(f);
-  }
   async function save(){
     if(disabled||saving)return;
     setSaving(true);setErr("");setMsg("");
@@ -377,6 +374,7 @@ function BrandingManager({orgId,isAdmin,isReadOnly,onSaved}){
       const body={brandAccent:accent||"",logoData:logo||undefined,removeLogo:!logo};
       const res=await apiFetch("/orgs/branding",{method:"PUT",body:JSON.stringify(body)});
       setAccent(res.brand_accent||"");
+      setDirty(false);
       setMsg(res.adjusted?"Saved — your color was deepened slightly so text stays readable.":"Branding saved.");
       onSaved&&onSaved();
     }catch(e){setErr(e.message||"Could not save branding.");}
@@ -398,20 +396,19 @@ function BrandingManager({orgId,isAdmin,isReadOnly,onSaved}){
               <div style={{width:64,height:64,borderRadius:12,border:"1px dashed "+T.bg3,background:T.bg,display:"flex",alignItems:"center",justifyContent:"center",overflow:"hidden",flexShrink:0}}>
                 {logo?<img src={logo} alt="logo" style={{maxWidth:"100%",maxHeight:"100%",objectFit:"contain"}}/>:<span style={{fontSize:10,color:T.ink3}}>none</span>}
               </div>
-              <div style={{display:"flex",flexDirection:"column",gap:6}}>
-                <label style={{background:disabled?T.bg3:T.bg2,border:"1px solid "+T.bg3,borderRadius:8,padding:"7px 12px",fontSize:12,fontWeight:600,color:T.ink,cursor:disabled?"not-allowed":"pointer"}}>
-                  {logo?"Replace logo":"Upload logo"}
-                  <input type="file" accept="image/*" onChange={onFile} disabled={disabled} style={{display:"none"}}/>
-                </label>
-                {logo&&!disabled&&<button onClick={()=>setLogo("")} style={{background:"none",border:"none",color:T.terracotta,fontSize:11,fontWeight:600,cursor:"pointer",textAlign:"left",padding:0}}>Remove</button>}
+              <div style={{display:"flex",flexDirection:"column",gap:6,flex:"1 1 200px"}}>
+                <Uploader accept={IMAGE_ACCEPT} acceptLabel={IMAGE_ACCEPT_LABEL} maxBytes={IMAGE_MAX_BYTES} compact
+                  disabled={disabled} label={logo?"Replace logo":"Upload logo"}
+                  onFile={({dataUrl})=>{setDirty(true);setLogo(dataUrl);}}/>
+                {logo&&!disabled&&<button onClick={()=>{setDirty(true);setLogo("");}} style={{background:"none",border:"none",color:T.terracotta,fontSize:11,fontWeight:600,cursor:"pointer",textAlign:"left",padding:0}}>Remove</button>}
               </div>
             </div>
           </div>
           <div>
             <div style={{fontSize:11,fontWeight:700,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:8}}>Accent color</div>
             <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
-              <input type="color" value={effAccent} onChange={e=>setAccent(e.target.value)} disabled={disabled} style={{width:40,height:40,border:"1px solid "+T.bg3,borderRadius:8,background:"none",cursor:disabled?"not-allowed":"pointer",padding:2}}/>
-              <input value={accent} onChange={e=>setAccent(e.target.value)} disabled={disabled} placeholder="#1a6b4a" style={{width:110,background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"9px 12px",color:T.ink,fontSize:13,outline:"none",fontFamily:"monospace"}}/>
+              <input type="color" value={effAccent} onChange={e=>{setDirty(true);setAccent(e.target.value);}} disabled={disabled} style={{width:40,height:40,border:"1px solid "+T.bg3,borderRadius:8,background:"none",cursor:disabled?"not-allowed":"pointer",padding:2}}/>
+              <input value={accent} onChange={e=>{setDirty(true);setAccent(e.target.value);}} disabled={disabled} placeholder="#1a6b4a" style={{width:110,background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"9px 12px",color:T.ink,fontSize:13,outline:"none",fontFamily:"monospace"}}/>
               {accent&&!disabled&&<button onClick={()=>setAccent("")} style={{background:"none",border:"none",color:T.ink3,fontSize:12,cursor:"pointer",textDecoration:"underline"}}>Reset to Steward gold</button>}
             </div>
             <div style={{display:"flex",gap:6,marginTop:10,flexWrap:"wrap"}}>
@@ -765,14 +762,18 @@ function PortalThemePreview({ps}){
 // Impact Updates donors see. Colors are server-normalized to WCAG-legible
 // values (the org is told when a color was deepened); images validated
 // server-side too (type + size).
-function PortalManager({isAdmin,isReadOnly}){
+export function PortalManager({isAdmin,isReadOnly}){
   const [ps,setPs]=useState(null);
   const [saving,setSaving]=useState(false);
   const [msg,setMsg]=useState("");const [err,setErr]=useState("");
+  // BUILD-54 §6 - unsaved-state: visible dirty chip + navigate-away guard
+  // (the real incident: an image uploaded, Save never clicked).
+  const [dirty,setDirty]=useState(false);
+  useDirtyGuard(dirty);
   const disabled=!isAdmin||isReadOnly;
   const load=()=>apiFetch("/portal-settings").then(setPs).catch(()=>setPs(null));
   useEffect(()=>{load();},[]);
-  const set=(k,v)=>setPs(p=>({...p,[k]:v}));
+  const set=(k,v)=>{setDirty(true);setPs(p=>({...p,[k]:v}));};
   // BUILD-51 — display refs: a new upload sits in *_data (data URI) until
   // saved; a stored image is a /portal-assets URL in *_url.
   const headerSrc=ps?(ps.header_image_data||resolveAssetUrl(ps.header_image_url)):null;
@@ -802,6 +803,7 @@ function PortalManager({isAdmin,isReadOnly}){
         minRecurringCents:Number(ps.min_recurring_cents)||500,
       })});
       setPs(p=>({...p,...res}));
+      setDirty(false);
       setMsg(res.adjusted?res.message:"Portal settings saved.");
     }catch(e){setErr(e.message||"Could not save portal settings.");}
     setSaving(false);
@@ -849,20 +851,28 @@ function PortalManager({isAdmin,isReadOnly}){
             <input style={{...inp,width:110,fontFamily:"monospace"}} value={ps.accent_color||""} disabled={disabled} onChange={e=>set("accent_color",e.target.value)} placeholder="#c9a84c"/>
           </div>
         </div>
-        <div>
+        <div style={{minWidth:220}}>
           <div style={lbl}>Logo</div>
-          <label style={{display:"inline-block",background:disabled?T.bg3:T.bg2,border:"1px solid "+T.bg3,borderRadius:8,padding:"7px 12px",fontSize:12,fontWeight:600,color:T.ink,cursor:disabled?"not-allowed":"pointer"}}>
-            {logoSrc?"Replace logo":"Upload logo"}
-            <input type="file" accept="image/*" onChange={onImg("logo_data")} disabled={disabled} style={{display:"none"}}/>
-          </label>
-          {logoSrc&&<img src={logoSrc} alt="" style={{display:"block",maxHeight:36,marginTop:6}}/>}
+          <Uploader accept={IMAGE_ACCEPT} acceptLabel={IMAGE_ACCEPT_LABEL} maxBytes={IMAGE_MAX_BYTES} compact
+            disabled={disabled} label={logoSrc?"Replace logo":"Upload logo"}
+            onFile={({dataUrl})=>set("logo_data",dataUrl)}>
+            {logoSrc&&<img src={logoSrc} alt="" style={{display:"block",maxHeight:36,marginTop:6}}/>}
+          </Uploader>
         </div>
-        <div>
+        <div style={{minWidth:260}}>
           <div style={lbl}>Header image (optional)</div>
-          <label style={{display:"inline-block",background:disabled?T.bg3:T.bg2,border:"1px solid "+T.bg3,borderRadius:8,padding:"7px 12px",fontSize:12,fontWeight:600,color:T.ink,cursor:disabled?"not-allowed":"pointer"}}>
-            {headerSrc?"Replace image":"Upload image"}
-            <input type="file" accept="image/*" onChange={onImg("header_image_data")} disabled={disabled} style={{display:"none"}}/>
-          </label>
+          <Uploader accept={IMAGE_ACCEPT} acceptLabel={IMAGE_ACCEPT_LABEL} maxBytes={IMAGE_MAX_BYTES} compact
+            disabled={disabled} label={headerSrc?"Replace image":"Upload image"}
+            validate={({file,dataUrl})=>file.type==="image/svg+xml"?null:new Promise(resolve=>{
+              // Mirror of the server banner rule (landscape, >=600px wide) so a
+              // portrait drop is explained BEFORE the round trip. UI courtesy
+              // only — the server re-validates identically.
+              const img=new Image();
+              img.onload=()=>resolve(img.height>=img.width?"Header images render as a wide banner — use a landscape image (at least 1200×300 works well).":(img.width<600?"Header images need to be at least 600px wide.":null));
+              img.onerror=()=>resolve("That file doesn't parse as an image.");
+              img.src=dataUrl;
+            })}
+            onFile={({dataUrl})=>set("header_image_data",dataUrl)}/>
           {/* BUILD-51 — banner CROP preview: exactly the wide crop the donor
               page renders, so a portrait upload shows its own decapitation
               here before the server rejects it. */}
@@ -951,8 +961,13 @@ function PortalManager({isAdmin,isReadOnly}){
           listed (unlisted orgs' donors never see any giving-account entry
           point, including on the org's own site). */}
       {ps.enabled===true&&ps.network_listed===true&&ps.org_slug&&<PortalWebsiteSnippet ps={ps}/>}
-      {isAdmin&&<button onClick={save} disabled={disabled||saving} title={isReadOnly?"Reactivate your subscription to make changes.":undefined}
-        style={{background:disabled?T.bg3:T.gold500,border:"none",borderRadius:9,padding:"10px 18px",color:T.ink,fontSize:13,fontWeight:700,cursor:disabled?"not-allowed":"pointer"}}>{saving?"Saving…":"Save portal settings"}</button>}
+      {isAdmin&&(
+        <div style={{position:"sticky",bottom:0,background:T.white,padding:"12px 0 4px",display:"flex",alignItems:"center",gap:12,borderTop:dirty?"1px solid "+T.bg3:"none"}}>
+          <button onClick={save} disabled={disabled||saving} title={isReadOnly?"Reactivate your subscription to make changes.":undefined}
+            style={{background:disabled?T.bg3:T.gold500,border:"none",borderRadius:9,padding:"10px 18px",color:T.ink,fontSize:13,fontWeight:700,cursor:disabled?"not-allowed":"pointer"}}>{saving?"Saving…":"Save portal settings"}</button>
+          {dirty&&!saving&&<span style={{fontSize:12,fontWeight:600,color:T.terra700}}>Unsaved changes</span>}
+        </div>
+      )}
       {msg&&<div style={{marginTop:10,fontSize:13,color:T.greenDk,fontWeight:600}}>{msg}</div>}
       {err&&<div style={{marginTop:10,fontSize:13,color:T.terracotta,fontWeight:600}}>{err}</div>}
     </div>
@@ -1013,7 +1028,7 @@ const lblCopy={fontSize:11,fontWeight:700,color:"#6b6b64",textTransform:"upperca
 
 // Impact Updates (§6.1) — what donors see in "What your giving made possible".
 // Attached to funds/campaigns; matching is deterministic on gift attribution.
-function ImpactUpdatesManager({isAdmin,isReadOnly}){
+export function ImpactUpdatesManager({isAdmin,isReadOnly}){
   const [rows,setRows]=useState([]);
   const [funds,setFunds]=useState([]);
   const [camps,setCamps]=useState([]);
@@ -1029,14 +1044,6 @@ function ImpactUpdatesManager({isAdmin,isReadOnly}){
   useEffect(()=>{load();},[]);
   const inp={width:"100%",boxSizing:"border-box",background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"9px 12px",color:T.ink,fontSize:13,outline:"none",fontFamily:"inherit"};
   const lbl={fontSize:11,fontWeight:700,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:6};
-  function addPhoto(e){
-    const f=e.target.files?.[0];if(!f)return;
-    if(!/^image\/(png|jpeg|jpg|gif|webp)$/.test(f.type)){setErr("Photos must be PNG, JPEG, GIF, or WebP.");return;}
-    if(f.size>350*1024){setErr("Photo too large — keep each under 350KB.");return;}
-    setErr("");const r=new FileReader();
-    r.onload=()=>setForm(fm=>({...fm,photos:[...(fm.photos||[]),r.result].slice(0,4)}));
-    r.readAsDataURL(f);
-  }
   async function save(){
     if(disabled||busy||!form?.title?.trim())return;
     setBusy(true);setErr("");
@@ -1081,10 +1088,14 @@ function ImpactUpdatesManager({isAdmin,isReadOnly}){
                   style={{position:"absolute",top:-6,right:-6,background:T.ink,color:T.bg,border:"none",borderRadius:"50%",width:18,height:18,fontSize:10,cursor:"pointer",lineHeight:1}}>✕</button>
               </div>
             ))}
-            {(form.photos||[]).length<4&&<label style={{background:T.bg2,border:"1px solid "+T.bg3,borderRadius:8,padding:"7px 12px",fontSize:12,fontWeight:600,cursor:"pointer"}}>
-              Add photo<input type="file" accept="image/*" onChange={addPhoto} style={{display:"none"}}/>
-            </label>}
           </div>
+          {(form.photos||[]).length<4&&(
+            <div style={{maxWidth:340,marginTop:8}}>
+              <Uploader accept={IMAGE_ACCEPT} acceptLabel={IMAGE_ACCEPT_LABEL} maxBytes={IMAGE_MAX_BYTES} compact multiple
+                label="Add photos"
+                onFile={({dataUrl})=>setForm(fm=>({...fm,photos:[...(fm.photos||[]),dataUrl].slice(0,4)}))}/>
+            </div>
+          )}
           <div style={{...lbl,marginTop:12}}>Shows to donors who gave to</div>
           <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
             {funds.map(f=>(
@@ -1140,7 +1151,7 @@ const SETTINGS_TABS=[
   {id:"account",label:"Account"},
 ];
 
-export function Settings({auth,logout,initialSection}) {
+export function Settings({auth,logout,initialSection,onNavigate}) {
   const [section,setSection]=useState(SETTINGS_TABS.some(t=>t.id===initialSection)?initialSection:"org");
   const orgName=auth?.org?.name||"Your Organization";
   const userName=auth?.user?.name||"User";
@@ -1497,7 +1508,7 @@ export function Settings({auth,logout,initialSection}) {
           </div>
         );
       })()}
-      <SectionTabs className="settings-tabbar" style={{marginBottom:-2}} tabs={SETTINGS_TABS} active={section} onSelect={setSection}/>
+      <SectionTabs className="settings-tabbar" style={{marginBottom:-2}} tabs={SETTINGS_TABS} active={section} onSelect={id=>{if(confirmIfDirty())setSection(id);}}/>
 
       {/* ── Organization ──────────────────────────────────────────────────── */}
       {section==="org"&&<div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:16,padding:"24px 28px"}}>
@@ -1673,11 +1684,21 @@ export function Settings({auth,logout,initialSection}) {
         <GivingPagesManager orgSlug={orgSlug} isAdmin={isAdmin} isReadOnly={isReadOnly}/>
       </>}
 
-      {/* ── Donor Portal (BUILD-45) ───────────────────────────────────────── */}
-      {section==="portal"&&<>
-        <PortalManager isAdmin={isAdmin} isReadOnly={isReadOnly}/>
-        <ImpactUpdatesManager isAdmin={isAdmin} isReadOnly={isReadOnly}/>
-      </>}
+      {/* ── Donor Portal — moved to its own top-level section (BUILD-54 §3).
+          One home only: this tab is a pointer, never a second editor. */}
+      {section==="portal"&&(
+        <div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:16,padding:"24px 28px"}}>
+          <SectionLabel>Donor Portal</SectionLabel>
+          <div style={{fontSize:13,color:T.ink3,lineHeight:1.6,marginTop:6,marginBottom:16,maxWidth:560}}>
+            The Donor Portal has its own home now — portal status, theme, impact updates, and
+            engagement all live under <strong style={{color:T.ink2}}>Donor Portal</strong> in the left navigation.
+          </div>
+          <button onClick={()=>onNavigate&&onNavigate("portal")}
+            style={{background:T.gold500,border:"none",borderRadius:9,padding:"10px 18px",color:T.ink,fontSize:13,fontWeight:700,cursor:"pointer"}}>
+            Open Donor Portal →
+          </button>
+        </div>
+      )}
 
       {/* ── Customization ─────────────────────────────────────────────────── */}
       {section==="customization"&&<>

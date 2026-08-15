@@ -292,6 +292,21 @@ function RecurringCard({ slug, sub, theme, onChanged }) {
   );
 }
 
+// BUILD-54 §2 — sanitized structured story blocks (server-validated typed
+// data, never HTML; React renders the strings as text nodes).
+function StoryBlocks({ blocks }) {
+  if (!Array.isArray(blocks) || !blocks.length) return null;
+  return (
+    <div style={{ fontSize: 14, lineHeight: 1.7 }}>
+      {blocks.map((b, i) => {
+        if (b.type === "h2") return <div key={i} style={{ fontFamily: "var(--pt-serif, Georgia,serif)", fontSize: 18, margin: "14px 0 6px" }}>{b.text}</div>;
+        if (b.type === "ul") return <ul key={i} style={{ margin: "8px 0", paddingLeft: 22 }}>{(b.items || []).map((it, j) => <li key={j} style={{ marginBottom: 4 }}>{it}</li>)}</ul>;
+        return <p key={i} style={{ margin: "8px 0" }}>{b.text}</p>;
+      })}
+    </div>
+  );
+}
+
 function Dashboard({ slug, me, reload }) {
   const theme = me.theme;
   const g = me.giving || {};
@@ -322,6 +337,19 @@ function Dashboard({ slug, me, reload }) {
           {me.account.exists
             ? <>Add a password to your giving account for one-step sign-in — use "Reset password" at <a href="/giving" style={{ color: "var(--pt-button, var(--pt-primary))" }}>your giving dashboard</a>.</>
             : <>See all your giving in one place — <a href={`/giving#signup&email=${encodeURIComponent(me.account.email || "")}&from=${encodeURIComponent(slug)}`} style={{ color: "var(--pt-button, var(--pt-primary))" }}>create a free account</a>. This page keeps working exactly as it does now.</>}
+        </div>
+      )}
+
+      {/* BUILD-54 §2 — thank-you state: the donor's recent campaign gift with
+          the org's OWN words about what that campaign is doing. Renders only
+          when the org authored content — never generated, never filler. */}
+      {me.thankYou && (
+        <div style={{ ...S.card, borderLeft: "4px solid var(--pt-accent)" }}>
+          <h2 style={S.h2}>Thank you</h2>
+          <p style={{ fontSize: 15, lineHeight: 1.7, margin: 0 }}>
+            Your {fmtFull(me.thankYou.amount)} gift supports <strong>{me.thankYou.campaignName}</strong>.
+          </p>
+          <p style={{ ...S.muted, marginTop: 8, marginBottom: 0 }}>{me.thankYou.description}</p>
         </div>
       )}
 
@@ -384,6 +412,35 @@ function Dashboard({ slug, me, reload }) {
           </p>
         </div>
       )}
+
+      {/* BUILD-54 §2 — campaign spotlights: what the campaigns this donor gave
+          to are doing, in the org's own words. A campaign with no authored
+          content never appears (its name still labels the gift rows above). */}
+      {(me.campaigns || []).map(c => (
+        <div key={c.id} style={{ ...S.card, padding: 0, overflow: "hidden" }}>
+          {c.heroImage && (
+            <div style={{ maxHeight: 220, overflow: "hidden" }}>
+              <img src={resolveAssetUrl(c.heroImage)} alt="" style={{ width: "100%", display: "block", objectFit: "cover" }} />
+            </div>
+          )}
+          <div style={{ padding: "20px 22px" }}>
+            <h2 style={{ ...S.h2, marginBottom: 6 }}>{c.name}</h2>
+            {c.description && <p style={{ fontSize: 14, lineHeight: 1.7, margin: "0 0 8px", color: "#3a3a35" }}>{c.description}</p>}
+            <StoryBlocks blocks={c.story} />
+            {c.goal && c.goal.amount > 0 && (
+              <div style={{ marginTop: 14 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, marginBottom: 6 }}>
+                  <span style={{ fontWeight: 700 }}>{fmtFull(c.goal.raised)} raised</span>
+                  <span style={S.muted}>of {fmtFull(c.goal.amount)}{c.goal.percent != null ? ` · ${c.goal.percent}%` : ""}</span>
+                </div>
+                <div style={{ height: 10, background: "#efece5", borderRadius: 5, overflow: "hidden" }}>
+                  <div style={{ width: `${Math.max(2, Math.min(100, c.goal.percent || 0))}%`, height: "100%", background: "var(--pt-primary)" }} />
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      ))}
 
       {(me.impact || []).length > 0 && (
         <div style={S.card}>

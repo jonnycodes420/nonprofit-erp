@@ -4420,8 +4420,11 @@ async function sendReceiptEmail(org, donor, snapshot, pdfBuffer, filename) {
     const entry = await givingAccountEntry(org);
     const html = await brandEmailHeaderHtml(org.id)
       + `<p>Hi ${escapeHtml(donor.name || "there")},</p>
-      <p>Thank you for your generous gift to <strong>${escapeHtml(displayNameCase(org.name))}</strong> — your official ${snapshot.type === "year_end" ? "year-end giving statement" : "tax receipt"} is attached.</p>
-      <p style="color:#8fa896;font-size:13px">Receipt #${escapeHtml(snapshot.receiptNumber)}</p>`
+      <p>Thank you for your generous gift to <strong>${escapeHtml(displayNameCase(org.name))}</strong> — your official ${snapshot.type === "year_end" ? "year-end giving statement" : "tax receipt"} is attached.</p>`
+      // BUILD-54 §2 — the campaign's own org-authored copy (frozen in the
+      // snapshot at issue time); absent when the campaign has no content.
+      + (snapshot.campaignNote ? `<p>Your gift supports <strong>${escapeHtml(snapshot.campaignNote.name)}</strong>. ${escapeHtml(snapshot.campaignNote.description)}</p>` : "")
+      + `<p style="color:#8fa896;font-size:13px">Receipt #${escapeHtml(snapshot.receiptNumber)}</p>`
       + (entry ? givingAccountEmailFooterHtml(entry.slug, donor.email) : "");
     // Transactional (not a campaign/sequence send) — deliberately no
     // unsubscribe link/List-Unsubscribe headers, but still skips suppressed
@@ -4479,6 +4482,19 @@ async function issueGiftReceipt(gift, org, donor, { send = true } = {}) {
     quidProQuoDesc: gift.quid_pro_quo_desc || null,
     quidProQuoValue: gift.quid_pro_quo_value != null ? parseFloat(gift.quid_pro_quo_value) : null,
   };
+
+  // BUILD-54 §2 — org-authored campaign copy for the cover email, frozen into
+  // the snapshot at issue time like everything else (a later campaign edit
+  // never changes what an already-issued receipt said). Present ONLY when the
+  // gift is campaign-attributed AND the campaign carries donor-facing
+  // content — a campaign with no content adds nothing (never fabricate).
+  if (gift.campaign_id || gift.campaign) {
+    const [c] = await query(
+      `SELECT COALESCE(donor_facing_name, name) AS name, donor_description FROM campaigns
+       WHERE org_id = ? AND (id = ? OR name = ?) AND donor_description IS NOT NULL LIMIT 1`,
+      [org.id, gift.campaign_id || "", gift.campaign || ""]);
+    if (c) snapshot.campaignNote = { name: c.name, description: c.donor_description };
+  }
 
   const pdfBuffer = await renderReceiptPdf(snapshot);
   const id = "rcpt_" + uuid().slice(0, 8);
@@ -8014,7 +8030,8 @@ function computeFundraisingPace(raised, goal, startDate, endDate) {
 //     one number would double-count and a treasurer would catch it.
 async function fundraisingCampaignRows(orgId) {
   const campaigns = await query(
-    `SELECT id, name, goal_amount, start_date, end_date, status, type, goal_category, parent_goal_id, created_at
+    `SELECT id, name, goal_amount, start_date, end_date, status, type, goal_category, parent_goal_id, created_at,
+            donor_facing_name, donor_description, donor_story, hero_image_url, goal_progress_public
      FROM campaigns WHERE org_id = ? AND goal_amount IS NOT NULL AND goal_amount > 0
      ORDER BY created_at DESC`,
     [orgId]
@@ -8074,6 +8091,13 @@ async function fundraisingCampaignRows(orgId) {
       type: c.type,
       goalCategory: GOAL_CATEGORIES.includes(c.goal_category) ? c.goal_category : "project",
       parentGoalId: c.parent_goal_id || null,
+      // BUILD-54 §2 — donor-facing content (org-authored; the CRM edit form
+      // round-trips these; donor surfaces read them via the portal payloads).
+      donorFacingName: c.donor_facing_name || null,
+      donorDescription: c.donor_description || null,
+      donorStory: Array.isArray(c.donor_story) ? c.donor_story : null,
+      heroImageUrl: c.hero_image_url || null,
+      goalProgressPublic: c.goal_progress_public === true,
       ...pace,
     };
   });
@@ -8264,6 +8288,28 @@ app.get("/fundraising/goals", requireAuth, wrap(async (req, res) => {
   res.json(fundraisingGoalsPortfolio(rows));
 }));
 
+// BUILD-54 §2 — the donor-facing fields ride the SAME create/edit routes the
+// CRM campaign form uses (setup happens where the campaign is created — no
+// separate configuration screen to forget). Shared validator for both routes;
+// returns { sets, params } column assignments or { status, body } to reject.
+async function parseDonorFacingCampaignFields(b, orgId) {
+  const sets = [], params = [];
+  if (b.donorFacingName !== undefined) { sets.push("donor_facing_name = ?"); params.push(String(b.donorFacingName || "").trim().slice(0, 120) || null); }
+  if (b.donorDescription !== undefined) { sets.push("donor_description = ?"); params.push(String(b.donorDescription || "").trim().slice(0, 600) || null); }
+  if (b.donorStory !== undefined) {
+    const v = validateStoryBlocks(b.donorStory);
+    if (v.error) return { status: 400, body: { error: v.error, message: "The story must be paragraphs, headings, and lists — no HTML or embeds." } };
+    sets.push("donor_story = ?"); params.push(v.blocks && v.blocks.length ? JSON.stringify(v.blocks) : null);
+  }
+  if (b.heroImageData !== undefined) {
+    const h = await storeCampaignHero(orgId, b.heroImageData);
+    if (h.error) return { status: 400, body: { error: h.error, message: h.message } };
+    if (h.url !== undefined) { sets.push("hero_image_url = ?"); params.push(h.url); }
+  }
+  if (b.goalProgressPublic !== undefined) { sets.push("goal_progress_public = ?"); params.push(b.goalProgressPublic === true); }
+  return { sets, params };
+}
+
 app.post("/fundraising/campaigns", requireAuth, checkWriteAccess, wrap(async (req, res) => {
   const { name, goalAmount, startDate, endDate, goalCategory, parentGoalId } = req.body;
   if (!name || !name.trim()) return res.status(400).json({ error: "Name required" });
@@ -8277,12 +8323,17 @@ app.post("/fundraising/campaigns", requireAuth, checkWriteAccess, wrap(async (re
     if (!p.length) return res.status(400).json({ error: "parentGoalId must be an existing goal in this org" });
     parent = parentGoalId;
   }
+  const df = await parseDonorFacingCampaignFields(req.body, req.user.orgId);
+  if (df.status) return res.status(df.status).json(df.body);
   const id = "cmp_" + uuid().slice(0, 8);
   await run(
     `INSERT INTO campaigns (id,org_id,name,type,subject,body,status,segment,goal_amount,start_date,end_date,goal_category,parent_goal_id,recipient_count,open_count)
      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,0,0)`,
     [id, req.user.orgId, name.trim(), "appeal", "", "", "draft", JSON.stringify({}), goal, startDate || null, endDate || null, category, parent]
   );
+  if (df.sets.length) {
+    await run(`UPDATE campaigns SET ${df.sets.join(", ")} WHERE id = ? AND org_id = ?`, [...df.params, id, req.user.orgId]);
+  }
   const rows = await fundraisingCampaignRows(req.user.orgId);
   res.status(201).json(rows.find(r => r.id === id) || { id });
 }));
@@ -8306,6 +8357,8 @@ app.put("/fundraising/campaigns/:id", requireAuth, checkWriteAccess, wrap(async 
     if (!p.length) return res.status(400).json({ error: "parentGoalId must be an existing goal in this org" });
     parentUpdate = parentGoalId;
   }
+  const df = await parseDonorFacingCampaignFields(req.body, req.user.orgId);
+  if (df.status) return res.status(df.status).json(df.body);
   await run(
     `UPDATE campaigns SET name=COALESCE(?,name), goal_amount=COALESCE(?,goal_amount),
        start_date=?, end_date=?, goal_category=COALESCE(?,goal_category),
@@ -8314,6 +8367,12 @@ app.put("/fundraising/campaigns/:id", requireAuth, checkWriteAccess, wrap(async 
      startDate || null, endDate || null, goalCategory || null,
      parentProvided, parentUpdate, req.params.id, req.user.orgId]
   );
+  if (df.sets.length) {
+    await run(`UPDATE campaigns SET ${df.sets.join(", ")} WHERE id = ? AND org_id = ?`, [...df.params, req.params.id, req.user.orgId]);
+    // A replaced/cleared hero leaves no orphaned asset (content addressing —
+    // one photo may back several campaigns; reference-counted like impact).
+    if (req.body.heroImageData !== undefined) await pruneCampaignAssets(req.user.orgId);
+  }
   const rows = await fundraisingCampaignRows(req.user.orgId);
   res.json(rows.find(r => r.id === req.params.id) || { id: req.params.id });
 }));
@@ -15717,7 +15776,7 @@ app.get("/portal/:orgSlug/me", requirePortalSession, wrap(async (req, res) => {
   // BUILD-54 §1 — impact matching, the account nudge, and the audit write
   // ride the same parallel batch as the data reads (they only need donorIds/
   // email, all known here). This endpoint is the donor's first paint.
-  const [byYearRows, totalsRow, gifts, receipts, recurring, pledges, household, impact, accountNudge] = await Promise.all([
+  const [byYearRows, totalsRow, gifts, receipts, recurring, pledges, household, impact, accountNudge, , campaignSpotlights, thankYouRows] = await Promise.all([
     query(
       `SELECT LEFT(date, 4) AS year, COALESCE(SUM(amount),0) AS total, COUNT(*)::int AS count
        FROM gifts WHERE org_id = ? AND donor_id = ANY(?) GROUP BY LEFT(date, 4) ORDER BY year DESC`,
@@ -15728,7 +15787,7 @@ app.get("/portal/:orgSlug/me", requirePortalSession, wrap(async (req, res) => {
        FROM gifts WHERE org_id = ? AND donor_id = ANY(?)`,
       [org.id, donorIds]),
     query(
-      `SELECT g.id, g.date, g.amount, g.type, COALESCE(c.name, g.campaign) AS campaign,
+      `SELECT g.id, g.date, g.amount, g.type, COALESCE(c.donor_facing_name, c.name, g.campaign) AS campaign,
               f.name AS fund, g.stripe_payment_id IS NOT NULL AS online,
               r.id AS receipt_id, r.receipt_number
        FROM gifts g
@@ -15787,6 +15846,40 @@ app.get("/portal/:orgSlug/me", requirePortalSession, wrap(async (req, res) => {
       return { exists: acct.length > 0, hasPassword: !!acct[0]?.password_hash, email };
     })() : Promise.resolve(null),
     portalAudit(org.id, donorIds[0], email, "dashboard_viewed", req),
+    // BUILD-54 §2 — campaign spotlights: campaigns THIS donor gave to (same
+    // 24-month window + campaign_id-OR-name attribution rule as the impact
+    // matcher — extended, not forked) that carry ORG-AUTHORED donor-facing
+    // content. A campaign with no content never appears here (never
+    // fabricate); goal figures are computed ONLY when the org opted that
+    // campaign's thermometer public, and are goal/raised only — never donor
+    // counts, never other donors' gifts.
+    query(
+      `SELECT c.id, COALESCE(c.donor_facing_name, c.name) AS name, c.donor_description, c.donor_story,
+              c.hero_image_url, c.goal_progress_public, c.goal_amount,
+              CASE WHEN c.goal_progress_public THEN
+                COALESCE((SELECT SUM(g2.amount - COALESCE(g2.cover_fee_amount,0)) FROM gifts g2
+                          WHERE g2.org_id = c.org_id AND (g2.campaign_id = c.id OR g2.campaign = c.name)), 0)
+              + COALESCE((SELECT SUM(gr.amount) FROM grants gr
+                          WHERE gr.org_id = c.org_id AND gr.campaign_id = c.id AND gr.awarded_at IS NOT NULL), 0)
+              END AS raised
+       FROM campaigns c
+       WHERE c.org_id = ?
+         AND (c.donor_description IS NOT NULL OR c.donor_story IS NOT NULL OR c.hero_image_url IS NOT NULL)
+         AND EXISTS (SELECT 1 FROM gifts g WHERE g.org_id = c.org_id AND g.donor_id = ANY(?)
+                     AND (g.campaign_id = c.id OR g.campaign = c.name)
+                     AND g.date >= (CURRENT_DATE - INTERVAL '24 months')::text)
+       ORDER BY c.created_at DESC LIMIT 6`,
+      [org.id, donorIds]),
+    // §2 thank-you state — the donor's most recent campaign-attributed gift
+    // in the last 30 days, shown ONLY when the campaign carries org-authored
+    // copy (no content → the gift shows the campaign name and nothing more).
+    query(
+      `SELECT g.amount, g.date, COALESCE(c.donor_facing_name, c.name) AS campaign_name, c.donor_description
+       FROM gifts g JOIN campaigns c ON c.org_id = g.org_id AND (g.campaign_id = c.id OR g.campaign = c.name)
+       WHERE g.org_id = ? AND g.donor_id = ANY(?) AND c.donor_description IS NOT NULL
+         AND g.date >= (CURRENT_DATE - INTERVAL '30 days')::text
+       ORDER BY g.date DESC, g.id DESC LIMIT 1`,
+      [org.id, donorIds]),
   ]);
 
   // Stripe display details (card last-4, next charge) — display-only, and the
@@ -15845,6 +15938,27 @@ app.get("/portal/:orgSlug/me", requirePortalSession, wrap(async (req, res) => {
     })),
     household,
     impact,
+    // §2 — org-authored campaign content only; empty array when none.
+    campaigns: campaignSpotlights.map(c => ({
+      id: c.id, name: c.name,
+      description: c.donor_description || null,
+      story: Array.isArray(c.donor_story) ? c.donor_story : null,
+      heroImage: c.hero_image_url || null,
+      // Goal figures ONLY when the org opted this campaign public — and only
+      // goal/raised/percent, never donor counts.
+      goal: c.goal_progress_public === true ? {
+        amount: parseFloat(c.goal_amount) || 0,
+        raised: parseFloat(c.raised) || 0,
+        percent: (parseFloat(c.goal_amount) || 0) > 0
+          ? Math.min(100, Math.round(((parseFloat(c.raised) || 0) / parseFloat(c.goal_amount)) * 100)) : null,
+      } : null,
+    })),
+    thankYou: thankYouRows.length ? {
+      amount: parseFloat(thankYouRows[0].amount) || 0,
+      date: thankYouRows[0].date,
+      campaignName: thankYouRows[0].campaign_name,
+      description: thankYouRows[0].donor_description,
+    } : null,
     account: accountNudge,
   });
 }));
@@ -16147,6 +16261,59 @@ async function pruneImpactAssets(orgId) {
   await pruneUnreferencedAssets(orgId, "impact", keep);
 }
 
+// ── BUILD-54 §2 — donor-facing campaign content helpers ────────────────────
+// The campaign STORY is sanitized structured text — a validated block array,
+// never HTML/CSS/JS and never paste-in embed code. Unknown block types,
+// oversized content, or non-string leaves reject the whole payload (400), so
+// nothing unvalidated can ever reach a donor's browser. React renders the
+// strings as text nodes (escaped by construction).
+const STORY_BLOCK_TYPES = ["p", "h2", "ul"];
+function validateStoryBlocks(raw) {
+  if (raw == null) return { blocks: null };                 // field not being set
+  if (raw === "" || (Array.isArray(raw) && raw.length === 0)) return { blocks: [] }; // explicit clear
+  if (!Array.isArray(raw) || raw.length > 40) return { error: "bad_story" };
+  const out = [];
+  for (const b of raw) {
+    if (!b || typeof b !== "object" || !STORY_BLOCK_TYPES.includes(b.type)) return { error: "bad_story" };
+    if (b.type === "ul") {
+      if (!Array.isArray(b.items) || b.items.length === 0 || b.items.length > 20) return { error: "bad_story" };
+      const items = b.items.map(i => typeof i === "string" ? i.trim().slice(0, 500) : null);
+      if (items.some(i => i == null || i === "")) return { error: "bad_story" };
+      out.push({ type: "ul", items });
+    } else {
+      if (typeof b.text !== "string" || !b.text.trim()) return { error: "bad_story" };
+      out.push({ type: b.type, text: b.text.trim().slice(0, b.type === "h2" ? 200 : 2000) });
+    }
+  }
+  return { blocks: out };
+}
+
+// Campaign hero image — single image on the BUILD-51 asset seam (kind
+// 'campaign'; content-photo rules, any orientation). A stored /portal-assets/
+// path echoes through unchanged; "" clears.
+async function storeCampaignHero(orgId, heroIn) {
+  if (heroIn == null) return { url: undefined };            // field not being set
+  if (heroIn === "") return { url: null };                  // explicit clear
+  if (typeof heroIn === "string" && heroIn.startsWith("/portal-assets/")) return { url: heroIn };
+  if (!validPortalImage(heroIn, 500000)) return { error: "bad_image", message: "Campaign photos must be PNG/JPEG/GIF/WebP/SVG under ~350KB." };
+  const m = String(heroIn).match(/^data:([^;]+);base64,(.*)$/s);
+  let buffer;
+  try { buffer = Buffer.from(m[2], "base64"); } catch { return { error: "bad_image" }; }
+  const dims = checkThemeImageDimensions("campaign", m[1], buffer);
+  if (!dims.ok) return { error: "bad_image_dimensions", message: dims.message };
+  const asset = await putThemeAsset({ orgId, kind: "campaign", buffer, contentType: m[1], width: dims.width, height: dims.height });
+  return { url: asset.path };
+}
+async function pruneCampaignAssets(orgId) {
+  const rows = await query(`SELECT hero_image_url FROM campaigns WHERE org_id = ? AND hero_image_url IS NOT NULL`, [orgId]);
+  const keep = [];
+  for (const r of rows) {
+    const m = /^\/portal-assets\/(pa_[a-f0-9]{24})$/.exec(String(r.hero_image_url));
+    if (m) keep.push(m[1]);
+  }
+  await pruneUnreferencedAssets(orgId, "campaign", keep);
+}
+
 app.put("/portal-settings", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
   const b = req.body || {};
   await run(`INSERT INTO portal_settings (org_id) VALUES (?) ON CONFLICT (org_id) DO NOTHING`, [req.user.orgId]);
@@ -16313,6 +16480,31 @@ app.put("/impact-updates/:id", requireAuth, requireAdmin, checkWriteAccess, wrap
   // Removed/replaced photos leave no orphaned assets (cross-update refs kept).
   await pruneImpactAssets(req.user.orgId);
   res.json((await query(`SELECT * FROM impact_updates WHERE id = ?`, [req.params.id]))[0]);
+}));
+
+// BUILD-54 §3 — the hub's engagement card: the portal's EXISTING quiet
+// signals (portal_audit_log), aggregated org-side. No new tracking. `recent`
+// includes only rows resolved to a real donor of THIS org (a bare
+// link-request email from a stranger is never surfaced to staff).
+app.get("/portal-engagement", requireAuth, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  const [countRows, recent] = await Promise.all([
+    query(
+      `SELECT action, COUNT(*)::int AS c FROM portal_audit_log
+       WHERE org_id = ? AND created_at > NOW() - INTERVAL '30 days' GROUP BY action`, [orgId]),
+    query(
+      `SELECT pal.action, pal.created_at, d.name AS donor_name
+       FROM portal_audit_log pal
+       JOIN donors d ON d.id = pal.donor_id AND d.org_id = pal.org_id AND d.deleted_at IS NULL
+       WHERE pal.org_id = ? AND pal.action IN
+         ('session_created','dashboard_viewed','impact_view','receipt_downloaded',
+          'recurring_cancel','recurring_pause','recurring_amount','recurring_resume')
+       ORDER BY pal.created_at DESC LIMIT 12`, [orgId]),
+  ]);
+  res.json({
+    counts: Object.fromEntries(countRows.map(r => [r.action, r.c])),
+    recent: recent.map(r => ({ action: r.action, donorName: displayNameCase(r.donor_name), createdAt: r.created_at })),
+  });
 }));
 
 app.delete("/impact-updates/:id", requireAuth, requireAdmin, wrap(async (req, res) => {

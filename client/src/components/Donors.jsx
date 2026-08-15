@@ -3,6 +3,7 @@ import Papa from "papaparse";
 import { apiFetch, API, getToken, adaptDonor } from "../api";
 import { useAuth } from "../main";
 import UpgradeModal from "./UpgradeModal";
+import Uploader from "./Uploader";
 import { bestCampaignMatch } from "../lib/campaignMatch";
 import { dueBadge } from "../lib/taskDue";
 
@@ -1010,7 +1011,9 @@ export function DonorImport({ onClose, onImported, withHistory = false }) {
         {!parsed && !xlsxSheets && (<>
           <div style={{marginBottom:14}}>
             <div style={{fontSize:11,fontWeight:700,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:6}}>Upload file</div>
-            <input type="file" accept=".csv,.tsv,.xlsx,.xls" onChange={handleFile} style={{fontSize:13,color:T.ink3}}/>
+            <Uploader accept={[".csv",".tsv",".xlsx",".xls"]} acceptLabel=".csv, .tsv, .xlsx, .xls" compact readAs="none"
+              label="Drop your spreadsheet here, or browse"
+              onFile={({file})=>handleFile({target:{files:[file]}})}/>
             <div style={{fontSize:11,color:T.ink3,marginTop:5}}>Drop a donor list OR a raw gift export — we detect the shape and build donors + their giving history. .csv, .tsv, .xlsx, .xls.</div>
           </div>
           <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:14}}>
@@ -1618,7 +1621,9 @@ function GiftHistoryImport({ donors, onClose, onImported }) {
         {step === "upload" && !xlsxSheets && (<>
           <div style={{marginBottom:14}}>
             <div style={{fontSize:11,fontWeight:700,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:6}}>Upload file</div>
-            <input type="file" accept=".csv,.tsv,.xlsx,.xls" onChange={handleFile} style={{fontSize:13,color:T.ink3}}/>
+            <Uploader accept={[".csv",".tsv",".xlsx",".xls"]} acceptLabel=".csv, .tsv, .xlsx, .xls" compact readAs="none"
+              label="Drop your spreadsheet here, or browse"
+              onFile={({file})=>handleFile({target:{files:[file]}})}/>
             <div style={{fontSize:11,color:T.ink3,marginTop:5}}>Wide format (one row/donor, year columns) or transactional (one row/gift) — auto-detected.</div>
           </div>
           <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:14}}>
@@ -2053,7 +2058,9 @@ function CombinedImport({ onClose, onImported }) {
         {step === "upload" && !xlsxSheets && (<>
           <div style={{marginBottom:14}}>
             <div style={{fontSize:11,fontWeight:700,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:6}}>Upload file</div>
-            <input type="file" accept=".csv,.tsv,.xlsx,.xls" onChange={handleFile} style={{fontSize:13,color:T.ink3}}/>
+            <Uploader accept={[".csv",".tsv",".xlsx",".xls"]} acceptLabel=".csv, .tsv, .xlsx, .xls" compact readAs="none"
+              label="Drop your spreadsheet here, or browse"
+              onFile={({file})=>handleFile({target:{files:[file]}})}/>
             <div style={{fontSize:11,color:T.ink3,marginTop:5}}>Wide format with donor columns (Name, Email…) and gift year columns (2021, 2022 Gift, Jan 2023…).</div>
           </div>
           <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:14}}>
@@ -4009,16 +4016,9 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
             <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
               <div style={{fontSize:14,fontWeight:800,color:T.ink}}>Donor Materials</div>
             </div>
-            <div
-              onDragOver={e=>{e.preventDefault();setMatDragging(true);}}
-              onDragLeave={()=>setMatDragging(false)}
-              onDrop={async e=>{e.preventDefault();setMatDragging(false);const file=e.dataTransfer.files[0];if(file)uploadMaterial(file);}}
-              onClick={()=>fileInputRef.current?.click()}
-              style={{border:`2px dashed ${matDragging?"#10b981":T.bg3}`,borderRadius:12,padding:"28px 20px",textAlign:"center",cursor:"pointer",transition:"border-color 0.15s",background:matDragging?"#10b98108":T.bg}}>
-              <div style={{fontSize:13,color:T.ink3}}>{matUploading?"Uploading…":"Drop a file here or click to browse"}</div>
-              <div style={{fontSize:11,color:T.ink3,marginTop:4}}>Proposals, letters, research — any file type</div>
-              <input ref={fileInputRef} type="file" style={{display:"none"}} onChange={e=>{const f=e.target.files[0];if(f)uploadMaterial(f);e.target.value="";}}/>
-            </div>
+            <Uploader accept={[]} readAs="none" busy={matUploading}
+              label={matUploading?"Uploading…":"Drop a file here, or browse — proposals, letters, research (any file type)"}
+              onFile={({file})=>uploadMaterial(file)}/>
             {matLoading?<div style={{textAlign:"center",color:T.ink3,fontSize:12,padding:16}}><Spin/></div>:materials.length===0?<div style={{fontSize:12,color:T.ink3,fontStyle:"italic",textAlign:"center",padding:16}}>No materials uploaded yet</div>:(
               <div style={{display:"flex",flexDirection:"column",gap:8}}>
                 {materials.map(m=>(
