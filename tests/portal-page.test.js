@@ -43,7 +43,7 @@ async function pub(p) {
 async function fixture() {
   await q(`DELETE FROM donor_accounts WHERE email LIKE '%@pp54.test'`);
   for (const org of [ORG_A, ORG_B]) {
-    for (const t of ["portal_assets", "portal_audit_log", "portal_sessions", "portal_magic_links", "impact_updates", "gifts", "campaigns", "fin_funds", "donors", "users"])
+    for (const t of ["portal_assets", "portal_audit_log", "portal_sessions", "portal_magic_links", "impact_updates", "interactions", "gifts", "campaigns", "fin_funds", "donors", "users"])
       await q(`DELETE FROM ${t} WHERE org_id=$1`, [org]).catch(() => {});
     await q(`DELETE FROM portal_pages WHERE org_id=$1`, [org]).catch(() => {});
     await q(`DELETE FROM portal_settings WHERE org_id=$1`, [org]).catch(() => {});

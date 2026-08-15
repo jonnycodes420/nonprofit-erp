@@ -190,10 +190,12 @@ export function WidgetView({ w, ctx }) {
       );
     }
     case "give":
+      // §5 vertical rhythm — a solid band in the org's own color, not another
+      // white card in a uniform stack.
       return (
-        <div style={{ ...cardStyle, display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
-          <div style={{ fontSize: 15, fontWeight: 600 }}>{w.heading || "Make a new gift"}</div>
-          <a href={`/give/${ctx.giveSlug}`} style={{ background: "var(--pt-button, var(--pt-primary))", color: "var(--pt-button-fg, #fff)", textDecoration: "none", borderRadius: 10, padding: "12px 22px", fontSize: 15, fontWeight: 700 }}>{w.buttonLabel || "Give"}</a>
+        <div style={{ background: "var(--pt-primary)", color: "var(--pt-primary-fg, #fff)", borderRadius: "var(--pt-card-radius, 14px)", padding: "26px 24px", marginBottom: 18, display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }}>
+          <div style={{ fontFamily: "var(--pt-serif, Georgia,serif)", fontSize: 20 }}>{w.heading || "Make a new gift"}</div>
+          <a href={`/give/${ctx.giveSlug}`} style={{ background: "var(--pt-primary-fg, #fff)", color: "var(--pt-primary)", textDecoration: "none", borderRadius: 10, padding: "12px 26px", fontSize: 15, fontWeight: 700 }}>{w.buttonLabel || "Give"}</a>
         </div>
       );
     case "mygiving":

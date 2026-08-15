@@ -44,7 +44,7 @@ async function pfetch(path, opts = {}) {
 // (varsFor below) — the fallbacks here match the designed defaults.
 const S = {
   page: { minHeight: "100vh", background: "var(--pt-bg, #faf9f6)", color: "#1c1c1a", fontFamily: "var(--pt-sans, 'DM Sans',system-ui,sans-serif)" },
-  wrap: { maxWidth: 720, margin: "0 auto", padding: "0 20px 64px" },
+  wrap: { maxWidth: 860, margin: "0 auto", padding: "0 20px 64px" },
   card: { background: "#fff", border: "var(--pt-card-border, 1px solid #e7e4dc)", borderRadius: "var(--pt-card-radius, 14px)", boxShadow: "var(--pt-card-shadow, none)", padding: "20px 22px", marginBottom: 18 },
   h2: { fontFamily: "var(--pt-serif, 'DM Serif Display',Georgia,serif)", fontWeight: 400, fontSize: 22, margin: "0 0 12px" },
   label: { fontSize: 12, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "#6b6b64", marginBottom: 6 },
@@ -72,20 +72,68 @@ function varsFor(theme) {
   };
 }
 
+// BUILD-54 §5 — the banner runs EDGE TO EDGE (never boxed in the content
+// column), and the org's identity is consolidated onto it: one plaque (logo
+// or monogram + name), no second identity block below. With no uploaded
+// image the fallback is the DESIGNED treatment — a solid band in the org's
+// own primary with monogram + name — never generated abstract shapes.
+function Monogram({ theme, size = 52 }) {
+  return (
+    <div aria-hidden style={{ width: size, height: size, borderRadius: "50%", background: "rgba(255,255,255,0.14)", border: "1px solid rgba(255,255,255,0.4)", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "var(--pt-serif, Georgia,serif)", fontSize: size * 0.46, color: "var(--pt-primary-fg, #fff)", flexShrink: 0 }}>
+      {(theme.displayName || "?").slice(0, 1)}
+    </div>
+  );
+}
+
 function PortalHeader({ theme }) {
+  const plaque = (
+    <div style={{ maxWidth: 860, margin: "0 auto", padding: "0 20px", display: "flex", alignItems: "center", gap: 14 }}>
+      {theme.logo
+        ? <img src={resolveAssetUrl(theme.logo)} alt="" style={{ height: 46, maxWidth: 150, objectFit: "contain", background: "rgba(255,255,255,0.92)", borderRadius: 10, padding: "4px 8px" }} />
+        : <Monogram theme={theme} />}
+      <div style={{ fontFamily: "var(--pt-serif, 'DM Serif Display',Georgia,serif)", fontSize: "clamp(24px, 3.4vw, 32px)", color: "var(--pt-primary-fg, #fff)", textShadow: theme.headerImage ? "0 1px 14px rgba(0,0,0,0.45)" : "none" }}>
+        {theme.displayName}
+      </div>
+    </div>
+  );
   return (
     <header style={{ marginBottom: 26 }}>
-      {theme.headerImage && (
-        <div style={{ height: 160, borderRadius: "0 0 16px 16px", overflow: "hidden", marginBottom: 18 }}>
-          <img src={resolveAssetUrl(theme.headerImage)} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+      {theme.headerImage ? (
+        <div style={{ position: "relative", width: "100%", height: "clamp(170px, 26vw, 300px)", overflow: "hidden" }}>
+          <img src={resolveAssetUrl(theme.headerImage)} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+          <div style={{ position: "absolute", inset: 0, background: "linear-gradient(rgba(0,0,0,0) 45%, rgba(0,0,0,0.42))" }} />
+          <div style={{ position: "absolute", left: 0, right: 0, bottom: 18 }}>{plaque}</div>
         </div>
+      ) : (
+        <div style={{ width: "100%", background: "var(--pt-primary)", padding: "clamp(30px, 5vw, 54px) 0" }}>{plaque}</div>
       )}
-      <div style={{ display: "flex", alignItems: "center", gap: 14, paddingTop: theme.headerImage ? 0 : 28 }}>
-        {theme.logo && <img src={resolveAssetUrl(theme.logo)} alt="" style={{ height: 44, maxWidth: 140, objectFit: "contain" }} />}
-        <div style={{ fontFamily: "var(--pt-serif, 'DM Serif Display',Georgia,serif)", fontSize: 24 }}>{theme.displayName}</div>
+      <div style={{ maxWidth: 860, margin: "0 auto", padding: "0 20px" }}>
+        <div style={{ height: 3, background: "var(--pt-accent)", borderRadius: 2, marginTop: 14, width: 64 }} />
       </div>
-      <div style={{ height: 3, background: "var(--pt-accent)", borderRadius: 2, marginTop: 12, width: 64 }} />
     </header>
+  );
+}
+
+// §5 fix 3 — the account row: quiet, SEPARATE from the org identity, and it
+// carries the org-themed nav a donor needs without backing out (in-page
+// anchors to the sections that exist; "All giving" appears on the /giving
+// drill-down).
+function AccountBar({ me, onSignOut }) {
+  const inDrilldown = typeof window !== "undefined" && window.location.pathname.startsWith("/giving");
+  const links = [];
+  if (inDrilldown) links.push(["All giving", "/giving", false]);
+  if ((me.recurring || []).length) links.push(["Recurring", "#recurring", true]);
+  if ((me.receipts || []).length) links.push(["Receipts & tax", "#receipts", true]);
+  return (
+    <div style={{ maxWidth: 860, margin: "0 auto", padding: "0 20px", display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap", marginBottom: 14 }}>
+      <span style={{ fontSize: 14 }}>Welcome back{me.donorName ? `, ${me.donorName.split(" ")[0]}` : ""}.</span>
+      <nav aria-label="Your giving" style={{ display: "flex", gap: 14, flexWrap: "wrap" }}>
+        {links.map(([label, href]) => (
+          <a key={label} href={href} style={{ color: "var(--pt-button, var(--pt-primary))", fontSize: 13, fontWeight: 700, textDecoration: "none", borderBottom: "2px solid var(--pt-accent)", paddingBottom: 1 }}>{label}</a>
+        ))}
+      </nav>
+      <button style={{ ...S.btnQuiet, padding: "6px 14px", fontSize: 13, marginLeft: "auto" }} onClick={onSignOut}>Sign out</button>
+    </div>
   );
 }
 
@@ -177,12 +225,12 @@ function YearBars({ byYear, gifts }) {
   return (
     <div>
       {byYear.map(y => (
-        <div key={y.year} style={{ marginBottom: 10 }}>
+        <div key={y.year} style={{ marginBottom: 14 }}>
           <div role="button" tabIndex={0} onClick={() => setOpenYear(openYear === y.year ? null : y.year)}
             onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setOpenYear(openYear === y.year ? null : y.year); } }}
             style={{ display: "flex", alignItems: "center", gap: 12, cursor: "pointer" }}>
             <div style={{ width: 44, fontSize: 13, fontWeight: 700 }}>{y.year}</div>
-            <div style={{ flex: 1, height: 18, background: "#efece5", borderRadius: 5, overflow: "hidden" }}>
+            <div style={{ flex: 1, height: 26, background: "#efece5", borderRadius: 6, overflow: "hidden" }}>
               <div style={{ width: `${Math.max(4, (y.total / max) * 100)}%`, height: "100%", background: "var(--pt-primary)" }} />
             </div>
             <div style={{ width: 90, textAlign: "right", fontSize: 13, fontWeight: 600 }}>{fmtFull(y.total)}</div>
@@ -320,17 +368,22 @@ function MyGivingSection({ slug, me, reload, theme, includeGiveCta }) {
           dates only; no streaks, no percentages, no invented milestones. */}
       <div style={S.card}>
         <h2 style={S.h2}>Your giving</h2>
-        <div style={{ display: "flex", gap: 28, flexWrap: "wrap", marginBottom: 16 }}>
-          <div><div style={S.label}>This year</div><div style={{ fontSize: 26, fontWeight: 700 }}>{fmtFull(g.ytd)}</div></div>
-          <div><div style={S.label}>Lifetime</div><div style={{ fontSize: 26, fontWeight: 700 }}>{fmtFull(g.lifetime)}</div></div>
-          {g.largestGift > 0 && <div><div style={S.label}>Largest gift</div><div style={{ fontSize: 26, fontWeight: 700 }}>{fmtFull(g.largestGift)}</div></div>}
+        <div style={{ display: "flex", gap: 32, flexWrap: "wrap", marginBottom: 16 }}>
+          <div><div style={S.label}>This year</div><div style={{ fontSize: 28, fontWeight: 700 }}>{fmtFull(g.ytd)}</div></div>
+          <div><div style={S.label}>Lifetime</div><div style={{ fontSize: 28, fontWeight: 700 }}>{fmtFull(g.lifetime)}</div></div>
+          {/* §5 — a stat that merely repeats another reads as a bug: show the
+              largest gift only when it differs from both figures above,
+              otherwise substitute the gifts count. */}
+          {g.largestGift > 0 && g.largestGift !== g.ytd && g.largestGift !== g.lifetime
+            ? <div><div style={S.label}>Largest gift</div><div style={{ fontSize: 28, fontWeight: 700 }}>{fmtFull(g.largestGift)}</div></div>
+            : g.giftCount > 1 && <div><div style={S.label}>Gifts</div><div style={{ fontSize: 28, fontWeight: 700 }}>{g.giftCount}</div></div>}
         </div>
         {g.firstGiftDate && <div style={{ ...S.muted, marginBottom: 14 }}>Giving with {theme.displayName} since {String(g.firstGiftDate).slice(0, 4)}.</div>}
         {(g.byYear || []).length > 0 && <YearBars byYear={g.byYear} gifts={me.gifts || []} />}
       </div>
 
       {(me.recurring || []).length > 0 && (
-        <div style={S.card}>
+        <div id="recurring" style={{ ...S.card, scrollMarginTop: 16 }}>
           <h2 style={S.h2}>Recurring giving</h2>
           {me.recurring.map(sub => <RecurringCard key={sub.id} slug={slug} sub={sub} theme={theme} onChanged={reload} />)}
         </div>
@@ -355,7 +408,7 @@ function MyGivingSection({ slug, me, reload, theme, includeGiveCta }) {
       )}
 
       {(me.receipts || []).length > 0 && (
-        <div style={S.card}>
+        <div id="receipts" style={{ ...S.card, scrollMarginTop: 16 }}>
           <h2 style={S.h2}>Tax receipts</h2>
           {me.receipts.map(r => (
             <div key={r.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 14, padding: "8px 0", borderBottom: "1px solid #f0ede6" }}>
@@ -391,13 +444,8 @@ function Dashboard({ slug, me, reload, page }) {
       }
     }
   }, [me.impact, slug, seenImpact]);
-  const logout = async () => { await pfetch(`/${slug}/logout`, { method: "POST", body: {} }); window.location.reload(); };
   return (
     <>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
-        <div style={{ fontSize: 15 }}>Welcome back{me.donorName ? `, ${me.donorName.split(" ")[0]}` : ""}.</div>
-        <button style={{ ...S.btnQuiet, padding: "6px 14px", fontSize: 13 }} onClick={logout}>Sign out</button>
-      </div>
       {/* BUILD-46 §1.3 — the migration nudge: prompted, never forced. Renders
           only when the server says accounts are live AND this org opted into
           donor-dashboard listing (me.account non-null — unlisted orgs' portals
@@ -531,19 +579,21 @@ export default function Portal() {
   );
   if (!theme || !checked) {
     if (theme) return ( // themed shell while the session check runs — the org's page from the first paint
-      <div style={{ ...S.page, ...varsFor(theme) }}><div style={S.wrap}>
+      <div style={{ ...S.page, ...varsFor(theme) }}>
         <PortalHeader theme={theme} />
-        <p style={S.muted}>Loading…</p>
-      </div></div>
+        <div style={S.wrap}><p style={S.muted}>Loading…</p></div>
+      </div>
     );
     return <div style={S.page}><div style={{ ...S.wrap, paddingTop: 80 }}><p style={S.muted}>Loading…</p></div></div>;
   }
 
   const vars = varsFor(theme);
+  const signOut = async () => { await pfetch(`/${orgSlug}/logout`, { method: "POST", body: {} }); window.location.reload(); };
   return (
     <div style={{ ...S.page, ...vars }}>
+      <PortalHeader theme={theme} />
+      {!isVerify && me && !me.empty && <AccountBar me={me} onSignOut={signOut} />}
       <div style={S.wrap}>
-        <PortalHeader theme={theme} />
         {isVerify
           ? <Verify slug={orgSlug} onVerified={loadMe} />
           : me && !me.empty

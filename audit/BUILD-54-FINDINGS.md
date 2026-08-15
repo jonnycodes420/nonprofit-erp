@@ -300,3 +300,62 @@ spotlight/never-fabricate, goal opt-in OFF/ON (no goal data when OFF, no donor c
 ever), thank-you state, campaign-targeted impact matching, receipt-email content
 present/absent, org isolation, §3 engagement scoping, §6 anchor-semantics source check.
 
+
+---
+
+## Stage 4 — §5 design pass · §7 deliverables
+
+### §5 applied to the NEW renderer (the drill-down fixes live once, in shared code)
+1. **Full-bleed banner** — the org's header image runs edge to edge with the identity
+   plaque (logo-or-monogram + name) ON the banner; never boxed in the content column.
+2. **Consolidated identity** — one plaque; the old banner→monogram+name→"Welcome back"
+   fragmentation is gone. Account controls (welcome, nav, sign out) are a quiet
+   separate row.
+3. **Nav on the drill-down** — the account row carries org-themed links (All giving on
+   the /giving drill-down; Recurring / Receipts & tax as in-page anchors that render
+   only when those sections exist). A donor no longer backs out to reach them.
+4. **Duplicate stat suppressed** — "Largest gift" renders only when it differs from
+   both This-year and Lifetime; otherwise the gifts count substitutes.
+5. **Year bars got room** (26px bars, more air) — the strongest element on the page.
+- **Placeholder art**: no uploaded banner → a DESIGNED solid band in the org's own
+  primary with monogram + name. Never generated abstract shapes.
+- Rhythm: the give widget renders as a solid org-color band (not another white card);
+  the content column widened 720→860; the banner/plaque/hero carry real scale.
+- Deliberately light elsewhere: the portal stays a calm reading column — §5's
+  2560-width "sections that fill the screen" was applied as the full-bleed banner +
+  band rhythm, not a multi-column relayout (the donor page is a letter, not a site).
+
+### §7 deliverables
+- `scripts/build54-capture.js` (13 asserts + shots, committed) → `docs/build54/`:
+  dashboard 1-org + 2-orgs, drill-down w/ campaign spotlight + thank-you + real
+  attributed gift, published public page (sign-in degradation), edit mode phone +
+  desktop, all 3 starters, CRM Donor Portal section w/ uploader zones — each at
+  390/1440/2560 where applicable.
+- `scripts/seed-build54-demo.js` (committed, API-only, idempotent, local-default /
+  prod-opt-in): dresses a campaign with donor-facing content, attributes a large demo
+  gift, publishes a 7-widget portal layout. Verified locally; prod run against
+  org_creo post-deploy.
+- Re-runs green: `build48-capture` 40/40, `build50-capture` 85/85 (the /giving DOM
+  contracts survived the §5 banner work), full `run-all.sh`, and the §4 safety
+  batteries within it.
+
+### Worry paragraph (spec §7 — the honest one)
+Three things to watch. **(1) Performance after the design work**: the donor page now
+does more per view — the page-mode config resolves funds/campaign/impact server-side
+(one query each per widget, sequential inside `resolvePortalPagePublic`); with a
+30-widget page that's up to ~30 round trips on the *config* path that BUILD-54 §1 just
+spent effort removing elsewhere. Fine at today's page sizes (measured: config with a
+7-widget page ≈ +150ms); if pages grow, parallelize that loop the same way — the
+re-measure numbers below are the baseline. **(2) The edit-mode authorization surface**:
+the guarantees are only as good as the invariant that every future editor endpoint
+stays requireAdmin + token-org-scoped and donor-data-free — the suite pins today's
+surface (route table + editor API allowlist), but a future "quick preview with real
+data" request is the exact temptation the sample-donor rule exists to refuse. Hold the
+line. **(3) Moderation/content load**: orgs can now publish free-form pages (text,
+photos, video embeds by ID) with ZERO platform visibility — there is no content-review
+queue, no report mechanism, and no super-admin view of published pages. The XSS/typed-
+data battery bounds the *technical* risk, but a bad-faith or hacked org account can
+publish anything a nonprofit page could say, under a page served from stewardapp.dev.
+Before the network opens beyond hand-picked pilots, decide: a super-admin "recently
+published pages" review list (cheap, quiet) or explicit terms + takedown process — or
+both. Recorded as the follow-up decision this build does NOT make.
