@@ -1,6 +1,5 @@
 import { useState, useEffect, useRef, useMemo, Component } from "react";
 import Papa from "papaparse";
-import * as XLSX from "xlsx";
 import { apiFetch, API, getToken, adaptDonor } from "../api";
 import { useAuth } from "../main";
 import UpgradeModal from "./UpgradeModal";
@@ -196,6 +195,10 @@ async function parseFileToSheets(file, { onSingle, onMulti, onError }) {
   const name = file.name.toLowerCase();
   if (name.endsWith(".xlsx") || name.endsWith(".xls")) {
     try {
+      // BUILD-54 §1 — xlsx is ~450KB minified and only needed the moment a
+      // spreadsheet is actually dropped; loading it lazily keeps it out of
+      // the Donors route chunk every CRM session pays to parse.
+      const XLSX = await import("xlsx");
       const buf = await file.arrayBuffer();
       const wb = XLSX.read(new Uint8Array(buf), { type:"array" });
       const sheetsData = wb.SheetNames.map(sn => {

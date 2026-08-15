@@ -83,7 +83,32 @@ function runTx(client, sql, params = []) {
   return client.query(pgSql, params).then(r => ({ changes: r.rowCount }));
 }
 
+// BUILD-54 §1 — schema-init fast path. initSchema is ~280 sequential DDL
+// statements; against a remote Postgres that's a 40–70s "Database initializing"
+// 503 window on EVERY deploy. The schema is fully determined by this file's
+// contents, so a hash of db.js is a faithful schema version: unchanged file →
+// the DDL is a guaranteed no-op → skip it. Any edit to db.js (i.e. any
+// migration) changes the hash and the full init runs exactly once, then the
+// new hash is stored. SCHEMA_INIT_FORCE=1 overrides the skip (break-glass,
+// e.g. after manual DDL surgery in Supabase).
+const SCHEMA_HASH = require("crypto")
+  .createHash("sha256")
+  .update(require("fs").readFileSync(__filename))
+  .digest("hex");
+
+async function schemaUnchanged() {
+  if (process.env.SCHEMA_INIT_FORCE === "1") return false;
+  await pool.query(`CREATE TABLE IF NOT EXISTS schema_meta (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    schema_hash TEXT NOT NULL,
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+  )`);
+  const r = await pool.query(`SELECT schema_hash FROM schema_meta WHERE id = 1`);
+  return r.rows.length > 0 && r.rows[0].schema_hash === SCHEMA_HASH;
+}
+
 async function initSchema() {
+  if (await schemaUnchanged()) return;
   await pool.query(`
     CREATE TABLE IF NOT EXISTS orgs (
       id TEXT PRIMARY KEY,
@@ -1886,6 +1911,13 @@ async function initSchema() {
     )
   `);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_network_apps_status ON network_applications (status, created_at DESC)`);
+
+  // Record this file's hash LAST — only a fully-completed init marks the
+  // schema current, so a crash mid-init re-runs the whole thing next boot.
+  await pool.query(
+    `INSERT INTO schema_meta (id, schema_hash, updated_at) VALUES (1, $1, NOW())
+     ON CONFLICT (id) DO UPDATE SET schema_hash = EXCLUDED.schema_hash, updated_at = NOW()`,
+    [SCHEMA_HASH]);
 }
 
 async function seedData() {

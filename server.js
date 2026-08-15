@@ -6403,26 +6403,42 @@ app.get("/dashboard/home", requireAuth, wrap(async (req, res) => {
   const orgRows = await query("SELECT plan, subscription_status FROM orgs WHERE id=?", [orgId]);
   const tier = orgRows.length ? orgPlanTier(orgRows[0]) : "core";
 
-  // BUILD-32 Part 4 — the Home "My donors / Whole org" scope toggle is a single-
-  // value picker unless 2+ officers actually have assigned donors (then "mine"
-  // and "all" differ). Same signal the Pipeline board uses; drives hiding it.
-  const distinctOfficers = await query(
-    `SELECT COUNT(DISTINCT assigned_to)::int AS c FROM donors
-       WHERE org_id=? AND assigned_to IS NOT NULL AND deleted_at IS NULL`, [orgId]);
-  const multiOfficer = (distinctOfficers[0]?.c || 0) >= 2;
-
-  // Tasks buckets [Core] — open tasks, scoped to the user (mine) or org (all).
+  // BUILD-54 §1 — everything after the tier probe is independent: one
+  // parallel batch instead of ~7 sequential round trips. The team-only
+  // queries only join the batch on team tier (results unchanged).
   const taskScope = scope === "mine" ? "AND assigned_to=?" : "";
-  const taskRows = await query(
-    `SELECT
-       COUNT(*) FILTER (WHERE due <> '' AND due IS NOT NULL AND due < ?) AS overdue,
-       COUNT(*) FILTER (WHERE due <> '' AND due IS NOT NULL AND left(due,10) = ?) AS today,
-       COUNT(*) FILTER (WHERE due <> '' AND due IS NOT NULL AND due > ? AND left(due,10) <> ?) AS upcoming,
-       COUNT(*) FILTER (WHERE due = '' OR due IS NULL) AS no_date,
-       COUNT(*) AS total
-     FROM tasks WHERE org_id=? AND done=0 ${taskScope}`,
-    scope === "mine" ? [today, today, today, today, orgId, userId] : [today, today, today, today, orgId]
-  );
+  const mMine = tier === "team" ? portfolioMembership({ orgId, userId, scope: "mine", alias: "" }) : null;
+  const mScope = tier === "team" ? portfolioMembership({ orgId, userId, scope, alias: "" }) : null;
+  const owner = scope === "mine" ? "assigned_to = ?" : "assigned_to IS NOT NULL";
+  const oppParams = scope === "mine" ? [orgId, orgId, userId] : [orgId, orgId];
+  const nullQ = Promise.resolve(null);
+  const [distinctOfficers, taskRows, pRows, cRows, totRows, stageRows, oppRows] = await Promise.all([
+    // BUILD-32 Part 4 — the Home "My donors / Whole org" scope toggle is a
+    // single-value picker unless 2+ officers actually have assigned donors.
+    query(
+      `SELECT COUNT(DISTINCT assigned_to)::int AS c FROM donors
+         WHERE org_id=? AND assigned_to IS NOT NULL AND deleted_at IS NULL`, [orgId]),
+    // Tasks buckets [Core] — open tasks, scoped to the user (mine) or org (all).
+    query(
+      `SELECT
+         COUNT(*) FILTER (WHERE due <> '' AND due IS NOT NULL AND due < ?) AS overdue,
+         COUNT(*) FILTER (WHERE due <> '' AND due IS NOT NULL AND left(due,10) = ?) AS today,
+         COUNT(*) FILTER (WHERE due <> '' AND due IS NOT NULL AND due > ? AND left(due,10) <> ?) AS upcoming,
+         COUNT(*) FILTER (WHERE due = '' OR due IS NULL) AS no_date,
+         COUNT(*) AS total
+       FROM tasks WHERE org_id=? AND done=0 ${taskScope}`,
+      scope === "mine" ? [today, today, today, today, orgId, userId] : [today, today, today, today, orgId]),
+    mMine ? query(`SELECT COUNT(*) AS cnt, COALESCE(SUM(total_giving),0) AS val FROM donors WHERE ${mMine.where}`, mMine.params) : nullQ,
+    mMine ? query("SELECT portfolio_color FROM users WHERE id=? AND org_id=?", [userId, orgId]) : nullQ,
+    mScope ? query(`SELECT COUNT(*) AS cnt, COALESCE(SUM(total_giving),0) AS val FROM donors WHERE ${mScope.where}`, mScope.params) : nullQ,
+    mScope ? query(`SELECT stage, COUNT(*) AS cnt, COALESCE(SUM(total_giving),0) AS val
+             FROM donors WHERE ${mScope.where} GROUP BY stage`, mScope.params) : nullQ,
+    mScope ? query(
+      `SELECT COALESCE(SUM(target_amount),0) AS ask, COUNT(*) AS cnt
+         FROM opportunities WHERE org_id=? AND status='open'
+           AND donor_id IN (SELECT id FROM donors WHERE org_id=? AND deleted_at IS NULL AND ${owner})`, oppParams) : nullQ,
+  ]);
+  const multiOfficer = (distinctOfficers[0]?.c || 0) >= 2;
   const tRow = taskRows[0] || {};
   const tasks = {
     overdue: parseInt(tRow.overdue, 10) || 0,
@@ -6436,12 +6452,6 @@ app.get("/dashboard/home", requireAuth, wrap(async (req, res) => {
   // value + the officer's color. Null on Core (the header is hidden).
   let portfolio = null;
   if (tier === "team") {
-    // The officer's own portfolio (always "mine"), via the ONE membership helper.
-    const m = portfolioMembership({ orgId, userId, scope: "mine", alias: "" });
-    const [pRows, cRows] = await Promise.all([
-      query(`SELECT COUNT(*) AS cnt, COALESCE(SUM(total_giving),0) AS val FROM donors WHERE ${m.where}`, m.params),
-      query("SELECT portfolio_color FROM users WHERE id=? AND org_id=?", [userId, orgId]),
-    ]);
     portfolio = {
       count: parseInt(pRows[0]?.cnt, 10) || 0,
       value: parseFloat(pRows[0]?.val) || 0,
@@ -6457,25 +6467,12 @@ app.get("/dashboard/home", requireAuth, wrap(async (req, res) => {
   // board sums, so Home's forecast and the board's asks agree. Null on Core.
   let pipeline = null;
   if (tier === "team") {
-    const m = portfolioMembership({ orgId, userId, scope, alias: "" });
-    const [totRows, stageRows] = await Promise.all([
-      query(`SELECT COUNT(*) AS cnt, COALESCE(SUM(total_giving),0) AS val FROM donors WHERE ${m.where}`, m.params),
-      query(`SELECT stage, COUNT(*) AS cnt, COALESCE(SUM(total_giving),0) AS val
-               FROM donors WHERE ${m.where} GROUP BY stage`, m.params),
-    ]);
     const byStage = Object.fromEntries(stageRows.map(r => [r.stage, r]));
     const stages = ALL_PIPELINE_STAGES.map(s => ({
       stage: s,
       count: parseInt(byStage[s]?.cnt, 10) || 0,
       value: parseFloat(byStage[s]?.val) || 0,
     }));
-    // Open asks belonging to THIS portfolio's donors only (matches the board).
-    const owner = scope === "mine" ? "assigned_to = ?" : "assigned_to IS NOT NULL";
-    const oppParams = scope === "mine" ? [orgId, orgId, userId] : [orgId, orgId];
-    const oppRows = await query(
-      `SELECT COALESCE(SUM(target_amount),0) AS ask, COUNT(*) AS cnt
-         FROM opportunities WHERE org_id=? AND status='open'
-           AND donor_id IN (SELECT id FROM donors WHERE org_id=? AND deleted_at IS NULL AND ${owner})`, oppParams);
     pipeline = {
       total: parseInt(totRows[0]?.cnt, 10) || 0,
       value: parseFloat(totRows[0]?.val) || 0,
@@ -6651,8 +6648,6 @@ app.get("/dashboard/today", requireAuth, wrap(async (req, res) => {
   const todayStr = today.toISOString().split("T")[0];
   const ninetyDaysAgo = new Date(today - 90 * 86400000).toISOString().split("T")[0];
   const items = [];
-  const [orgReceiptRow] = await query("SELECT receipts_enabled FROM orgs WHERE id=?", [orgId]);
-  const receiptsEnabled = !!orgReceiptRow?.receipts_enabled;
 
   // Ownership scoping — defaults to "this is MY job today" (the logged-in
   // user's own assigned donors), matching the existing assigned_to pattern
@@ -6674,14 +6669,28 @@ app.get("/dashboard/today", requireAuth, wrap(async (req, res) => {
     else if (items[existingIdx].priority < item.priority) items[existingIdx] = item;
   };
 
-  // Single source of truth for "at risk" — shared with the 'at_risk'
-  // auto-enroll trigger (see computeAtRiskCandidates/autoEnroll in
-  // server.js) so this display flag and the real-time draft trigger can
-  // never drift into two different definitions of the same thing.
-  const atRiskDonorIds = new Set((await computeAtRiskCandidates(orgId)).map(x => x.id));
-
-  // Donors in active stages with no recent contact
-  const noContact = await query(`
+  // ── BUILD-54 §1 — every bucket below is an independent read, so all of
+  // them fire in ONE parallel batch. This endpoint was ~14 sequential
+  // Railway↔Supabase round trips (~1.2s TTFB on a small org, the slowest
+  // read in the product); the results are byte-identical because bucket
+  // APPLICATION order below is unchanged — upsertItem's strict-< tie-break
+  // depends on that order, so never reorder the for-loops. The two receipt
+  // queries now always run (cheap LIMIT-5 reads) but still only APPLY when
+  // the org has receipts enabled.
+  const sixtyDaysAgo = new Date(today - 60 * 86400000).toISOString().split("T")[0];
+  const [
+    orgReceiptRows, atRiskCandidates, noContact, lapsedDonorRows, unacked,
+    needsReceipt, mismatched, dueTasks, milestoneRows, atRiskDraftRows,
+    noteReminderRows, atRiskSubs, portalDrift, employerDonorRows,
+  ] = await Promise.all([
+    query("SELECT receipts_enabled FROM orgs WHERE id=?", [orgId]),
+    // Single source of truth for "at risk" — shared with the 'at_risk'
+    // auto-enroll trigger (see computeAtRiskCandidates/autoEnroll in
+    // server.js) so this display flag and the real-time draft trigger can
+    // never drift into two different definitions of the same thing.
+    computeAtRiskCandidates(orgId),
+    // Donors in active stages with no recent contact
+    query(`
     SELECT d.id, d.name, d.total_giving, d.last_gift_date, d.last_gift_amount, d.stage,
            MAX(i.date) AS last_contact
     FROM donors d
@@ -6691,7 +6700,121 @@ app.get("/dashboard/today", requireAuth, wrap(async (req, res) => {
     HAVING MAX(i.date) < ? OR MAX(i.date) IS NULL
     ORDER BY COALESCE(d.total_giving, 0) DESC
     LIMIT 20
-  `, [orgId, ...scopeParams, ninetyDaysAgo]);
+  `, [orgId, ...scopeParams, ninetyDaysAgo]),
+    // Lapsed donors
+    query(`
+    SELECT id, name, total_giving, last_gift_date
+    FROM donors d
+    WHERE d.org_id = ? AND d.deleted_at IS NULL AND d.stage = 'lapsed' ${scopeClause}
+    ORDER BY total_giving DESC
+    LIMIT 5
+  `, [orgId, ...scopeParams]),
+    // Unacknowledged recent gifts (need a thank-you)
+    query(`
+    SELECT g.id AS gift_id, g.amount, g.date, d.id AS donor_id, d.name AS donor_name, d.total_giving
+    FROM gifts g
+    JOIN donors d ON d.id = g.donor_id
+    WHERE d.org_id = ?
+      AND (g.acknowledgement_sent = false OR g.acknowledgement_sent IS NULL)
+      AND g.date >= ? ${scopeClause}
+    ORDER BY g.amount DESC
+    LIMIT 5
+  `, [orgId, ninetyDaysAgo, ...scopeParams]),
+    // Tax receipts — $250+ gifts with no acknowledgment (applied only when
+    // the org has receipts enabled)
+    query(`
+      SELECT g.id AS gift_id, g.amount, g.date, d.id AS donor_id, d.name AS donor_name, d.total_giving
+      FROM gifts g
+      JOIN donors d ON d.id = g.donor_id
+      WHERE d.org_id = ?
+        AND g.amount >= 250
+        AND (g.acknowledgement_sent = false OR g.acknowledgement_sent IS NULL)
+        AND (g.is_sample IS NOT TRUE)
+        AND g.date >= ? ${scopeClause}
+      ORDER BY g.amount DESC
+      LIMIT 5
+    `, [orgId, sixtyDaysAgo, ...scopeParams]),
+    // Receipt/gift mismatch (applied only when receipts enabled)
+    query(`
+      SELECT r.id AS receipt_id, r.receipt_number, r.amount AS receipt_amount,
+             g.amount AS gift_amount, d.id AS donor_id, d.name AS donor_name, d.total_giving
+      FROM receipts r
+      LEFT JOIN gifts g ON g.id = r.gift_id
+      JOIN donors d ON d.id = r.donor_id
+      WHERE r.org_id = ? AND r.type = 'gift' AND r.voided_at IS NULL
+        AND (g.id IS NULL OR r.amount != g.amount OR (r.snapshot->>'giftDateRaw') != g.date)
+        ${scopeClause}
+      LIMIT 5
+    `, [orgId, ...scopeParams]),
+    // Overdue donor-linked tasks
+    query(`
+    SELECT t.id, t.title, t.due, t.priority AS task_priority, t.type AS task_type, t.donor_id, d.name AS donor_name, d.total_giving
+    FROM tasks t
+    JOIN donors d ON d.id = t.donor_id
+    WHERE t.org_id = ? AND done=0 AND t.due <= ? ${scopeClause}
+    ORDER BY t.due ASC
+    LIMIT 5
+  `, [orgId, todayStr, ...scopeParams]),
+    // Milestone-ready donors — pending AI-drafted stewardship emails
+    query(`
+    SELECT md.id AS draft_id, md.donor_id, md.subject, md.created_at, d.name AS donor_name, d.total_giving
+    FROM milestone_drafts md
+    JOIN donors d ON d.id = md.donor_id
+    WHERE md.org_id = ? AND md.status = 'pending_review' ${scopeClause}
+    ORDER BY md.created_at DESC
+    LIMIT 5
+  `, [orgId, ...scopeParams]),
+    // At-risk re-engagement drafts
+    query(`
+    SELECT md.id AS draft_id, md.donor_id, d.name AS donor_name, d.total_giving
+    FROM milestone_drafts md
+    JOIN donors d ON d.id = md.donor_id
+    WHERE md.org_id = ? AND md.status = 'pending_review' AND md.milestone_key = 'at_risk' ${scopeClause}
+    ORDER BY md.created_at DESC
+    LIMIT 10
+  `, [orgId, ...scopeParams]),
+    // Personal-note reminders
+    query(`
+    SELECT nr.id AS reminder_id, nr.donor_id, nr.talking_points, nr.created_at, d.name AS donor_name, d.total_giving
+    FROM note_reminders nr
+    JOIN donors d ON d.id = nr.donor_id
+    WHERE nr.org_id = ? AND nr.status = 'pending' ${scopeClause}
+    ORDER BY nr.created_at DESC
+    LIMIT 5
+  `, [orgId, ...scopeParams]),
+    // At-risk recurring gifts — failed/retrying donor subscriptions
+    query(`
+    SELECT rs.donor_id, rs.stripe_subscription_id, rs.amount, rs.interval, d.name AS donor_name, d.total_giving
+    FROM recurring_subscriptions rs
+    JOIN donors d ON d.id = rs.donor_id
+    WHERE rs.org_id = ? AND rs.status IN ('past_due','recovering') ${scopeClause}
+    ORDER BY rs.amount DESC NULLS LAST
+    LIMIT 5
+  `, [orgId, ...scopeParams]),
+    // BUILD-45 §6.3 drift wire — portal cancel/pause in the last 7 days
+    query(`
+    SELECT DISTINCT ON (pal.donor_id) pal.donor_id, pal.action, pal.created_at,
+           d.name AS donor_name, d.total_giving,
+           rs.amount, rs.interval
+    FROM portal_audit_log pal
+    JOIN donors d ON d.id = pal.donor_id AND d.org_id = pal.org_id AND d.deleted_at IS NULL
+    LEFT JOIN recurring_subscriptions rs ON rs.id = (pal.meta->>'subId') AND rs.org_id = pal.org_id
+    WHERE pal.org_id = ? AND pal.action IN ('recurring_cancel','recurring_pause')
+      AND pal.created_at > NOW() - INTERVAL '7 days' ${scopeClause}
+    ORDER BY pal.donor_id, pal.created_at DESC
+    LIMIT 5
+  `, [orgId, ...scopeParams]).catch(() => []),
+    // Matching-gift opportunities — recent donors with a known employer
+    query(`
+    SELECT d.id, d.name, d.employer, d.total_giving, d.last_gift_amount, d.last_gift_date
+    FROM donors d
+    WHERE d.org_id = ? AND d.deleted_at IS NULL AND d.employer IS NOT NULL AND d.employer <> '' AND d.last_gift_date >= ? ${scopeClause}
+    ORDER BY d.last_gift_date DESC
+    LIMIT 30
+  `, [orgId, ninetyDaysAgo, ...scopeParams]),
+  ]);
+  const receiptsEnabled = !!orgReceiptRows[0]?.receipts_enabled;
+  const atRiskDonorIds = new Set(atRiskCandidates.map(x => x.id));
 
   for (const d of noContact) {
     const daysSinceContact = d.last_contact
@@ -6728,13 +6851,6 @@ app.get("/dashboard/today", requireAuth, wrap(async (req, res) => {
   // (which only looks at active stages), but the queue is meant to unify
   // lapsed/no-contact/overdue-task/milestone in one ranked list, so they
   // need their own bucket rather than never appearing at all.
-  const lapsedDonorRows = await query(`
-    SELECT id, name, total_giving, last_gift_date
-    FROM donors d
-    WHERE d.org_id = ? AND d.deleted_at IS NULL AND d.stage = 'lapsed' ${scopeClause}
-    ORDER BY total_giving DESC
-    LIMIT 5
-  `, [orgId, ...scopeParams]);
   for (const l of lapsedDonorRows) {
     const daysSince = l.last_gift_date ? Math.floor((today - new Date(l.last_gift_date)) / 86400000) : null;
     const totalGiving = parseFloat(l.total_giving) || 0;
@@ -6748,17 +6864,6 @@ app.get("/dashboard/today", requireAuth, wrap(async (req, res) => {
   }
 
   // Unacknowledged recent gifts (need a thank-you)
-  const unacked = await query(`
-    SELECT g.id AS gift_id, g.amount, g.date, d.id AS donor_id, d.name AS donor_name, d.total_giving
-    FROM gifts g
-    JOIN donors d ON d.id = g.donor_id
-    WHERE d.org_id = ?
-      AND (g.acknowledgement_sent = false OR g.acknowledgement_sent IS NULL)
-      AND g.date >= ? ${scopeClause}
-    ORDER BY g.amount DESC
-    LIMIT 5
-  `, [orgId, ninetyDaysAgo, ...scopeParams]);
-
   for (const g of unacked) {
     const giftDate = new Date(g.date).toLocaleDateString("en-US", { month: "long", day: "numeric" });
     upsertItem({
@@ -6779,20 +6884,6 @@ app.get("/dashboard/today", requireAuth, wrap(async (req, res) => {
   // upsertItem tie (strict `<` — equal priorities keep whichever bucket
   // ran first) when both could apply to the same offline gift.
   if (receiptsEnabled) {
-    const sixtyDaysAgo = new Date(today - 60 * 86400000).toISOString().split("T")[0];
-    const needsReceipt = await query(`
-      SELECT g.id AS gift_id, g.amount, g.date, d.id AS donor_id, d.name AS donor_name, d.total_giving
-      FROM gifts g
-      JOIN donors d ON d.id = g.donor_id
-      WHERE d.org_id = ?
-        AND g.amount >= 250
-        AND (g.acknowledgement_sent = false OR g.acknowledgement_sent IS NULL)
-        AND (g.is_sample IS NOT TRUE)
-        AND g.date >= ? ${scopeClause}
-      ORDER BY g.amount DESC
-      LIMIT 5
-    `, [orgId, sixtyDaysAgo, ...scopeParams]);
-
     for (const g of needsReceipt) {
       const giftDate = new Date(g.date).toLocaleDateString("en-US", { month: "long", day: "numeric" });
       upsertItem({
@@ -6810,18 +6901,6 @@ app.get("/dashboard/today", requireAuth, wrap(async (req, res) => {
     // sent — not something that should silently change to match an edit.
     // LEFT JOIN (not JOIN) so a deleted gift (g.id IS NULL) is caught too,
     // not just an amount/date edit on a gift that still exists.
-    const mismatched = await query(`
-      SELECT r.id AS receipt_id, r.receipt_number, r.amount AS receipt_amount,
-             g.amount AS gift_amount, d.id AS donor_id, d.name AS donor_name, d.total_giving
-      FROM receipts r
-      LEFT JOIN gifts g ON g.id = r.gift_id
-      JOIN donors d ON d.id = r.donor_id
-      WHERE r.org_id = ? AND r.type = 'gift' AND r.voided_at IS NULL
-        AND (g.id IS NULL OR r.amount != g.amount OR (r.snapshot->>'giftDateRaw') != g.date)
-        ${scopeClause}
-      LIMIT 5
-    `, [orgId, ...scopeParams]);
-
     for (const m of mismatched) {
       const reason = m.gift_amount == null
         ? `Receipt #${m.receipt_number} — the gift it was issued for has been deleted — review`
@@ -6835,15 +6914,6 @@ app.get("/dashboard/today", requireAuth, wrap(async (req, res) => {
   }
 
   // Overdue donor-linked tasks
-  const dueTasks = await query(`
-    SELECT t.id, t.title, t.due, t.priority AS task_priority, t.type AS task_type, t.donor_id, d.name AS donor_name, d.total_giving
-    FROM tasks t
-    JOIN donors d ON d.id = t.donor_id
-    WHERE t.org_id = ? AND done=0 AND t.due <= ? ${scopeClause}
-    ORDER BY t.due ASC
-    LIMIT 5
-  `, [orgId, todayStr, ...scopeParams]);
-
   for (const t of dueTasks) {
     const daysOverdue = t.due && t.due < todayStr
       ? Math.floor((today - new Date(t.due)) / 86400000) : 0;
@@ -6861,15 +6931,6 @@ app.get("/dashboard/today", requireAuth, wrap(async (req, res) => {
   // staff review (see milestone_drafts / retention feature). Unified into
   // the same ranked queue as lapsed/no-contact/overdue-task reasons so this
   // one endpoint is the single source for "needs your attention".
-  const milestoneRows = await query(`
-    SELECT md.id AS draft_id, md.donor_id, md.subject, md.created_at, d.name AS donor_name, d.total_giving
-    FROM milestone_drafts md
-    JOIN donors d ON d.id = md.donor_id
-    WHERE md.org_id = ? AND md.status = 'pending_review' ${scopeClause}
-    ORDER BY md.created_at DESC
-    LIMIT 5
-  `, [orgId, ...scopeParams]);
-
   for (const m of milestoneRows) {
     const milestoneItem = {
       donorId: m.donor_id, donorName: m.donor_name,
@@ -6890,15 +6951,6 @@ app.get("/dashboard/today", requireAuth, wrap(async (req, res) => {
   // bucket re-upserts the same donor with a distinct reason and a priority
   // just above it (81 > 80) so staff can tell "just flagged today, draft
   // ready" apart from a plain milestone draft or a bare no-contact reason.
-  const atRiskDraftRows = await query(`
-    SELECT md.id AS draft_id, md.donor_id, d.name AS donor_name, d.total_giving
-    FROM milestone_drafts md
-    JOIN donors d ON d.id = md.donor_id
-    WHERE md.org_id = ? AND md.status = 'pending_review' AND md.milestone_key = 'at_risk' ${scopeClause}
-    ORDER BY md.created_at DESC
-    LIMIT 10
-  `, [orgId, ...scopeParams]);
-
   for (const a of atRiskDraftRows) {
     upsertItem({
       donorId: a.donor_id, donorName: a.donor_name,
@@ -6913,15 +6965,6 @@ app.get("/dashboard/today", requireAuth, wrap(async (req, res) => {
   // drafts above. Priority 82: a hair above milestone-drafted emails (80),
   // since these represent the org's highest-value/most-personal moments by
   // design (see isNoteMoment()).
-  const noteReminderRows = await query(`
-    SELECT nr.id AS reminder_id, nr.donor_id, nr.talking_points, nr.created_at, d.name AS donor_name, d.total_giving
-    FROM note_reminders nr
-    JOIN donors d ON d.id = nr.donor_id
-    WHERE nr.org_id = ? AND nr.status = 'pending' ${scopeClause}
-    ORDER BY nr.created_at DESC
-    LIMIT 5
-  `, [orgId, ...scopeParams]);
-
   for (const n of noteReminderRows) {
     const points = typeof n.talking_points === "string" ? JSON.parse(n.talking_points) : n.talking_points;
     upsertItem({
@@ -6938,14 +6981,6 @@ app.get("/dashboard/today", requireAuth, wrap(async (req, res) => {
   // nonprofit would otherwise never notice (see CLAUDE.md "Recurring gift
   // recovery"), so it's folded into the same ranked queue rather than living
   // only on a separate report.
-  const atRiskSubs = await query(`
-    SELECT rs.donor_id, rs.stripe_subscription_id, rs.amount, rs.interval, d.name AS donor_name, d.total_giving
-    FROM recurring_subscriptions rs
-    JOIN donors d ON d.id = rs.donor_id
-    WHERE rs.org_id = ? AND rs.status IN ('past_due','recovering') ${scopeClause}
-    ORDER BY rs.amount DESC NULLS LAST
-    LIMIT 5
-  `, [orgId, ...scopeParams]);
   for (const rs of atRiskSubs) {
     const amountStr = rs.amount != null ? `$${Number(rs.amount).toLocaleString()}/${rs.interval === "year" ? "yr" : "mo"}` : "a recurring gift";
     upsertItem({
@@ -6962,18 +6997,6 @@ app.get("/dashboard/today", requireAuth, wrap(async (req, res) => {
   // cancellation the org learns about in minutes is a save opportunity; one it
   // discovers at month-end is a lapse statistic. Outranks the failed-card
   // bucket (85): this donor made a deliberate choice minutes-to-days ago.
-  const portalDrift = await query(`
-    SELECT DISTINCT ON (pal.donor_id) pal.donor_id, pal.action, pal.created_at,
-           d.name AS donor_name, d.total_giving,
-           rs.amount, rs.interval
-    FROM portal_audit_log pal
-    JOIN donors d ON d.id = pal.donor_id AND d.org_id = pal.org_id AND d.deleted_at IS NULL
-    LEFT JOIN recurring_subscriptions rs ON rs.id = (pal.meta->>'subId') AND rs.org_id = pal.org_id
-    WHERE pal.org_id = ? AND pal.action IN ('recurring_cancel','recurring_pause')
-      AND pal.created_at > NOW() - INTERVAL '7 days' ${scopeClause}
-    ORDER BY pal.donor_id, pal.created_at DESC
-    LIMIT 5
-  `, [orgId, ...scopeParams]).catch(() => []);
   for (const pd of portalDrift) {
     const verb = pd.action === "recurring_cancel" ? "canceled" : "paused";
     const amountStr = pd.amount != null ? `$${Number(pd.amount).toLocaleString()}/${pd.interval === "year" ? "yr" : "mo"}` : "their recurring gift";
@@ -6994,13 +7017,6 @@ app.get("/dashboard/today", requireAuth, wrap(async (req, res) => {
   // as a hard exclusion (not just a priority contest), matching "isn't
   // already flagged for something else."
   const alreadyFlaggedIds = new Set(items.map(i => i.donorId));
-  const employerDonorRows = await query(`
-    SELECT d.id, d.name, d.employer, d.total_giving, d.last_gift_amount, d.last_gift_date
-    FROM donors d
-    WHERE d.org_id = ? AND d.deleted_at IS NULL AND d.employer IS NOT NULL AND d.employer <> '' AND d.last_gift_date >= ? ${scopeClause}
-    ORDER BY d.last_gift_date DESC
-    LIMIT 30
-  `, [orgId, ninetyDaysAgo, ...scopeParams]);
   let matchingGiftCount = 0;
   for (const d of employerDonorRows) {
     if (matchingGiftCount >= 5) break;
@@ -7145,24 +7161,24 @@ app.get("/metrics/stewardship-summary", requireAuth, wrap(async (req, res) => {
   // as a snapshot, so one user's "mine" view can't pollute the org's daily
   // trend. First-Touch Delay is intentionally left unscoped.
   const scope = req.query.scope === "all" ? "all" : "mine";
-  const debt = scope === "all" ? await snapshotMetricsForOrg(orgId) : await computeStewardshipDebt(orgId, { userId });
-  const firstTouch = await computeFirstTouchDelay(orgId);
-  const retention = scope === "all" ? await computeRetentionRate(orgId) : await computeRetentionRate(orgId, { userId });
-
   const since = new Date(); since.setDate(since.getDate() - 30);
   const sinceStr = since.toISOString().slice(0, 10);
-  const debtTrend = await query(
-    "SELECT snapshot_date, value FROM metric_snapshots WHERE org_id=? AND metric_key='stewardship_debt' AND snapshot_date >= ? ORDER BY snapshot_date ASC",
-    [orgId, sinceStr]
-  );
-  const touchTrend = await query(
-    "SELECT snapshot_date, value FROM metric_snapshots WHERE org_id=? AND metric_key='first_touch_delay' AND snapshot_date >= ? ORDER BY snapshot_date ASC",
-    [orgId, sinceStr]
-  );
-  const retentionTrend = await query(
-    "SELECT snapshot_date, value FROM metric_snapshots WHERE org_id=? AND metric_key='retention_rate' AND snapshot_date >= ? ORDER BY snapshot_date ASC",
-    [orgId, sinceStr]
-  );
+  // BUILD-54 §1 — the three metric computations and three trend reads are
+  // independent; one parallel batch (was 6 sequential round trips).
+  const [debt, firstTouch, retention, debtTrend, touchTrend, retentionTrend] = await Promise.all([
+    scope === "all" ? snapshotMetricsForOrg(orgId) : computeStewardshipDebt(orgId, { userId }),
+    computeFirstTouchDelay(orgId),
+    scope === "all" ? computeRetentionRate(orgId) : computeRetentionRate(orgId, { userId }),
+    query(
+      "SELECT snapshot_date, value FROM metric_snapshots WHERE org_id=? AND metric_key='stewardship_debt' AND snapshot_date >= ? ORDER BY snapshot_date ASC",
+      [orgId, sinceStr]),
+    query(
+      "SELECT snapshot_date, value FROM metric_snapshots WHERE org_id=? AND metric_key='first_touch_delay' AND snapshot_date >= ? ORDER BY snapshot_date ASC",
+      [orgId, sinceStr]),
+    query(
+      "SELECT snapshot_date, value FROM metric_snapshots WHERE org_id=? AND metric_key='retention_rate' AND snapshot_date >= ? ORDER BY snapshot_date ASC",
+      [orgId, sinceStr]),
+  ]);
 
   const trendDelta = trend => trend.length >= 2 ? Math.round(Number(trend[trend.length - 1].value) - Number(trend[0].value)) : null;
 
@@ -13509,27 +13525,28 @@ app.get("/recurring/update-card", wrap(async (req, res) => {
 // ── Recurring gift recovery: staff-facing routes ────────────────────────────
 app.get("/recurring/health", requireAuth, wrap(async (req, res) => {
   const orgId = req.user.orgId;
-  const summaryRows = await query(
-    `SELECT
-       COUNT(*) FILTER (WHERE status IN ('active','recovering'))::int AS active_count,
-       COUNT(*) FILTER (WHERE status IN ('past_due','recovering'))::int AS at_risk_count,
-       COALESCE(SUM(amount) FILTER (WHERE status IN ('past_due','recovering')), 0) AS mrr_at_risk
-     FROM recurring_subscriptions WHERE org_id=?`,
-    [orgId]
-  );
-  const s = summaryRows[0] || {};
-
-  const { rate: recoveryRate } = await computeRecoveryRate(orgId);
-
   const monthStart = new Date(); monthStart.setDate(1); monthStart.setHours(0, 0, 0, 0);
-  const recoveredThisMonth = (await query(
-    "SELECT COUNT(DISTINCT subscription_id)::int AS c FROM payment_recovery_events WHERE org_id=? AND type='payment_recovered' AND created_at >= ?",
-    [orgId, monthStart.toISOString()]
-  ))[0]?.c || 0;
-  const lostThisMonth = (await query(
-    "SELECT COUNT(DISTINCT subscription_id)::int AS c FROM payment_recovery_events WHERE org_id=? AND type='subscription_canceled' AND created_at >= ?",
-    [orgId, monthStart.toISOString()]
-  ))[0]?.c || 0;
+  // BUILD-54 §1 — four independent reads, one parallel batch.
+  const [summaryRows, recoveryRateOut, recMonthRows, lostMonthRows] = await Promise.all([
+    query(
+      `SELECT
+         COUNT(*) FILTER (WHERE status IN ('active','recovering'))::int AS active_count,
+         COUNT(*) FILTER (WHERE status IN ('past_due','recovering'))::int AS at_risk_count,
+         COALESCE(SUM(amount) FILTER (WHERE status IN ('past_due','recovering')), 0) AS mrr_at_risk
+       FROM recurring_subscriptions WHERE org_id=?`,
+      [orgId]),
+    computeRecoveryRate(orgId),
+    query(
+      "SELECT COUNT(DISTINCT subscription_id)::int AS c FROM payment_recovery_events WHERE org_id=? AND type='payment_recovered' AND created_at >= ?",
+      [orgId, monthStart.toISOString()]),
+    query(
+      "SELECT COUNT(DISTINCT subscription_id)::int AS c FROM payment_recovery_events WHERE org_id=? AND type='subscription_canceled' AND created_at >= ?",
+      [orgId, monthStart.toISOString()]),
+  ]);
+  const s = summaryRows[0] || {};
+  const recoveryRate = recoveryRateOut.rate;
+  const recoveredThisMonth = recMonthRows[0]?.c || 0;
+  const lostThisMonth = lostMonthRows[0]?.c || 0;
 
   res.json({
     activeCount: s.active_count || 0,
@@ -13574,15 +13591,14 @@ app.get("/impact", requireAuth, wrap(async (req, res) => {
   // subscription can appear across multiple failure/recovery cycles over time,
   // and every one of those is genuinely-recovered money, so we sum all of them
   // (not COUNT DISTINCT subscription like the recovery-RATE math).
-  const recRows = await query(
+  const pRec = query(
     `SELECT COUNT(*)::int AS c,
             COALESCE(SUM((detail->>'amount')::numeric), 0) AS amt
        FROM payment_recovery_events
       WHERE org_id=? AND type='payment_recovered' AND (detail->>'amount') IS NOT NULL`,
     [orgId]
   );
-  const recoveredCount = recRows[0]?.c || 0;
-  const recoveredAmount = parseFloat(recRows[0]?.amt) || 0;
+
 
   // (1b) BUILD-32 Part 2 — RE-ENGAGED giving: gifts from donors who were LAPSED
   // and gave again. This is a SEPARATE, precisely-labelled number — it is NOT
@@ -13594,7 +13610,7 @@ app.get("/impact", requireAuth, wrap(async (req, res) => {
   // count EVERY such re-engagement gift (not only a donor's current last gift),
   // so a donor who lapsed, came back, then lapsed and came back again is counted
   // for each genuine return. reengagedDonorCount = distinct donors who came back.
-  const reengRows = await query(
+  const pReeng = query(
     `SELECT COALESCE(SUM(g.amount),0) AS amt, COUNT(DISTINCT g.donor_id)::int AS donors
        FROM gifts g
       WHERE g.org_id = ?
@@ -13602,14 +13618,13 @@ app.get("/impact", requireAuth, wrap(async (req, res) => {
         AND g.date::date - (SELECT MAX(g2.date) FROM gifts g2 WHERE g2.donor_id = g.donor_id AND g2.date < g.date)::date > 365`,
     [orgId]
   );
-  const reengagedAmount = parseFloat(reengRows[0]?.amt) || 0;
-  const reengagedDonorCount = reengRows[0]?.donors || 0;
+
 
   // (1c) The donors BEHIND the re-engaged number — the Home hero chip drills
   // into exactly these rows (every aggregate drills into its source; the
   // destination must show the same count/amount the chip claimed). Same
   // >365-day-gap predicate as (1b), grouped per donor, capped at 50.
-  const reengagedDonors = await query(
+  const pReengDonors = query(
     `SELECT g.donor_id AS id, d.name, COALESCE(SUM(g.amount),0) AS amount,
             COUNT(*)::int AS gift_count, MAX(g.date) AS last_return_date
        FROM gifts g JOIN donors d ON d.id = g.donor_id
@@ -13624,29 +13639,35 @@ app.get("/impact", requireAuth, wrap(async (req, res) => {
 
   // (2) Fees kept — factual. Base = online giving processed through Steward
   // (own-Stripe donations, stripe_payment_id set), which the org kept 100% of.
-  const givingRows = await query(
+  const pGiving = query(
     `SELECT COALESCE(SUM(amount), 0) AS total
        FROM gifts WHERE org_id=? AND stripe_payment_id IS NOT NULL`,
     [orgId]
   );
-  const onlineGivingProcessed = parseFloat(givingRows[0]?.total) || 0;
-
-  // (3) Optional labeled estimate — assumption shown inline, secondary.
-  const FEE_ASSUMPTION_PCT = 3;
-  const estimatedFeesElsewhere =
-    Math.round(onlineGivingProcessed * (FEE_ASSUMPTION_PCT / 100) * 100) / 100;
 
   // Forward-looking honest empty state: how many recurring donors Steward is
   // actively watching for failed cards (so a new org sees a real promise, not
   // a fabricated $0-dressed-as-something number).
-  const watchRows = await query(
+  const pWatch = query(
     `SELECT COUNT(*)::int AS c FROM recurring_subscriptions
       WHERE org_id=? AND status IN ('active', 'recovering', 'past_due')`,
     [orgId]
   );
-  const watchingRecurringCount = watchRows[0]?.c || 0;
+  const pOrg = query("SELECT plan FROM orgs WHERE id=?", [orgId]);
 
-  const orgRows = await query("SELECT plan FROM orgs WHERE id=?", [orgId]);
+  // BUILD-54 §1 — the six reads above are independent; one parallel batch.
+  const [recRows, reengRows, reengagedDonors, givingRows, watchRows, orgRows] =
+    await Promise.all([pRec, pReeng, pReengDonors, pGiving, pWatch, pOrg]);
+  const recoveredCount = recRows[0]?.c || 0;
+  const recoveredAmount = parseFloat(recRows[0]?.amt) || 0;
+  const reengagedAmount = parseFloat(reengRows[0]?.amt) || 0;
+  const reengagedDonorCount = reengRows[0]?.donors || 0;
+  const onlineGivingProcessed = parseFloat(givingRows[0]?.total) || 0;
+  // (3) Optional labeled estimate — assumption shown inline, secondary.
+  const FEE_ASSUMPTION_PCT = 3;
+  const estimatedFeesElsewhere =
+    Math.round(onlineGivingProcessed * (FEE_ASSUMPTION_PCT / 100) * 100) / 100;
+  const watchingRecurringCount = watchRows[0]?.c || 0;
   const plan = orgRows[0]?.plan || "trial";
   const planMonthlyCost = PLAN_MONTHLY_COST[plan] ?? null;
 
@@ -15693,7 +15714,10 @@ app.get("/portal/:orgSlug/me", requirePortalSession, wrap(async (req, res) => {
   if (!donors.length) return res.json({ email, theme: portalThemePayload(org), empty: true });
   const donorIds = donors.map(d => d.id);
 
-  const [byYearRows, totalsRow, gifts, receipts, recurring, pledges, household] = await Promise.all([
+  // BUILD-54 §1 — impact matching, the account nudge, and the audit write
+  // ride the same parallel batch as the data reads (they only need donorIds/
+  // email, all known here). This endpoint is the donor's first paint.
+  const [byYearRows, totalsRow, gifts, receipts, recurring, pledges, household, impact, accountNudge] = await Promise.all([
     query(
       `SELECT LEFT(date, 4) AS year, COALESCE(SUM(amount),0) AS total, COUNT(*)::int AS count
        FROM gifts WHERE org_id = ? AND donor_id = ANY(?) GROUP BY LEFT(date, 4) ORDER BY year DESC`,
@@ -15746,12 +15770,30 @@ app.get("/portal/:orgSlug/me", requirePortalSession, wrap(async (req, res) => {
         [org.id, hh.id]);
       return { name: hh.name, combined: parseFloat(sum.combined) || 0 };
     })(),
+    matchImpactUpdates(org.id, donorIds),
+    // BUILD-46 §1.3 — the migration nudge, never a wall: a magic-link donor is
+    // PROMPTED to create an account/password; ignoring it forever is fine.
+    // null when the flag is off (prod default) so BUILD-45 clients see nothing,
+    // AND null when the org hasn't opted into donor-dashboard listing
+    // (network_listed) — an unlisted org's portal stays entirely its own page,
+    // with no mention of a cross-org account. `email` is the donor's own
+    // verified session address, returned so the signup link can carry it.
+    DONOR_ACCOUNTS_ENABLED && org.network_listed === true ? (async () => {
+      const em = foldEmail(email);
+      const acct = await query(
+        `SELECT id, password_hash FROM donor_accounts WHERE email = ? AND email_verified_at IS NOT NULL
+         UNION SELECT a.id, a.password_hash FROM donor_accounts a JOIN donor_account_aliases al ON al.account_id = a.id
+         WHERE al.email = ? AND al.verified_at IS NOT NULL LIMIT 1`, [em, em]);
+      return { exists: acct.length > 0, hasPassword: !!acct[0]?.password_hash, email };
+    })() : Promise.resolve(null),
+    portalAudit(org.id, donorIds[0], email, "dashboard_viewed", req),
   ]);
 
   // Stripe display details (card last-4, next charge) — display-only, and the
-  // dashboard degrades gracefully when Stripe is unreachable.
-  const recurringOut = [];
-  for (const s of recurring) {
+  // dashboard degrades gracefully when Stripe is unreachable. One live Stripe
+  // API call per active-ish subscription — in PARALLEL (BUILD-54 §1: these
+  // were serial, ~300ms each on the donor's first paint).
+  const recurringOut = await Promise.all(recurring.map(async (s) => {
     let last4 = null, nextCharge = null;
     if (stripe && org.stripe_account_id && ["active", "past_due", "recovering", "recovered", "paused"].includes(s.status)) {
       try {
@@ -15763,19 +15805,18 @@ app.get("/portal/:orgSlug/me", requirePortalSession, wrap(async (req, res) => {
         }
       } catch { /* display-only — omit */ }
     }
-    recurringOut.push({
+    return {
       id: s.id, amount: parseFloat(s.amount) || 0, interval: s.interval || "month",
       status: s.status, pausedAt: s.paused_at, resumeAt: s.resume_at, canceledAt: s.canceled_at,
       cardLast4: last4, nextChargeDate: nextCharge,
       paymentHistory: gifts.filter(g => g.online).slice(0, 12)
         .map(g => ({ date: g.date, amount: parseFloat(g.amount) || 0 })),
-    });
-  }
+    };
+  }));
 
   const t = totalsRow[0] || {};
   const nowYear = String(new Date().getFullYear());
   const byYear = byYearRows.map(r => ({ year: r.year, total: parseFloat(r.total) || 0, count: r.count }));
-  await portalAudit(org.id, donorIds[0], email, "dashboard_viewed", req);
   res.json({
     email,
     theme: portalThemePayload(org),
@@ -15803,22 +15844,8 @@ app.get("/portal/:orgSlug/me", requirePortalSession, wrap(async (req, res) => {
       paid: parseFloat(p.paid_amount) || 0, balance: parseFloat(p.balance) || 0,
     })),
     household,
-    impact: await matchImpactUpdates(org.id, donorIds),
-    // BUILD-46 §1.3 — the migration nudge, never a wall: a magic-link donor is
-    // PROMPTED to create an account/password; ignoring it forever is fine.
-    // null when the flag is off (prod default) so BUILD-45 clients see nothing,
-    // AND null when the org hasn't opted into donor-dashboard listing
-    // (network_listed) — an unlisted org's portal stays entirely its own page,
-    // with no mention of a cross-org account. `email` is the donor's own
-    // verified session address, returned so the signup link can carry it.
-    account: DONOR_ACCOUNTS_ENABLED && org.network_listed === true ? await (async () => {
-      const em = foldEmail(email);
-      const acct = await query(
-        `SELECT id, password_hash FROM donor_accounts WHERE email = ? AND email_verified_at IS NOT NULL
-         UNION SELECT a.id, a.password_hash FROM donor_accounts a JOIN donor_account_aliases al ON al.account_id = a.id
-         WHERE al.email = ? AND al.verified_at IS NOT NULL LIMIT 1`, [em, em]);
-      return { exists: acct.length > 0, hasPassword: !!acct[0]?.password_hash, email };
-    })() : null,
+    impact,
+    account: accountNudge,
   });
 }));
 
@@ -16854,16 +16881,43 @@ app.get("/account/dashboard", requireDonorAccount, wrap(async (req, res) => {
   const orgCards = [];
   let totalYtd = 0, totalLifetime = 0;
   const impactMerged = [];
-  for (const [orgId, { donorIds, meta }] of byOrg) {
-    const [t] = await query(
-      `SELECT COALESCE(SUM(amount),0) AS lifetime,
+  // BUILD-54 §1 — this was the FINDINGS-flagged N+1: 4 sequential queries per
+  // linked org on every dashboard view. Donor ids are globally unique (one
+  // org each), so one GROUP BY org_id over the full donor-id list is exactly
+  // the per-org loop's result; impact matching and the follows read join the
+  // same parallel batch.
+  const allOrgIds = [...byOrg.keys()];
+  const allDonorIds = links.map(l => l.donor_id);
+  const [aggRows, recRows, impactPerOrg, followRows] = await Promise.all([
+    allOrgIds.length ? query(
+      `SELECT org_id, COALESCE(SUM(amount),0) AS lifetime,
               COALESCE(SUM(amount) FILTER (WHERE LEFT(date,4) = ?),0) AS ytd,
               MAX(date) AS last_gift
-       FROM gifts WHERE org_id = ? AND donor_id = ANY(?)`, [nowYear, orgId, donorIds]);
-    const rec = await query(
-      `SELECT COUNT(*)::int n FROM recurring_subscriptions
-       WHERE org_id = ? AND donor_id = ANY(?) AND status IN ('active','past_due','recovering','recovered','paused')`,
-      [orgId, donorIds]);
+       FROM gifts WHERE org_id = ANY(?) AND donor_id = ANY(?) GROUP BY org_id`,
+      [nowYear, allOrgIds, allDonorIds]) : Promise.resolve([]),
+    allOrgIds.length ? query(
+      `SELECT org_id, COUNT(*)::int n FROM recurring_subscriptions
+       WHERE org_id = ANY(?) AND donor_id = ANY(?) AND status IN ('active','past_due','recovering','recovered','paused')
+       GROUP BY org_id`,
+      [allOrgIds, allDonorIds]) : Promise.resolve([]),
+    Promise.all(allOrgIds.map(orgId => matchImpactUpdates(orgId, byOrg.get(orgId).donorIds))),
+    query(
+      `SELECT f.id, f.org_id, o.org_slug, COALESCE(ps.display_name, o.name) AS name,
+              COALESCE(ps.logo_url, ps.logo_data) AS logo_data, ps.primary_color, ps.accent_color, ps.directory_description,
+              COALESCE(ps.header_image_url, ps.header_image_data) AS header_image_data, ps.background_tint, ps.button_color,
+              ps.type_pairing, ps.card_style, ps.footer_text, ps.ein_line, ps.contact_email
+       FROM donor_org_follows f
+       JOIN orgs o ON o.id = f.org_id
+       JOIN portal_settings ps ON ps.org_id = f.org_id AND ps.enabled = true AND ps.network_listed = true
+       WHERE f.account_id = ?
+         AND NOT EXISTS (SELECT 1 FROM donor_account_links l WHERE l.account_id = f.account_id AND l.org_id = f.org_id)
+       ORDER BY f.created_at DESC`, [acct.id]),
+  ]);
+  const aggByOrg = new Map(aggRows.map(r => [r.org_id, r]));
+  const recByOrg = new Map(recRows.map(r => [r.org_id, r.n]));
+  let orgIdx = 0;
+  for (const [orgId, { meta }] of byOrg) {
+    const t = aggByOrg.get(orgId) || { lifetime: 0, ytd: 0, last_gift: null };
     const card = {
       orgSlug: meta.org_slug,
       orgName: displayNameCase(meta.display_name || meta.org_name),
@@ -16881,12 +16935,11 @@ app.get("/account/dashboard", requireDonorAccount, wrap(async (req, res) => {
         contactEmail: meta.contact_email || null,
       },
       ytd: parseFloat(t.ytd) || 0, lifetime: parseFloat(t.lifetime) || 0,
-      lastGiftDate: t.last_gift || null, recurringCount: rec[0]?.n || 0,
+      lastGiftDate: t.last_gift || null, recurringCount: recByOrg.get(orgId) || 0,
     };
     totalYtd += card.ytd; totalLifetime += card.lifetime;
     orgCards.push(card);
-    const impact = await matchImpactUpdates(orgId, donorIds);
-    for (const u of impact) impactMerged.push({ ...u, orgSlug: meta.org_slug, orgName: card.orgName, logo: card.logo });
+    for (const u of impactPerOrg[orgIdx++]) impactMerged.push({ ...u, orgSlug: meta.org_slug, orgName: card.orgName, logo: card.logo });
   }
   orgCards.sort((a, b) => b.ytd - a.ytd || b.lifetime - a.lifetime);
   // BUILD-47 followed cards — display precedence: an org with ANY link row is
@@ -16895,18 +16948,11 @@ app.get("/account/dashboard", requireDonorAccount, wrap(async (req, res) => {
   // resurface it). A followed card carries NO history figures at all — no $0
   // rows pretending to be history — just identity, the give path, and
   // org-wide impact updates.
-  const followRows = await query(
-    `SELECT f.id, f.org_id, o.org_slug, COALESCE(ps.display_name, o.name) AS name,
-            COALESCE(ps.logo_url, ps.logo_data) AS logo_data, ps.primary_color, ps.accent_color, ps.directory_description,
-            COALESCE(ps.header_image_url, ps.header_image_data) AS header_image_data, ps.background_tint, ps.button_color,
-            ps.type_pairing, ps.card_style, ps.footer_text, ps.ein_line, ps.contact_email
-     FROM donor_org_follows f
-     JOIN orgs o ON o.id = f.org_id
-     JOIN portal_settings ps ON ps.org_id = f.org_id AND ps.enabled = true AND ps.network_listed = true
-     WHERE f.account_id = ?
-       AND NOT EXISTS (SELECT 1 FROM donor_account_links l WHERE l.account_id = f.account_id AND l.org_id = f.org_id)
-     ORDER BY f.created_at DESC`, [acct.id]);
   const followedCards = [];
+  // Org-wide impact updates only — a follow has no gift attribution to match
+  // against, and must never borrow anyone else's. Fetched in parallel.
+  const followImpact = await Promise.all(followRows.map(f => matchImpactUpdates(f.org_id, [])));
+  let followIdx = 0;
   for (const f of followRows) {
     followedCards.push({
       followId: f.id, orgSlug: f.org_slug, orgName: displayNameCase(f.name),
@@ -16923,10 +16969,7 @@ app.get("/account/dashboard", requireDonorAccount, wrap(async (req, res) => {
         contactEmail: f.contact_email || null,
       },
     });
-    // Org-wide impact updates only — a follow has no gift attribution to
-    // match against, and must never borrow anyone else's.
-    const impact = await matchImpactUpdates(f.org_id, []);
-    for (const u of impact) impactMerged.push({ ...u, orgSlug: f.org_slug, orgName: displayNameCase(f.name), logo: f.logo_data || null });
+    for (const u of followImpact[followIdx++]) impactMerged.push({ ...u, orgSlug: f.org_slug, orgName: displayNameCase(f.name), logo: f.logo_data || null });
   }
   // Millisecond-precision newest-first: String(Date) stringifies at SECOND
   // precision, so a string sort tie-broke same-second updates arbitrarily and
