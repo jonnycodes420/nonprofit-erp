@@ -16523,8 +16523,10 @@ async function resolvePortalPagePublic(org) {
   const [row] = await query(`SELECT published FROM portal_pages WHERE org_id = ?`, [org.id]);
   const widgets = row && Array.isArray(row.published) ? row.published : null;
   if (!widgets || !widgets.length) return null;
-  const out = [];
-  for (const w of widgets) {
+  // BUILD-54 §1 discipline: the per-widget resolution queries are independent
+  // reads — resolve them in PARALLEL (this is the donor's first paint; a
+  // sequential loop re-created the exact round-trip stacking §1 removed).
+  const out = await Promise.all(widgets.map(async (w) => {
     const r = { ...w };
     if (w.type === "funds" && w.fundIds?.length) {
       r.funds = (await query(
@@ -16563,8 +16565,8 @@ async function resolvePortalPagePublic(org) {
          ORDER BY created_at DESC LIMIT 6`, [org.id]))
         .map(u => ({ id: u.id, title: u.title, body: u.body, photos: Array.isArray(u.photos) ? u.photos : [], date: u.created_at }));
     }
-    out.push(r);
-  }
+    return r;
+  }));
   return { widgets: out, giveSlug: org.org_slug };
 }
 

@@ -359,3 +359,25 @@ publish anything a nonprofit page could say, under a page served from stewardapp
 Before the network opens beyond hand-picked pilots, decide: a super-admin "recently
 published pages" review list (cheap, quiet) or explicit terms + takedown process — or
 both. Recorded as the follow-up decision this build does NOT make.
+
+### §1 re-measure (end of build, prod, same methodology as the BEFORE tables)
+
+| Surface | Pre-build | Post-§1 | End of build |
+|---|---|---|---|
+| CRM /dashboard warm: greeting / settle | 884ms / 2.2s | 339ms / 1.4s | **359ms / 1.4s** — held |
+| `/dashboard/today` warm | 1,206ms | 231ms | **223ms** — held |
+| `/impact` / `/dashboard/home` warm | ~500–600ms | ~170–240ms | **154ms / 224ms** — held |
+| /giving warm settle | 1.01s | — | **0.95s** — held |
+| Org portal warm settle | 0.96s | — | **1.19s** (now renders the PUBLISHED 7-widget page) |
+| Deploy 503 blackout | 40–70s | (unobservable — db.js changed each push) | **18s measured live** on the a4fb924 deploy — the schema fast path proven |
+
+The one new cost the design work introduced: portal config with a published page ran
+516–962ms (the sequential per-widget resolution loop — exactly worry-paragraph item 1).
+Fixed in the same stage: `resolvePortalPagePublic` now resolves widgets in PARALLEL
+(post-fix prod timing recorded in the Stage 4 report). The §1 gains were NOT undone.
+
+### Prod demo (§7) — LIVE
+`seed-build54-demo.js` ran against prod org_creo: "Studio Expansion Capital Campaign"
+dressed as **"Steeples and Studios Campaign"** (description, story, hero, goal
+thermometer opted public), a **$25,000 attributed demo gift** on Renee Castillo, and a
+**published 7-widget portal page** at stewardapp.dev/portal/creo-arts-creo.
