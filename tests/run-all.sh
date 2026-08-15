@@ -59,7 +59,7 @@ CORE=(
   empty-states presentation-wiring notify-delivery concurrency2 permissions-matrix
   gift-idempotency portal
   donor-accounts donor-linking org-blindness network-gate donor-dashboard network-directory theme-depth donor-front-door theme-assets
-  campaign-impact
+  campaign-impact portal-page
   finance-reports-consistency name-normalize reserved-recovered concurrency
 )
 

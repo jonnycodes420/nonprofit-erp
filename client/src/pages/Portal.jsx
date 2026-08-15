@@ -16,6 +16,7 @@ import { useParams, useLocation, useNavigate } from "react-router-dom";
 import { fmtFull } from "../lib/money";
 import { resolvePairing, resolveCardStyle } from "../lib/portalTheme";
 import { resolveAssetUrl } from "../lib/assetUrl";
+import { PageRenderer } from "../components/PortalWidgets";
 
 // Same-origin in production via the vercel.json /portal-api proxy (the cookie
 // must be first-party); direct in dev (localhost ports are same-site).
@@ -307,7 +308,78 @@ function StoryBlocks({ blocks }) {
   );
 }
 
-function Dashboard({ slug, me, reload }) {
+// The donor's own giving cluster — one implementation for the legacy fixed
+// layout AND the §4 "My Giving" widget (the org's page decides WHERE it sits,
+// never WHAT it shows). includeGiveCta preserves the legacy card order
+// exactly (pinned by the build45/48/50 capture contracts).
+function MyGivingSection({ slug, me, reload, theme, includeGiveCta }) {
+  const g = me.giving || {};
+  return (
+    <>
+      {/* Giving summary — honest at every data size (§3.2): totals and real
+          dates only; no streaks, no percentages, no invented milestones. */}
+      <div style={S.card}>
+        <h2 style={S.h2}>Your giving</h2>
+        <div style={{ display: "flex", gap: 28, flexWrap: "wrap", marginBottom: 16 }}>
+          <div><div style={S.label}>This year</div><div style={{ fontSize: 26, fontWeight: 700 }}>{fmtFull(g.ytd)}</div></div>
+          <div><div style={S.label}>Lifetime</div><div style={{ fontSize: 26, fontWeight: 700 }}>{fmtFull(g.lifetime)}</div></div>
+          {g.largestGift > 0 && <div><div style={S.label}>Largest gift</div><div style={{ fontSize: 26, fontWeight: 700 }}>{fmtFull(g.largestGift)}</div></div>}
+        </div>
+        {g.firstGiftDate && <div style={{ ...S.muted, marginBottom: 14 }}>Giving with {theme.displayName} since {String(g.firstGiftDate).slice(0, 4)}.</div>}
+        {(g.byYear || []).length > 0 && <YearBars byYear={g.byYear} gifts={me.gifts || []} />}
+      </div>
+
+      {(me.recurring || []).length > 0 && (
+        <div style={S.card}>
+          <h2 style={S.h2}>Recurring giving</h2>
+          {me.recurring.map(sub => <RecurringCard key={sub.id} slug={slug} sub={sub} theme={theme} onChanged={reload} />)}
+        </div>
+      )}
+      {includeGiveCta && theme.giveSlug && (
+        <div style={{ ...S.card, display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
+          <div style={{ fontSize: 15 }}>Make a new gift to {theme.displayName}</div>
+          <a href={`/give/${theme.giveSlug}?email=${encodeURIComponent(me.email)}`} style={{ ...S.btn, textDecoration: "none", display: "inline-block" }}>Give</a>
+        </div>
+      )}
+
+      {(me.pledges || []).filter(p => p.status === "open").length > 0 && (
+        <div style={S.card}>
+          <h2 style={S.h2}>Pledges</h2>
+          {me.pledges.filter(p => p.status === "open").map(p => (
+            <div key={p.id} style={{ display: "flex", justifyContent: "space-between", fontSize: 14, padding: "8px 0", borderBottom: "1px solid #f0ede6" }}>
+              <span>Pledged {fmtFull(p.amount)} · due {p.dueDate}</span>
+              <span style={{ fontWeight: 600 }}>{p.paid > 0 ? `${fmtFull(p.paid)} paid · ${fmtFull(p.balance)} remaining` : `${fmtFull(p.balance)} remaining`}</span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {(me.receipts || []).length > 0 && (
+        <div style={S.card}>
+          <h2 style={S.h2}>Tax receipts</h2>
+          {me.receipts.map(r => (
+            <div key={r.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 14, padding: "8px 0", borderBottom: "1px solid #f0ede6" }}>
+              <span>{r.type === "year_end" ? `${r.taxYear} year-end statement` : `Receipt #${r.number}`} · {fmtFull(r.amount)}</span>
+              <a href={`${PORTAL_BASE}/${slug}/receipts/${r.id}/pdf`} style={{ color: "var(--pt-button, var(--pt-primary))", fontWeight: 600, fontSize: 13 }}>Download PDF</a>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {me.household && me.household.combined > 0 && (
+        <div style={S.card}>
+          <h2 style={S.h2}>Household giving</h2>
+          <p style={{ ...S.muted, marginTop: 0 }}>
+            Together, {me.household.name || "your household"} has given {fmtFull(me.household.combined)}.
+            This combined figure is shown separately from your own totals above.
+          </p>
+        </div>
+      )}
+    </>
+  );
+}
+
+function Dashboard({ slug, me, reload, page }) {
   const theme = me.theme;
   const g = me.giving || {};
   const seenImpact = useMemo(() => new Set(), []);
@@ -353,65 +425,18 @@ function Dashboard({ slug, me, reload }) {
         </div>
       )}
 
-      {/* Giving summary — honest at every data size (§3.2): totals and real
-          dates only; no streaks, no percentages, no invented milestones. */}
-      <div style={S.card}>
-        <h2 style={S.h2}>Your giving</h2>
-        <div style={{ display: "flex", gap: 28, flexWrap: "wrap", marginBottom: 16 }}>
-          <div><div style={S.label}>This year</div><div style={{ fontSize: 26, fontWeight: 700 }}>{fmtFull(g.ytd)}</div></div>
-          <div><div style={S.label}>Lifetime</div><div style={{ fontSize: 26, fontWeight: 700 }}>{fmtFull(g.lifetime)}</div></div>
-          {g.largestGift > 0 && <div><div style={S.label}>Largest gift</div><div style={{ fontSize: 26, fontWeight: 700 }}>{fmtFull(g.largestGift)}</div></div>}
-        </div>
-        {g.firstGiftDate && <div style={{ ...S.muted, marginBottom: 14 }}>Giving with {theme.displayName} since {String(g.firstGiftDate).slice(0, 4)}.</div>}
-        {(g.byYear || []).length > 0 && <YearBars byYear={g.byYear} gifts={me.gifts || []} />}
-      </div>
-
-      {(me.recurring || []).length > 0 && (
-        <div style={S.card}>
-          <h2 style={S.h2}>Recurring giving</h2>
-          {me.recurring.map(sub => <RecurringCard key={sub.id} slug={slug} sub={sub} theme={theme} onChanged={reload} />)}
-        </div>
-      )}
-      {theme.giveSlug && (
-        <div style={{ ...S.card, display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
-          <div style={{ fontSize: 15 }}>Make a new gift to {theme.displayName}</div>
-          <a href={`/give/${theme.giveSlug}?email=${encodeURIComponent(me.email)}`} style={{ ...S.btn, textDecoration: "none", display: "inline-block" }}>Give</a>
-        </div>
-      )}
-
-      {(me.pledges || []).filter(p => p.status === "open").length > 0 && (
-        <div style={S.card}>
-          <h2 style={S.h2}>Pledges</h2>
-          {me.pledges.filter(p => p.status === "open").map(p => (
-            <div key={p.id} style={{ display: "flex", justifyContent: "space-between", fontSize: 14, padding: "8px 0", borderBottom: "1px solid #f0ede6" }}>
-              <span>Pledged {fmtFull(p.amount)} · due {p.dueDate}</span>
-              <span style={{ fontWeight: 600 }}>{p.paid > 0 ? `${fmtFull(p.paid)} paid · ${fmtFull(p.balance)} remaining` : `${fmtFull(p.balance)} remaining`}</span>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {(me.receipts || []).length > 0 && (
-        <div style={S.card}>
-          <h2 style={S.h2}>Tax receipts</h2>
-          {me.receipts.map(r => (
-            <div key={r.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 14, padding: "8px 0", borderBottom: "1px solid #f0ede6" }}>
-              <span>{r.type === "year_end" ? `${r.taxYear} year-end statement` : `Receipt #${r.number}`} · {fmtFull(r.amount)}</span>
-              <a href={`${PORTAL_BASE}/${slug}/receipts/${r.id}/pdf`} style={{ color: "var(--pt-button, var(--pt-primary))", fontWeight: 600, fontSize: 13 }}>Download PDF</a>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {me.household && me.household.combined > 0 && (
-        <div style={S.card}>
-          <h2 style={S.h2}>Household giving</h2>
-          <p style={{ ...S.muted, marginTop: 0 }}>
-            Together, {me.household.name || "your household"} has given {fmtFull(me.household.combined)}.
-            This combined figure is shown separately from your own totals above.
-          </p>
-        </div>
-      )}
+      {/* BUILD-54 §4 — a PUBLISHED page replaces the fixed layout below.
+          The org arranges the widgets; the donor's own data renders only
+          through the My Giving widget (same MyGivingSection). The legacy
+          fixed layout is byte-identical for orgs with no published page. */}
+      {page ? (
+        <PageRenderer page={page} ctx={{
+          giveSlug: page.giveSlug || theme.giveSlug, me,
+          renderMyGiving: () => <MyGivingSection slug={slug} me={me} reload={reload} theme={theme} includeGiveCta={false} />,
+        }} />
+      ) : (
+      <>
+      <MyGivingSection slug={slug} me={me} reload={reload} theme={theme} includeGiveCta={true} />
 
       {/* BUILD-54 §2 — campaign spotlights: what the campaigns this donor gave
           to are doing, in the org's own words. A campaign with no authored
@@ -459,6 +484,8 @@ function Dashboard({ slug, me, reload }) {
           ))}
         </div>
       )}
+      </>
+      )}
     </>
   );
 }
@@ -476,6 +503,7 @@ export default function Portal() {
   });
   const [notFound, setNotFound] = useState(false);
   const [me, setMe] = useState(null);
+  const [page, setPage] = useState(null);      // BUILD-54 §4 — published page
   const [checked, setChecked] = useState(false);
 
   const loadMe = async () => {
@@ -489,6 +517,7 @@ export default function Portal() {
       const r = await pfetch(`/${orgSlug}/config`);
       if (r.status !== 200) { setNotFound(true); setChecked(true); return; }
       setTheme(r.body.theme);
+      setPage(r.body.page || null);
       try { sessionStorage.setItem("pt_theme_" + orgSlug, JSON.stringify(r.body.theme)); } catch { /* full/blocked storage is fine */ }
       if (!isVerify) await loadMe(); else setChecked(true);
     })();
@@ -518,8 +547,16 @@ export default function Portal() {
         {isVerify
           ? <Verify slug={orgSlug} onVerified={loadMe} />
           : me && !me.empty
-            ? <Dashboard slug={orgSlug} me={me} reload={loadMe} />
-            : <RequestLink slug={orgSlug} theme={theme} />}
+            ? <Dashboard slug={orgSlug} me={me} reload={loadMe} page={page} />
+            : page
+              ? <>
+                  <PageRenderer page={page} ctx={{
+                    giveSlug: page.giveSlug, me: null,
+                    renderMyGiving: () => <RequestLink slug={orgSlug} theme={theme} />,
+                  }} />
+                  {!page.widgets.some(w => w.type === "mygiving") && <RequestLink slug={orgSlug} theme={theme} />}
+                </>
+              : <RequestLink slug={orgSlug} theme={theme} />}
         <PortalFooter theme={theme} />
       </div>
     </div>

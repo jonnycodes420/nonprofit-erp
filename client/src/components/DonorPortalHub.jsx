@@ -100,9 +100,12 @@ export function DonorPortalHub({ auth, isReadOnly, onNavigate }) {
           )}
         </div>
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-          {/* Navigation → semantic anchor styled as a button (§6 caveat). */}
+          {/* Navigation → semantic anchors styled as buttons (§6 caveat).
+              Edit mode (§4) rides the existing staff session — the editor
+              renders SAMPLE donor data only, never a real donor's. */}
+          {isAdmin && <a href="/portal-editor" style={btnPrimary}>Edit the portal page</a>}
           {ps?.enabled && ps?.portal_url && (
-            <a href={ps.portal_url} target="_blank" rel="noreferrer" style={btnPrimary}>Open the live portal ↗</a>
+            <a href={ps.portal_url} target="_blank" rel="noreferrer" style={{ ...btnPrimary, background: T.bg2, border: "1px solid " + T.bg3 }}>Open the live portal ↗</a>
           )}
         </div>
       </div>

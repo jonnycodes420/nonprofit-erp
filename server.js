@@ -15684,7 +15684,13 @@ async function portalTimeline(orgId, donorId, note, portalEvent) {
 app.get("/portal/:orgSlug/config", wrap(async (req, res) => {
   const org = await portalOrgBySlug(req.params.orgSlug);
   if (!org) return res.status(404).json({ error: "portal_not_found" });
-  res.json({ theme: portalThemePayload(org) });
+  // BUILD-54 §4 — the PUBLISHED page, resolved for public view. Null when the
+  // org never published one (client renders the BUILD-45 fixed layout).
+  // Public resolution carries ZERO donor data by construction: the mygiving
+  // widget resolves to nothing (client shows a sign-in prompt) and the impact
+  // widget resolves org-wide updates only.
+  const page = await resolvePortalPagePublic(org);
+  res.json({ theme: portalThemePayload(org), page });
 }));
 
 // ── P-1/P-2/P-3: request a magic link ──────────────────────────────────────
@@ -16313,6 +16319,304 @@ async function pruneCampaignAssets(orgId) {
   }
   await pruneUnreferencedAssets(orgId, "campaign", keep);
 }
+
+// ═══ BUILD-54 §4 — the portal page: typed widget system ═════════════════════
+// Widgets are TYPED FIELDS AND DESIGNED VARIANTS — never raw HTML, CSS, JS,
+// or paste-in embed code. Every widget payload is validated field-by-field;
+// hostile strings are inert data (React renders text nodes); images ride the
+// BUILD-51 asset seam (kind 'widget'); video is stored as {provider, videoId}
+// parsed server-side from an allowlist — a stored page can never contain a
+// caller-supplied URL, tag, or script.
+const WIDGET_TYPES = ["hero", "richtext", "image", "gallery", "stats", "funds", "campaign", "impact", "quote", "staff", "faq", "video", "give", "mygiving"];
+
+// Allowlisted video providers, server-side ID parsing ONLY (§4).
+function parseVideoRef(url) {
+  const s = String(url || "").trim().slice(0, 300);
+  let m = /^https?:\/\/(?:www\.)?youtube\.com\/watch\?(?:.*&)?v=([A-Za-z0-9_-]{6,20})/.exec(s)
+    || /^https?:\/\/youtu\.be\/([A-Za-z0-9_-]{6,20})/.exec(s)
+    || /^https?:\/\/(?:www\.)?youtube\.com\/embed\/([A-Za-z0-9_-]{6,20})/.exec(s);
+  if (m) return { provider: "youtube", videoId: m[1] };
+  m = /^https?:\/\/(?:www\.)?vimeo\.com\/(\d{6,12})/.exec(s);
+  if (m) return { provider: "vimeo", videoId: m[1] };
+  return null;
+}
+
+async function storeWidgetImage(orgId, v) {
+  if (v == null || v === "") return { url: null };
+  if (typeof v === "string" && v.startsWith("/portal-assets/")) return { url: v };
+  if (!validPortalImage(v, 500000)) return { error: "Photos must be PNG/JPEG/GIF/WebP/SVG under ~350KB." };
+  const m = String(v).match(/^data:([^;]+);base64,(.*)$/s);
+  let buffer;
+  try { buffer = Buffer.from(m[2], "base64"); } catch { return { error: "That image didn't decode." }; }
+  const dims = checkThemeImageDimensions("widget", m[1], buffer);
+  if (!dims.ok) return { error: dims.message };
+  const asset = await putThemeAsset({ orgId, kind: "widget", buffer, contentType: m[1], width: dims.width, height: dims.height });
+  return { url: asset.path };
+}
+
+const wStr = (v, cap) => (v == null ? "" : String(v)).trim().slice(0, cap);
+
+// Validates ONE widget's typed fields → { widget } or { error }.
+async function validateWidget(raw, orgId) {
+  if (!raw || typeof raw !== "object" || !WIDGET_TYPES.includes(raw.type)) return { error: "Unknown widget type." };
+  const w = { id: /^wid_[a-f0-9]{8}$/.test(raw.id || "") ? raw.id : "wid_" + uuid().slice(0, 8), type: raw.type };
+  const img = async (v) => { const r = await storeWidgetImage(orgId, v); if (r.error) throw new Error(r.error); return r.url; };
+  try {
+    switch (raw.type) {
+      case "hero":
+        w.heading = wStr(raw.heading, 120); w.sub = wStr(raw.sub, 300);
+        w.image = await img(raw.image);
+        w.size = raw.size === "tall" ? "tall" : "standard";     // resize-where-sensible
+        break;
+      case "richtext": {
+        const v = validateStoryBlocks(raw.blocks);
+        if (v.error) return { error: "Rich text must be paragraphs, headings, and lists — no HTML." };
+        w.blocks = v.blocks || [];
+        break;
+      }
+      case "image":
+        w.image = await img(raw.image);
+        if (!w.image) return { error: "The image widget needs an image." };
+        w.caption = wStr(raw.caption, 300);
+        break;
+      case "gallery": {
+        const list = Array.isArray(raw.images) ? raw.images.slice(0, 8) : [];
+        w.images = [];
+        for (const v of list) { const u = await img(v); if (u) w.images.push(u); }
+        if (!w.images.length) return { error: "The gallery needs at least one image." };
+        break;
+      }
+      case "stats": {
+        const items = Array.isArray(raw.items) ? raw.items.slice(0, 4) : [];
+        w.items = items.map(i => ({ value: wStr(i?.value, 40), label: wStr(i?.label, 80) })).filter(i => i.value && i.label);
+        if (!w.items.length) return { error: "Stats need at least one value + label (your own numbers — nothing is computed for you)." };
+        break;
+      }
+      case "funds": {
+        w.heading = wStr(raw.heading, 120);
+        const ids = Array.isArray(raw.fundIds) ? raw.fundIds.slice(0, 6) : [];
+        for (const id of ids) { if (!(await orgOwns("fin_funds", id, orgId))) return { error: "Each fund must be one of your organization's funds." }; }
+        w.fundIds = ids;
+        break;
+      }
+      case "campaign":
+        if (!raw.campaignId || !(await orgOwns("campaigns", raw.campaignId, orgId))) return { error: "Pick one of your own campaigns." };
+        w.campaignId = raw.campaignId;
+        break;
+      case "impact":
+        w.heading = wStr(raw.heading, 120);
+        break;
+      case "quote":
+        w.text = wStr(raw.text, 500);
+        if (!w.text) return { error: "The quote needs text." };
+        w.attribution = wStr(raw.attribution, 120);
+        break;
+      case "staff": {
+        const members = Array.isArray(raw.members) ? raw.members.slice(0, 6) : [];
+        w.members = [];
+        for (const m of members) {
+          const name = wStr(m?.name, 80); if (!name) continue;
+          w.members.push({ name, role: wStr(m?.role, 80), photo: await img(m?.photo) });
+        }
+        if (!w.members.length) return { error: "Add at least one person." };
+        w.contactEmail = wStr(raw.contactEmail, 200);
+        break;
+      }
+      case "faq": {
+        const items = Array.isArray(raw.items) ? raw.items.slice(0, 10) : [];
+        w.items = items.map(i => ({ q: wStr(i?.q, 200), a: wStr(i?.a, 1000) })).filter(i => i.q && i.a);
+        if (!w.items.length) return { error: "Add at least one question and answer." };
+        break;
+      }
+      case "video": {
+        // Accept a stored ref back unchanged, or parse a fresh URL.
+        if (raw.provider && raw.videoId && parseVideoRef(
+          raw.provider === "youtube" ? `https://youtu.be/${raw.videoId}` : `https://vimeo.com/${raw.videoId}`)) {
+          w.provider = raw.provider === "vimeo" ? "vimeo" : "youtube"; w.videoId = wStr(raw.videoId, 20);
+        } else {
+          const ref = parseVideoRef(raw.url);
+          if (!ref) return { error: "Videos must be a YouTube or Vimeo link." };
+          w.provider = ref.provider; w.videoId = ref.videoId;
+        }
+        w.caption = wStr(raw.caption, 200);
+        break;
+      }
+      case "give":
+        w.heading = wStr(raw.heading, 120);
+        w.buttonLabel = wStr(raw.buttonLabel, 40) || "Give";
+        break;
+      case "mygiving":
+        break;      // no fields — renders the signed-in donor's own data,
+                    // degrades to a sign-in prompt on a public view
+      default:
+        return { error: "Unknown widget type." };
+    }
+  } catch (e) { return { error: e.message }; }
+  return { widget: w };
+}
+
+async function validateWidgets(rawList, orgId) {
+  if (!Array.isArray(rawList) || rawList.length > 30) return { error: "A page is up to 30 widgets." };
+  const out = [];
+  for (const raw of rawList) {
+    const v = await validateWidget(raw, orgId);
+    if (v.error) return { error: v.error };
+    out.push(v.widget);
+  }
+  return { widgets: out };
+}
+
+// Widget images are reference-counted across BOTH draft and published (one
+// photo can back several widgets and both generations).
+async function pruneWidgetAssets(orgId) {
+  const [row] = await query(`SELECT draft, published FROM portal_pages WHERE org_id = ?`, [orgId]);
+  const keep = [];
+  const collect = (list) => {
+    for (const w of (Array.isArray(list) ? list : [])) {
+      for (const u of [w.image, ...(w.images || []), ...((w.members || []).map(m => m.photo))]) {
+        const m = /^\/portal-assets\/(pa_[a-f0-9]{24})$/.exec(String(u || ""));
+        if (m) keep.push(m[1]);
+      }
+    }
+  };
+  if (row) { collect(row.draft); collect(row.published); }
+  await pruneUnreferencedAssets(orgId, "widget", keep);
+}
+
+// Starter layouts (§4) — an empty org never faces a blank canvas. Content
+// slots are EMPTY or clearly placeholder-labeled; nothing is invented.
+const PORTAL_STARTERS = {
+  story_first: {
+    label: "Story first",
+    widgets: [
+      { type: "hero", heading: "", sub: "", image: null, size: "tall" },
+      { type: "richtext", blocks: [{ type: "p", text: "Tell the story of your work here — in your own words." }] },
+      { type: "mygiving" }, { type: "impact", heading: "What your giving made possible" },
+      { type: "give", heading: "Make a new gift", buttonLabel: "Give" },
+    ],
+  },
+  giving_first: {
+    label: "Giving first",
+    widgets: [
+      { type: "hero", heading: "", sub: "", image: null, size: "standard" },
+      { type: "mygiving" }, { type: "impact", heading: "What your giving made possible" },
+      { type: "funds", heading: "Where you can give", fundIds: [] },
+      { type: "give", heading: "Make a new gift", buttonLabel: "Give" },
+    ],
+  },
+  campaign_first: {
+    label: "Campaign spotlight",
+    widgets: [
+      { type: "hero", heading: "", sub: "", image: null, size: "standard" },
+      { type: "mygiving" },
+      { type: "richtext", blocks: [{ type: "p", text: "Introduce your current campaign here, then add the Campaign widget and pick it." }] },
+      { type: "impact", heading: "What your giving made possible" },
+      { type: "give", heading: "Make a new gift", buttonLabel: "Give" },
+    ],
+  },
+};
+
+// Resolve the PUBLISHED page for donor-facing render. `sessionless` public
+// resolution carries no donor data by construction; the signed-in client
+// layers its own /me data onto the mygiving/impact widgets.
+async function resolvePortalPagePublic(org) {
+  const [row] = await query(`SELECT published FROM portal_pages WHERE org_id = ?`, [org.id]);
+  const widgets = row && Array.isArray(row.published) ? row.published : null;
+  if (!widgets || !widgets.length) return null;
+  const out = [];
+  for (const w of widgets) {
+    const r = { ...w };
+    if (w.type === "funds" && w.fundIds?.length) {
+      r.funds = (await query(
+        `SELECT id, name, restricted, description FROM fin_funds WHERE org_id = ? AND id = ANY(?)`,
+        [org.id, w.fundIds])).map(f => ({ id: f.id, name: f.name, description: f.description || null }));
+    }
+    if (w.type === "campaign") {
+      const [c] = await query(
+        `SELECT id, COALESCE(donor_facing_name, name) AS name, donor_description, donor_story, hero_image_url,
+                goal_progress_public, goal_amount,
+                CASE WHEN goal_progress_public THEN
+                  COALESCE((SELECT SUM(g2.amount - COALESCE(g2.cover_fee_amount,0)) FROM gifts g2
+                            WHERE g2.org_id = campaigns.org_id AND (g2.campaign_id = campaigns.id OR g2.campaign = campaigns.name)), 0)
+                + COALESCE((SELECT SUM(gr.amount) FROM grants gr
+                            WHERE gr.org_id = campaigns.org_id AND gr.campaign_id = campaigns.id AND gr.awarded_at IS NOT NULL), 0)
+                END AS raised
+         FROM campaigns WHERE id = ? AND org_id = ?`, [w.campaignId, org.id]);
+      r.campaign = c ? {
+        id: c.id, name: c.name, description: c.donor_description || null,
+        story: Array.isArray(c.donor_story) ? c.donor_story : null,
+        heroImage: c.hero_image_url || null,
+        goal: c.goal_progress_public === true ? {
+          amount: parseFloat(c.goal_amount) || 0, raised: parseFloat(c.raised) || 0,
+          percent: (parseFloat(c.goal_amount) || 0) > 0
+            ? Math.min(100, Math.round(((parseFloat(c.raised) || 0) / parseFloat(c.goal_amount)) * 100)) : null,
+        } : null,
+      } : null;
+    }
+    if (w.type === "impact") {
+      // Public view: ORG-WIDE published updates only (targeted updates need
+      // gift attribution, which needs a session — the signed-in client
+      // substitutes its matched /me feed).
+      r.updates = (await query(
+        `SELECT id, title, body, photos, created_at FROM impact_updates
+         WHERE org_id = ? AND status = 'published' AND org_wide = true
+         ORDER BY created_at DESC LIMIT 6`, [org.id]))
+        .map(u => ({ id: u.id, title: u.title, body: u.body, photos: Array.isArray(u.photos) ? u.photos : [], date: u.created_at }));
+    }
+    out.push(r);
+  }
+  return { widgets: out, giveSlug: org.org_slug };
+}
+
+// ── §4 CRM editor routes — admin-only, org-scoped BY the staff session (the
+// org id comes from req.user only; no cross-org id exists in this API), and
+// they carry ZERO donor data: edit mode renders SAMPLE donor data client-side.
+app.get("/portal-page", requireAuth, requireAdmin, wrap(async (req, res) => {
+  const [row] = await query(`SELECT * FROM portal_pages WHERE org_id = ?`, [req.user.orgId]);
+  res.json({
+    draft: row?.draft || null, published: row?.published || null,
+    draftUpdatedAt: row?.draft_updated_at || null, publishedAt: row?.published_at || null,
+    starters: Object.entries(PORTAL_STARTERS).map(([key, s]) => ({ key, label: s.label })),
+  });
+}));
+
+// Autosave target — writes the DRAFT only; donors never see it.
+app.put("/portal-page/draft", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
+  const v = await validateWidgets(req.body?.widgets, req.user.orgId);
+  if (v.error) return res.status(400).json({ error: "bad_widgets", message: v.error });
+  await run(
+    `INSERT INTO portal_pages (org_id, draft, draft_updated_at) VALUES (?,?,NOW())
+     ON CONFLICT (org_id) DO UPDATE SET draft = EXCLUDED.draft, draft_updated_at = NOW()`,
+    [req.user.orgId, JSON.stringify(v.widgets)]);
+  await pruneWidgetAssets(req.user.orgId);
+  res.json({ draft: v.widgets, draftUpdatedAt: new Date().toISOString() });
+}));
+
+app.post("/portal-page/publish", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
+  const [row] = await query(`SELECT draft FROM portal_pages WHERE org_id = ?`, [req.user.orgId]);
+  if (!row || !Array.isArray(row.draft)) return res.status(400).json({ error: "nothing_to_publish" });
+  await run(`UPDATE portal_pages SET published = draft, published_at = NOW() WHERE org_id = ?`, [req.user.orgId]);
+  res.json({ published: row.draft, publishedAt: new Date().toISOString() });
+}));
+
+app.post("/portal-page/revert", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
+  const [row] = await query(`SELECT published FROM portal_pages WHERE org_id = ?`, [req.user.orgId]);
+  await run(`UPDATE portal_pages SET draft = published, draft_updated_at = NOW() WHERE org_id = ?`, [req.user.orgId]);
+  await pruneWidgetAssets(req.user.orgId);
+  res.json({ draft: row?.published || null });
+}));
+
+app.post("/portal-page/starter", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
+  const starter = PORTAL_STARTERS[req.body?.key];
+  if (!starter) return res.status(400).json({ error: "unknown_starter" });
+  const v = await validateWidgets(starter.widgets, req.user.orgId);
+  if (v.error) return res.status(400).json({ error: "bad_widgets", message: v.error });
+  await run(
+    `INSERT INTO portal_pages (org_id, draft, draft_updated_at) VALUES (?,?,NOW())
+     ON CONFLICT (org_id) DO UPDATE SET draft = EXCLUDED.draft, draft_updated_at = NOW()`,
+    [req.user.orgId, JSON.stringify(v.widgets)]);
+  res.json({ draft: v.widgets });
+}));
 
 app.put("/portal-settings", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
   const b = req.body || {};

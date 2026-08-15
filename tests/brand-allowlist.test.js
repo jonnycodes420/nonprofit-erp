@@ -81,12 +81,20 @@ ok("EXTRAS never smuggles a banned library color", BANNED.every(v => !EXTRAS.inc
 //   pages/Portal.jsx — BUILD-45 donor portal: a deliberately WHITE-LABEL
 //     public surface that carries the ORG's server-validated theme (CSS vars
 //     + warm neutrals), never Steward's palette — Steward-invisible by design
+//   components/PortalWidgets.jsx — BUILD-54 §4: the portal-page widget
+//     renderer — the SAME white-label surface as Portal.jsx (org theme CSS
+//     vars + the portal's warm neutrals), split into its own file
+//   pages/PortalEditor.jsx — BUILD-54 §4: edit mode renders that same
+//     white-label preview inside a dark editing chrome; neither half is a
+//     Steward-branded CRM surface
 //   components/{Events,Board,Volunteers,Programs,AnnualFund}.jsx — hidden/
 //     deprecated surfaces (pivot backlog, not in any nav; AnnualFund and
 //     Programs are not even imported)
 const EXCLUDE = new Set([
   "pages/AdminDashboard.jsx",
   "pages/Portal.jsx",
+  "components/PortalWidgets.jsx",
+  "pages/PortalEditor.jsx",
   "components/Events.jsx", "components/Board.jsx", "components/Volunteers.jsx",
   "components/Programs.jsx", "components/AnnualFund.jsx",
 ]);

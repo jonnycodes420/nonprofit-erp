@@ -1925,6 +1925,25 @@ async function initSchema() {
   `);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_network_apps_status ON network_applications (status, created_at DESC)`);
 
+  // ═══ BUILD-54 §4 — the portal page: typed widgets, draft/publish ═══════════
+  // ONE page per org (the portal home). draft/published are VALIDATED widget
+  // arrays (validateWidgets in server.js — typed fields only, never raw
+  // HTML/CSS/JS/embeds; images ride the asset seam as /portal-assets paths;
+  // video is stored as {provider, videoId} parsed server-side from an
+  // allowlist). Autosave writes draft; nothing donor-visible until an
+  // explicit publish copies draft → published; revert copies published →
+  // draft. NULL published = the org has never published a page and the
+  // portal renders the BUILD-45 fixed layout unchanged.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS portal_pages (
+      org_id TEXT PRIMARY KEY REFERENCES orgs(id),
+      draft JSONB,
+      published JSONB,
+      draft_updated_at TIMESTAMPTZ,
+      published_at TIMESTAMPTZ
+    )
+  `);
+
   // Record this file's hash LAST — only a fully-completed init marks the
   // schema current, so a crash mid-init re-runs the whole thing next boot.
   await pool.query(

@@ -238,6 +238,52 @@ so the live fast-path observation lands on the Stage 3 push.
   (billing-portal fallback, portal live link). No `href="#"`, no href-less
   `<a onClick>` anywhere in client source — now pinned by the suite's source check.
 
+---
+
+## Stage 3 — §4 widget system
+
+- **Model**: `portal_pages` (one row per org) with `draft`/`published` JSONB widget
+  arrays. Autosave writes the draft; explicit `POST /portal-page/publish` copies
+  draft→published; `revert` copies published→draft. `published NULL` = the org keeps
+  the BUILD-45 fixed layout **byte-identically** (the capture-contract orgs never
+  regress).
+- **Widget library v1** (14 types): hero (size variant = the "resize where sensible"),
+  rich text (the §2 sanitized block format reused), image+caption, gallery, org-entered
+  stats (never computed), funds cards (org's real `fin_funds`, org-owned ids enforced;
+  give buttons link `/give/:slug` — Donate has no per-fund URL param today, noted),
+  campaign spotlight (renders the §2 donor-facing content — content edited in
+  Fundraising, never duplicated), impact feed (org-wide only on the public view;
+  signed-in substitutes the matched /me feed), quote, staff/contact, FAQ, video
+  (**allowlisted YouTube/Vimeo, server-side ID parsing; the stored page can never
+  contain a caller URL or embed code**), give CTA, My Giving (`MyGivingSection`
+  extracted from the legacy layout — one implementation; degrades to the sign-in card
+  on a public view, and a published page without the widget still gets the sign-in
+  card appended so donors always have a way in).
+- **Server validation** (`validateWidget`): typed fields only, unknown types/oversized/
+  foreign ids → 400; widget images ride the asset seam (kind `widget`,
+  reference-counted across draft+published); hostile strings inert.
+- **Editor** (`/portal-editor`, `PortalEditor.jsx`): the BUILD-34 machinery ported —
+  drag reorder with the midpoint rule, keyboard ↑/↓/remove buttons, contextual options
+  panel, add-widget library, debounced autosave with in-flight-edit protection,
+  Publish/Revert, 3 starter layouts (empty/placeholder slots — nothing invented),
+  **phone-default device toggle**, **in-place image drop** (a photo dropped on the
+  hero IS the hero). **Safety**: existing staff session only (RequireOnboarded +
+  npe_token; every endpoint requireAuth+requireAdmin, org from the token alone);
+  renders **SAMPLE donor data only** ("Sam Sample", visible SAMPLE DONOR DATA banner)
+  — the suite pins the editor's API surface to a fixed donor-data-free allowlist and
+  its zero portal-session/donor-endpoint usage at the source level.
+- **Behavior note (documented)**: when an org publishes a page, the §2 *automatic*
+  campaign spotlights of the legacy layout are replaced by the org's own arrangement
+  (the campaign widget); the thank-you state, welcome row, and account nudge persist
+  above the page in both modes.
+- **Tests**: `tests/portal-page.test.js` (40, in run-all): edit-mode authorization
+  (401/staff-403/admin-200 on every route), publish lifecycle (draft invisible →
+  publish → post-publish edits invisible → revert), widget validation battery incl.
+  video allowlist + no-stored-URL, public resolution (real funds, §2 campaign
+  content, org-wide-only impact, **zero donor data in the public config**), goal
+  opt-out flip, org isolation, sample-data-only source contract, starters.
+  Differential sweep + org-blindness re-run in the same gate.
+
 ### Stage 2 tests
 `tests/campaign-impact.test.js` (35, in run-all + the client build's guard chain):
 field round-trip, story sanitization battery, §6 server-parity, donor-facing labeling,

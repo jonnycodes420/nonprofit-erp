@@ -24,6 +24,7 @@ const App                = React.lazy(() => import("./App"));
 const Donate             = React.lazy(() => import("./pages/Donate"));
 const ManageFundraiser   = React.lazy(() => import("./pages/ManageFundraiser"));
 const Portal             = React.lazy(() => import("./pages/Portal")); // BUILD-45 donor portal (public, white-label)
+const PortalEditor       = React.lazy(() => import("./pages/PortalEditor")); // BUILD-54 §4 — staff-session edit mode, sample data only
 // BUILD-46 — the cross-org donor dashboard (Steward's consumer surface) + the
 // gated nonprofit network signup. Both flag-gated server-side; the pages
 // render a quiet unavailable state when the flags are off.
@@ -162,6 +163,10 @@ function Root() {
           <Route path="/invitation" element={<InvitationPage />} />
           {/* BUILD-45 — donor portal (magic-link auth; org-themed; /verify
               consumes the fragment token). */}
+          {/* BUILD-54 §4 — edit mode rides the EXISTING staff session (the
+              RequireOnboarded guard + npe_token); every editor endpoint is
+              requireAdmin + org-scoped server-side. */}
+          <Route path="/portal-editor" element={<RequireOnboarded><PortalEditor /></RequireOnboarded>} />
           <Route path="/portal/:orgSlug" element={<Portal />} />
           <Route path="/portal/:orgSlug/verify" element={<Portal />} />
           {/* BUILD-46 — donor dashboard: home + emailed-token landings + the

@@ -1,0 +1,467 @@
+// BUILD-54 §4 — EDIT MODE: the org edits the portal INSIDE the portal.
+// The real page renderer runs in the org's own theme with an editing chrome
+// layered over it (BUILD-34's Home-editor interaction machinery, ported).
+//
+// SAFETY RULES (non-negotiable, §4):
+//   • Authenticated by the EXISTING staff session (apiFetch/npe_token) — no
+//     new credential, no separate login. Every editor endpoint
+//     (/portal-page*) is requireAuth + requireAdmin and org-scoped by the
+//     token alone.
+//   • Edit mode renders SAMPLE DONOR DATA ONLY — the clearly-labeled
+//     fictional donor below. This file deliberately fetches NO donor data:
+//     no portal session, no /me, no donor endpoints (pinned by
+//     tests/portal-page.test.js's source check).
+//   • Draft/publish: autosave writes the DRAFT; nothing donor-visible until
+//     an explicit Publish; Revert restores the last published page.
+//   • Device toggle: phone and desktop, PHONE DEFAULT (donors arrive from
+//     email on a phone).
+import { useState, useEffect, useRef, useCallback } from "react";
+import { apiFetch, API } from "../api";
+import { PageRenderer } from "../components/PortalWidgets";
+import { resolvePairing, resolveCardStyle } from "../lib/portalTheme";
+import { textToStory, storyToText } from "../lib/storyBlocks";
+import { resolveAssetUrl } from "../lib/assetUrl";
+import Uploader, { IMAGE_ACCEPT, IMAGE_ACCEPT_LABEL, IMAGE_MAX_BYTES } from "../components/Uploader";
+
+// ── The fictional donor (§4: never a real donor's data) ────────────────────
+const SAMPLE_ME = {
+  donorName: "Sam Sample",
+  giving: { ytd: 450, lifetime: 2900 },
+  impact: [{
+    id: "sample_imp", title: "Sample impact update",
+    body: "Published impact updates your donors matched will appear here.",
+    photos: [], date: new Date().toISOString(),
+  }],
+};
+
+const WIDGET_META = {
+  hero:     { label: "Hero",             hint: "Big photo + headline" },
+  richtext: { label: "Rich text",        hint: "Paragraphs, headings, lists" },
+  image:    { label: "Image + caption",  hint: "One photo" },
+  gallery:  { label: "Gallery",          hint: "Up to 8 photos" },
+  stats:    { label: "Stats",            hint: "Your own numbers" },
+  funds:    { label: "Programs & funds", hint: "Cards from your real funds" },
+  campaign: { label: "Campaign",         hint: "A campaign's story + goal" },
+  impact:   { label: "Impact feed",      hint: "Your impact updates" },
+  quote:    { label: "Quote",            hint: "A voice from your community" },
+  staff:    { label: "People & contact", hint: "Faces + a way to reach you" },
+  faq:      { label: "FAQ",              hint: "Questions donors ask" },
+  video:    { label: "Video",            hint: "YouTube or Vimeo link" },
+  give:     { label: "Give button",      hint: "A clear way to give" },
+  mygiving: { label: "My Giving",        hint: "The donor's own history" },
+};
+
+const DEFAULT_WIDGET = {
+  hero: { type: "hero", heading: "", sub: "", image: null, size: "standard" },
+  richtext: { type: "richtext", blocks: [{ type: "p", text: "Write something in your own words." }] },
+  image: { type: "image", image: null, caption: "" },
+  gallery: { type: "gallery", images: [] },
+  stats: { type: "stats", items: [{ value: "", label: "" }] },
+  funds: { type: "funds", heading: "Where you can give", fundIds: [] },
+  campaign: { type: "campaign", campaignId: "" },
+  impact: { type: "impact", heading: "What your giving made possible" },
+  quote: { type: "quote", text: "", attribution: "" },
+  staff: { type: "staff", members: [{ name: "", role: "", photo: null }], contactEmail: "" },
+  faq: { type: "faq", items: [{ q: "", a: "" }] },
+  video: { type: "video", url: "", caption: "" },
+  give: { type: "give", heading: "Make a new gift", buttonLabel: "Give" },
+  mygiving: { type: "mygiving" },
+};
+
+const E = {
+  ink: "#0f1a12", cream: "#f0ede6", gold: "#c9a84c", bg3: "#dcd8cc", terra: "#8a3a24", green: "#0d5c3a",
+};
+const btn = { background: E.gold, color: E.ink, border: "none", borderRadius: 9, padding: "9px 16px", fontSize: 13, fontWeight: 700, cursor: "pointer" };
+const btnQuiet = { background: "transparent", color: E.cream, border: "1px solid #3a4a3e", borderRadius: 9, padding: "8px 14px", fontSize: 13, fontWeight: 600, cursor: "pointer" };
+const inp = { width: "100%", boxSizing: "border-box", padding: "8px 10px", fontSize: 13, border: "1px solid " + E.bg3, borderRadius: 8, fontFamily: "inherit" };
+const lbl = { fontSize: 11, fontWeight: 700, color: "#6b6b64", textTransform: "uppercase", letterSpacing: "0.06em", margin: "10px 0 4px" };
+
+function varsForPs(ps) {
+  const pairing = resolvePairing(ps.type_pairing);
+  const cs = resolveCardStyle(ps.card_style);
+  return {
+    "--pt-primary": ps.primary_color || "#1a6b4a", "--pt-primary-fg": "#ffffff",
+    "--pt-accent": ps.accent_color || "#c9a84c", "--pt-accent-fg": "#ffffff",
+    "--pt-button": ps.button_color || ps.primary_color || "#1a6b4a", "--pt-button-fg": "#ffffff",
+    "--pt-bg": ps.background_tint || "#faf9f6",
+    "--pt-serif": pairing.serif, "--pt-sans": pairing.sans,
+    "--pt-card-radius": cs.radius + "px",
+    "--pt-card-border": cs.borderWidth ? `${cs.borderWidth}px solid #e7e4dc` : "none",
+    "--pt-card-shadow": cs.shadow,
+  };
+}
+
+// Sample My Giving — a clearly-labeled stand-in; NEVER the live component
+// (the live one carries recurring mutations and expects a real session).
+function SampleMyGiving() {
+  return (
+    <div style={{ background: "#fff", border: "var(--pt-card-border,1px solid #e7e4dc)", borderRadius: "var(--pt-card-radius,14px)", padding: "20px 22px", marginBottom: 18 }}>
+      <div style={{ fontFamily: "var(--pt-serif,Georgia,serif)", fontSize: 22, marginBottom: 12 }}>Your giving</div>
+      <div style={{ display: "flex", gap: 28, flexWrap: "wrap" }}>
+        <div><div style={lbl}>This year</div><div style={{ fontSize: 26, fontWeight: 700 }}>$450</div></div>
+        <div><div style={lbl}>Lifetime</div><div style={{ fontSize: 26, fontWeight: 700 }}>$2,900</div></div>
+      </div>
+      <div style={{ fontSize: 12, color: "#6b6b64", marginTop: 10 }}>
+        Signed-in donors see their own history, recurring gifts, and receipts here — this is Sam Sample, a fictional donor.
+      </div>
+    </div>
+  );
+}
+
+function readImageFile(file, cb) {
+  if (!file || !/^image\//.test(file.type) || file.size > IMAGE_MAX_BYTES) return;
+  const r = new FileReader();
+  r.onload = () => cb(r.result);
+  r.readAsDataURL(file);
+}
+
+export default function PortalEditor() {
+  const [widgets, setWidgets] = useState(null);      // null = loading
+  const [meta, setMeta] = useState(null);            // starters, publishedAt…
+  const [ps, setPs] = useState(null);                // theme row (org's own)
+  const [funds, setFunds] = useState([]);
+  const [camps, setCamps] = useState([]);
+  const [device, setDevice] = useState("phone");     // §4: phone DEFAULT
+  const [selected, setSelected] = useState(null);
+  const [saveState, setSaveState] = useState("idle"); // idle|dirty|saving|saved|error
+  const [publishing, setPublishing] = useState(false);
+  const [err, setErr] = useState("");
+  const [dragId, setDragId] = useState(null);
+  const editSeq = useRef(0);
+  const saveTimer = useRef(null);
+
+  useEffect(() => {
+    apiFetch("/portal-page").then(d => { setMeta(d); setWidgets(Array.isArray(d.draft) ? d.draft : []); }).catch(e => setErr(e.message));
+    apiFetch("/portal-settings").then(setPs).catch(() => {});
+    apiFetch("/finance/funds").then(f => setFunds(Array.isArray(f) ? f : [])).catch(() => {});
+    apiFetch("/fundraising/campaigns").then(c => setCamps(Array.isArray(c) ? c : [])).catch(() => {});
+  }, []);
+
+  const scheduleSave = useCallback((next) => {
+    setSaveState("dirty");
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+    const seq = ++editSeq.current;
+    saveTimer.current = setTimeout(async () => {
+      setSaveState("saving"); setErr("");
+      try {
+        const r = await apiFetch("/portal-page/draft", { method: "PUT", body: JSON.stringify({ widgets: next }) });
+        // Adopt the server's canonical draft (data-URI images became asset
+        // paths) ONLY if nothing changed while the request was in flight.
+        if (seq === editSeq.current) { setWidgets(r.draft); setSaveState("saved"); }
+      } catch (e) { setErr(e.message || "Could not save the draft."); setSaveState("error"); }
+    }, 1200);
+  }, []);
+
+  const update = (next) => { setWidgets(next); scheduleSave(next); };
+  const updateWidget = (id, patch) => update(widgets.map(w => w.id === id ? { ...w, ...patch } : w));
+  const removeWidget = (id) => { update(widgets.filter(w => w.id !== id)); if (selected === id) setSelected(null); };
+  const move = (id, dir) => {
+    const i = widgets.findIndex(w => w.id === id);
+    const j = i + dir;
+    if (i < 0 || j < 0 || j >= widgets.length) return;
+    const next = widgets.slice();
+    [next[i], next[j]] = [next[j], next[i]];
+    update(next);
+  };
+  const addWidget = (type) => {
+    const w = { ...DEFAULT_WIDGET[type], id: "new_" + Math.random().toString(36).slice(2, 10) };
+    update([...widgets, w]);
+    setSelected(w.id);
+  };
+  // Drag reorder — BUILD-34's midpoint rule.
+  const onDragOverWidget = (e, overId) => {
+    e.preventDefault();
+    if (!dragId || dragId === overId) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const before = e.clientY < rect.top + rect.height / 2;
+    const from = widgets.findIndex(w => w.id === dragId);
+    let to = widgets.findIndex(w => w.id === overId) + (before ? 0 : 1);
+    if (from < 0 || to < 0) return;
+    if (from < to) to--;
+    if (from === to) return;
+    const next = widgets.slice();
+    const [moved] = next.splice(from, 1);
+    next.splice(to, 0, moved);
+    setWidgets(next);   // save on drop
+  };
+
+  const publish = async () => {
+    if (publishing) return;
+    if (!window.confirm("Publish this page? Donors will see it immediately.")) return;
+    setPublishing(true); setErr("");
+    try {
+      if (saveTimer.current) { clearTimeout(saveTimer.current); }
+      const seq = ++editSeq.current;
+      const r = await apiFetch("/portal-page/draft", { method: "PUT", body: JSON.stringify({ widgets }) });
+      if (seq === editSeq.current) setWidgets(r.draft);
+      await apiFetch("/portal-page/publish", { method: "POST", body: "{}" });
+      const d = await apiFetch("/portal-page");
+      setMeta(d); setSaveState("saved");
+    } catch (e) { setErr(e.message || "Publish failed."); }
+    setPublishing(false);
+  };
+  const revert = async () => {
+    if (!window.confirm("Discard the draft and go back to the last published page?")) return;
+    try {
+      const r = await apiFetch("/portal-page/revert", { method: "POST", body: "{}" });
+      setWidgets(Array.isArray(r.draft) ? r.draft : []);
+      setSelected(null); setSaveState("saved");
+    } catch (e) { setErr(e.message || "Revert failed."); }
+  };
+  const applyStarter = async (key) => {
+    try {
+      const r = await apiFetch("/portal-page/starter", { method: "POST", body: JSON.stringify({ key }) });
+      setWidgets(r.draft); setSaveState("saved");
+    } catch (e) { setErr(e.message || "Could not apply the starter."); }
+  };
+
+  if (err && widgets === null) {
+    return <div style={{ padding: 40, fontFamily: "system-ui" }}>
+      <p>{err}</p>
+      <a href="/dashboard" style={{ color: E.green }}>← Back to Steward</a>
+    </div>;
+  }
+  if (widgets === null || !ps) return <div style={{ padding: 40, fontFamily: "system-ui", color: "#6b6b64" }}>Loading the editor…</div>;
+
+  const themeVars = varsForPs(ps);
+  const selectedWidget = widgets.find(w => w.id === selected) || null;
+  const publicPreviewCtx = {
+    giveSlug: ps.org_slug, me: SAMPLE_ME,
+    renderMyGiving: () => <SampleMyGiving />,
+  };
+  // Resolve display-only data the server resolves for the live page.
+  const resolvedWidgets = widgets.map(w => {
+    if (w.type === "funds") return { ...w, funds: funds.filter(f => (w.fundIds || []).includes(f.id)).map(f => ({ id: f.id, name: f.name, description: f.description || null })) };
+    if (w.type === "campaign") {
+      const c = camps.find(x => x.id === w.campaignId);
+      return { ...w, campaign: c ? {
+        id: c.id, name: c.donorFacingName || c.name, description: c.donorDescription || null,
+        story: c.donorStory || null, heroImage: c.heroImageUrl || null,
+        goal: c.goalProgressPublic ? { amount: c.goalAmount, raised: c.raised, percent: c.goalAmount > 0 ? Math.min(100, Math.round((c.raised / c.goalAmount) * 100)) : null } : null,
+      } : null };
+    }
+    if (w.type === "impact") return { ...w, updates: SAMPLE_ME.impact };
+    return w;
+  });
+
+  const frameWidth = device === "phone" ? 390 : "100%";
+
+  return (
+    <div style={{ minHeight: "100vh", background: "#101a13", fontFamily: "'DM Sans',system-ui,sans-serif", display: "flex", flexDirection: "column" }}>
+      {/* ── Top chrome ── */}
+      <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 16px", background: E.ink, color: E.cream, flexWrap: "wrap" }}>
+        <a href="/dashboard" style={{ color: E.cream, textDecoration: "none", fontSize: 13, fontWeight: 600 }}>← Steward</a>
+        <span style={{ fontFamily: "'DM Serif Display',Georgia,serif", fontSize: 16 }}>Portal editor</span>
+        <span style={{ fontSize: 11, fontWeight: 700, background: E.gold, color: E.ink, borderRadius: 20, padding: "3px 10px" }}>SAMPLE DONOR DATA</span>
+        <div style={{ display: "flex", gap: 6, marginLeft: 8 }}>
+          {["phone", "desktop"].map(d => (
+            <button key={d} onClick={() => setDevice(d)}
+              style={{ ...btnQuiet, padding: "5px 12px", fontSize: 12, background: device === d ? "#2a3a2e" : "transparent", borderColor: device === d ? E.gold : "#3a4a3e" }}>
+              {d === "phone" ? "Phone" : "Desktop"}
+            </button>
+          ))}
+        </div>
+        <span style={{ marginLeft: "auto", fontSize: 12, color: "#8fa896" }}>
+          {saveState === "saving" ? "Saving draft…" : saveState === "dirty" ? "Unsaved edits…" : saveState === "error" ? "Save failed" : meta?.publishedAt ? "Draft autosaves · publish when ready" : "Draft autosaves"}
+        </span>
+        {meta?.publishedAt && <button onClick={revert} style={btnQuiet}>Revert to published</button>}
+        <button onClick={publish} disabled={publishing} style={btn}>{publishing ? "Publishing…" : "Publish"}</button>
+      </div>
+      {err && <div style={{ background: "#f6e3dd", color: E.terra, fontSize: 13, padding: "8px 16px" }}>{err}</div>}
+
+      <div style={{ flex: 1, display: "flex", minHeight: 0 }}>
+        {/* ── Preview ── */}
+        <div style={{ flex: 1, overflowY: "auto", padding: "24px 16px", display: "flex", justifyContent: "center" }}>
+          <div style={{ width: frameWidth, maxWidth: "100%", background: "var(--pt-bg,#faf9f6)", borderRadius: device === "phone" ? 24 : 12, border: "1px solid #2a3a2e", overflow: "hidden", alignSelf: "flex-start", ...themeVars }}>
+            <div style={{ padding: "18px 20px 60px", color: "#1c1c1a", fontFamily: "var(--pt-sans)" }}>
+              <div style={{ fontFamily: "var(--pt-serif,Georgia,serif)", fontSize: 22, margin: "6px 0 18px" }}>{ps.display_name || "Your portal"}</div>
+              {widgets.length === 0 ? (
+                <div style={{ padding: "10px 0 30px" }}>
+                  <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 6 }}>Start with a layout</div>
+                  <div style={{ fontSize: 13, color: "#6b6b64", marginBottom: 14 }}>Pick a starting point — everything stays editable, and nothing is visible to donors until you publish.</div>
+                  {(meta?.starters || []).map(s => (
+                    <button key={s.key} onClick={() => applyStarter(s.key)}
+                      style={{ display: "block", width: "100%", textAlign: "left", background: "#fff", border: "1px solid #e7e4dc", borderRadius: 10, padding: "12px 14px", marginBottom: 8, fontSize: 14, fontWeight: 600, cursor: "pointer" }}>
+                      {s.label}
+                    </button>
+                  ))}
+                </div>
+              ) : resolvedWidgets.map(w => (
+                <div key={w.id} draggable
+                  onDragStart={() => setDragId(w.id)}
+                  onDragEnd={() => { setDragId(null); scheduleSave(widgets); }}
+                  onDragOver={e => onDragOverWidget(e, w.id)}
+                  onClick={() => setSelected(w.id)}
+                  onDrop={["hero", "image"].includes(w.type) ? (e) => {
+                    // §4 — in-place image drop: a photo dropped ON the hero IS the hero.
+                    e.preventDefault(); e.stopPropagation();
+                    readImageFile(e.dataTransfer?.files?.[0], dataUrl => updateWidget(w.id, { image: dataUrl }));
+                  } : undefined}
+                  style={{ position: "relative", outline: selected === w.id ? `2px solid ${E.gold}` : "1px dashed transparent", borderRadius: 8, cursor: "grab" }}
+                  onMouseEnter={e => { if (selected !== w.id) e.currentTarget.style.outline = "1px dashed #c9a84c"; }}
+                  onMouseLeave={e => { if (selected !== w.id) e.currentTarget.style.outline = "1px dashed transparent"; }}>
+                  {/* floating widget controls — keyboard path first-class */}
+                  <div style={{ position: "absolute", top: -10, right: 6, zIndex: 5, display: "flex", gap: 4 }}>
+                    <span style={{ background: E.ink, color: E.cream, fontSize: 10, fontWeight: 700, borderRadius: 6, padding: "3px 8px" }}>{WIDGET_META[w.type]?.label}</span>
+                    <button aria-label="Move up" onClick={e => { e.stopPropagation(); move(w.id, -1); }} style={{ background: E.ink, color: E.cream, border: "none", borderRadius: 6, width: 22, height: 20, fontSize: 11, cursor: "pointer" }}>↑</button>
+                    <button aria-label="Move down" onClick={e => { e.stopPropagation(); move(w.id, +1); }} style={{ background: E.ink, color: E.cream, border: "none", borderRadius: 6, width: 22, height: 20, fontSize: 11, cursor: "pointer" }}>↓</button>
+                    <button aria-label="Remove widget" onClick={e => { e.stopPropagation(); removeWidget(w.id); }} style={{ background: E.terra, color: "#fff", border: "none", borderRadius: 6, width: 22, height: 20, fontSize: 11, cursor: "pointer" }}>✕</button>
+                  </div>
+                  <div style={{ pointerEvents: "none" }}>
+                    <PageRenderer page={{ widgets: [w], giveSlug: ps.org_slug }} ctx={publicPreviewCtx} />
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* ── Right rail: options for the selected widget + the library ── */}
+        <div style={{ width: 320, flexShrink: 0, background: "#f7f5ef", borderLeft: "1px solid #2a3a2e", overflowY: "auto", padding: "16px 16px 40px" }}>
+          {selectedWidget ? (
+            <WidgetOptions w={selectedWidget} funds={funds} camps={camps}
+              onChange={patch => updateWidget(selectedWidget.id, patch)}
+              onClose={() => setSelected(null)} />
+          ) : (
+            <>
+              <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 10 }}>Add a widget</div>
+              {Object.entries(WIDGET_META).map(([type, m]) => (
+                <button key={type} onClick={() => addWidget(type)}
+                  style={{ display: "block", width: "100%", textAlign: "left", background: "#fff", border: "1px solid #e0dcd0", borderRadius: 10, padding: "10px 12px", marginBottom: 6, cursor: "pointer" }}>
+                  <div style={{ fontSize: 13, fontWeight: 700 }}>{m.label}</div>
+                  <div style={{ fontSize: 11.5, color: "#6b6b64" }}>{m.hint}</div>
+                </button>
+              ))}
+              <div style={{ fontSize: 12, color: "#6b6b64", marginTop: 12, lineHeight: 1.5 }}>
+                Tap a widget in the preview to edit it. Drag to reorder — or use the ↑ ↓ buttons.
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function WidgetOptions({ w, funds, camps, onChange, onClose }) {
+  const head = (
+    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+      <div style={{ fontSize: 13, fontWeight: 700 }}>{WIDGET_META[w.type]?.label}</div>
+      <button onClick={onClose} style={{ background: "none", border: "none", fontSize: 13, cursor: "pointer", color: "#6b6b64" }}>Done ✕</button>
+    </div>
+  );
+  const imgUploader = (value, set, label = "Photo") => (
+    <>
+      <div style={lbl}>{label}</div>
+      <Uploader accept={IMAGE_ACCEPT} acceptLabel={IMAGE_ACCEPT_LABEL} maxBytes={IMAGE_MAX_BYTES} compact
+        label={value ? "Replace" : "Add a photo — or drop one straight onto the widget"}
+        onFile={({ dataUrl }) => set(dataUrl)}>
+        {value && (
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 6 }}>
+            <img src={String(value).startsWith("data:") ? value : resolveAssetUrl(value)} alt="" style={{ maxHeight: 48, borderRadius: 6 }} />
+            <button onClick={() => set(null)} style={{ background: "none", border: "1px solid #eac6b8", color: E.terra, borderRadius: 7, padding: "4px 10px", fontSize: 11, cursor: "pointer" }}>Remove</button>
+          </div>
+        )}
+      </Uploader>
+    </>
+  );
+  switch (w.type) {
+    case "hero": return <>{head}
+      <div style={lbl}>Heading</div><input style={inp} value={w.heading || ""} onChange={e => onChange({ heading: e.target.value })} />
+      <div style={lbl}>Subheading</div><textarea style={{ ...inp, resize: "vertical" }} rows={2} value={w.sub || ""} onChange={e => onChange({ sub: e.target.value })} />
+      <div style={lbl}>Size</div>
+      <select style={inp} value={w.size || "standard"} onChange={e => onChange({ size: e.target.value })}>
+        <option value="standard">Standard</option><option value="tall">Tall</option>
+      </select>
+      {imgUploader(w.image, v => onChange({ image: v }))}</>;
+    case "richtext": return <>{head}
+      <div style={lbl}>Text <span style={{ fontWeight: 400, textTransform: "none" }}>(blank line = paragraph, "## " heading, "- " list)</span></div>
+      <textarea style={{ ...inp, resize: "vertical" }} rows={8} value={storyToText(w.blocks)} onChange={e => onChange({ blocks: textToStory(e.target.value) })} /></>;
+    case "image": return <>{head}
+      {imgUploader(w.image, v => onChange({ image: v }))}
+      <div style={lbl}>Caption</div><input style={inp} value={w.caption || ""} onChange={e => onChange({ caption: e.target.value })} /></>;
+    case "gallery": return <>{head}
+      <div style={lbl}>Photos (up to 8)</div>
+      <Uploader accept={IMAGE_ACCEPT} acceptLabel={IMAGE_ACCEPT_LABEL} maxBytes={IMAGE_MAX_BYTES} compact multiple
+        label="Add photos" onFile={({ dataUrl }) => onChange({ images: [...(w.images || []), dataUrl].slice(0, 8) })} />
+      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 8 }}>
+        {(w.images || []).map((u, i) => (
+          <div key={i} style={{ position: "relative" }}>
+            <img src={String(u).startsWith("data:") ? u : resolveAssetUrl(u)} alt="" style={{ height: 48, borderRadius: 6 }} />
+            <button onClick={() => onChange({ images: w.images.filter((_, j) => j !== i) })}
+              style={{ position: "absolute", top: -6, right: -6, background: E.ink, color: "#fff", border: "none", borderRadius: "50%", width: 16, height: 16, fontSize: 9, cursor: "pointer", lineHeight: 1 }}>✕</button>
+          </div>
+        ))}
+      </div></>;
+    case "stats": return <>{head}
+      <div style={{ fontSize: 12, color: "#6b6b64", lineHeight: 1.5, marginBottom: 4 }}>Your own numbers, in your own words — nothing is computed or invented for you.</div>
+      {(w.items || []).map((it, i) => (
+        <div key={i} style={{ display: "flex", gap: 6, marginTop: 6 }}>
+          <input style={{ ...inp, width: 90 }} placeholder="1,200" value={it.value} onChange={e => onChange({ items: w.items.map((x, j) => j === i ? { ...x, value: e.target.value } : x) })} />
+          <input style={inp} placeholder="meals served" value={it.label} onChange={e => onChange({ items: w.items.map((x, j) => j === i ? { ...x, label: e.target.value } : x) })} />
+          <button onClick={() => onChange({ items: w.items.filter((_, j) => j !== i) })} style={{ background: "none", border: "none", color: E.terra, cursor: "pointer" }}>✕</button>
+        </div>
+      ))}
+      {(w.items || []).length < 4 && <button onClick={() => onChange({ items: [...(w.items || []), { value: "", label: "" }] })} style={{ ...btnQuiet, color: E.ink, borderColor: E.bg3, marginTop: 8 }}>+ Add stat</button>}</>;
+    case "funds": return <>{head}
+      <div style={lbl}>Heading</div><input style={inp} value={w.heading || ""} onChange={e => onChange({ heading: e.target.value })} />
+      <div style={lbl}>Funds to show</div>
+      {funds.map(f => (
+        <label key={f.id} style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 13, padding: "4px 0", cursor: "pointer" }}>
+          <input type="checkbox" checked={(w.fundIds || []).includes(f.id)}
+            onChange={e => onChange({ fundIds: e.target.checked ? [...(w.fundIds || []), f.id].slice(0, 6) : (w.fundIds || []).filter(x => x !== f.id) })} />
+          {f.name}
+        </label>
+      ))}
+      {!funds.length && <div style={{ fontSize: 12, color: "#6b6b64" }}>No funds yet — create them in Finance.</div>}</>;
+    case "campaign": return <>{head}
+      <div style={lbl}>Campaign</div>
+      <select style={inp} value={w.campaignId || ""} onChange={e => onChange({ campaignId: e.target.value })}>
+        <option value="">— pick a campaign —</option>
+        {camps.map(c => <option key={c.id} value={c.id}>{c.donorFacingName || c.name}</option>)}
+      </select>
+      <div style={{ fontSize: 12, color: "#6b6b64", marginTop: 8, lineHeight: 1.5 }}>
+        The story, photo, and goal come from the campaign itself — edit them in Fundraising. A campaign with no donor-facing content shows nothing here.
+      </div></>;
+    case "impact": return <>{head}
+      <div style={lbl}>Heading</div><input style={inp} value={w.heading || ""} onChange={e => onChange({ heading: e.target.value })} /></>;
+    case "quote": return <>{head}
+      <div style={lbl}>Quote</div><textarea style={{ ...inp, resize: "vertical" }} rows={3} value={w.text || ""} onChange={e => onChange({ text: e.target.value })} />
+      <div style={lbl}>Attribution</div><input style={inp} value={w.attribution || ""} onChange={e => onChange({ attribution: e.target.value })} /></>;
+    case "staff": return <>{head}
+      {(w.members || []).map((m, i) => (
+        <div key={i} style={{ border: "1px solid #e0dcd0", borderRadius: 8, padding: 8, marginTop: 8 }}>
+          <input style={inp} placeholder="Name" value={m.name} onChange={e => onChange({ members: w.members.map((x, j) => j === i ? { ...x, name: e.target.value } : x) })} />
+          <input style={{ ...inp, marginTop: 6 }} placeholder="Role" value={m.role} onChange={e => onChange({ members: w.members.map((x, j) => j === i ? { ...x, role: e.target.value } : x) })} />
+          {imgUploader(m.photo, v => onChange({ members: w.members.map((x, j) => j === i ? { ...x, photo: v } : x) }), "Photo (optional)")}
+          <button onClick={() => onChange({ members: w.members.filter((_, j) => j !== i) })} style={{ background: "none", border: "none", color: E.terra, fontSize: 12, cursor: "pointer", marginTop: 6 }}>Remove person</button>
+        </div>
+      ))}
+      {(w.members || []).length < 6 && <button onClick={() => onChange({ members: [...(w.members || []), { name: "", role: "", photo: null }] })} style={{ ...btnQuiet, color: E.ink, borderColor: E.bg3, marginTop: 8 }}>+ Add person</button>}
+      <div style={lbl}>Contact email</div><input style={inp} value={w.contactEmail || ""} onChange={e => onChange({ contactEmail: e.target.value })} /></>;
+    case "faq": return <>{head}
+      {(w.items || []).map((it, i) => (
+        <div key={i} style={{ border: "1px solid #e0dcd0", borderRadius: 8, padding: 8, marginTop: 8 }}>
+          <input style={inp} placeholder="Question" value={it.q} onChange={e => onChange({ items: w.items.map((x, j) => j === i ? { ...x, q: e.target.value } : x) })} />
+          <textarea style={{ ...inp, marginTop: 6, resize: "vertical" }} rows={2} placeholder="Answer" value={it.a} onChange={e => onChange({ items: w.items.map((x, j) => j === i ? { ...x, a: e.target.value } : x) })} />
+          <button onClick={() => onChange({ items: w.items.filter((_, j) => j !== i) })} style={{ background: "none", border: "none", color: E.terra, fontSize: 12, cursor: "pointer", marginTop: 6 }}>Remove</button>
+        </div>
+      ))}
+      {(w.items || []).length < 10 && <button onClick={() => onChange({ items: [...(w.items || []), { q: "", a: "" }] })} style={{ ...btnQuiet, color: E.ink, borderColor: E.bg3, marginTop: 8 }}>+ Add question</button>}</>;
+    case "video": return <>{head}
+      <div style={lbl}>YouTube or Vimeo link</div>
+      <input style={inp} placeholder="https://youtu.be/…" value={w.url || (w.videoId ? `(saved ${w.provider} video)` : "")}
+        onChange={e => onChange({ url: e.target.value, provider: undefined, videoId: undefined })} />
+      <div style={{ fontSize: 12, color: "#6b6b64", marginTop: 6, lineHeight: 1.5 }}>Only YouTube and Vimeo links work — the video ID is stored, never pasted embed code.</div>
+      <div style={lbl}>Caption</div><input style={inp} value={w.caption || ""} onChange={e => onChange({ caption: e.target.value })} /></>;
+    case "give": return <>{head}
+      <div style={lbl}>Heading</div><input style={inp} value={w.heading || ""} onChange={e => onChange({ heading: e.target.value })} />
+      <div style={lbl}>Button label</div><input style={inp} value={w.buttonLabel || ""} onChange={e => onChange({ buttonLabel: e.target.value })} /></>;
+    case "mygiving": return <>{head}
+      <div style={{ fontSize: 12.5, color: "#6b6b64", lineHeight: 1.6 }}>
+        Signed-in donors see their own giving history, recurring gifts, and receipts here.
+        On the public page it shows a sign-in prompt instead. Nothing to configure.
+      </div></>;
+    default: return head;
+  }
+}
