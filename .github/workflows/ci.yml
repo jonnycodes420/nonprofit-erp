@@ -53,6 +53,8 @@ jobs:
       STRIPE_API_BASE: http://localhost:5603   # BUILD-45 — donation Stripe client → the portal suite's local mock
       DONOR_ACCOUNTS_ENABLED: "1"              # BUILD-46 feature flags — ON in CI so the suites drive them;
       NETWORK_SIGNUP_ENABLED: "1"              # OFF in prod (unset) until launch
+      MIGC_CONTACT_EMAIL: migc-contact@example.org   # MIGC client-site suite captures the contact
+      MIGC_EMAIL_FROM: noreply@stewardapp.dev        # notification through the :5602 sink
 
     steps:
       - uses: actions/checkout@v4

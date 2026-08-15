@@ -18,7 +18,11 @@
 #        STRIPE_SECRET_KEY=sk_test_dummy STRIPE_WEBHOOK_SECRET=whsec_localtest \
 #        STRIPE_API_BASE=http://localhost:5603 \
 #        DONOR_ACCOUNTS_ENABLED=1 NETWORK_SIGNUP_ENABLED=1 \
+#        MIGC_CONTACT_EMAIL=migc-contact@example.org MIGC_EMAIL_FROM=noreply@stewardapp.dev \
 #        node server.js
+#      (The MIGC_* pair lets the migc suite capture the contact-form
+#      notification through the same :5602 sink; without them the route still
+#      stores rows and the suite's sink assertions fail.)
 #      (STRIPE_API_BASE points the donation Stripe client at the local mock the
 #      portal suite starts on :5603 — BUILD-45's Stripe seam, same pattern as
 #      RESEND_BASE_URL. Other suites never call the Stripe API outbound, so an
@@ -48,7 +52,7 @@ CORE=(
   donor-merge email-links email-polish finance-entity-routing finance-funds finance-gift-stamp finance-overview greeting
   finance-reintegration fundraising gift-attribution goals home home-layout households impact
   import-assign import-both import-combined import-shape import-stage invitation landing-reveal
-  locked-features
+  locked-features migc
   brand-allowlist moves no-emoji notifications officer-chip onboarding-brand palette pipeline pipeline-gating portfolios portfolio-pipeline-consistency reports-cadence setup-checklist solicitations-winrate
   report-truth
   session-cache session-privilege smart-moves state-diff state-diff2 tasks task-due tenant-isolation trial-end upgrade-checkout workflows workflows-e2e

@@ -106,6 +106,15 @@ const app = express();
 // client-spoofable X-Forwarded-For chain that `trust proxy: true` would allow.
 app.set("trust proxy", 1);
 
+// MIGC — Mission Increase Gulf Coast client-website API (routes/migc.js).
+// Mounted BEFORE the SaaS CORS/limiter/body-parsing stack on purpose: the
+// client site is a different browser origin with its own allowlist
+// (MIGC_SITE_ORIGIN), own JSON parsing, and own per-route rate limits, all
+// self-contained in the router — so Steward's own cross-origin policy below
+// stays byte-identical and the global cors() never terminates a /api/migc
+// preflight before the router's policy can answer it.
+app.use("/api/migc", require("./routes/migc").router);
+
 // Fail closed: an explicit, comma-separated allowlist is required to enable
 // cross-origin browser access. If CORS_ORIGIN is ever unset in the deploy
 // environment, fall back to the known production frontend origins rather than "*".
