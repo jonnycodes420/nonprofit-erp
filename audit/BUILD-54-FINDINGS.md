@@ -284,6 +284,15 @@ so the live fast-path observation lands on the Stage 3 push.
   opt-out flip, org isolation, sample-data-only source contract, starters.
   Differential sweep + org-blindness re-run in the same gate.
 
+### Found in passing (pre-existing, NOT fixed here)
+- **Donor-id width collision flake**: donor ids are `d_` + 8 hex chars; the
+  chunked import inserts 500 rows per statement, so ONE global-pkey collision
+  (odds grow with total donors in the DB — the scratch DB accumulates suite
+  orgs) aborts a whole 500-row batch (`batchErrors` reports it, the run loses
+  those rows). Hit once in a pre-push run (import-combined), green on re-run.
+  Worth its own small FIX: ON CONFLICT-safe id retry or wider ids on the
+  import insert path. Not touched in BUILD-54 (money-path import change).
+
 ### Stage 2 tests
 `tests/campaign-impact.test.js` (35, in run-all + the client build's guard chain):
 field round-trip, story sanitization battery, §6 server-parity, donor-facing labeling,
