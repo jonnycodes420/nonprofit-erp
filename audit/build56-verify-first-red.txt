@@ -1,0 +1,84 @@
+— the verify-first probe: theme banner replaced via PUT /portal-settings —
+  PASS  banner v1 stored
+  PASS  banner v1 serves its bytes
+  PASS  banner v2 replaces the pointer
+  PASS  old public URL 404s (a replaced image disappears from the portal)
+  FAIL  RETENTION: the old object's row SURVIVES, soft-deleted (bytes kept) — "ROW IS GONE — bytes destroyed"
+  FAIL  RETENTION: the old bytes are recoverable byte-identically
+  FAIL  HISTORY: a row records which hash WAS the banner (from v1 → to v2, with actor) — []
+  FAIL  HISTORY: the original upload is recorded too (null → v1)
+  PASS  re-upload of identical bytes resurrects the same asset id
+  PASS  resurrected asset serves again
+  FAIL  …and v2 is now the soft-deleted one
+  FAIL  CLEAR keeps the bytes too (soft-deleted, not destroyed)
+  FAIL  clear is in the history (v1 → null)
+
+— probe: impact-update photos —
+  PASS  impact photo stored
+  PASS  photo replaced via the ordinary edit path
+  PASS  old photo URL 404s
+  FAIL  RETENTION: replaced impact photo survives soft-deleted, bytes intact — "ROW IS GONE"
+  FAIL  HISTORY: impact photo pointer changes recorded (create + edit) — []
+  FAIL  deleting the update soft-deletes (not destroys) its photo
+  FAIL  delete is in the history (photos → null)
+
+— probe: campaign hero —
+  PASS  campaign hero stored
+  PASS  hero replaced
+  FAIL  RETENTION: replaced hero survives soft-deleted, bytes intact — "ROW IS GONE"
+  FAIL  HISTORY: hero changes recorded (create + replace) — []
+
+— probe: portal-page widget images —
+  PASS  widget image stored in draft
+  PASS  widget image replaced via draft autosave path
+  FAIL  RETENTION: replaced widget image survives soft-deleted, bytes intact — "ROW IS GONE"
+  FAIL  HISTORY: draft asset-path changes recorded ([w1] → [w2]) — []
+  FAIL  publish recorded in history (published null → [w2])
+
+— restore: soft-delete a banner, restore it, pointer live again —
+  FAIL  banner A soft-deleted by the replacement
+node:internal/modules/cjs/loader:1433
+  throw err;
+  ^
+
+Error: Cannot find module '/Users/jonathanatkinson/nonprofit-erp/scripts/restore-asset.js'
+    at Function._resolveFilename (node:internal/modules/cjs/loader:1430:15)
+    at defaultResolveImpl (node:internal/modules/cjs/loader:1040:19)
+    at resolveForCJSWithHooks (node:internal/modules/cjs/loader:1045:22)
+    at Function._load (node:internal/modules/cjs/loader:1216:25)
+    at wrapModuleLoad (node:internal/modules/cjs/loader:254:19)
+    at Function.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:171:5)
+    at node:internal/main/run_main_module:36:49 {
+  code: 'MODULE_NOT_FOUND',
+  requireStack: []
+}
+
+Node.js v22.23.1
+  FAIL  restore-asset.js un-deletes the object — "node:internal/modules/cjs/loader:1433\n  throw err;\n  ^\n\nError: Cannot find module '/Users/jonathanatkinson/nonprofit-erp/scripts/restore-asset.js'\n    at Function._resolveFilename (node:internal/modules/cjs/loader:1430:15)\n    at defaultResolveImpl (node:internal/modules/cjs/loader:1040:19)\n    at r"
+  FAIL  restored bytes serve BYTE-IDENTICALLY
+  FAIL  --repoint makes the pointer LIVE on the portal again — "/portal-assets/pa_16d370a65599bf33db35f70b"
+  FAIL  the restore itself is history-logged
+
+— purge: 89 days survives, 91 purges, referenced-but-old never purges —
+error: column "deleted_at" of relation "portal_assets" does not exist
+    at /Users/jonathanatkinson/nonprofit-erp/node_modules/pg-pool/index.js:45:11
+    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+    at async /Users/jonathanatkinson/nonprofit-erp/tests/asset-retention.test.js:227:3 {
+  length: 138,
+  severity: 'ERROR',
+  code: '42703',
+  detail: undefined,
+  hint: undefined,
+  position: '26',
+  internalPosition: undefined,
+  internalQuery: undefined,
+  where: undefined,
+  schema: undefined,
+  table: undefined,
+  column: undefined,
+  dataType: undefined,
+  constraint: undefined,
+  file: 'analyze.c',
+  line: '2532',
+  routine: 'transformUpdateTargetList'
+}
