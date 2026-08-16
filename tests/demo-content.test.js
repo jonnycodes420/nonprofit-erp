@@ -34,6 +34,16 @@ for (const f of seedScripts) {
   }
 }
 
+// 1b — NO seed/fix script defaults BASE to prod. seed-build50 was the one
+//      that did; a bare run meant for the scratch stack silently re-PUT the
+//      prod theme and overwrote the real banner (2026-08-15). Prod is always
+//      an explicit BASE= opt-in.
+for (const f of seedScripts) {
+  const src = read(path.join("scripts", f));
+  const m = src.match(/const BASE = process\.env\.BASE \|\| "([^"]+)"/);
+  if (m) ok(/localhost|127\.0\.0\.1/.test(m[1]), `${f} defaults BASE to ${m[1]} — seeds must default to the scratch stack`);
+}
+
 // 2 — The demo photo assets exist, are real JPEGs, and are all distinct files.
 const assets = ["demo-hero-choir.jpg", "demo-impact-exhibition.jpg", "demo-impact-studio.jpg", "demo-campaign-chapel.jpg"];
 const sizes = new Set();

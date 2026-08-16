@@ -32,7 +32,9 @@
 const fs = require("fs");
 const path = require("path");
 
-const BASE = process.env.BASE || "https://nonprofit-erp-production.up.railway.app";
+// Prod is an explicit BASE= opt-in on every seed/fix script (2026-08-15 rule,
+// pinned by tests/demo-content.test.js) — this one used to default to prod.
+const BASE = process.env.BASE || "http://localhost:5601";
 const ADMIN_EMAIL = process.env.ADMIN_EMAIL || "admin@creoarts.org";
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "demo1234";
 const APPLY = process.argv.includes("--apply");

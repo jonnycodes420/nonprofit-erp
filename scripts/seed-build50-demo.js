@@ -30,9 +30,16 @@
 // with xjca2006@gmail.com, click the verify link, and both orgs link
 // automatically.
 //
-//   node scripts/seed-build50-demo.js            # prod
-//   BASE=http://localhost:5601 node scripts/...  # scratch stack
-const BASE = process.env.BASE || "https://nonprofit-erp-production.up.railway.app";
+//   node scripts/seed-build50-demo.js                      # scratch stack
+//   BASE=https://nonprofit-erp-production.up.railway.app \
+//     node scripts/seed-build50-demo.js                    # prod (explicit opt-in)
+//
+// DEFAULT IS LOCALHOST — this script used to default to PROD, the only seed
+// that did, and a bare run meant to seed the local capture fixture silently
+// re-PUT the prod theme (overwrote the real banner with the SVG placeholder
+// band, 2026-08-15 — restored from saved bytes). Prod is ALWAYS an explicit
+// BASE=, on every seed. Pinned by tests/demo-content.test.js.
+const BASE = process.env.BASE || "http://localhost:5601";
 const CREO_EMAIL = process.env.CREO_EMAIL || "admin@creoarts.org";
 const CREO_PASSWORD = process.env.CREO_PASSWORD || "demo1234";
 const DEMO2_EMAIL = process.env.DEMO2_EMAIL || "xjca2006+b50demo@gmail.com";
