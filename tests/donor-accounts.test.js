@@ -98,6 +98,10 @@ async function fixture() {
   const s1 = await raw("POST", "/account/signup", { body: { email: EMAIL, password: "firstpass99", consent: true } });
   await settle();
   ok("signup 200 with a neutral body", s1.status === 200 && s1.body.received === true, s1.body);
+  // The signup send rides the fire-and-forget queued path behind a cost-12
+  // bcrypt hash — on a contended CI runner it can outlast one settle() (hit
+  // twice on 2026-08-16). Poll up to ~8s instead of racing a fixed wait.
+  for (let i = 0; i < 16 && mailTo(EMAIL).length === 0; i++) await settle();
   ok("verification email sent to the address", mailTo(EMAIL).length === 1, mailTo(EMAIL).length);
   const s2 = await raw("POST", "/account/signup", { body: { email: EMAIL, password: "differentpw1", consent: true } });
   await settle();
