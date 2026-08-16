@@ -1873,6 +1873,46 @@ async function initSchema() {
   `);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_portal_assets_org ON portal_assets(org_id, kind)`);
 
+  // ── BUILD-56 — asset retention & undo ────────────────────────────────────
+  // Destruction of an org's uploaded branding is impossible-by-default:
+  //   • a refcount-zero asset is SOFT-DELETED (deleted_at stamped, bytes kept
+  //     in whichever store) for ASSET_RETENTION_DAYS (assetStore.js), then
+  //     destroyed by the logged purge sweep — the ONE destruction seam;
+  //   • every mutation of a row that points at a content-addressed asset
+  //     appends an asset_pointer_history row (which hash WAS the banner —
+  //     the other half of recovery). History rows are tiny and are kept
+  //     INDEFINITELY on purpose: they are the index into everything else;
+  //   • every actual destruction is recorded in asset_purge_log.
+  // Pinned by tests/asset-retention.test.js (incl. the one-seam battery).
+  await pool.query(`ALTER TABLE portal_assets ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_portal_assets_deleted ON portal_assets(deleted_at) WHERE deleted_at IS NOT NULL`);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS asset_pointer_history (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL,
+      entity TEXT NOT NULL,
+      entity_id TEXT NOT NULL,
+      from_value JSONB,
+      to_value JSONB,
+      actor_user_id TEXT,
+      actor_email TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_asset_ptr_hist_org ON asset_pointer_history(org_id, created_at DESC)`);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS asset_purge_log (
+      id TEXT PRIMARY KEY,
+      asset_id TEXT NOT NULL,
+      org_id TEXT NOT NULL,
+      kind TEXT NOT NULL,
+      bytes INTEGER,
+      storage TEXT,
+      soft_deleted_at TIMESTAMPTZ,
+      purged_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+
   // A follow is DASHBOARD-SIDE state only: a donor added a listed org whose
   // records don't (yet) match a verified email. Zero giving history rides it,
   // and it is INVISIBLE to the org — same WALL rule as donor_account* tables:

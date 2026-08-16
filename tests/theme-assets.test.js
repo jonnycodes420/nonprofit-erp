@@ -120,12 +120,12 @@ async function fixture() {
   console.log("\n— content addressing —");
   const again = await api("PUT", "/portal-settings", tokA, { headerImageData: pngUri(1200, 300) });
   ok("identical bytes → identical URL (no new asset)", again.body.header_image_url === headerUrl);
-  const c1 = await q(`SELECT COUNT(*)::int n FROM portal_assets WHERE org_id=$1 AND kind='header'`, [ORG_A]);
+  const c1 = await q(`SELECT COUNT(*)::int n FROM portal_assets WHERE org_id=$1 AND kind='header' AND deleted_at IS NULL`, [ORG_A]);
   ok("still exactly one header asset", c1[0].n === 1);
   const put2 = await api("PUT", "/portal-settings", tokA, { headerImageData: pngUri(1600, 400) });
   ok("new bytes → NEW URL (immutable caching stays truthful)", put2.body.header_image_url !== headerUrl && /^\/portal-assets\/pa_/.test(put2.body.header_image_url));
-  const c2 = await q(`SELECT COUNT(*)::int n FROM portal_assets WHERE org_id=$1 AND kind='header'`, [ORG_A]);
-  ok("stale header asset pruned on replace", c2[0].n === 1);
+  const c2 = await q(`SELECT COUNT(*)::int n FROM portal_assets WHERE org_id=$1 AND kind='header' AND deleted_at IS NULL`, [ORG_A]);
+  ok("stale header asset pruned on replace (BUILD-56: soft-deleted, live count stays 1)", c2[0].n === 1);
   ok("old URL now 404s", (await fetch(BASE + headerUrl)).status === 404);
   const echo = await api("PUT", "/portal-settings", tokA, { headerImageData: put2.body.header_image_url, displayName: "Asset Arts" });
   ok("client echoing the stored URL on an unrelated save is a NO-OP", echo.body.header_image_url === put2.body.header_image_url && echo.body.header_image_data === null);
@@ -134,8 +134,8 @@ async function fixture() {
   console.log("\n— clear —");
   const cleared = await api("PUT", "/portal-settings", tokA, { headerImageData: "" });
   ok("clear nulls both columns", cleared.body.header_image_url === null && cleared.body.header_image_data === null);
-  const c3 = await q(`SELECT COUNT(*)::int n FROM portal_assets WHERE org_id=$1 AND kind='header'`, [ORG_A]);
-  ok("cleared asset row deleted", c3[0].n === 0);
+  const c3 = await q(`SELECT COUNT(*)::int n FROM portal_assets WHERE org_id=$1 AND kind='header' AND deleted_at IS NULL`, [ORG_A]);
+  ok("cleared asset no longer live (BUILD-56: soft-deleted into the retention window)", c3[0].n === 0);
   ok("cleared URL 404s", (await fetch(BASE + put2.body.header_image_url)).status === 404);
 
   // ── 6) validation: type + size + DIMENSIONS ───────────────────────────────
@@ -175,9 +175,10 @@ async function fixture() {
   console.log("\n— store invariants —");
   ok("same bytes in different orgs mint different ids (org-salted)",
     mig.body.header_image_url !== svgOk.body.header_image_url);
-  ok("assetIdFor is deterministic and matches the pinned format",
-    assetIdFor("o1", "image/png", Buffer.from("x")) === assetIdFor("o1", "image/png", Buffer.from("x"))
-    && ASSET_ID_RE.test(assetIdFor("o1", "image/png", Buffer.from("x"))));
+  ok("assetIdFor is deterministic, kind-salted (BUILD-56), and matches the pinned format",
+    assetIdFor("o1", "logo", "image/png", Buffer.from("x")) === assetIdFor("o1", "logo", "image/png", Buffer.from("x"))
+    && assetIdFor("o1", "logo", "image/png", Buffer.from("x")) !== assetIdFor("o1", "impact", "image/png", Buffer.from("x"))
+    && ASSET_ID_RE.test(assetIdFor("o1", "logo", "image/png", Buffer.from("x"))));
   const sig = _signedS3Request({ endpoint: "https://s.example.com", bucket: "b", key: "AK", secret: "SK", region: "auto", urlStyle: "path" }, "PUT", "k/1", Buffer.from("hi"));
   ok("SigV4 request shape (credentialed, signed host+date+payload-hash)",
     sig.url === "https://s.example.com/b/k/1"
@@ -211,10 +212,10 @@ async function fixture() {
   ok("echoing stored paths on edit is a no-op", echo2.status === 200 && echo2.body.photos.join() === [ph0, ph1].join());
   const add3 = await api("PUT", `/impact-updates/${upId}`, tokA, { photos: [ph0, ph1, pngUri(900, 600)] });
   ok("adding a third photo stores one more asset", add3.body.photos.length === 3
-    && (await q(`SELECT COUNT(*)::int AS n FROM portal_assets WHERE org_id=$1 AND kind='impact'`, [ORG_A]))[0].n === 3);
+    && (await q(`SELECT COUNT(*)::int AS n FROM portal_assets WHERE org_id=$1 AND kind='impact' AND deleted_at IS NULL`, [ORG_A]))[0].n === 3);
   const rm = await api("PUT", `/impact-updates/${upId}`, tokA, { photos: [ph0] });
   ok("removing photos PRUNES their assets", rm.body.photos.join() === ph0
-    && (await q(`SELECT COUNT(*)::int AS n FROM portal_assets WHERE org_id=$1 AND kind='impact'`, [ORG_A]))[0].n === 1);
+    && (await q(`SELECT COUNT(*)::int AS n FROM portal_assets WHERE org_id=$1 AND kind='impact' AND deleted_at IS NULL`, [ORG_A]))[0].n === 1);
   ok("removed photo URL 404s", (await fetch(BASE + ph1)).status === 404);
   const mk2 = await api("POST", "/impact-updates", tokA, { title: "Shares a photo", orgWide: true, photos: [ph0] });
   ok("a second update can reference the same stored photo", mk2.status === 201 && mk2.body.photos[0] === ph0);
@@ -222,7 +223,7 @@ async function fixture() {
   ok("deleting update 1 KEEPS the photo update 2 still references", (await fetch(BASE + ph0)).status === 200);
   await api("DELETE", `/impact-updates/${mk2.body.id}`, tokA);
   ok("deleting the last referencing update prunes the photo", (await fetch(BASE + ph0)).status === 404
-    && (await q(`SELECT COUNT(*)::int AS n FROM portal_assets WHERE org_id=$1 AND kind='impact'`, [ORG_A]))[0].n === 0);
+    && (await q(`SELECT COUNT(*)::int AS n FROM portal_assets WHERE org_id=$1 AND kind='impact' AND deleted_at IS NULL`, [ORG_A]))[0].n === 0);
 
   // caps + validation
   const six = await api("POST", "/impact-updates", tokA, {

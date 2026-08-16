@@ -68,7 +68,7 @@ const { google } = require("googleapis");
 const { Webhook: SvixWebhook } = require("svix");
 const { donationStripeKey, billingStripeKey, billingStripeMode, billingConfigError, otherBillingMode } = require("./stripeKeys");
 const { CANONICAL_APP_URL, resolvePublicAppUrl, publicAppUrl } = require("./publicUrl");
-const { putThemeAsset, getThemeAsset, pruneThemeAssets, pruneUnreferencedAssets, refreshAssetFallbackCount, assetHealth, ASSET_ID_RE } = require("./assetStore");
+const { putThemeAsset, getThemeAsset, pruneThemeAssets, pruneUnreferencedAssets, refreshAssetFallbackCount, refreshRetentionCounts, purgeExpiredAssets, assetHealth, ASSET_ID_RE } = require("./assetStore");
 const { imageSize } = require("image-size");
 const { computeTrialEnd } = require("./trialEnd");
 
@@ -7929,7 +7929,15 @@ app.put("/campaigns/:id", requireAuth, checkWriteAccess, wrap(async (req, res) =
 }));
 
 app.delete("/campaigns/:id", requireAuth, requireAdmin, wrap(async (req, res) => {
+  // BUILD-56 — a deleted campaign's hero drops to refcount zero: prune it
+  // into the retention window (it used to linger live but unreachable) and
+  // record the pointer removal.
+  const [ex] = await query("SELECT hero_image_url FROM campaigns WHERE id = ? AND org_id = ?", [req.params.id, req.user.orgId]);
   await run("DELETE FROM campaigns WHERE id = ? AND org_id = ?", [req.params.id, req.user.orgId]);
+  if (ex?.hero_image_url) {
+    await pruneCampaignAssets(req.user.orgId);
+    await recordAssetPointerHistory(req.user.orgId, "campaign.hero", req.params.id, ex.hero_image_url, null, req.user);
+  }
   res.json({ success: true });
 }));
 
@@ -8355,13 +8363,17 @@ app.post("/fundraising/campaigns", requireAuth, checkWriteAccess, wrap(async (re
   if (df.sets.length) {
     await run(`UPDATE campaigns SET ${df.sets.join(", ")} WHERE id = ? AND org_id = ?`, [...df.params, id, req.user.orgId]);
   }
+  if (req.body.heroImageData !== undefined) {
+    const [c] = await query(`SELECT hero_image_url FROM campaigns WHERE id = ?`, [id]);
+    await recordAssetPointerHistory(req.user.orgId, "campaign.hero", id, null, c?.hero_image_url || null, req.user);
+  }
   const rows = await fundraisingCampaignRows(req.user.orgId);
   res.status(201).json(rows.find(r => r.id === id) || { id });
 }));
 
 app.put("/fundraising/campaigns/:id", requireAuth, checkWriteAccess, wrap(async (req, res) => {
   const { name, goalAmount, startDate, endDate, goalCategory, parentGoalId } = req.body;
-  const existing = await query("SELECT id FROM campaigns WHERE id=? AND org_id=?", [req.params.id, req.user.orgId]);
+  const existing = await query("SELECT id, hero_image_url FROM campaigns WHERE id=? AND org_id=?", [req.params.id, req.user.orgId]);
   if (!existing.length) return res.status(404).json({ error: "Campaign not found" });
   if (goalAmount !== undefined) {
     const goal = parseFloat(goalAmount);
@@ -8392,7 +8404,13 @@ app.put("/fundraising/campaigns/:id", requireAuth, checkWriteAccess, wrap(async 
     await run(`UPDATE campaigns SET ${df.sets.join(", ")} WHERE id = ? AND org_id = ?`, [...df.params, req.params.id, req.user.orgId]);
     // A replaced/cleared hero leaves no orphaned asset (content addressing —
     // one photo may back several campaigns; reference-counted like impact).
-    if (req.body.heroImageData !== undefined) await pruneCampaignAssets(req.user.orgId);
+    // BUILD-56: prune = soft delete + a pointer-history row.
+    if (req.body.heroImageData !== undefined) {
+      await pruneCampaignAssets(req.user.orgId);
+      const [c] = await query(`SELECT hero_image_url FROM campaigns WHERE id = ?`, [req.params.id]);
+      await recordAssetPointerHistory(req.user.orgId, "campaign.hero", req.params.id,
+        existing[0].hero_image_url || null, c?.hero_image_url || null, req.user);
+    }
   }
   const rows = await fundraisingCampaignRows(req.user.orgId);
   res.json(rows.find(r => r.id === req.params.id) || { id: req.params.id });
@@ -13493,14 +13511,23 @@ if (!backgroundTicksDisabled()) {
   setInterval(() => processWorkflowSweeps().catch(console.error), 5 * 60 * 1000);
 }
 // BUILD-51b — keep /health's themeAssets.dbFallbackRows fresh (failed-S3-put
-// visibility); same 5-min cadence, never a second scheduler.
+// visibility); same 5-min cadence, never a second scheduler. BUILD-56 adds
+// the softDeleted (restorable) count on the same tick.
 if (!backgroundTicksDisabled()) {
   setTimeout(() => refreshAssetFallbackCount().catch(console.error), 20000);
   setInterval(() => refreshAssetFallbackCount().catch(console.error), 5 * 60 * 1000);
+  setTimeout(() => refreshRetentionCounts().catch(console.error), 20000);
+  setInterval(() => refreshRetentionCounts().catch(console.error), 5 * 60 * 1000);
+  // BUILD-56 Part 4 — the retention purge: destroys objects soft-deleted more
+  // than ASSET_RETENTION_DAYS ago (never a referenced one; every destruction
+  // logged in asset_purge_log). 6-hour cadence like checkTrialExpiry.
+  setTimeout(() => purgeExpiredAssets().catch(console.error), 90000);
+  setInterval(() => purgeExpiredAssets().catch(console.error), 6 * 60 * 60 * 1000);
 } else {
-  // Ticks off (test boot): populate the /health counter once at load — a
-  // read-only count, no mail/state side effects — so the field isn't stale.
+  // Ticks off (test boot): populate the /health counters once at load — a
+  // read-only count, no mail/state side effects — so the fields aren't stale.
   refreshAssetFallbackCount().catch(console.error);
+  refreshRetentionCounts().catch(console.error);
 }
 
 // ── Workflow routes ─────────────────────────────────────────────────────────
@@ -16228,6 +16255,13 @@ app.get("/portal-assets/:id", wrap(async (req, res) => {
   res.send(asset.buffer);
 }));
 
+// BUILD-56 Part 4 — ops/test hook for the retention purge (drives the exact
+// sweep path for the caller's org NOW; same bar as /workflows/run-sweeps).
+// The scheduled sweep runs org-wide on the 6-hour tick below.
+app.post("/assets/run-purge", requireAuth, requireAdmin, wrap(async (req, res) => {
+  res.json(await purgeExpiredAssets({ orgId: req.user.orgId }));
+}));
+
 app.get("/portal-settings", requireAuth, wrap(async (req, res) => {
   await run(`INSERT INTO portal_settings (org_id) VALUES (?) ON CONFLICT (org_id) DO NOTHING`, [req.user.orgId]);
   const [ps] = await query(`SELECT * FROM portal_settings WHERE org_id = ?`, [req.user.orgId]);
@@ -16268,6 +16302,37 @@ function validPortalImage(dataUri, capBytes) {
   if (typeof dataUri !== "string" || dataUri.length > capBytes) return false;
   const m = dataUri.match(/^data:([^;]+);base64,/);
   return !!m && PORTAL_IMG_MIMES.includes(m[1]);
+}
+
+// ── BUILD-56 Part 1 — pointer history ───────────────────────────────────────
+// Retained bytes are useless if nothing records which hash WAS the banner.
+// Every mutation of a row that points at a content-addressed asset appends a
+// history row: entity, from → to, when, actor. No-op when nothing changed.
+// Rows are tiny and kept INDEFINITELY — they are the index into recovery.
+async function recordAssetPointerHistory(orgId, entity, entityId, fromVal, toVal, actor) {
+  const f = fromVal === undefined ? null : fromVal;
+  const t = toVal === undefined ? null : toVal;
+  if (JSON.stringify(f) === JSON.stringify(t)) return;
+  await run(
+    `INSERT INTO asset_pointer_history (id, org_id, entity, entity_id, from_value, to_value, actor_user_id, actor_email)
+     VALUES (?,?,?,?,?,?,?,?)`,
+    ["aph_" + uuid().slice(0, 8), orgId, entity, entityId, JSON.stringify(f), JSON.stringify(t),
+     actor?.userId || null, actor?.email || null]);
+}
+
+// BUILD-56 — a legacy IN-ROW base64 image (a pre-BUILD-51 row that never
+// re-saved through the asset seam) being replaced or cleared would be
+// destroyed with the old row value, outside the retention window entirely.
+// Rescue it into the asset store first — it lands unreferenced, so the very
+// next prune soft-deletes it into the 90-day window — and record ITS path as
+// the history from-value.
+async function rescueLegacyImageValue(orgId, kind, dataUri) {
+  const m = typeof dataUri === "string" ? dataUri.match(/^data:([^;]+);base64,(.*)$/s) : null;
+  if (!m) return null;
+  try {
+    const asset = await putThemeAsset({ orgId, kind, buffer: Buffer.from(m[2], "base64"), contentType: m[1] });
+    return asset.path;
+  } catch (e) { console.error("[assets] legacy-image rescue failed:", e.message); return "legacy:unrecoverable"; }
 }
 
 // BUILD-51b — impact-update photos ride the same asset seam as theme images.
@@ -16505,20 +16570,27 @@ async function validateWidgets(rawList, orgId) {
   return { widgets: out };
 }
 
+// Every asset path a widget list references (BUILD-56: also the pointer-
+// history value for portal_pages — the paths, not the whole JSONB, so history
+// rows stay tiny while still recording which hashes were on the page).
+function extractWidgetAssetPaths(list) {
+  const out = [];
+  for (const w of (Array.isArray(list) ? list : [])) {
+    for (const u of [w.image, ...(w.images || []), ...((w.members || []).map(m => m && m.photo))]) {
+      if (/^\/portal-assets\/pa_[a-f0-9]{24}$/.test(String(u || ""))) out.push(u);
+    }
+  }
+  return out;
+}
+const widgetPathsOrNull = (list) => { const p = extractWidgetAssetPaths(list); return p.length ? p : null; };
+
 // Widget images are reference-counted across BOTH draft and published (one
 // photo can back several widgets and both generations).
 async function pruneWidgetAssets(orgId) {
   const [row] = await query(`SELECT draft, published FROM portal_pages WHERE org_id = ?`, [orgId]);
-  const keep = [];
-  const collect = (list) => {
-    for (const w of (Array.isArray(list) ? list : [])) {
-      for (const u of [w.image, ...(w.images || []), ...((w.members || []).map(m => m.photo))]) {
-        const m = /^\/portal-assets\/(pa_[a-f0-9]{24})$/.exec(String(u || ""));
-        if (m) keep.push(m[1]);
-      }
-    }
-  };
-  if (row) { collect(row.draft); collect(row.published); }
+  const keep = row
+    ? [...extractWidgetAssetPaths(row.draft), ...extractWidgetAssetPaths(row.published)].map(p => p.replace("/portal-assets/", ""))
+    : [];
   await pruneUnreferencedAssets(orgId, "widget", keep);
 }
 
@@ -16630,25 +16702,32 @@ app.get("/portal-page", requireAuth, requireAdmin, wrap(async (req, res) => {
 app.put("/portal-page/draft", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
   const v = await validateWidgets(req.body?.widgets, req.user.orgId);
   if (v.error) return res.status(400).json({ error: "bad_widgets", message: v.error });
+  const [prev] = await query(`SELECT draft FROM portal_pages WHERE org_id = ?`, [req.user.orgId]);
   await run(
     `INSERT INTO portal_pages (org_id, draft, draft_updated_at) VALUES (?,?,NOW())
      ON CONFLICT (org_id) DO UPDATE SET draft = EXCLUDED.draft, draft_updated_at = NOW()`,
     [req.user.orgId, JSON.stringify(v.widgets)]);
   await pruneWidgetAssets(req.user.orgId);
+  await recordAssetPointerHistory(req.user.orgId, "portal_page.draft", req.user.orgId,
+    widgetPathsOrNull(prev?.draft), widgetPathsOrNull(v.widgets), req.user);
   res.json({ draft: v.widgets, draftUpdatedAt: new Date().toISOString() });
 }));
 
 app.post("/portal-page/publish", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
-  const [row] = await query(`SELECT draft FROM portal_pages WHERE org_id = ?`, [req.user.orgId]);
+  const [row] = await query(`SELECT draft, published FROM portal_pages WHERE org_id = ?`, [req.user.orgId]);
   if (!row || !Array.isArray(row.draft)) return res.status(400).json({ error: "nothing_to_publish" });
   await run(`UPDATE portal_pages SET published = draft, published_at = NOW() WHERE org_id = ?`, [req.user.orgId]);
+  await recordAssetPointerHistory(req.user.orgId, "portal_page.published", req.user.orgId,
+    widgetPathsOrNull(row.published), widgetPathsOrNull(row.draft), req.user);
   res.json({ published: row.draft, publishedAt: new Date().toISOString() });
 }));
 
 app.post("/portal-page/revert", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
-  const [row] = await query(`SELECT published FROM portal_pages WHERE org_id = ?`, [req.user.orgId]);
+  const [row] = await query(`SELECT draft, published FROM portal_pages WHERE org_id = ?`, [req.user.orgId]);
   await run(`UPDATE portal_pages SET draft = published, draft_updated_at = NOW() WHERE org_id = ?`, [req.user.orgId]);
   await pruneWidgetAssets(req.user.orgId);
+  await recordAssetPointerHistory(req.user.orgId, "portal_page.draft", req.user.orgId,
+    widgetPathsOrNull(row?.draft), widgetPathsOrNull(row?.published), req.user);
   res.json({ draft: row?.published || null });
 }));
 
@@ -16657,10 +16736,13 @@ app.post("/portal-page/starter", requireAuth, requireAdmin, checkWriteAccess, wr
   if (!starter) return res.status(400).json({ error: "unknown_starter" });
   const v = await validateWidgets(starter.widgets, req.user.orgId);
   if (v.error) return res.status(400).json({ error: "bad_widgets", message: v.error });
+  const [prev] = await query(`SELECT draft FROM portal_pages WHERE org_id = ?`, [req.user.orgId]);
   await run(
     `INSERT INTO portal_pages (org_id, draft, draft_updated_at) VALUES (?,?,NOW())
      ON CONFLICT (org_id) DO UPDATE SET draft = EXCLUDED.draft, draft_updated_at = NOW()`,
     [req.user.orgId, JSON.stringify(v.widgets)]);
+  await recordAssetPointerHistory(req.user.orgId, "portal_page.draft", req.user.orgId,
+    widgetPathsOrNull(prev?.draft), widgetPathsOrNull(v.widgets), req.user);
   res.json({ draft: v.widgets });
 }));
 
@@ -16727,14 +16809,21 @@ app.put("/portal-settings", requireAuth, requireAdmin, checkWriteAccess, wrap(as
   // legacy *_data column is nulled. The client may echo back the stored URL
   // on an unrelated save — that's a no-op, not a re-upload. "" clears.
   const assetOps = []; // deferred until after the row UPDATE
+  // BUILD-56 — the current pointers, read up front so every change appends a
+  // pointer-history row (the from-half of recovery).
+  const [curPtr] = await query(`SELECT logo_url, logo_data, header_image_url, header_image_data FROM portal_settings WHERE org_id = ?`, [req.user.orgId]);
   for (const [key, colBase, kind] of [["logoData", "logo", "logo"], ["headerImageData", "header_image", "header"]]) {
     const v = b[key];
     if (v === undefined) continue;
     if (typeof v === "string" && (v.startsWith("/portal-assets/") || ASSET_ID_RE.test(v.replace("/portal-assets/", "")))) continue; // echo of the stored URL — keep
+    // The pointer being replaced: the stored URL, or a legacy in-row base64
+    // rescued into the store so the old bytes land in the retention window.
+    let fromVal = curPtr?.[`${colBase}_url`] || null;
+    if (!fromVal && curPtr?.[`${colBase}_data`]) fromVal = await rescueLegacyImageValue(req.user.orgId, kind, curPtr[`${colBase}_data`]);
     if (v == null || v === "") {
       updates.push(`${colBase}_data = ?`); params.push(null);
       updates.push(`${colBase}_url = ?`); params.push(null);
-      assetOps.push({ kind, keepId: null });
+      assetOps.push({ kind, keepId: null, entity: `portal_settings.${colBase}`, fromVal, toVal: null });
       continue;
     }
     if (!validPortalImage(v, 500000)) return res.status(400).json({ error: "bad_image", message: "Images must be PNG/JPEG/GIF/WebP/SVG under ~350KB." });
@@ -16747,7 +16836,7 @@ app.put("/portal-settings", requireAuth, requireAdmin, checkWriteAccess, wrap(as
     const asset = await putThemeAsset({ orgId: req.user.orgId, kind, buffer, contentType, width: dims.width, height: dims.height });
     updates.push(`${colBase}_url = ?`); params.push(asset.path);
     updates.push(`${colBase}_data = ?`); params.push(null);
-    assetOps.push({ kind, keepId: asset.id });
+    assetOps.push({ kind, keepId: asset.id, entity: `portal_settings.${colBase}`, fromVal, toVal: asset.path });
   }
   if (updates.length) {
     updates.push("updated_at = NOW()");
@@ -16755,7 +16844,11 @@ app.put("/portal-settings", requireAuth, requireAdmin, checkWriteAccess, wrap(as
   }
   // Prune stale assets only AFTER the row points at the replacement (a serve
   // of the old URL during the window is fine; a dangling row URL is not).
-  for (const op of assetOps) await pruneThemeAssets(req.user.orgId, op.kind, op.keepId);
+  // BUILD-56: prune = soft delete; the pointer change is history-logged.
+  for (const op of assetOps) {
+    await pruneThemeAssets(req.user.orgId, op.kind, op.keepId);
+    await recordAssetPointerHistory(req.user.orgId, op.entity, req.user.orgId, op.fromVal, op.toVal, req.user);
+  }
   const [ps] = await query(`SELECT * FROM portal_settings WHERE org_id = ?`, [req.user.orgId]);
   res.json({ ...ps, adjusted, ...(adjusted ? { message: tintAdjusted
     ? "Your colors were adjusted slightly so text stays readable (WCAG AA) — light accents are deepened, dark backgrounds lightened."
@@ -16799,8 +16892,21 @@ app.post("/impact-updates", requireAuth, requireAdmin, checkWriteAccess, wrap(as
      VALUES (?,?,?,?,?,?,?,?,?)`,
     [id, req.user.orgId, title, body, JSON.stringify(photos), JSON.stringify(targets),
      b.orgWide === true || targets.length === 0, b.status === "draft" ? "draft" : "published", req.user.userId]);
+  await recordAssetPointerHistory(req.user.orgId, "impact_update.photos", id, null, photos.length ? photos : null, req.user);
   res.status(201).json((await query(`SELECT * FROM impact_updates WHERE id = ?`, [id]))[0]);
 }));
+
+// BUILD-56 — the history from-value for an impact photo list: stored paths
+// pass through; a legacy in-row data URI is rescued into the store first so
+// the bytes land in the retention window instead of vanishing with the row.
+async function impactPhotosHistoryValue(orgId, photosList) {
+  const out = [];
+  for (const p of (Array.isArray(photosList) ? photosList : [])) {
+    if (typeof p === "string" && p.startsWith("data:")) out.push(await rescueLegacyImageValue(orgId, "impact", p) || "legacy:unrecoverable");
+    else out.push(p);
+  }
+  return out.length ? out : null;
+}
 
 app.put("/impact-updates/:id", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
   const [ex] = await query(`SELECT * FROM impact_updates WHERE id = ? AND org_id = ?`, [req.params.id, req.user.orgId]);
@@ -16829,6 +16935,10 @@ app.put("/impact-updates/:id", requireAuth, requireAdmin, checkWriteAccess, wrap
      req.params.id, req.user.orgId]);
   // Removed/replaced photos leave no orphaned assets (cross-update refs kept).
   await pruneImpactAssets(req.user.orgId);
+  if (b.photos !== undefined) {
+    await recordAssetPointerHistory(req.user.orgId, "impact_update.photos", req.params.id,
+      await impactPhotosHistoryValue(req.user.orgId, ex.photos), photos.length ? photos : null, req.user);
+  }
   res.json((await query(`SELECT * FROM impact_updates WHERE id = ?`, [req.params.id]))[0]);
 }));
 
@@ -16858,9 +16968,12 @@ app.get("/portal-engagement", requireAuth, wrap(async (req, res) => {
 }));
 
 app.delete("/impact-updates/:id", requireAuth, requireAdmin, wrap(async (req, res) => {
+  const [ex] = await query(`SELECT photos FROM impact_updates WHERE id = ? AND org_id = ?`, [req.params.id, req.user.orgId]);
   const result = await run(`DELETE FROM impact_updates WHERE id = ? AND org_id = ?`, [req.params.id, req.user.orgId]);
   if (!result.changes) return res.status(404).json({ error: "not_found" });
   await pruneImpactAssets(req.user.orgId);
+  await recordAssetPointerHistory(req.user.orgId, "impact_update.photos", req.params.id,
+    await impactPhotosHistoryValue(req.user.orgId, ex?.photos), null, req.user);
   res.json({ ok: true });
 }));
 

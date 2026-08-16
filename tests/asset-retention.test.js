@@ -297,22 +297,26 @@ async function fixture() {
   // prune/put call site (even a well-behaved one) fails until it is added
   // here — the same total-classification discipline as script-guards.
   const CLASSIFIED = {
-    // file → { fnName: expectedCallCount }  (definitions excluded)
+    // file → { fnName: expectedCallCount }  (function-declaration defs excluded)
     "server.js": {
-      putThemeAsset: 4,            // theme upload, impact photos, campaign hero, widget image
+      putThemeAsset: 5,            // theme upload · impact photo · campaign hero · widget image · legacy rescue
       pruneThemeAssets: 1,         // PUT /portal-settings (replace/clear)
       pruneUnreferencedAssets: 3,  // pruneImpactAssets / pruneCampaignAssets / pruneWidgetAssets bodies
-      pruneImpactAssets: 3,        // impact PUT, impact DELETE, (helper def excluded)
-      pruneCampaignAssets: 2,      // campaign PUT (hero change), campaign DELETE
-      pruneWidgetAssets: 2,        // draft PUT, revert
-      rescueLegacyImageValue: 3,   // portal-settings legacy *_data, impact legacy photos (PUT+DELETE)
+      pruneImpactAssets: 2,        // impact PUT, impact DELETE
+      pruneCampaignAssets: 2,      // campaign hero PUT, campaign DELETE
+      pruneWidgetAssets: 2,        // page draft PUT, revert
+      rescueLegacyImageValue: 2,   // portal-settings legacy *_data, impactPhotosHistoryValue
+      purgeExpiredAssets: 3,       // 6h tick (timeout+interval) + POST /assets/run-purge
+      // Part 1 coverage: every pointer-mutation site records history. A new
+      // mutation site must add BOTH the record call and this classification.
+      recordAssetPointerHistory: 11, // settings loop · impact POST/PUT/DELETE · campaign POST/PUT/DELETE · page draft/publish/revert/starter
     },
-    "assetStore.js": { putThemeAsset: 0, pruneUnreferencedAssets: 0, pruneThemeAssets: 1 /* alias def calls through */ },
+    "assetStore.js": { putThemeAsset: 0, pruneUnreferencedAssets: 1 /* the pruneThemeAssets alias body */, pruneThemeAssets: 0 },
   };
   const callCount = (text, name) => {
     const all = (text.match(new RegExp(`\\b${name}\\s*\\(`, "g")) || []).length;
-    const defs = (text.match(new RegExp(`(?:async\\s+)?function\\s+${name}\\s*\\(|const\\s+${name}\\s*=`, "g")) || []).length;
-    return all - defs;
+    const fnDefs = (text.match(new RegExp(`function\\s+${name}\\s*\\(`, "g")) || []).length;
+    return all - fnDefs;
   };
   const misclassified = [];
   for (const [file, fns] of Object.entries(CLASSIFIED)) {

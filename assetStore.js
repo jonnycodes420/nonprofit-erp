@@ -89,17 +89,34 @@ async function s3Delete(cfg, objectKey) {
 }
 
 const ASSET_ID_RE = /^pa_[a-f0-9]{24}$/;
-function assetIdFor(orgId, contentType, buffer) {
-  return "pa_" + sha256hex(orgId + "|" + contentType + "|").slice(0, 8) + sha256hex(buffer).slice(0, 16);
+// BUILD-56 — the id is salted by KIND too. Pre-BUILD-56 ids weren't, so
+// byte-identical uploads across kinds (one SVG as both logo and impact photo)
+// shared a single row whose `kind` was whichever came first — and the per-kind
+// prune could then 404 the OTHER kind's live pointer, or (post-retention)
+// resurrect a row outside its pruner's scope. Kind-salting removes sharing
+// for new writes; the global live-reference guard in pruneUnreferencedAssets
+// protects legacy shared rows. Existing stored ids keep serving unchanged (a
+// re-upload of the same bytes mints a kind-salted id and the old row retires
+// into the retention window).
+function assetIdFor(orgId, kind, contentType, buffer) {
+  return "pa_" + sha256hex(orgId + "|" + kind + "|" + contentType + "|").slice(0, 8) + sha256hex(buffer).slice(0, 16);
 }
 const assetPath = (id) => `/portal-assets/${id}`;
 
 // Store a validated theme image; returns { id, path }. Content-addressed:
 // identical bytes for the same org+type return the existing asset untouched.
 async function putThemeAsset({ orgId, kind, buffer, contentType, width, height }) {
-  const id = assetIdFor(orgId, contentType, buffer);
-  const existing = await query(`SELECT id FROM portal_assets WHERE id = ?`, [id]);
-  if (existing.length) return { id, path: assetPath(id) };
+  const id = assetIdFor(orgId, kind, contentType, buffer);
+  const existing = await query(`SELECT id, deleted_at FROM portal_assets WHERE id = ?`, [id]);
+  if (existing.length) {
+    // BUILD-56 — re-uploading bytes that are sitting in the retention window
+    // RESURRECTS the soft-deleted object (content addressing makes this free).
+    if (existing[0].deleted_at != null) {
+      await run(`UPDATE portal_assets SET deleted_at = NULL WHERE id = ?`, [id]);
+      refreshRetentionCounts().catch(() => {});
+    }
+    return { id, path: assetPath(id) };
+  }
   const cfg = s3Config();
   let storage = "db", s3Key = null, data = null;
   if (cfg) {
@@ -129,7 +146,9 @@ async function putThemeAsset({ orgId, kind, buffer, contentType, width, height }
 
 async function getThemeAsset(id) {
   if (!ASSET_ID_RE.test(String(id || ""))) return null;
-  const [row] = await query(`SELECT * FROM portal_assets WHERE id = ?`, [id]);
+  // BUILD-56 — a soft-deleted object 404s like a destroyed one: a removed
+  // image must disappear from the public URL; restore is the only way back.
+  const [row] = await query(`SELECT * FROM portal_assets WHERE id = ? AND deleted_at IS NULL`, [id]);
   if (!row) return null;
   let buffer = null;
   if (row.storage === "s3") {
@@ -145,26 +164,123 @@ async function getThemeAsset(id) {
   return { id: row.id, contentType: row.content_type, buffer };
 }
 
-// Remove every stored asset of one kind for an org except the ids in keep —
-// called on replace/clear (theme: keep ≤1) and after impact-update writes
-// (keep = every photo id any of the org's updates still references), so
-// stale assets never pile in either store.
+// BUILD-56 — the retention window. Rationale (decided, don't re-litigate):
+// the realistic failure is a mis-click or a bad run noticed days-to-weeks
+// later; the storage cost of a few hundred images for 90 days is pennies
+// against a permanent, unrecoverable loss of a customer's logo.
+const ASSET_RETENTION_DAYS = 90;
+
+// Soft-delete every stored asset of one kind for an org except the ids in
+// keep — called on replace/clear (theme: keep ≤1) and after impact/campaign/
+// widget writes (keep = every id still referenced). BUILD-56: this MARKS
+// deleted_at and KEEPS the bytes (DB row and S3 object). Nothing here
+// destroys anything — destruction happens only in the seam below, and only
+// past ASSET_RETENTION_DAYS.
 async function pruneUnreferencedAssets(orgId, kind, keepIds) {
-  const keep = new Set(keepIds || []);
-  const rows = await query(`SELECT id, storage, s3_key FROM portal_assets WHERE org_id = ? AND kind = ?`, [orgId, kind]);
-  const cfg = s3Config();
-  let pruned = 0;
-  for (const r of rows) {
-    if (keep.has(r.id)) continue;
-    if (r.storage === "s3" && cfg && r.s3_key) {
-      try { await s3Delete(cfg, r.s3_key); } catch (e) { console.error("[assetStore] S3 delete failed:", e.message); }
-    }
-    await run(`DELETE FROM portal_assets WHERE id = ?`, [r.id]);
-    pruned++;
-  }
-  return pruned;
+  // Legacy (pre-kind-salt) rows can be SHARED across kinds; a row ANY live
+  // pointer still references is never pruned, whatever its recorded kind.
+  const liveRefs = await collectLiveAssetRefs(orgId);
+  const keep = [...new Set([...(keepIds || []), ...liveRefs])];
+  const r = await run(
+    `UPDATE portal_assets SET deleted_at = NOW()
+     WHERE org_id = ? AND kind = ? AND deleted_at IS NULL AND NOT (id = ANY(?))`,
+    [orgId, kind, keep]);
+  if (r.changes) refreshRetentionCounts().catch(() => {});
+  return r.changes || 0;
 }
 const pruneThemeAssets = (orgId, kind, keepId) => pruneUnreferencedAssets(orgId, kind, keepId ? [keepId] : []);
+
+// Un-delete a retained object (the restore half lives in
+// scripts/restore-asset.js, which also re-points the pointer from history).
+async function restoreAsset(id) {
+  const [row] = await query(`SELECT id, deleted_at FROM portal_assets WHERE id = ?`, [id]);
+  if (!row) return null;
+  if (row.deleted_at != null) await run(`UPDATE portal_assets SET deleted_at = NULL WHERE id = ?`, [id]);
+  refreshRetentionCounts().catch(() => {});
+  return row;
+}
+
+// Every id currently referenced by a LIVE pointer, across every pointer
+// table an asset kind is stored into (portal_settings logo/header ·
+// impact_updates photos · campaigns hero · portal_pages draft+published
+// widget images). The purge guard reads this — an asset on this list is
+// never destroyed no matter how old its deleted_at is. Kept in ONE place on
+// purpose; the asset-retention battery pins that all four tables are here.
+async function collectLiveAssetRefs(orgId) {
+  const refs = new Set();
+  const add = (v) => { const m = /^\/portal-assets\/(pa_[a-f0-9]{24})$/.exec(String(v || "")); if (m) refs.add(m[1]); };
+  const w = orgId ? ` WHERE org_id = ?` : ``;
+  const p = orgId ? [orgId] : [];
+  for (const r of await query(`SELECT logo_url, header_image_url FROM portal_settings${w}`, p)) { add(r.logo_url); add(r.header_image_url); }
+  for (const r of await query(`SELECT photos FROM impact_updates${w}`, p)) {
+    for (const ph of (Array.isArray(r.photos) ? r.photos : [])) add(ph);
+  }
+  for (const r of await query(`SELECT hero_image_url FROM campaigns${w}`, p)) add(r.hero_image_url);
+  for (const r of await query(`SELECT draft, published FROM portal_pages${w}`, p)) {
+    for (const list of [r.draft, r.published]) {
+      for (const wd of (Array.isArray(list) ? list : [])) {
+        add(wd.image);
+        for (const u of (wd.images || [])) add(u);
+        for (const m of (wd.members || [])) add(m && m.photo);
+      }
+    }
+  }
+  return refs;
+}
+
+// ── DESTRUCTION SEAM ────────────────────────────────────────────────────────
+// destroyAsset() is the ONLY code path, anywhere in the product, that removes
+// asset BYTES (the DB row and the S3 object). Everything else soft-deletes
+// through pruneUnreferencedAssets above. The asset-retention battery fails
+// the build on any destruction primitive outside this block.
+async function destroyAsset(row) {
+  const cfg = s3Config();
+  if (row.storage === "s3" && cfg && row.s3_key) {
+    await s3Delete(cfg, row.s3_key); // throws → row survives, retried next sweep
+  }
+  await run(`DELETE FROM portal_assets WHERE id = ?`, [row.id]);
+}
+// ── END DESTRUCTION SEAM ────────────────────────────────────────────────────
+
+// BUILD-56 Part 4 — the purge sweep: destroys objects soft-deleted longer
+// than ASSET_RETENTION_DAYS ago. Guards, in order:
+//   • an object still referenced by a live pointer is NEVER destroyed — it is
+//     restored (self-heal: a referenced-but-soft-deleted object was serving
+//     404s to a live pointer, which is itself a bug) and logged CRITICAL;
+//   • every destruction writes an asset_purge_log row;
+//   • an S3 delete failure keeps the DB row so the next sweep retries.
+async function purgeExpiredAssets({ orgId = null } = {}) {
+  const rows = await query(
+    `SELECT id, org_id, kind, bytes, storage, s3_key, deleted_at FROM portal_assets
+     WHERE deleted_at IS NOT NULL AND deleted_at < NOW() - INTERVAL '${ASSET_RETENTION_DAYS} days'
+     ${orgId ? "AND org_id = ?" : ""}`,
+    orgId ? [orgId] : []);
+  let purged = 0, restoredReferenced = 0, failed = 0;
+  if (rows.length) {
+    const refs = await collectLiveAssetRefs(orgId);
+    for (const r of rows) {
+      if (refs.has(r.id)) {
+        console.error(`[assetStore] CRITICAL: soft-deleted asset ${r.id} is still referenced by a live pointer — restoring it, never purging`);
+        await run(`UPDATE portal_assets SET deleted_at = NULL WHERE id = ?`, [r.id]);
+        restoredReferenced++;
+        continue;
+      }
+      try {
+        await destroyAsset(r);
+        await run(
+          `INSERT INTO asset_purge_log (id, asset_id, org_id, kind, bytes, storage, soft_deleted_at) VALUES (?,?,?,?,?,?,?)`,
+          ["apl_" + crypto.randomUUID().replace(/-/g, "").slice(0, 12), r.id, r.org_id, r.kind, r.bytes, r.storage, r.deleted_at]);
+        purged++;
+      } catch (e) {
+        failed++;
+        console.error(`[assetStore] purge of ${r.id} failed (row kept; retried next sweep):`, e.message);
+      }
+    }
+    console.log(`[assetStore] purge: ${purged} destroyed past ${ASSET_RETENTION_DAYS}d retention, ${restoredReferenced} referenced→restored, ${failed} failed`);
+  }
+  await refreshRetentionCounts().catch(() => {});
+  return { purged, restoredReferenced, failed };
+}
 
 // BUILD-51b — fallback visibility for /health. dbFallbackRows counts assets
 // sitting in Postgres WHILE S3 is configured (each one is a failed S3 put);
@@ -175,17 +291,29 @@ let dbFallbackSinceBoot = 0;
 let dbFallbackRows = null;
 async function refreshAssetFallbackCount() {
   if (!s3Config()) { dbFallbackRows = null; return null; }
-  const [r] = await query(`SELECT COUNT(*)::int AS n FROM portal_assets WHERE storage = 'db'`);
+  // BUILD-56 — soft-deleted rows sit in Postgres BY DESIGN (the retention
+  // window), not as failed S3 puts; they must not trip the fallback alarm.
+  const [r] = await query(`SELECT COUNT(*)::int AS n FROM portal_assets WHERE storage = 'db' AND deleted_at IS NULL`);
   dbFallbackRows = r ? r.n : 0;
   return dbFallbackRows;
 }
+// BUILD-56 — /health surfaces how many retained objects are restorable
+// (there is something to restore ⇒ someone can notice a bad overwrite).
+// Cached like dbFallbackRows; bumped inline by prune/restore/purge.
+let softDeletedRows = null;
+async function refreshRetentionCounts() {
+  const [r] = await query(`SELECT COUNT(*)::int AS n FROM portal_assets WHERE deleted_at IS NOT NULL`);
+  softDeletedRows = r ? r.n : 0;
+  return softDeletedRows;
+}
 function assetHealth() {
-  return { s3: !!s3Config(), dbFallbackRows, dbFallbackSinceBoot };
+  return { s3: !!s3Config(), dbFallbackRows, dbFallbackSinceBoot, softDeleted: softDeletedRows };
 }
 
 module.exports = {
   s3Config, putThemeAsset, getThemeAsset, pruneThemeAssets, pruneUnreferencedAssets,
-  refreshAssetFallbackCount, assetHealth,
+  refreshAssetFallbackCount, refreshRetentionCounts, assetHealth,
+  restoreAsset, collectLiveAssetRefs, purgeExpiredAssets, ASSET_RETENTION_DAYS,
   assetIdFor, assetPath, ASSET_ID_RE,
   _signedS3Request: signedS3Request, // exported for the suite's determinism checks
 };

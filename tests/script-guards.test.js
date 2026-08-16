@@ -38,7 +38,8 @@ const GUARDED_WRITERS = [
   "finance-entity-routing-capture", "fix-build54-demo-photos",
   "fix-demo-finance-ledger", "invitation-capture", "load-irs-ein-registry",
   "migrate-build51-theme-assets", "migrate-build51b-impact-photos",
-  "migrate-plans-core-team", "seed-build45-asks", "seed-build45-portal-demo",
+  "migrate-plans-core-team", "restore-asset", "seed-build45-asks",
+  "seed-build45-portal-demo",
   "seed-build50-demo", "seed-build54-demo", "seed-creo-goals",
   "seed-fundraising-demo",
 ];
