@@ -482,9 +482,12 @@ app.post("/stripe/webhook", express.raw({ type: "application/json" }), async (re
               } catch (e) { console.error("[stripe] renewal attribution lookup failed:", e.message); }
             }
             // Check if donor was lapsed before updating stage
-            const donorPreRow = await query("SELECT stage, gift_count FROM donors WHERE id=$1", [donorId]);
+            const donorPreRow = await query("SELECT stage, gift_count, name FROM donors WHERE id=$1", [donorId]);
             const wasLapsed = donorPreRow[0]?.stage === 'lapsed';
             const wasFirstGift = (donorPreRow[0]?.gift_count || 0) === 0;
+            // Walk finding W-7: on the subscription-resolved path (§2a) both
+            // donorName and email are empty — the thank-task read "undefined".
+            const thankName = donorName || email || donorPreRow[0]?.name || "donor";
             // BUILD-27 Part C (scenario 2): RESERVE the gift by its Stripe pi.id
             // atomically. Under a PARALLEL webhook redelivery, exactly one INSERT
             // wins the uq_gifts_stripe_pi unique; the loser's RETURNING is empty and
@@ -547,14 +550,14 @@ app.post("/stripe/webhook", express.raw({ type: "application/json" }), async (re
               const txnId = "ft_" + uuid().slice(0, 8);
               await run(
                 "INSERT INTO fin_transactions (id,org_id,date,description,vendor_donor,amount,type,account_id,fund_id,donor_id,source,gift_id) VALUES (?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT (gift_id) WHERE gift_id IS NOT NULL DO NOTHING",
-                [txnId, orgId, today, "Online gift via Stripe", donorName || email, amount, "income", acctRow[0].id, fundId || (genFundRow.length ? genFundRow[0].id : null), donorId, "online", giftId]
+                [txnId, orgId, today, "Online gift via Stripe", thankName, amount, "income", acctRow[0].id, fundId || (genFundRow.length ? genFundRow[0].id : null), donorId, "online", giftId]
               );
             }
             const taskId = "t_" + uuid().slice(0, 8);
             await run(
               `INSERT INTO tasks (id, org_id, title, priority, done, created_at)
                VALUES ($1,$2,$3,$4,$5,NOW())`,
-              [taskId, orgId, `Send personal thank-you to ${donorName || email} for $${amount} online gift`, "high", 0]
+              [taskId, orgId, `Send personal thank-you to ${thankName} for $${amount} online gift`, "high", 0]
             );
 
             // Tax receipt — fire-and-forget, must never fail/500 the
