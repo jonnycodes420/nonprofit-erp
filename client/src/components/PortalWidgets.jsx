@@ -97,7 +97,10 @@ export function WidgetView({ w, ctx }) {
                 <div style={{ fontSize: 14, fontWeight: 700 }}>{f.name}</div>
                 {f.description && <div style={{ ...muted, marginTop: 2 }}>{f.description}</div>}
               </div>
-              <a href={`/give/${ctx.giveSlug}`} style={{ background: "var(--pt-button, var(--pt-primary))", color: "var(--pt-button-fg, #fff)", textDecoration: "none", borderRadius: 8, padding: "8px 16px", fontSize: 13, fontWeight: 700, whiteSpace: "nowrap" }}>Give</a>
+              {/* BUILD-55 — each card's Give carries ITS fund as the designation
+                  (?fund= preselects on the giving page → gifts.fund_id → the
+                  impact matcher), never the generic undesignated link. */}
+              <a href={`/give/${ctx.giveSlug}?fund=${encodeURIComponent(f.id)}`} style={{ background: "var(--pt-button, var(--pt-primary))", color: "var(--pt-button-fg, #fff)", textDecoration: "none", borderRadius: 8, padding: "8px 16px", fontSize: 13, fontWeight: 700, whiteSpace: "nowrap" }}>Give</a>
             </div>
           ))}
           {!(w.funds || []).length && <div style={muted}>No funds selected yet.</div>}
@@ -119,7 +122,11 @@ export function WidgetView({ w, ctx }) {
       );
     }
     case "impact": {
-      const updates = ctx.me ? (ctx.me.impact || []) : (w.updates || []);
+      // Donor-matched feed when the signed-in donor HAS matches; otherwise the
+      // resolved org-wide published updates (BUILD-55 — a signed-in donor with
+      // no matches, and the editor's sample donor, used to see nothing/sample
+      // here even when the org had real published updates).
+      const updates = (ctx.me?.impact?.length) ? ctx.me.impact : (w.updates || []);
       if (!updates.length) return null;
       return (
         <div style={cardStyle}>
@@ -215,13 +222,17 @@ export function WidgetView({ w, ctx }) {
 // page renders exactly as before.
 const FULL_WIDTH_WIDGETS = new Set(["hero", "mygiving", "give", "video", "richtext"]);
 
-export function PageRenderer({ page, ctx }) {
+// `decorate(w, node)` (optional) lets a host wrap each widget's rendered node
+// with chrome INSIDE its grid cell — the editor's selection/reorder controls
+// ride this seam so the desktop preview keeps the REAL .pt-widgets grid
+// instead of falling back to one PageRenderer per widget (BUILD-55 Part 2).
+export function PageRenderer({ page, ctx, decorate }) {
   if (!page || !Array.isArray(page.widgets) || !page.widgets.length) return null;
   return (
     <div className="pt-widgets">
       {page.widgets.map(w => (
         <div key={w.id} style={FULL_WIDTH_WIDGETS.has(w.type) ? { gridColumn: "1 / -1", minWidth: 0 } : { minWidth: 0 }}>
-          <WidgetView w={w} ctx={ctx} />
+          {decorate ? decorate(w, <WidgetView w={w} ctx={ctx} />) : <WidgetView w={w} ctx={ctx} />}
         </div>
       ))}
     </div>

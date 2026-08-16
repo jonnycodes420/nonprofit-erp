@@ -163,6 +163,11 @@ export default function Donate() {
             // it's raising money for the same campaign/fund as its parent.
             if (d.givingPage.fundId) setFundId(d.givingPage.fundId);
           }
+          // BUILD-55 — ?fund=<id> preselects a designation (the portal's
+          // Programs & funds cards link here per-fund). A page-level fund
+          // still wins; an id the org doesn't expose is ignored.
+          const qFund = params.get("fund");
+          if (qFund && !d.givingPage?.fundId && (d.funds || []).some(f => f.id === qFund)) setFundId(qFund);
           if (d.peerFundraiser) setPeerFundraiser(d.peerFundraiser);
           if (d.peerFundraisers) setPeerFundraisersSummary(d.peerFundraisers);
         }

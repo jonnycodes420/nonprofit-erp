@@ -185,7 +185,9 @@ async function fixture() {
   ok("editor declares the fictional donor (SAMPLE_ME)", editorSrc.includes("SAMPLE_ME") && editorSrc.includes("Sam Sample"));
   ok("editor renders the visible SAMPLE DONOR DATA banner", editorSrc.includes("SAMPLE DONOR DATA"));
   const called = [...editorSrc.matchAll(/apiFetch\("([^"]+)"/g)].map(m => m[1]);
-  const ALLOWED = new Set(["/portal-page", "/portal-page/draft", "/portal-page/publish", "/portal-page/revert", "/portal-page/starter", "/portal-settings", "/finance/funds", "/fundraising/campaigns"]);
+  // BUILD-55: /impact-updates joined the allowlist — the editor renders the org's
+  // REAL published updates in the impact widget (org content, no donor endpoint).
+  const ALLOWED = new Set(["/portal-page", "/portal-page/draft", "/portal-page/publish", "/portal-page/revert", "/portal-page/starter", "/portal-settings", "/finance/funds", "/fundraising/campaigns", "/impact-updates"]);
   ok("editor's API surface is the fixed donor-data-free allowlist", called.length > 0 && called.every(p => ALLOWED.has(p)), called);
   ok("editor opens no portal session and reads no donor endpoints",
     !/pfetch|credentials|\/portal\/\$\{|\/donors|\/account\//.test(editorSrc));

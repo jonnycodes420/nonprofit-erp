@@ -268,6 +268,11 @@ app.post("/stripe/webhook", express.raw({ type: "application/json" }), async (re
       const accountId = event.account;
       let campaignId = pi.metadata?.campaign_id || null;
       let givingPageId = pi.metadata?.giving_page_id || null;
+      // BUILD-55 — the donor's chosen designation (/donate stamps fund_id into
+      // the charge metadata; it previously never reached the gift row, so every
+      // online gift landed undesignated and the ledger stamp routed to the org's
+      // first unrestricted fund regardless of what the donor picked).
+      let fundId = pi.metadata?.fund_id || null;
       const peerFundraiserId = pi.metadata?.peer_fundraiser_id || null;
       const donorName = pi.metadata?.donor_name || "";
       // Donor-covers-fees (attribution FIX): the charged total IS the gift
@@ -370,18 +375,24 @@ app.post("/stripe/webhook", express.raw({ type: "application/json" }), async (re
             // it does ZERO money side-effects (no donor total bump, no ledger row).
             // Replaces the old check-then-insert dedup that raced. Still 200 so
             // Stripe stops retrying.
+            // Designation must be a real fund of THIS org — metadata is our own
+            // /donate stamp, but validate anyway (never trust webhook payloads).
+            if (fundId) {
+              const fundOk = await query("SELECT id FROM fin_funds WHERE id=$1 AND org_id=$2", [fundId, orgId]);
+              if (!fundOk.length) fundId = null;
+            }
             const reservedGift = pi.id
               ? await query(
-                  `INSERT INTO gifts (id, org_id, donor_id, amount, date, notes, stripe_payment_id, campaign_id, giving_page_id, peer_fundraiser_id, cover_fee_amount)
-                   VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+                  `INSERT INTO gifts (id, org_id, donor_id, amount, date, notes, stripe_payment_id, campaign_id, giving_page_id, peer_fundraiser_id, cover_fee_amount, fund_id)
+                   VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
                    ON CONFLICT (org_id, stripe_payment_id) WHERE stripe_payment_id IS NOT NULL DO NOTHING
                    RETURNING id`,
-                  [giftId, orgId, donorId, amount, today, "Online payment via Stripe", pi.id, campaignId, givingPageId, peerFundraiserId, coverFeeAmount]
+                  [giftId, orgId, donorId, amount, today, "Online payment via Stripe", pi.id, campaignId, givingPageId, peerFundraiserId, coverFeeAmount, fundId]
                 )
               : await query(
-                  `INSERT INTO gifts (id, org_id, donor_id, amount, date, notes, stripe_payment_id, campaign_id, giving_page_id, peer_fundraiser_id, cover_fee_amount)
-                   VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING id`,
-                  [giftId, orgId, donorId, amount, today, "Online payment via Stripe", pi.id, campaignId, givingPageId, peerFundraiserId, coverFeeAmount]
+                  `INSERT INTO gifts (id, org_id, donor_id, amount, date, notes, stripe_payment_id, campaign_id, giving_page_id, peer_fundraiser_id, cover_fee_amount, fund_id)
+                   VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING id`,
+                  [giftId, orgId, donorId, amount, today, "Online payment via Stripe", pi.id, campaignId, givingPageId, peerFundraiserId, coverFeeAmount, fundId]
                 );
             if (!reservedGift.length) {
               console.log(`[stripe] payment_intent.succeeded ${pi.id} already recorded — skipping duplicate (race-safe)`);
@@ -420,7 +431,7 @@ app.post("/stripe/webhook", express.raw({ type: "application/json" }), async (re
               const txnId = "ft_" + uuid().slice(0, 8);
               await run(
                 "INSERT INTO fin_transactions (id,org_id,date,description,vendor_donor,amount,type,account_id,fund_id,donor_id,source,gift_id) VALUES (?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT (gift_id) WHERE gift_id IS NOT NULL DO NOTHING",
-                [txnId, orgId, today, "Online gift via Stripe", donorName || email, amount, "income", acctRow[0].id, genFundRow.length ? genFundRow[0].id : null, donorId, "online", giftId]
+                [txnId, orgId, today, "Online gift via Stripe", donorName || email, amount, "income", acctRow[0].id, fundId || (genFundRow.length ? genFundRow[0].id : null), donorId, "online", giftId]
               );
             }
             const taskId = "t_" + uuid().slice(0, 8);
@@ -16557,9 +16568,14 @@ async function resolvePortalPagePublic(org) {
   const out = await Promise.all(widgets.map(async (w) => {
     const r = { ...w };
     if (w.type === "funds" && w.fundIds?.length) {
-      r.funds = (await query(
+      // BUILD-55 — cards render in the WIDGET's fundIds order (the org's manual
+      // sort; the first fund leads), not whatever order the DB returns.
+      const rows = await query(
         `SELECT id, name, restricted, description FROM fin_funds WHERE org_id = ? AND id = ANY(?)`,
-        [org.id, w.fundIds])).map(f => ({ id: f.id, name: f.name, description: f.description || null }));
+        [org.id, w.fundIds]);
+      const byId = new Map(rows.map(f => [f.id, f]));
+      r.funds = w.fundIds.map(id => byId.get(id)).filter(Boolean)
+        .map(f => ({ id: f.id, name: f.name, description: f.description || null }));
     }
     if (w.type === "campaign") {
       const [c] = await query(
