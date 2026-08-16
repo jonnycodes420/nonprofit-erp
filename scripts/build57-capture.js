@@ -103,12 +103,18 @@ async function seedFixture() {
   await pool.end();
 
   // One pending invitation, through the REAL proposal surface.
-  await j("POST", "/recurring/proposals", tok, { donorId: donorIds["June Park"], kind: "card_update", subId: "rsb57_3" });
-  return auth;
+  await j("POST", "/recurring/proposals", tok, { donorIds: undefined, donorId: donorIds["June Park"], kind: "card_update", subId: "rsb57_3" });
+
+  // §2c — an aggregate-history donor: columns beyond the itemized rows, the
+  // shape an imported total leaves behind (Miriam has $200 in rows).
+  const pool2 = new Pool({ connectionString: guard.writerDbUrl(), ssl: false });
+  await pool2.query(`UPDATE donors SET total_giving=300, gift_count=5 WHERE id=$1 AND org_id=$2`, [donorIds["Miriam Okafor"], orgId]);
+  await pool2.end();
+  return { auth, miriamId: donorIds["Miriam Okafor"] };
 }
 
 (async () => {
-  const auth = await seedFixture();
+  const { auth, miriamId } = await seedFixture();
   const browser = await chromium.launch();
 
   async function shootAt(width, height, suffix) {
@@ -145,6 +151,23 @@ async function seedFixture() {
 
   await shootAt(1440, 900, "1440");
   await shootAt(390, 844, "390");
+
+  // §2c — the lifetime-vs-itemized gap labels itself on the donor profile.
+  {
+    const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: 2 });
+    await ctx.addInitScript(([t, u, o]) => {
+      localStorage.setItem("npe_token", t);
+      localStorage.setItem("npe_user", JSON.stringify(u));
+      localStorage.setItem("npe_org", JSON.stringify(o));
+    }, [auth.token, auth.user, auth.org]);
+    const p = await ctx.newPage();
+    await p.goto(APP + "/donors/" + miriamId, { waitUntil: "networkidle" });
+    await p.waitForSelector(".dp-unitemized-note", { timeout: 10000 });
+    const note = await p.locator(".dp-unitemized-note").first().innerText();
+    ok("(2c) unitemized-history label renders on the profile with the exact gap", /\$100/.test(note), note);
+    await p.screenshot({ path: path.join(OUT, "donor-profile-unitemized-label-1440.png"), fullPage: false });
+    await ctx.close();
+  }
 
   await browser.close();
   console.log(`\n${pass} passed, ${fail} failed → ${OUT}`);

@@ -50,6 +50,13 @@ const Anthropic = require("@anthropic-ai/sdk");
 const { Resend } = require("resend");
 const resend = new Resend(process.env.RESEND_API_KEY);
 const { getDb, query, run, uuid, seedOrgData, withTransaction, withAdvisoryLock, queryTx, runTx } = require("./db");
+// BUILD-57 §2b — BULK-IMPORT ids carry FULL uuid entropy (32 hex). The 8-hex
+// ids minted elsewhere are fine one-at-a-time, but the import writes 500 rows
+// per statement, where a single global-pkey collision (8 hex = 32 bits —
+// birthday-collides at real multi-tenant scale) aborted the WHOLE batch and
+// lost its rows (the BUILD-54 finding, hit live in a pre-push run). Width,
+// not retry: 2^128 puts the class out of reach on every import mint site.
+const importId = prefix => prefix + uuid().replace(/-/g, "");
 const { signToken, requireAuth, requireSuperAdmin: requireSuperAdminJwt } = require("./auth");
 const { sessionCache } = require("./sessionCache");
 // BUILD-38 Part 1 — kill all of a user's live sessions: stamp sessions_valid_after
@@ -3176,7 +3183,7 @@ app.post("/donors/import", requireAuth, wrap(async (req, res) => {
     const tuples = batch.map(d => {
       const a = resolveAssignee(d);
       params.push(
-        "d_" + uuid().slice(0, 8), req.user.orgId,
+        importId("d_"), req.user.orgId,
         normalizeName(d.name),
         d.email   || "",
         d.phone   || "",
@@ -3301,7 +3308,7 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrap(async (r
       if (existingEmails.has(emailLower) || seenEmails.has(emailLower)) { duplicates++; return; }
       seenEmails.add(emailLower);
     }
-    const id = "d_" + uuid().slice(0, 8);
+    const id = importId("d_");
     indexToId[idx] = id;
     donorsToInsert.push({ ...d, _id: id });
     if (d._stageExplicit) explicitStageIds.push(id);
@@ -3409,7 +3416,7 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrap(async (r
     const giftParams = [], giftTuples = [];
     const rowByGid = new Map();
     batch.forEach(g => {
-      const gid = "g_"+uuid().slice(0,8);
+      const gid = importId("g_");
       rowByGid.set(gid, g);
       giftParams.push(gid, orgId, g.donorId, g.amount, g.date, g.type, g.campaign, null, g.notes, g.externalId || null);
       giftTuples.push("(?,?,?,?,?,?,?,?,?,?)");
@@ -3435,13 +3442,13 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrap(async (r
           const g = rowByGid.get(r.id);
           if (!g) continue;
           const intNote = `Gift received: $${g.amount.toLocaleString()} (${g.type})${g.notes?" — "+g.notes:""}`;
-          intParams.push("int_"+uuid().slice(0,8), orgId, g.donorId, "gift", intNote, g.date, importerId, importerName);
+          intParams.push(importId("int_"), orgId, g.donorId, "gift", intNote, g.date, importerId, importerName);
           intTuples.push("(?,?,?,?,?,?,?,?)");
           // Accumulate fin_transactions for current-FY gifts — same shape as single-gift
           // route, carrying gift_id so the stamp is idempotent (BUILD-21 Part 3).
           if (contribAcctId && g.date >= fyStart) {
             const dName = donorNameMap[g.donorId] || "Donor";
-            ftParams.push("ft_"+uuid().slice(0,8), orgId, g.date,
+            ftParams.push(importId("ft_"), orgId, g.date,
               `Gift from ${dName}`, dName, g.amount, "income", contribAcctId, genFundId, g.donorId, "import", r.id);
             ftTuples.push("(?,?,?,?,?,?,?,?,?,?,?,?)");
           }
@@ -4994,7 +5001,7 @@ app.post("/gifts/import-history", requireAuth, checkWriteAccess, wrap(async (req
     try {
       await withTransaction(async (client) => {
         for (const g of batch) {
-          const id = "g_" + uuid().slice(0, 8);
+          const id = importId("g_");
           // F-4: external-ID rows are cross-run idempotent at the DB — a
           // conflicted (already-imported) row inserts nothing, and its
           // interaction + ledger stamp are skipped with it.
@@ -5008,14 +5015,14 @@ app.post("/gifts/import-history", requireAuth, checkWriteAccess, wrap(async (req
           const intNote = `Gift received: $${g.amount.toLocaleString()} (${g.type})${g.notes ? " — " + g.notes : ""}`;
           await runTx(client,
             "INSERT INTO interactions (id,org_id,donor_id,type,note,date,created_by,logged_by_name) VALUES (?,?,?,?,?,?,?,?)",
-            ["int_"+uuid().slice(0,8), orgId, g.donorId, "gift", intNote, g.date, importerId, importerName]
+            [importId("int_"), orgId, g.donorId, "gift", intNote, g.date, importerId, importerName]
           );
           affectedDonorIds.add(g.donorId);
           // Accumulate fin_transactions for current-FY gifts — same shape as single-gift
           // route, carrying gift_id so the stamp is idempotent (BUILD-21 Part 3).
           if (contribAcctId && g.date >= fyStart) {
             const dName = donorNameMap[g.donorId] || "Donor";
-            ftParams.push("ft_"+uuid().slice(0,8), orgId, g.date,
+            ftParams.push(importId("ft_"), orgId, g.date,
               `Gift from ${dName}`, dName, g.amount, "income", contribAcctId, genFundId, g.donorId, "import", id);
             ftTuples.push("(?,?,?,?,?,?,?,?,?,?,?,?)");
           }

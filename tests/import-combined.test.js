@@ -110,6 +110,13 @@ const countGifts  = async o => (await q(`SELECT COUNT(*)::int n FROM gifts WHERE
   const sample = await donorRow(A, "big750@ic.local");
   ok("sampled big donor recalced (total 850)", Number(sample.total_giving) === 850, sample.total_giving);
   ok("sampled big donor recent gift → steward", sample.stage === "steward", sample.stage);
+  // BUILD-57 §2b — import-minted ids carry FULL uuid entropy (32 hex). The old
+  // 8-hex ids birthday-collided at multi-tenant scale and ONE collision
+  // aborted a whole 500-row batch (BUILD-54 finding, hit live in a pre-push).
+  ok("bulk-import donor ids are full-width (d_ + 32 hex — the batch-abort collision class is closed)",
+    /^d_[0-9a-f]{32}$/.test(sample.id), sample.id);
+  const [sampleGift] = await q(`SELECT id FROM gifts WHERE org_id=$1 AND donor_id=$2 LIMIT 1`, [A, sample.id]);
+  ok("bulk-import gift ids are full-width too", /^g_[0-9a-f]{32}$/.test(sampleGift?.id || ""), sampleGift);
 
   await closeDb();
   summary();

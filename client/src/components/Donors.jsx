@@ -3443,6 +3443,19 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
               ))}
             </div>
 
+            {/* BUILD-57 §2c — the lifetime figure and the itemized gift list
+                legitimately differ when history arrived as an imported TOTAL
+                (aggregate import writes total_giving/gift_count with no gift
+                rows — the documented reason Top Donors' lifetime scope reads
+                the column). Unlabeled, the two numbers read as a bug on a
+                demo screen; so the gap explains itself, always. */}
+            {!giftLoading&&donor.total-giftsFull.reduce((s,g)=>s+g.amount,0)>0.5&&(
+              <div className="dp-unitemized-note" style={{fontSize:11.5,color:T.ink3,lineHeight:1.5,margin:"-8px 2px 0"}}>
+                Lifetime includes <strong style={{color:T.ink2}}>{fmtFull(donor.total-giftsFull.reduce((s,g)=>s+g.amount,0))}</strong> recorded
+                as an imported total — giving that predates Steward and was never itemized as individual gifts.
+              </div>
+            )}
+
             {householdTotal!=null&&(
               <div style={{background:T.gold+"12",border:"1px solid "+T.gold+"40",borderRadius:12,padding:"10px 14px",fontSize:12,color:T.ink,cursor:"pointer"}} onClick={()=>setDpTab("related")}>
                 <strong>{fmtFull(donor.total)}</strong> individually · <strong style={{color:"#8a6d1f"}}>{fmtFull(householdTotal)}</strong> household total — <span style={{color:T.greenDk,fontWeight:700}}>see who's linked →</span>
@@ -3651,6 +3664,9 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
                 <div style={{fontSize:14,fontWeight:800,color:T.ink}}>Gift History</div>
                 <div style={{fontSize:12,color:T.ink3,marginTop:2}}>
                   Total: <strong style={{color:"#1a6b4a"}}>{fmtFull(giftsFull.reduce((s,g)=>s+g.amount,0))}</strong> · {giftsFull.length} gifts
+                  {donor.total-giftsFull.reduce((s,g)=>s+g.amount,0)>0.5&&(
+                    <span className="dp-unitemized-note"> · lifetime {fmtFull(donor.total)} includes {fmtFull(donor.total-giftsFull.reduce((s,g)=>s+g.amount,0))} of imported history not itemized below</span>
+                  )}
                 </div>
               </div>
               <div style={{display:"flex",gap:8,alignItems:"center"}}>

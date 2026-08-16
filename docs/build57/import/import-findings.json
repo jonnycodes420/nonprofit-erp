@@ -1,0 +1,62 @@
+{
+  "ranAt": "2026-08-16T21:57:43.760Z",
+  "donorTotal": 1232,
+  "findings": [
+    {
+      "class": "recommended-path-no-import-both",
+      "observed": "The RECOMMENDED menu entry (Import + History) opens CombinedImport, whose multi-sheet picker forces ONE sheet — the 'Import both — donors + their gift history' CTA exists only in DonorImport (menu: 'Import donors only'). A pilot org following the recommended path with the most common two-sheet workbook never sees the linked import."
+    },
+    {
+      "class": "same-day-twins",
+      "observed": "Sarah Jones has 3 of 3 same-day $100 gifts (F-4 says all 3 insert + duplicateCandidates reports them)"
+    },
+    {
+      "class": "nickname-legal-dupes",
+      "observed": "\"Miller\" search returns 2 donors (Bob Miller / Robert Miller) — nickname/legal twins land as separate records; merge tool is the offered path"
+    },
+    {
+      "class": "negative-total",
+      "observed": "Nina Negative total_giving stored as 0"
+    },
+    {
+      "class": "malformed-email",
+      "observed": "\"meredith@\" stored verbatim as email=\"meredith@\" — no validation at import"
+    },
+    {
+      "class": "formula-name",
+      "observed": "formula-injection name stored verbatim: \"=Sum(A1:A9)\" (CSV export guard must keep escaping it)"
+    },
+    {
+      "class": "deceased-flag",
+      "observed": "Deceased=Y column: donor landed as a normal active donor (status=new, tags=[]) — the flag is silently discarded"
+    },
+    {
+      "class": "do-not-solicit-flag",
+      "observed": "Do Not Contact=TRUE column: donor landed with no suppression (status=new) — a pilot org could email a do-not-solicit donor"
+    },
+    {
+      "class": "excel-serial-date",
+      "observed": "ACME's Excel-serial-dated gift stored date(s): 2021-02-07, 2001-01-15"
+    },
+    {
+      "class": "orphan-gift",
+      "observed": "orphan gift's donor minted from the gift row: Sam Stranger"
+    },
+    {
+      "class": "refund-rows",
+      "observed": "Margaret's refund rows (-250, \"(1,000)\") landed as gifts: none — negative gift handling"
+    },
+    {
+      "class": "non-utf8-bytes",
+      "observed": "windows-1252 CSV: \"José Latin-Muñoz\" stored as \"Jos� Latin-Mu�oz\" (mojibake if not exactly José Latin-Muñoz)"
+    },
+    {
+      "class": "gift-email-header-not-matched",
+      "observed": "The gift sheet header \"Donor Email\" is NOT recognized by the email-column probe (isEmailHdr anchors to ^email$), so Import-both silently fell back to LINK BY DONOR NAME (screenshot 04) — whitespace/nickname/joint-name variants then mint duplicate minimal donors and split giving history. \"Donor Email\" is the most common real-world gift-export header."
+    },
+    {
+      "class": "external-id-dropped-by-import-both",
+      "observed": "ZERO of 2,414 imported gifts carry external_id in the DB despite a Transaction ID column on every generated row — the Import-both client payload drops it, so the F-4 external-ID cross-run idempotency contract never engages through this surface (the TXN-DUP-1 pair was deduped client-side only, and re-imports with source IDs get no DB-level protection)."
+    }
+  ]
+}
