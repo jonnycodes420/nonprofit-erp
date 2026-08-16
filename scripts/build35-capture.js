@@ -15,7 +15,7 @@ const fs = require("fs");
 const { chromium } = require(path.join(process.env.PLAYWRIGHT_DIR, "node_modules", "playwright"));
 const { q, closeDb } = require("../tests/helpers");
 
-const BASE = process.env.BASE || "http://localhost:4173";
+const BASE = require("./lib/prodGuard").writerBase("http://localhost:4173"); // loopback default + --i-know-this-is-prod for remote (BUILD-55)
 const API = process.env.API || "http://localhost:5601";
 const OUT = process.env.OUT || "docs/build35-2026-08-04";
 const EMAIL = "founder@fresh-setup.local";

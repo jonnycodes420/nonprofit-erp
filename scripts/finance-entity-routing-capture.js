@@ -16,7 +16,7 @@ const fs = require("fs");
 const PW_DIR = process.env.PLAYWRIGHT_DIR || path.join(process.env.HOME, "steward-qa");
 const { chromium } = require(path.join(PW_DIR, "node_modules", "playwright"));
 
-const BASE = process.env.BASE || "http://localhost:4173";
+const BASE = require("./lib/prodGuard").writerBase("http://localhost:4173"); // loopback default + --i-know-this-is-prod for remote (BUILD-55)
 const API = process.env.API || "http://localhost:5601";
 const EMAIL = process.env.EMAIL || "froute-a@test.local";
 const PASSWORD = process.env.PASSWORD || "loadtest1234";

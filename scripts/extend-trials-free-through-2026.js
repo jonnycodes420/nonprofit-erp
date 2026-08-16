@@ -23,8 +23,7 @@ const { Pool } = require("pg");
 const { FREE_THROUGH_ISO } = require("../trialEnd");
 
 const APPLY = process.argv.includes("--apply");
-const url = process.env.DATABASE_URL;
-if (!url) { console.error("Set DATABASE_URL first."); process.exit(1); }
+const url = require("./lib/prodGuard").writerDbUrl(); // remote DB requires --i-know-this-is-prod (BUILD-55)
 
 // Match the app's DB SSL convention (db.js): default to relaxed SSL unless
 // DB_SSL=disable (the scratch stack has no SSL).

@@ -1,4 +1,6 @@
 #!/usr/bin/env node
+// BUILD-55: defaults to the LOCAL scratch stack. Running against prod now requires
+// BOTH an explicit BASE= AND --i-know-this-is-prod (see scripts/lib/prodGuard.js).
 // BUILD-24 — map any existing orgs off the legacy seed/growth/impact plan enum
 // onto the Core/Team commercial model. seed → core; growth/impact → team.
 //
@@ -16,7 +18,7 @@
 //   BASE=… SUPERADMIN_EMAIL=… SUPERADMIN_PASSWORD=… node scripts/migrate-plans-core-team.js
 //   … --apply
 
-const BASE = process.env.BASE || "https://nonprofit-erp-production.up.railway.app";
+const BASE = require("./lib/prodGuard").writerBase("http://localhost:5601"); // loopback default + --i-know-this-is-prod for remote (BUILD-55)
 const EMAIL = process.env.SUPERADMIN_EMAIL;
 const PASSWORD = process.env.SUPERADMIN_PASSWORD;
 const APPLY = process.argv.includes("--apply");

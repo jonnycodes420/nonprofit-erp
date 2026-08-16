@@ -15,7 +15,7 @@
 //           DEMO_EMAIL=admin@creoarts.org DEMO_PASSWORD=… node scripts/seed-build45-portal-demo.js
 //           (prod runs the API-driven parts only)
 
-const BASE = process.env.BASE || "http://localhost:5601";
+const BASE = require("./lib/prodGuard").writerBase("http://localhost:5601"); // loopback default + --i-know-this-is-prod for remote (BUILD-55)
 const EMAIL = process.env.DEMO_EMAIL || "admin@creoarts.org";
 const PASSWORD = process.env.DEMO_PASSWORD || "demo1234";
 const IS_LOCAL = /localhost|127\.0\.0\.1/.test(BASE);

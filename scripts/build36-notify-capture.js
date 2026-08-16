@@ -18,7 +18,7 @@ const path = require("path");
 const bcrypt = require("bcryptjs");
 const { Pool } = require("pg");
 
-const BASE = process.env.BASE || "http://localhost:5601";
+const BASE = require("./lib/prodGuard").writerBase("http://localhost:5601"); // loopback default + --i-know-this-is-prod for remote (BUILD-55)
 const DB_URL = process.env.DATABASE_URL || "postgresql://steward@localhost:5544/steward_loadtest";
 if (!/localhost|127\.0\.0\.1/.test(BASE) || !/localhost|127\.0\.0\.1/.test(DB_URL)) {
   console.error("Refusing to run against non-local BASE/DATABASE_URL."); process.exit(1);

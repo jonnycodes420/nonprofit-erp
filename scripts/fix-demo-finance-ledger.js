@@ -34,7 +34,7 @@ const path = require("path");
 
 // Prod is an explicit BASE= opt-in on every seed/fix script (2026-08-15 rule,
 // pinned by tests/demo-content.test.js) — this one used to default to prod.
-const BASE = process.env.BASE || "http://localhost:5601";
+const BASE = require("./lib/prodGuard").writerBase("http://localhost:5601"); // loopback default + --i-know-this-is-prod for remote (BUILD-55)
 const ADMIN_EMAIL = process.env.ADMIN_EMAIL || "admin@creoarts.org";
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "demo1234";
 const APPLY = process.argv.includes("--apply");

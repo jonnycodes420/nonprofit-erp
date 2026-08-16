@@ -26,7 +26,7 @@
 //     DEMO_EMAIL=admin@creoarts.org DEMO_PASSWORD=demo1234 \
 //     node scripts/seed-creo-goals.js                 # prod (deliberate)
 
-const BASE = process.env.BASE || "http://localhost:5601";
+const BASE = require("./lib/prodGuard").writerBase("http://localhost:5601"); // loopback default + --i-know-this-is-prod for remote (BUILD-55)
 const EMAIL = process.env.DEMO_EMAIL || "admin@creoarts.org";
 const PASSWORD = process.env.DEMO_PASSWORD || "demo1234";
 

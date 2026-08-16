@@ -1,4 +1,6 @@
 #!/usr/bin/env node
+// BUILD-55: defaults to the LOCAL scratch stack. Running against prod now requires
+// BOTH an explicit BASE= AND --i-know-this-is-prod (see scripts/lib/prodGuard.js).
 // BUILD-51 — migrate existing portal themes to asset storage, API-ONLY:
 // log in as each org's admin, read /portal-settings, and re-PUT any legacy
 // base64 image fields — the BUILD-51 write route stores them through
@@ -7,7 +9,8 @@
 //
 // Defaults to the two PROD demo orgs (org_creo + Harbor Music School). For
 // any other org: BASE=… ORGS='email:password,email2:password2' node scripts/…
-const BASE = process.env.BASE || "https://nonprofit-erp-production.up.railway.app";
+const guard = require("./lib/prodGuard");
+const BASE = guard.writerBase("http://localhost:5601"); // loopback default + --i-know-this-is-prod for remote (BUILD-55)
 const ORGS = (process.env.ORGS
   || "admin@creoarts.org:demo1234,xjca2006+b50demo@gmail.com:harbor-demo-2026")
   .split(",").map(s => { const i = s.indexOf(":"); return { email: s.slice(0, i), password: s.slice(i + 1) }; });
@@ -36,6 +39,7 @@ const j = async (method, path, body, token) => {
       console.log(`  ${email}: already migrated (header_image_url=${ps.body.header_image_url || "none"}, logo_url=${ps.body.logo_url || "none"})`);
       continue;
     }
+    guard.logOverwrite(`portal-settings-${email}`, ps.body);
     const put = await j("PUT", "/portal-settings", body, login.body.token);
     const okd = put.status === 200 && !put.body.header_image_data && !put.body.logo_data;
     console.log(`  ${okd ? "OK  " : "FAIL"} ${email}: header_image_url=${put.body.header_image_url || "none"} logo_url=${put.body.logo_url || "none"}`);

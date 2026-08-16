@@ -9,7 +9,8 @@
 //                   DEMO_EMAIL=admin@creoarts.org DEMO_PASSWORD=… node scripts/seed-build54-demo.js
 // org_creo is DEMO-ONLY (fabricated identity — see CLAUDE.md); its donors and
 // gifts are demo fiction end to end.
-const BASE = process.env.BASE || "http://localhost:5601";
+const guard = require("./lib/prodGuard");
+const BASE = guard.writerBase("http://localhost:5601"); // loopback default + --i-know-this-is-prod for remote (BUILD-55)
 const EMAIL = process.env.DEMO_EMAIL || "admin@creoarts.org";
 const PASSWORD = process.env.DEMO_PASSWORD || "demo1234";
 const CAMPAIGN_NAME = process.env.CAMPAIGN_NAME || "Studio Expansion Capital Campaign";
@@ -50,6 +51,7 @@ async function api(method, path, token, body) {
     fs.readFileSync(path.join(__dirname, "demo-assets", file)).toString("base64");
   const pageHero = demoPhoto("demo-hero-choir.jpg");
   const campaignHero = demoPhoto("demo-campaign-chapel.jpg");
+  guard.logOverwrite(`campaign-${camp.id}`, camp);
   await api("PUT", `/fundraising/campaigns/${camp.id}`, tok, {
     donorFacingName: "Steeples and Studios Campaign",
     donorDescription: "We're restoring the chapel and opening three new working studios — room for forty more young artists every week.",
@@ -92,6 +94,7 @@ async function api(method, path, token, body) {
     { type: "quote", text: "This place taught my daughter that her voice matters.", attribution: "A CREO parent (demo)" },
     { type: "give", heading: "Make a new gift", buttonLabel: "Give" },
   ];
+  guard.logOverwrite("portal-page", (await api("GET", "/portal-page", tok)).body);
   await api("PUT", "/portal-page/draft", tok, { widgets });
   await api("POST", "/portal-page/publish", tok, {});
   console.log(`published a ${widgets.length}-widget portal page`);

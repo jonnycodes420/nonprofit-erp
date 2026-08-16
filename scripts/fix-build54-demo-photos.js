@@ -22,7 +22,8 @@
 const fs = require("fs");
 const path = require("path");
 
-const BASE = process.env.BASE || "http://localhost:5601";
+const guard = require("./lib/prodGuard");
+const BASE = guard.writerBase("http://localhost:5601"); // loopback default + --i-know-this-is-prod for remote (BUILD-55)
 const EMAIL = process.env.DEMO_EMAIL || "admin@creoarts.org";
 const PASSWORD = process.env.DEMO_PASSWORD || "demo1234";
 const APPLY = process.argv.includes("--apply");
@@ -86,6 +87,7 @@ async function isPlaceholder(photoRef) {
       const targets = validTargets(u.targets);
       const dropped = (Array.isArray(u.targets) ? u.targets.length : 0) - targets.length;
       if (dropped) console.log(`  (dropping ${dropped} dangling target(s)${targets.length ? "" : " — now org-wide"})`);
+      guard.logOverwrite(`impact-update-${u.id}`, u);
       const put = await api("PUT", `/impact-updates/${u.id}`, tok, {
         title: u.title, body: u.body,
         photos: photos.map((p, i) => (flags[i] ? demoPhoto(replacement) : p)),

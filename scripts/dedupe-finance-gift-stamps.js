@@ -1,4 +1,6 @@
 #!/usr/bin/env node
+// BUILD-55: defaults to the LOCAL scratch stack. Running against prod now requires
+// BOTH an explicit BASE= AND --i-know-this-is-prod (see scripts/lib/prodGuard.js).
 // BUILD-21 Part 3 — de-duplicate double-stamped gift ledger rows.
 //
 // The old donor-profile "log gift" flow stamped fin_transactions TWICE for one
@@ -26,7 +28,7 @@
 const fs = require("fs");
 const path = require("path");
 
-const BASE = process.env.BASE || "https://nonprofit-erp-production.up.railway.app";
+const BASE = require("./lib/prodGuard").writerBase("http://localhost:5601"); // loopback default + --i-know-this-is-prod for remote (BUILD-55)
 const ADMIN_EMAIL = process.env.ADMIN_EMAIL || "admin@creoarts.org";
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "demo1234";
 const APPLY = process.argv.includes("--apply");

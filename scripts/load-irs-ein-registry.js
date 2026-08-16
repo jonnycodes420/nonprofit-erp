@@ -22,6 +22,7 @@
 const fs = require("fs");
 const { execSync } = require("child_process");
 const { getDb, query, run } = require("../db");
+require("./lib/prodGuard").writerDbUrl(); // registry writes go wherever DATABASE_URL points — remote requires --i-know-this-is-prod (BUILD-55)
 
 const PUB78_URL = "https://apps.irs.gov/pub/epostcard/data-download-pub78.zip";
 

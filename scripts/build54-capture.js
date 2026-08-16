@@ -19,7 +19,7 @@ const PLAYWRIGHT_DIR = process.env.PLAYWRIGHT_DIR || path.join(process.env.HOME,
 const { chromium } = require(path.join(PLAYWRIGHT_DIR, "node_modules", "playwright"));
 
 const APP = process.env.APP || "http://localhost:4173";
-const API = process.env.BASE || "http://localhost:5601";
+const API = require("./lib/prodGuard").writerBase("http://localhost:5601"); // loopback default + --i-know-this-is-prod for remote (BUILD-55)
 const OUT = path.join(__dirname, "..", "docs", "build54");
 fs.mkdirSync(OUT, { recursive: true });
 

@@ -31,7 +31,7 @@ const fs = require("fs");
 if (process.env.PLAYWRIGHT_DIR) module.paths.unshift(path.join(process.env.PLAYWRIGHT_DIR, "node_modules"));
 const { chromium } = require("playwright");
 
-const BASE = process.env.BASE || "http://localhost:4173";
+const BASE = require("./lib/prodGuard").writerBase("http://localhost:4173"); // loopback default + --i-know-this-is-prod for remote (BUILD-55)
 const OUT = process.env.OUT || "docs/invitation-capture";
 fs.mkdirSync(OUT, { recursive: true });
 let pass = 0, fail = 0;

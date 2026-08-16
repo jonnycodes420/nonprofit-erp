@@ -33,8 +33,7 @@ const { Pool } = require("pg");
 
 const APPLY = process.argv.includes("--apply");
 const orgArg = (process.argv.find(a => a.startsWith("--org=")) || "").split("=")[1] || null;
-const DB_URL = process.env.DATABASE_URL;
-if (!DB_URL) { console.error("Set DATABASE_URL to run this backfill."); process.exit(1); }
+const DB_URL = require("./lib/prodGuard").writerDbUrl(); // remote DB requires --i-know-this-is-prod (BUILD-55)
 
 const norm = s => String(s == null ? "" : s).trim().toLowerCase().replace(/\s+/g, " ");
 

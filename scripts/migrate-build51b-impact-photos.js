@@ -1,4 +1,6 @@
 #!/usr/bin/env node
+// BUILD-55: defaults to the LOCAL scratch stack. Running against prod now requires
+// BOTH an explicit BASE= AND --i-know-this-is-prod (see scripts/lib/prodGuard.js).
 // BUILD-51b — migrate existing impact-update photos to asset storage,
 // API-ONLY: log in as each org's admin, list /impact-updates, and re-PUT the
 // photos array on any update still carrying data-URI photos — the BUILD-51b
@@ -8,7 +10,8 @@
 //
 // Defaults to the two PROD demo orgs. For others:
 //   BASE=… ORGS='email:password,email2:password2' node scripts/…
-const BASE = process.env.BASE || "https://nonprofit-erp-production.up.railway.app";
+const guard = require("./lib/prodGuard");
+const BASE = guard.writerBase("http://localhost:5601"); // loopback default + --i-know-this-is-prod for remote (BUILD-55)
 const ORGS = (process.env.ORGS
   || "admin@creoarts.org:demo1234,xjca2006+b50demo@gmail.com:harbor-demo-2026")
   .split(",").map(s => { const i = s.indexOf(":"); return { email: s.slice(0, i), password: s.slice(i + 1) }; });
@@ -35,6 +38,7 @@ const j = async (method, path, body, token) => {
     for (const u of rows) {
       const photos = Array.isArray(u.photos) ? u.photos : [];
       if (!photos.some(p => String(p).startsWith("data:"))) { clean++; continue; }
+      guard.logOverwrite(`impact-update-${u.id}`, u);
       const put = await j("PUT", `/impact-updates/${u.id}`, { photos }, login.body.token);
       const okd = put.status === 200 && (put.body.photos || []).every(p => String(p).startsWith("/portal-assets/"));
       console.log(`  ${okd ? "OK  " : "FAIL"} ${email} ${u.id}: ${(put.body.photos || []).join(", ").slice(0, 120)}`);

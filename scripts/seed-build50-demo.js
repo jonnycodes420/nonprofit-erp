@@ -39,7 +39,8 @@
 // re-PUT the prod theme (overwrote the real banner with the SVG placeholder
 // band, 2026-08-15 — restored from saved bytes). Prod is ALWAYS an explicit
 // BASE=, on every seed. Pinned by tests/demo-content.test.js.
-const BASE = process.env.BASE || "http://localhost:5601";
+const guard = require("./lib/prodGuard");
+const BASE = guard.writerBase("http://localhost:5601"); // loopback default + --i-know-this-is-prod for remote (BUILD-55)
 const CREO_EMAIL = process.env.CREO_EMAIL || "admin@creoarts.org";
 const CREO_PASSWORD = process.env.CREO_PASSWORD || "demo1234";
 const DEMO2_EMAIL = process.env.DEMO2_EMAIL || "xjca2006+b50demo@gmail.com";
@@ -106,14 +107,23 @@ async function seedGifts(token, donorId, gifts) {
   const ct = creo.body.token;
 
   // Theme: the BUILD-50 takeover opens with the header image as a banner —
-  // seed the demo assets when they're missing so the state is visible.
-  const themePut = await j("PUT", "/portal-settings", {
-    headerImageData: svgBand("#8a4a2c", "#e7cf91"),
-    logoData: svgLogo("#8a4a2c", "C"),
-    primaryColor: "#8a4a2c", accentColor: "#c9a84c", buttonColor: "#8a4a2c",
-    backgroundTint: "#faf5ec", typePairing: "editorial", cardStyle: "soft-shadow",
-  }, ct);
-  ok("creo portal theme (banner + logo + colors) saved", themePut.status === 200, themePut.body);
+  // seed the demo assets ONLY when they're missing. This PUT used to be
+  // unconditional and stomped the real prod banner in the 2026-08-15 incident;
+  // an existing header/logo is never overwritten by a seed anymore.
+  const curTheme = await j("GET", "/portal-settings", null, ct);
+  const hasAssets = !!(curTheme.body?.headerImageUrl || curTheme.body?.headerImageData || curTheme.body?.header_image_url);
+  if (hasAssets) {
+    console.log("  creo theme assets already present — leaving them untouched");
+  } else {
+    guard.logOverwrite("creo-portal-settings", curTheme.body);
+    const themePut = await j("PUT", "/portal-settings", {
+      headerImageData: svgBand("#8a4a2c", "#e7cf91"),
+      logoData: svgLogo("#8a4a2c", "C"),
+      primaryColor: "#8a4a2c", accentColor: "#c9a84c", buttonColor: "#8a4a2c",
+      backgroundTint: "#faf5ec", typePairing: "editorial", cardStyle: "soft-shadow",
+    }, ct);
+    ok("creo portal theme (banner + logo + colors) saved", themePut.status === 200, themePut.body);
+  }
 
   const donorId = await findOrCreateDonor(ct);
   ok("creo donor id resolved", !!donorId);
@@ -169,6 +179,7 @@ async function seedGifts(token, donorId, gifts) {
   }
   const ht = h.body.token;
   await j("POST", "/onboarding/complete", {}, ht); // chart of accounts (gift→ledger stamp needs '4010')
+  guard.logOverwrite("harbor-portal-settings", (await j("GET", "/portal-settings", null, ht)).body);
   const hTheme = await j("PUT", "/portal-settings", {
     enabled: true, networkListed: true, displayName: "Harbor Music School",
     primaryColor: "#33538a", accentColor: "#33538a", buttonColor: "#33538a",

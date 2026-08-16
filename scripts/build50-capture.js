@@ -32,7 +32,7 @@ const { Client } = require("pg");
 const bcrypt = require("bcryptjs");
 const { chromium } = require(process.env.PLAYWRIGHT_DIR + "/node_modules/playwright");
 
-const API = process.env.BASE || "http://localhost:5601";
+const API = require("./lib/prodGuard").writerBase("http://localhost:5601"); // loopback default + --i-know-this-is-prod for remote (BUILD-55)
 const APP = process.env.APP || "http://localhost:4173";
 const OUT = process.env.OUT || (__dirname + "/../docs/build50-consumer-polish");
 const DB = process.env.DATABASE_URL || "postgres://steward:steward@localhost:5544/steward_loadtest";
