@@ -239,3 +239,35 @@ the gift row AND its ledger stamp; foreign-org fund ids rejected; undesignated
 behavior byte-compatible with before; the client chain + editor + precedence
 source contracts.
 
+
+---
+
+## What I'd still be nervous about (the honest list)
+
+1. **The editor's desktop CSS is a MIRROR, not a shared source.** `.pe-wrap`/
+   `.pt-widgets` rules are copied from Portal.jsx's PortalStyles with a
+   keep-in-lock-step comment — no automated parity check. If the published
+   page's ladder or grid changes, the editor silently drifts until someone
+   notices. A small source-guard (assert the two style blocks agree) would
+   close it.
+2. **The impact-precedence change touches the LIVE signed-in portal**, not
+   just the editor: a donor with zero matched updates now sees the org-wide
+   feed where they previously saw nothing. I believe it's an improvement (the
+   public page already showed that content), and it's documented + tested —
+   but it's a donor-visible behavior change that shipped without a human
+   looking at it on prod.
+3. **Recurring renewals still can't carry a fund designation** (no fund column
+   on recurring_subscriptions). A donor who starts a monthly gift from a fund
+   card gets a designated first charge and undesignated renewals.
+4. **The guard can't see browser-driven writes.** A Playwright capture script
+   pointed at prod with prod creds writes through the app UI regardless of
+   prodGuard. All such scripts default loopback and are classified, but the
+   protection there is convention + classification, not enforcement.
+5. **There is still no backup/undo for portal assets or settings rows.** Part
+   1.4 scopes the fixes (soft-delete prune window + settings versioning);
+   until one ships, the next overwrite-class accident is again unrecoverable
+   unless someone happened to save bytes first.
+6. One transient `portal-page` failure (43/1) appeared in an early subset run
+   and never reproduced — three subsequent runs including the full battery
+   were green. Most likely leftover scratch-DB state from this session's
+   tooling; noting it because unexplained one-offs deserve a line.
