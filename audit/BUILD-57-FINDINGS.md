@@ -162,6 +162,19 @@ recovery → second-org follow → org-blindness byte-identical → year-end $11
    subscription-resolved gift path (fixed inline — trivially safe, my own
    new §2a code; ledger vendor name fixed with it).
 
+## Found in passing — the deploy pipeline can strand the backend silently
+
+Two pushes in quick succession (b30f33e, then the docs-only a8bfb63 ~60s
+later) had BOTH `deploy-railway` jobs end **cancelled** — they eliminated
+each other in the `deploy-main` concurrency group — while both `test` and
+`deploy-vercel` went green. Net effect: frontend live at the new SHA,
+**backend still on the previous one**, and nothing red anywhere a human
+would glance. The standing SHA-verify habit caught it; recovered by
+re-running the newer run's railway job via the API. Worth a small CI fix
+(e.g. `cancel-in-progress: false` semantics that queue rather than cancel,
+or a post-deploy SHA assertion that FAILS the run when the backend doesn't
+reach the pushed SHA — the poll exists but a cancelled job never runs it).
+
 ## §worry
 
 What I would not bet on, plainly:
