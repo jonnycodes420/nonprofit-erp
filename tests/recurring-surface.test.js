@@ -57,12 +57,18 @@ function startStripeMock(port = 5603) {
           res.end(JSON.stringify({ id: "cs_mock_" + stripeCalls.length, object: "checkout.session", mode, url: `http://127.0.0.1:${port}/mock-checkout/${mode}` }));
           return;
         }
+        // §6 — the PI→invoice→subscription resolution path (BUILD-57 §2a).
+        const inv = req.url.match(/^\/v1\/invoices\/([^/?]+)/);
+        if (req.method === "GET" && inv) {
+          res.end(JSON.stringify({ id: inv[1], object: "invoice", subscription: ({ in_mock_r1: "sub_r1" })[inv[1]] || null }));
+          return;
+        }
         const m = req.url.match(/^\/v1\/subscriptions\/([^/?]+)/);
         if (m) {
           res.end(JSON.stringify({
             id: m[1], object: "subscription", status: "active",
             current_period_end: Math.floor(Date.now() / 1000) + 20 * 86400,
-            items: { data: [{ id: "si_mock_1", price: { currency: "usd" } }] },
+            items: { data: [{ id: "si_mock_1", price: { currency: "usd", product: "prod_mock" } }] },
           }));
         } else { res.end(JSON.stringify({ ok: true })); }
       });
@@ -408,6 +414,57 @@ async function fixture() {
   await settle();
   ok("proposal invitation reaches a suppression-listed donor (it IS the mechanism)",
     r.status === 201 && mailTo("cy@rec.test").length === 1);
+
+  // ── §6 real-Stripe event shapes (BUILD-57 §2a drill, pinned) ─────────────
+  // A real subscription charge's PI carries NO receipt_email and NO metadata
+  // (and on API 2025+, NO invoice field at all) — the drill proved the old
+  // handler silently skipped every real recurring charge. These pin the two
+  // resolution paths and the new-payload shapes.
+
+  // (a) invoice-carrying PI, no email: invoice → subscription → donor + fund.
+  let wh = await fireWebhook({
+    id: "evt_rec_shape_a", type: "payment_intent.succeeded", account: ACCT_A,
+    data: { object: { id: "pi_shape_a", amount_received: 5000, invoice: "in_mock_r1", customer: "cus_rs_r1", metadata: {} } },
+  });
+  ok("real-shape PI (no email, has invoice) → 200", wh.status === 200, wh);
+  let [g] = await q(`SELECT * FROM gifts WHERE stripe_payment_id='pi_shape_a'`);
+  ok("renewal gift recorded via invoice→subscription resolution (no email needed)",
+    g && g.donor_id === "d_rec_a" && parseFloat(g.amount) === 50, g);
+  ok("…linked to its subscription AND fund-designated (BUILD-56 chain)",
+    g?.recurring_subscription_id === "rs_r1" && g?.fund_id === "fund_rec_1", g);
+
+  // (b) 2025+ shape: NO invoice field either — pi.customer is the only link.
+  wh = await fireWebhook({
+    id: "evt_rec_shape_b", type: "payment_intent.succeeded", account: ACCT_A,
+    data: { object: { id: "pi_shape_b", amount_received: 2500, customer: "cus_rs_r2", metadata: {} } },
+  });
+  [g] = await q(`SELECT * FROM gifts WHERE stripe_payment_id='pi_shape_b'`);
+  ok("2025+ PI (no email, no invoice) resolves by unique customer → gift linked",
+    g && g.donor_id === "d_rec_b" && g.recurring_subscription_id === "rs_r2", g);
+
+  // (c) 2025+ invoice.payment_failed: subscription under parent.subscription_details.
+  wh = await fireWebhook({
+    id: "evt_rec_shape_c", type: "invoice.payment_failed", account: ACCT_A,
+    data: { object: { id: "in_shape_c", amount_due: 24000, customer: "cus_rs_r5",
+      parent: { subscription_details: { subscription: "sub_r5", metadata: { donor_email: "ada@rec.test" } } },
+      lines: { data: [{ period: { end: Math.floor(Date.now() / 1000) + 25 * 86400 }, pricing: { price_details: { recurring: { interval: "month" } } } }] } } },
+  });
+  let [rsr5] = await q(`SELECT status FROM recurring_subscriptions WHERE id='rs_r5'`);
+  ok("new-shape payment_failed still triggers the recovery family", rsr5.status === "past_due", rsr5);
+
+  // (d) 2025+ invoice.payment_succeeded: recovery + next-charge sync from the
+  // line period (subscription.updated does NOT fire at creation on real Stripe).
+  wh = await fireWebhook({
+    id: "evt_rec_shape_d", type: "invoice.payment_succeeded", account: ACCT_A,
+    data: { object: { id: "in_shape_d", amount_paid: 24000, customer: "cus_rs_r5",
+      parent: { subscription_details: { subscription: "sub_r5" } },
+      lines: { data: [{ period: { end: Math.floor(Date.now() / 1000) + 30 * 86400 } }] } } },
+  });
+  [rsr5] = await q(`SELECT status, current_period_end FROM recurring_subscriptions WHERE id='rs_r5'`);
+  ok("new-shape payment_succeeded → recovered + current_period_end synced from the line period",
+    rsr5.status === "recovered" && rsr5.current_period_end != null, rsr5);
+  ok("recovery logged in the movement ledger",
+    (await q(`SELECT * FROM recurring_change_log WHERE subscription_id='rs_r5' AND kind='recovered'`)).length >= 1);
 
   if (sink) sink.close();
   if (smock) smock.close();

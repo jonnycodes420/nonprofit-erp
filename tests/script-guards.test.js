@@ -54,7 +54,7 @@ const LOOPBACK_HARDCODED = ["build45-portal-capture", "onramp-capture"];
 // Read-only against whatever BASE points at (may default to prod): their only
 // write-shaped call is POST /auth/login. Verified below, not just trusted.
 const PROD_READONLY = [
-  "attribution-chips-capture", "build12-ui-capture", "build49-capture",
+  "attribution-chips-capture", "build12-ui-capture", "build49-capture", "build57-prod-capture",
   "consistency-audit", "finance-overview-capture", "landing-crispness-prod",
   "landing-funnel-verify", "landing-hero-verify", "landing-image-verify",
   "landing-motion-verify", "screenshot-matrix", "topbar-verify",

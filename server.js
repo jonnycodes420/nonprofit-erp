@@ -256,6 +256,44 @@ const invitationLimiter = rateLimit({
   skip: rateLimitDisabled,
 });
 
+// BUILD-57 §2a — event-shape normalizers. Server-side RETRIEVES ride the
+// pinned stripe-node API version (old shapes), but WEBHOOK payloads ride the
+// endpoint/CLI API version: on 2025+ versions `invoice.subscription` moved to
+// `invoice.parent.subscription_details.subscription` (metadata beside it),
+// the line's price.recurring moved under `pricing`, and the PaymentIntent
+// lost its `invoice` field entirely. Every handler reads through these so
+// both generations of payload work.
+const invoiceSubscriptionId = inv =>
+  inv?.subscription || inv?.parent?.subscription_details?.subscription || null;
+const invoiceSubMetadata = inv =>
+  inv?.subscription_details?.metadata || inv?.parent?.subscription_details?.metadata || null;
+const invoiceLineInterval = inv => {
+  const line = inv?.lines?.data?.[0];
+  return line?.price?.recurring?.interval
+    || line?.pricing?.price_details?.recurring?.interval
+    || (line?.parent?.subscription_item_details ? (line?.plan?.interval || null) : null)
+    || line?.plan?.interval || null;
+};
+
+// BUILD-57 §2a (real-Stripe finding): a Checkout-born subscription's product
+// is auto-created, INACTIVE, and IMMUTABLE ("created by Stripe automatically
+// and cannot be updated") — so a reprice can never reuse it. Every reprice
+// instead rides ONE durable, metadata-tagged product per connected account,
+// found by search (create-on-miss; search lag can mint a rare duplicate
+// product, which is harmless catalog clutter, never money).
+async function ensureRecurringGiftProduct(stripeAccount, orgName) {
+  try {
+    const found = await stripe.products.search(
+      { query: "active:'true' AND metadata['steward']:'recurring_gift'", limit: 1 },
+      { stripeAccount });
+    if (found?.data?.[0]?.id) return found.data[0].id;
+  } catch { /* search unsupported/lagging — create below */ }
+  const p = await stripe.products.create(
+    { name: `${orgName} recurring gift`, metadata: { steward: "recurring_gift" } },
+    { stripeAccount });
+  return p?.id;
+}
+
 // Stripe webhook must receive raw body — register BEFORE express.json()
 app.post("/stripe/webhook", express.raw({ type: "application/json" }), async (req, res) => {
   if (!stripe) return res.status(503).json({ error: "Stripe not configured" });
@@ -293,7 +331,45 @@ app.post("/stripe/webhook", express.raw({ type: "application/json" }), async (re
         if (Number.isFinite(base) && base > 0 && amount > base / 100) coverFeeAmount = amount - base / 100;
       }
 
-      if (email && accountId) {
+      // BUILD-57 §2a — REAL-STRIPE FIX. A subscription charge's PI is
+      // INVOICE-generated: it carries no receipt_email and no metadata (those
+      // ride the checkout session / one-time payment_intent_data only). The
+      // old `email &&` guard silently skipped the whole gift path for every
+      // real recurring charge — first and renewal alike — while the mock
+      // fixtures always stamped an email onto the PI, so three builds of
+      // recurring plumbing proved a path real Stripe never takes. When the
+      // email is absent, resolve the DONOR through the invoice's
+      // subscription → recurring_subscriptions row instead.
+      let subResolvedDonorId = null;
+      if (!email && accountId && (pi.invoice || pi.customer)) {
+        try {
+          const orgRow0 = await query("SELECT id FROM orgs WHERE stripe_account_id=$1", [accountId]);
+          if (orgRow0.length) {
+            if (pi.invoice) {
+              const invObj = await stripe.invoices.retrieve(pi.invoice, {}, { stripeAccount: accountId });
+              const invSub = invoiceSubscriptionId(invObj);
+              if (invSub) {
+                const rsRows0 = await query(
+                  "SELECT donor_id FROM recurring_subscriptions WHERE stripe_subscription_id=$1 AND org_id=$2",
+                  [invSub, orgRow0[0].id]);
+                if (rsRows0.length) subResolvedDonorId = rsRows0[0].donor_id;
+              }
+            }
+            if (!subResolvedDonorId && pi.customer) {
+              // 2025+ API: the PI event has no invoice field at all — the
+              // customer is the only linkage. Only ever ONE non-canceled
+              // subscription per customer resolves; ambiguity resolves
+              // nothing (never mis-assign).
+              const rsRows0 = await query(
+                "SELECT donor_id FROM recurring_subscriptions WHERE stripe_customer_id=$1 AND org_id=$2 AND status <> 'canceled'",
+                [pi.customer, orgRow0[0].id]);
+              if (rsRows0.length === 1) subResolvedDonorId = rsRows0[0].donor_id;
+            }
+          }
+        } catch (e) { console.error("[stripe] invoice→donor resolution failed:", e.message); }
+      }
+
+      if ((email || subResolvedDonorId) && accountId) {
         const orgRow = await query("SELECT id FROM orgs WHERE stripe_account_id=$1", [accountId]);
         if (orgRow.length) {
           const orgId = orgRow[0].id;
@@ -311,7 +387,9 @@ app.post("/stripe/webhook", express.raw({ type: "application/json" }), async (re
           // donor email can't both SELECT-nothing and both INSERT a donor (which
           // would split the gift/total across two rows). The lock serializes only
           // same-email concurrent creates; everything else stays parallel.
-          let donorRow = await withAdvisoryLock(`donor:${orgId}:${(email || "").toLowerCase()}`, async () => {
+          let donorRow = subResolvedDonorId
+            ? await query("SELECT id FROM donors WHERE id=$1 AND org_id=$2", [subResolvedDonorId, orgId])
+            : await withAdvisoryLock(`donor:${orgId}:${(email || "").toLowerCase()}`, async () => {
             let dr = await query("SELECT id FROM donors WHERE org_id=$1 AND email ILIKE $2", [orgId, email]);
             if (!dr.length && donorName) {
               const newDonorId = "d_" + uuid().slice(0, 8);
@@ -329,7 +407,7 @@ app.post("/stripe/webhook", express.raw({ type: "application/json" }), async (re
             // BUILD-46 §1.2 — a gift under an email a verified donor account
             // holds attaches to that account (idempotent, fire-and-forget;
             // no-op with accounts off or no matching account).
-            linkEmailToAccounts(orgId, email).catch(() => {});
+            if (email) linkEmailToAccounts(orgId, email).catch(() => {});
             const giftId = "g_" + uuid().slice(0, 8);
             const today = new Date().toISOString().slice(0, 10);
             // Recurring RENEWAL attribution (attribution FIX): an invoice-generated
@@ -346,19 +424,31 @@ app.post("/stripe/webhook", express.raw({ type: "application/json" }), async (re
             // to its subscription so the roster's "total given on this
             // subscription" is a real SUM over gift rows.
             let recurringSubDbId = null;
-            if (pi.invoice) {
+            if (pi.invoice || pi.customer) {
               try {
                 let rsRow = null;
                 try {
-                  const invObj = await stripe.invoices.retrieve(pi.invoice, { stripeAccount: accountId });
-                  if (invObj?.subscription) {
-                    const rows = await query(
-                      "SELECT id, campaign_id, giving_page_id, cover_fee_amount, fund_id FROM recurring_subscriptions WHERE stripe_subscription_id=$1 AND org_id=$2",
-                      [invObj.subscription, orgId]
-                    );
-                    rsRow = rows[0] || null;
+                  if (pi.invoice) {
+                    const invObj = await stripe.invoices.retrieve(pi.invoice, {}, { stripeAccount: accountId });
+                    const invSub = invoiceSubscriptionId(invObj);
+                    if (invSub) {
+                      const rows = await query(
+                        "SELECT id, campaign_id, giving_page_id, cover_fee_amount, fund_id FROM recurring_subscriptions WHERE stripe_subscription_id=$1 AND org_id=$2",
+                        [invSub, orgId]
+                      );
+                      rsRow = rows[0] || null;
+                    }
                   }
                 } catch { /* unreachable Stripe (local/test) — donor-level fallback below */ }
+                if (!rsRow && pi.customer) {
+                  // 2025+ API: no pi.invoice — the stored checkout customer is
+                  // the linkage; unique non-canceled sub or nothing.
+                  const rows = await query(
+                    "SELECT id, campaign_id, giving_page_id, cover_fee_amount, fund_id FROM recurring_subscriptions WHERE stripe_customer_id=$1 AND org_id=$2 AND status <> 'canceled'",
+                    [pi.customer, orgId]
+                  );
+                  if (rows.length === 1) rsRow = rows[0];
+                }
                 if (!rsRow) {
                   // Donor-level fallback: only when it's UNAMBIGUOUS. For the
                   // gift↔subscription LINK the bar is any single non-canceled
@@ -590,7 +680,7 @@ app.post("/stripe/webhook", express.raw({ type: "application/json" }), async (re
       if (session.mode === "setup" && session.setup_intent && event.account
           && !(await recoveryEventAlreadyProcessed(event.id))) {
         try {
-          const setupIntent = await stripe.setupIntents.retrieve(session.setup_intent, { stripeAccount: event.account });
+          const setupIntent = await stripe.setupIntents.retrieve(session.setup_intent, {}, { stripeAccount: event.account });
           const subscriptionId = setupIntent.metadata?.subscription_id;
           const recOrgId = setupIntent.metadata?.org_id;
           const paymentMethodId = setupIntent.payment_method;
@@ -619,9 +709,9 @@ app.post("/stripe/webhook", express.raw({ type: "application/json" }), async (re
             }
 
             try {
-              const subObj = await stripe.subscriptions.retrieve(subscriptionId, { stripeAccount: event.account });
+              const subObj = await stripe.subscriptions.retrieve(subscriptionId, {}, { stripeAccount: event.account });
               if (subObj.latest_invoice) {
-                const invoice = await stripe.invoices.retrieve(subObj.latest_invoice, { stripeAccount: event.account });
+                const invoice = await stripe.invoices.retrieve(subObj.latest_invoice, {}, { stripeAccount: event.account });
                 if (invoice.status === "open") {
                   // The resulting invoice.payment_succeeded event (if this
                   // succeeds) flows through the handler below and does the
@@ -725,22 +815,31 @@ app.post("/stripe/webhook", express.raw({ type: "application/json" }), async (re
     }
 
     // ── Recurring gift recovery: failed-payment detection & dunning ────────
+    // BUILD-57 §2a (real-Stripe finding): API 2025+ event payloads moved
+    // `invoice.subscription` to `invoice.parent.subscription_details.
+    // subscription` — the old top-level read made EVERY invoice-keyed handler
+    // (the entire failed-card recovery family) a silent no-op on modern
+    // events. Normalize both shapes; same for the line's recurring interval
+    // (price.recurring moved under pricing on new payloads).
     if (event.type === "invoice.payment_failed") {
       const inv = event.data.object;
-      if (inv.subscription && !(await recoveryEventAlreadyProcessed(event.id))) {
-        let subMeta = null;
-        try {
-          const subObj = await stripe.subscriptions.retrieve(inv.subscription, { stripeAccount: event.account });
-          subMeta = subObj.metadata;
-        } catch (e) { console.error("[recovery] could not retrieve subscription for payment_failed:", e.message); }
+      const invSubId = invoiceSubscriptionId(inv);
+      if (invSubId && !(await recoveryEventAlreadyProcessed(event.id))) {
+        let subMeta = invoiceSubMetadata(inv);
+        if (!subMeta) {
+          try {
+            const subObj = await stripe.subscriptions.retrieve(invSubId, {}, { stripeAccount: event.account });
+            subMeta = subObj.metadata;
+          } catch (e) { console.error("[recovery] could not retrieve subscription for payment_failed:", e.message); }
+        }
 
-        const resolved = await resolveOrgAndDonorForSubscription(event.account, inv.subscription, subMeta);
+        const resolved = await resolveOrgAndDonorForSubscription(event.account, invSubId, subMeta);
         if (resolved?.donor) {
           const { org, donor } = resolved;
           const amount = inv.amount_due != null ? inv.amount_due / 100 : null;
-          const interval = inv.lines?.data?.[0]?.price?.recurring?.interval || null;
+          const interval = invoiceLineInterval(inv);
 
-          const existingRows = await query("SELECT * FROM recurring_subscriptions WHERE stripe_subscription_id=?", [inv.subscription]);
+          const existingRows = await query("SELECT * FROM recurring_subscriptions WHERE stripe_subscription_id=?", [invSubId]);
           const isNewCycle = !existingRows.length || !["past_due", "recovering"].includes(existingRows[0].status);
 
           if (!existingRows.length) {
@@ -748,7 +847,7 @@ app.post("/stripe/webhook", express.raw({ type: "application/json" }), async (re
               `INSERT INTO recurring_subscriptions
                  (id, org_id, donor_id, stripe_subscription_id, stripe_customer_id, amount, interval, status, failure_count, first_failed_at, last_failed_at, dunning_step, next_dunning_at)
                VALUES (?,?,?,?,?,?,?,'past_due',1,NOW(),NOW(),0,NOW())`,
-              ["rsub_" + uuid().slice(0, 8), org.id, donor.id, inv.subscription, inv.customer || null, amount, interval]
+              ["rsub_" + uuid().slice(0, 8), org.id, donor.id, invSubId, inv.customer || null, amount, interval]
             );
           } else if (isNewCycle) {
             // Previously active/recovered/canceled — this is a genuinely new
@@ -763,7 +862,7 @@ app.post("/stripe/webhook", express.raw({ type: "application/json" }), async (re
                  stripe_customer_id = COALESCE(?, stripe_customer_id),
                  updated_at = NOW()
                WHERE stripe_subscription_id=?`,
-              [amount, interval, inv.customer || null, inv.subscription]
+              [amount, interval, inv.customer || null, invSubId]
             );
           } else {
             // Already mid-cycle (past_due/recovering) — this is Stripe's own
@@ -777,11 +876,11 @@ app.post("/stripe/webhook", express.raw({ type: "application/json" }), async (re
                  stripe_customer_id = COALESCE(?, stripe_customer_id),
                  updated_at = NOW()
                WHERE stripe_subscription_id=?`,
-              [amount, interval, inv.customer || null, inv.subscription]
+              [amount, interval, inv.customer || null, invSubId]
             );
           }
           await run("UPDATE donors SET stripe_subscription_status='past_due' WHERE id=? AND org_id=?", [donor.id, org.id]);
-          await logRecoveryEvent(org.id, donor.id, inv.subscription, "payment_failed", event.id, { amount, invoiceId: inv.id });
+          await logRecoveryEvent(org.id, donor.id, invSubId, "payment_failed", event.id, { amount, invoiceId: inv.id });
 
           // BUILD-13 workflows — recipe #1 (failed_recurring_recovery). Fire
           // only on a genuinely NEW failure cycle (not each Stripe retry),
@@ -790,16 +889,16 @@ app.post("/stripe/webhook", express.raw({ type: "application/json" }), async (re
           // the always-on dunning engine doesn't ALSO send a day-0 email.
           if (isNewCycle) {
             try {
-              const [subRow] = await query("SELECT * FROM recurring_subscriptions WHERE stripe_subscription_id=?", [inv.subscription]);
+              const [subRow] = await query("SELECT * FROM recurring_subscriptions WHERE stripe_subscription_id=?", [invSubId]);
               const result = await fireWorkflows(org.id, "recurring_failed", {
-                dedupKey: `failed:${inv.subscription}:${subRow?.first_failed_at || event.id}`,
+                dedupKey: `failed:${invSubId}:${subRow?.first_failed_at || event.id}`,
                 donorId: donor.id, amount, subscriptionRow: subRow,
-                entityType: "subscription", entityId: inv.subscription,
+                entityType: "subscription", entityId: invSubId,
               });
               const sentRecovery = result.ran.some(r => r.actions.some(a => a.type === "send_email" && a.template === "recovery"));
               if (sentRecovery && subRow) {
                 const next = new Date(new Date(subRow.first_failed_at || Date.now()).getTime() + DUNNING_SCHEDULE_DAYS[1] * 86400000);
-                await run("UPDATE recurring_subscriptions SET dunning_step=1, next_dunning_at=? WHERE stripe_subscription_id=?", [next.toISOString(), inv.subscription]);
+                await run("UPDATE recurring_subscriptions SET dunning_step=1, next_dunning_at=? WHERE stripe_subscription_id=?", [next.toISOString(), invSubId]);
               }
             } catch (e) { console.error("[workflow] recurring_failed:", e.message); }
           }
@@ -809,8 +908,19 @@ app.post("/stripe/webhook", express.raw({ type: "application/json" }), async (re
 
     if (event.type === "invoice.payment_succeeded") {
       const inv = event.data.object;
-      if (inv.subscription && !(await recoveryEventAlreadyProcessed(event.id))) {
-        const existingRows = await query("SELECT * FROM recurring_subscriptions WHERE stripe_subscription_id=?", [inv.subscription]);
+      const invSubId = invoiceSubscriptionId(inv);
+      if (invSubId && !(await recoveryEventAlreadyProcessed(event.id))) {
+        const existingRows = await query("SELECT * FROM recurring_subscriptions WHERE stripe_subscription_id=?", [invSubId]);
+        // BUILD-57 §2a (real-Stripe finding): customer.subscription.updated
+        // does NOT fire at creation, so the roster's "next charge" stayed
+        // NULL until some later mutation. Every real subscription invoice
+        // carries the paid-through period on its line — sync it here, the
+        // event that fires on every cycle including the first.
+        const paidThrough = inv.lines?.data?.[0]?.period?.end || null;
+        if (existingRows.length && paidThrough) {
+          await run("UPDATE recurring_subscriptions SET current_period_end=to_timestamp(?), updated_at=NOW() WHERE id=?",
+            [paidThrough, existingRows[0].id]).catch(() => {});
+        }
         // BUILD-45 R-3: a PAUSED schedule that charges again means Stripe's
         // pause_collection auto-resume (resumes_at) fired — flip it active and
         // clear the pause bookkeeping. Not a "recovery" (no failure cycle).
@@ -838,7 +948,7 @@ app.post("/stripe/webhook", express.raw({ type: "application/json" }), async (re
             [rs.id]
           );
           if (donor) await run("UPDATE donors SET stripe_subscription_status='active' WHERE id=? AND org_id=?", [donor.id, rs.org_id]);
-          await logRecoveryEvent(rs.org_id, rs.donor_id, inv.subscription, "payment_recovered", event.id, {
+          await logRecoveryEvent(rs.org_id, rs.donor_id, invSubId, "payment_recovered", event.id, {
             amount: inv.amount_paid != null ? inv.amount_paid / 100 : null,
           });
           await logRecurringChange(rs.org_id, rs.id, rs.donor_id, "recovered",
@@ -881,8 +991,25 @@ app.post("/stripe/webhook", express.raw({ type: "application/json" }), async (re
               source: "subscription.updated",
               amount: rs.amount != null ? parseFloat(rs.amount) : null,
             });
+            // BUILD-57 §2a (real-Stripe ordering finding): on real deliveries
+            // this event lands BEFORE invoice.payment_succeeded, so this
+            // "safety net" wins the flip nearly every time and the invoice
+            // branch's bookkeeping is starved. Do the full job here too —
+            // whichever branch flips the status (both guard on
+            // past_due/recovering, so exactly one can) owns the movement-log
+            // row and the thank-you.
+            await logRecurringChange(rs.org_id, rs.id, rs.donor_id, "recovered",
+              { newAmount: rs.amount != null ? parseFloat(rs.amount) : null, interval: rs.interval, actor: "system" });
+            try {
+              const [orgT] = await query("SELECT id, name, org_slug, recurring_dunning_enabled, recurring_dunning_subject, recurring_dunning_body FROM orgs WHERE id=?", [rs.org_id]);
+              const [donorT] = await query("SELECT id, name, email FROM donors WHERE id=? AND org_id=?", [rs.donor_id, rs.org_id]);
+              if (orgT && donorT?.email && orgT.recurring_dunning_enabled !== false) {
+                await sendRecoveredThankYouEmail(orgT, donorT, rs);
+              }
+            } catch (e) { console.error("[recovery] safety-net thank-you failed:", e.message); }
           }
-          const amount = sub.items?.data?.[0]?.price?.unit_amount != null ? sub.items.data[0].price.unit_amount / 100 : null;
+          const amount = sub.items?.data?.[0]?.price?.unit_amount != null ? sub.items.data[0].price.unit_amount / 100
+            : sub.items?.data?.[0]?.pricing?.unit_amount != null ? sub.items.data[0].pricing.unit_amount / 100 : null;
           if (amount != null) {
             // BUILD-57 — an amount that actually MOVED here changed outside
             // Steward's own paths (those sync rs.amount before this event
@@ -897,9 +1024,11 @@ app.post("/stripe/webhook", express.raw({ type: "application/json" }), async (re
           }
           // BUILD-57 — sync the roster's "next charge" from Stripe's own
           // current_period_end (this event fires on every renewal cycle).
-          if (sub.current_period_end) {
+          // API 2025+ moved it from the subscription onto its ITEMS.
+          const cpe = sub.current_period_end || sub.items?.data?.[0]?.current_period_end || null;
+          if (cpe) {
             await run("UPDATE recurring_subscriptions SET current_period_end=to_timestamp(?), updated_at=NOW() WHERE id=?",
-              [sub.current_period_end, rs.id]).catch(() => {});
+              [cpe, rs.id]).catch(() => {});
           }
         }
       }
@@ -14444,10 +14573,15 @@ app.post("/recurring/proposal/confirm", donateLimiter, express.urlencoded({ exte
     const stripeSub = await stripe.subscriptions.retrieve(rs.stripe_subscription_id, {}, { stripeAccount: p.stripe_account_id });
     const item = stripeSub.items?.data?.[0];
     if (!item) throw new Error("subscription has no items");
+    // BUILD-57 §2a (real-Stripe finding): subscription updates take price_data
+    // with an existing PRODUCT id — product_data is Checkout-only sugar and
+    // real Stripe rejects it (the mock accepted anything). The item's own
+    // price already carries the product.
+    const productId = await ensureRecurringGiftProduct(p.stripe_account_id, orgName);
     await stripe.subscriptions.update(rs.stripe_subscription_id, {
       items: [{ id: item.id, price_data: {
         currency: item.price?.currency || "usd",
-        product_data: { name: `${orgName} recurring gift` },
+        product: productId,
         recurring: { interval: newInterval },
         unit_amount: newCents,
       } }],
@@ -17019,10 +17153,15 @@ app.post("/portal/:orgSlug/recurring/:subId/amount", portalMutationLimiter, requ
     const stripeSub = await stripe.subscriptions.retrieve(sub.stripe_subscription_id, {}, { stripeAccount: org.stripe_account_id });
     const item = stripeSub.items?.data?.[0];
     if (!item) return res.status(409).json({ error: "not_editable" });
+    // BUILD-57 §2a (real-Stripe finding): subscription updates take price_data
+    // with an existing PRODUCT id — product_data is Checkout-only sugar and
+    // real Stripe rejects it (the local mock accepted anything, so this
+    // donor-facing reprice had never actually worked against real Stripe).
+    const productId = await ensureRecurringGiftProduct(org.stripe_account_id, displayNameCase(org.name));
     await stripe.subscriptions.update(sub.stripe_subscription_id, {
       items: [{ id: item.id, price_data: {
         currency: item.price?.currency || "usd",
-        product_data: { name: `${displayNameCase(org.name)} recurring gift` },
+        product: productId,
         recurring: { interval: (sub.interval === "year" ? "year" : "month") },
         unit_amount: cents,
       } }],
