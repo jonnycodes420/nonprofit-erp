@@ -64,6 +64,8 @@ async function fixture() {
   await q(`INSERT INTO campaigns (id,org_id,name,type,status,goal_amount,recipient_count,open_count) VALUES ('c_ac_2',$1,'Capital Push 2026','appeal','draft',100000,0,0)`, [ORG_A]);
   await q(`INSERT INTO accounts (id,org_id,code,name,type) VALUES ('acct_ac_rev',$1,'4010','Contributions','revenue') ON CONFLICT DO NOTHING`, [ORG_A]).catch(() => {});
   await q(`INSERT INTO fin_funds (id,org_id,name,restricted) VALUES ('fund_ac_gen',$1,'General',false) ON CONFLICT DO NOTHING`, [ORG_A]).catch(() => {});
+  await q(`INSERT INTO fin_funds (id,org_id,name,restricted) VALUES ('fund_ac_rest',$1,'Youth Program',true) ON CONFLICT DO NOTHING`, [ORG_A]).catch(() => {});
+  await q(`INSERT INTO donors (id,org_id,name,email,status,stage,total_giving,gift_count) VALUES ('d_ac_a3',$1,'Cara Complete','cara.ac@test.local','new','cultivate',0,0)`, [ORG_A]);
 
   await q(`INSERT INTO orgs (id,name,org_slug,onboarding_complete,subscription_status,plan) VALUES ($1,'AC B','ac-b',1,'active','growth')`, [ORG_B]);
   await q(`INSERT INTO users (id,org_id,email,password_hash,name,role) VALUES ('u_ac_b',$1,'ac-b@test.local',$2,'AC B','admin')`, [ORG_B, hash]);
@@ -177,6 +179,27 @@ async function run() {
   ok("P1 RENEWAL gift attributed from subscription (campaign + page)", gRenew && gRenew.campaign_id === "c_ac_1" && gRenew.giving_page_id === pageId, gRenew);
   camps = (await api("GET", "/fundraising/campaigns", tokA)).body;
   ok("P1 renewal moved the thermometer ($225 total)", campRow(camps, "c_ac_1").raised === 225, campRow(camps, "c_ac_1"));
+
+  // BUILD-56 (BUILD-55 §worry-3 follow-up): the FUND designation rides the
+  // subscription row too — a monthly gift started from a fund card designates
+  // its RENEWALS, not just the first charge. A fresh donor (Cara) so the
+  // donor-level fallback can't be poisoned by Ben's campaign-attributed sub.
+  const subFund = "sub_ac_" + crypto.randomBytes(5).toString("hex");
+  const stSubF = await fireSubCheckout({ email: "cara.ac@test.local", name: "Cara Complete", subId: subFund, amountCents: 4000, metadata: { fund_id: "fund_ac_rest" } });
+  ok("P1f fund-designated subscription checkout → 200", stSubF === 200, stSubF);
+  const rsF = (await q(`SELECT * FROM recurring_subscriptions WHERE stripe_subscription_id=$1`, [subFund]))[0];
+  ok("P1f subscription row stores the FUND designation", rsF && rsF.fund_id === "fund_ac_rest", rsF);
+  const piFRenew = "pi_ac_" + crypto.randomBytes(5).toString("hex");
+  await firePI({ email: "cara.ac@test.local", name: "Cara Complete", amountCents: 4000, piId: piFRenew, metadata: {}, invoice: "in_ac_frenewal1" });
+  const gFRenew = (await q(`SELECT * FROM gifts WHERE org_id=$1 AND stripe_payment_id=$2`, [ORG_A, piFRenew]))[0];
+  ok("P1f RENEWAL gift carries the sub's fund designation", gFRenew && gFRenew.fund_id === "fund_ac_rest", gFRenew && gFRenew.fund_id);
+  const ftFRenew = (await q(`SELECT fund_id FROM fin_transactions WHERE gift_id=$1`, [gFRenew?.id]))[0];
+  ok("P1f renewal LEDGER stamp routes to the designated fund", ftFRenew && ftFRenew.fund_id === "fund_ac_rest", ftFRenew);
+  // A bogus/foreign fund in checkout metadata is dropped, never stored.
+  const subBad = "sub_ac_" + crypto.randomBytes(5).toString("hex");
+  await fireSubCheckout({ email: "cara.ac@test.local", name: "Cara Complete", subId: subBad, amountCents: 1000, metadata: { fund_id: "fund_of_org_b" } });
+  const rsBad = (await q(`SELECT fund_id FROM recurring_subscriptions WHERE stripe_subscription_id=$1`, [subBad]))[0];
+  ok("P1f unowned fund_id in sub metadata is dropped (validated org-owned)", rsBad && rsBad.fund_id === null, rsBad);
 
   // Unattributed page still works.
   const pPlain = await api("POST", "/giving-pages", tokA, { title: "General Support" });

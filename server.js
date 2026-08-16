@@ -334,14 +334,14 @@ app.post("/stripe/webhook", express.raw({ type: "application/json" }), async (re
             // otherwise fall back to the donor's single attributed subscription —
             // ambiguity (2+ subs with different attributions) attributes nothing
             // rather than guessing (same never-mis-assign discipline as imports).
-            if (!campaignId && !givingPageId && pi.invoice) {
+            if (!campaignId && !givingPageId && !fundId && pi.invoice) {
               try {
                 let rsRow = null;
                 try {
                   const invObj = await stripe.invoices.retrieve(pi.invoice, { stripeAccount: accountId });
                   if (invObj?.subscription) {
                     const rows = await query(
-                      "SELECT campaign_id, giving_page_id, cover_fee_amount FROM recurring_subscriptions WHERE stripe_subscription_id=$1 AND org_id=$2",
+                      "SELECT campaign_id, giving_page_id, cover_fee_amount, fund_id FROM recurring_subscriptions WHERE stripe_subscription_id=$1 AND org_id=$2",
                       [invObj.subscription, orgId]
                     );
                     rsRow = rows[0] || null;
@@ -349,17 +349,21 @@ app.post("/stripe/webhook", express.raw({ type: "application/json" }), async (re
                 } catch { /* unreachable Stripe (local/test) — donor-level fallback below */ }
                 if (!rsRow) {
                   const rows = await query(
-                    `SELECT campaign_id, giving_page_id, cover_fee_amount FROM recurring_subscriptions
+                    `SELECT campaign_id, giving_page_id, cover_fee_amount, fund_id FROM recurring_subscriptions
                       WHERE org_id=$1 AND donor_id=$2 AND status <> 'canceled'
-                        AND (campaign_id IS NOT NULL OR giving_page_id IS NOT NULL)`,
+                        AND (campaign_id IS NOT NULL OR giving_page_id IS NOT NULL OR fund_id IS NOT NULL)`,
                     [orgId, donorId]
                   );
-                  const distinct = new Set(rows.map(r => `${r.campaign_id || ""}|${r.giving_page_id || ""}`));
+                  const distinct = new Set(rows.map(r => `${r.campaign_id || ""}|${r.giving_page_id || ""}|${r.fund_id || ""}`));
                   if (distinct.size === 1) rsRow = rows[0];
                 }
                 if (rsRow) {
                   campaignId = rsRow.campaign_id || null;
                   givingPageId = rsRow.giving_page_id || null;
+                  // BUILD-56 — the sub's FUND designation carries onto every
+                  // renewal (validated org-owned below with the gift insert's
+                  // own fund guard).
+                  fundId = rsRow.fund_id || null;
                   const rsCover = parseFloat(rsRow.cover_fee_amount) || 0;
                   if (!coverFeeAmount && rsCover > 0 && rsCover < amount) coverFeeAmount = rsCover;
                 }
@@ -514,16 +518,24 @@ app.post("/stripe/webhook", express.raw({ type: "application/json" }), async (re
             // every renewal (see the renewal-attribution block above).
             const subCampaignId = session.metadata?.campaign_id || null;
             const subGivingPageId = session.metadata?.giving_page_id || null;
+            // BUILD-56 — the FUND designation rides the sub row too (validated
+            // org-owned, like the gift-insert guard: never trust webhook
+            // payloads even though the metadata is our own /donate stamp).
+            let subFundId = session.metadata?.fund_id || null;
+            if (subFundId) {
+              const fOk = await query("SELECT id FROM fin_funds WHERE id=$1 AND org_id=$2", [subFundId, orgId]);
+              if (!fOk.length) subFundId = null;
+            }
             let subCoverFee = 0;
             if (session.metadata?.cover_fees === "true" && session.metadata?.base_amount_cents && recurAmount != null) {
               const base = parseInt(session.metadata.base_amount_cents, 10);
               if (Number.isFinite(base) && base > 0 && recurAmount > base / 100) subCoverFee = recurAmount - base / 100;
             }
             await run(
-              `INSERT INTO recurring_subscriptions (id, org_id, donor_id, stripe_subscription_id, stripe_customer_id, amount, interval, status, campaign_id, giving_page_id, cover_fee_amount)
-               VALUES ($1,$2,$3,$4,$5,$6,$7,'active',$8,$9,$10)
+              `INSERT INTO recurring_subscriptions (id, org_id, donor_id, stripe_subscription_id, stripe_customer_id, amount, interval, status, campaign_id, giving_page_id, cover_fee_amount, fund_id)
+               VALUES ($1,$2,$3,$4,$5,$6,$7,'active',$8,$9,$10,$11)
                ON CONFLICT (stripe_subscription_id) DO NOTHING`,
-              ["rsub_" + uuid().slice(0, 8), orgId, donorId, session.subscription, session.customer || null, recurAmount, frequency === "annual" ? "year" : "month", subCampaignId, subGivingPageId, subCoverFee]
+              ["rsub_" + uuid().slice(0, 8), orgId, donorId, session.subscription, session.customer || null, recurAmount, frequency === "annual" ? "year" : "month", subCampaignId, subGivingPageId, subCoverFee, subFundId]
             );
           }
         }

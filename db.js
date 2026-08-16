@@ -1596,6 +1596,12 @@ async function initSchema() {
   await pool.query(`ALTER TABLE recurring_subscriptions ADD COLUMN IF NOT EXISTS campaign_id TEXT`);
   await pool.query(`ALTER TABLE recurring_subscriptions ADD COLUMN IF NOT EXISTS giving_page_id TEXT`);
   await pool.query(`ALTER TABLE recurring_subscriptions ADD COLUMN IF NOT EXISTS cover_fee_amount NUMERIC DEFAULT 0`);
+  // BUILD-56 (BUILD-55 §worry-3 follow-up) — a subscription remembers its FUND
+  // designation the same way it remembers campaign/page attribution, so
+  // renewal charges route to the designated fund instead of falling back to
+  // undesignated (stamped at checkout.session.completed, read back by the
+  // renewal-attribution block in payment_intent.succeeded).
+  await pool.query(`ALTER TABLE recurring_subscriptions ADD COLUMN IF NOT EXISTS fund_id TEXT`);
 
   // ══ BUILD-45 — DONOR PORTAL ══════════════════════════════════════════════
   // A public, money-adjacent surface for people who are NOT Steward users.
