@@ -167,7 +167,13 @@ asset-path lists (tiny rows), not the widget JSONB. The restore script's
 - `tests/asset-retention.test.js` 56 — in run-all (88 suites).
 - theme-assets updated to the retention contract (59), attribution 75 (+5),
   script-guards 285 (restore-asset classified GUARDED_WRITERS).
-- Full battery green locally; CI + SHA-verified deploy recorded below.
+- Full battery green locally (87 suites, incl. the browser suites with the
+  CORS_ORIGIN/PLAYWRIGHT_DIR env). CI run 31953231486 green on `6b9f1ac`.
+- SHA-verified live 2026-08-16: backend `/health.buildSha` = `6b9f1acb…526f`,
+  frontend `<meta name="build-sha">` = same; prod `/health.themeAssets` now
+  reads `{s3: true, dbFallbackRows: 0, dbFallbackSinceBoot: 0, softDeleted: 0}`
+  — softDeleted 0 is correct (nothing has been replaced since the deploy;
+  the first theme replacement will make it 1, restorable for 90 days).
 
 ## §worry — what I would not bet on
 
