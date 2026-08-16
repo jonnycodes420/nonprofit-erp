@@ -63,3 +63,36 @@ workflow is correct by construction and mirrors the local boot recipe, but the
 first run on GitHub should be watched: the likely first-run snags are the
 Postgres service readiness and the server-boot wait loop. The full suite is
 proven green locally (56 suites) with the same env the workflow sets.
+
+## 6. Tigris bucket versioning on `steward-portal-assets` (BUILD-56, belt-and-braces)
+
+BUILD-56 makes asset destruction impossible-by-default in the APP (soft delete +
+90-day retention + pointer history + restore script). Bucket versioning is the
+storage-layer BELT on top — it does NOT substitute for any of that (opaque S3
+version IDs with no pointer history are not a recovery path), but it means even
+a bug inside the destruction seam can't permanently lose S3 bytes.
+
+Console path (Railway buckets are Tigris under the hood):
+
+1. Railway dashboard → project **nonprofit-erp** → prod environment → bucket
+   **steward-portal-assets** → open the Tigris console/storage settings for the
+   bucket (Railway surfaces a "Open in Tigris" / storage settings link).
+2. Enable **Object Versioning** on the bucket.
+3. Add a **lifecycle rule** to expire *noncurrent versions* after **180 days**
+   (double the app's 90-day window, so the belt outlives the suspenders; keeps
+   storage bounded).
+
+CLI alternative (Tigris speaks the S3 API; use the `PORTAL_ASSETS_S3_*` creds):
+
+```
+aws s3api put-bucket-versioning --bucket steward-portal-assets \
+  --endpoint-url https://t3.storageapi.dev \
+  --versioning-configuration Status=Enabled
+aws s3api put-bucket-lifecycle-configuration --bucket steward-portal-assets \
+  --endpoint-url https://t3.storageapi.dev \
+  --lifecycle-configuration '{"Rules":[{"ID":"expire-noncurrent","Status":"Enabled",
+    "Filter":{},"NoncurrentVersionExpiration":{"NoncurrentDays":180}}]}'
+```
+
+Verify: `aws s3api get-bucket-versioning --bucket steward-portal-assets
+--endpoint-url https://t3.storageapi.dev` → `"Status": "Enabled"`.
