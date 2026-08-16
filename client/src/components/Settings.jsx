@@ -1,7 +1,6 @@
 import { useState, useEffect } from "react";
 import { T, Pill, SectionLabel, PageTitle, SectionTabs, fmt } from "./shared";
 import { QrCodeBlock, EmbedCodeBlock } from "./ShareBlocks";
-import { TYPE_PAIRINGS, CARD_STYLES, resolvePairing, cardChrome, THEME_DEFAULTS } from "../lib/portalTheme";
 import { resolveAssetUrl } from "../lib/assetUrl";
 import { apiFetch, API, getToken, billingErrorMessage } from "../api";
 import UpgradeModal from "./UpgradeModal";
@@ -32,6 +31,24 @@ const GP_STATUS_META={
   active:   {label:"Active",   bg:"#edf3ee", color:"#1a6b4a", border:"#10b981"},
   archived: {label:"Archived", bg:"#f3f0eb", color:"#6b6b6b", border:"#d4cfc6"},
 };
+
+// A shareable URL renders as labeled actions — open + copy — never bare
+// monospace text (the URL travels via the clipboard). One implementation for
+// every share surface in Settings (giving-page share panel, donation QR card).
+function UrlLinkButtons({url,openLabel="Open page ↗"}){
+  const [copied,setCopied]=useState(false);
+  const copy=async()=>{
+    try{await navigator.clipboard.writeText(url);setCopied(true);setTimeout(()=>setCopied(false),2000);}
+    catch{/* clipboard blocked — the Open link still carries the URL */}
+  };
+  const base={borderRadius:8,padding:"7px 14px",fontSize:12,fontWeight:700,cursor:"pointer"};
+  return(
+    <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
+      <a href={url} target="_blank" rel="noreferrer" style={{...base,display:"inline-block",background:T.gold500,border:"none",color:T.ink,textDecoration:"none"}}>{openLabel}</a>
+      <button onClick={copy} style={{...base,background:T.bg2,border:"1px solid "+T.bg3,color:T.ink}}>{copied?"Copied ✓":"Copy link"}</button>
+    </div>
+  );
+}
 
 // Own top-level manager component (module scope, like QrCodeBlock/
 // EmbedCodeBlock above) — a titled, storied, goal-tracked donation page
@@ -209,9 +226,7 @@ function GivingPagesManager({orgSlug,isAdmin,isReadOnly}){
             </div>
             {shareOpen&&(
               <div style={{marginTop:14,background:T.bg,border:"1px solid "+T.bg3,borderRadius:12,padding:"16px 18px",display:"flex",flexDirection:"column",gap:14}}>
-                <div style={{background:T.white,borderRadius:10,padding:"10px 14px",fontFamily:"monospace",fontSize:12,color:T.ink2,wordBreak:"break-all",border:"1px solid "+T.bg3}}>
-                  {url}
-                </div>
+                <UrlLinkButtons url={url}/>
                 <QrCodeBlock url={url} filenameBase={slugifyPreview(p.title)||"giving-page"}/>
                 <div>
                   <div style={{fontSize:11,fontWeight:700,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:8}}>Embed Code</div>
@@ -392,17 +407,11 @@ function BrandingManager({orgId,isAdmin,isReadOnly,onSaved}){
         <div style={{flex:"1 1 300px",display:"flex",flexDirection:"column",gap:18}}>
           <div>
             <div style={{fontSize:11,fontWeight:700,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:8}}>Logo</div>
-            <div style={{display:"flex",alignItems:"center",gap:12}}>
-              <div style={{width:64,height:64,borderRadius:12,border:"1px dashed "+T.bg3,background:T.bg,display:"flex",alignItems:"center",justifyContent:"center",overflow:"hidden",flexShrink:0}}>
-                {logo?<img src={logo} alt="logo" style={{maxWidth:"100%",maxHeight:"100%",objectFit:"contain"}}/>:<span style={{fontSize:10,color:T.ink3}}>none</span>}
-              </div>
-              <div style={{display:"flex",flexDirection:"column",gap:6,flex:"1 1 200px"}}>
-                <Uploader accept={IMAGE_ACCEPT} acceptLabel={IMAGE_ACCEPT_LABEL} maxBytes={IMAGE_MAX_BYTES} compact
-                  disabled={disabled} label={logo?"Replace logo":"Upload logo"}
-                  onFile={({dataUrl})=>{setDirty(true);setLogo(dataUrl);}}/>
-                {logo&&!disabled&&<button onClick={()=>{setDirty(true);setLogo("");}} style={{background:"none",border:"none",color:T.terracotta,fontSize:11,fontWeight:600,cursor:"pointer",textAlign:"left",padding:0}}>Remove</button>}
-              </div>
-            </div>
+            <Uploader accept={IMAGE_ACCEPT} acceptLabel={IMAGE_ACCEPT_LABEL} maxBytes={IMAGE_MAX_BYTES} compact
+              shape="square" preview={logo||null}
+              disabled={disabled} label={logo?"Replace logo":"Drag your logo here, or browse"}
+              onFile={({dataUrl})=>{setDirty(true);setLogo(dataUrl);}}
+              onRemove={disabled?null:()=>{setDirty(true);setLogo("");}}/>
           </div>
           <div>
             <div style={{fontSize:11,fontWeight:700,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:8}}>Accent color</div>
@@ -677,308 +686,19 @@ function TaxReceiptsManager({orgId,isAdmin,isReadOnly}){
 // settingsIntent → initialSection prop), e.g. Communications' CAN-SPAM
 // prompt lands directly on "receipts".
 
-// ── BUILD-48 — live theme preview (Settings › Donor Portal) ─────────────────
-// Renders the two surfaces the theme owns, straight from the UNSAVED editor
-// state: the single-org TAKEOVER of a donor's dashboard, and the org's card
-// in a multi-org dashboard. Colors here are the raw picks — the server may
-// deepen/lighten them slightly on save (the admin is told when it does).
-function PortalThemePreview({ps}){
-  const pairing=resolvePairing(ps.type_pairing);
-  // BUILD-51 — a freshly-picked file is a data URI in *_data; a saved image
-  // is a /portal-assets URL in *_url. Either renders.
-  const headerSrc=ps.header_image_data||resolveAssetUrl(ps.header_image_url);
-  const logoSrc=ps.logo_data||resolveAssetUrl(ps.logo_url);
-  const chrome=cardChrome(ps.card_style,T.bg3);
-  const primary=ps.primary_color||THEME_DEFAULTS.primary;
-  const accent=ps.accent_color||THEME_DEFAULTS.accent;
-  const button=ps.button_color||primary;
-  const tint=ps.background_tint||"#faf9f6";
-  const name=ps.display_name||"Your Organization";
-  const muted={fontSize:10,color:"#6b6b64"};
-  return(
-    <div style={{border:"1px solid "+T.bg3,borderRadius:12,padding:"16px 18px",marginBottom:16,background:T.bg}}>
-      <div style={{fontSize:12,fontWeight:700,color:T.ink,marginBottom:2}}>Live preview</div>
-      <div style={{fontSize:12,color:T.ink3,lineHeight:1.5,marginBottom:12,maxWidth:620}}>
-        Left: when yours is the only organization a donor follows, your theme owns their whole giving
-        page. Right: your card when they support several — your theme stays on your card. Colors may be
-        adjusted slightly on save so text stays readable.
-      </div>
-      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(270px,1fr))",gap:14}}>
-        <div style={{background:tint,border:"1px solid "+T.bg3,borderRadius:10,paddingBottom:14,overflow:"hidden"}}>
-          <div style={{padding:"8px 14px 0",...muted}}>Steward · your giving account</div>
-          {headerSrc&&(
-            <div style={{height:54,overflow:"hidden",margin:"8px 14px 0",borderRadius:8}}>
-              <img src={headerSrc} alt="" style={{width:"100%",height:"100%",objectFit:"cover",display:"block"}}/>
-            </div>
-          )}
-          <div style={{display:"flex",alignItems:"center",gap:8,padding:"10px 14px 0"}}>
-            {logoSrc&&<img src={logoSrc} alt="" style={{height:22,maxWidth:70,objectFit:"contain"}}/>}
-            <span style={{fontFamily:pairing.serif,fontSize:17,color:T.ink}}>{name}</span>
-          </div>
-          <div style={{height:2,background:accent,width:44,borderRadius:2,margin:"8px 14px 10px"}}/>
-          <div style={{background:primary,borderRadius:8,margin:"0 14px 10px",padding:"10px 12px"}}>
-            <div style={{fontSize:9,textTransform:"uppercase",letterSpacing:"0.08em",color:T.white,opacity:0.8}}>This year</div>
-            <div style={{fontFamily:pairing.serif,fontSize:20,color:T.white}}>$1,250</div>
-          </div>
-          <div style={{margin:"0 14px",...chrome,background:T.white,padding:"10px 12px",display:"flex",justifyContent:"space-between",alignItems:"center",gap:8}}>
-            <span style={{fontFamily:pairing.serif,fontSize:12,color:T.ink}}>Your history with {name}</span>
-            <span style={{background:button,color:T.white,borderRadius:6,padding:"5px 9px",fontSize:10,fontWeight:700,whiteSpace:"nowrap"}}>Gifts &amp; receipts →</span>
-          </div>
-        </div>
-        <div style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:10,padding:14}}>
-          <div style={{fontFamily:"'DM Serif Display',Georgia,serif",fontSize:13,color:T.ink,marginBottom:8}}>Your organizations</div>
-          <div style={{...chrome,background:T.white,overflow:"hidden",borderLeft:"4px solid "+accent}}>
-            {headerSrc&&(
-              <div style={{height:36,overflow:"hidden"}}>
-                <img src={headerSrc} alt="" style={{width:"100%",height:"100%",objectFit:"cover",display:"block"}}/>
-              </div>
-            )}
-            <div style={{display:"flex",alignItems:"center",gap:8,padding:"10px 12px"}}>
-              {logoSrc
-                ? <img src={logoSrc} alt="" style={{width:26,height:26,borderRadius:6,objectFit:"cover"}}/>
-                : <div style={{width:26,height:26,borderRadius:6,background:primary,color:T.white,display:"flex",alignItems:"center",justifyContent:"center",fontFamily:pairing.serif,fontSize:13}}>{name[0]}</div>}
-              <div style={{flex:1,minWidth:0}}>
-                <div style={{fontFamily:pairing.serif,fontSize:13,color:T.ink}}>{name}</div>
-                <div style={muted}>Last gift May 12</div>
-              </div>
-              <div style={{textAlign:"right"}}>
-                <div style={{fontSize:11,fontWeight:700,color:T.ink}}>$350 this year</div>
-                <div style={muted}>$1,250 lifetime</div>
-              </div>
-            </div>
-          </div>
-          <div style={{borderRadius:10,border:"1px solid "+T.bg3,background:T.white,opacity:0.55,marginTop:8,padding:"10px 12px"}}>
-            <div style={{fontSize:12,color:T.ink3}}>Another organization</div>
-            <div style={muted}>Their card keeps their own theme</div>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ── BUILD-45 — Donor Portal manager (Settings › Donor Portal) ──────────────
-// The org's public, white-label donor surface: enable switch, theme, and the
-// Impact Updates donors see. Colors are server-normalized to WCAG-legible
-// values (the org is told when a color was deepened); images validated
-// server-side too (type + size).
-export function PortalManager({isAdmin,isReadOnly}){
-  const [ps,setPs]=useState(null);
-  const [saving,setSaving]=useState(false);
-  const [msg,setMsg]=useState("");const [err,setErr]=useState("");
-  // BUILD-54 §6 - unsaved-state: visible dirty chip + navigate-away guard
-  // (the real incident: an image uploaded, Save never clicked).
-  const [dirty,setDirty]=useState(false);
-  useDirtyGuard(dirty);
-  const disabled=!isAdmin||isReadOnly;
-  const load=()=>apiFetch("/portal-settings").then(setPs).catch(()=>setPs(null));
-  useEffect(()=>{load();},[]);
-  const set=(k,v)=>{setDirty(true);setPs(p=>({...p,[k]:v}));};
-  // BUILD-51 — display refs: a new upload sits in *_data (data URI) until
-  // saved; a stored image is a /portal-assets URL in *_url.
-  const headerSrc=ps?(ps.header_image_data||resolveAssetUrl(ps.header_image_url)):null;
-  const logoSrc=ps?(ps.logo_data||resolveAssetUrl(ps.logo_url)):null;
-  function onImg(field){return e=>{
-    const f=e.target.files?.[0];if(!f)return;
-    if(!/^image\/(png|jpeg|jpg|gif|webp|svg\+xml)$/.test(f.type)){setErr("Use a PNG, JPEG, GIF, WebP, or SVG image.");return;}
-    if(f.size>350*1024){setErr("Image too large — keep it under 350KB.");return;}
-    setErr("");const r=new FileReader();r.onload=()=>set(field,r.result);r.readAsDataURL(f);
-  };}
-  async function save(){
-    if(disabled||saving||!ps)return;
-    setSaving(true);setErr("");setMsg("");
-    try{
-      const res=await apiFetch("/portal-settings",{method:"PUT",body:JSON.stringify({
-        enabled:ps.enabled===true,poweredBy:ps.powered_by===true,
-        networkListed:ps.network_listed===true,
-        directoryDescription:ps.directory_description||"",
-        directoryCity:ps.directory_city||"",
-        directoryState:ps.directory_state||"",
-        displayName:ps.display_name||"",footerText:ps.footer_text||"",
-        contactEmail:ps.contact_email||"",einLine:ps.ein_line||"",
-        primaryColor:ps.primary_color||"",accentColor:ps.accent_color||"",
-        backgroundTint:ps.background_tint||"",buttonColor:ps.button_color||"",
-        typePairing:ps.type_pairing||"",cardStyle:ps.card_style||"",
-        logoData:ps.logo_data||ps.logo_url||"",headerImageData:ps.header_image_data||ps.header_image_url||"",
-        minRecurringCents:Number(ps.min_recurring_cents)||500,
-      })});
-      setPs(p=>({...p,...res}));
-      setDirty(false);
-      setMsg(res.adjusted?res.message:"Portal settings saved.");
-    }catch(e){setErr(e.message||"Could not save portal settings.");}
-    setSaving(false);
-  }
-  if(!ps)return <div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:16,padding:"24px 28px",color:T.ink3,fontSize:13}}>Loading…</div>;
-  const inp={width:"100%",boxSizing:"border-box",background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"9px 12px",color:T.ink,fontSize:13,outline:"none",fontFamily:"inherit"};
-  const lbl={fontSize:11,fontWeight:700,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:6};
-  return(
-    <div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:16,padding:"24px 28px"}}>
-      <SectionLabel>Donor Portal</SectionLabel>
-      <div style={{fontSize:13,color:T.ink3,lineHeight:1.6,marginTop:6,marginBottom:16,maxWidth:600}}>
-        A private page where your donors see their own giving history, download tax receipts, and manage
-        their recurring gifts. Your portal signs donors in by email link — no password to manage here.
-        Separately, donors can choose to create their own free Steward account to see their giving across
-        every organization they support; that's optional and theirs, and it never changes what your portal
-        shows. The portal carries your identity, not ours.
-      </div>
-      <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:16}}>
-        <label style={{display:"flex",alignItems:"center",gap:8,fontSize:14,fontWeight:600,color:T.ink,cursor:disabled?"not-allowed":"pointer"}}>
-          <input type="checkbox" checked={ps.enabled===true} disabled={disabled} onChange={e=>set("enabled",e.target.checked)}/>
-          Portal is {ps.enabled?"ON":"OFF"}
-        </label>
-        {ps.enabled&&ps.portal_url&&<a href={ps.portal_url} target="_blank" rel="noreferrer" style={{fontSize:13,color:T.greenDk,fontWeight:600}}>{ps.portal_url} ↗</a>}
-      </div>
-      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(240px,1fr))",gap:14,marginBottom:16}}>
-        <div><div style={lbl}>Display name</div><input style={inp} value={ps.display_name||""} disabled={disabled} onChange={e=>set("display_name",e.target.value)} placeholder="Your organization's public name"/></div>
-        <div><div style={lbl}>Contact email (shown to donors)</div><input style={inp} value={ps.contact_email||""} disabled={disabled} onChange={e=>set("contact_email",e.target.value)} placeholder="hello@yourorg.org"/></div>
-        <div><div style={lbl}>Footer text</div><input style={inp} value={ps.footer_text||""} disabled={disabled} onChange={e=>set("footer_text",e.target.value)} placeholder="Your mission line or mailing address"/></div>
-        <div><div style={lbl}>EIN line (for receipts context)</div><input style={inp} value={ps.ein_line||""} disabled={disabled} onChange={e=>set("ein_line",e.target.value)} placeholder="Tax ID (EIN): 12-3456789"/></div>
-        <div><div style={lbl}>Minimum recurring amount ($)</div><input style={inp} inputMode="numeric" value={(Number(ps.min_recurring_cents)||500)/100} disabled={disabled}
-          onChange={e=>set("min_recurring_cents",Math.round((parseFloat(e.target.value)||5)*100))}/></div>
-      </div>
-      <div style={{display:"flex",gap:24,flexWrap:"wrap",marginBottom:16}}>
-        <div>
-          <div style={lbl}>Primary color</div>
-          <div style={{display:"flex",gap:8,alignItems:"center"}}>
-            <input type="color" value={ps.primary_color||"#1a6b4a"} disabled={disabled} onChange={e=>set("primary_color",e.target.value)} style={{width:36,height:36,border:"1px solid "+T.bg3,borderRadius:8,background:"none",padding:2,cursor:disabled?"not-allowed":"pointer"}}/>
-            <input style={{...inp,width:110,fontFamily:"monospace"}} value={ps.primary_color||""} disabled={disabled} onChange={e=>set("primary_color",e.target.value)} placeholder="#1a6b4a"/>
-          </div>
-        </div>
-        <div>
-          <div style={lbl}>Accent color</div>
-          <div style={{display:"flex",gap:8,alignItems:"center"}}>
-            <input type="color" value={ps.accent_color||"#c9a84c"} disabled={disabled} onChange={e=>set("accent_color",e.target.value)} style={{width:36,height:36,border:"1px solid "+T.bg3,borderRadius:8,background:"none",padding:2,cursor:disabled?"not-allowed":"pointer"}}/>
-            <input style={{...inp,width:110,fontFamily:"monospace"}} value={ps.accent_color||""} disabled={disabled} onChange={e=>set("accent_color",e.target.value)} placeholder="#c9a84c"/>
-          </div>
-        </div>
-        <div style={{minWidth:220}}>
-          <div style={lbl}>Logo</div>
-          <Uploader accept={IMAGE_ACCEPT} acceptLabel={IMAGE_ACCEPT_LABEL} maxBytes={IMAGE_MAX_BYTES} compact
-            disabled={disabled} label={logoSrc?"Replace logo":"Upload logo"}
-            onFile={({dataUrl})=>set("logo_data",dataUrl)}>
-            {logoSrc&&<img src={logoSrc} alt="" style={{display:"block",maxHeight:36,marginTop:6}}/>}
-          </Uploader>
-        </div>
-        <div style={{minWidth:260}}>
-          <div style={lbl}>Header image (optional)</div>
-          <Uploader accept={IMAGE_ACCEPT} acceptLabel={IMAGE_ACCEPT_LABEL} maxBytes={IMAGE_MAX_BYTES} compact
-            disabled={disabled} label={headerSrc?"Replace image":"Upload image"}
-            validate={({file,dataUrl})=>file.type==="image/svg+xml"?null:new Promise(resolve=>{
-              // Mirror of the server banner rule (landscape, >=600px wide) so a
-              // portrait drop is explained BEFORE the round trip. UI courtesy
-              // only — the server re-validates identically.
-              const img=new Image();
-              img.onload=()=>resolve(img.height>=img.width?"Header images render as a wide banner — use a landscape image (at least 1200×300 works well).":(img.width<600?"Header images need to be at least 600px wide.":null));
-              img.onerror=()=>resolve("That file doesn't parse as an image.");
-              img.src=dataUrl;
-            })}
-            onFile={({dataUrl})=>set("header_image_data",dataUrl)}/>
-          {/* BUILD-51 — banner CROP preview: exactly the wide crop the donor
-              page renders, so a portrait upload shows its own decapitation
-              here before the server rejects it. */}
-          {headerSrc&&(
-            <div style={{marginTop:8}}>
-              <div style={{width:"100%",maxWidth:340,aspectRatio:"1200 / 250",overflow:"hidden",borderRadius:8,border:"1px solid "+T.bg3}}>
-                <img src={headerSrc} alt="" style={{width:"100%",height:"100%",objectFit:"cover",display:"block"}}/>
-              </div>
-              <div style={{fontSize:11,color:T.ink3,marginTop:4,maxWidth:340,lineHeight:1.5}}>
-                Banner crop — how the header shows on your donor page. Landscape
-                images around 1200×300 work best; portrait images are rejected.
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
-      {/* BUILD-48 theme depth — background tint + button color (both contrast-
-          guarded server-side, like the accent), plus two ENUM choices: a
-          curated type pairing and a card style. Never free CSS, never a font
-          upload or external font URL. */}
-      <div style={{display:"flex",gap:24,flexWrap:"wrap",marginBottom:16}}>
-        <div>
-          <div style={lbl}>Background tint (optional)</div>
-          <div style={{display:"flex",gap:8,alignItems:"center"}}>
-            <input type="color" value={ps.background_tint||"#faf9f6"} disabled={disabled} onChange={e=>set("background_tint",e.target.value)} style={{width:36,height:36,border:"1px solid "+T.bg3,borderRadius:8,background:"none",padding:2,cursor:disabled?"not-allowed":"pointer"}}/>
-            <input style={{...inp,width:110,fontFamily:"monospace"}} value={ps.background_tint||""} disabled={disabled} onChange={e=>set("background_tint",e.target.value)} placeholder="#faf9f6"/>
-            {ps.background_tint&&<button style={{background:"none",border:"none",color:T.ink3,fontSize:12,cursor:"pointer"}} disabled={disabled} onClick={()=>set("background_tint","")}>Clear</button>}
-          </div>
-          <div style={{fontSize:11,color:T.ink3,marginTop:4,maxWidth:220}}>A soft page wash behind your portal. Dark colors are lightened so text stays readable.</div>
-        </div>
-        <div>
-          <div style={lbl}>Button &amp; link color (optional)</div>
-          <div style={{display:"flex",gap:8,alignItems:"center"}}>
-            <input type="color" value={ps.button_color||ps.primary_color||"#1a6b4a"} disabled={disabled} onChange={e=>set("button_color",e.target.value)} style={{width:36,height:36,border:"1px solid "+T.bg3,borderRadius:8,background:"none",padding:2,cursor:disabled?"not-allowed":"pointer"}}/>
-            <input style={{...inp,width:110,fontFamily:"monospace"}} value={ps.button_color||""} disabled={disabled} onChange={e=>set("button_color",e.target.value)} placeholder="primary"/>
-            {ps.button_color&&<button style={{background:"none",border:"none",color:T.ink3,fontSize:12,cursor:"pointer"}} disabled={disabled} onClick={()=>set("button_color","")}>Clear</button>}
-          </div>
-          <div style={{fontSize:11,color:T.ink3,marginTop:4,maxWidth:220}}>Buttons and links. Left empty, they use your primary color.</div>
-        </div>
-        <div>
-          <div style={lbl}>Type pairing</div>
-          <select style={{...inp,width:220}} value={ps.type_pairing||"dm"} disabled={disabled} onChange={e=>set("type_pairing",e.target.value)}>
-            {Object.entries(TYPE_PAIRINGS).map(([k,v])=><option key={k} value={k}>{v.label}</option>)}
-          </select>
-          <div style={{fontSize:11,color:T.ink3,marginTop:4,maxWidth:220}}>A curated set — every pairing is pre-licensed and self-hosted, so your page stays fast.</div>
-        </div>
-        <div>
-          <div style={lbl}>Card style</div>
-          <select style={{...inp,width:160}} value={ps.card_style||"rounded"} disabled={disabled} onChange={e=>set("card_style",e.target.value)}>
-            {Object.entries(CARD_STYLES).map(([k,v])=><option key={k} value={k}>{v.label}</option>)}
-          </select>
-        </div>
-      </div>
-      <PortalThemePreview ps={ps}/>
-      <label style={{display:"flex",alignItems:"center",gap:8,fontSize:13,color:T.ink3,marginBottom:16,cursor:disabled?"not-allowed":"pointer"}}>
-        <input type="checkbox" checked={ps.powered_by===true} disabled={disabled} onChange={e=>set("powered_by",e.target.checked)}/>
-        Show a small "Powered by Steward" line in the footer (off by default — the portal is yours)
-      </label>
-      {/* BUILD-46 §2.2 — the second switch: donor-dashboard listing. Off by
-          default for existing orgs; entirely separate from the portal itself
-          (opting out keeps the standalone portal working unchanged). */}
-      <label style={{display:"flex",alignItems:"center",gap:8,fontSize:13,color:T.ink3,marginBottom:16,cursor:disabled?"not-allowed":"pointer"}}>
-        <input type="checkbox" checked={ps.network_listed===true} disabled={disabled} onChange={e=>set("network_listed",e.target.checked)}/>
-        List this organization in donor dashboards (donors who verify an email you have on file see their giving with you alongside their other giving; you see nothing new). When listed, your signed-in portal also shows donors one quiet line offering that optional account; unlisted, it never mentions it.
-      </label>
-      {/* BUILD-47 — the directory card donors see when they SEARCH for you.
-          Only shown while listed; reveals only what you type here. */}
-      {ps.network_listed===true&&(
-        <div style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:10,padding:"14px 16px",marginBottom:16}}>
-          <div style={{fontSize:12,fontWeight:700,color:T.ink,marginBottom:4}}>Your directory listing</div>
-          <div style={{fontSize:12,color:T.ink3,lineHeight:1.5,marginBottom:10}}>
-            Donors can find you by name, city, or EIN and add you to their dashboard. This card shows only
-            what you enter below — never anything about any donor.
-          </div>
-          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(200px,1fr))",gap:12}}>
-            <div style={{gridColumn:"1 / -1"}}><div style={lbl}>One-line description</div>
-              <input style={inp} maxLength={160} value={ps.directory_description||""} disabled={disabled} onChange={e=>set("directory_description",e.target.value)} placeholder="What you do, in one sentence"/></div>
-            <div><div style={lbl}>City</div>
-              <input style={inp} maxLength={80} value={ps.directory_city||""} disabled={disabled} onChange={e=>set("directory_city",e.target.value)} placeholder="Fairhope"/></div>
-            <div><div style={lbl}>State</div>
-              <input style={inp} maxLength={40} value={ps.directory_state||""} disabled={disabled} onChange={e=>set("directory_state",e.target.value)} placeholder="AL"/></div>
-          </div>
-        </div>
-      )}
-      {/* BUILD-49 entry point (e) — the copy-paste website snippet. Only while
-          listed (unlisted orgs' donors never see any giving-account entry
-          point, including on the org's own site). */}
-      {ps.enabled===true&&ps.network_listed===true&&ps.org_slug&&<PortalWebsiteSnippet ps={ps}/>}
-      {isAdmin&&(
-        <div style={{position:"sticky",bottom:0,background:T.white,padding:"12px 0 4px",display:"flex",alignItems:"center",gap:12,borderTop:dirty?"1px solid "+T.bg3:"none"}}>
-          <button onClick={save} disabled={disabled||saving} title={isReadOnly?"Reactivate your subscription to make changes.":undefined}
-            style={{background:disabled?T.bg3:T.gold500,border:"none",borderRadius:9,padding:"10px 18px",color:T.ink,fontSize:13,fontWeight:700,cursor:disabled?"not-allowed":"pointer"}}>{saving?"Saving…":"Save portal settings"}</button>
-          {dirty&&!saving&&<span style={{fontSize:12,fontWeight:600,color:T.terra700}}>Unsaved changes</span>}
-        </div>
-      )}
-      {msg&&<div style={{marginTop:10,fontSize:13,color:T.greenDk,fontWeight:600}}>{msg}</div>}
-      {err&&<div style={{marginTop:10,fontSize:13,color:T.terracotta,fontWeight:600}}>{err}</div>}
-    </div>
-  );
-}
+// ── BUILD-55 — the old PortalManager form (and its PortalThemePreview) is
+// GONE, deliberately: everything appearance/content-editable moved into the
+// in-portal editor's Design mode (client/src/pages/PortalEditor.jsx — edit
+// what you see, where you see it). The status/listing switches it also
+// carried (enabled, network_listed, directory card) live on the CRM's Donor
+// Portal tab (DonorPortalHub.jsx). Every field has exactly ONE home — do not
+// rebuild a second editing surface here.
 
 // ── BUILD-49 entry point (e) — "put it on your website" snippet ─────────────
 // A link and a button an org can paste into its own site, pointing donors at
 // their giving account with from=<slug> (the cosmetic theming fragment — no
 // donor data rides the URL). Shown only while the org is network-listed.
-function PortalWebsiteSnippet({ps}){
+export function PortalWebsiteSnippet({ps}){
   const [copied,setCopied]=useState("");
   // Derive the canonical site base from the server-built portal_url so the
   // snippet always carries the same host the server links carry.
@@ -1018,13 +738,23 @@ function PortalWebsiteSnippet({ps}){
         </div>
         <a href={givingUrl} target="_blank" rel="noreferrer" style={{display:"inline-block",background:T.ink,color:T.bg,padding:"10px 22px",borderRadius:8,fontSize:14,fontWeight:600,textDecoration:"none"}}>Your giving account</a>
       </div>
-      <div style={{fontSize:12,color:T.ink3,marginTop:10}}>
-        Your donor portal (this organization only): <a href={ps.portal_url} target="_blank" rel="noreferrer" style={{color:T.greenDk,fontWeight:600}}>{ps.portal_url}</a>
+      <div style={{fontSize:12,color:T.ink3,marginTop:10,display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+        <span>Your donor portal (this organization only):</span>
+        <a href={ps.portal_url} target="_blank" rel="noreferrer" style={{display:"inline-block",background:T.bg2,border:"1px solid "+T.bg3,borderRadius:8,padding:"7px 14px",color:T.ink,fontSize:12,fontWeight:700,textDecoration:"none"}}>Open donor portal ↗</a>
       </div>
     </div>
   );
 }
 const lblCopy={fontSize:11,fontWeight:700,color:"#6b6b64",textTransform:"uppercase",letterSpacing:"0.07em"};
+
+// The snippet renders in the Donor Portal hub now (a share/links artifact);
+// this gate keeps the enabled+listed+slug rule in ONE place (pinned by
+// tests/donor-front-door.test.js — unlisted orgs' donors never see any
+// giving-account entry point, including on the org's own site).
+export function PortalWebsiteSnippetCard({ps}){
+  if(!ps)return null;
+  return <>{ps.enabled===true&&ps.network_listed===true&&ps.org_slug&&<PortalWebsiteSnippet ps={ps}/>}</>;
+}
 
 // Impact Updates (§6.1) — what donors see in "What your giving made possible".
 // Attached to funds/campaigns; matching is deterministic on gift attribution.
@@ -1079,23 +809,28 @@ export function ImpactUpdatesManager({isAdmin,isReadOnly}){
           <input style={inp} value={form.title} onChange={e=>setForm(f=>({...f,title:e.target.value}))} placeholder="Food bank served 400 families this spring"/>
           <div style={{...lbl,marginTop:12}}>Story</div>
           <textarea style={{...inp,minHeight:90,resize:"vertical",lineHeight:1.6}} value={form.body} onChange={e=>setForm(f=>({...f,body:e.target.value}))}/>
-          <div style={{...lbl,marginTop:12}}>Photos (up to 4, each under 350KB)</div>
-          <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
-            {(form.photos||[]).map((p,i)=>(
-              <div key={i} style={{position:"relative"}}>
-                <img src={resolveAssetUrl(p)} alt="" style={{height:56,borderRadius:8}}/>
-                <button onClick={()=>setForm(f=>({...f,photos:f.photos.filter((_,j)=>j!==i)}))}
-                  style={{position:"absolute",top:-6,right:-6,background:T.ink,color:T.bg,border:"none",borderRadius:"50%",width:18,height:18,fontSize:10,cursor:"pointer",lineHeight:1}}>✕</button>
-              </div>
-            ))}
+          <div style={{...lbl,marginTop:12}}>Photos</div>
+          <div style={{maxWidth:400,marginTop:2}}>
+            {/* Multi-photo site: the photos array is not a single preview, so the
+                thumbnail strip renders as children and the zone stays the drop target. */}
+            <Uploader accept={IMAGE_ACCEPT} acceptLabel={IMAGE_ACCEPT_LABEL} maxBytes={IMAGE_MAX_BYTES} compact multiple
+              label="Drag photos here, or browse"
+              hint={"Up to 4 photos · "+IMAGE_ACCEPT_LABEL}
+              disabled={(form.photos||[]).length>=4}
+              onFile={({dataUrl})=>setForm(fm=>({...fm,photos:[...(fm.photos||[]),dataUrl].slice(0,4)}))}>
+              {(form.photos||[]).length>0&&(
+                <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap",marginTop:8}}>
+                  {(form.photos||[]).map((p,i)=>(
+                    <div key={i} style={{position:"relative"}}>
+                      <img src={resolveAssetUrl(p)} alt="" style={{height:56,borderRadius:8}}/>
+                      <button onClick={()=>setForm(f=>({...f,photos:f.photos.filter((_,j)=>j!==i)}))}
+                        style={{position:"absolute",top:-6,right:-6,background:T.ink,color:T.bg,border:"none",borderRadius:"50%",width:18,height:18,fontSize:10,cursor:"pointer",lineHeight:1}}>✕</button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </Uploader>
           </div>
-          {(form.photos||[]).length<4&&(
-            <div style={{maxWidth:340,marginTop:8}}>
-              <Uploader accept={IMAGE_ACCEPT} acceptLabel={IMAGE_ACCEPT_LABEL} maxBytes={IMAGE_MAX_BYTES} compact multiple
-                label="Add photos"
-                onFile={({dataUrl})=>setForm(fm=>({...fm,photos:[...(fm.photos||[]),dataUrl].slice(0,4)}))}/>
-            </div>
-          )}
           <div style={{...lbl,marginTop:12}}>Shows to donors who gave to</div>
           <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
             {funds.map(f=>(
@@ -1593,8 +1328,8 @@ export function Settings({auth,logout,initialSection,onNavigate}) {
         <div style={{fontSize:13,color:T.ink3,marginBottom:14,lineHeight:1.6}}>
           Print this QR code and put it in your bulletin, on a sign, or anywhere donors can scan it to give.
         </div>
-        <div style={{background:T.bg,borderRadius:10,padding:"10px 14px",fontFamily:"monospace",fontSize:12,color:T.ink2,wordBreak:"break-all",marginBottom:14,border:"1px solid "+T.bg3}}>
-          {donationUrl}
+        <div style={{marginBottom:14}}>
+          <UrlLinkButtons url={donationUrl}/>
         </div>
         <QrCodeBlock url={donationUrl} filenameBase={orgName.toLowerCase().replace(/[^a-z0-9]+/g,"-")}/>
       </div>}

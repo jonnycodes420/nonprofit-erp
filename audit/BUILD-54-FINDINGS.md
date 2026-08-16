@@ -325,6 +325,21 @@ present/absent, org isolation, §3 engagement scoping, §6 anchor-semantics sour
   2560-width "sections that fill the screen" was applied as the full-bleed banner +
   band rhythm, not a multi-column relayout (the donor page is a letter, not a site).
 
+> **2026-08-15 — OVERRIDDEN (explicit direction from Jonathan).** The "letter, not a
+> site" call above is superseded: the donor-facing pages now USE THE WIDTH at
+> 1440/2560 — multi-column where content allows — while staying single-column at
+> 390. Portal: content column ladder 860 → 1140 (≥1280px) → 1360 (≥1720px); giving
+> summary goes stats-beside-year-bars ≥900px; the secondary cluster, campaign
+> spotlights (2+), impact updates, and published-page widgets arrange 2-up ≥1280px
+> (full-width widget kinds — hero/mygiving/give/video/richtext — span both tracks;
+> pairable kinds flow in source order, preserving the widget-order contract).
+> Dashboard: `.gd-wrap` → 1440 at ≥2100px, org + followed cards 2-up ≥1200px,
+> `.gd-imgrid` 3 columns ≥1600px. The full-bleed banner + band rhythm is KEPT —
+> the override is about width use, not the banner treatment. Capture contracts
+> updated in lock-step (build50-capture: imgrid 1/2/3 at 390/1440/2560 + card-grid
+> 2-up; build54-capture: stats-beside-bars + widget-pair-shares-a-row at 1440,
+> single-column/no-h-scroll at 390).
+
 ### §7 deliverables
 - `scripts/build54-capture.js` (13 asserts + shots, committed) → `docs/build54/`:
   dashboard 1-org + 2-orgs, drill-down w/ campaign spotlight + thank-you + real

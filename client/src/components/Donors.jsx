@@ -549,6 +549,7 @@ function buildBothPayload(donorSheet, giftSheet, matchInfo, matchKey) {
 // import button, buried in the regular Donors tab, after the fact.
 export function DonorImport({ onClose, onImported, withHistory = false }) {
   const [csvText,    setCsvText]    = useState("");
+  const [srcFile,    setSrcFile]    = useState(null);       // the uploaded File (name/size for the file tile)
   const [parsed,     setParsed]     = useState(null);       // { headers:[], rows:[] }
   const [xlsxSheets, setXlsxSheets]= useState(null);       // [{name, rowCount, headers, rows}] | null
   const [mapping,    setMapping]    = useState({});         // aggregate + wide donor-field mapping
@@ -1007,13 +1008,31 @@ export function DonorImport({ onClose, onImported, withHistory = false }) {
           <button onClick={onClose} style={{background:T.bg3,border:"none",borderRadius:8,padding:"6px 12px",color:T.ink3,cursor:"pointer",fontSize:13,flexShrink:0}}>✕ Close</button>
         </div>
 
+        {/* The uploaded file as a tile — name, size, detected shape/row count.
+            Still a drop target: dropping a new file re-parses. */}
+        {srcFile && (parsed || xlsxSheets || bothMode) && (
+          <div style={{marginBottom:16}}>
+            <Uploader accept={[".csv",".tsv",".xlsx",".xls"]} acceptLabel=".csv, .tsv, .xlsx, .xls" compact readAs="none"
+              label="Replace file"
+              fileMeta={srcFile ? {
+                name: srcFile.name, size: srcFile.size,
+                detail: parsed ? `${parsed.rows.length.toLocaleString()} rows · ${shapeLabel(effectiveShape)}`
+                  : bothMode ? "donors + gift history workbook"
+                  : `${xlsxSheets.length} sheets`,
+              } : null}
+              onFile={({file})=>{setSrcFile(file);handleFile({target:{files:[file]}});}}
+              onRemove={()=>{setSrcFile(null);setParsed(null);setXlsxSheets(null);setBothMode(null);setErr("");}}/>
+          </div>
+        )}
+
         {/* ── Step 1a: Upload / Paste ── */}
         {!parsed && !xlsxSheets && (<>
           <div style={{marginBottom:14}}>
             <div style={{fontSize:11,fontWeight:700,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:6}}>Upload file</div>
             <Uploader accept={[".csv",".tsv",".xlsx",".xls"]} acceptLabel=".csv, .tsv, .xlsx, .xls" compact readAs="none"
               label="Drop your spreadsheet here, or browse"
-              onFile={({file})=>handleFile({target:{files:[file]}})}/>
+              fileMeta={null}
+              onFile={({file})=>{setSrcFile(file);handleFile({target:{files:[file]}});}}/>
             <div style={{fontSize:11,color:T.ink3,marginTop:5}}>Drop a donor list OR a raw gift export — we detect the shape and build donors + their giving history. .csv, .tsv, .xlsx, .xls.</div>
           </div>
           <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:14}}>
@@ -1395,6 +1414,7 @@ function autoDetectTxMapping(headers, rows) {
 function GiftHistoryImport({ donors, onClose, onImported }) {
   const [step, setStep]             = useState("upload");
   const [csvText, setCsvText]       = useState("");
+  const [srcFile, setSrcFile]       = useState(null); // the uploaded File (name/size for the file tile)
   const [xlsxSheets, setXlsxSheets] = useState(null);
   const [parsed, setParsed]         = useState(null);
   const [err, setErr]               = useState("");
@@ -1617,13 +1637,29 @@ function GiftHistoryImport({ donors, onClose, onImported }) {
           <button onClick={onClose} style={{background:T.bg3,border:"none",borderRadius:8,padding:"6px 12px",color:T.ink3,cursor:"pointer",fontSize:13,flexShrink:0}}>✕ Close</button>
         </div>
 
+        {/* The uploaded file as a tile — still a drop target for a replacement */}
+        {srcFile && (parsed || xlsxSheets) && (
+          <div style={{marginBottom:16}}>
+            <Uploader accept={[".csv",".tsv",".xlsx",".xls"]} acceptLabel=".csv, .tsv, .xlsx, .xls" compact readAs="none"
+              label="Replace file"
+              fileMeta={srcFile ? {
+                name: srcFile.name, size: srcFile.size,
+                detail: parsed ? `${parsed.rows.length.toLocaleString()} rows · ${effectiveFormat === "wide" ? "wide year columns" : "transaction ledger"}`
+                  : `${xlsxSheets.length} sheets`,
+              } : null}
+              onFile={({file})=>{setSrcFile(file);handleFile({target:{files:[file]}});}}
+              onRemove={()=>{setSrcFile(null);setParsed(null);setXlsxSheets(null);setStep("upload");setErr("");}}/>
+          </div>
+        )}
+
         {/* Upload */}
         {step === "upload" && !xlsxSheets && (<>
           <div style={{marginBottom:14}}>
             <div style={{fontSize:11,fontWeight:700,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:6}}>Upload file</div>
             <Uploader accept={[".csv",".tsv",".xlsx",".xls"]} acceptLabel=".csv, .tsv, .xlsx, .xls" compact readAs="none"
               label="Drop your spreadsheet here, or browse"
-              onFile={({file})=>handleFile({target:{files:[file]}})}/>
+              fileMeta={null}
+              onFile={({file})=>{setSrcFile(file);handleFile({target:{files:[file]}});}}/>
             <div style={{fontSize:11,color:T.ink3,marginTop:5}}>Wide format (one row/donor, year columns) or transactional (one row/gift) — auto-detected.</div>
           </div>
           <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:14}}>
@@ -1937,6 +1973,7 @@ function GiftHistoryImport({ donors, onClose, onImported }) {
 function CombinedImport({ onClose, onImported }) {
   const [step, setStep]             = useState("upload");
   const [csvText, setCsvText]       = useState("");
+  const [srcFile, setSrcFile]       = useState(null); // the uploaded File (name/size for the file tile)
   const [xlsxSheets, setXlsxSheets] = useState(null);
   const [parsed, setParsed]         = useState(null);
   const [err, setErr]               = useState("");
@@ -2054,13 +2091,29 @@ function CombinedImport({ onClose, onImported }) {
           <button onClick={onClose} style={{background:T.bg3,border:"none",borderRadius:8,padding:"6px 12px",color:T.ink3,cursor:"pointer",fontSize:13,flexShrink:0}}>✕ Close</button>
         </div>
 
+        {/* The uploaded file as a tile — still a drop target for a replacement */}
+        {srcFile && (parsed || xlsxSheets) && (
+          <div style={{marginBottom:16}}>
+            <Uploader accept={[".csv",".tsv",".xlsx",".xls"]} acceptLabel=".csv, .tsv, .xlsx, .xls" compact readAs="none"
+              label="Replace file"
+              fileMeta={srcFile ? {
+                name: srcFile.name, size: srcFile.size,
+                detail: parsed ? `${parsed.rows.length.toLocaleString()} rows · donors + year columns`
+                  : `${xlsxSheets.length} sheets`,
+              } : null}
+              onFile={({file})=>{setSrcFile(file);handleFile({target:{files:[file]}});}}
+              onRemove={()=>{setSrcFile(null);setParsed(null);setXlsxSheets(null);setStep("upload");setErr("");}}/>
+          </div>
+        )}
+
         {/* Upload */}
         {step === "upload" && !xlsxSheets && (<>
           <div style={{marginBottom:14}}>
             <div style={{fontSize:11,fontWeight:700,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:6}}>Upload file</div>
             <Uploader accept={[".csv",".tsv",".xlsx",".xls"]} acceptLabel=".csv, .tsv, .xlsx, .xls" compact readAs="none"
               label="Drop your spreadsheet here, or browse"
-              onFile={({file})=>handleFile({target:{files:[file]}})}/>
+              fileMeta={null}
+              onFile={({file})=>{setSrcFile(file);handleFile({target:{files:[file]}});}}/>
             <div style={{fontSize:11,color:T.ink3,marginTop:5}}>Wide format with donor columns (Name, Email…) and gift year columns (2021, 2022 Gift, Jan 2023…).</div>
           </div>
           <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:14}}>
@@ -2618,15 +2671,19 @@ function GiftLinkModal({donor,orgName,onClose}){
             {err&&<div style={{color:"#8a3a24",fontSize:13,background:"#f6e3dd",border:"1px solid #eac6b8",borderRadius:8,padding:"10px 12px",marginBottom:14}}>{err}</div>}
             {url&&!loading&&(
               <>
-                <div style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:10,padding:"10px 14px",fontSize:12,color:T.ink3,wordBreak:"break-all",lineHeight:1.5,marginBottom:16}}>{url}</div>
-                <div style={{display:"flex",gap:10}}>
+                {/* Labeled link pattern — never a raw URL as visible text */}
+                <div style={{display:"flex",gap:10,marginBottom:12}}>
+                  <a href={url} target="_blank" rel="noreferrer"
+                    style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",background:T.bg,border:"1px solid "+T.bg3,borderRadius:10,padding:"11px",color:T.ink2,fontSize:13,fontWeight:700,textDecoration:"none"}}>
+                    Open link ↗
+                  </a>
                   <button onClick={copyLink} style={{flex:1,background:copied?T.greenDk:T.bg,border:"1px solid "+(copied?T.greenDk:T.bg3),borderRadius:10,padding:"11px",color:copied?"#fff":T.ink2,fontSize:13,fontWeight:700,cursor:"pointer",transition:"all 0.15s"}}>
                     {copied?"✓ Copied!":"Copy Link"}
                   </button>
-                  {donor.email&&<button onClick={()=>setShowEmail(true)} style={{flex:1,background:T.greenDk,border:"none",borderRadius:10,padding:"11px",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer"}}>
-                    ✉ Send via Email
-                  </button>}
                 </div>
+                {donor.email&&<button onClick={()=>setShowEmail(true)} style={{width:"100%",background:T.greenDk,border:"none",borderRadius:10,padding:"11px",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer"}}>
+                  ✉ Send via Email
+                </button>}
               </>
             )}
           </>

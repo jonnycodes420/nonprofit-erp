@@ -55,6 +55,9 @@ jobs:
       NETWORK_SIGNUP_ENABLED: "1"              # OFF in prod (unset) until launch
       MIGC_CONTACT_EMAIL: migc-contact@example.org   # MIGC client-site suite captures the contact
       MIGC_EMAIL_FROM: noreply@stewardapp.dev        # notification through the :5602 sink
+      DISABLE_BACKGROUND_TICKS: "1"   # SPEED: no periodic job fires mid-suite (the flake fix);
+                                      # every sweep stays drivable via its ops route.
+                                      # CI still runs the FULL battery — no suite selection here.
 
     steps:
       - uses: actions/checkout@v4
@@ -62,6 +65,10 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
+          cache: 'npm'
+          cache-dependency-path: |
+            package-lock.json
+            client/package-lock.json
 
       - name: Install server deps (locked)
         run: npm ci

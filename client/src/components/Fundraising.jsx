@@ -577,16 +577,10 @@ function CampaignModal({ mode, campaign, campaigns = [], onClose, onSaved }) {
           <div style={{ marginBottom: 14 }}>
             <label style={lbl}>Campaign photo</label>
             <Uploader accept={IMAGE_ACCEPT} acceptLabel={IMAGE_ACCEPT_LABEL} maxBytes={IMAGE_MAX_BYTES} compact
-              label={dfHero ? "Replace photo" : "Add a photo"}
-              onFile={({ dataUrl }) => { setDfHero(dataUrl); setDirty(true); }}>
-              {dfHero && (
-                <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 8 }}>
-                  <img src={dfHero.startsWith("data:") ? dfHero : resolveAssetUrl(dfHero)} alt="" style={{ maxHeight: 64, borderRadius: 8 }} />
-                  <button type="button" onClick={() => { setDfHero(""); setDirty(true); }}
-                    style={{ background: "none", border: "1px solid " + T.terra200, color: T.terra700, borderRadius: 8, padding: "6px 12px", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>Remove</button>
-                </div>
-              )}
-            </Uploader>
+              shape="wide" preview={dfHero ? (dfHero.startsWith("data:") ? dfHero : resolveAssetUrl(dfHero)) : null}
+              label={dfHero ? "Replace photo" : "Drag a photo here, or browse"}
+              onFile={({ dataUrl }) => { setDfHero(dataUrl); setDirty(true); }}
+              onRemove={() => { setDfHero(""); setDirty(true); }} />
           </div>
           <label style={{ display: "flex", alignItems: "flex-start", gap: 8, fontSize: 13, color: T.ink, cursor: "pointer" }}>
             <input type="checkbox" checked={goalPublic} onChange={e => setGoalPublic(e.target.checked)} style={{ marginTop: 2 }} />

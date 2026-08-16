@@ -275,7 +275,15 @@ async function fixture() {
     cwd: __dirname + "/..",
     env: {
       ...process.env, PORT: "5611",
-      DATABASE_URL: process.env.DATABASE_URL, DB_SSL: "disable",
+      // Same default as tests/helpers.js — the parent battery may not export
+      // DATABASE_URL (each suite defaults it internally), but the child needs
+      // it in env or pg falls back to a nonexistent local socket and /health
+      // never goes ok ("flag-off child server boots" flake).
+      DATABASE_URL: process.env.DATABASE_URL || "postgresql://steward@localhost:5544/steward_loadtest",
+      DB_SSL: "disable",
+      // The child lives ~20s inside this suite; with ticks on, its 5s
+      // dunning/pledge sweeps could mail into our :5602 sink mid-assertions.
+      DISABLE_BACKGROUND_TICKS: "1",
       JWT_SECRET: "local-test-secret", DISABLE_RATE_LIMIT: "1", SESSION_CACHE_TTL_MS: "0",
       RESEND_API_KEY: "re_dummy_local", RESEND_BASE_URL: "http://localhost:5602",
       STRIPE_SECRET_KEY: "sk_test_dummy", STRIPE_WEBHOOK_SECRET: "whsec_localtest",

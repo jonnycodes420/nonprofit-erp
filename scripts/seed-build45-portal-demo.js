@@ -20,10 +20,15 @@ const EMAIL = process.env.DEMO_EMAIL || "admin@creoarts.org";
 const PASSWORD = process.env.DEMO_PASSWORD || "demo1234";
 const IS_LOCAL = /localhost|127\.0\.0\.1/.test(BASE);
 
-// A tiny warm-toned SVG as the demo photo (self-contained, no assets).
-const photo = (label, bg) => "data:image/svg+xml;base64," + Buffer.from(
-  `<svg xmlns="http://www.w3.org/2000/svg" width="400" height="260"><rect width="400" height="260" fill="${bg}"/><text x="20" y="140" font-family="Georgia" font-size="22" fill="#fff">${label}</text></svg>`
-).toString("base64");
+// Impact photos are REAL photographs committed in scripts/demo-assets/
+// (free-tier Unsplash, provenance in scripts/demo-assets/README.md).
+// A flat-color SVG placeholder here renders as a solid brand-color block on
+// the donor page (objectFit:cover crops the caption away) — never regress to
+// a <rect> placeholder for anything donor-visible.
+const fs = require("fs");
+const path = require("path");
+const photo = (file) => "data:image/jpeg;base64," +
+  fs.readFileSync(path.join(__dirname, "demo-assets", file)).toString("base64");
 
 async function api(method, path, token, body) {
   const r = await fetch(BASE + path, {
@@ -65,14 +70,14 @@ async function api(method, path, token, body) {
     {
       title: "Spring scholarships placed 32 young artists in studios",
       body: "Because of scholarship-fund donors, 32 students who couldn't otherwise afford studio time spent this spring learning ceramics, printmaking, and oil painting alongside working artists. Three of them showed work in the May student exhibition.",
-      photos: [photo("Student exhibition, May", "#1a6b4a")],
+      photos: [photo("demo-impact-exhibition.jpg")],
       targets: scholarships ? [{ kind: "fund", id: scholarships.id }] : [],
       orgWide: !scholarships,
     },
     {
       title: "The studio expansion broke ground",
       body: "The back lot is officially a construction site. When it opens next spring, the new wing doubles our teaching space and adds the first fully accessible studio in the county. Every capital-campaign gift moved this from a drawing to a foundation.",
-      photos: [photo("Groundbreaking day", "#b8593f")],
+      photos: [photo("demo-impact-studio.jpg")],
       targets: [],
       orgWide: true,
     },

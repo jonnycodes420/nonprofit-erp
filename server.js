@@ -167,6 +167,14 @@ function rateLimitHandler(req, res) {
 // Never set in production — Railway env does not define it.
 const rateLimitDisabled = () => process.env.DISABLE_RATE_LIMIT === "1";
 
+// Test-boot switch: DISABLE_BACKGROUND_TICKS=1 turns off every periodic
+// setTimeout/setInterval job (digests, sweeps, dunning, sequences, …) so a
+// test run never has a background tick fire mid-suite (mail-sink pollution,
+// surprise auto-lapse). Every sweep stays reachable via its ops route
+// (/workflows/run-sweeps, /pipeline/run-auto-lapse, /digests/run, …).
+// Never set in production.
+const backgroundTicksDisabled = () => process.env.DISABLE_BACKGROUND_TICKS === "1";
+
 // Loose baseline across the whole API — catches scraping/volumetric abuse
 // without interfering with normal SPA usage (a dashboard load fires many
 // parallel fetches from one IP).
@@ -1492,8 +1500,10 @@ async function processSmartMoves() {
     }
   } catch (e) { console.error("[smart-move] sweep:", e.message); }
 }
-setTimeout(() => processSmartMoves().catch(console.error), 40000);
-setInterval(() => processSmartMoves().catch(console.error), 5 * 60 * 1000);
+if (!backgroundTicksDisabled()) {
+  setTimeout(() => processSmartMoves().catch(console.error), 40000);
+  setInterval(() => processSmartMoves().catch(console.error), 5 * 60 * 1000);
+}
 
 // Signal-based move SUGGESTIONS for a donor (never auto-applied). The officer
 // reviews and one-click accepts (which applies via the normal move route) or
@@ -8564,8 +8574,10 @@ async function processScheduledCampaigns() {
     }
   } catch (e) { console.error("[campaign-scheduler]", e.message); }
 }
-setTimeout(() => processScheduledCampaigns().catch(console.error), 20000);
-setInterval(() => processScheduledCampaigns().catch(console.error), 5 * 60 * 1000);
+if (!backgroundTicksDisabled()) {
+  setTimeout(() => processScheduledCampaigns().catch(console.error), 20000);
+  setInterval(() => processScheduledCampaigns().catch(console.error), 5 * 60 * 1000);
+}
 
 // ── Tracking pixel (no auth) ───────────────────────────────────────────────
 app.get("/track/:recipientId/open.gif", wrap(async (req, res) => {
@@ -11386,8 +11398,10 @@ async function processDigests(now = new Date()) {
     }
   } catch (e) { console.error("[digest] processDigests:", e.message); }
 }
-setTimeout(() => processDigests().catch(console.error), 30000);
-setInterval(() => processDigests().catch(console.error), 5 * 60 * 1000);
+if (!backgroundTicksDisabled()) {
+  setTimeout(() => processDigests().catch(console.error), 30000);
+  setInterval(() => processDigests().catch(console.error), 5 * 60 * 1000);
+}
 
 // ── BUILD-36 A3 — the daily due/overdue task reminder ────────────────────────
 // One email per user per day (digest_sends idempotency: digest_type
@@ -11465,8 +11479,10 @@ async function processDailyTaskReminders(now = new Date(), { force = false } = {
     }
   } catch (e) { console.error("[daily-tasks] processDailyTaskReminders:", e.message); }
 }
-setTimeout(() => processDailyTaskReminders().catch(console.error), 45000);
-setInterval(() => processDailyTaskReminders().catch(console.error), 5 * 60 * 1000);
+if (!backgroundTicksDisabled()) {
+  setTimeout(() => processDailyTaskReminders().catch(console.error), 45000);
+  setInterval(() => processDailyTaskReminders().catch(console.error), 5 * 60 * 1000);
+}
 
 // POST /digests/run-daily (requireAuth + requireAdmin) — drive the daily
 // reminder for the caller's org NOW (ops/test hook, same bar as /digests/run).
@@ -12867,8 +12883,10 @@ async function processDunning() {
     }
   } catch (e) { console.error("[dunning] processDunning:", e.message); }
 }
-setTimeout(() => processDunning().catch(console.error), 5000);
-setInterval(() => processDunning().catch(console.error), 60 * 60 * 1000);
+if (!backgroundTicksDisabled()) {
+  setTimeout(() => processDunning().catch(console.error), 5000);
+  setInterval(() => processDunning().catch(console.error), 60 * 60 * 1000);
+}
 
 // ════════════════════════════════════════════════════════════════════════════
 // Workflows engine (BUILD-13 Part 3) — retention recipes on a builder-ready
@@ -13184,7 +13202,7 @@ async function retryFailedNotifications({ force = false } = {}) {
 // POST /admin/notifications/retry ops hook stay fully live, so notify-delivery
 // drives retry explicitly and production (DISABLE_RATE_LIMIT unset) retries on
 // the tick as designed.
-if (!rateLimitDisabled()) {
+if (!rateLimitDisabled() && !backgroundTicksDisabled()) {
   setTimeout(() => retryFailedNotifications().catch(console.error), 50000);
   setInterval(() => retryFailedNotifications().catch(console.error), 5 * 60 * 1000);
 }
@@ -13459,12 +13477,20 @@ async function processWorkflowSweeps(onlyOrgId = null) {
     } catch (e) { console.error("[workflow-sweep] org", orgId, e.message); }
   }
 }
-setTimeout(() => processWorkflowSweeps().catch(console.error), 25000);
-setInterval(() => processWorkflowSweeps().catch(console.error), 5 * 60 * 1000);
+if (!backgroundTicksDisabled()) {
+  setTimeout(() => processWorkflowSweeps().catch(console.error), 25000);
+  setInterval(() => processWorkflowSweeps().catch(console.error), 5 * 60 * 1000);
+}
 // BUILD-51b — keep /health's themeAssets.dbFallbackRows fresh (failed-S3-put
 // visibility); same 5-min cadence, never a second scheduler.
-setTimeout(() => refreshAssetFallbackCount().catch(console.error), 20000);
-setInterval(() => refreshAssetFallbackCount().catch(console.error), 5 * 60 * 1000);
+if (!backgroundTicksDisabled()) {
+  setTimeout(() => refreshAssetFallbackCount().catch(console.error), 20000);
+  setInterval(() => refreshAssetFallbackCount().catch(console.error), 5 * 60 * 1000);
+} else {
+  // Ticks off (test boot): populate the /health counter once at load — a
+  // read-only count, no mail/state side effects — so the field isn't stale.
+  refreshAssetFallbackCount().catch(console.error);
+}
 
 // ── Workflow routes ─────────────────────────────────────────────────────────
 app.get("/workflows", requireAuth, wrap(async (req, res) => {
@@ -13904,8 +13930,10 @@ async function processPledgeReminders() {
     }
   } catch (e) { console.error("[pledge-reminder] processPledgeReminders:", e.message); }
 }
-setTimeout(() => processPledgeReminders().catch(console.error), 5000);
-setInterval(() => processPledgeReminders().catch(console.error), 60 * 60 * 1000);
+if (!backgroundTicksDisabled()) {
+  setTimeout(() => processPledgeReminders().catch(console.error), 5000);
+  setInterval(() => processPledgeReminders().catch(console.error), 60 * 60 * 1000);
+}
 
 app.post("/pledges/process-reminders", requireAuth, requireAdmin, wrap(async (req, res) => {
   await processPledgeReminders();
@@ -17840,7 +17868,7 @@ async function processNetworkGate() {
   }
   return { checked: approved.length, delisted };
 }
-if (!rateLimitDisabled()) {
+if (!rateLimitDisabled() && !backgroundTicksDisabled()) {
   setInterval(() => processNetworkGate().catch(console.error), 6 * 60 * 60 * 1000);
 }
 app.post("/admin/network/run-gate-sweep", requireAuth, requireSuperAdmin, wrap(async (req, res) => {
@@ -17865,6 +17893,9 @@ app.use((err, req, res, next) => {
 const PORT = parseInt(process.env.PORT || "3001", 10);
 app.listen(PORT, () => {
   console.log(`Steward backend running on port ${PORT}`);
+  if (backgroundTicksDisabled()) {
+    console.log("[boot] background ticks DISABLED (DISABLE_BACKGROUND_TICKS=1 — test boot)");
+  }
   if (!process.env.RESEND_DOMAIN_VERIFIED) {
     console.warn("[email] WARNING: RESEND_DOMAIN_VERIFIED not set — emails may land in spam");
   }
@@ -17888,18 +17919,22 @@ app.listen(PORT, () => {
 });
 
 // Run sequence engine on startup (5s delay) then every hour
-setTimeout(() => {
-  processSequences().catch(console.error);
-  autoEnroll().catch(console.error);
-}, 5000);
-setInterval(() => {
-  processSequences().catch(console.error);
-  autoEnroll().catch(console.error);
-}, 60 * 60 * 1000);
+if (!backgroundTicksDisabled()) {
+  setTimeout(() => {
+    processSequences().catch(console.error);
+    autoEnroll().catch(console.error);
+  }, 5000);
+  setInterval(() => {
+    processSequences().catch(console.error);
+    autoEnroll().catch(console.error);
+  }, 60 * 60 * 1000);
+}
 
 // Run Gmail sync on startup (10s delay) then every 15 min
-setTimeout(() => syncAllGmail().catch(console.error), 10000);
-setInterval(() => syncAllGmail().catch(console.error), 15 * 60 * 1000);
+if (!backgroundTicksDisabled()) {
+  setTimeout(() => syncAllGmail().catch(console.error), 10000);
+  setInterval(() => syncAllGmail().catch(console.error), 15 * 60 * 1000);
+}
 
 // Check trial expiry on startup (15s delay) then every 6 hours
 async function checkTrialExpiry() {
@@ -17910,8 +17945,10 @@ async function checkTrialExpiry() {
     );
   } catch (e) { console.error("checkTrialExpiry error:", e); }
 }
-setTimeout(() => checkTrialExpiry(), 15000);
-setInterval(() => checkTrialExpiry(), 6 * 60 * 60 * 1000);
+if (!backgroundTicksDisabled()) {
+  setTimeout(() => checkTrialExpiry(), 15000);
+  setInterval(() => checkTrialExpiry(), 6 * 60 * 60 * 1000);
+}
 
 // ── "Name the vague anxiety as a number" metrics ────────────────────────────
 // Design pattern (see CLAUDE.md): a fuzzy staff worry gets computed into one
@@ -18099,7 +18136,9 @@ async function snapshotAllOrgMetrics() {
     }
   } catch (e) { console.error("[metrics] snapshotAllOrgMetrics error:", e.message); }
 }
-setTimeout(() => snapshotAllOrgMetrics(), 20000);
-setInterval(() => snapshotAllOrgMetrics(), 6 * 60 * 60 * 1000);
+if (!backgroundTicksDisabled()) {
+  setTimeout(() => snapshotAllOrgMetrics(), 20000);
+  setInterval(() => snapshotAllOrgMetrics(), 6 * 60 * 60 * 1000);
+}
 
 module.exports = app;

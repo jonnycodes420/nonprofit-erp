@@ -36,6 +36,7 @@ createdb -h localhost -p 5544 -U steward steward_loadtest
 # from the repo root — boots, builds schema (watch for "✅ Database ready")
 DATABASE_URL="postgresql://steward@localhost:5544/steward_loadtest" \
   JWT_SECRET=local-test-secret PORT=5601 DISABLE_RATE_LIMIT=1 \
+  DISABLE_BACKGROUND_TICKS=1 \
   RESEND_API_KEY=re_dummy_local node server.js
 
 # seed the 25k-donor load-test org (needed by donors-pagination; the other
@@ -59,12 +60,38 @@ online-gift path is drivable:
 ```bash
 DATABASE_URL="postgresql://steward@localhost:5544/steward_loadtest" \
   JWT_SECRET=local-test-secret PORT=5601 DISABLE_RATE_LIMIT=1 \
+  DISABLE_BACKGROUND_TICKS=1 \
   RESEND_API_KEY=re_dummy_local RESEND_BASE_URL=http://localhost:5602 \
   DEMO_SMTP_FROM=noreply@stewardapp.dev STRIPE_SECRET_KEY=sk_test_dummy \
   STRIPE_WEBHOOK_SECRET=whsec_localtest STRIPE_API_BASE=http://localhost:5603 \
   node server.js
 bash tests/run-all.sh
 ```
+
+`DISABLE_BACKGROUND_TICKS=1` is **the flake fix** (SPEED workstream): it turns
+off every periodic background job (digest / dunning / workflow-sweep /
+smart-move / sequence / Gmail-sync / trial-expiry / metrics timers) so nothing
+fires mid-suite and pollutes the :5602 mail sink or auto-lapses a fixture donor.
+Every sweep stays reachable through its ops route (`/workflows/run-sweeps`,
+`/pipeline/run-auto-lapse`, `/digests/run`, `/digests/run-daily`,
+`/recurring/process-dunning`, `/sequences/process`,
+`/admin/notifications/retry`, `/admin/network/run-gate-sweep`), which is what
+the suites already drive. The old ritual of "fresh boot, then wait ~90s for the
+startup ticks to drain before running" is **retired** — start the battery as
+soon as `/health` is ok. Never set this in production.
+
+### Running a subset
+
+`SUITES="tasks greeting" bash tests/run-all.sh` runs only the named suites
+(names must be in run-all.sh's CORE list; an unknown name is a hard error that
+prints the valid names). Per-suite elapsed seconds and a total are printed.
+
+`tests/affected.sh <git-range>` computes which suites a change actually
+touches — it prints `FULL` (shared surface changed: server.js, db.js, routes/,
+package-lock, test infra, …), a space-separated suite list (suite-file or
+client-only changes), or nothing (docs/audit/scripts/markdown only). The
+pre-push hook (.githooks/pre-push) uses it to narrow the local run;
+`PREPUSH_FULL=1 git push` forces the full battery. CI always runs everything.
 
 `RESEND_BASE_URL=http://localhost:5602` redirects all outbound email to a local
 port so `workflows-e2e` (BUILD-25 Part A) can capture the recipe emails it asserts

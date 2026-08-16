@@ -40,7 +40,16 @@ async function api(method, path, token, body) {
     console.log("created the demo campaign (none existed)");
   }
   const ps = await api("GET", "/portal-settings", tok);
-  const heroPath = ps.header_image_url || null;   // reuse the org's stored banner asset (a /portal-assets path echoes through)
+  // Photos are REAL and DISTINCT per surface (banner / page hero / campaign
+  // hero) — reusing the theme banner as a widget image made the page read as
+  // one repeated photo (BUILD-54 follow-up, 2026-08-15). Sources committed in
+  // scripts/demo-assets/ (free-tier Unsplash, see its README.md).
+  const fs = require("fs");
+  const path = require("path");
+  const demoPhoto = (file) => "data:image/jpeg;base64," +
+    fs.readFileSync(path.join(__dirname, "demo-assets", file)).toString("base64");
+  const pageHero = demoPhoto("demo-hero-choir.jpg");
+  const campaignHero = demoPhoto("demo-campaign-chapel.jpg");
   await api("PUT", `/fundraising/campaigns/${camp.id}`, tok, {
     donorFacingName: "Steeples and Studios Campaign",
     donorDescription: "We're restoring the chapel and opening three new working studios — room for forty more young artists every week.",
@@ -50,7 +59,7 @@ async function api(method, path, token, body) {
       { type: "ul", items: ["Chapel restoration and sound work", "Three teaching studios", "Accessible entrance and gallery hall"] },
       { type: "p", text: "Every gift to this campaign goes to the building fund. We publish progress updates here as the work happens." },
     ],
-    ...(heroPath ? { heroImageData: heroPath } : {}),
+    heroImageData: campaignHero,
     goalProgressPublic: true,
   });
   console.log(`campaign dressed: ${camp.name} → "Steeples and Studios Campaign"`);
@@ -75,7 +84,7 @@ async function api(method, path, token, body) {
   // 3) the full widget layout, published
   const funds = await api("GET", "/finance/funds", tok);
   const widgets = [
-    { type: "hero", heading: "Making the arts belong to everyone", sub: "What your giving builds, in one place.", image: heroPath, size: "tall" },
+    { type: "hero", heading: "Making the arts belong to everyone", sub: "What your giving builds, in one place.", image: pageHero, size: "tall" },
     { type: "mygiving" },
     { type: "campaign", campaignId: camp.id },
     { type: "impact", heading: "What your giving made possible" },

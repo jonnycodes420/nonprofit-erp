@@ -253,13 +253,15 @@ const THIS_YEAR = String(new Date().getFullYear());
     await page.waitForTimeout(600);
     await page.click('button:has-text("Donor Portal")', { timeout: 5000 });
     await page.waitForTimeout(900);
-    ok("Settings live preview renders", await page.locator("text=Live preview").count() === 1);
-    ok("preview shows the takeover mock (quiet line + org serif name)",
-      await page.locator("text=Steward · your giving account").count() > 0);
-    ok("preview shows the multi-org card mock", await page.locator("text=Their card keeps their own theme").count() === 1);
-    const prev = page.locator("text=Live preview").locator("xpath=ancestor::div[contains(@style,'border-radius') or 1][1]");
+    // BUILD-54 follow-up (2026-08-15): the theme form + PortalThemePreview
+    // mock were retired from the CRM — appearance editing (and its preview,
+    // the REAL page) now lives in /portal-editor Design mode, asserted by
+    // scripts/build54-capture.js. The CRM hub must NOT carry a theme preview.
+    ok("CRM hub carries no theme-preview mock (moved to the editor)",
+      await page.locator("text=Live preview").count() === 0
+      && await page.locator("text=Their card keeps their own theme").count() === 0);
+    ok("CRM hub keeps the edit-mode path", await page.locator("text=Edit the portal").count() > 0);
     await page.screenshot({ path: `${OUT}/settings-preview-1440.png`, fullPage: true });
-    void prev;
     await ctx.close();
   }
 

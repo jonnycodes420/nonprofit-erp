@@ -191,6 +191,21 @@ async function fixture() {
     !/pfetch|credentials|\/portal\/\$\{|\/donors|\/account\//.test(editorSrc));
   ok("editor phone-default device toggle", /useState\("phone"\)/.test(editorSrc));
 
+  // BUILD-55 — the editor OWNS design (the old Settings PortalManager form is
+  // gone; no duplicate editing surface — every field has exactly one home).
+  console.log("\n— design mode owns appearance (source contract) —");
+  ok("editor carries the Design mode toggle + the theme fields",
+    editorSrc.includes('"Design"') && editorSrc.includes("typePairing")
+    && editorSrc.includes("cardStyle") && editorSrc.includes("headerImageData"));
+  const hubSrc = fs.readFileSync(path.join(__dirname, "..", "client", "src", "components", "DonorPortalHub.jsx"), "utf8");
+  const settingsSrc = fs.readFileSync(path.join(__dirname, "..", "client", "src", "components", "Settings.jsx"), "utf8");
+  ok("the Hub no longer imports or renders PortalManager", !hubSrc.includes("PortalManager"));
+  ok("Settings no longer defines the old PortalManager form", !settingsSrc.includes("function PortalManager"));
+  // Links are labeled buttons in the Hub — a raw URL never renders as text.
+  // ({ps.portal_url} may only appear as an attribute value, i.e. preceded
+  // by "=", e.g. href={ps.portal_url}.)
+  ok("the Hub renders no raw portal URL as text", !/[^=]\{ps\.portal_url\}/.test(hubSrc));
+
   // ── 7) starters ──────────────────────────────────────────────────────────
   console.log("\n— starter layouts —");
   const st = await api("POST", "/portal-page/starter", tokB, { key: "story_first" });

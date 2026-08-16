@@ -19,7 +19,13 @@
 #        STRIPE_API_BASE=http://localhost:5603 \
 #        DONOR_ACCOUNTS_ENABLED=1 NETWORK_SIGNUP_ENABLED=1 \
 #        MIGC_CONTACT_EMAIL=migc-contact@example.org MIGC_EMAIL_FROM=noreply@stewardapp.dev \
+#        DISABLE_BACKGROUND_TICKS=1 \
 #        node server.js
+#      (DISABLE_BACKGROUND_TICKS=1 is THE flake fix: it turns off every periodic
+#      background job (digest/dunning/sweep/sequence timers) so no tick fires
+#      mid-suite — the old "fresh boot + wait 90s before running" ritual is
+#      RETIRED; the battery can start the moment /health is ok. Every sweep
+#      stays drivable via its ops route, so suites lose nothing.)
 #      (The MIGC_* pair lets the migc suite capture the contact-form
 #      notification through the same :5602 sink; without them the route still
 #      stores rows and the suite's sink assertions fail.)
@@ -34,7 +40,10 @@
 #      its own capture server there for its run, and other suites' sends simply
 #      fail-and-log against the unbound port — no real email ever leaves.)
 #
-# Usage:  bash tests/run-all.sh
+# Usage:  bash tests/run-all.sh                      # full battery
+#         SUITES="tasks greeting" bash tests/run-all.sh   # only those suites
+#         (unknown suite names are a hard error; tests/affected.sh computes a
+#          selection from a git range for the pre-push hook)
 #
 # NOT included here (need extra setup — run individually, see tests/README.md):
 #   donors-pagination, reports  → need `node scripts/seed-loadtest.js` first
@@ -61,7 +70,29 @@ CORE=(
   donor-accounts donor-linking org-blindness network-gate donor-dashboard network-directory theme-depth donor-front-door theme-assets
   campaign-impact portal-page
   finance-reports-consistency name-normalize reserved-recovered concurrency
+  demo-content
 )
+
+# SUITES="name1 name2" runs only those suites (each must be in CORE above —
+# an unknown name is a hard error so a typo can't silently skip verification).
+if [ -n "${SUITES:-}" ]; then
+  RUN=()
+  for want in $SUITES; do
+    found=0
+    for name in "${CORE[@]}"; do
+      if [ "$name" = "$want" ]; then found=1; break; fi
+    done
+    if [ "$found" -ne 1 ]; then
+      echo "ERROR: unknown suite '$want' (not in run-all.sh CORE)." >&2
+      echo "Valid names: ${CORE[*]}" >&2
+      exit 2
+    fi
+    RUN+=("$want")
+  done
+  echo "[run-all] SUITES selection: running ${#RUN[@]} of ${#CORE[@]} suites: ${RUN[*]}"
+else
+  RUN=("${CORE[@]}")
+fi
 
 # Each suite's FULL output is kept in $SUITE_LOG_DIR (default /tmp/steward-suite-logs),
 # and a failing suite's entire output is dumped inline under its FAIL line — so a
@@ -72,26 +103,31 @@ mkdir -p "$LOGDIR"
 rm -f "$LOGDIR"/*.log 2>/dev/null || true
 
 pass=0; fail=0; failed=()
-for name in "${CORE[@]}"; do
+total_start=$(date +%s)
+for name in "${RUN[@]}"; do
   file="tests/${name}.test.js"
   [ -f "$file" ] || { echo "  SKIP  $name (missing)"; continue; }
   log="$LOGDIR/${name}.log"
+  t0=$(date +%s)
   node "$file" >"$log" 2>&1
+  t1=$(date +%s)
+  secs=$((t1 - t0))
   last=$(tail -1 "$log")
   if [[ "$last" == *"0 failed"* ]]; then
-    printf "  \033[32mPASS\033[0m  %-24s %s\n" "$name" "$last"
+    printf "  \033[32mPASS\033[0m  %-24s %4ss  %s\n" "$name" "$secs" "$last"
     pass=$((pass+1))
   else
-    printf "  \033[31mFAIL\033[0m  %-24s %s\n" "$name" "$last"
+    printf "  \033[31mFAIL\033[0m  %-24s %4ss  %s\n" "$name" "$secs" "$last"
     echo "  ──── $name: full output ($log) ────"
     cat "$log"
     echo "  ──── end $name output ────"
     fail=$((fail+1)); failed+=("$name")
   fi
 done
+total_end=$(date +%s)
 
 echo ""
-echo "Suites: $pass passed, $fail failed"
+echo "Suites: $pass passed, $fail failed  (total $((total_end - total_start))s)"
 if [ "$fail" -ne 0 ]; then
   echo "Failed: ${failed[*]}"
   exit 1

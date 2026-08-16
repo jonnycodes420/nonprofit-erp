@@ -54,6 +54,43 @@ const S = {
   muted: { fontSize: 13, color: "#6b6b64", lineHeight: 1.6 },
 };
 
+// 2026-08-15 wide-width pass — explicit override of the BUILD-54 "the donor
+// page is a letter, not a site" call (see audit/BUILD-54-FINDINGS.md): the
+// portal now USES the width. The content column widens on a ladder
+// (860 → 1140 at >=1280px → 1360 at >=1720px), the donor's own cards arrange
+// into two columns at desktop, and published-page widgets flow into a
+// two-track grid (full-width kinds span both tracks — the CSS lives here, the
+// kind→span map lives in PortalWidgets so the editor preview stays
+// single-column). 390 stays a single column; the full-bleed banner + band
+// rhythm is untouched; no theme CSS-var logic changes. Portal.jsx previously
+// had no media queries — this style block (the GivingStyles pattern) is the
+// one home for them.
+function PortalStyles() {
+  return <style>{`
+    .pt-col { max-width: 860px; margin: 0 auto; padding: 0 20px; }
+    .pt-wrap { max-width: 860px; margin: 0 auto; padding: 0 20px 64px; }
+    @media (min-width: 1280px) { .pt-col, .pt-wrap { max-width: 1140px; } }
+    @media (min-width: 1720px) { .pt-col, .pt-wrap { max-width: 1360px; } }
+    /* Giving summary at wide: the stats block sits BESIDE the year bars
+       (a 2-column internal grid); single column below ~900px. */
+    @media (min-width: 900px) {
+      .pt-mygiving-grid { display: grid; grid-template-columns: minmax(200px, 250px) 1fr; gap: 4px 40px; align-items: start; }
+      .pt-mygiving-statsrow { flex-direction: column; gap: 16px !important; }
+    }
+    /* Secondary cluster (recurring / give / pledges / receipts / household),
+       campaign spotlights, impact updates, and published-page widgets:
+       arranged into two columns at >=1280px, stacked below. */
+    @media (min-width: 1280px) {
+      .pt-cluster, .pt-campaigns { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; align-items: start; }
+      .pt-cluster:not(:empty), .pt-campaigns:not(:empty) { margin-bottom: 18px; }
+      .pt-cluster > *, .pt-campaigns > * { margin-bottom: 0 !important; }
+      .pt-impactgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 32px; }
+      .pt-widgets { display: grid; grid-template-columns: 1fr 1fr; gap: 0 18px; align-items: start; }
+      .pt-widgets > * { min-width: 0; }
+    }
+  `}</style>;
+}
+
 // The org's validated theme → CSS variables. One implementation for the live
 // page and the from-dashboard handoff shell (no neutral flash on drill-down).
 function varsFor(theme) {
@@ -87,7 +124,7 @@ function Monogram({ theme, size = 52 }) {
 
 function PortalHeader({ theme }) {
   const plaque = (
-    <div style={{ maxWidth: 860, margin: "0 auto", padding: "0 20px", display: "flex", alignItems: "center", gap: 14 }}>
+    <div className="pt-col" style={{ display: "flex", alignItems: "center", gap: 14 }}>
       {theme.logo
         ? <img src={resolveAssetUrl(theme.logo)} alt="" style={{ height: 46, maxWidth: 150, objectFit: "contain", background: "rgba(255,255,255,0.92)", borderRadius: 10, padding: "4px 8px" }} />
         : <Monogram theme={theme} />}
@@ -107,7 +144,7 @@ function PortalHeader({ theme }) {
       ) : (
         <div style={{ width: "100%", background: "var(--pt-primary)", padding: "clamp(30px, 5vw, 54px) 0" }}>{plaque}</div>
       )}
-      <div style={{ maxWidth: 860, margin: "0 auto", padding: "0 20px" }}>
+      <div className="pt-col">
         <div style={{ height: 3, background: "var(--pt-accent)", borderRadius: 2, marginTop: 14, width: 64 }} />
       </div>
     </header>
@@ -125,7 +162,7 @@ function AccountBar({ me, onSignOut }) {
   if ((me.recurring || []).length) links.push(["Recurring", "#recurring", true]);
   if ((me.receipts || []).length) links.push(["Receipts & tax", "#receipts", true]);
   return (
-    <div style={{ maxWidth: 860, margin: "0 auto", padding: "0 20px", display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap", marginBottom: 14 }}>
+    <div className="pt-col" style={{ display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap", marginBottom: 14 }}>
       <span style={{ fontSize: 14 }}>Welcome back{me.donorName ? `, ${me.donorName.split(" ")[0]}` : ""}.</span>
       <nav aria-label="Your giving" style={{ display: "flex", gap: 14, flexWrap: "wrap" }}>
         {links.map(([label, href]) => (
@@ -365,23 +402,35 @@ function MyGivingSection({ slug, me, reload, theme, includeGiveCta }) {
   return (
     <>
       {/* Giving summary — honest at every data size (§3.2): totals and real
-          dates only; no streaks, no percentages, no invented milestones. */}
-      <div style={S.card}>
+          dates only; no streaks, no percentages, no invented milestones.
+          2026-08-15 wide-width pass: at >=900px the card's internals become a
+          2-column grid — stats block | year bars — instead of stacked
+          (pt-mygiving-grid in PortalStyles); single column below. */}
+      <div className="pt-mygiving" style={S.card}>
         <h2 style={S.h2}>Your giving</h2>
-        <div style={{ display: "flex", gap: 32, flexWrap: "wrap", marginBottom: 16 }}>
-          <div><div style={S.label}>This year</div><div style={{ fontSize: 28, fontWeight: 700 }}>{fmtFull(g.ytd)}</div></div>
-          <div><div style={S.label}>Lifetime</div><div style={{ fontSize: 28, fontWeight: 700 }}>{fmtFull(g.lifetime)}</div></div>
-          {/* §5 — a stat that merely repeats another reads as a bug: show the
-              largest gift only when it differs from both figures above,
-              otherwise substitute the gifts count. */}
-          {g.largestGift > 0 && g.largestGift !== g.ytd && g.largestGift !== g.lifetime
-            ? <div><div style={S.label}>Largest gift</div><div style={{ fontSize: 28, fontWeight: 700 }}>{fmtFull(g.largestGift)}</div></div>
-            : g.giftCount > 1 && <div><div style={S.label}>Gifts</div><div style={{ fontSize: 28, fontWeight: 700 }}>{g.giftCount}</div></div>}
+        <div className="pt-mygiving-grid">
+          <div className="pt-mygiving-stats">
+            <div className="pt-mygiving-statsrow" style={{ display: "flex", gap: 32, flexWrap: "wrap", marginBottom: 16 }}>
+              <div><div style={S.label}>This year</div><div style={{ fontSize: 28, fontWeight: 700 }}>{fmtFull(g.ytd)}</div></div>
+              <div><div style={S.label}>Lifetime</div><div style={{ fontSize: 28, fontWeight: 700 }}>{fmtFull(g.lifetime)}</div></div>
+              {/* §5 — a stat that merely repeats another reads as a bug: show the
+                  largest gift only when it differs from both figures above,
+                  otherwise substitute the gifts count. */}
+              {g.largestGift > 0 && g.largestGift !== g.ytd && g.largestGift !== g.lifetime
+                ? <div><div style={S.label}>Largest gift</div><div style={{ fontSize: 28, fontWeight: 700 }}>{fmtFull(g.largestGift)}</div></div>
+                : g.giftCount > 1 && <div><div style={S.label}>Gifts</div><div style={{ fontSize: 28, fontWeight: 700 }}>{g.giftCount}</div></div>}
+            </div>
+            {g.firstGiftDate && <div style={{ ...S.muted, marginBottom: 14 }}>Giving with {theme.displayName} since {String(g.firstGiftDate).slice(0, 4)}.</div>}
+          </div>
+          {(g.byYear || []).length > 0 && (
+            <div className="pt-mygiving-bars"><YearBars byYear={g.byYear} gifts={me.gifts || []} /></div>
+          )}
         </div>
-        {g.firstGiftDate && <div style={{ ...S.muted, marginBottom: 14 }}>Giving with {theme.displayName} since {String(g.firstGiftDate).slice(0, 4)}.</div>}
-        {(g.byYear || []).length > 0 && <YearBars byYear={g.byYear} gifts={me.gifts || []} />}
       </div>
 
+      {/* Secondary cluster — arranged (2-up grid at >=1280px via pt-cluster),
+          not stacked; each card renders exactly as before below that. */}
+      <div className="pt-cluster">
       {(me.recurring || []).length > 0 && (
         <div id="recurring" style={{ ...S.card, scrollMarginTop: 16 }}>
           <h2 style={S.h2}>Recurring giving</h2>
@@ -428,6 +477,7 @@ function MyGivingSection({ slug, me, reload, theme, includeGiveCta }) {
           </p>
         </div>
       )}
+      </div>
     </>
   );
 }
@@ -488,7 +538,9 @@ function Dashboard({ slug, me, reload, page }) {
 
       {/* BUILD-54 §2 — campaign spotlights: what the campaigns this donor gave
           to are doing, in the org's own words. A campaign with no authored
-          content never appears (its name still labels the gift rows above). */}
+          content never appears (its name still labels the gift rows above).
+          2026-08-15 wide-width pass: 2-up at >=1280px when 2+ exist. */}
+      <div className={(me.campaigns || []).length >= 2 ? "pt-campaigns" : undefined}>
       {(me.campaigns || []).map(c => (
         <div key={c.id} style={{ ...S.card, padding: 0, overflow: "hidden" }}>
           {c.heroImage && (
@@ -514,10 +566,13 @@ function Dashboard({ slug, me, reload, page }) {
           </div>
         </div>
       ))}
+      </div>
 
       {(me.impact || []).length > 0 && (
         <div style={S.card}>
           <h2 style={S.h2}>What your giving made possible</h2>
+          {/* 2026-08-15 wide-width pass: updates flow 2-up at >=1280px. */}
+          <div className="pt-impactgrid">
           {me.impact.map(u => (
             <div key={u.id} style={{ marginBottom: 20 }}>
               <div style={{ fontWeight: 700, fontSize: 16, marginBottom: 4 }}>{u.title}</div>
@@ -530,6 +585,7 @@ function Dashboard({ slug, me, reload, page }) {
               <div style={{ ...S.muted, marginTop: 4, fontSize: 12 }}>{String(u.date).slice(0, 10)}</div>
             </div>
           ))}
+          </div>
         </div>
       )}
       </>
@@ -573,27 +629,29 @@ export default function Portal() {
   }, [orgSlug]);
 
   if (notFound) return (
-    <div style={S.page}><div style={{ ...S.wrap, paddingTop: 80, textAlign: "center" }}>
+    <div style={S.page}><PortalStyles /><div className="pt-wrap" style={{ paddingTop: 80, textAlign: "center" }}>
       <p style={{ fontSize: 16 }}>This page isn't available.</p>
     </div></div>
   );
   if (!theme || !checked) {
     if (theme) return ( // themed shell while the session check runs — the org's page from the first paint
       <div style={{ ...S.page, ...varsFor(theme) }}>
+        <PortalStyles />
         <PortalHeader theme={theme} />
-        <div style={S.wrap}><p style={S.muted}>Loading…</p></div>
+        <div className="pt-wrap"><p style={S.muted}>Loading…</p></div>
       </div>
     );
-    return <div style={S.page}><div style={{ ...S.wrap, paddingTop: 80 }}><p style={S.muted}>Loading…</p></div></div>;
+    return <div style={S.page}><PortalStyles /><div className="pt-wrap" style={{ paddingTop: 80 }}><p style={S.muted}>Loading…</p></div></div>;
   }
 
   const vars = varsFor(theme);
   const signOut = async () => { await pfetch(`/${orgSlug}/logout`, { method: "POST", body: {} }); window.location.reload(); };
   return (
     <div style={{ ...S.page, ...vars }}>
+      <PortalStyles />
       <PortalHeader theme={theme} />
       {!isVerify && me && !me.empty && <AccountBar me={me} onSignOut={signOut} />}
-      <div style={S.wrap}>
+      <div className="pt-wrap">
         {isVerify
           ? <Verify slug={orgSlug} onVerified={loadMe} />
           : me && !me.empty

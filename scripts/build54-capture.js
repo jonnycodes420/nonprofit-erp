@@ -85,6 +85,26 @@ async function donorCookie(email, password) {
             const m = t.match(/This year\s*\$([\d,]+)/); const l = t.match(/Largest gift\s*\$([\d,]+)/);
             return !m || !l || m[1] !== l[1];
           })));
+        // 2026-08-15 wide-width pass: the giving-summary stats sit BESIDE the
+        // year bars at 1440 (bounding boxes overlap vertically, bars to the
+        // right of the stats block — pt-mygiving-grid in Portal.jsx).
+        ok("drill-down: stats beside the year bars at 1440", await p.evaluate(() => {
+          const s = document.querySelector(".pt-mygiving-stats");
+          const b = document.querySelector(".pt-mygiving-bars");
+          if (!s || !b) return false;
+          const rs = s.getBoundingClientRect(), rb = b.getBoundingClientRect();
+          return rs.top < rb.bottom && rb.top < rs.bottom && rb.left > rs.right - 10;
+        }));
+      }
+      if (w === 390) {
+        // 2026-08-15 wide-width pass: 390 stays a single column — the summary
+        // grid is stacked and nothing scrolls horizontally.
+        ok("drill-down: summary stacks single-column at 390", await p.evaluate(() => {
+          const g = document.querySelector(".pt-mygiving-grid");
+          return !!g && getComputedStyle(g).display !== "grid";
+        }));
+        ok("drill-down: no horizontal scroll at 390", await p.evaluate(() =>
+          document.documentElement.scrollWidth <= window.innerWidth + 1));
       }
       await p.screenshot({ path: path.join(OUT, `drilldown-spotlight-${w}.png`), fullPage: true });
       await ctx.close();
@@ -100,6 +120,30 @@ async function donorCookie(email, password) {
     await p.waitForTimeout(600);
     if (w === 1440) {
       ok("public page: sign-in path always present", await p.isVisible("text=Email me a sign-in link"));
+      // 2026-08-15 wide-width pass: the published-page widget list is a
+      // two-track grid at 1440 (.pt-widgets); when the layout carries 2+
+      // pairable (non-full-span) widgets, at least one pair shares a row.
+      ok("public page: widget grid is two-track at 1440, pairable widgets share a row", await p.evaluate(() => {
+        const g = document.querySelector(".pt-widgets");
+        if (!g) return false;
+        const cs = getComputedStyle(g);
+        if (cs.display !== "grid" || cs.gridTemplateColumns.split(" ").filter(Boolean).length !== 2) return false;
+        const gw = g.getBoundingClientRect().width;
+        const narrow = [...g.children].filter(k => k.getBoundingClientRect().width < gw * 0.7);
+        if (narrow.length < 2) return true; // grid live; fixture has <2 pairable widgets
+        return narrow.some((a, i) => narrow.slice(i + 1).some(b => {
+          const ra = a.getBoundingClientRect(), rb = b.getBoundingClientRect();
+          return ra.top < rb.bottom && rb.top < ra.bottom && Math.abs(ra.left - rb.left) > 10;
+        }));
+      }));
+    }
+    if (w === 390) {
+      ok("public page: single column at 390 (widget grid off)", await p.evaluate(() => {
+        const g = document.querySelector(".pt-widgets");
+        return !!g && getComputedStyle(g).display !== "grid";
+      }));
+      ok("public page: no horizontal scroll at 390", await p.evaluate(() =>
+        document.documentElement.scrollWidth <= window.innerWidth + 1));
     }
     await p.screenshot({ path: path.join(OUT, `portal-page-public-${w}.png`), fullPage: true });
     await ctx.close();
@@ -161,8 +205,17 @@ async function donorCookie(email, password) {
         await p.waitForTimeout(900);
       } catch { /* keep the shot anyway */ }
       if (w === 1440) {
-        ok("CRM: Donor Portal is a top-level section", await p.isVisible("text=Edit the portal page"));
-        ok("CRM: shared uploader drop zones present", (await p.locator(".uploader-zone").count()) >= 2);
+        // BUILD-54 follow-up (2026-08-15): the appearance form moved INTO the
+        // portal editor (Design mode); the CRM hub is slim — status, buttons,
+        // engagement, impact updates, campaign entry. Pin the new contract.
+        ok("CRM: Donor Portal hub with edit-mode button", await p.isVisible("text=Edit the portal"));
+        ok("CRM: portal links are buttons (open + copy), never raw URL text", (
+          await p.isVisible("text=Open the live portal")
+          && await p.isVisible("text=Copy link")
+          && !(await p.evaluate(() => document.body.innerText.includes("/portal/creo-arts")))
+        ));
+        ok("CRM: theme editing moved out of the hub (no color pickers)",
+          (await p.locator("input[type='color']").count()) === 0);
       }
       await p.screenshot({ path: path.join(OUT, `crm-donor-portal-${w}.png`), fullPage: true });
       await ctx.close();

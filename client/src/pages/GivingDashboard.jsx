@@ -124,6 +124,17 @@ function GivingStyles() {
     @media (min-width: 1600px) {
       .gd-wrap, .gd-headwrap { max-width: 1200px; }
     }
+    @media (min-width: 2100px) {
+      .gd-wrap, .gd-headwrap { max-width: 1440px; }
+    }
+    /* 2026-08-15 wide-width pass — the signed-in shell USES the width:
+       org + followed cards go 2-up at >=1200px (the wrapper is the grid;
+       card internals unchanged), and the impact grid takes a third column
+       at >=1600px. Single column at phone widths is untouched. */
+    @media (min-width: 1200px) {
+      .gd-cardgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: start; margin: 14px 0; }
+      .gd-cardgrid > * { margin: 0 !important; }
+    }
     .gd-orgcard { transition: box-shadow .15s ease, transform .15s ease; }
     .gd-orgcard:hover { box-shadow: 0 4px 18px rgba(15,26,18,0.10); transform: translateY(-1px); }
     .gd-dirrow:hover { background: ${G.cream}; }
@@ -163,6 +174,7 @@ function GivingStyles() {
       .gd-tkname { font-size: 22px !important; }
     }
     .gd-imgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    @media (min-width: 1600px) { .gd-imgrid { grid-template-columns: 1fr 1fr 1fr; } }
     @media (max-width: 900px) { .gd-imgrid { grid-template-columns: 1fr; } }
   `}</style>;
 }
@@ -873,8 +885,13 @@ function Home({ me, dash, loadDash, takeover, onOpenOrg }) {
             <DirectorySearch autoFocus onChanged={loadDash} />
           </div>
         )}
-        {dash.orgs.map(o => <OrgCard key={o.orgSlug} org={o} onOpen={() => onOpenOrg(o)} />)}
-        {followed.map(f => <FollowedCard key={f.orgSlug} org={f} onConnect={() => connect(f)} onUnfollow={() => unfollow(f)} />)}
+        {/* 2026-08-15 wide-width pass: the wrapper goes 2-up at >=1200px
+            (gd-cardgrid in GivingStyles); below that it's an inert div and
+            the cards stack exactly as before. */}
+        <div className="gd-cardgrid">
+          {dash.orgs.map(o => <OrgCard key={o.orgSlug} org={o} onOpen={() => onOpenOrg(o)} />)}
+          {followed.map(f => <FollowedCard key={f.orgSlug} org={f} onConnect={() => connect(f)} onUnfollow={() => unfollow(f)} />)}
+        </div>
         {dash.impact.length > 0 && (<>
           <h2 style={{ ...S.h2, marginTop: 28, marginBottom: 12 }}>What your giving made possible</h2>
           {/* Per-org theming stays INSIDE the update it belongs to (accent

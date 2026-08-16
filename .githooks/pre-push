@@ -1,22 +1,83 @@
 #!/usr/bin/env bash
 # BUILD-38 Part 2 — the gate that actually precedes deploy in solo auto-mode.
-# CI-on-push races Vercel/Railway's auto-deploy; this pre-push hook runs the full
-# suite locally FIRST and blocks the push if anything is red.
+# CI-on-push races Vercel/Railway's auto-deploy; this pre-push hook runs the
+# verification suites locally FIRST and blocks the push if anything is red.
+#
+# SPEED workstream: the hook now narrows the LOCAL run to the suites affected
+# by what's actually being pushed (tests/affected.sh — conservative: any
+# shared-surface change → the full battery). CI always runs the full battery
+# regardless, so selection here only shortens the local wait, never the gate.
 #
 # Enable once with:  npm run setup:hooks
+# Force the full battery locally with:  PREPUSH_FULL=1 git push
 # Bypass in a true emergency with:  git push --no-verify   (don't make it a habit)
 #
 # Assumes the local scratch stack is up (scratch Postgres :5544 + the API server
-# booted per tests/README.md, with SESSION_CACHE_TTL_MS=0). If the server isn't
-# up the suite fails loudly — which is the correct outcome for "don't push blind".
+# booted per tests/README.md, with SESSION_CACHE_TTL_MS=0 and
+# DISABLE_BACKGROUND_TICKS=1). If the server isn't up the suite fails loudly —
+# which is the correct outcome for "don't push blind".
 set -u
 repo_root="$(git rev-parse --show-toplevel)"
 cd "$repo_root" || exit 1
 
-echo "[pre-push] running full verification suite before push…"
-if ! bash tests/run-all.sh; then
-  echo ""
-  echo "[pre-push] BLOCKED: tests failed. Fix them, or 'git push --no-verify' only if you truly mean to."
-  exit 1
+zero=0000000000000000000000000000000000000000
+mode="" # FULL | list | skip
+reason=""
+selection=""
+
+if [ "${PREPUSH_FULL:-}" = "1" ]; then
+  mode="FULL"; reason="PREPUSH_FULL=1 forced"
+else
+  # Standard pre-push stdin: <local ref> <local sha> <remote ref> <remote sha>
+  while read -r local_ref local_sha remote_ref remote_sha; do
+    [ -z "${local_sha:-}" ] && continue
+    if [ "$local_sha" = "$zero" ]; then
+      continue # branch deletion — nothing to test for this ref
+    fi
+    if [ "$remote_sha" = "$zero" ]; then
+      mode="FULL"; reason="new branch $local_ref (no remote base)"
+      break
+    fi
+    range="${remote_sha}..${local_sha}"
+    out="$(bash tests/affected.sh "$range" </dev/null)"
+    nfiles=$(git diff --name-only "$range" -- 2>/dev/null | grep -c . || true)
+    if [ "$out" = "FULL" ]; then
+      mode="FULL"; reason="affected.sh → FULL for $range ($nfiles changed files)"
+      break
+    elif [ -n "$out" ]; then
+      mode="list"; reason="affected.sh → suite subset for $range ($nfiles changed files)"
+      for s in $out; do
+        case " $selection " in *" $s "*) ;; *) selection="$selection $s" ;; esac
+      done
+    else
+      [ -z "$mode" ] && { mode="skip"; reason="affected.sh → no test-relevant changes in $range ($nfiles changed files)"; }
+    fi
+  done
 fi
-echo "[pre-push] all suites green — pushing."
+
+# No refs on stdin at all (rare) → be safe and run everything.
+[ -z "$mode" ] && { mode="FULL"; reason="no pushed refs parsed — defaulting to full battery"; }
+selection="${selection# }"
+
+case "$mode" in
+  skip)
+    echo "[pre-push] $reason"
+    echo "[pre-push] no test-relevant changes — skipping local suites (CI still runs the full battery)"
+    exit 0 ;;
+  FULL)
+    echo "[pre-push] mode: FULL battery — $reason"
+    if ! bash tests/run-all.sh; then
+      echo ""
+      echo "[pre-push] BLOCKED: tests failed. Fix them, or 'git push --no-verify' only if you truly mean to."
+      exit 1
+    fi ;;
+  list)
+    echo "[pre-push] mode: affected suites only — $reason"
+    echo "[pre-push] running: $selection"
+    if ! SUITES="$selection" bash tests/run-all.sh; then
+      echo ""
+      echo "[pre-push] BLOCKED: tests failed. Fix them, or 'git push --no-verify' only if you truly mean to."
+      exit 1
+    fi ;;
+esac
+echo "[pre-push] all selected suites green — pushing."

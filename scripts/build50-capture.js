@@ -244,7 +244,10 @@ const THIS_YEAR = new Date().getFullYear();
       const g = document.querySelector(".gd-imgrid");
       return g ? getComputedStyle(g).gridTemplateColumns.split(" ").length : 0;
     });
-    ok(`impact updates: ${w === "390" ? "single" : "two"}-column grid (${w})`, w === "390" ? gridCols === 1 : gridCols === 2, gridCols);
+    // 2026-08-15 wide-width pass: 1 column at 390, 2 at 1440, 3 at 2560
+    // (the >=1600px rule in GivingStyles adds the third track).
+    const wantCols = w === "390" ? 1 : w === "1440" ? 2 : 3;
+    ok(`impact updates: ${wantCols}-column grid (${w})`, gridCols === wantCols, gridCols);
     ok(`impact updates render their PHOTOS (${w})`,
       await page.locator(".gd-imgrid img").count() >= 2);
     ok(`targeted update renders (${w})`, (await page.innerText("body")).includes("Summer studio scholarships"));
@@ -352,6 +355,21 @@ const THIS_YEAR = new Date().getFullYear();
     });
     ok("multi-org shell header band is Steward ink, no org color above the fold", headerBg === "rgb(15, 26, 18)", headerBg);
     ok("multi-org: impact photos render inside the org's own cards", await page.locator(".gd-imgrid img").count() >= 2);
+    // 2026-08-15 wide-width pass: at 1440 the org + followed cards sit in a
+    // 2-track grid (.gd-cardgrid) and — when the fixture renders 2+ cards
+    // (here: CREO OrgCard + pantry FollowedCard) — the first two share a row.
+    const cardGrid = await page.evaluate(() => {
+      const g = document.querySelector(".gd-cardgrid");
+      if (!g) return null;
+      const tracks = getComputedStyle(g).gridTemplateColumns.split(" ").filter(Boolean).length;
+      const kids = [...g.children].map(c => c.getBoundingClientRect());
+      const sameRow = kids.length >= 2
+        ? kids[0].top < kids[1].bottom && kids[1].top < kids[0].bottom && Math.abs(kids[0].left - kids[1].left) > 10
+        : null;
+      return { tracks, count: kids.length, sameRow };
+    });
+    ok("org + followed cards go 2-up on the wide shell (1440)",
+      cardGrid && cardGrid.tracks === 2 && (cardGrid.count < 2 || cardGrid.sameRow === true), cardGrid);
     await ctx.close();
   }
   for (const [w, vp] of VPS) {

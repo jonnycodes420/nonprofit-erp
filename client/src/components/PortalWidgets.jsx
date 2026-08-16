@@ -205,7 +205,25 @@ export function WidgetView({ w, ctx }) {
   }
 }
 
+// 2026-08-15 wide-width pass — the kind→span map for the published-page grid.
+// At >=1280px Portal.jsx's PortalStyles turns .pt-widgets into a two-track CSS
+// grid; full-width kinds span both tracks via inline gridColumn, pairable
+// kinds take one column each and FLOW IN SOURCE ORDER (grid auto-placement),
+// which preserves the published widget-order contract. The editor deliberately
+// does NOT load PortalStyles, so its previews stay a single column — below
+// 1280px (and everywhere without the CSS) the wrappers are inert divs and the
+// page renders exactly as before.
+const FULL_WIDTH_WIDGETS = new Set(["hero", "mygiving", "give", "video", "richtext"]);
+
 export function PageRenderer({ page, ctx }) {
   if (!page || !Array.isArray(page.widgets) || !page.widgets.length) return null;
-  return <>{page.widgets.map(w => <WidgetView key={w.id} w={w} ctx={ctx} />)}</>;
+  return (
+    <div className="pt-widgets">
+      {page.widgets.map(w => (
+        <div key={w.id} style={FULL_WIDTH_WIDGETS.has(w.type) ? { gridColumn: "1 / -1", minWidth: 0 } : { minWidth: 0 }}>
+          <WidgetView w={w} ctx={ctx} />
+        </div>
+      ))}
+    </div>
+  );
 }

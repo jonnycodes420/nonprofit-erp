@@ -62,11 +62,12 @@ const svgLogo = (bg, letter) => "data:image/svg+xml;base64," + Buffer.from(
   `<svg xmlns="http://www.w3.org/2000/svg" width="96" height="96"><rect width="96" height="96" rx="18" fill="${bg}"/>` +
   `<text x="48" y="64" font-family="Georgia,serif" font-size="52" fill="#ffffff" text-anchor="middle">${letter}</text></svg>`
 ).toString("base64");
-const svgPhoto = (bg, fg, label) => "data:image/svg+xml;base64," + Buffer.from(
-  `<svg xmlns="http://www.w3.org/2000/svg" width="800" height="500"><rect width="800" height="500" fill="${bg}"/>` +
-  `<circle cx="240" cy="260" r="130" fill="${fg}" opacity="0.4"/><rect x="440" y="120" width="260" height="260" rx="20" fill="${fg}" opacity="0.3"/>` +
-  `<text x="60" y="460" font-family="Georgia,serif" font-size="34" fill="${fg}">${label}</text></svg>`
-).toString("base64");
+// Impact PHOTOS must be real photographs (scripts/demo-assets/, provenance in
+// its README.md) — a flat SVG "photo" renders as a solid color block on the
+// donor page (BUILD-54 follow-up, 2026-08-15). svgBand/svgLogo above stay:
+// a designed band/monogram is a legitimate theme FALLBACK, not a photo.
+const realPhoto = (file) => "data:image/jpeg;base64," +
+  require("fs").readFileSync(require("path").join(__dirname, "demo-assets", file)).toString("base64");
 
 async function findOrCreateDonor(token) {
   const list = await j("GET", `/donors?search=${encodeURIComponent(DONOR_EMAIL)}&limit=10`, null, token);
@@ -127,7 +128,7 @@ async function seedGifts(token, donorId, gifts) {
     const mk = await j("POST", "/impact-updates", {
       title: "Summer studio scholarships — 22 students",
       body: "Your giving covered a full summer of studio time, materials included, for twenty-two students who could not otherwise afford it.",
-      photos: [svgPhoto("#8a4a2c", "#e7cf91", "Studio"), svgPhoto("#6b8f7a", "#f0ede6", "Students")],
+      photos: [realPhoto("demo-impact-studio.jpg"), realPhoto("demo-impact-exhibition.jpg")],
       targets: [{ kind: "fund", id: targetFund }],
       orgWide: false, status: "published",
     }, ct);
@@ -174,7 +175,7 @@ async function seedGifts(token, donorId, gifts) {
   const hUpdate = await j("POST", "/impact-updates", {
     title: "Spring recital — 60 students on stage",
     body: "Every scholarship student performed this spring. Thank you for keeping lessons within reach.",
-    photos: [svgPhoto("#33538a", "#dfe8e2", "Recital")],
+    photos: [realPhoto("demo-hero-choir.jpg")],
     targets: [], orgWide: true, status: "published",
   }, ht);
   ok("harbor org-wide impact update", hUpdate.status === 200 || hUpdate.status === 201 || hUpdate.body?.error === undefined, hUpdate.body);
