@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { apiFetch } from "../api";
 import { T, fmt, fmtFull, PageTitle, SectionTabs, EmptyState, GoldMoment, StartHere, interactive } from "./shared";
+import { RecurringView } from "./RecurringGiving";
 import { QrCodeBlock, EmbedCodeBlock } from "./ShareBlocks";
 import Uploader, { IMAGE_ACCEPT, IMAGE_ACCEPT_LABEL, IMAGE_MAX_BYTES } from "./Uploader";
 import { textToStory, storyToText } from "../lib/storyBlocks";
@@ -70,8 +71,11 @@ function daysLeftText(dl) {
   return `${dl} days left`;
 }
 
-export function Fundraising({ data, isReadOnly, onNavigate }) {
-  const [subtab, setSubtab] = useState("overview");
+export function Fundraising({ data, isReadOnly, onNavigate, initialSection }) {
+  // BUILD-57 — deep-linkable (Home's Recurring tab lands on the recurring
+  // section via navigateTo("fundraising",{frSection:"recurring"})); consumed
+  // on mount only, navNonce remounts like the other intent tabs.
+  const [subtab, setSubtab] = useState(initialSection || "overview");
   const [overview, setOverview] = useState(null);
   const [campaigns, setCampaigns] = useState([]);
   const [pages, setPages] = useState([]);
@@ -95,6 +99,7 @@ export function Fundraising({ data, isReadOnly, onNavigate }) {
     { id: "overview", label: "Overview" },
     { id: "campaigns", label: "Campaigns", badge: campaigns.length || undefined },
     { id: "pages", label: "Giving Pages", badge: pages.filter(p => p.status === "active").length || undefined },
+    { id: "recurring", label: "Recurring Giving" },
     { id: "funds", label: "Funds" },
   ];
 
@@ -124,6 +129,10 @@ export function Fundraising({ data, isReadOnly, onNavigate }) {
 
       {!loading && subtab === "pages" && (
         <PagesView pages={pages} orgSlug={orgSlug} onNavigate={onNavigate} />
+      )}
+
+      {!loading && subtab === "recurring" && (
+        <RecurringView onNavigate={onNavigate} isReadOnly={isReadOnly} />
       )}
 
       {!loading && subtab === "funds" && (

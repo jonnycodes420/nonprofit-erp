@@ -334,38 +334,53 @@ app.post("/stripe/webhook", express.raw({ type: "application/json" }), async (re
             // otherwise fall back to the donor's single attributed subscription —
             // ambiguity (2+ subs with different attributions) attributes nothing
             // rather than guessing (same never-mis-assign discipline as imports).
-            if (!campaignId && !givingPageId && !fundId && pi.invoice) {
+            // BUILD-57 — resolve the subscription behind ANY invoice-backed PI
+            // (not only when attribution is missing): the gift row links back
+            // to its subscription so the roster's "total given on this
+            // subscription" is a real SUM over gift rows.
+            let recurringSubDbId = null;
+            if (pi.invoice) {
               try {
                 let rsRow = null;
                 try {
                   const invObj = await stripe.invoices.retrieve(pi.invoice, { stripeAccount: accountId });
                   if (invObj?.subscription) {
                     const rows = await query(
-                      "SELECT campaign_id, giving_page_id, cover_fee_amount, fund_id FROM recurring_subscriptions WHERE stripe_subscription_id=$1 AND org_id=$2",
+                      "SELECT id, campaign_id, giving_page_id, cover_fee_amount, fund_id FROM recurring_subscriptions WHERE stripe_subscription_id=$1 AND org_id=$2",
                       [invObj.subscription, orgId]
                     );
                     rsRow = rows[0] || null;
                   }
                 } catch { /* unreachable Stripe (local/test) — donor-level fallback below */ }
                 if (!rsRow) {
+                  // Donor-level fallback: only when it's UNAMBIGUOUS. For the
+                  // gift↔subscription LINK the bar is any single non-canceled
+                  // sub; for ATTRIBUTION it stays "one distinct attribution"
+                  // (2+ subs with different attributions attribute nothing).
                   const rows = await query(
-                    `SELECT campaign_id, giving_page_id, cover_fee_amount, fund_id FROM recurring_subscriptions
-                      WHERE org_id=$1 AND donor_id=$2 AND status <> 'canceled'
-                        AND (campaign_id IS NOT NULL OR giving_page_id IS NOT NULL OR fund_id IS NOT NULL)`,
+                    `SELECT id, campaign_id, giving_page_id, cover_fee_amount, fund_id FROM recurring_subscriptions
+                      WHERE org_id=$1 AND donor_id=$2 AND status <> 'canceled'`,
                     [orgId, donorId]
                   );
-                  const distinct = new Set(rows.map(r => `${r.campaign_id || ""}|${r.giving_page_id || ""}|${r.fund_id || ""}`));
-                  if (distinct.size === 1) rsRow = rows[0];
+                  if (rows.length === 1) rsRow = rows[0];
+                  else if (!campaignId && !givingPageId && !fundId) {
+                    const attributed = rows.filter(r => r.campaign_id || r.giving_page_id || r.fund_id);
+                    const distinct = new Set(attributed.map(r => `${r.campaign_id || ""}|${r.giving_page_id || ""}|${r.fund_id || ""}`));
+                    if (distinct.size === 1) rsRow = attributed[0];
+                  }
                 }
                 if (rsRow) {
-                  campaignId = rsRow.campaign_id || null;
-                  givingPageId = rsRow.giving_page_id || null;
-                  // BUILD-56 — the sub's FUND designation carries onto every
-                  // renewal (validated org-owned below with the gift insert's
-                  // own fund guard).
-                  fundId = rsRow.fund_id || null;
-                  const rsCover = parseFloat(rsRow.cover_fee_amount) || 0;
-                  if (!coverFeeAmount && rsCover > 0 && rsCover < amount) coverFeeAmount = rsCover;
+                  recurringSubDbId = rsRow.id;
+                  if (!campaignId && !givingPageId && !fundId) {
+                    campaignId = rsRow.campaign_id || null;
+                    givingPageId = rsRow.giving_page_id || null;
+                    // BUILD-56 — the sub's FUND designation carries onto every
+                    // renewal (validated org-owned below with the gift insert's
+                    // own fund guard).
+                    fundId = rsRow.fund_id || null;
+                    const rsCover = parseFloat(rsRow.cover_fee_amount) || 0;
+                    if (!coverFeeAmount && rsCover > 0 && rsCover < amount) coverFeeAmount = rsCover;
+                  }
                 }
               } catch (e) { console.error("[stripe] renewal attribution lookup failed:", e.message); }
             }
@@ -387,16 +402,16 @@ app.post("/stripe/webhook", express.raw({ type: "application/json" }), async (re
             }
             const reservedGift = pi.id
               ? await query(
-                  `INSERT INTO gifts (id, org_id, donor_id, amount, date, notes, stripe_payment_id, campaign_id, giving_page_id, peer_fundraiser_id, cover_fee_amount, fund_id)
-                   VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+                  `INSERT INTO gifts (id, org_id, donor_id, amount, date, notes, stripe_payment_id, campaign_id, giving_page_id, peer_fundraiser_id, cover_fee_amount, fund_id, recurring_subscription_id)
+                   VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
                    ON CONFLICT (org_id, stripe_payment_id) WHERE stripe_payment_id IS NOT NULL DO NOTHING
                    RETURNING id`,
-                  [giftId, orgId, donorId, amount, today, "Online payment via Stripe", pi.id, campaignId, givingPageId, peerFundraiserId, coverFeeAmount, fundId]
+                  [giftId, orgId, donorId, amount, today, "Online payment via Stripe", pi.id, campaignId, givingPageId, peerFundraiserId, coverFeeAmount, fundId, recurringSubDbId]
                 )
               : await query(
-                  `INSERT INTO gifts (id, org_id, donor_id, amount, date, notes, stripe_payment_id, campaign_id, giving_page_id, peer_fundraiser_id, cover_fee_amount, fund_id)
-                   VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING id`,
-                  [giftId, orgId, donorId, amount, today, "Online payment via Stripe", pi.id, campaignId, givingPageId, peerFundraiserId, coverFeeAmount, fundId]
+                  `INSERT INTO gifts (id, org_id, donor_id, amount, date, notes, stripe_payment_id, campaign_id, giving_page_id, peer_fundraiser_id, cover_fee_amount, fund_id, recurring_subscription_id)
+                   VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING id`,
+                  [giftId, orgId, donorId, amount, today, "Online payment via Stripe", pi.id, campaignId, givingPageId, peerFundraiserId, coverFeeAmount, fundId, recurringSubDbId]
                 );
             if (!reservedGift.length) {
               console.log(`[stripe] payment_intent.succeeded ${pi.id} already recorded — skipping duplicate (race-safe)`);
@@ -531,12 +546,30 @@ app.post("/stripe/webhook", express.raw({ type: "application/json" }), async (re
               const base = parseInt(session.metadata.base_amount_cents, 10);
               if (Number.isFinite(base) && base > 0 && recurAmount > base / 100) subCoverFee = recurAmount - base / 100;
             }
-            await run(
+            const subInterval = frequency === "annual" ? "year" : "month";
+            const insertedSub = await query(
               `INSERT INTO recurring_subscriptions (id, org_id, donor_id, stripe_subscription_id, stripe_customer_id, amount, interval, status, campaign_id, giving_page_id, cover_fee_amount, fund_id)
                VALUES ($1,$2,$3,$4,$5,$6,$7,'active',$8,$9,$10,$11)
-               ON CONFLICT (stripe_subscription_id) DO NOTHING`,
-              ["rsub_" + uuid().slice(0, 8), orgId, donorId, session.subscription, session.customer || null, recurAmount, frequency === "annual" ? "year" : "month", subCampaignId, subGivingPageId, subCoverFee, subFundId]
+               ON CONFLICT (stripe_subscription_id) DO NOTHING
+               RETURNING id`,
+              ["rsub_" + uuid().slice(0, 8), orgId, donorId, session.subscription, session.customer || null, recurAmount, subInterval, subCampaignId, subGivingPageId, subCoverFee, subFundId]
             );
+            // BUILD-57 — movement ledger: log 'created' only when the row was
+            // genuinely reserved (a redelivered webhook logs nothing).
+            if (insertedSub.length) {
+              await logRecurringChange(orgId, insertedSub[0].id, donorId, "created",
+                { newAmount: recurAmount, interval: subInterval, actor: "donor" });
+            }
+            // BUILD-57 — a staff proposal completed by the donor on Stripe.
+            // The proposal id rode our own checkout metadata; mark it done so
+            // "pending donor action" clears on both staff surfaces.
+            if (session.metadata?.proposal_id) {
+              await run(
+                `UPDATE recurring_proposals SET status='completed', completed_at=NOW(), updated_at=NOW()
+                  WHERE id=$1 AND org_id=$2 AND status='pending'`,
+                [session.metadata.proposal_id, orgId]
+              ).catch(() => {});
+            }
           }
         }
       }
@@ -561,8 +594,22 @@ app.post("/stripe/webhook", express.raw({ type: "application/json" }), async (re
             // the donor instead of waiting for Stripe's next scheduled retry.
             await stripe.subscriptions.update(subscriptionId, { default_payment_method: paymentMethodId }, { stripeAccount: event.account });
 
-            const rsRows = await query("SELECT donor_id FROM recurring_subscriptions WHERE stripe_subscription_id=$1 AND org_id=$2", [subscriptionId, recOrgId]);
+            const rsRows = await query("SELECT id, donor_id FROM recurring_subscriptions WHERE stripe_subscription_id=$1 AND org_id=$2", [subscriptionId, recOrgId]);
             await logRecoveryEvent(recOrgId, rsRows[0]?.donor_id || null, subscriptionId, "card_updated", event.id, {});
+            // BUILD-57 — a card-update PROPOSAL completes when the setup
+            // session lands (by id if our metadata carried one, else any
+            // pending card_update proposal on this subscription).
+            if (setupIntent.metadata?.proposal_id) {
+              await run(
+                `UPDATE recurring_proposals SET status='completed', completed_at=NOW(), updated_at=NOW()
+                  WHERE id=$1 AND org_id=$2 AND status='pending'`,
+                [setupIntent.metadata.proposal_id, recOrgId]).catch(() => {});
+            } else if (rsRows[0]) {
+              await run(
+                `UPDATE recurring_proposals SET status='completed', completed_at=NOW(), updated_at=NOW()
+                  WHERE org_id=$1 AND subscription_id=$2 AND kind='card_update' AND status='pending'`,
+                [recOrgId, rsRows[0].id]).catch(() => {});
+            }
 
             try {
               const subObj = await stripe.subscriptions.retrieve(subscriptionId, { stripeAccount: event.account });
@@ -767,6 +814,8 @@ app.post("/stripe/webhook", express.raw({ type: "application/json" }), async (re
             [rsP.id]);
           await run("UPDATE donors SET stripe_subscription_status='active' WHERE id=? AND org_id=?", [rsP.donor_id, rsP.org_id]).catch(() => {});
           await portalTimeline(rsP.org_id, rsP.donor_id, "Portal: paused recurring gift auto-resumed on schedule", "recurring_autoresume").catch(() => {});
+          await logRecurringChange(rsP.org_id, rsP.id, rsP.donor_id, "resumed",
+            { newAmount: rsP.amount != null ? parseFloat(rsP.amount) : null, interval: rsP.interval, actor: "system" });
         }
         if (existingRows.length && ["past_due", "recovering"].includes(existingRows[0].status)) {
           const rs = existingRows[0];
@@ -785,6 +834,8 @@ app.post("/stripe/webhook", express.raw({ type: "application/json" }), async (re
           await logRecoveryEvent(rs.org_id, rs.donor_id, inv.subscription, "payment_recovered", event.id, {
             amount: inv.amount_paid != null ? inv.amount_paid / 100 : null,
           });
+          await logRecurringChange(rs.org_id, rs.id, rs.donor_id, "recovered",
+            { newAmount: rs.amount != null ? parseFloat(rs.amount) : null, interval: rs.interval, actor: "system" });
           // A recovered renewal is still a real gift — that's recorded by the
           // existing payment_intent.succeeded handler above (fired separately
           // by Stripe for the invoice's underlying charge), not duplicated here.
@@ -826,7 +877,22 @@ app.post("/stripe/webhook", express.raw({ type: "application/json" }), async (re
           }
           const amount = sub.items?.data?.[0]?.price?.unit_amount != null ? sub.items.data[0].price.unit_amount / 100 : null;
           if (amount != null) {
+            // BUILD-57 — an amount that actually MOVED here changed outside
+            // Steward's own paths (those sync rs.amount before this event
+            // lands, so old == new and nothing is double-logged).
+            const oldAmount = rs.amount != null ? parseFloat(rs.amount) : null;
+            if (oldAmount != null && Math.abs(amount - oldAmount) >= 0.005) {
+              await logRecurringChange(rs.org_id, rs.id, rs.donor_id,
+                amount > oldAmount ? "amount_up" : "amount_down",
+                { oldAmount, newAmount: amount, interval: rs.interval, actor: "system" });
+            }
             await run("UPDATE recurring_subscriptions SET amount=?, updated_at=NOW() WHERE id=?", [amount, rs.id]);
+          }
+          // BUILD-57 — sync the roster's "next charge" from Stripe's own
+          // current_period_end (this event fires on every renewal cycle).
+          if (sub.current_period_end) {
+            await run("UPDATE recurring_subscriptions SET current_period_end=to_timestamp(?), updated_at=NOW() WHERE id=?",
+              [sub.current_period_end, rs.id]).catch(() => {});
           }
         }
       }
@@ -844,6 +910,18 @@ app.post("/stripe/webhook", express.raw({ type: "application/json" }), async (re
           );
           await run("UPDATE donors SET stripe_subscription_status='canceled' WHERE id=? AND org_id=?", [rs.donor_id, rs.org_id]);
           await logRecoveryEvent(rs.org_id, rs.donor_id, sub.id, "subscription_canceled", event.id, {});
+          // BUILD-57 — the churn SPLIT, decided where the context lives:
+          // a subscription that died while past_due/recovering was lost to a
+          // failed card (involuntary — a technical problem); one deleted from
+          // 'active'/'paused' was a choice made outside Steward (voluntary).
+          // A row already 'canceled' was logged by the portal/staff cancel
+          // path that initiated it — logging again would double-count churn.
+          if (rs.status !== "canceled") {
+            const churnKind = ["past_due", "recovering"].includes(rs.status)
+              ? "canceled_involuntary" : "canceled_voluntary";
+            await logRecurringChange(rs.org_id, rs.id, rs.donor_id, churnKind,
+              { oldAmount: rs.amount != null ? parseFloat(rs.amount) : null, interval: rs.interval, actor: "system" });
+          }
         } else if (event.account) {
           // No health record ever existed (subscription never failed a
           // payment before being canceled) — still mirror the donor-level
@@ -7735,6 +7813,80 @@ async function logRecoveryEvent(orgId, donorId, subscriptionId, type, stripeEven
   );
 }
 
+// ── BUILD-57 — recurring movement ledger + staff-change notifications ──────
+// One writer for the append-only recurring_change_log (the MRR waterfall's
+// source of truth). KINDS: created · amount_up · amount_down · paused ·
+// resumed · canceled_voluntary · canceled_involuntary · recovered ·
+// fund_changed. The voluntary/involuntary split is decided HERE, at write
+// time, when the caller knows why — a sustainer manager needs the two never
+// collapsed (one is a technical problem, the other a relationship problem).
+const RECURRING_CHANGE_KINDS = new Set([
+  "created", "amount_up", "amount_down", "paused", "resumed",
+  "canceled_voluntary", "canceled_involuntary", "recovered", "fund_changed",
+]);
+async function logRecurringChange(orgId, subscriptionId, donorId, kind, { oldAmount = null, newAmount = null, interval = null, actor = "system", actorName = null } = {}) {
+  if (!RECURRING_CHANGE_KINDS.has(kind)) return;
+  await run(
+    `INSERT INTO recurring_change_log (id, org_id, subscription_id, donor_id, kind, old_amount, new_amount, sub_interval, actor, actor_name)
+     VALUES (?,?,?,?,?,?,?,?,?,?)`,
+    ["rcl_" + uuid().slice(0, 8), orgId, subscriptionId || null, donorId || null, kind, oldAmount, newAmount, interval, actor, actorName]
+  ).catch(e => console.error("[recurring] change-log write failed:", e.message));
+}
+
+// UNSUPPRESSIBLE donor notification for STAFF-side subscription changes.
+// The standing rule (BUILD-57): every staff action on a donor's recurring
+// gift notifies the donor, and NO role, setting, or flag can turn that off —
+// not recurring_dunning_enabled, not the suppression list, not notification
+// prefs. It is a transactional service message about the donor's own money,
+// not marketing (hence no unsubscribe footer, same rule as receipts). Tested
+// by tests/recurring-surface.test.js with every suppression lever thrown.
+async function sendRecurringDonorEmail(org, donor, subject, bodyText, { actionUrl = null, actionLabel = null } = {}) {
+  if (!process.env.RESEND_API_KEY) return true;
+  if (!donor?.email) return true;
+  const orgName = displayNameCase(org.name);
+  const psRows = await query("SELECT enabled FROM portal_settings WHERE org_id=?", [org.id]).catch(() => []);
+  const ps = psRows[0];
+  const html = await brandEmailHeaderHtml(org.id) + `
+    <div style="font-family:Georgia,'Times New Roman',serif;max-width:520px;margin:0 auto;padding:24px;color:#0f1a12;">
+      <p>${escHtmlWf(bodyText)}</p>
+      ${actionUrl ? `<p style="margin:22px 0;"><a href="${actionUrl}" style="background:#c9a84c;color:#0f1a12;text-decoration:none;padding:12px 22px;border-radius:8px;font-weight:bold;display:inline-block;">${escHtmlWf(actionLabel || "Review")}</a></p>` : ""}
+      ${ps?.enabled && org.org_slug ? `<p style="font-size:13px;color:#555;">You can review your giving anytime: <a href="${publicAppUrl()}/portal/${org.org_slug}">${escHtmlWf(orgName)} donor portal</a>.</p>` : ""}
+      <p style="font-size:13px;color:#555;">If you didn't expect this change, reply to this email and ${escHtmlWf(orgName)} will make it right.</p>
+    </div>`;
+  try {
+    const { error: sendErr } = await resend.emails.send({
+      from: process.env.DEMO_SMTP_FROM || "noreply@stewardapp.dev",
+      to: donor.email, subject: `${subject} — ${orgName}`, html,
+    });
+    if (sendErr) { console.error("[recurring] donor notification error:", sendErr.message); return false; }
+    return true;
+  } catch (e) { console.error("[recurring] donor notification failed:", e.message); return false; }
+}
+
+// Proposal tokens: 256-bit CSPRNG, stored SHA-256 (hash-at-rest — a DB leak
+// must never leak a live completion link), 14-day expiry, resendable once
+// (a resend supersedes the old token). Same discipline as portal_magic_links.
+const PROPOSAL_EXPIRY_DAYS = 14;
+const hashProposalToken = t => crypto.createHash("sha256").update(String(t)).digest("hex");
+function mintProposalToken() {
+  const token = crypto.randomBytes(32).toString("base64url");
+  return { token, hash: hashProposalToken(token) };
+}
+// Lazy expiry — flipped at every read/confirm; no new scheduler.
+async function expireStaleProposals(orgId) {
+  const args = orgId ? [orgId] : [];
+  await run(
+    `UPDATE recurring_proposals SET status='expired', updated_at=NOW()
+      WHERE status='pending' AND expires_at < NOW()${orgId ? " AND org_id=?" : ""}`, args
+  ).catch(() => {});
+}
+const PROPOSAL_KIND_LABELS = {
+  create: "start a recurring gift",
+  amount: "change your recurring gift amount",
+  frequency: "change how often your recurring gift repeats",
+  card_update: "update the card on your recurring gift",
+};
+
 // Finds the org + donor for a Connect subscription/invoice event. Primary
 // match is donors.stripe_subscription_id (set at subscription creation, see
 // checkout.session.completed below); falls back to the donor_email carried
@@ -13657,6 +13809,670 @@ app.get("/recurring/update-card", wrap(async (req, res) => {
   res.redirect(303, session.url);
 }));
 
+// ══ BUILD-57 Part 1 — THE STAFF RECURRING-GIVING SURFACE ═══════════════════
+// The page a development office manages the sustainer program from. The
+// pre-answered rule: anything that can MOVE MONEY (create / amount /
+// frequency / card) is an INVITATION the donor completes; pause / resume /
+// cancel / fund-designation are staff-direct. Staff never touch card data —
+// no exceptions. Every staff-side change fires an UNSUPPRESSIBLE donor
+// notification (sendRecurringDonorEmail above). New org-side donor-identity
+// routes here are in the org-blindness battery (tests/org-blindness.test.js).
+
+const monthlyEq = (amount, interval) => {
+  const a = parseFloat(amount) || 0;
+  return interval === "year" ? a / 12 : a;
+};
+
+// Loads an org-owned subscription + its donor, or responds 404 (foreign /
+// unknown ids are indistinguishable — standard org-scoping discipline).
+async function staffOwnedSub(req, res) {
+  const rows = await query(
+    `SELECT rs.*, d.name AS donor_name, d.email AS donor_email
+       FROM recurring_subscriptions rs
+       JOIN donors d ON d.id = rs.donor_id AND d.org_id = rs.org_id
+      WHERE rs.id = ? AND rs.org_id = ?`,
+    [req.params.subId, req.user.orgId]);
+  if (!rows.length) { res.status(404).json({ error: "not_found" }); return null; }
+  return rows[0];
+}
+
+async function staffActorName(req) {
+  const rows = await query("SELECT name FROM users WHERE id = ? AND org_id = ?", [req.user.userId, req.user.orgId]).catch(() => []);
+  return rows[0]?.name || req.user.email || "Staff";
+}
+
+async function staffRecurringOrg(orgId) {
+  const rows = await query("SELECT id, name, org_slug, stripe_account_id FROM orgs WHERE id = ?", [orgId]);
+  return rows[0] || null;
+}
+
+async function noteRecurringAction(orgId, donorId, text, actorName) {
+  const today = new Date().toISOString().slice(0, 10);
+  await run(
+    "INSERT INTO interactions (id,org_id,donor_id,type,note,date,logged_by_name) VALUES (?,?,?,'note',?,?,?)",
+    ["i_" + uuid().slice(0, 8), orgId, donorId, text, today, actorName]).catch(() => {});
+}
+
+// The roster — every subscription, plus pending create-invitations. Sorting/
+// filtering is client-side; the at-risk-first default order is server-side so
+// the failure queue is the first thing every consumer of this payload sees.
+app.get("/recurring/roster", requireAuth, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  await expireStaleProposals(orgId);
+  const [subs, proposals] = await Promise.all([
+    query(
+      `SELECT rs.id, rs.donor_id, rs.amount, rs.interval, rs.status, rs.fund_id,
+              rs.failure_count, rs.first_failed_at, rs.last_failed_at, rs.dunning_step,
+              rs.paused_at, rs.resume_at, rs.canceled_at, rs.recovered_at,
+              rs.created_at, rs.current_period_end,
+              d.name AS donor_name, d.email AS donor_email,
+              f.name AS fund_name,
+              COALESCE(g.total, 0) AS total_given, COALESCE(g.cnt, 0)::int AS linked_gift_count
+         FROM recurring_subscriptions rs
+         JOIN donors d ON d.id = rs.donor_id AND d.org_id = rs.org_id AND d.deleted_at IS NULL
+         LEFT JOIN fin_funds f ON f.id = rs.fund_id AND f.org_id = rs.org_id
+         LEFT JOIN LATERAL (
+           SELECT SUM(amount) AS total, COUNT(*) AS cnt FROM gifts
+            WHERE org_id = rs.org_id AND recurring_subscription_id = rs.id
+         ) g ON true
+        WHERE rs.org_id = ?
+        ORDER BY (rs.status IN ('past_due','recovering')) DESC, rs.last_failed_at DESC NULLS LAST, rs.created_at DESC`,
+      [orgId]),
+    query(
+      `SELECT p.id, p.donor_id, p.subscription_id, p.kind, p.proposed_amount, p.proposed_interval,
+              p.proposed_fund_id, p.status, p.resend_count, p.expires_at, p.created_at, p.created_by_name,
+              d.name AS donor_name, f.name AS fund_name
+         FROM recurring_proposals p
+         JOIN donors d ON d.id = p.donor_id AND d.org_id = p.org_id
+         LEFT JOIN fin_funds f ON f.id = p.proposed_fund_id AND f.org_id = p.org_id
+        WHERE p.org_id = ? AND p.status = 'pending'
+        ORDER BY p.created_at DESC`,
+      [orgId]),
+  ]);
+  const pendingBySub = {};
+  for (const p of proposals) if (p.subscription_id) pendingBySub[p.subscription_id] = p;
+  const rows = subs.map(s => {
+    const pending = pendingBySub[s.id] || null;
+    // Display precedence: canceled > past due > paused > pending donor
+    // action > active. A failing card outranks a pending proposal — the
+    // at-risk queue is the point of the page.
+    const displayStatus =
+      s.status === "canceled" ? "canceled"
+        : ["past_due", "recovering"].includes(s.status) ? "past_due"
+        : s.status === "paused" ? "paused"
+        : pending ? "pending"
+        : "active";
+    return {
+      id: s.id, donorId: s.donor_id, donorName: s.donor_name, donorEmail: s.donor_email,
+      amount: s.amount != null ? parseFloat(s.amount) : null, interval: s.interval || "month",
+      status: s.status, displayStatus,
+      fundId: s.fund_id || null, fundName: s.fund_name || null,
+      nextChargeAt: s.current_period_end || null, startedAt: s.created_at,
+      totalGiven: parseFloat(s.total_given) || 0, linkedGiftCount: s.linked_gift_count,
+      failureCount: s.failure_count, lastFailedAt: s.last_failed_at, dunningStep: s.dunning_step,
+      pausedAt: s.paused_at, resumeAt: s.resume_at, canceledAt: s.canceled_at,
+      pendingProposal: pending ? { id: pending.id, kind: pending.kind, expiresAt: pending.expires_at, resendCount: pending.resend_count } : null,
+    };
+  });
+  const invitations = proposals.filter(p => !p.subscription_id).map(p => ({
+    id: p.id, donorId: p.donor_id, donorName: p.donor_name, kind: p.kind,
+    proposedAmount: p.proposed_amount != null ? parseFloat(p.proposed_amount) : null,
+    proposedInterval: p.proposed_interval, fundName: p.fund_name || null,
+    expiresAt: p.expires_at, resendCount: p.resend_count, createdAt: p.created_at,
+    createdByName: p.created_by_name || null,
+  }));
+  res.json({ subs: rows, invitations });
+}));
+
+// The movement summary — current MRR plus the month-to-date waterfall over
+// the append-only recurring_change_log. Involuntary (card failure) and
+// voluntary (donor chose) churn are SEPARATE rows by design: one is a
+// technical problem you can fix, the other a relationship problem you can't.
+app.get("/recurring/movement", requireAuth, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  const [mrrRows, changeRows, cohortRows] = await Promise.all([
+    query(
+      `SELECT COALESCE(SUM(CASE WHEN interval='year' THEN amount/12 ELSE amount END),0) AS mrr,
+              COUNT(*) FILTER (WHERE status IN ('active','recovered'))::int AS healthy,
+              COUNT(*) FILTER (WHERE status IN ('past_due','recovering'))::int AS at_risk
+         FROM recurring_subscriptions
+        WHERE org_id = ? AND status IN ('active','recovered','past_due','recovering')`,
+      [orgId]),
+    query(
+      `SELECT kind, old_amount, new_amount, sub_interval FROM recurring_change_log
+        WHERE org_id = ? AND created_at >= date_trunc('month', NOW())`,
+      [orgId]),
+    // 12-month sustainer retention: every subscription whose 12-month mark
+    // has passed — retained means it was still alive at that mark.
+    query(
+      `SELECT COUNT(*)::int AS cohort,
+              COUNT(*) FILTER (WHERE canceled_at IS NULL OR canceled_at >= created_at + INTERVAL '12 months')::int AS retained
+         FROM recurring_subscriptions
+        WHERE org_id = ? AND created_at <= NOW() - INTERVAL '12 months'`,
+      [orgId]),
+  ]);
+  const buckets = {
+    new: { count: 0, amount: 0 }, upgraded: { count: 0, amount: 0 }, downgraded: { count: 0, amount: 0 },
+    paused: { count: 0, amount: 0 }, resumed: { count: 0, amount: 0 },
+    involuntaryChurn: { count: 0, amount: 0 }, voluntaryChurn: { count: 0, amount: 0 },
+  };
+  for (const c of changeRows) {
+    const oldEq = monthlyEq(c.old_amount, c.sub_interval);
+    const newEq = monthlyEq(c.new_amount, c.sub_interval);
+    if (c.kind === "created") { buckets.new.count++; buckets.new.amount += newEq; }
+    else if (c.kind === "amount_up") { buckets.upgraded.count++; buckets.upgraded.amount += newEq - oldEq; }
+    else if (c.kind === "amount_down") { buckets.downgraded.count++; buckets.downgraded.amount += oldEq - newEq; }
+    else if (c.kind === "paused") { buckets.paused.count++; buckets.paused.amount += oldEq; }
+    else if (c.kind === "resumed") { buckets.resumed.count++; buckets.resumed.amount += newEq; }
+    else if (c.kind === "canceled_involuntary") { buckets.involuntaryChurn.count++; buckets.involuntaryChurn.amount += oldEq; }
+    else if (c.kind === "canceled_voluntary") { buckets.voluntaryChurn.count++; buckets.voluntaryChurn.amount += oldEq; }
+  }
+  const round2 = n => Math.round(n * 100) / 100;
+  for (const k of Object.keys(buckets)) buckets[k].amount = round2(buckets[k].amount);
+  const net = round2(
+    buckets.new.amount + buckets.upgraded.amount + buckets.resumed.amount
+    - buckets.downgraded.amount - buckets.paused.amount
+    - buckets.involuntaryChurn.amount - buckets.voluntaryChurn.amount);
+  const cohort = cohortRows[0]?.cohort || 0;
+  const retained = cohortRows[0]?.retained || 0;
+  res.json({
+    mrr: round2(parseFloat(mrrRows[0]?.mrr) || 0),
+    healthyCount: mrrRows[0]?.healthy || 0,
+    atRiskCount: mrrRows[0]?.at_risk || 0,
+    waterfall: { monthStart: new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().slice(0, 10), ...buckets, net },
+    // No cohort → null, never a fake 0% (the empty-state honesty rule).
+    retention12: { rate: cohort ? round2((retained / cohort) * 100) : null, cohortSize: cohort, retained },
+    // If the sector benchmark is cited anywhere, it is THIS, sourced:
+    benchmark: { value: 71, source: "M+R Benchmarks 2026", label: "sustainer retention at 12 months" },
+  });
+}));
+
+// The dashboard's exceptions payload — "who needs you today," counts + short
+// lists only. Deliberately NOT the roster (the design rule: if the same
+// table renders twice, the design is wrong).
+app.get("/recurring/exceptions", requireAuth, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  await expireStaleProposals(orgId);
+  const [failed, exhausted, proposals, activeSubs] = await Promise.all([
+    query(
+      `SELECT rs.id, rs.amount, rs.interval, rs.status, rs.last_failed_at, rs.dunning_step, rs.failure_count,
+              rs.donor_id, d.name AS donor_name
+         FROM recurring_subscriptions rs
+         JOIN donors d ON d.id = rs.donor_id AND d.org_id = rs.org_id AND d.deleted_at IS NULL
+        WHERE rs.org_id = ? AND rs.status IN ('past_due','recovering')
+        ORDER BY rs.last_failed_at DESC NULLS LAST`,
+      [orgId]),
+    // Dunning cadence exhausted and still unresolved — Stripe's own retries
+    // are all that's left before customer.subscription.deleted (churn).
+    query(
+      `SELECT rs.id, rs.amount, rs.interval, rs.last_failed_at, rs.donor_id, d.name AS donor_name
+         FROM recurring_subscriptions rs
+         JOIN donors d ON d.id = rs.donor_id AND d.org_id = rs.org_id AND d.deleted_at IS NULL
+        WHERE rs.org_id = ? AND rs.status = 'recovering' AND rs.next_dunning_at IS NULL
+        ORDER BY rs.last_failed_at ASC NULLS LAST`,
+      [orgId]),
+    query(
+      `SELECT p.id, p.kind, p.expires_at, p.resend_count, p.donor_id, p.subscription_id, d.name AS donor_name
+         FROM recurring_proposals p
+         JOIN donors d ON d.id = p.donor_id AND d.org_id = p.org_id
+        WHERE p.org_id = ? AND p.status = 'pending'
+        ORDER BY p.expires_at ASC`,
+      [orgId]),
+    query(
+      `SELECT rs.id, rs.amount, rs.interval, rs.created_at, rs.donor_id, d.name AS donor_name
+         FROM recurring_subscriptions rs
+         JOIN donors d ON d.id = rs.donor_id AND d.org_id = rs.org_id AND d.deleted_at IS NULL
+        WHERE rs.org_id = ? AND rs.status IN ('active','recovered')`,
+      [orgId]),
+  ]);
+  // Sustainer anniversaries worth a note: an active subscription whose start
+  // date's month/day lands inside the next 14 days, at least a year in.
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const anniversaries = [];
+  for (const s of activeSubs) {
+    const start = new Date(s.created_at);
+    if (Number.isNaN(start.getTime())) continue;
+    const anniv = new Date(today.getFullYear(), start.getMonth(), start.getDate());
+    if (anniv < today) anniv.setFullYear(anniv.getFullYear() + 1);
+    const years = anniv.getFullYear() - start.getFullYear();
+    const daysOut = Math.round((anniv - today) / 86400000);
+    if (years >= 1 && daysOut <= 14) {
+      anniversaries.push({
+        subId: s.id, donorId: s.donor_id, donorName: s.donor_name,
+        amount: s.amount != null ? parseFloat(s.amount) : null, interval: s.interval || "month",
+        years, date: anniv.toISOString().slice(0, 10), daysOut,
+      });
+    }
+  }
+  anniversaries.sort((a, b) => a.daysOut - b.daysOut);
+  const mapSub = s => ({
+    subId: s.id, donorId: s.donor_id, donorName: s.donor_name,
+    amount: s.amount != null ? parseFloat(s.amount) : null, interval: s.interval || "month",
+    lastFailedAt: s.last_failed_at || null, dunningStep: s.dunning_step, failureCount: s.failure_count,
+  });
+  res.json({
+    counts: {
+      failedCards: failed.length, aboutToLapse: exhausted.length,
+      pendingProposals: proposals.length, anniversaries: anniversaries.length,
+    },
+    failedCards: failed.slice(0, 8).map(mapSub),
+    aboutToLapse: exhausted.slice(0, 8).map(mapSub),
+    pendingProposals: proposals.slice(0, 8).map(p => ({
+      id: p.id, kind: p.kind, donorId: p.donor_id, donorName: p.donor_name,
+      subscriptionId: p.subscription_id, expiresAt: p.expires_at, resendCount: p.resend_count,
+    })),
+    anniversaries: anniversaries.slice(0, 8),
+  });
+}));
+
+// ── Staff-direct actions: pause · resume · cancel · fund designation ───────
+// Pause/resume/fund are ordinary gated writes. CANCEL is deliberately NOT
+// checkWriteAccess-gated (same reasoning as the DELETE convention): a donor
+// asking to stop must never be blocked by the org's own billing state, and
+// cancel can never take more money.
+
+app.post("/recurring/subs/:subId/pause", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  const sub = await staffOwnedSub(req, res);
+  if (!sub) return;
+  if (!["active", "recovered"].includes(sub.status)) {
+    return res.status(409).json({ error: "not_pausable", message: "Only an active subscription can be paused." });
+  }
+  const org = await staffRecurringOrg(req.user.orgId);
+  if (!stripe || !org?.stripe_account_id) return res.status(503).json({ error: "stripe_unavailable" });
+  let resumeAt = null;
+  if (req.body?.resumeAt) {
+    resumeAt = new Date(req.body.resumeAt);
+    if (Number.isNaN(resumeAt.getTime()) || resumeAt <= new Date()) {
+      return res.status(400).json({ error: "bad_resume_date", message: "Resume date must be in the future." });
+    }
+  }
+  const actorName = await staffActorName(req);
+  await withAdvisoryLock(`portal-sub:${sub.id}`, async () => {
+    await stripe.subscriptions.update(sub.stripe_subscription_id, {
+      pause_collection: { behavior: "void", ...(resumeAt ? { resumes_at: Math.floor(resumeAt.getTime() / 1000) } : {}) },
+    }, { stripeAccount: org.stripe_account_id });
+    await run(
+      `UPDATE recurring_subscriptions SET status='paused', paused_at=NOW(), resume_at=?, next_dunning_at=NULL, updated_at=NOW() WHERE id=?`,
+      [resumeAt ? resumeAt.toISOString() : null, sub.id]);
+    await logRecurringChange(org.id, sub.id, sub.donor_id, "paused",
+      { oldAmount: parseFloat(sub.amount) || null, interval: sub.interval, actor: "staff", actorName });
+    await noteRecurringAction(org.id, sub.donor_id,
+      `Paused their $${Number(sub.amount).toLocaleString()}/${sub.interval || "month"} recurring gift${resumeAt ? ` until ${resumeAt.toISOString().slice(0, 10)}` : ""}`, actorName);
+    await sendRecurringDonorEmail(org, { email: sub.donor_email, name: sub.donor_name },
+      "Your recurring gift is paused",
+      `${displayNameCase(org.name)} has paused your $${Number(sub.amount).toLocaleString()}/${sub.interval || "month"} recurring gift${resumeAt ? `; it will resume automatically on ${resumeAt.toISOString().slice(0, 10)}` : ""}. No charges will occur while it's paused.`);
+    res.json({ ok: true, status: "paused", resumeAt: resumeAt ? resumeAt.toISOString() : null });
+  });
+}));
+
+app.post("/recurring/subs/:subId/resume", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  const sub = await staffOwnedSub(req, res);
+  if (!sub) return;
+  if (sub.status !== "paused") {
+    return res.status(409).json({ error: "not_paused", message: "Only a paused subscription can be resumed." });
+  }
+  const org = await staffRecurringOrg(req.user.orgId);
+  if (!stripe || !org?.stripe_account_id) return res.status(503).json({ error: "stripe_unavailable" });
+  const actorName = await staffActorName(req);
+  await withAdvisoryLock(`portal-sub:${sub.id}`, async () => {
+    await stripe.subscriptions.update(sub.stripe_subscription_id, { pause_collection: "" }, { stripeAccount: org.stripe_account_id });
+    await run(`UPDATE recurring_subscriptions SET status='active', paused_at=NULL, resume_at=NULL, updated_at=NOW() WHERE id=?`, [sub.id]);
+    await logRecurringChange(org.id, sub.id, sub.donor_id, "resumed",
+      { newAmount: parseFloat(sub.amount) || null, interval: sub.interval, actor: "staff", actorName });
+    await noteRecurringAction(org.id, sub.donor_id,
+      `Resumed their $${Number(sub.amount).toLocaleString()}/${sub.interval || "month"} recurring gift`, actorName);
+    await sendRecurringDonorEmail(org, { email: sub.donor_email, name: sub.donor_name },
+      "Your recurring gift has resumed",
+      `${displayNameCase(org.name)} has resumed your $${Number(sub.amount).toLocaleString()}/${sub.interval || "month"} recurring gift. Your next charge will occur on the normal schedule.`);
+    res.json({ ok: true, status: "active" });
+  });
+}));
+
+app.post("/recurring/subs/:subId/cancel", requireAuth, wrap(async (req, res) => {
+  const sub = await staffOwnedSub(req, res);
+  if (!sub) return;
+  if (sub.status === "canceled") return res.status(409).json({ error: "already_canceled" });
+  const org = await staffRecurringOrg(req.user.orgId);
+  if (!stripe || !org?.stripe_account_id) return res.status(503).json({ error: "stripe_unavailable" });
+  const actorName = await staffActorName(req);
+  await withAdvisoryLock(`portal-sub:${sub.id}`, async () => {
+    await stripe.subscriptions.update(sub.stripe_subscription_id, { cancel_at_period_end: true }, { stripeAccount: org.stripe_account_id });
+    await run(
+      `UPDATE recurring_subscriptions SET status='canceled', canceled_at=NOW(), next_dunning_at=NULL, updated_at=NOW() WHERE id=?`,
+      [sub.id]);
+    await run(`UPDATE donors SET stripe_subscription_status='canceled', updated_at=NOW() WHERE id=? AND org_id=?`, [sub.donor_id, org.id]).catch(() => {});
+    await logRecurringChange(org.id, sub.id, sub.donor_id, "canceled_voluntary",
+      { oldAmount: parseFloat(sub.amount) || null, interval: sub.interval, actor: "staff", actorName });
+    await noteRecurringAction(org.id, sub.donor_id,
+      `Canceled their $${Number(sub.amount).toLocaleString()}/${sub.interval || "month"} recurring gift at their request`, actorName);
+    await sendRecurringDonorEmail(org, { email: sub.donor_email, name: sub.donor_name },
+      "Your recurring gift is canceled",
+      `${displayNameCase(org.name)} has canceled your $${Number(sub.amount).toLocaleString()}/${sub.interval || "month"} recurring gift. You won't be charged again. Thank you for everything you've given.`);
+    res.json({ ok: true, status: "canceled" });
+  });
+}));
+
+app.put("/recurring/subs/:subId/fund", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  const sub = await staffOwnedSub(req, res);
+  if (!sub) return;
+  if (sub.status === "canceled") return res.status(409).json({ error: "canceled" });
+  const orgId = req.user.orgId;
+  let fundId = req.body?.fundId || null;
+  let fundName = null;
+  if (fundId) {
+    const f = await query("SELECT id, name FROM fin_funds WHERE id=? AND org_id=?", [fundId, orgId]);
+    if (!f.length) return res.status(404).json({ error: "fund_not_found" });
+    fundName = f[0].name;
+  }
+  const org = await staffRecurringOrg(orgId);
+  const actorName = await staffActorName(req);
+  await run("UPDATE recurring_subscriptions SET fund_id=?, updated_at=NOW() WHERE id=?", [fundId, sub.id]);
+  await logRecurringChange(orgId, sub.id, sub.donor_id, "fund_changed",
+    { oldAmount: parseFloat(sub.amount) || null, newAmount: parseFloat(sub.amount) || null, interval: sub.interval, actor: "staff", actorName });
+  await noteRecurringAction(orgId, sub.donor_id,
+    fundId ? `Changed their recurring gift's designation to ${fundName}` : "Cleared their recurring gift's fund designation", actorName);
+  await sendRecurringDonorEmail(org, { email: sub.donor_email, name: sub.donor_name },
+    "Your recurring gift's designation changed",
+    fundId
+      ? `Your $${Number(sub.amount).toLocaleString()}/${sub.interval || "month"} recurring gift to ${displayNameCase(org.name)} now supports ${fundName}. Future charges will be designated there.`
+      : `Your $${Number(sub.amount).toLocaleString()}/${sub.interval || "month"} recurring gift to ${displayNameCase(org.name)} is no longer designated to a specific fund; it will support the organization's general work.`);
+  res.json({ ok: true, fundId, fundName });
+}));
+
+// ── Proposals: the invitation path for anything that can move money ────────
+app.post("/recurring/proposals", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  const { donorId, kind } = req.body || {};
+  if (!PROPOSAL_KIND_LABELS[kind]) return res.status(400).json({ error: "bad_kind" });
+  const donorRows = await query(
+    "SELECT id, name, email FROM donors WHERE id=? AND org_id=? AND deleted_at IS NULL", [donorId, orgId]);
+  if (!donorRows.length) return res.status(404).json({ error: "donor_not_found" });
+  const donor = donorRows[0];
+  if (!donor.email) return res.status(400).json({ error: "donor_has_no_email", message: "This donor has no email on file — a proposal is completed by the donor from an email." });
+
+  let sub = null;
+  if (kind !== "create") {
+    const subRows = await query(
+      "SELECT * FROM recurring_subscriptions WHERE id=? AND org_id=? AND donor_id=?",
+      [req.body?.subId, orgId, donorId]);
+    if (!subRows.length) return res.status(404).json({ error: "subscription_not_found" });
+    sub = subRows[0];
+    if (sub.status === "canceled") return res.status(409).json({ error: "canceled" });
+  }
+
+  const psRows = await query("SELECT min_recurring_cents FROM portal_settings WHERE org_id=?", [orgId]).catch(() => []);
+  const minCents = Number(psRows[0]?.min_recurring_cents) || 500;
+  let proposedAmount = null, proposedInterval = null, proposedFundId = null;
+  if (kind === "create" || kind === "amount") {
+    const cents = Number(req.body?.amountCents);
+    if (!Number.isInteger(cents) || cents < minCents || cents > 10000000) {
+      return res.status(400).json({ error: "bad_amount", message: `Amount must be at least $${(minCents / 100).toFixed(2)}.` });
+    }
+    proposedAmount = cents / 100;
+  }
+  if (kind === "create" || kind === "frequency") {
+    proposedInterval = req.body?.interval;
+    if (!["month", "year"].includes(proposedInterval)) return res.status(400).json({ error: "bad_interval" });
+  }
+  if (kind === "create" && req.body?.fundId) {
+    const f = await query("SELECT id FROM fin_funds WHERE id=? AND org_id=?", [req.body.fundId, orgId]);
+    if (!f.length) return res.status(404).json({ error: "fund_not_found" });
+    proposedFundId = req.body.fundId;
+  }
+
+  // One pending proposal per (donor, kind, subscription) at a time — a second
+  // identical ask supersedes the first (its token dies with it).
+  await run(
+    `UPDATE recurring_proposals SET status='canceled', updated_at=NOW()
+      WHERE org_id=? AND donor_id=? AND kind=? AND COALESCE(subscription_id,'')=COALESCE(?,'') AND status='pending'`,
+    [orgId, donorId, kind, sub?.id || null]).catch(() => {});
+
+  const { token, hash } = mintProposalToken();
+  const id = "rprop_" + uuid().slice(0, 8);
+  const actorName = await staffActorName(req);
+  const expiresAt = new Date(Date.now() + PROPOSAL_EXPIRY_DAYS * 86400000);
+  await run(
+    `INSERT INTO recurring_proposals (id, org_id, donor_id, subscription_id, kind, proposed_amount, proposed_interval, proposed_fund_id, token_hash, created_by, created_by_name, expires_at)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
+    [id, orgId, donorId, sub?.id || null, kind, proposedAmount, proposedInterval, proposedFundId, hash, req.user.userId, actorName, expiresAt.toISOString()]);
+
+  const org = await staffRecurringOrg(orgId);
+  const orgName = displayNameCase(org.name);
+  const url = `${publicAppUrl()}/recurring/proposal?token=${token}`;
+  const detail =
+    kind === "create" ? `a ${proposedInterval === "year" ? "yearly" : "monthly"} gift of $${proposedAmount.toLocaleString()}`
+      : kind === "amount" ? `changing your recurring gift to $${proposedAmount.toLocaleString()}/${sub.interval || "month"}`
+      : kind === "frequency" ? `changing your recurring gift to repeat ${proposedInterval === "year" ? "yearly" : "monthly"}`
+      : "updating the card on your recurring gift";
+  await sendRecurringDonorEmail(org, donor, `A request from ${orgName}`,
+    `${actorName} at ${orgName} has proposed ${detail}. Nothing changes unless you complete it — the link below expires in ${PROPOSAL_EXPIRY_DAYS} days.`,
+    { actionUrl: url, actionLabel: "Review and complete" });
+  await noteRecurringAction(orgId, donorId, `Sent a recurring-gift proposal (${PROPOSAL_KIND_LABELS[kind]})`, actorName);
+  res.status(201).json({
+    id, donorId, kind, subscriptionId: sub?.id || null,
+    proposedAmount, proposedInterval, proposedFundId,
+    status: "pending", expiresAt: expiresAt.toISOString(), resendCount: 0,
+  });
+}));
+
+app.post("/recurring/proposals/:id/resend", requireAuth, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  await expireStaleProposals(orgId);
+  const rows = await query(
+    `SELECT p.*, d.name AS donor_name, d.email AS donor_email
+       FROM recurring_proposals p JOIN donors d ON d.id=p.donor_id AND d.org_id=p.org_id
+      WHERE p.id=? AND p.org_id=?`, [req.params.id, orgId]);
+  if (!rows.length) return res.status(404).json({ error: "not_found" });
+  const p = rows[0];
+  if (p.status !== "pending") return res.status(409).json({ error: "not_pending" });
+  if (p.resend_count >= 1) return res.status(409).json({ error: "already_resent", message: "A proposal can be resent once. Create a fresh proposal instead." });
+  const { token, hash } = mintProposalToken();
+  const expiresAt = new Date(Date.now() + PROPOSAL_EXPIRY_DAYS * 86400000);
+  await run(
+    `UPDATE recurring_proposals SET token_hash=?, resend_count=1, resent_at=NOW(), expires_at=?, updated_at=NOW() WHERE id=?`,
+    [hash, expiresAt.toISOString(), p.id]);
+  const org = await staffRecurringOrg(orgId);
+  const url = `${publicAppUrl()}/recurring/proposal?token=${token}`;
+  await sendRecurringDonorEmail(org, { email: p.donor_email, name: p.donor_name },
+    `A reminder from ${displayNameCase(org.name)}`,
+    `A reminder about the proposed change to your recurring giving (${PROPOSAL_KIND_LABELS[p.kind]}). Nothing changes unless you complete it — the link below expires in ${PROPOSAL_EXPIRY_DAYS} days.`,
+    { actionUrl: url, actionLabel: "Review and complete" });
+  res.json({ ok: true, resendCount: 1, expiresAt: expiresAt.toISOString() });
+}));
+
+// ── The donor-facing completion pages (public, tokenized, org-branded) ─────
+function proposalPageHtml({ orgName, title, bodyHtml, button = null, formAction = null, token = null }) {
+  return `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>${escHtmlWf(title)} — ${escHtmlWf(orgName)}</title></head>
+<body style="margin:0;background:#f0ede6;font-family:Georgia,'Times New Roman',serif;color:#0f1a12;">
+  <div style="max-width:520px;margin:48px auto;padding:0 20px;">
+    <div style="background:#ffffff;border:1px solid #dce7df;border-radius:14px;padding:36px 32px;">
+      <p style="margin:0 0 4px;font-size:13px;letter-spacing:0.08em;text-transform:uppercase;color:#6b8f7a;">${escHtmlWf(orgName)}</p>
+      <h1 style="margin:0 0 18px;font-size:26px;font-weight:400;">${escHtmlWf(title)}</h1>
+      ${bodyHtml}
+      ${button && formAction ? `
+      <form method="POST" action="${formAction}" style="margin:26px 0 0;">
+        <input type="hidden" name="token" value="${escHtmlWf(token)}">
+        <button type="submit" style="background:#c9a84c;color:#0f1a12;border:none;border-radius:10px;padding:13px 26px;font-size:15px;font-weight:bold;cursor:pointer;font-family:inherit;">${escHtmlWf(button)}</button>
+      </form>` : ""}
+      <p style="margin:26px 0 0;font-size:13px;color:#555;">Questions? Reply to the email that brought you here and ${escHtmlWf(orgName)} will help.</p>
+    </div>
+  </div>
+</body></html>`;
+}
+
+async function loadLiveProposal(token) {
+  if (!token || typeof token !== "string" || token.length > 200) return null;
+  await expireStaleProposals(null);
+  const rows = await query(
+    `SELECT p.*, d.name AS donor_name, d.email AS donor_email,
+            o.name AS org_name, o.org_slug, o.stripe_account_id,
+            f.name AS fund_name
+       FROM recurring_proposals p
+       JOIN donors d ON d.id = p.donor_id AND d.org_id = p.org_id
+       JOIN orgs o ON o.id = p.org_id
+       LEFT JOIN fin_funds f ON f.id = p.proposed_fund_id AND f.org_id = p.org_id
+      WHERE p.token_hash = ? AND p.status = 'pending'`,
+    [hashProposalToken(token)]);
+  return rows[0] || null;
+}
+
+app.get("/recurring/proposal", donateLimiter, wrap(async (req, res) => {
+  res.set("Content-Type", "text/html");
+  const p = await loadLiveProposal(req.query.token);
+  if (!p) {
+    return res.status(400).send(proposalPageHtml({
+      orgName: "Recurring giving", title: "This link is no longer active",
+      bodyHtml: `<p>The proposal it pointed to has expired or was already completed. If you still want to make the change, ask the organization to send a fresh one.</p>`,
+    }));
+  }
+  const orgName = displayNameCase(p.org_name);
+  const firstName = String(p.donor_name || "").split(" ")[0] || "there";
+  let sub = null;
+  if (p.subscription_id) {
+    const subRows = await query("SELECT amount, interval FROM recurring_subscriptions WHERE id=?", [p.subscription_id]);
+    sub = subRows[0] || null;
+  }
+  const cur = sub ? `$${Number(sub.amount).toLocaleString()}/${sub.interval || "month"}` : null;
+  let bodyHtml, button;
+  if (p.kind === "create") {
+    bodyHtml = `<p>Hi ${escHtmlWf(firstName)} — ${escHtmlWf(orgName)} has invited you to start a recurring gift of
+      <strong>$${Number(p.proposed_amount).toLocaleString()}/${p.proposed_interval === "year" ? "year" : "month"}</strong>${p.fund_name ? `, supporting <strong>${escHtmlWf(p.fund_name)}</strong>` : ""}.</p>
+      <p style="font-size:14px;color:#555;">You'll enter payment details securely on Stripe — ${escHtmlWf(orgName)} never sees your card.</p>`;
+    button = "Continue to Stripe";
+  } else if (p.kind === "amount") {
+    bodyHtml = `<p>Hi ${escHtmlWf(firstName)} — ${escHtmlWf(orgName)} has proposed changing your recurring gift
+      from <strong>${escHtmlWf(cur || "its current amount")}</strong> to <strong>$${Number(p.proposed_amount).toLocaleString()}/${sub?.interval || "month"}</strong>.</p>
+      <p style="font-size:14px;color:#555;">Nothing changes unless you confirm. The new amount takes effect on your next scheduled charge.</p>`;
+    button = "Confirm the new amount";
+  } else if (p.kind === "frequency") {
+    bodyHtml = `<p>Hi ${escHtmlWf(firstName)} — ${escHtmlWf(orgName)} has proposed changing your recurring gift
+      from <strong>${escHtmlWf(cur || "its current schedule")}</strong> to repeat <strong>${p.proposed_interval === "year" ? "yearly" : "monthly"}</strong>.</p>
+      <p style="font-size:14px;color:#555;">Nothing changes unless you confirm.</p>`;
+    button = "Confirm the new schedule";
+  } else {
+    bodyHtml = `<p>Hi ${escHtmlWf(firstName)} — ${escHtmlWf(orgName)} has asked you to update the card on your
+      <strong>${escHtmlWf(cur || "recurring")}</strong> gift.</p>
+      <p style="font-size:14px;color:#555;">You'll update it securely on Stripe — ${escHtmlWf(orgName)} never sees your card.</p>`;
+    button = "Update my card on Stripe";
+  }
+  res.send(proposalPageHtml({
+    orgName, title: PROPOSAL_KIND_LABELS[p.kind].replace(/^./, c => c.toUpperCase()),
+    bodyHtml, button, formAction: "/recurring/proposal/confirm", token: req.query.token,
+  }));
+}));
+
+app.post("/recurring/proposal/confirm", donateLimiter, express.urlencoded({ extended: false }), wrap(async (req, res) => {
+  res.set("Content-Type", "text/html");
+  const token = req.body?.token || req.query.token;
+  const p = await loadLiveProposal(token);
+  if (!p) {
+    return res.status(400).send(proposalPageHtml({
+      orgName: "Recurring giving", title: "This link is no longer active",
+      bodyHtml: `<p>The proposal it pointed to has expired or was already completed. If you still want to make the change, ask the organization to send a fresh one.</p>`,
+    }));
+  }
+  const orgName = displayNameCase(p.org_name);
+  if (!stripe || !p.stripe_account_id) {
+    return res.status(503).send(proposalPageHtml({ orgName, title: "Payments unavailable", bodyHtml: "<p>Payments aren't configured for this organization yet. Please try again later.</p>" }));
+  }
+
+  if (p.kind === "create") {
+    // The donor completes on Stripe Checkout; our own metadata carries the
+    // proposal id so checkout.session.completed marks it completed and the
+    // fund designation stamps the subscription row (BUILD-56 chain).
+    const cents = Math.round(parseFloat(p.proposed_amount) * 100);
+    const metadata = {
+      donor_email: p.donor_email, org_id: p.org_id, proposal_id: p.id,
+      frequency: p.proposed_interval === "year" ? "annual" : "monthly",
+      ...(p.proposed_fund_id ? { fund_id: p.proposed_fund_id } : {}),
+    };
+    const session = await stripe.checkout.sessions.create({
+      payment_method_types: ["card"],
+      mode: "subscription",
+      customer_email: p.donor_email,
+      line_items: [{
+        price_data: {
+          currency: "usd",
+          product_data: { name: `${orgName} recurring gift` },
+          unit_amount: cents,
+          recurring: { interval: p.proposed_interval === "year" ? "year" : "month" },
+        },
+        quantity: 1,
+      }],
+      metadata,
+      subscription_data: { metadata },
+      success_url: `${publicAppUrl()}/give/${p.org_slug}?donated=true`,
+      cancel_url: `${publicAppUrl()}/give/${p.org_slug}`,
+    }, { stripeAccount: p.stripe_account_id });
+    return res.redirect(303, session.url);
+  }
+
+  if (p.kind === "card_update") {
+    const subRows = await query("SELECT * FROM recurring_subscriptions WHERE id=? AND org_id=?", [p.subscription_id, p.org_id]);
+    const rs = subRows[0];
+    if (!rs) return res.status(404).send(proposalPageHtml({ orgName, title: "Subscription not found", bodyHtml: "<p>This subscription no longer exists.</p>" }));
+    const session = await stripe.checkout.sessions.create({
+      mode: "setup",
+      payment_method_types: ["card"],
+      ...(rs.stripe_customer_id ? { customer: rs.stripe_customer_id } : {}),
+      setup_intent_data: { metadata: { subscription_id: rs.stripe_subscription_id, org_id: p.org_id, proposal_id: p.id } },
+      success_url: `${publicAppUrl()}/give/${p.org_slug}?card_updated=true`,
+      cancel_url: `${publicAppUrl()}/give/${p.org_slug}`,
+    }, { stripeAccount: p.stripe_account_id });
+    return res.redirect(303, session.url);
+  }
+
+  // amount / frequency — Stripe-FIRST reprice (the mutation fails if Stripe
+  // does; we never claim a schedule changed while Stripe keeps charging the
+  // old one), serialized per sub like every other subscription mutation.
+  const subRows = await query("SELECT * FROM recurring_subscriptions WHERE id=? AND org_id=?", [p.subscription_id, p.org_id]);
+  const rs = subRows[0];
+  if (!rs || !["active", "recovered", "paused", "past_due", "recovering"].includes(rs.status)) {
+    return res.status(409).send(proposalPageHtml({ orgName, title: "This gift can't be changed right now", bodyHtml: "<p>The subscription is no longer in a state that can be changed. Ask the organization for help.</p>" }));
+  }
+  const newInterval = p.kind === "frequency" ? p.proposed_interval : (rs.interval === "year" ? "year" : "month");
+  const newCents = p.kind === "amount" ? Math.round(parseFloat(p.proposed_amount) * 100) : Math.round((parseFloat(rs.amount) || 0) * 100);
+  await withAdvisoryLock(`portal-sub:${rs.id}`, async () => {
+    const stripeSub = await stripe.subscriptions.retrieve(rs.stripe_subscription_id, {}, { stripeAccount: p.stripe_account_id });
+    const item = stripeSub.items?.data?.[0];
+    if (!item) throw new Error("subscription has no items");
+    await stripe.subscriptions.update(rs.stripe_subscription_id, {
+      items: [{ id: item.id, price_data: {
+        currency: item.price?.currency || "usd",
+        product_data: { name: `${orgName} recurring gift` },
+        recurring: { interval: newInterval },
+        unit_amount: newCents,
+      } }],
+      proration_behavior: "none",
+    }, { stripeAccount: p.stripe_account_id });
+    const oldAmt = parseFloat(rs.amount) || 0;
+    const newAmt = newCents / 100;
+    await run("UPDATE recurring_subscriptions SET amount=?, interval=?, updated_at=NOW() WHERE id=?", [newAmt, newInterval, rs.id]);
+    await run(`UPDATE recurring_proposals SET status='completed', completed_at=NOW(), updated_at=NOW() WHERE id=?`, [p.id]);
+    if (p.kind === "amount" && Math.abs(newAmt - oldAmt) >= 0.005) {
+      await logRecurringChange(p.org_id, rs.id, rs.donor_id, newAmt > oldAmt ? "amount_up" : "amount_down",
+        { oldAmount: oldAmt, newAmount: newAmt, interval: newInterval, actor: "donor" });
+    }
+    await noteRecurringAction(p.org_id, rs.donor_id,
+      p.kind === "amount"
+        ? `Completed the proposed change: recurring gift is now $${newAmt.toLocaleString()}/${newInterval} (was $${oldAmt.toLocaleString()})`
+        : `Completed the proposed change: recurring gift now repeats ${newInterval === "year" ? "yearly" : "monthly"}`,
+      p.donor_name || "Donor");
+    await sendRecurringDonorEmail({ id: p.org_id, name: p.org_name, org_slug: p.org_slug }, { email: p.donor_email, name: p.donor_name },
+      "Your recurring gift changed",
+      p.kind === "amount"
+        ? `Your recurring gift to ${orgName} is now $${newAmt.toLocaleString()}/${newInterval} (was $${oldAmt.toLocaleString()}). The new amount takes effect on your next scheduled charge.`
+        : `Your recurring gift to ${orgName} now repeats ${newInterval === "year" ? "yearly" : "monthly"}.`);
+    res.send(proposalPageHtml({
+      orgName, title: "Done — thank you",
+      bodyHtml: p.kind === "amount"
+        ? `<p>Your recurring gift is now <strong>$${newAmt.toLocaleString()}/${newInterval}</strong>. The new amount takes effect on your next scheduled charge.</p>`
+        : `<p>Your recurring gift now repeats <strong>${newInterval === "year" ? "yearly" : "monthly"}</strong>.</p>`,
+    }));
+  });
+}));
+
 // ── Recurring gift recovery: staff-facing routes ────────────────────────────
 app.get("/recurring/health", requireAuth, wrap(async (req, res) => {
   const orgId = req.user.orgId;
@@ -16142,6 +16958,8 @@ app.post("/portal/:orgSlug/recurring/:subId/pause", portalMutationLimiter, requi
       `UPDATE recurring_subscriptions SET status='paused', paused_at=NOW(), resume_at=?, next_dunning_at=NULL, updated_at=NOW() WHERE id=?`,
       [resumeAt, sub.id]);
     await portalAudit(org.id, donor.id, email, "recurring_pause", req, { subId: sub.id, resumeAt });
+    await logRecurringChange(org.id, sub.id, donor.id, "paused",
+      { oldAmount: parseFloat(sub.amount) || null, interval: sub.interval, actor: "donor" });
     await portalTimeline(org.id, donor.id, `Portal: paused their $${Number(sub.amount).toLocaleString()}/${sub.interval || "month"} recurring gift${resumeAt ? ` until ${resumeAt.toISOString().slice(0, 10)}` : ""}`, "recurring_pause");
     portalDriftAlert(org, donor, sub, "recurring_pause", resumeAt ? `auto-resumes ${resumeAt.toISOString().slice(0, 10)}` : "no resume date set").catch(() => {});
     sendPortalMutationEmail(org, email, "Your recurring gift is paused",
@@ -16163,6 +16981,8 @@ app.post("/portal/:orgSlug/recurring/:subId/resume", portalMutationLimiter, requ
     await stripe.subscriptions.update(sub.stripe_subscription_id, { pause_collection: "" }, { stripeAccount: org.stripe_account_id });
     await run(`UPDATE recurring_subscriptions SET status='active', paused_at=NULL, resume_at=NULL, updated_at=NOW() WHERE id=?`, [sub.id]);
     await portalAudit(org.id, donor.id, email, "recurring_resume", req, { subId: sub.id });
+    await logRecurringChange(org.id, sub.id, donor.id, "resumed",
+      { newAmount: parseFloat(sub.amount) || null, interval: sub.interval, actor: "donor" });
     await portalTimeline(org.id, donor.id, `Portal: resumed their $${Number(sub.amount).toLocaleString()}/${sub.interval || "month"} recurring gift`, "recurring_resume");
     sendPortalMutationEmail(org, email, "Your recurring gift has resumed",
       `Your $${Number(sub.amount).toLocaleString()}/${sub.interval || "month"} recurring gift is active again. Thank you for your continued support.`).catch(() => {});
@@ -16205,6 +17025,10 @@ app.post("/portal/:orgSlug/recurring/:subId/amount", portalMutationLimiter, requ
     const newAmt = cents / 100;
     await run(`UPDATE recurring_subscriptions SET amount=?, updated_at=NOW() WHERE id=?`, [newAmt, sub.id]);
     await portalAudit(org.id, donor.id, email, "recurring_amount", req, { subId: sub.id, from: oldAmt, to: newAmt });
+    if (Math.abs(newAmt - oldAmt) >= 0.005) {
+      await logRecurringChange(org.id, sub.id, donor.id, newAmt > oldAmt ? "amount_up" : "amount_down",
+        { oldAmount: oldAmt, newAmount: newAmt, interval: sub.interval, actor: "donor" });
+    }
     await portalTimeline(org.id, donor.id, `Portal: changed their recurring gift from $${oldAmt.toLocaleString()} to $${newAmt.toLocaleString()}/${sub.interval || "month"}`, "recurring_amount");
     sendPortalMutationEmail(org, email, "Your recurring gift amount changed",
       `Your recurring gift is now $${newAmt.toLocaleString()}/${sub.interval || "month"} (was $${oldAmt.toLocaleString()}). The new amount takes effect on your next scheduled charge.`).catch(() => {});
@@ -16230,6 +17054,8 @@ app.post("/portal/:orgSlug/recurring/:subId/cancel", portalMutationLimiter, requ
       [sub.id]);
     await run(`UPDATE donors SET stripe_subscription_status='canceled', updated_at=NOW() WHERE id=? AND org_id=?`, [donor.id, org.id]).catch(() => {});
     await portalAudit(org.id, donor.id, email, "recurring_cancel", req, { subId: sub.id, reason });
+    await logRecurringChange(org.id, sub.id, donor.id, "canceled_voluntary",
+      { oldAmount: parseFloat(sub.amount) || null, interval: sub.interval, actor: "donor" });
     await portalTimeline(org.id, donor.id, `Portal: canceled their $${Number(sub.amount).toLocaleString()}/${sub.interval || "month"} recurring gift${reason ? ` — reason: ${reason}` : ""}`, "recurring_cancel");
     portalDriftAlert(org, donor, sub, "recurring_cancel", reason).catch(() => {});
     sendPortalMutationEmail(org, email, "Your recurring gift is canceled",

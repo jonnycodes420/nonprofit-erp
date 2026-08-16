@@ -32,7 +32,7 @@ const read = f => fs.readFileSync(path.join(root, "scripts", f + ".js"), "utf8")
 const GUARDED_WRITERS = [
   "backfill-campaign-attribution", "build25-workflows-capture", "build35-capture",
   "build36-bulkassign-capture", "build36-notify-capture", "build47-capture",
-  "build55-capture",
+  "build55-capture", "build57-capture",
   "build48-capture", "build50-capture", "build54-capture",
   "dedupe-finance-gift-stamps", "extend-trials-free-through-2026",
   "finance-entity-routing-capture", "fix-build54-demo-photos",

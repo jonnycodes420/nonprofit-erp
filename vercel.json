@@ -40,6 +40,14 @@
       "destination": "https://nonprofit-erp-production.up.railway.app/recurring/update-card"
     },
     {
+      "source": "/recurring/proposal",
+      "destination": "https://nonprofit-erp-production.up.railway.app/recurring/proposal"
+    },
+    {
+      "source": "/recurring/proposal/confirm",
+      "destination": "https://nonprofit-erp-production.up.railway.app/recurring/proposal/confirm"
+    },
+    {
       "source": "/giving",
       "destination": "/giving.html"
     },

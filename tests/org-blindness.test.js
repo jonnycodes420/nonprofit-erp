@@ -103,6 +103,12 @@ const BATTERY = [
   ["top donors report", "GET", `/reports/top-donors?year=${THIS_YEAR}&yearMode=calendar`],
   ["portal audit view", "GET", "/portal-audit"],
   ["donor recurring record", "GET", "/donors/d_obA_w/recurring-subscription"],
+  // BUILD-57 — the staff recurring surface (roster / movement / exceptions)
+  // reads donor identity org-side; it must be byte-blind to org B's donor,
+  // subscription, and any cross-org account artifact.
+  ["recurring roster", "GET", "/recurring/roster"],
+  ["recurring movement", "GET", "/recurring/movement"],
+  ["recurring exceptions", "GET", "/recurring/exceptions"],
 ];
 
 async function captureBattery(tokenA) {

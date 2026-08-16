@@ -1,7 +1,8 @@
 import { useState, useEffect, Fragment } from "react";
 import { apiFetch } from "../api";
 import { useAuth } from "../main";
-import { T, fmt, fmtFull, daysUntil, daysDiff, askClaude, buildContext, Spin, AIBtn, GoldMoment, interactive } from "./shared";
+import { T, fmt, fmtFull, daysUntil, daysDiff, askClaude, buildContext, Spin, AIBtn, GoldMoment, interactive, SectionTabs } from "./shared";
+import { DashboardRecurring } from "./RecurringGiving";
 import { mergeLayout, sectionMeta, isDefaultLayout, moveToTop } from "../lib/homeLayout";
 import { greetingForHour } from "../lib/greeting";
 import FunnelChart from "./FunnelChart";
@@ -191,6 +192,10 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
   const isAdmin=auth?.user?.role==="admin";
   const todayStr=new Date().toLocaleDateString("en-US",{weekday:"long",month:"long",day:"numeric"});
 
+  // BUILD-57 — the dashboard area is two tabs: Today (the existing section
+  // stack) and Recurring (EXCEPTIONS only — counts + a path into the
+  // Fundraising → Recurring Giving page, never a second roster).
+  const [dashTab,setDashTab]=useState("today");
   const [briefing,setBriefing]=useState("");
   const [briefLoading,setBriefLoading]=useState(false);
   const [briefOpen,setBriefOpen]=useState(false);
@@ -1393,6 +1398,15 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
         )}
       </div>
 
+      {/* BUILD-57 — Today / Recurring tabs. Recurring is the exceptions view:
+          who needs a human this morning, and one button into the full
+          Fundraising → Recurring Giving page. */}
+      <SectionTabs tabs={[{id:"today",label:"Today"},{id:"recurring",label:"Recurring"}]}
+        active={dashTab} onSelect={setDashTab} className="dash-tabbar"/>
+
+      {dashTab==="recurring"&&<DashboardRecurring onNavigate={onNavigate}/>}
+
+      {dashTab==="today"&&(<>
       {/* One-time gold moments (BUILD-08 Phase D) — the product's only
           celebration pattern, each fires once per org (localStorage-keyed
           inside GoldMoment). Goal completion keys on the goal id, so a NEW
@@ -1543,6 +1557,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
           </div>
         </div>
       )}
+      </>)}
 
       <MetricBreakdownPanel
         open={debtBreakdownOpen}

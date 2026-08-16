@@ -1063,6 +1063,60 @@ async function initSchema() {
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_recurring_subs_dunning ON recurring_subscriptions (status, next_dunning_at)`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_recurring_subs_donor ON recurring_subscriptions (org_id, donor_id)`);
 
+  // ── BUILD-57 Part 1 — the staff recurring-giving surface ────────────────
+  // recurring_change_log is the append-only movement ledger behind the MRR
+  // waterfall (new / upgraded / downgraded / paused / resumed / voluntary vs
+  // involuntary churn). Every subscription state change writes one row at the
+  // moment it happens — the waterfall is a read-time SUM over this log, never
+  // a stored counter. Separating involuntary (card failure) from voluntary
+  // (donor chose to stop) churn is the point of the whole surface; the KIND
+  // is decided at write time when the context is known, not inferred later.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS recurring_change_log (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL,
+      subscription_id TEXT,
+      donor_id TEXT,
+      kind TEXT NOT NULL,
+      old_amount NUMERIC,
+      new_amount NUMERIC,
+      sub_interval TEXT,
+      actor TEXT,
+      actor_name TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_recurring_change_org ON recurring_change_log (org_id, created_at)`);
+
+  // recurring_proposals — staff-initiated changes a DONOR must complete.
+  // Anything that can move money (create / amount / frequency / card update)
+  // is an invitation: staff propose, the donor completes via a tokenized
+  // public link (token stored hash-at-rest, portal-magic-link discipline).
+  // Proposals expire after 14 days and can be resent exactly once.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS recurring_proposals (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL,
+      donor_id TEXT NOT NULL,
+      subscription_id TEXT,
+      kind TEXT NOT NULL,
+      proposed_amount NUMERIC,
+      proposed_interval TEXT,
+      proposed_fund_id TEXT,
+      token_hash TEXT UNIQUE,
+      status TEXT NOT NULL DEFAULT 'pending',
+      created_by TEXT,
+      created_by_name TEXT,
+      resend_count INTEGER NOT NULL DEFAULT 0,
+      resent_at TIMESTAMPTZ,
+      expires_at TIMESTAMPTZ NOT NULL,
+      completed_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_recurring_proposals_org ON recurring_proposals (org_id, status)`);
+
   // Append-only log of everything that happens to a subscription's payment
   // health — the source of truth for recovery-rate math (recovered vs. lost
   // over a trailing window) and for webhook idempotency: stripe_event_id is
@@ -1602,6 +1656,17 @@ async function initSchema() {
   // undesignated (stamped at checkout.session.completed, read back by the
   // renewal-attribution block in payment_intent.succeeded).
   await pool.query(`ALTER TABLE recurring_subscriptions ADD COLUMN IF NOT EXISTS fund_id TEXT`);
+  // BUILD-57 — the roster's "next charge" column. Synced from Stripe webhook
+  // payloads (subscription.updated / checkout completion) where available;
+  // NULL renders as "—", never a guessed date.
+  await pool.query(`ALTER TABLE recurring_subscriptions ADD COLUMN IF NOT EXISTS current_period_end TIMESTAMPTZ`);
+  // BUILD-57 — renewal gifts link back to their subscription so the roster's
+  // "total given on this subscription" is a real SUM over gift rows, not an
+  // estimate. Stamped in payment_intent.succeeded when the PI's invoice
+  // resolves a subscription; pre-BUILD-57 gifts stay NULL (unknowable —
+  // never guessed by donor+amount matching).
+  await pool.query(`ALTER TABLE gifts ADD COLUMN IF NOT EXISTS recurring_subscription_id TEXT`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_gifts_recurring_sub ON gifts (org_id, recurring_subscription_id) WHERE recurring_subscription_id IS NOT NULL`);
 
   // ══ BUILD-45 — DONOR PORTAL ══════════════════════════════════════════════
   // A public, money-adjacent surface for people who are NOT Steward users.
