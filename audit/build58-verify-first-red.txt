@@ -1,0 +1,258 @@
+BUILD-58 verify-first — the four new suites run RED against the pre-BUILD-58 server
+(commit db5ca2c, 2026-08-16 22:03 EDT). Tests are written to the
+post-fix contract; no assertion may be loosened to make them pass.
+
+===== tests/ledger-provisioning.test.js =====
+ledger-provisioning (BUILD-58 W-3)
+
+§1 creation paths provision a chart of accounts
+  PASS  register-org 201
+  FAIL  register-org: chart of accounts exists at creation (4010) — {"has4010":false,"only4010":false,"hasFund":false}
+  FAIL  register-org: unrestricted fund exists at creation — {"has4010":false,"only4010":false,"hasFund":false}
+  PASS  onboarding/complete still 200 on a pre-provisioned org
+  PASS  onboarding/complete does not duplicate the chart (exactly one 4010)
+  PASS  legacy register 201
+  FAIL  legacy register: chart of accounts exists at creation — {"has4010":false,"only4010":false,"hasFund":false}
+  FAIL  legacy register: unrestricted fund exists at creation — {"has4010":false,"only4010":false,"hasFund":false}
+  PASS  network signup 201
+  FAIL  network signup: chart of accounts exists at creation (THE W-3 hole) — {"has4010":false,"only4010":false,"hasFund":false}
+  FAIL  network signup: unrestricted fund exists at creation — {"has4010":false,"only4010":false,"hasFund":false}
+  PASS  portal-tier org can create a donor
+  PASS  portal-tier org can record a gift
+  FAIL  network-signup org: the gift stamped the ledger EXACTLY once — {"stamps":0}
+
+§2 a ledger write can never land nowhere silently
+  FAIL  manual gift on a chartless org: stamp EXISTS (self-healed, not skipped) — {"stamps":0}
+  FAIL  the missing chart was provisioned by the heal — {"has4010":false,"only4010":false,"hasFund":false}
+  PASS  webhook accepted
+  PASS  webhook gift recorded
+  FAIL  webhook gift on a chartless org: ledger stamp EXISTS (self-healed) — {"stamps":0}
+  FAIL  /health carries a ledger.chartSelfHeals counter
+  FAIL  self-heals were COUNTED (loud, not silent) — {"before":null,"after":null}
+
+§3 org-creation sites are classified (a new path fails until it provisions)
+  PASS  exactly 3 org-creation sites in server.js (new one → classify it here + provision)
+  FAIL  every org-creation site calls ensureOrgLedger() — {"provisioned":0,"sites":3}
+  FAIL  server.js defines ensureOrgLedger as the one provisioning helper — null
+  FAIL  the 4010 probe lives in ONE place (the ensure helper), not per-site — {"probes":4}
+
+10 passed, 15 failed
+
+===== tests/mail-suppression.test.js =====
+mail-suppression (BUILD-58 W-4)
+
+§1 one suppressibility decision point, typed
+  FAIL  DONOR_MAIL_POLICY classification table exists — null
+  FAIL  getSuppressionReason has exactly 2 occurrences (definition + the policy layer) — {"calls":14}
+  FAIL  every kind in the policy table is transactional|marketing — {"kinds":0,"classes":0}
+  FAIL  policy classifies "dunning" — null
+  FAIL  policy classifies "recovered_thankyou" — null
+  FAIL  policy classifies "receipt" — null
+  FAIL  policy classifies "year_end" — null
+  FAIL  policy classifies "recurring_change" — null
+  FAIL  policy classifies "campaign" — null
+  FAIL  policy classifies "sequence" — null
+  FAIL  policy classifies "workflow" — null
+
+§2 dunning delivers to a marketing-suppressed donor
+  FAIL  manual dunning resend returns 200 for a suppressed donor — {"error":"This donor's email is suppressed (unsubscribe)."}
+  FAIL  the recovery email was DELIVERED despite the marketing suppression — {"delivered":0}
+  FAIL  dunning_sent logged — and this time it is TRUE — {"events":0}
+
+§3 a failed delivery is never logged as sent
+  PASS  provider rejected → NO new dunning_sent row
+  PASS  the route does not claim sent:true on a failed delivery
+
+§4 deceased blocks everything; do_not_contact blocks marketing only
+  PASS  PUT /donors/:id accepts doNotContact
+  FAIL  do_not_contact stored on the donor row — {}
+  FAIL  do-not-contact donor STILL gets the card-failure email (service mail) — {"delivered":0}
+  PASS  PUT /donors/:id accepts deceased
+  PASS  resend to a deceased donor is refused
+  PASS  no email left for the deceased donor
+
+§5 campaigns still honor the suppression list AND the flags
+  PASS  campaign created
+  PASS  campaign send queued
+  PASS  clean donor received the campaign
+  PASS  suppressed donor did NOT receive the campaign
+  FAIL  do-not-contact donor did NOT receive the campaign — {"delivered":1}
+  FAIL  deceased donor did NOT receive the campaign — {"delivered":1}
+
+§6 a receipt reaches a marketing-suppressed donor
+  PASS  receipt issued for the suppressed donor
+  FAIL  receipt email DELIVERED despite marketing suppression — {"delivered":0}
+  FAIL  receipt row records the real delivery (sent_to set) — {"sent_to":null}
+
+11 passed, 20 failed
+
+===== tests/first-login-matrix.test.js =====
+first-login-matrix (BUILD-58 W-2)
+
+§1 trial·-·onb0 → welcome
+  PASS  trial·-·onb0: /org answers 200
+  PASS  trial·-·onb0: /org/setup-status answers 200
+
+§1 trial·-·onb1 → dashboard
+  PASS  trial·-·onb1: /org answers 200
+  PASS  trial·-·onb1: /donors/summaries answers 200
+  PASS  trial·-·onb1: /tasks answers 200
+  PASS  trial·-·onb1: /grants answers 200
+  PASS  trial·-·onb1: /financials answers 200
+
+§1 core·-·onb1 → dashboard
+  PASS  core·-·onb1: /org answers 200
+  PASS  core·-·onb1: /donors/summaries answers 200
+  PASS  core·-·onb1: /tasks answers 200
+  PASS  core·-·onb1: /grants answers 200
+  PASS  core·-·onb1: /financials answers 200
+
+§1 team·-·onb1 → dashboard
+  PASS  team·-·onb1: /org answers 200
+  PASS  team·-·onb1: /donors/summaries answers 200
+  PASS  team·-·onb1: /tasks answers 200
+  PASS  team·-·onb1: /grants answers 200
+  PASS  team·-·onb1: /financials answers 200
+
+§1 seed·-·onb1 → dashboard
+  PASS  seed·-·onb1: /org answers 200
+  PASS  seed·-·onb1: /donors/summaries answers 200
+  PASS  seed·-·onb1: /tasks answers 200
+  PASS  seed·-·onb1: /grants answers 200
+  PASS  seed·-·onb1: /financials answers 200
+
+§1 growth·-·onb1 → dashboard
+  PASS  growth·-·onb1: /org answers 200
+  PASS  growth·-·onb1: /donors/summaries answers 200
+  PASS  growth·-·onb1: /tasks answers 200
+  PASS  growth·-·onb1: /grants answers 200
+  PASS  growth·-·onb1: /financials answers 200
+
+§1 impact·-·onb1 → dashboard
+  PASS  impact·-·onb1: /org answers 200
+  PASS  impact·-·onb1: /donors/summaries answers 200
+  PASS  impact·-·onb1: /tasks answers 200
+  PASS  impact·-·onb1: /grants answers 200
+  PASS  impact·-·onb1: /financials answers 200
+
+§1 founding·-·onb1 → dashboard
+  PASS  founding·-·onb1: /org answers 200
+  PASS  founding·-·onb1: /donors/summaries answers 200
+  PASS  founding·-·onb1: /tasks answers 200
+  PASS  founding·-·onb1: /grants answers 200
+  PASS  founding·-·onb1: /financials answers 200
+
+§1 portal·pending·onb1 → portal-home
+  PASS  portal·pending·onb1: /org answers 200
+  PASS  portal·pending·onb1: /donors/summaries answers 200
+  PASS  portal·pending·onb1: /tasks answers 200
+  PASS  portal·pending·onb1: /portal-settings answers 200
+  PASS  portal·pending·onb1: /impact-updates answers 200
+  PASS  portal·pending·onb1: /network/application answers 200
+  PASS  portal·pending·onb1: /billing/status answers 200
+  PASS  portal·pending·onb1: /grants stays 403 portal_tier
+  PASS  portal·pending·onb1: /campaigns stays 403 portal_tier
+
+§1 portal·approved·onb1 → portal-home
+  PASS  portal·approved·onb1: /org answers 200
+  PASS  portal·approved·onb1: /donors/summaries answers 200
+  PASS  portal·approved·onb1: /tasks answers 200
+  PASS  portal·approved·onb1: /portal-settings answers 200
+  PASS  portal·approved·onb1: /impact-updates answers 200
+  PASS  portal·approved·onb1: /network/application answers 200
+  PASS  portal·approved·onb1: /billing/status answers 200
+  PASS  portal·approved·onb1: /grants stays 403 portal_tier
+  PASS  portal·approved·onb1: /campaigns stays 403 portal_tier
+
+§1 portal·held·onb1 → portal-home
+  PASS  portal·held·onb1: /org answers 200
+  PASS  portal·held·onb1: /donors/summaries answers 200
+  PASS  portal·held·onb1: /tasks answers 200
+  PASS  portal·held·onb1: /portal-settings answers 200
+  PASS  portal·held·onb1: /impact-updates answers 200
+  PASS  portal·held·onb1: /network/application answers 200
+  PASS  portal·held·onb1: /billing/status answers 200
+  PASS  portal·held·onb1: /grants stays 403 portal_tier
+
+§1 portal·rejected·onb1 → portal-home
+  PASS  portal·rejected·onb1: /org answers 200
+  PASS  portal·rejected·onb1: /donors/summaries answers 200
+  PASS  portal·rejected·onb1: /tasks answers 200
+  PASS  portal·rejected·onb1: /portal-settings answers 200
+  PASS  portal·rejected·onb1: /impact-updates answers 200
+  PASS  portal·rejected·onb1: /network/application answers 200
+  PASS  portal·rejected·onb1: /billing/status answers 200
+  PASS  portal·rejected·onb1: /grants stays 403 portal_tier
+
+§1 portal·dispute·onb1 → portal-home
+  PASS  portal·dispute·onb1: /org answers 200
+  PASS  portal·dispute·onb1: /donors/summaries answers 200
+  PASS  portal·dispute·onb1: /tasks answers 200
+  PASS  portal·dispute·onb1: /portal-settings answers 200
+  PASS  portal·dispute·onb1: /impact-updates answers 200
+  PASS  portal·dispute·onb1: /network/application answers 200
+  PASS  portal·dispute·onb1: /billing/status answers 200
+  PASS  portal·dispute·onb1: /grants stays 403 portal_tier
+
+§2 plan-value totality
+  PASS  plan literals discovered from the tier authority
+  PASS  plan "portal" has a first-login matrix row
+  PASS  plan "team" has a first-login matrix row
+  PASS  plan "core" has a first-login matrix row
+  PASS  plan "growth" has a first-login matrix row
+  PASS  plan "impact" has a first-login matrix row
+  PASS  plan "founding" has a first-login matrix row
+
+§3 client shell handles the portal tier
+  FAIL  App.jsx knows the portal_tier error code (tolerated, not fatal) — null
+  FAIL  App.jsx has a portal-tier tab set (PORTAL_TIER_TABS) — null
+  FAIL  initial load survives partial failure (allSettled, not all-or-nothing) — null
+
+§4 donor-facing give page shows the portal display name, never the staff name
+  FAIL  public give payload carries the donor-facing display name — {"name":"Whitelabel Org (Demo)","mission":null,"slug":"whitelabel-org-demo-7e3c4d","coverFeesEnabled":true,"givingAccount":false}
+  FAIL  the staff-side name does not leak to the give page — {"name":"Whitelabel Org (Demo)","mission":null,"slug":"whitelabel-org-demo-7e3c4d","coverFeesEnabled":true,"givingAccount":false}
+
+86 passed, 5 failed
+
+===== tests/import-columns.test.js =====
+import-columns (BUILD-58 Part 2)
+
+§1 email-column probe recognizes real-world headers
+  FAIL  "Donor Email" recognized as the email column — {"shape":"transaction","yearCols":[],"hasDateCol":true,"hasAmountCol":true,"hasTotalCol":false,"donorRepeats":true,"distinctDonors":1,"keyedRows":2,"nameCol":"Donor Name","emailCol":""}
+  PASS  "Email" recognized as an email column
+  PASS  "Email Address" recognized as an email column
+  PASS  "E-mail" recognized as an email column
+  FAIL  "Donor E-mail" recognized as an email column — ""
+  FAIL  "Contact Email" recognized as an email column — ""
+  FAIL  "Primary Email" recognized as an email column — ""
+  PASS  "Emailed Receipt" is NOT an email column (no false positive)
+  FAIL  Import-both picks EMAIL as the match key for a Donor-Email gift sheet — {"key":"name","available":["name"],"donorEmailCol":"Email","donorNameCol":"Name","donorIdCol":"","giftEmailCol":"","giftNameCol":"Donor Name","giftIdCol":""}
+
+§2 flag columns are recognized, never silently dropped
+  FAIL  detectFlagColumns is exported — ["YEAR_HDR_PAT","applyOwnerAssignment","detectImportShape","detectOwnerColumn","detectWorkbookRoles","findDonorIdHdr","groupOwnerMatches","groupTransactions","linkGiftsToDonors","matchOwnersToUsers","normalizeName","pickMatchKey","shapeLabel"]
+
+§3 classifyColumns — mapped · ignored · unrecognized
+  FAIL  classifyColumns is exported — null
+
+§4 non-UTF8 CSV bytes decode correctly
+  FAIL  decodeSpreadsheetBytes is exported — null
+
+§5 buildGiftItemsFromLedger — externalId survives, skipped rows have reasons
+  FAIL  buildGiftItemsFromLedger is exported — null
+
+§6 the flags survive the real import routes
+  PASS  /donors/import accepts flagged donors
+  FAIL  deceased flag stored — [{"name":"Norma Normal"},{"name":"Dora Deceased"},{"name":"Don Notsolicit"}]
+  FAIL  do_not_contact flag stored — [{"name":"Norma Normal"},{"name":"Dora Deceased"},{"name":"Don Notsolicit"}]
+  FAIL  unflagged donor stays unflagged — null
+  PASS  /donors/import-combined accepts flagged donors
+  FAIL  import-combined: deceased stored + external_id stored — {"external_id":"B58-EXT-d6i7ed"}
+
+§7 client wiring pins
+  FAIL  Recommended menu entry routes to the magical import (DonorImport) — "{label:\"Import + History\",hint:\"One file in, donors + full gift history out\",badge:\"Recommended\",act:()=>setShowCombinedImport(true)},"
+  FAIL  the summary renders the column accounting (classifyColumns wired in) — null
+  FAIL  CSV parsing goes through decodeSpreadsheetBytes (encoding fix wired in) — null
+  FAIL  buildBothPayload builds gift items through the accounted ledger builder — null
+
+6 passed, 17 failed
+
