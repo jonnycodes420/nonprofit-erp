@@ -46,7 +46,7 @@ const GUARDED_WRITERS = [
 
 // Writes data but HARD-REFUSES any non-loopback target outright (stricter
 // than the guard — these are load/e2e fixtures that must never see prod).
-const SELF_REFUSING = ["loadtest", "seed-loadtest", "seed-build46-network-demo"];
+const SELF_REFUSING = ["loadtest", "seed-loadtest", "seed-build46-network-demo", "build58-stripe-drill"];
 
 // Loopback is HARDCODED (no BASE env at all) — cannot reach a remote host.
 const LOOPBACK_HARDCODED = ["build45-portal-capture", "onramp-capture"];

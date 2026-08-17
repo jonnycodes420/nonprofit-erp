@@ -881,6 +881,13 @@ async function initSchema() {
   await pool.query(`ALTER TABLE gifts ADD COLUMN IF NOT EXISTS pledge_id TEXT`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_gifts_pledge ON gifts (pledge_id) WHERE pledge_id IS NOT NULL`);
   await pool.query(`UPDATE gifts g SET pledge_id = p.id FROM pledges p WHERE p.fulfilled_gift_id = g.id AND g.pledge_id IS NULL`).catch(() => {});
+  // BUILD-58 Part 3 (boundary drill) — a disputed gift is an ordinary event
+  // that no build had handled: the money is held pending resolution, so the
+  // gift is FLAGGED (loud, never silent) on charge.dispute.created and
+  // REVERSED like a refund only if the org LOSES. dispute_status ∈
+  // needs_response | under_review | won | lost.
+  await pool.query(`ALTER TABLE gifts ADD COLUMN IF NOT EXISTS disputed_at TIMESTAMPTZ DEFAULT NULL`);
+  await pool.query(`ALTER TABLE gifts ADD COLUMN IF NOT EXISTS dispute_status TEXT DEFAULT NULL`);
   await pool.query(`ALTER TABLE fin_funds ADD COLUMN IF NOT EXISTS is_sample BOOLEAN DEFAULT false`);
   await pool.query(`ALTER TABLE volunteers ADD COLUMN IF NOT EXISTS is_sample BOOLEAN DEFAULT false`);
   await pool.query(`ALTER TABLE board_members ADD COLUMN IF NOT EXISTS is_sample BOOLEAN DEFAULT false`);

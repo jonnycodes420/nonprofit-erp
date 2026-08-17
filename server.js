@@ -817,6 +817,79 @@ app.post("/stripe/webhook", express.raw({ type: "application/json" }), async (re
       }
     }
 
+    // ── BUILD-58 Part 3 — DISPUTES / chargebacks (the boundary drill found
+    // this unhandled everywhere) ───────────────────────────────────────────
+    // A dispute is not a refund: the money is HELD pending resolution and the
+    // org may win. So on creation the gift is FLAGGED and staff are alerted
+    // LOUDLY (never a silent hit to the ledger a treasurer discovers at
+    // year-end) — but nothing is reversed. Only a LOST dispute reverses the
+    // gift the same way a full refund does; a WON dispute just clears the flag.
+    // Idempotent: created is a no-op once flagged; closed converges on status.
+    if (event.type === "charge.dispute.created" || event.type === "charge.dispute.updated" || event.type === "charge.dispute.closed") {
+      const dispute = event.data.object;
+      const accountId = event.account;
+      const piId = dispute.payment_intent || null;
+      if (piId && accountId) {
+        const orgRow = await query("SELECT id FROM orgs WHERE stripe_account_id=$1", [accountId]);
+        if (orgRow.length) {
+          const orgId = orgRow[0].id;
+          const giftRows = await query("SELECT * FROM gifts WHERE org_id=$1 AND stripe_payment_id=$2", [orgId, piId]);
+          if (giftRows.length) {
+            const g = giftRows[0];
+            const today = new Date().toISOString().slice(0, 10);
+            const amt = parseFloat(g.amount) || (dispute.amount || 0) / 100;
+            const closed = event.type === "charge.dispute.closed";
+            const lost = closed && dispute.status === "lost";
+            const won = closed && (dispute.status === "won" || dispute.status === "warning_closed");
+            const uiStatus = lost ? "lost" : won ? "won" : (dispute.status === "under_review" ? "under_review" : "needs_response");
+
+            await withAdvisoryLock(`gift:${g.id}`, async () => {
+              if (lost) {
+                // Lost — the money is gone. Reverse exactly like a full refund:
+                // void the receipt, drop the ledger stamp + gift, recalc.
+                await withTransaction(async (client) => {
+                  await runTx(client,
+                    `UPDATE receipts SET voided_at=NOW(), void_reason='Gift lost to a Stripe dispute/chargeback', gift_id=NULL
+                     WHERE gift_id=$1 AND org_id=$2 AND type='gift' AND voided_at IS NULL`, [g.id, orgId]);
+                  await runTx(client, "UPDATE receipts SET gift_id=NULL WHERE gift_id=$1 AND org_id=$2", [g.id, orgId]);
+                  await runTx(client, "UPDATE pledges SET fulfilled_gift_id=NULL, updated_at=NOW() WHERE fulfilled_gift_id=$1 AND org_id=$2", [g.id, orgId]);
+                  await runTx(client, "DELETE FROM fin_transactions WHERE gift_id=$1 AND org_id=$2", [g.id, orgId]);
+                  await runTx(client, "DELETE FROM gifts WHERE id=$1 AND org_id=$2", [g.id, orgId]);
+                });
+                if (g.pledge_id) await recalcPledgePayment(g.pledge_id, orgId).catch(() => {});
+                if (g.donor_id) {
+                  await recalcDonorSummary(g.donor_id, orgId);
+                  await run("INSERT INTO interactions (id,org_id,donor_id,type,note,date) VALUES ($1,$2,$3,'note',$4,$5)",
+                    ["i_" + uuid().slice(0, 8), orgId, g.donor_id, `Dispute LOST: $${amt.toLocaleString()} online gift charged back via Stripe — gift reversed`, today]).catch(() => {});
+                }
+                console.log(`[stripe] dispute LOST ${dispute.id} — gift ${g.id} reversed ($${amt})`);
+              } else {
+                // Created / updated / won — keep the gift, just track state.
+                const firstFlag = !g.disputed_at;
+                await run("UPDATE gifts SET disputed_at=COALESCE(disputed_at, NOW()), dispute_status=$1 WHERE id=$2 AND org_id=$3", [uiStatus, g.id, orgId]);
+                if (won && g.donor_id) {
+                  await run("INSERT INTO interactions (id,org_id,donor_id,type,note,date) VALUES ($1,$2,$3,'note',$4,$5)",
+                    ["i_" + uuid().slice(0, 8), orgId, g.donor_id, `Dispute WON: $${amt.toLocaleString()} online gift dispute resolved in your favor — funds reinstated`, today]).catch(() => {});
+                } else if (firstFlag && event.type === "charge.dispute.created") {
+                  // LOUD: a high-priority staff task + a donor timeline note. A
+                  // dispute has a Stripe response deadline; silence loses it by
+                  // default. (The day-view + Finance surface disputed gifts too.)
+                  const due = dispute.evidence_details?.due_by ? new Date(dispute.evidence_details.due_by * 1000).toISOString().slice(0, 10) : new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10);
+                  await run("INSERT INTO tasks (id,org_id,title,priority,done,due,donor_id) VALUES ($1,$2,$3,'high',0,$4,$5)",
+                    ["t_" + uuid().slice(0, 8), orgId, `Payment disputed — $${amt.toLocaleString()} charged back${dispute.reason ? " (" + String(dispute.reason).replace(/_/g, " ") + ")" : ""}. Respond in Stripe before ${due} or the funds are lost.`, due, g.donor_id || null]).catch(() => {});
+                  if (g.donor_id) {
+                    await run("INSERT INTO interactions (id,org_id,donor_id,type,note,date) VALUES ($1,$2,$3,'note',$4,$5)",
+                      ["i_" + uuid().slice(0, 8), orgId, g.donor_id, `Dispute opened: $${amt.toLocaleString()} online gift was disputed via the donor's bank${dispute.reason ? " (" + String(dispute.reason).replace(/_/g, " ") + ")" : ""} — respond in Stripe`, today]).catch(() => {});
+                  }
+                  console.log(`[stripe] dispute CREATED ${dispute.id} — gift ${g.id} flagged + staff task ($${amt})`);
+                }
+              }
+            });
+          }
+        }
+      }
+    }
+
     // ── Recurring gift recovery: failed-payment detection & dunning ────────
     // BUILD-57 §2a (real-Stripe finding): API 2025+ event payloads moved
     // `invoice.subscription` to `invoice.parent.subscription_details.
@@ -19100,9 +19173,13 @@ app.get("/network/application", requireAuth, wrap(async (req, res) => {
   const [appRow] = await query(`SELECT * FROM network_applications WHERE org_id = ?`, [req.user.orgId]);
   if (!appRow) return res.status(404).json({ error: "not_found" });
   const [org] = await query(`SELECT stripe_account_id, stripe_connected FROM orgs WHERE id = ?`, [req.user.orgId]);
+  // W-1: show the org the TRUTH from Stripe (charges_enabled), not the
+  // link-created flag; null = Stripe unreachable right now.
+  const chk = await stripeChargesEnabled(org?.stripe_account_id);
   res.json({
     status: appRow.status, ein: appRow.ein, einResult: appRow.ein_result, domainCheck: appRow.domain_check,
     stripeConnected: !!(org?.stripe_connected && org?.stripe_account_id),
+    chargesEnabled: chk.definitive ? chk.ok : null,
     website: appRow.website,
   });
 }));
@@ -19119,6 +19196,24 @@ app.get("/admin/network/applications", requireAuth, requireSuperAdmin, wrap(asyn
   res.json(rows);
 }));
 
+// BUILD-58 (W-1) — "Stripe onboarding complete" is a fact we ask STRIPE for,
+// never our own flag: /stripe/connect sets stripe_connected=true at LINK
+// creation, before any onboarding happens, so trusting it let a reviewer
+// approve an org whose Express onboarding was never finished (its Give page
+// would take gifts Stripe refuses). `definitive` distinguishes a real answer
+// from an unreachable Stripe: the approval gate refuses either way (verify or
+// don't approve), the auto-delist sweep acts only on a definitive false.
+async function stripeChargesEnabled(accountId) {
+  if (!accountId) return { ok: false, definitive: true, reason: "no_account" };
+  if (!stripe) return { ok: false, definitive: false, reason: "stripe_not_configured" };
+  try {
+    const acct = await stripe.accounts.retrieve(accountId);
+    return { ok: acct.charges_enabled === true, definitive: true, reason: acct.charges_enabled === true ? null : "charges_disabled" };
+  } catch (e) {
+    return { ok: false, definitive: false, reason: "stripe_unreachable" };
+  }
+}
+
 app.post("/admin/network/applications/:id/decide", requireAuth, requireSuperAdmin, wrap(async (req, res) => {
   const action = String(req.body?.action || "");
   const reason = String(req.body?.reason || "").slice(0, 500);
@@ -19127,14 +19222,20 @@ app.post("/admin/network/applications/:id/decide", requireAuth, requireSuperAdmi
   if (!appRow) return res.status(404).json({ error: "not_found" });
   if (action === "approve") {
     // The gate holds even against the approver: EIN verified-and-ok AND
-    // Stripe onboarding complete, or the approve is refused. The EIN is
-    // re-checked LIVE (the registry refreshes monthly — the signup-time
-    // snapshot is display evidence, never the gate).
+    // Stripe onboarding ACTUALLY complete, or the approve is refused. The EIN
+    // is re-checked LIVE (the registry refreshes monthly — the signup-time
+    // snapshot is display evidence, never the gate). BUILD-58 (BUILD-57 W-1):
+    // Stripe is re-checked LIVE too — `stripe_connected` is set at LINK
+    // creation, before any onboarding happens, so the gate now asks Stripe
+    // for charges_enabled instead of trusting our own flag. Unreachable
+    // Stripe = refuse (an approval must verify; the human retries).
     const liveEin = await einLookup(appRow.ein);
     const [org] = await query(`SELECT stripe_account_id, stripe_connected FROM orgs WHERE id = ?`, [appRow.org_id]);
+    const stripeChk = await stripeChargesEnabled(org?.stripe_account_id);
     const gate = {
       einFound: liveEin.found === true && (liveEin.status || "ok") === "ok",
-      stripe: !!(org?.stripe_connected && org?.stripe_account_id),
+      stripe: stripeChk.ok,
+      stripeReason: stripeChk.reason,
       notDispute: appRow.status !== "dispute" || !!req.body?.resolveDispute,
     };
     if (!gate.einFound || !gate.stripe || !gate.notDispute) {
@@ -19180,7 +19281,16 @@ async function processNetworkGate() {
       const found = await einLookup(a.ein);
       if (!found.found || found.status !== "ok") reason = `EIN ${a.ein} ${found.found ? "status: " + found.status : "no longer on the IRS list"}`;
     }
-    if (!reason && (!a.stripe_account_id || a.stripe_connected === false)) reason = "Stripe account disconnected/restricted";
+    if (!reason) {
+      // W-1: the sweep asks Stripe, not our link-creation flag. Fail-safe:
+      // an UNREACHABLE Stripe delists nobody (an outage ≠ every org revoked)
+      // — only a definitive charges_enabled=false (or no account) delists.
+      if (!a.stripe_account_id) reason = "Stripe account disconnected/restricted";
+      else {
+        const chk = await stripeChargesEnabled(a.stripe_account_id);
+        if (chk.definitive && !chk.ok) reason = "Stripe account disconnected/restricted (charges disabled)";
+      }
+    }
     if (!reason) continue;
     const decisions = (typeof a.decisions === "string" ? JSON.parse(a.decisions || "[]") : (a.decisions || []));
     decisions.push({ at: new Date().toISOString(), by: "system", action: "delisted", reason });

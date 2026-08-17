@@ -43,7 +43,7 @@ const CASES = [
   ok("lib: null passes through untouched", normalizeName(null) === null);
 
   // ── 2. Server enforces it on import AND agrees with the lib (lock-step) ──
-  for (const t of ["gifts", "interactions", "donors", "users"]) await q(`DELETE FROM ${t} WHERE org_id=$1`, [A]).catch(() => {});
+  for (const t of ["gifts", "interactions", "fin_transactions", "budgets", "accounts", "fin_funds", "donors", "users"]) await q(`DELETE FROM ${t} WHERE org_id=$1`, [A]).catch(() => {});
   await q(`DELETE FROM orgs WHERE id=$1`, [A]).catch(() => {});
   await q(`INSERT INTO orgs (id,name,org_slug,onboarding_complete,subscription_status,plan) VALUES ($1,'NN Org','nn-a',1,'active','growth')`, [A]);
   await q(`INSERT INTO users (id,org_id,email,password_hash,name,role) VALUES ('u_nn',$1,'nn@nn.local',$2,'Admin','admin')`, [A, bcrypt.hashSync("loadtest1234", 10)]);
@@ -77,7 +77,7 @@ const CASES = [
   ok("edit persisted verbatim (no re-normalization on manual edit)",
     (await q(`SELECT name FROM donors WHERE id=$1`, [anyRow.id]))[0].name === "Iris B. Lindqvist");
 
-  for (const t of ["gifts", "interactions", "donors", "users"]) await q(`DELETE FROM ${t} WHERE org_id=$1`, [A]).catch(() => {});
+  for (const t of ["gifts", "interactions", "fin_transactions", "budgets", "accounts", "fin_funds", "donors", "users"]) await q(`DELETE FROM ${t} WHERE org_id=$1`, [A]).catch(() => {});
   await q(`DELETE FROM orgs WHERE id=$1`, [A]).catch(() => {});
   await closeDb();
   summary();

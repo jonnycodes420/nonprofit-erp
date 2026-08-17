@@ -29,6 +29,7 @@ function startSink(port = 5602) {
   });
 }
 function startStripeMock(port = 5603) {
+  const state = { chargesEnabled: true }; // W-1: the gate now asks Stripe, not our flag
   return new Promise(resolve => {
     const srv = http.createServer((req, res) => {
       let b = ""; req.on("data", c => b += c);
@@ -36,11 +37,13 @@ function startStripeMock(port = 5603) {
         res.setHeader("Content-Type", "application/json");
         if (req.url.startsWith("/v1/payment_links") || req.url.startsWith("/v1/checkout")) {
           res.end(JSON.stringify({ id: "plink_mock", url: "https://mock.stripe/pay" }));
+        } else if (/^\/v1\/accounts\//.test(req.url)) {
+          res.end(JSON.stringify({ id: req.url.split("/").pop(), object: "account", charges_enabled: state.chargesEnabled }));
         } else res.end(JSON.stringify({ id: "mock", object: "mock" }));
       });
     });
     srv.on("error", () => resolve(null));
-    srv.listen(port, () => resolve(srv));
+    srv.listen(port, () => { srv.state = state; resolve(srv); });
   });
 }
 const settle = (ms = 400) => new Promise(r => setTimeout(r, ms));
@@ -58,7 +61,7 @@ async function raw(method, path, { body, token, headers } = {}) {
 async function cleanup() {
   const orgs = await q(`SELECT org_id FROM network_applications`);
   for (const { org_id } of orgs) {
-    for (const t of ["portal_audit_log", "portal_sessions", "portal_magic_links", "gifts", "interactions", "donors", "users", "portal_settings"])
+    for (const t of ["portal_audit_log", "portal_sessions", "portal_magic_links", "gifts", "interactions", "donors", "users", "portal_settings", "fin_transactions", "budgets", "accounts", "fin_funds"])
       await q(`DELETE FROM ${t} WHERE org_id=$1`, [org_id]).catch(() => {});
   }
   await q(`DELETE FROM network_applications`);
@@ -130,11 +133,14 @@ async function cleanup() {
   ok("approve REFUSED while the EIN is unverified (gate_unmet, even for the admin)",
     early.status === 400 && early.body.error === "gate_unmet" && early.body.gate.einFound === false, early.body);
   await q(`INSERT INTO ein_registry (ein,name,status) VALUES ($1,'River Bend Shelter Inc','ok') ON CONFLICT (ein) DO UPDATE SET status='ok'`, [EIN_GOOD]);
-  // Stripe gate: disconnect → refused
-  await q(`UPDATE orgs SET stripe_connected=false WHERE id=$1`, [orgId]);
+  // Stripe gate (W-1): the gate asks Stripe for charges_enabled LIVE — our
+  // stripe_connected flag (set at LINK creation) is no longer trusted. A
+  // half-onboarded account (flag true, charges disabled) is REFUSED.
+  stripeMock.state.chargesEnabled = false;
   const noStripe = await raw("POST", `/admin/network/applications/${appId}/decide`, { token: superTok, body: { action: "approve" } });
-  ok("approve REFUSED without completed Stripe onboarding", noStripe.status === 400 && noStripe.body.gate.stripe === false);
-  await q(`UPDATE orgs SET stripe_connected=true WHERE id=$1`, [orgId]);
+  ok("approve REFUSED while Stripe says charges_enabled=false (even with stripe_connected=true)",
+    noStripe.status === 400 && noStripe.body.gate.stripe === false, noStripe.body);
+  stripeMock.state.chargesEnabled = true;
 
   // ── approve: portal live, listed, giftable; decisions logged ─────────────
   const appr = await raw("POST", `/admin/network/applications/${appId}/decide`, { token: superTok, body: { action: "approve", reason: "verified 501c3, site checks out" } });

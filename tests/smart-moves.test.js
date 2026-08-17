@@ -22,7 +22,7 @@ const daysAgo = n => iso(Date.now() - n * 86400000);
 
 async function reset() {
   for (const org of [A, B]) {
-    for (const t of ["moves", "opportunities", "interactions", "gifts", "tasks", "donors", "users"])
+    for (const t of ["moves", "opportunities", "interactions", "gifts", "fin_transactions", "budgets", "accounts", "fin_funds", "tasks", "donors", "users"])
       await q(`DELETE FROM ${t} WHERE org_id=$1`, [org]).catch(() => {});
     await q(`DELETE FROM orgs WHERE id=$1`, [org]);
   }

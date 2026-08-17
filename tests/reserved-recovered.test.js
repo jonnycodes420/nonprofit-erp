@@ -47,7 +47,7 @@ const FORBIDDEN = [
   if (offenders.length) offenders.slice(0, 20).forEach(o => console.error("    " + o));
 
   // ── 2. Live: the win-back goal counts ONLY genuine re-engaged giving ──
-  for (const t of ["fundraising_goals", "gifts", "interactions", "donors", "users"]) await q(`DELETE FROM ${t} WHERE org_id=$1`, [A]).catch(() => {});
+  for (const t of ["fundraising_goals", "gifts", "interactions", "fin_transactions", "budgets", "accounts", "fin_funds", "donors", "users"]) await q(`DELETE FROM ${t} WHERE org_id=$1`, [A]).catch(() => {});
   await q(`DELETE FROM orgs WHERE id=$1`, [A]).catch(() => {});
   await q(`INSERT INTO orgs (id,name,org_slug,onboarding_complete,subscription_status,plan) VALUES ($1,'RR Org','rr-a',1,'active','growth')`, [A]);
   await q(`INSERT INTO users (id,org_id,email,password_hash,name,role) VALUES ('u_rr',$1,'rr@rr.local',$2,'Admin','admin')`, [A, bcrypt.hashSync("loadtest1234", 10)]);
@@ -76,7 +76,7 @@ const FORBIDDEN = [
   ok("recent momentum figure is the re-engaged slice only", Number(goal.recentAmount) === 1000, goal.recentAmount);
   ok("recent momentum donor count is 1 (the winback donor)", Number(goal.recentDonorCount) === 1, goal.recentDonorCount);
 
-  for (const t of ["fundraising_goals", "gifts", "interactions", "donors", "users"]) await q(`DELETE FROM ${t} WHERE org_id=$1`, [A]).catch(() => {});
+  for (const t of ["fundraising_goals", "gifts", "interactions", "fin_transactions", "budgets", "accounts", "fin_funds", "donors", "users"]) await q(`DELETE FROM ${t} WHERE org_id=$1`, [A]).catch(() => {});
   await q(`DELETE FROM orgs WHERE id=$1`, [A]).catch(() => {});
   await closeDb();
   summary();
