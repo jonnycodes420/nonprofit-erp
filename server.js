@@ -544,15 +544,15 @@ app.post("/stripe/webhook", express.raw({ type: "application/json" }), async (re
                  new Date(Date.now()+2*24*60*60*1000).toISOString().slice(0,10)]
               ).catch(()=>{});
             }
-            const acctRow = await query("SELECT id FROM accounts WHERE org_id=$1 AND code='4010' LIMIT 1", [orgId]);
-            const genFundRow = await query("SELECT id FROM fin_funds WHERE org_id=$1 AND restricted=false ORDER BY created_at ASC LIMIT 1", [orgId]);
-            if (acctRow.length) {
-              const txnId = "ft_" + uuid().slice(0, 8);
-              await run(
-                "INSERT INTO fin_transactions (id,org_id,date,description,vendor_donor,amount,type,account_id,fund_id,donor_id,source,gift_id) VALUES (?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT (gift_id) WHERE gift_id IS NOT NULL DO NOTHING",
-                [txnId, orgId, today, "Online gift via Stripe", thankName, amount, "income", acctRow[0].id, fundId || (genFundRow.length ? genFundRow[0].id : null), donorId, "online", giftId]
-              );
-            }
+            // BUILD-58 W-3: resolve the stamp target through the ONE ledger
+            // helper — a chartless org gets provisioned on the spot (loudly),
+            // never a silently skipped stamp.
+            const ledger = await ensureOrgLedger(orgId, { heal: true });
+            const txnId = "ft_" + uuid().slice(0, 8);
+            await run(
+              "INSERT INTO fin_transactions (id,org_id,date,description,vendor_donor,amount,type,account_id,fund_id,donor_id,source,gift_id) VALUES (?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT (gift_id) WHERE gift_id IS NOT NULL DO NOTHING",
+              [txnId, orgId, today, "Online gift via Stripe", thankName, amount, "income", ledger.contribAcctId, fundId || ledger.genFundId, donorId, "online", giftId]
+            );
             const taskId = "t_" + uuid().slice(0, 8);
             await run(
               `INSERT INTO tasks (id, org_id, title, priority, done, created_at)
@@ -1349,6 +1349,58 @@ const BUILD_SHA = (() => {
   } catch { /* no stamp file — fall through to env */ }
   return process.env.RAILWAY_GIT_COMMIT_SHA || process.env.BUILD_SHA || null;
 })();
+// ── BUILD-58 W-3 — the ONE ledger-provisioning helper ──────────────────────
+// Every org-creation path calls this at creation, and every gift/grant ledger
+// stamp resolves its target accounts through it. If the chart of accounts is
+// missing (a legacy org, or a creation path that somehow skipped provisioning)
+// it SELF-HEALS — provisioning the chart on the spot — and says so loudly
+// (CRITICAL log + Sentry + /health.ledger.chartSelfHeals). The class rule this
+// pins: a financial write must never land nowhere and return success. The
+// '4010' probe below is the only one in the codebase — stamp sites must go
+// through here, never re-probe (pinned by tests/ledger-provisioning.test.js).
+let ledgerChartSelfHeals = 0;
+async function ensureOrgLedger(orgId, { heal = false } = {}) {
+  const probe = async () => {
+    const [contrib] = await query("SELECT id FROM accounts WHERE org_id = ? AND code = '4010' LIMIT 1", [orgId]);
+    const [grant] = await query("SELECT id FROM accounts WHERE org_id = ? AND type = 'revenue' AND subtype = 'grants' ORDER BY code ASC LIMIT 1", [orgId]);
+    const [fund] = await query("SELECT id FROM fin_funds WHERE org_id = ? AND restricted = false ORDER BY created_at ASC LIMIT 1", [orgId]);
+    return { contribAcctId: contrib?.id || null, grantAcctId: grant?.id || contrib?.id || null, genFundId: fund?.id || null };
+  };
+  let ids = await probe();
+  if (ids.contribAcctId && ids.genFundId) return ids;
+
+  // Missing pieces — provision under an advisory lock so two concurrent
+  // stamps (e.g. parallel webhook deliveries) can't double-build the chart.
+  await withAdvisoryLock("orgledger:" + orgId, async () => {
+    const existing = await query("SELECT id FROM accounts WHERE org_id = ? LIMIT 1", [orgId]);
+    if (!existing.length) {
+      await seedOrgData(orgId); // full standard chart + General Operating fund
+    } else {
+      // A partial chart (org built its own accounts): add only what's missing.
+      const partial = await probe();
+      if (!partial.contribAcctId) {
+        await run("INSERT INTO accounts (id, org_id, code, name, type, subtype) VALUES (?,?,?,?,?,?)",
+          ["acc_" + uuid().slice(0, 8), orgId, "4010", "Individual Contributions", "revenue", "contributions"]);
+      }
+      const funds = await query("SELECT id FROM fin_funds WHERE org_id = ? AND restricted = false LIMIT 1", [orgId]);
+      if (!funds.length) {
+        await run("INSERT INTO fin_funds (id, org_id, name, description, restricted) VALUES (?,?,?,?,false)",
+          ["ff_" + uuid().slice(0, 8), orgId, "General Operating", "General unrestricted operating fund", false]);
+      }
+    }
+  });
+  ids = await probe();
+  if (heal) {
+    // Reaching here from a STAMP means an org existed without a usable ledger
+    // — the provisioning gap W-3 found. The stamp still lands (self-healed),
+    // but the gap is surfaced, never swallowed.
+    ledgerChartSelfHeals++;
+    console.error(`[ledger] CRITICAL: org ${orgId} had no usable chart of accounts at stamp time — provisioned on the spot (self-heal #${ledgerChartSelfHeals}). An org-creation path is not provisioning.`);
+    try { if (process.env.SENTRY_DSN) Sentry.captureMessage(`ledger chart self-heal for org ${orgId}`, "error"); } catch { /* surfacing must never fail the stamp */ }
+  }
+  return ids;
+}
+
 app.get("/health", (req, res) => {
   // billing.ok is the cached mode-consistency result (booleans/mode only — no
   // secrets): true = all configured prices resolve under the billing key's mode,
@@ -1369,6 +1421,10 @@ app.get("/health", (req, res) => {
     // the SURFACING that F-2 was missing. Cached (refreshed by the retry sweep),
     // so /health stays a cheap synchronous check.
     notifications: { failedPending: notifyFailedPending },
+    // BUILD-58 W-3: how many times a ledger stamp found no usable chart of
+    // accounts and had to provision one on the spot. Non-zero = an
+    // org-creation path is skipping provisioning — investigate, don't ignore.
+    ledger: { chartSelfHeals: ledgerChartSelfHeals },
     // BUILD-51: which theme-asset driver is live — s3:true means uploads go to
     // the bucket; s3:false (env unset) means bytes land in Postgres.
     // BUILD-51b: dbFallbackRows counts assets sitting in Postgres WHILE S3 is
@@ -1987,6 +2043,9 @@ app.post("/auth/register", registerLimiter, wrap(async (req, res) => {
   const trialEndsAt = computeTrialEnd(Date.now()).toISOString();
   await run("INSERT INTO orgs (id, name, mission, ein, onboarding_complete, org_slug, plan, subscription_status, trial_ends_at) VALUES (?,?,?,?,0,?,'trial','trialing',?)",
     [orgId, orgName, orgMission || "", ein || "", orgSlug, trialEndsAt]);
+  // BUILD-58 W-3: every org is born with a usable ledger (chart of accounts +
+  // General Operating fund) — gift stamps must never no-op on a fresh org.
+  await ensureOrgLedger(orgId).catch(e => console.error("[org] ledger provisioning:", e.message));
   const hash = bcrypt.hashSync(password, 12);
   await run("INSERT INTO users (id, org_id, email, password_hash, name, role) VALUES (?,?,?,?,?,?)",
     [userId, orgId, normalizedEmail, hash, name || email, "admin"]);
@@ -2134,6 +2193,8 @@ app.post("/auth/register-org", registerLimiter, wrap(async (req, res) => {
     "INSERT INTO orgs (id, name, onboarding_complete, org_slug, plan, subscription_status, trial_ends_at) VALUES (?,?,0,?,'trial','trialing',?)",
     [orgId, orgName, orgSlug, trialEndsAt]
   );
+  // BUILD-58 W-3: every org is born with a usable ledger.
+  await ensureOrgLedger(orgId).catch(e => console.error("[org] ledger provisioning:", e.message));
   const hash = bcrypt.hashSync(password, 12);
   await run(
     "INSERT INTO users (id, org_id, email, password_hash, name, role) VALUES (?,?,?,?,?,?)",
@@ -3529,12 +3590,10 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrap(async (r
     ? new Date(_fyNow.getFullYear() - 1, 6, 1).toISOString().split("T")[0]
     : new Date(_fyNow.getFullYear(), 6, 1).toISOString().split("T")[0];
 
-  const [contribAcctRowsC, genFundRowsC] = await Promise.all([
-    query("SELECT id FROM accounts WHERE org_id = ? AND code = '4010' LIMIT 1", [orgId]),
-    query("SELECT id FROM fin_funds WHERE org_id = ? AND restricted = false ORDER BY created_at ASC LIMIT 1", [orgId]),
-  ]);
-  const contribAcctId = contribAcctRowsC[0]?.id || null;
-  const genFundId     = genFundRowsC[0]?.id     || null;
+  // BUILD-58 W-3: the ONE ledger helper — self-heals a chartless org loudly.
+  const ledgerC = await ensureOrgLedger(orgId, { heal: true });
+  const contribAcctId = ledgerC.contribAcctId;
+  const genFundId     = ledgerC.genFundId;
   // Donor names map: built from the already-prepared donorsToInsert list (no extra query)
   const donorNameMap = Object.fromEntries(donorsToInsert.map(d => [d._id, String(d.name).trim()]));
 
@@ -4195,21 +4254,18 @@ app.post("/donors/:id/gifts", requireAuth, checkWriteAccess, wrap(async (req, re
   const donorRows = await query("SELECT * FROM donors WHERE id = ?", [req.params.id]);
   // Auto-sync gift to Finance ledger
   try {
-    const [contribAcct, genFund] = await Promise.all([
-      query("SELECT id FROM accounts WHERE org_id = ? AND code = '4010' LIMIT 1", [req.user.orgId]),
-      query("SELECT id FROM fin_funds WHERE org_id = ? AND restricted = false ORDER BY created_at ASC LIMIT 1", [req.user.orgId]),
-    ]);
-    // The gift's own fund (if the officer chose one) wins; otherwise the general
-    // unrestricted fund. ON CONFLICT makes the stamp idempotent per gift.
-    const stampFund = fundId || (genFund.length ? genFund[0].id : null);
-    if (contribAcct.length) {
-      await run(
-        "INSERT INTO fin_transactions (id,org_id,date,description,vendor_donor,amount,type,account_id,fund_id,donor_id,source,gift_id) VALUES (?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT (gift_id) WHERE gift_id IS NOT NULL DO NOTHING",
-        ["ft_"+uuid().slice(0,8), req.user.orgId, giftDate,
-         `Gift from ${donorRows[0]?.name || "Donor"}`, donorRows[0]?.name || "",
-         amt, "income", contribAcct[0].id, stampFund, req.params.id, "gift", giftId]
-      );
-    }
+    // BUILD-58 W-3: resolve the stamp target through the ONE ledger helper —
+    // a chartless org gets provisioned on the spot (loudly), never a skipped
+    // stamp. The gift's own fund (if the officer chose one) wins; otherwise
+    // the general unrestricted fund. ON CONFLICT keeps the stamp idempotent.
+    const ledgerG = await ensureOrgLedger(req.user.orgId, { heal: true });
+    const stampFund = fundId || ledgerG.genFundId;
+    await run(
+      "INSERT INTO fin_transactions (id,org_id,date,description,vendor_donor,amount,type,account_id,fund_id,donor_id,source,gift_id) VALUES (?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT (gift_id) WHERE gift_id IS NOT NULL DO NOTHING",
+      ["ft_"+uuid().slice(0,8), req.user.orgId, giftDate,
+       `Gift from ${donorRows[0]?.name || "Donor"}`, donorRows[0]?.name || "",
+       amt, "income", ledgerG.contribAcctId, stampFund, req.params.id, "gift", giftId]
+    );
   } catch(e) { console.error("Finance sync:", e.message); }
   // Log gift interaction
   try {
@@ -5113,13 +5169,11 @@ app.post("/gifts/import-history", requireAuth, checkWriteAccess, wrap(async (req
   );
   const donorNameMap = Object.fromEntries(dnRows.map(d => [d.id, d.name]));
 
-  // Same account + fund the single-gift route uses
-  const [contribAcctRowsH, genFundRowsH] = await Promise.all([
-    query("SELECT id FROM accounts WHERE org_id = ? AND code = '4010' LIMIT 1", [orgId]),
-    query("SELECT id FROM fin_funds WHERE org_id = ? AND restricted = false ORDER BY created_at ASC LIMIT 1", [orgId]),
-  ]);
-  const contribAcctId = contribAcctRowsH[0]?.id || null;
-  const genFundId     = genFundRowsH[0]?.id     || null;
+  // Same account + fund the single-gift route uses — through the ONE ledger
+  // helper (BUILD-58 W-3): a chartless org is provisioned loudly, never skipped.
+  const ledgerH = await ensureOrgLedger(orgId, { heal: true });
+  const contribAcctId = ledgerH.contribAcctId;
+  const genFundId     = ledgerH.genFundId;
 
   const BATCH = 200;
   let inserted = 0, financeSynced = 0;
@@ -6105,18 +6159,19 @@ async function stampGrantAward(orgId, grantId, funder, program, amount) {
     "SELECT id FROM fin_funds WHERE org_id=? AND (name ILIKE ? OR name ILIKE ?) LIMIT 1",
     [orgId, `%${funder}%`, `%${program || ""}%`]
   );
-  const genFund = matchFund.length ? matchFund : await query(
-    "SELECT id FROM fin_funds WHERE org_id=? AND restricted=false ORDER BY created_at ASC LIMIT 1", [orgId]
-  );
-  const acct = await query("SELECT id FROM accounts WHERE org_id=? LIMIT 1", [orgId]);
+  // BUILD-58 W-3: the award stamp resolves its accounts through the ONE
+  // ledger helper (grants revenue account, contributions fallback) — a
+  // chartless org is provisioned loudly, never a null-account booking.
+  const ledgerA = await ensureOrgLedger(orgId, { heal: true });
+  const fundId = matchFund[0]?.id || ledgerA.genFundId;
   await run(
     `INSERT INTO fin_transactions (id,org_id,date,description,vendor_donor,amount,type,account_id,fund_id,grant_id,source)
      VALUES (?,?,?,?,?,?,'income',?,?,?,'grant')
      ON CONFLICT (grant_id) WHERE grant_id IS NOT NULL DO NOTHING`,
     ["ft_" + uuid().slice(0, 8), orgId, new Date().toISOString().slice(0, 10),
      `Grant awarded: ${funder} — ${program || ""}`, funder,
-     parseFloat(amount) || 0, acct[0]?.id || null, genFund[0]?.id || null, grantId]
-  ).catch(() => {});
+     parseFloat(amount) || 0, ledgerA.grantAcctId, fundId, grantId]
+  ).catch(e => console.error("[ledger] grant award stamp failed:", e.message));
 }
 
 app.post("/grants", requireAuth, checkWriteAccess, wrap(async (req, res) => {
@@ -16138,16 +16193,14 @@ app.patch("/events/:id/attendees/:attendeeId", requireAuth, checkWriteAccess, as
          last_gift_date=$2, gift_count=gift_count+1 WHERE id=$3 AND org_id=$4`,
         [newGift, today, att.donor_id, orgId]
       );
-      const funds = await query("SELECT id FROM fin_funds WHERE org_id=$1 AND restricted=false LIMIT 1", [orgId]);
-      const accts = await query("SELECT id FROM accounts WHERE org_id=$1 AND type='revenue' LIMIT 1", [orgId]);
-      if (funds.length && accts.length) {
-        await run(
-          `INSERT INTO fin_transactions (id, org_id, date, description, vendor_donor, amount, type, account_id, fund_id, donor_id, source, gift_id)
-           VALUES ($1,$2,$3,$4,$5,$6,'income',$7,$8,$9,'gift',$10)
-           ON CONFLICT (gift_id) WHERE gift_id IS NOT NULL DO NOTHING`,
-          ["ft_" + uuid().slice(0,8), orgId, today, `Event Gift — ${evt?.name||"event"}`, att.name, newGift, accts[0].id, funds[0].id, att.donor_id, giftId]
-        );
-      }
+      // BUILD-58 W-3: through the ONE ledger helper — never a skipped stamp.
+      const ledgerE = await ensureOrgLedger(orgId, { heal: true });
+      await run(
+        `INSERT INTO fin_transactions (id, org_id, date, description, vendor_donor, amount, type, account_id, fund_id, donor_id, source, gift_id)
+         VALUES ($1,$2,$3,$4,$5,$6,'income',$7,$8,$9,'gift',$10)
+         ON CONFLICT (gift_id) WHERE gift_id IS NOT NULL DO NOTHING`,
+        ["ft_" + uuid().slice(0,8), orgId, today, `Event Gift — ${evt?.name||"event"}`, att.name, newGift, ledgerE.contribAcctId, ledgerE.genFundId, att.donor_id, giftId]
+      );
     }
     // On attendance: +5 wealth score, log interaction, advance prospect/qualify stage
     if (newStatus === 'attended' && att.donor_id) {
@@ -18855,6 +18908,10 @@ app.post("/network/signup", requireFlag(NETWORK_SIGNUP_ENABLED), networkSignupLi
     `INSERT INTO orgs (id, name, org_slug, plan, subscription_status, onboarding_complete, ein)
      VALUES (?,?,?,?,?,1,?)`,
     [orgId, name, orgSlug, "portal", "active", ein]);
+  // BUILD-58 W-3: /network/signup mints onboarding_complete=1 and never runs
+  // the onboarding step that used to (incidentally) provision the chart of
+  // accounts — the exact hole the BUILD-57 walk found. Provision at birth.
+  await ensureOrgLedger(orgId).catch(e => console.error("[network] ledger provisioning:", e.message));
   const userId = "user_" + uuid().slice(0, 8);
   await run(
     `INSERT INTO users (id, org_id, email, password_hash, name, role) VALUES (?,?,?,?,?,'admin')`,
