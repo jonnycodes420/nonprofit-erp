@@ -75,6 +75,7 @@ const { google } = require("googleapis");
 const { Webhook: SvixWebhook } = require("svix");
 const { donationStripeKey, billingStripeKey, billingStripeMode, billingConfigError, otherBillingMode } = require("./stripeKeys");
 const { CANONICAL_APP_URL, resolvePublicAppUrl, publicAppUrl } = require("./publicUrl");
+const { DONATION_WEBHOOK_EVENTS, BILLING_WEBHOOK_EVENTS, webhookEventDiff } = require("./stripeEvents");
 const { putThemeAsset, getThemeAsset, pruneThemeAssets, pruneUnreferencedAssets, refreshAssetFallbackCount, refreshRetentionCounts, purgeExpiredAssets, assetHealth, ASSET_ID_RE } = require("./assetStore");
 const { imageSize } = require("image-size");
 const { computeTrialEnd } = require("./trialEnd");
@@ -684,6 +685,27 @@ app.post("/stripe/webhook", express.raw({ type: "application/json" }), async (re
             if (insertedSub.length) {
               await logRecurringChange(orgId, insertedSub[0].id, donorId, "created",
                 { newAmount: recurAmount, interval: subInterval, actor: "donor" });
+            } else {
+              // BUILD-63 Part 3 — the checkout LOST the insert race. When a
+              // brand-new subscription's FIRST charge declines,
+              // invoice.payment_failed pre-creates the recurring_subscriptions
+              // row on the fly — but it carries NO attribution (campaign / page /
+              // fund / cover-fee), so with ON CONFLICT DO NOTHING the designation
+              // this checkout knows would be lost forever, and every recovered
+              // renewal would attribute to nothing. Backfill the attribution
+              // columns that are still null (COALESCE never clobbers a value the
+              // row already has). Idempotent, order-independent.
+              await run(
+                `UPDATE recurring_subscriptions SET
+                   campaign_id = COALESCE(campaign_id, ?),
+                   giving_page_id = COALESCE(giving_page_id, ?),
+                   fund_id = COALESCE(fund_id, ?),
+                   cover_fee_amount = COALESCE(NULLIF(cover_fee_amount, 0), ?),
+                   stripe_customer_id = COALESCE(stripe_customer_id, ?),
+                   updated_at = NOW()
+                 WHERE stripe_subscription_id = ? AND org_id = ?`,
+                [subCampaignId, subGivingPageId, subFundId, subCoverFee, session.customer || null, session.subscription, orgId]
+              ).catch(() => {});
             }
             // BUILD-57 — a staff proposal completed by the donor on Stripe.
             // The proposal id rode our own checkout metadata; mark it done so
@@ -1037,28 +1059,35 @@ app.post("/stripe/webhook", express.raw({ type: "application/json" }), async (re
         }
         if (existingRows.length && ["past_due", "recovering"].includes(existingRows[0].status)) {
           const rs = existingRows[0];
-          const orgRows = await query(
-            "SELECT id, name, recurring_dunning_enabled FROM orgs WHERE id=?", [rs.org_id]
-          );
-          const org = orgRows[0];
-          const donorRows = await query("SELECT id, name, email FROM donors WHERE id=? AND org_id=?", [rs.donor_id, rs.org_id]);
-          const donor = donorRows[0];
-
-          await run(
-            `UPDATE recurring_subscriptions SET status='recovered', recovered_at=NOW(), next_dunning_at=NULL, updated_at=NOW() WHERE id=?`,
+          // BUILD-63 Part 3 — the recovery flip is a COMPARE-AND-SWAP. Both
+          // invoice.payment_succeeded AND customer.subscription.updated fire on a
+          // recovery and are DIFFERENT events (the event.id dedup can't cross
+          // them), so an unconditional check-then-update would let BOTH log
+          // 'recovered' and BOTH send the donor thank-you under concurrency. The
+          // conditional UPDATE … WHERE status IN (past_due,recovering) RETURNING
+          // lets exactly one win; the loser gets zero rows and does no side-effects.
+          const flipped = await query(
+            `UPDATE recurring_subscriptions SET status='recovered', recovered_at=NOW(), next_dunning_at=NULL, updated_at=NOW()
+               WHERE id=? AND status IN ('past_due','recovering') RETURNING id`,
             [rs.id]
           );
-          if (donor) await run("UPDATE donors SET stripe_subscription_status='active' WHERE id=? AND org_id=?", [donor.id, rs.org_id]);
-          await logRecoveryEvent(rs.org_id, rs.donor_id, invSubId, "payment_recovered", event.id, {
-            amount: inv.amount_paid != null ? inv.amount_paid / 100 : null,
-          });
-          await logRecurringChange(rs.org_id, rs.id, rs.donor_id, "recovered",
-            { newAmount: rs.amount != null ? parseFloat(rs.amount) : null, interval: rs.interval, actor: "system" });
-          // A recovered renewal is still a real gift — that's recorded by the
-          // existing payment_intent.succeeded handler above (fired separately
-          // by Stripe for the invoice's underlying charge), not duplicated here.
-          if (org && donor?.email && org.recurring_dunning_enabled !== false) {
-            await sendRecoveredThankYouEmail(org, donor, rs);
+          if (flipped.length) {
+            const orgRows = await query("SELECT id, name, recurring_dunning_enabled FROM orgs WHERE id=?", [rs.org_id]);
+            const org = orgRows[0];
+            const donorRows = await query("SELECT id, name, email FROM donors WHERE id=? AND org_id=?", [rs.donor_id, rs.org_id]);
+            const donor = donorRows[0];
+            if (donor) await run("UPDATE donors SET stripe_subscription_status='active' WHERE id=? AND org_id=?", [donor.id, rs.org_id]);
+            await logRecoveryEvent(rs.org_id, rs.donor_id, invSubId, "payment_recovered", event.id, {
+              amount: inv.amount_paid != null ? inv.amount_paid / 100 : null,
+            });
+            await logRecurringChange(rs.org_id, rs.id, rs.donor_id, "recovered",
+              { newAmount: rs.amount != null ? parseFloat(rs.amount) : null, interval: rs.interval, actor: "system" });
+            // A recovered renewal is still a real gift — that's recorded by the
+            // existing payment_intent.succeeded handler above (fired separately
+            // by Stripe for the invoice's underlying charge), not duplicated here.
+            if (org && donor?.email && org.recurring_dunning_enabled !== false) {
+              await sendRecoveredThankYouEmail(org, donor, rs);
+            }
           }
         }
       }
@@ -1079,35 +1108,38 @@ app.post("/stripe/webhook", express.raw({ type: "application/json" }), async (re
           // retry resolves things without that event landing first, so it
           // only updates bookkeeping/logs, never re-sends the thank-you.
           if (sub.status === "active" && ["past_due", "recovering"].includes(rs.status)) {
-            await run(
-              `UPDATE recurring_subscriptions SET status='recovered', recovered_at=NOW(), next_dunning_at=NULL, updated_at=NOW() WHERE id=?`,
+            // BUILD-63 Part 3 — COMPARE-AND-SWAP (see the twin in
+            // invoice.payment_succeeded). These two DIFFERENT events both fire on
+            // a recovery; the atomic conditional flip lets exactly one win, so
+            // the movement-log row and the donor thank-you happen once even when
+            // both events are processed concurrently on different workers. The
+            // old comment "both guard on past_due/recovering, so exactly one can"
+            // described the INTENT — the check-then-update didn't enforce it.
+            const flipped = await query(
+              `UPDATE recurring_subscriptions SET status='recovered', recovered_at=NOW(), next_dunning_at=NULL, updated_at=NOW()
+                 WHERE id=? AND status IN ('past_due','recovering') RETURNING id`,
               [rs.id]
             );
-            await run("UPDATE donors SET stripe_subscription_status='active' WHERE id=? AND org_id=?", [rs.donor_id, rs.org_id]);
-            // Record the recurring gift amount so the recovered-dollars figure
-            // (GET /impact) stays complete even when recovery lands via this
-            // safety-net path (no invoice, so we use the subscription's own
-            // tracked amount — the gift that was actually won back).
-            await logRecoveryEvent(rs.org_id, rs.donor_id, sub.id, "payment_recovered", event.id, {
-              source: "subscription.updated",
-              amount: rs.amount != null ? parseFloat(rs.amount) : null,
-            });
-            // BUILD-57 §2a (real-Stripe ordering finding): on real deliveries
-            // this event lands BEFORE invoice.payment_succeeded, so this
-            // "safety net" wins the flip nearly every time and the invoice
-            // branch's bookkeeping is starved. Do the full job here too —
-            // whichever branch flips the status (both guard on
-            // past_due/recovering, so exactly one can) owns the movement-log
-            // row and the thank-you.
-            await logRecurringChange(rs.org_id, rs.id, rs.donor_id, "recovered",
-              { newAmount: rs.amount != null ? parseFloat(rs.amount) : null, interval: rs.interval, actor: "system" });
-            try {
-              const [orgT] = await query("SELECT id, name, org_slug, recurring_dunning_enabled, recurring_dunning_subject, recurring_dunning_body FROM orgs WHERE id=?", [rs.org_id]);
-              const [donorT] = await query("SELECT id, name, email FROM donors WHERE id=? AND org_id=?", [rs.donor_id, rs.org_id]);
-              if (orgT && donorT?.email && orgT.recurring_dunning_enabled !== false) {
-                await sendRecoveredThankYouEmail(orgT, donorT, rs);
-              }
-            } catch (e) { console.error("[recovery] safety-net thank-you failed:", e.message); }
+            if (flipped.length) {
+              await run("UPDATE donors SET stripe_subscription_status='active' WHERE id=? AND org_id=?", [rs.donor_id, rs.org_id]);
+              // Record the recurring gift amount so the recovered-dollars figure
+              // (GET /impact) stays complete even when recovery lands via this
+              // safety-net path (no invoice, so we use the subscription's own
+              // tracked amount — the gift that was actually won back).
+              await logRecoveryEvent(rs.org_id, rs.donor_id, sub.id, "payment_recovered", event.id, {
+                source: "subscription.updated",
+                amount: rs.amount != null ? parseFloat(rs.amount) : null,
+              });
+              await logRecurringChange(rs.org_id, rs.id, rs.donor_id, "recovered",
+                { newAmount: rs.amount != null ? parseFloat(rs.amount) : null, interval: rs.interval, actor: "system" });
+              try {
+                const [orgT] = await query("SELECT id, name, org_slug, recurring_dunning_enabled, recurring_dunning_subject, recurring_dunning_body FROM orgs WHERE id=?", [rs.org_id]);
+                const [donorT] = await query("SELECT id, name, email FROM donors WHERE id=? AND org_id=?", [rs.donor_id, rs.org_id]);
+                if (orgT && donorT?.email && orgT.recurring_dunning_enabled !== false) {
+                  await sendRecoveredThankYouEmail(orgT, donorT, rs);
+                }
+              } catch (e) { console.error("[recovery] safety-net thank-you failed:", e.message); }
+            }
           }
           const amount = sub.items?.data?.[0]?.price?.unit_amount != null ? sub.items.data[0].price.unit_amount / 100
             : sub.items?.data?.[0]?.pricing?.unit_amount != null ? sub.items.data[0].pricing.unit_amount / 100 : null;
@@ -1479,6 +1511,17 @@ function reconciliationHealth() {
   };
 }
 
+// ── BUILD-63 Part 2 — the event-manifest vs live-subscription diff ───────────
+// A handler that grows a `case` nobody subscribed becomes SILENT working code
+// (the BUILD-58 refund/dispute class). This caches the diff between the manifest
+// (stripeEvents.js, pinned to the handler by tests/webhook-manifest.test.js) and
+// the LIVE endpoint's subscribed event list, so /health surfaces the count.
+// missingCount > 0 = handled events that will never arrive — go subscribe them.
+let webhookSubStatus = { missingCount: null, checked: false, checkedAt: null, endpoints: [] };
+function webhookSubHealth() {
+  return { missingCount: webhookSubStatus.missingCount, checked: webhookSubStatus.checked };
+}
+
 async function ensureOrgLedger(orgId, { heal = false } = {}) {
   const probe = async () => {
     const [contrib] = await query("SELECT id FROM accounts WHERE org_id = ? AND code = '4010' LIMIT 1", [orgId]);
@@ -1558,6 +1601,10 @@ app.get("/health", (req, res) => {
     // UptimeRobot alongside themeAssets.dbFallbackRows). orphanGifts is the
     // reverse (a gift with no succeeded charge). checkedAt null = not yet run.
     reconciliation: reconciliationHealth(),
+    // BUILD-63 Part 2: manifest-vs-subscription diff. missingCount > 0 means the
+    // handler processes event types the live endpoint does NOT subscribe — code
+    // wired to nothing. Watch alongside reconciliation. null = not yet checked.
+    webhookSubscriptions: webhookSubHealth(),
   });
 });
 
@@ -13898,7 +13945,23 @@ async function reconcileStripeVsGifts() {
       const net = (ch.amount || 0) - (ch.amount_refunded || 0);
       const piId = ch.payment_intent || null;
       if (piId) seenPIs.add(piId);
-      if (net <= 0) continue;                       // fully refunded — the refund handler owns removal
+      if (net <= 0) {
+        // BUILD-63 Part 3 — a fully-refunded charge should have had its gift
+        // reversed by the charge.refunded handler. If a gift STILL exists, the
+        // handler never ran — either charge.refunded raced ahead of the gift's
+        // own payment_intent.succeeded (so there was nothing to reverse when it
+        // fired), or the event type isn't subscribed. Surface it; a refunded
+        // donation still sitting as a live gift is real divergence.
+        if (piId) {
+          const staleGift = await query("SELECT id FROM gifts WHERE org_id=$1 AND stripe_payment_id=$2", [org.id, piId]);
+          if (staleGift.length) {
+            orphans++;
+            divergences.push({ kind: "refunded_charge_with_live_gift", chargeId: ch.id, paymentIntent: piId,
+              account: acct, orgId: org.id, amount: (ch.amount_refunded || 0) / 100 });
+          }
+        }
+        continue;                                   // otherwise: fully refunded, correctly reversed
+      }
       if (!piId) continue;                          // donations always ride a PaymentIntent
       const giftRows = await query(
         "SELECT id FROM gifts WHERE org_id=$1 AND stripe_payment_id=$2", [org.id, piId]);
@@ -13949,9 +14012,55 @@ app.post("/admin/reconcile/run", requireAuth, requireSuperAdmin, wrap(async (req
   const result = await reconcileStripeVsGifts();
   res.json(result);
 }));
+// BUILD-63 Part 2 — on-demand manifest-vs-live-subscription diff (super-admin).
+// Returns the full per-endpoint diff (missing/extra event types) so Jonathan can
+// fix the subscription list in one pass. Read-only.
+app.post("/admin/webhook-subscriptions/check", requireAuth, requireSuperAdmin, wrap(async (req, res) => {
+  const result = await checkWebhookSubscriptions();
+  res.json(result);
+}));
 if (!backgroundTicksDisabled()) {
   setTimeout(() => reconcileStripeVsGifts().catch(console.error), 90000);
   setInterval(() => reconcileStripeVsGifts().catch(console.error), RECONCILE_INTERVAL_MIN * 60 * 1000);
+}
+
+// ── BUILD-63 Part 2 — refresh the manifest-vs-live-subscription diff ─────────
+// Lists the platform's webhook endpoints, finds the donation (/stripe/webhook)
+// and billing (/billing/webhook) endpoints by URL, and diffs each endpoint's
+// subscribed event list against its manifest. Caches missingCount for /health.
+// Read-only. Cheap (one list call), so it runs at boot + hourly.
+async function checkWebhookSubscriptions() {
+  if (!stripe) { webhookSubStatus = { missingCount: null, checked: false, checkedAt: null, endpoints: [] }; return webhookSubStatus; }
+  try {
+    const eps = await stripe.webhookEndpoints.list({ limit: 100 });
+    const byManifest = [
+      { route: "/stripe/webhook", manifest: DONATION_WEBHOOK_EVENTS },
+      { route: "/billing/webhook", manifest: BILLING_WEBHOOK_EVENTS },
+    ];
+    const endpoints = [];
+    let totalMissing = 0;
+    for (const { route, manifest } of byManifest) {
+      const ep = (eps?.data || []).find(e => typeof e.url === "string" && e.url.endsWith(route) && e.status !== "disabled");
+      if (!ep) { endpoints.push({ route, found: false, missing: manifest.slice(), extra: [] }); totalMissing += manifest.length; continue; }
+      const diff = webhookEventDiff(manifest, ep.enabled_events || []);
+      endpoints.push({ route, found: true, endpointId: ep.id, missing: diff.missing, extra: diff.extra, wildcard: diff.wildcard });
+      totalMissing += diff.missing.length;
+    }
+    webhookSubStatus = { missingCount: totalMissing, checked: true, checkedAt: new Date().toISOString(), endpoints };
+    if (totalMissing > 0) {
+      console.error(`[webhook-manifest] ${totalMissing} handled event type(s) NOT subscribed on the live endpoint(s): ${JSON.stringify(endpoints.filter(e => e.missing.length))}`);
+      try { if (process.env.SENTRY_DSN) Sentry.captureMessage(`webhook manifest: ${totalMissing} handled event(s) unsubscribed`, "warning"); } catch { /* surfacing must never throw */ }
+    }
+  } catch (e) {
+    console.error("[webhook-manifest] subscription check failed:", e.message);
+    // leave the last known value; mark unchecked only if never checked
+    if (!webhookSubStatus.checked) webhookSubStatus = { missingCount: null, checked: false, checkedAt: null, endpoints: [] };
+  }
+  return webhookSubStatus;
+}
+if (!backgroundTicksDisabled()) {
+  setTimeout(() => checkWebhookSubscriptions().catch(console.error), 95000);
+  setInterval(() => checkWebhookSubscriptions().catch(console.error), 60 * 60 * 1000);
 }
 
 // BUILD-36 A2 — email a task's assignee when someone ELSE (or a workflow)

@@ -125,6 +125,20 @@ const healthRecon = async () => (await api("GET", "/health")).body.reconciliatio
   ok("Scenario 5: a gift whose PI still reports succeeded is NOT a false orphan",
     !falseOrphan, r.body.divergences);
 
+  // ── Scenario 6 — BUILD-63: a fully-refunded charge that STILL has a live gift.
+  //     The charge.refunded handler should have reversed it; if a gift remains,
+  //     the handler never ran (raced ahead of the gift, or the event isn't
+  //     subscribed). A refunded donation sitting as a live gift is divergence. ──
+  await q(`INSERT INTO gifts (id,org_id,donor_id,amount,date,stripe_payment_id,notes)
+           VALUES ('g_recon_refunded',$1,'d_recon',30,$2,'pi_refunded','should-have-been-reversed')`, [ORG, today()]);
+  mockCharges = [
+    { id: "ch_recon_ref", status: "succeeded", amount: 3000, amount_refunded: 3000, payment_intent: "pi_refunded", created: nowSec() - 15 * 60 },
+  ];
+  r = await runReconcile(token);
+  const d6 = (r.body.divergences || []).find(d => d.kind === "refunded_charge_with_live_gift" && d.paymentIntent === "pi_refunded");
+  ok("Scenario 6: a fully-refunded charge whose gift was never reversed is flagged",
+    !!d6 && d6.chargeId === "ch_recon_ref" && d6.account === ACCT, r.body.divergences);
+
   if (smock) smock.close();
   await closeDb();
   summary();
