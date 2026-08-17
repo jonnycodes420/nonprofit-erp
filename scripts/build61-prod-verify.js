@@ -55,9 +55,15 @@ async function run() {
     await page.goto(`${APP}/give/${slug}`, { waitUntil: "networkidle" });
     await page.waitForTimeout(600);
 
-    // (1) no Steward wordmark/name in the visible text.
-    const bodyText = await page.evaluate(() => document.body.innerText);
-    ok(`[${slug}] no "Steward" in the visible page text`, !/steward/i.test(bodyText), bodyText.match(/.{0,15}steward.{0,15}/i)?.[0]);
+    // (1) no Steward wordmark/name in the page CHROME. An org's OWN authored
+    //     content (its footer/mission/name) may legitimately contain any word,
+    //     including "Steward" — white-label is about Steward's branding never
+    //     appearing, not censoring an org's copy. So strip the org-authored
+    //     fields, then assert no "Steward" and no "Powered by Steward" remains.
+    let bodyText = await page.evaluate(() => document.body.innerText);
+    for (const own of [theme.footerText, theme.einLine, theme.displayName]) if (own) bodyText = bodyText.split(own).join("");
+    ok(`[${slug}] no Steward wordmark/name in the page chrome`, !/steward/i.test(bodyText), bodyText.match(/.{0,15}steward.{0,15}/i)?.[0]);
+    ok(`[${slug}] no "Powered by Steward"`, !/powered by steward/i.test(await page.evaluate(() => document.body.innerText)));
 
     // (2) no Steward emerald anywhere in computed styles.
     const emeraldHits = await page.evaluate((stew) => {
