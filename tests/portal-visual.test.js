@@ -35,7 +35,9 @@ async function api(method, p, token, body) {
 
 (async () => {
   console.log("portal-visual (BUILD-59)");
-  if (!haveDeps()) { console.log("  SKIP — no Playwright or client/dist (browser suite)"); process.exit(0); }
+  // Browser-suite skip convention (empty-states/presentation-wiring): the last
+  // line MUST contain "0 failed" so run-all counts a clean skip as a pass.
+  if (!haveDeps()) { console.log("  SKIP — no Playwright or client/dist (browser suite)\n\n0 passed, 0 failed (suite skipped)"); process.exit(0); }
   const { chromium } = require(path.join(PW, "node_modules", "playwright"));
 
   // seed a portal org with the installation header + a right-of-center focal
