@@ -1943,6 +1943,14 @@ async function initSchema() {
   await pool.query(`ALTER TABLE portal_settings ADD COLUMN IF NOT EXISTS header_focal_x REAL DEFAULT 0.5`);
   await pool.query(`ALTER TABLE portal_settings ADD COLUMN IF NOT EXISTS header_focal_y REAL DEFAULT 0.5`);
 
+  // BUILD-61 Part 2 — NON-DESTRUCTIVE CROP. A normalized crop rectangle
+  // {x,y,w,h} (fractions 0..1 of the ORIGINAL asset, authored against the
+  // banner ratio) stored on the header POINTER — the bytes are never re-encoded
+  // and the original asset is never replaced, so an org can re-crop tomorrow
+  // from the full picture (the whole point of BUILD-56's retention machinery).
+  // NULL = no crop → the focal point (above) is the fallback.
+  await pool.query(`ALTER TABLE portal_settings ADD COLUMN IF NOT EXISTS header_crop TEXT`);
+
   // BUILD-60 Part 2 — per-frequency, org-configurable donation amount ladders.
   // A $25/$50/$100/$250/$500 ladder is right for one-time and a punishing ask
   // as a monthly commitment, so the ladders are separate and each org sets its

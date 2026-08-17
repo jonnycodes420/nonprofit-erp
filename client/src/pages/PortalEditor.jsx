@@ -22,7 +22,7 @@ import { resolvePairing, resolveCardStyle, TYPE_PAIRINGS, CARD_STYLES } from "..
 import { textToStory, storyToText } from "../lib/storyBlocks";
 import { resolveAssetUrl } from "../lib/assetUrl";
 import Uploader, { IMAGE_ACCEPT, IMAGE_ACCEPT_LABEL, IMAGE_MAX_BYTES } from "../components/Uploader";
-import { PortalBannerPreview, PORTAL_HEADER_RATIO } from "../components/PortalBanner";
+import { PortalBannerCrop, PORTAL_HEADER_RATIO } from "../components/PortalBanner";
 
 // ── The fictional donor (§4: never a real donor's data) ────────────────────
 const SAMPLE_ME = {
@@ -181,6 +181,8 @@ export default function PortalEditor() {
     headerImageData: p.header_image_data || p.header_image_url || "",
     headerFocalX: Number(p.header_focal_x ?? 0.5),
     headerFocalY: Number(p.header_focal_y ?? 0.5),
+    // BUILD-61 — the non-destructive crop rect (object or JSON string or null).
+    headerCrop: p.header_crop == null ? null : (typeof p.header_crop === "string" ? p.header_crop : p.header_crop),
   });
   const scheduleDesignSave = useCallback((next) => {
     setSaveState("dirty");
@@ -558,20 +560,22 @@ function DesignRail({ ps, onSet, note }) {
           img.onerror = () => resolve("That file doesn't parse as an image.");
           img.src = dataUrl;
         })}
-        onFile={({ dataUrl }) => { onSet("header_image_data", dataUrl); onSet("header_focal_x", 0.5); onSet("header_focal_y", 0.5); }}
-        onRemove={() => { onSet("header_image_data", ""); onSet("header_image_url", null); }} />
-      {/* BUILD-59 — the FOCAL crop UI: the exact banner render (same ratio,
-          object-fit, scrim) + a click-to-set focal dot. What you set here is
-          byte-for-byte what the donor's banner shows (pinned by
-          tests/portal-preview-render.test.js). */}
+        onFile={({ dataUrl }) => { onSet("header_image_data", dataUrl); onSet("header_focal_x", 0.5); onSet("header_focal_y", 0.5); onSet("header_crop", null); }}
+        onRemove={() => { onSet("header_image_data", ""); onSet("header_image_url", null); onSet("header_crop", null); }} />
+      {/* BUILD-61 — the CROP control: a fixed-ratio viewport IS the banner
+          render (same ratio, object-fit math, scrim), with drag-to-move +
+          zoom. Non-destructive: it emits a normalized rect against the
+          original; Reset returns to the focal fallback. Preview == render by
+          reuse (pinned by tests/portal-crop.test.js). */}
       {headerSrc && (
         <div style={{ marginTop: 8 }}>
-          <PortalBannerPreview
+          <PortalBannerCrop
             url={headerSrc}
+            crop={(() => { const c = ps.header_crop; if (!c) return null; if (typeof c === "object") return c; try { return JSON.parse(c); } catch { return null; } })()}
             focal={{ x: ps.header_focal_x, y: ps.header_focal_y }}
             bandColor={ps.primary_color || "#1a6b4a"}
             ratio={PORTAL_HEADER_RATIO}
-            onFocalChange={(x, y) => { onSet("header_focal_x", x); onSet("header_focal_y", y); }}
+            onChange={(c) => onSet("header_crop", c)}
           />
         </div>
       )}

@@ -24,8 +24,14 @@
 //
 // The SAME shape is used by the editor crop preview (PortalBannerPreview
 // below), which is why preview == render is provable.
+import { useState, useRef, useEffect } from "react";
 import { resolveAssetUrl } from "../lib/assetUrl";
 import { BANNER_SCRIM } from "../lib/portalScrim";
+import { ratioValue, cropFor, zoomCenterFromCrop, cropImgStyle } from "../lib/portalCrop";
+
+// Re-export the crop math (defined JSX-free in ../lib/portalCrop so the Node
+// suite can test it) for any component that imports it from here.
+export { ratioValue, cropFor, zoomCenterFromCrop, cropImgStyle };
 
 // The width ladder the server's /portal-assets/:id?w= route resizes to. Kept
 // in lock-step with PORTAL_ASSET_WIDTHS in server.js.
@@ -59,7 +65,9 @@ export { BANNER_SCRIM };
 
 // The IMG element every banner render + the editor preview share. Split out so
 // the preview can wrap the identical element (preview == render, by reuse).
-export function bannerImgStyle(focal) {
+// A crop wins over the focal point (focal is the fallback — BUILD-61).
+export function bannerImgStyle(focal, crop) {
+  if (crop && crop.w > 0 && crop.h > 0) return cropImgStyle(crop);
   return { width: "100%", height: "100%", objectFit: "cover", objectPosition: focalPosition(focal), display: "block" };
 }
 
@@ -67,7 +75,7 @@ export function bannerImgStyle(focal) {
 // overlaid children (the identity plaque). `ratio` is a CSS aspect-ratio
 // string; `bandColor` is the org primary (the loading band); `priority` marks
 // the hero (eager + high fetch priority) vs below-fold (lazy).
-export default function PortalBanner({ url, focal, bandColor, ratio = "1200 / 320", priority = false, scrim = true, alt = "", children, radius = 0 }) {
+export default function PortalBanner({ url, focal, crop, bandColor, ratio = "1200 / 320", priority = false, scrim = true, alt = "", children, radius = 0 }) {
   const src = resolveAssetUrl(url);
   const srcSet = bannerSrcSet(url);
   return (
@@ -80,7 +88,7 @@ export default function PortalBanner({ url, focal, bandColor, ratio = "1200 / 32
           loading={priority ? "eager" : "lazy"}
           decoding="async"
           fetchpriority={priority ? "high" : "auto"}
-          style={bannerImgStyle(focal)}
+          style={bannerImgStyle(focal, crop)}
         />
       )}
       {scrim && children != null && (
@@ -124,6 +132,92 @@ export function PortalBannerPreview({ url, focal, onFocalChange, bandColor, rati
       </div>
       <div style={{ fontSize: 11, color: "#6b6b64", marginTop: 4, lineHeight: 1.4 }}>
         Click the most important part of the image — the banner keeps it in view as it crops.
+      </div>
+    </div>
+  );
+}
+
+// PortalBannerCrop — BUILD-61 crop control. A fixed-ratio viewport (the slot)
+// showing the image through the SAME render (bannerImgStyle/cropImgStyle) the
+// donor gets, so what you see IS the output (preview == render, by reuse). Drag
+// to move; slider or scroll wheel to zoom; the crop is ratio-locked to the slot.
+// Non-destructive: it emits a normalized {x,y,w,h} rect against the original —
+// the bytes are never touched. Emits null to clear back to the focal fallback.
+export function PortalBannerCrop({ url, crop, focal, onChange, bandColor, ratio = "1200 / 300", radius = 10 }) {
+  const slotAR = ratioValue(ratio);
+  const [natAR, setNatAR] = useState(null);
+  const [zoom, setZoom] = useState(1);
+  const [center, setCenter] = useState({ cx: focal?.x ?? 0.5, cy: focal?.y ?? 0.5 });
+  const vpRef = useRef(null);
+  const dragRef = useRef(null);
+  const initedRef = useRef(false);
+
+  // Adopt an existing stored crop once the natural aspect is known.
+  useEffect(() => {
+    if (natAR && crop && !initedRef.current) {
+      const zc = zoomCenterFromCrop(crop, natAR, slotAR);
+      setZoom(zc.zoom); setCenter(zc.center); initedRef.current = true;
+    }
+  }, [natAR, crop, slotAR]);
+
+  const cur = natAR ? cropFor(zoom, center, natAR, slotAR) : null;
+
+  function emit(next) { onChange && onChange(next); }
+  function onImgLoad(e) {
+    const { naturalWidth: w, naturalHeight: h } = e.currentTarget;
+    if (w && h) setNatAR(w / h);
+  }
+  function moveBy(dxPx, dyPx) {
+    const vp = vpRef.current; if (!vp || !cur) return;
+    const r = vp.getBoundingClientRect();
+    const ncx = Math.min(1, Math.max(0, center.cx - (dxPx / r.width) * cur.w));
+    const ncy = Math.min(1, Math.max(0, center.cy - (dyPx / r.height) * cur.h));
+    const nc = { cx: ncx, cy: ncy };
+    setCenter(nc);
+    emit(cropFor(zoom, nc, natAR, slotAR));
+  }
+  function onPointerDown(e) {
+    if (!cur) return;
+    e.currentTarget.setPointerCapture?.(e.pointerId);
+    dragRef.current = { x: e.clientX, y: e.clientY };
+  }
+  function onPointerMove(e) {
+    if (!dragRef.current) return;
+    const dx = e.clientX - dragRef.current.x, dy = e.clientY - dragRef.current.y;
+    dragRef.current = { x: e.clientX, y: e.clientY };
+    moveBy(dx, dy);
+  }
+  function onPointerUp(e) { dragRef.current = null; e.currentTarget.releasePointerCapture?.(e.pointerId); }
+  function setZoomTo(z) {
+    const nz = Math.min(5, Math.max(1, z));
+    setZoom(nz);
+    if (natAR) emit(cropFor(nz, center, natAR, slotAR));
+  }
+
+  return (
+    <div>
+      <div
+        ref={vpRef}
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={onPointerUp}
+        onWheel={e => { setZoomTo(zoom + (e.deltaY < 0 ? 0.2 : -0.2)); }}
+        style={{ position: "relative", width: "100%", aspectRatio: ratio, background: bandColor || "var(--pt-primary, #1a6b4a)", overflow: "hidden", borderRadius: radius, cursor: dragRef.current ? "grabbing" : "grab", touchAction: "none" }}
+      >
+        {url && <img src={resolveAssetUrl(url)} alt="" onLoad={onImgLoad} draggable={false}
+          style={cur ? cropImgStyle(cur) : bannerImgStyle(focal)} />}
+        <div aria-hidden="true" style={{ position: "absolute", inset: 0, background: BANNER_SCRIM, pointerEvents: "none" }} />
+      </div>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 8 }}>
+        <span style={{ fontSize: 11, color: "#6b6b64" }}>Zoom</span>
+        <input type="range" min="1" max="5" step="0.05" value={zoom} onChange={e => setZoomTo(parseFloat(e.target.value))} style={{ flex: 1 }} aria-label="Zoom the crop" />
+        <button type="button" onClick={() => { initedRef.current = true; setZoom(1); setCenter({ cx: focal?.x ?? 0.5, cy: focal?.y ?? 0.5 }); emit(null); }}
+          style={{ fontSize: 11, color: "#6b6b64", background: "none", border: "1px solid #6b6b64", borderRadius: 6, padding: "3px 8px", cursor: "pointer" }}>
+          Reset
+        </button>
+      </div>
+      <div style={{ fontSize: 11, color: "#6b6b64", marginTop: 4, lineHeight: 1.4 }}>
+        Drag to move, scroll or use the slider to zoom. This is exactly what donors see. Reset returns to the whole picture.
       </div>
     </div>
   );

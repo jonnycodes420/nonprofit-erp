@@ -16772,7 +16772,7 @@ async function portalOrgBySlug(slug) {
             ps.contact_email AS portal_contact, ps.ein_line AS portal_ein,
             ps.powered_by, ps.min_recurring_cents, ps.network_listed,
             ps.background_tint, ps.button_color, ps.type_pairing, ps.card_style,
-            ps.header_focal_x, ps.header_focal_y
+            ps.header_focal_x, ps.header_focal_y, ps.header_crop
      FROM orgs o JOIN portal_settings ps ON ps.org_id = o.id
      WHERE o.org_slug = ? AND ps.enabled = true`, [slug]);
   return rows[0] || null;
@@ -16830,6 +16830,8 @@ function portalThemePayload(org) {
       x: Math.min(1, Math.max(0, Number(org.header_focal_x ?? 0.5) || 0.5)),
       y: Math.min(1, Math.max(0, Number(org.header_focal_y ?? 0.5) || 0.5)),
     },
+    // BUILD-61 — non-destructive crop rect (or null → focal fallback).
+    headerCrop: parseCrop(org.header_crop),
     ...portalCardTheme(org),
     footerText: clean(org.portal_footer, 500),
     contactEmail: clean(org.portal_contact, 200),
@@ -16860,6 +16862,22 @@ function parseAmountLadder(raw, fallback) {
   return (clean.length >= 3 && clean.length <= 6) ? clean : fallback.slice();
 }
 
+// A normalized crop rectangle {x,y,w,h} (each 0..1) or null. Non-destructive:
+// it only ever describes which part of the original asset a slot shows. Shared
+// by giveThemePayload + portalThemePayload so the give page and the portal read
+// the exact same crop.
+function parseCrop(raw) {
+  if (raw == null) return null;
+  let c = raw;
+  if (typeof raw === "string") { try { c = JSON.parse(raw); } catch { return null; } }
+  if (!c || typeof c !== "object") return null;
+  const n = (v) => (Number.isFinite(Number(v)) ? Number(v) : null);
+  const x = n(c.x), y = n(c.y), w = n(c.w), h = n(c.h);
+  if ([x, y, w, h].some(v => v == null)) return null;
+  if (w <= 0 || h <= 0 || w > 1 || h > 1 || x < 0 || y < 0 || x + w > 1.005 || y + h > 1.005) return null;
+  return { x, y, w, h };
+}
+
 function giveThemePayload(org) {
   const clean = (v, cap) => (typeof v === "string" ? v.slice(0, cap) : null);
   const clamp01 = (n, d) => Math.min(1, Math.max(0, Number(n ?? d) || d));
@@ -16868,6 +16886,7 @@ function giveThemePayload(org) {
     logo: org.give_logo || null,
     headerImage: org.give_header_image || null,
     headerFocal: { x: clamp01(org.header_focal_x, 0.5), y: clamp01(org.header_focal_y, 0.5) },
+    headerCrop: parseCrop(org.header_crop),
     // colors/type/card — the shared portal theme resolver (normalized at save,
     // re-checked here, designed-neutral fallback when unset).
     ...portalCardTheme(org),
@@ -16887,7 +16906,7 @@ function giveThemePayload(org) {
 const GIVE_THEME_COLS = `ps.display_name,
   COALESCE(ps.logo_url, ps.logo_data) AS give_logo,
   COALESCE(ps.header_image_url, ps.header_image_data) AS give_header_image,
-  ps.header_focal_x, ps.header_focal_y,
+  ps.header_focal_x, ps.header_focal_y, ps.header_crop,
   ps.primary_color, ps.accent_color, ps.button_color, ps.background_tint,
   ps.type_pairing, ps.card_style,
   ps.footer_text AS give_footer, ps.contact_email AS give_contact, ps.ein_line AS give_ein,
@@ -18177,6 +18196,17 @@ app.put("/portal-settings", requireAuth, requireAdmin, checkWriteAccess, wrap(as
     const n = Number(b[key]);
     if (!Number.isFinite(n)) return res.status(400).json({ error: "bad_focal", message: "Focal point must be a number between 0 and 1." });
     updates.push(`${col} = ?`); params.push(Math.min(1, Math.max(0, n)));
+  }
+  // BUILD-61 — the non-destructive crop rectangle (normalized {x,y,w,h}).
+  // null/"" clears it back to the focal fallback. Validated identically to the
+  // read side (parseCrop) so a malformed rect can never be stored.
+  if (b.headerCrop !== undefined) {
+    if (b.headerCrop === "" || b.headerCrop == null) { updates.push("header_crop = NULL"); }
+    else {
+      const c = parseCrop(b.headerCrop);
+      if (!c) return res.status(400).json({ error: "bad_crop", message: "Crop must be a rectangle {x,y,w,h} within the image." });
+      updates.push("header_crop = ?"); params.push(JSON.stringify(c));
+    }
   }
   const assetOps = []; // deferred until after the row UPDATE
   // BUILD-56 — the current pointers, read up front so every change appends a

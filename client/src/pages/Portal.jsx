@@ -146,6 +146,7 @@ function PortalHeader({ theme }) {
         <PortalBanner
           url={theme.headerImage}
           focal={theme.headerFocal}
+          crop={theme.headerCrop}
           bandColor="var(--pt-primary)"
           ratio={PORTAL_HEADER_RATIO}
           priority
