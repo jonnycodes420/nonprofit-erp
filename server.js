@@ -9498,7 +9498,8 @@ app.get("/org/:orgSlug/public", wrap(async (req, res) => {
   // the org's white-label display name (portal_settings.display_name) when
   // set, never the staff-side orgs.name (e.g. "CREO Arts (Demo)").
   const orgs = await query(
-    "SELECT o.id, o.name, o.mission, o.cover_fees_enabled, ps.display_name FROM orgs o LEFT JOIN portal_settings ps ON ps.org_id = o.id WHERE o.org_slug = $1",
+    `SELECT o.id, o.name, o.mission, o.cover_fees_enabled, ${GIVE_THEME_COLS}
+     FROM orgs o LEFT JOIN portal_settings ps ON ps.org_id = o.id WHERE o.org_slug = $1`,
     [req.params.orgSlug]
   );
   if (!orgs.length) return res.status(404).json({ error: "Organization not found" });
@@ -9509,7 +9510,8 @@ app.get("/org/:orgSlug/public", wrap(async (req, res) => {
   // giving account only for listed orgs (givingAccountEntry — the one gate).
   // Listing is already public via the directory, so this reveals nothing new.
   const gaEntry = await givingAccountEntry({ id: org.id, org_slug: req.params.orgSlug });
-  res.json({ org: { name: org.donor_facing_name, mission: org.mission, slug: req.params.orgSlug, coverFeesEnabled: org.cover_fees_enabled !== false, givingAccount: !!gaEntry }, funds });
+  // BUILD-60 — the give page is the ORG's page: it carries the org's own theme.
+  res.json({ org: { name: org.donor_facing_name, mission: org.mission, slug: req.params.orgSlug, coverFeesEnabled: org.cover_fees_enabled !== false, givingAccount: !!gaEntry, theme: giveThemePayload(org) }, funds });
 }));
 
 // ── Giving Pages ────────────────────────────────────────────────────────────
@@ -9666,7 +9668,7 @@ app.delete("/giving-pages/:id", requireAuth, requireAdmin, wrap(async (req, res)
 // GET /org/:orgSlug/public, plus the page's own title/story/image/goal and
 // the real computed raised total (never a manually-set counter).
 app.get("/org/:orgSlug/giving-page/:pageSlug/public", wrap(async (req, res) => {
-  const orgs = await query("SELECT o.id, o.name, o.mission, o.cover_fees_enabled, ps.display_name FROM orgs o LEFT JOIN portal_settings ps ON ps.org_id = o.id WHERE o.org_slug = ?", [req.params.orgSlug]);
+  const orgs = await query(`SELECT o.id, o.name, o.mission, o.cover_fees_enabled, ${GIVE_THEME_COLS} FROM orgs o LEFT JOIN portal_settings ps ON ps.org_id = o.id WHERE o.org_slug = ?`, [req.params.orgSlug]);
   if (!orgs.length) return res.status(404).json({ error: "Organization not found" });
   const org = orgs[0];
   org.donor_facing_name = String(org.display_name || "").trim() || org.name; // W-2 white-label
@@ -9705,7 +9707,7 @@ app.get("/org/:orgSlug/giving-page/:pageSlug/public", wrap(async (req, res) => {
   );
 
   res.json({
-    org: { name: org.donor_facing_name, mission: org.mission, slug: req.params.orgSlug, coverFeesEnabled: org.cover_fees_enabled !== false, givingAccount: !!(await givingAccountEntry({ id: org.id, org_slug: req.params.orgSlug })) },
+    org: { name: org.donor_facing_name, mission: org.mission, slug: req.params.orgSlug, coverFeesEnabled: org.cover_fees_enabled !== false, givingAccount: !!(await givingAccountEntry({ id: org.id, org_slug: req.params.orgSlug })), theme: giveThemePayload(org) },
     givingPage: {
       id: page.id, slug: page.slug, title: page.title, story: page.story, imageUrl: page.image_url,
       goalAmount: page.goal_amount != null ? parseFloat(page.goal_amount) : null,
@@ -9873,7 +9875,7 @@ app.post("/org/:orgSlug/giving-page/:pageSlug/fundraisers", donateLimiter, wrap(
 // "never existed") if either the fundraiser OR its parent page is archived —
 // a fundraiser cannot outlive its campaign's own availability.
 app.get("/org/:orgSlug/giving-page/:pageSlug/fundraiser/:fundraiserSlug/public", wrap(async (req, res) => {
-  const orgs = await query("SELECT o.id, o.name, o.mission, o.cover_fees_enabled, ps.display_name FROM orgs o LEFT JOIN portal_settings ps ON ps.org_id = o.id WHERE o.org_slug = ?", [req.params.orgSlug]);
+  const orgs = await query(`SELECT o.id, o.name, o.mission, o.cover_fees_enabled, ${GIVE_THEME_COLS} FROM orgs o LEFT JOIN portal_settings ps ON ps.org_id = o.id WHERE o.org_slug = ?`, [req.params.orgSlug]);
   if (!orgs.length) return res.status(404).json({ error: "Organization not found" });
   const org = orgs[0];
   org.donor_facing_name = String(org.display_name || "").trim() || org.name; // W-2 white-label
@@ -9895,7 +9897,7 @@ app.get("/org/:orgSlug/giving-page/:pageSlug/fundraiser/:fundraiserSlug/public",
   const f = fRows[0];
 
   res.json({
-    org: { name: org.donor_facing_name, mission: org.mission, slug: req.params.orgSlug, coverFeesEnabled: org.cover_fees_enabled !== false, givingAccount: !!(await givingAccountEntry({ id: org.id, org_slug: req.params.orgSlug })) },
+    org: { name: org.donor_facing_name, mission: org.mission, slug: req.params.orgSlug, coverFeesEnabled: org.cover_fees_enabled !== false, givingAccount: !!(await givingAccountEntry({ id: org.id, org_slug: req.params.orgSlug })), theme: giveThemePayload(org) },
     givingPage: { id: page.id, slug: page.slug, title: page.title, fundId: page.fund_id, fundName: page.fund_name || null },
     peerFundraiser: {
       id: f.id, slug: f.slug, name: f.name, story: f.story, imageUrl: f.image_url,
@@ -16838,6 +16840,59 @@ function portalThemePayload(org) {
   };
 }
 
+// ── BUILD-60 — the giving page is the ORG's page ────────────────────────────
+// The public /give flow must be indistinguishable from the org's own site:
+// the org's colors, logo, type pairing, banner and white-label display name —
+// from the SAME portal theme the portal already uses (portalCardTheme), never
+// Steward's mark or emerald. An org with no theme falls back to the designed
+// neutral portal default (never a Steward brand color).
+//
+// Per-frequency amount ladders (Part 2): defaults live here; an org overrides
+// them on portal_settings.onetime_amounts / monthly_amounts.
+const GIVE_ONETIME_DEFAULT = [25, 50, 100, 250, 500];
+const GIVE_MONTHLY_DEFAULT = [10, 25, 50, 100, 250];
+function parseAmountLadder(raw, fallback) {
+  if (raw == null) return fallback.slice();
+  let arr = raw;
+  if (typeof raw === "string") { try { arr = JSON.parse(raw); } catch { return fallback.slice(); } }
+  if (!Array.isArray(arr)) return fallback.slice();
+  const clean = arr.map(n => Math.round(Number(n))).filter(n => Number.isFinite(n) && n >= 1 && n <= 1000000);
+  return (clean.length >= 3 && clean.length <= 6) ? clean : fallback.slice();
+}
+
+function giveThemePayload(org) {
+  const clean = (v, cap) => (typeof v === "string" ? v.slice(0, cap) : null);
+  const clamp01 = (n, d) => Math.min(1, Math.max(0, Number(n ?? d) || d));
+  return {
+    displayName: clean(org.display_name, 120) || displayNameCase(org.name),
+    logo: org.give_logo || null,
+    headerImage: org.give_header_image || null,
+    headerFocal: { x: clamp01(org.header_focal_x, 0.5), y: clamp01(org.header_focal_y, 0.5) },
+    // colors/type/card — the shared portal theme resolver (normalized at save,
+    // re-checked here, designed-neutral fallback when unset).
+    ...portalCardTheme(org),
+    footerText: clean(org.give_footer, 500),
+    contactEmail: clean(org.give_contact, 200),
+    einLine: clean(org.give_ein, 200),
+    // "Powered by Steward" is OFF by default (white-label). A flag so it can be
+    // turned on network-wide later without a rebuild — see BUILD-60 decision.
+    poweredBy: org.powered_by === true,
+    onetimeAmounts: parseAmountLadder(org.onetime_amounts, GIVE_ONETIME_DEFAULT),
+    monthlyAmounts: parseAmountLadder(org.monthly_amounts, GIVE_MONTHLY_DEFAULT),
+  };
+}
+
+// The theme columns every public /give endpoint selects from portal_settings.
+// Aliased to the names portalCardTheme + giveThemePayload read.
+const GIVE_THEME_COLS = `ps.display_name,
+  COALESCE(ps.logo_url, ps.logo_data) AS give_logo,
+  COALESCE(ps.header_image_url, ps.header_image_data) AS give_header_image,
+  ps.header_focal_x, ps.header_focal_y,
+  ps.primary_color, ps.accent_color, ps.button_color, ps.background_tint,
+  ps.type_pairing, ps.card_style,
+  ps.footer_text AS give_footer, ps.contact_email AS give_contact, ps.ein_line AS give_ein,
+  ps.powered_by, ps.onetime_amounts, ps.monthly_amounts`;
+
 async function portalAudit(orgId, donorId, email, action, req, meta) {
   await run(
     `INSERT INTO portal_audit_log (id,org_id,donor_id,email,action,ip,meta) VALUES (?,?,?,?,?,?,?)`,
@@ -18061,6 +18116,18 @@ app.put("/portal-settings", requireAuth, requireAdmin, checkWriteAccess, wrap(as
   if (b.footerText !== undefined) setStr("footer_text", b.footerText, 500);
   if (b.contactEmail !== undefined) setStr("contact_email", b.contactEmail, 200);
   if (b.einLine !== undefined) setStr("ein_line", b.einLine, 200);
+  // BUILD-60 Part 2 — per-frequency, org-configurable amount ladders. A valid
+  // ladder is 3–6 positive whole-dollar tiers; null/"" clears back to the
+  // built-in default. Stored as a JSON array of ints.
+  for (const [key, col, dflt] of [["onetimeAmounts", "onetime_amounts", GIVE_ONETIME_DEFAULT], ["monthlyAmounts", "monthly_amounts", GIVE_MONTHLY_DEFAULT]]) {
+    if (b[key] === undefined) continue;
+    if (b[key] === "" || b[key] == null) { updates.push(`${col} = NULL`); continue; }
+    if (!Array.isArray(b[key])) return res.status(400).json({ error: "bad_ladder", message: `${key} must be an array of dollar amounts.` });
+    const clean = b[key].map(n => Math.round(Number(n))).filter(n => Number.isFinite(n) && n >= 1 && n <= 1000000);
+    if (clean.length < 3 || clean.length > 6 || clean.length !== b[key].length) return res.status(400).json({ error: "bad_ladder", message: `${key} must be 3–6 whole-dollar amounts between $1 and $1,000,000.` });
+    updates.push(`${col} = ?`); params.push(JSON.stringify(clean));
+    void dflt;
+  }
   if (b.minRecurringCents !== undefined) {
     const c = Number(b.minRecurringCents);
     if (!Number.isInteger(c) || c < 100 || c > 1000000) return res.status(400).json({ error: "bad_min" });

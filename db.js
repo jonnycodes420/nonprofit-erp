@@ -1943,6 +1943,14 @@ async function initSchema() {
   await pool.query(`ALTER TABLE portal_settings ADD COLUMN IF NOT EXISTS header_focal_x REAL DEFAULT 0.5`);
   await pool.query(`ALTER TABLE portal_settings ADD COLUMN IF NOT EXISTS header_focal_y REAL DEFAULT 0.5`);
 
+  // BUILD-60 Part 2 — per-frequency, org-configurable donation amount ladders.
+  // A $25/$50/$100/$250/$500 ladder is right for one-time and a punishing ask
+  // as a monthly commitment, so the ladders are separate and each org sets its
+  // own (they know their own donors). Stored as a JSON array of positive ints;
+  // NULL = the built-in default (server GIVE_ONETIME_DEFAULT/GIVE_MONTHLY_DEFAULT).
+  await pool.query(`ALTER TABLE portal_settings ADD COLUMN IF NOT EXISTS onetime_amounts TEXT`);
+  await pool.query(`ALTER TABLE portal_settings ADD COLUMN IF NOT EXISTS monthly_amounts TEXT`);
+
   // ── BUILD-51 — theme-asset storage ───────────────────────────────────────
   // Theme images live OUT of the portal_settings row: the row carries a
   // content-addressed URL PATH (/portal-assets/<id>); the bytes live in

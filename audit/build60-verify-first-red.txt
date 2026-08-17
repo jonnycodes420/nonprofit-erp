@@ -1,0 +1,42 @@
+BUILD-60 — verify-first RED (run against the pre-build server + pre-build Donate.jsx)
+Captured 2026-08-17T16:02:42Z. 22 assertions fail: the give payload carries NO org theme
+(white-label brand-leak), and Donate.jsx still defaults frequency to one-time (recurring is not the ask).
+Both the brand-leak assertion and the frequency-default assertion fail, as required.
+============================================================================
+
+  FAIL  [giveflow-terracotta] give payload carries the org theme (white-label) — 200
+  FAIL  [giveflow-terracotta] display name is white-label (no "(Demo)")
+  FAIL  [giveflow-terracotta] primary is the org's OWN color, not the neutral default
+  PASS  [giveflow-terracotta] no Steward emerald in any theme value
+  PASS  [giveflow-terracotta] no Steward emerald anywhere in the give payload
+  PASS  [giveflow-terracotta] the word "Steward" appears nowhere in the give payload
+  PASS  [giveflow-terracotta] the staff-side "(Demo)" name never leaks
+  FAIL  [giveflow-terracotta] poweredBy defaults OFF
+  FAIL  [giveflow-harbor] give payload carries the org theme (white-label) — 200
+  FAIL  [giveflow-harbor] display name is white-label (no "(Demo)")
+  FAIL  [giveflow-harbor] primary is the org's OWN color, not the neutral default
+  PASS  [giveflow-harbor] no Steward emerald in any theme value
+  PASS  [giveflow-harbor] no Steward emerald anywhere in the give payload
+  PASS  [giveflow-harbor] the word "Steward" appears nowhere in the give payload
+  PASS  [giveflow-harbor] the staff-side "(Demo)" name never leaks
+  FAIL  [giveflow-harbor] poweredBy defaults OFF
+  FAIL  terracotta org: custom monthly ladder flows through
+  FAIL  terracotta org: one-time ladder falls back to the default
+  FAIL  harbor org: default monthly ladder
+  FAIL  harbor org: default one-time ladder
+  PASS  admin login ok
+  PASS  PUT valid monthly ladder → 200
+  FAIL  configured monthly ladder round-trips to the give page
+  FAIL  PUT ladder with <3 tiers / zero → 400 — {"org_id":"org_gfb_a","enabled":true,"display_name":"Brushworks Collective","logo_data":null,"header_image_data":null,"primary_color":"#b8593f","accent_color":"#7a5230","footer_text":null,"contact_email":null,"ein_line":null,"powered_by":false,"min_recurring_cents":500,"created_at":"2026-08-17T16:02:29.599Z","updated_at":"2026-08-17T16:02:29.599Z","network_listed":false,"directory_description":nul
+  FAIL  PUT ladder with >6 tiers → 400 — {"org_id":"org_gfb_a","enabled":true,"display_name":"Brushworks Collective","logo_data":null,"header_image_data":null,"primary_color":"#b8593f","accent_color":"#7a5230","footer_text":null,"contact_email":null,"ein_line":null,"powered_by":false,"min_recurring_cents":500,"created_at":"2026-08-17T16:02:29.599Z","updated_at":"2026-08-17T16:02:29.599Z","network_listed":false,"directory_description":nul
+  PASS  PUT empty ladder clears back to default
+  FAIL  cleared monthly ladder falls back to default
+  FAIL  frequency state defaults to Monthly — "frequency default"
+  PASS  no hardcoded Steward emerald in Donate.jsx
+  FAIL  "Powered by Steward" is gated behind th.poweredBy
+  FAIL  the giving page never renders a hardcoded Steward wordmark/logo
+  FAIL  submit button states the recurring commitment
+  FAIL  recurring disclosure beside the button
+  FAIL  amount ladder is per-frequency
+
+12 passed, 22 failed

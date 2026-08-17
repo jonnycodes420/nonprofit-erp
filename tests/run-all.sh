@@ -69,7 +69,7 @@ CORE=(
   portal-visual
   gift-idempotency portal
   donor-accounts donor-linking org-blindness network-gate donor-dashboard network-directory theme-depth donor-front-door theme-assets
-  campaign-impact portal-page portal-designation asset-retention recurring-surface
+  campaign-impact portal-page portal-designation asset-retention recurring-surface giving-flow-brand
   ledger-provisioning mail-suppression first-login-matrix import-columns
   stripe-disputes external-fixture-provenance
   portal-contrast
