@@ -94,6 +94,10 @@ async function fixture() {
   await q(`INSERT INTO recurring_subscriptions (id,org_id,donor_id,stripe_subscription_id,amount,interval,status) VALUES ('rs_ddM',$1,'d_ddM_h','sub_ddM',20,'month','active')`, [ORG_M]);
   await q(`INSERT INTO recurring_subscriptions (id,org_id,donor_id,stripe_subscription_id,amount,interval,status) VALUES ('rs_ddN',$1,'d_ddN_h','sub_ddN',15,'month','active')`, [ORG_N]);
   await q(`INSERT INTO impact_updates (id,org_id,title,body,targets,org_wide,status) VALUES ('imp_ddM',$1,'New kiln installed','Clay wing live.','[]',true,'published')`, [ORG_M]);
+  // BUILD-62 Part 5 — a SECOND update, same title, this one WITH a photo. The
+  // dashboard must dedup by title and keep the photo'd one (never render the
+  // story twice, once photoless).
+  await q(`INSERT INTO impact_updates (id,org_id,title,body,photos,targets,org_wide,status) VALUES ('imp_ddM2',$1,'New kiln installed','Clay wing live — with a photo.','["pa_kiln"]','[]',true,'published')`, [ORG_M]);
   await q(`INSERT INTO impact_updates (id,org_id,title,body,targets,org_wide,status) VALUES ('imp_ddN',$1,'Winter beds funded','80 warm nights.','[]',true,'published')`, [ORG_N]);
 }
 
@@ -130,6 +134,12 @@ async function fixture() {
     dash.impact.some(u => u.title === "Winter beds funded" && u.orgName === "North Shelter"), dash.impact.map(u => u.title));
   const dates = dash.impact.map(u => String(u.date));
   ok("impact feed is newest-first (deterministic, no ranking)", dates.every((d, i) => i === 0 || dates[i - 1] >= d));
+  // BUILD-62 Part 5 — the dedup bug on the donor's home surface.
+  const kilnCards = dash.impact.filter(u => u.title === "New kiln installed" && u.orgName === "Meadow Arts");
+  ok("BUILD-62: same-title impact updates are DEDUPED to one card on the donor's home surface",
+    kilnCards.length === 1, kilnCards.map(u => ({ photos: u.photos })));
+  ok("…and the deduped card keeps the one WITH the photograph (never the photoless/placeholder twin)",
+    kilnCards[0] && Array.isArray(kilnCards[0].photos) && kilnCards[0].photos.length > 0, kilnCards[0]);
 
   // ── §2.1 unified recurring == per-org lists ──────────────────────────────
   const rec = (await raw("GET", "/account/recurring", { cookie })).body.recurring;

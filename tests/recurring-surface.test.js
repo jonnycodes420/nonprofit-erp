@@ -63,6 +63,15 @@ function startStripeMock(port = 5603) {
           res.end(JSON.stringify({ id: inv[1], object: "invoice", subscription: ({ in_mock_r1: "sub_r1" })[inv[1]] || null }));
           return;
         }
+        // BUILD-62 — the customer→donor fallback (used when a subscription
+        // charge's PI arrives before checkout.session.completed has created
+        // the recurring_subscriptions row).
+        const cust = req.url.match(/^\/v1\/customers\/([^/?]+)/);
+        if (req.method === "GET" && cust) {
+          const email = ({ cus_race: "eli@rec.test" })[cust[1]] || null;
+          res.end(JSON.stringify({ id: cust[1], object: "customer", email, name: email ? "Eli Epsilon" : null }));
+          return;
+        }
         const m = req.url.match(/^\/v1\/subscriptions\/([^/?]+)/);
         if (m) {
           res.end(JSON.stringify({
@@ -465,6 +474,33 @@ async function fixture() {
     rsr5.status === "recovered" && rsr5.current_period_end != null, rsr5);
   ok("recovery logged in the movement ledger",
     (await q(`SELECT * FROM recurring_change_log WHERE subscription_id='rs_r5' AND kind='recovered'`)).length >= 1);
+
+  // (e) BUILD-62 — THE LIVE-CHARGE-THAT-LEFT-NO-TRACE RACE. On a brand-new
+  // subscription Stripe emits payment_intent.succeeded ~2s BEFORE
+  // checkout.session.completed and delivers them concurrently, so the
+  // recurring_subscriptions row (a) and (b) rely on does NOT exist yet when
+  // the PI handler runs. The old handler dropped the gift and returned 200
+  // (money taken, no record). Here we deliberately fire the PI with a
+  // customer that has NO recurring_subscriptions row — the handler must
+  // resolve the donor from Stripe's own customer object and record the gift
+  // anyway. (cus_race maps to eli@rec.test in the mock; d_rec_e exists.)
+  ok("precondition: no recurring_subscriptions row exists for the racing customer",
+    (await q(`SELECT id FROM recurring_subscriptions WHERE stripe_customer_id='cus_race'`)).length === 0);
+  wh = await fireWebhook({
+    id: "evt_rec_race", type: "payment_intent.succeeded", account: ACCT_A,
+    data: { object: { id: "pi_race", amount_received: 100, customer: "cus_race", metadata: {} } },
+  });
+  ok("racing PI (no email, no invoice, NO local sub row yet) → 200", wh.status === 200, wh);
+  [g] = await q(`SELECT * FROM gifts WHERE stripe_payment_id='pi_race'`);
+  ok("BUILD-62: first recurring charge is RECORDED even when the sub row is not there yet",
+    g && g.donor_id === "d_rec_e" && parseFloat(g.amount) === 1, g);
+  // Idempotency holds on the customer-fallback path too: redelivery is a no-op.
+  await fireWebhook({
+    id: "evt_rec_race", type: "payment_intent.succeeded", account: ACCT_A,
+    data: { object: { id: "pi_race", amount_received: 100, customer: "cus_race", metadata: {} } },
+  });
+  ok("BUILD-62: redelivered racing PI does not double-record",
+    (await q(`SELECT COUNT(*)::int AS n FROM gifts WHERE stripe_payment_id='pi_race'`))[0].n === 1);
 
   if (sink) sink.close();
   if (smock) smock.close();

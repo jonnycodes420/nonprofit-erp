@@ -308,7 +308,10 @@ app.post("/stripe/webhook", express.raw({ type: "application/json" }), async (re
   try {
     if (event.type === "payment_intent.succeeded") {
       const pi = event.data.object;
-      const email = pi.receipt_email || pi.metadata?.donor_email;
+      // `email`/`donorName` are `let` because the BUILD-62 fallback below can
+      // fill them from Stripe's own customer object when a subscription
+      // charge's PI carries neither (invoice-generated PIs are empty).
+      let email = pi.receipt_email || pi.metadata?.donor_email;
       const amount = pi.amount_received / 100;
       const accountId = event.account;
       let campaignId = pi.metadata?.campaign_id || null;
@@ -319,7 +322,7 @@ app.post("/stripe/webhook", express.raw({ type: "application/json" }), async (re
       // first unrestricted fund regardless of what the donor picked).
       let fundId = pi.metadata?.fund_id || null;
       const peerFundraiserId = pi.metadata?.peer_fundraiser_id || null;
-      const donorName = pi.metadata?.donor_name || "";
+      let donorName = pi.metadata?.donor_name || "";
       // Donor-covers-fees (attribution FIX): the charged total IS the gift
       // (receipt/ledger/donor totals record it), but the cover portion is
       // remembered so campaign/page goal progress can count what the donor
@@ -364,6 +367,28 @@ app.post("/stripe/webhook", express.raw({ type: "application/json" }), async (re
                 "SELECT donor_id FROM recurring_subscriptions WHERE stripe_customer_id=$1 AND org_id=$2 AND status <> 'canceled'",
                 [pi.customer, orgRow0[0].id]);
               if (rsRows0.length === 1) subResolvedDonorId = rsRows0[0].donor_id;
+            }
+            // BUILD-62 — the live-charge-that-left-no-trace fix. The two
+            // lookups above both need a recurring_subscriptions row, and that
+            // row is written by checkout.session.completed — a DIFFERENT
+            // event that Stripe emits ~2s AFTER this one and delivers
+            // concurrently. On a brand-new subscription the row does not exist
+            // yet when this handler runs, so BOTH lookups miss, the donor is
+            // unresolved, and the first real recurring charge is dropped
+            // (money taken, no gift, 200 returned — Stripe never retries).
+            // A money-recording handler must never depend on a SIBLING event
+            // having been processed first: resolve the donor straight from
+            // Stripe's own customer object, which always exists by the time
+            // its PaymentIntent succeeds. (3-arg retrieve — stripe-node 22
+            // does not read {stripeAccount} from the params position.)
+            if (!subResolvedDonorId && !email && pi.customer) {
+              try {
+                const cust = await stripe.customers.retrieve(pi.customer, {}, { stripeAccount: accountId });
+                if (cust && !cust.deleted && cust.email) {
+                  email = cust.email;
+                  if (!donorName) donorName = cust.name || cust.email;
+                }
+              } catch (e) { console.error("[stripe] customer→donor fallback failed:", e.message); }
             }
           }
         } catch (e) { console.error("[stripe] invoice→donor resolution failed:", e.message); }
@@ -1432,6 +1457,28 @@ const BUILD_SHA = (() => {
 // '4010' probe below is the only one in the codebase — stamp sites must go
 // through here, never re-probe (pinned by tests/ledger-provisioning.test.js).
 let ledgerChartSelfHeals = 0;
+
+// ── BUILD-62 Part 3 — RECONCILIATION GUARD state ────────────────────────────
+// The instance (BUILD-62) was a webhook race; the CLASS is "money can move at
+// Stripe and leave no trace in Steward, and nothing notices." That has now
+// happened twice, in two modes, and both times a human reading a page was the
+// only thing that caught it. This state holds the last reconciliation result —
+// SURFACED as counts on /health so UptimeRobot's keyword watch pages on it,
+// exactly like themeAssets.dbFallbackRows. A donor charged with no record is
+// the single worst thing this product can do; it should page within the hour,
+// not wait for someone to open a portal. See reconcileStripeVsGifts() below.
+let reconciliation = {
+  unrecordedCharges: 0, orphanGifts: 0, checkedAt: null, oldestUnrecordedAgeMin: null, divergences: [],
+};
+function reconciliationHealth() {
+  return {
+    unrecordedCharges: reconciliation.unrecordedCharges,
+    orphanGifts: reconciliation.orphanGifts,
+    checkedAt: reconciliation.checkedAt,
+    oldestUnrecordedAgeMin: reconciliation.oldestUnrecordedAgeMin,
+  };
+}
+
 async function ensureOrgLedger(orgId, { heal = false } = {}) {
   const probe = async () => {
     const [contrib] = await query("SELECT id FROM accounts WHERE org_id = ? AND code = '4010' LIMIT 1", [orgId]);
@@ -1505,6 +1552,12 @@ app.get("/health", (req, res) => {
     // non-zero value that grows = the silent-fallback failure mode; null when
     // S3 isn't configured (DB storage is then by design).
     themeAssets: assetHealth(),
+    // BUILD-62 Part 3: the reconciliation guard. unrecordedCharges > 0 means a
+    // real charge settled at Stripe with NO gift row behind it — a donor was
+    // charged and Steward has no record. This is the paging signal (watch it in
+    // UptimeRobot alongside themeAssets.dbFallbackRows). orphanGifts is the
+    // reverse (a gift with no succeeded charge). checkedAt null = not yet run.
+    reconciliation: reconciliationHealth(),
   });
 });
 
@@ -13810,6 +13863,97 @@ if (!rateLimitDisabled() && !backgroundTicksDisabled()) {
   setInterval(() => retryFailedNotifications().catch(console.error), 5 * 60 * 1000);
 }
 
+// ── BUILD-62 Part 3 — the reconciliation SWEEP ──────────────────────────────
+// Donations settle in each org's OWN connected Stripe account (never the
+// platform account, which only carries Steward's subscription billing). So the
+// guard walks every connected account and asks, both directions:
+//   1. Does every succeeded, not-fully-refunded charge have a gift row? A
+//      charge with none = a donor was charged and Steward recorded NOTHING —
+//      the exact failure BUILD-62 chased. This is an ALERT (count on /health +
+//      Sentry), never a log line.
+//   2. Does every recent online gift still have a succeeded charge behind it?
+//      The reverse — a phantom/reversed gift.
+// Read-only at Stripe and in Steward. Windowed + capped so it stays cheap.
+const RECONCILE_WINDOW_HOURS = Math.max(1, parseInt(process.env.RECONCILE_WINDOW_HOURS || "72", 10) || 72);
+const RECONCILE_INTERVAL_MIN = Math.max(5, parseInt(process.env.RECONCILE_INTERVAL_MIN || "20", 10) || 20);
+async function reconcileStripeVsGifts() {
+  if (!stripe) return reconciliation;
+  const nowSec = Math.floor(Date.now() / 1000);
+  const sinceSec = nowSec - RECONCILE_WINDOW_HOURS * 3600;
+  const sinceDate = new Date(sinceSec * 1000).toISOString().slice(0, 10);
+  const divergences = [];
+  let unrecorded = 0, orphans = 0, oldestAgeMin = null;
+  // Only orgs with a connected account can have taken a donation.
+  const orgs = await query(
+    "SELECT id, stripe_account_id FROM orgs WHERE stripe_account_id IS NOT NULL LIMIT 500");
+  for (const org of orgs) {
+    const acct = org.stripe_account_id;
+    let charges;
+    try {
+      charges = await stripe.charges.list({ created: { gte: sinceSec }, limit: 100 }, { stripeAccount: acct });
+    } catch (e) { console.error(`[reconcile] charges.list failed for ${acct}: ${e.message}`); continue; }
+    const seenPIs = new Set();
+    for (const ch of (charges?.data || [])) {
+      if (ch.status !== "succeeded") continue;
+      const net = (ch.amount || 0) - (ch.amount_refunded || 0);
+      const piId = ch.payment_intent || null;
+      if (piId) seenPIs.add(piId);
+      if (net <= 0) continue;                       // fully refunded — the refund handler owns removal
+      if (!piId) continue;                          // donations always ride a PaymentIntent
+      const giftRows = await query(
+        "SELECT id FROM gifts WHERE org_id=$1 AND stripe_payment_id=$2", [org.id, piId]);
+      if (!giftRows.length) {
+        unrecorded++;
+        const ageMin = Math.round((nowSec - (ch.created || nowSec)) / 60);
+        if (oldestAgeMin == null || ageMin > oldestAgeMin) oldestAgeMin = ageMin;
+        divergences.push({ kind: "charge_without_gift", chargeId: ch.id, paymentIntent: piId,
+          account: acct, orgId: org.id, amount: net / 100, ageMin });
+      }
+    }
+    // Reverse: recent online gifts whose PI isn't among the live succeeded
+    // charges — retrieve-confirm (capped) so a windowed-list miss can't
+    // false-positive.
+    const recentGifts = await query(
+      "SELECT id, stripe_payment_id FROM gifts WHERE org_id=$1 AND stripe_payment_id LIKE 'pi_%' AND date >= $2 LIMIT 200",
+      [org.id, sinceDate]);
+    let reverseChecked = 0;
+    for (const g of recentGifts) {
+      if (seenPIs.has(g.stripe_payment_id)) continue;   // has a live succeeded charge
+      if (reverseChecked >= 25) break;
+      reverseChecked++;
+      let status = "missing";
+      try {
+        const pi = await stripe.paymentIntents.retrieve(g.stripe_payment_id, {}, { stripeAccount: acct });
+        if (pi && pi.status === "succeeded") continue;   // fine — just outside the charge window
+        status = pi?.status || "missing";
+      } catch { status = "retrieve_failed"; }
+      orphans++;
+      divergences.push({ kind: "gift_without_charge", giftId: g.id, paymentIntent: g.stripe_payment_id,
+        account: acct, orgId: org.id, status });
+    }
+  }
+  reconciliation = {
+    unrecordedCharges: unrecorded, orphanGifts: orphans, checkedAt: new Date().toISOString(),
+    oldestUnrecordedAgeMin: oldestAgeMin, divergences: divergences.slice(0, 50),
+  };
+  if (unrecorded > 0) {
+    console.error(`[reconcile] ALERT: ${unrecorded} Stripe charge(s) with NO gift in Steward (oldest ${oldestAgeMin}m) — ${JSON.stringify(divergences.filter(d => d.kind === "charge_without_gift").slice(0, 10))}`);
+    try { if (process.env.SENTRY_DSN) Sentry.captureMessage(`reconciliation: ${unrecorded} unrecorded Stripe charge(s)`, "error"); } catch { /* surfacing must never throw */ }
+  }
+  return reconciliation;
+}
+// Ops/test hook (super-admin — the guard reads across every org's connected
+// account, so it is a platform operation, not an org-scoped one). Returns the
+// full divergence detail so a human can act: charge id, account, amount, age.
+app.post("/admin/reconcile/run", requireAuth, requireSuperAdmin, wrap(async (req, res) => {
+  const result = await reconcileStripeVsGifts();
+  res.json(result);
+}));
+if (!backgroundTicksDisabled()) {
+  setTimeout(() => reconcileStripeVsGifts().catch(console.error), 90000);
+  setInterval(() => reconcileStripeVsGifts().catch(console.error), RECONCILE_INTERVAL_MIN * 60 * 1000);
+}
+
 // BUILD-36 A2 — email a task's assignee when someone ELSE (or a workflow)
 // assigned it. NO email for a self-assigned task. Deduped/idempotent via
 // notifyUserOnce: default eventKey = taskassign:<taskId>:<assigneeId> (so
@@ -19048,17 +19192,37 @@ app.get("/account/dashboard", requireDonorAccount, wrap(async (req, res) => {
     });
     for (const u of followImpact[followIdx++]) impactMerged.push({ ...u, orgSlug: f.org_slug, orgName: displayNameCase(f.name), logo: f.logo_data || null });
   }
+  // BUILD-62 Part 5 — DEDUP the donor's impact feed. An org can publish two
+  // updates with the SAME title — e.g. one TARGETED to a fund the donor gave to
+  // (which carries a photo) and one ORG-WIDE (photoless) — and matchImpactUpdates
+  // returns both, so the same story rendered TWICE on the donor's home surface:
+  // once with the photograph, once photoless. Collapse by (org, normalized
+  // title), keeping the richest entry — a photo'd one beats a photoless one,
+  // then a matched (targeted) one, then the most recent.
+  const normImpactTitle = t => String(t || "").trim().toLowerCase().replace(/\s+/g, " ");
+  const impactScore = u => ((u.photos && u.photos.length) ? 2 : 0) + (u.matched ? 1 : 0);
+  const impactBest = new Map();
+  for (const u of impactMerged) {
+    const key = `${u.orgSlug}::${normImpactTitle(u.title)}`;
+    const prev = impactBest.get(key);
+    if (!prev
+      || impactScore(u) > impactScore(prev)
+      || (impactScore(u) === impactScore(prev) && new Date(u.date) > new Date(prev.date))) {
+      impactBest.set(key, u);
+    }
+  }
+  const impactDeduped = [...impactBest.values()];
   // Millisecond-precision newest-first: String(Date) stringifies at SECOND
   // precision, so a string sort tie-broke same-second updates arbitrarily and
   // the deterministic-order assertion caught it on CI (2026-08-12).
-  impactMerged.sort((a, b) => new Date(b.date) - new Date(a.date));
+  impactDeduped.sort((a, b) => new Date(b.date) - new Date(a.date));
   await donorAudit(acct.id, acct.email, "dashboard_viewed", req);
   res.json({
     brand: CONSUMER_BRAND,
     totals: { ytd: totalYtd, lifetime: totalLifetime, orgCount: orgCards.length },
     orgs: orgCards,
     followed: followedCards,
-    impact: impactMerged.slice(0, 20),
+    impact: impactDeduped.slice(0, 20),
   });
 }));
 

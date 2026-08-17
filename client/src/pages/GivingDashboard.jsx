@@ -482,13 +482,27 @@ function orgTheme(org) {
 // a banner strip), then title + body. Theming stays the OWNING org's.
 function ImpactCard({ u, t, eyebrow }) {
   const photos = Array.isArray(u.photos) ? u.photos.filter(Boolean) : [];
+  // BUILD-62 Part 5 — the no-image treatment is the org's own SOLID BAND with
+  // its monogram, never generated placeholder art (the standing rule; same
+  // fallback as TakeoverHeader). An update with no photo used to render a bare
+  // card; a demo update seeded with a placeholder SVG "photo" rendered abstract
+  // shapes — both are wrong. With no real photo, show the designed band.
+  const bandColor = t.primary || t.accent || G.emerald;
+  const bandFg = t.primaryFg || "#ffffff";
+  const monogram = (u.orgName || eyebrow || "?").trim()[0] || "?";
   return (
     <div style={{ ...S.card, ...(t.chrome || {}), margin: 0, padding: 0, overflow: "hidden", borderLeft: `3px solid ${t.accent || G.emerald}` }}>
-      {photos.length > 0 && (
+      {photos.length > 0 ? (
         <div style={{ height: 180, overflow: "hidden", display: "flex" }}>
           {photos.slice(0, 2).map((p, i) => (
             <img key={i} src={resolveAssetUrl(p)} alt="" style={{ width: photos.length > 1 ? "50%" : "100%", height: "100%", objectFit: "cover", display: "block" }} />
           ))}
+        </div>
+      ) : (
+        <div style={{ height: 96, background: bandColor, display: "flex", alignItems: "center", justifyContent: "center" }}>
+          {u.logo
+            ? <img src={resolveAssetUrl(u.logo)} alt="" style={{ height: 44, maxWidth: 150, objectFit: "contain" }} />
+            : <div aria-hidden="true" style={{ width: 44, height: 44, borderRadius: 9, border: `2px solid ${bandFg}`, color: bandFg, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: t.serif, fontSize: 22 }}>{monogram}</div>}
         </div>
       )}
       <div style={{ padding: "16px 20px 18px" }}>

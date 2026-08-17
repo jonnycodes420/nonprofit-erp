@@ -140,6 +140,57 @@ that lied for three builds — cannot recur silently.
   → **`BLOCKED-storage-failure-drill.md`** (needs a way to fault-inject the
   real bucket — revoke creds mid-run or point at a real-but-erroring endpoint).
 
+## 8. Webhook DELIVERY vs the HANDLER — the surface a CLI drill cannot reach (BUILD-62, 2026-08-17)
+
+**The permanent lesson, stated plainly:** *a test-mode drill that forwards
+events with the Stripe CLI (`stripe listen`) proves the HANDLER and nothing
+about DELIVERY.* Endpoint configuration — Connect enablement, the subscribed
+event list, the pinned API version, the signing secret — is a **separate
+surface** that only a real endpoint receiving a real event exercises. **Any
+future boundary drill must state explicitly which of the two it covered.**
+
+And a sharper corollary BUILD-62 exposed: `stripe listen` also **hides
+event-ordering bugs.** It forwards events over one connection, effectively
+sequentially, and lets you re-deliver a missed one by hand. A real endpoint
+receives events as **concurrent, independent POSTs** and never re-delivers a
+2xx. A handler that is correct on each event in isolation can still be wrong
+about the *order* its sibling events arrive in — and that wrongness is invisible
+under CLI forwarding.
+
+- **Mock/drill defined it?** BUILD-57 §2a drilled the subscription handler via
+  `stripe listen --forward-connect-to`. It proved the handler parses real
+  2025+/2026 payloads. It could not, and did not, touch: whether the live
+  endpoint is Connect-enabled, which events it subscribes, its pinned API
+  version, its signing secret — **or** how the handler behaves when
+  `payment_intent.succeeded` and `checkout.session.completed` arrive out of
+  order under concurrent delivery.
+- **Checked against the real endpoint?** Only in BUILD-62, by a **real $1/month
+  live charge** on a real connected account hitting the real production endpoint.
+- **What the real endpoint did:** delivered every event, correctly signed, and
+  our side returned 200 to each — *and still recorded no gift.* The endpoint
+  config was entirely correct (Connect on, events right, API version handled,
+  secret verifying); the defect was the concurrency/ordering race in the handler
+  (the first recurring charge's PI is emitted ~2s before, and delivered
+  concurrently with, the `checkout.session.completed` that creates the
+  `recurring_subscriptions` row the PI handler needs). **Fixed** — the PI handler
+  now resolves the donor straight from Stripe's own customer object, so it never
+  depends on a sibling event having been processed first
+  (`tests/recurring-surface.test.js` §6(e), the live-charge race). And the
+  standing insurance against the whole *class* — a charge that leaves no trace —
+  is the **reconciliation guard** (`reconcileStripeVsGifts`,
+  `/health.reconciliation`, `tests/reconciliation.test.js`).
+
+**This is the FOURTH distinct instance this month of something being green
+because the check and the reality never met** — after (1) the Stripe mock that
+lied for three builds (BUILD-57 §2a), (2) real-signup orgs having no chart of
+accounts so every ledger stamp silently no-op'd (BUILD-58 W-3), and (3) the
+Connect approval gate trusting our own `stripe_connected` flag instead of asking
+Stripe (BUILD-58 W-1). The pattern is always the same shape: a green suite
+asserting against a fixture that stands in for a real surface nobody had made the
+suite touch. The property that answers it is the one this document exists for —
+name which real surface each drill covered, and treat "never checked against the
+real thing" as a finding, not an absence.
+
 ---
 
 ## Summary — what is now real vs still mock-backed
@@ -155,4 +206,5 @@ that lied for three builds — cannot recur silently.
 | Platform billing webhook lifecycle | ❌ | mock-era, undrilled | §worry |
 | Email delivery (bounce/complaint) | ❌ | never real | `BLOCKED-resend-webhook-drill.md` |
 | Object storage real failure | ❌ (happy path ✅) | never real | `BLOCKED-storage-failure-drill.md` |
-| **Live-key** Stripe (real money) | ❌ by design | — | `BLOCKED-stripe-live-drill.md` (no real nonprofit approved until it runs) |
+| **Live-key** Stripe (real money) | ✅ BUILD-62 (recurring) | ordering race dropped the first charge | **fixed + pinned + reconciliation guard** |
+| Endpoint config (Connect/events/version/secret) | ✅ BUILD-62 | all correct — delivery was never the fault | confirmed on the real endpoint |
