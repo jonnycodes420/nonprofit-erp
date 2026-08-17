@@ -31,6 +31,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { resolvePairing, cardChrome } from "../lib/portalTheme";
 import { resolveAssetUrl } from "../lib/assetUrl";
+import { fmtDay } from "../lib/money"; // BUILD-64 Part 4 — the ONE donor-facing date formatter
 
 export const CONSUMER_BRAND = "Steward"; // plain Steward (go-live 2026-08-12); rename = one commit (BLOCKED-consumer-brand.md)
 
@@ -92,13 +93,8 @@ const S = {
 };
 
 function fmtMoney(n) { return "$" + Math.round(n || 0).toLocaleString(); }
-// Presentational only — "2026-04-14" reads mechanical in a serif stat cell.
-function fmtDay(iso) {
-  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(iso || ""));
-  if (!m) return String(iso || "");
-  const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-  return `${months[parseInt(m[2], 10) - 1]} ${parseInt(m[3], 10)}, ${m[1]}`;
-}
+// BUILD-64 — fmtDay now lives in lib/money.js (the ONE donor-facing date
+// formatter, shared with the org portal); imported above.
 
 // Group account-wide rows (recurring, tax years) by org, preserving order —
 // the multi-org tabs render neutral chrome with per-org themed GROUPS.
@@ -954,7 +950,7 @@ function Home({ me, dash, loadDash, takeover, onOpenOrg }) {
             <h2 style={{ ...S.h2, ...(tt ? { fontFamily: tt.serif } : {}), fontSize: 17, marginTop: 18 }}>Receipts</h2>
             {tax.receipts.map(r => (
               <div key={r.id} style={{ display: "flex", justifyContent: "space-between", padding: "6px 0" }}>
-                <div style={S.muted}>#{r.number} · {String(r.date).slice(0, 10)}</div>
+                <div style={S.muted}>#{r.number} · {fmtDay(r.date)}</div>
                 <div>{fmtMoney(r.amount)}</div>
               </div>
             ))}

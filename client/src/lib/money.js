@@ -26,3 +26,17 @@ export const fmtFull = n => {
   if (!Number.isFinite(v)) return "$0";
   return `$${v.toLocaleString(undefined, Number.isInteger(v) ? {} : { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 };
+
+// BUILD-64 Part 4 — the ONE human date formatter for every donor-facing
+// surface. A bare ISO "2026-08-17" reads mechanical in a serif giving history;
+// the cross-org dashboard already rendered "Aug 17, 2026" while the org portal
+// leaked ISO on gift rows and impact updates. This is that one formatter, so an
+// ISO date can never reach a donor's eyes again (pinned by the portal suite).
+// Parses the leading YYYY-MM-DD off any ISO/timestamp string; passes anything
+// unparseable through verbatim (never invents a date).
+const FMT_MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+export const fmtDay = iso => {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(iso || ""));
+  if (!m) return String(iso || "");
+  return `${FMT_MONTHS[parseInt(m[2], 10) - 1]} ${parseInt(m[3], 10)}, ${m[1]}`;
+};

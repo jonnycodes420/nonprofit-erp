@@ -13,7 +13,7 @@
 
 import { useState, useEffect, useMemo } from "react";
 import { useParams, useLocation, useNavigate } from "react-router-dom";
-import { fmtFull } from "../lib/money";
+import { fmtFull, fmtDay } from "../lib/money";
 import { resolvePairing, resolveCardStyle } from "../lib/portalTheme";
 import { resolveAssetUrl } from "../lib/assetUrl";
 import { PageRenderer } from "../components/PortalWidgets";
@@ -299,7 +299,18 @@ function YearBars({ byYear, gifts }) {
             <div style={{ margin: "8px 0 4px 56px" }}>
               {gifts.filter(g => (g.date || "").startsWith(y.year)).map(g => (
                 <div key={g.id} style={{ display: "flex", justifyContent: "space-between", fontSize: 13, padding: "5px 0", borderBottom: "1px solid #f0ede6" }}>
-                  <span>{g.date}{g.campaign ? ` · ${g.campaign}` : g.fund ? ` · ${g.fund}` : ""}</span>
+                  {/* BUILD-64 Part 4: human date (never ISO); a quiet Recurring
+                      tag so a column of identical monthly amounts explains
+                      itself; and the FUND designation shown where one exists
+                      (three builds wired designation end to end — a donor should
+                      see it where they read their own giving), alongside the
+                      campaign when both are present. */}
+                  <span>
+                    {fmtDay(g.date)}
+                    {g.campaign ? ` · ${g.campaign}` : ""}
+                    {g.fund ? ` · ${g.fund}` : ""}
+                    {g.recurring && <span style={{ marginLeft: 6, fontSize: 11, fontWeight: 600, color: "var(--pt-accent, #6b8f7a)", textTransform: "uppercase", letterSpacing: "0.04em" }}>Recurring</span>}
+                  </span>
                   <span style={{ fontWeight: 600 }}>{fmtFull(g.amount)}</span>
                 </div>
               ))}
@@ -338,9 +349,9 @@ function RecurringCard({ slug, sub, theme, onChanged }) {
         </div>
         {sub.cardLast4 && <div style={S.muted}>Card ending {sub.cardLast4}</div>}
       </div>
-      {sub.status === "paused" && <div style={{ ...S.muted, marginTop: 6 }}>Paused{sub.resumeAt ? ` — resumes automatically ${String(sub.resumeAt).slice(0, 10)}` : ""}. No charges while paused.</div>}
+      {sub.status === "paused" && <div style={{ ...S.muted, marginTop: 6 }}>Paused{sub.resumeAt ? ` — resumes automatically ${fmtDay(sub.resumeAt)}` : ""}. No charges while paused.</div>}
       {sub.nextChargeDate && sub.status !== "canceled" && sub.status !== "paused" && (
-        <div style={{ ...S.muted, marginTop: 6 }}>Next charge: {sub.nextChargeDate}</div>
+        <div style={{ ...S.muted, marginTop: 6 }}>Next charge: {fmtDay(sub.nextChargeDate)}</div>
       )}
       {["past_due", "recovering"].includes(sub.status) && (
         <div style={{ marginTop: 10, padding: "10px 14px", background: "#fdf6ec", border: "1px solid #ecd9b0", borderRadius: 10, fontSize: 14 }}>
@@ -436,12 +447,12 @@ function MyGivingSection({ slug, me, reload, theme, includeGiveCta }) {
             <div className="pt-mygiving-statsrow" style={{ display: "flex", gap: 32, flexWrap: "wrap", marginBottom: 16 }}>
               <div><div style={S.label}>This year</div><div style={{ fontSize: 28, fontWeight: 700 }}>{fmtFull(g.ytd)}</div></div>
               <div><div style={S.label}>Lifetime</div><div style={{ fontSize: 28, fontWeight: 700 }}>{fmtFull(g.lifetime)}</div></div>
-              {/* §5 — a stat that merely repeats another reads as a bug: show the
-                  largest gift only when it differs from both figures above,
-                  otherwise substitute the gifts count. */}
-              {g.largestGift > 0 && g.largestGift !== g.ytd && g.largestGift !== g.lifetime
-                ? <div><div style={S.label}>Largest gift</div><div style={{ fontSize: 28, fontWeight: 700 }}>{fmtFull(g.largestGift)}</div></div>
-                : g.giftCount > 1 && <div><div style={S.label}>Gifts</div><div style={{ fontSize: 28, fontWeight: 700 }}>{g.giftCount}</div></div>}
+              {/* BUILD-64 Part 4 — "Largest gift" is a fundraiser's metric on a
+                  donor's own page; it reads as being sized up. The gift COUNT is
+                  the donor-friendly third stat (and it restores the 5→6 signal
+                  that quietly vanished when the old branch hid the count whenever
+                  the largest gift differed — i.e. almost always). */}
+              {g.giftCount > 1 && <div><div style={S.label}>Gifts</div><div style={{ fontSize: 28, fontWeight: 700 }}>{g.giftCount}</div></div>}
             </div>
             {g.firstGiftDate && <div style={{ ...S.muted, marginBottom: 14 }}>Giving with {theme.displayName} since {String(g.firstGiftDate).slice(0, 4)}.</div>}
           </div>
@@ -472,7 +483,7 @@ function MyGivingSection({ slug, me, reload, theme, includeGiveCta }) {
           <h2 style={S.h2}>Pledges</h2>
           {me.pledges.filter(p => p.status === "open").map(p => (
             <div key={p.id} style={{ display: "flex", justifyContent: "space-between", fontSize: 14, padding: "8px 0", borderBottom: "1px solid #f0ede6" }}>
-              <span>Pledged {fmtFull(p.amount)} · due {p.dueDate}</span>
+              <span>Pledged {fmtFull(p.amount)} · due {fmtDay(p.dueDate)}</span>
               <span style={{ fontWeight: 600 }}>{p.paid > 0 ? `${fmtFull(p.paid)} paid · ${fmtFull(p.balance)} remaining` : `${fmtFull(p.balance)} remaining`}</span>
             </div>
           ))}
@@ -608,7 +619,7 @@ function Dashboard({ slug, me, reload, page }) {
                 </div>
               )}
               {u.body && <div style={{ fontSize: 14, lineHeight: 1.7, whiteSpace: "pre-wrap" }}>{u.body}</div>}
-              <div style={{ ...S.muted, marginTop: 6, fontSize: 12 }}>{String(u.date).slice(0, 10)}</div>
+              <div style={{ ...S.muted, marginTop: 6, fontSize: 12 }}>{fmtDay(u.date)}</div>
             </div>
           ))}
           </div>

@@ -4909,16 +4909,22 @@ async function givingAccountEntry(org) {
 function givingAccountLink(slug, email) {
   return `${publicAppUrl()}/giving#signup&from=${slug}` + (email ? `&email=${encodeURIComponent(email)}` : "");
 }
-function givingAccountEmailFooterHtml(slug, email) {
+// BUILD-64 decision (Jonathan may overrule): the giving-account CTA STAYS in the
+// org's transactional receipt — but quiet, below a divider, and in the ORG's
+// palette, never Steward's emerald. So it reads as a service the org offers, not
+// a Steward house ad. `linkColor` is the org's own primary (from the shared
+// resolver); it falls back to the neutral portal default, never #0d5c3a.
+function givingAccountEmailFooterHtml(slug, email, linkColor) {
+  const color = linkColor || PORTAL_DEFAULT_THEME.primary;
   return `<p style="border-top:1px solid #e8e4db;margin-top:22px;padding-top:12px;color:#8fa896;font-size:12px;">
     See all your giving in one place — receipts, recurring gifts, and year-end totals across every organization you support:
-    <a href="${givingAccountLink(slug, email)}" style="color:#0d5c3a;">create your free giving account</a>.</p>`;
+    <a href="${givingAccountLink(slug, email)}" style="color:${color};">create your free giving account</a>.</p>`;
 }
 
 async function sendReceiptEmail(org, donor, snapshot, pdfBuffer, filename) {
   if (!process.env.RESEND_API_KEY) return false;
   try {
-    const from = process.env.DEMO_SMTP_FROM || "noreply@stewardapp.dev";
+    const from = await donorFromAddress(org.id); // BUILD-64: the org's name in the inbox
     // Subject names the artifact honestly (a year-end statement is not a
     // "donation receipt") and the cover carries the branded org header like
     // every other donor-facing email — both live-test findings, 2026-08-05.
@@ -4926,8 +4932,10 @@ async function sendReceiptEmail(org, donor, snapshot, pdfBuffer, filename) {
     const dfName = await donorFacingOrgName(org.id, org.name); // W-2 white-label
     const subject = `Your ${artifact} from ${dfName}`;
     // BUILD-49 entry point (a)+(b): one quiet footer line on the receipt and
-    // year-end cover emails, only for listed orgs.
+    // year-end cover emails, only for listed orgs. BUILD-64: the CTA link is in
+    // the org's own palette, never Steward emerald.
     const entry = await givingAccountEntry(org);
+    const brand = await resolveOrgBrandTheme(org.id).catch(() => null);
     const html = await brandEmailHeaderHtml(org.id)
       + `<p>Hi ${escapeHtml(donor.name || "there")},</p>
       <p>Thank you for your generous gift to <strong>${escapeHtml(dfName)}</strong> — your official ${snapshot.type === "year_end" ? "year-end giving statement" : "tax receipt"} is attached.</p>`
@@ -4935,7 +4943,7 @@ async function sendReceiptEmail(org, donor, snapshot, pdfBuffer, filename) {
       // snapshot at issue time); absent when the campaign has no content.
       + (snapshot.campaignNote ? `<p>Your gift supports <strong>${escapeHtml(snapshot.campaignNote.name)}</strong>. ${escapeHtml(snapshot.campaignNote.description)}</p>` : "")
       + `<p style="color:#8fa896;font-size:13px">Receipt #${escapeHtml(snapshot.receiptNumber)}</p>`
-      + (entry ? givingAccountEmailFooterHtml(entry.slug, donor.email) : "");
+      + (entry ? givingAccountEmailFooterHtml(entry.slug, donor.email, brand && brand.band) : "");
     // Transactional (not a campaign/sequence send) — deliberately no
     // unsubscribe link/List-Unsubscribe headers, but still skips suppressed
     // addresses (below, before this is ever called) to protect the shared
@@ -4969,13 +4977,17 @@ async function issueGiftReceipt(gift, org, donor, { send = true } = {}) {
 
   const deductibleAmount = gift.deductible_amount != null ? parseFloat(gift.deductible_amount) : parseFloat(gift.amount);
   const receiptNumber = await allocateReceiptNumber(org.id);
+  // BUILD-64: the receipt's brand surface (band color + logo) comes from the
+  // SAME resolver as the portal/give page — frozen into the snapshot at issue
+  // time, so a later theme change never alters an already-issued receipt.
+  const brand = await resolveOrgBrandTheme(org.id).catch(() => null);
 
   const snapshot = {
     type: "gift",
     orgLegalName: org.legal_name || org.name,
-    orgAccent: org.brand_accent || null,       // BUILD-13: branded receipt header
-    orgAccentFg: org.brand_accent_fg || null,
-    orgLogo: org.logo_data || null,
+    orgAccent: brand ? brand.band : null,      // BUILD-64: portal primary, never Steward green
+    orgAccentFg: brand ? brand.bandFg : null,
+    orgLogo: brand ? brand.logoDataUri : null,
     orgEin: org.ein || "",
     orgAddress: org.receipt_address || "",
     signatureName: org.receipt_signature_name || "",
@@ -5079,12 +5091,13 @@ async function issueYearEndStatement(org, donor, year, { send = true } = {}) {
   const totalDeductible = lineItems.reduce((s, i) => s + i.deductibleAmount, 0);
 
   const receiptNumber = await allocateReceiptNumber(org.id);
+  const brand = await resolveOrgBrandTheme(org.id).catch(() => null); // BUILD-64: shared resolver, frozen at issue
   const snapshot = {
     type: "year_end",
     orgLegalName: org.legal_name || org.name,
-    orgAccent: org.brand_accent || null,       // BUILD-13: branded receipt header
-    orgAccentFg: org.brand_accent_fg || null,
-    orgLogo: org.logo_data || null,
+    orgAccent: brand ? brand.band : null,      // BUILD-64: portal primary, never Steward green
+    orgAccentFg: brand ? brand.bandFg : null,
+    orgLogo: brand ? brand.logoDataUri : null,
     orgEin: org.ein || "",
     orgAddress: org.receipt_address || "",
     signatureName: org.receipt_signature_name || "",
@@ -8019,24 +8032,75 @@ async function unsubscribeEmailFooterHtml(email, orgId, source) {
   </div>`;
 }
 
-// Branded email header band (BUILD-13 Part 2) — the org's logo + name on its
-// accent color, above the message body. Tasteful: one slim band, still inside
-// Steward's typographic frame. Falls back to a plain org-name band (Steward
-// green) when no accent is set, and to nothing if the org can't be resolved.
-// async (a DB lookup), like unsubscribeEmailFooterHtml — every caller awaits.
+// ── BUILD-64 — ONE theme resolver for every donor-facing artifact ──────────
+// The give page and the portal read the org's identity from portal_settings
+// (portalCardTheme + display_name). Before BUILD-64 the EMAIL header band and
+// the receipt PDF read a SECOND, unrelated copy — orgs.brand_accent (the old
+// BUILD-13 white-label), which was unset on the demo orgs and fell back to
+// Steward green. Result: a terracotta org's receipt arrived with a green band.
+// resolveOrgBrandTheme is now THE resolver every off-web artifact reads, so an
+// org's mail and documents carry the same colors, logo and white-label name as
+// its portal — never a second copy, never Steward's mark. (Legal fields — the
+// receipt's legal_name/EIN — stay on orgs; only the BRAND surface moves here.)
+async function resolveOrgBrandTheme(orgId) {
+  const rows = await query(
+    `SELECT o.name, o.legal_name, o.logo_data AS org_logo,
+            ps.display_name, ps.primary_color, ps.accent_color, ps.button_color,
+            ps.background_tint, ps.type_pairing, ps.card_style,
+            ps.logo_data AS ps_logo_data, ps.logo_url AS ps_logo_url
+       FROM orgs o LEFT JOIN portal_settings ps ON ps.org_id = o.id
+      WHERE o.id = ?`, [orgId]);
+  const r = rows[0] || {};
+  const card = portalCardTheme(r); // primary/accent/fg from portal_settings, designed-neutral default when unset
+  const isData = v => typeof v === "string" && /^data:image\/(png|jpe?g|gif|webp);base64,/.test(v);
+  // A logo we can embed inline (email <img>, PDF doc.image) MUST be base64.
+  const logoDataUri = [r.ps_logo_data, r.org_logo].find(isData) || null;
+  // An asset-URL logo (portal_settings.logo_url, e.g. /portal-assets/pa_…) can
+  // ride an email as an absolute src, but can't be embedded in the PDF.
+  const logoAbsUrl = (!logoDataUri && typeof r.ps_logo_url === "string" && r.ps_logo_url)
+    ? (r.ps_logo_url.startsWith("http") ? r.ps_logo_url : publicAppUrl() + r.ps_logo_url) : null;
+  const displayName = displayNameCase(String(r.display_name || "").trim() || r.name || "");
+  return {
+    band: card.primary, bandFg: card.primaryFg,
+    accent: card.accent, accentFg: card.accentFg,
+    logoDataUri, logoAbsUrl,
+    displayName,
+    legalName: r.legal_name || r.name || displayName,
+  };
+}
+
+// The donor-facing "From" — the org's name in the inbox, so a receipt reads as
+// coming from "CREO Arts", not a bare unfamiliar domain (BUILD-64 Part 2, the
+// "Now" half of sender identity; per-org sending DOMAINS are scoped separately
+// in BLOCKED-sending-domains.md). Header-injection-safe: no CR/LF/quotes/angles
+// in the display name. The address itself is unchanged (noreply@stewardapp.dev).
+const DONOR_MAIL_ADDR = () => process.env.DEMO_SMTP_FROM || "noreply@stewardapp.dev";
+function fromWithDisplayName(displayName, addr) {
+  const clean = String(displayName || "").replace(/[\r\n"<>]/g, "").trim().slice(0, 78);
+  return clean ? `${clean} <${addr}>` : addr;
+}
+async function donorFromAddress(orgId) {
+  const theme = await resolveOrgBrandTheme(orgId).catch(() => null);
+  return fromWithDisplayName(theme && theme.displayName, DONOR_MAIL_ADDR());
+}
+
+// Branded email header band (BUILD-13 Part 2, rewired in BUILD-64) — the org's
+// logo + white-label name on its OWN primary color (from the shared resolver
+// above), above the message body. Tasteful: one slim band, still inside
+// Steward's typographic frame. Falls back to a plain org-name band (the
+// designed-neutral portal default) when no theme is set, and to nothing if the
+// org can't be resolved. async (a DB lookup) — every caller awaits.
 async function brandEmailHeaderHtml(orgId) {
-  const rows = await query("SELECT name, legal_name, logo_data, brand_accent, brand_accent_fg FROM orgs WHERE id = ?", [orgId]);
-  const org = rows[0];
-  if (!org) return "";
+  const theme = await resolveOrgBrandTheme(orgId).catch(() => null);
+  if (!theme) return "";
   const esc = s => String(s || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-  const accent = org.brand_accent || "#1a6b4a";
-  const fg = org.brand_accent_fg || "#ffffff";
-  const name = esc(displayNameCase(org.legal_name || org.name || ""));
-  const logo = (org.logo_data && /^data:image\/(png|jpe?g|gif|webp);base64,/.test(org.logo_data))
-    ? `<img src="${org.logo_data}" alt="${name}" height="34" style="height:34px;max-width:150px;vertical-align:middle;border:0;display:inline-block;margin-right:10px;" />`
+  const name = esc(theme.displayName);
+  const src = theme.logoDataUri || theme.logoAbsUrl;
+  const logo = src
+    ? `<img src="${src}" alt="${name}" height="34" style="height:34px;max-width:150px;vertical-align:middle;border:0;display:inline-block;margin-right:10px;" />`
     : "";
-  return `<div style="background:${accent};padding:16px 22px;border-radius:12px 12px 0 0;font-family:'DM Sans',Helvetica,Arial,sans-serif;">
-    <span style="display:inline-block;vertical-align:middle;">${logo}</span><span style="color:${fg};font-size:17px;font-weight:700;vertical-align:middle;">${name}</span>
+  return `<div style="background:${theme.band};padding:16px 22px;border-radius:12px 12px 0 0;font-family:'DM Sans',Helvetica,Arial,sans-serif;">
+    <span style="display:inline-block;vertical-align:middle;">${logo}</span><span style="color:${theme.bandFg};font-size:17px;font-weight:700;vertical-align:middle;">${name}</span>
   </div>`;
 }
 
@@ -8325,7 +8389,7 @@ async function sendRecurringDonorEmail(org, donor, subject, bodyText, { actionUr
     </div>`;
   try {
     const { error: sendErr } = await resend.emails.send({
-      from: process.env.DEMO_SMTP_FROM || "noreply@stewardapp.dev",
+      from: await donorFromAddress(org.id), // BUILD-64: the org's name in the inbox
       to: donor.email, subject: `${subject} — ${orgName}`, html,
     });
     if (sendErr) { console.error("[recurring] donor notification error:", sendErr.message); return false; }
@@ -8441,7 +8505,7 @@ async function sendDunningEmail(org, donor, subscriptionRow) {
     + applyDunningTokens(org.recurring_dunning_body || DEFAULT_DUNNING_BODY, tokenCtx)
     + portalLine
     + await unsubscribeEmailFooterHtml(donor.email, org.id, "campaign");
-  const smtpFrom = process.env.DEMO_SMTP_FROM || "noreply@stewardapp.dev";
+  const smtpFrom = await donorFromAddress(org.id); // BUILD-64: the org's name in the inbox
   if (process.env.RESEND_API_KEY) {
     try {
       const { error: sendErr } = await resend.emails.send({
@@ -8473,7 +8537,7 @@ async function sendRecoveredThankYouEmail(org, donor, subscriptionRow) {
 <p>Thank you for sticking with us.</p>
 <p>With gratitude,<br/>${dfName}</p>`
     + await unsubscribeEmailFooterHtml(donor.email, org.id, "campaign");
-  const smtpFrom = process.env.DEMO_SMTP_FROM || "noreply@stewardapp.dev";
+  const smtpFrom = await donorFromAddress(org.id); // BUILD-64: the org's name in the inbox
   if (process.env.RESEND_API_KEY) {
     try {
       const { error: sendErr } = await resend.emails.send({
@@ -9141,6 +9205,7 @@ async function runCampaignSend(campaign, org, donors) {
 
       const year = String(new Date().getFullYear());
       const brandHeader = await brandEmailHeaderHtml(org.id); // BUILD-13 — once per send, not per recipient
+      const campaignFrom = smtpFrom ? fromWithDisplayName((await resolveOrgBrandTheme(org.id).catch(() => null))?.displayName, smtpFrom) : smtpFrom; // BUILD-64: org name in the inbox, resolved once
 
       for (const donor of donors) {
         const decision = await donorMailDecision("campaign", donor.email, org.id);
@@ -9182,7 +9247,8 @@ async function runCampaignSend(campaign, org, donors) {
         try {
           if (resendApiKey && smtpFrom) {
             const { error: sendError } = await resend.emails.send({
-              from: smtpFrom, to: donor.email,
+              from: campaignFrom, // BUILD-64: org name in the inbox (resolved once per send)
+              to: donor.email,
               subject: campaign.subject || "",
               html: htmlFull,
               headers: unsubscribeHeaders(donor.email, org.id, "campaign"),
@@ -9873,7 +9939,7 @@ function escapeHtml(s) {
 async function sendFundraiserManageEmail(org, fundraiser, givingPage, manageUrl) {
   if (!process.env.RESEND_API_KEY) return false;
   try {
-    const from = process.env.DEMO_SMTP_FROM || "onboarding@resend.dev";
+    const from = await donorFromAddress(org.id); // BUILD-64: the org's name in the inbox
     const { error } = await resend.emails.send({
       from,
       to: fundraiser.email,
@@ -12460,9 +12526,11 @@ async function processSequences() {
           : `<p>${bodyRaw.replace(/\n\n+/g, "</p><p>").replace(/\n/g, "<br>")}</p>`)
           + await unsubscribeEmailFooterHtml(recipient.email, enr.org_id, "sequence");
         const founderEmail = process.env.FOUNDER_EMAIL || "noreply@stewardapp.dev";
+        // BUILD-64: a donor-facing sequence carries the org's name in the inbox;
+        // the onboarding drip is founder→staff mail and keeps the founder From.
         const smtpFrom = enr.seq_trigger === "onboarding"
           ? founderEmail
-          : (process.env.DEMO_SMTP_FROM || "noreply@stewardapp.dev");
+          : await donorFromAddress(enr.org_id);
         // W-4 log honesty: the "Sequence: … Step N" interaction and the step
         // advance happen ONLY after a real delivery. A provider failure skips
         // both — next_send_at is untouched, so the next tick retries, and no
@@ -12817,7 +12885,11 @@ app.get("/donors/:id/impact-summary/pdf", requireAuth, wrap(async (req, res) => 
   const { orgId } = req.user;
   const [donor] = await query("SELECT * FROM donors WHERE id = ? AND org_id = ? AND deleted_at IS NULL", [req.params.id, orgId]);
   if (!donor) return res.status(404).json({ error: "Donor not found" });
-  const [org] = await query("SELECT name FROM orgs WHERE id = ?", [orgId]);
+  // BUILD-64: a donor-facing document (printable/mailable) — carries the org's
+  // OWN identity from the shared resolver, never a hardcoded Steward-green band
+  // and never the staff-side "(Demo)" name (white-label).
+  const brand = await resolveOrgBrandTheme(orgId).catch(() => null);
+  const org = { name: brand ? brand.displayName : "" };
 
   const totalGiving = Number(donor.total_giving) || 0;
   const giftCount = Number(donor.gift_count) || 0;
@@ -12858,6 +12930,12 @@ app.get("/donors/:id/impact-summary/pdf", requireAuth, wrap(async (req, res) => 
     doc.on("end", () => resolve(Buffer.concat(chunks)));
     doc.on("error", reject);
 
+    // BUILD-64: header band + accent = the org's OWN theme (shared resolver);
+    // GREEN stays only as the money-figure color (money = green semantics, same
+    // as the receipt PDF), never the band.
+    const BAND   = brand ? brand.band : "#1a6b4a";
+    const BANDFG = brand ? brand.bandFg : "#ffffff";
+    const BANDSUB = BANDFG === "#ffffff" ? "#ffffffcc" : "#0f1a12aa";
     const GREEN = "#1a6b4a";
     const INK   = "#1a1a1a";
     const INK3  = "#6b7280";
@@ -12866,10 +12944,10 @@ app.get("/donors/:id/impact-summary/pdf", requireAuth, wrap(async (req, res) => 
     const fmtD  = n => "$" + (parseFloat(n) || 0).toLocaleString("en-US", { maximumFractionDigits: 0 });
     const genDate = now.toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" });
 
-    doc.rect(0, 0, PW, 96).fill(GREEN);
-    doc.font("Helvetica").fontSize(9).fillColor("#a7f3d0").text("I M P A C T   S U M M A R Y", 50, 22);
-    doc.font("Helvetica-Bold").fontSize(24).fillColor("#fff").text(donor.name || "Valued Donor", 50, 38);
-    doc.font("Helvetica").fontSize(10).fillColor("#d1fae5").text(org.name, 50, 70);
+    doc.rect(0, 0, PW, 96).fill(BAND);
+    doc.font("Helvetica").fontSize(9).fillColor(BANDSUB).text("I M P A C T   S U M M A R Y", 50, 22);
+    doc.font("Helvetica-Bold").fontSize(24).fillColor(BANDFG).text(donor.name || "Valued Donor", 50, 38);
+    doc.font("Helvetica").fontSize(10).fillColor(BANDSUB).text(org.name, 50, 70);
 
     let y = 128;
     doc.font("Helvetica-Bold").fontSize(12).fillColor(INK).text("Giving Summary", 50, y); y += 20;
@@ -13269,7 +13347,7 @@ app.post("/milestone-drafts/:id/send", requireAuth, requireAdmin, checkWriteAcce
   const decision = await donorMailDecision("milestone", donor.email, req.user.orgId);
   if (!decision.send) return res.status(400).json({ error: `Cannot send — ${decision.reason === "deceased" ? "this donor is marked deceased" : decision.reason === "do_not_contact" ? "this donor is marked do-not-contact" : `this donor is suppressed (${decision.reason})`}` });
 
-  const smtpFrom = process.env.DEMO_SMTP_FROM || "noreply@stewardapp.dev";
+  const smtpFrom = await donorFromAddress(req.user.orgId); // BUILD-64: org name in the inbox
   if (process.env.RESEND_API_KEY) {
     const bodyHtml = `<p>${draft.body.replace(/\n\n+/g, "</p><p>").replace(/\n/g, "<br>")}</p>`
       + await unsubscribeEmailFooterHtml(donor.email, req.user.orgId, "sequence");
@@ -13714,7 +13792,7 @@ async function sendWorkflowEmail(org, donor, subject, bodyHtml) {
   const decision = await donorMailDecision("workflow", donor.email, org.id);
   if (!decision.send) return false;
   const html = await brandEmailHeaderHtml(org.id) + bodyHtml + await unsubscribeEmailFooterHtml(donor.email, org.id, "campaign");
-  const from = process.env.DEMO_SMTP_FROM || "noreply@stewardapp.dev";
+  const from = await donorFromAddress(org.id); // BUILD-64: the org's name in the inbox
   if (process.env.RESEND_API_KEY) {
     try {
       const { error } = await resend.emails.send({ from, to: donor.email, subject, html, headers: unsubscribeHeaders(donor.email, org.id, "campaign") });
@@ -13820,10 +13898,10 @@ async function notifyUserOnce({ org, userId, email, eventKey, channel, prefKind,
 // stored body_html is the FINAL rendered email, so the retry resends it raw —
 // no org lookup, no notification_sends dedup (these are per-request emails).
 const DONOR_EMAIL_ORG = "donor-network";
-async function sendRawEmail(toEmail, subject, html) {
+async function sendRawEmail(toEmail, subject, html, fromOverride) {
   if (!toEmail) return false;
   if (!process.env.RESEND_API_KEY) return true; // no email configured — nothing to deliver
-  const from = process.env.DEMO_SMTP_FROM || "noreply@stewardapp.dev";
+  const from = fromOverride || DONOR_MAIL_ADDR(); // BUILD-64: org-named From when caller supplies one
   try {
     const { error } = await resend.emails.send({ from, to: toEmail, subject, html });
     if (error) { console.error("[donor-email] send error:", error.message); return false; }
@@ -13834,8 +13912,8 @@ async function sendRawEmail(toEmail, subject, html) {
 // failed send lands in notification_failures (retried on the 5-min tick,
 // surfaced on /health.notifications.failedPending) — never fire-and-forget:
 // a silently-lost reset email locks a donor out.
-async function sendDonorLifecycleEmail(kind, toEmail, subject, html) {
-  const ok = await sendRawEmail(toEmail, subject, html);
+async function sendDonorLifecycleEmail(kind, toEmail, subject, html, fromOverride) {
+  const ok = await sendRawEmail(toEmail, subject, html, fromOverride);
   if (ok) return true;
   try {
     await run(
@@ -15432,7 +15510,7 @@ async function sendPledgeReminderEmail(org, donor, pledgeRow) {
   const subject = applyPledgeReminderTokens(org.pledge_reminder_subject || DEFAULT_PLEDGE_REMINDER_SUBJECT, tokenCtx);
   const bodyHtml = applyPledgeReminderTokens(org.pledge_reminder_body || DEFAULT_PLEDGE_REMINDER_BODY, tokenCtx)
     + await unsubscribeEmailFooterHtml(donor.email, org.id, "campaign");
-  const smtpFrom = process.env.DEMO_SMTP_FROM || "noreply@stewardapp.dev";
+  const smtpFrom = await donorFromAddress(org.id); // BUILD-64: org name in the inbox
   if (process.env.RESEND_API_KEY) {
     try {
       const { error: sendErr } = await resend.emails.send({
@@ -17285,7 +17363,7 @@ async function sendPortalMagicLinkEmail(org, email, token) {
   // (retried on the tick, surfaced on /health) — no more console-only failure.
   // The stored html is final-rendered, so a retry resends it verbatim; a link
   // that expires before a retry lands is harmless (the donor re-requests).
-  await sendDonorLifecycleEmail("magic_link", email, `Your sign-in link — ${theme.displayName}`, html);
+  await sendDonorLifecycleEmail("magic_link", email, `Your sign-in link — ${theme.displayName}`, html, fromWithDisplayName(theme.displayName, DONOR_MAIL_ADDR())); // BUILD-64: org name in the inbox
 }
 
 // Donor-facing confirmation for every money mutation (R-8). Transactional —
@@ -17302,7 +17380,7 @@ async function sendPortalMutationEmail(org, email, subject, bodyText) {
     </div>`;
   try {
     const { error: sendErr } = await resend.emails.send({
-      from: process.env.DEMO_SMTP_FROM || "noreply@stewardapp.dev",
+      from: fromWithDisplayName(theme.displayName, DONOR_MAIL_ADDR()), // BUILD-64: org name in the inbox
       to: email, subject: `${subject} — ${theme.displayName}`, html,
     });
     if (sendErr) console.error("[portal] mutation email error:", sendErr.message);
@@ -17489,6 +17567,7 @@ app.get("/portal/:orgSlug/me", requirePortalSession, wrap(async (req, res) => {
     query(
       `SELECT g.id, g.date, g.amount, g.type, COALESCE(c.donor_facing_name, c.name, g.campaign) AS campaign,
               f.name AS fund, g.stripe_payment_id IS NOT NULL AS online,
+              g.recurring_subscription_id IS NOT NULL AS recurring,
               r.id AS receipt_id, r.receipt_number
        FROM gifts g
        LEFT JOIN campaigns c ON c.id = g.campaign_id AND c.org_id = g.org_id
@@ -17625,6 +17704,7 @@ app.get("/portal/:orgSlug/me", requirePortalSession, wrap(async (req, res) => {
     gifts: gifts.map(g => ({
       id: g.id, date: g.date, amount: parseFloat(g.amount) || 0, type: g.type,
       campaign: g.campaign || null, fund: g.fund || null, online: g.online === true,
+      recurring: g.recurring === true, // BUILD-64 Part 4 — mark recurring gifts in the history
       receiptId: g.receipt_id || null, receiptNumber: g.receipt_number || null,
     })),
     receipts: receipts.map(r => ({
