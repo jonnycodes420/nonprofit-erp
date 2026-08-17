@@ -145,6 +145,8 @@ export function adaptDonor(d) {
     employer:      d.employer ?? null,
     matchingGift:  d.matching_gift ?? null,
     householdId:   d.household_id ?? null,
+    deceased:      d.deceased === true,          // BUILD-58 Part 2 — safety flags
+    doNotContact:  d.do_not_contact === true,
   };
 }
 

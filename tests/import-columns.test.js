@@ -160,8 +160,11 @@ const uniq = () => Math.random().toString(36).slice(2, 8);
     // The RECOMMENDED menu entry must open the magical DonorImport path (the
     // one with shape detection + the Import-both CTA), not the legacy
     // CombinedImport whose multi-sheet picker forces one sheet.
-    const recLine = donorsSrc.split("\n").find(l => /badge:"Recommended"/.test(l)) || "";
-    ok("Recommended menu entry routes to the magical import (DonorImport)", /MagicImport|setShowImportHistory|withHistory/.test(recLine), recLine.trim().slice(0, 160));
+    // The menu's Recommended act still flips showCombinedImport (pinned by
+    // brand-allowlist/setup-checklist) — what changed is WHAT RENDERS: the
+    // magical DonorImport (withHistory), never the legacy one-sheet picker.
+    ok("Recommended menu entry routes to the magical import (DonorImport)",
+      /showCombinedImport&&<DonorImport withHistory/.test(donorsSrc) && !/function CombinedImport/.test(donorsSrc), null);
     ok("the summary renders the column accounting (classifyColumns wired in)", /classifyColumns/.test(donorsSrc), null);
     ok("CSV parsing goes through decodeSpreadsheetBytes (encoding fix wired in)", /decodeSpreadsheetBytes/.test(donorsSrc), null);
     ok("buildBothPayload builds gift items through the accounted ledger builder", /buildGiftItemsFromLedger/.test(donorsSrc), null);

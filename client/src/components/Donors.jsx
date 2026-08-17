@@ -30,7 +30,7 @@ import { T, fmt, fmtFull, daysDiff, SC, askClaude, STAGES, STAGE_ACTION, TIER_CO
 // profile button, and modal render below, and add `VoiceMemoModal` back to
 // the import above).
 import { DonorMap } from "./DonorMap";
-import { detectImportShape, groupTransactions, shapeLabel, YEAR_HDR_PAT, detectWorkbookRoles, pickMatchKey, linkGiftsToDonors, detectOwnerColumn, matchOwnersToUsers, applyOwnerAssignment, groupOwnerMatches, normalizeName } from "../lib/importShape";
+import { detectImportShape, groupTransactions, shapeLabel, YEAR_HDR_PAT, detectWorkbookRoles, pickMatchKey, linkGiftsToDonors, detectOwnerColumn, matchOwnersToUsers, applyOwnerAssignment, groupOwnerMatches, normalizeName, normalizeDate, normalizeMoney, normalizeEmail, detectFlagColumns, parseBoolFlag, classifyColumns, decodeSpreadsheetBytes, buildGiftItemsFromLedger } from "../lib/importShape";
 
 // ── CSV Import helpers ─────────────────────────────────────────────────────
 // ── Import field registry ──────────────────────────────────────────────────
@@ -50,6 +50,11 @@ const CSV_FIELDS = [
   // raw cell value is matched to an org user (email→name) before submit; on Core
   // it's ignored server-side. Labels mirror importShape.js's OWNER_HDR_PAT.
   { key:"owner",     labels:["assigned officer","assigned to","owner","solicitor","gift officer","relationship manager","account manager","managed by","assigned fundraiser"] },
+  // BUILD-58 Part 2 — safety flags, never silently discarded again. Values
+  // parse through parseBoolFlag; deceased blocks ALL outbound mail,
+  // doNotContact blocks marketing (donorMailDecision, server-side).
+  { key:"deceased",     labels:["deceased","is deceased"] },
+  { key:"doNotContact", labels:["do not contact","do not solicit","do not mail","do not email","dnc","dns","no contact"] },
 ];
 const VALID_IMPORT_KEYS = new Set([...CSV_FIELDS.map(f => f.key), "_firstName", "_lastName"]);
 const IMPORT_STAGES = ["prospect","qualify","cultivate","solicit","steward","lapsed"];
@@ -71,6 +76,11 @@ const NEGATOR_PHRASES = ["do not", "don't", "opt out", "opt-out", "unsubscribe",
 function guessField(header) {
   if (!header || !String(header).trim()) return "";
   const h = String(header).toLowerCase().trim();
+  // BUILD-58 Part 2 — the flag columns come FIRST: "Do Not Contact" used to
+  // hit the negator list below and be silently dropped from the mapping.
+  const flags = detectFlagColumns([header]);
+  if (flags.deceasedCol) return "deceased";
+  if (flags.doNotContactCol) return "doNotContact";
   // Reject headers that signal a negation/flag ("do not email", "opt out of email", etc.)
   if (NEGATOR_PHRASES.some(n => h.includes(n))) return "";
   // Separate first/last name columns → internal keys combined into name on build
@@ -107,66 +117,9 @@ function inferStage(total, lastGiftStr, hasContactInfo) {
 
 const STAGE_COLORS = Object.fromEntries(STAGES.map(s => [s.id, s.color]));
 
-// ── Normalization helpers ──────────────────────────────────────────────────
-function normalizeDate(val) {
-  if (val === null || val === undefined || val === "") return { value:null, warn:null };
-  if (val instanceof Date) {
-    return isNaN(val) ? { value:null, warn:"invalid date" } : { value:val.toISOString().split("T")[0], warn:null };
-  }
-  const s = String(val).trim();
-  if (!s) return { value:null, warn:null };
-  // Excel serial (5-digit number > 25569 = 1970-01-01)
-  if (/^\d{5}$/.test(s)) {
-    const n = parseInt(s);
-    if (n > 25569 && n < 60000) {
-      const d = new Date((n - 25569) * 86400000);
-      if (!isNaN(d)) return { value:d.toISOString().split("T")[0], warn:null };
-    }
-  }
-  // ISO YYYY-MM-DD
-  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) {
-    const d = new Date(s + "T12:00:00Z");
-    if (!isNaN(d)) return { value:s, warn:null };
-  }
-  // MM/DD/YYYY or M/D/YYYY
-  const mdy = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
-  if (mdy) {
-    const iso = `${mdy[3]}-${mdy[1].padStart(2,"0")}-${mdy[2].padStart(2,"0")}`;
-    const d = new Date(iso + "T12:00:00Z");
-    if (!isNaN(d)) return { value:iso, warn:null };
-  }
-  // YYYY/MM/DD
-  const ymd = s.match(/^(\d{4})\/(\d{2})\/(\d{2})$/);
-  if (ymd) {
-    const iso = `${ymd[1]}-${ymd[2]}-${ymd[3]}`;
-    const d = new Date(iso + "T12:00:00Z");
-    if (!isNaN(d)) return { value:iso, warn:null };
-  }
-  // "Jan 2023" / "January 2023"
-  const monYear = s.match(/^([A-Za-z]+)\s+(\d{4})$/);
-  if (monYear) {
-    const d = new Date(`${monYear[1]} 1, ${monYear[2]}`);
-    if (!isNaN(d)) return { value:d.toISOString().split("T")[0], warn:null };
-  }
-  // Native parse as last resort (guard against bare 4-digit years)
-  if (!/^\d{4}$/.test(s)) {
-    const d = new Date(s);
-    if (!isNaN(d) && d.getFullYear() > 1900 && d.getFullYear() < 2100)
-      return { value:d.toISOString().split("T")[0], warn:null };
-  }
-  return { value:null, warn:`couldn't parse date '${s}'` };
-}
-
-function normalizeMoney(val) {
-  if (val === null || val === undefined || val === "") return { value:null, warn:null };
-  if (typeof val === "number" && !isNaN(val)) return { value:val, warn:null };
-  const s = String(val).trim();
-  if (!s) return { value:null, warn:null };
-  const n = parseFloat(s.replace(/[$,\s]/g, ""));
-  if (isNaN(n)) return { value:null, warn:`couldn't parse amount '${s}'` };
-  return { value:n, warn:null };
-}
-
+// ── Normalization helpers (normalizeDate/Money/Email) live in
+// lib/importShape.js — BUILD-58 Part 2 moved them so the pure ledger-row
+// builder there can use them and the Node suite can test the pipeline. ────
 function normalizeStage(val) {
   if (!val) return null;
   const v = String(val).toLowerCase().trim();
@@ -178,16 +131,6 @@ function normalizeStage(val) {
   if (v.includes("steward") || v.includes("current") || v.includes("active donor")) return "steward";
   if (v.includes("lapsed") || v.includes("inactive") || v.includes("lost") || v.includes("former")) return "lapsed";
   return null;
-}
-
-function normalizeEmail(val) {
-  if (!val) return { value:null, warn:null };
-  const s = String(val).trim();
-  if (!s) return { value:null, warn:null };
-  const lower = s.toLowerCase();
-  if (!lower.includes("@") || !lower.includes(".") || lower.length < 5)
-    return { value:lower, warn:`invalid email '${s}'` };
-  return { value:lower, warn:null };
 }
 
 // ── Shared file-parsing helper ────────────────────────────────────────────
@@ -223,14 +166,21 @@ async function parseFileToSheets(file, { onSingle, onMulti, onError }) {
       else { sheetsData.sort((a,b) => b.rowCount - a.rowCount); onMulti(sheetsData); }
     } catch(ex) { onError("Could not read Excel file: " + ex.message); }
   } else {
-    Papa.parse(file, {
-      header:true, skipEmptyLines:true, transformHeader: h => h.trim(),
-      complete: res => {
-        if (!res.data?.length) { onError("No rows found."); return; }
-        onSingle(res.meta.fields || [], res.data);
-      },
-      error: ex => onError("Parse error: " + ex.message),
-    });
+    // BUILD-58 Part 2 — decode the BYTES first: a windows-1252 CSV read as
+    // UTF-8 stores permanent mojibake ("Jos\u00e9" → "Jos\ufffd"). decodeSpreadsheetBytes
+    // tries strict UTF-8 and falls back to windows-1252.
+    try {
+      const buf = await file.arrayBuffer();
+      const text = decodeSpreadsheetBytes(new Uint8Array(buf));
+      Papa.parse(text, {
+        header:true, skipEmptyLines:true, transformHeader: h => h.trim(),
+        complete: res => {
+          if (!res.data?.length) { onError("No rows found."); return; }
+          onSingle(res.meta.fields || [], res.data);
+        },
+        error: ex => onError("Parse error: " + ex.message),
+      });
+    } catch (ex) { onError("Could not read file: " + ex.message); }
   }
 }
 
@@ -301,6 +251,8 @@ function buildDonorRows(parsed, mapping) {
     d._stageExplicit = !!_explicitStage;
     if (d.city)  d.city  = String(d.city).trim()  || null;
     if (d.state) d.state = String(d.state).trim()  || null;
+    if (d.deceased !== undefined) d.deceased = parseBoolFlag(d.deceased);
+    if (d.doNotContact !== undefined) d.doNotContact = parseBoolFlag(d.doNotContact);
     if (warnings.length) warned.push({ ...d, _warnings:warnings, _rowIndex:idx+2 });
     else ready.push(d);
   });
@@ -345,6 +297,8 @@ function buildCombinedRows(parsed, donorMapping, yearCols) {
     if (d.gifts !== undefined && d.gifts !== "") d.gifts = parseInt(d.gifts) || null;
     if (d.city)  d.city  = String(d.city).trim()  || null;
     if (d.state) d.state = String(d.state).trim()  || null;
+    if (d.deceased !== undefined) d.deceased = parseBoolFlag(d.deceased);
+    if (d.doNotContact !== undefined) d.doNotContact = parseBoolFlag(d.doNotContact);
     // Derive the year-column gifts BEFORE inferring stage, so stage reflects the
     // real giving history (sum + latest gift date) — not the mapped total/
     // last-gift columns, which a wide year-column file usually doesn't have.
@@ -499,31 +453,21 @@ function buildBothPayload(donorSheet, giftSheet, matchInfo, matchKey) {
   // Keep _stageExplicit (server honors it) + _donorId (linkGiftsToDonors strips it).
   const donors = [...ready, ...warned].map(({ _warnings, _rowIndex, ...d }) => d);
 
-  // One gift item per gift-ledger row.
+  // One gift item per gift-ledger row — through the ONE accounted builder
+  // (BUILD-58 Part 2): externalId rides each gift (the F-4 idempotency key
+  // this surface used to DROP), and every skipped row gets a stated reason.
   const tx = autoDetectTxMapping(giftSheet.headers, giftSheet.rows);
   const idCol = matchInfo.giftIdCol;
-  const items = (giftSheet.rows || []).map(row => {
-    const rawEmail = tx.donorEmail ? String(row[tx.donorEmail] || "").trim() : "";
-    const name     = tx.donorName  ? String(row[tx.donorName]  || "").trim() : "";
-    const donorId  = idCol ? String(row[idCol] || "").trim() : "";
-    let gift = null;
-    if (tx.amount) {
-      const { value: amtVal } = normalizeMoney(row[tx.amount]);
-      const amt = Math.round(amtVal || 0);
-      if (amt > 0) {
-        const { value: parsedDate } = normalizeDate(tx.date ? row[tx.date] : "");
-        gift = {
-          amount: amt,
-          date: parsedDate || new Date().toISOString().split("T")[0],
-          type: tx.type ? (String(row[tx.type] || "").toLowerCase() || "cash") : "cash",
-          campaign: tx.campaign ? String(row[tx.campaign] || "") : "",
-          notes: tx.notes ? String(row[tx.notes] || "") : "",
-        };
-      }
-    }
-    const { value: email } = normalizeEmail(rawEmail);
-    return { email: email || "", name, donorId, gift };
-  });
+  const { items, report } = buildGiftItemsFromLedger(giftSheet.rows || [], tx, idCol);
+
+  // Column accounting for BOTH sheets (the class fix): mapped / deliberately
+  // ignored (year columns — history comes from the gift sheet) / unrecognized.
+  const yearIgnored = (donorSheet.headers || []).filter(h => YEAR_HDR_PAT.test(String(h)));
+  const donorColumns = classifyColumns(donorSheet.headers || [], donorMapping, yearIgnored);
+  const giftMapping = {};
+  Object.entries(tx).forEach(([role, h]) => { if (h) giftMapping[h] = role; });
+  if (idCol) giftMapping[idCol] = giftMapping[idCol] || "donor id (match key)";
+  const giftColumns = classifyColumns(giftSheet.headers || [], giftMapping, []);
 
   const linked = linkGiftsToDonors(donors, items, matchKey);
   return {
@@ -532,6 +476,8 @@ function buildBothPayload(donorSheet, giftSheet, matchInfo, matchKey) {
     donorWarned: warned.length,
     donorSkipped: skipped.length,
     giftRows: (giftSheet.rows || []).length,
+    rowReport: report,                           // negative/unparsable/zero rows, by count + reason
+    columnReports: { donorSheet: donorColumns, giftSheet: giftColumns },
   };
 }
 
@@ -725,7 +671,20 @@ export function DonorImport({ onClose, onImported, withHistory = false }) {
       const totals = await submitImportChunked(donors, gifts, (done,total) => setProgress({ done, total }));
       // Don't call onImported() here — the result screen must render first; its
       // Done button calls onImported() so the modal stays until dismissed.
-      setResult({ ...totals, warned:warnedCount, skipped:skippedCount, shape:effectiveShape });
+      // BUILD-58 Part 2 — the class fix: every column accounted for, by name.
+      const colReport = (() => {
+        const headers = parsed?.headers || [];
+        if (effectiveShape === "transaction") {
+          const m = {};
+          Object.entries(txMap).forEach(([role, h]) => { if (h) m[h] = role; });
+          return classifyColumns(headers, m, []);
+        }
+        const m = { ...mapping };
+        const ignored = [];
+        if (effectiveShape === "wide") yearCols.forEach(yc => { if (yc.enabled) m[yc.col] = "gift (" + yc.col + ")"; else ignored.push(yc.col); });
+        return classifyColumns(headers, m, ignored);
+      })();
+      setResult({ ...totals, warned:warnedCount, skipped:skippedCount, shape:effectiveShape, columnReport: colReport });
     } catch (e) {
       console.error("IMPORT FAILED:", e);
       if (e.error === "record_limit") { setUpgradeInfo(e); }
@@ -778,6 +737,8 @@ export function DonorImport({ onClose, onImported, withHistory = false }) {
         shape: "both",
         unmatched: bothPayload.unmatchedGifts,
         newDonors: bothPayload.newDonors,
+        columnReports: bothPayload.columnReports,
+        rowReport: bothPayload.rowReport,
       });
     } catch (e) {
       console.error("IMPORT-BOTH FAILED:", e);
@@ -974,6 +935,30 @@ export function DonorImport({ onClose, onImported, withHistory = false }) {
             {result.warned > 0    && <> · <strong>{result.warned}</strong> imported with warnings</>}
             {result.skipped > 0   && <> · <strong>{result.skipped}</strong> skipped (no name or email)</>}
           </div>
+          {/* BUILD-58 Part 2 — nothing in the file vanishes silently: every
+              column is mapped, deliberately ignored, or called out as
+              unrecognized; every skipped ROW has a stated reason. */}
+          {(result.columnReport || result.columnReports) && (() => {
+            const sections = result.columnReports
+              ? [["Donor sheet", result.columnReports.donorSheet], ["Gift sheet", result.columnReports.giftSheet]]
+              : [["Your file", result.columnReport]];
+            const rr = result.rowReport;
+            const rowNotes = rr ? [
+              rr.negativeRows > 0 && `${rr.negativeRows} negative-amount row${rr.negativeRows === 1 ? "" : "s"} not imported (refunds/adjustments — Steward has no negative-gift model)`,
+              rr.unparsableAmountRows > 0 && `${rr.unparsableAmountRows} row${rr.unparsableAmountRows === 1 ? "" : "s"} with unreadable amounts not imported`,
+              rr.zeroAmountRows > 0 && `${rr.zeroAmountRows} zero-amount row${rr.zeroAmountRows === 1 ? "" : "s"} not imported`,
+            ].filter(Boolean) : [];
+            return <div style={{textAlign:"left",background:T.bg2,border:`1px solid ${T.bg3}`,borderRadius:10,padding:"12px 16px",marginBottom:24,fontSize:12,lineHeight:1.7}}>
+              <div style={{fontSize:10,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",color:T.ink3,marginBottom:6}}>Every column accounted for</div>
+              {sections.map(([label, c]) => c && <div key={label} style={{marginBottom:6}}>
+                <strong style={{color:T.ink}}>{label}:</strong>{" "}
+                <span style={{color:T.ink2}}>{c.mapped.map(m => `${m.header} → ${m.field}`).join(" · ") || "no columns mapped"}</span>
+                {c.ignored.length > 0 && <div style={{color:T.ink3}}>Not imported (by design): {c.ignored.join(" · ")}</div>}
+                {c.unrecognized.length > 0 && <div style={{color:T.terracotta,fontWeight:600}}>Not imported — unrecognized: {c.unrecognized.join(" · ")}</div>}
+              </div>)}
+              {rowNotes.length > 0 && <div style={{borderTop:`1px solid ${T.bg3}`,paddingTop:6,marginTop:6,color:T.ink2}}>{rowNotes.map((n,i) => <div key={i}>{n}</div>)}</div>}
+            </div>;
+          })()}
           {hasBatchErrors && (
             <div style={{background:"#f6e3dd",border:"1px solid #eac6b8",borderRadius:10,padding:"10px 14px",marginBottom:24,textAlign:"left",fontSize:12,color:"#8a3a24"}}>
               <strong>Batch errors — some rows may not have been inserted:</strong>
@@ -1965,340 +1950,6 @@ function GiftHistoryImport({ donors, onClose, onImported }) {
         </>)}
 
       </div>
-    </div>
-  );
-}
-
-// ── CombinedImport ─────────────────────────────────────────────────────────
-function CombinedImport({ onClose, onImported }) {
-  const [step, setStep]             = useState("upload");
-  const [csvText, setCsvText]       = useState("");
-  const [srcFile, setSrcFile]       = useState(null); // the uploaded File (name/size for the file tile)
-  const [xlsxSheets, setXlsxSheets] = useState(null);
-  const [parsed, setParsed]         = useState(null);
-  const [err, setErr]               = useState("");
-
-  const [donorMapping, setDonorMapping]     = useState({});
-  const [yearCols, setYearCols]             = useState([]);
-  const [yearConvention, setYearConvention] = useState("dec31");
-
-  const [combinedRows, setCombinedRows] = useState([]);
-  const [loading, setLoading]   = useState(false);
-  const [result, setResult]     = useState(null);
-  const [upgradeInfo, setUpgradeInfo] = useState(null);
-
-  const overlay = { position:"fixed",inset:0,background:"rgba(15,26,18,0.72)",zIndex:300,display:"flex",alignItems:"center",justifyContent:"center",padding:20 };
-  const modal   = { background:T.white,border:"1px solid "+T.bg3,borderRadius:20,width:"100%",maxWidth:720,maxHeight:"90vh",overflowY:"auto",padding:28,boxSizing:"border-box" };
-  const inp     = { width:"100%",background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"9px 12px",color:T.ink,fontSize:13,outline:"none",fontFamily:"inherit",boxSizing:"border-box" };
-
-  // Non-year headers only — used for donor field mapping
-  const donorHeaders = parsed?.headers.filter(h => !YEAR_HDR_PAT.test(h)) ?? [];
-
-  const applyParsed = (headers, rows) => {
-    const nonYear = headers.filter(h => !YEAR_HDR_PAT.test(h));
-    setDonorMapping(buildAutoMapping(nonYear, rows));
-    const cfg = autoDetectWideConfig(headers, rows);
-    setYearCols(cfg.yearCols.map(col => ({ col, date: yearColToDate(col,"dec31"), enabled:true })));
-    setParsed({ headers, rows }); setXlsxSheets(null); setErr("");
-    setStep("configure");
-  };
-
-  const handleFile = async (e) => {
-    const file = e.target.files?.[0]; if (!file) return;
-    setErr("");
-    await parseFileToSheets(file, { onSingle:applyParsed, onMulti:s=>setXlsxSheets(s), onError:msg=>setErr(msg) });
-  };
-
-  const doPaste = () => {
-    if (!csvText.trim()) return;
-    Papa.parse(csvText, {
-      header:true, skipEmptyLines:true, transformHeader:h=>h.trim(),
-      complete: res => { if (!res.data?.length) { setErr("No rows found."); return; } applyParsed(res.meta.fields||[], res.data); },
-      error: ex => setErr("Parse error: " + ex.message),
-    });
-  };
-
-  const onConventionChange = (val) => {
-    setYearConvention(val);
-    setYearCols(cols => cols.map(yc => ({ ...yc, date: yearColToDate(yc.col, val) })));
-  };
-
-  const buildPreview = () => {
-    setErr("");
-    if (!parsed) return;
-    const rows = buildCombinedRows(parsed, donorMapping, yearCols);
-    if (!rows.some(r => !r.skipped)) { setErr("No valid rows — map a name or email column."); return; }
-    setCombinedRows(rows);
-    setStep("preview");
-  };
-
-  const stats = useMemo(() => {
-    const valid   = combinedRows.filter(r => !r.skipped);
-    const skipped = combinedRows.filter(r => r.skipped).length;
-    const warned  = valid.filter(r => r.warnings.length > 0).length;
-    const gifts   = valid.reduce((s,r) => s + r.gifts.length, 0);
-    const stageCounts = {};
-    valid.forEach(r => { const s = r.donor.stage; if (s) stageCounts[s] = (stageCounts[s] || 0) + 1; });
-    return { donors:valid.length, gifts, warned, skipped, stageCounts };
-  }, [combinedRows]);
-
-  const doImport = async () => {
-    const validRows = combinedRows.filter(r => !r.skipped);
-    const donors = validRows.map(({donor}) => { const {_warnings,_rowIndex,...d}=donor; return d; });
-    const gifts  = [];
-    validRows.forEach(({gifts:rg}, idx) => rg.forEach(g => gifts.push({ ...g, donorIndex:idx })));
-    if (!donors.length) { setErr("No donors to import."); return; }
-    setLoading(true); setErr("");
-    try {
-      const res = await apiFetch("/donors/import-combined", { method:"POST", body:JSON.stringify({ donors, gifts }) });
-      setResult(res); setStep("result");
-    } catch(e) {
-      if (e.error === "record_limit") setUpgradeInfo(e);
-      else setErr(e.message || "Import failed.");
-    }
-    setLoading(false);
-  };
-
-  // Result screen
-  if (step === "result" && result) {
-    return (
-      <div style={overlay} className="modal-sheet-overlay">
-        <div style={{...modal,textAlign:"center"}} className="modal-sheet-inner">
-          <div style={{fontSize:36,marginBottom:12}}>✓</div>
-          <div style={{fontFamily:"'DM Serif Display',Georgia,serif",fontSize:22,fontWeight:400,color:T.ink,marginBottom:12,letterSpacing:"-0.01em"}}>Import complete.</div>
-          <div style={{fontSize:14,color:T.ink3,marginBottom:20,lineHeight:1.8}}>
-            <strong style={{color:T.ink}}>{result.created}</strong> donors created &nbsp;·&nbsp;
-            <strong style={{color:T.ink}}>{result.giftsInserted}</strong> gifts attached
-            {result.duplicates>0 && <> &nbsp;·&nbsp; <strong>{result.duplicates}</strong> duplicates skipped</>}
-          </div>
-          {result.donorsUpdated>0 && <div style={{fontSize:12,color:T.ink3,marginBottom:24}}>{result.donorsUpdated} donor giving total{result.donorsUpdated!==1?"s":""} recalculated.</div>}
-          <button onClick={onImported} style={{background:"#10b981",border:"none",borderRadius:10,padding:"12px 28px",color:"#fff",fontSize:14,fontWeight:700,cursor:"pointer"}}>Done</button>
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div style={overlay} className="modal-sheet-overlay">
-      <div style={modal} className="modal-sheet-inner">
-
-        {/* Header */}
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:20}}>
-          <div>
-            <div style={{fontSize:18,fontWeight:800,color:T.ink}}>Import Donors + History</div>
-            <div style={{fontSize:13,color:T.ink3,marginTop:2}}>One wide file: donor info + year-column gifts — creates donors and attaches their history in one step</div>
-          </div>
-          <button onClick={onClose} style={{background:T.bg3,border:"none",borderRadius:8,padding:"6px 12px",color:T.ink3,cursor:"pointer",fontSize:13,flexShrink:0}}>✕ Close</button>
-        </div>
-
-        {/* The uploaded file as a tile — still a drop target for a replacement */}
-        {srcFile && (parsed || xlsxSheets) && (
-          <div style={{marginBottom:16}}>
-            <Uploader accept={[".csv",".tsv",".xlsx",".xls"]} acceptLabel=".csv, .tsv, .xlsx, .xls" compact readAs="none"
-              label="Replace file"
-              fileMeta={srcFile ? {
-                name: srcFile.name, size: srcFile.size,
-                detail: parsed ? `${parsed.rows.length.toLocaleString()} rows · donors + year columns`
-                  : `${xlsxSheets.length} sheets`,
-              } : null}
-              onFile={({file})=>{setSrcFile(file);handleFile({target:{files:[file]}});}}
-              onRemove={()=>{setSrcFile(null);setParsed(null);setXlsxSheets(null);setStep("upload");setErr("");}}/>
-          </div>
-        )}
-
-        {/* Upload */}
-        {step === "upload" && !xlsxSheets && (<>
-          <div style={{marginBottom:14}}>
-            <div style={{fontSize:11,fontWeight:700,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:6}}>Upload file</div>
-            <Uploader accept={[".csv",".tsv",".xlsx",".xls"]} acceptLabel=".csv, .tsv, .xlsx, .xls" compact readAs="none"
-              label="Drop your spreadsheet here, or browse"
-              fileMeta={null}
-              onFile={({file})=>{setSrcFile(file);handleFile({target:{files:[file]}});}}/>
-            <div style={{fontSize:11,color:T.ink3,marginTop:5}}>Wide format with donor columns (Name, Email…) and gift year columns (2021, 2022 Gift, Jan 2023…).</div>
-          </div>
-          <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:14}}>
-            <div style={{flex:1,height:1,background:T.bg3}}/><span style={{fontSize:12,color:T.ink3}}>or paste CSV text</span><div style={{flex:1,height:1,background:T.bg3}}/>
-          </div>
-          <textarea value={csvText} onChange={e=>setCsvText(e.target.value)} rows={5}
-            placeholder={"Name,Email,2021 Gift,2022 Gift,2023 Gift\nJane Smith,jane@example.com,500,750,1000"}
-            style={{...inp,resize:"vertical",lineHeight:1.5,marginBottom:12}}/>
-          {err&&<div style={{color:"#b8593f",fontSize:12,marginBottom:10}}>{err}</div>}
-          <button onClick={doPaste} disabled={!csvText.trim()}
-            style={{background:csvText.trim()?T.gold500:T.bg2,border:"none",borderRadius:10,padding:"11px 20px",color:csvText.trim()?T.ink:T.ink3,fontSize:14,fontWeight:700,cursor:csvText.trim()?"pointer":"not-allowed",opacity:csvText.trim()?1:0.5}}>
-            Parse →
-          </button>
-        </>)}
-
-        {/* Sheet picker */}
-        {step === "upload" && xlsxSheets && (<>
-          <div style={{fontSize:14,fontWeight:700,color:T.ink,marginBottom:4}}>This workbook has {xlsxSheets.length} sheets with data.</div>
-          <div style={{fontSize:13,color:T.ink3,marginBottom:16}}>Pick the sheet to import.</div>
-          <div style={{display:"flex",flexDirection:"column",gap:8,marginBottom:16}}>
-            {xlsxSheets.map((s,i) => (
-              <div key={s.name} style={{display:"flex",alignItems:"center",justifyContent:"space-between",background:T.bg,border:"1px solid "+T.bg3,borderRadius:10,padding:"12px 16px"}}>
-                <div>
-                  <div style={{fontSize:14,fontWeight:600,color:T.ink}}>{s.name}</div>
-                  <div style={{fontSize:12,color:T.ink3,marginTop:2}}>{s.rowCount.toLocaleString()} rows · {s.headers.filter(Boolean).length} columns</div>
-                </div>
-                <button onClick={()=>applyParsed(s.headers,s.rows)}
-                  style={{background:"#1a6b4a",border:"none",borderRadius:8,padding:"8px 16px",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer"}}>
-                  {i===0?"Use this ←":"Select"}
-                </button>
-              </div>
-            ))}
-          </div>
-          <button onClick={()=>setXlsxSheets(null)} style={{background:"transparent",border:"1px solid "+T.bg3,borderRadius:10,padding:"9px 16px",color:T.ink3,fontSize:13,cursor:"pointer"}}>← Back</button>
-        </>)}
-
-        {/* Configure */}
-        {step === "configure" && parsed && (<>
-
-          <div style={{background:T.bg,borderRadius:10,padding:"10px 14px",marginBottom:16,fontSize:12,color:T.ink3}}>
-            {parsed.rows.length.toLocaleString()} rows · {parsed.headers.length} columns &nbsp;·&nbsp;
-            {donorHeaders.length} donor field{donorHeaders.length!==1?"s":""} · {yearCols.length} year column{yearCols.length!==1?"s":""}
-          </div>
-
-          {/* Donor field mapping */}
-          <div style={{marginBottom:16}}>
-            <div style={{fontSize:11,fontWeight:700,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:8}}>
-              Donor Field Mapping
-            </div>
-            {donorHeaders.length === 0
-              ? <div style={{fontSize:13,color:"#a97f22",background:"#f6eccf",borderRadius:8,padding:"10px 12px"}}>No non-year columns detected. This file may be gift-only — use "↑ Giving History" instead.</div>
-              : <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6}}>
-                  {donorHeaders.map(h => (
-                    <div key={h} style={{display:"flex",alignItems:"center",gap:6,background:donorMapping[h]?T.bg:"transparent",borderRadius:7,padding:"5px 8px",border:`1px solid ${donorMapping[h]?T.bg3:"transparent"}`}}>
-                      <span style={{fontSize:12,color:donorMapping[h]?T.ink:T.ink3,flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={h}>{h}</span>
-                      <select value={donorMapping[h]||""} onChange={e=>setDonorMapping(p=>({...p,[h]:e.target.value}))}
-                        style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:6,padding:"4px 6px",color:T.ink,fontSize:11,outline:"none",flexShrink:0}}>
-                        <option value="">— skip —</option>
-                        <option value="_firstName">firstName</option>
-                        <option value="_lastName">lastName</option>
-                        {CSV_FIELDS.map(f=><option key={f.key} value={f.key}>{f.key}</option>)}
-                      </select>
-                    </div>
-                  ))}
-                </div>
-            }
-          </div>
-
-          {/* Year columns */}
-          <div style={{marginBottom:16}}>
-            <div style={{fontSize:11,fontWeight:700,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:8}}>
-              Gift Year Columns — {yearCols.filter(yc=>yc.enabled).length}/{yearCols.length} enabled
-            </div>
-
-            {/* Convention toggle */}
-            <div style={{display:"flex",gap:8,marginBottom:10}}>
-              {[["dec31","Dec 31 (end of year)"],["first","Jan 1 (start of year)"]].map(([v,l]) => (
-                <button key={v} onClick={()=>onConventionChange(v)}
-                  style={{flex:1,background:yearConvention===v?T.bg2:"transparent",border:`1px solid ${yearConvention===v?T.greenDk:T.bg3}`,borderRadius:8,padding:"7px 12px",color:yearConvention===v?T.greenDk:T.ink3,fontSize:12,fontWeight:600,cursor:"pointer",textAlign:"left"}}>
-                  {l}
-                </button>
-              ))}
-            </div>
-
-            {yearCols.length === 0
-              ? <div style={{fontSize:13,color:T.ink3}}>No year-like columns found. Proceed to create donors without gift history, or go back and check your file.</div>
-              : <div style={{display:"flex",flexDirection:"column",gap:4}}>
-                  {yearCols.map((yc,i) => (
-                    <div key={yc.col} style={{display:"flex",alignItems:"center",gap:10,background:yc.enabled?T.bg:"transparent",border:`1px solid ${yc.enabled?T.bg3:"transparent"}`,borderRadius:8,padding:"7px 10px"}}>
-                      <input type="checkbox" checked={yc.enabled} onChange={e=>setYearCols(c=>c.map((x,j)=>j===i?{...x,enabled:e.target.checked}:x))} style={{cursor:"pointer"}}/>
-                      <span style={{flex:1,fontSize:13,color:yc.enabled?T.ink:T.ink3}}>{yc.col}</span>
-                      <span style={{fontSize:12,color:T.ink3}}>→</span>
-                      <input type="date" value={yc.date||""} onChange={e=>setYearCols(c=>c.map((x,j)=>j===i?{...x,date:e.target.value}:x))}
-                        style={{background:T.bg2,border:"1px solid "+T.bg3,borderRadius:6,padding:"4px 8px",color:T.ink,fontSize:12,outline:"none"}}/>
-                    </div>
-                  ))}
-                </div>
-            }
-          </div>
-
-          {err&&<div style={{color:"#b8593f",fontSize:12,marginBottom:10}}>{err}</div>}
-          <div style={{display:"flex",gap:10}}>
-            <button onClick={()=>{setParsed(null);setStep("upload");setErr("");}}
-              style={{background:"transparent",border:"1px solid "+T.bg3,borderRadius:10,padding:"11px 18px",color:T.ink3,fontSize:13,cursor:"pointer"}}>← Back</button>
-            <button onClick={buildPreview}
-              style={{flex:1,background:T.gold500,border:"none",borderRadius:10,padding:"11px 20px",color:T.ink,fontSize:14,fontWeight:700,cursor:"pointer"}}>
-              Preview →
-            </button>
-          </div>
-        </>)}
-
-        {/* Preview — mandatory confirm before any write */}
-        {step === "preview" && (<>
-
-          {/* Summary card */}
-          <div style={{background:T.bg,borderRadius:12,padding:"14px 16px",marginBottom:16}}>
-            <div style={{fontSize:15,fontWeight:700,color:T.ink,marginBottom:6}}>
-              <span style={{color:"#10b981"}}>{stats.donors}</span> donors to create &nbsp;·&nbsp;
-              <span style={{color:T.greenMid}}>{stats.gifts}</span> gifts to attach
-              {stats.warned>0&&<> &nbsp;·&nbsp; <span style={{color:"#a97f22"}}>{stats.warned}</span> with warnings</>}
-              {stats.skipped>0&&<> &nbsp;·&nbsp; <span style={{color:T.ink3}}>{stats.skipped}</span> skipped</>}
-            </div>
-            <div style={{fontSize:12,color:T.ink3}}>No data is written until you click the confirm button below.</div>
-          </div>
-
-          {/* Smart stage assignment — inferred from each donor's giving history */}
-          {Object.keys(stats.stageCounts).length>0 && (
-            <div style={{background:T.bg,borderRadius:10,padding:"10px 14px",marginBottom:16}}>
-              <div style={{fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.1em",color:T.ink3,marginBottom:6}}>Smart Stage Assignment</div>
-              <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
-                {Object.entries(stats.stageCounts).map(([s,n])=>(
-                  <span key={s} style={{fontSize:12,fontWeight:600,padding:"3px 10px",borderRadius:99,background:(STAGE_COLORS[s]||T.ink3)+"22",color:STAGE_COLORS[s]||T.ink3,border:`1px solid ${(STAGE_COLORS[s]||T.ink3)}30`,textTransform:"capitalize"}}>{s} × {n}</span>
-                ))}
-              </div>
-              <div style={{fontSize:11,color:T.ink3,marginTop:6}}>Inferred from each donor's imported giving history. Editable anytime after import.</div>
-            </div>
-          )}
-
-          {/* Row preview */}
-          <div style={{marginBottom:14}}>
-            <div style={{fontSize:11,fontWeight:700,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:8}}>
-              First {Math.min(combinedRows.filter(r=>!r.skipped).length,6)} Rows
-            </div>
-            <div style={{display:"flex",flexDirection:"column",gap:6}}>
-              {combinedRows.filter(r=>!r.skipped).slice(0,6).map((cr,i) => (
-                <div key={i} style={{background:cr.warnings.length?`#fdfaf2`:"#edf3ee",border:`1px solid ${cr.warnings.length?"#e7cf91":T.bg3}`,borderRadius:9,padding:"10px 12px"}}>
-                  <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:cr.gifts.length?5:0,flexWrap:"wrap"}}>
-                    <span style={{fontSize:13,fontWeight:700,color:T.ink}}>{cr.donor.name}</span>
-                    {cr.donor.email&&<span style={{fontSize:11,color:T.ink3}}>{cr.donor.email}</span>}
-                    {cr.donor.stage&&<span style={{fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:99,background:(STAGE_COLORS[cr.donor.stage]||T.ink3)+"22",color:STAGE_COLORS[cr.donor.stage]||T.ink3,textTransform:"capitalize"}}>{cr.donor.stage}</span>}
-                    {cr.warnings.length>0&&<span style={{fontSize:11,color:"#8a6d1f",background:"#f6eccf",borderRadius:4,padding:"1px 6px"}}>{cr.warnings[0]}</span>}
-                  </div>
-                  {cr.gifts.length>0&&(
-                    <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
-                      {cr.gifts.map((g,j)=>(
-                        <span key={j} style={{fontSize:11,background:T.bg2,borderRadius:5,padding:"2px 8px",color:T.ink2}}>${g.amount.toLocaleString()} · {g.date}</span>
-                      ))}
-                    </div>
-                  )}
-                  {cr.gifts.length===0&&<div style={{fontSize:11,color:T.ink3}}>No gift amounts in year columns</div>}
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* Skipped rows */}
-          {stats.skipped>0&&(
-            <div style={{marginBottom:14,fontSize:12,color:T.ink3}}>
-              <strong>{stats.skipped} row{stats.skipped!==1?"s":""} skipped</strong> — no name or email to identify the donor.
-            </div>
-          )}
-
-          {err&&<div style={{color:"#b8593f",fontSize:12,marginBottom:10}}>{err}</div>}
-          <div style={{display:"flex",gap:10,marginTop:4}}>
-            <button onClick={()=>setStep("configure")}
-              style={{background:"transparent",border:"1px solid "+T.bg3,borderRadius:10,padding:"11px 18px",color:T.ink3,fontSize:13,cursor:"pointer"}}>← Back</button>
-            <button onClick={doImport} disabled={loading||stats.donors===0}
-              style={{flex:1,background:loading||stats.donors===0?T.bg2:T.gold500,border:"none",borderRadius:10,padding:"11px 20px",color:loading||stats.donors===0?T.ink3:T.ink,fontSize:14,fontWeight:700,cursor:loading||stats.donors===0?"not-allowed":"pointer",opacity:loading||stats.donors===0?0.6:1}}>
-              {loading?"Importing…":`Import ${stats.donors} Donor${stats.donors!==1?"s":""} + ${stats.gifts} Gift${stats.gifts!==1?"s":""} →`}
-            </button>
-          </div>
-        </>)}
-
-      </div>
-      {upgradeInfo&&<UpgradeModal open={true} onClose={()=>{setUpgradeInfo(null);onClose();}} reason={upgradeInfo.error} current={upgradeInfo.current} limit={upgradeInfo.limit} plan={upgradeInfo.plan}/>}
     </div>
   );
 }
@@ -3376,6 +3027,9 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
             <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
               <span style={{fontSize:16,fontWeight:800,color:T.ink,letterSpacing:"-0.01em"}}>{donor.name}</span>
               <span style={{fontSize:10,fontWeight:700,padding:"3px 9px",borderRadius:99,background:stage.color+"22",color:stage.color}}>{stage.label}</span>
+              {/* BUILD-58 Part 2 — safety flags, visible where staff decide to reach out */}
+              {donor.deceased&&<span title="No mail of any kind is sent to this donor" style={{fontSize:10,fontWeight:800,padding:"3px 9px",borderRadius:99,background:T.terra100,color:T.terra700,border:`1px solid ${T.terra200}`}}>Deceased</span>}
+              {!donor.deceased&&donor.doNotContact&&<span title="Excluded from campaigns, sequences, and workflow emails" style={{fontSize:10,fontWeight:800,padding:"3px 9px",borderRadius:99,background:T.gold100,color:T.gold700,border:`1px solid ${T.gold300}`}}>Do not contact</span>}
               <span style={{fontSize:11,color:T.ink3}}>{donor.email}</span>
             </div>
             <div className="dph-meta" style={{fontSize:11,color:T.ink3,marginTop:2,display:"flex",flexWrap:"wrap",gap:"0 4px"}}>
@@ -5684,7 +5338,12 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
       {showImport&&<DonorImport onClose={()=>setShowImport(false)} onImported={()=>{reloadDonors();setShowImport(false);}}/>}
       {showGiftImport&&<GiftHistoryImport donors={data.donors} onClose={()=>setShowGiftImport(false)} onImported={()=>{reloadDonors();setShowGiftImport(false);}}/>}
       {showMerge&&<MergeDuplicatesModal onClose={()=>setShowMerge(false)} onMerged={reloadDonors} isReadOnly={isReadOnly}/>}
-      {showCombinedImport&&<CombinedImport onClose={()=>setShowCombinedImport(false)} onImported={()=>{reloadDonors();setShowCombinedImport(false);}}/>}
+      {/* BUILD-58 Part 2 — the RECOMMENDED "Import + History" entry now opens the
+          MAGICAL import (DonorImport withHistory: shape detection + the
+          "Import both" two-sheet CTA). The legacy CombinedImport, whose
+          multi-sheet picker forced ONE sheet, is retired — a pilot following
+          the recommended path gets the good path. */}
+      {showCombinedImport&&<DonorImport withHistory onClose={()=>setShowCombinedImport(false)} onImported={()=>{reloadDonors();setShowCombinedImport(false);}}/>}
       {upgradeModal&&<UpgradeModal open={true} onClose={()=>setUpgradeModal(null)} reason={upgradeModal.reason} current={upgradeModal.current} limit={upgradeModal.limit} plan={upgradeModal.plan}/>}
       {logTarget&&<LogTouchpointModal donor={logTarget} onSave={int=>handleLogged(logTarget,int)} onClose={()=>setLogTarget(null)}/>}
       {followUpTarget&&<FollowUpTaskModal donor={followUpTarget} onClose={()=>setFollowUpTarget(null)} onSave={task=>{setData(prev=>({...prev,tasks:[task,...prev.tasks]}));setFollowUpTarget(null);}}/>}

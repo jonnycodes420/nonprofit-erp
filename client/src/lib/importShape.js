@@ -42,6 +42,187 @@ const numlike = v => {
   return !isNaN(parseFloat(String(v).replace(/[$,\s]/g, "")));
 };
 
+// ── Cell normalizers (moved here from Donors.jsx, BUILD-58 Part 2, so the
+// pure gift-ledger builder below can use them and the Node suite can test the
+// whole pipeline) ───────────────────────────────────────────────────────────
+export function normalizeDate(val) {
+  if (val === null || val === undefined || val === "") return { value: null, warn: null };
+  if (val instanceof Date) {
+    return isNaN(val) ? { value: null, warn: "invalid date" } : { value: val.toISOString().split("T")[0], warn: null };
+  }
+  const s = String(val).trim();
+  if (!s) return { value: null, warn: null };
+  // Excel serial (5-digit number > 25569 = 1970-01-01)
+  if (/^\d{5}$/.test(s)) {
+    const n = parseInt(s);
+    if (n > 25569 && n < 60000) {
+      const d = new Date((n - 25569) * 86400000);
+      if (!isNaN(d)) return { value: d.toISOString().split("T")[0], warn: null };
+    }
+  }
+  // ISO YYYY-MM-DD
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) {
+    const d = new Date(s + "T12:00:00Z");
+    if (!isNaN(d)) return { value: s, warn: null };
+  }
+  // MM/DD/YYYY or M/D/YYYY
+  const mdy = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (mdy) {
+    const iso = `${mdy[3]}-${mdy[1].padStart(2, "0")}-${mdy[2].padStart(2, "0")}`;
+    const d = new Date(iso + "T12:00:00Z");
+    if (!isNaN(d)) return { value: iso, warn: null };
+  }
+  // YYYY/MM/DD
+  const ymd = s.match(/^(\d{4})\/(\d{2})\/(\d{2})$/);
+  if (ymd) {
+    const iso = `${ymd[1]}-${ymd[2]}-${ymd[3]}`;
+    const d = new Date(iso + "T12:00:00Z");
+    if (!isNaN(d)) return { value: iso, warn: null };
+  }
+  // "Jan 2023" / "January 2023"
+  const monYear = s.match(/^([A-Za-z]+)\s+(\d{4})$/);
+  if (monYear) {
+    const d = new Date(`${monYear[1]} 1, ${monYear[2]}`);
+    if (!isNaN(d)) return { value: d.toISOString().split("T")[0], warn: null };
+  }
+  // Native parse as last resort (guard against bare 4-digit years)
+  if (!/^\d{4}$/.test(s)) {
+    const d = new Date(s);
+    if (!isNaN(d) && d.getFullYear() > 1900 && d.getFullYear() < 2100)
+      return { value: d.toISOString().split("T")[0], warn: null };
+  }
+  return { value: null, warn: `couldn't parse date '${s}'` };
+}
+
+export function normalizeMoney(val) {
+  if (val === null || val === undefined || val === "") return { value: null, warn: null };
+  if (typeof val === "number" && !isNaN(val)) return { value: val, warn: null };
+  const s = String(val).trim();
+  if (!s) return { value: null, warn: null };
+  // Accounting-style negatives: "(1,000)" = -1000 (refund/adjustment rows —
+  // recognized so the row REPORT can say "refund", never silently vanish).
+  const paren = s.match(/^\((.+)\)$/);
+  const core = paren ? paren[1] : s;
+  const n = parseFloat(core.replace(/[$,\s]/g, ""));
+  if (isNaN(n)) return { value: null, warn: `couldn't parse amount '${s}'` };
+  return { value: paren ? -n : n, warn: null };
+}
+
+export function normalizeEmail(val) {
+  if (!val) return { value: null, warn: null };
+  const s = String(val).trim();
+  if (!s) return { value: null, warn: null };
+  const lower = s.toLowerCase();
+  if (!lower.includes("@") || !lower.includes(".") || lower.length < 5)
+    return { value: lower, warn: `invalid email '${s}'` };
+  return { value: lower, warn: null };
+}
+
+// ── BUILD-58 Part 2 — deceased / do-not-contact flag columns ───────────────
+// The single most damaging silent discard the hostile import found: a
+// Deceased=Y or Do Not Contact=TRUE column landed the donor as a normal
+// solicitable record. These probes are deliberately anchored (no "Deceased
+// Spouse Name" false positives); values parse through parseBoolFlag.
+const DECEASED_HDR = /^(is\s+)?deceased\??$/i;
+const DNC_HDR = /^(do\s*not\s*(contact|solicit|mail|email)|dns|dnc|no\s*(contact|solicitation)|opt(ed)?[\s-]*out)\??$/i;
+export function detectFlagColumns(headers = []) {
+  const hs = headers.map(h => String(h));
+  return {
+    deceasedCol: hs.find(h => DECEASED_HDR.test(h.trim())) || "",
+    doNotContactCol: hs.find(h => DNC_HDR.test(h.trim())) || "",
+  };
+}
+export function parseBoolFlag(val) {
+  const s = String(val == null ? "" : val).trim().toLowerCase();
+  if (!s) return false;
+  return ["y", "yes", "true", "t", "1", "x", "deceased", "do not contact", "do not solicit", "dnc", "dns", "checked"].includes(s);
+}
+
+// ── BUILD-58 Part 2 — THE CLASS FIX: every column accounted for, by name ───
+// classifyColumns(headers, mapping, deliberatelyIgnored) → the import summary
+// tells the person who ran it exactly what happened to every column:
+//   mapped        — imported, with the field it landed in
+//   ignored       — the importer KNOWS the column and chose to skip it
+//                   (year columns in Import-both, a consumed match-key column)
+//   unrecognized  — nobody knows what this is; it was NOT imported
+// A silently-discarded column is now impossible: it shows up in one of the
+// three lists or the arithmetic assert in the suite fails.
+export function classifyColumns(headers = [], mapping = {}, deliberatelyIgnored = []) {
+  const ignoredSet = new Set(deliberatelyIgnored.map(h => String(h)));
+  const mapped = [], ignored = [], unrecognized = [];
+  for (const h of headers.map(x => String(x))) {
+    const field = mapping[h];
+    if (field) mapped.push({ header: h, field });
+    else if (ignoredSet.has(h)) ignored.push(h);
+    else unrecognized.push(h);
+  }
+  return { mapped, ignored, unrecognized };
+}
+
+// ── BUILD-58 Part 2 — encoding: never store mojibake ───────────────────────
+// A windows-1252 CSV ("José Muñoz") read as UTF-8 stores permanent "Jos�"
+// corruption. Try strict UTF-8 first; on any invalid byte fall back to
+// windows-1252 (the overwhelmingly common non-UTF8 nonprofit export
+// encoding). Strips a UTF-8 BOM.
+export function decodeSpreadsheetBytes(bytes) {
+  const buf = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
+  let start = 0;
+  if (buf.length >= 3 && buf[0] === 0xEF && buf[1] === 0xBB && buf[2] === 0xBF) start = 3;
+  const body = start ? buf.subarray(start) : buf;
+  try {
+    return new TextDecoder("utf-8", { fatal: true }).decode(body);
+  } catch {
+    return new TextDecoder("windows-1252").decode(body);
+  }
+}
+
+// ── BUILD-58 Part 2 — the ONE gift-ledger row builder (used by Import-both) ─
+// Extracted from Donors.jsx's buildBothPayload so it is pure and testable.
+// Carries externalId (the F-4 cross-run idempotency key — previously DROPPED
+// on this surface) and returns a row REPORT so skipped rows always have a
+// stated reason: negative amounts are refunds (not imported — Steward has no
+// negative-gift model), unparsable amounts are named, zero-amount rows
+// counted. tx = { donorEmail, donorName, amount, date, type, campaign,
+// notes, externalId, phone } (header names or "").
+export function buildGiftItemsFromLedger(rows = [], tx = {}, idCol = "") {
+  const report = { giftRows: rows.length, builtGifts: 0, negativeRows: 0, unparsableAmountRows: 0, zeroAmountRows: 0, noAmountColumn: !tx.amount };
+  const items = rows.map(row => {
+    const rawEmail = tx.donorEmail ? String(row[tx.donorEmail] || "").trim() : "";
+    const name = tx.donorName ? String(row[tx.donorName] || "").trim() : "";
+    const donorId = idCol ? String(row[idCol] || "").trim() : "";
+    let gift = null;
+    if (tx.amount) {
+      const rawAmount = row[tx.amount];
+      const { value: amtVal, warn } = normalizeMoney(rawAmount);
+      if (amtVal == null) {
+        if (String(rawAmount ?? "").trim() !== "") { report.unparsableAmountRows++; }
+      } else if (amtVal < 0) {
+        report.negativeRows++;
+      } else {
+        const amt = Math.round(amtVal);
+        if (amt > 0) {
+          const { value: parsedDate } = normalizeDate(tx.date ? row[tx.date] : "");
+          gift = {
+            amount: amt,
+            date: parsedDate || new Date().toISOString().split("T")[0],
+            type: tx.type ? (String(row[tx.type] || "").toLowerCase() || "cash") : "cash",
+            campaign: tx.campaign ? String(row[tx.campaign] || "") : "",
+            notes: tx.notes ? String(row[tx.notes] || "") : "",
+            externalId: tx.externalId ? (String(row[tx.externalId] || "").trim() || undefined) : undefined,
+          };
+          report.builtGifts++;
+        } else {
+          report.zeroAmountRows++;
+        }
+      }
+      void warn;
+    }
+    const { value: email } = normalizeEmail(rawEmail);
+    return { email: email || "", name, donorId, gift };
+  });
+  return { items, report };
+}
+
 // Column-role probes on header text (deliberately loose — a human can override).
 const isDateHdr   = h => /\b(date|when)\b|gift ?date|donation ?date/i.test(String(h)) && !YEAR_HDR_PAT.test(String(h).replace(/date/ig, ""));
 const isAmountHdr = h => {
@@ -51,7 +232,12 @@ const isAmountHdr = h => {
 };
 const isTotalHdr  = h => /^total$/i.test(String(h).trim()) || /(total|lifetime|cumulative)\s*(giv|donat|amount|contrib|raised)/i.test(String(h));
 const isNameHdr   = h => /^(name|full ?name|donor ?name|donor|contact|constituent)$/i.test(String(h).trim());
-const isEmailHdr  = h => /^(email|email ?address|e-?mail)$/i.test(String(h).trim());
+// "Donor Email" is the most common real-world gift-export header there is —
+// the old ^email$ anchor missed it and Import-both silently fell back to
+// LINK BY NAME, splitting donor histories (BUILD-57 §2b finding 2). Accepts
+// an optional donor/contact/primary/billing qualifier; still anchored so
+// "Emailed Receipt" can never false-positive.
+const isEmailHdr  = h => /^(donor|contact|primary|billing)?\s*e-?mail(\s*address)?$/i.test(String(h).trim());
 
 // detectImportShape(headers, rows) → { shape, yearCols, signals… }
 // `rows` is the parsed row objects (keyed by header). Only a sample is scanned.
