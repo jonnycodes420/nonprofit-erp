@@ -42,7 +42,7 @@ async function waitFor(fn, tries = 40) { for (let i = 0; i < tries; i++) { if (a
 
 async function reset() {
   for (const o of [ORG, ORG_T]) {
-    for (const t of ["notification_sends", "digest_sends", "workflow_runs", "workflows", "tasks", "interactions", "gifts", "donors", "users"]) {
+    for (const t of ["notification_sends", "digest_sends", "workflow_runs", "workflows", "tasks", "interactions", "gifts", "donors", "users", "fin_transactions", "budgets", "accounts", "fin_funds"]) {
       await q(`DELETE FROM ${t} WHERE org_id=$1`, [o]).catch(() => {});
     }
     await q(`DELETE FROM orgs WHERE id=$1`, [o]);
@@ -198,7 +198,7 @@ const mkUser = (org, id, email, name, role = "staff") =>
   ok("A4: notification ledger is org-scoped (existing org has none)", leak[0].n === 0, leak[0].n);
 
   await reset();
-  for (const t of ["notification_sends", "digest_sends", "workflow_runs", "workflows", "users"]) {
+  for (const t of ["notification_sends", "digest_sends", "workflow_runs", "workflows", "users", "fin_transactions", "budgets", "accounts", "fin_funds"]) {
     await q(`DELETE FROM ${t} WHERE org_id=$1`, [newOrgId]).catch(() => {});
   }
   await q(`DELETE FROM orgs WHERE id=$1`, [newOrgId]).catch(() => {});

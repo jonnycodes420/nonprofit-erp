@@ -36,7 +36,7 @@ const mock = http.createServer((req, res) => {
 const mailTo = to => captured.filter(e => e.path === "/emails" && (e.body?.to === to || e.body?.to?.includes?.(to)));
 
 async function reset() {
-  for (const t of ["digest_sends", "workflow_runs", "workflows", "receipts", "tasks", "interactions", "opportunities", "moves", "gifts", "donors", "users"]) {
+  for (const t of ["digest_sends", "workflow_runs", "workflows", "receipts", "tasks", "interactions", "opportunities", "moves", "gifts", "donors", "users", "fin_transactions", "budgets", "accounts", "fin_funds"]) {
     await q(`DELETE FROM ${t} WHERE org_id=$1`, [ORG]).catch(() => {});
   }
   await q(`DELETE FROM orgs WHERE id=$1`, [ORG]);

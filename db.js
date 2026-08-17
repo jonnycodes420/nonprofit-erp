@@ -383,6 +383,14 @@ async function initSchema() {
 
   await pool.query(`ALTER TABLE donors ADD COLUMN IF NOT EXISTS assigned_to TEXT DEFAULT NULL`);
   await pool.query(`ALTER TABLE donors ADD COLUMN IF NOT EXISTS assigned_to_name TEXT DEFAULT NULL`);
+
+  // BUILD-58 Part 2 — deceased / do-not-contact are FIRST-CLASS flags, not
+  // discarded import columns. deceased blocks ALL outbound donor mail;
+  // do_not_contact blocks marketing only (donorMailDecision in server.js is
+  // the one enforcement point). Import maps them; the profile shows them.
+  await pool.query(`ALTER TABLE donors ADD COLUMN IF NOT EXISTS deceased BOOLEAN DEFAULT false`);
+  await pool.query(`ALTER TABLE donors ADD COLUMN IF NOT EXISTS do_not_contact BOOLEAN DEFAULT false`);
+
   // NOTE: an old boot-time backfill here auto-assigned EVERY unassigned donor to
   // the org's first admin. Removed (pipeline-is-a-portfolio FIX): assignment is a
   // deliberate act, and auto-assigning the whole base is exactly what dumped

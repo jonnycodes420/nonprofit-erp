@@ -3394,9 +3394,13 @@ app.post("/donors/import", requireAuth, wrap(async (req, res) => {
         a.name,             // assigned_to_name. Assignment IS board membership (BUILD-30) —
                             // an assigned donor is in the officer's portfolio AND on their board.
         a.pendingInviteId,  // pending_assignee_invite_id — held for an invited-but-not-accepted officer
-        a.pendingName       // pending_assignee_name — display label until they accept
+        a.pendingName,      // pending_assignee_name — display label until they accept
+        // BUILD-58 Part 2: deceased / do-not-contact flags — mapped from the
+        // file, never silently discarded again.
+        d.deceased === true || d.deceased === "true",
+        d.doNotContact === true || d.doNotContact === "true"
       );
-      return "(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)";
+      return "(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)";
     });
 
     try {
@@ -3405,7 +3409,7 @@ app.post("/donors/import", requireAuth, wrap(async (req, res) => {
           `INSERT INTO donors
              (id,org_id,name,email,phone,status,stage,total_giving,last_gift_amount,
               last_gift_date,gift_count,tags,notes,city,state,assigned_to,assigned_to_name,
-              pending_assignee_invite_id,pending_assignee_name)
+              pending_assignee_invite_id,pending_assignee_name,deceased,do_not_contact)
            VALUES ${tuples.join(",")}`,
           params
         );
@@ -3522,9 +3526,12 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrap(async (r
         d.notes||"", d.city||null, d.state||null,
         a.id, a.name,   // assigned_to / assigned_to_name — Team owner-column routing.
         // Assignment IS board membership (BUILD-30): no separate in_pipeline flag.
-        a.pendingInviteId, a.pendingName   // pending assignment held for an invited-but-not-accepted officer
+        a.pendingInviteId, a.pendingName,   // pending assignment held for an invited-but-not-accepted officer
+        // BUILD-58 Part 2: deceased / do-not-contact — never silently discarded.
+        d.deceased === true || d.deceased === "true",
+        d.doNotContact === true || d.doNotContact === "true"
       );
-      return "(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)";
+      return "(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)";
     });
     try {
       await withTransaction(async (client) => {
@@ -3532,7 +3539,7 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrap(async (r
           `INSERT INTO donors
              (id,org_id,name,email,phone,status,stage,total_giving,last_gift_amount,
               last_gift_date,gift_count,tags,notes,city,state,assigned_to,assigned_to_name,
-              pending_assignee_invite_id,pending_assignee_name)
+              pending_assignee_invite_id,pending_assignee_name,deceased,do_not_contact)
            VALUES ${tuples.join(",")}`,
           params
         );
@@ -3750,6 +3757,17 @@ app.put("/donors/:id", requireAuth, checkWriteAccess, wrap(async (req, res) => {
      req.params.id, req.user.orgId]
   );
   if (!affected.changes) return res.status(404).json({ error: "Donor not found" });
+
+  // BUILD-58 Part 2 — the deceased / do-not-contact flags (only touched when
+  // the request carries them, so older callers never clobber a stored flag).
+  if (req.body.deceased !== undefined || req.body.doNotContact !== undefined) {
+    await run(
+      `UPDATE donors SET deceased = COALESCE(?, deceased), do_not_contact = COALESCE(?, do_not_contact) WHERE id=? AND org_id=?`,
+      [req.body.deceased === undefined ? null : !!req.body.deceased,
+       req.body.doNotContact === undefined ? null : !!req.body.doNotContact,
+       req.params.id, req.user.orgId]
+    );
+  }
 
   const rows = await query("SELECT * FROM donors WHERE id = ?", [req.params.id]);
   const d = rows[0];
@@ -4026,6 +4044,11 @@ app.post("/donors/merge", requireAuth, checkWriteAccess, wrap(async (req, res) =
     const unionTags = [...new Set([...pTags, ...sTags])];
     if (unionTags.length > pTags.length) { sets.push("tags=?"); vals.push(JSON.stringify(unionTags)); }
     if (!primary.planned_giving && secondary.planned_giving) { sets.push("planned_giving=?"); vals.push(true); }
+    // BUILD-58 Part 2: safety flags OR on merge — a deceased/do-not-contact
+    // mark on EITHER record survives consolidation (losing it re-opens the
+    // solicit-a-deceased-donor wound).
+    if (!primary.deceased && secondary.deceased) { sets.push("deceased=?"); vals.push(true); }
+    if (!primary.do_not_contact && secondary.do_not_contact) { sets.push("do_not_contact=?"); vals.push(true); }
     if (sets.length) await runTx(client, `UPDATE donors SET ${sets.join(", ")}, updated_at=NOW() WHERE id=? AND org_id=?`, [...vals, primaryId, orgId]);
 
     // Soft-delete the secondary — recoverable via trash until purge, like
@@ -4812,8 +4835,10 @@ async function issueGiftReceipt(gift, org, donor, { send = true } = {}) {
 
   let emailSent = false;
   if (send && donor.email) {
-    const suppressReason = await getSuppressionReason(donor.email, org.id);
-    if (!suppressReason) {
+    // W-4: a receipt is TRANSACTIONAL — the marketing suppression list does
+    // not apply (deceased still blocks, via the one policy).
+    const decision = await donorMailDecision("receipt", donor.email, org.id);
+    if (decision.send) {
       emailSent = await sendReceiptEmail(org, donor, snapshot, pdfBuffer, `receipt-${receiptNumber}.pdf`);
       if (emailSent) await run("UPDATE receipts SET sent_to=?, sent_at=NOW() WHERE id=?", [donor.email, id]);
     }
@@ -4836,8 +4861,8 @@ async function issueGiftReceipt(gift, org, donor, { send = true } = {}) {
 // was originally issued.
 async function resendReceiptEmail(receipt, org, donor) {
   if (!donor.email) return false;
-  const suppressReason = await getSuppressionReason(donor.email, org.id);
-  if (suppressReason) return false;
+  const decision = await donorMailDecision("receipt", donor.email, org.id);
+  if (!decision.send) return false;
   const pdfBuffer = Buffer.from(receipt.pdf_data, "base64");
   const filename = receipt.type === "year_end" ? `${receipt.tax_year}-giving-statement.pdf` : `receipt-${receipt.receipt_number}.pdf`;
   const sent = await sendReceiptEmail(org, donor, receipt.snapshot, pdfBuffer, filename);
@@ -4908,8 +4933,9 @@ async function issueYearEndStatement(org, donor, year, { send = true } = {}) {
 
   let emailSent = false;
   if (send && donor.email) {
-    const suppressReason = await getSuppressionReason(donor.email, org.id);
-    if (!suppressReason) {
+    // W-4: year-end statements are TRANSACTIONAL (tax paperwork, not outreach).
+    const decision = await donorMailDecision("year_end", donor.email, org.id);
+    if (decision.send) {
       emailSent = await sendReceiptEmail(org, donor, snapshot, pdfBuffer, `${year}-giving-statement.pdf`);
       if (emailSent) await run("UPDATE receipts SET sent_to=?, sent_at=NOW() WHERE id=?", [donor.email, id]);
     }
@@ -7859,6 +7885,55 @@ async function getSuppressionReason(email, orgId) {
   return rows[0]?.reason || null;
 }
 
+// ── BUILD-58 W-4 — ONE place decides suppressibility ───────────────────────
+// Every donor-facing message kind is classified transactional | marketing.
+// TRANSACTIONAL = service mail about the donor's own money or account
+// (failed-card recovery, receipts, year-end statements, recurring-gift
+// changes). A donor who unsubscribed from a newsletter has NOT opted out of
+// being told their card failed — transactional mail NEVER consults the
+// marketing suppression list. MARKETING = org-authored outreach; the
+// suppression list and the donor's do_not_contact flag both apply.
+// `deceased` blocks everything.
+//
+// The raw probe above (getSuppressionReason) may be called ONLY by
+// donorMailDecision — pinned by tests/mail-suppression.test.js source scan —
+// so a new send site cannot quietly consult the wrong list. An UNCLASSIFIED
+// kind fails CLOSED: classify it here before it can send.
+//
+// NB the transactional-vs-marketing line is a legal judgment as well as a
+// product one — flagged for attorney review in BLOCKED-build58.md; this table
+// is the product's best-faith classification, not a legal conclusion.
+const DONOR_MAIL_POLICY = {
+  campaign:           "marketing",
+  sequence:           "marketing",
+  workflow:           "marketing",      // org-authored thank-you / re-engage recipes
+  milestone:          "marketing",      // staff-reviewed milestone drafts
+  pledge_reminder:    "marketing",      // a reminder to give is solicitation
+  onboarding_drip:    "marketing",      // founder drip to org staff
+  dunning:            "transactional",  // failed-card recovery (W-4's instance)
+  recovered_thankyou: "transactional",  // "your card worked" confirmation
+  receipt:            "transactional",  // legal acknowledgment of a gift
+  year_end:           "transactional",  // year-end giving statement
+  recurring_change:   "transactional",  // staff/donor changes to a recurring gift + proposals
+};
+async function donorMailDecision(kind, email, orgId) {
+  const cls = DONOR_MAIL_POLICY[kind];
+  if (!cls) return { send: false, reason: "unclassified_kind:" + kind };
+  if (!email) return { send: false, reason: "no_email" };
+  const [flags] = await query(
+    `SELECT bool_or(deceased) AS deceased, bool_or(do_not_contact) AS dnc
+       FROM donors WHERE org_id = ? AND LOWER(email) = LOWER(?) AND deleted_at IS NULL`,
+    [orgId, email]
+  ).catch(() => [null]);
+  if (flags?.deceased) return { send: false, reason: "deceased" };
+  if (cls === "marketing") {
+    if (flags?.dnc) return { send: false, reason: "do_not_contact" };
+    const suppressReason = await getSuppressionReason(email, orgId);
+    if (suppressReason) return { send: false, reason: suppressReason };
+  }
+  return { send: true, reason: null };
+}
+
 async function recordUnsubscribe(email, orgId, source) {
   await run(
     "INSERT INTO email_suppressions (id, org_id, email, reason, source) VALUES (?,?,?,?,?)",
@@ -8037,6 +8112,11 @@ async function logRecurringChange(orgId, subscriptionId, donorId, kind, { oldAmo
 async function sendRecurringDonorEmail(org, donor, subject, bodyText, { actionUrl = null, actionLabel = null } = {}) {
   if (!process.env.RESEND_API_KEY) return true;
   if (!donor?.email) return true;
+  // W-4: TRANSACTIONAL via the one policy — the suppression list, prefs, and
+  // do_not_contact never block it (the unsuppressible rule, unchanged); only
+  // the policy's hard block (deceased) refuses.
+  const decision = await donorMailDecision("recurring_change", donor.email, org.id);
+  if (!decision.send) { console.log(`[recurring] donor notification refused (${decision.reason})`); return false; }
   const orgName = displayNameCase(org.name);
   const psRows = await query("SELECT enabled FROM portal_settings WHERE org_id=?", [org.id]).catch(() => []);
   const ps = psRows[0];
@@ -8131,15 +8211,21 @@ function applyDunningTokens(str, { donor, org, amount, updateUrl }) {
     .replace(/{{update_url}}/g, updateUrl);
 }
 
-// Sends the dunning email if the address isn't suppressed. The
-// recurring_dunning_enabled org-level kill switch is checked by callers
-// (processDunning / the manual resend route), not here, since a manual staff
-// resend should still work even if an org has paused the automatic cadence.
+// Sends the failed-card recovery email. TRANSACTIONAL (W-4): the marketing
+// suppression list does NOT apply — a donor who unsubscribed from campaigns
+// has not opted out of being told their card failed. Only the policy's hard
+// blocks (deceased, no email) refuse. The recurring_dunning_enabled org-level
+// kill switch is checked by callers (processDunning / the manual resend
+// route), not here, since a manual staff resend should still work even if an
+// org has paused the automatic cadence.
+// Returns { sent, refused }: refused = a permanent policy refusal (don't
+// retry); sent:false with refused:null = provider failure (retry later).
+// Callers log `dunning_sent` ONLY when sent is true — the log never lies.
 async function sendDunningEmail(org, donor, subscriptionRow) {
-  const suppressReason = await getSuppressionReason(donor.email, org.id);
-  if (suppressReason) {
-    console.log(`[dunning] skipping suppressed address ${donor.email} (${suppressReason})`);
-    return false;
+  const decision = await donorMailDecision("dunning", donor.email, org.id);
+  if (!decision.send) {
+    console.log(`[dunning] refused for ${donor.email} (${decision.reason})`);
+    return { sent: false, refused: decision.reason };
   }
   const updateUrl = buildCardUpdateUrl(subscriptionRow.stripe_subscription_id, org.id);
   const tokenCtx = { donor, org, amount: subscriptionRow.amount, updateUrl };
@@ -8165,16 +8251,22 @@ async function sendDunningEmail(org, donor, subscriptionRow) {
         from: smtpFrom, to: donor.email, subject, html: bodyHtml,
         headers: unsubscribeHeaders(donor.email, org.id, "campaign"),
       });
-      if (sendErr) console.error("[dunning] send error:", sendErr.message);
-    } catch (e) { console.error("[dunning] resend error:", e.message); }
+      if (sendErr) {
+        // W-4 log honesty: a provider rejection is a FAILED send — callers
+        // must not log dunning_sent for it. refused stays null (retryable).
+        console.error("[dunning] send error:", sendErr.message);
+        return { sent: false, refused: null };
+      }
+    } catch (e) { console.error("[dunning] resend error:", e.message); return { sent: false, refused: null }; }
   }
-  return true;
+  return { sent: true, refused: null };
 }
 
 // Short "you're all set" note — a warm confirmation, not another ask.
+// TRANSACTIONAL (W-4): rides the same policy as dunning.
 async function sendRecoveredThankYouEmail(org, donor, subscriptionRow) {
-  const suppressReason = await getSuppressionReason(donor.email, org.id);
-  if (suppressReason) return;
+  const decision = await donorMailDecision("recovered_thankyou", donor.email, org.id);
+  if (!decision.send) return;
   const firstName = donor.name ? donor.name.trim().split(/\s+/)[0] : "";
   const amountStr = subscriptionRow.amount != null ? `$${Number(subscriptionRow.amount).toLocaleString()}` : "your";
   const subject = "You're all set — thank you!";
@@ -8853,12 +8945,12 @@ async function runCampaignSend(campaign, org, donors) {
       const brandHeader = await brandEmailHeaderHtml(org.id); // BUILD-13 — once per send, not per recipient
 
       for (const donor of donors) {
-        const suppressReason = await getSuppressionReason(donor.email, org.id);
-        if (suppressReason) {
-          console.log(`[campaign:${campaign.id}] skipping suppressed address ${donor.email} (${suppressReason})`);
+        const decision = await donorMailDecision("campaign", donor.email, org.id);
+        if (!decision.send) {
+          console.log(`[campaign:${campaign.id}] skipping ${donor.email} (${decision.reason})`);
           await run(
             "INSERT INTO campaign_recipients (id,org_id,campaign_id,donor_id,email,failure_reason) VALUES (?,?,?,?,?,?)",
-            ["cr_" + uuid().slice(0, 8), org.id, campaign.id, donor.id, donor.email, `suppressed: ${suppressReason}`]
+            ["cr_" + uuid().slice(0, 8), org.id, campaign.id, donor.id, donor.email, `suppressed: ${decision.reason}`]
           ).catch(() => {});
           continue;
         }
@@ -11997,9 +12089,9 @@ async function sendOnboardingSequence(orgId, userId, userName, userEmail) {
     const body0 = applyTokens(step0.body);
     const bodyHtml0 = `<p>${body0.replace(/\n\n+/g, "</p><p>").replace(/\n/g, "<br>")}</p>` + await unsubscribeEmailFooterHtml(userEmail, orgId, "sequence");
     const founderEmail = process.env.FOUNDER_EMAIL || "noreply@stewardapp.dev";
-    const suppressReason0 = await getSuppressionReason(userEmail, orgId);
-    if (suppressReason0) {
-      console.log(`[onboarding] skipping suppressed address ${userEmail} (${suppressReason0})`);
+    const decision0 = await donorMailDecision("onboarding_drip", userEmail, orgId);
+    if (!decision0.send) {
+      console.log(`[onboarding] skipping ${userEmail} (${decision0.reason})`);
     } else if (process.env.RESEND_API_KEY) {
       try {
         const { error: sendErr } = await resend.emails.send({
@@ -12085,12 +12177,14 @@ async function processSequences() {
           }
           continue;
         }
-        const suppressReason = await getSuppressionReason(recipient.email, enr.org_id);
-        if (suppressReason) {
-          console.log(`[seq] skipping suppressed recipient ${recipient.email} (${suppressReason}) — enrollment ${enr.id}`);
+        const seqDecision = await donorMailDecision("sequence", recipient.email, enr.org_id);
+        if (!seqDecision.send) {
+          console.log(`[seq] skipping recipient ${recipient.email} (${seqDecision.reason}) — enrollment ${enr.id}`);
           await run(
             `UPDATE sequence_enrollments SET status=?, completed_at=NOW() WHERE id=?`,
-            [suppressReason === "unsubscribed" ? "unsubscribed" : "bounced", enr.id]
+            // bounced stays bounced; every other refusal (unsubscribe, donor
+            // flags) closes the enrollment as unsubscribed.
+            [seqDecision.reason === "bounced" ? "bounced" : "unsubscribed", enr.id]
           );
           continue;
         }
@@ -12163,7 +12257,13 @@ async function processSequences() {
         const smtpFrom = enr.seq_trigger === "onboarding"
           ? founderEmail
           : (process.env.DEMO_SMTP_FROM || "noreply@stewardapp.dev");
+        // W-4 log honesty: the "Sequence: … Step N" interaction and the step
+        // advance happen ONLY after a real delivery. A provider failure skips
+        // both — next_send_at is untouched, so the next tick retries, and no
+        // timeline entry claims an email that never left.
+        let seqDelivered = true; // no API key configured = nothing to deliver
         if (process.env.RESEND_API_KEY && smtpFrom) {
+          seqDelivered = false;
           try {
             const sendOpts = {
               from: smtpFrom, to: recipient.email, subject, html: bodyHtml,
@@ -12172,8 +12272,10 @@ async function processSequences() {
             if (enr.seq_trigger === "onboarding") sendOpts.reply_to = founderEmail;
             const { error: sendErr } = await resend.emails.send(sendOpts);
             if (sendErr) console.error("[seq] send error:", sendErr.message);
+            else seqDelivered = true;
           } catch (e) { console.error("[seq] resend error:", e.message); }
         }
+        if (!seqDelivered) { console.error(`[seq] delivery failed for enrollment ${enr.id} — will retry next tick`); continue; }
         // Only log donor interactions for non-onboarding sequences (donor_id is a user_id for onboarding)
         if (enr.seq_trigger !== "onboarding") {
           const intId = "i_" + uuid().slice(0, 8);
@@ -12958,8 +13060,8 @@ app.post("/milestone-drafts/:id/send", requireAuth, requireAdmin, checkWriteAcce
   const donor = donorRows[0];
   if (!donor || !donor.email) return res.status(400).json({ error: "Donor has no email on file" });
 
-  const suppressReason = await getSuppressionReason(donor.email, req.user.orgId);
-  if (suppressReason) return res.status(400).json({ error: `Cannot send — this donor is suppressed (${suppressReason})` });
+  const decision = await donorMailDecision("milestone", donor.email, req.user.orgId);
+  if (!decision.send) return res.status(400).json({ error: `Cannot send — ${decision.reason === "deceased" ? "this donor is marked deceased" : decision.reason === "do_not_contact" ? "this donor is marked do-not-contact" : `this donor is suppressed (${decision.reason})`}` });
 
   const smtpFrom = process.env.DEMO_SMTP_FROM || "noreply@stewardapp.dev";
   if (process.env.RESEND_API_KEY) {
@@ -13254,8 +13356,20 @@ async function processDunning() {
         // picks back up correctly if re-enabled) but don't send.
         if (org.recurring_dunning_enabled === false) continue;
 
-        await sendDunningEmail(org, { name: rs.donor_name, email: rs.donor_email }, rs);
-        await logRecoveryEvent(rs.org_id, rs.donor_id, rs.stripe_subscription_id, "dunning_sent", null, { step: rs.dunning_step });
+        // W-4 log honesty: dunning_sent is logged ONLY after a real delivery.
+        // A permanent policy refusal (deceased) logs dunning_skipped and
+        // advances the cadence (retrying is pointless); a provider failure
+        // logs nothing and leaves next_dunning_at alone so the next tick
+        // retries — the absence of a row is the truth.
+        const dunningResult = await sendDunningEmail(org, { name: rs.donor_name, email: rs.donor_email }, rs);
+        if (dunningResult.sent) {
+          await logRecoveryEvent(rs.org_id, rs.donor_id, rs.stripe_subscription_id, "dunning_sent", null, { step: rs.dunning_step });
+        } else if (dunningResult.refused) {
+          await logRecoveryEvent(rs.org_id, rs.donor_id, rs.stripe_subscription_id, "dunning_skipped", null, { step: rs.dunning_step, reason: dunningResult.refused });
+        } else {
+          console.error(`[dunning] delivery failed for sub ${rs.id} — will retry next tick`);
+          continue;
+        }
 
         const nextStep = rs.dunning_step + 1;
         const nextDelayDays = DUNNING_SCHEDULE_DAYS[nextStep];
@@ -13389,14 +13503,17 @@ const escHtmlWf = s => String(s || "").replace(/&/g, "&amp;").replace(/</g, "&lt
 // cleanly without RESEND_API_KEY (local tests) — the run is still logged.
 async function sendWorkflowEmail(org, donor, subject, bodyHtml) {
   if (!donor?.email) return false;
-  if (await getSuppressionReason(donor.email, org.id)) return false;
+  // W-4: workflow recipe mail is MARKETING — suppression + donor flags apply
+  // through the one policy.
+  const decision = await donorMailDecision("workflow", donor.email, org.id);
+  if (!decision.send) return false;
   const html = await brandEmailHeaderHtml(org.id) + bodyHtml + await unsubscribeEmailFooterHtml(donor.email, org.id, "campaign");
   const from = process.env.DEMO_SMTP_FROM || "noreply@stewardapp.dev";
   if (process.env.RESEND_API_KEY) {
     try {
       const { error } = await resend.emails.send({ from, to: donor.email, subject, html, headers: unsubscribeHeaders(donor.email, org.id, "campaign") });
-      if (error) console.error("[workflow] email error:", error.message);
-    } catch (e) { console.error("[workflow] email threw:", e.message); }
+      if (error) { console.error("[workflow] email error:", error.message); return false; }
+    } catch (e) { console.error("[workflow] email threw:", e.message); return false; }
   }
   return true;
 }
@@ -13751,24 +13868,26 @@ async function runWorkflowAction(action, { org, donor, ctx, config }) {
     case "send_email": {
       if (!donor) return null;
       if (action.template === "recovery") {
-        if (ctx.subscriptionRow) await sendDunningEmail(org, donor, ctx.subscriptionRow);
-        return { type: "send_email", template: "recovery" };
+        // W-4 log honesty: actions_taken records what actually happened, not
+        // what was attempted — sent:false rows are visible in the run log.
+        const r = ctx.subscriptionRow ? await sendDunningEmail(org, donor, ctx.subscriptionRow) : { sent: false, refused: "no_subscription" };
+        return { type: "send_email", template: "recovery", sent: r.sent === true, ...(r.refused ? { refused: r.refused } : {}) };
       }
       if (action.template === "thankyou") {
         const body = `<p>Hi ${escHtmlWf(firstName)},</p>
 <p>Thank you for your first gift to ${escHtmlWf(displayNameCase(org.name))} — welcome to our community. Gifts like yours are exactly what make our work possible, and we're so glad you're part of it.</p>
 <p>You'll hear from a real person here soon. In the meantime, just reply if there's anything you'd like to know.</p>
 <p>With gratitude,<br/>${escHtmlWf(displayNameCase(org.name))}</p>`;
-        await sendWorkflowEmail(org, donor, `Thank you from ${displayNameCase(org.name)}`, body);
-        return { type: "send_email", template: "thankyou" };
+        const sentTy = await sendWorkflowEmail(org, donor, `Thank you from ${displayNameCase(org.name)}`, body);
+        return { type: "send_email", template: "thankyou", sent: sentTy === true };
       }
       if (action.template === "reengage") {
         const body = `<p>Hi ${escHtmlWf(firstName)},</p>
 <p>It's been a while, and we've missed you at ${escHtmlWf(displayNameCase(org.name))}. Your past support made a real difference — and there's more good work ahead we'd love for you to be part of.</p>
 <p>If now's a good time to come back, we'd be grateful. And if not, thank you all the same.</p>
 <p>Warmly,<br/>${escHtmlWf(displayNameCase(org.name))}</p>`;
-        await sendWorkflowEmail(org, donor, `We've missed you at ${displayNameCase(org.name)}`, body);
-        return { type: "send_email", template: "reengage" };
+        const sentRe = await sendWorkflowEmail(org, donor, `We've missed you at ${displayNameCase(org.name)}`, body);
+        return { type: "send_email", template: "reengage", sent: sentRe === true };
       }
       return null;
     }
@@ -14438,10 +14557,17 @@ app.post("/recurring/proposals", requireAuth, checkWriteAccess, wrap(async (req,
       : kind === "amount" ? `changing your recurring gift to $${proposedAmount.toLocaleString()}/${sub.interval || "month"}`
       : kind === "frequency" ? `changing your recurring gift to repeat ${proposedInterval === "year" ? "yearly" : "monthly"}`
       : "updating the card on your recurring gift";
-  await sendRecurringDonorEmail(org, donor, `A request from ${orgName}`,
+  // W-5: sendRecurringDonorEmail appends "— <org>" to every subject; naming
+  // the org here too doubled it ("A request from X — X").
+  const proposalDelivered = await sendRecurringDonorEmail(org, donor, "A request about your recurring gift",
     `${actorName} at ${orgName} has proposed ${detail}. Nothing changes unless you complete it — the link below expires in ${PROPOSAL_EXPIRY_DAYS} days.`,
     { actionUrl: url, actionLabel: "Review and complete" });
-  await noteRecurringAction(orgId, donorId, `Sent a recurring-gift proposal (${PROPOSAL_KIND_LABELS[kind]})`, actorName);
+  // W-4 log honesty: the timeline note claims a send only when one happened.
+  await noteRecurringAction(orgId, donorId,
+    proposalDelivered
+      ? `Sent a recurring-gift proposal (${PROPOSAL_KIND_LABELS[kind]})`
+      : `Created a recurring-gift proposal (${PROPOSAL_KIND_LABELS[kind]}) — email delivery FAILED; resend it from the roster`,
+    actorName);
   res.status(201).json({
     id, donorId, kind, subscriptionId: sub?.id || null,
     proposedAmount, proposedInterval, proposedFundId,
@@ -14859,13 +14985,14 @@ app.post("/recurring/:donorId/resend", requireAuth, wrap(async (req, res) => {
   if (!rsRows.length) return res.status(400).json({ error: "This donor has no recurring gift currently at risk." });
   const rs = rsRows[0];
 
-  const suppressReason = await getSuppressionReason(donor.email, orgId);
-  if (suppressReason) return res.status(400).json({ error: `This donor's email is suppressed (${suppressReason}).` });
-
   const orgRows = await query(
     "SELECT id, name, recurring_dunning_subject, recurring_dunning_body FROM orgs WHERE id=?", [orgId]
   );
-  await sendDunningEmail(orgRows[0], donor, rs);
+  // W-4: dunning is transactional — the marketing suppression list no longer
+  // blocks a staff resend. dunning_sent is logged ONLY on real delivery.
+  const result = await sendDunningEmail(orgRows[0], donor, rs);
+  if (result.refused) return res.status(400).json({ error: `Cannot send — ${result.refused === "deceased" ? "this donor is marked deceased" : result.refused}.` });
+  if (!result.sent) return res.status(502).json({ sent: false, error: "The email provider rejected the send — nothing was recorded as sent. Try again shortly." });
   await logRecoveryEvent(orgId, donor.id, rs.stripe_subscription_id, "dunning_sent", null, { manual: true });
   res.json({ sent: true });
 }));
@@ -14919,9 +15046,10 @@ function applyPledgeReminderTokens(str, { donor, org, amount, dueDate, giveUrl }
 }
 
 async function sendPledgeReminderEmail(org, donor, pledgeRow) {
-  const suppressReason = await getSuppressionReason(donor.email, org.id);
-  if (suppressReason) {
-    console.log(`[pledge-reminder] skipping suppressed address ${donor.email} (${suppressReason})`);
+  // W-4: a reminder to give is solicitation — MARKETING in the policy.
+  const decision = await donorMailDecision("pledge_reminder", donor.email, org.id);
+  if (!decision.send) {
+    console.log(`[pledge-reminder] skipping ${donor.email} (${decision.reason})`);
     return false;
   }
   const frontendUrl = publicAppUrl();
@@ -15020,8 +15148,8 @@ app.post("/pledges/:id/resend", requireAuth, wrap(async (req, res) => {
   const p = rows[0];
   if (!p.donor_email) return res.status(400).json({ error: "This donor has no email on file." });
 
-  const suppressReason = await getSuppressionReason(p.donor_email, req.user.orgId);
-  if (suppressReason) return res.status(400).json({ error: `This donor's email is suppressed (${suppressReason}).` });
+  const decision = await donorMailDecision("pledge_reminder", p.donor_email, req.user.orgId);
+  if (!decision.send) return res.status(400).json({ error: `Cannot send — ${decision.reason === "deceased" ? "this donor is marked deceased" : decision.reason === "do_not_contact" ? "this donor is marked do-not-contact" : `this donor's email is suppressed (${decision.reason})`}.` });
 
   const orgRows = await query(
     "SELECT id, name, org_slug, pledge_reminder_subject, pledge_reminder_body FROM orgs WHERE id=?", [req.user.orgId]

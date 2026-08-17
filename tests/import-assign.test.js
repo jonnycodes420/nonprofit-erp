@@ -18,7 +18,7 @@ const TEAM = "org_ia_team", CORE = "org_ia_core", OTHER = "org_ia_other";
 
 async function reset() {
   for (const org of [TEAM, CORE, OTHER]) {
-    for (const t of ["gifts", "interactions", "fin_transactions", "invites", "donors", "users"])
+    for (const t of ["gifts", "interactions", "fin_transactions", "budgets", "accounts", "fin_funds", "invites", "donors", "users"])
       await q(`DELETE FROM ${t} WHERE org_id=$1`, [org]).catch(() => {});
     await q(`DELETE FROM orgs WHERE id=$1`, [org]);
   }

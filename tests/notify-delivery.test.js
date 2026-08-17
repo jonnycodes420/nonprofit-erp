@@ -58,7 +58,7 @@ const toList = m => [].concat(m.to || []);
 
   // tiny org: admin + officer + one assigned donor
   for (const t of ["notification_sends", "digest_sends", "workflow_runs", "workflows", "tasks", "interactions",
-    "fin_transactions", "fin_accounts", "accounts", "gifts", "donors", "users"])
+    "fin_transactions", "fin_accounts", "budgets", "accounts", "fin_funds", "gifts", "donors", "users"])
     await q(`DELETE FROM ${t} WHERE org_id=$1`, [ORG]).catch(() => {});
   await q(`DELETE FROM orgs WHERE id=$1`, [ORG]);
   await q(`INSERT INTO orgs (id,name,org_slug,onboarding_complete,plan,subscription_status)
