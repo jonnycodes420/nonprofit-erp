@@ -76,6 +76,14 @@ const NAV_GROUPS=[
 ];
 const TEAM_GATED=new Set(["pipeline"]);
 
+// BUILD-58 W-2 — the Portal tier is NOT the CRM, and its shell says so
+// honestly: only the surfaces the tier's own capabilities live on (gift
+// recording + import in Donors, the portal hub/editor + impact updates in
+// Donor Portal, receipts + giving in Settings). First login lands on the
+// portal hub, never an error screen. The server's portal_tier gate is
+// unchanged — this is the UI finally matching it.
+const PORTAL_TIER_TABS=new Set(["donors","portal","settings"]);
+
 // ── App Shell ──────────────────────────────────────────────────────────────
 function AppShell() {
   const { auth, logout } = useAuth();
@@ -108,6 +116,9 @@ function AppShell() {
   // BUILD-57 — Home's Recurring tab deep-links to Fundraising → Recurring
   // Giving (opts key `frSection`, distinct from Settings' `section`).
   const [fundraisingIntent,setFundraisingIntent]=useState(null);
+  // BUILD-58 W-2 — the portal-tier org's network-application status (pending/
+  // approved/held/…) surfaces as a quiet banner instead of a dead end.
+  const [networkApp,setNetworkApp]=useState(null);
   // SHELVED — voice capture works but unproven adoption assumption, revisit
   // later. Code intact, re-enable by uncommenting.
   // const [showVoiceMemo,setShowVoiceMemo]=useState(false);
@@ -119,6 +130,9 @@ function AppShell() {
   // on the Grants tab). Plain nav (no opts) never remounts.
   const [navNonce,setNavNonce]=useState(0);
   const navigateTo=(t,opts)=>{
+    // BUILD-58 W-2 — a portal-tier org has no CRM surfaces; any deep link to
+    // one lands on the portal hub instead of a locked/broken view.
+    if(data?.org?.plan==="portal"&&!PORTAL_TIER_TABS.has(t))t="portal";
     if(t!==tab&&!confirmIfDirty())return;   // BUILD-54 §6 — unsaved-state guard
     setCommsInitialNav(opts?.subtab||null);
     setCommsHighlightDraftId(opts?.highlightDraftId||null);
@@ -177,7 +191,12 @@ function AppShell() {
 
   async function loadData() {
     try {
-      const [org,donors,grants,volunteers,tasks,board,financials] = await Promise.all([
+      // BUILD-58 W-2 — allSettled, not all-or-nothing: a Portal-plan org's
+      // CRM routes answer 403 portal_tier BY DESIGN, and that must never
+      // render as a "Failed to connect" outage on a new customer's first
+      // login. /org failing is still fatal; for everything else a portal_tier
+      // 403 (or any failure on a portal-tier org) falls back to empty data.
+      const results = await Promise.allSettled([
         apiFetch("/org"),
         // Lightweight whole-org list (no notes/score_rationale) — the full
         // GET /donors payload was the last known scaling cliff (21.7MB at
@@ -190,8 +209,31 @@ function AppShell() {
         apiFetch("/board"),
         apiFetch("/financials"),
       ]);
-      const adapted=adaptData({org,donors,grants,volunteers,tasks,board,financials});
+      const [orgR,donorsR,grantsR,volunteersR,tasksR,boardR,financialsR]=results;
+      if(orgR.status==="rejected")throw orgR.reason;
+      const org=orgR.value;
+      const portalTier=org?.plan==="portal";
+      const val=(r,fallback)=>{
+        if(r.status==="fulfilled")return r.value;
+        if(portalTier||r.reason?.error==="portal_tier")return fallback;
+        throw r.reason;
+      };
+      const adapted=adaptData({
+        org,
+        donors:val(donorsR,[]),
+        grants:val(grantsR,[]),
+        volunteers:val(volunteersR,[]),
+        tasks:val(tasksR,[]),
+        board:val(boardR,[]),
+        financials:val(financialsR,{months:[],funds:[]}),
+      });
       setData(adapted);
+      if(portalTier){
+        // Land on the tier's own surface (the Donor Portal hub), and surface
+        // the network-application status while it's under review.
+        setTab(t=>t==="dashboard"?"portal":t);
+        apiFetch("/network/application").then(setNetworkApp).catch(()=>{});
+      }
       if(org?.id) localStorage.setItem("steward_onboarded_"+org.id,"1");
     } catch(e) { setLoadErr(e.message); }
     setLoading(false);
@@ -239,6 +281,15 @@ function AppShell() {
   // unknown so we never flash a lock before the plan loads.
   const planTier=(()=>{ if(!billing)return "team"; if(billing.planTier)return billing.planTier; const p=billing.plan; if(p==="team"||p==="growth"||p==="impact")return "team"; if(subStatus==="trialing")return "team"; return "core"; })();
   const isCoreTier=planTier==="core";
+  // BUILD-58 W-2 — the portal-tier shell. Derived from /org (synchronous with
+  // the data load, no billing-fetch flash). tabAllowed filters every nav
+  // surface; navigateTo routes a disallowed target back to the portal hub.
+  const isPortalTier=data.org?.plan==="portal";
+  const tabAllowed=id=>!isPortalTier||PORTAL_TIER_TABS.has(id);
+  const bottomTabs=isPortalTier
+    ?[BOTTOM_TABS.find(t=>t.id==="donors"),MORE_TABS.find(t=>t.id==="portal"),BOTTOM_TABS.find(t=>t.id==="settings")].filter(Boolean)
+    :BOTTOM_TABS;
+  const moreTabs=MORE_TABS.filter(t=>tabAllowed(t.id));
   const showTrialBanner=!bannerDismissed&&subStatus==="trialing"&&billing?.trialDaysLeft<=14;
   const showWarningBanner=accessState==="warning";
   const showReadOnlyBanner=isReadOnly;
@@ -327,13 +378,15 @@ function AppShell() {
           };
           const home=byId["dashboard"];
           return <>
-            {home&&navItem(home)}
-            {NAV_GROUPS.map(g=>(
-              <div key={g.label} style={{marginTop:12}}>
+            {home&&tabAllowed("dashboard")&&navItem(home)}
+            {NAV_GROUPS.map(g=>{
+              const ids=g.ids.filter(tabAllowed);
+              if(!ids.length)return null;
+              return <div key={g.label} style={{marginTop:12}}>
                 <div style={{fontSize:9.5,fontWeight:800,letterSpacing:"0.11em",textTransform:"uppercase",color:"#5a7566",padding:"0 12px 4px 13px"}}>{g.label}</div>
-                {g.ids.map(id=>byId[id]).filter(Boolean).map(navItem)}
-              </div>
-            ))}
+                {ids.map(id=>byId[id]).filter(Boolean).map(navItem)}
+              </div>;
+            })}
           </>;
         })()}
       </div>
@@ -392,6 +445,20 @@ function AppShell() {
       <button onClick={()=>setBannerDismissed(true)} style={{marginLeft:"auto",background:"transparent",border:"none",color:"#3d5245",cursor:"pointer",fontSize:16,padding:"0 4px",lineHeight:1}}>✕</button>
     </div>}
 
+    {/* BUILD-58 W-2 — portal-tier application status: a quiet, honest line,
+        never an error screen. Approved renders nothing. */}
+    {isPortalTier&&networkApp&&networkApp.status!=="approved"&&<div style={{background:T.gold100,borderBottom:"1px solid "+T.gold300,padding:"10px 24px",display:"flex",alignItems:"center",gap:10,fontSize:13,color:T.ink}}>
+      <span style={{fontWeight:800,color:T.gold700,letterSpacing:"0.04em",textTransform:"uppercase",fontSize:11}}>
+        {networkApp.status==="pending"?"Application under review":networkApp.status==="held"?"Application on hold":networkApp.status==="dispute"?"EIN under review":"Application not approved"}
+      </span>
+      <span style={{color:T.ink2}}>
+        {networkApp.status==="pending"&&"We verify your EIN and Stripe setup, then a human approves your listing. Meanwhile you can import donors, record gifts, and design your portal — it stays private until approval."}
+        {networkApp.status==="held"&&"A reviewer needs more information — check your email, or reply to jonathan@stewardapp.dev."}
+        {networkApp.status==="dispute"&&"Your EIN is already claimed by another Steward organization — a human is reviewing both applications."}
+        {networkApp.status==="rejected"&&"Your application wasn't approved. If you think that's wrong, write to jonathan@stewardapp.dev."}
+      </span>
+    </div>}
+
     {/* Per-tab width strategy (BUILD-06 Phase E): Home stays a readable
         centered column (~1200px) — it's a reading page. Workspace tabs
         (Donors, Grants, Communications, Reports, Settings + the hidden
@@ -446,7 +513,7 @@ function AppShell() {
     {moreOpen&&<div className="mobile-more-overlay" onClick={()=>setMoreOpen(false)}>
       <div className="mobile-more-drawer slide-up" onClick={e=>e.stopPropagation()}>
         <div className="mobile-more-handle"/>
-        {MORE_TABS.map(t=>{
+        {moreTabs.map(t=>{
           const active=tab===t.id;
           return(
             <button key={t.id} onClick={()=>{setTab(t.id);setMoreOpen(false);}} className={`mobile-more-row${active?" active":""}`}>
@@ -474,13 +541,13 @@ function AppShell() {
 
     {/* Bottom nav bar — mobile only, always in DOM */}
     <div className="mobile-bottom-bar">
-      {BOTTOM_TABS.map(t=>(
+      {bottomTabs.map(t=>(
         <button key={t.id} onClick={()=>{setTab(t.id);setMoreOpen(false);}} className={`mobile-bottom-tab${tab===t.id?" active":""}`}>
           <span className="mob-icon">{t.icon}</span>
           {t.label}
         </button>
       ))}
-      <button onClick={()=>setMoreOpen(v=>!v)} className={`mobile-bottom-tab${MORE_TABS.some(t=>t.id===tab)||moreOpen?" active":""}`}>
+      <button onClick={()=>setMoreOpen(v=>!v)} className={`mobile-bottom-tab${moreTabs.some(t=>t.id===tab)||moreOpen?" active":""}`}>
         <span className="mob-icon">⋯</span>
         More
       </button>

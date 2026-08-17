@@ -4743,13 +4743,14 @@ async function sendReceiptEmail(org, donor, snapshot, pdfBuffer, filename) {
     // "donation receipt") and the cover carries the branded org header like
     // every other donor-facing email — both live-test findings, 2026-08-05.
     const artifact = snapshot.type === "year_end" ? "year-end giving statement" : "donation receipt";
-    const subject = `Your ${artifact} from ${displayNameCase(org.name)}`;
+    const dfName = await donorFacingOrgName(org.id, org.name); // W-2 white-label
+    const subject = `Your ${artifact} from ${dfName}`;
     // BUILD-49 entry point (a)+(b): one quiet footer line on the receipt and
     // year-end cover emails, only for listed orgs.
     const entry = await givingAccountEntry(org);
     const html = await brandEmailHeaderHtml(org.id)
       + `<p>Hi ${escapeHtml(donor.name || "there")},</p>
-      <p>Thank you for your generous gift to <strong>${escapeHtml(displayNameCase(org.name))}</strong> — your official ${snapshot.type === "year_end" ? "year-end giving statement" : "tax receipt"} is attached.</p>`
+      <p>Thank you for your generous gift to <strong>${escapeHtml(dfName)}</strong> — your official ${snapshot.type === "year_end" ? "year-end giving statement" : "tax receipt"} is attached.</p>`
       // BUILD-54 §2 — the campaign's own org-authored copy (frozen in the
       // snapshot at issue time); absent when the campaign has no content.
       + (snapshot.campaignNote ? `<p>Your gift supports <strong>${escapeHtml(snapshot.campaignNote.name)}</strong>. ${escapeHtml(snapshot.campaignNote.description)}</p>` : "")
@@ -7903,6 +7904,15 @@ async function getSuppressionReason(email, orgId) {
 // NB the transactional-vs-marketing line is a legal judgment as well as a
 // product one — flagged for attorney review in BLOCKED-build58.md; this table
 // is the product's best-faith classification, not a legal conclusion.
+// W-2 white-label sweep: the name a DONOR sees is the portal display name
+// when the org set one, never the staff-side orgs.name ("CREO Arts (Demo)").
+// Used by the transactional donor-mail family + the public give payloads.
+async function donorFacingOrgName(orgId, fallbackName) {
+  const rows = await query("SELECT display_name FROM portal_settings WHERE org_id = ?", [orgId]).catch(() => []);
+  const dn = String(rows[0]?.display_name || "").trim();
+  return dn || displayNameCase(fallbackName || "");
+}
+
 const DONOR_MAIL_POLICY = {
   campaign:           "marketing",
   sequence:           "marketing",
@@ -7926,10 +7936,16 @@ async function donorMailDecision(kind, email, orgId) {
     [orgId, email]
   ).catch(() => [null]);
   if (flags?.deceased) return { send: false, reason: "deceased" };
+  const suppressReason = await getSuppressionReason(email, orgId);
   if (cls === "marketing") {
     if (flags?.dnc) return { send: false, reason: "do_not_contact" };
-    const suppressReason = await getSuppressionReason(email, orgId);
     if (suppressReason) return { send: false, reason: suppressReason };
+  } else {
+    // Transactional ignores the donor's marketing OPT-OUT ("unsubscribed") —
+    // that's the W-4 rule — but still honors DELIVERABILITY suppressions:
+    // a hard-bounced address can't receive anything, and mailing a
+    // complainer damages the shared sending domain for every org.
+    if (suppressReason === "bounced" || suppressReason === "complained") return { send: false, reason: suppressReason };
   }
   return { send: true, reason: null };
 }
@@ -8117,7 +8133,7 @@ async function sendRecurringDonorEmail(org, donor, subject, bodyText, { actionUr
   // the policy's hard block (deceased) refuses.
   const decision = await donorMailDecision("recurring_change", donor.email, org.id);
   if (!decision.send) { console.log(`[recurring] donor notification refused (${decision.reason})`); return false; }
-  const orgName = displayNameCase(org.name);
+  const orgName = await donorFacingOrgName(org.id, org.name);
   const psRows = await query("SELECT enabled FROM portal_settings WHERE org_id=?", [org.id]).catch(() => []);
   const ps = psRows[0];
   const html = await brandEmailHeaderHtml(org.id) + `
@@ -8228,7 +8244,8 @@ async function sendDunningEmail(org, donor, subscriptionRow) {
     return { sent: false, refused: decision.reason };
   }
   const updateUrl = buildCardUpdateUrl(subscriptionRow.stripe_subscription_id, org.id);
-  const tokenCtx = { donor, org, amount: subscriptionRow.amount, updateUrl };
+  // W-2 white-label: {{org_name}} renders the donor-facing display name.
+  const tokenCtx = { donor, org: { ...org, name: await donorFacingOrgName(org.id, org.name) }, amount: subscriptionRow.amount, updateUrl };
   const subject = applyDunningTokens(org.recurring_dunning_subject || DEFAULT_DUNNING_SUBJECT, tokenCtx);
   // BUILD-45 §6.3 — when the org's donor portal is enabled, the recovery email
   // also links the donor into their portal (magic-link sign-in — no staff, no
@@ -8267,13 +8284,14 @@ async function sendDunningEmail(org, donor, subscriptionRow) {
 async function sendRecoveredThankYouEmail(org, donor, subscriptionRow) {
   const decision = await donorMailDecision("recovered_thankyou", donor.email, org.id);
   if (!decision.send) return;
+  const dfName = await donorFacingOrgName(org.id, org.name); // W-2 white-label
   const firstName = donor.name ? donor.name.trim().split(/\s+/)[0] : "";
   const amountStr = subscriptionRow.amount != null ? `$${Number(subscriptionRow.amount).toLocaleString()}` : "your";
   const subject = "You're all set — thank you!";
   const bodyHtml = `<p>Hi ${firstName},</p>
-<p>Great news — your card on file worked, and your ${amountStr} gift to ${org.name} went through. Your recurring support is active again, and we're so grateful for it.</p>
+<p>Great news — your card on file worked, and your ${amountStr} gift to ${dfName} went through. Your recurring support is active again, and we're so grateful for it.</p>
 <p>Thank you for sticking with us.</p>
-<p>With gratitude,<br/>${org.name}</p>`
+<p>With gratitude,<br/>${dfName}</p>`
     + await unsubscribeEmailFooterHtml(donor.email, org.id, "campaign");
   const smtpFrom = process.env.DEMO_SMTP_FROM || "noreply@stewardapp.dev";
   if (process.env.RESEND_API_KEY) {
@@ -9403,18 +9421,22 @@ app.get("/org/public-list", wrap(async (req, res) => {
 
 // ── Public donation page ───────────────────────────────────────────────────
 app.get("/org/:orgSlug/public", wrap(async (req, res) => {
+  // BUILD-58 W-2 — the give page is a DONOR-FACING money surface: it shows
+  // the org's white-label display name (portal_settings.display_name) when
+  // set, never the staff-side orgs.name (e.g. "CREO Arts (Demo)").
   const orgs = await query(
-    "SELECT id, name, mission, cover_fees_enabled FROM orgs WHERE org_slug = $1",
+    "SELECT o.id, o.name, o.mission, o.cover_fees_enabled, ps.display_name FROM orgs o LEFT JOIN portal_settings ps ON ps.org_id = o.id WHERE o.org_slug = $1",
     [req.params.orgSlug]
   );
   if (!orgs.length) return res.status(404).json({ error: "Organization not found" });
   const org = orgs[0];
+  org.donor_facing_name = String(org.display_name || "").trim() || org.name;
   const funds = await query("SELECT id, name, restricted FROM fin_funds WHERE org_id = $1 ORDER BY name ASC", [org.id]);
   // BUILD-49 entry point (c): the post-donation thank-you screen offers the
   // giving account only for listed orgs (givingAccountEntry — the one gate).
   // Listing is already public via the directory, so this reveals nothing new.
   const gaEntry = await givingAccountEntry({ id: org.id, org_slug: req.params.orgSlug });
-  res.json({ org: { name: org.name, mission: org.mission, slug: req.params.orgSlug, coverFeesEnabled: org.cover_fees_enabled !== false, givingAccount: !!gaEntry }, funds });
+  res.json({ org: { name: org.donor_facing_name, mission: org.mission, slug: req.params.orgSlug, coverFeesEnabled: org.cover_fees_enabled !== false, givingAccount: !!gaEntry }, funds });
 }));
 
 // ── Giving Pages ────────────────────────────────────────────────────────────
@@ -9571,9 +9593,10 @@ app.delete("/giving-pages/:id", requireAuth, requireAdmin, wrap(async (req, res)
 // GET /org/:orgSlug/public, plus the page's own title/story/image/goal and
 // the real computed raised total (never a manually-set counter).
 app.get("/org/:orgSlug/giving-page/:pageSlug/public", wrap(async (req, res) => {
-  const orgs = await query("SELECT id, name, mission, cover_fees_enabled FROM orgs WHERE org_slug = ?", [req.params.orgSlug]);
+  const orgs = await query("SELECT o.id, o.name, o.mission, o.cover_fees_enabled, ps.display_name FROM orgs o LEFT JOIN portal_settings ps ON ps.org_id = o.id WHERE o.org_slug = ?", [req.params.orgSlug]);
   if (!orgs.length) return res.status(404).json({ error: "Organization not found" });
   const org = orgs[0];
+  org.donor_facing_name = String(org.display_name || "").trim() || org.name; // W-2 white-label
   // raised_amount counts the donor-intended amount (net of covered fees) —
   // the goal-progress rule; campaign_* carry the "counts toward" linkage so a
   // linked page's thermometer tracks the CAMPAIGN's live progress (one goal
@@ -9609,7 +9632,7 @@ app.get("/org/:orgSlug/giving-page/:pageSlug/public", wrap(async (req, res) => {
   );
 
   res.json({
-    org: { name: org.name, mission: org.mission, slug: req.params.orgSlug, coverFeesEnabled: org.cover_fees_enabled !== false, givingAccount: !!(await givingAccountEntry({ id: org.id, org_slug: req.params.orgSlug })) },
+    org: { name: org.donor_facing_name, mission: org.mission, slug: req.params.orgSlug, coverFeesEnabled: org.cover_fees_enabled !== false, givingAccount: !!(await givingAccountEntry({ id: org.id, org_slug: req.params.orgSlug })) },
     givingPage: {
       id: page.id, slug: page.slug, title: page.title, story: page.story, imageUrl: page.image_url,
       goalAmount: page.goal_amount != null ? parseFloat(page.goal_amount) : null,
@@ -9777,9 +9800,10 @@ app.post("/org/:orgSlug/giving-page/:pageSlug/fundraisers", donateLimiter, wrap(
 // "never existed") if either the fundraiser OR its parent page is archived —
 // a fundraiser cannot outlive its campaign's own availability.
 app.get("/org/:orgSlug/giving-page/:pageSlug/fundraiser/:fundraiserSlug/public", wrap(async (req, res) => {
-  const orgs = await query("SELECT id, name, mission, cover_fees_enabled FROM orgs WHERE org_slug = ?", [req.params.orgSlug]);
+  const orgs = await query("SELECT o.id, o.name, o.mission, o.cover_fees_enabled, ps.display_name FROM orgs o LEFT JOIN portal_settings ps ON ps.org_id = o.id WHERE o.org_slug = ?", [req.params.orgSlug]);
   if (!orgs.length) return res.status(404).json({ error: "Organization not found" });
   const org = orgs[0];
+  org.donor_facing_name = String(org.display_name || "").trim() || org.name; // W-2 white-label
 
   const pageRows = await query(
     `SELECT gp.*, f.name AS fund_name FROM giving_pages gp LEFT JOIN fin_funds f ON f.id = gp.fund_id
@@ -9798,7 +9822,7 @@ app.get("/org/:orgSlug/giving-page/:pageSlug/fundraiser/:fundraiserSlug/public",
   const f = fRows[0];
 
   res.json({
-    org: { name: org.name, mission: org.mission, slug: req.params.orgSlug, coverFeesEnabled: org.cover_fees_enabled !== false, givingAccount: !!(await givingAccountEntry({ id: org.id, org_slug: req.params.orgSlug })) },
+    org: { name: org.donor_facing_name, mission: org.mission, slug: req.params.orgSlug, coverFeesEnabled: org.cover_fees_enabled !== false, givingAccount: !!(await givingAccountEntry({ id: org.id, org_slug: req.params.orgSlug })) },
     givingPage: { id: page.id, slug: page.slug, title: page.title, fundId: page.fund_id, fundName: page.fund_name || null },
     peerFundraiser: {
       id: f.id, slug: f.slug, name: f.name, story: f.story, imageUrl: f.image_url,

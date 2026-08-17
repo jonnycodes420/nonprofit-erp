@@ -161,6 +161,7 @@ export function adaptData({ org, donors, grants, volunteers, tasks, board, finan
       website:    org.website || "",
       programs:   [],
       ein:        org.ein || "",
+      plan:       org.plan || "",           // BUILD-58 W-2 — the shell branches on the portal tier
       fiscalYear: "Jan-Dec",
       logo:        org.logo_data || "",       // BUILD-13 branding
       brandAccent: org.brand_accent || "",
