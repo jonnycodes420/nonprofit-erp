@@ -104,8 +104,14 @@ async function api(method, p, token, body) {
   const editor = fs.readFileSync(path.join(__dirname, "..", "client", "src", "pages", "PortalEditor.jsx"), "utf8");
   ok("bannerImgStyle is the ONE object-fit/object-position source", /export function bannerImgStyle/.test(banner) && /objectPosition: focalPosition/.test(banner), null);
   ok("live banner renders via PortalBanner (which uses bannerImgStyle)", /PortalBanner[\s\S]{0,400}ratio=\{PORTAL_HEADER_RATIO\}/.test(portal), null);
-  ok("editor preview uses the SAME ratio (PORTAL_HEADER_RATIO)", /PortalBannerPreview[\s\S]{0,300}ratio=\{PORTAL_HEADER_RATIO\}/.test(editor), null);
-  ok("PortalBannerPreview reuses bannerImgStyle (identical crop math)", /bannerImgStyle\(\{ x: fx, y: fy \}\)/.test(banner), null);
+  // BUILD-61 baseline update: the editor now uses the CROP control
+  // (PortalBannerCrop) in place of the BUILD-59 focal-only PortalBannerPreview.
+  // It reuses the SAME slot ratio and the SAME cropImgStyle the live banner
+  // renders through, so preview == render still holds by reuse (the crop math
+  // + non-destructiveness are pinned in tests/portal-crop.test.js).
+  ok("editor crop control uses the SAME ratio (PORTAL_HEADER_RATIO)", /PortalBannerCrop[\s\S]{0,700}ratio=\{PORTAL_HEADER_RATIO\}/.test(editor), null);
+  ok("the crop editor renders through the SAME cropImgStyle as the live banner (preview==render)", /cur \? cropImgStyle\(cur\)/.test(banner), null);
+  ok("bannerImgStyle applies the crop over the focal fallback", /if \(crop && crop\.w > 0 && crop\.h > 0\) return cropImgStyle\(crop\)/.test(banner), null);
 
   summary();
 })().catch(e => { console.error(e); process.exit(1); });

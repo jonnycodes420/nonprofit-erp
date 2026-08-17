@@ -75,11 +75,15 @@ export function bannerImgStyle(focal, crop) {
 // overlaid children (the identity plaque). `ratio` is a CSS aspect-ratio
 // string; `bandColor` is the org primary (the loading band); `priority` marks
 // the hero (eager + high fetch priority) vs below-fold (lazy).
-export default function PortalBanner({ url, focal, crop, bandColor, ratio = "1200 / 320", priority = false, scrim = true, alt = "", children, radius = 0 }) {
+export default function PortalBanner({ url, focal, crop, bandColor, ratio = "1200 / 320", priority = false, scrim = true, alt = "", children, radius = 0, maxVh }) {
   const src = resolveAssetUrl(url);
   const srcSet = bannerSrcSet(url);
   return (
-    <div style={{ position: "relative", width: "100%", aspectRatio: ratio, background: bandColor || "var(--pt-primary, #1a6b4a)", overflow: "hidden", borderRadius: radius }}>
+    // BUILD-61 Part 3 item 1 — the banner is capped at a proportion of the
+    // viewport height (maxVh) so the hero never eats the fold at large widths;
+    // the aspect-ratio still reserves space (CLS 0) and object-fit:cover crops
+    // into the capped box, so the render stays clean.
+    <div style={{ position: "relative", width: "100%", aspectRatio: ratio, maxHeight: maxVh ? `${maxVh}vh` : undefined, background: bandColor || "var(--pt-primary, #1a6b4a)", overflow: "hidden", borderRadius: radius }}>
       {url && (
         <img
           src={src}

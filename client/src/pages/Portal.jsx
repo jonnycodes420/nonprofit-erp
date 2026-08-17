@@ -149,6 +149,7 @@ function PortalHeader({ theme }) {
           crop={theme.headerCrop}
           bandColor="var(--pt-primary)"
           ratio={PORTAL_HEADER_RATIO}
+          maxVh={42}
           priority
           alt=""
         >
@@ -175,13 +176,22 @@ function AccountBar({ me, onSignOut }) {
   if ((me.recurring || []).length) links.push(["Recurring", "#recurring", true]);
   if ((me.receipts || []).length) links.push(["Receipts & tax", "#receipts", true]);
   return (
-    <div className="pt-col" style={{ display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap", marginBottom: 14 }}>
-      <span style={{ fontSize: 14 }}>Welcome back{me.donorName ? `, ${me.donorName.split(" ")[0]}` : ""}.</span>
-      <nav aria-label="Your giving" style={{ display: "flex", gap: 14, flexWrap: "wrap" }}>
-        {links.map(([label, href]) => (
-          <a key={label} href={href} style={{ color: "var(--pt-button, var(--pt-primary))", fontSize: 13, fontWeight: 700, textDecoration: "none", borderBottom: "2px solid var(--pt-accent)", paddingBottom: 1 }}>{label}</a>
-        ))}
-      </nav>
+    // §5 fix 3 / BUILD-61 Part 3 item 4 — three DISTINCT treatments so the row
+    // doesn't read as three unrelated things on one line: (1) the greeting is a
+    // quiet serif line (identity/tone); (2) the navigation is a bordered pill
+    // GROUP that clearly reads as nav, not floating tabs beside the greeting;
+    // (3) Sign out is a quiet button pinned right.
+    <div className="pt-col" style={{ display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap", marginBottom: 16 }}>
+      <span style={{ fontFamily: "var(--pt-serif, 'DM Serif Display',Georgia,serif)", fontSize: 17, color: "#1c1c1a", letterSpacing: "-0.01em" }}>
+        Welcome back{me.donorName ? `, ${me.donorName.split(" ")[0]}` : ""}.
+      </span>
+      {links.length > 0 && (
+        <nav aria-label="Your giving" style={{ display: "flex", alignItems: "center", gap: 2, flexWrap: "wrap", border: "1px solid color-mix(in srgb, var(--pt-primary) 22%, transparent)", borderRadius: 999, padding: 3, background: "color-mix(in srgb, var(--pt-primary) 6%, transparent)" }}>
+          {links.map(([label, href]) => (
+            <a key={label} href={href} style={{ color: "var(--pt-button, var(--pt-primary))", fontSize: 13, fontWeight: 700, textDecoration: "none", borderRadius: 999, padding: "5px 12px" }}>{label}</a>
+          ))}
+        </nav>
+      )}
       <button style={{ ...S.btnQuiet, padding: "6px 14px", fontSize: 13, marginLeft: "auto" }} onClick={onSignOut}>Sign out</button>
     </div>
   );
@@ -587,15 +597,18 @@ function Dashboard({ slug, me, reload, page }) {
           {/* 2026-08-15 wide-width pass: updates flow 2-up at >=1280px. */}
           <div className="pt-impactgrid">
           {me.impact.map(u => (
-            <div key={u.id} style={{ marginBottom: 20 }}>
-              <div style={{ fontWeight: 700, fontSize: 16, marginBottom: 4 }}>{u.title}</div>
+            <div key={u.id} style={{ marginBottom: 24 }}>
+              <div style={{ fontWeight: 700, fontSize: 16, marginBottom: 8 }}>{u.title}</div>
+              {/* BUILD-61 Part 3 item 2 — impact photos run FULL-WIDTH above the
+                  update text (a single photo spans the column; 2+ share a row),
+                  so they read as photographs, not left-aligned clip-art thumbs. */}
               {(u.photos || []).length > 0 && (
-                <div style={{ display: "flex", gap: 8, margin: "8px 0", flexWrap: "wrap" }}>
-                  {u.photos.map((p, i) => <img key={i} src={resolveAssetUrl(p)} alt="" style={{ maxWidth: 200, maxHeight: 140, borderRadius: 8, objectFit: "cover" }} />)}
+                <div style={{ display: "grid", gridTemplateColumns: u.photos.length > 1 ? "1fr 1fr" : "1fr", gap: 8, margin: "0 0 10px" }}>
+                  {u.photos.map((p, i) => <img key={i} src={resolveAssetUrl(p)} alt="" style={{ width: "100%", height: u.photos.length > 1 ? 190 : 260, borderRadius: 10, objectFit: "cover", display: "block" }} />)}
                 </div>
               )}
               {u.body && <div style={{ fontSize: 14, lineHeight: 1.7, whiteSpace: "pre-wrap" }}>{u.body}</div>}
-              <div style={{ ...S.muted, marginTop: 4, fontSize: 12 }}>{String(u.date).slice(0, 10)}</div>
+              <div style={{ ...S.muted, marginTop: 6, fontSize: 12 }}>{String(u.date).slice(0, 10)}</div>
             </div>
           ))}
           </div>
