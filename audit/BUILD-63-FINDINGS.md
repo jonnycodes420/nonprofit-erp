@@ -223,6 +223,40 @@ proven, from production data, that money at Stripe and money in Steward agree.
 
 ---
 
+## POST-SHIP OBSERVATION — the guard reported "clean" for a charge I know is unrecorded
+
+With BUILD-62 live, `/health.reconciliation` ran in prod
+(`checkedAt 2026-08-17T20:04:59Z`) and reported `unrecordedCharges: 0` — but the
+drill's $1 charge is still unrecorded (Jonathan hasn't recovered it yet), so it
+should have been flagged. I could not reproduce the guard's `charges.list` from
+this environment: the Stripe CLI's **restricted** `rk_live` key returns
+`account_invalid` ("does not have access to account … Application access may have
+been revoked") for `charges.list`/`payment_intents.retrieve` on the connected
+account — though the SAME key can read that account's *events* and
+*subscriptions*. So a restricted key can be scoped such that it reads some
+resources on a connected account but not charges.
+
+That is exactly the silent-failure shape this build exists to kill: the guard
+`continue`d past a read failure and the account contributed 0, so `/health` read
+all-clear while the guard was **blind**. **Fixed:** `reconcileStripeVsGifts` now
+counts `accountsChecked` / `accountsErrored`; a read failure is logged as "guard
+BLIND for this account" + Sentry, and `/health.reconciliation.accountsErrored`
+surfaces it. **`unrecordedCharges: 0` is only trustworthy when `accountsErrored:
+0`.** Pinned by `reconciliation` Scenario 7 (a 403 on an account → counted
+errored, surfaced on /health, not silently clean).
+
+**Action / open question for Jonathan:** once `fbe40ba`+ is live, read
+`/health.reconciliation` — if `accountsErrored > 0`, the prod donation key is a
+restricted key without connected-account **charge** read, and the guard is blind
+in production (it must be given a key that can read charges on connected accounts,
+or the restricted key's scope widened). If `accountsErrored: 0` with
+`accountsChecked > 0` and still `unrecordedCharges: 0`, then either CREO's
+connected account isn't `acct_…4aV` in the `orgs` row the guard scans, or a gift
+already exists for that charge — worth a direct look. The prod donation key
+CREATES charges on connected accounts (donations require it), so it most likely
+CAN read them and `accountsErrored` will be 0 — but the guard now tells the truth
+either way instead of guessing.
+
 ## §worry
 
 - **The reconciliation guard is still the only backstop, and it is detection, not

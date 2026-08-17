@@ -29,6 +29,14 @@ function startStripeMock(port = 5603) {
         res.setHeader("Content-Type", "application/json");
         const acct = req.headers["stripe-account"];
         if (req.method === "GET" && req.url.startsWith("/v1/charges")) {
+          // BUILD-63 — simulate a key that can't read a connected account's
+          // charges (restricted key / revoked grant): the guard must count this
+          // as a blind account, never silently as "clean".
+          if (acct === "acct_blind") {
+            res.statusCode = 403;
+            res.end(JSON.stringify({ error: { message: "no access to acct_blind", type: "invalid_request_error", code: "account_invalid" } }));
+            return;
+          }
           const data = acct === ACCT ? mockCharges : [];
           res.end(JSON.stringify({ object: "list", data, has_more: false }));
           return;
@@ -138,6 +146,21 @@ const healthRecon = async () => (await api("GET", "/health")).body.reconciliatio
   const d6 = (r.body.divergences || []).find(d => d.kind === "refunded_charge_with_live_gift" && d.paymentIntent === "pi_refunded");
   ok("Scenario 6: a fully-refunded charge whose gift was never reversed is flagged",
     !!d6 && d6.chargeId === "ch_recon_ref" && d6.account === ACCT, r.body.divergences);
+
+  // ── Scenario 7 — BUILD-63: the guard must not report "clean" when it is BLIND.
+  //     An account whose charges can't be read (restricted key / revoked grant)
+  //     is counted, not silently skipped — a non-zero accountsErrored means an
+  //     unrecordedCharges:0 is NOT a clean bill of health. ────────────────────
+  await q(`INSERT INTO orgs (id,name,org_slug,onboarding_complete,subscription_status,plan,stripe_account_id,stripe_connected)
+           VALUES ('org_recon_blind','Blind Org','recon-blind',1,'active','growth','acct_blind',true)`, [])
+    .catch(() => {});
+  mockCharges = [];
+  r = await runReconcile(token);
+  ok("Scenario 7: a connected account that can't be read is counted as errored, not clean",
+    r.body.accountsErrored >= 1 && r.body.accountsChecked >= 1, { errored: r.body.accountsErrored, checked: r.body.accountsChecked });
+  h = await healthRecon();
+  ok("…and /health surfaces accountsErrored so a blind guard is visible", h.accountsErrored >= 1, h);
+  await q(`DELETE FROM orgs WHERE id='org_recon_blind'`, []).catch(() => {});
 
   if (smock) smock.close();
   await closeDb();

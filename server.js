@@ -1500,7 +1500,8 @@ let ledgerChartSelfHeals = 0;
 // the single worst thing this product can do; it should page within the hour,
 // not wait for someone to open a portal. See reconcileStripeVsGifts() below.
 let reconciliation = {
-  unrecordedCharges: 0, orphanGifts: 0, checkedAt: null, oldestUnrecordedAgeMin: null, divergences: [],
+  unrecordedCharges: 0, orphanGifts: 0, checkedAt: null, oldestUnrecordedAgeMin: null,
+  accountsChecked: null, accountsErrored: null, divergences: [],
 };
 function reconciliationHealth() {
   return {
@@ -1508,6 +1509,12 @@ function reconciliationHealth() {
     orphanGifts: reconciliation.orphanGifts,
     checkedAt: reconciliation.checkedAt,
     oldestUnrecordedAgeMin: reconciliation.oldestUnrecordedAgeMin,
+    // BUILD-63 — accountsErrored > 0 means the guard could NOT read some
+    // connected accounts (e.g. a restricted key without connected-account
+    // charge access): a "clean" unrecordedCharges is not trustworthy while this
+    // is non-zero. Watch it alongside unrecordedCharges.
+    accountsChecked: reconciliation.accountsChecked ?? null,
+    accountsErrored: reconciliation.accountsErrored ?? null,
   };
 }
 
@@ -13929,7 +13936,7 @@ async function reconcileStripeVsGifts() {
   const sinceSec = nowSec - RECONCILE_WINDOW_HOURS * 3600;
   const sinceDate = new Date(sinceSec * 1000).toISOString().slice(0, 10);
   const divergences = [];
-  let unrecorded = 0, orphans = 0, oldestAgeMin = null;
+  let unrecorded = 0, orphans = 0, oldestAgeMin = null, accountsChecked = 0, accountsErrored = 0;
   // Only orgs with a connected account can have taken a donation.
   const orgs = await query(
     "SELECT id, stripe_account_id FROM orgs WHERE stripe_account_id IS NOT NULL LIMIT 500");
@@ -13938,7 +13945,18 @@ async function reconcileStripeVsGifts() {
     let charges;
     try {
       charges = await stripe.charges.list({ created: { gte: sinceSec }, limit: 100 }, { stripeAccount: acct });
-    } catch (e) { console.error(`[reconcile] charges.list failed for ${acct}: ${e.message}`); continue; }
+      accountsChecked++;
+    } catch (e) {
+      // BUILD-63 — a guard that can't SEE must not report "clean." A read
+      // failure here (e.g. a restricted key without connected-account charge
+      // access, or a revoked application grant) previously just `continue`d,
+      // so the account silently contributed 0 divergences and /health read
+      // all-clear while the guard was blind. Count it and surface it: a
+      // non-zero accountsErrored means unrecordedCharges:0 is NOT trustworthy.
+      accountsErrored++;
+      console.error(`[reconcile] charges.list failed for ${acct} — guard BLIND for this account: ${e.message}`);
+      continue;
+    }
     const seenPIs = new Set();
     for (const ch of (charges?.data || [])) {
       if (ch.status !== "succeeded") continue;
@@ -13997,11 +14015,15 @@ async function reconcileStripeVsGifts() {
   }
   reconciliation = {
     unrecordedCharges: unrecorded, orphanGifts: orphans, checkedAt: new Date().toISOString(),
-    oldestUnrecordedAgeMin: oldestAgeMin, divergences: divergences.slice(0, 50),
+    oldestUnrecordedAgeMin: oldestAgeMin, accountsChecked, accountsErrored, divergences: divergences.slice(0, 50),
   };
   if (unrecorded > 0) {
     console.error(`[reconcile] ALERT: ${unrecorded} Stripe charge(s) with NO gift in Steward (oldest ${oldestAgeMin}m) — ${JSON.stringify(divergences.filter(d => d.kind === "charge_without_gift").slice(0, 10))}`);
     try { if (process.env.SENTRY_DSN) Sentry.captureMessage(`reconciliation: ${unrecorded} unrecorded Stripe charge(s)`, "error"); } catch { /* surfacing must never throw */ }
+  }
+  if (accountsErrored > 0) {
+    console.error(`[reconcile] ${accountsErrored} connected account(s) could not be read — the guard is BLIND for them; unrecordedCharges:${unrecorded} is not a clean bill of health.`);
+    try { if (process.env.SENTRY_DSN) Sentry.captureMessage(`reconciliation: guard blind for ${accountsErrored} account(s)`, "warning"); } catch { /* never throw */ }
   }
   return reconciliation;
 }
