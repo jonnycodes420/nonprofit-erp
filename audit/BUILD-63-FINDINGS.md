@@ -231,15 +231,40 @@ one gift, one sub row, one donor.
 
 ---
 
-## PART 5 — AFTER JONATHAN'S LIVE CHARGE
+## PART 5 — POST-RECOVERY VERIFICATION FROM PRODUCTION DATA
 
-Pending. Once Jonathan re-delivers the missed event and runs the fresh live charge
-(`BLOCKED-build62-verify.md`), the post-charge verification runs from production
-DATA (one sub row + one gift per subscription; amount/fund/ledger correct; portal
-+ cross-org + receipts moved; `/health.reconciliation` zero divergence both ways;
-recovered $1 + fresh charge both present, neither duplicated) and the
-reconciliation output is quoted here. This will be the first time the product has
-proven, from production data, that money at Stripe and money in Steward agree.
+Jonathan recovered the first $1 (re-delivered the dropped
+`payment_intent.succeeded` to the live endpoint; the deployed fix + the now-
+existing subscription row recorded it — no re-charge). Verified from prod DATA,
+not from word — **the whole chain, clean and un-duplicated**:
+
+| Check | Result (read from prod, 2026-08-17) |
+|---|---|
+| Gift row | `g_76da4688` · $1 · `stripe_payment_id pi_3U5Ugz…` · linked `recurring_subscription_id rsub_eebec117` — **exactly one** |
+| Ledger stamp | one row · `Online gift via Stripe` · `source=online` · `gift_id=g_76da4688` (the "one gift, one stamp" invariant holds) |
+| Donor totals | `$1,300 → $1,301` · `5 → 6 gifts` · last gift `2026-08-17 $1` |
+| Subscription link | roster `rsub_eebec117`: `totalGiven 1`, `linkedGiftCount 1` (were 0/0) |
+| Fund designation | none — the drill's first checkout carried an empty `fund_id` (Part 0), so nothing to carry; not a defect |
+| Tax receipt | **`#2026-00010` · $1 · type gift** (the receipt counter advanced correctly past the year-end `#2026-00009`) |
+| Receipt email | `sent_to xjca2006@gmail.com` · `sent_at 2026-08-17T19:37:53Z` (BUILD-58: `sent_at` only after real delivery) |
+| Duplicate? | **none** — one gift dated today, `gift_count 6`, one ledger row, one receipt |
+
+**This is the milestone the brief named: from production data, money at Stripe
+and money in Steward now agree** for that charge — Stripe charge → gift → ledger
+→ donor total → subscription link → tax receipt → email, every link confirmed.
+The portal/cross-org figures read as live SUMs over the gift rows, so they move
+with the recorded gift by construction.
+
+`/health.reconciliation` now reads `unrecordedCharges: 0` **correctly** (the gift
+exists, so the charge is matched) — where before recovery it read 0 while the
+charge was genuinely unrecorded (the blindness question, answered by
+`accountsErrored` once `4802bba` deploys).
+
+**Still outstanding (Jonathan):** the **fresh** live charge
+(`BLOCKED-build62-verify.md`) — a brand-new subscription proving the ordering fix
+under real concurrent delivery. The recovered $1 proves the recording chain end
+to end; the fresh charge proves the race is closed. No second subscription is in
+the roster yet, so that leg is pending.
 
 ---
 
