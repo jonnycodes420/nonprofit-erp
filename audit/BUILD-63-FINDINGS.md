@@ -302,6 +302,21 @@ CREATES charges on connected accounts (donations require it), so it most likely
 CAN read them and `accountsErrored` will be 0 — but the guard now tells the truth
 either way instead of guessing.
 
+### RESOLVED (2026-08-17, hardening live on `a216660`)
+
+`/health.reconciliation` now reads **`accountsChecked: 1, accountsErrored: 0,
+unrecordedCharges: 0`** (checkedAt 21:11:36Z). The prod guard **is not blind** —
+it reads the one connected account (CREO's `acct_…4aV`; it is the only org with a
+non-null `stripe_account_id` in prod) with zero read errors. And the earlier
+`unrecordedCharges: 0` was **correct, not a false negative**: Jonathan recovered
+the $1 at **19:37** (the recovered gift's receipt `sent_at`), and every reconcile
+reading I saw (20:04, 20:42, 21:00, 21:11) was *after* that, so the charge was
+already matched to its gift. My blindness suspicion was a timing error on my part
+— but the hardening was still the right call: it turned an unverifiable "0" into
+a self-describing `accountsChecked:1 / accountsErrored:0`, which is exactly why
+the answer is now certain instead of inferred. The guard sees production, and
+Stripe and Steward agree.
+
 ## §worry
 
 - **The reconciliation guard is still the only backstop, and it is detection, not
