@@ -42,7 +42,7 @@ const GUARDED_WRITERS = [
   "seed-build45-portal-demo",
   "seed-build50-demo", "seed-build54-demo", "seed-creo-goals",
   "seed-fundraising-demo",
-  "build59-capture",
+  "build59-capture", "build59-install-demo-images",
 ];
 
 // Writes data but HARD-REFUSES any non-loopback target outright (stricter

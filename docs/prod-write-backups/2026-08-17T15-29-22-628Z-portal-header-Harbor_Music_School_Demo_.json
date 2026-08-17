@@ -1,0 +1,11 @@
+{
+  "base": "https://nonprofit-erp-production.up.railway.app",
+  "label": "portal-header-Harbor_Music_School_Demo_",
+  "savedAt": "2026-08-17T15:29:22.629Z",
+  "current": {
+    "display_name": "Harbor Music School",
+    "header_image_url": "/portal-assets/pa_6b196fdd0fecdbe09bb32b79",
+    "header_focal_x": 0.5,
+    "header_focal_y": 0.5
+  }
+}

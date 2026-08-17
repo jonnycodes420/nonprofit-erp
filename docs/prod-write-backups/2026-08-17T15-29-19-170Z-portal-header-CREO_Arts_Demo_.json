@@ -1,0 +1,11 @@
+{
+  "base": "https://nonprofit-erp-production.up.railway.app",
+  "label": "portal-header-CREO_Arts_Demo_",
+  "savedAt": "2026-08-17T15:29:19.177Z",
+  "current": {
+    "display_name": "CREO Arts",
+    "header_image_url": "/portal-assets/pa_3d22c8f3b451542269d5c3b8",
+    "header_focal_x": 0.5,
+    "header_focal_y": 0.5
+  }
+}
