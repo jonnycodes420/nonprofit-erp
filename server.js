@@ -17168,6 +17168,28 @@ app.get("/portal/:orgSlug/session", requirePortalSession, wrap(async (req, res) 
   res.json({ email: req.portal.email });
 }));
 
+// BUILD-61 Part 4 — the returning-donor default, done SAFELY. This is
+// requirePortalSession-authed: identity is already established (the donor is
+// signed in to THEIR OWN portal for THIS org) and the arrangement returned is
+// their own. The anonymous /give page never calls a donor-varying endpoint, so
+// a public give page is byte-identical whether or not the email behind it has
+// ever given (pinned in tests/org-blindness.test.js). Returns the donor's
+// current recurring arrangement (frequency + intended base amount) or null.
+app.get("/portal/:orgSlug/give-default", requirePortalSession, wrap(async (req, res) => {
+  const { org, email } = req.portal;
+  const donors = await portalDonorsFor(org.id, email);
+  if (!donors.length) return res.json({ arrangement: null });
+  const rows = await query(
+    `SELECT amount, cover_fee_amount, interval FROM recurring_subscriptions
+     WHERE org_id = ? AND donor_id = ANY(?) AND status IN ('active','recovered','past_due','recovering')
+     ORDER BY updated_at DESC NULLS LAST, created_at DESC LIMIT 1`,
+    [org.id, donors.map(d => d.id)]);
+  if (!rows.length) return res.json({ arrangement: null });
+  const s = rows[0];
+  const base = Math.max(1, Math.round((Number(s.amount) || 0) - (Number(s.cover_fee_amount) || 0)));
+  res.json({ arrangement: { frequency: s.interval === "year" ? "annual" : "monthly", amount: base } });
+}));
+
 // ── §3 — the dashboard: every figure from the SAME gifts ledger the CRM
 //    reports read (org-scoped, live SUMs; no parallel computation) ──────────
 app.get("/portal/:orgSlug/me", requirePortalSession, wrap(async (req, res) => {

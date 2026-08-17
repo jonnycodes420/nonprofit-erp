@@ -17,6 +17,13 @@ import { resolvePairing, cardChrome, THEME_DEFAULTS } from "../lib/portalTheme";
 const ONETIME_FALLBACK = [25, 50, 100, 250, 500];
 const MONTHLY_FALLBACK = [10, 25, 50, 100, 250];
 
+// BUILD-61 Part 4 — the portal-session API base (first-party via the vercel.json
+// /portal-api proxy in prod; direct in dev). ONLY used to read a SIGNED-IN
+// donor's own existing arrangement — the anonymous give page never touches it,
+// so it can never reveal that an email is a donor.
+const PORTAL_BASE = import.meta.env.VITE_PORTAL_API
+  || (import.meta.env.PROD ? "/portal-api" : (import.meta.env.VITE_API_URL || "http://localhost:3001") + "/portal");
+
 // The pre-selected tier of the active ladder. The spec's "middle tier — $50
 // one-time, $25 monthly" lands on the SECOND tier of the default 5-item
 // ladders (index 1), so that is the low-friction default we honor, re-selected
@@ -175,6 +182,7 @@ export default function Donate() {
   const [email, setEmail] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [submitErr, setSubmitErr] = useState("");
+  const [returning, setReturning] = useState(false); // signed-in donor prefill applied
 
   const th = resolveTheme(org?.theme);
   const activeLadder = frequency === "monthly" ? th.monthlyAmounts : th.onetimeAmounts;
@@ -227,6 +235,29 @@ export default function Donate() {
       })
       .catch(() => { setPageError("Could not load this donation page."); setPageLoading(false); });
   }, [orgSlug, pageSlug, fundraiserSlug]);
+
+  // BUILD-61 Part 4 — a SIGNED-IN returning donor defaults to their existing
+  // arrangement. Identity is established by the portal session (first-party
+  // cookie via the /portal-api proxy); this is a donor reading THEIR OWN
+  // history. Anonymous visitors get 401 here → no change, so the public page
+  // is byte-identical whether or not the email behind it has ever given.
+  useEffect(() => {
+    if (!org || pageSlug) return; // org-wide give page only
+    let cancelled = false;
+    fetch(`${PORTAL_BASE}/${orgSlug}/give-default`, { credentials: "include", headers: { "Content-Type": "application/json" } })
+      .then(r => (r.ok ? r.json() : null))
+      .then(d => {
+        if (cancelled || !d || !d.arrangement) return;
+        const { frequency: f, amount } = d.arrangement;
+        const ladder = f === "monthly" ? (org.theme?.monthlyAmounts || MONTHLY_FALLBACK) : (org.theme?.onetimeAmounts || ONETIME_FALLBACK);
+        setFrequency(f);
+        if (ladder.includes(amount)) { setPreset(amount); setIsCustom(false); setCustomAmt(""); }
+        else { setIsCustom(true); setCustomAmt(String(amount)); setPreset(null); }
+        setReturning(true);
+      })
+      .catch(() => { /* anonymous / no proxy — ignore */ });
+    return () => { cancelled = true; };
+  }, [org, orgSlug, pageSlug]);
 
   // Frequency switch: re-select the second tier of the NEW ladder (never carry
   // the old amount across — a $250 one-time gift is a very different monthly ask).
@@ -573,7 +604,11 @@ export default function Donate() {
               </button>
             ))}
           </div>
-          {frequency === "monthly" && (
+          {returning ? (
+            <div style={{ marginTop: 10, fontSize: 12.5, color: T.ink2, lineHeight: 1.5 }}>
+              Welcome back — we've set this to your current gift to {org.name}. Change anything you like.
+            </div>
+          ) : frequency === "monthly" && (
             <div style={{ marginTop: 10, fontSize: 12.5, color: T.ink2, lineHeight: 1.5 }}>
               Monthly giving is the steadiest way to support {org.name} — and you can change or stop it anytime.
             </div>

@@ -212,6 +212,27 @@ async function captureBattery(tokenA) {
     ok(`org-A audit view after drill-down never contains "${marker}"`, !auditView.text.includes(marker));
   }
 
+  // ── BUILD-61 Part 4 — the returning-donor default stays donor-BLIND ────────
+  // The anonymous /give page must be byte-identical whether or not the email
+  // behind it has ever given, and the prefill endpoint must refuse anonymice —
+  // recognition happens ONLY inside an established portal session (the donor's
+  // own history). Run last so it never disturbs the frozen world-1/2 battery.
+  {
+    const beforeGive = await raw("GET", `/org/${SLUG_A}/public`);
+    // An Org-A donor now has a gift AND an active recurring arrangement.
+    await q(`INSERT INTO recurring_subscriptions (id,org_id,donor_id,stripe_subscription_id,amount,interval,status)
+             VALUES ('rs_ob61',$1,'d_obA_w','sub_ob61',30,'month','active') ON CONFLICT (id) DO NOTHING`, [ORG_A]);
+    await q(`INSERT INTO gifts (id,org_id,donor_id,amount,date,type,campaign) VALUES ('g_ob61',$1,'d_obA_w',30,'${THIS_YEAR}-08-01','cash','') ON CONFLICT (id) DO NOTHING`, [ORG_A]);
+    const afterGive = await raw("GET", `/org/${SLUG_A}/public`);
+    ok("the anonymous give page is BYTE-IDENTICAL before/after the donor gives (donor-blind)", beforeGive.text === afterGive.text);
+
+    const anon = await raw("GET", `/portal/${SLUG_A}/give-default`);
+    ok("give-default refuses an anonymous request (401 — never reveals a donor)", anon.status === 401, anon.status);
+    const authed = await raw("GET", `/portal/${SLUG_A}/give-default`, { cookie });
+    const arr = JSON.parse(authed.text).arrangement;
+    ok("give-default returns the SIGNED-IN donor's own arrangement", authed.status === 200 && arr && arr.frequency === "monthly" && arr.amount === 30, { status: authed.status, arr });
+  }
+
   sink.close();
   await closeDb();
   summary();
