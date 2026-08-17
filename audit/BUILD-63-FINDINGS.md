@@ -10,11 +10,31 @@ and answers it with out-of-order regression tests where money can move.
 ## PART 1 — SHIP IT
 
 BUILD-62 (the redacted `7ac3448`, single commit) went through the full gate:
-pre-push battery green (99 suites), pushed to `main`
-(`12bd1ed..7ac3448`), CI `test` job green. Deploy: `deploy-railway` +
-`deploy-vercel` ran; both surfaces SHA-verified via `/health.buildSha` and the
-`<meta name="build-sha">` tag. **Deployed SHA: `7ac3448` — see the SHA-verified
-line at the end of this file** (filled in once both surfaces reported it live).
+pre-push battery green (99 suites), pushed to `main` (`12bd1ed..7ac3448`), CI
+`test` job green, and **both surfaces SHA-verified live** — `deploy-railway`
+SUCCESS (`/health.buildSha == 7ac3448`) and `deploy-vercel` SUCCESS (its "verify
+live site serves this commit" step green; note `curl` can't verify the frontend
+directly because `www.stewardapp.dev` sits behind Vercel's bot-challenge
+"Security Checkpoint" — the CI job's own SHA-verify is the check).
+
+BUILD-63 then shipped on top: **`fbe40ba` (the manifest + the three race fixes)
+is SHA-verified live on both surfaces** (deploy-railway + deploy-vercel both
+SUCCESS), and **`4802bba` (the reconcile-blindness hardening) is the current
+`main` HEAD**. Its `deploy-railway` was cancelled once (queued behind fbe40ba's
+slow Railway build, dropped by the `deploy-main` concurrency group); the hardening
+rides the next `railway up` (which deploys the full working tree). **Deployed SHA
+chain: `7ac3448` → `fbe40ba` (live) → `4802bba` (HEAD, backend deploy re-triggered
+by the final docs commit).**
+
+**Live `/health` readings confirm the build works in production** (on `fbe40ba`):
+- `webhookSubscriptions: {missingCount: 2, checked: true}` — the prod
+  manifest-vs-endpoint diff ran and found **exactly the 2 handled-but-unsubscribed
+  events** this file lists (`charge.dispute.updated` on donation,
+  `invoice.payment_succeeded` on billing). Part 2 works end-to-end in prod.
+- `reconciliation: {unrecordedCharges: 0, checkedAt: 2026-08-17T20:42:28Z, …}` —
+  the guard re-ticks in prod. `accountsErrored` appears once `4802bba` deploys
+  (see the post-ship observation below — that field is what tells us whether the
+  0 is trustworthy or the guard is blind).
 
 Note on the push: the first attempts were correctly blocked — the *public* repo
 would have received the live Stripe object ids (account / customer / subscription
