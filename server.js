@@ -16769,7 +16769,8 @@ async function portalOrgBySlug(slug) {
             ps.primary_color, ps.accent_color, ps.footer_text AS portal_footer,
             ps.contact_email AS portal_contact, ps.ein_line AS portal_ein,
             ps.powered_by, ps.min_recurring_cents, ps.network_listed,
-            ps.background_tint, ps.button_color, ps.type_pairing, ps.card_style
+            ps.background_tint, ps.button_color, ps.type_pairing, ps.card_style,
+            ps.header_focal_x, ps.header_focal_y
      FROM orgs o JOIN portal_settings ps ON ps.org_id = o.id
      WHERE o.org_slug = ? AND ps.enabled = true`, [slug]);
   return rows[0] || null;
@@ -16821,6 +16822,12 @@ function portalThemePayload(org) {
     displayName: clean(org.portal_display_name, 120) || displayNameCase(org.name),
     logo: org.portal_logo || org.logo_data || null,
     headerImage: org.portal_header_image || null,
+    // BUILD-59 — normalized focal point (0..1, center default) honored by the
+    // banner render via object-position. Clamped defensively.
+    headerFocal: {
+      x: Math.min(1, Math.max(0, Number(org.header_focal_x ?? 0.5) || 0.5)),
+      y: Math.min(1, Math.max(0, Number(org.header_focal_y ?? 0.5) || 0.5)),
+    },
     ...portalCardTheme(org),
     footerText: clean(org.portal_footer, 500),
     contactEmail: clean(org.portal_contact, 200),
@@ -17511,13 +17518,36 @@ app.post("/portal/:orgSlug/recurring/:subId/update-card", portalMutationLimiter,
 // a stale image (the Vercel /portal-assets proxy + any CDN honor these
 // headers). Carries no donor data — theme imagery is public by definition
 // (it renders on the public portal/give pages).
+// BUILD-59 — responsive delivery: ?w=<n> serves a width-resized variant so a
+// phone gets a ~400–800px banner instead of the 2400px master (srcset/sizes
+// on the render). Widths are a fixed whitelist (an open param would be a
+// resize-DoS + a cache-cardinality blowout); the id is content-addressed so
+// (id,w) is a stable, immutable URL — the CDN caches each width once. SVGs and
+// non-raster types pass through untouched (they scale losslessly).
+const PORTAL_ASSET_WIDTHS = [400, 800, 1280, 1920, 2560];
 app.get("/portal-assets/:id", wrap(async (req, res) => {
   const asset = await getThemeAsset(req.params.id);
   if (!asset) return res.status(404).json({ error: "not_found" });
-  res.set("Content-Type", asset.contentType);
+  let buffer = asset.buffer, contentType = asset.contentType, variantTag = "";
+  const w = parseInt(req.query.w, 10);
+  if (PORTAL_ASSET_WIDTHS.includes(w) && contentType !== "image/svg+xml" && contentType !== "image/gif") {
+    try {
+      const sharp = require("sharp");
+      const meta = await sharp(asset.buffer).metadata();
+      // Never UPSCALE — a 900px master asked for 2560 stays 900 (upscaling is
+      // the grain complaint). Re-encode as WebP for the resized variants.
+      if (meta.width && meta.width > w) {
+        buffer = await sharp(asset.buffer).resize({ width: w, withoutEnlargement: true }).webp({ quality: 82 }).toBuffer();
+        contentType = "image/webp";
+        variantTag = `-w${w}`;
+      }
+    } catch (e) { console.error("[portal-assets] resize failed, serving master:", e.message); }
+  }
+  res.set("Content-Type", contentType);
   res.set("Cache-Control", "public, max-age=31536000, immutable");
-  res.set("ETag", `"${asset.id}"`);
-  res.send(asset.buffer);
+  res.set("ETag", `"${asset.id}${variantTag}"`);
+  res.set("Vary", "Accept");
+  res.send(buffer);
 }));
 
 // BUILD-56 Part 4 — ops/test hook for the retention purge (drives the exact
@@ -18073,6 +18103,14 @@ app.put("/portal-settings", requireAuth, requireAdmin, checkWriteAccess, wrap(as
   // assetStore, and the row keeps only the /portal-assets/<id> URL path; the
   // legacy *_data column is nulled. The client may echo back the stored URL
   // on an unrelated save — that's a no-op, not a re-upload. "" clears.
+  // BUILD-59 — header focal point (normalized 0..1; the org sets it by clicking
+  // the crop preview). Clamped; stored on the header pointer.
+  for (const [key, col] of [["headerFocalX", "header_focal_x"], ["headerFocalY", "header_focal_y"]]) {
+    if (b[key] === undefined) continue;
+    const n = Number(b[key]);
+    if (!Number.isFinite(n)) return res.status(400).json({ error: "bad_focal", message: "Focal point must be a number between 0 and 1." });
+    updates.push(`${col} = ?`); params.push(Math.min(1, Math.max(0, n)));
+  }
   const assetOps = []; // deferred until after the row UPDATE
   // BUILD-56 — the current pointers, read up front so every change appends a
   // pointer-history row (the from-half of recovery).

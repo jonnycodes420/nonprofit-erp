@@ -8,6 +8,11 @@
 export function resolveAssetUrl(v) {
   if (!v || typeof v !== "string") return v || null;
   if (!v.startsWith("/portal-assets/")) return v;
+  // BUILD-59 — VITE_ASSET_ORIGIN is the local-capture override: a `vite build`
+  // is PROD to Vite but the scratch preview server has no /portal-assets proxy,
+  // so the capture recipe points assets at the API origin. Unset in real prod
+  // (same-origin path via the vercel.json proxy) — behavior there is unchanged.
+  if (import.meta.env.VITE_ASSET_ORIGIN) return import.meta.env.VITE_ASSET_ORIGIN + v;
   if (import.meta.env.PROD) return v;
   return (import.meta.env.VITE_API_URL || "http://localhost:5601") + v;
 }

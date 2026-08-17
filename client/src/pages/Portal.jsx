@@ -17,6 +17,8 @@ import { fmtFull } from "../lib/money";
 import { resolvePairing, resolveCardStyle } from "../lib/portalTheme";
 import { resolveAssetUrl } from "../lib/assetUrl";
 import { PageRenderer } from "../components/PortalWidgets";
+import PortalBanner from "../components/PortalBanner";
+import { portalScaleVars } from "../lib/portalScale";
 
 // Same-origin in production via the vercel.json /portal-api proxy (the cookie
 // must be first-party); direct in dev (localhost ports are same-site).
@@ -42,16 +44,20 @@ async function pfetch(path, opts = {}) {
 // BUILD-48 theme depth: page background, fonts, card chrome, and button/link
 // color all resolve through CSS variables set from the org's validated theme
 // (varsFor below) — the fallbacks here match the designed defaults.
+// BUILD-59 — every size/space here references the ONE portal scale
+// (lib/portalScale.js) via CSS vars, so the count of distinct raw values drops
+// hard (reported in FINDINGS). Buttons are one height/padding/label-case
+// everywhere; body/inputs share the body step; line-height is the body token.
 const S = {
-  page: { minHeight: "100vh", background: "var(--pt-bg, #faf9f6)", color: "#1c1c1a", fontFamily: "var(--pt-sans, 'DM Sans',system-ui,sans-serif)" },
-  wrap: { maxWidth: 860, margin: "0 auto", padding: "0 20px 64px" },
-  card: { background: "#fff", border: "var(--pt-card-border, 1px solid #e7e4dc)", borderRadius: "var(--pt-card-radius, 14px)", boxShadow: "var(--pt-card-shadow, none)", padding: "20px 22px", marginBottom: 18 },
-  h2: { fontFamily: "var(--pt-serif, 'DM Serif Display',Georgia,serif)", fontWeight: 400, fontSize: 22, margin: "0 0 12px" },
-  label: { fontSize: 12, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "#6b6b64", marginBottom: 6 },
-  input: { width: "100%", boxSizing: "border-box", padding: "12px 14px", fontSize: 15, border: "1px solid #d8d4c9", borderRadius: 10, outline: "none", fontFamily: "inherit" },
-  btn: { background: "var(--pt-button, var(--pt-primary))", color: "var(--pt-button-fg, var(--pt-primary-fg))", border: "none", borderRadius: 10, padding: "12px 22px", fontSize: 15, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" },
-  btnQuiet: { background: "transparent", color: "#1c1c1a", border: "1px solid #d8d4c9", borderRadius: 10, padding: "10px 18px", fontSize: 14, cursor: "pointer", fontFamily: "inherit" },
-  muted: { fontSize: 13, color: "#6b6b64", lineHeight: 1.6 },
+  page: { minHeight: "100vh", background: "var(--pt-bg, #faf9f6)", color: "#1c1c1a", fontFamily: "var(--pt-sans, 'DM Sans',system-ui,sans-serif)", fontSize: "var(--pt-fs-body, 15px)", lineHeight: "var(--pt-lh-body, 1.55)" },
+  wrap: { maxWidth: 860, margin: "0 auto", padding: "0 var(--pt-sp-5, 24px) var(--pt-sp-8, 64px)" },
+  card: { background: "#fff", border: "var(--pt-card-border, 1px solid #e7e4dc)", borderRadius: "var(--pt-card-radius, 14px)", boxShadow: "var(--pt-card-shadow, none)", padding: "var(--pt-sp-5, 24px)", marginBottom: "var(--pt-sp-4, 16px)" },
+  h2: { fontFamily: "var(--pt-serif, 'DM Serif Display',Georgia,serif)", fontWeight: 400, fontSize: "var(--pt-fs-h2, 22px)", lineHeight: "var(--pt-lh-display, 1.15)", margin: "0 0 var(--pt-sp-3, 12px)" },
+  label: { fontSize: "var(--pt-fs-micro, 12px)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "#6b6b64", marginBottom: "var(--pt-sp-2, 8px)" },
+  input: { width: "100%", boxSizing: "border-box", padding: "var(--pt-sp-3, 12px) var(--pt-sp-4, 16px)", fontSize: "var(--pt-fs-body, 15px)", border: "1px solid #d8d4c9", borderRadius: 10, outline: "none", fontFamily: "inherit" },
+  btn: { background: "var(--pt-button, var(--pt-primary))", color: "var(--pt-button-fg, var(--pt-primary-fg))", border: "none", borderRadius: 10, padding: "var(--pt-sp-3, 12px) var(--pt-sp-5, 24px)", fontSize: "var(--pt-fs-body, 15px)", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" },
+  btnQuiet: { background: "transparent", color: "#1c1c1a", border: "1px solid #d8d4c9", borderRadius: 10, padding: "var(--pt-sp-3, 12px) var(--pt-sp-4, 16px)", fontSize: "var(--pt-fs-body, 15px)", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" },
+  muted: { fontSize: "var(--pt-fs-small, 13px)", color: "#6b6b64", lineHeight: "var(--pt-lh-body, 1.55)" },
 };
 
 // 2026-08-15 wide-width pass — explicit override of the BUILD-54 "the donor
@@ -106,6 +112,7 @@ function varsFor(theme) {
     "--pt-card-radius": cs.radius + "px",
     "--pt-card-border": cs.borderWidth ? `${cs.borderWidth}px solid #e7e4dc` : "none",
     "--pt-card-shadow": cs.shadow,
+    ...portalScaleVars(), // BUILD-59 — the one type + spacing scale
   };
 }
 
@@ -122,30 +129,41 @@ function Monogram({ theme, size = 52 }) {
   );
 }
 
+// BUILD-59 — the header banner ratio, fixed so the crop is identical at every
+// breakpoint (object-fit:cover crops by RATIO, not pixel size). That constancy
+// is what makes "preview equals render" provable — the editor preview uses the
+// same ratio + object-position, so it shows exactly what the banner shows.
+export const PORTAL_HEADER_RATIO = "1200 / 300";
+
 function PortalHeader({ theme }) {
   const plaque = (
-    <div className="pt-col" style={{ display: "flex", alignItems: "center", gap: 14 }}>
+    <div className="pt-col" style={{ display: "flex", alignItems: "center", gap: "var(--pt-sp-3, 14px)", paddingBottom: "var(--pt-sp-4, 18px)", paddingTop: "var(--pt-sp-5, 24px)" }}>
       {theme.logo
         ? <img src={resolveAssetUrl(theme.logo)} alt="" style={{ height: 46, maxWidth: 150, objectFit: "contain", background: "rgba(255,255,255,0.92)", borderRadius: 10, padding: "4px 8px" }} />
         : <Monogram theme={theme} />}
-      <div style={{ fontFamily: "var(--pt-serif, 'DM Serif Display',Georgia,serif)", fontSize: "clamp(24px, 3.4vw, 32px)", color: "var(--pt-primary-fg, #fff)", textShadow: theme.headerImage ? "0 1px 14px rgba(0,0,0,0.45)" : "none" }}>
+      <div style={{ fontFamily: "var(--pt-serif, 'DM Serif Display',Georgia,serif)", fontSize: "var(--pt-fs-display, clamp(26px, 3.4vw, 34px))", lineHeight: 1.1, color: "var(--pt-primary-fg, #fff)" }}>
         {theme.displayName}
       </div>
     </div>
   );
   return (
-    <header style={{ marginBottom: 26 }}>
+    <header style={{ marginBottom: "var(--pt-sp-6, 30px)" }}>
       {theme.headerImage ? (
-        <div style={{ position: "relative", width: "100%", height: "clamp(170px, 26vw, 300px)", overflow: "hidden" }}>
-          <img src={resolveAssetUrl(theme.headerImage)} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
-          <div style={{ position: "absolute", inset: 0, background: "linear-gradient(rgba(0,0,0,0) 45%, rgba(0,0,0,0.42))" }} />
-          <div style={{ position: "absolute", left: 0, right: 0, bottom: 18 }}>{plaque}</div>
-        </div>
+        <PortalBanner
+          url={theme.headerImage}
+          focal={theme.headerFocal}
+          bandColor="var(--pt-primary)"
+          ratio={PORTAL_HEADER_RATIO}
+          priority
+          alt=""
+        >
+          {plaque}
+        </PortalBanner>
       ) : (
         <div style={{ width: "100%", background: "var(--pt-primary)", padding: "clamp(30px, 5vw, 54px) 0" }}>{plaque}</div>
       )}
       <div className="pt-col">
-        <div style={{ height: 3, background: "var(--pt-accent)", borderRadius: 2, marginTop: 14, width: 64 }} />
+        <div style={{ height: 3, background: "var(--pt-accent)", borderRadius: 2, marginTop: "var(--pt-sp-3, 14px)", width: 64 }} />
       </div>
     </header>
   );

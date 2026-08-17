@@ -1933,6 +1933,16 @@ async function initSchema() {
   await pool.query(`ALTER TABLE portal_settings ADD COLUMN IF NOT EXISTS type_pairing TEXT`);
   await pool.query(`ALTER TABLE portal_settings ADD COLUMN IF NOT EXISTS card_style TEXT`);
 
+  // ── BUILD-59 — header FOCAL POINT ────────────────────────────────────────
+  // The root cause of "out of crop": a photo is object-fit:cover'd into a
+  // banner that doesn't share its aspect ratio, and the subject isn't always
+  // centered (the installation photo's students sit right-of-center). A
+  // normalized focal x/y (0..1, default center) the org sets once by clicking
+  // the crop preview, honored in the render via object-position. Stored on the
+  // header POINTER (per-org-per-slot), plumbed into the theme payload.
+  await pool.query(`ALTER TABLE portal_settings ADD COLUMN IF NOT EXISTS header_focal_x REAL DEFAULT 0.5`);
+  await pool.query(`ALTER TABLE portal_settings ADD COLUMN IF NOT EXISTS header_focal_y REAL DEFAULT 0.5`);
+
   // ── BUILD-51 — theme-asset storage ───────────────────────────────────────
   // Theme images live OUT of the portal_settings row: the row carries a
   // content-addressed URL PATH (/portal-assets/<id>); the bytes live in
