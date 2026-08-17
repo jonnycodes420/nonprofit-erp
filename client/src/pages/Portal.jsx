@@ -17,7 +17,7 @@ import { fmtFull } from "../lib/money";
 import { resolvePairing, resolveCardStyle } from "../lib/portalTheme";
 import { resolveAssetUrl } from "../lib/assetUrl";
 import { PageRenderer } from "../components/PortalWidgets";
-import PortalBanner from "../components/PortalBanner";
+import PortalBanner, { PORTAL_HEADER_RATIO } from "../components/PortalBanner";
 import { portalScaleVars } from "../lib/portalScale";
 
 // Same-origin in production via the vercel.json /portal-api proxy (the cookie
@@ -128,12 +128,6 @@ function Monogram({ theme, size = 52 }) {
     </div>
   );
 }
-
-// BUILD-59 — the header banner ratio, fixed so the crop is identical at every
-// breakpoint (object-fit:cover crops by RATIO, not pixel size). That constancy
-// is what makes "preview equals render" provable — the editor preview uses the
-// same ratio + object-position, so it shows exactly what the banner shows.
-export const PORTAL_HEADER_RATIO = "1200 / 300";
 
 function PortalHeader({ theme }) {
   const plaque = (
