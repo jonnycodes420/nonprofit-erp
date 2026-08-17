@@ -1,0 +1,73 @@
+BUILD-65 — VERIFY-FIRST RED (committed before any implementation)
+Captured: 2026-08-17T23:59:24Z against local scratch server + Postgres.
+Tests are written to the POST-FIX contract; every FAIL below is the current
+(pre-fix) behavior BUILD-65 changes. Nothing is loosened to make these pass.
+
+===== tests/build65.test.js (Parts 1,2,5,6) =====
+build65 (uploads · PDF logo from storage · CTA out of PDF · guardsOk)
+  PASS  test JPEG is genuinely camera-sized (>3.5MB)
+  FAIL  Part1 banner: 4MB JPEG accepted (200) — {"s":500,"b":"Internal server error"}
+  FAIL  Part1 banner: stored as an asset URL
+  FAIL  Part1 logo: 4MB JPEG accepted (200) — {"s":500,"b":"Internal server error"}
+  FAIL  Part1 impact photo: 4MB JPEG accepted (201) — {"s":500,"b":"Internal server error"}
+  FAIL  Part1 campaign hero: 4MB JPEG accepted — {"s":500,"b":"Internal server error"}
+  FAIL  Part1 widget image: 4MB JPEG accepted (200) — {"s":500,"b":"Internal server error"}
+  FAIL  Part1: uploads landed as ≥4 stored assets — []
+  PASS  Part1: no stored raster asset exceeds ~1MB (resized on ingest)
+  PASS  Part1: long edge capped at ≤2560 on ingest
+  PASS  Part1: non-image rejected (400)
+  FAIL  Part1: error names a usable format, not bytes — "Images must be PNG/JPEG/GIF/WebP/SVG under ~350KB."
+  FAIL  Part2 precondition: logo is an object-storage URL (not base64) — {"logo_url":null,"logo_data":null}
+  FAIL  Part2: gift receipt issued — {"s":201}
+  FAIL  Part2: PDF is a real PDF — "{\"error\""
+  FAIL  Part2: PDF embeds the object-storage logo (image XObject present)
+  PASS  Part2 control: no-logo org PDF embeds no image
+  PASS  Part5: year-end statement issued
+  FAIL  Part5: PDF snapshot carries NO giving-account CTA — "https://www.stewardapp.dev/giving#from=build65-arts"
+  PASS  Part5: the account CTA is still in the receipt EMAIL
+  FAIL  Part6: unrecordedCharges is NULL before any reconcile run — 0
+  FAIL  Part6: orphanGifts is NULL before any reconcile run — 1
+  FAIL  Part6: accountsWithStripe denominator is surfaced (a number)
+  FAIL  Part6: guardsOk is a boolean
+  FAIL  Part6: guardsOk is FALSE when reconciliation has never run (a zero that means 'didn't look')
+
+7 passed, 18 failed
+
+===== tests/stripe-disputes.test.js §5 (Part 7 funds_reinstated) =====
+stripe-disputes (BUILD-58 Part 3)
+  PASS  recorded real dispute fixture exists
+  PASS  fixture carries provenance (real Stripe, test mode)
+  PASS  fixture is a charge.dispute.created payload
+
+§1 dispute.created flags loudly, reverses nothing
+  PASS  gift flagged disputed_at + status=needs_response
+  PASS  ledger stamp NOT removed (money only held)
+  PASS  a high-priority staff task was created with a respond-by deadline
+  PASS  a donor timeline note records the dispute
+
+§2 idempotent under redelivery
+  PASS  redelivery did NOT create a second task
+  PASS  gift still present (update didn't reverse it)
+
+§3 dispute won keeps the gift
+  PASS  won: gift kept, dispute_status=won
+  PASS  a funds-reinstated note recorded
+
+§4 dispute lost reverses the gift
+  PASS  lost: the gift row is deleted (reversed)
+  PASS  lost: its ledger stamp is removed
+  PASS  lost: the receipt was voided (chargeback reason)
+  PASS  lost: donor total recalced down by the lost gift
+  PASS  a reversal note recorded
+
+§5 dispute reinstated (won on appeal) restores the reversed gift
+  PASS  reinstate-setup: gift reversed on the loss
+  FAIL  reinstated: the gift row is restored
+  FAIL  reinstated: dispute_status=won
+  FAIL  reinstated: the ledger stamp is back (one) — 0
+  FAIL  reinstated: the receipt is un-voided and re-linked — {"voided_at":"2026-08-17T23:59:29.162Z","gift_id":null}
+  FAIL  reinstated: donor total is whole again — {"base3":"395","after3":"95"}
+  PASS  reinstated: a restoration note recorded
+  FAIL  reinstated: redelivery makes no duplicate gift — 0
+
+18 passed, 6 failed

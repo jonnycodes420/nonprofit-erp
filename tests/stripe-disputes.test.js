@@ -137,8 +137,47 @@ async function seedGift(orgId, donorId, piId, amount) {
     ok("a reversal note recorded", notes.length === 1, notes.length);
   }
 
+  // ── §5 BUILD-65 Part 7 — withdrawn-then-reinstated: a LOST dispute later
+  // won on appeal (funds_reinstated) must RESTORE the reversed gift ─────────
+  console.log("\n§5 dispute reinstated (won on appeal) restores the reversed gift");
+  const pi3 = "pi_disp_" + uniq();
+  const gift3 = await seedGift(orgId, donorId, pi3, 300);
+  const [rcpt3] = await q(`SELECT id, receipt_number, amount FROM receipts WHERE gift_id=$1 AND type='gift'`, [gift3]);
+  const [{ total_giving: base3 }] = await q(`SELECT total_giving FROM donors WHERE id=$1`, [donorId]);
+  await signAndSend("charge.dispute.created", useShape(pi3, { status: "needs_response" }), acctId);
+  await settle();
+  await signAndSend("charge.dispute.closed", useShape(pi3, { status: "lost" }), acctId);
+  await settle();
+  {
+    const g = await q(`SELECT id FROM gifts WHERE id=$1`, [gift3]);
+    ok("reinstate-setup: gift reversed on the loss", g.length === 0, g.length);
+  }
+  // Now the org appeals and wins — Stripe returns the money.
+  await signAndSend("charge.dispute.funds_reinstated", useShape(pi3, { status: "won" }), acctId);
+  await settle();
+  {
+    const [g] = await q(`SELECT id, amount, dispute_status FROM gifts WHERE org_id=$1 AND stripe_payment_id=$2`, [orgId, pi3]);
+    ok("reinstated: the gift row is restored", !!g, g);
+    ok("reinstated: dispute_status=won", g?.dispute_status === "won", g?.dispute_status);
+    const stamps = await q(`SELECT id FROM fin_transactions WHERE org_id=$1 AND gift_id=$2`, [orgId, g?.id]);
+    ok("reinstated: the ledger stamp is back (one)", stamps.length === 1, stamps.length);
+    const [rc] = await q(`SELECT voided_at, gift_id FROM receipts WHERE id=$1`, [rcpt3.id]);
+    ok("reinstated: the receipt is un-voided and re-linked", rc && rc.voided_at == null && rc.gift_id === g?.id, rc);
+    const [{ total_giving: after3 }] = await q(`SELECT total_giving FROM donors WHERE id=$1`, [donorId]);
+    ok("reinstated: donor total is whole again", Number(after3) === Number(base3), { base3, after3 });
+    const notes = await q(`SELECT id FROM interactions WHERE donor_id=$1 AND note ILIKE '%reinstat%'`, [donorId]);
+    ok("reinstated: a restoration note recorded", notes.length >= 1, notes.length);
+  }
+  // idempotent: a redelivered funds_reinstated makes no second gift/stamp
+  await signAndSend("charge.dispute.funds_reinstated", useShape(pi3, { status: "won" }), acctId);
+  await settle();
+  {
+    const g = await q(`SELECT id FROM gifts WHERE org_id=$1 AND stripe_payment_id=$2`, [orgId, pi3]);
+    ok("reinstated: redelivery makes no duplicate gift", g.length === 1, g.length);
+  }
+
   // cleanup
-  for (const t of ["fin_transactions", "receipts", "tasks", "interactions", "gifts", "budgets", "accounts", "fin_funds", "donors"])
+  for (const t of ["dispute_reversals", "fin_transactions", "receipts", "tasks", "interactions", "gifts", "budgets", "accounts", "fin_funds", "donors"])
     await q(`DELETE FROM ${t} WHERE org_id=$1`, [orgId]).catch(() => {});
   await q(`DELETE FROM orgs WHERE id=$1`, [orgId]);
 
