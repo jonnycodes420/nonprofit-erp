@@ -67,7 +67,7 @@ const PROD_READONLY = [
 const LOOPBACK_CAPTURES = [
   "build14-capture", "build15-capture", "build17-capture", "build19-capture",
   "build19-home-capture", "build21-capture", "build22-capture", "build28-capture",
-  "build34-capture", "build36-invite-capture", "build40-mobile-capture",
+  "build34-capture", "build36-invite-capture", "build40-mobile-capture", "build61-capture",
   "build41-capture", "build46-capture", "creo-goals-capture",
   "donor-profile-gating-capture", "goal-consistency-capture", "import-stage-capture",
 ];

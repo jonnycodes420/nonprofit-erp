@@ -499,32 +499,53 @@ export default function Donate() {
             )}
           </div>
         ) : (
-          // Org-wide page identity — the org's banner (with its focal point),
-          // then its logo (or a monogram in its own primary color — never
-          // Steward's serif "S"), then "Give to {display name}" + mission.
+          // Org-wide page identity. There is ALWAYS a designed identity band —
+          // the org's banner (with its focal point), or, on day one when an org
+          // has no logo and no photo (the most common state, and the one seen
+          // least), a SOLID COLOR BAND carrying an intentional serif monogram.
+          // Never an empty header, a grey box, a placeholder photo, or generated
+          // art (standing rule) — the unthemed default must read as chosen.
           <div style={{ width: "100%", maxWidth: 480, marginBottom: 32 }}>
-            {th.headerImage && (
-              <img src={th.headerImage} alt={th.displayName || org.name}
-                style={{ width: "100%", height: "min(30vh, 220px)", objectFit: "cover", objectPosition: `${th.headerFocal.x * 100}% ${th.headerFocal.y * 100}%`, borderRadius: 16, marginBottom: 20, display: "block" }}
-                onError={e => { e.target.style.display = "none"; }}
-              />
-            )}
-            <div style={{ textAlign: "center" }}>
-              {th.logo ? (
-                <img src={th.logo} alt={th.displayName || org.name}
-                  style={{ maxHeight: 56, maxWidth: 220, objectFit: "contain", margin: "0 auto 16px", display: "block" }}
+            {th.headerImage ? (
+              // (a) real banner photo → image band, then a small identity chip.
+              <>
+                <img src={th.headerImage} alt={th.displayName || org.name}
+                  style={{ width: "100%", height: "min(30vh, 220px)", objectFit: "cover", objectPosition: `${th.headerFocal.x * 100}% ${th.headerFocal.y * 100}%`, borderRadius: 16, marginBottom: 18, display: "block" }}
                   onError={e => { e.target.style.display = "none"; }}
                 />
-              ) : (
-                <div style={{ width: 48, height: 48, background: th.primary, borderRadius: 14, display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 16px" }}>
-                  <span style={{ fontFamily: th.serif, fontSize: 26, fontWeight: 700, color: th.primaryFg, lineHeight: 1 }}>{monogram}</span>
+                <div style={{ textAlign: "center" }}>
+                  {th.logo ? (
+                    <img src={th.logo} alt={th.displayName || org.name}
+                      style={{ maxHeight: 52, maxWidth: 220, objectFit: "contain", margin: "0 auto 14px", display: "block" }}
+                      onError={e => { e.target.style.display = "none"; }} />
+                  ) : (
+                    <div style={{ width: 46, height: 46, background: th.primary, borderRadius: 13, display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 14px" }}>
+                      <span style={{ fontFamily: th.serif, fontSize: 24, fontWeight: 700, color: th.primaryFg, lineHeight: 1 }}>{monogram}</span>
+                    </div>
+                  )}
                 </div>
-              )}
-              <h1 style={{ margin: 0, fontSize: 26, fontWeight: 800, color: T.ink, fontFamily: th.serif, letterSpacing: "-0.02em" }}>
+              </>
+            ) : (
+              // (b) the designed neutral: a solid identity band in the org's own
+              // color carries a logo, or a large serif monogram in a soft ring.
+              <div style={{ width: "100%", height: 156, borderRadius: 18, background: th.primary, display: "flex", alignItems: "center", justifyContent: "center", marginBottom: 22, boxShadow: "inset 0 -40px 60px -40px rgba(0,0,0,0.28)" }}>
+                {th.logo ? (
+                  <img src={th.logo} alt={th.displayName || org.name}
+                    style={{ maxHeight: 72, maxWidth: 260, objectFit: "contain", display: "block" }}
+                    onError={e => { e.target.style.display = "none"; }} />
+                ) : (
+                  <div style={{ width: 84, height: 84, borderRadius: 22, border: `2px solid ${th.primaryFg}59`, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                    <span style={{ fontFamily: th.serif, fontSize: 44, fontWeight: 700, color: th.primaryFg, lineHeight: 1 }}>{monogram}</span>
+                  </div>
+                )}
+              </div>
+            )}
+            <div style={{ textAlign: "center" }}>
+              <h1 style={{ margin: 0, fontSize: 27, fontWeight: 800, color: T.ink, fontFamily: th.serif, letterSpacing: "-0.02em", lineHeight: 1.15 }}>
                 Give to {org.name}
               </h1>
               {org.mission && (
-                <p style={{ margin: "8px 0 0", fontSize: 14, color: T.ink3, maxWidth: 400, lineHeight: 1.6 }}>{org.mission}</p>
+                <p style={{ margin: "10px auto 0", fontSize: 14.5, color: T.ink3, maxWidth: 400, lineHeight: 1.65 }}>{org.mission}</p>
               )}
             </div>
           </div>

@@ -119,6 +119,11 @@ async function run() {
   ok("recurring disclosure beside the button", /every month until you cancel/.test(src) && /Cancel anytime from your donor account/.test(src));
   ok("amount ladder is per-frequency", /monthlyAmounts/.test(src) && /onetimeAmounts/.test(src) && /activeLadder/.test(src));
 
+  // ── (4) BUILD-61 Part 1 — the unthemed default is DESIGNED, never empty ───
+  ok("no-banner default renders a SOLID identity band in the org's color", /height: 156,[^]{0,140}background: th\.primary/.test(src));
+  ok("the default band carries an intentional serif monogram (not an empty box)", /border: `2px solid \$\{th\.primaryFg\}[^]{0,220}fontFamily: th\.serif[^]{0,140}\{monogram\}/.test(src));
+  ok("no placeholder-image source in the giving-page header", !/placeholder\.com|via\.placeholder|picsum|dummyimage|#cccccc"|#dddddd"|#e0e0e0"/i.test(src));
+
   await closeDb();
   summary();
 }
