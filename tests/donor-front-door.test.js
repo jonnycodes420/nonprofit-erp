@@ -148,9 +148,11 @@ async function fixture() {
     !!stL && stL.html.includes(`from=${L.slug}`) && /\/giving#signup&/.test(stL.html));
   const [snapL] = await q(`SELECT snapshot FROM receipts WHERE org_id=$1 AND type='year_end' AND voided_at IS NULL`, [L.id]);
   const sL = typeof snapL.snapshot === "string" ? JSON.parse(snapL.snapshot) : snapL.snapshot;
-  ok("listed PDF snapshot stamped with givingAccountUrl (#from=slug, NO email)",
-    !!sL.givingAccountUrl && sL.givingAccountUrl.endsWith(`/giving#from=${L.slug}`), sL.givingAccountUrl);
-  ok("listed PDF snapshot carries the display line", !!sL.givingAccountDisplay && sL.givingAccountDisplay.endsWith("/giving"), sL.givingAccountDisplay);
+  // BUILD-65 Part 5: the account CTA LEFT the PDF (a document handed to an
+  // accountant should not carry a marketing link). It stays in the cover EMAIL
+  // above. The snapshot no longer stamps givingAccountUrl at all.
+  ok("listed PDF snapshot carries NO giving-account CTA (left the PDF)",
+    sL.givingAccountUrl == null && sL.givingAccountDisplay == null, { url: sL.givingAccountUrl, display: sL.givingAccountDisplay });
 
   mail = [];
   const yeU = await api("POST", `/donors/${DONOR_U.id}/year-end-statement`, tokU, { year: YEAR, send: true });
@@ -162,12 +164,14 @@ async function fixture() {
   const sU = typeof snapU.snapshot === "string" ? JSON.parse(snapU.snapshot) : snapU.snapshot;
   ok("unlisted PDF snapshot NOT stamped", !sU.givingAccountUrl && !sU.givingAccountDisplay);
 
-  // The renderer actually prints the stamped line (source guard — PDF text
-  // streams are compressed, so the mechanism is pinned at both ends: snapshot
-  // stamp above + the render branch here).
+  // BUILD-65 Part 5: the renderer no longer prints an account CTA in the PDF
+  // footer — the footer is the legal tax line only (source guard, since PDF
+  // text streams are compressed).
   const serverSrc = fs.readFileSync("server.js", "utf8");
-  ok("renderReceiptPdf renders snapshot.givingAccountUrl in the page footer",
-    /snapshot\.givingAccountUrl/.test(serverSrc) && /givingAccountDisplay/.test(serverSrc));
+  // pdfkit's `link:` option is the PDF-footer-specific marker (the EMAIL CTA,
+  // which we keep, uses an <a href> — a different mechanism).
+  ok("renderReceiptPdf footer no longer renders an account CTA link",
+    !/link:\s*snapshot\.givingAccountUrl/.test(serverSrc));
 
   // ── 3. Public donate payloads (thank-you screen gate) ─────────────────────
   console.log("\n— entry point (c): public donate payload gate —");

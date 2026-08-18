@@ -134,11 +134,21 @@ async function fixture() {
   // ── PART 6 — guardsOk + null-when-unchecked + accountsWithStripe ─────────
   const h = await api("GET", "/health", null);
   const rec = h.body?.reconciliation || {};
-  ok("Part6: unrecordedCharges is NULL before any reconcile run", rec.unrecordedCharges === null, rec.unrecordedCharges);
-  ok("Part6: orphanGifts is NULL before any reconcile run", rec.orphanGifts === null, rec.orphanGifts);
+  // Order-independent invariant (a reconcile may or may not have run on this
+  // shared server): counters are NULL exactly when the check hasn't run, and a
+  // real number once it has — never a clean 0 that means "I didn't look".
+  const unchecked = rec.checkedAt == null;
+  ok("Part6: counters are null exactly when unchecked (no zero meaning 'didn't look')",
+    unchecked ? (rec.unrecordedCharges === null && rec.orphanGifts === null)
+              : (typeof rec.unrecordedCharges === "number" && typeof rec.orphanGifts === "number"),
+    { checkedAt: rec.checkedAt, unrecorded: rec.unrecordedCharges, orphan: rec.orphanGifts });
   ok("Part6: accountsWithStripe denominator is surfaced (a number)", typeof rec.accountsWithStripe === "number", rec.accountsWithStripe);
   ok("Part6: guardsOk is a boolean", typeof h.body?.guardsOk === "boolean", h.body?.guardsOk);
-  ok("Part6: guardsOk is FALSE when reconciliation has never run (a zero that means 'didn't look')", h.body?.guardsOk === false, h.body?.guardsOk);
+  // guardsOk must be FALSE whenever reconciliation is unchecked or stale — a
+  // guard that hasn't run fresh can never report clean.
+  const reconFresh = rec.checkedAt != null && (Date.now() - Date.parse(rec.checkedAt)) <= 40 * 60 * 1000;
+  if (!reconFresh) ok("Part6: guardsOk is FALSE while reconciliation is unchecked/stale", h.body?.guardsOk === false, { checkedAt: rec.checkedAt, guardsOk: h.body?.guardsOk });
+  else ok("Part6: guardsOk is a boolean when reconciliation is fresh", typeof h.body?.guardsOk === "boolean", h.body?.guardsOk);
 
   await closeDb();
   summary();
