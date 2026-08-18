@@ -894,6 +894,18 @@ app.post("/stripe/webhook", express.raw({ type: "application/json" }), async (re
               if (lost) {
                 // Lost — the money is gone. Reverse exactly like a full refund:
                 // void the receipt, drop the ledger stamp + gift, recalc.
+                // BUILD-65 Part 7: a lost dispute can be WON BACK on appeal
+                // (charge.dispute.funds_reinstated). Snapshot what we're about
+                // to reverse — keyed on the payment_intent — so it can be
+                // restored byte-for-byte instead of staying reversed forever.
+                const [rcptToVoid] = await query(
+                  "SELECT id FROM receipts WHERE gift_id=$1 AND org_id=$2 AND type='gift' AND voided_at IS NULL", [g.id, orgId]);
+                await run(
+                  `INSERT INTO dispute_reversals (id,org_id,stripe_payment_id,dispute_id,gift_snapshot,receipt_id)
+                   VALUES ($1,$2,$3,$4,$5,$6)
+                   ON CONFLICT (org_id, stripe_payment_id) DO UPDATE
+                     SET gift_snapshot=EXCLUDED.gift_snapshot, receipt_id=EXCLUDED.receipt_id, dispute_id=EXCLUDED.dispute_id, created_at=NOW()`,
+                  ["drev_" + uuid().slice(0, 8), orgId, piId, dispute.id, JSON.stringify(g), rcptToVoid?.id || null]).catch(e => console.error("[stripe] reversal snapshot failed:", e.message));
                 await withTransaction(async (client) => {
                   await runTx(client,
                     `UPDATE receipts SET voided_at=NOW(), void_reason='Gift lost to a Stripe dispute/chargeback', gift_id=NULL
@@ -932,6 +944,79 @@ app.post("/stripe/webhook", express.raw({ type: "application/json" }), async (re
                 }
               }
             });
+          }
+        }
+      }
+    }
+
+    // ── BUILD-65 Part 7 — a dispute WON BACK on appeal (funds reinstated) ────
+    // The full lifecycle, not just the loss: charge.dispute.funds_reinstated
+    // means Stripe returned the money. If the gift is still live (a clean win),
+    // just mark it won. If it was REVERSED by an earlier lost close, RESTORE it
+    // byte-for-byte from the reversal snapshot — gift row, ledger stamp, receipt
+    // — so the ledger isn't short and the donor's history isn't wrong forever.
+    // Idempotent: a redelivery finds the gift already present and no-ops.
+    if (event.type === "charge.dispute.funds_reinstated") {
+      const dispute = event.data.object;
+      const accountId = event.account;
+      const piId = dispute.payment_intent || null;
+      if (piId && accountId) {
+        const orgRow = await query("SELECT id FROM orgs WHERE stripe_account_id=$1", [accountId]);
+        if (orgRow.length) {
+          const orgId = orgRow[0].id;
+          const today = new Date().toISOString().slice(0, 10);
+          const live = await query("SELECT id, donor_id, dispute_status, amount FROM gifts WHERE org_id=$1 AND stripe_payment_id=$2", [orgId, piId]);
+          if (live.length) {
+            // Never reversed — a clean win. Just record the outcome.
+            const g = live[0];
+            await withAdvisoryLock(`gift:${g.id}`, async () => {
+              if (g.dispute_status !== "won") {
+                await run("UPDATE gifts SET dispute_status='won', disputed_at=COALESCE(disputed_at,NOW()) WHERE id=$1 AND org_id=$2", [g.id, orgId]);
+                if (g.donor_id) await run("INSERT INTO interactions (id,org_id,donor_id,type,note,date) VALUES ($1,$2,$3,'note',$4,$5)",
+                  ["i_" + uuid().slice(0, 8), orgId, g.donor_id, `Dispute WON: $${(parseFloat(g.amount) || 0).toLocaleString()} online gift dispute resolved in your favor — funds reinstated`, today]).catch(() => {});
+              }
+            });
+            console.log(`[stripe] dispute funds_reinstated ${dispute.id} — gift ${g.id} kept, marked won`);
+          } else {
+            // Reversed by an earlier loss — restore from the snapshot.
+            const [rev] = await query("SELECT * FROM dispute_reversals WHERE org_id=$1 AND stripe_payment_id=$2", [orgId, piId]);
+            if (rev) {
+              const snap = typeof rev.gift_snapshot === "string" ? JSON.parse(rev.gift_snapshot) : rev.gift_snapshot;
+              await withAdvisoryLock(`gift:${snap.id}`, async () => {
+                if ((await query("SELECT id FROM gifts WHERE id=$1", [snap.id])).length) return; // already restored
+                snap.dispute_status = "won";
+                // Re-insert the gift verbatim (every column the reversal froze).
+                const cols = Object.keys(snap).filter(k => snap[k] !== undefined);
+                const ph = cols.map((_, i) => "$" + (i + 1)).join(",");
+                await run(`INSERT INTO gifts (${cols.join(",")}) VALUES (${ph}) ON CONFLICT (id) DO NOTHING`, cols.map(k => snap[k]));
+                // Re-stamp the ledger through the ONE ledger helper (same as the
+                // online-gift path); idempotent on gift_id.
+                try {
+                  const ledgerG = await ensureOrgLedger(orgId, { heal: true });
+                  const [dn] = await query("SELECT name FROM donors WHERE id=$1", [snap.donor_id]);
+                  await run(
+                    "INSERT INTO fin_transactions (id,org_id,date,description,vendor_donor,amount,type,account_id,fund_id,donor_id,source,gift_id) VALUES (?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT (gift_id) WHERE gift_id IS NOT NULL DO NOTHING",
+                    ["ft_" + uuid().slice(0, 8), orgId, snap.date, `Gift from ${dn?.name || "Donor"}`, dn?.name || "",
+                     snap.amount, "income", ledgerG.contribAcctId, snap.fund_id || ledgerG.genFundId, snap.donor_id, "online", snap.id]);
+                } catch (e) { console.error("[stripe] reinstate ledger stamp failed:", e.message); }
+                // Un-void + re-link the receipt that was voided on the loss.
+                if (rev.receipt_id) await run("UPDATE receipts SET voided_at=NULL, void_reason=NULL, gift_id=$1 WHERE id=$2 AND org_id=$3", [snap.id, rev.receipt_id, orgId]).catch(() => {});
+                // Reopen the pledge link if this gift fulfilled one.
+                if (snap.pledge_id) {
+                  await run("UPDATE pledges SET fulfilled_gift_id=$1, updated_at=NOW() WHERE id=$2 AND org_id=$3", [snap.id, snap.pledge_id, orgId]).catch(() => {});
+                  await recalcPledgePayment(snap.pledge_id, orgId).catch(() => {});
+                }
+                if (snap.donor_id) {
+                  await recalcDonorSummary(snap.donor_id, orgId);
+                  await run("INSERT INTO interactions (id,org_id,donor_id,type,note,date) VALUES ($1,$2,$3,'note',$4,$5)",
+                    ["i_" + uuid().slice(0, 8), orgId, snap.donor_id, `Dispute WON on appeal: $${(parseFloat(snap.amount) || 0).toLocaleString()} online gift reinstated — the reversed gift, ledger entry and receipt were restored`, today]).catch(() => {});
+                }
+                await run("DELETE FROM dispute_reversals WHERE org_id=$1 AND stripe_payment_id=$2", [orgId, piId]);
+                console.log(`[stripe] dispute funds_reinstated ${dispute.id} — gift ${snap.id} RESTORED ($${snap.amount})`);
+              });
+            } else {
+              console.error(`[stripe] dispute funds_reinstated for ${piId} but no gift and no reversal snapshot — manual review needed`);
+            }
           }
         }
       }
@@ -1416,6 +1501,11 @@ app.post("/billing/webhook", express.raw({ type: "application/json" }), async (r
 // (req._body), so the global parser skips bodies these already handled; the
 // 5mb cap stays in force for every other route.
 app.use(["/donors/import-combined", "/donors/import", "/gifts/import-history"], express.json({ limit: "30mb" }));
+// BUILD-65 Part 1 — image-upload routes accept a real camera photo (~15MB of
+// image ≈ 20MB of base64 + JSON). The global 5mb cap below still guards every
+// other route. Without this a phone photo is rejected by the body parser
+// BEFORE any of the friendly validation/resize logic runs.
+app.use(["/portal-settings", "/portal-page", "/impact-updates", "/fundraising/campaigns"], express.json({ limit: "22mb" }));
 app.use(express.json({ limit: "5mb" }));
 
 // Gzip the heavy whole-org read payloads (BUILD-06 Phase A). Scoped to the
@@ -1499,10 +1589,29 @@ let ledgerChartSelfHeals = 0;
 // exactly like themeAssets.dbFallbackRows. A donor charged with no record is
 // the single worst thing this product can do; it should page within the hour,
 // not wait for someone to open a portal. See reconcileStripeVsGifts() below.
+// BUILD-65 Part 6 — the counters are NULL until the sweep has actually run.
+// A `0` for a check that never happened is a "clean" zero that means "I didn't
+// look" — the exact failure accountsErrored was added to prevent, left open one
+// door down (right after a deploy, unrecordedCharges read 0 with checkedAt:null).
+// null = unchecked; a number = a real result. guardsOk (below) treats null as
+// NOT fresh.
 let reconciliation = {
-  unrecordedCharges: 0, orphanGifts: 0, checkedAt: null, oldestUnrecordedAgeMin: null,
+  unrecordedCharges: null, orphanGifts: null, checkedAt: null, oldestUnrecordedAgeMin: null,
   accountsChecked: null, accountsErrored: null, divergences: [],
 };
+// BUILD-65 Part 6 — the DENOMINATOR for accountsChecked: how many orgs have a
+// connected Stripe account at all (the count the sweep SHOULD be reading). When
+// Brian's orgs connect and it should read 6, a stuck accountsChecked:1 then
+// looks wrong instead of looking fine. Cached (refreshed on boot + each sweep)
+// so /health stays synchronous.
+let reconcileAccountsWithStripe = null;
+async function refreshReconcileDenominator() {
+  try {
+    const [r] = await query("SELECT COUNT(*)::int AS n FROM orgs WHERE stripe_account_id IS NOT NULL");
+    reconcileAccountsWithStripe = r ? r.n : 0;
+  } catch { /* leave prior value */ }
+  return reconcileAccountsWithStripe;
+}
 function reconciliationHealth() {
   return {
     unrecordedCharges: reconciliation.unrecordedCharges,
@@ -1515,7 +1624,30 @@ function reconciliationHealth() {
     // is non-zero. Watch it alongside unrecordedCharges.
     accountsChecked: reconciliation.accountsChecked ?? null,
     accountsErrored: reconciliation.accountsErrored ?? null,
+    accountsWithStripe: reconcileAccountsWithStripe,   // BUILD-65 Part 6 — the denominator
   };
+}
+
+// BUILD-65 Part 6 — a single field that is true ONLY when every guard is both
+// clean AND fresh. Nothing may report a clean zero for a check that has not
+// run: a null counter (unchecked), a stale reconciliation, or an unrun webhook
+// check all make this false. This is the one-glance "is everything actually
+// being watched, and is it all quiet?" signal — a human watches guardsOk, not
+// eight separate counters.
+const GUARD_FRESH_MS = 40 * 60 * 1000; // reconciliation must have run within ~40 min
+function guardsOk() {
+  const r = reconciliation;
+  const reconFresh = r.checkedAt != null && (Date.now() - Date.parse(r.checkedAt)) <= GUARD_FRESH_MS;
+  const reconClean = r.unrecordedCharges === 0 && r.orphanGifts === 0 && r.accountsErrored === 0;
+  if (!reconFresh || !reconClean) return false;
+  if (!(webhookSubStatus.checked === true && webhookSubStatus.missingCount === 0)) return false;
+  if (ledgerChartSelfHeals !== 0) return false;
+  // dbFallbackRows is null when S3 isn't configured (DB storage is then by
+  // design, not a fault) — null counts as OK; only a positive count is a fault.
+  const h = assetHealth();
+  if (h.dbFallbackRows != null && h.dbFallbackRows !== 0) return false;
+  if (notifyFailedPending !== 0) return false;
+  return true;
 }
 
 // ── BUILD-63 Part 2 — the event-manifest vs live-subscription diff ───────────
@@ -1612,6 +1744,9 @@ app.get("/health", (req, res) => {
     // handler processes event types the live endpoint does NOT subscribe — code
     // wired to nothing. Watch alongside reconciliation. null = not yet checked.
     webhookSubscriptions: webhookSubHealth(),
+    // BUILD-65 Part 6: the aggregate. true ONLY when every guard above is both
+    // clean AND fresh (a null/stale counter fails it). One field to page on.
+    guardsOk: guardsOk(),
   });
 });
 
@@ -4867,22 +5002,16 @@ async function renderReceiptPdf(snapshot) {
     const range = doc.bufferedPageRange();
     for (let i = range.start; i < range.start + range.count; i++) {
       doc.switchToPage(i);
-      // BUILD-49 entry point (b): the year-end statement PDF carries one quiet
-      // giving-account line — only when it was stamped into the snapshot at
-      // issue time (listed orgs only; an already-issued receipt never changes).
-      // The link carries from=<slug> only — no donor identifier ever rides a
-      // URL embedded in a document that may be printed or forwarded.
-      const footerY = snapshot.givingAccountUrl ? doc.page.height - 52 : doc.page.height - 40;
+      // BUILD-65 Part 5: the receipt/statement footer is the legal tax line
+      // ONLY. The "see all your giving" account CTA was removed from the PDF —
+      // a document handed to an accountant should not carry a marketing link
+      // (the CTA lives in the cover EMAIL instead). Legacy already-issued
+      // receipts may still carry snapshot.givingAccountUrl frozen in; we simply
+      // no longer render it.
       doc.font("Helvetica").fontSize(7).fillColor("#9ca3af").text(
         `${snapshot.orgLegalName} is a tax-exempt organization. EIN: ${snapshot.orgEin || "—"}. This receipt is provided for your tax records. Please retain it. No portion of this document constitutes tax advice.`,
-        50, footerY, { width: PW - 100, height: 30, align: "left" }
+        50, doc.page.height - 40, { width: PW - 100, height: 30, align: "left" }
       );
-      if (snapshot.givingAccountUrl) {
-        doc.font("Helvetica").fontSize(7).fillColor("#9ca3af").text(
-          `See all your giving in one place — ${snapshot.givingAccountDisplay || "your free giving account"}`,
-          50, doc.page.height - 32, { width: PW - 100, height: 12, align: "left", link: snapshot.givingAccountUrl }
-        );
-      }
     }
 
     doc.end();
@@ -4987,7 +5116,7 @@ async function issueGiftReceipt(gift, org, donor, { send = true } = {}) {
     orgLegalName: org.legal_name || org.name,
     orgAccent: brand ? brand.band : null,      // BUILD-64: portal primary, never Steward green
     orgAccentFg: brand ? brand.bandFg : null,
-    orgLogo: brand ? brand.logoDataUri : null,
+    orgLogo: await resolvePdfLogo(brand),      // BUILD-65: from object storage, not base64-only
     orgEin: org.ein || "",
     orgAddress: org.receipt_address || "",
     signatureName: org.receipt_signature_name || "",
@@ -5097,7 +5226,7 @@ async function issueYearEndStatement(org, donor, year, { send = true } = {}) {
     orgLegalName: org.legal_name || org.name,
     orgAccent: brand ? brand.band : null,      // BUILD-64: portal primary, never Steward green
     orgAccentFg: brand ? brand.bandFg : null,
-    orgLogo: brand ? brand.logoDataUri : null,
+    orgLogo: await resolvePdfLogo(brand),      // BUILD-65: from object storage, not base64-only
     orgEin: org.ein || "",
     orgAddress: org.receipt_address || "",
     signatureName: org.receipt_signature_name || "",
@@ -5109,14 +5238,13 @@ async function issueYearEndStatement(org, donor, year, { send = true } = {}) {
     taxYear: year,
     lineItems, totalAmount, totalDeductible,
   };
-  // BUILD-49 entry point (b): stamp the giving-account line into the frozen
-  // snapshot at issue time (listed orgs only). PDF link carries from=<slug>
-  // only — never a donor identifier (the document may be printed/forwarded).
-  const entry = await givingAccountEntry(org);
-  if (entry) {
-    snapshot.givingAccountUrl = `${publicAppUrl()}/giving#from=${entry.slug}`;
-    snapshot.givingAccountDisplay = `${publicAppUrl().replace(/^https?:\/\//, "")}/giving`;
-  }
+  // BUILD-65 Part 5: the "create your free giving account" CTA has LEFT the PDF.
+  // A year-end statement may be handed to an accountant or attached to a filing;
+  // a marketing link inside it is the one place it stops looking like a receipt.
+  // The account CTA stays in the receipt/statement EMAIL (sendReceiptEmail,
+  // in the org's palette, where it reads as a service the org offers) — this
+  // only removes it from the document. (BUILD-49 had stamped it into the frozen
+  // snapshot; we no longer set snapshot.givingAccountUrl at all.)
   const pdfBuffer = await renderReceiptPdf(snapshot);
   const id = "rcpt_" + uuid().slice(0, 8);
   await run(
@@ -5150,12 +5278,16 @@ app.get("/receipts/preview", requireAuth, requireAdmin, wrap(async (req, res) =>
   // missing" preview even before receipts_enabled can be flipped on.
   const fakeDonor = { name: "Jordan Sample", email: null };
   const fakeGiftDate = new Date().toISOString().slice(0, 10);
+  // BUILD-65 Part 2 sweep: the preview also assumed base64 (org.brand_accent /
+  // org.logo_data) — a modern org's Settings preview showed Steward-green + no
+  // logo. Read the SAME resolver + object-storage logo the issued receipt does.
+  const brand = await resolveOrgBrandTheme(org.id).catch(() => null);
   const snapshot = {
     type: "gift",
     orgLegalName: org.legal_name || org.name,
-    orgAccent: org.brand_accent || null,       // BUILD-13: branded receipt header
-    orgAccentFg: org.brand_accent_fg || null,
-    orgLogo: org.logo_data || null,
+    orgAccent: brand ? brand.band : null,
+    orgAccentFg: brand ? brand.bandFg : null,
+    orgLogo: await resolvePdfLogo(brand),
     orgEin: org.ein || "XX-XXXXXXX",
     orgAddress: org.receipt_address || "123 Main St, Anytown, ST 00000",
     signatureName: org.receipt_signature_name || "",
@@ -8067,6 +8199,39 @@ async function resolveOrgBrandTheme(orgId) {
     displayName,
     legalName: r.legal_name || r.name || displayName,
   };
+}
+
+// ── BUILD-65 Part 2 — a PDF-embeddable logo, from OBJECT STORAGE ────────────
+// renderReceiptPdf can only embed PNG/JPEG bytes (pdfkit's constraint). Since
+// BUILD-51 a modern org's logo lives in object storage — portal_settings
+// .logo_url = /portal-assets/<id> — so resolveOrgBrandTheme's logoDataUri
+// (base64 only) is NULL for it, and every real org's tax receipt rendered with
+// NO logo while the legacy demo data (base64 in the row) worked fine. This
+// fetches the asset bytes and returns a png/jpeg data URI the PDF can embed —
+// converting WebP/SVG/GIF to PNG (which also fixes legacy base64 WebP logos the
+// old png|jpeg-only check silently dropped). Async + only called on the
+// (low-frequency) PDF-issue paths, so resolveOrgBrandTheme stays cheap for the
+// hot email paths. Returns null on any failure — a missing logo is never fatal.
+async function resolvePdfLogo(brand) {
+  if (!brand) return null;
+  let buffer = null, ct = null;
+  try {
+    const dm = typeof brand.logoDataUri === "string" ? brand.logoDataUri.match(/^data:([^;]+);base64,(.*)$/s) : null;
+    if (dm) { buffer = Buffer.from(dm[2], "base64"); ct = dm[1]; }
+    else if (typeof brand.logoAbsUrl === "string") {
+      const idm = brand.logoAbsUrl.match(/(pa_[a-f0-9]{24})/);
+      if (idm) { const a = await getThemeAsset(idm[1]); if (a) { buffer = a.buffer; ct = a.contentType; } }
+    }
+  } catch (e) { console.error("[pdf-logo] fetch failed:", e.message); return null; }
+  if (!buffer || !buffer.length) return null;
+  if (ct === "image/png" || ct === "image/jpeg" || ct === "image/jpg") {
+    return `data:${ct};base64,${buffer.toString("base64")}`;
+  }
+  try {
+    const sharp = require("sharp");
+    const png = await sharp(buffer, { failOn: "none" }).png().toBuffer();
+    return "data:image/png;base64," + png.toString("base64");
+  } catch (e) { console.error("[pdf-logo] convert failed:", e.message); return null; }
 }
 
 // The donor-facing "From" — the org's name in the inbox, so a receipt reads as
@@ -14095,6 +14260,7 @@ async function reconcileStripeVsGifts() {
     unrecordedCharges: unrecorded, orphanGifts: orphans, checkedAt: new Date().toISOString(),
     oldestUnrecordedAgeMin: oldestAgeMin, accountsChecked, accountsErrored, divergences: divergences.slice(0, 50),
   };
+  reconcileAccountsWithStripe = orgs.length;   // BUILD-65 Part 6 — the denominator, in sync with this sweep
   if (unrecorded > 0) {
     console.error(`[reconcile] ALERT: ${unrecorded} Stripe charge(s) with NO gift in Steward (oldest ${oldestAgeMin}m) — ${JSON.stringify(divergences.filter(d => d.kind === "charge_without_gift").slice(0, 10))}`);
     try { if (process.env.SENTRY_DSN) Sentry.captureMessage(`reconciliation: ${unrecorded} unrecorded Stripe charge(s)`, "error"); } catch { /* surfacing must never throw */ }
@@ -14123,6 +14289,11 @@ if (!backgroundTicksDisabled()) {
   setTimeout(() => reconcileStripeVsGifts().catch(console.error), 90000);
   setInterval(() => reconcileStripeVsGifts().catch(console.error), RECONCILE_INTERVAL_MIN * 60 * 1000);
 }
+// BUILD-65 Part 6 — surface the accountsChecked DENOMINATOR even before the
+// first sweep (and even when background ticks are disabled), so /health can
+// show "checked 1 of 6". Refreshed on boot + on the 5-min asset tick below.
+setTimeout(() => refreshReconcileDenominator().catch(() => {}), 8000);
+setInterval(() => refreshReconcileDenominator().catch(() => {}), 5 * 60 * 1000);
 
 // ── BUILD-63 Part 2 — refresh the manifest-vs-live-subscription diff ─────────
 // Lists the platform's webhook endpoints, finds the donation (/stripe/webhook)
@@ -18037,8 +18208,10 @@ function checkThemeImageDimensions(kind, contentType, buffer) {
       return { ok: false, message: "Header images need to be at least 600px wide to look sharp as a banner." };
     }
   }
-  if (d.width > 6000 || d.height > 6000) {
-    return { ok: false, message: "Images can be at most 6000px on a side." };
+  // BUILD-65: we resize down on ingest, so a large photo is fine — only reject
+  // genuinely absurd dimensions (a decompression-bomb guard, not a size limit).
+  if (d.width > 12000 || d.height > 12000) {
+    return { ok: false, message: "That image is unusually large. Please use a photo under about 12,000 pixels on a side." };
   }
   return { ok: true, width: d.width, height: d.height };
 }
@@ -18048,6 +18221,69 @@ function validPortalImage(dataUri, capBytes) {
   if (typeof dataUri !== "string" || dataUri.length > capBytes) return false;
   const m = dataUri.match(/^data:([^;]+);base64,/);
   return !!m && PORTAL_IMG_MIMES.includes(m[1]);
+}
+
+// ── BUILD-65 Part 1 — uploads should not make anyone think about bytes ──────
+// The 350KB cap (validPortalImage's old 500000-char limit) was vestigial from
+// the base64-in-the-row era: it existed because the image string was stored in
+// a DB column and echoed in every payload. Since BUILD-51 the BYTES live behind
+// the asset seam and only a /portal-assets/ URL rides payloads — so the only
+// real limits are (a) don't accept a decompression bomb, (b) don't store a
+// 15MB master. We RESIZE + COMPRESS on ingest instead of rejecting: a phone
+// photo (3–5MB) is the case every org starts with, and it must just work.
+//
+// Accept up to ~15MB of actual image (≈ 20MB of base64 + JSON — the upload
+// routes carry a 22mb body cap for this). Reject only non-images and genuinely
+// absurd payloads, with words a nonprofit staffer can act on — never a byte
+// count they have to satisfy in Photoshop.
+const MAX_UPLOAD_BYTES = 15 * 1024 * 1024;                 // ~15MB of decoded image
+const MAX_UPLOAD_STR = Math.ceil(MAX_UPLOAD_BYTES * 4 / 3) + 1024; // its base64 length + slack
+// The largest each slot actually renders at. We cap the LONG edge here so the
+// stored master is never bigger than the biggest place it's shown; the ?w=
+// route still serves smaller responsive variants on demand (each cached once).
+const UPLOAD_LONG_EDGE = { header: 2560, campaign: 2560, widget: 2560, impact: 2000, logo: 1200 };
+
+// Returns an actionable message if this data URI can't be accepted, else null.
+// (Call sites already handle ""/null as "clear" before reaching here.)
+function uploadImageError(dataUri) {
+  if (typeof dataUri !== "string") return "That file isn't an image we can use. Please upload a PNG, JPEG, GIF, WebP, or SVG image.";
+  const m = dataUri.match(/^data:([^;]+);base64,/);
+  if (!m || !PORTAL_IMG_MIMES.includes(m[1])) return "That file isn't an image we can use. Please upload a PNG, JPEG, GIF, WebP, or SVG image.";
+  if (dataUri.length > MAX_UPLOAD_STR) return "That image is unusually large. Please use a photo under 15 MB — a normal photo from a phone or camera is well within that.";
+  return null;
+}
+
+// Resize + compress a validated raster on ingest. SVG (vector) and GIF
+// (possibly animated → sharp would flatten it) pass through untouched; a raster
+// over the slot's long-edge cap is scaled DOWN (never up — upscaling is the
+// grain complaint) and re-encoded (WebP for photos; PNG for a logo, to keep
+// crisp edges + transparency). Returns { buffer, contentType, width, height }
+// or { error, message } if the bytes won't process as an image.
+async function normalizeUploadImage(kind, contentType, buffer) {
+  if (contentType === "image/svg+xml" || contentType === "image/gif") {
+    return { buffer, contentType, width: null, height: null };
+  }
+  const cap = UPLOAD_LONG_EDGE[kind] || 2560;
+  try {
+    const sharp = require("sharp");
+    let pipe = sharp(buffer, { failOn: "none" }).rotate() // honor EXIF orientation
+      .resize({ width: cap, height: cap, fit: "inside", withoutEnlargement: true });
+    pipe = (kind === "logo") ? pipe.png({ compressionLevel: 9 }) : pipe.webp({ quality: 82 });
+    const out = await pipe.toBuffer({ resolveWithObject: true });
+    return {
+      buffer: out.data,
+      contentType: kind === "logo" ? "image/png" : "image/webp",
+      width: out.info.width, height: out.info.height,
+    };
+  } catch (e) {
+    // sharp couldn't process these bytes. checkThemeImageDimensions already
+    // parsed the header (via image-size) and the mime already validated, so
+    // rather than block the upload we store the original untouched — the pre-
+    // BUILD-65 behavior. A genuine photo always decodes; this path is for the
+    // odd header-only/edge-case buffer, not a resize failure on a real image.
+    console.error("[upload] normalize skipped (storing original):", e.message);
+    return { buffer, contentType, width: null, height: null };
+  }
 }
 
 // ── BUILD-56 Part 1 — pointer history ───────────────────────────────────────
@@ -18092,13 +18328,16 @@ async function storeImpactPhotos(orgId, photosIn) {
   const out = [];
   for (const p of photos) {
     if (typeof p === "string" && p.startsWith("/portal-assets/")) { out.push(p); continue; }
-    if (!validPortalImage(p, 500000)) return { error: "bad_image", message: "Photos must be PNG/JPEG/GIF/WebP/SVG under ~350KB." };
+    const uerr = uploadImageError(p);
+    if (uerr) return { error: "bad_image", message: uerr };
     const m = String(p).match(/^data:([^;]+);base64,(.*)$/s);
     let buffer;
     try { buffer = Buffer.from(m[2], "base64"); } catch { return { error: "bad_image" }; }
     const dims = checkThemeImageDimensions("impact", m[1], buffer);
     if (!dims.ok) return { error: "bad_image_dimensions", message: dims.message };
-    const asset = await putThemeAsset({ orgId, kind: "impact", buffer, contentType: m[1], width: dims.width, height: dims.height });
+    const norm = await normalizeUploadImage("impact", m[1], buffer);
+    if (norm.error) return norm;
+    const asset = await putThemeAsset({ orgId, kind: "impact", buffer: norm.buffer, contentType: norm.contentType, width: norm.width ?? dims.width, height: norm.height ?? dims.height });
     out.push(asset.path);
   }
   return { photos: out };
@@ -18151,13 +18390,16 @@ async function storeCampaignHero(orgId, heroIn) {
   if (heroIn == null) return { url: undefined };            // field not being set
   if (heroIn === "") return { url: null };                  // explicit clear
   if (typeof heroIn === "string" && heroIn.startsWith("/portal-assets/")) return { url: heroIn };
-  if (!validPortalImage(heroIn, 500000)) return { error: "bad_image", message: "Campaign photos must be PNG/JPEG/GIF/WebP/SVG under ~350KB." };
+  const uerr = uploadImageError(heroIn);
+  if (uerr) return { error: "bad_image", message: uerr };
   const m = String(heroIn).match(/^data:([^;]+);base64,(.*)$/s);
   let buffer;
   try { buffer = Buffer.from(m[2], "base64"); } catch { return { error: "bad_image" }; }
   const dims = checkThemeImageDimensions("campaign", m[1], buffer);
   if (!dims.ok) return { error: "bad_image_dimensions", message: dims.message };
-  const asset = await putThemeAsset({ orgId, kind: "campaign", buffer, contentType: m[1], width: dims.width, height: dims.height });
+  const norm = await normalizeUploadImage("campaign", m[1], buffer);
+  if (norm.error) return norm;
+  const asset = await putThemeAsset({ orgId, kind: "campaign", buffer: norm.buffer, contentType: norm.contentType, width: norm.width ?? dims.width, height: norm.height ?? dims.height });
   return { url: asset.path };
 }
 async function pruneCampaignAssets(orgId) {
@@ -18194,13 +18436,16 @@ function parseVideoRef(url) {
 async function storeWidgetImage(orgId, v) {
   if (v == null || v === "") return { url: null };
   if (typeof v === "string" && v.startsWith("/portal-assets/")) return { url: v };
-  if (!validPortalImage(v, 500000)) return { error: "Photos must be PNG/JPEG/GIF/WebP/SVG under ~350KB." };
+  const uerr = uploadImageError(v);
+  if (uerr) return { error: uerr };
   const m = String(v).match(/^data:([^;]+);base64,(.*)$/s);
   let buffer;
   try { buffer = Buffer.from(m[2], "base64"); } catch { return { error: "That image didn't decode." }; }
   const dims = checkThemeImageDimensions("widget", m[1], buffer);
   if (!dims.ok) return { error: dims.message };
-  const asset = await putThemeAsset({ orgId, kind: "widget", buffer, contentType: m[1], width: dims.width, height: dims.height });
+  const norm = await normalizeUploadImage("widget", m[1], buffer);
+  if (norm.error) return { error: norm.message };
+  const asset = await putThemeAsset({ orgId, kind: "widget", buffer: norm.buffer, contentType: norm.contentType, width: norm.width ?? dims.width, height: norm.height ?? dims.height });
   return { url: asset.path };
 }
 
@@ -18603,14 +18848,17 @@ app.put("/portal-settings", requireAuth, requireAdmin, checkWriteAccess, wrap(as
       assetOps.push({ kind, keepId: null, entity: `portal_settings.${colBase}`, fromVal, toVal: null });
       continue;
     }
-    if (!validPortalImage(v, 500000)) return res.status(400).json({ error: "bad_image", message: "Images must be PNG/JPEG/GIF/WebP/SVG under ~350KB." });
+    const uerr = uploadImageError(v);
+    if (uerr) return res.status(400).json({ error: "bad_image", message: uerr });
     const m = v.match(/^data:([^;]+);base64,(.*)$/s);
     const contentType = m[1];
     let buffer;
     try { buffer = Buffer.from(m[2], "base64"); } catch { return res.status(400).json({ error: "bad_image" }); }
     const dims = checkThemeImageDimensions(kind, contentType, buffer);
     if (!dims.ok) return res.status(400).json({ error: "bad_image_dimensions", message: dims.message });
-    const asset = await putThemeAsset({ orgId: req.user.orgId, kind, buffer, contentType, width: dims.width, height: dims.height });
+    const norm = await normalizeUploadImage(kind, contentType, buffer);
+    if (norm.error) return res.status(400).json({ error: norm.error, message: norm.message });
+    const asset = await putThemeAsset({ orgId: req.user.orgId, kind, buffer: norm.buffer, contentType: norm.contentType, width: norm.width ?? dims.width, height: norm.height ?? dims.height });
     updates.push(`${colBase}_url = ?`); params.push(asset.path);
     updates.push(`${colBase}_data = ?`); params.push(null);
     assetOps.push({ kind, keepId: asset.id, entity: `portal_settings.${colBase}`, fromVal, toVal: asset.path });

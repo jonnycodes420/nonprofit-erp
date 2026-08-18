@@ -67,17 +67,19 @@ function assertAgree(label, handledSet, manifest) {
   const d4 = webhookEventDiff(["a", "b"], ["a", "b"]);
   ok("diff: an exactly-matching subscription is clean", d4.missing.length === 0 && d4.extra.length === 0, d4);
 
-  // The known real-world diff (documented in FINDINGS): the four BUILD-58 events
-  // are exactly what a 6-event live endpoint is missing.
+  // The known real-world diff: against a 6-event endpoint that subscribed no
+  // refund/dispute events, the manifest handles the refund + dispute family it
+  // doesn't subscribe. BUILD-65 added charge.dispute.funds_reinstated (won-on-
+  // appeal → restore the reversed gift), so it's part of that set now.
   const liveSubscribedNow = [
     "payment_intent.succeeded", "checkout.session.completed",
     "invoice.payment_failed", "invoice.payment_succeeded",
     "customer.subscription.updated", "customer.subscription.deleted",
   ];
   const live = webhookEventDiff(DONATION_WEBHOOK_EVENTS, liveSubscribedNow);
-  ok("diff vs the pre-BUILD-63 live donation endpoint = the 4 BUILD-58 events",
+  ok("diff vs a no-dispute-events endpoint = the refund + dispute family",
     JSON.stringify(live.missing) === JSON.stringify(
-      ["charge.dispute.closed", "charge.dispute.created", "charge.dispute.updated", "charge.refunded"]),
+      ["charge.dispute.closed", "charge.dispute.created", "charge.dispute.funds_reinstated", "charge.dispute.updated", "charge.refunded"]),
     live);
 
   summary();

@@ -23,6 +23,7 @@ const DONATION_WEBHOOK_EVENTS = [
   "charge.dispute.created",
   "charge.dispute.updated",
   "charge.dispute.closed",
+  "charge.dispute.funds_reinstated",   // BUILD-65 Part 7 — won-on-appeal → restore the reversed gift
   "invoice.payment_failed",
   "invoice.payment_succeeded",
   "customer.subscription.updated",

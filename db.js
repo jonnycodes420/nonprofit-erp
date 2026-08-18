@@ -888,6 +888,22 @@ async function initSchema() {
   // needs_response | under_review | won | lost.
   await pool.query(`ALTER TABLE gifts ADD COLUMN IF NOT EXISTS disputed_at TIMESTAMPTZ DEFAULT NULL`);
   await pool.query(`ALTER TABLE gifts ADD COLUMN IF NOT EXISTS dispute_status TEXT DEFAULT NULL`);
+  // BUILD-65 Part 7 — a LOST dispute reverses the gift (deletes it), but a
+  // dispute can be won BACK on appeal (charge.dispute.funds_reinstated). Without
+  // a record of what was reversed, the gift/ledger/receipt could never be
+  // restored. This holds the snapshot needed to reinstate: keyed on the
+  // payment_intent (the reversal's natural id), consumed on reinstatement.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS dispute_reversals (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL,
+      stripe_payment_id TEXT NOT NULL,
+      dispute_id TEXT,
+      gift_snapshot JSONB NOT NULL,
+      receipt_id TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      UNIQUE (org_id, stripe_payment_id)
+    )`);
   await pool.query(`ALTER TABLE fin_funds ADD COLUMN IF NOT EXISTS is_sample BOOLEAN DEFAULT false`);
   await pool.query(`ALTER TABLE volunteers ADD COLUMN IF NOT EXISTS is_sample BOOLEAN DEFAULT false`);
   await pool.query(`ALTER TABLE board_members ADD COLUMN IF NOT EXISTS is_sample BOOLEAN DEFAULT false`);

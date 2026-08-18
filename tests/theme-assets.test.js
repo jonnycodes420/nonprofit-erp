@@ -146,14 +146,20 @@ async function fixture() {
   ok("square header rejected too (height >= width)", square.status === 400 && square.body.error === "bad_image_dimensions");
   const narrow = await api("PUT", "/portal-settings", tokA, { headerImageData: pngUri(400, 100) });
   ok("sub-600px-wide header rejected", narrow.status === 400 && narrow.body.error === "bad_image_dimensions");
-  const huge = await api("PUT", "/portal-settings", tokA, { headerImageData: pngUri(7000, 1000) });
-  ok("absurd pixel dimensions rejected", huge.status === 400 && huge.body.error === "bad_image_dimensions");
+  // BUILD-65: we resize down on ingest, so a large photo is fine — only
+  // genuinely absurd dimensions (a decompression-bomb guard) are rejected now
+  // (was 6000px; a 7000px banner is now accepted and downscaled).
+  const huge = await api("PUT", "/portal-settings", tokA, { headerImageData: pngUri(13000, 1000) });
+  ok("absurd pixel dimensions rejected (>12000px)", huge.status === 400 && huge.body.error === "bad_image_dimensions");
   const garbage = await api("PUT", "/portal-settings", tokA, { headerImageData: "data:image/png;base64," + Buffer.from("not a png at all").toString("base64") });
   ok("bytes that don't parse as an image rejected", garbage.status === 400 && garbage.body.error === "bad_image_dimensions");
   const badMime = await api("PUT", "/portal-settings", tokA, { headerImageData: "data:text/html;base64," + Buffer.from("<html>").toString("base64") });
   ok("non-image mime rejected", badMime.status === 400 && badMime.body.error === "bad_image");
-  const big = await api("PUT", "/portal-settings", tokA, { headerImageData: "data:image/png;base64," + "A".repeat(500001) });
-  ok("size cap enforced", big.status === 400 && big.body.error === "bad_image");
+  // BUILD-65: the old ~350KB cap is GONE (a phone photo is 3–5MB and must just
+  // work — resized on ingest). Only a genuinely absurd payload (over ~15MB) is
+  // rejected, with actionable text that names no byte count to satisfy.
+  const big = await api("PUT", "/portal-settings", tokA, { headerImageData: "data:image/png;base64," + "A".repeat(21 * 1024 * 1024) });
+  ok("oversized (>15MB) rejected with actionable text", big.status === 400 && big.body.error === "bad_image" && !/350\s*KB/i.test(big.body.message || ""), big.body);
   const svgOk = await api("PUT", "/portal-settings", tokA, { headerImageData: svgUri });
   ok("SVG header accepted (vector — no raster dimension rule)", svgOk.status === 200 && /^\/portal-assets\/pa_/.test(svgOk.body.header_image_url));
   const logoPortrait = await api("PUT", "/portal-settings", tokA, { logoData: pngUri(200, 400) });
