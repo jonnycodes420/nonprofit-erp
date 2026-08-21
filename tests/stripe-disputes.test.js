@@ -161,8 +161,12 @@ async function seedGift(orgId, donorId, piId, amount) {
     ok("reinstated: dispute_status=won", g?.dispute_status === "won", g?.dispute_status);
     const stamps = await q(`SELECT id FROM fin_transactions WHERE org_id=$1 AND gift_id=$2`, [orgId, g?.id]);
     ok("reinstated: the ledger stamp is back (one)", stamps.length === 1, stamps.length);
-    const [rc] = await q(`SELECT voided_at, gift_id FROM receipts WHERE id=$1`, [rcpt3.id]);
+    const [rc] = await q(`SELECT voided_at, gift_id, receipt_number FROM receipts WHERE id=$1`, [rcpt3.id]);
     ok("reinstated: the receipt is un-voided and re-linked", rc && rc.voided_at == null && rc.gift_id === g?.id, rc);
+    // The SAME receipt row is un-voided (not a new one), so the donor's original
+    // number stands — their filed paperwork stays valid, no re-numbering. (The
+    // void itself sends no donor notice, so there's nothing to contradict.)
+    ok("reinstated: the receipt keeps its ORIGINAL number", rc && rc.receipt_number === rcpt3.receipt_number, { was: rcpt3.receipt_number, now: rc?.receipt_number });
     const [{ total_giving: after3 }] = await q(`SELECT total_giving FROM donors WHERE id=$1`, [donorId]);
     ok("reinstated: donor total is whole again", Number(after3) === Number(base3), { base3, after3 });
     const notes = await q(`SELECT id FROM interactions WHERE donor_id=$1 AND note ILIKE '%reinstat%'`, [donorId]);

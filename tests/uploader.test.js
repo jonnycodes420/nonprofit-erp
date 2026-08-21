@@ -147,9 +147,17 @@ ok(/shape="wide" preview=\{dfHero/.test(fundraising), "Fundraising dfHero: shape
 ok(/onRemove=\{\(\) => \{ setDfHero\(""\)/.test(fundraising), "Fundraising dfHero: onRemove clears the value");
 ok(!fundraising.includes("</Uploader>"), "Fundraising: no children preview markup left");
 
-// Donors CSV import sites (3 entry points) pass fileMeta from the parsed file.
+// CSV import file-tile: every import COMPONENT that reads a spreadsheet must
+// show the filled file tile (fileMeta from the parsed file). There are TWO such
+// components — `DonorImport` (which serves BOTH the "Import donors only" and the
+// "Import + History" menu entries via its `withHistory` prop; the tile is gated
+// on `srcFile && (parsed || xlsxSheets || bothMode)`, NOT on withHistory, so all
+// three user-facing entry points show it) and `GiftHistoryImport`. The legacy
+// `CombinedImport` third component was DELETED in BUILD-58 — so the count is 2,
+// not 3. (Verified 2026-08-21: all three entry points genuinely pass fileMeta;
+// this was a stale count, not a missing site.)
 const csvMetaCount = (donors.match(/fileMeta=\{srcFile \? \{/g) || []).length;
-ok(csvMetaCount === 3, `Donors.jsx: all 3 CSV import sites pass fileMeta (found ${csvMetaCount})`);
+ok(csvMetaCount === 2, `Donors.jsx: both CSV import components pass fileMeta (found ${csvMetaCount})`);
 ok(/transaction ledger|shapeLabel\(effectiveShape\)/.test(donors),
   "Donors CSV fileMeta detail carries rows + detected shape");
 

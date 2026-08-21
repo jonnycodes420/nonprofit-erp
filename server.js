@@ -77,6 +77,7 @@ const { donationStripeKey, billingStripeKey, billingStripeMode, billingConfigErr
 const { CANONICAL_APP_URL, resolvePublicAppUrl, publicAppUrl } = require("./publicUrl");
 const { DONATION_WEBHOOK_EVENTS, BILLING_WEBHOOK_EVENTS, webhookEventDiff } = require("./stripeEvents");
 const { putThemeAsset, getThemeAsset, pruneThemeAssets, pruneUnreferencedAssets, refreshAssetFallbackCount, refreshRetentionCounts, purgeExpiredAssets, assetHealth, ASSET_ID_RE } = require("./assetStore");
+const { computeGuardsOk } = require("./guards");
 const { imageSize } = require("image-size");
 const { computeTrialEnd } = require("./trialEnd");
 
@@ -1630,24 +1631,20 @@ function reconciliationHealth() {
 
 // BUILD-65 Part 6 — a single field that is true ONLY when every guard is both
 // clean AND fresh. Nothing may report a clean zero for a check that has not
-// run: a null counter (unchecked), a stale reconciliation, or an unrun webhook
-// check all make this false. This is the one-glance "is everything actually
-// being watched, and is it all quiet?" signal — a human watches guardsOk, not
-// eight separate counters.
-const GUARD_FRESH_MS = 40 * 60 * 1000; // reconciliation must have run within ~40 min
+// run. Small-fix #1: a boot grace so a not-yet-run check doesn't read false the
+// instant after a deploy (which opened a UptimeRobot incident on every deploy).
+// The decision logic is the pure computeGuardsOk (guards.js), unit-tested for
+// the boot-grace and dead-tick cases in tests/guards.test.js.
+const guardBootAt = Date.now();
 function guardsOk() {
-  const r = reconciliation;
-  const reconFresh = r.checkedAt != null && (Date.now() - Date.parse(r.checkedAt)) <= GUARD_FRESH_MS;
-  const reconClean = r.unrecordedCharges === 0 && r.orphanGifts === 0 && r.accountsErrored === 0;
-  if (!reconFresh || !reconClean) return false;
-  if (!(webhookSubStatus.checked === true && webhookSubStatus.missingCount === 0)) return false;
-  if (ledgerChartSelfHeals !== 0) return false;
-  // dbFallbackRows is null when S3 isn't configured (DB storage is then by
-  // design, not a fault) — null counts as OK; only a positive count is a fault.
-  const h = assetHealth();
-  if (h.dbFallbackRows != null && h.dbFallbackRows !== 0) return false;
-  if (notifyFailedPending !== 0) return false;
-  return true;
+  return computeGuardsOk({
+    bootAt: guardBootAt,
+    reconciliation,
+    webhook: webhookSubStatus,
+    chartSelfHeals: ledgerChartSelfHeals,
+    dbFallbackRows: assetHealth().dbFallbackRows,
+    failedPending: notifyFailedPending,
+  });
 }
 
 // ── BUILD-63 Part 2 — the event-manifest vs live-subscription diff ───────────

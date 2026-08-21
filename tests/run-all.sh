@@ -72,7 +72,7 @@ CORE=(
   campaign-impact portal-page portal-designation asset-retention recurring-surface giving-flow-brand portal-crop giving-summary
   ledger-provisioning mail-suppression first-login-matrix import-columns
   stripe-disputes external-fixture-provenance reconciliation webhook-manifest webhook-ordering
-  build65
+  build65 guards
   portal-contrast
   finance-reports-consistency name-normalize reserved-recovered concurrency
   demo-content

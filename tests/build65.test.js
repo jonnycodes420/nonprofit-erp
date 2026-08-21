@@ -143,12 +143,10 @@ async function fixture() {
               : (typeof rec.unrecordedCharges === "number" && typeof rec.orphanGifts === "number"),
     { checkedAt: rec.checkedAt, unrecorded: rec.unrecordedCharges, orphan: rec.orphanGifts });
   ok("Part6: accountsWithStripe denominator is surfaced (a number)", typeof rec.accountsWithStripe === "number", rec.accountsWithStripe);
+  // guardsOk is a boolean here; the precise boot-grace (no deploy false-alarm)
+  // and dead-tick (still trips) semantics are pinned in tests/guards.test.js,
+  // where boot age + freshness can be controlled directly.
   ok("Part6: guardsOk is a boolean", typeof h.body?.guardsOk === "boolean", h.body?.guardsOk);
-  // guardsOk must be FALSE whenever reconciliation is unchecked or stale — a
-  // guard that hasn't run fresh can never report clean.
-  const reconFresh = rec.checkedAt != null && (Date.now() - Date.parse(rec.checkedAt)) <= 40 * 60 * 1000;
-  if (!reconFresh) ok("Part6: guardsOk is FALSE while reconciliation is unchecked/stale", h.body?.guardsOk === false, { checkedAt: rec.checkedAt, guardsOk: h.body?.guardsOk });
-  else ok("Part6: guardsOk is a boolean when reconciliation is fresh", typeof h.body?.guardsOk === "boolean", h.body?.guardsOk);
 
   await closeDb();
   summary();
