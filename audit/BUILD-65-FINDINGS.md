@@ -187,6 +187,55 @@ The 17 donor-facing artifacts are enumerated in `audit/BUILD-64-FINDINGS.md`
 
 ---
 
+## PART 3 — crop on the remaining slots (in progress, slot by slot)
+
+The BUILD-61 crop is a clean, reusable library — `cropImgStyle` (render) +
+`PortalBannerCrop` (editor) + `parseCrop` (server) — and preview==render holds
+**by reuse** (the render and the editor call the same function with the same
+ratio; that is the exact proof the banner is held to, with no pixel-diff). BUT
+the four slots are **not mechanically identical**, and that is the finding:
+
+- **Campaign hero — DONE + verified + committed (`c07d6ad`).** A genuine cover
+  slot; mirrors the banner. `campaigns.hero_crop`/`hero_focal_x/y`; validated in
+  the one shared write path; round-trips through all three read paths (editor
+  list, portal spotlight, portal widget); both render sites apply the shared
+  `bannerImgStyle(heroFocal, heroCrop)` in a fixed `PORTAL_CAMPAIGN_HERO_RATIO`
+  (1200/480) box; the Fundraising editor wires the same `PortalBannerCrop`.
+  Pinned: `campaign-impact` hero-crop round-trip (41/0) + `portal-crop`
+  structural preview==render-by-reuse guard (66/0). **Design choice made:** the
+  slot is now ratio-locked (an existing hero with no crop cover-fits at center
+  focal) — that is what "ratio-locked" requires; it is a small, consistent
+  framing change, not a re-crop of the subject.
+
+- **Impact photo — a cover slot, but an ARRAY.** `impact_updates.photos` is a
+  list; per-photo crop needs either a parallel `photo_crops` array (index-aligned
+  — `storeImpactPhotos` preserves order, so alignment survives) or a re-shape of
+  `photos` into objects (larger blast radius: `storeImpactPhotos`,
+  `pruneImpactAssets`, `collectLiveAssetRefs`, the render). It also renders at a
+  variable grid aspect (fixed height, `width:100%`), so like the hero it must be
+  committed to a fixed ratio. Doable and clean via the index-aligned array; it is
+  a real, self-contained build (server + editor grid UI + render), not a
+  one-liner. **Next in line.**
+
+- **Widget image — renders at NATURAL aspect.** The `image`/`hero` widgets show
+  the whole image at its own ratio (not a cover crop). Adding a ratio-locked crop
+  means **committing those widgets to a fixed display ratio**, which re-crops
+  every existing widget image an org already placed. That is a deliberate design
+  change to the page builder, not a mechanical extension — it needs a product
+  call (which ratio? per-widget-type? opt-in?) before it touches live donor
+  pages. **Flagged for a decision, not guessed.**
+
+- **Logo — renders `contain`.** A logo is shown WHOLE (the mark must not be cut);
+  a ratio-locked cover crop would decapitate it. A "crop" here would really be a
+  trim-whitespace affordance, a different control from the banner's cover-crop.
+  **Flagged for a decision, not guessed.**
+
+The honest status: the extension is proven end-to-end on the campaign hero; the
+impact photo is the next clean slot; the widget image and logo are genuine
+product/design decisions that should not be made unilaterally on donor surfaces.
+
+---
+
 ## Verification
 
 `bash tests/run-all.sh` — the full battery (now including `build65`) is green:
