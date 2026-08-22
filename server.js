@@ -8934,7 +8934,7 @@ function computeFundraisingPace(raised, goal, startDate, endDate) {
 async function fundraisingCampaignRows(orgId) {
   const campaigns = await query(
     `SELECT id, name, goal_amount, start_date, end_date, status, type, goal_category, parent_goal_id, created_at,
-            donor_facing_name, donor_description, donor_story, hero_image_url, goal_progress_public
+            donor_facing_name, donor_description, donor_story, hero_image_url, hero_crop, hero_focal_x, hero_focal_y, goal_progress_public
      FROM campaigns WHERE org_id = ? AND goal_amount IS NOT NULL AND goal_amount > 0
      ORDER BY created_at DESC`,
     [orgId]
@@ -9000,6 +9000,8 @@ async function fundraisingCampaignRows(orgId) {
       donorDescription: c.donor_description || null,
       donorStory: Array.isArray(c.donor_story) ? c.donor_story : null,
       heroImageUrl: c.hero_image_url || null,
+      heroCrop: parseCrop(c.hero_crop),
+      heroFocal: { x: Math.min(1, Math.max(0, Number(c.hero_focal_x ?? 0.5) || 0.5)), y: Math.min(1, Math.max(0, Number(c.hero_focal_y ?? 0.5) || 0.5)) },
       goalProgressPublic: c.goal_progress_public === true,
       ...pace,
     };
@@ -9208,6 +9210,22 @@ async function parseDonorFacingCampaignFields(b, orgId) {
     const h = await storeCampaignHero(orgId, b.heroImageData);
     if (h.error) return { status: 400, body: { error: h.error, message: h.message } };
     if (h.url !== undefined) { sets.push("hero_image_url = ?"); params.push(h.url); }
+  }
+  // BUILD-65 Part 3 — non-destructive crop + focal for the hero (same library
+  // and validation as the banner: parseCrop; a crop wins, focal is the fallback).
+  if (b.heroCrop !== undefined) {
+    if (b.heroCrop === "" || b.heroCrop == null) { sets.push("hero_crop = NULL"); }
+    else {
+      const c = parseCrop(b.heroCrop);
+      if (!c) return { status: 400, body: { error: "bad_crop", message: "Crop must be a rectangle {x,y,w,h} within the image." } };
+      sets.push("hero_crop = ?"); params.push(JSON.stringify(c));
+    }
+  }
+  for (const [key, col] of [["heroFocalX", "hero_focal_x"], ["heroFocalY", "hero_focal_y"]]) {
+    if (b[key] === undefined) continue;
+    const nn = Number(b[key]);
+    if (!Number.isFinite(nn)) return { status: 400, body: { error: "bad_focal", message: "Focal point must be a number between 0 and 1." } };
+    sets.push(`${col} = ?`); params.push(Math.min(1, Math.max(0, nn)));
   }
   if (b.goalProgressPublic !== undefined) { sets.push("goal_progress_public = ?"); params.push(b.goalProgressPublic === true); }
   return { sets, params };
@@ -17802,7 +17820,7 @@ app.get("/portal/:orgSlug/me", requirePortalSession, wrap(async (req, res) => {
     // counts, never other donors' gifts.
     query(
       `SELECT c.id, COALESCE(c.donor_facing_name, c.name) AS name, c.donor_description, c.donor_story,
-              c.hero_image_url, c.goal_progress_public, c.goal_amount,
+              c.hero_image_url, c.hero_crop, c.hero_focal_x, c.hero_focal_y, c.goal_progress_public, c.goal_amount,
               CASE WHEN c.goal_progress_public THEN
                 COALESCE((SELECT SUM(g2.amount - COALESCE(g2.cover_fee_amount,0)) FROM gifts g2
                           WHERE g2.org_id = c.org_id AND (g2.campaign_id = c.id OR g2.campaign = c.name)), 0)
@@ -17892,6 +17910,8 @@ app.get("/portal/:orgSlug/me", requirePortalSession, wrap(async (req, res) => {
       description: c.donor_description || null,
       story: Array.isArray(c.donor_story) ? c.donor_story : null,
       heroImage: c.hero_image_url || null,
+      heroCrop: parseCrop(c.hero_crop),
+      heroFocal: { x: Math.min(1, Math.max(0, Number(c.hero_focal_x ?? 0.5) || 0.5)), y: Math.min(1, Math.max(0, Number(c.hero_focal_y ?? 0.5) || 0.5)) },
       // Goal figures ONLY when the org opted this campaign public — and only
       // goal/raised/percent, never donor counts.
       goal: c.goal_progress_public === true ? {
@@ -18639,7 +18659,7 @@ async function resolvePortalPagePublic(org) {
     }
     if (w.type === "campaign") {
       const [c] = await query(
-        `SELECT id, COALESCE(donor_facing_name, name) AS name, donor_description, donor_story, hero_image_url,
+        `SELECT id, COALESCE(donor_facing_name, name) AS name, donor_description, donor_story, hero_image_url, hero_crop, hero_focal_x, hero_focal_y,
                 goal_progress_public, goal_amount,
                 CASE WHEN goal_progress_public THEN
                   COALESCE((SELECT SUM(g2.amount - COALESCE(g2.cover_fee_amount,0)) FROM gifts g2
@@ -18652,6 +18672,8 @@ async function resolvePortalPagePublic(org) {
         id: c.id, name: c.name, description: c.donor_description || null,
         story: Array.isArray(c.donor_story) ? c.donor_story : null,
         heroImage: c.hero_image_url || null,
+        heroCrop: parseCrop(c.hero_crop),
+        heroFocal: { x: Math.min(1, Math.max(0, Number(c.hero_focal_x ?? 0.5) || 0.5)), y: Math.min(1, Math.max(0, Number(c.hero_focal_y ?? 0.5) || 0.5)) },
         goal: c.goal_progress_public === true ? {
           amount: parseFloat(c.goal_amount) || 0, raised: parseFloat(c.raised) || 0,
           percent: (parseFloat(c.goal_amount) || 0) > 0

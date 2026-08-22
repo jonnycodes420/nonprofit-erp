@@ -152,6 +152,22 @@ async function fixture() {
   const keep = await api("GET", "/fundraising/campaigns", tokA);
   ok("rejected uploads left the stored hero untouched", keep.body.find(c => c.id === CID)?.heroImageUrl === heroUrl);
 
+  // ── 4) BUILD-65 Part 3 — non-destructive hero crop (the banner-crop library
+  // extended to this slot): crop round-trips, validates, focal is the fallback ─
+  console.log("\n— hero crop (BUILD-65 Part 3) —");
+  const cropSet = await api("PUT", `/fundraising/campaigns/${CID}`, tokA, { heroCrop: { x: 0.1, y: 0.05, w: 0.6, h: 0.4 } });
+  ok("hero crop persisted + returned (normalized rect)", cropSet.status === 200
+    && cropSet.body.heroCrop && Math.abs(cropSet.body.heroCrop.w - 0.6) < 1e-6 && Math.abs(cropSet.body.heroCrop.x - 0.1) < 1e-6, cropSet.body.heroCrop);
+  const badCrop = await api("PUT", `/fundraising/campaigns/${CID}`, tokA, { heroCrop: { x: 0.5, y: 0.5, w: 0.9, h: 0.9 } }); // x+w > 1
+  ok("out-of-bounds crop rejected (400), bytes never touched", badCrop.status === 400, badCrop.status);
+  const keep2 = await api("GET", "/fundraising/campaigns", tokA);
+  ok("rejected crop left the stored crop untouched", Math.abs((keep2.body.find(c => c.id === CID)?.heroCrop?.w ?? 0) - 0.6) < 1e-6);
+  const cleared = await api("PUT", `/fundraising/campaigns/${CID}`, tokA, { heroCrop: "" });
+  ok("crop cleared → null (falls back to focal)", cleared.status === 200 && cleared.body.heroCrop == null, cleared.body.heroCrop);
+  ok("hero focal defaults to center when unset (the fallback)", cleared.body.heroFocal && cleared.body.heroFocal.x === 0.5 && cleared.body.heroFocal.y === 0.5, cleared.body.heroFocal);
+  const focalSet = await api("PUT", `/fundraising/campaigns/${CID}`, tokA, { heroFocalX: 0.7, heroFocalY: 0.3 });
+  ok("hero focal persists", focalSet.status === 200 && Math.abs(focalSet.body.heroFocal.x - 0.7) < 1e-6 && Math.abs(focalSet.body.heroFocal.y - 0.3) < 1e-6, focalSet.body.heroFocal);
+
   // ── 4) attribution + labeling + spotlight on the donor portal ────────────
   console.log("\n— donor portal: labeling, spotlight, opt-in goal —");
   await q(`INSERT INTO gifts (id,org_id,donor_id,amount,date,type,campaign,campaign_id) VALUES

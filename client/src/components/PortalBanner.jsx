@@ -43,6 +43,12 @@ export const BANNER_WIDTHS = [400, 800, 1280, 1920, 2560];
 // banner share this ratio, so they show the same crop.
 export const PORTAL_HEADER_RATIO = "1200 / 300";
 
+// BUILD-65 Part 3 — the campaign hero is a taller feature image than the header
+// banner. Fixing the ratio is what makes "preview equals render" provable here
+// too (the editor crop preview and the live card share it). A hero with no
+// explicit crop cover-fits into this ratio at its focal point (center default).
+export const PORTAL_CAMPAIGN_HERO_RATIO = "1200 / 480";
+
 // Only content-addressed portal assets get a srcset (a data-URI or external
 // URL can't be resized by our route). Returns "" to skip srcset cleanly.
 export function bannerSrcSet(url) {

@@ -69,6 +69,16 @@ async function run() {
   ok("the editor wires the crop control (drag + zoom, non-destructive rect)", /PortalBannerCrop/.test(editorSrc) && /onChange=\{\(c\) => onSet\("header_crop", c\)\}/.test(editorSrc));
   ok("the portal banner passes the crop", /crop=\{theme\.headerCrop\}/.test(portalSrc));
 
+  // BUILD-65 Part 3 — the SAME library extended to the campaign hero:
+  // preview == render by reuse (bannerImgStyle in the render, PortalBannerCrop
+  // in the editor, one shared ratio).
+  const widgetsSrc = fs.readFileSync(path.join(__dirname, "..", "client", "src", "components", "PortalWidgets.jsx"), "utf8");
+  const fundSrc = fs.readFileSync(path.join(__dirname, "..", "client", "src", "components", "Fundraising.jsx"), "utf8");
+  ok("campaign hero renders through bannerImgStyle(focal, crop) in the widget", /bannerImgStyle\(c\.heroFocal, c\.heroCrop\)/.test(widgetsSrc));
+  ok("campaign hero renders through bannerImgStyle(focal, crop) in the portal spotlight", /bannerImgStyle\(c\.heroFocal, c\.heroCrop\)/.test(portalSrc));
+  ok("campaign hero render + editor share PORTAL_CAMPAIGN_HERO_RATIO", /PORTAL_CAMPAIGN_HERO_RATIO/.test(widgetsSrc) && /PORTAL_CAMPAIGN_HERO_RATIO/.test(portalSrc) && /PORTAL_CAMPAIGN_HERO_RATIO/.test(fundSrc));
+  ok("campaign editor wires the same PortalBannerCrop control (non-destructive rect)", /PortalBannerCrop/.test(fundSrc) && /setDfHeroCrop\(c\)/.test(fundSrc));
+
   // ── (3) round-trip + validation + non-destructive ────────────────────────
   const tok = (await api("POST", "/auth/login", null, { email: ADMIN, password: "loadtest1234" })).body.token;
   const before = (await q(`SELECT header_image_url, header_crop FROM portal_settings WHERE org_id=$1`, [ORG]))[0];

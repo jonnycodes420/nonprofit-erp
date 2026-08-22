@@ -6,6 +6,7 @@ import { QrCodeBlock, EmbedCodeBlock } from "./ShareBlocks";
 import Uploader, { IMAGE_ACCEPT, IMAGE_ACCEPT_LABEL, IMAGE_MAX_BYTES } from "./Uploader";
 import { textToStory, storyToText } from "../lib/storyBlocks";
 import { resolveAssetUrl } from "../lib/assetUrl";
+import { PortalBannerCrop, PORTAL_CAMPAIGN_HERO_RATIO } from "./PortalBanner";
 
 // ── Fundraising (BUILD-11) ──────────────────────────────────────────────────
 // The money-moving home. Everything here reads live figures from the backend
@@ -486,6 +487,7 @@ function CampaignModal({ mode, campaign, campaigns = [], onClose, onSaved }) {
   const [dfDesc, setDfDesc] = useState(campaign?.donorDescription || "");
   const [dfStory, setDfStory] = useState(storyToText(campaign?.donorStory));
   const [dfHero, setDfHero] = useState(campaign?.heroImageUrl || "");   // stored path OR fresh data URI
+  const [dfHeroCrop, setDfHeroCrop] = useState(campaign?.heroCrop || null); // BUILD-65 Part 3 — non-destructive crop
   const [goalPublic, setGoalPublic] = useState(campaign?.goalProgressPublic === true);
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState("");
@@ -509,7 +511,7 @@ function CampaignModal({ mode, campaign, campaigns = [], onClose, onSaved }) {
       const body = {
         name: name.trim(), goalAmount: g, goalCategory: category, parentGoalId: parentId || null, startDate: start || null, endDate: end || null,
         donorFacingName: dfName.trim(), donorDescription: dfDesc.trim(),
-        donorStory: textToStory(dfStory), heroImageData: dfHero || "",
+        donorStory: textToStory(dfStory), heroImageData: dfHero || "", heroCrop: dfHero ? dfHeroCrop : "",
         goalProgressPublic: goalPublic,
       };
       if (mode === "edit") await apiFetch(`/fundraising/campaigns/${campaign.id}`, { method: "PUT", body: JSON.stringify(body) });
@@ -588,8 +590,19 @@ function CampaignModal({ mode, campaign, campaigns = [], onClose, onSaved }) {
             <Uploader accept={IMAGE_ACCEPT} acceptLabel={IMAGE_ACCEPT_LABEL} maxBytes={IMAGE_MAX_BYTES} compact
               shape="wide" preview={dfHero ? (dfHero.startsWith("data:") ? dfHero : resolveAssetUrl(dfHero)) : null}
               label={dfHero ? "Replace photo" : "Drag a photo here, or browse"}
-              onFile={({ dataUrl }) => { setDfHero(dataUrl); setDirty(true); }}
-              onRemove={() => { setDfHero(""); setDirty(true); }} />
+              onFile={({ dataUrl }) => { setDfHero(dataUrl); setDfHeroCrop(null); setDirty(true); }}
+              onRemove={() => { setDfHero(""); setDfHeroCrop(null); setDirty(true); }} />
+            {/* BUILD-65 Part 3 — non-destructive crop; this preview IS the render
+                (same cropImgStyle + ratio the donor's campaign card uses). */}
+            {dfHero && (
+              <div style={{ marginTop: 10 }}>
+                <PortalBannerCrop
+                  url={dfHero.startsWith("data:") ? dfHero : resolveAssetUrl(dfHero)}
+                  crop={dfHeroCrop} focal={campaign?.heroFocal}
+                  ratio={PORTAL_CAMPAIGN_HERO_RATIO}
+                  onChange={(c) => { setDfHeroCrop(c); setDirty(true); }} />
+              </div>
+            )}
           </div>
           <label style={{ display: "flex", alignItems: "flex-start", gap: 8, fontSize: 13, color: T.ink, cursor: "pointer" }}>
             <input type="checkbox" checked={goalPublic} onChange={e => setGoalPublic(e.target.checked)} style={{ marginTop: 2 }} />

@@ -17,7 +17,7 @@ import { fmtFull, fmtDay } from "../lib/money";
 import { resolvePairing, resolveCardStyle } from "../lib/portalTheme";
 import { resolveAssetUrl } from "../lib/assetUrl";
 import { PageRenderer } from "../components/PortalWidgets";
-import PortalBanner, { PORTAL_HEADER_RATIO } from "../components/PortalBanner";
+import PortalBanner, { PORTAL_HEADER_RATIO, PORTAL_CAMPAIGN_HERO_RATIO, bannerImgStyle, bannerSrcSet } from "../components/PortalBanner";
 import { portalScaleVars } from "../lib/portalScale";
 
 // Same-origin in production via the vercel.json /portal-api proxy (the cookie
@@ -577,9 +577,11 @@ function Dashboard({ slug, me, reload, page }) {
       <div className={(me.campaigns || []).length >= 2 ? "pt-campaigns" : undefined}>
       {(me.campaigns || []).map(c => (
         <div key={c.id} style={{ ...S.card, padding: 0, overflow: "hidden" }}>
+          {/* BUILD-65 Part 3 — non-destructive crop (or focal fallback) into the
+              fixed campaign-hero ratio; the editor crop preview shares it. */}
           {c.heroImage && (
-            <div style={{ maxHeight: 220, overflow: "hidden" }}>
-              <img src={resolveAssetUrl(c.heroImage)} alt="" style={{ width: "100%", display: "block", objectFit: "cover" }} />
+            <div style={{ position: "relative", width: "100%", aspectRatio: PORTAL_CAMPAIGN_HERO_RATIO, overflow: "hidden" }}>
+              <img src={resolveAssetUrl(c.heroImage)} {...(bannerSrcSet(c.heroImage) ? { srcSet: bannerSrcSet(c.heroImage), sizes: "100vw" } : {})} alt="" loading="lazy" decoding="async" style={bannerImgStyle(c.heroFocal, c.heroCrop)} />
             </div>
           )}
           <div style={{ padding: "20px 22px" }}>

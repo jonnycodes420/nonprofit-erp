@@ -6,6 +6,7 @@
 // (allowlisted, parsed server-side — never a caller-supplied URL).
 import { fmtFull } from "../lib/money";
 import { resolveAssetUrl } from "../lib/assetUrl";
+import { bannerImgStyle, bannerSrcSet, PORTAL_CAMPAIGN_HERO_RATIO } from "./PortalBanner";
 
 const muted = { fontSize: 13, color: "#6b6b64", lineHeight: 1.6 };
 const h2 = { fontFamily: "var(--pt-serif, 'DM Serif Display',Georgia,serif)", fontWeight: 400, fontSize: 22, margin: "0 0 12px" };
@@ -111,7 +112,13 @@ export function WidgetView({ w, ctx }) {
       if (!c) return null;    // never fabricate — no content, no widget
       return (
         <div style={{ ...cardStyle, padding: 0, overflow: "hidden" }}>
-          {c.heroImage && <div style={{ maxHeight: 220, overflow: "hidden" }}><img src={resolveAssetUrl(c.heroImage)} alt="" style={{ width: "100%", display: "block", objectFit: "cover" }} /></div>}
+          {/* BUILD-65 Part 3 — non-destructive crop (or focal fallback) into a
+              fixed ratio, so the editor crop preview shows exactly this. */}
+          {c.heroImage && (
+            <div style={{ position: "relative", width: "100%", aspectRatio: PORTAL_CAMPAIGN_HERO_RATIO, overflow: "hidden" }}>
+              <img src={resolveAssetUrl(c.heroImage)} {...(bannerSrcSet(c.heroImage) ? { srcSet: bannerSrcSet(c.heroImage), sizes: "100vw" } : {})} alt="" loading="lazy" decoding="async" style={bannerImgStyle(c.heroFocal, c.heroCrop)} />
+            </div>
+          )}
           <div style={{ padding: "20px 22px" }}>
             <h2 style={{ ...h2, marginBottom: 6 }}>{c.name}</h2>
             {c.description && <p style={{ fontSize: 14, lineHeight: 1.7, margin: "0 0 8px", color: "#3a3a35" }}>{c.description}</p>}

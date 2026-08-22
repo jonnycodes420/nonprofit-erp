@@ -695,6 +695,13 @@ async function initSchema() {
   await pool.query(`ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS donor_description TEXT`);
   await pool.query(`ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS donor_story JSONB`);
   await pool.query(`ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS hero_image_url TEXT`);
+  // BUILD-65 Part 3 — non-destructive crop for the campaign hero (the BUILD-61
+  // banner-crop library extended to this slot). hero_crop is a normalized
+  // {x,y,w,h} against the ORIGINAL; hero_focal_{x,y} is the fallback when no
+  // crop is set. Bytes are never touched.
+  await pool.query(`ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS hero_crop TEXT`);
+  await pool.query(`ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS hero_focal_x REAL DEFAULT 0.5`);
+  await pool.query(`ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS hero_focal_y REAL DEFAULT 0.5`);
   await pool.query(`ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS goal_progress_public BOOLEAN NOT NULL DEFAULT false`);
   await pool.query(`ALTER TABLE interactions ADD COLUMN IF NOT EXISTS logged_by_name TEXT`);
 
