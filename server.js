@@ -17934,7 +17934,7 @@ app.get("/portal/:orgSlug/me", requirePortalSession, wrap(async (req, res) => {
 // ── §6.2 — deterministic impact matching over EXISTING gift attribution ────
 async function matchImpactUpdates(orgId, donorIds) {
   const updates = await query(
-    `SELECT id, title, body, photos, targets, org_wide, created_at
+    `SELECT id, title, body, photos, photo_crops, targets, org_wide, created_at
      FROM impact_updates WHERE org_id = ? AND status = 'published' ORDER BY created_at DESC LIMIT 50`, [orgId]);
   if (!updates.length) return [];
   const attrib = await query(
@@ -17947,7 +17947,7 @@ async function matchImpactUpdates(orgId, donorIds) {
   for (const u of updates) {
     const targets = Array.isArray(u.targets) ? u.targets : [];
     const hit = targets.some(tg => (tg.kind === "fund" && funds.has(tg.id)) || (tg.kind === "campaign" && camps.has(tg.id)));
-    const row = { id: u.id, title: u.title, body: u.body, photos: Array.isArray(u.photos) ? u.photos : [], date: u.created_at, matched: hit };
+    const row = { id: u.id, title: u.title, body: u.body, photos: Array.isArray(u.photos) ? u.photos : [], photoCrops: Array.isArray(u.photo_crops) ? u.photo_crops : [], date: u.created_at, matched: hit };
     if (hit) targeted.push(row);
     else if (u.org_wide) orgWide.push(row);
   }
@@ -18340,11 +18340,18 @@ async function rescueLegacyImageValue(orgId, kind, dataUri) {
 // passes through untouched (the Settings edit form echoes existing photos);
 // a data URI is validated + stored and becomes a path. Cap: 4 per update.
 const MAX_IMPACT_PHOTOS = 4;
-async function storeImpactPhotos(orgId, photosIn) {
-  const photos = (Array.isArray(photosIn) ? photosIn : []).filter(Boolean).slice(0, MAX_IMPACT_PHOTOS);
-  const out = [];
-  for (const p of photos) {
-    if (typeof p === "string" && p.startsWith("/portal-assets/")) { out.push(p); continue; }
+// BUILD-65 Part 3 — cropsIn is optional, index-aligned with photosIn. We zip
+// them, drop falsy photos (keeping crops aligned), cap at 4, and emit a `crops`
+// array aligned with the stored `photos` (each a validated {x,y,w,h} or null →
+// center focal fallback). The bytes are never touched.
+async function storeImpactPhotos(orgId, photosIn, cropsIn) {
+  const pairs = (Array.isArray(photosIn) ? photosIn : [])
+    .map((p, i) => ({ p, c: Array.isArray(cropsIn) ? cropsIn[i] : null }))
+    .filter(x => x.p).slice(0, MAX_IMPACT_PHOTOS);
+  const out = [], crops = [];
+  for (const { p, c } of pairs) {
+    const crop = (c == null || c === "") ? null : parseCrop(c);
+    if (typeof p === "string" && p.startsWith("/portal-assets/")) { out.push(p); crops.push(crop); continue; }
     const uerr = uploadImageError(p);
     if (uerr) return { error: "bad_image", message: uerr };
     const m = String(p).match(/^data:([^;]+);base64,(.*)$/s);
@@ -18355,9 +18362,9 @@ async function storeImpactPhotos(orgId, photosIn) {
     const norm = await normalizeUploadImage("impact", m[1], buffer);
     if (norm.error) return norm;
     const asset = await putThemeAsset({ orgId, kind: "impact", buffer: norm.buffer, contentType: norm.contentType, width: norm.width ?? dims.width, height: norm.height ?? dims.height });
-    out.push(asset.path);
+    out.push(asset.path); crops.push(crop);
   }
-  return { photos: out };
+  return { photos: out, crops };
 }
 // Keep = every photo id ANY of the org's updates still references (content
 // addressing means one photo can legitimately back several updates).
@@ -18686,10 +18693,10 @@ async function resolvePortalPagePublic(org) {
       // gift attribution, which needs a session — the signed-in client
       // substitutes its matched /me feed).
       r.updates = (await query(
-        `SELECT id, title, body, photos, created_at FROM impact_updates
+        `SELECT id, title, body, photos, photo_crops, created_at FROM impact_updates
          WHERE org_id = ? AND status = 'published' AND org_wide = true
          ORDER BY created_at DESC LIMIT 6`, [org.id]))
-        .map(u => ({ id: u.id, title: u.title, body: u.body, photos: Array.isArray(u.photos) ? u.photos : [], date: u.created_at }));
+        .map(u => ({ id: u.id, title: u.title, body: u.body, photos: Array.isArray(u.photos) ? u.photos : [], photoCrops: Array.isArray(u.photo_crops) ? u.photo_crops : [], date: u.created_at }));
     }
     return r;
   }));
@@ -18925,16 +18932,16 @@ app.post("/impact-updates", requireAuth, requireAdmin, checkWriteAccess, wrap(as
   const title = String(b.title || "").trim().slice(0, 200);
   if (!title) return res.status(400).json({ error: "title_required" });
   const body = String(b.body || "").slice(0, 20000);
-  const stored = await storeImpactPhotos(req.user.orgId, b.photos);
+  const stored = await storeImpactPhotos(req.user.orgId, b.photos, b.photoCrops);
   if (stored.error) return res.status(400).json({ error: stored.error, message: stored.message });
-  const photos = stored.photos;
+  const photos = stored.photos, photoCrops = stored.crops;
   const targets = await validImpactTargets(b.targets, req.user.orgId);
   if (targets === null) return res.status(404).json({ error: "bad_targets", message: "Each target must be a fund or campaign in your organization." });
   const id = "imp_" + uuid().slice(0, 8);
   await run(
-    `INSERT INTO impact_updates (id,org_id,title,body,photos,targets,org_wide,status,created_by)
-     VALUES (?,?,?,?,?,?,?,?,?)`,
-    [id, req.user.orgId, title, body, JSON.stringify(photos), JSON.stringify(targets),
+    `INSERT INTO impact_updates (id,org_id,title,body,photos,photo_crops,targets,org_wide,status,created_by)
+     VALUES (?,?,?,?,?,?,?,?,?,?)`,
+    [id, req.user.orgId, title, body, JSON.stringify(photos), JSON.stringify(photoCrops), JSON.stringify(targets),
      b.orgWide === true || targets.length === 0, b.status === "draft" ? "draft" : "published", req.user.userId]);
   await recordAssetPointerHistory(req.user.orgId, "impact_update.photos", id, null, photos.length ? photos : null, req.user);
   res.status(201).json((await query(`SELECT * FROM impact_updates WHERE id = ?`, [id]))[0]);
@@ -18959,11 +18966,11 @@ app.put("/impact-updates/:id", requireAuth, requireAdmin, checkWriteAccess, wrap
   const title = b.title !== undefined ? String(b.title || "").trim().slice(0, 200) : ex.title;
   if (!title) return res.status(400).json({ error: "title_required" });
   const body = b.body !== undefined ? String(b.body || "").slice(0, 20000) : ex.body;
-  let photos = ex.photos;
+  let photos = ex.photos, photoCrops = Array.isArray(ex.photo_crops) ? ex.photo_crops : [];
   if (b.photos !== undefined) {
-    const stored = await storeImpactPhotos(req.user.orgId, b.photos);
+    const stored = await storeImpactPhotos(req.user.orgId, b.photos, b.photoCrops);
     if (stored.error) return res.status(400).json({ error: stored.error, message: stored.message });
-    photos = stored.photos;
+    photos = stored.photos; photoCrops = stored.crops;
   }
   let targets = ex.targets;
   if (b.targets !== undefined) {
@@ -18971,9 +18978,9 @@ app.put("/impact-updates/:id", requireAuth, requireAdmin, checkWriteAccess, wrap
     if (targets === null) return res.status(404).json({ error: "bad_targets" });
   }
   await run(
-    `UPDATE impact_updates SET title=?, body=?, photos=?, targets=?, org_wide=?, status=?, updated_at=NOW()
+    `UPDATE impact_updates SET title=?, body=?, photos=?, photo_crops=?, targets=?, org_wide=?, status=?, updated_at=NOW()
      WHERE id=? AND org_id=?`,
-    [title, body, JSON.stringify(photos), JSON.stringify(targets),
+    [title, body, JSON.stringify(photos), JSON.stringify(photoCrops), JSON.stringify(targets),
      b.orgWide !== undefined ? b.orgWide === true : ex.org_wide,
      b.status !== undefined ? (b.status === "draft" ? "draft" : "published") : ex.status,
      req.params.id, req.user.orgId]);

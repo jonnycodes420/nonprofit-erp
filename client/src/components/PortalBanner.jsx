@@ -49,6 +49,11 @@ export const PORTAL_HEADER_RATIO = "1200 / 300";
 // explicit crop cover-fits into this ratio at its focal point (center default).
 export const PORTAL_CAMPAIGN_HERO_RATIO = "1200 / 480";
 
+// BUILD-65 Part 3 — impact photos are a grid of cover-cropped photos; fixing
+// the ratio (a standard 3:2 photo) is what makes each photo's crop preview
+// equal its render. A photo with no crop cover-fits at center.
+export const PORTAL_IMPACT_PHOTO_RATIO = "3 / 2";
+
 // Only content-addressed portal assets get a srcset (a data-URI or external
 // URL can't be resized by our route). Returns "" to skip srcset cleanly.
 export function bannerSrcSet(url) {

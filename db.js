@@ -1804,6 +1804,11 @@ async function initSchema() {
     )
   `);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_impact_updates_org ON impact_updates (org_id, created_at DESC)`);
+  // BUILD-65 Part 3 — per-photo non-destructive crop, an array index-aligned
+  // with `photos` (each entry a normalized {x,y,w,h} or null → center focal
+  // fallback). Bytes are never touched. storeImpactPhotos preserves order, so
+  // photos[i] ↔ photo_crops[i] stays aligned across add/remove.
+  await pool.query(`ALTER TABLE impact_updates ADD COLUMN IF NOT EXISTS photo_crops JSONB DEFAULT '[]'`);
 
   // R-2/R-3 pause state (BUILD-44 F-6): a paused schedule produces zero
   // charges (Stripe pause_collection) and is excluded from dunning.

@@ -222,6 +222,30 @@ async function fixture() {
   me = (await raw("GET", `/portal/${SLUG_A}/me`, { cookie: sess.cookie })).body;
   ok("update matched via the gift's campaign attribution", (me.impact || []).some(u => u.title === "The roof is on"), me.impact);
 
+  // ── 6b) BUILD-65 Part 3 — per-photo non-destructive crop, index-aligned ──
+  console.log("\n— impact photo crop (BUILD-65 Part 3) —");
+  const withPhotos = await api("POST", "/impact-updates", tokA, {
+    title: "Photos with crops", body: "b", orgWide: true,
+    photos: [pngUri(1200, 800), pngUri(1000, 700)],
+    photoCrops: [{ x: 0.1, y: 0.1, w: 0.5, h: 0.3333 }, null],
+  });
+  ok("impact update with photos + aligned crops created", withPhotos.status === 201, withPhotos.body);
+  const iid = withPhotos.body.id;
+  const findRow = async () => (await api("GET", "/impact-updates", tokA)).body.find(u => u.id === iid);
+  let irow = await findRow();
+  const cropsOf = (u) => (typeof u.photo_crops === "string" ? JSON.parse(u.photo_crops) : u.photo_crops) || [];
+  ok("photo_crops stored index-aligned with photos", Array.isArray(irow.photos) && irow.photos.length === 2 && cropsOf(irow).length === 2, { photos: irow.photos?.length, crops: cropsOf(irow) });
+  ok("photo 0 crop persisted (normalized), photo 1 null (center fallback)", cropsOf(irow)[0] && Math.abs(cropsOf(irow)[0].w - 0.5) < 1e-6 && cropsOf(irow)[1] == null, cropsOf(irow));
+  // Removing the first photo keeps the crop array aligned with the survivors.
+  const removed = await api("PUT", `/impact-updates/${iid}`, tokA, { photos: [irow.photos[1]], photoCrops: [null] });
+  ok("PUT drops a photo → 200", removed.status === 200, removed.status);
+  irow = await findRow();
+  ok("after remove, photos + crops stay aligned (1 each)", irow.photos.length === 1 && cropsOf(irow).length === 1 && cropsOf(irow)[0] == null, { photos: irow.photos, crops: cropsOf(irow) });
+  // An out-of-bounds crop falls back to null (center), never a stored bad rect.
+  const badc = await api("PUT", `/impact-updates/${iid}`, tokA, { photos: irow.photos, photoCrops: [{ x: 0.9, y: 0, w: 0.5, h: 0.3 }] });
+  ok("out-of-bounds crop stored as null (center fallback), never a bad rect", badc.status === 200 && cropsOf(await findRow())[0] == null);
+  await api("PUT", `/impact-updates/${iid}`, tokA, { photos: [], photoCrops: [] }); // cleanup this update's photos
+
   // ── 7) receipt email carries the org-authored campaign copy ──────────────
   console.log("\n— receipt email content —");
   mails.length = 0;

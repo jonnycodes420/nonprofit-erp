@@ -17,7 +17,7 @@ import { fmtFull, fmtDay } from "../lib/money";
 import { resolvePairing, resolveCardStyle } from "../lib/portalTheme";
 import { resolveAssetUrl } from "../lib/assetUrl";
 import { PageRenderer } from "../components/PortalWidgets";
-import PortalBanner, { PORTAL_HEADER_RATIO, PORTAL_CAMPAIGN_HERO_RATIO, bannerImgStyle, bannerSrcSet } from "../components/PortalBanner";
+import PortalBanner, { PORTAL_HEADER_RATIO, PORTAL_CAMPAIGN_HERO_RATIO, PORTAL_IMPACT_PHOTO_RATIO, bannerImgStyle, bannerSrcSet } from "../components/PortalBanner";
 import { portalScaleVars } from "../lib/portalScale";
 
 // Same-origin in production via the vercel.json /portal-api proxy (the cookie
@@ -617,7 +617,14 @@ function Dashboard({ slug, me, reload, page }) {
                   so they read as photographs, not left-aligned clip-art thumbs. */}
               {(u.photos || []).length > 0 && (
                 <div style={{ display: "grid", gridTemplateColumns: u.photos.length > 1 ? "1fr 1fr" : "1fr", gap: 8, margin: "0 0 10px" }}>
-                  {u.photos.map((p, i) => <img key={i} src={resolveAssetUrl(p)} alt="" style={{ width: "100%", height: u.photos.length > 1 ? 190 : 260, borderRadius: 10, objectFit: "cover", display: "block" }} />)}
+                  {/* BUILD-65 Part 3 — per-photo non-destructive crop (or center
+                      fallback) into the fixed impact ratio; the editor preview
+                      shares it, so preview == render. */}
+                  {u.photos.map((p, i) => (
+                    <div key={i} style={{ position: "relative", width: "100%", aspectRatio: PORTAL_IMPACT_PHOTO_RATIO, borderRadius: 10, overflow: "hidden" }}>
+                      <img src={resolveAssetUrl(p)} {...(bannerSrcSet(p) ? { srcSet: bannerSrcSet(p), sizes: "50vw" } : {})} alt="" loading="lazy" decoding="async" style={bannerImgStyle(undefined, (u.photoCrops || [])[i])} />
+                    </div>
+                  ))}
                 </div>
               )}
               {u.body && <div style={{ fontSize: 14, lineHeight: 1.7, whiteSpace: "pre-wrap" }}>{u.body}</div>}

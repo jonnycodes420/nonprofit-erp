@@ -79,6 +79,13 @@ async function run() {
   ok("campaign hero render + editor share PORTAL_CAMPAIGN_HERO_RATIO", /PORTAL_CAMPAIGN_HERO_RATIO/.test(widgetsSrc) && /PORTAL_CAMPAIGN_HERO_RATIO/.test(portalSrc) && /PORTAL_CAMPAIGN_HERO_RATIO/.test(fundSrc));
   ok("campaign editor wires the same PortalBannerCrop control (non-destructive rect)", /PortalBannerCrop/.test(fundSrc) && /setDfHeroCrop\(c\)/.test(fundSrc));
 
+  // BUILD-65 Part 3 — impact photos: per-photo crop through the same library.
+  const settingsSrc = fs.readFileSync(path.join(__dirname, "..", "client", "src", "components", "Settings.jsx"), "utf8");
+  ok("impact photo renders through bannerImgStyle(_, per-index crop) in the widget", /bannerImgStyle\(undefined, \(u\.photoCrops \|\| \[\]\)\[i\]\)/.test(widgetsSrc));
+  ok("impact photo renders through bannerImgStyle(_, per-index crop) in the portal feed", /bannerImgStyle\(undefined, \(u\.photoCrops \|\| \[\]\)\[i\]\)/.test(portalSrc));
+  ok("impact render + editor share PORTAL_IMPACT_PHOTO_RATIO", /PORTAL_IMPACT_PHOTO_RATIO/.test(widgetsSrc) && /PORTAL_IMPACT_PHOTO_RATIO/.test(portalSrc) && /PORTAL_IMPACT_PHOTO_RATIO/.test(settingsSrc));
+  ok("impact editor wires the same PortalBannerCrop control (per-photo, aligned)", /PortalBannerCrop/.test(settingsSrc) && /photoCrops/.test(settingsSrc));
+
   // ── (3) round-trip + validation + non-destructive ────────────────────────
   const tok = (await api("POST", "/auth/login", null, { email: ADMIN, password: "loadtest1234" })).body.token;
   const before = (await q(`SELECT header_image_url, header_crop FROM portal_settings WHERE org_id=$1`, [ORG]))[0];

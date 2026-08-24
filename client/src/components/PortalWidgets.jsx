@@ -6,7 +6,7 @@
 // (allowlisted, parsed server-side — never a caller-supplied URL).
 import { fmtFull } from "../lib/money";
 import { resolveAssetUrl } from "../lib/assetUrl";
-import { bannerImgStyle, bannerSrcSet, PORTAL_CAMPAIGN_HERO_RATIO } from "./PortalBanner";
+import { bannerImgStyle, bannerSrcSet, PORTAL_CAMPAIGN_HERO_RATIO, PORTAL_IMPACT_PHOTO_RATIO } from "./PortalBanner";
 
 const muted = { fontSize: 13, color: "#6b6b64", lineHeight: 1.6 };
 const h2 = { fontFamily: "var(--pt-serif, 'DM Serif Display',Georgia,serif)", fontWeight: 400, fontSize: 22, margin: "0 0 12px" };
@@ -143,7 +143,13 @@ export function WidgetView({ w, ctx }) {
               <div style={{ fontWeight: 700, fontSize: 16, marginBottom: 4 }}>{u.title}</div>
               {(u.photos || []).length > 0 && (
                 <div style={{ display: "flex", gap: 8, margin: "8px 0", flexWrap: "wrap" }}>
-                  {u.photos.map((p, i) => <img key={i} src={resolveAssetUrl(p)} alt="" style={{ maxWidth: 200, maxHeight: 140, borderRadius: 8, objectFit: "cover" }} />)}
+                  {/* BUILD-65 Part 3 — per-photo crop (or center fallback) in the
+                      fixed impact ratio; the editor preview shares it. */}
+                  {u.photos.map((p, i) => (
+                    <div key={i} style={{ position: "relative", width: 200, maxWidth: "100%", aspectRatio: PORTAL_IMPACT_PHOTO_RATIO, borderRadius: 8, overflow: "hidden" }}>
+                      <img src={resolveAssetUrl(p)} alt="" loading="lazy" decoding="async" style={bannerImgStyle(undefined, (u.photoCrops || [])[i])} />
+                    </div>
+                  ))}
                 </div>
               )}
               {u.body && <div style={{ fontSize: 14, lineHeight: 1.7, whiteSpace: "pre-wrap" }}>{u.body}</div>}
