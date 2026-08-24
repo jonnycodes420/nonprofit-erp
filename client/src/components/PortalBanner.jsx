@@ -54,6 +54,11 @@ export const PORTAL_CAMPAIGN_HERO_RATIO = "1200 / 480";
 // equal its render. A photo with no crop cover-fits at center.
 export const PORTAL_IMPACT_PHOTO_RATIO = "3 / 2";
 
+// BUILD-65 Part 3 — the image/hero page-builder widgets are committed to a
+// fixed display ratio (a standard 16:9 media frame) so their crop preview
+// equals the render. A widget image with no crop cover-fits at center.
+export const PORTAL_WIDGET_IMAGE_RATIO = "16 / 9";
+
 // Only content-addressed portal assets get a srcset (a data-URI or external
 // URL can't be resized by our route). Returns "" to skip srcset cleanly.
 export function bannerSrcSet(url) {

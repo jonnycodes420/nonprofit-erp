@@ -18485,6 +18485,7 @@ async function validateWidget(raw, orgId) {
       case "hero":
         w.heading = wStr(raw.heading, 120); w.sub = wStr(raw.sub, 300);
         w.image = await img(raw.image);
+        w.imageCrop = parseCrop(raw.imageCrop);                 // BUILD-65 Part 3 — non-destructive crop
         w.size = raw.size === "tall" ? "tall" : "standard";     // resize-where-sensible
         break;
       case "richtext": {
@@ -18496,6 +18497,7 @@ async function validateWidget(raw, orgId) {
       case "image":
         w.image = await img(raw.image);
         if (!w.image) return { error: "The image widget needs an image." };
+        w.imageCrop = parseCrop(raw.imageCrop);                 // BUILD-65 Part 3 — non-destructive crop
         w.caption = wStr(raw.caption, 300);
         break;
       case "gallery": {

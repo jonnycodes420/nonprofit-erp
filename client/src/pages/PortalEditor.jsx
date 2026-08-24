@@ -22,7 +22,7 @@ import { resolvePairing, resolveCardStyle, TYPE_PAIRINGS, CARD_STYLES } from "..
 import { textToStory, storyToText } from "../lib/storyBlocks";
 import { resolveAssetUrl } from "../lib/assetUrl";
 import Uploader, { IMAGE_ACCEPT, IMAGE_ACCEPT_LABEL, IMAGE_MAX_BYTES } from "../components/Uploader";
-import { PortalBannerCrop, PORTAL_HEADER_RATIO } from "../components/PortalBanner";
+import { PortalBannerCrop, PORTAL_HEADER_RATIO, PORTAL_WIDGET_IMAGE_RATIO } from "../components/PortalBanner";
 
 // ── The fictional donor (§4: never a real donor's data) ────────────────────
 const SAMPLE_ME = {
@@ -634,6 +634,14 @@ function WidgetOptions({ w, funds, camps, onChange, onClose }) {
         onRemove={() => set(null)} />
     </>
   );
+  // BUILD-65 Part 3 — the non-destructive crop for a widget image; same
+  // PortalBannerCrop the banner uses, at the widget ratio, so preview==render.
+  const imgCropper = (value, crop, setCrop) => value ? (
+    <div style={{ marginTop: 8 }}>
+      <PortalBannerCrop url={String(value).startsWith("data:") ? value : resolveAssetUrl(value)}
+        crop={crop || null} ratio={PORTAL_WIDGET_IMAGE_RATIO} onChange={setCrop} />
+    </div>
+  ) : null;
   switch (w.type) {
     case "hero": return <>{head}
       <div style={lbl}>Heading</div><input style={inp} value={w.heading || ""} onChange={e => onChange({ heading: e.target.value })} />
@@ -642,12 +650,14 @@ function WidgetOptions({ w, funds, camps, onChange, onClose }) {
       <select style={inp} value={w.size || "standard"} onChange={e => onChange({ size: e.target.value })}>
         <option value="standard">Standard</option><option value="tall">Tall</option>
       </select>
-      {imgUploader(w.image, v => onChange({ image: v }))}</>;
+      {imgUploader(w.image, v => onChange({ image: v, imageCrop: null }))}
+      {imgCropper(w.image, w.imageCrop, c => onChange({ imageCrop: c }))}</>;
     case "richtext": return <>{head}
       <div style={lbl}>Text <span style={{ fontWeight: 400, textTransform: "none" }}>(blank line = paragraph, "## " heading, "- " list)</span></div>
       <textarea style={{ ...inp, resize: "vertical" }} rows={8} value={storyToText(w.blocks)} onChange={e => onChange({ blocks: textToStory(e.target.value) })} /></>;
     case "image": return <>{head}
-      {imgUploader(w.image, v => onChange({ image: v }))}
+      {imgUploader(w.image, v => onChange({ image: v, imageCrop: null }))}
+      {imgCropper(w.image, w.imageCrop, c => onChange({ imageCrop: c }))}
       <div style={lbl}>Caption</div><input style={inp} value={w.caption || ""} onChange={e => onChange({ caption: e.target.value })} /></>;
     case "gallery": return <>{head}
       <div style={lbl}>Photos</div>

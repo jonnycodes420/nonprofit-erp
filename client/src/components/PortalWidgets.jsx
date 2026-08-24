@@ -6,7 +6,7 @@
 // (allowlisted, parsed server-side — never a caller-supplied URL).
 import { fmtFull } from "../lib/money";
 import { resolveAssetUrl } from "../lib/assetUrl";
-import { bannerImgStyle, bannerSrcSet, PORTAL_CAMPAIGN_HERO_RATIO, PORTAL_IMPACT_PHOTO_RATIO } from "./PortalBanner";
+import { bannerImgStyle, bannerSrcSet, PORTAL_CAMPAIGN_HERO_RATIO, PORTAL_IMPACT_PHOTO_RATIO, PORTAL_WIDGET_IMAGE_RATIO } from "./PortalBanner";
 
 const muted = { fontSize: 13, color: "#6b6b64", lineHeight: 1.6 };
 const h2 = { fontFamily: "var(--pt-serif, 'DM Serif Display',Georgia,serif)", fontWeight: 400, fontSize: 22, margin: "0 0 12px" };
@@ -47,9 +47,11 @@ export function WidgetView({ w, ctx }) {
     case "hero":
       return (
         <div style={{ marginBottom: 18 }}>
+          {/* BUILD-65 Part 3 — fixed-ratio media frame + non-destructive crop
+              (focal-center fallback); the editor crop preview shares it. */}
           {w.image && (
-            <div style={{ maxHeight: w.size === "tall" ? 340 : 200, overflow: "hidden", borderRadius: "var(--pt-card-radius, 14px)" }}>
-              <img src={resolveAssetUrl(w.image)} alt="" style={{ width: "100%", display: "block", objectFit: "cover" }} />
+            <div style={{ position: "relative", width: "100%", aspectRatio: PORTAL_WIDGET_IMAGE_RATIO, overflow: "hidden", borderRadius: "var(--pt-card-radius, 14px)" }}>
+              <img src={resolveAssetUrl(w.image)} {...(bannerSrcSet(w.image) ? { srcSet: bannerSrcSet(w.image), sizes: "100vw" } : {})} alt="" loading="lazy" decoding="async" style={bannerImgStyle(undefined, w.imageCrop)} />
             </div>
           )}
           {(w.heading || w.sub) && (
@@ -65,7 +67,10 @@ export function WidgetView({ w, ctx }) {
     case "image":
       return (
         <figure style={{ margin: "0 0 18px" }}>
-          <img src={resolveAssetUrl(w.image)} alt={w.caption || ""} style={{ width: "100%", display: "block", borderRadius: "var(--pt-card-radius, 14px)" }} />
+          {/* BUILD-65 Part 3 — fixed-ratio frame + non-destructive crop. */}
+          <div style={{ position: "relative", width: "100%", aspectRatio: PORTAL_WIDGET_IMAGE_RATIO, overflow: "hidden", borderRadius: "var(--pt-card-radius, 14px)" }}>
+            <img src={resolveAssetUrl(w.image)} {...(bannerSrcSet(w.image) ? { srcSet: bannerSrcSet(w.image), sizes: "100vw" } : {})} alt={w.caption || ""} loading="lazy" decoding="async" style={bannerImgStyle(undefined, w.imageCrop)} />
+          </div>
           {w.caption && <figcaption style={{ ...muted, marginTop: 6 }}>{w.caption}</figcaption>}
         </figure>
       );

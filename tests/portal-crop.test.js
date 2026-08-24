@@ -86,6 +86,12 @@ async function run() {
   ok("impact render + editor share PORTAL_IMPACT_PHOTO_RATIO", /PORTAL_IMPACT_PHOTO_RATIO/.test(widgetsSrc) && /PORTAL_IMPACT_PHOTO_RATIO/.test(portalSrc) && /PORTAL_IMPACT_PHOTO_RATIO/.test(settingsSrc));
   ok("impact editor wires the same PortalBannerCrop control (per-photo, aligned)", /PortalBannerCrop/.test(settingsSrc) && /photoCrops/.test(settingsSrc));
 
+  // BUILD-65 Part 3 — widget image/hero: fixed ratio + crop through the same library.
+  const editorPgSrc = fs.readFileSync(path.join(__dirname, "..", "client", "src", "pages", "PortalEditor.jsx"), "utf8");
+  ok("widget hero/image render through bannerImgStyle(_, w.imageCrop)", /bannerImgStyle\(undefined, w\.imageCrop\)/.test(widgetsSrc));
+  ok("widget render + editor share PORTAL_WIDGET_IMAGE_RATIO", /PORTAL_WIDGET_IMAGE_RATIO/.test(widgetsSrc) && /PORTAL_WIDGET_IMAGE_RATIO/.test(editorPgSrc));
+  ok("widget editor wires the same PortalBannerCrop control", /PortalBannerCrop/.test(editorPgSrc) && /imageCrop/.test(editorPgSrc));
+
   // ── (3) round-trip + validation + non-destructive ────────────────────────
   const tok = (await api("POST", "/auth/login", null, { email: ADMIN, password: "loadtest1234" })).body.token;
   const before = (await q(`SELECT header_image_url, header_crop FROM portal_settings WHERE org_id=$1`, [ORG]))[0];

@@ -80,7 +80,7 @@ async function fixture() {
   // ── 2) draft/publish lifecycle ───────────────────────────────────────────
   console.log("\n— draft/publish lifecycle —");
   const v1 = [
-    { type: "hero", heading: "Welcome to Page Arts", sub: "Version one", image: pngUri(1200, 600), size: "tall" },
+    { type: "hero", heading: "Welcome to Page Arts", sub: "Version one", image: pngUri(1200, 600), imageCrop: { x: 0.1, y: 0.05, w: 0.5, h: 0.28125 }, size: "tall" },
     { type: "richtext", blocks: [{ type: "p", text: "Our story, v1." }] },
     { type: "mygiving" },
     { type: "give", heading: "Make a new gift", buttonLabel: "Give" },
@@ -89,6 +89,9 @@ async function fixture() {
   ok("draft accepted, widgets get ids", put1.status === 200 && put1.body.draft.length === 4
     && put1.body.draft.every(w => /^wid_[a-f0-9]{8}$/.test(w.id)), put1.body);
   ok("hero image became an asset path in the DRAFT", /^\/portal-assets\/pa_/.test(put1.body.draft[0].image || ""), put1.body.draft[0]);
+  // BUILD-65 Part 3 — the widget image's non-destructive crop round-trips.
+  ok("widget image crop (non-destructive rect) round-trips in the draft", put1.body.draft[0].imageCrop
+    && Math.abs(put1.body.draft[0].imageCrop.w - 0.5) < 1e-6 && Math.abs(put1.body.draft[0].imageCrop.x - 0.1) < 1e-6, put1.body.draft[0].imageCrop);
   let cfg = (await pub(`/portal/${SLUG_A}/config`)).body;
   ok("UNPUBLISHED draft is invisible to donors (config.page null)", cfg.page === null, cfg.page);
 
