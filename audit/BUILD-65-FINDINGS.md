@@ -207,32 +207,42 @@ the four slots are **not mechanically identical**, and that is the finding:
   focal) — that is what "ratio-locked" requires; it is a small, consistent
   framing change, not a re-crop of the subject.
 
-- **Impact photo — a cover slot, but an ARRAY.** `impact_updates.photos` is a
-  list; per-photo crop needs either a parallel `photo_crops` array (index-aligned
-  — `storeImpactPhotos` preserves order, so alignment survives) or a re-shape of
-  `photos` into objects (larger blast radius: `storeImpactPhotos`,
-  `pruneImpactAssets`, `collectLiveAssetRefs`, the render). It also renders at a
-  variable grid aspect (fixed height, `width:100%`), so like the hero it must be
-  committed to a fixed ratio. Doable and clean via the index-aligned array; it is
-  a real, self-contained build (server + editor grid UI + render), not a
-  one-liner. **Next in line.**
+- **Impact photo — DONE + verified + committed (`a34b288`).** A cover slot, but
+  an ARRAY. `impact_updates.photo_crops` is index-aligned with `photos`;
+  `storeImpactPhotos(orgId, photos, crops)` zips + filters + caps them together
+  so alignment survives add/remove; invalid crop → null center fallback. Both
+  donor-facing read paths expose `photoCrops`; the Portal feed + PortalWidgets
+  render apply `bannerImgStyle(_, photoCrops[i])` in a fixed `PORTAL_IMPACT_PHOTO_
+  RATIO` (3/2) box; the Settings editor lets you tap a photo to crop it with the
+  same `PortalBannerCrop`. Pinned in `campaign-impact` (47/0) + `portal-crop`
+  (73/0).
 
-- **Widget image — renders at NATURAL aspect.** The `image`/`hero` widgets show
-  the whole image at its own ratio (not a cover crop). Adding a ratio-locked crop
-  means **committing those widgets to a fixed display ratio**, which re-crops
-  every existing widget image an org already placed. That is a deliberate design
-  change to the page builder, not a mechanical extension — it needs a product
-  call (which ratio? per-widget-type? opt-in?) before it touches live donor
-  pages. **Flagged for a decision, not guessed.**
+- **Widget image — DONE + verified + committed (`7f6a6c9`).** Decision made (with
+  sign-off): the `image`/`hero` widgets are committed to a fixed 16:9 frame
+  (`PORTAL_WIDGET_IMAGE_RATIO`) + a non-destructive `imageCrop` (in the widget
+  JSON). Existing widget images now cover-fit 16:9 at center — the accepted
+  tradeoff for a consistent framed crop. Server `validateWidget`, PortalWidgets
+  render, PortalEditor editor (no new apiFetch — the allowlist is unchanged).
+  Pinned in `portal-page` (45/0) + `portal-crop`.
 
-- **Logo — renders `contain`.** A logo is shown WHOLE (the mark must not be cut);
-  a ratio-locked cover crop would decapitate it. A "crop" here would really be a
-  trim-whitespace affordance, a different control from the banner's cover-crop.
-  **Flagged for a decision, not guessed.**
+- **Logo — a DISTINCT control (decision: trim-whitespace), scoped, not rushed.**
+  A logo renders `contain` (shown WHOLE — the mark must never be cut), so the
+  cover-crop library does not apply. The chosen "trim-whitespace" affordance is a
+  genuinely different feature: a **free-rectangle** selector (any aspect, not the
+  ratio-locked pan-zoom cropper) + a **contain render of the trimmed sub-rect
+  that needs the image's natural size measured at render** (there is no CSS way
+  to contain-fit a sub-rectangle without it), applied across ~5 web logo sites
+  (portal header, editor, giving dashboard, give page). It also applies to the
+  WEB logo only — the email/PDF logo can't be CSS-cropped without re-encoding,
+  which the non-destructive rule forbids. This is a self-contained follow-up
+  build, deliberately **not** rushed onto donor-facing logo rendering at the tail
+  of a long session; the render math + free-box editor deserve their own verified
+  pass.
 
-The honest status: the extension is proven end-to-end on the campaign hero; the
-impact photo is the next clean slot; the widget image and logo are genuine
-product/design decisions that should not be made unilaterally on donor surfaces.
+The honest status: three of four slots (campaign hero, impact photo, widget
+image) are done end-to-end and verified through the shared cover-crop library;
+the logo trim-whitespace is a distinct control, scoped and queued as its own
+focused build.
 
 ---
 
