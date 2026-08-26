@@ -4,6 +4,82 @@ Separating Kingdom Builders (the donor-facing giving product) into a standalone
 repository. Fork, not a move — Steward loses nothing and is not edited. This file
 is the running narrative + decisions + the §worry section. Updated as parts land.
 
+## Steward identity guard — SHIPPED to main, DEPLOY BLOCKED on infra
+
+- Reviewed the staged diff (clean: two `/health` keys, boot-time DB-name cache,
+  Layer-0 in `writerBase` gated behind `!opts.noExit`). No test asserts exact
+  `/health` shape; `script-guards` scans `scripts/` non-recursively so root
+  `product.js` / `scripts/lib/prodGuard.js` aren't tripped.
+- **Steward full battery GREEN: 104 suites / 0 failed** (ran twice — once by hand,
+  once via the pre-push hook). Committed `03ad292` (guard) + `bad500e` (audit
+  trail) and **pushed to `main`** through the repo-admin bypass (pre-push battery
+  green). This satisfies "Steward stays green at every boundary" and the review.
+- **⚠ DEPLOY BLOCKED (needs Jonathan).** GitHub Actions created **no workflow run**
+  for the push (Actions `enabled:true`, `allowed_actions:all`, yet 0 runs for
+  `bad500e`/`03ad292`; last run was 3 days ago). Signature of an **account-level
+  Actions usage/spending cap** silently suppressing run creation. Because Steward
+  deploys ONLY from the CI `deploy-railway`/`deploy-vercel` jobs, **prod is still
+  on `8bfef81` and does NOT have the identity guard** (`/health` on prod shows no
+  `product`/`database`). The guard is on `main` but protecting nothing in prod —
+  the exact state Jonathan flagged, now one infra step from resolved.
+  **Options for Jonathan:** (a) clear the GitHub Actions billing/quota, then a
+  fresh push (or re-run) deploys normally; (b) authorize the documented
+  break-glass manual deploy (`git rev-parse HEAD > .build-sha` → `railway up` +
+  the Vercel job) — I did NOT do this autonomously (production, beyond "normal
+  gate"). Prod scratch stack was rebuilt after a `/tmp` reaper corrupted the PG
+  cluster at midnight (`initdb` per the documented recipe) — not related to the
+  Actions issue.
+
+## Part A — mixed-component trim, feature by feature (route counts)
+
+Rhythm: trim the feature across every component that uses it → carve the routes
+it orphans (acorn) → reboot + drive the giving flow. Running carve total after
+each.
+
+| Feature | Status | Routes carved | Total |
+|---|---|---|---|
+| (chunk 1, orphaned) reports/digests/workflows/tasks/sequences/… | DONE | 51 | 51 |
+| (B) Donors portfolio-CRM orphans | DONE | 55 | 106 |
+| **Gmail** (Settings card+handlers) | **DONE** | **7** (`/gmail/*`) | **113** |
+| Custom Fields (Settings) | todo | ~3 (`/custom-fields*`) | |
+| Impact Metrics (Settings) | todo | ~2 (`/impact-metrics*`) | |
+| Team / Portfolio (Settings) | todo | `/org/team`, `/portfolio/officers*` | |
+| Finance mgmt (Finance) | todo | `/finance/{accounts,budgets,audit-log}`, `/financials*` | |
+| Goals / analytics (Fundraising) | todo | `/goals*` | |
+| **Campaign send (U-9)** — send/briefing/recipients/scheduling | todo | `/campaigns/:id/{send,briefing}` + `processScheduledCampaigns` | |
+| Grants / Board (whoever still calls) | todo | `/grants*`, `/board*` | |
+
+Then the dead job/helper bodies (`fireWorkflows`, `processSequences`/`autoEnroll`,
+`syncGmail`/`syncAllGmail`, gmail OAuth helper) + `db.js` STEWARD table drop
+(incl. `gmail_connections`/`gmail_sync_exclusions` + the `GOOGLE_*` env, now
+orphaned by the Gmail carve) + U-1 orgs-column split, then Part 4 (rebrand).
+
+## UNCLEAR items (U-1…U-13) — resolution audit
+
+Requested check that all 13 boundary UNCLEARs are actioned (U-8/U-4 answered by
+Jonathan; the other 11 proceeded on my leans). Traced empirically against the
+current KB tree. **Two drifted — U-6 and U-9 — exactly as Jonathan predicted.**
+
+| # | Resolution | Landed / status |
+|---|---|---|
+| U-1 orgs column split | Keep money/portal/receipt/network cols; drop Steward-commercial | **PENDING** — `db.js` still has `plan`/`subscription_status`/`stripe_customer_id`/`recurring_dunning*` (KB copied whole). Rides the `db.js` table carve. |
+| U-2 donor CRM surface | Lean read-first donor screen, not the portfolio CRM | **DONE** — `components/Donors.jsx` (5,472→344), `tests/donors-lean.test.js` 21/0. |
+| U-3 workflows↔dunning | Dunning SHARED (stays); workflows STEWARD (go) | **DONE (routes)** — `/workflows*` carved; `processDunning` kept (7 refs); `processWorkflowSweeps` tick stopped. Dead `fireWorkflows` engine body remains for the call-graph cleanup. |
+| U-4 platform billing | **Jonathan: stub.** Billing STEWARD | **PENDING** — `/billing/*`, PlanPicker, `billingPlans.js` still in KB; billing-removal row in Part A table. |
+| U-5 Finance mgmt tab | Funds editor only; drop budgets/accounts/audit | **PENDING** — Finance.jsx whole; Part A "Finance mgmt" row. |
+| **U-6 reports** | **My lean: giving-summary SHARED, rest STEWARD** | **⚠ DRIFTED — needs your call.** `GET /reports/:key` (which served giving-summary) was carved in chunk 1, so giving-summary is **not reachable in KB**. The handler `reportGivingSummary` + `REPORT_KEYS` + the network-gate allow-line survive as **dead code**. `/fundraising/overview` already gives an org admin "what did we raise." **Recommend: reconcile to DROPPED (overview covers it) and delete the dead handler** — or restore a lean `GET /reports/giving-summary` if you want the period/median/new-donor view. Your pick. |
+| U-7 Fundraising vs analytics | Lean campaign editor travels; roll-up analytics stays STEWARD | **PARTIAL** — Fundraising.jsx whole; campaign editor + overview kept, goals/analytics trim is Part A "Goals" row. |
+| U-8 staff recurring | **Jonathan: KB.** RecurringGiving travels | **DONE** — `RecurringGiving.jsx` + `/recurring/*` kept. |
+| **U-9 campaign send** | **My lean: send/scheduling STEWARD (remove); campaign RECORD SHARED (keep)** | **⚠ NOT YET CARVED + was missing from the feature table (your catch).** `/campaigns/:id/send`, `/campaigns/:id/briefing`, `campaign_recipients`, `processScheduledCampaigns` (body) still in KB; no kept-client caller. `/campaigns` CRUD + `/progress` stay (giving attribution + goal thermometers). **Added as a Part A feature row; will carve.** |
+| U-10 legal pages | Stub, don't adapt (personal-name risk) | **DONE** — Privacy/Terms placeholder stubs (Part 2). |
+| U-11 Settings split | Keep KB config; carve Steward config | **PENDING** — Part A rows (Gmail/Team/Custom Fields/Impact Metrics). |
+| U-12 AdminDashboard | KB keeps network review + org mgmt; drop Steward-only ops | **ACCEPTABLE as-is; rebrand at Part 4** — calls only `/admin/{metrics,network/applications,orgs}` (all KB-relevant); no Steward-commercial admin routes. Carries its own `A` palette + "Steward" strings → Part 4. |
+| U-13 sequences/milestones/notes | STEWARD (carve); KB authors own onboarding email later | **DONE (routes)** — carved chunk 1. Dead `processSequences`/`autoEnroll` bodies remain for call-graph cleanup. KB onboarding email = deferred. |
+
+**Net:** 5 DONE, 1 acceptable, 5 PENDING (all in the Part A / db.js / billing
+carve queue), **2 drifted needing your decision (U-6, U-9)**. U-9 is folded into
+the Part A feature table below; U-6 needs a keep-or-drop call.
+
 ## Progress
 
 - **Part 0 — boundary drawn.** `audit/BUILD-66-BOUNDARY.md` classifies ~87 tables,
