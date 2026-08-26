@@ -70,18 +70,45 @@ each.
 | (chunk 1, orphaned) reports/digests/workflows/tasks/sequences/… | DONE | 51 | 51 |
 | (B) Donors portfolio-CRM orphans | DONE | 55 | 106 |
 | **Gmail** (Settings card+handlers) | **DONE** | **7** (`/gmail/*`) | **113** |
-| Custom Fields (Settings) | todo | ~3 (`/custom-fields*`) | |
-| Impact Metrics (Settings) | todo | ~2 (`/impact-metrics*`) | |
-| Team / Portfolio (Settings) | todo | `/org/team`, `/portfolio/officers*` | |
-| Finance mgmt (Finance) | todo | `/finance/{accounts,budgets,audit-log}`, `/financials*` | |
-| Goals / analytics (Fundraising) | todo | `/goals*` | |
-| **Campaign send (U-9)** — send/briefing/recipients/scheduling | todo | `/campaigns/:id/{send,briefing}` + `processScheduledCampaigns` | |
-| Grants / Board (whoever still calls) | todo | `/grants*`, `/board*` | |
+| **U-6 reports (dropped)** | **DONE** | already carved; dead handler cluster deleted | 113 |
 
-Then the dead job/helper bodies (`fireWorkflows`, `processSequences`/`autoEnroll`,
-`syncGmail`/`syncAllGmail`, gmail OAuth helper) + `db.js` STEWARD table drop
-(incl. `gmail_connections`/`gmail_sync_exclusions` + the `GOOGLE_*` env, now
-orphaned by the Gmail carve) + U-1 orgs-column split, then Part 4 (rebrand).
+**Caller-entanglement map (traced) — this dictates the remaining order:**
+- **Custom Fields** → Settings only. *Cleanly isolable* (~5 routes) BUT shares the
+  Settings "customization" section render + interleaved `cfForm`/`imForm` state
+  with Impact Metrics → do the two together.
+- **Impact Metrics** → Settings **+ WelcomePage** (onboarding "metric" step POSTs
+  `/impact-metrics`). Can't orphan until WelcomePage's metric step goes too.
+- **Goals** → **WelcomePage** only ("goal" step POSTs `/goals`).
+- **Portfolio/officers** → **WelcomePage** only (Team-invite step).
+- **Team** (`/org/team`) → Settings only (clean).
+- **Finance mgmt** (`/finance/{accounts,budgets,audit-log}`) → Finance only.
+- **`/financials`** → **App.jsx** (bulk `adaptData` load).
+- **`/grants`** → **App.jsx + Finance.jsx + TopBar.jsx** (data load, entity
+  routing, global search) — most entangled.
+- **`/board`** → **App.jsx** (bulk load).
+
+**Consequence:** the remaining Part A is **three coupled units**, not seven
+independent features:
+1. **Customization + onboarding** — trim Settings' Custom Fields + Impact Metrics
+   AND rewrite WelcomePage to a lean KB onboarding (drop goal/metric/portfolio
+   steps) → orphans `/custom-fields*`, `/impact-metrics*`, `/goals*`,
+   `/portfolio/officers*`. (WelcomePage-rewrite-sized, like the Donors B pass.)
+2. **Finance mgmt + App bulk-load** — trim Finance to a funds editor (U-5),
+   remove `/financials`+`/grants`+`/board` from App.jsx's `adaptData` and
+   TopBar search → orphans `/finance/{accounts,budgets,audit-log}`, `/financials*`,
+   `/grants*`, `/board*`.
+3. **Campaign send (U-9)** — remove `/campaigns/:id/{send,briefing}` +
+   `campaign_recipients` + `processScheduledCampaigns` (no client caller; keep
+   `/campaigns` CRUD + `/progress`).
+Then Team (clean, small), the dead job/helper bodies (`fireWorkflows`,
+`processSequences`/`autoEnroll`, `syncGmail`/`syncAllGmail`, gmail OAuth helper),
+the `db.js` STEWARD table drop (incl. `gmail_connections`/`gmail_sync_exclusions`
++ `GOOGLE_*` env, orphaned by Gmail), and U-1 orgs-column split. Then Part 4.
+
+**Boot-recipe fix (learned this pass):** KB test boots must use
+`STRIPE_API_BASE=http://localhost:5603` (network-gate's Stripe mock port) — my
+earlier :5703 starved `stripeChargesEnabled` and false-failed network-gate 10×
+(env, not a regression; 34/0 with :5603).
 
 ## UNCLEAR items (U-1…U-13) — resolution audit
 
