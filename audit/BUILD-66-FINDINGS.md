@@ -70,7 +70,27 @@ each.
 | (chunk 1, orphaned) reports/digests/workflows/tasks/sequences/… | DONE | 51 | 51 |
 | (B) Donors portfolio-CRM orphans | DONE | 55 | 106 |
 | **Gmail** (Settings card+handlers) | **DONE** | **7** (`/gmail/*`) | **113** |
-| **U-6 reports (dropped)** | **DONE** | already carved; dead handler cluster deleted | 113 |
+| **U-6 reports (dropped)** | **DONE** | dead handler cluster deleted | 113 |
+| **U-9 campaign send** | **DONE** | **2** (`/campaigns/:id/{send,briefing}`) | **115** |
+| **App bulk-load** (dead buildContext + board/financials/volunteers/tasks) | **DONE** | **4** (`/board`, `/financials*`) | **119** |
+| **Team** (`/org/team`, `/auth/invite`) | **KEEP** (decision) | — org-side admin the brief wants; distinct from STEWARD portfolio-officer layer | 119 |
+
+**Decisions this pass:** Team stays (KB orgs invite co-admins to configure their
+portal/funds/campaigns — generic org admin, not the major-gifts officer layer).
+
+**Remaining Part A (2 coupled units + cleanup):**
+- **Finance mgmt + grants** — trim Finance.jsx to a funds editor (U-5): drop
+  Accounts/Budgets/Audit subtabs, the AI forecast/risk (askClaude/AIBtn/AIPanel),
+  and the grant entity-routing (Finance's `data.grants` reader); remove TopBar
+  grant search. Then carve `/finance/{accounts,budgets,audit-log}` +, once
+  Finance/TopBar no longer read `data.grants`, `/grants*`. (Finance.jsx is 1401
+  woven lines — its own careful unit.)
+- **Customization + WelcomePage onboarding** — trim Settings' Custom Fields +
+  Impact Metrics AND rewrite WelcomePage to lean KB onboarding (drop goal/metric/
+  portfolio steps) → orphans `/custom-fields*`, `/impact-metrics*`, `/goals*`,
+  `/portfolio/officers*`.
+- Then dead job/helper bodies + `db.js` STEWARD table drop + U-1 orgs-column
+  split, then Part 4.
 
 **Caller-entanglement map (traced) — this dictates the remaining order:**
 - **Custom Fields** → Settings only. *Cleanly isolable* (~5 routes) BUT shares the
