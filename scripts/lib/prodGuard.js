@@ -25,12 +25,39 @@
 
 const fs = require("fs");
 const path = require("path");
+const { execSync } = require("child_process");
+const { PRODUCT_ID } = require("../../product");
 
 const CONFIRM_FLAG = "--i-know-this-is-prod";
 const LOOPBACK_RE = /^https?:\/\/(localhost|127\.0\.0\.1)([:/]|$)/i;
 
 function isLoopback(url) {
   return LOOPBACK_RE.test(String(url || ""));
+}
+
+// Layer 0 — LOOPBACK IS NOT IDENTITY. A host/port check (Layers 1–2 below)
+// cannot tell whether the server answering is THIS product or a different one
+// that merely shares the port — the exact hole that let a demo seed write into
+// the wrong application on a shared loopback port. Before a writer commits a
+// row, verify GET /health.product (and, when the caller pins one via
+// opts.database, /health.database). Synchronous on purpose so writerBase keeps
+// its signature and every existing caller inherits the check.
+function assertServerIdentity(base, opts = {}) {
+  let health = null;
+  try {
+    const url = String(base).replace(/\/+$/, "") + "/health";
+    const out = execSync(`curl -fsS --max-time 5 ${JSON.stringify(url)}`, { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] });
+    health = JSON.parse(out);
+  } catch { health = null; }
+  const refuse = (code, msg) => {
+    if (opts.noExit) { const e = new Error(code); e.code = code; throw e; }
+    console.error("\n" + msg + "\n");
+    process.exit(1);
+  };
+  if (!health) refuse("identity_unverifiable", `REFUSED: could not read ${base}/health to verify server identity before writing (loopback is not identity — verify, don't assume).`);
+  if (health.product !== PRODUCT_ID) refuse("wrong_product", `REFUSED: ${base} is product "${health.product || "<unset>"}", not "${PRODUCT_ID}". A different application is answering on that host/port.`);
+  if (opts.database && health.database !== opts.database) refuse("wrong_database", `REFUSED: ${base} is connected to database "${health.database || "<unknown>"}", not the intended "${opts.database}".`);
+  return health;
 }
 
 // Resolve BASE for a WRITING script. `def` must itself be loopback — a writer
@@ -55,6 +82,9 @@ function writerBase(def, opts = {}) {
     console.error(`\n*** WRITING TO REMOTE HOST: ${base} ***`);
     console.error(`*** Log/save anything you are about to overwrite — there is no server-side undo. ***\n`);
   }
+  // Layer 0 — verify the server's identity before any write (skipped only in
+  // unit tests, which pass noExit and have no live server to ask).
+  if (!opts.noExit) assertServerIdentity(base, { database: opts.database });
   writerBase.lastBase = base;
   return base;
 }
@@ -108,4 +138,4 @@ function writerDbUrl(opts = {}) {
   return url;
 }
 
-module.exports = { writerBase, writerDbUrl, logOverwrite, isLoopback, isRemote, CONFIRM_FLAG };
+module.exports = { writerBase, writerDbUrl, logOverwrite, isLoopback, isRemote, assertServerIdentity, CONFIRM_FLAG };

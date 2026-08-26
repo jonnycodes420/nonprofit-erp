@@ -78,6 +78,7 @@ const { CANONICAL_APP_URL, resolvePublicAppUrl, publicAppUrl } = require("./publ
 const { DONATION_WEBHOOK_EVENTS, BILLING_WEBHOOK_EVENTS, webhookEventDiff } = require("./stripeEvents");
 const { putThemeAsset, getThemeAsset, pruneThemeAssets, pruneUnreferencedAssets, refreshAssetFallbackCount, refreshRetentionCounts, purgeExpiredAssets, assetHealth, ASSET_ID_RE } = require("./assetStore");
 const { computeGuardsOk } = require("./guards");
+const { PRODUCT_ID } = require("./product");
 const { imageSize } = require("image-size");
 const { computeTrialEnd } = require("./trialEnd");
 
@@ -1517,8 +1518,13 @@ app.use("/donors", compression());
 
 // ── DB readiness guard ─────────────────────────────────────────────────────
 let dbReady = false;
+let DB_NAME = null;  // the actual connected database, surfaced on /health for the identity guard
 getDb()
-  .then(() => { dbReady = true; console.log("Database ready"); })
+  .then(async () => {
+    dbReady = true;
+    try { const r = await query("SELECT current_database() AS d"); DB_NAME = r[0] && r[0].d; } catch { /* non-fatal: /health reports database:null */ }
+    console.log("Database ready");
+  })
   .catch(err => { console.error("Database init failed:", err); process.exit(1); });
 
 app.use((req, res, next) => {
@@ -1711,6 +1717,10 @@ app.get("/health", (req, res) => {
   // one-glance check that reset/invite links carry stewardapp.dev.
   const pu = resolvePublicAppUrl();
   res.json({
+    // product + database are the IDENTITY guard: a write script asserts both
+    // against what it intended before writing, so it can never write to a
+    // different product or database that merely shares a loopback host/port.
+    product: PRODUCT_ID, database: DB_NAME,
     status: "ok", version: "1.1.0", buildSha: BUILD_SHA, db: dbReady, sentry: !!process.env.SENTRY_DSN,
     billing: { mode: billingModeStatus.mode, ok: billingModeStatus.ok, checked: billingModeStatus.checked },
     publicUrl: { url: pu.url, fromEnv: pu.fromEnv },
