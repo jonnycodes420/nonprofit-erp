@@ -60,7 +60,7 @@ const PROD_READONLY = [
   "build61-prod-verify", "check-webhook-subscriptions",
   "consistency-audit", "finance-overview-capture", "landing-crispness-prod",
   "landing-funnel-verify", "landing-hero-verify", "landing-image-verify",
-  "landing-motion-verify", "screenshot-matrix", "topbar-verify",
+  "landing-motion-verify", "screenshot-matrix", "topbar-verify", "status",
 ];
 
 // Browser-driving captures: default loopback; any writes ride the logged-in
