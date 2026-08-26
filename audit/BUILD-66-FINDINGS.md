@@ -22,13 +22,42 @@ is the running narrative + decisions + the §worry section. Updated as parts lan
   on `8bfef81` and does NOT have the identity guard** (`/health` on prod shows no
   `product`/`database`). The guard is on `main` but protecting nothing in prod —
   the exact state Jonathan flagged, now one infra step from resolved.
-  **Options for Jonathan:** (a) clear the GitHub Actions billing/quota, then a
-  fresh push (or re-run) deploys normally; (b) authorize the documented
-  break-glass manual deploy (`git rev-parse HEAD > .build-sha` → `railway up` +
-  the Vercel job) — I did NOT do this autonomously (production, beyond "normal
-  gate"). Prod scratch stack was rebuilt after a `/tmp` reaper corrupted the PG
-  cluster at midnight (`initdb` per the documented recipe) — not related to the
-  Actions issue.
+  **Decision (Jonathan): option (a) — clear the Actions cap, no break-glass.**
+
+### Ground truth on what's live (asked before clearing the cap)
+
+- **Backend** `/health.buildSha` = `8bfef81`. **Frontend** `<meta build-sha>` =
+  `8bfef81` on BOTH www.stewardapp.dev and the vercel URL. **Both surfaces match,
+  cleanly — no split-brain.** Last successful CI run: `8bfef81`, 2026-08-23 04:57.
+- **`origin/main` = `f7b5012`. Prod is SIX commits behind**, not three:
+
+  | commit | what | code? | mine? |
+  |---|---|---|---|
+  | f7b5012 | BUILD-66 FINDINGS | docs | yes |
+  | bad500e | BUILD-66 audit trail | docs | yes |
+  | 03ad292 | identity guard | server.js/prodGuard/product.js | yes |
+  | a9be0d2 | BUILD-65 Part 3 FINDINGS "3 of 4 crop slots done" | docs | **no** |
+  | 7f6a6c9 | **BUILD-65 Part 3c: widget/hero crop** | PortalBanner/Widgets/Editor, server.js, tests | **no** |
+  | a34b288 | **BUILD-65 Part 3b: per-photo crop on impact photos** | PortalBanner/Widgets/Settings/Portal, db.js, server.js | **no** |
+
+- **⚠ ANSWER TO "did anything believed-shipped not ship": YES.** BUILD-65 **Part
+  3b + 3c** (per-photo impact crop, widget/hero crop — real donor-facing
+  features, with tests) were committed **2026-08-23 22:26–22:32**, but the last
+  CI run was **04:57 that morning** (`8bfef81`). They were **committed locally
+  and never pushed** — sitting undeployed for 3 days; prod has run without them.
+- **My push today coupled them to the guard.** Before my push, `origin/main` was
+  `8bfef81` == prod. My guard sat on top of local HEAD `a9be0d2`, so `git push`
+  necessarily swept those 3 BUILD-65 ancestors to `origin` too. **I did not check
+  `git log origin/main..HEAD` before pushing — I should have, and flagged the
+  coupling then.** Consequence: the **next successful CI deploy ships my guard
+  AND BUILD-65 Part 3b/3c together.** Mitigating: the full battery I ran today
+  (104/0) was against the working tree that INCLUDES all six commits, so they are
+  **test-green together**. But "3 of 4 crop slots done" reads like a WIP
+  checkpoint (slot 4 = logo trim, only "scoped") — **Jonathan should decide
+  whether to ship the BUILD-65 crop work now or hold/split it**, since clearing
+  the cap + pushing will deploy it alongside the guard.
+- Prod scratch stack was rebuilt after a `/tmp` reaper corrupted the PG cluster
+  at midnight (`initdb` per the documented recipe) — unrelated to Actions.
 
 ## Part A — mixed-component trim, feature by feature (route counts)
 
