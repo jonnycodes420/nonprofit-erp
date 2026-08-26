@@ -59,6 +59,23 @@ is the running narrative + decisions + the §worry section. Updated as parts lan
 - Prod scratch stack was rebuilt after a `/tmp` reaper corrupted the PG cluster
   at midnight (`initdb` per the documented recipe) — unrelated to Actions.
 
+## Deploy resolved + drift-check shipped (this pass)
+
+- **The identity guard is LIVE in prod.** The Actions cap cleared; CI deployed
+  through `6fd9112`. Prod `/health` now reports `"product":"steward",
+  "database":"postgres"` — the guard is protecting production. **BUILD-65 Part
+  3b/3c shipped alongside it** (Jonathan's decision; both are ancestors of
+  `6fd9112`, verified by `git merge-base --is-ancestor`). Both surfaces matched
+  (no split-brain). Item 1 (ship the guard) is **complete**.
+- **`scripts/status.js` — the drift-check that would have caught BUILD-65.**
+  Prints local HEAD · origin/main · prod backend buildSha · prod frontend
+  build-sha, and LOUDLY flags unpushed / behind-remote / undeployed / split-brain.
+  Read-only (classified PROD_READONLY, script-guards 332/0), hosts env-overridable
+  for the fork, `npm run status`. **Proved itself on first run:** flagged
+  origin/main 1 commit ahead of prod (undeployed), and later degraded gracefully
+  on a transient deploy-window 503 (no crash, no false-green, exit 2). The
+  pre-push battery re-confirmed Steward green with these changes.
+
 ## Part A — mixed-component trim, feature by feature (route counts)
 
 Rhythm: trim the feature across every component that uses it → carve the routes
