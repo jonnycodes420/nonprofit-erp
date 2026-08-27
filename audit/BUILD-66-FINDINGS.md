@@ -95,7 +95,25 @@ each.
 **Decisions this pass:** Team stays (KB orgs invite co-admins to configure their
 portal/funds/campaigns — generic org admin, not the major-gifts officer layer).
 
-**Remaining Part A (1 coupled unit + cleanup):**
+**Part A — customization + WelcomePage DONE; dead-body decouple DONE.**
+- **Customization + WelcomePage (U-11/U-13):** `WelcomePage.jsx` rewritten as the
+  KB onboarding — **basics → theme → add fund → publish (enable portal + starter
+  page) → launch with the shareable `/give/:slug` link** (a real signup→live-portal
+  walk, not the old CRM flow minus steps; drove clean end to end). Settings' Custom
+  Fields + Impact Metrics removed. **13 routes carved** (`/custom-fields*`,
+  `/impact-metrics*`, `/goals*`, `/portfolio/officers*`); total **148**. KB `e3a03cb`.
+- **Dead bodies — live behavior decoupled (`f1dcf58`, `997a182`):** removed all
+  STEWARD fire-and-forget calls from the money path (gift route, webhook, dunning
+  coordination) + the last live STEWARD job registration (`processSequences`/
+  `autoEnroll`) + the webhook `recordAutoMove`. **No STEWARD route or job is live;
+  money path drives green.** The dead FUNCTION BODIES remain uncalled in server.js
+  (deletion is the next tail item) — see RESUME "NEXT".
+- **Remaining Part-3 tail (documented in RESUME):** delete the dead function
+  bodies → U-4 billing stub → `db.js` table drop + U-1 → test strip (run-all
+  green) → Part 4. Stopped at the `997a182` green boundary rather than rush the
+  schema/billing/test surgery at the tail of a long run.
+
+**Superseded — earlier "remaining Part A" note:**
 - **Finance mgmt + grants — DONE (U-5 resolved).** `Finance.jsx` rewritten
   **1,401 → ~230 lines** as a **funds editor**: money-in (Stripe balance/payouts)
   + funds create/edit with balances from `/finance/summary` (a deliberate screen,

@@ -9,12 +9,17 @@ enough to pick up without the chat history. Running narrative + decisions +
 
 - **Two repos.** Steward = `~/nonprofit-erp` (the fork SOURCE — do not edit for
   the separation). Kingdom Builders = `~/kingdom-builders` (the new product).
-- **KB HEAD:** `f4894ab` ("Finance mgmt + grants unit …"). **KB has NO git
-  remote** (`git remote` is empty) and must stay that way until Part 8.
-- **KB server.js:** ~222 `app.*` routes remain. **135 STEWARD routes carved so
+- **KB HEAD:** `997a182` ("Dead bodies (part 2) …"). **KB has NO git remote**
+  (`git remote` is empty) and must stay that way until Part 8.
+- **KB server.js:** ~209 `app.*` routes remain. **148 STEWARD routes carved so
   far** (per commit): chunk-1 51 · Donors 55 · Gmail 7 · campaign send 2 ·
-  board/financials 4 · **Finance+grants 16**. Every carve verified with a live
-  giving-flow drive (below) — never `node --check` alone.
+  board/financials 4 · Finance+grants 16 · **customization+onboarding 13**. Every
+  carve verified with a live giving-flow drive (below) — never `node --check`.
+- **No live STEWARD behavior remains:** no STEWARD route is reachable, no STEWARD
+  background job is registered (all remaining ticks are SHARED/KB — dunning,
+  reconciliation, asset purge, network gate, notification retry), and the money
+  path (gift route + webhook + dunning) no longer calls fireWorkflows/
+  autoUnlapse/recordAutoMove/calcWealthScore. KB boots/builds/drives green.
 - **Steward:** the identity guard (`/health.product`+`database`; write scripts
   assert both) is LIVE in prod and its battery is green (104/0). `scripts/status.js`
   (`npm run status`) is the deploy drift-check. Steward is otherwise untouched by
@@ -45,35 +50,42 @@ enough to pick up without the chat history. Running narrative + decisions +
   (org-admin invite — a staff departure must not orphan the org; the
   portfolio-officer layer still goes with the WelcomePage unit).
 
-## NEXT UNIT — Customization + WelcomePage onboarding (a full pass)
+## NEXT — finish Part 3's tail (units 3–5 + dead-body deletion)
 
-(Finance is DONE — see "Done so far".) The drive's step-5 was already updated to
-verify designation via `/finance/summary.fundBalances` (the ledger route is gone).
+Customization + WelcomePage is DONE (WelcomePage rewritten as signup→live-portal
+onboarding: basics → theme → fund → publish → shareable link; drove clean). The
+"dead bodies" unit is HALF done — all live STEWARD behavior is decoupled (jobs +
+money-path calls gone) — but the dead FUNCTION BODIES themselves still sit in
+server.js, uncalled. Remaining, in this order:
 
-Trim Settings' **Custom Fields + Impact Metrics** (woven inline state/handlers/
-modals in the "customization" section) AND **rewrite WelcomePage** to a lean KB
-onboarding — drop the **goal**, **metric**, and **portfolio-invite** steps (the
-portfolio-officer layer goes here). Impact Metrics is called by BOTH Settings AND
-WelcomePage, so both must go together to orphan `/impact-metrics*`. Then carve:
-`/custom-fields*` (~3), `/impact-metrics*` (~2), `/goals*` (~2),
-`/portfolio/officers*` (~2). Build the right lean onboarding, not a stub.
-
-## REMAINING UNITS after that (with expected orphan counts)
-
-1. **Dead job/helper bodies** — `fireWorkflows`, `processSequences`/`autoEnroll`,
-   `syncGmail`/`syncAllGmail` + the gmail OAuth helper, `processScheduledCampaigns`
-   body, the recurring dead report helpers — call-graph cleanup (interconnected;
-   do WITH the db.js drop).
-2. **`db.js` STEWARD table drop** — drop the §2-STEWARD tables (pipeline/moves/
+1. **Delete the dead function bodies** — now safely uncalled (verified: no live
+   caller). The cluster: `fireWorkflows`, `ensureWorkflows`, `WORKFLOW_RECIPES`,
+   `processWorkflowSweeps`, `processSequences`, `autoEnroll` (+ milestone/sequence
+   helpers), `processDigests`/`runDigestsForOrg`/`composeWeekInReview`/
+   `composeOfficerMonthly`, `processDailyTaskReminders`, `processScheduledCampaigns`,
+   `processSmartMoves`/`autoLapseOrg`/`autoUnlapseOnGift`/`recordAutoMove`/
+   `computeMoveSuggestions`, `calcWealthScore`, `syncGmail`/`syncAllGmail`/
+   `makeOAuth2Client`, `snapshotMetricsForOrg`/`snapshotAllOrgMetrics` +
+   stewardship-debt/first-touch helpers. Also delete the 8 empty
+   `if(!backgroundTicksDisabled()){}` husks. Use acorn to find each function
+   declaration's span; confirm 0 external call-sites first; drive after.
+2. **U-4 billing stub** — remove `/billing/*`, PlanPicker, `billingPlans.js`,
+   `trialEnd.js`, `matchingGifts.js`, LockedFeature tier logic. DO THIS BEFORE U-1
+   (U-1 drops the orgs columns billing reads).
+3. **`db.js` STEWARD table drop + U-1** — drop the §2-STEWARD tables (pipeline/moves/
    opportunities/households/pledges/planned/designations/grants/programs/tasks/
    workflows/sequences/milestones/notes/board/events/volunteers/gmail_*/
    campaign_recipients/digest_sends/…) once no handler reads them. Plus the
    `GOOGLE_*` env (orphaned by Gmail) and **U-1** (the `orgs` Steward-commercial
    column split: drop plan/subscription/stripe_customer/recurring_dunning cols,
    keep money/portal/receipt/network cols).
-3. **U-4 billing stub** — remove `/billing/*`, PlanPicker, `billingPlans.js`,
-   `trialEnd.js`, `matchingGifts.js`, LockedFeature tier logic.
-4. Then **Part 4** (rebrand / no-`Steward`-string), Parts 5–8.
+4. **Test strip** — delete the STEWARD test suites (they reference carved routes
+   and are red now) + prune `tests/run-all.sh` to the KB-relevant battery
+   (org-blindness, network-gate, donors-lean, isolation, portal*, donor-accounts/
+   -linking/-dashboard, network-directory, gift-idempotency, reconciliation,
+   webhook-*, guards, theme-assets, asset-retention, recurring-surface, giving-*,
+   portal-crop/-contrast/-visual, …). Goal: `bash tests/run-all.sh` GREEN.
+5. Then **Part 4** (rebrand / no-`Steward`-string), Parts 5–8 (the second run).
 
 **Still-OPEN UNCLEARs to action as their unit lands:** U-1 (orgs cols → db.js
 drop), U-4 (billing stub), U-5 (Finance = funds editor, THIS unit), U-7
