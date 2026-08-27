@@ -9,11 +9,16 @@ enough to pick up without the chat history. Running narrative + decisions +
 
 - **Two repos.** Steward = `~/nonprofit-erp` (the fork SOURCE — do not edit for
   the separation). Kingdom Builders = `~/kingdom-builders` (the new product).
-- **KB HEAD:** `c71ce2f` ("U-4 billing stub (part 1) …"). **KB has NO git remote**
+- **KB HEAD:** `9aa9802` ("U-4 billing stub (part 2) …"). **KB has NO git remote**
   (`git remote` is empty) and must stay that way until Part 8.
-- **`bash tests/run-all.sh` is GREEN — 33 KB/SHARED suites, 0 failed.** This is
-  the net for the schema drop (it now exists). Boot with the KB env + STRIPE_API_
-  BASE=:5603 (below); run on a fresh `kb_test`.
+- **`bash tests/run-all.sh` is GREEN — 35 KB/SHARED suites, 0 failed.** This is
+  the net for the schema drop. Boot with the KB env + STRIPE_API_BASE=:5603
+  (below); run on a fresh `kb_test`. (35 = the 33 kept + the two Part-6 guards
+  **tenant-isolation** and **external-fixture-provenance**, rebuilt in KB form —
+  see below.)
+- **Part 3 is DONE except the schema drop.** test strip ✓ · dead bodies ✓ ·
+  U-4 billing (server + client) ✓ · guards restored ✓. Only db.js table drop +
+  U-1 remain — its own session (see "NEXT").
 - **KB server.js:** ~204 `app.*` routes remain. **~153 STEWARD routes carved**
   (chunk-1 51 · Donors 55 · Gmail 7 · campaign send 2 · board/financials 4 ·
   Finance+grants 16 · customization+onboarding 13 · billing 5). Every carve
@@ -69,20 +74,74 @@ enough to pick up without the chat history. Running narrative + decisions +
   (org-admin invite — a staff departure must not orphan the org; the
   portfolio-officer layer still goes with the WelcomePage unit).
 
-## NEXT — finish Part 3's tail: billing-client cleanup, then the schema drop
+## NEXT (fresh session) — THE SCHEMA DROP: db.js STEWARD tables + U-1
 
-Order (Jonathan's, reordered so the green battery precedes the schema drop):
-1. **Billing-client cleanup** (finishes U-4) — the vestigial list above. Delete
-   `Pricing.jsx`/`PlanPicker.jsx`/`UpgradeModal.jsx` + their routes/imports;
-   remove the Settings "Billing" section + `SignupPage` checkout + `shared`
-   `LockedFeature`/`goToPricing` + `api` `billingErrorMessage`; set Settings
-   `isReadOnly=false`. Build + `run-all.sh` (still 33/0) + commit.
-2. **`db.js` STEWARD table drop + U-1** — THE flagged step, and the green
-   `run-all.sh` is its net. Drop the §2-STEWARD tables; **before/after each drop,
-   run the battery** — a kept suite that DELETEs from a dropped table in its
-   cleanup list will go red (that's the net catching it; trim that cleanup list).
-   Plus U-1 (orgs column split) + `GOOGLE_*` env. Boot + drive + `run-all.sh` green.
-3. Then Part 4 (rebrand), Parts 5–8 (the second run).
+Everything else in Part 3 is DONE (test strip, dead bodies, U-4 billing server+
+client). This is the LAST Part-3 step and the one most likely to break something
+quietly — hence its own session. **The green `run-all.sh` (35/0) is its net: run
+it before you start and after every drop.**
+
+### The procedure (non-negotiable — this is why it has the net)
+Drop tables in SMALL groups, and **after each group: boot + `bash tests/run-all.sh`.**
+A kept suite that goes red = the net catching a real coupling (a cleanup list
+DELETEs from the dropped table, or a kept handler/FK still references it). Fix
+that (trim the cleanup list / drop the referencing column first), get green,
+then the next group. Never drop the whole set blind.
+
+### FK dependencies FIRST (the quiet-breakage trap)
+Several KEPT tables carry columns that FK into STEWARD tables — dropping the
+STEWARD table fails, or (worse) a `DROP … CASCADE` silently takes data with it.
+Before dropping, drop the referencing COLUMN (or its FK) on the kept table:
+- `gifts.pledge_id` → pledges · `gifts.recurring_subscription_id` stays (KEEP).
+- `donors.household_id` → households · `donors.assigned_to`/`assigned_to_name` →
+  (users, kept, but these are portfolio-officer fields — drop the columns).
+- `fin_transactions.grant_id` → grants (drop the column) · `.gift_id`/`.fund_id`
+  stay.
+- `campaigns.parent_goal_id` stays (campaigns kept); check no FK to fundraising_goals.
+Grep each dropped table for inbound FKs (`REFERENCES <table>`) in db.js first.
+
+### STEWARD tables to DROP (from BOUNDARY §2)
+moves · opportunities · households · donor_relationships · donor_designations ·
+planned_gifts · pledges · grants · grant_interactions · programs · program_grants ·
+tasks · workflows · workflow_runs · sequences · sequence_steps ·
+sequence_enrollments · milestone_drafts · note_reminders · fundraising_goals ·
+annual_fund_goals · custom_fields · custom_field_values · metric_snapshots ·
+board_members · board_reports · events · event_attendees · volunteers ·
+campaign_recipients · gmail_connections · gmail_sync_exclusions · digest_sends ·
+financials · funds (legacy) · ai_log · billing_webhook_events · invitation_requests ·
+demo_requests. (migc_* were never in KB's db.js.)
+
+### KEEP — do NOT drop (SHARED/KB spine)
+orgs · users · donors · gifts · fin_funds · accounts · fin_transactions ·
+fin_audit_log · campaigns · receipts · recurring_subscriptions ·
+recurring_change_log · recurring_proposals · payment_recovery_events ·
+portal_* (assets/audit_log/magic_links/pages/sessions/settings) · impact_updates ·
+giving_pages · peer_fundraisers · donor_account*/donor_org_follows ·
+network_applications · ein_registry · email_suppressions · notification_failures ·
+notification_sends (dunning/recovery alerts use it) · invites (Team — KEPT) ·
+password_reset_tokens · dispute_reversals · schema_meta · budgets? (check —
+Finance funds editor doesn't use it; likely drop with the finance-ledger set).
+
+### U-1 — orgs column split (NUANCED — do not drop all commercial-looking cols)
+- **DROP** (Steward commercial): `subscription_status`, `stripe_customer_id`,
+  `stripe_customer_id_test`, `trial_ends_at`, `grace_until`, `current_period_end`.
+- **KEEP** `plan` — KB's shell reads `org.plan==="portal"` for the portal-tier
+  gate (App.jsx). **KEEP** `recurring_dunning_enabled`/`_subject`/`_body` —
+  dunning is SHARED and live. KEEP the receipt/tax + network_listed + cover_fees +
+  Gmail-token? (gmail dropped → drop `gmail_*` org cols if any) columns.
+- Also drop the `GOOGLE_CLIENT_ID/SECRET/REDIRECT_URI` env from SETUP/README
+  (orphaned by the Gmail carve).
+
+### Known coupling the net WILL flag (pre-warned)
+- `tests/session-privilege.test.js` cleanup list DELETEs from STEWARD tables →
+  trim it when those drop.
+- `tests/tenant-isolation.test.js` reset lists `pledges` (guarded by `.catch()`,
+  so it survives) — but drop the line for cleanliness.
+- The demo seed (`scripts/seed-demo.js`) touches only kept tables — safe.
+
+### Done when
+Boot + `scripts/drive-giving.js` green + `run-all.sh` 35/0 green + a whole-tree
+leak check (`migc` + no dropped-table reference in a kept handler). Then Part 4.
 
 ## (historical) earlier tail plan — superseded by the above
 
