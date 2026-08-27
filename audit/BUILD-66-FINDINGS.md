@@ -95,13 +95,20 @@ each.
 **Decisions this pass:** Team stays (KB orgs invite co-admins to configure their
 portal/funds/campaigns — generic org admin, not the major-gifts officer layer).
 
-**Remaining Part A (2 coupled units + cleanup):**
-- **Finance mgmt + grants** — trim Finance.jsx to a funds editor (U-5): drop
-  Accounts/Budgets/Audit subtabs, the AI forecast/risk (askClaude/AIBtn/AIPanel),
-  and the grant entity-routing (Finance's `data.grants` reader); remove TopBar
-  grant search. Then carve `/finance/{accounts,budgets,audit-log}` +, once
-  Finance/TopBar no longer read `data.grants`, `/grants*`. (Finance.jsx is 1401
-  woven lines — its own careful unit.)
+**Remaining Part A (1 coupled unit + cleanup):**
+- **Finance mgmt + grants — DONE (U-5 resolved).** `Finance.jsx` rewritten
+  **1,401 → ~230 lines** as a **funds editor**: money-in (Stripe balance/payouts)
+  + funds create/edit with balances from `/finance/summary` (a deliberate screen,
+  not a stripped tab). Dropped Transactions/Budgets/Accounts/Audit subtabs, AI
+  forecast/risk, grant entity-routing; removed `/grants` from App bulk-load +
+  `adaptData`, TopBar grant search; deleted orphaned `financeMatch.js`. **16
+  routes carved** (`/finance/{accounts,budgets,audit-log,transactions}` +
+  `/grants*`); running total **135**. Drive green (designation verified via
+  fund-balance delta on `/finance/summary` — the ledger route is carved, so the
+  drive's step-5 was updated first per the gotcha). Wall tests green
+  (org-blindness 54 · network-gate 34 · donors-lean 21 · isolation 144). KB
+  commit `f4894ab`. **U-7 note:** Fundraising's roll-up analytics were NOT touched
+  by this unit — revisit when the Fundraising surface is next in hand.
 - **Customization + WelcomePage onboarding** — trim Settings' Custom Fields +
   Impact Metrics AND rewrite WelcomePage to lean KB onboarding (drop goal/metric/
   portfolio steps) → orphans `/custom-fields*`, `/impact-metrics*`, `/goals*`,

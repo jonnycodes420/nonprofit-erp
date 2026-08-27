@@ -9,12 +9,12 @@ enough to pick up without the chat history. Running narrative + decisions +
 
 - **Two repos.** Steward = `~/nonprofit-erp` (the fork SOURCE — do not edit for
   the separation). Kingdom Builders = `~/kingdom-builders` (the new product).
-- **KB HEAD:** `42fd0dc` ("Part A (App bulk-load) …"). **KB has NO git remote**
-  (`git remote` is empty) and must stay that way until Part 8.
-- **KB server.js:** 238 `app.*` routes remain. **119 STEWARD routes carved so
-  far** (tallied per commit): chunk-1 orphans 51 · Donors-orphans 55 · Gmail 7 ·
-  campaign send 2 · board/financials 4. Every carve verified with a live giving-
-  flow drive (below) — never `node --check` alone.
+- **KB HEAD:** `f4894ab` ("Finance mgmt + grants unit …"). **KB has NO git
+  remote** (`git remote` is empty) and must stay that way until Part 8.
+- **KB server.js:** ~222 `app.*` routes remain. **135 STEWARD routes carved so
+  far** (per commit): chunk-1 51 · Donors 55 · Gmail 7 · campaign send 2 ·
+  board/financials 4 · **Finance+grants 16**. Every carve verified with a live
+  giving-flow drive (below) — never `node --check` alone.
 - **Steward:** the identity guard (`/health.product`+`database`; write scripts
   assert both) is LIVE in prod and its battery is green (104/0). `scripts/status.js`
   (`npm run status`) is the deploy drift-check. Steward is otherwise untouched by
@@ -34,71 +34,46 @@ enough to pick up without the chat history. Running narrative + decisions +
   answers "what did we raise").
 - **U-9: campaign send** carved (`/campaigns/:id/{send,briefing}`); `/campaigns`
   CRUD + `/progress` kept (giving-page campaigns).
-- **Part A App bulk-load:** dead `buildContext` removed; App load + `adaptData`
-  trimmed to org/donors/grants; `/board` + `/financials*` carved.
+- **Part A App bulk-load:** dead `buildContext` removed; `/board` + `/financials*`
+  carved.
+- **U-5 (Finance) DONE:** `Finance.jsx` rewritten 1,401 → ~230 lines as a **funds
+  editor** (money-in + funds create/edit, balances from `/finance/summary`).
+  `/grants` removed from App/adaptData/TopBar; `financeMatch.js` deleted; 16
+  routes carved (`/finance/{accounts,budgets,audit-log,transactions}` + `/grants*`).
 - **Decisions banked:** U-8 → KB (staff recurring stays). U-4 → billing stubbed
-  (STEWARD). U-6 → dropped. **Team STAYS in KB** (org-admin invite — a staff
-  departure must not orphan the org; the portfolio-officer layer still goes).
+  (STEWARD). U-6 → dropped. U-5 → funds editor (done). **Team STAYS in KB**
+  (org-admin invite — a staff departure must not orphan the org; the
+  portfolio-officer layer still goes with the WelcomePage unit).
 
-## NEXT UNIT — Finance mgmt + grants (a full pass)
+## NEXT UNIT — Customization + WelcomePage onboarding (a full pass)
 
-`client/src/components/Finance.jsx` is **1,401 woven lines** with 6 SectionTabs
-(overview · transactions · funds · budgets · accounts · audit). Trim it to a
-**FUNDS EDITOR per U-5.**
+(Finance is DONE — see "Done so far".) The drive's step-5 was already updated to
+verify designation via `/finance/summary.fundBalances` (the ledger route is gone).
 
-**Target shape (this is the bar):** a clean **funds editor** — create/edit funds
-(`GET/POST/PUT /finance/funds`) **plus the money-in view** (the Stripe balance +
-payouts strip, `GET /finance/stripe-summary`). **The target is a funds editor,
-not a reduced Finance tab — if it reads as a Finance tab with pieces missing,
-it's wrong.** Treat it like the Donors B pass: build the right screen, likely a
-near-rewrite, not four subtabs deleted leaving a stub.
+Trim Settings' **Custom Fields + Impact Metrics** (woven inline state/handlers/
+modals in the "customization" section) AND **rewrite WelcomePage** to a lean KB
+onboarding — drop the **goal**, **metric**, and **portfolio-invite** steps (the
+portfolio-officer layer goes here). Impact Metrics is called by BOTH Settings AND
+WelcomePage, so both must go together to orphan `/impact-metrics*`. Then carve:
+`/custom-fields*` (~3), `/impact-metrics*` (~2), `/goals*` (~2),
+`/portfolio/officers*` (~2). Build the right lean onboarding, not a stub.
 
-**Drop:** Transactions (ledger), Budgets, Accounts, Audit Log subtabs; the AI
-6-month forecast / risk analysis (`askClaude`/`AIBtn`/`AIPanel` — Finance is
-their only kept caller); the grant entity-routing in `TransactionModal`
-(`financeMatch.js`, `/grants/:id/manual-match`, `data.grants`); and the **TopBar
-grant search**.
+## REMAINING UNITS after that (with expected orphan counts)
 
-**Then carve** (acorn tool, see below):
-- `/finance/accounts` (GET/POST) + `/finance/accounts/:id` (PUT)
-- `/finance/budgets` (GET/POST)
-- `/finance/audit-log` (GET)
-- `/finance/transactions` (GET/POST) + `/finance/transactions/:id` (DELETE)
-- `/grants` (GET/POST) · `/grants/:id` (GET/PUT/DELETE) · `/grants/:id/manual-match`
-  (GET) · `/grants/:id/interactions` (POST)  — **but first** remove App.jsx's
-  `/grants` fetch + `adaptData.grants` + TopBar search + Finance's `data.grants`
-  use, or App's bulk load keeps it live.
-- **KEEP:** `/finance/funds*`, `/finance/stripe-summary`, `/finance/summary`.
-
-**⚠ GOTCHA — update the drive first.** `scratchpad/drive-giving.js` step 5
-verifies the ledger stamp by reading `GET /finance/transactions`, which THIS UNIT
-CARVES. Before carving `/finance/transactions`, change the drive's designation
-check to another signal (fund-balance delta via `/finance/funds`, or a direct
-`psql` query on `fin_transactions`) — otherwise the drive false-fails.
-
-Expected orphan count: ~9 routes (finance ~5 + grants ~4).
-
-## REMAINING UNITS after Finance (with expected orphan counts)
-
-1. **Customization + WelcomePage onboarding** — trim Settings' Custom Fields +
-   Impact Metrics AND rewrite WelcomePage to lean KB onboarding (drop the goal /
-   metric / portfolio-invite steps). Orphans: `/custom-fields*` (~3),
-   `/impact-metrics*` (~2), `/goals*` (~2), `/portfolio/officers*` (~2). The
-   portfolio-officer layer goes here.
-2. **Dead job/helper bodies** — `fireWorkflows`, `processSequences`/`autoEnroll`,
+1. **Dead job/helper bodies** — `fireWorkflows`, `processSequences`/`autoEnroll`,
    `syncGmail`/`syncAllGmail` + the gmail OAuth helper, `processScheduledCampaigns`
    body, the recurring dead report helpers — call-graph cleanup (interconnected;
    do WITH the db.js drop).
-3. **`db.js` STEWARD table drop** — drop the §2-STEWARD tables (pipeline/moves/
+2. **`db.js` STEWARD table drop** — drop the §2-STEWARD tables (pipeline/moves/
    opportunities/households/pledges/planned/designations/grants/programs/tasks/
    workflows/sequences/milestones/notes/board/events/volunteers/gmail_*/
    campaign_recipients/digest_sends/…) once no handler reads them. Plus the
    `GOOGLE_*` env (orphaned by Gmail) and **U-1** (the `orgs` Steward-commercial
    column split: drop plan/subscription/stripe_customer/recurring_dunning cols,
    keep money/portal/receipt/network cols).
-4. **U-4 billing stub** — remove `/billing/*`, PlanPicker, `billingPlans.js`,
+3. **U-4 billing stub** — remove `/billing/*`, PlanPicker, `billingPlans.js`,
    `trialEnd.js`, `matchingGifts.js`, LockedFeature tier logic.
-5. Then **Part 4** (rebrand / no-`Steward`-string), Parts 5–8.
+4. Then **Part 4** (rebrand / no-`Steward`-string), Parts 5–8.
 
 **Still-OPEN UNCLEARs to action as their unit lands:** U-1 (orgs cols → db.js
 drop), U-4 (billing stub), U-5 (Finance = funds editor, THIS unit), U-7
