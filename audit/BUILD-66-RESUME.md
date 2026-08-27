@@ -9,17 +9,36 @@ enough to pick up without the chat history. Running narrative + decisions +
 
 - **Two repos.** Steward = `~/nonprofit-erp` (the fork SOURCE — do not edit for
   the separation). Kingdom Builders = `~/kingdom-builders` (the new product).
-- **KB HEAD:** `997a182` ("Dead bodies (part 2) …"). **KB has NO git remote**
+- **KB HEAD:** `c71ce2f` ("U-4 billing stub (part 1) …"). **KB has NO git remote**
   (`git remote` is empty) and must stay that way until Part 8.
-- **KB server.js:** ~209 `app.*` routes remain. **148 STEWARD routes carved so
-  far** (per commit): chunk-1 51 · Donors 55 · Gmail 7 · campaign send 2 ·
-  board/financials 4 · Finance+grants 16 · **customization+onboarding 13**. Every
-  carve verified with a live giving-flow drive (below) — never `node --check`.
-- **No live STEWARD behavior remains:** no STEWARD route is reachable, no STEWARD
-  background job is registered (all remaining ticks are SHARED/KB — dunning,
-  reconciliation, asset purge, network gate, notification retry), and the money
-  path (gift route + webhook + dunning) no longer calls fireWorkflows/
-  autoUnlapse/recordAutoMove/calcWealthScore. KB boots/builds/drives green.
+- **`bash tests/run-all.sh` is GREEN — 33 KB/SHARED suites, 0 failed.** This is
+  the net for the schema drop (it now exists). Boot with the KB env + STRIPE_API_
+  BASE=:5603 (below); run on a fresh `kb_test`.
+- **KB server.js:** ~204 `app.*` routes remain. **~153 STEWARD routes carved**
+  (chunk-1 51 · Donors 55 · Gmail 7 · campaign send 2 · board/financials 4 ·
+  Finance+grants 16 · customization+onboarding 13 · billing 5). Every carve
+  verified with a live giving-flow drive.
+- **No live STEWARD behavior remains, and the dead bodies are DELETED:** no
+  STEWARD route reachable, no STEWARD job registered, money path decoupled, and
+  the 28 dead helper/job functions (fireWorkflows/processSequences/autoEnroll/
+  syncGmail/etc.) + WORKFLOW_RECIPES consts are removed (−57KB). KB boots/builds/
+  drives green.
+- **Test strip DONE:** 76 STEWARD suites deleted; the 33 KB/SHARED suites trimmed
+  of carved-route assertions where needed (portal staff-list, gift-idempotency
+  F-4/F-5, mail-suppression campaign-send, session-privilege pipeline; giving-
+  flow-brand From domain-agnostic; tenant-isolation + first-login-matrix +
+  external-fixture-provenance deleted as mostly-STEWARD). `run-all.sh` CORE = the
+  33 kept. portal-visual kept as a file, excluded from CORE (browser-env).
+- **Billing (U-4) — server + App shell DONE:** `/billing/*` + `/admin/billing-
+  diagnostic` carved; `billingPlans.js`/`trialEnd.js`/`matchingGifts.js` deleted;
+  App.jsx billing banners/PlanPicker/tier removed (`isReadOnly`/`isCoreTier` now
+  false). **Remaining billing-client cleanup:** Settings "Billing" section
+  (contained, ~1294–1411 + state/openBillingPortal/isReadOnly→false), `Pricing.jsx`
+  (+ its `/pricing` route in main.jsx), `PlanPicker.jsx` (now unimported),
+  `UpgradeModal.jsx` (Settings-only), `SignupPage.jsx` `/billing/create-checkout`,
+  `shared.jsx` `goToPricing`/`LockedFeature`/`LockGlyph` (unused after Team-gate
+  removal), `api.js` `billingErrorMessage`. All vestigial (build green; they call
+  carved routes that 404) — clean up then the stub is complete.
 - **Steward:** the identity guard (`/health.product`+`database`; write scripts
   assert both) is LIVE in prod and its battery is green (104/0). `scripts/status.js`
   (`npm run status`) is the deploy drift-check. Steward is otherwise untouched by
@@ -50,7 +69,22 @@ enough to pick up without the chat history. Running narrative + decisions +
   (org-admin invite — a staff departure must not orphan the org; the
   portfolio-officer layer still goes with the WelcomePage unit).
 
-## NEXT — finish Part 3's tail (units 3–5 + dead-body deletion)
+## NEXT — finish Part 3's tail: billing-client cleanup, then the schema drop
+
+Order (Jonathan's, reordered so the green battery precedes the schema drop):
+1. **Billing-client cleanup** (finishes U-4) — the vestigial list above. Delete
+   `Pricing.jsx`/`PlanPicker.jsx`/`UpgradeModal.jsx` + their routes/imports;
+   remove the Settings "Billing" section + `SignupPage` checkout + `shared`
+   `LockedFeature`/`goToPricing` + `api` `billingErrorMessage`; set Settings
+   `isReadOnly=false`. Build + `run-all.sh` (still 33/0) + commit.
+2. **`db.js` STEWARD table drop + U-1** — THE flagged step, and the green
+   `run-all.sh` is its net. Drop the §2-STEWARD tables; **before/after each drop,
+   run the battery** — a kept suite that DELETEs from a dropped table in its
+   cleanup list will go red (that's the net catching it; trim that cleanup list).
+   Plus U-1 (orgs column split) + `GOOGLE_*` env. Boot + drive + `run-all.sh` green.
+3. Then Part 4 (rebrand), Parts 5–8 (the second run).
+
+## (historical) earlier tail plan — superseded by the above
 
 Customization + WelcomePage is DONE (WelcomePage rewritten as signup→live-portal
 onboarding: basics → theme → fund → publish → shareable link; drove clean). The
