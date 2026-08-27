@@ -556,3 +556,75 @@ history — is already fully satisfied (KB was never forked; `.git` is brand new
    Part 4 is not a find-replace — renamed identifiers change API contracts and
    stored-snapshot shapes. This is the part most likely to hide a functional
    regression behind a passing string-grep.
+
+---
+
+## Schema drop — DONE (2026-08-27). db.js STEWARD tables + U-1 orgs split
+
+The last Part-3 step, run in its own session as planned. Method: drop in small
+groups, boot a FRESH `kb_test` from the edited `db.js` and run `tests/run-all.sh`
+after each group; **plain source removal only, never a live `CASCADE`** — a
+dangling `REFERENCES` loud-fails schema-init at boot, which is information. FK
+columns on KEPT tables were removed before the referenced table. Every group
+landed green (`run-all` 35/0) before the next.
+
+### The diff (the evidence that what dropped is what was meant to)
+
+- **Tables: 82 → 45. 37 dropped, 0 added.** Dropped set (exactly BOUNDARY §2,
+  minus `demo_requests`/`board_reports`/`migc_*` which were never in KB's db.js):
+  ai_log, annual_fund_goals, billing_webhook_events, board_members,
+  campaign_recipients, custom_field_values, custom_fields, digest_sends,
+  donor_designations, donor_relationships, event_attendees, events, financials,
+  fundraising_goals, funds (legacy — distinct from kept `fin_funds`),
+  gmail_connections, gmail_sync_exclusions, grant_interactions, grants,
+  households, invitation_requests, metric_snapshots, milestone_drafts, moves,
+  note_reminders, opportunities, planned_gifts, pledges, program_grants,
+  programs, sequence_enrollments, sequence_steps, sequences, tasks, volunteers,
+  workflow_runs, workflows.
+- **KEEP-list spine intact** (verified present): orgs, users, donors, gifts,
+  fin_funds, accounts, fin_transactions, fin_audit_log, campaigns, receipts,
+  recurring_subscriptions/change_log/proposals, payment_recovery_events, portal_*,
+  impact_updates, giving_pages, peer_fundraisers, donor_account*/donor_org_follows,
+  network_applications, ein_registry, email_suppressions, notification_sends/
+  failures, invites (Team), password_reset_tokens, dispute_reversals, schema_meta,
+  budgets, interactions, donor_materials, impact_metrics.
+- **U-1 orgs columns — DROPPED exactly 6:** subscription_status, stripe_customer_id,
+  stripe_customer_id_test, trial_ends_at, grace_until, current_period_end.
+  **KEPT (the quiet-breakage nuance): `plan`** (portal-tier gate reads
+  `plan==="portal"`), **`recurring_dunning_enabled/_subject/_body`** (SHARED, live),
+  and `stripe_account_id`/`stripe_connected*` (Stripe **Connect** payout — KB needs
+  it to receive gifts; distinct from the Steward-billing `stripe_customer_id`).
+
+### Couplings the net caught (fixed, not worked around)
+
+- Dead in-db `seedData()` (CREO-Arts Steward sample seeder) — deleted (574 lines).
+- Campaign progress summed awarded **grants** + open **pledges** into "raised" —
+  called from the public giving/portal path, so it took down portal + donor
+  suites; both terms neutralized (KB campaigns are gift-funded only).
+- Money path: online-gift/recurring auto-**tasks**, dispute→task alert,
+  pledge-unlink in refund/dispute reversals — removed (officer still notified).
+- Donor portal `/portal/:slug/me` pledge + household sections; `/dashboard/home`
+  + `/dashboard/today` task/opportunity/milestone/note buckets.
+- **U-1 was the widest blast**: an `orgs` write in the common org-creation path
+  named `subscription_status`, so every seed 500'd until 37 test seeds + 6 server
+  sites + `orgPlanTier` (now plan-based) + `checkWriteAccess` (no billing lockout)
+  were unwound.
+
+### Verification
+
+`run-all.sh` 35/0 · org-blindness 54/0 · tenant-isolation 18/0 ·
+`drive-giving.js` green end-to-end (login → designated gift → fund-ledger delta →
+receipt+PDF → donor lifetime → public give page + portal) · migc grep 0 · boot
+clean on a fresh DB. KB HEAD `8da7e74`, **no remote**.
+
+### Known follow-up (belongs with Part 4, NOT a schema-drop gap)
+
+Remaining `FROM <dropped-table>` references live only in **dead branches** (gated
+by dropped columns that are now null — e.g. the portal household section guards on
+`donor.household_id`) and **orphaned STEWARD routes the KB client never calls**
+(events/volunteers/board CRUD, campaign-recipient send/track, demo-request,
+load/clear-sample-data, /org/export, the `/admin/orgs/:id` detail aggregate).
+None are reachable from KB's client or exercised by the battery. Finishing that
+route carve + the `Steward`-string leaks found along the way (PortalEditor
+"Back to Steward", `sendOnboardingSequence` founder email, unsubscribe page title)
+is Part 4 work.

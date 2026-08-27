@@ -9,16 +9,20 @@ enough to pick up without the chat history. Running narrative + decisions +
 
 - **Two repos.** Steward = `~/nonprofit-erp` (the fork SOURCE — do not edit for
   the separation). Kingdom Builders = `~/kingdom-builders` (the new product).
-- **KB HEAD:** `9aa9802` ("U-4 billing stub (part 2) …"). **KB has NO git remote**
-  (`git remote` is empty) and must stay that way until Part 8.
-- **`bash tests/run-all.sh` is GREEN — 35 KB/SHARED suites, 0 failed.** This is
-  the net for the schema drop. Boot with the KB env + STRIPE_API_BASE=:5603
-  (below); run on a fresh `kb_test`. (35 = the 33 kept + the two Part-6 guards
-  **tenant-isolation** and **external-fixture-provenance**, rebuilt in KB form —
-  see below.)
-- **Part 3 is DONE except the schema drop.** test strip ✓ · dead bodies ✓ ·
-  U-4 billing (server + client) ✓ · guards restored ✓. Only db.js table drop +
-  U-1 remain — its own session (see "NEXT").
+- **KB HEAD:** `8da7e74` ("BUILD-66 schema drop: leak-sweep + verification").
+  **KB has NO git remote** (`git remote` is empty) and must stay that way until
+  Part 8.
+- **`bash tests/run-all.sh` is GREEN — 35 KB/SHARED suites, 0 failed.** Boot with
+  the KB env + STRIPE_API_BASE=:5603 (below); run on a fresh `kb_test`.
+- **PART 3 IS COMPLETE (2026-08-27).** test strip ✓ · dead bodies ✓ · U-4 billing
+  (server + client) ✓ · guards restored ✓ · **schema drop ✓** (db.js STEWARD
+  tables + U-1 orgs split — 82→45 tables, −6 orgs cols; diff + couplings in
+  `BUILD-66-FINDINGS.md` §"Schema drop — DONE"). Verified: run-all 35/0,
+  org-blindness 54/0, tenant-isolation 18/0, `drive-giving.js` green end-to-end,
+  migc grep 0. **Next: Parts 4–8** (rebrand/no-"Steward"-string, external-services
+  config, guards-travel confirmation, two-DB proof, handover packet). Note for
+  Part 4: an orphaned-STEWARD-route carve + several `Steward`-string leaks are
+  logged in FINDINGS §"Known follow-up".
 - **KB server.js:** ~204 `app.*` routes remain. **~153 STEWARD routes carved**
   (chunk-1 51 · Donors 55 · Gmail 7 · campaign send 2 · board/financials 4 ·
   Finance+grants 16 · customization+onboarding 13 · billing 5). Every carve
@@ -74,10 +78,16 @@ enough to pick up without the chat history. Running narrative + decisions +
   (org-admin invite — a staff departure must not orphan the org; the
   portfolio-officer layer still goes with the WelcomePage unit).
 
-## NEXT (fresh session) — THE SCHEMA DROP: db.js STEWARD tables + U-1
+## ✅ DONE (2026-08-27) — THE SCHEMA DROP: db.js STEWARD tables + U-1
+
+**Completed.** Executed exactly as the procedure below prescribes (small groups,
+`run-all` after each, plain DROP only / never CASCADE, FK columns first). Result +
+before/after diff + the couplings the net caught are in `BUILD-66-FINDINGS.md`
+§"Schema drop — DONE". The procedure notes below are retained as the historical
+record of how it was run.
 
 Everything else in Part 3 is DONE (test strip, dead bodies, U-4 billing server+
-client). This is the LAST Part-3 step and the one most likely to break something
+client). This was the LAST Part-3 step and the one most likely to break something
 quietly — hence its own session. **The green `run-all.sh` (35/0) is its net: run
 it before you start and after every drop.**
 
