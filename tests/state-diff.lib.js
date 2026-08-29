@@ -10,7 +10,7 @@
 const bcrypt = require("bcryptjs");
 const path = require("path");
 const stripeLib = require(path.join(__dirname, "..", "node_modules", "stripe"))("sk_test_dummy");
-const { api, q, login } = require("./helpers");
+const { api, q, login, SINK_PORT } = require("./helpers");
 
 const BASE = process.env.BASE || "http://localhost:5601";
 const WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET || "whsec_localtest";
@@ -332,7 +332,7 @@ const settle = (ms = 400) => new Promise(r => setTimeout(r, ms));
 // would break a manifest that counts the send). Start this at suite top,
 // close it at the end.
 const http = require("http");
-function startMailSink(port = 5602) {
+function startMailSink(port = SINK_PORT) {
   return new Promise(resolve => {
     const srv = http.createServer((req, res) => {
       let b = ""; req.on("data", c => b += c);

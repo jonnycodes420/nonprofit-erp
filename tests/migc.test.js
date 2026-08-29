@@ -11,12 +11,11 @@
 // Rate-limit 429s are NOT asserted here — the shared scratch server runs with
 // DISABLE_RATE_LIMIT=1 (limiter wiring is covered by the source guard below).
 
-const { ok, summary, q, closeDb, BASE } = require("./helpers");
+const { ok, summary, q, closeDb, BASE, SINK_PORT } = require("./helpers");
 const http = require("http");
 const fs = require("fs");
 const path = require("path");
 
-const SINK_PORT = 5602;
 const CONTACT_TO = process.env.MIGC_CONTACT_EMAIL || "migc-contact@example.org";
 const MARK = "migc-suite.example"; // every row this suite creates uses this email domain
 

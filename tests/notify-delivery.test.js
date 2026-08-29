@@ -14,12 +14,11 @@
 
 const bcrypt = require("bcryptjs");
 const http = require("http");
-const { ok, summary, login, api, q } = require("./helpers");
+const { ok, summary, login, api, q, SINK_PORT, BASE } = require("./helpers");
 
 const ORG = "org_notif44";
 const ADMIN_ID = "u_n44_admin", ADMIN = "n44-admin@example.org";
 const OFFICER_ID = "u_n44_officer", OFFICER = "n44-officer@example.org";
-const SINK_PORT = 5602;
 
 let received = [];       // captured sends
 let sinkMode = "ok";     // "ok" | "fail"
@@ -147,7 +146,10 @@ const toList = m => [].concat(m.to || []);
     ok("outage: send queued in notification_failures for retry", failed.length === 1, failed);
     ok("outage: queued row carries recipient + payload", failed[0] && failed[0].recipient_email === OFFICER && /Doomed delivery/.test((failed[0].subject || "") + (failed[0].body_html || "")), failed[0]);
     // …and /health SURFACES it (the visibility F-2 was missing)
-    const h = await (await fetch("http://localhost:5601/health")).json();
+    // BASE, never a literal port: loopback is not identity — a hardcoded
+    // :5601 read a DIFFERENT product's /health on a machine running two
+    // dev stacks, and this assertion passed/failed on their data (BUILD-72).
+    const h = await (await fetch(BASE + "/health")).json();
     ok("outage: /health surfaces failedPending ≥ 1", (h.notifications?.failedPending ?? 0) >= 1, h.notifications);
 
     // retry while the provider is STILL down → attempts grow, nothing delivered

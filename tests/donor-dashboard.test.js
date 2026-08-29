@@ -10,7 +10,7 @@
 
 const bcrypt = require("bcryptjs");
 const http = require("http");
-const { BASE, ok, summary, q, closeDb } = require("./helpers");
+const { BASE, ok, summary, q, closeDb, SINK_PORT, STRIPE_MOCK_PORT } = require("./helpers");
 
 const ORG_M = "org_dd_m", SLUG_M = "dondash-m";
 const ORG_N = "org_dd_n", SLUG_N = "dondash-n";
@@ -19,7 +19,7 @@ const THIS_YEAR = String(new Date().getFullYear());
 const LAST_YEAR = String(Number(THIS_YEAR) - 1);
 
 let mail = [];
-function startSink(port = 5602) {
+function startSink(port = SINK_PORT) {
   return new Promise(resolve => {
     const srv = http.createServer((req, res) => {
       let b = ""; req.on("data", c => b += c);
@@ -29,7 +29,7 @@ function startSink(port = 5602) {
     srv.listen(port, () => resolve(srv));
   });
 }
-function startStripeMock(port = 5603) {
+function startStripeMock(port = STRIPE_MOCK_PORT) {
   return new Promise(resolve => {
     const srv = http.createServer((req, res) => {
       let b = ""; req.on("data", c => b += c);

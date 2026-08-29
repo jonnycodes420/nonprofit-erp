@@ -20,7 +20,7 @@
 
 const http = require("http");
 const bcrypt = require("bcryptjs");
-const { ok, summary, login, api, q, closeDb } = require("./helpers");
+const { ok, summary, login, api, q, closeDb, SINK_PORT } = require("./helpers");
 
 const ORG = "org_ep_a";
 let captured = [];
@@ -43,7 +43,7 @@ async function reset() {
 }
 
 (async () => {
-  await new Promise((res, rej) => { mock.on("error", rej); mock.listen(5602, res); });
+  await new Promise((res, rej) => { mock.on("error", rej); mock.listen(SINK_PORT, res); });
   await reset();
 
   // Lowercase-signup org + users (the exact live finding: "Monthly Report — jon").

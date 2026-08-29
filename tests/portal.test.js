@@ -9,7 +9,7 @@
 
 const bcrypt = require("bcryptjs");
 const http = require("http");
-const { BASE, ok, summary, login, api, q, closeDb } = require("./helpers");
+const { BASE, ok, summary, login, api, q, closeDb, SINK_PORT, STRIPE_MOCK_PORT } = require("./helpers");
 
 const ORG_P = "org_pt_p", SLUG_P = "portal-p";
 const ORG_Q = "org_pt_q", SLUG_Q = "portal-q";
@@ -19,7 +19,7 @@ const THIS_YEAR = String(new Date().getFullYear());
 
 // ── capture sinks ──────────────────────────────────────────────────────────
 let mail = [];
-function startCapturingMailSink(port = 5602) {
+function startCapturingMailSink(port = SINK_PORT) {
   return new Promise(resolve => {
     const srv = http.createServer((req, res) => {
       let b = ""; req.on("data", c => b += c);
@@ -36,7 +36,7 @@ function startCapturingMailSink(port = 5602) {
 
 // Minimal Stripe mock: enough surface for retrieve/update on subscriptions.
 let stripeCalls = [];
-function startStripeMock(port = 5603) {
+function startStripeMock(port = STRIPE_MOCK_PORT) {
   return new Promise(resolve => {
     const srv = http.createServer((req, res) => {
       let b = ""; req.on("data", c => b += c);

@@ -25,7 +25,7 @@ const http = require("http");
 const bcrypt = require("bcryptjs");
 const fs = require("fs");
 const path = require("path");
-const { BASE, ok, summary, login, api, q, closeDb } = require("./helpers");
+const { BASE, ok, summary, login, api, q, closeDb, SINK_PORT } = require("./helpers");
 
 const ORG_A = "org_ci54_a", SLUG_A = "campimpact-a";
 const ORG_B = "org_ci54_b";
@@ -63,7 +63,7 @@ function startSink() {
         res.writeHead(200, { "Content-Type": "application/json" }); res.end('{"id":"snk"}');
       });
     });
-    s.listen(5602, () => resolve(s));
+    s.listen(SINK_PORT, () => resolve(s));
   });
 }
 

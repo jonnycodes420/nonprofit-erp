@@ -17,6 +17,7 @@
 // + the :4173 CORS origin).
 
 const path = require("path");
+const API = process.env.BASE || "http://localhost:5601";  // BASE, never a literal port (BUILD-72)
 const fs = require("fs");
 const { ok, summary, login, api, q } = require("./helpers");
 
@@ -75,7 +76,7 @@ const rendersMoney = (text, n) => text.includes(fmtFull(n)) || text.includes(fmt
   let token;
   try { token = await login(EMAIL); }
   catch {
-    const r = await fetch("http://localhost:5601/auth/register-org", {
+    const r = await fetch(API + "/auth/register-org", {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ orgName: "B41 Mobile Fixture", userName: "B41 Admin", email: EMAIL, password: "loadtest1234" }),
     });
@@ -121,7 +122,7 @@ const rendersMoney = (text, n) => text.includes(fmtFull(n)) || text.includes(fmt
   const todayItems = (await api("GET", `/dashboard/today?scope=${attnScope}`, token)).body || [];
   const donorIdSet = new Set((dsum.body || []).map(d => d.id));
   const expectedAttnCount = todayItems.filter(i => donorIdSet.has(i.donorId)).slice(0, 6).length;
-  const lr = await fetch("http://localhost:5601/auth/login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email: EMAIL, password: "loadtest1234" }) });
+  const lr = await fetch(API + "/auth/login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email: EMAIL, password: "loadtest1234" }) });
   const j = await lr.json();
 
   const { base: FRONT, srv } = await frontendBase();

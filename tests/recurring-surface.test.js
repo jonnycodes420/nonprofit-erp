@@ -20,7 +20,7 @@
 const bcrypt = require("bcryptjs");
 const http = require("http");
 const Stripe = require("stripe");
-const { BASE, ok, summary, api, q, closeDb } = require("./helpers");
+const { BASE, ok, summary, api, q, closeDb, SINK_PORT, STRIPE_MOCK_PORT } = require("./helpers");
 
 const WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET || "whsec_localtest";
 const stripeLib = new Stripe("sk_test_dummy");
@@ -30,7 +30,7 @@ const ACCT_A = "acct_rec_a", ACCT_B = "acct_rec_b", ACCT_RO = "acct_rec_ro";
 
 // ── mail sink (:5602) ──────────────────────────────────────────────────────
 let mail = [];
-function startSink(port = 5602) {
+function startSink(port = SINK_PORT) {
   return new Promise(resolve => {
     const srv = http.createServer((req, res) => {
       let b = ""; req.on("data", c => b += c);
@@ -45,7 +45,7 @@ const settle = (ms = 400) => new Promise(r => setTimeout(r, ms));
 
 // ── Stripe mock (:5603) — subscriptions retrieve/update + checkout sessions ─
 let stripeCalls = [];
-function startStripeMock(port = 5603) {
+function startStripeMock(port = STRIPE_MOCK_PORT) {
   return new Promise(resolve => {
     const srv = http.createServer((req, res) => {
       let b = ""; req.on("data", c => b += c);

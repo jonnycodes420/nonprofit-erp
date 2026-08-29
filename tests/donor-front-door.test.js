@@ -24,7 +24,7 @@
 const fs = require("fs");
 const http = require("http");
 const bcrypt = require("bcryptjs");
-const { BASE, ok, summary, login, api, q, closeDb } = require("./helpers");
+const { BASE, ok, summary, login, api, q, closeDb, SINK_PORT } = require("./helpers");
 
 const YEAR = new Date().getFullYear();
 const L = { id: "org_dfd_l", slug: "dfd-listed", name: "Front Door Listed" };
@@ -35,7 +35,7 @@ const ACCT_EMAIL = "dfd.account@dfd49.test";
 const ACCT_UNVERIFIED = "dfd.unverified@dfd49.test";
 
 let mail = [];
-function startSink(port = 5602) {
+function startSink(port = SINK_PORT) {
   return new Promise(resolve => {
     const srv = http.createServer((req, res) => {
       let b = ""; req.on("data", c => b += c);

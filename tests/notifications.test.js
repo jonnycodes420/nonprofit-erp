@@ -19,7 +19,7 @@
 
 const http = require("http");
 const bcrypt = require("bcryptjs");
-const { ok, summary, login, api, q, closeDb } = require("./helpers");
+const { ok, summary, login, api, q, closeDb, SINK_PORT } = require("./helpers");
 
 const ORG = "org_ns_a";   // main Team org
 const ORG_T = "org_ns_t"; // untouched "existing" org
@@ -53,7 +53,7 @@ const mkUser = (org, id, email, name, role = "staff") =>
     [id, org, email, bcrypt.hashSync("loadtest1234", 10), name, role]);
 
 (async () => {
-  await new Promise((res, rej) => { mock.on("error", rej); mock.listen(5602, res); });
+  await new Promise((res, rej) => { mock.on("error", rej); mock.listen(SINK_PORT, res); });
   await reset();
 
   // Lowercase org name → header must render it title-cased.

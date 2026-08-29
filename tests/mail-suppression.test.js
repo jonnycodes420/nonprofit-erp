@@ -23,7 +23,7 @@
 //
 // Verify-first: committed RED against the pre-BUILD-58 server.
 
-const { ok, summary, api, q, closeDb, BASE } = require("./helpers");
+const { ok, summary, api, q, closeDb, BASE, SINK_PORT } = require("./helpers");
 const crypto = require("crypto");
 const http = require("http");
 const fs = require("fs");
@@ -34,7 +34,7 @@ const today = () => new Date().toISOString().slice(0, 10);
 
 // Capture sink on :5602 (the server's RESEND_BASE_URL). `mode` can be flipped
 // to "fail" so the provider rejects — the log-honesty leg.
-function startSink(port = 5602) {
+function startSink(port = SINK_PORT) {
   const state = { captured: [], mode: "ok" };
   const srv = http.createServer((req, res) => {
     let b = ""; req.on("data", c => b += c);
@@ -56,7 +56,7 @@ const settle = (ms = 700) => new Promise(r => setTimeout(r, ms));
 (async () => {
   console.log("mail-suppression (BUILD-58 W-4)");
   const sink = await startSink();
-  if (!sink) { console.error("could not bind :5602 — another sink running?"); process.exit(1); }
+  if (!sink) { console.error(`could not bind :${SINK_PORT} — another sink running?`); process.exit(1); }
   const { state } = sink;
   const to = addr => state.captured.filter(m => (Array.isArray(m.to) ? m.to : [m.to]).includes(addr));
 

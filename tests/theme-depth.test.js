@@ -17,7 +17,7 @@ const bcrypt = require("bcryptjs");
 const http = require("http");
 const fs = require("fs");
 const path = require("path");
-const { BASE, ok, summary, login, api, q, closeDb } = require("./helpers");
+const { BASE, ok, summary, login, api, q, closeDb, SINK_PORT } = require("./helpers");
 const { normalizeTint, tintPasses, normalizeAccent, contrast, INK, MUTED_TEXT } = require("../branding");
 
 const ORG_A = "org_td_a", SLUG_A = "themedepth-a";
@@ -27,7 +27,7 @@ const EMAIL = "rowan@td48.test";
 const THIS_YEAR = String(new Date().getFullYear());
 
 let mail = [];
-function startSink(port = 5602) {
+function startSink(port = SINK_PORT) {
   return new Promise(resolve => {
     const srv = http.createServer((req, res) => {
       let b = ""; req.on("data", c => b += c);

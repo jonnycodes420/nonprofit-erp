@@ -10,7 +10,7 @@
 // (Resend's SDK honors RESEND_BASE_URL), so no real email ever leaves.
 
 const http = require("http");
-const { BASE, ok, summary, api } = require("./helpers");
+const { BASE, ok, summary, api, SINK_PORT } = require("./helpers");
 
 const captured = []; // { path, body } for every POST the server makes to "Resend"
 const mock = http.createServer((req, res) => {
@@ -49,7 +49,7 @@ async function sendCampaign(reg, donorEmail) {
 }
 
 (async () => {
-  await new Promise((res, rej) => { mock.on("error", rej); mock.listen(5602, res); });
+  await new Promise((res, rej) => { mock.on("error", rej); mock.listen(SINK_PORT, res); });
   const stamp = Date.now();
 
   console.log("\nOrg with receipt_address configured:");

@@ -19,7 +19,7 @@ const fs = require("fs");
 const path = require("path");
 const http = require("http");
 const bcrypt = require("bcryptjs");
-const { BASE, ok, summary, api, q, closeDb } = require("./helpers");
+const { BASE, ok, summary, api, q, closeDb, SINK_PORT } = require("./helpers");
 
 const STEWARD_EMERALD = /#0d5c3a|#10b981/i;
 const DEFAULT_PRIMARY = "#1a6b4a"; // the neutral portal default — an org's own color must override it
@@ -116,7 +116,7 @@ function eq(a, b) { return JSON.stringify(a) === JSON.stringify(b); }
 
 async function run() {
   await fixture();
-  await new Promise(r => { mailSink.on("error", () => r()); mailSink.listen(5602, r); });
+  await new Promise(r => { mailSink.on("error", () => r()); mailSink.listen(SINK_PORT, r); });
 
   // ── (1) NO STEWARD BRAND — for each org ──────────────────────────────────
   ASSERTED.add("page");

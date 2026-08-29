@@ -40,6 +40,14 @@
 #      its own capture server there for its run, and other suites' sends simply
 #      fail-and-log against the unbound port — no real email ever leaves.)
 #
+#      (PORTS: the mail sink and Stripe mock default to :5602/:5603, but every
+#      suite now reads them from tests/helpers.js — `SINK_PORT` /
+#      `STRIPE_MOCK_PORT`. If another product's dev stack is squatting those on
+#      this machine, move BOTH together: export SINK_PORT/STRIPE_MOCK_PORT for
+#      the suite run AND boot the server with matching RESEND_BASE_URL /
+#      STRIPE_API_BASE, or the suites will capture nothing. Unset = the
+#      historical values, so CI and the recipe above are unchanged.)
+#
 # Usage:  bash tests/run-all.sh                      # full battery
 #         SUITES="tasks greeting" bash tests/run-all.sh   # only those suites
 #         (unknown suite names are a hard error; tests/affected.sh computes a

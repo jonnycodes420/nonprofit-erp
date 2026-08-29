@@ -7,7 +7,7 @@
 
 const bcrypt = require("bcryptjs");
 const http = require("http");
-const { BASE, ok, summary, q, closeDb } = require("./helpers");
+const { BASE, ok, summary, q, closeDb, SINK_PORT } = require("./helpers");
 
 const ORG_X = "org_dl_x", SLUG_X = "donlink-x";
 const ORG_Y = "org_dl_y", SLUG_Y = "donlink-y";
@@ -15,7 +15,7 @@ const ORG_OFF = "org_dl_off"; // portal DISABLED — must never be linked
 const THIS_YEAR = String(new Date().getFullYear());
 
 let mail = [];
-function startSink(port = 5602) {
+function startSink(port = SINK_PORT) {
   return new Promise(resolve => {
     const srv = http.createServer((req, res) => {
       let b = ""; req.on("data", c => b += c);

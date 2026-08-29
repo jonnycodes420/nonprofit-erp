@@ -16,7 +16,7 @@
 
 const bcrypt = require("bcryptjs");
 const http = require("http");
-const { BASE, ok, summary, api, q, closeDb } = require("./helpers");
+const { BASE, ok, summary, api, q, closeDb, SINK_PORT } = require("./helpers");
 
 const ORG_A = "org_ob_a", SLUG_A = "blind-a";
 const ORG_B = "org_ob_b", SLUG_B = "blind-b";
@@ -28,7 +28,7 @@ const ACCOUNT_MARKERS = ["donor_account", "wren-alias@ob46.test", "dof_", "donor
 const THIS_YEAR = String(new Date().getFullYear());
 
 let mail = [];
-function startSink(port = 5602) {
+function startSink(port = SINK_PORT) {
   return new Promise(resolve => {
     const srv = http.createServer((req, res) => {
       let b = ""; req.on("data", c => b += c);

@@ -12,13 +12,13 @@
 // past the gate when it should.
 
 const http = require("http");
-const { BASE, ok, summary, api, q, closeDb } = require("./helpers");
+const { BASE, ok, summary, api, q, closeDb, SINK_PORT, STRIPE_MOCK_PORT } = require("./helpers");
 
 const EIN_GOOD = "812345679";
 const THIS_YEAR = String(new Date().getFullYear());
 
 let mail = [];
-function startSink(port = 5602) {
+function startSink(port = SINK_PORT) {
   return new Promise(resolve => {
     const srv = http.createServer((req, res) => {
       let b = ""; req.on("data", c => b += c);
@@ -28,7 +28,7 @@ function startSink(port = 5602) {
     srv.listen(port, () => resolve(srv));
   });
 }
-function startStripeMock(port = 5603) {
+function startStripeMock(port = STRIPE_MOCK_PORT) {
   const state = { chargesEnabled: true }; // W-1: the gate now asks Stripe, not our flag
   return new Promise(resolve => {
     const srv = http.createServer((req, res) => {

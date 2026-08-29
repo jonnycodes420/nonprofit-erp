@@ -77,4 +77,13 @@ function db() {
 const q = (sql, params) => db().query(sql, params).then(r => r.rows);
 async function closeDb() { if (_pool) await _pool.end(); }
 
-module.exports = { BASE, ok, summary, login, api, wireSize, q, closeDb };
+// ── Local mock ports (BUILD-72) ────────────────────────────────────────────
+// Every suite that stands up its own Resend mail sink or Stripe mock binds
+// THESE, never a bare literal, so a machine running a second product's dev
+// stack (which is how this collided) can move them with one env var instead of
+// editing twenty files. Defaults are the historical values, so the run-all
+// recipe, tests/README.md and ci.yml keep working unchanged.
+const SINK_PORT        = Number(process.env.SINK_PORT || 5602);
+const STRIPE_MOCK_PORT = Number(process.env.STRIPE_MOCK_PORT || 5603);
+
+module.exports = { BASE, ok, summary, login, api, wireSize, q, closeDb, SINK_PORT, STRIPE_MOCK_PORT };

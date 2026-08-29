@@ -25,7 +25,7 @@
 const http = require("http");
 const bcrypt = require("bcryptjs");
 const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY || "sk_test_dummy");
-const { BASE, ok, summary, login, api, q, closeDb } = require("./helpers");
+const { BASE, ok, summary, login, api, q, closeDb, SINK_PORT } = require("./helpers");
 
 const WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET || "whsec_localtest";
 const A = "org_wfe_a", B = "org_wfe_b";
@@ -110,7 +110,7 @@ async function fireWebhook(type, object, evtId, account = ACCT_A) {
 }
 
 (async () => {
-  await new Promise((res, rej) => { mock.on("error", rej); mock.listen(5602, res); });
+  await new Promise((res, rej) => { mock.on("error", rej); mock.listen(SINK_PORT, res); });
   await wipe(A); await wipe(B);
   await seedOrg(A, "wfe-a", ACCT_A);
   await seedOrg(B, "wfe-b", null);

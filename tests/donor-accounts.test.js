@@ -15,7 +15,7 @@
 const bcrypt = require("bcryptjs");
 const http = require("http");
 const { spawn } = require("child_process");
-const { BASE, ok, summary, api, q, closeDb } = require("./helpers");
+const { BASE, ok, summary, api, q, closeDb, SINK_PORT, STRIPE_MOCK_PORT } = require("./helpers");
 
 const ORG_A = "org_da_a", SLUG_A = "donacct-a";
 const ORG_B = "org_da_b", SLUG_B = "donacct-b";
@@ -24,7 +24,7 @@ const THIS_YEAR = String(new Date().getFullYear());
 
 let mail = [];
 let sinkServer = null;
-function startSink(port = 5602) {
+function startSink(port = SINK_PORT) {
   return new Promise(resolve => {
     const srv = http.createServer((req, res) => {
       let b = ""; req.on("data", c => b += c);
@@ -289,9 +289,9 @@ async function fixture() {
       // dunning/pledge sweeps could mail into our :5602 sink mid-assertions.
       DISABLE_BACKGROUND_TICKS: "1",
       JWT_SECRET: "local-test-secret", DISABLE_RATE_LIMIT: "1", SESSION_CACHE_TTL_MS: "0",
-      RESEND_API_KEY: "re_dummy_local", RESEND_BASE_URL: "http://localhost:5602",
+      RESEND_API_KEY: "re_dummy_local", RESEND_BASE_URL: `http://localhost:${SINK_PORT}`,
       STRIPE_SECRET_KEY: "sk_test_dummy", STRIPE_WEBHOOK_SECRET: "whsec_localtest",
-      STRIPE_API_BASE: "http://localhost:5603",
+      STRIPE_API_BASE: `http://localhost:${STRIPE_MOCK_PORT}`,
       DONOR_ACCOUNTS_ENABLED: "", NETWORK_SIGNUP_ENABLED: "",
     },
     stdio: "ignore",

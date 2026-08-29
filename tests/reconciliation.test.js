@@ -14,14 +14,14 @@
 
 const bcrypt = require("bcryptjs");
 const http = require("http");
-const { BASE, ok, summary, api, q, closeDb, login } = require("./helpers");
+const { BASE, ok, summary, api, q, closeDb, login, STRIPE_MOCK_PORT } = require("./helpers");
 
 const ORG = "org_recon", ACCT = "acct_recon_x", SUPER = "recon-super@test.local";
 
 // ── Stripe mock (:5603): parameterizable per scenario ───────────────────────
 let mockCharges = [];                 // charges returned for ACCT only
 let mockCanceledPIs = new Set();      // PIs whose retrieve() reports non-succeeded
-function startStripeMock(port = 5603) {
+function startStripeMock(port = STRIPE_MOCK_PORT) {
   return new Promise(resolve => {
     const srv = http.createServer((req, res) => {
       let b = ""; req.on("data", c => b += c);
@@ -61,7 +61,7 @@ const runReconcile = token => api("POST", "/admin/reconcile/run", token);
 const healthRecon = async () => (await api("GET", "/health")).body.reconciliation;
 
 (async () => {
-  const smock = await startStripeMock(5603);
+  const smock = await startStripeMock(STRIPE_MOCK_PORT);
 
   // ── fixture ───────────────────────────────────────────────────────────────
   for (const t of ["gifts", "donors", "users"]) await q(`DELETE FROM ${t} WHERE org_id=$1`, [ORG]).catch(() => {});

@@ -20,7 +20,7 @@
 //   - schema: donor_id + source columns and the two org-scoped indexes exist
 
 const bcrypt = require("bcryptjs");
-const { BASE, ok, summary, login, api, q, closeDb } = require("./helpers");
+const { BASE, ok, summary, login, api, q, closeDb, STRIPE_MOCK_PORT } = require("./helpers");
 
 const SK = process.env.STRIPE_TEST_KEY;
 const ACCT = process.env.STRIPE_TEST_ACCOUNT;
@@ -183,9 +183,9 @@ async function fixture() {
         }
       });
     });
-    const mockUp = await new Promise(r => { mock.on("error", () => r(false)); mock.listen(5603, () => r(true)); });
+    const mockUp = await new Promise(r => { mock.on("error", () => r(false)); mock.listen(STRIPE_MOCK_PORT, () => r(true)); });
     if (!mockUp) {
-      console.log("  SKIP  connected-branch mock leg (:5603 busy)");
+      console.log(`  SKIP  connected-branch mock leg (:${STRIPE_MOCK_PORT} busy)`);
     } else {
       // A FRESH org id every run — the route caches per org for 5 minutes in
       // process memory, and the scratch server outlives suite runs.
