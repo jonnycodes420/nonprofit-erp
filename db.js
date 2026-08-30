@@ -876,55 +876,6 @@ async function initSchema() {
   await pool.query(`ALTER TABLE gifts ADD COLUMN IF NOT EXISTS idempotency_key TEXT`);
   await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS uq_gifts_idem ON gifts (org_id, idempotency_key) WHERE idempotency_key IS NOT NULL`);
 
-  // BUILD-72 Part 2 — the same seam on PLEDGES. A pledge is a money row on a
-  // screen a finance person reads, and it had no idempotency at all: two
-  // genuinely concurrent identical creates produced two pledges (Part 0 finding
-  // 0.2b). Same shape as gifts: a client-minted key, unique per org, partial so
-  // legacy and keyless rows are unaffected.
-  await pool.query(`ALTER TABLE pledges ADD COLUMN IF NOT EXISTS idempotency_key TEXT`);
-  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS uq_pledges_idem ON pledges (org_id, idempotency_key) WHERE idempotency_key IS NOT NULL`);
-
-  // BUILD-72 Part 3 — a donor who OVERPAYS a pledge is a good problem, and the
-  // money must still appear. The old code clamped the balance to 0 and the
-  // surplus vanished from every pledge surface. It is now recorded.
-  await pool.query(`ALTER TABLE pledges ADD COLUMN IF NOT EXISTS surplus_amount NUMERIC NOT NULL DEFAULT 0`);
-  // ...and every EXISTING row is recomputed once, so no pledge carries a status
-  // or a surplus that drifted from its payment total before this build. Status
-  // is derived from the payments, exactly as pledgeStatusFor() does at runtime;
-  // written_off / cancelled are never resurrected by arithmetic.
-  await pool.query(`
-    WITH paid AS (
-      SELECT p.id,
-             p.amount::numeric                              AS amount,
-             COALESCE(SUM(g.amount), 0)::numeric            AS paid
-        FROM pledges p
-        LEFT JOIN gifts g ON g.pledge_id = p.id AND g.org_id = p.org_id
-       GROUP BY p.id, p.amount
-    )
-    UPDATE pledges pl
-       SET status = CASE
-             WHEN pl.status IN ('written_off','cancelled') THEN pl.status
-             WHEN paid.amount > 0 AND paid.paid >= paid.amount THEN 'fulfilled'
-             ELSE 'open'
-           END,
-           surplus_amount = CASE
-             WHEN pl.status IN ('written_off','cancelled') THEN pl.surplus_amount
-             WHEN paid.amount > 0 AND paid.paid > paid.amount THEN ROUND(paid.paid - paid.amount, 2)
-             ELSE 0
-           END
-      FROM paid
-     WHERE paid.id = pl.id
-       AND (pl.status IS DISTINCT FROM CASE
-              WHEN pl.status IN ('written_off','cancelled') THEN pl.status
-              WHEN paid.amount > 0 AND paid.paid >= paid.amount THEN 'fulfilled'
-              ELSE 'open'
-            END
-         OR pl.surplus_amount IS DISTINCT FROM CASE
-              WHEN pl.status IN ('written_off','cancelled') THEN pl.surplus_amount
-              WHEN paid.amount > 0 AND paid.paid > paid.amount THEN ROUND(paid.paid - paid.amount, 2)
-              ELSE 0
-            END)
-  `);
   // §1.2 F-4 — an import file's explicit external-ID column (gift/transaction id
   // from the source CRM) is the ONLY safe cross-run gift dedup key. (date,
   // amount, donor) alone is never a dedup key — forty $100 Sunday gifts are
@@ -1344,6 +1295,62 @@ async function initSchema() {
   `);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_pledges_org_donor ON pledges (org_id, donor_id)`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_pledges_reminder ON pledges (status, next_reminder_at)`);
+  // BUILD-72 Part 2 — the same seam on PLEDGES. A pledge is a money row on a
+  // screen a finance person reads, and it had no idempotency at all: two
+  // genuinely concurrent identical creates produced two pledges (Part 0 finding
+  // 0.2b). Same shape as gifts: a client-minted key, unique per org, partial so
+  // legacy and keyless rows are unaffected.
+  await pool.query(`ALTER TABLE pledges ADD COLUMN IF NOT EXISTS idempotency_key TEXT`);
+  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS uq_pledges_idem ON pledges (org_id, idempotency_key) WHERE idempotency_key IS NOT NULL`);
+
+  // BUILD-72 Part 3 — a donor who OVERPAYS a pledge is a good problem, and the
+  // money must still appear. The old code clamped the balance to 0 and the
+  // surplus vanished from every pledge surface. It is now recorded.
+  await pool.query(`ALTER TABLE pledges ADD COLUMN IF NOT EXISTS surplus_amount NUMERIC NOT NULL DEFAULT 0`);
+  // ...and every EXISTING row is recomputed once, so no pledge carries a status
+  // or a surplus that drifted from its payment total before this build. Status
+  // is derived from the payments, exactly as pledgeStatusFor() does at runtime;
+  // written_off / cancelled are never resurrected by arithmetic.
+  await pool.query(`
+    WITH paid AS (
+      SELECT p.id,
+             p.amount::numeric                              AS amount,
+             COALESCE(SUM(g.amount), 0)::numeric            AS paid
+        FROM pledges p
+        LEFT JOIN gifts g ON g.pledge_id = p.id AND g.org_id = p.org_id
+       GROUP BY p.id, p.amount
+    )
+    UPDATE pledges pl
+       SET status = CASE
+             WHEN pl.status IN ('written_off','cancelled') THEN pl.status
+             WHEN paid.amount > 0 AND paid.paid >= paid.amount THEN 'fulfilled'
+             ELSE 'open'
+           END,
+           surplus_amount = CASE
+             WHEN pl.status IN ('written_off','cancelled') THEN pl.surplus_amount
+             WHEN paid.amount > 0 AND paid.paid > paid.amount THEN ROUND(paid.paid - paid.amount, 2)
+             ELSE 0
+           END
+      FROM paid
+     WHERE paid.id = pl.id
+       AND (pl.status IS DISTINCT FROM CASE
+              WHEN pl.status IN ('written_off','cancelled') THEN pl.status
+              WHEN paid.amount > 0 AND paid.paid >= paid.amount THEN 'fulfilled'
+              ELSE 'open'
+            END
+         OR pl.surplus_amount IS DISTINCT FROM CASE
+              WHEN pl.status IN ('written_off','cancelled') THEN pl.surplus_amount
+              WHEN paid.amount > 0 AND paid.paid > paid.amount THEN ROUND(paid.paid - paid.amount, 2)
+              ELSE 0
+            END)
+  `);
+  // §1.2 F-4 — an import file's explicit external-ID column (gift/transaction id
+  // from the source CRM) is the ONLY safe cross-run gift dedup key. (date,
+  // amount, donor) alone is never a dedup key — forty $100 Sunday gifts are
+  // forty gifts.
+  await pool.query(`ALTER TABLE gifts ADD COLUMN IF NOT EXISTS external_id TEXT`);
+  
+
   // due_date was briefly a real DATE column, which node-pg serializes with a
   // full timestamp ("2026-07-05T00:00:00.000Z") — inconsistent with every
   // other date-like column in this schema (gifts.date, grants.deadline,

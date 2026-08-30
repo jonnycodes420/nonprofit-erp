@@ -674,6 +674,48 @@ prod frontend before the next part starts.
 
 ---
 
+# S-3 — a migration-ordering bug the local scratch DB could not see
+
+Caught by CI on the first push of this build, which is exactly what CI is for.
+Recorded because the blind spot is structural and will recur.
+
+**What happened.** The Part 2/3 pledge migrations were appended next to the
+GIFT migrations at `db.js:877` — but `CREATE TABLE pledges` is ~400 lines later
+at `db.js:1274`. On a **fresh** database the `ALTER TABLE pledges` ran before the
+table existed: `Database init failed: relation "pledges" does not exist`. The
+server never booted, the `test` job failed, and **both deploy jobs correctly
+skipped — nothing reached production.**
+
+**Why local was green.** The scratch DB at `:5546/steward_loadtest` has been
+alive for weeks and already had a `pledges` table, so the ALTER succeeded there.
+A full 106-suite green run locally is **not** evidence that `db.js` is correct,
+because the local DB is never fresh. CI's stock `postgres:16` is the only place
+this class shows up.
+
+**A second bug, found while fixing the first.** The scripted splice that moved
+the blocks also deleted the four lines between them — the pre-existing
+`ALTER TABLE gifts ADD COLUMN external_id` + its comment — which then failed as
+`column "external_id" does not exist`. Restored, and verified with
+`git diff 220ab86 -- db.js | grep '^-'` returning **nothing**: the change to
+`db.js` is now purely additive.
+
+**Standing practice added.** Before pushing any `db.js` change: create a
+throwaway database, boot the server against it, and confirm no
+`Database init failed`, then run the money suites against that fresh DB.
+
+```
+createdb -h localhost -p 5546 -U steward steward_freshcheck
+DATABASE_URL=…/steward_freshcheck PORT=5608 node server.js     # → /health status ok
+DATABASE_URL=…/steward_freshcheck BASE=http://localhost:5608 \
+  SUITES="pledge-math gift-idempotency import-reconciliation" bash tests/run-all.sh
+```
+
+Result after the fix: `/health` → `status: ok`, `database: steward_freshcheck`;
+`pledges` carries `idempotency_key` + `surplus_amount` + `uq_pledges_idem`; the
+three money suites pass **205 assertions from an empty schema**.
+
+---
+
 # PART 0 SIDE-FINDINGS — the harness itself
 
 Two defects found while standing the battery up to *do* Part 0. Neither is a
