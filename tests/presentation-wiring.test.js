@@ -17,7 +17,6 @@
 // + the :4173 CORS origin).
 
 const path = require("path");
-const API = process.env.BASE || "http://localhost:5601";  // BASE, never a literal port (BUILD-72)
 const fs = require("fs");
 const { ok, summary, login, api, q } = require("./helpers");
 
@@ -30,8 +29,13 @@ const EMAIL = "b41mobile@example.org";
 const skip = why => { console.log("  SKIP  " + why + "\n\n0 passed, 0 failed (suite skipped)"); process.exit(0); };
 if (!fs.existsSync(path.join(DIST, "index.html"))) skip("client/dist not built");
 const distJs = fs.readdirSync(path.join(DIST, "assets")).filter(f => f.endsWith(".js"));
-if (!distJs.some(f => fs.readFileSync(path.join(DIST, "assets", f), "utf8").includes("localhost:5601")))
-  skip("client/dist not built against the local API (VITE_API_URL=http://localhost:5601)");
+// BASE, never a literal port (BUILD-72 S-2): the dist must be built against
+// whatever local API this run uses, which is not always :5601 on a machine
+// running a second product's dev stack.
+const API = process.env.BASE || "http://localhost:5601";  // BASE, never a literal port (BUILD-72)
+const API_ORIGIN = (process.env.BASE || "http://localhost:5601").replace(/^https?:\/\//, "");
+if (!distJs.some(f => fs.readFileSync(path.join(DIST, "assets", f), "utf8").includes(API_ORIGIN)))
+  skip(`client/dist not built against the local API (VITE_API_URL=${process.env.BASE || "http://localhost:5601"})`);
 let chromium;
 try { module.paths.unshift(path.join(PW_DIR, "node_modules")); ({ chromium } = require("playwright")); }
 catch { skip("Playwright not found (set PLAYWRIGHT_DIR)"); }

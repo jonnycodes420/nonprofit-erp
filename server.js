@@ -1535,6 +1535,23 @@ app.use((req, res, next) => {
 // ── Async error wrapper ────────────────────────────────────────────────────
 const wrap = fn => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
 
+// BUILD-72 Part 1 — an import that does not reconcile is not a 500. The
+// transaction has already rolled back by the time this runs (db.js's
+// withTransaction ROLLBACKs on throw), so nothing landed; the caller gets 409
+// plus the equation that failed, and the client renders the dollar discrepancy
+// on the summary screen. Wrap an import handler in this instead of `wrap`.
+const wrapImport = fn => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(e => {
+  if (e && e.code === "import_unreconciled") {
+    console.error("[import] ABORTED — did not reconcile:", e.message, JSON.stringify(e.reconciliation));
+    return res.status(409).json({
+      error: "import_unreconciled",
+      message: e.message,
+      reconciliation: e.reconciliation,
+    });
+  }
+  return next(e);
+});
+
 // ── Admin guard ────────────────────────────────────────────────────────────
 // Revalidates the caller's role against the DB, NOT the (stateless, 7-day) JWT.
 // The token bakes `role` in at login, so a demoted or removed user would keep
@@ -3625,6 +3642,138 @@ async function buildAssigneeResolver(donors, orgId, isTeam) {
   };
 }
 
+// ── BUILD-72 Part 1 — THE IMPORT RECONCILIATION INVARIANT ───────────────────
+// The class fix. The instance bugs (F-4's twin collapse in BUILD-45, and 0.1b's
+// far worse "a matched donor's gifts vanish" found in BUILD-72 Part 0) were both
+// the same shape: a row entered the importer and left no trace. Counting donors
+// on the summary screen never caught it, because the thing that disappeared was
+// money.
+//
+// So every importer now keeps a ledger, and every row it touches must land in
+// EXACTLY ONE bucket:
+//
+//     rows_in_file    = created + skipped_by_user + errored
+//     dollars_in_file = created + skipped_by_user + errored
+//
+// Both equations are computed by the importer itself, asserted before the
+// transaction commits, and returned to the client for display. If either fails
+// to balance the import ABORTS AND ROLLS BACK, naming the discrepancy in
+// dollars — on the user's screen, at run time. A collapse bug introduced years
+// from now by someone else fails here instead of silently eating a Sunday's
+// offering.
+//
+// The dollar equation is the one that matters: a row count can be right while
+// money is wrong.
+function importLedger(kind, unit = "gift") {
+  return {
+    kind, unit,
+    rows:    { inFile: 0, created: 0, skipped: 0, errored: 0 },
+    dollars: { inFile: 0, created: 0, skipped: 0, errored: 0 },
+    skippedReasons: {},
+    erroredReasons: {},
+    _tally(map, reason, n, amount) {
+      const e = map[reason] || (map[reason] = { rows: 0, dollars: 0 });
+      e.rows += n; e.dollars += amount;
+    },
+    // Every row in the payload announces itself here FIRST, before any routing
+    // decision. Nothing may be created, skipped or errored that did not.
+    saw(amount, n = 1) { this.rows.inFile += n; this.dollars.inFile += round2(amount); },
+    created(amount, n = 1) { this.rows.created += n; this.dollars.created += round2(amount); },
+    skipped(reason, amount, n = 1) {
+      this.rows.skipped += n; this.dollars.skipped += round2(amount);
+      this._tally(this.skippedReasons, reason, n, round2(amount));
+    },
+    errored(reason, amount, n = 1) {
+      this.rows.errored += n; this.dollars.errored += round2(amount);
+      this._tally(this.erroredReasons, reason, n, round2(amount));
+    },
+    balance() {
+      const rowsAccounted    = this.rows.created + this.rows.skipped + this.rows.errored;
+      const dollarsAccounted = round2(this.dollars.created + this.dollars.skipped + this.dollars.errored);
+      const rowGap    = this.rows.inFile - rowsAccounted;
+      const dollarGap = round2(this.dollars.inFile - dollarsAccounted);
+      return {
+        rowsAccounted, dollarsAccounted, rowGap, dollarGap,
+        rowsBalanced: rowGap === 0,
+        dollarsBalanced: Math.abs(dollarGap) < 0.005,
+        balanced: rowGap === 0 && Math.abs(dollarGap) < 0.005,
+      };
+    },
+    // The report the client renders verbatim on the summary screen. The user
+    // sees the equation, not a reassurance.
+    report() {
+      const b = this.balance();
+      return {
+        kind: this.kind, unit: this.unit,
+        rows: { ...this.rows, accounted: b.rowsAccounted, balanced: b.rowsBalanced },
+        dollars: { ...this.dollars, accounted: b.dollarsAccounted, balanced: b.dollarsBalanced },
+        skippedReasons: this.skippedReasons,
+        erroredReasons: this.erroredReasons,
+        balanced: b.balanced,
+        rowGap: b.rowGap, dollarGap: b.dollarGap,
+      };
+    },
+    // Throws inside the transaction → db.js's withTransaction ROLLBACKs → the
+    // route's catch turns it into a 409 carrying this report. Nothing lands.
+    assertBalanced() {
+      const b = this.balance();
+      if (b.balanced) return;
+      const parts = [];
+      if (!b.rowsBalanced)
+        parts.push(`${Math.abs(b.rowGap)} ${this.unit} row(s) ${b.rowGap > 0 ? "unaccounted for" : "counted twice"}`);
+      if (!b.dollarsBalanced)
+        parts.push(`$${Math.abs(b.dollarGap).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${b.dollarGap > 0 ? "unaccounted for" : "counted twice"}`);
+      const err = new Error(`Import aborted — the file did not reconcile: ${parts.join("; ")}. Nothing was saved.`);
+      err.code = "import_unreconciled";
+      err.reconciliation = this.report();
+      throw err;
+    },
+  };
+}
+// Money here is dollars-and-cents, so every accumulation rounds to 2dp rather
+// than letting binary floating point drift the equation off by 1e-13 and abort
+// a perfectly good import.
+function round2(n) { return Math.round((Number(n) || 0) * 100) / 100; }
+
+// A per-batch SAVEPOINT. One transaction wraps the whole import so the final
+// assertion can roll everything back — but a single bad batch must still be
+// survivable and COUNTED as errored rather than killing the request. Postgres
+// aborts a transaction on any statement error, so each batch runs inside its
+// own savepoint: released on success, rolled back to on failure.
+async function withSavepoint(client, name, fn) {
+  await client.query(`SAVEPOINT ${name}`);
+  try {
+    const r = await fn();
+    await client.query(`RELEASE SAVEPOINT ${name}`);
+    return { ok: true, result: r };
+  } catch (e) {
+    await client.query(`ROLLBACK TO SAVEPOINT ${name}`);
+    await client.query(`RELEASE SAVEPOINT ${name}`);
+    return { ok: false, error: e };
+  }
+}
+
+// A potential-duplicate GROUP is same resolved donor + same gift date + same
+// amount. Steward cannot tell two gala tickets from a doubled file and must not
+// try: groups are DETECTED and SURFACED, never resolved automatically, and the
+// default selection is keep-all (see the import routes' `skipRowKeys`).
+function duplicateGroupsFrom(rows) {
+  const byFp = new Map();
+  for (const r of rows) {
+    const fp = `${r.donorId}|${r.date}|${r.amount}`;
+    if (!byFp.has(fp)) byFp.set(fp, []);
+    byFp.get(fp).push(r);
+  }
+  const groups = [];
+  for (const [fp, members] of byFp) {
+    if (members.length < 2) continue;
+    const [donorId, date, amount] = fp.split("|");
+    groups.push({ key: fp, donorId, date, amount: Number(amount), count: members.length });
+  }
+  groups.sort((a, b) => b.count - a.count || b.amount - a.amount);
+  return groups;
+}
+
 app.post("/donors/import", requireAuth, wrap(async (req, res) => {
   const { donors } = req.body;
   if (!Array.isArray(donors) || donors.length === 0)
@@ -3669,14 +3818,25 @@ app.post("/donors/import", requireAuth, wrap(async (req, res) => {
   const existingEmails = new Set(existingEmailRows.map(r => r.e));
   const seenEmails = new Set(); // within-import dedup
 
-  let duplicates = 0;
+  // BUILD-72 Part 1 — the invariant applies here too. This path carries no
+  // gifts, so the "dollars" it reconciles are the lifetime totals the file
+  // states for each donor: losing a donor row loses that figure, and it should
+  // be as visible as a lost gift.
+  const ledger = importLedger("donors", "donor");
+  let duplicates = 0, namelessRows = 0;
   const donorsToInsert = [];
 
   for (const d of donors) {
-    if (!d.name || !String(d.name).trim()) continue;
+    const stated = round2(parseFloat(d.total) || 0);
+    ledger.saw(stated);
+    if (!d.name || !String(d.name).trim()) {
+      namelessRows++; ledger.skipped("no_usable_name", stated); continue;
+    }
     const emailLower = (d.email || "").toLowerCase().trim();
     if (emailLower) {
-      if (existingEmails.has(emailLower) || seenEmails.has(emailLower)) { duplicates++; continue; }
+      if (existingEmails.has(emailLower) || seenEmails.has(emailLower)) {
+        duplicates++; ledger.skipped("already_on_file", stated); continue;
+      }
       seenEmails.add(emailLower);
     }
     donorsToInsert.push(d);
@@ -3737,15 +3897,29 @@ app.post("/donors/import", requireAuth, wrap(async (req, res) => {
         );
       });
       created += batch.length;
+      for (const d of batch) ledger.created(round2(parseFloat(d.total) || 0));
     } catch (e) {
       const rowStart = bi + 1;
       const rowEnd   = bi + batch.length;
       console.error(`[import] batch rows ${rowStart}–${rowEnd} failed:`, e.message);
       batchErrors.push({ rows: `${rowStart}–${rowEnd}`, error: e.message });
+      // Counted, not swallowed: a failed batch is `errored`, and the equation
+      // still has to balance.
+      for (const d of batch) ledger.errored("donor_insert_failed", round2(parseFloat(d.total) || 0));
     }
   }
 
-  res.json({ created, duplicates, batchErrors });
+  // The donors-only path commits per batch (each batch is independent and a
+  // partial donor load is recoverable), so the assertion here is a REPORT and a
+  // loud server-side error rather than a rollback — there is nothing left to
+  // roll back by the time it runs. The combined + gift-history paths, which
+  // move money, hold one transaction and genuinely abort.
+  const bal = ledger.balance();
+  if (!bal.balanced) {
+    console.error("[import] DONOR LEDGER DID NOT BALANCE:", JSON.stringify(ledger.report()));
+  }
+
+  res.json({ created, duplicates, batchErrors, namelessRows, reconciliation: ledger.report() });
 }));
 
 // ── Combined import: new donors + their year-column gift history in one pass ─
@@ -3753,7 +3927,7 @@ app.post("/donors/import", requireAuth, wrap(async (req, res) => {
 // them without a round trip. Both donor and gift inserts are bulk (one statement
 // per batch), matching the pattern in /donors/import and matching the gift+
 // interaction format that /gifts/import-history and the single-gift route use.
-app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(async (req, res) => {
   const { donors, gifts } = req.body;
   if (!Array.isArray(donors) || !donors.length)
     return res.status(400).json({ error: "donors array required" });
@@ -3782,6 +3956,26 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrap(async (r
     }
   }
 
+  // BUILD-72 Part 1 — the reconciliation ledger for THIS request. The client
+  // chunks a large file 500 donors at a time and sums these across chunks for
+  // the file-level figure the summary screen shows.
+  const ledger = importLedger("donors+gifts");
+  // The user's explicit deselections from the pre-commit duplicate review.
+  // Absent (a headless import, or a user who clicked straight through) = KEEP
+  // ALL: the failure mode of this design is a duplicate the user can delete,
+  // never a gift that vanished. Those are not symmetrical.
+  const skipRowKeys = new Set(Array.isArray(req.body.skipRowKeys) ? req.body.skipRowKeys : []);
+  let roundingAdjustment = 0;
+  let duplicateGroups = [];
+  let sabotageBudget = rateLimitDisabled() ? (Number(req.body.__sabotageDropRows) || 0) : 0;
+  // Hoisted above the transaction: the post-commit recalcs and the response
+  // below read these, and they must survive the callback's scope.
+  let externalIdDupes = 0;
+  let giftsInserted = 0, financeSynced = 0;
+  let duplicateCandidates = { withinFile: 0, samples: [] };
+  let matchesExistingCount = 0;
+  const affectedDonorIds = new Set();
+
   // Importer identity
   const importerRow = await query("SELECT name FROM users WHERE id=?", [req.user.userId]);
   const importerName = importerRow[0]?.name || "";
@@ -3803,31 +3997,51 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrap(async (r
   let duplicates = 0;
   let created = 0;
   const donorsToInsert = [];
-  const indexToId = {}; // donorIndex → pre-generated id (only non-deduped donors)
+  const indexToId = {}; // donorIndex → the donor id this row's gifts belong to
+                        // (newly generated, OR an existing donor we matched)
+  const matchedIds = new Set(); // donors we matched rather than created
+  let namelessRows = 0;         // donor rows with no usable name — counted, never silent
   const explicitStageIds = []; // donors whose file had an explicit stage column — never re-inferred over
   const batchErrors = [];
   const failedIds = new Set(); // IDs whose batch failed — drop their gifts too
   const DONOR_BATCH = 500;
 
+  // BUILD-72 Part 1 — ONE transaction for the whole request. The reconciliation
+  // invariant is asserted before it commits, so an import that does not balance
+  // rolls back in full rather than landing a short count. Individual batches run
+  // inside SAVEPOINTs so one bad batch is survivable AND counted, instead of
+  // killing the request or (as before) vanishing into a warning nobody reads.
   await withAdvisoryLock(`import:${orgId}`, async () => {
-  // Email dedup (same bulk-Set approach as /donors/import)
-  const existingEmailRows = await query(
-    "SELECT LOWER(email) AS e FROM donors WHERE org_id=? AND email IS NOT NULL AND email != '' AND deleted_at IS NULL",
+  await withTransaction(async (txc) => {
+  // Email dedup. BUILD-72 Part 1: the dedup now keeps the EXISTING donor's ID
+  // instead of throwing it away. That one change is the whole 0.1b fix — a
+  // matched donor used to get no `indexToId` entry, and the gift loop below
+  // then discarded EVERY GIFT THEY BROUGHT, silently, with a 200 and a summary
+  // that only ever mentioned donors. A second file with two known donors and
+  // $1,800 of new gifts landed $0. Matching a donor is not a reason to lose
+  // their money; it is the reason to attach it to the right record.
+  const existingEmailRows = await queryTx(txc,
+    "SELECT id, LOWER(email) AS e FROM donors WHERE org_id=? AND email IS NOT NULL AND email != '' AND deleted_at IS NULL",
     [orgId]
   );
-  const existingEmails = new Set(existingEmailRows.map(r => r.e));
-  const seenEmails = new Set();
+  const existingByEmail = new Map();
+  for (const r of existingEmailRows) if (!existingByEmail.has(r.e)) existingByEmail.set(r.e, r.id);
+  const seenEmails = new Map(); // within-file email → the id we already assigned it
 
   // Generate all donor IDs in JS before inserting — gifts reference these IDs directly,
   // no extra round trip needed.
   donors.forEach((d, idx) => {
-    if (!d.name || !String(d.name).trim()) return;
+    if (!d.name || !String(d.name).trim()) { namelessRows++; return; }
     const emailLower = (d.email || "").toLowerCase().trim();
     if (emailLower) {
-      if (existingEmails.has(emailLower) || seenEmails.has(emailLower)) { duplicates++; return; }
-      seenEmails.add(emailLower);
+      // Already on file, or already claimed earlier in THIS file → route this
+      // row's gifts to that donor. `duplicates` still counts donors not
+      // created, so the existing summary sentence stays true.
+      const priorId = existingByEmail.get(emailLower) || seenEmails.get(emailLower);
+      if (priorId) { duplicates++; indexToId[idx] = priorId; matchedIds.add(priorId); return; }
     }
     const id = importId("d_");
+    if (emailLower) seenEmails.set(emailLower, id);
     indexToId[idx] = id;
     donorsToInsert.push({ ...d, _id: id });
     if (d._stageExplicit) explicitStageIds.push(id);
@@ -3855,25 +4069,25 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrap(async (r
       );
       return "(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)";
     });
-    try {
-      await withTransaction(async (client) => {
-        await runTx(client,
-          `INSERT INTO donors
-             (id,org_id,name,email,phone,status,stage,total_giving,last_gift_amount,
-              last_gift_date,gift_count,tags,notes,city,state,assigned_to,assigned_to_name,
-              pending_assignee_invite_id,pending_assignee_name,deceased,do_not_contact)
-           VALUES ${tuples.join(",")}`,
-          params
-        );
-      });
+    // SAVEPOINT, not a nested transaction: we are already inside the request's
+    // one transaction, so a failed batch must be rolled back to a point rather
+    // than poisoning everything after it.
+    const r = await withSavepoint(txc, `dbatch_${bi}`, () => runTx(txc,
+      `INSERT INTO donors
+         (id,org_id,name,email,phone,status,stage,total_giving,last_gift_amount,
+          last_gift_date,gift_count,tags,notes,city,state,assigned_to,assigned_to_name,
+          pending_assignee_invite_id,pending_assignee_name,deceased,do_not_contact)
+       VALUES ${tuples.join(",")}`,
+      params
+    ));
+    if (r.ok) {
       created += batch.length;
-    } catch (e) {
-      console.error(`[combined-import] donor batch ${bi}–${bi+batch.length} failed:`, e.message);
-      batchErrors.push({ rows:`${bi+1}–${bi+batch.length}`, error:e.message });
+    } else {
+      console.error(`[combined-import] donor batch ${bi}–${bi+batch.length} failed:`, r.error.message);
+      batchErrors.push({ rows:`${bi+1}–${bi+batch.length}`, error:r.error.message });
       batch.forEach(d => failedIds.add(d._id));
     }
   }
-  }); // end withAdvisoryLock(import:orgId) — donor dedup+insert now atomic per org
 
   // ── Build gift+interaction records ──
   // Filter to gifts whose donor was actually inserted (not deduped or batch-failed).
@@ -3888,28 +4102,84 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrap(async (r
   const seenExternalIds = new Set(); // within-file external-ID dedup
   const fpCounts = new Map();        // informational twin report, NOT a filter
   const giftsToInsert = [];
-  let externalIdDupes = 0;
-  for (const g of gifts) {
+  // BUILD-72 Part 1 — every row announces itself to the ledger BEFORE any
+  // routing decision, then lands in exactly one bucket. There is no `continue`
+  // in this loop that does not first record where the row went.
+  for (let gi = 0; gi < gifts.length; gi++) {
+    const g = gifts[gi];
+    const rawAmt = Number(g.amount) || 0;
+    const amt    = Math.round(rawAmt);
+    ledger.saw(amt);
+    // The importer stores whole dollars (Math.round). Surface what that costs
+    // instead of letting the ledger silently disagree with the file — the cents
+    // question itself is BUILD-72 Part 3's to answer.
+    roundingAdjustment += round2(rawAmt - amt);
+
     const donorId = indexToId[g.donorIndex];
-    if (!donorId || failedIds.has(donorId)) continue;
-    const amt  = Math.round(Number(g.amount) || 0);
-    if (amt <= 0) continue;
+    if (!donorId) { ledger.errored("donor_row_unusable", amt); continue; }
+    if (failedIds.has(donorId)) { ledger.errored("donor_batch_failed", amt); continue; }
+    if (amt <= 0) { ledger.skipped("non_positive_amount", amt); continue; }
+
     const date = normalizeGiftDate(g.date);
+    const rowKey = `${donorId}|${date}|${amt}`;
+    // The user's explicit deselection from the pre-commit review — the ONLY way
+    // a row is dropped on purpose, and it is counted as such.
+    if (skipRowKeys.has(rowKey)) { ledger.skipped("user_deselected", amt); continue; }
+
     const externalId = (g.externalId || g.external_id || "").toString().trim().slice(0, 128) || null;
     if (externalId) {
-      if (seenExternalIds.has(externalId)) { externalIdDupes++; continue; }
+      if (seenExternalIds.has(externalId)) {
+        externalIdDupes++; ledger.skipped("external_id_repeated_in_file", amt); continue;
+      }
       seenExternalIds.add(externalId);
     } else {
-      const fp = `${donorId}|${amt}|${date}`;
-      fpCounts.set(fp, (fpCounts.get(fp) || 0) + 1);
+      fpCounts.set(rowKey, (fpCounts.get(rowKey) || 0) + 1);
     }
-    giftsToInsert.push({ donorId, amount:amt, date, type:g.type||"cash", campaign:g.campaign||"", notes:g.notes||"", externalId });
+    giftsToInsert.push({ donorId, amount:amt, date, type:g.type||"cash", campaign:g.campaign||"", notes:g.notes||"", externalId, rowKey });
   }
-  const duplicateCandidates = {
+  duplicateCandidates = {
     withinFile: [...fpCounts.values()].filter(n => n > 1).reduce((s, n) => s + (n - 1), 0),
     samples: [...fpCounts.entries()].filter(([, n]) => n > 1).slice(0, 10)
-      .map(([fp, n]) => { const [dId, amount, date] = fp.split("|"); return { donor: donorNameById(dId), amount: Number(amount), date, count: n }; }),
+      .map(([fp, n]) => { const [dId, date, amount] = fp.split("|"); return { donor: donorNameById(dId), amount: Number(amount), date, count: n }; }),
   };
+  // The reviewable groups — same donor, same date, same amount. DETECTED and
+  // SURFACED, never resolved automatically; every member is imported unless the
+  // user deselects it by rowKey.
+  //
+  // TWO kinds, and the second is what makes a re-import honest. Since BUILD-72
+  // a matched donor's gifts actually land (Part 0's 0.1b), so re-uploading the
+  // same file genuinely creates a second set of gifts. That is the deliberate
+  // trade — a duplicate the user can delete beats a gift they never learn about
+  // — but it is only defensible if the user is TOLD. So rows matching a gift
+  // already on file are flagged `matches_existing`, on top of within-file twins.
+  // ── The sabotage seam (test-only, gated on DISABLE_RATE_LIMIT — the scratch /
+  // CI boot; never set in prod). tests/import-reconciliation.test.js drives a
+  // double that DROPS rows here, exactly where every real silent-loss bug in
+  // this file has lived: the row was seen, then left the pipeline with nothing
+  // recording where it went. The invariant must ABORT the whole import rather
+  // than succeed with a short count. A guard nobody has watched fail is a guess.
+  if (sabotageBudget > 0 && giftsToInsert.length) {
+    giftsToInsert.splice(0, Math.min(sabotageBudget, giftsToInsert.length));
+  }
+
+  const resolvedDonorIds = [...new Set(giftsToInsert.map(g => g.donorId))];
+  const existingGiftFps = new Set();
+  if (resolvedDonorIds.length) {
+    const exRows = await queryTx(txc,
+      "SELECT donor_id, date, amount FROM gifts WHERE org_id = ? AND donor_id = ANY(?)",
+      [orgId, resolvedDonorIds]);
+    for (const r of exRows) existingGiftFps.add(`${r.donor_id}|${r.date}|${Math.round(parseFloat(r.amount))}`);
+  }
+  const seenExisting = new Set();
+  duplicateGroups = [
+    ...duplicateGroupsFrom(giftsToInsert)
+      .map(gr => ({ ...gr, kind: "within_file", donor: donorNameById(gr.donorId) })),
+    ...giftsToInsert
+      .filter(g => existingGiftFps.has(g.rowKey) && !seenExisting.has(g.rowKey) && seenExisting.add(g.rowKey))
+      .map(g => ({ key: g.rowKey, kind: "matches_existing", donorId: g.donorId,
+                   donor: donorNameById(g.donorId), date: g.date, amount: g.amount, count: 1 })),
+  ];
+  matchesExistingCount = duplicateGroups.filter(g => g.kind === "matches_existing").length;
   function donorNameById(dId) { const d = donorsToInsert.find(x => x._id === dId); return d ? String(d.name).trim() : dId; }
 
   // ── Finance sync setup (Gap 1) ───────────────────────────────────────────
@@ -3928,8 +4198,6 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrap(async (r
 
   // ── Bulk-insert gifts + interactions (200/batch, both in same transaction) ──
   const GIFT_BATCH = 200;
-  let giftsInserted = 0, financeSynced = 0;
-  const affectedDonorIds = new Set();
 
   for (let bi = 0; bi < giftsToInsert.length; bi += GIFT_BATCH) {
     const batch = giftsToInsert.slice(bi, bi + GIFT_BATCH);
@@ -3942,60 +4210,84 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrap(async (r
       giftTuples.push("(?,?,?,?,?,?,?,?,?,?)");
       affectedDonorIds.add(g.donorId);
     });
-    try {
-      let keptCount = 0, ftCount = 0;
-      await withTransaction(async (client) => {
-        // F-4: the external-ID partial unique (uq_gifts_external) is the ONE
-        // cross-run gift dedup — a re-imported file with source IDs is a
-        // strict no-op at the DB. RETURNING tells us which rows genuinely
-        // landed so interactions + ledger stamps are only written for those
-        // (a skipped gift must not orphan an interaction or a ledger row).
-        const kept = await queryTx(client,
-          `INSERT INTO gifts (id,org_id,donor_id,amount,date,type,campaign,fund_id,notes,external_id)
-           VALUES ${giftTuples.join(",")}
-           ON CONFLICT (org_id, external_id) WHERE external_id IS NOT NULL DO NOTHING
-           RETURNING id`,
-          giftParams
+    let keptCount = 0, ftCount = 0;
+    let keptRows = [];
+    // SAVEPOINT inside the request's one transaction: a bad batch is rolled
+    // back to here and COUNTED as errored, instead of poisoning the rest.
+    const bres = await withSavepoint(txc, `gbatch_${bi}`, async () => {
+      // F-4: the external-ID partial unique (uq_gifts_external) is the ONE
+      // cross-run gift dedup — a re-imported file with source IDs is a
+      // strict no-op at the DB. RETURNING tells us which rows genuinely
+      // landed so interactions + ledger stamps are only written for those
+      // (a skipped gift must not orphan an interaction or a ledger row).
+      const kept = await queryTx(txc,
+        `INSERT INTO gifts (id,org_id,donor_id,amount,date,type,campaign,fund_id,notes,external_id)
+         VALUES ${giftTuples.join(",")}
+         ON CONFLICT (org_id, external_id) WHERE external_id IS NOT NULL DO NOTHING
+         RETURNING id`,
+        giftParams
+      );
+      const intParams = [], intTuples = [], ftParams = [], ftTuples = [];
+      for (const r of kept) {
+        const g = rowByGid.get(r.id);
+        if (!g) continue;
+        keptRows.push(g);
+        const intNote = `Gift received: $${g.amount.toLocaleString()} (${g.type})${g.notes?" — "+g.notes:""}`;
+        intParams.push(importId("int_"), orgId, g.donorId, "gift", intNote, g.date, importerId, importerName);
+        intTuples.push("(?,?,?,?,?,?,?,?)");
+        // Accumulate fin_transactions for current-FY gifts — same shape as single-gift
+        // route, carrying gift_id so the stamp is idempotent (BUILD-21 Part 3).
+        if (contribAcctId && g.date >= fyStart) {
+          const dName = donorNameMap[g.donorId] || "Donor";
+          ftParams.push(importId("ft_"), orgId, g.date,
+            `Gift from ${dName}`, dName, g.amount, "income", contribAcctId, genFundId, g.donorId, "import", r.id);
+          ftTuples.push("(?,?,?,?,?,?,?,?,?,?,?,?)");
+        }
+      }
+      if (intTuples.length) {
+        await runTx(txc,
+          `INSERT INTO interactions (id,org_id,donor_id,type,note,date,created_by,logged_by_name) VALUES ${intTuples.join(",")}`,
+          intParams
         );
-        const intParams = [], intTuples = [], ftParams = [], ftTuples = [];
-        for (const r of kept) {
-          const g = rowByGid.get(r.id);
-          if (!g) continue;
-          const intNote = `Gift received: $${g.amount.toLocaleString()} (${g.type})${g.notes?" — "+g.notes:""}`;
-          intParams.push(importId("int_"), orgId, g.donorId, "gift", intNote, g.date, importerId, importerName);
-          intTuples.push("(?,?,?,?,?,?,?,?)");
-          // Accumulate fin_transactions for current-FY gifts — same shape as single-gift
-          // route, carrying gift_id so the stamp is idempotent (BUILD-21 Part 3).
-          if (contribAcctId && g.date >= fyStart) {
-            const dName = donorNameMap[g.donorId] || "Donor";
-            ftParams.push(importId("ft_"), orgId, g.date,
-              `Gift from ${dName}`, dName, g.amount, "income", contribAcctId, genFundId, g.donorId, "import", r.id);
-            ftTuples.push("(?,?,?,?,?,?,?,?,?,?,?,?)");
-          }
-        }
-        if (intTuples.length) {
-          await runTx(client,
-            `INSERT INTO interactions (id,org_id,donor_id,type,note,date,created_by,logged_by_name) VALUES ${intTuples.join(",")}`,
-            intParams
-          );
-        }
-        // One bulk INSERT for FY fin_transactions — same tx as gifts, rolls back together
-        if (ftTuples.length) {
-          await runTx(client,
-            `INSERT INTO fin_transactions (id,org_id,date,description,vendor_donor,amount,type,account_id,fund_id,donor_id,source,gift_id)
-             VALUES ${ftTuples.join(",")} ON CONFLICT (gift_id) WHERE gift_id IS NOT NULL DO NOTHING`,
-            ftParams
-          );
-        }
-        keptCount = kept.length; ftCount = ftTuples.length;
-      });
+      }
+      // One bulk INSERT for FY fin_transactions — same tx as gifts, rolls back together
+      if (ftTuples.length) {
+        await runTx(txc,
+          `INSERT INTO fin_transactions (id,org_id,date,description,vendor_donor,amount,type,account_id,fund_id,donor_id,source,gift_id)
+           VALUES ${ftTuples.join(",")} ON CONFLICT (gift_id) WHERE gift_id IS NOT NULL DO NOTHING`,
+          ftParams
+        );
+      }
+      keptCount = kept.length; ftCount = ftTuples.length;
+    });
+
+    if (bres.ok) {
       giftsInserted += keptCount;
       financeSynced += ftCount;
-    } catch (e) {
-      console.error(`[combined-import] gift batch ${bi}–${bi+batch.length} failed:`, e.message);
-      batchErrors.push({ error: e.message });
+      const keptSet = new Set(keptRows);
+      for (const g of batch) {
+        if (keptSet.has(g)) { ledger.created(g.amount); continue; }
+        // Refused by the external-ID unique: NOT a loss — this gift was already
+        // imported on an earlier run. Still a skip, and still counted, or the
+        // equation could never balance on a deliberate re-import.
+        externalIdDupes++;
+        ledger.skipped("external_id_already_imported", g.amount);
+      }
+    } else {
+      console.error(`[combined-import] gift batch ${bi}–${bi+batch.length} failed:`, bres.error.message);
+      batchErrors.push({ rows: `${bi+1}–${bi+batch.length}`, error: bres.error.message });
+      // The batch rolled back to its savepoint — every row in it is ERRORED,
+      // counted and reported. Never silently gone.
+      for (const g of batch) ledger.errored("gift_insert_failed", g.amount);
     }
   }
+
+  // ── THE ASSERTION. Before this transaction commits, the equations must hold.
+  // A throw here rolls the whole import back (db.js withTransaction) and the
+  // route answers 409 with the discrepancy named in dollars.
+  ledger.assertBalanced();
+  }); // end withTransaction — nothing above has committed until here
+  }); // end withAdvisoryLock(import:orgId)
 
   // Recalc every donor that had gifts inserted — ONE set-based query (import
   // hang fix), not a per-donor loop.
@@ -4064,7 +4356,16 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrap(async (r
   }
 
   res.json({ created, giftsInserted, duplicates, donorsUpdated: affectedDonorIds.size, financeSynced, batchErrors,
-             duplicateCandidates, externalIdDupes });
+             duplicateCandidates, externalIdDupes,
+             // BUILD-72 Part 1 — matched donors are now reported, and their
+             // gifts actually landed. `duplicates` still counts donors NOT
+             // created; `donorsMatched` says what became of them.
+             donorsMatched: matchedIds.size, namelessRows,
+             // The equations, for the summary screen. The user sees the
+             // arithmetic, not a reassurance that it worked.
+             reconciliation: ledger.report(),
+             roundingAdjustment: round2(roundingAdjustment),
+             duplicateGroups, matchesExistingCount });
 }));
 
 app.put("/donors/:id", requireAuth, checkWriteAccess, wrap(async (req, res) => {
@@ -5445,7 +5746,7 @@ app.post("/donors/:id/year-end-statement", requireAuth, checkWriteAccess, wrap(a
 // Accepts pre-matched gifts (donorId already resolved by frontend) and inserts
 // them transactionally, then recalcs each affected donor's summary. Deduplicates
 // by exact (donor_id, amount, date) fingerprint so re-running is safe.
-app.post("/gifts/import-history", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+app.post("/gifts/import-history", requireAuth, checkWriteAccess, wrapImport(async (req, res) => {
   const { gifts } = req.body;
   if (!Array.isArray(gifts) || !gifts.length)
     return res.status(400).json({ error: "gifts array required" });
@@ -5467,52 +5768,79 @@ app.post("/gifts/import-history", requireAuth, checkWriteAccess, wrap(async (req
   //   · A row with an explicit external ID (source-system gift/transaction id)
   //     dedupes on THAT — within the file here, cross-run at the DB
   //     (uq_gifts_external, ON CONFLICT DO NOTHING below).
-  //   · A row WITHOUT an external ID that matches an EXISTING gift on
-  //     (donor, amount, date) is HELD for human review — returned in
-  //     heldForReview, not inserted, never silently dropped. Re-submitting
-  //     with includeDuplicates:true imports the held rows (the human decided).
   //   · Same-(donor,amount,date) twins WITHIN the file are all inserted
-  //     (forty $100 Sunday gifts are forty gifts) and counted in
-  //     duplicateCandidates.withinFile as an informational report.
-  const includeDuplicates = req.body.includeDuplicates === true;
+  //     (forty $100 Sunday gifts are forty gifts).
+  //
+  // BUILD-72 Part 1 — THE DEFAULT FLIPPED. A no-external-ID row matching an
+  // EXISTING gift on (donor, date, amount) used to be HELD and NOT inserted
+  // unless the caller re-submitted with includeDuplicates:true. That made the
+  // default SKIP, and the product cannot tell two gala tickets from a doubled
+  // file — so a default of skip loses real money whenever it guesses wrong.
+  // The default is now KEEP ALL: the row is imported and its group is surfaced
+  // in duplicateGroups for review. Deselecting is the user's explicit act, by
+  // rowKey, and is counted as `user_deselected`. The failure mode of this
+  // design is a duplicate the user can delete, not a gift they never learn
+  // about; those are not symmetrical and the code must not treat them as such.
+  const skipRowKeys = new Set(Array.isArray(req.body.skipRowKeys) ? req.body.skipRowKeys : []);
   const existingRows = await query(
     "SELECT donor_id, amount, date FROM gifts WHERE org_id = ? AND donor_id = ANY(?)",
     [orgId, donorIds]
   );
-  const existingFps = new Set(existingRows.map(g => `${g.donor_id}|${Math.round(parseFloat(g.amount))}|${g.date}`));
+  const existingFps = new Set(existingRows.map(g => `${g.donor_id}|${g.date}|${Math.round(parseFloat(g.amount))}`));
 
   // Importer identity — used in interaction logged_by_name, same pattern as single-gift route
   const importerRow = await query("SELECT name FROM users WHERE id=?", [req.user.userId]);
   const importerName = importerRow[0]?.name || "";
   const importerId   = req.user.userId;
 
+  const ledger = importLedger("gifts");
+  let roundingAdjustment = 0;
   let invalid = 0, externalIdDupes = 0;
   const seenExternalIds = new Set();
   const fileFpCounts = new Map();
-  const heldForReview = [];
+  const matchesExisting = [];  // rows that look like an existing gift — imported, and flagged
   const toInsert = [];
   for (const g of gifts) {
-    if (!g.donorId || !validDonorIds.has(g.donorId)) { invalid++; continue; }
-    const amt = Math.round(Number(g.amount) || 0);
-    if (amt <= 0) { invalid++; continue; }
+    const rawAmt = Number(g.amount) || 0;
+    const amt = Math.round(rawAmt);
+    ledger.saw(amt);
+    roundingAdjustment += round2(rawAmt - amt);
+    if (!g.donorId || !validDonorIds.has(g.donorId)) { invalid++; ledger.errored("donor_not_in_org", amt); continue; }
+    if (amt <= 0) { invalid++; ledger.skipped("non_positive_amount", amt); continue; }
     const date = normalizeGiftDate(g.date);
     const externalId = (g.externalId || g.external_id || "").toString().trim().slice(0, 128) || null;
+    const rowKey = `${g.donorId}|${date}|${amt}`;
+    // The ONLY deliberate drop: the user deselected this row in the review.
+    if (skipRowKeys.has(rowKey)) { ledger.skipped("user_deselected", amt); continue; }
     if (externalId) {
-      if (seenExternalIds.has(externalId)) { externalIdDupes++; continue; }
+      if (seenExternalIds.has(externalId)) {
+        externalIdDupes++; ledger.skipped("external_id_repeated_in_file", amt); continue;
+      }
       seenExternalIds.add(externalId);
     } else {
-      const fp = `${g.donorId}|${amt}|${date}`;
-      if (existingFps.has(fp) && !includeDuplicates) {
-        heldForReview.push({ donorId: g.donorId, amount: amt, date, type: g.type || "cash", notes: g.notes || "" });
-        continue;
+      // Looks like a gift already on file. IMPORTED anyway (keep-all), and
+      // flagged so the review can show it. Never held back by default.
+      if (existingFps.has(rowKey)) {
+        matchesExisting.push({ rowKey, donorId: g.donorId, amount: amt, date, type: g.type || "cash", notes: g.notes || "" });
       }
-      fileFpCounts.set(fp, (fileFpCounts.get(fp) || 0) + 1);
+      fileFpCounts.set(rowKey, (fileFpCounts.get(rowKey) || 0) + 1);
     }
-    toInsert.push({ donorId:g.donorId, amount:amt, date, type:g.type||"cash", campaign:g.campaign||"", fund_id:g.fund_id||null, notes:g.notes||"", externalId });
+    toInsert.push({ donorId:g.donorId, amount:amt, date, type:g.type||"cash", campaign:g.campaign||"", fund_id:g.fund_id||null, notes:g.notes||"", externalId, rowKey });
   }
   const duplicateCandidates = {
     withinFile: [...fileFpCounts.values()].filter(n => n > 1).reduce((s, n) => s + (n - 1), 0),
   };
+  // Reviewable groups: twins within this file, PLUS rows that match a gift
+  // already on file. Both surfaced, neither resolved automatically.
+  const donorNamesForGroups = Object.fromEntries(
+    (await query("SELECT id, name FROM donors WHERE org_id = ? AND id = ANY(?)", [orgId, donorIds])).map(d => [d.id, d.name])
+  );
+  const donorNameOf = id => donorNamesForGroups[id] || id;
+  const duplicateGroups = [
+    ...duplicateGroupsFrom(toInsert).map(gr => ({ ...gr, kind: "within_file", donor: donorNameOf(gr.donorId) })),
+    ...matchesExisting.map(m => ({ key: m.rowKey, kind: "matches_existing", donorId: m.donorId,
+                                   donor: donorNameOf(m.donorId), date: m.date, amount: m.amount, count: 1 })),
+  ];
 
   // ── Finance sync setup (Gap 1) ───────────────────────────────────────────
   // fyStart mirrors /dashboard/my-stats exactly: July 1 fiscal year boundary.
@@ -5539,12 +5867,17 @@ app.post("/gifts/import-history", requireAuth, checkWriteAccess, wrap(async (req
   const affectedDonorIds = new Set();
   const batchErrors = [];
 
+  // BUILD-72 Part 1 — ONE transaction for the request, SAVEPOINT per batch, and
+  // the reconciliation invariant asserted before it commits.
+  await withTransaction(async (txc) => {
   for (let bi = 0; bi < toInsert.length; bi += BATCH) {
     const batch = toInsert.slice(bi, bi + BATCH);
     const ftParams = [], ftTuples = []; // fin_transactions rows for current-FY gifts in this batch
     let keptInBatch = 0;
-    try {
-      await withTransaction(async (client) => {
+    const keptRows = [];
+    {
+      const bres = await withSavepoint(txc, `hbatch_${bi}`, async () => {
+        const client = txc;
         for (const g of batch) {
           const id = importId("g_");
           // F-4: external-ID rows are cross-run idempotent at the DB — a
@@ -5555,8 +5888,8 @@ app.post("/gifts/import-history", requireAuth, checkWriteAccess, wrap(async (req
              ON CONFLICT (org_id, external_id) WHERE external_id IS NOT NULL DO NOTHING RETURNING id`,
             [id, orgId, g.donorId, g.amount, g.date, g.type, g.campaign, g.fund_id, g.notes, g.externalId || null]
           );
-          if (!kept.length) { externalIdDupes++; continue; }
-          keptInBatch++;
+          if (!kept.length) { g._conflicted = true; continue; }
+          keptInBatch++; keptRows.push(g);
           const intNote = `Gift received: $${g.amount.toLocaleString()} (${g.type})${g.notes ? " — " + g.notes : ""}`;
           await runTx(client,
             "INSERT INTO interactions (id,org_id,donor_id,type,note,date,created_by,logged_by_name) VALUES (?,?,?,?,?,?,?,?)",
@@ -5581,13 +5914,28 @@ app.post("/gifts/import-history", requireAuth, checkWriteAccess, wrap(async (req
           );
         }
       });
-      inserted += keptInBatch;
-      financeSynced += ftTuples.length;
-    } catch (e) {
-      console.error(`[gift-import] batch ${bi}–${bi+batch.length} failed:`, e.message);
-      batchErrors.push({ error: e.message });
+      if (bres.ok) {
+        inserted += keptInBatch;
+        financeSynced += ftTuples.length;
+        const keptSet = new Set(keptRows);
+        for (const g of batch) {
+          if (keptSet.has(g)) { ledger.created(g.amount); continue; }
+          // Refused by the external-ID unique — already imported on an earlier
+          // run. A skip, not a loss, and counted either way.
+          externalIdDupes++;
+          ledger.skipped("external_id_already_imported", g.amount);
+        }
+      } else {
+        console.error(`[gift-import] batch ${bi}–${bi+batch.length} failed:`, bres.error.message);
+        batchErrors.push({ rows: `${bi+1}–${bi+batch.length}`, error: bres.error.message });
+        for (const g of batch) ledger.errored("gift_insert_failed", g.amount);
+      }
     }
   }
+
+  // THE ASSERTION — before commit. A throw rolls the whole import back.
+  ledger.assertBalanced();
+  }); // end withTransaction
 
   // Recalc donor summaries — always full recalc from gifts table, never delta.
   // ONE set-based query (import hang fix), not a per-donor loop.
@@ -5645,9 +5993,16 @@ app.post("/gifts/import-history", requireAuth, checkWriteAccess, wrap(async (req
     } catch (e) { console.error(`[gift-import] stage inference failed:`, e.message); }
   }
 
-  res.json({ inserted, duplicates: heldForReview.length + externalIdDupes, invalid,
+  res.json({ inserted, duplicates: externalIdDupes, invalid,
              donorsUpdated: affectedDonorIds.size, financeSynced, batchErrors,
-             heldForReview, duplicateCandidates, externalIdDupes });
+             duplicateCandidates, externalIdDupes,
+             // BUILD-72 Part 1 — the default is KEEP ALL. Nothing is held back;
+             // these are surfaced for review, and `heldForReview` stays as an
+             // always-empty field so an older client cannot misread the shape.
+             heldForReview: [], duplicateGroups,
+             matchesExistingCount: matchesExisting.length,
+             reconciliation: ledger.report(),
+             roundingAdjustment: round2(roundingAdjustment) });
 }));
 
 app.get("/donors/:id/planned-gifts", requireAuth, wrap(async (req, res) => {

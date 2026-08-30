@@ -73,14 +73,30 @@ const countGifts  = async o => (await q(`SELECT COUNT(*)::int n FROM gifts WHERE
   const carol = await donorRow(A, "carol@ic.local");
   ok("Carol $1500 @120d → solicit", carol.stage === "solicit", carol.stage);
 
-  // ── 2. Idempotent re-run — same file again adds no donors, no gift dupes ──
+  // ── 2. Re-run — donors dedupe; gifts LAND and are FLAGGED (BUILD-72 Part 1) ──
+  // REVIEWED MONEY-CONTRACT CHANGE. This used to assert "re-run attaches 0 new
+  // gifts", which was true for the wrong reason: a matched donor's gifts were
+  // silently DISCARDED (BUILD-72 Part 0 finding 0.1b — a second file with known
+  // donors and $1,800 of new gifts landed $0). Idempotence-by-data-loss is not
+  // idempotence. The importer now attaches them and SURFACES the collision:
+  // same donor, same date, same amount => a `matches_existing` group, default
+  // keep. A duplicate the user can delete beats a gift they never learn about.
   const rerun = await api("POST", "/donors/import-combined", tA, { donors, gifts });
   ok("re-run 200", rerun.status === 200, rerun.body);
   ok("re-run creates 0 donors", rerun.body.created === 0, rerun.body);
   ok("re-run reports 3 duplicates", rerun.body.duplicates === 3, rerun.body);
-  ok("re-run attaches 0 new gifts", rerun.body.giftsInserted === 0, rerun.body);
+  ok("re-run MATCHED all 3 donors (their gifts route to the existing records)",
+     rerun.body.donorsMatched === 3, rerun.body);
+  ok("re-run attaches every gift — none silently dropped (0.1b)",
+     rerun.body.giftsInserted === 6, rerun.body);
+  ok("re-run FLAGS all 6 as matching gifts already on file",
+     rerun.body.matchesExistingCount === 6, rerun.body.duplicateGroups);
+  ok("re-run reconciles: 6 in, 6 created, 0 lost",
+     rerun.body.reconciliation.balanced === true
+     && rerun.body.reconciliation.rows.inFile === 6
+     && rerun.body.reconciliation.rows.created === 6, rerun.body.reconciliation);
   ok("still exactly 3 donors after re-run", (await countDonors(A)) === 3, await countDonors(A));
-  ok("still exactly 6 gifts after re-run", (await countGifts(A)) === 6, await countGifts(A));
+  ok("12 gifts after re-run (6 original + 6 flagged re-imports)", (await countGifts(A)) === 12, await countGifts(A));
 
   // ── 3. Org isolation — same email in org B is independent; A untouched ────
   const impB = await api("POST", "/donors/import-combined", tB, {
@@ -92,7 +108,9 @@ const countGifts  = async o => (await q(`SELECT COUNT(*)::int n FROM gifts WHERE
   ok("org A still has exactly 3 donors", (await countDonors(A)) === 3, await countDonors(A));
   ok("org B has exactly 1 donor", (await countDonors(B)) === 1, await countDonors(B));
   const janeA = await donorRow(A, "jane@ic.local");
-  ok("org A Jane's total unchanged by org B import", Number(janeA.total_giving) === 750, janeA.total_giving);
+  // 1500 = her 750 twice, from the deliberate re-run above — org B never
+  // touched it, which is what this row is actually pinning.
+  ok("org A Jane's total unchanged by org B import", Number(janeA.total_giving) === 1500, janeA.total_giving);
 
   // ── 4. Large import doesn't hang — 1,500 donors + 1,500 gifts, batched ────
   const bigDonors = [], bigGifts = [];

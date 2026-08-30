@@ -192,26 +192,52 @@ async function counts(donorId) {
   ok("external-ID re-run inserts ZERO (DB-level cross-run idempotency)",
     rerun.status === 200 && rerun.body.inserted === 0 && rerun.body.externalIdDupes === 2, rerun.body);
 
-  // A no-ID row matching an existing gift → HELD, not inserted, not dropped.
+  // BUILD-72 Part 1 — REVIEWED MONEY-CONTRACT CHANGE. A no-ID row matching an
+  // existing gift used to be HELD and NOT inserted unless the caller re-sent
+  // with includeDuplicates:true — i.e. the DEFAULT WAS SKIP. Steward cannot
+  // tell two gala tickets from a doubled file, so a default of skip loses real
+  // money every time it guesses wrong. The default is now KEEP ALL: the row is
+  // imported and its group is surfaced for review.
   const held = await api("POST", "/gifts/import-history", tok, {
     gifts: [
-      { donorId: edId, amount: 50, date: "2026-08-01" },          // collides with TXN-001's (donor,amount,date)
+      { donorId: edId, amount: 50, date: "2026-08-01" },          // collides with TXN-001's (donor,date,amount)
       { donorId: edId, amount: 75, date: "2026-08-03" },          // clean row
     ],
   });
-  ok("clean row inserted, colliding row HELD for review",
-    held.body.inserted === 1 && Array.isArray(held.body.heldForReview) && held.body.heldForReview.length === 1, held.body);
-  ok("held row carries its details for the report",
-    held.body.heldForReview[0].amount === 50 && held.body.heldForReview[0].date === "2026-08-01", held.body.heldForReview);
+  ok("BOTH rows import — the colliding one is never held back",
+    held.body.inserted === 2, held.body);
+  ok("nothing is held (the field survives, always empty)",
+    Array.isArray(held.body.heldForReview) && held.body.heldForReview.length === 0, held.body.heldForReview);
+  ok("the collision is SURFACED as a matches_existing group",
+    held.body.matchesExistingCount === 1
+    && held.body.duplicateGroups.some(g => g.kind === "matches_existing" && g.amount === 50 && g.date === "2026-08-01"),
+    held.body.duplicateGroups);
+  ok("import-history reconciles: 2 in, 2 created, 0 lost",
+    held.body.reconciliation.balanced === true
+    && held.body.reconciliation.rows.inFile === 2
+    && held.body.reconciliation.rows.created === 2, held.body.reconciliation);
 
-  // The human decides: includeDuplicates imports the held row.
-  const forced = await api("POST", "/gifts/import-history", tok, {
-    includeDuplicates: true,
-    gifts: [{ donorId: edId, amount: 50, date: "2026-08-01" }],
+  // Deselecting is the user's EXPLICIT act, by rowKey — and it is counted.
+  const deselected = await api("POST", "/gifts/import-history", tok, {
+    skipRowKeys: [`${edId}|2026-08-05|60`],
+    gifts: [
+      { donorId: edId, amount: 60, date: "2026-08-05" },   // user deselected this one
+      { donorId: edId, amount: 70, date: "2026-08-05" },   // kept
+    ],
   });
-  ok("includeDuplicates:true imports the reviewed row", forced.body.inserted === 1, forced.body);
+  ok("a deselected row is skipped, and COUNTED as user_deselected",
+    deselected.body.inserted === 1
+    && deselected.body.reconciliation.skippedReasons.user_deselected?.rows === 1
+    && deselected.body.reconciliation.skippedReasons.user_deselected?.dollars === 60,
+    deselected.body.reconciliation);
+  ok("an import with a deliberate skip still reconciles",
+    deselected.body.reconciliation.balanced === true
+    && deselected.body.reconciliation.rows.inFile === 2
+    && deselected.body.reconciliation.rows.created === 1
+    && deselected.body.reconciliation.rows.skipped === 1, deselected.body.reconciliation);
+
   const edGifts = await q(`SELECT COUNT(*)::int AS n FROM gifts WHERE donor_id=$1`, [edId]);
-  ok("donor ends with 4 gifts (2 ext-ID + $75 + reviewed $50)", edGifts[0].n === 4, edGifts[0]);
+  ok("donor ends with 5 gifts (2 ext-ID + $75 + kept $50 + kept $70)", edGifts[0].n === 5, edGifts[0]);
 
   // Two same-day/same-amount rows WITHIN one history file both import.
   const twins = await api("POST", "/gifts/import-history", tok, {

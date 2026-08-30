@@ -98,7 +98,19 @@ const N = 6;
     const dCount = Number((await q(`SELECT COUNT(*) c FROM donors WHERE org_id=$1 AND email LIKE 'dup%@c44.local'`, [ORG]))[0].c);
     const gCount = Number((await q(`SELECT COUNT(*) c FROM gifts g JOIN donors d ON d.id=g.donor_id WHERE g.org_id=$1 AND d.email LIKE 'dup%@c44.local'`, [ORG]))[0].c);
     ok("dup import: each donor exactly ONCE (advisory lock holds)", dCount === 20, dCount);
-    ok("dup import: each gift exactly ONCE", gCount === 20, gCount);
+    // BUILD-72 Part 1 — REVIEWED MONEY-CONTRACT CHANGE. The same file submitted
+    // twice is indistinguishable from a donor who genuinely gave the same
+    // amount on the same day twice, so the importer imports both and SURFACES
+    // the collision rather than guessing. "Each gift exactly once" was only
+    // true because the second import silently DISCARDED every gift belonging to
+    // a donor it deduped (Part 0 finding 0.1b) — idempotence by data loss.
+    ok("dup import: every gift from BOTH files lands (none silently discarded)", gCount === 40, gCount);
+    ok("dup import: both requests reconcile — nothing unaccounted for",
+       r1.body.reconciliation?.balanced === true && r2.body.reconciliation?.balanced === true,
+       [r1.body.reconciliation, r2.body.reconciliation]);
+    ok("dup import: the second file's collisions are SURFACED for review",
+       (r1.body.matchesExistingCount || 0) + (r2.body.matchesExistingCount || 0) === 20,
+       [r1.body.matchesExistingCount, r2.body.matchesExistingCount]);
   }
 
   // ── 4. double-submitted pledge payment ──

@@ -400,6 +400,111 @@ those, not just delete the row.
 
 ---
 
+# PART 1 — THE IMPORT RECONCILIATION INVARIANT (and F-4)
+
+Committed as its own change with its fixture and tests. Battery: **105 suites /
+0 failed** (up from 104 — the three browser suites now genuinely RUN instead of
+skipping; see P1-6).
+
+## P1-1 · The invariant
+
+`importLedger()` in `server.js` is the one seam. Every importer that moves money
+keeps a ledger, and every row it touches lands in exactly one bucket:
+
+    rows_in_file    = created + skipped_by_user + errored
+    dollars_in_file = created + skipped_by_user + errored
+
+Computed by the importer itself, **asserted before the transaction commits**,
+and returned to the client, which renders the arithmetic on the summary screen
+under "Every row and every dollar accounted for". A file that does not balance
+is refused with **409** naming the discrepancy in dollars, and nothing is
+written.
+
+Applied to `/donors/import-combined` (Shape A wide + transaction), to
+`/gifts/import-history`, and to `/donors/import` — the donors-only path commits
+per batch and is independently recoverable, so there the assertion is a loud
+server-side report rather than a rollback, which is stated in the code.
+
+## P1-2 · Abort and roll back, without losing per-batch tolerance
+
+The two money paths now hold **ONE transaction per request** with the assertion
+inside it. But `rows_errored` is a legitimate bucket, so a single bad batch must
+be survivable *and counted* rather than killing the request — and Postgres
+aborts a whole transaction on any statement error. Each batch therefore runs in
+its own **SAVEPOINT** (`withSavepoint`): released on success, rolled back to on
+failure, its rows counted as `errored`. The final assertion still rolls back
+everything.
+
+## P1-3 · 0.1b fixed — a matched donor's gifts land
+
+The dedup now keeps the existing donor's **id** instead of discarding it, so a
+matched donor's gifts attach to the record already on file. Part 0's exact
+input now lands 3 rows / $1,800 where it previously landed $0.
+
+## P1-4 · Duplicates are surfaced, never resolved — and the default flipped
+
+A potential-duplicate group is same resolved donor + same date + same amount.
+Two kinds are detected and returned in `duplicateGroups`: `within_file` twins,
+and `matches_existing` (a row matching a gift already on file — the honest
+consequence of P1-3, since re-uploading a file now genuinely creates a second
+set of gifts). **Default selection is keep-all**; deselection is explicit, by
+`skipRowKeys`, and counted as `user_deselected`. Headless or skipped review
+creates everything and the summary states how many groups were auto-kept.
+
+`/gifts/import-history` **defaulted to SKIP** before this build (0.1c): a no-ID
+row matching an existing gift was held back unless the caller re-sent with
+`includeDuplicates:true`. That default is now keep-all. `heldForReview` remains
+in the response as an always-empty array so an older client cannot misread the
+shape.
+
+## P1-5 · Four reviewed money-contract changes in the existing battery
+
+Each was pinning the *old* behavior, and in three cases pinning the bug itself.
+Every one is annotated in place with why it changed:
+
+| Suite | Was | Now |
+|---|---|---|
+| `import-combined` | "re-run attaches 0 new gifts" | re-run attaches all 6 and flags them; 12 gifts total |
+| `import-both` | "re-run attached 0 gifts" | every gift lands, all flagged |
+| `gift-idempotency` §F-4 | colliding row HELD, `includeDuplicates` to force | both import; collision surfaced; deselection counted |
+| `concurrency` §3 / `concurrency2` §3 | "each gift exactly ONCE" | lands once per file, collision surfaced, both reconcile |
+
+**"Idempotence by data loss is not idempotence."** Every one of those green
+assertions was describing the 0.1b bug approvingly.
+
+## P1-6 · `tests/import-reconciliation.test.js` (53 assertions, in run-all)
+
+- The Part 0 fixture matrix, asserting **dollar totals** and per-case counts.
+- 0.1b directly: a matched donor's $1,800 must land.
+- **The invariant vs a sabotaged importer.** A test-only seam (gated on
+  `DISABLE_RATE_LIMIT`, i.e. the scratch/CI boot, never prod) drops rows exactly
+  where every real silent-loss bug in this file has lived — after the row was
+  seen, with nothing recording where it went. The import must be **refused with
+  409, name the gap in dollars, and roll back so completely that not even the
+  donor row survives.** A guard nobody has watched fail is a guess.
+- The **family**, not one case: group sizes 2, 3, 12 and 40.
+- **5,000 rows** (1,000 donors × 5 gifts, $270,600) — reconciles in ~540ms.
+- Keep-all by default; deselection explicit and counted in dollars.
+
+Two more harness fixes were needed and are the same class as S-1/S-2:
+`empty-states` and `presentation-wiring` skipped unless `client/dist` contained
+the literal `localhost:5601`; they now derive the expected origin from `BASE`.
+With `client/dist` built against this run's API (and `VITE_ASSET_ORIGIN`, the
+override BUILD-59 already documented), **`empty-states` (20), `presentation-wiring`
+(36), `landing-reveal` (7) and `portal-visual` (29) now genuinely run.**
+
+## P1-7 · Carried forward, not fixed here
+
+**Cents are still truncated on import.** `Math.round()` on every gift amount
+means a $33.33 row stores as $33. The ledger normalizes consistently so the
+invariant stays meaningful, and the loss is now **surfaced** rather than hidden:
+the response carries `roundingAdjustment` and the summary screen says
+"Amounts are stored in whole dollars; $X of cents was rounded off." Deciding
+whether money becomes cents-accurate is **Part 3's**, since it touches every
+money write path and every test asserting whole dollars.
+
+---
+
 # PART 0 SIDE-FINDINGS — the harness itself
 
 Two defects found while standing the battery up to *do* Part 0. Neither is a

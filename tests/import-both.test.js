@@ -132,13 +132,20 @@ const countDonors = async o => (await q(`SELECT COUNT(*)::int n FROM donors WHER
   const dave = await donorRow(A, "dave@x.org");
   ok("Dave (unmatched) created with his gift → steward", dave && dave.stage === "steward" && Number(dave.total_giving) === 250, dave);
 
-  // Idempotent re-run — every donor deduped by email, zero new rows.
+  // Re-run — every DONOR dedupes by email and no donor row is created. Their
+  // GIFTS now land and are flagged (BUILD-72 Part 1; the old "attached 0 gifts"
+  // assertion was pinning the 0.1b data-loss bug, where a matched donor's gifts
+  // were silently discarded).
   const before = await countDonors(A);
   const rerun = await api("POST", "/donors/import-combined", tA, { donors: byEmail.donors, gifts: byEmail.gifts });
   ok("re-run 200", rerun.status === 200, rerun.body);
   ok("re-run created 0 donors", rerun.body.created === 0, rerun.body);
   ok("re-run reports 4 duplicates", rerun.body.duplicates === 4, rerun.body);
-  ok("re-run attached 0 gifts", rerun.body.giftsInserted === 0, rerun.body);
+  ok("re-run matched all 4 donors", rerun.body.donorsMatched === 4, rerun.body);
+  ok("re-run attached every gift, none dropped", rerun.body.giftsInserted === byEmail.gifts.length, rerun.body);
+  ok("re-run flagged them as matching gifts already on file",
+     rerun.body.matchesExistingCount === byEmail.gifts.length, rerun.body.duplicateGroups);
+  ok("re-run reconciles", rerun.body.reconciliation.balanced === true, rerun.body.reconciliation);
   ok("donor count unchanged after re-run", (await countDonors(A)) === before, { before, after: await countDonors(A) });
 
   // ── 5. Org isolation ─────────────────────────────────────────────────────

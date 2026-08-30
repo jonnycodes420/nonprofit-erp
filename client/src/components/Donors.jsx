@@ -408,7 +408,14 @@ async function submitImportChunked(donors, gifts, onProgress) {
     if (!giftsByDonor.has(g.donorIndex)) giftsByDonor.set(g.donorIndex, []);
     giftsByDonor.get(g.donorIndex).push(g);
   }
-  const totals = { created: 0, giftsInserted: 0, duplicates: 0, donorsUpdated: 0, financeSynced: 0, batchErrors: [], twinCandidates: 0 };
+  const totals = { created: 0, giftsInserted: 0, duplicates: 0, donorsUpdated: 0, financeSynced: 0, batchErrors: [], twinCandidates: 0,
+    // BUILD-72 Part 1 — the file-level reconciliation, summed across chunks.
+    // The server asserts it per request; this is what the user is shown.
+    donorsMatched: 0, matchesExistingCount: 0, roundingAdjustment: 0,
+    reconciliation: { rows: { inFile: 0, created: 0, skipped: 0, errored: 0 },
+                      dollars: { inFile: 0, created: 0, skipped: 0, errored: 0 },
+                      skippedReasons: {}, erroredReasons: {}, balanced: true },
+    duplicateGroups: [] };
   const total = donors.length;
   if (!total) return totals;
   for (let start = 0; start < total; start += CHUNK) {
@@ -430,6 +437,28 @@ async function submitImportChunked(donors, gifts, onProgress) {
     totals.twinCandidates += (res.duplicateCandidates && res.duplicateCandidates.withinFile) || 0;
     totals.donorsUpdated += res.donorsUpdated || 0;
     totals.financeSynced += res.financeSynced || 0;
+    totals.donorsMatched += res.donorsMatched || 0;
+    totals.matchesExistingCount += res.matchesExistingCount || 0;
+    totals.roundingAdjustment += res.roundingAdjustment || 0;
+    if (res.duplicateGroups?.length) totals.duplicateGroups.push(...res.duplicateGroups);
+    // Sum the per-request equations into one file-level equation. If ANY chunk
+    // failed to balance the whole file is reported unbalanced — a file is only
+    // reconciled if every part of it was.
+    const rr = res.reconciliation;
+    if (rr) {
+      for (const axis of ["rows", "dollars"])
+        for (const k of ["inFile", "created", "skipped", "errored"])
+          totals.reconciliation[axis][k] += rr[axis][k] || 0;
+      for (const [reason, v] of Object.entries(rr.skippedReasons || {})) {
+        const e = totals.reconciliation.skippedReasons[reason] || (totals.reconciliation.skippedReasons[reason] = { rows: 0, dollars: 0 });
+        e.rows += v.rows; e.dollars += v.dollars;
+      }
+      for (const [reason, v] of Object.entries(rr.erroredReasons || {})) {
+        const e = totals.reconciliation.erroredReasons[reason] || (totals.reconciliation.erroredReasons[reason] = { rows: 0, dollars: 0 });
+        e.rows += v.rows; e.dollars += v.dollars;
+      }
+      if (rr.balanced === false) totals.reconciliation.balanced = false;
+    }
     if (res.batchErrors?.length) totals.batchErrors.push(...res.batchErrors);
     if (onProgress) onProgress(Math.min(start + CHUNK, total), total);
   }
@@ -935,6 +964,61 @@ export function DonorImport({ onClose, onImported, withHistory = false }) {
             {result.warned > 0    && <> · <strong>{result.warned}</strong> imported with warnings</>}
             {result.skipped > 0   && <> · <strong>{result.skipped}</strong> skipped (no name or email)</>}
           </div>
+          {/* BUILD-72 Part 1 — THE RECONCILIATION, on the user's screen.
+              rows_in_file = created + skipped + errored, and the same for
+              dollars. The user sees the arithmetic, not a reassurance that it
+              worked. If it does not balance the server has already refused the
+              import (409) and nothing was written — this panel only ever
+              renders a balanced file or the shape of what went where. */}
+          {result.reconciliation && result.reconciliation.rows.inFile > 0 && (() => {
+            const R = result.reconciliation;
+            const money = n => "$" + Number(n || 0).toLocaleString(undefined, { maximumFractionDigits: 2 });
+            const line = (label, rows, dollars, tone) => (
+              <div style={{display:"flex",justifyContent:"space-between",gap:12,color:tone||T.ink2}}>
+                <span>{label}</span>
+                <span style={{fontVariantNumeric:"tabular-nums"}}>{rows.toLocaleString()} · {money(dollars)}</span>
+              </div>
+            );
+            return <div style={{textAlign:"left",background:T.bg2,border:`1px solid ${T.bg3}`,borderRadius:10,padding:"12px 16px",marginBottom:16,fontSize:12,lineHeight:1.8}}>
+              <div style={{fontSize:10,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",color:T.ink3,marginBottom:6}}>
+                Every row and every dollar accounted for
+              </div>
+              {line("In your file", R.rows.inFile, R.dollars.inFile, T.ink)}
+              <div style={{height:1,background:T.bg3,margin:"6px 0"}} />
+              {line("Imported", R.rows.created, R.dollars.created)}
+              {R.rows.skipped > 0 && line("Skipped", R.rows.skipped, R.dollars.skipped)}
+              {Object.entries(R.skippedReasons || {}).map(([reason, v]) =>
+                <div key={reason} style={{paddingLeft:12,color:T.ink3,fontSize:11}}>
+                  {reason.replace(/_/g," ")}: {v.rows.toLocaleString()} · {money(v.dollars)}
+                </div>)}
+              {R.rows.errored > 0 && line("Errored", R.rows.errored, R.dollars.errored, T.terracotta)}
+              {Object.entries(R.erroredReasons || {}).map(([reason, v]) =>
+                <div key={reason} style={{paddingLeft:12,color:T.terracotta,fontSize:11}}>
+                  {reason.replace(/_/g," ")}: {v.rows.toLocaleString()} · {money(v.dollars)}
+                </div>)}
+              <div style={{height:1,background:T.bg3,margin:"6px 0"}} />
+              <div style={{display:"flex",justifyContent:"space-between",gap:12,fontWeight:700,
+                           color: R.balanced ? T.ink : T.terracotta}}>
+                <span>{R.balanced ? "Balanced" : "DOES NOT BALANCE"}</span>
+                <span style={{fontVariantNumeric:"tabular-nums"}}>
+                  {(R.rows.created + R.rows.skipped + R.rows.errored).toLocaleString()} · {money(R.dollars.created + R.dollars.skipped + R.dollars.errored)}
+                </span>
+              </div>
+              {result.matchesExistingCount > 0 && (
+                <div style={{marginTop:8,paddingTop:8,borderTop:`1px solid ${T.bg3}`,color:T.ink2}}>
+                  <strong style={{color:T.ink}}>{result.matchesExistingCount}</strong>{" "}
+                  {result.matchesExistingCount === 1 ? "gift matches one" : "gifts match ones"} already on file
+                  (same donor, date and amount). {result.matchesExistingCount === 1 ? "It was" : "They were"} imported —
+                  review and delete any that are genuine duplicates.
+                </div>
+              )}
+              {Math.abs(result.roundingAdjustment || 0) >= 0.005 && (
+                <div style={{marginTop:6,color:T.ink3,fontSize:11}}>
+                  Amounts are stored in whole dollars; {money(Math.abs(result.roundingAdjustment))} of cents was rounded off.
+                </div>
+              )}
+            </div>;
+          })()}
           {/* BUILD-58 Part 2 — nothing in the file vanishes silently: every
               column is mapped, deliberately ignored, or called out as
               unrecognized; every skipped ROW has a stated reason. */}

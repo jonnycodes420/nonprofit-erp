@@ -141,7 +141,7 @@ const movesFor = id => q(`SELECT id, from_stage, to_stage FROM moves WHERE donor
   // ═══ Scenario 3 — parallel imports, overlapping files ═══
   console.log("\n── 3. parallel imports — overlapping emails dedupe, gifts attach once ──");
   const { groupTransactions } = await import("../client/src/lib/importShape.js");
-  let importDupe = false, importErr = false, giftDupe = false;
+  let importDupe = false, importErr = false, giftDupe = false, giftFlagMissing = false;
   for (let i = 0; i < N; i++) {
     const shared = `cc3_shared_${i}@cc.local`;
     const mk = uniq => groupTransactions([
@@ -155,14 +155,26 @@ const movesFor = id => q(`SELECT id, from_stage, to_stage FROM moves WHERE donor
     if (r1.status !== 200 || r2.status !== 200) importErr = true;
     const dCount = (await q(`SELECT COUNT(*)::int n FROM donors WHERE org_id=$1 AND email=$2 AND deleted_at IS NULL`, [A, shared]))[0].n;
     if (dCount !== 1) importDupe = true;
-    // The shared donor's gift must attach once, not once-per-import.
+    // BUILD-72 Part 1 — REVIEWED MONEY-CONTRACT CHANGE. Two files each carrying
+    // the same donor with a $100 gift on the same date is EXACTLY the case the
+    // product cannot resolve: two real gifts, or one file uploaded twice. It
+    // must not guess. This used to assert "attaches exactly once", which was
+    // true only because the second import silently DISCARDED the gift of a
+    // donor it deduped (0.1b). Both now land, and the collision is surfaced.
     const shId = (await q(`SELECT id FROM donors WHERE org_id=$1 AND email=$2 AND deleted_at IS NULL LIMIT 1`, [A, shared]))[0]?.id;
     const gCount = (await q(`SELECT COUNT(*)::int n FROM gifts WHERE donor_id=$1`, [shId]))[0].n;
-    if (gCount !== 1) giftDupe = true;
+    if (gCount !== 2) giftDupe = true;
+    // Both requests must reconcile — under a race, nothing may go unaccounted.
+    if (r1.body?.reconciliation?.balanced === false || r2.body?.reconciliation?.balanced === false) importErr = true;
+    // The advisory lock serializes the two imports per org, so the one that
+    // runs second sees the first's committed gift and FLAGS the collision.
+    const flagged = (r1.body?.matchesExistingCount || 0) + (r2.body?.matchesExistingCount || 0);
+    if (flagged < 1) giftFlagMissing = true;
   }
-  ok("3: both parallel imports complete cleanly (no deadlock/500)", !importErr);
+  ok("3: both parallel imports complete cleanly (no deadlock/500, both reconcile)", !importErr);
   ok("3: an overlapping email yields EXACTLY one donor (dedupe held under race)", !importDupe);
-  ok("3: the shared donor's gift attaches exactly once", !giftDupe);
+  ok("3: the shared donor's gift lands once PER FILE — neither is discarded", !giftDupe);
+  ok("3: the collision is SURFACED, not silently resolved", !giftFlagMissing);
 
   // ═══ Scenario 4 — pipeline contention ═══
   console.log("\n── 4. pipeline contention — two officers move the same prospect ──");
