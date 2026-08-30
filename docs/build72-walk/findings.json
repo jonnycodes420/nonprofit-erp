@@ -1,0 +1,22 @@
+{
+  "pass": 74,
+  "fail": 0,
+  "findings": [
+    {
+      "name": "1440: could not open a drifted donor from the donors list",
+      "soft": true
+    },
+    {
+      "soft": true,
+      "name": "1440/settings: could not drive the Settings→Giving tab from the capture — timezone control NOT visually confirmed at this width (asserted by tests/date-seam.test.js §6 instead)"
+    },
+    {
+      "name": "390: could not open a drifted donor from the donors list",
+      "soft": true
+    },
+    {
+      "soft": true,
+      "name": "390/settings: could not drive the Settings→Giving tab from the capture — timezone control NOT visually confirmed at this width (asserted by tests/date-seam.test.js §6 instead)"
+    }
+  ]
+}

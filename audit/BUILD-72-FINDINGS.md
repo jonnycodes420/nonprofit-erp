@@ -963,6 +963,109 @@ standalone is evidence about the *environment*, not the code.
 
 ---
 
+# PART 5 — THE DEMO SEED AND THE WALK
+
+## P5-1 · The seed — idempotent by TEARDOWN
+
+`scripts/seed-build72-demo.js` (GUARDED_WRITERS). **Harborlight Youth Collective**
+— 1,072 donors · 2,869 gifts · $6.3M lifetime · **top 200 carry 87.7%** (the FEP
+shape) · every pipeline stage populated. One command, ~4s, safe at 9:55pm before
+a 10pm call.
+
+Part 1 made teardown mandatory: re-importing a file now legitimately creates
+duplicate gifts (the correct trade), so the seed **drops and recreates** the org
+rather than importing over itself. Two consecutive runs produce **byte-identical
+totals**.
+
+**It exercises the new paths**, so this build is visible on screen rather than
+theoretical: a pledge **partially paid** ($4,000 of $10,000, open), a pledge
+**overpaid with a recorded surplus** ($5,750 of $5,000 → fulfilled, surplus
+$750), a recurring gift with a **failed card** (`past_due`), a gift carrying
+**cents** ($1,234.56), a lapsed major donor ($125,000 lifetime, silent since
+2024), a donor with two addresses, and a two-person household.
+
+**The eleven** are the pitch: consistent multi-year mid-level giving, nothing
+this year, assigned to the signed-in director so they sit at the top of the day
+view.
+
+## P5-2 · It cannot touch production or Kingdom Builders — proven, not asserted
+
+Four refusals, each **executed** rather than reasoned about:
+
+| Attempt | Result |
+|---|---|
+| `DATABASE_URL=…/kb_test` | REFUSED — server reports `steward_loadtest`, connection is `kb_test`, "one of them is not what you think" |
+| `BASE=…:5601` (the Kingdom Builders server) | REFUSED — could not verify identity before writing |
+| `DATABASE_URL=…/postgres` (production's database name) | REFUSED — name mismatch |
+| `BASE=<the production URL>` | REFUSED — needs `--i-know-this-is-prod` |
+
+Layers: `writerBase` loopback default → `--i-know-this-is-prod` for remote →
+`/health` product+database identity → **an explicit scratch-name allowlist**
+where production and `kb_*` names fail closed.
+
+## P5-3 · What the walk found that the suites could not
+
+`scripts/build72-capture.js` — 1440 and 390, opened as a stranger, **74
+assertions, 0 failed**, screenshots in `docs/build72-walk/`.
+
+**Clean** on the populated org: **no `Invalid Date` anywhere** (the BUILD-44 pass
+only ever cleared the empty org), no `NaN` / `null` / `undefined` /
+`[object Object]`, no failed image loads, no leftover test artifacts
+(`user_0a9d3327` and its family).
+
+**Four real defects found, all fixed:**
+
+1. **`$2720.5k` on the pipeline funnel.** `fmt()` in `lib/money.js` had no
+   millions branch. Nobody writes "$2720.5k" and a fundraiser reads it as
+   broken. It had never appeared because it only shows on a POPULATED org —
+   every fixture was under $1M. Fixed, and the fix exposed the same class one
+   unit down: **$999,999 rendered "$1000.0k"**. The threshold is now the value
+   that *rounds* to the next unit, with a bare `.0` trimmed → `$2.7M` · `$3M` ·
+   `$1M` · `$1.2k`. Pinned in `finance-funds` (29).
+2. **`666% · Goal met · $1,018,277 over`** on the demo's first screen. The
+   display logic is right (BUILD-45's exceeded-goal rule); the *seed* was wrong.
+   The goal is now derived from what the file actually raised (~85%).
+3. **`PORTFOLIO 0 donors · $0` and an all-zero My Portfolio** on a 1,000-donor
+   org — the "empty state where data exists" Part 5 warns about. The signed-in
+   director had no assigned donors and no logged touchpoints. Fixed: the eleven
+   plus a share of the majors are theirs, with real calls and meetings logged.
+4. **"SET UP STEWARD · 2 of 6"** — the new-org activation checklist on a demo
+   with a decade of giving reads as unfinished setup. Dismissed in the seed.
+
+**Two local-harness artifacts, verified against production before being
+allowlisted** (never silently ignored): `_vercel/insights` 404s (production
+serves them 200) and `/ai/stream` 500 (no `ANTHROPIC_API_KEY` in the scratch
+env; it IS set on the Railway service). The UI degrades gracefully on both — no
+broken card, no rot on screen.
+
+## P5-4 · Written down, NOT fixed — where to look next time
+
+- **The ImpactLine reads as an overclaim on this data**: *"Steward has
+  re-engaged $2M from 610 lapsed donors."* The number is honest by its own
+  definition (a gift after a >365-day gap), but on a file with sparse historical
+  giving that definition sweeps in a large share of ordinary repeat giving and
+  produces a headline no one will believe. BUILD-32 deliberately separated
+  "re-engaged" from the reserved word "recovered" — this is the *next* question:
+  whether a >365-day gap alone should headline a dollar figure. **A demo watcher
+  will ask about this number.**
+- **`$1,472,151.56 of $1,730,000`** — the seeded cents donor makes the goal
+  figure carry cents while everything around it is whole dollars. Honest, and a
+  live illustration of the Step A cents question.
+- **The Settings→Giving tab could not be driven from the capture** at either
+  width (three selector strategies failed on the horizontally-scrolling,
+  unlabeled section strip). The timezone control itself is verified by
+  `date-seam` §6 and rendered correctly in the walk's first pass. Recorded as a
+  NOTE so a green run never implies it was visually checked.
+- **The drifted-donor click-through could not be driven** from the donors list
+  in the final pass. The donor profile itself renders clean (asserted in an
+  earlier pass with real giving history).
+- **Not done: the 8pm-local walk.** Part 5 asks for one after 8pm to prove Part 4
+  in demo conditions. Part 0's live capture already crossed exactly that boundary
+  (19:59:58 → 20:00:58 EDT) and Part 4's suite replays it at 19:59 / 20:01 /
+  23:59, but a human walking the app after 8pm remains the unrun step.
+
+---
+
 # PART 0 SIDE-FINDINGS — the harness itself
 
 Two defects found while standing the battery up to *do* Part 0. Neither is a

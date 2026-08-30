@@ -71,6 +71,18 @@ async function testMoneyHelpers() {
   ok("fmt handles a positive under 1k", fmt(850) === "$850", fmt(850));
   ok("fmt handles a positive over 1k", fmt(1200) === "$1.2k", fmt(1200));
   ok("fmt handles a numeric string (pg NUMERIC)", fmt("1200") === "$1.2k", fmt("1200"));
+  // BUILD-72 Part 5 — the millions branch. A real donor file's pipeline used to
+  // read "$2720.5k"; nobody writes that and a fundraiser reads it as broken.
+  // Found by the walk on a POPULATED org, which is the only place it appears.
+  ok("fmt rolls over to millions", fmt(2720500) === "$2.7M", fmt(2720500));
+  ok("fmt keeps a round million clean", fmt(3000000) === "$3M", fmt(3000000));
+  ok("fmt handles a large negative million", fmt(-1500000) === "-$1.5M", fmt(-1500000));
+  ok("fmt is exact at the 1M boundary", fmt(1000000) === "$1M", fmt(1000000));
+  // The same class of wrong, one unit down: $999,999 used to render "$1000.0k".
+  ok("just under 1M rolls up rather than reading $1000.0k", fmt(999999) === "$1M", fmt(999999));
+  ok("a round thousand stays clean", fmt(1000) === "$1k", fmt(1000));
+  ok("no bare .0 survives anywhere", ![fmt(1000), fmt(3000000), fmt(999999), fmt(1200)].some(x => /\.0\D/.test(x)),
+     [fmt(1000), fmt(3000000), fmt(999999), fmt(1200)]);
   ok("fmtFull renders cents ($140.50 not $140.5)", fmtFull(140.5) === "$140.50", fmtFull(140.5));
   ok("fmtFull renders a negative", fmtFull(-4200) === "$-4,200", fmtFull(-4200));
   ok("fmtFull renders zero", fmtFull(0) === "$0", fmtFull(0));

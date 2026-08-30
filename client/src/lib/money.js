@@ -7,16 +7,28 @@
 // NUMERIC pg-serialized as a string, or a missing field must NEVER throw —
 // fmt(null) used to crash the Funds view via null.toLocaleString().
 
-// Compact: $1.2k / $850 / −$36.9k. abs() keeps large NEGATIVE values in the "k"
-// branch (a treasurer's −$36,898 reads as −$36.9k, not "$-36,898").
+// Compact: $2.7M / $1.2k / $850 / -$36.9k. abs() keeps large NEGATIVE values in
+// the abbreviated branch (a treasurer's -$36,898 reads as -$36.9k, not
+// "$-36,898").
+//
+// BUILD-72 Part 5 — the MILLIONS branch was missing, so a real donor file's
+// pipeline read "$2720.5k". Nobody writes that, and a fundraiser reads it as
+// broken. It never showed up before because it only appears on a POPULATED
+// org: the BUILD-44 pass cleared the empty one, and every fixture was small
+// enough to stay under $1M. Found by the Part 5 walk, on the first screen.
 export const fmt = n => {
   const v = Number(n);
   if (!Number.isFinite(v)) return "$0";
   const sign = v < 0 ? "-" : "";
   const a = Math.abs(v);
-  return a >= 1000
-    ? `${sign}$${(a / 1000).toFixed(a % 1000 === 0 ? 0 : 1)}k`
-    : `${sign}$${a.toLocaleString()}`;
+  // One decimal, with a bare ".0" trimmed so a round figure reads "$3M" not
+  // "$3.0M". The threshold is the value that ROUNDS to the next unit, not the
+  // unit itself: $999,999 was rendering "$1000.0k" — the same class of wrong as
+  // "$2720.5k", one unit down.
+  const one = x => { const t = x.toFixed(1); return t.endsWith(".0") ? t.slice(0, -2) : t; };
+  if (a >= 999500) return `${sign}$${one(a / 1000000)}M`;
+  if (a >= 1000)   return `${sign}$${one(a / 1000)}k`;
+  return `${sign}$${a.toLocaleString()}`;
 };
 
 // Full: whole dollars stay clean ($1,200); cents-carrying amounts render as

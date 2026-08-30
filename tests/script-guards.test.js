@@ -30,6 +30,11 @@ const read = f => fs.readFileSync(path.join(root, "scripts", f + ".js"), "utf8")
 
 // Writes data (API or DB) — must resolve its target through prodGuard.
 const GUARDED_WRITERS = [
+  // BUILD-72 Part 5 — the demo seed. Loopback default via writerBase, and it
+  // additionally refuses any database name not on an explicit scratch
+  // allowlist (production and kb_* fail closed), plus an identity check that
+  // the server's reported database matches the one being written to.
+  "seed-build72-demo",
   "backfill-campaign-attribution", "build25-workflows-capture", "build35-capture",
   "build36-bulkassign-capture", "build36-notify-capture", "build47-capture",
   "build55-capture", "build57-capture", "build57-import-drill",
@@ -74,6 +79,9 @@ const PROD_READONLY = [
 // Browser-driving captures: default loopback; any writes ride the logged-in
 // app UI (Playwright), not script-issued fetches. Loopback default asserted.
 const LOOPBACK_CAPTURES = [
+  // BUILD-72 Part 5 — the walk. Drives the logged-in app in Playwright and
+  // only reads; its one script-issued fetch is /auth/login.
+  "build72-capture",
   "build14-capture", "build15-capture", "build17-capture", "build19-capture",
   "build19-home-capture", "build21-capture", "build22-capture", "build28-capture",
   "build34-capture", "build36-invite-capture", "build40-mobile-capture", "build61-capture",
