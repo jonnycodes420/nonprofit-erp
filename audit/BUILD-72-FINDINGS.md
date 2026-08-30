@@ -646,6 +646,34 @@ Every money comparison goes through `cents()`.
 
 ---
 
+# WHAT A PUSH TO `main` ACTUALLY DEPLOYS — answered once, so nobody asks again
+
+Verified 2026-08-29 from the repo, not from memory. **A push to `main` deploys
+BOTH surfaces together, gated on a green battery. There is no skew window.**
+
+| Fact | Evidence |
+|---|---|
+| Vercel git auto-build is **OFF** | root `vercel.json` → `"git": {"deploymentEnabled": {"main": false}}` (pinned by `tests/email-links.test.js` §5) |
+| The frontend deploys **only** from CI | `.github/workflows/ci.yml` job `deploy-vercel`, `needs: [test]`, `if: push && ref == main && vars.VERCEL_DEPLOY_ENABLED == 'true'` |
+| That flag is live | GitHub Actions variable `VERCEL_DEPLOY_ENABLED = true` |
+| The backend deploys **only** from CI | job `deploy-railway`, `needs: [test]`, same `if` minus the flag; Railway's own GitHub auto-deploy is disconnected |
+| Both are gated on tests | both carry `needs: [test]`, and `test` runs the full `run-all.sh` battery |
+| Both self-verify | each polls prod for its own `$GITHUB_SHA` (`/health.buildSha` for Railway, the `<meta name="build-sha">` for Vercel) with a 5-minute timeout |
+| Actions is not capped | last three runs `220ab86`, `8ef259c`, `d69b3ef` all `success` (the BUILD-66 Actions-cap block has cleared) |
+
+**So the sequencing worry in the Part 4/5 brief does not apply here.** A frontend
+expecting `organizations.timezone` cannot reach production ahead of a backend
+that has the column: the two deploy jobs start from the same green `test` job on
+the same commit. The only asymmetry possible is `deploy-vercel` being skipped if
+`VERCEL_DEPLOY_ENABLED` were ever unset, which leaves the **backend ahead** — the
+safe direction (a new column no frontend reads yet).
+
+**Standing practice for this build:** push after every part, then
+`node scripts/status.js` until local HEAD == `origin/main` == prod backend ==
+prod frontend before the next part starts.
+
+---
+
 # PART 0 SIDE-FINDINGS — the harness itself
 
 Two defects found while standing the battery up to *do* Part 0. Neither is a
