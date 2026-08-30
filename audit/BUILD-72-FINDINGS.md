@@ -311,24 +311,45 @@ four hours early. Captured live against the scratch stack on 2026-08-29 with two
 seeded tasks (one due today-local `2026-08-29`, one due tomorrow-local
 `2026-08-30`):
 
-A minute-by-minute sampler ran across the boundary. The capture and its full
-table are appended to this file when the run completes; the two seeded tasks are
-`t_b72tz_today` (due `2026-08-29`, org-local today) and `t_b72tz_tomorrow` (due
-`2026-08-30`, org-local tomorrow), read through `GET /dashboard/today`.
+A minute-by-minute sampler ran across the real boundary on the evening of
+2026-08-29, reading `GET /dashboard/today` against the scratch stack. Two tasks
+were seeded: `t_b72tz_today` (due `2026-08-29`, org-local **today**) and
+`t_b72tz_tomorrow` (due `2026-08-30`, org-local **tomorrow**). **Nothing about
+the data changed during the run** — only the wall clock moved.
 
-The predicted behavior, which follows directly from `server.js:7328` + `:7437`
-and does not depend on the capture:
+```
+local time                UTC       UTC date     today's task: daysOverdue
+Sat Aug 29 2026 19:55:58  23:55:58  2026-08-29   0
+Sat Aug 29 2026 19:56:58  23:56:58  2026-08-29   0
+Sat Aug 29 2026 19:57:58  23:57:58  2026-08-29   0
+Sat Aug 29 2026 19:58:58  23:58:58  2026-08-29   0
+Sat Aug 29 2026 19:59:58  23:59:58  2026-08-29   0
+Sat Aug 29 2026 20:00:58  00:00:58  2026-08-30   1     ← flip
+Sat Aug 29 2026 20:01:58  00:01:58  2026-08-30   1
+Sat Aug 29 2026 20:02:58  00:02:58  2026-08-30   1
+Sat Aug 29 2026 20:03:58  00:03:58  2026-08-30   1
+Sat Aug 29 2026 20:04:58  00:04:58  2026-08-30   1
+```
 
-- **Before 20:00 EDT** — `todayStr = 2026-08-29`. Tomorrow's task is correctly
-  absent; today's task shows `daysOverdue: 0`.
-- **From 20:00 EDT** — UTC rolls to `2026-08-30` while the Eastern org is still
-  on Saturday evening. `t.due <= todayStr` now admits **tomorrow's** task, so
-  Sunday's work appears on Saturday's list; and `t.due < todayStr` becomes true
-  for **today's** task, so a task due today renders as **1 day overdue** on the
-  evening of the day it is due.
+**Between 19:59:58 and 20:00:58 EDT — one minute, on a Saturday evening — a task
+due today began rendering as "1 day overdue" on the day view.** The org is still
+on Saturday. The task is still due Saturday. Only `server.js:7598`'s
+`t.due < todayStr` changed its mind, because `todayStr` is UTC.
 
-Four hours early, every day, for every Eastern org — on the first screen of the
-product.
+**Second leg** (`.b72probe/p04d.js`, run at 20:05:44 EDT on its own donor — the
+first sampler put both tasks on one donor and `upsertItem` keeps one item per
+donor, which masked this):
+
+```
+local now       : Sat Aug 29 2026 20:05:44   (org-local date 2026-08-29)
+server UTC today: 2026-08-30
+task due        : 2026-08-30  (org-local TOMORROW — not yet actionable)
+on the day view : *** YES — surfaced, a day early ***
+```
+
+Tomorrow's work appears on tonight's list. Both legs, four hours early, every
+day, for every Eastern org — on the first screen of the product and the whole
+pitch.
 
 **Verdict: CONFIRMED**, and the brief's instruction to find or build the seam
 rather than fix `thisWeek` alone is the right call — fixing `weekBounds` would
