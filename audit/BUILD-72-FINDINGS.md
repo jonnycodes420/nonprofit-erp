@@ -560,6 +560,92 @@ Stripe webhook and portal paths. Recorded, not fixed.
 
 ---
 
+# PART 3 — F-5, PLEDGE PAYMENT MATH
+
+Part 0's verdict was DIFFERENT FROM DESCRIBED: the headline claim ("any pledge
+payment fulfills the whole pledge") was false — BUILD-45 already derived `paid`
+from linked gifts. But three of the brief's four decisions were violated.
+
+## P3-1 · Overpayment is recorded and flagged, not swallowed
+
+`pledges.surplus_amount NUMERIC NOT NULL DEFAULT 0`. A $1,300 payment run
+against a $1,000 pledge now leaves it `fulfilled`, balance `0`, **surplus
+`$300`, `overpaid: true`** — on the payment's own response, on the pledge list,
+and persisted. Every dollar still exists as gifts. Not capped, not rejected.
+
+**A payment against an already-fulfilled pledge used to be REJECTED (400).**
+`POST /donors/:id/gifts` filtered `status='open'`. A final payment arriving
+after an earlier one completed the pledge is a real event, and the brief says
+neither cap nor reject — so `('open','fulfilled')` is now accepted and the extra
+becomes surplus. `written_off` is still refused: that is a human decision, and
+such a payment belongs on the donor as a plain gift.
+
+## P3-2 · Status is derived, and both drift vectors are closed
+
+`pledgeStatusFor()` is the only thing that decides a stored status, and
+`pledgeDisplayStatus()` derives `open` / `partially_fulfilled` / `fulfilled` for
+every read. **`partially_fulfilled` is deliberately a DISPLAY state only** —
+storing it would give the drift a second place to hide.
+
+| Drift vector (found in Part 0) | Closed by |
+|---|---|
+| `PUT /pledges/:id` with a new `amount` never recomputed — a fulfilled $1,000 pledge raised to $5,000 stayed "fulfilled" with $3,300 outstanding | the route now **always** calls `recalcPledgePayment` after the write; raising it reopens the pledge and shows the real $4,000 outstanding |
+| `PUT /pledges/:id` accepted `status` directly — $0 paid could be stored `fulfilled` | setting `fulfilled` by hand is **refused with 400 `status_derived`** and a message saying to record the payment or write it off |
+
+`written_off` (and lifting it back to `open`) stays human-settable, because it
+is a decision rather than a fact. Arithmetic never resurrects it.
+
+## P3-3 · The migration recomputed every existing row
+
+A guarded `UPDATE … FROM (payment totals)` in `db.js` recomputes `status` and
+`surplus_amount` for all pre-existing pledges, touching only rows that actually
+disagree. Verified after the run:
+
+```
+total_pledges | status_drifted | surplus_drifted
+           24 |              0 |               0
+```
+
+## P3-4 · Money is NUMERIC, but cents are still truncated — the honest state
+
+The brief says a float on this path outranks the rest of Part 3. **There is no
+float**: `gifts.amount`, `pledges.amount` and `pledges.surplus_amount` are all
+`NUMERIC`, asserted in the suite by reading `information_schema`.
+
+But `Math.round()` on every manual and imported gift means **$33.33 stores as
+$33**, while Stripe gifts keep their cents (`db.js` migrated these columns
+`integer → NUMERIC` in the first place because a $50.50 online gift was
+throwing and being lost). So the same $50.50 stores differently depending on how
+it arrived, and a finance person reconciling a bank deposit is off by the cents
+on every hand-keyed row.
+
+**Not fixed in this build, deliberately, and this is the one judgment call in
+Part 3 I want flagged rather than buried.** Making money cents-accurate touches
+every write path (manual gift, both importers, pledges, the ledger stamp,
+receipts, the year-end PDF) and every test asserting whole dollars. Doing it
+inside a GTM-readiness build — whose thesis is that a half-done money change is
+worse than a known one — is the wrong trade. What this build does instead:
+
+- The suite **pins the current truth** (`a $33.33 payment stores as 33`), so a
+  future cents fix must come to this line and change it deliberately.
+- Part 1 **surfaces** the loss on the import summary: "Amounts are stored in
+  whole dollars; $X of cents was rounded off."
+- All Part 3 arithmetic is asserted in **integer cents**, never floats, so the
+  suite stays correct when the underlying storage becomes cents-accurate.
+
+Recommended as the first item of BUILD-73, ahead of user removal.
+
+## P3-5 · `tests/pledge-math.test.js` (98 assertions, in run-all)
+
+Ladders reaching the amount in **1, 2, 3 and 7** steps, asserting paid, balance,
+derived status and zero surplus at every rung; an exact full payment; the
+overpayment above; a payment on an already-fulfilled pledge; both drift vectors;
+write-off behavior; a pledge that does not divide evenly (1000/3 → 333/333/334,
+landing exactly on zero with no phantom surplus); and the column-type check.
+Every money comparison goes through `cents()`.
+
+---
+
 # PART 0 SIDE-FINDINGS — the harness itself
 
 Two defects found while standing the battery up to *do* Part 0. Neither is a

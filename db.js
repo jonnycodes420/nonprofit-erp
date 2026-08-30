@@ -883,6 +883,48 @@ async function initSchema() {
   // legacy and keyless rows are unaffected.
   await pool.query(`ALTER TABLE pledges ADD COLUMN IF NOT EXISTS idempotency_key TEXT`);
   await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS uq_pledges_idem ON pledges (org_id, idempotency_key) WHERE idempotency_key IS NOT NULL`);
+
+  // BUILD-72 Part 3 — a donor who OVERPAYS a pledge is a good problem, and the
+  // money must still appear. The old code clamped the balance to 0 and the
+  // surplus vanished from every pledge surface. It is now recorded.
+  await pool.query(`ALTER TABLE pledges ADD COLUMN IF NOT EXISTS surplus_amount NUMERIC NOT NULL DEFAULT 0`);
+  // ...and every EXISTING row is recomputed once, so no pledge carries a status
+  // or a surplus that drifted from its payment total before this build. Status
+  // is derived from the payments, exactly as pledgeStatusFor() does at runtime;
+  // written_off / cancelled are never resurrected by arithmetic.
+  await pool.query(`
+    WITH paid AS (
+      SELECT p.id,
+             p.amount::numeric                              AS amount,
+             COALESCE(SUM(g.amount), 0)::numeric            AS paid
+        FROM pledges p
+        LEFT JOIN gifts g ON g.pledge_id = p.id AND g.org_id = p.org_id
+       GROUP BY p.id, p.amount
+    )
+    UPDATE pledges pl
+       SET status = CASE
+             WHEN pl.status IN ('written_off','cancelled') THEN pl.status
+             WHEN paid.amount > 0 AND paid.paid >= paid.amount THEN 'fulfilled'
+             ELSE 'open'
+           END,
+           surplus_amount = CASE
+             WHEN pl.status IN ('written_off','cancelled') THEN pl.surplus_amount
+             WHEN paid.amount > 0 AND paid.paid > paid.amount THEN ROUND(paid.paid - paid.amount, 2)
+             ELSE 0
+           END
+      FROM paid
+     WHERE paid.id = pl.id
+       AND (pl.status IS DISTINCT FROM CASE
+              WHEN pl.status IN ('written_off','cancelled') THEN pl.status
+              WHEN paid.amount > 0 AND paid.paid >= paid.amount THEN 'fulfilled'
+              ELSE 'open'
+            END
+         OR pl.surplus_amount IS DISTINCT FROM CASE
+              WHEN pl.status IN ('written_off','cancelled') THEN pl.surplus_amount
+              WHEN paid.amount > 0 AND paid.paid > paid.amount THEN ROUND(paid.paid - paid.amount, 2)
+              ELSE 0
+            END)
+  `);
   // §1.2 F-4 — an import file's explicit external-ID column (gift/transaction id
   // from the source CRM) is the ONLY safe cross-run gift dedup key. (date,
   // amount, donor) alone is never a dedup key — forty $100 Sunday gifts are

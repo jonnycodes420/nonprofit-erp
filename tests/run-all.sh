@@ -75,7 +75,7 @@ CORE=(
   session-cache session-privilege smart-moves state-diff state-diff2 tasks task-due tenant-isolation trial-end upgrade-checkout workflows workflows-e2e
   empty-states presentation-wiring notify-delivery concurrency2 permissions-matrix
   portal-visual
-  gift-idempotency portal
+  gift-idempotency pledge-math portal
   donor-accounts donor-linking org-blindness network-gate donor-dashboard network-directory theme-depth donor-front-door theme-assets
   campaign-impact portal-page portal-designation asset-retention recurring-surface giving-flow-brand portal-crop giving-summary
   ledger-provisioning mail-suppression first-login-matrix import-columns

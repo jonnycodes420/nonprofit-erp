@@ -4752,6 +4752,32 @@ app.delete("/interactions/:id", requireAuth, wrap(async (req, res) => {
 // honest remaining balance. Reopens a fulfilled pledge whose payments fell
 // back below the amount (gift deleted/refunded/shrunk). Canceled pledges are
 // never resurrected. Returns {paid, balance} or null.
+// BUILD-72 Part 3 — pledge status is DERIVED, never an independent flag.
+//   applied_total <  amount  → partially_fulfilled (open), remaining shown
+//   applied_total == amount  → fulfilled
+//   applied_total >  amount  → fulfilled, and the SURPLUS is recorded and
+//                              flagged rather than swallowed. A donor who
+//                              overpays a pledge is a good problem, and the
+//                              money must still appear.
+// `pledges.status` remains a column because reminder cadence, reporting and
+// `written_off` all read it — but it is now RECOMPUTED FROM THE PAYMENT TOTAL
+// on every write that can move it, and `pledgeStatusFor` is the only thing that
+// decides it. Nothing may set it independently (see PUT /pledges/:id).
+function pledgeStatusFor(paid, amount, currentStatus) {
+  // A cancelled / written-off pledge is never resurrected by arithmetic.
+  if (currentStatus === "written_off" || currentStatus === "cancelled") return currentStatus;
+  if (amount > 0 && paid >= amount) return "fulfilled";
+  return "open";
+}
+// `partially_fulfilled` is a DISPLAY state, not a stored one: storing it would
+// give the drift a second place to hide. Anything reading a pledge derives it.
+function pledgeDisplayStatus(paid, amount, storedStatus) {
+  if (storedStatus === "written_off" || storedStatus === "cancelled") return storedStatus;
+  if (amount > 0 && paid >= amount) return "fulfilled";
+  if (paid > 0) return "partially_fulfilled";
+  return "open";
+}
+
 async function recalcPledgePayment(pledgeId, orgId) {
   const rows = await query("SELECT * FROM pledges WHERE id=? AND org_id=?", [pledgeId, orgId]);
   if (!rows.length) return null;
@@ -4759,25 +4785,32 @@ async function recalcPledgePayment(pledgeId, orgId) {
   const paidRows = await query(
     "SELECT COALESCE(SUM(amount),0) AS paid FROM gifts WHERE pledge_id=? AND org_id=?",
     [pledgeId, orgId]);
-  const paid = parseFloat(paidRows[0].paid) || 0;
-  const amount = parseFloat(p.amount) || 0;
-  if (paid >= amount && amount > 0) {
+  const paid = round2(parseFloat(paidRows[0].paid) || 0);
+  const amount = round2(parseFloat(p.amount) || 0);
+  const status = pledgeStatusFor(paid, amount, p.status);
+  const surplus = round2(Math.max(0, paid - amount));
+
+  if (status === "fulfilled") {
     const lastGift = await query(
       "SELECT id FROM gifts WHERE pledge_id=? AND org_id=? ORDER BY date DESC, id DESC LIMIT 1",
       [pledgeId, orgId]);
     await run(
       `UPDATE pledges SET status='fulfilled', fulfilled_gift_id=?, fulfilled_at=COALESCE(fulfilled_at, NOW()),
-              next_reminder_at=NULL, updated_at=NOW()
+              next_reminder_at=NULL, surplus_amount=?, updated_at=NOW()
        WHERE id=? AND org_id=? AND status IN ('open','fulfilled')`,
-      [lastGift[0]?.id || null, pledgeId, orgId]);
+      [lastGift[0]?.id || null, surplus, pledgeId, orgId]);
   } else {
     await run(
       `UPDATE pledges SET status=CASE WHEN status='fulfilled' THEN 'open' ELSE status END,
-              fulfilled_gift_id=NULL, fulfilled_at=NULL, updated_at=NOW()
+              fulfilled_gift_id=NULL, fulfilled_at=NULL, surplus_amount=0, updated_at=NOW()
        WHERE id=? AND org_id=?`,
       [pledgeId, orgId]);
   }
-  return { paid, balance: Math.max(0, amount - paid) };
+  return {
+    paid, balance: round2(Math.max(0, amount - paid)),
+    surplus, overpaid: surplus > 0,
+    status: pledgeDisplayStatus(paid, amount, status),
+  };
 }
 
 // Reusable "open pledges with honest remaining balances" aggregate — remaining
@@ -4822,13 +4855,21 @@ app.post("/donors/:id/gifts", requireAuth, checkWriteAccess, wrap(async (req, re
   let campaignName = campaign || "";
   let effectiveCampaignId = campaignId;
 
-  // Optional: this gift fulfills a specific open pledge — the "gift
+  // Optional: this gift is a payment against a specific pledge — the "gift
   // recorded against it" stop condition (see processPledgeReminders()).
   // Validated up front so a stale/foreign pledgeId 400s before any insert.
+  //
+  // BUILD-72 Part 3 — an ALREADY-FULFILLED pledge still accepts payments. The
+  // old `status='open'` filter rejected them, which is one of the three ways a
+  // donor's money could fail to land: a final payment arriving after the pledge
+  // was completed by an earlier one is a real event, and the brief is explicit
+  // that an overpayment is neither capped nor rejected. It becomes surplus.
+  // A WRITTEN-OFF pledge is still refused: that is a deliberate human decision
+  // and a payment against it should be recorded as a plain gift instead.
   let pledgeRow = null;
   if (pledgeId) {
     const pledgeRows = await query(
-      "SELECT * FROM pledges WHERE id=? AND donor_id=? AND org_id=? AND status='open'",
+      "SELECT * FROM pledges WHERE id=? AND donor_id=? AND org_id=? AND status IN ('open','fulfilled')",
       [pledgeId, req.params.id, req.user.orgId]
     );
     if (!pledgeRows.length) return res.status(400).json({ error: "This pledge is not open for this donor." });
@@ -4937,12 +4978,23 @@ app.post("/donors/:id/gifts", requireAuth, checkWriteAccess, wrap(async (req, re
     isFirstGift: (donorRows[0]?.gift_count || 0) === 1, entityType: "gift", entityId: giftId,
   }).catch(e => console.error("[workflow] gift_received:", e.message));
   const fulfilledPledgeRows = pledgeRow ? await query(
-    `SELECT p.*, COALESCE(pp.paid,0) AS paid_amount, GREATEST(p.amount - COALESCE(pp.paid,0), 0) AS balance
+    `SELECT p.*, COALESCE(pp.paid,0) AS paid_amount, GREATEST(p.amount - COALESCE(pp.paid,0), 0) AS balance,
+            GREATEST(COALESCE(pp.paid,0) - p.amount, 0) AS surplus
      FROM pledges p
      LEFT JOIN (SELECT pledge_id, SUM(amount) AS paid FROM gifts WHERE org_id=? AND pledge_id IS NOT NULL GROUP BY pledge_id) pp
        ON pp.pledge_id = p.id
      WHERE p.id=?`, [req.user.orgId, pledgeRow.id]) : [];
-  res.status(201).json({ gift: giftRows[0], donor: donorRows[0], pledge: fulfilledPledgeRows[0] || null });
+  // BUILD-72 Part 3 — the response a payment returns says what the payment DID:
+  // remaining balance, or the surplus if the donor overpaid.
+  const fp = fulfilledPledgeRows[0] || null;
+  const fpOut = fp ? (() => {
+    const paid = round2(parseFloat(fp.paid_amount) || 0);
+    const amount = round2(parseFloat(fp.amount) || 0);
+    const surplus = round2(parseFloat(fp.surplus) || 0);
+    return { ...fp, paid, balance: round2(parseFloat(fp.balance) || 0), surplus, overpaid: surplus > 0,
+             displayStatus: pledgeDisplayStatus(paid, amount, fp.status) };
+  })() : null;
+  res.status(201).json({ gift: giftRows[0], donor: donorRows[0], pledge: fpOut });
 }));
 
 app.put("/gifts/:id", requireAuth, wrap(async (req, res) => {
@@ -5078,14 +5130,28 @@ app.delete("/gifts/:id", requireAuth, wrap(async (req, res) => {
 app.get("/donors/:id/pledges", requireAuth, wrap(async (req, res) => {
   // F-5: every pledge read carries the honest paid/balance figures, derived
   // live from linked payment gifts — never a stored counter.
+  // BUILD-72 Part 3 adds the SURPLUS on an overpaid pledge and the DERIVED
+  // display status (open / partially_fulfilled / fulfilled), so no surface has
+  // to re-derive either and get it subtly different.
   const rows = await query(
-    `SELECT p.*, COALESCE(pp.paid,0) AS paid_amount, GREATEST(p.amount - COALESCE(pp.paid,0), 0) AS balance
+    `SELECT p.*, COALESCE(pp.paid,0) AS paid_amount, GREATEST(p.amount - COALESCE(pp.paid,0), 0) AS balance,
+            GREATEST(COALESCE(pp.paid,0) - p.amount, 0) AS surplus
      FROM pledges p
      LEFT JOIN (SELECT pledge_id, SUM(amount) AS paid FROM gifts WHERE org_id=? AND pledge_id IS NOT NULL GROUP BY pledge_id) pp ON pp.pledge_id=p.id
      WHERE p.donor_id=? AND p.org_id=? ORDER BY p.due_date ASC`,
     [req.user.orgId, req.params.id, req.user.orgId]
   );
-  res.json(rows);
+  res.json(rows.map(r => {
+    const paid = round2(parseFloat(r.paid_amount) || 0);
+    const amount = round2(parseFloat(r.amount) || 0);
+    const surplus = round2(parseFloat(r.surplus) || 0);
+    return {
+      ...r,
+      paid, balance: round2(parseFloat(r.balance) || 0),
+      surplus, overpaid: surplus > 0,
+      displayStatus: pledgeDisplayStatus(paid, amount, r.status),
+    };
+  }));
 }));
 
 app.post("/donors/:id/pledges", requireAuth, checkWriteAccess, wrap(async (req, res) => {
@@ -5154,18 +5220,32 @@ app.put("/pledges/:id", requireAuth, checkWriteAccess, wrap(async (req, res) => 
     }
   }
 
-  // Marking fulfilled/written_off (manually, with no specific gift to link —
-  // see POST /donors/:id/gifts' pledgeId param for the "linked a gift"
-  // path) is the same stop condition either way: clear the cadence so
-  // processPledgeReminders() has nothing left to send.
-  const validStatuses = ["open", "fulfilled", "written_off"];
-  const newStatus = status && validStatuses.includes(status) ? status : p.status;
+  // BUILD-72 Part 3 — the two drift vectors this route used to carry are closed.
+  //
+  //  (1) Changing `amount` did NOT recompute the status, so raising a fulfilled
+  //      $1,000 pledge to $5,000 left it reading "fulfilled" with $3,300
+  //      outstanding.
+  //  (2) `status` was directly settable, so a pledge with $0 paid could be
+  //      stored as 'fulfilled' — an independent flag drifting from the money.
+  //
+  // Now: `written_off` is the ONLY status a human sets, because it is the only
+  // one that is a decision rather than a fact. open/fulfilled are FACTS about
+  // the payment total and are always derived by recalcPledgePayment() below.
+  const HUMAN_SETTABLE = ["written_off", "open"];   // 'open' = un-write-off
+  let newStatus = p.status;
+  if (status && HUMAN_SETTABLE.includes(status)) newStatus = status;
+  else if (status === "fulfilled") {
+    // Refused deliberately: a pledge becomes fulfilled by being PAID. Marking
+    // it fulfilled by hand is what let the flag drift from the money.
+    return res.status(400).json({
+      error: "status_derived",
+      message: "A pledge is fulfilled by its payments, not by hand. Record the payment against it, or write it off.",
+    });
+  }
   const stopping = newStatus !== "open" && p.status === "open";
-  const nowFulfilled = newStatus === "fulfilled" && p.status !== "fulfilled";
 
   await run(
     `UPDATE pledges SET amount=?, due_date=?, notes=?, status=?, campaign_id=?,
-       fulfilled_at = CASE WHEN ? THEN NOW() ELSE fulfilled_at END,
        next_reminder_at = CASE WHEN ? THEN NULL ELSE next_reminder_at END,
        updated_at=NOW()
      WHERE id=? AND org_id=?`,
@@ -5175,13 +5255,16 @@ app.put("/pledges/:id", requireAuth, checkWriteAccess, wrap(async (req, res) => 
       notes !== undefined ? notes : p.notes,
       newStatus,
       newCampaignId,
-      nowFulfilled,
       stopping,
       req.params.id, req.user.orgId,
     ]
   );
+  // ALWAYS recompute against the payment total — this is what closes drift (1).
+  // A changed amount, or a write-off being lifted, re-derives open/fulfilled and
+  // the surplus from the gifts actually linked to this pledge.
+  const recomputed = await recalcPledgePayment(req.params.id, req.user.orgId);
   const rows = await query("SELECT * FROM pledges WHERE id=?", [req.params.id]);
-  res.json(rows[0]);
+  res.json({ ...rows[0], ...(recomputed || {}) });
 }));
 
 app.delete("/pledges/:id", requireAuth, wrap(async (req, res) => {
