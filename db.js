@@ -1592,6 +1592,28 @@ async function initSchema() {
   // explicitly never show again.
   await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS setup_card_state TEXT`);
 
+  // ── BUILD-72 Part 4 — the organization's timezone ────────────────────────
+  // Every date boundary in the product is computed in THIS zone: not the
+  // server's, not the browser's, not UTC. Before this column existed, a task
+  // due today began reading as "1 day overdue" at 20:00 EDT with nothing
+  // changing but the wall clock (Part 0's live capture), because `todayStr`
+  // was `new Date().toISOString()` — a UTC calendar date.
+  //
+  // IANA identifier, e.g. "America/New_York". Validated at the API boundary by
+  // orgTime.isValidTimezone (Intl is the authority, not a hand-kept list).
+  // NOT NULL with a default so no read path ever has to cope with a null zone.
+  await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS timezone TEXT`);
+  await pool.query(`UPDATE orgs SET timezone = 'America/New_York' WHERE timezone IS NULL OR timezone = ''`);
+  await pool.query(`ALTER TABLE orgs ALTER COLUMN timezone SET DEFAULT 'America/New_York'`);
+  await pool.query(`
+    DO $$ BEGIN
+      IF EXISTS (SELECT 1 FROM information_schema.columns
+                  WHERE table_schema='public' AND table_name='orgs'
+                    AND column_name='timezone' AND is_nullable='YES') THEN
+        ALTER TABLE orgs ALTER COLUMN timezone SET NOT NULL;
+      END IF;
+    END $$;`);
+
   // ── Moves management & prospect pipeline (BUILD-15, Team plan) ────────────
   // The major-gifts spine. Reuses the existing donors.stage field as the
   // managed pipeline (no second stage column is forked). Every stage change

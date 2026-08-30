@@ -79,6 +79,28 @@ const { DONATION_WEBHOOK_EVENTS, BILLING_WEBHOOK_EVENTS, webhookEventDiff } = re
 const { putThemeAsset, getThemeAsset, pruneThemeAssets, pruneUnreferencedAssets, refreshAssetFallbackCount, refreshRetentionCounts, purgeExpiredAssets, assetHealth, ASSET_ID_RE } = require("./assetStore");
 const { computeGuardsOk } = require("./guards");
 const { PRODUCT_ID } = require("./product");
+// BUILD-72 Part 4 — THE date seam. Every civil-date boundary in the product
+// goes through here, computed in the ORGANIZATION's timezone. See orgTime.js
+// for the type discipline (instants vs civil dates) and why it exists.
+const orgTime = require("./orgTime");
+const { orgToday, orgIsOverdue, orgDaysOverdue, orgPeriodBounds, orgFiscalYearStart, orgReportYear } = orgTime;
+
+// Resolve an org's timezone for the seam. Cached briefly: every date-bounded
+// read needs it, and it changes about once in an organization's lifetime.
+const _tzCache = new Map();
+const TZ_CACHE_MS = 30000;
+async function orgTz(orgId) {
+  const hit = _tzCache.get(orgId);
+  if (hit && hit.until > Date.now()) return hit.value;
+  let tz = orgTime.DEFAULT_TZ;
+  try {
+    const r = await query("SELECT timezone FROM orgs WHERE id=?", [orgId]);
+    tz = orgTime.normalizeTimezone(r[0]?.timezone);
+  } catch { /* pre-migration boot — the default is correct */ }
+  _tzCache.set(orgId, { value: { timezone: tz }, until: Date.now() + TZ_CACHE_MS });
+  return { timezone: tz };
+}
+function invalidateOrgTz(orgId) { _tzCache.delete(orgId); }
 const { imageSize } = require("image-size");
 const { computeTrialEnd } = require("./trialEnd");
 
@@ -2741,6 +2763,24 @@ app.patch("/orgs/:id", requireAuth, requireAdmin, wrap(async (req, res) => {
     );
   }
 
+  // BUILD-72 Part 4 — the organization's timezone. EVERY date boundary in the
+  // product is computed in this zone, so a wrong value is not cosmetic: it
+  // moves what "this week" and "overdue" mean. Validated against Intl (the
+  // authority on IANA zones — never a hand-kept list) and rejected rather than
+  // silently defaulted, because a silent default here is exactly the class of
+  // bug Part 4 exists to remove.
+  if (req.body.timezone !== undefined) {
+    const tz = String(req.body.timezone || "").trim();
+    if (!orgTime.isValidTimezone(tz)) {
+      return res.status(400).json({
+        error: "invalid_timezone",
+        message: `"${tz}" is not a recognized IANA timezone (for example: America/New_York, America/Chicago, Asia/Kolkata).`,
+      });
+    }
+    await run(`UPDATE orgs SET timezone=? WHERE id=?`, [tz, req.params.id]);
+    invalidateOrgTz(req.params.id);   // the 30s read cache must not serve the old zone
+  }
+
   // Donor-covers-fees switch — only touched when the request includes it
   // (Settings' Giving section sends it; no other PATCH caller does).
   if (req.body.coverFeesEnabled !== undefined) {
@@ -4220,10 +4260,8 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(as
 
   // ── Finance sync setup (Gap 1) ───────────────────────────────────────────
   // fyStart mirrors /dashboard/my-stats exactly: July 1 fiscal year boundary.
-  const _fyNow = new Date();
-  const fyStart = _fyNow.getMonth() < 6
-    ? new Date(_fyNow.getFullYear() - 1, 6, 1).toISOString().split("T")[0]
-    : new Date(_fyNow.getFullYear(), 6, 1).toISOString().split("T")[0];
+  // ORG_TZ_SEAM_OK — one fiscal-year definition, in the org's timezone.
+  const fyStart = orgFiscalYearStart(await orgTz(orgId));
 
   // BUILD-58 W-3: the ONE ledger helper — self-heals a chartless org loudly.
   const ledgerC = await ensureOrgLedger(orgId, { heal: true });
@@ -4363,7 +4401,12 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(as
   // the generic 'cultivate' bucket).
   if (affectedDonorIds.size > 0) {
     try {
-      const stageParams = [orgId, [...affectedDonorIds]];
+      // ORG_TZ_SEAM_OK — "days since the last gift" is civil-date arithmetic in
+      // the ORG's calendar. CURRENT_DATE was the POSTGRES session zone, a THIRD
+      // timezone alongside the server's and UTC, so a donor could cross the
+      // 365-day lapsed line on a different day than their own calendar says.
+      const _stageToday = orgToday(await orgTz(orgId));
+      const stageParams = [_stageToday, _stageToday, _stageToday, orgId, [...affectedDonorIds]];
       let excludeClause = "";
       if (explicitStageIds.length) { excludeClause = " AND id <> ALL(?)"; stageParams.push(explicitStageIds); }
       await run(
@@ -4373,12 +4416,12 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(as
                 AND (COALESCE(email,'') != '' OR COALESCE(phone,'') != '') THEN 'qualify'
            WHEN total_giving = 0 AND last_gift_date IS NULL            THEN 'prospect'
            WHEN last_gift_date IS NOT NULL
-                AND (CURRENT_DATE - last_gift_date::date) > 365        THEN 'lapsed'
+                AND (?::date - last_gift_date::date) > 365             THEN 'lapsed'
            WHEN last_gift_date IS NOT NULL
-                AND (CURRENT_DATE - last_gift_date::date) < 90
+                AND (?::date - last_gift_date::date) < 90
                 AND total_giving > 0                                   THEN 'steward'
            WHEN last_gift_date IS NOT NULL
-                AND (CURRENT_DATE - last_gift_date::date) BETWEEN 90 AND 180
+                AND (?::date - last_gift_date::date) BETWEEN 90 AND 180
                 AND total_giving >= 1000                                THEN 'solicit'
            WHEN total_giving > 0                                        THEN 'cultivate'
            ELSE 'prospect'
@@ -5981,10 +6024,8 @@ app.post("/gifts/import-history", requireAuth, checkWriteAccess, wrapImport(asyn
 
   // ── Finance sync setup (Gap 1) ───────────────────────────────────────────
   // fyStart mirrors /dashboard/my-stats exactly: July 1 fiscal year boundary.
-  const _fyNow = new Date();
-  const fyStart = _fyNow.getMonth() < 6
-    ? new Date(_fyNow.getFullYear() - 1, 6, 1).toISOString().split("T")[0]
-    : new Date(_fyNow.getFullYear(), 6, 1).toISOString().split("T")[0];
+  // ORG_TZ_SEAM_OK — one fiscal-year definition, in the org's timezone.
+  const fyStart = orgFiscalYearStart(await orgTz(orgId));
 
   // Donor names needed for fin_transactions description / vendor_donor (bulk, one query)
   const dnRows = await query(
@@ -6102,6 +6143,7 @@ app.post("/gifts/import-history", requireAuth, checkWriteAccess, wrapImport(asyn
 
   // Infer pipeline stage — same logic as combined import (see its comment
   // for the qualify/solicit reasoning), same guardrail.
+  const _giftStageToday = orgToday(await orgTz(orgId));   // ORG_TZ_SEAM_OK
   if (affectedDonorIds.size > 0) {
     try {
       await run(
@@ -6111,12 +6153,12 @@ app.post("/gifts/import-history", requireAuth, checkWriteAccess, wrapImport(asyn
                 AND (COALESCE(email,'') != '' OR COALESCE(phone,'') != '') THEN 'qualify'
            WHEN total_giving = 0 AND last_gift_date IS NULL            THEN 'prospect'
            WHEN last_gift_date IS NOT NULL
-                AND (CURRENT_DATE - last_gift_date::date) > 365        THEN 'lapsed'
+                AND (?::date - last_gift_date::date) > 365             THEN 'lapsed'
            WHEN last_gift_date IS NOT NULL
-                AND (CURRENT_DATE - last_gift_date::date) < 90
+                AND (?::date - last_gift_date::date) < 90
                 AND total_giving > 0                                   THEN 'steward'
            WHEN last_gift_date IS NOT NULL
-                AND (CURRENT_DATE - last_gift_date::date) BETWEEN 90 AND 180
+                AND (?::date - last_gift_date::date) BETWEEN 90 AND 180
                 AND total_giving >= 1000                                THEN 'solicit'
            WHEN total_giving > 0                                        THEN 'cultivate'
            ELSE 'prospect'
@@ -6125,7 +6167,8 @@ app.post("/gifts/import-history", requireAuth, checkWriteAccess, wrapImport(asyn
          WHERE org_id = ? AND id = ANY(?)
            AND stage = 'prospect'
            AND deleted_at IS NULL`,
-        [orgId, [...affectedDonorIds]]
+        // ORG_TZ_SEAM_OK — same civil-date arithmetic as import-combined.
+        [_giftStageToday, _giftStageToday, _giftStageToday, orgId, [...affectedDonorIds]]
       );
     } catch (e) { console.error(`[gift-import] stage inference failed:`, e.message); }
   }
@@ -6635,7 +6678,7 @@ app.get("/pipeline", requireAuth, wrap(async (req, res) => {
   }
 
   // Won this quarter (period) — a coarse pipeline health figure.
-  const { start } = finPeriodBounds("fiscal", 0);
+  const { start } = finPeriodBounds("fiscal", 0, await orgTz(req.user.orgId));   // ORG_TZ_SEAM_OK
   const wonAgg = await query(
     `SELECT COALESCE(SUM(gift_amount),0) AS amt, COUNT(*)::int AS cnt FROM opportunities
        WHERE org_id=? AND status='won' AND closed_at >= ?`, [orgId, start]);
@@ -7511,9 +7554,7 @@ app.get("/dashboard/recent-activity", requireAuth, wrap(async (req, res) => {
 app.get("/dashboard/my-stats", requireAuth, wrap(async (req, res) => {
   const { orgId, userId } = req.user;
   const now = new Date();
-  const fyStart = now.getMonth() < 6
-    ? new Date(now.getFullYear() - 1, 6, 1).toISOString().split("T")[0]
-    : new Date(now.getFullYear(), 6, 1).toISOString().split("T")[0];
+  const fyStart = orgFiscalYearStart(await orgTz(orgId));   // ORG_TZ_SEAM_OK
   const today = now.toISOString().split("T")[0];
 
   const [portfolioRows, visitsRows, movesRows, giftsRows, pipelineRows, lapsedRows, orgInteractionRows, orgGiftHistoryRows] = await Promise.all([
@@ -7667,9 +7708,7 @@ app.get("/dashboard/my-stats/visits/breakdown", requireAuth, wrap(async (req, re
   const { orgId, userId } = req.user;
   // fyStart mirrors /dashboard/my-stats exactly: July 1 fiscal year boundary.
   const now = new Date();
-  const fyStart = now.getMonth() < 6
-    ? new Date(now.getFullYear() - 1, 6, 1).toISOString().split("T")[0]
-    : new Date(now.getFullYear(), 6, 1).toISOString().split("T")[0];
+  const fyStart = orgFiscalYearStart(await orgTz(orgId));   // ORG_TZ_SEAM_OK
   const PAGE_SIZE = 50;
   const [rows, countRow] = await Promise.all([
     query(
@@ -7699,9 +7738,7 @@ app.get("/dashboard/my-stats/moves/breakdown", requireAuth, wrap(async (req, res
   const { orgId, userId } = req.user;
   // fyStart mirrors /dashboard/my-stats exactly: July 1 fiscal year boundary.
   const now = new Date();
-  const fyStart = now.getMonth() < 6
-    ? new Date(now.getFullYear() - 1, 6, 1).toISOString().split("T")[0]
-    : new Date(now.getFullYear(), 6, 1).toISOString().split("T")[0];
+  const fyStart = orgFiscalYearStart(await orgTz(orgId));   // ORG_TZ_SEAM_OK
   const PAGE_SIZE = 50;
   const [rows, countRow] = await Promise.all([
     query(
@@ -7732,9 +7769,7 @@ app.get("/dashboard/my-stats/gifts/breakdown", requireAuth, wrap(async (req, res
   const { orgId, userId } = req.user;
   // fyStart mirrors /dashboard/my-stats exactly: July 1 fiscal year boundary.
   const now = new Date();
-  const fyStart = now.getMonth() < 6
-    ? new Date(now.getFullYear() - 1, 6, 1).toISOString().split("T")[0]
-    : new Date(now.getFullYear(), 6, 1).toISOString().split("T")[0];
+  const fyStart = orgFiscalYearStart(await orgTz(orgId));   // ORG_TZ_SEAM_OK
   const PAGE_SIZE = 50;
   const [rows, totalRow] = await Promise.all([
     query(
@@ -7817,8 +7852,14 @@ app.get("/dashboard/my-stats/lapsed/breakdown", requireAuth, wrap(async (req, re
 app.get("/dashboard/today", requireAuth, wrap(async (req, res) => {
   const { orgId, userId } = req.user;
   const today = new Date();
-  const todayStr = today.toISOString().split("T")[0];
-  const ninetyDaysAgo = new Date(today - 90 * 86400000).toISOString().split("T")[0];
+  // BUILD-72 Part 4 — the day view is the screen Part 0 captured going wrong:
+  // `todayStr` was a UTC calendar date, so at 20:00 EDT it rolled over and a
+  // task due today began reading "1 day overdue" with nothing changing but the
+  // clock. It is now the civil date IN THE ORG'S TIMEZONE, and every window
+  // below is derived from it by calendar arithmetic. ORG_TZ_SEAM_OK
+  const org = await orgTz(orgId);
+  const todayStr = orgToday(org, today);
+  const ninetyDaysAgo = orgTime.addDays(todayStr, -90);
   const items = [];
 
   // Ownership scoping — defaults to "this is MY job today" (the logged-in
@@ -7849,7 +7890,7 @@ app.get("/dashboard/today", requireAuth, wrap(async (req, res) => {
   // depends on that order, so never reorder the for-loops. The two receipt
   // queries now always run (cheap LIMIT-5 reads) but still only APPLY when
   // the org has receipts enabled.
-  const sixtyDaysAgo = new Date(today - 60 * 86400000).toISOString().split("T")[0];
+  const sixtyDaysAgo = orgTime.addDays(todayStr, -60);   // ORG_TZ_SEAM_OK
   const [
     orgReceiptRows, atRiskCandidates, noContact, lapsedDonorRows, unacked,
     needsReceipt, mismatched, dueTasks, milestoneRows, atRiskDraftRows,
@@ -8087,8 +8128,9 @@ app.get("/dashboard/today", requireAuth, wrap(async (req, res) => {
 
   // Overdue donor-linked tasks
   for (const t of dueTasks) {
-    const daysOverdue = t.due && t.due < todayStr
-      ? Math.floor((today - new Date(t.due)) / 86400000) : 0;
+    // Two civil dates compared as civil dates — never an instant, never
+    // millisecond arithmetic across a DST boundary. ORG_TZ_SEAM_OK
+    const daysOverdue = orgDaysOverdue(t.due, org, today);
     upsertItem({
       donorId: t.donor_id, donorName: t.donor_name,
       reason: `Task: "${t.title}"`,
@@ -9573,13 +9615,14 @@ function fundraisingGoalsPortfolio(rows) {
 app.get("/fundraising/overview", requireAuth, wrap(async (req, res) => {
   const { orgId } = req.user;
   const yearMode = req.query.yearMode === "calendar" ? "calendar" : "fiscal";
-  const cur = finPeriodBounds(yearMode, 0);
-  const prior = finPeriodBounds(yearMode, -1);
+  const _fpTz = await orgTz(orgId);   // ORG_TZ_SEAM_OK
+  const cur = finPeriodBounds(yearMode, 0, _fpTz);
+  const prior = finPeriodBounds(yearMode, -1, _fpTz);
   const today = new Date().toISOString().split("T")[0];
   // BUILD-32 Part 3 — the Home hero's "this week's giving" figure. A true
   // Monday-based calendar week (weekBounds), independent of the fiscal/calendar
   // period above, so the hero shows a number that genuinely moves week to week.
-  const wk = weekBounds(0);
+  const wk = weekBounds(0, await orgTz(orgId));   // ORG_TZ_SEAM_OK
 
   const [goalRows, curRows, priorRows, weekRows, recentGifts, campaigns, givingPages] = await Promise.all([
     query(
@@ -11290,8 +11333,10 @@ app.post("/finance/budgets", requireAuth, requireAdmin, checkWriteAccess, wrap(a
 // ISO date bounds + labels the client renders verbatim, so the FY definition
 // lives in exactly one place.
 const FIN_MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
-function finPeriodBounds(yearMode, offset = 0) {
-  const now = new Date();
+function finPeriodBounds(yearMode, offset = 0, org = null) {
+  // ORG_TZ_SEAM_OK — the fiscal/calendar boundary in the org's own calendar.
+  const _today = orgTime.parseCivil(orgToday(org || {}));
+  const now = { getMonth: () => _today.m - 1, getFullYear: () => _today.y };
   if (yearMode === "fiscal") {
     const curFyStart = now.getMonth() < 6 ? now.getFullYear() - 1 : now.getFullYear();
     const fyStart = curFyStart + offset;
@@ -11329,8 +11374,9 @@ function finPeriodBounds(yearMode, offset = 0) {
 app.get("/finance/summary", requireAuth, wrap(async (req, res) => {
   const { orgId } = req.user;
   const { yearMode = "calendar" } = req.query;
-  const cur = finPeriodBounds(yearMode, 0);
-  const prior = finPeriodBounds(yearMode, -1);
+  const _fpTz = await orgTz(orgId);   // ORG_TZ_SEAM_OK
+  const cur = finPeriodBounds(yearMode, 0, _fpTz);
+  const prior = finPeriodBounds(yearMode, -1, _fpTz);
 
   const [ytdRows, priorRows, allRows, monthRows, fundRows, activeFundRows, giftHistRows, ledgerGiftRows] = await Promise.all([
     query(`SELECT type, SUM(amount) as total FROM fin_transactions
@@ -11986,13 +12032,15 @@ function reportYearBounds(year, yearMode) {
     : { from: `${year}-01-01`, to: `${year}-12-31` };
 }
 // The year currently in progress (fiscal label year is the June-30 end year).
-function reportCurrentYear(yearMode, now = new Date()) {
-  return yearMode === "fiscal"
-    ? (now.getMonth() < 6 ? now.getFullYear() : now.getFullYear() + 1)
-    : now.getFullYear();
+// ORG_TZ_SEAM_OK — which year a report calls "current" is a civil-calendar
+// question, answered in the ORG's timezone. On Dec 31 at 8pm in New York the
+// server's UTC clock is already next year, so an org opening Reports on New
+// Year's Eve used to be shown the wrong year by default.
+function reportCurrentYear(yearMode, org = null) {
+  return orgReportYear(org || {}, yearMode);
 }
 
-function parseReportParams(q) {
+function parseReportParams(q, org = null) {   // ORG_TZ_SEAM_OK
   const bad = msg => { const e = new Error(msg); e.status = 400; return e; };
   const p = {};
 
@@ -12010,9 +12058,9 @@ function parseReportParams(q) {
     if (!q.from || !isDate(q.from)) throw bad("from must be YYYY-MM-DD");
     if (!q.to || !isDate(q.to)) throw bad("to must be YYYY-MM-DD");
     p.from = q.from; p.to = q.to;
-    p.year = reportCurrentYear(p.yearMode); // for reports that need a year anyway
+    p.year = reportCurrentYear(p.yearMode, org); // for reports that need a year anyway
   } else {
-    p.year = reportCurrentYear(p.yearMode);
+    p.year = reportCurrentYear(p.yearMode, org);
     const b = reportYearBounds(p.year, p.yearMode);
     p.from = b.from; p.to = b.to;
   }
@@ -12546,7 +12594,7 @@ app.get("/reports/:key", requireAuth, wrap(async (req, res) => {
       return res.status(403).json({ error: "plan_required", requiredPlan: "team", message: "The solicitations report is available on the Team plan." });
   }
   let p;
-  try { p = parseReportParams(req.query); }
+  try { p = parseReportParams(req.query, await orgTz(req.user.orgId)); }   // ORG_TZ_SEAM_OK
   catch (e) { return res.status(e.status === 400 ? 400 : 500).json({ error: e.message }); }
   const data = await REPORT_HANDLERS[key](req.user.orgId, p);
   if (reportLocked && data && typeof data === "object" && !Array.isArray(data)) data.locked = true;
@@ -12574,18 +12622,16 @@ app.get("/reports/:key", requireAuth, wrap(async (req, res) => {
 function digestYmd(d) { return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; }
 // Monday-based week. offset 0 = the week containing `now`; -1 = the prior
 // (most-recently-completed) week. key is stable per Monday.
-function weekBounds(offset = 0, now = new Date()) {
-  const d = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const dow = (d.getDay() + 6) % 7; // Mon=0 … Sun=6
-  const monday = new Date(d); monday.setDate(d.getDate() - dow + offset * 7);
-  const sunday = new Date(monday); sunday.setDate(monday.getDate() + 6);
-  return { start: digestYmd(monday), end: digestYmd(sunday), key: "wk:" + digestYmd(monday) };
+// BUILD-72 Part 4 — both delegate to the seam. They used to build windows from
+// the SERVER's local clock (UTC in prod), so a gift entered Sunday evening in
+// New York landed outside the week the product called "this week". `org` is
+// {timezone} from orgTz(orgId); omitting it falls back to the default zone
+// rather than to the server's, which is the whole point. ORG_TZ_SEAM_OK
+function weekBounds(offset = 0, org = null, atInstant = new Date()) {
+  return orgPeriodBounds(org || {}, "week", offset, atInstant);
 }
-function monthBounds(offset = 0, now = new Date()) {
-  const start = new Date(now.getFullYear(), now.getMonth() + offset, 1);
-  const end = new Date(now.getFullYear(), now.getMonth() + offset + 1, 0);
-  return { start: digestYmd(start), end: digestYmd(end),
-    key: `mo:${start.getFullYear()}-${String(start.getMonth() + 1).padStart(2, "0")}` };
+function monthBounds(offset = 0, org = null, atInstant = new Date()) {
+  return orgPeriodBounds(org || {}, "month", offset, atInstant);
 }
 
 // Compose the Week-in-Review sections for a window. officerId != null scopes
@@ -12824,9 +12870,12 @@ async function runDigestsForOrg(org, { wk, mo, types = ["weekly", "monthly"], se
 // exactly once, on the first tick after that period rolls over.
 async function processDigests(now = new Date()) {
   try {
-    const wk = weekBounds(-1, now), mo = monthBounds(-1, now);
-    const orgs = await query("SELECT id, name, plan, subscription_status FROM orgs WHERE onboarding_complete=1", []);
+    // ORG_TZ_SEAM_OK — windows are computed PER ORG. Two orgs in different
+    // timezones complete a week on different days, so one shared window would
+    // hand at least one of them somebody else's calendar.
+    const orgs = await query("SELECT id, name, plan, subscription_status, timezone FROM orgs WHERE onboarding_complete=1", []);
     for (const org of orgs) {
+      const wk = weekBounds(-1, org, now), mo = monthBounds(-1, org, now);
       await runDigestsForOrg(org, { wk, mo }).catch(e => console.error("[digest]", org.id, e.message));
     }
   } catch (e) { console.error("[digest] processDigests:", e.message); }
@@ -12943,11 +12992,11 @@ app.get("/digests/preview", requireAuth, wrap(async (req, res) => {
     // Core: return the caller's own monthly report as a READ-only locked
     // preview (their own gifts/portfolio — a pure read), flagged locked so the
     // client dims it behind LockedFeature instead of a bare 403 card.
-    const mo = monthBounds(-1);
+    const mo = monthBounds(-1, await orgTz(org.id));   // ORG_TZ_SEAM_OK
     const report = await composeOfficerMonthly(org.id, mo, { id: me.id, name: me.name });
     return res.json({ type, window: mo, report, locked: tier !== "team" });
   }
-  const wk = weekBounds(-1);
+  const wk = weekBounds(-1, await orgTz(org.id));   // ORG_TZ_SEAM_OK
   const isOfficerScope = tier === "team" && me.role !== "admin";
   const sections = await composeWeekInReview(org.id, wk, isOfficerScope ? me.id : null);
   const teamRollup = isOfficerScope ? (await composeWeekInReview(org.id, wk, null)).totals : null;
@@ -12966,8 +13015,11 @@ app.post("/digests/run", requireAuth, requireAdmin, wrap(async (req, res) => {
   const types = type === "weekly" || type === "monthly" ? [type] : ["weekly", "monthly"];
   // Build windows: explicit override (a Monday / month-start date) or the
   // most-recently-completed period.
-  const wk = weekStart ? weekBounds(0, new Date(weekStart + "T12:00:00")) : weekBounds(-1);
-  const mo = monthStart ? monthBounds(0, new Date(monthStart + "T12:00:00")) : monthBounds(-1);
+  // ORG_TZ_SEAM_OK — an explicit override pins the window to a civil date the
+  // caller supplied; otherwise the org's own most-recently-completed period.
+  const _tz = await orgTz(org.id);
+  const wk = weekStart ? weekBounds(0, _tz, new Date(weekStart + "T12:00:00Z")) : weekBounds(-1, _tz);
+  const mo = monthStart ? monthBounds(0, _tz, new Date(monthStart + "T12:00:00Z")) : monthBounds(-1, _tz);
   const result = await runDigestsForOrg(org, { wk, mo, types, send: !dryRun });
   res.json({ windows: { weekly: wk, monthly: mo }, ...result });
 }));
@@ -16218,10 +16270,18 @@ async function processPledgeReminders() {
     // equivalent external event, so this scan IS the trigger: any open
     // pledge whose due date has just passed starts its cadence at "day 0"
     // (fires immediately, same as a fresh payment failure does).
-    await run(
-      `UPDATE pledges SET first_overdue_at=NOW(), next_reminder_at=NOW(), updated_at=NOW()
-       WHERE status='open' AND first_overdue_at IS NULL AND due_date::date < CURRENT_DATE`
-    );
+    // ORG_TZ_SEAM_OK — "the due date has passed" is a comparison of TWO CIVIL
+    // DATES in the org's own calendar. CURRENT_DATE is the Postgres session
+    // zone, so a pledge in a western org used to start its dunning cadence
+    // hours early — a reminder email about money, sent on the wrong day.
+    const _overdueOrgs = await query("SELECT id, timezone FROM orgs", []);
+    for (const _o of _overdueOrgs) {
+      await run(
+        `UPDATE pledges SET first_overdue_at=NOW(), next_reminder_at=NOW(), updated_at=NOW()
+         WHERE org_id=? AND status='open' AND first_overdue_at IS NULL AND due_date::date < ?::date`,
+        [_o.id, orgToday(_o)]
+      );
+    }
 
     // Step 2 — send whatever's due, exactly like processDunning().
     const rows = await query(
@@ -18242,6 +18302,9 @@ app.get("/portal/:orgSlug/me", requirePortalSession, wrap(async (req, res) => {
   // BUILD-54 §1 — impact matching, the account nudge, and the audit write
   // ride the same parallel batch as the data reads (they only need donorIds/
   // email, all known here). This endpoint is the donor's first paint.
+  // ORG_TZ_SEAM_OK — the portal's lookback windows are civil dates in the
+  // ORG's calendar, not the Postgres session zone.
+  const _portalToday = orgToday(await orgTz(org.id));
   const [byYearRows, totalsRow, gifts, receipts, recurring, pledges, household, impact, accountNudge, , campaignSpotlights, thankYouRows] = await Promise.all([
     query(
       `SELECT LEFT(date, 4) AS year, COALESCE(SUM(amount),0) AS total, COUNT(*)::int AS count
@@ -18334,9 +18397,9 @@ app.get("/portal/:orgSlug/me", requirePortalSession, wrap(async (req, res) => {
          AND (c.donor_description IS NOT NULL OR c.donor_story IS NOT NULL OR c.hero_image_url IS NOT NULL)
          AND EXISTS (SELECT 1 FROM gifts g WHERE g.org_id = c.org_id AND g.donor_id = ANY(?)
                      AND (g.campaign_id = c.id OR g.campaign = c.name)
-                     AND g.date >= (CURRENT_DATE - INTERVAL '24 months')::text)
+                     AND g.date >= ?)
        ORDER BY c.created_at DESC LIMIT 6`,
-      [org.id, donorIds]),
+      [org.id, donorIds, orgTime.addDays(_portalToday, -730)]),   // ORG_TZ_SEAM_OK
     // §2 thank-you state — the donor's most recent campaign-attributed gift
     // in the last 30 days, shown ONLY when the campaign carries org-authored
     // copy (no content → the gift shows the campaign name and nothing more).
@@ -18344,9 +18407,9 @@ app.get("/portal/:orgSlug/me", requirePortalSession, wrap(async (req, res) => {
       `SELECT g.amount, g.date, COALESCE(c.donor_facing_name, c.name) AS campaign_name, c.donor_description
        FROM gifts g JOIN campaigns c ON c.org_id = g.org_id AND (g.campaign_id = c.id OR g.campaign = c.name)
        WHERE g.org_id = ? AND g.donor_id = ANY(?) AND c.donor_description IS NOT NULL
-         AND g.date >= (CURRENT_DATE - INTERVAL '30 days')::text
+         AND g.date >= ?
        ORDER BY g.date DESC, g.id DESC LIMIT 1`,
-      [org.id, donorIds]),
+      [org.id, donorIds, orgTime.addDays(_portalToday, -30)]),    // ORG_TZ_SEAM_OK
   ]);
 
   // Stripe display details (card last-4, next charge) — display-only, and the
@@ -18441,8 +18504,9 @@ async function matchImpactUpdates(orgId, donorIds) {
   if (!updates.length) return [];
   const attrib = await query(
     `SELECT DISTINCT fund_id, campaign_id FROM gifts
-     WHERE org_id = ? AND donor_id = ANY(?) AND date >= (CURRENT_DATE - INTERVAL '24 months')::text`,
-    [orgId, donorIds]);
+     WHERE org_id = ? AND donor_id = ANY(?) AND date >= ?`,
+    // ORG_TZ_SEAM_OK — a civil-date lookback window in the org's calendar.
+    [orgId, donorIds, orgTime.addDays(orgToday(await orgTz(orgId)), -730)]);
   const funds = new Set(attrib.map(a => a.fund_id).filter(Boolean));
   const camps = new Set(attrib.map(a => a.campaign_id).filter(Boolean));
   const targeted = [], orgWide = [];

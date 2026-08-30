@@ -65,6 +65,10 @@ const PROD_READONLY = [
   // opens a READ ONLY transaction, issues only SELECTs, and ROLLBACKs. It
   // verifies identity (product + database) before the connection is used.
   "build72-cents-audit",
+  // BUILD-72 Part 4 — a pure SOURCE scan (reads server.js/db.js off disk and
+  // counts civil-date/instant confusion sites). Touches no server, no database
+  // and no network at all.
+  "build72-date-audit",
 ];
 
 // Browser-driving captures: default loopback; any writes ride the logged-in

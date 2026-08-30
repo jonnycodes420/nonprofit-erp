@@ -451,6 +451,64 @@ function BrandingManager({orgId,isAdmin,isReadOnly,onSaved}){
   );
 }
 
+// BUILD-72 Part 4 — the organization's timezone. Not a display preference:
+// EVERY date boundary in the product is computed in this zone. Before it
+// existed, a task due today started reading "1 day overdue" at 8pm Eastern
+// because the server compared it against a UTC calendar date.
+function TimezoneCard({orgId,isAdmin,isReadOnly}){
+  const [tz,setTz]=useState(null);          // null = loading
+  const [saving,setSaving]=useState(false);
+  const [err,setErr]=useState("");
+  const [savedAt,setSavedAt]=useState(0);
+  useEffect(()=>{
+    apiFetch("/org").then(o=>setTz(o.timezone||"America/New_York")).catch(()=>setTz("America/New_York"));
+  },[]);
+  // The zones a US nonprofit actually sits in, plus the ones our tests pin.
+  // Any valid IANA zone is accepted by the API; this list is the common path.
+  const ZONES=[
+    ["America/New_York","Eastern"],["America/Chicago","Central"],
+    ["America/Denver","Mountain"],["America/Phoenix","Arizona (no DST)"],
+    ["America/Los_Angeles","Pacific"],["America/Anchorage","Alaska"],
+    ["Pacific/Honolulu","Hawaii"],["America/Puerto_Rico","Puerto Rico"],
+  ];
+  async function save(next){
+    if(saving||next===tz)return;
+    const prev=tz; setSaving(true); setTz(next); setErr("");
+    try{
+      await apiFetch(`/orgs/${orgId}`,{method:"PATCH",body:JSON.stringify({timezone:next})});
+      setSavedAt(Date.now());
+    }catch(e){ setTz(prev); setErr(e.message||"Could not save the timezone."); }
+    setSaving(false);
+  }
+  const today=(()=>{ try{ return tz? new Intl.DateTimeFormat("en-US",{timeZone:tz,weekday:"long",month:"long",day:"numeric"}).format(new Date()):""; }catch{ return ""; } })();
+  return(
+    <div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:16,padding:"24px 28px",marginBottom:20}}>
+      <SectionLabel>Time Zone</SectionLabel>
+      <div style={{fontSize:13,color:T.ink3,lineHeight:1.6,marginTop:6,marginBottom:14}}>
+        Every date in Steward is calculated in your organization&rsquo;s time zone — what counts as
+        &ldquo;this week&rdquo;, when a task becomes overdue, and where a gift falls in your fiscal year.
+        A gift you enter on Sunday evening belongs to that Sunday.
+      </div>
+      <div style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
+        <select
+          value={tz||"America/New_York"}
+          disabled={!isAdmin||isReadOnly||saving||tz===null}
+          onChange={e=>save(e.target.value)}
+          style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"10px 12px",
+                  color:T.ink,fontSize:13,fontFamily:"inherit",minWidth:260,
+                  cursor:(!isAdmin||isReadOnly)?"not-allowed":"pointer"}}>
+          {ZONES.map(([z,label])=><option key={z} value={z}>{label} — {z}</option>)}
+          {tz&&!ZONES.some(([z])=>z===tz)&&<option value={tz}>{tz}</option>}
+        </select>
+        {today&&<span style={{fontSize:12,color:T.ink3}}>Today here is <strong style={{color:T.ink}}>{today}</strong></span>}
+        {savedAt>0&&<span style={{fontSize:12,color:T.green||"#10b981"}}>Saved</span>}
+      </div>
+      {err&&<div style={{fontSize:12,color:T.terracotta,marginTop:8}}>{err}</div>}
+      {!isAdmin&&<div style={{fontSize:12,color:T.ink3,marginTop:8}}>Only an admin can change this.</div>}
+    </div>
+  );
+}
+
 function CoverFeesCard({orgId,isAdmin}){
   const [enabled,setEnabled]=useState(null); // null = loading
   const [saving,setSaving]=useState(false);
@@ -1432,6 +1490,7 @@ export function Settings({auth,logout,initialSection,onNavigate}) {
 
       {/* ── Giving Pages ──────────────────────────────────────────────────── */}
       {section==="giving"&&<>
+        <TimezoneCard orgId={auth?.org?.id} isAdmin={isAdmin} isReadOnly={isReadOnly}/>
         <CoverFeesCard orgId={auth?.org?.id} isAdmin={isAdmin}/>
         <GivingPagesManager orgSlug={orgSlug} isAdmin={isAdmin} isReadOnly={isReadOnly}/>
       </>}

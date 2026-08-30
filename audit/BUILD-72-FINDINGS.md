@@ -829,6 +829,140 @@ guessing at a fix on the live payment path is precisely what the brief forbids.
 
 ---
 
+# PART 4 — DATE BOUNDARIES IN THE ORGANIZATION'S TIMEZONE
+
+Part 0's live capture is the specification: a task due today flipping to
+"1 day overdue" at 20:00:58 EDT with nothing changing but the wall clock.
+
+## P4-1 · The diagnosis, confirmed
+
+That flip is a **civil date compared against a UTC instant**. After 20:00 EDT
+the UTC calendar date rolls over, the stored due date becomes "yesterday" in the
+comparison's frame, and a task due today reads as overdue. Every enumerated site
+is a variant of it.
+
+## P4-2 · The type discipline
+
+Written into `orgTime.js`, which is where the two kinds of time meet and
+nowhere else:
+
+| | |
+|---|---|
+| **Instants** | `created_at`, webhook receipt times, payment times, session times. `timestamptz`, always UTC. **`now()` on one of these is CORRECT** — 358 of the 613 raw matches are exactly this and are not findings. |
+| **Civil dates** | gift date, pledge due date, task due, campaign start/end. `YYYY-MM-DD`, no timezone, **never converted**. A gift given on March 15 was given on March 15 in every timezone on earth. |
+
+**The rule: never compare a civil-date column to `now()`, `CURRENT_DATE`,
+`CURRENT_TIMESTAMP` or a JavaScript `new Date()`.**
+
+## P4-3 · The enumeration (committed, and asserted on)
+
+`scripts/build72-date-audit.js` is the enumeration itself — a source scan that
+classifies every site and is run BY the test suite, so the number cannot drift
+unnoticed.
+
+| Pattern | Before | After |
+|---|---|---|
+| civil-date column vs the SQL clock | 10 | **0** |
+| civil date derived from a UTC instant | 89 | 80 |
+| fixed-ms week (`7*24*60*60*1000` — wrong across DST) | 2 | 2 |
+| period year from the server's local clock | 34 | 12 |
+| period bounds from the server's local clock | 15 | 3 |
+| **TOTAL UNROUTED** | **150** | **97** |
+| routed through the seam | 0 | **9** |
+
+**Every `CURRENT_DATE` in the product is gone.** The remaining 97 are
+overwhelmingly instant-shaped uses of `toISOString().slice(0,10)` (audit
+stamps, email timestamps, filenames) that are correct as UTC, plus surfaces not
+yet reached. They are a *ceiling that cannot rise*, not a claim of correctness —
+see P4-6.
+
+## P4-4 · The seam
+
+`orgTime.js`. Everything returns **civil dates**, so nothing downstream can
+accidentally compare an instant to a date:
+
+- `orgToday(org)` — the civil date it currently is for that organization
+- `orgPeriodBounds(org, period, offset)` — inclusive civil start/end for
+  `today` · `week` · `month` · `quarter` · `year` · `fiscal_year`
+- `orgIsOverdue(due, org)` / `orgDaysOverdue(due, org)` — two civil dates, nothing else
+- `orgFiscalYearStart(org)` — replaced **31 hand-rolled copies** of the July-1 rule
+- `orgReportYear(org, mode)` — which year a report calls "current"
+
+All arithmetic is **calendar arithmetic on Y/M/D**, never milliseconds.
+`Intl.DateTimeFormat` does the zone resolution, so half-hour offsets
+(`Asia/Kolkata`) and southern-hemisphere DST (`Australia/Sydney`) are correct by
+construction rather than by a table someone has to maintain.
+
+`organizations.timezone` — IANA, `NOT NULL`, default `America/New_York`, every
+existing org backfilled, with a **Settings → Giving** control. An invalid zone
+is **rejected with 400**, never silently defaulted: a silent default here is the
+exact class of bug Part 4 exists to remove.
+
+## P4-5 · What was routed
+
+The day view (`/dashboard/today` — the screen Part 0 captured), `weekBounds` /
+`monthBounds` and all five call sites, all six fiscal-year derivations, both
+importers' stage inference, the pledge-overdue sweep, the portal's 24-month and
+30-day lookbacks, and the reports/finance period helpers.
+
+Two of these were quietly worse than the day view:
+
+- **The digest tick** computed ONE week window and used it for every
+  organization. Two orgs in different timezones complete a week on different
+  days, so at least one was handed somebody else's calendar. Now per-org.
+- **The pledge-overdue sweep** used `CURRENT_DATE` — the *Postgres session*
+  timezone, a **third** zone alongside the server's and UTC — to decide a pledge
+  was late. A western org started its dunning cadence hours early: a reminder
+  email about money, on the wrong day. Now per-org civil dates.
+
+## P4-6 · The family assertion — what makes this a class fix
+
+`tests/date-seam.test.js` §5 runs the enumeration and **fails if the unrouted
+count rises above 97**. A new date-bounded query written without the seam pushes
+it up and breaks the build. That is the assertion that stops coverage decaying
+the moment someone adds a view — the rest of the suite would happily stay green
+while the product regressed around it.
+
+The suite (62 assertions) also pins: the Part 0 capture replayed at 19:59 /
+20:01 / 23:59 local (never overdue) and at 00:01 the next day (overdue by
+exactly 1); 23:30 local on the last day of a week, month and fiscal year in
+four timezones; the same instant landing in **different weeks** for New York and
+Kolkata, correctly for both; both DST transitions in both directions; and the
+column, the API and the day view end to end.
+
+## P4-7 · Not fixed, named
+
+The 97 remaining sites are not all benign — they are simply not all reached.
+The honest statement is that Part 4 fixed **every civil-date-vs-clock
+comparison** and the highest-traffic period boundaries, and installed a ratchet
+so the rest can only shrink. Lowering `DATE_SITE_BASELINE` as sites are routed
+is the mechanism; BUILD-73 should drive it down rather than leave it at 97.
+
+---
+
+# S-5 — my own parallel processes polluted two battery runs
+
+Twice in this build a battery failure was caused by something I was running
+alongside it, not by the code under test. Recorded because the diagnosis cost
+real time both times and the lesson is mechanical.
+
+1. **Task-id collision.** The Part 0 boundary sampler inserted a task with id
+   `t_today`; `tests/home.test.js` uses the same literal id and died on
+   `duplicate key ... tasks_pkey`. Fixed by namespacing the probe's ids.
+2. **Connection contention.** The S-3 fresh-database server on `:5608` was left
+   running against the same Postgres cluster during a full battery.
+   `donor-accounts` died with `read ECONNRESET` mid rate-limit burst and then
+   hung — **1106s against a 14s baseline** — which read exactly like a Part 4
+   regression. It was not: with `:5608` stopped and nothing else touching the
+   stack, the suite passes 52/0 in 75 seconds. Neither burst reproduced in
+   isolation, which was the clue that the suite was not the problem.
+
+**Practice:** run the battery with nothing else touching the scratch stack, and
+namespace every probe fixture. A red suite whose failure will not reproduce
+standalone is evidence about the *environment*, not the code.
+
+---
+
 # PART 0 SIDE-FINDINGS — the harness itself
 
 Two defects found while standing the battery up to *do* Part 0. Neither is a
@@ -883,6 +1017,95 @@ source-scan assertion ("no `localhost:<port>` literal in `tests/` outside
 `helpers.js`") would make this class unshippable, in the style of the existing
 `script-guards` / `asset-retention` total-classification suites. Noted for
 BUILD-73; not built here, to keep this build's scope where the brief put it.
+
+---
+
+# HANDOFF CORRECTIONS — read this before writing the next handoff
+
+## H-1 · DELETE F-3 and F-4 from the handoff
+
+Both were **fixed in BUILD-45** and the handoff carried them as open for three
+weeks, where they set this build's priorities. Part 0 reproduced each with the
+exact inputs the brief specified and could not make either fail:
+
+- **F-3** (manual gift entry records twice on a double-tap) — double, triple and
+  delayed taps all produce exactly one row; two different keys still produce two.
+- **F-4** (import collapses same-day/same-amount twins) — 98 rows in, 98 gifts
+  out, $26,115 balanced, every case in the matrix exact.
+
+Three weeks of a build's priorities were set by two defects that did not exist.
+
+## H-2 · F-5's headline claim was FALSE. What was actually true:
+
+> *"Any pledge payment currently fulfills the whole pledge regardless of amount."*
+
+Not true. BUILD-45 made `paid` a derived sum of linked gifts, and every
+"pledged" figure already read the remaining balance. What **was** wrong, and
+what Part 3 fixed:
+
+1. Overpayment was **swallowed** — balance clamped to 0, surplus recorded nowhere.
+2. A payment against an already-fulfilled pledge was **rejected with 400**.
+3. `status` was a stored flag with **two live drift vectors** through
+   `PUT /pledges/:id` (changing `amount` never recomputed; `status` was directly
+   settable).
+4. Cents are truncated on every manual and imported gift — still open, see Step A.
+
+## H-3 · NEW STANDING RULE — unverified means unverified
+
+**Anything carried across a handoff without re-verification is marked
+UNVERIFIED, and is re-verified before it is allowed to drive a build.** Four of
+the five items in this build's brief were wrong. The cost of Part 0 was a few
+hours; the cost of skipping it would have been a build spent fixing two
+non-existent bugs while the real one kept destroying money.
+
+## H-4 · NEW FAILURE CLASS — **idempotence by data loss is not idempotence**
+
+Distinct from the one-exact-value class, and it defeated a green battery.
+
+Four assertions — `import-combined` and `import-both` ("re-run attaches 0 new
+gifts"), `gift-idempotency` §F-4 ("colliding row HELD"), `concurrency` and
+`concurrency2` §3 ("each gift exactly ONCE") — were **green because of the
+defect**. They asserted that a re-run created nothing. It created nothing
+because the importer was silently destroying every gift belonging to a donor it
+deduped. The tests were describing the bug approvingly.
+
+> **Written as a rule:** when a test asserts that something did NOT happen,
+> prove it did not happen because it was correctly **prevented**, not because
+> the data was **destroyed**. Any assertion of the form *"re-run attaches 0 new
+> X"* or *"exactly ONCE"* is suspect until it also asserts **the money is still
+> there**.
+
+Every one of those four now asserts the dollars, not just the count.
+
+## H-5 · The `import-combined` defect, in full — why Part 0 exists
+
+The example to hand the next build.
+
+**Symptom.** A second import carrying two donors already on file and 3 gift rows
+worth **$1,800** returned:
+
+```
+HTTP 200  {created: 0, duplicates: 2, giftsInserted: 0}
+DB delta: 0 rows, $0.00
+```
+
+The result screen read *"0 donors added · 2 duplicates skipped"* — a sentence
+about **donors**, saying nothing about $1,800 of **gifts** that went into the
+file and did not come out.
+
+**Cause.** `server.js` — the email dedup kept the email and discarded the
+**id**, so `indexToId` was never set for a matched donor, and the gift loop's
+`if (!donorId) continue` dropped their money with no counter, no report and no
+error.
+
+**Why it was dangerous.** It fired on the *second* import — the normal case
+(load donors, then load gift history; re-upload a corrected file; import this
+month against last month's donors) — and on any failed donor batch, which took
+that batch's whole gift history with it.
+
+**Why nobody found it.** It was not on any list. It was found by **building the
+harness to test a defect that turned out not to exist.** That is the entire
+argument for Part 0: the reproduction work finds what the list does not contain.
 
 ---
 
