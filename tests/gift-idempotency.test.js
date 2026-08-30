@@ -249,6 +249,69 @@ async function counts(donorId) {
   ok("within-file twins in history BOTH import + reported",
     twins.body.inserted === 2 && twins.body.duplicateCandidates.withinFile === 1, twins.body);
 
+  // ── BUILD-72 Part 2 · the key has NO expiry window ────────────────────────
+  // The brief asks that a key replayed after five minutes still return the
+  // original rather than creating a second row. Rather than sleep, backdate the
+  // row: if any time window were ever introduced, this replay would fall
+  // outside it and create a second gift.
+  console.log("\n— Part 2 · replay long after the fact —");
+  const staleKey = crypto.randomUUID();
+  const first = await api("POST", "/donors/d_gi_a1/gifts", tok, { amount: 321, date: TODAY, idempotencyKey: staleKey });
+  ok("gift created for the stale-key probe", first.status === 201, first.body);
+  await q(`UPDATE gifts SET created_at = NOW() - INTERVAL '10 minutes' WHERE id=$1`, [first.body.gift.id]);
+  const beforeStale = (await q(`SELECT COUNT(*)::int AS n FROM gifts WHERE donor_id='d_gi_a1'`))[0].n;
+  const replayed = await api("POST", "/donors/d_gi_a1/gifts", tok, { amount: 321, date: TODAY, idempotencyKey: staleKey });
+  const afterStale = (await q(`SELECT COUNT(*)::int AS n FROM gifts WHERE donor_id='d_gi_a1'`))[0].n;
+  ok("a key replayed 10 minutes later returns the ORIGINAL gift",
+    replayed.status === 200 && replayed.body.duplicate === true && replayed.body.gift.id === first.body.gift.id, replayed.body);
+  ok("and creates NO second row — the key has no expiry window", afterStale === beforeStale, { beforeStale, afterStale });
+
+  // ── BUILD-72 Part 2 · the same seam on PLEDGES ────────────────────────────
+  // Part 0 finding 0.2b: two genuinely concurrent identical pledge creates
+  // produced TWO pledges. A pledge is a money row on a screen a finance person
+  // reads, and it is the same seam as gifts, so it is fixed here rather than
+  // deferred. (Interaction/note logging and donor creation have the same gap
+  // but are not money and are a different seam — scoped to BUILD-73.)
+  console.log("\n— Part 2 · pledge idempotency —");
+  const pledgeCount = async () =>
+    (await q(`SELECT COUNT(*)::int AS n FROM pledges WHERE donor_id='d_gi_a2'`))[0].n;
+  await q(`UPDATE pledges SET fulfilled_gift_id=NULL WHERE org_id=$1`, [ORG_A]).catch(() => {});
+  await q(`DELETE FROM gifts WHERE donor_id='d_gi_a2'`).catch(() => {});
+  await q(`DELETE FROM pledges WHERE donor_id='d_gi_a2'`).catch(() => {});
+
+  const pKey = crypto.randomUUID();
+  const body = { amount: 2500, dueDate: TODAY, notes: "double-tap probe", idempotencyKey: pKey };
+
+  // Genuinely CONCURRENT, not sequential — a disabled button does not survive a
+  // flaky connection, so the DB constraint has to be what holds.
+  const [pa, pb] = await Promise.all([
+    api("POST", "/donors/d_gi_a2/pledges", tok, body),
+    api("POST", "/donors/d_gi_a2/pledges", tok, body),
+  ]);
+  ok("two concurrent creates with one key → exactly ONE pledge", (await pledgeCount()) === 1, await pledgeCount());
+  ok("both requests succeed (no 5xx, no error the user must interpret)",
+    [200, 201].includes(pa.status) && [200, 201].includes(pb.status), [pa.status, pb.status]);
+  ok("they describe the SAME pledge", pa.body.id === pb.body.id, [pa.body.id, pb.body.id]);
+  ok("exactly one of them is the create, the other a replay",
+    [pa.body.duplicate, pb.body.duplicate].filter(Boolean).length === 1, [pa.body.duplicate, pb.body.duplicate]);
+
+  // A replay long after the fact still returns the original, never a second row.
+  const late = await api("POST", "/donors/d_gi_a2/pledges", tok, body);
+  ok("a later replay of the same key returns the ORIGINAL pledge",
+    late.status === 200 && late.body.id === pa.body.id && late.body.duplicate === true, late.body);
+  ok("still exactly ONE pledge after the replay", (await pledgeCount()) === 1, await pledgeCount());
+
+  // A DIFFERENT key with identical fields is a real second pledge — a donor
+  // genuinely making two commitments must still work.
+  const second = await api("POST", "/donors/d_gi_a2/pledges", tok, { ...body, idempotencyKey: crypto.randomUUID() });
+  ok("a different key with identical fields creates a SECOND pledge", second.status === 201, second.body);
+  ok("now exactly TWO pledges", (await pledgeCount()) === 2, await pledgeCount());
+
+  // Keys are org-scoped, like gifts.
+  await q(`INSERT INTO donors (id,org_id,name,email,status,stage,total_giving,gift_count) VALUES ('d_gi_b1',$1,'B Pledge','bp.gi@test.local','mid','cultivate',0,0)`, [ORG_B]).catch(() => {});
+  const crossOrg = await api("POST", "/donors/d_gi_b1/pledges", tokB, body);
+  ok("the same key in ANOTHER org creates normally (org-scoped unique)", crossOrg.status === 201, crossOrg.body);
+
   await closeDb();
   summary();
 })().catch(e => { console.error(e); process.exit(1); });

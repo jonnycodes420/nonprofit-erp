@@ -5108,11 +5108,29 @@ app.post("/donors/:id/pledges", requireAuth, checkWriteAccess, wrap(async (req, 
     if (!camp.length) return res.status(404).json({ error: "Campaign not found" });
   }
 
+  // BUILD-72 Part 2 — idempotency, same seam as gifts. The client mints a key
+  // when the pledge form opens and rotates it only on a successful save, so a
+  // double-tapped Save (or a browser retry on hotel wifi in front of a
+  // prospect) replays the SAME key and gets the SAME pledge back — 200, not a
+  // second row and not an error. The DB unique is the fix; a disabled button is
+  // cosmetic and does not survive a flaky connection.
+  const idemKey = typeof req.body.idempotencyKey === "string" && req.body.idempotencyKey.trim()
+    ? req.body.idempotencyKey.trim().slice(0, 128) : null;
+
   const id = "pl_" + uuid().slice(0, 8);
-  await run(
-    "INSERT INTO pledges (id,org_id,donor_id,amount,due_date,notes,campaign_id) VALUES (?,?,?,?,?,?,?)",
-    [id, req.user.orgId, req.params.id, Math.round(Number(amount)), dueDate, notes || "", campaignId]
+  const inserted = await query(
+    `INSERT INTO pledges (id,org_id,donor_id,amount,due_date,notes,campaign_id,idempotency_key)
+     VALUES (?,?,?,?,?,?,?,?)
+     ON CONFLICT (org_id, idempotency_key) WHERE idempotency_key IS NOT NULL DO NOTHING
+     RETURNING id`,
+    [id, req.user.orgId, req.params.id, Math.round(Number(amount)), dueDate, notes || "", campaignId, idemKey]
   );
+  if (!inserted.length && idemKey) {
+    // A replay. Return the ORIGINAL pledge with 200 — never a second row, and
+    // never an error the user has to interpret mid-demo.
+    const dup = await query("SELECT * FROM pledges WHERE org_id=? AND idempotency_key=?", [req.user.orgId, idemKey]);
+    if (dup.length) return res.status(200).json({ ...dup[0], duplicate: true });
+  }
   const rows = await query("SELECT * FROM pledges WHERE id=?", [id]);
   res.status(201).json(rows[0]);
 }));

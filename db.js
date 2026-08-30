@@ -875,6 +875,14 @@ async function initSchema() {
   // partial unique and produces exactly one gift row.
   await pool.query(`ALTER TABLE gifts ADD COLUMN IF NOT EXISTS idempotency_key TEXT`);
   await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS uq_gifts_idem ON gifts (org_id, idempotency_key) WHERE idempotency_key IS NOT NULL`);
+
+  // BUILD-72 Part 2 — the same seam on PLEDGES. A pledge is a money row on a
+  // screen a finance person reads, and it had no idempotency at all: two
+  // genuinely concurrent identical creates produced two pledges (Part 0 finding
+  // 0.2b). Same shape as gifts: a client-minted key, unique per org, partial so
+  // legacy and keyless rows are unaffected.
+  await pool.query(`ALTER TABLE pledges ADD COLUMN IF NOT EXISTS idempotency_key TEXT`);
+  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS uq_pledges_idem ON pledges (org_id, idempotency_key) WHERE idempotency_key IS NOT NULL`);
   // §1.2 F-4 — an import file's explicit external-ID column (gift/transaction id
   // from the source CRM) is the ONLY safe cross-run gift dedup key. (date,
   // amount, donor) alone is never a dedup key — forty $100 Sunday gifts are

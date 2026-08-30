@@ -505,6 +505,61 @@ money write path and every test asserting whole dollars.
 
 ---
 
+# PART 2 — F-3, IDEMPOTENCY ON MANUAL GIFT ENTRY
+
+**F-3 itself needed no code.** Part 0 established it was fixed in BUILD-45 and
+that the fix is exactly the design this brief pre-answers: a client-minted UUID
+per form open, a partial unique on `(organization_id, idempotency_key)`, a
+replay returning the existing gift with 200, and the key rotating only on a
+successful save. Double, triple and delayed taps all yield one row; two
+different keys with identical fields still yield two.
+
+So Part 2's work was the residue Part 0 found.
+
+## P2-1 · Pledge creation is now idempotent — the same seam, so it lands here
+
+Finding 0.2b: two genuinely concurrent identical `POST /donors/:id/pledges`
+produced **two pledges**. A pledge is a money row on a screen a finance person
+reads, and it is the same seam as gifts, so the brief's instruction ("fix it
+here only if it is the same seam") applies.
+
+- `pledges.idempotency_key` + `uq_pledges_idem (org_id, idempotency_key)`
+  partial unique — identical shape to `uq_gifts_idem`, so legacy and keyless
+  rows are untouched.
+- `INSERT … ON CONFLICT DO NOTHING RETURNING`, and a replay returns the
+  **original pledge with 200 and `duplicate:true`** — not an error the user has
+  to interpret in front of a prospect.
+- `Donors.jsx` mints `addPledgeIdemRef` on first submit and clears it only on
+  success, mirroring `addGift` exactly.
+
+## P2-2 · Deliberately NOT fixed here
+
+`POST /donors/:id/interactions` (note / move logging) and `POST /donors` also
+create two rows from two concurrent identical requests. Both are real; neither
+is money, and donors already have duplicate-detection and a merge tool. The
+brief says to name them and scope them rather than widen this build, so they are
+**BUILD-73**.
+
+The keyless gift path also still double-writes — a DB constraint cannot protect
+a request that declines to identify itself. Every first-party client sends a
+key. Closing it would mean rejecting keyless creates, which would break the
+Stripe webhook and portal paths. Recorded, not fixed.
+
+## P2-3 · Tests (in `gift-idempotency`, now 54 assertions)
+
+- Pledges: two **genuinely concurrent** creates with one key → exactly one row,
+  both requests succeed, both describe the same pledge, exactly one is the
+  replay.
+- A different key with identical fields → a real second pledge (a donor making
+  two commitments must still work).
+- The key is org-scoped: the same key in another org creates normally.
+- **The key has no expiry window.** Rather than sleep for five minutes, the
+  gift's `created_at` is backdated ten minutes and the key replayed: it returns
+  the original and creates no second row. If a time window were ever introduced,
+  this replay would fall outside it and the test would fail.
+
+---
+
 # PART 0 SIDE-FINDINGS — the harness itself
 
 Two defects found while standing the battery up to *do* Part 0. Neither is a

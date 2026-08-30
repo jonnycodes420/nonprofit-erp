@@ -2625,6 +2625,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
   // cleared only on SUCCESS: a double-tap (or retry after a network error)
   // replays the same key and the server records exactly one gift.
   const addGiftIdemRef=useRef(null);
+  const addPledgeIdemRef=useRef(null);   // BUILD-72 Part 2 — pledge double-tap guard
   const [addGiftOpen,setAddGiftOpen]=useState(false);
   const [giftSaving,setGiftSaving]=useState(false);
 
@@ -2970,8 +2971,13 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
   const addPledge=async()=>{
     if(!pledgeForm.amount||isNaN(Number(pledgeForm.amount))||!pledgeForm.dueDate)return;
     setPledgeSaving(true);
+    // BUILD-72 Part 2 — one key per pledge, minted on first submit and cleared
+    // only on success, so a double-tap replays it and the server returns the
+    // original row. Mirrors addGift exactly.
+    if(!addPledgeIdemRef.current)addPledgeIdemRef.current=crypto.randomUUID();
     try{
-      await apiFetch(`/donors/${donor.id}/pledges`,{method:"POST",body:JSON.stringify(pledgeForm)});
+      await apiFetch(`/donors/${donor.id}/pledges`,{method:"POST",body:JSON.stringify({...pledgeForm,idempotencyKey:addPledgeIdemRef.current})});
+      addPledgeIdemRef.current=null;
       setAddPledgeOpen(false);
       setPledgeForm({amount:"",dueDate:new Date().toISOString().split("T")[0],notes:"",campaignId:""});
       loadPledges();
