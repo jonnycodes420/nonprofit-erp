@@ -3669,6 +3669,12 @@ function importLedger(kind, unit = "gift") {
     kind, unit,
     rows:    { inFile: 0, created: 0, skipped: 0, errored: 0 },
     dollars: { inFile: 0, created: 0, skipped: 0, errored: 0 },
+    // The file's RAW total, before the importer's whole-dollar rounding. The
+    // normalized `dollars.inFile` above is what the equation balances on; this
+    // is what the file actually said. The gap between them is the blind spot
+    // guarded in assertBalanced().
+    rawDollarsInFile: 0,
+    rawRowsWithCents: 0,
     skippedReasons: {},
     erroredReasons: {},
     _tally(map, reason, n, amount) {
@@ -3677,7 +3683,13 @@ function importLedger(kind, unit = "gift") {
     },
     // Every row in the payload announces itself here FIRST, before any routing
     // decision. Nothing may be created, skipped or errored that did not.
-    saw(amount, n = 1) { this.rows.inFile += n; this.dollars.inFile += round2(amount); },
+    saw(amount, n = 1, rawAmount = null) {
+      this.rows.inFile += n;
+      this.dollars.inFile += round2(amount);
+      const raw = rawAmount == null ? amount : rawAmount;
+      this.rawDollarsInFile = round2(this.rawDollarsInFile + round2(raw));
+      if (Math.abs(round2(raw) - Math.round(raw)) >= 0.005) this.rawRowsWithCents += n;
+    },
     created(amount, n = 1) { this.rows.created += n; this.dollars.created += round2(amount); },
     skipped(reason, amount, n = 1) {
       this.rows.skipped += n; this.dollars.skipped += round2(amount);
@@ -3711,11 +3723,35 @@ function importLedger(kind, unit = "gift") {
         erroredReasons: this.erroredReasons,
         balanced: b.balanced,
         rowGap: b.rowGap, dollarGap: b.dollarGap,
+        rawDollarsInFile: round2(this.rawDollarsInFile),
+        rawRowsWithCents: this.rawRowsWithCents,
       };
     },
     // Throws inside the transaction → db.js's withTransaction ROLLBACKs → the
     // route's catch turns it into a 409 carrying this report. Nothing lands.
     assertBalanced() {
+      // ── THE CENTS BLIND SPOT (BUILD-72 Step A) ──────────────────────────
+      // The equation compares dollars-in-file to dollars-created. If BOTH
+      // SIDES TRUNCATE IDENTICALLY it balances, reports success, and money is
+      // gone — the one hole in the guarantee Part 1 established, sitting
+      // exactly on the $33.33-stores-as-33 defect. So the ledger also carries
+      // the file's RAW total, and refuses an import whose cents were absorbed
+      // silently: rows arrived carrying cents, yet not a cent survived into
+      // what was created. A balanced equation is not permission to lose money.
+      if (this.rawRowsWithCents > 0) {
+        const createdCents = Math.abs(round2(this.dollars.created) - Math.round(this.dollars.created));
+        const rawCents     = Math.abs(round2(this.rawDollarsInFile) - Math.round(this.rawDollarsInFile));
+        if (rawCents >= 0.005 && createdCents < 0.005) {
+          const lost = round2(this.rawDollarsInFile - this.dollars.inFile);
+          const err = new Error(
+            `Import aborted — ${this.rawRowsWithCents} row(s) in the file carry cents, but the imported total is a whole dollar figure: ` +
+            `$${Math.abs(lost).toFixed(2)} of cents would be silently dropped. Nothing was saved.`);
+          err.code = "import_unreconciled";
+          err.reconciliation = { ...this.report(), centsBlindSpot: true,
+            rawDollarsInFile: this.rawDollarsInFile, rawRowsWithCents: this.rawRowsWithCents, centsDropped: round2(lost) };
+          throw err;
+        }
+      }
       const b = this.balance();
       if (b.balanced) return;
       const parts = [];
@@ -4109,7 +4145,7 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(as
     const g = gifts[gi];
     const rawAmt = Number(g.amount) || 0;
     const amt    = Math.round(rawAmt);
-    ledger.saw(amt);
+    ledger.saw(amt, 1, rawAmt);
     // The importer stores whole dollars (Math.round). Surface what that costs
     // instead of letting the ledger silently disagree with the file — the cents
     // question itself is BUILD-72 Part 3's to answer.
@@ -5904,7 +5940,7 @@ app.post("/gifts/import-history", requireAuth, checkWriteAccess, wrapImport(asyn
   for (const g of gifts) {
     const rawAmt = Number(g.amount) || 0;
     const amt = Math.round(rawAmt);
-    ledger.saw(amt);
+    ledger.saw(amt, 1, rawAmt);
     roundingAdjustment += round2(rawAmt - amt);
     if (!g.donorId || !validDonorIds.has(g.donorId)) { invalid++; ledger.errored("donor_not_in_org", amt); continue; }
     if (amt <= 0) { invalid++; ledger.skipped("non_positive_amount", amt); continue; }

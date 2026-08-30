@@ -61,6 +61,10 @@ const PROD_READONLY = [
   "consistency-audit", "finance-overview-capture", "landing-crispness-prod",
   "landing-funnel-verify", "landing-hero-verify", "landing-image-verify",
   "landing-motion-verify", "screenshot-matrix", "topbar-verify", "status",
+  // BUILD-72 Step A — the cents measurement. READ-ONLY by construction: it
+  // opens a READ ONLY transaction, issues only SELECTs, and ROLLBACKs. It
+  // verifies identity (product + database) before the connection is used.
+  "build72-cents-audit",
 ];
 
 // Browser-driving captures: default loopback; any writes ride the logged-in

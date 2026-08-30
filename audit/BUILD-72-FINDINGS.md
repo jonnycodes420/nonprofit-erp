@@ -716,6 +716,119 @@ three money suites pass **205 assertions from an empty schema**.
 
 ---
 
+# STEP A — THE CENTS MEASUREMENT
+
+## A-1 · What the code settles without needing production
+
+Verified in `server.js` at BUILD-72. **Truncation is confined to two paths, and
+the Stripe path is not one of them:**
+
+| Path | Amount expression | Cents |
+|---|---|---|
+| Stripe webhook (all online + recurring gifts) | `pi.amount_received / 100` | **preserved** |
+| Event-attendee auto-gift | `parseFloat(...)` | **preserved** |
+| Manual entry `POST /donors/:id/gifts` | `Math.round(Number(amount))` | **TRUNCATED** |
+| `/donors/import-combined`, `/gifts/import-history` | `Math.round(...)` | **TRUNCATED** |
+| Pledge create + `PUT /pledges/:id` | `Math.round(Number(amount))` | **TRUNCATED** |
+
+This settles **recoverability**, which is what the remediation branch hinges on:
+
+- A Stripe row was never truncated, so there is nothing to recover.
+- A manual or imported row was rounded **before** the INSERT and has no Stripe
+  object behind it. The original cents exist **nowhere** — not in the row, not
+  in an audit trail, not upstream.
+
+So *"migrate existing rows where the true value is recoverable from the source"*
+recovers **nothing, by construction**. If the counts come back non-zero, the
+actionable half is fixing the write paths plus producing the list of
+unrecoverable rows — never a value-restoring migration.
+
+## A-2 · The measurement — BLOCKED on a credential, script committed and proven
+
+`scripts/build72-cents-audit.js` (classified `PROD_READONLY` in
+`tests/script-guards.test.js`) answers all four questions. It is read-only by
+construction — `SET TRANSACTION READ ONLY` + `BEGIN READ ONLY` + `ROLLBACK`,
+`SELECT` only — and verifies identity **before the connection is used**: it
+reads `GET /health` for `product` + `database`, then asks the database its own
+name and refuses if the two disagree. A remote `DATABASE_URL` additionally
+requires `--i-know-this-is-prod`.
+
+**It has not been run against production.** Both routes to the prod
+`DATABASE_URL` are closed in this environment: the Railway CLI is blocked by the
+permission classifier, and `mcp__railway__list-variables` returns names with
+values redacted (`valuesRedacted: true`). See `BLOCKED-build72.md` B-2 for the
+one command that unblocks it.
+
+**Proven working** against the local scratch database (18,560 gifts, 27
+receipts, 24 pledges, 46 subscriptions), and the dry run caught a flaw in its
+own first draft — see A-3.
+
+## A-3 · The detector had a false positive that would have fired Part 3.5 wrongly
+
+The first draft counted `receipts WHERE r.amount <> g.amount` as evidence of a
+truncated receipt. On local data that returned **1** — and the decision rule
+would have declared "NON-ZERO → Part 3.5 before Part 4."
+
+The row was `receipt $280` against `gift $80`. **A receipt is a frozen snapshot
+by design** (BUILD-64), so any later gift edit or refund makes it disagree —
+correct behavior, not a cents bug. Both figures were whole dollars.
+
+**A cents loss can never move a figure by a dollar or more.** The detector now
+splits the two:
+
+- `ABS(r.amount - g.amount) < 1` → the **cents signature** (the decision input)
+- `ABS(r.amount - g.amount) >= 1` → a gift edited or refunded after issue, by design
+
+Local re-run: cents signature **0**, edited-after-issue **1**. Correctly
+classified.
+
+## A-4 · The blind spot is closed NOW, because it is right under either branch
+
+The brief's zero-branch asks for one assertion. It is added regardless of the
+measurement, because it is protective either way and the guarantee it patches is
+the one Part 1 just established.
+
+`importLedger` now also carries the file's **raw** total (`rawDollarsInFile`,
+`rawRowsWithCents`) alongside the rounded one the equation balances on. Before
+committing, `assertBalanced()` refuses an import where **rows arrived carrying
+cents but the created total is a whole-dollar figure** — the exact shape where
+both sides truncate identically, the equation reads clean, and money is gone.
+The refusal names the dollars: *"2 row(s) in the file carry cents, but the
+imported total is a whole dollar figure: $0.99 of cents would be silently
+dropped. Nothing was saved."*
+
+Pinned by `import-reconciliation` §7 (62 assertions in that suite now): a
+`33.33 + 66.66 = 99.99` file is refused with 409 and **nothing is written**;
+a whole-dollar file is unaffected.
+
+**KNOWN RESIDUAL, recorded rather than papered over.** Per-row truncation whose
+errors *cancel* in the total — `33.33 → 33` and `66.67 → 67`, netting `100.00`
+on both sides — is **not** caught, because the file's total carries no cents for
+the rule to compare against. Every affected donor's record is still individually
+wrong. The suite pins this case explicitly as a documented residual. Only making
+storage cents-accurate closes it, which is why cents remains BUILD-73's first
+item even if the production counts come back zero.
+
+---
+
+# S-4 — a real intermittent race, not a flake to shrug at
+
+`tests/webhook-ordering.test.js` §Q2 ("simultaneous `Promise.all`: exactly ONE
+gift, ONE sub, ONE donor") has failed **three times across this build's full
+runs** with `{"g":1,"s":1,"d":2}` — one gift, one subscription, **two donor
+rows** — and passes on every isolated re-run.
+
+It is not on any path BUILD-72 touched (the suite never calls an import route),
+and it predates this build. But `d:2` is a **duplicate donor created by two
+simultaneous Stripe webhooks**, which is a real concurrency defect that
+manifests only under contention. The import path got an advisory lock for
+exactly this class in BUILD-27; the webhook donor-resolution path did not.
+
+Recorded for **BUILD-73**, not fixed here: it is outside this build's scope, and
+guessing at a fix on the live payment path is precisely what the brief forbids.
+
+---
+
 # PART 0 SIDE-FINDINGS — the harness itself
 
 Two defects found while standing the battery up to *do* Part 0. Neither is a

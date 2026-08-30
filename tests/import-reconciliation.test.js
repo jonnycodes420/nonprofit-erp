@@ -237,6 +237,65 @@ function parseCsv(text) {
      desel.body.reconciliation.skippedReasons.user_deselected?.dollars === 1000, desel.body.reconciliation.skippedReasons);
   ok("a deliberate skip still reconciles", desel.body.reconciliation.balanced === true, desel.body.reconciliation);
 
+  // ── §7 · the CENTS BLIND SPOT (BUILD-72 Step A) ─────────────────────────
+  // The equation compares dollars-in-file to dollars-created. If both sides
+  // truncate identically it balances, reports success, and money is gone. This
+  // is the one hole in the guarantee §1–§6 establish, and it sits exactly on
+  // the $33.33-stores-as-33 defect. The importer must REFUSE such a file.
+  console.log("\n— §7 · cents cannot be absorbed silently —");
+  const centsFile = {
+    donors: [{ name: "Cents Carrier", email: "cents@recon.test", stage: "prospect" }],
+    gifts: [
+      // 33.33 + 66.66 = 99.99 — the file's total CARRIES cents, while the
+      // rounded amounts (33 + 67) create a whole-dollar 100.00. That is the
+      // blind spot precisely: both sides of the old equation would have read
+      // 100 and reported a clean balance while $0.99 evaporated.
+      { donorIndex: 0, amount: 33.33, date: "2026-09-01", type: "cash", campaign: "", notes: "" },
+      { donorIndex: 0, amount: 66.66, date: "2026-09-02", type: "cash", campaign: "", notes: "" },
+    ],
+  };
+  const beforeCents = await dbTotals();
+  const centsRes = await api("POST", "/donors/import-combined", tok, centsFile);
+  const afterCents = await dbTotals();
+  ok("a file whose cents would be silently absorbed is REFUSED (409)",
+     centsRes.status === 409, { status: centsRes.status, body: centsRes.body });
+  ok("the refusal names the cents that would have been dropped",
+     /cents/i.test(centsRes.body.message || "") && /\$/.test(centsRes.body.message || ""), centsRes.body.message);
+  ok("the refusal flags the blind spot explicitly",
+     centsRes.body.reconciliation?.centsBlindSpot === true, centsRes.body.reconciliation);
+  ok("it reports how many rows carried cents",
+     centsRes.body.reconciliation?.rawRowsWithCents === 2, centsRes.body.reconciliation);
+  ok("NOTHING was written — a balanced equation is not permission to lose money",
+     afterCents.n === beforeCents.n && afterCents.d === beforeCents.d, { beforeCents, afterCents });
+
+  // KNOWN RESIDUAL, recorded rather than papered over: per-row truncation whose
+  // errors CANCEL in the total (33.33 → 33 and 66.67 → 67, netting 100.00 both
+  // sides) is NOT caught here, because the file's total carries no cents for the
+  // rule to compare against. Each donor's record is still individually wrong.
+  // Only making storage cents-accurate closes that, which is why cents remains
+  // BUILD-73's first item — see audit/BUILD-72-FINDINGS.md, Step A.
+  const netZero = await api("POST", "/donors/import-combined", tok, {
+    donors: [{ name: "Net Zero Cents", email: "netzero@recon.test", stage: "prospect" }],
+    gifts: [
+      { donorIndex: 0, amount: 33.33, date: "2026-09-03", type: "cash", campaign: "", notes: "" },
+      { donorIndex: 0, amount: 66.67, date: "2026-09-04", type: "cash", campaign: "", notes: "" },
+    ],
+  });
+  ok("DOCUMENTED RESIDUAL: cancelling per-row cents still import (guard is total-scoped)",
+     netZero.status === 200, netZero.status);
+  ok("...but the rows that carried cents are still REPORTED, so it is visible",
+     netZero.body.reconciliation.rawRowsWithCents === 2, netZero.body.reconciliation);
+
+  // A whole-dollar file is unaffected — the guard fires only on absorbed cents.
+  const wholeRes = await api("POST", "/donors/import-combined", tok, {
+    donors: [{ name: "Whole Dollars", email: "whole@recon.test", stage: "prospect" }],
+    gifts: [{ donorIndex: 0, amount: 100, date: "2026-09-01", type: "cash", campaign: "", notes: "" }],
+  });
+  ok("a whole-dollar file still imports normally", wholeRes.status === 200
+     && wholeRes.body.reconciliation.balanced === true, wholeRes.body.reconciliation);
+  ok("and reports zero rows carrying cents",
+     wholeRes.body.reconciliation.rawRowsWithCents === 0, wholeRes.body.reconciliation);
+
   await closeDb();
   summary();
 })();
