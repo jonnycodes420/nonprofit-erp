@@ -91,7 +91,7 @@ ok(/<PageTitle main="Your" accent="finances."\/>/.test(fin.replace(/\n/g, " ")) 
 ok(has(fin, "revDeltaCaption"), "Finance vs-prior-period delta surfaced on a stat card caption (not dropped)");
 
 // ── Attribution FIX — Home hero chips are drillable ─────────────────────────
-// The four dark-hero chips (Pace · This FY · This week · Re-engaged) route
+// The four dark-hero chips (Pace · This FY · This week · At risk) route
 // through the ONE shared interactive() treatment (dark variant — keyboard
 // focus/activation included) to destinations that show the SAME number the
 // chip claimed (the count-matches-destination rule; the live agreement
@@ -102,8 +102,13 @@ ok(has(dash, "interactive(onClick,{label:onClick?`Open ${label}`:undefined,dark:
 ok(count(dash, 'onClick={()=>onNavigate("fundraising")}/>') >= 2, "Pace chip → Fundraising Overview (both hero branches)");
 ok(has(dash, 'onNavigate("reports",{report:"giving-summary",preset:"thisFY",yearMode:"fiscal"})'), "This-FY chip → Reports Giving Summary (current FY, fiscal)");
 ok(has(dash, 'onNavigate("reports",{report:"giving-summary",from:tw.start,to:tw.end})'), "This-week chip → Giving Summary filtered to the chip's exact week");
-ok(has(dash, "setReengBreakdownOpen(true)"), "Re-engaged chip opens its donor drill-down");
-ok(has(dash, "impact?.reengagedDonors"), "Re-engaged drill-down lists the donors behind the number");
+ok(has(dash, "setReengBreakdownOpen(true)"), "At-risk chip opens its donor drill-down");
+// BUILD-73 Part 3 — the chip now reads AT RISK and drills into impact.atRiskDonors.
+// It used to read "Re-engaged" and drill into impact.reengagedDonors, which on
+// the demo rendered "$2M · 610 lapsed donors came back" — a results claim on the
+// first screen a prospect sees. See tests/reserved-recovered.test.js.
+ok(has(dash, "impact?.atRiskDonors"), "At-risk drill-down lists the donors behind the number");
+ok(!/label:"Re-engaged"/.test(dash), "the hero chip no longer claims re-engagement");
 // Time Left has no destination — it must stay visibly static (no dead click).
 ok(/label="Time Left"[^/]*sub="left to reach this goal"\/>/.test(dash), "Time Left chip stays static (no onClick — no dead click)");
 // The Reports deep-link intent is real (App threads it, Reports consumes it).

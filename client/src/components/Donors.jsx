@@ -3461,7 +3461,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
                 active:      {label:"Active",         color:"#1a6b4a"},
                 past_due:    {label:"Payment failed",  color:T.terracotta},
                 recovering:  {label:"Recovering",      color:"#c9a84c"},
-                recovered:   {label:"Recovered",       color:"#10b981"},
+                recovered:   {label:"Card fixed",      color:"#10b981"},
                 canceled:    {label:"Canceled",        color:T.ink3},
               };
               const meta=RS_META[recurringSub.status]||{label:recurringSub.status,color:T.ink3};

@@ -102,7 +102,12 @@ const movesOf = async id => q(`SELECT from_stage,to_stage,description,officer_id
   const mv2 = await movesOf("sm_lapse");
   ok("un-lapse logged a second move", mv2.length === 2, mv2);
   ok("un-lapse move is lapsed → steward", mv2[1]?.from_stage === "lapsed" && mv2[1]?.to_stage === "steward");
-  ok("un-lapse description is Auto: re-engaged", /Auto: re-engaged/.test(mv2[1]?.description || ""), mv2[1]);
+  // BUILD-73 Part 3 — was "Auto: re-engaged". The outcome-claim family is banned
+  // on every user-facing surface, and a move description is one: it renders in
+  // the donor's move history. The move itself is unchanged; only the words are.
+  ok("un-lapse description states the FACT, not an outcome claim",
+     /Auto: new gift after a year-long gap/.test(mv2[1]?.description || "")
+     && !/re-?engaged/i.test(mv2[1]?.description || ""), mv2[1]);
   ok("un-lapse move has null officer_id", mv2[1]?.officer_id === null);
 
   // ── Suggestions surfaced but NEVER auto-applied ──

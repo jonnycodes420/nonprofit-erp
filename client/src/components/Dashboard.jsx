@@ -1,7 +1,7 @@
 import { useState, useEffect, Fragment } from "react";
 import { apiFetch } from "../api";
 import { useAuth } from "../main";
-import { T, fmt, fmtFull, daysUntil, daysDiff, askClaude, buildContext, Spin, AIBtn, GoldMoment, interactive, SectionTabs } from "./shared";
+import { T, fmt, fmtFull, quietPhrase, daysUntil, daysDiff, askClaude, buildContext, Spin, AIBtn, GoldMoment, interactive, SectionTabs } from "./shared";
 import { DashboardRecurring } from "./RecurringGiving";
 import { mergeLayout, sectionMeta, isDefaultLayout, moveToTop } from "../lib/homeLayout";
 import { greetingForHour } from "../lib/greeting";
@@ -31,30 +31,43 @@ const PORTFOLIO_BREAKDOWNS = {
   lapsed: { endpoint: "/dashboard/my-stats/lapsed/breakdown", title: "Lapsed", explanation: "Donors assigned to you who've lapsed, ranked by lifetime giving." },
 };
 
-// The honest impact line (FIX) — a quiet "what Steward has done for you" stat,
-// on-palette and not shouting. ATTRIBUTABLE amounts only: recovered recurring
-// giving (a hard, tracked number) + the factual 0% platform fee. NEVER total
-// giving as "Steward raised." Click to expand a provenance breakdown that shows
-// exactly what's counted and the assumption on the one estimate. Empty/new org
-// → a forward-looking line ("watching N donors for failed cards"), never a fake
-// number. See GET /impact in server.js for the honesty guarantees.
+// The impact line. BUILD-73 Part 3 rewrote what it LEADS with, and the reason
+// is positioning, not data.
+//
+// It used to open "Steward has recovered $X in failed-card gifts and re-engaged
+// $Y from N lapsed donors." On a demo org with a decade of history that renders
+// as "$2M re-engaged from 610 lapsed donors" — and nobody reads that as a
+// description of the organization's own past. It reads as money STEWARD brought
+// in, on the first screen a prospect sees, which is invented social proof. If
+// a prospect later works out the number is synthetic, everything else said in
+// that meeting becomes suspect.
+//
+// THE RULE, now stated where it is easy to find: the value math describes the
+// SIZE OF THE PROBLEM, never Steward's results. So the lead figure is money AT
+// RISK — the lifetime giving of donors who have gone quiet — which is a fact
+// about the org's own file and claims nothing. Same vocabulary as the landing
+// page, on purpose: one language across the demo and the marketing.
+//
+// Pinned by tests/reserved-recovered.test.js, which fails the build on the
+// whole outcome-claim family ("recovered", "re-engaged", "recaptured",
+// "won back", "brought back"), not on one exact string.
 function ImpactLine({ impact }) {
   const [open, setOpen] = useState(false);
   if (!impact) return null;
-  const recovered = impact.recoveredAmount || 0;
-  const reeng = impact.reengagedAmount || 0;
-  const reengDonors = impact.reengagedDonorCount || 0;
+  const atRisk = impact.atRiskAmount || 0;
+  const quiet = impact.quietDonorCount || 0;
+  const retried = impact.recoveredAmount || 0;
+  const returned = impact.reengagedAmount || 0;
+  const returnedDonors = impact.reengagedDonorCount || 0;
   const watching = impact.watchingRecurringCount || 0;
   const online = impact.onlineGivingProcessed || 0;
-  const hasRecovered = recovered > 0;
-  // Truly nothing to say yet (no recoveries, no re-engagement, no giving,
-  // nothing watched) → stay silent rather than manufacture a line.
-  if (!hasRecovered && reeng <= 0 && watching <= 0 && online <= 0) return null;
+  const hasRetried = retried > 0;
+  const hasAtRisk = atRisk > 0 && quiet > 0;
+  // Nothing to say yet → stay silent rather than manufacture a line.
+  if (!hasAtRisk && !hasRetried && returned <= 0 && watching <= 0 && online <= 0) return null;
 
-  // Recovered (automated failed-card workflow) and re-engaged (lapsed donors who
-  // came back) are DISTINCT numbers — never merged into one "recovered".
-  const head = (hasRecovered || reeng > 0)
-    ? <>Steward has {hasRecovered && <>recovered <strong style={{ color: T.green600 }}>{fmt(recovered)}</strong> in failed-card gifts</>}{hasRecovered && reeng > 0 && " and "}{reeng > 0 && <>re-engaged <strong style={{ color: T.green600 }}>{fmt(reeng)}</strong> from {reengDonors} lapsed donor{reengDonors === 1 ? "" : "s"}</>} — with no platform fee and no donor tip.</>
+  const head = hasAtRisk
+    ? <><strong style={{ color: T.ink }}>{fmt(atRisk)}</strong> at risk across <strong style={{ color: T.ink }}>{quiet.toLocaleString()}</strong> quiet donor{quiet === 1 ? "" : "s"} — no gift in over {quietPhrase(impact.quietSinceDays)}. No platform fee, no donor tip.</>
     : watching > 0
       ? <>Steward is watching <strong style={{ color: T.ink }}>{watching}</strong> recurring donor{watching === 1 ? "" : "s"} for failed cards — no platform fee, no donor tip, gifts settle in your own Stripe.</>
       : <>No platform fee, no donor tip — <strong style={{ color: T.green600 }}>$0</strong> to Steward on every gift, settled in your own Stripe.</>;
@@ -79,15 +92,20 @@ function ImpactLine({ impact }) {
       </div>
       {open && (
         <div style={{ padding: "2px 18px 14px", background: T.green100 }}>
-          {hasRecovered && row(
-            "Recovered (automated)",
-            fmt(recovered),
-            `${impact.recoveredCount} gift${impact.recoveredCount === 1 ? "" : "s"} the failed-card recovery workflow won back — money that would have quietly lapsed. 100% attributable, tracked per gift.`
+          {hasAtRisk && row(
+            "At risk right now",
+            fmt(atRisk),
+            `Lifetime giving of ${quiet.toLocaleString()} donor${quiet === 1 ? "" : "s"} with no gift in over ${quietPhrase(impact.quietSinceDays)} — drifting, but not yet lapsed. This is your file's own history, not anything Steward did: it is the size of the problem, measured.`
           )}
-          {reeng > 0 && row(
-            "Re-engaged (surfaced)",
-            fmt(reeng),
-            `${fmt(reeng)} from ${reengDonors} lapsed donor${reengDonors === 1 ? "" : "s"} who came back — a gift after a 365-day gap. Counted separately from automated recovery, never merged into it.`
+          {hasRetried && row(
+            "Failed cards, retried automatically",
+            fmt(retried),
+            `${impact.recoveredCount} gift${impact.recoveredCount === 1 ? "" : "s"} whose card failed and which the dunning workflow retried. Tracked per gift, 100% attributable to a retry Steward actually ran.`
+          )}
+          {returned > 0 && row(
+            "Gifts after a year-long gap",
+            fmt(returned),
+            `${fmt(returned)} from ${returnedDonors} donor${returnedDonors === 1 ? "" : "s"} who gave again after a 365-day gap. A fact about your file's history — counted separately from the failed-card retries, never merged into them.`
           )}
           {row(
             "Platform fees you paid Steward",
@@ -353,7 +371,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
   const onSectionDrop=e=>{e.preventDefault();setDragSectionId(null);};
 
   const [debtBreakdownOpen,setDebtBreakdownOpen]=useState(false);
-  // Re-engaged hero chip drill-down (attribution FIX) — reads impact.reengagedDonors.
+  // At-risk hero chip drill-down (attribution FIX) — reads impact.atRiskDonors.
   const [reengBreakdownOpen,setReengBreakdownOpen]=useState(false);
   const [debtBreakdown,setDebtBreakdown]=useState(null);
   const [debtBreakdownLoading,setDebtBreakdownLoading]=useState(false);
@@ -721,10 +739,10 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
     if(isTrivial){
       return goal.goalType==="lapsed_recovery"?`${donorWord} came back this week`:`${donorWord} gave this week`;
     }
-    // B3 — "recovered" is reserved for tracked recovery-workflow dollars only.
-    // This figure is incoming giving toward the win-back goal, NOT money the
-    // recovery workflow attributably won back, so it must read "came in", never
-    // "recovered" (which would overclaim what Steward did).
+    // B3, tightened by BUILD-73 Part 3 — this figure is incoming giving toward
+    // the win-back goal, NOT money any Steward workflow brought in, so it reads
+    // "came in". The outcome-claim family is banned outright now, not merely
+    // reserved; see tests/reserved-recovered.test.js.
     return `${fmtFull(goal.recentAmount)} came in from ${donorWord} this week`;
   })();
 
@@ -751,7 +769,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
 
   // BUILD-32 Part 3 — two LIVE figures for the hero's right-hand stack, added as
   // information (not decoration): this week's giving (a true Monday-based week
-  // from /fundraising/overview) and re-engaged/recovered giving (Part 2, from
+  // from /fundraising/overview) and money at risk (BUILD-73 Part 3, from
   // /impact). Both real, both move week to week — replacing the static "Active
   // Goals" count, which never changed week to week.
   const tw=fundOverview?.thisWeek||{raised:0,giftCount:0};
@@ -760,15 +778,19 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
   // sides, so the destination total equals the chip's number.
   const twStat={label:"This week",value:fmtFull(tw.raised||0),sub:`${tw.giftCount||0} gift${(tw.giftCount||0)===1?"":"s"} logged`,
     onClick:tw.start&&tw.end?()=>onNavigate("reports",{report:"giving-summary",from:tw.start,to:tw.end}):undefined};
-  const reengAmt=impact?.reengagedAmount||0, recovAmt=impact?.recoveredAmount||0, reengDonors=impact?.reengagedDonorCount||0;
-  // "Re-engaged" drills into the donors BEHIND the number (impact.reengagedDonors)
-  // via the standard MetricBreakdownPanel — the panel shows the same amount +
-  // donor count the chip claimed, each row linking to the donor profile.
-  const reengStat=reengAmt>0
-    ? {label:"Re-engaged",value:fmtFull(reengAmt),valueColor:T.gold,sub:`${reengDonors} lapsed donor${reengDonors===1?"":"s"} came back`,onClick:()=>setReengBreakdownOpen(true)}
-    : recovAmt>0
-      ? {label:"Recovered",value:fmtFull(recovAmt),valueColor:T.gold,sub:"failed-card gifts won back"}
-      : {label:"Re-engaged",value:"—",sub:"lapsed donors who return",onClick:()=>setReengBreakdownOpen(true)};
+  // BUILD-73 Part 3 — THE DEMO'S FIRST SCREEN. This chip used to read
+  // "Re-engaged · $2M · 610 lapsed donors came back", which is a results claim
+  // in everything but grammar: on the first screen a prospect sees, it reads as
+  // money Steward brought in. It is now AT RISK — the lifetime giving of donors
+  // who have gone quiet — which is the same file, described honestly, and the
+  // same words the landing page uses.
+  const atRiskAmt=impact?.atRiskAmount||0, quietCount=impact?.quietDonorCount||0;
+  // "At risk" drills into the donors BEHIND the number (impact.atRiskDonors) via
+  // the standard MetricBreakdownPanel — the panel shows the same amount + donor
+  // count the chip claimed, each row linking to the donor profile.
+  const reengStat=atRiskAmt>0
+    ? {label:"At risk",value:fmtFull(atRiskAmt),valueColor:T.gold,sub:`${quietCount.toLocaleString()} quiet donor${quietCount===1?"":"s"} · no gift in over ${quietPhrase(impact?.quietSinceDays)}`,onClick:()=>setReengBreakdownOpen(true)}
+    : {label:"At risk",value:"—",sub:"donors who go quiet",onClick:()=>setReengBreakdownOpen(true)};
 
       /* Goal banner — restructured into a real two-column layout so its
           footprint matches its content across the card's full width,
@@ -832,7 +854,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
                 <div style={{fontSize:13,color:"#c9c2b4"}}><strong style={{fontSize:15,color:T.gold,fontFamily:"'DM Serif Display',serif",fontWeight:400}}>{fmtFull(raised)}</strong> of {fmtFull(goalAmt)}{many?` · ${fgRollup.activeGoalCount} active goals`:""}</div>
               </div>
               {/* RIGHT — real supporting stats. Pace + the FY comparison are kept;
-                  this-week giving + re-engaged/recovered giving are the two live
+                  this-week giving + money at risk are the two live
                   BUILD-32 figures (both move week to week). "Active Goals" (a
                   static count) was dropped — density here must be information. */}
               <div style={{flex:"1 1 260px",minWidth:230,display:"grid",gridTemplateColumns:"1fr 1fr",gap:"8px 18px",alignContent:"start"}}>
@@ -875,7 +897,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
               </div>
 
               {/* RIGHT — supporting stats. Pace + Time Left kept; this-week giving
-                  + re-engaged/recovered (BUILD-32) are the two live added figures,
+                  + money at risk (BUILD-73 Part 3) are the two live added figures,
                   replacing the vaguer "recent momentum" text line. */}
               <div style={{flex:"1 1 260px",minWidth:230,display:"grid",gridTemplateColumns:"1fr 1fr",gap:"8px 18px",alignContent:"start"}}>
                 <GoalStat label="Pace" value={paceLabel} valueColor={paceLabel==="Ahead of pace"?T.gold:paceLabel==="Behind pace"?T.terracotta:"#f0ede6"} sub={paceSub} onClick={()=>onNavigate("fundraising")}/>
@@ -1355,7 +1377,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
           Sits at the foot of the home column, small and on-palette. */
   // Nothing-to-say guard mirrored from ImpactLine's own early return, so the
   // section reads as absent (not an empty edit-mode shell) when silent.
-  const impactVisible=!!impact&&((impact.recoveredAmount||0)>0||(impact.reengagedAmount||0)>0||(impact.watchingRecurringCount||0)>0||(impact.onlineGivingProcessed||0)>0);
+  const impactVisible=!!impact&&((impact.atRiskAmount||0)>0||(impact.recoveredAmount||0)>0||(impact.reengagedAmount||0)>0||(impact.watchingRecurringCount||0)>0||(impact.onlineGivingProcessed||0)>0);
   const impactSection=impactVisible?<ImpactLine impact={impact}/>:null;
 
 
@@ -1418,8 +1440,8 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
       )}
       {recurringHealth&&recurringHealth.recoveredThisMonth>0&&(
         <GoldMoment moment="first_recovery"
-          title="A recurring gift came back."
-          line="A failed card was fixed and the gift resumed — money that, at most organizations, would have quietly disappeared. Steward will keep watching."/>
+          title="A failed card was fixed."
+          line="The gift resumed — money that, at most organizations, would have quietly disappeared. Steward will keep watching."/>
       )}
 
       {/* ── The section stack (BUILD-34) ─────────────────────────────────
@@ -1599,16 +1621,16 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
       <MetricBreakdownPanel
         open={reengBreakdownOpen}
         onClose={()=>setReengBreakdownOpen(false)}
-        title="Re-engaged giving"
-        explanation="Donors who were lapsed (a gap of more than a year) and gave again — every genuine return gift counted, the same lapse definition the pipeline uses. This is surfaced giving, distinct from the failed-card recovery workflow's recovered dollars."
+        title="Money at risk"
+        explanation={`The lifetime giving of donors with no gift in over ${quietPhrase(impact?.quietSinceDays)} — the same going-quiet threshold the pipeline's move suggestions use. These donors are drifting, not yet lapsed, which is exactly when there is still something to do about it. This is your file's own history, not anything Steward did: it is the size of the problem, measured.`}
         loading={false}
-        total={impact?.reengagedAmount!=null?fmtFull(impact.reengagedAmount):"—"}
-        totalLabel="Re-engaged"
-        totalCount={impact?.reengagedDonorCount}
-        rows={(impact?.reengagedDonors||[]).map(r=>({
+        total={impact?.atRiskAmount!=null?fmtFull(impact.atRiskAmount):"—"}
+        totalLabel="At risk"
+        totalCount={impact?.quietDonorCount}
+        rows={(impact?.atRiskDonors||[]).map(r=>({
           donorId:r.id,
           donorName:r.name,
-          detail:`${r.giftCount} return gift${r.giftCount===1?"":"s"}${r.lastReturnDate?` · last ${new Date(r.lastReturnDate).toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"})}`:""}`,
+          detail:r.lastGiftDate?`Last gave ${new Date(r.lastGiftDate).toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"})}`:"No gift date on file",
           value:fmtFull(r.amount),
         }))}
         onSelectDonor={goToDonorFromBreakdown}

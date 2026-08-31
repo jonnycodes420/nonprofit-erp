@@ -52,3 +52,18 @@ export const fmtDay = iso => {
   if (!m) return String(iso || "");
   return `${FMT_MONTHS[parseInt(m[2], 10) - 1]} ${parseInt(m[3], 10)}, ${m[1]}`;
 };
+
+// BUILD-73 Part 3 — the at-risk threshold, rendered in words.
+//
+// The Home chip shipped for exactly one build reading "544 quiet donors · no
+// gift in over a year" while the server's QUIET_DAYS was 180. The number and
+// the sentence were maintained in different files, so they drifted the moment
+// one changed. Every surface now derives the phrase from the payload's
+// `quietSinceDays`, so the copy cannot contradict the figure it describes.
+export const quietPhrase = days => {
+  const d = Number(days);
+  if (!Number.isFinite(d) || d <= 0) return "a while";
+  if (d >= 365) { const y = Math.round(d / 365); return y === 1 ? "a year" : `${y} years`; }
+  const m = Math.round(d / 30);
+  return m <= 1 ? "a month" : m === 12 ? "a year" : `${m} months`;
+};

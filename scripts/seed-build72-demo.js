@@ -30,7 +30,12 @@ const { Client } = require("pg");
 const bcrypt = require("bcryptjs");
 const orgTime = require("../orgTime");
 
-const BASE = guard.writerBase("http://localhost:5601");
+// Resolved INSIDE main(), not at module load. BUILD-73 Part 3 requires this
+// file for its DRIFTED/SHAPE exports (tests/demo-shape.test.js), and
+// writerBase() performs a live identity check — so at module scope, merely
+// importing the seed hit the network and refused. The guard is unchanged and
+// still runs before a single write; it just runs when the seed actually seeds.
+let BASE;
 const DB = process.env.DATABASE_URL || "postgres://steward@localhost:5544/steward_loadtest";
 
 const ORG = "org_b72demo";
@@ -62,8 +67,34 @@ const between = (a, b) => a + Math.floor(rnd() * (b - a + 1));
 const FIRST = ["Marguerite","Halvard","Ondine","Casper","Wilhelmina","Tobias","Rosalind","Emmett","Philippa","Gideon","Cordelia","Ansel","Beatrix","Rufus","Isolde","Barnaby","Clementine","Alaric","Perpetua","Silas","Verity","Osric","Henrietta","Leopold","Araminta","Fenwick","Drusilla","Cuthbert","Marisol","Thaddeus"];
 const LAST  = ["Ashgrove","Bellwether","Cinderhalt","Dunmoor","Elmsworth","Fairweather","Glasswick","Hollowell","Ironvale","Jessamine","Kettleby","Lindquist","Marchbanks","Netherfield","Oakhampton","Pemberton","Quillfeather","Ravensmere","Stonebridge","Thornbury","Underhill","Vanterpool","Wexford","Yarrowdale","Ziegler","Applewhite","Braithwaite","Carrowmore","Dellacroix","Everhart"];
 
+// THE ELEVEN, hoisted to module scope and exported. They are the demo's thesis
+// — consistent multi-year mid-level giving, then nothing — and BUILD-73 Part 3
+// asserts on them by name (tests/demo-shape.test.js), so they must be readable
+// without running the seed. Exported, not duplicated: a copy in the test would
+// drift from the seed the first time either changed.
+const DRIFTED = [
+  ["Marguerite Ashgrove", 2500], ["Halvard Bellwether", 2000], ["Ondine Cinderhalt", 2400],
+  ["Casper Dunmoor", 1800],      ["Wilhelmina Elmsworth", 3000], ["Tobias Fairweather", 2000],
+  ["Rosalind Glasswick", 2200],  ["Emmett Hollowell", 1900],   ["Philippa Ironvale", 2600],
+  ["Gideon Jessamine", 2000],    ["Cordelia Kettleby", 2800],
+];
+
+// The shape contract BUILD-73 Part 3 pins. The demo is the pitch, and the pitch
+// is mid-level drift — eleven quiet donors, never four hundred lapsed $50s. A
+// seed that regresses toward a flat file, or toward a file so top-heavy it
+// reads as fake, tells a different story than the product's. These are ranges,
+// not exact numbers: the tail is randomly generated on purpose, and a test that
+// demanded an exact percentage would be pinning the random seed, not the shape.
+const SHAPE = {
+  driftedCount: 11,
+  topDecileShareMin: 0.62, topDecileShareMax: 0.82,   // top 10% of donors, share of lifetime revenue
+  top200ShareMin: 0.82,    top200ShareMax: 0.93,      // the FEP figure the seed prints
+  donorsMin: 1000,         donorsMax: 1150,
+};
+
 async function main() {
   // ── Layer 0/3 — identity BEFORE anything is written ─────────────────────
+  BASE = guard.writerBase("http://localhost:5601");         // Layers 1-2, before any write
   const health = guard.assertServerIdentity(BASE);          // refuses a non-steward product
   console.log(`[identity] ${BASE} → product=${health.product} database=${health.database}`);
 
@@ -129,12 +160,6 @@ async function main() {
   // year. Not lapsed-and-forgotten — quietly gone, while still looking fine in
   // any report that only counts lifetime totals.
   console.log("[seed] the eleven drifted mid-level donors…");
-  const DRIFTED = [
-    ["Marguerite Ashgrove", 2500], ["Halvard Bellwether", 2000], ["Ondine Cinderhalt", 2400],
-    ["Casper Dunmoor", 1800],      ["Wilhelmina Elmsworth", 3000], ["Tobias Fairweather", 2000],
-    ["Rosalind Glasswick", 2200],  ["Emmett Hollowell", 1900],   ["Philippa Ironvale", 2600],
-    ["Gideon Jessamine", 2000],    ["Cordelia Kettleby", 2800],
-  ];
   const driftedIds = [];
   DRIFTED.forEach(([name, amt], i) => {
     const email = name.toLowerCase().replace(/ /g, ".") + "@example.demo";
@@ -234,10 +259,28 @@ async function main() {
   }
 
   // BUILD-72 Part 3 — a gift carrying CENTS, so the Step A truncation question
-  // is visible on screen rather than theoretical.
+  // is visible on screen rather than theoretical. Since BUILD-73 Part 2 this
+  // amount survives as $1,234.56 rather than storing as $1,235.
   const centsDonor = addDonor("Araminta Wexford", "araminta.wexford@example.demo",
                               { status: "mid", stage: "cultivate" });
   addGift(centsDonor, 1234.56, dateIn(YEAR, 4, 2), { cents: true });
+
+  // BUILD-73 Part 3.2 — the pledge fixtures get their OWN donors.
+  //
+  // They used to hang off driftedIds[0] and driftedIds[1], which attached 2026
+  // pledge PAYMENTS to two of the eleven and quietly un-drifted them: Marguerite
+  // Ashgrove last gave 192 days ago and Halvard Bellwether 117, so two of the
+  // demo's eleven were not quiet at all. Nothing said so — the seed printed
+  // "the eleven drifted mid-level donors: 11" either way, because it counted the
+  // list rather than checking the shape. tests/demo-shape.test.js found it, and
+  // now asserts it, which is the whole point of that suite.
+  //
+  // The eleven must be SILENT. Anything that needs a current-year gift belongs
+  // on a donor whose story is a current-year gift.
+  const pledgeDonorA = addDonor("Isolde Fennimore", "isolde.fennimore@example.demo",
+                                { status: "major", stage: "solicit", pin: true, officer: "u_b72demo" });
+  const pledgeDonorB = addDonor("Barnaby Thistlewood", "barnaby.thistlewood@example.demo",
+                                { status: "mid", stage: "steward", pin: true, officer: "u_b72demo_off" });
 
   await writeAll(client, donors, gifts);
 
@@ -246,16 +289,16 @@ async function main() {
   const plPartial = "pl_b72_part", plOver = "pl_b72_over";
   await q(`INSERT INTO pledges (id,org_id,donor_id,amount,due_date,notes,campaign_id,status)
            VALUES ($1,$2,$3,10000,$4,'Capital pledge — three-year commitment','camp_b72demo','open')`,
-          [plPartial, ORG, driftedIds[0], dateIn(YEAR, 12, 31)]);
+          [plPartial, ORG, pledgeDonorA, dateIn(YEAR, 12, 31)]);
   await q(`INSERT INTO gifts (id,org_id,donor_id,amount,date,type,pledge_id,campaign)
            VALUES ('g_b72_pl1',$1,$2,4000,$3,'check',$4,'Annual Fund ' || $5)`,
-          [ORG, driftedIds[0], dateIn(YEAR, 2, 20), plPartial, String(YEAR)]);
+          [ORG, pledgeDonorA, dateIn(YEAR, 2, 20), plPartial, String(YEAR)]);
   await q(`INSERT INTO pledges (id,org_id,donor_id,amount,due_date,notes,campaign_id,status)
            VALUES ($1,$2,$3,5000,$4,'Scholarship pledge','camp_b72demo','open')`,
-          [plOver, ORG, driftedIds[1], dateIn(YEAR, 9, 30)]);
+          [plOver, ORG, pledgeDonorB, dateIn(YEAR, 9, 30)]);
   await q(`INSERT INTO gifts (id,org_id,donor_id,amount,date,type,pledge_id)
            VALUES ('g_b72_pl2',$1,$2,5750,$3,'check',$4)`,
-          [ORG, driftedIds[1], dateIn(YEAR, 5, 6), plOver]);
+          [ORG, pledgeDonorB, dateIn(YEAR, 5, 6), plOver]);
 
   // BUILD-72 Part 3 — the pledges were written directly, so derive their status
   // and surplus exactly as recalcPledgePayment() would. Without this the
@@ -274,6 +317,10 @@ async function main() {
 
   // ── A recurring gift with a FAILED card ─────────────────────────────────
   console.log("[seed] a recurring gift with a failed card…");
+  // Deliberately one of the eleven: a failed card is one of the real reasons a
+  // reliable mid-level donor goes quiet, and the subscription row carries no
+  // gift, so it does not break their silence. It is the story, not a
+  // contradiction — Ondine Cinderhalt did not choose to stop.
   const recurDonor = driftedIds[2];
   await q(`INSERT INTO recurring_subscriptions
              (id,org_id,donor_id,amount,interval,status,stripe_subscription_id,fund_id,created_at)
@@ -402,4 +449,8 @@ async function writeAll(client, donors, gifts) {
   }
 }
 
-main().catch(e => { console.error(e); process.exit(1); });
+module.exports = { DRIFTED, SHAPE, ORG, ADMIN_EMAIL, ADMIN_PASSWORD };
+
+// Only run when invoked directly — tests/demo-shape.test.js requires this file
+// for DRIFTED/SHAPE and must not trigger a seed by importing it.
+if (require.main === module) main().catch(e => { console.error(e); process.exit(1); });

@@ -290,3 +290,171 @@ PASS  a whole-dollar file still imports normally
 - **Eleven of twelve production orgs are test data**, including one named
   "Go-Live Test Shelter (DELETE ME)". Not a defect; a cleanup decision that is
   Jonathan's to make, not a migration's.
+
+
+---
+
+# PART 3 — THE DEMO'S FIRST SCREEN
+
+## 3.1 — The results claim, and where it actually lived
+
+The brief named the sentence: **"$2M re-engaged from 610 lapsed donors."** It was
+real, and the figure was exact:
+
+```
+GET /impact (org_b72demo, the demo org)
+reengagedAmount     $1,980,614.00
+reengagedDonorCount 610
+```
+
+It rendered in **three** places, not one — the Home hero chip
+(`Re-engaged · $2M · 610 lapsed donors came back`), the Home impact line
+("Steward has recovered $X … and re-engaged $Y from N lapsed donors"), and the
+same sentence duplicated in Settings' value banner and billing ROI card.
+
+**The mechanism.** `reengagedAmount` sums every gift that followed a >365-day
+gap, across all history. On an org with a decade of giving that is a large
+number by construction — it describes the ORGANIZATION'S past, and nothing about
+Steward. But the sentence begins "**Steward has** …", and on the first screen a
+prospect sees, nobody parses it as anything but money Steward brought in.
+
+## 3.2 — Fixing by framing meant fixing the MEASURE, not the label
+
+The brief says "$2M at risk across 610 quiet donors" is "the same data, honest on
+its face." Relabelling the re-engagement sum as "at risk" would have been a
+different untruth: gifts that already arrived after a gap are not money at risk
+today. So the figure now measures what the words say.
+
+**`atRiskAmount` = Σ lifetime giving of donors who have gone quiet.** A fact
+about the org's own file, claiming nothing.
+
+**The threshold is the product thesis, and it is 180 days, not 365.** This is
+where 3.1 and 3.2 meet. Leading with the 365-day lapsed set tells the
+lapsed-recapture story — donors already gone — which is the story every other
+tool tells, and exactly what 3.2 says to avoid. Leading at 180 days surfaces the
+donors who are *drifting*, while every lifetime-total report still shows them as
+fine. `computeMoveSuggestions` already fired a `going_quiet` signal at 180 days
+with the reason *"reach out before they lapse"* — the threshold existed; the
+headline figure just wasn't using it. It is now `QUIET_DAYS`, named beside
+`LAPSE_DAYS` so the two cannot drift apart unnoticed.
+
+**The demo's first screen now reads:**
+
+```
+AT RISK
+$2,006,865
+544 quiet donors · no gift in over 6 months
+```
+
+Same magnitude the brief expected, describing money genuinely at risk, and — the
+point — **the eleven drifted mid-level donors are inside it.** At the 365-day
+line they were not: they last gave 286–294 days ago, so a lapse-based figure
+would have opened the demo on a set that excludes its own thesis.
+
+## 3.3 — The copy shipped wrong for one build, and that is now impossible
+
+The chip rendered `544 quiet donors · no gift in over a year` while the server's
+threshold was 180 days. The number and the sentence were maintained in different
+files. Every surface now derives the phrase from the payload
+(`quietPhrase(impact.quietSinceDays)` in `client/src/lib/money.js`), and
+`reserved-recovered` pins both the pure function and the absence of a hardcoded
+duration in the Dashboard source.
+
+## 3.4 — The ban, asserted on the family
+
+`tests/reserved-recovered.test.js` was BUILD-26's "recovered is a reserved word"
+grep. It is now the **outcome-claim ban**: `recovered`, `re-engaged`/`reengaged`,
+`recaptured`, `won back`, `brought back` — banned in **user-facing copy** across
+app UI, emails, PDFs, CSV headers, the demo seed and the landing page (78 files
+scanned).
+
+**How it tells copy from code.** The scan reads **string literals and JSX text**
+and ignores identifiers, snake_case keys, SQL, console output and interpolated
+`${…}` expressions. So `recoveredAmount`, `recovered_at`, `payment_recovered`
+and the `recovered` subscription status survive untouched — renaming a database
+column makes no claim to anybody — while a rendered sentence cannot.
+
+**Deliberately NOT banned: "recovery" and "recovering" as PROCESS nouns** —
+"failed-card recovery", "recovery emails", "Needs recovery", the
+`lapsed_recovery` goal type. Those name a workflow Steward genuinely runs. The
+banned words are all **past-tense outcomes**, which is the shape that reads as a
+results claim. Drawing the line at tense rather than at the word root keeps a
+feature honestly nameable while making the overclaim unshippable. My first draft
+banned the root and flagged ten legitimate feature names; that was over-reach and
+is recorded here rather than quietly narrowed.
+
+**The scan is proven capable of failing** — it is driven against the exact
+sentence the demo used to open on, and asserted not to flag an identifier.
+
+**Rewritten copy, every surface:**
+
+| Surface | Was | Now |
+|---|---|---|
+| Home hero chip | `Re-engaged · 610 lapsed donors came back` | `At risk · 544 quiet donors · no gift in over 6 months` |
+| Home impact line | `Steward has recovered $X … and re-engaged $Y` | `$2.0M at risk across 544 quiet donors` |
+| Home drill-down | `Re-engaged giving` | `Money at risk` |
+| Settings banner + billing ROI | the same sentence, twice | the at-risk framing |
+| Impact detail rows | `Recovered (automated)` · `Re-engaged (surfaced)` | `At risk right now` · `Failed cards, retried automatically` · `Gifts after a year-long gap` |
+| Annual Fund metric card | `Lapsed Recovered` | `Returned After a Gap` |
+| Recurring status chip + CSV header | `Recovered` | `Card fixed` |
+| Auto-move description | `Auto: re-engaged — new gift` | `Auto: new gift after a year-long gap` |
+| Webhook task title | `Re-engaged via online gift` | `Gave again after a year-long gap` |
+| Gold moment | `A recurring gift came back.` | `A failed card was fixed.` |
+| In-app landing | `Watch retention and recovered gifts climb` | `Watch retention climb and the at-risk number fall` |
+
+**Verified on the rendered page**, not just in source: every banned word absent
+from the demo's Home screen DOM (`docs/build73-demo/first-screen-1440.png`).
+
+## 3.5 — The seed had drifted, and the assertion caught it
+
+The BUILD-72 Part 5 shape held: **1,072 donors · top 200 carry 87.5% · top decile
+72.5% · eleven drifted donors present.** But two of the eleven were **not quiet**:
+
+```
+Marguerite Ashgrove  last gift 192 days ago
+Halvard Bellwether   last gift 117 days ago
+```
+
+The pledge fixtures hung off `driftedIds[0]` and `driftedIds[1]`, attaching
+current-year pledge PAYMENTS to two of the eleven and silently un-drifting them.
+Nothing said so: the seed printed *"the eleven drifted mid-level donors: 11"*
+either way, because it counted the list rather than checking the shape. **That is
+exactly the drift 3.2 describes, and `tests/demo-shape.test.js` found it on its
+first run.**
+
+Fixed by giving the pledges their own donors (Isolde Fennimore, Barnaby
+Thistlewood). The `past_due` recurring subscription stays on one of the eleven
+deliberately — a failed card is a real reason a reliable mid-level donor goes
+quiet, and a subscription row carries no gift, so it does not break the silence.
+It is the story, not a contradiction.
+
+**`tests/demo-shape.test.js` (17)** asserts the shape as RANGES exported from the
+seed itself (`SHAPE`), never duplicated in the test:
+
+- top-decile revenue share within `[62%, 82%]` · top-200 within `[82%, 93%]`
+- explicitly **not flat** (>50%) and **not absurdly top-heavy** (<95%) — both
+  read as fake to a fundraiser
+- all eleven present, mid-level by lifetime giving, 4+ gifts each, quiet >180
+  days, **not yet lapsed** (<365), each assigned to a person
+- the eleven are INSIDE the figure the demo opens on
+- the at-risk count (544) exceeds the lapsed-only count (347) — the figure is
+  about drift, not recapture
+
+## 3.6 — A real bug this part introduced, and how it was caught
+
+My first at-risk query compared `gifts.date` — a **civil date** — against
+`CURRENT_DATE`. That is precisely the class BUILD-72 Part 4 closed: the figure
+would have flipped for every org west of UTC for part of each day.
+`tests/date-seam.test.js` failed immediately (`unrouted civil-date sites: 99,
+baseline 97`). Routed through `orgTime.addDays(orgToday(await orgTz(orgId)), …)`
+— one cutoff, computed once, in the organization's own calendar. Baseline back
+to 97, one more site routed.
+
+## Known intermittent, recorded rather than swept
+
+`tests/donor-linking.test.js` §S-12 failed **once** in a full-battery run
+(`claim.status` not 200 → `/account/me` returned no `links`, so `.length` threw)
+and passes on every isolated run (3/3) and on a clean re-run of the full battery
+(109 suites, 0 failed). Not on any path this build touched. Same class as
+BUILD-72's S-4 webhook-ordering flake — recorded, not fixed, and not claimed as
+green when it was not.

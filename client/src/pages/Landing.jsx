@@ -1056,7 +1056,7 @@ export default function Landing() {
                 {
                   shot: <ClimbShot />,
                   alt: "A fundraising goal's progress: 22% of goal reached, $5,501 of $25,000",
-                  line: <><strong>Watch retention and recovered gifts climb.</strong> The numbers move because someone finally noticed in time.</>,
+                  line: <><strong>Watch retention climb and the at-risk number fall.</strong> The numbers move because someone finally noticed in time.</>,
                 },
               ].map((s, i) => (
                 <div key={i} className="lp-hiw-step">

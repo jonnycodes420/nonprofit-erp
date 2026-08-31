@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { T, Pill, SectionLabel, PageTitle, SectionTabs, fmt } from "./shared";
+import { T, Pill, SectionLabel, PageTitle, SectionTabs, fmt, quietPhrase } from "./shared";
 import { QrCodeBlock, EmbedCodeBlock } from "./ShareBlocks";
 import { resolveAssetUrl } from "../lib/assetUrl";
 import { apiFetch, API, getToken, billingErrorMessage } from "../api";
@@ -1293,23 +1293,22 @@ export function Settings({auth,logout,initialSection,onNavigate}) {
           what Steward has done for them, not a near-empty Organization card.
           Honest numbers only — forward-looking copy when there's nothing yet. */}
       {impact&&(()=>{
-        // BUILD-32 Part 2 — recovered (failed-card workflow) and re-engaged
-        // (lapsed donors who came back) are TWO separate, precisely-labelled
-        // numbers. Never merged — merging would overclaim "recovered".
-        const recovered=impact.recoveredAmount||0;
-        const reeng=impact.reengagedAmount||0;
-        const reengDonors=impact.reengagedDonorCount||0;
+        // BUILD-73 Part 3 — this banner leads with MONEY AT RISK, not with
+        // anything Steward claims to have done. The value math describes the
+        // size of the problem; it never describes Steward's results. Same
+        // vocabulary as the Home hero and the landing page, on purpose.
+        const atRisk=impact.atRiskAmount||0;
+        const quiet=impact.quietDonorCount||0;
         const watching=impact.watchingRecurringCount||0;
         const clauses=[];
-        if(recovered>0)clauses.push(<>recovered <strong style={{color:T.green600}}>{fmt(recovered)}</strong> in failed-card gifts</>);
-        if(reeng>0)clauses.push(<>re-engaged <strong style={{color:T.green600}}>{fmt(reeng)}</strong> from <strong style={{color:T.ink}}>{reengDonors}</strong> lapsed donor{reengDonors===1?"":"s"} who came back</>);
+        if(atRisk>0&&quiet>0)clauses.push(<><strong style={{color:T.ink}}>{fmt(atRisk)}</strong> at risk across <strong style={{color:T.ink}}>{quiet.toLocaleString()}</strong> quiet donor{quiet===1?"":"s"}</>);
         let msg;
         if(clauses.length){
-          msg=<>Steward has {clauses.map((c,i)=><span key={i}>{i>0?(i===clauses.length-1?" and ":", "):""}{c}</span>)} — with <strong style={{color:T.ink}}>no platform fee and no donor tip</strong>; gifts settle in your own Stripe.</>;
+          msg=<>{clauses.map((c,i)=><span key={i}>{i>0?(i===clauses.length-1?" and ":", "):""}{c}</span>)} — no gift in over {quietPhrase(impact.quietSinceDays)}. <strong style={{color:T.ink}}>No platform fee and no donor tip</strong>; gifts settle in your own Stripe.</>;
         }else if(watching>0){
           msg=<>Steward is watching <strong style={{color:T.ink}}>{watching}</strong> recurring gift{watching===1?"":"s"} for failed cards — <strong style={{color:T.ink}}>no platform fee, no donor tip</strong>; gifts settle in your own Stripe.</>;
         }else{
-          msg=<><strong style={{color:T.ink}}>No platform fee, no donor tip</strong> — your gifts settle in your own Stripe. Your recovered-giving and re-engaged-giving numbers appear here as you use Steward.</>;
+          msg=<><strong style={{color:T.ink}}>No platform fee, no donor tip</strong> — your gifts settle in your own Stripe. Your at-risk giving appears here as donors go quiet.</>;
         }
         return (
           <div style={{background:T.white,border:"1px solid "+T.bg3,borderLeft:"3px solid "+T.gold500,borderRadius:12,padding:"12px 16px",display:"flex",alignItems:"center",gap:10}}>
@@ -1644,17 +1643,16 @@ export function Settings({auth,logout,initialSection,onNavigate}) {
                 </div>
               )}
             </div>
-            {/* ROI / impact line (FIX) — the retention moment: what Steward has
-                actually recovered for you, next to what the plan costs. Honest,
-                attributable amounts only (never total giving); click for the
-                provenance breakdown + the assumption on the one estimate. */}
-            {impact&&(impact.recoveredAmount>0||impact.reengagedAmount>0||impact.watchingRecurringCount>0||impact.onlineGivingProcessed>0)&&(()=>{
-              const recovered=impact.recoveredAmount||0, cost=impact.planMonthlyCost, watching=impact.watchingRecurringCount||0, online=impact.onlineGivingProcessed||0;
-              const reeng=impact.reengagedAmount||0, reengDonors=impact.reengagedDonorCount||0;
-              // Recovered (automated failed-card workflow) and re-engaged (lapsed
-              // donors who came back) are DISTINCT — never merged into "recovered".
-              const head=(recovered>0||reeng>0)
-                ? <>Steward has {recovered>0&&<>recovered <strong style={{color:T.green600}}>{fmt(recovered)}</strong> in failed-card gifts</>}{recovered>0&&reeng>0&&" and "}{reeng>0&&<>re-engaged <strong style={{color:T.green600}}>{fmt(reeng)}</strong> from {reengDonors} lapsed donor{reengDonors===1?"":"s"}</>}{cost!=null&&<> · your plan is <strong style={{color:T.ink}}>${cost}/mo</strong></>}. No platform fee, no donor tip.</>
+            {/* ROI / impact line. BUILD-73 Part 3: it leads with what is AT RISK
+                in the org's own file, next to what the plan costs — the size of
+                the problem, never a claim about what Steward achieved. Click for
+                the provenance breakdown + the assumption on the one estimate. */}
+            {impact&&(impact.atRiskAmount>0||impact.recoveredAmount>0||impact.reengagedAmount>0||impact.watchingRecurringCount>0||impact.onlineGivingProcessed>0)&&(()=>{
+              const retried=impact.recoveredAmount||0, cost=impact.planMonthlyCost, watching=impact.watchingRecurringCount||0, online=impact.onlineGivingProcessed||0;
+              const returned=impact.reengagedAmount||0, returnedDonors=impact.reengagedDonorCount||0;
+              const atRisk=impact.atRiskAmount||0, quiet=impact.quietDonorCount||0;
+              const head=(atRisk>0&&quiet>0)
+                ? <><strong style={{color:T.ink}}>{fmt(atRisk)}</strong> at risk across <strong style={{color:T.ink}}>{quiet.toLocaleString()}</strong> quiet donor{quiet===1?"":"s"}{cost!=null&&<> · your plan is <strong style={{color:T.ink}}>${cost}/mo</strong></>}. No platform fee, no donor tip.</>
                 : watching>0
                   ? <>Steward is watching <strong style={{color:T.ink}}>{watching}</strong> recurring donor{watching===1?"":"s"} for failed cards — money most orgs lose silently{cost!=null&&<>, on a <strong style={{color:T.ink}}>${cost}/mo</strong> plan</>}. No platform fee, no donor tip.</>
                   : <>No platform fee, no donor tip — <strong style={{color:T.green600}}>$0</strong> to Steward on every gift{cost!=null&&<>, on a <strong style={{color:T.ink}}>${cost}/mo</strong> plan</>}.</>;
@@ -1677,10 +1675,12 @@ export function Settings({auth,logout,initialSection,onNavigate}) {
                   </div>
                   {impactOpen&&(
                     <div style={{padding:"2px 16px 12px",background:T.green100}}>
-                      {recovered>0&&brow("Recovered (automated)",fmt(recovered),
-                        `${impact.recoveredCount} gift${impact.recoveredCount===1?"":"s"} the failed-card recovery workflow won back — money that would have quietly lapsed. 100% attributable, tracked per gift.`)}
-                      {reeng>0&&brow("Re-engaged (surfaced)",fmt(reeng),
-                        `${fmt(reeng)} from ${reengDonors} lapsed donor${reengDonors===1?"":"s"} who came back — a gift after a 365-day gap. Counted separately from automated recovery, never merged into it.`)}
+                      {atRisk>0&&brow("At risk right now",fmt(atRisk),
+                        `Lifetime giving of ${quiet.toLocaleString()} donor${quiet===1?"":"s"} with no gift in over ${quietPhrase(impact.quietSinceDays)} — drifting, not yet lapsed. Your file's own history: the size of the problem, measured, not anything Steward did.`)}
+                      {retried>0&&brow("Failed cards, retried automatically",fmt(retried),
+                        `${impact.recoveredCount} gift${impact.recoveredCount===1?"":"s"} whose card failed and which the dunning workflow retried. Tracked per gift, attributable to a retry Steward actually ran.`)}
+                      {returned>0&&brow("Gifts after a year-long gap",fmt(returned),
+                        `${fmt(returned)} from ${returnedDonors} donor${returnedDonors===1?"":"s"} who gave again after a 365-day gap. A fact about your file's history, counted separately from the failed-card retries.`)}
                       {brow("Platform fees you paid Steward","$0",
                         "Donations run on your own Stripe — no platform fee, no donor tip. (Stripe's standard card fee still applies, and goes to Stripe, not to us.)")}
                       {online>0&&brow(

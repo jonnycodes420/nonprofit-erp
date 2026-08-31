@@ -589,13 +589,13 @@ app.post("/stripe/webhook", express.raw({ type: "application/json" }), async (re
             // BUILD-22 — auto-unlapse is logged as a move + timeline entry so a
             // lapsed→steward jump on an online gift is transparent, not silent.
             if (wasLapsed) {
-              await recordAutoMove(orgId, donorId, "lapsed", "steward", "Auto: re-engaged — new gift").catch(e => console.error("[smart-move] webhook unlapse:", e.message));
+              await recordAutoMove(orgId, donorId, "lapsed", "steward", "Auto: new gift after a year-long gap").catch(e => console.error("[smart-move] webhook unlapse:", e.message));
             }
             // Re-engagement task for previously lapsed donors
             if (wasLapsed) {
               await run(
                 "INSERT INTO tasks (id,org_id,title,priority,done,due) VALUES ($1,$2,$3,'high',0,$4)",
-                ["t_"+uuid().slice(0,8), orgId, `Re-engaged via online gift — follow up with ${donorName||email} within 48 hours`,
+                ["t_"+uuid().slice(0,8), orgId, `Gave again after a year-long gap — follow up with ${donorName||email} within 48 hours`,
                  new Date(Date.now()+2*24*60*60*1000).toISOString().slice(0,10)]
               ).catch(()=>{});
             }
@@ -2078,6 +2078,15 @@ async function recordMove(orgId, donorId, officerId, officerName, fromStage, toS
 // inferStage's `> 365` band and the pipeline "Lapsed" column — do not invent a
 // second lapse rule.
 const LAPSE_DAYS = 365;
+// BUILD-73 Part 3 — QUIET_DAYS is the "going quiet" threshold, and it already
+// existed: computeMoveSuggestions fires `going_quiet` at 180 days with the
+// reason "reach out before they lapse." That is the whole Steward thesis — a
+// donor drifting is the moment to act, and waiting for the 365-day lapse line
+// is waiting too long. The at-risk figure on the home screen uses THIS
+// threshold, not the lapse one, so the demo leads with drift rather than with
+// recapture. Named here so the two thresholds sit together and neither can
+// drift from the other unnoticed.
+const QUIET_DAYS = 180;
 // System-authored moves (auto-lapse / auto-unlapse) carry a null officer_id and
 // this name, so they're visibly automatic in the timeline and distinguishable
 // from human moves (the override-wins guard keys off officer_id IS NOT NULL).
@@ -2107,7 +2116,7 @@ async function autoUnlapseOnGift(orgId, donorId, preStage) {
     "UPDATE donors SET stage='steward', updated_at=NOW() WHERE id=? AND org_id=? AND stage='lapsed' RETURNING id",
     [donorId, orgId]);
   if (!upd.length) return false; // someone moved them first — respect it
-  await recordAutoMove(orgId, donorId, "lapsed", "steward", "Auto: re-engaged — new gift");
+  await recordAutoMove(orgId, donorId, "lapsed", "steward", "Auto: new gift after a year-long gap");
   return true;
 }
 
@@ -16186,11 +16195,65 @@ app.get("/impact", requireAuth, wrap(async (req, res) => {
       WHERE org_id=? AND status IN ('active', 'recovering', 'past_due')`,
     [orgId]
   );
+  // (1d) BUILD-73 Part 3 — MONEY AT RISK. This is the figure the product leads
+  // with now, and the reason is a positioning defect, not a data one.
+  //
+  // The hero used to read "Steward has recovered $X … and re-engaged $Y from N
+  // lapsed donors." Nobody parses that as a description of the ORG's history —
+  // it reads as money STEWARD brought in, on the first screen a prospect sees,
+  // which is invented social proof. The standing rule is that the value math
+  // describes the SIZE OF THE PROBLEM and never Steward's results.
+  //
+  // So the lead figure is the lifetime giving of donors who have gone QUIET —
+  // no gift in QUIET_DAYS — which is money genuinely at risk today, is a fact
+  // about the organization's own file, and claims nothing about what Steward
+  // did.
+  //
+  // QUIET_DAYS (180), not LAPSE_DAYS (365), and that choice is the product
+  // thesis. A donor who has not given in six months is drifting; a donor at
+  // twelve months has already gone. Leading with the 365-day set would tell the
+  // LAPSED-RECAPTURE story — four hundred small donors who left — which is the
+  // story every other tool tells. Leading at 180 days surfaces the mid-level
+  // donors who are quietly slipping while every lifetime-total report still
+  // shows them as fine. That difference is the entire differentiator, and it is
+  // the same threshold computeMoveSuggestions already fires `going_quiet` on.
+  // The quiet cutoff is a CIVIL DATE in the ORGANIZATION'S timezone, resolved
+  // through the seam (BUILD-72 Part 4). `gifts.date` is a civil date — a gift
+  // given on March 15 was given on March 15 in every timezone on earth — so
+  // comparing it to CURRENT_DATE would ask Postgres's UTC clock a question only
+  // the org's calendar can answer, and the at-risk figure would flip for
+  // everyone west of UTC for part of each day. One cutoff, computed once.
+  const _quietCutoff = orgTime.addDays(orgToday(await orgTz(orgId)), -QUIET_DAYS);
+  const pAtRisk = query(
+    `SELECT COALESCE(SUM(d.total_giving), 0) AS amt, COUNT(*)::int AS donors
+       FROM donors d
+      WHERE d.org_id = ?
+        AND d.deleted_at IS NULL
+        AND d.total_giving > 0
+        AND (SELECT MAX(g.date) FROM gifts g WHERE g.donor_id = d.id) IS NOT NULL
+        AND (SELECT MAX(g.date) FROM gifts g WHERE g.donor_id = d.id) < ?`,
+    [orgId, _quietCutoff]
+  );
+  // The donors BEHIND the at-risk number — every aggregate drills into its
+  // source, and the destination shows the same count and amount the chip claimed.
+  const pAtRiskDonors = query(
+    `SELECT d.id, d.name, COALESCE(d.total_giving, 0) AS amount,
+            (SELECT MAX(g.date) FROM gifts g WHERE g.donor_id = d.id) AS last_gift_date
+       FROM donors d
+      WHERE d.org_id = ?
+        AND d.deleted_at IS NULL
+        AND d.total_giving > 0
+        AND (SELECT MAX(g.date) FROM gifts g WHERE g.donor_id = d.id) IS NOT NULL
+        AND (SELECT MAX(g.date) FROM gifts g WHERE g.donor_id = d.id) < ?
+      ORDER BY d.total_giving DESC
+      LIMIT 50`,
+    [orgId, _quietCutoff]
+  );
   const pOrg = query("SELECT plan FROM orgs WHERE id=?", [orgId]);
 
   // BUILD-54 §1 — the six reads above are independent; one parallel batch.
-  const [recRows, reengRows, reengagedDonors, givingRows, watchRows, orgRows] =
-    await Promise.all([pRec, pReeng, pReengDonors, pGiving, pWatch, pOrg]);
+  const [recRows, reengRows, reengagedDonors, givingRows, watchRows, atRiskRows, atRiskDonors, orgRows] =
+    await Promise.all([pRec, pReeng, pReengDonors, pGiving, pWatch, pAtRisk, pAtRiskDonors, pOrg]);
   const recoveredCount = recRows[0]?.c || 0;
   const recoveredAmount = parseFloat(recRows[0]?.amt) || 0;
   const reengagedAmount = parseFloat(reengRows[0]?.amt) || 0;
@@ -16204,8 +16267,18 @@ app.get("/impact", requireAuth, wrap(async (req, res) => {
   const plan = orgRows[0]?.plan || "trial";
   const planMonthlyCost = PLAN_MONTHLY_COST[plan] ?? null;
 
+  const atRiskAmount = parseFloat(atRiskRows[0]?.amt) || 0;
+  const quietDonorCount = atRiskRows[0]?.donors || 0;
+
   res.json({
-    recoveredAmount,               // hero, hard, attributable (failed-card workflow)
+    // BUILD-73 Part 3 — THE LEAD FIGURE. Money at risk, never money recovered.
+    atRiskAmount,                  // Σ lifetime giving of donors quiet > LAPSE_DAYS
+    quietDonorCount,
+    quietSinceDays: QUIET_DAYS,
+    atRiskDonors: atRiskDonors.map(r => ({
+      id: r.id, name: r.name, amount: parseFloat(r.amount) || 0, lastGiftDate: r.last_gift_date,
+    })),
+    recoveredAmount,               // internal: the failed-card retry workflow's tracked total
     recoveredCount,
     reengagedAmount,               // SURFACED, separate — lapsed donors who came back
     reengagedDonorCount,
@@ -17843,7 +17916,7 @@ app.get("/org/export/csv", requireAuth, requireAdmin, wrap(async (req, res) => {
       ["Donor name", "donor_name"], ["Donor email", "donor_email"],
       ["Amount", "amount"], ["Interval", "interval"], ["Status", "status"],
       ["Failure count", "failure_count"], ["First failed", "first_failed_at"],
-      ["Recovered", "recovered_at"], ["Canceled", "canceled_at"],
+      ["Card fixed", "recovered_at"], ["Canceled", "canceled_at"],
       ["Stripe subscription", "stripe_subscription_id"], ["Created", "created_at"],
     ], recurring),
     "giving_pages.csv": toCsv([

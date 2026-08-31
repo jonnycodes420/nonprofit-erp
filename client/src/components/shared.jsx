@@ -102,8 +102,8 @@ export function interactive(onClick, opts = {}) {
 // module's scope — shared.jsx itself calls fmt()/fmtFull() (GivingHistoryChart,
 // buildContext). A re-export alone left them undefined here and crashed the
 // donor profile with "Can't find variable: fmt" (the BUILD-21 fmt regression).
-import { fmt, fmtFull } from "../lib/money";
-export { fmt, fmtFull };
+import { fmt, fmtFull, quietPhrase } from "../lib/money";
+export { fmt, fmtFull, quietPhrase };
 export const daysDiff = d => Math.floor((new Date()-new Date(d))/86400000);
 export const daysUntil = d => Math.floor((new Date(d)-new Date())/86400000);
 
