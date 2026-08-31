@@ -268,12 +268,13 @@ function parseCsv(text) {
   ok("NOTHING was written — a balanced equation is not permission to lose money",
      afterCents.n === beforeCents.n && afterCents.d === beforeCents.d, { beforeCents, afterCents });
 
-  // KNOWN RESIDUAL, recorded rather than papered over: per-row truncation whose
-  // errors CANCEL in the total (33.33 → 33 and 66.67 → 67, netting 100.00 both
-  // sides) is NOT caught here, because the file's total carries no cents for the
-  // rule to compare against. Each donor's record is still individually wrong.
-  // Only making storage cents-accurate closes that, which is why cents remains
-  // BUILD-73's first item — see audit/BUILD-72-FINDINGS.md, Step A.
+  // BUILD-73 Part 1 — the residual BUILD-72 documented is now CLOSED. Per-row
+  // rounding whose errors CANCEL in the total (33.33 → 33 and 66.67 → 67,
+  // netting 100.00 on both sides) used to import cleanly: the file's total
+  // carried no cents for a total-scoped rule to compare against, so the
+  // equation read balanced while each donor's record was individually wrong.
+  // The rule is now stated per ROW, which is the only place it is true.
+  const beforeNetZero = await dbTotals();
   const netZero = await api("POST", "/donors/import-combined", tok, {
     donors: [{ name: "Net Zero Cents", email: "netzero@recon.test", stage: "prospect" }],
     gifts: [
@@ -281,10 +282,26 @@ function parseCsv(text) {
       { donorIndex: 0, amount: 66.67, date: "2026-09-04", type: "cash", campaign: "", notes: "" },
     ],
   });
-  ok("DOCUMENTED RESIDUAL: cancelling per-row cents still import (guard is total-scoped)",
-     netZero.status === 200, netZero.status);
-  ok("...but the rows that carried cents are still REPORTED, so it is visible",
-     netZero.body.reconciliation.rawRowsWithCents === 2, netZero.body.reconciliation);
+  const afterNetZero = await dbTotals();
+  ok("CANCELLING per-row cents are REFUSED too — the guard is per-row, not per-total",
+     netZero.status === 409, { status: netZero.status, body: netZero.body });
+  ok("the cancelling case still reports both rows as carrying cents",
+     netZero.body.reconciliation?.rawRowsWithCents === 2, netZero.body.reconciliation);
+  ok("...and names the full magnitude dropped ($0.33 + $0.33 = $0.66), not the net $0.00",
+     Math.abs((netZero.body.reconciliation?.rawCentsDropped ?? -1) - 0.66) < 0.005,
+     netZero.body.reconciliation);
+  ok("NOTHING was written for the cancelling file either",
+     afterNetZero.n === beforeNetZero.n && afterNetZero.d === beforeNetZero.d,
+     { beforeNetZero, afterNetZero });
+
+  // A single row losing a single cent is still a refusal. The rule has no
+  // tolerance band: "small enough to ignore" is how cents disappear at scale.
+  const oneCent = await api("POST", "/donors/import-combined", tok, {
+    donors: [{ name: "One Cent", email: "onecent@recon.test", stage: "prospect" }],
+    gifts: [{ donorIndex: 0, amount: 100.01, date: "2026-09-05", type: "cash", campaign: "", notes: "" }],
+  });
+  ok("a single row carrying a single cent is REFUSED",
+     oneCent.status === 409, { status: oneCent.status, body: oneCent.body });
 
   // A whole-dollar file is unaffected — the guard fires only on absorbed cents.
   const wholeRes = await api("POST", "/donors/import-combined", tok, {

@@ -3715,6 +3715,15 @@ function importLedger(kind, unit = "gift") {
     // guarded in assertBalanced().
     rawDollarsInFile: 0,
     rawRowsWithCents: 0,
+    // BUILD-73 Part 1 — the PER-ROW cents ledger. BUILD-72's blind-spot guard
+    // compares the file's TOTAL cents against the created TOTAL's cents, which
+    // leaves one documented residual: per-row rounding whose errors CANCEL
+    // ($33.33 -> 33 and $66.67 -> 67 net to $100.00 on both sides). The
+    // equation reads clean, the total-level rule sees no cents to compare, and
+    // every affected donor's record is still individually wrong. This
+    // accumulates what each row actually lost, so the refusal below is decided
+    // per row and subsumes the total-level case entirely.
+    rawCentsDropped: 0,
     skippedReasons: {},
     erroredReasons: {},
     _tally(map, reason, n, amount) {
@@ -3729,6 +3738,11 @@ function importLedger(kind, unit = "gift") {
       const raw = rawAmount == null ? amount : rawAmount;
       this.rawDollarsInFile = round2(this.rawDollarsInFile + round2(raw));
       if (Math.abs(round2(raw) - Math.round(raw)) >= 0.005) this.rawRowsWithCents += n;
+      // What THIS row lost (or gained) to the importer's rounding, accumulated
+      // as an absolute magnitude so a +$0.33 and a -$0.33 cannot cancel each
+      // other out of existence. `amount` is the normalized figure the importer
+      // will actually store; `raw` is what the file said.
+      this.rawCentsDropped = round2(this.rawCentsDropped + Math.abs(round2(round2(raw) - round2(amount))) * n);
     },
     created(amount, n = 1) { this.rows.created += n; this.dollars.created += round2(amount); },
     skipped(reason, amount, n = 1) {
@@ -3765,6 +3779,7 @@ function importLedger(kind, unit = "gift") {
         rowGap: b.rowGap, dollarGap: b.dollarGap,
         rawDollarsInFile: round2(this.rawDollarsInFile),
         rawRowsWithCents: this.rawRowsWithCents,
+        rawCentsDropped: round2(this.rawCentsDropped),
       };
     },
     // Throws inside the transaction → db.js's withTransaction ROLLBACKs → the
@@ -3778,19 +3793,23 @@ function importLedger(kind, unit = "gift") {
       // the file's RAW total, and refuses an import whose cents were absorbed
       // silently: rows arrived carrying cents, yet not a cent survived into
       // what was created. A balanced equation is not permission to lose money.
-      if (this.rawRowsWithCents > 0) {
-        const createdCents = Math.abs(round2(this.dollars.created) - Math.round(this.dollars.created));
-        const rawCents     = Math.abs(round2(this.rawDollarsInFile) - Math.round(this.rawDollarsInFile));
-        if (rawCents >= 0.005 && createdCents < 0.005) {
-          const lost = round2(this.rawDollarsInFile - this.dollars.inFile);
-          const err = new Error(
-            `Import aborted — ${this.rawRowsWithCents} row(s) in the file carry cents, but the imported total is a whole dollar figure: ` +
-            `$${Math.abs(lost).toFixed(2)} of cents would be silently dropped. Nothing was saved.`);
-          err.code = "import_unreconciled";
-          err.reconciliation = { ...this.report(), centsBlindSpot: true,
-            rawDollarsInFile: this.rawDollarsInFile, rawRowsWithCents: this.rawRowsWithCents, centsDropped: round2(lost) };
-          throw err;
-        }
+      // BUILD-73 Part 1 tightens this from the TOTAL to the ROW. The
+      // production audit (audit/BUILD-73-FINDINGS.md) found no cents anywhere
+      // in the database — not one row out of 7,571 — which is exactly what a
+      // system that rounds at every write door looks like from the inside. The
+      // rule is therefore stated at the only place it is true: a row that
+      // arrived carrying cents must not be stored without them. This subsumes
+      // BUILD-72's total-level rule (a total can only lose cents if some row
+      // did) and closes its documented cancelling residual.
+      if (round2(this.rawCentsDropped) >= 0.005) {
+        const lost = round2(this.rawCentsDropped);
+        const err = new Error(
+          `Import aborted — ${this.rawRowsWithCents} row(s) in the file carry cents that would not be stored: ` +
+          `$${lost.toFixed(2)} would be silently dropped across ${this.rows.inFile} row(s). Nothing was saved.`);
+        err.code = "import_unreconciled";
+        err.reconciliation = { ...this.report(), centsBlindSpot: true,
+          rawDollarsInFile: this.rawDollarsInFile, rawRowsWithCents: this.rawRowsWithCents, centsDropped: lost };
+        throw err;
       }
       const b = this.balance();
       if (b.balanced) return;

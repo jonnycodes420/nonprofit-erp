@@ -70,6 +70,11 @@ const PROD_READONLY = [
   // opens a READ ONLY transaction, issues only SELECTs, and ROLLBACKs. It
   // verifies identity (product + database) before the connection is used.
   "build72-cents-audit",
+  // BUILD-73 Part 1 — the production cents audit. Same construction as its
+  // BUILD-72 predecessor (READ ONLY transaction, SELECTs only, ROLLBACK,
+  // identity verified before use), plus a read-only Stripe cross-check
+  // (paymentIntents.retrieve) that turns bucket-1 candidates into proven drift.
+  "build73-cents-audit",
   // BUILD-72 Part 4 — a pure SOURCE scan (reads server.js/db.js off disk and
   // counts civil-date/instant confusion sites). Touches no server, no database
   // and no network at all.
