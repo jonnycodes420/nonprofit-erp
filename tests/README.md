@@ -30,6 +30,34 @@ pg_ctl -D $DIR/data start
 createdb -h localhost -p 5544 -U steward steward_loadtest
 ```
 
+## The browser suites need TWO more things (BUILD-73)
+
+Four suites drive a real browser — `empty-states`, `presentation-wiring`,
+`portal-visual`, `landing-reveal` — and they failed for a long time in a way
+that looked like product bugs and was an environment gap. Both causes are
+recorded here so nobody rediscovers them:
+
+**1. `CORS_ORIGIN=http://localhost:4173`.** The API's CORS allowlist contains
+the production origins only; `CORS_ORIGIN` can ADD origins but never replace
+them. Without it the app loads from :4173, every `fetch` to the API is blocked,
+and the page renders "Failed to connect". The suites then report
+`nav button not found` for every tab — a CORS failure wearing a UI failure's
+clothes.
+
+**2. A preview that mirrors `vercel.json`, not `vite preview`.** In production
+Vercel rewrites `/portal-api`, `/account-api`, `/network-api`, `/portal-assets`
+and the recurring/unsubscribe paths to the backend, so the donor portal talks to
+the API SAME-ORIGIN. `vite preview` serves static files and nothing else, so
+those fetches got `index.html` back and the portal sat on "Loading…" forever.
+
+```bash
+cd client && VITE_API_URL=http://localhost:5606 npx vite build
+API=http://localhost:5606 PORT=4173 node scripts/local-preview.js
+```
+
+`scripts/local-preview.js` is that stand-in: the same rewrite table, pointed at
+the local API. It refuses any non-loopback `API` by construction.
+
 ## Boot the server + seed
 
 ```bash
