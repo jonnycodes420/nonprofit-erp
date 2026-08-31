@@ -188,19 +188,32 @@ const storedStatus = async pledgeId =>
   ok("uneven split: balance lands exactly on 0", cents(thirds.balance) === 0, thirds.balance);
   ok("uneven split: no phantom surplus from float drift", cents(thirds.surplus) === 0, thirds.surplus);
 
-  // KNOWN AND RECORDED (BUILD-72 Part 0 finding 0.3c): the manual gift route
-  // rounds to whole dollars, so a $33.33 payment stores as $33. That is a real
-  // defect and it is written down in audit/BUILD-72-FINDINGS.md — this pins the
-  // CURRENT truth so a future cents fix has to come here and change it
-  // deliberately rather than by accident.
+  // BUILD-73 Part 2 — FIXED. BUILD-72 pinned this as a DOCUMENTED DEFECT: the
+  // manual gift route rounded to whole dollars, so a $33.33 payment stored as
+  // $33 and the pledge's balance was wrong by 33c from the moment it was paid.
+  // The note there said "a future cents fix has to come here and change it
+  // deliberately rather than by accident." This is that change, made
+  // deliberately: the assertion is inverted, and it now pins the CORRECT
+  // behaviour. See money.js and tests/money-cents.test.js.
   const centsId = await newPledge(100);
   await pay(centsId, 33.33);
   const centsRow = await q(`SELECT amount::text AS a FROM gifts WHERE pledge_id=$1`, [centsId]);
-  ok("DOCUMENTED DEFECT: a $33.33 payment stores as whole dollars ($33)",
-     centsRow[0].a === "33", centsRow[0]);
+  ok("a $33.33 payment stores 3333 CENTS — the BUILD-72 defect is fixed",
+     cents(centsRow[0].a) === 3333, centsRow[0]);
   const centsPledge = await readPledge(centsId);
-  ok("...and the balance is consistent with what was actually stored",
-     cents(centsPledge.paid) === cents(33) && cents(centsPledge.balance) === cents(67), centsPledge);
+  ok("...and the pledge balance is exact to the cent: $33.33 paid, $66.67 left",
+     cents(centsPledge.paid) === 3333 && cents(centsPledge.balance) === 6667, centsPledge);
+
+  // The three thirds of $100 that motivated the whole build: they must sum
+  // back to exactly $100.00, with no phantom surplus and no missing cent.
+  const thirdId = await newPledge(100);
+  await pay(thirdId, 33.33);
+  await pay(thirdId, 33.33);
+  await pay(thirdId, 33.34);
+  const thirdRow = await readPledge(thirdId);
+  ok("$33.33 + $33.33 + $33.34 fulfills a $100 pledge EXACTLY",
+     cents(thirdRow.paid) === 10000 && cents(thirdRow.balance) === 0
+     && cents(thirdRow.surplus) === 0 && thirdRow.displayStatus === "fulfilled", thirdRow);
 
   await closeDb();
   summary();

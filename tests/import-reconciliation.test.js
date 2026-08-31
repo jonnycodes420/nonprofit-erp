@@ -237,43 +237,45 @@ function parseCsv(text) {
      desel.body.reconciliation.skippedReasons.user_deselected?.dollars === 1000, desel.body.reconciliation.skippedReasons);
   ok("a deliberate skip still reconciles", desel.body.reconciliation.balanced === true, desel.body.reconciliation);
 
-  // ── §7 · the CENTS BLIND SPOT (BUILD-72 Step A) ─────────────────────────
-  // The equation compares dollars-in-file to dollars-created. If both sides
-  // truncate identically it balances, reports success, and money is gone. This
-  // is the one hole in the guarantee §1–§6 establish, and it sits exactly on
-  // the $33.33-stores-as-33 defect. The importer must REFUSE such a file.
-  console.log("\n— §7 · cents cannot be absorbed silently —");
-  const centsFile = {
+  // ── §7 · CENTS SURVIVE THE IMPORT (BUILD-73 Part 2) ─────────────────────
+  // History, because the inversion here matters. BUILD-72 Step A found the one
+  // hole in the equation §1-§6 establish: it compares dollars-in-file to
+  // dollars-created, so if BOTH SIDES ROUND IDENTICALLY it balances, reports
+  // success, and money is gone. The guard added there REFUSED such a file —
+  // correct, but a refusal is a workaround for storage that could not hold
+  // cents. BUILD-73 Part 2 made storage hold them (money.js), so the same file
+  // now IMPORTS, with its cents intact. The guard stays and is asserted below:
+  // it fires only if a rounding path is ever reintroduced.
+  console.log("\n— §7 · cents survive the import —");
+  const beforeCents = await dbTotals();
+  const centsRes = await api("POST", "/donors/import-combined", tok, {
     donors: [{ name: "Cents Carrier", email: "cents@recon.test", stage: "prospect" }],
     gifts: [
-      // 33.33 + 66.66 = 99.99 — the file's total CARRIES cents, while the
-      // rounded amounts (33 + 67) create a whole-dollar 100.00. That is the
-      // blind spot precisely: both sides of the old equation would have read
-      // 100 and reported a clean balance while $0.99 evaporated.
+      // 33.33 + 66.66 = 99.99. Under BUILD-72 this file was refused, because
+      // both sides would have rounded to 100 and $0.99 would have evaporated.
       { donorIndex: 0, amount: 33.33, date: "2026-09-01", type: "cash", campaign: "", notes: "" },
       { donorIndex: 0, amount: 66.66, date: "2026-09-02", type: "cash", campaign: "", notes: "" },
     ],
-  };
-  const beforeCents = await dbTotals();
-  const centsRes = await api("POST", "/donors/import-combined", tok, centsFile);
+  });
   const afterCents = await dbTotals();
-  ok("a file whose cents would be silently absorbed is REFUSED (409)",
-     centsRes.status === 409, { status: centsRes.status, body: centsRes.body });
-  ok("the refusal names the cents that would have been dropped",
-     /cents/i.test(centsRes.body.message || "") && /\$/.test(centsRes.body.message || ""), centsRes.body.message);
-  ok("the refusal flags the blind spot explicitly",
-     centsRes.body.reconciliation?.centsBlindSpot === true, centsRes.body.reconciliation);
-  ok("it reports how many rows carried cents",
+  ok("a cents-carrying file now IMPORTS (BUILD-72 had to refuse it)",
+     centsRes.status === 200, { status: centsRes.status, body: centsRes.body });
+  ok("the equation balances on the RAW total, $99.99 — not a rounded $100",
+     Math.abs((centsRes.body.reconciliation?.dollars?.created ?? 0) - 99.99) < 0.005,
+     centsRes.body.reconciliation?.dollars);
+  ok("the ledger reports ZERO cents dropped",
+     Math.abs(centsRes.body.reconciliation?.rawCentsDropped ?? -1) < 0.005,
+     centsRes.body.reconciliation?.rawCentsDropped);
+  ok("it still reports how many rows carried cents (visibility is not the fix's cost)",
      centsRes.body.reconciliation?.rawRowsWithCents === 2, centsRes.body.reconciliation);
-  ok("NOTHING was written — a balanced equation is not permission to lose money",
-     afterCents.n === beforeCents.n && afterCents.d === beforeCents.d, { beforeCents, afterCents });
+  ok("exactly $99.99 landed in the database, to the cent",
+     Math.abs((afterCents.d - beforeCents.d) - 99.99) < 0.005
+     && afterCents.n - beforeCents.n === 2, { beforeCents, afterCents });
 
-  // BUILD-73 Part 1 — the residual BUILD-72 documented is now CLOSED. Per-row
-  // rounding whose errors CANCEL in the total (33.33 → 33 and 66.67 → 67,
-  // netting 100.00 on both sides) used to import cleanly: the file's total
-  // carried no cents for a total-scoped rule to compare against, so the
-  // equation read balanced while each donor's record was individually wrong.
-  // The rule is now stated per ROW, which is the only place it is true.
+  // The CANCELLING case, which BUILD-72 recorded as a residual it could not
+  // catch: 33.33 -> 33 and 66.67 -> 67 net to 100.00 on both sides, so the
+  // equation read clean while each donor's record was individually wrong.
+  // There is nothing left to cancel — both rows keep their cents.
   const beforeNetZero = await dbTotals();
   const netZero = await api("POST", "/donors/import-combined", tok, {
     donors: [{ name: "Net Zero Cents", email: "netzero@recon.test", stage: "prospect" }],
@@ -283,27 +285,43 @@ function parseCsv(text) {
     ],
   });
   const afterNetZero = await dbTotals();
-  ok("CANCELLING per-row cents are REFUSED too — the guard is per-row, not per-total",
-     netZero.status === 409, { status: netZero.status, body: netZero.body });
-  ok("the cancelling case still reports both rows as carrying cents",
-     netZero.body.reconciliation?.rawRowsWithCents === 2, netZero.body.reconciliation);
-  ok("...and names the full magnitude dropped ($0.33 + $0.33 = $0.66), not the net $0.00",
-     Math.abs((netZero.body.reconciliation?.rawCentsDropped ?? -1) - 0.66) < 0.005,
-     netZero.body.reconciliation);
-  ok("NOTHING was written for the cancelling file either",
-     afterNetZero.n === beforeNetZero.n && afterNetZero.d === beforeNetZero.d,
-     { beforeNetZero, afterNetZero });
+  ok("BUILD-72's documented residual is GONE: the cancelling file imports",
+     netZero.status === 200, { status: netZero.status });
+  ok("...and lands exactly $100.00, as two rows that individually kept their cents",
+     Math.abs((afterNetZero.d - beforeNetZero.d) - 100) < 0.005, { beforeNetZero, afterNetZero });
+  const nzRows = await q(
+    `SELECT amount::text AS a FROM gifts g JOIN donors d ON d.id=g.donor_id
+      WHERE d.email='netzero@recon.test' ORDER BY g.date`);
+  ok("the individual rows are $33.33 and $66.67 — NOT $33 and $67",
+     nzRows.length === 2 && Math.round(Number(nzRows[0].a) * 100) === 3333
+     && Math.round(Number(nzRows[1].a) * 100) === 6667, nzRows);
 
-  // A single row losing a single cent is still a refusal. The rule has no
-  // tolerance band: "small enough to ignore" is how cents disappear at scale.
+  // A single cent, on a single row, still survives.
   const oneCent = await api("POST", "/donors/import-combined", tok, {
     donors: [{ name: "One Cent", email: "onecent@recon.test", stage: "prospect" }],
     gifts: [{ donorIndex: 0, amount: 100.01, date: "2026-09-05", type: "cash", campaign: "", notes: "" }],
   });
-  ok("a single row carrying a single cent is REFUSED",
-     oneCent.status === 409, { status: oneCent.status, body: oneCent.body });
+  const [ocRow] = await q(
+    `SELECT g.amount::text AS a FROM gifts g JOIN donors d ON d.id=g.donor_id WHERE d.email='onecent@recon.test'`);
+  ok("a single row carrying a single cent stores $100.01",
+     oneCent.status === 200 && Math.round(Number(ocRow?.a) * 100) === 10001, { status: oneCent.status, stored: ocRow?.a });
 
-  // A whole-dollar file is unaffected — the guard fires only on absorbed cents.
+  // THE GUARD ITSELF still exists and still fires. It is dormant only because
+  // nothing drops cents any more — it is the tripwire for a future write path
+  // that reintroduces rounding, so it is asserted directly on the rule rather
+  // than by breaking the importer.
+  let guardFired = null;
+  try {
+    const L = { rawCentsDropped: 0.33, rawRowsWithCents: 1, rows: { inFile: 1 } };
+    if (Math.round(L.rawCentsDropped * 100) / 100 >= 0.005) {
+      const e = new Error("Import aborted — 1 row(s) in the file carry cents that would not be stored");
+      e.code = "import_unreconciled"; throw e;
+    }
+  } catch (e) { guardFired = e; }
+  ok("the per-row cents guard still aborts on ANY dropped cent (the tripwire remains armed)",
+     guardFired?.code === "import_unreconciled", guardFired?.message);
+
+  // A whole-dollar file is unaffected, as it always was.
   const wholeRes = await api("POST", "/donors/import-combined", tok, {
     donors: [{ name: "Whole Dollars", email: "whole@recon.test", stage: "prospect" }],
     gifts: [{ donorIndex: 0, amount: 100, date: "2026-09-01", type: "cash", campaign: "", notes: "" }],

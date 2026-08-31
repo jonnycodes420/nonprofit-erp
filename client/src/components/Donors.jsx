@@ -1012,9 +1012,17 @@ export function DonorImport({ onClose, onImported, withHistory = false }) {
                   review and delete any that are genuine duplicates.
                 </div>
               )}
+              {/* BUILD-73 Part 2 — this used to read "Amounts are stored in whole
+                  dollars; $X of cents was rounded off." It is no longer true:
+                  the money seam (money.js) stores what the file said, to the
+                  cent. BUILD-72 P3-4 asked that a future cents fix come to this
+                  line and change it deliberately — this is that change.
+                  roundingAdjustment is still reported by the API and is now
+                  always 0; if it ever isn't, a rounding path has come back and
+                  the user should be told, so the surfacing stays. */}
               {Math.abs(result.roundingAdjustment || 0) >= 0.005 && (
-                <div style={{marginTop:6,color:T.ink3,fontSize:11}}>
-                  Amounts are stored in whole dollars; {money(Math.abs(result.roundingAdjustment))} of cents was rounded off.
+                <div style={{marginTop:6,color:T.terra700,fontSize:11}}>
+                  {money(Math.abs(result.roundingAdjustment))} of cents could not be stored — please report this.
                 </div>
               )}
             </div>;

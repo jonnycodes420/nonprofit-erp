@@ -1073,6 +1073,35 @@ async function initSchema() {
     END $$;`);
   }
 
+  // BUILD-73 Part 2 — CENTS, AT THE DATABASE. The migration above stopped these
+  // columns being INTEGER, which is what made cents storable; it left them
+  // unconstrained NUMERIC, which stores $33.333 just as happily as $33.33.
+  // Money has exactly two decimal places, so the column says so. NUMERIC(12,2)
+  // is arbitrary-precision decimal — not a float — and it is the last line of
+  // defence behind money.js: if a future write path is added that skips the
+  // seam, the database rounds to the cent rather than accepting sub-cent noise
+  // that no invariant would ever catch.
+  //
+  // 12 digits total = up to $9,999,999,999.99, comfortably above any gift and
+  // any org's lifetime total. Guarded on numeric_scale so the table rewrite
+  // runs once, not on every boot (the same reason the block above is guarded).
+  // The production audit (audit/BUILD-73-FINDINGS.md) confirmed ZERO rows carry
+  // sub-cent values, so this rewrite cannot change a single stored figure.
+  for (const [tbl, col] of [
+    ["gifts", "amount"], ["gifts", "cover_fee_amount"], ["gifts", "deductible_amount"],
+    ["donors", "total_giving"], ["donors", "last_gift_amount"],
+    ["pledges", "amount"], ["fin_transactions", "amount"],
+    ["recurring_subscriptions", "amount"],
+  ]) {
+    await pool.query(`DO $$ BEGIN
+      IF EXISTS (SELECT 1 FROM information_schema.columns
+                 WHERE table_schema='public' AND table_name='${tbl}' AND column_name='${col}'
+                   AND data_type='numeric' AND numeric_scale IS DISTINCT FROM 2) THEN
+        ALTER TABLE ${tbl} ALTER COLUMN ${col} TYPE NUMERIC(12,2) USING ROUND(${col}::numeric, 2);
+      END IF;
+    END $$;`);
+  }
+
   // One row per donor subscription — a health record layered on top of the
   // donors.stripe_subscription_id/stripe_subscription_status columns (which
   // already existed for the "active" happy path). This table is what actually

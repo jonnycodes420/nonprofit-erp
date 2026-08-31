@@ -79,6 +79,10 @@ const PROD_READONLY = [
   // counts civil-date/instant confusion sites). Touches no server, no database
   // and no network at all.
   "build72-date-audit",
+  // BUILD-73 Part 2 — a pure SOURCE scan (reads server.js/db.js off disk and
+  // finds any money value rounded to a whole dollar). No server, no database,
+  // no network. Run BY tests/money-cents.test.js so the enumeration cannot drift.
+  "build73-money-audit",
 ];
 
 // Browser-driving captures: default loopback; any writes ride the logged-in

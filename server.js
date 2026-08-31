@@ -83,6 +83,11 @@ const { PRODUCT_ID } = require("./product");
 // goes through here, computed in the ORGANIZATION's timezone. See orgTime.js
 // for the type discipline (instants vs civil dates) and why it exists.
 const orgTime = require("./orgTime");
+// BUILD-73 Part 2 — THE MONEY SEAM. Every money value that crosses into or out
+// of storage goes through here, and nothing else in this file converts between
+// dollars and cents. See money.js for why the eight Math.round() sites this
+// replaces were each a chance to be wrong in the same direction.
+const { toCents, toDollars, parseMoneyOrThrow, hasCents } = require("./money");
 const { orgToday, orgIsOverdue, orgDaysOverdue, orgPeriodBounds, orgFiscalYearStart, orgReportYear } = orgTime;
 
 // Resolve an org's timezone for the seam. Cached briefly: every date-bounded
@@ -3959,8 +3964,8 @@ app.post("/donors/import", requireAuth, wrap(async (req, res) => {
         d.phone   || "",
         d.status  || "new",
         d.stage   || "prospect",
-        Math.round(parseFloat(d.total)      || 0),
-        Math.round(parseFloat(d.lastAmount) || 0),
+        toDollars(toCents(d.total)      || 0),   // BUILD-73: cents preserved, was Math.round
+        toDollars(toCents(d.lastAmount) || 0),   // BUILD-73: cents preserved, was Math.round
         d.lastGift || null,
         parseInt(d.gifts) || (d.total ? 1 : 0),
         JSON.stringify(Array.isArray(d.tags) ? d.tags : []),
@@ -4151,7 +4156,7 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(as
       params.push(
         d._id, orgId, normalizeName(d.name), d.email||"", d.phone||"",
         d.status||"new", d.stage||"prospect",
-        Math.round(parseFloat(d.total)||0), Math.round(parseFloat(d.lastAmount)||0),
+        toDollars(toCents(d.total)||0), toDollars(toCents(d.lastAmount)||0),  // BUILD-73: cents preserved
         d.lastGift||null, parseInt(d.gifts)||(d.total?1:0),
         JSON.stringify(Array.isArray(d.tags)?d.tags:[]),
         d.notes||"", d.city||null, d.state||null,
@@ -4202,12 +4207,15 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(as
   // in this loop that does not first record where the row went.
   for (let gi = 0; gi < gifts.length; gi++) {
     const g = gifts[gi];
-    const rawAmt = Number(g.amount) || 0;
-    const amt    = Math.round(rawAmt);
+    // BUILD-73 Part 2 — parsed to integer cents at the edge, stored exactly.
+    // Was `Math.round(rawAmt)`, which is how $33.33 became $33 on the way in.
+    const gCents = toCents(g.amount);
+    const rawAmt = gCents === null ? (Number(g.amount) || 0) : toDollars(gCents);
+    const amt    = rawAmt;                    // no rounding: what the file said is what lands
     ledger.saw(amt, 1, rawAmt);
-    // The importer stores whole dollars (Math.round). Surface what that costs
-    // instead of letting the ledger silently disagree with the file — the cents
-    // question itself is BUILD-72 Part 3's to answer.
+    // Kept at 0 and still reported, so a client reading this field does not
+    // break. It can only become non-zero if a rounding path is reintroduced —
+    // which tests/money-cents.test.js fails on first.
     roundingAdjustment += round2(rawAmt - amt);
 
     const donorId = indexToId[g.donorIndex];
@@ -4263,7 +4271,11 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(as
     const exRows = await queryTx(txc,
       "SELECT donor_id, date, amount FROM gifts WHERE org_id = ? AND donor_id = ANY(?)",
       [orgId, resolvedDonorIds]);
-    for (const r of exRows) existingGiftFps.add(`${r.donor_id}|${r.date}|${Math.round(parseFloat(r.amount))}`);
+    // BUILD-73 Part 2 — the fingerprint must use the SAME representation as
+    // rowKey below. It rounded to a whole dollar, which was harmless while
+    // storage did too; now that gifts carry cents, a rounding fingerprint would
+    // silently stop matching its own rows.
+    for (const r of exRows) existingGiftFps.add(`${r.donor_id}|${r.date}|${parseFloat(r.amount)}`);
   }
   const seenExisting = new Set();
   duplicateGroups = [
@@ -4988,7 +5000,12 @@ app.post("/donors/:id/gifts", requireAuth, checkWriteAccess, wrap(async (req, re
 
   const giftId = "g_" + uuid().slice(0, 8);
   const giftDate = normalizeGiftDate(date);              // enforce ISO YYYY-MM-DD
-  const amt = Math.round(Number(amount));                // round, not truncate; INTEGER column
+  // BUILD-73 Part 2 — the money seam. The comment that used to sit here said
+  // "INTEGER column", which stopped being true at the cover-fees migration and
+  // is the likeliest reason the rounding outlived its justification.
+  let amt;
+  try { amt = toDollars(parseMoneyOrThrow(amount, "amount")); }
+  catch (e) { return res.status(400).json({ error: e.message, code: e.code }); }
 
   // §1.1 F-3 — client-generated idempotency key, enforced by uq_gifts_idem at
   // the DATABASE (not an app-layer check). A double-tapped Save, a replayed
@@ -5124,7 +5141,14 @@ app.put("/gifts/:id", requireAuth, wrap(async (req, res) => {
       if (campaign === undefined) newCampaign = null;
     }
   }
-  const newAmt  = amount !== undefined ? Math.round(Number(amount)) : g.amount; // round, not truncate
+  // BUILD-73 Part 2 — THIS is the path the audit was written for: it rounds any
+  // gift, including one carrying a stripe_payment_id, so a $33.33 online gift
+  // whose campaign was corrected in the UI came back out as $33.
+  let newAmt = g.amount;
+  if (amount !== undefined) {
+    try { newAmt = toDollars(parseMoneyOrThrow(amount, "amount")); }
+    catch (e) { return res.status(400).json({ error: e.message, code: e.code }); }
+  }
   const newDate = date ? normalizeGiftDate(date) : g.date;                       // enforce ISO
   // BUILD-27 concurrency (concurrency2 "torn write" fix): serialize this gift's
   // edit → donor-recalc → ledger-stamp trio under a per-gift advisory lock, the
@@ -5281,13 +5305,20 @@ app.post("/donors/:id/pledges", requireAuth, checkWriteAccess, wrap(async (req, 
   const idemKey = typeof req.body.idempotencyKey === "string" && req.body.idempotencyKey.trim()
     ? req.body.idempotencyKey.trim().slice(0, 128) : null;
 
+  // BUILD-73 Part 2 — the money seam; was Math.round(Number(amount)) inline in
+  // the parameter list, where a bad value became NaN and a cents value became
+  // a whole dollar with nothing said about either.
+  let pledgeAmt;
+  try { pledgeAmt = toDollars(parseMoneyOrThrow(amount, "amount")); }
+  catch (e) { return res.status(400).json({ error: e.message, code: e.code }); }
+
   const id = "pl_" + uuid().slice(0, 8);
   const inserted = await query(
     `INSERT INTO pledges (id,org_id,donor_id,amount,due_date,notes,campaign_id,idempotency_key)
      VALUES (?,?,?,?,?,?,?,?)
      ON CONFLICT (org_id, idempotency_key) WHERE idempotency_key IS NOT NULL DO NOTHING
      RETURNING id`,
-    [id, req.user.orgId, req.params.id, Math.round(Number(amount)), dueDate, notes || "", campaignId, idemKey]
+    [id, req.user.orgId, req.params.id, pledgeAmt, dueDate, notes || "", campaignId, idemKey]
   );
   if (!inserted.length && idemKey) {
     // A replay. Return the ORIGINAL pledge with 200 — never a second row, and
@@ -5342,13 +5373,20 @@ app.put("/pledges/:id", requireAuth, checkWriteAccess, wrap(async (req, res) => 
   }
   const stopping = newStatus !== "open" && p.status === "open";
 
+  // BUILD-73 Part 2 — the money seam; was Math.round(Number(amount)).
+  let pledgeNewAmt = p.amount;
+  if (amount !== undefined) {
+    try { pledgeNewAmt = toDollars(parseMoneyOrThrow(amount, "amount")); }
+    catch (e) { return res.status(400).json({ error: e.message, code: e.code }); }
+  }
+
   await run(
     `UPDATE pledges SET amount=?, due_date=?, notes=?, status=?, campaign_id=?,
        next_reminder_at = CASE WHEN ? THEN NULL ELSE next_reminder_at END,
        updated_at=NOW()
      WHERE id=? AND org_id=?`,
     [
-      amount !== undefined ? Math.round(Number(amount)) : p.amount,
+      pledgeNewAmt,
       dueDate || p.due_date,
       notes !== undefined ? notes : p.notes,
       newStatus,
@@ -5985,7 +6023,8 @@ app.post("/gifts/import-history", requireAuth, checkWriteAccess, wrapImport(asyn
     "SELECT donor_id, amount, date FROM gifts WHERE org_id = ? AND donor_id = ANY(?)",
     [orgId, donorIds]
   );
-  const existingFps = new Set(existingRows.map(g => `${g.donor_id}|${g.date}|${Math.round(parseFloat(g.amount))}`));
+  // BUILD-73 Part 2 — same representation as rowKey (see import-combined).
+  const existingFps = new Set(existingRows.map(g => `${g.donor_id}|${g.date}|${parseFloat(g.amount)}`));
 
   // Importer identity — used in interaction logged_by_name, same pattern as single-gift route
   const importerRow = await query("SELECT name FROM users WHERE id=?", [req.user.userId]);
@@ -6000,8 +6039,10 @@ app.post("/gifts/import-history", requireAuth, checkWriteAccess, wrapImport(asyn
   const matchesExisting = [];  // rows that look like an existing gift — imported, and flagged
   const toInsert = [];
   for (const g of gifts) {
-    const rawAmt = Number(g.amount) || 0;
-    const amt = Math.round(rawAmt);
+    // BUILD-73 Part 2 — the money seam; was Math.round(rawAmt).
+    const hCents = toCents(g.amount);
+    const rawAmt = hCents === null ? (Number(g.amount) || 0) : toDollars(hCents);
+    const amt = rawAmt;                       // cents preserved
     ledger.saw(amt, 1, rawAmt);
     roundingAdjustment += round2(rawAmt - amt);
     if (!g.donorId || !validDonorIds.has(g.donorId)) { invalid++; ledger.errored("donor_not_in_org", amt); continue; }
@@ -7806,7 +7847,9 @@ app.get("/dashboard/my-stats/gifts/breakdown", requireAuth, wrap(async (req, res
     ),
   ]);
   res.json({
-    total: Math.round(Number(totalRow[0]?.total || 0)),
+    // BUILD-73 Part 2 — was Math.round(): a drill-down total is money, and
+    // rounding it here made the panel disagree with the ledger it drills into.
+    total: toDollars(toCents(totalRow[0]?.total) || 0),
     count: parseInt(totalRow[0]?.cnt || 0),
     rows: rows.map(r => ({
       id: r.id, donorId: r.donor_id, donorName: r.donor_name,
@@ -7833,7 +7876,8 @@ app.get("/dashboard/my-stats/pipeline/breakdown", requireAuth, wrap(async (req, 
     ),
   ]);
   res.json({
-    total: Math.round(Number(totalRow[0]?.total || 0)),
+    // BUILD-73 Part 2 — was Math.round(); see the sibling drill-down above.
+    total: toDollars(toCents(totalRow[0]?.total) || 0),
     count: parseInt(totalRow[0]?.cnt || 0),
     rows: rows.map(d => ({
       donorId: d.id, donorName: d.name,
@@ -8449,7 +8493,8 @@ app.get("/dashboard/stewardship-debt/breakdown", requireAuth, wrap(async (req, r
     contribution: Math.round(d.contribution * 10) / 10,
     percentOfTotal: total > 0 ? Math.round((d.contribution / total) * 1000) / 10 : 0,
   }));
-  res.json({ total: Math.round(total), count: breakdown.length, rows });
+  // BUILD-73 Part 2 — was Math.round(total); the headline of a money breakdown.
+  res.json({ total: toDollars(toCents(total) || 0), count: breakdown.length, rows });
 }));
 
 // Ranked drill-down behind the Retention Rate headline number — the actual
@@ -10372,7 +10417,7 @@ app.post("/stripe/donation-page", requireAuth, wrap(async (req, res) => {
     return res.status(400).json({ error: "Stripe not connected" });
   }
 
-  const amountCents = amount ? Math.round(parseFloat(amount) * 100) : null;
+  const amountCents = amount ? toCents(amount) : null;   // BUILD-73: the money seam
   const stripeOpts = { stripeAccount: org.stripe_account_id };
 
   const product = await stripe.products.create(
@@ -10959,7 +11004,8 @@ app.post("/donate/:orgSlug", donateLimiter, wrap(async (req, res) => {
     }
   }
 
-  const baseCents = Math.round(parseFloat(amount) * 100);
+  const baseCents = toCents(amount);                     // BUILD-73: the money seam
+  if (baseCents === null) return res.status(400).json({ error: "Invalid donation amount" });
   if (baseCents < 100) return res.status(400).json({ error: "Minimum donation is $1" });
 
   // Re-derived server-side from the base amount — the client sends only the
@@ -15912,7 +15958,7 @@ app.post("/recurring/proposal/confirm", donateLimiter, express.urlencoded({ exte
     // The donor completes on Stripe Checkout; our own metadata carries the
     // proposal id so checkout.session.completed marks it completed and the
     // fund designation stamps the subscription row (BUILD-56 chain).
-    const cents = Math.round(parseFloat(p.proposed_amount) * 100);
+    const cents = toCents(p.proposed_amount);              // BUILD-73: the money seam
     const metadata = {
       donor_email: p.donor_email, org_id: p.org_id, proposal_id: p.id,
       frequency: p.proposed_interval === "year" ? "annual" : "monthly",
@@ -15963,7 +16009,7 @@ app.post("/recurring/proposal/confirm", donateLimiter, express.urlencoded({ exte
     return res.status(409).send(proposalPageHtml({ orgName, title: "This gift can't be changed right now", bodyHtml: "<p>The subscription is no longer in a state that can be changed. Ask the organization for help.</p>" }));
   }
   const newInterval = p.kind === "frequency" ? p.proposed_interval : (rs.interval === "year" ? "year" : "month");
-  const newCents = p.kind === "amount" ? Math.round(parseFloat(p.proposed_amount) * 100) : Math.round((parseFloat(rs.amount) || 0) * 100);
+  const newCents = p.kind === "amount" ? toCents(p.proposed_amount) : (toCents(rs.amount) || 0);   // BUILD-73: the money seam
   await withAdvisoryLock(`portal-sub:${rs.id}`, async () => {
     const stripeSub = await stripe.subscriptions.retrieve(rs.stripe_subscription_id, {}, { stripeAccount: p.stripe_account_id });
     const item = stripeSub.items?.data?.[0];
@@ -18306,8 +18352,13 @@ app.get("/portal/:orgSlug/give-default", requirePortalSession, wrap(async (req, 
     [org.id, donors.map(d => d.id)]);
   if (!rows.length) return res.json({ arrangement: null });
   const s = rows[0];
-  const base = Math.max(1, Math.round((Number(s.amount) || 0) - (Number(s.cover_fee_amount) || 0)));
-  res.json({ arrangement: { frequency: s.interval === "year" ? "annual" : "monthly", amount: base } });
+  // BUILD-73 Part 2 — was Math.max(1, Math.round(amount - cover_fee_amount)).
+  // This figure is shown to the DONOR as what they currently give, and it seeds
+  // the change-my-amount form, so rounding it told a $33.33/mo donor they give
+  // $33 and would then have changed their subscription to exactly that. Cents
+  // are kept; the floor stays $1.00, expressed in cents.
+  const baseCentsNow = Math.max(100, (toCents(s.amount) || 0) - (toCents(s.cover_fee_amount) || 0));
+  res.json({ arrangement: { frequency: s.interval === "year" ? "annual" : "monthly", amount: toDollars(baseCentsNow) } });
 }));
 
 // ── §3 — the dashboard: every figure from the SAME gifts ledger the CRM
