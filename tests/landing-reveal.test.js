@@ -1,29 +1,42 @@
-// BUILD-40 P0-1 — no invisible landing content, at phone AND desktop width.
+// BUILD-40 P0-1, rewritten by BUILD-73 Part 4 — NO INVISIBLE LANDING CONTENT.
 //
-// The bug this pins: `.lp-reveal` was authored fail-CLOSED (base opacity:0,
-// visibility depends on an IntersectionObserver callback arriving). A fast
-// momentum flick, an anchor jump, or back-navigation scroll restoration moves
-// sections through the viewport BETWEEN observer callbacks — they never get
-// `is-visible` and stay blank forever. Measured live 2026-08-06: EIGHT
-// sections at opacity 0 in a 390px viewport (calculator, morning queue,
-// how-it-works, money strip, candor…). The fix inverts to fail-open
-// (hidden state scoped to html.reveal-ready, desktop-only ≥768px, with a
-// recovery sweep); this test drives the exact failure mode:
+// ── WHAT THIS ORIGINALLY PINNED, AND WHY IT CHANGED ─────────────────────────
+// The BUILD-40 bug: `.lp-reveal` was authored fail-CLOSED (base opacity:0,
+// visibility depending on an IntersectionObserver callback arriving). A fast
+// momentum flick, an anchor jump or back-navigation scroll restoration moved
+// sections through the viewport BETWEEN callbacks — they never got
+// `is-visible` and stayed blank forever. Measured live 2026-08-06: EIGHT
+// sections at opacity 0 in a 390px viewport.
 //
-//   at 390px and 1440px: hard-jump scrollTo() five positions spanning the
-//   page, then assert ZERO text-bearing .lp-reveal sections with computed
-//   opacity < 0.9.
+// BUILD-73 Part 4 rebuilt the landing page and the reveal machinery is GONE
+// entirely — there is no `.lp-reveal`, no IntersectionObserver, and no
+// JS-armed visibility anywhere on the page. That is a stronger fix than
+// fail-open: content that never depends on an observer cannot be stranded by
+// one. Two assertions that were about the OLD implementation are therefore
+// retired, and both are named here rather than quietly dropped:
 //
-// Also drives the P2 concern most likely to embarrass a live demo: the
-// calculator slider must be DRAGGABLE at 390px (real pointer drag on the
-// thumb, not a synthetic value setter) and must update the loss figure.
+//   · "reveals are OFF below 768px" — there are no reveals at any width.
+//   · the recovery-calculator slider drag — the calculator is not on the
+//     rebuilt page (the section order in BUILD-73's brief does not include
+//     it). Nothing about it regressed; it was removed by design.
+//
+// ── WHAT THIS STILL PINS, AND MUST KEEP PINNING ─────────────────────────────
+// The RULE, which is permanent and not tied to any implementation:
+// **content visibility must never depend on an animation succeeding.** So the
+// original failure mode is still driven, against whatever the page is made of
+// today: hard scroll jumps at 390 and 1440, then assert that ZERO text-bearing
+// elements sit at an opacity below 0.9 — and the same with reduced motion on,
+// which is the cheap proxy for "the animation path never ran."
+//
+// The dot field's own reduced-motion guarantee — the highest-consequence
+// version of this rule on the new page — is asserted in detail in
+// tests/landing-field.test.js §1.
 //
 // Needs a browser + built client, unlike the API suites, so it bootstraps
 // itself: serves client/dist on its own port and loads Playwright from
 // PLAYWRIGHT_DIR (default ~/steward-qa — Playwright is deliberately not a
 // project dep). If either is missing it SKIPS (exit 0, "0 failed") so
-// `run-all.sh` stays runnable on a bare API-only checkout — but on the dev
-// machine it always runs for real.
+// `run-all.sh` stays runnable on a bare API-only checkout.
 
 const path = require("path");
 const fs = require("fs");
@@ -80,9 +93,18 @@ async function noInvisibleTextAfterJumps(browser, width, height) {
     await page.waitForTimeout(120);
   }
   await page.waitForTimeout(600); // give any transition time to finish
+  // Scan every element that CARRIES ITS OWN TEXT (a leaf, not a wrapper whose
+  // text is its children's) — the class-scoped version only worked while the
+  // page had a reveal class to scope to.
   const invisible = await page.evaluate(() =>
-    [...document.querySelectorAll(".lp-reveal")]
-      .filter(el => el.innerText.trim().length > 0 && parseFloat(getComputedStyle(el).opacity) < 0.9)
+    [...document.querySelectorAll("p, h1, h2, h3, li, span, div, a, button")]
+      .filter(el => {
+        const own = [...el.childNodes].some(n => n.nodeType === 3 && n.textContent.trim().length > 2);
+        if (!own) return false;
+        const st = getComputedStyle(el);
+        if (st.display === "none" || st.visibility === "hidden") return false;  // deliberately hidden ≠ stranded
+        return parseFloat(st.opacity) < 0.9;
+      })
       .map(el => el.innerText.trim().slice(0, 60))
   );
   const res = { width, docH, invisible };
@@ -108,51 +130,57 @@ async function noInvisibleTextAfterJumps(browser, width, height) {
     await page.goto(`http://localhost:${PORT}/`, { waitUntil: "networkidle" });
     await page.waitForTimeout(400);
     const hidden = await page.evaluate(() =>
-      [...document.querySelectorAll(".lp-reveal")].filter(el => parseFloat(getComputedStyle(el).opacity) < 0.9).length
+      [...document.querySelectorAll("p, h1, h2, h3, span, div, a, button")].filter(el => {
+        const own = [...el.childNodes].some(n => n.nodeType === 3 && n.textContent.trim().length > 2);
+        if (!own) return false;
+        const st = getComputedStyle(el);
+        if (st.display === "none" || st.visibility === "hidden") return false;
+        return parseFloat(st.opacity) < 0.9;
+      }).length
     );
-    ok("prefers-reduced-motion: every section visible immediately (no reveal state)", hidden === 0, hidden);
+    ok("prefers-reduced-motion: every text element is visible immediately", hidden === 0, hidden);
+    // And the thing that would actually bite: the 199-dot field.
+    const dotsHidden = await page.evaluate(() =>
+      [...document.querySelectorAll(".df-dot")].filter(d => parseFloat(getComputedStyle(d).opacity) < 1).length);
+    ok("prefers-reduced-motion: not one of the 796 dots is dimmed", dotsHidden === 0, dotsHidden);
     await page.close();
   }
 
-  // ── 3. Phone width: reveals are OFF entirely (no hidden base state below
-  //      768px — scroll animations add nothing on a phone, cost everything) ──
+  // ── 3. The fail-closed pattern is GONE, structurally ────────────────────
+  //      BUILD-40 fixed the reveal by making it fail-open. BUILD-73 removed it
+  //      altogether. This asserts the class cannot come back by accident: no
+  //      element anywhere starts hidden waiting for JS to reveal it.
   {
+    const fs2 = require("fs");
+    const src = fs2.readFileSync(path.join(ROOT, "client", "src", "pages", "Landing.jsx"), "utf8");
+    ok("no .lp-reveal / IntersectionObserver visibility machinery on the page",
+      !/lp-reveal/.test(src) && !/IntersectionObserver/.test(src), null);
+    ok("no opacity:0 base state outside a prefers-reduced-motion: no-preference query",
+      (() => {
+        const guarded = src.slice(src.indexOf("@media (prefers-reduced-motion: no-preference)"));
+        const unguarded = src.slice(0, src.indexOf("@media (prefers-reduced-motion: no-preference)"));
+        return !/opacity:\s*0\b/.test(unguarded) && /opacity: 0/.test(guarded);
+      })(), null);
+
     const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
     await page.goto(`http://localhost:${PORT}/`, { waitUntil: "load" });
-    // Immediately after load, BEFORE any scrolling: below-the-fold sections
-    // must already be fully opaque at phone width.
-    await page.waitForTimeout(250);
+    // The hero's `.up` entrance is a PURE CSS animation (0.95s, longest delay
+    // 0.3s, fill `both`) — unlike the retired reveal it needs no JS to arm and
+    // no observer to fire, so it always completes. Wait past its full duration
+    // and then assert; measuring mid-flight would be testing the clock.
+    await page.waitForTimeout(1600);   // BEFORE any scrolling
     const hidden = await page.evaluate(() =>
-      [...document.querySelectorAll(".lp-reveal")].filter(el => parseFloat(getComputedStyle(el).opacity) < 0.9).length
-    );
-    ok("390px: no section is ever opacity-hidden (reveals disabled under 768px)", hidden === 0, hidden);
+      [...document.querySelectorAll("h1, h2, h3, p")].filter(el =>
+        el.innerText.trim().length > 0 && parseFloat(getComputedStyle(el).opacity) < 0.9)
+        .map(el => el.innerText.trim().slice(0, 40)));
+    ok("390px: below-the-fold copy is opaque at load, before any scroll", hidden.length === 0, hidden);
     await page.close();
   }
 
-  // ── 4. Calculator slider: real pointer drag at 390px updates the figure ──
-  {
-    const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
-    await page.goto(`http://localhost:${PORT}/`, { waitUntil: "networkidle" });
-    const slider = page.locator(".lp-slider");
-    await slider.scrollIntoViewIfNeeded();
-    await page.waitForTimeout(300);
-    const before = await page.locator(".lp-calc-loss").innerText();
-    const box = await slider.boundingBox();
-    ok("slider present and sized at 390px", !!box && box.width > 200, box);
-    // Drag the thumb from its current position to ~90% of the track.
-    const startX = box.x + box.width * (1300 / 19800); // value 1500 of 200–20000
-    const y = box.y + box.height / 2;
-    await page.mouse.move(startX, y);
-    await page.mouse.down();
-    await page.mouse.move(box.x + box.width * 0.9, y, { steps: 12 });
-    await page.mouse.up();
-    await page.waitForTimeout(250);
-    const after = await page.locator(".lp-calc-loss").innerText();
-    const val = await slider.inputValue();
-    ok("slider drag moved the value", Number(val) > 10000, val);
-    ok("loss figure updated from the drag", after !== before, { before, after });
-    await page.close();
-  }
+  // RETIRED (BUILD-73 Part 4, deliberately — see the header):
+  //   · "reveals are OFF below 768px"  → there are no reveals at any width.
+  //   · the calculator slider drag     → the calculator is not on the rebuilt
+  //     page. Nothing regressed; the section was removed by design.
 
   await browser.close();
   srv.close();

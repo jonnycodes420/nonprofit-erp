@@ -101,6 +101,7 @@ const LOOPBACK_CAPTURES = [
 // Out of scope for BASE/DB guarding, each for a stated reason.
 const EXEMPT = {
   "local-preview": "serves client/dist and proxies vercel.json's rewrites to a LOOPBACK-ONLY API; refuses any non-loopback API and writes nothing",
+  "build73-landing-capture": "read-only Playwright capture of the PUBLIC landing page; refuses any non-loopback APP_ORIGIN, logs in to nothing and writes only PNGs under docs/landing/",
   "build28-prepare-images": "local image generation, no network writes",
   "create-billing-products": "writes to STRIPE, not the app; has its own refuse-live-without---live guard",
 };
