@@ -63,9 +63,19 @@ const LOOPBACK_HARDCODED = ["build45-portal-capture", "onramp-capture"];
 const PROD_READONLY = [
   "attribution-chips-capture", "build12-ui-capture", "build49-capture", "build57-prod-capture",
   "build61-prod-verify", "check-webhook-subscriptions",
-  "consistency-audit", "finance-overview-capture", "landing-crispness-prod",
-  "landing-funnel-verify", "landing-hero-verify", "landing-image-verify",
-  "landing-motion-verify", "screenshot-matrix", "topbar-verify", "status",
+  "consistency-audit", "finance-overview-capture",
+  // BUILD-73 Part 4 — the landing page was rebuilt, and FIVE scripts that
+  // policed the old one were consolidated into this one:
+  //   landing-funnel-verify · landing-hero-verify · landing-crispness-prod
+  //   landing-image-verify  · landing-motion-verify
+  // Their honesty gates (no fabricated proof, the FEP attribution, no
+  // competitor cited as authority, no "keep 100%" overclaim), their CLS and
+  // no-auto-popup checks, and their measured-contrast checks all live here.
+  // What did NOT survive is the raster-vs-DOM product-shot policing: the
+  // rebuilt page has no product screenshots, so that subject is gone rather
+  // than unwatched. See audit/BUILD-73-FINDINGS.md.
+  "landing-prod-verify",
+  "screenshot-matrix", "topbar-verify", "status",
   // BUILD-72 Step A — the cents measurement. READ-ONLY by construction: it
   // opens a READ ONLY transaction, issues only SELECTs, and ROLLBACKs. It
   // verifies identity (product + database) before the connection is used.

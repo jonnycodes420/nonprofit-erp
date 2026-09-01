@@ -618,13 +618,51 @@ One assertion needed care: the hero's `.up` entrance is a pure CSS animation
 that always completes, unlike the JS-armed reveal, so measuring at 250ms was
 testing the clock. It now waits past the full duration, with a comment.
 
-## Carried, not fixed
+## The five prod scripts — RESOLVED at merge
 
-`scripts/landing-funnel-verify.js`, `landing-hero-verify.js`,
-`landing-crispness-prod.js`, `landing-image-verify.js` and
-`landing-motion-verify.js` all target the OLD page and run against **production**
-(they are `PROD_READONLY`, not part of `run-all.sh`). They will fail against the
-rebuilt page once it deploys. They are left alone deliberately: rewriting five
-prod-targeting scripts against a page that is not yet deployed would be writing
-assertions I cannot run. **They must be rewritten or retired in the same change
-that merges `landing-rebuild` to main** — recorded in `BLOCKED-build73.md`.
+The merge of `landing-rebuild` into main (`b01d3d8`) left five prod-targeting
+scripts asserting against a page that no longer exists. They were consolidated
+into **one**, `scripts/landing-prod-verify.js`, rather than left broken or
+deleted wholesale.
+
+| Retired | Its subject on the rebuilt page |
+|---|---|
+| `landing-funnel-verify.js` | section order + the recovery calculator + the "$149" pricing signal — **and two assertions that INVERTED**: it *required* a pricing signal and a `/pricing` link in the body, both of which the rebuilt page forbids |
+| `landing-hero-verify.js` | the BUILD-41 ink-field hero and its scrim — the hero is cream now |
+| `landing-crispness-prod.js` | raster-vs-DOM product screenshots at DPR 2/3 |
+| `landing-image-verify.js` | the same, byte-level |
+| `landing-motion-verify.js` | the `.lp-reveal` IntersectionObserver machinery |
+
+**What survived, because it was worth surviving** — these gates predate the
+rebuild and are not about any particular page:
+
+- no fabricated social proof; no logo-bar imagery
+- the FEP attribution, including "full-year 2025" verbatim
+- **no competitor cited as the authority** (Bloomerang republishes FEP's number;
+  citing it was a real defect fixed on 2026-08-06)
+- no "keep 100% of every gift" overclaim — Stripe's own fee still applies
+- CLS ≤ 0.02 on a full mobile scroll, and no auto popup/modal on load (both were
+  buried inside `landing-motion-verify`)
+- **measured** text contrast (buried inside `landing-hero-verify`)
+
+**What did not survive, and is recorded rather than quietly unwatched:** the
+raster-vs-DOM product-shot policing. Those two scripts existed because a
+downscaled bitmap of antialiased UI text resamples soft at every non-integer
+DPR, and BUILD-12 fixed it by making the product shots live DOM. **The rebuilt
+page has no product screenshots at all**, so the subject is gone — not
+untested. If a raster product shot is ever reintroduced, that guard has to come
+back with it.
+
+**Added on top**, because they are the rebuilt page's own rules: NO PRICING
+anywhere (the inverse of what the old script demanded), no outcome-claim
+language, the four dot fields with their nesting, the placeholders visible, and
+the reduced-motion guarantee.
+
+`scripts/landing-prod-verify.js` — **30 assertions, 30 passing** against the
+local build; run against production once the deploy lands.
+
+**One number worth watching:** the hero lede measures **4.53:1** on cream. That
+clears WCAG AA, but by 0.03. It is the reference's own `#6B6560` on `#E8E4DB`
+and was copied exactly per the brief's instruction not to substitute values —
+but it has almost no margin, and darkening that grey a step is the obvious fix
+if it is ever judged too light in the flesh.

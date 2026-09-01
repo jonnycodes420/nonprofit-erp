@@ -39,7 +39,14 @@ cleanly. See `audit/BUILD-73-FINDINGS.md`.
 
 ---
 
-## B-2 · Five prod-targeting landing scripts will fail once `landing-rebuild` merges
+## B-2 · RESOLVED at merge — five prod landing scripts consolidated into one
+
+**Closed 2026-09-01** by `scripts/landing-prod-verify.js` (30 assertions), which
+carries forward every honesty, CLS and contrast gate the five held and adds the
+rebuilt page's own no-pricing rule. Full accounting in
+`audit/BUILD-73-FINDINGS.md`. The original entry is kept below for the record.
+
+### (original)
 
 **Not blocking this build** — they are `PROD_READONLY` scripts, not part of
 `tests/run-all.sh`, and they run against the LIVE site, which still serves the
