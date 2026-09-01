@@ -1,50 +1,119 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import {
+  FIELD_SIZE, DRIFT_COUNTS, STEADY_COUNT, fieldDots, breatheDelay,
+} from "../lib/donorField";
 
-// ── Landing (BUILD-07 rebuild, 2026-07-17; product shots → DOM, BUILD-12) ───
-// Register: warm-serious, book-set, five-color palette only. Every number and
-// capability on this page is cross-checked against CLAUDE.md reality — no
-// invented testimonials, no implied scale, no marketing verbs.
-// PRODUCT VISUALS ARE LIVE DOM/SVG, NOT RASTER SCREENSHOTS (BUILD-12). Three
-// raster "fixes" couldn't beat retina blur because this is a Vite static app
-// (no image optimizer) serving downscaled bitmaps of antialiased UI text,
-// which resample soft at every non-integer DPR. The shots below are the real
-// component markup with real / clearly-sample-labeled values (see the shot
-// components + CLAUDE.md's "Landing product shots" note). Do NOT reintroduce
-// <img> screenshots for these; crispness is now structural.
+// ── Landing — BUILD-73 Part 4 rebuild ───────────────────────────────────────
+//
+// Structure and every numeric value come from the two reference files that
+// shipped with the build (1440px and 390px). Sizes, line-heights, paddings,
+// radii, opacities and gaps are copied EXACTLY out of them — not rounded to a
+// 4/8px grid, not replaced with framework defaults. Where a value looks odd
+// (86px nav, 0.86fr/1.14fr hero, 0.032em tracking) it is the reference's, and
+// changing it should be a decision rather than a tidy-up.
+//
+// What this page must never grow:
+//   · a price, a plan name, a tier, or a founding-partner rate. Cost is a
+//     conversation. Every path ends at Start free or Talk to the founder.
+//   · invented social proof — no logos, no review scores, no testimonials,
+//     no customer counts.
+//   · an outcome claim. The value math describes the SIZE OF THE PROBLEM and
+//     never Steward's results (BUILD-73 Part 3; the ban is asserted in
+//     tests/reserved-recovered.test.js and it scans this file).
+//
+// Copy that is load-bearing and must not be edited casually:
+//   · "Fundraising Effectiveness Project, full-year 2025." FEP rebased in
+//     Q1 2026 and now headlines a QUARTERLY figure — dropping "full-year"
+//     would silently change what the number means.
+//
+// The dot field is the one piece with real machinery behind it: see
+// ../lib/donorField.js for why the drift set is a module constant with a
+// load-bearing ORDER, and tests/donor-field.test.js for the properties.
 
 const C = {
-  ink:    "#0f1a12",
-  dark2:  "#1a2e1f",
-  dark3:  "#2d4a35",
-  cream:  "#f0ede6",
-  cream2: "#e8e4db",
-  cream3: "#ddd9d0",
-  white:  "#ffffff",
-  gold:   "#c9a84c",
-  terra:  "#b8593f",
-  sage:   "#8fa896",
-  greenDk:"#0d5c3a",
-  greenMd:"#1a6b4a",
-  ink3:   "#6b6560",
+  ink:     "#0F1A12",
+  cream:   "#F0EDE6",
+  cream2:  "#E8E4DB",
+  gold:    "#C9A84C",
+  greenDk: "#0D5C3A",
+  ink3:    "#6B6560",
+  sage:    "#8FA896",
 };
 
-const CALENDLY_URL = "https://calendly.com/xjca2006/new-meeting";
+const CALENDLY_URL   = "https://calendly.com/xjca2006/new-meeting";
 const FOUNDER_MAILTO = "mailto:jonathan@stewardapp.dev";
 
-// ── BUILD-28: image-forward, nonprofit-native landing ────────────────────────
-// The page's top third is photography + words; the DOM product shots (BUILD-12,
-// still live/vector — never rasterized) are demoted below the calculator as
-// proof. The hero photo is ILLUSTRATIVE arts/community work, NOT a Steward
-// customer — never captioned as one. All photography is free-tier Unsplash;
-// provenance + license is recorded in client/public/ASSETS.md.
-//
-// The hero PHOTO was retired in BUILD-41 (solid ink field — the image was
-// the LCP problem and muddied the type). The verticals band photos remain.
+// ── PLACEHOLDERS ────────────────────────────────────────────────────────────
+// One exported object, each value carrying a TODO, rendered so an unfilled
+// value is OBVIOUS on the page rather than silently blank. None of these are
+// invented: a guessed school or legal entity name on a public page is a
+// fabrication, and a blank one is a page that looks broken without saying why.
+export const PLACEHOLDERS = {
+  founderLastName: "[LAST NAME]",        // TODO: Jonathan's surname
+  founderSchool:   "[SCHOOL]",           // TODO: the school he attends
+  founderPhoto:    "[ FOUNDER PHOTO ]",  // TODO: a real photo, never a stock portrait
+  legalEntity:     "[LEGAL ENTITY NAME]",// TODO: the registered entity for the © line
+};
+const isPlaceholder = v => typeof v === "string" && v.trim().startsWith("[");
 
-// "Built for orgs like yours" — the who-it's-for band. Each vertical named in
-// its own language. A slot with no cleared photo ships a graceful on-palette
-// fallback (Rescue is blocked on a clean licensed file; Faith awaits one).
+// A placeholder renders in a dotted outline so it reads as "not filled in yet"
+// at a glance, on the page, to anyone — including whoever is about to demo it.
+function Placeholder({ value, block }) {
+  if (!isPlaceholder(value)) return <>{value}</>;
+  const style = {
+    display: block ? "flex" : "inline-flex", alignItems: "center", justifyContent: "center",
+    border: `1px dashed rgba(15, 26, 18, 0.32)`, borderRadius: block ? 12 : 4,
+    color: C.ink3, letterSpacing: "0.14em", fontSize: 13, fontFamily: "'DM Sans', system-ui, sans-serif",
+    padding: block ? 0 : "1px 7px", background: block ? C.cream : "transparent",
+    width: block ? "100%" : "auto", height: block ? "100%" : "auto",
+  };
+  return <span style={style}>{value}</span>;
+}
+
+// ── THE DONOR FIELD — one component, four renders ───────────────────────────
+// The hero field and the three year fields are THE SAME 199 DONORS at
+// different times. Rendering them from one component with a drift count is
+// what makes that true rather than merely claimed: there is no second list to
+// drift out of sync with the first.
+//
+// Accessibility: the wrapper carries role="img" and an aria-label that states
+// the fact IN WORDS, and the dot container is aria-hidden so a screen reader
+// is not read 199 empty elements. The legend below every field is real text,
+// not decoration.
+//
+// Performance: only opacity and transform animate. No filter, no shadow
+// transition, nothing layout-affecting — on 199 elements any of those would
+// cost a paint per frame.
+function DonorField({ count, size, gap, label, className = "" }) {
+  const dots = fieldDots(count);
+  return (
+    <div role="img" aria-label={label} className={className}>
+      <div aria-hidden="true" style={{ display: "flex", flexWrap: "wrap", gap }}>
+        {dots.map(d => (
+          <span
+            key={d.i}
+            className={d.drifting ? "df-dot df-drift" : "df-dot"}
+            style={{
+              width: size, height: size, borderRadius: "50%",
+              background: d.drifting ? C.gold : C.greenDk,
+              // Custom properties, so the animation lives entirely in CSS
+              // behind the reduced-motion query and this element never
+              // carries an opacity of its own.
+              "--d": `${d.delay}ms`,
+              "--b": `${breatheDelay(d.i)}ms`,
+            }}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ── "Built for orgs like yours" — kept from the live page ───────────────────
+// Photography is ILLUSTRATIVE nonprofit work, NOT a Steward customer, and is
+// never captioned as one (the honest-imagery rule). Free-tier Unsplash;
+// provenance and licence per image in client/public/ASSETS.md.
 const VERTICALS = [
   {
     title: "Arts & culture",
@@ -60,322 +129,27 @@ const VERTICALS = [
     title: "Faith & community",
     blurb: "One staffer wearing every hat, keeping a whole community's giving on track.",
     img: "/card-faith",
-    pos: "center 60%", // portrait source — keep the lit chapel in the landscape crop
+    pos: "center 60%", // portrait source — keep the lit chapel inside the landscape crop
   },
 ];
 
-// ── Interactive wedge (BUILD-11 Build B; re-sourced 2026-08-06) ─────────────
-// The monthly giving lost to lapsing sustainers, made visceral with HONEST
-// math the visitor drives themselves: annual loss = monthly recurring × 12 ×
-// 29%. The rate is PRIMARY-SOURCED, not the recycled "widely-cited 20–30%"
-// payments-literature range the sector passes around: M+R Benchmarks 2026
-// (2025 data, 180 nonprofits) reports monthly sustainer retention of 71% at
-// twelve months → 29% annual attrition, with about one in ten monthly gifts
-// failing inside the first two months (heavily card/processing driven).
-// Client-side only, no backend, no invented recovery figure — the point is
-// the size of the leak, not a flattering promise.
-const CHURN_RATE = 0.29; // 1 − 0.71 twelve-month sustainer retention (M+R Benchmarks 2026)
-const fmtMoney = n => "$" + Math.round(n).toLocaleString();
-
-function RecoveryCalculator() {
-  const [monthly, setMonthly] = useState(1500);
-  const annualLoss = monthly * 12 * CHURN_RATE;
-  return (
-    <div className="lp-calc">
-      <div className="lp-calc-copy">
-        <div style={{ fontSize: 11, fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.14em", color: C.terra, marginBottom: 16 }}>Do the math</div>
-        <h2 className="lp-serif" style={{ fontSize: "clamp(28px, 3vw, 40px)", color: C.ink, lineHeight: 1.15, marginBottom: 18 }}>
-          What are you leaving on the table?
-        </h2>
-        <p style={{ fontSize: 16, color: "#2d2d2d", lineHeight: 1.8 }}>
-          Recurring donors don't quit — their cards expire. The charge fails at
-          2 a.m., no one is watching, and the gift just stops. Move the slider to
-          your monthly recurring giving and see the quiet annual leak.
-        </p>
-      </div>
-      <div className="lp-calc-card">
-        <label style={{ fontSize: 13, fontWeight: 700, color: C.ink3, display: "block", marginBottom: 10 }}>Your monthly recurring giving</label>
-        <div className="lp-serif" style={{ fontSize: 34, color: C.ink, marginBottom: 14 }}>{fmtMoney(monthly)}<span style={{ fontSize: 16, color: C.ink3 }}> / month</span></div>
-        <input type="range" min={200} max={20000} step={100} value={monthly}
-          onChange={e => setMonthly(Number(e.target.value))} className="lp-slider"
-          aria-label="Monthly recurring giving" />
-        <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: C.ink3, marginTop: 6, marginBottom: 22 }}>
-          <span>$200</span><span>$20,000</span>
-        </div>
-        <div style={{ background: C.cream, border: `1px solid ${C.cream3}`, borderLeft: `3px solid ${C.terra}`, borderRadius: 12, padding: "18px 20px", marginBottom: 14 }}>
-          <div style={{ fontSize: 12, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", color: C.ink3, marginBottom: 6 }}>Silently lost each year</div>
-          <div className="lp-calc-loss lp-serif" style={{ fontSize: "clamp(34px, 4.5vw, 46px)", color: C.terra, lineHeight: 1 }}>{fmtMoney(annualLoss)}</div>
-          <div style={{ fontSize: 13, color: "#2d2d2d", lineHeight: 1.6, marginTop: 8 }}>
-            much of it from cards that simply failed — donors who never decided
-            to stop giving.
-          </div>
-        </div>
-        <div style={{ fontSize: 14, color: C.greenDk, fontWeight: 600, lineHeight: 1.6 }}>
-          ↳ Steward's whole job here: catch each failed card within the hour and
-          win the gift back — in your name, no login for the donor.
-        </div>
-        <p style={{ fontSize: 11.5, color: C.ink3, marginTop: 16, lineHeight: 1.6 }}>
-          Assumes 29% annual attrition on monthly giving — M+R Benchmarks 2026
-          (2025 data): sustainer retention is 71% at twelve months, and about
-          one in ten monthly gifts fails within the first two months. How much
-          comes back depends on your donors; Steward pursues every dollar of it.
-        </p>
-      </div>
-    </div>
-  );
-}
-
-// ── Product shots as LIVE DOM, not raster screenshots (BUILD-12) ────────────
-// Three raster "fixes" (BUILD-08 → BUILD-10 Part 2 → BUILD-11) could not make
-// captured UI text crisp on retina: this is a Vite STATIC app (no Vercel/Next
-// image optimizer), so prod serves the committed WebP bytes verbatim — the
-// blur was never CDN re-encoding, it was raster-of-text softness. A downscaled
-// bitmap of antialiased text resamples soft at every non-integer DPR ratio;
-// only vector text is pixel-crisp at every DPR. So the product visuals below
-// are the real component markup with real / clearly-sample-labeled values —
-// built to match the crisp "DO THE MATH" calculator card exactly (styled
-// HTML/CSS in-page, real type, Steward palette, soft elevation). They cannot
-// blur, they weigh almost nothing, and they can't drift from what ships.
-// DO NOT convert these back into <img> screenshots. See CLAUDE.md.
-
-const PencilIcon = () => (
-  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={C.sage} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
-    <path d="M17 3a2.85 2.85 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" />
-  </svg>
-);
-
-const GoalStat = ({ label, value, valueColor, sub }) => (
-  <div className="lp-goalstat">
-    <div className="lp-goalstat-l">{label}</div>
-    <div className="lp-goalstat-v" style={valueColor ? { color: valueColor } : undefined}>{value}</div>
-    {sub && <div className="lp-goalstat-s">{sub}</div>}
-  </div>
-);
-
-const RetChip = ({ name, amt }) => (
-  <span className="lp-retchip"><b>{name}</b> <span style={{ color: C.ink3 }}>{amt}</span></span>
-);
-
-// The hero: the home screen's goal banner + retention card, exactly as the
-// product renders them (Dashboard.jsx). Values are the demo org's real numbers
-// (goal 22% of $25,000, retention 33% vs the 43% sector average). The one
-// deliberate motion — the goal bar filling to its true 22% — is now a REAL
-// CSS bar animating its own width, not an overlay faked onto a screenshot.
-// A single restrained product signal floated over the hero photo (BUILD-29).
-// DOM/vector only (never raster — the crispness guards apply). It reuses the
-// BUILD-12 goal-thermometer language so a first-time visitor instantly reads
-// "fundraising software," resolving the "is this an arts org?" ambiguity. It's
-// a signal, not a demo — one card, decorative (aria-hidden).
-function HeroFloatCard() {
-  return (
-    <div className="lp-hero-card" aria-hidden="true">
-      <div className="lp-hcard-eyebrow">Fundraising Goal</div>
-      <div className="lp-hcard-label">Raise $25,000 this quarter</div>
-      <div className="lp-hcard-row">
-        <span className="lp-serif lp-hcard-pct">22%</span>
-        <span className="lp-hcard-sub">of goal reached</span>
-      </div>
-      <div className="lp-hcard-track"><div className="lp-hcard-fill" /></div>
-      <div className="lp-hcard-foot">
-        <strong className="lp-serif">$5,501</strong> of $25,000 · 53 days left
-      </div>
-    </div>
-  );
-}
-
-function HeroShot() {
-  return (
-    <div className="lp-hero-shot">
-      <div className="lp-goalcard">
-        <div className="lp-goal-cols">
-          <div style={{ flex: "2 1 240px", minWidth: 0 }}>
-            <div className="lp-goal-eyebrow">Fundraising Goal</div>
-            <div className="lp-goal-label">Raise $25,000 this quarter <PencilIcon /></div>
-            <div style={{ display: "flex", alignItems: "baseline", gap: 10, margin: "2px 0 12px" }}>
-              <div className="lp-serif lp-goal-pct">22%</div>
-              <div style={{ fontSize: 13, fontWeight: 600, color: C.sage }}>of goal reached</div>
-            </div>
-            <div className="lp-goal-track"><div className="lp-goal-fill" /></div>
-            <div style={{ fontSize: 13, color: "#c9c2b4", marginTop: 10 }}>
-              <strong className="lp-serif" style={{ fontSize: 15, color: C.gold, fontWeight: 400 }}>$5,501</strong> of $25,000
-            </div>
-          </div>
-          <div style={{ flex: "1 1 180px", minWidth: 160, display: "flex", flexDirection: "column", gap: 9 }}>
-            <GoalStat label="Pace" value="Behind pace" valueColor={C.terra} sub="18pt behind schedule" />
-            <GoalStat label="Time Left" value="53 days" sub="left to reach this goal" />
-            <GoalStat label="This Week" value="1 donor gave this week" sub="recent momentum" />
-          </div>
-        </div>
-      </div>
-
-      <div className="lp-scope">
-        <span style={{ fontSize: 11, color: C.ink3 }}>Showing:</span>
-        <div className="lp-scope-toggle">
-          <span className="lp-scope-on">My donors</span>
-          <span className="lp-scope-off">Whole org</span>
-        </div>
-      </div>
-
-      <div className="lp-retcard">
-        <div className="lp-goalstat-l" style={{ color: C.ink3 }}>Donor Retention Rate</div>
-        <div style={{ display: "flex", alignItems: "baseline", gap: 12, flexWrap: "wrap", marginTop: 6 }}>
-          <div className="lp-serif" style={{ fontSize: 32, fontWeight: 400, color: C.terra, lineHeight: 1 }}>33%</div>
-          <span style={{ fontSize: 13, fontWeight: 700, color: C.ink3 }}>No change vs 3 weeks ago</span>
-        </div>
-        <div style={{ fontSize: 13, fontWeight: 600, color: "#3a3a3a", marginTop: 6, lineHeight: 1.4, maxWidth: 380 }}>
-          10pt below the 43% sector average — worth a closer look at who isn't renewing.
-        </div>
-        <div className="lp-ret-chips">
-          <RetChip name="Vanessa Cole" amt="$3,000" />
-          <RetChip name="Sunrise Foundati…" amt="$25,000" />
-          <RetChip name="Diana Torres" amt="$250" />
-          <span className="lp-ret-more">+3 more →</span>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// "Needs Your Attention" queue rows — the real home-screen queue (Dashboard.jsx).
-// Sample donors, clearly demo. tone → the product's real row color: task = ink,
-// note (personal-note nudge) = deep green, milestone/lapsed (AI draft) = gold.
-const QUEUE_ROWS = [
-  { initial: "M", name: "Margaret Chen", tone: "task", reason: 'Task: "Call Margaret Chen — major gift conversation"', action: "Mark done ✓" },
-  { initial: "J", name: "James Okafor", tone: "task", reason: 'Task: "Re-engage James Okafor (lapsed 18mo)"', action: "Mark done ✓" },
-  { initial: "J", name: "Julian Marsh", tone: "note", bullets: [
-      "This marks their 2-year anniversary with your organization.",
-      'From their file: "Consistent annual donor, due for this year’s ask conversation."',
-      "Most recent gift: $5,000 on February 12, 2026.",
-    ], action: "Mark sent ✓" },
-  { initial: "E", name: "Elena Marchetti", tone: "note", bullets: [
-      "Just crossed $10,000 in total lifetime giving ($12,500 total).",
-      'From their file: "Just crossed $10,000 lifetime giving. High-touch relationship, board-adjacent."',
-      "They’ve been giving for 2 years — since October 2023.",
-    ], action: "Mark sent ✓" },
-  { initial: "S", name: "Sunrise Foundation", tone: "milestone", reason: "Flagged today — AI-drafted re-engagement email ready for review", action: "Review draft →" },
-  { initial: "R", name: "Robert & Lisa Atkinson", tone: "milestone", reason: "Flagged today — AI-drafted re-engagement email ready for review", action: "Review draft →" },
-];
-const TONE_COLOR = { task: C.ink, note: C.greenDk, milestone: C.gold };
-
-function QueueRow({ r, last }) {
-  const color = TONE_COLOR[r.tone];
-  const btnText = r.tone === "milestone" ? C.ink : "#fff";
-  return (
-    <div className="lp-qrow" style={{ borderLeft: `3px solid ${color}`, borderBottom: last ? "none" : `1px solid ${C.cream2}` }}>
-      <div className="lp-qav" style={{ background: color + "22", color }}>{r.initial}</div>
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontSize: 13, fontWeight: 700, color: C.ink }}>{r.name}</div>
-        {r.bullets ? (
-          <ul style={{ margin: "4px 0 0", padding: "0 0 0 16px", fontSize: 12, color: C.ink3, lineHeight: 1.5 }}>
-            {r.bullets.map((b, i) => <li key={i} style={{ marginBottom: 2 }}>{b}</li>)}
-          </ul>
-        ) : (
-          <div style={{ fontSize: 12, color: C.ink3, marginTop: 2, lineHeight: 1.4 }}>{r.reason}</div>
-        )}
-      </div>
-      <span className="lp-qbtn" style={{ background: color, color: btnText }}>{r.action}</span>
-    </div>
-  );
-}
-
-function QueueShot({ rows = QUEUE_ROWS, header = true }) {
-  return (
-    <div className="lp-qcard">
-      {header && (
-        <div className="lp-qhead">
-          <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <span className="lp-goalstat-l" style={{ color: C.ink, fontSize: 11 }}>Needs Your Attention</span>
-            <span className="lp-qmine">Mine</span>
-          </span>
-          <span style={{ fontSize: 11, color: C.ink3 }}>{rows.length} items</span>
-        </div>
-      )}
-      {rows.map((r, i) => <QueueRow key={i} r={r} last={i === rows.length - 1} />)}
-    </div>
-  );
-}
-
-// Three compact queue rows for the "How it works" step — single-line reasons.
-const ATTENTION_ROWS = [
-  { initial: "S", name: "Sunrise Foundation", tone: "milestone", reason: "Flagged today — re-engagement draft ready", action: "Review →" },
-  { initial: "J", name: "Julian Marsh", tone: "note", reason: "2-year anniversary — time for a personal note", action: "Mark sent ✓" },
-  { initial: "M", name: "Margaret Chen", tone: "task", reason: 'Task: "Call — major gift conversation"', action: "Mark done ✓" },
+// The three donors on the "Who's slipping away" card. Illustrative, and
+// labelled as such in the card's own footer — never presented as real people
+// at a real organization.
+const SLIPPING = [
+  { name: "Margaret Chen",       why: "$2,000 every March since 2019. Nothing for 14 months.",              amt: "$2,000", unit: "a year" },
+  { name: "The Halvorsen Family", why: "Gave four times a year, then once, then not at all.",                amt: "$3,400", unit: "lifetime" },
+  { name: "David Okonkwo",       why: "Monthly gift failed three weeks ago. Card expired. He doesn't know.", amt: "$150",   unit: "a month" },
 ];
 
-// The tax receipt, as the product's receipt renderer lays it out (server.js
-// renderReceiptPdf) — the same green header, EIN line, gift row, and the IRS
-// "no goods or services" line. Sample values (the live /receipts/preview data).
-function ReceiptShot() {
-  return (
-    <div className="lp-receipt">
-      <div className="lp-receipt-head">
-        <div className="lp-receipt-kicker">Donation Receipt</div>
-        <div className="lp-receipt-org">CREO Arts</div>
-        <div className="lp-receipt-ein">EIN: 47-1234567</div>
-      </div>
-      <div className="lp-receipt-body">
-        <div className="lp-receipt-meta">
-          <span>Receipt #2026-PREVIEW</span>
-          <span>Issued July 18, 2026</span>
-        </div>
-        <div className="lp-receipt-donor">Jordan Sample</div>
-        <div className="lp-receipt-addr">123 Main St, Anytown, ST 00000</div>
-        <div className="lp-receipt-grid">
-          <div><div className="lp-receipt-k">Gift Date</div><div className="lp-receipt-v">July 18, 2026</div></div>
-          <div><div className="lp-receipt-k">Amount</div><div className="lp-receipt-v" style={{ color: C.greenMd }}>$250.00</div></div>
-          <div><div className="lp-receipt-k">Payment Method</div><div className="lp-receipt-v">Credit Card</div></div>
-        </div>
-        <div className="lp-receipt-note">No goods or services were provided in exchange for this contribution.</div>
-      </div>
-    </div>
-  );
-}
-
-// How-it-works step 1: the CSV column-mapping the importer does automatically.
-function ImportShot() {
-  const maps = [
-    ["name", "Donor name"],
-    ["email", "Email"],
-    ["last_gift", "Last gift amount"],
-    ["city", "City"],
-  ];
-  return (
-    <div className="lp-import">
-      <div className="lp-import-head">
-        <span className="lp-goalstat-l" style={{ color: C.ink, fontSize: 11 }}>Import donors</span>
-        <span style={{ fontSize: 11, color: C.ink3 }}>donors.csv · 24 rows</span>
-      </div>
-      <div className="lp-import-body">
-        {maps.map(([csv, field]) => (
-          <div key={csv} className="lp-import-row">
-            <span className="lp-import-csv">{csv}</span>
-            <span className="lp-import-arrow">→</span>
-            <span className="lp-import-field">{field}</span>
-            <span className="lp-import-ok">✓</span>
-          </div>
-        ))}
-        <div className="lp-import-foot">24 donors ready · stages auto-assigned</div>
-      </div>
-    </div>
-  );
-}
-
-// How-it-works step 3: the compact goal-progress the numbers climb toward.
-function ClimbShot() {
-  return (
-    <div className="lp-climb">
-      <div className="lp-goal-eyebrow">Fundraising Goal</div>
-      <div style={{ display: "flex", alignItems: "baseline", gap: 8, margin: "6px 0 10px" }}>
-        <span className="lp-serif" style={{ fontSize: 42, color: C.gold, lineHeight: 1 }}>22%</span>
-        <span style={{ fontSize: 12, color: C.sage }}>of goal reached</span>
-      </div>
-      <div className="lp-goal-track"><div className="lp-goal-fill lp-goal-fill-static" /></div>
-      <div style={{ fontSize: 12, color: "#c9c2b4", marginTop: 8 }}>
-        <strong className="lp-serif" style={{ color: C.gold, fontWeight: 400 }}>$5,501</strong> of $25,000
-      </div>
-    </div>
-  );
-}
+const YEAR_PANELS = [
+  { month: "January",  count: DRIFT_COUNTS.january,
+    copy: "Everyone is current. The file looks healthy and the board is happy." },
+  { month: "June",     count: DRIFT_COUNTS.june,
+    copy: "Thirty-one have quietly gone past their usual month. This is the window, and this is where Steward calls it." },
+  { month: "December", count: DRIFT_COUNTS.december,
+    copy: "Seventy-four gone, and the year-end report explains the shortfall without ever naming one of them." },
+];
 
 function CalendlyModal({ onClose }) {
   const loaded = useRef(false);
@@ -388,28 +162,31 @@ function CalendlyModal({ onClose }) {
     document.head.appendChild(s);
   }, []);
   useEffect(() => {
-    const onKey = (e) => { if (e.key === "Escape") onClose(); };
+    const onKey = e => { if (e.key === "Escape") onClose(); };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
   }, [onClose]);
   return (
     <div
-      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+      onClick={e => { if (e.target === e.currentTarget) onClose(); }}
       style={{
-        position: "fixed", inset: 0, zIndex: 500, background: "rgba(15,26,18,0.6)",
+        position: "fixed", inset: 0, zIndex: 500, background: "rgba(15, 26, 18, 0.6)",
         display: "flex", alignItems: "flex-start", justifyContent: "center",
         padding: "40px 16px", overflowY: "auto",
       }}
     >
       <div style={{
         background: C.cream, borderRadius: 18, width: "100%", maxWidth: 680,
-        boxShadow: "0 24px 80px rgba(0,0,0,0.25)", border: `1px solid ${C.cream3}`, overflow: "hidden",
+        boxShadow: "0 24px 80px rgba(0, 0, 0, 0.25)", border: "1px solid rgba(15, 26, 18, 0.14)", overflow: "hidden",
       }}>
-        <div style={{ padding: "22px 26px 0", display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
-          <span style={{ fontFamily: "'DM Serif Display',serif", fontSize: 23, color: C.ink }}>
+        <div style={{ padding: "22px 26px 0", display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 12 }}>
+          <span className="lp-serif" style={{ fontSize: 23, color: C.ink }}>
             Pick a time — it's me you'll be talking to
           </span>
-          <button onClick={onClose} aria-label="Close" style={{ background: "none", border: "none", fontSize: 22, color: C.ink3, cursor: "pointer", lineHeight: 1, padding: 4 }}>×</button>
+          <button onClick={onClose} aria-label="Close" style={{
+            background: "none", border: "none", fontSize: 22, color: C.ink3, cursor: "pointer",
+            lineHeight: 1, padding: 10, minWidth: 44, minHeight: 44,
+          }}>×</button>
         </div>
         <div style={{ padding: "4px 26px 0", fontSize: 13, color: C.ink3 }}>
           Or just write: <a href={FOUNDER_MAILTO} style={{ color: C.greenDk, textDecoration: "underline", textUnderlineOffset: 3 }}>jonathan@stewardapp.dev</a>
@@ -420,722 +197,593 @@ function CalendlyModal({ onClose }) {
   );
 }
 
+const STYLES = `
+  .lp, .lp *, .lp *::before, .lp *::after { box-sizing: border-box; }
+  .lp { background: ${C.cream2}; color: ${C.ink}; font-family: 'DM Sans', system-ui, sans-serif;
+        -webkit-font-smoothing: antialiased; overflow-x: hidden; min-height: 100vh; }
+  .lp p { margin: 0; }
+  .lp h1, .lp h2, .lp h3 { margin: 0; font-family: 'DM Serif Display', Georgia, serif; font-weight: 400; }
+  .lp a { color: inherit; text-decoration: none; }
+  .lp-serif { font-family: 'DM Serif Display', Georgia, serif; font-weight: 400; }
+
+  /* Section rhythm. The reference is 100px 64px at 1440 and 62px 20px at 390;
+     the collapse point is chosen by where the 50px headlines start wrapping
+     badly, not by a round number — see the 1080px query below. */
+  .lp-sec { padding: 100px 64px; }
+  .lp-eyebrow { font-size: 12px; font-weight: 700; letter-spacing: 0.16em; }
+
+  /* Buttons. Every one is at least 44px tall including at 390px. */
+  .lp-btn { display: inline-flex; align-items: center; justify-content: center;
+            border-radius: 999px; font-weight: 500; cursor: pointer; border: none;
+            font-family: inherit; min-height: 44px; transition: transform .12s ease, opacity .12s ease; }
+  .lp-btn:hover { transform: translateY(-1px); }
+  .lp-btn-ink   { background: ${C.ink}; color: ${C.cream}; font-size: 16px; padding: 16px 32px; }
+  .lp-btn-gold  { background: ${C.gold}; color: ${C.ink}; font-size: 17px; font-weight: 600; padding: 18px 38px; }
+  .lp-btn-ghost { background: transparent; color: ${C.cream}; font-size: 17px; padding: 18px 36px;
+                  border: 1px solid rgba(240, 237, 230, 0.3); }
+  .lp-btn-quiet { background: transparent; color: ${C.ink}; font-size: 16px; padding: 12px 0;
+                  border: none; border-bottom: 1px solid rgba(15, 26, 18, 0.28); border-radius: 0; }
+  .lp-navbtn { background: ${C.ink}; color: ${C.cream}; font-weight: 500; padding: 11px 24px;
+               border-radius: 999px; border: none; cursor: pointer; font-family: inherit;
+               font-size: 15px; min-height: 44px; }
+  .lp-navlink { font-size: 15px; color: ${C.ink3}; background: none; border: none; cursor: pointer;
+                font-family: inherit; padding: 10px 0; min-height: 44px; display: inline-flex;
+                align-items: center; transition: color .15s; }
+  .lp-navlink:hover, .lp a:hover { color: ${C.gold}; }
+  .lp-focus:focus-visible { outline: 2px solid ${C.gold}; outline-offset: 3px; border-radius: 4px; }
+
+  /* ── THE DOT FIELD ───────────────────────────────────────────────────────
+     The base state is fully visible and carries NO opacity of its own. The
+     entrance wave and the breathing live entirely inside the no-preference
+     query below. Leaving an opacity of 0 as a base state outside that query is
+     the bug this structure exists to prevent: with reduced motion on, the
+     animation never runs, and a field that starts at zero opacity simply
+     never appears. */
+  .lp .df-dot { display: block; flex: 0 0 auto; will-change: auto; }
+
+  @media (prefers-reduced-motion: no-preference) {
+    @keyframes lpDotIn   { from { opacity: 0; transform: scale(0.35); } to { opacity: 1; transform: none; } }
+    @keyframes lpDotGlow { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+    @keyframes lpUp      { from { opacity: 0; transform: translateY(18px); } to { opacity: 1; transform: none; } }
+    @keyframes lpPulse   { 0%, 100% { box-shadow: 0 0 0 0 rgba(201, 168, 76, 0.55); }
+                           55%      { box-shadow: 0 0 0 7px rgba(201, 168, 76, 0); } }
+    .lp .df-dot   { animation: lpDotIn 0.5s ease-out var(--d) both; }
+    .lp .df-drift { animation: lpDotIn 0.5s ease-out var(--d) both,
+                               lpDotGlow 5s ease-in-out var(--b) infinite; }
+    .lp .up       { animation: lpUp 0.95s cubic-bezier(0.2, 0.75, 0.2, 1) both; }
+    .lp .lp-pulse { animation: lpPulse 2.4s ease-out infinite; }
+  }
+
+  /* ── Layout ── */
+  .lp-nav      { display: flex; align-items: center; justify-content: space-between;
+                 padding: 0 64px; height: 86px; border-bottom: 1px solid rgba(15, 26, 18, 0.1); }
+  .lp-navwrap  { display: flex; align-items: center; gap: 36px; }
+  .lp-hero     { display: grid; grid-template-columns: 0.86fr 1.14fr; gap: 60px;
+                 align-items: center; padding: 84px 64px 88px; }
+  .lp-hero-col { display: flex; flex-direction: column; gap: 26px; }
+  .lp-field-hero { max-width: 672px; }
+  .lp-legend   { display: flex; align-items: center; gap: 28px; padding-top: 22px;
+                 border-top: 1px solid rgba(15, 26, 18, 0.16); max-width: 672px; flex-wrap: wrap; }
+  .lp-strip    { background: ${C.cream}; border-top: 1px solid rgba(15, 26, 18, 0.1);
+                 padding: 20px 64px; display: flex; align-items: center;
+                 justify-content: space-between; gap: 24px; flex-wrap: wrap; }
+  .lp-3col     { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 40px; margin-top: 64px; }
+  .lp-cards    { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 26px;
+                 margin-top: 58px; align-items: start; }
+  .lp-split    { display: grid; grid-template-columns: 0.9fr 1.1fr; gap: 72px; align-items: center; }
+  .lp-founder  { display: grid; grid-template-columns: 0.72fr 1.28fr; gap: 64px; align-items: start; }
+  .lp-sechead  { display: flex; align-items: flex-end; justify-content: space-between; gap: 48px; }
+  .lp-ctarow   { display: flex; align-items: center; gap: 24px; margin-top: 10px; flex-wrap: wrap; }
+  .lp-verts    { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 26px; margin-top: 58px; }
+  .lp-vert-img { width: 100%; aspect-ratio: 4 / 3; object-fit: cover; display: block; }
+  .lp-footer   { background: ${C.ink}; border-top: 1px solid rgba(240, 237, 230, 0.1);
+                 padding: 34px 64px; display: flex; align-items: center;
+                 justify-content: space-between; gap: 20px; flex-wrap: wrap; }
+
+  /* Wide content scrolls inside its own container; the page body never does. */
+  .lp-scrollx { overflow-x: auto; }
+
+  /* ── Collapse point: 1080px, chosen by where the 50px serif headlines start
+     wrapping into two-word orphans against the 0.86fr hero column, not by a
+     round number. ── */
+  @media (max-width: 1080px) {
+    .lp-sec     { padding: 72px 40px; }
+    .lp-nav     { padding: 0 40px; }
+    .lp-hero    { grid-template-columns: 1fr; gap: 44px; padding: 60px 40px 64px; }
+    .lp-split, .lp-founder { grid-template-columns: 1fr; gap: 40px; }
+    .lp-sechead { flex-direction: column; align-items: flex-start; gap: 18px; }
+    .lp-3col, .lp-cards, .lp-verts { grid-template-columns: 1fr; gap: 32px; margin-top: 44px; }
+    .lp-cards > * { margin-top: 0 !important; }
+    .lp-strip   { padding: 20px 40px; flex-direction: column; align-items: flex-start; gap: 8px; }
+    .lp-footer  { padding: 28px 40px; }
+    .lp-h1      { font-size: 54px !important; }
+    .lp-h2      { font-size: 40px !important; }
+    .lp-close-h { font-size: 48px !important; }
+  }
+
+  /* ── 390px reference values ── */
+  @media (max-width: 640px) {
+    .lp-sec     { padding: 62px 20px; }
+    .lp-nav     { padding: 0 20px; height: 70px; }
+    .lp-nav .lp-navwrap .lp-navlink { display: none; }
+    .lp-hero    { padding: 52px 20px 56px; gap: 22px; }
+    .lp-hero-col { gap: 22px; }
+    .lp-strip   { padding: 20px; }
+    .lp-footer  { padding: 28px 20px; flex-direction: column; align-items: flex-start; gap: 14px; }
+    .lp-h1      { font-size: 46px !important; }
+    .lp-h2      { font-size: 34px !important; }
+    .lp-h3      { font-size: 23px !important; }
+    .lp-close-h { font-size: 40px !important; }
+    .lp-lede    { font-size: 17px !important; }
+    .lp-ctarow  { flex-direction: column; align-items: stretch; gap: 12px; }
+    .lp-ctarow > .lp-btn { width: 100%; padding: 17px 24px; }
+    .lp-btn-quiet { border: 1px solid rgba(15, 26, 18, 0.3); border-radius: 999px; padding: 17px 24px; }
+    .lp-legend  { gap: 20px; padding-top: 18px; }
+    .lp-legend .lp-grow { display: none; }
+    .lp-legend .lp-atrisk { flex-basis: 100%; }
+  }
+
+  /* Nothing on this page may scroll the page sideways, at any width from 320. */
+  @media (max-width: 400px) {
+    .lp-sec, .lp-hero, .lp-nav, .lp-strip, .lp-footer { padding-left: 16px; padding-right: 16px; }
+  }
+`;
+
 export default function Landing() {
   const navigate = useNavigate();
   const [showCal, setShowCal] = useState(false);
 
+  // Document head. Set here rather than in index.html because index.html is
+  // the shared SPA shell — every authenticated route would otherwise inherit
+  // the landing's title and description.
   useEffect(() => {
-    document.body.style.overflow = showCal ? "hidden" : "";
-    return () => { document.body.style.overflow = ""; };
-  }, [showCal]);
-
-  // Premium scroll reveals (BUILD-29; rebuilt FAIL-OPEN in BUILD-40 P0-1).
-  // The old design was fail-closed: base CSS hid every `.lp-reveal` and
-  // visibility depended on an IntersectionObserver callback arriving. A
-  // momentum flick on a phone, an anchor jump, or back-navigation scroll
-  // restoration moved sections through the viewport BETWEEN callbacks — they
-  // never got `is-visible` and stayed blank forever (eight sections measured
-  // at opacity 0 in a live 390px walk, 2026-08-06). Now:
-  //   - the hidden state only exists while `html.reveal-ready` is set (armed
-  //     HERE, after this code owns recovery) and only ≥768px (see the CSS) —
-  //     with JS broken/slow/blocked, everything renders. Content visibility
-  //     must never depend on an animation succeeding.
-  //   - reveals are OFF at phone width: scroll animations add nothing on a
-  //     phone and cost everything.
-  //   - every observer callback also runs a recovery sweep (reveal anything
-  //     whose top is already above the viewport bottom, regardless of
-  //     isIntersecting), plus an idle pass after load for the fold.
-  useEffect(() => {
-    const els = Array.from(document.querySelectorAll(".lp-reveal"));
-    if (!els.length) return;
-    const mm = q => window.matchMedia && window.matchMedia(q).matches;
-    const noMotion = mm("(prefers-reduced-motion: reduce)") || mm("(max-width: 767px)") || !("IntersectionObserver" in window);
-    if (noMotion) {
-      // Never armed → the CSS hidden state never applies. is-visible is added
-      // anyway as a belt (and so class-based checks read one consistent state).
-      els.forEach(el => el.classList.add("is-visible"));
-      return;
-    }
-    const reveal = el => el.classList.add("is-visible");
-    // Reveal everything already in the first viewport BEFORE arming the hidden
-    // state, so arming can never blank content the visitor is looking at.
-    els.forEach(el => { if (el.getBoundingClientRect().top < window.innerHeight) reveal(el); });
-    document.documentElement.classList.add("reveal-ready");
-    const sweep = () => {
-      for (const el of els) {
-        if (!el.classList.contains("is-visible") && el.getBoundingClientRect().top < window.innerHeight) {
-          reveal(el); io.unobserve(el);
-        }
-      }
+    const prevTitle = document.title;
+    document.title = "Steward — donor CRM for small nonprofits";
+    const meta = (attr, key, content) => {
+      let el = document.head.querySelector(`meta[${attr}="${key}"]`);
+      let created = false;
+      if (!el) { el = document.createElement("meta"); el.setAttribute(attr, key); document.head.appendChild(el); created = true; }
+      const prev = el.getAttribute("content");
+      el.setAttribute("content", content);
+      return () => { if (created) el.remove(); else if (prev != null) el.setAttribute("content", prev); };
     };
-    const io = new IntersectionObserver((entries, obs) => {
-      for (const e of entries) {
-        if (e.isIntersecting) { reveal(e.target); obs.unobserve(e.target); }
-      }
-      // Recovery: a fast jump generates callbacks for sections it skipped
-      // PAST (isIntersecting false) — sweep them visible instead of stranding.
-      sweep();
-    }, { threshold: 0.12, rootMargin: "0px 0px -10% 0px" });
-    els.forEach(el => io.observe(el));
-    const idle = window.requestIdleCallback || (fn => setTimeout(fn, 1200));
-    const cancelIdle = window.cancelIdleCallback || clearTimeout;
-    const idleId = idle(sweep);
-    return () => { io.disconnect(); cancelIdle(idleId); document.documentElement.classList.remove("reveal-ready"); };
+    const DESC = "Donors don't leave, they drift. Steward shows you which of your donors have gone quiet, ranked, with the reason next to each name — before a lapse becomes permanent.";
+    const undo = [
+      meta("name", "description", DESC),
+      meta("property", "og:title", "Steward — donor CRM for small nonprofits"),
+      meta("property", "og:description", DESC),
+      meta("property", "og:type", "website"),
+      meta("property", "og:url", "https://www.stewardapp.dev/"),
+      meta("property", "og:image", "https://www.stewardapp.dev/og-image.png"),
+      meta("name", "twitter:card", "summary_large_image"),
+      meta("name", "twitter:title", "Steward — donor CRM for small nonprofits"),
+      meta("name", "twitter:description", DESC),
+    ];
+    return () => { document.title = prevTitle; undo.forEach(f => f()); };
   }, []);
 
-  const GoldBtn = ({ children, onClick, big }) => (
-    <button onClick={onClick} className="lp-goldbtn" style={{
-      background: C.gold, color: C.ink, border: "none",
-      padding: big ? "15px 32px" : "13px 26px", borderRadius: 10,
-      fontSize: big ? 16 : 15, fontWeight: 700, cursor: "pointer",
-      fontFamily: "'DM Sans',sans-serif", letterSpacing: "0.01em",
-    }}>{children}</button>
-  );
-  const QuietBtn = ({ children, onClick, big, onDark }) => (
-    <button onClick={onClick} className="lp-quietbtn" style={{
-      background: "transparent", color: onDark ? C.cream : C.ink,
-      border: `1.5px solid ${onDark ? C.dark3 : C.cream3}`,
-      padding: big ? "14px 30px" : "12px 24px", borderRadius: 10,
-      fontSize: big ? 16 : 15, fontWeight: 600, cursor: "pointer",
-      fontFamily: "'DM Sans',sans-serif",
-    }}>{children}</button>
-  );
-  const Eyebrow = ({ children, onDark }) => (
-    <div style={{
-      fontSize: 11, fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.14em",
-      color: onDark ? C.gold : C.greenDk, marginBottom: 16, fontFamily: "'DM Sans',sans-serif",
-    }}>{children}</div>
-  );
+  const scrollTo = id => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    const reduce = typeof window !== "undefined"
+      && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+    el.scrollIntoView({ behavior: reduce ? "auto" : "smooth", block: "start" });
+  };
+
+  const startFree = () => navigate("/signup");
+  const talkToFounder = () => setShowCal(true);
 
   return (
     <>
-      {/* Fonts: injected here (non-render-blocking, so first paint stays fast)
-          with display=OPTIONAL — the brand serif never swaps in mid-load, so the
-          hero headline never reflows (CLS≈0). preconnects live in index.html. */}
-      <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Sans:wght@400;500;600;700;800&display=optional" rel="stylesheet" />
-      <style>{`
-        *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
-        html, body { background: ${C.cream}; overflow-x: hidden; }
-        /* index.html carries an inline body background (#030712, the app's
-           dark pre-paint) — inline style beats any stylesheet, so the page
-           ground must live on .lp itself. */
-        .lp { background: ${C.cream}; font-family: 'DM Sans', sans-serif; color: ${C.ink}; line-height: 1.65; overflow-x: hidden; min-height: 100vh; }
-        .lp a { text-decoration: none; color: inherit; }
-        .lp ::selection { background: ${C.greenDk}22; }
-        .lp-serif { font-family: 'DM Serif Display', Georgia, serif; font-weight: 400; letter-spacing: -0.02em; }
-        .lp-goldbtn { transition: transform .12s ease, box-shadow .12s ease; box-shadow: 0 2px 14px rgba(201,168,76,0.35); }
-        .lp-goldbtn:hover { transform: translateY(-1px); box-shadow: 0 6px 22px rgba(201,168,76,0.45); }
-        .lp-quietbtn { transition: border-color .15s, background .15s; }
-        .lp-quietbtn:hover { border-color: ${C.gold}; }
-        .lp-navlink { font-size: 14px; color: ${C.ink3}; transition: color .15s; }
-        .lp-navlink:hover { color: ${C.ink}; }
-
-        /* ── BUILD-28: image-forward hero. Full-bleed photo + a FLAT rgba
-           scrim (never a gradient). Headline sits over the dark, quiet
-           upper-left; the choir reads center/right. object-position keeps
-           the quiet area behind the type at every breakpoint. ── */
-        /* Solid ink field (BUILD-41) — no photo, no scrim, nothing for the
-           type to wait on. min-height keeps the hero its stage on desktop;
-           mobile takes its height from the content. */
-        .lp-hero-photo { position: relative; min-height: min(78vh, 680px); display: flex; align-items: flex-start; overflow: hidden; background: ${C.ink}; }
-        .lp-hero-content { position: relative; z-index: 2; width: 100%; max-width: 1140px; margin: 0 auto; padding: clamp(76px, 13vh, 150px) 64px 72px; }
-        .lp-hero-copy { max-width: 620px; }
-        .lp-hero-trust { font-size: 13px; color: rgba(240,237,230,0.72); }
-
-        /* ── BUILD-29: the single floated product card (see HeroFloatCard).
-           White card + real elevation over the lower-right of the photo. Shown
-           only ≥1140px, where it clears the upper-left copy at every width;
-           hidden below so it never crowds the type (mobile: dropped entirely). */
-        .lp-hero-card {
-          position: absolute; z-index: 3;
-          right: clamp(28px, 5vw, 88px); bottom: clamp(40px, 8vh, 76px);
-          width: 320px;
-          background: ${C.white}; border: 1px solid rgba(255,255,255,0.55);
-          border-radius: 16px; padding: 18px 20px;
-          box-shadow: 0 34px 74px rgba(15,26,18,0.42), 0 8px 22px rgba(15,26,18,0.28);
-        }
-        .lp-hcard-eyebrow { font-size: 9.5px; font-weight: 800; letter-spacing: 0.12em; text-transform: uppercase; color: ${C.greenDk}; margin-bottom: 6px; }
-        .lp-hcard-label { font-size: 14px; font-weight: 700; color: ${C.ink}; margin-bottom: 8px; }
-        .lp-hcard-row { display: flex; align-items: baseline; gap: 9px; margin-bottom: 11px; }
-        .lp-hcard-pct { font-size: 40px; font-weight: 400; color: ${C.gold}; line-height: 1; }
-        .lp-hcard-sub { font-size: 12px; font-weight: 600; color: ${C.ink3}; }
-        .lp-hcard-track { background: ${C.cream2}; border-radius: 99px; height: 9px; overflow: hidden; }
-        .lp-hcard-fill { height: 100%; width: 22%; background: ${C.gold}; border-radius: 99px; animation: lpFill 1.5s ease-out both; }
-        .lp-hcard-foot { font-size: 12px; color: ${C.ink3}; margin-top: 10px; }
-        .lp-hcard-foot strong { font-size: 14px; color: ${C.gold}; font-weight: 400; }
-        @media (max-width: 1139px) { .lp-hero-card { display: none; } }
-
-        /* ── BUILD-29 scroll reveals, FAIL-OPEN since BUILD-40 P0-1. The
-           hidden base state is scoped to html.reveal-ready (set by JS only
-           after the recovery sweeps are armed) AND to ≥768px — a phone never
-           hides content behind an animation, and neither does broken/blocked
-           JS. Opacity and transform only, so ZERO layout shift. The
-           reduced-motion block below stays as a belt. */
-        @media (min-width: 768px) {
-          html.reveal-ready .lp-reveal { opacity: 0; transform: translateY(16px); transition: opacity .38s ease-out, transform .38s ease-out; }
-          html.reveal-ready .lp-reveal.is-visible { opacity: 1; transform: none; }
-        }
-
-        /* Verticals band — "this is a tool for you" */
-        .lp-vert-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 28px; }
-        .lp-vert-card { background: ${C.white}; border: 1px solid ${C.cream3}; border-radius: 14px; overflow: hidden; box-shadow: 0 12px 36px rgba(15,26,18,0.08); display: flex; flex-direction: column; }
-        .lp-vert-media, .lp-vert-fallback { height: 220px; width: 100%; }
-        .lp-vert-media { object-fit: cover; display: block; background: ${C.cream2}; }
-        .lp-vert-fallback { background: ${C.cream2}; display: flex; align-items: center; justify-content: center; }
-        .lp-vert-rule { width: 46px; height: 3px; border-radius: 2px; background: ${C.gold}; opacity: 0.85; }
-        .lp-vert-body { padding: 22px 24px 26px; flex: 1; }
-
-        /* Product proof — the real home screen, framed as evidence */
-        .lp-proof { max-width: 720px; margin: 0 auto; }
-
-        .lp-hero-grid { display: grid; grid-template-columns: 1.02fr 1fr; gap: 60px; align-items: center; }
-
-        /* Browser-window chrome around the hero product shot — makes the live
-           DOM home screen read like a real app, not markup floating on beige.
-           The one deliberate motion on the page (the goal bar filling to its
-           true 22%) is now a real CSS bar animating its own width; see
-           .lp-goal-fill below. Gone under prefers-reduced-motion. */
-        .lp-frame { border-radius: 14px; overflow: hidden; background: ${C.white}; border: 1px solid ${C.cream3}; box-shadow: 0 30px 80px rgba(15,26,18,0.20), 0 6px 22px rgba(15,26,18,0.10); }
-        .lp-frame-bar { height: 36px; display: flex; align-items: center; gap: 7px; padding: 0 14px; background: ${C.cream2}; border-bottom: 1px solid ${C.cream3}; }
-        .lp-frame-dot { width: 10px; height: 10px; border-radius: 50%; }
-        .lp-frame-url { margin-left: 12px; font-size: 11px; color: ${C.ink3}; background: ${C.white}; border: 1px solid ${C.cream3}; border-radius: 6px; padding: 3px 12px; letter-spacing: 0.02em; }
-        /* The hero product shot is now LIVE DOM inside the window chrome —
-           the home screen's goal banner + retention card, on the app's own
-           cream ground, rendered as real markup (crisp at every DPR). */
-        .lp-shot-wrap { background: #e9e5dc; padding: 18px; }
-        .lp-hero-shot { display: flex; flex-direction: column; gap: 12px; }
-        .lp-goalcard { background: linear-gradient(135deg, #0f1a12, #152420); border: 1px solid #1a2e1f; border-radius: 14px; padding: 20px 22px; color: ${C.cream}; }
-        .lp-goal-cols { display: flex; gap: 24px; flex-wrap: wrap; }
-        .lp-goal-eyebrow { font-size: 10px; font-weight: 800; letter-spacing: 0.12em; text-transform: uppercase; color: ${C.sage}; margin-bottom: 5px; }
-        .lp-goal-label { font-size: 15px; font-weight: 600; color: #c9c2b4; margin-bottom: 14px; display: flex; align-items: center; gap: 8px; }
-        .lp-goal-pct { font-size: 52px; font-weight: 400; color: ${C.gold}; line-height: 1; }
-        .lp-goal-track { background: #0a120c; border-radius: 99px; height: 11px; overflow: hidden; }
-        .lp-goal-fill { height: 100%; width: 22%; background: ${C.gold}; border-radius: 99px; animation: lpFill 1.5s ease-out both; }
-        .lp-goal-fill-static { animation: none; }
-        @keyframes lpFill { from { width: 0 } to { width: 22% } }
-        .lp-goalstat { background: rgba(255,255,255,0.04); border: 1px solid #1a2e1f; border-radius: 10px; padding: 9px 13px; }
-        .lp-goalstat-l { font-size: 9px; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; color: ${C.sage}; margin-bottom: 4px; }
-        .lp-goalstat-v { font-size: 14px; font-weight: 700; color: ${C.cream}; line-height: 1.3; }
-        .lp-goalstat-s { font-size: 11px; color: ${C.sage}; margin-top: 2px; }
-        .lp-scope { display: flex; justify-content: flex-end; align-items: center; gap: 8px; }
-        .lp-scope-toggle { display: flex; background: #ddd9d0; border-radius: 99px; padding: 2px; }
-        .lp-scope-on { background: ${C.white}; border-radius: 99px; padding: 4px 13px; font-size: 12px; font-weight: 700; color: ${C.ink}; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
-        .lp-scope-off { padding: 4px 13px; font-size: 12px; font-weight: 700; color: ${C.ink3}; }
-        .lp-retcard { background: ${C.white}; border: 1px solid ${C.cream3}; border-radius: 14px; padding: 18px 22px; }
-        .lp-ret-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 14px; }
-        .lp-retchip { font-size: 12px; color: ${C.ink}; background: ${C.cream}; border: 1px solid ${C.cream3}; border-radius: 99px; padding: 5px 11px; }
-        .lp-ret-more { font-size: 12px; font-weight: 600; color: ${C.greenDk}; border: 1px dashed ${C.cream3}; border-radius: 99px; padding: 5px 11px; }
-
-        /* Queue card (the morning queue + the how-it-works attention step) */
-        .lp-qcard { background: ${C.white}; border: 1px solid ${C.cream3}; border-radius: 14px; overflow: hidden; box-shadow: 0 16px 48px rgba(15,26,18,0.12); }
-        .lp-qhead { display: flex; justify-content: space-between; align-items: center; padding: 15px 20px; border-bottom: 1px solid ${C.cream2}; }
-        .lp-qmine { font-size: 9px; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase; color: ${C.greenDk}; background: ${C.greenDk}12; padding: 2px 7px; border-radius: 99px; }
-        .lp-qrow { display: flex; align-items: flex-start; gap: 13px; padding: 13px 18px; }
-        .lp-qav { width: 36px; height: 36px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 14px; font-weight: 800; flex-shrink: 0; }
-        .lp-qbtn { border-radius: 8px; padding: 8px 13px; font-size: 12px; font-weight: 700; white-space: nowrap; flex-shrink: 0; align-self: center; }
-
-        /* Receipt (the product's receipt renderer, as DOM) */
-        .lp-receipt { background: ${C.white}; border: 1px solid ${C.cream3}; border-radius: 12px; overflow: hidden; box-shadow: 0 16px 48px rgba(15,26,18,0.12); }
-        .lp-receipt-head { background: ${C.greenMd}; padding: 20px 26px; }
-        .lp-receipt-kicker { font-size: 10px; letter-spacing: 0.22em; text-transform: uppercase; color: #cfe8dc; margin-bottom: 6px; }
-        .lp-receipt-org { font-size: 21px; font-weight: 800; color: ${C.white}; letter-spacing: -0.01em; }
-        .lp-receipt-ein { font-size: 11px; color: #d6ebe0; margin-top: 5px; }
-        .lp-receipt-body { padding: 22px 26px 26px; }
-        .lp-receipt-meta { display: flex; justify-content: space-between; font-size: 11px; color: ${C.ink3}; margin-bottom: 14px; }
-        .lp-receipt-donor { font-size: 15px; font-weight: 800; color: ${C.ink}; }
-        .lp-receipt-addr { font-size: 11px; color: ${C.ink3}; margin-top: 3px; margin-bottom: 16px; }
-        .lp-receipt-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; background: #f5f5f0; border-radius: 8px; padding: 16px 18px; }
-        .lp-receipt-k { font-size: 8.5px; letter-spacing: 0.06em; text-transform: uppercase; color: ${C.ink3}; margin-bottom: 5px; }
-        .lp-receipt-v { font-size: 13px; font-weight: 800; color: ${C.ink}; }
-        .lp-receipt-note { font-size: 11.5px; color: #2d2d2d; margin-top: 16px; }
-
-        /* CSV import mapping (how-it-works step 1) */
-        .lp-import { width: 100%; background: ${C.white}; border: 1px solid ${C.cream3}; border-radius: 12px; overflow: hidden; box-shadow: 0 8px 26px rgba(15,26,18,0.10); }
-        .lp-import-head { display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; border-bottom: 1px solid ${C.cream2}; }
-        .lp-import-body { padding: 14px 16px; }
-        .lp-import-row { display: flex; align-items: center; gap: 9px; font-size: 12px; padding: 5px 0; }
-        .lp-import-csv { font-family: ui-monospace, Menlo, monospace; font-size: 11px; color: ${C.ink3}; background: ${C.cream}; border: 1px solid ${C.cream3}; border-radius: 5px; padding: 2px 8px; }
-        .lp-import-arrow { color: ${C.sage}; }
-        .lp-import-field { color: ${C.ink}; font-weight: 600; flex: 1; }
-        .lp-import-ok { color: ${C.greenMd}; font-weight: 800; }
-        .lp-import-foot { margin-top: 10px; padding-top: 10px; border-top: 1px solid ${C.cream2}; font-size: 11px; color: ${C.greenDk}; font-weight: 700; }
-
-        /* Compact goal card (how-it-works step 3) */
-        .lp-climb { width: 100%; background: linear-gradient(135deg, #0f1a12, #152420); border: 1px solid #1a2e1f; border-radius: 12px; padding: 18px 20px; }
-
-        /* Recurring-loss calculator (the interactive wedge) */
-        .lp-calc { max-width: 1140px; margin: 0 auto; display: grid; grid-template-columns: 1fr 1fr; gap: 56px; align-items: center; }
-        .lp-calc-card { background: ${C.white}; border: 1px solid ${C.cream3}; border-radius: 16px; padding: 28px 30px; box-shadow: 0 16px 48px rgba(15,26,18,0.10); }
-        .lp-slider { -webkit-appearance: none; appearance: none; width: 100%; height: 6px; border-radius: 99px; background: linear-gradient(90deg, ${C.terra} 0%, ${C.gold} 100%); outline: none; }
-        .lp-slider::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 24px; height: 24px; border-radius: 50%; background: ${C.ink}; border: 3px solid ${C.white}; box-shadow: 0 2px 8px rgba(15,26,18,0.3); cursor: pointer; }
-        .lp-slider::-moz-range-thumb { width: 22px; height: 22px; border-radius: 50%; background: ${C.ink}; border: 3px solid ${C.white}; cursor: pointer; }
-        @media (prefers-reduced-motion: reduce) {
-          .lp-goal-fill { animation: none; width: 22%; }
-          .lp-hcard-fill { animation: none; width: 22%; }
-          .lp-goldbtn, .lp-goldbtn:hover { transform: none; }
-          /* Accessibility: no fade/rise — content is present immediately. */
-          .lp-reveal { opacity: 1 !important; transform: none !important; transition: none !important; }
-        }
-
-        .lp-section { padding: 116px 64px; }
-        .lp-narrow { max-width: 720px; margin: 0 auto; }
-        .lp-wide { max-width: 1140px; margin: 0 auto; }
-
-        /* Moments: alternating prose + real capture */
-        .lp-moment { display: grid; grid-template-columns: 5fr 6fr; gap: 64px; align-items: center; }
-        .lp-moment.lp-flip { grid-template-columns: 6fr 5fr; }
-        .lp-moment.lp-flip .lp-moment-text { order: 2; }
-        .lp-moment.lp-flip .lp-moment-media { order: 1; }
-        .lp-moment + .lp-moment { margin-top: 120px; }
-        .lp-caption { font-size: 12px; color: ${C.ink3}; margin-top: 12px; }
-
-        /* The real dunning email, set like an email */
-        .lp-email { background: ${C.white}; border: 1px solid ${C.cream3}; border-radius: 12px; box-shadow: 0 16px 48px rgba(15,26,18,0.12); overflow: hidden; }
-        .lp-email-head { padding: 16px 22px; border-bottom: 1px solid ${C.cream2}; font-size: 13px; color: ${C.ink3}; line-height: 1.7; }
-        .lp-email-body { padding: 22px; font-size: 14px; color: #2d2d2d; line-height: 1.75; }
-        .lp-email-body p + p { margin-top: 13px; }
-
-        /* How it works: three numbered steps */
-        .lp-hiw-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 40px; align-items: stretch; }
-        .lp-hiw-step { display: flex; flex-direction: column; gap: 18px; }
-        .lp-hiw-imgbox { background: ${C.cream}; border: 1px solid ${C.cream3}; border-radius: 12px; padding: 18px; display: flex; align-items: center; justify-content: center; flex: 1; min-height: 210px; }
-        .lp-hiw-imgbox > * { width: 100%; }
-
-        @media (max-width: 768px) {
-          /* ── BUILD-40 P1: compress vertical rhythm. The page measured
-             ~15,000px tall at 390px (seventeen phone screens); section and
-             moment spacing was inheriting desktop air nearly whole. ── */
-          .lp-section { padding: 56px 22px; }
-          .lp-hiw-grid { grid-template-columns: 1fr; gap: 28px; }
-          .lp-hero-grid { grid-template-columns: 1fr; gap: 44px; }
-          /* Hero: height comes from the CONTENT, not 82vh of photograph —
-             the ~180px of empty image between nav and eyebrow is cut so the
-             headline and both CTAs clear a real iPhone's ~700px usable fold
-             (browser chrome eats ~140px the test frame doesn't show). Scrim
-             darkened for AA over the tighter crop. */
-          .lp-hero-photo { min-height: 0; }
-          .lp-hero-content { padding: 72px 22px 44px; }
-          .lp-h1 { font-size: 42px !important; }
-          /* CTA pairs: equal, full-width, primary first — the 250px/370px
-             stacked mismatch read as a mistake. */
-          .lp-cta-row { flex-direction: column; align-items: stretch; gap: 14px !important; }
-          .lp-cta-row button { width: 100%; min-height: 52px; }
-          /* Verticals: a horizontal snap carousel instead of three stacked
-             image cards (three full screens of scrolling for three
-             sentences). Scrolls INSIDE its own container — the page never
-             scrolls horizontally. */
-          .lp-vert-grid { display: flex; overflow-x: auto; scroll-snap-type: x mandatory; gap: 14px; margin: 0 -22px; padding: 4px 22px 16px; -webkit-overflow-scrolling: touch; }
-          .lp-vert-card { flex: 0 0 80%; scroll-snap-align: center; }
-          .lp-vert-media, .lp-vert-fallback { height: 150px; }
-          .lp-vert-body { padding: 18px 20px 20px; }
-          /* Nav: Pricing must stay reachable on mobile (it was display:none,
-             leaving it footer-only). "Log in" moves to the footer instead;
-             the gold CTA compacts to fit 390px. */
-          .lp-nav { padding: 0 18px !important; gap: 10px; }
-          .lp-nav-login { display: none; }
-          .lp-nav .lp-goldbtn { padding: 11px 13px !important; font-size: 13px !important; }
-          /* Long centered serif paragraphs don't work at 390px — left-align
-             body-length text; centering is for short headings. */
-          .lp-problem { text-align: left !important; }
-          .lp-statement { font-size: 27px !important; line-height: 1.35 !important; }
-          /* The product shot drops the DESKTOP browser chrome (traffic
-             lights + address bar undercut "this is the home screen" on a
-             phone) — the UI shows edge-to-edge in the rounded card. */
-          .lp-frame-bar { display: none; }
-          .lp-shot-wrap { padding: 12px; }
-          .lp-moment, .lp-moment.lp-flip { grid-template-columns: 1fr; gap: 24px; }
-          .lp-moment.lp-flip .lp-moment-text { order: 1; }
-          .lp-moment.lp-flip .lp-moment-media { order: 2; }
-          .lp-moment + .lp-moment { margin-top: 56px; }
-          .lp-calc { grid-template-columns: 1fr; gap: 28px; }
-          .lp-calc-card { padding: 22px 20px; }
-          /* ── BUILD-40 P2: touch + type. Body copy ≥16px (this audience
-             skews 45+ and reads on phones in bad light); 44px tap targets;
-             a thumb-sized slider with a tall hit area; safe-area padding so
-             nothing sits under the iPhone home indicator. ── */
-          .lp-vert-body p, .lp-hiw-grid p, .lp-moment-text p { font-size: 16px !important; }
-          .lp-nav .lp-navlink { display: inline-block; padding: 12px 6px; }
-          footer .lp-navlink { display: inline-block; padding: 12px 8px; }
-          .lp footer { padding: 36px 22px calc(36px + env(safe-area-inset-bottom, 0px)) !important; }
-          .lp-slider { height: 6px; padding: 14px 0; background-clip: content-box; box-sizing: content-box; }
-          .lp-slider::-webkit-slider-thumb { width: 30px; height: 30px; }
-          .lp-slider::-moz-range-thumb { width: 28px; height: 28px; }
-          /* ── BUILD-40 P1 (continued): the tallest blocks at 390px were the
-             moments (3,428px), how-it-works (1,423px) and the product shots'
-             inherited desktop air. Compact the shot internals; the
-             how-it-works ILLUSTRATIONS drop at phone width (the numbered step
-             text carries the meaning, the shots still show >=768px, and two of
-             the three shots also appear full-size elsewhere on the page). ── */
-          .lp-hiw-imgbox { display: none; }
-          .lp-qrow { padding: 10px 13px; gap: 10px; }
-          .lp-qav { width: 30px; height: 30px; font-size: 12px; }
-          .lp-qhead { padding: 12px 14px; }
-          .lp-email-head { padding: 12px 16px; font-size: 12px; }
-          .lp-email-body { padding: 16px; font-size: 13px; line-height: 1.65; }
-          .lp-receipt-head { padding: 14px 18px; }
-          .lp-receipt-body { padding: 16px 18px 18px; }
-          .lp-receipt-grid { padding: 12px 14px; gap: 8px; }
-          .lp-goalcard { padding: 16px 16px; }
-          .lp-goal-pct { font-size: 40px; }
-          .lp-retcard { padding: 14px 16px; }
-          .lp-shot-wrap { padding: 10px; }
-          .lp-section { padding: 48px 22px; }
-          /* Queue card: drop the near-duplicate of each row pair (Elena
-             mirrors Julian's note row; Robert mirrors Sunrise's milestone
-             row) — all three row tones stay represented in four rows. The
-             item-count chip goes with them so the header never contradicts
-             what's shown. */
-          .lp-qcard > .lp-qrow:nth-of-type(4), .lp-qcard > .lp-qrow:nth-of-type(6) { display: none; }
-          .lp-qhead > span:last-child { display: none; }
-          /* Proof shot: the goal thermometer + retention card carry the
-             message; the secondary stat boxes + scope toggle are desktop
-             depth. */
-          .lp-shot-wrap .lp-goalstat, .lp-shot-wrap .lp-scope { display: none; }
-        }
-      `}</style>
+      {/* Fonts: non-render-blocking (injected in the render, not a head <link>
+          in index.html) with display=OPTIONAL, so the brand serif never swaps
+          in mid-load and the hero headline never reflows. Both faces carry a
+          real fallback stack in the CSS above (Georgia, serif · system-ui,
+          sans-serif). preconnects live in index.html. Do NOT move this into a
+          render-blocking <head> stylesheet — it costs ~1.3s of FCP, measured. */}
+      <link
+        rel="stylesheet"
+        href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,300..700&family=DM+Serif+Display:ital@0;1&display=optional"
+      />
+      <style>{STYLES}</style>
 
       {showCal && <CalendlyModal onClose={() => setShowCal(false)} />}
 
       <div className="lp">
 
-        {/* ── Nav — quiet, not sticky; the page is the pitch ── */}
-        <nav className="lp-nav" style={{
-          display: "flex", alignItems: "center", justifyContent: "space-between",
-          padding: "0 64px", height: 68, borderBottom: `1px solid ${C.cream2}`,
-        }}>
-          <span className="lp-serif" style={{ fontSize: 22, color: C.ink }}>Steward</span>
-          <div style={{ display: "flex", alignItems: "center", gap: 22 }}>
-            <a href="/pricing" className="lp-navlink lp-nav-pricing">Pricing</a>
-            <a href="/login" className="lp-navlink lp-nav-login">Log in</a>
-            <GoldBtn onClick={() => navigate("/signup")}>Start free</GoldBtn>
+        {/* ── NAV ────────────────────────────────────────────────────────── */}
+        <nav className="lp-nav">
+          <a href="/" className="lp-serif lp-focus" style={{ fontSize: 26, letterSpacing: "-0.01em", display: "inline-flex", alignItems: "center", minHeight: 44 }}>Steward</a>
+          <div className="lp-navwrap">
+            {/* No Pricing link, deliberately. Price is a conversation, and every
+                path on this page ends at Start free or Talk to the founder.
+                The /pricing route still exists for anyone holding a direct link. */}
+            <button className="lp-navlink lp-focus" onClick={() => scrollTo("product")}>Product</button>
+            <button className="lp-navlink lp-focus" onClick={() => scrollTo("how-it-works")}>How it works</button>
+            <a href="/login" className="lp-navlink lp-focus">Log in</a>
+            <button className="lp-navbtn lp-focus" onClick={startFree}>Start free</button>
           </div>
         </nav>
 
-        {/* ── 1. The hero is a SOLID INK field (BUILD-41 — the photograph is
-            retired). The choir photo muddied the type, was the LCP problem,
-            and painted seconds after the words; cream serif on deep green
-            with the brass rule carries itself. Do NOT reintroduce a hero
-            image without new direction — the index.html preload and the
-            hero-choir assets were deleted with it. ── */}
-        <section className="lp-hero-photo">
-          <div className="lp-hero-content">
-            <div className="lp-hero-copy">
-              {/* Eyebrow's one job is orientation — say plainly what this IS. */}
-              <Eyebrow onDark>Donor CRM for small nonprofits</Eyebrow>
-              <h1 className="lp-serif lp-h1" style={{ fontSize: "clamp(44px, 4.8vw, 72px)", lineHeight: 1.06, color: C.cream, marginBottom: 24 }}>
-                Donors don't leave.<br />
-                They drift.<br />
-                Steward{" "}
-                <span style={{ borderBottom: `4px solid ${C.gold}`, paddingBottom: 2 }}>notices.</span>
-              </h1>
-              {/* ONE clause (BUILD-41). The promise, whole, in two lines —
-                  fees live in the trust line below and the money strip, and
-                  the failed-cards story has the calculator + moment 2. */}
-              <p style={{ fontSize: 17.5, color: "rgba(240,237,230,0.94)", lineHeight: 1.75, maxWidth: 496, marginBottom: 32 }}>
-                Steward tells you{" "}
-                <strong style={{ color: C.cream }}>who to call today, and what to say.</strong>
+        {/* ── HERO ───────────────────────────────────────────────────────── */}
+        <header className="lp-hero">
+          <div className="lp-hero-col">
+            <div className="up lp-eyebrow" style={{ color: C.greenDk }}>DONOR CRM FOR SMALL NONPROFITS</div>
+            <h1 className="up lp-h1" style={{ fontSize: 64, lineHeight: 1.02, letterSpacing: "-0.032em", animationDelay: "0.08s" }}>
+              Donors don't leave.<br />They drift.<br /><span style={{ color: C.greenDk }}>Steward notices.</span>
+            </h1>
+            <p className="up lp-lede" style={{ fontSize: 19, lineHeight: 1.55, color: C.ink3, maxWidth: 440, animationDelay: "0.16s" }}>
+              Every dot is one of the {FIELD_SIZE} donors who carry 90% of your revenue. The gold ones are the {DRIFT_COUNTS.hero} expected to go quiet this year, one at a time, without telling you.
+            </p>
+            <div className="up lp-ctarow" style={{ animationDelay: "0.24s" }}>
+              <button className="lp-btn lp-btn-ink lp-focus" onClick={startFree}>Start free</button>
+              <button className="lp-btn lp-btn-quiet lp-focus" onClick={talkToFounder}>Talk to the founder</button>
+            </div>
+            <p className="up" style={{ fontSize: 14, color: C.ink3, lineHeight: 1.7, marginTop: 4, animationDelay: "0.3s" }}>
+              No platform fee · no donor tip prompt · gifts settle in your own Stripe
+            </p>
+          </div>
+
+          <div className="lp-hero-col">
+            <DonorField
+              count={DRIFT_COUNTS.hero}
+              size={20}
+              gap={12}
+              className="lp-field-hero"
+              label={`A field of ${FIELD_SIZE} dots, one for each of the donors who carry 90% of a typical file's revenue. ${DRIFT_COUNTS.hero} of them are gold, marking the donors expected to go quiet over a year.`}
+            />
+            <div className="lp-legend">
+              <span style={{ fontSize: 14, color: C.ink3 }}>{STEADY_COUNT} steady</span>
+              <span style={{ fontSize: 14, color: C.ink3 }}>{DRIFT_COUNTS.hero} drifting</span>
+              <span className="lp-grow" style={{ flexGrow: 1 }} />
+              <span className="lp-atrisk" style={{ display: "flex", alignItems: "baseline", gap: 10 }}>
+                <span className="lp-serif" style={{ fontSize: 36, letterSpacing: "-0.02em" }}>$360,144</span>
+                <span style={{ fontSize: 14, color: C.ink3 }}>walking out</span>
+              </span>
+            </div>
+          </div>
+        </header>
+
+        {/* ── SOURCE STRIP ───────────────────────────────────────────────── */}
+        {/* "full-year 2025" is load-bearing: FEP rebased in Q1 2026 and now
+            headlines a QUARTERLY figure. Dropping those two words silently
+            changes what the number means. */}
+        <div className="lp-strip">
+          <p style={{ fontSize: 14, color: C.ink3, lineHeight: 1.6 }}>
+            Distribution and lapse rate from the Fundraising Effectiveness Project, full-year 2025, applied to a 1,000-donor file.
+          </p>
+          <p style={{ fontSize: 14, fontWeight: 500, lineHeight: 1.5 }}>
+            One saved mid-level donor pays for Steward several times over.
+          </p>
+        </div>
+
+        {/* ── BUILT FOR ORGS LIKE YOURS ──────────────────────────────────── */}
+        {/* Kept from the live page. The photography is illustrative nonprofit
+            work, never a Steward customer and never captioned as one. */}
+        <section className="lp-sec" style={{ background: C.cream2 }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 18, alignItems: "center", textAlign: "center" }}>
+            <div className="lp-eyebrow" style={{ color: C.greenDk }}>BUILT FOR ORGS LIKE YOURS</div>
+            <h2 className="lp-h2" style={{ fontSize: 50, lineHeight: 1.06, letterSpacing: "-0.025em", maxWidth: 900 }}>
+              You know your donors. Steward notices when they're slipping.
+            </h2>
+          </div>
+          <div className="lp-verts">
+            {VERTICALS.map(v => (
+              <article key={v.title} style={{
+                background: C.cream, border: "1px solid rgba(15, 26, 18, 0.1)", borderRadius: 14,
+                overflow: "hidden", boxShadow: "0 14px 40px rgba(15, 26, 18, 0.06)",
+                display: "flex", flexDirection: "column",
+              }}>
+                <img
+                  className="lp-vert-img"
+                  src={`${v.img}-800.webp`}
+                  srcSet={`${v.img}-400.webp 400w, ${v.img}-800.webp 800w`}
+                  sizes="(max-width: 1080px) 100vw, 33vw"
+                  alt=""
+                  aria-hidden="true"
+                  loading="lazy"
+                  decoding="async"
+                  style={{ objectPosition: v.pos || "center" }}
+                />
+                <div style={{ padding: 28, display: "flex", flexDirection: "column", gap: 12 }}>
+                  <h3 className="lp-serif lp-h3" style={{ fontSize: 25, lineHeight: 1.18 }}>{v.title}</h3>
+                  <p style={{ fontSize: 15, lineHeight: 1.65, color: C.ink3 }}>{v.blurb}</p>
+                </div>
+              </article>
+            ))}
+          </div>
+        </section>
+
+        {/* ── ONE YEAR, THE SAME FILE ────────────────────────────────────── */}
+        {/* The three fields are the SAME 199 donors at three moments. June's 31
+            are literally the first 31 of December's 74 (donorField.js), so the
+            progression nests — the section's whole claim is that these are the
+            same people further along, and it is true by construction. */}
+        <section id="how-it-works" className="lp-sec" style={{ background: C.ink }}>
+          <div className="lp-sechead">
+            <div style={{ display: "flex", flexDirection: "column", gap: 18, maxWidth: 720 }}>
+              <div className="lp-eyebrow" style={{ color: C.gold }}>ONE YEAR, THE SAME FILE</div>
+              <h2 className="lp-h2" style={{ fontSize: 50, lineHeight: 1.06, color: C.cream, letterSpacing: "-0.025em" }}>
+                Nobody decides to stop giving. It just stops.
+              </h2>
+            </div>
+            <p style={{ fontSize: 16, lineHeight: 1.6, color: "rgba(240, 237, 230, 0.6)", maxWidth: 340 }}>
+              There is no cancellation, no complaint and no exit survey. A gift simply doesn't arrive, and then another one doesn't.
+            </p>
+          </div>
+
+          <div className="lp-3col">
+            {YEAR_PANELS.map(p => (
+              <div key={p.month} style={{ display: "flex", flexDirection: "column", gap: 22 }}>
+                <DonorField
+                  count={p.count}
+                  size={11}
+                  gap={7}
+                  label={
+                    p.count === 0
+                      ? `${p.month}: all ${FIELD_SIZE} donors are still current.`
+                      : `${p.month}: ${p.count} of the same ${FIELD_SIZE} donors have gone quiet, shown in gold.`
+                  }
+                />
+                <div style={{
+                  display: "flex", flexDirection: "column", gap: 7, paddingTop: 18,
+                  borderTop: "1px solid rgba(240, 237, 230, 0.2)",
+                }}>
+                  <div className="lp-serif" style={{ fontSize: 26, color: C.cream }}>{p.month}</div>
+                  <p style={{ fontSize: 15, lineHeight: 1.6, color: "rgba(240, 237, 230, 0.6)" }}>{p.copy}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+
+        {/* ── EVERY DOT IS A PERSON ──────────────────────────────────────── */}
+        <section id="product" className="lp-sec" style={{ background: C.cream }}>
+          <div className="lp-split">
+            <div style={{ display: "flex", flexDirection: "column", gap: 22 }}>
+              <div className="lp-eyebrow" style={{ color: C.greenDk }}>EVERY DOT IS A PERSON</div>
+              <h2 className="lp-h2" style={{ fontSize: 50, lineHeight: 1.06, letterSpacing: "-0.025em" }}>
+                They have names, and one of them is about to be gone.
+              </h2>
+              <p style={{ fontSize: 18, lineHeight: 1.65, color: C.ink3, maxWidth: 480 }}>
+                Steward turns the gold dots back into people with a reason attached, ranked by what they are worth and how long they have been quiet. That list is the whole product.
               </p>
-              <div className="lp-cta-row" style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 16 }}>
-                <GoldBtn big onClick={() => navigate("/signup")}>Start free</GoldBtn>
-                <QuietBtn big onDark onClick={() => setShowCal(true)}>Talk to the founder</QuietBtn>
+              <div className="lp-ctarow" style={{ marginTop: 8 }}>
+                <button className="lp-btn lp-btn-ink lp-focus" onClick={startFree}>See it on your own file</button>
               </div>
-              <p className="lp-hero-trust">No platform fee · no donor tip · gifts settle in your own Stripe</p>
             </div>
-          </div>
-          {/* A single DOM/vector product card floated in the lower-right
-              (BUILD-29) — a stranger reads "software FOR nonprofits." Real
-              elevation over the ink field. Hidden ≤1139px so it never crowds
-              the type. */}
-          <HeroFloatCard />
-        </section>
 
-        {/* ── 1.1 "Built for orgs like yours" — the who-it's-for band (BUILD-28).
-            On cream, serif card titles. Signals "a tool FOR you", never a
-            nonprofit's own site. Slots with no cleared photo ship a graceful
-            on-palette fallback. ── */}
-        <section className="lp-section lp-reveal" style={{ background: C.cream, paddingTop: 84, paddingBottom: 84 }}>
-          <div className="lp-wide">
-            <div style={{ textAlign: "center", marginBottom: 46 }}>
-              <Eyebrow>Built for orgs like yours</Eyebrow>
-              <h2 className="lp-serif" style={{ fontSize: "clamp(28px, 3.2vw, 42px)", color: C.ink, lineHeight: 1.14 }}>
-                You know your donors. Steward notices when they're slipping.
-              </h2>
-            </div>
-            <div className="lp-vert-grid">
-              {VERTICALS.map(v => (
-                <div key={v.title} className="lp-vert-card">
-                  {v.img ? (
-                    <img className="lp-vert-media" alt="" aria-hidden="true"
-                      src={`${v.img}-800.webp`}
-                      srcSet={`${v.img}-400.webp 400w, ${v.img}-800.webp 800w`}
-                      sizes="(max-width: 768px) 100vw, 360px"
-                      width="800" height="533" loading="lazy" decoding="async"
-                      style={v.pos ? { objectPosition: v.pos } : undefined} />
-                  ) : (
-                    <div className="lp-vert-fallback" aria-hidden="true"><span className="lp-vert-rule" /></div>
-                  )}
-                  <div className="lp-vert-body">
-                    <h3 className="lp-serif" style={{ fontSize: 23, color: C.ink, marginBottom: 8 }}>{v.title}</h3>
-                    <p style={{ fontSize: 15, color: "#2d2d2d", lineHeight: 1.65 }}>{v.blurb}</p>
+            <div style={{
+              background: C.cream2, border: "1px solid rgba(15, 26, 18, 0.12)", borderRadius: 14,
+              overflow: "hidden", boxShadow: "0 26px 60px rgba(15, 26, 18, 0.12)",
+            }}>
+              <div style={{
+                display: "flex", alignItems: "center", justifyContent: "space-between", gap: 14,
+                padding: "20px 24px", background: C.cream, borderBottom: "1px solid rgba(15, 26, 18, 0.1)",
+              }}>
+                <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+                  <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.16em", color: C.ink3 }}>TODAY</div>
+                  <div style={{ fontSize: 18, fontWeight: 600 }}>Who's slipping away</div>
+                </div>
+                <div style={{
+                  display: "flex", alignItems: "center", gap: 8, background: C.ink, color: C.gold,
+                  fontSize: 13, fontWeight: 600, padding: "8px 14px", borderRadius: 999, flexShrink: 0,
+                }}>
+                  <span className="lp-pulse" aria-hidden="true" style={{ width: 6, height: 6, borderRadius: "50%", background: C.gold, display: "block" }} />
+                  11 drifting
+                </div>
+              </div>
+
+              {SLIPPING.map(r => (
+                <div key={r.name} style={{
+                  display: "flex", alignItems: "center", justifyContent: "space-between", gap: 18,
+                  padding: "20px 24px", background: C.cream, borderBottom: "1px solid rgba(15, 26, 18, 0.08)",
+                }}>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                    <div style={{ fontSize: 16, fontWeight: 600 }}>{r.name}</div>
+                    <div style={{ fontSize: 14, color: C.ink3, lineHeight: 1.45 }}>{r.why}</div>
+                  </div>
+                  <div style={{ textAlign: "right", flexShrink: 0 }}>
+                    <div style={{ fontSize: 17, fontWeight: 600 }}>{r.amt}</div>
+                    <div style={{ fontSize: 12, color: C.ink3, marginTop: 2 }}>{r.unit}</div>
                   </div>
                 </div>
               ))}
+
+              <div style={{
+                display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12,
+                padding: "17px 24px", background: C.cream2, flexWrap: "wrap",
+              }}>
+                <span style={{ fontSize: 14, fontWeight: 600, color: C.greenDk }}>See all 11 →</span>
+                <span style={{ fontSize: 13, color: C.ink3 }}>Illustrative — not a real organization's file</span>
+              </div>
             </div>
           </div>
         </section>
 
-        {/* ── 1.5 The wedge, made visceral + interactive ── */}
-        <section className="lp-section lp-reveal" style={{ background: C.white, borderTop: `1px solid ${C.cream2}` }}>
-          <RecoveryCalculator />
-        </section>
-
-        {/* ── 2. The problem, told plainly ── */}
-        <section className="lp-section lp-reveal" style={{ background: C.cream, borderBottom: `1px solid ${C.cream2}` }}>
-          <div className="lp-narrow lp-problem" style={{ textAlign: "center" }}>
-            <p className="lp-serif lp-statement" style={{ fontSize: "clamp(24px, 2.6vw, 33px)", lineHeight: 1.5, color: C.ink }}>
-              The average nonprofit keeps 43% of its donors from one year to the
-              next. Not because people stop caring — because nobody noticed them
-              going quiet. Every CRM can store your donors.{" "}
-              <span style={{ borderBottom: `3px solid ${C.gold}` }}>Steward watches over them.</span>
-            </p>
-            {/* Attribution goes to the PRIMARY source (the FEP produces this
-                number; others republish it) — never to a competitor. */}
-            <p style={{ fontSize: 12.5, color: C.ink3, marginTop: 26 }}>
-              43.3% is the full-year 2025 donor retention rate published by the
-              Fundraising Effectiveness Project (AFP Foundation for Philanthropy).
-            </p>
-          </div>
-        </section>
-
-        {/* ── 2.5 Proof: the real home screen (BUILD-28 relocated the product
-            shot here, below the wedge, as EVIDENCE — no longer the page's
-            visual identity). Live DOM + browser chrome, crisp at every DPR
-            (BUILD-12; do not rasterize). ── */}
-        <section className="lp-section lp-reveal" style={{ background: C.white, borderTop: `1px solid ${C.cream2}` }}>
-          <div className="lp-proof">
-            <div style={{ textAlign: "center", marginBottom: 40 }}>
-              <Eyebrow>The actual product</Eyebrow>
-              <h2 className="lp-serif" style={{ fontSize: "clamp(28px, 3.2vw, 42px)", color: C.ink, lineHeight: 1.14 }}>
-                Not a mockup. This is the home screen.
+        {/* ── WHAT IT DOES ───────────────────────────────────────────────── */}
+        <section className="lp-sec" style={{ background: C.cream2 }}>
+          <div className="lp-sechead">
+            <div style={{ display: "flex", flexDirection: "column", gap: 18, maxWidth: 700 }}>
+              <div className="lp-eyebrow" style={{ color: C.greenDk }}>WHAT IT DOES</div>
+              <h2 className="lp-h2" style={{ fontSize: 48, lineHeight: 1.06, letterSpacing: "-0.025em" }}>
+                Built around the fundraiser's week, not the database.
               </h2>
             </div>
-            <div className="lp-frame">
-              <div className="lp-frame-bar" aria-hidden="true">
-                <span className="lp-frame-dot" style={{ background: C.terra, opacity: 0.7 }} />
-                <span className="lp-frame-dot" style={{ background: C.gold, opacity: 0.8 }} />
-                <span className="lp-frame-dot" style={{ background: C.sage }} />
-                <span className="lp-frame-url">app.stewardapp.dev</span>
-              </div>
-              <div className="lp-shot-wrap" role="img"
-                aria-label="Steward's home screen: the quarter's fundraising goal at 22%, and the donor retention rate it's noticing">
-                <HeroShot />
-              </div>
-            </div>
+            <p style={{ fontSize: 16, lineHeight: 1.6, color: C.ink3, maxWidth: 330 }}>
+              Three things it does that a spreadsheet and a general-purpose CRM both fail at.
+            </p>
           </div>
-        </section>
 
-        {/* ── 3. Three true product moments ── */}
-        <section className="lp-section lp-reveal">
-          <div className="lp-wide">
-
-            {/* Moment 1 — the morning queue */}
-            <div className="lp-moment">
-              <div className="lp-moment-text">
-                <Eyebrow>Tuesday, 8:04 am</Eyebrow>
-                <h2 className="lp-serif" style={{ fontSize: "clamp(28px, 3vw, 40px)", color: C.ink, lineHeight: 1.15, marginBottom: 18 }}>
-                  The morning queue
-                </h2>
-                <p style={{ fontSize: 16, color: "#2d2d2d", lineHeight: 1.8 }}>
-                  Steward opens with who needs you today: a donor about to cross a
-                  milestone worth a handwritten note, a longtime giver going quiet,
-                  a task you set for yourself last month. Each one arrives with its
-                  reasons — last gift, what their file says, how long it's been —
-                  and one action. It's rarely more than a handful. Work the list
-                  over coffee.
+          <div className="lp-cards">
+            {/* 01 — a short list */}
+            <article style={{
+              background: C.cream, border: "1px solid rgba(15, 26, 18, 0.1)", borderRadius: 14, padding: 28,
+              display: "flex", flexDirection: "column", gap: 24, boxShadow: "0 14px 40px rgba(15, 26, 18, 0.06)",
+            }}>
+              <div aria-hidden="true" style={{
+                display: "flex", flexDirection: "column", gap: 12, background: C.ink,
+                borderRadius: 10, padding: 22, height: 136, justifyContent: "center",
+              }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 11 }}>
+                  <span className="lp-pulse" style={{ width: 9, height: 9, borderRadius: "50%", background: C.gold, flexShrink: 0, display: "block" }} />
+                  <span style={{ height: 8, background: "rgba(240, 237, 230, 0.9)", borderRadius: 999, width: 130, display: "block" }} />
+                </div>
+                <span style={{ height: 8, background: "rgba(240, 237, 230, 0.55)", borderRadius: 999, width: 96, display: "block" }} />
+                <span style={{ height: 8, background: "rgba(240, 237, 230, 0.32)", borderRadius: 999, width: 150, maxWidth: "100%", display: "block" }} />
+                <span style={{ height: 8, background: "rgba(240, 237, 230, 0.2)", borderRadius: 999, width: 80, display: "block" }} />
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                <div className="lp-serif" style={{ fontSize: 30, color: "rgba(13, 92, 58, 0.3)", lineHeight: 1 }}>01</div>
+                <h3 className="lp-h3" style={{ fontSize: 25, lineHeight: 1.18 }}>A short list, not a dashboard</h3>
+                <p style={{ fontSize: 15, lineHeight: 1.65, color: C.ink3 }}>
+                  Open Monday morning to the people who changed, ranked, with the reason written next to each name. Nothing to build first.
                 </p>
               </div>
-              <div className="lp-moment-media" role="img"
-                aria-label="Steward's Needs Your Attention queue: six donors with reasons and a single action each">
-                <QueueShot />
-                <div className="lp-caption">The queue on Steward's home screen — the live component, rendered here with sample donors.</div>
-              </div>
-            </div>
+            </article>
 
-            {/* Moment 2 — recovery. The money section; the email shown is the
-                real default template from the product (server.js
-                DEFAULT_DUNNING_BODY), tokens filled with visibly sample values. */}
-            <div className="lp-moment lp-flip">
-              <div className="lp-moment-text">
-                <Eyebrow>Any night, 2:11 am</Eyebrow>
-                <h2 className="lp-serif" style={{ fontSize: "clamp(28px, 3vw, 40px)", color: C.ink, lineHeight: 1.15, marginBottom: 18 }}>
-                  The gift you didn't know you were losing
-                </h2>
-                <p style={{ fontSize: 16, color: "#2d2d2d", lineHeight: 1.8, marginBottom: 14 }}>
-                  20–30% of recurring giving is lost to nothing more dramatic than
-                  an expired card. The donor never decided to stop — their bank
-                  reissued some plastic, the charge failed at two in the morning,
-                  and nobody ever asked them to fix it.
-                </p>
-                <p style={{ fontSize: 16, color: "#2d2d2d", lineHeight: 1.8 }}>
-                  When a recurring gift fails, Steward notices within the hour and
-                  sends a warm note in your organization's name with a one-click,
-                  no-login card update — then follows up on a gentle schedule until
-                  it's resolved. You see the dollars at risk on your home screen,
-                  and you see them come back.
+            {/* 02 — drift, the gold-bordered middle card */}
+            <article style={{
+              background: C.cream, border: "1px solid rgba(201, 168, 76, 0.55)", borderRadius: 14, padding: 28,
+              display: "flex", flexDirection: "column", gap: 24, marginTop: 34,
+              boxShadow: "0 20px 54px rgba(15, 26, 18, 0.1)",
+            }}>
+              <div aria-hidden="true" style={{
+                display: "flex", alignItems: "flex-end", gap: 8, background: C.ink,
+                borderRadius: 10, padding: 22, height: 136,
+              }}>
+                {[58, 68, 56, 74, 64].map((h, i) => (
+                  <span key={i} style={{ flexGrow: 1, height: h, background: C.greenDk, borderRadius: 3, display: "block" }} />
+                ))}
+                <span style={{ flexGrow: 1, height: 18, background: C.gold, borderRadius: 3, display: "block" }} />
+                <span style={{ flexGrow: 1, height: 5, background: C.gold, borderRadius: 3, display: "block" }} />
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                <div className="lp-serif" style={{ fontSize: 30, color: "rgba(201, 168, 76, 0.85)", lineHeight: 1 }}>02</div>
+                <h3 className="lp-h3" style={{ fontSize: 25, lineHeight: 1.18 }}>Drift, before it becomes a lapse</h3>
+                <p style={{ fontSize: 15, lineHeight: 1.65, color: C.ink3 }}>
+                  A donor who gave every March and hasn't yet isn't lapsed. That is the window where a phone call still works, and it closes quietly.
                 </p>
               </div>
-              <div className="lp-moment-media">
-                <div className="lp-email">
-                  <div className="lp-email-head">
-                    <div><span style={{ color: C.ink, fontWeight: 600 }}>From:</span> Riverbend Arts Collective</div>
-                    <div><span style={{ color: C.ink, fontWeight: 600 }}>Subject:</span> A quick fix to keep your support going</div>
+            </article>
+
+            {/* 03 — ask vs gift */}
+            <article style={{
+              background: C.cream, border: "1px solid rgba(15, 26, 18, 0.1)", borderRadius: 14, padding: 28,
+              display: "flex", flexDirection: "column", gap: 24, boxShadow: "0 14px 40px rgba(15, 26, 18, 0.06)",
+            }}>
+              <div aria-hidden="true" style={{
+                display: "flex", flexDirection: "column", justifyContent: "center", gap: 17,
+                background: C.ink, borderRadius: 10, padding: 22, height: 136,
+              }}>
+                <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: "rgba(240, 237, 230, 0.6)", letterSpacing: "0.1em" }}>
+                    <span>ASKED</span><span>$45,000</span>
                   </div>
-                  <div className="lp-email-body">
-                    <p>Hi Maria,</p>
-                    <p>Thank you again for your ongoing gift of $50 to Riverbend Arts Collective — support like yours is what makes our work possible.</p>
-                    <p>We tried to process your latest gift and the card on file didn't go through. This happens most often when a card has expired or been reissued, and it only takes a minute to fix.</p>
-                    <p style={{ textAlign: "center", margin: "22px 0" }}>
-                      <span style={{ background: C.greenMd, color: "#fff", padding: "11px 26px", borderRadius: 8, fontWeight: 700, display: "inline-block" }}>Update my card</span>
-                    </p>
-                    <p>If you have any questions, just reply to this email — we're glad to help.</p>
-                    <p>With gratitude,<br />Riverbend Arts Collective</p>
+                  <span style={{ height: 8, background: "rgba(240, 237, 230, 0.26)", borderRadius: 999, display: "block" }} />
+                </div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: "rgba(240, 237, 230, 0.6)", letterSpacing: "0.1em" }}>
+                    <span>RECEIVED</span><span>$28,500</span>
+                  </div>
+                  <div style={{ display: "flex" }}>
+                    <span style={{ height: 8, background: C.gold, borderRadius: 999, width: "63%", display: "block" }} />
                   </div>
                 </div>
-                <div className="lp-caption">The actual email Steward sends when a card fails — its built-in template, shown with sample values. Orgs can rewrite every word.</div>
               </div>
-            </div>
-
-            {/* Moment 3 — receipts */}
-            <div className="lp-moment">
-              <div className="lp-moment-text">
-                <Eyebrow>Audit season</Eyebrow>
-                <h2 className="lp-serif" style={{ fontSize: "clamp(28px, 3vw, 40px)", color: C.ink, lineHeight: 1.15, marginBottom: 18 }}>
-                  The receipt that sends itself
-                </h2>
-                <p style={{ fontSize: 16, color: "#2d2d2d", lineHeight: 1.8 }}>
-                  Every online gift gets an IRS-compliant receipt — numbered,
-                  recorded, and sent the moment the payment lands. Offline gifts
-                  are one click, never automatic, because you know which entries
-                  are backfill. Year-end statements consolidate a donor's whole
-                  year on demand. Your auditor stops asking.
+              <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                <div className="lp-serif" style={{ fontSize: 30, color: "rgba(13, 92, 58, 0.3)", lineHeight: 1 }}>03</div>
+                <h3 className="lp-h3" style={{ fontSize: 25, lineHeight: 1.18 }}>Ask versus gift, per officer</h3>
+                <p style={{ fontSize: 15, lineHeight: 1.65, color: C.ink3 }}>
+                  What was asked, what came in, and by whom. The report your board wants and your current system makes you assemble by hand.
                 </p>
               </div>
-              <div className="lp-moment-media" role="img"
-                aria-label="A numbered, IRS-compliant donation receipt generated by Steward">
-                <ReceiptShot />
-                <div className="lp-caption">Steward's actual receipt layout, shown with sample values — the same template the product generates and sends.</div>
-              </div>
-            </div>
-
+            </article>
           </div>
         </section>
 
-        {/* ── 3.5 How it works — three numbered steps, one line + one real
-            capture each (BUILD-08 Phase A). Same honesty rule as everything
-            else on the page: all three images are crops of the live product. */}
-        <section className="lp-section lp-reveal" style={{ background: C.white, borderTop: `1px solid ${C.cream2}` }}>
-          <div className="lp-wide">
-            <div style={{ textAlign: "center", marginBottom: 56 }}>
-              <Eyebrow>How it works</Eyebrow>
-              <h2 className="lp-serif" style={{ fontSize: "clamp(30px, 3.4vw, 44px)", color: C.ink, lineHeight: 1.12 }}>
-                Three steps, and the first one's on me.
+        {/* ── WHO BUILT THIS ─────────────────────────────────────────────── */}
+        <section className="lp-sec" style={{ background: C.cream2 }}>
+          <div className="lp-founder">
+            <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+              <div style={{
+                width: "100%", aspectRatio: "4 / 5", background: C.cream,
+                border: "1px solid rgba(15, 26, 18, 0.14)", borderRadius: 12,
+                display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden",
+              }}>
+                <Placeholder value={PLACEHOLDERS.founderPhoto} block />
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                <div style={{ fontSize: 17, fontWeight: 600 }}>
+                  Jonathan <Placeholder value={PLACEHOLDERS.founderLastName} />
+                </div>
+                <div style={{ fontSize: 15, color: C.ink3 }}>Founder, Steward</div>
+              </div>
+            </div>
+
+            <div style={{ display: "flex", flexDirection: "column", gap: 26 }}>
+              <div className="lp-eyebrow" style={{ color: C.greenDk }}>WHO BUILT THIS</div>
+
+              <h2 className="lp-h2" style={{ fontSize: 50, lineHeight: 1.06, letterSpacing: "-0.025em" }}>
+                You didn't take this job to chase money.
               </h2>
-            </div>
-            <div className="lp-hiw-grid">
-              {[
-                {
-                  shot: <ImportShot />,
-                  alt: "Steward's CSV import — columns auto-mapped, stages auto-assigned",
-                  line: <><strong>Import your donors.</strong> A CSV is enough — columns auto-map and stages auto-assign.</>,
-                },
-                {
-                  shot: <QueueShot rows={ATTENTION_ROWS} header={false} />,
-                  alt: "Three rows from the Needs Your Attention queue, each with a reason and one action",
-                  line: <><strong>See who needs attention today.</strong> A short queue with reasons, not a database to dig through.</>,
-                },
-                {
-                  shot: <ClimbShot />,
-                  alt: "A fundraising goal's progress: 22% of goal reached, $5,501 of $25,000",
-                  line: <><strong>Watch retention climb and the at-risk number fall.</strong> The numbers move because someone finally noticed in time.</>,
-                },
-              ].map((s, i) => (
-                <div key={i} className="lp-hiw-step">
-                  <div className="lp-hiw-imgbox" role="img" aria-label={s.alt}>
-                    {s.shot}
-                  </div>
-                  <div style={{ display: "flex", gap: 14, alignItems: "flex-start" }}>
-                    <span className="lp-serif" style={{ fontSize: 34, color: C.gold, lineHeight: 1, flexShrink: 0 }}>{i + 1}</span>
-                    <p style={{ fontSize: 15, color: "#2d2d2d", lineHeight: 1.7 }}>{s.line}</p>
-                  </div>
-                </div>
-              ))}
+
+              <p style={{ fontSize: 18, lineHeight: 1.7, color: C.ink3 }}>
+                Nobody starts a nonprofit because they love donor databases. You started it because of a kid who needed a place to go after school, or a family who needed a meal, or a building worth saving. That was the whole point. And then somehow the week fills up with spreadsheets and mail merges and a system that makes you assemble by hand the one report your board actually asked for.
+              </p>
+
+              <p style={{ fontSize: 18, lineHeight: 1.7, color: C.ink3 }}>
+                My father has spent his career as a development officer, so I grew up hearing about this at the dinner table — not the fundraising wins, but the good people who left quietly and were only noticed a year later, when the number came in short. He'd know their names. He'd know exactly what happened. He just didn't have anything that told him in time.
+              </p>
+
+              <p style={{ fontSize: 18, lineHeight: 1.7, color: C.ink3 }}>
+                That's the only thing Steward is trying to do: give you back the hours the software should never have taken, and put the right name in front of you while there is still something you can do about it. Less time keeping the machine running. More time on the work you actually signed up for.
+              </p>
+
+              <p style={{ fontSize: 18, lineHeight: 1.7, color: C.ink3 }}>
+                I'm Jonathan. I'm a student at <Placeholder value={PLACEHOLDERS.founderSchool} />, I started Steward in May 2026, and I have written every line of it since. It was specified with my dad, argued about with him, and rebuilt more than once because he looked at a screen and told me it was wrong.
+              </p>
+
+              <div style={{ borderLeft: `2px solid ${C.gold}`, paddingLeft: 24, display: "flex", flexDirection: "column", gap: 8 }}>
+                <p style={{ fontSize: 18, lineHeight: 1.7, color: C.ink }}>
+                  I am young for this and I am not going to pretend otherwise. What it buys you is someone who picks up the phone, ships the fix the same week, and has no bigger customer to prioritise ahead of you.
+                </p>
+              </div>
+
+              <div className="lp-ctarow" style={{ marginTop: 6 }}>
+                <button className="lp-btn lp-btn-ink lp-focus" onClick={talkToFounder}>Talk to the founder</button>
+                <span style={{ fontSize: 15, color: C.ink3 }}>Fifteen minutes, and I will tell you if Steward is wrong for you.</span>
+              </div>
             </div>
           </div>
         </section>
 
-        {/* ── 4. The money strip ── */}
-        <section className="lp-section lp-reveal" style={{ background: C.ink }}>
-          <div className="lp-narrow" style={{ textAlign: "center" }}>
-            <Eyebrow onDark>Where the money goes</Eyebrow>
-            <h2 className="lp-serif" style={{ fontSize: "clamp(32px, 3.6vw, 48px)", color: C.cream, lineHeight: 1.12, marginBottom: 24 }}>
-              Your donors give to you. Only you.
+        {/* ── CLOSING ────────────────────────────────────────────────────── */}
+        <section className="lp-sec" style={{ background: C.ink, paddingTop: 110, paddingBottom: 110 }}>
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 24, textAlign: "center" }}>
+            <h2 className="lp-close-h" style={{ fontSize: 62, lineHeight: 1.03, color: C.cream, letterSpacing: "-0.03em", maxWidth: 800 }}>
+              Find out which of yours are gold.
             </h2>
-            <p style={{ fontSize: 16.5, color: C.sage, lineHeight: 1.85, maxWidth: 620, margin: "0 auto 22px" }}>
-              Donations settle directly into your organization's own Stripe
-              account. Steward never touches the money and takes no percentage —
-              0%, on every gift. Your donors are never asked to add a tip to
-              cover somebody's software.
+            <p style={{ fontSize: 19, lineHeight: 1.55, color: "rgba(240, 237, 230, 0.72)", maxWidth: 540 }}>
+              Import a CSV and see your own file drawn this way. About ten minutes, and no card.
             </p>
-            <p className="lp-serif" style={{ fontSize: 20, fontStyle: "italic", color: C.gold, lineHeight: 1.6, maxWidth: 560, margin: "0 auto 22px" }}>
-              Free platforms are paid for by your donors' tips. Steward is paid
-              for by you — flatly, transparently.
-            </p>
-            <p style={{ fontSize: 12.5, color: "#6b8f7a", maxWidth: 480, margin: "0 auto" }}>
-              Stripe's standard card-processing fee still applies — that goes to
-              Stripe, not to us. Plans are $149 or $299 a month, flat.{" "}
-              <a href="/pricing" style={{ color: C.sage, textDecoration: "underline", textUnderlineOffset: 3 }}>See pricing</a>.
+            <div className="lp-ctarow" style={{ justifyContent: "center", gap: 14, marginTop: 12 }}>
+              <button className="lp-btn lp-btn-gold lp-focus" onClick={startFree}>Start free</button>
+              <button className="lp-btn lp-btn-ghost lp-focus" onClick={talkToFounder}>Talk to the founder</button>
+            </div>
+            <p style={{ fontSize: 14, color: C.sage, marginTop: 4 }}>
+              No card required · your data exports whenever you want it · cancel by email
             </p>
           </div>
         </section>
 
-        {/* ── 5 + 6 + invitation section REMOVED (BUILD-49) ──
-            The "Where Steward is today" candor section and the "A letter from
-            the founder" section were deleted in full (Part 5). The embedded
-            founding-partner invitation form was removed with them (Part 1 —
-            public signup is reopened; the landing CTAs are "Start free" →
-            /signup, and the standalone /invitation route is kept only so old
-            links don't 404). The money strip (§4) now flows into the close. ── */}
-
-        {/* ── 7. Close ── */}
-        <section className="lp-section lp-reveal" style={{ textAlign: "center" }}>
-          <div className="lp-narrow">
-            <h2 className="lp-serif" style={{ fontSize: "clamp(34px, 4vw, 52px)", color: C.ink, marginBottom: 30, lineHeight: 1.12 }}>
-              See who needs you today.
-            </h2>
-            <div className="lp-cta-row" style={{ display: "flex", gap: 12, justifyContent: "center", flexWrap: "wrap", marginBottom: 18 }}>
-              <GoldBtn big onClick={() => navigate("/signup")}>Start free</GoldBtn>
-              <QuietBtn big onClick={() => setShowCal(true)}>Talk to the founder</QuietBtn>
-            </div>
-            <p style={{ fontSize: 13, color: C.ink3 }}>
-              No platform fee · no donor tip · your data exports anytime
-            </p>
-          </div>
-        </section>
-
-        {/* ── Footer — real links only ── */}
-        <footer style={{ background: C.ink, padding: "44px 64px" }}>
-          <div className="lp-wide" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 18 }}>
-            <div>
-              <div className="lp-serif" style={{ fontSize: 20, color: C.cream, marginBottom: 4 }}>Steward</div>
-              <div style={{ fontSize: 12, color: C.sage }}>© 2026 Steward · Donor retention for small nonprofits</div>
-            </div>
-            <div style={{ display: "flex", gap: 24, flexWrap: "wrap", fontSize: 13 }}>
-              <a href="/pricing" style={{ color: C.sage }} className="lp-navlink">Pricing</a>
-              <a href="/login" style={{ color: C.sage }} className="lp-navlink">Log in</a>
-              <a href={FOUNDER_MAILTO} style={{ color: C.sage }} className="lp-navlink">Contact</a>
-              <a href="/terms" style={{ color: C.sage }} className="lp-navlink">Terms</a>
-              <a href="/privacy" style={{ color: C.sage }} className="lp-navlink">Privacy</a>
-            </div>
+        {/* ── FOOTER ─────────────────────────────────────────────────────── */}
+        <footer className="lp-footer">
+          <div className="lp-serif" style={{ fontSize: 21, color: C.cream }}>Steward</div>
+          <div style={{ display: "flex", gap: 30, fontSize: 14, color: C.sage, alignItems: "center", flexWrap: "wrap" }}>
+            <a href="/terms" className="lp-focus" style={{ color: C.sage, minHeight: 44, display: "inline-flex", alignItems: "center" }}>Terms</a>
+            <a href="/privacy" className="lp-focus" style={{ color: C.sage, minHeight: 44, display: "inline-flex", alignItems: "center" }}>Privacy</a>
+            <span>© 2026 <Placeholder value={PLACEHOLDERS.legalEntity} /></span>
           </div>
         </footer>
 

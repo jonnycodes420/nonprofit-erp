@@ -458,3 +458,173 @@ and passes on every isolated run (3/3) and on a clean re-run of the full battery
 (109 suites, 0 failed). Not on any path this build touched. Same class as
 BUILD-72's S-4 webhook-ordering flake — recorded, not fixed, and not claimed as
 green when it was not.
+
+
+---
+
+# PART 4 — THE LANDING PAGE
+
+Branch `landing-rebuild`. Marketing page only: no app, auth, donor portal,
+giving page or import path was touched, so `BLOCKED-build73.md` gained nothing.
+
+## The two changes the brief did not ask for, and who asked for them
+
+Both came from Jonathan in-session, and both override the written brief. They
+are recorded here because a future reader comparing the page to the brief will
+otherwise find two unexplained differences.
+
+1. **"Here is what Steward doesn't do" is DELETED.** The brief says to keep it
+   verbatim, including "Steward has no customers yet," and calls it "the point,
+   not a placeholder." Jonathan's instruction was explicit and unambiguous:
+   *"get rid of this section BEFORE YOU ASK."* Removed in full — the heading,
+   the BEFORE YOU ASK eyebrow, and all four items. Asserted absent from the
+   built bundle.
+
+2. **The founder bio is rewritten**, on the instruction *"make it my heart for
+   non profits — mention how nonprofits need to focus more on their mission and
+   less on fundraising, pull on their heart strings, replace the garbage AI
+   wrote there."* The old opening ("Built with a development officer. He's my
+   dad.") led with credential. The new one leads with the reader:
+
+   > **You didn't take this job to chase money.**
+   >
+   > Nobody starts a nonprofit because they love donor databases. You started
+   > it because of a kid who needed a place to go after school, or a family who
+   > needed a meal, or a building worth saving.
+
+   The dad is still there and still the credential, but as the reason the
+   product knows what it knows — *"not the fundraising wins, but the good people
+   who left quietly and were only noticed a year later, when the number came in
+   short. He'd know their names. He just didn't have anything that told him in
+   time."* The thesis paragraph is the one Jonathan asked for: give back the
+   hours the software should never have taken. **Nothing in it is invented** —
+   the placeholders stay placeholders.
+
+3. **The "Built for orgs like yours" section is KEPT**, on a mid-build
+   instruction with a screenshot (*"DO NOT GET RID OF THIS"*). It is not in the
+   brief's section order, so it would have been dropped. It sits after the
+   source strip, where the who-it's-for band belongs, with all three photo cards
+   intact. Asserted present with all three verticals.
+
+## The dot field — the only piece with real machinery
+
+`client/src/lib/donorField.js`, JSX-free so the Node suite imports it directly.
+
+**Deterministic by construction, not by convention.** The drift set is a
+hard-coded index list, not a seeded shuffle. Three separate failures were on the
+table and a module constant closes all three: a field that reshuffles per render
+looks broken to a reader who scrolls back; server and client must emit
+byte-identical markup or hydration repaints; and a random draw per field makes
+the year section's central claim false.
+
+**The ORDERING is load-bearing, and the reference does not have it.** The brief
+requires "June's 31 are the first 31 of December's 74." In the mock, June's 31
+*are* a subset of December's 74 — but a scattered one, not the first 31 in index
+order. Since the page GENERATES the field, the ordering was mine to choose:
+`DRIFT_ORDER` begins with the mock's own June indices, then the remaining 43.
+So the rendered page matches the reference **exactly**, and the nesting is
+literally true rather than coincidentally true. Sorting that array would keep
+the arithmetic and destroy the picture — June's gold would cluster in the
+top-left corner. There is a comment on it saying so.
+
+**One component, four renders.** `<DonorField count size gap label />` renders
+74 at 20px/12px for the hero and 0 / 31 / 74 at 11px/7px for the three months —
+the reference's exact values. There is no second list to drift out of sync.
+
+**Asserted, not trusted.** Three fields of coloured dots look correct whatever
+the indices are; nobody would catch a broken nesting by eye. So:
+
+- `tests/donor-field.test.js` (**31**) — the pure properties, including that
+  the nesting holds **at every count from 0 to 74**, not just the three the page
+  uses, so a future fourth panel cannot break it.
+- `tests/landing-field.test.js` (**37**) — the same nesting read back from
+  **computed background colours in a real browser**, so a rendering bug between
+  the module and the screen is caught too.
+
+## Reduced motion — the highest-consequence failure on the page
+
+The entrance wave and the breathing live entirely inside
+`@media (prefers-reduced-motion: no-preference)`. The base `.df-dot` state
+carries **no opacity of its own**. Leaving `opacity: 0` outside that query is
+the exact bug the structure exists to prevent: the animation never runs, and a
+field that starts at zero opacity never appears — a blank hero, silently, for
+the visitors most likely to need the page to just work.
+
+Verified in a real browser with the OS setting on: **796 dots, minimum computed
+opacity 1.0, zero animations running, every dot with real geometry.** Captured
+at `docs/landing/landing-1440-reduced-motion.png`.
+
+**Performance:** only `opacity` and `transform` animate. Asserted by scoping the
+check to the two dot keyframes — `lpPulse` deliberately animates a `box-shadow`,
+but on ONE 6px dot in a card header, not on 199 elements, so the rule is
+asserted where it matters rather than globally.
+
+## What the page will not say
+
+| Checked | Result |
+|---|---|
+| price, plan name, tier, `/pricing` link, "founding partner" | **0** in the rendered text and **0** in the landing region of the built bundle |
+| `recovered` / `re-engaged` / `recaptured` / `won back` / `brought back` | **0** in both |
+| invented social proof (logos, review scores, testimonials, customer counts) | none |
+| `"Fundraising Effectiveness Project, full-year 2025"` | intact, verbatim |
+| `[LAST NAME]` · `[SCHOOL]` · `[ FOUNDER PHOTO ]` · `[LEGAL ENTITY NAME]` | all four **visible on the page**, in dotted outlines |
+
+The `/pricing` **route still exists** — only its nav and footer links are gone,
+so anyone holding a direct link still lands somewhere real.
+
+**Placeholders render in a dashed outline**, not as bare text and never blank. A
+blank one is a page that looks broken without saying why; a guessed school or
+legal entity on a public page is a fabrication. `PLACEHOLDERS` is one exported
+object, each key carrying a `TODO`.
+
+## Responsive, and how the breakpoint was chosen
+
+**1080px, not 1024.** The brief says to pick it by where headlines start
+wrapping badly, and the 50px serif headings begin throwing two-word orphans
+against the 0.86fr hero column just above 1080. A second query at 640px carries
+the 390px reference's own values (62px/20px padding, 46px h1, 34px h2, stacked
+full-width CTAs), and a third at 400px trims side padding so 320 survives.
+
+**No horizontal page scroll at 320, 390, 768, 1024, 1440 or 1920** — asserted at
+every one of those widths. **Every visible tap target ≥44px at 390** — this
+caught the wordmark link at 30px, which is fixed.
+
+## Verification — the human walk
+
+1. Read top to bottom at 1440 and 390 — `docs/landing/landing-{1440,390}.png`.
+2. The year section, checkable by eye — `docs/landing/year-section-{1440,390}.png`.
+   January all emerald; June's gold positions visibly reappear in December.
+3. Reduced motion on, reloaded, dots visible — captured above.
+4. Built output grepped: zero price, zero outcome claims.
+5. Console clean, no font or image 404s.
+
+## Guards updated rather than deleted
+
+`tests/landing-reveal.test.js` pinned the OLD page: `.lp-reveal` fail-closed
+sections and the recovery calculator's slider. Neither exists — the reveal
+machinery is gone entirely (stronger than BUILD-40's fail-open fix: content that
+never depends on an observer cannot be stranded by one), and the calculator is
+not in the brief's section order.
+
+**Deleting the guard would have been the wrong move**, so it was rewritten to
+pin the permanent RULE — *content visibility must never depend on an animation
+succeeding* — against whatever the page is made of today: hard scroll jumps at
+390 and 1440 over every text-bearing element, plus a structural assertion that
+no `opacity: 0` base state escapes the reduced-motion query. The two retired
+assertions are **named in the file's header** with the reason, so the next
+reader knows they were removed by decision and not by accident.
+
+One assertion needed care: the hero's `.up` entrance is a pure CSS animation
+that always completes, unlike the JS-armed reveal, so measuring at 250ms was
+testing the clock. It now waits past the full duration, with a comment.
+
+## Carried, not fixed
+
+`scripts/landing-funnel-verify.js`, `landing-hero-verify.js`,
+`landing-crispness-prod.js`, `landing-image-verify.js` and
+`landing-motion-verify.js` all target the OLD page and run against **production**
+(they are `PROD_READONLY`, not part of `run-all.sh`). They will fail against the
+rebuilt page once it deploys. They are left alone deliberately: rewriting five
+prod-targeting scripts against a page that is not yet deployed would be writing
+assertions I cannot run. **They must be rewritten or retired in the same change
+that merges `landing-rebuild` to main** — recorded in `BLOCKED-build73.md`.

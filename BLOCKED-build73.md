@@ -35,3 +35,41 @@ credential route BUILD-72 was blocked on (`railway variables` /
 refused, but `railway run --` injects the production environment into a local
 process without printing anything, and the read-only audit ran through it
 cleanly. See `audit/BUILD-73-FINDINGS.md`.
+
+
+---
+
+## B-2 · Five prod-targeting landing scripts will fail once `landing-rebuild` merges
+
+**Not blocking this build** — they are `PROD_READONLY` scripts, not part of
+`tests/run-all.sh`, and they run against the LIVE site, which still serves the
+old page.
+
+`scripts/landing-funnel-verify.js` · `landing-hero-verify.js` ·
+`landing-crispness-prod.js` · `landing-image-verify.js` ·
+`landing-motion-verify.js`
+
+Every one of them asserts against the pre-BUILD-73 landing: the photo hero and
+its srcset, the recovery calculator's slider and its 0.29 churn constant, the
+`.lp-reveal` sections, the `.lp-frame` browser chrome, the DOM product shots,
+and the "Here is what Steward doesn't do" candor copy. **None of those exist on
+the rebuilt page.**
+
+They were left alone deliberately rather than rewritten blind: they target
+production, so any replacement assertions could not be run until the new page is
+actually deployed, and committing assertions I have not executed is worse than
+committing none.
+
+**Decision needed at merge time, not now.** When `landing-rebuild` goes to main
+and deploys, each script gets one of two outcomes, decided per script:
+
+1. **Rewritten** against the new page — the honesty gates (no fabricated social
+   proof, no invented numbers, the FEP attribution) are still worth having on
+   the deployed bytes, and that is `landing-funnel-verify`'s real job.
+2. **Retired**, with the reason recorded — `landing-crispness-prod` and
+   `landing-image-verify` exist to police raster-vs-DOM product shots, and the
+   rebuilt page has no product screenshots at all, so their subject is gone.
+
+The committed suites that DO cover the new page and run in `run-all.sh` are
+`tests/donor-field.test.js` (31), `tests/landing-field.test.js` (37) and the
+rewritten `tests/landing-reveal.test.js` (7).
