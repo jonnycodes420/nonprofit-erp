@@ -168,3 +168,79 @@ Broadened (not added):
 still resolving as a direct route is likewise verified in-session rather than
 guarded, for the same reason. Both are fair candidates for a later build that
 is not under a shrink-the-count rule.
+
+---
+
+## VERIFICATION — AGAINST DEPLOYED BYTES
+
+Prod (`main`) has **not** been touched. `vercel.json` sets
+`git.deploymentEnabled.main = false`, so main deploys only through the
+`deploy-vercel` Actions job — merging is a production deploy of the public
+marketing site, and that is Jonathan's call.
+
+What was verified instead is the **branch preview Vercel built from the pushed
+commit** — `d005afa`, deployment `dpl_5NeJxdsRVMPUTGnZ2ogTM55v2Pmk`, READY at
+`client-git-landing-trim-jonnycodes420s-projects.vercel.app`. Deployed bytes,
+not the local build. The preview is SSO-protected, so the committed
+`landing-prod-verify.js` ran unmodified against it through a scratch localhost
+proxy carrying the preview's `_vercel_jwt` cookie (proxy lives in the session
+scratchpad, not the repo — it injects one cookie and changes nothing else).
+
+```
+BASE=<preview> node scripts/landing-prod-verify.js
+29 passed, 0 failed
+29 guards ran — 1 FEWER than BUILD-73's 30.
+```
+
+Against that same deployment:
+
+1. **Both sections gone at 1440 and 390** — and at 320, 768, 1024, 1920. No
+   match for the founder copy, `WHO BUILT THIS`, `[ FOUNDER PHOTO ]`,
+   `[SCHOOL]`, `[LAST NAME]`, or any of the doesn't-do gap copy.
+2. **No orphaned constants, no dead anchors, no console errors, no asset 404s.**
+   (The two `SyntaxError`s that appear on a LOCAL `vite preview` are its SPA
+   fallback serving HTML for `/_vercel/insights/script.js` and
+   `/_vercel/speed-insights/script.js`. Deployed, those are real scripts and
+   the console is clean — which is why prod was clean at 30/30 too.)
+3. **Contrast floor holds at 5.0 on every text element** — 75 elements, worst
+   case 5.81:1.
+4. **CLS 0.0000** over a full mobile scroll; **no horizontal scroll** at 320,
+   390, 768, 1024, 1440, 1920.
+5. **Dot field correct** — four fields of 199, hero 74, January 0, June 31,
+   December 74, June a genuine subset of December.
+6. **Reduced motion** renders all 796 dots at full opacity.
+7. **Zero pricing in rendered text**; `/pricing` still resolves for a direct
+   link (renders "Two plans, split on a real line."), and no `/pricing` link
+   appears in nav or footer.
+8. **Fresh captures in `docs/landing/`** at DPR 2, replacing the previous ones:
+   `landing-1440.png`, `landing-390.png`, `landing-1440-reduced-motion.png`,
+   `year-section-1440.png`, `year-section-390.png`. The stale untracked
+   `prod-1440.png` (a BUILD-73 leftover) was removed.
+
+Local gates green as well: `landing-field` 37/37, `landing-reveal` 7/7,
+`brand-allowlist` 27/27, `eslint src && vite build` clean, and the full
+`bash tests/run-all.sh` at **111 suites / 0 failed** (the pre-push hook ran it
+again on the push).
+
+Environment note for whoever picks this up: the scratch stack had been lost to
+a reboot and needed rebuilding — Postgres 16 on `:5544` **with SSL enabled**
+(`db.js` hardcodes `ssl: { rejectUnauthorized: false }`, so a non-SSL cluster
+fails at `initSchema`), and `portal-visual` needs
+`scripts/local-preview.js` on `:4173` rather than a plain `vite preview`
+(the rewrite table is what lets the portal reach the API same-origin). Both are
+in `tests/README.md`; neither is a regression.
+
+---
+
+## PART 2 — NOT BUILT, AWAITING JONATHAN
+
+The build ships without the line above the closing CTA. The captures above are
+what the page looks like without it, at both widths, so the call can be made
+against the real thing rather than a description.
+
+The seam is real: at 1440 the page runs from the third feature card straight
+into "Find out which of yours are gold." with nothing human between them.
+Whether that reads as abrupt or as clean is a judgement, and it is not mine.
+
+The proposed line, if wanted: *Built alongside a career development officer.*
+One line, above the closing CTA. No name, no photo, no bio, no age.
