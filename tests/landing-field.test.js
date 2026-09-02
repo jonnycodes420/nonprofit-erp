@@ -156,9 +156,10 @@ const goldIndices = () => [...document.querySelectorAll('[role="img"]')].map(f =
   console.log("\n— §6 · load-bearing copy —");
   ok('"Fundraising Effectiveness Project, full-year 2025" is intact — FEP rebased in Q1 2026 and now headlines a QUARTERLY figure',
      /Fundraising Effectiveness Project, full-year 2025/.test(text), null);
-  ok("the placeholders are VISIBLE on the page, not silently blank",
-     ["[LAST NAME]", "[SCHOOL]", "[ FOUNDER PHOTO ]", "[LEGAL ENTITY NAME]"].every(p => text.includes(p)),
-     ["[LAST NAME]", "[SCHOOL]", "[ FOUNDER PHOTO ]", "[LEGAL ENTITY NAME]"].filter(p => !text.includes(p)));
+  // BUILD-74 removed the founder section; [LAST NAME], [SCHOOL] and
+  // [ FOUNDER PHOTO ] went with it. The © line is the last unfilled value.
+  ok("the © placeholder is VISIBLE on the page, not silently blank",
+     text.includes("[LEGAL ENTITY NAME]"), null);
   ok("the 'Built for orgs like yours' section is present with all three verticals",
      /You know your donors\. Steward notices when they're slipping\./.test(text)
      && /Arts & culture/.test(text) && /Rescue & relief/.test(text) && /Faith & community/.test(text), null);

@@ -59,6 +59,13 @@ const EXTRAS = [
   // it borrows from the portal so quiet chrome stays AA on any validated
   // background tint (it is also the anchor normalizeTint guards against):
   "#6b6b64",
+  // BUILD-74: the landing page's muted grey. It is T.ink3 (#6b6560) darkened
+  // by one step. #6b6560 measures 4.53:1 on the landing's #E8E4DB ground —
+  // AA, but with 0.03 of headroom, so any later nudge to either value dropped
+  // it under with nothing to catch it. #5a554f is 5.81:1 there and visually
+  // near-identical, and landing-prod-verify.js now holds a 5.0 floor against
+  // it. Landing.jsx ONLY — T.ink3 is unchanged for the authenticated app.
+  "#5a554f",
 ];
 for (const v of EXTRAS) ALLOWED.add(v.toLowerCase());
 
