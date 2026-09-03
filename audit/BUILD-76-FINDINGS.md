@@ -187,6 +187,40 @@ every call site; drift.js itself does pure civil-date arithmetic on
   trailing 30 days) snapshots into `metric_snapshots` so BUILD-77 can see
   whether the loop works on the pilot.
 
+## PART 7 — THREE CANNED AUTOMATIONS (decisions)
+
+- **`quiet_past_pattern`** rides THE drift engine, not a second 1.5×-median
+  definition (the D.3 spec predates drift.js; two "past their own pattern"
+  computations in one codebase is exactly the two-truths bug this build
+  exists to kill). Trigger `donor_drifting`, swept on the existing 5-minute
+  tick beside the lapse sweep; fires only for HIGH-confidence drift; task
+  goes to the assigned officer (ED fallback, recorded); dedup per
+  (donor, last_gift_date) so one drift episode fires once; the BUILD-25
+  live-transition guard applies — the drift must have STARTED on/after the
+  donor's created_at (an imported already-drifting history is a fact, not an
+  event). The task title carries the drift reason — the donor's own pattern.
+- **`major_gift_alert`** is TUNING, not building: the workflows payload now
+  carries a `suggestedThreshold` (95th percentile of the trailing 12 months'
+  gifts, computed from the org's own file, shown beside the config); the
+  owner alert title carries context (lifetime, last gift date).
+- **`pledge_due_soon`**: trigger `pledge_due`, same sweep; a task for the
+  donor's officer `leadDays` (default 14) before an open pledge's due date,
+  dedup per (pledge, due_date). Creates a task only — the donor-facing
+  pledge reminder machinery (BUILD-57) is separate and untouched.
+- C.2 pinned at the source: none of the three recipes carries a send_email
+  action (asserted in workflows-e2e).
+- **Part 7 results**: workflows-e2e §B76 (84 total in the suite) — the drift
+  recipe fires ONCE on a live transition with the reason in the task title,
+  fires NOTHING for an imported-already-drifting donor or a
+  medium-confidence one, and holds under two concurrent sweeps; the pledge
+  recipe carries the OUTSTANDING amount ($600 of a $1,000 pledge with $400
+  paid), skips out-of-window and fulfilled pledges, and dedups per
+  (pledge, due_date); the suggestion equals the hand-computed
+  percentile_cont(0.95) and an org with <20 gifts in the year gets none.
+  Suite-hygiene fix along the way: workflows-e2e's WIPE list predated
+  pledges — the FK leftover silently kept the org row alive and crashed the
+  NEXT run on orgs_pkey.
+
 ## LANGUAGE
 
 - BUILD-73's outcome-claim ban already covers app copy + emails + PDFs

@@ -53,7 +53,7 @@ const runCount = async (wfId) => (await q(`SELECT COUNT(*)::int AS n FROM workfl
 
   // ── Provisioning ──────────────────────────────────────────────────────────
   const list = (await api("GET", "/workflows", tokenA)).body;
-  ok("GET /workflows provisions 5 recipes", list.length === 5, list.length);
+  ok("GET /workflows provisions 7 recipes", list.length === 7, list.length);
   ok("recipes disabled by default (nothing auto-runs)", list.every(w => !w.enabled));
   ok("recipes carry trigger/conditions/actions data (builder-ready)",
     list.every(w => w.trigger && Array.isArray(w.conditions) && Array.isArray(w.actions)));

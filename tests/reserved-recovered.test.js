@@ -124,6 +124,18 @@ function chunksOf(line) {
      ["recoveredAmount", "recovered_at", "payment_recovered", "recovered_thankyou"]
        .every(c => NOT_COPY.some(n => n.re.test(c))));
 
+  // BUILD-76 LANGUAGE decision, recorded as an assertion instead of an
+  // accident: the FORWARD-LOOKING process noun ("re-engagement email",
+  // "At-Risk Re-Engagement") names a workflow, not a result, and is
+  // DELIBERATELY allowed — the ban is drawn at past-tense outcomes. The home
+  // screen's "AI-drafted re-engagement email ready for review" is legal on
+  // purpose, not missed.
+  ok("forward-looking 're-engagement' (process noun) is deliberately ALLOWED",
+     ["AI-drafted re-engagement email ready for review", "At-Risk Re-Engagement", "Re-engage {donor} — lapsing"]
+       .every(c => !FAMILY.some(f => f.re.test(c))));
+  ok("…while the past-tense outcome 're-engaged' stays banned",
+     FAMILY.some(f => f.re.test("we re-engaged 610 donors")));
+
   // ── 2. Live: the win-back goal counts ONLY genuine re-engaged giving ──
   for (const t of ["fundraising_goals", "gifts", "interactions", "fin_transactions", "budgets", "accounts", "fin_funds", "donors", "users"]) await q(`DELETE FROM ${t} WHERE org_id=$1`, [A]).catch(() => {});
   await q(`DELETE FROM orgs WHERE id=$1`, [A]).catch(() => {});

@@ -89,8 +89,23 @@ function RecipeCard({ w, isReadOnly, onToggle, onConfig, expanded, onOpenRuns, r
 
       {/* Light config */}
       {w.recipe_key === "major_gift_alert" && (
-        <ConfigRow label="Major-gift threshold" prefix="$" value={w.config?.threshold ?? 1000} isReadOnly={isReadOnly}
-          onSave={v => onConfig({ threshold: Number(v) })} />
+        <>
+          <ConfigRow label="Major-gift threshold" prefix="$" value={w.config?.threshold ?? 1000} isReadOnly={isReadOnly}
+            onSave={v => onConfig({ threshold: Number(v) })} />
+          {/* BUILD-76 Part 7 — the honest default: the org's own 95th-percentile
+              gift over the trailing year, suggested, never silently applied. */}
+          {w.suggestedThreshold != null && w.suggestedThreshold !== (w.config?.threshold ?? 1000) && (
+            <div style={{ fontSize: 12, color: T.ink3, marginTop: 6 }}>
+              In your own file, the top 5% of last year's gifts start at <strong style={{ color: T.ink }}>${w.suggestedThreshold.toLocaleString()}</strong>
+              {!isReadOnly && <> — <button onClick={() => onConfig({ threshold: w.suggestedThreshold })}
+                style={{ background: "none", border: "none", padding: 0, color: T.greenDk, fontWeight: 700, fontSize: 12, cursor: "pointer" }}>use that</button></>}
+            </div>
+          )}
+        </>
+      )}
+      {w.recipe_key === "pledge_due_soon" && (
+        <ConfigRow label="Days before the due date" value={w.config?.leadDays ?? 14} isReadOnly={isReadOnly}
+          onSave={v => onConfig({ leadDays: Number(v) })} />
       )}
       {w.recipe_key === "instant_gift_thanks" && (
         <div style={{ display: "flex", gap: 20, flexWrap: "wrap", alignItems: "center", marginTop: 12 }}>

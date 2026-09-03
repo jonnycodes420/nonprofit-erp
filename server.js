@@ -13581,7 +13581,8 @@ async function computeDriftForDonors(orgId, { donorIds = null } = {}) {
   const idParams = donorIds ? [donorIds] : [];
   const [donors, giftAgg, recurringRows, pledgeRows, contactRows] = await Promise.all([
     query(`SELECT d.id, d.name, d.total_giving, d.deceased, d.do_not_contact,
-                  d.assigned_to, d.assigned_to_name, d.stripe_subscription_status
+                  d.assigned_to, d.assigned_to_name, d.stripe_subscription_status,
+                  d.created_at::date::text AS created_date
              FROM donors d WHERE d.org_id = ? AND d.deleted_at IS NULL${idFilter}`, [orgId, ...idParams]),
     // One compact row per donor — dates+amounts as parallel arrays, so the
     // whole org's cadence math is a single round trip, not an N+1.
@@ -13630,6 +13631,7 @@ async function computeDriftForDonors(orgId, { donorIds = null } = {}) {
     a.donorName = d.name;
     a.assignedTo = d.assigned_to || null;
     a.assignedToName = d.assigned_to_name || null;
+    a.donorCreatedDate = d.created_date || null;   // the quiet_past_pattern live-transition guard reads this
     const lc = lastContact.get(d.id);
     a.handled = !!(lc && orgTime.compareCivil(lc, handledCutoff) >= 0);
     map.set(d.id, a);
@@ -14746,6 +14748,32 @@ const WORKFLOW_RECIPES = [
     ],
     defaultConfig: { notify: "both", threshold: 0 },
   },
+  // ── BUILD-76 Part 7 — two of the three canned automations (the third is
+  // major_gift_alert above, which Part 7 TUNES rather than duplicates).
+  // Neither may ever email a donor (C.2) — create_task only, pinned at the
+  // source by workflows-e2e §B76.
+  {
+    key: "quiet_past_pattern",
+    name: "Donor quiet past their own pattern → task for their officer",
+    description: "When a donor goes meaningfully past their own giving rhythm — the same drift computation the home screen shows, high confidence only — create a task for their relationship owner carrying the reason. Earlier and more personal than the fixed lapse window.",
+    trigger: "donor_drifting",
+    conditions: [],
+    actions: [
+      { type: "create_task", assignToOwner: true, title: "{donor} is drifting — {reason}", priority: "medium", dueDays: 5 },
+    ],
+    defaultConfig: {},
+  },
+  {
+    key: "pledge_due_soon",
+    name: "Pledge payment coming due → task for their officer",
+    description: "A set number of days before an open pledge's due date, create a task for the donor's relationship owner so the ask never slips. Internal task only — the donor-facing pledge reminder emails are configured separately.",
+    trigger: "pledge_due",
+    conditions: [],
+    actions: [
+      { type: "create_task", assignToOwner: true, title: "Pledge due {dueDate}: {donor} — {amount} outstanding", priority: "medium", dueDays: 0 },
+    ],
+    defaultConfig: { leadDays: 14 },
+  },
 ];
 const WORKFLOW_RECIPE_MAP = Object.fromEntries(WORKFLOW_RECIPES.map(r => [r.key, r]));
 
@@ -15231,11 +15259,15 @@ async function runWorkflowAction(action, { org, donor, ctx, config, recipeKey })
   const wfActor = sysWorkflow(recipeKey || "unknown"); // BUILD-75 C.1 — the workflow IS the actor
   const firstName = donor?.name ? donor.name.trim().split(/\s+/)[0] : "there";
   const amtStr = ctx.amount != null ? `$${Number(ctx.amount).toLocaleString()}` : "";
-  const fill = s => String(s || "").replace(/{donor}/g, donor?.name || "the donor").replace(/{amount}/g, amtStr);
+  const fill = s => String(s || "").replace(/{donor}/g, donor?.name || "the donor").replace(/{amount}/g, amtStr)
+    .replace(/{reason}/g, ctx.reason || "past their own giving pattern")   // BUILD-76 — the drift reason, the donor's own words-worthy sentence
+    .replace(/{dueDate}/g, ctx.dueDate ? orgTime.formatCivil(ctx.dueDate) : "soon");
   switch (action.type) {
     case "create_task":
     case "notify_owner": {
-      const isOwner = action.type === "notify_owner";
+      // BUILD-76 Part 7 — assignToOwner lets a plain create_task land with the
+      // donor's relationship owner (same ED fallback + recorded flag).
+      const isOwner = action.type === "notify_owner" || action.assignToOwner === true;
       // The alert lands with the donor's relationship owner. BUILD-25 A1.4: a
       // major-gift donor with NO assigned owner must degrade gracefully — the
       // alert falls back to the ED (first org admin) rather than becoming an
@@ -15249,9 +15281,18 @@ async function runWorkflowAction(action, { org, donor, ctx, config, recipeKey })
         const admins = await query("SELECT id, name FROM users WHERE org_id=? AND role='admin' ORDER BY created_at ASC LIMIT 1", [org.id]);
         if (admins.length) { owner = { id: admins[0].id, name: admins[0].name || "" }; assignedFallback = true; }
       }
-      const title = isOwner
-        ? `Stewardship alert: ${donor?.name || "a major donor"} gave ${amtStr || "a major gift"}`
-        : fill(action.title || "Follow up");
+      // BUILD-76 Part 7 (D.3 §2) — the default owner-alert title carries the
+      // donor's context: lifetime and last gift, so the officer can pick up
+      // the phone without opening the record first. An explicit action.title
+      // (the new recipes) wins and is placeholder-filled.
+      const lifetime = donor && Number(donor.total_giving) > 0 ? `$${Number(donor.total_giving).toLocaleString()} lifetime` : null;
+      const lastGift = donor?.last_gift_date ? `last gift ${orgTime.formatCivil(String(donor.last_gift_date).slice(0, 10))}` : null;
+      const donorCtxStr = [lifetime, lastGift].filter(Boolean).join(", ");
+      const title = action.title
+        ? fill(action.title)
+        : isOwner
+          ? `Stewardship alert: ${donor?.name || "a major donor"} gave ${amtStr || "a major gift"}${donorCtxStr ? ` (${donorCtxStr})` : ""}`
+          : "Follow up";
       const due = action.dueDays != null ? new Date(Date.now() + action.dueDays * 86400000).toISOString().slice(0, 10) : "";
       const taskId = "t_" + uuid().slice(0, 8);
       await run(
@@ -15441,6 +15482,70 @@ async function processWorkflowSweeps(onlyOrgId = null) {
       }
     } catch (e) { console.error("[workflow-sweep] org", orgId, e.message); }
   }
+
+  // ── BUILD-76 Part 7 — quiet_past_pattern: THE drift engine, as a trigger ──
+  // Not a second definition: the sweep reads computeDriftForDonors (the same
+  // one function the home list and every badge read). High confidence only —
+  // an officer sent to call for a wrong reason once discounts the list
+  // forever. Dedup per (donor, last_gift_date): one drift episode fires once;
+  // a new gift starts a new episode. The BUILD-25 live-transition guarantee:
+  // the drift must have STARTED on/after the donor's created_at — a file
+  // imported already-drifting is history, not an event.
+  const driftOrgRows = onlyOrgId
+    ? await query("SELECT DISTINCT org_id FROM workflows WHERE trigger='donor_drifting' AND enabled=true AND org_id=?", [onlyOrgId])
+    : await query("SELECT DISTINCT org_id FROM workflows WHERE trigger='donor_drifting' AND enabled=true");
+  for (const { org_id: orgId } of driftOrgRows) {
+    try {
+      const { map } = await computeDriftForDonors(orgId);
+      let fired = 0;
+      for (const a of map.values()) {
+        if (fired >= 200) break;   // same per-sweep cap as the lapse sweep
+        if (a.state !== "drifting" || a.confidence !== "high") continue;
+        if (!a.driftStartDate || !a.donorCreatedDate) continue;
+        if (orgTime.compareCivil(a.driftStartDate, a.donorCreatedDate) < 0) continue; // drifted before we ever knew them — history, not an event
+        await fireWorkflows(orgId, "donor_drifting", {
+          dedupKey: `drift:${a.donorId}:${a.lastGiftDate}`,
+          donorId: a.donorId, entityType: "donor", entityId: a.donorId,
+          reason: a.reason,
+        });
+        fired++;
+      }
+    } catch (e) { console.error("[workflow-sweep drift] org", orgId, e.message); }
+  }
+
+  // ── BUILD-76 Part 7 — pledge_due_soon: a task leadDays before due ────────
+  // Open pledges only (status='open' IS "remaining balance > 0" — the
+  // partial-payment recompute keeps that true), inside [today, today+lead]
+  // on the ORG's calendar. Dedup per (pledge, due_date). Task only — the
+  // donor-facing pledge reminder machinery is separate and untouched (C.2).
+  const pledgeOrgRows = onlyOrgId
+    ? await query("SELECT org_id, config FROM workflows WHERE trigger='pledge_due' AND enabled=true AND org_id=?", [onlyOrgId])
+    : await query("SELECT org_id, config FROM workflows WHERE trigger='pledge_due' AND enabled=true");
+  for (const { org_id: orgId, config } of pledgeOrgRows) {
+    try {
+      const leadDays = Math.max(1, parseInt(asJson(config, {}).leadDays, 10) || 14);
+      const org = await orgTz(orgId);
+      const todayStr = orgToday(org);                                  // ORG_TZ_SEAM_OK
+      const horizon = orgTime.addDays(todayStr, leadDays);
+      const due = await query(
+        `SELECT p.id, p.donor_id, p.amount, p.due_date,
+                COALESCE((SELECT SUM(g.amount) FROM gifts g WHERE g.pledge_id = p.id AND g.org_id = p.org_id), 0) AS paid
+           FROM pledges p
+          WHERE p.org_id = ? AND p.status = 'open'
+            AND p.due_date >= ? AND p.due_date <= ?
+          LIMIT 200`,
+        [orgId, todayStr, horizon]);
+      for (const p of due) {
+        const remaining = Math.max(0, (parseFloat(p.amount) || 0) - (parseFloat(p.paid) || 0));
+        if (remaining <= 0) continue;
+        await fireWorkflows(orgId, "pledge_due", {
+          dedupKey: `pledgedue:${p.id}:${p.due_date}`,
+          donorId: p.donor_id, entityType: "pledge", entityId: p.id,
+          amount: remaining, dueDate: String(p.due_date).slice(0, 10),
+        });
+      }
+    } catch (e) { console.error("[workflow-sweep pledge] org", orgId, e.message); }
+  }
 }
 if (!backgroundTicksDisabled()) {
   setTimeout(() => processWorkflowSweeps().catch(console.error), 25000);
@@ -15476,11 +15581,27 @@ app.get("/workflows", requireAuth, wrap(async (req, res) => {
     [req.user.orgId]
   );
   const byWf = Object.fromEntries(runCounts.map(r => [r.workflow_id, r]));
+  // BUILD-76 Part 7 (D.3 §2) — major_gift_alert gets an HONEST default
+  // suggestion derived from the org's own file: the 95th percentile of the
+  // trailing 12 months' gifts. Shown beside the config as a suggestion,
+  // never silently applied.
+  let suggestedThreshold = null;
+  if (rows.some(w => w.recipe_key === "major_gift_alert")) {
+    const yearAgo = orgTime.addDays(orgToday(await orgTz(req.user.orgId)), -365);   // ORG_TZ_SEAM_OK
+    const pct = await query(
+      `SELECT percentile_cont(0.95) WITHIN GROUP (ORDER BY amount) AS p95, COUNT(*)::int AS n
+         FROM gifts WHERE org_id = ? AND date >= ? AND amount > 0`,
+      [req.user.orgId, yearAgo]);
+    if ((pct[0]?.n || 0) >= 20 && pct[0].p95 != null) {
+      suggestedThreshold = Math.round(parseFloat(pct[0].p95) / 50) * 50 || null;   // rounded to a sayable $50 step
+    }
+  }
   res.json(rows.map(w => ({
     ...w,
     conditions: asJson(w.conditions, []), actions: asJson(w.actions, []), config: asJson(w.config, {}),
     description: WORKFLOW_RECIPE_MAP[w.recipe_key]?.description || "",
     runCount: byWf[w.id]?.n || 0, lastRun: byWf[w.id]?.last || null,
+    ...(w.recipe_key === "major_gift_alert" ? { suggestedThreshold } : {}),
   })));
 }));
 
@@ -15504,6 +15625,7 @@ app.put("/workflows/:id", requireAuth, requireAdmin, checkWriteAccess, wrap(asyn
     const merged = { ...asJson(rows[0].config, {}), ...config };
     if (merged.threshold !== undefined) merged.threshold = Math.max(0, Number(merged.threshold) || 0);
     if (merged.lapseDays !== undefined) merged.lapseDays = Math.max(1, parseInt(merged.lapseDays, 10) || 365);
+    if (merged.leadDays !== undefined) merged.leadDays = Math.max(1, parseInt(merged.leadDays, 10) || 14);   // BUILD-76 pledge_due_soon
     if (merged.notify !== undefined && !["ed", "owner", "both"].includes(merged.notify)) merged.notify = "both";
     sets.push("config=?"); params.push(JSON.stringify(merged));
   }

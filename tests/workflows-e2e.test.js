@@ -59,7 +59,7 @@ async function waitFor(fn, { tries = 60, delay = 50 } = {}) {
 
 // ── DB fixture helpers ───────────────────────────────────────────────────────
 const WIPE = ["workflow_runs", "workflows", "moves", "opportunities", "recurring_subscriptions",
-  "payment_recovery_events", "fin_transactions", "gifts", "interactions", "tasks", "donors",
+  "payment_recovery_events", "fin_transactions", "gifts", "pledges", "interactions", "tasks", "donors",
   "accounts", "fin_funds", "users"];
 async function wipe(org) {
   for (const t of WIPE) await q(`DELETE FROM ${t} WHERE org_id=$1`, [org]).catch(() => {});
@@ -128,11 +128,11 @@ async function fireWebhook(type, object, evtId, account = ACCT_A) {
   // ═══════════════════════════════════════════════════════════════════════════
   console.log("\n── A0: imports must fire ZERO workflows (the P0) ──");
   let list = await recipesA();
-  ok("A0 setup: 5 recipes provision, disabled by default", list.length === 5 && list.every(w => !w.enabled));
+  ok("A0 setup: 7 recipes provision, disabled by default", list.length === 7 && list.every(w => !w.enabled));
   // Turn ON ALL FIVE — the worst case a real org's first onboarding faces.
   for (const w of list) await enable(tA, w.id, w.recipe_key === "major_gift_alert" ? { threshold: 1000 } : undefined);
   list = await recipesA();
-  ok("A0 setup: all 5 recipes enabled", list.every(w => w.enabled));
+  ok("A0 setup: all 7 recipes enabled", list.every(w => w.enabled));
   clearMail();
 
   // Import a mix through the REAL importers: a brand-new donor whose FIRST gift
@@ -422,6 +422,111 @@ async function fireWebhook(type, object, evtId, account = ACCT_A) {
   ok("A2: no run planted in B for A's donor", (await q(`SELECT COUNT(*)::int n FROM workflow_runs WHERE org_id=$1 AND donor_id='d_race'`, [B]))[0].n === 0);
   ok("A2: B cannot read A's workflow runs (404)", (await api("GET", `/workflows/${wfNew2.id}/runs`, tB)).status === 404);
   ok("A2: A's runs never appear under B's org", (await q(`SELECT COUNT(*)::int n FROM workflow_runs WHERE org_id=$1 AND workflow_id=$2`, [B, wfNew2.id]))[0].n === 0);
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // B76 — the three canned automations (BUILD-76 Part 7). Exactly three, on
+  // the existing engine; none may email a donor (C.2).
+  // ═══════════════════════════════════════════════════════════════════════════
+  console.log("\n── B76: quiet_past_pattern · major_gift_alert tuning · pledge_due_soon ──");
+  list = await recipesA();
+  const wfDrift = wfByKey(list, "quiet_past_pattern");
+  const wfPledge = wfByKey(list, "pledge_due_soon");
+  ok("B76: both new recipes exist, disabled by default", wfDrift && wfPledge && !wfDrift.enabled && !wfPledge.enabled,
+    { drift: !!wfDrift, pledge: !!wfPledge });
+
+  // C.2 pinned at the source: none of the three carries a donor-facing send.
+  for (const key of ["quiet_past_pattern", "pledge_due_soon", "major_gift_alert"]) {
+    const w = wfByKey(list, key);
+    ok(`B76/C.2: ${key} has NO send_email action`, w.actions.every(a => a.type !== "send_email"), w.actions);
+  }
+
+  await enable(tA, wfDrift.id);
+  await enable(tA, wfPledge.id);
+
+  // Gift rows via SQL (a sweep test needs history, and SQL inserts must never
+  // fire gift_received — that is A0's own guarantee, reused here on purpose).
+  const giveHistory = async (donorId, dates, amt) => {
+    for (const d of dates) await q(
+      `INSERT INTO gifts (id,org_id,donor_id,amount,date) VALUES ($1,$2,$3,$4,$5)`,
+      ["g_" + donorId + "_" + d, A, donorId, amt, d]);
+  };
+  const yearlyEnding = end => [daysAgo(end + 730), daysAgo(end + 365), daysAgo(end)];
+
+  // LIVE transition: on file for 800 days, drift began ~40 days ago → fires.
+  await seedDonor(A, "d_b76_live", "Liv Longtime", { stage: "steward", giftCount: 3, lastGift: daysAgo(495), total: 900, createdAt: iso(Date.now() - 800 * 86400000), owner: "u_a_off", ownerName: "Officer A" });
+  await giveHistory("d_b76_live", yearlyEnding(495), 300);
+  // HISTORY: identical pattern, but the donor was imported TODAY — the drift
+  // predates our knowing them. Must not fire (the BUILD-25 guarantee).
+  await seedDonor(A, "d_b76_hist", "Hist Imported", { stage: "steward", giftCount: 3, lastGift: daysAgo(495), total: 900, owner: "u_a_off", ownerName: "Officer A" });
+  await giveHistory("d_b76_hist", yearlyEnding(495), 300);
+  // MEDIUM confidence (2 gifts): never fires — a bad flag costs more than a missed one.
+  await seedDonor(A, "d_b76_med", "Medium Mel", { stage: "steward", giftCount: 2, lastGift: daysAgo(550), total: 800, createdAt: iso(Date.now() - 1200 * 86400000), owner: "u_a_off", ownerName: "Officer A" });
+  await giveHistory("d_b76_med", [daysAgo(975), daysAgo(550)], 400);
+
+  clearMail();
+  await api("POST", "/workflows/run-sweeps", tA);
+  ok("B76.1: live-transition drifting donor fires ONCE",
+    await waitFor(async () => (await runCountWf(wfDrift.id)) === 1), await runCountWf(wfDrift.id));
+  const driftTask = await q(`SELECT title, assigned_to FROM tasks WHERE org_id=$1 AND donor_id='d_b76_live'`, [A]);
+  ok("B76.1: the task went to the assigned officer", driftTask.length === 1 && driftTask[0].assigned_to === "u_a_off", driftTask);
+  ok("B76.1: the task title carries the donor's OWN pattern, not system language",
+    /Liv Longtime is drifting — /.test(driftTask[0]?.title || "") && /Nothing for/.test(driftTask[0]?.title || "")
+    && !/ratio|overdue/i.test(driftTask[0]?.title || ""), driftTask[0]?.title);
+  ok("B76.1: imported-already-drifting donor fired NOTHING (history, not an event)",
+    (await q(`SELECT COUNT(*)::int n FROM workflow_runs WHERE workflow_id=$1 AND donor_id='d_b76_hist'`, [wfDrift.id]))[0].n === 0);
+  ok("B76.1: medium-confidence donor fired NOTHING",
+    (await q(`SELECT COUNT(*)::int n FROM workflow_runs WHERE workflow_id=$1 AND donor_id='d_b76_med'`, [wfDrift.id]))[0].n === 0);
+
+  // Idempotent under a PARALLEL re-fire (the A2 discipline).
+  await Promise.all([api("POST", "/workflows/run-sweeps", tA), api("POST", "/workflows/run-sweeps", tA)]);
+  await sleep(300);
+  ok("B76.1: two concurrent sweeps → still exactly one run/task",
+    (await runCountWf(wfDrift.id)) === 1 && (await taskCount(A, "d_b76_live")) === 1,
+    { runs: await runCountWf(wfDrift.id), tasks: await taskCount(A, "d_b76_live") });
+  ok("B76/C.2: no donor mail left the drift fire (internal task only)",
+    mailTo("d_b76_live@wfe.local").length === 0, allMail().map(m => m.body?.to));
+
+  // ── pledge_due_soon ──
+  await seedDonor(A, "d_b76_pl", "Pia Pledger", { stage: "steward", owner: "u_a_off", ownerName: "Officer A" });
+  await q(`INSERT INTO pledges (id,org_id,donor_id,amount,due_date,status) VALUES ('pl_b76_soon',$1,'d_b76_pl',1000,$2,'open')`, [A, daysAgo(-10)]);
+  await q(`INSERT INTO gifts (id,org_id,donor_id,amount,date,pledge_id) VALUES ('g_b76_part',$1,'d_b76_pl',400,$2,'pl_b76_soon')`, [A, daysAgo(20)]);
+  await q(`INSERT INTO pledges (id,org_id,donor_id,amount,due_date,status) VALUES ('pl_b76_far',$1,'d_b76_pl',500,$2,'open')`, [A, daysAgo(-40)]);
+  await q(`INSERT INTO pledges (id,org_id,donor_id,amount,due_date,status) VALUES ('pl_b76_done',$1,'d_b76_pl',200,$2,'fulfilled')`, [A, daysAgo(-5)]);
+  await api("POST", "/workflows/run-sweeps", tA);
+  ok("B76.3: the due-soon open pledge fires ONCE",
+    await waitFor(async () => (await runCountWf(wfPledge.id)) === 1), await runCountWf(wfPledge.id));
+  const plTask = await q(`SELECT title, assigned_to FROM tasks WHERE org_id=$1 AND donor_id='d_b76_pl'`, [A]);
+  ok("B76.3: task to the officer, carrying the OUTSTANDING amount ($600, not the $1,000 pledged)",
+    plTask.length === 1 && plTask[0].assigned_to === "u_a_off" && /\$600/.test(plTask[0].title), plTask);
+  ok("B76.3: a pledge outside the lead window fired NOTHING",
+    (await q(`SELECT COUNT(*)::int n FROM workflow_runs WHERE workflow_id=$1 AND entity_id='pl_b76_far'`, [wfPledge.id]))[0].n === 0);
+  ok("B76.3: a fulfilled pledge fired NOTHING",
+    (await q(`SELECT COUNT(*)::int n FROM workflow_runs WHERE workflow_id=$1 AND entity_id='pl_b76_done'`, [wfPledge.id]))[0].n === 0);
+  await api("POST", "/workflows/run-sweeps", tA);
+  await sleep(200);
+  ok("B76.3: a second sweep is a no-op (dedup per pledge+due_date)",
+    (await runCountWf(wfPledge.id)) === 1 && (await taskCount(A, "d_b76_pl")) === 1);
+
+  // ── major_gift_alert tuning: the honest suggestion from the org's own file ──
+  // In org B (its gift ledger is CLEAN — the hand-computed expectation must
+  // own its entire input set, and org A has a suite's worth of gifts by now).
+  await seedDonor(B, "d_b76_p95", "Percy Percentile", {});
+  const listNoData = await api("GET", "/workflows", tB).then(r => r.body);
+  ok("B76.2: an org with under 20 gifts in the year gets NO suggestion (never invent one)",
+    wfByKey(listNoData, "major_gift_alert").suggestedThreshold === null,
+    wfByKey(listNoData, "major_gift_alert").suggestedThreshold);
+  const amounts = Array.from({ length: 40 }, (_, i) => (i + 1) * 25); // $25…$1,000
+  for (let i = 0; i < amounts.length; i++)
+    await q(`INSERT INTO gifts (id,org_id,donor_id,amount,date) VALUES ($1,$2,'d_b76_p95',$3,$4)`,
+      ["g_b76_p95_" + i, B, amounts[i], daysAgo(30 + i)]);
+  const listSug = await api("GET", "/workflows", tB).then(r => r.body);
+  const mga = wfByKey(listSug, "major_gift_alert");
+  // Hand-computed percentile_cont(0.95) over 25..1000 step 25: rank = 0.95*(40-1)+1
+  // = 38.05 → 950 + 0.05*25 = 951.25 → rounded to the $50 step = 950.
+  ok("B76.2: suggestedThreshold = the hand-computed 95th percentile of the org's own year ($950)",
+    mga.suggestedThreshold === 950, mga.suggestedThreshold);
+  ok("B76.2: the suggestion never silently changes the config",
+    (mga.config.threshold ?? 1000) === 1000, mga.config);
 
   await wipe(A); await wipe(B);
   mock.close();

@@ -146,7 +146,7 @@ function assessDrift(gifts, today) {
   // ── seasonal cluster: month first, then calendar quarter ────────────────
   const seasonal = detectSeasonalCluster(events);
 
-  let state, overdueRatio, expectedNext, basis;
+  let state, overdueRatio, expectedNext, basis, driftStartDate = null;
   const lapseBoundaryDays = Math.min(DRIFT.LAPSE_RATIO * (seasonal ? 365 : cadence), DRIFT.LAPSE_MAX_DAYS);
 
   if (seasonal) {
@@ -165,6 +165,9 @@ function assessDrift(gifts, today) {
     if (daysSinceLast > lapseBoundaryDays) state = "lapsed";
     else if (daysPastWindow != null && daysPastWindow > DRIFT.SEASONAL_GRACE_DAYS) state = "drifting";
     else state = "ok";
+    // The first civil day the state became (or becomes) drifting — the
+    // quiet_past_pattern sweep's live-transition guard reads this.
+    driftStartDate = orgTime.addDays(windowClose, DRIFT.SEASONAL_GRACE_DAYS + 1);
   } else {
     basis = "interval";
     expectedNext = orgTime.addDays(last.date, Math.round(cadence));
@@ -173,6 +176,8 @@ function assessDrift(gifts, today) {
     if (daysSinceLast > lapseBoundaryDays) state = "lapsed";
     else if (overdueRatio > DRIFT.DRIFT_THRESHOLD && pastExpected >= DRIFT.MIN_OVERDUE_DAYS) state = "drifting";
     else state = "ok";
+    driftStartDate = orgTime.addDays(last.date,
+      Math.max(Math.floor(cadence * DRIFT.DRIFT_THRESHOLD) + 1, Math.ceil(cadence) + DRIFT.MIN_OVERDUE_DAYS));
   }
 
   // ── confidence — a bad flag costs more than a missed one ────────────────
@@ -186,7 +191,7 @@ function assessDrift(gifts, today) {
     state, confidence, basis, events: n,
     cadenceDays: seasonal ? 365 : (cadence != null ? Math.round(cadence) : null),
     intervalCv: cv != null ? Math.round(cv * 100) / 100 : null,
-    daysSinceLast, overdueRatio, expectedNext,
+    daysSinceLast, overdueRatio, expectedNext, driftStartDate,
     lastGiftDate: last.date, firstGiftDate: first.date,
     valueAtRisk: Math.round(valueAtRisk * 100) / 100,
     seasonal: seasonal ? { kind: seasonal.kind, month: seasonal.month || null, quarter: seasonal.quarter || null, years: seasonal.years } : null,
