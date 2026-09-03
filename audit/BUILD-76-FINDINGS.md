@@ -146,6 +146,34 @@ every call site; drift.js itself does pure civil-date arithmetic on
 
 ## PART 3 — PROOF (record kept as parts land)
 
+- **3.1 / 3.3** — tests/drift.test.js (72, in run-all): every named case
+  through the real import path; the BUILD-72 invariant balanced on the
+  drift fixture file; manual entry clears with double-tap-safe idempotency.
+- **3.2 — the LIVE drill**: `scripts/build76-drift-drill.js` (SELF_REFUSING,
+  classified in script-guards) against REAL Stripe test mode with
+  `stripe listen` — **21/21** (docs/drift/stripe-drill-2026-09-03.log).
+  Live-proven: a real charge clears list+badge and drops the headline by
+  exactly the donor's value at risk; the FIRST charge of a new subscription
+  through REAL Checkout (Playwright completes the 4242 card) lands as sub
+  row + gift; a failed first recurring charge (real invoice.payment_failed)
+  creates the past_due sub row and the donor is EXCLUDED from drift; a real
+  refund puts the flag straight back. Drill gotchas recorded in
+  docs/drift/README.md (3-arg stripeAccount retrieve; a reused test
+  connected account must be released from earlier drill orgs or
+  event.account resolves into the first run's org).
+  The exclusion status set was widened during the drill: 'recovered' and
+  'paused' subscriptions also exclude (billing again / deliberately paused —
+  neither is quiet drift); only canceled/lost return a donor to voluntary
+  cadence.
+- **3.4** — computed on read, recorded above; the drill proved the property
+  live in both directions (webhook in, refund out).
+- **3.5 — the walk**: docs/drift/WALK.md + walk-*.png (1440/390, after 8pm
+  in the walked org's own timezone). All ten reasons pass the
+  say-it-out-loud test. One tension noted for BUILD-77: the fixed-365 stage
+  pill (`Lapsed`) and the drift badge can appear together on a record —
+  both true, deliberately separate vocabularies (D.3 keeps LAPSE_DAYS
+  untouched), but worth a label softening later.
+
 ## PART 4 — LOGGING AS A BYPRODUCT (decisions)
 
 - Marking a drift row done expands ONE inline line ("What happened?") in the

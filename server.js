@@ -13591,8 +13591,13 @@ async function computeDriftForDonors(orgId, { donorIds = null } = {}) {
              FROM gifts g JOIN donors d ON d.id = g.donor_id
             WHERE g.org_id = ? AND d.deleted_at IS NULL${idFilter}
             GROUP BY g.donor_id`, [orgId, ...idParams]),
+    // Every status that means "this donor is ON a subscription": active,
+    // failing (past_due/recovering — the failed-payment path owns those),
+    // recovered (billing again), and paused (a deliberate, known state with
+    // its own portal-drift signal — not QUIET drift). Only canceled/lost
+    // return a donor to voluntary cadence.
     query(`SELECT DISTINCT donor_id FROM recurring_subscriptions
-            WHERE org_id = ? AND status IN ('active','past_due','recovering')`, [orgId]),
+            WHERE org_id = ? AND status IN ('active','past_due','recovering','recovered','paused')`, [orgId]),
     query(`SELECT DISTINCT donor_id FROM pledges WHERE org_id = ? AND status = 'open'`, [orgId]),
     // Last meaningful contact — powers HANDLED (the list stops resurfacing
     // someone already called; the badge is untouched, they are still drifting).
