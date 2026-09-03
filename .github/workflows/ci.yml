@@ -60,7 +60,7 @@ jobs:
                                       # CI still runs the FULL battery — no suite selection here.
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: actions/setup-node@v4
         with:
@@ -136,7 +136,7 @@ jobs:
       group: deploy-main
       cancel-in-progress: false
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: actions/setup-node@v4
         with:
@@ -204,7 +204,7 @@ jobs:
       VERCEL_ORG_ID: team_bmpIjp9a9Cji8y2NqHsEuewv
       VERCEL_PROJECT_ID: prj_OCO0p927wc7CszoQS9PEEnDg7mIy
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Deploy to Vercel
         run: |
