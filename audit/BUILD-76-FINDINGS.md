@@ -187,6 +187,36 @@ every call site; drift.js itself does pure civil-date arithmetic on
   trailing 30 days) snapshots into `metric_snapshots` so BUILD-77 can see
   whether the loop works on the pilot.
 
+## PART 5 — OFFICER vs OFFICER (the decided visibility, asserted)
+
+tenant-matrix §8 (matrix now 43): two officers in one org, each with a
+portfolio. **The decision, written down rather than left to the accident:**
+
+- **Donor DATA is org-shared.** Any staff member reads any donor record,
+  gifts, notes, moves — that IS the turnover thesis ("everything she knew
+  is written down" — for the ORGANIZATION). Officer-level data silos would
+  make the pitch false. Asserted deliberately (officer 1 reads officer 2's
+  donor and their logged notes, 200).
+- **Portfolio VIEWS are officer-scoped and enforced server-side.** The
+  pipeline board downgrades a staff scope=all / foreign assignedTo to the
+  officer's own portfolio (BUILD-31's rule, now matrix-asserted with real
+  second-officer fixtures); the whole my-stats family (count + all five
+  breakdowns) never carries another officer's rows. These are the
+  performance/compensation-tracking surfaces the brief names as the trust
+  question — they stay per-officer. The admin oversight view still sees
+  both portfolios (the Team-tier whole-shop forecast, by design).
+- **The day view's ?scope=all stays open to staff** — small-shop
+  convenience, deliberate.
+- **Drift is org-wide, and a colleague may clear a drift item for another
+  officer's donor** — the actor stamp records who did it; accountability,
+  not a wall.
+
+Self-inflicted incident during this part, worth remembering: editing +
+manually running tenant-matrix WHILE a pre-push battery was mid-flight
+collided on the suite's fixed in-process port (:5697) and red-lit the
+Part 7 push. Nothing was wrong with the code; the rule is one battery at a
+time on this machine.
+
 ## PART 7 — THREE CANNED AUTOMATIONS (decisions)
 
 - **`quiet_past_pattern`** rides THE drift engine, not a second 1.5×-median

@@ -466,6 +466,84 @@ function sign(payload, opts) { return jwt.sign(payload, process.env.JWT_SECRET, 
   });
   ok("import of a B-only email at A treats it as NEW — no B hint in the result", imp.status === 200 && !imp.text.toLowerCase().includes("zzmarkb"), imp.text.slice(0, 200));
 
+  // ── §8 · OFFICER vs OFFICER, inside one org (BUILD-76 Part 5) ─────────────
+  // The admin-token battery above proves org A cannot touch org B. It says
+  // nothing about officer A vs officer B INSIDE one org — the BUILD-75 worry
+  // paragraph's exact gap. THE DECISION, written down and asserted rather
+  // than left to accident:
+  //
+  //   · Donor DATA is ORG-SHARED — any staff member reads any donor record,
+  //     gifts, notes, moves. That IS the product's turnover thesis ("if your
+  //     director leaves, everything she knew is written down" — written down
+  //     for the ORGANIZATION, not siloed per officer). Officer-level data
+  //     silos would make the pitch false.
+  //   · Portfolio VIEWS are officer-scoped and ENFORCED SERVER-SIDE, not
+  //     hidden client-side: the pipeline board (BUILD-31 — a non-admin's
+  //     scope=all / foreign assignedTo is downgraded to their own
+  //     portfolio) and the my-stats family (own numbers by construction).
+  //     Performance-tracking surfaces are the trust question the brief
+  //     names, and they are the ones that stay per-officer.
+  //   · The day view's org-wide opt-in (?scope=all) stays open to staff —
+  //     a small-shop convenience, deliberately.
+  //   · Drift is org-wide (the file's truth, not an officer's), and a
+  //     colleague may clear a drift item for another officer's donor — the
+  //     actor stamp records WHO, which is accountability, not a wall.
+  console.log("\n— §8 · officer vs officer, inside one org —");
+  await q(`INSERT INTO users (id,org_id,email,password_hash,name,role) VALUES ($1,$2,'off2-a@mx.local',$3,'Officer Two','staff')`,
+    [`u_${A}_off2`, A, bcrypt.hashSync("loadtest1234", 10)]);
+  await q(`INSERT INTO donors (id,org_id,name,email,status,stage,total_giving,gift_count,last_gift_date,assigned_to,assigned_to_name,notes,tags)
+           VALUES ($1,$2,'Portfolio Two Donor','p2donor@mx.local','mid','cultivate',777,1,$3,$4,'Officer Two','officer two private-ish note','[]')`,
+    [`d_${A}_p2`, A, TODAY, `u_${A}_off2`]);
+  await q(`INSERT INTO interactions (id,org_id,donor_id,type,note,date,created_by,logged_by_name) VALUES ($1,$2,$3,'call','p2 call note',$4,$5,'Officer Two')`,
+    [`i_${A}_p2`, A, `d_${A}_p2`, TODAY, `u_${A}_off2`]);
+  const off1 = aStaff; // u_${A}_staff owns d_${A}
+
+  // The enforced wall: the pipeline board downgrades a staff scope=all /
+  // foreign assignedTo to the officer's OWN portfolio.
+  for (const [label, path] of [
+    ["scope=all", "/pipeline?scope=all"],
+    ["assignedTo=officer2", `/pipeline?assignedTo=u_${A}_off2`],
+  ]) {
+    const res = await mfetch("GET", path, off1);
+    const cols = JSON.parse(res.text).columns || {};
+    const cards = Object.values(cols).flat();
+    ok(`§8 pipeline ${label}: staff downgraded to OWN portfolio (no officer-2 cards)`,
+      res.status === 200 && cards.every(c => c.assignedTo !== `u_${A}_off2`) && !cards.some(c => c.donorId === `d_${A}_p2`),
+      cards.map(c => [c.donorId, c.assignedTo]));
+  }
+  const adminBoard = JSON.parse((await mfetch("GET", "/pipeline?scope=all", aAdmin)).text);
+  ok("§8 pipeline: the ADMIN oversight view still sees both portfolios (the Team-tier whole-shop forecast)",
+    Object.values(adminBoard.columns || {}).flat().some(c => c.donorId === `d_${A}_p2`)
+    && Object.values(adminBoard.columns || {}).flat().some(c => c.donorId === `d_${A}`), null);
+
+  // my-stats: officer 1's numbers never include officer 2's portfolio.
+  const myStats = JSON.parse((await mfetch("GET", "/dashboard/my-stats", off1)).text);
+  ok("§8 my-stats: portfolioCount is the officer's OWN (1, not 2)", myStats.portfolioCount === 1, myStats.portfolioCount);
+  for (const bk of ["pipeline", "lapsed", "gifts", "visits", "moves"]) {
+    const res = await mfetch("GET", `/dashboard/my-stats/${bk}/breakdown`, off1);
+    ok(`§8 my-stats/${bk} breakdown: no officer-2 rows`,
+      res.status === 200 && !res.text.includes(`d_${A}_p2`) && !res.text.includes("Portfolio Two Donor"), res.text.slice(0, 120));
+  }
+
+  // The DECIDED sharing: officer 1 reads officer 2's donor + their notes.
+  const shared = await mfetch("GET", `/donors/d_${A}_p2`, off1);
+  ok("§8 DECISION: donor records are org-shared — officer 1 reads officer 2's donor (200)", shared.status === 200, shared.status);
+  ok("§8 DECISION: …including the logged notes (the turnover thesis)",
+    shared.text.includes("p2 call note"), null);
+
+  // The day view: mine is mine; org-wide is a deliberate opt-in for staff.
+  const mineQ = await mfetch("GET", "/dashboard/today?scope=mine", off1);
+  ok("§8 today?scope=mine: no officer-2 donors", mineQ.status === 200 && !mineQ.text.includes(`d_${A}_p2`), null);
+  const allQ = await mfetch("GET", "/dashboard/today?scope=all", off1);
+  ok("§8 DECISION: today?scope=all stays open to staff (small-shop convenience)", allQ.status === 200, allQ.status);
+
+  // Drift: org-wide by decision; a colleague's done is recorded to THEM.
+  const dDone = await mfetch("POST", `/drift/d_${A}_p2/done`, off1, { note: "covered for officer two" });
+  ok("§8 DECISION: drift-done on a colleague's donor is allowed (shared workspace)", [200, 201].includes(dDone.status), dDone.status);
+  const doneRow = await q(`SELECT created_by FROM interactions WHERE org_id=$1 AND donor_id=$2 AND metadata->>'via'='drift_done'`, [A, `d_${A}_p2`]);
+  ok("§8 …and the actor stamp records WHO actually did it (accountability, not a wall)",
+    doneRow.length === 1 && doneRow[0].created_by === `u_${A}_staff`, doneRow);
+
   // ── §5 · org B is byte-identical after the whole battery ───────────────────
   console.log("\n— §5 · B-integrity: the battery wrote nothing across the wall —");
   const bAfter = await hashOrgB();
