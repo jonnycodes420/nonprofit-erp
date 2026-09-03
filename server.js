@@ -12981,10 +12981,21 @@ if (!backgroundTicksDisabled()) {
 // nothing reserved, so if tasks appear later the same morning it still goes.
 // Gated to a morning window so it reads as a morning brief, not a 2 AM ping.
 // Reuses the existing 5-min tick — NOT a second scheduler.
-const DAILY_REMINDER_WINDOW = [6, 12]; // send when the local hour is in [6, 12)
-function inDailyReminderWindow(now) { const h = now.getHours(); return h >= DAILY_REMINDER_WINDOW[0] && h < DAILY_REMINDER_WINDOW[1]; }
-function localDateKey(now) {
-  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+const DAILY_REMINDER_WINDOW = [6, 12]; // send when the ORG-local hour is in [6, 12)
+// ORG_TZ_SEAM_OK (BUILD-75 A.2) — the window and the day are the ORGANIZATION's,
+// per org inside the loop. The old form read the PROCESS clock (UTC in prod):
+// the documented "morning window [6,12) local" was 6am-noon UTC, and Phase 0.2
+// measured the result — every daily_tasks send in production had fired at
+// 02:00 America/New_York. One UTC `today` also served as both the task filter
+// and the digest_sends dedup key for every org regardless of timezone.
+// Transition note (recorded in audit/BUILD-75-FINDINGS.md §0.2 before this was
+// written): because every recorded send fired at an hour where the UTC and
+// org-local civil dates agree, the org-local key on the changeover day is
+// string-identical to the UTC key already reserved — no double send, no skipped
+// day, no migration. Policy if a future org's window ever spans a UTC-date
+// disagreement: skip, never double.
+function inDailyReminderWindow(orgClock) {
+  return orgClock.hour >= DAILY_REMINDER_WINDOW[0] && orgClock.hour < DAILY_REMINDER_WINDOW[1];
 }
 
 async function composeDailyTaskReminder(orgId, userId, today) {
@@ -13042,11 +13053,14 @@ async function runDailyTaskRemindersForOrg(org, { today, send = true }) {
 
 async function processDailyTaskReminders(now = new Date(), { force = false } = {}) {
   try {
-    if (!force && !inDailyReminderWindow(now)) return;
-    const today = localDateKey(now);
-    const orgs = await query("SELECT id, name FROM orgs WHERE onboarding_complete=1", []);
+    // ORG_TZ_SEAM_OK — window and day are computed PER ORG (see the note on
+    // DAILY_REMINDER_WINDOW above). Two orgs in different timezones are in
+    // their morning at different instants, and "today" differs between them.
+    const orgs = await query("SELECT id, name, timezone FROM orgs WHERE onboarding_complete=1", []);
     for (const org of orgs) {
-      await runDailyTaskRemindersForOrg(org, { today }).catch(e => console.error("[daily-tasks]", org.id, e.message));
+      const clock = orgTime.orgClock(org, now);
+      if (!force && !inDailyReminderWindow(clock)) continue;
+      await runDailyTaskRemindersForOrg(org, { today: clock.date }).catch(e => console.error("[daily-tasks]", org.id, e.message));
     }
   } catch (e) { console.error("[daily-tasks] processDailyTaskReminders:", e.message); }
 }
@@ -13059,9 +13073,9 @@ if (!backgroundTicksDisabled()) {
 // reminder for the caller's org NOW (ops/test hook, same bar as /digests/run).
 // {today?, dryRun?} pin the date / preview without sending.
 app.post("/digests/run-daily", requireAuth, requireAdmin, wrap(async (req, res) => {
-  const [org] = await query("SELECT id, name FROM orgs WHERE id=?", [req.user.orgId]);
+  const [org] = await query("SELECT id, name, timezone FROM orgs WHERE id=?", [req.user.orgId]);
   if (!org) return res.status(404).json({ error: "Org not found" });
-  const today = (req.body && req.body.today) || localDateKey(new Date());
+  const today = (req.body && req.body.today) || orgToday(org); // ORG_TZ_SEAM_OK (BUILD-75 A.3)
   const out = await runDailyTaskRemindersForOrg(org, { today, send: !(req.body && req.body.dryRun) });
   res.json({ today, ...out });
 }));
