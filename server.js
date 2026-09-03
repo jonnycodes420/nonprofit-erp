@@ -655,18 +655,25 @@ app.post("/stripe/webhook", express.raw({ type: "application/json" }), async (re
           if (orgRow.length) {
             const orgId = orgRow[0].id;
             const donorName = session.metadata?.donor_name || email;
-            let donorRow = await query("SELECT id FROM donors WHERE org_id=$1 AND email ILIKE $2", [orgId, email]);
-            let donorId;
-            if (donorRow.length) {
-              donorId = donorRow[0].id;
-            } else {
-              donorId = "d_" + uuid().slice(0, 8);
+            // BUILD-75 — the SAME per-(org,email) advisory lock the
+            // payment_intent.succeeded handler uses (BUILD-27 scenario 2).
+            // Stripe delivers checkout.session.completed and the PI event
+            // CONCURRENTLY for a new subscription's first charge; this
+            // resolve-or-create was the one bare check-then-insert left on
+            // the pair, so the race minted TWO donor rows for one brand-new
+            // donor (caught as a ~1-in-3 flake of webhook-ordering's "Q2
+            // simultaneous" case — a flaky race test is a race, not a flake).
+            const donorId = await withAdvisoryLock(`donor:${orgId}:${(email || "").toLowerCase()}`, async () => {
+              const dr = await query("SELECT id FROM donors WHERE org_id=$1 AND email ILIKE $2", [orgId, email]);
+              if (dr.length) return dr[0].id;
+              const newId = "d_" + uuid().slice(0, 8);
               await run(
                 `INSERT INTO donors (id, org_id, name, email, status, stage, total_giving, gift_count)
                  VALUES ($1,$2,$3,$4,'active','steward',0,0)`,
-                [donorId, orgId, donorName, email.toLowerCase()]
+                [newId, orgId, donorName, email.toLowerCase()]
               );
-            }
+              return newId;
+            });
             const frequency = session.metadata?.frequency || "monthly";
             await run(
               `UPDATE donors SET stripe_subscription_id=$1, stripe_subscription_status='active', stripe_customer_id=$2,
