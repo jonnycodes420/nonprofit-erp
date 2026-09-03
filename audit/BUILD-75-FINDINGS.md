@@ -435,3 +435,52 @@ billing traffic would be verification theater.
 3. Get one real donor file — every correctness claim in this build is about
    the product agreeing with itself; drift detection has never met a real
    export.
+
+---
+
+## VERIFICATION (the build's own checklist, answered)
+
+1. **Phase 0's two audits committed before any code changes** — `737a52d`,
+   the build's first commit.
+2. **Every new guard proven to fail on a tree where the defect exists** —
+   date-seam §8 (four constructed trees), actor-stamp §2 (defective source),
+   tenant-matrix §1 (synthetic uncovered route). And the route-coverage gate
+   was proven on a REAL route: C.3's `DELETE /users/:id` tripped the
+   inventory-drift check the moment it existed, forcing the regenerated
+   inventory + resolver into the same commit.
+3. **The date audit reports two axes and never sums them** — §5 expressions
+   85 (from 97), §7 helpers/call-sites 0/0 (from 10/72), pinned separately.
+4. **Route-coverage failure demonstrated** — item 2's real-route trip, plus
+   the permanent synthetic proof inside the suite.
+5. **`landing-prod-verify.js` 29/29** against the deployed page after full
+   convergence.
+6. **Full battery green, run once per push** by the pre-push gate; the final
+   push's battery ran on the exact deployed tree. CI reproduced it (the one
+   CI-only failure the build produced — the fresh-database migration
+   ordering — was itself a real bug the warm scratch DB had been hiding,
+   fixed and proven on a genuinely fresh database).
+7. **`node scripts/status.js` aligned** — local == origin == prod backend ==
+   prod frontend == `121a7d1`.
+
+`BLOCKED-build75.md` was never needed: no decision arose that touched money,
+a donor communication, a tax document, or what a date means without the
+brief or the measured data answering it (the one candidate — the digest
+transition day — was answered by Phase 0.2's observed reality and recorded
+before the code was written).
+
+## THE WORRY PARAGRAPH
+
+Three things to keep an eye on. (1) The tenant matrix probes with the
+ADMIN token on the theory that the strongest in-org credential proves the
+wall for everyone — but a staff-scoped route family that org-scopes on
+`assigned_to` rather than `org_id` would pass this battery while leaking
+between OFFICERS; nothing here tests officer-vs-officer visibility inside
+one org (BUILD-31's server-side downgrade covers the known instance).
+(2) `created_by_name` freezes the login EMAIL, not the display name — right
+for identity, slightly wrong for display; the day a "logged by" line ships
+in the UI it should JOIN users and fall back to the frozen email, and if
+that JOIN gets skipped the UI will read emails at people. (3) The
+CI-vs-scratch gap bit twice in one build (fresh-DB migration ordering, the
+CORS/VITE local-dist footguns) — the scratch stack's warmth keeps hiding
+first-boot classes, and a periodic fresh-DB boot check in CI would catch
+them before a push does.
