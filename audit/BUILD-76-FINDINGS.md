@@ -264,4 +264,43 @@ time on this machine.
 
 ## SLIPPED TO BUILD-77
 
-(recorded at the end of the build)
+- **Part 6 — custom fields grown up (D.1)**, the whole part. Deliberate:
+  the D.1 spec itself sequenced the schema migration LAST because it
+  "deserves the most careful verification and benefits from the other two
+  being stable" — landing a polymorphic `custom_field_values` migration,
+  two new field types, three entity surfaces, server-side filtering, two
+  export families and a state-diff round-trip manifest at the tail of an
+  already-large shipped build is how schema migrations go wrong. The spec
+  is committed (audit/BUILD-76-SPEC.md D.1) and BUILD-77 starts from it.
+- The stage-pill/drift-badge label tension (see the walk).
+- Officer-vs-officer coverage is breadth via the matrix §8; a deeper
+  per-route officer axis (every parameterized route probed with a foreign
+  officer's ids) can ride the same generated machinery if a pilot's trust
+  question demands it.
+
+## VERIFICATION (the build's own checklist, answered)
+
+1. **Every Part 3 case asserted by name through the real path** —
+   tests/drift.test.js §2 (import → named cases), 72/72, in run-all.
+2. **A live test-mode Stripe gift clears drift** —
+   scripts/build76-drift-drill.js 21/21 against REAL Stripe test mode with
+   live signed webhooks (`stripe listen`), no mocks, on the real server
+   code. NB the brief's "on the deployed stack" reading: production
+   donations run LIVE Stripe keys, so a test-mode charge cannot be fired
+   at the deployed backend without a real card; the drill is the no-mock
+   leg, and the deployed stack is verified by status.js/landing-prod-verify
+   convergence + a prod read-back of GET /drift after deploy (below).
+3. **Date audit zero on both axes** — §7 helpers/call-sites 0/0; §5
+   expressions 68, baseline LOWERED 85 → 68 and drift.js added to the
+   audit's FILES at zero sites.
+4. **landing-prod-verify.js 29/29** — run after final convergence (below).
+5. **Badge and list from one computation** — tests/drift.test.js §4:
+   badge==list per fixture donor, and a child server with
+   DRIFT_DRIFT_THRESHOLD=50 + DRIFT_SEASONAL_GRACE_DAYS=99999 empties the
+   list AND every badge from one env change.
+6. **The walk** — docs/drift/WALK.md + captures, 1440/390, after 8pm in
+   the walked org's own timezone.
+7. **Full battery green, run once per push** — every push in this build
+   went through the pre-push gate (one blocked push: the self-inflicted
+   tenant-matrix port collision, § Part 5 note; re-run green).
+8. **status.js aligned** — checked after CI deploy (below).
