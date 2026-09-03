@@ -25,7 +25,7 @@ const fs = require("fs");
 const path = require("path");
 
 const ROOT = path.join(__dirname, "..");
-const FILES = ["server.js", "db.js"];
+const FILES = ["server.js", "db.js", "drift.js"];   // drift.js added BUILD-76 — pure module, must stay at zero sites
 
 // Civil-date columns, from information_schema (DATE, or TEXT holding YYYY-MM-DD).
 const CIVIL_COLUMNS = [

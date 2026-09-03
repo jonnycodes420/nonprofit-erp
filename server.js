@@ -89,6 +89,12 @@ const orgTime = require("./orgTime");
 // replaces were each a chance to be wrong in the same direction.
 const { toCents, toDollars, parseMoneyOrThrow, hasCents } = require("./money");
 const { orgToday, orgIsOverdue, orgDaysOverdue, orgPeriodBounds, orgFiscalYearStart, orgReportYear } = orgTime;
+// BUILD-76 Part 1 — THE DRIFT ENGINE. One pure module defines "drifting"
+// (past the donor's OWN expected next gift, not yet lapsed); every surface —
+// the home list, the headline dollars, the funnel row, every badge — reads
+// computeDriftForDonors() below, which is the only caller. drift.js never
+// reads a clock; `today` goes in through the org-timezone seam.
+const driftEngine = require("./drift");
 
 // Resolve an org's timezone for the seam. Cached briefly: every date-bounded
 // read needs it, and it changes about once in an organization's lifetime.
@@ -3427,20 +3433,24 @@ function buildDonorListFilter(req) {
 // are honored in both modes.
 app.get("/donors", requireAuth, wrap(async (req, res) => {
   const { whereSql, params, orderBy } = buildDonorListFilter(req);
-  const mapDonor = tpMap => d => ({
+  // BUILD-76 Part 2 — every donor row carries the drift badge field, computed
+  // fresh by the same function as the home list (one computation, one truth).
+  const mapDonor = (tpMap, driftMap) => d => ({
     ...d,
     tags: JSON.parse(d.tags || "[]"),
     last_touchpoint: tpMap[d.id] || null,
     matching_gift: lookupMatchingGift(d.employer),
+    drift: driftBadgeField(driftMap.get(d.id)),
   });
 
   if (req.query.limit === undefined) {
-    const [donors, touchpoints] = await Promise.all([
+    const [donors, touchpoints, { map: driftMap }] = await Promise.all([
       query(`SELECT * FROM donors WHERE ${whereSql} ORDER BY ${orderBy}`, params),
       query("SELECT donor_id, MAX(date) AS last_touchpoint FROM interactions WHERE org_id = ? GROUP BY donor_id", [req.user.orgId]),
+      computeDriftForDonors(req.user.orgId),
     ]);
     const tpMap = Object.fromEntries(touchpoints.map(r => [r.donor_id, r.last_touchpoint]));
-    return res.json(donors.map(mapDonor(tpMap)));
+    return res.json(donors.map(mapDonor(tpMap, driftMap)));
   }
 
   const limit  = Math.min(Math.max(parseInt(req.query.limit, 10) || 50, 1), 200);
@@ -3449,13 +3459,16 @@ app.get("/donors", requireAuth, wrap(async (req, res) => {
     query(`SELECT * FROM donors WHERE ${whereSql} ORDER BY ${orderBy} LIMIT ? OFFSET ?`, [...params, limit, offset]),
     query(`SELECT COUNT(*) AS c FROM donors WHERE ${whereSql}`, params),
   ]);
-  // Touchpoints only for the page's donors — not the org-wide GROUP BY
+  // Touchpoints + drift only for the page's donors — not the org-wide GROUP BY
   const ids = donors.map(d => d.id);
-  const touchpoints = ids.length
-    ? await query("SELECT donor_id, MAX(date) AS last_touchpoint FROM interactions WHERE org_id = ? AND donor_id = ANY(?) GROUP BY donor_id", [req.user.orgId, ids])
-    : [];
+  const [touchpoints, { map: driftMap }] = await Promise.all([
+    ids.length
+      ? query("SELECT donor_id, MAX(date) AS last_touchpoint FROM interactions WHERE org_id = ? AND donor_id = ANY(?) GROUP BY donor_id", [req.user.orgId, ids])
+      : Promise.resolve([]),
+    computeDriftForDonors(req.user.orgId, { donorIds: ids.length ? ids : ["_none_"] }),
+  ]);
   const tpMap = Object.fromEntries(touchpoints.map(r => [r.donor_id, r.last_touchpoint]));
-  res.json({ donors: donors.map(mapDonor(tpMap)), total: parseInt(cnt[0].c, 10) });
+  res.json({ donors: donors.map(mapDonor(tpMap, driftMap)), total: parseInt(cnt[0].c, 10) });
 }));
 
 // Lightweight whole-org list for consumers that need every donor but not the
@@ -3465,7 +3478,7 @@ app.get("/donors", requireAuth, wrap(async (req, res) => {
 // audience counts, AI context builders. Column names match GET /donors so
 // adaptDonor works unchanged on the subset.
 app.get("/donors/summaries", requireAuth, wrap(async (req, res) => {
-  const [donors, touchpoints] = await Promise.all([
+  const [donors, touchpoints, { map: driftMap }] = await Promise.all([
     query(`SELECT id, name, email, phone, stage, status, total_giving, last_gift_date,
                   last_gift_amount, gift_count, assigned_to, assigned_to_name,
                   pending_assignee_invite_id, pending_assignee_name,
@@ -3473,6 +3486,7 @@ app.get("/donors/summaries", requireAuth, wrap(async (req, res) => {
                   employer, stripe_subscription_status
            FROM donors WHERE org_id = ? AND deleted_at IS NULL ORDER BY total_giving DESC, id`, [req.user.orgId]),
     query("SELECT donor_id, MAX(date) AS last_touchpoint FROM interactions WHERE org_id = ? GROUP BY donor_id", [req.user.orgId]),
+    computeDriftForDonors(req.user.orgId),   // BUILD-76 — the shared-state views badge from the same computation
   ]);
   const tpMap = Object.fromEntries(touchpoints.map(r => [r.donor_id, r.last_touchpoint]));
   res.json(donors.map(d => ({
@@ -3480,6 +3494,7 @@ app.get("/donors/summaries", requireAuth, wrap(async (req, res) => {
     tags: JSON.parse(d.tags || "[]"),
     last_touchpoint: tpMap[d.id] || null,
     matching_gift: lookupMatchingGift(d.employer),
+    drift: driftBadgeField(driftMap.get(d.id)),
   })));
 }));
 
@@ -3624,6 +3639,10 @@ app.get("/donors/:id", requireAuth, wrap(async (req, res) => {
   d.interactions = await query("SELECT * FROM interactions WHERE donor_id = ? AND org_id = ? ORDER BY date DESC", [d.id, req.user.orgId]);
   d.gifts = await query("SELECT * FROM gifts WHERE donor_id = ? ORDER BY date DESC", [d.id]);
   d.matching_gift = lookupMatchingGift(d.employer);
+  // BUILD-76 — the donor record shows the drift reason inline; same
+  // computation as the list and every badge.
+  const { map: driftMap } = await computeDriftForDonors(req.user.orgId, { donorIds: [d.id] });
+  d.drift = driftBadgeField(driftMap.get(d.id));
   res.json(d);
 }));
 
@@ -6747,6 +6766,11 @@ app.get("/pipeline", requireAuth, wrap(async (req, res) => {
        ORDER BY donor_id, (NULLIF(due,'')) ASC NULLS LAST`, [orgId]);
   const taskByDonor = Object.fromEntries(nextTasks.map(t => [t.donor_id, { title: t.title, due: t.due }]));
 
+  // BUILD-76 Part 2 — pipeline cards carry the drift badge, same computation
+  // as the home list (scoped to the board's own donors).
+  const boardIds = donors.map(d => d.id);
+  const { map: driftMap } = await computeDriftForDonors(orgId, { donorIds: boardIds.length ? boardIds : ["_none_"] });
+
   const now = Date.now();
   const columns = {}; ALL_PIPELINE_STAGES.forEach(s => { columns[s] = []; });
   let forecastOpen = 0, forecastWeighted = 0, openCount = 0;
@@ -6763,6 +6787,7 @@ app.get("/pipeline", requireAuth, wrap(async (req, res) => {
       assignedTo: d.assigned_to, assignedToName: d.assigned_to_name,
       askAmount: a.ask, openOppCount: a.cnt, stageAge,
       nextTask: taskByDonor[d.id] || null,
+      drift: driftBadgeField(driftMap.get(d.id)),
     });
   }
 
@@ -8352,6 +8377,101 @@ app.get("/dashboard/today", requireAuth, wrap(async (req, res) => {
 
   items.sort((a, b) => b.priority - a.priority);
   res.json(items.slice(0, 10));
+}));
+
+// ── BUILD-76 Part 2 — the Drifting surface ─────────────────────────────────
+// The list the product is named for. High confidence only by default
+// (?includeMedium=1 opts in, and every row carries its labelled confidence —
+// a medium flag is NEVER presented as high); ranked by value at risk,
+// descending; capped at DRIFT.HOME_LIST_CAP (?all=1 lifts the cap for the
+// see-all view). Rows already handled (a meaningful contact inside the
+// snooze window) are filtered from the LIST but stay in the headline —
+// the money is still at risk until a gift lands.
+app.get("/drift", requireAuth, wrap(async (req, res) => {
+  const { orgId } = req.user;
+  const includeMedium = req.query.includeMedium === "1" || req.query.includeMedium === "true";
+  const uncapped = req.query.all === "1" || req.query.all === "true";
+  const { map, today } = await computeDriftForDonors(orgId);
+
+  const drifting = [...map.values()].filter(a => a.state === "drifting");
+  const high = drifting.filter(a => a.confidence === "high");
+  const medium = drifting.filter(a => a.confidence === "medium");
+  const lapsed = [...map.values()].filter(a => a.state === "lapsed");
+
+  // The headline: dollars at risk from drift, in this organisation's own
+  // file — the same sentence the landing page makes. High confidence only:
+  // a number that includes guesses is not a number a director repeats.
+  const atRiskAmount = toDollars(high.reduce((s, a) => s + toCents(a.valueAtRisk), 0));
+
+  const surfaced = (includeMedium ? drifting : high)
+    .filter(a => !a.handled)
+    .sort((x, y) => y.valueAtRisk - x.valueAtRisk);
+  const cap = driftEngine.DRIFT.HOME_LIST_CAP;
+  const row = a => ({
+    donorId: a.donorId, donorName: a.donorName, reason: a.reason,
+    confidence: a.confidence, valueAtRisk: a.valueAtRisk,
+    lastGiftDate: a.lastGiftDate, assignedTo: a.assignedTo, assignedToName: a.assignedToName,
+    basis: a.basis, seasonal: !!a.seasonal,
+  });
+  res.json({
+    today,
+    atRiskAmount,
+    atRiskBasis: "trailing24mo",
+    counts: {
+      driftingHigh: high.length,
+      driftingMedium: medium.length,
+      handled: drifting.filter(a => a.handled).length,
+      lapsed: lapsed.length,
+    },
+    lapsedAmount: toDollars(lapsed.reduce((s, a) => s + toCents(a.valueAtRisk || 0), 0)),
+    cap,
+    total: surfaced.length,
+    list: (uncapped ? surfaced : surfaced.slice(0, cap)).map(row),
+  });
+}));
+
+// BUILD-76 Part 4 — logging as a byproduct. Marking a drift row done asks for
+// ONE line, in the flow; Skip is one keypress. BOTH record the interaction —
+// the call happened either way, which is what makes the donor record read
+// "you called her three weeks ago" and stops the list resurfacing them
+// (HANDLED_SNOOZE_DAYS). A skip is recorded as metadata.skipped, never as
+// nothing — that is what lets log_capture_rate be measured honestly.
+app.post("/drift/:donorId/done", requireAuth, wrap(async (req, res) => {
+  const { orgId, userId } = req.user;
+  const donorRows = await query("SELECT id FROM donors WHERE id = ? AND org_id = ? AND deleted_at IS NULL",
+    [req.params.donorId, orgId]);
+  if (!donorRows.length) return res.status(404).json({ error: "Donor not found" });
+
+  const note = typeof req.body?.note === "string" ? req.body.note.trim() : "";
+  const skipped = note === "";
+  const type = ["call", "meeting", "email", "stewardship"].includes(req.body?.type) ? req.body.type : "call";
+  const userRow = await query("SELECT name FROM users WHERE id=?", [userId]);
+  const org = await orgTz(orgId);
+  const todayStr = orgToday(org);                           // ORG_TZ_SEAM_OK
+  // Idempotent under a double-tap: ONE drift-done per (donor, org-local day,
+  // actor) — the second Save neither duplicates the interaction nor
+  // half-clears. Advisory lock because this is a check-then-insert (the
+  // BUILD-27 primitive; a unique constraint on a JSONB marker is the wrong
+  // tool). A retap that DOES carry a line upgrades the skip in place.
+  const result = await withAdvisoryLock(`driftdone:${orgId}:${req.params.donorId}:${userId}:${todayStr}`, async () => {
+    const existing = await query(
+      `SELECT id FROM interactions WHERE org_id = ? AND donor_id = ? AND created_by = ?
+         AND date = ? AND metadata->>'via' = 'drift_done'`,
+      [orgId, req.params.donorId, userId, todayStr]);
+    if (existing.length) {
+      if (!skipped) await run("UPDATE interactions SET note = ?, metadata = jsonb_set(metadata, '{skipped}', 'false') WHERE id = ?",
+        [note, existing[0].id]);
+      return { id: existing[0].id, deduped: true, status: 200 };
+    }
+    const id = "int_" + uuid().slice(0, 8);
+    await run(
+      "INSERT INTO interactions (id,org_id,donor_id,type,note,date,created_by,logged_by_name,metadata) VALUES (?,?,?,?,?,?,?,?,?)",
+      [id, orgId, req.params.donorId, type, note, todayStr, userId,
+       userRow[0]?.name || "", JSON.stringify({ via: "drift_done", skipped })]
+    );
+    return { id, skipped, status: 201 };
+  });
+  res.status(result.status).json({ id: result.id, skipped: result.skipped, deduped: result.deduped });
 }));
 
 // ── Fundraising goals (home screen goal banner) ─────────────────────────────
@@ -13437,6 +13557,89 @@ async function computeAtRiskCandidates(orgId) {
        AND total_giving >= 5000`,
     [orgId]
   );
+}
+
+// ── BUILD-76 Part 1 — drift, computed for real ──────────────────────────────
+// The ONE integration point over the pure engine in drift.js. Computed on
+// READ, never stored (the Part 3.4 decision, audit/BUILD-76-FINDINGS.md): a
+// gift that lands via webhook or manual entry is reflected the next time any
+// drift surface is read, because every surface calls this fresh. NB
+// computeAtRiskCandidates above is a DIFFERENT, older signal (feeds the
+// at_risk re-engagement EMAIL trigger); it is deliberately untouched — drift
+// is the day-view/badge truth, not a mail trigger.
+//
+// Exclusions (brief §1.4 — what a real file is full of; each has its own
+// assertion in tests/drift.test.js): deceased · do-not-contact · active
+// recurring (a monthly donor's failed card is a failed payment, not drift —
+// status active/past_due/recovering all count as "on subscription") · open
+// pledges (contractual cadence, not voluntary) · single-gift donors (the
+// engine returns not_eligible — no cadence exists).
+async function computeDriftForDonors(orgId, { donorIds = null } = {}) {
+  const org = await orgTz(orgId);
+  const today = orgToday(org);                              // ORG_TZ_SEAM_OK
+  const idFilter = donorIds ? " AND d.id = ANY(?)" : "";
+  const idParams = donorIds ? [donorIds] : [];
+  const [donors, giftAgg, recurringRows, pledgeRows, contactRows] = await Promise.all([
+    query(`SELECT d.id, d.name, d.total_giving, d.deceased, d.do_not_contact,
+                  d.assigned_to, d.assigned_to_name, d.stripe_subscription_status
+             FROM donors d WHERE d.org_id = ? AND d.deleted_at IS NULL${idFilter}`, [orgId, ...idParams]),
+    // One compact row per donor — dates+amounts as parallel arrays, so the
+    // whole org's cadence math is a single round trip, not an N+1.
+    query(`SELECT g.donor_id,
+                  array_agg(g.date::text ORDER BY g.date) AS dates,
+                  array_agg(g.amount ORDER BY g.date) AS amounts
+             FROM gifts g JOIN donors d ON d.id = g.donor_id
+            WHERE g.org_id = ? AND d.deleted_at IS NULL${idFilter}
+            GROUP BY g.donor_id`, [orgId, ...idParams]),
+    query(`SELECT DISTINCT donor_id FROM recurring_subscriptions
+            WHERE org_id = ? AND status IN ('active','past_due','recovering')`, [orgId]),
+    query(`SELECT DISTINCT donor_id FROM pledges WHERE org_id = ? AND status = 'open'`, [orgId]),
+    // Last meaningful contact — powers HANDLED (the list stops resurfacing
+    // someone already called; the badge is untouched, they are still drifting).
+    query(`SELECT donor_id, MAX(date) AS last_contact FROM interactions
+            WHERE org_id = ? AND type IN ${MEANINGFUL_CONTACT_TYPES} GROUP BY donor_id`, [orgId]),
+  ]);
+  const onSubscription = new Set(recurringRows.map(r => r.donor_id));
+  const onPledge = new Set(pledgeRows.map(r => r.donor_id));
+  const lastContact = new Map(contactRows.map(r => [r.donor_id, String(r.last_contact).slice(0, 10)]));
+  const giftsByDonor = new Map(giftAgg.map(r => [r.donor_id, r]));
+  const handledCutoff = orgTime.addDays(today, -driftEngine.DRIFT.HANDLED_SNOOZE_DAYS);
+
+  const map = new Map();
+  for (const d of donors) {
+    let excludedReason = null;
+    if (d.deceased) excludedReason = "deceased";
+    else if (d.do_not_contact) excludedReason = "do_not_contact";
+    else if (onSubscription.has(d.id) || d.stripe_subscription_status === "active") excludedReason = "active_recurring";
+    else if (onPledge.has(d.id)) excludedReason = "open_pledge";
+    if (excludedReason) {
+      map.set(d.id, { state: "excluded", excludedReason, donorId: d.id });
+      continue;
+    }
+    const agg = giftsByDonor.get(d.id);
+    const gifts = agg
+      ? agg.dates.map((date, i) => ({ date: String(date).slice(0, 10), amount: parseFloat(agg.amounts[i]) || 0 }))
+      : [];
+    const a = driftEngine.assessDrift(gifts, today);
+    a.donorId = d.id;
+    a.donorName = d.name;
+    a.assignedTo = d.assigned_to || null;
+    a.assignedToName = d.assigned_to_name || null;
+    const lc = lastContact.get(d.id);
+    a.handled = !!(lc && orgTime.compareCivil(lc, handledCutoff) >= 0);
+    map.set(d.id, a);
+  }
+  return { map, today };
+}
+
+// The badge's read of the assessment — minimal, and null unless the donor is
+// actually DRIFTING (an excluded/ok/lapsed/not-eligible donor gets no badge
+// by construction; the Part 1 exclusion assertions ride on this being the
+// only shape any list payload carries).
+function driftBadgeField(a) {
+  return a && a.state === "drifting"
+    ? { state: "drifting", confidence: a.confidence, reason: a.reason }
+    : null;
 }
 
 // Lazily provisions one "at_risk" sequence per org — unlike milestone
@@ -21085,6 +21288,25 @@ async function snapshotMetricsForOrg(orgId) {
       `INSERT INTO metric_snapshots (id, org_id, metric_key, value, snapshot_date) VALUES (?,?,?,?,?)
        ON CONFLICT (org_id, metric_key, snapshot_date) DO UPDATE SET value = EXCLUDED.value`,
       ["ms_" + uuid().slice(0, 8), orgId, "retention_rate", retentionRate, today]
+    );
+  }
+  // BUILD-76 Part 4 — log_capture_rate: of the drift items marked done in the
+  // trailing 30 days, what share carried a line. This is the funnel metric
+  // that tells BUILD-77 whether the logging-as-a-byproduct loop actually
+  // works on the pilot — skips are RECORDED (metadata.skipped), so an honest
+  // denominator exists. Only snapshotted once anyone has used the loop.
+  const capture = await query(
+    `SELECT COUNT(*)::int AS total,
+            COUNT(*) FILTER (WHERE metadata->>'skipped' = 'false')::int AS with_note
+       FROM interactions
+      WHERE org_id = ? AND metadata->>'via' = 'drift_done'
+        AND created_at > NOW() - INTERVAL '30 days'`, [orgId]);
+  if ((capture[0]?.total || 0) > 0) {
+    const rate = Math.round((capture[0].with_note / capture[0].total) * 100);
+    await run(
+      `INSERT INTO metric_snapshots (id, org_id, metric_key, value, snapshot_date) VALUES (?,?,?,?,?)
+       ON CONFLICT (org_id, metric_key, snapshot_date) DO UPDATE SET value = EXCLUDED.value`,
+      ["ms_" + uuid().slice(0, 8), orgId, "log_capture_rate", rate, today]
     );
   }
   return debt;

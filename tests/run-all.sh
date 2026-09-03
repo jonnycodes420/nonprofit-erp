@@ -66,7 +66,7 @@ cd "$(dirname "$0")/.."
 CORE=(
   attribution-completeness
   billing billing-config-error brand-glyph branding clickability consistency-e2e designations digests
-  date-seam donor-merge email-links email-polish finance-entity-routing finance-funds finance-gift-stamp finance-overview greeting
+  date-seam donor-merge drift email-links email-polish finance-entity-routing finance-funds finance-gift-stamp finance-overview greeting
   finance-reintegration fundraising gift-attribution goals home home-layout households impact
   import-assign import-both import-combined import-reconciliation import-shape import-stage invitation landing-reveal
   locked-features migc

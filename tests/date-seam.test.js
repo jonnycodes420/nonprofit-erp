@@ -165,7 +165,7 @@ const UTC = { timezone: "UTC" };
   // The count as Part 4 leaves it. A new date-bounded query written WITHOUT the
   // seam pushes this up and fails here, which is what stops coverage decaying
   // the moment somebody adds a view.
-  const BASELINE = Number(process.env.DATE_SITE_BASELINE || 85); // 97 before BUILD-75 Phase A routed 12 sites
+  const BASELINE = Number(process.env.DATE_SITE_BASELINE || 68); // 97 → 85 (BUILD-75 Phase A) → 68 (locked in BUILD-76; drift.js joins the scan at zero sites)
   ok(`unrouted civil-date sites: ${total} (baseline ${BASELINE}) — must not INCREASE`,
      total <= BASELINE, { total, BASELINE, routed });
   ok(`sites routed through the seam: ${routed} (must be > 0)`, routed > 0, routed);
