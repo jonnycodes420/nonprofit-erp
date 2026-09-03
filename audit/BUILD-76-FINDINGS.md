@@ -391,3 +391,60 @@ behind --i-know-this-is-prod) + the server-vs-connection identity match →
 allowed, with a loud banner; every DELETE/INSERT stays pinned to
 org_b72demo; kb_*/kingdom names refuse unconditionally; any other name
 fails closed. A prod-db-name + loopback-BASE mismatch also refuses.
+
+## PART 2 — THE EMPTY STATE (a defect regardless of the data)
+
+- `GET /drift` now carries evaluation transparency: `evaluated` (every
+  non-deleted donor), `onPattern`, and `excluded` = {singleGift,
+  activeRecurring, deceased, doNotSolicit, openPledge} — tallied from the
+  same map every other figure reads. drift.test.js §10 (76) pins the tallies
+  per exclusion family and that the arithmetic closes (evaluated ==
+  onPattern + drifting + lapsed + excluded).
+- The Drifting section RENDERS AT ZERO with a `drift-empty-state` that shows
+  its work, three-way: no donors at all ("…if you just imported and this
+  still reads zero donors, the import didn't land" — the healthy-file vs
+  failed-import distinction), everyone-handled, and the true zero ("Checked
+  N donors: X on their own pattern … excluded from drift").
+- The goal banner's At-risk tile answers in WORDS — "No donors drifting ·
+  N giving patterns checked" — never an em dash; if the 180-day quiet figure
+  is zero while a short-cadence donor is drifting, the tile shows the drift
+  figure instead (never claims "no donors drifting" over one).
+- Asserted: empty-states.test.js (24) now gives its zero-donor org a GOAL so
+  the tile renders, and asserts both the section's presence+wording and the
+  tile's words at 1440 and 390.
+
+## PART 3 — THE RETENTION CONFIDENCE FLOOR
+
+- `RETENTION_FLOOR` (server.js, beside SECTOR_AVG_RETENTION_RATE — the same
+  one-place env-overridable pattern as drift.js's DRIFT; it lives in
+  server.js rather than drift.js because retention is not drift's concept
+  and the engine module stays single-purpose):
+  - `MIN_PRIOR_YEAR_DONORS = 20` — below ~20, one donor moves the rate ≥5
+    points; that is noise wearing a percent sign, not a rate.
+  - `MIN_HISTORY_DAYS = 548` (~18 months) — a year-over-year cohort rate
+    needs a full prior year plus enough current year to compare; anything
+    less is a partial-cohort artifact.
+- Below the floor: the API says `thinData` (plus historyDays + the floor
+  itself so the UI shows its work); the card reads "Not enough history yet"
+  with the reason ("A real rate needs about 20 donors from last year and 18
+  months of history — this file has N and M months so far"), the sector
+  comparison and sparkline are DROPPED entirely; the daily snapshot SKIPS,
+  so a 100%-on-16-donors artifact can never outlive the thin data in the
+  trend line. The breakdown panel headline follows the same rule.
+- home.test.js (46): 16 prior-year donors → current computes 100 but
+  thinData=true and reset-baselines writes NO retention snapshot; 25 donors
+  + 18 months → floor clears, a real (sub-100) rate returns and snapshots.
+- **Why the walk missed it** (BUILD-72's walk spec listed exactly this and
+  it shipped anyway): every walk ever performed ran on a SEEDED org whose
+  rich file computes a plausible rate — the defect only renders on thin
+  files, and no walk visited one. The walk had the failure on its list and
+  only ever looked at fixtures that couldn't produce it. Standing rule:
+  **a walk must include the empty/thin case for every claim it checks.**
+  The follow-up walk did (docs/drift/WALK.md addendum, walk-empty-* +
+  walk-seeded-* at 1440/390).
+- Same-family bonus caught during the walk: the demo seed itself generated
+  98% retention (annual mids all re-gave every year) — arithmetically true,
+  reads as fake. A third of the tail now churns (1–2-gift donors who
+  stopped one to three years back — who churns in real files; never
+  drifting-high, so the eleven stay on top): Harborlight now reads 85%
+  org-wide on ~680 prior-year donors.

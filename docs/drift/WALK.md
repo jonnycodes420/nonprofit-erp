@@ -53,3 +53,45 @@ hero stat shows.
    cluster in a calendar month by construction.
 3. At 390 the rows stack cleanly (name → reason → money → Done); nothing
    truncates; the one-line input fits with Save/Skip beside it.
+
+---
+
+# The follow-up walk (BUILD-76 follow-up) — empty AND seeded
+
+2026-09-03 evening, 1440 + 390, on the real page. **The empty case is the one
+that had never been looked at**, so it went first.
+
+**Empty** (`walk-empty-1440.png` / `-390.png` — a zero-donor org with a goal
+set, so every tile renders):
+- The goal banner's At-risk tile reads **"No donors drifting · 0 giving
+  patterns checked"** — words, never an em dash.
+- The Drifting section RENDERS, with an empty state that shows its work:
+  "No donors to evaluate yet." plus the sentence that distinguishes a healthy
+  file from a silently failed import ("…if you just imported and this still
+  reads zero donors, the import didn't land").
+- Retention reads "—  · Too early to measure" (the zero-data case, its own
+  copy) — no fabricated rate, no sector comparison.
+
+**Seeded** (`walk-seeded-1440.png` / `-390.png` — Harborlight, the fixed
+BUILD-72 seed):
+- The Drifting list is the pitch: eleven rows capped, the three quarterly
+  members on top by value at risk, and **Margaret Chen visible, reading
+  "$2,000 every July since 2019. Nothing for 14 months."** — the landing
+  page's sentence form, inside the app, with a reason instead of a bare
+  follow-up task.
+- Ondine Cinderhalt appears where her story lives: Needs Your Attention,
+  "Recurring gift failed — $150/mo at risk", with the resend-update-link
+  action — not on the drift list.
+- Retention reads 85% org-wide / 91% my-donors on hundreds of prior-year
+  donors — above the confidence floor, believable, and no longer the 98%
+  the seed used to generate.
+
+**Why the original walk missed the 100%-on-thin-data card** (BUILD-72's walk
+spec explicitly listed "a retention card reading 100% on thin data" and it
+shipped anyway): every walk ever performed was on a SEEDED org — a rich
+file where retention computes a plausible number. The defect only renders on
+thin files, and no walk visited one; the walk had the failure on its list
+and then only ever looked at fixtures that couldn't produce it. Same blind
+spot as the drift empty state. The rule that follows, recorded in findings:
+**a walk must include the empty/thin case for every claim it checks, not
+just the fixture built to show the feature working.**

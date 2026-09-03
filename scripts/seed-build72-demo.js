@@ -316,12 +316,18 @@ async function main() {
                                       pin: i % 7 === 0 });
     // Tuned so the top ~200 carry ~90% of revenue, not ~96%. A file that is
     // TOO top-heavy reads as fake to a fundraiser just as a flat one does.
-    const n = between(1, 4);
     const m = between(1, 12);
+    // A third of the tail CHURNED — their giving stopped one to three years
+    // back, and churners carry only 1–2 gifts (that IS who churns; and 1–2
+    // gifts can never be drifting/high, so churn can't bury the eleven).
+    // Without this the file retained ~98% year over year — arithmetically
+    // true and exactly as fake-reading as the 100%-on-16-donors card.
+    const churnOffset = [0, 0, 0, 0, 0, 0, 1, 2, 3][between(0, 8)];
+    const n = churnOffset > 0 ? between(1, 2) : between(1, 4);
     // Capped at $450 (was $620) so no tail donor's trailing-24-month giving
     // can reach $2,000 — Margaret Chen (the weakest of the eleven by value
     // at risk) is then guaranteed a place on the capped home drift list.
-    const lastYear = i % 101 === 0 ? YEAR - 1 : YEAR;
+    const lastYear = i % 101 === 0 ? YEAR - 1 : YEAR - churnOffset;
     for (let k = 0; k < n; k++)
       addGift(id, between(40, 450), dateIn(lastYear - k, m, between(1, 28)));
   }

@@ -177,6 +177,53 @@ async function seedTask(o, id, owner, due, done = 0) {
   ok("core org's numbers never include team org's donors", core.tasks.total === 2);
   ok("team admin sees only team org's tasks", all.tasks.total === 5);
 
+  // ── The retention confidence floor (BUILD-76 follow-up) ──────────────────
+  // "100% · 57pt above the sector average" on 16 donors is arithmetically
+  // true and completely meaningless — below RETENTION_FLOOR (20 prior-year
+  // donors AND 18 months of history) the API says thinData and the card says
+  // "not enough history yet" with NO sector comparison; the daily snapshot
+  // also skips, so the artifact never pollutes the trend line.
+  console.log("\n— retention confidence floor —");
+  const RF = "org_home_retfloor";
+  for (const t of ["metric_snapshots", "gifts", "donors", "users"]) await q(`DELETE FROM ${t} WHERE org_id=$1`, [RF]).catch(() => {});
+  await q(`DELETE FROM orgs WHERE id=$1`, [RF]).catch(() => {});
+  await q(`INSERT INTO orgs (id,name,org_slug,onboarding_complete,plan,subscription_status) VALUES ($1,'Ret Floor','ret-floor',1,'team','active')`, [RF]);
+  await q(`INSERT INTO users (id,org_id,email,password_hash,name,role) VALUES ('u_retfloor',$1,'retfloor@home.local',$2,'RF Admin','admin')`,
+    [RF, bcrypt.hashSync("loadtest1234", 10)]);
+  const tokR = await login("retfloor@home.local");
+  const yr = Number(TODAY.slice(0, 4));
+  // 16 donors, all gave last year AND this year → 100% retained, thin data.
+  for (let i = 0; i < 16; i++) {
+    await q(`INSERT INTO donors (id,org_id,name,email,gift_count,total_giving) VALUES ($1,$2,$3,$4,2,200)`,
+      [`d_rf_${i}`, RF, `Thin Donor ${i}`, `thin${i}@home.local`]);
+    await q(`INSERT INTO gifts (id,org_id,donor_id,amount,date) VALUES ($1,$2,$3,100,$4)`, [`g_rfA_${i}`, RF, `d_rf_${i}`, `${yr - 1}-05-10`]);
+    await q(`INSERT INTO gifts (id,org_id,donor_id,amount,date) VALUES ($1,$2,$3,100,$4)`, [`g_rfB_${i}`, RF, `d_rf_${i}`, `${yr}-02-15`]);
+  }
+  const thin = (await api("GET", "/metrics/stewardship-summary?scope=all", tokR)).body.retentionRate;
+  ok("16 prior-year donors: the rate computes 100 but the API says THIN DATA",
+    thin.current === 100 && thin.thinData === true, { current: thin.current, thin: thin.thinData, prev: thin.prevYearCount });
+  ok("…and carries the floor so the UI can show its work", thin.floor && thin.floor.minPriorYearDonors >= 1 && thin.floor.minHistoryDays >= 1, thin.floor);
+  await api("POST", "/metrics/reset-baselines", tokR);
+  const [thinSnap] = await q(`SELECT COUNT(*)::int n FROM metric_snapshots WHERE org_id=$1 AND metric_key='retention_rate'`, [RF]);
+  ok("a thin-data rate is NEVER snapshotted into the trend", thinSnap.n === 0, thinSnap);
+  // Cross the floor: 25 prior-year donors, history back past 18 months.
+  for (let i = 16; i < 25; i++) {
+    await q(`INSERT INTO donors (id,org_id,name,email,gift_count,total_giving) VALUES ($1,$2,$3,$4,2,200)`,
+      [`d_rf_${i}`, RF, `Solid Donor ${i}`, `solid${i}@home.local`]);
+    await q(`INSERT INTO gifts (id,org_id,donor_id,amount,date) VALUES ($1,$2,$3,100,$4)`, [`g_rfA_${i}`, RF, `d_rf_${i}`, `${yr - 1}-04-01`]);
+    if (i % 2 === 0) await q(`INSERT INTO gifts (id,org_id,donor_id,amount,date) VALUES ($1,$2,$3,100,$4)`, [`g_rfB_${i}`, RF, `d_rf_${i}`, `${yr}-03-01`]);
+  }
+  await q(`INSERT INTO gifts (id,org_id,donor_id,amount,date) VALUES ('g_rf_old',$1,'d_rf_0',50,$2)`, [RF, `${yr - 2}-01-15`]);
+  const solid = (await api("GET", "/metrics/stewardship-summary?scope=all", tokR)).body.retentionRate;
+  ok("25 prior-year donors + 18 months of history: the floor clears and a real rate returns",
+    solid.thinData === false && solid.current != null && solid.current < 100,
+    { current: solid.current, thin: solid.thinData, prev: solid.prevYearCount, hist: solid.historyDays });
+  await api("POST", "/metrics/reset-baselines", tokR);
+  const [solidSnap] = await q(`SELECT COUNT(*)::int n FROM metric_snapshots WHERE org_id=$1 AND metric_key='retention_rate'`, [RF]);
+  ok("…and a real rate DOES snapshot", solidSnap.n === 1, solidSnap);
+  for (const t of ["metric_snapshots", "gifts", "donors", "users"]) await q(`DELETE FROM ${t} WHERE org_id=$1`, [RF]).catch(() => {});
+  await q(`DELETE FROM orgs WHERE id=$1`, [RF]).catch(() => {});
+
   await reset();
   await closeDb();
   summary();

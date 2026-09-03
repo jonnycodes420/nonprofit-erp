@@ -8643,6 +8643,9 @@ app.get("/metrics/stewardship-summary", requireAuth, wrap(async (req, res) => {
     firstTouchDelay: { current: firstTouch.avgDays, sampleSize: firstTouch.sampleSize, untouchedCount: firstTouch.untouchedCount, newestUntouched: firstTouch.newestUntouched, trend: touchTrend.map(r => ({ date: r.snapshot_date, value: Number(r.value) })), deltaVsTrendStart: trendDelta(touchTrend) },
     retentionRate: {
       current: retention.retentionRate, sectorAverage: SECTOR_AVG_RETENTION_RATE,
+      // BUILD-76 follow-up — the confidence floor: below it the client says
+      // "not enough history yet" and drops the sector comparison entirely.
+      thinData: retention.thinData, historyDays: retention.historyDays, floor: retention.floor,
       retained: retention.retained, prevYearCount: retention.prevYearCount,
       // Lets the client tell "0% because nothing has been logged this year
       // yet" (day-one org, too early to measure) apart from a genuine 0%.
@@ -8710,6 +8713,7 @@ app.get("/dashboard/retention/breakdown", requireAuth, wrap(async (req, res) => 
 
   res.json({
     retentionRate: retention.retentionRate, sectorAverage: SECTOR_AVG_RETENTION_RATE,
+    thinData: retention.thinData, historyDays: retention.historyDays, floor: retention.floor,
     retained: retention.retained, prevYearCount: retention.prevYearCount,
     year: retention.year, prevYear: retention.prevYear,
     nonRetainedCount: nonRetainedIds.length, rows,
@@ -21354,6 +21358,25 @@ async function computeFirstTouchDelay(orgId) {
 // both places read from one source instead of a second hardcoded "43".
 const SECTOR_AVG_RETENTION_RATE = 43;
 
+// BUILD-76 follow-up — THE RETENTION CONFIDENCE FLOOR. Below these, the card
+// says "not enough history yet" instead of a percentage and drops the sector
+// comparison entirely; the daily snapshot also skips, so thin-data artifacts
+// never pollute the trend. "100% · 57pt above the sector average" on 16
+// donors is arithmetically true and completely meaningless — a development
+// director reads 100% as fake and then doubts everything else on the screen
+// (the same failure family as the retired "$2M re-engaged" headline:
+// presenting a thin-data artifact as an achievement). Same one-place,
+// env-overridable pattern as drift.js's DRIFT constants; thresholds
+// reasoning in audit/BUILD-76-FINDINGS.md.
+const RETENTION_FLOOR = {
+  MIN_PRIOR_YEAR_DONORS: 20,   // below ~20, each donor moves the rate ≥5pt — noise, not a rate
+  MIN_HISTORY_DAYS: 548,       // ~18 months: a full prior year plus enough current year to compare
+};
+for (const k of Object.keys(RETENTION_FLOOR)) {
+  const env = process.env["RETENTION_" + k];
+  if (env !== undefined && env !== "" && Number.isFinite(Number(env))) RETENTION_FLOOR[k] = Number(env);
+}
+
 // Cohort year-over-year donor retention: what % of last year's donors gave
 // again this year. This is a real, correct metric fundraisers already
 // benchmark against — unlike stewardship_debt's invented composite score.
@@ -21396,11 +21419,26 @@ async function computeRetentionRate(orgId, { year = null, gifts, userId } = {}) 
   const prevYearDonorIds = new Set(prevYearGifts.map(g => g.donor_id));
   const retained = [...thisYearDonorIds].filter(id => prevYearDonorIds.has(id)).length;
   const retentionRate = prevYearDonorIds.size > 0 ? Math.round(retained / prevYearDonorIds.size * 100) : null;
+  // BUILD-76 follow-up — the confidence floor (see RETENTION_FLOOR): a rate
+  // computed over too few prior-year donors, or too little history, is a
+  // thin-data artifact and every consumer must know it. Civil-string compare
+  // is safe for YYYY-MM-DD; span measured to the org's own today.
+  const firstGiftDate = allGifts.reduce((min, g) => {
+    const d = g.date ? String(g.date).slice(0, 10) : null;
+    return d && (!min || d < min) ? d : min;
+  }, null);
+  const historyDays = firstGiftDate
+    ? (orgTime.daysBetween(firstGiftDate, orgToday(await orgTz(orgId))) ?? 0)
+    : 0;
+  const thinData = prevYearDonorIds.size < RETENTION_FLOOR.MIN_PRIOR_YEAR_DONORS
+    || historyDays < RETENTION_FLOOR.MIN_HISTORY_DAYS;
   return {
     retentionRate, retained,
     thisYearDonorIds, prevYearDonorIds,
     thisYearCount: thisYearDonorIds.size, prevYearCount: prevYearDonorIds.size,
     year, prevYear,
+    thinData, historyDays,
+    floor: { minPriorYearDonors: RETENTION_FLOOR.MIN_PRIOR_YEAR_DONORS, minHistoryDays: RETENTION_FLOOR.MIN_HISTORY_DAYS },
   };
 }
 
@@ -21428,8 +21466,10 @@ async function snapshotMetricsForOrg(orgId) {
       ["ms_" + uuid().slice(0, 8), orgId, "recovery_rate", recoveryRate, today]
     );
   }
-  const { retentionRate } = await computeRetentionRate(orgId);
-  if (retentionRate != null) {
+  const { retentionRate, thinData: retentionThin } = await computeRetentionRate(orgId);
+  // BUILD-76 follow-up: a thin-data rate is never snapshotted — a 100%-on-16-
+  // donors artifact in the trend line would outlive the thin data that made it.
+  if (retentionRate != null && !retentionThin) {
     await run(
       `INSERT INTO metric_snapshots (id, org_id, metric_key, value, snapshot_date) VALUES (?,?,?,?,?)
        ON CONFLICT (org_id, metric_key, snapshot_date) DO UPDATE SET value = EXCLUDED.value`,

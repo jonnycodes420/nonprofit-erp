@@ -707,7 +707,13 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
   // logged in the current year at all (0% with thisYearCount===0). Neither is
   // a verdict on the org, so neither gets the below-sector-average framing.
   const retentionTooEarly=retentionCurrent==null||(retentionCurrent===0&&stewardMetrics?.retentionRate?.thisYearCount===0);
-  const retentionColor=retentionTooEarly?T.ink:retentionCurrent>=retentionSector?T.greenMid:T.terracotta;
+  // BUILD-76 follow-up — THE CONFIDENCE FLOOR (server-decided, RETENTION_FLOOR
+  // in server.js): a rate on too few prior-year donors or too little history
+  // reads "not enough history yet" and drops the sector comparison entirely.
+  // "100% · 57pt above the sector average" on 16 donors is arithmetically
+  // true and reads as fake — and then everything else on the screen does too.
+  const retentionThin=!retentionTooEarly&&!!stewardMetrics?.retentionRate?.thinData;
+  const retentionColor=(retentionTooEarly||retentionThin)?T.ink:retentionCurrent>=retentionSector?T.greenMid:T.terracotta;
 
   // Goal banner: greeting is real (time-of-day + the logged-in user's own
   // `name` field from the DB — not a role label or placeholder; an empty
@@ -1134,10 +1140,10 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
               <div style={{flex:"1 1 220px",minWidth:0}}>
                 <div style={{fontSize:10,fontWeight:800,letterSpacing:"0.1em",textTransform:"uppercase",color:T.ink3,marginBottom:6}}>Donor Retention Rate</div>
                 <div style={{display:"flex",alignItems:"baseline",gap:10,flexWrap:"wrap"}}>
-                  <div style={{fontSize:heroIsDrift?22:32,fontWeight:800,fontFamily:"'DM Serif Display',serif",color:retentionColor,lineHeight:1}}>
-                    {retentionTooEarly?"—":`${retentionCurrent}%`}
+                  <div style={{fontSize:retentionThin?17:heroIsDrift?22:32,fontWeight:800,fontFamily:"'DM Serif Display',serif",color:retentionColor,lineHeight:1.2}}>
+                    {retentionTooEarly?"—":retentionThin?"Not enough history yet":`${retentionCurrent}%`}
                   </div>
-                  {!retentionTooEarly&&stewardMetrics.retentionRate.deltaVsTrendStart!=null&&(
+                  {!retentionTooEarly&&!retentionThin&&stewardMetrics.retentionRate.deltaVsTrendStart!=null&&(
                     <span style={{fontSize:13,fontWeight:700,color:stewardMetrics.retentionRate.deltaVsTrendStart===0?T.ink3:stewardMetrics.retentionRate.deltaVsTrendStart>0?"#1a6b4a":T.terracotta}}>
                       {stewardMetrics.retentionRate.deltaVsTrendStart===0
                         ?"No change vs 3 weeks ago"
@@ -1152,7 +1158,9 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
                   {/* A brand-new org gets an expectant "too early" line, never
                       the below-sector-average verdict (QA_FRESH_ORG R2) —
                       mirrors First-Touch Delay's day-one handling below. */}
-                  {retentionTooEarly
+                  {retentionThin
+                    ?`A real rate needs about ${stewardMetrics.retentionRate.floor?.minPriorYearDonors??20} donors from last year and ${Math.round((stewardMetrics.retentionRate.floor?.minHistoryDays??548)/30.44)} months of history — this file has ${stewardMetrics.retentionRate.prevYearCount} prior-year donor${stewardMetrics.retentionRate.prevYearCount===1?"":"s"} and ${Math.max(1,Math.round((stewardMetrics.retentionRate.historyDays||0)/30.44))} month${Math.round((stewardMetrics.retentionRate.historyDays||0)/30.44)===1?"":"s"} so far. The number will appear when it can mean something.`
+                    :retentionTooEarly
                     ?!myStats?.orgHasGiftHistory
                       ?`Too early to measure — import your donors to start tracking. The typical nonprofit retains ${retentionSector}% of its donors year over year.`
                       :stewardMetrics.retentionRate.prevYearCount>0
@@ -1163,7 +1171,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
                       :`${retentionSector-retentionCurrent}pt below the ${retentionSector}% sector average — worth a closer look at who isn't renewing.`}
                 </div>
               </div>
-              {stewardMetrics.retentionRate.trend.length>=2&&(
+              {!retentionThin&&stewardMetrics.retentionRate.trend.length>=2&&(
                 <Sparkline trend={stewardMetrics.retentionRate.trend} color={retentionColor} width={120} height={36}/>
               )}
             </div>
@@ -1775,7 +1783,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
         title="Donor Retention Rate"
         explanation={`Donors who gave in ${retentionBreakdown?.prevYear??"the prior year"} but haven't given again in ${retentionBreakdown?.year??"the current year"} — the specific list dragging the rate down, not just the percentage.`}
         loading={retentionBreakdownLoading}
-        total={retentionBreakdown?.retentionRate!=null?`${retentionBreakdown.retentionRate}%`:"—"}
+        total={retentionBreakdown?.thinData?"Not enough history yet":retentionBreakdown?.retentionRate!=null?`${retentionBreakdown.retentionRate}%`:"—"}
         totalLabel="Retention rate"
         totalCount={retentionBreakdown?.nonRetainedCount}
         rows={(retentionBreakdown?.rows||[]).map(r=>({
