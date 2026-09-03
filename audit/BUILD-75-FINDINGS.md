@@ -280,3 +280,73 @@ Orphan deletions land in the next commit.
 
 matrix 28/28 · permissions-matrix 94/94 · tenant-isolation 32/32 ·
 state-diff 68/68 · tasks 38/38.
+
+### B.4 — orphan deletions executed
+
+The seven zero-reference routes are gone (each left a one-line tombstone
+comment pointing here): `GET /donors/my`, `GET /dashboard/recent-activity`,
+`GET /ai/donor-score`, `PUT /org/smtp`, `GET /email/test-smtp`,
+`GET /stripe/online-gifts`, `POST /org/backfill-gift-touchpoints`. Bodies
+were reviewed first: all read-only legacy or a one-time admin backfill (the
+last one an unwatched WRITE endpoint — exactly the class B.1 warns about).
+Inventory regenerated: **350 routes**, 25 orphan candidates remaining, all
+carrying keep verdicts above. The matrix re-ran green against the
+regenerated inventory (its drift check is what forces this file to stay
+current).
+
+**Also found and fixed while the battery was being stabilized:** a LIVE
+donor-dedup race — `checkout.session.completed`'s donor resolve-or-create
+was the one bare check-then-insert left on the concurrent Stripe event pair
+(the PI handler took the BUILD-27 advisory lock; the checkout side raced
+it). Two donor rows for one brand-new recurring donor, presenting as a
+~1-in-3 flake of webhook-ordering's "Q2 simultaneous" case. A flaky race
+test is a race, not a flake. Both handlers now serialize on the same
+`donor:org:email` lock; webhook-ordering held 15/15 across five
+consecutive runs.
+
+### B.5 — what this battery does NOT cover (the paid review starts here)
+
+Written down so the app-sec day is spent on judgment, not enumeration:
+
+- **Business-logic abuse** — legitimate flows composed maliciously (e.g.
+  refund/reissue cycles, proposal supersede timing, self-serve plan-switch
+  edge states). The matrix proves walls, not intent.
+- **Privilege escalation through legitimate flows** — invite/accept chains,
+  role changes mid-session, the super-admin surface's own workflows.
+- **Session/token lifecycle depth** — fixation, concurrent-session
+  semantics, JWT algorithm pinning (the §5 hardening item open since the
+  2026-07-10 report), cookie scoping beyond what portal.test.js pins.
+- **Secrets handling & infrastructure** — env hygiene, Railway/Vercel
+  config, database network posture, backup story (Supabase backups still
+  don't exist — standing gap), key rotation.
+- **Rate limiting adequacy** — limiters exist and are probed for presence,
+  not for whether their budgets actually stop a motivated enumerator.
+- **Account/donor enumeration via timing** — the portal magic-link flow is
+  flat by construction; nothing else has been timing-measured.
+- **Denial of service** — payload-size limits exist (5mb/30mb) but nothing
+  here load-tests hostile shapes (the accepted image-size/xlsx advisories
+  live exactly in this class).
+- **Anything requiring an attacker's imagination** — the entire point of
+  paying a human.
+
+### B.6 — the free automated layer
+
+- **Dependabot** (`.github/dependabot.yml`): weekly npm PRs for both
+  packages + the Actions workflows themselves.
+- **CodeQL** (`.github/workflows/codeql.yml`): javascript analysis on every
+  push/PR + a weekly sweep.
+- **npm audit at a FAILING threshold** (`scripts/audit-gate.js`, wired into
+  ci.yml before the battery): any high/critical advisory not listed in
+  `audit/npm-audit-allowlist.json` — with a reason and a review-by date —
+  fails CI. `npm audit fix` was applied first (root 8→1 advisories, client
+  4→3); the two remaining highs have NO upstream fix and are accepted with
+  exposure analysis in the allowlist: `image-size` (DoS; reachable only via
+  admin-authenticated, mime-allowlisted, size-capped branding uploads) and
+  `xlsx` (prototype pollution/ReDoS; client-side parsing of the user's OWN
+  spreadsheet in their own tab — no cross-user or server surface; replacing
+  the parser is a deliberate future task).
+- **ZAP baseline** (`.github/workflows/zap-baseline.yml`): weekly +
+  manual-dispatch passive scan against a loopback boot of the real server.
+  Deliberately not per-push — its findings move with ZAP's rule packs, not
+  with our diffs; the per-push gates on our own code are the battery and
+  the audit gate.

@@ -1,0 +1,29 @@
+{
+  "_rule": "Every entry is a HIGH/CRITICAL advisory we have READ and accepted, with the reason and a review-by date. scripts/audit-gate.js fails CI on any high/critical not listed here. Deleting an entry re-arms the gate for that advisory.",
+  "exceptions": [
+    {
+      "ghsa": "GHSA-w3rx-r6r6-pgpr",
+      "package": "image-size",
+      "reason": "DoS via crafted ICNS infinite loop. No upstream fix. Exposure: server-side dimension sniffing of BRANDING uploads only - admin-authenticated, mime-allowlisted (png/jpeg/gif/webp/svg), size-capped ~350KB. Worst case is one wedged request from an authenticated admin, not an unauthenticated DoS.",
+      "reviewBy": "2026-12-01"
+    },
+    {
+      "ghsa": "GHSA-5p2g-fcmc-qvqq",
+      "package": "image-size",
+      "reason": "Same exposure as GHSA-w3rx-r6r6-pgpr (JXL/HEIF parser loops - formats the upload mime allowlist never accepts).",
+      "reviewBy": "2026-12-01"
+    },
+    {
+      "ghsa": "GHSA-4r6h-8v6p-xvw6",
+      "package": "xlsx",
+      "reason": "Prototype pollution in SheetJS. No fixed version on the npm registry (SheetJS moved distribution off npm). Exposure: CLIENT-side parsing of the user's OWN spreadsheet in their own browser session - no cross-user or server surface. Replacing the import pipeline's parser is a deliberate future task, not a hot patch.",
+      "reviewBy": "2026-12-01"
+    },
+    {
+      "ghsa": "GHSA-5pgg-2g8v-p4x9",
+      "package": "xlsx",
+      "reason": "ReDoS in SheetJS - same client-side own-file exposure as GHSA-4r6h-8v6p-xvw6; worst case is the user's own tab stalling on their own crafted file.",
+      "reviewBy": "2026-12-01"
+    }
+  ]
+}

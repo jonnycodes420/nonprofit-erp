@@ -1,0 +1,23 @@
+# BUILD-75 B.6 — CodeQL static analysis (javascript). Free, finds common web
+# vulnerability patterns (injection, tainted flows), will not find logic bugs
+# — see audit/BUILD-75-FINDINGS.md B.5 for what nothing automated covers.
+name: CodeQL
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: "17 6 * * 1" # weekly Monday sweep, catches new query packs
+jobs:
+  analyze:
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: github/codeql-action/init@v3
+        with:
+          languages: javascript
+      - uses: github/codeql-action/analyze@v3

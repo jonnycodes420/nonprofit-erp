@@ -1,0 +1,58 @@
+# BUILD-75 B.6 — OWASP ZAP baseline scan against a loopback boot of the real
+# server. Passive rules only (baseline never attacks); finds missing headers,
+# cookie flags, info leaks. Weekly + manual — NOT on every push (it adds ~5min
+# and its findings change with ZAP's rules, not with our diffs; the failing
+# gates on our own code are the test battery + the audit gate).
+name: ZAP Baseline
+on:
+  schedule:
+    - cron: "43 6 * * 1"
+  workflow_dispatch:
+jobs:
+  zap:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: steward
+          POSTGRES_PASSWORD: steward
+          POSTGRES_DB: steward_loadtest
+        ports:
+          - 5544:5432
+        options: >-
+          --health-cmd "pg_isready -U steward"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://steward:steward@localhost:5544/steward_loadtest
+      DB_SSL: disable
+      JWT_SECRET: local-test-secret
+      PORT: "5601"
+      DISABLE_BACKGROUND_TICKS: "1"
+      RESEND_API_KEY: re_dummy_local
+      STRIPE_SECRET_KEY: sk_test_dummy
+      STRIPE_WEBHOOK_SECRET: whsec_localtest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - name: Install server deps
+        run: npm ci
+      - name: Boot the API server
+        run: |
+          node server.js > /tmp/server.log 2>&1 &
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:5601/health >/dev/null; then echo "server up"; exit 0; fi
+            sleep 1
+          done
+          echo "server failed to start"; cat /tmp/server.log; exit 1
+      - name: ZAP baseline scan
+        uses: zaproxy/action-baseline@v0.14.0
+        with:
+          target: http://localhost:5601
+          allow_issue_writing: false
+          artifact_name: zap-baseline-report

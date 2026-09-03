@@ -3175,43 +3175,7 @@ app.post("/org/clear-sample-data", requireAuth, wrap(async (req, res) => {
 // For gifts that pre-date the touchpoint-creation code in the history importer.
 // Safe to re-run: skips any gift that already has a type='gift' interaction
 // whose note contains the same dollar amount (donor_id + date + amount match).
-app.post("/org/backfill-gift-touchpoints", requireAuth, requireAdmin, wrap(async (req, res) => {
-  const orgId = req.user.orgId;
-
-  const toBackfill = await query(
-    `SELECT g.id, g.donor_id, g.amount, g.date, g.type, g.notes
-     FROM gifts g
-     WHERE g.org_id = ?
-     AND NOT EXISTS (
-       SELECT 1 FROM interactions i
-       WHERE i.org_id = ?
-       AND i.type = 'gift'
-       AND i.donor_id = g.donor_id
-       AND i.date = g.date
-       AND i.note LIKE '%$' || to_char(g.amount, 'FM999,999,999') || '%'
-     )
-     ORDER BY g.donor_id, g.date`,
-    [orgId, orgId]
-  );
-
-  let created = 0;
-  for (const g of toBackfill) {
-    const fundNote = g.type || "cash";
-    const amt = Number(g.amount);
-    const intNote = `Gift received: $${amt.toLocaleString()} (${fundNote})${g.notes ? " — " + g.notes : ""}`;
-    await run(
-      "INSERT INTO interactions (id,org_id,donor_id,type,note,date,created_by,logged_by_name) VALUES (?,?,?,?,?,?,?,?)",
-      ["int_"+uuid().slice(0,8), orgId, g.donor_id, "gift", intNote, g.date, req.user.userId, "Import Backfill"]
-    );
-    created++;
-  }
-
-  res.json({
-    found: toBackfill.length,
-    backfilled: created,
-    gifts: toBackfill.map(g => ({ donor_id: g.donor_id, amount: g.amount, date: g.date }))
-  });
-}));
+// (route deleted, BUILD-75 B.4 — zero references anywhere: client, tests, scripts, docs. See audit/BUILD-75-FINDINGS.md B.1 orphan verdicts.)
 
 // ── Team ───────────────────────────────────────────────────────────────────
 app.get("/org/team", requireAuth, wrap(async (req, res) => {
@@ -3570,20 +3534,7 @@ app.get("/donors/export/csv", requireAuth, wrap(async (req, res) => {
   res.send(toCsv(columns, donors));
 }));
 
-app.get("/donors/my", requireAuth, wrap(async (req, res) => {
-  const [donors, touchpoints] = await Promise.all([
-    query("SELECT * FROM donors WHERE org_id = ? AND assigned_to = ? AND deleted_at IS NULL ORDER BY total_giving DESC", [req.user.orgId, req.user.userId]),
-    query("SELECT donor_id, MAX(date) AS last_touchpoint FROM interactions WHERE org_id = ? GROUP BY donor_id", [req.user.orgId]),
-  ]);
-  const tpMap = Object.fromEntries(touchpoints.map(r => [r.donor_id, r.last_touchpoint]));
-  const result = donors.map(d => ({
-    ...d,
-    tags: JSON.parse(d.tags || "[]"),
-    last_touchpoint: tpMap[d.id] || null,
-    matching_gift: lookupMatchingGift(d.employer),
-  }));
-  res.json(result);
-}));
+// (route deleted, BUILD-75 B.4 — zero references anywhere: client, tests, scripts, docs. See audit/BUILD-75-FINDINGS.md B.1 orphan verdicts.)
 
 app.get("/donors/custom-field-values/all", requireAuth, wrap(async (req, res) => {
   const rows = await query(
@@ -7638,18 +7589,7 @@ app.post("/financials/month", requireAuth, requireAdmin, wrap(async (req, res) =
 // opens. adaptData() hardcodes donors[].interactions to [], so the
 // Dashboard's Recent Activity feed had no real data source. This gives it
 // one directly, org-wide, instead of relying on the per-donor shape.
-app.get("/dashboard/recent-activity", requireAuth, wrap(async (req, res) => {
-  const rows = await query(
-    `SELECT i.id, i.type, i.note, i.date, i.donor_id, d.name AS donor_name
-     FROM interactions i
-     JOIN donors d ON d.id = i.donor_id
-     WHERE i.org_id = ? AND d.deleted_at IS NULL
-     ORDER BY i.date DESC, i.created_at DESC
-     LIMIT 10`,
-    [req.user.orgId]
-  );
-  res.json(rows);
-}));
+// (route deleted, BUILD-75 B.4 — zero references anywhere: client, tests, scripts, docs. See audit/BUILD-75-FINDINGS.md B.1 orphan verdicts.)
 
 app.get("/dashboard/my-stats", requireAuth, wrap(async (req, res) => {
   const { orgId, userId } = req.user;
@@ -8669,82 +8609,13 @@ Return ONLY a JSON object like: {"Original Header": "fieldName", "Another Header
 }));
 
 // ── AI — donor propensity scoring ──────────────────────────────────────────
-app.get("/ai/donor-score", requireAuth, wrap(async (req, res) => {
-  const donors = await query("SELECT * FROM donors WHERE org_id = ? AND deleted_at IS NULL", [req.user.orgId]);
-  const scored = donors.map(d => {
-    let score = 0;
-
-    if      (d.total_giving > 20000) score += 35;
-    else if (d.total_giving > 5000)  score += 22;
-    else if (d.total_giving > 1000)  score += 12;
-    else                             score += 5;
-
-    // Unguarded new Date(null) silently evaluates to the 1970 epoch (a huge,
-    // wrong "days since" value that happened to fall through all three bands
-    // below without erroring) — null-guard so a missing last_gift_date just
-    // skips the recency bonus instead of relying on that coincidence.
-    const days = d.last_gift_date ? Math.floor((Date.now() - new Date(d.last_gift_date)) / 86_400_000) : null;
-    if (days !== null) {
-      if      (days < 90)  score += 30;
-      else if (days < 180) score += 22;
-      else if (days < 365) score += 12;
-    }
-
-    score += Math.min(d.gift_count * 4, 20);
-
-    if (d.status === "lapsed") score -= 15;
-
-    const tags = JSON.parse(d.tags || "[]");
-    if (tags.includes("board-adjacent")) score += 10;
-    if (tags.includes("recurring"))      score += 5;
-
-    return { id: d.id, name: d.name, score: Math.max(5, Math.min(score, 99)), status: d.status };
-  });
-  res.json(scored.sort((a, b) => b.score - a.score));
-}));
+// (route deleted, BUILD-75 B.4 — zero references anywhere: client, tests, scripts, docs. See audit/BUILD-75-FINDINGS.md B.1 orphan verdicts.)
 
 // ── SMTP settings ──────────────────────────────────────────────────────────
-app.put("/org/smtp", requireAuth, requireAdmin, wrap(async (req, res) => {
-  const { smtpHost, smtpPort, smtpUser, smtpPass, smtpFrom } = req.body;
-  await run(
-    `UPDATE orgs SET smtp_host=?, smtp_port=?, smtp_user=?, smtp_pass=?, smtp_from=? WHERE id=?`,
-    [smtpHost || null, smtpPort || 587, smtpUser || null, smtpPass || null, smtpFrom || null, req.user.orgId]
-  );
-  res.json({ success: true });
-}));
+// (route deleted, BUILD-75 B.4 — zero references anywhere: client, tests, scripts, docs. See audit/BUILD-75-FINDINGS.md B.1 orphan verdicts.)
 
 // ── SMTP test endpoint ─────────────────────────────────────────────────────
-app.get("/email/test-smtp", requireAuth, requireAdmin, wrap(async (req, res) => {
-  const apiKey = process.env.RESEND_API_KEY;
-  const from   = process.env.DEMO_SMTP_FROM;
-  const to     = process.env.DEMO_NOTIFY_EMAIL;
-
-  const cfg = {
-    host: "smtp.resend.com", port: 465, user: "resend",
-    pass: apiKey ? "set" : "MISSING",
-    from: from || "MISSING",
-    to:   to   || "MISSING",
-  };
-
-  if (!apiKey) return res.json({ success: false, error: "RESEND_API_KEY env var not set", config: cfg });
-  if (!from)   return res.json({ success: false, error: "DEMO_SMTP_FROM env var not set (verified-domain from address)", config: cfg });
-  if (!to)     return res.json({ success: false, error: "DEMO_NOTIFY_EMAIL env var not set", config: cfg });
-
-  try {
-    console.log("[test-smtp] sending via Resend HTTP API…", cfg);
-    const { data, error } = await resend.emails.send({
-      from, to,
-      subject: "Steward SMTP test",
-      html: "<p>SMTP is working. This is a test from your <strong>Steward ERP</strong>.</p>",
-    });
-    if (error) throw new Error(error.message);
-    console.log("[test-smtp] sent OK — id:", data.id);
-    res.json({ success: true, id: data.id, from, to, config: cfg });
-  } catch (err) {
-    console.error("[test-smtp] FAILED:", err.message);
-    res.json({ success: false, error: { message: err.message }, config: cfg });
-  }
-}));
+// (route deleted, BUILD-75 B.4 — zero references anywhere: client, tests, scripts, docs. See audit/BUILD-75-FINDINGS.md B.1 orphan verdicts.)
 
 // ── Email suppression & unsubscribe ─────────────────────────────────────────
 // Signed, no-login-required unsubscribe tokens. HMAC (not full JWT) is enough
@@ -11208,26 +11079,7 @@ app.post("/stripe/campaign-link", requireAuth, wrap(async (req, res) => {
   res.json({ url: link.url });
 }));
 
-app.get("/stripe/online-gifts", requireAuth, wrap(async (req, res) => {
-  const result = await query(
-    `SELECT g.id, g.amount, g.date, g.stripe_payment_id,
-            d.name AS donor_name, d.email AS donor_email
-     FROM gifts g
-     JOIN donors d ON d.id = g.donor_id
-     WHERE g.org_id=$1 AND g.stripe_payment_id IS NOT NULL
-     ORDER BY g.date DESC, g.created_at DESC
-     LIMIT 20`,
-    [req.user.orgId]
-  );
-  res.json(result.map(r => ({
-    id: r.id,
-    amount: parseFloat(r.amount),
-    date: r.date,
-    donorName: r.donor_name,
-    donorEmail: r.donor_email,
-    stripePaymentId: r.stripe_payment_id,
-  })));
-}));
+// (route deleted, BUILD-75 B.4 — zero references anywhere: client, tests, scripts, docs. See audit/BUILD-75-FINDINGS.md B.1 orphan verdicts.)
 
 // ── Finance: Accounts ─────────────────────────────────────────────────────
 app.get("/finance/accounts", requireAuth, wrap(async (req, res) => {

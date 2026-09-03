@@ -82,6 +82,16 @@ jobs:
       - name: Lint guards (no-undef, rules-of-hooks)
         run: npm run lint --prefix client
 
+      # ── BUILD-75 B.6 — dependency audit at a FAILING threshold ─────────────
+      # A new high/critical advisory fails the build unless it is listed in
+      # audit/npm-audit-allowlist.json with a reason and a review-by date
+      # (two no-fix-available highs are currently accepted there, with their
+      # exposure analysis). scripts/audit-gate.js is the gate.
+      - name: npm audit gate (server)
+        run: node scripts/audit-gate.js .
+      - name: npm audit gate (client)
+        run: node scripts/audit-gate.js client
+
       - name: Boot the API server
         run: |
           node server.js > /tmp/server.log 2>&1 &

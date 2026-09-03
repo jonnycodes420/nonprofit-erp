@@ -1,0 +1,17 @@
+# BUILD-75 B.6 — the free automated layer: dependency update PRs.
+# Weekly, both packages + the Actions workflows themselves. Security updates
+# arrive regardless of schedule. The npm-audit gate in ci.yml is the failing
+# threshold; this is the paved road to staying under it.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: "/"
+    schedule: { interval: weekly, day: monday }
+    open-pull-requests-limit: 5
+  - package-ecosystem: npm
+    directory: "/client"
+    schedule: { interval: weekly, day: monday }
+    open-pull-requests-limit: 5
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule: { interval: weekly, day: monday }

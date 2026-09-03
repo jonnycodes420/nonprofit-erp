@@ -122,6 +122,7 @@ const EXEMPT = {
   "build73-landing-capture": "read-only Playwright capture of the PUBLIC landing page; refuses any non-loopback APP_ORIGIN, logs in to nothing and writes only PNGs under docs/landing/",
   "build28-prepare-images": "local image generation, no network writes",
   "create-billing-products": "writes to STRIPE, not the app; has its own refuse-live-without---live guard",
+  "audit-gate": "BUILD-75 B.6 — runs `npm audit --json` on the local package and compares against audit/npm-audit-allowlist.json; no BASE, no DB, no app writes",
 };
 
 // ── 1. Every script file is classified ──────────────────────────────────────
