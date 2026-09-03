@@ -1,0 +1,8764 @@
+{
+ "generatedAt": "2026-09-03T05:02:00.610Z",
+ "count": 357,
+ "routes": [
+  {
+   "method": "POST",
+   "path": "/stripe/webhook",
+   "line": 328,
+   "auth": [],
+   "sourceSeen": true,
+   "layerCount": 2,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/stripe/webhook",
+    "referenced": false
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/resend/webhook",
+   "line": 1331,
+   "auth": [],
+   "sourceSeen": true,
+   "layerCount": 2,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/resend/webhook",
+    "referenced": false
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/billing/webhook",
+   "line": 1427,
+   "auth": [],
+   "sourceSeen": true,
+   "layerCount": 2,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/billing/webhook",
+    "referenced": false
+   }
+  },
+  {
+   "method": "GET",
+   "path": "/health",
+   "line": 1756,
+   "auth": [],
+   "sourceSeen": true,
+   "layerCount": 1,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/health",
+    "referenced": true
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/invitation-request",
+   "line": 1813,
+   "auth": [
+    "invitationLimiter"
+   ],
+   "sourceSeen": true,
+   "layerCount": 2,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": [
+     "donorBand",
+     "elapsedMs",
+     "email",
+     "hardestPart",
+     "name",
+     "organization",
+     "role",
+     "website"
+    ]
+   },
+   "identifiers": [
+    "donorBand",
+    "email",
+    "organization"
+   ],
+   "frontend": {
+    "probe": "/invitation-request",
+    "referenced": true
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/admin/notifications/retry",
+   "line": 1856,
+   "auth": [
+    "requireAuth",
+    "requireAdmin"
+   ],
+   "sourceSeen": true,
+   "layerCount": 3,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": [
+     "force"
+    ]
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/admin/notifications/retry",
+    "referenced": false
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/admin/debug/sentry-test",
+   "line": 1867,
+   "auth": [
+    "requireAuth",
+    "requireAdmin"
+   ],
+   "sourceSeen": true,
+   "layerCount": 3,
+   "params": {
+    "path": [],
+    "query": [
+     "mode"
+    ],
+    "body": []
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/admin/debug/sentry-test",
+    "referenced": false
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/auth/login",
+   "line": 2383,
+   "auth": [
+    "loginIpLimiter",
+    "loginAccountLimiter"
+   ],
+   "sourceSeen": true,
+   "layerCount": 3,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": [
+     "email",
+     "password"
+    ]
+   },
+   "identifiers": [
+    "email"
+   ],
+   "frontend": {
+    "probe": "/auth/login",
+    "referenced": true
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/auth/register",
+   "line": 2402,
+   "auth": [
+    "registerLimiter"
+   ],
+   "sourceSeen": true,
+   "layerCount": 2,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": [
+     "ein",
+     "email",
+     "name",
+     "orgMission",
+     "orgName",
+     "password"
+    ]
+   },
+   "identifiers": [
+    "email",
+    "orgMission",
+    "orgName"
+   ],
+   "frontend": {
+    "probe": "/auth/register",
+    "referenced": true
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/auth/forgot-password",
+   "line": 2442,
+   "auth": [
+    "passwordResetLimiter"
+   ],
+   "sourceSeen": true,
+   "layerCount": 2,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": [
+     "email"
+    ]
+   },
+   "identifiers": [
+    "email"
+   ],
+   "frontend": {
+    "probe": "/auth/forgot-password",
+    "referenced": true
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/auth/reset-password",
+   "line": 2520,
+   "auth": [
+    "passwordResetLimiter"
+   ],
+   "sourceSeen": true,
+   "layerCount": 2,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": [
+     "password",
+     "token"
+    ]
+   },
+   "identifiers": [
+    "token"
+   ],
+   "frontend": {
+    "probe": "/auth/reset-password",
+    "referenced": true
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/auth/register-org",
+   "line": 2546,
+   "auth": [
+    "registerLimiter"
+   ],
+   "sourceSeen": true,
+   "layerCount": 2,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": [
+     "email",
+     "orgName",
+     "password",
+     "userName"
+    ]
+   },
+   "identifiers": [
+    "email",
+    "orgName",
+    "userName"
+   ],
+   "frontend": {
+    "probe": "/auth/register-org",
+    "referenced": true
+   }
+  },
+  {
+   "method": "GET",
+   "path": "/me",
+   "line": 2616,
+   "auth": [
+    "requireAuth"
+   ],
+   "sourceSeen": true,
+   "layerCount": 2,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/me",
+    "referenced": null
+   }
+  },
+  {
+   "method": "PUT",
+   "path": "/me/notification-prefs",
+   "line": 2630,
+   "auth": [
+    "requireAuth"
+   ],
+   "sourceSeen": true,
+   "layerCount": 2,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/me/notification-prefs",
+    "referenced": true
+   }
+  },
+  {
+   "method": "GET",
+   "path": "/me/home-layout",
+   "line": 2666,
+   "auth": [
+    "requireAuth"
+   ],
+   "sourceSeen": true,
+   "layerCount": 2,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/me/home-layout",
+    "referenced": true
+   }
+  },
+  {
+   "method": "PUT",
+   "path": "/me/home-layout",
+   "line": 2674,
+   "auth": [
+    "requireAuth"
+   ],
+   "sourceSeen": true,
+   "layerCount": 2,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/me/home-layout",
+    "referenced": true
+   }
+  },
+  {
+   "method": "DELETE",
+   "path": "/me/home-layout",
+   "line": 2683,
+   "auth": [
+    "requireAuth"
+   ],
+   "sourceSeen": true,
+   "layerCount": 2,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/me/home-layout",
+    "referenced": true
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/onboarding/complete",
+   "line": 2689,
+   "auth": [
+    "requireAuth"
+   ],
+   "sourceSeen": true,
+   "layerCount": 2,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/onboarding/complete",
+    "referenced": true
+   }
+  },
+  {
+   "method": "GET",
+   "path": "/org",
+   "line": 2696,
+   "auth": [
+    "requireAuth"
+   ],
+   "sourceSeen": true,
+   "layerCount": 2,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/org",
+    "referenced": true
+   }
+  },
+  {
+   "method": "GET",
+   "path": "/org/setup-status",
+   "line": 2711,
+   "auth": [
+    "requireAuth"
+   ],
+   "sourceSeen": true,
+   "layerCount": 2,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/org/setup-status",
+    "referenced": true
+   }
+  },
+  {
+   "method": "PUT",
+   "path": "/org/setup-card",
+   "line": 2752,
+   "auth": [
+    "requireAuth",
+    "requireAdmin"
+   ],
+   "sourceSeen": true,
+   "layerCount": 3,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": [
+     "state"
+    ]
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/org/setup-card",
+    "referenced": true
+   }
+  },
+  {
+   "method": "PATCH",
+   "path": "/orgs/:id",
+   "line": 2762,
+   "auth": [
+    "requireAuth",
+    "requireAdmin"
+   ],
+   "sourceSeen": true,
+   "layerCount": 3,
+   "params": {
+    "path": [
+     "id"
+    ],
+    "query": [],
+    "body": [
+     "annualBudget",
+     "coverFeesEnabled",
+     "ein",
+     "focusArea",
+     "foundedYear",
+     "legalName",
+     "mission",
+     "name",
+     "receiptAddress",
+     "receiptCustomMessage",
+     "receiptSignatureName",
+     "receiptSignatureTitle",
+     "receiptsEnabled",
+     "timezone",
+     "website"
+    ]
+   },
+   "identifiers": [
+    "id"
+   ],
+   "frontend": {
+    "probe": "/orgs",
+    "referenced": true
+   }
+  },
+  {
+   "method": "PUT",
+   "path": "/orgs/branding",
+   "line": 2865,
+   "auth": [
+    "requireAuth",
+    "requireAdmin",
+    "checkWriteAccess"
+   ],
+   "sourceSeen": true,
+   "layerCount": 4,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": [
+     "brandAccent",
+     "logoData",
+     "removeLogo"
+    ]
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/orgs/branding",
+    "referenced": true
+   }
+  },
+  {
+   "method": "GET",
+   "path": "/org/sample-data-status",
+   "line": 2899,
+   "auth": [
+    "requireAuth"
+   ],
+   "sourceSeen": true,
+   "layerCount": 2,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/org/sample-data-status",
+    "referenced": true
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/org/load-sample-data",
+   "line": 2908,
+   "auth": [
+    "requireAuth"
+   ],
+   "sourceSeen": true,
+   "layerCount": 2,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/org/load-sample-data",
+    "referenced": true
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/org/clear-sample-data",
+   "line": 3147,
+   "auth": [
+    "requireAuth"
+   ],
+   "sourceSeen": true,
+   "layerCount": 2,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/org/clear-sample-data",
+    "referenced": true
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/org/backfill-gift-touchpoints",
+   "line": 3171,
+   "auth": [
+    "requireAuth",
+    "requireAdmin"
+   ],
+   "sourceSeen": true,
+   "layerCount": 3,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/org/backfill-gift-touchpoints",
+    "referenced": false
+   }
+  },
+  {
+   "method": "GET",
+   "path": "/org/team",
+   "line": 3210,
+   "auth": [
+    "requireAuth"
+   ],
+   "sourceSeen": true,
+   "layerCount": 2,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/org/team",
+    "referenced": true
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/auth/invite",
+   "line": 3219,
+   "auth": [
+    "requireAuth",
+    "requireAdmin"
+   ],
+   "sourceSeen": true,
+   "layerCount": 3,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": [
+     "email",
+     "role"
+    ]
+   },
+   "identifiers": [
+    "email"
+   ],
+   "frontend": {
+    "probe": "/auth/invite",
+    "referenced": true
+   }
+  },
+  {
+   "method": "GET",
+   "path": "/auth/invite/:token",
+   "line": 3285,
+   "auth": [],
+   "sourceSeen": true,
+   "layerCount": 1,
+   "params": {
+    "path": [
+     "token"
+    ],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [
+    "token"
+   ],
+   "frontend": {
+    "probe": "/auth/invite",
+    "referenced": true
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/auth/invite/accept",
+   "line": 3299,
+   "auth": [],
+   "sourceSeen": true,
+   "layerCount": 1,
+   "params": {
+    "path": [],
+    "query": [
+     "assignedTo",
+     "designation",
+     "household",
+     "search",
+     "sort",
+     "stage",
+     "status"
+    ],
+    "body": [
+     "name",
+     "password",
+     "token"
+    ]
+   },
+   "identifiers": [
+    "token"
+   ],
+   "frontend": {
+    "probe": "/auth/invite/accept",
+    "referenced": true
+   }
+  },
+  {
+   "method": "GET",
+   "path": "/donors",
+   "line": 3399,
+   "auth": [
+    "requireAuth"
+   ],
+   "sourceSeen": true,
+   "layerCount": 2,
+   "params": {
+    "path": [],
+    "query": [
+     "limit",
+     "offset"
+    ],
+    "body": []
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/donors",
+    "referenced": true
+   }
+  },
+  {
+   "method": "GET",
+   "path": "/donors/summaries",
+   "line": 3438,
+   "auth": [
+    "requireAuth"
+   ],
+   "sourceSeen": true,
+   "layerCount": 2,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/donors/summaries",
+    "referenced": true
+   }
+  },
+  {
+   "method": "GET",
+   "path": "/donors/duplicates",
+   "line": 3479,
+   "auth": [
+    "requireAuth"
+   ],
+   "sourceSeen": true,
+   "layerCount": 2,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/donors/duplicates",
+    "referenced": true
+   }
+  },
+  {
+   "method": "GET",
+   "path": "/donors/export/csv",
+   "line": 3549,
+   "auth": [
+    "requireAuth"
+   ],
+   "sourceSeen": true,
+   "layerCount": 2,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/donors/export/csv",
+    "referenced": true
+   }
+  },
+  {
+   "method": "GET",
+   "path": "/donors/my",
+   "line": 3566,
+   "auth": [
+    "requireAuth"
+   ],
+   "sourceSeen": true,
+   "layerCount": 2,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/donors/my",
+    "referenced": false
+   }
+  },
+  {
+   "method": "GET",
+   "path": "/donors/custom-field-values/all",
+   "line": 3581,
+   "auth": [
+    "requireAuth"
+   ],
+   "sourceSeen": true,
+   "layerCount": 2,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/donors/custom-field-values/all",
+    "referenced": true
+   }
+  },
+  {
+   "method": "GET",
+   "path": "/donors/stage-counts",
+   "line": 3591,
+   "auth": [
+    "requireAuth"
+   ],
+   "sourceSeen": true,
+   "layerCount": 2,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/donors/stage-counts",
+    "referenced": true
+   }
+  },
+  {
+   "method": "GET",
+   "path": "/donors/:id",
+   "line": 3599,
+   "auth": [
+    "requireAuth"
+   ],
+   "sourceSeen": true,
+   "layerCount": 2,
+   "params": {
+    "path": [
+     "id"
+    ],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [
+    "id"
+   ],
+   "frontend": {
+    "probe": "/donors",
+    "referenced": true
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/donors",
+   "line": 3614,
+   "auth": [
+    "requireAuth",
+    "checkWriteAccess"
+   ],
+   "sourceSeen": true,
+   "layerCount": 3,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": [
+     "assignedTo",
+     "assignedToName",
+     "email",
+     "lastAmount",
+     "name",
+     "notes",
+     "phone",
+     "stage",
+     "status",
+     "tags"
+    ]
+   },
+   "identifiers": [
+    "email"
+   ],
+   "frontend": {
+    "probe": "/donors",
+    "referenced": true
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/donors/import",
+   "line": 3889,
+   "auth": [
+    "requireAuth"
+   ],
+   "sourceSeen": true,
+   "layerCount": 2,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": [
+     "donors"
+    ]
+   },
+   "identifiers": [
+    "donors"
+   ],
+   "frontend": {
+    "probe": "/donors/import",
+    "referenced": true
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/donors/import-combined",
+   "line": 4042,
+   "auth": [
+    "requireAuth",
+    "checkWriteAccess"
+   ],
+   "sourceSeen": true,
+   "layerCount": 3,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": [
+     "__sabotageDropRows",
+     "donors",
+     "gifts",
+     "skipRowKeys"
+    ]
+   },
+   "identifiers": [
+    "donors",
+    "gifts"
+   ],
+   "frontend": {
+    "probe": "/donors/import-combined",
+    "referenced": true
+   }
+  },
+  {
+   "method": "PUT",
+   "path": "/donors/:id",
+   "line": 4493,
+   "auth": [
+    "requireAuth",
+    "checkWriteAccess"
+   ],
+   "sourceSeen": true,
+   "layerCount": 3,
+   "params": {
+    "path": [
+     "id"
+    ],
+    "query": [],
+    "body": [
+     "city",
+     "deceased",
+     "doNotContact",
+     "email",
+     "employer",
+     "name",
+     "notes",
+     "phone",
+     "stage",
+     "state",
+     "status",
+     "tags",
+     "zip"
+    ]
+   },
+   "identifiers": [
+    "email",
+    "id"
+   ],
+   "frontend": {
+    "probe": "/donors",
+    "referenced": true
+   }
+  },
+  {
+   "method": "PATCH",
+   "path": "/donors/:id/stage",
+   "line": 4528,
+   "auth": [
+    "requireAuth",
+    "requirePlan(team)",
+    "checkWriteAccess"
+   ],
+   "sourceSeen": true,
+   "layerCount": 4,
+   "params": {
+    "path": [
+     "id"
+    ],
+    "query": [],
+    "body": [
+     "prevStage",
+     "stage"
+    ]
+   },
+   "identifiers": [
+    "id"
+   ],
+   "frontend": {
+    "probe": "/donors",
+    "referenced": true
+   }
+  },
+  {
+   "method": "DELETE",
+   "path": "/donors/:id",
+   "line": 4562,
+   "auth": [
+    "requireAuth",
+    "requireAdmin"
+   ],
+   "sourceSeen": true,
+   "layerCount": 3,
+   "params": {
+    "path": [
+     "id"
+    ],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [
+    "id"
+   ],
+   "frontend": {
+    "probe": "/donors",
+    "referenced": true
+   }
+  },
+  {
+   "method": "PATCH",
+   "path": "/donors/:id/assign",
+   "line": 4571,
+   "auth": [
+    "requireAuth",
+    "requireAdmin",
+    "requirePlan(team)",
+    "checkWriteAccess"
+   ],
+   "sourceSeen": true,
+   "layerCount": 5,
+   "params": {
+    "path": [
+     "id"
+    ],
+    "query": [],
+    "body": [
+     "assignedTo",
+     "assignedToName"
+    ]
+   },
+   "identifiers": [
+    "id"
+   ],
+   "frontend": {
+    "probe": "/donors",
+    "referenced": true
+   }
+  },
+  {
+   "method": "PATCH",
+   "path": "/donors/bulk-stage",
+   "line": 4588,
+   "auth": [
+    "requireAuth",
+    "requirePlan(team)",
+    "checkWriteAccess"
+   ],
+   "sourceSeen": true,
+   "layerCount": 4,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": [
+     "ids",
+     "stage"
+    ]
+   },
+   "identifiers": [
+    "ids"
+   ],
+   "frontend": {
+    "probe": "/donors/bulk-stage",
+    "referenced": true
+   }
+  },
+  {
+   "method": "PATCH",
+   "path": "/donors/bulk-assign",
+   "line": 4608,
+   "auth": [
+    "requireAuth",
+    "requireAdmin",
+    "requirePlan(team)",
+    "checkWriteAccess"
+   ],
+   "sourceSeen": true,
+   "layerCount": 5,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": [
+     "assignedTo",
+     "ids"
+    ]
+   },
+   "identifiers": [
+    "ids"
+   ],
+   "frontend": {
+    "probe": "/donors/bulk-assign",
+    "referenced": true
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/donors/bulk-delete",
+   "line": 4654,
+   "auth": [
+    "requireAuth",
+    "requireAdmin"
+   ],
+   "sourceSeen": true,
+   "layerCount": 3,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": [
+     "ids"
+    ]
+   },
+   "identifiers": [
+    "ids"
+   ],
+   "frontend": {
+    "probe": "/donors/bulk-delete",
+    "referenced": true
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/donors/purge-trash",
+   "line": 4682,
+   "auth": [
+    "requireAuth",
+    "requireAdmin"
+   ],
+   "sourceSeen": true,
+   "layerCount": 3,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/donors/purge-trash",
+    "referenced": false
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/donors/merge",
+   "line": 4722,
+   "auth": [
+    "requireAuth",
+    "checkWriteAccess"
+   ],
+   "sourceSeen": true,
+   "layerCount": 3,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": [
+     "primaryId",
+     "secondaryId"
+    ]
+   },
+   "identifiers": [
+    "primaryId",
+    "secondaryId"
+   ],
+   "frontend": {
+    "probe": "/donors/merge",
+    "referenced": true
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/donors/:id/interactions",
+   "line": 4816,
+   "auth": [
+    "requireAuth"
+   ],
+   "sourceSeen": true,
+   "layerCount": 2,
+   "params": {
+    "path": [
+     "id"
+    ],
+    "query": [],
+    "body": [
+     "date",
+     "metadata",
+     "note",
+     "type"
+    ]
+   },
+   "identifiers": [
+    "id"
+   ],
+   "frontend": {
+    "probe": "/donors",
+    "referenced": true
+   }
+  },
+  {
+   "method": "DELETE",
+   "path": "/interactions/:id",
+   "line": 4844,
+   "auth": [
+    "requireAuth"
+   ],
+   "sourceSeen": true,
+   "layerCount": 2,
+   "params": {
+    "path": [
+     "id"
+    ],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [
+    "id"
+   ],
+   "frontend": {
+    "probe": "/interactions",
+    "referenced": true
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/donors/:id/gifts",
+   "line": 4945,
+   "auth": [
+    "requireAuth",
+    "checkWriteAccess"
+   ],
+   "sourceSeen": true,
+   "layerCount": 3,
+   "params": {
+    "path": [
+     "id"
+    ],
+    "query": [],
+    "body": [
+     "amount",
+     "campaign",
+     "campaignId",
+     "campaign_id",
+     "date",
+     "fundId",
+     "fund_id",
+     "idempotencyKey",
+     "notes",
+     "pledgeId",
+     "type"
+    ]
+   },
+   "identifiers": [
+    "campaign",
+    "campaignId",
+    "campaign_id",
+    "fundId",
+    "fund_id",
+    "id",
+    "pledgeId"
+   ],
+   "frontend": {
+    "probe": "/donors",
+    "referenced": true
+   }
+  },
+  {
+   "method": "PUT",
+   "path": "/gifts/:id",
+   "line": 5127,
+   "auth": [
+    "requireAuth"
+   ],
+   "sourceSeen": true,
+   "layerCount": 2,
+   "params": {
+    "path": [
+     "id"
+    ],
+    "query": [],
+    "body": [
+     "acknowledgement_sent",
+     "amount",
+     "campaign",
+     "campaignId",
+     "campaign_id",
+     "date",
+     "fund_id",
+     "notes",
+     "payment_method",
+     "type"
+    ]
+   },
+   "identifiers": [
+    "campaign",
+    "campaignId",
+    "campaign_id",
+    "fund_id",
+    "id"
+   ],
+   "frontend": {
+    "probe": "/gifts",
+    "referenced": true
+   }
+  },
+  {
+   "method": "DELETE",
+   "path": "/gifts/:id",
+   "line": 5205,
+   "auth": [
+    "requireAuth"
+   ],
+   "sourceSeen": true,
+   "layerCount": 2,
+   "params": {
+    "path": [
+     "id"
+    ],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [
+    "id"
+   ],
+   "frontend": {
+    "probe": "/gifts",
+    "referenced": true
+   }
+  },
+  {
+   "method": "GET",
+   "path": "/donors/:id/pledges",
+   "line": 5264,
+   "auth": [
+    "requireAuth"
+   ],
+   "sourceSeen": true,
+   "layerCount": 2,
+   "params": {
+    "path": [
+     "id"
+    ],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [
+    "id"
+   ],
+   "frontend": {
+    "probe": "/donors",
+    "referenced": true
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/donors/:id/pledges",
+   "line": 5292,
+   "auth": [
+    "requireAuth",
+    "checkWriteAccess"
+   ],
+   "sourceSeen": true,
+   "layerCount": 3,
+   "params": {
+    "path": [
+     "id"
+    ],
+    "query": [],
+    "body": [
+     "amount",
+     "campaignId",
+     "campaign_id",
+     "dueDate",
+     "idempotencyKey",
+     "notes"
+    ]
+   },
+   "identifiers": [
+    "campaignId",
+    "campaign_id",
+    "id"
+   ],
+   "frontend": {
+    "probe": "/donors",
+    "referenced": true
+   }
+  },
+  {
+   "method": "PUT",
+   "path": "/pledges/:id",
+   "line": 5346,
+   "auth": [
+    "requireAuth",
+    "checkWriteAccess"
+   ],
+   "sourceSeen": true,
+   "layerCount": 3,
+   "params": {
+    "path": [
+     "id"
+    ],
+    "query": [],
+    "body": [
+     "amount",
+     "campaignId",
+     "campaign_id",
+     "dueDate",
+     "notes",
+     "status"
+    ]
+   },
+   "identifiers": [
+    "campaignId",
+    "campaign_id",
+    "id"
+   ],
+   "frontend": {
+    "probe": "/pledges",
+    "referenced": true
+   }
+  },
+  {
+   "method": "DELETE",
+   "path": "/pledges/:id",
+   "line": 5419,
+   "auth": [
+    "requireAuth"
+   ],
+   "sourceSeen": true,
+   "layerCount": 2,
+   "params": {
+    "path": [
+     "id"
+    ],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [
+    "id"
+   ],
+   "frontend": {
+    "probe": "/pledges",
+    "referenced": true
+   }
+  },
+  {
+   "method": "GET",
+   "path": "/receipts/preview",
+   "line": 5843,
+   "auth": [
+    "requireAuth",
+    "requireAdmin"
+   ],
+   "sourceSeen": true,
+   "layerCount": 3,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/receipts/preview",
+    "referenced": true
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/receipts/year-end-run",
+   "line": 5885,
+   "auth": [
+    "requireAuth",
+    "requireAdmin",
+    "checkWriteAccess"
+   ],
+   "sourceSeen": true,
+   "layerCount": 4,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": [
+     "dryRun",
+     "year"
+    ]
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/receipts/year-end-run",
+    "referenced": true
+   }
+  },
+  {
+   "method": "GET",
+   "path": "/receipts/:id/pdf",
+   "line": 5927,
+   "auth": [
+    "requireAuth"
+   ],
+   "sourceSeen": true,
+   "layerCount": 2,
+   "params": {
+    "path": [
+     "id"
+    ],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [
+    "id"
+   ],
+   "frontend": {
+    "probe": "/receipts",
+    "referenced": true
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/receipts/:id/void",
+   "line": 5942,
+   "auth": [
+    "requireAuth",
+    "requireAdmin"
+   ],
+   "sourceSeen": true,
+   "layerCount": 3,
+   "params": {
+    "path": [
+     "id"
+    ],
+    "query": [],
+    "body": [
+     "reason"
+    ]
+   },
+   "identifiers": [
+    "id"
+   ],
+   "frontend": {
+    "probe": "/receipts",
+    "referenced": true
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/gifts/:id/receipt",
+   "line": 5956,
+   "auth": [
+    "requireAuth",
+    "checkWriteAccess"
+   ],
+   "sourceSeen": true,
+   "layerCount": 3,
+   "params": {
+    "path": [
+     "id"
+    ],
+    "query": [
+     "resend"
+    ],
+    "body": []
+   },
+   "identifiers": [
+    "id"
+   ],
+   "frontend": {
+    "probe": "/gifts",
+    "referenced": true
+   }
+  },
+  {
+   "method": "GET",
+   "path": "/donors/:id/receipts",
+   "line": 5983,
+   "auth": [
+    "requireAuth"
+   ],
+   "sourceSeen": true,
+   "layerCount": 2,
+   "params": {
+    "path": [
+     "id"
+    ],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [
+    "id"
+   ],
+   "frontend": {
+    "probe": "/donors",
+    "referenced": true
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/donors/:id/year-end-statement",
+   "line": 5993,
+   "auth": [
+    "requireAuth",
+    "checkWriteAccess"
+   ],
+   "sourceSeen": true,
+   "layerCount": 3,
+   "params": {
+    "path": [
+     "id"
+    ],
+    "query": [],
+    "body": [
+     "send",
+     "year"
+    ]
+   },
+   "identifiers": [
+    "id"
+   ],
+   "frontend": {
+    "probe": "/donors",
+    "referenced": true
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/gifts/import-history",
+   "line": 6012,
+   "auth": [
+    "requireAuth",
+    "checkWriteAccess"
+   ],
+   "sourceSeen": true,
+   "layerCount": 3,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": [
+     "gifts",
+     "skipRowKeys"
+    ]
+   },
+   "identifiers": [
+    "gifts"
+   ],
+   "frontend": {
+    "probe": "/gifts/import-history",
+    "referenced": true
+   }
+  },
+  {
+   "method": "GET",
+   "path": "/donors/:id/planned-gifts",
+   "line": 6274,
+   "auth": [
+    "requireAuth"
+   ],
+   "sourceSeen": true,
+   "layerCount": 2,
+   "params": {
+    "path": [
+     "id"
+    ],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [
+    "id"
+   ],
+   "frontend": {
+    "probe": "/donors",
+    "referenced": true
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/donors/:id/planned-gifts",
+   "line": 6280,
+   "auth": [
+    "requireAuth"
+   ],
+   "sourceSeen": true,
+   "layerCount": 2,
+   "params": {
+    "path": [
+     "id"
+    ],
+    "query": [],
+    "body": [
+     "date_indicated",
+     "estimated_value",
+     "notes",
+     "type"
+    ]
+   },
+   "identifiers": [
+    "id"
+   ],
+   "frontend": {
+    "probe": "/donors",
+    "referenced": true
+   }
+  },
+  {
+   "method": "PUT",
+   "path": "/planned-gifts/:id",
+   "line": 6308,
+   "auth": [
+    "requireAuth"
+   ],
+   "sourceSeen": true,
+   "layerCount": 2,
+   "params": {
+    "path": [
+     "id"
+    ],
+    "query": [],
+    "body": [
+     "date_indicated",
+     "estimated_value",
+     "notes",
+     "type"
+    ]
+   },
+   "identifiers": [
+    "id"
+   ],
+   "frontend": {
+    "probe": "/planned-gifts",
+    "referenced": true
+   }
+  },
+  {
+   "method": "DELETE",
+   "path": "/planned-gifts/:id",
+   "line": 6323,
+   "auth": [
+    "requireAuth"
+   ],
+   "sourceSeen": true,
+   "layerCount": 2,
+   "params": {
+    "path": [
+     "id"
+    ],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [
+    "id"
+   ],
+   "frontend": {
+    "probe": "/planned-gifts",
+    "referenced": true
+   }
+  },
+  {
+   "method": "GET",
+   "path": "/donors/:id/materials",
+   "line": 6330,
+   "auth": [
+    "requireAuth"
+   ],
+   "sourceSeen": true,
+   "layerCount": 2,
+   "params": {
+    "path": [
+     "id"
+    ],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [
+    "id"
+   ],
+   "frontend": {
+    "probe": "/donors",
+    "referenced": true
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/donors/:id/materials",
+   "line": 6363,
+   "auth": [
+    "requireAuth"
+   ],
+   "sourceSeen": true,
+   "layerCount": 2,
+   "params": {
+    "path": [
+     "id"
+    ],
+    "query": [],
+    "body": [
+     "file_data",
+     "file_name",
+     "file_type",
+     "file_url",
+     "notes"
+    ]
+   },
+   "identifiers": [
+    "id"
+   ],
+   "frontend": {
+    "probe": "/donors",
+    "referenced": true
+   }
+  },
+  {
+   "method": "DELETE",
+   "path": "/materials/:id",
+   "line": 6394,
+   "auth": [
+    "requireAuth"
+   ],
+   "sourceSeen": true,
+   "layerCount": 2,
+   "params": {
+    "path": [
+     "id"
+    ],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [
+    "id"
+   ],
+   "frontend": {
+    "probe": "/materials",
+    "referenced": true
+   }
+  },
+  {
+   "method": "GET",
+   "path": "/households",
+   "line": 6441,
+   "auth": [
+    "requireAuth"
+   ],
+   "sourceSeen": true,
+   "layerCount": 2,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/households",
+    "referenced": true
+   }
+  },
+  {
+   "method": "GET",
+   "path": "/households/:id",
+   "line": 6453,
+   "auth": [
+    "requireAuth"
+   ],
+   "sourceSeen": true,
+   "layerCount": 2,
+   "params": {
+    "path": [
+     "id"
+    ],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [
+    "id"
+   ],
+   "frontend": {
+    "probe": "/households",
+    "referenced": true
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/households",
+   "line": 6481,
+   "auth": [
+    "requireAuth",
+    "checkWriteAccess"
+   ],
+   "sourceSeen": true,
+   "layerCount": 3,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": [
+     "jointAcknowledgment",
+     "memberIds",
+     "name",
+     "primaryDonorId"
+    ]
+   },
+   "identifiers": [
+    "memberIds",
+    "primaryDonorId"
+   ],
+   "frontend": {
+    "probe": "/households",
+    "referenced": true
+   }
+  },
+  {
+   "method": "PUT",
+   "path": "/households/:id",
+   "line": 6501,
+   "auth": [
+    "requireAuth",
+    "checkWriteAccess"
+   ],
+   "sourceSeen": true,
+   "layerCount": 3,
+   "params": {
+    "path": [
+     "id"
+    ],
+    "query": [],
+    "body": [
+     "jointAcknowledgment",
+     "memberIds",
+     "name",
+     "primaryDonorId"
+    ]
+   },
+   "identifiers": [
+    "id",
+    "memberIds",
+    "primaryDonorId"
+   ],
+   "frontend": {
+    "probe": "/households",
+    "referenced": true
+   }
+  },
+  {
+   "method": "DELETE",
+   "path": "/households/:id",
+   "line": 6530,
+   "auth": [
+    "requireAuth"
+   ],
+   "sourceSeen": true,
+   "layerCount": 2,
+   "params": {
+    "path": [
+     "id"
+    ],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [
+    "id"
+   ],
+   "frontend": {
+    "probe": "/households",
+    "referenced": true
+   }
+  },
+  {
+   "method": "GET",
+   "path": "/donors/:id/soft-credit",
+   "line": 6542,
+   "auth": [
+    "requireAuth"
+   ],
+   "sourceSeen": true,
+   "layerCount": 2,
+   "params": {
+    "path": [
+     "id"
+    ],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [
+    "id"
+   ],
+   "frontend": {
+    "probe": "/donors",
+    "referenced": true
+   }
+  },
+  {
+   "method": "GET",
+   "path": "/donors/:id/designations",
+   "line": 6567,
+   "auth": [
+    "requireAuth"
+   ],
+   "sourceSeen": true,
+   "layerCount": 2,
+   "params": {
+    "path": [
+     "id"
+    ],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [
+    "id"
+   ],
+   "frontend": {
+    "probe": "/donors",
+    "referenced": true
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/donors/:id/designations",
+   "line": 6574,
+   "auth": [
+    "requireAuth",
+    "checkWriteAccess"
+   ],
+   "sourceSeen": true,
+   "layerCount": 3,
+   "params": {
+    "path": [
+     "id"
+    ],
+    "query": [],
+    "body": [
+     "kind"
+    ]
+   },
+   "identifiers": [
+    "id"
+   ],
+   "frontend": {
+    "probe": "/donors",
+    "referenced": true
+   }
+  },
+  {
+   "method": "DELETE",
+   "path": "/donors/:id/designations/:kind",
+   "line": 6584,
+   "auth": [
+    "requireAuth"
+   ],
+   "sourceSeen": true,
+   "layerCount": 2,
+   "params": {
+    "path": [
+     "id",
+     "kind"
+    ],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [
+    "id"
+   ],
+   "frontend": {
+    "probe": "/donors",
+    "referenced": true
+   }
+  },
+  {
+   "method": "GET",
+   "path": "/portfolio/officers",
+   "line": 6594,
+   "auth": [
+    "requireAuth"
+   ],
+   "sourceSeen": true,
+   "layerCount": 2,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/portfolio/officers",
+    "referenced": true
+   }
+  },
+  {
+   "method": "PUT",
+   "path": "/portfolio/officers/:userId/color",
+   "line": 6629,
+   "auth": [
+    "requireAuth",
+    "requireAdmin",
+    "requirePlan(team)",
+    "checkWriteAccess"
+   ],
+   "sourceSeen": true,
+   "layerCount": 5,
+   "params": {
+    "path": [
+     "userId"
+    ],
+    "query": [],
+    "body": [
+     "color"
+    ]
+   },
+   "identifiers": [
+    "userId"
+   ],
+   "frontend": {
+    "probe": "/portfolio/officers",
+    "referenced": true
+   }
+  },
+  {
+   "method": "GET",
+   "path": "/pipeline",
+   "line": 6647,
+   "auth": [
+    "requireAuth"
+   ],
+   "sourceSeen": true,
+   "layerCount": 2,
+   "params": {
+    "path": [],
+    "query": [
+     "assignedTo",
+     "designation",
+     "minGiving",
+     "scope",
+     "search",
+     "sort"
+    ],
+    "body": []
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/pipeline",
+    "referenced": true
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/pipeline/add",
+   "line": 6790,
+   "auth": [
+    "requireAuth",
+    "requirePlan(team)",
+    "checkWriteAccess"
+   ],
+   "sourceSeen": true,
+   "layerCount": 4,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": [
+     "ids"
+    ]
+   },
+   "identifiers": [
+    "ids"
+   ],
+   "frontend": {
+    "probe": "/pipeline/add",
+    "referenced": true
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/pipeline/remove",
+   "line": 6812,
+   "auth": [
+    "requireAuth",
+    "requirePlan(team)",
+    "checkWriteAccess"
+   ],
+   "sourceSeen": true,
+   "layerCount": 4,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": [
+     "ids"
+    ]
+   },
+   "identifiers": [
+    "ids"
+   ],
+   "frontend": {
+    "probe": "/pipeline/remove",
+    "referenced": false
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/pipeline/:donorId/move",
+   "line": 6826,
+   "auth": [
+    "requireAuth",
+    "requirePlan(team)",
+    "checkWriteAccess"
+   ],
+   "sourceSeen": true,
+   "layerCount": 4,
+   "params": {
+    "path": [
+     "donorId"
+    ],
+    "query": [],
+    "body": [
+     "description",
+     "toStage"
+    ]
+   },
+   "identifiers": [
+    "donorId"
+   ],
+   "frontend": {
+    "probe": "/pipeline",
+    "referenced": true
+   }
+  },
+  {
+   "method": "GET",
+   "path": "/donors/:id/move-suggestions",
+   "line": 6853,
+   "auth": [
+    "requireAuth"
+   ],
+   "sourceSeen": true,
+   "layerCount": 2,
+   "params": {
+    "path": [
+     "id"
+    ],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [
+    "id"
+   ],
+   "frontend": {
+    "probe": "/donors",
+    "referenced": true
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/pipeline/run-auto-lapse",
+   "line": 6862,
+   "auth": [
+    "requireAuth",
+    "requireAdmin"
+   ],
+   "sourceSeen": true,
+   "layerCount": 3,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/pipeline/run-auto-lapse",
+    "referenced": false
+   }
+  },
+  {
+   "method": "GET",
+   "path": "/donors/:id/moves",
+   "line": 6868,
+   "auth": [
+    "requireAuth"
+   ],
+   "sourceSeen": true,
+   "layerCount": 2,
+   "params": {
+    "path": [
+     "id"
+    ],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [
+    "id"
+   ],
+   "frontend": {
+    "probe": "/donors",
+    "referenced": true
+   }
+  },
+  {
+   "method": "GET",
+   "path": "/donors/:id/opportunities",
+   "line": 6877,
+   "auth": [
+    "requireAuth"
+   ],
+   "sourceSeen": true,
+   "layerCount": 2,
+   "params": {
+    "path": [
+     "id"
+    ],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [
+    "id"
+   ],
+   "frontend": {
+    "probe": "/donors",
+    "referenced": true
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/donors/:id/opportunities",
+   "line": 6885,
+   "auth": [
+    "requireAuth",
+    "requirePlan(team)",
+    "checkWriteAccess"
+   ],
+   "sourceSeen": true,
+   "layerCount": 4,
+   "params": {
+    "path": [
+     "id"
+    ],
+    "query": [],
+    "body": [
+     "expectedClose",
+     "name",
+     "targetAmount"
+    ]
+   },
+   "identifiers": [
+    "id"
+   ],
+   "frontend": {
+    "probe": "/donors",
+    "referenced": true
+   }
+  },
+  {
+   "method": "PUT",
+   "path": "/opportunities/:id",
+   "line": 6904,
+   "auth": [
+    "requireAuth",
+    "requirePlan(team)",
+    "checkWriteAccess"
+   ],
+   "sourceSeen": true,
+   "layerCount": 4,
+   "params": {
+    "path": [
+     "id"
+    ],
+    "query": [],
+    "body": [
+     "expectedClose",
+     "giftAmount",
+     "giftId",
+     "name",
+     "status",
+     "targetAmount"
+    ]
+   },
+   "identifiers": [
+    "giftAmount",
+    "giftId",
+    "id"
+   ],
+   "frontend": {
+    "probe": "/opportunities",
+    "referenced": true
+   }
+  },
+  {
+   "method": "DELETE",
+   "path": "/opportunities/:id",
+   "line": 6937,
+   "auth": [
+    "requireAuth"
+   ],
+   "sourceSeen": true,
+   "layerCount": 2,
+   "params": {
+    "path": [
+     "id"
+    ],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [
+    "id"
+   ],
+   "frontend": {
+    "probe": "/opportunities",
+    "referenced": true
+   }
+  },
+  {
+   "method": "GET",
+   "path": "/pipeline/officer-activity",
+   "line": 6945,
+   "auth": [
+    "requireAuth"
+   ],
+   "sourceSeen": true,
+   "layerCount": 2,
+   "params": {
+    "path": [],
+    "query": [
+     "from",
+     "to"
+    ],
+    "body": []
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/pipeline/officer-activity",
+    "referenced": false
+   }
+  },
+  {
+   "method": "GET",
+   "path": "/donors/:id/relationships",
+   "line": 6980,
+   "auth": [
+    "requireAuth"
+   ],
+   "sourceSeen": true,
+   "layerCount": 2,
+   "params": {
+    "path": [
+     "id"
+    ],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [
+    "id"
+   ],
+   "frontend": {
+    "probe": "/donors",
+    "referenced": true
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/donors/:id/relationships",
+   "line": 7021,
+   "auth": [
+    "requireAuth",
+    "checkWriteAccess"
+   ],
+   "sourceSeen": true,
+   "layerCount": 3,
+   "params": {
+    "path": [
+     "id"
+    ],
+    "query": [],
+    "body": [
+     "notes",
+     "relatedDonorId",
+     "relationshipType"
+    ]
+   },
+   "identifiers": [
+    "id",
+    "relatedDonorId"
+   ],
+   "frontend": {
+    "probe": "/donors",
+    "referenced": true
+   }
+  },
+  {
+   "method": "DELETE",
+   "path": "/donor-relationships/:id",
+   "line": 7053,
+   "auth": [
+    "requireAuth"
+   ],
+   "sourceSeen": true,
+   "layerCount": 2,
+   "params": {
+    "path": [
+     "id"
+    ],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [
+    "id"
+   ],
+   "frontend": {
+    "probe": "/donor-relationships",
+    "referenced": true
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/donors/:id/score",
+   "line": 7061,
+   "auth": [
+    "requireAuth",
+    "requirePlan(team)",
+    "checkWriteAccess"
+   ],
+   "sourceSeen": true,
+   "layerCount": 4,
+   "params": {
+    "path": [
+     "id"
+    ],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [
+    "id"
+   ],
+   "frontend": {
+    "probe": "/donors",
+    "referenced": true
+   }
+  },
+  {
+   "method": "GET",
+   "path": "/donors/:id/fund-affinity",
+   "line": 7067,
+   "auth": [
+    "requireAuth"
+   ],
+   "sourceSeen": true,
+   "layerCount": 2,
+   "params": {
+    "path": [
+     "id"
+    ],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [
+    "id"
+   ],
+   "frontend": {
+    "probe": "/donors",
+    "referenced": true
+   }
+  },
+  {
+   "method": "GET",
+   "path": "/grants",
+   "line": 7120,
+   "auth": [
+    "requireAuth"
+   ],
+   "sourceSeen": true,
+   "layerCount": 2,
+   "params": {
+    "path": [],
+    "query": [
+     "limit",
+     "search"
+    ],
+    "body": []
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/grants",
+    "referenced": true
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/grants",
+   "line": 7162,
+   "auth": [
+    "requireAuth",
+    "checkWriteAccess"
+   ],
+   "sourceSeen": true,
+   "layerCount": 3,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": [
+     "amount",
+     "campaignId",
+     "campaign_id",
+     "deadline",
+     "funder",
+     "notes",
+     "officer",
+     "program",
+     "reportDue",
+     "status"
+    ]
+   },
+   "identifiers": [
+    "campaignId",
+    "campaign_id",
+    "funder"
+   ],
+   "frontend": {
+    "probe": "/grants",
+    "referenced": true
+   }
+  },
+  {
+   "method": "PUT",
+   "path": "/grants/:id",
+   "line": 7190,
+   "auth": [
+    "requireAuth",
+    "checkWriteAccess"
+   ],
+   "sourceSeen": true,
+   "layerCount": 3,
+   "params": {
+    "path": [
+     "id"
+    ],
+    "query": [],
+    "body": [
+     "adoptTxnId",
+     "amount",
+     "campaignId",
+     "campaign_id",
+     "deadline",
+     "description",
+     "funder",
+     "notes",
+     "officer",
+     "program",
+     "received",
+     "reportDue",
+     "requirements",
+     "status"
+    ]
+   },
+   "identifiers": [
+    "adoptTxnId",
+    "campaignId",
+    "campaign_id",
+    "funder",
+    "id"
+   ],
+   "frontend": {
+    "probe": "/grants",
+    "referenced": true
+   }
+  },
+  {
+   "method": "GET",
+   "path": "/grants/:id/manual-match",
+   "line": 7305,
+   "auth": [
+    "requireAuth"
+   ],
+   "sourceSeen": true,
+   "layerCount": 2,
+   "params": {
+    "path": [
+     "id"
+    ],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [
+    "id"
+   ],
+   "frontend": {
+    "probe": "/grants",
+    "referenced": true
+   }
+  },
+  {
+   "method": "DELETE",
+   "path": "/grants/:id",
+   "line": 7327,
+   "auth": [
+    "requireAuth"
+   ],
+   "sourceSeen": true,
+   "layerCount": 2,
+   "params": {
+    "path": [
+     "id"
+    ],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [
+    "id"
+   ],
+   "frontend": {
+    "probe": "/grants",
+    "referenced": true
+   }
+  },
+  {
+   "method": "GET",
+   "path": "/grants/:id",
+   "line": 7333,
+   "auth": [
+    "requireAuth"
+   ],
+   "sourceSeen": true,
+   "layerCount": 2,
+   "params": {
+    "path": [
+     "id"
+    ],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [
+    "id"
+   ],
+   "frontend": {
+    "probe": "/grants",
+    "referenced": true
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/grants/:id/interactions",
+   "line": 7346,
+   "auth": [
+    "requireAuth"
+   ],
+   "sourceSeen": true,
+   "layerCount": 2,
+   "params": {
+    "path": [
+     "id"
+    ],
+    "query": [],
+    "body": [
+     "date",
+     "note",
+     "type"
+    ]
+   },
+   "identifiers": [
+    "id"
+   ],
+   "frontend": {
+    "probe": "/grants",
+    "referenced": true
+   }
+  },
+  {
+   "method": "GET",
+   "path": "/volunteers",
+   "line": 7360,
+   "auth": [
+    "requireAuth"
+   ],
+   "sourceSeen": true,
+   "layerCount": 2,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/volunteers",
+    "referenced": true
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/volunteers",
+   "line": 7368,
+   "auth": [
+    "requireAuth",
+    "checkWriteAccess"
+   ],
+   "sourceSeen": true,
+   "layerCount": 3,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": [
+     "convertPotential",
+     "email",
+     "employer",
+     "hours",
+     "name",
+     "notes",
+     "skills"
+    ]
+   },
+   "identifiers": [
+    "email"
+   ],
+   "frontend": {
+    "probe": "/volunteers",
+    "referenced": true
+   }
+  },
+  {
+   "method": "PUT",
+   "path": "/volunteers/:id",
+   "line": 7383,
+   "auth": [
+    "requireAuth",
+    "checkWriteAccess"
+   ],
+   "sourceSeen": true,
+   "layerCount": 3,
+   "params": {
+    "path": [
+     "id"
+    ],
+    "query": [],
+    "body": [
+     "convertPotential",
+     "email",
+     "employer",
+     "hours",
+     "name",
+     "notes",
+     "skills"
+    ]
+   },
+   "identifiers": [
+    "email",
+    "id"
+   ],
+   "frontend": {
+    "probe": "/volunteers",
+    "referenced": true
+   }
+  },
+  {
+   "method": "GET",
+   "path": "/volunteers/donor-prospects",
+   "line": 7422,
+   "auth": [
+    "requireAuth"
+   ],
+   "sourceSeen": true,
+   "layerCount": 2,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/volunteers/donor-prospects",
+    "referenced": false
+   }
+  },
+  {
+   "method": "GET",
+   "path": "/tasks",
+   "line": 7442,
+   "auth": [
+    "requireAuth"
+   ],
+   "sourceSeen": true,
+   "layerCount": 2,
+   "params": {
+    "path": [],
+    "query": [
+     "scope"
+    ],
+    "body": []
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/tasks",
+    "referenced": true
+   }
+  },
+  {
+   "method": "GET",
+   "path": "/donors/:id/tasks",
+   "line": 7460,
+   "auth": [
+    "requireAuth"
+   ],
+   "sourceSeen": true,
+   "layerCount": 2,
+   "params": {
+    "path": [
+     "id"
+    ],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [
+    "id"
+   ],
+   "frontend": {
+    "probe": "/donors",
+    "referenced": true
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/tasks",
+   "line": 7471,
+   "auth": [
+    "requireAuth",
+    "checkWriteAccess"
+   ],
+   "sourceSeen": true,
+   "layerCount": 3,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": [
+     "assignedTo",
+     "assignedToName",
+     "donorId",
+     "due",
+     "priority",
+     "title",
+     "type"
+    ]
+   },
+   "identifiers": [
+    "donorId"
+   ],
+   "frontend": {
+    "probe": "/tasks",
+    "referenced": true
+   }
+  },
+  {
+   "method": "PUT",
+   "path": "/tasks/:id",
+   "line": 7502,
+   "auth": [
+    "requireAuth",
+    "checkWriteAccess"
+   ],
+   "sourceSeen": true,
+   "layerCount": 3,
+   "params": {
+    "path": [
+     "id"
+    ],
+    "query": [],
+    "body": [
+     "assignedTo",
+     "done",
+     "donorId",
+     "due",
+     "priority",
+     "title",
+     "type"
+    ]
+   },
+   "identifiers": [
+    "donorId",
+    "id"
+   ],
+   "frontend": {
+    "probe": "/tasks",
+    "referenced": true
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/tasks/:id/complete",
+   "line": 7542,
+   "auth": [
+    "requireAuth",
+    "checkWriteAccess"
+   ],
+   "sourceSeen": true,
+   "layerCount": 3,
+   "params": {
+    "path": [
+     "id"
+    ],
+    "query": [],
+    "body": [
+     "done"
+    ]
+   },
+   "identifiers": [
+    "id"
+   ],
+   "frontend": {
+    "probe": "/tasks",
+    "referenced": true
+   }
+  },
+  {
+   "method": "DELETE",
+   "path": "/tasks/:id",
+   "line": 7554,
+   "auth": [
+    "requireAuth"
+   ],
+   "sourceSeen": true,
+   "layerCount": 2,
+   "params": {
+    "path": [
+     "id"
+    ],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [
+    "id"
+   ],
+   "frontend": {
+    "probe": "/tasks",
+    "referenced": true
+   }
+  },
+  {
+   "method": "GET",
+   "path": "/board",
+   "line": 7561,
+   "auth": [
+    "requireAuth"
+   ],
+   "sourceSeen": true,
+   "layerCount": 2,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/board",
+    "referenced": true
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/board",
+   "line": 7566,
+   "auth": [
+    "requireAuth",
+    "checkWriteAccess"
+   ],
+   "sourceSeen": true,
+   "layerCount": 3,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": [
+     "attendance",
+     "committees",
+     "employer",
+     "givingLevel",
+     "name",
+     "role",
+     "term"
+    ]
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/board",
+    "referenced": true
+   }
+  },
+  {
+   "method": "GET",
+   "path": "/financials",
+   "line": 7581,
+   "auth": [
+    "requireAuth"
+   ],
+   "sourceSeen": true,
+   "layerCount": 2,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/financials",
+    "referenced": true
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/financials/month",
+   "line": 7609,
+   "auth": [
+    "requireAuth",
+    "requireAdmin"
+   ],
+   "sourceSeen": true,
+   "layerCount": 3,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": [
+     "admin",
+     "events",
+     "fundraising",
+     "grants",
+     "individual",
+     "month",
+     "otherRevenue",
+     "programs",
+     "year"
+    ]
+   },
+   "identifiers": [
+    "fundraising",
+    "grants"
+   ],
+   "frontend": {
+    "probe": "/financials/month",
+    "referenced": false
+   }
+  },
+  {
+   "method": "GET",
+   "path": "/dashboard/recent-activity",
+   "line": 7634,
+   "auth": [
+    "requireAuth"
+   ],
+   "sourceSeen": true,
+   "layerCount": 2,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/dashboard/recent-activity",
+    "referenced": false
+   }
+  },
+  {
+   "method": "GET",
+   "path": "/dashboard/my-stats",
+   "line": 7647,
+   "auth": [
+    "requireAuth"
+   ],
+   "sourceSeen": true,
+   "layerCount": 2,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/dashboard/my-stats",
+    "referenced": true
+   }
+  },
+  {
+   "method": "GET",
+   "path": "/dashboard/home",
+   "line": 7704,
+   "auth": [
+    "requireAuth"
+   ],
+   "sourceSeen": true,
+   "layerCount": 2,
+   "params": {
+    "path": [],
+    "query": [
+     "scope"
+    ],
+    "body": []
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/dashboard/home",
+    "referenced": true
+   }
+  },
+  {
+   "method": "GET",
+   "path": "/dashboard/my-stats/visits/breakdown",
+   "line": 7800,
+   "auth": [
+    "requireAuth"
+   ],
+   "sourceSeen": true,
+   "layerCount": 2,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/dashboard/my-stats/visits/breakdown",
+    "referenced": true
+   }
+  },
+  {
+   "method": "GET",
+   "path": "/dashboard/my-stats/moves/breakdown",
+   "line": 7830,
+   "auth": [
+    "requireAuth"
+   ],
+   "sourceSeen": true,
+   "layerCount": 2,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/dashboard/my-stats/moves/breakdown",
+    "referenced": true
+   }
+  },
+  {
+   "method": "GET",
+   "path": "/dashboard/my-stats/gifts/breakdown",
+   "line": 7861,
+   "auth": [
+    "requireAuth"
+   ],
+   "sourceSeen": true,
+   "layerCount": 2,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/dashboard/my-stats/gifts/breakdown",
+    "referenced": true
+   }
+  },
+  {
+   "method": "GET",
+   "path": "/dashboard/my-stats/pipeline/breakdown",
+   "line": 7895,
+   "auth": [
+    "requireAuth"
+   ],
+   "sourceSeen": true,
+   "layerCount": 2,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/dashboard/my-stats/pipeline/breakdown",
+    "referenced": true
+   }
+  },
+  {
+   "method": "GET",
+   "path": "/dashboard/my-stats/lapsed/breakdown",
+   "line": 7923,
+   "auth": [
+    "requireAuth"
+   ],
+   "sourceSeen": true,
+   "layerCount": 2,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/dashboard/my-stats/lapsed/breakdown",
+    "referenced": true
+   }
+  },
+  {
+   "method": "GET",
+   "path": "/dashboard/today",
+   "line": 7948,
+   "auth": [
+    "requireAuth"
+   ],
+   "sourceSeen": true,
+   "layerCount": 2,
+   "params": {
+    "path": [],
+    "query": [
+     "scope"
+    ],
+    "body": []
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/dashboard/today",
+    "referenced": true
+   }
+  },
+  {
+   "method": "GET",
+   "path": "/goals/active",
+   "line": 8351,
+   "auth": [
+    "requireAuth"
+   ],
+   "sourceSeen": true,
+   "layerCount": 2,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/goals/active",
+    "referenced": true
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/goals",
+   "line": 8431,
+   "auth": [
+    "requireAuth",
+    "requireAdmin",
+    "checkWriteAccess"
+   ],
+   "sourceSeen": true,
+   "layerCount": 4,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": [
+     "goalAmount",
+     "goalType",
+     "label",
+     "periodEnd",
+     "periodStart"
+    ]
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/goals",
+    "referenced": true
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/metrics/reset-baselines",
+   "line": 8458,
+   "auth": [
+    "requireAuth",
+    "requireAdmin"
+   ],
+   "sourceSeen": true,
+   "layerCount": 3,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/metrics/reset-baselines",
+    "referenced": false
+   }
+  },
+  {
+   "method": "GET",
+   "path": "/metrics/stewardship-summary",
+   "line": 8464,
+   "auth": [
+    "requireAuth"
+   ],
+   "sourceSeen": true,
+   "layerCount": 2,
+   "params": {
+    "path": [],
+    "query": [
+     "scope"
+    ],
+    "body": []
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/metrics/stewardship-summary",
+    "referenced": true
+   }
+  },
+  {
+   "method": "GET",
+   "path": "/dashboard/stewardship-debt/breakdown",
+   "line": 8515,
+   "auth": [
+    "requireAuth"
+   ],
+   "sourceSeen": true,
+   "layerCount": 2,
+   "params": {
+    "path": [],
+    "query": [
+     "scope"
+    ],
+    "body": []
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/dashboard/stewardship-debt/breakdown",
+    "referenced": true
+   }
+  },
+  {
+   "method": "GET",
+   "path": "/dashboard/retention/breakdown",
+   "line": 8540,
+   "auth": [
+    "requireAuth"
+   ],
+   "sourceSeen": true,
+   "layerCount": 2,
+   "params": {
+    "path": [],
+    "query": [
+     "scope"
+    ],
+    "body": []
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/dashboard/retention/breakdown",
+    "referenced": true
+   }
+  },
+  {
+   "method": "GET",
+   "path": "/dashboard",
+   "line": 8573,
+   "auth": [
+    "requireAuth"
+   ],
+   "sourceSeen": true,
+   "layerCount": 2,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/dashboard",
+    "referenced": true
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/ai/stream",
+   "line": 8597,
+   "auth": [
+    "requireAuth"
+   ],
+   "sourceSeen": true,
+   "layerCount": 2,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": [
+     "systemPrompt",
+     "userMessage"
+    ]
+   },
+   "identifiers": [
+    "userMessage"
+   ],
+   "frontend": {
+    "probe": "/ai/stream",
+    "referenced": true
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/ai/column-map",
+   "line": 8628,
+   "auth": [
+    "requireAuth"
+   ],
+   "sourceSeen": true,
+   "layerCount": 2,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": [
+     "headers",
+     "sample"
+    ]
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/ai/column-map",
+    "referenced": true
+   }
+  },
+  {
+   "method": "GET",
+   "path": "/ai/donor-score",
+   "line": 8665,
+   "auth": [
+    "requireAuth"
+   ],
+   "sourceSeen": true,
+   "layerCount": 2,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/ai/donor-score",
+    "referenced": false
+   }
+  },
+  {
+   "method": "PUT",
+   "path": "/org/smtp",
+   "line": 8700,
+   "auth": [
+    "requireAuth",
+    "requireAdmin"
+   ],
+   "sourceSeen": true,
+   "layerCount": 3,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": [
+     "smtpFrom",
+     "smtpHost",
+     "smtpPass",
+     "smtpPort",
+     "smtpUser"
+    ]
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/org/smtp",
+    "referenced": false
+   }
+  },
+  {
+   "method": "GET",
+   "path": "/email/test-smtp",
+   "line": 8710,
+   "auth": [
+    "requireAuth",
+    "requireAdmin"
+   ],
+   "sourceSeen": true,
+   "layerCount": 3,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/email/test-smtp",
+    "referenced": false
+   }
+  },
+  {
+   "method": "GET",
+   "path": "/unsubscribe",
+   "line": 9061,
+   "auth": [],
+   "sourceSeen": true,
+   "layerCount": 1,
+   "params": {
+    "path": [],
+    "query": [
+     "token"
+    ],
+    "body": []
+   },
+   "identifiers": [
+    "token"
+   ],
+   "frontend": {
+    "probe": "/unsubscribe",
+    "referenced": true
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/unsubscribe",
+   "line": 9071,
+   "auth": [],
+   "sourceSeen": true,
+   "layerCount": 1,
+   "params": {
+    "path": [],
+    "query": [
+     "token"
+    ],
+    "body": []
+   },
+   "identifiers": [
+    "token"
+   ],
+   "frontend": {
+    "probe": "/unsubscribe",
+    "referenced": true
+   }
+  },
+  {
+   "method": "GET",
+   "path": "/campaigns",
+   "line": 9373,
+   "auth": [
+    "requireAuth"
+   ],
+   "sourceSeen": true,
+   "layerCount": 2,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/campaigns",
+    "referenced": true
+   }
+  },
+  {
+   "method": "GET",
+   "path": "/campaigns/:id",
+   "line": 9391,
+   "auth": [
+    "requireAuth"
+   ],
+   "sourceSeen": true,
+   "layerCount": 2,
+   "params": {
+    "path": [
+     "id"
+    ],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [
+    "id"
+   ],
+   "frontend": {
+    "probe": "/campaigns",
+    "referenced": true
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/campaigns",
+   "line": 9407,
+   "auth": [
+    "requireAuth",
+    "checkWriteAccess"
+   ],
+   "sourceSeen": true,
+   "layerCount": 3,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": [
+     "body",
+     "name",
+     "scheduledAt",
+     "segment",
+     "subject",
+     "type"
+    ]
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/campaigns",
+    "referenced": true
+   }
+  },
+  {
+   "method": "PUT",
+   "path": "/campaigns/:id",
+   "line": 9422,
+   "auth": [
+    "requireAuth",
+    "checkWriteAccess"
+   ],
+   "sourceSeen": true,
+   "layerCount": 3,
+   "params": {
+    "path": [
+     "id"
+    ],
+    "query": [],
+    "body": [
+     "body",
+     "name",
+     "scheduledAt",
+     "segment",
+     "status",
+     "subject",
+     "type"
+    ]
+   },
+   "identifiers": [
+    "id"
+   ],
+   "frontend": {
+    "probe": "/campaigns",
+    "referenced": true
+   }
+  },
+  {
+   "method": "DELETE",
+   "path": "/campaigns/:id",
+   "line": 9446,
+   "auth": [
+    "requireAuth",
+    "requireAdmin"
+   ],
+   "sourceSeen": true,
+   "layerCount": 3,
+   "params": {
+    "path": [
+     "id"
+    ],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [
+    "id"
+   ],
+   "frontend": {
+    "probe": "/campaigns",
+    "referenced": true
+   }
+  },
+  {
+   "method": "PUT",
+   "path": "/campaigns/:id/briefing",
+   "line": 9460,
+   "auth": [
+    "requireAuth",
+    "checkWriteAccess"
+   ],
+   "sourceSeen": true,
+   "layerCount": 3,
+   "params": {
+    "path": [
+     "id"
+    ],
+    "query": [],
+    "body": [
+     "briefing",
+     "end_date",
+     "goal_amount",
+     "start_date"
+    ]
+   },
+   "identifiers": [
+    "id"
+   ],
+   "frontend": {
+    "probe": "/campaigns",
+    "referenced": true
+   }
+  },
+  {
+   "method": "GET",
+   "path": "/campaigns/:id/progress",
+   "line": 9472,
+   "auth": [
+    "requireAuth"
+   ],
+   "sourceSeen": true,
+   "layerCount": 2,
+   "params": {
+    "path": [
+     "id"
+    ],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [
+    "id"
+   ],
+   "frontend": {
+    "probe": "/campaigns",
+    "referenced": true
+   }
+  },
+  {
+   "method": "GET",
+   "path": "/fundraising/overview",
+   "line": 9713,
+   "auth": [
+    "requireAuth"
+   ],
+   "sourceSeen": true,
+   "layerCount": 2,
+   "params": {
+    "path": [],
+    "query": [
+     "yearMode"
+    ],
+    "body": []
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/fundraising/overview",
+    "referenced": true
+   }
+  },
+  {
+   "method": "GET",
+   "path": "/fundraising/campaigns",
+   "line": 9829,
+   "auth": [
+    "requireAuth"
+   ],
+   "sourceSeen": true,
+   "layerCount": 2,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/fundraising/campaigns",
+    "referenced": true
+   }
+  },
+  {
+   "method": "GET",
+   "path": "/fundraising/goals",
+   "line": 9834,
+   "auth": [
+    "requireAuth"
+   ],
+   "sourceSeen": true,
+   "layerCount": 2,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/fundraising/goals",
+    "referenced": false
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/fundraising/campaigns",
+   "line": 9877,
+   "auth": [
+    "requireAuth",
+    "checkWriteAccess"
+   ],
+   "sourceSeen": true,
+   "layerCount": 3,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": [
+     "endDate",
+     "goalAmount",
+     "goalCategory",
+     "heroImageData",
+     "name",
+     "parentGoalId",
+     "startDate"
+    ]
+   },
+   "identifiers": [
+    "parentGoalId"
+   ],
+   "frontend": {
+    "probe": "/fundraising/campaigns",
+    "referenced": true
+   }
+  },
+  {
+   "method": "PUT",
+   "path": "/fundraising/campaigns/:id",
+   "line": 9909,
+   "auth": [
+    "requireAuth",
+    "checkWriteAccess"
+   ],
+   "sourceSeen": true,
+   "layerCount": 3,
+   "params": {
+    "path": [
+     "id"
+    ],
+    "query": [],
+    "body": [
+     "endDate",
+     "goalAmount",
+     "goalCategory",
+     "heroImageData",
+     "name",
+     "parentGoalId",
+     "startDate"
+    ]
+   },
+   "identifiers": [
+    "id",
+    "parentGoalId"
+   ],
+   "frontend": {
+    "probe": "/fundraising/campaigns",
+    "referenced": true
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/campaigns/:id/send",
+   "line": 9986,
+   "auth": [
+    "requireAuth",
+    "requireAdmin",
+    "checkWriteAccess"
+   ],
+   "sourceSeen": true,
+   "layerCount": 4,
+   "params": {
+    "path": [
+     "id"
+    ],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [
+    "id"
+   ],
+   "frontend": {
+    "probe": "/campaigns",
+    "referenced": true
+   }
+  },
+  {
+   "method": "GET",
+   "path": "/track/:recipientId/open.gif",
+   "line": 10149,
+   "auth": [],
+   "sourceSeen": true,
+   "layerCount": 1,
+   "params": {
+    "path": [
+     "recipientId"
+    ],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [
+    "recipientId"
+   ],
+   "frontend": {
+    "probe": "/track",
+    "referenced": false
+   }
+  },
+  {
+   "method": "GET",
+   "path": "/programs",
+   "line": 10209,
+   "auth": [
+    "requireAuth"
+   ],
+   "sourceSeen": true,
+   "layerCount": 2,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/programs",
+    "referenced": true
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/programs",
+   "line": 10227,
+   "auth": [
+    "requireAuth"
+   ],
+   "sourceSeen": true,
+   "layerCount": 2,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": [
+     "budget",
+     "description",
+     "endDate",
+     "metrics",
+     "name",
+     "outcomes",
+     "participantCount",
+     "spent",
+     "staff",
+     "startDate",
+     "status"
+    ]
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/programs",
+    "referenced": true
+   }
+  },
+  {
+   "method": "PUT",
+   "path": "/programs/:id",
+   "line": 10244,
+   "auth": [
+    "requireAuth"
+   ],
+   "sourceSeen": true,
+   "layerCount": 2,
+   "params": {
+    "path": [
+     "id"
+    ],
+    "query": [],
+    "body": [
+     "budget",
+     "description",
+     "endDate",
+     "metrics",
+     "name",
+     "outcomes",
+     "participantCount",
+     "spent",
+     "staff",
+     "startDate",
+     "status"
+    ]
+   },
+   "identifiers": [
+    "id"
+   ],
+   "frontend": {
+    "probe": "/programs",
+    "referenced": true
+   }
+  },
+  {
+   "method": "DELETE",
+   "path": "/programs/:id",
+   "line": 10264,
+   "auth": [
+    "requireAuth",
+    "requireAdmin"
+   ],
+   "sourceSeen": true,
+   "layerCount": 3,
+   "params": {
+    "path": [
+     "id"
+    ],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [
+    "id"
+   ],
+   "frontend": {
+    "probe": "/programs",
+    "referenced": true
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/programs/:id/grants",
+   "line": 10270,
+   "auth": [
+    "requireAuth",
+    "requireAdmin"
+   ],
+   "sourceSeen": true,
+   "layerCount": 3,
+   "params": {
+    "path": [
+     "id"
+    ],
+    "query": [],
+    "body": [
+     "allocated",
+     "grantId"
+    ]
+   },
+   "identifiers": [
+    "grantId",
+    "id"
+   ],
+   "frontend": {
+    "probe": "/programs",
+    "referenced": true
+   }
+  },
+  {
+   "method": "DELETE",
+   "path": "/programs/:id/grants/:grantId",
+   "line": 10296,
+   "auth": [
+    "requireAuth",
+    "requireAdmin"
+   ],
+   "sourceSeen": true,
+   "layerCount": 3,
+   "params": {
+    "path": [
+     "grantId",
+     "id"
+    ],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [
+    "grantId",
+    "id"
+   ],
+   "frontend": {
+    "probe": "/programs",
+    "referenced": true
+   }
+  },
+  {
+   "method": "GET",
+   "path": "/annual-fund",
+   "line": 10306,
+   "auth": [
+    "requireAuth"
+   ],
+   "sourceSeen": true,
+   "layerCount": 2,
+   "params": {
+    "path": [],
+    "query": [
+     "year"
+    ],
+    "body": []
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/annual-fund",
+    "referenced": true
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/annual-fund/goal",
+   "line": 10385,
+   "auth": [
+    "requireAuth",
+    "requireAdmin"
+   ],
+   "sourceSeen": true,
+   "layerCount": 3,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": [
+     "goal",
+     "year"
+    ]
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/annual-fund/goal",
+    "referenced": true
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/stripe/connect",
+   "line": 10400,
+   "auth": [
+    "requireAuth",
+    "requireAdmin"
+   ],
+   "sourceSeen": true,
+   "layerCount": 3,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/stripe/connect",
+    "referenced": true
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/stripe/donation-page",
+   "line": 10445,
+   "auth": [
+    "requireAuth"
+   ],
+   "sourceSeen": true,
+   "layerCount": 2,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": [
+     "amount",
+     "donorEmail",
+     "donorName"
+    ]
+   },
+   "identifiers": [
+    "donorEmail",
+    "donorName"
+   ],
+   "frontend": {
+    "probe": "/stripe/donation-page",
+    "referenced": true
+   }
+  },
+  {
+   "method": "GET",
+   "path": "/stripe/status",
+   "line": 10477,
+   "auth": [
+    "requireAuth"
+   ],
+   "sourceSeen": true,
+   "layerCount": 2,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/stripe/status",
+    "referenced": true
+   }
+  },
+  {
+   "method": "GET",
+   "path": "/org/public-list",
+   "line": 10488,
+   "auth": [],
+   "sourceSeen": true,
+   "layerCount": 1,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/org/public-list",
+    "referenced": false
+   }
+  },
+  {
+   "method": "GET",
+   "path": "/org/:orgSlug/public",
+   "line": 10494,
+   "auth": [],
+   "sourceSeen": true,
+   "layerCount": 1,
+   "params": {
+    "path": [
+     "orgSlug"
+    ],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [
+    "orgSlug"
+   ],
+   "frontend": {
+    "probe": "/org",
+    "referenced": true
+   }
+  },
+  {
+   "method": "GET",
+   "path": "/giving-pages",
+   "line": 10537,
+   "auth": [
+    "requireAuth"
+   ],
+   "sourceSeen": true,
+   "layerCount": 2,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/giving-pages",
+    "referenced": true
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/giving-pages",
+   "line": 10574,
+   "auth": [
+    "requireAuth",
+    "requireAdmin",
+    "checkWriteAccess"
+   ],
+   "sourceSeen": true,
+   "layerCount": 4,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": [
+     "campaignId",
+     "fundId",
+     "goalAmount",
+     "imageUrl",
+     "slug",
+     "story",
+     "title"
+    ]
+   },
+   "identifiers": [
+    "campaignId",
+    "fundId",
+    "slug"
+   ],
+   "frontend": {
+    "probe": "/giving-pages",
+    "referenced": true
+   }
+  },
+  {
+   "method": "PUT",
+   "path": "/giving-pages/:id",
+   "line": 10601,
+   "auth": [
+    "requireAuth",
+    "requireAdmin",
+    "checkWriteAccess"
+   ],
+   "sourceSeen": true,
+   "layerCount": 4,
+   "params": {
+    "path": [
+     "id"
+    ],
+    "query": [],
+    "body": [
+     "campaignId",
+     "fundId",
+     "goalAmount",
+     "imageUrl",
+     "slug",
+     "status",
+     "story",
+     "title"
+    ]
+   },
+   "identifiers": [
+    "campaignId",
+    "fundId",
+    "id",
+    "slug"
+   ],
+   "frontend": {
+    "probe": "/giving-pages",
+    "referenced": true
+   }
+  },
+  {
+   "method": "DELETE",
+   "path": "/giving-pages/:id",
+   "line": 10660,
+   "auth": [
+    "requireAuth",
+    "requireAdmin"
+   ],
+   "sourceSeen": true,
+   "layerCount": 3,
+   "params": {
+    "path": [
+     "id"
+    ],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [
+    "id"
+   ],
+   "frontend": {
+    "probe": "/giving-pages",
+    "referenced": true
+   }
+  },
+  {
+   "method": "GET",
+   "path": "/org/:orgSlug/giving-page/:pageSlug/public",
+   "line": 10669,
+   "auth": [],
+   "sourceSeen": true,
+   "layerCount": 1,
+   "params": {
+    "path": [
+     "orgSlug",
+     "pageSlug"
+    ],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [
+    "orgSlug"
+   ],
+   "frontend": {
+    "probe": "/org",
+    "referenced": true
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/org/:orgSlug/giving-page/:pageSlug/fundraisers",
+   "line": 10805,
+   "auth": [
+    "donateLimiter"
+   ],
+   "sourceSeen": true,
+   "layerCount": 2,
+   "params": {
+    "path": [
+     "orgSlug",
+     "pageSlug"
+    ],
+    "query": [],
+    "body": [
+     "email",
+     "imageUrl",
+     "name",
+     "personalGoalAmount",
+     "story"
+    ]
+   },
+   "identifiers": [
+    "email",
+    "orgSlug"
+   ],
+   "frontend": {
+    "probe": "/org",
+    "referenced": true
+   }
+  },
+  {
+   "method": "GET",
+   "path": "/org/:orgSlug/giving-page/:pageSlug/fundraiser/:fundraiserSlug/public",
+   "line": 10876,
+   "auth": [],
+   "sourceSeen": true,
+   "layerCount": 1,
+   "params": {
+    "path": [
+     "fundraiserSlug",
+     "orgSlug",
+     "pageSlug"
+    ],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [
+    "fundraiserSlug",
+    "orgSlug"
+   ],
+   "frontend": {
+    "probe": "/org",
+    "referenced": true
+   }
+  },
+  {
+   "method": "GET",
+   "path": "/peer-fundraisers/manage/:token",
+   "line": 10916,
+   "auth": [
+    "fundraiserManageLimiter"
+   ],
+   "sourceSeen": true,
+   "layerCount": 2,
+   "params": {
+    "path": [
+     "token"
+    ],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [
+    "token"
+   ],
+   "frontend": {
+    "probe": "/peer-fundraisers/manage",
+    "referenced": true
+   }
+  },
+  {
+   "method": "PUT",
+   "path": "/peer-fundraisers/manage/:token",
+   "line": 10938,
+   "auth": [
+    "fundraiserManageLimiter"
+   ],
+   "sourceSeen": true,
+   "layerCount": 2,
+   "params": {
+    "path": [
+     "token"
+    ],
+    "query": [],
+    "body": [
+     "imageUrl",
+     "name",
+     "personalGoalAmount",
+     "story"
+    ]
+   },
+   "identifiers": [
+    "token"
+   ],
+   "frontend": {
+    "probe": "/peer-fundraisers/manage",
+    "referenced": true
+   }
+  },
+  {
+   "method": "GET",
+   "path": "/giving-pages/:id/fundraisers",
+   "line": 10971,
+   "auth": [
+    "requireAuth"
+   ],
+   "sourceSeen": true,
+   "layerCount": 2,
+   "params": {
+    "path": [
+     "id"
+    ],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [
+    "id"
+   ],
+   "frontend": {
+    "probe": "/giving-pages",
+    "referenced": true
+   }
+  },
+  {
+   "method": "PUT",
+   "path": "/peer-fundraisers/:id",
+   "line": 10991,
+   "auth": [
+    "requireAuth",
+    "requireAdmin",
+    "checkWriteAccess"
+   ],
+   "sourceSeen": true,
+   "layerCount": 4,
+   "params": {
+    "path": [
+     "id"
+    ],
+    "query": [],
+    "body": [
+     "status"
+    ]
+   },
+   "identifiers": [
+    "id"
+   ],
+   "frontend": {
+    "probe": "/peer-fundraisers",
+    "referenced": true
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/donate/:orgSlug",
+   "line": 11018,
+   "auth": [
+    "donateLimiter"
+   ],
+   "sourceSeen": true,
+   "layerCount": 2,
+   "params": {
+    "path": [
+     "orgSlug"
+    ],
+    "query": [],
+    "body": [
+     "amount",
+     "campaignId",
+     "coverFees",
+     "email",
+     "firstName",
+     "frequency",
+     "fundId",
+     "lastName"
+    ]
+   },
+   "identifiers": [
+    "campaignId",
+    "email",
+    "fundId",
+    "orgSlug"
+   ],
+   "frontend": {
+    "probe": "/donate",
+    "referenced": true
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/stripe/campaign-link",
+   "line": 11172,
+   "auth": [
+    "requireAuth"
+   ],
+   "sourceSeen": true,
+   "layerCount": 2,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": [
+     "campaignId",
+     "campaignName"
+    ]
+   },
+   "identifiers": [
+    "campaignId",
+    "campaignName"
+   ],
+   "frontend": {
+    "probe": "/stripe/campaign-link",
+    "referenced": true
+   }
+  },
+  {
+   "method": "GET",
+   "path": "/stripe/online-gifts",
+   "line": 11204,
+   "auth": [
+    "requireAuth"
+   ],
+   "sourceSeen": true,
+   "layerCount": 2,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/stripe/online-gifts",
+    "referenced": false
+   }
+  },
+  {
+   "method": "GET",
+   "path": "/finance/accounts",
+   "line": 11226,
+   "auth": [
+    "requireAuth"
+   ],
+   "sourceSeen": true,
+   "layerCount": 2,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/finance/accounts",
+    "referenced": true
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/finance/accounts",
+   "line": 11234,
+   "auth": [
+    "requireAuth",
+    "requireAdmin",
+    "checkWriteAccess"
+   ],
+   "sourceSeen": true,
+   "layerCount": 4,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": [
+     "code",
+     "name",
+     "subtype",
+     "type"
+    ]
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/finance/accounts",
+    "referenced": true
+   }
+  },
+  {
+   "method": "PUT",
+   "path": "/finance/accounts/:id",
+   "line": 11250,
+   "auth": [
+    "requireAuth",
+    "requireAdmin",
+    "checkWriteAccess"
+   ],
+   "sourceSeen": true,
+   "layerCount": 4,
+   "params": {
+    "path": [
+     "id"
+    ],
+    "query": [],
+    "body": [
+     "active",
+     "name",
+     "subtype"
+    ]
+   },
+   "identifiers": [
+    "id"
+   ],
+   "frontend": {
+    "probe": "/finance/accounts",
+    "referenced": true
+   }
+  },
+  {
+   "method": "GET",
+   "path": "/finance/funds",
+   "line": 11269,
+   "auth": [
+    "requireAuth"
+   ],
+   "sourceSeen": true,
+   "layerCount": 2,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/finance/funds",
+    "referenced": true
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/finance/funds",
+   "line": 11277,
+   "auth": [
+    "requireAuth",
+    "requireAdmin",
+    "checkWriteAccess"
+   ],
+   "sourceSeen": true,
+   "layerCount": 4,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": [
+     "description",
+     "name",
+     "restricted"
+    ]
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/finance/funds",
+    "referenced": true
+   }
+  },
+  {
+   "method": "PUT",
+   "path": "/finance/funds/:id",
+   "line": 11293,
+   "auth": [
+    "requireAuth",
+    "requireAdmin",
+    "checkWriteAccess"
+   ],
+   "sourceSeen": true,
+   "layerCount": 4,
+   "params": {
+    "path": [
+     "id"
+    ],
+    "query": [],
+    "body": [
+     "description",
+     "name",
+     "restricted"
+    ]
+   },
+   "identifiers": [
+    "id"
+   ],
+   "frontend": {
+    "probe": "/finance/funds",
+    "referenced": true
+   }
+  },
+  {
+   "method": "GET",
+   "path": "/finance/transactions",
+   "line": 11312,
+   "auth": [
+    "requireAuth"
+   ],
+   "sourceSeen": true,
+   "layerCount": 2,
+   "params": {
+    "path": [],
+    "query": [
+     "account",
+     "donor_id",
+     "fund",
+     "year"
+    ],
+    "body": []
+   },
+   "identifiers": [
+    "account",
+    "donor_id",
+    "fund"
+   ],
+   "frontend": {
+    "probe": "/finance/transactions",
+    "referenced": true
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/finance/transactions",
+   "line": 11332,
+   "auth": [
+    "requireAuth",
+    "checkWriteAccess"
+   ],
+   "sourceSeen": true,
+   "layerCount": 3,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": [
+     "accountId",
+     "amount",
+     "date",
+     "description",
+     "donorId",
+     "fundId",
+     "notes",
+     "type",
+     "vendorDonor"
+    ]
+   },
+   "identifiers": [
+    "accountId",
+    "donorId",
+    "fundId"
+   ],
+   "frontend": {
+    "probe": "/finance/transactions",
+    "referenced": true
+   }
+  },
+  {
+   "method": "DELETE",
+   "path": "/finance/transactions/:id",
+   "line": 11362,
+   "auth": [
+    "requireAuth",
+    "requireAdmin"
+   ],
+   "sourceSeen": true,
+   "layerCount": 3,
+   "params": {
+    "path": [
+     "id"
+    ],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [
+    "id"
+   ],
+   "frontend": {
+    "probe": "/finance/transactions",
+    "referenced": true
+   }
+  },
+  {
+   "method": "GET",
+   "path": "/finance/budgets",
+   "line": 11379,
+   "auth": [
+    "requireAuth"
+   ],
+   "sourceSeen": true,
+   "layerCount": 2,
+   "params": {
+    "path": [],
+    "query": [
+     "year"
+    ],
+    "body": []
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/finance/budgets",
+    "referenced": true
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/finance/budgets",
+   "line": 11411,
+   "auth": [
+    "requireAuth",
+    "requireAdmin",
+    "checkWriteAccess"
+   ],
+   "sourceSeen": true,
+   "layerCount": 4,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": [
+     "accountId",
+     "amount",
+     "year"
+    ]
+   },
+   "identifiers": [
+    "accountId"
+   ],
+   "frontend": {
+    "probe": "/finance/budgets",
+    "referenced": true
+   }
+  },
+  {
+   "method": "GET",
+   "path": "/finance/summary",
+   "line": 11479,
+   "auth": [
+    "requireAuth"
+   ],
+   "sourceSeen": true,
+   "layerCount": 2,
+   "params": {
+    "path": [],
+    "query": [
+     "yearMode"
+    ],
+    "body": []
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/finance/summary",
+    "referenced": true
+   }
+  },
+  {
+   "method": "GET",
+   "path": "/finance/stripe-summary",
+   "line": 11575,
+   "auth": [
+    "requireAuth"
+   ],
+   "sourceSeen": true,
+   "layerCount": 2,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/finance/stripe-summary",
+    "referenced": true
+   }
+  },
+  {
+   "method": "GET",
+   "path": "/finance/audit-log",
+   "line": 11622,
+   "auth": [
+    "requireAuth"
+   ],
+   "sourceSeen": true,
+   "layerCount": 2,
+   "params": {
+    "path": [],
+    "query": [
+     "action",
+     "entityType",
+     "limit"
+    ],
+    "body": []
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/finance/audit-log",
+    "referenced": true
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/demo-request",
+   "line": 11638,
+   "auth": [],
+   "sourceSeen": true,
+   "layerCount": 1,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": [
+     "challenge",
+     "email",
+     "name",
+     "orgName",
+     "orgSize"
+    ]
+   },
+   "identifiers": [
+    "email",
+    "orgName",
+    "orgSize"
+   ],
+   "frontend": {
+    "probe": "/demo-request",
+    "referenced": false
+   }
+  },
+  {
+   "method": "GET",
+   "path": "/reports/board",
+   "line": 11692,
+   "auth": [
+    "requireAuth"
+   ],
+   "sourceSeen": true,
+   "layerCount": 2,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/reports/board",
+    "referenced": true
+   }
+  },
+  {
+   "method": "GET",
+   "path": "/reports/board/:id/pdf",
+   "line": 11705,
+   "auth": [
+    "requireAuth"
+   ],
+   "sourceSeen": true,
+   "layerCount": 2,
+   "params": {
+    "path": [
+     "id"
+    ],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [
+    "id"
+   ],
+   "frontend": {
+    "probe": "/reports/board",
+    "referenced": true
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/reports/board",
+   "line": 11723,
+   "auth": [
+    "requireAuth"
+   ],
+   "sourceSeen": true,
+   "layerCount": 2,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/reports/board",
+    "referenced": true
+   }
+  },
+  {
+   "method": "GET",
+   "path": "/reports/:key",
+   "line": 12695,
+   "auth": [
+    "requireAuth"
+   ],
+   "sourceSeen": true,
+   "layerCount": 2,
+   "params": {
+    "path": [
+     "key"
+    ],
+    "query": [
+     "format"
+    ],
+    "body": []
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/reports",
+    "referenced": true
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/digests/run-daily",
+   "line": 13102,
+   "auth": [
+    "requireAuth",
+    "requireAdmin"
+   ],
+   "sourceSeen": true,
+   "layerCount": 3,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": [
+     "dryRun",
+     "today"
+    ]
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/digests/run-daily",
+    "referenced": false
+   }
+  },
+  {
+   "method": "GET",
+   "path": "/digests/preview",
+   "line": 13112,
+   "auth": [
+    "requireAuth"
+   ],
+   "sourceSeen": true,
+   "layerCount": 2,
+   "params": {
+    "path": [],
+    "query": [
+     "type"
+    ],
+    "body": []
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/digests/preview",
+    "referenced": true
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/digests/run",
+   "line": 13140,
+   "auth": [
+    "requireAuth",
+    "requireAdmin"
+   ],
+   "sourceSeen": true,
+   "layerCount": 3,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": [
+     "dryRun",
+     "monthStart",
+     "type",
+     "weekStart"
+    ]
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/digests/run",
+    "referenced": false
+   }
+  },
+  {
+   "method": "GET",
+   "path": "/donors/:id/impact-summary/pdf",
+   "line": 13746,
+   "auth": [
+    "requireAuth"
+   ],
+   "sourceSeen": true,
+   "layerCount": 2,
+   "params": {
+    "path": [
+     "id"
+    ],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [
+    "id"
+   ],
+   "frontend": {
+    "probe": "/donors",
+    "referenced": true
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/sequences/process",
+   "line": 13988,
+   "auth": [
+    "requireAuth",
+    "requireAdmin"
+   ],
+   "sourceSeen": true,
+   "layerCount": 3,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/sequences/process",
+    "referenced": true
+   }
+  },
+  {
+   "method": "GET",
+   "path": "/sequences",
+   "line": 13994,
+   "auth": [
+    "requireAuth"
+   ],
+   "sourceSeen": true,
+   "layerCount": 2,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/sequences",
+    "referenced": true
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/sequences",
+   "line": 14007,
+   "auth": [
+    "requireAuth",
+    "requireAdmin"
+   ],
+   "sourceSeen": true,
+   "layerCount": 3,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": [
+     "name",
+     "steps",
+     "trigger",
+     "triggerStage"
+    ]
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/sequences",
+    "referenced": true
+   }
+  },
+  {
+   "method": "GET",
+   "path": "/sequences/:id/steps",
+   "line": 14026,
+   "auth": [
+    "requireAuth"
+   ],
+   "sourceSeen": true,
+   "layerCount": 2,
+   "params": {
+    "path": [
+     "id"
+    ],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [
+    "id"
+   ],
+   "frontend": {
+    "probe": "/sequences",
+    "referenced": true
+   }
+  },
+  {
+   "method": "GET",
+   "path": "/sequences/:id/enrollments",
+   "line": 14033,
+   "auth": [
+    "requireAuth"
+   ],
+   "sourceSeen": true,
+   "layerCount": 2,
+   "params": {
+    "path": [
+     "id"
+    ],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [
+    "id"
+   ],
+   "frontend": {
+    "probe": "/sequences",
+    "referenced": true
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/sequences/:id/enroll",
+   "line": 14051,
+   "auth": [
+    "requireAuth",
+    "requirePlan(team)"
+   ],
+   "sourceSeen": true,
+   "layerCount": 3,
+   "params": {
+    "path": [
+     "id"
+    ],
+    "query": [],
+    "body": [
+     "donorId"
+    ]
+   },
+   "identifiers": [
+    "donorId",
+    "id"
+   ],
+   "frontend": {
+    "probe": "/sequences",
+    "referenced": true
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/sequences/:id/unenroll",
+   "line": 14084,
+   "auth": [
+    "requireAuth"
+   ],
+   "sourceSeen": true,
+   "layerCount": 2,
+   "params": {
+    "path": [
+     "id"
+    ],
+    "query": [],
+    "body": [
+     "donorId"
+    ]
+   },
+   "identifiers": [
+    "donorId",
+    "id"
+   ],
+   "frontend": {
+    "probe": "/sequences",
+    "referenced": true
+   }
+  },
+  {
+   "method": "PUT",
+   "path": "/sequences/:id",
+   "line": 14094,
+   "auth": [
+    "requireAuth",
+    "requireAdmin"
+   ],
+   "sourceSeen": true,
+   "layerCount": 3,
+   "params": {
+    "path": [
+     "id"
+    ],
+    "query": [],
+    "body": [
+     "name",
+     "status",
+     "steps",
+     "trigger",
+     "triggerStage"
+    ]
+   },
+   "identifiers": [
+    "id"
+   ],
+   "frontend": {
+    "probe": "/sequences",
+    "referenced": true
+   }
+  },
+  {
+   "method": "PATCH",
+   "path": "/sequences/:id/status",
+   "line": 14116,
+   "auth": [
+    "requireAuth",
+    "requireAdmin"
+   ],
+   "sourceSeen": true,
+   "layerCount": 3,
+   "params": {
+    "path": [
+     "id"
+    ],
+    "query": [],
+    "body": [
+     "status"
+    ]
+   },
+   "identifiers": [
+    "id"
+   ],
+   "frontend": {
+    "probe": "/sequences",
+    "referenced": true
+   }
+  },
+  {
+   "method": "DELETE",
+   "path": "/sequences/:id",
+   "line": 14127,
+   "auth": [
+    "requireAuth",
+    "requireAdmin"
+   ],
+   "sourceSeen": true,
+   "layerCount": 3,
+   "params": {
+    "path": [
+     "id"
+    ],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [
+    "id"
+   ],
+   "frontend": {
+    "probe": "/sequences",
+    "referenced": true
+   }
+  },
+  {
+   "method": "GET",
+   "path": "/impact-metrics",
+   "line": 14136,
+   "auth": [
+    "requireAuth"
+   ],
+   "sourceSeen": true,
+   "layerCount": 2,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/impact-metrics",
+    "referenced": true
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/impact-metrics",
+   "line": 14141,
+   "auth": [
+    "requireAuth",
+    "requireAdmin",
+    "checkWriteAccess"
+   ],
+   "sourceSeen": true,
+   "layerCount": 4,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": [
+     "dollarThreshold",
+     "name",
+     "outcomeTemplate"
+    ]
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/impact-metrics",
+    "referenced": true
+   }
+  },
+  {
+   "method": "PUT",
+   "path": "/impact-metrics/:id",
+   "line": 14153,
+   "auth": [
+    "requireAuth",
+    "requireAdmin",
+    "checkWriteAccess"
+   ],
+   "sourceSeen": true,
+   "layerCount": 4,
+   "params": {
+    "path": [
+     "id"
+    ],
+    "query": [],
+    "body": [
+     "active",
+     "dollarThreshold",
+     "name",
+     "outcomeTemplate"
+    ]
+   },
+   "identifiers": [
+    "id"
+   ],
+   "frontend": {
+    "probe": "/impact-metrics",
+    "referenced": true
+   }
+  },
+  {
+   "method": "DELETE",
+   "path": "/impact-metrics/:id",
+   "line": 14164,
+   "auth": [
+    "requireAuth",
+    "requireAdmin"
+   ],
+   "sourceSeen": true,
+   "layerCount": 3,
+   "params": {
+    "path": [
+     "id"
+    ],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [
+    "id"
+   ],
+   "frontend": {
+    "probe": "/impact-metrics",
+    "referenced": true
+   }
+  },
+  {
+   "method": "GET",
+   "path": "/milestone-drafts",
+   "line": 14172,
+   "auth": [
+    "requireAuth"
+   ],
+   "sourceSeen": true,
+   "layerCount": 2,
+   "params": {
+    "path": [],
+    "query": [
+     "status"
+    ],
+    "body": []
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/milestone-drafts",
+    "referenced": true
+   }
+  },
+  {
+   "method": "PUT",
+   "path": "/milestone-drafts/:id",
+   "line": 14185,
+   "auth": [
+    "requireAuth",
+    "checkWriteAccess"
+   ],
+   "sourceSeen": true,
+   "layerCount": 3,
+   "params": {
+    "path": [
+     "id"
+    ],
+    "query": [],
+    "body": [
+     "body",
+     "subject"
+    ]
+   },
+   "identifiers": [
+    "id"
+   ],
+   "frontend": {
+    "probe": "/milestone-drafts",
+    "referenced": true
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/milestone-drafts/:id/dismiss",
+   "line": 14197,
+   "auth": [
+    "requireAuth"
+   ],
+   "sourceSeen": true,
+   "layerCount": 2,
+   "params": {
+    "path": [
+     "id"
+    ],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [
+    "id"
+   ],
+   "frontend": {
+    "probe": "/milestone-drafts",
+    "referenced": true
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/milestone-drafts/:id/send",
+   "line": 14206,
+   "auth": [
+    "requireAuth",
+    "requireAdmin",
+    "checkWriteAccess"
+   ],
+   "sourceSeen": true,
+   "layerCount": 4,
+   "params": {
+    "path": [
+     "id"
+    ],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [
+    "id"
+   ],
+   "frontend": {
+    "probe": "/milestone-drafts",
+    "referenced": true
+   }
+  },
+  {
+   "method": "GET",
+   "path": "/note-reminders",
+   "line": 14250,
+   "auth": [
+    "requireAuth"
+   ],
+   "sourceSeen": true,
+   "layerCount": 2,
+   "params": {
+    "path": [],
+    "query": [
+     "status"
+    ],
+    "body": []
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/note-reminders",
+    "referenced": true
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/note-reminders/:id/send",
+   "line": 14265,
+   "auth": [
+    "requireAuth"
+   ],
+   "sourceSeen": true,
+   "layerCount": 2,
+   "params": {
+    "path": [
+     "id"
+    ],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [
+    "id"
+   ],
+   "frontend": {
+    "probe": "/note-reminders",
+    "referenced": true
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/note-reminders/:id/dismiss",
+   "line": 14288,
+   "auth": [
+    "requireAuth"
+   ],
+   "sourceSeen": true,
+   "layerCount": 2,
+   "params": {
+    "path": [
+     "id"
+    ],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [
+    "id"
+   ],
+   "frontend": {
+    "probe": "/note-reminders",
+    "referenced": true
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/voice-memos/transcribe",
+   "line": 14305,
+   "auth": [
+    "requireAuth"
+   ],
+   "sourceSeen": true,
+   "layerCount": 2,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": [
+     "audioBase64",
+     "donorId",
+     "mimeType"
+    ]
+   },
+   "identifiers": [
+    "donorId"
+   ],
+   "frontend": {
+    "probe": "/voice-memos/transcribe",
+    "referenced": true
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/voice-memos/save",
+   "line": 14363,
+   "auth": [
+    "requireAuth",
+    "checkWriteAccess"
+   ],
+   "sourceSeen": true,
+   "layerCount": 3,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": [
+     "actionText",
+     "addDetailToNotes",
+     "createFollowUpTask",
+     "detailText",
+     "donorId",
+     "transcript"
+    ]
+   },
+   "identifiers": [
+    "donorId"
+   ],
+   "frontend": {
+    "probe": "/voice-memos/save",
+    "referenced": true
+   }
+  },
+  {
+   "method": "GET",
+   "path": "/custom-fields",
+   "line": 14398,
+   "auth": [
+    "requireAuth"
+   ],
+   "sourceSeen": true,
+   "layerCount": 2,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/custom-fields",
+    "referenced": true
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/custom-fields",
+   "line": 14406,
+   "auth": [
+    "requireAuth",
+    "requireAdmin",
+    "checkWriteAccess"
+   ],
+   "sourceSeen": true,
+   "layerCount": 4,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": [
+     "fieldType",
+     "label",
+     "options",
+     "required"
+    ]
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/custom-fields",
+    "referenced": true
+   }
+  },
+  {
+   "method": "PUT",
+   "path": "/custom-fields/reorder",
+   "line": 14424,
+   "auth": [
+    "requireAuth",
+    "requireAdmin",
+    "checkWriteAccess"
+   ],
+   "sourceSeen": true,
+   "layerCount": 4,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": [
+     "ids"
+    ]
+   },
+   "identifiers": [
+    "ids"
+   ],
+   "frontend": {
+    "probe": "/custom-fields/reorder",
+    "referenced": false
+   }
+  },
+  {
+   "method": "PUT",
+   "path": "/custom-fields/:id",
+   "line": 14436,
+   "auth": [
+    "requireAuth",
+    "requireAdmin",
+    "checkWriteAccess"
+   ],
+   "sourceSeen": true,
+   "layerCount": 4,
+   "params": {
+    "path": [
+     "id"
+    ],
+    "query": [],
+    "body": [
+     "fieldType",
+     "label",
+     "options",
+     "required",
+     "showInDirectory"
+    ]
+   },
+   "identifiers": [
+    "id"
+   ],
+   "frontend": {
+    "probe": "/custom-fields",
+    "referenced": true
+   }
+  },
+  {
+   "method": "DELETE",
+   "path": "/custom-fields/:id",
+   "line": 14447,
+   "auth": [
+    "requireAuth",
+    "requireAdmin"
+   ],
+   "sourceSeen": true,
+   "layerCount": 3,
+   "params": {
+    "path": [
+     "id"
+    ],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [
+    "id"
+   ],
+   "frontend": {
+    "probe": "/custom-fields",
+    "referenced": true
+   }
+  },
+  {
+   "method": "GET",
+   "path": "/donors/:id/custom-fields",
+   "line": 14454,
+   "auth": [
+    "requireAuth"
+   ],
+   "sourceSeen": true,
+   "layerCount": 2,
+   "params": {
+    "path": [
+     "id"
+    ],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [
+    "id"
+   ],
+   "frontend": {
+    "probe": "/donors",
+    "referenced": true
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/donors/:id/custom-fields",
+   "line": 14476,
+   "auth": [
+    "requireAuth"
+   ],
+   "sourceSeen": true,
+   "layerCount": 2,
+   "params": {
+    "path": [
+     "id"
+    ],
+    "query": [],
+    "body": [
+     "fieldId",
+     "value"
+    ]
+   },
+   "identifiers": [
+    "fieldId",
+    "id"
+   ],
+   "frontend": {
+    "probe": "/donors",
+    "referenced": true
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/admin/reconcile/run",
+   "line": 14985,
+   "auth": [
+    "requireAuth",
+    "requireSuperAdmin"
+   ],
+   "sourceSeen": true,
+   "layerCount": 4,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/admin/reconcile/run",
+    "referenced": false
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/admin/webhook-subscriptions/check",
+   "line": 14992,
+   "auth": [
+    "requireAuth",
+    "requireSuperAdmin"
+   ],
+   "sourceSeen": true,
+   "layerCount": 4,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/admin/webhook-subscriptions/check",
+    "referenced": false
+   }
+  },
+  {
+   "method": "GET",
+   "path": "/workflows",
+   "line": 15342,
+   "auth": [
+    "requireAuth"
+   ],
+   "sourceSeen": true,
+   "layerCount": 2,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/workflows",
+    "referenced": true
+   }
+  },
+  {
+   "method": "GET",
+   "path": "/workflows/:id/runs",
+   "line": 15359,
+   "auth": [
+    "requireAuth"
+   ],
+   "sourceSeen": true,
+   "layerCount": 2,
+   "params": {
+    "path": [
+     "id"
+    ],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [
+    "id"
+   ],
+   "frontend": {
+    "probe": "/workflows",
+    "referenced": true
+   }
+  },
+  {
+   "method": "PUT",
+   "path": "/workflows/:id",
+   "line": 15368,
+   "auth": [
+    "requireAuth",
+    "requireAdmin",
+    "checkWriteAccess"
+   ],
+   "sourceSeen": true,
+   "layerCount": 4,
+   "params": {
+    "path": [
+     "id"
+    ],
+    "query": [],
+    "body": [
+     "config",
+     "enabled"
+    ]
+   },
+   "identifiers": [
+    "id"
+   ],
+   "frontend": {
+    "probe": "/workflows",
+    "referenced": true
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/workflows/simulate",
+   "line": 15392,
+   "auth": [
+    "requireAuth",
+    "requireAdmin"
+   ],
+   "sourceSeen": true,
+   "layerCount": 3,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": [
+     "amount",
+     "dedupKey",
+     "donorId",
+     "isFirstGift",
+     "trigger"
+    ]
+   },
+   "identifiers": [
+    "donorId"
+   ],
+   "frontend": {
+    "probe": "/workflows/simulate",
+    "referenced": false
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/recurring/process-dunning",
+   "line": 15403,
+   "auth": [
+    "requireAuth",
+    "requireAdmin"
+   ],
+   "sourceSeen": true,
+   "layerCount": 3,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/recurring/process-dunning",
+    "referenced": false
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/workflows/run-sweeps",
+   "line": 15412,
+   "auth": [
+    "requireAuth",
+    "requireAdmin"
+   ],
+   "sourceSeen": true,
+   "layerCount": 3,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/workflows/run-sweeps",
+    "referenced": false
+   }
+  },
+  {
+   "method": "GET",
+   "path": "/recurring/update-card",
+   "line": 15426,
+   "auth": [],
+   "sourceSeen": true,
+   "layerCount": 1,
+   "params": {
+    "path": [
+     "subId"
+    ],
+    "query": [
+     "token"
+    ],
+    "body": []
+   },
+   "identifiers": [
+    "subId",
+    "token"
+   ],
+   "frontend": {
+    "probe": "/recurring/update-card",
+    "referenced": true
+   }
+  },
+  {
+   "method": "GET",
+   "path": "/recurring/roster",
+   "line": 15503,
+   "auth": [
+    "requireAuth"
+   ],
+   "sourceSeen": true,
+   "layerCount": 2,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/recurring/roster",
+    "referenced": true
+   }
+  },
+  {
+   "method": "GET",
+   "path": "/recurring/movement",
+   "line": 15575,
+   "auth": [
+    "requireAuth"
+   ],
+   "sourceSeen": true,
+   "layerCount": 2,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/recurring/movement",
+    "referenced": true
+   }
+  },
+  {
+   "method": "GET",
+   "path": "/recurring/exceptions",
+   "line": 15637,
+   "auth": [
+    "requireAuth"
+   ],
+   "sourceSeen": true,
+   "layerCount": 2,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/recurring/exceptions",
+    "referenced": true
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/recurring/subs/:subId/pause",
+   "line": 15718,
+   "auth": [
+    "requireAuth",
+    "checkWriteAccess"
+   ],
+   "sourceSeen": true,
+   "layerCount": 3,
+   "params": {
+    "path": [
+     "subId"
+    ],
+    "query": [],
+    "body": [
+     "resumeAt"
+    ]
+   },
+   "identifiers": [
+    "subId"
+   ],
+   "frontend": {
+    "probe": "/recurring/subs",
+    "referenced": true
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/recurring/subs/:subId/resume",
+   "line": 15752,
+   "auth": [
+    "requireAuth",
+    "checkWriteAccess"
+   ],
+   "sourceSeen": true,
+   "layerCount": 3,
+   "params": {
+    "path": [
+     "subId"
+    ],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [
+    "subId"
+   ],
+   "frontend": {
+    "probe": "/recurring/subs",
+    "referenced": true
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/recurring/subs/:subId/cancel",
+   "line": 15775,
+   "auth": [
+    "requireAuth"
+   ],
+   "sourceSeen": true,
+   "layerCount": 2,
+   "params": {
+    "path": [
+     "subId"
+    ],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [
+    "subId"
+   ],
+   "frontend": {
+    "probe": "/recurring/subs",
+    "referenced": true
+   }
+  },
+  {
+   "method": "PUT",
+   "path": "/recurring/subs/:subId/fund",
+   "line": 15799,
+   "auth": [
+    "requireAuth",
+    "checkWriteAccess"
+   ],
+   "sourceSeen": true,
+   "layerCount": 3,
+   "params": {
+    "path": [
+     "subId"
+    ],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [
+    "subId"
+   ],
+   "frontend": {
+    "probe": "/recurring/subs",
+    "referenced": true
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/recurring/proposals",
+   "line": 15827,
+   "auth": [
+    "requireAuth",
+    "checkWriteAccess"
+   ],
+   "sourceSeen": true,
+   "layerCount": 3,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": [
+     "donorId",
+     "fundId",
+     "kind"
+    ]
+   },
+   "identifiers": [
+    "donorId",
+    "fundId"
+   ],
+   "frontend": {
+    "probe": "/recurring/proposals",
+    "referenced": true
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/recurring/proposals/:id/resend",
+   "line": 15909,
+   "auth": [
+    "requireAuth"
+   ],
+   "sourceSeen": true,
+   "layerCount": 2,
+   "params": {
+    "path": [
+     "id"
+    ],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [
+    "id"
+   ],
+   "frontend": {
+    "probe": "/recurring/proposals",
+    "referenced": true
+   }
+  },
+  {
+   "method": "GET",
+   "path": "/recurring/proposal",
+   "line": 15971,
+   "auth": [
+    "donateLimiter"
+   ],
+   "sourceSeen": true,
+   "layerCount": 2,
+   "params": {
+    "path": [],
+    "query": [
+     "token"
+    ],
+    "body": []
+   },
+   "identifiers": [
+    "token"
+   ],
+   "frontend": {
+    "probe": "/recurring/proposal",
+    "referenced": true
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/recurring/proposal/confirm",
+   "line": 16016,
+   "auth": [
+    "donateLimiter"
+   ],
+   "sourceSeen": true,
+   "layerCount": 3,
+   "params": {
+    "path": [],
+    "query": [
+     "token"
+    ],
+    "body": []
+   },
+   "identifiers": [
+    "token"
+   ],
+   "frontend": {
+    "probe": "/recurring/proposal/confirm",
+    "referenced": true
+   }
+  },
+  {
+   "method": "GET",
+   "path": "/recurring/health",
+   "line": 16133,
+   "auth": [
+    "requireAuth"
+   ],
+   "sourceSeen": true,
+   "layerCount": 2,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/recurring/health",
+    "referenced": true
+   }
+  },
+  {
+   "method": "GET",
+   "path": "/impact",
+   "line": 16192,
+   "auth": [
+    "requireAuth"
+   ],
+   "sourceSeen": true,
+   "layerCount": 2,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/impact",
+    "referenced": true
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/recurring/:donorId/resend",
+   "line": 16369,
+   "auth": [
+    "requireAuth"
+   ],
+   "sourceSeen": true,
+   "layerCount": 2,
+   "params": {
+    "path": [
+     "donorId"
+    ],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [
+    "donorId"
+   ],
+   "frontend": {
+    "probe": "/recurring",
+    "referenced": true
+   }
+  },
+  {
+   "method": "GET",
+   "path": "/donors/:id/recurring-subscription",
+   "line": 16399,
+   "auth": [
+    "requireAuth"
+   ],
+   "sourceSeen": true,
+   "layerCount": 2,
+   "params": {
+    "path": [
+     "id"
+    ],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [
+    "id"
+   ],
+   "frontend": {
+    "probe": "/donors",
+    "referenced": true
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/pledges/process-reminders",
+   "line": 16535,
+   "auth": [
+    "requireAuth",
+    "requireAdmin"
+   ],
+   "sourceSeen": true,
+   "layerCount": 3,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/pledges/process-reminders",
+    "referenced": false
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/pledges/:id/resend",
+   "line": 16544,
+   "auth": [
+    "requireAuth"
+   ],
+   "sourceSeen": true,
+   "layerCount": 2,
+   "params": {
+    "path": [
+     "id"
+    ],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [
+    "id"
+   ],
+   "frontend": {
+    "probe": "/pledges",
+    "referenced": true
+   }
+  },
+  {
+   "method": "GET",
+   "path": "/admin/billing-diagnostic",
+   "line": 16689,
+   "auth": [
+    "requireAuth",
+    "requireSuperAdmin"
+   ],
+   "sourceSeen": true,
+   "layerCount": 4,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/admin/billing-diagnostic",
+    "referenced": false
+   }
+  },
+  {
+   "method": "GET",
+   "path": "/billing/status",
+   "line": 16700,
+   "auth": [
+    "requireAuth"
+   ],
+   "sourceSeen": true,
+   "layerCount": 2,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/billing/status",
+    "referenced": true
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/billing/create-checkout",
+   "line": 16779,
+   "auth": [
+    "requireAuth",
+    "requireAdmin"
+   ],
+   "sourceSeen": true,
+   "layerCount": 3,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": [
+     "plan"
+    ]
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/billing/create-checkout",
+    "referenced": true
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/billing/create-portal",
+   "line": 16841,
+   "auth": [
+    "requireAuth",
+    "requireAdmin"
+   ],
+   "sourceSeen": true,
+   "layerCount": 3,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/billing/create-portal",
+    "referenced": true
+   }
+  },
+  {
+   "method": "GET",
+   "path": "/admin/orgs",
+   "line": 16944,
+   "auth": [
+    "requireAuth",
+    "requireSuperAdmin"
+   ],
+   "sourceSeen": true,
+   "layerCount": 4,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/admin/orgs",
+    "referenced": true
+   }
+  },
+  {
+   "method": "GET",
+   "path": "/admin/metrics",
+   "line": 16968,
+   "auth": [
+    "requireAuth",
+    "requireSuperAdmin"
+   ],
+   "sourceSeen": true,
+   "layerCount": 4,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/admin/metrics",
+    "referenced": true
+   }
+  },
+  {
+   "method": "GET",
+   "path": "/admin/orgs/:id",
+   "line": 17022,
+   "auth": [
+    "requireAuth",
+    "requireSuperAdmin"
+   ],
+   "sourceSeen": true,
+   "layerCount": 4,
+   "params": {
+    "path": [
+     "id"
+    ],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [
+    "id"
+   ],
+   "frontend": {
+    "probe": "/admin/orgs",
+    "referenced": true
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/admin/orgs/:id/extend-trial",
+   "line": 17045,
+   "auth": [
+    "requireAuth",
+    "requireSuperAdmin"
+   ],
+   "sourceSeen": true,
+   "layerCount": 4,
+   "params": {
+    "path": [
+     "id"
+    ],
+    "query": [],
+    "body": [
+     "days"
+    ]
+   },
+   "identifiers": [
+    "id"
+   ],
+   "frontend": {
+    "probe": "/admin/orgs",
+    "referenced": true
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/admin/orgs/:id/change-plan",
+   "line": 17067,
+   "auth": [
+    "requireAuth",
+    "requireSuperAdmin"
+   ],
+   "sourceSeen": true,
+   "layerCount": 4,
+   "params": {
+    "path": [
+     "id"
+    ],
+    "query": [],
+    "body": [
+     "plan"
+    ]
+   },
+   "identifiers": [
+    "id"
+   ],
+   "frontend": {
+    "probe": "/admin/orgs",
+    "referenced": true
+   }
+  },
+  {
+   "method": "DELETE",
+   "path": "/admin/orgs/:id",
+   "line": 17077,
+   "auth": [
+    "requireAuth",
+    "requireSuperAdmin"
+   ],
+   "sourceSeen": true,
+   "layerCount": 4,
+   "params": {
+    "path": [
+     "id"
+    ],
+    "query": [],
+    "body": [
+     "confirm"
+    ]
+   },
+   "identifiers": [
+    "id"
+   ],
+   "frontend": {
+    "probe": "/admin/orgs",
+    "referenced": true
+   }
+  },
+  {
+   "method": "GET",
+   "path": "/admin/data-integrity",
+   "line": 17162,
+   "auth": [
+    "requireAuth",
+    "requireSuperAdmin"
+   ],
+   "sourceSeen": true,
+   "layerCount": 4,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/admin/data-integrity",
+    "referenced": false
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/admin/data-integrity/fix",
+   "line": 17208,
+   "auth": [
+    "requireAuth",
+    "requireSuperAdmin"
+   ],
+   "sourceSeen": true,
+   "layerCount": 4,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/admin/data-integrity/fix",
+    "referenced": false
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/gmail/auth-url",
+   "line": 17385,
+   "auth": [
+    "requireAuth"
+   ],
+   "sourceSeen": true,
+   "layerCount": 2,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/gmail/auth-url",
+    "referenced": true
+   }
+  },
+  {
+   "method": "GET",
+   "path": "/gmail/callback",
+   "line": 17401,
+   "auth": [],
+   "sourceSeen": true,
+   "layerCount": 1,
+   "params": {
+    "path": [],
+    "query": [
+     "code",
+     "error",
+     "state"
+    ],
+    "body": []
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/gmail/callback",
+    "referenced": false
+   }
+  },
+  {
+   "method": "GET",
+   "path": "/gmail/status",
+   "line": 17449,
+   "auth": [
+    "requireAuth"
+   ],
+   "sourceSeen": true,
+   "layerCount": 2,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/gmail/status",
+    "referenced": true
+   }
+  },
+  {
+   "method": "DELETE",
+   "path": "/gmail/disconnect",
+   "line": 17465,
+   "auth": [
+    "requireAuth"
+   ],
+   "sourceSeen": true,
+   "layerCount": 2,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/gmail/disconnect",
+    "referenced": true
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/gmail/sync",
+   "line": 17478,
+   "auth": [
+    "requireAuth"
+   ],
+   "sourceSeen": true,
+   "layerCount": 2,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/gmail/sync",
+    "referenced": true
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/gmail/send",
+   "line": 17488,
+   "auth": [
+    "requireAuth"
+   ],
+   "sourceSeen": true,
+   "layerCount": 2,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": [
+     "body",
+     "donorId",
+     "subject",
+     "to"
+    ]
+   },
+   "identifiers": [
+    "donorId"
+   ],
+   "frontend": {
+    "probe": "/gmail/send",
+    "referenced": true
+   }
+  },
+  {
+   "method": "GET",
+   "path": "/gmail/thread/:donorId",
+   "line": 17544,
+   "auth": [
+    "requireAuth"
+   ],
+   "sourceSeen": true,
+   "layerCount": 2,
+   "params": {
+    "path": [
+     "donorId"
+    ],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [
+    "donorId"
+   ],
+   "frontend": {
+    "probe": "/gmail/thread",
+    "referenced": true
+   }
+  },
+  {
+   "method": "GET",
+   "path": "/events",
+   "line": 17567,
+   "auth": [
+    "requireAuth"
+   ],
+   "sourceSeen": true,
+   "layerCount": 2,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/events",
+    "referenced": true
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/events",
+   "line": 17587,
+   "auth": [
+    "requireAuth",
+    "checkWriteAccess"
+   ],
+   "sourceSeen": true,
+   "layerCount": 3,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": [
+     "capacity",
+     "cost",
+     "date",
+     "description",
+     "endDate",
+     "eventType",
+     "location",
+     "name"
+    ]
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/events",
+    "referenced": true
+   }
+  },
+  {
+   "method": "PUT",
+   "path": "/events/:id",
+   "line": 17603,
+   "auth": [
+    "requireAuth",
+    "checkWriteAccess"
+   ],
+   "sourceSeen": true,
+   "layerCount": 3,
+   "params": {
+    "path": [
+     "id"
+    ],
+    "query": [],
+    "body": [
+     "capacity",
+     "cost",
+     "date",
+     "description",
+     "endDate",
+     "eventType",
+     "location",
+     "name",
+     "notes",
+     "revenue",
+     "status"
+    ]
+   },
+   "identifiers": [
+    "id"
+   ],
+   "frontend": {
+    "probe": "/events",
+    "referenced": true
+   }
+  },
+  {
+   "method": "DELETE",
+   "path": "/events/:id",
+   "line": 17629,
+   "auth": [
+    "requireAuth"
+   ],
+   "sourceSeen": true,
+   "layerCount": 2,
+   "params": {
+    "path": [
+     "id"
+    ],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [
+    "id"
+   ],
+   "frontend": {
+    "probe": "/events",
+    "referenced": true
+   }
+  },
+  {
+   "method": "GET",
+   "path": "/events/:id",
+   "line": 17637,
+   "auth": [
+    "requireAuth"
+   ],
+   "sourceSeen": true,
+   "layerCount": 2,
+   "params": {
+    "path": [
+     "id"
+    ],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [
+    "id"
+   ],
+   "frontend": {
+    "probe": "/events",
+    "referenced": true
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/events/:id/attendees",
+   "line": 17662,
+   "auth": [
+    "requireAuth",
+    "checkWriteAccess"
+   ],
+   "sourceSeen": true,
+   "layerCount": 3,
+   "params": {
+    "path": [
+     "id"
+    ],
+    "query": [],
+    "body": [
+     "donorIds",
+     "email",
+     "name",
+     "notes"
+    ]
+   },
+   "identifiers": [
+    "donorIds",
+    "email",
+    "id"
+   ],
+   "frontend": {
+    "probe": "/events",
+    "referenced": true
+   }
+  },
+  {
+   "method": "PATCH",
+   "path": "/events/:id/attendees/:attendeeId",
+   "line": 17699,
+   "auth": [
+    "requireAuth",
+    "checkWriteAccess"
+   ],
+   "sourceSeen": true,
+   "layerCount": 3,
+   "params": {
+    "path": [
+     "attendeeId",
+     "id"
+    ],
+    "query": [],
+    "body": [
+     "giftAmount",
+     "notes",
+     "status"
+    ]
+   },
+   "identifiers": [
+    "attendeeId",
+    "giftAmount",
+    "id"
+   ],
+   "frontend": {
+    "probe": "/events",
+    "referenced": true
+   }
+  },
+  {
+   "method": "DELETE",
+   "path": "/events/:id/attendees/:attendeeId",
+   "line": 17755,
+   "auth": [
+    "requireAuth"
+   ],
+   "sourceSeen": true,
+   "layerCount": 2,
+   "params": {
+    "path": [
+     "attendeeId",
+     "id"
+    ],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [
+    "attendeeId",
+    "id"
+   ],
+   "frontend": {
+    "probe": "/events",
+    "referenced": true
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/events/:id/follow-up",
+   "line": 17763,
+   "auth": [
+    "requireAuth",
+    "checkWriteAccess"
+   ],
+   "sourceSeen": true,
+   "layerCount": 3,
+   "params": {
+    "path": [
+     "id"
+    ],
+    "query": [],
+    "body": [
+     "dueDate",
+     "priority",
+     "taskTitle"
+    ]
+   },
+   "identifiers": [
+    "id"
+   ],
+   "frontend": {
+    "probe": "/events",
+    "referenced": true
+   }
+  },
+  {
+   "method": "GET",
+   "path": "/donors/:id/events",
+   "line": 17789,
+   "auth": [
+    "requireAuth"
+   ],
+   "sourceSeen": true,
+   "layerCount": 2,
+   "params": {
+    "path": [
+     "id"
+    ],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [
+    "id"
+   ],
+   "frontend": {
+    "probe": "/donors",
+    "referenced": true
+   }
+  },
+  {
+   "method": "GET",
+   "path": "/org/export",
+   "line": 17805,
+   "auth": [
+    "requireAuth"
+   ],
+   "sourceSeen": true,
+   "layerCount": 2,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/org/export",
+    "referenced": true
+   }
+  },
+  {
+   "method": "GET",
+   "path": "/org/export/csv",
+   "line": 17885,
+   "auth": [
+    "requireAuth",
+    "requireAdmin"
+   ],
+   "sourceSeen": true,
+   "layerCount": 3,
+   "params": {
+    "path": [
+     "orgSlug"
+    ],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [
+    "orgSlug"
+   ],
+   "frontend": {
+    "probe": "/org/export/csv",
+    "referenced": true
+   }
+  },
+  {
+   "method": "GET",
+   "path": "/portal/:orgSlug/config",
+   "line": 18397,
+   "auth": [],
+   "sourceSeen": true,
+   "layerCount": 1,
+   "params": {
+    "path": [
+     "orgSlug"
+    ],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [
+    "orgSlug"
+   ],
+   "frontend": {
+    "probe": "/portal",
+    "referenced": true
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/portal/:orgSlug/request-link",
+   "line": 18410,
+   "auth": [
+    "portalLinkIpLimiter",
+    "portalLinkEmailLimiter"
+   ],
+   "sourceSeen": true,
+   "layerCount": 3,
+   "params": {
+    "path": [
+     "orgSlug"
+    ],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [
+    "orgSlug"
+   ],
+   "frontend": {
+    "probe": "/portal",
+    "referenced": true
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/portal/:orgSlug/verify",
+   "line": 18436,
+   "auth": [
+    "portalLinkIpLimiter"
+   ],
+   "sourceSeen": true,
+   "layerCount": 2,
+   "params": {
+    "path": [
+     "orgSlug"
+    ],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [
+    "orgSlug"
+   ],
+   "frontend": {
+    "probe": "/portal",
+    "referenced": true
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/portal/:orgSlug/logout",
+   "line": 18476,
+   "auth": [],
+   "sourceSeen": true,
+   "layerCount": 1,
+   "params": {
+    "path": [
+     "orgSlug"
+    ],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [
+    "orgSlug"
+   ],
+   "frontend": {
+    "probe": "/portal",
+    "referenced": true
+   }
+  },
+  {
+   "method": "GET",
+   "path": "/portal/:orgSlug/session",
+   "line": 18483,
+   "auth": [
+    "requirePortalSession"
+   ],
+   "sourceSeen": true,
+   "layerCount": 2,
+   "params": {
+    "path": [
+     "orgSlug"
+    ],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [
+    "orgSlug"
+   ],
+   "frontend": {
+    "probe": "/portal",
+    "referenced": true
+   }
+  },
+  {
+   "method": "GET",
+   "path": "/portal/:orgSlug/give-default",
+   "line": 18494,
+   "auth": [
+    "requirePortalSession"
+   ],
+   "sourceSeen": true,
+   "layerCount": 2,
+   "params": {
+    "path": [
+     "orgSlug"
+    ],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [
+    "orgSlug"
+   ],
+   "frontend": {
+    "probe": "/portal",
+    "referenced": true
+   }
+  },
+  {
+   "method": "GET",
+   "path": "/portal/:orgSlug/me",
+   "line": 18516,
+   "auth": [
+    "requirePortalSession"
+   ],
+   "sourceSeen": true,
+   "layerCount": 2,
+   "params": {
+    "path": [
+     "orgSlug"
+    ],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [
+    "orgSlug"
+   ],
+   "frontend": {
+    "probe": "/portal",
+    "referenced": true
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/portal/:orgSlug/impact/:updateId/viewed",
+   "line": 18744,
+   "auth": [
+    "requirePortalSession"
+   ],
+   "sourceSeen": true,
+   "layerCount": 2,
+   "params": {
+    "path": [
+     "orgSlug",
+     "updateId"
+    ],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [
+    "orgSlug",
+    "updateId"
+   ],
+   "frontend": {
+    "probe": "/portal",
+    "referenced": true
+   }
+  },
+  {
+   "method": "GET",
+   "path": "/portal/:orgSlug/receipts/:id/pdf",
+   "line": 18754,
+   "auth": [
+    "requirePortalSession"
+   ],
+   "sourceSeen": true,
+   "layerCount": 2,
+   "params": {
+    "path": [
+     "id",
+     "orgSlug",
+     "subId"
+    ],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [
+    "id",
+    "orgSlug",
+    "subId"
+   ],
+   "frontend": {
+    "probe": "/portal",
+    "referenced": true
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/portal/:orgSlug/recurring/:subId/pause",
+   "line": 18789,
+   "auth": [
+    "portalMutationLimiter",
+    "requirePortalSession"
+   ],
+   "sourceSeen": true,
+   "layerCount": 3,
+   "params": {
+    "path": [
+     "orgSlug",
+     "subId"
+    ],
+    "query": [],
+    "body": [
+     "resumeDate"
+    ]
+   },
+   "identifiers": [
+    "orgSlug",
+    "subId"
+   ],
+   "frontend": {
+    "probe": "/portal",
+    "referenced": true
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/portal/:orgSlug/recurring/:subId/resume",
+   "line": 18826,
+   "auth": [
+    "portalMutationLimiter",
+    "requirePortalSession"
+   ],
+   "sourceSeen": true,
+   "layerCount": 3,
+   "params": {
+    "path": [
+     "orgSlug",
+     "subId"
+    ],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [
+    "orgSlug",
+    "subId"
+   ],
+   "frontend": {
+    "probe": "/portal",
+    "referenced": true
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/portal/:orgSlug/recurring/:subId/amount",
+   "line": 18850,
+   "auth": [
+    "portalMutationLimiter",
+    "requirePortalSession"
+   ],
+   "sourceSeen": true,
+   "layerCount": 3,
+   "params": {
+    "path": [
+     "orgSlug",
+     "subId"
+    ],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [
+    "orgSlug",
+    "subId"
+   ],
+   "frontend": {
+    "probe": "/portal",
+    "referenced": true
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/portal/:orgSlug/recurring/:subId/cancel",
+   "line": 18900,
+   "auth": [
+    "portalMutationLimiter",
+    "requirePortalSession"
+   ],
+   "sourceSeen": true,
+   "layerCount": 3,
+   "params": {
+    "path": [
+     "orgSlug",
+     "subId"
+    ],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [
+    "orgSlug",
+    "subId"
+   ],
+   "frontend": {
+    "probe": "/portal",
+    "referenced": true
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/portal/:orgSlug/recurring/:subId/update-card",
+   "line": 18928,
+   "auth": [
+    "portalMutationLimiter",
+    "requirePortalSession"
+   ],
+   "sourceSeen": true,
+   "layerCount": 3,
+   "params": {
+    "path": [
+     "orgSlug",
+     "subId"
+    ],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [
+    "orgSlug",
+    "subId"
+   ],
+   "frontend": {
+    "probe": "/portal",
+    "referenced": true
+   }
+  },
+  {
+   "method": "GET",
+   "path": "/portal-assets/:id",
+   "line": 18953,
+   "auth": [],
+   "sourceSeen": true,
+   "layerCount": 1,
+   "params": {
+    "path": [
+     "id"
+    ],
+    "query": [
+     "w"
+    ],
+    "body": []
+   },
+   "identifiers": [
+    "id"
+   ],
+   "frontend": {
+    "probe": "/portal-assets",
+    "referenced": true
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/assets/run-purge",
+   "line": 18981,
+   "auth": [
+    "requireAuth",
+    "requireAdmin"
+   ],
+   "sourceSeen": true,
+   "layerCount": 3,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/assets/run-purge",
+    "referenced": false
+   }
+  },
+  {
+   "method": "GET",
+   "path": "/portal-settings",
+   "line": 18985,
+   "auth": [
+    "requireAuth"
+   ],
+   "sourceSeen": true,
+   "layerCount": 2,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/portal-settings",
+    "referenced": true
+   }
+  },
+  {
+   "method": "GET",
+   "path": "/portal-page",
+   "line": 19497,
+   "auth": [
+    "requireAuth",
+    "requireAdmin"
+   ],
+   "sourceSeen": true,
+   "layerCount": 3,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/portal-page",
+    "referenced": true
+   }
+  },
+  {
+   "method": "PUT",
+   "path": "/portal-page/draft",
+   "line": 19507,
+   "auth": [
+    "requireAuth",
+    "requireAdmin",
+    "checkWriteAccess"
+   ],
+   "sourceSeen": true,
+   "layerCount": 4,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/portal-page/draft",
+    "referenced": true
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/portal-page/publish",
+   "line": 19521,
+   "auth": [
+    "requireAuth",
+    "requireAdmin",
+    "checkWriteAccess"
+   ],
+   "sourceSeen": true,
+   "layerCount": 4,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/portal-page/publish",
+    "referenced": true
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/portal-page/revert",
+   "line": 19530,
+   "auth": [
+    "requireAuth",
+    "requireAdmin",
+    "checkWriteAccess"
+   ],
+   "sourceSeen": true,
+   "layerCount": 4,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/portal-page/revert",
+    "referenced": true
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/portal-page/starter",
+   "line": 19539,
+   "auth": [
+    "requireAuth",
+    "requireAdmin",
+    "checkWriteAccess"
+   ],
+   "sourceSeen": true,
+   "layerCount": 4,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/portal-page/starter",
+    "referenced": true
+   }
+  },
+  {
+   "method": "PUT",
+   "path": "/portal-settings",
+   "line": 19554,
+   "auth": [
+    "requireAuth",
+    "requireAdmin",
+    "checkWriteAccess"
+   ],
+   "sourceSeen": true,
+   "layerCount": 4,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/portal-settings",
+    "referenced": true
+   }
+  },
+  {
+   "method": "GET",
+   "path": "/impact-updates",
+   "line": 19698,
+   "auth": [
+    "requireAuth"
+   ],
+   "sourceSeen": true,
+   "layerCount": 2,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/impact-updates",
+    "referenced": true
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/impact-updates",
+   "line": 19718,
+   "auth": [
+    "requireAuth",
+    "requireAdmin",
+    "checkWriteAccess"
+   ],
+   "sourceSeen": true,
+   "layerCount": 4,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/impact-updates",
+    "referenced": true
+   }
+  },
+  {
+   "method": "PUT",
+   "path": "/impact-updates/:id",
+   "line": 19750,
+   "auth": [
+    "requireAuth",
+    "requireAdmin",
+    "checkWriteAccess"
+   ],
+   "sourceSeen": true,
+   "layerCount": 4,
+   "params": {
+    "path": [
+     "id"
+    ],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [
+    "id"
+   ],
+   "frontend": {
+    "probe": "/impact-updates",
+    "referenced": true
+   }
+  },
+  {
+   "method": "GET",
+   "path": "/portal-engagement",
+   "line": 19788,
+   "auth": [
+    "requireAuth"
+   ],
+   "sourceSeen": true,
+   "layerCount": 2,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/portal-engagement",
+    "referenced": true
+   }
+  },
+  {
+   "method": "DELETE",
+   "path": "/impact-updates/:id",
+   "line": 19809,
+   "auth": [
+    "requireAuth",
+    "requireAdmin"
+   ],
+   "sourceSeen": true,
+   "layerCount": 3,
+   "params": {
+    "path": [
+     "id"
+    ],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [
+    "id"
+   ],
+   "frontend": {
+    "probe": "/impact-updates",
+    "referenced": true
+   }
+  },
+  {
+   "method": "GET",
+   "path": "/portal-audit",
+   "line": 19820,
+   "auth": [
+    "requireAuth",
+    "requireAdmin"
+   ],
+   "sourceSeen": true,
+   "layerCount": 3,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/portal-audit",
+    "referenced": false
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/account/signup",
+   "line": 19973,
+   "auth": [
+    "accountIpLimiter",
+    "accountEmailLimiter"
+   ],
+   "sourceSeen": true,
+   "layerCount": 4,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/account/signup",
+    "referenced": false
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/account/verify",
+   "line": 20009,
+   "auth": [
+    "accountIpLimiter"
+   ],
+   "sourceSeen": true,
+   "layerCount": 3,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/account/verify",
+    "referenced": false
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/account/login",
+   "line": 20024,
+   "auth": [
+    "accountIpLimiter",
+    "accountEmailLimiter"
+   ],
+   "sourceSeen": true,
+   "layerCount": 4,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/account/login",
+    "referenced": false
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/account/logout",
+   "line": 20053,
+   "auth": [],
+   "sourceSeen": true,
+   "layerCount": 2,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/account/logout",
+    "referenced": false
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/account/request-link",
+   "line": 20067,
+   "auth": [
+    "accountIpLimiter",
+    "accountEmailLimiter"
+   ],
+   "sourceSeen": true,
+   "layerCount": 4,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/account/request-link",
+    "referenced": false
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/account/link-verify",
+   "line": 20104,
+   "auth": [
+    "accountIpLimiter"
+   ],
+   "sourceSeen": true,
+   "layerCount": 3,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/account/link-verify",
+    "referenced": false
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/account/request-reset",
+   "line": 20123,
+   "auth": [
+    "accountIpLimiter",
+    "accountEmailLimiter"
+   ],
+   "sourceSeen": true,
+   "layerCount": 4,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/account/request-reset",
+    "referenced": false
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/account/reset",
+   "line": 20145,
+   "auth": [
+    "accountIpLimiter"
+   ],
+   "sourceSeen": true,
+   "layerCount": 3,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/account/reset",
+    "referenced": false
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/account/change-password",
+   "line": 20172,
+   "auth": [
+    "requireDonorAccount"
+   ],
+   "sourceSeen": true,
+   "layerCount": 2,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/account/change-password",
+    "referenced": false
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/account/change-email",
+   "line": 20190,
+   "auth": [
+    "requireDonorAccount",
+    "accountIpLimiter"
+   ],
+   "sourceSeen": true,
+   "layerCount": 3,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/account/change-email",
+    "referenced": false
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/account/change-email/confirm",
+   "line": 20208,
+   "auth": [
+    "accountIpLimiter"
+   ],
+   "sourceSeen": true,
+   "layerCount": 3,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/account/change-email/confirm",
+    "referenced": false
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/account/aliases",
+   "line": 20237,
+   "auth": [
+    "requireDonorAccount",
+    "accountIpLimiter",
+    "accountEmailLimiter"
+   ],
+   "sourceSeen": true,
+   "layerCount": 4,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/account/aliases",
+    "referenced": false
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/account/aliases/verify",
+   "line": 20264,
+   "auth": [
+    "accountIpLimiter"
+   ],
+   "sourceSeen": true,
+   "layerCount": 3,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/account/aliases/verify",
+    "referenced": false
+   }
+  },
+  {
+   "method": "DELETE",
+   "path": "/account/aliases/:id",
+   "line": 20280,
+   "auth": [
+    "requireDonorAccount"
+   ],
+   "sourceSeen": true,
+   "layerCount": 2,
+   "params": {
+    "path": [
+     "id"
+    ],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [
+    "id"
+   ],
+   "frontend": {
+    "probe": "/account/aliases",
+    "referenced": false
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/account/links/:id/unlink",
+   "line": 20288,
+   "auth": [
+    "requireDonorAccount"
+   ],
+   "sourceSeen": true,
+   "layerCount": 2,
+   "params": {
+    "path": [
+     "id"
+    ],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [
+    "id"
+   ],
+   "frontend": {
+    "probe": "/account/links",
+    "referenced": false
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/account/links/:id/relink",
+   "line": 20296,
+   "auth": [
+    "requireDonorAccount"
+   ],
+   "sourceSeen": true,
+   "layerCount": 2,
+   "params": {
+    "path": [
+     "id"
+    ],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [
+    "id"
+   ],
+   "frontend": {
+    "probe": "/account/links",
+    "referenced": false
+   }
+  },
+  {
+   "method": "DELETE",
+   "path": "/account",
+   "line": 20307,
+   "auth": [
+    "requireDonorAccount"
+   ],
+   "sourceSeen": true,
+   "layerCount": 2,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/account",
+    "referenced": true
+   }
+  },
+  {
+   "method": "GET",
+   "path": "/account/me",
+   "line": 20320,
+   "auth": [
+    "requireDonorAccount"
+   ],
+   "sourceSeen": true,
+   "layerCount": 2,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/account/me",
+    "referenced": false
+   }
+  },
+  {
+   "method": "GET",
+   "path": "/account/dashboard",
+   "line": 20357,
+   "auth": [
+    "requireDonorAccount"
+   ],
+   "sourceSeen": true,
+   "layerCount": 2,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/account/dashboard",
+    "referenced": false
+   }
+  },
+  {
+   "method": "GET",
+   "path": "/account/recurring",
+   "line": 20502,
+   "auth": [
+    "requireDonorAccount"
+   ],
+   "sourceSeen": true,
+   "layerCount": 2,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/account/recurring",
+    "referenced": false
+   }
+  },
+  {
+   "method": "GET",
+   "path": "/account/tax-summary",
+   "line": 20524,
+   "auth": [
+    "requireDonorAccount"
+   ],
+   "sourceSeen": true,
+   "layerCount": 2,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/account/tax-summary",
+    "referenced": false
+   }
+  },
+  {
+   "method": "GET",
+   "path": "/network/directory",
+   "line": 20576,
+   "auth": [
+    "requireDonorAccount",
+    "directorySearchLimiter"
+   ],
+   "sourceSeen": true,
+   "layerCount": 3,
+   "params": {
+    "path": [],
+    "query": [
+     "page",
+     "q"
+    ],
+    "body": []
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/network/directory",
+    "referenced": false
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/account/orgs/add",
+   "line": 20635,
+   "auth": [
+    "requireDonorAccount",
+    "addOrgLimiter"
+   ],
+   "sourceSeen": true,
+   "layerCount": 3,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/account/orgs/add",
+    "referenced": false
+   }
+  },
+  {
+   "method": "DELETE",
+   "path": "/account/follows/:id",
+   "line": 20661,
+   "auth": [
+    "requireDonorAccount"
+   ],
+   "sourceSeen": true,
+   "layerCount": 2,
+   "params": {
+    "path": [
+     "id"
+    ],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [
+    "id"
+   ],
+   "frontend": {
+    "probe": "/account/follows",
+    "referenced": false
+   }
+  },
+  {
+   "method": "GET",
+   "path": "/network/config",
+   "line": 20692,
+   "auth": [],
+   "sourceSeen": true,
+   "layerCount": 1,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/network/config",
+    "referenced": true
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/network/signup",
+   "line": 20697,
+   "auth": [
+    "networkSignupLimiter"
+   ],
+   "sourceSeen": true,
+   "layerCount": 3,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": [
+     "ein",
+     "email",
+     "orgName",
+     "password",
+     "website"
+    ]
+   },
+   "identifiers": [
+    "email",
+    "orgName"
+   ],
+   "frontend": {
+    "probe": "/network/signup",
+    "referenced": false
+   }
+  },
+  {
+   "method": "GET",
+   "path": "/network/application",
+   "line": 20766,
+   "auth": [
+    "requireAuth"
+   ],
+   "sourceSeen": true,
+   "layerCount": 2,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/network/application",
+    "referenced": true
+   }
+  },
+  {
+   "method": "GET",
+   "path": "/admin/network/applications",
+   "line": 20782,
+   "auth": [
+    "requireAuth",
+    "requireSuperAdmin"
+   ],
+   "sourceSeen": true,
+   "layerCount": 4,
+   "params": {
+    "path": [],
+    "query": [
+     "status"
+    ],
+    "body": []
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/admin/network/applications",
+    "referenced": true
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/admin/network/applications/:id/decide",
+   "line": 20811,
+   "auth": [
+    "requireAuth",
+    "requireSuperAdmin"
+   ],
+   "sourceSeen": true,
+   "layerCount": 4,
+   "params": {
+    "path": [
+     "id"
+    ],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [
+    "id"
+   ],
+   "frontend": {
+    "probe": "/admin/network/applications",
+    "referenced": true
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/admin/network/run-gate-sweep",
+   "line": 20903,
+   "auth": [
+    "requireAuth",
+    "requireSuperAdmin"
+   ],
+   "sourceSeen": true,
+   "layerCount": 4,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/admin/network/run-gate-sweep",
+    "referenced": false
+   }
+  }
+ ]
+}

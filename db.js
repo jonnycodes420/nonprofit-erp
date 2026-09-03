@@ -2765,10 +2765,12 @@ async function seedData() {
     [orgId]
   );
   let debtBaseline = 0;
-  const nowMs = seedNow.getTime();
   for (const row of debtBaselineRows.rows) {
     if (!row.last_contact) continue;
-    const daysSince = Math.max(0, Math.min(1000, Math.floor((nowMs - new Date(row.last_contact).getTime()) / 86400000)));
+    // civil-days between the stored civil date and the seam's seed today
+    const gap = orgTime.daysBetween(String(row.last_contact).slice(0, 10), seedToday);
+    if (gap == null) continue;
+    const daysSince = Math.max(0, Math.min(1000, gap));
     debtBaseline += (daysSince / 30) * ((Number(row.total_giving) || 0) / 1000);
   }
   debtBaseline = Math.round(debtBaseline) || 400;

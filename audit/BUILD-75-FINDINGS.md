@@ -200,3 +200,83 @@ prints them separately by construction.
 
 date-seam 70/70 (was 65 — §8 added, §7 reworked), finance-overview 33/33,
 report-truth 85/85, home 41/41, fundraising 34/34.
+
+---
+
+## PHASE B — PROVE THE WALLS
+
+### B.1 — the mechanical enumeration
+
+`scripts/build75-route-inventory.js` boots the real server against the
+scratch stack, walks the LIVE Express router (Express 5 `app.router`), and
+annotates every route from its source registration — auth chain (middleware
+closures like `requireAdmin`/`wrap()` are anonymous at runtime; the
+registration line is the only legible record, cross-checked against the
+runtime layer count), every `req.params/query/body` reference, the
+identifier-shaped subset, and whether any client/src file references the
+route's literal prefix. Committed as `audit/route-inventory.json`.
+
+**357 routes.** 21 truly public (webhooks, health, donate/portal/unsubscribe
+surfaces, tracking pixel — each individually legitimate). 194 carry at least
+one identifier-shaped parameter. Auth spread: 153 requireAuth · 70 +admin ·
+14 +superAdmin · 12 +requirePlan(team) · 65 +checkWriteAccess · 15
+portal-session · 20 donor-account/limiter families.
+
+**Orphan candidates (authenticated, zero frontend references): 32.** Verdicts:
+
+| Verdict | Routes | Reasoning |
+|---|---|---|
+| **keep — documented ops/test hook** | `/digests/run`, `/digests/run-daily`, `/workflows/simulate`, `/workflows/run-sweeps`, `/pipeline/run-auto-lapse`, `/recurring/process-dunning`, `/pledges/process-reminders`, `/metrics/reset-baselines`, `/donors/purge-trash`, `/assets/run-purge`, `/admin/notifications/retry`, `/admin/debug/sentry-test`, `/admin/reconcile/run`, `/admin/webhook-subscriptions/check`, `/admin/billing-diagnostic`, `/admin/data-integrity`, `/admin/data-integrity/fix`, `/admin/network/run-gate-sweep`, `/portal-audit` | each is referenced by tests and/or CLAUDE.md as the drivable form of a background sweep or an ops diagnostic — the documented pattern since BUILD-22 |
+| **keep — hidden-surface route (2026-07-12 pivot: intact by design)** | `/volunteers/donor-prospects`, `/financials/month` (legacy `financials` pair, documented legacy) | the pivot hid Volunteers/legacy-Finance from nav deliberately reversibly; their routes stay |
+| **keep — documented API, UI wiring thin** | `/fundraising/goals` (BUILD-16, tested), `/pipeline/remove` (BUILD-30 unassign path), `/pipeline/officer-activity` (BUILD-17 feed), `/custom-fields/reorder` (documented manager API) | documented + tested; deleting would orphan the docs, not the code |
+| **DELETE in B.4** | `GET /donors/my`, `GET /dashboard/recent-activity`, `GET /ai/donor-score`, `PUT /org/smtp`, `GET /email/test-smtp`, `GET /stripe/online-gifts`, `POST /org/backfill-gift-touchpoints` | zero references anywhere — client, tests, scripts, CLAUDE.md. Dead legacy from pre-pivot surfaces (the old activity feed, the retired SMTP config, the pre-Reports stripe view, a one-time backfill). Bodies reviewed before deletion in B.4 |
+
+### B.2 — the generated matrix (`tests/tenant-matrix.test.js`, in run-all)
+
+The suite boots server.js in-process, regenerates the inventory from the
+live router, and generates ~1,000 probes: §2 the auth wall (no/tampered/
+expired token → 401 on every authenticated route; staff→admin 403;
+org-admin→superadmin 403; staff JWT rejected on cookie-auth routes), §3
+cross-tenant dual-probes (A's admin token on B's REAL id vs a ghost id —
+byte-indistinguishable, never 2xx, canonical answer 404), §4 a leak scan of
+every A-credentialed response body for B's private markers, §5 org B
+content-hashed before/after the battery (byte-identical = nothing wrote
+across the wall), §6 404-indistinguishability samples, §7 targeted B.3
+(search for a B-only string → zero rows; JSON/CSV exports and dashboard
+aggregates scanned byte-wise; a signed Stripe webhook on A's account
+carrying B's donor email resolves inside A only; importing a B-only email
+at A surfaces no B hint). Deep portal/donor-account isolation remains
+org-blindness (48) + portal (67); this suite is the breadth layer.
+
+**What the first run found — 26 real defects, all fixed in this commit:**
+
+1. **14 mutation routes answered `200 {success:true}` for a foreign or
+   nonexistent id** (DELETE tasks/grants/pledges/opportunities/
+   donor-relationships/programs/program-grant-links/giving-pages/
+   impact-metrics/custom-fields/events/attendees/campaigns/
+   finance-transactions, plus POST /sequences/:id/unenroll). No data ever
+   changed (the org_id WHERE held — §5 proved it), but the API reported a
+   deletion that never happened. All now 404 on zero changes.
+2. **9 donor-child GET routes answered `200 []` for another tenant's donor
+   id** (pledges, receipts, planned-gifts, materials, relationships,
+   custom-fields, recurring-subscription, events, gmail/thread). Empty, so
+   nothing leaked — but they broke the one-answer convention and each was
+   one refactor away from leaking. All now `orgOwns` → 404.
+3. **`PATCH /orgs/:id` answered 403 for a foreign org id** — the one route
+   whose answer differed from its neighbours (a 403 confirms existence).
+   Now 404.
+4. **`GET /reports/board/:id/pdf` 500ed on a fresh database** — the
+   `board_reports` table is lazily created by its sibling routes' DDL
+   guard, which this route lacked; an org's first-ever request here (and
+   every foreign-id probe) crashed instead of 404ing. Guard added.
+
+### B.4 — the coverage gate (delivered inside the matrix)
+
+The committed inventory must match the live router (drift = re-run the
+script); every parameterized route must be cross-tenant-probed or carry a
+reasoned `PARAM_EXEMPT` entry — a new `/foo/:barId` with neither fails the
+suite, proven by a synthetic route asserted into the unexercised bucket.
+Orphan deletions land in the next commit.
+
+matrix 28/28 · permissions-matrix 94/94 · tenant-isolation 32/32 ·
+state-diff 68/68 · tasks 38/38.

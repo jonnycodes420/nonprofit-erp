@@ -464,7 +464,10 @@ app.post("/stripe/webhook", express.raw({ type: "application/json" }), async (re
             // no-op with accounts off or no matching account).
             if (email) linkEmailToAccounts(orgId, email).catch(() => {});
             const giftId = "g_" + uuid().slice(0, 8);
-            const today = new Date().toISOString().slice(0, 10);
+            // ORG_TZ_SEAM_OK (BUILD-75) — the gift DATE is the org's civil date.
+            // The UTC slice dated a 9pm-ET Dec-31 gift as Jan 1: the wrong TAX
+            // YEAR on the row every year-end statement and receipt reads.
+            const today = orgToday(await orgTz(orgId));
             // Recurring RENEWAL attribution (attribution FIX): an invoice-generated
             // PI carries none of the checkout metadata, so a renewal charge through
             // a giving page used to land unattributed after the first month. The
@@ -825,7 +828,7 @@ app.post("/stripe/webhook", express.raw({ type: "application/json" }), async (re
             const g = giftRows[0];
             const remaining = Math.max(0, ((ch.amount || 0) - (ch.amount_refunded || 0)) / 100);
             const refunded = (ch.amount_refunded || 0) / 100;
-            const today = new Date().toISOString().slice(0, 10);
+            const today = orgToday(await orgTz(orgId)); // ORG_TZ_SEAM_OK (BUILD-75)
             if (remaining <= 0) {
               // FULL refund — the gift's net effect becomes zero everywhere,
               // exactly once. A refund is a fact about the money, so an active
@@ -912,7 +915,7 @@ app.post("/stripe/webhook", express.raw({ type: "application/json" }), async (re
           const giftRows = await query("SELECT * FROM gifts WHERE org_id=$1 AND stripe_payment_id=$2", [orgId, piId]);
           if (giftRows.length) {
             const g = giftRows[0];
-            const today = new Date().toISOString().slice(0, 10);
+            const today = orgToday(await orgTz(orgId)); // ORG_TZ_SEAM_OK (BUILD-75)
             const amt = parseFloat(g.amount) || (dispute.amount || 0) / 100;
             const closed = event.type === "charge.dispute.closed";
             const lost = closed && dispute.status === "lost";
@@ -993,7 +996,7 @@ app.post("/stripe/webhook", express.raw({ type: "application/json" }), async (re
         const orgRow = await query("SELECT id FROM orgs WHERE stripe_account_id=$1", [accountId]);
         if (orgRow.length) {
           const orgId = orgRow[0].id;
-          const today = new Date().toISOString().slice(0, 10);
+          const today = orgToday(await orgTz(orgId)); // ORG_TZ_SEAM_OK (BUILD-75)
           const live = await query("SELECT id, donor_id, dispute_status, amount FROM gifts WHERE org_id=$1 AND stripe_payment_id=$2", [orgId, piId]);
           if (live.length) {
             // Never reversed — a clean win. Just record the outcome.
@@ -2757,7 +2760,8 @@ app.put("/org/setup-card", requireAuth, requireAdmin, wrap(async (req, res) => {
 }));
 
 app.patch("/orgs/:id", requireAuth, requireAdmin, wrap(async (req, res) => {
-  if (req.user.orgId !== req.params.id) return res.status(403).json({ error: "Forbidden" });
+  // BUILD-75 B: a foreign/unknown id answers 404, never a false success — one answer everywhere
+  if (req.user.orgId !== req.params.id) return res.status(404).json({ error: "Not found" });
   const { name, mission, focusArea, annualBudget, foundedYear, website,
           legalName, ein, receiptAddress, receiptSignatureName, receiptSignatureTitle, receiptCustomMessage, receiptsEnabled } = req.body;
   // name is optional — only the new onboarding flow's "org basics" step
@@ -5258,6 +5262,7 @@ app.delete("/gifts/:id", requireAuth, wrap(async (req, res) => {
 // against these (processPledgeReminders, below) deliberately mirrors the
 // recurring-gift dunning engine's architecture.
 app.get("/donors/:id/pledges", requireAuth, wrap(async (req, res) => {
+  if (!(await orgOwns("donors", req.params.id, req.user.orgId))) return res.status(404).json({ error: "Donor not found" }); // BUILD-75 B: the parent must be YOURS before children are answered — even an empty list confirms nothing about another tenant
   // F-5: every pledge read carries the honest paid/balance figures, derived
   // live from linked payment gifts — never a stored counter.
   // BUILD-72 Part 3 adds the SURPLUS on an overpaid pledge and the DERIVED
@@ -5412,7 +5417,8 @@ app.put("/pledges/:id", requireAuth, checkWriteAccess, wrap(async (req, res) => 
 }));
 
 app.delete("/pledges/:id", requireAuth, wrap(async (req, res) => {
-  await run("DELETE FROM pledges WHERE id=? AND org_id=?", [req.params.id, req.user.orgId]);
+  const { changes } = await run("DELETE FROM pledges WHERE id=? AND org_id=?", [req.params.id, req.user.orgId]);
+  if (!changes) return res.status(404).json({ error: "Not found" }); // BUILD-75 B: a foreign/unknown id answers 404, never a false success — one answer everywhere
   res.json({ ok: true });
 }));
 
@@ -5975,6 +5981,7 @@ app.post("/gifts/:id/receipt", requireAuth, checkWriteAccess, wrap(async (req, r
 // response (board_reports pattern), fetched separately via
 // GET /receipts/:id/pdf only when actually downloading one.
 app.get("/donors/:id/receipts", requireAuth, wrap(async (req, res) => {
+  if (!(await orgOwns("donors", req.params.id, req.user.orgId))) return res.status(404).json({ error: "Donor not found" }); // BUILD-75 B: the parent must be YOURS before children are answered — even an empty list confirms nothing about another tenant
   const rows = await query(
     `SELECT id, org_id, donor_id, gift_id, type, tax_year, receipt_number, amount, deductible_amount, sent_to, sent_at, voided_at, void_reason, created_at
      FROM receipts WHERE donor_id=? AND org_id=? ORDER BY created_at DESC`,
@@ -6265,6 +6272,7 @@ app.post("/gifts/import-history", requireAuth, checkWriteAccess, wrapImport(asyn
 }));
 
 app.get("/donors/:id/planned-gifts", requireAuth, wrap(async (req, res) => {
+  if (!(await orgOwns("donors", req.params.id, req.user.orgId))) return res.status(404).json({ error: "Donor not found" }); // BUILD-75 B: the parent must be YOURS before children are answered — even an empty list confirms nothing about another tenant
   const rows = await query("SELECT * FROM planned_gifts WHERE donor_id=? AND org_id=? ORDER BY created_at DESC", [req.params.id, req.user.orgId]);
   res.json(rows);
 }));
@@ -6320,6 +6328,7 @@ app.delete("/planned-gifts/:id", requireAuth, wrap(async (req, res) => {
 }));
 
 app.get("/donors/:id/materials", requireAuth, wrap(async (req, res) => {
+  if (!(await orgOwns("donors", req.params.id, req.user.orgId))) return res.status(404).json({ error: "Donor not found" }); // BUILD-75 B: the parent must be YOURS before children are answered — even an empty list confirms nothing about another tenant
   const rows = await query("SELECT id,org_id,donor_id,file_name,file_type,file_url,notes,uploaded_by,uploaded_at FROM donor_materials WHERE donor_id=? AND org_id=? ORDER BY uploaded_at DESC", [req.params.id, req.user.orgId]);
   res.json(rows);
 }));
@@ -6926,7 +6935,8 @@ app.put("/opportunities/:id", requireAuth, requirePlan("team"), checkWriteAccess
 }));
 
 app.delete("/opportunities/:id", requireAuth, wrap(async (req, res) => {
-  await run("DELETE FROM opportunities WHERE id=? AND org_id=?", [req.params.id, req.user.orgId]);
+  const { changes } = await run("DELETE FROM opportunities WHERE id=? AND org_id=?", [req.params.id, req.user.orgId]);
+  if (!changes) return res.status(404).json({ error: "Not found" }); // BUILD-75 B: a foreign/unknown id answers 404, never a false success — one answer everywhere
   res.json({ success: true });
 }));
 
@@ -6968,6 +6978,7 @@ const DONOR_RELATIONSHIP_TYPES = ["spouse", "household", "family", "employer_mat
 const HOUSEHOLD_RELATIONSHIP_TYPES = ["spouse", "household"];
 
 app.get("/donors/:id/relationships", requireAuth, wrap(async (req, res) => {
+  if (!(await orgOwns("donors", req.params.id, req.user.orgId))) return res.status(404).json({ error: "Donor not found" }); // BUILD-75 B: the parent must be YOURS before children are answered — even an empty list confirms nothing about another tenant
   const { orgId } = req.user;
   const donorId = req.params.id;
   const rows = await query(
@@ -7040,7 +7051,8 @@ app.post("/donors/:id/relationships", requireAuth, checkWriteAccess, wrap(async 
 }));
 
 app.delete("/donor-relationships/:id", requireAuth, wrap(async (req, res) => {
-  await run("DELETE FROM donor_relationships WHERE id = ? AND org_id = ?", [req.params.id, req.user.orgId]);
+  const { changes } = await run("DELETE FROM donor_relationships WHERE id = ? AND org_id = ?", [req.params.id, req.user.orgId]);
+  if (!changes) return res.status(404).json({ error: "Not found" }); // BUILD-75 B: a foreign/unknown id answers 404, never a false success — one answer everywhere
   res.json({ success: true });
 }));
 
@@ -7313,7 +7325,8 @@ app.get("/grants/:id/manual-match", requireAuth, wrap(async (req, res) => {
 }));
 
 app.delete("/grants/:id", requireAuth, wrap(async (req, res) => {
-  await run("DELETE FROM grants WHERE id = ? AND org_id = ?", [req.params.id, req.user.orgId]);
+  const { changes } = await run("DELETE FROM grants WHERE id = ? AND org_id = ?", [req.params.id, req.user.orgId]);
+  if (!changes) return res.status(404).json({ error: "Not found" }); // BUILD-75 B: a foreign/unknown id answers 404, never a false success — one answer everywhere
   res.json({ success: true });
 }));
 
@@ -7393,7 +7406,7 @@ app.put("/volunteers/:id", requireAuth, checkWriteAccess, wrap(async (req, res) 
         "INSERT INTO donors (id,org_id,name,email,stage,notes,gift_count,total_giving) VALUES (?,?,?,?,'prospect',?,0,0)",
         [donorId, orgId, name, email.toLowerCase(), "Auto-created from volunteer record. 20+ hours logged."]
       ).catch(() => {});
-      const today = new Date().toISOString().slice(0, 10);
+      const today = orgToday(await orgTz(orgId)); // ORG_TZ_SEAM_OK (BUILD-75)
       await run("INSERT INTO interactions (id,org_id,donor_id,type,note,date) VALUES (?,?,?,'note',?,?)",
         ["i_"+uuid().slice(0,8), orgId, donorId, "Volunteer prospect — 20+ hours logged", today]).catch(() => {});
     }
@@ -7539,7 +7552,8 @@ app.post("/tasks/:id/complete", requireAuth, checkWriteAccess, wrap(async (req, 
 }));
 
 app.delete("/tasks/:id", requireAuth, wrap(async (req, res) => {
-  await run("DELETE FROM tasks WHERE id = ? AND org_id = ?", [req.params.id, req.user.orgId]);
+  const { changes } = await run("DELETE FROM tasks WHERE id = ? AND org_id = ?", [req.params.id, req.user.orgId]);
+  if (!changes) return res.status(404).json({ error: "Not found" }); // BUILD-75 B: a foreign/unknown id answers 404, never a false success — one answer everywhere
   res.json({ success: true });
 }));
 
@@ -9434,6 +9448,7 @@ app.delete("/campaigns/:id", requireAuth, requireAdmin, wrap(async (req, res) =>
   // into the retention window (it used to linger live but unreachable) and
   // record the pointer removal.
   const [ex] = await query("SELECT hero_image_url FROM campaigns WHERE id = ? AND org_id = ?", [req.params.id, req.user.orgId]);
+  if (!ex) return res.status(404).json({ error: "Not found" }); // BUILD-75 B: a foreign/unknown id answers 404, never a false success — one answer everywhere
   await run("DELETE FROM campaigns WHERE id = ? AND org_id = ?", [req.params.id, req.user.orgId]);
   if (ex?.hero_image_url) {
     await pruneCampaignAssets(req.user.orgId);
@@ -10247,7 +10262,8 @@ app.put("/programs/:id", requireAuth, wrap(async (req, res) => {
 }));
 
 app.delete("/programs/:id", requireAuth, requireAdmin, wrap(async (req, res) => {
-  await run("DELETE FROM programs WHERE id = ? AND org_id = ?", [req.params.id, req.user.orgId]);
+  const { changes } = await run("DELETE FROM programs WHERE id = ? AND org_id = ?", [req.params.id, req.user.orgId]);
+  if (!changes) return res.status(404).json({ error: "Not found" }); // BUILD-75 B: a foreign/unknown id answers 404, never a false success — one answer everywhere
   res.json({ success: true });
 }));
 
@@ -10278,10 +10294,11 @@ app.post("/programs/:id/grants", requireAuth, requireAdmin, wrap(async (req, res
 }));
 
 app.delete("/programs/:id/grants/:grantId", requireAuth, requireAdmin, wrap(async (req, res) => {
-  await run(
+  const { changes } = await run(
     "DELETE FROM program_grants WHERE program_id = ? AND grant_id = ? AND org_id = ?",
     [req.params.id, req.params.grantId, req.user.orgId]
   );
+  if (!changes) return res.status(404).json({ error: "Not found" }); // BUILD-75 B: a foreign/unknown id answers 404, never a false success — one answer everywhere
   res.json({ success: true });
 }));
 
@@ -10641,7 +10658,8 @@ app.put("/giving-pages/:id", requireAuth, requireAdmin, checkWriteAccess, wrap(a
 // data integrity" in CLAUDE.md). DELETE routes are intentionally never
 // checkWriteAccess-gated, consistent with every other DELETE in this app.
 app.delete("/giving-pages/:id", requireAuth, requireAdmin, wrap(async (req, res) => {
-  await run("DELETE FROM giving_pages WHERE id=? AND org_id=?", [req.params.id, req.user.orgId]);
+  const { changes } = await run("DELETE FROM giving_pages WHERE id=? AND org_id=?", [req.params.id, req.user.orgId]);
+  if (!changes) return res.status(404).json({ error: "Not found" }); // BUILD-75 B: a foreign/unknown id answers 404, never a false success — one answer everywhere
   res.json({ success: true });
 }));
 
@@ -11348,6 +11366,7 @@ app.delete("/finance/transactions/:id", requireAuth, requireAdmin, wrap(async (r
     LEFT JOIN accounts a ON a.id = ft.account_id
     LEFT JOIN fin_funds f ON f.id = ft.fund_id
     WHERE ft.id = ? AND ft.org_id = ?`, [req.params.id, req.user.orgId]);
+  if (!txnToDelete) return res.status(404).json({ error: "Not found" }); // BUILD-75 B: a foreign/unknown id answers 404, never a false success — one answer everywhere
   await run("DELETE FROM fin_transactions WHERE id = ? AND org_id = ?", [req.params.id, req.user.orgId]);
   writeAuditLog(req.user.orgId, req.user.userId, req.user.email, "deleted", "transaction", req.params.id, {
     description: txnToDelete ? `Deleted ${txnToDelete.type === "income" ? "+" : "-"}$${parseFloat(txnToDelete.amount).toFixed(2)} — ${txnToDelete.description}` : "Deleted transaction",
@@ -11684,6 +11703,11 @@ app.get("/reports/board", requireAuth, wrap(async (req, res) => {
 }));
 
 app.get("/reports/board/:id/pdf", requireAuth, wrap(async (req, res) => {
+  // BUILD-75 B: the table is lazily created by the sibling list/generate
+  // routes — without the same guard here, the FIRST request an org ever
+  // makes to this route on a fresh database was a 500, and a foreign id
+  // 500ed instead of 404ing.
+  await run(BOARD_REPORTS_DDL).catch(() => {});
   const [report] = await query(
     "SELECT id, quarter, year, pdf_data FROM board_reports WHERE id = ? AND org_id = ?",
     [req.params.id, req.user.orgId]
@@ -14059,10 +14083,11 @@ app.post("/sequences/:id/enroll", requireAuth, requirePlan("team"), wrap(async (
 
 app.post("/sequences/:id/unenroll", requireAuth, wrap(async (req, res) => {
   const { donorId } = req.body;
-  await run(
+  const { changes } = await run(
     "UPDATE sequence_enrollments SET status='unsubscribed' WHERE sequence_id=? AND donor_id=? AND org_id=?",
     [req.params.id, donorId, req.user.orgId]
   );
+  if (!changes) return res.status(404).json({ error: "Not found" }); // BUILD-75 B: a foreign/unknown id answers 404, never a false success — one answer everywhere
   res.json({ success: true });
 }));
 
@@ -14137,7 +14162,8 @@ app.put("/impact-metrics/:id", requireAuth, requireAdmin, checkWriteAccess, wrap
 }));
 
 app.delete("/impact-metrics/:id", requireAuth, requireAdmin, wrap(async (req, res) => {
-  await run("DELETE FROM impact_metrics WHERE id=? AND org_id=?", [req.params.id, req.user.orgId]);
+  const { changes } = await run("DELETE FROM impact_metrics WHERE id=? AND org_id=?", [req.params.id, req.user.orgId]);
+  if (!changes) return res.status(404).json({ error: "Not found" }); // BUILD-75 B: a foreign/unknown id answers 404, never a false success — one answer everywhere
   res.json({ success: true });
 }));
 
@@ -14420,11 +14446,13 @@ app.put("/custom-fields/:id", requireAuth, requireAdmin, checkWriteAccess, wrap(
 
 app.delete("/custom-fields/:id", requireAuth, requireAdmin, wrap(async (req, res) => {
   await run("DELETE FROM custom_field_values WHERE field_id=? AND org_id=?", [req.params.id, req.user.orgId]);
-  await run("DELETE FROM custom_fields WHERE id=? AND org_id=?", [req.params.id, req.user.orgId]);
+  const { changes } = await run("DELETE FROM custom_fields WHERE id=? AND org_id=?", [req.params.id, req.user.orgId]);
+  if (!changes) return res.status(404).json({ error: "Not found" }); // BUILD-75 B: a foreign/unknown id answers 404, never a false success — one answer everywhere
   res.json({ ok: true });
 }));
 
 app.get("/donors/:id/custom-fields", requireAuth, wrap(async (req, res) => {
+  if (!(await orgOwns("donors", req.params.id, req.user.orgId))) return res.status(404).json({ error: "Donor not found" }); // BUILD-75 B: the parent must be YOURS before children are answered — even an empty list confirms nothing about another tenant
   const rows = await query(
     `SELECT cf.id AS field_id, cf.label, cf.field_type, cf.options, cf.required, cf.field_order,
             cfv.value
@@ -16369,6 +16397,7 @@ app.post("/recurring/:donorId/resend", requireAuth, wrap(async (req, res) => {
 // recurring gift that's failed a payment (donors.stripe_subscription_status
 // alone can't distinguish "recovering" from "past_due").
 app.get("/donors/:id/recurring-subscription", requireAuth, wrap(async (req, res) => {
+  if (!(await orgOwns("donors", req.params.id, req.user.orgId))) return res.status(404).json({ error: "Donor not found" }); // BUILD-75 B: the parent must be YOURS before children are answered — even an empty list confirms nothing about another tenant
   const rows = await query(
     `SELECT stripe_subscription_id, amount, interval, status, failure_count, first_failed_at, last_failed_at, recovered_at, canceled_at
      FROM recurring_subscriptions WHERE donor_id=? AND org_id=? ORDER BY created_at DESC LIMIT 1`,
@@ -17513,6 +17542,7 @@ app.post("/gmail/send", requireAuth, wrap(async (req, res) => {
 
 // GET /gmail/thread/:donorId — last 20 email interactions for AI context
 app.get("/gmail/thread/:donorId", requireAuth, wrap(async (req, res) => {
+  if (!(await orgOwns("donors", req.params.donorId, req.user.orgId))) return res.status(404).json({ error: "Donor not found" }); // BUILD-75 B
   const rows = await query(
     `SELECT id, type, note, date, created_at, metadata FROM interactions WHERE org_id=? AND donor_id=? AND type='email' ORDER BY created_at DESC LIMIT 20`,
     [req.user.orgId, req.params.donorId]
@@ -17598,7 +17628,8 @@ app.put("/events/:id", requireAuth, checkWriteAccess, async (req, res) => {
 
 app.delete("/events/:id", requireAuth, async (req, res) => {
   try {
-    await run("DELETE FROM events WHERE id=$1 AND org_id=$2", [req.params.id, req.user.orgId]);
+    const { changes } = await run("DELETE FROM events WHERE id=$1 AND org_id=$2", [req.params.id, req.user.orgId]);
+    if (!changes) return res.status(404).json({ error: "Not found" }); // BUILD-75 B: a foreign/unknown id answers 404, never a false success — one answer everywhere
     res.json({ ok: true });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
@@ -17723,7 +17754,8 @@ app.patch("/events/:id/attendees/:attendeeId", requireAuth, checkWriteAccess, as
 
 app.delete("/events/:id/attendees/:attendeeId", requireAuth, async (req, res) => {
   try {
-    await run("DELETE FROM event_attendees WHERE id=$1 AND org_id=$2", [req.params.attendeeId, req.user.orgId]);
+    const { changes } = await run("DELETE FROM event_attendees WHERE id=$1 AND org_id=$2", [req.params.attendeeId, req.user.orgId]);
+    if (!changes) return res.status(404).json({ error: "Not found" }); // BUILD-75 B: a foreign/unknown id answers 404, never a false success — one answer everywhere
     res.json({ ok: true });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
@@ -17757,6 +17789,7 @@ app.post("/events/:id/follow-up", requireAuth, checkWriteAccess, async (req, res
 app.get("/donors/:id/events", requireAuth, async (req, res) => {
   try {
     const orgId = req.user.orgId;
+    if (!(await orgOwns("donors", req.params.id, orgId))) return res.status(404).json({ error: "Donor not found" }); // BUILD-75 B
     const rows = await query(`
       SELECT e.id, e.name, e.event_type, e.date, e.status, ea.status AS attendee_status
       FROM event_attendees ea
