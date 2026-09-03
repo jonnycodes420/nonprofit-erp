@@ -95,3 +95,12 @@ and then only ever looked at fixtures that couldn't produce it. Same blind
 spot as the drift empty state. The rule that follows, recorded in findings:
 **a walk must include the empty/thin case for every claim it checks, not
 just the fixture built to show the feature working.**
+
+## Production (2026-09-03, post-seed)
+
+The seed ran against production (deliberate two-flag path; shape self-assert
+held: drifting/high 13 ∈ [11,20], decile 75.9%). Read back on the LIVE
+deployed page (`walk-prod-seeded-1440.png`, www.stewardapp.dev as the
+Harborlight director): the Drifting section renders with the eleven capped,
+and **Margaret Chen is on it — "$2,000 every July since 2019. Nothing for
+14 months."** The canonical example is now on the right side of the door.
