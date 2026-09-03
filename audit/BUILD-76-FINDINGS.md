@@ -334,3 +334,60 @@ quiet_past_pattern recipe and the home drift list read one computation but
 fire on different cadences (5-min sweep vs read) — a donor can appear on
 the list minutes before the officer's task exists; harmless today, worth
 remembering if anyone ever "fixes" the sweep by storing drift state.
+
+---
+
+# BUILD-76 FOLLOW-UP (2026-09-03 evening) — the seed, the empty state, the retention floor
+
+## PART 1 — THE SEED, fixed and self-asserting
+
+**Reproduced first, on scratch: the fixture was wrong, not the engine —
+exactly as the brief predicted.** The old roster gave most of the eleven
+annual NOVEMBER gifts; under month-aware drift a November giver in September
+is simply not due yet, so only FOUR of the eleven assessed as drifting. Two
+more failure modes surfaced on the same run: one of the eleven carried a
+seeded touchpoint 20 days old, inside HANDLED_SNOOZE_DAYS, and was
+suppressed from the list; and Ondine Cinderhalt's past_due subscription
+EXCLUDES her from drift by design, so she could never be one of the eleven
+and the failed-card fixture at once. And there was no Margaret Chen anywhere
+in the seed — the landing page's canonical example lived only in org_creo's
+boot seed, as a $5,000 November major with a bare follow-up task.
+
+**The fix (scripts/seed-build72-demo.js):**
+- The roster is [name, amount, pattern]; every pattern is constructed
+  RELATIVE TO TODAY so all eleven assess drifting/HIGH on any run date:
+  3 seasonal (same month for 7 years, last ~14 months back — window closed
+  past grace), 5 semiannual (~1.6× cadence out), 3 quarterly (~2.1× out,
+  >180d so the eleven sit inside BOTH at-risk figures). Margaret Chen leads
+  at $2,000 seasonal — the capped home list reads "$2,000 every <Month>
+  since 2019. Nothing for 14 months.", the landing sentence's exact form.
+- Ondine moved to her own donor (BUILD-73's pledge-donor precedent):
+  $150/month for 18 months, card died two months ago, past_due sub —
+  excluded from drift, alive in the failed-payment path.
+- Organic noise bounded: mids/majors and the tail each give in ONE season
+  per donor (random year/month scatter minted ~21 accidental drifters,
+  incl. a $9.6k one that outranked all eleven); ~1-in-100 tail donors stop
+  a year back (bounded realistic drift); tail gifts cap at $450 so no tail
+  donor's trailing-24 can reach Margaret's $2,000 — she is GUARANTEED a
+  capped-list seat. Touchpoints seeded ≥35 days back (outside the snooze).
+- **The shape assertion runs INSIDE the seed, on every target including
+  production** (where demo-shape.test.js never runs): the eleven are
+  assessed through drift.js BEFORE any write (refuses if the fixture would
+  not drift), and after the write the generated file must hold
+  drifting/high ∈ [11, 20] (SHAPE.driftingHighMin/Max) and top-decile
+  revenue share ∈ [62%, 82%] or the seed exits 1. It has now silently
+  un-drifted twice (BUILD-73: two; BUILD-76: seven) — never again silently.
+- tests/demo-shape.test.js §4 (33): every one of the eleven drifting/high
+  by name via GET /drift, the count range, Margaret ON the capped list with
+  the sentence-form regex, Ondine excluded into the failed path. The old
+  flat-365 "not yet lapsed" check became the engine's 24-month boundary —
+  the flat-365 intuition was the exact thinking that mis-shaped the fixture.
+
+**The guard (Layer 3) gained the ONE deliberate production path.** As
+written the seed refused the prod database ("postgres") unconditionally —
+Jonathan's standing "run it against production" item was impossible as
+written. Now: prod db + non-loopback BASE (which writerBase already gates
+behind --i-know-this-is-prod) + the server-vs-connection identity match →
+allowed, with a loud banner; every DELETE/INSERT stays pinned to
+org_b72demo; kb_*/kingdom names refuse unconditionally; any other name
+fails closed. A prod-db-name + loopback-BASE mismatch also refuses.

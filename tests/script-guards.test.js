@@ -30,10 +30,13 @@ const read = f => fs.readFileSync(path.join(root, "scripts", f + ".js"), "utf8")
 
 // Writes data (API or DB) — must resolve its target through prodGuard.
 const GUARDED_WRITERS = [
-  // BUILD-72 Part 5 — the demo seed. Loopback default via writerBase, and it
-  // additionally refuses any database name not on an explicit scratch
-  // allowlist (production and kb_* fail closed), plus an identity check that
-  // the server's reported database matches the one being written to.
+  // BUILD-72 Part 5 — the demo seed. Loopback default via writerBase; any
+  // database name outside the scratch allowlist fails closed EXCEPT the one
+  // deliberate production path (prod db + prod BASE + --i-know-this-is-prod,
+  // BUILD-76 follow-up — puts the Harborlight demo fiction on prod, touching
+  // only org_b72demo rows); kb_*/kingdom refuse unconditionally, and the
+  // identity check (server's reported database == the one being written)
+  // always applies.
   "seed-build72-demo",
   "backfill-campaign-attribution", "build25-workflows-capture", "build35-capture",
   "build36-bulkassign-capture", "build36-notify-capture", "build47-capture",

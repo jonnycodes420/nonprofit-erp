@@ -20,7 +20,10 @@
 //   Layer 1  loopback default via prodGuard.writerBase.
 //   Layer 2  a remote BASE additionally needs --i-know-this-is-prod.
 //   Layer 3  a hard refusal on any database whose name is not an explicit
-//            allowlisted scratch name, and on any org id that is not ours.
+//            allowlisted scratch name — except the ONE deliberate production
+//            path (prod db + prod BASE + --i-know-this-is-prod, BUILD-76
+//            follow-up), which still touches only org_b72demo rows. Kingdom
+//            Builders names refuse unconditionally.
 //
 // Usage:  node scripts/seed-build72-demo.js
 //         (DATABASE_URL + BASE default to the scratch stack)
@@ -43,10 +46,19 @@ const ADMIN_EMAIL = "director@harborlight.demo";
 const ADMIN_PASSWORD = "demo-harbor-2026";
 const TZ = process.env.DEMO_TZ || "America/New_York";
 
-// ── Layer 3: an explicit allowlist of database names this may write to. Any
-// production or Kingdom Builders name fails closed, not open.
+// ── Layer 3: an explicit allowlist of database names this may write to.
+// Kingdom Builders names fail closed ALWAYS. The production database
+// ("postgres", Steward's Supabase) is reachable ONLY through the deliberate
+// two-flag path below (BUILD-76 follow-up — Jonathan's standing item is to
+// put the Harborlight demo org on production; the seed used to fail closed
+// on prod unconditionally, which made that item impossible as written):
+// a non-loopback BASE (which already forced --i-know-this-is-prod through
+// writerBase) AND the server-vs-connection identity match. Even then the
+// seed touches ONLY org_b72demo rows — every DELETE and INSERT is pinned to
+// that org id.
 const ALLOWED_DB = /^(steward_loadtest|steward_demo|steward_freshcheck|steward_build\w+)$/;
-const FORBIDDEN_DB = /^(postgres|kb_|kingdom)/i;
+const KB_DB = /^(kb_|kingdom)/i;
+const PROD_DB = "postgres";
 
 const pad = n => String(n).padStart(2, "0");
 const ymd = d => `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}`;
@@ -72,12 +84,64 @@ const LAST  = ["Ashgrove","Bellwether","Cinderhalt","Dunmoor","Elmsworth","Fairw
 // asserts on them by name (tests/demo-shape.test.js), so they must be readable
 // without running the seed. Exported, not duplicated: a copy in the test would
 // drift from the seed the first time either changed.
+//
+// BUILD-76 FOLLOW-UP — the roster is now [name, amount, pattern], and every
+// pattern is constructed RELATIVE TO TODAY so all eleven assess as
+// drifting/HIGH under the real engine (drift.js) on any run date. The old
+// roster gave most of the eleven annual NOVEMBER gifts — under month-aware
+// drift a November giver in September is simply not due yet, so only four of
+// the eleven actually drifted (the fixture was wrong, not the engine — the
+// exact failure mode BUILD-73 Part 3 caught once before, one layer deeper).
+// Margaret Chen leads: she is the landing page's canonical example, and the
+// demo must read her sentence ("$2,000 every <Month> since <year>. Nothing
+// for 14 months.") in the Drifting section, not a bare follow-up task.
+// Ondine Cinderhalt left the eleven for her own story (the failed card —
+// below): a past_due subscription EXCLUDES a donor from drift by design, so
+// she cannot be one of the eleven and be the failed-card fixture at once.
 const DRIFTED = [
-  ["Marguerite Ashgrove", 2500], ["Halvard Bellwether", 2000], ["Ondine Cinderhalt", 2400],
-  ["Casper Dunmoor", 1800],      ["Wilhelmina Elmsworth", 3000], ["Tobias Fairweather", 2000],
-  ["Rosalind Glasswick", 2200],  ["Emmett Hollowell", 1900],   ["Philippa Ironvale", 2600],
-  ["Gideon Jessamine", 2000],    ["Cordelia Kettleby", 2800],
+  ["Margaret Chen", 2000, "seasonal"],          // THE canonical example
+  ["Marguerite Ashgrove", 2500, "seasonal"],
+  ["Halvard Bellwether", 2000, "semiannual"],
+  ["Casper Dunmoor", 1800, "semiannual"],
+  ["Wilhelmina Elmsworth", 3000, "semiannual"],
+  ["Tobias Fairweather", 2000, "quarterly"],
+  ["Rosalind Glasswick", 2200, "quarterly"],
+  ["Emmett Hollowell", 1900, "quarterly"],
+  ["Philippa Ironvale", 2600, "semiannual"],
+  ["Gideon Jessamine", 2100, "seasonal"],
+  ["Cordelia Kettleby", 2800, "semiannual"],
 ];
+
+// The gift dates for one of the eleven, RELATIVE TO TODAY — deterministic,
+// and always drifting/high under drift.js:
+//   seasonal    — one gift in the same calendar month for 7 straight years,
+//                 the last ~14 months back (the window closed ~2 months ago;
+//                 past the 30-day grace at any run date).
+//   semiannual  — every ~182 days for 4 years, silent ~9–10 months
+//                 (ratio ≈ 1.6× cadence; boundary 455d).
+//   quarterly   — every ~91 days for 2 years, silent ~6.5 months
+//                 (ratio ≈ 2.1×; boundary 227d — regenerated relative to
+//                 today on every run, so it never ages into lapsed).
+function driftedGiftDates(pattern, i) {
+  if (pattern === "seasonal") {
+    // i*4 (not i%3*12) so no two seasonal members share an anchor — twin
+    // sentences on adjacent rows read as synthetic data.
+    const anchor = orgTime.addDays(TODAY, -(420 + i * 4));          // ~14–15 months back
+    const [ay, am] = [Number(anchor.slice(0, 4)), Number(anchor.slice(5, 7))];
+    const dates = [];
+    for (let y = ay - 6; y <= ay; y++) dates.push(dateIn(y, am, 10));
+    return dates;
+  }
+  if (pattern === "semiannual") {
+    const end = 280 + (i % 4) * 8;                                  // 280–304 days silent
+    return [7, 6, 5, 4, 3, 2, 1, 0].map(k => orgTime.addDays(TODAY, -(end + k * 182)));
+  }
+  // quarterly — silence >180d on purpose: every one of the eleven must sit
+  // inside BOTH the drift window AND the older 180-day going-quiet figure
+  // (the ImpactLine), so the two at-risk numbers agree about the thesis.
+  const end = 185 + (i % 3) * 5;                                    // 185–195 days silent
+  return [7, 6, 5, 4, 3, 2, 1, 0].map(k => orgTime.addDays(TODAY, -(end + k * 91)));
+}
 
 // The shape contract BUILD-73 Part 3 pins. The demo is the pitch, and the pitch
 // is mid-level drift — eleven quiet donors, never four hundred lapsed $50s. A
@@ -87,6 +151,10 @@ const DRIFTED = [
 // demanded an exact percentage would be pinning the random seed, not the shape.
 const SHAPE = {
   driftedCount: 11,
+  // Engine-verified drift (BUILD-76 follow-up): the eleven plus a bounded
+  // handful of organic small-tail drifters. Below 11 the fixture un-drifted;
+  // far above it the file is noise, not a story.
+  driftingHighMin: 11, driftingHighMax: 20,
   topDecileShareMin: 0.62, topDecileShareMax: 0.82,   // top 10% of donors, share of lifetime revenue
   top200ShareMin: 0.82,    top200ShareMax: 0.93,      // the FEP figure the seed prints
   donorsMin: 1000,         donorsMax: 1150,
@@ -105,11 +173,22 @@ async function main() {
   const refuse = msg => { console.error(`\nREFUSED: ${msg}\n`); process.exit(1); };
   if (dbName !== health.database)
     refuse(`the server at ${BASE} reports database "${health.database}" but this connection is to "${dbName}". One of them is not what you think.`);
-  if (FORBIDDEN_DB.test(dbName))
-    refuse(`"${dbName}" is a production or Kingdom Builders database name. This seed writes DEMO FICTION and must never touch it.`);
-  if (!ALLOWED_DB.test(dbName))
-    refuse(`"${dbName}" is not an allowlisted scratch database (${ALLOWED_DB}). Failing closed.`);
-  console.log(`[identity] database "${dbName}" is an allowlisted scratch target\n`);
+  if (KB_DB.test(dbName))
+    refuse(`"${dbName}" is a Kingdom Builders database name. This seed writes STEWARD demo fiction and must never touch it — no flag overrides this.`);
+  const isProdRun = dbName === PROD_DB;
+  if (isProdRun) {
+    // The deliberate path: prod db + non-loopback BASE (writerBase already
+    // demanded --i-know-this-is-prod for that BASE) + identity match above.
+    if (guard.isLoopback(BASE))
+      refuse(`database "${dbName}" is production but BASE (${BASE}) is loopback — refusing a mismatched pair. A prod run points BASE at the prod backend so the identity check is against the server that owns this database.`);
+    console.log(`\n*** PRODUCTION SEED ***`);
+    console.log(`*** This drops and recreates ONLY the Harborlight demo org (${ORG}) — fiction, no real donors. ***`);
+    console.log(`*** Every DELETE and INSERT below is pinned to org_id='${ORG}'. Nothing else is touched. ***\n`);
+  } else if (!ALLOWED_DB.test(dbName)) {
+    refuse(`"${dbName}" is not an allowlisted scratch database (${ALLOWED_DB}) and not the guarded prod path. Failing closed.`);
+  } else {
+    console.log(`[identity] database "${dbName}" is an allowlisted scratch target\n`);
+  }
 
   const q = (sql, params = []) => client.query(sql, params).then(r => r.rows);
 
@@ -160,19 +239,36 @@ async function main() {
   // year. Not lapsed-and-forgotten — quietly gone, while still looking fine in
   // any report that only counts lifetime totals.
   console.log("[seed] the eleven drifted mid-level donors…");
+  // THE SHAPE ASSERTION AT GENERATION TIME (BUILD-76 follow-up). The eleven
+  // are assessed through the REAL engine (drift.js, a pure function) BEFORE a
+  // single row is written. If any of them is not drifting/high, the fixture
+  // is wrong — refuse to seed rather than silently un-drift. This runs on
+  // EVERY target including production, where tests/demo-shape.test.js never
+  // does; the suite is the committed guard, this is the last line.
+  const driftEngine = require("../drift");
+  const fixtureErrors = [];
+  DRIFTED.forEach(([name, amt, pattern], i) => {
+    const a = driftEngine.assessDrift(driftedGiftDates(pattern, i).map(date => ({ date, amount: amt })), TODAY);
+    if (a.state !== "drifting" || a.confidence !== "high")
+      fixtureErrors.push(`${name} (${pattern}): state=${a.state} confidence=${a.confidence}`);
+  });
+  if (fixtureErrors.length) {
+    console.error("\nREFUSED: the fixture would not drift — the fixture is wrong, not the engine:");
+    fixtureErrors.forEach(e => console.error("  " + e));
+    process.exit(1);
+  }
   const driftedIds = [];
-  DRIFTED.forEach(([name, amt], i) => {
+  DRIFTED.forEach(([name, amt, pattern], i) => {
     const email = name.toLowerCase().replace(/ /g, ".") + "@example.demo";
     const id = addDonor(name, email, { status: "mid", stage: "cultivate",
                                       officer: i % 3 === 0 ? "u_b72demo_off" : "u_b72demo" });
     driftedIds.push(id);
     // The eleven belong to the director — they are the pitch, and they must be
-    // in the portfolio of whoever is signed in during the demo.
-    // Four consecutive years of giving, then silence.
-    for (let y = YEAR - 4; y <= YEAR - 1; y++) {
-      addGift(id, amt + (i % 3) * 100, dateIn(y, 11, 8 + (i % 14)), { campaign: "Annual Fund " + y });
-      if (i % 2 === 0) addGift(id, Math.round(amt / 2), dateIn(y, 5, 12 + (i % 10)));
-    }
+    // in the portfolio of whoever is signed in during the demo. Steady
+    // amounts on purpose: the drift reason then reads the donor's own pattern
+    // ("$2,000 every July since 2019"), not "usually around".
+    for (const date of driftedGiftDates(pattern, i))
+      addGift(id, amt, date, { campaign: "Annual Fund " + date.slice(0, 4) });
   });
 
   // ── The rest of the file: ~1,000 donors on the FEP shape — roughly 200
@@ -189,20 +285,31 @@ async function main() {
     return [n, `donor${did + 1}@example.demo`];
   };
 
-  // 190 major/mid donors carrying the bulk of revenue.
+  // 190 major/mid donors carrying the bulk of revenue. Each gives in ONE
+  // season, every year through THIS year (BUILD-76 follow-up): random months
+  // per year used to line up into accidental tight cadences, minting $10k+
+  // organic drifters that outranked all eleven on the value-at-risk-ranked
+  // home list — and no i%9 "quiet this year" majors for the same reason. The
+  // quiet-major story is Verity Underhill (lapsed); the quiet story is the
+  // eleven.
   for (let i = 0; i < 190; i++) {
     const [name, email] = mkName();
     const tier = i < 25 ? "major" : "mid";
     const base = tier === "major" ? between(10000, 45000) : between(1200, 6000);
+    const givingMonth = between(1, 12);   // their season — annual givers give at their own time of year
     const id = addDonor(name, email, { status: tier, stage: i % 5 === 0 ? "steward" : "cultivate",
                                        officer: i % 4 === 0 ? "u_b72demo_off" : (i % 3 === 0 ? "u_b72demo" : null) });
     for (let y = YEAR - 3; y <= YEAR; y++) {
-      if (y === YEAR && i % 9 === 0) continue;          // a few quiet this year too
-      addGift(id, base + between(-200, 400), dateIn(y, between(1, 12), between(1, 28)),
+      addGift(id, base + between(-200, 400), dateIn(y, givingMonth, between(1, 28)),
               { campaign: y === YEAR ? "Annual Fund " + YEAR : "Annual Fund " + y });
     }
   }
-  // ~810 small donors — the tail. Present, but not the story.
+  // ~810 small donors — the tail. Present, but not the story. Each gives in
+  // one season across consecutive years (BUILD-76 follow-up — random
+  // year/month scatter used to mint ~20 accidental organic drifters through
+  // the two-interval variability quirk). Most run through THIS year; a
+  // deterministic handful (~1 in 100) stopped last year — the file's
+  // bounded, realistic organic drift.
   for (let i = 0; i < 810; i++) {
     const [name, email] = mkName();
     const id = addDonor(name, email, { status: "new", stage: i % 7 === 0 ? "qualify" : "prospect",
@@ -210,8 +317,13 @@ async function main() {
     // Tuned so the top ~200 carry ~90% of revenue, not ~96%. A file that is
     // TOO top-heavy reads as fake to a fundraiser just as a flat one does.
     const n = between(1, 4);
+    const m = between(1, 12);
+    // Capped at $450 (was $620) so no tail donor's trailing-24-month giving
+    // can reach $2,000 — Margaret Chen (the weakest of the eleven by value
+    // at risk) is then guaranteed a place on the capped home drift list.
+    const lastYear = i % 101 === 0 ? YEAR - 1 : YEAR;
     for (let k = 0; k < n; k++)
-      addGift(id, between(40, 620), dateIn(between(YEAR - 3, YEAR), between(1, 12), between(1, 28)));
+      addGift(id, between(40, 450), dateIn(lastYear - k, m, between(1, 28)));
   }
 
   // ── REALISTIC MESS — a file with none reads as fake to anyone who has
@@ -282,6 +394,15 @@ async function main() {
   const pledgeDonorB = addDonor("Barnaby Thistlewood", "barnaby.thistlewood@example.demo",
                                 { status: "mid", stage: "steward", pin: true, officer: "u_b72demo_off" });
 
+  // The failed-card donor (BUILD-76 follow-up — her OWN story, see the
+  // subscription block below): $150/month for a year and a half, then the
+  // card died two months ago. A past_due subscription EXCLUDES her from
+  // drift by design — she routes to the failed-payment path instead.
+  const recurDonor = addDonor("Ondine Cinderhalt", "ondine.cinderhalt@example.demo",
+                              { status: "mid", stage: "steward", pin: true, officer: "u_b72demo" });
+  for (let k = 17; k >= 2; k--)
+    addGift(recurDonor, 150, orgTime.addDays(TODAY, -(k * 30 + 4)));
+
   await writeAll(client, donors, gifts);
 
   // ── Pledges: one PARTIALLY paid, one OVERPAID with a recorded surplus ────
@@ -317,11 +438,13 @@ async function main() {
 
   // ── A recurring gift with a FAILED card ─────────────────────────────────
   console.log("[seed] a recurring gift with a failed card…");
-  // Deliberately one of the eleven: a failed card is one of the real reasons a
-  // reliable mid-level donor goes quiet, and the subscription row carries no
-  // gift, so it does not break their silence. It is the story, not a
-  // contradiction — Ondine Cinderhalt did not choose to stop.
-  const recurDonor = driftedIds[2];
+  // recurDonor (Ondine Cinderhalt) was created — with her monthly gift
+  // history — BEFORE writeAll above; this block only attaches the failed
+  // subscription. She is deliberately NOT one of the eleven: a past_due
+  // subscription EXCLUDES a donor from drift by design, and her story lives
+  // in the failed-payment path (same precedent as BUILD-73's pledge donors:
+  // anything that needs a non-drift state belongs on a donor whose story IS
+  // that state).
   await q(`INSERT INTO recurring_subscriptions
              (id,org_id,donor_id,amount,interval,status,stripe_subscription_id,fund_id,created_at)
            VALUES ('rs_b72demo',$1,$2,150,'month','past_due','sub_demo_b72','fund_b72demo_gen',NOW())`,
@@ -393,8 +516,55 @@ async function main() {
              VALUES ($1,$2,$3,$4,$5,$6,'u_b72demo','Dana Reyes')`,
             [`int_b72_${++ic}`, ORG, did, i % 2 ? "meeting" : "call",
              i % 2 ? "Coffee — talked about the studio program." : "Left a voicemail about the spring showcase.",
-             orgTime.addDays(TODAY, -(20 + i * 9))]);
+             // ≥35 days back on purpose: a meaningful contact inside
+             // HANDLED_SNOOZE_DAYS (30) would suppress that donor from the
+             // drift LIST — the first run of the fixed seed hid one of the
+             // eleven exactly this way.
+             orgTime.addDays(TODAY, -(35 + i * 9))]);
   }
+
+  // ── THE SHAPE ASSERTION ON THE GENERATED FILE (BUILD-76 follow-up) ──────
+  // Asserted HERE, after the write, on every target including production —
+  // the committed guard is tests/demo-shape.test.js, but that suite never
+  // runs against prod, and this file has silently un-drifted twice now
+  // (BUILD-73 caught two of the eleven; BUILD-76's month-aware engine
+  // caught seven more). Count of engine-drifting donors within a range, and
+  // top-decile revenue share within a range, or the seed FAILS — teardown
+  // idempotency makes a failed run safe to re-run after fixing.
+  console.log("[assert] the generated file's shape…");
+  const allGiftRows = await q(
+    `SELECT g.donor_id, array_agg(g.date::text ORDER BY g.date) AS dates,
+            array_agg(g.amount ORDER BY g.date) AS amounts
+       FROM gifts g WHERE g.org_id = $1 GROUP BY g.donor_id`, [ORG]);
+  const excludedFromDrift = new Set(
+    (await q(`SELECT donor_id FROM recurring_subscriptions WHERE org_id=$1 AND status IN ('active','past_due','recovering','recovered','paused')
+              UNION SELECT donor_id FROM pledges WHERE org_id=$1 AND status='open'`, [ORG])).map(r => r.donor_id));
+  let driftingHigh = 0;
+  const driftingById = new Map();
+  for (const r of allGiftRows) {
+    if (excludedFromDrift.has(r.donor_id)) continue;
+    const a = driftEngine.assessDrift(r.dates.map((date, k) => ({ date: String(date).slice(0, 10), amount: parseFloat(r.amounts[k]) || 0 })), TODAY);
+    if (a.state === "drifting" && a.confidence === "high") { driftingHigh++; driftingById.set(r.donor_id, a); }
+  }
+  const shapeFail = [];
+  if (driftingHigh < SHAPE.driftingHighMin || driftingHigh > SHAPE.driftingHighMax)
+    shapeFail.push(`engine-drifting/high count ${driftingHigh} outside [${SHAPE.driftingHighMin}, ${SHAPE.driftingHighMax}]`);
+  for (const id of driftedIds)
+    if (!driftingById.has(id)) shapeFail.push(`one of the eleven is NOT drifting/high: ${id}`);
+  const decile = await q(
+    `WITH totals AS (SELECT donor_id, SUM(amount)::float t FROM gifts WHERE org_id=$1 GROUP BY donor_id),
+          n AS (SELECT COUNT(*)::int c FROM donors WHERE org_id=$1 AND deleted_at IS NULL)
+     SELECT (SELECT SUM(t) FROM (SELECT t FROM totals ORDER BY t DESC LIMIT (SELECT GREATEST(1, ROUND(c * 0.1)) FROM n)) top)
+            / NULLIF((SELECT SUM(t) FROM totals), 0) AS share`, [ORG]);
+  const decileShare = parseFloat(decile[0]?.share) || 0;
+  if (decileShare < SHAPE.topDecileShareMin || decileShare > SHAPE.topDecileShareMax)
+    shapeFail.push(`top-decile revenue share ${(decileShare * 100).toFixed(1)}% outside [${SHAPE.topDecileShareMin * 100}%, ${SHAPE.topDecileShareMax * 100}%]`);
+  if (shapeFail.length) {
+    console.error("\nSHAPE ASSERTION FAILED — the generated file does not tell the story:");
+    shapeFail.forEach(e => console.error("  " + e));
+    process.exit(1);
+  }
+  console.log(`[assert] drifting/high ${driftingHigh} (range ${SHAPE.driftingHighMin}–${SHAPE.driftingHighMax}) · top-decile share ${(decileShare * 100).toFixed(1)}% — shape holds`);
 
   // ── Report ──────────────────────────────────────────────────────────────
   const [sum] = await q(`SELECT COUNT(DISTINCT d.id)::int donors,

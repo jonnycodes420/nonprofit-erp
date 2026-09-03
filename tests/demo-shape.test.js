@@ -99,12 +99,15 @@ const pct = n => (n * 100).toFixed(1) + "%";
   ok(`each has gone quiet — no gift in over 180 days (${quiet.length}/${rows.length})`,
      quiet.length === rows.length, rows.map(r => `${r.name}: ${daysSince(r)}d`));
 
-  // ...but NOT yet lapsed. This is the whole point: they are still reachable,
-  // and every lifetime-total report still shows them as fine. A demo whose
-  // eleven had all crossed the 365-day line would be telling the recapture
-  // story again, one layer down.
-  const notYetLapsed = rows.filter(r => daysSince(r) < 365);
-  ok(`and they are NOT yet lapsed — still inside the 365-day line (${notYetLapsed.length}/${rows.length})`,
+  // ...but NOT lapsed — still reachable. The boundary is the ENGINE's, not a
+  // flat 365 days: a seasonal annual giver's window doesn't close until the
+  // 24-month cap (month-aware drift, BUILD-76), and the flat-365 intuition
+  // this assertion used to encode is exactly the thinking that mis-shaped
+  // the old fixture (annual November givers "quiet since last year" who
+  // weren't due yet). §4 below asserts the engine's verdict donor by donor;
+  // this keeps the coarse sanity bound at the engine's own hard cap.
+  const notYetLapsed = rows.filter(r => daysSince(r) < 730);
+  ok(`and none has crossed the 24-month hard boundary — still reachable (${notYetLapsed.length}/${rows.length})`,
      notYetLapsed.length === rows.length, rows.map(r => `${r.name}: ${daysSince(r)}d`));
 
   const assigned = rows.filter(r => r.assigned_to);
@@ -141,6 +144,49 @@ const pct = n => (n * 100).toFixed(1) + "%";
      (impact.atRiskDonors || []).length > 0
      && impact.atRiskDonors.every((r, i, a) => i === 0 || a[i - 1].amount >= r.amount),
      (impact.atRiskDonors || []).slice(0, 3));
+
+  // ── 4 · THE ENGINE'S VERDICT (BUILD-76 follow-up) ───────────────────────
+  // §2's day-count checks are the old intuition; this section asks the real
+  // question: does drift.js — the one definition every surface reads — call
+  // the eleven drifting, at high confidence, TODAY? This is the assertion
+  // that catches silent un-drifting, because it has now happened twice:
+  // BUILD-73 caught two of the eleven carrying fresh pledge payments, and
+  // BUILD-76's month-aware engine revealed seven more whose annual November
+  // gifts made them simply not-due-yet rather than drifting.
+  console.log("\n— §4 · the engine's verdict on the generated file —");
+  const driftAll = (await api("GET", "/drift?all=1&includeMedium=1", tok)).body;
+  const byName = Object.fromEntries(driftAll.list.map(r => [r.donorName, r]));
+  for (const [name] of DRIFTED) {
+    const r = byName[name];
+    ok(`§4 ${name} is DRIFTING at HIGH confidence`, r && r.confidence === "high",
+       r ? r.confidence : "not on the drift list at all");
+  }
+  ok(`§4 engine-drifting/high count inside [${SHAPE.driftingHighMin}, ${SHAPE.driftingHighMax}] (${driftAll.counts.driftingHigh})`,
+     driftAll.counts.driftingHigh >= SHAPE.driftingHighMin && driftAll.counts.driftingHigh <= SHAPE.driftingHighMax,
+     driftAll.counts);
+
+  // THE CANONICAL EXAMPLE: Margaret Chen must be VISIBLE — on the capped
+  // home list (not just the see-all view) — reading her own pattern in the
+  // landing page's sentence form. She is the pitch; a bare follow-up task
+  // with no reason is the exact failure this build fixes.
+  const capped = (await api("GET", "/drift", tok)).body;
+  const margaret = capped.list.find(r => r.donorName === "Margaret Chen");
+  ok("§4 Margaret Chen is ON the capped home drift list", !!margaret,
+     capped.list.map(r => r.donorName));
+  ok("§4 …reading the landing page's sentence form ($2,000 every <Month> since <year>. Nothing for ~14 months.)",
+     !!margaret && /^\$2,000 every [A-Z][a-z]+ since \d{4}\. Nothing for 1[2-6] months\.$/.test(margaret.reason),
+     margaret && margaret.reason);
+
+  // The failed card is Ondine's story, not a drift row: a past_due
+  // subscription EXCLUDES her by design, and she lives in the
+  // failed-payment path instead.
+  ok("§4 Ondine Cinderhalt (failed card) is NOT on any drift surface",
+     !driftAll.list.some(r => r.donorName === "Ondine Cinderhalt"), null);
+  const [ondineSub] = await q(
+    `SELECT rs.status FROM recurring_subscriptions rs JOIN donors d ON d.id = rs.donor_id
+      WHERE rs.org_id = $1 AND d.name = 'Ondine Cinderhalt'`, [ORG]);
+  ok("§4 …because her subscription sits in the failed-payment path (past_due)",
+     ondineSub && ondineSub.status === "past_due", ondineSub);
 
   await closeDb();
   summary();
