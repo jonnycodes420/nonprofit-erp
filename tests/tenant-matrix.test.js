@@ -37,6 +37,12 @@
 // (48) and tests/portal.test.js (67) — this suite is the breadth layer.
 
 process.env.PORT = "5697";
+// The in-process boot needs the scratch DB even when the pushing shell
+// exported nothing: default DATABASE_URL exactly as tests/helpers.js does
+// (dotenv's .env is empty here — an unset URL sent the boot to :5432), and
+// disable SSL for the loopback scratch PG.
+process.env.DATABASE_URL = process.env.DATABASE_URL || "postgresql://steward@localhost:5544/steward_loadtest";
+if (/localhost|127\.0\.0\.1/.test(process.env.DATABASE_URL)) process.env.DB_SSL = "disable";
 process.env.DISABLE_BACKGROUND_TICKS = "1";
 process.env.DISABLE_RATE_LIMIT = "1";
 process.env.SESSION_CACHE_TTL_MS = "0";
@@ -66,7 +72,8 @@ const TODAY = iso(new Date());
 
 async function reset() {
   for (const org of [A, B]) {
-    for (const t of ["portal_audit_log", "digest_sends", "notification_sends", "workflow_runs", "workflows",
+    for (const t of ["board_reports", "donor_relationships", "donor_designations",
+      "portal_audit_log", "digest_sends", "notification_sends", "workflow_runs", "workflows",
       "impact_updates", "recurring_change_log", "recurring_proposals", "recurring_subscriptions", "payment_recovery_events",
       "receipts", "pledges", "milestone_drafts", "note_reminders", "donor_materials", "planned_gifts",
       "custom_field_values", "custom_fields", "impact_metrics", "sequence_enrollments", "sequence_steps", "sequences",
