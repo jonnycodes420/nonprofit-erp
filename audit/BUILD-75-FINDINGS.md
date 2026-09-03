@@ -350,3 +350,45 @@ Written down so the app-sec day is spent on judgment, not enumeration:
   Deliberately not per-push — its findings move with ZAP's rule packs, not
   with our diffs; the per-push gates on our own code are the battery and
   the audit gate.
+
+---
+
+## PHASE C — THE SUBSTRATE
+
+### C.1 — the actor on every write (commit `4a7e31f`)
+
+`created_by`/`created_by_name` on all 16 actor tables, stamped at every
+server.js INSERT (~59 sites): a user id for a human, a system identity
+string for a non-human path (`system:stripe-webhook`,
+`system:workflow:<recipe>`, `system:auto`, `system:portal-drift`), never a
+boolean. NULL means "predates BUILD-75" — history is never backfilled with
+guesses, which is exactly why this lands while it is nearly free.
+`tests/actor-stamp.test.js` is the class guard: source scan with total
+classification (one classified exception: the dispute-reinstatement path
+re-inserts the FROZEN row, which already carries its original actor),
+proven to fail on a defective tree, plus live probes for the human, the
+webhook, the importer, and the sample-data click.
+
+### C.2 — the line that does not get crossed
+
+In CLAUDE.md's CRITICAL WORKING RULES, before any agent exists: **agents
+read, draft and propose; a human commits anything that moves money or
+reaches a donor.** The documented transactional exceptions (receipt
+auto-send, dunning, recurring-change confirmations) are a closed set —
+human product decisions about transactional mail made in advance.
+
+### C.3 — user removal, finally (`DELETE /users/:id` + Settings › Team)
+
+Soft-detach, never a row delete: `users.deactivated_at` stamps the
+removal, `sessions_valid_after` bumps (the BUILD-38 revocation machinery
+finally gets its trigger — the fired-development-officer threat it was
+built for), login is blocked with the same generic message as a wrong
+password, their seat frees for the plan limit, their portfolio donors
+return to the Directory unassigned and their OPEN task assignments
+release — while everything they authored keeps their identity (completed
+tasks keep their historical assignee, deliberately). Refusals: self,
+last-active-admin, staff → 403, foreign/unknown → 404 indistinguishably.
+Settings › Team gains the Remove control (admin-only, quiet terracotta
+outline, one honest confirm). The tenant matrix auto-covers the new route
+(its inventory-drift check forced the regeneration in this same commit —
+the B.4 gate working as designed). `tests/user-removal.test.js` (16).

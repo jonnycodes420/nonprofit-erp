@@ -1364,6 +1364,21 @@ export function Settings({auth,logout,initialSection,onNavigate}) {
               <div style={{fontSize:11,color:T.ink3,marginTop:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{m.email}</div>
             </div>
             <Pill label={m.role} color={m.role==="admin"?T.greenDk:"#6b6560"}/>
+            {auth?.user?.role==="admin"&&m.id!==auth?.user?.id&&(
+              /* BUILD-75 C.3 — soft-detach: revokes their sessions, frees their
+                 seat, unassigns their portfolio; everything they authored keeps
+                 their name. Quiet terracotta outline per the destructive-action
+                 convention. */
+              <button onClick={async()=>{
+                if(!window.confirm(`Remove ${m.name||m.email} from the organization? Their sign-in stops working immediately; everything they logged keeps their name. Their assigned donors return to the Directory unassigned.`))return;
+                try{
+                  await apiFetch(`/users/${m.id}`,{method:"DELETE"});
+                  setTeam(t=>t.filter(x=>x.id!==m.id));
+                }catch(e){ alert(e.message||"Couldn't remove this person"); }
+              }} style={{fontSize:12,padding:"5px 12px",borderRadius:8,border:"1px solid "+T.terra200,background:"transparent",color:T.terra700,cursor:"pointer",flexShrink:0}}>
+                Remove
+              </button>
+            )}
           </div>
         ))}
         {team.length===0&&<div style={{fontSize:13,color:T.ink3}}>Loading…</div>}

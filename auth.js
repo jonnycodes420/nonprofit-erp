@@ -15,7 +15,7 @@ function signToken(payload) {
 // Loader for the session cache: the live revocation state for one user, or null
 // if the row is gone (deleted/removed → no pass-through, ever).
 async function loadUserSession(userId) {
-  const rows = await query("SELECT sessions_valid_after, role, org_id FROM users WHERE id = ?", [userId]);
+  const rows = await query("SELECT sessions_valid_after, role, org_id, deactivated_at FROM users WHERE id = ?", [userId]);
   return rows.length ? rows[0] : null;
 }
 
@@ -46,6 +46,10 @@ async function requireAuth(req, res, next) {
     const info = await sessionCache.get(payload.userId, loadUserSession);
     if (!info) {
       return res.status(401).json({ error: "user_not_found", message: "Your account no longer exists" });
+    }
+    // BUILD-75 C.3 — a removed (soft-detached) user authenticates nowhere.
+    if (info.deactivated_at) {
+      return res.status(401).json({ error: "account_deactivated", message: "This account has been removed from the organization" });
     }
     const validAfterSec = Math.floor(new Date(info.sessions_valid_after).getTime() / 1000);
     // iat is whole seconds; allow 1s of clock skew before rejecting.

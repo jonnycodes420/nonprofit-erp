@@ -1479,6 +1479,10 @@ async function initSchema() {
   // (created_by) and fin_audit_log already carried their own actor columns.
   // tests/actor-stamp.test.js pins that every server.js INSERT into these
   // tables stamps the actor.
+  // BUILD-75 C.3 — user removal is a SOFT DETACH, never a row delete: the
+  // actor columns above point at users forever, and "we delete the row" is
+  // the wrong answer for a system whose value is institutional memory.
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS deactivated_at TIMESTAMPTZ`);
   for (const t of ["gifts", "donors", "pledges", "tasks", "campaigns", "grants", "events",
     "households", "opportunities", "receipts", "giving_pages", "planned_gifts",
     "volunteers", "board_members", "fin_transactions", "sequences"]) {

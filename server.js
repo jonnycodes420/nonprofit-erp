@@ -2415,6 +2415,9 @@ app.post("/auth/login", loginIpLimiter, loginAccountLimiter, wrap(async (req, re
   if (!bcrypt.compareSync(password, user.password_hash)) {
     return res.status(401).json({ error: "Invalid credentials" });
   }
+  // BUILD-75 C.3 — a removed user cannot log in. Same generic message as a
+  // wrong password: the login form is not the place to enumerate accounts.
+  if (user.deactivated_at) return res.status(401).json({ error: "Invalid credentials" });
 
   const orgs = await query("SELECT * FROM orgs WHERE id = ?", [user.org_id]);
   const org = orgs[0];
@@ -3196,11 +3199,45 @@ app.post("/org/clear-sample-data", requireAuth, wrap(async (req, res) => {
 
 // ── Team ───────────────────────────────────────────────────────────────────
 app.get("/org/team", requireAuth, wrap(async (req, res) => {
+  // Active members only — a removed (soft-detached) user leaves the team list
+  // but their authored rows keep their created_by identity (BUILD-75 C.1/C.3).
   const members = await query(
-    "SELECT id, email, name, role, created_at FROM users WHERE org_id = ? ORDER BY created_at ASC",
+    "SELECT id, email, name, role, created_at FROM users WHERE org_id = ? AND deactivated_at IS NULL ORDER BY created_at ASC",
     [req.user.orgId]
   );
   res.json(members);
+}));
+
+// ── BUILD-75 C.3 — USER REMOVAL, finally ────────────────────────────────────
+// Settings could invite but not remove; the only path was manual database
+// surgery (which caused the documented dangling-FK incident). Removal is a
+// SOFT DETACH: the row survives (institutional memory — everything they
+// authored keeps its actor), their sessions are revoked through the BUILD-38
+// machinery, login is blocked, and their operational attachments (portfolio,
+// open task assignments) are released. DELETE-shaped, so per the standing
+// convention it is deliberately NOT checkWriteAccess-gated.
+app.delete("/users/:id", requireAuth, requireAdmin, wrap(async (req, res) => {
+  const { orgId } = req.user;
+  const [target] = await query("SELECT id, role, deactivated_at FROM users WHERE id=? AND org_id=?", [req.params.id, orgId]);
+  if (!target || target.deactivated_at) return res.status(404).json({ error: "Not found" });
+  if (target.id === req.user.userId) {
+    return res.status(400).json({ error: "cannot_remove_self", message: "You can't remove your own account. Ask another admin." });
+  }
+  if (target.role === "admin") {
+    const [{ c }] = await query("SELECT COUNT(*)::int AS c FROM users WHERE org_id=? AND role='admin' AND deactivated_at IS NULL AND id<>?", [orgId, target.id]);
+    if (!c) return res.status(400).json({ error: "last_admin", message: "You can't remove the last admin of an organization." });
+  }
+  // Soft-detach + revoke every session (sessions_valid_after is the BUILD-38
+  // revocation clock requireAuth checks; worst-case lag is the session-cache
+  // TTL, same as a password reset).
+  await run("UPDATE users SET deactivated_at=NOW(), sessions_valid_after=NOW() WHERE id=? AND org_id=?", [target.id, orgId]);
+  // Release operational attachments — assignment is portfolio/board membership
+  // (BUILD-30), and a removed officer's donors go back to the Directory
+  // unassigned rather than orbiting a ghost. Authorship (created_by) is
+  // untouched everywhere, deliberately.
+  const dn = await run("UPDATE donors SET assigned_to=NULL, assigned_to_name=NULL WHERE org_id=? AND assigned_to=?", [orgId, target.id]);
+  const tn = await run("UPDATE tasks SET assigned_to=NULL, assigned_to_name=NULL WHERE org_id=? AND assigned_to=? AND done=0", [orgId, target.id]);
+  res.json({ removed: true, donorsUnassigned: dn.changes, openTasksUnassigned: tn.changes });
 }));
 
 // ── Invite ─────────────────────────────────────────────────────────────────
@@ -16790,7 +16827,7 @@ async function checkPlanLimit(org, dimension) {
   const limit = limits[dimension];
   let current = 0;
   if (dimension === "seats") {
-    const rows = await query("SELECT COUNT(*) AS c FROM users WHERE org_id=?", [org.id]);
+    const rows = await query("SELECT COUNT(*) AS c FROM users WHERE org_id=? AND deactivated_at IS NULL", [org.id]); // removed users free their seat (BUILD-75 C.3)
     current = Number(rows[0]?.c) || 0;
   } else if (dimension === "records") {
     const rows = await query("SELECT COUNT(*) AS c FROM donors WHERE org_id=? AND deleted_at IS NULL", [org.id]);
