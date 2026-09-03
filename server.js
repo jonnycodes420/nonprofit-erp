@@ -3556,7 +3556,7 @@ app.get("/donors/export/csv", requireAuth, wrap(async (req, res) => {
     ["Tags", d => JSON.parse(d.tags || "[]").join("|")],
   ];
   res.setHeader("Content-Type", "text/csv; charset=utf-8");
-  res.setHeader("Content-Disposition", `attachment; filename="donors-${new Date().toISOString().split("T")[0]}.csv"`);
+  res.setHeader("Content-Disposition", `attachment; filename="donors-${orgToday(await orgTz(req.user.orgId))}.csv"`); // ORG_TZ_SEAM_OK — an evening export is named for today, not UTC-tomorrow
   res.send(toCsv(columns, donors));
 }));
 
@@ -5442,7 +5442,14 @@ async function allocateReceiptNumber(orgId) {
     [orgId]
   );
   const n = rows[0].receipt_counter;
-  return `${new Date().getFullYear()}-${String(n).padStart(5, "0")}`;
+  // ORG_TZ_SEAM_OK — the year prefix is the ORG's civil year at issue, never
+  // the process clock's. In UTC production those disagree from 19:00 EST every
+  // Dec 31: the highest-volume hours of the highest-volume giving day would
+  // stamp tax documents with next year's prefix (BUILD-75 Phase 0.1 measured
+  // the exposure — half of all receipts to date were allocated inside the
+  // nightly disagreement window; only the year boundary hadn't been crossed).
+  const year = orgToday(await orgTz(orgId)).slice(0, 4);
+  return `${year}-${String(n).padStart(5, "0")}`;
 }
 
 function applyReceiptTokens(str, org, donor) {
@@ -5677,9 +5684,13 @@ async function issueGiftReceipt(gift, org, donor, { send = true } = {}) {
     signatureTitle: org.receipt_signature_title || "",
     customMessage: applyReceiptTokens(org.receipt_custom_message, org, donor),
     receiptNumber,
-    issueDate: new Date().toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" }),
+    // ORG_TZ_SEAM_OK — the issue date printed on a tax document is the org's
+    // civil date, and the gift date is a stored civil date formatted from its
+    // own Y/M/D (never round-tripped through new Date(), which shifts it a day
+    // in any process timezone west of UTC).
+    issueDate: orgTime.formatCivil(orgToday(await orgTz(org.id))),
     donorName: donor.name,
-    giftDate: gift.date ? new Date(gift.date).toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" }) : "",
+    giftDate: gift.date ? orgTime.formatCivil(gift.date) : "",
     giftDateRaw: gift.date || null, // ISO, alongside the display-formatted giftDate above — lets the /dashboard/today mismatch-detection query compare against gifts.date directly without reparsing a formatted string
     amount: parseFloat(gift.amount),
     deductibleAmount,
@@ -5765,7 +5776,7 @@ async function issueYearEndStatement(org, donor, year, { send = true } = {}) {
   );
 
   const lineItems = gifts.map(g => ({
-    date: g.date ? new Date(g.date).toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" }) : "",
+    date: g.date ? orgTime.formatCivil(g.date) : "", // civil date formatted from its own Y/M/D — never round-tripped through new Date()
     amount: parseFloat(g.amount),
     deductibleAmount: g.deductible_amount != null ? parseFloat(g.deductible_amount) : parseFloat(g.amount),
     paymentMethod: g.payment_method || "",
@@ -5787,7 +5798,7 @@ async function issueYearEndStatement(org, donor, year, { send = true } = {}) {
     signatureTitle: org.receipt_signature_title || "",
     customMessage: applyReceiptTokens(org.receipt_custom_message, org, donor),
     receiptNumber,
-    issueDate: new Date().toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" }),
+    issueDate: orgTime.formatCivil(orgToday(await orgTz(org.id))), // ORG_TZ_SEAM_OK
     donorName: donor.name,
     taxYear: year,
     lineItems, totalAmount, totalDeductible,
@@ -5831,7 +5842,7 @@ app.get("/receipts/preview", requireAuth, requireAdmin, wrap(async (req, res) =>
   // fields not yet configured, so this stays useful as a "here's what's
   // missing" preview even before receipts_enabled can be flipped on.
   const fakeDonor = { name: "Jordan Sample", email: null };
-  const fakeGiftDate = new Date().toISOString().slice(0, 10);
+  const fakeGiftDate = orgToday(await orgTz(org.id)); // ORG_TZ_SEAM_OK
   // BUILD-65 Part 2 sweep: the preview also assumed base64 (org.brand_accent /
   // org.logo_data) — a modern org's Settings preview showed Steward-green + no
   // logo. Read the SAME resolver + object-storage logo the issued receipt does.
@@ -5847,10 +5858,10 @@ app.get("/receipts/preview", requireAuth, requireAdmin, wrap(async (req, res) =>
     signatureName: org.receipt_signature_name || "",
     signatureTitle: org.receipt_signature_title || "",
     customMessage: applyReceiptTokens(org.receipt_custom_message, org, fakeDonor),
-    receiptNumber: `${new Date().getFullYear()}-PREVIEW`,
-    issueDate: new Date().toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" }),
+    receiptNumber: `${orgToday(await orgTz(org.id)).slice(0, 4)}-PREVIEW`, // ORG_TZ_SEAM_OK — the preview shows the number an issue would mint
+    issueDate: orgTime.formatCivil(orgToday(await orgTz(org.id))),
     donorName: fakeDonor.name,
-    giftDate: new Date(fakeGiftDate).toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" }),
+    giftDate: orgTime.formatCivil(fakeGiftDate),
     amount: 250,
     deductibleAmount: 250,
     paymentMethod: "Credit Card",
@@ -11702,16 +11713,20 @@ app.post("/reports/board", requireAuth, wrap(async (req, res) => {
   await run(BOARD_REPORTS_MIGRATE).catch(() => {});
 
   // Date helpers — toDs safely converts Date objects OR strings to YYYY-MM-DD
-  const now = new Date();
-  const yr = now.getFullYear();
-  const q = Math.floor(now.getMonth() / 3) + 1;
-  const qMs = new Date(yr, (q - 1) * 3, 1).toISOString().slice(0, 10);
-  const qMe = new Date(yr, q * 3, 0).toISOString().slice(0, 10);
-  const pqMs = new Date(yr, (q - 2) * 3, 1).toISOString().slice(0, 10);
-  const pqMe = new Date(yr, (q - 1) * 3, 0).toISOString().slice(0, 10);
+  // ORG_TZ_SEAM_OK (BUILD-75 A.1) — the stamped quarter/year and every period
+  // bound come from the ORG's civil date, not the process clock. The old
+  // `new Date().getFullYear()`/`getMonth()` form stamped next quarter's label
+  // on a report generated in the last UTC-offset hours of Mar/Jun/Sep/Dec 31.
+  const _orgTzBR = await orgTz(orgId);
+  const today = orgToday(_orgTzBR);
+  const qb = orgTime.orgPeriodBounds(_orgTzBR, "quarter", 0);
+  const pqb = orgTime.orgPeriodBounds(_orgTzBR, "quarter", -1);
+  const yr = orgTime.parseCivil(today).y;
+  const q = Math.floor((orgTime.parseCivil(today).m - 1) / 3) + 1;
+  const qMs = qb.start, qMe = qb.end;
+  const pqMs = pqb.start, pqMe = pqb.end;
   const ytdS = `${yr}-01-01`;
   const ytdE = `${yr}-12-31`;
-  const today = now.toISOString().slice(0, 10);
   const toDs = d => d ? (d instanceof Date ? d.toISOString() : String(d)).slice(0, 10) : "";
 
   console.log("[board-report] step 2: dates — q:", q, "yr:", yr, "qMs:", qMs, "qMe:", qMe);
@@ -17737,7 +17752,7 @@ app.get("/org/export", requireAuth, wrap(async (req, res) => {
 
   const orgRows = await query("SELECT name, org_slug FROM orgs WHERE id=?", [orgId]);
   const orgSlug = (orgRows[0]?.org_slug || orgId).replace(/[^a-z0-9-]/gi, "-").toLowerCase();
-  const date = new Date().toISOString().split("T")[0];
+  const date = orgToday(await orgTz(orgId)); // ORG_TZ_SEAM_OK — filename carries the org's civil date
 
   const cfDefs = await query("SELECT id, label FROM custom_fields WHERE org_id=? ORDER BY field_order", [orgId]);
   const cfVals = await query("SELECT donor_id, field_id, value FROM custom_field_values WHERE org_id=?", [orgId]);
@@ -17818,7 +17833,7 @@ app.get("/org/export/csv", requireAuth, requireAdmin, wrap(async (req, res) => {
 
   const orgRows = await query("SELECT name, org_slug FROM orgs WHERE id=?", [orgId]);
   const orgSlug = (orgRows[0]?.org_slug || orgId).replace(/[^a-z0-9-]/gi, "-").toLowerCase();
-  const date = new Date().toISOString().split("T")[0];
+  const date = orgToday(await orgTz(orgId)); // ORG_TZ_SEAM_OK — filename carries the org's civil date
 
   const cfDefs = await query("SELECT id, label FROM custom_fields WHERE org_id=? ORDER BY field_order", [orgId]);
   const cfVals = await query("SELECT donor_id, field_id, value FROM custom_field_values WHERE org_id=?", [orgId]);

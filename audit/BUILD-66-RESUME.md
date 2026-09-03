@@ -5,6 +5,23 @@ Cold-start pointer for continuing the Kingdom Builders separation. Read this +
 enough to pick up without the chat history. Running narrative + decisions +
 §worry live in `audit/BUILD-66-FINDINGS.md`.
 
+## BUILD-67 addendum (2026-08-27) — the donor's first five minutes
+
+Shipped in the KB fork (`~/kingdom-builders`), report `audit/BUILD-67-FINDINGS.md`.
+What changed that affects this cold-start recipe:
+- **`bash tests/run-all.sh` is now 38 KB/SHARED suites (was 35), 0 failed** — added
+  `portal-verify` (the magic-link entry contract). Same boot env as below.
+- **The client build was BROKEN at the fork and is now fixed.** `client/package.json`'s
+  `build`/`brand-guard` pointed at `../tests/brand-allowlist.test.js`, a Steward-era
+  file absent in the fork, so `npm run build` (and any Vercel deploy) failed. Both
+  now point at the KB brand wall `tests/no-steward.test.js`. `npm run build` is green.
+- **Donor sign-in links are 60 minutes** (was 15) and every failure state (expired /
+  used / superseded / unreadable) is messaged with a one-tap resend — the org-portal
+  magic link (`/portal/:slug/verify`) AND the `/giving` account sign-in link
+  (`/account/link-verify`). One expiry rule across the product.
+- **Walkthrough mail-log path** (SETUP.md, dev-mocks): captured email lands in
+  `/tmp/kb-walk-mail.log` (SETUP previously said `/tmp/kb-mail.log`; corrected).
+
 ## Where things are
 
 - **Two repos.** Steward = `~/nonprofit-erp` (the fork SOURCE — do not edit for

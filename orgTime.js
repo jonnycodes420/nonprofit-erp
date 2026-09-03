@@ -178,6 +178,19 @@ function orgPeriodBounds(org, period, offset = 0, atInstant = new Date()) {
 function orgFiscalYearStart(org, atInstant = new Date()) {
   return orgPeriodBounds(org, "fiscal_year", 0, atInstant).start;
 }
+// Display-format a CIVIL DATE without ever constructing an instant from it.
+// `new Date("2026-03-15").toLocaleDateString()` parses as UTC midnight and
+// re-renders in the process timezone — correct only when the process runs in
+// UTC, and off by one day west of it. A civil date is formatted from its own
+// Y/M/D, never round-tripped through a clock. (BUILD-75 A.1 — receipts print
+// their issue and gift dates through this.)
+const MONTHS_LONG = ["January", "February", "March", "April", "May", "June",
+  "July", "August", "September", "October", "November", "December"];
+function formatCivil(dateStr) {
+  const c = parseCivil(dateStr);
+  return c ? `${MONTHS_LONG[c.m - 1]} ${c.d}, ${c.y}` : "";
+}
+
 // The year a report labels "current", for both bases.
 function orgReportYear(org, yearMode, atInstant = new Date()) {
   const c = parseCivil(orgToday(org, atInstant));
@@ -189,6 +202,6 @@ module.exports = {
   DEFAULT_TZ, FISCAL_START_MONTH, PERIODS,
   isValidTimezone, normalizeTimezone,
   orgToday, orgClock, orgIsOverdue, orgDaysOverdue,
-  orgPeriodBounds, orgFiscalYearStart, orgReportYear,
+  orgPeriodBounds, orgFiscalYearStart, orgReportYear, formatCivil,
   addDays, dayOfWeek, compareCivil, daysBetween, parseCivil,
 };
