@@ -800,9 +800,16 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
   // "At risk" drills into the donors BEHIND the number (impact.atRiskDonors) via
   // the standard MetricBreakdownPanel — the panel shows the same amount + donor
   // count the chip claimed, each row linking to the donor profile.
+  // BUILD-76 follow-up: never an em dash. "AT RISK —" is the worst possible
+  // answer to the product's headline capability — a healthy file and a
+  // broken import read identically. Words, always.
   const reengStat=atRiskAmt>0
     ? {label:"At risk",value:fmtFull(atRiskAmt),valueColor:T.gold,sub:`${quietCount.toLocaleString()} quiet donor${quietCount===1?"":"s"} · no gift in over ${quietPhrase(impact?.quietSinceDays)}`,onClick:()=>setReengBreakdownOpen(true)}
-    : {label:"At risk",value:"—",sub:"donors who go quiet",onClick:()=>setReengBreakdownOpen(true)};
+    : driftData&&driftData.counts.driftingHigh>0
+      // Edge: a short-cadence drifter can exist before anyone crosses the
+      // 180-day quiet line — never claim "no donors drifting" over them.
+      ? {label:"At risk",value:fmtFull(driftData.atRiskAmount),valueColor:T.gold,sub:`${driftData.counts.driftingHigh} donor${driftData.counts.driftingHigh===1?"":"s"} past their own pattern`,onClick:()=>document.getElementById("dash-drifting")?.scrollIntoView({behavior:"smooth",block:"start"})}
+      : {label:"At risk",value:"No donors drifting",sub:driftData?`${driftData.evaluated.toLocaleString()} giving pattern${driftData.evaluated===1?"":"s"} checked`:"checking giving patterns",onClick:()=>setReengBreakdownOpen(true)};
 
       /* Goal banner — restructured into a real two-column layout so its
           footprint matches its content across the card's full width,
@@ -1246,14 +1253,48 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
     }catch{/* leave the row; nothing was recorded */}
     finally{setDriftBusy(false);}
   };
-  const driftSection=driftData&&driftData.counts.driftingHigh>0&&driftRows.length>0?(
-      <div id="dash-drifting" style={{...cardWrap,borderColor:T.gold500+"55",scrollMarginTop:64}}>
+  // BUILD-76 follow-up: the section RENDERS EVEN AT ZERO, with an empty
+  // state that shows its work — how many patterns were checked and who was
+  // excluded and why. An absent section reads as a broken feature; a bare
+  // zero is indistinguishable from a silently failed import. Both defects,
+  // regardless of the data.
+  const driftEmptyState=(()=>{
+    if(!driftData)return null;
+    const ex=driftData.excluded||{};
+    const exParts=[
+      ex.singleGift>0&&`${ex.singleGift.toLocaleString()} single-gift (no pattern yet)`,
+      ex.activeRecurring>0&&`${ex.activeRecurring.toLocaleString()} on active recurring`,
+      ex.deceased>0&&`${ex.deceased.toLocaleString()} deceased`,
+      ex.doNotSolicit>0&&`${ex.doNotSolicit.toLocaleString()} do-not-solicit`,
+      ex.openPledge>0&&`${ex.openPledge.toLocaleString()} on an open pledge`,
+    ].filter(Boolean);
+    if(driftData.evaluated===0)return{
+      head:"No donors to evaluate yet.",
+      body:"Steward watches every donor's own giving pattern here. Once donors and their gift history are in, anyone quietly past their pattern surfaces on this list — if you just imported and this still reads zero donors, the import didn't land.",
+    };
+    if(driftData.counts.driftingHigh>0&&driftRows.length===0)return{
+      head:"Everyone drifting has been contacted.",
+      body:`All ${driftData.counts.driftingHigh} drifting donor${driftData.counts.driftingHigh===1?"":"s"} had outreach logged in the last 30 days — they stay off this list while the conversation is fresh, and come back if no gift follows.`,
+    };
+    return{
+      head:"No donors drifting.",
+      body:`Checked ${driftData.evaluated.toLocaleString()} donor${driftData.evaluated===1?"":"s"}: `
+        +`${(driftData.onPattern||0).toLocaleString()} giving on their own pattern`
+        +(driftData.counts.lapsed>0?`, ${driftData.counts.lapsed.toLocaleString()} already lapsed`:"")
+        +(exParts.length?`, and ${exParts.join(", ")} excluded from drift`:"")
+        +". A gap in anyone's own rhythm will surface here.",
+    };
+  })();
+  const driftSection=driftData?(
+      <div id="dash-drifting" style={{...cardWrap,borderColor:driftRows.length>0?T.gold500+"55":T.bg3,scrollMarginTop:64}}>
         <div className="dash-cpad" style={{...cPad,borderBottom:"1px solid "+T.bg3,...sHdr}}>
           <span style={{display:"flex",alignItems:"center",gap:8}}>
             <span aria-hidden style={{color:T.gold500,fontSize:13,lineHeight:1}}>◉</span>
             <span style={sTitle}>Drifting</span>
             <span style={{fontSize:11.5,color:T.ink3}}>
-              {fmtFull(driftData.atRiskAmount)} at risk · {driftData.counts.driftingHigh} donor{driftData.counts.driftingHigh===1?"":"s"} past their own pattern
+              {driftData.counts.driftingHigh>0
+                ?`${fmtFull(driftData.atRiskAmount)} at risk · ${driftData.counts.driftingHigh} donor${driftData.counts.driftingHigh===1?"":"s"} past their own pattern`
+                :"watching every donor's own giving pattern"}
             </span>
           </span>
           {driftData.total>driftData.list.length&&!driftAllData&&(
@@ -1265,6 +1306,13 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
             <button onClick={()=>setDriftAllData(null)} style={sLink}>Show top {driftData.cap}</button>
           )}
         </div>
+        {driftRows.length===0&&driftEmptyState&&(
+          <div data-testid="drift-empty-state" style={{padding:"18px 20px"}}>
+            <div style={{fontSize:13,fontWeight:700,color:T.ink}}>{driftEmptyState.head}</div>
+            <div style={{fontSize:12,color:T.ink3,marginTop:5,lineHeight:1.55,maxWidth:560}}>{driftEmptyState.body}</div>
+          </div>
+        )}
+        {driftRows.length>0&&(
         <ul className="attn-list" style={{listStyle:"none",margin:0,padding:0}}>
           {driftRows.map((r,i)=>{
             const lineOpen=driftLineFor===r.donorId;
@@ -1309,6 +1357,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
             );
           })}
         </ul>
+        )}
       </div>
   ):null;
 

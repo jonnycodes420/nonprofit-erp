@@ -438,6 +438,24 @@ const settle = (ms = 400) => new Promise(r => setTimeout(r, ms));
   ok("no system language — no ratios, no raw day counts, no snake_case",
     everyReason.every(r => !/ratio|overdue|[0-9]{3,} ?days|_/i.test(r)), everyReason.filter(r => /ratio|overdue|[0-9]{3,} ?days|_/i.test(r)));
 
+  // ── §10 · the zero that shows its work (BUILD-76 follow-up) ──────────────
+  // GET /drift carries evaluation transparency: how many donors were looked
+  // at, how many are on their own pattern, and exactly why the rest can
+  // never drift. Without these an empty list is indistinguishable from a
+  // silently failed import.
+  console.log("\n— §10 · evaluation transparency —");
+  const trans = await getDrift(tok, "?includeMedium=1");
+  const [donorCount] = await q(`SELECT COUNT(*)::int n FROM donors WHERE org_id=$1 AND deleted_at IS NULL`, [ORG]);
+  ok("evaluated == every non-deleted donor", trans.evaluated === donorCount.n, { evaluated: trans.evaluated, donors: donorCount.n });
+  ok("the exclusion tally names each family: 2 deceased, 1 do-not-solicit, 1 active recurring, 1 open pledge",
+    trans.excluded.deceased === 2 && trans.excluded.doNotSolicit === 1
+    && trans.excluded.activeRecurring === 1 && trans.excluded.openPledge === 1, trans.excluded);
+  ok("single-gift donors are counted (no pattern yet)", trans.excluded.singleGift >= 1, trans.excluded.singleGift);
+  const exSum = Object.values(trans.excluded).reduce((a, b) => a + b, 0);
+  ok("the arithmetic closes: evaluated = onPattern + drifting + lapsed + excluded",
+    trans.evaluated === trans.onPattern + trans.counts.driftingHigh + trans.counts.driftingMedium + trans.counts.lapsed + exSum,
+    { evaluated: trans.evaluated, onPattern: trans.onPattern, counts: trans.counts, exSum });
+
   stripeMock && stripeMock.close();
   await closeDb();
   summary();

@@ -8398,6 +8398,22 @@ app.get("/drift", requireAuth, wrap(async (req, res) => {
   const medium = drifting.filter(a => a.confidence === "medium");
   const lapsed = [...map.values()].filter(a => a.state === "lapsed");
 
+  // BUILD-76 follow-up — a zero that shows its work. The empty state must
+  // name what was checked and who was excluded and why, or a healthy file
+  // and a silently failed import read identically. Tallied from the same
+  // map every other figure reads.
+  const excludedTally = { singleGift: 0, activeRecurring: 0, deceased: 0, doNotSolicit: 0, openPledge: 0 };
+  let onPattern = 0;
+  for (const a of map.values()) {
+    if (a.state === "excluded") {
+      if (a.excludedReason === "deceased") excludedTally.deceased++;
+      else if (a.excludedReason === "do_not_contact") excludedTally.doNotSolicit++;
+      else if (a.excludedReason === "active_recurring") excludedTally.activeRecurring++;
+      else if (a.excludedReason === "open_pledge") excludedTally.openPledge++;
+    } else if (a.state === "not_eligible") excludedTally.singleGift++;
+    else if (a.state === "ok") onPattern++;
+  }
+
   // The headline: dollars at risk from drift, in this organisation's own
   // file — the same sentence the landing page makes. High confidence only:
   // a number that includes guesses is not a number a director repeats.
@@ -8423,6 +8439,9 @@ app.get("/drift", requireAuth, wrap(async (req, res) => {
       handled: drifting.filter(a => a.handled).length,
       lapsed: lapsed.length,
     },
+    evaluated: map.size,          // every non-deleted donor the computation looked at
+    onPattern,                    // inside their own pattern (state 'ok')
+    excluded: excludedTally,      // and exactly why the rest can never drift
     lapsedAmount: toDollars(lapsed.reduce((s, a) => s + toCents(a.valueAtRisk || 0), 0)),
     cap,
     total: surfaced.length,

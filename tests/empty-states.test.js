@@ -74,6 +74,13 @@ const BAD = [/\bNaN\b/, /\$NaN/, /Invalid Date/i, /\bundefined\b/, /\bInfinity\b
     [ORG, ADMIN, bcrypt.hashSync("loadtest1234", 10)]);
   const token = await login(ADMIN);
   await api("POST", "/onboarding/complete", token, {});
+  // BUILD-76 follow-up: give the EMPTY org a goal so the goal banner (and its
+  // "At risk" tile) renders — the tile reading "AT RISK —" on a zero-data org
+  // was the defect: a healthy file and a silently failed import were
+  // indistinguishable. The sweep below asserts words, never an em dash.
+  const today = new Date().toISOString().slice(0, 10);
+  const yearEnd = today.slice(0, 4) + "-12-31";
+  await api("POST", "/goals", token, { label: "Empty-org goal", goalAmount: 10000, goalType: "total_raised", periodStart: today.slice(0, 4) + "-01-01", periodEnd: yearEnd });
   // the REAL login payload — hand-built user/org objects miss fields the
   // route guards read and the app silently bounces to /login
   const lr = await fetch((process.env.BASE || "http://localhost:5601") + "/auth/login", {
@@ -138,6 +145,15 @@ const BAD = [/\bNaN\b/, /\$NaN/, /Invalid Date/i, /\bundefined\b/, /\bInfinity\b
           let card = el; for (let i = 0; i < 4 && card.parentElement; i++) card = card.parentElement;
           return card.innerText.replace(/\n/g, " | ").slice(0, 200);
         });
+        // BUILD-76 follow-up — the Drifting section must RENDER on an empty
+        // org, with an empty state that shows its work; and the goal banner's
+        // At-risk tile must answer in words, never an em dash.
+        found.__driftEmpty = await page.evaluate(() =>
+          document.querySelector('[data-testid="drift-empty-state"]')?.innerText.replace(/\n/g, " | ") || "");
+        found.__atRiskTile = await page.evaluate(() => {
+          const label = [...document.querySelectorAll("div")].find(e => e.children.length === 0 && /^at risk$/i.test((e.innerText || "").trim()));
+          return label && label.parentElement ? label.parentElement.innerText.replace(/\n/g, " | ") : "no at-risk tile rendered";
+        });
       }
     }
     await page.close();
@@ -147,7 +163,7 @@ const BAD = [/\bNaN\b/, /\$NaN/, /Invalid Date/i, /\bundefined\b/, /\bInfinity\b
   for (const [w, h, label] of [[1440, 900, "desktop"], [390, 844, "mobile"]]) {
     const { found, pageErrors } = await sweep(w, h, label);
     for (const [tab, hits] of Object.entries(found)) {
-      if (tab === "__retention") continue;
+      if (tab.startsWith("__")) continue;   // probe payloads, asserted separately below
       if (hits === "nav button not found") { ok(`${label} ${tab}: navigable`, false, hits); continue; }
       ok(`${label} ${tab}: no NaN / Invalid Date / undefined / Infinity`, hits.length === 0, hits);
     }
@@ -155,6 +171,15 @@ const BAD = [/\bNaN\b/, /\$NaN/, /Invalid Date/i, /\bundefined\b/, /\bInfinity\b
     // the retention card must not CLAIM a rate for an org with no history
     const ret = found.__retention || "";
     ok(`${label}: retention shows no fabricated rate for an empty org`, !/\b(100|0)\s*%/.test(ret) || /not enough|insufficient|no history|—/i.test(ret), ret);
+    // BUILD-76 follow-up: the zero that shows its work (both defects were
+    // "regardless of the data" — an absent section reads as a broken feature,
+    // and a bare dash can't distinguish a healthy file from a failed import).
+    const de = found.__driftEmpty || "";
+    ok(`${label}: the Drifting section RENDERS on an empty org, and its empty state names what it checked`,
+       /No donors/i.test(de) && /import|evaluate|checked/i.test(de), de.slice(0, 160) || "SECTION ABSENT");
+    const at = found.__atRiskTile || "";
+    ok(`${label}: the At-risk tile answers in words ("No donors drifting"), never an em dash`,
+       /No donors drifting/i.test(at) && !at.includes("—"), at.slice(0, 120));
   }
 
   await browser.close();
