@@ -99,7 +99,7 @@ function migc429(req, res) {
   res.set("Retry-After", String(Math.max(1, Math.ceil(resetMs / 1000))));
   res.status(429).json({ error: "rate_limited", message: "Too many requests. Please try again later." });
 }
-const rateLimitDisabled = () => process.env.DISABLE_RATE_LIMIT === "1";
+const rateLimitDisabled = () => process.env.TEST_MODE === "1" || process.env.DISABLE_RATE_LIMIT === "1"; // BUILD-75: TEST_MODE is the flag's real name; the old var stays an alias
 const limiterOpts = {
   windowMs: 60 * 60 * 1000,
   limit: 5,
