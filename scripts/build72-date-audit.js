@@ -118,8 +118,74 @@ function report({ found, routed }, { verbose = true } = {}) {
   return { total, routed, rows };
 }
 
+// ── REACHABILITY (added after BUILD-74 found three sites this audit could not
+// see) ─────────────────────────────────────────────────────────────────────
+// WHY THIS EXISTS. Everything above matches EXPRESSIONS ON LINES. That makes a
+// defective HELPER exactly one site forever: `localDateKey` was counted once,
+// at its definition, and its three call sites — including the one that stamped
+// tasks.due for the portal drift wire — were invisible. A fourth caller would
+// never have moved `total`, so `total <= BASELINE` could not fail for this
+// class. Part 4 enumerated ~100 sites and still shipped the bug, because the
+// method asks "where is the bad expression written?" and never "where does the
+// bad value get USED?".
+//
+// scanHelpers answers the second question: which functions DERIVE a civil date
+// (or a day-of decision) from process-local Date accessors, and how many call
+// sites do they have. The call-site total is the number to hold flat.
+const LOCAL_ACCESSOR = /\.(getFullYear|getMonth|getDate|getHours|getDay|getMinutes)\s*\(\)/;
+const HELPER_DEF = /^(?:\s*)(?:(?:async\s+)?function\s+([A-Za-z_$][\w$]*)\s*\(|const\s+([A-Za-z_$][\w$]*)\s*=\s*(?:async\s*)?(?:function\s*)?\()/;
+
+function bodyOf(lines, start) {
+  let depth = 0, seen = false, out = [];
+  for (let j = start; j < lines.length && j < start + 400; j++) {
+    out.push(lines[j].replace(/\/\/.*$/, ""));
+    for (const ch of lines[j]) { if (ch === "{") { depth++; seen = true; } else if (ch === "}") depth--; }
+    if (seen && depth <= 0) break;
+  }
+  return out.join("\n");
+}
+
+function scanHelpers() {
+  const srcs = FILES.map(f => ({ f, lines: fs.readFileSync(path.join(ROOT, f), "utf8").split("\n") }));
+  const helpers = [];
+  for (const { f, lines } of srcs)
+    lines.forEach((raw, i) => {
+      const m = HELPER_DEF.exec(raw);
+      if (!m) return;
+      const body = bodyOf(lines, i);
+      if (!LOCAL_ACCESSOR.test(body) || ROUTED.test(body)) return;
+      helpers.push({ name: m[1] || m[2], at: `${f}:${i + 1}` });
+    });
+  let callSites = 0;
+  const rows = helpers.map(h => {
+    const call = new RegExp(`(?<![\\w$.])${h.name}\\s*\\(`);
+    const sites = [];
+    for (const { f, lines } of srcs)
+      lines.forEach((raw, i) => {
+        const at = `${f}:${i + 1}`;
+        if (at === h.at) return;
+        const line = raw.replace(/\/\/.*$/, "");
+        const dm = HELPER_DEF.exec(line);
+        if (dm && (dm[1] || dm[2]) === h.name) return;
+        if (call.test(line)) sites.push(at);
+      });
+    callSites += sites.length;
+    return { ...h, callers: sites.length, sites };
+  });
+  rows.sort((a, b) => b.callers - a.callers);
+  return { helpers: rows, callSites };
+}
+
 if (require.main === module) {
   const r = report(scan(), { verbose: !process.argv.includes("--count") });
-  if (process.argv.includes("--count")) console.log(JSON.stringify({ total: r.total, routed: r.routed }));
+  const h = scanHelpers();
+  if (process.argv.includes("--count")) {
+    console.log(JSON.stringify({ total: r.total, routed: r.routed, helperCallSites: h.callSites }));
+  } else {
+    console.log(`\nREACHABILITY — helpers deriving a civil date from the PROCESS clock`);
+    console.log(`  ${String(h.helpers.length).padStart(4)}   tainted helpers`);
+    console.log(`  ${String(h.callSites).padStart(4)}   call sites the line-oriented count above CANNOT see\n`);
+    for (const x of h.helpers) console.log(`  ${String(x.callers).padStart(3)}  ${x.name.padEnd(28)} ${x.at}`);
+  }
 }
-module.exports = { scan, report, DEFECTS, CIVIL_COLUMNS };
+module.exports = { scan, report, scanHelpers, DEFECTS, CIVIL_COLUMNS };

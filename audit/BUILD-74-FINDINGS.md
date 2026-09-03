@@ -250,3 +250,17 @@ Also Jonathan's call. `C.ink3` stays at `#5A554F` with the contrast floor at
 
 The footer-placeholder fix (2.42:1 → inherit/currentColor) was independent of
 that choice — it failed AA under either grey — and stands either way.
+
+---
+
+## POSTSCRIPT — CI caught something, and it wasn't this build
+
+The BUILD-74 merge went red on `portal`, in code BUILD-74 never touched: a
+date-basis seam in BUILD-45's portal drift wire, live in production, invisible
+for four hours every evening. More importantly, it exposed a defect in
+**BUILD-72 Part 4's enumeration method** — it counts expressions on lines, so a
+defective helper counts once at its definition and every call site is invisible.
+`localDateKey` was already one of the 97; its three callers were not.
+
+Written up separately, with the re-run enumeration and the new guard:
+**`audit/BUILD-74-date-seam-FINDINGS.md`**.

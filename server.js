@@ -18288,12 +18288,19 @@ async function portalDriftAlert(org, donor, sub, action, detail) {
     const verb = action === "recurring_cancel" ? "canceled" : "paused";
     const amt = sub.amount != null ? `$${Number(sub.amount).toLocaleString()}/${sub.interval || "month"}` : "a recurring gift";
     // High-priority task due TODAY, donor-linked — the "needs you today" item.
+    // ORG_TZ_SEAM_OK — "today" here MUST be the ORG's civil date, because
+    // /dashboard/today filters tasks with orgToday(org). This used to be
+    // localDateKey(new Date()) (the PROCESS zone, UTC in prod), so a cancel
+    // between UTC midnight and the org's midnight — 20:00–00:00 EDT — stamped
+    // the task with TOMORROW's org date and the officer's day view did not
+    // show it on the evening it was created. That is precisely the save window
+    // this wire exists to open. Guarded under TZ=UTC in tests/date-seam.js §7.
     await run(
       `INSERT INTO tasks (id,org_id,title,due,priority,type,donor_id,assigned_to,assigned_to_name)
        VALUES (?,?,?,?,?,?,?,?,?)`,
       ["t_" + uuid().slice(0, 8), org.id,
        `${donor.name} ${verb} their ${amt} recurring gift — reach out today`,
-       localDateKey(new Date()), "high", "donor", donor.id, officer.id, officer.name || ""]);
+       orgToday(await orgTz(org.id)), "high", "donor", donor.id, officer.id, officer.name || ""]);
     const subj = `${donor.name} ${verb} their recurring gift`;
     const body = `<p><strong>${escHtmlWf(donor.name)}</strong> just ${verb} their ${escHtmlWf(amt)} recurring gift from the donor portal${detail ? " — " + escHtmlWf(detail) : ""}.</p>
       <p>A cancellation the org learns about in minutes is a save opportunity. Suggested next step: a personal call or note today — thank them for their giving, ask nothing, and learn what changed.</p>`;

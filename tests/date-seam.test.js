@@ -194,6 +194,46 @@ const UTC = { timezone: "UTC" };
   ok("the day view surfaces a task due the org's local today", !!mine, items.length);
   ok("and reports it as 0 days overdue, not 1", mine && mine.daysOverdue === 0, mine && mine.daysOverdue);
 
+  // ── §7 · REACHABILITY — the enumeration's blind spot ────────────────────
+  // BUILD-74 found three date-seam sites Part 4's enumeration could not see,
+  // one of which was a live defect: the portal drift wire stamped tasks.due
+  // with localDateKey(new Date()) — the PROCESS zone, UTC in production —
+  // while /dashboard/today filters with orgToday(org). Between UTC midnight
+  // and the org's midnight (20:00–00:00 EDT) the "reach out today" task was
+  // stamped TOMORROW and never appeared on the evening it was created.
+  //
+  // §5 above could not catch it, and this is the important part: §5 matches
+  // EXPRESSIONS ON LINES, so a defective HELPER counts exactly once, at its
+  // definition. localDateKey WAS in the 97. Its three call sites were not. A
+  // fourth caller would never have moved `total`. The method asks "where is
+  // the bad expression written?" and never "where does the bad value get
+  // USED?" — so coverage was decaying at every call site while the number
+  // stood still.
+  console.log("\n— §7 · reachability: call sites of process-clock helpers —");
+  const { scanHelpers } = require("../scripts/build72-date-audit");
+  const { helpers, callSites } = scanHelpers();
+  // 73 before BUILD-74 routed the portal drift task through the seam; 72 after.
+  const HELPER_BASELINE = Number(process.env.DATE_HELPER_BASELINE || 72);
+  ok(`call sites of process-clock date helpers: ${callSites} (baseline ${HELPER_BASELINE}) — must not INCREASE`,
+     callSites <= HELPER_BASELINE, { callSites, HELPER_BASELINE, helpers: helpers.map(h => `${h.name}:${h.callers}`) });
+  if (callSites < HELPER_BASELINE)
+    console.log(`  NOTE  ${HELPER_BASELINE - callSites} call site(s) newly routed — lower DATE_HELPER_BASELINE to ${callSites}.`);
+
+  // The instance, pinned at the SOURCE so it cannot come back with the clock.
+  // A behavioural assertion here would only fail in the timezone window that
+  // produced it; this fails everywhere, always.
+  // Comments are STRIPPED first — the explanation of this very bug names the
+  // defective call, and a guard that its own docstring can trip is not a guard.
+  const rawSrv = require("fs").readFileSync(require("path").join(__dirname, "..", "server.js"), "utf8");
+  const srv = rawSrv.split("\n").map(l => l.replace(/\/\/.*$/, "")).join("\n");
+  const drift = srv.slice(srv.indexOf("async function portalDriftAlert"));
+  const driftBody = drift.slice(0, drift.indexOf("\n}\n") + 1);
+  ok("portalDriftAlert stamps tasks.due through the ORG seam, not the process clock",
+     /orgToday\(/.test(driftBody) && !/localDateKey\(/.test(driftBody),
+     driftBody.match(/INSERT INTO tasks[\s\S]{0,240}/)?.[0]);
+  ok("no task INSERT takes its due date from the process clock",
+     !/INSERT INTO tasks[\s\S]{0,400}?localDateKey\(new Date\(\)\)/.test(srv), null);
+
   await closeDb();
   summary();
 })();
