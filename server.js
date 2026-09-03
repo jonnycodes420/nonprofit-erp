@@ -106,6 +106,23 @@ async function orgTz(orgId) {
   return { timezone: tz };
 }
 function invalidateOrgTz(orgId) { _tzCache.delete(orgId); }
+
+// ── BUILD-75 C.1 — THE ACTOR ON EVERY WRITE ─────────────────────────────────
+// Every row that represents something someone DID records who did it — an
+// IDENTITY, never a boolean: a user id for a human, or a system identity
+// string for a non-human path. "Who logged this note" and "who imported these
+// four hundred rows" are questions a development office asks constantly, and
+// they are unanswerable retroactively — the information exists only at write
+// time. This is also what makes agent oversight free the day something
+// non-human writes: the actor column is already there, already honest.
+// tests/actor-stamp.test.js pins that every INSERT into the actor tables
+// carries these two values.
+function actor(req) {
+  return { id: (req && req.user && req.user.userId) || null, name: (req && req.user && req.user.email) || null };
+}
+const SYS_STRIPE = { id: "system:stripe-webhook", name: "Stripe (online)" };
+const SYS_AUTO = { id: "system:auto", name: "Steward (automatic)" };
+const sysWorkflow = recipe => ({ id: `system:workflow:${recipe}`, name: `Steward (workflow: ${recipe})` });
 const { imageSize } = require("image-size");
 const { computeTrialEnd } = require("./trialEnd");
 
@@ -449,9 +466,9 @@ app.post("/stripe/webhook", express.raw({ type: "application/json" }), async (re
             if (!dr.length && donorName) {
               const newDonorId = "d_" + uuid().slice(0, 8);
               await run(
-                `INSERT INTO donors (id, org_id, name, email, status, stage, total_giving, gift_count)
-                 VALUES ($1,$2,$3,$4,'active','steward',0,0)`,
-                [newDonorId, orgId, donorName, email.toLowerCase()]
+                `INSERT INTO donors (id, org_id, name, email, status, stage, total_giving, gift_count, created_by, created_by_name)
+                 VALUES ($1,$2,$3,$4,'active','steward',0,0,$5,$6)`,
+                [newDonorId, orgId, donorName, email.toLowerCase(), SYS_STRIPE.id, SYS_STRIPE.name]
               );
               dr = [{ id: newDonorId }];
             }
@@ -560,16 +577,16 @@ app.post("/stripe/webhook", express.raw({ type: "application/json" }), async (re
             }
             const reservedGift = pi.id
               ? await query(
-                  `INSERT INTO gifts (id, org_id, donor_id, amount, date, notes, stripe_payment_id, campaign_id, giving_page_id, peer_fundraiser_id, cover_fee_amount, fund_id, recurring_subscription_id)
-                   VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+                  `INSERT INTO gifts (id, org_id, donor_id, amount, date, notes, stripe_payment_id, campaign_id, giving_page_id, peer_fundraiser_id, cover_fee_amount, fund_id, recurring_subscription_id, created_by, created_by_name)
+                   VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
                    ON CONFLICT (org_id, stripe_payment_id) WHERE stripe_payment_id IS NOT NULL DO NOTHING
                    RETURNING id`,
-                  [giftId, orgId, donorId, amount, today, "Online payment via Stripe", pi.id, campaignId, givingPageId, peerFundraiserId, coverFeeAmount, fundId, recurringSubDbId]
+                  [giftId, orgId, donorId, amount, today, "Online payment via Stripe", pi.id, campaignId, givingPageId, peerFundraiserId, coverFeeAmount, fundId, recurringSubDbId, SYS_STRIPE.id, SYS_STRIPE.name]
                 )
               : await query(
-                  `INSERT INTO gifts (id, org_id, donor_id, amount, date, notes, stripe_payment_id, campaign_id, giving_page_id, peer_fundraiser_id, cover_fee_amount, fund_id, recurring_subscription_id)
-                   VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING id`,
-                  [giftId, orgId, donorId, amount, today, "Online payment via Stripe", pi.id, campaignId, givingPageId, peerFundraiserId, coverFeeAmount, fundId, recurringSubDbId]
+                  `INSERT INTO gifts (id, org_id, donor_id, amount, date, notes, stripe_payment_id, campaign_id, giving_page_id, peer_fundraiser_id, cover_fee_amount, fund_id, recurring_subscription_id, created_by, created_by_name)
+                   VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) RETURNING id`,
+                  [giftId, orgId, donorId, amount, today, "Online payment via Stripe", pi.id, campaignId, givingPageId, peerFundraiserId, coverFeeAmount, fundId, recurringSubDbId, SYS_STRIPE.id, SYS_STRIPE.name]
                 );
             if (!reservedGift.length) {
               console.log(`[stripe] payment_intent.succeeded ${pi.id} already recorded — skipping duplicate (race-safe)`);
@@ -597,9 +614,9 @@ app.post("/stripe/webhook", express.raw({ type: "application/json" }), async (re
             // Re-engagement task for previously lapsed donors
             if (wasLapsed) {
               await run(
-                "INSERT INTO tasks (id,org_id,title,priority,done,due) VALUES ($1,$2,$3,'high',0,$4)",
+                "INSERT INTO tasks (id,org_id,title,priority,done,due,created_by,created_by_name) VALUES ($1,$2,$3,'high',0,$4,$5,$6)",
                 ["t_"+uuid().slice(0,8), orgId, `Gave again after a year-long gap — follow up with ${donorName||email} within 48 hours`,
-                 new Date(Date.now()+2*24*60*60*1000).toISOString().slice(0,10)]
+                 new Date(Date.now()+2*24*60*60*1000).toISOString().slice(0,10), SYS_STRIPE.id, SYS_STRIPE.name]
               ).catch(()=>{});
             }
             // BUILD-58 W-3: resolve the stamp target through the ONE ledger
@@ -608,14 +625,14 @@ app.post("/stripe/webhook", express.raw({ type: "application/json" }), async (re
             const ledger = await ensureOrgLedger(orgId, { heal: true });
             const txnId = "ft_" + uuid().slice(0, 8);
             await run(
-              "INSERT INTO fin_transactions (id,org_id,date,description,vendor_donor,amount,type,account_id,fund_id,donor_id,source,gift_id) VALUES (?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT (gift_id) WHERE gift_id IS NOT NULL DO NOTHING",
-              [txnId, orgId, today, "Online gift via Stripe", thankName, amount, "income", ledger.contribAcctId, fundId || ledger.genFundId, donorId, "online", giftId]
+              "INSERT INTO fin_transactions (id,org_id,date,description,vendor_donor,amount,type,account_id,fund_id,donor_id,source,gift_id,created_by,created_by_name) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT (gift_id) WHERE gift_id IS NOT NULL DO NOTHING",
+              [txnId, orgId, today, "Online gift via Stripe", thankName, amount, "income", ledger.contribAcctId, fundId || ledger.genFundId, donorId, "online", giftId, SYS_STRIPE.id, SYS_STRIPE.name]
             );
             const taskId = "t_" + uuid().slice(0, 8);
             await run(
-              `INSERT INTO tasks (id, org_id, title, priority, done, created_at)
-               VALUES ($1,$2,$3,$4,$5,NOW())`,
-              [taskId, orgId, `Send personal thank-you to ${thankName} for $${amount} online gift`, "high", 0]
+              `INSERT INTO tasks (id, org_id, title, priority, done, created_at, created_by, created_by_name)
+               VALUES ($1,$2,$3,$4,$5,NOW(),$6,$7)`,
+              [taskId, orgId, `Send personal thank-you to ${thankName} for $${amount} online gift`, "high", 0, SYS_STRIPE.id, SYS_STRIPE.name]
             );
 
             // Tax receipt — fire-and-forget, must never fail/500 the
@@ -629,7 +646,7 @@ app.post("/stripe/webhook", express.raw({ type: "application/json" }), async (re
                 const [orgFull] = await query("SELECT * FROM orgs WHERE id=?", [orgId]);
                 const [donorFull] = await query("SELECT * FROM donors WHERE id=?", [donorId]);
                 const [giftFull] = await query("SELECT * FROM gifts WHERE id=?", [giftId]);
-                if (orgFull && donorFull && giftFull) await issueGiftReceipt(giftFull, orgFull, donorFull, { send: true });
+                if (orgFull && donorFull && giftFull) await issueGiftReceipt(giftFull, orgFull, donorFull, { send: true, by: SYS_STRIPE });
               } catch (e) { console.error("[receipts] webhook issueGiftReceipt failed:", e.message); }
             })().catch(console.error);
 
@@ -668,9 +685,9 @@ app.post("/stripe/webhook", express.raw({ type: "application/json" }), async (re
               if (dr.length) return dr[0].id;
               const newId = "d_" + uuid().slice(0, 8);
               await run(
-                `INSERT INTO donors (id, org_id, name, email, status, stage, total_giving, gift_count)
-                 VALUES ($1,$2,$3,$4,'active','steward',0,0)`,
-                [newId, orgId, donorName, email.toLowerCase()]
+                `INSERT INTO donors (id, org_id, name, email, status, stage, total_giving, gift_count, created_by, created_by_name)
+                 VALUES ($1,$2,$3,$4,'active','steward',0,0,$5,$6)`,
+                [newId, orgId, donorName, email.toLowerCase(), SYS_STRIPE.id, SYS_STRIPE.name]
               );
               return newId;
             });
@@ -683,8 +700,8 @@ app.post("/stripe/webhook", express.raw({ type: "application/json" }), async (re
             );
             const taskId = "t_" + uuid().slice(0, 8);
             await run(
-              `INSERT INTO tasks (id, org_id, title, priority, done, created_at) VALUES ($1,$2,$3,'high',0,NOW())`,
-              [taskId, orgId, `Welcome ${donorName} as a ${frequency} recurring donor — send personal thank-you`]
+              `INSERT INTO tasks (id, org_id, title, priority, done, created_at, created_by, created_by_name) VALUES ($1,$2,$3,'high',0,NOW(),$4,$5)`,
+              [taskId, orgId, `Welcome ${donorName} as a ${frequency} recurring donor — send personal thank-you`, SYS_STRIPE.id, SYS_STRIPE.name]
             );
             // Health record for the failed-payment recovery system — created
             // 'active' up front so every recurring gift has one from day one,
@@ -973,8 +990,8 @@ app.post("/stripe/webhook", express.raw({ type: "application/json" }), async (re
                   // dispute has a Stripe response deadline; silence loses it by
                   // default. (The day-view + Finance surface disputed gifts too.)
                   const due = dispute.evidence_details?.due_by ? new Date(dispute.evidence_details.due_by * 1000).toISOString().slice(0, 10) : new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10);
-                  await run("INSERT INTO tasks (id,org_id,title,priority,done,due,donor_id) VALUES ($1,$2,$3,'high',0,$4,$5)",
-                    ["t_" + uuid().slice(0, 8), orgId, `Payment disputed — $${amt.toLocaleString()} charged back${dispute.reason ? " (" + String(dispute.reason).replace(/_/g, " ") + ")" : ""}. Respond in Stripe before ${due} or the funds are lost.`, due, g.donor_id || null]).catch(() => {});
+                  await run("INSERT INTO tasks (id,org_id,title,priority,done,due,donor_id,created_by,created_by_name) VALUES ($1,$2,$3,'high',0,$4,$5,$6,$7)",
+                    ["t_" + uuid().slice(0, 8), orgId, `Payment disputed — $${amt.toLocaleString()} charged back${dispute.reason ? " (" + String(dispute.reason).replace(/_/g, " ") + ")" : ""}. Respond in Stripe before ${due} or the funds are lost.`, due, g.donor_id || null, SYS_STRIPE.id, SYS_STRIPE.name]).catch(() => {});
                   if (g.donor_id) {
                     await run("INSERT INTO interactions (id,org_id,donor_id,type,note,date) VALUES ($1,$2,$3,'note',$4,$5)",
                       ["i_" + uuid().slice(0, 8), orgId, g.donor_id, `Dispute opened: $${amt.toLocaleString()} online gift was disputed via the donor's bank${dispute.reason ? " (" + String(dispute.reason).replace(/_/g, " ") + ")" : ""} — respond in Stripe`, today]).catch(() => {});
@@ -1034,9 +1051,9 @@ app.post("/stripe/webhook", express.raw({ type: "application/json" }), async (re
                   const ledgerG = await ensureOrgLedger(orgId, { heal: true });
                   const [dn] = await query("SELECT name FROM donors WHERE id=$1", [snap.donor_id]);
                   await run(
-                    "INSERT INTO fin_transactions (id,org_id,date,description,vendor_donor,amount,type,account_id,fund_id,donor_id,source,gift_id) VALUES (?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT (gift_id) WHERE gift_id IS NOT NULL DO NOTHING",
+                    "INSERT INTO fin_transactions (id,org_id,date,description,vendor_donor,amount,type,account_id,fund_id,donor_id,source,gift_id,created_by,created_by_name) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT (gift_id) WHERE gift_id IS NOT NULL DO NOTHING",
                     ["ft_" + uuid().slice(0, 8), orgId, snap.date, `Gift from ${dn?.name || "Donor"}`, dn?.name || "",
-                     snap.amount, "income", ledgerG.contribAcctId, snap.fund_id || ledgerG.genFundId, snap.donor_id, "online", snap.id]);
+                     snap.amount, "income", ledgerG.contribAcctId, snap.fund_id || ledgerG.genFundId, snap.donor_id, "online", snap.id, SYS_STRIPE.id, SYS_STRIPE.name]);
                 } catch (e) { console.error("[stripe] reinstate ledger stamp failed:", e.message); }
                 // Un-void + re-link the receipt that was voided on the loss.
                 if (rev.receipt_id) await run("UPDATE receipts SET voided_at=NULL, void_reason=NULL, gift_id=$1 WHERE id=$2 AND org_id=$3", [snap.id, rev.receipt_id, orgId]).catch(() => {});
@@ -2973,9 +2990,9 @@ app.post("/org/load-sample-data", requireAuth, wrap(async (req, res) => {
 
   for (const d of donors) {
     await run(
-      `INSERT INTO donors (id,org_id,name,email,phone,stage,total_giving,last_gift_amount,last_gift_date,gift_count,city,state,zip,assigned_to,assigned_to_name,is_sample)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,true) ON CONFLICT (id) DO NOTHING`,
-      [d.id,orgId,d.name,d.email,d.phone,d.stage,d.total,d.last,d.lastGift,d.giftCount,d.city,d.state,d.zip,userId,userName]
+      `INSERT INTO donors (id,org_id,name,email,phone,stage,total_giving,last_gift_amount,last_gift_date,gift_count,city,state,zip,assigned_to,assigned_to_name,is_sample,created_by,created_by_name)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,true,?,?) ON CONFLICT (id) DO NOTHING`,
+      [d.id,orgId,d.name,d.email,d.phone,d.stage,d.total,d.last,d.lastGift,d.giftCount,d.city,d.state,d.zip,userId,userName,userId,userName]
     );
   }
 
@@ -2985,12 +3002,12 @@ app.post("/org/load-sample-data", requireAuth, wrap(async (req, res) => {
     const fundId = d.stage==="steward" ? fEdu : fGen;
     const method = (d.stage==="steward"||d.stage==="solicit") ? "check" : "credit_card";
     await run(
-      `INSERT INTO gifts (id,org_id,donor_id,amount,date,type,fund_id,payment_method,is_sample) VALUES (?,?,?,?,?,?,?,?,true) ON CONFLICT (id) DO NOTHING`,
-      ["smpl_g"+n, orgId, d.id, d.last, d.lastGift, "cash", fundId, method]
+      `INSERT INTO gifts (id,org_id,donor_id,amount,date,type,fund_id,payment_method,is_sample,created_by,created_by_name) VALUES (?,?,?,?,?,?,?,?,true,?,?) ON CONFLICT (id) DO NOTHING`,
+      ["smpl_g"+n, orgId, d.id, d.last, d.lastGift, "cash", fundId, method, userId, userName]
     );
     await run(
-      `INSERT INTO fin_transactions (id,org_id,date,description,vendor_donor,amount,type,account_id,fund_id,is_sample) VALUES (?,?,?,?,?,?,?,?,?,true) ON CONFLICT (id) DO NOTHING`,
-      ["smpl_ftx"+n, orgId, d.lastGift, `Gift — ${d.name}`, d.name, d.last, "income", null, fundId]
+      `INSERT INTO fin_transactions (id,org_id,date,description,vendor_donor,amount,type,account_id,fund_id,is_sample,created_by,created_by_name) VALUES (?,?,?,?,?,?,?,?,?,true,?,?) ON CONFLICT (id) DO NOTHING`,
+      ["smpl_ftx"+n, orgId, d.lastGift, `Gift — ${d.name}`, d.name, d.last, "income", null, fundId, userId, userName]
     );
   }
   // Additional historical gifts for top donors
@@ -3003,12 +3020,12 @@ app.post("/org/load-sample-data", requireAuth, wrap(async (req, res) => {
   ];
   for (const g of oldGifts) {
     await run(
-      `INSERT INTO gifts (id,org_id,donor_id,amount,date,type,fund_id,payment_method,is_sample) VALUES (?,?,?,?,?,?,?,?,true) ON CONFLICT (id) DO NOTHING`,
-      [g.id,orgId,g.donor,g.amount,g.date,"cash",g.fund,g.method]
+      `INSERT INTO gifts (id,org_id,donor_id,amount,date,type,fund_id,payment_method,is_sample,created_by,created_by_name) VALUES (?,?,?,?,?,?,?,?,true,?,?) ON CONFLICT (id) DO NOTHING`,
+      [g.id,orgId,g.donor,g.amount,g.date,"cash",g.fund,g.method,userId,userName]
     );
     await run(
-      `INSERT INTO fin_transactions (id,org_id,date,description,vendor_donor,amount,type,account_id,fund_id,is_sample) VALUES (?,?,?,?,?,?,?,?,?,true) ON CONFLICT (id) DO NOTHING`,
-      [g.id+"_ftx",orgId,g.date,`Historical gift`,donors.find(d=>d.id===g.donor)?.name||"",g.amount,"income",null,g.fund]
+      `INSERT INTO fin_transactions (id,org_id,date,description,vendor_donor,amount,type,account_id,fund_id,is_sample,created_by,created_by_name) VALUES (?,?,?,?,?,?,?,?,?,true,?,?) ON CONFLICT (id) DO NOTHING`,
+      [g.id+"_ftx",orgId,g.date,`Historical gift`,donors.find(d=>d.id===g.donor)?.name||"",g.amount,"income",null,g.fund,userId,userName]
     );
   }
 
@@ -3023,8 +3040,8 @@ app.post("/org/load-sample-data", requireAuth, wrap(async (req, res) => {
   ];
   for (const e of expenses) {
     await run(
-      `INSERT INTO fin_transactions (id,org_id,date,description,vendor_donor,amount,type,account_id,fund_id,is_sample) VALUES (?,?,?,?,?,?,?,?,?,true) ON CONFLICT (id) DO NOTHING`,
-      [e.id,orgId,e.date,e.desc,e.vendor,e.amount,"expense",null,e.fund]
+      `INSERT INTO fin_transactions (id,org_id,date,description,vendor_donor,amount,type,account_id,fund_id,is_sample,created_by,created_by_name) VALUES (?,?,?,?,?,?,?,?,?,true,?,?) ON CONFLICT (id) DO NOTHING`,
+      [e.id,orgId,e.date,e.desc,e.vendor,e.amount,"expense",null,e.fund,userId,userName]
     );
   }
 
@@ -3037,20 +3054,20 @@ app.post("/org/load-sample-data", requireAuth, wrap(async (req, res) => {
   ];
   for (const g of grants) {
     await run(
-      `INSERT INTO grants (id,org_id,funder,program,amount,status,deadline,notes,is_sample) VALUES (?,?,?,?,?,?,?,?,true) ON CONFLICT (id) DO NOTHING`,
-      [g.id,orgId,g.funder,g.program,g.amount,g.status,g.deadline,g.notes]
+      `INSERT INTO grants (id,org_id,funder,program,amount,status,deadline,notes,is_sample,created_by,created_by_name) VALUES (?,?,?,?,?,?,?,?,true,?,?) ON CONFLICT (id) DO NOTHING`,
+      [g.id,orgId,g.funder,g.program,g.amount,g.status,g.deadline,g.notes,userId,userName]
     );
   }
 
   // 2 events
   const ev1 = "smpl_ev1", ev2 = "smpl_ev2";
   await run(
-    `INSERT INTO events (id,org_id,name,event_type,date,end_date,location,description,capacity,status,revenue,cost,is_sample) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,true) ON CONFLICT (id) DO NOTHING`,
-    [ev1,orgId,"Annual Spring Gala","gala",dAgo(30),dAgo(30),"The Plaza Hotel, NYC","Our signature annual fundraising gala celebrating 10 years of impact.",200,"completed",185000,42000]
+    `INSERT INTO events (id,org_id,name,event_type,date,end_date,location,description,capacity,status,revenue,cost,is_sample,created_by,created_by_name) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,true,?,?) ON CONFLICT (id) DO NOTHING`,
+    [ev1,orgId,"Annual Spring Gala","gala",dAgo(30),dAgo(30),"The Plaza Hotel, NYC","Our signature annual fundraising gala celebrating 10 years of impact.",200,"completed",185000,42000,userId,userName]
   );
   await run(
-    `INSERT INTO events (id,org_id,name,event_type,date,end_date,location,description,capacity,status,revenue,cost,is_sample) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,true) ON CONFLICT (id) DO NOTHING`,
-    [ev2,orgId,"Fall Cultivation Dinner","cultivation",dAgo(-60),dAgo(-60),"Private Dining Room, One World Trade","Intimate dinner for prospective major donors.",30,"upcoming",0,8500]
+    `INSERT INTO events (id,org_id,name,event_type,date,end_date,location,description,capacity,status,revenue,cost,is_sample,created_by,created_by_name) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,true,?,?) ON CONFLICT (id) DO NOTHING`,
+    [ev2,orgId,"Fall Cultivation Dinner","cultivation",dAgo(-60),dAgo(-60),"Private Dining Room, One World Trade","Intimate dinner for prospective major donors.",30,"upcoming",0,8500,userId,userName]
   );
   // Gala attendees
   const galaGuests = [
@@ -3071,12 +3088,12 @@ app.post("/org/load-sample-data", requireAuth, wrap(async (req, res) => {
 
   // 1 email campaign
   await run(
-    `INSERT INTO campaigns (id,org_id,name,subject,body,status,briefing,goal_amount,raised_amount,start_date,end_date,is_sample) VALUES (?,?,?,?,?,?,?,?,?,?,?,true) ON CONFLICT (id) DO NOTHING`,
+    `INSERT INTO campaigns (id,org_id,name,subject,body,status,briefing,goal_amount,raised_amount,start_date,end_date,is_sample,created_by,created_by_name) VALUES (?,?,?,?,?,?,?,?,?,?,?,true,?,?) ON CONFLICT (id) DO NOTHING`,
     ["smpl_camp1",orgId,"Year-End Giving Appeal","Make a difference before December 31st",
      "Dear {{first_name}},\n\nAs the year draws to a close, we reflect on the incredible impact your support has made possible. This year, our students performed on stages across New York City, received 47 scholarships, and logged over 12,000 hours of instruction.\n\nYour gift today — doubled by a board matching challenge — will fund another year of transformative programming.\n\nWith gratitude,\n{{user_name}}",
      "sent",
      "Lead with the 3 scholarship recipient stories. Emphasize the 2:1 board match — expires Dec 31. Subject line A/B: test urgency vs. impact angle. Send to all active donors + lapsed within 2 years.",
-     200000,142000,dAgo(45),dAgo(-20)]
+     200000,142000,dAgo(45),dAgo(-20),userId,userName]
   );
 
   // 15 interactions
@@ -3114,8 +3131,8 @@ app.post("/org/load-sample-data", requireAuth, wrap(async (req, res) => {
   ];
   for (const t of tasks) {
     await run(
-      `INSERT INTO tasks (id,org_id,title,due,priority,type,done,donor_id,is_sample) VALUES (?,?,?,?,?,?,0,?,true) ON CONFLICT (id) DO NOTHING`,
-      [t.id,orgId,t.title,t.due,t.priority,"donor",t.donor]
+      `INSERT INTO tasks (id,org_id,title,due,priority,type,done,donor_id,is_sample,created_by,created_by_name) VALUES (?,?,?,?,?,?,0,?,true,?,?) ON CONFLICT (id) DO NOTHING`,
+      [t.id,orgId,t.title,t.due,t.priority,"donor",t.donor,userId,userName]
     );
   }
 
@@ -3128,8 +3145,8 @@ app.post("/org/load-sample-data", requireAuth, wrap(async (req, res) => {
   ];
   for (const v of volunteers) {
     await run(
-      `INSERT INTO volunteers (id,org_id,name,email,hours,skills,notes,is_sample) VALUES (?,?,?,?,?,?,?,true) ON CONFLICT (id) DO NOTHING`,
-      [v.id,orgId,v.name,v.email,v.hours,v.skills,v.notes]
+      `INSERT INTO volunteers (id,org_id,name,email,hours,skills,notes,is_sample,created_by,created_by_name) VALUES (?,?,?,?,?,?,?,true,?,?) ON CONFLICT (id) DO NOTHING`,
+      [v.id,orgId,v.name,v.email,v.hours,v.skills,v.notes,userId,userName]
     );
   }
 
@@ -3143,8 +3160,8 @@ app.post("/org/load-sample-data", requireAuth, wrap(async (req, res) => {
   ];
   for (const b of board) {
     await run(
-      `INSERT INTO board_members (id,org_id,name,role,giving_level,committees,is_sample) VALUES (?,?,?,?,?,?,true) ON CONFLICT (id) DO NOTHING`,
-      [b.id,orgId,b.name,b.role,b.giving_level,b.committees]
+      `INSERT INTO board_members (id,org_id,name,role,giving_level,committees,is_sample,created_by,created_by_name) VALUES (?,?,?,?,?,?,true,?,?) ON CONFLICT (id) DO NOTHING`,
+      [b.id,orgId,b.name,b.role,b.giving_level,b.committees,userId,userName]
     );
   }
 
@@ -3591,11 +3608,11 @@ app.post("/donors", requireAuth, checkWriteAccess, wrap(async (req, res) => {
   const finalAssignedTo = assignedTo || req.user.userId;
   const finalAssignedToName = assignedTo ? (assignedToName || "") : selfName;
   await run(
-    `INSERT INTO donors (id,org_id,name,email,phone,status,stage,total_giving,last_gift_amount,last_gift_date,gift_count,tags,notes,assigned_to,assigned_to_name)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+    `INSERT INTO donors (id,org_id,name,email,phone,status,stage,total_giving,last_gift_amount,last_gift_date,gift_count,tags,notes,assigned_to,assigned_to_name,created_by,created_by_name)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     [id, req.user.orgId, name, email || "", phone || "", status || "new", stage || "prospect",
      lastAmount || 0, lastAmount || 0, today, lastAmount ? 1 : 0,
-     JSON.stringify(tags || []), notes || "", finalAssignedTo, finalAssignedToName]
+     JSON.stringify(tags || []), notes || "", finalAssignedTo, finalAssignedToName, actor(req).id, actor(req).name]
   );
   const rows = await query("SELECT * FROM donors WHERE id = ?", [id]);
   res.status(201).json(rows[0]);
@@ -4281,8 +4298,8 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(as
     batch.forEach(g => {
       const gid = importId("g_");
       rowByGid.set(gid, g);
-      giftParams.push(gid, orgId, g.donorId, g.amount, g.date, g.type, g.campaign, null, g.notes, g.externalId || null);
-      giftTuples.push("(?,?,?,?,?,?,?,?,?,?)");
+      giftParams.push(gid, orgId, g.donorId, g.amount, g.date, g.type, g.campaign, null, g.notes, g.externalId || null, actor(req).id, actor(req).name);
+      giftTuples.push("(?,?,?,?,?,?,?,?,?,?,?,?)");
       affectedDonorIds.add(g.donorId);
     });
     let keptCount = 0, ftCount = 0;
@@ -4296,7 +4313,7 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(as
       // landed so interactions + ledger stamps are only written for those
       // (a skipped gift must not orphan an interaction or a ledger row).
       const kept = await queryTx(txc,
-        `INSERT INTO gifts (id,org_id,donor_id,amount,date,type,campaign,fund_id,notes,external_id)
+        `INSERT INTO gifts (id,org_id,donor_id,amount,date,type,campaign,fund_id,notes,external_id,created_by,created_by_name)
          VALUES ${giftTuples.join(",")}
          ON CONFLICT (org_id, external_id) WHERE external_id IS NOT NULL DO NOTHING
          RETURNING id`,
@@ -4315,8 +4332,8 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(as
         if (contribAcctId && g.date >= fyStart) {
           const dName = donorNameMap[g.donorId] || "Donor";
           ftParams.push(importId("ft_"), orgId, g.date,
-            `Gift from ${dName}`, dName, g.amount, "income", contribAcctId, genFundId, g.donorId, "import", r.id);
-          ftTuples.push("(?,?,?,?,?,?,?,?,?,?,?,?)");
+            `Gift from ${dName}`, dName, g.amount, "income", contribAcctId, genFundId, g.donorId, "import", r.id, actor(req).id, actor(req).name);
+          ftTuples.push("(?,?,?,?,?,?,?,?,?,?,?,?,?,?)");
         }
       }
       if (intTuples.length) {
@@ -4328,7 +4345,7 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(as
       // One bulk INSERT for FY fin_transactions — same tx as gifts, rolls back together
       if (ftTuples.length) {
         await runTx(txc,
-          `INSERT INTO fin_transactions (id,org_id,date,description,vendor_donor,amount,type,account_id,fund_id,donor_id,source,gift_id)
+          `INSERT INTO fin_transactions (id,org_id,date,description,vendor_donor,amount,type,account_id,fund_id,donor_id,source,gift_id,created_by,created_by_name)
            VALUES ${ftTuples.join(",")} ON CONFLICT (gift_id) WHERE gift_id IS NOT NULL DO NOTHING`,
           ftParams
         );
@@ -4987,12 +5004,13 @@ app.post("/donors/:id/gifts", requireAuth, checkWriteAccess, wrap(async (req, re
     ? req.body.idempotencyKey.trim().slice(0, 128) : null;
 
   const insertedRows = await query(
-    `INSERT INTO gifts (id,org_id,donor_id,amount,date,type,campaign,campaign_id,notes,fund_id,pledge_id,idempotency_key)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+    `INSERT INTO gifts (id,org_id,donor_id,amount,date,type,campaign,campaign_id,notes,fund_id,pledge_id,idempotency_key,created_by,created_by_name)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
      ON CONFLICT (org_id, idempotency_key) WHERE idempotency_key IS NOT NULL DO NOTHING
      RETURNING id`,
     [giftId, req.user.orgId, req.params.id, amt, giftDate, type || "cash", campaignName || "",
-     effectiveCampaignId || null, notes || "", fundId || null, pledgeRow ? pledgeRow.id : null, idemKey]
+     effectiveCampaignId || null, notes || "", fundId || null, pledgeRow ? pledgeRow.id : null, idemKey,
+     actor(req).id, actor(req).name]
   );
   if (!insertedRows.length) {
     const dupGift = await query("SELECT * FROM gifts WHERE org_id=? AND idempotency_key=?", [req.user.orgId, idemKey]);
@@ -5033,10 +5051,10 @@ app.post("/donors/:id/gifts", requireAuth, checkWriteAccess, wrap(async (req, re
     const ledgerG = await ensureOrgLedger(req.user.orgId, { heal: true });
     const stampFund = fundId || ledgerG.genFundId;
     await run(
-      "INSERT INTO fin_transactions (id,org_id,date,description,vendor_donor,amount,type,account_id,fund_id,donor_id,source,gift_id) VALUES (?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT (gift_id) WHERE gift_id IS NOT NULL DO NOTHING",
+      "INSERT INTO fin_transactions (id,org_id,date,description,vendor_donor,amount,type,account_id,fund_id,donor_id,source,gift_id,created_by,created_by_name) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT (gift_id) WHERE gift_id IS NOT NULL DO NOTHING",
       ["ft_"+uuid().slice(0,8), req.user.orgId, giftDate,
        `Gift from ${donorRows[0]?.name || "Donor"}`, donorRows[0]?.name || "",
-       amt, "income", ledgerG.contribAcctId, stampFund, req.params.id, "gift", giftId]
+       amt, "income", ledgerG.contribAcctId, stampFund, req.params.id, "gift", giftId, actor(req).id, actor(req).name]
     );
   } catch(e) { console.error("Finance sync:", e.message); }
   // Log gift interaction
@@ -5285,11 +5303,12 @@ app.post("/donors/:id/pledges", requireAuth, checkWriteAccess, wrap(async (req, 
 
   const id = "pl_" + uuid().slice(0, 8);
   const inserted = await query(
-    `INSERT INTO pledges (id,org_id,donor_id,amount,due_date,notes,campaign_id,idempotency_key)
-     VALUES (?,?,?,?,?,?,?,?)
+    `INSERT INTO pledges (id,org_id,donor_id,amount,due_date,notes,campaign_id,idempotency_key,created_by,created_by_name)
+     VALUES (?,?,?,?,?,?,?,?,?,?)
      ON CONFLICT (org_id, idempotency_key) WHERE idempotency_key IS NOT NULL DO NOTHING
      RETURNING id`,
-    [id, req.user.orgId, req.params.id, pledgeAmt, dueDate, notes || "", campaignId, idemKey]
+    [id, req.user.orgId, req.params.id, pledgeAmt, dueDate, notes || "", campaignId, idemKey,
+     actor(req).id, actor(req).name]
   );
   if (!inserted.length && idemKey) {
     // A replay. Return the ORIGINAL pledge with 200 — never a second row, and
@@ -5616,7 +5635,7 @@ async function sendReceiptEmail(org, donor, snapshot, pdfBuffer, filename) {
 // Single choke point for issuing a per-gift receipt — used by both the
 // webhook (fire-and-forget) and the manual "Send receipt" route, so
 // idempotency/suppression/sample-skip logic lives in exactly one place.
-async function issueGiftReceipt(gift, org, donor, { send = true } = {}) {
+async function issueGiftReceipt(gift, org, donor, { send = true, by = SYS_AUTO } = {}) {
   if (!org.receipts_enabled) return { skipped: "receipts_disabled" };
   if (gift.is_sample) return { skipped: "sample_gift" };
 
@@ -5678,9 +5697,9 @@ async function issueGiftReceipt(gift, org, donor, { send = true } = {}) {
   const pdfBuffer = await renderReceiptPdf(snapshot);
   const id = "rcpt_" + uuid().slice(0, 8);
   await run(
-    `INSERT INTO receipts (id, org_id, donor_id, gift_id, type, receipt_number, amount, deductible_amount, snapshot, pdf_data)
-     VALUES (?,?,?,?,?,?,?,?,?,?)`,
-    [id, org.id, donor.id, gift.id, "gift", receiptNumber, snapshot.amount, deductibleAmount, JSON.stringify(snapshot), pdfBuffer.toString("base64")]
+    `INSERT INTO receipts (id, org_id, donor_id, gift_id, type, receipt_number, amount, deductible_amount, snapshot, pdf_data, created_by, created_by_name)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
+    [id, org.id, donor.id, gift.id, "gift", receiptNumber, snapshot.amount, deductibleAmount, JSON.stringify(snapshot), pdfBuffer.toString("base64"), by.id, by.name]
   );
 
   let emailSent = false;
@@ -5724,7 +5743,7 @@ async function resendReceiptEmail(receipt, org, donor) {
 // Supersedes (voids) any prior active statement for the same donor+year
 // before inserting the new one, since the partial-unique index only allows
 // one active statement per (org_id, donor_id, tax_year).
-async function issueYearEndStatement(org, donor, year, { send = true } = {}) {
+async function issueYearEndStatement(org, donor, year, { send = true, by = SYS_AUTO } = {}) {
   const gifts = await query(
     `SELECT * FROM gifts WHERE org_id=? AND donor_id=? AND (is_sample IS NOT TRUE)
        AND date >= ? AND date <= ? ORDER BY date ASC`,
@@ -5776,9 +5795,9 @@ async function issueYearEndStatement(org, donor, year, { send = true } = {}) {
   const pdfBuffer = await renderReceiptPdf(snapshot);
   const id = "rcpt_" + uuid().slice(0, 8);
   await run(
-    `INSERT INTO receipts (id, org_id, donor_id, gift_id, type, tax_year, receipt_number, amount, deductible_amount, snapshot, pdf_data)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
-    [id, org.id, donor.id, null, "year_end", year, receiptNumber, totalAmount, totalDeductible, JSON.stringify(snapshot), pdfBuffer.toString("base64")]
+    `INSERT INTO receipts (id, org_id, donor_id, gift_id, type, tax_year, receipt_number, amount, deductible_amount, snapshot, pdf_data, created_by, created_by_name)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+    [id, org.id, donor.id, null, "year_end", year, receiptNumber, totalAmount, totalDeductible, JSON.stringify(snapshot), pdfBuffer.toString("base64"), by.id, by.name]
   );
 
   let emailSent = false;
@@ -5869,7 +5888,7 @@ app.post("/receipts/year-end-run", requireAuth, requireAdmin, checkWriteAccess, 
   let generated = 0, emailed = 0, skipped = 0;
   for (const donorRow of donorRows) {
     try {
-      const result = await issueYearEndStatement(org, donorRow, taxYear, { send: true });
+      const result = await issueYearEndStatement(org, donorRow, taxYear, { send: true, by: actor(req) });
       if (result.skipped) { skipped++; continue; }
       generated++;
       if (result.emailSent) emailed++;
@@ -5930,7 +5949,7 @@ app.post("/gifts/:id/receipt", requireAuth, checkWriteAccess, wrap(async (req, r
     return res.status(409).json({ error: "This gift already has an active receipt.", receipt: existingRows[0] });
   }
 
-  const result = await issueGiftReceipt(gift, org, donor, { send: true });
+  const result = await issueGiftReceipt(gift, org, donor, { send: true, by: actor(req) });
   if (result.skipped) return res.status(400).json({ error: `Could not issue receipt: ${result.skipped}` });
   res.status(201).json(result.receipt);
 }));
@@ -5958,7 +5977,7 @@ app.post("/donors/:id/year-end-statement", requireAuth, checkWriteAccess, wrap(a
   const [donor] = await query("SELECT * FROM donors WHERE id=? AND org_id=?", [req.params.id, orgId]);
   if (!donor) return res.status(404).json({ error: "Donor not found" });
 
-  const result = await issueYearEndStatement(org, donor, taxYear, { send: send !== false });
+  const result = await issueYearEndStatement(org, donor, taxYear, { send: send !== false, by: actor(req) });
   if (result.skipped) return res.status(400).json({ error: `No gifts found for ${taxYear}.` });
   res.status(201).json(result.receipt);
 }));
@@ -6106,9 +6125,9 @@ app.post("/gifts/import-history", requireAuth, checkWriteAccess, wrapImport(asyn
           // conflicted (already-imported) row inserts nothing, and its
           // interaction + ledger stamp are skipped with it.
           const kept = await queryTx(client,
-            `INSERT INTO gifts (id,org_id,donor_id,amount,date,type,campaign,fund_id,notes,external_id) VALUES (?,?,?,?,?,?,?,?,?,?)
+            `INSERT INTO gifts (id,org_id,donor_id,amount,date,type,campaign,fund_id,notes,external_id,created_by,created_by_name) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
              ON CONFLICT (org_id, external_id) WHERE external_id IS NOT NULL DO NOTHING RETURNING id`,
-            [id, orgId, g.donorId, g.amount, g.date, g.type, g.campaign, g.fund_id, g.notes, g.externalId || null]
+            [id, orgId, g.donorId, g.amount, g.date, g.type, g.campaign, g.fund_id, g.notes, g.externalId || null, actor(req).id, actor(req).name]
           );
           if (!kept.length) { g._conflicted = true; continue; }
           keptInBatch++; keptRows.push(g);
@@ -6123,14 +6142,14 @@ app.post("/gifts/import-history", requireAuth, checkWriteAccess, wrapImport(asyn
           if (contribAcctId && g.date >= fyStart) {
             const dName = donorNameMap[g.donorId] || "Donor";
             ftParams.push(importId("ft_"), orgId, g.date,
-              `Gift from ${dName}`, dName, g.amount, "income", contribAcctId, genFundId, g.donorId, "import", id);
-            ftTuples.push("(?,?,?,?,?,?,?,?,?,?,?,?)");
+              `Gift from ${dName}`, dName, g.amount, "income", contribAcctId, genFundId, g.donorId, "import", id, actor(req).id, actor(req).name);
+            ftTuples.push("(?,?,?,?,?,?,?,?,?,?,?,?,?,?)");
           }
         }
         // One bulk INSERT for all FY fin_transactions in this batch — same tx as gifts
         if (ftTuples.length) {
           await runTx(client,
-            `INSERT INTO fin_transactions (id,org_id,date,description,vendor_donor,amount,type,account_id,fund_id,donor_id,source,gift_id)
+            `INSERT INTO fin_transactions (id,org_id,date,description,vendor_donor,amount,type,account_id,fund_id,donor_id,source,gift_id,created_by,created_by_name)
              VALUES ${ftTuples.join(",")} ON CONFLICT (gift_id) WHERE gift_id IS NOT NULL DO NOTHING`,
             ftParams
           );
@@ -6242,8 +6261,8 @@ app.post("/donors/:id/planned-gifts", requireAuth, wrap(async (req, res) => {
   if (!donorCheck.length) return res.status(404).json({ error: "Donor not found" });
   const id = "pg_" + uuid().slice(0,8);
   await run(
-    "INSERT INTO planned_gifts (id,org_id,donor_id,type,estimated_value,date_indicated,notes) VALUES (?,?,?,?,?,?,?)",
-    [id, req.user.orgId, req.params.id, type, estimated_value||null, date_indicated||null, notes||""]
+    "INSERT INTO planned_gifts (id,org_id,donor_id,type,estimated_value,date_indicated,notes,created_by,created_by_name) VALUES (?,?,?,?,?,?,?,?,?)",
+    [id, req.user.orgId, req.params.id, type, estimated_value||null, date_indicated||null, notes||"", actor(req).id, actor(req).name]
   );
   if (!donorCheck[0].planned_giving) {
     await run("UPDATE donors SET planned_giving=true WHERE id=? AND org_id=?", [req.params.id, req.user.orgId]);
@@ -6449,8 +6468,8 @@ app.post("/households", requireAuth, checkWriteAccess, wrap(async (req, res) => 
   }
   const id = "hh_" + uuid().slice(0, 8);
   await withTransaction(async (client) => {
-    await runTx(client, "INSERT INTO households (id,org_id,name,primary_donor_id,joint_acknowledgment) VALUES (?,?,?,?,?)",
-      [id, req.user.orgId, hhName, v.primary, jointAcknowledgment !== false]);
+    await runTx(client, "INSERT INTO households (id,org_id,name,primary_donor_id,joint_acknowledgment,created_by,created_by_name) VALUES (?,?,?,?,?,?,?)",
+      [id, req.user.orgId, hhName, v.primary, jointAcknowledgment !== false, actor(req).id, actor(req).name]);
     await runTx(client, "UPDATE donors SET household_id=? WHERE id = ANY(?) AND org_id=?", [id, v.ids, req.user.orgId]);
   });
   res.status(201).json(await householdView(id, req.user.orgId));
@@ -6851,8 +6870,8 @@ app.post("/donors/:id/opportunities", requireAuth, requirePlan("team"), checkWri
   if (!officerId) { officerId = req.user.userId; const u = await query("SELECT name FROM users WHERE id=?", [req.user.userId]); officerName = u[0]?.name || ""; }
   const id = "opp_" + uuid().slice(0, 8);
   await run(
-    "INSERT INTO opportunities (id,org_id,donor_id,name,target_amount,status,officer_id,officer_name,expected_close) VALUES (?,?,?,?,?,'open',?,?,?)",
-    [id, req.user.orgId, req.params.id, (name || "").trim() || "Ask", amt, officerId, officerName || "", expectedClose || null]);
+    "INSERT INTO opportunities (id,org_id,donor_id,name,target_amount,status,officer_id,officer_name,expected_close,created_by,created_by_name) VALUES (?,?,?,?,?,'open',?,?,?,?,?)",
+    [id, req.user.orgId, req.params.id, (name || "").trim() || "Ask", amt, officerId, officerName || "", expectedClose || null, actor(req).id, actor(req).name]);
   const rows = await query("SELECT * FROM opportunities WHERE id=?", [id]);
   res.status(201).json({ ...rows[0], target_amount: parseFloat(rows[0].target_amount) || 0 });
 }));
@@ -7097,7 +7116,7 @@ app.get("/grants", requireAuth, wrap(async (req, res) => {
 // this grant's stamp (grant_id taken) can never double-insert. Fund matching is
 // the original BUILD-09 heuristic (funder/program-named fund, else the first
 // unrestricted fund).
-async function stampGrantAward(orgId, grantId, funder, program, amount) {
+async function stampGrantAward(orgId, grantId, funder, program, amount, by = SYS_AUTO) {
   const matchFund = await query(
     "SELECT id FROM fin_funds WHERE org_id=? AND (name ILIKE ? OR name ILIKE ?) LIMIT 1",
     [orgId, `%${funder}%`, `%${program || ""}%`]
@@ -7108,12 +7127,12 @@ async function stampGrantAward(orgId, grantId, funder, program, amount) {
   const ledgerA = await ensureOrgLedger(orgId, { heal: true });
   const fundId = matchFund[0]?.id || ledgerA.genFundId;
   await run(
-    `INSERT INTO fin_transactions (id,org_id,date,description,vendor_donor,amount,type,account_id,fund_id,grant_id,source)
-     VALUES (?,?,?,?,?,?,'income',?,?,?,'grant')
+    `INSERT INTO fin_transactions (id,org_id,date,description,vendor_donor,amount,type,account_id,fund_id,grant_id,source,created_by,created_by_name)
+     VALUES (?,?,?,?,?,?,'income',?,?,?,'grant',?,?)
      ON CONFLICT (grant_id) WHERE grant_id IS NOT NULL DO NOTHING`,
-    ["ft_" + uuid().slice(0, 8), orgId, new Date().toISOString().slice(0, 10),
+    ["ft_" + uuid().slice(0, 8), orgId, orgToday(await orgTz(orgId)), // ORG_TZ_SEAM_OK (BUILD-75)
      `Grant awarded: ${funder} — ${program || ""}`, funder,
-     parseFloat(amount) || 0, ledgerA.grantAcctId, fundId, grantId]
+     parseFloat(amount) || 0, ledgerA.grantAcctId, fundId, grantId, by.id, by.name]
   ).catch(e => console.error("[ledger] grant award stamp failed:", e.message));
 }
 
@@ -7133,14 +7152,14 @@ app.post("/grants", requireAuth, checkWriteAccess, wrap(async (req, res) => {
   const id = "gr_" + uuid().slice(0, 8);
   const isAwarded = (status || "prospecting") === "awarded";
   await run(
-    "INSERT INTO grants (id,org_id,funder,program,amount,status,deadline,report_due,officer,notes,campaign_id,awarded_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+    "INSERT INTO grants (id,org_id,funder,program,amount,status,deadline,report_due,officer,notes,campaign_id,awarded_at,created_by,created_by_name) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
     [id, req.user.orgId, funder, program || "", amount || 0,
      status || "prospecting", deadline || "", reportDue || "", officer || "", notes || "",
-     campaignId, isAwarded ? new Date().toISOString() : null]
+     campaignId, isAwarded ? new Date().toISOString() : null, actor(req).id, actor(req).name]
   );
   // A grant created directly IN 'awarded' books its income too (this path
   // previously never stamped the ledger — only the PUT transition did).
-  if (isAwarded) await stampGrantAward(req.user.orgId, id, funder, program, amount);
+  if (isAwarded) await stampGrantAward(req.user.orgId, id, funder, program, amount, actor(req));
   const rows = await query("SELECT * FROM grants WHERE id = ?", [id]);
   res.status(201).json(rows[0]);
 }));
@@ -7226,7 +7245,7 @@ app.put("/grants/:id", requireAuth, checkWriteAccess, wrap(async (req, res) => {
         new: { grant_id: req.params.id },
       }).catch(() => {});
     }
-    if (!adopted) await stampGrantAward(orgId, req.params.id, funder, program, amount);
+    if (!adopted) await stampGrantAward(orgId, req.params.id, funder, program, amount, actor(req));
   }
 
   // Un-award (awarded_at cleared — the grant moved BACK to a pursuing or
@@ -7243,8 +7262,8 @@ app.put("/grants/:id", requireAuth, checkWriteAccess, wrap(async (req, res) => {
   if ((status === 'closed' || status === 'rejected') && prevStatus !== status) {
     const sixMonths = new Date(Date.now() + 180*24*60*60*1000).toISOString().slice(0, 10);
     await run(
-      "INSERT INTO tasks (id,org_id,title,priority,done,due) VALUES (?,?,?,'medium',0,?)",
-      ["t_"+uuid().slice(0,8), orgId, `Follow up with ${funder} re: next cycle`, sixMonths]
+      "INSERT INTO tasks (id,org_id,title,priority,done,due,created_by,created_by_name) VALUES (?,?,?,'medium',0,?,?,?)",
+      ["t_"+uuid().slice(0,8), orgId, `Follow up with ${funder} re: next cycle`, sixMonths, actor(req).id, actor(req).name]
     ).catch(() => {});
   }
 
@@ -7329,10 +7348,10 @@ app.post("/volunteers", requireAuth, checkWriteAccess, wrap(async (req, res) => 
 
   const id = "v_" + uuid().slice(0, 8);
   await run(
-    "INSERT INTO volunteers (id,org_id,name,email,hours,skills,employer,notes,convert_potential,last_active) VALUES (?,?,?,?,?,?,?,?,?,?)",
+    "INSERT INTO volunteers (id,org_id,name,email,hours,skills,employer,notes,convert_potential,last_active,created_by,created_by_name) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
     [id, req.user.orgId, name, email || "", hours || 0,
      JSON.stringify(skills || []), employer || "", notes || "",
-     convertPotential || "medium", new Date().toISOString().split("T")[0]]
+     convertPotential || "medium", new Date().toISOString().split("T")[0], actor(req).id, actor(req).name]
   );
   const rows = await query("SELECT * FROM volunteers WHERE id = ?", [id]);
   res.status(201).json(rows[0]);
@@ -7361,16 +7380,16 @@ app.put("/volunteers/:id", requireAuth, checkWriteAccess, wrap(async (req, res) 
     if (!existing.length) {
       const donorId = "d_" + uuid().slice(0, 8);
       await run(
-        "INSERT INTO donors (id,org_id,name,email,stage,notes,gift_count,total_giving) VALUES (?,?,?,?,'prospect',?,0,0)",
-        [donorId, orgId, name, email.toLowerCase(), "Auto-created from volunteer record. 20+ hours logged."]
+        "INSERT INTO donors (id,org_id,name,email,stage,notes,gift_count,total_giving,created_by,created_by_name) VALUES (?,?,?,?,'prospect',?,0,0,?,?)",
+        [donorId, orgId, name, email.toLowerCase(), "Auto-created from volunteer record. 20+ hours logged.", SYS_AUTO.id, SYS_AUTO.name]
       ).catch(() => {});
       const today = orgToday(await orgTz(orgId)); // ORG_TZ_SEAM_OK (BUILD-75)
       await run("INSERT INTO interactions (id,org_id,donor_id,type,note,date) VALUES (?,?,?,'note',?,?)",
         ["i_"+uuid().slice(0,8), orgId, donorId, "Volunteer prospect — 20+ hours logged", today]).catch(() => {});
     }
     const dueDate = new Date(Date.now() + 7*24*60*60*1000).toISOString().slice(0, 10);
-    await run("INSERT INTO tasks (id,org_id,title,priority,done,due) VALUES (?,?,?,'high',0,?)",
-      ["t_"+uuid().slice(0,8), orgId, `Cultivate volunteer ${name} as donor prospect — 20+ hours logged`, dueDate]).catch(() => {});
+    await run("INSERT INTO tasks (id,org_id,title,priority,done,due,created_by,created_by_name) VALUES (?,?,?,'high',0,?,?,?)",
+      ["t_"+uuid().slice(0,8), orgId, `Cultivate volunteer ${name} as donor prospect — 20+ hours logged`, dueDate, SYS_AUTO.id, SYS_AUTO.name]).catch(() => {});
   }
 
   const rows = await query("SELECT * FROM volunteers WHERE id = ?", [req.params.id]);
@@ -7442,9 +7461,9 @@ app.post("/tasks", requireAuth, checkWriteAccess, wrap(async (req, res) => {
 
   const id = "t_" + uuid().slice(0, 8);
   await run(
-    "INSERT INTO tasks (id,org_id,title,due,priority,type,done,donor_id,assigned_to,assigned_to_name,updated_at) VALUES (?,?,?,?,?,?,0,?,?,?,NOW())",
+    "INSERT INTO tasks (id,org_id,title,due,priority,type,done,donor_id,assigned_to,assigned_to_name,updated_at,created_by,created_by_name) VALUES (?,?,?,?,?,?,0,?,?,?,NOW(),?,?)",
     [id, req.user.orgId, String(title).trim(), due || "", priority || "medium", type || "donor",
-     donorId || null, ownerId, ownerName]
+     donorId || null, ownerId, ownerName, actor(req).id, actor(req).name]
   );
   const rows = await query(
     `SELECT t.*, d.name AS donor_name FROM tasks t
@@ -7527,9 +7546,9 @@ app.post("/board", requireAuth, checkWriteAccess, wrap(async (req, res) => {
 
   const id = "b_" + uuid().slice(0, 8);
   await run(
-    "INSERT INTO board_members (id,org_id,name,role,employer,term,giving_level,committees,attendance) VALUES (?,?,?,?,?,?,?,?,?)",
+    "INSERT INTO board_members (id,org_id,name,role,employer,term,giving_level,committees,attendance,created_by,created_by_name) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
     [id, req.user.orgId, name, role || "Member", employer || "", term || "",
-     givingLevel || "$0", JSON.stringify(committees || []), attendance ?? 100]
+     givingLevel || "$0", JSON.stringify(committees || []), attendance ?? 100, actor(req).id, actor(req).name]
   );
   const rows = await query("SELECT * FROM board_members WHERE id = ?", [id]);
   res.status(201).json(rows[0]);
@@ -9288,10 +9307,10 @@ app.post("/campaigns", requireAuth, checkWriteAccess, wrap(async (req, res) => {
 
   const id = "cmp_" + uuid().slice(0, 8);
   await run(
-    `INSERT INTO campaigns (id,org_id,name,type,subject,body,status,segment,scheduled_at,recipient_count,open_count)
-     VALUES (?,?,?,?,?,?,?,?,?,0,0)`,
+    `INSERT INTO campaigns (id,org_id,name,type,subject,body,status,segment,scheduled_at,recipient_count,open_count,created_by,created_by_name)
+     VALUES (?,?,?,?,?,?,?,?,?,0,0,?,?)`,
     [id, req.user.orgId, name, type || "appeal", subject || "", body || "",
-     scheduledAt ? "scheduled" : "draft", JSON.stringify(segment || {}), scheduledAt || null]
+     scheduledAt ? "scheduled" : "draft", JSON.stringify(segment || {}), scheduledAt || null, actor(req).id, actor(req).name]
   );
   const rows = await query("SELECT * FROM campaigns WHERE id = ?", [id]);
   res.status(201).json(rows[0]);
@@ -9769,9 +9788,9 @@ app.post("/fundraising/campaigns", requireAuth, checkWriteAccess, wrap(async (re
   if (df.status) return res.status(df.status).json(df.body);
   const id = "cmp_" + uuid().slice(0, 8);
   await run(
-    `INSERT INTO campaigns (id,org_id,name,type,subject,body,status,segment,goal_amount,start_date,end_date,goal_category,parent_goal_id,recipient_count,open_count)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,0,0)`,
-    [id, req.user.orgId, name.trim(), "appeal", "", "", "draft", JSON.stringify({}), goal, startDate || null, endDate || null, category, parent]
+    `INSERT INTO campaigns (id,org_id,name,type,subject,body,status,segment,goal_amount,start_date,end_date,goal_category,parent_goal_id,recipient_count,open_count,created_by,created_by_name)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,0,0,?,?)`,
+    [id, req.user.orgId, name.trim(), "appeal", "", "", "draft", JSON.stringify({}), goal, startDate || null, endDate || null, category, parent, actor(req).id, actor(req).name]
   );
   if (df.sets.length) {
     await run(`UPDATE campaigns SET ${df.sets.join(", ")} WHERE id = ? AND org_id = ?`, [...df.params, id, req.user.orgId]);
@@ -10468,9 +10487,9 @@ app.post("/giving-pages", requireAuth, requireAdmin, checkWriteAccess, wrap(asyn
   const finalSlug = await uniqueGivingPageSlug(req.user.orgId, base);
   const id = "gp_" + uuid().slice(0, 8);
   await run(
-    `INSERT INTO giving_pages (id, org_id, slug, title, goal_amount, story, image_url, fund_id, status, campaign_id)
-     VALUES (?,?,?,?,?,?,?,?,'active',?)`,
-    [id, req.user.orgId, finalSlug, title.trim(), goalAmount ? parseFloat(goalAmount) : null, story || "", imageUrl || "", fundId || null, campaignId || null]
+    `INSERT INTO giving_pages (id, org_id, slug, title, goal_amount, story, image_url, fund_id, status, campaign_id, created_by, created_by_name)
+     VALUES (?,?,?,?,?,?,?,?,'active',?,?,?)`,
+    [id, req.user.orgId, finalSlug, title.trim(), goalAmount ? parseFloat(goalAmount) : null, story || "", imageUrl || "", fundId || null, campaignId || null, actor(req).id, actor(req).name]
   );
   const rows = await query("SELECT *, 0 AS raised_amount FROM giving_pages WHERE id=?", [id]);
   res.status(201).json(rows[0]);
@@ -11201,8 +11220,8 @@ app.post("/finance/transactions", requireAuth, checkWriteAccess, wrap(async (req
   if (!(await orgOwns("donors", donorId, req.user.orgId))) return res.status(404).json({ error: "Donor not found" });
   const id = "ft_" + uuid().slice(0, 8);
   await run(
-    "INSERT INTO fin_transactions (id,org_id,date,description,vendor_donor,amount,type,account_id,fund_id,notes,donor_id,source) VALUES (?,?,?,?,?,?,?,?,?,?,?,'manual')",
-    [id, req.user.orgId, date, description, vendorDonor || "", parseFloat(amount), type, accountId || null, fundId || null, notes || "", donorId || null]
+    "INSERT INTO fin_transactions (id,org_id,date,description,vendor_donor,amount,type,account_id,fund_id,notes,donor_id,source,created_by,created_by_name) VALUES (?,?,?,?,?,?,?,?,?,?,?,'manual',?,?)",
+    [id, req.user.orgId, date, description, vendorDonor || "", parseFloat(amount), type, accountId || null, fundId || null, notes || "", donorId || null, actor(req).id, actor(req).name]
   );
   const rows = await query(`
     SELECT ft.*, a.code as account_code, a.name as account_name, a.type as account_type,
@@ -13019,8 +13038,8 @@ async function sendOnboardingSequence(orgId, userId, userName, userEmail) {
   try {
     const seqId = "seq_" + uuid().slice(0, 8);
     await run(
-      "INSERT INTO sequences (id, org_id, name, trigger, status) VALUES (?, ?, 'Onboarding', 'onboarding', 'active')",
-      [seqId, orgId]
+      "INSERT INTO sequences (id, org_id, name, trigger, status, created_by, created_by_name) VALUES (?, ?, 'Onboarding', 'onboarding', 'active', ?, ?)",
+      [seqId, orgId, SYS_AUTO.id, SYS_AUTO.name]
     );
     const steps = [
       {
@@ -13389,8 +13408,8 @@ async function ensureAtRiskSequence() {
     if (existing.length) continue;
     const seqId = "seq_" + uuid().slice(0, 8);
     await run(
-      "INSERT INTO sequences (id, org_id, name, trigger, status) VALUES (?,?,?,?,'active')",
-      [seqId, o.id, "At-Risk Re-Engagement", "at_risk"]
+      "INSERT INTO sequences (id, org_id, name, trigger, status, created_by, created_by_name) VALUES (?,?,?,?,'active',?,?)",
+      [seqId, o.id, "At-Risk Re-Engagement", "at_risk", SYS_AUTO.id, SYS_AUTO.name]
     );
     await run(
       "INSERT INTO sequence_steps (id, sequence_id, step_order, delay_days, subject, body) VALUES (?,?,?,?,?,?)",
@@ -13410,8 +13429,8 @@ async function ensureMilestoneSequences() {
     if (existing.length) continue;
     const seqId = "seq_" + uuid().slice(0, 8);
     await run(
-      "INSERT INTO sequences (id, org_id, name, trigger, status) VALUES (?,?,?,?,'active')",
-      [seqId, o.org_id, "Milestone & Anniversary Emails", "milestone"]
+      "INSERT INTO sequences (id, org_id, name, trigger, status, created_by, created_by_name) VALUES (?,?,?,?,'active',?,?)",
+      [seqId, o.org_id, "Milestone & Anniversary Emails", "milestone", SYS_AUTO.id, SYS_AUTO.name]
     );
     await run(
       "INSERT INTO sequence_steps (id, sequence_id, step_order, delay_days, subject, body) VALUES (?,?,?,?,?,?)",
@@ -13868,8 +13887,8 @@ app.post("/sequences", requireAuth, requireAdmin, wrap(async (req, res) => {
   if (!name) return res.status(400).json({ error: "Name required" });
   const id = "seq_" + uuid().slice(0, 8);
   await run(
-    "INSERT INTO sequences (id, org_id, name, trigger, trigger_stage) VALUES (?, ?, ?, ?, ?)",
-    [id, req.user.orgId, name, trigger || "manual", triggerStage || null]
+    "INSERT INTO sequences (id, org_id, name, trigger, trigger_stage, created_by, created_by_name) VALUES (?, ?, ?, ?, ?, ?, ?)",
+    [id, req.user.orgId, name, trigger || "manual", triggerStage || null, actor(req).id, actor(req).name]
   );
   for (let i = 0; i < steps.length; i++) {
     const s = steps[i];
@@ -14245,8 +14264,8 @@ app.post("/voice-memos/save", requireAuth, checkWriteAccess, wrap(async (req, re
     taskId = "t_" + uuid().slice(0, 8);
     const due = new Date(); due.setDate(due.getDate() + 7);
     await run(
-      "INSERT INTO tasks (id,org_id,title,due,priority,type,done,donor_id) VALUES (?,?,?,?,?,?,0,?)",
-      [taskId, req.user.orgId, actionText.trim(), due.toISOString().slice(0, 10), "medium", "donor", donorId]
+      "INSERT INTO tasks (id,org_id,title,due,priority,type,done,donor_id,created_by,created_by_name) VALUES (?,?,?,?,?,?,0,?,?,?)",
+      [taskId, req.user.orgId, actionText.trim(), due.toISOString().slice(0, 10), "medium", "donor", donorId, actor(req).id, actor(req).name]
     );
   }
 
@@ -14959,7 +14978,8 @@ async function provisionNewOrgWorkflows(orgId) {
 }
 
 // Execute one action. Returns a summary object for the run log, or null.
-async function runWorkflowAction(action, { org, donor, ctx, config }) {
+async function runWorkflowAction(action, { org, donor, ctx, config, recipeKey }) {
+  const wfActor = sysWorkflow(recipeKey || "unknown"); // BUILD-75 C.1 — the workflow IS the actor
   const firstName = donor?.name ? donor.name.trim().split(/\s+/)[0] : "there";
   const amtStr = ctx.amount != null ? `$${Number(ctx.amount).toLocaleString()}` : "";
   const fill = s => String(s || "").replace(/{donor}/g, donor?.name || "the donor").replace(/{amount}/g, amtStr);
@@ -14986,8 +15006,8 @@ async function runWorkflowAction(action, { org, donor, ctx, config }) {
       const due = action.dueDays != null ? new Date(Date.now() + action.dueDays * 86400000).toISOString().slice(0, 10) : "";
       const taskId = "t_" + uuid().slice(0, 8);
       await run(
-        "INSERT INTO tasks (id,org_id,title,due,priority,type,done,donor_id,assigned_to,assigned_to_name,updated_at) VALUES (?,?,?,?,?,'donor',0,?,?,?,NOW())",
-        [taskId, org.id, title, due, action.priority || "medium", donor?.id || null, owner?.id || null, owner?.name || null]
+        "INSERT INTO tasks (id,org_id,title,due,priority,type,done,donor_id,assigned_to,assigned_to_name,updated_at,created_by,created_by_name) VALUES (?,?,?,?,?,'donor',0,?,?,?,NOW(),?,?)",
+        [taskId, org.id, title, due, action.priority || "medium", donor?.id || null, owner?.id || null, owner?.name || null, wfActor.id, wfActor.name]
       );
       // BUILD-36 A2/A4: a workflow that assigns a task to someone emails them.
       // For a gift-fired workflow the event key is the gift, so this collapses
@@ -15026,8 +15046,8 @@ async function runWorkflowAction(action, { org, donor, ctx, config }) {
       const due = new Date(Date.now() + 1 * 86400000).toISOString().slice(0, 10);
       const taskId = "t_" + uuid().slice(0, 8);
       await run(
-        "INSERT INTO tasks (id,org_id,title,due,priority,type,done,donor_id,assigned_to,assigned_to_name,updated_at) VALUES (?,?,?,?,?,'donor',0,?,?,?,NOW())",
-        [taskId, org.id, title, due, "high", donor?.id || null, taskOwner?.id || null, taskOwner?.name || null]
+        "INSERT INTO tasks (id,org_id,title,due,priority,type,done,donor_id,assigned_to,assigned_to_name,updated_at,created_by,created_by_name) VALUES (?,?,?,?,?,'donor',0,?,?,?,NOW(),?,?)",
+        [taskId, org.id, title, due, "high", donor?.id || null, taskOwner?.id || null, taskOwner?.name || null, wfActor.id, wfActor.name]
       );
       // Email each distinct recipient (internal, no donor footer).
       const emailBody = `<p>A gift just came in — a good moment to say thank you.</p>
@@ -15123,7 +15143,7 @@ async function fireWorkflows(orgId, trigger, ctx) {
 
     const taken = [];
     for (const a of actions) {
-      try { const res = await runWorkflowAction(a, { org, donor, ctx, config }); if (res) taken.push(res); }
+      try { const res = await runWorkflowAction(a, { org, donor, ctx, config, recipeKey: wf.recipe_key }); if (res) taken.push(res); }
       catch (e) { console.error(`[workflow:${wf.recipe_key}] action ${a.type} failed:`, e.message); }
     }
     await run("UPDATE workflow_runs SET actions_taken=? WHERE id=?", [JSON.stringify(taken), runId]);
@@ -17450,9 +17470,9 @@ app.post("/events", requireAuth, checkWriteAccess, async (req, res) => {
     if (!name || !eventType || !date) return res.status(400).json({ error: "name, eventType, date required" });
     const id = "evt_" + uuid().slice(0, 8);
     await run(
-      `INSERT INTO events (id, org_id, name, event_type, date, end_date, location, description, capacity, cost)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
-      [id, orgId, name, eventType, date, endDate || null, location || null, description || null, capacity || null, parseFloat(cost) || 0]
+      `INSERT INTO events (id, org_id, name, event_type, date, end_date, location, description, capacity, cost, created_by, created_by_name)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
+      [id, orgId, name, eventType, date, endDate || null, location || null, description || null, capacity || null, parseFloat(cost) || 0, actor(req).id, actor(req).name]
     );
     const [row] = await query("SELECT * FROM events WHERE id=$1", [id]);
     res.json({ ...row, attendee_count: 0, confirmed_count: 0, no_show_count: 0, invited_count: 0, total_revenue: 0 });
@@ -17573,13 +17593,14 @@ app.patch("/events/:id/attendees/:attendeeId", requireAuth, checkWriteAccess, as
     if (newStatus === 'attended' && newGift > 0 && att.donor_id) {
       const evtRows = await query("SELECT * FROM events WHERE id=$1", [att.event_id]);
       const evt = evtRows[0];
-      const today = new Date().toISOString().slice(0, 10);
+      const today = orgToday(await orgTz(orgId)); // ORG_TZ_SEAM_OK (BUILD-75) — the gift date is the org's civil date
       const giftId = "g_" + uuid().slice(0, 8);
       await run(
-        `INSERT INTO gifts (id, org_id, donor_id, amount, date, type, campaign, notes)
-         VALUES ($1,$2,$3,$4,$5,'cash',$6,$7)
+        `INSERT INTO gifts (id, org_id, donor_id, amount, date, type, campaign, notes, created_by, created_by_name)
+         VALUES ($1,$2,$3,$4,$5,'cash',$6,$7,$8,$9)
          ON CONFLICT DO NOTHING`,
-        [giftId, orgId, att.donor_id, newGift, today, evt?.name || "Event", `Gift at ${evt?.name || "event"}`]
+        [giftId, orgId, att.donor_id, newGift, today, evt?.name || "Event", `Gift at ${evt?.name || "event"}`,
+         actor(req).id, actor(req).name]
       );
       await run(
         `UPDATE donors SET total_giving=total_giving+$1, last_gift_amount=$1,
@@ -17589,10 +17610,10 @@ app.patch("/events/:id/attendees/:attendeeId", requireAuth, checkWriteAccess, as
       // BUILD-58 W-3: through the ONE ledger helper — never a skipped stamp.
       const ledgerE = await ensureOrgLedger(orgId, { heal: true });
       await run(
-        `INSERT INTO fin_transactions (id, org_id, date, description, vendor_donor, amount, type, account_id, fund_id, donor_id, source, gift_id)
-         VALUES ($1,$2,$3,$4,$5,$6,'income',$7,$8,$9,'gift',$10)
+        `INSERT INTO fin_transactions (id, org_id, date, description, vendor_donor, amount, type, account_id, fund_id, donor_id, source, gift_id, created_by, created_by_name)
+         VALUES ($1,$2,$3,$4,$5,$6,'income',$7,$8,$9,'gift',$10,$11,$12)
          ON CONFLICT (gift_id) WHERE gift_id IS NOT NULL DO NOTHING`,
-        ["ft_" + uuid().slice(0,8), orgId, today, `Event Gift — ${evt?.name||"event"}`, att.name, newGift, ledgerE.contribAcctId, ledgerE.genFundId, att.donor_id, giftId]
+        ["ft_" + uuid().slice(0,8), orgId, today, `Event Gift — ${evt?.name||"event"}`, att.name, newGift, ledgerE.contribAcctId, ledgerE.genFundId, att.donor_id, giftId, actor(req).id, actor(req).name]
       );
     }
     // On attendance: +5 wealth score, log interaction, advance prospect/qualify stage
@@ -17635,9 +17656,9 @@ app.post("/events/:id/follow-up", requireAuth, checkWriteAccess, async (req, res
       const title = (taskTitle || "Follow up with {{event_name}} attendee")
         .replace("{{event_name}}", eventName);
       await run(
-        `INSERT INTO tasks (id, org_id, title, due, priority, type, donor_id)
-         VALUES ($1,$2,$3,$4,$5,'donor',$6)`,
-        ["tsk_" + uuid().slice(0, 8), orgId, title, dueDate || null, priority || 'medium', att.donor_id]
+        `INSERT INTO tasks (id, org_id, title, due, priority, type, donor_id, created_by, created_by_name)
+         VALUES ($1,$2,$3,$4,$5,'donor',$6,$7,$8)`,
+        ["tsk_" + uuid().slice(0, 8), orgId, title, dueDate || null, priority || 'medium', att.donor_id, actor(req).id, actor(req).name]
       );
       count++;
     }
@@ -18225,11 +18246,12 @@ async function portalDriftAlert(org, donor, sub, action, detail) {
     // show it on the evening it was created. That is precisely the save window
     // this wire exists to open. Guarded under TZ=UTC in tests/date-seam.js §7.
     await run(
-      `INSERT INTO tasks (id,org_id,title,due,priority,type,donor_id,assigned_to,assigned_to_name)
-       VALUES (?,?,?,?,?,?,?,?,?)`,
+      `INSERT INTO tasks (id,org_id,title,due,priority,type,donor_id,assigned_to,assigned_to_name,created_by,created_by_name)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
       ["t_" + uuid().slice(0, 8), org.id,
        `${donor.name} ${verb} their ${amt} recurring gift — reach out today`,
-       orgToday(await orgTz(org.id)), "high", "donor", donor.id, officer.id, officer.name || ""]);
+       orgToday(await orgTz(org.id)), "high", "donor", donor.id, officer.id, officer.name || "",
+       "system:portal-drift", "Donor portal"]);
     const subj = `${donor.name} ${verb} their recurring gift`;
     const body = `<p><strong>${escHtmlWf(donor.name)}</strong> just ${verb} their ${escHtmlWf(amt)} recurring gift from the donor portal${detail ? " — " + escHtmlWf(detail) : ""}.</p>
       <p>A cancellation the org learns about in minutes is a save opportunity. Suggested next step: a personal call or note today — thank them for their giving, ask nothing, and learn what changed.</p>`;

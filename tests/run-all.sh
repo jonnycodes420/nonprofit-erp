@@ -72,7 +72,7 @@ CORE=(
   locked-features migc
   brand-allowlist moves no-emoji notifications officer-chip onboarding-brand palette pipeline pipeline-gating portfolios portfolio-pipeline-consistency reports-cadence setup-checklist solicitations-winrate
   report-truth
-  session-cache session-privilege smart-moves state-diff state-diff2 tasks task-due tenant-isolation tenant-matrix trial-end upgrade-checkout workflows workflows-e2e
+  session-cache session-privilege smart-moves state-diff state-diff2 tasks task-due tenant-isolation tenant-matrix actor-stamp trial-end upgrade-checkout workflows workflows-e2e
   empty-states presentation-wiring notify-delivery concurrency2 permissions-matrix
   portal-visual
   gift-idempotency pledge-math portal

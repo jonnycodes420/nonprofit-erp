@@ -1466,6 +1466,26 @@ async function initSchema() {
   // in server.js) so two concurrent issues can never collide on a number.
   await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS receipt_counter INTEGER DEFAULT 0`);
 
+  // ── BUILD-75 C.1 — THE ACTOR ON EVERY WRITE ───────────────────────────────
+  // Every row that represents something someone DID records who did it:
+  // `created_by` an IDENTITY (a user id, or a system identity string like
+  // "system:stripe-webhook" / "system:workflow:<recipe>" — never a boolean),
+  // `created_by_name` the frozen display fallback (survives user deletion;
+  // live display should JOIN users when the id resolves). NULL means
+  // "unrecorded — the row predates BUILD-75"; history is never backfilled
+  // with guesses, which is exactly why this lands now rather than in 2027.
+  // interactions (created_by/logged_by_name), moves (officer_id/officer_name),
+  // donor_materials (uploaded_by), board_reports (generated_by), impact_updates
+  // (created_by) and fin_audit_log already carried their own actor columns.
+  // tests/actor-stamp.test.js pins that every server.js INSERT into these
+  // tables stamps the actor.
+  for (const t of ["gifts", "donors", "pledges", "tasks", "campaigns", "grants", "events",
+    "households", "opportunities", "receipts", "giving_pages", "planned_gifts",
+    "volunteers", "board_members", "fin_transactions", "sequences"]) {
+    await pool.query(`ALTER TABLE ${t} ADD COLUMN IF NOT EXISTS created_by TEXT`);
+    await pool.query(`ALTER TABLE ${t} ADD COLUMN IF NOT EXISTS created_by_name TEXT`);
+  }
+
   // deductible_amount is null for the common case ("equals amount"); only
   // set when it genuinely differs from gifts.amount, i.e. a quid pro quo gift.
   await pool.query(`ALTER TABLE gifts ADD COLUMN IF NOT EXISTS deductible_amount NUMERIC`);
