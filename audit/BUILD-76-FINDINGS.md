@@ -304,3 +304,33 @@ time on this machine.
    went through the pre-push gate (one blocked push: the self-inflicted
    tenant-matrix port collision, § Part 5 note; re-run green).
 8. **status.js aligned** — checked after CI deploy (below).
+
+## FINAL CONVERGENCE (2026-09-03 evening)
+
+`node scripts/status.js`: **aligned** — local HEAD == origin/main == prod
+backend == prod frontend == `7998741`. `landing-prod-verify.js` 29/29
+against the converged frontend. Prod `/health` ok at the same sha; prod
+`GET /drift` answers correctly (the demo org's file currently yields zero
+drifting donors — Jonathan's standing `seed-build72-demo.js` item, a prod
+write reserved for him, is what puts drifted demo donors in that file).
+
+One deploy wrinkle, resolved: the docs-only push's CI run had its
+deploy-vercel job CANCELLED by the deploy concurrency group while its
+deploy-railway completed — a brief backend/frontend split-brain that
+status.js flagged exactly as designed; rerun-failed-jobs converged it.
+
+## THE WORRY PARAGRAPH
+
+(1) **Drift has still never met a real donor file.** Everything above is
+the product agreeing with itself on constructed fixtures plus the WAP
+synthetic org (where the proportions looked sane: 4.7% high-confidence).
+A real export could still make the thresholds noisy — the constants are
+env-tunable for exactly that first afternoon. Jonathan's list item 3 is
+still the gate to calling this TRUE. (2) **Compute-on-read has no cache by
+design**; if a pilot org lands with 50k+ gifts, /donors and /drift reads
+will start showing up in the BUILD-54 perf traces — the fix is a short-TTL
+cache WITH write-path invalidation, never a schedule. (3) The
+quiet_past_pattern recipe and the home drift list read one computation but
+fire on different cadences (5-min sweep vs read) — a donor can appear on
+the list minutes before the officer's task exists; harmless today, worth
+remembering if anyone ever "fixes" the sweep by storing drift state.
