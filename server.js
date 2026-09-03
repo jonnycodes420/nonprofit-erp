@@ -216,10 +216,14 @@ function rateLimitHandler(req, res) {
   res.status(429).json({ error: "rate_limited", message: "Too many requests. Please try again later." });
 }
 
-// Load-test hook only: DISABLE_RATE_LIMIT=1 turns limiters off so a local
-// benchmark measures route cost, not limiter 429s (see LOADTEST_REPORT.md).
-// Never set in production — Railway env does not define it.
-const rateLimitDisabled = () => process.env.DISABLE_RATE_LIMIT === "1";
+// BUILD-75 — TEST_MODE=1 is the test-boot switch this flag actually became:
+// it turns limiters off (the original load-test purpose), arms the x-test-*
+// and sabotage seams, and disables the automatic notification-retry timers —
+// "DISABLE_RATE_LIMIT" stopped describing it several builds ago. The old env
+// var stays accepted as a deprecated alias so existing boots and CI keep
+// working; new recipes set TEST_MODE=1. Never set either in production.
+const testMode = () => process.env.TEST_MODE === "1" || process.env.DISABLE_RATE_LIMIT === "1";
+const rateLimitDisabled = testMode; // deprecated alias — the limiter skips below read it
 
 // Test-boot switch: DISABLE_BACKGROUND_TICKS=1 turns off every periodic
 // setTimeout/setInterval job (digests, sweeps, dunning, sequences, …) so a

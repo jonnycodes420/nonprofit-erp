@@ -43,7 +43,7 @@ jobs:
       DB_SSL: disable                 # stock postgres image has no SSL (db.js honors this)
       JWT_SECRET: local-test-secret
       PORT: "5601"
-      DISABLE_RATE_LIMIT: "1"
+      TEST_MODE: "1"                  # BUILD-75 rename (limiters off + test seams armed; DISABLE_RATE_LIMIT stays an accepted alias)
       SESSION_CACHE_TTL_MS: "0"       # deterministic: suites reuse fixed user ids (BUILD-38)
       RESEND_API_KEY: re_dummy_local
       RESEND_BASE_URL: http://localhost:5602

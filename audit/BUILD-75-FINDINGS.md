@@ -392,3 +392,46 @@ Settings › Team gains the Remove control (admin-only, quiet terracotta
 outline, one honest confirm). The tenant matrix auto-covers the new route
 (its inventory-drift check forced the regeneration in this same commit —
 the B.4 gate working as designed). `tests/user-removal.test.js` (16).
+
+---
+
+## PHASE D + THE SMALL ITEMS
+
+**D — specified, committed, NOT built:** `audit/BUILD-76-SPEC.md` — custom
+fields grown up (donor_ref + multi_select on donors/gifts/grants, server-side
+filtering, the soft-credit-never-touches-money invariant pinned the household
+way), logging as a byproduct (the call-done one-line loop, with a
+`log_capture_rate` metric so BUILD-77 can see whether it works), and exactly
+three canned automations on the existing workflows engine (quiet-past-own-
+pattern, tuned major-gift alert, pledge-due) — none of which may email a
+donor, per C.2. Sequencing: D.2 → D.3 → D.1.
+
+**Trigger data in the prospect script** (kingdom-builders `88ad857`):
+`scripts/nonprofit-leads.py` gains `contributions` + `contrib_yoy_pct` —
+year-over-year change in CONTRIBUTIONS (totcntrbgfts/totcntrbs, not total
+revenue, which program fees mask). Live-verified against ProPublica: EIN
+530196605 → −13.3%. Resume files from before the columns stay loadable.
+
+**`DISABLE_RATE_LIMIT` → `TEST_MODE`:** the flag became the test-boot
+switch several builds ago (limiters off + x-test/sabotage seams armed +
+automatic notification-retry timers off) and the name stopped describing
+it. `testMode()` reads `TEST_MODE=1` with the old var as a deprecated
+alias — every existing boot keeps working; run-all's header recipe and CI
+now set TEST_MODE. Verified with a TEST_MODE-only boot: portal 67/67 (the
+seam suite), guards 15/15, donor-accounts 52/52.
+
+**The platform billing webhook stays mock-era — noted, deliberately not
+fixed here.** Donor-side Stripe has been drilled against reality
+(BUILD-57/58); `/billing/webhook` has never met a real Stripe subscription
+event beyond test-mode idempotency suites. It becomes real work the week a
+paying org exists; touching it inside a correctness build with no live
+billing traffic would be verification theater.
+
+## JONATHAN'S LIST (unchanged from the brief, not Claude's to do)
+
+1. Run `scripts/seed-build72-demo.js` against production (two drifted demo
+   donors still wrong; it writes to prod).
+2. Book the attorney (unblocks Gmail verification, founding-partner terms).
+3. Get one real donor file — every correctness claim in this build is about
+   the product agreeing with itself; drift detection has never met a real
+   export.

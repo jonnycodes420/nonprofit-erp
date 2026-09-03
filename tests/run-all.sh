@@ -13,7 +13,7 @@
 #      online-gift path, AND with RESEND_BASE_URL pointing at a local sink port so
 #      workflows-e2e can capture (never send) the recipe emails:
 #        DATABASE_URL=…:5544/steward_loadtest JWT_SECRET=local-test-secret \
-#        PORT=5601 DISABLE_RATE_LIMIT=1 SESSION_CACHE_TTL_MS=0 RESEND_API_KEY=re_dummy_local \
+#        PORT=5601 TEST_MODE=1 SESSION_CACHE_TTL_MS=0 RESEND_API_KEY=re_dummy_local \
 #        RESEND_BASE_URL=http://localhost:5602 DEMO_SMTP_FROM=noreply@stewardapp.dev \
 #        STRIPE_SECRET_KEY=sk_test_dummy STRIPE_WEBHOOK_SECRET=whsec_localtest \
 #        STRIPE_API_BASE=http://localhost:5603 \
