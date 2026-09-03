@@ -85,6 +85,11 @@ const PROD_READONLY = [
   // identity verified before use), plus a read-only Stripe cross-check
   // (paymentIntents.retrieve) that turns bucket-1 candidates into proven drift.
   "build73-cents-audit",
+  // BUILD-75 Phase 0 — the receipt-numbering + digest-dedup audits. Same
+  // construction as the cents audits (SELECTs only, identity verified via
+  // /health + current_database() before the connection is used for anything,
+  // --i-know-this-is-prod required for a remote target). Never writes.
+  "build75-phase0-audit",
   // BUILD-72 Part 4 — a pure SOURCE scan (reads server.js/db.js off disk and
   // counts civil-date/instant confusion sites). Touches no server, no database
   // and no network at all.
