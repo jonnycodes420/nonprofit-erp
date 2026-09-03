@@ -10289,7 +10289,7 @@ app.delete("/programs/:id/grants/:grantId", requireAuth, requireAdmin, wrap(asyn
 // ── Annual Fund ────────────────────────────────────────────────────────────
 app.get("/annual-fund", requireAuth, wrap(async (req, res) => {
   const { orgId } = req.user;
-  const year = parseInt(req.query.year) || new Date().getFullYear();
+  const year = parseInt(req.query.year) || orgTime.parseCivil(orgToday(await orgTz(orgId))).y; // ORG_TZ_SEAM_OK (BUILD-75 A.4)
   const prevYear = year - 1;
 
   const goalRows = await query(
@@ -21056,7 +21056,12 @@ const SECTOR_AVG_RETENTION_RATE = 43;
 // scope retention to just that user's assigned donors (same assigned_to
 // pattern as GET /dashboard/today) — /annual-fund never passes this, so its
 // behavior is unchanged.
-async function computeRetentionRate(orgId, { year = new Date().getFullYear(), gifts, userId } = {}) {
+async function computeRetentionRate(orgId, { year = null, gifts, userId } = {}) {
+  // ORG_TZ_SEAM_OK (BUILD-75 A.4) — the default "this year" is the ORG's civil
+  // year, not the process clock's. From 19:00 EST every Dec 31 the UTC default
+  // bucketed by a year that hadn't started locally: retention against a
+  // nearly-empty new year, snapshotted into metric_snapshots as a cliff.
+  if (year == null) year = orgTime.parseCivil(orgToday(await orgTz(orgId))).y;
   const prevYear = year - 1;
   // Only donor_id + date are read below — SELECT * was shipping every column
   // of 200k+ rows (~70MB heap churn per call at load-test scale). The JS
