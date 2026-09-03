@@ -2916,12 +2916,11 @@ app.post("/org/load-sample-data", requireAuth, wrap(async (req, res) => {
   const userRows = await query("SELECT name FROM users WHERE id=?", [userId]);
   const userName = userRows[0]?.name || "Sample User";
 
-  const today = new Date();
-  function dAgo(n) {
-    const d = new Date(today);
-    d.setDate(d.getDate() - n);
-    return d.toISOString().split("T")[0];
-  }
+  // ORG_TZ_SEAM_OK (BUILD-75 A.5) — sample dates are civil dates in the ORG's
+  // timezone; the old UTC slice dated every demo row for tomorrow when the
+  // sample data was loaded in the local evening.
+  const sampleToday = orgToday(await orgTz(orgId));
+  function dAgo(n) { return orgTime.addDays(sampleToday, -n); }
 
   // Insert 3 sample funds
   const fGen = "fund_smpl_general", fEdu = "fund_smpl_edu", fCap = "fund_smpl_capital";
@@ -10012,7 +10011,7 @@ async function runCampaignSend(campaign, org, donors) {
         console.log(`[campaign:${campaign.id}] Resend HTTP API configured — from=${smtpFrom}`);
       }
 
-      const year = String(new Date().getFullYear());
+      const year = orgToday(await orgTz(org.id)).slice(0, 4); // ORG_TZ_SEAM_OK (BUILD-75 A.5) — the {{year}} token is the org's civil year
       const brandHeader = await brandEmailHeaderHtml(org.id); // BUILD-13 — once per send, not per recipient
       const campaignFrom = smtpFrom ? fromWithDisplayName((await resolveOrgBrandTheme(org.id).catch(() => null))?.displayName, smtpFrom) : smtpFrom; // BUILD-64: org name in the inbox, resolved once
 
@@ -12708,7 +12707,9 @@ app.get("/reports/:key", requireAuth, wrap(async (req, res) => {
 // double-sends. A double-send is a trust disaster; the reservation is
 // non-negotiable, exactly like workflow_runs.
 
-function digestYmd(d) { return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; }
+// (digestYmd deleted, BUILD-75 A.5 — its last caller now reads orgToday; a
+// process-clock date formatter kept around is a tainted helper waiting for a
+// new caller, which is exactly the class the reachability guard exists for.)
 // Monday-based week. offset 0 = the week containing `now`; -1 = the prior
 // (most-recently-completed) week. key is stable per Monday.
 // BUILD-72 Part 4 — both delegate to the seam. They used to build windows from
@@ -12728,7 +12729,7 @@ function monthBounds(offset = 0, org = null, atInstant = new Date()) {
 // tasks); org-wide otherwise. today gates the past-due-tasks section.
 async function composeWeekInReview(orgId, win, officerId = null) {
   const { start, end } = win;
-  const today = digestYmd(new Date());
+  const today = orgToday(await orgTz(orgId)); // ORG_TZ_SEAM_OK (BUILD-75 A.5) — past-due gating on the ORG's civil date
   const dFilter = officerId ? "AND d.assigned_to = ?" : "";
   const dParam = officerId ? [officerId] : [];
   const gifts = await query(
@@ -13447,19 +13448,24 @@ async function computeMilestoneCandidates(orgId) {
      WHERE org_id = ? AND deleted_at IS NULL AND email IS NOT NULL AND email != '' AND first_gift_date IS NOT NULL`,
     [orgId]
   );
-  const today = new Date();
+  // ORG_TZ_SEAM_OK (BUILD-75 A.5) — anniversary math is CIVIL-date arithmetic
+  // in the org's timezone: the org's today vs the stored first-gift civil date,
+  // both as Y/M/D. The old form compared process-clock parts to a
+  // new Date(str) parse (UTC midnight re-read in the process zone), which near
+  // month boundaries in the UTC evening put "today" a day/month ahead.
+  const today = orgTime.parseCivil(orgToday(await orgTz(orgId)));
   for (const d of anniversaryDonors) {
-    const first = new Date(d.first_gift_date);
-    if (isNaN(first.getTime())) continue;
-    const dayDiff = Math.abs(today.getDate() - first.getDate());
+    const first = orgTime.parseCivil(d.first_gift_date);
+    if (!first) continue;
+    const dayDiff = Math.abs(today.d - first.d);
     const inWindow = dayDiff <= 3 || dayDiff >= 27; // loose +/-3 day window, tolerates month-length wraparound
-    const monthsSince = (today.getFullYear() - first.getFullYear()) * 12 + (today.getMonth() - first.getMonth());
+    const monthsSince = (today.y - first.y) * 12 + (today.m - first.m);
     if (monthsSince === 6 && inWindow) {
       candidates.push({ donorId: d.id, milestoneKey: "anniversary_6mo", milestoneType: "anniversary", label: "6-month" });
       continue;
     }
-    const yearsSince = today.getFullYear() - first.getFullYear();
-    if (yearsSince >= 1 && today.getMonth() === first.getMonth() && inWindow) {
+    const yearsSince = today.y - first.y;
+    if (yearsSince >= 1 && today.m === first.m && inWindow) {
       candidates.push({ donorId: d.id, milestoneKey: `anniversary_year_${yearsSince}`, milestoneType: "anniversary", label: `${yearsSince}-year` });
     }
   }

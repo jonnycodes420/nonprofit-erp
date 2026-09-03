@@ -103,3 +103,57 @@ recipients to ignore the email.
 duplicate and no gap. Both audits are clean.** Per the build brief: a clean
 measurement is a result. Phase A proceeds in its planned order — nothing
 jumps the queue.
+
+---
+
+## PHASE A — FINISH THE DATE SEAM
+
+### A.1 — Receipt and identifier year prefixes (commit `aa2f964`)
+
+`allocateReceiptNumber` now derives its year prefix from the org's civil
+year through the seam. **No migration was needed**: Phase 0.1 measured zero
+receipts with a wrong Axis-A prefix, so there was nothing to renumber — the
+rule "do not silently renumber an issued receipt" never had to be invoked.
+Also routed: the preview number, both `issueDate` stamps, `giftDate` /
+statement line-item display (new `orgTime.formatCivil` — the
+`new Date(str).toLocaleDateString` round-trip is correct only in a UTC
+process zone), the board-report quarter/year stamp + period bounds, and the
+three export filenames.
+
+### A.2/A.3 — the daily reminder (commit `8d668ba`)
+
+Window and day are computed per org through `orgClock`; `localDateKey` is
+deleted. The transition executed exactly as §0.2 predicted: string-identical
+keys, no double, no skip, no migration. **User-visible before the fix:** the
+"morning brief" arrived at 2:00am ET (every production send; Phase 0.2's
+observed data), and the task list inside it was filtered on the UTC day —
+masked only because 2am ET and 6am UTC share a civil date.
+
+### A.4 — retention default year (commit `334dfd3`)
+
+Default year resolves through the seam inside the helper; `/annual-fund`'s
+own default routes the same way. **Stored-figure check (read-only, prod):**
+229 `retention_rate` snapshots, 2026-07-17→2026-09-03, zero taken inside a
+Dec-31 local/UTC disagreement window → no stored figure was ever computed
+on the wrong basis; nothing recomputed.
+
+### A.5 — the remaining tainted helpers → ZERO
+
+The reachability scan now reports **0 tainted helpers, 0 call sites** (was
+10 / 72 when BUILD-74 filed it). Per-site verdicts, with user visibility:
+
+| Helper (callers) | Fix | User-visible? What a customer would have seen |
+|---|---|---|
+| `dAgo` (58, all inside `POST /org/load-sample-data`) | helper body routed through the seam — one edit cleans all 58 callers | Marginal: sample data loaded in the local evening carried tomorrow's dates ("last gift: tomorrow" on a demo row). Demo-only, no real data |
+| `runCampaignSend` (2) | `{{year}}` template token = org's civil year | Yes, narrowly: a campaign sent 7pm–midnight ET on Dec 31 rendered next year's year in any template using `{{year}}` (typically a footer). No production campaign has been sent in that window |
+| `digestYmd` (1, `composeWeekInReview`) | caller reads `orgToday`; **helper deleted** (a kept-around process-clock formatter is a tainted helper waiting for a new caller) | Yes: the Week-in-Review "past-due tasks" section classified a task due *today* as past-due from 8pm ET — same class as the BUILD-72 Part 0 capture, in an email |
+| `computeMilestoneCandidates` (1) | anniversary math rewritten as pure civil Y/M/D arithmetic vs the org's today | Mild: near month boundaries in the UTC evening, anniversary candidates fired a day early/late. Staff-review queue only — a human saw a slightly mistimed suggestion, no donor ever did |
+| `seedData` (db.js, boot) | `seedAgo`/`seedFromNow` are civil `addDays` on the org-zone today; `elenaFirst`/`julianLastGift` civil too | Demo-only (org_creo): evening deploys seeded demo dates one day forward |
+| `monthsSince` (0 callers) | was an inline expression inside `computeMilestoneCandidates` the scanner parsed as a helper; gone with that rewrite | n/a |
+
+**Not in scope, noted:** the §5 expression axis still holds ~14 inline
+sites (e.g. `snapshotMetricsForOrg`'s UTC `snapshot_date`, the
+`startOfMonth` trio at server.js:~16940, portal `nowYear` display defaults)
+— pinned by the §5 baseline, each an instant-vs-civil display/bucketing
+default rather than a consumed helper value. They decrease the baseline as
+they get routed; none mints an identifier or reaches a donor.

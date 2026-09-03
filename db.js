@@ -2,6 +2,7 @@ require("dotenv").config();
 const { Pool } = require("pg");
 const { randomUUID: uuid } = require("crypto");
 const bcrypt = require("bcryptjs");
+const orgTime = require("./orgTime"); // BUILD-75 A.5 — seed dates are CIVIL dates in the default org timezone, never UTC slices of the process clock
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
@@ -2603,9 +2604,11 @@ async function seedData() {
   // so the Dashboard's new milestone widget has real content. Dates are
   // computed relative to seed time rather than hardcoded, so they don't go
   // stale the way g1-g5's 2025 deadlines did.
-  const seedNow = new Date();
-  const seedAgo = n => { const d = new Date(seedNow); d.setDate(d.getDate() - n); return d.toISOString().split("T")[0]; };
-  const seedFromNow = n => { const d = new Date(seedNow); d.setDate(d.getDate() + n); return d.toISOString().split("T")[0]; };
+  // ORG_TZ_SEAM_OK — org_creo sits in the seam's default zone; a seed run in
+  // the UTC evening must not date everything for tomorrow.
+  const seedToday = orgTime.orgToday({});
+  const seedAgo = n => orgTime.addDays(seedToday, -n);
+  const seedFromNow = n => orgTime.addDays(seedToday, n);
 
   const stageDonors = [
     ["dseed_01", orgId, "Priya Anand",     "panand@example.com",    "212-555-0801", "new",   "prospect", 0,     null, null,         0, '["board-referral"]', "Introduced by a board member at the spring gala. Not yet engaged.", null],
@@ -2709,19 +2712,19 @@ async function seedData() {
   // Personal-note reminders — real, computed talking points (not AI-drafted
   // text) for the org's highest-value/most-personal milestone moments.
   // Mirrors the shape computeNoteTalkingPoints() would actually produce.
-  const elenaFirst = new Date(seedNow); elenaFirst.setDate(elenaFirst.getDate() - 1000);
+  const elenaFirst = seedAgo(1000); // civil YYYY-MM-DD, via the seam
   const elenaYears = Math.floor(1000 / 365.25);
-  const julianLastGift = new Date(seedNow); julianLastGift.setDate(julianLastGift.getDate() - 150);
+  const julianLastGift = seedAgo(150);
   const noteReminders = [
     ["notereminder_01", orgId, "dseed_09", null, "threshold_10000", JSON.stringify([
       "Just crossed $10,000 in total lifetime giving ($12,500 total).",
       'From their file: "Just crossed $10,000 lifetime giving. High-touch relationship, board-adjacent."',
-      `They've been giving for ${elenaYears} years — since ${elenaFirst.toLocaleDateString("en-US",{month:"long",year:"numeric"})}.`,
+      `They've been giving for ${elenaYears} years — since ${orgTime.formatCivil(elenaFirst).replace(/ \d+,/, "")}.`,
     ]), "pending"],
     ["notereminder_02", orgId, "dseed_06", null, "anniversary_year_2", JSON.stringify([
       "This marks their 2-year anniversary with your organization.",
       'From their file: "Consistent annual donor, due for this year\'s ask conversation."',
-      `Most recent gift: $5,000 on ${julianLastGift.toLocaleDateString("en-US",{month:"long",day:"numeric",year:"numeric"})}.`,
+      `Most recent gift: $5,000 on ${orgTime.formatCivil(julianLastGift)}.`,
     ]), "pending"],
   ];
   for (const n of noteReminders) {
