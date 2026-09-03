@@ -17,7 +17,11 @@ import {
 //   · a price, a plan name, a tier, or a founding-partner rate. Cost is a
 //     conversation. Every path ends at Start free or Talk to the founder.
 //   · invented social proof — no logos, no review scores, no testimonials,
-//     no customer counts.
+//     no customer counts, no "trusted by", no "join hundreds of". BUILD-74
+//     removed the section that said "Steward has no customers yet" out loud.
+//     That is a CUT, not a change of fact: the limitation is now stated in the
+//     sales conversation instead of on the page, and its absence here is not
+//     permission to imply the opposite. See audit/BUILD-74-FINDINGS.md.
 //   · an outcome claim. The value math describes the SIZE OF THE PROBLEM and
 //     never Steward's results (BUILD-73 Part 3; the ban is asserted in
 //     tests/reserved-recovered.test.js and it scans this file).
@@ -37,7 +41,12 @@ const C = {
   cream2:  "#E8E4DB",
   gold:    "#C9A84C",
   greenDk: "#0D5C3A",
-  ink3:    "#6B6560",
+  // Deliberately NOT shared.jsx's T.ink3 (#6B6560), which this page used to
+  // copy. 5.81:1 on cream2, 6.31:1 on cream; #6B6560 was 4.53:1 — passing AA
+  // with 0.03 of headroom, so any future nudge to either value dropped it
+  // below the line silently. The floor in landing-prod-verify.js is 5.0,
+  // which is a margin a test can actually catch.
+  ink3:    "#5A554F",
   sage:    "#8FA896",
 };
 
@@ -50,23 +59,23 @@ const FOUNDER_MAILTO = "mailto:jonathan@stewardapp.dev";
 // invented: a guessed school or legal entity name on a public page is a
 // fabrication, and a blank one is a page that looks broken without saying why.
 export const PLACEHOLDERS = {
-  founderLastName: "[LAST NAME]",        // TODO: Jonathan's surname
-  founderSchool:   "[SCHOOL]",           // TODO: the school he attends
-  founderPhoto:    "[ FOUNDER PHOTO ]",  // TODO: a real photo, never a stock portrait
-  legalEntity:     "[LEGAL ENTITY NAME]",// TODO: the registered entity for the © line
+  legalEntity: "[LEGAL ENTITY NAME]", // TODO: the registered entity for the © line
 };
 const isPlaceholder = v => typeof v === "string" && v.trim().startsWith("[");
 
 // A placeholder renders in a dotted outline so it reads as "not filled in yet"
 // at a glance, on the page, to anyone — including whoever is about to demo it.
-function Placeholder({ value, block }) {
+// Colour and border INHERIT. The only surviving caller is the © line in the
+// ink footer, and a hardcoded warm grey there measured 2.42:1 — a placeholder
+// nobody can read is exactly the failure this component exists to prevent.
+// currentColor keeps it legible on whatever ground it is dropped onto next.
+function Placeholder({ value }) {
   if (!isPlaceholder(value)) return <>{value}</>;
   const style = {
-    display: block ? "flex" : "inline-flex", alignItems: "center", justifyContent: "center",
-    border: `1px dashed rgba(15, 26, 18, 0.32)`, borderRadius: block ? 12 : 4,
-    color: C.ink3, letterSpacing: "0.14em", fontSize: 13, fontFamily: "'DM Sans', system-ui, sans-serif",
-    padding: block ? 0 : "1px 7px", background: block ? C.cream : "transparent",
-    width: block ? "100%" : "auto", height: block ? "100%" : "auto",
+    display: "inline-flex", alignItems: "center", justifyContent: "center",
+    border: "1px dashed currentColor", borderRadius: 4, color: "inherit",
+    letterSpacing: "0.14em", fontSize: 13, fontFamily: "'DM Sans', system-ui, sans-serif",
+    padding: "1px 7px", background: "transparent",
   };
   return <span style={style}>{value}</span>;
 }
@@ -271,7 +280,6 @@ const STYLES = `
   .lp-cards    { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 26px;
                  margin-top: 58px; align-items: start; }
   .lp-split    { display: grid; grid-template-columns: 0.9fr 1.1fr; gap: 72px; align-items: center; }
-  .lp-founder  { display: grid; grid-template-columns: 0.72fr 1.28fr; gap: 64px; align-items: start; }
   .lp-sechead  { display: flex; align-items: flex-end; justify-content: space-between; gap: 48px; }
   .lp-ctarow   { display: flex; align-items: center; gap: 24px; margin-top: 10px; flex-wrap: wrap; }
   .lp-verts    { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 26px; margin-top: 58px; }
@@ -290,7 +298,7 @@ const STYLES = `
     .lp-sec     { padding: 72px 40px; }
     .lp-nav     { padding: 0 40px; }
     .lp-hero    { grid-template-columns: 1fr; gap: 44px; padding: 60px 40px 64px; }
-    .lp-split, .lp-founder { grid-template-columns: 1fr; gap: 40px; }
+    .lp-split   { grid-template-columns: 1fr; gap: 40px; }
     .lp-sechead { flex-direction: column; align-items: flex-start; gap: 18px; }
     .lp-3col, .lp-cards, .lp-verts { grid-template-columns: 1fr; gap: 32px; margin-top: 44px; }
     .lp-cards > * { margin-top: 0 !important; }
@@ -634,7 +642,7 @@ export default function Landing() {
                 <span style={{ height: 8, background: "rgba(240, 237, 230, 0.2)", borderRadius: 999, width: 80, display: "block" }} />
               </div>
               <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-                <div className="lp-serif" style={{ fontSize: 30, color: "rgba(13, 92, 58, 0.3)", lineHeight: 1 }}>01</div>
+                <div aria-hidden="true" className="lp-serif" style={{ fontSize: 30, color: "rgba(13, 92, 58, 0.3)", lineHeight: 1 }}>01</div>
                 <h3 className="lp-h3" style={{ fontSize: 25, lineHeight: 1.18 }}>A short list, not a dashboard</h3>
                 <p style={{ fontSize: 15, lineHeight: 1.65, color: C.ink3 }}>
                   Open Monday morning to the people who changed, ranked, with the reason written next to each name. Nothing to build first.
@@ -659,7 +667,7 @@ export default function Landing() {
                 <span style={{ flexGrow: 1, height: 5, background: C.gold, borderRadius: 3, display: "block" }} />
               </div>
               <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-                <div className="lp-serif" style={{ fontSize: 30, color: "rgba(201, 168, 76, 0.85)", lineHeight: 1 }}>02</div>
+                <div aria-hidden="true" className="lp-serif" style={{ fontSize: 30, color: "rgba(201, 168, 76, 0.85)", lineHeight: 1 }}>02</div>
                 <h3 className="lp-h3" style={{ fontSize: 25, lineHeight: 1.18 }}>Drift, before it becomes a lapse</h3>
                 <p style={{ fontSize: 15, lineHeight: 1.65, color: C.ink3 }}>
                   A donor who gave every March and hasn't yet isn't lapsed. That is the window where a phone call still works, and it closes quietly.
@@ -692,69 +700,13 @@ export default function Landing() {
                 </div>
               </div>
               <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-                <div className="lp-serif" style={{ fontSize: 30, color: "rgba(13, 92, 58, 0.3)", lineHeight: 1 }}>03</div>
+                <div aria-hidden="true" className="lp-serif" style={{ fontSize: 30, color: "rgba(13, 92, 58, 0.3)", lineHeight: 1 }}>03</div>
                 <h3 className="lp-h3" style={{ fontSize: 25, lineHeight: 1.18 }}>Ask versus gift, per officer</h3>
                 <p style={{ fontSize: 15, lineHeight: 1.65, color: C.ink3 }}>
                   What was asked, what came in, and by whom. The report your board wants and your current system makes you assemble by hand.
                 </p>
               </div>
             </article>
-          </div>
-        </section>
-
-        {/* ── WHO BUILT THIS ─────────────────────────────────────────────── */}
-        <section className="lp-sec" style={{ background: C.cream2 }}>
-          <div className="lp-founder">
-            <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
-              <div style={{
-                width: "100%", aspectRatio: "4 / 5", background: C.cream,
-                border: "1px solid rgba(15, 26, 18, 0.14)", borderRadius: 12,
-                display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden",
-              }}>
-                <Placeholder value={PLACEHOLDERS.founderPhoto} block />
-              </div>
-              <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                <div style={{ fontSize: 17, fontWeight: 600 }}>
-                  Jonathan <Placeholder value={PLACEHOLDERS.founderLastName} />
-                </div>
-                <div style={{ fontSize: 15, color: C.ink3 }}>Founder, Steward</div>
-              </div>
-            </div>
-
-            <div style={{ display: "flex", flexDirection: "column", gap: 26 }}>
-              <div className="lp-eyebrow" style={{ color: C.greenDk }}>WHO BUILT THIS</div>
-
-              <h2 className="lp-h2" style={{ fontSize: 50, lineHeight: 1.06, letterSpacing: "-0.025em" }}>
-                You didn't take this job to chase money.
-              </h2>
-
-              <p style={{ fontSize: 18, lineHeight: 1.7, color: C.ink3 }}>
-                Nobody starts a nonprofit because they love donor databases. You started it because of a kid who needed a place to go after school, or a family who needed a meal, or a building worth saving. That was the whole point. And then somehow the week fills up with spreadsheets and mail merges and a system that makes you assemble by hand the one report your board actually asked for.
-              </p>
-
-              <p style={{ fontSize: 18, lineHeight: 1.7, color: C.ink3 }}>
-                My father has spent his career as a development officer, so I grew up hearing about this at the dinner table — not the fundraising wins, but the good people who left quietly and were only noticed a year later, when the number came in short. He'd know their names. He'd know exactly what happened. He just didn't have anything that told him in time.
-              </p>
-
-              <p style={{ fontSize: 18, lineHeight: 1.7, color: C.ink3 }}>
-                That's the only thing Steward is trying to do: give you back the hours the software should never have taken, and put the right name in front of you while there is still something you can do about it. Less time keeping the machine running. More time on the work you actually signed up for.
-              </p>
-
-              <p style={{ fontSize: 18, lineHeight: 1.7, color: C.ink3 }}>
-                I'm Jonathan. I'm a student at <Placeholder value={PLACEHOLDERS.founderSchool} />, I started Steward in May 2026, and I have written every line of it since. It was specified with my dad, argued about with him, and rebuilt more than once because he looked at a screen and told me it was wrong.
-              </p>
-
-              <div style={{ borderLeft: `2px solid ${C.gold}`, paddingLeft: 24, display: "flex", flexDirection: "column", gap: 8 }}>
-                <p style={{ fontSize: 18, lineHeight: 1.7, color: C.ink }}>
-                  I am young for this and I am not going to pretend otherwise. What it buys you is someone who picks up the phone, ships the fix the same week, and has no bigger customer to prioritise ahead of you.
-                </p>
-              </div>
-
-              <div className="lp-ctarow" style={{ marginTop: 6 }}>
-                <button className="lp-btn lp-btn-ink lp-focus" onClick={talkToFounder}>Talk to the founder</button>
-                <span style={{ fontSize: 15, color: C.ink3 }}>Fifteen minutes, and I will tell you if Steward is wrong for you.</span>
-              </div>
-            </div>
           </div>
         </section>
 

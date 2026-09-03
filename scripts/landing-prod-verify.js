@@ -47,6 +47,13 @@ const path = require("path");
 const BASE = (process.env.BASE || "https://www.stewardapp.dev").replace(/\/+$/, "");
 const PW = process.env.PLAYWRIGHT_DIR || path.join(process.env.HOME || "", "steward-qa");
 
+// ── GUARD COUNT ────────────────────────────────────────────────────────────
+// BUILD-74 deleted a whole section from the page. A gate that deletes copy and
+// still runs the same number of guards is a gate still asserting against copy
+// that no longer exists, so the count is reported rather than left implicit:
+// if it does not FALL after a deletion, something stale survived.
+const GUARDS_BEFORE = 30; // BUILD-73's count, measured against prod at 261dc73
+
 let pass = 0, fail = 0;
 const ok = (name, cond, extra) => {
   if (cond) { pass++; console.log("  PASS  " + name); }
@@ -87,7 +94,6 @@ const rgb = s => (s.match(/\d+/g) || []).slice(0, 3).map(Number);
     "Nobody decides to stop giving. It just stops.",         // the year
     "They have names, and one of them is about to be gone.", // every dot is a person
     "Built around the fundraiser's week, not the database.", // what it does
-    "You didn't take this job to chase money.",              // who built this
     "Find out which of yours are gold.",                     // closing
   ];
   const positions = SECTIONS.map(s => text.indexOf(s));
@@ -109,8 +115,20 @@ const rgb = s => (s.match(/\d+/g) || []).slice(0, 3).map(Number);
 
   // ── §3 · honesty gates — permanent, and older than this rebuild ─────────
   console.log("\n— §3 · honesty —");
-  ok("no fabricated social proof (trusted-by / as-seen-in / star ratings / user counts)",
-     !/trusted by|as seen in|★|rated \d|\d+\s*(customers|nonprofits|organizations)\s+(use|trust)/i.test(text), null);
+  // BUILD-74 deleted the section that said "Steward has no customers yet" out
+  // loud. That copy moved into the sales conversation; it did NOT stop being
+  // true. So this guard is deliberately BROADER than the string it replaces —
+  // it asserts on the whole family of things that would imply the opposite,
+  // because the page no longer carries a sentence contradicting them.
+  const SOCIAL_PROOF = [
+    /trusted by/i, /as seen in/i, /join (hundreds|thousands|dozens|\d+)/i,
+    /loved by/i, /used by \d/i, /\bour customers\b/i, /\btestimonial/i,
+    /★|⭐/, /\brated\s*\d/i, /\d(\.\d)?\s*(\/\s*5|out of 5|stars)/i,
+    /\b\d[\d,]*\+?\s*(customers|clients|nonprofits|organizations|orgs|teams|users)\b/i,
+    /\b(customers|nonprofits|organizations|orgs|teams)\s+(use|trust|rely on|switched to)\b/i,
+  ];
+  ok("no fabricated social proof — the whole family, not one string (logos, review scores, testimonials, customer counts, trusted-by, join-hundreds-of)",
+     !SOCIAL_PROOF.some(re => re.test(text)), SOCIAL_PROOF.filter(re => re.test(text)).map(String));
   const imgs = await page.evaluate(() => [...document.querySelectorAll("img")].map(i => i.getAttribute("src") || ""));
   ok("no logo-bar imagery", !imgs.some(s => /logo|client|partner/i.test(s)), imgs);
   ok("the 43%-class stat is attributed to the Fundraising Effectiveness Project",
@@ -126,9 +144,15 @@ const rgb = s => (s.match(/\d+/g) || []).slice(0, 3).map(Number);
   const BANNED = [/\brecovered\b/i, /\bre-?engaged\b/i, /\brecaptured\b/i, /\bwon\s+back\b/i, /\bbrought\s+back\b/i];
   ok("no outcome-claim language (BUILD-73 Part 3's ban reaches the landing page too)",
      !BANNED.some(re => re.test(text)), BANNED.filter(re => re.test(text)).map(String));
-  ok("the placeholders are VISIBLE, not silently blank or invented",
-     ["[LAST NAME]", "[SCHOOL]", "[ FOUNDER PHOTO ]", "[LEGAL ENTITY NAME]"].every(p => text.includes(p)),
-     ["[LAST NAME]", "[SCHOOL]", "[ FOUNDER PHOTO ]", "[LEGAL ENTITY NAME]"].filter(p => !text.includes(p)));
+  // [LAST NAME], [SCHOOL] and [ FOUNDER PHOTO ] went with the founder section
+  // in BUILD-74. The © line is the last unfilled value on the page, and it
+  // must still render VISIBLY rather than blank — a footer that silently says
+  // "© 2026" looks finished when it is not.
+  // No guard is added here for "the founder placeholders stayed gone". The
+  // build's rule is that this file ends with FEWER guards than it started
+  // with, and a same-count run is exactly the signal it exists to raise.
+  ok("the © placeholder is VISIBLE, not silently blank or invented",
+     text.includes("[LEGAL ENTITY NAME]"), null);
 
   // ── §4 · the dot field ──────────────────────────────────────────────────
   console.log("\n— §4 · the dot field —");
@@ -146,18 +170,36 @@ const rgb = s => (s.match(/\d+/g) || []).slice(0, 3).map(Number);
      jun && dec && jun.every(i => dec.includes(i)), null);
 
   // ── §5 · measured contrast ──────────────────────────────────────────────
-  console.log("\n— §5 · measured contrast —");
-  const c = await page.evaluate(() => {
-    const pick = sel => { const el = document.querySelector(sel); if (!el) return null;
+  // This used to sample TWO elements (h1 and the lede) at a 4.5 floor. Both
+  // measured 4.53:1 — AA with 0.03 of headroom, which is a pass no future
+  // tweak to either the ink or the ground could survive. BUILD-74 darkened
+  // the page grey to #5A554F (5.81:1 on cream2) and this became ONE guard
+  // that sweeps EVERY visible text element at a floor of 5.0. Sampling two
+  // elements was never the point; having a margin a test can catch is.
+  //
+  // aria-hidden subtrees are excluded, and the only text inside one is the
+  // decorative 01/02/03 card numerals. That exclusion lives in the MARKUP
+  // rather than in a selector list here, so it cannot quietly grow.
+  const FLOOR = 5.0;
+  console.log(`\n— §5 · measured contrast (floor ${FLOOR.toFixed(1)}:1, every text element) —`);
+  const swatches = await page.evaluate(() => {
+    const out = [];
+    for (const el of document.querySelectorAll(".lp *")) {
+      if (el.closest('[aria-hidden="true"]')) continue;
+      if (![...el.childNodes].some(n => n.nodeType === 3 && n.textContent.trim())) continue;
+      const cs = getComputedStyle(el);
+      if (cs.display === "none" || cs.visibility === "hidden" || parseFloat(cs.opacity) === 0) continue;
       let bg = "", n = el;
       while (n && (!bg || bg === "rgba(0, 0, 0, 0)")) { bg = getComputedStyle(n).backgroundColor; n = n.parentElement; }
-      return { fg: getComputedStyle(el).color, bg, size: parseFloat(getComputedStyle(el).fontSize) }; };
-    return { h1: pick("h1"), lede: pick("h1 + p") || pick("p") };
+      out.push({ t: el.textContent.trim().slice(0, 44), fg: cs.color, bg, size: parseFloat(cs.fontSize) });
+    }
+    return out;
   });
-  if (c.h1) ok(`hero headline contrast ${contrast(rgb(c.h1.fg), rgb(c.h1.bg)).toFixed(2)}:1 ≥ 4.5 (large text)`,
-    contrast(rgb(c.h1.fg), rgb(c.h1.bg)) >= 4.5, c.h1);
-  if (c.lede) ok(`hero lede contrast ${contrast(rgb(c.lede.fg), rgb(c.lede.bg)).toFixed(2)}:1 ≥ 4.5`,
-    contrast(rgb(c.lede.fg), rgb(c.lede.bg)) >= 4.5, c.lede);
+  const measured = swatches.map(s => ({ ...s, c: contrast(rgb(s.fg), rgb(s.bg)) })).sort((a, b) => a.c - b.c);
+  const worst = measured[0];
+  ok(`all ${measured.length} visible text elements ≥ ${FLOOR.toFixed(1)}:1 (worst ${worst ? worst.c.toFixed(2) : "n/a"}:1)`,
+     measured.length > 20 && measured.every(m => m.c >= FLOOR),
+     measured.filter(m => m.c < FLOOR).slice(0, 5).map(m => `${m.c.toFixed(2)}:1 ${m.fg} on ${m.bg} — ${m.t}`));
 
   // ── §6 · wiring, and nothing interrupts the reader ─────────────────────
   console.log("\n— §6 · wiring —");
@@ -212,6 +254,10 @@ const rgb = s => (s.match(/\d+/g) || []).slice(0, 3).map(Number);
   await rctx.close();
 
   await browser.close();
+  const ran = pass + fail;
+  const delta = ran - GUARDS_BEFORE;
   console.log(`\n${pass} passed, ${fail} failed`);
+  console.log(`${ran} guards ran \u2014 ${delta === 0 ? "SAME AS" : delta < 0 ? `${-delta} FEWER than` : `${delta} MORE than`} BUILD-73's ${GUARDS_BEFORE}.`);
+  if (delta === 0) console.log("  \u2191 BUILD-74 deleted a section. An unchanged count means a stale guard survived it.");
   process.exit(fail ? 1 : 0);
 })().catch(e => { console.error(e); process.exit(1); });
