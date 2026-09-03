@@ -232,15 +232,21 @@ in `tests/README.md`; neither is a regression.
 
 ---
 
-## PART 2 — NOT BUILT, AWAITING JONATHAN
+## PART 2 — DECIDED: NO LINE
 
-The build ships without the line above the closing CTA. The captures above are
-what the page looks like without it, at both widths, so the call can be made
-against the real thing rather than a description.
+**Jonathan's call, made against the captures: leave it out.** The feature grid
+runs straight into the closing ask, and that is the intended page.
 
-The seam is real: at 1440 the page runs from the third feature card straight
-into "Find out which of yours are gold." with nothing human between them.
-Whether that reads as abrupt or as clean is a judgement, and it is not mine.
+The proposal was one line above the closing CTA — *Built alongside a career
+development officer.* It was NOT built, and it should not be added later on the
+strength of this paragraph. If the seam ever reads wrong on the live page, that
+is a new decision with fresh eyes, not a resumption of this one.
 
-The proposed line, if wanted: *Built alongside a career development officer.*
-One line, above the closing CTA. No name, no photo, no bio, no age.
+## THE GREY — DECIDED: KEEP #5A554F
+
+Also Jonathan's call. `C.ink3` stays at `#5A554F` with the contrast floor at
+5.0, as built. The alternative on the table was reverting to `#6B6560` with a
+4.5 floor; it was not taken.
+
+The footer-placeholder fix (2.42:1 → inherit/currentColor) was independent of
+that choice — it failed AA under either grey — and stands either way.
