@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useMemo } from "react";
 import { apiFetch } from "../api";
-import { T } from "./shared";
+import { T, DriftBadge } from "./shared";
 
 // ── Global top bar (desktop shell only, BUILD-08; full-width BUILD-10) ──────
 // Slim 52px bar spanning the FULL viewport width (fixed, top:0/left:0/right:0),
@@ -104,6 +104,7 @@ export function TopBar({ auth, logout, onNavigate }) {
     const out = [];
     (results?.donors||[]).forEach(d=>out.push({
       group:"Donors", key:"d_"+d.id, title:d.name, sub:d.email||fmtMoney(d.total_giving)+" lifetime",
+      drift:d.drift||null,   // BUILD-76 — server-computed badge field rides the search payload
       onSelect:()=>onNavigate("donors",{selectDonorId:d.id}),
     }));
     (results?.grants||[]).forEach(g=>out.push({
@@ -173,7 +174,10 @@ export function TopBar({ auth, logout, onNavigate }) {
               onMouseDown={e=>{e.preventDefault();pick(item);}}
               onMouseEnter={()=>setSel(i)}
               style={{display:"block",width:"100%",textAlign:"left",background:active?T.bgElevated:"transparent",border:"none",borderLeft:`3px solid ${active?T.gold:"transparent"}`,padding:"7px 14px 7px 11px",cursor:"pointer",boxSizing:"border-box"}}>
-              <div style={{fontSize:13,fontWeight:600,color:"#f0ede6",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{item.title}</div>
+              <div style={{fontSize:13,fontWeight:600,color:"#f0ede6",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",display:"flex",alignItems:"center",gap:6}}>
+                <span style={{overflow:"hidden",textOverflow:"ellipsis"}}>{item.title}</span>
+                <DriftBadge drift={item.drift}/>
+              </div>
               {item.sub && <div style={{fontSize:11.5,color:"#8fa896",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{item.sub}</div>}
             </button>;
           })}

@@ -46,7 +46,12 @@ export function computeStageWeights(counts, stages, metric = "count", floor = 0.
 // visually resolve the bump. Lapsed keeps the same bar treatment (it always
 // used one) but stays a separate branch below — a leak out of the funnel,
 // not the next step in it.
-export default function FunnelChart({ counts, metric = "count", onStageClick, showLapsed = true, bandHeight = 40 }) {
+// BUILD-76 Part 2 — `drift` ({count, amount, onClick}) renders the FEATURED
+// out-flow row: drifting is the window where a call still works, so it leads;
+// lapsed (the failure state, after the window closed) stays below it,
+// smaller. The row renders only when count > 0 — a featured row proudly
+// reading zero is the exact mistake the old lapsed row made.
+export default function FunnelChart({ counts, metric = "count", onStageClick, showLapsed = true, bandHeight = 40, drift = null }) {
   const [hovered, setHovered] = useState(null);
   const coreStages = STAGES.filter(s => s.id !== "lapsed");
   const lapsedStage = STAGES.find(s => s.id === "lapsed");
@@ -104,6 +109,31 @@ export default function FunnelChart({ counts, metric = "count", onStageClick, sh
         );
       })}
 
+      {drift && drift.count > 0 && (
+        <div
+          onClick={drift.onClick || undefined}
+          onMouseEnter={() => setHovered("drift")}
+          onMouseLeave={() => setHovered(h => h === "drift" ? null : h)}
+          style={{
+            marginTop: 2, borderTop: "1px dashed " + T.bg3,
+            cursor: drift.onClick ? "pointer" : "default", borderRadius: 8,
+            padding: `${rowGap}px 6px 4px`, margin: "2px -6px 0",
+            background: hovered === "drift" ? T.gold500 + "14" : "transparent", transition: "background 0.15s ease",
+          }}
+        >
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", fontSize: 11, marginBottom: 5 }}>
+            <span style={{ fontWeight: 800, color: T.gold600, textTransform: "uppercase", letterSpacing: "0.06em" }}>◉ Drifting — Still Reachable</span>
+            <span style={{ color: T.ink3, display: "flex", alignItems: "center", gap: 5 }}>
+              {drift.count} · {drift.amount > 0 ? fmt(drift.amount) : "—"} at risk
+              <Chevron color={T.gold600} show={hovered === "drift"} />
+            </span>
+          </div>
+          <div style={{ background: T.bg, borderRadius: 5, height: barHeight, overflow: "hidden" }}>
+            <div style={{ height: "100%", width: `${Math.round(Math.max(0.08, Math.min(1, drift.count / max)) * 100)}%`, background: T.gold500, borderRadius: 5, transition: "width 0.4s ease" }} />
+          </div>
+        </div>
+      )}
+
       {showLapsed && lapsedStage && (
         <div
           onClick={onStageClick ? () => onStageClick("lapsed") : undefined}
@@ -116,14 +146,16 @@ export default function FunnelChart({ counts, metric = "count", onStageClick, sh
             background: hovered === "lapsed" ? lapsedStage.color + "0d" : "transparent", transition: "background 0.15s ease",
           }}
         >
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", fontSize: 11, marginBottom: 5 }}>
-            <span style={{ fontWeight: 800, color: lapsedStage.color, textTransform: "uppercase", letterSpacing: "0.06em" }}>↘ Leaking Out — Lapsed</span>
+          {/* Demoted whenever the drifting row leads (BUILD-76): lapsed is the
+              after-the-window failure state — kept, below, smaller. */}
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", fontSize: drift && drift.count > 0 ? 10 : 11, marginBottom: 5 }}>
+            <span style={{ fontWeight: 800, color: lapsedStage.color, textTransform: "uppercase", letterSpacing: "0.06em", opacity: drift && drift.count > 0 ? 0.75 : 1 }}>↘ Lapsed — Window Closed</span>
             <span style={{ color: T.ink3, display: "flex", alignItems: "center", gap: 5 }}>
               {baseLabel(lapsedStage)}
               <Chevron color={lapsedStage.color} show={hovered === "lapsed"} />
             </span>
           </div>
-          <div style={{ background: T.bg, borderRadius: 5, height: barHeight, overflow: "hidden" }}>
+          <div style={{ background: T.bg, borderRadius: 5, height: drift && drift.count > 0 ? Math.max(6, Math.round(barHeight * 0.55)) : barHeight, overflow: "hidden" }}>
             <div style={{ height: "100%", width: `${lapsedWidthPct}%`, background: lapsedStage.color, borderRadius: 5, transition: "width 0.4s ease" }} />
           </div>
         </div>

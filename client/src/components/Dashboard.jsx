@@ -258,6 +258,17 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
   const [homeData,setHomeData]=useState(null);
   const [firstTouchOpen,setFirstTouchOpen]=useState(false);
 
+  // ── BUILD-76 Part 2 — the Drifting surface ────────────────────────────────
+  // Org-wide (the headline is the landing page's sentence about the whole
+  // file), computed on read server-side — refetched after any done-action so
+  // the list, the badge counts and the headline can never be stale together.
+  const [driftData,setDriftData]=useState(null);      // capped list (the day view)
+  const [driftAllData,setDriftAllData]=useState(null); // see-all expansion, fetched on demand
+  const [driftLineFor,setDriftLineFor]=useState(null); // donorId with the one-line input open
+  const [driftLine,setDriftLine]=useState("");
+  const [driftBusy,setDriftBusy]=useState(false);
+  const loadDrift=()=>apiFetch("/drift").then(r=>{setDriftData(r);setDriftAllData(null);}).catch(()=>{});
+
   // ── BUILD-35: activation checklist state ──────────────────────────────────
   const setupOrgId=(()=>{try{return JSON.parse(localStorage.getItem("npe_org")||"{}").id||"org";}catch{return "org";}})();
   const [setupStatus,setSetupStatus]=useState(null);
@@ -445,6 +456,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
     apiFetch("/impact").then(r=>setImpact(r)).catch(()=>{});
     apiFetch("/fundraising/overview").then(r=>setFundOverview(r||null)).catch(()=>setFundOverview(null));
     loadGoal();
+    loadDrift();
   },[]);
 
   // Queue + hero metrics are re-fetched whenever scope changes (including
@@ -1085,19 +1097,37 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
           Stewardship Debt's invented composite score, see the demoted strip
           below) — the nonprofit sector average line already lived in the
           onboarding drip email before this. */
+  // BUILD-76 §2.2 — the lead stat is DOLLARS AT RISK FROM DRIFT, the same
+  // sentence the landing page makes with the org's own file. Retention (the
+  // pre-76 hero) is kept, demoted to the block below; the clever composites
+  // stay demoted further as chips. At $0 drift the card keeps Retention as
+  // hero — an honest zero is not a headline.
+  const heroIsDrift=!!(driftData&&driftData.atRiskAmount>0&&driftData.counts.driftingHigh>0);
   const retentionSection=stewardMetrics?(
         <div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:16,padding:"20px 24px",display:"flex",flexDirection:"column",gap:16}}>
-          {/* Donor Retention Rate — the Home dashboard's primary hero metric.
-              This is the number fundraisers already benchmark against (unlike
-              Stewardship Debt's invented composite score, see the demoted strip
-              below) — the nonprofit sector average line already lived in the
-              onboarding drip email before this. */}
-          <div>
+          {heroIsDrift&&(
+            <div onClick={()=>document.getElementById("dash-drifting")?.scrollIntoView({behavior:"smooth",block:"start"})}
+              className="card-click" style={{cursor:"pointer",borderRadius:12,margin:-4,padding:4}}>
+              <div style={{fontSize:10,fontWeight:800,letterSpacing:"0.1em",textTransform:"uppercase",color:T.ink3,marginBottom:6}}>At Risk From Drift</div>
+              <div style={{display:"flex",alignItems:"baseline",gap:10,flexWrap:"wrap"}}>
+                <div style={{fontSize:32,fontWeight:800,fontFamily:"'DM Serif Display',serif",color:T.ink,lineHeight:1}}>{fmtFull(driftData.atRiskAmount)}</div>
+                <span style={{fontSize:13,fontWeight:700,color:T.gold600}}>{driftData.counts.driftingHigh} donor{driftData.counts.driftingHigh===1?"":"s"} drifting</span>
+              </div>
+              <div style={{fontSize:13,fontWeight:600,color:T.ink2,marginTop:6,lineHeight:1.4,maxWidth:400}}>
+                Giving from donors quietly past their own pattern — each is on the Drifting list below, with the reason, while a call still works.
+              </div>
+            </div>
+          )}
+          {/* Donor Retention Rate — the pre-BUILD-76 hero metric, kept and
+              demoted below the drift headline (it remains the number
+              fundraisers benchmark against; the sector-average line already
+              lived in the onboarding drip email). */}
+          <div style={heroIsDrift?{borderTop:"1px solid "+T.bg3,paddingTop:14}:undefined}>
             <div onClick={openRetentionBreakdown} className="card-click" style={{display:"flex",flexWrap:"wrap",gap:20,alignItems:"center",cursor:"pointer",borderRadius:12,margin:-4,padding:4}}>
               <div style={{flex:"1 1 220px",minWidth:0}}>
                 <div style={{fontSize:10,fontWeight:800,letterSpacing:"0.1em",textTransform:"uppercase",color:T.ink3,marginBottom:6}}>Donor Retention Rate</div>
                 <div style={{display:"flex",alignItems:"baseline",gap:10,flexWrap:"wrap"}}>
-                  <div style={{fontSize:32,fontWeight:800,fontFamily:"'DM Serif Display',serif",color:retentionColor,lineHeight:1}}>
+                  <div style={{fontSize:heroIsDrift?22:32,fontWeight:800,fontFamily:"'DM Serif Display',serif",color:retentionColor,lineHeight:1}}>
                     {retentionTooEarly?"—":`${retentionCurrent}%`}
                   </div>
                   {!retentionTooEarly&&stewardMetrics.retentionRate.deltaVsTrendStart!=null&&(
@@ -1198,11 +1228,96 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
         </div>
       ):null;
 
+  // ── BUILD-76 Part 2 — the Drifting section, first in the work column ──────
+  // The one thing the product is named for, above Needs Your Attention (not
+  // beside it). Renders only when someone is actually drifting — a featured
+  // section proudly reading zero is the mistake the old lapsed row made.
+  // Each row: name · the reason in the donor's own pattern · the money.
+  // "Done" opens ONE inline line (Part 4 — the log is a byproduct of clearing
+  // the item, never a form); Skip is one keypress and is recorded as skipped.
+  const driftRows=driftAllData?driftAllData.list:(driftData?.list||[]);
+  const submitDriftDone=async(donorId,note)=>{
+    if(driftBusy)return;
+    setDriftBusy(true);
+    try{
+      await apiFetch(`/drift/${donorId}/done`,{method:"POST",body:JSON.stringify({note:note||""})});
+      setDriftLineFor(null);setDriftLine("");
+      await loadDrift();
+    }catch{/* leave the row; nothing was recorded */}
+    finally{setDriftBusy(false);}
+  };
+  const driftSection=driftData&&driftData.counts.driftingHigh>0&&driftRows.length>0?(
+      <div id="dash-drifting" style={{...cardWrap,borderColor:T.gold500+"55",scrollMarginTop:64}}>
+        <div className="dash-cpad" style={{...cPad,borderBottom:"1px solid "+T.bg3,...sHdr}}>
+          <span style={{display:"flex",alignItems:"center",gap:8}}>
+            <span aria-hidden style={{color:T.gold500,fontSize:13,lineHeight:1}}>◉</span>
+            <span style={sTitle}>Drifting</span>
+            <span style={{fontSize:11.5,color:T.ink3}}>
+              {fmtFull(driftData.atRiskAmount)} at risk · {driftData.counts.driftingHigh} donor{driftData.counts.driftingHigh===1?"":"s"} past their own pattern
+            </span>
+          </span>
+          {driftData.total>driftData.list.length&&!driftAllData&&(
+            <button onClick={()=>apiFetch("/drift?all=1").then(r=>setDriftAllData(r)).catch(()=>{})} style={sLink}>
+              See all {driftData.total} →
+            </button>
+          )}
+          {driftAllData&&(
+            <button onClick={()=>setDriftAllData(null)} style={sLink}>Show top {driftData.cap}</button>
+          )}
+        </div>
+        <ul className="attn-list" style={{listStyle:"none",margin:0,padding:0}}>
+          {driftRows.map((r,i)=>{
+            const lineOpen=driftLineFor===r.donorId;
+            return(
+              <li key={r.donorId} style={{borderBottom:i<driftRows.length-1?"1px solid "+T.bg3:"none",borderLeft:"3px solid "+T.gold500}}>
+                <div style={{display:"flex",alignItems:"stretch"}}>
+                  <a className="attn-row-main" href={`/donors/${r.donorId}`}
+                    style={{flex:1,minWidth:0,display:"flex",alignItems:"flex-start",gap:14,padding:"13px 20px",textDecoration:"none",color:"inherit"}}
+                    onClick={e=>{if(e.metaKey||e.ctrlKey||e.shiftKey||e.altKey)return;e.preventDefault();onNavigate("donors",{selectDonorId:r.donorId});}}>
+                    <div style={{width:38,height:38,borderRadius:"50%",background:T.gold100,display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,fontWeight:800,color:T.gold600,flexShrink:0}}>
+                      {(r.donorName||"?")[0]}
+                    </div>
+                    <div style={{flex:1,minWidth:0}}>
+                      <div className="attn-donor-name" style={{fontSize:13,fontWeight:700,color:T.ink}}>{r.donorName}</div>
+                      <div style={{fontSize:12,color:T.ink2,marginTop:2,lineHeight:1.45}}>{r.reason}</div>
+                    </div>
+                    <div style={{fontSize:13.5,fontWeight:800,fontFamily:"'DM Serif Display',serif",color:T.ink,whiteSpace:"nowrap",paddingTop:2}}>{fmtFull(r.valueAtRisk)}</div>
+                  </a>
+                  {!lineOpen&&(
+                    <div style={{display:"flex",alignItems:"center",padding:"8px 20px 8px 8px",flexShrink:0}}>
+                      <button onClick={()=>{setDriftLineFor(r.donorId);setDriftLine("");}} disabled={isReadOnly}
+                        title={isReadOnly?"Reactivate your subscription to make changes.":"Reached out? Mark it done"}
+                        className="attn-row-action" style={{background:T.gold500,border:"none",borderRadius:8,padding:"8px 14px",color:T.ink,fontSize:12,fontWeight:700,cursor:isReadOnly?"not-allowed":"pointer",whiteSpace:"nowrap",opacity:isReadOnly?0.45:1}}>
+                        Done
+                      </button>
+                    </div>
+                  )}
+                </div>
+                {lineOpen&&(
+                  <div style={{display:"flex",gap:8,alignItems:"center",padding:"0 20px 13px 72px"}}>
+                    <input autoFocus value={driftLine} onChange={e=>setDriftLine(e.target.value)}
+                      onKeyDown={e=>{if(e.key==="Enter")submitDriftDone(r.donorId,driftLine);if(e.key==="Escape")submitDriftDone(r.donorId,"");}}
+                      placeholder="One line — what happened? (Enter saves · Esc skips)"
+                      style={{flex:1,border:"1px solid "+T.bg3,borderRadius:8,padding:"8px 12px",fontSize:12.5,color:T.ink,background:T.bg,outline:"none"}}/>
+                    <button onClick={()=>submitDriftDone(r.donorId,driftLine)} disabled={driftBusy}
+                      style={{background:T.greenDk,border:"none",borderRadius:8,padding:"8px 14px",color:"#fff",fontSize:12,fontWeight:700,cursor:driftBusy?"wait":"pointer"}}>Save</button>
+                    <button onClick={()=>submitDriftDone(r.donorId,"")} disabled={driftBusy}
+                      style={{background:"transparent",border:"none",padding:"8px 4px",color:T.ink3,fontSize:12,fontWeight:700,cursor:driftBusy?"wait":"pointer"}}>Skip</button>
+                  </div>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      </div>
+  ):null;
+
   // The two-column queue/briefing + funnel/grant/recurring grid — one section.
   const workSection=(
       <div className="dash-main-grid" style={{display:"grid",gridTemplateColumns:"minmax(0,1fr) 320px",gap:16,alignItems:"start"}}>
         {/* LEFT: the queue is the hero (the "Need to Do" command card scrolls here) */}
         <div style={{display:"flex",flexDirection:"column",gap:14}}>
+          {driftSection}
           <div id="dash-needtodo" style={{...cardWrap,scrollMarginTop:64}}>
             <div className="dash-cpad" style={{...cPad,borderBottom:"1px solid "+T.bg3,...sHdr}}>
               <span style={{display:"flex",alignItems:"center",gap:8}}>
@@ -1318,7 +1433,12 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
               <button onClick={()=>onNavigate("donors")} style={sLink}>View all →</button>
             </div>
             <div style={{padding:"16px 20px"}}>
-              <FunnelChart counts={countsByStage} onStageClick={s=>onNavigate("donors",{stageFilter:s})}/>
+              <FunnelChart counts={countsByStage} onStageClick={s=>onNavigate("donors",{stageFilter:s})}
+                drift={driftData&&driftData.counts.driftingHigh>0?{
+                  count:driftData.counts.driftingHigh,
+                  amount:driftData.atRiskAmount,
+                  onClick:()=>document.getElementById("dash-drifting")?.scrollIntoView({behavior:"smooth",block:"start"}),
+                }:null}/>
             </div>
           </div>
 

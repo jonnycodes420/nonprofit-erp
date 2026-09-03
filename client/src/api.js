@@ -147,6 +147,7 @@ export function adaptDonor(d) {
     householdId:   d.household_id ?? null,
     deceased:      d.deceased === true,          // BUILD-58 Part 2 — safety flags
     doNotContact:  d.do_not_contact === true,
+    drift:         d.drift ?? null,              // BUILD-76 — the badge field, server-computed (one truth)
   };
 }
 

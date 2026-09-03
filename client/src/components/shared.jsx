@@ -579,6 +579,28 @@ export function EmptyState({title,message,action,onAction}) {
     {action&&<button onClick={onAction} style={{marginTop:8,background:T.greenDk,border:"none",borderRadius:10,padding:"9px 18px",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer",boxShadow:"0 2px 10px rgba(26,107,74,0.2)"}}>{action}</button>}
   </div>;
 }
+// ── DriftBadge (BUILD-76 Part 2) ───────────────────────────────────────────
+// The drift marker, everywhere a donor appears: brass, small, quiet — these
+// are people who LIKE the organization, not problems, so it is deliberately
+// not terracotta. Renders ONLY from the server's `drift` field (one
+// computation, one truth — the Part 1 exclusion assertions guarantee an
+// excluded donor never carries it). The reason rides `title` for hover;
+// donor-record surfaces show it inline themselves.
+export function DriftBadge({drift,style}) {
+  if (!drift || drift.state !== "drifting") return null;
+  return (
+    <span title={drift.reason} style={{
+      display:"inline-flex",alignItems:"center",gap:4,flexShrink:0,
+      background:T.gold100,border:"1px solid "+T.gold500+"55",borderRadius:99,
+      padding:"1px 8px",fontSize:9.5,fontWeight:800,letterSpacing:"0.07em",
+      textTransform:"uppercase",color:T.gold600,lineHeight:1.6,whiteSpace:"nowrap",...style,
+    }}>
+      <span aria-hidden style={{fontSize:8,lineHeight:1}}>◉</span>
+      Drifting{drift.confidence==="medium"?" · unsure":""}
+    </span>
+  );
+}
+
 // ── Warmth pass (BUILD-08 Phase D) ─────────────────────────────────────────
 // GoldMoment: the product's one celebration pattern — a single gold moment
 // (soft rise + one sheen across the accent bar, no confetti, gone under

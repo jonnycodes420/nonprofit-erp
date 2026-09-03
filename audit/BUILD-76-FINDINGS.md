@@ -95,6 +95,23 @@ every call site; drift.js itself does pure civil-date arithmetic on
 - The Drifting section is org-wide (not officer-scoped): the headline is the
   same sentence the landing page makes about the whole file. Officer scoping
   can ride the existing scope toggle later if a pilot asks.
+- The Drifting section requires VISIBLE rows, not just a nonzero count —
+  when every drifting donor is handled the card disappears rather than
+  rendering an empty header (found on the first visual smoke; the hero and
+  funnel row stay, because the money is still at risk until a gift lands).
+- The section lives INSIDE the work column, above Needs Your Attention —
+  deliberately not a new homeLayout row: the layout merge appends unknown
+  ids at the END for users with saved configs, which would have put the
+  thesis section last on every existing account.
+- The older "quiet donors" figures (goal-banner AT RISK chip, ImpactLine —
+  both ≥180-day QUIET_DAYS, BUILD-73) are KEPT with their own labels: they
+  measure the size of the whole problem; the drift headline is the
+  high-confidence, pattern-based subset an officer can act on today. Both
+  say "at risk", neither says recovered.
+- Two drift-era funnel rows: "◉ Drifting — Still Reachable" (featured, gold,
+  count+dollars, renders only when count > 0 — a featured row proudly
+  reading zero is the exact mistake the old lapsed row made) and "↘ Lapsed —
+  Window Closed" (kept, smaller, demoted whenever the drift row leads).
 
 ### Part 1 results
 

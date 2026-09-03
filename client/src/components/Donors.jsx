@@ -24,7 +24,7 @@ class ErrorBoundary extends Component {
     return this.props.children;
   }
 }
-import { T, fmt, fmtFull, daysDiff, SC, askClaude, STAGES, STAGE_ACTION, TIER_COLOR, donorScore, moveUrgency, Spin, Pill, Card, AIBtn, AIPanel, PageTitle, EmptyState, GivingHistoryChart, TpField, TpYesNo, TouchpointTimeline, LockedFeature, goToPricing } from "./shared";
+import { T, fmt, fmtFull, daysDiff, SC, askClaude, STAGES, STAGE_ACTION, TIER_COLOR, donorScore, moveUrgency, Spin, Pill, Card, AIBtn, AIPanel, PageTitle, EmptyState, GivingHistoryChart, TpField, TpYesNo, TouchpointTimeline, LockedFeature, goToPricing, DriftBadge } from "./shared";
 // SHELVED — voice capture works but unproven adoption assumption, revisit
 // later. Code intact, re-enable by uncommenting (see showVoiceMemo state,
 // profile button, and modal render below, and add `VoiceMemoModal` back to
@@ -3125,6 +3125,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
             <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
               <span style={{fontSize:16,fontWeight:800,color:T.ink,letterSpacing:"-0.01em"}}>{donor.name}</span>
               <span style={{fontSize:10,fontWeight:700,padding:"3px 9px",borderRadius:99,background:stage.color+"22",color:stage.color}}>{stage.label}</span>
+              <DriftBadge drift={donor.drift}/>
               {/* BUILD-58 Part 2 — safety flags, visible where staff decide to reach out */}
               {donor.deceased&&<span title="No mail of any kind is sent to this donor" style={{fontSize:10,fontWeight:800,padding:"3px 9px",borderRadius:99,background:T.terra100,color:T.terra700,border:`1px solid ${T.terra200}`}}>Deceased</span>}
               {!donor.deceased&&donor.doNotContact&&<span title="Excluded from campaigns, sequences, and workflow emails" style={{fontSize:10,fontWeight:800,padding:"3px 9px",borderRadius:99,background:T.gold100,color:T.gold700,border:`1px solid ${T.gold300}`}}>Do not contact</span>}
@@ -3135,6 +3136,9 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
               <span style={{whiteSpace:"nowrap"}}>·</span>
               <span style={{whiteSpace:"nowrap"}}>{donor.gifts} gifts</span>
             </div>
+            {/* BUILD-76 — the drift reason, inline on the record (hover-only
+                would hide the one sentence that explains the badge). */}
+            {donor.drift&&<div style={{fontSize:11.5,color:T.gold600,fontWeight:600,marginTop:3,lineHeight:1.4}}>{donor.drift.reason}</div>}
           </div>
         </div>
         {/* BUILD-41: Request Gift is THE action; Impact Summary/Edit collapse
@@ -4721,7 +4725,10 @@ function DirectoryView({donors,loading,serverTotal,page,pageSize,onPage,clientFi
                 <div style={{display:"flex",alignItems:"center",gap:8,minWidth:0}}>
                   <div style={{width:compact?22:32,height:compact?22:32,borderRadius:"50%",background:stage.color+"22",display:"flex",alignItems:"center",justifyContent:"center",fontSize:compact?10:12,fontWeight:800,color:stage.color,flexShrink:0,transition:"width 0.12s,height 0.12s"}}>{d.name[0]}</div>
                   <div style={{minWidth:0}}>
-                    <div style={{fontSize:compact?12:13,fontWeight:700,color:T.ink,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{d.name}</div>
+                    <div style={{fontSize:compact?12:13,fontWeight:700,color:T.ink,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",display:"flex",alignItems:"center",gap:6}}>
+                      <span style={{overflow:"hidden",textOverflow:"ellipsis"}}>{d.name}</span>
+                      <DriftBadge drift={d.drift}/>
+                    </div>
                     {!compact&&d.email&&<div style={{fontSize:11,color:T.ink3,marginTop:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{d.email}</div>}
                     <span className="dir-stage-mobile" style={{background:stage.color+"22",color:stage.color,borderRadius:99,padding:"2px 7px",fontSize:10,fontWeight:800,letterSpacing:"0.04em",textTransform:"uppercase",marginTop:3}}>{stage.label}</span>
                   </div>
@@ -4772,6 +4779,7 @@ function DirectoryView({donors,loading,serverTotal,page,pageSize,onPage,clientFi
                   <div className="dir-m-name" style={{fontSize:17,fontWeight:700,color:T.ink,lineHeight:1.25,overflowWrap:"anywhere"}}>
                     {d.name}
                     <span style={{background:stage.color+"22",color:stage.color,borderRadius:99,padding:"2px 8px",fontSize:9.5,fontWeight:800,letterSpacing:"0.04em",textTransform:"uppercase",marginLeft:8,verticalAlign:"2px",whiteSpace:"nowrap"}}>{stage.label}</span>
+                    <DriftBadge drift={d.drift} style={{marginLeft:6,verticalAlign:"2px"}}/>
                   </div>
                   <div style={{fontSize:14,color:T.ink3,marginTop:3}}>
                     {fmtFull(d.total)}

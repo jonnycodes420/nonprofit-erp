@@ -6,7 +6,7 @@
 // upgrade state, not a broken tab.
 import { useState, useEffect, useMemo } from "react";
 import { apiFetch } from "../api";
-import { T, PageTitle, EmptyState, fmt, fmtFull, interactive, LockedFeature, goToPricing } from "./shared";
+import { T, PageTitle, EmptyState, fmt, fmtFull, interactive, LockedFeature, goToPricing, DriftBadge } from "./shared";
 
 // Forward major-gifts pipeline + trailing re-engagement column. Mirrors
 // server's ALL_PIPELINE_STAGES ordering.
@@ -108,7 +108,10 @@ function ProspectCard({ card, colorMap, onOpen, onMove, isReadOnly, dndEnabled, 
         <div {...interactive(() => onOpen(card.donorId), { label: `Open ${card.name}` })} style={{ borderRadius: 6, margin: -4, padding: 4, flex: 1, minWidth: 0 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <div title={card.assignedToName || "Unassigned"} style={{ width: 22, height: 22, borderRadius: "50%", flexShrink: 0, background: color || "#1a6b4a22", color: color ? "#fff" : T.greenMid, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 800 }}>{initials(card.assignedToName)}</div>
-            <div style={{ flex: 1, fontSize: 13, fontWeight: 700, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{card.name}</div>
+            <div style={{ flex: 1, fontSize: 13, fontWeight: 700, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", display: "flex", alignItems: "center", gap: 6 }}>
+              <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>{card.name}</span>
+              <DriftBadge drift={card.drift}/>
+            </div>
           </div>
           <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginTop: 6, flexWrap: "wrap" }}>
             {card.askAmount > 0 && <span style={{ fontSize: 12, fontWeight: 800, color: T.gold600 }}>{fmt(card.askAmount)} ask{card.openOppCount > 1 ? ` ×${card.openOppCount}` : ""}</span>}
