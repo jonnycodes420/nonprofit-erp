@@ -20,6 +20,15 @@
 //       than 150 instance fixes.
 //   §6  The seam is wired end to end: orgs.timezone, the API that sets it, and
 //       the day view reading it.
+//   §7  REACHABILITY: both axes pinned INDEPENDENTLY at zero — the tainted-
+//       helper SET must stay empty, and tainted-helper call sites must stay
+//       zero. Two numbers, two axes, never summed (BUILD-75 A.6).
+//   §8  THE GUARD PROVEN TO FAIL: scanHelpers run against constructed trees
+//       where each defect exists — a helper becoming tainted with the §5
+//       expression count UNCHANGED, a tainted helper gaining a caller with the
+//       helper count unchanged, and a tainted helper hiding behind one seam
+//       call elsewhere in its body. A guard never seen failing is not known
+//       to guard anything.
 
 const bcrypt = require("bcryptjs");
 const { ok, summary, login, api, q, closeDb } = require("./helpers");
@@ -156,7 +165,7 @@ const UTC = { timezone: "UTC" };
   // The count as Part 4 leaves it. A new date-bounded query written WITHOUT the
   // seam pushes this up and fails here, which is what stops coverage decaying
   // the moment somebody adds a view.
-  const BASELINE = Number(process.env.DATE_SITE_BASELINE || 97);
+  const BASELINE = Number(process.env.DATE_SITE_BASELINE || 85); // 97 before BUILD-75 Phase A routed 12 sites
   ok(`unrouted civil-date sites: ${total} (baseline ${BASELINE}) — must not INCREASE`,
      total <= BASELINE, { total, BASELINE, routed });
   ok(`sites routed through the seam: ${routed} (must be > 0)`, routed > 0, routed);
@@ -209,15 +218,75 @@ const UTC = { timezone: "UTC" };
   // the bad expression written?" and never "where does the bad value get
   // USED?" — so coverage was decaying at every call site while the number
   // stood still.
-  console.log("\n— §7 · reachability: call sites of process-clock helpers —");
+  console.log("\n— §7 · reachability: BOTH axes pinned independently at ZERO —");
   const { scanHelpers } = require("../scripts/build72-date-audit");
   const { helpers, callSites } = scanHelpers();
-  // 73 before BUILD-74 routed the portal drift task through the seam; 72 after.
-  const HELPER_BASELINE = Number(process.env.DATE_HELPER_BASELINE || 72);
-  ok(`call sites of process-clock date helpers: ${callSites} (baseline ${HELPER_BASELINE}) — must not INCREASE`,
-     callSites <= HELPER_BASELINE, { callSites, HELPER_BASELINE, helpers: helpers.map(h => `${h.name}:${h.callers}`) });
-  if (callSites < HELPER_BASELINE)
-    console.log(`  NOTE  ${HELPER_BASELINE - callSites} call site(s) newly routed — lower DATE_HELPER_BASELINE to ${callSites}.`);
+  // BUILD-75 A.5 drove both axes to zero (10 helpers / 72 call sites at the
+  // BUILD-74 filing). The two assertions are DELIBERATELY separate: the SET
+  // pin fails the moment any helper becomes tainted — even one with zero
+  // callers, even with no new §5 expression written — and the call-site pin
+  // fails when a tainted helper gains a consumer even if the helper count is
+  // unchanged. Never merge them, and never sum them with §5's number: 85 and
+  // 0 measure different axes (expressions written vs values consumed).
+  ok(`tainted-helper SET is empty (any name here is a regression): [${helpers.map(h => h.name).join(", ")}]`,
+     helpers.length === 0, helpers.map(h => `${h.name} at ${h.at} (${h.callers} callers)`));
+  ok(`call sites of process-clock date helpers: ${callSites} — must stay 0`,
+     callSites === 0, { callSites, helpers: helpers.map(h => `${h.name}:${h.callers}`) });
+
+  console.log("\n— §8 · the guard proven to FAIL on trees where the defect exists —");
+  const { scan: _scan, DEFECTS: _DEFECTS } = require("../scripts/build72-date-audit");
+  const mkTree = lines => [{ f: "synthetic.js", lines }];
+  const exprCount = lines => {
+    // the §5 axis applied to the synthetic tree: expression-pattern hits per line
+    let n = 0;
+    for (const raw of lines) {
+      const line = raw.replace(/\/\/.*$/, "");
+      for (const [, re] of _DEFECTS) if (re.test(line)) { n++; break; }
+    }
+    return n;
+  };
+
+  // Tree A: the bad expression exists at TOP LEVEL, no helper involved.
+  const treeA = [
+    "const topLevelYear = new Date().getFullYear();",
+    "function fooDate() { return topLevelYear; }",
+    "const a = fooDate();",
+  ];
+  // Tree B: the SAME expression MOVED INSIDE the helper — §5's count is
+  // unchanged (one expression before, one after; nothing new was written),
+  // but the helper is now tainted and its caller consumes the bad value.
+  const treeB = [
+    "function fooDate() { return new Date().getFullYear(); }",
+    "const a = fooDate();",
+  ];
+  ok("constructed trees hold the §5 axis FLAT (1 expression in each — nothing new was added)",
+     exprCount(treeA) === 1 && exprCount(treeB) === 1, { a: exprCount(treeA), b: exprCount(treeB) });
+  const hA = scanHelpers(mkTree(treeA)), hB = scanHelpers(mkTree(treeB));
+  ok("a helper BECOMING tainted fails the guard even with no new expression (0 tainted → 1 tainted)",
+     hA.helpers.length === 0 && hB.helpers.length === 1 && hB.helpers[0].name === "fooDate",
+     { a: hA.helpers, b: hB.helpers });
+
+  // Tree C: the tainted helper gains ONE MORE caller — helper count unchanged,
+  // the call-site axis must move (this is the axis a helper-count pin misses).
+  const treeC = [...treeB, "const b = fooDate();"];
+  const hC = scanHelpers(mkTree(treeC));
+  ok("a tainted helper GAINING a caller fails the guard even with the helper count unchanged",
+     hC.helpers.length === 1 && hC.callSites === hB.callSites + 1,
+     { b: hB.callSites, c: hC.callSites });
+
+  // Tree D: a tainted helper that ALSO calls the seam on another line. The
+  // pre-BUILD-75 body-level ROUTED escape cleared exactly this shape; the
+  // line-level rule must still flag it.
+  const treeD = [
+    "function mixedDate(org) {",
+    "  const t = orgToday(org);",
+    "  return t + new Date().getHours();",
+    "}",
+    "const c = mixedDate(o);",
+  ];
+  const hD = scanHelpers(mkTree(treeD));
+  ok("one seam call elsewhere in the body does NOT clear a raw accessor (the old escape's hole)",
+     hD.helpers.length === 1 && hD.helpers[0].name === "mixedDate", hD.helpers);
 
   // The instance, pinned at the SOURCE so it cannot come back with the clock.
   // A behavioural assertion here would only fail in the timezone window that

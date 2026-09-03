@@ -145,15 +145,25 @@ function bodyOf(lines, start) {
   return out.join("\n");
 }
 
-function scanHelpers() {
-  const srcs = FILES.map(f => ({ f, lines: fs.readFileSync(path.join(ROOT, f), "utf8").split("\n") }));
+// `sources` (optional) — [{ f, lines }] to scan a CONSTRUCTED tree instead of
+// the repo. date-seam §8 uses this to PROVE the guard fails on a tree where
+// the defect exists — a guard never seen failing is not known to guard.
+function scanHelpers(sources = null) {
+  const srcs = sources || FILES.map(f => ({ f, lines: fs.readFileSync(path.join(ROOT, f), "utf8").split("\n") }));
   const helpers = [];
   for (const { f, lines } of srcs)
     lines.forEach((raw, i) => {
       const m = HELPER_DEF.exec(raw);
       if (!m) return;
       const body = bodyOf(lines, i);
-      if (!LOCAL_ACCESSOR.test(body) || ROUTED.test(body)) return;
+      // LINE-LEVEL taint (BUILD-75 A.6): a helper is tainted when any line of
+      // its body reads a process-local accessor on a line that is not itself
+      // routed through the seam. The old BODY-level escape (`ROUTED.test(body)`
+      // cleared the whole helper) meant one seam call anywhere in a body could
+      // hide a raw accessor elsewhere in it — a helper could BECOME tainted
+      // with the guard unable to see it, the exact class this scan exists for.
+      const tainted = body.split("\n").some(l => LOCAL_ACCESSOR.test(l) && !ROUTED.test(l));
+      if (!tainted) return;
       helpers.push({ name: m[1] || m[2], at: `${f}:${i + 1}` });
     });
   let callSites = 0;

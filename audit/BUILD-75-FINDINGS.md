@@ -157,3 +157,46 @@ sites (e.g. `snapshotMetricsForOrg`'s UTC `snapshot_date`, the
 — pinned by the §5 baseline, each an instant-vs-civil display/bucketing
 default rather than a consumed helper value. They decrease the baseline as
 they get routed; none mints an identifier or reaches a donor.
+
+### A.6 — the audit's own defect, closed as a class
+
+**The two axes, re-enumerated after all of Phase A, against baseline:**
+
+| Axis | At BUILD-74 filing | After Phase A | Pinned at |
+|---|---|---|---|
+| §5 — expressions written (unrouted civil-date sites) | 97 | **85** | `DATE_SITE_BASELINE 85`, must not increase |
+| §7 — values consumed (tainted helpers / their call sites) | 10 / 72 | **0 / 0** | two separate assertions: the helper SET must be empty (names printed on failure), and call sites must equal 0 |
+
+The numbers are never summed — they measure different axes, and the audit
+prints them separately by construction.
+
+**What changed in the guard itself:**
+
+1. **`scanHelpers` taint is now LINE-level, not body-level.** The old escape
+   (`ROUTED.test(body)` cleared the whole helper) meant one seam call
+   anywhere in a body hid a raw accessor elsewhere in it. Tightening the
+   rule immediately surfaced two helpers the old guard could not see:
+   `finPeriodBounds` (a false positive — its `now` was a shim over the
+   seam value dressed as a Date; the shim is gone, the civil parts are read
+   directly) and `computeRetentionRate` (real: `new Date(g.date)
+   .getFullYear()` re-read stored civil dates through the process zone —
+   byte-identical on the UTC production runtime, but on any non-UTC process
+   every New Year's Day gift bucketed into the prior year; now
+   `parseCivil(g.date).y`, zone-independent).
+2. **The helper SET is pinned, not just a count.** A helper that becomes
+   tainted fails the suite even with zero callers and no new §5 expression;
+   a tainted helper gaining a caller fails even with the helper count
+   unchanged. Two assertions, deliberately never merged.
+3. **§8 proves the guard fails where the defect exists** — `scanHelpers`
+   now accepts a constructed tree, and the suite runs four of them:
+   the §5 axis held flat while a helper becomes tainted (the expression
+   MOVED into a body — nothing new written, §5 blind, §7 fires); a tainted
+   helper gaining a caller with the helper count unchanged; and the old
+   body-level escape's exact hole (a seam call on one line does not clear a
+   raw accessor on another).
+4. **The standing rule is in CLAUDE.md** (CRITICAL WORKING RULES): a guard
+   whose number cannot fall is not measuring coverage — state what would
+   make it fail, and prove it fails.
+
+date-seam 70/70 (was 65 — §8 added, §7 reworked), finance-overview 33/33,
+report-truth 85/85, home 41/41, fundraising 34/34.

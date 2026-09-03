@@ -11419,10 +11419,12 @@ app.post("/finance/budgets", requireAuth, requireAdmin, checkWriteAccess, wrap(a
 const FIN_MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 function finPeriodBounds(yearMode, offset = 0, org = null) {
   // ORG_TZ_SEAM_OK — the fiscal/calendar boundary in the org's own calendar.
+  // (BUILD-75 A.6: the old `now = { getMonth: … }` shim over this value read
+  // like a process clock and hid from the line-level taint scan's accessor
+  // check — read the civil parts directly instead of dressing them as a Date.)
   const _today = orgTime.parseCivil(orgToday(org || {}));
-  const now = { getMonth: () => _today.m - 1, getFullYear: () => _today.y };
   if (yearMode === "fiscal") {
-    const curFyStart = now.getMonth() < 6 ? now.getFullYear() - 1 : now.getFullYear();
+    const curFyStart = _today.m - 1 < 6 ? _today.y - 1 : _today.y;
     const fyStart = curFyStart + offset;
     return {
       start: `${fyStart}-07-01`,
@@ -11434,7 +11436,7 @@ function finPeriodBounds(yearMode, offset = 0, org = null) {
         .concat([...Array(6)].map((_, i) => ({ y: fyStart + 1, m: i }))),
     };
   }
-  const year = now.getFullYear() + offset;
+  const year = _today.y + offset;
   return {
     start: `${year}-01-01`,
     end: `${year}-12-31`,
@@ -21078,8 +21080,14 @@ async function computeRetentionRate(orgId, { year = null, gifts, userId } = {}) 
     const assignedIds = new Set(assignedRows.map(r => r.id));
     allGifts = allGifts.filter(g => assignedIds.has(g.donor_id));
   }
-  const thisYearGifts = allGifts.filter(g => new Date(g.date).getFullYear() === year);
-  const prevYearGifts = allGifts.filter(g => new Date(g.date).getFullYear() === prevYear);
+  // ORG_TZ_SEAM_OK (BUILD-75 A.6) — year-bucket by the stored CIVIL date's own
+  // Y, never a new Date() round-trip: `new Date("2026-01-01")` read back through
+  // a non-UTC process zone lands on Dec 31 and buckets every New Year's Day
+  // gift into the prior year. parseCivil is zone-independent and byte-identical
+  // to the old behavior on the UTC production runtime.
+  const civilYear = g => { const c = orgTime.parseCivil(g.date); return c ? c.y : null; };
+  const thisYearGifts = allGifts.filter(g => civilYear(g) === year);
+  const prevYearGifts = allGifts.filter(g => civilYear(g) === prevYear);
   const thisYearDonorIds = new Set(thisYearGifts.map(g => g.donor_id));
   const prevYearDonorIds = new Set(prevYearGifts.map(g => g.donor_id));
   const retained = [...thisYearDonorIds].filter(id => prevYearDonorIds.has(id)).length;
