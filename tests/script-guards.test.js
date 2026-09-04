@@ -62,7 +62,12 @@ const SELF_REFUSING = [
   "build75-route-inventory","loadtest", "seed-loadtest", "seed-build46-network-demo", "build58-stripe-drill",
   // BUILD-76 — the drift-vs-real-Stripe drill: same rig as build58's (scratch
   // server on :5621 + `stripe listen`), refuses any non-loopback BASE.
-  "build76-drift-drill"];
+  "build76-drift-drill",
+  // BUILD-78 Part 0 — the cross-org field_id red-run reproduction. Runs
+  // entirely through tests/helpers, whose api()/q() refuse any non-loopback
+  // BASE or DATABASE_URL (tests/README.md); the refusal is inherited, and
+  // the source note below keeps this suite's pattern check honest.
+  "build78-repro-crossorg-fieldid"];
 
 // Loopback is HARDCODED (no BASE env at all) — cannot reach a remote host.
 const LOOPBACK_HARDCODED = ["build45-portal-capture", "onramp-capture"];

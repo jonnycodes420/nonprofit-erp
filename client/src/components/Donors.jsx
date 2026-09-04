@@ -4238,7 +4238,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
                   )}
                 </div>
               ))}
-              {cfError&&<div style={{fontSize:11.5,color:"#e8a08c"}}>{cfError}</div>}
+              {cfError&&<div style={{fontSize:11.5,color:"#b8593f"}}>{cfError}</div>}
               {hidden>0&&(
                 <button onClick={()=>setCfShowAll(v=>!v)} style={{background:"none",border:"none",padding:0,fontSize:11,fontWeight:600,color:"#8fa896",cursor:"pointer",textAlign:"left"}}>
                   {cfShowAll?"Hide empty fields":`Show all ${cfData.length} fields (${hidden} empty)`}

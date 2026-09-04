@@ -9,6 +9,14 @@
 // and can never be read is the quietest kind of data loss.
 //
 // Run against the scratch stack (never prod): node scripts/build78-repro-crossorg-fieldid.js
+// Hard refusal, own layer on top of tests/helpers' (two layers on purpose):
+// this script seeds and writes; it must never point anywhere but loopback.
+for (const [name, v] of [["DATABASE_URL", process.env.DATABASE_URL || ""], ["BASE", process.env.BASE || "http://localhost:5601"]]) {
+  if (v && !/localhost|127\.0\.0\.1/.test(v)) {
+    console.error(`REFUSED: ${name}=${v} is not loopback — this reproduction writes and never runs against a remote target.`);
+    process.exit(1);
+  }
+}
 const bcrypt = require("bcryptjs");
 const { q, login, api, closeDb } = require("../tests/helpers");
 
