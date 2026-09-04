@@ -8726,6 +8726,10 @@ app.get("/metrics/stewardship-summary", requireAuth, wrap(async (req, res) => {
       // Lets the client tell "0% because nothing has been logged this year
       // yet" (day-one org, too early to measure) apart from a genuine 0%.
       thisYearCount: retention.thisYearCount,
+      // BUILD-77 Part 4 — the tile STATES its window + denominator (a rate is
+      // meaningless without them: 66% "above sector average" over 204
+      // prior-year donors where half the file is lapsed reads as fake).
+      year: retention.year, prevYear: retention.prevYear,
       trend: retentionTrend.map(r => ({ date: r.snapshot_date, value: Number(r.value) })), deltaVsTrendStart: trendDelta(retentionTrend),
     },
   });
@@ -16127,7 +16131,7 @@ app.get("/recurring/unlinked", requireAuth, wrap(async (req, res) => {
     const lastGift = r.last_gift ? String(r.last_gift).slice(0, 10) : null;
     const stopped = lastGift ? lastGift < stopCutoff : false;
     const months = r.first_gift && lastGift ? monthsBetween(r.first_gift, lastGift) : null;
-    const amtStr = r.amount != null ? `$${Math.round(r.amount)}` : "their monthly gift";
+    const amtStr = r.amount != null ? "$" + Number(r.amount).toLocaleString("en-US", { maximumFractionDigits: 0 }) : "their monthly gift";
     // Their own story — never "lapsed" (they didn't choose to leave; their
     // card expired). "Gave $25 a month for 26 months. Nothing since June."
     const reason = stopped
@@ -16174,9 +16178,9 @@ app.post("/recurring/unlinked/send-reconnect", requireAuth, requireAdmin, checkW
     const freq = "monthly";
     const token = signReconnectToken(d.id, orgId);
     const params = new URLSearchParams({ reconnect: token, frequency: freq });
-    if (d.amount != null) params.set("amount", String(Math.round(d.amount)));
+    if (d.amount != null) params.set("amount", Number(d.amount).toFixed(2));
     const link = `${publicAppUrl()}/give/${org.org_slug}?${params.toString()}`;
-    const amtStr = d.amount != null ? `$${Math.round(d.amount)}/month` : "your monthly gift";
+    const amtStr = d.amount != null ? "$" + Number(d.amount).toLocaleString("en-US", { maximumFractionDigits: 0 }) + "/month" : "your monthly gift";
     const html = await brandEmailHeaderHtml(orgId)
       + `<p>Hi ${escapeHtml((d.name || "there").split(" ")[0])},</p>
          <p>Thank you for being a faithful monthly supporter of <strong>${escapeHtml(dfName)}</strong>. We've moved to a new giving system, and because card details can't transfer between systems, we need you to reconnect your ${escapeHtml(amtStr)} gift.</p>

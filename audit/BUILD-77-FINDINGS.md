@@ -210,3 +210,27 @@ out of lapsed · §6 reconnect stitches to the existing donor through a live
 webhook (and the negative). Route inventory regenerated (357 → the two new
 param-less recurring routes need no cross-tenant probe; tenant-matrix's
 drift check forced the regeneration).
+
+## PART 4 — one number, and a claim we have not earned
+
+- The three at-risk figures reconciled into ONE nested story on the drift
+  hero (the metrics-card headline since BUILD-76): the widest pool (lifetime
+  giving of everyone quiet past the going-quiet line, impact.atRiskAmount) is
+  the outer number; DRIFTING (high-confidence, past-own-pattern, still
+  reachable — driftData.atRiskAmount) is the actionable subset shown as "of
+  $X at risk … this $Y is drifting"; lapsed is the window-closed subset on
+  the funnel. No more three competing figures on one screen; the
+  lapsed-recovery goal is a TARGET (a goal with progress), not a fourth
+  at-risk number.
+- Retention: the tile STATES its window and denominator ("N of M donors who
+  gave in FY Y gave again, FY Y→FY Y+1") and the congratulation is GONE.
+  "66% · Donors are sticking with you, 23pt above the 43% sector average"
+  on a file where 247 of 483 donors are lapsed and 145 gave exactly once is
+  arithmetically true and reads as fake — and then everything else on the
+  screen does too. Steward reports numbers; it does not tell an organisation
+  it is doing well four minutes after meeting them. The sector average stays
+  as a stated benchmark, not a verdict. (The confidence FLOOR from BUILD-76
+  still applies underneath: below 20 prior-year donors / 18 months it reads
+  "not enough history yet" with no comparison at all.) Payload now carries
+  year/prevYear/prevYearCount/retained; home.test.js asserts the window +
+  denominator are present.

@@ -56,7 +56,7 @@ function parseCsv(t) {
 
 async function reset() {
   for (const t of ["workflow_runs", "workflows", "digest_sends", "moves", "opportunities", "tasks",
-    "payment_recovery_events", "recurring_subscriptions", "receipts", "pledges", "fin_audit_log",
+    "payment_recovery_events", "reconnect_sends", "recurring_subscriptions", "receipts", "pledges", "fin_audit_log",
     "fin_transactions", "gifts", "interactions", "milestone_drafts", "note_reminders",
     "fundraising_goals", "metric_snapshots", "donors", "campaigns", "fin_funds", "accounts", "budgets", "users"])
     await q(`DELETE FROM ${t} WHERE org_id=$1`, [ORG]).catch(() => {});

@@ -1133,8 +1133,16 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
                 <div style={{fontSize:32,fontWeight:800,fontFamily:"'DM Serif Display',serif",color:T.ink,lineHeight:1}}>{fmtFull(driftData.atRiskAmount)}</div>
                 <span style={{fontSize:13,fontWeight:700,color:T.gold600}}>{driftData.counts.driftingHigh} donor{driftData.counts.driftingHigh===1?"":"s"} drifting</span>
               </div>
-              <div style={{fontSize:13,fontWeight:600,color:T.ink2,marginTop:6,lineHeight:1.4,maxWidth:400}}>
-                Giving from donors quietly past their own pattern — each is on the Drifting list below, with the reason, while a call still works.
+              <div style={{fontSize:13,fontWeight:600,color:T.ink2,marginTop:6,lineHeight:1.4,maxWidth:430}}>
+                {/* BUILD-77 Part 4 — ONE headline, the other two figures
+                    reconciled into it as subsets, in plain language. The
+                    widest "at risk" pool (lifetime giving of everyone quiet
+                    past {quietPhrase}) is the outer number; drifting is the
+                    high-confidence, still-reachable subset; lapsed is the
+                    window-closed subset — never three competing figures. */}
+                {impact&&impact.atRiskAmount>0&&impact.quietDonorCount>0
+                  ?<>Of <strong style={{color:T.ink}}>{fmtFull(impact.atRiskAmount)}</strong> at risk across {impact.quietDonorCount.toLocaleString()} quiet donor{impact.quietDonorCount===1?"":"s"} (no gift in over {quietPhrase(impact.quietSinceDays)}), this <strong style={{color:T.ink}}>{fmtFull(driftData.atRiskAmount)}</strong> is drifting — past their own pattern, still reachable with a call now.</>
+                  :<>Giving from donors quietly past their own pattern — each is on the Drifting list below, with the reason, while a call still works.</>}
               </div>
             </div>
           )}
@@ -1173,9 +1181,18 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
                       :stewardMetrics.retentionRate.prevYearCount>0
                         ?`Too early to measure — as this year's gifts land, you'll see how many of last year's ${stewardMetrics.retentionRate.prevYearCount} donor${stewardMetrics.retentionRate.prevYearCount===1?"":"s"} stick with you.`
                         :`Too early to measure — you'll see this once there's a prior year of giving to compare against. The typical nonprofit retains ${retentionSector}%.`
-                    :retentionCurrent>=retentionSector
-                      ?`Donors are sticking with you — ${retentionCurrent-retentionSector}pt above the ${retentionSector}% nonprofit sector average.`
-                      :`${retentionSector-retentionCurrent}pt below the ${retentionSector}% sector average — worth a closer look at who isn't renewing.`}
+                    :(()=>{
+                      // BUILD-77 Part 4 — STATE THE WINDOW AND DENOMINATOR, and
+                      // remove the congratulation. Steward reports numbers; it
+                      // does not tell an organisation it is doing well four
+                      // minutes after meeting them. What the rate means is a
+                      // fact ("N of M last-year donors gave again"), not a verdict.
+                      const rr=stewardMetrics.retentionRate;
+                      const py=rr.prevYear, cy=rr.year;
+                      const denom=rr.prevYearCount||0, kept=rr.retained||0;
+                      const window=py&&cy?`FY ${py} → FY ${cy}`:"year over year";
+                      return `${kept.toLocaleString()} of ${denom.toLocaleString()} donor${denom===1?"":"s"} who gave in ${py?`FY ${py}`:"the prior year"} gave again (${window}). The nonprofit sector average is about ${retentionSector}%.`;
+                    })()}
                 </div>
               </div>
               {!retentionThin&&stewardMetrics.retentionRate.trend.length>=2&&(

@@ -218,6 +218,12 @@ async function seedTask(o, id, owner, due, done = 0) {
   ok("25 prior-year donors + 18 months of history: the floor clears and a real rate returns",
     solid.thinData === false && solid.current != null && solid.current < 100,
     { current: solid.current, thin: solid.thinData, prev: solid.prevYearCount, hist: solid.historyDays });
+  // BUILD-77 Part 4 — the tile can STATE its window + denominator: the payload
+  // carries the year, prior year, prior-year donor count and retained count,
+  // so the copy is a fact ("N of M gave again, FY→FY"), never a verdict.
+  ok("retention payload carries the window (year/prevYear) and the denominator (prevYearCount + retained)",
+    solid.year != null && solid.prevYear === solid.year - 1 && solid.prevYearCount >= solid.retained && solid.retained >= 0,
+    { year: solid.year, prevYear: solid.prevYear, denom: solid.prevYearCount, kept: solid.retained });
   await api("POST", "/metrics/reset-baselines", tokR);
   const [solidSnap] = await q(`SELECT COUNT(*)::int n FROM metric_snapshots WHERE org_id=$1 AND metric_key='retention_rate'`, [RF]);
   ok("…and a real rate DOES snapshot", solidSnap.n === 1, solidSnap);
