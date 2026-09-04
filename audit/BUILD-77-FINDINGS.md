@@ -144,3 +144,69 @@ assertions would be wrong in both directions).
   NO fin_funds row 500s /donors/import-combined (parameter-count error in a
   fund-resolution branch). Real orgs get funds at creation; noted, not
   chased in this build.
+
+## PART 5 — imported sustainers are invisible (the third state)
+
+- Cause: "recurring" meant "has a Stripe subscription object", so every
+  imported sustainer (34 in the fixture, 462 gift rows) was invisible to the
+  whole recurring surface, AND at 3× monthly cadence they sat past the 2.5×
+  lapse boundary — invisible to drift too. They vanished into the lapsed pile.
+- Three states, not two: active (subscription live here) · unlinked
+  (sustainer history, no authorization here — every imported sustainer
+  starts here) · none. Nobody can import a live recurring authorization;
+  card credentials do not move between processors (Zeffy says so in their
+  own docs).
+- Detection (importShape.detectImportedSustainers): interval evidence
+  (gifts clustered 20–40 days at a ≤15%-stable amount) OUTRANKS the note;
+  a note alone counts unless the intervals contradict it; PLEDGE
+  installments never count (12 monthly capital-pledge payments look exactly
+  like a sustainer — the first key draft over-counted 47, the 13 extras all
+  12-of-12 pledge payers). Sets imported_sustainer + the historical amount
+  and last gift so the reconnect flow can prefill both.
+- GET /recurring/unlinked tells the TRUE sentence ("N giving · N stopped ·
+  N not yet connected here" — zero was a lie that cost an org its best
+  donors) and routes the stopped ones OUT of lapsed into their own reason
+  ("Gave $25 a month for 26 months. Nothing since June." — never "lapsed",
+  which implies they chose to leave). Every ask/lapse surface excludes them
+  (`imported_sustainer IS NOT TRUE`): drift (`unlinked_sustainer`
+  exclusion), the day-view lapsed bucket, at-risk candidates, the lapse
+  sweep, auto-enroll, the client Re-engage view.
+
+## PART 6 — the re-authorization flow (the migration story)
+
+- A bulk action on the unlinked list sends a reconnect link to the org's
+  giving page, prefilled with the historical amount + frequency and carrying
+  a signed reconnect token (POST /recurring/unlinked/send-reconnect).
+- The Donate page reads ?reconnect=<token>&amount=&frequency=, prefills, and
+  passes the token to /donate; the checkout metadata carries
+  reconnect_donor_id.
+- The checkout.session.completed handler STITCHES to the existing donor by
+  the signed id (then email, then name) — never a second record; 26 months
+  of history stay attached and lifetime value does not reset. The negative
+  is asserted too: a reconnect matching nothing creates a new donor and
+  never silently merges into the wrong one. The imported_sustainer flag
+  clears and the reconnect is stamped into reconnect_sends.
+- The recovery number (sent · reconnected · monthly-back) comes from real
+  reconnect_sends rows stamped by the webhook — never an estimate. BUILD-73's
+  copy rule holds: money at risk, never money recovered, until the charge
+  settles (reconnected_amount is only the settled subscription amount).
+- Proven end to end through a LIVE test-mode webhook in the golden suite §6.
+
+## PART 7 — recurring off home
+
+- The Recurring tab left the home screen; DashboardRecurring now renders at
+  the top of Fundraising → Recurring Giving (with the new UnlinkedSustainers
+  panel below it). Home keeps one view and no tab bar; when any of the four
+  recurring counts is non-zero, ONE line on Home links across. Recurring is
+  a place you go, not a thing you scan every morning.
+
+## THE GOLDEN SUITE, FINAL
+
+tests/import-messy.test.js: 52 asserts, in run-all. §1 mapping · §2
+dispositions (count AND dollars, per-reason) · §3 real route + DB truth +
+Larry's dates + flags + sustainer state · §4 exclusions absent from every
+actionable surface by IDENTITY · §5 unlinked sustainers visible and routed
+out of lapsed · §6 reconnect stitches to the existing donor through a live
+webhook (and the negative). Route inventory regenerated (357 → the two new
+param-less recurring routes need no cross-tenant probe; tenant-matrix's
+drift check forced the regeneration).

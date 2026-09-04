@@ -392,6 +392,86 @@ function AtRiskQueue({ subs, isReadOnly, onAction }) {
 }
 
 // ── The full page ──────────────────────────────────────────────────────────
+
+// ── BUILD-77 Parts 5+6 — UNLINKED SUSTAINERS ────────────────────────────────
+// The third recurring state: sustainer history from an import, no payment
+// authorization here (card credentials do not move between processors —
+// nobody can import a live authorization). This panel tells the true
+// sentence ("N giving · N whose giving stopped · N not yet connected"),
+// lists the stopped ones with their own story ("Gave $25 a month for 26
+// months. Nothing since June." — never "lapsed", which implies they chose
+// to leave), and sends the reconnect link that makes migration one email
+// instead of a project. The recovery numbers come from REAL events
+// (reconnect_sends rows stamped by the webhook), never an estimate — and
+// per BUILD-73's rule the money is AT RISK until a charge actually settles.
+export function UnlinkedSustainers({ isReadOnly, onNavigate }) {
+  const [data, setData] = useState(null);
+  const [sel, setSel] = useState(() => new Set());
+  const [busy, setBusy] = useState(false);
+  const [toast, setToast] = useState("");
+  const load = () => apiFetch("/recurring/unlinked").then(setData).catch(() => {});
+  useEffect(() => { load(); }, []);
+  if (!data || (data.counts.unlinked === 0 && data.stats.sent === 0)) return null;
+  const { counts, stats } = data;
+  const stopped = data.list.filter(u => u.stopped);
+  const giving = data.list.filter(u => !u.stopped);
+  const toggle = id => setSel(p => { const n = new Set(p); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  const sendable = data.list.filter(u => u.email && !u.reconnectedAt);
+  const sendTargets = [...sel].filter(id => sendable.some(u => u.donorId === id));
+  const send = async () => {
+    if (!sendTargets.length || busy) return;
+    setBusy(true);
+    try {
+      const r = await apiFetch("/recurring/unlinked/send-reconnect", { method: "POST", body: JSON.stringify({ donorIds: sendTargets }) });
+      setToast(`${r.sent} reconnect link${r.sent === 1 ? "" : "s"} sent.`);
+      setSel(new Set()); await load();
+    } catch (e) { setToast(e.message || "Send failed."); }
+    setBusy(false);
+  };
+  const row = (u) => (
+    <div key={u.donorId} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 10px", borderTop: `1px solid ${T.bg2}` }}>
+      {!isReadOnly && u.email && !u.reconnectedAt && (
+        <input type="checkbox" checked={sel.has(u.donorId)} onChange={() => toggle(u.donorId)} style={{ width: 15, height: 15, cursor: "pointer" }} />
+      )}
+      <div {...interactive(() => onNavigate("donors", { selectDonorId: u.donorId }), { label: `Open ${u.donorName}` })} style={{ flex: 1, minWidth: 0, borderRadius: 6, padding: "2px 4px", margin: "-2px -4px" }}>
+        <span style={{ fontSize: 13, fontWeight: 700, color: T.ink }}>{u.donorName}</span>
+        <span style={{ fontSize: 12, color: T.ink3, marginLeft: 8 }}>{u.reason}</span>
+      </div>
+      {u.sentAt && !u.reconnectedAt && <span style={{ fontSize: 11, color: T.ink3, whiteSpace: "nowrap" }}>link sent</span>}
+      {u.reconnectedAt && <span style={{ fontSize: 11, fontWeight: 700, color: T.greenDk, whiteSpace: "nowrap" }}>reconnected ✓</span>}
+      {!u.email && <span style={{ fontSize: 11, color: T.terra700, whiteSpace: "nowrap" }}>no email on file</span>}
+    </div>
+  );
+  return (
+    <div style={{ background: T.bgCard, border: `1px solid ${counts.stopped ? (T.gold500 || "#c9a84c") + "66" : T.bg3}`, borderRadius: 12, padding: "14px 14px 6px" }}>
+      {toast && <div style={{ fontSize: 12, color: T.greenDk, padding: "0 10px 8px" }}>{toast}</div>}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, padding: "0 10px 8px", flexWrap: "wrap" }}>
+        <div>
+          <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: "0.08em", textTransform: "uppercase", color: T.ink3 }}>Sustainers · not yet connected here</div>
+          <div style={{ fontSize: 13, color: T.ink2, marginTop: 3 }}>
+            <strong style={{ color: T.ink }}>{counts.activeLinked}</strong> giving · <strong style={{ color: counts.stopped ? (T.terra700) : T.ink }}>{counts.stopped}</strong> whose giving stopped · <strong style={{ color: T.ink }}>{counts.unlinked}</strong> not yet connected to a payment method here
+          </div>
+          {stats.sent > 0 && (
+            <div style={{ fontSize: 12, color: T.ink3, marginTop: 3 }}>
+              Reconnect so far: {stats.sent} sent · {stats.reconnected} reconnected · {fmtFull(stats.monthlyBack)}/mo giving again
+            </div>
+          )}
+        </div>
+        {!isReadOnly && sendable.length > 0 && (
+          <button onClick={send} disabled={busy || sendTargets.length === 0}
+            title={sendTargets.length === 0 ? "Select sustainers below (those with an email on file)" : undefined}
+            style={{ background: sendTargets.length ? (T.gold500 || "#c9a84c") : T.bg2, border: "none", borderRadius: 9, padding: "9px 16px", color: sendTargets.length ? T.ink : T.ink3, fontSize: 12.5, fontWeight: 700, cursor: sendTargets.length && !busy ? "pointer" : "not-allowed" }}>
+            {busy ? "Sending…" : `Send reconnect link${sendTargets.length === 1 ? "" : "s"}${sendTargets.length ? ` (${sendTargets.length})` : ""}`}
+          </button>
+        )}
+      </div>
+      {stopped.map(row)}
+      {giving.length > 0 && <div style={{ fontSize: 11, color: T.ink3, padding: "8px 10px 6px", borderTop: `1px solid ${T.bg2}` }}>{giving.length} more imported sustainer{giving.length === 1 ? "" : "s"} still gave recently — reconnect them before their card would have renewed.</div>}
+      {giving.map(row)}
+    </div>
+  );
+}
+
 export function RecurringView({ onNavigate, isReadOnly }) {
   const [roster, setRoster] = useState(null);
   const [movement, setMovement] = useState(null);
@@ -491,6 +571,7 @@ export function RecurringView({ onNavigate, isReadOnly }) {
       {/* BUILD-77 Part 7 — the morning exceptions view moved here from the
           Home tab bar: who needs a person, at the top of the page you go to. */}
       <DashboardRecurring onNavigate={onNavigate} />
+      <UnlinkedSustainers isReadOnly={isReadOnly} onNavigate={onNavigate} />
       {toast && (
         <div role="status" style={{ position: "fixed", bottom: 24, right: 24, zIndex: 400, background: T.ink, color: T.inkInverse, borderRadius: 10, padding: "12px 18px", fontSize: 13, boxShadow: T.shadowLg }}>{toast}</div>
       )}

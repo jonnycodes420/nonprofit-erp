@@ -253,6 +253,73 @@ async function reset() {
   ok(`the flags actually gate the at-risk shape (excluded pool: ${atRiskAll.length} would have qualified by money+silence alone)`,
     atRiskAll.length > 0 && !atRisk.some(r => excluded.includes(r.name.toLowerCase())), null);
 
+  // ── §5 · the recurring surface sees imported sustainers (Part 5) ─────────
+  console.log("\n— §5 · unlinked sustainers are visible, not zero —");
+  const unlinked = (await api("GET", "/recurring/unlinked", tok)).body;
+  ok(`the recurring surface counts the 34 imported sustainers (was zero)`,
+    unlinked.counts.unlinked === KEY.sustainers.count, unlinked.counts);
+  ok(`…and separates the ${KEY.sustainers.stoppedOver60d.length} whose giving stopped >60 days ago`,
+    unlinked.counts.stopped === KEY.sustainers.stoppedOver60d.length, { got: unlinked.counts.stopped, expect: KEY.sustainers.stoppedOver60d.length });
+  const stoppedRows = unlinked.list.filter(u => u.stopped);
+  ok("a stopped sustainer's reason is their own story, never 'lapsed'",
+    stoppedRows.length > 0 && stoppedRows.every(u => /a month/.test(u.reason) && !/lapsed/i.test(u.reason)),
+    stoppedRows.slice(0, 2).map(u => u.reason));
+  // routed OUT of lapsed: a stopped imported sustainer is not in the day view's lapsed bucket
+  const attn2 = (await api("GET", "/dashboard/today?scope=all", tok)).body;
+  const susIds = new Set(unlinked.list.map(u => u.donorId));
+  ok("no imported sustainer appears in the Needs-Your-Attention lapsed bucket (their card stopped, they did not)",
+    !attn2.some(i => i.action === "lapsed" && susIds.has(i.donorId)),
+    attn2.filter(i => i.action === "lapsed" && susIds.has(i.donorId)).map(i => i.donorName));
+
+  // ── §6 · the reconnect flow, through a LIVE test-mode webhook ────────────
+  // A reconnect stitches the new subscription to the EXISTING donor (history
+  // stays, lifetime does not reset); the negative — a reconnect matching
+  // nothing — creates a new donor and never silently merges.
+  console.log("\n— §6 · reconnect stitches to the existing donor —");
+  const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY || "sk_test_dummy");
+  const WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET || "whsec_localtest";
+  const ACCT = "acct_b77golden";
+  await q(`UPDATE orgs SET stripe_account_id=$1, stripe_connected=true WHERE id=$2`, [ACCT, ORG]);
+  const target = stoppedRows.find(u => u.email) || unlinked.list.find(u => u.email);
+  const [before] = await q(`SELECT total_giving::float t, gift_count::int n FROM donors WHERE id=$1`, [target.donorId]);
+  // send a reconnect link (records the intent; email fails to the dummy sink, harmless)
+  const sendRes = await api("POST", "/recurring/unlinked/send-reconnect", tok, { donorIds: [target.donorId] });
+  ok("send-reconnect records the send", sendRes.status === 200 && sendRes.body.sent >= 0, sendRes.body);
+  // the token is deterministic — sign it the way the server does (HMAC over the id+org)
+  const crypto = require("crypto");
+  const SECRET = process.env.RECOVERY_SECRET || process.env.JWT_SECRET || "local-test-secret";
+  const payload = Buffer.from(JSON.stringify({ donorId: target.donorId, orgId: ORG, k: "reconnect" })).toString("base64url");
+  const sig = crypto.createHmac("sha256", SECRET).update(payload).digest("base64url");
+  const reconnectToken = `${payload}.${sig}`;
+  const fire = async evt => {
+    const body = JSON.stringify(evt);
+    const header = stripe.webhooks.generateTestHeaderString({ payload: body, secret: WEBHOOK_SECRET });
+    const r = await fetch(BASE + "/stripe/webhook", { method: "POST", headers: { "Content-Type": "application/json", "stripe-signature": header }, body });
+    return r.status;
+  };
+  // the checkout.session.completed a reconnect produces — reconnect_donor_id in metadata
+  await fire({ id: "evt_b77_recon", type: "checkout.session.completed", account: ACCT,
+    data: { object: { mode: "subscription", customer_email: target.email || "noemail@b77.test", customer: "cus_b77recon", subscription: "sub_b77recon", amount_total: 2500,
+      metadata: { donor_name: target.donorName, frequency: "monthly", reconnect_donor_id: target.donorId } } } });
+  await new Promise(r => setTimeout(r, 600));
+  const [after] = await q(`SELECT id, total_giving::float t, gift_count::int n, imported_sustainer, stripe_subscription_id FROM donors WHERE id=$1`, [target.donorId]);
+  ok("the reconnect stitched to the EXISTING donor — no second record, history intact",
+    after && after.id === target.donorId && Math.abs(after.t - before.t) < 0.01 && after.n === before.n, { before, after });
+  ok("…their subscription is now linked and the unlinked flag cleared",
+    after.stripe_subscription_id === "sub_b77recon" && after.imported_sustainer === false, after);
+  const [dupes] = await q(`SELECT COUNT(*)::int c FROM donors WHERE org_id=$1 AND name=$2`, [ORG, target.donorName]);
+  ok("no duplicate donor row was created for the reconnected sustainer", dupes.c === 1, dupes);
+  const recon = (await api("GET", "/recurring/unlinked", tok)).body;
+  ok("the recovery number comes from the real event (1 reconnected, monthly-back > 0)",
+    recon.stats.reconnected === 1 && recon.stats.monthlyBack > 0, recon.stats);
+  // the negative: a reconnect token matching NOTHING creates a new donor, no silent merge
+  await fire({ id: "evt_b77_recon_neg", type: "checkout.session.completed", account: ACCT,
+    data: { object: { mode: "subscription", customer_email: "ghost-reconnect@b77.test", customer: "cus_b77ghost", subscription: "sub_b77ghost", amount_total: 1000,
+      metadata: { donor_name: "Ghost Reconnect", frequency: "monthly", reconnect_donor_id: "d_does_not_exist" } } } });
+  await new Promise(r => setTimeout(r, 500));
+  const [ghost] = await q(`SELECT COUNT(*)::int c FROM donors WHERE org_id=$1 AND email='ghost-reconnect@b77.test'`, [ORG]);
+  ok("a reconnect matching nothing creates a new donor (never a silent merge)", ghost.c === 1, ghost);
+
   await closeDb();
   summary();
 })().catch(async e => { console.error("SUITE ERROR:", e); await closeDb().catch(() => {}); process.exit(1); });

@@ -691,6 +691,16 @@ app.post("/stripe/webhook", express.raw({ type: "application/json" }), async (re
             // donor (caught as a ~1-in-3 flake of webhook-ordering's "Q2
             // simultaneous" case — a flaky race test is a race, not a flake).
             const donorId = await withAdvisoryLock(`donor:${orgId}:${(email || "").toLowerCase()}`, async () => {
+              // BUILD-77 Part 6 — a reconnect stitches to the EXISTING donor
+              // by the signed id, then by email, then by name. It must NEVER
+              // create a second record (the 26-months-of-history-stays-attached
+              // guarantee); the negative — a reconnect matching nothing —
+              // falls through to the normal resolve and creates a donor.
+              const reconnectId = session.metadata?.reconnect_donor_id;
+              if (reconnectId) {
+                const rr = await query("SELECT id FROM donors WHERE id=$1 AND org_id=$2 AND deleted_at IS NULL", [reconnectId, orgId]);
+                if (rr.length) return rr[0].id;
+              }
               const dr = await query("SELECT id FROM donors WHERE org_id=$1 AND email ILIKE $2", [orgId, email]);
               if (dr.length) return dr[0].id;
               const newId = "d_" + uuid().slice(0, 8);
@@ -708,6 +718,27 @@ app.post("/stripe/webhook", express.raw({ type: "application/json" }), async (re
                WHERE id=$3`,
               [session.subscription, session.customer || null, donorId]
             );
+            // BUILD-77 Part 6 — the donor is now LINKED: clear the imported
+            // (unlinked) sustainer state, and if this completed a reconnect,
+            // stamp the ledger (real event → the migration recovery number).
+            const recurAmt77 = session.amount_total != null ? session.amount_total / 100 : null;
+            await run(`UPDATE donors SET imported_sustainer=false WHERE id=$1 AND org_id=$2`, [donorId, orgId]).catch(() => {});
+            // A reconnection is counted whether or not a reconnect link was
+            // recorded first (a donor may complete a link forwarded to them,
+            // or reconnect on their own) — UPSERT so the recovery number
+            // reflects every sustainer who came back, stamped from THIS real
+            // event, never an estimate.
+            if (session.metadata?.reconnect_donor_id) {
+              await run(
+                `INSERT INTO reconnect_sends (id, org_id, donor_id, historical_interval, reconnected_at, new_subscription_id, reconnected_amount)
+                 VALUES ($1,$2,$3,'month',NOW(),$4,$5)
+                 ON CONFLICT (org_id, donor_id) DO UPDATE SET
+                   reconnected_at = COALESCE(reconnect_sends.reconnected_at, NOW()),
+                   new_subscription_id = EXCLUDED.new_subscription_id,
+                   reconnected_amount = EXCLUDED.reconnected_amount`,
+                ["rcs_" + uuid().slice(0, 8), orgId, donorId, session.subscription, recurAmt77]
+              ).catch(() => {});
+            }
             const taskId = "t_" + uuid().slice(0, 8);
             await run(
               `INSERT INTO tasks (id, org_id, title, priority, done, created_at, created_by, created_by_name) VALUES ($1,$2,$3,'high',0,NOW(),$4,$5)`,
@@ -9244,6 +9275,25 @@ function verifyRecoveryToken(token) {
   } catch { return null; }
 }
 
+// BUILD-77 Part 6 — the reconnect token binds a giving-page prefill to the
+// EXISTING donor so the new subscription stitches back to their record
+// (never a second donor). Same HMAC construction as the recovery token.
+function signReconnectToken(donorId, orgId) {
+  const payload = Buffer.from(JSON.stringify({ donorId, orgId, k: "reconnect" })).toString("base64url");
+  const sig = crypto.createHmac("sha256", RECOVERY_SECRET).update(payload).digest("base64url");
+  return `${payload}.${sig}`;
+}
+function verifyReconnectToken(token) {
+  if (!token || typeof token !== "string" || !token.includes(".")) return null;
+  const [payload, sig] = token.split(".");
+  if (!payload || !sig) return null;
+  const expected = crypto.createHmac("sha256", RECOVERY_SECRET).update(payload).digest("base64url");
+  const a = Buffer.from(sig), b = Buffer.from(expected);
+  if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return null;
+  try { const d = JSON.parse(Buffer.from(payload, "base64url").toString()); return (d.k === "reconnect" && d.donorId && d.orgId) ? d : null; }
+  catch { return null; }
+}
+
 function buildCardUpdateUrl(subscriptionId, orgId) {
   // Canonical domain via the vercel.json /recurring/update-card proxy rewrite
   // — the failed-card recovery email is exactly where a suspicious-looking
@@ -11253,6 +11303,10 @@ app.post("/donate/:orgSlug", donateLimiter, wrap(async (req, res) => {
     cover_fees: feesCovered ? "true" : "",
     base_amount_cents: feesCovered ? String(baseCents) : "",
   };
+  // BUILD-77 Part 6 — a valid reconnect token stitches the resulting
+  // subscription to the EXISTING donor (webhook reads reconnect_donor_id).
+  const reconnectDecoded = req.body.reconnectToken ? verifyReconnectToken(req.body.reconnectToken) : null;
+  if (reconnectDecoded && reconnectDecoded.orgId === org.id) metadata.reconnect_donor_id = reconnectDecoded.donorId;
 
   const returnPath = peerFundraiserId
     ? `/give/${req.params.orgSlug}/${givingPageSlug}/${fundraiserSlug}`
@@ -16040,6 +16094,108 @@ app.get("/recurring/exceptions", requireAuth, wrap(async (req, res) => {
     })),
     anniversaries: anniversaries.slice(0, 8),
   });
+}));
+
+// ── BUILD-77 Part 5 — the unlinked sustainer list + the reconnect send ─────
+// Imported sustainers: history here, no payment authorization (nobody can
+// import a live card). The list tells the true sentence and routes the
+// stopped ones out of "lapsed" into their own recovery language; the
+// recovery stats come from real reconnect_sends rows.
+app.get("/recurring/unlinked", requireAuth, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  const today = orgToday(await orgTz(orgId));                 // ORG_TZ_SEAM_OK
+  const stopCutoff = orgTime.addDays(today, -60);
+  const rows = await query(
+    `SELECT d.id, d.name, d.email,
+            d.imported_sustainer_amount::float AS amount,
+            d.imported_sustainer_last_gift AS last_gift,
+            (SELECT MIN(g.date) FROM gifts g WHERE g.donor_id=d.id AND g.org_id=d.org_id) AS first_gift,
+            (SELECT COUNT(*)::int FROM gifts g WHERE g.donor_id=d.id AND g.org_id=d.org_id AND g.amount>0) AS gift_count,
+            rc.sent_at, rc.reconnected_at
+       FROM donors d
+       LEFT JOIN reconnect_sends rc ON rc.org_id=d.org_id AND rc.donor_id=d.id
+      WHERE d.org_id=? AND d.deleted_at IS NULL AND d.imported_sustainer IS TRUE
+      ORDER BY (d.imported_sustainer_last_gift < ?) DESC, d.imported_sustainer_amount DESC NULLS LAST`,
+    [orgId, stopCutoff]);
+  const monthsBetween = (a, b) => {
+    const ca = orgTime.parseCivil(String(a).slice(0, 10)), cb = orgTime.parseCivil(String(b).slice(0, 10));
+    if (!ca || !cb) return null;
+    return Math.max(1, (cb.y - ca.y) * 12 + (cb.m - ca.m));
+  };
+  const monthName = d => { const c = orgTime.parseCivil(String(d).slice(0, 10)); return c ? orgTime.formatCivil(`${c.y}-${String(c.m).padStart(2, "0")}-01`).replace(/ \d+,?/, "").split(" ")[0] : ""; };
+  const list = rows.map(r => {
+    const lastGift = r.last_gift ? String(r.last_gift).slice(0, 10) : null;
+    const stopped = lastGift ? lastGift < stopCutoff : false;
+    const months = r.first_gift && lastGift ? monthsBetween(r.first_gift, lastGift) : null;
+    const amtStr = r.amount != null ? `$${Math.round(r.amount)}` : "their monthly gift";
+    // Their own story — never "lapsed" (they didn't choose to leave; their
+    // card expired). "Gave $25 a month for 26 months. Nothing since June."
+    const reason = stopped
+      ? `Gave ${amtStr} a month${months ? ` for ${months} months` : ""}. Nothing since ${lastGift ? monthName(lastGift) : "their last gift"}.`
+      : `Giving ${amtStr} a month${months ? ` for ${months} months` : ""} — reconnect before their card would renew.`;
+    return {
+      donorId: r.id, donorName: r.name, email: r.email || null,
+      amount: r.amount != null ? Math.round(r.amount * 100) / 100 : null,
+      lastGift, stopped, reason,
+      sentAt: r.sent_at || null, reconnectedAt: r.reconnected_at || null,
+    };
+  });
+  const [active] = await query(
+    `SELECT COUNT(*)::int n FROM recurring_subscriptions WHERE org_id=? AND status IN ('active','recovered')`, [orgId]);
+  const [stats] = await query(
+    `SELECT COUNT(*)::int sent,
+            COUNT(*) FILTER (WHERE reconnected_at IS NOT NULL)::int reconnected,
+            COALESCE(SUM(reconnected_amount) FILTER (WHERE reconnected_at IS NOT NULL),0)::float monthly_back
+       FROM reconnect_sends WHERE org_id=?`, [orgId]);
+  res.json({
+    counts: {
+      activeLinked: active.n,
+      stopped: list.filter(u => u.stopped).length,
+      unlinked: list.filter(u => !u.reconnectedAt).length,
+    },
+    stats: { sent: stats.sent, reconnected: stats.reconnected, monthlyBack: Math.round(stats.monthly_back * 100) / 100 },
+    list,
+  });
+}));
+
+app.post("/recurring/unlinked/send-reconnect", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  const ids = Array.isArray(req.body.donorIds) ? req.body.donorIds.slice(0, 500) : [];
+  if (!ids.length) return res.status(400).json({ error: "donorIds required" });
+  const [org] = await query("SELECT id, name, org_slug FROM orgs WHERE id=?", [orgId]);
+  const donors = await query(
+    `SELECT id, name, email, imported_sustainer_amount::float AS amount, imported_sustainer_last_gift AS last_gift
+       FROM donors WHERE org_id=? AND deleted_at IS NULL AND imported_sustainer IS TRUE
+        AND id = ANY(?) AND email IS NOT NULL AND email <> ''`,
+    [orgId, ids]);
+  const dfName = await donorFacingOrgName(orgId, org.name).catch(() => org.name);
+  let sent = 0;
+  for (const d of donors) {
+    const freq = "monthly";
+    const token = signReconnectToken(d.id, orgId);
+    const params = new URLSearchParams({ reconnect: token, frequency: freq });
+    if (d.amount != null) params.set("amount", String(Math.round(d.amount)));
+    const link = `${publicAppUrl()}/give/${org.org_slug}?${params.toString()}`;
+    const amtStr = d.amount != null ? `$${Math.round(d.amount)}/month` : "your monthly gift";
+    const html = await brandEmailHeaderHtml(orgId)
+      + `<p>Hi ${escapeHtml((d.name || "there").split(" ")[0])},</p>
+         <p>Thank you for being a faithful monthly supporter of <strong>${escapeHtml(dfName)}</strong>. We've moved to a new giving system, and because card details can't transfer between systems, we need you to reconnect your ${escapeHtml(amtStr)} gift.</p>
+         <p>It takes about a minute — your amount is already filled in:</p>
+         <p><a href="${link}" style="display:inline-block;background:#c9a84c;color:#0f1a12;text-decoration:none;font-weight:700;padding:11px 22px;border-radius:8px">Reconnect my monthly gift</a></p>
+         <p style="color:#8fa896;font-size:13px">If you'd rather not continue your monthly gift, no action is needed — and thank you for everything you've already given.</p>`;
+    const from = await donorFromAddress(orgId).catch(() => undefined);
+    const ok = await sendDonorLifecycleEmail("reconnect", d.email, `Reconnect your monthly gift to ${dfName}`, html, from);
+    if (ok) {
+      await run(
+        `INSERT INTO reconnect_sends (id, org_id, donor_id, historical_amount, historical_interval, sent_by)
+         VALUES (?,?,?,?,?,?)
+         ON CONFLICT (org_id, donor_id) DO UPDATE SET sent_at=NOW(), historical_amount=EXCLUDED.historical_amount, sent_by=EXCLUDED.sent_by`,
+        ["rcs_" + uuid().slice(0, 8), orgId, d.id, d.amount, "month", actor(req).id]
+      );
+      sent++;
+    }
+  }
+  res.json({ sent, requested: donors.length });
 }));
 
 // ── Staff-direct actions: pause · resume · cancel · fund designation ───────

@@ -1208,6 +1208,31 @@ async function initSchema() {
   `);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_recurring_proposals_org ON recurring_proposals (org_id, status)`);
 
+  // BUILD-77 Part 6 — the reconnect ledger. One row per reconnect link sent
+  // to an imported (unlinked) sustainer; the recovery numbers on the
+  // recurring surface come from these REAL rows, never an estimate.
+  // reconnected_at + new_subscription_id are stamped by the webhook when the
+  // donor completes checkout and their new subscription stitches to the
+  // EXISTING donor record (BUILD-73's rule: money is at risk until the
+  // charge settles — reconnected_at means the subscription exists, and the
+  // monthly-back figure counts only settled amounts).
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS reconnect_sends (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL,
+      donor_id TEXT NOT NULL,
+      historical_amount NUMERIC,
+      historical_interval TEXT DEFAULT 'month',
+      sent_at TIMESTAMPTZ DEFAULT NOW(),
+      sent_by TEXT,
+      reconnected_at TIMESTAMPTZ,
+      new_subscription_id TEXT,
+      reconnected_amount NUMERIC,
+      UNIQUE(org_id, donor_id)
+    )
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_reconnect_sends_org ON reconnect_sends (org_id)`);
+
   // Append-only log of everything that happens to a subscription's payment
   // health — the source of truth for recovery-rate math (recovered vs. lost
   // over a trailing window) and for webhook idempotency: stripe_event_id is

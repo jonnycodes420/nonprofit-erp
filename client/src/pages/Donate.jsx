@@ -172,6 +172,7 @@ export default function Donate() {
   // active ladder is pre-selected; switching frequency re-selects the second
   // tier of the NEW ladder (never carries an amount across).
   const [frequency, setFrequency] = useState("monthly");
+  const [reconnectToken, setReconnectToken] = useState(null);   // BUILD-77 Part 6 — stitches the new subscription to the imported donor
   const [preset, setPreset] = useState(null);   // the selected ladder amount (null until org loads)
   const [customAmt, setCustomAmt] = useState("");
   const [isCustom, setIsCustom] = useState(false);
@@ -204,6 +205,19 @@ export default function Donate() {
     if (params.get("fundraiser_created") === "true") {
       setJustCreatedEmailSent(params.get("email_sent") === "true");
       window.history.replaceState({}, "", basePath);
+    }
+    // BUILD-77 Part 6 — the reconnect link: an imported sustainer arriving
+    // from the reconnect email lands with their historical amount and
+    // frequency prefilled, and the signed token rides the checkout so the
+    // new subscription stitches to their EXISTING record (26 months of
+    // history stays attached; lifetime value does not reset).
+    const rq = params.get("reconnect");
+    if (rq) {
+      setReconnectToken(rq);
+      const rAmt = parseFloat(params.get("amount"));
+      const rFreq = params.get("frequency") === "annual" ? "annual" : "monthly";
+      setFrequency(rFreq);
+      if (rAmt > 0) { setIsCustom(true); setCustomAmt(String(rAmt)); setPreset(null); }
     }
     const url = fundraiserSlug
       ? `${API}/org/${orgSlug}/giving-page/${pageSlug}/fundraiser/${fundraiserSlug}/public`
@@ -292,6 +306,7 @@ export default function Donate() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           amount: effectiveAmount, fundId, frequency, firstName, lastName, email,
+          reconnectToken: reconnectToken || undefined,
           givingPageId: givingPage?.id, peerFundraiserId: peerFundraiser?.id,
           coverFees: showCoverFees && coverFees,
         }),
