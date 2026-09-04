@@ -177,3 +177,61 @@ resolved; the newer spec wins each one.
   golden's idempotence asserts are scoped: fields/keys/values absolute,
   donor rows per-email.
 - tests/import-messy-cf.test.js: 110 asserts, in run-all.
+
+## PARTS 5 + 6 — SURFACES, EXPORT, THE ROUND TRIP (shipped)
+
+- **Donor record (5.1)**: custom fields in position order, empty fields
+  collapsed behind a show-all, inline edit through the same seam
+  (`validateCustomFields`) — a refused value names its reason on screen.
+- **Gift record (5.2)**: gift-entity fields render on each gift-history row
+  (a value summary appended to the notes cell), inline-editable in the row's
+  Edit form (per-type inputs; select gets a dropdown), saved through the
+  gift seam. The per-donor gift CSV gains a column per gift field.
+- **Settings (5.3)**: one list per entity (donor/gift tabs), add / rename /
+  reorder / archive / restore. Type is immutable after creation — the modal
+  says so and disables the type select on edit, instead of hiding the control.
+- **5.4 / 5.5 held**: filtering/sorting/segmenting stay deferred; drift is
+  byte-identical before and after custom values exist on a drifting AND an
+  excluded donor (golden §5, asserted on the /drift JSON).
+- **Export (6.1)**: every non-archived field is its own column in the donor
+  CSV, the ZIP donors.csv + gifts.csv, and the /org/export JSON (which also
+  carries the definition manifest, keyed). Archived fields excluded, values
+  untouched (6.3, golden §4).
+- **The round trip (6.2) is the proof**: tests/custom-fields-roundtrip.test.js
+  (42, in run-all) exports org A through the CSV + JSON, imports into a FRESH
+  org B through the real mapper plan + route, and asserts definitions match by
+  key/type/options, every value matches BY KEY (never label), money to the
+  cent, dates as civil dates, and BOTH axes balance on the re-import. The
+  export rendering (renderCustomValue) and the import coercion
+  (coerceCustomValue) are two implementations; §2 asserts every type's export
+  against a hand-written expected value, not only against itself.
+
+## VERIFICATION — the build's own checklist, answered
+
+1. Both axes balance on the new fixture, and the column axis was MADE to go
+   red (golden §3, audit/build78-column-red.txt).
+2. Round trip clean, by key, money to the cent, dates civil (roundtrip suite).
+3. A date custom field asserted IN A BROWSER: the walk imports the fixture,
+   opens a donor carrying a Last Contact value, and confirms an mm/dd/yyyy
+   source rendered as an ISO civil date — normalizeDate ran in Chrome, whose
+   native Date refuses that format (scripts/build78-capture.js, docs/build78).
+4. Second import creates zero new fields — prevention, not cleanup (golden §6).
+5. Archive then restore: value count unchanged through archive, every value
+   matched on restore (custom-fields §4).
+6. Route-coverage extended and green, cross-org field_id rejected with no row
+   (tenant-matrix 43, custom-fields §5).
+7. Drift byte-identical before/after custom fields (golden §5).
+8. Ask-gate assertions pass untouched; every exclusion-shaped header refused
+   as a custom destination (golden §1, import-messy 52 untouched).
+9. Existing battery green including import-messy at 52.
+10. landing-prod-verify 29/29; date audit unchanged (custom fields route
+    through normalizeDate — no new clock-derived civil dates).
+11. Human walk at 1440 and 390, every proposed field read on screen; nothing
+    reads like system output (docs/build78 screenshots).
+12. node scripts/status.js aligned before shipping.
+
+## THE THING THIS BUILD IS NOT
+
+Custom fields let Steward say yes to a real file instead of asking an org to
+change their data. Still not the milestone: there has still never been a
+conversation with a nonprofit.

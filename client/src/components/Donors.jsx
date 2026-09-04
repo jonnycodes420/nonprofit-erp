@@ -1689,7 +1689,7 @@ export function DonorImport({ onClose, onImported, withHistory = false }) {
                     const label = d.label!==undefined?d.label:c.proposal.label;
                     const failed = (type===c.proposal.type?c.proposal.evidence.failed:null);
                     const decided = d.action==="accept"||d.action==="discard"||d.action==="core";
-                    return <div key={c.index} style={{borderTop:`1px solid ${T.bg3}`,paddingTop:8,marginTop:8}}>
+                    return <div key={c.index} data-cf-col={String(c.header).trim()} data-cf-decided={decided?"1":"0"} style={{borderTop:`1px solid ${T.bg3}`,paddingTop:8,marginTop:8}}>
                       <div style={{marginBottom:4}}>
                         <strong style={{color:T.ink}}>{String(c.header).trim()}</strong>
                         {" → "}<strong style={{color:T.greenDk}}>{({text:"Text",long_text:"Long text",number:"Number",money:"Money",date:"Date",select:"Select",multi_select:"Multi-select",checkbox:"Yes/No"})[type]||type}</strong>
@@ -2882,6 +2882,17 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
   const [cfShowAll,setCfShowAll]=useState(false);
   const [cfError,setCfError]=useState("");
   useEffect(()=>{apiFetch(`/donors/${donor.id}/custom-fields`).then(rows=>setCfData(Array.isArray(rows)?rows:[])).catch(()=>{});},[donor.id]);
+  // BUILD-78 5.2 — gift-entity fields surface on each gift row and edit
+  // through the same seam as everything else.
+  const [giftCfDefs,setGiftCfDefs]=useState([]);
+  useEffect(()=>{apiFetch("/custom-fields?entity=gift").then(rows=>setGiftCfDefs(Array.isArray(rows)?rows:[])).catch(()=>{});},[]);
+  const giftCfEditStr=(def,v)=>{
+    if(v===null||v===undefined)return "";
+    if(def.type==="money")return Number.isInteger(v)?(v/100).toFixed(2):String(v);
+    if(def.type==="checkbox")return v===true?"yes":v===false?"no":String(v);
+    if(def.type==="multi_select")return Array.isArray(v)?v.join("; "):String(v);
+    return String(v);
+  };
   const [donorEvents,setDonorEvents]=useState([]);
   useEffect(()=>{apiFetch(`/donors/${donor.id}/events`).then(rows=>setDonorEvents(Array.isArray(rows)?rows:[])).catch(()=>{});},[donor.id]);
   const [localScore,setLocalScore]=useState(donor.wealthScore??null);
@@ -3296,10 +3307,15 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
   const saveGiftEdit=async(giftId)=>{
     setGiftSaving(true);
     try{
-      await apiFetch(`/gifts/${giftId}`,{method:"PUT",body:JSON.stringify(giftEditForm)});
+      const {customFields,...core}=giftEditForm;
+      await apiFetch(`/gifts/${giftId}`,{method:"PUT",body:JSON.stringify(core)});
+      if(customFields&&giftCfDefs.length){
+        // through the ONE seam — a refused value names its reason
+        await apiFetch(`/gifts/${giftId}/custom-fields`,{method:"PUT",body:JSON.stringify({values:customFields})});
+      }
       loadGiftsFull();
       setGiftEditId(null);
-    }catch(e){console.error(e);}
+    }catch(e){alert(e?.errors?.[0]?.error||e.message||"That value was refused");}
     setGiftSaving(false);
   };
 
@@ -3453,7 +3469,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
   };
 
   const exportGiftsCSV=()=>{
-    const rows=[["Date","Amount","Type","Payment Method","Fund","Ack Sent","Notes"],...giftsFull.map(g=>[g.date,g.amount,g.type,g.payment_method,g.fund_id,g.acknowledgement_sent?"Yes":"No",g.notes])];
+    const rows=[["Date","Amount","Type","Payment Method","Fund","Ack Sent","Notes",...giftCfDefs.map(d=>d.label)],...giftsFull.map(g=>[g.date,g.amount,g.type,g.payment_method,g.fund_id,g.acknowledgement_sent?"Yes":"No",g.notes,...giftCfDefs.map(d=>renderCustomValue(d,(g.custom_fields||{})[d.key]))])];
     const csv=rows.map(r=>r.map(v=>`"${(v||"").toString().replace(/"/g,'""')}"`).join(",")).join("\n");
     const blob=new Blob([csv],{type:"text/csv"});
     const url=URL.createObjectURL(blob);
@@ -3920,6 +3936,18 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
                               </select>
                               <input value={giftEditForm.payment_method} onChange={e=>setGiftEditForm(p=>({...p,payment_method:e.target.value}))} placeholder="Method" style={{width:100,background:T.bg,border:"1px solid "+T.bg3,borderRadius:6,padding:"5px 8px",color:T.ink,fontSize:12,outline:"none"}}/>
                               <input value={giftEditForm.notes} onChange={e=>setGiftEditForm(p=>({...p,notes:e.target.value}))} placeholder="Notes" style={{flex:1,minWidth:80,background:T.bg,border:"1px solid "+T.bg3,borderRadius:6,padding:"5px 8px",color:T.ink,fontSize:12,outline:"none"}}/>
+                              {giftCfDefs.map(d=>(
+                                d.type==="select"?(
+                                  <select key={d.key} value={giftEditForm.customFields?.[d.key]||""} onChange={e=>setGiftEditForm(p=>({...p,customFields:{...p.customFields,[d.key]:e.target.value}}))}
+                                    title={d.label} style={{width:110,background:T.bg,border:"1px solid "+T.bg3,borderRadius:6,padding:"5px 8px",color:T.ink,fontSize:12,outline:"none"}}>
+                                    <option value="">{d.label}…</option>
+                                    {(d.options||[]).map(o=><option key={o} value={o}>{o}</option>)}
+                                  </select>
+                                ):(
+                                  <input key={d.key} value={giftEditForm.customFields?.[d.key]||""} onChange={e=>setGiftEditForm(p=>({...p,customFields:{...p.customFields,[d.key]:e.target.value}}))}
+                                    placeholder={d.label} title={d.label} style={{width:110,background:T.bg,border:"1px solid "+T.bg3,borderRadius:6,padding:"5px 8px",color:T.ink,fontSize:12,outline:"none"}}/>
+                                )
+                              ))}
                               <label style={{display:"flex",alignItems:"center",gap:4,fontSize:11,color:T.ink,cursor:"pointer",flexShrink:0}}>
                                 <input type="checkbox" checked={!!giftEditForm.acknowledgement_sent} onChange={e=>setGiftEditForm(p=>({...p,acknowledgement_sent:e.target.checked}))} style={{accentColor:"#1a6b4a"}}/>
                                 Ack
@@ -3944,9 +3972,11 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
                                 return <button onClick={()=>sendReceipt(g.id)} disabled={busy||isReadOnly} title={isReadOnly?"Reactivate your subscription to make changes.":""} style={{background:"none",border:"1px solid "+T.bg3,borderRadius:6,color:isReadOnly?T.ink3:"#1a6b4a",fontSize:11,fontWeight:600,cursor:isReadOnly?"not-allowed":"pointer",padding:"3px 8px",opacity:busy?0.6:1}}>{busy?"Sending…":"Send receipt"}</button>;
                               })()}
                             </td>
-                            <td style={{padding:"9px 12px",color:T.ink3,maxWidth:140,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{g.notes||""}</td>
+                            <td style={{padding:"9px 12px",color:T.ink3,maxWidth:180,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}
+                              title={[g.notes,...giftCfDefs.map(d=>{const v=(g.custom_fields||{})[d.key];return (v!==null&&v!==undefined&&v!=="")?`${d.label}: ${renderCustomValue(d,v)}`:null;}).filter(Boolean)].filter(Boolean).join(" · ")}>
+                              {[g.notes,...giftCfDefs.map(d=>{const v=(g.custom_fields||{})[d.key];return (v!==null&&v!==undefined&&v!=="")?`${d.label}: ${renderCustomValue(d,v)}`:null;}).filter(Boolean)].filter(Boolean).join(" · ")}</td>
                             <td style={{padding:"9px 12px",whiteSpace:"nowrap"}}>
-                              <button onClick={()=>{setGiftEditId(g.id);setGiftEditForm({amount:g.amount,date:g.date,type:g.type,payment_method:g.payment_method||"",notes:g.notes||"",fund_id:g.fund_id||"",acknowledgement_sent:g.acknowledgement_sent});}} style={{background:"none",border:"none",color:T.ink3,fontSize:12,cursor:"pointer",padding:"2px 6px"}}>Edit</button>
+                              <button onClick={()=>{setGiftEditId(g.id);setGiftEditForm({amount:g.amount,date:g.date,type:g.type,payment_method:g.payment_method||"",notes:g.notes||"",fund_id:g.fund_id||"",acknowledgement_sent:g.acknowledgement_sent,customFields:Object.fromEntries(giftCfDefs.map(d=>[d.key,giftCfEditStr(d,(g.custom_fields||{})[d.key])]))});}} style={{background:"none",border:"none",color:T.ink3,fontSize:12,cursor:"pointer",padding:"2px 6px"}}>Edit</button>
                               <button onClick={()=>deleteGift(g.id)} style={{background:"none",border:"none",color:"#b8593f",fontSize:12,cursor:"pointer",padding:"2px 6px"}}>Delete</button>
                             </td>
                           </>

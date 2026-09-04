@@ -29,6 +29,7 @@ const A = "org_b78cf", B = "org_b78cfB", M = "org_b78cfmig";
 
 async function resetOrg(org, { plan = "team" } = {}) {
   for (const t of ["custom_field_events", "custom_field_defs", "custom_field_values", "custom_fields",
+    "fin_audit_log", "fin_transactions", "budgets", "accounts", "fin_funds", "metric_snapshots",
     "gifts", "interactions", "tasks", "donors", "users"])
     await q(`DELETE FROM ${t} WHERE org_id=$1`, [org]).catch(() => {});
   await q(`DELETE FROM orgs WHERE id=$1`, [org]).catch(() => {});
