@@ -234,3 +234,25 @@ drift check forced the regeneration).
   "not enough history yet" with no comparison at all.) Payload now carries
   year/prevYear/prevYearCount/retained; home.test.js asserts the window +
   denominator are present.
+
+## THE WALK (2026-09-04) — the real file, re-imported into a fresh org
+
+docs/drift/b77-home-1440.png — the fixed pipeline, the whole fixture:
+- **file: 2,502 rows · imported 2,481 · skipped 10 · errored 11** — every
+  physical row a disposition, "In your file" the honest count.
+- **At Risk From Drift $64,050 · 35 drifting**, reading the reconciled
+  sentence: "Of $2,494,041.62 at risk across 332 quiet donors (no gift in
+  over 6 months), this $64,050.39 is drifting — past their own pattern,
+  still reachable with a call now." One nested story, not three figures.
+- **Retention 60% — "124 of 206 donors who gave in FY 2025 gave again
+  (FY 2025 → FY 2026). The nonprofit sector average is about 43%."** Window,
+  denominator, no congratulation.
+- Drift excludes, on the real file: 15 deceased · 13 do-not-solicit · 4
+  do-not-contact · 16 pledge-cadence · 34 unlinked sustainers · 141
+  single-gift. The Drifting list is real donors with their own patterns.
+- Needs Your Attention carries lapsed MAJORS (Virginia Mulvaney $252,500,
+  Larry Ackerly — "last gift 895 days ago", his real 2024-03-23 date, NOT
+  today) and thank-you tasks — and NO deceased/do-not-solicit donor (Emily
+  Chen the bequest, Helen Ravensworth the DECEASED $105k, both gone).
+- Recurring surface: 34 imported sustainers visible, 13 whose giving
+  stopped — was zero.
