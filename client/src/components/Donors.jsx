@@ -6,7 +6,7 @@ import UpgradeModal from "./UpgradeModal";
 import Uploader from "./Uploader";
 import { bestCampaignMatch } from "../lib/campaignMatch";
 import { dueBadge } from "../lib/taskDue";
-import { renderCustomValue } from "../lib/customFieldShape";
+import { renderCustomValue, coerceCustomValue, parseBoolValue, buildMapperPlan, buildColumnLedger, summarizeColumnLedger, countPhysicalColumns, proposalEvidenceText, generateFieldKey, CF_TYPES } from "../lib/customFieldShape";
 
 class ErrorBoundary extends Component {
   constructor(props) { super(props); this.state = { error: null }; }
@@ -160,10 +160,18 @@ async function parseFileToSheets(file, { onSingle, onMulti, onError }) {
             return [h, String(v ?? "").trim()];
           }))
         );
-        return { name:sn, rowCount:rows.length, headers, rows };
+        return { name:sn, rowCount:rows.length, headers, rows, rawWidths: dataRows.map(r => r.length) };
       }).filter(s => s && s.rowCount > 0);
       if (!sheetsData.length) { onError("No data rows found in this file."); return; }
-      if (sheetsData.length === 1) { onSingle(sheetsData[0].headers, sheetsData[0].rows); }
+      if (sheetsData.length === 1) {
+        // BUILD-78 Part 3.1 — the physical column count, taken ONCE at parse
+        // entry from the sheet's raw header row (blank headers count) plus any
+        // overflow cells body rows carry beyond the header width.
+        const s0 = sheetsData[0];
+        let maxOverflow = 0, overflowRows = 0;
+        for (const r of s0.rawWidths || []) { const extra = r - s0.headers.length; if (extra > 0) { overflowRows++; if (extra > maxOverflow) maxOverflow = extra; } }
+        onSingle(s0.headers, s0.rows, { headerCells: s0.headers, headerCount: s0.headers.length, orphanColumns: maxOverflow, overflowRows, total: s0.headers.length + maxOverflow });
+      }
       else { sheetsData.sort((a,b) => b.rowCount - a.rowCount); onMulti(sheetsData); }
     } catch(ex) { onError("Could not read Excel file: " + ex.message); }
   } else {
@@ -177,7 +185,7 @@ async function parseFileToSheets(file, { onSingle, onMulti, onError }) {
         header:true, skipEmptyLines:true, transformHeader: h => h.trim(),
         complete: res => {
           if (!res.data?.length) { onError("No rows found."); return; }
-          onSingle(res.meta.fields || [], res.data);
+          onSingle(res.meta.fields || [], res.data, countPhysicalColumns(text, res.data));
         },
         error: ex => onError("Parse error: " + ex.message),
       });
@@ -349,9 +357,15 @@ function buildAggregatePayload(parsed, mapping, seedHistory) {
 // every physical row leaves with a disposition, no date ever defaults to
 // today, refunds import as negative gifts, and the file-level counts are
 // taken at parse entry and carried through unchanged.
-function buildTransactionPayload(parsed, txMap) {
+function buildTransactionPayload(parsed, txMap, cfInputs) {
   if (!parsed) return { donors: [], gifts: [], warnedCount: 0, skippedCount: 0, dispositions: [], flaggedRows: [], file: { rows: 0, dollars: 0, imported: 0, donorOnly: 0, skipped: 0, errored: 0 } };
-  const built = buildTransactionRows(parsed, txMap, {});
+  const built = buildTransactionRows(parsed, txMap, {
+    // BUILD-78 — exclusion-shaped columns route to the flag family; custom
+    // columns coerce per type and a failed value refuses the row pre-write.
+    flagColumns: cfInputs ? cfInputs.flagColumns : {},
+    cfColumns: cfInputs ? cfInputs.cfColumns : [],
+    coerceCustomValue, parseBoolValue,
+  });
   return { ...built,
     warnedCount: 0,
     skippedCount: built.file.skipped + built.file.errored };
@@ -372,7 +386,7 @@ function buildWidePayload(parsed, donorMapping, yearCols) {
 // request long enough to hit a platform timeout). Each chunk is self-contained:
 // its gifts are re-indexed to the chunk's local donor positions. Cross-chunk
 // email dedup is handled server-side (chunk N sees chunk N-1's committed rows).
-async function submitImportChunked(donors, gifts, onProgress) {
+async function submitImportChunked(donors, gifts, onProgress, extras) {
   const CHUNK = 500;
   const hasGifts = gifts.length > 0;
   const giftsByDonor = new Map();
@@ -399,7 +413,10 @@ async function submitImportChunked(donors, gifts, onProgress) {
         const gg = giftsByDonor.get(start + localIdx);
         if (gg) gg.forEach(g => { const { donorIndex, ...rest } = g; chunkGifts.push({ ...rest, donorIndex: localIdx }); });
       });
-      res = await apiFetch("/donors/import-combined", { method: "POST", body: JSON.stringify({ donors: slice, gifts: chunkGifts }) });
+      res = await apiFetch("/donors/import-combined", { method: "POST", body: JSON.stringify({ donors: slice, gifts: chunkGifts,
+        // BUILD-78 — the column ledger + saved mappings ride every chunk
+        // (idempotent server-side); the ledger is validated per request.
+        ...(extras ? { columns: extras.columns, fieldMappings: extras.fieldMappings, customFieldDelimiters: extras.customFieldDelimiters } : {}) }) });
     } else {
       res = await apiFetch("/donors/import", { method: "POST", body: JSON.stringify({ donors: slice }) });
     }
@@ -508,7 +525,12 @@ export function DonorImport({ onClose, onImported, withHistory = false }) {
   const [bothMode,   setBothMode]   = useState(null);       // { donorSheet, giftSheet, matchInfo } when "Import both" is chosen
   const [matchKey,   setMatchKey]   = useState("email");    // gift→donor link column in both-mode
   const [loading,    setLoading]    = useState(false);
-  const [ackUnmapped, setAckUnmapped] = useState(false);    // BUILD-77 Part 3d — homeless columns require an explicit acknowledgement
+  const [ackUnmapped, setAckUnmapped] = useState(false);    // BUILD-77 Part 3d — homeless columns require an explicit acknowledgement (aggregate/wide shapes)
+  // ── BUILD-78 — the column mapper (transaction shape) ──
+  const [physicalCols, setPhysicalCols] = useState(null);   // { headerCells, orphanColumns, overflowRows, total } — parse entry, never derived from the mapping
+  const [cfDefs, setCfDefs] = useState({ donor: [], gift: [] });
+  const [savedCfMappings, setSavedCfMappings] = useState([]);
+  const [cfDecisions, setCfDecisions] = useState({});       // columnIndex → { action, entity?, type?, label?, options?, role? }
   const [progress,   setProgress]   = useState(null);       // { done, total } during chunked submit
   const [aiLoading,  setAiLoading]  = useState(false);
   const [result,     setResult]     = useState(null);       // {created,giftsInserted,duplicates,warned,skipped,batchErrors}
@@ -544,6 +566,11 @@ export function DonorImport({ onClose, onImported, withHistory = false }) {
   }).catch(()=>({ active:[], pending:[] }));
 
   useEffect(() => { loadOfficers(); }, []);  // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    apiFetch("/custom-fields?entity=donor").then(r=>setCfDefs(p=>({...p,donor:Array.isArray(r)?r:[]}))).catch(()=>{});
+    apiFetch("/custom-fields?entity=gift").then(r=>setCfDefs(p=>({...p,gift:Array.isArray(r)?r:[]}))).catch(()=>{});
+    apiFetch("/import-field-mappings").then(r=>setSavedCfMappings(Array.isArray(r)?r:[])).catch(()=>{});
+  }, []);
 
   const effectiveShape = shapeOverride || shape;
 
@@ -563,7 +590,7 @@ export function DonorImport({ onClose, onImported, withHistory = false }) {
     setErr("");
   };
 
-  const applyParsed = (headers, rows) => {
+  const applyParsed = (headers, rows, physical) => {
     const det = detectImportShape(headers, rows);
     setShape(det.shape); setShapeOverride(null);
     // Donor-field mapping is over the non-year columns (year columns are gifts,
@@ -573,6 +600,9 @@ export function DonorImport({ onClose, onImported, withHistory = false }) {
     const cfg = autoDetectWideConfig(headers, rows);
     setYearCols(cfg.yearCols.map(col => ({ col, date: yearColToDate(col, "dec31"), enabled: true })));
     setParsed({ headers, rows });
+    // BUILD-78 Part 3.1 — left side of the column equation, from parse entry.
+    setPhysicalCols(physical || { headerCells: headers, headerCount: headers.length, orphanColumns: 0, overflowRows: 0, total: headers.length });
+    setCfDecisions({});
     setXlsxSheets(null);
     setErr("");
   };
@@ -593,7 +623,7 @@ export function DonorImport({ onClose, onImported, withHistory = false }) {
       transformHeader: h => h.trim(),
       complete: res => {
         if (!res.data?.length) { setErr("No rows found. Check CSV format."); return; }
-        applyParsed(res.meta.fields || [], res.data);
+        applyParsed(res.meta.fields || [], res.data, countPhysicalColumns(csvText, res.data));
       },
       error: ex => setErr("Parse error: " + ex.message),
     });
@@ -622,6 +652,48 @@ export function DonorImport({ onClose, onImported, withHistory = false }) {
     setYearCols(cols => cols.map(yc => ({ ...yc, date: yearColToDate(yc.col, val) })));
   };
 
+  // ── BUILD-78 — the mapper plan: one entry per PHYSICAL column ──
+  const mapperPlan = useMemo(() => {
+    if (!parsed || effectiveShape !== "transaction" || !physicalCols) return null;
+    try {
+      return buildMapperPlan({
+        headers: physicalCols.headerCells, fields: parsed.headers, rows: parsed.rows, txMap,
+        existingDefs: cfDefs, savedMappings: savedCfMappings,
+        orphanColumns: physicalCols.orphanColumns, overflowRows: physicalCols.overflowRows,
+      });
+    } catch (e) { console.error("[import] mapper plan failed:", e); return null; }
+  }, [parsed, effectiveShape, physicalCols, txMap, cfDefs, savedCfMappings]);
+
+  // The columns that flow into the accounted builder, from plan + decisions.
+  // Preview keys for not-yet-created fields are provisional; doImport swaps in
+  // the real ones after the explicit accepts create the fields.
+  const cfBuildInputs = useMemo(() => {
+    if (!mapperPlan) return { flagColumns: {}, cfColumns: [], undecided: 0, ledger: null };
+    const flagColumns = {}, cfColumns = [];
+    let undecided = 0;
+    for (const c of mapperPlan.columns) {
+      const d = cfDecisions[c.index] || {};
+      const action = d.action || (c.status === "flag" ? "flag" : c.status === "custom-existing" ? "existing" : null);
+      if (c.status === "flag" && action === "flag") { flagColumns[c.flag] = c.field; continue; }
+      if (action === "existing" && (c.def || d.fieldId)) {
+        const def = c.def || [...cfDefs.donor, ...cfDefs.gift].find(x => x.id === d.fieldId);
+        if (def) cfColumns.push({ field: c.field, entity: def.entity, key: def.key, def, delimiter: d.delimiter });
+        continue;
+      }
+      if (action === "accept") {
+        const type = d.type || c.proposal.type;
+        const label = d.label || c.proposal.label;
+        const entity = d.entity || c.entity;
+        const options = d.options || c.proposal.options || [];
+        cfColumns.push({ field: c.field, entity, key: generateFieldKey(label), provisional: { label, type, options }, def: { type, options }, delimiter: d.delimiter });
+        continue;
+      }
+      if (c.status === "custom-proposed" && !d.action) undecided++;
+    }
+    const ledger = buildColumnLedger(mapperPlan, cfDecisions);
+    return { flagColumns, cfColumns, undecided, ledger };
+  }, [mapperPlan, cfDecisions, cfDefs]);
+
   // ── Shape-aware payload build (memoized) ──
   // aggregate → donors (+ one seeded gift/donor from total+lastGift when
   // withHistory, so onboarding gets real gifts rows); transaction → group the
@@ -629,14 +701,14 @@ export function DonorImport({ onClose, onImported, withHistory = false }) {
   const payload = useMemo(() => {
     if (!parsed) return { donors:[], gifts:[], warnedCount:0, skippedCount:0 };
     try {
-      if (effectiveShape === "transaction") return buildTransactionPayload(parsed, txMap);
+      if (effectiveShape === "transaction") return buildTransactionPayload(parsed, txMap, cfBuildInputs);
       if (effectiveShape === "wide")        return buildWidePayload(parsed, mapping, yearCols);
       return buildAggregatePayload(parsed, mapping, withHistory);
     } catch (e) {
       console.error("[import] payload build failed:", e);
       return { donors:[], gifts:[], warnedCount:0, skippedCount:0, error:e.message };
     }
-  }, [parsed, effectiveShape, mapping, txMap, yearCols, withHistory]);
+  }, [parsed, effectiveShape, mapping, txMap, yearCols, withHistory, cfBuildInputs]);
 
   // Stage-count preview from the built payload (aggregate donors carry a client
   // stage; transaction/wide donors are re-staged server-side from their gifts,
@@ -659,27 +731,68 @@ export function DonorImport({ onClose, onImported, withHistory = false }) {
     return counts;
   }, [payload, effectiveShape]);
 
-  // BUILD-77 Part 3d — the columns that would be left behind, computed for
-  // the mapping screen (transaction shape; the fixture's thirteen included
-  // Phone, Address, City, State and ZIP before those gained homes).
-  const unmappedHeaders = useMemo(() => {
-    if (!parsed || effectiveShape !== "transaction") return [];
-    const mapped = new Set(Object.values(txMap).filter(Boolean));
-    return (parsed.headers || []).filter(h => String(h).trim() && !mapped.has(h));
-  }, [parsed, txMap, effectiveShape]);
+  // BUILD-78 — the plan supersedes BUILD-77's bulk acknowledgement: every
+  // unmapped column now takes an explicit per-column decision (store as
+  // custom / map to core / discard), and the import is gated on zero
+  // undecided columns rather than one checkbox.
+  const cfUndecided = cfBuildInputs.undecided;
 
   // ── Submit import (chunked, with progress — the hang fix) ──
   const doImport = async () => {
-    const { donors: rawDonors, gifts, warnedCount, skippedCount, error } = payload;
-    if (error) { setErr("Failed to prepare import data — " + error + ". Check the browser console."); return; }
+    let activePayload = payload;
+    let importExtras = null;
+    setLoading(true); setErr("");
+    try {
+      if (effectiveShape === "transaction" && mapperPlan) {
+        // BUILD-78 4.3/4.5 — the ONLY point where accepted proposals become
+        // fields: an explicit accept, a POST per field with the import as its
+        // source, and the real keys swapped into the build. Existing fields
+        // are resolved, never re-created — prevention, not cleanup.
+        const ledger = buildColumnLedger(mapperPlan, cfDecisions);
+        const colSummary = summarizeColumnLedger(physicalCols.total, ledger);
+        if (!colSummary.balanced) { setErr("Some columns still need a decision before the import can run."); setLoading(false); return; }
+        const finalCfColumns = [];
+        const fieldMappings = [];
+        for (const entry of ledger) {
+          const col = mapperPlan.columns.find(c => c.index === entry.index);
+          if (entry.disposition === "custom-existing") {
+            const def = col.def || [...cfDefs.donor, ...cfDefs.gift].find(x => x.id === entry.fieldId);
+            finalCfColumns.push({ field: col.field, entity: def.entity, key: def.key, def, delimiter: entry.delimiter });
+            fieldMappings.push({ entity: def.entity, header: String(entry.header).trim(), fieldId: def.id });
+          } else if (entry.disposition === "custom-new") {
+            const created = await apiFetch("/custom-fields", { method: "POST", body: JSON.stringify({
+              entity: entry.entity, label: entry.label, type: entry.type,
+              options: (entry.type === "select" || entry.type === "multi_select") ? entry.options : [],
+              source: `import of ${srcFile?.name || "pasted data"}`,
+            })});
+            finalCfColumns.push({ field: col.field, entity: created.entity, key: created.key, def: created, delimiter: entry.delimiter });
+            fieldMappings.push({ entity: created.entity, header: String(entry.header).trim(), fieldId: created.id });
+          }
+        }
+        activePayload = buildTransactionPayload(parsed, txMap, { flagColumns: cfBuildInputs.flagColumns, cfColumns: finalCfColumns });
+        importExtras = {
+          columns: { inFile: physicalCols.total, ledger: ledger.map(({ index, header, disposition, flag, role, fieldId, entity, reason }) => ({ index, header, disposition, flag, role, fieldId, entity, reason })) },
+          fieldMappings,
+          customFieldDelimiters: Object.fromEntries(finalCfColumns.filter(c => c.delimiter).map(c => [c.key, c.delimiter])),
+          columnLedgerFull: ledger,
+        };
+      }
+    } catch (e) {
+      console.error("IMPORT FIELD SETUP FAILED:", e);
+      setErr(e.message || "Could not create the custom fields. Nothing was imported.");
+      setLoading(false); return;
+    }
+    const { donors: rawDonors, gifts, warnedCount, skippedCount, error } = activePayload;
+    if (error) { setErr("Failed to prepare import data — " + error + ". Check the browser console."); setLoading(false); return; }
     if (!rawDonors.length) {
       setErr(skippedCount ? `All ${skippedCount} rows skipped — no usable name or email.` : "Nothing to import — map a name or email column.");
-      return;
+      setLoading(false); return;
     }
+    const payloadForSummary = activePayload;
     const donors = assignPayloadDonors(rawDonors); // stamp assignedTo from the owner mapping (Team)
-    setLoading(true); setErr(""); setProgress({ done:0, total:donors.length });
+    setProgress({ done:0, total:donors.length });
     try {
-      const totals = await submitImportChunked(donors, gifts, (done,total) => setProgress({ done, total }));
+      const totals = await submitImportChunked(donors, gifts, (done,total) => setProgress({ done, total }), importExtras);
       // ── BUILD-77 Part 3a — the file-level equation, from PARSE ENTRY ──
       // "In your file" is the physical non-blank row count taken once when
       // the file was parsed, never the count of what survived the client's
@@ -688,10 +801,10 @@ export function DonorImport({ onClose, onImported, withHistory = false }) {
       // reasons, and balance is recomputed against the FILE. The old code
       // summed only the server's payload-scoped equation, which is how 74
       // rows and ~$154,806 of a real file hid behind "Balanced".
-      if (payload.file && payload.dispositions) {
+      if (payloadForSummary.file && payloadForSummary.dispositions) {
         const R = totals.reconciliation;
-        R.rows.inFile = payload.file.rows;
-        R.dollars.inFile = payload.file.dollars;
+        R.rows.inFile = payloadForSummary.file.rows;
+        R.dollars.inFile = payloadForSummary.file.dollars;
         const bump = (bucket, reason, rows, dollars) => {
           R.rows[bucket] += rows; R.dollars[bucket] += dollars;
           const box = bucket === "skipped" ? R.skippedReasons : R.erroredReasons;
@@ -699,7 +812,7 @@ export function DonorImport({ onClose, onImported, withHistory = false }) {
           e.rows += rows; e.dollars += dollars;
         };
         const byReason = {};
-        for (const d of payload.dispositions) {
+        for (const d of payloadForSummary.dispositions) {
           if (d.disposition === "gift") continue;   // sent to the server; its ledger owns them
           const key = d.disposition + "|" + (d.reason || "donor_info_only");
           const e = byReason[key] || (byReason[key] = { rows: 0, dollars: 0 });
@@ -717,8 +830,8 @@ export function DonorImport({ onClose, onImported, withHistory = false }) {
         R.dollars.accounted = Math.round(dAccounted * 100) / 100;
         R.dollars.balanced = Math.abs(R.dollars.inFile - dAccounted) < 0.005;
         R.balanced = R.rows.balanced && R.dollars.balanced;
-        totals.refusedRows = payload.dispositions.filter(d => d.disposition === "skipped" || d.disposition === "errored");
-        totals.flaggedRows = payload.flaggedRows || [];
+        totals.refusedRows = payloadForSummary.dispositions.filter(d => d.disposition === "skipped" || d.disposition === "errored");
+        totals.flaggedRows = payloadForSummary.flaggedRows || [];
       }
       // Don't call onImported() here — the result screen must render first; its
       // Done button calls onImported() so the modal stays until dismissed.
@@ -735,6 +848,13 @@ export function DonorImport({ onClose, onImported, withHistory = false }) {
         if (effectiveShape === "wide") yearCols.forEach(yc => { if (yc.enabled) m[yc.col] = "gift (" + yc.col + ")"; else ignored.push(yc.col); });
         return classifyColumns(headers, m, ignored);
       })();
+      if (importExtras) {
+        totals.columnAxis = {
+          inFile: physicalCols.total,
+          summary: summarizeColumnLedger(physicalCols.total, importExtras.columnLedgerFull),
+          ledger: importExtras.columnLedgerFull,
+        };
+      }
       setResult({ ...totals, warned:warnedCount, skipped:skippedCount, shape:effectiveShape, columnReport: colReport });
     } catch (e) {
       console.error("IMPORT FAILED:", e);
@@ -1127,10 +1247,55 @@ export function DonorImport({ onClose, onImported, withHistory = false }) {
               {result.flaggedRows.length > 30 && <div style={{color:T.ink3}}>+{result.flaggedRows.length-30} more — every one is on the donor's record with its flag set.</div>}
             </div>
           )}
+          {/* BUILD-78 Part 3.3 — the COLUMN axis of the invariant. Left side
+              from the physical header parse at parse entry; right side summed
+              independently from the disposition ledger. The server refused
+              the write if they disagreed, so what renders here balanced. */}
+          {result.columnAxis && (() => {
+            const CA = result.columnAxis; const c = CA.summary.counts;
+            const custom = c["custom-existing"] + c["custom-new"];
+            const parts = [
+              [c.core, "mapped"],
+              [custom, `stored as custom${c["custom-new"] ? ` (${c["custom-new"]} new)` : ""}`],
+              [c.flag, "flagged"],
+              [c.discarded, "discarded"],
+              [c.refused, "refused"],
+            ].filter(([n]) => n > 0);
+            return <div style={{textAlign:"left",background:T.bg2,border:`1px solid ${T.bg3}`,borderRadius:10,padding:"12px 16px",marginBottom:16,fontSize:12,lineHeight:1.8}}>
+              <div style={{fontSize:10,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",color:T.ink3,marginBottom:6}}>Every column accounted for</div>
+              <div style={{display:"flex",justifyContent:"space-between",gap:12,color:T.ink}}>
+                <span>Columns in your file</span>
+                <span style={{fontVariantNumeric:"tabular-nums"}}>{CA.inFile}</span>
+              </div>
+              <div style={{height:1,background:T.bg3,margin:"6px 0"}} />
+              {parts.map(([n, label]) => (
+                <div key={label} style={{display:"flex",justifyContent:"space-between",gap:12,color:T.ink2}}>
+                  <span>{label[0].toUpperCase()+label.slice(1)}</span>
+                  <span style={{fontVariantNumeric:"tabular-nums"}}>{n}</span>
+                </div>
+              ))}
+              <div style={{height:1,background:T.bg3,margin:"6px 0"}} />
+              <div style={{display:"flex",justifyContent:"space-between",gap:12,fontWeight:700,color:CA.summary.balanced?T.ink:T.terracotta}}>
+                <span>{CA.summary.balanced?"Balanced":"DOES NOT BALANCE"}</span>
+                <span style={{fontVariantNumeric:"tabular-nums"}}>{CA.summary.accounted}</span>
+              </div>
+              <div style={{marginTop:8,paddingTop:8,borderTop:`1px solid ${T.bg3}`,color:T.ink3,fontSize:11,lineHeight:1.6}}>
+                {CA.ledger.map(e => {
+                  const what = e.disposition === "core" ? `→ ${e.role}`
+                    : e.disposition === "custom-new" ? `→ new custom field "${e.label}"`
+                    : e.disposition === "custom-existing" ? "→ existing custom field"
+                    : e.disposition === "flag" ? `→ ${String(e.flag||"").replace(/([A-Z])/g," $1").toLowerCase()} flag`
+                    : e.disposition === "discarded" ? "discarded (acknowledged)"
+                    : `not importable — ${e.reason || "refused"}`;
+                  return <div key={e.index}>{String(e.header).trim() || `(column ${e.index+1}, no header)`} {what}</div>;
+                })}
+              </div>
+            </div>;
+          })()}
           {/* BUILD-58 Part 2 — nothing in the file vanishes silently: every
               column is mapped, deliberately ignored, or called out as
               unrecognized; every skipped ROW has a stated reason. */}
-          {(result.columnReport || result.columnReports) && (() => {
+          {!result.columnAxis && (result.columnReport || result.columnReports) && (() => {
             const sections = result.columnReports
               ? [["Donor sheet", result.columnReports.donorSheet], ["Gift sheet", result.columnReports.giftSheet]]
               : [["Your file", result.columnReport]];
@@ -1467,28 +1632,122 @@ export function DonorImport({ onClose, onImported, withHistory = false }) {
             </div>
           )}
 
-          {/* BUILD-77 Part 3d — columns with NO home are named BEFORE the
-              write, and the import will not run until acknowledged. An org
-              that imports and then cannot mail anyone has lost the thing
-              they came for. */}
-          {unmappedHeaders.length > 0 && (
-            <div style={{background:T.bg,border:`1px solid ${T.bg3}`,borderRadius:10,padding:"10px 14px",marginBottom:12,textAlign:"left"}}>
-              <div style={{fontSize:12,fontWeight:700,color:"#b8593f",marginBottom:4}}>
-                {unmappedHeaders.length} column{unmappedHeaders.length===1?" has":"s have"} no home and will NOT be imported:
-              </div>
-              <div style={{fontSize:12,color:T.ink2,marginBottom:8}}>{unmappedHeaders.join(" · ")}</div>
-              <label style={{display:"flex",alignItems:"center",gap:8,fontSize:12,color:T.ink,cursor:"pointer"}}>
-                <input type="checkbox" checked={ackUnmapped} onChange={e=>setAckUnmapped(e.target.checked)}/>
-                I understand these columns will be left behind
-              </label>
-            </div>
-          )}
+          {/* BUILD-78 Parts 2+4 — every column gets a decision BEFORE the
+              write. Exclusion-shaped columns route to the flag family and are
+              never offered as custom destinations; unmapped columns PROPOSE a
+              custom field with the guess's evidence, and nothing is created
+              without an explicit accept. */}
+          {mapperPlan && (() => {
+            const FLAG_LABEL = { deceased:"deceased", deceasedDate:"deceased date", doNotSolicit:"do-not-solicit", doNotContact:"do-not-contact", doNotMail:"do-not-mail", doNotEmail:"do-not-email" };
+            const flagCols = mapperPlan.columns.filter(c=>c.status==="flag");
+            const existingCols = mapperPlan.columns.filter(c=>c.status==="custom-existing");
+            const proposedCols = mapperPlan.columns.filter(c=>c.status==="custom-proposed");
+            const refusedCols = mapperPlan.columns.filter(c=>c.status==="refused");
+            const setDecision = (idx, d) => setCfDecisions(p=>({ ...p, [idx]: d }));
+            const clearDecision = idx => setCfDecisions(p=>{ const n={...p}; delete n[idx]; return n; });
+            const openRoles = Object.entries(txMap).filter(([,h])=>!h).map(([role])=>role);
+            if (!flagCols.length && !existingCols.length && !proposedCols.length && !refusedCols.length) return null;
+            return <div style={{textAlign:"left",marginBottom:12}}>
+              {flagCols.length>0 && (
+                <div style={{background:T.gold100||"#f6eccf",border:`1px solid ${(T.gold500||"#c9a84c")}55`,borderRadius:10,padding:"10px 14px",marginBottom:10,fontSize:12,lineHeight:1.6}}>
+                  <div style={{fontSize:10,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",color:T.gold600||"#a97f22",marginBottom:4}}>These columns set safety flags</div>
+                  {flagCols.map(c=>{
+                    const discarded = cfDecisions[c.index]?.action==="discard";
+                    return <div key={c.index} style={{marginBottom:6}}>
+                      <strong style={{color:T.ink}}>{String(c.header).trim()}</strong>{" looks like "}<strong>{FLAG_LABEL[c.flag]||c.flag}</strong>{" state — it will set the flag, never a custom field. "}
+                      {c.matchedValues?.length>0 && <span style={{color:T.ink3}}>Values we matched: {c.matchedValues.join(", ")} ({c.matchedCount} of {c.nonblankCount}).</span>}
+                      <div>
+                        <label style={{display:"inline-flex",alignItems:"center",gap:6,cursor:"pointer",color:T.ink2}}>
+                          <input type="checkbox" checked={!discarded} onChange={e=>e.target.checked?clearDecision(c.index):setDecision(c.index,{action:"discard"})}/>
+                          Set these flags{discarded?" (currently OFF — this column will be dropped, acknowledged)":""}
+                        </label>
+                      </div>
+                    </div>;
+                  })}
+                </div>
+              )}
+              {(existingCols.length>0||proposedCols.length>0) && (
+                <div style={{background:T.bg,border:`1px solid ${T.bg3}`,borderRadius:10,padding:"10px 14px",marginBottom:10,fontSize:12,lineHeight:1.6}}>
+                  <div style={{fontSize:10,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",color:T.ink3,marginBottom:6}}>
+                    Columns without a standard home{cfUndecided>0?` — ${cfUndecided} still need${cfUndecided===1?"s":""} a decision`:""}
+                  </div>
+                  {existingCols.map(c=>{
+                    const discarded = cfDecisions[c.index]?.action==="discard";
+                    return <div key={c.index} style={{marginBottom:6,color:T.ink2}}>
+                      <strong style={{color:T.ink}}>{String(c.header).trim()}</strong>{" → your existing "}{c.entity}{" field "}<strong>{c.def.label}</strong>
+                      {c.via==="saved-mapping"?" (remembered from your last import)":""}.{" "}
+                      <button onClick={()=>discarded?clearDecision(c.index):setDecision(c.index,{action:"discard"})}
+                        style={{background:"none",border:"none",padding:0,color:discarded?T.greenDk:T.ink3,fontSize:12,cursor:"pointer",textDecoration:"underline"}}>
+                        {discarded?"Un-discard":"Discard instead"}
+                      </button>
+                    </div>;
+                  })}
+                  {proposedCols.map(c=>{
+                    const d = cfDecisions[c.index]||{};
+                    const type = d.type||c.proposal.type;
+                    const entity = d.entity||c.entity;
+                    const label = d.label!==undefined?d.label:c.proposal.label;
+                    const failed = (type===c.proposal.type?c.proposal.evidence.failed:null);
+                    const decided = d.action==="accept"||d.action==="discard"||d.action==="core";
+                    return <div key={c.index} style={{borderTop:`1px solid ${T.bg3}`,paddingTop:8,marginTop:8}}>
+                      <div style={{marginBottom:4}}>
+                        <strong style={{color:T.ink}}>{String(c.header).trim()}</strong>
+                        {" → "}<strong style={{color:T.greenDk}}>{({text:"Text",long_text:"Long text",number:"Number",money:"Money",date:"Date",select:"Select",multi_select:"Multi-select",checkbox:"Yes/No"})[type]||type}</strong>
+                        {" ("}{entity}{" field). "}
+                        <span style={{color:T.ink3}}>{proposalEvidenceText(c.proposal.type, c.proposal.evidence)}</span>
+                        {failed>0 && d.action==="accept" && <span style={{color:"#b8593f"}}>{" "}{failed.toLocaleString()} row{failed===1?"":"s"} will be refused with line numbers.</span>}
+                      </div>
+                      <div style={{display:"flex",gap:6,flexWrap:"wrap",alignItems:"center"}}>
+                        {d.action!=="accept"&&d.action!=="discard"&&(
+                          <button onClick={()=>setDecision(c.index,{...d,action:"accept"})}
+                            style={{background:T.green600,border:"none",borderRadius:7,padding:"4px 12px",color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer"}}>Store it</button>
+                        )}
+                        {d.action==="accept"&&<span style={{color:T.greenDk,fontWeight:700}}>Will be stored ✓</span>}
+                        {d.action==="discard"&&<span style={{color:T.ink3,fontWeight:600}}>Discarded (acknowledged)</span>}
+                        <select value={type} onChange={e=>setDecision(c.index,{...d,type:e.target.value})}
+                          style={{background:T.white,border:`1px solid ${T.bg3}`,borderRadius:7,padding:"3px 6px",fontSize:11,color:T.ink2}}>
+                          {CF_TYPES.map(t=><option key={t} value={t}>{({text:"Text",long_text:"Long text",number:"Number",money:"Money",date:"Date",select:"Select",multi_select:"Multi-select",checkbox:"Yes/No"})[t]}</option>)}
+                        </select>
+                        <select value={entity} onChange={e=>setDecision(c.index,{...d,entity:e.target.value})}
+                          style={{background:T.white,border:`1px solid ${T.bg3}`,borderRadius:7,padding:"3px 6px",fontSize:11,color:T.ink2}}>
+                          <option value="donor">on the donor</option>
+                          <option value="gift">on the gift</option>
+                        </select>
+                        <input value={label} onChange={e=>setDecision(c.index,{...d,label:e.target.value})}
+                          style={{background:T.white,border:`1px solid ${T.bg3}`,borderRadius:7,padding:"3px 8px",fontSize:11,color:T.ink,width:140}}/>
+                        {openRoles.length>0&&(
+                          <select value={d.action==="core"?d.role:""} onChange={e=>e.target.value?(setDecision(c.index,{action:"core",role:e.target.value}),setTxMap(m=>({...m,[e.target.value]:c.field}))):null}
+                            style={{background:T.white,border:`1px solid ${T.bg3}`,borderRadius:7,padding:"3px 6px",fontSize:11,color:T.ink3}}>
+                            <option value="">…or map to a standard field</option>
+                            {openRoles.map(r=><option key={r} value={r}>{r}</option>)}
+                          </select>
+                        )}
+                        {d.action!=="discard"&&(
+                          <button onClick={()=>setDecision(c.index,{action:"discard"})}
+                            style={{background:"none",border:"none",padding:0,color:T.ink3,fontSize:12,cursor:"pointer",textDecoration:"underline"}}>Discard</button>
+                        )}
+                        {d.action==="discard"&&(
+                          <button onClick={()=>clearDecision(c.index)}
+                            style={{background:"none",border:"none",padding:0,color:T.greenDk,fontSize:12,cursor:"pointer",textDecoration:"underline"}}>Un-discard</button>
+                        )}
+                      </div>
+                    </div>;
+                  })}
+                </div>
+              )}
+              {refusedCols.length>0 && (
+                <div style={{fontSize:11.5,color:T.ink3,marginBottom:4}}>
+                  {refusedCols.map(c=><div key={c.index}>Column {c.index+1}: not importable — {c.reason}.</div>)}
+                </div>
+              )}
+            </div>;
+          })()}
           {err&&<div style={{color:"#b8593f",fontSize:12,marginBottom:10}}>{err}</div>}
           <div style={{display:"flex",gap:10}}>
             <button onClick={()=>{setParsed(null);setErr("");}} disabled={loading}
               style={{background:"transparent",border:"1px solid "+T.bg3,borderRadius:10,padding:"11px 18px",color:T.ink3,fontSize:13,cursor:loading?"not-allowed":"pointer",opacity:loading?0.5:1}}>← Back</button>
-            <button onClick={doImport} disabled={loading||donorCount===0||(unmappedHeaders.length>0&&!ackUnmapped)}
-              style={{flex:1,background:loading||donorCount===0||(unmappedHeaders.length>0&&!ackUnmapped)?T.bg2:T.green600,border:"none",borderRadius:10,padding:"11px 20px",color:"#fff",fontSize:14,fontWeight:700,cursor:loading||donorCount===0||(unmappedHeaders.length>0&&!ackUnmapped)?"not-allowed":"pointer",opacity:loading||donorCount===0||(unmappedHeaders.length>0&&!ackUnmapped)?0.6:1}}>
+            <button onClick={doImport} disabled={loading||donorCount===0||cfUndecided>0}
+              style={{flex:1,background:loading||donorCount===0||cfUndecided>0?T.bg2:T.green600,border:"none",borderRadius:10,padding:"11px 20px",color:"#fff",fontSize:14,fontWeight:700,cursor:loading||donorCount===0||cfUndecided>0?"not-allowed":"pointer",opacity:loading||donorCount===0||cfUndecided>0?0.6:1}}>
               {loading?"Importing…":`Import ${donorCount.toLocaleString()} donor${donorCount!==1?"s":""}${giftCount>0?` + ${giftCount.toLocaleString()} gifts`:""} →`}
             </button>
           </div>

@@ -80,7 +80,7 @@ CORE=(
   donor-accounts donor-linking org-blindness network-gate donor-dashboard network-directory theme-depth donor-front-door theme-assets
   campaign-impact portal-page portal-designation asset-retention recurring-surface giving-flow-brand portal-crop giving-summary
   ledger-provisioning mail-suppression first-login-matrix import-columns
-  custom-fields
+  custom-fields import-messy-cf
   stripe-disputes external-fixture-provenance reconciliation webhook-manifest webhook-ordering
   build65 guards
   portal-contrast

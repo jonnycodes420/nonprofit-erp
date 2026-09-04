@@ -150,3 +150,332 @@ export function renderCustomValue(def, stored) {
       return String(stored); // text / long_text / date (ISO) / select label
   }
 }
+// ── BUILD-78 Part 2 — the ask gate is not extensible ───────────────────────
+// A custom field may NEVER be the source of an ask-gate decision. These
+// probes detect exclusion-shaped COLUMNS (by header, and by content for the
+// belt-and-braces case) so the mapper can route them to the core flag family
+// and refuse to park them in a custom field. Conservative like
+// detectNoteMarkers: anchored patterns, normalized for trailing whitespace,
+// case, NBSP and smart apostrophes. "Do not include in vendor mailing"
+// (BUILD-77's deliberate non-match) stays a non-match — the patterns require
+// the do-not phrase to BE the header, not appear inside one.
+export const normalizeHeaderText = h => String(h || "")
+  .replace(/ /g, " ")            // NBSP
+  .replace(/[‘’ʼ]/g, "'") // smart apostrophes
+  .replace(/\s+/g, " ")
+  .trim().toLowerCase();
+
+const EXCLUSION_HDR_PROBES = [
+  [/^(is )?deceased\??$/, "deceased"],
+  [/^deceased('s)? date\??$/, "deceasedDate"],
+  [/^date (of )?deceased\??$/, "deceasedDate"],
+  [/^date of death\??$/, "deceasedDate"],
+  [/^(do ?not ?solicit|no solicitation|dns)\??$/, "doNotSolicit"],
+  [/^(do ?not ?contact|no (further )?contact|dnc)\??$/, "doNotContact"],
+  [/^(do ?not ?mail|no mail(ings?)?)\??$/, "doNotMail"],
+  [/^(do ?not ?e ?-?mail|no e ?-?mail)\??$/, "doNotEmail"],
+  [/^opt(ed)?[ -]?out\??$/, "doNotSolicit"],
+  // the smart-apostrophe family — normalizeHeaderText folds ’ to ' first
+  [/^don't solicit\??$/, "doNotSolicit"],
+  [/^don't contact\??$/, "doNotContact"],
+  [/^don't mail\??$/, "doNotMail"],
+  [/^don't e ?-?mail\??$/, "doNotEmail"],
+];
+
+// classifyExclusionHeader(header) → 'deceased' | 'deceasedDate' |
+// 'doNotSolicit' | 'doNotContact' | 'doNotMail' | 'doNotEmail' | null
+export function classifyExclusionHeader(header) {
+  const h = normalizeHeaderText(header);
+  if (!h) return null;
+  for (const [re, flag] of EXCLUSION_HDR_PROBES) if (re.test(h)) return flag;
+  return null;
+}
+
+// detectExclusionColumn(header, values) → null, or
+//   { flag, via: 'header'|'content', matchedValues: [...], matchedCount, nonblank }
+// The content probe is a backstop for a header the family missed whose VALUES
+// literally say the state ("Do not solicit", "DECEASED") — the same phrase
+// logic as detectNoteMarkers, applied cell-wise, and only when EVERY
+// non-blank cell matches (a mixed column is not an exclusion column).
+const EXCLUSION_VALUE_RE = /^(deceased|passed away|do not (solicit|contact|mail|e-?mail)|dns|dnc)$/i;
+export function detectExclusionColumn(header, values = []) {
+  const nonblank = values.filter(v => String(v ?? "").trim() !== "");
+  const flag = classifyExclusionHeader(header);
+  if (flag) {
+    const matched = nonblank.filter(v => flag === "deceasedDate" || parseBoolValue(v) !== null);
+    return { flag, via: "header", matchedCount: matched.length, nonblank: nonblank.length,
+             matchedValues: [...new Set(matched.map(v => String(v).trim()))].slice(0, 8) };
+  }
+  if (nonblank.length >= 3 && nonblank.every(v => EXCLUSION_VALUE_RE.test(String(v).trim()))) {
+    const first = String(nonblank[0]).trim().toLowerCase();
+    const contentFlag = /deceased|passed/.test(first) ? "deceased"
+      : /mail\b|mailing/.test(first) ? "doNotMail"
+      : /e-?mail/.test(first) ? "doNotEmail"
+      : /contact|dnc/.test(first) ? "doNotContact" : "doNotSolicit";
+    return { flag: contentFlag, via: "content", matchedCount: nonblank.length, nonblank: nonblank.length,
+             matchedValues: [...new Set(nonblank.map(v => String(v).trim()))].slice(0, 8) };
+  }
+  return null;
+}
+
+// Cell-level boolean read for a FLAG column (wider than the checkbox type's
+// strict set on the truthy side — "deceased" in a Deceased? column is a yes —
+// but still explicit; null = unrecognized, and an unrecognized flag value is
+// surfaced, never guessed).
+export function parseBoolValue(v) {
+  const s = String(v ?? "").trim().toLowerCase();
+  if (!s) return null;
+  if (CHECKBOX_TRUTHY.includes(s) || ["deceased", "do not contact", "do not solicit", "do not mail", "do not email", "dnc", "dns"].includes(s)) return true;
+  if (CHECKBOX_FALSY.includes(s) || ["living", "active", "ok to contact", "ok"].includes(s)) return false;
+  return null;
+}
+
+// ── BUILD-78 Part 4.1 — proposal, never auto-creation ──────────────────────
+// proposeCustomField(header, values, opts) → { label, type, options?,
+//   evidence: { nonblank, parsed, failed, distinct, sample } }
+// The guess is shown WITH its evidence ("1,987 of 2,483 values parse as a
+// date. 496 do not."); the user accepts, changes, routes to core, or
+// discards. Nothing is created without an explicit accept.
+export function proposeCustomField(header, values = [], opts = {}) {
+  const nonblankRaw = values.map(v => String(v ?? "").trim()).filter(Boolean);
+  const nonblank = nonblankRaw.slice(0, 3000);
+  const label = String(header || "").trim().slice(0, CF_LIMITS.LABEL_MAX) || "Imported field";
+  const n = nonblank.length;
+  const ev = extra => ({ nonblank: n, sample: nonblank.slice(0, 3), ...extra });
+  if (!n) return { label, type: "text", evidence: ev({ parsed: 0, failed: 0 }) };
+
+  // checkbox: virtually every value in the explicit sets
+  const boolish = nonblank.filter(v => {
+    const l = v.toLowerCase();
+    return CHECKBOX_TRUTHY.includes(l) || CHECKBOX_FALSY.includes(l);
+  }).length;
+  if (boolish / n >= 0.95) return { label, type: "checkbox", evidence: ev({ parsed: boolish, failed: n - boolish }) };
+
+  // date: majority parse through the nine explicit formats
+  const dateParsed = nonblank.filter(v => normalizeDate(v, { currentYear: opts.currentYear }).value != null).length;
+  if (dateParsed / n >= 0.6) return { label, type: "date", evidence: ev({ parsed: dateParsed, failed: n - dateParsed }) };
+
+  // money vs number: parseable through the money seam's separator handling
+  const moneyParsed = nonblank.filter(v => { const m = normalizeMoney(v); return !m.blank && m.value != null; }).length;
+  if (moneyParsed / n >= 0.9) {
+    const currencyish = nonblank.filter(v => /[$]|^[A-Za-z]{3}\s+\d|\.\d{2}$/.test(v)).length;
+    const type = currencyish / n >= 0.5 ? "money" : "number";
+    return { label, type, evidence: ev({ parsed: moneyParsed, failed: n - moneyParsed }) };
+  }
+
+  // select: genuine low cardinality — never a high-cardinality code column
+  // (Appeal Code is the pinned trap: many distinct values must land as text)
+  const canon = new Map(); // case-folded → first-seen casing
+  for (const v of nonblank) { const k = v.toLowerCase(); if (!canon.has(k)) canon.set(k, v); }
+  const distinct = canon.size;
+  if (n >= 12 && distinct <= 12 && distinct / n <= 0.34 && [...canon.values()].every(o => o.length <= 40))
+    return { label, type: "select", options: [...canon.values()], evidence: ev({ parsed: n, failed: 0, distinct }) };
+
+  // long text: real prose
+  if (nonblank.some(v => v.length > 200) || nonblank.reduce((s, v) => s + v.length, 0) / n > 120)
+    return { label, type: "long_text", evidence: ev({ parsed: n, failed: 0 }) };
+
+  return { label, type: "text", evidence: ev({ parsed: n, failed: 0, distinct }) };
+}
+
+// One sentence of evidence for the proposal card — app copy lives with the
+// guess so every consumer says the same thing.
+export function proposalEvidenceText(type, evidence) {
+  const n = evidence.nonblank || 0;
+  const word = { checkbox: "read as yes/no", date: "parse as a date", money: "parse as an amount", number: "parse as a number" }[type];
+  if (word) {
+    const failed = evidence.failed || 0;
+    return `${(evidence.parsed || 0).toLocaleString()} of ${n.toLocaleString()} values ${word}.` + (failed ? ` ${failed.toLocaleString()} do not.` : "");
+  }
+  if (type === "select") return `${n.toLocaleString()} values, only ${evidence.distinct} distinct — looks like a fixed set of choices.`;
+  if (type === "long_text") return `Long free-text values — stored up to ${CF_LIMITS.LONG_TEXT_MAX.toLocaleString()} characters.`;
+  return `Free text.` + (evidence.distinct ? ` ${evidence.distinct.toLocaleString()} distinct values across ${n.toLocaleString()}.` : "");
+}
+
+// ── BUILD-78 Part 3 — the column axis of the invariant ─────────────────────
+// countPhysicalColumns(rawText, parsedRows) — the LEFT side of the column
+// equation, taken ONCE at parse entry from the physical header line (via the
+// same CSV grammar the row parser uses), plus any orphan cell positions body
+// rows carry beyond the header width (a malformed row's overflow cells are
+// columns the file physically has). NEVER derived from the mapping.
+export function parseCsvHeaderLine(text) {
+  const cells = []; let cell = "", q = false, i = 0;
+  const t = String(text || "");
+  for (; i < t.length; i++) {
+    const c = t[i];
+    if (q) { if (c === '"') { if (t[i + 1] === '"') { cell += '"'; i++; } else q = false; } else cell += c; }
+    else if (c === '"') q = true;
+    else if (c === ",") { cells.push(cell); cell = ""; }
+    else if (c === "\n" || c === "\r") break;
+    else cell += c;
+  }
+  cells.push(cell);
+  return cells;
+}
+
+export function countPhysicalColumns(rawText, parsedRows = []) {
+  const headerCells = parseCsvHeaderLine(rawText);
+  // Papa parks cells beyond the header width in __parsed_extra.
+  let maxOverflow = 0, overflowRows = 0;
+  for (const r of parsedRows) {
+    const extra = r && r.__parsed_extra ? r.__parsed_extra.length : 0;
+    if (extra > 0) { overflowRows++; if (extra > maxOverflow) maxOverflow = extra; }
+  }
+  return { headerCells, headerCount: headerCells.length, orphanColumns: maxOverflow, overflowRows,
+           total: headerCells.length + maxOverflow };
+}
+
+// The closed disposition set (3.2). Exactly one per column; the ledger is a
+// separate structure from the header parse, so the two sides can disagree —
+// which is the entire point of having both.
+export const COLUMN_DISPOSITIONS = ["core", "custom-existing", "custom-new", "flag", "discarded", "refused"];
+
+// summarizeColumnLedger(total, ledger) → the 3.3 line, LEFT side from the
+// physical parse, RIGHT side summed independently from the ledger.
+export function summarizeColumnLedger(total, ledger = []) {
+  const counts = { core: 0, "custom-existing": 0, "custom-new": 0, flag: 0, discarded: 0, refused: 0, invalid: 0 };
+  for (const e of ledger) {
+    if (e && COLUMN_DISPOSITIONS.includes(e.disposition)) counts[e.disposition]++;
+    else counts.invalid++;
+  }
+  const accounted = ledger.length;
+  return { inFile: total, accounted, counts,
+           balanced: accounted === total && counts.invalid === 0 };
+}
+// ── BUILD-78 Parts 2+3+4 — the mapper plan ─────────────────────────────────
+// buildMapperPlan({...}) → one entry per PHYSICAL column with a starting
+// status the user can override — the pure, Node-testable core of the mapping
+// screen. The golden suite drives THIS, not the React component.
+//
+// Statuses (map 1:1 onto the 3.2 dispositions at import time):
+//   core            — claimed by the role mapping (txMap)
+//   flag            — exclusion-shaped (Part 2): routed to the ask-gate flag
+//                     family; CANNOT be parked in a custom field
+//   custom-existing — resolves to a field that already exists (saved mapping
+//                     by field id first — a renamed label still resolves —
+//                     then a current-label match)
+//   custom-proposed — a guessed NEW field awaiting the user's explicit
+//                     accept; never created without one (4.1)
+//   unmapped        — nothing claimed it; the user stores it as custom,
+//                     maps it to core, or discards it with an acknowledgement
+//   refused         — physically unmappable, with a reason (blank header,
+//                     orphan overflow cells)
+export function buildMapperPlan({ headers = [], fields = [], rows = [], txMap = {}, existingDefs = { donor: [], gift: [] }, savedMappings = [], orphanColumns = 0, overflowRows = 0, currentYear } = {}) {
+  const roleByField = {};
+  Object.entries(txMap).forEach(([role, h]) => { if (h && roleByField[h] === undefined) roleByField[h] = role; });
+  const savedByHeader = new Map(savedMappings.map(m => [`${m.entity}|${normalizeHeaderText(m.header)}`, m.fieldId]));
+  const defsById = new Map([...existingDefs.donor, ...existingDefs.gift].map(d => [d.id, d]));
+  const defByLabel = ent => new Map((existingDefs[ent] || []).map(d => [normalizeHeaderText(d.label), d]));
+  const labelMaps = { donor: defByLabel("donor"), gift: defByLabel("gift") };
+
+  // donor identity per row (email-else-name, the grouping key the builder
+  // uses) — powers the donor-vs-gift entity guess: a column constant within
+  // each donor is donor-shaped; one that varies inside a donor is gift-shaped.
+  const keyOf = r => {
+    const email = txMap.donorEmail ? String(r[txMap.donorEmail] || "").trim().toLowerCase() : "";
+    if (email.includes("@")) return email;
+    return txMap.donorName ? String(r[txMap.donorName] || "").trim().toLowerCase() : "";
+  };
+
+  // A stray header row echoed into the body (page-break export artifact)
+  // must not pollute the evidence scan — it would add a literal "Gift Level"
+  // to a select's options. Same probe the accounted builder uses.
+  const scanRows = txMap.donorName
+    ? rows.filter(r => String(r[txMap.donorName] ?? "").trim() !== txMap.donorName)
+    : rows;
+  const columns = [];
+  headers.forEach((rawHeader, index) => {
+    const field = fields[index] !== undefined ? fields[index] : rawHeader; // Papa's (possibly deduped) accessor
+    const headerTrim = String(rawHeader).trim();
+    const values = scanRows.map(r => r[field]);
+    const base = { index, header: rawHeader, field, values: undefined };
+
+    if (!headerTrim) {
+      const nonblank = values.filter(v => String(v ?? "").trim() !== "").length;
+      columns.push({ ...base, status: "refused", reason: "no header", nonblank });
+      return;
+    }
+    if (roleByField[field] !== undefined) {
+      columns.push({ ...base, status: "core", role: roleByField[field] });
+      return;
+    }
+    // Part 2 — the trap. Detected exclusion shape routes to the flag family
+    // and is NOT offered as a custom destination, full stop.
+    const excl = detectExclusionColumn(rawHeader, values);
+    if (excl) {
+      columns.push({ ...base, status: "flag", flag: excl.flag, via: excl.via,
+                     matchedValues: excl.matchedValues, matchedCount: excl.matchedCount, nonblankCount: excl.nonblank });
+      return;
+    }
+    // custom resolution: saved mapping by FIELD ID outranks everything —
+    // rename every label and the mapping still resolves (4.4)
+    const proposal = proposeCustomField(rawHeader, values, { currentYear });
+    for (const entity of ["donor", "gift"]) {
+      const savedId = savedByHeader.get(`${entity}|${normalizeHeaderText(rawHeader)}`);
+      const def = savedId && defsById.get(savedId);
+      if (def && !def.archivedAt && !def.archived_at) {
+        columns.push({ ...base, status: "custom-existing", entity, def, via: "saved-mapping", proposal });
+        return;
+      }
+    }
+    for (const entity of ["donor", "gift"]) {
+      const def = labelMaps[entity].get(normalizeHeaderText(rawHeader));
+      if (def && !def.archivedAt && !def.archived_at) {
+        columns.push({ ...base, status: "custom-existing", entity, def, via: "label-match", proposal });
+        return;
+      }
+    }
+    // entity guess for the proposal: constant-within-donor → donor field
+    let entity = "donor";
+    if (txMap.donorEmail || txMap.donorName) {
+      const perDonor = new Map();
+      let varies = false, donorsWithValue = 0;
+      for (const r of scanRows) {
+        const k = keyOf(r); if (!k) continue;
+        const v = String(r[field] ?? "").trim(); if (!v) continue;
+        if (!perDonor.has(k)) { perDonor.set(k, v); donorsWithValue++; }
+        else if (perDonor.get(k) !== v) { varies = true; break; }
+      }
+      if (varies) entity = "gift";
+      void donorsWithValue;
+    }
+    columns.push({ ...base, status: "custom-proposed", entity, proposal });
+  });
+
+  // Orphan overflow cells are physical columns with no header and no mapping
+  // surface at all — refused, with the reason and the row count.
+  for (let i = 0; i < orphanColumns; i++) {
+    columns.push({ index: headers.length + i, header: "", field: null,
+                   status: "refused", reason: `overflow cells beyond the header row (${overflowRows} row${overflowRows === 1 ? "" : "s"})` });
+  }
+  return { columns };
+}
+
+// buildColumnLedger(plan, decisions) — fold the user's decisions over the
+// plan into the final disposition ledger (3.2): exactly one disposition per
+// physical column, a SEPARATE structure from the physical count.
+// decisions: { [index]: { action: 'accept'|'existing'|'core'|'discard'|'flag',
+//                         entity?, type?, label?, options?, delimiter?, fieldId?, role? } }
+export function buildColumnLedger(plan, decisions = {}) {
+  return plan.columns.map(c => {
+    const d = decisions[c.index] || {};
+    const entry = { index: c.index, header: c.header };
+    const action = d.action
+      || (c.status === "core" ? "core"
+        : c.status === "flag" ? "flag"
+        : c.status === "custom-existing" ? "existing"
+        : c.status === "refused" ? "refused"
+        : "unmapped");
+    switch (action) {
+      case "core": return { ...entry, disposition: "core", role: c.role || d.role };
+      case "flag": return { ...entry, disposition: "flag", flag: c.flag || d.flag };
+      case "existing": return { ...entry, disposition: "custom-existing", entity: d.entity || c.entity, fieldId: d.fieldId || (c.def && c.def.id) };
+      case "accept": return { ...entry, disposition: "custom-new", entity: d.entity || c.entity,
+                              type: d.type || c.proposal.type, label: d.label || c.proposal.label,
+                              options: d.options || c.proposal.options, delimiter: d.delimiter };
+      case "discard": return { ...entry, disposition: "discarded" };
+      case "refused": return { ...entry, disposition: "refused", reason: c.reason };
+      default: return { ...entry, disposition: null }; // unmapped and undecided — the ledger does not balance
+    }
+  });
+}

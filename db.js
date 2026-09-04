@@ -632,6 +632,20 @@ async function initSchema() {
     )
   `);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_cf_events_org ON custom_field_events (org_id, created_at DESC)`);
+  // BUILD-78 Part 4.4 — saved import mappings store FIELD IDS, never labels:
+  // rename every label and a re-imported file still resolves to the same
+  // fields (asserted by the golden suite: rename-all, re-import, zero new).
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS import_field_mappings (
+      org_id TEXT NOT NULL,
+      entity TEXT NOT NULL,
+      header_norm TEXT NOT NULL,
+      field_id TEXT NOT NULL REFERENCES custom_field_defs(id) ON DELETE CASCADE,
+      updated_at TIMESTAMPTZ DEFAULT NOW(),
+      PRIMARY KEY (org_id, entity, header_norm)
+    )
+  `);
+
   // One-shot data-migration markers (hash-keyed schema init re-runs the whole
   // file on any edit; data moves must not re-run on donors that have since
   // diverged).

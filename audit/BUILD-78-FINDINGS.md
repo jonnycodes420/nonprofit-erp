@@ -120,3 +120,60 @@ resolved; the newer spec wins each one.
   seam, limits as clear messages, key/type immutability, archive/restore by
   count AND value, no delete route, the Part 0 cross-org red now green, the
   migration, and Part 9 events with actor identities.
+
+## PARTS 2 + 3 + 4 + 8 — THE MAPPER, THE COLUMN AXIS, THE FIXTURE (shipped)
+
+- **The ask gate is not extensible, asserted as a family**: `classifyExclusionHeader`
+  + `detectExclusionColumn` (customFieldShape.js) route Deceased?/DNS/DNC/
+  Do Not Mail/Solicit/Contact/Email/Deceased Date/opt-out — plus the
+  smart-apostrophe "Don't …" family — to the core flags. A column with that
+  shape is status `flag` in the plan and is never offered as a custom
+  destination; the golden §1 fails if any family member ever is. The
+  BUILD-77 vendor-mailing non-match is pinned again at the header level.
+- **An unrecognized non-blank value in a flag column refuses the row** — the
+  checkbox rule ("maybe" is a question for a human, not a no) applied to the
+  flag family. Recorded as a decision: refusal with a line number beats a
+  guessed false on a Deceased? column.
+- **The column axis**: `countPhysicalColumns` takes the count ONCE at parse
+  entry (raw header line + orphan overflow cells — Papa's `__parsed_extra`);
+  the disposition ledger is a separate structure built from the user's
+  per-column decisions; `/donors/import-combined` refuses the write (409
+  `columns_unreconciled`) when they disagree. **The red was made real**:
+  golden §3 removes one column from the ledger, asserts 409 and zero rows
+  written; captured in audit/build78-column-red.txt.
+- **Proposal, never auto-creation**: `buildMapperPlan` (pure, Node-tested)
+  resolves saved mapping by FIELD ID → current-label match → evidence-based
+  proposal; nothing is created until the user's accept makes doImport POST
+  the field (actor + `created during import of <file>` source). BUILD-77's
+  bulk acknowledge checkbox is superseded on the transaction path by
+  per-column decisions; aggregate/wide shapes keep the BUILD-58/77 column
+  report (decision recorded: the fixture path is transaction-shaped, and the
+  other two shapes gain custom-field mapping in a later build, not by
+  accident).
+- **The mixed column refuses rows**: a custom value that fails its type
+  refuses the whole row with its line number, pre-write client-side and
+  again at the seam server-side; the failure count is on the proposal card
+  BEFORE the write. Refused rows join the BUILD-77 downloadable CSV.
+- **Soft Credit To is guessed select by the evidence** (4 distinct names over
+  ~75 values is statistically select-shaped); the golden decisions override
+  the type to text — the override path is the assert. Stores as text,
+  creates no donors, touches no drift.
+- **Fixture**: tests/fixtures/build78/steward-messy-cf.csv, seed 20260905,
+  1,548 rows, WINDOWS-1252 BYTES (smart quotes as real 0x91–0x94 — Node's
+  latin1 truncates them, mapped explicitly), 22 physical columns
+  (8 core · 8 custom · Deceased? · 2 discards · blank header · 2 orphan
+  overflow cells), name collisions on purpose. Answer key independent
+  (gen-answer-key.mjs — TextDecoder + spec rules re-implemented). B77's
+  steward-messy-2500.csv untouched.
+- **Idempotence by prevention, proven twice**: re-import resolves every
+  custom column to custom-existing (zero proposals, zero creations), and
+  after renaming EVERY label the id-keyed saved mappings still resolve all
+  eight. Matched donors take fill-missing merges only.
+- **Re-learned in red**: the first golden run flagged "Wendy Reyes" on the
+  today view — three donors share that name and only one is deceased. The
+  assert was matching by name; the ask gate was right. Fixed to identity,
+  which is precisely the B77 Guillory lesson.
+- **Cross-run donor dedup stays email-only** (the BUILD-72 trade), so the
+  golden's idempotence asserts are scoped: fields/keys/values absolute,
+  donor rows per-email.
+- tests/import-messy-cf.test.js: 110 asserts, in run-all.

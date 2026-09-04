@@ -712,6 +712,23 @@ export function detectNoteMarkers(text) {
 // Refunds import as NEGATIVE gifts: they reduce the dollar total, not the
 // row count. $0 rows (in-kind / soft credit) are SKIPPED with their reason —
 // visible and downloadable, never silently gone.
+// BUILD-78 additions, both threaded through opts so the accounted builder
+// stays the ONE row pipeline:
+//   opts.flagColumns  — { deceased?, deceasedDate?, doNotSolicit?, doNotContact?,
+//                         doNotMail?, doNotEmail? } → the Papa field carrying
+//                         that exclusion-shaped column (Part 2: routed to the
+//                         core flag family, never a custom field). A non-blank
+//                         value neither set recognizes REFUSES the row — a
+//                         "maybe" in a Deceased? column is a question for a
+//                         human, never a no.
+//   opts.cfColumns    — [{ field, entity: 'donor'|'gift', key, def, delimiter }]
+//                         custom-field columns; values coerce through
+//   opts.coerceCustomValue — customFieldShape's coerceCustomValue, injected by
+//                         the caller (importShape cannot import it back —
+//                         customFieldShape already imports this module). A
+//                         value that fails coercion REFUSES the row with its
+//                         line number (4.2): never coerced, never blanked,
+//                         never quietly stored as text.
 export function buildTransactionRows(parsed, txMap, opts = {}) {
   const today = opts.today || new Date().toISOString().split("T")[0];
   const currentYear = Number(String(today).slice(0, 4));
@@ -720,6 +737,10 @@ export function buildTransactionRows(parsed, txMap, opts = {}) {
   const dispositions = [];   // { line, disposition, reason?, dollars, name, raw }
   const flaggedRows = [];    // { line, name, matched, flags }
   let fileDollars = 0;
+  const flagCols = opts.flagColumns || {};
+  const cfCols = opts.cfColumns || [];
+  const coerceCf = opts.coerceCustomValue || null;
+  const parseBool = opts.parseBoolValue || null;
 
   const headerText = c => String(txMap[c] || "");
   rows.forEach((row, i) => {
@@ -765,6 +786,66 @@ export function buildTransactionRows(parsed, txMap, opts = {}) {
     if (markers.matched.length) flaggedRows.push({ line, name: donor.name, matched: markers.matched, note: noteText,
       flags: { deceased: !!markers.deceased, doNotSolicit: !!markers.doNotSolicit, doNotContact: !!markers.doNotContact, doNotMail: !!markers.doNotMail, doNotEmail: !!markers.doNotEmail } });
 
+    // ── BUILD-78 Part 2 — exclusion-shaped COLUMNS route to the flag family ──
+    let flagRefusal = null;
+    const colMatched = [];
+    for (const [flag, fieldName] of Object.entries(flagCols)) {
+      if (!fieldName) continue;
+      const rawV = String(row[fieldName] ?? "").trim();
+      if (!rawV) continue;
+      if (flag === "deceasedDate") {
+        const dd = normalizeDate(rawV, { currentYear });
+        if (dd.value) { donor.deceased = true; donor.deceasedDate = donor.deceasedDate || dd.value; colMatched.push(`${fieldName}: ${rawV}`); }
+        else { flagRefusal = `unreadable_${flag}`; break; }
+        continue;
+      }
+      const b = parseBool ? parseBool(rawV) : null;
+      if (b === true) {
+        if (flag === "deceased") donor.deceased = true;
+        else donor[flag] = true;
+        colMatched.push(`${fieldName}: ${rawV}`);
+      } else if (b === null) { flagRefusal = `unrecognized_${flag}_value`; break; }
+    }
+    if (flagRefusal) {
+      // The whole ROW is refused (its dollars still land in the equation);
+      // no donor and no values are built from a row a human must look at.
+      const m0 = txMap.amount ? normalizeMoney(row[txMap.amount]) : { blank: true };
+      const dol = (!m0.blank && m0.value != null) ? m0.value : 0;
+      record("errored", flagRefusal, dol, donor.name);
+      fileDollars += dol;
+      return;
+    }
+    if (colMatched.length) flaggedRows.push({ line, name: donor.name, matched: colMatched, note: noteText,
+      flags: { deceased: !!donor.deceased, doNotSolicit: !!donor.doNotSolicit, doNotContact: !!donor.doNotContact, doNotMail: !!donor.doNotMail, doNotEmail: !!donor.doNotEmail } });
+
+    // ── BUILD-78 Part 4.2 — custom-field values; a failed coercion refuses the row ──
+    if (cfCols.length && coerceCf) {
+      const donorCf = {}, giftCf = {};
+      let cfRefusal = null;
+      for (const c of cfCols) {
+        const rawV = row[c.field];
+        if (String(rawV ?? "").trim() === "") continue;
+        const r = coerceCf(c.def, rawV, { delimiter: c.delimiter, currentYear });
+        if (!r.ok) { cfRefusal = `${c.key}_invalid`; break; }
+        if (r.blank) continue;
+        // RAW travels to the server; the ONE seam re-coerces and stores. The
+        // client-side coercion here exists only to refuse the row pre-write.
+        if (c.entity === "gift") giftCf[c.key] = String(rawV).trim();
+        else donorCf[c.key] = String(rawV).trim();
+      }
+      if (cfRefusal) {
+        const m0 = txMap.amount ? normalizeMoney(row[txMap.amount]) : { blank: true };
+        const dol = (!m0.blank && m0.value != null) ? m0.value : 0;
+        record("errored", cfRefusal, dol, donor.name);
+        fileDollars += dol;
+        return;
+      }
+      if (Object.keys(donorCf).length) donor.customFields = donorCf;
+      if (Object.keys(giftCf).length) donor._giftCustomFields = giftCf; // picked up by mkGift below
+    }
+
+    const rowGiftCf = donor._giftCustomFields || undefined;
+    delete donor._giftCustomFields;
     const key = (email && email.includes("@")) ? email.toLowerCase() : donor.name.toLowerCase();
     const mkGift = (amount) => ({
       amount,
@@ -773,6 +854,7 @@ export function buildTransactionRows(parsed, txMap, opts = {}) {
       campaign: txMap.campaign ? String(row[txMap.campaign] || "") : "",
       notes: noteText,
       externalId: txMap.externalId ? (String(row[txMap.externalId] || "").trim() || undefined) : undefined,
+      customFields: rowGiftCf,   // BUILD-78: raw, re-validated by the server seam
     });
 
     if (!txMap.amount) { items.push({ key, donor, gift: null }); record("donor_only", null, 0, donor.name); return; }
@@ -877,6 +959,10 @@ export function groupTransactions(items = []) {
         if (donor[k]) canon[k] = true;
       }
       if (donor.deceasedDate && !canon.deceasedDate) canon.deceasedDate = donor.deceasedDate;
+      // BUILD-78 — donor custom values: first non-blank per key wins across
+      // the donor's rows (a donor-level column is constant per donor; when a
+      // messy file disagrees with itself, the earliest row is kept).
+      if (donor.customFields) canon.customFields = { ...donor.customFields, ...(canon.customFields || {}) };
     }
     if (gift) gifts.push({ ...gift, donorIndex: di });
   }

@@ -1,0 +1,11118 @@
+{
+ "generatedAt": "2026-09-04",
+ "file": {
+  "physicalRows": 1548
+ },
+ "columnAxis": {
+  "inFile": 22,
+  "headerCells": 20,
+  "orphanColumns": 2,
+  "dispositions": {
+   "core": 8,
+   "custom": 8,
+   "flag": 1,
+   "discarded": 2,
+   "refused": 3
+  },
+  "customFields": [
+   {
+    "header": "Board Member",
+    "entity": "donor",
+    "type": "checkbox",
+    "key": "board_member"
+   },
+   {
+    "header": "Matching Employer",
+    "entity": "donor",
+    "type": "text",
+    "key": "matching_employer"
+   },
+   {
+    "header": "Preferred Name",
+    "entity": "donor",
+    "type": "text",
+    "key": "preferred_name"
+   },
+   {
+    "header": "In Memory Of",
+    "entity": "gift",
+    "type": "text",
+    "key": "in_memory_of"
+   },
+   {
+    "header": "Appeal Code",
+    "entity": "gift",
+    "type": "text",
+    "key": "appeal_code"
+   },
+   {
+    "header": "Soft Credit To",
+    "entity": "gift",
+    "type": "text",
+    "key": "soft_credit_to"
+   },
+   {
+    "header": "Last Contact",
+    "entity": "donor",
+    "type": "date",
+    "key": "last_contact"
+   },
+   {
+    "header": "Gift Level",
+    "entity": "donor",
+    "type": "select",
+    "key": "gift_level"
+   }
+  ]
+ },
+ "giftLevelOptions": [
+  "platinum",
+  "GOLD",
+  "Founder",
+  "Benefactor",
+  "Silver",
+  "Bronze"
+ ],
+ "buckets": {
+  "gift": {
+   "rows": 1372,
+   "dollars": 342024.5
+  },
+  "skipped": {
+   "rows": 14,
+   "dollars": 0
+  },
+  "errored": {
+   "rows": 162,
+   "dollars": 36264.5
+  }
+ },
+ "reasons": {
+  "last_contact_invalid": {
+   "rows": 130,
+   "dollars": 30396.5
+  },
+  "future_date": {
+   "rows": 21,
+   "dollars": 5443
+  },
+  "board_member_invalid": {
+   "rows": 1,
+   "dollars": 425
+  },
+  "unparseable_amount": {
+   "rows": 9,
+   "dollars": 0
+  },
+  "zero_amount": {
+   "rows": 14,
+   "dollars": 0
+  },
+  "stray_header_row": {
+   "rows": 1,
+   "dollars": 0
+  }
+ },
+ "donorCount": 567,
+ "deceased": [
+  "Bram Zimmer",
+  "Carlos Jamison",
+  "Dana Solano",
+  "Doug Grady",
+  "Karen Grady",
+  "Marta Barnes",
+  "Marta Iverson",
+  "Olga Quimby",
+  "Quinn Fuentes",
+  "Wendy Reyes",
+  "Wendy Rhodes",
+  "Wendy Wexler",
+  "Xavier Pruitt"
+ ],
+ "doNotSolicitFromNotes": [
+  "Aaron Abbott",
+  "Aaron Grady",
+  "Aaron Solano",
+  "Beth Grady",
+  "Beth Nolan",
+  "Beth Sandoval",
+  "Bram Fuentes",
+  "Bram Mercer",
+  "Bram Nolan",
+  "Carlos Fuentes",
+  "Carlos Vickers",
+  "Celia Barnes",
+  "Celia Okafor",
+  "Celia Vickers",
+  "Dana Mercer",
+  "Doug Abbott",
+  "Elena Keller",
+  "Frank Ellison",
+  "Frank Nolan",
+  "Frank Pruitt",
+  "Frank Reyes",
+  "Frank Solano",
+  "Grace Quimby",
+  "Grace Solano",
+  "Hector Fuentes",
+  "Hector Wexler",
+  "Irene Tran",
+  "Irene Zimmer",
+  "James Lozano",
+  "Karen Barnes",
+  "Karen Jamison",
+  "Karen Petrov",
+  "Luis Ellison",
+  "Marta Fuentes",
+  "Marta Lozano",
+  "Marta Quimby",
+  "Miriam Barnes",
+  "Miriam Jamison",
+  "Miriam Quimby",
+  "Miriam Solano",
+  "Ned Grady",
+  "Ned Vickers",
+  "Ned Zimmer",
+  "Olga Sandoval",
+  "Olga Tran",
+  "Pete Ellison",
+  "Pete Quimby",
+  "Rosa Okafor",
+  "Rosa Okafor",
+  "Rosa Solano",
+  "Rosa Wexler",
+  "Sam Tran",
+  "Sam Wexler",
+  "Sam Zimmer",
+  "Sam Zimmer",
+  "Tina Dawson",
+  "Tina Jamison",
+  "Tina Mercer",
+  "Tina Pruitt",
+  "Tina Reyes",
+  "Tina Solano",
+  "Tina Tran",
+  "Uma Lozano",
+  "Uma Tobin",
+  "Uma Underhill",
+  "Uma Wexler",
+  "Uma Zimmer",
+  "Victor Cortez",
+  "Victor Cortez",
+  "Victor Ellison",
+  "Wendy Iverson",
+  "Wendy Jamison",
+  "Wendy Lozano",
+  "Wendy Mercer",
+  "Xavier Pruitt",
+  "Yolanda Rhodes",
+  "Yolanda Zimmer",
+  "Zach Ellison",
+  "Zach Tobin",
+  "Zach Zimmer"
+ ],
+ "boardMembers": 65,
+ "softCreditNonDonors": [
+  "The Harriman Family Trust",
+  "Beacon Community Fund"
+ ],
+ "sampleDonors": [
+  {
+   "key": "beth.grady3@example.org",
+   "name": "Beth Grady",
+   "custom": {
+    "board_member": false,
+    "matching_employer": "Söderberg Analytics",
+    "preferred_name": "Be",
+    "last_contact": "2023-02-15"
+   }
+  },
+  {
+   "key": "uma.solano5@example.org",
+   "name": "Uma Solano",
+   "custom": {
+    "board_member": false,
+    "matching_employer": "O’Brien Financial",
+    "last_contact": "2025-10-16",
+    "gift_level": "Benefactor"
+   }
+  },
+  {
+   "key": "hector.dawson6@example.org",
+   "name": "Hector Dawson",
+   "custom": {
+    "board_member": false,
+    "matching_employer": "Café Río Holdings",
+    "preferred_name": "Hect",
+    "gift_level": "Benefactor"
+   }
+  },
+  {
+   "key": "doug.solano7@example.org",
+   "name": "Doug Solano",
+   "custom": {
+    "board_member": false,
+    "matching_employer": "“Big Blue” Warehouse Co.",
+    "preferred_name": "Do",
+    "gift_level": "Silver"
+   }
+  },
+  {
+   "key": "zach.pruitt9@example.org",
+   "name": "Zach Pruitt",
+   "custom": {
+    "matching_employer": "“Big Blue” Warehouse Co.",
+    "preferred_name": "Za",
+    "last_contact": "2025-10-23",
+    "gift_level": "Benefactor"
+   }
+  }
+ ],
+ "sampleGiftCustom": {
+  "donor": "Irene Okafor",
+  "date": "2023-09-15",
+  "amount": 470,
+  "custom": {
+   "appeal_code": "FY25-NG976",
+   "soft_credit_to": "Beth Grady"
+  }
+ },
+ "dispositions": [
+  {
+   "line": 2,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 200,
+   "name": "Zach Ortega"
+  },
+  {
+   "line": 3,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 424,
+   "name": "Zach Ortega"
+  },
+  {
+   "line": 4,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 304,
+   "name": "Irene Okafor"
+  },
+  {
+   "line": 5,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 470,
+   "name": "Irene Okafor"
+  },
+  {
+   "line": 6,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 424,
+   "name": "Irene Okafor"
+  },
+  {
+   "line": 7,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 302,
+   "name": "Irene Okafor"
+  },
+  {
+   "line": 8,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 389,
+   "name": "James Fuentes"
+  },
+  {
+   "line": 9,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 218,
+   "name": "Beth Grady"
+  },
+  {
+   "line": 10,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 418.5,
+   "name": "Beth Grady"
+  },
+  {
+   "line": 11,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 407,
+   "name": "Beth Grady"
+  },
+  {
+   "line": 12,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 497,
+   "name": "Beth Grady"
+  },
+  {
+   "line": 13,
+   "disposition": "errored",
+   "reason": "last_contact_invalid",
+   "dollars": 159.5,
+   "name": "Frank Zimmer"
+  },
+  {
+   "line": 14,
+   "disposition": "errored",
+   "reason": "last_contact_invalid",
+   "dollars": 175,
+   "name": "Frank Zimmer"
+  },
+  {
+   "line": 15,
+   "disposition": "errored",
+   "reason": "last_contact_invalid",
+   "dollars": 385,
+   "name": "Frank Zimmer"
+  },
+  {
+   "line": 16,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 125,
+   "name": "Uma Solano"
+  },
+  {
+   "line": 17,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 206,
+   "name": "Uma Solano"
+  },
+  {
+   "line": 18,
+   "disposition": "errored",
+   "reason": "future_date",
+   "dollars": 298,
+   "name": "Hector Dawson"
+  },
+  {
+   "line": 19,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 133.5,
+   "name": "Hector Dawson"
+  },
+  {
+   "line": 20,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 224,
+   "name": "Hector Dawson"
+  },
+  {
+   "line": 21,
+   "disposition": "errored",
+   "reason": "future_date",
+   "dollars": -118,
+   "name": "Hector Dawson"
+  },
+  {
+   "line": 22,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 485,
+   "name": "Doug Solano"
+  },
+  {
+   "line": 23,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 371,
+   "name": "Doug Solano"
+  },
+  {
+   "line": 24,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 67,
+   "name": "James Hobbs"
+  },
+  {
+   "line": 25,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 242,
+   "name": "Zach Pruitt"
+  },
+  {
+   "line": 26,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 239,
+   "name": "Karen Grady"
+  },
+  {
+   "line": 27,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 11,
+   "name": "Tina Wexler"
+  },
+  {
+   "line": 28,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 239.5,
+   "name": "Tina Wexler"
+  },
+  {
+   "line": 29,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 150,
+   "name": "Beth Sandoval"
+  },
+  {
+   "line": 30,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 289,
+   "name": "Bram Jamison"
+  },
+  {
+   "line": 31,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 486.5,
+   "name": "Bram Jamison"
+  },
+  {
+   "line": 32,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 101,
+   "name": "Grace Solano"
+  },
+  {
+   "line": 33,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 308,
+   "name": "Grace Solano"
+  },
+  {
+   "line": 34,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 249,
+   "name": "Grace Ortega"
+  },
+  {
+   "line": 35,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 218,
+   "name": "Grace Ortega"
+  },
+  {
+   "line": 36,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 2,
+   "name": "Luis Keller"
+  },
+  {
+   "line": 37,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 169.5,
+   "name": "Luis Keller"
+  },
+  {
+   "line": 38,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 433,
+   "name": "Luis Keller"
+  },
+  {
+   "line": 39,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 78,
+   "name": "Luis Keller"
+  },
+  {
+   "line": 40,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 239,
+   "name": "Irene Reyes"
+  },
+  {
+   "line": 41,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 462,
+   "name": "Irene Reyes"
+  },
+  {
+   "line": 42,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 248,
+   "name": "Hector Zimmer"
+  },
+  {
+   "line": 43,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 201,
+   "name": "Hector Zimmer"
+  },
+  {
+   "line": 44,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 501,
+   "name": "Irene Reyes"
+  },
+  {
+   "line": 45,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 408,
+   "name": "Irene Reyes"
+  },
+  {
+   "line": 46,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 266.5,
+   "name": "Irene Reyes"
+  },
+  {
+   "line": 47,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 134,
+   "name": "Uma Nolan"
+  },
+  {
+   "line": 48,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 183,
+   "name": "Uma Nolan"
+  },
+  {
+   "line": 49,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 441,
+   "name": "Uma Nolan"
+  },
+  {
+   "line": 50,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 409,
+   "name": "Uma Nolan"
+  },
+  {
+   "line": 51,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 482,
+   "name": "James Reyes"
+  },
+  {
+   "line": 52,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 497,
+   "name": "James Reyes"
+  },
+  {
+   "line": 53,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 319,
+   "name": "James Reyes"
+  },
+  {
+   "line": 54,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 235.5,
+   "name": "James Reyes"
+  },
+  {
+   "line": 55,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 234,
+   "name": "Victor Cortez"
+  },
+  {
+   "line": 56,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 414,
+   "name": "Victor Cortez"
+  },
+  {
+   "line": 57,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 401,
+   "name": "Carlos Petrov"
+  },
+  {
+   "line": 58,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 377,
+   "name": "Carlos Petrov"
+  },
+  {
+   "line": 59,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 425.5,
+   "name": "Carlos Petrov"
+  },
+  {
+   "line": 60,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 459,
+   "name": "Bram Zimmer"
+  },
+  {
+   "line": 61,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 386,
+   "name": "Bram Zimmer"
+  },
+  {
+   "line": 62,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 372,
+   "name": "Wendy Reyes"
+  },
+  {
+   "line": 63,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 261,
+   "name": "Wendy Reyes"
+  },
+  {
+   "line": 64,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 206.5,
+   "name": "Olga Tran"
+  },
+  {
+   "line": 65,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 625,
+   "name": "Olga Tran"
+  },
+  {
+   "line": 66,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 365,
+   "name": "Olga Tran"
+  },
+  {
+   "line": 67,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 135.5,
+   "name": "Aaron Fuentes"
+  },
+  {
+   "line": 68,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 295,
+   "name": "Aaron Fuentes"
+  },
+  {
+   "line": 69,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 88,
+   "name": "Aaron Fuentes"
+  },
+  {
+   "line": 70,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 300,
+   "name": "Beth Barnes"
+  },
+  {
+   "line": 71,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 25,
+   "name": "Doug Yancey"
+  },
+  {
+   "line": 72,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 169,
+   "name": "Doug Yancey"
+  },
+  {
+   "line": 73,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 110.5,
+   "name": "Zach Keller"
+  },
+  {
+   "line": 74,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 185.5,
+   "name": "Dana Reyes"
+  },
+  {
+   "line": 75,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 185,
+   "name": "Dana Reyes"
+  },
+  {
+   "line": 76,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 186,
+   "name": "Frank Tobin"
+  },
+  {
+   "line": 77,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 124,
+   "name": "Pete Ellison"
+  },
+  {
+   "line": 78,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 462.5,
+   "name": "Pete Ellison"
+  },
+  {
+   "line": 79,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 143,
+   "name": "Pete Ellison"
+  },
+  {
+   "line": 80,
+   "disposition": "errored",
+   "reason": "future_date",
+   "dollars": 262.5,
+   "name": "Pete Ellison"
+  },
+  {
+   "line": 81,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 396,
+   "name": "Celia Barnes"
+  },
+  {
+   "line": 82,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 208,
+   "name": "Celia Barnes"
+  },
+  {
+   "line": 83,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 434,
+   "name": "Celia Barnes"
+  },
+  {
+   "line": 84,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 347,
+   "name": "Grace Rhodes"
+  },
+  {
+   "line": 85,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 126,
+   "name": "Grace Yancey"
+  },
+  {
+   "line": 86,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 243,
+   "name": "Grace Yancey"
+  },
+  {
+   "line": 87,
+   "disposition": "errored",
+   "reason": "board_member_invalid",
+   "dollars": 425,
+   "name": "Beth Sandoval"
+  },
+  {
+   "line": 88,
+   "disposition": "errored",
+   "reason": "last_contact_invalid",
+   "dollars": 336.5,
+   "name": "Yolanda Cortez"
+  },
+  {
+   "line": 89,
+   "disposition": "errored",
+   "reason": "last_contact_invalid",
+   "dollars": 253,
+   "name": "Yolanda Cortez"
+  },
+  {
+   "line": 90,
+   "disposition": "errored",
+   "reason": "last_contact_invalid",
+   "dollars": 246,
+   "name": "Yolanda Cortez"
+  },
+  {
+   "line": 91,
+   "disposition": "errored",
+   "reason": "last_contact_invalid",
+   "dollars": 198,
+   "name": "Yolanda Cortez"
+  },
+  {
+   "line": 92,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 466,
+   "name": "Marta Barnes"
+  },
+  {
+   "line": 93,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 492,
+   "name": "Marta Barnes"
+  },
+  {
+   "line": 94,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 165,
+   "name": "Marta Barnes"
+  },
+  {
+   "line": 95,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 297,
+   "name": "Bram Mercer"
+  },
+  {
+   "line": 96,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 378,
+   "name": "Bram Mercer"
+  },
+  {
+   "line": 97,
+   "disposition": "errored",
+   "reason": "last_contact_invalid",
+   "dollars": 205,
+   "name": "Ned Cortez"
+  },
+  {
+   "line": 98,
+   "disposition": "errored",
+   "reason": "last_contact_invalid",
+   "dollars": 221.5,
+   "name": "Ned Cortez"
+  },
+  {
+   "line": 99,
+   "disposition": "errored",
+   "reason": "last_contact_invalid",
+   "dollars": 57,
+   "name": "Ned Cortez"
+  },
+  {
+   "line": 100,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 307,
+   "name": "Beth Cortez"
+  },
+  {
+   "line": 101,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 451,
+   "name": "Beth Cortez"
+  },
+  {
+   "line": 102,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 215,
+   "name": "Beth Cortez"
+  },
+  {
+   "line": 103,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 423,
+   "name": "Beth Cortez"
+  },
+  {
+   "line": 104,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 148,
+   "name": "Dana Mercer"
+  },
+  {
+   "line": 105,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": -55,
+   "name": "Dana Mercer"
+  },
+  {
+   "line": 106,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 458,
+   "name": "Aaron Solano"
+  },
+  {
+   "line": 107,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 313,
+   "name": "Aaron Solano"
+  },
+  {
+   "line": 108,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 67,
+   "name": "Aaron Solano"
+  },
+  {
+   "line": 109,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 41,
+   "name": "Olga Dawson"
+  },
+  {
+   "line": 110,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 26,
+   "name": "Olga Dawson"
+  },
+  {
+   "line": 111,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 459.5,
+   "name": "Olga Dawson"
+  },
+  {
+   "line": 112,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 277,
+   "name": "Olga Dawson"
+  },
+  {
+   "line": 113,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 14,
+   "name": "Ned Pruitt"
+  },
+  {
+   "line": 114,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 193,
+   "name": "Ned Pruitt"
+  },
+  {
+   "line": 115,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 179,
+   "name": "Sam Wexler"
+  },
+  {
+   "line": 116,
+   "disposition": "errored",
+   "reason": "last_contact_invalid",
+   "dollars": 174,
+   "name": "James Tobin"
+  },
+  {
+   "line": 117,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 233.5,
+   "name": "Zach Jamison"
+  },
+  {
+   "line": 118,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 327,
+   "name": "Zach Jamison"
+  },
+  {
+   "line": 119,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 147,
+   "name": "Zach Jamison"
+  },
+  {
+   "line": 120,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 247.5,
+   "name": "Olga Reyes"
+  },
+  {
+   "line": 121,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 356,
+   "name": "Irene Rhodes"
+  },
+  {
+   "line": 122,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 321,
+   "name": "Irene Rhodes"
+  },
+  {
+   "line": 123,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 266,
+   "name": "Beth Iverson"
+  },
+  {
+   "line": 124,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 274,
+   "name": "Beth Iverson"
+  },
+  {
+   "line": 125,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 231,
+   "name": "Beth Iverson"
+  },
+  {
+   "line": 126,
+   "disposition": "errored",
+   "reason": "future_date",
+   "dollars": 382,
+   "name": "Beth Iverson"
+  },
+  {
+   "line": 127,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 49,
+   "name": "Beth Wexler"
+  },
+  {
+   "line": 128,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": -187,
+   "name": "Beth Wexler"
+  },
+  {
+   "line": 129,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 21,
+   "name": "Beth Wexler"
+  },
+  {
+   "line": 130,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 473,
+   "name": "Victor Lozano"
+  },
+  {
+   "line": 131,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 300,
+   "name": "Victor Lozano"
+  },
+  {
+   "line": 132,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 184,
+   "name": "Victor Lozano"
+  },
+  {
+   "line": 133,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 278,
+   "name": "Miriam Barnes"
+  },
+  {
+   "line": 134,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 371,
+   "name": "Miriam Barnes"
+  },
+  {
+   "line": 135,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 346,
+   "name": "Miriam Iverson"
+  },
+  {
+   "line": 136,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 243,
+   "name": "Miriam Iverson"
+  },
+  {
+   "line": 137,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 491,
+   "name": "Miriam Iverson"
+  },
+  {
+   "line": 138,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 47,
+   "name": "Miriam Hobbs"
+  },
+  {
+   "line": 139,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 32.5,
+   "name": "Olga Pruitt"
+  },
+  {
+   "line": 140,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 161.5,
+   "name": "Olga Pruitt"
+  },
+  {
+   "line": 141,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 340,
+   "name": "Beth Jamison"
+  },
+  {
+   "line": 142,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 245,
+   "name": "Celia Barnes"
+  },
+  {
+   "line": 143,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 202,
+   "name": "Celia Barnes"
+  },
+  {
+   "line": 144,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 483,
+   "name": "Celia Barnes"
+  },
+  {
+   "line": 145,
+   "disposition": "errored",
+   "reason": "last_contact_invalid",
+   "dollars": 190,
+   "name": "Carlos Ortega"
+  },
+  {
+   "line": 146,
+   "disposition": "errored",
+   "reason": "last_contact_invalid",
+   "dollars": 488,
+   "name": "Carlos Ortega"
+  },
+  {
+   "line": 147,
+   "disposition": "errored",
+   "reason": "last_contact_invalid",
+   "dollars": 305,
+   "name": "Carlos Ortega"
+  },
+  {
+   "line": 148,
+   "disposition": "errored",
+   "reason": "last_contact_invalid",
+   "dollars": 176,
+   "name": "Carlos Ortega"
+  },
+  {
+   "line": 149,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": -52,
+   "name": "Tina Ellison"
+  },
+  {
+   "line": 150,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 2,
+   "name": "Tina Ellison"
+  },
+  {
+   "line": 151,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 200,
+   "name": "Miriam Okafor"
+  },
+  {
+   "line": 152,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 468.5,
+   "name": "Uma Zimmer"
+  },
+  {
+   "line": 153,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 29,
+   "name": "Uma Zimmer"
+  },
+  {
+   "line": 154,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 194,
+   "name": "Uma Zimmer"
+  },
+  {
+   "line": 155,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 224,
+   "name": "Uma Zimmer"
+  },
+  {
+   "line": 156,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 477,
+   "name": "Doug Jamison"
+  },
+  {
+   "line": 157,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 211,
+   "name": "Doug Jamison"
+  },
+  {
+   "line": 158,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 212.5,
+   "name": "Ned Reyes"
+  },
+  {
+   "line": 159,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 162.5,
+   "name": "Ned Reyes"
+  },
+  {
+   "line": 160,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 223,
+   "name": "Luis Grady"
+  },
+  {
+   "line": 161,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 63,
+   "name": "Dana Iverson"
+  },
+  {
+   "line": 162,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 233,
+   "name": "Dana Iverson"
+  },
+  {
+   "line": 163,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 311,
+   "name": "Dana Iverson"
+  },
+  {
+   "line": 164,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 151,
+   "name": "Luis Hobbs"
+  },
+  {
+   "line": 165,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 142.5,
+   "name": "Luis Hobbs"
+  },
+  {
+   "line": 166,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 215.5,
+   "name": "Luis Hobbs"
+  },
+  {
+   "line": 167,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 188.5,
+   "name": "Sam Lozano"
+  },
+  {
+   "line": 168,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 58,
+   "name": "Sam Lozano"
+  },
+  {
+   "line": 169,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 292,
+   "name": "Sam Lozano"
+  },
+  {
+   "line": 170,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 326.5,
+   "name": "Sam Lozano"
+  },
+  {
+   "line": 171,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 43,
+   "name": "Xavier Ortega"
+  },
+  {
+   "line": 172,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 121,
+   "name": "Xavier Ortega"
+  },
+  {
+   "line": 173,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 55,
+   "name": "Aaron Iverson"
+  },
+  {
+   "line": 174,
+   "disposition": "errored",
+   "reason": "future_date",
+   "dollars": 251,
+   "name": "Aaron Iverson"
+  },
+  {
+   "line": 175,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 369,
+   "name": "Aaron Iverson"
+  },
+  {
+   "line": 176,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 129,
+   "name": "Aaron Iverson"
+  },
+  {
+   "line": 177,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 402,
+   "name": "Hector Tran"
+  },
+  {
+   "line": 178,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 98,
+   "name": "Hector Tran"
+  },
+  {
+   "line": 179,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 163,
+   "name": "Hector Tran"
+  },
+  {
+   "line": 180,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 170,
+   "name": "Hector Tran"
+  },
+  {
+   "line": 181,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 341,
+   "name": "Xavier Hobbs"
+  },
+  {
+   "line": 182,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 482,
+   "name": "Xavier Hobbs"
+  },
+  {
+   "line": 183,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 427.5,
+   "name": "Xavier Hobbs"
+  },
+  {
+   "line": 184,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 258,
+   "name": "Xavier Hobbs"
+  },
+  {
+   "line": 185,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 435,
+   "name": "Marta Hobbs"
+  },
+  {
+   "line": 186,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 185,
+   "name": "Marta Hobbs"
+  },
+  {
+   "line": 187,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 303,
+   "name": "Marta Hobbs"
+  },
+  {
+   "line": 188,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 378,
+   "name": "Marta Fuentes"
+  },
+  {
+   "line": 189,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 188,
+   "name": "Marta Fuentes"
+  },
+  {
+   "line": 190,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 61,
+   "name": "Marta Fuentes"
+  },
+  {
+   "line": 191,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 257,
+   "name": "Marta Fuentes"
+  },
+  {
+   "line": 192,
+   "disposition": "errored",
+   "reason": "unparseable_amount",
+   "dollars": 0,
+   "name": "Elena Keller"
+  },
+  {
+   "line": 193,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 451.5,
+   "name": "Elena Keller"
+  },
+  {
+   "line": 194,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 486,
+   "name": "Elena Keller"
+  },
+  {
+   "line": 195,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 84,
+   "name": "Elena Keller"
+  },
+  {
+   "line": 196,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 365,
+   "name": "Celia Vickers"
+  },
+  {
+   "line": 197,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 50,
+   "name": "Celia Vickers"
+  },
+  {
+   "line": 198,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 132,
+   "name": "Celia Vickers"
+  },
+  {
+   "line": 199,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 129.5,
+   "name": "Celia Vickers"
+  },
+  {
+   "line": 200,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 237,
+   "name": "Luis Okafor"
+  },
+  {
+   "line": 201,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 164,
+   "name": "Luis Okafor"
+  },
+  {
+   "line": 202,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 245,
+   "name": "Luis Okafor"
+  },
+  {
+   "line": 203,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 430,
+   "name": "Bram Jamison"
+  },
+  {
+   "line": 204,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 170,
+   "name": "Aaron Cortez"
+  },
+  {
+   "line": 205,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 151,
+   "name": "Aaron Cortez"
+  },
+  {
+   "line": 206,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 301.5,
+   "name": "Aaron Cortez"
+  },
+  {
+   "line": 207,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 63,
+   "name": "Aaron Cortez"
+  },
+  {
+   "line": 208,
+   "disposition": "errored",
+   "reason": "last_contact_invalid",
+   "dollars": 0,
+   "name": "Xavier Nolan"
+  },
+  {
+   "line": 209,
+   "disposition": "errored",
+   "reason": "last_contact_invalid",
+   "dollars": 0,
+   "name": "Xavier Nolan"
+  },
+  {
+   "line": 210,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 276,
+   "name": "Frank Pruitt"
+  },
+  {
+   "line": 211,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 430,
+   "name": "Uma Mercer"
+  },
+  {
+   "line": 212,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 480,
+   "name": "Uma Mercer"
+  },
+  {
+   "line": 213,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 465,
+   "name": "Uma Mercer"
+  },
+  {
+   "line": 214,
+   "disposition": "errored",
+   "reason": "last_contact_invalid",
+   "dollars": 438,
+   "name": "Hector Yancey"
+  },
+  {
+   "line": 215,
+   "disposition": "errored",
+   "reason": "last_contact_invalid",
+   "dollars": 491,
+   "name": "Hector Yancey"
+  },
+  {
+   "line": 216,
+   "disposition": "errored",
+   "reason": "last_contact_invalid",
+   "dollars": 329.5,
+   "name": "Hector Yancey"
+  },
+  {
+   "line": 217,
+   "disposition": "errored",
+   "reason": "last_contact_invalid",
+   "dollars": 106,
+   "name": "Hector Yancey"
+  },
+  {
+   "line": 218,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 98.5,
+   "name": "Zach Grady"
+  },
+  {
+   "line": 219,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 124,
+   "name": "Zach Grady"
+  },
+  {
+   "line": 220,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 123.5,
+   "name": "Olga Vickers"
+  },
+  {
+   "line": 221,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 436,
+   "name": "Carlos Fuentes"
+  },
+  {
+   "line": 222,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 152,
+   "name": "Carlos Fuentes"
+  },
+  {
+   "line": 223,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 356,
+   "name": "Carlos Fuentes"
+  },
+  {
+   "line": 224,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 264,
+   "name": "Carlos Rhodes"
+  },
+  {
+   "line": 225,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 407,
+   "name": "Carlos Rhodes"
+  },
+  {
+   "line": 226,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 334.5,
+   "name": "Carlos Rhodes"
+  },
+  {
+   "line": 227,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 31,
+   "name": "Carlos Rhodes"
+  },
+  {
+   "line": 228,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 283.5,
+   "name": "Tina Tran"
+  },
+  {
+   "line": 229,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 227,
+   "name": "Victor Ellison"
+  },
+  {
+   "line": 230,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 476.5,
+   "name": "Victor Ellison"
+  },
+  {
+   "line": 231,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 291.5,
+   "name": "Victor Ellison"
+  },
+  {
+   "line": 232,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 206,
+   "name": "Luis Zimmer"
+  },
+  {
+   "line": 233,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 260,
+   "name": "Luis Zimmer"
+  },
+  {
+   "line": 234,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 448,
+   "name": "Doug Grady"
+  },
+  {
+   "line": 235,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 449,
+   "name": "Doug Grady"
+  },
+  {
+   "line": 236,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 369,
+   "name": "Doug Grady"
+  },
+  {
+   "line": 237,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 905,
+   "name": "Ned Grady"
+  },
+  {
+   "line": 238,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 348.5,
+   "name": "Ned Grady"
+  },
+  {
+   "line": 239,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 122,
+   "name": "Ned Grady"
+  },
+  {
+   "line": 240,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 35,
+   "name": "Ned Grady"
+  },
+  {
+   "line": 241,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 163,
+   "name": "Miriam Solano"
+  },
+  {
+   "line": 242,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 448,
+   "name": "Miriam Solano"
+  },
+  {
+   "line": 243,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 281,
+   "name": "Miriam Solano"
+  },
+  {
+   "line": 244,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 31,
+   "name": "Miriam Solano"
+  },
+  {
+   "line": 245,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 104,
+   "name": "Beth Okafor"
+  },
+  {
+   "line": 246,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 437,
+   "name": "Rosa Wexler"
+  },
+  {
+   "line": 247,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 291.5,
+   "name": "Rosa Wexler"
+  },
+  {
+   "line": 248,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 334,
+   "name": "Rosa Wexler"
+  },
+  {
+   "line": 249,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 120,
+   "name": "Rosa Wexler"
+  },
+  {
+   "line": 250,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 233,
+   "name": "Hector Ortega"
+  },
+  {
+   "line": 251,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 41,
+   "name": "Hector Ortega"
+  },
+  {
+   "line": 252,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 286,
+   "name": "Hector Ortega"
+  },
+  {
+   "line": 253,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 117.5,
+   "name": "Hector Ortega"
+  },
+  {
+   "line": 254,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 254.5,
+   "name": "Miriam Keller"
+  },
+  {
+   "line": 255,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 249,
+   "name": "Miriam Keller"
+  },
+  {
+   "line": 256,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 56,
+   "name": "Frank Vickers"
+  },
+  {
+   "line": 257,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 297,
+   "name": "Celia Ellison"
+  },
+  {
+   "line": 258,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 273,
+   "name": "Celia Ellison"
+  },
+  {
+   "line": 259,
+   "disposition": "errored",
+   "reason": "future_date",
+   "dollars": 450,
+   "name": "Miriam Barnes"
+  },
+  {
+   "line": 260,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 78.5,
+   "name": "Miriam Barnes"
+  },
+  {
+   "line": 261,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 328,
+   "name": "Miriam Barnes"
+  },
+  {
+   "line": 262,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 412,
+   "name": "Miriam Barnes"
+  },
+  {
+   "line": 263,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 55,
+   "name": "Uma Abbott"
+  },
+  {
+   "line": 264,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 105,
+   "name": "Uma Abbott"
+  },
+  {
+   "line": 265,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 77,
+   "name": "Celia Wexler"
+  },
+  {
+   "line": 266,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 420,
+   "name": "Celia Wexler"
+  },
+  {
+   "line": 267,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 261,
+   "name": "Yolanda Underhill"
+  },
+  {
+   "line": 268,
+   "disposition": "skipped",
+   "reason": "zero_amount",
+   "dollars": 0,
+   "name": "Yolanda Underhill"
+  },
+  {
+   "line": 269,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 400.5,
+   "name": "Yolanda Underhill"
+  },
+  {
+   "line": 270,
+   "disposition": "errored",
+   "reason": "future_date",
+   "dollars": 115,
+   "name": "Yolanda Underhill"
+  },
+  {
+   "line": 271,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 432,
+   "name": "Yolanda Hobbs"
+  },
+  {
+   "line": 272,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 249,
+   "name": "Pete Fuentes"
+  },
+  {
+   "line": 273,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": -89,
+   "name": "Pete Fuentes"
+  },
+  {
+   "line": 274,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 123,
+   "name": "Rosa Underhill"
+  },
+  {
+   "line": 275,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 384,
+   "name": "Rosa Underhill"
+  },
+  {
+   "line": 276,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 216,
+   "name": "Irene Abbott"
+  },
+  {
+   "line": 277,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 201,
+   "name": "Irene Abbott"
+  },
+  {
+   "line": 278,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 235,
+   "name": "Irene Abbott"
+  },
+  {
+   "line": 279,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 74,
+   "name": "Victor Lozano"
+  },
+  {
+   "line": 280,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 80,
+   "name": "Victor Lozano"
+  },
+  {
+   "line": 281,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": -161,
+   "name": "Rosa Okafor"
+  },
+  {
+   "line": 282,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 263,
+   "name": "Rosa Okafor"
+  },
+  {
+   "line": 283,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 337,
+   "name": "Victor Underhill"
+  },
+  {
+   "line": 284,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 65,
+   "name": "Victor Underhill"
+  },
+  {
+   "line": 285,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 409,
+   "name": "Victor Underhill"
+  },
+  {
+   "line": 286,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 483,
+   "name": "Yolanda Ortega"
+  },
+  {
+   "line": 287,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 96,
+   "name": "Yolanda Ortega"
+  },
+  {
+   "line": 288,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 260,
+   "name": "Tina Reyes"
+  },
+  {
+   "line": 289,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 315,
+   "name": "Tina Reyes"
+  },
+  {
+   "line": 290,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 424,
+   "name": "Tina Reyes"
+  },
+  {
+   "line": 291,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 114,
+   "name": "Tina Reyes"
+  },
+  {
+   "line": 292,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 495,
+   "name": "Rosa Hobbs"
+  },
+  {
+   "line": 293,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 430.5,
+   "name": "Rosa Hobbs"
+  },
+  {
+   "line": 294,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 212,
+   "name": "Rosa Hobbs"
+  },
+  {
+   "line": 295,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 175.5,
+   "name": "Rosa Zimmer"
+  },
+  {
+   "line": 296,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": -206,
+   "name": "Rosa Zimmer"
+  },
+  {
+   "line": 297,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 278,
+   "name": "Rosa Zimmer"
+  },
+  {
+   "line": 298,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 174,
+   "name": "Celia Petrov"
+  },
+  {
+   "line": 299,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 357,
+   "name": "Celia Petrov"
+  },
+  {
+   "line": 300,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 18,
+   "name": "Celia Petrov"
+  },
+  {
+   "line": 301,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 207,
+   "name": "Wendy Vickers"
+  },
+  {
+   "line": 302,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 301,
+   "name": "Frank Keller"
+  },
+  {
+   "line": 303,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 247,
+   "name": "Grace Quimby"
+  },
+  {
+   "line": 304,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 117,
+   "name": "James Underhill"
+  },
+  {
+   "line": 305,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 155.5,
+   "name": "James Underhill"
+  },
+  {
+   "line": 306,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 381,
+   "name": "James Underhill"
+  },
+  {
+   "line": 307,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 160,
+   "name": "James Underhill"
+  },
+  {
+   "line": 308,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 235,
+   "name": "Irene Vickers"
+  },
+  {
+   "line": 309,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 158.5,
+   "name": "Irene Vickers"
+  },
+  {
+   "line": 310,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 103,
+   "name": "Irene Vickers"
+  },
+  {
+   "line": 311,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": -208,
+   "name": "Irene Vickers"
+  },
+  {
+   "line": 312,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 137,
+   "name": "Yolanda Mercer"
+  },
+  {
+   "line": 313,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 388,
+   "name": "Yolanda Mercer"
+  },
+  {
+   "line": 314,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 23.5,
+   "name": "Yolanda Mercer"
+  },
+  {
+   "line": 315,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 453,
+   "name": "Yolanda Mercer"
+  },
+  {
+   "line": 316,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 459,
+   "name": "Aaron Mercer"
+  },
+  {
+   "line": 317,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 267,
+   "name": "Aaron Mercer"
+  },
+  {
+   "line": 318,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 370,
+   "name": "Uma Quimby"
+  },
+  {
+   "line": 319,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 304,
+   "name": "Uma Quimby"
+  },
+  {
+   "line": 320,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 395,
+   "name": "Uma Quimby"
+  },
+  {
+   "line": 321,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 299,
+   "name": "Bram Cortez"
+  },
+  {
+   "line": 322,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 58,
+   "name": "Bram Cortez"
+  },
+  {
+   "line": 323,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 189,
+   "name": "Bram Cortez"
+  },
+  {
+   "line": 324,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 365,
+   "name": "Bram Cortez"
+  },
+  {
+   "line": 325,
+   "disposition": "errored",
+   "reason": "last_contact_invalid",
+   "dollars": 296,
+   "name": "Rosa Grady"
+  },
+  {
+   "line": 326,
+   "disposition": "errored",
+   "reason": "last_contact_invalid",
+   "dollars": 201,
+   "name": "Rosa Grady"
+  },
+  {
+   "line": 327,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 352,
+   "name": "Miriam Jamison"
+  },
+  {
+   "line": 328,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 279,
+   "name": "Miriam Jamison"
+  },
+  {
+   "line": 329,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 297,
+   "name": "Miriam Jamison"
+  },
+  {
+   "line": 330,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 305,
+   "name": "Hector Mercer"
+  },
+  {
+   "line": 331,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 132,
+   "name": "Hector Mercer"
+  },
+  {
+   "line": 332,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 290,
+   "name": "Hector Mercer"
+  },
+  {
+   "line": 333,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 134,
+   "name": "Hector Mercer"
+  },
+  {
+   "line": 334,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 15,
+   "name": "Rosa Mercer"
+  },
+  {
+   "line": 335,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 337,
+   "name": "Bram Dawson"
+  },
+  {
+   "line": 336,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 41,
+   "name": "Ned Iverson"
+  },
+  {
+   "line": 337,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 420,
+   "name": "Ned Iverson"
+  },
+  {
+   "line": 338,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 461,
+   "name": "Ned Iverson"
+  },
+  {
+   "line": 339,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 481,
+   "name": "Ned Iverson"
+  },
+  {
+   "line": 340,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 486,
+   "name": "Victor Nolan"
+  },
+  {
+   "line": 341,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 391,
+   "name": "Victor Nolan"
+  },
+  {
+   "line": 342,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 466,
+   "name": "Victor Nolan"
+  },
+  {
+   "line": 343,
+   "disposition": "errored",
+   "reason": "last_contact_invalid",
+   "dollars": 321,
+   "name": "Karen Sandoval"
+  },
+  {
+   "line": 344,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 423,
+   "name": "Wendy Iverson"
+  },
+  {
+   "line": 345,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 242,
+   "name": "Wendy Iverson"
+  },
+  {
+   "line": 346,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 197,
+   "name": "Wendy Iverson"
+  },
+  {
+   "line": 347,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 131,
+   "name": "Wendy Iverson"
+  },
+  {
+   "line": 348,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 205,
+   "name": "Karen Fuentes"
+  },
+  {
+   "line": 349,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 387,
+   "name": "Karen Fuentes"
+  },
+  {
+   "line": 350,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 200,
+   "name": "Victor Fuentes"
+  },
+  {
+   "line": 351,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 221,
+   "name": "Victor Fuentes"
+  },
+  {
+   "line": 352,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 409,
+   "name": "Victor Fuentes"
+  },
+  {
+   "line": 353,
+   "disposition": "errored",
+   "reason": "last_contact_invalid",
+   "dollars": 468.5,
+   "name": "Elena Okafor"
+  },
+  {
+   "line": 354,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 17,
+   "name": "Victor Jamison"
+  },
+  {
+   "line": 355,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 65,
+   "name": "Marta Pruitt"
+  },
+  {
+   "line": 356,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 58.5,
+   "name": "Dana Tobin"
+  },
+  {
+   "line": 357,
+   "disposition": "errored",
+   "reason": "future_date",
+   "dollars": 217,
+   "name": "Marta Pruitt"
+  },
+  {
+   "line": 358,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 385,
+   "name": "Frank Pruitt"
+  },
+  {
+   "line": 359,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 123,
+   "name": "Frank Pruitt"
+  },
+  {
+   "line": 360,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 253,
+   "name": "Frank Pruitt"
+  },
+  {
+   "line": 361,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 423,
+   "name": "Frank Pruitt"
+  },
+  {
+   "line": 362,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 156,
+   "name": "Victor Cortez"
+  },
+  {
+   "line": 363,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 287,
+   "name": "Victor Cortez"
+  },
+  {
+   "line": 364,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 265,
+   "name": "Marta Dawson"
+  },
+  {
+   "line": 365,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 58,
+   "name": "Marta Dawson"
+  },
+  {
+   "line": 366,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 30,
+   "name": "Marta Dawson"
+  },
+  {
+   "line": 367,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 129,
+   "name": "Yolanda Pruitt"
+  },
+  {
+   "line": 368,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 331,
+   "name": "Yolanda Pruitt"
+  },
+  {
+   "line": 369,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 326,
+   "name": "Yolanda Pruitt"
+  },
+  {
+   "line": 370,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 39.5,
+   "name": "Marta Jamison"
+  },
+  {
+   "line": 371,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 179,
+   "name": "Marta Jamison"
+  },
+  {
+   "line": 372,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 189,
+   "name": "Marta Jamison"
+  },
+  {
+   "line": 373,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 126,
+   "name": "Karen Petrov"
+  },
+  {
+   "line": 374,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 361,
+   "name": "Karen Petrov"
+  },
+  {
+   "line": 375,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 73,
+   "name": "Karen Petrov"
+  },
+  {
+   "line": 376,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 126.5,
+   "name": "Carlos Jamison"
+  },
+  {
+   "line": 377,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 56,
+   "name": "Carlos Jamison"
+  },
+  {
+   "line": 378,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 177,
+   "name": "Carlos Jamison"
+  },
+  {
+   "line": 379,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 54,
+   "name": "Wendy Yancey"
+  },
+  {
+   "line": 380,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 483,
+   "name": "Miriam Vickers"
+  },
+  {
+   "line": 381,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 333,
+   "name": "Miriam Vickers"
+  },
+  {
+   "line": 382,
+   "disposition": "errored",
+   "reason": "last_contact_invalid",
+   "dollars": 96,
+   "name": "Ned Keller"
+  },
+  {
+   "line": 383,
+   "disposition": "errored",
+   "reason": "last_contact_invalid",
+   "dollars": 239,
+   "name": "Ned Keller"
+  },
+  {
+   "line": 384,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 455,
+   "name": "Uma Iverson"
+  },
+  {
+   "line": 385,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 97,
+   "name": "Doug Tran"
+  },
+  {
+   "line": 386,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 74,
+   "name": "Doug Tran"
+  },
+  {
+   "line": 387,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 271,
+   "name": "Xavier Pruitt"
+  },
+  {
+   "line": 388,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 428,
+   "name": "Xavier Pruitt"
+  },
+  {
+   "line": 389,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 48,
+   "name": "Xavier Pruitt"
+  },
+  {
+   "line": 390,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 35,
+   "name": "Xavier Pruitt"
+  },
+  {
+   "line": 391,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 405,
+   "name": "Irene Fuentes"
+  },
+  {
+   "line": 392,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 448,
+   "name": "Celia Vickers"
+  },
+  {
+   "line": 393,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 138,
+   "name": "Celia Vickers"
+  },
+  {
+   "line": 394,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 302,
+   "name": "Celia Vickers"
+  },
+  {
+   "line": 395,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 59,
+   "name": "Bram Yancey"
+  },
+  {
+   "line": 396,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 359,
+   "name": "Pete Dawson"
+  },
+  {
+   "line": 397,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 415,
+   "name": "Bram Vickers"
+  },
+  {
+   "line": 398,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 101,
+   "name": "Xavier Solano"
+  },
+  {
+   "line": 399,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 137,
+   "name": "Sam Underhill"
+  },
+  {
+   "line": 400,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 118,
+   "name": "Yolanda Dawson"
+  },
+  {
+   "line": 401,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 83,
+   "name": "Yolanda Dawson"
+  },
+  {
+   "line": 402,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 322,
+   "name": "Zach Keller"
+  },
+  {
+   "line": 403,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 371,
+   "name": "Karen Sandoval"
+  },
+  {
+   "line": 404,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 122,
+   "name": "Karen Sandoval"
+  },
+  {
+   "line": 405,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 147,
+   "name": "Olga Nolan"
+  },
+  {
+   "line": 406,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 450,
+   "name": "Olga Nolan"
+  },
+  {
+   "line": 407,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 337,
+   "name": "Olga Nolan"
+  },
+  {
+   "line": 408,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 451,
+   "name": "Olga Nolan"
+  },
+  {
+   "line": 409,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 258.5,
+   "name": "Dana Okafor"
+  },
+  {
+   "line": 410,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 430.5,
+   "name": "Dana Okafor"
+  },
+  {
+   "line": 411,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 387,
+   "name": "Dana Okafor"
+  },
+  {
+   "line": 412,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 51,
+   "name": "Bram Tobin"
+  },
+  {
+   "line": 413,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 165.5,
+   "name": "Bram Tobin"
+  },
+  {
+   "line": 414,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 380,
+   "name": "Bram Tobin"
+  },
+  {
+   "line": 415,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 457,
+   "name": "Bram Tobin"
+  },
+  {
+   "line": 416,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 156,
+   "name": "Rosa Cortez"
+  },
+  {
+   "line": 417,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 449.5,
+   "name": "Rosa Cortez"
+  },
+  {
+   "line": 418,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 245,
+   "name": "Rosa Cortez"
+  },
+  {
+   "line": 419,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 216,
+   "name": "Rosa Cortez"
+  },
+  {
+   "line": 420,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 460,
+   "name": "Bram Cortez"
+  },
+  {
+   "line": 421,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 474.5,
+   "name": "Bram Cortez"
+  },
+  {
+   "line": 422,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 407,
+   "name": "Bram Cortez"
+  },
+  {
+   "line": 423,
+   "disposition": "errored",
+   "reason": "last_contact_invalid",
+   "dollars": 285.5,
+   "name": "Beth Petrov"
+  },
+  {
+   "line": 424,
+   "disposition": "errored",
+   "reason": "last_contact_invalid",
+   "dollars": 271,
+   "name": "Beth Petrov"
+  },
+  {
+   "line": 425,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 18,
+   "name": "Xavier Nolan"
+  },
+  {
+   "line": 426,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 440,
+   "name": "Hector Wexler"
+  },
+  {
+   "line": 427,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 304.5,
+   "name": "Hector Wexler"
+  },
+  {
+   "line": 428,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 420,
+   "name": "Olga Cortez"
+  },
+  {
+   "line": 429,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 18,
+   "name": "Wendy Lozano"
+  },
+  {
+   "line": 430,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 31,
+   "name": "Wendy Lozano"
+  },
+  {
+   "line": 431,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 480.5,
+   "name": "Wendy Lozano"
+  },
+  {
+   "line": 432,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 149,
+   "name": "Dana Petrov"
+  },
+  {
+   "line": 433,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 366,
+   "name": "Dana Petrov"
+  },
+  {
+   "line": 434,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 204,
+   "name": "Dana Petrov"
+  },
+  {
+   "line": 435,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 126,
+   "name": "Dana Petrov"
+  },
+  {
+   "line": 436,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 195,
+   "name": "Zach Petrov"
+  },
+  {
+   "line": 437,
+   "disposition": "errored",
+   "reason": "last_contact_invalid",
+   "dollars": 133,
+   "name": "Miriam Vickers"
+  },
+  {
+   "line": 438,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 197,
+   "name": "Miriam Underhill"
+  },
+  {
+   "line": 439,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 400,
+   "name": "Tina Mercer"
+  },
+  {
+   "line": 440,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 327,
+   "name": "Tina Mercer"
+  },
+  {
+   "line": 441,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 140,
+   "name": "Tina Mercer"
+  },
+  {
+   "line": 442,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 466,
+   "name": "Tina Mercer"
+  },
+  {
+   "line": 443,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 214.5,
+   "name": "Frank Sandoval"
+  },
+  {
+   "line": 444,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 380,
+   "name": "Frank Sandoval"
+  },
+  {
+   "line": 445,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 98,
+   "name": "Frank Sandoval"
+  },
+  {
+   "line": 446,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 200.5,
+   "name": "Victor Wexler"
+  },
+  {
+   "line": 447,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 67,
+   "name": "Miriam Keller"
+  },
+  {
+   "line": 448,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 91,
+   "name": "Miriam Keller"
+  },
+  {
+   "line": 449,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 302,
+   "name": "Grace Mercer"
+  },
+  {
+   "line": 450,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 346,
+   "name": "Grace Mercer"
+  },
+  {
+   "line": 451,
+   "disposition": "errored",
+   "reason": "future_date",
+   "dollars": 493,
+   "name": "Grace Mercer"
+  },
+  {
+   "line": 452,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 228.5,
+   "name": "Victor Solano"
+  },
+  {
+   "line": 453,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 82,
+   "name": "Quinn Barnes"
+  },
+  {
+   "line": 454,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 482,
+   "name": "Quinn Barnes"
+  },
+  {
+   "line": 455,
+   "disposition": "skipped",
+   "reason": "zero_amount",
+   "dollars": 0,
+   "name": "Karen Okafor"
+  },
+  {
+   "line": 456,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 23,
+   "name": "Karen Okafor"
+  },
+  {
+   "line": 457,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 232,
+   "name": "Karen Okafor"
+  },
+  {
+   "line": 458,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 331.5,
+   "name": "Olga Mercer"
+  },
+  {
+   "line": 459,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 134,
+   "name": "Olga Mercer"
+  },
+  {
+   "line": 460,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 495.5,
+   "name": "Olga Mercer"
+  },
+  {
+   "line": 461,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 10,
+   "name": "Beth Lozano"
+  },
+  {
+   "line": 462,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 87,
+   "name": "Beth Lozano"
+  },
+  {
+   "line": 463,
+   "disposition": "errored",
+   "reason": "unparseable_amount",
+   "dollars": 0,
+   "name": "Beth Lozano"
+  },
+  {
+   "line": 464,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 146,
+   "name": "Beth Lozano"
+  },
+  {
+   "line": 465,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 380,
+   "name": "Xavier Okafor"
+  },
+  {
+   "line": 466,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 177,
+   "name": "Hector Solano"
+  },
+  {
+   "line": 467,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 321.5,
+   "name": "Pete Solano"
+  },
+  {
+   "line": 468,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 110,
+   "name": "Rosa Pruitt"
+  },
+  {
+   "line": 469,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 298,
+   "name": "Rosa Pruitt"
+  },
+  {
+   "line": 470,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 61,
+   "name": "Rosa Pruitt"
+  },
+  {
+   "line": 471,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 12.5,
+   "name": "Wendy Mercer"
+  },
+  {
+   "line": 472,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 76.5,
+   "name": "Wendy Mercer"
+  },
+  {
+   "line": 473,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 45,
+   "name": "Wendy Mercer"
+  },
+  {
+   "line": 474,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 399.5,
+   "name": "Wendy Mercer"
+  },
+  {
+   "line": 475,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 343,
+   "name": "Celia Rhodes"
+  },
+  {
+   "line": 476,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 232,
+   "name": "Celia Rhodes"
+  },
+  {
+   "line": 477,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 72,
+   "name": "Celia Rhodes"
+  },
+  {
+   "line": 478,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 498,
+   "name": "Celia Rhodes"
+  },
+  {
+   "line": 479,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 442,
+   "name": "Marta Tobin"
+  },
+  {
+   "line": 480,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 49,
+   "name": "Marta Tobin"
+  },
+  {
+   "line": 481,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 157,
+   "name": "Marta Tobin"
+  },
+  {
+   "line": 482,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 156.5,
+   "name": "Karen Reyes"
+  },
+  {
+   "line": 483,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": -106,
+   "name": "Karen Reyes"
+  },
+  {
+   "line": 484,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 276,
+   "name": "Karen Reyes"
+  },
+  {
+   "line": 485,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 118,
+   "name": "Karen Reyes"
+  },
+  {
+   "line": 486,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 336,
+   "name": "Luis Tran"
+  },
+  {
+   "line": 487,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 72,
+   "name": "Luis Tran"
+  },
+  {
+   "line": 488,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 213,
+   "name": "Luis Tran"
+  },
+  {
+   "line": 489,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 21,
+   "name": "Luis Tran"
+  },
+  {
+   "line": 490,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 309,
+   "name": "Marta Nolan"
+  },
+  {
+   "line": 491,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 311.5,
+   "name": "Karen Ortega"
+  },
+  {
+   "line": 492,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 201,
+   "name": "Karen Ortega"
+  },
+  {
+   "line": 493,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 150,
+   "name": "Karen Ortega"
+  },
+  {
+   "line": 494,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 135,
+   "name": "Uma Hobbs"
+  },
+  {
+   "line": 495,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 255,
+   "name": "Grace Tobin"
+  },
+  {
+   "line": 496,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 460.5,
+   "name": "Grace Tobin"
+  },
+  {
+   "line": 497,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 403.5,
+   "name": "Grace Tobin"
+  },
+  {
+   "line": 498,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 325,
+   "name": "Grace Tobin"
+  },
+  {
+   "line": 499,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 244,
+   "name": "Dana Okafor"
+  },
+  {
+   "line": 500,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 224,
+   "name": "Dana Okafor"
+  },
+  {
+   "line": 501,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 335,
+   "name": "Dana Okafor"
+  },
+  {
+   "line": 502,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 375,
+   "name": "Elena Cortez"
+  },
+  {
+   "line": 503,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 85,
+   "name": "Elena Cortez"
+  },
+  {
+   "line": 504,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 387,
+   "name": "Elena Cortez"
+  },
+  {
+   "line": 505,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 409,
+   "name": "Olga Ellison"
+  },
+  {
+   "line": 506,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 41,
+   "name": "Olga Ellison"
+  },
+  {
+   "line": 507,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 26,
+   "name": "Olga Ellison"
+  },
+  {
+   "line": 508,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 460,
+   "name": "Olga Ellison"
+  },
+  {
+   "line": 509,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 78,
+   "name": "Grace Nolan"
+  },
+  {
+   "line": 510,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 347,
+   "name": "Grace Nolan"
+  },
+  {
+   "line": 511,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 398,
+   "name": "Grace Nolan"
+  },
+  {
+   "line": 512,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 453,
+   "name": "Grace Nolan"
+  },
+  {
+   "line": 513,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 182,
+   "name": "Beth Dawson"
+  },
+  {
+   "line": 514,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 190,
+   "name": "Beth Dawson"
+  },
+  {
+   "line": 515,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 398,
+   "name": "Beth Dawson"
+  },
+  {
+   "line": 516,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 281,
+   "name": "Marta Hobbs"
+  },
+  {
+   "line": 517,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 472,
+   "name": "Sam Tran"
+  },
+  {
+   "line": 518,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 278,
+   "name": "Sam Tran"
+  },
+  {
+   "line": 519,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 464,
+   "name": "Sam Tran"
+  },
+  {
+   "line": 520,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 325,
+   "name": "Miriam Cortez"
+  },
+  {
+   "line": 521,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 150,
+   "name": "Miriam Cortez"
+  },
+  {
+   "line": 522,
+   "disposition": "errored",
+   "reason": "future_date",
+   "dollars": 325,
+   "name": "Miriam Cortez"
+  },
+  {
+   "line": 523,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 429,
+   "name": "Karen Barnes"
+  },
+  {
+   "line": 524,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 142,
+   "name": "Karen Barnes"
+  },
+  {
+   "line": 525,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 404,
+   "name": "Karen Barnes"
+  },
+  {
+   "line": 526,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 496,
+   "name": "Karen Barnes"
+  },
+  {
+   "line": 527,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": -78,
+   "name": "Xavier Barnes"
+  },
+  {
+   "line": 528,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 486,
+   "name": "Xavier Barnes"
+  },
+  {
+   "line": 529,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 154,
+   "name": "Xavier Barnes"
+  },
+  {
+   "line": 530,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": -154,
+   "name": "Xavier Barnes"
+  },
+  {
+   "line": 531,
+   "disposition": "errored",
+   "reason": "future_date",
+   "dollars": 110,
+   "name": "Pete Mercer"
+  },
+  {
+   "line": 532,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 85,
+   "name": "Pete Mercer"
+  },
+  {
+   "line": 533,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 132,
+   "name": "Pete Mercer"
+  },
+  {
+   "line": 534,
+   "disposition": "errored",
+   "reason": "future_date",
+   "dollars": 466,
+   "name": "Irene Ellison"
+  },
+  {
+   "line": 535,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": -148,
+   "name": "Irene Ellison"
+  },
+  {
+   "line": 536,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 494,
+   "name": "Marta Hobbs"
+  },
+  {
+   "line": 537,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 163,
+   "name": "Marta Hobbs"
+  },
+  {
+   "line": 538,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 332,
+   "name": "Marta Hobbs"
+  },
+  {
+   "line": 539,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 11,
+   "name": "Marta Hobbs"
+  },
+  {
+   "line": 540,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 63,
+   "name": "Aaron Grady"
+  },
+  {
+   "line": 541,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 429,
+   "name": "Aaron Grady"
+  },
+  {
+   "line": 542,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 422,
+   "name": "Aaron Grady"
+  },
+  {
+   "line": 543,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 130,
+   "name": "Aaron Grady"
+  },
+  {
+   "line": 544,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 401,
+   "name": "Beth Zimmer"
+  },
+  {
+   "line": 545,
+   "disposition": "errored",
+   "reason": "last_contact_invalid",
+   "dollars": 208,
+   "name": "Beth Nolan"
+  },
+  {
+   "line": 546,
+   "disposition": "errored",
+   "reason": "last_contact_invalid",
+   "dollars": 499.5,
+   "name": "Beth Nolan"
+  },
+  {
+   "line": 547,
+   "disposition": "errored",
+   "reason": "last_contact_invalid",
+   "dollars": 40.5,
+   "name": "Beth Nolan"
+  },
+  {
+   "line": 548,
+   "disposition": "errored",
+   "reason": "last_contact_invalid",
+   "dollars": 141,
+   "name": "Beth Nolan"
+  },
+  {
+   "line": 549,
+   "disposition": "errored",
+   "reason": "last_contact_invalid",
+   "dollars": 248,
+   "name": "Yolanda Nolan"
+  },
+  {
+   "line": 550,
+   "disposition": "errored",
+   "reason": "last_contact_invalid",
+   "dollars": -32,
+   "name": "Yolanda Nolan"
+  },
+  {
+   "line": 551,
+   "disposition": "errored",
+   "reason": "last_contact_invalid",
+   "dollars": 145,
+   "name": "Yolanda Nolan"
+  },
+  {
+   "line": 552,
+   "disposition": "errored",
+   "reason": "last_contact_invalid",
+   "dollars": 102,
+   "name": "Yolanda Nolan"
+  },
+  {
+   "line": 553,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 197,
+   "name": "Luis Zimmer"
+  },
+  {
+   "line": 554,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 446,
+   "name": "Luis Zimmer"
+  },
+  {
+   "line": 555,
+   "disposition": "errored",
+   "reason": "last_contact_invalid",
+   "dollars": 298,
+   "name": "Rosa Reyes"
+  },
+  {
+   "line": 556,
+   "disposition": "errored",
+   "reason": "last_contact_invalid",
+   "dollars": 134,
+   "name": "Rosa Reyes"
+  },
+  {
+   "line": 557,
+   "disposition": "errored",
+   "reason": "last_contact_invalid",
+   "dollars": 161,
+   "name": "Rosa Reyes"
+  },
+  {
+   "line": 558,
+   "disposition": "errored",
+   "reason": "last_contact_invalid",
+   "dollars": -204,
+   "name": "Rosa Reyes"
+  },
+  {
+   "line": 559,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 85,
+   "name": "Frank Keller"
+  },
+  {
+   "line": 560,
+   "disposition": "errored",
+   "reason": "unparseable_amount",
+   "dollars": 0,
+   "name": "Frank Keller"
+  },
+  {
+   "line": 561,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 438,
+   "name": "Grace Lozano"
+  },
+  {
+   "line": 562,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 248,
+   "name": "Grace Lozano"
+  },
+  {
+   "line": 563,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 293,
+   "name": "Grace Lozano"
+  },
+  {
+   "line": 564,
+   "disposition": "errored",
+   "reason": "last_contact_invalid",
+   "dollars": 339,
+   "name": "Irene Fuentes"
+  },
+  {
+   "line": 565,
+   "disposition": "errored",
+   "reason": "last_contact_invalid",
+   "dollars": 239,
+   "name": "Irene Fuentes"
+  },
+  {
+   "line": 566,
+   "disposition": "errored",
+   "reason": "last_contact_invalid",
+   "dollars": 75,
+   "name": "Irene Fuentes"
+  },
+  {
+   "line": 567,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 318,
+   "name": "Pete Fuentes"
+  },
+  {
+   "line": 568,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": -63,
+   "name": "Pete Fuentes"
+  },
+  {
+   "line": 569,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 472,
+   "name": "Pete Fuentes"
+  },
+  {
+   "line": 570,
+   "disposition": "errored",
+   "reason": "last_contact_invalid",
+   "dollars": 310,
+   "name": "Karen Hobbs"
+  },
+  {
+   "line": 571,
+   "disposition": "errored",
+   "reason": "last_contact_invalid",
+   "dollars": 31,
+   "name": "Karen Hobbs"
+  },
+  {
+   "line": 572,
+   "disposition": "errored",
+   "reason": "last_contact_invalid",
+   "dollars": 120,
+   "name": "Karen Hobbs"
+  },
+  {
+   "line": 573,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 103,
+   "name": "Xavier Quimby"
+  },
+  {
+   "line": 574,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 372,
+   "name": "Xavier Quimby"
+  },
+  {
+   "line": 575,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 16,
+   "name": "Xavier Quimby"
+  },
+  {
+   "line": 576,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": -200,
+   "name": "Aaron Abbott"
+  },
+  {
+   "line": 577,
+   "disposition": "errored",
+   "reason": "last_contact_invalid",
+   "dollars": 336,
+   "name": "Yolanda Fuentes"
+  },
+  {
+   "line": 578,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 340,
+   "name": "Wendy Jamison"
+  },
+  {
+   "line": 579,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 190,
+   "name": "Wendy Jamison"
+  },
+  {
+   "line": 580,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 147,
+   "name": "Wendy Jamison"
+  },
+  {
+   "line": 581,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 102,
+   "name": "Yolanda Tobin"
+  },
+  {
+   "line": 582,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 55.5,
+   "name": "Yolanda Tobin"
+  },
+  {
+   "line": 583,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 465,
+   "name": "Tina Petrov"
+  },
+  {
+   "line": 584,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 28,
+   "name": "Tina Petrov"
+  },
+  {
+   "line": 585,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 135,
+   "name": "Sam Wexler"
+  },
+  {
+   "line": 586,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 383,
+   "name": "Sam Wexler"
+  },
+  {
+   "line": 587,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 118,
+   "name": "Bram Reyes"
+  },
+  {
+   "line": 588,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 74,
+   "name": "Miriam Tran"
+  },
+  {
+   "line": 589,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 246,
+   "name": "Miriam Tran"
+  },
+  {
+   "line": 590,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 482,
+   "name": "Miriam Tran"
+  },
+  {
+   "line": 591,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 481,
+   "name": "Miriam Tran"
+  },
+  {
+   "line": 592,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 231,
+   "name": "Carlos Reyes"
+  },
+  {
+   "line": 593,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 349,
+   "name": "Carlos Reyes"
+  },
+  {
+   "line": 594,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 334,
+   "name": "Carlos Reyes"
+  },
+  {
+   "line": 595,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 473,
+   "name": "Carlos Reyes"
+  },
+  {
+   "line": 596,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 377.5,
+   "name": "James Lozano"
+  },
+  {
+   "line": 597,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 279,
+   "name": "James Lozano"
+  },
+  {
+   "line": 598,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 335,
+   "name": "James Nolan"
+  },
+  {
+   "line": 599,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 184,
+   "name": "James Nolan"
+  },
+  {
+   "line": 600,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 82,
+   "name": "James Nolan"
+  },
+  {
+   "line": 601,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 323,
+   "name": "James Nolan"
+  },
+  {
+   "line": 602,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 418,
+   "name": "Frank Ellison"
+  },
+  {
+   "line": 603,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 289,
+   "name": "Frank Ellison"
+  },
+  {
+   "line": 604,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 169,
+   "name": "Celia Solano"
+  },
+  {
+   "line": 605,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 190,
+   "name": "Celia Solano"
+  },
+  {
+   "line": 606,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 212,
+   "name": "Celia Solano"
+  },
+  {
+   "line": 607,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 137.5,
+   "name": "Celia Solano"
+  },
+  {
+   "line": 608,
+   "disposition": "errored",
+   "reason": "last_contact_invalid",
+   "dollars": 269.5,
+   "name": "James Iverson"
+  },
+  {
+   "line": 609,
+   "disposition": "errored",
+   "reason": "last_contact_invalid",
+   "dollars": 438,
+   "name": "James Iverson"
+  },
+  {
+   "line": 610,
+   "disposition": "errored",
+   "reason": "last_contact_invalid",
+   "dollars": 435,
+   "name": "James Iverson"
+  },
+  {
+   "line": 611,
+   "disposition": "errored",
+   "reason": "last_contact_invalid",
+   "dollars": 422.5,
+   "name": "James Iverson"
+  },
+  {
+   "line": 612,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 116,
+   "name": "Sam Wexler"
+  },
+  {
+   "line": 613,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 470,
+   "name": "Sam Wexler"
+  },
+  {
+   "line": 614,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 493,
+   "name": "Sam Wexler"
+  },
+  {
+   "line": 615,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 115.5,
+   "name": "Miriam Ortega"
+  },
+  {
+   "line": 616,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 327,
+   "name": "Olga Iverson"
+  },
+  {
+   "line": 617,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 321,
+   "name": "Tina Jamison"
+  },
+  {
+   "line": 618,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 410,
+   "name": "Tina Jamison"
+  },
+  {
+   "line": 619,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 227,
+   "name": "Tina Jamison"
+  },
+  {
+   "line": 620,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 190,
+   "name": "Elena Abbott"
+  },
+  {
+   "line": 621,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 443.5,
+   "name": "Elena Abbott"
+  },
+  {
+   "line": 622,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 130,
+   "name": "Uma Tobin"
+  },
+  {
+   "line": 623,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 103,
+   "name": "Uma Tobin"
+  },
+  {
+   "line": 624,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 57.5,
+   "name": "Uma Tobin"
+  },
+  {
+   "line": 625,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 330,
+   "name": "Uma Tran"
+  },
+  {
+   "line": 626,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 135,
+   "name": "Hector Wexler"
+  },
+  {
+   "line": 627,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 403,
+   "name": "Hector Wexler"
+  },
+  {
+   "line": 628,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 31,
+   "name": "Aaron Nolan"
+  },
+  {
+   "line": 629,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 15,
+   "name": "Tina Jamison"
+  },
+  {
+   "line": 630,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 396,
+   "name": "Tina Jamison"
+  },
+  {
+   "line": 631,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 382,
+   "name": "Tina Jamison"
+  },
+  {
+   "line": 632,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 136,
+   "name": "Beth Mercer"
+  },
+  {
+   "line": 633,
+   "disposition": "errored",
+   "reason": "unparseable_amount",
+   "dollars": 0,
+   "name": "Beth Mercer"
+  },
+  {
+   "line": 634,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 428,
+   "name": "Beth Mercer"
+  },
+  {
+   "line": 635,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 360,
+   "name": "Beth Mercer"
+  },
+  {
+   "line": 636,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 254,
+   "name": "Xavier Yancey"
+  },
+  {
+   "line": 637,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 323,
+   "name": "Yolanda Fuentes"
+  },
+  {
+   "line": 638,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 440,
+   "name": "Yolanda Fuentes"
+  },
+  {
+   "line": 639,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 487,
+   "name": "Yolanda Fuentes"
+  },
+  {
+   "line": 640,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 81,
+   "name": "Dana Pruitt"
+  },
+  {
+   "line": 641,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 337.5,
+   "name": "Dana Pruitt"
+  },
+  {
+   "line": 642,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 264,
+   "name": "Rosa Okafor"
+  },
+  {
+   "line": 643,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 217,
+   "name": "Rosa Okafor"
+  },
+  {
+   "line": 644,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 347,
+   "name": "Rosa Okafor"
+  },
+  {
+   "line": 645,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 281,
+   "name": "Rosa Okafor"
+  },
+  {
+   "line": 646,
+   "disposition": "errored",
+   "reason": "last_contact_invalid",
+   "dollars": 92,
+   "name": "Zach Grady"
+  },
+  {
+   "line": 647,
+   "disposition": "errored",
+   "reason": "last_contact_invalid",
+   "dollars": 201,
+   "name": "Zach Grady"
+  },
+  {
+   "line": 648,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 351,
+   "name": "Uma Barnes"
+  },
+  {
+   "line": 649,
+   "disposition": "errored",
+   "reason": "last_contact_invalid",
+   "dollars": 145,
+   "name": "Victor Rhodes"
+  },
+  {
+   "line": 650,
+   "disposition": "errored",
+   "reason": "last_contact_invalid",
+   "dollars": 225.5,
+   "name": "Victor Rhodes"
+  },
+  {
+   "line": 651,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 61,
+   "name": "Sam Tran"
+  },
+  {
+   "line": 652,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 146,
+   "name": "Sam Tran"
+  },
+  {
+   "line": 653,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 288.5,
+   "name": "Celia Tran"
+  },
+  {
+   "line": 654,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 463.5,
+   "name": "Celia Tran"
+  },
+  {
+   "line": 655,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 102,
+   "name": "Celia Tran"
+  },
+  {
+   "line": 656,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 305,
+   "name": "Celia Tran"
+  },
+  {
+   "line": 657,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 117,
+   "name": "Celia Okafor"
+  },
+  {
+   "line": 658,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 300,
+   "name": "Celia Okafor"
+  },
+  {
+   "line": 659,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 123,
+   "name": "Celia Okafor"
+  },
+  {
+   "line": 660,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 292,
+   "name": "Celia Okafor"
+  },
+  {
+   "line": 661,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 238.5,
+   "name": "Carlos Okafor"
+  },
+  {
+   "line": 662,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 282,
+   "name": "Carlos Okafor"
+  },
+  {
+   "line": 663,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 398,
+   "name": "Xavier Yancey"
+  },
+  {
+   "line": 664,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 330,
+   "name": "Xavier Yancey"
+  },
+  {
+   "line": 665,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 445,
+   "name": "Olga Quimby"
+  },
+  {
+   "line": 666,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 291.5,
+   "name": "Marta Lozano"
+  },
+  {
+   "line": 667,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 457,
+   "name": "Marta Lozano"
+  },
+  {
+   "line": 668,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 150,
+   "name": "Ned Nolan"
+  },
+  {
+   "line": 669,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 213,
+   "name": "Frank Ellison"
+  },
+  {
+   "line": 670,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 422,
+   "name": "Quinn Jamison"
+  },
+  {
+   "line": 671,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 252.5,
+   "name": "Quinn Jamison"
+  },
+  {
+   "line": 672,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 392.5,
+   "name": "Quinn Jamison"
+  },
+  {
+   "line": 673,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 305,
+   "name": "Quinn Zimmer"
+  },
+  {
+   "line": 674,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 479,
+   "name": "Quinn Zimmer"
+  },
+  {
+   "line": 675,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 394,
+   "name": "Quinn Zimmer"
+  },
+  {
+   "line": 676,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 489,
+   "name": "Rosa Rhodes"
+  },
+  {
+   "line": 677,
+   "disposition": "errored",
+   "reason": "last_contact_invalid",
+   "dollars": 90,
+   "name": "Beth Hobbs"
+  },
+  {
+   "line": 678,
+   "disposition": "errored",
+   "reason": "last_contact_invalid",
+   "dollars": 84,
+   "name": "Beth Hobbs"
+  },
+  {
+   "line": 679,
+   "disposition": "errored",
+   "reason": "last_contact_invalid",
+   "dollars": 116,
+   "name": "Beth Hobbs"
+  },
+  {
+   "line": 680,
+   "disposition": "errored",
+   "reason": "last_contact_invalid",
+   "dollars": 91,
+   "name": "Beth Hobbs"
+  },
+  {
+   "line": 681,
+   "disposition": "errored",
+   "reason": "last_contact_invalid",
+   "dollars": 238.5,
+   "name": "Zach Keller"
+  },
+  {
+   "line": 682,
+   "disposition": "errored",
+   "reason": "last_contact_invalid",
+   "dollars": 409.5,
+   "name": "Zach Keller"
+  },
+  {
+   "line": 683,
+   "disposition": "errored",
+   "reason": "last_contact_invalid",
+   "dollars": 339,
+   "name": "Zach Keller"
+  },
+  {
+   "line": 684,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 489,
+   "name": "Karen Cortez"
+  },
+  {
+   "line": 685,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 340.5,
+   "name": "Karen Cortez"
+  },
+  {
+   "line": 686,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 350,
+   "name": "Karen Cortez"
+  },
+  {
+   "line": 687,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 117.5,
+   "name": "Marta Keller"
+  },
+  {
+   "line": 688,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 218,
+   "name": "Aaron Lozano"
+  },
+  {
+   "line": 689,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 459,
+   "name": "Zach Petrov"
+  },
+  {
+   "line": 690,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 392,
+   "name": "Dana Keller"
+  },
+  {
+   "line": 691,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 87,
+   "name": "Dana Keller"
+  },
+  {
+   "line": 692,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 90.5,
+   "name": "Olga Reyes"
+  },
+  {
+   "line": 693,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 357,
+   "name": "Elena Nolan"
+  },
+  {
+   "line": 694,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 121.5,
+   "name": "Yolanda Mercer"
+  },
+  {
+   "line": 695,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 65,
+   "name": "Yolanda Mercer"
+  },
+  {
+   "line": 696,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 36,
+   "name": "Yolanda Mercer"
+  },
+  {
+   "line": 697,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 382.5,
+   "name": "Miriam Quimby"
+  },
+  {
+   "line": 698,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 32,
+   "name": "Miriam Quimby"
+  },
+  {
+   "line": 699,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": -134,
+   "name": "Miriam Quimby"
+  },
+  {
+   "line": 700,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 451,
+   "name": "Miriam Quimby"
+  },
+  {
+   "line": 701,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 388,
+   "name": "Luis Grady"
+  },
+  {
+   "line": 702,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 187,
+   "name": "Luis Grady"
+  },
+  {
+   "line": 703,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 180,
+   "name": "Frank Hobbs"
+  },
+  {
+   "line": 704,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 464,
+   "name": "Marta Grady"
+  },
+  {
+   "line": 705,
+   "disposition": "skipped",
+   "reason": "zero_amount",
+   "dollars": 0,
+   "name": "Marta Grady"
+  },
+  {
+   "line": 706,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 438,
+   "name": "Marta Grady"
+  },
+  {
+   "line": 707,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 248.5,
+   "name": "Marta Grady"
+  },
+  {
+   "line": 708,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 279.5,
+   "name": "Aaron Grady"
+  },
+  {
+   "line": 709,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 113,
+   "name": "Aaron Grady"
+  },
+  {
+   "line": 710,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 258,
+   "name": "Aaron Grady"
+  },
+  {
+   "line": 711,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 223,
+   "name": "Aaron Grady"
+  },
+  {
+   "line": 712,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 404,
+   "name": "Yolanda Okafor"
+  },
+  {
+   "line": 713,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 35,
+   "name": "Yolanda Okafor"
+  },
+  {
+   "line": 714,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 322.5,
+   "name": "Xavier Mercer"
+  },
+  {
+   "line": 715,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 268,
+   "name": "Xavier Mercer"
+  },
+  {
+   "line": 716,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 62.5,
+   "name": "Xavier Mercer"
+  },
+  {
+   "line": 717,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 310,
+   "name": "Uma Tran"
+  },
+  {
+   "line": 718,
+   "disposition": "errored",
+   "reason": "unparseable_amount",
+   "dollars": 0,
+   "name": "Uma Tran"
+  },
+  {
+   "line": 719,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 40.5,
+   "name": "Uma Tran"
+  },
+  {
+   "line": 720,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 109,
+   "name": "Uma Tran"
+  },
+  {
+   "line": 721,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 488,
+   "name": "Rosa Yancey"
+  },
+  {
+   "line": 722,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 241,
+   "name": "Aaron Grady"
+  },
+  {
+   "line": 723,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 475,
+   "name": "Aaron Grady"
+  },
+  {
+   "line": 724,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 270,
+   "name": "Aaron Grady"
+  },
+  {
+   "line": 725,
+   "disposition": "errored",
+   "reason": "future_date",
+   "dollars": 437,
+   "name": "Wendy Iverson"
+  },
+  {
+   "line": 726,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 154,
+   "name": "Wendy Iverson"
+  },
+  {
+   "line": 727,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 66,
+   "name": "Wendy Iverson"
+  },
+  {
+   "line": 728,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 63,
+   "name": "Wendy Iverson"
+  },
+  {
+   "line": 729,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 223,
+   "name": "Uma Petrov"
+  },
+  {
+   "line": 730,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 439,
+   "name": "Dana Tran"
+  },
+  {
+   "line": 731,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 350,
+   "name": "Pete Zimmer"
+  },
+  {
+   "line": 732,
+   "disposition": "errored",
+   "reason": "last_contact_invalid",
+   "dollars": 311.5,
+   "name": "Sam Hobbs"
+  },
+  {
+   "line": 733,
+   "disposition": "errored",
+   "reason": "last_contact_invalid",
+   "dollars": 219,
+   "name": "Sam Hobbs"
+  },
+  {
+   "line": 734,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 472,
+   "name": "Victor Yancey"
+  },
+  {
+   "line": 735,
+   "disposition": "errored",
+   "reason": "last_contact_invalid",
+   "dollars": 433,
+   "name": "Carlos Abbott"
+  },
+  {
+   "line": 736,
+   "disposition": "errored",
+   "reason": "last_contact_invalid",
+   "dollars": 141,
+   "name": "Carlos Abbott"
+  },
+  {
+   "line": 737,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 367,
+   "name": "Doug Grady"
+  },
+  {
+   "line": 738,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 368.5,
+   "name": "Doug Grady"
+  },
+  {
+   "line": 739,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 472.5,
+   "name": "Olga Mercer"
+  },
+  {
+   "line": 740,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 106.5,
+   "name": "Olga Mercer"
+  },
+  {
+   "line": 741,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 251,
+   "name": "Hector Wexler"
+  },
+  {
+   "line": 742,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 434,
+   "name": "Wendy Reyes"
+  },
+  {
+   "line": 743,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 397,
+   "name": "Wendy Reyes"
+  },
+  {
+   "line": 744,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 471,
+   "name": "Wendy Reyes"
+  },
+  {
+   "line": 745,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 367,
+   "name": "Wendy Reyes"
+  },
+  {
+   "line": 746,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 608,
+   "name": "Rosa Solano"
+  },
+  {
+   "line": 747,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 342,
+   "name": "Rosa Solano"
+  },
+  {
+   "line": 748,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 449,
+   "name": "Ned Vickers"
+  },
+  {
+   "line": 749,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 280,
+   "name": "Ned Vickers"
+  },
+  {
+   "line": 750,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 71,
+   "name": "Ned Vickers"
+  },
+  {
+   "line": 751,
+   "disposition": "errored",
+   "reason": "unparseable_amount",
+   "dollars": 0,
+   "name": "Wendy Petrov"
+  },
+  {
+   "line": 752,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 420,
+   "name": "Wendy Petrov"
+  },
+  {
+   "line": 753,
+   "disposition": "errored",
+   "reason": "unparseable_amount",
+   "dollars": 0,
+   "name": "Wendy Petrov"
+  },
+  {
+   "line": 754,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 81,
+   "name": "Wendy Petrov"
+  },
+  {
+   "line": 755,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 489,
+   "name": "Miriam Abbott"
+  },
+  {
+   "line": 756,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 45,
+   "name": "Miriam Abbott"
+  },
+  {
+   "line": 757,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 381,
+   "name": "Miriam Abbott"
+  },
+  {
+   "line": 758,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 131,
+   "name": "Marta Tran"
+  },
+  {
+   "line": 759,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 499,
+   "name": "Marta Tran"
+  },
+  {
+   "line": 760,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": -134,
+   "name": "Marta Tran"
+  },
+  {
+   "line": 761,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 481,
+   "name": "Wendy Okafor"
+  },
+  {
+   "line": 762,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 120,
+   "name": "Wendy Okafor"
+  },
+  {
+   "line": 763,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 469.5,
+   "name": "Wendy Okafor"
+  },
+  {
+   "line": 764,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 143,
+   "name": "Marta Abbott"
+  },
+  {
+   "line": 765,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 273,
+   "name": "Marta Abbott"
+  },
+  {
+   "line": 766,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 54,
+   "name": "Victor Barnes"
+  },
+  {
+   "line": 767,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 293,
+   "name": "Victor Barnes"
+  },
+  {
+   "line": 768,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 159,
+   "name": "Victor Barnes"
+  },
+  {
+   "line": 769,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 489,
+   "name": "Victor Barnes"
+  },
+  {
+   "line": 770,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 41,
+   "name": "Hector Mercer"
+  },
+  {
+   "line": 771,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 444,
+   "name": "Hector Mercer"
+  },
+  {
+   "line": 772,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 187,
+   "name": "Hector Mercer"
+  },
+  {
+   "line": 773,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 213.5,
+   "name": "Victor Cortez"
+  },
+  {
+   "line": 774,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 80,
+   "name": "Victor Cortez"
+  },
+  {
+   "line": 775,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 93,
+   "name": "Victor Cortez"
+  },
+  {
+   "line": 776,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 138,
+   "name": "Victor Cortez"
+  },
+  {
+   "line": 777,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 220.5,
+   "name": "Frank Lozano"
+  },
+  {
+   "line": 778,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 172,
+   "name": "Frank Lozano"
+  },
+  {
+   "line": 779,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 173,
+   "name": "Frank Lozano"
+  },
+  {
+   "line": 780,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 414,
+   "name": "Frank Lozano"
+  },
+  {
+   "line": 781,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 307,
+   "name": "Bram Okafor"
+  },
+  {
+   "line": 782,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 113,
+   "name": "Bram Okafor"
+  },
+  {
+   "line": 783,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 27,
+   "name": "Bram Okafor"
+  },
+  {
+   "line": 784,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 430,
+   "name": "Bram Okafor"
+  },
+  {
+   "line": 785,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 147.5,
+   "name": "Tina Quimby"
+  },
+  {
+   "line": 786,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 343,
+   "name": "Tina Quimby"
+  },
+  {
+   "line": 787,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 25,
+   "name": "Tina Quimby"
+  },
+  {
+   "line": 788,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 216,
+   "name": "Tina Quimby"
+  },
+  {
+   "line": 789,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 231.5,
+   "name": "Celia Jamison"
+  },
+  {
+   "line": 790,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": -129,
+   "name": "Pete Solano"
+  },
+  {
+   "line": 791,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 476,
+   "name": "Pete Solano"
+  },
+  {
+   "line": 792,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 419,
+   "name": "Olga Underhill"
+  },
+  {
+   "line": 793,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": -144,
+   "name": "Irene Fuentes"
+  },
+  {
+   "line": 794,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 326,
+   "name": "Irene Fuentes"
+  },
+  {
+   "line": 795,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 20,
+   "name": "Tina Hobbs"
+  },
+  {
+   "line": 796,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 231,
+   "name": "Tina Hobbs"
+  },
+  {
+   "line": 797,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 400,
+   "name": "Tina Hobbs"
+  },
+  {
+   "line": 798,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 123,
+   "name": "Tina Hobbs"
+  },
+  {
+   "line": 799,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 407,
+   "name": "Ned Zimmer"
+  },
+  {
+   "line": 800,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 138,
+   "name": "Hector Fuentes"
+  },
+  {
+   "line": 801,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 300,
+   "name": "Celia Lozano"
+  },
+  {
+   "line": 802,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 100,
+   "name": "Celia Lozano"
+  },
+  {
+   "line": 803,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 463.5,
+   "name": "Carlos Okafor"
+  },
+  {
+   "line": 804,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 495,
+   "name": "Carlos Okafor"
+  },
+  {
+   "line": 805,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": -75,
+   "name": "Carlos Okafor"
+  },
+  {
+   "line": 806,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 144,
+   "name": "Marta Quimby"
+  },
+  {
+   "line": 807,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 250.5,
+   "name": "Marta Quimby"
+  },
+  {
+   "line": 808,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 19,
+   "name": "Marta Quimby"
+  },
+  {
+   "line": 809,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 91,
+   "name": "Dana Tobin"
+  },
+  {
+   "line": 810,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 334,
+   "name": "Dana Tobin"
+  },
+  {
+   "line": 811,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 111.5,
+   "name": "Aaron Wexler"
+  },
+  {
+   "line": 812,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 296,
+   "name": "Aaron Wexler"
+  },
+  {
+   "line": 813,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 284.5,
+   "name": "Aaron Wexler"
+  },
+  {
+   "line": 814,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 231,
+   "name": "Bram Okafor"
+  },
+  {
+   "line": 815,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 317,
+   "name": "Bram Okafor"
+  },
+  {
+   "line": 816,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 133,
+   "name": "Bram Okafor"
+  },
+  {
+   "line": 817,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 139,
+   "name": "Bram Okafor"
+  },
+  {
+   "line": 818,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 20,
+   "name": "Bram Nolan"
+  },
+  {
+   "line": 819,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 294,
+   "name": "Bram Nolan"
+  },
+  {
+   "line": 820,
+   "disposition": "errored",
+   "reason": "future_date",
+   "dollars": 50,
+   "name": "Bram Nolan"
+  },
+  {
+   "line": 821,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 253,
+   "name": "Hector Lozano"
+  },
+  {
+   "line": 822,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 13,
+   "name": "Hector Lozano"
+  },
+  {
+   "line": 823,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 249,
+   "name": "Hector Lozano"
+  },
+  {
+   "line": 824,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 100,
+   "name": "Hector Lozano"
+  },
+  {
+   "line": 825,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 110,
+   "name": "Dana Petrov"
+  },
+  {
+   "line": 826,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 465,
+   "name": "Miriam Petrov"
+  },
+  {
+   "line": 827,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 29,
+   "name": "Miriam Petrov"
+  },
+  {
+   "line": 828,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 409,
+   "name": "Dana Mercer"
+  },
+  {
+   "line": 829,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 280,
+   "name": "Quinn Okafor"
+  },
+  {
+   "line": 830,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 380.5,
+   "name": "Sam Zimmer"
+  },
+  {
+   "line": 831,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 171,
+   "name": "Sam Zimmer"
+  },
+  {
+   "line": 832,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 171,
+   "name": "Sam Zimmer"
+  },
+  {
+   "line": 833,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 260,
+   "name": "Sam Zimmer"
+  },
+  {
+   "line": 834,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 67,
+   "name": "Aaron Fuentes"
+  },
+  {
+   "line": 835,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 257,
+   "name": "Aaron Fuentes"
+  },
+  {
+   "line": 836,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 35,
+   "name": "James Tobin"
+  },
+  {
+   "line": 837,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 354,
+   "name": "James Tobin"
+  },
+  {
+   "line": 838,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 334,
+   "name": "James Tobin"
+  },
+  {
+   "line": 839,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 183,
+   "name": "Karen Quimby"
+  },
+  {
+   "line": 840,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 50,
+   "name": "Karen Quimby"
+  },
+  {
+   "line": 841,
+   "disposition": "errored",
+   "reason": "last_contact_invalid",
+   "dollars": 316,
+   "name": "Doug Rhodes"
+  },
+  {
+   "line": 842,
+   "disposition": "errored",
+   "reason": "last_contact_invalid",
+   "dollars": 177,
+   "name": "Doug Rhodes"
+  },
+  {
+   "line": 843,
+   "disposition": "errored",
+   "reason": "last_contact_invalid",
+   "dollars": 186,
+   "name": "Doug Rhodes"
+  },
+  {
+   "line": 844,
+   "disposition": "errored",
+   "reason": "last_contact_invalid",
+   "dollars": 318,
+   "name": "Doug Rhodes"
+  },
+  {
+   "line": 845,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 47,
+   "name": "Quinn Fuentes"
+  },
+  {
+   "line": 846,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 201,
+   "name": "Quinn Fuentes"
+  },
+  {
+   "line": 847,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 75,
+   "name": "Quinn Fuentes"
+  },
+  {
+   "line": 848,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 487,
+   "name": "Quinn Fuentes"
+  },
+  {
+   "line": 849,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 150,
+   "name": "Tina Tran"
+  },
+  {
+   "line": 850,
+   "disposition": "errored",
+   "reason": "last_contact_invalid",
+   "dollars": 355,
+   "name": "Quinn Yancey"
+  },
+  {
+   "line": 851,
+   "disposition": "errored",
+   "reason": "last_contact_invalid",
+   "dollars": 109,
+   "name": "Quinn Yancey"
+  },
+  {
+   "line": 852,
+   "disposition": "errored",
+   "reason": "last_contact_invalid",
+   "dollars": 435,
+   "name": "Quinn Yancey"
+  },
+  {
+   "line": 853,
+   "disposition": "errored",
+   "reason": "last_contact_invalid",
+   "dollars": 269,
+   "name": "Quinn Yancey"
+  },
+  {
+   "line": 854,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 409.5,
+   "name": "Carlos Yancey"
+  },
+  {
+   "line": 855,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 107,
+   "name": "Carlos Yancey"
+  },
+  {
+   "line": 856,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 322,
+   "name": "Carlos Yancey"
+  },
+  {
+   "line": 857,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 82,
+   "name": "Beth Ortega"
+  },
+  {
+   "line": 858,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 467,
+   "name": "Beth Ortega"
+  },
+  {
+   "line": 859,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 217.5,
+   "name": "Beth Ortega"
+  },
+  {
+   "line": 860,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 234,
+   "name": "Zach Solano"
+  },
+  {
+   "line": 861,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 130,
+   "name": "Zach Solano"
+  },
+  {
+   "line": 862,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 114,
+   "name": "Zach Solano"
+  },
+  {
+   "line": 863,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 224.5,
+   "name": "Rosa Petrov"
+  },
+  {
+   "line": 864,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 43,
+   "name": "Ned Barnes"
+  },
+  {
+   "line": 865,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 419,
+   "name": "Victor Mercer"
+  },
+  {
+   "line": 866,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 316,
+   "name": "Victor Mercer"
+  },
+  {
+   "line": 867,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 14.5,
+   "name": "Victor Mercer"
+  },
+  {
+   "line": 868,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 86,
+   "name": "Sam Abbott"
+  },
+  {
+   "line": 869,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 325,
+   "name": "Sam Abbott"
+  },
+  {
+   "line": 870,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 85.5,
+   "name": "Sam Abbott"
+  },
+  {
+   "line": 871,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 126,
+   "name": "Sam Abbott"
+  },
+  {
+   "line": 872,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": -121,
+   "name": "Elena Iverson"
+  },
+  {
+   "line": 873,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 326,
+   "name": "Elena Iverson"
+  },
+  {
+   "line": 874,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 367,
+   "name": "Bram Zimmer"
+  },
+  {
+   "line": 875,
+   "disposition": "errored",
+   "reason": "last_contact_invalid",
+   "dollars": 415.5,
+   "name": "Elena Barnes"
+  },
+  {
+   "line": 876,
+   "disposition": "errored",
+   "reason": "last_contact_invalid",
+   "dollars": 134,
+   "name": "Elena Barnes"
+  },
+  {
+   "line": 877,
+   "disposition": "errored",
+   "reason": "last_contact_invalid",
+   "dollars": 356.5,
+   "name": "Elena Barnes"
+  },
+  {
+   "line": 878,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 105,
+   "name": "Celia Nolan"
+  },
+  {
+   "line": 879,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 434,
+   "name": "Wendy Rhodes"
+  },
+  {
+   "line": 880,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 144,
+   "name": "Wendy Rhodes"
+  },
+  {
+   "line": 881,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 21.5,
+   "name": "Aaron Abbott"
+  },
+  {
+   "line": 882,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 454.5,
+   "name": "Olga Yancey"
+  },
+  {
+   "line": 883,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 473,
+   "name": "Yolanda Wexler"
+  },
+  {
+   "line": 884,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 13,
+   "name": "Yolanda Wexler"
+  },
+  {
+   "line": 885,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 438,
+   "name": "Yolanda Wexler"
+  },
+  {
+   "line": 886,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 244,
+   "name": "Yolanda Wexler"
+  },
+  {
+   "line": 887,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 441,
+   "name": "Pete Sandoval"
+  },
+  {
+   "line": 888,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 179,
+   "name": "Pete Sandoval"
+  },
+  {
+   "line": 889,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 20.5,
+   "name": "Ned Cortez"
+  },
+  {
+   "line": 890,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 297,
+   "name": "Ned Cortez"
+  },
+  {
+   "line": 891,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 459,
+   "name": "Ned Cortez"
+  },
+  {
+   "line": 892,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 439,
+   "name": "Ned Cortez"
+  },
+  {
+   "line": 893,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 138,
+   "name": "Wendy Ortega"
+  },
+  {
+   "line": 894,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 102,
+   "name": "Wendy Ortega"
+  },
+  {
+   "line": 895,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 150,
+   "name": "Wendy Ortega"
+  },
+  {
+   "line": 896,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 430,
+   "name": "Wendy Ortega"
+  },
+  {
+   "line": 897,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 157,
+   "name": "Pete Barnes"
+  },
+  {
+   "line": 898,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 178.5,
+   "name": "Pete Barnes"
+  },
+  {
+   "line": 899,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 446,
+   "name": "Pete Barnes"
+  },
+  {
+   "line": 900,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 463,
+   "name": "Pete Barnes"
+  },
+  {
+   "line": 901,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 484,
+   "name": "Hector Abbott"
+  },
+  {
+   "line": 902,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 287.5,
+   "name": "Grace Iverson"
+  },
+  {
+   "line": 903,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 435,
+   "name": "Grace Iverson"
+  },
+  {
+   "line": 904,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 463,
+   "name": "Grace Iverson"
+  },
+  {
+   "line": 905,
+   "disposition": "errored",
+   "reason": "last_contact_invalid",
+   "dollars": 162,
+   "name": "Frank Rhodes"
+  },
+  {
+   "line": 906,
+   "disposition": "errored",
+   "reason": "last_contact_invalid",
+   "dollars": 341,
+   "name": "Frank Rhodes"
+  },
+  {
+   "line": 907,
+   "disposition": "errored",
+   "reason": "last_contact_invalid",
+   "dollars": 181,
+   "name": "Frank Rhodes"
+  },
+  {
+   "line": 908,
+   "disposition": "errored",
+   "reason": "last_contact_invalid",
+   "dollars": 362.5,
+   "name": "Frank Rhodes"
+  },
+  {
+   "line": 909,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 195,
+   "name": "Carlos Reyes"
+  },
+  {
+   "line": 910,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 88.5,
+   "name": "Carlos Reyes"
+  },
+  {
+   "line": 911,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 382,
+   "name": "Carlos Reyes"
+  },
+  {
+   "line": 912,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 396,
+   "name": "Dana Zimmer"
+  },
+  {
+   "line": 913,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 335,
+   "name": "Dana Zimmer"
+  },
+  {
+   "line": 914,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 13.5,
+   "name": "Dana Zimmer"
+  },
+  {
+   "line": 915,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 416,
+   "name": "Dana Zimmer"
+  },
+  {
+   "line": 916,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 125,
+   "name": "Marta Rhodes"
+  },
+  {
+   "line": 917,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 351,
+   "name": "Luis Tran"
+  },
+  {
+   "line": 918,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 278,
+   "name": "Karen Lozano"
+  },
+  {
+   "line": 919,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 106,
+   "name": "Karen Lozano"
+  },
+  {
+   "line": 920,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 93,
+   "name": "Karen Lozano"
+  },
+  {
+   "line": 921,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 396,
+   "name": "Quinn Cortez"
+  },
+  {
+   "line": 922,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 122,
+   "name": "Bram Barnes"
+  },
+  {
+   "line": 923,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 40.5,
+   "name": "Bram Barnes"
+  },
+  {
+   "line": 924,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 395,
+   "name": "Bram Barnes"
+  },
+  {
+   "line": 925,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 389.5,
+   "name": "Hector Ellison"
+  },
+  {
+   "line": 926,
+   "disposition": "skipped",
+   "reason": "zero_amount",
+   "dollars": 0,
+   "name": "Hector Ellison"
+  },
+  {
+   "line": 927,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 196,
+   "name": "Hector Ellison"
+  },
+  {
+   "line": 928,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 70.5,
+   "name": "Hector Ellison"
+  },
+  {
+   "line": 929,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 332,
+   "name": "Luis Jamison"
+  },
+  {
+   "line": 930,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 78,
+   "name": "Luis Jamison"
+  },
+  {
+   "line": 931,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 268,
+   "name": "Luis Jamison"
+  },
+  {
+   "line": 932,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 325,
+   "name": "Luis Jamison"
+  },
+  {
+   "line": 933,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 340.5,
+   "name": "Irene Jamison"
+  },
+  {
+   "line": 934,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 137,
+   "name": "Irene Jamison"
+  },
+  {
+   "line": 935,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 103,
+   "name": "Irene Jamison"
+  },
+  {
+   "line": 936,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 31,
+   "name": "Luis Iverson"
+  },
+  {
+   "line": 937,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 182,
+   "name": "Luis Iverson"
+  },
+  {
+   "line": 938,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 268.5,
+   "name": "Tina Reyes"
+  },
+  {
+   "line": 939,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 209,
+   "name": "Tina Reyes"
+  },
+  {
+   "line": 940,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 261,
+   "name": "Tina Reyes"
+  },
+  {
+   "line": 941,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 467,
+   "name": "Luis Hobbs"
+  },
+  {
+   "line": 942,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 156,
+   "name": "Luis Hobbs"
+  },
+  {
+   "line": 943,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 164,
+   "name": "Victor Wexler"
+  },
+  {
+   "line": 944,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 187,
+   "name": "Xavier Iverson"
+  },
+  {
+   "line": 945,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 200,
+   "name": "Uma Lozano"
+  },
+  {
+   "line": 946,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 493,
+   "name": "Uma Lozano"
+  },
+  {
+   "line": 947,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 114,
+   "name": "Uma Lozano"
+  },
+  {
+   "line": 948,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 407,
+   "name": "Beth Reyes"
+  },
+  {
+   "line": 949,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 83.5,
+   "name": "Beth Reyes"
+  },
+  {
+   "line": 950,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 415,
+   "name": "Elena Underhill"
+  },
+  {
+   "line": 951,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 364,
+   "name": "Uma Pruitt"
+  },
+  {
+   "line": 952,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 454,
+   "name": "Uma Pruitt"
+  },
+  {
+   "line": 953,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 338,
+   "name": "Uma Pruitt"
+  },
+  {
+   "line": 954,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 390.5,
+   "name": "Uma Pruitt"
+  },
+  {
+   "line": 955,
+   "disposition": "skipped",
+   "reason": "zero_amount",
+   "dollars": 0,
+   "name": "Xavier Reyes"
+  },
+  {
+   "line": 956,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 54,
+   "name": "Xavier Reyes"
+  },
+  {
+   "line": 957,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 330,
+   "name": "Uma Pruitt"
+  },
+  {
+   "line": 958,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 377,
+   "name": "Uma Pruitt"
+  },
+  {
+   "line": 959,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 49,
+   "name": "Uma Pruitt"
+  },
+  {
+   "line": 960,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 369,
+   "name": "Uma Pruitt"
+  },
+  {
+   "line": 961,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 462,
+   "name": "Pete Tobin"
+  },
+  {
+   "line": 962,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 371,
+   "name": "Pete Tobin"
+  },
+  {
+   "line": 963,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 220,
+   "name": "Karen Barnes"
+  },
+  {
+   "line": 964,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 381,
+   "name": "Karen Barnes"
+  },
+  {
+   "line": 965,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 11,
+   "name": "Xavier Pruitt"
+  },
+  {
+   "line": 966,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 497,
+   "name": "Xavier Pruitt"
+  },
+  {
+   "line": 967,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 294,
+   "name": "Xavier Pruitt"
+  },
+  {
+   "line": 968,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 86,
+   "name": "Hector Rhodes"
+  },
+  {
+   "line": 969,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 148,
+   "name": "Hector Rhodes"
+  },
+  {
+   "line": 970,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 404,
+   "name": "Hector Rhodes"
+  },
+  {
+   "line": 971,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 322,
+   "name": "Dana Underhill"
+  },
+  {
+   "line": 972,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 421,
+   "name": "Dana Underhill"
+  },
+  {
+   "line": 973,
+   "disposition": "errored",
+   "reason": "last_contact_invalid",
+   "dollars": 309.5,
+   "name": "Sam Sandoval"
+  },
+  {
+   "line": 974,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 340,
+   "name": "Grace Mercer"
+  },
+  {
+   "line": 975,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 476,
+   "name": "Tina Grady"
+  },
+  {
+   "line": 976,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 225,
+   "name": "Tina Grady"
+  },
+  {
+   "line": 977,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 69,
+   "name": "Tina Grady"
+  },
+  {
+   "line": 978,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 41,
+   "name": "Rosa Dawson"
+  },
+  {
+   "line": 979,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 100,
+   "name": "Rosa Dawson"
+  },
+  {
+   "line": 980,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 341,
+   "name": "Rosa Dawson"
+  },
+  {
+   "line": 981,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 310,
+   "name": "Aaron Yancey"
+  },
+  {
+   "line": 982,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 259,
+   "name": "Aaron Yancey"
+  },
+  {
+   "line": 983,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 195,
+   "name": "Aaron Yancey"
+  },
+  {
+   "line": 984,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 265,
+   "name": "Aaron Yancey"
+  },
+  {
+   "line": 985,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 337,
+   "name": "Beth Iverson"
+  },
+  {
+   "line": 986,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 266,
+   "name": "Beth Iverson"
+  },
+  {
+   "line": 987,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 388,
+   "name": "Bram Fuentes"
+  },
+  {
+   "line": 988,
+   "disposition": "skipped",
+   "reason": "zero_amount",
+   "dollars": 0,
+   "name": "Pete Hobbs"
+  },
+  {
+   "line": 989,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 265,
+   "name": "Pete Hobbs"
+  },
+  {
+   "line": 990,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 70,
+   "name": "Pete Hobbs"
+  },
+  {
+   "line": 991,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 315,
+   "name": "Pete Hobbs"
+  },
+  {
+   "line": 992,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": -40,
+   "name": "Xavier Jamison"
+  },
+  {
+   "line": 993,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 449,
+   "name": "Tina Jamison"
+  },
+  {
+   "line": 994,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 113,
+   "name": "Tina Jamison"
+  },
+  {
+   "line": 995,
+   "disposition": "errored",
+   "reason": "last_contact_invalid",
+   "dollars": 448,
+   "name": "Victor Wexler"
+  },
+  {
+   "line": 996,
+   "disposition": "errored",
+   "reason": "last_contact_invalid",
+   "dollars": 382,
+   "name": "Victor Wexler"
+  },
+  {
+   "line": 997,
+   "disposition": "errored",
+   "reason": "last_contact_invalid",
+   "dollars": 347,
+   "name": "Victor Wexler"
+  },
+  {
+   "line": 998,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 407,
+   "name": "James Lozano"
+  },
+  {
+   "line": 999,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 74,
+   "name": "James Lozano"
+  },
+  {
+   "line": 1000,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 159,
+   "name": "James Lozano"
+  },
+  {
+   "line": 1001,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 65,
+   "name": "James Lozano"
+  },
+  {
+   "line": 1002,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 429,
+   "name": "Frank Nolan"
+  },
+  {
+   "line": 1003,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 165,
+   "name": "Frank Nolan"
+  },
+  {
+   "line": 1004,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 74,
+   "name": "Frank Nolan"
+  },
+  {
+   "line": 1005,
+   "disposition": "errored",
+   "reason": "last_contact_invalid",
+   "dollars": 97,
+   "name": "Xavier Vickers"
+  },
+  {
+   "line": 1006,
+   "disposition": "errored",
+   "reason": "last_contact_invalid",
+   "dollars": 126,
+   "name": "Xavier Vickers"
+  },
+  {
+   "line": 1007,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 37,
+   "name": "Carlos Vickers"
+  },
+  {
+   "line": 1008,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 234,
+   "name": "Carlos Vickers"
+  },
+  {
+   "line": 1009,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 18,
+   "name": "Carlos Vickers"
+  },
+  {
+   "line": 1010,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 401,
+   "name": "Carlos Vickers"
+  },
+  {
+   "line": 1011,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 388,
+   "name": "Aaron Pruitt"
+  },
+  {
+   "line": 1012,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 260,
+   "name": "Aaron Pruitt"
+  },
+  {
+   "line": 1013,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 339,
+   "name": "Aaron Pruitt"
+  },
+  {
+   "line": 1014,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 346,
+   "name": "Sam Zimmer"
+  },
+  {
+   "line": 1015,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 329,
+   "name": "Sam Zimmer"
+  },
+  {
+   "line": 1016,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 483,
+   "name": "Sam Zimmer"
+  },
+  {
+   "line": 1017,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 347,
+   "name": "Marta Solano"
+  },
+  {
+   "line": 1018,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 416,
+   "name": "Marta Solano"
+  },
+  {
+   "line": 1019,
+   "disposition": "skipped",
+   "reason": "zero_amount",
+   "dollars": 0,
+   "name": "Marta Solano"
+  },
+  {
+   "line": 1020,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 71,
+   "name": "Pete Okafor"
+  },
+  {
+   "line": 1021,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 316,
+   "name": "Pete Okafor"
+  },
+  {
+   "line": 1022,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 298,
+   "name": "Pete Okafor"
+  },
+  {
+   "line": 1023,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 105,
+   "name": "Tina Keller"
+  },
+  {
+   "line": 1024,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": -108,
+   "name": "Tina Keller"
+  },
+  {
+   "line": 1025,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 385,
+   "name": "Tina Keller"
+  },
+  {
+   "line": 1026,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 383,
+   "name": "Celia Rhodes"
+  },
+  {
+   "line": 1027,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 273,
+   "name": "Celia Rhodes"
+  },
+  {
+   "line": 1028,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 2,
+   "name": "Zach Okafor"
+  },
+  {
+   "line": 1029,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 2,
+   "name": "Hector Yancey"
+  },
+  {
+   "line": 1030,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 57,
+   "name": "Beth Sandoval"
+  },
+  {
+   "line": 1031,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 167,
+   "name": "Rosa Tran"
+  },
+  {
+   "line": 1032,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 475,
+   "name": "Rosa Tran"
+  },
+  {
+   "line": 1033,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 362,
+   "name": "Rosa Tran"
+  },
+  {
+   "line": 1034,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 317,
+   "name": "Rosa Tran"
+  },
+  {
+   "line": 1035,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 409,
+   "name": "Elena Vickers"
+  },
+  {
+   "line": 1036,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 215.5,
+   "name": "Elena Vickers"
+  },
+  {
+   "line": 1037,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 299,
+   "name": "Elena Vickers"
+  },
+  {
+   "line": 1038,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 145,
+   "name": "Dana Barnes"
+  },
+  {
+   "line": 1039,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 455,
+   "name": "Dana Barnes"
+  },
+  {
+   "line": 1040,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 495.5,
+   "name": "Dana Barnes"
+  },
+  {
+   "line": 1041,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 443,
+   "name": "Dana Barnes"
+  },
+  {
+   "line": 1042,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 81.5,
+   "name": "Bram Lozano"
+  },
+  {
+   "line": 1043,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 443,
+   "name": "Bram Lozano"
+  },
+  {
+   "line": 1044,
+   "disposition": "errored",
+   "reason": "future_date",
+   "dollars": 429.5,
+   "name": "Bram Lozano"
+  },
+  {
+   "line": 1045,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 135,
+   "name": "Yolanda Ellison"
+  },
+  {
+   "line": 1046,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 385,
+   "name": "Yolanda Ellison"
+  },
+  {
+   "line": 1047,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 254,
+   "name": "Luis Lozano"
+  },
+  {
+   "line": 1048,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 173,
+   "name": "Luis Lozano"
+  },
+  {
+   "line": 1049,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": -155,
+   "name": "Aaron Abbott"
+  },
+  {
+   "line": 1050,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 440.5,
+   "name": "Aaron Abbott"
+  },
+  {
+   "line": 1051,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 28,
+   "name": "Dana Mercer"
+  },
+  {
+   "line": 1052,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 21.5,
+   "name": "Dana Mercer"
+  },
+  {
+   "line": 1053,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 202,
+   "name": "Dana Mercer"
+  },
+  {
+   "line": 1054,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 483.5,
+   "name": "Dana Mercer"
+  },
+  {
+   "line": 1055,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 195,
+   "name": "Bram Abbott"
+  },
+  {
+   "line": 1056,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 139,
+   "name": "Bram Abbott"
+  },
+  {
+   "line": 1057,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 299.5,
+   "name": "Bram Abbott"
+  },
+  {
+   "line": 1058,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 202.5,
+   "name": "Bram Abbott"
+  },
+  {
+   "line": 1059,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 142,
+   "name": "Rosa Hobbs"
+  },
+  {
+   "line": 1060,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 32,
+   "name": "Beth Iverson"
+  },
+  {
+   "line": 1061,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 293,
+   "name": "Luis Tobin"
+  },
+  {
+   "line": 1062,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 116,
+   "name": "Luis Tobin"
+  },
+  {
+   "line": 1063,
+   "disposition": "errored",
+   "reason": "last_contact_invalid",
+   "dollars": 467,
+   "name": "Victor Rhodes"
+  },
+  {
+   "line": 1064,
+   "disposition": "errored",
+   "reason": "last_contact_invalid",
+   "dollars": 65,
+   "name": "Pete Nolan"
+  },
+  {
+   "line": 1065,
+   "disposition": "errored",
+   "reason": "last_contact_invalid",
+   "dollars": 87,
+   "name": "Pete Nolan"
+  },
+  {
+   "line": 1066,
+   "disposition": "errored",
+   "reason": "last_contact_invalid",
+   "dollars": 74,
+   "name": "Pete Nolan"
+  },
+  {
+   "line": 1067,
+   "disposition": "errored",
+   "reason": "last_contact_invalid",
+   "dollars": 21,
+   "name": "Marta Hobbs"
+  },
+  {
+   "line": 1068,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 496,
+   "name": "Irene Quimby"
+  },
+  {
+   "line": 1069,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 61.5,
+   "name": "Irene Quimby"
+  },
+  {
+   "line": 1070,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 499,
+   "name": "Dana Sandoval"
+  },
+  {
+   "line": 1071,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 151,
+   "name": "Xavier Okafor"
+  },
+  {
+   "line": 1072,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 95,
+   "name": "Hector Dawson"
+  },
+  {
+   "line": 1073,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 101,
+   "name": "Hector Dawson"
+  },
+  {
+   "line": 1074,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 221,
+   "name": "Grace Iverson"
+  },
+  {
+   "line": 1075,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 193,
+   "name": "Doug Abbott"
+  },
+  {
+   "line": 1076,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 125,
+   "name": "Doug Abbott"
+  },
+  {
+   "line": 1077,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 63.5,
+   "name": "Doug Abbott"
+  },
+  {
+   "line": 1078,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 14,
+   "name": "Doug Abbott"
+  },
+  {
+   "line": 1079,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 270,
+   "name": "Karen Jamison"
+  },
+  {
+   "line": 1080,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 145,
+   "name": "Doug Vickers"
+  },
+  {
+   "line": 1081,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 28,
+   "name": "Doug Vickers"
+  },
+  {
+   "line": 1082,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 180.5,
+   "name": "Wendy Reyes"
+  },
+  {
+   "line": 1083,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 60,
+   "name": "Wendy Reyes"
+  },
+  {
+   "line": 1084,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 450,
+   "name": "Wendy Reyes"
+  },
+  {
+   "line": 1085,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 107,
+   "name": "Uma Fuentes"
+  },
+  {
+   "line": 1086,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 397,
+   "name": "Uma Fuentes"
+  },
+  {
+   "line": 1087,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 305.5,
+   "name": "Uma Fuentes"
+  },
+  {
+   "line": 1088,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 264,
+   "name": "Irene Lozano"
+  },
+  {
+   "line": 1089,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 382,
+   "name": "Irene Lozano"
+  },
+  {
+   "line": 1090,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 206,
+   "name": "James Vickers"
+  },
+  {
+   "line": 1091,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 335,
+   "name": "Sam Barnes"
+  },
+  {
+   "line": 1092,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 47,
+   "name": "Sam Barnes"
+  },
+  {
+   "line": 1093,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 310,
+   "name": "Sam Barnes"
+  },
+  {
+   "line": 1094,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 120,
+   "name": "Karen Ortega"
+  },
+  {
+   "line": 1095,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 198,
+   "name": "Karen Ortega"
+  },
+  {
+   "line": 1096,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 336,
+   "name": "Karen Ortega"
+  },
+  {
+   "line": 1097,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 392.5,
+   "name": "Olga Pruitt"
+  },
+  {
+   "line": 1098,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 218,
+   "name": "Olga Pruitt"
+  },
+  {
+   "line": 1099,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 424,
+   "name": "Marta Fuentes"
+  },
+  {
+   "line": 1100,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 451,
+   "name": "Marta Fuentes"
+  },
+  {
+   "line": 1101,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 345,
+   "name": "Irene Vickers"
+  },
+  {
+   "line": 1102,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 208,
+   "name": "Irene Vickers"
+  },
+  {
+   "line": 1103,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 341.5,
+   "name": "Irene Vickers"
+  },
+  {
+   "line": 1104,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 384,
+   "name": "Irene Vickers"
+  },
+  {
+   "line": 1105,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 146.5,
+   "name": "Karen Underhill"
+  },
+  {
+   "line": 1106,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 473,
+   "name": "Karen Underhill"
+  },
+  {
+   "line": 1107,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 339.5,
+   "name": "Karen Underhill"
+  },
+  {
+   "line": 1108,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 208,
+   "name": "Karen Underhill"
+  },
+  {
+   "line": 1109,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 167,
+   "name": "James Abbott"
+  },
+  {
+   "line": 1110,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 76,
+   "name": "Elena Sandoval"
+  },
+  {
+   "line": 1111,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 411,
+   "name": "Elena Sandoval"
+  },
+  {
+   "line": 1112,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 34,
+   "name": "Elena Sandoval"
+  },
+  {
+   "line": 1113,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 265,
+   "name": "Tina Jamison"
+  },
+  {
+   "line": 1114,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 431,
+   "name": "Pete Underhill"
+  },
+  {
+   "line": 1115,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 342,
+   "name": "Karen Jamison"
+  },
+  {
+   "line": 1116,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 12,
+   "name": "Karen Jamison"
+  },
+  {
+   "line": 1117,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 495,
+   "name": "Karen Jamison"
+  },
+  {
+   "line": 1118,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 245,
+   "name": "Karen Jamison"
+  },
+  {
+   "line": 1119,
+   "disposition": "errored",
+   "reason": "last_contact_invalid",
+   "dollars": 25,
+   "name": "Pete Barnes"
+  },
+  {
+   "line": 1120,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 352,
+   "name": "Victor Abbott"
+  },
+  {
+   "line": 1121,
+   "disposition": "errored",
+   "reason": "last_contact_invalid",
+   "dollars": 380.5,
+   "name": "Zach Barnes"
+  },
+  {
+   "line": 1122,
+   "disposition": "errored",
+   "reason": "last_contact_invalid",
+   "dollars": 479,
+   "name": "Zach Barnes"
+  },
+  {
+   "line": 1123,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 334,
+   "name": "Grace Solano"
+  },
+  {
+   "line": 1124,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 162,
+   "name": "Grace Solano"
+  },
+  {
+   "line": 1125,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 263,
+   "name": "Grace Solano"
+  },
+  {
+   "line": 1126,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 462,
+   "name": "Victor Underhill"
+  },
+  {
+   "line": 1127,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 325.5,
+   "name": "Victor Underhill"
+  },
+  {
+   "line": 1128,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 19,
+   "name": "Victor Underhill"
+  },
+  {
+   "line": 1129,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 447,
+   "name": "Victor Underhill"
+  },
+  {
+   "line": 1130,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 377,
+   "name": "Zach Vickers"
+  },
+  {
+   "line": 1131,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 475,
+   "name": "Zach Vickers"
+  },
+  {
+   "line": 1132,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 424,
+   "name": "Uma Tobin"
+  },
+  {
+   "line": 1133,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 80.5,
+   "name": "Uma Tobin"
+  },
+  {
+   "line": 1134,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 320,
+   "name": "Uma Tobin"
+  },
+  {
+   "line": 1135,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 327,
+   "name": "Uma Tobin"
+  },
+  {
+   "line": 1136,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 148.5,
+   "name": "Aaron Barnes"
+  },
+  {
+   "line": 1137,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 353,
+   "name": "Aaron Barnes"
+  },
+  {
+   "line": 1138,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 137,
+   "name": "Aaron Barnes"
+  },
+  {
+   "line": 1139,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 250,
+   "name": "Aaron Barnes"
+  },
+  {
+   "line": 1140,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 377,
+   "name": "Yolanda Quimby"
+  },
+  {
+   "line": 1141,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 454,
+   "name": "Frank Grady"
+  },
+  {
+   "line": 1142,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 199,
+   "name": "Frank Grady"
+  },
+  {
+   "line": 1143,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 220,
+   "name": "Celia Wexler"
+  },
+  {
+   "line": 1144,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 97,
+   "name": "Celia Wexler"
+  },
+  {
+   "line": 1145,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 374,
+   "name": "Wendy Cortez"
+  },
+  {
+   "line": 1146,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 159,
+   "name": "Wendy Cortez"
+  },
+  {
+   "line": 1147,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 50,
+   "name": "Wendy Cortez"
+  },
+  {
+   "line": 1148,
+   "disposition": "errored",
+   "reason": "last_contact_invalid",
+   "dollars": 344,
+   "name": "Carlos Cortez"
+  },
+  {
+   "line": 1149,
+   "disposition": "errored",
+   "reason": "last_contact_invalid",
+   "dollars": 157.5,
+   "name": "Carlos Cortez"
+  },
+  {
+   "line": 1150,
+   "disposition": "errored",
+   "reason": "last_contact_invalid",
+   "dollars": 393,
+   "name": "Carlos Cortez"
+  },
+  {
+   "line": 1151,
+   "disposition": "errored",
+   "reason": "last_contact_invalid",
+   "dollars": 306,
+   "name": "Carlos Cortez"
+  },
+  {
+   "line": 1152,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 497,
+   "name": "Xavier Sandoval"
+  },
+  {
+   "line": 1153,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": -27,
+   "name": "Aaron Quimby"
+  },
+  {
+   "line": 1154,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 19,
+   "name": "Aaron Quimby"
+  },
+  {
+   "line": 1155,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 289,
+   "name": "Zach Zimmer"
+  },
+  {
+   "line": 1156,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 306,
+   "name": "Zach Zimmer"
+  },
+  {
+   "line": 1157,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 408,
+   "name": "Zach Zimmer"
+  },
+  {
+   "line": 1158,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 26,
+   "name": "Karen Grady"
+  },
+  {
+   "line": 1159,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 88,
+   "name": "Karen Grady"
+  },
+  {
+   "line": 1160,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 48,
+   "name": "Karen Grady"
+  },
+  {
+   "line": 1161,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 68,
+   "name": "Irene Zimmer"
+  },
+  {
+   "line": 1162,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 36,
+   "name": "Irene Zimmer"
+  },
+  {
+   "line": 1163,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 355,
+   "name": "Irene Zimmer"
+  },
+  {
+   "line": 1164,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 100,
+   "name": "Carlos Tran"
+  },
+  {
+   "line": 1165,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 353,
+   "name": "Carlos Tran"
+  },
+  {
+   "line": 1166,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 207,
+   "name": "Carlos Tran"
+  },
+  {
+   "line": 1167,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 180,
+   "name": "Aaron Vickers"
+  },
+  {
+   "line": 1168,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 419,
+   "name": "Aaron Vickers"
+  },
+  {
+   "line": 1169,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 255,
+   "name": "Aaron Vickers"
+  },
+  {
+   "line": 1170,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 347,
+   "name": "Aaron Vickers"
+  },
+  {
+   "line": 1171,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 72.5,
+   "name": "Xavier Petrov"
+  },
+  {
+   "line": 1172,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 253,
+   "name": "Xavier Petrov"
+  },
+  {
+   "line": 1173,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 458,
+   "name": "Xavier Petrov"
+  },
+  {
+   "line": 1174,
+   "disposition": "errored",
+   "reason": "last_contact_invalid",
+   "dollars": 116,
+   "name": "Wendy Wexler"
+  },
+  {
+   "line": 1175,
+   "disposition": "errored",
+   "reason": "last_contact_invalid",
+   "dollars": 355,
+   "name": "Wendy Wexler"
+  },
+  {
+   "line": 1176,
+   "disposition": "errored",
+   "reason": "last_contact_invalid",
+   "dollars": 327,
+   "name": "Bram Rhodes"
+  },
+  {
+   "line": 1177,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 72,
+   "name": "Tina Tran"
+  },
+  {
+   "line": 1178,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 325.5,
+   "name": "Tina Cortez"
+  },
+  {
+   "line": 1179,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 295,
+   "name": "Tina Cortez"
+  },
+  {
+   "line": 1180,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 43,
+   "name": "Tina Cortez"
+  },
+  {
+   "line": 1181,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 479,
+   "name": "Pete Quimby"
+  },
+  {
+   "line": 1182,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 212.5,
+   "name": "Wendy Iverson"
+  },
+  {
+   "line": 1183,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 240,
+   "name": "Wendy Iverson"
+  },
+  {
+   "line": 1184,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 101,
+   "name": "Wendy Iverson"
+  },
+  {
+   "line": 1185,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 290,
+   "name": "Wendy Iverson"
+  },
+  {
+   "line": 1186,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 267,
+   "name": "Celia Lozano"
+  },
+  {
+   "line": 1187,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 153,
+   "name": "Celia Lozano"
+  },
+  {
+   "line": 1188,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 368,
+   "name": "Celia Lozano"
+  },
+  {
+   "line": 1189,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 484,
+   "name": "Dana Okafor"
+  },
+  {
+   "line": 1190,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 328,
+   "name": "Dana Okafor"
+  },
+  {
+   "line": 1191,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 18,
+   "name": "Dana Okafor"
+  },
+  {
+   "line": 1192,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 14,
+   "name": "Bram Iverson"
+  },
+  {
+   "line": 1193,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 452.5,
+   "name": "Bram Iverson"
+  },
+  {
+   "line": 1194,
+   "disposition": "skipped",
+   "reason": "zero_amount",
+   "dollars": 0,
+   "name": "Bram Iverson"
+  },
+  {
+   "line": 1195,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 254.5,
+   "name": "Bram Iverson"
+  },
+  {
+   "line": 1196,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 310,
+   "name": "Rosa Lozano"
+  },
+  {
+   "line": 1197,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 381,
+   "name": "Rosa Lozano"
+  },
+  {
+   "line": 1198,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 324,
+   "name": "Zach Ellison"
+  },
+  {
+   "line": 1199,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 448,
+   "name": "Zach Ellison"
+  },
+  {
+   "line": 1200,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 365.5,
+   "name": "Zach Ellison"
+  },
+  {
+   "line": 1201,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 153.5,
+   "name": "Frank Fuentes"
+  },
+  {
+   "line": 1202,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 260,
+   "name": "Frank Fuentes"
+  },
+  {
+   "line": 1203,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 370,
+   "name": "James Zimmer"
+  },
+  {
+   "line": 1204,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 464,
+   "name": "James Zimmer"
+  },
+  {
+   "line": 1205,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 439.5,
+   "name": "Doug Lozano"
+  },
+  {
+   "line": 1206,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 10,
+   "name": "Doug Lozano"
+  },
+  {
+   "line": 1207,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 409,
+   "name": "Tina Lozano"
+  },
+  {
+   "line": 1208,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 59,
+   "name": "Tina Lozano"
+  },
+  {
+   "line": 1209,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 462,
+   "name": "Hector Hobbs"
+  },
+  {
+   "line": 1210,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 374,
+   "name": "Hector Hobbs"
+  },
+  {
+   "line": 1211,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 126,
+   "name": "Hector Hobbs"
+  },
+  {
+   "line": 1212,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 378,
+   "name": "Hector Hobbs"
+  },
+  {
+   "line": 1213,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 94,
+   "name": "Marta Iverson"
+  },
+  {
+   "line": 1214,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 363,
+   "name": "Marta Iverson"
+  },
+  {
+   "line": 1215,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 367,
+   "name": "Marta Iverson"
+  },
+  {
+   "line": 1216,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 25,
+   "name": "Victor Keller"
+  },
+  {
+   "line": 1217,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 377,
+   "name": "Victor Keller"
+  },
+  {
+   "line": 1218,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 250,
+   "name": "Victor Keller"
+  },
+  {
+   "line": 1219,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 403,
+   "name": "Victor Keller"
+  },
+  {
+   "line": 1220,
+   "disposition": "errored",
+   "reason": "last_contact_invalid",
+   "dollars": 345,
+   "name": "Luis Reyes"
+  },
+  {
+   "line": 1221,
+   "disposition": "errored",
+   "reason": "last_contact_invalid",
+   "dollars": 53,
+   "name": "Luis Reyes"
+  },
+  {
+   "line": 1222,
+   "disposition": "errored",
+   "reason": "last_contact_invalid",
+   "dollars": 353,
+   "name": "Luis Reyes"
+  },
+  {
+   "line": 1223,
+   "disposition": "errored",
+   "reason": "last_contact_invalid",
+   "dollars": 237,
+   "name": "Luis Reyes"
+  },
+  {
+   "line": 1224,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 209,
+   "name": "Ned Underhill"
+  },
+  {
+   "line": 1225,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 236,
+   "name": "Ned Underhill"
+  },
+  {
+   "line": 1226,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 585,
+   "name": "Yolanda Zimmer"
+  },
+  {
+   "line": 1227,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 241,
+   "name": "Yolanda Zimmer"
+  },
+  {
+   "line": 1228,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 188,
+   "name": "Yolanda Zimmer"
+  },
+  {
+   "line": 1229,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 289,
+   "name": "Yolanda Zimmer"
+  },
+  {
+   "line": 1230,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 220,
+   "name": "Grace Yancey"
+  },
+  {
+   "line": 1231,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 442.5,
+   "name": "Grace Yancey"
+  },
+  {
+   "line": 1232,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 480,
+   "name": "Grace Yancey"
+  },
+  {
+   "line": 1233,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 457.5,
+   "name": "Marta Jamison"
+  },
+  {
+   "line": 1234,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 487,
+   "name": "Marta Jamison"
+  },
+  {
+   "line": 1235,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 472,
+   "name": "Marta Jamison"
+  },
+  {
+   "line": 1236,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 406,
+   "name": "Marta Jamison"
+  },
+  {
+   "line": 1237,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 104,
+   "name": "Victor Jamison"
+  },
+  {
+   "line": 1238,
+   "disposition": "errored",
+   "reason": "last_contact_invalid",
+   "dollars": 202,
+   "name": "Wendy Barnes"
+  },
+  {
+   "line": 1239,
+   "disposition": "errored",
+   "reason": "last_contact_invalid",
+   "dollars": 456,
+   "name": "Wendy Barnes"
+  },
+  {
+   "line": 1240,
+   "disposition": "errored",
+   "reason": "last_contact_invalid",
+   "dollars": 275.5,
+   "name": "Wendy Barnes"
+  },
+  {
+   "line": 1241,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 466,
+   "name": "Elena Underhill"
+  },
+  {
+   "line": 1242,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 471,
+   "name": "Celia Quimby"
+  },
+  {
+   "line": 1243,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 89.5,
+   "name": "Celia Quimby"
+  },
+  {
+   "line": 1244,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 326,
+   "name": "Luis Ellison"
+  },
+  {
+   "line": 1245,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 328,
+   "name": "Luis Ellison"
+  },
+  {
+   "line": 1246,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 371.5,
+   "name": "Celia Reyes"
+  },
+  {
+   "line": 1247,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 214,
+   "name": "Celia Reyes"
+  },
+  {
+   "line": 1248,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 108,
+   "name": "Celia Reyes"
+  },
+  {
+   "line": 1249,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 307,
+   "name": "Celia Reyes"
+  },
+  {
+   "line": 1250,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 469,
+   "name": "Celia Reyes"
+  },
+  {
+   "line": 1251,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 60,
+   "name": "Celia Reyes"
+  },
+  {
+   "line": 1252,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 318,
+   "name": "Sam Vickers"
+  },
+  {
+   "line": 1253,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 220,
+   "name": "Sam Vickers"
+  },
+  {
+   "line": 1254,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 489,
+   "name": "Sam Vickers"
+  },
+  {
+   "line": 1255,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 272,
+   "name": "Wendy Mercer"
+  },
+  {
+   "line": 1256,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 116,
+   "name": "Wendy Mercer"
+  },
+  {
+   "line": 1257,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 156,
+   "name": "Wendy Mercer"
+  },
+  {
+   "line": 1258,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 273,
+   "name": "Victor Rhodes"
+  },
+  {
+   "line": 1259,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 267,
+   "name": "Victor Rhodes"
+  },
+  {
+   "line": 1260,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 109,
+   "name": "Victor Rhodes"
+  },
+  {
+   "line": 1261,
+   "disposition": "skipped",
+   "reason": "zero_amount",
+   "dollars": 0,
+   "name": "Olga Fuentes"
+  },
+  {
+   "line": 1262,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 146,
+   "name": "Olga Fuentes"
+  },
+  {
+   "line": 1263,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 385,
+   "name": "Olga Fuentes"
+  },
+  {
+   "line": 1264,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 286,
+   "name": "Wendy Keller"
+  },
+  {
+   "line": 1265,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 336,
+   "name": "Sam Yancey"
+  },
+  {
+   "line": 1266,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 19,
+   "name": "Sam Yancey"
+  },
+  {
+   "line": 1267,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 232,
+   "name": "Sam Yancey"
+  },
+  {
+   "line": 1268,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 146,
+   "name": "Yolanda Tobin"
+  },
+  {
+   "line": 1269,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 48,
+   "name": "Elena Rhodes"
+  },
+  {
+   "line": 1270,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 398,
+   "name": "Elena Rhodes"
+  },
+  {
+   "line": 1271,
+   "disposition": "errored",
+   "reason": "future_date",
+   "dollars": 462,
+   "name": "Elena Rhodes"
+  },
+  {
+   "line": 1272,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 197,
+   "name": "Elena Rhodes"
+  },
+  {
+   "line": 1273,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 11,
+   "name": "Ned Hobbs"
+  },
+  {
+   "line": 1274,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 43,
+   "name": "Ned Hobbs"
+  },
+  {
+   "line": 1275,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 239,
+   "name": "Ned Hobbs"
+  },
+  {
+   "line": 1276,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 430,
+   "name": "Celia Okafor"
+  },
+  {
+   "line": 1277,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 237,
+   "name": "Celia Okafor"
+  },
+  {
+   "line": 1278,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 138.5,
+   "name": "Celia Okafor"
+  },
+  {
+   "line": 1279,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 83,
+   "name": "Celia Okafor"
+  },
+  {
+   "line": 1280,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 322,
+   "name": "Sam Vickers"
+  },
+  {
+   "line": 1281,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 111,
+   "name": "Sam Vickers"
+  },
+  {
+   "line": 1282,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 435,
+   "name": "Sam Vickers"
+  },
+  {
+   "line": 1283,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": -169,
+   "name": "Sam Vickers"
+  },
+  {
+   "line": 1284,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 186,
+   "name": "Miriam Reyes"
+  },
+  {
+   "line": 1285,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 165,
+   "name": "Miriam Reyes"
+  },
+  {
+   "line": 1286,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 105,
+   "name": "Miriam Reyes"
+  },
+  {
+   "line": 1287,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 47,
+   "name": "Miriam Reyes"
+  },
+  {
+   "line": 1288,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 147,
+   "name": "Wendy Solano"
+  },
+  {
+   "line": 1289,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 233,
+   "name": "Wendy Solano"
+  },
+  {
+   "line": 1290,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 259,
+   "name": "Wendy Solano"
+  },
+  {
+   "line": 1291,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 285,
+   "name": "Marta Solano"
+  },
+  {
+   "line": 1292,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 244.5,
+   "name": "Marta Solano"
+  },
+  {
+   "line": 1293,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 246,
+   "name": "Marta Solano"
+  },
+  {
+   "line": 1294,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 47,
+   "name": "Marta Solano"
+  },
+  {
+   "line": 1295,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 64,
+   "name": "Frank Reyes"
+  },
+  {
+   "line": 1296,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 470.5,
+   "name": "Irene Tran"
+  },
+  {
+   "line": 1297,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 71.5,
+   "name": "Irene Tran"
+  },
+  {
+   "line": 1298,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 297.5,
+   "name": "Irene Tran"
+  },
+  {
+   "line": 1299,
+   "disposition": "errored",
+   "reason": "unparseable_amount",
+   "dollars": 0,
+   "name": "Irene Tran"
+  },
+  {
+   "line": 1300,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 486.5,
+   "name": "Yolanda Rhodes"
+  },
+  {
+   "line": 1301,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 21,
+   "name": "Yolanda Rhodes"
+  },
+  {
+   "line": 1302,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 428,
+   "name": "Doug Iverson"
+  },
+  {
+   "line": 1303,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 234,
+   "name": "Doug Iverson"
+  },
+  {
+   "line": 1304,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 128,
+   "name": "Doug Iverson"
+  },
+  {
+   "line": 1305,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 344,
+   "name": "Doug Iverson"
+  },
+  {
+   "line": 1306,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 471.5,
+   "name": "Pete Keller"
+  },
+  {
+   "line": 1307,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 197,
+   "name": "Pete Keller"
+  },
+  {
+   "line": 1308,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 367,
+   "name": "Pete Keller"
+  },
+  {
+   "line": 1309,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 24,
+   "name": "Pete Keller"
+  },
+  {
+   "line": 1310,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 411,
+   "name": "Doug Mercer"
+  },
+  {
+   "line": 1311,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 773,
+   "name": "Doug Mercer"
+  },
+  {
+   "line": 1312,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 94,
+   "name": "Ned Sandoval"
+  },
+  {
+   "line": 1313,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 401,
+   "name": "Ned Sandoval"
+  },
+  {
+   "line": 1314,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 265,
+   "name": "Irene Tran"
+  },
+  {
+   "line": 1315,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 246,
+   "name": "Irene Tran"
+  },
+  {
+   "line": 1316,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 10,
+   "name": "Yolanda Pruitt"
+  },
+  {
+   "line": 1317,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 266,
+   "name": "Yolanda Pruitt"
+  },
+  {
+   "line": 1318,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 487,
+   "name": "Yolanda Pruitt"
+  },
+  {
+   "line": 1319,
+   "disposition": "errored",
+   "reason": "last_contact_invalid",
+   "dollars": 63,
+   "name": "Wendy Okafor"
+  },
+  {
+   "line": 1320,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 356,
+   "name": "Carlos Vickers"
+  },
+  {
+   "line": 1321,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 171.5,
+   "name": "Carlos Vickers"
+  },
+  {
+   "line": 1322,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 372,
+   "name": "Carlos Vickers"
+  },
+  {
+   "line": 1323,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 392,
+   "name": "Carlos Vickers"
+  },
+  {
+   "line": 1324,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 114.5,
+   "name": "Miriam Zimmer"
+  },
+  {
+   "line": 1325,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 88,
+   "name": "Miriam Zimmer"
+  },
+  {
+   "line": 1326,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 374,
+   "name": "Miriam Zimmer"
+  },
+  {
+   "line": 1327,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 477,
+   "name": "Zach Abbott"
+  },
+  {
+   "line": 1328,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 383,
+   "name": "Pete Barnes"
+  },
+  {
+   "line": 1329,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 390,
+   "name": "Marta Quimby"
+  },
+  {
+   "line": 1330,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 161,
+   "name": "Zach Okafor"
+  },
+  {
+   "line": 1331,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 155,
+   "name": "Zach Okafor"
+  },
+  {
+   "line": 1332,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 141,
+   "name": "Zach Okafor"
+  },
+  {
+   "line": 1333,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 274,
+   "name": "Zach Okafor"
+  },
+  {
+   "line": 1334,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 246,
+   "name": "Quinn Fuentes"
+  },
+  {
+   "line": 1335,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 111.5,
+   "name": "Quinn Fuentes"
+  },
+  {
+   "line": 1336,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": -131,
+   "name": "Sam Ortega"
+  },
+  {
+   "line": 1337,
+   "disposition": "errored",
+   "reason": "last_contact_invalid",
+   "dollars": 423.5,
+   "name": "Grace Dawson"
+  },
+  {
+   "line": 1338,
+   "disposition": "errored",
+   "reason": "last_contact_invalid",
+   "dollars": 445,
+   "name": "Grace Dawson"
+  },
+  {
+   "line": 1339,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 30.5,
+   "name": "Marta Grady"
+  },
+  {
+   "line": 1340,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 320,
+   "name": "Marta Grady"
+  },
+  {
+   "line": 1341,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 123,
+   "name": "Marta Grady"
+  },
+  {
+   "line": 1342,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 225,
+   "name": "Doug Keller"
+  },
+  {
+   "line": 1343,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 499,
+   "name": "Hector Pruitt"
+  },
+  {
+   "line": 1344,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 352,
+   "name": "Hector Pruitt"
+  },
+  {
+   "line": 1345,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 289,
+   "name": "Hector Pruitt"
+  },
+  {
+   "line": 1346,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 420,
+   "name": "Rosa Cortez"
+  },
+  {
+   "line": 1347,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 191,
+   "name": "Rosa Cortez"
+  },
+  {
+   "line": 1348,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 204,
+   "name": "Rosa Cortez"
+  },
+  {
+   "line": 1349,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": -106,
+   "name": "Quinn Mercer"
+  },
+  {
+   "line": 1350,
+   "disposition": "errored",
+   "reason": "last_contact_invalid",
+   "dollars": 219.5,
+   "name": "Karen Nolan"
+  },
+  {
+   "line": 1351,
+   "disposition": "errored",
+   "reason": "last_contact_invalid",
+   "dollars": 301,
+   "name": "Karen Nolan"
+  },
+  {
+   "line": 1352,
+   "disposition": "errored",
+   "reason": "last_contact_invalid",
+   "dollars": 86,
+   "name": "Karen Nolan"
+  },
+  {
+   "line": 1353,
+   "disposition": "errored",
+   "reason": "last_contact_invalid",
+   "dollars": 293,
+   "name": "Karen Nolan"
+  },
+  {
+   "line": 1354,
+   "disposition": "errored",
+   "reason": "last_contact_invalid",
+   "dollars": 253,
+   "name": "Frank Yancey"
+  },
+  {
+   "line": 1355,
+   "disposition": "errored",
+   "reason": "last_contact_invalid",
+   "dollars": 168,
+   "name": "Frank Yancey"
+  },
+  {
+   "line": 1356,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 362,
+   "name": "Aaron Nolan"
+  },
+  {
+   "line": 1357,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 109,
+   "name": "Aaron Nolan"
+  },
+  {
+   "line": 1358,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 55,
+   "name": "Aaron Nolan"
+  },
+  {
+   "line": 1359,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 424,
+   "name": "Aaron Nolan"
+  },
+  {
+   "line": 1360,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 135,
+   "name": "Celia Hobbs"
+  },
+  {
+   "line": 1361,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 237,
+   "name": "Celia Hobbs"
+  },
+  {
+   "line": 1362,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 224.5,
+   "name": "Celia Hobbs"
+  },
+  {
+   "line": 1363,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 179,
+   "name": "Celia Hobbs"
+  },
+  {
+   "line": 1364,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 238.5,
+   "name": "Pete Jamison"
+  },
+  {
+   "line": 1365,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 55,
+   "name": "Elena Underhill"
+  },
+  {
+   "line": 1366,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 261,
+   "name": "Elena Underhill"
+  },
+  {
+   "line": 1367,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 305,
+   "name": "Zach Keller"
+  },
+  {
+   "line": 1368,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 192.5,
+   "name": "Zach Keller"
+  },
+  {
+   "line": 1369,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 405,
+   "name": "Zach Keller"
+  },
+  {
+   "line": 1370,
+   "disposition": "skipped",
+   "reason": "zero_amount",
+   "dollars": 0,
+   "name": "Irene Ellison"
+  },
+  {
+   "line": 1371,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 123,
+   "name": "Irene Ellison"
+  },
+  {
+   "line": 1372,
+   "disposition": "errored",
+   "reason": "future_date",
+   "dollars": 226,
+   "name": "Irene Ellison"
+  },
+  {
+   "line": 1373,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 34,
+   "name": "Irene Ellison"
+  },
+  {
+   "line": 1374,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 279.5,
+   "name": "Beth Cortez"
+  },
+  {
+   "line": 1375,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 458.5,
+   "name": "Beth Cortez"
+  },
+  {
+   "line": 1376,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 46,
+   "name": "Beth Cortez"
+  },
+  {
+   "line": 1377,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 406,
+   "name": "Beth Solano"
+  },
+  {
+   "line": 1378,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 373,
+   "name": "Zach Wexler"
+  },
+  {
+   "line": 1379,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 24,
+   "name": "Tina Solano"
+  },
+  {
+   "line": 1380,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 213,
+   "name": "Tina Solano"
+  },
+  {
+   "line": 1381,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 69.5,
+   "name": "Tina Solano"
+  },
+  {
+   "line": 1382,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 238,
+   "name": "Tina Solano"
+  },
+  {
+   "line": 1383,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 34,
+   "name": "Aaron Tran"
+  },
+  {
+   "line": 1384,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 77,
+   "name": "Quinn Hobbs"
+  },
+  {
+   "line": 1385,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 384,
+   "name": "Olga Sandoval"
+  },
+  {
+   "line": 1386,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 407,
+   "name": "Aaron Keller"
+  },
+  {
+   "line": 1387,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 380.5,
+   "name": "Aaron Keller"
+  },
+  {
+   "line": 1388,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 339,
+   "name": "Carlos Zimmer"
+  },
+  {
+   "line": 1389,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 439,
+   "name": "Celia Barnes"
+  },
+  {
+   "line": 1390,
+   "disposition": "errored",
+   "reason": "last_contact_invalid",
+   "dollars": 144,
+   "name": "Tina Rhodes"
+  },
+  {
+   "line": 1391,
+   "disposition": "errored",
+   "reason": "last_contact_invalid",
+   "dollars": 230,
+   "name": "Tina Rhodes"
+  },
+  {
+   "line": 1392,
+   "disposition": "errored",
+   "reason": "last_contact_invalid",
+   "dollars": 27,
+   "name": "Tina Rhodes"
+  },
+  {
+   "line": 1393,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 396,
+   "name": "Yolanda Petrov"
+  },
+  {
+   "line": 1394,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 366,
+   "name": "Yolanda Petrov"
+  },
+  {
+   "line": 1395,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 450,
+   "name": "Yolanda Petrov"
+  },
+  {
+   "line": 1396,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 259,
+   "name": "Yolanda Petrov"
+  },
+  {
+   "line": 1397,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 128,
+   "name": "Yolanda Reyes"
+  },
+  {
+   "line": 1398,
+   "disposition": "skipped",
+   "reason": "zero_amount",
+   "dollars": 0,
+   "name": "Yolanda Reyes"
+  },
+  {
+   "line": 1399,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 126,
+   "name": "Yolanda Reyes"
+  },
+  {
+   "line": 1400,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 317,
+   "name": "Xavier Hobbs"
+  },
+  {
+   "line": 1401,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 60,
+   "name": "Elena Mercer"
+  },
+  {
+   "line": 1402,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 230,
+   "name": "Grace Cortez"
+  },
+  {
+   "line": 1403,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 326,
+   "name": "Grace Cortez"
+  },
+  {
+   "line": 1404,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 360,
+   "name": "Ned Lozano"
+  },
+  {
+   "line": 1405,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 349,
+   "name": "Ned Lozano"
+  },
+  {
+   "line": 1406,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 92.5,
+   "name": "Pete Dawson"
+  },
+  {
+   "line": 1407,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 26.5,
+   "name": "Pete Dawson"
+  },
+  {
+   "line": 1408,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 304,
+   "name": "Pete Dawson"
+  },
+  {
+   "line": 1409,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 317.5,
+   "name": "Pete Dawson"
+  },
+  {
+   "line": 1410,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 206.5,
+   "name": "Dana Grady"
+  },
+  {
+   "line": 1411,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 224,
+   "name": "Beth Rhodes"
+  },
+  {
+   "line": 1412,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 495,
+   "name": "Beth Rhodes"
+  },
+  {
+   "line": 1413,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 218.5,
+   "name": "Frank Tobin"
+  },
+  {
+   "line": 1414,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 259,
+   "name": "Karen Dawson"
+  },
+  {
+   "line": 1415,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 497,
+   "name": "Karen Dawson"
+  },
+  {
+   "line": 1416,
+   "disposition": "errored",
+   "reason": "last_contact_invalid",
+   "dollars": 19,
+   "name": "Uma Hobbs"
+  },
+  {
+   "line": 1417,
+   "disposition": "errored",
+   "reason": "last_contact_invalid",
+   "dollars": 161,
+   "name": "Uma Hobbs"
+  },
+  {
+   "line": 1418,
+   "disposition": "errored",
+   "reason": "last_contact_invalid",
+   "dollars": 149,
+   "name": "Uma Hobbs"
+  },
+  {
+   "line": 1419,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 143,
+   "name": "Ned Rhodes"
+  },
+  {
+   "line": 1420,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 144.5,
+   "name": "Ned Rhodes"
+  },
+  {
+   "line": 1421,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 219,
+   "name": "Ned Rhodes"
+  },
+  {
+   "line": 1422,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 250,
+   "name": "Ned Rhodes"
+  },
+  {
+   "line": 1423,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": -144,
+   "name": "Olga Barnes"
+  },
+  {
+   "line": 1424,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 132,
+   "name": "Olga Barnes"
+  },
+  {
+   "line": 1425,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 342,
+   "name": "Frank Ortega"
+  },
+  {
+   "line": 1426,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 417,
+   "name": "Frank Ortega"
+  },
+  {
+   "line": 1427,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 344.5,
+   "name": "Celia Barnes"
+  },
+  {
+   "line": 1428,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 308,
+   "name": "Celia Barnes"
+  },
+  {
+   "line": 1429,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 162,
+   "name": "Celia Barnes"
+  },
+  {
+   "line": 1430,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 51,
+   "name": "Rosa Underhill"
+  },
+  {
+   "line": 1431,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 88.5,
+   "name": "Rosa Underhill"
+  },
+  {
+   "line": 1432,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 23.5,
+   "name": "Rosa Underhill"
+  },
+  {
+   "line": 1433,
+   "disposition": "errored",
+   "reason": "unparseable_amount",
+   "dollars": 0,
+   "name": "Rosa Underhill"
+  },
+  {
+   "line": 1434,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 303,
+   "name": "Beth Vickers"
+  },
+  {
+   "line": 1435,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 469,
+   "name": "Beth Vickers"
+  },
+  {
+   "line": 1436,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 214,
+   "name": "Dana Solano"
+  },
+  {
+   "line": 1437,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 131.5,
+   "name": "Dana Solano"
+  },
+  {
+   "line": 1438,
+   "disposition": "skipped",
+   "reason": "zero_amount",
+   "dollars": 0,
+   "name": "Dana Solano"
+  },
+  {
+   "line": 1439,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 419,
+   "name": "Dana Solano"
+  },
+  {
+   "line": 1440,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 219,
+   "name": "Pete Rhodes"
+  },
+  {
+   "line": 1441,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 196,
+   "name": "Celia Wexler"
+  },
+  {
+   "line": 1442,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 231,
+   "name": "Uma Mercer"
+  },
+  {
+   "line": 1443,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 311,
+   "name": "Uma Mercer"
+  },
+  {
+   "line": 1444,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 373,
+   "name": "Uma Mercer"
+  },
+  {
+   "line": 1445,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 275,
+   "name": "Hector Rhodes"
+  },
+  {
+   "line": 1446,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 418,
+   "name": "Hector Rhodes"
+  },
+  {
+   "line": 1447,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": -174,
+   "name": "Hector Rhodes"
+  },
+  {
+   "line": 1448,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 182,
+   "name": "Hector Rhodes"
+  },
+  {
+   "line": 1449,
+   "disposition": "skipped",
+   "reason": "zero_amount",
+   "dollars": 0,
+   "name": "Uma Underhill"
+  },
+  {
+   "line": 1450,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 75.5,
+   "name": "Uma Underhill"
+  },
+  {
+   "line": 1451,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 332,
+   "name": "Uma Underhill"
+  },
+  {
+   "line": 1452,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 483,
+   "name": "Wendy Wexler"
+  },
+  {
+   "line": 1453,
+   "disposition": "errored",
+   "reason": "future_date",
+   "dollars": 14,
+   "name": "Wendy Wexler"
+  },
+  {
+   "line": 1454,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 462,
+   "name": "Zach Tobin"
+  },
+  {
+   "line": 1455,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 285,
+   "name": "Zach Tobin"
+  },
+  {
+   "line": 1456,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 233,
+   "name": "Zach Tobin"
+  },
+  {
+   "line": 1457,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 190,
+   "name": "Zach Tobin"
+  },
+  {
+   "line": 1458,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": -88,
+   "name": "Doug Dawson"
+  },
+  {
+   "line": 1459,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 349,
+   "name": "Doug Dawson"
+  },
+  {
+   "line": 1460,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 266,
+   "name": "Doug Dawson"
+  },
+  {
+   "line": 1461,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 271,
+   "name": "Hector Keller"
+  },
+  {
+   "line": 1462,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 75,
+   "name": "Hector Keller"
+  },
+  {
+   "line": 1463,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 72,
+   "name": "Hector Keller"
+  },
+  {
+   "line": 1464,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 205,
+   "name": "Ned Vickers"
+  },
+  {
+   "line": 1465,
+   "disposition": "errored",
+   "reason": "last_contact_invalid",
+   "dollars": 31,
+   "name": "Wendy Jamison"
+  },
+  {
+   "line": 1466,
+   "disposition": "errored",
+   "reason": "last_contact_invalid",
+   "dollars": 317,
+   "name": "Wendy Jamison"
+  },
+  {
+   "line": 1467,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 406,
+   "name": "Irene Quimby"
+  },
+  {
+   "line": 1468,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 210,
+   "name": "Irene Quimby"
+  },
+  {
+   "line": 1469,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 397,
+   "name": "Irene Quimby"
+  },
+  {
+   "line": 1470,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 400,
+   "name": "Aaron Mercer"
+  },
+  {
+   "line": 1471,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 357,
+   "name": "Aaron Mercer"
+  },
+  {
+   "line": 1472,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 102,
+   "name": "Carlos Petrov"
+  },
+  {
+   "line": 1473,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 74,
+   "name": "Carlos Petrov"
+  },
+  {
+   "line": 1474,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 132,
+   "name": "Carlos Petrov"
+  },
+  {
+   "line": 1475,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 294.5,
+   "name": "Carlos Petrov"
+  },
+  {
+   "line": 1476,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": -142,
+   "name": "Tina Pruitt"
+  },
+  {
+   "line": 1477,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 365,
+   "name": "Zach Rhodes"
+  },
+  {
+   "line": 1478,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 257,
+   "name": "Zach Rhodes"
+  },
+  {
+   "line": 1479,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 196,
+   "name": "Zach Rhodes"
+  },
+  {
+   "line": 1480,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 458,
+   "name": "Frank Reyes"
+  },
+  {
+   "line": 1481,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 416.5,
+   "name": "Frank Reyes"
+  },
+  {
+   "line": 1482,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 404,
+   "name": "Frank Reyes"
+  },
+  {
+   "line": 1483,
+   "disposition": "errored",
+   "reason": "last_contact_invalid",
+   "dollars": 448,
+   "name": "Xavier Keller"
+  },
+  {
+   "line": 1484,
+   "disposition": "errored",
+   "reason": "last_contact_invalid",
+   "dollars": 136,
+   "name": "Xavier Keller"
+  },
+  {
+   "line": 1485,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 97,
+   "name": "Celia Vickers"
+  },
+  {
+   "line": 1486,
+   "disposition": "errored",
+   "reason": "future_date",
+   "dollars": 367,
+   "name": "Celia Vickers"
+  },
+  {
+   "line": 1487,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 260,
+   "name": "Elena Ortega"
+  },
+  {
+   "line": 1488,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 67,
+   "name": "Elena Ortega"
+  },
+  {
+   "line": 1489,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 53,
+   "name": "Elena Ortega"
+  },
+  {
+   "line": 1490,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 371,
+   "name": "Elena Ortega"
+  },
+  {
+   "line": 1491,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 61,
+   "name": "Uma Cortez"
+  },
+  {
+   "line": 1492,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 32,
+   "name": "Uma Cortez"
+  },
+  {
+   "line": 1493,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 129,
+   "name": "Beth Sandoval"
+  },
+  {
+   "line": 1494,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 282,
+   "name": "Beth Sandoval"
+  },
+  {
+   "line": 1495,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 375,
+   "name": "Beth Sandoval"
+  },
+  {
+   "line": 1496,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 264,
+   "name": "Carlos Vickers"
+  },
+  {
+   "line": 1497,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 39.5,
+   "name": "Carlos Vickers"
+  },
+  {
+   "line": 1498,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 478,
+   "name": "Carlos Vickers"
+  },
+  {
+   "line": 1499,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 403,
+   "name": "Carlos Vickers"
+  },
+  {
+   "line": 1500,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 236,
+   "name": "Rosa Dawson"
+  },
+  {
+   "line": 1501,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 340,
+   "name": "Rosa Dawson"
+  },
+  {
+   "line": 1502,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 437.5,
+   "name": "Rosa Dawson"
+  },
+  {
+   "line": 1503,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 72,
+   "name": "Rosa Dawson"
+  },
+  {
+   "line": 1504,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 473,
+   "name": "Uma Wexler"
+  },
+  {
+   "line": 1505,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 116,
+   "name": "Uma Wexler"
+  },
+  {
+   "line": 1506,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 111,
+   "name": "Uma Wexler"
+  },
+  {
+   "line": 1507,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 420,
+   "name": "Uma Wexler"
+  },
+  {
+   "line": 1508,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 75.5,
+   "name": "Marta Keller"
+  },
+  {
+   "line": 1509,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 213,
+   "name": "Beth Nolan"
+  },
+  {
+   "line": 1510,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 44,
+   "name": "Beth Nolan"
+  },
+  {
+   "line": 1511,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 548,
+   "name": "Beth Nolan"
+  },
+  {
+   "line": 1512,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 239,
+   "name": "Beth Nolan"
+  },
+  {
+   "line": 1513,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 330.5,
+   "name": "Celia Cortez"
+  },
+  {
+   "line": 1514,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 128.5,
+   "name": "Celia Cortez"
+  },
+  {
+   "line": 1515,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 260,
+   "name": "Celia Cortez"
+  },
+  {
+   "line": 1516,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 245,
+   "name": "Celia Cortez"
+  },
+  {
+   "line": 1517,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 116,
+   "name": "Wendy Grady"
+  },
+  {
+   "line": 1518,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 102,
+   "name": "Aaron Okafor"
+  },
+  {
+   "line": 1519,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 252,
+   "name": "Frank Solano"
+  },
+  {
+   "line": 1520,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 87.5,
+   "name": "Frank Solano"
+  },
+  {
+   "line": 1521,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 468,
+   "name": "Frank Solano"
+  },
+  {
+   "line": 1522,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 461,
+   "name": "Irene Lozano"
+  },
+  {
+   "line": 1523,
+   "disposition": "skipped",
+   "reason": "zero_amount",
+   "dollars": 0,
+   "name": "Irene Lozano"
+  },
+  {
+   "line": 1524,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 230,
+   "name": "Irene Lozano"
+  },
+  {
+   "line": 1525,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 289,
+   "name": "Irene Lozano"
+  },
+  {
+   "line": 1526,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 216.5,
+   "name": "Olga Sandoval"
+  },
+  {
+   "line": 1527,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 327,
+   "name": "Olga Sandoval"
+  },
+  {
+   "line": 1528,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 184,
+   "name": "Olga Sandoval"
+  },
+  {
+   "line": 1529,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 23,
+   "name": "Olga Sandoval"
+  },
+  {
+   "line": 1530,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 24.5,
+   "name": "Elena Petrov"
+  },
+  {
+   "line": 1531,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 499,
+   "name": "Elena Petrov"
+  },
+  {
+   "line": 1532,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 290,
+   "name": "Elena Petrov"
+  },
+  {
+   "line": 1533,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 119,
+   "name": "Elena Petrov"
+  },
+  {
+   "line": 1534,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 496,
+   "name": "Tina Dawson"
+  },
+  {
+   "line": 1535,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 448,
+   "name": "Tina Dawson"
+  },
+  {
+   "line": 1536,
+   "disposition": "errored",
+   "reason": "future_date",
+   "dollars": 166,
+   "name": "Xavier Dawson"
+  },
+  {
+   "line": 1537,
+   "disposition": "errored",
+   "reason": "future_date",
+   "dollars": 40,
+   "name": "Xavier Dawson"
+  },
+  {
+   "line": 1538,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 471,
+   "name": "Xavier Dawson"
+  },
+  {
+   "line": 1539,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 491.5,
+   "name": "Irene Cortez"
+  },
+  {
+   "line": 1540,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 368,
+   "name": "Irene Cortez"
+  },
+  {
+   "line": 1541,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 282,
+   "name": "Irene Cortez"
+  },
+  {
+   "line": 1542,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 215,
+   "name": "Miriam Grady"
+  },
+  {
+   "line": 1543,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 482,
+   "name": "Miriam Grady"
+  },
+  {
+   "line": 1544,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 360,
+   "name": "Miriam Grady"
+  },
+  {
+   "line": 1545,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 67,
+   "name": "Yolanda Ellison"
+  },
+  {
+   "line": 1546,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 292,
+   "name": "Yolanda Ellison"
+  },
+  {
+   "line": 1547,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 52,
+   "name": "Karen Solano"
+  },
+  {
+   "line": 1548,
+   "disposition": "gift",
+   "reason": null,
+   "dollars": 120,
+   "name": "Dorothy Overfield"
+  },
+  {
+   "line": 1549,
+   "disposition": "errored",
+   "reason": "stray_header_row",
+   "dollars": 0,
+   "name": "Donor Name"
+  }
+ ]
+}

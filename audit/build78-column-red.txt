@@ -1,0 +1,7 @@
+— §3 · the column check goes red (what would have to be true: a column leaves the ledger) —
+  PASS  the server REFUSES the write (409 columns_unreconciled)
+  PASS  …and NOTHING landed
+  RED RUN: {"error":"columns_unreconciled","message":"your file has 22 columns but 21 have a disposition — nothing was imported","columns":{"inFile":22,"accounted":21,"counts":{"core":8,"custom-existing":0,"cust
+  PASS  a disposition outside the closed set is refused the same way
+
+— §4 · through the real route, against the key —

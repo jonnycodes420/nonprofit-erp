@@ -4190,6 +4190,55 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(as
   let duplicateCandidates = { withinFile: 0, samples: [] };
   let matchesExistingCount = 0;
   const affectedDonorIds = new Set();
+  const matchedCfMerges = [];   // BUILD-78 — custom values for donors matched rather than created
+
+  // ── BUILD-78 Part 3 — THE COLUMN AXIS. The client computes the physical
+  // column count ONCE at parse entry and sends the disposition ledger as a
+  // SEPARATE structure; this check refuses the write when they disagree.
+  // Exactly one disposition per column, from the closed set — a metric whose
+  // left side is derived from its right side cannot fail, so the two sides
+  // arrive independently and are compared here, before anything is written.
+  let columnSummary = null;
+  if (req.body.columns) {
+    const { summarizeColumnLedger } = await cfShape();
+    const inFile = Number(req.body.columns.inFile) || 0;
+    columnSummary = summarizeColumnLedger(inFile, Array.isArray(req.body.columns.ledger) ? req.body.columns.ledger : []);
+    if (!columnSummary.balanced) {
+      return res.status(409).json({
+        error: "columns_unreconciled",
+        message: `your file has ${inFile} columns but ${columnSummary.accounted} have a disposition${columnSummary.counts.invalid ? ` (${columnSummary.counts.invalid} invalid)` : ""} — nothing was imported`,
+        columns: columnSummary,
+      });
+    }
+  }
+
+  // ── BUILD-78 — custom-field values ride the rows as RAW strings and are
+  // validated HERE, through the one seam, before the transaction opens. The
+  // client refuses bad rows with line numbers before submitting; a value
+  // failing here means a client bug, and the answer is refusal, not storage.
+  const cfDonorDefs = await loadCfDefs("donor", orgId);
+  const cfGiftDefs = await loadCfDefs("gift", orgId);
+  const cfDelims = req.body.customFieldDelimiters || {};   // key → declared delimiter (multi-select, mapping time)
+  const cfRefused = [];
+  const donorCfById = new Map();   // donorIndex → validated {key: storedValue}
+  for (let i = 0; i < donors.length; i++) {
+    if (!donors[i].customFields) continue;
+    const v = await validateCustomFields("donor", orgId, donors[i].customFields, { defs: cfDonorDefs, delimiters: cfDelims });
+    if (!v.ok) { cfRefused.push({ donorIndex: i, entity: "donor", errors: v.errors }); continue; }
+    donorCfById.set(i, v.values);
+  }
+  const giftCfByIdx = new Map();   // gift array index → validated values
+  for (let i = 0; i < gifts.length; i++) {
+    if (!gifts[i].customFields) continue;
+    const v = await validateCustomFields("gift", orgId, gifts[i].customFields, { defs: cfGiftDefs, delimiters: cfDelims });
+    if (!v.ok) { cfRefused.push({ giftIndex: i, entity: "gift", errors: v.errors }); continue; }
+    giftCfByIdx.set(i, v.values);
+  }
+  if (cfRefused.length) {
+    return res.status(422).json({ error: "custom_field_values_refused",
+      message: `${cfRefused.length} row(s) carry custom-field values the field definitions refuse — nothing was imported`,
+      refused: cfRefused.slice(0, 20) });
+  }
 
   // Importer identity
   const importerRow = await query("SELECT name FROM users WHERE id=?", [req.user.userId]);
@@ -4253,12 +4302,19 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(as
       // row's gifts to that donor. `duplicates` still counts donors not
       // created, so the existing summary sentence stays true.
       const priorId = existingByEmail.get(emailLower) || seenEmails.get(emailLower);
-      if (priorId) { duplicates++; indexToId[idx] = priorId; matchedIds.add(priorId); return; }
+      if (priorId) {
+        duplicates++; indexToId[idx] = priorId; matchedIds.add(priorId);
+        // BUILD-78 4.5 — a matched donor's custom values FILL MISSING keys
+        // only: a re-run never clobbers what is already on the record.
+        const cfv = donorCfById.get(idx);
+        if (cfv && Object.keys(cfv).length) matchedCfMerges.push({ donorId: priorId, values: cfv });
+        return;
+      }
     }
     const id = importId("d_");
     if (emailLower) seenEmails.set(emailLower, id);
     indexToId[idx] = id;
-    donorsToInsert.push({ ...d, _id: id });
+    donorsToInsert.push({ ...d, _id: id, _cfValidated: donorCfById.get(idx) || null });
     if (d._stageExplicit) explicitStageIds.push(id);
   });
 
@@ -4288,9 +4344,11 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(as
         d.deceasedDate || null, d.address || null, d.zip || null,
         d.importedSustainer === true,
         d.importedSustainerAmount != null ? toDollars(toCents(d.importedSustainerAmount) || 0) : null,
-        d.importedSustainerLastGift || null
+        d.importedSustainerLastGift || null,
+        // BUILD-78 — validated through the ONE seam above; raw never lands.
+        d._cfValidated && Object.keys(d._cfValidated).length ? JSON.stringify(d._cfValidated) : null
       );
-      return "(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)";
+      return "(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)";
     });
     // SAVEPOINT, not a nested transaction: we are already inside the request's
     // one transaction, so a failed batch must be rolled back to a point rather
@@ -4301,7 +4359,7 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(as
           last_gift_date,gift_count,tags,notes,city,state,assigned_to,assigned_to_name,
           pending_assignee_invite_id,pending_assignee_name,deceased,do_not_contact,
           do_not_solicit,do_not_mail,do_not_email,deceased_date,address,zip,
-          imported_sustainer,imported_sustainer_amount,imported_sustainer_last_gift)
+          imported_sustainer,imported_sustainer_amount,imported_sustainer_last_gift,custom_fields)
        VALUES ${tuples.join(",")}`,
       params
     ));
@@ -4312,6 +4370,14 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(as
       batchErrors.push({ rows:`${bi+1}–${bi+batch.length}`, error:r.error.message });
       batch.forEach(d => failedIds.add(d._id));
     }
+  }
+
+  // BUILD-78 — matched donors: fill-missing merge of the file's custom
+  // values (existing keys win; a re-run never claws a record backwards).
+  for (const m of matchedCfMerges) {
+    await runTx(txc,
+      `UPDATE donors SET custom_fields = ?::jsonb || COALESCE(custom_fields, '{}'::jsonb) WHERE id=? AND org_id=?`,
+      [JSON.stringify(m.values), m.donorId, orgId]);
   }
 
   // ── Build gift+interaction records ──
@@ -4369,7 +4435,8 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(as
     } else {
       fpCounts.set(rowKey, (fpCounts.get(rowKey) || 0) + 1);
     }
-    giftsToInsert.push({ donorId, amount:amt, date, type:g.type||"cash", campaign:g.campaign||"", notes:g.notes||"", externalId, rowKey });
+    giftsToInsert.push({ donorId, amount:amt, date, type:g.type||"cash", campaign:g.campaign||"", notes:g.notes||"", externalId, rowKey,
+      customFields: giftCfByIdx.get(gi) || null });   // BUILD-78 — validated above
   }
   duplicateCandidates = {
     withinFile: [...fpCounts.values()].filter(n => n > 1).reduce((s, n) => s + (n - 1), 0),
@@ -4442,8 +4509,9 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(as
     batch.forEach(g => {
       const gid = importId("g_");
       rowByGid.set(gid, g);
-      giftParams.push(gid, orgId, g.donorId, g.amount, g.date, g.type, g.campaign, null, g.notes, g.externalId || null, actor(req).id, actor(req).name);
-      giftTuples.push("(?,?,?,?,?,?,?,?,?,?,?,?)");
+      giftParams.push(gid, orgId, g.donorId, g.amount, g.date, g.type, g.campaign, null, g.notes, g.externalId || null, actor(req).id, actor(req).name,
+        g.customFields && Object.keys(g.customFields).length ? JSON.stringify(g.customFields) : null);
+      giftTuples.push("(?,?,?,?,?,?,?,?,?,?,?,?,?)");
       affectedDonorIds.add(g.donorId);
     });
     let keptCount = 0, ftCount = 0;
@@ -4457,7 +4525,7 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(as
       // landed so interactions + ledger stamps are only written for those
       // (a skipped gift must not orphan an interaction or a ledger row).
       const kept = await queryTx(txc,
-        `INSERT INTO gifts (id,org_id,donor_id,amount,date,type,campaign,fund_id,notes,external_id,created_by,created_by_name)
+        `INSERT INTO gifts (id,org_id,donor_id,amount,date,type,campaign,fund_id,notes,external_id,created_by,created_by_name,custom_fields)
          VALUES ${giftTuples.join(",")}
          ON CONFLICT (org_id, external_id) WHERE external_id IS NOT NULL DO NOTHING
          RETURNING id`,
@@ -4596,8 +4664,28 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(as
     } catch (e) { console.error(`[combined-import] stage inference failed:`, e.message); }
   }
 
+  // BUILD-78 4.4 — persist header→FIELD ID mappings so the next import of
+  // this shape resolves the same fields even after every label is renamed.
+  // Post-commit and non-fatal: a mapping upsert must never kill an import.
+  if (Array.isArray(req.body.fieldMappings) && req.body.fieldMappings.length) {
+    try {
+      const { normalizeHeaderText } = await cfShape();
+      const ownIds = new Set([...cfDonorDefs, ...cfGiftDefs].map(d => d.id));
+      for (const fm of req.body.fieldMappings.slice(0, 200)) {
+        if (!fm || !ownIds.has(fm.fieldId)) continue;   // a foreign field id buys nothing
+        const entity = fm.entity === "gift" ? "gift" : "donor";
+        await run(
+          `INSERT INTO import_field_mappings (org_id, entity, header_norm, field_id, updated_at)
+           VALUES (?,?,?,?,NOW())
+           ON CONFLICT (org_id, entity, header_norm) DO UPDATE SET field_id = EXCLUDED.field_id, updated_at = NOW()`,
+          [orgId, entity, normalizeHeaderText(fm.header), fm.fieldId]);
+      }
+    } catch (e) { console.error("[combined-import] field-mapping upsert failed:", e.message); }
+  }
+
   res.json({ created, giftsInserted, duplicates, donorsUpdated: affectedDonorIds.size, financeSynced, batchErrors,
              duplicateCandidates, externalIdDupes,
+             columns: columnSummary,
              // BUILD-72 Part 1 — matched donors are now reported, and their
              // gifts actually landed. `duplicates` still counts donors NOT
              // created; `donorsMatched` says what became of them.
@@ -14715,6 +14803,17 @@ async function cfEvent(req, orgId, entity, event, { fieldId, entityId, detail } 
   );
 }
 async function cfShape() { return import("./client/src/lib/customFieldShape.js"); }
+
+app.get("/import-field-mappings", requireAuth, wrap(async (req, res) => {
+  const entity = String(req.query.entity || "").toLowerCase();
+  const rows = await query(
+    `SELECT m.entity, m.header_norm, m.field_id FROM import_field_mappings m
+     JOIN custom_field_defs d ON d.id = m.field_id
+     WHERE m.org_id=?${CF_ENTITIES.includes(entity) ? " AND m.entity=?" : ""} AND d.archived_at IS NULL`,
+    CF_ENTITIES.includes(entity) ? [req.user.orgId, entity] : [req.user.orgId]
+  );
+  res.json(rows.map(r => ({ entity: r.entity, header: r.header_norm, fieldId: r.field_id })));
+}));
 
 app.get("/custom-fields", requireAuth, wrap(async (req, res) => {
   const entity = String(req.query.entity || "donor").toLowerCase();
