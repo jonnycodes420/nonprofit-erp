@@ -76,7 +76,7 @@ async function reset() {
       "portal_audit_log", "digest_sends", "notification_sends", "workflow_runs", "workflows",
       "impact_updates", "recurring_change_log", "recurring_proposals", "recurring_subscriptions", "payment_recovery_events",
       "receipts", "pledges", "milestone_drafts", "note_reminders", "donor_materials", "planned_gifts",
-      "custom_field_values", "custom_fields", "impact_metrics", "sequence_enrollments", "sequence_steps", "sequences",
+      "custom_field_events", "custom_field_defs", "custom_field_values", "custom_fields", "impact_metrics", "sequence_enrollments", "sequence_steps", "sequences",
       "peer_fundraisers", "giving_pages", "event_attendees", "events", "volunteers", "board_members",
       "opportunities", "moves", "program_grants", "programs", "tasks", "interactions", "gifts", "grants",
       "households", "donors", "fin_audit_log", "fin_transactions", "budgets", "accounts", "fin_funds",
@@ -141,7 +141,12 @@ async function seedOrg(o, tag) {
     [`gp_${o}`, o, `page-${tag}`, `Page ${tag}`]); // title deliberately public-safe
   await q(`INSERT INTO peer_fundraisers (id,org_id,giving_page_id,name,email,slug,status,edit_token) VALUES ($1,$2,$3,$4,$5,$6,'active',$7)`,
     [`pf_${o}`, o, `gp_${o}`, `Peer ${tag}`, `peer-${tag}@mx.local`, `peer-${tag}`, crypto.randomBytes(32).toString("hex")]);
-  await q(`INSERT INTO custom_fields (id,org_id,label,field_type) VALUES ($1,$2,$3,'text')`, [`cf_${o}`, o, `${mark} Field`]);
+  // BUILD-78: defs table replaces the legacy custom_fields; B's donor also
+  // carries a private custom VALUE so leak-scan bodies can catch it.
+  await q(`INSERT INTO custom_field_defs (id,org_id,entity,key,label,type) VALUES ($1,$2,'donor',$3,$4,'text')`,
+    [`cf_${o}`, o, `${tag}_private_field`, `${mark} Field`]);
+  await q(`UPDATE donors SET custom_fields=$1::jsonb WHERE id=$2`,
+    [JSON.stringify({ [`${tag}_private_field`]: `${mark} custom value` }), `d_${o}`]);
   await q(`INSERT INTO impact_metrics (id,org_id,name,dollar_threshold,outcome_template,active) VALUES ($1,$2,$3,100,'{n} things',TRUE)`,
     [`im_${o}`, o, `${mark} Metric`]);
   await q(`INSERT INTO milestone_drafts (id,org_id,donor_id,milestone_key,subject,body,status) VALUES ($1,$2,$3,'threshold_500',$4,$5,'pending_review')`,
@@ -251,7 +256,7 @@ function sign(payload, opts) { return jwt.sign(payload, process.env.JWT_SECRET, 
   async function hashOrgB() {
     const parts = [];
     for (const t of ["donors", "gifts", "grants", "tasks", "campaigns", "fin_transactions", "fin_funds", "opportunities",
-      "pledges", "receipts", "households", "sequences", "workflows", "events", "volunteers", "custom_fields",
+      "pledges", "receipts", "households", "sequences", "workflows", "events", "volunteers", "custom_field_defs",
       "impact_metrics", "milestone_drafts", "note_reminders", "recurring_subscriptions", "giving_pages", "users"]) {
       const rows = await q(`SELECT * FROM ${t} WHERE org_id=$1 ORDER BY id`, [B]).catch(() => []);
       parts.push(t + ":" + JSON.stringify(rows));

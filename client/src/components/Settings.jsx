@@ -983,12 +983,22 @@ export function Settings({auth,logout,initialSection,onNavigate}) {
 
   const [orgSlug,setOrgSlug]=useState(auth?.org?.org_slug||"");
 
-  const [customFields,setCustomFields]=useState([]);
+  // BUILD-78 — one list per entity; archive/restore, never delete; type
+  // immutable after creation (the modal says so instead of hiding it).
+  const [customFields,setCustomFields]=useState({donor:[],gift:[]});
+  const [cfEntity,setCfEntity]=useState("donor");
+  const [cfShowArchived,setCfShowArchived]=useState(false);
   const [showAddField,setShowAddField]=useState(false);
   const [editingField,setEditingField]=useState(null);
-  const [cfForm,setCfForm]=useState({label:"",fieldType:"text",options:[],required:false});
+  const [cfForm,setCfForm]=useState({label:"",type:"text",options:[]});
   const [cfOptInput,setCfOptInput]=useState("");
   const [cfSaving,setCfSaving]=useState(false);
+  async function reloadCf(entity){
+    try{
+      const rows=await apiFetch(`/custom-fields?entity=${entity}&includeArchived=1`);
+      setCustomFields(prev=>({...prev,[entity]:Array.isArray(rows)?rows:[]}));
+    }catch{/* section renders empty */}
+  }
 
   const [impactMetrics,setImpactMetrics]=useState([]);
   const [showAddMetric,setShowAddMetric]=useState(false);
@@ -1036,7 +1046,7 @@ export function Settings({auth,logout,initialSection,onNavigate}) {
     if(!auth?.org?.org_slug){
       apiFetch("/org").then(r=>{ if(r.org_slug) setOrgSlug(r.org_slug); }).catch(()=>{});
     }
-    apiFetch("/custom-fields").then(setCustomFields).catch(()=>{});
+    reloadCf("donor");reloadCf("gift");
     apiFetch("/impact-metrics").then(setImpactMetrics).catch(()=>{});
     apiFetch("/gmail/status").then(setGmailStatus).catch(()=>{});
     apiFetch("/org/sample-data-status").then(setSampleStatus).catch(()=>{});
@@ -1184,21 +1194,21 @@ export function Settings({auth,logout,initialSection,onNavigate}) {
 
   function openAddField(){
     setEditingField(null);
-    setCfForm({label:"",fieldType:"text",options:[],required:false});
+    setCfForm({label:"",type:"text",options:[]});
     setCfOptInput("");
     setShowAddField(true);
   }
 
   function openEditField(f){
     setEditingField(f);
-    setCfForm({label:f.label,fieldType:f.field_type,options:Array.isArray(f.options)?f.options:[],required:!!f.required});
+    setCfForm({label:f.label,type:f.type,options:Array.isArray(f.options)?f.options:[]});
     setCfOptInput("");
     setShowAddField(true);
   }
 
   function closeCfModal(){
     setShowAddField(false);setEditingField(null);
-    setCfForm({label:"",fieldType:"text",options:[],required:false});
+    setCfForm({label:"",type:"text",options:[]});
     setCfOptInput("");
   }
 
@@ -1218,24 +1228,38 @@ export function Settings({auth,logout,initialSection,onNavigate}) {
     setCfSaving(true);
     try{
       if(editingField){
-        const updated=await apiFetch(`/custom-fields/${editingField.id}`,{method:"PUT",body:JSON.stringify({label:cfForm.label,fieldType:cfForm.fieldType,options:cfForm.options,required:cfForm.required})});
-        setCustomFields(prev=>prev.map(f=>f.id===editingField.id?updated:f));
+        await apiFetch(`/custom-fields/${editingField.id}`,{method:"PUT",body:JSON.stringify({label:cfForm.label,options:cfForm.options})});
       }else{
-        const created=await apiFetch("/custom-fields",{method:"POST",body:JSON.stringify({label:cfForm.label,fieldType:cfForm.fieldType,options:cfForm.options,required:cfForm.required})});
-        setCustomFields(prev=>[...prev,created]);
+        await apiFetch("/custom-fields",{method:"POST",body:JSON.stringify({entity:cfEntity,label:cfForm.label,type:cfForm.type,options:cfForm.options})});
       }
+      await reloadCf(cfEntity);
       closeCfModal();
     }catch(e){alert(e.message||"Failed to save field");}
     setCfSaving(false);
   }
 
-  async function deleteCfField(id){
-    if(!window.confirm("Delete this custom field? All saved values will be permanently removed."))return;
-    await apiFetch(`/custom-fields/${id}`,{method:"DELETE"}).catch(()=>{});
-    setCustomFields(prev=>prev.filter(f=>f.id!==id));
+  // Archive hides a field from the record, the mapper and the export, and
+  // destroys nothing; restore brings every value back. There is no delete.
+  async function archiveCfField(f){
+    try{await apiFetch(`/custom-fields/${f.id}/archive`,{method:"POST"});await reloadCf(f.entity);}
+    catch(e){alert(e.message||"Failed to archive field");}
+  }
+  async function restoreCfField(f){
+    try{await apiFetch(`/custom-fields/${f.id}/restore`,{method:"POST"});await reloadCf(f.entity);}
+    catch(e){alert(e.message||"Failed to restore field");}
+  }
+  async function moveCfField(f,dir){
+    const live=customFields[f.entity].filter(x=>!x.archivedAt);
+    const i=live.findIndex(x=>x.id===f.id);
+    const j=i+dir;
+    if(i<0||j<0||j>=live.length)return;
+    const ids=live.map(x=>x.id);
+    [ids[i],ids[j]]=[ids[j],ids[i]];
+    try{await apiFetch("/custom-fields/reorder",{method:"PUT",body:JSON.stringify({entity:f.entity,ids})});await reloadCf(f.entity);}
+    catch(e){alert(e.message||"Failed to reorder");}
   }
 
-  const CF_TYPE_LABELS={text:"Text",number:"Number",date:"Date",dropdown:"Dropdown",checkbox:"Yes/No"};
+  const CF_TYPE_LABELS={text:"Text",long_text:"Long text",number:"Number",money:"Money",date:"Date",select:"Select",multi_select:"Multi-select",checkbox:"Yes/No"};
 
   function openAddMetric(){
     setEditingMetric(null);
@@ -1534,24 +1558,59 @@ export function Settings({auth,logout,initialSection,onNavigate}) {
         </div>
         {/* Purpose + example + payoff (BUILD-31 Part 3): make the value obvious. */}
         <div style={{fontSize:12.5,color:T.ink3,marginBottom:14,lineHeight:1.6,background:T.bg,border:"1px solid "+T.bg3,borderRadius:10,padding:"10px 12px"}}>
-          Extra donor data specific to your org — e.g. <strong style={{color:T.ink2}}>Board Connection</strong>, <strong style={{color:T.ink2}}>Alma Mater</strong>, or <strong style={{color:T.ink2}}>Preferred Name</strong>. Every field you add shows up on <strong style={{color:T.ink2}}>each donor's profile</strong>, can appear as a <strong style={{color:T.ink2}}>Directory column</strong>, and is included in your <strong style={{color:T.ink2}}>CSV export</strong>.{customFields.length===0?" Add your first below.":""}
+          Extra data specific to your org — e.g. <strong style={{color:T.ink2}}>Board Connection</strong>, <strong style={{color:T.ink2}}>Matching Employer</strong>, or a gift's <strong style={{color:T.ink2}}>Appeal Code</strong>. Fields show on <strong style={{color:T.ink2}}>each record</strong>, can be filled by <strong style={{color:T.ink2}}>imports</strong>, and each is a column in your <strong style={{color:T.ink2}}>CSV export</strong>.
         </div>
-        {customFields.map((f,i)=>(
-          <div key={f.id}
-            style={{display:"flex",alignItems:"center",gap:12,padding:"11px 0 11px 10px",borderBottom:i<customFields.length-1?"1px solid "+T.bg3:"none",borderLeft:"3px solid "+T.bg3,transition:"border-color 0.15s",marginLeft:-10}}
-            onMouseEnter={e=>e.currentTarget.style.borderLeftColor=T.greenDk}
-            onMouseLeave={e=>e.currentTarget.style.borderLeftColor=T.bg3}>
-            <div style={{flex:1,minWidth:0}}>
-              <div style={{fontSize:13,fontWeight:600,color:T.ink}}>{f.label}{f.required&&<span style={{marginLeft:5,fontSize:10,color:T.ink3,fontWeight:400}}>required</span>}</div>
-              <div style={{fontSize:11,color:T.ink3,marginTop:2}}>{CF_TYPE_LABELS[f.field_type]||f.field_type}{f.field_type==="dropdown"&&f.options?.length?` — ${f.options.join(", ")}`:""}
+        <div style={{display:"flex",gap:6,marginBottom:12}}>
+          {["donor","gift"].map(en=>(
+            <button key={en} onClick={()=>setCfEntity(en)}
+              style={{background:cfEntity===en?T.green:T.bg,border:"1px solid "+(cfEntity===en?T.green:T.bg3),borderRadius:8,padding:"6px 14px",fontSize:12,fontWeight:700,color:cfEntity===en?"#fff":T.ink2,cursor:"pointer"}}>
+              {en==="donor"?"Donor fields":"Gift fields"}
+            </button>
+          ))}
+        </div>
+        {(()=>{
+          const live=customFields[cfEntity].filter(f=>!f.archivedAt);
+          const archived=customFields[cfEntity].filter(f=>!!f.archivedAt);
+          return <>
+            {live.length===0&&<div style={{fontSize:12.5,color:T.ink3,padding:"8px 0"}}>No {cfEntity} fields yet.{isAdmin?" Add your first above.":""}</div>}
+            {live.map((f,i)=>(
+              <div key={f.id}
+                style={{display:"flex",alignItems:"center",gap:12,padding:"11px 0 11px 10px",borderBottom:i<live.length-1?"1px solid "+T.bg3:"none",borderLeft:"3px solid "+T.bg3,transition:"border-color 0.15s",marginLeft:-10}}
+                onMouseEnter={e=>e.currentTarget.style.borderLeftColor=T.greenDk}
+                onMouseLeave={e=>e.currentTarget.style.borderLeftColor=T.bg3}>
+                <div style={{flex:1,minWidth:0}}>
+                  <div style={{fontSize:13,fontWeight:600,color:T.ink}}>{f.label}</div>
+                  <div style={{fontSize:11,color:T.ink3,marginTop:2}}>{CF_TYPE_LABELS[f.type]||f.type}{(f.type==="select"||f.type==="multi_select")&&f.options?.length?` — ${f.options.slice(0,8).join(", ")}${f.options.length>8?` (+${f.options.length-8} more)`:""}`:""}
+                    {f.createdSource&&f.createdSource!=="legacy-migration"?` · created during ${f.createdSource}${f.createdByName?` by ${f.createdByName}`:""}`:""}
+                  </div>
+                </div>
+                {isAdmin&&<div style={{display:"flex",gap:6,flexShrink:0}}>
+                  <button onClick={()=>moveCfField(f,-1)} disabled={i===0} style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:6,padding:"5px 8px",fontSize:11,color:T.ink2,cursor:i===0?"default":"pointer",opacity:i===0?0.4:1}}>↑</button>
+                  <button onClick={()=>moveCfField(f,1)} disabled={i===live.length-1} style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:6,padding:"5px 8px",fontSize:11,color:T.ink2,cursor:i===live.length-1?"default":"pointer",opacity:i===live.length-1?0.4:1}}>↓</button>
+                  <button onClick={()=>openEditField(f)} style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:6,padding:"5px 10px",fontSize:11,fontWeight:600,color:T.ink2,cursor:"pointer"}}>Edit</button>
+                  <button onClick={()=>archiveCfField(f)} style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:6,padding:"5px 10px",fontSize:11,fontWeight:600,color:T.ink2,cursor:"pointer"}}
+                    title="Hides this field from records, imports and exports. Every saved value is kept and comes back if you restore the field.">Archive</button>
+                </div>}
               </div>
-            </div>
-            {isAdmin&&<div style={{display:"flex",gap:6,flexShrink:0}}>
-              <button onClick={()=>openEditField(f)} style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:6,padding:"5px 10px",fontSize:11,fontWeight:600,color:T.ink2,cursor:"pointer"}}>Edit</button>
-              <button onClick={()=>deleteCfField(f.id)} style={{background:"#f6e3dd",border:"1px solid #eac6b8",borderRadius:6,padding:"5px 10px",fontSize:11,fontWeight:600,color:"#8a3a24",cursor:"pointer"}}>Delete</button>
-            </div>}
-          </div>
-        ))}
+            ))}
+            {archived.length>0&&(
+              <div style={{marginTop:14}}>
+                <button onClick={()=>setCfShowArchived(v=>!v)} style={{background:"none",border:"none",padding:0,fontSize:12,fontWeight:600,color:T.ink3,cursor:"pointer"}}>
+                  {cfShowArchived?"▾":"▸"} Archived ({archived.length})
+                </button>
+                {cfShowArchived&&archived.map(f=>(
+                  <div key={f.id} style={{display:"flex",alignItems:"center",gap:12,padding:"9px 0 9px 10px",marginLeft:-10,borderLeft:"3px solid "+T.bg3,opacity:0.7}}>
+                    <div style={{flex:1,minWidth:0}}>
+                      <div style={{fontSize:13,fontWeight:600,color:T.ink2}}>{f.label}</div>
+                      <div style={{fontSize:11,color:T.ink3,marginTop:2}}>{CF_TYPE_LABELS[f.type]||f.type} · archived — values kept</div>
+                    </div>
+                    {isAdmin&&<button onClick={()=>restoreCfField(f)} style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:6,padding:"5px 10px",fontSize:11,fontWeight:600,color:T.ink2,cursor:"pointer",flexShrink:0}}>Restore</button>}
+                  </div>
+                ))}
+              </div>
+            )}
+          </>;
+        })()}
       </div>
 
       {/* ── Impact Metrics ────────────────────────────────────────────────── */}
@@ -1808,15 +1867,21 @@ export function Settings({auth,logout,initialSection,onNavigate}) {
               style={{width:"100%",boxSizing:"border-box",border:"1px solid "+T.bg3,borderRadius:10,padding:"10px 12px",fontSize:14,color:T.ink,background:T.bg,outline:"none",marginBottom:14}}
             />
             <div style={{fontSize:12,fontWeight:600,color:T.ink3,marginBottom:4}}>Field type</div>
-            <select value={cfForm.fieldType} onChange={e=>setCfForm(f=>({...f,fieldType:e.target.value}))}
-              style={{width:"100%",boxSizing:"border-box",border:"1px solid "+T.bg3,borderRadius:10,padding:"10px 12px",fontSize:14,color:T.ink,background:T.bg,outline:"none",marginBottom:14}}>
+            <select value={cfForm.type} onChange={e=>setCfForm(f=>({...f,type:e.target.value}))} disabled={!!editingField}
+              style={{width:"100%",boxSizing:"border-box",border:"1px solid "+T.bg3,borderRadius:10,padding:"10px 12px",fontSize:14,color:T.ink,background:T.bg,outline:"none",marginBottom:editingField?4:14,opacity:editingField?0.6:1}}>
               <option value="text">Text</option>
+              <option value="long_text">Long text (up to 2,000 characters)</option>
               <option value="number">Number</option>
+              <option value="money">Money</option>
               <option value="date">Date</option>
-              <option value="dropdown">Dropdown</option>
+              <option value="select">Select (one choice)</option>
+              <option value="multi_select">Multi-select</option>
               <option value="checkbox">Yes/No (Checkbox)</option>
             </select>
-            {cfForm.fieldType==="dropdown"&&(
+            {editingField&&<div style={{fontSize:11.5,color:T.ink3,marginBottom:14,lineHeight:1.5}}>
+              A field's type can't change after creation — changing it would silently rewrite every saved value. Archive this field and add a new one instead.
+            </div>}
+            {(cfForm.type==="select"||cfForm.type==="multi_select")&&(
               <div style={{marginBottom:14}}>
                 <div style={{fontSize:12,fontWeight:600,color:T.ink3,marginBottom:6}}>Options</div>
                 <div style={{display:"flex",gap:8,marginBottom:8}}>
@@ -1837,11 +1902,7 @@ export function Settings({auth,logout,initialSection,onNavigate}) {
                 </div>
               </div>
             )}
-            <label style={{display:"flex",alignItems:"center",gap:8,fontSize:13,color:T.ink,cursor:"pointer",marginBottom:20}}>
-              <input type="checkbox" checked={!!cfForm.required} onChange={e=>setCfForm(f=>({...f,required:e.target.checked}))} style={{width:16,height:16,cursor:"pointer"}}/>
-              Required field
-            </label>
-            <div style={{display:"flex",gap:10}}>
+            <div style={{display:"flex",gap:10,marginTop:6}}>
               <button onClick={closeCfModal} style={{flex:1,background:T.bg,border:"1px solid "+T.bg3,borderRadius:10,padding:"10px",color:T.ink2,fontSize:13,fontWeight:600,cursor:"pointer"}}>Cancel</button>
               <button onClick={saveCfField} disabled={cfSaving||!cfForm.label.trim()} style={{flex:2,background:T.green,border:"none",borderRadius:10,padding:"10px",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer",opacity:(cfSaving||!cfForm.label.trim())?0.7:1}}>
                 {cfSaving?"Saving…":editingField?"Save changes":"Add field"}

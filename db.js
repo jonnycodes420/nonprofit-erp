@@ -587,6 +587,61 @@ async function initSchema() {
     )
   `);
 
+  // ── BUILD-78 — custom fields, grown up ─────────────────────────────────────
+  // The definitions table is the ONLY authority on shape (spec 1.2); values
+  // live in a custom_fields JSONB column ON the donor/gift row (1.1 — the EAV
+  // custom_field_values table above is legacy, migrated once by
+  // customFields.js migrateLegacyCustomFields and never read again).
+  // `key` is generated once at creation and IMMUTABLE forever; `label` is what
+  // a human sees and is never used as an identifier anywhere.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS custom_field_defs (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL,
+      entity TEXT NOT NULL DEFAULT 'donor',
+      key TEXT NOT NULL,
+      label TEXT NOT NULL,
+      type TEXT NOT NULL,
+      options JSONB DEFAULT '[]',
+      position INTEGER DEFAULT 0,
+      show_in_directory BOOLEAN DEFAULT false,
+      archived_at TIMESTAMPTZ,
+      created_by TEXT,
+      created_by_name TEXT,
+      created_source TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      UNIQUE (org_id, entity, key)
+    )
+  `);
+  await pool.query(`ALTER TABLE donors ADD COLUMN IF NOT EXISTS custom_fields JSONB`);
+  await pool.query(`ALTER TABLE gifts ADD COLUMN IF NOT EXISTS custom_fields JSONB`);
+  // Part 9 — the audit trail: definition changes are their OWN event type,
+  // distinguishable from value writes; every event carries an actor identity.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS custom_field_events (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL,
+      entity TEXT NOT NULL,
+      field_id TEXT,
+      entity_id TEXT,
+      event TEXT NOT NULL,
+      detail JSONB DEFAULT '{}',
+      created_by TEXT,
+      created_by_name TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_cf_events_org ON custom_field_events (org_id, created_at DESC)`);
+  // One-shot data-migration markers (hash-keyed schema init re-runs the whole
+  // file on any edit; data moves must not re-run on donors that have since
+  // diverged).
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS schema_flags (
+      flag TEXT PRIMARY KEY,
+      done_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+
   await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS focus_area TEXT`);
   await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS annual_budget TEXT`);
   await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS founded_year INTEGER`);

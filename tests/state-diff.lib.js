@@ -255,7 +255,7 @@ const RESET_TABLES = ["notification_sends", "digest_sends", "workflow_runs", "wo
   "recurring_subscriptions", "receipts", "pledges", "opportunities", "moves", "milestone_drafts", "note_reminders",
   "sequence_enrollments", "sequences", "tasks", "interactions", "fin_transactions", "fin_funds", "fin_budgets",
   "fin_accounts", "accounts", "financials", "funds", "fundraising_goals", "impact_metrics", "metric_snapshots",
-  "custom_field_values", "custom_fields", "email_suppressions", "event_attendees", "events", "volunteers",
+  "custom_field_values", "custom_fields", "custom_field_defs", "custom_field_events", "email_suppressions", "event_attendees", "events", "volunteers",
   "board_members", "email_opens", "campaign_recipients", "donor_designations", "planned_gifts", "donor_materials",
   "donor_relationships", "gifts", "grant_interactions", "grants", "campaigns", "giving_pages", "households",
   "fin_audit_log", "ai_log", "board_reports", "stripe_donations", "stripe_subscriptions",

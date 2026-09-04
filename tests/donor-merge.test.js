@@ -20,7 +20,7 @@ async function fixture() {
   for (const org of [ORG, ORG_B, ORG_RO]) {
     for (const t of ["receipts", "pledges", "gifts", "interactions", "milestone_drafts", "note_reminders",
       "donor_materials", "planned_gifts", "payment_recovery_events", "recurring_subscriptions", "tasks",
-      "volunteers", "campaign_recipients", "custom_field_values", "sequence_enrollments", "event_attendees",
+      "volunteers", "campaign_recipients", "custom_field_values", "custom_field_defs", "sequence_enrollments", "event_attendees",
       "donor_relationships", "sequences", "events", "custom_fields", "donors", "users"])
       await q(`DELETE FROM ${t} WHERE org_id=$1`, [org]).catch(() => {});
     await q(`DELETE FROM orgs WHERE id=$1`, [org]);
@@ -75,11 +75,12 @@ async function fixture() {
   // Unique-constrained children with a CONFLICT on each: both donors have a
   // value for field cf1 / an enrollment in seq1 / attendance at ev1 (the
   // primary's row must win), plus a secondary-only row that must move.
-  await q(`INSERT INTO custom_fields (id, org_id, label, field_type) VALUES ('cf_mrg_1',$1,'Preferred Name','text'),('cf_mrg_2',$1,'T-Shirt Size','text')`, [ORG]);
-  await q(`INSERT INTO custom_field_values (id, org_id, donor_id, field_id, value) VALUES
-    ('cfv_mrg_p1',$1,'d_mrg_p','cf_mrg_1','Jordy'),
-    ('cfv_mrg_s1',$1,'d_mrg_s','cf_mrg_1','J.'),
-    ('cfv_mrg_s2',$1,'d_mrg_s','cf_mrg_2','L')`, [ORG]);
+  // BUILD-78: custom values ride the donor row (JSONB keyed by field key).
+  await q(`INSERT INTO custom_field_defs (id, org_id, entity, key, label, type) VALUES
+    ('cf_mrg_1',$1,'donor','preferred_name','Preferred Name','text'),
+    ('cf_mrg_2',$1,'donor','t_shirt_size','T-Shirt Size','text')`, [ORG]);
+  await q(`UPDATE donors SET custom_fields='{"preferred_name":"Jordy"}'::jsonb WHERE id='d_mrg_p'`);
+  await q(`UPDATE donors SET custom_fields='{"preferred_name":"J.","t_shirt_size":"L"}'::jsonb WHERE id='d_mrg_s'`);
   await q(`INSERT INTO sequences (id, org_id, name, trigger, status) VALUES ('sq_mrg_1',$1,'Lapsed win-back','lapsed_90','active'),('sq_mrg_2',$1,'New donor','new_donor','active')`, [ORG]);
   await q(`INSERT INTO sequence_enrollments (id, sequence_id, org_id, donor_id, status) VALUES
     ('se_mrg_p1','sq_mrg_1',$1,'d_mrg_p','active'),
@@ -140,8 +141,9 @@ async function fixture() {
   }
 
   // Unique-constrained tables: primary's row won each conflict, extras moved.
-  const cfv = await q(`SELECT field_id, value FROM custom_field_values WHERE org_id=$1 AND donor_id='d_mrg_p' ORDER BY field_id`, [ORG]);
-  ok("custom fields: primary's conflicting value kept ('Jordy'), secondary-only value moved", cfv.length === 2 && cfv.find(r => r.field_id === "cf_mrg_1")?.value === "Jordy" && cfv.find(r => r.field_id === "cf_mrg_2")?.value === "L", cfv);
+  const [cfRow] = await q(`SELECT custom_fields FROM donors WHERE id='d_mrg_p'`);
+  ok("custom fields: primary's conflicting value kept ('Jordy'), secondary-only value moved",
+    cfRow.custom_fields?.preferred_name === "Jordy" && cfRow.custom_fields?.t_shirt_size === "L", cfRow.custom_fields);
   const se = await q(`SELECT id, sequence_id FROM sequence_enrollments WHERE org_id=$1 AND donor_id='d_mrg_p' ORDER BY sequence_id`, [ORG]);
   ok("enrollments: primary's kept for seq1, secondary's seq2 moved, no dupes", se.length === 2 && se.find(r => r.sequence_id === "sq_mrg_1")?.id === "se_mrg_p1", se);
   const ea = await q(`SELECT id, event_id FROM event_attendees WHERE org_id=$1 AND donor_id='d_mrg_p' ORDER BY event_id`, [ORG]);

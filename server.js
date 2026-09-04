@@ -88,6 +88,7 @@ const orgTime = require("./orgTime");
 // dollars and cents. See money.js for why the eight Math.round() sites this
 // replaces were each a chance to be wrong in the same direction.
 const { toCents, toDollars, parseMoneyOrThrow, hasCents } = require("./money");
+const { loadDefs: loadCfDefs, validateCustomFields, mergeCustomValues, migrateLegacyCustomFields } = require("./customFields");
 const { orgToday, orgIsOverdue, orgDaysOverdue, orgPeriodBounds, orgFiscalYearStart, orgReportYear } = orgTime;
 // BUILD-76 Part 1 — THE DRIFT ENGINE. One pure module defines "drifting"
 // (past the donor's OWN expected next gift, not yet lapsed); every surface —
@@ -1619,6 +1620,17 @@ getDb()
     dbReady = true;
     try { const r = await query("SELECT current_database() AS d"); DB_NAME = r[0] && r[0].d; } catch { /* non-fatal: /health reports database:null */ }
     console.log("Database ready");
+    // BUILD-78 — one-shot legacy custom-field migration (EAV → defs + JSONB).
+    // Flag-guarded so it runs once; a failure does NOT mark the flag (next
+    // boot retries) and is loud — legacy values stay invisible until it lands.
+    try {
+      const done = await query("SELECT 1 FROM schema_flags WHERE flag='b78_cf_jsonb_migration'");
+      if (!done.length) {
+        const stats = await migrateLegacyCustomFields();
+        await run("INSERT INTO schema_flags (flag) VALUES ('b78_cf_jsonb_migration') ON CONFLICT (flag) DO NOTHING");
+        console.log("[custom-fields] legacy EAV migrated:", JSON.stringify(stats));
+      }
+    } catch (e) { console.error("[custom-fields] CRITICAL: legacy migration failed — legacy custom-field values are not visible until this succeeds:", e); }
   })
   .catch(err => { console.error("Database init failed:", err); process.exit(1); });
 
@@ -3642,6 +3654,10 @@ app.get("/donors/duplicates", requireAuth, wrap(async (req, res) => {
 app.get("/donors/export/csv", requireAuth, wrap(async (req, res) => {
   const { whereSql, params, orderBy } = buildDonorListFilter(req);
   const donors = await query(`SELECT * FROM donors WHERE ${whereSql} ORDER BY ${orderBy}`, params);
+  // BUILD-78 6.1 — every non-archived donor custom field is its own column,
+  // headed with the CURRENT label, rendered per the type table.
+  const cfDonorDefs = await loadCfDefs("donor", req.user.orgId);
+  const { renderCustomValue } = await cfShape();
   const columns = [
     ["Name", "name"], ["Email", "email"], ["Phone", "phone"],
     ["Stage", "stage"], ["Status", "status"],
@@ -3650,6 +3666,7 @@ app.get("/donors/export/csv", requireAuth, wrap(async (req, res) => {
     ["Assigned to", d => d.assigned_to_name || ""],
     ["City", d => d.city || ""], ["State", d => d.state || ""],
     ["Tags", d => JSON.parse(d.tags || "[]").join("|")],
+    ...cfDonorDefs.map(f => [f.label, d => renderCustomValue(f, (d.custom_fields || {})[f.key])]),
   ];
   res.setHeader("Content-Type", "text/csv; charset=utf-8");
   res.setHeader("Content-Disposition", `attachment; filename="donors-${orgToday(await orgTz(req.user.orgId))}.csv"`); // ORG_TZ_SEAM_OK — an evening export is named for today, not UTC-tomorrow
@@ -3659,11 +3676,13 @@ app.get("/donors/export/csv", requireAuth, wrap(async (req, res) => {
 // (route deleted, BUILD-75 B.4 — zero references anywhere: client, tests, scripts, docs. See audit/BUILD-75-FINDINGS.md B.1 orphan verdicts.)
 
 app.get("/donors/custom-field-values/all", requireAuth, wrap(async (req, res) => {
+  // BUILD-78: values live on the donor row (JSONB, keyed by the immutable
+  // field key), so this is one column read — no EAV join, no pivot.
   const rows = await query(
-    "SELECT donor_id, field_id, value FROM custom_field_values WHERE org_id = ?",
+    "SELECT id, custom_fields FROM donors WHERE org_id = ? AND deleted_at IS NULL AND custom_fields IS NOT NULL",
     [req.user.orgId]
   );
-  res.json(rows.map(r => ({ donorId: r.donor_id, fieldId: r.field_id, value: r.value })));
+  res.json(rows.map(r => ({ donorId: r.id, values: r.custom_fields || {} })));
 }));
 
 // Pipeline stage counts — reuses the same grouping the Dashboard's Donor
@@ -4894,6 +4913,12 @@ app.post("/donors/merge", requireAuth, checkWriteAccess, wrap(async (req, res) =
     // solicit-a-deceased-donor wound).
     if (!primary.deceased && secondary.deceased) { sets.push("deceased=?"); vals.push(true); }
     if (!primary.do_not_contact && secondary.do_not_contact) { sets.push("do_not_contact=?"); vals.push(true); }
+    // BUILD-78: custom-field values ride the donor row now (JSONB). Merge
+    // keeps the non-primary's data (Data Hygiene reference pattern): the
+    // secondary's keys fill in, the primary wins any per-key conflict.
+    const pCf = primary.custom_fields && typeof primary.custom_fields === "object" ? primary.custom_fields : {};
+    const sCf = secondary.custom_fields && typeof secondary.custom_fields === "object" ? secondary.custom_fields : {};
+    if (Object.keys(sCf).some(k => pCf[k] === undefined)) { sets.push("custom_fields=?::jsonb"); vals.push(JSON.stringify({ ...sCf, ...pCf })); }
     if (sets.length) await runTx(client, `UPDATE donors SET ${sets.join(", ")}, updated_at=NOW() WHERE id=? AND org_id=?`, [...vals, primaryId, orgId]);
 
     // Soft-delete the secondary — recoverable via trash until purge, like
@@ -14663,98 +14688,195 @@ app.post("/voice-memos/save", requireAuth, checkWriteAccess, wrap(async (req, re
   res.json({ success: true, taskId });
 }));
 
-// ── Custom Fields ───────────────────────────────────────────────────────────
-app.get("/custom-fields", requireAuth, wrap(async (req, res) => {
-  const rows = await query(
-    "SELECT * FROM custom_fields WHERE org_id=? ORDER BY field_order ASC, created_at ASC",
-    [req.user.orgId]
+// ── Custom Fields (BUILD-78) ────────────────────────────────────────────────
+// The definitions table (custom_field_defs) is the ONLY authority on shape;
+// values live in a custom_fields JSONB column ON the donor/gift row. Every
+// value write goes through validateCustomFields (customFields.js) — THE one
+// seam (spec 1.4); a second validation implementation anywhere is the defect.
+// There is NO hard-delete path in this build: archive hides a field from the
+// record, the mapper and the export, and destroys nothing (spec 1.6).
+const CF_ENTITIES = ["donor", "gift"];
+const cfDefOut = d => ({
+  id: d.id, entity: d.entity, key: d.key, label: d.label, type: d.type,
+  options: Array.isArray(d.options) ? d.options : JSON.parse(d.options || "[]"),
+  position: d.position, showInDirectory: !!d.show_in_directory,
+  archivedAt: d.archived_at || null, createdBy: d.created_by || null,
+  createdByName: d.created_by_name || null, createdSource: d.created_source || null,
+  createdAt: d.created_at,
+});
+// Part 9 — definition changes and value writes land in the audit trail as
+// their OWN event types, each carrying an actor identity (never a boolean).
+async function cfEvent(req, orgId, entity, event, { fieldId, entityId, detail } = {}) {
+  await run(
+    `INSERT INTO custom_field_events (id,org_id,entity,field_id,entity_id,event,detail,created_by,created_by_name)
+     VALUES (?,?,?,?,?,?,?,?,?)`,
+    ["cfe_" + uuid().slice(0, 12), orgId, entity, fieldId || null, entityId || null, event,
+     JSON.stringify(detail || {}), actor(req).id, actor(req).name]
   );
-  res.json(rows);
+}
+async function cfShape() { return import("./client/src/lib/customFieldShape.js"); }
+
+app.get("/custom-fields", requireAuth, wrap(async (req, res) => {
+  const entity = String(req.query.entity || "donor").toLowerCase();
+  if (!CF_ENTITIES.includes(entity)) return res.status(400).json({ error: "entity must be donor or gift" });
+  const defs = await loadCfDefs(entity, req.user.orgId, { includeArchived: req.query.includeArchived === "1" });
+  res.json(defs.map(cfDefOut));
 }));
 
 app.post("/custom-fields", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
-  const { label, fieldType, options, required } = req.body;
-  if (!label || !fieldType) return res.status(400).json({ error: "label and fieldType required" });
-  const maxOrder = await query(
-    "SELECT COALESCE(MAX(field_order),0) AS mo FROM custom_fields WHERE org_id=?",
-    [req.user.orgId]
-  );
-  const nextOrder = (maxOrder[0]?.mo || 0) + 1;
-  const id = "cf_" + Date.now();
+  const { CF_TYPES, CF_LIMITS, generateFieldKey } = await cfShape();
+  const entity = String(req.body.entity || "donor").toLowerCase();
+  if (!CF_ENTITIES.includes(entity)) return res.status(400).json({ error: "entity must be donor or gift" });
+  const label = String(req.body.label || "").trim();
+  const type = String(req.body.type || req.body.fieldType || "").trim();
+  if (!label) return res.status(400).json({ error: "label required" });
+  if (label.length > CF_LIMITS.LABEL_MAX) return res.status(400).json({ error: `label is over the ${CF_LIMITS.LABEL_MAX}-character limit` });
+  if (!CF_TYPES.includes(type)) return res.status(400).json({ error: `type must be one of: ${CF_TYPES.join(", ")}` });
+  const wantsOptions = type === "select" || type === "multi_select";
+  const options = [...new Set((Array.isArray(req.body.options) ? req.body.options : []).map(o => String(o).trim()).filter(Boolean))];
+  if (wantsOptions && !options.length) return res.status(400).json({ error: "select fields need at least one option" });
+  if (!wantsOptions && options.length) return res.status(400).json({ error: `a ${type} field does not take options` });
+  if (options.length > CF_LIMITS.OPTIONS_PER_SELECT)
+    return res.status(400).json({ error: `that is ${options.length} options — the limit is ${CF_LIMITS.OPTIONS_PER_SELECT}. Past that a select is free text wearing a costume; consider a text field.` });
+
+  // The 40-field cap counts LIVE fields; archiving frees a slot, and restore
+  // is never blocked by the cap (restore must always work — spec 1.6).
+  const live = await query(`SELECT COUNT(*)::int AS n FROM custom_field_defs WHERE org_id=? AND entity=? AND archived_at IS NULL`, [req.user.orgId, entity]);
+  if (live[0].n >= CF_LIMITS.FIELDS_PER_ENTITY)
+    return res.status(400).json({ error: `this org already has ${live[0].n} ${entity} fields — the limit is ${CF_LIMITS.FIELDS_PER_ENTITY}. Archive fields you no longer use to make room.` });
+
+  const existingKeys = (await query(`SELECT key FROM custom_field_defs WHERE org_id=? AND entity=?`, [req.user.orgId, entity])).map(r => r.key);
+  const key = generateFieldKey(label, existingKeys);   // immutable forever from here
+  const maxPos = await query(`SELECT COALESCE(MAX(position),0) AS mp FROM custom_field_defs WHERE org_id=? AND entity=?`, [req.user.orgId, entity]);
+  const id = "cfd_" + uuid().slice(0, 12);
+  const source = req.body.source ? String(req.body.source).slice(0, 200) : null;
   await run(
-    "INSERT INTO custom_fields (id,org_id,label,field_type,options,required,field_order) VALUES (?,?,?,?,?,?,?)",
-    [id, req.user.orgId, label, fieldType, JSON.stringify(options || []), required ? 1 : 0, nextOrder]
+    `INSERT INTO custom_field_defs (id,org_id,entity,key,label,type,options,position,created_by,created_by_name,created_source)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+    [id, req.user.orgId, entity, key, label, type, JSON.stringify(options), (maxPos[0]?.mp || 0) + 1,
+     actor(req).id, actor(req).name, source]
   );
-  const [field] = await query("SELECT * FROM custom_fields WHERE id=?", [id]);
-  res.json(field);
+  await cfEvent(req, req.user.orgId, entity, "definition_created", { fieldId: id, detail: { key, label, type, source } });
+  const [field] = await query(`SELECT * FROM custom_field_defs WHERE id=?`, [id]);
+  res.json(cfDefOut(field));
 }));
 
 // reorder MUST be before /:id
 app.put("/custom-fields/reorder", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
-  const { ids } = req.body; // ordered array of field ids
+  const { ids } = req.body;
+  const entity = String(req.body.entity || "donor").toLowerCase();
   if (!Array.isArray(ids)) return res.status(400).json({ error: "ids array required" });
   for (let i = 0; i < ids.length; i++) {
-    await run(
-      "UPDATE custom_fields SET field_order=? WHERE id=? AND org_id=?",
-      [i, ids[i], req.user.orgId]
-    );
+    await run(`UPDATE custom_field_defs SET position=? WHERE id=? AND org_id=? AND entity=?`, [i + 1, ids[i], req.user.orgId, entity]);
   }
+  await cfEvent(req, req.user.orgId, entity, "definition_reordered", { detail: { ids } });
   res.json({ ok: true });
 }));
 
 app.put("/custom-fields/:id", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
-  const { label, fieldType, options, required, showInDirectory } = req.body;
-  await run(
-    "UPDATE custom_fields SET label=?,field_type=?,options=?,required=?,show_in_directory=? WHERE id=? AND org_id=?",
-    [label, fieldType, JSON.stringify(options || []), required ? 1 : 0, showInDirectory ? true : false, req.params.id, req.user.orgId]
-  );
-  const [field] = await query("SELECT * FROM custom_fields WHERE id=? AND org_id=?", [req.params.id, req.user.orgId]);
+  const { CF_LIMITS } = await cfShape();
+  const [field] = await query(`SELECT * FROM custom_field_defs WHERE id=? AND org_id=?`, [req.params.id, req.user.orgId]);
   if (!field) return res.status(404).json({ error: "Not found" });
-  res.json({ ...field, options: typeof field.options === "string" ? JSON.parse(field.options||"[]") : field.options });
+  // Type is IMMUTABLE after creation (spec 5.3): changing a type is a data
+  // migration wearing a dropdown, and the honest version of it is out of
+  // scope. The key never changes, period (1.2).
+  if ((req.body.type || req.body.fieldType) && String(req.body.type || req.body.fieldType) !== field.type)
+    return res.status(400).json({ error: "a field's type cannot change after creation — archive this field and create a new one" });
+  if (req.body.key && req.body.key !== field.key)
+    return res.status(400).json({ error: "a field's key never changes" });
+
+  const label = req.body.label !== undefined ? String(req.body.label || "").trim() : field.label;
+  if (!label) return res.status(400).json({ error: "label required" });
+  if (label.length > CF_LIMITS.LABEL_MAX) return res.status(400).json({ error: `label is over the ${CF_LIMITS.LABEL_MAX}-character limit` });
+
+  let options = Array.isArray(field.options) ? field.options : JSON.parse(field.options || "[]");
+  if (req.body.options !== undefined) {
+    const next = [...new Set((Array.isArray(req.body.options) ? req.body.options : []).map(o => String(o).trim()).filter(Boolean))];
+    if (field.type !== "select" && field.type !== "multi_select") {
+      if (next.length) return res.status(400).json({ error: `a ${field.type} field does not take options` });
+    } else {
+      // Options can be ADDED, never removed or renamed here — a removed
+      // option orphans every value that holds it. (An honest option
+      // migration is future work; recorded in the findings.)
+      const missing = options.filter(o => !next.includes(o));
+      if (missing.length) return res.status(400).json({ error: `options cannot be removed: ${missing.join(", ")} — stored values still point at them` });
+      if (next.length > CF_LIMITS.OPTIONS_PER_SELECT)
+        return res.status(400).json({ error: `that is ${next.length} options — the limit is ${CF_LIMITS.OPTIONS_PER_SELECT}` });
+      options = next;
+    }
+  }
+  const showInDirectory = req.body.showInDirectory !== undefined ? !!req.body.showInDirectory : field.show_in_directory;
+  await run(`UPDATE custom_field_defs SET label=?, options=?, show_in_directory=? WHERE id=? AND org_id=?`,
+    [label, JSON.stringify(options), showInDirectory, req.params.id, req.user.orgId]);
+  if (label !== field.label)
+    await cfEvent(req, req.user.orgId, field.entity, "definition_renamed", { fieldId: field.id, detail: { from: field.label, to: label, key: field.key } });
+  else
+    await cfEvent(req, req.user.orgId, field.entity, "definition_updated", { fieldId: field.id, detail: { key: field.key } });
+  const [updated] = await query(`SELECT * FROM custom_field_defs WHERE id=?`, [req.params.id]);
+  res.json(cfDefOut(updated));
 }));
 
-app.delete("/custom-fields/:id", requireAuth, requireAdmin, wrap(async (req, res) => {
-  await run("DELETE FROM custom_field_values WHERE field_id=? AND org_id=?", [req.params.id, req.user.orgId]);
-  const { changes } = await run("DELETE FROM custom_fields WHERE id=? AND org_id=?", [req.params.id, req.user.orgId]);
-  if (!changes) return res.status(404).json({ error: "Not found" }); // BUILD-75 B: a foreign/unknown id answers 404, never a false success — one answer everywhere
-  res.json({ ok: true });
+app.post("/custom-fields/:id/archive", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
+  const [field] = await query(`SELECT * FROM custom_field_defs WHERE id=? AND org_id=?`, [req.params.id, req.user.orgId]);
+  if (!field) return res.status(404).json({ error: "Not found" });
+  if (!field.archived_at) {
+    await run(`UPDATE custom_field_defs SET archived_at=NOW() WHERE id=? AND org_id=?`, [req.params.id, req.user.orgId]);
+    await cfEvent(req, req.user.orgId, field.entity, "definition_archived", { fieldId: field.id, detail: { key: field.key, label: field.label } });
+  }
+  const [updated] = await query(`SELECT * FROM custom_field_defs WHERE id=?`, [req.params.id]);
+  res.json(cfDefOut(updated));
 }));
+
+app.post("/custom-fields/:id/restore", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
+  const [field] = await query(`SELECT * FROM custom_field_defs WHERE id=? AND org_id=?`, [req.params.id, req.user.orgId]);
+  if (!field) return res.status(404).json({ error: "Not found" });
+  if (field.archived_at) {
+    await run(`UPDATE custom_field_defs SET archived_at=NULL WHERE id=? AND org_id=?`, [req.params.id, req.user.orgId]);
+    await cfEvent(req, req.user.orgId, field.entity, "definition_restored", { fieldId: field.id, detail: { key: field.key, label: field.label } });
+  }
+  const [updated] = await query(`SELECT * FROM custom_field_defs WHERE id=?`, [req.params.id]);
+  res.json(cfDefOut(updated));   // restored — every value comes back with it, because none ever left
+}));
+
+// (the pre-BUILD-78 DELETE /custom-fields/:id is deliberately GONE — it
+// deleted every stored value with the definition. Archive, never delete.)
 
 app.get("/donors/:id/custom-fields", requireAuth, wrap(async (req, res) => {
-  if (!(await orgOwns("donors", req.params.id, req.user.orgId))) return res.status(404).json({ error: "Donor not found" }); // BUILD-75 B: the parent must be YOURS before children are answered — even an empty list confirms nothing about another tenant
-  const rows = await query(
-    `SELECT cf.id AS field_id, cf.label, cf.field_type, cf.options, cf.required, cf.field_order,
-            cfv.value
-     FROM custom_fields cf
-     LEFT JOIN custom_field_values cfv ON cfv.field_id=cf.id AND cfv.donor_id=? AND cfv.org_id=?
-     WHERE cf.org_id=?
-     ORDER BY cf.field_order ASC, cf.created_at ASC`,
-    [req.params.id, req.user.orgId, req.user.orgId]
-  );
-  res.json(rows.map(r => ({
-    fieldId: r.field_id,
-    label: r.label,
-    fieldType: r.field_type,
-    options: r.options || [],
-    required: r.required,
-    fieldOrder: r.field_order,
-    value: r.value || null,
-  })));
+  if (!(await orgOwns("donors", req.params.id, req.user.orgId))) return res.status(404).json({ error: "Donor not found" }); // BUILD-75 B: the parent must be YOURS before children are answered
+  const [donor] = await query(`SELECT custom_fields FROM donors WHERE id=? AND org_id=?`, [req.params.id, req.user.orgId]);
+  const vals = donor?.custom_fields || {};
+  const defs = await loadCfDefs("donor", req.user.orgId);
+  res.json(defs.map(d => ({ ...cfDefOut(d), value: vals[d.key] !== undefined ? vals[d.key] : null })));
 }));
 
-app.post("/donors/:id/custom-fields", requireAuth, wrap(async (req, res) => {
-  const { fieldId, value } = req.body;
-  if (!fieldId) return res.status(400).json({ error: "fieldId required" });
-  const donorCheck = await query("SELECT id FROM donors WHERE id=? AND org_id=?", [req.params.id, req.user.orgId]);
-  if (!donorCheck.length) return res.status(404).json({ error: "Donor not found" });
-  const valId = "cfv_" + Date.now();
-  await run(
-    `INSERT INTO custom_field_values (id,org_id,donor_id,field_id,value,updated_at)
-     VALUES (?,?,?,?,?,NOW())
-     ON CONFLICT (donor_id,field_id) DO UPDATE SET value=EXCLUDED.value, updated_at=NOW()`,
-    [valId, req.user.orgId, req.params.id, fieldId, value]
-  );
-  res.json({ ok: true });
+app.put("/donors/:id/custom-fields", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  const [donor] = await query(`SELECT id, custom_fields FROM donors WHERE id=? AND org_id=?`, [req.params.id, req.user.orgId]);
+  if (!donor) return res.status(404).json({ error: "Donor not found" });
+  const v = await validateCustomFields("donor", req.user.orgId, req.body.values || {});
+  if (!v.ok) return res.status(422).json({ error: "some values were refused", errors: v.errors });
+  const merged = mergeCustomValues(donor.custom_fields, v.values);
+  await run(`UPDATE donors SET custom_fields=?::jsonb WHERE id=? AND org_id=?`, [JSON.stringify(merged), req.params.id, req.user.orgId]);
+  await cfEvent(req, req.user.orgId, "donor", "values_written", { entityId: req.params.id, detail: { keys: Object.keys(v.values) } });
+  res.json({ ok: true, customFields: merged });
+}));
+
+app.get("/gifts/:id/custom-fields", requireAuth, wrap(async (req, res) => {
+  if (!(await orgOwns("gifts", req.params.id, req.user.orgId))) return res.status(404).json({ error: "Gift not found" });
+  const [gift] = await query(`SELECT custom_fields FROM gifts WHERE id=? AND org_id=?`, [req.params.id, req.user.orgId]);
+  const vals = gift?.custom_fields || {};
+  const defs = await loadCfDefs("gift", req.user.orgId);
+  res.json(defs.map(d => ({ ...cfDefOut(d), value: vals[d.key] !== undefined ? vals[d.key] : null })));
+}));
+
+app.put("/gifts/:id/custom-fields", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  const [gift] = await query(`SELECT id, custom_fields FROM gifts WHERE id=? AND org_id=?`, [req.params.id, req.user.orgId]);
+  if (!gift) return res.status(404).json({ error: "Gift not found" });
+  const v = await validateCustomFields("gift", req.user.orgId, req.body.values || {});
+  if (!v.ok) return res.status(422).json({ error: "some values were refused", errors: v.errors });
+  const merged = mergeCustomValues(gift.custom_fields, v.values);
+  await run(`UPDATE gifts SET custom_fields=?::jsonb WHERE id=? AND org_id=?`, [JSON.stringify(merged), req.params.id, req.user.orgId]);
+  await cfEvent(req, req.user.orgId, "gift", "values_written", { entityId: req.params.id, detail: { keys: Object.keys(v.values) } });
+  res.json({ ok: true, customFields: merged });
 }));
 
 // ── Recurring gift recovery: dunning engine ─────────────────────────────────
@@ -17583,6 +17705,8 @@ app.delete("/admin/orgs/:id", requireAuth, requireSuperAdmin, wrap(async (req, r
   await run("DELETE FROM sequences WHERE org_id=?", [orgId]).catch(() => {});
   await run("DELETE FROM custom_field_values WHERE org_id=?", [orgId]).catch(() => {});
   await run("DELETE FROM custom_fields WHERE org_id=?", [orgId]).catch(() => {});
+  await run("DELETE FROM custom_field_events WHERE org_id=?", [orgId]).catch(() => {});
+  await run("DELETE FROM custom_field_defs WHERE org_id=?", [orgId]).catch(() => {});
   await run("DELETE FROM fin_audit_log WHERE org_id=?", [orgId]).catch(() => {});
   await run("DELETE FROM budgets WHERE org_id=?", [orgId]).catch(() => {});
   await run("DELETE FROM fin_transactions WHERE org_id=?", [orgId]).catch(() => {});
@@ -18303,13 +18427,17 @@ app.get("/org/export", requireAuth, wrap(async (req, res) => {
   const orgSlug = (orgRows[0]?.org_slug || orgId).replace(/[^a-z0-9-]/gi, "-").toLowerCase();
   const date = orgToday(await orgTz(orgId)); // ORG_TZ_SEAM_OK — filename carries the org's civil date
 
-  const cfDefs = await query("SELECT id, label FROM custom_fields WHERE org_id=? ORDER BY field_order", [orgId]);
-  const cfVals = await query("SELECT donor_id, field_id, value FROM custom_field_values WHERE org_id=?", [orgId]);
-  const cfByDonor = {};
-  for (const v of cfVals) {
-    if (!cfByDonor[v.donor_id]) cfByDonor[v.donor_id] = {};
-    cfByDonor[v.donor_id][v.field_id] = v.value;
-  }
+  // BUILD-78: defs are the authority; values ride the rows (JSONB, keyed by
+  // the immutable field key — a rename never changes what an export means).
+  // Archived fields are excluded and their stored values untouched (6.3).
+  const cfDonorDefs = await loadCfDefs("donor", orgId);
+  const cfGiftDefs = await loadCfDefs("gift", orgId);
+  const liveCf = (row, defs) => {
+    const live = new Set(defs.map(f => f.key));
+    const out = {};
+    for (const f of defs) out[f.key] = row.custom_fields && row.custom_fields[f.key] !== undefined && live.has(f.key) ? row.custom_fields[f.key] : null;
+    return out;
+  };
 
   const [donors, gifts, pledges, grants, txns, events, attendees, campaigns, interactions, volunteers, board, tasks] = await Promise.all([
     query("SELECT * FROM donors WHERE org_id=? AND deleted_at IS NULL ORDER BY name", [orgId]),
@@ -18326,17 +18454,18 @@ app.get("/org/export", requireAuth, wrap(async (req, res) => {
     query("SELECT t.*, d.name as donor_name FROM tasks t LEFT JOIN donors d ON d.id=t.donor_id WHERE t.org_id=? ORDER BY t.due", [orgId]),
   ]);
 
-  const donorsEnriched = donors.map(d => ({
-    ...d,
-    custom_fields: cfDefs.reduce((acc, f) => { acc[f.label] = cfByDonor[d.id]?.[f.id] ?? null; return acc; }, {}),
-  }));
+  const donorsEnriched = donors.map(d => ({ ...d, custom_fields: liveCf(d, cfDonorDefs) }));
+  const giftsEnriched = gifts.map(g => (g.custom_fields ? { ...g, custom_fields: liveCf(g, cfGiftDefs) } : g));
 
   res.setHeader("Content-Disposition", `attachment; filename="steward-export-${orgSlug}-${date}.json"`);
   res.json({
     exported_at: new Date().toISOString(),
     org: orgRows[0] || {},
+    custom_field_defs: [...cfDonorDefs, ...cfGiftDefs].map(f => ({
+      id: f.id, entity: f.entity, key: f.key, label: f.label, type: f.type, options: f.options, position: f.position,
+    })),
     donors: donorsEnriched,
-    gifts,
+    gifts: giftsEnriched,
     planned_gifts: pledges,
     grants,
     transactions: txns,
@@ -18384,13 +18513,11 @@ app.get("/org/export/csv", requireAuth, requireAdmin, wrap(async (req, res) => {
   const orgSlug = (orgRows[0]?.org_slug || orgId).replace(/[^a-z0-9-]/gi, "-").toLowerCase();
   const date = orgToday(await orgTz(orgId)); // ORG_TZ_SEAM_OK — filename carries the org's civil date
 
-  const cfDefs = await query("SELECT id, label FROM custom_fields WHERE org_id=? ORDER BY field_order", [orgId]);
-  const cfVals = await query("SELECT donor_id, field_id, value FROM custom_field_values WHERE org_id=?", [orgId]);
-  const cfByDonor = {};
-  for (const v of cfVals) {
-    if (!cfByDonor[v.donor_id]) cfByDonor[v.donor_id] = {};
-    cfByDonor[v.donor_id][v.field_id] = v.value;
-  }
+  // BUILD-78: custom columns come from the defs table (live fields only,
+  // headed with the current label) and the row JSONB, rendered per type.
+  const cfDonorDefs = await loadCfDefs("donor", orgId);
+  const cfGiftDefs = await loadCfDefs("gift", orgId);
+  const { renderCustomValue } = await cfShape();
 
   const [donors, gifts, interactions, grants, pledges, plannedGifts, recurring, givingPages, peerFundraisers, receipts] = await Promise.all([
     query("SELECT * FROM donors WHERE org_id=? AND deleted_at IS NULL ORDER BY name", [orgId]),
@@ -18445,7 +18572,7 @@ app.get("/org/export/csv", requireAuth, requireAdmin, wrap(async (req, res) => {
       ["Assigned to", "assigned_to_name"], ["Planned giving", "planned_giving"],
       ["Wealth score", "wealth_score"], ["Capacity tier", "capacity_tier"],
       ["Tags", r => joinTags(r.tags)], ["Notes", "notes"], ["Sample data", "is_sample"], ["Created", "created_at"],
-      ...cfDefs.map(f => [f.label, r => (cfByDonor[r.id] ? cfByDonor[r.id][f.id] : null)]),
+      ...cfDonorDefs.map(f => [f.label, r => renderCustomValue(f, (r.custom_fields || {})[f.key])]),
     ], donors),
     "gifts.csv": toCsv([
       ["Donor name", "donor_name"], ["Donor email", "donor_email"],
@@ -18453,6 +18580,7 @@ app.get("/org/export/csv", requireAuth, requireAdmin, wrap(async (req, res) => {
       ["Fund", "fund_name"], ["Campaign", "campaign_name"], ["Giving page", "giving_page_title"],
       ["Peer fundraiser", "peer_fundraiser_name"], ["Acknowledged", "acknowledgement_sent"],
       ["Notes", "notes"], ["Sample data", "is_sample"],
+      ...cfGiftDefs.map(f => [f.label, r => renderCustomValue(f, (r.custom_fields || {})[f.key])]),
     ], gifts),
     "interactions.csv": toCsv([
       ["Donor name", "donor_name"], ["Donor email", "donor_email"],

@@ -6,6 +6,7 @@ import UpgradeModal from "./UpgradeModal";
 import Uploader from "./Uploader";
 import { bestCampaignMatch } from "../lib/campaignMatch";
 import { dueBadge } from "../lib/taskDue";
+import { renderCustomValue } from "../lib/customFieldShape";
 
 class ErrorBoundary extends Component {
   constructor(props) { super(props); this.state = { error: null }; }
@@ -2619,6 +2620,8 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
   const [cfEditing,setCfEditing]=useState(null);
   const [cfEditVal,setCfEditVal]=useState("");
   const [cfSaved,setCfSaved]=useState(null);
+  const [cfShowAll,setCfShowAll]=useState(false);
+  const [cfError,setCfError]=useState("");
   useEffect(()=>{apiFetch(`/donors/${donor.id}/custom-fields`).then(rows=>setCfData(Array.isArray(rows)?rows:[])).catch(()=>{});},[donor.id]);
   const [donorEvents,setDonorEvents]=useState([]);
   useEffect(()=>{apiFetch(`/donors/${donor.id}/events`).then(rows=>setDonorEvents(Array.isArray(rows)?rows:[])).catch(()=>{});},[donor.id]);
@@ -4147,63 +4150,103 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
             </div>
           </div>,{title:"Email sequences",blurb:"Enroll this donor in an automated stewardship sequence. Part of the Team portfolio toolkit.",minHeight:120})}
 
-          {cfData.length>0&&<div>
+          {cfData.length>0&&(()=>{
+            // BUILD-78 5.1 — custom fields in position order, empty fields
+            // collapsed behind a show-all; every edit goes through the same
+            // validation seam as import and the API (a refused value names
+            // its reason, never silently stores something else).
+            const withValues=cfData.filter(f=>f.value!==null&&f.value!==undefined&&f.value!=="");
+            const shown=cfShowAll?cfData:withValues;
+            const hidden=cfData.length-withValues.length;
+            const editStr=f=>{
+              const v=f.value;
+              if(v===null||v===undefined)return "";
+              if(f.type==="money")return Number.isInteger(v)?(v/100).toFixed(2):String(v);
+              if(f.type==="checkbox")return v===true?"yes":v===false?"no":String(v);
+              if(f.type==="multi_select")return Array.isArray(v)?v.join("; "):String(v);
+              return String(v);
+            };
+            const saveCf=async f=>{
+              try{
+                const r=await apiFetch(`/donors/${donor.id}/custom-fields`,{method:"PUT",body:JSON.stringify({values:{[f.key]:cfEditVal}})});
+                setCfData(prev=>prev.map(x=>x.key===f.key?{...x,value:r.customFields[f.key]!==undefined?r.customFields[f.key]:null}:x));
+                setCfSaved(f.key);setTimeout(()=>setCfSaved(null),2000);
+                setCfEditing(null);setCfError("");onCfSaved?.();
+              }catch(e){
+                setCfError(e?.errors?.[0]?.error||e.message||"That value was refused");
+              }
+            };
+            return <div>
             <div style={{fontSize:10,fontWeight:800,textTransform:"uppercase",letterSpacing:"0.12em",color:"#8fa896",marginBottom:8}}>Custom Fields</div>
             <div style={{display:"flex",flexDirection:"column",gap:8}}>
-              {cfData.map(f=>(
-                <div key={f.fieldId} style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8}}>
-                  <div style={{fontSize:12,color:"#8fa896",fontWeight:600,minWidth:90,flexShrink:0}}>{f.label}{f.required&&<span style={{color:"#b8593f",marginLeft:2}}>*</span>}</div>
-                  {cfEditing===f.fieldId?(
+              {shown.map(f=>(
+                <div key={f.key} style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8}}>
+                  <div style={{fontSize:12,color:"#8fa896",fontWeight:600,minWidth:90,flexShrink:0}}>{f.label}</div>
+                  {cfEditing===f.key?(
                     <div style={{display:"flex",gap:6,flex:1}}>
-                      {f.fieldType==="checkbox"?(
+                      {f.type==="checkbox"?(
                         <select value={cfEditVal} onChange={e=>setCfEditVal(e.target.value)}
                           style={{flex:1,background:"#0f1a12",border:"1px solid #2d4a35",borderRadius:8,padding:"5px 8px",fontSize:12,color:"#f0ede6",outline:"none"}}>
                           <option value="">—</option>
-                          <option value="Yes">Yes</option>
-                          <option value="No">No</option>
+                          <option value="yes">Yes</option>
+                          <option value="no">No</option>
                         </select>
-                      ):f.fieldType==="dropdown"?(
+                      ):f.type==="select"?(
                         <select value={cfEditVal} onChange={e=>setCfEditVal(e.target.value)}
                           style={{flex:1,background:"#0f1a12",border:"1px solid #2d4a35",borderRadius:8,padding:"5px 8px",fontSize:12,color:"#f0ede6",outline:"none"}}>
                           <option value="">—</option>
                           {(f.options||[]).map(o=><option key={o} value={o}>{o}</option>)}
                         </select>
+                      ):f.type==="multi_select"?(
+                        <div style={{flex:1,display:"flex",flexWrap:"wrap",gap:5,background:"#0f1a12",border:"1px solid #2d4a35",borderRadius:8,padding:"5px 8px"}}>
+                          {(f.options||[]).map(o=>{
+                            const cur=cfEditVal?cfEditVal.split("; ").filter(Boolean):[];
+                            const on=cur.includes(o);
+                            return <button key={o} onClick={()=>{
+                              const next=on?cur.filter(x=>x!==o):[...cur,o];
+                              setCfEditVal(next.join("; "));
+                            }} style={{background:on?T.greenDk:"transparent",border:"1px solid #2d4a35",borderRadius:12,padding:"2px 8px",fontSize:11,color:on?"#f0ede6":"#8fa896",cursor:"pointer"}}>{o}</button>;
+                          })}
+                        </div>
+                      ):f.type==="long_text"?(
+                        <textarea value={cfEditVal} onChange={e=>setCfEditVal(e.target.value)} rows={3}
+                          style={{flex:1,background:"#0f1a12",border:"1px solid #2d4a35",borderRadius:8,padding:"5px 8px",fontSize:12,color:"#f0ede6",outline:"none",resize:"vertical"}}
+                          autoFocus/>
                       ):(
                         <input value={cfEditVal} onChange={e=>setCfEditVal(e.target.value)}
-                          type={f.fieldType==="number"?"number":f.fieldType==="date"?"date":"text"}
+                          type={f.type==="date"?"date":"text"}
+                          inputMode={f.type==="number"||f.type==="money"?"decimal":undefined}
                           style={{flex:1,background:"#0f1a12",border:"1px solid #2d4a35",borderRadius:8,padding:"5px 8px",fontSize:12,color:"#f0ede6",outline:"none"}}
-                          onKeyDown={async e=>{
-                            if(e.key==="Enter"){
-                              await apiFetch(`/donors/${donor.id}/custom-fields`,{method:"POST",body:JSON.stringify({fieldId:f.fieldId,value:cfEditVal})});
-                              setCfData(prev=>prev.map(x=>x.fieldId===f.fieldId?{...x,value:cfEditVal}:x));
-                              setCfSaved(f.fieldId);setTimeout(()=>setCfSaved(null),2000);
-                              setCfEditing(null);onCfSaved?.();
-                            }else if(e.key==="Escape"){setCfEditing(null);}
+                          onKeyDown={e=>{
+                            if(e.key==="Enter"){saveCf(f);}
+                            else if(e.key==="Escape"){setCfEditing(null);setCfError("");}
                           }}
                           autoFocus
                         />
                       )}
-                      <button onClick={async()=>{
-                        await apiFetch(`/donors/${donor.id}/custom-fields`,{method:"POST",body:JSON.stringify({fieldId:f.fieldId,value:cfEditVal})});
-                        setCfData(prev=>prev.map(x=>x.fieldId===f.fieldId?{...x,value:cfEditVal}:x));
-                        setCfSaved(f.fieldId);setTimeout(()=>setCfSaved(null),2000);
-                        setCfEditing(null);onCfSaved?.();
-                      }} style={{background:T.greenDk,border:"none",borderRadius:8,padding:"5px 10px",color:"#f0ede6",fontSize:11,fontWeight:700,cursor:"pointer"}}>Save</button>
-                      <button onClick={()=>setCfEditing(null)} style={{background:"transparent",border:"none",padding:"5px 8px",color:"#8fa896",fontSize:12,cursor:"pointer"}}>✕</button>
+                      <button onClick={()=>saveCf(f)} style={{background:T.greenDk,border:"none",borderRadius:8,padding:"5px 10px",color:"#f0ede6",fontSize:11,fontWeight:700,cursor:"pointer"}}>Save</button>
+                      <button onClick={()=>{setCfEditing(null);setCfError("");}} style={{background:"transparent",border:"none",padding:"5px 8px",color:"#8fa896",fontSize:12,cursor:"pointer"}}>✕</button>
                     </div>
                   ):(
                     <div style={{display:"flex",alignItems:"center",gap:6,flex:1,justifyContent:"flex-end"}}>
-                      <span style={{fontSize:12,color:f.value?"#f0ede6":"#8fa896",fontStyle:f.value?"normal":"italic"}}>
-                        {cfSaved===f.fieldId?"Saved ✓":f.value||"—"}
+                      <span style={{fontSize:12,color:(f.value!==null&&f.value!==undefined&&f.value!=="")?"#f0ede6":"#8fa896",fontStyle:(f.value!==null&&f.value!==undefined&&f.value!=="")?"normal":"italic",textAlign:"right",overflowWrap:"anywhere"}}>
+                        {cfSaved===f.key?"Saved ✓":(renderCustomValue(f,f.value)||"—")}
                       </span>
-                      <button onClick={()=>{setCfEditing(f.fieldId);setCfEditVal(f.value||"");}}
+                      <button onClick={()=>{setCfEditing(f.key);setCfEditVal(editStr(f));setCfError("");}}
                         style={{background:"#1a2e1f",border:"1px solid #2d4a35",borderRadius:6,padding:"3px 8px",fontSize:10,color:"#10b981",cursor:"pointer"}}>Edit</button>
                     </div>
                   )}
                 </div>
               ))}
+              {cfError&&<div style={{fontSize:11.5,color:"#e8a08c"}}>{cfError}</div>}
+              {hidden>0&&(
+                <button onClick={()=>setCfShowAll(v=>!v)} style={{background:"none",border:"none",padding:0,fontSize:11,fontWeight:600,color:"#8fa896",cursor:"pointer",textAlign:"left"}}>
+                  {cfShowAll?"Hide empty fields":`Show all ${cfData.length} fields (${hidden} empty)`}
+                </button>
+              )}
             </div>
-          </div>}
+            </div>;
+          })()}
 
           {donorEvents.length>0&&<div>
             <div style={{fontSize:10,fontWeight:800,textTransform:"uppercase",letterSpacing:"0.12em",color:"#8fa896",marginBottom:8}}>Events</div>
@@ -5050,7 +5093,7 @@ function FilterBar({filters,onChange,customFields,cfFilters,onCfChange}){
         <div style={{borderTop:"1px solid "+T.bg3,paddingTop:12,display:"flex",flexDirection:"column",gap:10}}>
           <span style={{fontSize:11,fontWeight:700,color:T.ink3,textTransform:"uppercase",letterSpacing:".06em"}}>Custom Fields</span>
           {customFields.map(f=>{
-            if(f.field_type==="dropdown"){
+            if(f.type==="select"||f.type==="multi_select"){
               const sel=cfFilters[f.id]||[];
               return(
                 <div key={f.id} className="filter-bar-row" style={row}>
@@ -5063,7 +5106,7 @@ function FilterBar({filters,onChange,customFields,cfFilters,onCfChange}){
                 </div>
               );
             }
-            if(f.field_type==="checkbox"){
+            if(f.type==="checkbox"){
               const val=cfFilters[f.id]||"";
               return(
                 <div key={f.id} className="filter-bar-row" style={row}>
@@ -5076,7 +5119,7 @@ function FilterBar({filters,onChange,customFields,cfFilters,onCfChange}){
                 </div>
               );
             }
-            if(f.field_type==="date"){
+            if(f.type==="date"){
               const val=cfFilters[f.id]||{from:"",to:""};
               return(
                 <div key={f.id} className="filter-bar-row" style={row}>
@@ -5091,7 +5134,7 @@ function FilterBar({filters,onChange,customFields,cfFilters,onCfChange}){
             return(
               <div key={f.id} className="filter-bar-row" style={row}>
                 <span style={lbl}>{f.label}</span>
-                <input value={val} onChange={e=>setCf(f.id,e.target.value)} type={f.field_type==="number"?"number":"text"} placeholder={f.field_type==="number"?"Any value":"Search…"} style={{...inp,minWidth:160}}/>
+                <input value={val} onChange={e=>setCf(f.id,e.target.value)} type={f.type==="number"||f.type==="money"?"number":"text"} placeholder={f.type==="number"||f.type==="money"?"Any value":"Search…"} style={{...inp,minWidth:160}}/>
               </div>
             );
           })}
@@ -5337,17 +5380,25 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
       if(typeof fval==="object"&&!Array.isArray(fval)&&!fval.from&&!fval.to)continue;
       const f=customFields.find(x=>x.id===fieldId);
       if(!f)continue;
-      const dv=(cfValues[d.id]?.[fieldId]||"").toLowerCase();
-      if(f.field_type==="dropdown"){
+      // BUILD-78: values are typed and keyed by the immutable field KEY.
+      const raw=cfValues[d.id]?.[f.key];
+      if(f.type==="select"){
         if(fval.length===0)continue;
-        if(!fval.some(opt=>dv===opt.toLowerCase()))return false;
-      }else if(f.field_type==="checkbox"){
-        if(fval&&dv!==fval.toLowerCase())return false;
-      }else if(f.field_type==="date"){
-        if(fval.from&&dv<fval.from)return false;
-        if(fval.to&&dv>fval.to)return false;
+        if(!fval.some(opt=>String(raw??"").toLowerCase()===opt.toLowerCase()))return false;
+      }else if(f.type==="multi_select"){
+        if(fval.length===0)continue;
+        const have=Array.isArray(raw)?raw.map(v=>String(v).toLowerCase()):[String(raw??"").toLowerCase()];
+        if(!fval.some(opt=>have.includes(opt.toLowerCase())))return false;
+      }else if(f.type==="checkbox"){
+        if(fval==="Yes"&&raw!==true)return false;
+        if(fval==="No"&&raw!==false)return false;
+      }else if(f.type==="date"){
+        const dv=String(raw??"");
+        if(fval.from&&(!dv||dv<fval.from))return false;
+        if(fval.to&&(!dv||dv>fval.to))return false;
       }else{
-        if(!dv.includes(fval.toLowerCase()))return false;
+        const dv=(f.type==="money"&&Number.isInteger(raw)?(raw/100).toFixed(2):String(raw??"")).toLowerCase();
+        if(!dv.includes(String(fval).toLowerCase()))return false;
       }
     }
     return true;
@@ -5366,11 +5417,11 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
     apiFetch("/org/sample-data-status").then(setSampleStatus).catch(()=>{});
     apiFetch("/org/team").then(setOrgTeam).catch(()=>{});
     loadOfficers();
-    apiFetch("/custom-fields").then(rows=>setCustomFields(Array.isArray(rows)?rows:[])).catch(()=>{});
+    apiFetch("/custom-fields?entity=donor").then(rows=>setCustomFields(Array.isArray(rows)?rows:[])).catch(()=>{});
     apiFetch("/donors/custom-field-values/all").then(rows=>{
       if(!Array.isArray(rows))return;
       const map={};
-      rows.forEach(r=>{if(!map[r.donorId])map[r.donorId]={};map[r.donorId][r.fieldId]=r.value;});
+      rows.forEach(r=>{map[r.donorId]=r.values||{};});
       setCfValues(map);
     }).catch(()=>{});
   },[]);
@@ -5445,7 +5496,7 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
       const rows=await apiFetch("/donors/custom-field-values/all");
       if(!Array.isArray(rows))return;
       const map={};
-      rows.forEach(r=>{if(!map[r.donorId])map[r.donorId]={};map[r.donorId][r.fieldId]=r.value;});
+      rows.forEach(r=>{map[r.donorId]=r.values||{};});
       setCfValues(map);
     }catch(e){console.error(e);}
   };
@@ -5627,7 +5678,7 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
           if(Array.isArray(fval))label+=fval.join(", ");
           else if(typeof fval==="object")label+=`${fval.from||"any"} → ${fval.to||"any"}`;
           else label+=fval;
-          pills.push({id:"cf_"+fieldId,label,rm:()=>setCfFilters(p=>({...p,[fieldId]:f.field_type==="dropdown"?[]:f.field_type==="date"?{from:"",to:""}:""}))});
+          pills.push({id:"cf_"+fieldId,label,rm:()=>setCfFilters(p=>({...p,[fieldId]:(f.type==="select"||f.type==="multi_select")?[]:f.type==="date"?{from:"",to:""}:""}))});
         });
         const clearAll=()=>{setFilters({tiers:[],stages:[],pattern:"",geo:"",giftFrom:"",giftTo:"",totalMin:"",totalMax:""});setCfFilters({});};
         return<>

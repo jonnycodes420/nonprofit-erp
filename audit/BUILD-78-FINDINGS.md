@@ -76,3 +76,47 @@ resolved; the newer spec wins each one.
   Part 2 family header is ever offered as one.
 
 (Findings for Parts 1+ accrue below as the build proceeds.)
+
+## PART 1 — THE DATA MODEL (shipped)
+
+- **One implementation of the type rules**: `client/src/lib/customFieldShape.js`
+  (ESM, pure) is shared byte-for-byte by the client, the server seam
+  (`customFields.js` — dynamic import, CJS↔ESM) and the suites. Money coerces
+  to integer CENTS in exactly one place: the server seam, through money.js
+  `toCents`. The client module returns dollars; only the seam converts.
+- **Coercion decisions recorded per 1.3**: number/money use `normalizeMoney`
+  (BUILD-73 separators; the "n/a"-family reads as blank, not an error — a
+  deliberate carry of the BUILD-77 Part 3 blank-vs-unparseable distinction);
+  date uses `normalizeDate` (nine formats, calendar-validated, no fallback);
+  checkbox truthy {y,yes,true,t,1,x,checked} / falsy {n,no,false,f,0,unchecked},
+  anything else an error; select/multi-select match options after trim+case-fold
+  and store the canonical option string.
+- **The 40-field cap counts LIVE fields.** Archiving frees a slot; restore is
+  never blocked by the cap (restore must always work — a restore that can fail
+  makes archive a delete with extra steps). Decision, recorded.
+- **Select options are add-only** on edit: removing (or renaming) an option
+  would orphan every stored value holding it. An honest option migration is
+  future work; the error says why.
+- **Migration preserves, never refuses**: legacy EAV values that coerce
+  cleanly land typed; ones that do not are stored as the raw string
+  (`keptRaw` counted). The refusal rule is for NEW writes, not for data the
+  org already owns. Flag-guarded at boot (`schema_flags.b78_cf_jsonb_migration`);
+  failure is loud, does not mark the flag, and retries next boot.
+- **`show_in_directory` is carried on the new defs table but no client surface
+  reads it today** (the BUILD-76 D.1 claim that a Directory column opt-in
+  "exists" was aspirational — nothing in client/src reads the column). Carried
+  so nothing is lost; not wired further, per 5.4's display-only scope.
+- **The Part 7 "fails by design" red never fired**: the tenant matrix resolves
+  new route params from the LIVE router walk plus the segment map, and
+  `custom-fields` was already a mapped segment — so the six new routes were
+  cross-probed automatically on the first run (43/43). That is the generated
+  machinery doing exactly what B.4 built it for; noted here because the spec
+  predicted a red that the generator made unnecessary. route-inventory.json
+  regenerated and committed.
+- Legacy EAV reassignment kept inside donor merge (harmless no-op post-
+  migration) PLUS the JSONB fold: secondary's keys fill in, primary wins
+  conflicts — donor-merge.test.js §now asserts the JSONB behavior.
+- tests/custom-fields.test.js (58, in run-all): the type matrix through the
+  seam, limits as clear messages, key/type immutability, archive/restore by
+  count AND value, no delete route, the Part 0 cross-org red now green, the
+  migration, and Part 9 events with actor identities.
