@@ -1,0 +1,3 @@
+POST status: 200 body: {"ok":true}
+rows written with org B's field_id: 1 {"org_id":"org_b78reproA","donor_id":"d_b78reproA","field_id":"cf_b78reproB","value":"written across the wall"}
+REPRODUCED: cross-org field_id reference was ACCEPTED and the row was written.
