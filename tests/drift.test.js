@@ -66,7 +66,10 @@ function seasonalCurrentDates() {
   const now = new Date();
   const y = now.getUTCFullYear(), m = now.getUTCMonth() + 1;
   const dates = [];
-  for (let i = 4; i >= 0; i--) dates.push(`${y - i}-${String(m).padStart(2, "0")}-05`);
+  // day 01, not 05: a current-month gift dated even one day ahead of today
+  // is now a future-date ERROR (BUILD-77 Part 2c), so the in-window donor's
+  // latest gift must already have happened whatever today's day-of-month is.
+  for (let i = 4; i >= 0; i--) dates.push(`${y - i}-${String(m).padStart(2, "0")}-01`);
   return dates;
 }
 const quarterlyEnding = (endDaysAgo, n = 5) => {
@@ -447,9 +450,9 @@ const settle = (ms = 400) => new Promise(r => setTimeout(r, ms));
   const trans = await getDrift(tok, "?includeMedium=1");
   const [donorCount] = await q(`SELECT COUNT(*)::int n FROM donors WHERE org_id=$1 AND deleted_at IS NULL`, [ORG]);
   ok("evaluated == every non-deleted donor", trans.evaluated === donorCount.n, { evaluated: trans.evaluated, donors: donorCount.n });
-  ok("the exclusion tally names each family: 2 deceased, 1 do-not-solicit, 1 active recurring, 1 open pledge",
-    trans.excluded.deceased === 2 && trans.excluded.doNotSolicit === 1
-    && trans.excluded.activeRecurring === 1 && trans.excluded.openPledge === 1, trans.excluded);
+  ok("the exclusion tally names each family: 2 deceased, 1 do-not-contact, 1 active recurring, 1 pledge cadence",
+    trans.excluded.deceased === 2 && trans.excluded.doNotContact === 1
+    && trans.excluded.activeRecurring === 1 && trans.excluded.pledgeCadence === 1, trans.excluded);
   ok("single-gift donors are counted (no pattern yet)", trans.excluded.singleGift >= 1, trans.excluded.singleGift);
   const exSum = Object.values(trans.excluded).reduce((a, b) => a + b, 0);
   ok("the arithmetic closes: evaluated = onPattern + drifting + lapsed + excluded",

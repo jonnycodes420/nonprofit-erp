@@ -1909,13 +1909,28 @@ app.post("/admin/debug/sentry-test", requireAuth, requireAdmin, wrap(async (req,
 
 // ── Gift date normalization ────────────────────────────────────────────────
 // Enforces ISO YYYY-MM-DD so MAX(date) string comparison = chronological order.
+// BUILD-77 Part 2a — NO date default, anywhere. This used to fall back to
+// today() twice (empty → today, unparseable → today, via the
+// platform-dependent native Date parser in between): a real file's
+// "03-16-2020" failed in the BROWSER's parser upstream, fell through to
+// now(), and turned a drifting seasonal donor into "Gave $25,000 on
+// September 4 — not yet thanked" (September 4 because new Date() is UTC —
+// tomorrow's date every evening, while the page header still said the
+// org-local September 3). A gift with an unparseable date is an ERROR with
+// its line number, never a gift dated today. The CLIENT parses the messy
+// formats (importShape.normalizeDate, nine explicit formats, no native
+// fallback); the server accepts calendar-valid ISO and refuses everything
+// else — refusal is visible, a default is not.
 function normalizeGiftDate(raw) {
-  if (!raw) return new Date().toISOString().split("T")[0];
+  if (!raw) return null;
   const s = String(raw).trim();
-  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;          // already ISO
-  const d = new Date(s);
-  if (!isNaN(d)) return d.toISOString().split("T")[0];   // parse → ISO
-  return new Date().toISOString().split("T")[0];          // fallback to today
+  const m = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!m) return null;
+  const y = +m[1], mo = +m[2], d = +m[3];
+  if (mo < 1 || mo > 12 || d < 1 || y < 1900 || y > 2100) return null;
+  const leap = (y % 4 === 0 && y % 100 !== 0) || y % 400 === 0;
+  const dim = [31, leap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31][mo - 1];
+  return d <= dim ? s : null;
 }
 
 // B2 (BUILD-26) — tidy a name arriving from a messy spreadsheet WITHOUT destroying
@@ -2168,6 +2183,7 @@ async function autoLapseOrg(orgId) {
   const rows = await query(
     `SELECT d.id, d.stage, d.last_gift_date FROM donors d
       WHERE d.org_id=? AND d.deleted_at IS NULL
+        AND d.imported_sustainer IS NOT TRUE
         AND d.gift_count > 0
         AND d.last_gift_date IS NOT NULL AND d.last_gift_date <> ''
         AND d.last_gift_date::date < ?::date
@@ -3483,7 +3499,9 @@ app.get("/donors/summaries", requireAuth, wrap(async (req, res) => {
                   last_gift_amount, gift_count, assigned_to, assigned_to_name,
                   pending_assignee_invite_id, pending_assignee_name,
                   city, state, zip, tags, wealth_score, capacity_tier, planned_giving,
-                  employer, stripe_subscription_status
+                  employer, stripe_subscription_status,
+                  deceased, do_not_contact, do_not_solicit, do_not_mail, do_not_email,
+                  imported_sustainer, imported_sustainer_amount, imported_sustainer_last_gift
            FROM donors WHERE org_id = ? AND deleted_at IS NULL ORDER BY total_giving DESC, id`, [req.user.orgId]),
     query("SELECT donor_id, MAX(date) AS last_touchpoint FROM interactions WHERE org_id = ? GROUP BY donor_id", [req.user.orgId]),
     computeDriftForDonors(req.user.orgId),   // BUILD-76 — the shared-state views badge from the same computation
@@ -4212,9 +4230,17 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(as
         a.pendingInviteId, a.pendingName,   // pending assignment held for an invited-but-not-accepted officer
         // BUILD-58 Part 2: deceased / do-not-contact — never silently discarded.
         d.deceased === true || d.deceased === "true",
-        d.doNotContact === true || d.doNotContact === "true"
+        d.doNotContact === true || d.doNotContact === "true",
+        // BUILD-77 Part 1: the flag FAMILY + address/zip + the sustainer state
+        // — scanned from free text by the importer, confirmed by a human on
+        // the summary's "we flagged these" list.
+        d.doNotSolicit === true, d.doNotMail === true, d.doNotEmail === true,
+        d.deceasedDate || null, d.address || null, d.zip || null,
+        d.importedSustainer === true,
+        d.importedSustainerAmount != null ? toDollars(toCents(d.importedSustainerAmount) || 0) : null,
+        d.importedSustainerLastGift || null
       );
-      return "(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)";
+      return "(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)";
     });
     // SAVEPOINT, not a nested transaction: we are already inside the request's
     // one transaction, so a failed batch must be rolled back to a point rather
@@ -4223,7 +4249,9 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(as
       `INSERT INTO donors
          (id,org_id,name,email,phone,status,stage,total_giving,last_gift_amount,
           last_gift_date,gift_count,tags,notes,city,state,assigned_to,assigned_to_name,
-          pending_assignee_invite_id,pending_assignee_name,deceased,do_not_contact)
+          pending_assignee_invite_id,pending_assignee_name,deceased,do_not_contact,
+          do_not_solicit,do_not_mail,do_not_email,deceased_date,address,zip,
+          imported_sustainer,imported_sustainer_amount,imported_sustainer_last_gift)
        VALUES ${tuples.join(",")}`,
       params
     ));
@@ -4252,6 +4280,7 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(as
   // BUILD-72 Part 1 — every row announces itself to the ledger BEFORE any
   // routing decision, then lands in exactly one bucket. There is no `continue`
   // in this loop that does not first record where the row went.
+  const importToday = orgToday(await orgTz(orgId));   // ORG_TZ_SEAM_OK — hoisted once for the future-date policy below
   for (let gi = 0; gi < gifts.length; gi++) {
     const g = gifts[gi];
     // BUILD-73 Part 2 — parsed to integer cents at the edge, stored exactly.
@@ -4268,9 +4297,14 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(as
     const donorId = indexToId[g.donorIndex];
     if (!donorId) { ledger.errored("donor_row_unusable", amt); continue; }
     if (failedIds.has(donorId)) { ledger.errored("donor_batch_failed", amt); continue; }
-    if (amt <= 0) { ledger.skipped("non_positive_amount", amt); continue; }
+    // BUILD-77 Part 3c — a NEGATIVE amount is a refund/adjustment row: it
+    // imports as a negative gift (reducing the dollar total, not the row
+    // count) so the donor's net lifetime is true. Only exact zero skips.
+    if (amt === 0) { ledger.skipped("zero_amount", amt); continue; }
 
     const date = normalizeGiftDate(g.date);
+    if (!date) { ledger.errored("unparseable_or_missing_date", amt); continue; }
+    if (date > importToday) { ledger.errored("future_date", amt); continue; }   // Part 2c policy: a gift is a thing that happened
     const rowKey = `${donorId}|${date}|${amt}`;
     // The user's explicit deselection from the pre-commit review — the ONLY way
     // a row is dropped on purpose, and it is counted as such.
@@ -5047,6 +5081,7 @@ app.post("/donors/:id/gifts", requireAuth, checkWriteAccess, wrap(async (req, re
 
   const giftId = "g_" + uuid().slice(0, 8);
   const giftDate = normalizeGiftDate(date);              // enforce ISO YYYY-MM-DD
+  if (!giftDate) return res.status(400).json({ error: "A valid gift date (YYYY-MM-DD) is required — an unparseable date is an error, never today's date." });
   // BUILD-73 Part 2 — the money seam. The comment that used to sit here said
   // "INTEGER column", which stopped being true at the cover-fees migration and
   // is the likeliest reason the rounding outlived its justification.
@@ -5198,6 +5233,7 @@ app.put("/gifts/:id", requireAuth, wrap(async (req, res) => {
     catch (e) { return res.status(400).json({ error: e.message, code: e.code }); }
   }
   const newDate = date ? normalizeGiftDate(date) : g.date;                       // enforce ISO
+  if (date && !newDate) return res.status(400).json({ error: "A valid gift date (YYYY-MM-DD) is required — an unparseable date is an error, never today's date." });
   // BUILD-27 concurrency (concurrency2 "torn write" fix): serialize this gift's
   // edit → donor-recalc → ledger-stamp trio under a per-gift advisory lock, the
   // same primitive the import/webhook-donor dedup paths use. recalcDonorSummary
@@ -6109,8 +6145,9 @@ app.post("/gifts/import-history", requireAuth, checkWriteAccess, wrapImport(asyn
     ledger.saw(amt, 1, rawAmt);
     roundingAdjustment += round2(rawAmt - amt);
     if (!g.donorId || !validDonorIds.has(g.donorId)) { invalid++; ledger.errored("donor_not_in_org", amt); continue; }
-    if (amt <= 0) { invalid++; ledger.skipped("non_positive_amount", amt); continue; }
+    if (amt === 0) { invalid++; ledger.skipped("zero_amount", amt); continue; }
     const date = normalizeGiftDate(g.date);
+    if (!date) { invalid++; ledger.errored("unparseable_or_missing_date", amt); continue; }
     const externalId = (g.externalId || g.external_id || "").toString().trim().slice(0, 128) || null;
     const rowKey = `${g.donorId}|${date}|${amt}`;
     // The ONLY deliberate drop: the user deselected this row in the review.
@@ -8036,7 +8073,8 @@ app.get("/dashboard/today", requireAuth, wrap(async (req, res) => {
            MAX(i.date) AS last_contact
     FROM donors d
     LEFT JOIN interactions i ON i.donor_id = d.id AND i.type != 'email_open'
-    WHERE d.org_id = ? AND d.deleted_at IS NULL AND d.stage NOT IN ('prospect','lapsed') ${scopeClause}
+    WHERE d.org_id = ? AND d.deleted_at IS NULL AND d.stage NOT IN ('prospect','lapsed')
+      AND ${solicitableSql("d")} ${scopeClause}
     GROUP BY d.id, d.name, d.total_giving, d.last_gift_date, d.last_gift_amount, d.stage
     HAVING MAX(i.date) < ? OR MAX(i.date) IS NULL
     ORDER BY COALESCE(d.total_giving, 0) DESC
@@ -8046,7 +8084,9 @@ app.get("/dashboard/today", requireAuth, wrap(async (req, res) => {
     query(`
     SELECT id, name, total_giving, last_gift_date
     FROM donors d
-    WHERE d.org_id = ? AND d.deleted_at IS NULL AND d.stage = 'lapsed' ${scopeClause}
+    WHERE d.org_id = ? AND d.deleted_at IS NULL AND d.stage = 'lapsed'
+      AND ${solicitableSql("d")}
+      AND d.imported_sustainer IS NOT TRUE ${scopeClause}
     ORDER BY total_giving DESC
     LIMIT 5
   `, [orgId, ...scopeParams]),
@@ -8057,6 +8097,7 @@ app.get("/dashboard/today", requireAuth, wrap(async (req, res) => {
     JOIN donors d ON d.id = g.donor_id
     WHERE d.org_id = ?
       AND (g.acknowledgement_sent = false OR g.acknowledgement_sent IS NULL)
+      AND d.deceased IS NOT TRUE
       AND g.date >= ? ${scopeClause}
     ORDER BY g.amount DESC
     LIMIT 5
@@ -8071,6 +8112,7 @@ app.get("/dashboard/today", requireAuth, wrap(async (req, res) => {
         AND g.amount >= 250
         AND (g.acknowledgement_sent = false OR g.acknowledgement_sent IS NULL)
         AND (g.is_sample IS NOT TRUE)
+        AND d.deceased IS NOT TRUE
         AND g.date >= ? ${scopeClause}
       ORDER BY g.amount DESC
       LIMIT 5
@@ -8149,7 +8191,8 @@ app.get("/dashboard/today", requireAuth, wrap(async (req, res) => {
     query(`
     SELECT d.id, d.name, d.employer, d.total_giving, d.last_gift_amount, d.last_gift_date
     FROM donors d
-    WHERE d.org_id = ? AND d.deleted_at IS NULL AND d.employer IS NOT NULL AND d.employer <> '' AND d.last_gift_date >= ? ${scopeClause}
+    WHERE d.org_id = ? AND d.deleted_at IS NULL AND d.employer IS NOT NULL AND d.employer <> ''
+      AND ${solicitableSql("d")} AND d.last_gift_date >= ? ${scopeClause}
     ORDER BY d.last_gift_date DESC
     LIMIT 30
   `, [orgId, ninetyDaysAgo, ...scopeParams]),
@@ -8402,14 +8445,16 @@ app.get("/drift", requireAuth, wrap(async (req, res) => {
   // name what was checked and who was excluded and why, or a healthy file
   // and a silently failed import read identically. Tallied from the same
   // map every other figure reads.
-  const excludedTally = { singleGift: 0, activeRecurring: 0, deceased: 0, doNotSolicit: 0, openPledge: 0 };
+  const excludedTally = { singleGift: 0, activeRecurring: 0, deceased: 0, doNotContact: 0, doNotSolicit: 0, pledgeCadence: 0, unlinkedSustainer: 0 };
   let onPattern = 0;
   for (const a of map.values()) {
     if (a.state === "excluded") {
       if (a.excludedReason === "deceased") excludedTally.deceased++;
-      else if (a.excludedReason === "do_not_contact") excludedTally.doNotSolicit++;
+      else if (a.excludedReason === "do_not_contact") excludedTally.doNotContact++;
+      else if (a.excludedReason === "do_not_solicit") excludedTally.doNotSolicit++;
       else if (a.excludedReason === "active_recurring") excludedTally.activeRecurring++;
-      else if (a.excludedReason === "open_pledge") excludedTally.openPledge++;
+      else if (a.excludedReason === "unlinked_sustainer") excludedTally.unlinkedSustainer++;
+      else if (a.excludedReason === "pledge_cadence") excludedTally.pledgeCadence++;
     } else if (a.state === "not_eligible") excludedTally.singleGift++;
     else if (a.state === "ok") onPattern++;
   }
@@ -13516,6 +13561,7 @@ async function computeMilestoneCandidates(orgId) {
   const recentGiftDonors = await query(
     `SELECT id, total_giving, last_gift_amount FROM donors
      WHERE org_id = ? AND deleted_at IS NULL AND email IS NOT NULL AND email != ''
+       AND deceased IS NOT TRUE AND do_not_contact IS NOT TRUE
        AND last_gift_date IS NOT NULL AND last_gift_date::date >= NOW() - INTERVAL '2 days'`,
     [orgId]
   );
@@ -13533,7 +13579,8 @@ async function computeMilestoneCandidates(orgId) {
 
   const anniversaryDonors = await query(
     `SELECT id, first_gift_date FROM donors
-     WHERE org_id = ? AND deleted_at IS NULL AND email IS NOT NULL AND email != '' AND first_gift_date IS NOT NULL`,
+     WHERE org_id = ? AND deleted_at IS NULL AND email IS NOT NULL AND email != ''
+       AND deceased IS NOT TRUE AND do_not_contact IS NOT TRUE AND first_gift_date IS NOT NULL`,
     [orgId]
   );
   // ORG_TZ_SEAM_OK (BUILD-75 A.5) — anniversary math is CIVIL-date arithmetic
@@ -13572,10 +13619,12 @@ async function computeMilestoneCandidates(orgId) {
 async function computeAtRiskCandidates(orgId) {
   return query(
     `SELECT id, name, email, total_giving, last_gift_date, last_gift_amount
-     FROM donors
+     FROM donors d
      WHERE org_id = ? AND deleted_at IS NULL
        AND stage NOT IN ('prospect', 'lapsed')
        AND email IS NOT NULL AND email != ''
+       AND ${solicitableSql("d")}
+       AND d.imported_sustainer IS NOT TRUE
        AND last_gift_date IS NOT NULL AND last_gift_date::date < NOW() - INTERVAL '300 days'
        AND total_giving >= 5000`,
     [orgId]
@@ -13603,18 +13652,25 @@ async function computeDriftForDonors(orgId, { donorIds = null } = {}) {
   const idFilter = donorIds ? " AND d.id = ANY(?)" : "";
   const idParams = donorIds ? [donorIds] : [];
   const [donors, giftAgg, recurringRows, pledgeRows, contactRows] = await Promise.all([
-    query(`SELECT d.id, d.name, d.total_giving, d.deceased, d.do_not_contact,
+    query(`SELECT d.id, d.name, d.total_giving, d.deceased, d.do_not_contact, d.do_not_solicit,
+                  d.imported_sustainer,
                   d.assigned_to, d.assigned_to_name, d.stripe_subscription_status,
                   d.created_at::date::text AS created_date
              FROM donors d WHERE d.org_id = ? AND d.deleted_at IS NULL${idFilter}`, [orgId, ...idParams]),
     // One compact row per donor — dates+amounts as parallel arrays, so the
-    // whole org's cadence math is a single round trip, not an N+1.
+    // whole org's cadence math is a single round trip, not an N+1. The
+    // pledge marker (BUILD-77 Part 1d): a gift whose note marks it a
+    // scheduled pledge payment — or that pays a pledge row — inside the
+    // trailing 24 months means the donor's cadence is CONTRACTUAL, not
+    // voluntary, and drift has nothing to say about it.
     query(`SELECT g.donor_id,
                   array_agg(g.date::text ORDER BY g.date) AS dates,
-                  array_agg(g.amount ORDER BY g.date) AS amounts
+                  array_agg(g.amount ORDER BY g.date) AS amounts,
+                  bool_or((g.notes ~* 'pledge (payment|installment)' OR g.pledge_id IS NOT NULL)
+                          AND g.date::date >= ?::date - INTERVAL '730 days') AS pledge_recent
              FROM gifts g JOIN donors d ON d.id = g.donor_id
             WHERE g.org_id = ? AND d.deleted_at IS NULL${idFilter}
-            GROUP BY g.donor_id`, [orgId, ...idParams]),
+            GROUP BY g.donor_id`, [today, orgId, ...idParams]),
     // Every status that means "this donor is ON a subscription": active,
     // failing (past_due/recovering — the failed-payment path owns those),
     // recovered (billing again), and paused (a deliberate, known state with
@@ -13636,11 +13692,14 @@ async function computeDriftForDonors(orgId, { donorIds = null } = {}) {
 
   const map = new Map();
   for (const d of donors) {
+    const agg0 = giftsByDonor.get(d.id);
     let excludedReason = null;
     if (d.deceased) excludedReason = "deceased";
     else if (d.do_not_contact) excludedReason = "do_not_contact";
+    else if (d.do_not_solicit) excludedReason = "do_not_solicit";           // BUILD-77 — an ask list may never carry a no-ask donor
     else if (onSubscription.has(d.id) || d.stripe_subscription_status === "active") excludedReason = "active_recurring";
-    else if (onPledge.has(d.id)) excludedReason = "open_pledge";
+    else if (d.imported_sustainer) excludedReason = "unlinked_sustainer";  // BUILD-77 Part 5 — their card stopped, they did not; the recurring surface owns them
+    else if (onPledge.has(d.id) || (agg0 && agg0.pledge_recent)) excludedReason = "pledge_cadence";
     if (excludedReason) {
       map.set(d.id, { state: "excluded", excludedReason, donorId: d.id });
       continue;
@@ -14056,17 +14115,17 @@ async function autoEnroll() {
       let donors = [];
       if (seq.trigger === "lapsed_90") {
         donors = await query(
-          `SELECT id FROM donors WHERE org_id = ? AND stage = 'lapsed' AND deleted_at IS NULL AND last_gift_date IS NOT NULL AND last_gift_date::date < NOW() - INTERVAL '90 days'`,
+          `SELECT id FROM donors d WHERE org_id = ? AND stage = 'lapsed' AND deleted_at IS NULL AND ${solicitableSql("d")} AND d.imported_sustainer IS NOT TRUE AND last_gift_date IS NOT NULL AND last_gift_date::date < NOW() - INTERVAL '90 days'`,
           [seq.org_id]
         );
       } else if (seq.trigger === "lapsed_180") {
         donors = await query(
-          `SELECT id FROM donors WHERE org_id = ? AND stage = 'lapsed' AND deleted_at IS NULL AND last_gift_date IS NOT NULL AND last_gift_date::date < NOW() - INTERVAL '180 days'`,
+          `SELECT id FROM donors d WHERE org_id = ? AND stage = 'lapsed' AND deleted_at IS NULL AND ${solicitableSql("d")} AND d.imported_sustainer IS NOT TRUE AND last_gift_date IS NOT NULL AND last_gift_date::date < NOW() - INTERVAL '180 days'`,
           [seq.org_id]
         );
       } else if (seq.trigger === "new_donor") {
         donors = await query(
-          `SELECT id FROM donors WHERE org_id = ? AND gift_count = 1 AND deleted_at IS NULL AND last_gift_date IS NOT NULL AND last_gift_date::date > NOW() - INTERVAL '7 days'`,
+          `SELECT id FROM donors d WHERE org_id = ? AND gift_count = 1 AND deleted_at IS NULL AND deceased IS NOT TRUE AND do_not_contact IS NOT TRUE AND last_gift_date IS NOT NULL AND last_gift_date::date > NOW() - INTERVAL '7 days'`,
           [seq.org_id]
         );
       } else if (seq.trigger === "at_risk") {
@@ -15490,8 +15549,9 @@ async function processWorkflowSweeps(onlyOrgId = null) {
       // "recipes act on new live events, not records being loaded" guarantee,
       // enforced in SQL so no import path can slip past it.
       const lapsing = await query(
-        `SELECT id, last_gift_date FROM donors
+        `SELECT id, last_gift_date FROM donors d
           WHERE org_id=? AND deleted_at IS NULL AND gift_count > 0
+            AND ${solicitableSql("d")} AND d.imported_sustainer IS NOT TRUE
             AND last_gift_date IS NOT NULL AND last_gift_date <> '' AND last_gift_date < ?
             AND created_at::date <= (last_gift_date::date + INTERVAL '${parseInt(lapseDays, 10)} days')
           LIMIT 200`,
@@ -21271,6 +21331,13 @@ if (!backgroundTicksDisabled()) {
 // deliberately excludes passive rows like email_open or gift/note/
 // stage_change, which aren't a human reaching out.
 const MEANINGFUL_CONTACT_TYPES = "('call','meeting','email','stewardship')";
+// BUILD-77 Part 1f — THE ASK GATE, one predicate for every surface with an
+// action button. deceased blocks everything; do_not_contact blocks all
+// outreach; do_not_solicit blocks ASKS (drift, re-engage, at-risk,
+// suggested outreach, ask-automations) while stewardship thank-yous and
+// transactional mail may continue. One excluded donor reaching one
+// actionable surface is a bug (tests/import-messy.test.js §4).
+const solicitableSql = (a = "d") => `${a}.deceased IS NOT TRUE AND ${a}.do_not_contact IS NOT TRUE AND ${a}.do_not_solicit IS NOT TRUE`;
 
 // Per-donor breakdown behind the stewardship_debt headline number — every
 // donor's exact contribution to the aggregate, sorted by who's driving it

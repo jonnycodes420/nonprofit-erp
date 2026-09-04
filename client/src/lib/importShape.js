@@ -45,64 +45,114 @@ const numlike = v => {
 // ── Cell normalizers (moved here from Donors.jsx, BUILD-58 Part 2, so the
 // pure gift-ledger builder below can use them and the Node suite can test the
 // whole pipeline) ───────────────────────────────────────────────────────────
-export function normalizeDate(val) {
+// BUILD-77 Part 2 — EXPLICIT formats only, and NO fallback of any kind.
+// The old version ended in `new Date(s)` — the native parser — which is
+// PLATFORM-DEPENDENT: Chrome refused "03-16-2020" (so the caller's
+// `|| today` fallback stamped the gift with today's UTC date and un-drifted
+// the donor) while Node parsed it fine, so no server-side test could ever
+// see the browser's failure. A gift with an unparseable date is an ERROR
+// with its line number, never a gift dated today.
+//
+// Supported (the messy-file nine, each matched explicitly):
+//   m/d/yyyy · m/d/yy · mm-dd-yyyy · yyyy-mm-dd · yyyy/mm/dd ·
+//   "March 4, 2024" · "14 February 2024" · dd-Mon-yy (and dd-Mon-yyyy) ·
+//   bare Excel serials (5-digit int, epoch 1899-12-30) · "Mar 2024" (day 1)
+// Ambiguous two-digit years resolve to the PAST: 5/12/99 is 1999, never
+// 2099 (pivot on the current year — a 2-digit year later than "now" is the
+// previous century). Calendar-validated: 2/30 and 13/1 are errors, not
+// best-effort guesses.
+const MONTH_NUM = { jan: 1, feb: 2, mar: 3, apr: 4, may: 5, jun: 6, jul: 7, aug: 8, sep: 9, oct: 10, nov: 11, dec: 12,
+  january: 1, february: 2, march: 3, april: 4, june: 6, july: 7, august: 8, september: 9, october: 10, november: 11, december: 12 };
+const DAYS_IN_MONTH = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+function validCivil(y, m, d) {
+  if (m < 1 || m > 12 || d < 1) return false;
+  const leap = (y % 4 === 0 && y % 100 !== 0) || y % 400 === 0;
+  const max = m === 2 && leap ? 29 : DAYS_IN_MONTH[m - 1];
+  return d <= max && y >= 1900 && y <= 2100;
+}
+function pivotYear2(yy, currentYear) {
+  // resolve to the past: the latest century that keeps the year ≤ current
+  const cc = Math.floor(currentYear / 100) * 100;
+  const y = cc + yy;
+  return y > currentYear ? y - 100 : y;
+}
+const civil = (y, m, d) => validCivil(y, m, d)
+  ? { value: `${y}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`, warn: null }
+  : null;
+export function normalizeDate(val, opts = {}) {
+  const currentYear = opts.currentYear || new Date().getFullYear();
   if (val === null || val === undefined || val === "") return { value: null, warn: null };
   if (val instanceof Date) {
     return isNaN(val) ? { value: null, warn: "invalid date" } : { value: val.toISOString().split("T")[0], warn: null };
   }
   const s = String(val).trim();
   if (!s) return { value: null, warn: null };
-  // Excel serial (5-digit number > 25569 = 1970-01-01)
+  let m, r;
+  // Excel serial — 5-digit day count from 1899-12-30 (Lotus epoch, bug and all)
   if (/^\d{5}$/.test(s)) {
-    const n = parseInt(s);
-    if (n > 25569 && n < 60000) {
-      const d = new Date((n - 25569) * 86400000);
-      if (!isNaN(d)) return { value: d.toISOString().split("T")[0], warn: null };
-    }
-  }
-  // ISO YYYY-MM-DD
-  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) {
-    const d = new Date(s + "T12:00:00Z");
-    if (!isNaN(d)) return { value: s, warn: null };
-  }
-  // MM/DD/YYYY or M/D/YYYY
-  const mdy = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
-  if (mdy) {
-    const iso = `${mdy[3]}-${mdy[1].padStart(2, "0")}-${mdy[2].padStart(2, "0")}`;
-    const d = new Date(iso + "T12:00:00Z");
-    if (!isNaN(d)) return { value: iso, warn: null };
-  }
-  // YYYY/MM/DD
-  const ymd = s.match(/^(\d{4})\/(\d{2})\/(\d{2})$/);
-  if (ymd) {
-    const iso = `${ymd[1]}-${ymd[2]}-${ymd[3]}`;
-    const d = new Date(iso + "T12:00:00Z");
-    if (!isNaN(d)) return { value: iso, warn: null };
-  }
-  // "Jan 2023" / "January 2023"
-  const monYear = s.match(/^([A-Za-z]+)\s+(\d{4})$/);
-  if (monYear) {
-    const d = new Date(`${monYear[1]} 1, ${monYear[2]}`);
-    if (!isNaN(d)) return { value: d.toISOString().split("T")[0], warn: null };
-  }
-  // Native parse as last resort (guard against bare 4-digit years)
-  if (!/^\d{4}$/.test(s)) {
-    const d = new Date(s);
-    if (!isNaN(d) && d.getFullYear() > 1900 && d.getFullYear() < 2100)
+    const n = parseInt(s, 10);
+    if (n >= 10000 && n < 60000) {
+      const d = new Date(Date.UTC(1899, 11, 30) + n * 86400000);
       return { value: d.toISOString().split("T")[0], warn: null };
+    }
+    return { value: null, warn: `couldn't parse date '${s}'` };
+  }
+  // yyyy-mm-dd / yyyy/mm/dd
+  if (m = s.match(/^(\d{4})[-\/](\d{1,2})[-\/](\d{1,2})$/)) {
+    if (r = civil(+m[1], +m[2], +m[3])) return r;
+    return { value: null, warn: `not a real calendar date '${s}'` };
+  }
+  // m/d/yyyy and mm-dd-yyyy
+  if (m = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/)) {
+    if (r = civil(+m[3], +m[1], +m[2])) return r;
+    return { value: null, warn: `not a real calendar date '${s}'` };
+  }
+  // m/d/yy — two-digit year pivots to the past
+  if (m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2})$/)) {
+    if (r = civil(pivotYear2(+m[3], currentYear), +m[1], +m[2])) return r;
+    return { value: null, warn: `not a real calendar date '${s}'` };
+  }
+  // dd-Mon-yy / dd-Mon-yyyy ("4-Mar-24")
+  if (m = s.match(/^(\d{1,2})[-\s]([A-Za-z]{3,9})[-\s](\d{2}|\d{4})$/)) {
+    const mon = MONTH_NUM[m[2].toLowerCase()];
+    const y = m[3].length === 2 ? pivotYear2(+m[3], currentYear) : +m[3];
+    if (mon && (r = civil(y, mon, +m[1]))) return r;
+    return { value: null, warn: `couldn't parse date '${s}'` };
+  }
+  // "March 4, 2024" / "Mar 4 2024"
+  if (m = s.match(/^([A-Za-z]{3,9})\.?\s+(\d{1,2}),?\s+(\d{4})$/)) {
+    const mon = MONTH_NUM[m[1].toLowerCase()];
+    if (mon && (r = civil(+m[3], mon, +m[2]))) return r;
+    return { value: null, warn: `couldn't parse date '${s}'` };
+  }
+  // "14 February 2024"
+  if (m = s.match(/^(\d{1,2})\s+([A-Za-z]{3,9})\.?\s+(\d{4})$/)) {
+    const mon = MONTH_NUM[m[2].toLowerCase()];
+    if (mon && (r = civil(+m[3], mon, +m[1]))) return r;
+    return { value: null, warn: `couldn't parse date '${s}'` };
+  }
+  // "Jan 2023" / "January 2023" — first of the month
+  if (m = s.match(/^([A-Za-z]{3,9})\.?\s+(\d{4})$/)) {
+    const mon = MONTH_NUM[m[1].toLowerCase()];
+    if (mon && (r = civil(+m[2], mon, 1))) return r;
   }
   return { value: null, warn: `couldn't parse date '${s}'` };
 }
 
 export function normalizeMoney(val) {
-  if (val === null || val === undefined || val === "") return { value: null, warn: null };
+  if (val === null || val === undefined || val === "") return { value: null, warn: null, blank: true };
   if (typeof val === "number" && !isNaN(val)) return { value: val, warn: null };
   const s = String(val).trim();
-  if (!s) return { value: null, warn: null };
+  // BUILD-77 Part 3 — deliberate blanks ("", "n/a", "TBD", "-") are a
+  // DIFFERENT disposition than an unparseable amount: skipped, not errored.
+  if (!s || /^(n\/a|na|tbd|-|—|unknown)$/i.test(s)) return { value: null, warn: null, blank: true };
   // Accounting-style negatives: "(1,000)" = -1000 (refund/adjustment rows —
   // recognized so the row REPORT can say "refund", never silently vanish).
   const paren = s.match(/^\((.+)\)$/);
-  const core = paren ? paren[1] : s;
+  // Currency-code prefixes: "USD 750.00" is how QuickBooks and half the
+  // legacy CRMs export money. 54 such rows ($154,849.63) vanished from a
+  // real file without a trace — the exact silent loss BUILD-77 Part 3 found.
+  const core = (paren ? paren[1] : s).replace(/^[A-Za-z]{3}\s+/, "");
   const n = parseFloat(core.replace(/[$,\s]/g, ""));
   if (isNaN(n)) return { value: null, warn: `couldn't parse amount '${s}'` };
   return { value: paren ? -n : n, warn: null };
@@ -560,6 +610,251 @@ export function applyOwnerAssignment(donors = [], resolved = {}) {
 // non-null gift becomes a gift row carrying its donor's index in `donors` —
 // exactly the { donors, gifts:[{donorIndex}] } shape /donors/import-combined
 // consumes, so the server dedupes, attaches, recalcs, and re-infers stage.
+export function autoDetectTxMapping(headers, rows) {
+  // BUILD-77 Part 3d — auto-map by header name for EVERY field the schema
+  // has. A real export's Phone/Address/City/State/ZIP columns used to be
+  // silently discarded ("an org that imports and then cannot mail anyone has
+  // lost the thing they came for"); anything that still has no home is named
+  // on the mapping screen and requires an acknowledgement before the write.
+  const map = { donorName:"",firstName:"",lastName:"",orgName:"",donorEmail:"",amount:"",date:"",type:"",campaign:"",notes:"",phone:"",address:"",city:"",state:"",zip:"",owner:"",externalId:"" };
+  const sample = rows.slice(0,10);
+  for (const h of headers) {
+    const hl = h.toLowerCase().trim();
+    if (!map.donorName  && /^(name|full.?name|donor.?name|donor|contact|constituent)$/.test(hl)) map.donorName  = h;
+    if (!map.firstName  && /^first.?name$/.test(hl))                                    map.firstName = h;
+    if (!map.lastName   && /^last.?name$/.test(hl))                                     map.lastName  = h;
+    if (!map.orgName    && /^(org(anization)?.?name|company)$/.test(hl))                map.orgName   = h;
+    if (!map.donorEmail && /^(email|email.?address|e-?mail)$/.test(hl))                          map.donorEmail = h;
+    // BUILD-45 §1.2 F-4 — a source-system gift/transaction id is the ONLY safe
+    // gift dedup key; (donor, amount, date) never is. Anchored so a bare "ID"
+    // (usually the donor id) or "Donor ID" is never grabbed.
+    if (!map.externalId && /^(gift.?id|transaction.?id|txn.?id|payment.?id|external.?id|reference(.?(no|number|id))?)$/.test(hl)) map.externalId = h;
+    if (!map.amount     && /^(amount|gift.?amount|donation.?amount|gift|giving|sum)$/.test(hl)) {
+      if (sample.some(r => !isNaN(parseFloat(String(r[h]||"").replace(/^[A-Za-z]{3}\s+/,"").replace(/[$,]/g,""))))) map.amount = h;
+    }
+    if (!map.date     && /^(date|gift.?date|donation.?date|when)$/.test(hl))           map.date     = h;
+    if (!map.type     && /^(type|gift.?type|payment.?(type|method)|method|payment)$/.test(hl)) map.type     = h;
+    if (!map.campaign && /^(campaign|appeal|designation)$/.test(hl))                   map.campaign = h;
+    if (!map.notes    && /^(notes?|memo|comments?)$/.test(hl))                         map.notes    = h;
+    if (!map.phone    && /^(phone|phone.?number|telephone|mobile|cell)$/.test(hl))     map.phone    = h;
+    if (!map.address  && /^(address|street(.?address)?|address.?1|mailing.?address)$/.test(hl)) map.address = h;
+    if (!map.city     && /^city$/.test(hl))                                            map.city     = h;
+    if (!map.state    && /^(state|province)$/.test(hl))                                map.state    = h;
+    if (!map.zip      && /^(zip(.?code)?|postal(.?code)?)$/.test(hl))                  map.zip      = h;
+    if (!map.owner)   map.owner = detectOwnerColumn([h]) ? h : map.owner;
+  }
+  // "Fund" maps to campaign ONLY if no campaign column exists (both present →
+  // Fund has no home of its own and lands on the acknowledge list).
+  if (!map.campaign) { const f = headers.find(h => /^fund$/i.test(String(h).trim())); if (f) map.campaign = f; }
+  return map;
+}
+
+// ── BUILD-77 Part 1 — free-text safety markers ─────────────────────────────
+// In a real export the state lives in the NOTES column, not a field:
+// "DECEASED - notify family only", "Removed from mailing - do not contact",
+// "d. Nov 2023", "DNS". Matching is CONSERVATIVE — a false positive costs
+// the org one ask, a false negative costs them a relationship — and every
+// match is surfaced on the import summary ("we flagged these") so a human
+// confirms rather than discovers later. Deliberate non-match, pinned by the
+// suite: "Do not include in vendor mailing" (a note about a VENDOR list,
+// not the donor) must flag nothing.
+export function detectNoteMarkers(text) {
+  const t = String(text || "").trim();
+  const out = { deceased: false, deceasedDate: null, doNotSolicit: false, doNotContact: false,
+                doNotMail: false, doNotEmail: false, pledgePayment: false, sustainerNote: false, matched: [] };
+  if (!t) return out;
+  const hit = (flag, re, label) => { const m = t.match(re); if (m) { out[flag] = true; out.matched.push(label || m[0]); return m; } return null; };
+
+  // deceased — the worst possible false positive is calling the dead
+  hit("deceased", /\bdeceased\b/i);
+  hit("deceased", /passed away/i);
+  hit("deceased", /^d\.\s+/i, "d. <date>");            // "d. Nov 2023" — anchored so "Ph.D." can't match
+  if (hit("deceased", /estate of decedent|\bbequest\b/i)) out.doNotSolicit = true; // an estate is never solicited
+  let dm = t.match(/deceased\s+(\d{1,2}\/\d{4})/i) || t.match(/^d\.\s+([A-Za-z]{3,9}\.?\s+\d{4})/i);
+  if (dm) out.deceasedDate = dm[1];
+
+  // solicitation / contact / channel blocks
+  hit("doNotSolicit", /do not solicit/i);
+  hit("doNotSolicit", /no solicitation/i);
+  hit("doNotSolicit", /\bDNS\b/);
+  hit("doNotSolicit", /do not (mail or |mail\/)?call/i);  // a fundraiser's call IS an ask ("do not mail or call" blocks both)
+  hit("doNotContact", /do not contact/i);
+  hit("doNotContact", /no further contact/i);
+  hit("doNotMail", /do not mail\b/i);
+  hit("doNotMail", /removed from (the )?mailing/i);
+  hit("doNotMail", /stop (all )?mail\b/i);
+  hit("doNotEmail", /do not e-?mail/i);
+  hit("doNotEmail", /unsubscribed?\b/i);
+
+  // contractual cadence + sustainer history (both are ROUTING facts, not blocks)
+  hit("pledgePayment", /pledge (payment|installment)/i);
+  hit("sustainerNote", /monthly recurring/i);
+  hit("sustainerNote", /\bsustainer\b/i);
+  hit("sustainerNote", /monthly (eft|ach|giver|donor|gift)/i);
+  hit("sustainerNote", /recurring\b.*(cc|card) on file|\brecurring\b\s*[-–—]/i, "recurring - CC on file");
+  return out;
+}
+
+// ── BUILD-77 Parts 2+3 — THE ACCOUNTED TRANSACTION BUILDER ─────────────────
+// One row per gift, donor repeated: every PHYSICAL row leaves with exactly
+// one disposition — gift · donor_only · skipped(reason) · errored(reason) —
+// and the file-level equation is computed from PARSE ENTRY, never from what
+// survived. This replaces the silent inline logic in Donors.jsx that let 74
+// rows and $154,806 of a real file vanish behind a "Balanced" summary:
+// unparsable amounts vanished, refunds vanished, zero rows vanished, and an
+// unparseable date became a gift dated TODAY (the Larry Ackerly finding —
+// see normalizeDate above for why the browser and the test runner even
+// disagreed about which dates failed).
+//
+// Policy, written down (BUILD-77 Part 2c): a FUTURE-dated gift is an ERROR
+// (`future_date`, with its line) — a gift is a thing that happened. The one
+// legitimate future-money shape is a pledge, which is not a gift row.
+// Refunds import as NEGATIVE gifts: they reduce the dollar total, not the
+// row count. $0 rows (in-kind / soft credit) are SKIPPED with their reason —
+// visible and downloadable, never silently gone.
+export function buildTransactionRows(parsed, txMap, opts = {}) {
+  const today = opts.today || new Date().toISOString().split("T")[0];
+  const currentYear = Number(String(today).slice(0, 4));
+  const rows = parsed && parsed.rows ? parsed.rows : [];
+  const items = [];
+  const dispositions = [];   // { line, disposition, reason?, dollars, name, raw }
+  const flaggedRows = [];    // { line, name, matched, flags }
+  let fileDollars = 0;
+
+  const headerText = c => String(txMap[c] || "");
+  rows.forEach((row, i) => {
+    const line = (opts.firstLine || 2) + i;           // 1-based file line (after the header)
+    const rawName = txMap.donorName ? String(row[txMap.donorName] || "").trim() : "";
+    const first = txMap.firstName ? String(row[txMap.firstName] || "").trim() : "";
+    const last = txMap.lastName ? String(row[txMap.lastName] || "").trim() : "";
+    const orgName = txMap.orgName ? String(row[txMap.orgName] || "").trim() : "";
+    const rawEmail = txMap.donorEmail ? String(row[txMap.donorEmail] || "").trim() : "";
+    const rawAmount = txMap.amount ? row[txMap.amount] : "";
+    const rawDate = txMap.date ? row[txMap.date] : "";
+    const record = (disposition, reason, dollars, name) => {
+      dispositions.push({ line, disposition, reason: reason || null, dollars: dollars || 0, name: name || rawName || rawEmail || "(no name)", raw: row });
+    };
+
+    // A stray header row echoed into the body (real exports do this at page
+    // breaks): its cells literally equal the column names.
+    if (rawName && rawName === headerText("donorName") && String(rawAmount || "").trim() === headerText("amount")) {
+      record("errored", "stray_header_row", 0);
+      return;
+    }
+
+    const name = normalizeName(rawName || [first, last].filter(Boolean).join(" ") || orgName) || "";
+    const { value: emailVal } = normalizeEmail(rawEmail);
+    const email = emailVal || "";
+    if (!name && !email) { record("errored", "no_donor_identity", 0); return; }
+
+    const donor = { name: name || email, email, stage: "prospect" };
+    if (txMap.phone && row[txMap.phone]) donor.phone = String(row[txMap.phone]).trim() || null;
+    if (txMap.city && row[txMap.city]) donor.city = String(row[txMap.city]).trim() || null;
+    if (txMap.state && row[txMap.state]) donor.state = String(row[txMap.state]).trim() || null;
+    if (txMap.address && row[txMap.address]) donor.address = String(row[txMap.address]).trim() || null;
+    if (txMap.zip && row[txMap.zip]) donor.zip = String(row[txMap.zip]).trim() || null;
+    if (txMap.owner && row[txMap.owner]) donor.owner = String(row[txMap.owner]).trim() || undefined;
+
+    const noteText = txMap.notes ? String(row[txMap.notes] || "") : "";
+    const markers = detectNoteMarkers(noteText);
+    if (markers.deceased) { donor.deceased = true; if (markers.deceasedDate) donor.deceasedDate = markers.deceasedDate; }
+    if (markers.doNotSolicit) donor.doNotSolicit = true;
+    if (markers.doNotContact) donor.doNotContact = true;
+    if (markers.doNotMail) donor.doNotMail = true;
+    if (markers.doNotEmail) donor.doNotEmail = true;
+    if (markers.matched.length) flaggedRows.push({ line, name: donor.name, matched: markers.matched, note: noteText,
+      flags: { deceased: !!markers.deceased, doNotSolicit: !!markers.doNotSolicit, doNotContact: !!markers.doNotContact, doNotMail: !!markers.doNotMail, doNotEmail: !!markers.doNotEmail } });
+
+    const key = (email && email.includes("@")) ? email.toLowerCase() : donor.name.toLowerCase();
+    const mkGift = (amount) => ({
+      amount,
+      date: null, // filled below
+      type: txMap.type ? (String(row[txMap.type] || "").toLowerCase().trim() || "cash") : "cash",
+      campaign: txMap.campaign ? String(row[txMap.campaign] || "") : "",
+      notes: noteText,
+      externalId: txMap.externalId ? (String(row[txMap.externalId] || "").trim() || undefined) : undefined,
+    });
+
+    if (!txMap.amount) { items.push({ key, donor, gift: null }); record("donor_only", null, 0, donor.name); return; }
+    const money = normalizeMoney(rawAmount);
+    if (money.blank) { items.push({ key, donor, gift: null }); record("skipped", "no_amount", 0, donor.name); return; }
+    if (money.value == null) { items.push({ key, donor, gift: null }); record("errored", "unparseable_amount", 0, donor.name); return; }
+    if (money.value === 0) { items.push({ key, donor, gift: null }); record("skipped", "zero_amount", 0, donor.name); return; }
+
+    const { value: dateVal } = normalizeDate(rawDate, { currentYear });
+    if (!dateVal) { items.push({ key, donor, gift: null }); record("errored", "unparseable_date", money.value, donor.name); fileDollars += money.value; return; }
+    if (dateVal > today) { items.push({ key, donor, gift: null }); record("errored", "future_date", money.value, donor.name); fileDollars += money.value; return; }
+
+    const gift = mkGift(money.value);   // cents preserved — the money seam owns rounding, and it doesn't
+    gift.date = dateVal;
+    items.push({ key, donor, gift });
+    fileDollars += money.value;
+    record("gift", null, money.value, donor.name);
+  });
+
+  const { donors, gifts } = groupTransactions(items);
+  detectImportedSustainers(donors, gifts);
+  return {
+    donors, gifts, dispositions, flaggedRows,
+    file: {
+      rows: rows.length,                       // physical non-blank rows, counted ONCE at parse entry
+      dollars: Math.round(fileDollars * 100) / 100,
+      imported: dispositions.filter(d => d.disposition === "gift").length,
+      donorOnly: dispositions.filter(d => d.disposition === "donor_only").length,
+      skipped: dispositions.filter(d => d.disposition === "skipped").length,
+      errored: dispositions.filter(d => d.disposition === "errored").length,
+    },
+  };
+}
+
+// ── BUILD-77 Part 5 — imported sustainers (the third state) ────────────────
+// A sustainer who arrives by import has no Stripe subscription and never
+// can (card credentials do not move between processors), so "recurring ==
+// has a subscription object" made every one of them invisible. Detect the
+// HISTORY: interval evidence (gifts clustered near 30 days at a stable
+// amount) outranks the note; a note alone counts unless the intervals
+// contradict it. Marks the donor `importedSustainer` with the historical
+// amount + last gift so the reconnect flow can prefill both.
+export function detectImportedSustainers(donors = [], gifts = []) {
+  const byDonor = new Map();
+  for (const g of gifts) {
+    if (!byDonor.has(g.donorIndex)) byDonor.set(g.donorIndex, []);
+    byDonor.get(g.donorIndex).push(g);
+  }
+  donors.forEach((d, i) => {
+    // Pledge installments are CONTRACTUAL cadence — twelve monthly payments
+    // of a capital pledge look exactly like a sustainer to interval math and
+    // are nothing of the kind (a "reconnect your monthly gift" email to a
+    // completed pledge would be wrong twice). The pledge marker outranks
+    // sustainer inference.
+    const raw = (byDonor.get(i) || []).filter(g => g.amount > 0);
+    const gs = raw.filter(g => !detectNoteMarkers(g.notes).pledgePayment).sort((a, b) => a.date < b.date ? -1 : 1);
+    const noteHits = gs.filter(g => detectNoteMarkers(g.notes).sustainerNote).length;
+    let intervalMonthly = false, intervalContradicts = false;
+    if (gs.length >= 4) {
+      const iv = [];
+      for (let k = 1; k < gs.length; k++) {
+        const a = new Date(gs[k - 1].date + "T12:00:00Z"), b = new Date(gs[k].date + "T12:00:00Z");
+        iv.push(Math.round((b - a) / 86400000));
+      }
+      const sorted = [...iv].sort((a, b) => a - b);
+      const median = sorted[Math.floor(sorted.length / 2)];
+      const amts = gs.map(g => g.amount).sort((a, b) => a - b);
+      const amtMedian = amts[Math.floor(amts.length / 2)];
+      const amtStable = gs.every(g => amtMedian > 0 && Math.abs(g.amount - amtMedian) / amtMedian <= 0.15);
+      intervalMonthly = median >= 20 && median <= 40 && amtStable;
+      intervalContradicts = median > 60;
+    }
+    if (intervalMonthly || (noteHits >= 2 && !intervalContradicts)) {
+      const amts = gs.map(g => g.amount).sort((a, b) => a - b);
+      d.importedSustainer = true;
+      d.importedSustainerAmount = amts.length ? amts[Math.floor(amts.length / 2)] : null;
+      d.importedSustainerLastGift = gs.length ? gs[gs.length - 1].date : null;
+    }
+  });
+  return donors;
+}
+
 export function groupTransactions(items = []) {
   const donors = [];
   const gifts = [];
@@ -573,9 +868,15 @@ export function groupTransactions(items = []) {
     } else {
       const canon = donors[di];
       if ((!canon.name || !String(canon.name).trim()) && donor.name) canon.name = donor.name;
-      for (const k of ["email", "phone", "city", "state", "notes", "owner"]) {
+      for (const k of ["email", "phone", "city", "state", "address", "zip", "notes", "owner"]) {
         if ((canon[k] == null || canon[k] === "") && donor[k]) canon[k] = donor[k];
       }
+      // BUILD-77 Part 1 — safety flags OR across a donor's rows: one row
+      // saying deceased makes the DONOR deceased, whichever row said it.
+      for (const k of ["deceased", "doNotContact", "doNotSolicit", "doNotMail", "doNotEmail"]) {
+        if (donor[k]) canon[k] = true;
+      }
+      if (donor.deceasedDate && !canon.deceasedDate) canon.deceasedDate = donor.deceasedDate;
     }
     if (gift) gifts.push({ ...gift, donorIndex: di });
   }

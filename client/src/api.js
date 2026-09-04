@@ -147,6 +147,14 @@ export function adaptDonor(d) {
     householdId:   d.household_id ?? null,
     deceased:      d.deceased === true,          // BUILD-58 Part 2 — safety flags
     doNotContact:  d.do_not_contact === true,
+    doNotSolicit:  d.do_not_solicit === true,    // BUILD-77 Part 1 — the flag family
+    doNotMail:     d.do_not_mail === true,
+    doNotEmail:    d.do_not_email === true,
+    deceasedDate:  d.deceased_date ?? null,
+    address:       d.address ?? null,
+    importedSustainer: d.imported_sustainer === true,   // BUILD-77 Part 5 — the third recurring state
+    importedSustainerAmount: d.imported_sustainer_amount != null ? parseFloat(d.imported_sustainer_amount) : null,
+    importedSustainerLastGift: d.imported_sustainer_last_gift ?? null,
     drift:         d.drift ?? null,              // BUILD-76 — the badge field, server-computed (one truth)
   };
 }

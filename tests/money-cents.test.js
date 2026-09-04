@@ -193,8 +193,8 @@ async function reset() {
   const imp = await api("POST", "/donors/import-combined", tok, {
     donors: [{ name: "Import Cents", email: "importcents@b73.test", stage: "prospect" }],
     gifts: [
-      { donorIndex: 0, amount: 33.33, date: "2026-09-05", type: "cash", campaign: "", notes: "" },
-      { donorIndex: 0, amount: 66.67, date: "2026-09-06", type: "cash", campaign: "", notes: "" },
+      { donorIndex: 0, amount: 33.33, date: "2026-06-05", type: "cash", campaign: "", notes: "" },
+      { donorIndex: 0, amount: 66.67, date: "2026-06-06", type: "cash", campaign: "", notes: "" },
     ],
   });
   ok("a cents-carrying import now SUCCEEDS (it used to be refused, because it used to lose them)",

@@ -391,6 +391,28 @@ async function initSchema() {
   // the one enforcement point). Import maps them; the profile shows them.
   await pool.query(`ALTER TABLE donors ADD COLUMN IF NOT EXISTS deceased BOOLEAN DEFAULT false`);
   await pool.query(`ALTER TABLE donors ADD COLUMN IF NOT EXISTS do_not_contact BOOLEAN DEFAULT false`);
+  // BUILD-77 Part 1 — the flag FAMILY, not one flag. A real export's contact
+  // preferences are per-channel (an org that mails but does not call is
+  // normal), and the state lives in free text ("DO NOT SOLICIT", "Removed
+  // from mailing - do not contact", "d. Nov 2023") that the importer now
+  // scans into these fields. Semantics: do_not_solicit = no ASKS (drift
+  // list, re-engage, suggested outreach, ask-automations) but stewardship/
+  // newsletters may continue; do_not_mail/do_not_email are channel blocks;
+  // deceased_date is display/history (deceased itself blocks everything).
+  await pool.query(`ALTER TABLE donors ADD COLUMN IF NOT EXISTS do_not_solicit BOOLEAN DEFAULT false`);
+  await pool.query(`ALTER TABLE donors ADD COLUMN IF NOT EXISTS do_not_mail BOOLEAN DEFAULT false`);
+  await pool.query(`ALTER TABLE donors ADD COLUMN IF NOT EXISTS do_not_email BOOLEAN DEFAULT false`);
+  await pool.query(`ALTER TABLE donors ADD COLUMN IF NOT EXISTS deceased_date TEXT`);
+  await pool.query(`ALTER TABLE donors ADD COLUMN IF NOT EXISTS address TEXT`);
+  // BUILD-77 Part 5 — the sustainer's THIRD state. "Recurring" used to mean
+  // "has a Stripe subscription object", which made every IMPORTED sustainer
+  // invisible to the entire recurring surface (card credentials do not move
+  // between processors — nobody can import a live authorization). unlinked =
+  // sustainer history, no authorization here; these carry the historical
+  // cadence so the reconnect flow can prefill it.
+  await pool.query(`ALTER TABLE donors ADD COLUMN IF NOT EXISTS imported_sustainer BOOLEAN DEFAULT false`);
+  await pool.query(`ALTER TABLE donors ADD COLUMN IF NOT EXISTS imported_sustainer_amount NUMERIC`);
+  await pool.query(`ALTER TABLE donors ADD COLUMN IF NOT EXISTS imported_sustainer_last_gift TEXT`);
 
   // NOTE: an old boot-time backfill here auto-assigned EVERY unassigned donor to
   // the org's first admin. Removed (pipeline-is-a-portfolio FIX): assignment is a

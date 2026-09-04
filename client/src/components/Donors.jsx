@@ -30,7 +30,7 @@ import { T, fmt, fmtFull, daysDiff, SC, askClaude, STAGES, STAGE_ACTION, TIER_CO
 // profile button, and modal render below, and add `VoiceMemoModal` back to
 // the import above).
 import { DonorMap } from "./DonorMap";
-import { detectImportShape, groupTransactions, shapeLabel, YEAR_HDR_PAT, detectWorkbookRoles, pickMatchKey, linkGiftsToDonors, detectOwnerColumn, matchOwnersToUsers, applyOwnerAssignment, groupOwnerMatches, normalizeName, normalizeDate, normalizeMoney, normalizeEmail, detectFlagColumns, parseBoolFlag, classifyColumns, decodeSpreadsheetBytes, buildGiftItemsFromLedger } from "../lib/importShape";
+import { detectImportShape, groupTransactions, shapeLabel, YEAR_HDR_PAT, detectWorkbookRoles, pickMatchKey, linkGiftsToDonors, detectOwnerColumn, matchOwnersToUsers, applyOwnerAssignment, groupOwnerMatches, normalizeName, normalizeDate, normalizeMoney, normalizeEmail, detectFlagColumns, parseBoolFlag, classifyColumns, decodeSpreadsheetBytes, buildGiftItemsFromLedger, buildTransactionRows, detectNoteMarkers, autoDetectTxMapping } from "../lib/importShape";
 
 // ── CSV Import helpers ─────────────────────────────────────────────────────
 // ── Import field registry ──────────────────────────────────────────────────
@@ -343,46 +343,17 @@ function buildAggregatePayload(parsed, mapping, seedHistory) {
   return { donors, gifts, warnedCount: warned.length, skippedCount: skipped.length };
 }
 
-// TRANSACTION: one row per GIFT, donor repeated. Group by donor (email-first,
-// else name), create each donor once, attach every row as an individual gift.
+// TRANSACTION: one row per GIFT, donor repeated. Delegates to importShape's
+// buildTransactionRows — the ONE accounted builder (BUILD-77 Parts 2+3):
+// every physical row leaves with a disposition, no date ever defaults to
+// today, refunds import as negative gifts, and the file-level counts are
+// taken at parse entry and carried through unchanged.
 function buildTransactionPayload(parsed, txMap) {
-  if (!parsed) return { donors: [], gifts: [], warnedCount: 0, skippedCount: 0 };
-  const items = [];
-  let skippedCount = 0, warnedCount = 0;
-  parsed.rows.forEach(row => {
-    const rawName  = txMap.donorName  ? String(row[txMap.donorName]  || "").trim() : "";
-    const rawEmail = txMap.donorEmail ? String(row[txMap.donorEmail] || "").trim() : "";
-    if (!rawName && !rawEmail) { skippedCount++; return; }
-    const { value: emailVal, warn: emailWarn } = normalizeEmail(rawEmail);
-    if (emailWarn) warnedCount++;
-    const email = emailVal || "";
-    const name  = rawName || email || rawEmail;
-    const donor = { name, email, stage: "prospect" };
-    if (txMap.phone && row[txMap.phone]) donor.phone = String(row[txMap.phone]).trim() || null;
-    if (txMap.city  && row[txMap.city])  donor.city  = String(row[txMap.city]).trim()  || null;
-    if (txMap.state && row[txMap.state]) donor.state = String(row[txMap.state]).trim()  || null;
-    if (txMap.owner && row[txMap.owner]) donor.owner = String(row[txMap.owner]).trim()  || undefined;
-    let gift = null;
-    if (txMap.amount) {
-      const { value: amtVal } = normalizeMoney(row[txMap.amount]);
-      const amt = Math.round(amtVal || 0);
-      if (amt > 0) {
-        const { value: parsedDate } = normalizeDate(txMap.date ? row[txMap.date] : "");
-        gift = {
-          amount: amt,
-          date: parsedDate || new Date().toISOString().split("T")[0],
-          type: txMap.type ? (String(row[txMap.type] || "").toLowerCase() || "cash") : "cash",
-          campaign: txMap.campaign ? String(row[txMap.campaign] || "") : "",
-          notes: txMap.notes ? String(row[txMap.notes] || "") : "",
-          externalId: txMap.externalId ? (String(row[txMap.externalId] || "").trim() || undefined) : undefined,
-        };
-      }
-    }
-    const key = (email && email.includes("@")) ? email.toLowerCase() : name.toLowerCase();
-    items.push({ key, donor, gift });
-  });
-  const { donors, gifts } = groupTransactions(items);
-  return { donors, gifts, warnedCount, skippedCount };
+  if (!parsed) return { donors: [], gifts: [], warnedCount: 0, skippedCount: 0, dispositions: [], flaggedRows: [], file: { rows: 0, dollars: 0, imported: 0, donorOnly: 0, skipped: 0, errored: 0 } };
+  const built = buildTransactionRows(parsed, txMap, {});
+  return { ...built,
+    warnedCount: 0,
+    skippedCount: built.file.skipped + built.file.errored };
 }
 
 // WIDE: one row per donor, year columns → one gift per funded year.
@@ -536,6 +507,7 @@ export function DonorImport({ onClose, onImported, withHistory = false }) {
   const [bothMode,   setBothMode]   = useState(null);       // { donorSheet, giftSheet, matchInfo } when "Import both" is chosen
   const [matchKey,   setMatchKey]   = useState("email");    // gift→donor link column in both-mode
   const [loading,    setLoading]    = useState(false);
+  const [ackUnmapped, setAckUnmapped] = useState(false);    // BUILD-77 Part 3d — homeless columns require an explicit acknowledgement
   const [progress,   setProgress]   = useState(null);       // { done, total } during chunked submit
   const [aiLoading,  setAiLoading]  = useState(false);
   const [result,     setResult]     = useState(null);       // {created,giftsInserted,duplicates,warned,skipped,batchErrors}
@@ -686,6 +658,15 @@ export function DonorImport({ onClose, onImported, withHistory = false }) {
     return counts;
   }, [payload, effectiveShape]);
 
+  // BUILD-77 Part 3d — the columns that would be left behind, computed for
+  // the mapping screen (transaction shape; the fixture's thirteen included
+  // Phone, Address, City, State and ZIP before those gained homes).
+  const unmappedHeaders = useMemo(() => {
+    if (!parsed || effectiveShape !== "transaction") return [];
+    const mapped = new Set(Object.values(txMap).filter(Boolean));
+    return (parsed.headers || []).filter(h => String(h).trim() && !mapped.has(h));
+  }, [parsed, txMap, effectiveShape]);
+
   // ── Submit import (chunked, with progress — the hang fix) ──
   const doImport = async () => {
     const { donors: rawDonors, gifts, warnedCount, skippedCount, error } = payload;
@@ -698,6 +679,46 @@ export function DonorImport({ onClose, onImported, withHistory = false }) {
     setLoading(true); setErr(""); setProgress({ done:0, total:donors.length });
     try {
       const totals = await submitImportChunked(donors, gifts, (done,total) => setProgress({ done, total }));
+      // ── BUILD-77 Part 3a — the file-level equation, from PARSE ENTRY ──
+      // "In your file" is the physical non-blank row count taken once when
+      // the file was parsed, never the count of what survived the client's
+      // own builders. The client's refused rows (unparseable amount/date,
+      // future-dated, refunds are NOT refused) join the buckets with their
+      // reasons, and balance is recomputed against the FILE. The old code
+      // summed only the server's payload-scoped equation, which is how 74
+      // rows and ~$154,806 of a real file hid behind "Balanced".
+      if (payload.file && payload.dispositions) {
+        const R = totals.reconciliation;
+        R.rows.inFile = payload.file.rows;
+        R.dollars.inFile = payload.file.dollars;
+        const bump = (bucket, reason, rows, dollars) => {
+          R.rows[bucket] += rows; R.dollars[bucket] += dollars;
+          const box = bucket === "skipped" ? R.skippedReasons : R.erroredReasons;
+          const e = box[reason] || (box[reason] = { rows: 0, dollars: 0 });
+          e.rows += rows; e.dollars += dollars;
+        };
+        const byReason = {};
+        for (const d of payload.dispositions) {
+          if (d.disposition === "gift") continue;   // sent to the server; its ledger owns them
+          const key = d.disposition + "|" + (d.reason || "donor_info_only");
+          const e = byReason[key] || (byReason[key] = { rows: 0, dollars: 0 });
+          e.rows += 1; e.dollars += d.dollars || 0;
+        }
+        for (const [key, v] of Object.entries(byReason)) {
+          const [disp, reason] = key.split("|");
+          if (disp === "errored") bump("errored", reason, v.rows, v.dollars);
+          else bump("skipped", reason, v.rows, v.dollars);   // skipped + donor_only both surface as skipped-with-reason
+        }
+        const accounted = R.rows.created + R.rows.skipped + R.rows.errored;
+        R.rows.accounted = accounted;
+        R.rows.balanced = accounted === R.rows.inFile;
+        const dAccounted = R.dollars.created + R.dollars.skipped + R.dollars.errored;
+        R.dollars.accounted = Math.round(dAccounted * 100) / 100;
+        R.dollars.balanced = Math.abs(R.dollars.inFile - dAccounted) < 0.005;
+        R.balanced = R.rows.balanced && R.dollars.balanced;
+        totals.refusedRows = payload.dispositions.filter(d => d.disposition === "skipped" || d.disposition === "errored");
+        totals.flaggedRows = payload.flaggedRows || [];
+      }
       // Don't call onImported() here — the result screen must render first; its
       // Done button calls onImported() so the modal stays until dismissed.
       // BUILD-58 Part 2 — the class fix: every column accounted for, by name.
@@ -759,6 +780,46 @@ export function DonorImport({ onClose, onImported, withHistory = false }) {
     setLoading(true); setErr(""); setProgress({ done:0, total:donors.length });
     try {
       const totals = await submitImportChunked(donors, gifts, (done,total) => setProgress({ done, total }));
+      // ── BUILD-77 Part 3a — the file-level equation, from PARSE ENTRY ──
+      // "In your file" is the physical non-blank row count taken once when
+      // the file was parsed, never the count of what survived the client's
+      // own builders. The client's refused rows (unparseable amount/date,
+      // future-dated, refunds are NOT refused) join the buckets with their
+      // reasons, and balance is recomputed against the FILE. The old code
+      // summed only the server's payload-scoped equation, which is how 74
+      // rows and ~$154,806 of a real file hid behind "Balanced".
+      if (payload.file && payload.dispositions) {
+        const R = totals.reconciliation;
+        R.rows.inFile = payload.file.rows;
+        R.dollars.inFile = payload.file.dollars;
+        const bump = (bucket, reason, rows, dollars) => {
+          R.rows[bucket] += rows; R.dollars[bucket] += dollars;
+          const box = bucket === "skipped" ? R.skippedReasons : R.erroredReasons;
+          const e = box[reason] || (box[reason] = { rows: 0, dollars: 0 });
+          e.rows += rows; e.dollars += dollars;
+        };
+        const byReason = {};
+        for (const d of payload.dispositions) {
+          if (d.disposition === "gift") continue;   // sent to the server; its ledger owns them
+          const key = d.disposition + "|" + (d.reason || "donor_info_only");
+          const e = byReason[key] || (byReason[key] = { rows: 0, dollars: 0 });
+          e.rows += 1; e.dollars += d.dollars || 0;
+        }
+        for (const [key, v] of Object.entries(byReason)) {
+          const [disp, reason] = key.split("|");
+          if (disp === "errored") bump("errored", reason, v.rows, v.dollars);
+          else bump("skipped", reason, v.rows, v.dollars);   // skipped + donor_only both surface as skipped-with-reason
+        }
+        const accounted = R.rows.created + R.rows.skipped + R.rows.errored;
+        R.rows.accounted = accounted;
+        R.rows.balanced = accounted === R.rows.inFile;
+        const dAccounted = R.dollars.created + R.dollars.skipped + R.dollars.errored;
+        R.dollars.accounted = Math.round(dAccounted * 100) / 100;
+        R.dollars.balanced = Math.abs(R.dollars.inFile - dAccounted) < 0.005;
+        R.balanced = R.rows.balanced && R.dollars.balanced;
+        totals.refusedRows = payload.dispositions.filter(d => d.disposition === "skipped" || d.disposition === "errored");
+        totals.flaggedRows = payload.flaggedRows || [];
+      }
       setResult({
         ...totals,
         warned: bothPayload.donorWarned,
@@ -1004,6 +1065,24 @@ export function DonorImport({ onClose, onImported, withHistory = false }) {
                   {(R.rows.created + R.rows.skipped + R.rows.errored).toLocaleString()} · {money(R.dollars.created + R.dollars.skipped + R.dollars.errored)}
                 </span>
               </div>
+              {/* BUILD-77 Part 3b — if an org cannot get back what Steward
+                  refused, Steward ate it. Exactly the skipped+errored rows,
+                  with line number and reason, as a CSV. */}
+              {result.refusedRows?.length > 0 && (
+                <div style={{marginTop:8,paddingTop:8,borderTop:`1px solid ${T.bg3}`}}>
+                  <button onClick={()=>{
+                    const esc=v=>{const t=String(v??"");return /[",\n]/.test(t)?'"'+t.replace(/"/g,'""')+'"':t;};
+                    const rawHeaders=Object.keys(result.refusedRows[0].raw||{});
+                    const lines=[["Line","Disposition","Reason",...rawHeaders].map(esc).join(",")];
+                    for(const r of result.refusedRows) lines.push([r.line,r.disposition,r.reason||"",...rawHeaders.map(h=>r.raw?.[h]??"")].map(esc).join(","));
+                    const blob=new Blob([lines.join("\n")],{type:"text/csv"});
+                    const a=document.createElement("a");a.href=URL.createObjectURL(blob);
+                    a.download="not-imported-rows.csv";a.click();URL.revokeObjectURL(a.href);
+                  }} style={{background:"transparent",border:"none",padding:0,color:T.greenDk,fontSize:12,fontWeight:700,cursor:"pointer"}}>
+                    ↓ Download the {result.refusedRows.length} rows that were not imported (line numbers + reasons)
+                  </button>
+                </div>
+              )}
               {result.matchesExistingCount > 0 && (
                 <div style={{marginTop:8,paddingTop:8,borderTop:`1px solid ${T.bg3}`,color:T.ink2}}>
                   <strong style={{color:T.ink}}>{result.matchesExistingCount}</strong>{" "}
@@ -1027,6 +1106,26 @@ export function DonorImport({ onClose, onImported, withHistory = false }) {
               )}
             </div>;
           })()}
+          {/* BUILD-77 Part 1c — WE FLAGGED THESE. Every row where a free-text
+              safety marker was detected, with the matched phrase, so a human
+              confirms now rather than discovering after an ask goes out. */}
+          {result.flaggedRows?.length > 0 && (
+            <div style={{textAlign:"left",background:T.gold100||"#f6eccf",border:`1px solid ${(T.gold500||"#c9a84c")}55`,borderRadius:10,padding:"12px 16px",marginBottom:16,fontSize:12,lineHeight:1.7}}>
+              <div style={{fontSize:10,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",color:T.gold600||"#a97f22",marginBottom:6}}>
+                We flagged these — from the notes column, please confirm
+              </div>
+              {result.flaggedRows.slice(0,30).map((f,i)=>(
+                <div key={i} style={{display:"flex",justifyContent:"space-between",gap:10,color:T.ink2}}>
+                  <span style={{minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
+                    <strong style={{color:T.ink}}>{f.name}</strong>{" — "}
+                    {[f.flags.deceased&&"deceased",f.flags.doNotSolicit&&"do-not-solicit",f.flags.doNotContact&&"do-not-contact",f.flags.doNotMail&&"do-not-mail",f.flags.doNotEmail&&"do-not-email"].filter(Boolean).join(", ")}
+                  </span>
+                  <span style={{color:T.ink3,flexShrink:0}}>line {f.line} · "{String(f.matched[0]||"").slice(0,32)}"</span>
+                </div>
+              ))}
+              {result.flaggedRows.length > 30 && <div style={{color:T.ink3}}>+{result.flaggedRows.length-30} more — every one is on the donor's record with its flag set.</div>}
+            </div>
+          )}
           {/* BUILD-58 Part 2 — nothing in the file vanishes silently: every
               column is mapped, deliberately ignored, or called out as
               unrecognized; every skipped ROW has a stated reason. */}
@@ -1367,12 +1466,28 @@ export function DonorImport({ onClose, onImported, withHistory = false }) {
             </div>
           )}
 
+          {/* BUILD-77 Part 3d — columns with NO home are named BEFORE the
+              write, and the import will not run until acknowledged. An org
+              that imports and then cannot mail anyone has lost the thing
+              they came for. */}
+          {unmappedHeaders.length > 0 && (
+            <div style={{background:T.bg,border:`1px solid ${T.bg3}`,borderRadius:10,padding:"10px 14px",marginBottom:12,textAlign:"left"}}>
+              <div style={{fontSize:12,fontWeight:700,color:"#b8593f",marginBottom:4}}>
+                {unmappedHeaders.length} column{unmappedHeaders.length===1?" has":"s have"} no home and will NOT be imported:
+              </div>
+              <div style={{fontSize:12,color:T.ink2,marginBottom:8}}>{unmappedHeaders.join(" · ")}</div>
+              <label style={{display:"flex",alignItems:"center",gap:8,fontSize:12,color:T.ink,cursor:"pointer"}}>
+                <input type="checkbox" checked={ackUnmapped} onChange={e=>setAckUnmapped(e.target.checked)}/>
+                I understand these columns will be left behind
+              </label>
+            </div>
+          )}
           {err&&<div style={{color:"#b8593f",fontSize:12,marginBottom:10}}>{err}</div>}
           <div style={{display:"flex",gap:10}}>
             <button onClick={()=>{setParsed(null);setErr("");}} disabled={loading}
               style={{background:"transparent",border:"1px solid "+T.bg3,borderRadius:10,padding:"11px 18px",color:T.ink3,fontSize:13,cursor:loading?"not-allowed":"pointer",opacity:loading?0.5:1}}>← Back</button>
-            <button onClick={doImport} disabled={loading||donorCount===0}
-              style={{flex:1,background:loading||donorCount===0?T.bg2:T.green600,border:"none",borderRadius:10,padding:"11px 20px",color:"#fff",fontSize:14,fontWeight:700,cursor:loading||donorCount===0?"not-allowed":"pointer",opacity:loading||donorCount===0?0.6:1}}>
+            <button onClick={doImport} disabled={loading||donorCount===0||(unmappedHeaders.length>0&&!ackUnmapped)}
+              style={{flex:1,background:loading||donorCount===0||(unmappedHeaders.length>0&&!ackUnmapped)?T.bg2:T.green600,border:"none",borderRadius:10,padding:"11px 20px",color:"#fff",fontSize:14,fontWeight:700,cursor:loading||donorCount===0||(unmappedHeaders.length>0&&!ackUnmapped)?"not-allowed":"pointer",opacity:loading||donorCount===0||(unmappedHeaders.length>0&&!ackUnmapped)?0.6:1}}>
               {loading?"Importing…":`Import ${donorCount.toLocaleString()} donor${donorCount!==1?"s":""}${giftCount>0?` + ${giftCount.toLocaleString()} gifts`:""} →`}
             </button>
           </div>
@@ -1464,28 +1579,8 @@ function autoDetectWideConfig(headers, rows) {
   return { yearCols: validYearCols, donorNameCol, donorEmailCol };
 }
 
-function autoDetectTxMapping(headers, rows) {
-  const map = { donorName:"",donorEmail:"",amount:"",date:"",type:"",campaign:"",notes:"",owner:"",externalId:"" };
-  const sample = rows.slice(0,10);
-  for (const h of headers) {
-    const hl = h.toLowerCase().trim();
-    if (!map.donorName  && /^(name|full.?name|donor.?name|donor|contact|first.?name)$/.test(hl)) map.donorName  = h;
-    if (!map.donorEmail && /^(email|email.?address|e-?mail)$/.test(hl))                          map.donorEmail = h;
-    // BUILD-45 §1.2 F-4 — a source-system gift/transaction id is the ONLY safe
-    // gift dedup key; (donor, amount, date) never is. Anchored so a bare "ID"
-    // (usually the donor id) or "Donor ID" is never grabbed.
-    if (!map.externalId && /^(gift.?id|transaction.?id|txn.?id|payment.?id|external.?id|reference(.?(no|number|id))?)$/.test(hl)) map.externalId = h;
-    if (!map.amount     && /^(amount|gift.?amount|donation.?amount|gift|giving|sum)$/.test(hl)) {
-      if (sample.some(r => !isNaN(parseFloat(String(r[h]||"").replace(/[$,]/g,""))))) map.amount = h;
-    }
-    if (!map.date     && /^(date|gift.?date|donation.?date|when)$/.test(hl))           map.date     = h;
-    if (!map.type     && /^(type|gift.?type|payment.?type|method|payment)$/.test(hl)) map.type     = h;
-    if (!map.campaign && /^(campaign|fund|appeal|designation)$/.test(hl))              map.campaign = h;
-    if (!map.notes    && /^(notes?|memo|comments?)$/.test(hl))                         map.notes    = h;
-    if (!map.owner)   map.owner = detectOwnerColumn([h]) ? h : map.owner;
-  }
-  return map;
-}
+// autoDetectTxMapping moved to lib/importShape.js (BUILD-77) so the golden
+// fixture suite drives the REAL auto-mapping, not a copy.
 
 // ── GiftHistoryImport ──────────────────────────────────────────────────────
 function GiftHistoryImport({ donors, onClose, onImported }) {
@@ -3129,6 +3224,8 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
               {/* BUILD-58 Part 2 — safety flags, visible where staff decide to reach out */}
               {donor.deceased&&<span title="No mail of any kind is sent to this donor" style={{fontSize:10,fontWeight:800,padding:"3px 9px",borderRadius:99,background:T.terra100,color:T.terra700,border:`1px solid ${T.terra200}`}}>Deceased</span>}
               {!donor.deceased&&donor.doNotContact&&<span title="Excluded from campaigns, sequences, and workflow emails" style={{fontSize:10,fontWeight:800,padding:"3px 9px",borderRadius:99,background:T.gold100,color:T.gold700,border:`1px solid ${T.gold300}`}}>Do not contact</span>}
+              {!donor.deceased&&!donor.doNotContact&&donor.doNotSolicit&&<span title="No asks — excluded from the drift list, re-engage, suggested outreach, and ask automations. Stewardship thank-yous continue." style={{fontSize:10,fontWeight:800,padding:"3px 9px",borderRadius:99,background:T.gold100,color:T.gold700,border:`1px solid ${T.gold300}`}}>Do not solicit</span>}
+              {donor.importedSustainer&&<span title={`Sustainer history from import — no payment authorization here yet${donor.importedSustainerAmount?` (was $${donor.importedSustainerAmount}/mo)`:""}. Send a reconnect link from Fundraising → Recurring.`} style={{fontSize:10,fontWeight:800,padding:"3px 9px",borderRadius:99,background:T.green100||"#edf3ee",color:T.greenDk,border:`1px solid ${T.green200||"#dce7df"}`}}>Sustainer · not reconnected</span>}
               <span style={{fontSize:11,color:T.ink3}}>{donor.email}</span>
             </div>
             <div className="dph-meta" style={{fontSize:11,color:T.ink3,marginTop:2,display:"flex",flexWrap:"wrap",gap:"0 4px"}}>
@@ -4267,7 +4364,12 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
 
 // ── Re-engage View ─────────────────────────────────────────────────────────
 function ReEngageView({donors,org,onLogTouchpoint,onSelectDonor}){
-  const lapsed=[...donors].filter(d=>d.stage==="lapsed"||(d.lastGift&&daysDiff(d.lastGift)>365)).sort((a,b)=>b.total-a.total);
+  // BUILD-77 Part 1f — a re-engage list is an ASK surface: the no-ask family
+  // (deceased / do-not-contact / do-not-solicit) never appears here, and an
+  // unlinked imported sustainer belongs to the recurring reconnect list —
+  // their card stopped, they did not choose to leave.
+  const askable=d=>!d.deceased&&!d.doNotContact&&!d.doNotSolicit&&!d.importedSustainer;
+  const lapsed=[...donors].filter(d=>askable(d)&&(d.stage==="lapsed"||(d.lastGift&&daysDiff(d.lastGift)>365))).sort((a,b)=>b.total-a.total);
   const totalValue=lapsed.reduce((s,d)=>s+d.total,0);
   const avgDays=lapsed.length
     ?Math.round(lapsed.reduce((s,d)=>s+daysDiff(d.lastGift||d.lastTouchpoint||new Date().toISOString()),0)/lapsed.length)
@@ -5135,7 +5237,7 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
   const isAdmin=auth?.user?.role==="admin";
   const userId=auth?.user?.id||"";
   const userName=auth?.user?.name||auth?.user?.email||"";
-  const lapsedCount=data.donors.filter(d=>d.stage==="lapsed"||(d.lastGift&&daysDiff(d.lastGift)>365)).length;
+  const lapsedCount=data.donors.filter(d=>!d.deceased&&!d.doNotContact&&!d.doNotSolicit&&!d.importedSustainer&&(d.stage==="lapsed"||(d.lastGift&&daysDiff(d.lastGift)>365))).length;   // BUILD-77 — the badge matches the (gated) list
   const[view,setView]=useState(initialView||"directory");
   const[search,setSearch]=useState("");
   const[selected,setSelected]=useState(()=>initialSelectDonorId?data.donors.find(d=>d.id===initialSelectDonorId)||null:null);

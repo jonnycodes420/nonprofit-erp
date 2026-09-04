@@ -2,7 +2,6 @@ import { useState, useEffect, Fragment } from "react";
 import { apiFetch } from "../api";
 import { useAuth } from "../main";
 import { T, fmt, fmtFull, quietPhrase, daysUntil, daysDiff, askClaude, buildContext, Spin, AIBtn, GoldMoment, interactive, SectionTabs } from "./shared";
-import { DashboardRecurring } from "./RecurringGiving";
 import { mergeLayout, sectionMeta, isDefaultLayout, moveToTop } from "../lib/homeLayout";
 import { greetingForHour } from "../lib/greeting";
 import FunnelChart from "./FunnelChart";
@@ -213,7 +212,15 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
   // BUILD-57 — the dashboard area is two tabs: Today (the existing section
   // stack) and Recurring (EXCEPTIONS only — counts + a path into the
   // Fundraising → Recurring Giving page, never a second roster).
-  const [dashTab,setDashTab]=useState("today");
+  // BUILD-77 Part 7 — the four recurring counts, for the ONE cross-link line
+  // (the tab itself moved to Fundraising → Recurring Giving).
+  const [recurringAttention,setRecurringAttention]=useState(0);
+  useEffect(()=>{
+    apiFetch("/recurring/exceptions").then(d=>{
+      const c=d?.counts||{};
+      setRecurringAttention((c.failedCards||0)+(c.aboutToLapse||0)+(c.pendingProposals||0)+(c.anniversaries||0));
+    }).catch(()=>{});
+  },[]);
   const [briefing,setBriefing]=useState("");
   const [briefLoading,setBriefLoading]=useState(false);
   const [briefOpen,setBriefOpen]=useState(false);
@@ -1272,9 +1279,11 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
     const exParts=[
       ex.singleGift>0&&`${ex.singleGift.toLocaleString()} single-gift (no pattern yet)`,
       ex.activeRecurring>0&&`${ex.activeRecurring.toLocaleString()} on active recurring`,
+      ex.unlinkedSustainer>0&&`${ex.unlinkedSustainer.toLocaleString()} sustainer${ex.unlinkedSustainer===1?"":"s"} not yet reconnected`,
       ex.deceased>0&&`${ex.deceased.toLocaleString()} deceased`,
       ex.doNotSolicit>0&&`${ex.doNotSolicit.toLocaleString()} do-not-solicit`,
-      ex.openPledge>0&&`${ex.openPledge.toLocaleString()} on an open pledge`,
+      ex.doNotContact>0&&`${ex.doNotContact.toLocaleString()} do-not-contact`,
+      ex.pledgeCadence>0&&`${ex.pledgeCadence.toLocaleString()} on pledge schedules`,
     ].filter(Boolean);
     if(driftData.evaluated===0)return{
       head:"No donors to evaluate yet.",
@@ -1597,15 +1606,23 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
         )}
       </div>
 
-      {/* BUILD-57 — Today / Recurring tabs. Recurring is the exceptions view:
-          who needs a human this morning, and one button into the full
-          Fundraising → Recurring Giving page. */}
-      <SectionTabs tabs={[{id:"today",label:"Today"},{id:"recurring",label:"Recurring"}]}
-        active={dashTab} onSelect={setDashTab} className="dash-tabbar"/>
+      {/* BUILD-77 Part 7 — the Recurring tab left the home screen (it lives
+          under Fundraising → Recurring Giving). Home keeps one tab and no
+          tab bar; when any recurring count is non-zero, ONE line below links
+          across. Recurring is a place you go, not a thing you scan every
+          morning. */}
+      {recurringAttention>0&&(
+        <div {...interactive(()=>onNavigate("fundraising",{frSection:"recurring"}),{label:"Open recurring giving"})}
+          style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:12,padding:"10px 16px",display:"flex",alignItems:"center",gap:10}}>
+          <span aria-hidden style={{color:T.terracotta,fontSize:13,lineHeight:1}}>◑</span>
+          <span style={{flex:1,fontSize:13,color:T.ink2}}>
+            <strong style={{color:T.ink}}>{recurringAttention}</strong> recurring item{recurringAttention===1?"":"s"} need{recurringAttention===1?"s":""} a person — failed cards, expiring cards, or waiting proposals.
+          </span>
+          <span style={{fontSize:12,fontWeight:700,color:T.greenDk,whiteSpace:"nowrap"}}>Open Recurring →</span>
+        </div>
+      )}
 
-      {dashTab==="recurring"&&<DashboardRecurring onNavigate={onNavigate}/>}
-
-      {dashTab==="today"&&(<>
+      {(<>
       {/* One-time gold moments (BUILD-08 Phase D) — the product's only
           celebration pattern, each fires once per org (localStorage-keyed
           inside GoldMoment). Goal completion keys on the goal id, so a NEW

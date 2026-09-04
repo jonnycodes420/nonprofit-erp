@@ -488,6 +488,9 @@ export function RecurringView({ onNavigate, isReadOnly }) {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      {/* BUILD-77 Part 7 — the morning exceptions view moved here from the
+          Home tab bar: who needs a person, at the top of the page you go to. */}
+      <DashboardRecurring onNavigate={onNavigate} />
       {toast && (
         <div role="status" style={{ position: "fixed", bottom: 24, right: 24, zIndex: 400, background: T.ink, color: T.inkInverse, borderRadius: 10, padding: "12px 18px", fontSize: 13, boxShadow: T.shadowLg }}>{toast}</div>
       )}

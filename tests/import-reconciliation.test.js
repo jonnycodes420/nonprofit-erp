@@ -299,7 +299,7 @@ function parseCsv(text) {
   // A single cent, on a single row, still survives.
   const oneCent = await api("POST", "/donors/import-combined", tok, {
     donors: [{ name: "One Cent", email: "onecent@recon.test", stage: "prospect" }],
-    gifts: [{ donorIndex: 0, amount: 100.01, date: "2026-09-05", type: "cash", campaign: "", notes: "" }],
+    gifts: [{ donorIndex: 0, amount: 100.01, date: "2026-06-05", type: "cash", campaign: "", notes: "" }],
   });
   const [ocRow] = await q(
     `SELECT g.amount::text AS a FROM gifts g JOIN donors d ON d.id=g.donor_id WHERE d.email='onecent@recon.test'`);
