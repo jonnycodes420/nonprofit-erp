@@ -1,0 +1,64 @@
+Steward
+⌕
+?
+B
+B79 Walker
+Sign out
+◈
+Home
+PEOPLE
+♦
+Donors
+◫
+Pipeline
+◻
+Tasks
+FUNDRAISING
+↗
+Fundraising
+◉
+Grants
+◑
+Communications
+◫
+Donor Portal
+◧
+Workflows
+INSIGHT
+▤
+Reports
+◇
+Finance
+⚙
+Settings
+Your donors.
+✓
+Import complete.
+1111 donors added · 1327 duplicates skipped · 2372 imported with warnings · 72 skipped (no name or email)
+EVERY ROW AND EVERY DOLLAR ACCOUNTED FOR
+In your file
+2,438 · $0
+Imported
+1,111 · $0
+Skipped
+1,327 · $0
+already on file: 1,327 · $0
+Balanced
+2,438 · $0
+EVERY COLUMN ACCOUNTED FOR
+Your file: _1 → _firstName · _3 → _lastName · _5 → email · _17 → lastGift
+Not imported — unrecognized: Donor Giving History Report · · _2 · _4 · _6 · _7 · _8 · _9 · _10 · _11 · _12 · _13 · _14 · _15 · _16 · _18 · _19 · _20
+Done
+Directory
+Team
+Re-engage
+Map
+✦ Call List
++ Add
+↑ Import & tools
+▾
+⊞ Filters
+No donors yet.
+Every relationship in Steward starts as one row — bring in a spreadsheet from Import above, or add a single name to begin.
+Add a donor →
+Explore with sample data

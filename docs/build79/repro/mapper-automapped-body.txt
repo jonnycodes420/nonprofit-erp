@@ -1,0 +1,464 @@
+Steward
+⌕
+?
+B
+B79 Walker
+Sign out
+◈
+Home
+PEOPLE
+♦
+Donors
+◫
+Pipeline
+◻
+Tasks
+FUNDRAISING
+↗
+Fundraising
+◉
+Grants
+◑
+Communications
+◫
+Donor Portal
+◧
+Workflows
+INSIGHT
+▤
+Reports
+◇
+Finance
+⚙
+Settings
+Your donors.
+Import Donors
+One file — donors and their giving history · shape auto-detected · stages auto-assigned
+✕ Close
+▤
+steward-messy-2500-v2.csv
+428 KB · 2,510 rows · one row per donor — we'll import donors and their totals
+Replace
+Remove
+We detected: one row per donor — we'll import donors and their totals.
+One row per donor (totals)
+One row per gift (build history)
+Year columns (build history)
+Map columns (22 donor columns · 2,510 rows)
+✦ Auto-map
+Donor Giving History Report
+— skip —
+firstName
+lastName
+name
+email
+phone
+total
+lastAmount
+lastGift
+gifts
+status
+city
+state
+notes
+owner
+deceased
+doNotContact
+(blank)
+— skip —
+firstName
+lastName
+name
+email
+phone
+total
+lastAmount
+lastGift
+gifts
+status
+city
+state
+notes
+owner
+deceased
+doNotContact
+_1
+— skip —
+firstName
+lastName
+name
+email
+phone
+total
+lastAmount
+lastGift
+gifts
+status
+city
+state
+notes
+owner
+deceased
+doNotContact
+_2
+— skip —
+firstName
+lastName
+name
+email
+phone
+total
+lastAmount
+lastGift
+gifts
+status
+city
+state
+notes
+owner
+deceased
+doNotContact
+_3
+— skip —
+firstName
+lastName
+name
+email
+phone
+total
+lastAmount
+lastGift
+gifts
+status
+city
+state
+notes
+owner
+deceased
+doNotContact
+_4
+— skip —
+firstName
+lastName
+name
+email
+phone
+total
+lastAmount
+lastGift
+gifts
+status
+city
+state
+notes
+owner
+deceased
+doNotContact
+_5
+— skip —
+firstName
+lastName
+name
+email
+phone
+total
+lastAmount
+lastGift
+gifts
+status
+city
+state
+notes
+owner
+deceased
+doNotContact
+_6
+— skip —
+firstName
+lastName
+name
+email
+phone
+total
+lastAmount
+lastGift
+gifts
+status
+city
+state
+notes
+owner
+deceased
+doNotContact
+_7
+— skip —
+firstName
+lastName
+name
+email
+phone
+total
+lastAmount
+lastGift
+gifts
+status
+city
+state
+notes
+owner
+deceased
+doNotContact
+_8
+— skip —
+firstName
+lastName
+name
+email
+phone
+total
+lastAmount
+lastGift
+gifts
+status
+city
+state
+notes
+owner
+deceased
+doNotContact
+_9
+— skip —
+firstName
+lastName
+name
+email
+phone
+total
+lastAmount
+lastGift
+gifts
+status
+city
+state
+notes
+owner
+deceased
+doNotContact
+_10
+— skip —
+firstName
+lastName
+name
+email
+phone
+total
+lastAmount
+lastGift
+gifts
+status
+city
+state
+notes
+owner
+deceased
+doNotContact
+_11
+— skip —
+firstName
+lastName
+name
+email
+phone
+total
+lastAmount
+lastGift
+gifts
+status
+city
+state
+notes
+owner
+deceased
+doNotContact
+_12
+— skip —
+firstName
+lastName
+name
+email
+phone
+total
+lastAmount
+lastGift
+gifts
+status
+city
+state
+notes
+owner
+deceased
+doNotContact
+_13
+— skip —
+firstName
+lastName
+name
+email
+phone
+total
+lastAmount
+lastGift
+gifts
+status
+city
+state
+notes
+owner
+deceased
+doNotContact
+_14
+— skip —
+firstName
+lastName
+name
+email
+phone
+total
+lastAmount
+lastGift
+gifts
+status
+city
+state
+notes
+owner
+deceased
+doNotContact
+_15
+— skip —
+firstName
+lastName
+name
+email
+phone
+total
+lastAmount
+lastGift
+gifts
+status
+city
+state
+notes
+owner
+deceased
+doNotContact
+_16
+— skip —
+firstName
+lastName
+name
+email
+phone
+total
+lastAmount
+lastGift
+gifts
+status
+city
+state
+notes
+owner
+deceased
+doNotContact
+_17
+— skip —
+firstName
+lastName
+name
+email
+phone
+total
+lastAmount
+lastGift
+gifts
+status
+city
+state
+notes
+owner
+deceased
+doNotContact
+_18
+— skip —
+firstName
+lastName
+name
+email
+phone
+total
+lastAmount
+lastGift
+gifts
+status
+city
+state
+notes
+owner
+deceased
+doNotContact
+_19
+— skip —
+firstName
+lastName
+name
+email
+phone
+total
+lastAmount
+lastGift
+gifts
+status
+city
+state
+notes
+owner
+deceased
+doNotContact
+_20
+— skip —
+firstName
+lastName
+name
+email
+phone
+total
+lastAmount
+lastGift
+gifts
+status
+city
+state
+notes
+owner
+deceased
+doNotContact
+ASSIGN THESE DONORS TO AN OFFICER
+No owner/officer column detected. Route them all now, or leave unassigned and split them from the Directory later.
+Leave unassigned (assign later from the Directory)
+Assign all to me
+No rows ready — map at least one column to name or email.
+← Back
+Import 0 donors →
+Directory
+Team
+Re-engage
+Map
+✦ Call List
++ Add
+↑ Import & tools
+▾
+⊞ Filters
+No donors yet.
+Every relationship in Steward starts as one row — bring in a spreadsheet from Import above, or add a single name to begin.
+Add a donor →
+Explore with sample data

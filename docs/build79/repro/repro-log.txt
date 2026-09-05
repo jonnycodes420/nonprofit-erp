@@ -1,0 +1,55 @@
+fresh org: org_cfbdfba1
+=== MAPPER STATE ===
+  mapper text: ["We detected: one row per donor — we'll import donors and their totals","detected"]
+  mapper text: ["2,510 rows · one row per donor — we'll import donors and their totals\n","2,510 rows)\n✦ Auto-map\nDonor Giving History Report\n— skip —\nfirstName\n"]
+  mapper text: ["one row per donor — we'll import donors and their totals\nReplace\nRemove\nWe detected: one row per "]
+  buttons: ["Steward","?","BB79 Walker","Sign out","◈Home","♦Donors","◫Pipeline","◻Tasks","↗Fundraising","◉Grants","◑Communications","◫Donor Portal","◧Workflows","▤Reports","◇Finance","⚙Settings","✕ Close","Replace","Remove","✦ Auto-map","← Back","Import 0 donors →","Directory","Team","Re-engage","Map","✦ Call List","+ Add","↑ Import & tools ▾","⊞ Filters","Add a donor →","Explore with sample data"]
+shot: 01-mapper-1440
+  after Auto-map, import button reads: "Import 0 donors →"
+shot: 02-automapped-1440
+  mapper select count: 24
+  select options: ["aggregate","transaction","wide"]
+  after prod mapping, import button reads: "Import 2,438 donors →"
+shot: 03-prod-mapping-1440
+clicked: Import 2,438 donors →
+shot: 04-after-import-2-438-donors-
+reached result screen
+=== SUMMARY STATE ===
+  summary text: ["EVERY ROW AND EVERY DOLLAR ACCOUNTED FOR\nIn your file\n2,438 "]
+  summary text: ["Balanced\n2,438 · $0\nEVERY COLUMN ACCOUNTED FOR\nYour file: _1 → _firstName · _3 → _lastNa"]
+  summary text: ["In your file\n2,438 · $0\nImported\n1,111 · $0\nSkipped\n1,327 · $0\nalready on file: 1,327 · $0\nB"]
+  summary text: ["2372 imported with warnings · 72 skipped (no name or email)\nEVERY ROW AND"]
+  summary text: ["warnings · 72 skipped (no name or email)\nEVERY ROW AND EVERY DOLLAR "]
+  buttons: ["Steward","?","BB79 Walker","Sign out","◈Home","♦Donors","◫Pipeline","◻Tasks","↗Fundraising","◉Grants","◑Communications","◫Donor Portal","◧Workflows","▤Reports","◇Finance","⚙Settings","Done","Directory","Team","Re-engage","Map","✦ Call List","+ Add","↑ Import & tools ▾","⊞ Filters","Add a donor →","Explore with sample data"]
+shot: 07-summary-1440
+shot: 08-donorlist-1440
+=== DB TRUTH (psql) ===
+  donors: 1111
+  gifts: 0|0
+  sum(donors.total): 0.00
+  last_gift_date null / sep2026 / other: 1111|0|0
+  phone-shaped names: 355
+  sample phone-named: (859) 477-7973
+(859) 491-6462
+859-491-6462
+(859) 445-7368
+(606) 221-9266
+606.501.7418
+  sample names: (270) 211-8490
+(270) 221-6987
+(270) 233-8019
+(270) 234-5052
+(270) 254-5472
+(270) 256-9976
+(270) 259-5635
+(270) 267-2901
+(270) 289-8028
+(270) 300-6741
+  [pageerror] Unexpected token '<'
+  [pageerror] Unexpected token '<'
+  home text: "NEEDS YOUR ATTENTION 6 items 1 1 (502) 220-8677 New prospect — no contact yet. First outreach sets the tone. Log call → M Madison New prospect — no contact yet. First outreach sets the tone. Log call "
+  home text: "DRIFTING watching every donor's own giving pattern No donors drifting"
+  home text: "Import your donors Connect Stripe unlocks online giving and failed-card recove"
+shot: 09-home-1440
+=== EXPORT === status: 200
+  export bytes: 60648 first line: "Name,Email,Phone,Stage,Status,Total giving,Last gift date,Last gift amount,Gift count,Assigned to,City,State,Tags\r"
