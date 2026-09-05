@@ -101,6 +101,39 @@ const ok = (cond, label, detail) => {
     "a donor NAMED 'Total …' with an amount is DATA, not chrome");
   ok(lib.classifyBodyRow(["Dylan Hollingsworth", "$750.00"], hc) === null, "an ordinary row is data");
 
+  console.log("— §8 · shape is a decision with evidence, or a question (Part 2) —");
+  // correct headers on the v2 fixture → transaction, with the reason stated
+  const detGood = lib.detectImportShape(a.headers, a.rows);
+  ok(detGood.shape === "transaction", "v2 with the real header detects individual gifts", detGood.shape);
+  ok(/amount.*date/i.test(detGood.reason || ""), "the decision names its evidence", detGood.reason);
+  // the Part-0 garbage headers (line 1 as header → _1.._21) → UNKNOWN, never a default
+  const garbageHeaders = ["Donor Giving History Report", ..."_".repeat(21).split("").map((_, i) => `_${i + 1}`)];
+  const garbageRows = a.rows.slice(0, 60).map(r => {
+    const o = {};
+    garbageHeaders.forEach((h, i) => { o[h] = r[a.headers[i]] || ""; });
+    return o;
+  });
+  const detBad = lib.detectImportShape(garbageHeaders, garbageRows);
+  ok(detBad.shape === "unknown", "unrecognisable headers yield shape UNKNOWN — the mapper asks, it does not pick", detBad.shape);
+  ok(/recognised/.test(detBad.reason || ""), "the refusal says why", detBad.reason);
+  ok((detBad.recognized || []).length < 3, "fewer than three recognised columns is the trigger", detBad.recognized);
+
+  console.log("— §9 · totals mode refuses a per-gift file (Part 2.2) —");
+  // keyed the way the Part-0 run was (Phone as the identity column):
+  const clPhone = lib.assessAggregateCollapse(a.rows, "Phone", "");
+  ok(clPhone.refuse === true, "aggregate on v2 keyed by phone REFUSES to proceed", clPhone);
+  ok(clPhone.collapsed > clPhone.keyedRows / 3, `the evidence: ${clPhone.collapsed} of ${clPhone.keyedRows} rows collapse`, clPhone);
+  // keyed by email (the file's real email column) — still a per-gift file:
+  const clEmail = lib.assessAggregateCollapse(a.rows, "Email", "Name");
+  ok(clEmail.refuse === true, "aggregate on v2 keyed by email refuses too", clEmail);
+  // a genuinely-aggregate file (one row per donor) sails through:
+  const uniqRows = [...new Map(a.rows.map(r => [r.Phone || r.Name, r])).values()];
+  const clUniq = lib.assessAggregateCollapse(uniqRows, "Phone", "Name");
+  ok(clUniq.refuse === false, "a genuinely one-row-per-donor set is not refused", { collapsed: clUniq.collapsed, keyed: clUniq.keyedRows });
+  // small files never trip the guard (30-row floor)
+  const clSmall = lib.assessAggregateCollapse(a.rows.slice(0, 10), "Phone", "");
+  ok(clSmall.refuse === false, "under 30 keyed rows the guard stays quiet (tiny files collapse legitimately)");
+
   console.log(`import-header: ${passed} passed, ${failed} failed`);
   process.exit(failed ? 1 : 0);
 })();

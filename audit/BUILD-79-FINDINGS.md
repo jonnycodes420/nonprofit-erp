@@ -172,3 +172,26 @@ earlier local `build-local-dist` run FAILED on eslint (`no-undef`) while a
 `tail -2` hid everything but eslint's warning summary — the walk then ran green
 against a stale bundle; caught by mtime comparison. Check the bundle hash, not
 the build's last two lines.
+
+## Part 2 — shape is a decision with evidence, or it is a question
+
+- `detectImportShape` now returns its `reason` and the list of `recognized`
+  columns; **fewer than three recognised columns → shape `unknown`** — the
+  banner turns to a question, the shape select gains a "— choose —" placeholder,
+  and the import button is disabled until a human picks. The Part-0 garbage
+  headers (line 1 as header → `_1.._21`) yield `unknown` (asserted).
+- `assessAggregateCollapse(rows, emailCol, nameCol)` — full-file scan on the
+  columns the mapping actually sends as identity. **Totals mode refuses when
+  >1/3 of ≥30 keyed rows collapse within the file** (v2 keyed by phone: 1,327
+  of 2,438 — refused; keyed by email — refused; the deduped one-row-per-donor
+  set — allowed). Refusal banner offers one-click "Treat as individual gifts";
+  `doImport` double-checks.
+- Duplicate language split at the source (`/donors/import`): `already_in_steward`
+  (matched a record that pre-dated this import) vs `duplicate_within_this_import`
+  (another row of the same file). Response carries `duplicatesOnFile` /
+  `duplicatesInFile`; the result headline and the reconciliation breakdown
+  render them as different sentences. In a fresh org every collapse now reads
+  as the file folding onto itself — never phantom "already on file" records.
+
+Assertions: import-header §8/§9 (43 total). The fresh-org HTTP assertion rides
+the Part 8 golden.

@@ -31,7 +31,7 @@ import { T, fmt, fmtFull, daysDiff, SC, askClaude, STAGES, STAGE_ACTION, TIER_CO
 // profile button, and modal render below, and add `VoiceMemoModal` back to
 // the import above).
 import { DonorMap } from "./DonorMap";
-import { detectImportShape, groupTransactions, shapeLabel, YEAR_HDR_PAT, detectWorkbookRoles, pickMatchKey, linkGiftsToDonors, detectOwnerColumn, matchOwnersToUsers, applyOwnerAssignment, groupOwnerMatches, normalizeName, normalizeDate, normalizeMoney, normalizeEmail, detectFlagColumns, parseBoolFlag, classifyColumns, decodeSpreadsheetBytes, decodeSpreadsheetBytesDetailed, analyzeCsvText, analyzeSheetRows, buildGiftItemsFromLedger, buildTransactionRows, detectNoteMarkers, autoDetectTxMapping } from "../../../shared/importShape";
+import { detectImportShape, groupTransactions, shapeLabel, YEAR_HDR_PAT, detectWorkbookRoles, pickMatchKey, linkGiftsToDonors, detectOwnerColumn, matchOwnersToUsers, applyOwnerAssignment, groupOwnerMatches, normalizeName, normalizeDate, normalizeMoney, normalizeEmail, detectFlagColumns, parseBoolFlag, classifyColumns, decodeSpreadsheetBytes, decodeSpreadsheetBytesDetailed, analyzeCsvText, analyzeSheetRows, assessAggregateCollapse, buildGiftItemsFromLedger, buildTransactionRows, detectNoteMarkers, autoDetectTxMapping } from "../../../shared/importShape";
 
 // ── CSV Import helpers ─────────────────────────────────────────────────────
 // ── Import field registry ──────────────────────────────────────────────────
@@ -153,6 +153,16 @@ function cp1252RowNames(report, parsed) {
   }
   return [...names];
 }
+
+// BUILD-79 Part 2.3 — reason keys the reconciliation panel renders with real
+// language. "already on file" used to cover BOTH a record that pre-dated the
+// import AND another row of the same file — in a fresh org that read as 1,327
+// phantom pre-existing records.
+const IMPORT_REASON_LABELS = {
+  already_in_steward: "already in Steward before this import",
+  already_on_file: "already in Steward before this import", // legacy key from older servers
+  duplicate_within_this_import: "duplicate rows within this file (collapsed)",
+};
 
 // The slice of an analyzeSheetRows result the importers carry as the parse
 // report (chrome banner, record count, the file's own TOTAL row for Part 3.2).
@@ -414,7 +424,7 @@ async function submitImportChunked(donors, gifts, onProgress, extras) {
     if (!giftsByDonor.has(g.donorIndex)) giftsByDonor.set(g.donorIndex, []);
     giftsByDonor.get(g.donorIndex).push(g);
   }
-  const totals = { created: 0, giftsInserted: 0, duplicates: 0, donorsUpdated: 0, financeSynced: 0, batchErrors: [], twinCandidates: 0,
+  const totals = { created: 0, giftsInserted: 0, duplicates: 0, duplicatesOnFile: 0, duplicatesInFile: 0, donorsUpdated: 0, financeSynced: 0, batchErrors: [], twinCandidates: 0,
     // BUILD-72 Part 1 — the file-level reconciliation, summed across chunks.
     // The server asserts it per request; this is what the user is shown.
     donorsMatched: 0, matchesExistingCount: 0, roundingAdjustment: 0,
@@ -443,6 +453,8 @@ async function submitImportChunked(donors, gifts, onProgress, extras) {
     totals.created       += res.created       || 0;
     totals.giftsInserted += res.giftsInserted || 0;
     totals.duplicates    += res.duplicates    || 0;
+    totals.duplicatesOnFile += res.duplicatesOnFile || 0;
+    totals.duplicatesInFile += res.duplicatesInFile || 0;
     totals.twinCandidates += (res.duplicateCandidates && res.duplicateCandidates.withinFile) || 0;
     totals.donorsUpdated += res.donorsUpdated || 0;
     totals.financeSynced += res.financeSynced || 0;
@@ -541,6 +553,7 @@ export function DonorImport({ onClose, onImported, withHistory = false }) {
   const [yearCols,   setYearCols]   = useState([]);         // wide year columns
   const [yearConvention, setYearConvention] = useState("dec31");
   const [shape,      setShape]      = useState("aggregate");// auto-detected file shape
+  const [shapeDetail, setShapeDetail] = useState(null);      // BUILD-79 Part 2 — the detection's evidence { reason, recognized, … }
   const [shapeOverride, setShapeOverride] = useState(null); // user override, if any
   const [bothMode,   setBothMode]   = useState(null);       // { donorSheet, giftSheet, matchInfo } when "Import both" is chosen
   const [matchKey,   setMatchKey]   = useState("email");    // gift→donor link column in both-mode
@@ -594,6 +607,18 @@ export function DonorImport({ onClose, onImported, withHistory = false }) {
   }, []);
 
   const effectiveShape = shapeOverride || shape;
+  // BUILD-79 Part 2.2 — totals mode refuses when >1/3 of keyed rows collapse
+  // onto a key already seen in THIS file: that is a per-gift file. The rows
+  // are all scanned (not a sample) against the columns the mapping actually
+  // sends as email/name.
+  const aggregateCollapse = useMemo(() => {
+    if (effectiveShape !== "aggregate" || !parsed) return null;
+    const emailCol = Object.keys(mapping).find(h => mapping[h] === "email") || "";
+    const nameCol = Object.keys(mapping).find(h => mapping[h] === "name") || "";
+    if (!emailCol && !nameCol) return null;
+    return assessAggregateCollapse(parsed.rows, emailCol, nameCol);
+  }, [effectiveShape, parsed, mapping]);
+  const shapeBlocked = effectiveShape === "unknown" || (aggregateCollapse && aggregateCollapse.refuse);
 
   // Multi-sheet workbook: detect a "Donors + Gift History" pair so we can offer
   // "Import both" above the per-sheet options. Runs detectImportShape per sheet.
@@ -614,7 +639,7 @@ export function DonorImport({ onClose, onImported, withHistory = false }) {
   const applyParsed = (headers, rows, physical, report) => {
     setParseReport(report || null);
     const det = detectImportShape(headers, rows);
-    setShape(det.shape); setShapeOverride(null);
+    setShape(det.shape); setShapeOverride(null); setShapeDetail(det);
     // Donor-field mapping is over the non-year columns (year columns are gifts,
     // configured separately) so a wide file's donor grid stays clean.
     setMapping(buildAutoMapping(headers.filter(h => !YEAR_HDR_PAT.test(String(h))), rows));
@@ -756,6 +781,9 @@ export function DonorImport({ onClose, onImported, withHistory = false }) {
 
   // ── Submit import (chunked, with progress — the hang fix) ──
   const doImport = async () => {
+    // BUILD-79 Part 2 — shape is a decision with evidence, or a question.
+    if (effectiveShape === "unknown") { setErr("Choose how this file is shaped before importing — we couldn't tell from the columns."); return; }
+    if (aggregateCollapse?.refuse) { setErr(`${aggregateCollapse.collapsed.toLocaleString()} of ${aggregateCollapse.keyedRows.toLocaleString()} rows collapse onto the same donors — this file is one row per gift. Switch the shape to individual gifts.`); return; }
     let activePayload = payload;
     let importExtras = null;
     setLoading(true); setErr("");
@@ -1157,7 +1185,9 @@ export function DonorImport({ onClose, onImported, withHistory = false }) {
           <div style={{fontSize:14,color:T.ink3,marginBottom:hasBatchErrors?12:28,lineHeight:1.8}}>
             <strong style={{color:T.ink}}>{result.created}</strong> donors added
             {result.giftsInserted > 0 && <> · <strong>{result.giftsInserted}</strong> gifts attached</>}
-            {result.duplicates > 0 && <> · <strong>{result.duplicates}</strong> duplicates skipped</>}
+            {result.duplicatesInFile > 0 && <> · <strong>{result.duplicatesInFile}</strong> duplicate row{result.duplicatesInFile===1?"":"s"} within this file collapsed</>}
+            {result.duplicatesOnFile > 0 && <> · <strong>{result.duplicatesOnFile}</strong> matched record{result.duplicatesOnFile===1?"":"s"} already in Steward</>}
+            {result.duplicates > 0 && !result.duplicatesInFile && !result.duplicatesOnFile && <> · <strong>{result.duplicates}</strong> duplicates skipped</>}
             {result.twinCandidates > 0 && <> · <strong>{result.twinCandidates}</strong> same-day/same-amount twins imported (reviewable)</>}
             {result.newDonors > 0 && <> · <strong>{result.newDonors}</strong> created from unmatched gifts</>}
             {result.warned > 0    && <> · <strong>{result.warned}</strong> imported with warnings</>}
@@ -1188,12 +1218,12 @@ export function DonorImport({ onClose, onImported, withHistory = false }) {
               {R.rows.skipped > 0 && line("Skipped", R.rows.skipped, R.dollars.skipped)}
               {Object.entries(R.skippedReasons || {}).map(([reason, v]) =>
                 <div key={reason} style={{paddingLeft:12,color:T.ink3,fontSize:11}}>
-                  {reason.replace(/_/g," ")}: {v.rows.toLocaleString()} · {money(v.dollars)}
+                  {IMPORT_REASON_LABELS[reason] || reason.replace(/_/g," ")}: {v.rows.toLocaleString()} · {money(v.dollars)}
                 </div>)}
               {R.rows.errored > 0 && line("Errored", R.rows.errored, R.dollars.errored, T.terracotta)}
               {Object.entries(R.erroredReasons || {}).map(([reason, v]) =>
                 <div key={reason} style={{paddingLeft:12,color:T.terracotta,fontSize:11}}>
-                  {reason.replace(/_/g," ")}: {v.rows.toLocaleString()} · {money(v.dollars)}
+                  {IMPORT_REASON_LABELS[reason] || reason.replace(/_/g," ")}: {v.rows.toLocaleString()} · {money(v.dollars)}
                 </div>)}
               <div style={{height:1,background:T.bg3,margin:"6px 0"}} />
               <div style={{display:"flex",justifyContent:"space-between",gap:12,fontWeight:700,
@@ -1555,18 +1585,33 @@ export function DonorImport({ onClose, onImported, withHistory = false }) {
             </div>
           )}
 
-          {/* Detection banner + override */}
-          <div style={{background:T.gold100||"#f6eccf",border:`1px solid ${T.gold300||"#e7cf91"}`,borderRadius:10,padding:"11px 14px",marginBottom:14,display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,flexWrap:"wrap"}}>
+          {/* Detection banner + override — BUILD-79 Part 2: the decision shows
+              its evidence, and with too little evidence it becomes a QUESTION. */}
+          <div style={{background:effectiveShape==="unknown"?(T.terra100||"#f6e3dd"):(T.gold100||"#f6eccf"),border:`1px solid ${effectiveShape==="unknown"?(T.terra200||"#eac6b8"):(T.gold300||"#e7cf91")}`,borderRadius:10,padding:"11px 14px",marginBottom:14,display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,flexWrap:"wrap"}}>
             <div style={{fontSize:12.5,color:T.ink,lineHeight:1.5}}>
-              <span style={{fontWeight:700}}>We detected:</span> {shapeLabel(effectiveShape)}.
+              <span style={{fontWeight:700}}>{effectiveShape==="unknown"?"We can't tell:":"We detected:"}</span> {shapeLabel(effectiveShape)}.
+              {shapeDetail?.reason && <span style={{color:T.ink3}}> ({shapeDetail.reason})</span>}
             </div>
             <select value={effectiveShape} onChange={e=>setShapeOverride(e.target.value)}
               style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:7,padding:"5px 8px",color:T.ink,fontSize:12,outline:"none",cursor:"pointer"}}>
+              {effectiveShape==="unknown" && <option value="unknown">— choose the file's shape —</option>}
               <option value="aggregate">One row per donor (totals)</option>
               <option value="transaction">One row per gift (build history)</option>
               <option value="wide">Year columns (build history)</option>
             </select>
           </div>
+
+          {/* BUILD-79 Part 2.2 — totals mode REFUSES a per-gift file. */}
+          {aggregateCollapse?.refuse && (
+            <div style={{background:T.terra100||"#f6e3dd",border:`1px solid ${T.terra200||"#eac6b8"}`,borderRadius:10,padding:"11px 14px",marginBottom:14,fontSize:12.5,color:T.terra700||"#8a3a24",lineHeight:1.6}}>
+              <strong>{aggregateCollapse.collapsed.toLocaleString()} of {aggregateCollapse.keyedRows.toLocaleString()} rows collapse onto a donor already in this file.</strong>{" "}
+              One row per donor would silently merge them — this file looks like one row per <em>gift</em>. Import as totals is disabled.
+              <button onClick={()=>setShapeOverride("transaction")}
+                style={{display:"block",marginTop:8,background:T.green600,border:"none",borderRadius:8,padding:"8px 14px",color:"#fff",fontSize:12.5,fontWeight:700,cursor:"pointer"}}>
+                Treat as individual gifts →
+              </button>
+            </div>
+          )}
 
           {/* Column mapper — aggregate/wide use the donor-field grid; transaction uses gift roles */}
           {effectiveShape === "transaction" ? (
@@ -1792,8 +1837,8 @@ export function DonorImport({ onClose, onImported, withHistory = false }) {
           <div style={{display:"flex",gap:10}}>
             <button onClick={()=>{setParsed(null);setErr("");}} disabled={loading}
               style={{background:"transparent",border:"1px solid "+T.bg3,borderRadius:10,padding:"11px 18px",color:T.ink3,fontSize:13,cursor:loading?"not-allowed":"pointer",opacity:loading?0.5:1}}>← Back</button>
-            <button onClick={doImport} disabled={loading||donorCount===0||cfUndecided>0}
-              style={{flex:1,background:loading||donorCount===0||cfUndecided>0?T.bg2:T.green600,border:"none",borderRadius:10,padding:"11px 20px",color:"#fff",fontSize:14,fontWeight:700,cursor:loading||donorCount===0||cfUndecided>0?"not-allowed":"pointer",opacity:loading||donorCount===0||cfUndecided>0?0.6:1}}>
+            <button onClick={doImport} disabled={loading||donorCount===0||cfUndecided>0||shapeBlocked}
+              style={{flex:1,background:loading||donorCount===0||cfUndecided>0||shapeBlocked?T.bg2:T.green600,border:"none",borderRadius:10,padding:"11px 20px",color:"#fff",fontSize:14,fontWeight:700,cursor:loading||donorCount===0||cfUndecided>0||shapeBlocked?"not-allowed":"pointer",opacity:loading||donorCount===0||cfUndecided>0||shapeBlocked?0.6:1}}>
               {loading?"Importing…":`Import ${donorCount.toLocaleString()} donor${donorCount!==1?"s":""}${giftCount>0?` + ${giftCount.toLocaleString()} gifts`:""} →`}
             </button>
           </div>

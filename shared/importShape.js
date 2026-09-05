@@ -582,20 +582,58 @@ export function detectImportShape(headers = [], rows = []) {
     distinctDonors = seen.size;
   }
 
-  let shape;
-  if (yearCols.length >= 2 && !hasDateCol) shape = "wide";
-  else if (hasAmountCol && hasDateCol && !hasTotalCol) shape = "transaction";
-  else if (hasAmountCol && hasDateCol && donorRepeats) shape = "transaction";
-  else if (yearCols.length >= 2) shape = "wide";
-  else shape = "aggregate";
+  // BUILD-79 Part 2.1 — the RECOGNIZED columns are the evidence a shape
+  // decision stands on. When fewer than three columns are recognised at all,
+  // shape is UNKNOWN and the mapper asks — it does not pick. "One row per
+  // donor" was once chosen for a report export because a wrong header made
+  // zero columns recognisable, and 1,111 donors landed with $0 of giving.
+  const recognized = [];
+  for (const h of hs) {
+    if (isDateHdr(h)) recognized.push({ header: h, as: "gift date" });
+    else if (isAmountHdr(h)) recognized.push({ header: h, as: "amount" });
+    else if (isTotalHdr(h)) recognized.push({ header: h, as: "lifetime total" });
+    else if (isNameHdr(h)) recognized.push({ header: h, as: "donor name" });
+    else if (isEmailHdr(h)) recognized.push({ header: h, as: "email" });
+    else if (yearCols.includes(h)) recognized.push({ header: h, as: "year column" });
+    else if (/^(first|last)\s*name$/i.test(h.trim())) recognized.push({ header: h, as: h.trim().toLowerCase() });
+    else if (/^phone(\s*(number|#))?$/i.test(h.trim())) recognized.push({ header: h, as: "phone" });
+  }
 
-  return { shape, yearCols, hasDateCol, hasAmountCol, hasTotalCol, donorRepeats, distinctDonors, keyedRows, nameCol: nameCol || "", emailCol: emailCol || "" };
+  let shape, reason;
+  if (yearCols.length >= 2 && !hasDateCol) { shape = "wide"; reason = `${yearCols.length} year columns, no gift-date column`; }
+  else if (hasAmountCol && hasDateCol && !hasTotalCol) { shape = "transaction"; reason = "amount + gift-date columns, no lifetime-total column"; }
+  else if (hasAmountCol && hasDateCol && donorRepeats) { shape = "transaction"; reason = "amount + gift-date columns and the same donor repeats across rows"; }
+  else if (yearCols.length >= 2) { shape = "wide"; reason = `${yearCols.length} year columns`; }
+  else if (recognized.length < 3) { shape = "unknown"; reason = `only ${recognized.length} column${recognized.length === 1 ? "" : "s"} recognised — not enough evidence to pick a shape`; }
+  else { shape = "aggregate"; reason = "donor-identity and total-style columns, no per-gift date column"; }
+
+  return { shape, reason, recognized, yearCols, hasDateCol, hasAmountCol, hasTotalCol, donorRepeats, distinctDonors, keyedRows, nameCol: nameCol || "", emailCol: emailCol || "" };
+}
+
+// BUILD-79 Part 2.2 — the signal totals mode must not ignore: when more than a
+// third of the keyed rows in an aggregate ("one row per donor") import collapse
+// onto a key already seen IN THE SAME FILE, the file is one row per GIFT and
+// the shape is wrong. Returns the evidence; the mapper refuses to proceed.
+export function assessAggregateCollapse(rows = [], emailCol = "", nameCol = "") {
+  let keyedRows = 0, collapsed = 0;
+  const seen = new Set();
+  for (const r of rows) {
+    const key = (emailCol && String(r[emailCol] || "").toLowerCase().trim())
+             || (nameCol && String(r[nameCol] || "").toLowerCase().trim()) || "";
+    if (!key) continue;
+    keyedRows++;
+    if (seen.has(key)) collapsed++;
+    else seen.add(key);
+  }
+  const ratio = keyedRows ? collapsed / keyedRows : 0;
+  return { keyedRows, distinct: seen.size, collapsed, ratio, refuse: keyedRows >= 30 && ratio > 1 / 3 };
 }
 
 // A short, honest one-line description for the detection banner.
 export function shapeLabel(shape) {
   if (shape === "transaction") return "individual gifts — we'll build donors + their giving history";
   if (shape === "wide")        return "year-column giving — we'll build donors + a gift per year";
+  if (shape === "unknown")     return "we can't tell how this file is shaped — choose below before importing";
   return "one row per donor — we'll import donors and their totals";
 }
 

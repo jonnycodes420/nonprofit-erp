@@ -4039,6 +4039,10 @@ app.post("/donors/import", requireAuth, wrap(async (req, res) => {
   // be as visible as a lost gift.
   const ledger = importLedger("donors", "donor");
   let duplicates = 0, namelessRows = 0;
+  // BUILD-79 Part 2.3 — "already on file" and "another row of this same file"
+  // are different facts. In a fresh org NOTHING is on file; every collapse is
+  // the file folding onto itself, and the language must say so.
+  let duplicatesOnFile = 0, duplicatesInFile = 0;
   const donorsToInsert = [];
 
   for (const d of donors) {
@@ -4049,8 +4053,11 @@ app.post("/donors/import", requireAuth, wrap(async (req, res) => {
     }
     const emailLower = (d.email || "").toLowerCase().trim();
     if (emailLower) {
-      if (existingEmails.has(emailLower) || seenEmails.has(emailLower)) {
-        duplicates++; ledger.skipped("already_on_file", stated); continue;
+      if (existingEmails.has(emailLower)) {
+        duplicates++; duplicatesOnFile++; ledger.skipped("already_in_steward", stated); continue;
+      }
+      if (seenEmails.has(emailLower)) {
+        duplicates++; duplicatesInFile++; ledger.skipped("duplicate_within_this_import", stated); continue;
       }
       seenEmails.add(emailLower);
     }
@@ -4134,7 +4141,7 @@ app.post("/donors/import", requireAuth, wrap(async (req, res) => {
     console.error("[import] DONOR LEDGER DID NOT BALANCE:", JSON.stringify(ledger.report()));
   }
 
-  res.json({ created, duplicates, batchErrors, namelessRows, reconciliation: ledger.report() });
+  res.json({ created, duplicates, duplicatesOnFile, duplicatesInFile, batchErrors, namelessRows, reconciliation: ledger.report() });
 }));
 
 // ── Combined import: new donors + their year-column gift history in one pass ─
