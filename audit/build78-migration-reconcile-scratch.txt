@@ -1,0 +1,13 @@
+── BUILD-78 migration reconciliation (read-only, independent) ──
+legacy defs:                 4
+legacy non-blank values:     4
+  blank after coercion:      0  (keys absent BY DESIGN)
+  reconciled (must be present):4
+  kept RAW (didn't type):    1
+
+DEF LOSS (legacy def with no cfd_ counterpart):   0
+VALUE LOSS (key missing from donor JSONB):        0
+value differs (edit OR loss — cannot tell):       0
+kept-raw rows (sample): [{"donor":"d_cfm2","key":"grad_year","value":"unknown-ish"}]
+
+✓ NO LOSS: every legacy def and every non-blank value is accounted for in the JSONB.

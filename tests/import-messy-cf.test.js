@@ -249,6 +249,15 @@ async function reset() {
   }
   ok("the server echoes a balanced column summary", colEcho && colEcho.balanced, colEcho);
 
+  // Part 9 — an imported custom value is auditable: a values_written event
+  // stamped via=import with the importer's identity (never null).
+  const impEvents = await q(`SELECT entity, created_by, created_by_name, detail->>'via' via FROM custom_field_events
+    WHERE org_id=$1 AND event='values_written' AND detail->>'via'='import'`, [ORG]);
+  ok("import wrote an auditable custom-field event (donor + gift), stamped with the importer",
+    impEvents.length >= 2 && impEvents.every(e => e.created_by && e.via === "import")
+    && impEvents.some(e => e.entity === "donor") && impEvents.some(e => e.entity === "gift"),
+    impEvents);
+
   const [dc] = await q(`SELECT COUNT(*)::int c FROM donors WHERE org_id=$1 AND deleted_at IS NULL`, [ORG]);
   ok(`donor count = ${KEY.donorCount} (soft credit created NONE)`, dc.c === KEY.donorCount, dc.c);
   for (const ghostName of KEY.softCreditNonDonors) {

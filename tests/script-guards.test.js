@@ -89,6 +89,11 @@ const PROD_READONLY = [
   // rebuilt page has no product screenshots, so that subject is gone rather
   // than unwatched. See audit/BUILD-73-FINDINGS.md.
   "landing-prod-verify",
+  // BUILD-78 — the independent EAV→JSONB migration reconciliation. Connects to
+  // the DB directly and issues ONLY SELECTs (no INSERT/UPDATE/DELETE, no write
+  // HTTP); safe to run read-only against prod to certify zero-loss from the
+  // SURVIVING legacy tables, which the migration never drops.
+  "build78-migration-reconcile",
   "screenshot-matrix", "topbar-verify", "status",
   // BUILD-72 Step A — the cents measurement. READ-ONLY by construction: it
   // opens a READ ONLY transaction, issues only SELECTs, and ROLLBACKs. It

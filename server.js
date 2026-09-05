@@ -4683,6 +4683,22 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(as
     } catch (e) { console.error("[combined-import] field-mapping upsert failed:", e.message); }
   }
 
+  // BUILD-78 Part 9 — an imported custom value is as auditable as a hand-typed
+  // one. The donor/gift ROW already carries the BUILD-75 importer actor, but
+  // the custom-field audit trail did not see the import; record ONE summarizing
+  // values_written event (not one per value — that would be thousands) so a
+  // reviewer of custom_field_events can distinguish import writes from manual
+  // ones and attribute them to the importer.
+  try {
+    const cfDonorWrites = donorCfById.size;
+    const cfGiftWrites = giftCfByIdx.size;
+    const cfSource = `import of ${req.body.sourceFileName || "a file"}`;
+    if (cfDonorWrites) await cfEvent(req, orgId, "donor", "values_written",
+      { detail: { via: "import", source: cfSource, rows: cfDonorWrites, keys: [...new Set([...donorCfById.values()].flatMap(v => Object.keys(v)))] } });
+    if (cfGiftWrites) await cfEvent(req, orgId, "gift", "values_written",
+      { detail: { via: "import", source: cfSource, rows: cfGiftWrites, keys: [...new Set([...giftCfByIdx.values()].flatMap(v => Object.keys(v)))] } });
+  } catch (e) { console.error("[combined-import] custom-field audit event failed:", e.message); }
+
   res.json({ created, giftsInserted, duplicates, donorsUpdated: affectedDonorIds.size, financeSynced, batchErrors,
              duplicateCandidates, externalIdDupes,
              columns: columnSummary,

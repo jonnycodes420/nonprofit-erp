@@ -235,3 +235,102 @@ resolved; the newer spec wins each one.
 Custom fields let Steward say yes to a real file instead of asking an org to
 change their data. Still not the milestone: there has still never been a
 conversation with a nonprofit.
+
+## PART 1 ADDENDUM — "zero loss" re-examined (2026-09-05)
+
+Prompted by the correct challenge that "zero loss" is the exact sentence shape
+that has lied before ("Balanced", "Nothing needs you"). It was.
+
+**The migration's own `stats.values` counter is NOT an independent check.** It
+is incremented inside the write loop, at the same place the value is queued
+into the JSONB — left side derived from the right side, the metric that cannot
+go red. The suite's §6 hand-checked a handful of sample values and asserted the
+re-run creates zero defs; neither is a row-count-plus-checksum reconciliation.
+So "zero loss" was, as written, an unverified claim resting on the code looking
+correct plus a spot check. Recorded as the defect it was.
+
+**What saved it: the migration never drops the legacy tables.** `custom_fields`
+and `custom_field_values` are only ever deleted by the whole-org admin cascade;
+the migration and normal operation read them and never touch them. So the
+pre-migration source of truth SURVIVES on scratch and on prod. The claim
+"if the pre-count wasn't captured before boot it cannot be reconstructed" is
+therefore false in this one case — not by design, by luck: the source is intact
+and the reconciliation is runnable now.
+
+**The honest check now exists and is proven red-capable:**
+`scripts/build78-migration-reconcile.js` (read-only, PROD_READONLY, no
+INSERT/UPDATE/DELETE). It reads the surviving legacy tables and the JSONB and
+reconciles from BOTH ends independently: every legacy def must have its
+`cfd_<id>` counterpart; every legacy non-blank value must, after coercing per
+its def's type, be PRESENT under its key in that donor's JSONB — unless
+coercion legitimately reads it blank (keys absent by design). A MISSING key is
+unambiguous loss (exit 1); a DIFFERING value is reported as a warning only,
+never called loss (without a timestamp it may be a legitimate post-migration
+edit, and we do not pretend to tell them apart). **Proven red**: stripping one
+migrated key made it report `VALUE LOSS: 1` and name the row; restored, it
+exits 0. On the scratch data: 4 defs, 4 values, 0 loss, 1 kept-raw.
+
+**Idempotency — verified two ways, not asserted.** (1) The boot guard checks
+`schema_flags.b78_cf_jsonb_migration`; the flag is set only AFTER success, so a
+failed migration retries next boot (and is loud — CRITICAL log, does not mark
+the flag). (2) Forced a second `migrateLegacyCustomFields()` after editing a
+migrated value in the JSONB: it created zero defs AND the fill-missing merge
+(`legacy ||`-ed UNDER the existing JSONB, existing keys win) preserved the
+edit — the re-run never clawed the record backwards. NB `stats.values`
+over-reports on a re-run (it counts what it iterates, not net writes) — another
+reason that counter was never the truth.
+
+**Did it run against production?** Prod is on d17d6c2 (this build), so the
+migration code and its boot call are deployed and ran at that boot if the flag
+was absent. **I cannot certify prod zero-loss from this session — there is no
+prod DATABASE_URL here.** The reconcile script is read-only and classified
+PROD_READONLY precisely so it can certify prod at any time:
+`DATABASE_URL=<prod> node scripts/build78-migration-reconcile.js`. Because the
+legacy tables survive on prod, this remains verifiable indefinitely — the
+pre-boot checksum I failed to capture is not the only way to answer the
+question. **Standing item for Jonathan: run the reconcile against prod once and
+capture the output** — until then, prod zero-loss is asserted-by-code-symmetry,
+not certified.
+
+## THE KEPT-RAW POPULATION — bounded, frozen, but not surfaced in-product
+
+"Kept raw where not" does create a population of untyped strings in JSONB — the
+homeless-column problem wearing a different hat, correctly named. Two facts that
+bound it:
+
+- **It is the migration's ONLY output of raw values.** Every other write path
+  (manual donor/gift edit, API, import) goes through `validateCustomFields`,
+  which on a failed coercion REFUSES the write (422) and never stores the raw
+  string. So the kept-raw set is a fixed, one-time migration artifact: it cannot
+  grow, and no future write adds to it.
+- **The reconcile script LISTS them** (kept-raw rows, with donor + key + value)
+  — the operator's answer to "which of our values didn't type."
+
+**The honest gap: there is no IN-PRODUCT surface** showing an org which of their
+values didn't type — no per-donor "this value didn't match its field's type"
+badge, no admin list. Given the population is bounded and frozen, the
+proportionate fix is a small read surface (a per-donor badge, or an admin
+"unmatched legacy values" list driven by the same reconcile query), not urgent
+machinery — but it should not harden into "those just sit there quietly
+forever." Recorded here as a named, bounded gap rather than left implicit.
+
+## PART 9 — landed, and the import hole closed (2026-09-05)
+
+Part 9 did NOT fall out with the renumbering, but it was incomplete. Verified:
+- Definition writes (created/reordered/renamed/updated/archived/restored) each
+  stamp an actor via `custom_field_events` — distinguishable from value events.
+- Manual value writes (`PUT /donors/:id/custom-fields`, `/gifts/:id/...`) stamp
+  a `values_written` event with the actor.
+- Every donor/gift ROW carries `created_by` (BUILD-75), so the actor of ANY
+  custom value — imported included — is never null and always recoverable.
+
+**The hole: the import path wrote custom values with no `custom_field_events`
+row** — a hand-typed value was auditable as its own event; an imported one was
+only inferable from the row's importer. Closed: `/donors/import-combined` now
+emits ONE summarizing `values_written` event per entity (`via: import`, source
+file, row count, keys) stamped with the importer — not one per value (that would
+be thousands). Pinned by import-messy-cf §4 (import produces a donor AND a gift
+via=import event, each stamped with the importer). So an imported custom value
+is now as auditable as a hand-typed one — the free-today, brutal-to-retrofit
+identity that makes the agent direction real is complete across every write
+path.
