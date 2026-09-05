@@ -480,6 +480,60 @@ export function analyzeSheetRows(records, opts = {}) {
   };
 }
 
+// ── BUILD-79 Part 5 — a column that fails its own type check cannot be
+// mapped to that type. The evidence is computed from the VALUES (all of them,
+// not a 10-row sample) and shown with every guess/refusal:
+//   "_5 → email: 0 of 2,438 values contain @; 2,391 look like phone numbers".
+const PHONE_SHAPE_RE = /^[+()\d][\d\s().+-]{6,}$/;
+export function columnTypeEvidence(field, values = []) {
+  const vals = values.map(v => String(v ?? "").trim()).filter(Boolean);
+  const n = vals.length;
+  const fmtN = x => x.toLocaleString();
+  if (!n) return { ok: true, summary: "no values to check" };
+  if (field === "email") {
+    const at = vals.filter(v => v.includes("@")).length;
+    const phoneish = vals.filter(v => PHONE_SHAPE_RE.test(v)).length;
+    const ok = at / n >= 0.1;
+    return { ok, summary: `${fmtN(at)} of ${fmtN(n)} values contain @` + (phoneish > n / 2 ? `; ${fmtN(phoneish)} look like phone numbers` : "") };
+  }
+  if (field === "phone") {
+    const ph = vals.filter(v => (v.match(/\d/g) || []).length >= 7).length;
+    return { ok: ph / n >= 0.1, summary: `${fmtN(ph)} of ${fmtN(n)} values look like phone numbers` };
+  }
+  if (field === "lastGift") {
+    const parsed = vals.filter(v => normalizeDate(v).value != null).length;
+    return { ok: parsed / n >= 0.1, summary: `${fmtN(parsed)} of ${fmtN(n)} values parse as dates` };
+  }
+  if (field === "total" || field === "lastAmount") {
+    const parsed = vals.filter(v => { const r = normalizeMoney(v); return r.value != null && /\d/.test(v); }).length;
+    return { ok: parsed / n >= 0.1, summary: `${fmtN(parsed)} of ${fmtN(n)} values parse as amounts` };
+  }
+  if (field === "gifts") {
+    const ints = vals.filter(v => /^\d{1,5}$/.test(v)).length;
+    return { ok: ints / n >= 0.1, summary: `${fmtN(ints)} of ${fmtN(n)} values are whole numbers` };
+  }
+  return { ok: true, summary: "" };
+}
+
+// validateMappingChoice(headers, rows, header, field) — the type check above,
+// plus the relationship rules a shape can see: a Spouse-ish column can never
+// take a name role while the file carries a real name column for that role.
+const SPOUSE_HDR_RE = /\bspouse|partner\b/i;
+export function validateMappingChoice(headers = [], rows = [], header, field) {
+  if (!field) return { ok: true, summary: "" };
+  const hs = headers.map(h => String(h));
+  if ((field === "_lastName" || field === "_firstName" || field === "name") && SPOUSE_HDR_RE.test(String(header))) {
+    const want = field === "_lastName" ? /^(last\s*name|lastname|surname|family name)$/i
+               : field === "_firstName" ? /^(first\s*name|firstname|given name)$/i
+               : /^(name|full ?name|donor ?name)$/i;
+    const real = hs.find(h => want.test(h.trim()));
+    if (real) return { ok: false, summary: `“${header}” is a spouse column and this file already has “${real}” — a first name plus a spouse's first name is not a person` };
+  }
+  const ev = columnTypeEvidence(field, rows.map(r => r[header]));
+  if (!ev.ok) return { ok: false, summary: ev.summary + " — refused" };
+  return { ok: true, summary: ev.summary };
+}
+
 // BUILD-79 Part 3.1 — the INDEPENDENT amount scan. The dollar line's left side
 // must come from the raw file, never from the mapping: when no amount column is
 // mapped, both sides of the old dollar equation were zero, so a file whose own
@@ -1080,8 +1134,11 @@ export function buildTransactionRows(parsed, txMap, opts = {}) {
   const parseBool = opts.parseBoolValue || null;
 
   const headerText = c => String(txMap[c] || "");
+  const keyFirstLine = new Map();   // donor key → first physical line (for "Unnamed donor (line N)")
   rows.forEach((row, i) => {
-    const line = (opts.firstLine || 2) + i;           // 1-based file line (after the header)
+    // BUILD-79 Part 1/5 — real physical lines when the caller has them (chrome
+    // removal makes "index + 2" wrong on report exports).
+    const line = (opts.rowLines && opts.rowLines[i]) || (opts.firstLine || 2) + i;
     const rawName = txMap.donorName ? String(row[txMap.donorName] || "").trim() : "";
     const first = txMap.firstName ? String(row[txMap.firstName] || "").trim() : "";
     const last = txMap.lastName ? String(row[txMap.lastName] || "").trim() : "";
@@ -1105,7 +1162,14 @@ export function buildTransactionRows(parsed, txMap, opts = {}) {
     const email = emailVal || "";
     if (!name && !email) { record("errored", "no_donor_identity", 0); return; }
 
-    const donor = { name: name || email, email, stage: "prospect" };
+    // BUILD-79 Part 5 — a display name NEVER falls back to email (or the
+    // phone number living in an email-mapped column). Blank stays blank here;
+    // grouping may fill it from a later row of the same donor, and whatever
+    // is still blank after grouping becomes "Unnamed donor (line N)" +
+    // a needs-name tag, excluded from actionable surfaces until named.
+    const donor = { name, email, stage: "prospect" };
+    const dkey = (email && email.includes("@")) ? email.toLowerCase() : (name || `__line_${line}`).toLowerCase();
+    if (!keyFirstLine.has(dkey)) keyFirstLine.set(dkey, line);
     if (txMap.phone && row[txMap.phone]) donor.phone = String(row[txMap.phone]).trim() || null;
     if (txMap.city && row[txMap.city]) donor.city = String(row[txMap.city]).trim() || null;
     if (txMap.state && row[txMap.state]) donor.state = String(row[txMap.state]).trim() || null;
@@ -1183,7 +1247,7 @@ export function buildTransactionRows(parsed, txMap, opts = {}) {
 
     const rowGiftCf = donor._giftCustomFields || undefined;
     delete donor._giftCustomFields;
-    const key = (email && email.includes("@")) ? email.toLowerCase() : donor.name.toLowerCase();
+    const key = dkey;
     const mkGift = (amount) => ({
       amount,
       date: null, // filled below
@@ -1212,6 +1276,15 @@ export function buildTransactionRows(parsed, txMap, opts = {}) {
   });
 
   const { donors, gifts } = groupTransactions(items);
+  // BUILD-79 Part 5 — name the nameless honestly, and flag them for review.
+  for (const d of donors) {
+    if (!d.name || !String(d.name).trim()) {
+      const k = (d.email && d.email.includes("@")) ? d.email.toLowerCase() : null;
+      const ln = (k && keyFirstLine.get(k)) || "?";
+      d.name = `Unnamed donor (line ${ln})`;
+      d.tags = [...new Set([...(Array.isArray(d.tags) ? d.tags : []), "needs-name"])];
+    }
+  }
   detectImportedSustainers(donors, gifts);
   return {
     donors, gifts, dispositions, flaggedRows,

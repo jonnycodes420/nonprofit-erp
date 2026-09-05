@@ -260,3 +260,26 @@ the same pass.
 Noted, not fixed (manual-entry form, not an import path): the Add-Donor quick
 form stamps `lastGift: today` when a "last amount" is typed (Donors.jsx
 ~6100) — a data-entry assumption worth its own small FIX.
+
+## Part 5 — a name is a name
+
+- **Display names never fall back to email or phone**, on any path. The
+  aggregate/wide builders and the transaction/grouping pipeline name a
+  nameless record **"Unnamed donor (line N)"** (real physical line, post-chrome)
+  and tag it `needs-name` (surfaces as a review chip; Part 6 excludes the tag
+  from actionable surfaces). Grouping still fills a blank name from a later row
+  of the same donor — the sentinel survives only when NO row named them.
+- **A column that fails its own type check cannot be mapped to that type — by
+  the auto-mapper, by the AI mapper, or by a human.** `columnTypeEvidence` /
+  `validateMappingChoice` (lib) compute counted evidence over ALL values (the
+  old 10-row sample let a phone column with one stray email slip through):
+  live refusals read exactly like the spec — "can't map to email: 0 of 2,438
+  values contain @; 2,391 look like phone numbers — refused" and "'Spouse' is
+  a spouse column and this file already has 'Last Name' — a first name plus a
+  spouse's first name is not a person" (part5-refusals.png).
+- **Unrecognised headers demote one-click Auto-map**: when under half the
+  headers are recognisable the button reads "✦ Guess from contents" with a
+  warning that guesses come from values and still pass type checks.
+- Transaction dispositions/refusal CSVs now carry REAL physical line numbers
+  (`opts.rowLines`) — "index + 2" was wrong on report exports after chrome
+  removal.

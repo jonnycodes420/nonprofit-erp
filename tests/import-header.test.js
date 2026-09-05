@@ -143,6 +143,43 @@ const ok = (cond, label, detail) => {
   const noMoney = lib.scanAmountShapedColumns(["Name", "Email", "ZIP"], a.rows.slice(0, 50).map(r => ({ Name: r.Name, Email: r.Email, ZIP: r.ZIP })));
   ok(noMoney === null || noMoney.header !== "ZIP", "ZIP codes never scan as money", noMoney);
 
+  console.log("— §11 · a name is a name (Part 5) —");
+  // phone-shaped cannot map to email, with the evidence sentence
+  const phoneVals = a.rows.map(r => ({ Phone: r.Phone }));
+  const vPhone = lib.validateMappingChoice(["Phone"], phoneVals, "Phone", "email");
+  ok(vPhone.ok === false && /contain @/.test(vPhone.summary) && /phone/.test(vPhone.summary),
+    "phone-shaped → email refused with counted evidence", vPhone);
+  // a real email column passes
+  const vEmail = lib.validateMappingChoice(["Email"], a.rows, "Email", "email");
+  ok(vEmail.ok === true, "the real email column passes its check", vEmail);
+  // Spouse cannot take last name while the file has a Last Name column
+  const vSpouse = lib.validateMappingChoice(a.headers, a.rows, "Spouse", "_lastName");
+  ok(vSpouse.ok === false && /spouse/i.test(vSpouse.summary),
+    "Spouse → last name refused while a real Last Name column exists (Nicole Peter is not a person)", vSpouse);
+  // unnamed donors: a ledger keyed by email only yields flagged Unnamed donors, never email-as-name
+  const txm = { donorEmail: "E", amount: "A", date: "D" };
+  const built = lib.buildTransactionRows({ rows: [
+    { E: "x@y.org", A: "$50", D: "2024-01-05" },
+    { E: "x@y.org", A: "$60", D: "2024-02-05" },
+    { E: "z@w.org", A: "$10", D: "2024-01-09" },
+  ] }, txm, { today: "2026-09-05", rowLines: [5, 6, 7] });
+  ok(built.donors.every(d => !d.name.includes("@")),
+    "no donor's display name is an email address", built.donors.map(d => d.name));
+  ok(built.donors.every(d => /^Unnamed donor \(line \d+\)$/.test(d.name)),
+    "nameless donors are 'Unnamed donor (line N)' with their first line", built.donors.map(d => d.name));
+  ok(built.donors.every(d => (d.tags || []).includes("needs-name")),
+    "each carries the needs-name flag for review", built.donors.map(d => d.tags));
+  // and a later row's real name fills the blank instead of the sentinel
+  const built2 = lib.buildTransactionRows({ rows: [
+    { E: "x@y.org", N: "", A: "$50", D: "2024-01-05" },
+    { E: "x@y.org", N: "Jane Doe", A: "$60", D: "2024-02-05" },
+  ] }, { ...txm, donorName: "N" }, { today: "2026-09-05" });
+  ok(built2.donors.length === 1 && built2.donors[0].name === "Jane Doe",
+    "a later row's real name names the donor — the sentinel only survives when NO row has a name", built2.donors[0]);
+  // real physical lines ride the dispositions when the caller passes rowLines
+  const withLines = lib.buildTransactionRows({ rows: [{ E: "", N: "", A: "$5", D: "x" }] }, { ...txm, donorName: "N" }, { rowLines: [412] });
+  ok(withLines.dispositions[0].line === 412, "dispositions carry REAL physical lines after chrome removal", withLines.dispositions[0]);
+
   console.log(`import-header: ${passed} passed, ${failed} failed`);
   process.exit(failed ? 1 : 0);
 })();

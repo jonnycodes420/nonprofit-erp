@@ -31,7 +31,7 @@ import { T, fmt, fmtFull, daysDiff, SC, askClaude, STAGES, STAGE_ACTION, TIER_CO
 // profile button, and modal render below, and add `VoiceMemoModal` back to
 // the import above).
 import { DonorMap } from "./DonorMap";
-import { detectImportShape, groupTransactions, shapeLabel, YEAR_HDR_PAT, detectWorkbookRoles, pickMatchKey, linkGiftsToDonors, detectOwnerColumn, matchOwnersToUsers, applyOwnerAssignment, groupOwnerMatches, normalizeName, normalizeDate, normalizeMoney, normalizeEmail, detectFlagColumns, parseBoolFlag, classifyColumns, decodeSpreadsheetBytes, decodeSpreadsheetBytesDetailed, analyzeCsvText, analyzeSheetRows, assessAggregateCollapse, scanAmountShapedColumns, buildGiftItemsFromLedger, buildTransactionRows, detectNoteMarkers, autoDetectTxMapping } from "../../../shared/importShape";
+import { detectImportShape, groupTransactions, shapeLabel, YEAR_HDR_PAT, detectWorkbookRoles, pickMatchKey, linkGiftsToDonors, detectOwnerColumn, matchOwnersToUsers, applyOwnerAssignment, groupOwnerMatches, normalizeName, normalizeDate, normalizeMoney, normalizeEmail, detectFlagColumns, parseBoolFlag, classifyColumns, decodeSpreadsheetBytes, decodeSpreadsheetBytesDetailed, analyzeCsvText, analyzeSheetRows, assessAggregateCollapse, scanAmountShapedColumns, validateMappingChoice, columnTypeEvidence, buildGiftItemsFromLedger, buildTransactionRows, detectNoteMarkers, autoDetectTxMapping } from "../../../shared/importShape";
 
 // ── CSV Import helpers ─────────────────────────────────────────────────────
 // ── Import field registry ──────────────────────────────────────────────────
@@ -226,21 +226,15 @@ async function parseFileToSheets(file, { onSingle, onMulti, onError }) {
 // ── Module-level column auto-mapper ──────────────────────────────────────
 // Extracted from DonorImport so CombinedImport can reuse it.
 function buildAutoMapping(headers, rows = []) {
-  const sample = rows.slice(0, 10);
   const guesses = headers.map(h => ({ h, g: guessField(h) }));
   const hasSingleName = guesses.some(x => x.g === "name");
   const auto = {};
   guesses.forEach(({ h, g }) => {
     if (!g) return;
     if (hasSingleName && (g === "_firstName" || g === "_lastName")) return;
-    if (g === "email") {
-      const vals = sample.map(r => String(r[h] ?? "").trim()).filter(Boolean);
-      if (vals.length && !vals.some(v => v.includes("@"))) return;
-    }
-    if (g === "phone") {
-      const vals = sample.map(r => String(r[h] ?? "").trim()).filter(Boolean);
-      if (vals.length && !vals.some(v => /\d/.test(v))) return;
-    }
+    // BUILD-79 Part 5 — every guess passes its own type check over the FULL
+    // values (a 10-row sample once let phone-shaped columns map to email).
+    if (!validateMappingChoice(headers, rows, h, g).ok) return;
     auto[h] = g;
   });
   return auto;
@@ -248,7 +242,7 @@ function buildAutoMapping(headers, rows = []) {
 
 // ── Module-level donor row normalization ──────────────────────────────────
 // Extracted from DonorImport's built useMemo so CombinedImport can share it.
-function buildDonorRows(parsed, mapping) {
+function buildDonorRows(parsed, mapping, rowLines) {
   if (!parsed) return { ready:[], warned:[], skipped:[] };
   const ready = [], warned = [], skipped = [];
   parsed.rows.forEach((row, idx) => {
@@ -269,7 +263,12 @@ function buildDonorRows(parsed, mapping) {
     const hasName  = !!(d.name  && String(d.name).trim());
     const hasEmail = !!(d.email && String(d.email).trim());
     if (!hasName && !hasEmail) { skipped.push({ row:idx+2, reason:"no name or email" }); return; }
-    if (!hasName) { d.name = String(d.email).trim(); warnings.push(`${rowLabel}: no name — using email as name`); }
+    if (!hasName) {
+      // BUILD-79 Part 5 — a display name never falls back to email/phone.
+      d.name = `Unnamed donor (line ${rowLines?.[idx] ?? idx + 2})`;
+      d.tags = ["needs-name"];
+      warnings.push(`${rowLabel}: no name — flagged as unnamed for review`);
+    }
     else d.name = normalizeName(d.name); // B2 — tidy Last,First / ALL-CAPS in the preview (editable)
     if (d.email !== undefined) { const {value,warn} = normalizeEmail(d.email); d.email=value; if(warn) warnings.push(`${rowLabel}: ${warn}`); }
     if (d.phone) d.phone = String(d.phone).trim() || null;
@@ -300,7 +299,7 @@ function buildDonorRows(parsed, mapping) {
 
 // ── Combined-row builder (donor + year-column gifts in one pass) ──────────
 // Used only by CombinedImport. Preserves rowIdx so gift attachments are exact.
-function buildCombinedRows(parsed, donorMapping, yearCols) {
+function buildCombinedRows(parsed, donorMapping, yearCols, rowLines) {
   if (!parsed) return [];
   const activeCols = yearCols.filter(yc => yc.enabled && yc.date);
   const results = [];
@@ -322,7 +321,7 @@ function buildCombinedRows(parsed, donorMapping, yearCols) {
     const hasName  = !!(d.name  && String(d.name).trim());
     const hasEmail = !!(d.email && String(d.email).trim());
     if (!hasName && !hasEmail) { results.push({ rowIdx:idx, donor:null, gifts:[], warnings:[], skipped:true }); return; }
-    if (!hasName) { d.name = String(d.email).trim(); warnings.push(`${rowLabel}: no name`); }
+    if (!hasName) { d.name = `Unnamed donor (line ${rowLines?.[idx] ?? idx + 2})`; d.tags = ["needs-name"]; warnings.push(`${rowLabel}: no name — flagged as unnamed for review`); }
     else d.name = normalizeName(d.name); // B2 — tidy Last,First / ALL-CAPS in the preview (editable)
     if (d.email !== undefined) { const {value,warn} = normalizeEmail(d.email); d.email=value; if(warn) warnings.push(`${rowLabel}: ${warn}`); }
     if (d.phone) d.phone = String(d.phone).trim() || null;
@@ -369,8 +368,8 @@ function buildCombinedRows(parsed, donorMapping, yearCols) {
 // imported total + last-gift date so a brand-new org gets queryable gifts rows
 // (not just aggregate donor fields) — same rationale as DonorImport's old
 // `withHistory` flag, now the default for the magical one-file path.
-function buildAggregatePayload(parsed, mapping, seedHistory) {
-  const { ready, warned, skipped } = buildDonorRows(parsed, mapping);
+function buildAggregatePayload(parsed, mapping, seedHistory, rowLines) {
+  const { ready, warned, skipped } = buildDonorRows(parsed, mapping, rowLines);
   const donors = [...ready, ...warned].map(({ _warnings, _rowIndex, ...d }) => d);
   const gifts = [];
   if (seedHistory) {
@@ -392,9 +391,10 @@ function buildAggregatePayload(parsed, mapping, seedHistory) {
 // every physical row leaves with a disposition, no date ever defaults to
 // today, refunds import as negative gifts, and the file-level counts are
 // taken at parse entry and carried through unchanged.
-function buildTransactionPayload(parsed, txMap, cfInputs) {
+function buildTransactionPayload(parsed, txMap, cfInputs, rowLines) {
   if (!parsed) return { donors: [], gifts: [], warnedCount: 0, skippedCount: 0, dispositions: [], flaggedRows: [], file: { rows: 0, dollars: 0, imported: 0, donorOnly: 0, skipped: 0, errored: 0 } };
   const built = buildTransactionRows(parsed, txMap, {
+    rowLines,
     // BUILD-78 — exclusion-shaped columns route to the flag family; custom
     // columns coerce per type and a failed value refuses the row pre-write.
     flagColumns: cfInputs ? cfInputs.flagColumns : {},
@@ -407,8 +407,8 @@ function buildTransactionPayload(parsed, txMap, cfInputs) {
 }
 
 // WIDE: one row per donor, year columns → one gift per funded year.
-function buildWidePayload(parsed, donorMapping, yearCols) {
-  const rows = buildCombinedRows(parsed, donorMapping, yearCols);
+function buildWidePayload(parsed, donorMapping, yearCols, rowLines) {
+  const rows = buildCombinedRows(parsed, donorMapping, yearCols, rowLines);
   const valid = rows.filter(r => !r.skipped);
   const donors = valid.map(({ donor }) => { const { _warnings, _rowIndex, ...d } = donor; return d; });
   const gifts = [];
@@ -566,7 +566,8 @@ export function DonorImport({ onClose, onImported, withHistory = false }) {
   const [ackUnmapped, setAckUnmapped] = useState(false);    // BUILD-77 Part 3d — homeless columns require an explicit acknowledgement (aggregate/wide shapes)
   // ── BUILD-78 — the column mapper (transaction shape) ──
   const [physicalCols, setPhysicalCols] = useState(null);   // { headerCells, orphanColumns, overflowRows, total } — parse entry, never derived from the mapping
-  const [parseReport, setParseReport] = useState(null);     // BUILD-79 Part 1 — { records, chromeAbove, chromeRows, totalRow, headerLine, cp1252Lines } from parse entry
+  const [parseReport, setParseReport] = useState(null);
+  const [mapRefusal, setMapRefusal] = useState(null);       // BUILD-79 Part 5 — last refused mapping choice + its evidence     // BUILD-79 Part 1 — { records, chromeAbove, chromeRows, totalRow, headerLine, cp1252Lines } from parse entry
   const [cfDefs, setCfDefs] = useState({ donor: [], gift: [] });
   const [savedCfMappings, setSavedCfMappings] = useState([]);
   const [cfDecisions, setCfDecisions] = useState({});       // columnIndex → { action, entity?, type?, label?, options?, role? }
@@ -624,6 +625,15 @@ export function DonorImport({ onClose, onImported, withHistory = false }) {
     return assessAggregateCollapse(parsed.rows, emailCol, nameCol);
   }, [effectiveShape, parsed, mapping]);
   const shapeBlocked = effectiveShape === "unknown" || (aggregateCollapse && aggregateCollapse.refuse);
+  // BUILD-79 Part 5 — when most headers are unrecognised, one-click Auto-map
+  // is demoted to an explicit contents-based guess with a warning.
+  const headersUnrecognized = useMemo(() => {
+    if (!parsed) return false;
+    const hs = parsed.headers.filter(h => h && !/^_\d+$/.test(h));
+    if (!hs.length) return true;
+    const recognized = hs.filter(h => guessField(h)).length;
+    return recognized / parsed.headers.length < 0.5;
+  }, [parsed]);
 
   // Multi-sheet workbook: detect a "Donors + Gift History" pair so we can offer
   // "Import both" above the per-sheet options. Runs detectImportShape per sheet.
@@ -689,7 +699,9 @@ export function DonorImport({ onClose, onImported, withHistory = false }) {
       if (res.mapping) {
         const merged = { ...mapping };
         Object.entries(res.mapping).forEach(([h, f]) => {
-          if (f && VALID_IMPORT_KEYS.has(f)) merged[h] = f;
+          // BUILD-79 Part 5 — the model's guesses pass the same type checks a
+          // human's choices do. Spouse→lastName and phone→email died here.
+          if (f && VALID_IMPORT_KEYS.has(f) && validateMappingChoice(parsed.headers, parsed.rows, h, f).ok) merged[h] = f;
         });
         setMapping(merged);
       }
@@ -751,14 +763,14 @@ export function DonorImport({ onClose, onImported, withHistory = false }) {
   const payload = useMemo(() => {
     if (!parsed) return { donors:[], gifts:[], warnedCount:0, skippedCount:0 };
     try {
-      if (effectiveShape === "transaction") return buildTransactionPayload(parsed, txMap, cfBuildInputs);
-      if (effectiveShape === "wide")        return buildWidePayload(parsed, mapping, yearCols);
-      return buildAggregatePayload(parsed, mapping, withHistory);
+      if (effectiveShape === "transaction") return buildTransactionPayload(parsed, txMap, cfBuildInputs, parseReport?.rowLines);
+      if (effectiveShape === "wide")        return buildWidePayload(parsed, mapping, yearCols, parseReport?.rowLines);
+      return buildAggregatePayload(parsed, mapping, withHistory, parseReport?.rowLines);
     } catch (e) {
       console.error("[import] payload build failed:", e);
       return { donors:[], gifts:[], warnedCount:0, skippedCount:0, error:e.message };
     }
-  }, [parsed, effectiveShape, mapping, txMap, yearCols, withHistory, cfBuildInputs]);
+  }, [parsed, effectiveShape, mapping, txMap, yearCols, withHistory, cfBuildInputs, parseReport]);
 
   // Stage-count preview from the built payload (aggregate donors carry a client
   // stage; transaction/wide donors are re-staged server-side from their gifts,
@@ -822,7 +834,7 @@ export function DonorImport({ onClose, onImported, withHistory = false }) {
             fieldMappings.push({ entity: created.entity, header: String(entry.header).trim(), fieldId: created.id });
           }
         }
-        activePayload = buildTransactionPayload(parsed, txMap, { flagColumns: cfBuildInputs.flagColumns, cfColumns: finalCfColumns });
+        activePayload = buildTransactionPayload(parsed, txMap, { flagColumns: cfBuildInputs.flagColumns, cfColumns: finalCfColumns }, parseReport?.rowLines);
         importExtras = {
           columns: { inFile: physicalCols.total, ledger: ledger.map(({ index, header, disposition, flag, role, fieldId, entity, reason }) => ({ index, header, disposition, flag, role, fieldId, entity, reason })) },
           fieldMappings,
@@ -1762,15 +1774,33 @@ export function DonorImport({ onClose, onImported, withHistory = false }) {
                   Map columns <span style={{fontSize:11,color:T.ink3,fontWeight:400}}>({donorHeaders.length} donor columns{effectiveShape==="wide"?` · ${yearCols.length} year columns`:""} · {parsed.rows.length.toLocaleString()} rows)</span>
                 </div>
                 <button onClick={doAiMap} disabled={aiLoading}
-                  style={{background:aiLoading?"#14352a":T.green600,border:"none",borderRadius:8,padding:"6px 14px",color:"#fff",fontSize:12,fontWeight:700,cursor:aiLoading?"not-allowed":"pointer",display:"flex",alignItems:"center",gap:6,opacity:aiLoading?0.7:1}}>
-                  {aiLoading?<><Spin/>Mapping…</>:<>✦ Auto-map</>}
+                  style={{background:aiLoading?"#14352a":(headersUnrecognized?T.bg2:T.green600),border:headersUnrecognized?`1px solid ${T.gold500||"#c9a84c"}`:"none",borderRadius:8,padding:"6px 14px",color:headersUnrecognized?(T.gold700||"#8a6d1f"):"#fff",fontSize:12,fontWeight:700,cursor:aiLoading?"not-allowed":"pointer",display:"flex",alignItems:"center",gap:6,opacity:aiLoading?0.7:1}}>
+                  {aiLoading?<><Spin/>Mapping…</>:headersUnrecognized?<>✦ Guess from contents</>:<>✦ Auto-map</>}
                 </button>
               </div>
+              {headersUnrecognized && (
+                <div style={{background:T.gold100||"#f6eccf",border:`1px solid ${T.gold300||"#e7cf91"}`,borderRadius:8,padding:"8px 12px",marginBottom:8,fontSize:12,color:T.ink,lineHeight:1.5}}>
+                  Most of these column headers aren't ones Steward recognises — one-click mapping is off. “Guess from contents” reads the values instead, and every guess still has to pass its type check. Review each column before importing.
+                </div>
+              )}
+              {mapRefusal && (
+                <div style={{background:T.terra100||"#f6e3dd",border:`1px solid ${T.terra200||"#eac6b8"}`,borderRadius:8,padding:"8px 12px",marginBottom:8,fontSize:12,color:T.terra700||"#8a3a24",lineHeight:1.5}}>
+                  <strong>“{mapRefusal.header}” can't map to {mapRefusal.field.replace(/^_/,"")}:</strong> {mapRefusal.summary}
+                </div>
+              )}
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6}}>
                 {donorHeaders.map(h => (
                   <div key={h} style={{display:"flex",alignItems:"center",gap:6,background:mapping[h]?T.bg:"transparent",borderRadius:7,padding:"5px 8px",border:`1px solid ${mapping[h]?T.bg3:"transparent"}`}}>
                     <span style={{fontSize:12,color:mapping[h]?T.ink:T.ink3,flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",minWidth:0}} title={h||"(blank)"}>{h||"(blank)"}</span>
-                    <select value={mapping[h]||""} onChange={e=>setMapping(p=>({...p,[h]:e.target.value}))}
+                    <select value={mapping[h]||""} onChange={e=>{
+                      const field=e.target.value;
+                      // BUILD-79 Part 5 — a column that fails its own type
+                      // check cannot be mapped to that type, by anyone.
+                      const v=validateMappingChoice(parsed.headers,parsed.rows,h,field);
+                      if(!v.ok){setMapRefusal({header:h,field,summary:v.summary});return;}
+                      setMapRefusal(null);
+                      setMapping(p=>({...p,[h]:field}));
+                    }}
                       style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:6,padding:"4px 6px",color:T.ink,fontSize:11,outline:"none",flexShrink:0}}>
                       <option value="">— skip —</option>
                       <option value="_firstName">firstName</option>
