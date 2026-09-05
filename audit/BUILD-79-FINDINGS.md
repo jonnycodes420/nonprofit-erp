@@ -312,3 +312,34 @@ Verified live (part6-directory.png / part6-home.png): giftless 12-donor import
 → amber summary, blank scores, "no gift on file" cells, 2 Unnamed donor rows,
 honest drift copy, unticked gift-gap checklist row, and no phone numbers
 anywhere in Needs Your Attention.
+
+## Part 8 — golden, and the verification walk
+
+- `tests/import-messy-v2.test.js` (26, in run-all beside the v1 golden): the
+  file layer's numbers pinned (line 4, 2,500, TOTAL $2,035,978.52, 4 repaired
+  lines), shape transaction-by-evidence + totals-refusal + garbage-headers→
+  unknown, the accounted builder (one disposition per record on REAL lines, no
+  today-or-later gift the file didn't state, no email/phone display names),
+  the real route in chunks (gift accounting closes: 1,288 built = 1,270 DB +
+  18 server external-id refusals, stated), **Part 7.4's round trip on the
+  imported org** (export 200, CSV-shaped, García byte-honest), and the
+  fresh-org duplicate-language HTTP assertion.
+- `scripts/build79-capture.js` (committed walk, 27 asserts, ALL PASS, 1440+390
+  screenshots in docs/build79/): every verification item drivable locally —
+  chrome banner verbatim, one count, totals refused with the one-click flip
+  and a dead import button, the summary reconciling the file's own TOTAL row
+  with the difference explained, DB truth on dates/names/dollars, honest home
+  surfaces, export 200.
+
+### What the honest import of v2 looks like (BUILD-80's starting material)
+1,288 gifts / $2,277,509 imported (1,270 / $2,265,318 after 18 stated
+external-id dupe refusals) · **1,105 rows / $1,544,854 errored
+`unparseable_date`** — the dd/mm convention trap ("23/3/20"), refused with
+line numbers and downloadable, never guessed and never today-stamped · 55
+unparseable amounts · 41 future-dated · 11 no-amount. The dd/mm inference that
+would recover that $1.5M is exactly BUILD-80's semantic layer; BUILD-79's job
+was that it shows up as a named $1.5M refusal instead of $0 and a green check.
+
+Known local-walk artifact: vite preview 404s /_vercel/insights/script.js as
+HTML ("Unexpected token '<'" pageerror) — prod serves the real script; the walk
+filters it.
