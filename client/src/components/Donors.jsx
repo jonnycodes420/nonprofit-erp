@@ -1289,7 +1289,7 @@ export function DonorImport({ onClose, onImported, withHistory = false }) {
             {result.twinCandidates > 0 && <> · <strong>{result.twinCandidates}</strong> same-day/same-amount twins imported (reviewable)</>}
             {result.newDonors > 0 && <> · <strong>{result.newDonors}</strong> created from unmatched gifts</>}
             {result.warned > 0    && <> · <strong>{result.warned}</strong> imported with warnings</>}
-            {result.skipped > 0   && <> · <strong>{result.skipped}</strong> skipped (no name or email)</>}
+            {result.skipped > 0   && <> · <strong>{result.skipped.toLocaleString()}</strong> {result.refusedRows?.length ? "refused with line-numbered reasons" : "skipped (no name or email)"}</>}
           </div>
           {/* BUILD-72 Part 1 — THE RECONCILIATION, on the user's screen.
               rows_in_file = created + skipped + errored, and the same for
@@ -1845,7 +1845,7 @@ export function DonorImport({ onClose, onImported, withHistory = false }) {
                 ? <>{" "}<span style={{color:T.green600}}>{donorCount.toLocaleString()}</span>{" donors ready"}
                     {giftCount>0&&<>{" · "}<span style={{color:T.green600}}>{giftCount.toLocaleString()}</span>{" gifts"}</>}
                     {payload.warnedCount>0&&<>{" · "}<span style={{color:T.gold600||"#a97f22"}}>{payload.warnedCount}</span>{" with warnings"}</>}
-                    {payload.skippedCount>0&&<>{" · "}<span style={{color:T.ink3}}>{payload.skippedCount}</span>{" skipped (no name or email)"}</>}</>
+                    {payload.skippedCount>0&&<>{" · "}<span style={{color:T.ink3}}>{payload.skippedCount.toLocaleString()}</span>{effectiveShape==="transaction"?" rows will be refused, each with its line and reason":" skipped (no name or email)"}</>}</>
                 : <span style={{color:T.ink3}}>No rows ready — map at least one column to <em>name</em> or <em>email</em>.</span>}
             </div>
           </div>
