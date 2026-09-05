@@ -195,3 +195,39 @@ the build's last two lines.
 
 Assertions: import-header §8/§9 (43 total). The fresh-org HTTP assertion rides
 the Part 8 golden.
+
+## Part 3 — the summary cannot say Balanced at zero
+
+- **3.1** `scanAmountShapedColumns` (lib): the dollar line's left side comes
+  from a raw scan of the file for the most currency-shaped column, computed at
+  parse entry BEFORE any mapping exists. v2: `Amount`, $2,196,822.63 raw
+  (currency-shaped cells only — `USD 750.00` styles are the parser's job and
+  land in the accounting axis). No amount-shaped column at all → the line reads
+  "unknown — no amount-shaped column found", never $0.
+- The file-level equation now exists on **every** path: the aggregate/wide
+  paths (which only ever echoed the server's payload-scoped ledger — how
+  "Balanced · 2,438 · $0" happened) now take rows from parse entry
+  (`parseReport.records`), fold the client's pre-submit skips in as reasons,
+  and take dollars from the independent scan. The scan column is named on the
+  panel ("scanned independently from your 'Amount' column — not from the
+  mapping").
+- **3.2** When Part 1 captured a TOTAL row, the summary shows the first
+  reconciliation against a figure Steward did not compute: the file's own
+  total, what Steward imported, the difference, how much of it is explained by
+  skipped/errored dollars, and an honest note that a report's own total may
+  count differently (soft credits/pledges/duplicates — BUILD-80's material).
+- **3.3** GREEN IS EARNED: the check mark and "every row and every dollar
+  accounted for" require amount mapped + date mapped + imported dollars > 0 +
+  both axes balanced. Otherwise: amber ◑, "Imported — with gaps you should
+  read.", a missing-list naming each gap (including "$0 was imported, but the
+  file's 'X' column carries $N of currency-shaped values"), and the panel title
+  downgrades to "The arithmetic — read the gaps above before trusting it".
+  Verified live both ways (probe screenshots part3-amber-summary /
+  part3-green-summary in docs/build79/repro/).
+- **3.4** Warnings download as CSV with line numbers + reasons
+  (imported-with-warnings.csv), same as refused rows; the aggregate builder
+  stops discarding its `_warnings`.
+- Leftover (documented): the import-both path's dead client equation (a
+  BUILD-78 finding) still suppresses its file panel; its summaryHealth is not
+  computed. Its gifts are real by construction; folding it into this layer
+  rides with the Part 8/BUILD-80 work.

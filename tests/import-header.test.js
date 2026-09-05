@@ -134,6 +134,15 @@ const ok = (cond, label, detail) => {
   const clSmall = lib.assessAggregateCollapse(a.rows.slice(0, 10), "Phone", "");
   ok(clSmall.refuse === false, "under 30 keyed rows the guard stays quiet (tiny files collapse legitimately)");
 
+  console.log("— §10 · the independent dollar scan (Part 3.1) —");
+  const scan2 = lib.scanAmountShapedColumns(a.headers, a.rows);
+  ok(scan2 && scan2.header === "Amount", "v2: the raw scan finds the Amount column with no mapping's help", scan2);
+  ok(scan2.sum > 2000000, `the scanned sum (${scan2 && scan2.sum}) is in the file's own TOTAL row's neighbourhood — never $0`, scan2 && scan2.sum);
+  const scan1 = lib.scanAmountShapedColumns(b.headers, b.rows);
+  ok(scan1 && scan1.header === "Amount", "v1: same", scan1 && scan1.header);
+  const noMoney = lib.scanAmountShapedColumns(["Name", "Email", "ZIP"], a.rows.slice(0, 50).map(r => ({ Name: r.Name, Email: r.Email, ZIP: r.ZIP })));
+  ok(noMoney === null || noMoney.header !== "ZIP", "ZIP codes never scan as money", noMoney);
+
   console.log(`import-header: ${passed} passed, ${failed} failed`);
   process.exit(failed ? 1 : 0);
 })();

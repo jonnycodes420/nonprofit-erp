@@ -31,7 +31,7 @@ import { T, fmt, fmtFull, daysDiff, SC, askClaude, STAGES, STAGE_ACTION, TIER_CO
 // profile button, and modal render below, and add `VoiceMemoModal` back to
 // the import above).
 import { DonorMap } from "./DonorMap";
-import { detectImportShape, groupTransactions, shapeLabel, YEAR_HDR_PAT, detectWorkbookRoles, pickMatchKey, linkGiftsToDonors, detectOwnerColumn, matchOwnersToUsers, applyOwnerAssignment, groupOwnerMatches, normalizeName, normalizeDate, normalizeMoney, normalizeEmail, detectFlagColumns, parseBoolFlag, classifyColumns, decodeSpreadsheetBytes, decodeSpreadsheetBytesDetailed, analyzeCsvText, analyzeSheetRows, assessAggregateCollapse, buildGiftItemsFromLedger, buildTransactionRows, detectNoteMarkers, autoDetectTxMapping } from "../../../shared/importShape";
+import { detectImportShape, groupTransactions, shapeLabel, YEAR_HDR_PAT, detectWorkbookRoles, pickMatchKey, linkGiftsToDonors, detectOwnerColumn, matchOwnersToUsers, applyOwnerAssignment, groupOwnerMatches, normalizeName, normalizeDate, normalizeMoney, normalizeEmail, detectFlagColumns, parseBoolFlag, classifyColumns, decodeSpreadsheetBytes, decodeSpreadsheetBytesDetailed, analyzeCsvText, analyzeSheetRows, assessAggregateCollapse, scanAmountShapedColumns, buildGiftItemsFromLedger, buildTransactionRows, detectNoteMarkers, autoDetectTxMapping } from "../../../shared/importShape";
 
 // ── CSV Import helpers ─────────────────────────────────────────────────────
 // ── Import field registry ──────────────────────────────────────────────────
@@ -379,7 +379,12 @@ function buildAggregatePayload(parsed, mapping, seedHistory) {
       if (amount > 0 && d.lastGift) gifts.push({ donorIndex: idx, amount, date: d.lastGift, type: "cash", campaign: "" });
     });
   }
-  return { donors, gifts, warnedCount: warned.length, skippedCount: skipped.length };
+  // BUILD-79 Part 3.4 — "N imported with warnings" with no warning visible is a
+  // number, not information. The warnings ride out with their row index (the
+  // caller maps index → physical line via the parse report) and download as CSV.
+  const warnedRows = warned.map(w => ({ idx: (w._rowIndex ?? 2) - 2, reasons: w._warnings || [] }));
+  const skippedRows = skipped.map(k => ({ idx: (k.row ?? 2) - 2, reason: k.reason }));
+  return { donors, gifts, warnedCount: warned.length, skippedCount: skipped.length, warnedRows, skippedRows };
 }
 
 // TRANSACTION: one row per GIFT, donor repeated. Delegates to importShape's
@@ -637,7 +642,10 @@ export function DonorImport({ onClose, onImported, withHistory = false }) {
   };
 
   const applyParsed = (headers, rows, physical, report) => {
-    setParseReport(report || null);
+    // BUILD-79 Part 3.1 — the independent dollar scan happens ONCE, at parse
+    // entry, before any mapping exists to bias it.
+    const amountScan = scanAmountShapedColumns(headers, rows);
+    setParseReport(report ? { ...report, amountScan } : { amountScan });
     const det = detectImportShape(headers, rows);
     setShape(det.shape); setShapeOverride(null); setShapeDetail(det);
     // Donor-field mapping is over the non-year columns (year columns are gifts,
@@ -877,6 +885,73 @@ export function DonorImport({ onClose, onImported, withHistory = false }) {
         R.balanced = R.rows.balanced && R.dollars.balanced;
         totals.refusedRows = payloadForSummary.dispositions.filter(d => d.disposition === "skipped" || d.disposition === "errored");
         totals.flaggedRows = payloadForSummary.flaggedRows || [];
+      }
+      // ── BUILD-79 Part 3 — the file-level equation exists on EVERY path.
+      // The aggregate/wide paths used to show only the server's payload-scoped
+      // ledger: both sides derived from what the client chose to send, so a
+      // 2,500-record report import could read "Balanced · 2,438 · $0". Rows
+      // come from parse entry; DOLLARS come from the independent raw-file scan
+      // (Part 3.1) — never from the mapping.
+      else if (parseReport?.records) {
+        const R = totals.reconciliation;
+        R.rows.inFile = parseReport.records;
+        const bump = (bucket, reason, rows, dollars) => {
+          R.rows[bucket] += rows; R.dollars[bucket] += dollars;
+          const box = bucket === "skipped" ? R.skippedReasons : R.erroredReasons;
+          const e = box[reason] || (box[reason] = { rows: 0, dollars: 0 });
+          e.rows += rows; e.dollars += dollars;
+        };
+        for (const k of (payloadForSummary.skippedRows || [])) bump("skipped", k.reason || "skipped_before_submit", 1, 0);
+        if (payloadForSummary.warnedRows) {
+          totals.warnedRows = payloadForSummary.warnedRows.map(w => ({
+            line: parseReport.rowLines?.[w.idx] ?? (w.idx + 2), reasons: w.reasons,
+            raw: parsed?.rows?.[w.idx] || {},
+          }));
+        }
+        // server buckets (created + its skipped/errored reasons, incl. the
+        // duplicate split) were already merged per chunk; the client-side
+        // pre-submit skips just joined them above. One partition, one sum.
+        R.rows.accounted = R.rows.created + R.rows.skipped + R.rows.errored;
+        R.rows.balanced = R.rows.accounted === R.rows.inFile;
+        R.dollars.inFile = parseReport.amountScan ? parseReport.amountScan.sum : null;
+        R.dollars.accounted = Math.round((R.dollars.created + R.dollars.skipped + R.dollars.errored) * 100) / 100;
+        R.dollars.balanced = R.dollars.inFile == null ? false : Math.abs(R.dollars.inFile - R.dollars.accounted) < 0.005;
+        R.dollars.scanColumn = parseReport.amountScan?.header || null;
+        R.balanced = R.rows.balanced && R.dollars.balanced;
+      }
+      // BUILD-79 Part 3.3 — GREEN IS EARNED. The check mark and "every row and
+      // every dollar accounted for" require: an amount column mapped, a date
+      // column mapped, non-zero imported dollars, and both axes balanced.
+      // Anything less is amber, and the panel says what is missing.
+      {
+        const R = totals.reconciliation;
+        const amountMapped = effectiveShape === "transaction" ? !!txMap.amount
+          : effectiveShape === "wide" ? yearCols.some(y => y.enabled)
+          : Object.values(mapping).some(f => f === "total" || f === "lastAmount");
+        const dateMapped = effectiveShape === "transaction" ? !!txMap.date
+          : effectiveShape === "wide" ? true /* year columns carry their own dates */
+          : Object.values(mapping).some(f => f === "lastGift");
+        const dollarsIn = Number(R.dollars.created || 0);
+        const missing = [];
+        if (!amountMapped) missing.push("no amount column was mapped");
+        if (!dateMapped) missing.push("no gift-date column was mapped");
+        if (dollarsIn <= 0 && parseReport?.amountScan?.sum > 0)
+          missing.push(`$0 was imported, but the file's “${parseReport.amountScan.header}” column carries ${"$" + parseReport.amountScan.sum.toLocaleString(undefined,{maximumFractionDigits:2})} of currency-shaped values`);
+        else if (dollarsIn <= 0) missing.push("no gift dollars were imported");
+        if (!R.rows.balanced) missing.push("the row equation does not balance");
+        if (!R.dollars.balanced) missing.push(R.dollars.inFile == null ? "the file's dollars are unknown (no amount-shaped column found)" : "the dollar equation does not balance");
+        totals.summaryHealth = {
+          greenEarned: amountMapped && dateMapped && dollarsIn > 0 && R.rows.balanced && R.dollars.balanced,
+          missing,
+        };
+        // Part 3.2 — the file's own TOTAL row is the first outside number the
+        // product has ever reconciled against.
+        if (parseReport?.totalRow) {
+          const diff = Math.round((parseReport.totalRow.amount - dollarsIn) * 100) / 100;
+          totals.fileTotalRow = { stated: parseReport.totalRow.amount, line: parseReport.totalRow.line,
+            imported: dollarsIn, difference: diff,
+            explained: { skipped: R.dollars.skipped || 0, errored: R.dollars.errored || 0 } };
+        }
       }
       // Don't call onImported() here — the result screen must render first; its
       // Done button calls onImported() so the modal stays until dismissed.
@@ -1178,10 +1253,21 @@ export function DonorImport({ onClose, onImported, withHistory = false }) {
     return (
       <div style={overlay} className="modal-sheet-overlay">
         <div style={{...modal,textAlign:"center"}} className="modal-sheet-inner">
-          <div style={{fontSize:36,marginBottom:12}}>{hasBatchErrors?"✕":"✓"}</div>
-          <div style={{fontFamily:"'DM Serif Display',Georgia,serif",fontSize:22,fontWeight:400,color:T.ink,marginBottom:12,letterSpacing:"-0.01em"}}>
-            {hasBatchErrors ? "Import finished with errors." : "Import complete."}
+          {/* BUILD-79 Part 3.3 — the check mark is EARNED: amount + date
+              mapped, non-zero dollars, both axes balanced. Anything less is
+              amber and names what is missing. */}
+          <div style={{fontSize:36,marginBottom:12,color:hasBatchErrors?T.terracotta:(result.summaryHealth&&!result.summaryHealth.greenEarned)?(T.gold600||"#a97f22"):T.ink}}>
+            {hasBatchErrors?"✕":(result.summaryHealth&&!result.summaryHealth.greenEarned)?"◑":"✓"}
           </div>
+          <div style={{fontFamily:"'DM Serif Display',Georgia,serif",fontSize:22,fontWeight:400,color:T.ink,marginBottom:12,letterSpacing:"-0.01em"}}>
+            {hasBatchErrors ? "Import finished with errors." : (result.summaryHealth&&!result.summaryHealth.greenEarned) ? "Imported — with gaps you should read." : "Import complete."}
+          </div>
+          {result.summaryHealth && !result.summaryHealth.greenEarned && result.summaryHealth.missing.length > 0 && (
+            <div style={{textAlign:"left",background:T.gold100||"#f6eccf",border:`1px solid ${T.gold300||"#e7cf91"}`,borderRadius:10,padding:"10px 14px",marginBottom:12,fontSize:12.5,color:T.ink,lineHeight:1.7}}>
+              <div style={{fontSize:10,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",color:T.gold700||"#8a6d1f",marginBottom:4}}>What's missing before this counts as fully accounted for</div>
+              {result.summaryHealth.missing.map((m,i)=><div key={i}>· {m}</div>)}
+            </div>
+          )}
           <div style={{fontSize:14,color:T.ink3,marginBottom:hasBatchErrors?12:28,lineHeight:1.8}}>
             <strong style={{color:T.ink}}>{result.created}</strong> donors added
             {result.giftsInserted > 0 && <> · <strong>{result.giftsInserted}</strong> gifts attached</>}
@@ -1209,10 +1295,18 @@ export function DonorImport({ onClose, onImported, withHistory = false }) {
               </div>
             );
             return <div style={{textAlign:"left",background:T.bg2,border:`1px solid ${T.bg3}`,borderRadius:10,padding:"12px 16px",marginBottom:16,fontSize:12,lineHeight:1.8}}>
-              <div style={{fontSize:10,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",color:T.ink3,marginBottom:6}}>
-                Every row and every dollar accounted for
+              <div style={{fontSize:10,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",color:(result.summaryHealth&&!result.summaryHealth.greenEarned)?(T.gold700||"#8a6d1f"):T.ink3,marginBottom:6}}>
+                {(result.summaryHealth&&!result.summaryHealth.greenEarned) ? "The arithmetic — read the gaps above before trusting it" : "Every row and every dollar accounted for"}
               </div>
-              {line("In your file", R.rows.inFile, R.dollars.inFile, T.ink)}
+              <div style={{display:"flex",justifyContent:"space-between",gap:12,color:T.ink}}>
+                <span>In your file</span>
+                <span style={{fontVariantNumeric:"tabular-nums"}}>
+                  {R.rows.inFile.toLocaleString()} · {R.dollars.inFile == null ? "unknown — no amount-shaped column found" : money(R.dollars.inFile)}
+                </span>
+              </div>
+              {R.dollars.scanColumn && R.dollars.inFile != null && (
+                <div style={{paddingLeft:12,color:T.ink3,fontSize:11}}>dollars scanned independently from your “{R.dollars.scanColumn}” column — not from the mapping</div>
+              )}
               <div style={{height:1,background:T.bg3,margin:"6px 0"}} />
               {line("Imported", R.rows.created, R.dollars.created)}
               {R.rows.skipped > 0 && line("Skipped", R.rows.skipped, R.dollars.skipped)}
@@ -1248,6 +1342,34 @@ export function DonorImport({ onClose, onImported, withHistory = false }) {
                     a.download="not-imported-rows.csv";a.click();URL.revokeObjectURL(a.href);
                   }} style={{background:"transparent",border:"none",padding:0,color:T.greenDk,fontSize:12,fontWeight:700,cursor:"pointer"}}>
                     ↓ Download the {result.refusedRows.length} rows that were not imported (line numbers + reasons)
+                  </button>
+                </div>
+              )}
+              {result.fileTotalRow && (
+                <div style={{marginTop:8,paddingTop:8,borderTop:`1px solid ${T.bg3}`,color:T.ink2}}>
+                  <div style={{fontWeight:700,color:T.ink}}>Your file's own total row (line {result.fileTotalRow.line}) says {money(result.fileTotalRow.stated)}.</div>
+                  <div>Steward imported {money(result.fileTotalRow.imported)} · difference {money(Math.abs(result.fileTotalRow.difference))}{result.fileTotalRow.difference < 0 ? " (Steward imported MORE than the report's total)" : ""}</div>
+                  {result.fileTotalRow.difference !== 0 && (
+                    <div style={{color:T.ink3,fontSize:11}}>
+                      of which: skipped rows {money(result.fileTotalRow.explained.skipped)} · errored rows {money(result.fileTotalRow.explained.errored)}
+                      {Math.abs(result.fileTotalRow.difference) - result.fileTotalRow.explained.skipped - result.fileTotalRow.explained.errored > 0.005 &&
+                        <> · the rest is how the report itself counted (its total may exclude soft credits, pledges or duplicates — compare before trusting either number)</>}
+                    </div>
+                  )}
+                </div>
+              )}
+              {result.warnedRows?.length > 0 && (
+                <div style={{marginTop:8,paddingTop:8,borderTop:`1px solid ${T.bg3}`}}>
+                  <button onClick={()=>{
+                    const esc=v=>{const t=String(v??"");return /[",\n]/.test(t)?'"'+t.replace(/"/g,'""')+'"':t;};
+                    const rawHeaders=Object.keys(result.warnedRows[0].raw||{});
+                    const lines=[["Line","Warnings",...rawHeaders].map(esc).join(",")];
+                    for(const r of result.warnedRows) lines.push([r.line,(r.reasons||[]).join(" | "),...rawHeaders.map(h=>r.raw?.[h]??"")].map(esc).join(","));
+                    const blob=new Blob([lines.join("\n")],{type:"text/csv"});
+                    const a=document.createElement("a");a.href=URL.createObjectURL(blob);
+                    a.download="imported-with-warnings.csv";a.click();URL.revokeObjectURL(a.href);
+                  }} style={{background:"transparent",border:"none",padding:0,color:T.gold700||"#8a6d1f",fontSize:12,fontWeight:700,cursor:"pointer"}}>
+                    ↓ Download the {result.warnedRows.length} rows imported with warnings (line numbers + reasons)
                   </button>
                 </div>
               )}

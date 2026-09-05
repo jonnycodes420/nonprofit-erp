@@ -480,6 +480,41 @@ export function analyzeSheetRows(records, opts = {}) {
   };
 }
 
+// BUILD-79 Part 3.1 — the INDEPENDENT amount scan. The dollar line's left side
+// must come from the raw file, never from the mapping: when no amount column is
+// mapped, both sides of the old dollar equation were zero, so a file whose own
+// TOTAL row read $2,035,978.52 reported "Balanced · $0". This scans every
+// column for currency-shaped values and sums the best candidate, mapping or no
+// mapping. Excluded: id/zip/phone/year/count-shaped headers.
+const AMOUNT_EXCLUDE_HDR = /\b(zip|postal|phone|fax|id|#|number|no\.|year|count|qty|quantity|age|score)\b/i;
+const CURRENCY_CELL_RE = /^\(?-?\$?\s?[\d,]+(\.\d{1,2})?\)?$/;
+export function scanAmountShapedColumns(headers = [], rows = []) {
+  const candidates = [];
+  for (const h of headers.map(x => String(x))) {
+    if (AMOUNT_EXCLUDE_HDR.test(h) || YEAR_HDR_PAT.test(h)) continue;
+    let nonEmpty = 0, currency = 0, dollarSigns = 0, sum = 0;
+    for (const r of rows) {
+      const raw = String(r[h] ?? "").trim();
+      if (!raw) continue;
+      nonEmpty++;
+      if (CURRENCY_CELL_RE.test(raw) && /\d/.test(raw)) {
+        const { value } = normalizeMoney(raw);
+        if (value != null && Math.abs(value) < 1e9) {
+          currency++; sum += value;
+          if (raw.includes("$")) dollarSigns++;
+        }
+      }
+    }
+    if (nonEmpty >= 5 && currency / nonEmpty >= 0.5 && currency >= 5) {
+      candidates.push({ header: h, nonEmpty, currencyCells: currency, dollarSigns, sum: Math.round(sum * 100) / 100 });
+    }
+  }
+  // most currency-shaped cells wins; $-signs break ties (a bare-integer column
+  // like gift counts can pass the shape test, a $-carrying one is the money)
+  candidates.sort((a, b) => (b.currencyCells - a.currencyCells) || (b.dollarSigns - a.dollarSigns));
+  return candidates[0] || null;
+}
+
 // analyzeCsvText(text, opts) — the one-call CSV entry: records → analysis.
 export function analyzeCsvText(text, opts = {}) {
   return analyzeSheetRows(parseCsvRecords(text), opts);
