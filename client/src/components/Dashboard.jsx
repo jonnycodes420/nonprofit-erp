@@ -187,15 +187,29 @@ function SetupChecklist({ status, onNavigate, isAdmin, onSetCardState }) {
             </div>
           );
         }
+        // BUILD-79 Part 6 — donors on file with $0 of giving is NOT a done
+        // import: say so, offer the re-import path, and let an admin confirm
+        // the file genuinely had no gifts.
+        const giftGap = item.key === "donors" && item.needsGiftConfirm;
         return (
-          <div key={item.key} {...interactive(() => onNavigate(meta.nav[0], meta.nav[1]), { label: `${meta.label} — ${meta.why}` })}
-            style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 2px", borderTop: "1px solid " + T.bg2, borderRadius: 8 }}>
-            <span aria-hidden style={{ width: 20, height: 20, borderRadius: "50%", border: "1.5px solid " + T.bg3, flexShrink: 0 }} />
-            <span style={{ flex: 1, minWidth: 0 }}>
-              <span style={{ fontSize: 13, fontWeight: 700, color: T.ink }}>{meta.label}</span>
-              <span style={{ display: "block", fontSize: 11.5, color: T.ink3, lineHeight: 1.45 }}>{meta.why}</span>
-            </span>
-            <span style={{ fontSize: 12, fontWeight: 700, color: T.green600, whiteSpace: "nowrap" }}>{meta.cta} →</span>
+          <div key={item.key}>
+            <div {...interactive(() => onNavigate(meta.nav[0], meta.nav[1]), { label: `${meta.label} — ${meta.why}` })}
+              style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 2px", borderTop: "1px solid " + T.bg2, borderRadius: 8 }}>
+              <span aria-hidden style={{ width: 20, height: 20, borderRadius: "50%", border: "1.5px solid " + T.bg3, flexShrink: 0 }} />
+              <span style={{ flex: 1, minWidth: 0 }}>
+                <span style={{ fontSize: 13, fontWeight: 700, color: T.ink }}>{meta.label}</span>
+                <span style={{ display: "block", fontSize: 11.5, color: T.ink3, lineHeight: 1.45 }}>
+                  {giftGap ? `${(item.count||0).toLocaleString()} donors are on file with $0 of giving — an import that dropped every dollar isn't done. Re-import with the gift columns mapped.` : meta.why}
+                </span>
+              </span>
+              <span style={{ fontSize: 12, fontWeight: 700, color: T.green600, whiteSpace: "nowrap" }}>{giftGap ? "Re-import" : meta.cta} →</span>
+            </div>
+            {giftGap && isAdmin && (
+              <button onClick={() => { apiFetch("/org/setup-confirm-no-gifts", { method: "POST", body: "{}" }).then(() => window.location.reload()).catch(() => {}); }}
+                style={{ background: "transparent", border: "none", padding: "0 0 6px 30px", color: T.ink3, fontSize: 11, cursor: "pointer", textDecoration: "underline" }}>
+                My file genuinely had no gifts — mark this done
+              </button>
+            )}
           </div>
         );
       })}
@@ -822,7 +836,16 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
       // Edge: a short-cadence drifter can exist before anyone crosses the
       // 180-day quiet line — never claim "no donors drifting" over them.
       ? {label:"At risk",value:fmtFull(driftData.atRiskAmount),valueColor:T.gold,sub:`${driftData.counts.driftingHigh} donor${driftData.counts.driftingHigh===1?"":"s"} past their own pattern`,onClick:()=>document.getElementById("dash-drifting")?.scrollIntoView({behavior:"smooth",block:"start"})}
-      : {label:"At risk",value:"No donors drifting",sub:driftData?`${driftData.evaluated.toLocaleString()} giving pattern${driftData.evaluated===1?"":"s"} checked`:"checking giving patterns",onClick:()=>setReengBreakdownOpen(true)};
+      : {label:"At risk",
+         // BUILD-79 Part 6 — a pattern needs gifts. An org with donors but $0
+         // of giving gets the truth, not "1,111 giving patterns checked".
+         value:driftData&&driftData.evaluated>0&&(driftData.giftedDonorCount??0)===0?"No giving history yet":"No donors drifting",
+         sub:driftData
+           ?((driftData.giftedDonorCount??driftData.evaluated)===0
+              ?"no giving history on file yet, so nothing to check"
+              :`${(driftData.giftedDonorCount??driftData.evaluated).toLocaleString()} giving pattern${(driftData.giftedDonorCount??driftData.evaluated)===1?"":"s"} checked`)
+           :"checking giving patterns",
+         onClick:()=>setReengBreakdownOpen(true)};
 
       /* Goal banner — restructured into a real two-column layout so its
           footprint matches its content across the card's full width,
@@ -1302,6 +1325,10 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
       ex.doNotContact>0&&`${ex.doNotContact.toLocaleString()} do-not-contact`,
       ex.pledgeCadence>0&&`${ex.pledgeCadence.toLocaleString()} on pledge schedules`,
     ].filter(Boolean);
+    if(driftData.evaluated>0&&(driftData.giftedDonorCount??0)===0)return{
+      head:"No giving history on file yet, so nothing to check.",
+      body:`${driftData.evaluated.toLocaleString()} donor${driftData.evaluated===1?"":"s"} are on file with zero gifts between them — a giving pattern needs gifts. If your import should have carried giving history, re-run it with the gift columns mapped; drift starts watching the moment real gifts exist.`,
+    };
     if(driftData.evaluated===0)return{
       head:"No donors to evaluate yet.",
       body:"Steward watches every donor's own giving pattern here. Once donors and their gift history are in, anyone quietly past their pattern surfaces on this list — if you just imported and this still reads zero donors, the import didn't land.",
@@ -1312,7 +1339,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
     };
     return{
       head:"No donors drifting.",
-      body:`Checked ${driftData.evaluated.toLocaleString()} donor${driftData.evaluated===1?"":"s"}: `
+      body:`Checked ${(driftData.giftedDonorCount??driftData.evaluated).toLocaleString()} donor${(driftData.giftedDonorCount??driftData.evaluated)===1?"":"s"} with giving history: `
         +`${(driftData.onPattern||0).toLocaleString()} giving on their own pattern`
         +(driftData.counts.lapsed>0?`, ${driftData.counts.lapsed.toLocaleString()} already lapsed`:"")
         +(exParts.length?`, and ${exParts.join(", ")} excluded from drift`:"")

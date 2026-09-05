@@ -2811,20 +2811,29 @@ app.get("/org/setup-status", requireAuth, wrap(async (req, res) => {
   const org = orgs[0];
   const tier = orgPlanTier(org);
 
-  const [donorRow, pageRow, wfRow, userRow, inviteRow] = await Promise.all([
+  const [donorRow, giftRow, pageRow, wfRow, userRow, inviteRow] = await Promise.all([
     query(`SELECT COUNT(*)::int AS n FROM donors WHERE org_id = ? AND deleted_at IS NULL AND is_sample IS NOT TRUE`, [orgId]),
+    query(`SELECT COUNT(*)::int AS n FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
+             WHERE g.org_id = ? AND d.deleted_at IS NULL AND d.is_sample IS NOT TRUE`, [orgId]),
     query(`SELECT COUNT(*)::int AS n FROM giving_pages WHERE org_id = ? AND status = 'active'`, [orgId]),
     query(`SELECT COUNT(*)::int AS n FROM workflows WHERE org_id = ? AND enabled = TRUE`, [orgId]),
     query(`SELECT COUNT(*)::int AS n FROM users WHERE org_id = ?`, [orgId]),
     query(`SELECT COUNT(*)::int AS n FROM invites WHERE org_id = ? AND accepted_at IS NULL AND expires_at > NOW()`, [orgId]),
   ]);
   const donorCount = donorRow[0].n;
+  const giftCount = giftRow[0].n;
 
   // In value order. `key` is stable (the client owns labels/why-lines/deep
   // links); `done` is the live computation. The invite item exists only on
   // Team tier — plan-graceful means HIDDEN on Core, not shown-and-locked.
   const items = [
-    { key: "donors", done: donorCount > SETUP_DONOR_THRESHOLD, count: donorCount },
+    // BUILD-79 Part 6 — donors without a single gift do not tick the box: an
+    // import that dropped every dollar is not "done". A human can confirm the
+    // file genuinely had no gifts (POST /org/setup-confirm-no-gifts).
+    { key: "donors",
+      done: donorCount > SETUP_DONOR_THRESHOLD && (giftCount > 0 || !!org.setup_no_gifts_confirmed),
+      count: donorCount, giftCount,
+      needsGiftConfirm: donorCount > SETUP_DONOR_THRESHOLD && giftCount === 0 && !org.setup_no_gifts_confirmed },
     { key: "stripe", done: !!org.stripe_account_id },
     { key: "address", done: !!(org.receipt_address && String(org.receipt_address).trim()) },
     { key: "givingPage", done: pageRow[0].n > 0 },
@@ -2845,6 +2854,14 @@ app.get("/org/setup-status", requireAuth, wrap(async (req, res) => {
 // The card's dismissal preference — per ORG (admins share it), requireAdmin.
 // Deliberately NOT checkWriteAccess-gated: collapsing a setup card is a
 // display preference, not org data; a read_only org may still tidy its Home.
+// BUILD-79 Part 6 — the explicit "my file genuinely had no gifts" confirmation
+// that lets the donors checklist item tick at $0. Admin, one-way (re-importing
+// with gifts makes it moot).
+app.post("/org/setup-confirm-no-gifts", requireAuth, requireAdmin, wrap(async (req, res) => {
+  await run("UPDATE orgs SET setup_no_gifts_confirmed = TRUE WHERE id = ?", [req.user.orgId]);
+  res.json({ ok: true });
+}));
+
 app.put("/org/setup-card", requireAuth, requireAdmin, wrap(async (req, res) => {
   const { state } = req.body || {};
   const normalized = state === "" || state == null ? null : state;
@@ -8245,7 +8262,7 @@ app.get("/dashboard/today", requireAuth, wrap(async (req, res) => {
     FROM donors d
     LEFT JOIN interactions i ON i.donor_id = d.id AND i.type != 'email_open'
     WHERE d.org_id = ? AND d.deleted_at IS NULL AND d.stage NOT IN ('prospect','lapsed')
-      AND ${solicitableSql("d")} ${scopeClause}
+      AND ${solicitableSql("d")} AND ${namedOrGivingSql("d")} ${scopeClause}
     GROUP BY d.id, d.name, d.total_giving, d.last_gift_date, d.last_gift_amount, d.stage
     HAVING MAX(i.date) < ? OR MAX(i.date) IS NULL
     ORDER BY COALESCE(d.total_giving, 0) DESC
@@ -8606,6 +8623,10 @@ app.get("/drift", requireAuth, wrap(async (req, res) => {
   const includeMedium = req.query.includeMedium === "1" || req.query.includeMedium === "true";
   const uncapped = req.query.all === "1" || req.query.all === "true";
   const { map, today } = await computeDriftForDonors(orgId);
+  // BUILD-79 Part 6 — "1,111 giving patterns checked" was once said about an
+  // org with ZERO gifts; zero patterns were checked. The chip's honest count.
+  const giftedDonorCount = (await query(
+    "SELECT COUNT(*)::int AS n FROM donors WHERE org_id=? AND deleted_at IS NULL AND COALESCE(gift_count,0) > 0", [orgId]))[0].n;
 
   const drifting = [...map.values()].filter(a => a.state === "drifting");
   const high = drifting.filter(a => a.confidence === "high");
@@ -8656,6 +8677,7 @@ app.get("/drift", requireAuth, wrap(async (req, res) => {
       lapsed: lapsed.length,
     },
     evaluated: map.size,          // every non-deleted donor the computation looked at
+    giftedDonorCount,             // BUILD-79 Part 6 — donors with ≥1 gift: the only count "patterns checked" may claim
     onPattern,                    // inside their own pattern (state 'ok')
     excluded: excludedTally,      // and exactly why the rest can never drift
     lapsedAmount: toDollars(lapsed.reduce((s, a) => s + toCents(a.valueAtRisk || 0), 0)),
@@ -21752,6 +21774,13 @@ const MEANINGFUL_CONTACT_TYPES = "('call','meeting','email','stewardship')";
 // transactional mail may continue. One excluded donor reaching one
 // actionable surface is a bug (tests/import-messy.test.js §4).
 const solicitableSql = (a = "d") => `${a}.deceased IS NOT TRUE AND ${a}.do_not_contact IS NOT TRUE AND ${a}.do_not_solicit IS NOT TRUE`;
+
+// BUILD-79 Part 6 — an UNNAMED record with zero gifts is not an actionable
+// person: six phone numbers once sat in Needs Your Attention with Log call
+// buttons. The needs-name tag is the import's flag (Part 5); a human naming
+// the record clears it from this predicate the moment the tag is removed.
+const namedOrGivingSql = (a = "d") =>
+  `NOT (COALESCE(${a}.gift_count, 0) = 0 AND (COALESCE(${a}.tags, '[]')::text LIKE '%needs-name%' OR ${a}.name LIKE 'Unnamed donor%'))`;
 
 // Per-donor breakdown behind the stewardship_debt headline number — every
 // donor's exact contribution to the aggregate, sorted by who's driving it

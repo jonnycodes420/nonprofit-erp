@@ -1741,6 +1741,9 @@ async function initSchema() {
   // incomplete, 'collapsed' = the small "Finish setup" chip, 'hidden' =
   // explicitly never show again.
   await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS setup_card_state TEXT`);
+  // BUILD-79 Part 6 — "Import your donors" ticks only when gifts came with
+  // them, or a human explicitly confirmed the file had none.
+  await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS setup_no_gifts_confirmed BOOLEAN DEFAULT FALSE`);
 
   // ── BUILD-72 Part 4 — the organization's timezone ────────────────────────
   // Every date boundary in the product is computed in THIS zone: not the

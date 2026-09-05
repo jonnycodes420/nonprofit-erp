@@ -283,3 +283,32 @@ form stamps `lastGift: today` when a "last amount" is typed (Donors.jsx
 - Transaction dispositions/refusal CSVs now carry REAL physical line numbers
   (`opts.rowLines`) — "index + 2" was wrong on report exports after chrome
   removal.
+
+## Part 6 — downstream surfaces do not trust an empty import
+
+- **Score on no giving data is no score.** `donorScore` returns null for a
+  donor with zero gifts, $0 and no last-gift date; every score badge renders a
+  quiet "—" titled "no gifts on file" (profile tile says it in words). The 35
+  is dead twice over: its recency half died with Part 4's read-side fix, its
+  render died here.
+- **Needs Your Attention** excludes unnamed zero-gift records at the SQL level
+  (`namedOrGivingSql` beside `solicitableSql`): needs-name-tagged or
+  "Unnamed donor…"-named rows with no gifts never reach the queue. Named
+  zero-gift prospects legitimately remain ("New prospect — no contact yet").
+- **Drift** returns `giftedDonorCount` (donors with ≥1 gift — the only number
+  "patterns checked" may claim). An org with donors but $0 of giving reads
+  "No giving history on file yet, so nothing to check" with the honest donor
+  count and re-import guidance; the healthy empty state now says "Checked N
+  donors WITH GIVING HISTORY".
+- **Setup checklist**: "Import your donors" requires >5 donors AND ≥1 gift, or
+  the explicit admin confirmation (`POST /org/setup-confirm-no-gifts`, new org
+  column `setup_no_gifts_confirmed`). The un-done row says "N donors are on
+  file with $0 of giving — an import that dropped every dollar isn't done",
+  CTA becomes "Re-import", with a quiet "my file genuinely had no gifts" link.
+  setup-checklist suite updated to the new contract (39) — the old "6 donors →
+  done" assertion now proves the opposite.
+
+Verified live (part6-directory.png / part6-home.png): giftless 12-donor import
+→ amber summary, blank scores, "no gift on file" cells, 2 Unnamed donor rows,
+honest drift copy, unticked gift-gap checklist row, and no phone numbers
+anywhere in Needs Your Attention.

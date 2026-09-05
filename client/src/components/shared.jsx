@@ -217,10 +217,15 @@ export const TIER_COLOR = {Micro:T.ink3,Small:T.green500,Mid:T.greenMid,Major:T.
 
 // ── Score helpers ──────────────────────────────────────────────────────────
 export function donorScore(d) {
+  // BUILD-79 Part 6 — score on no giving data is NO SCORE. 1,111 giftless
+  // imports once all scored 35 (base 5 + a recency 30 earned by the read-side
+  // today-fallback). A donor with zero gifts, no dollars and no last-gift
+  // date has nothing to score; render blank with "no gifts on file".
+  if (!(d.gifts > 0) && !(d.total > 0) && !d.lastGift) return null;
   let s=0;
   if(d.total>20000)s+=35; else if(d.total>5000)s+=22; else if(d.total>1000)s+=12; else s+=5;
-  const days=daysDiff(d.lastGift);
-  if(days<90)s+=30; else if(days<180)s+=22; else if(days<365)s+=12;
+  const days=d.lastGift?daysDiff(d.lastGift):null;
+  if(days!=null){ if(days<90)s+=30; else if(days<180)s+=22; else if(days<365)s+=12; }
   s+=Math.min(d.gifts*4,20);
   if(d.status==="lapsed")s-=15;
   if(d.tags.includes("board-adjacent"))s+=10;

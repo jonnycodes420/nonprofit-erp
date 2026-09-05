@@ -3824,7 +3824,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
           {/* Overview tab */}
           {dpTab==="overview"&&<div style={{padding:"22px 20px 24px 24px",display:"flex",flexDirection:"column",gap:18}}>
             <div className="donor-stat-grid" style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10}}>
-              {[["Lifetime",fmtFull(donor.total),T.ink],["Last Gift",lastGiftDisplay,"#1a6b4a"],["Contact",`${urg.days}d ago`,urg.urgencyColor],["Score",`${sc}/99`,scoreColor]].map(([l,v,c])=>(
+              {[["Lifetime",fmtFull(donor.total),T.ink],["Last Gift",lastGiftDisplay,"#1a6b4a"],["Contact",`${urg.days}d ago`,urg.urgencyColor],["Score",sc!=null?`${sc}/99`:"no gifts on file",sc!=null?scoreColor:T.ink3]].map(([l,v,c])=>(
                 <div key={l} style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:12,padding:"12px 14px"}}>
                   <div style={{fontSize:9,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.1em",color:T.ink3,marginBottom:4}}>{l}</div>
                   <div style={{fontSize:20,fontWeight:800,color:c,fontFamily:"'DM Serif Display',serif",lineHeight:1.1}}>{v}</div>
@@ -5047,7 +5047,9 @@ function ReEngageView({donors,org,onLogTouchpoint,onSelectDonor}){
                 </>:<div style={{fontSize:11,color:T.ink3}}>no dates on file</div>}
               </div>
               <div className="re-col-score" style={{textAlign:"right"}}>
-                <span style={{fontSize:13,fontWeight:800,color:scColor,background:scColor+"18",borderRadius:7,padding:"3px 9px",display:"inline-block"}}>{sc}</span>
+                {sc!=null
+                  ?<span style={{fontSize:13,fontWeight:800,color:scColor,background:scColor+"18",borderRadius:7,padding:"3px 9px",display:"inline-block"}}>{sc}</span>
+                  :<span title="no gifts on file" style={{color:T.ink3,fontSize:11}}>—</span>}
               </div>
               <div className="re-col-actions" style={{display:"flex",gap:6,justifyContent:"flex-end"}}>
                 <button onClick={e=>{e.stopPropagation();onLogTouchpoint(d);}} style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:7,padding:"4px 10px",color:T.ink3,fontSize:11,fontWeight:600,cursor:"pointer"}}>+ Log</button>
@@ -5459,7 +5461,9 @@ function DirectoryView({donors,loading,serverTotal,page,pageSize,onPage,clientFi
                     :<div style={{fontSize:11,color:T.ink3}}>no gift on file</div>}
                 </div>
                 <div style={{textAlign:"right"}}>
-                  <span style={{background:scColor+"18",color:scColor,borderRadius:7,padding:"3px 8px",fontSize:12,fontWeight:800}}>{sc}</span>
+                  {sc!=null
+                    ?<span style={{background:scColor+"18",color:scColor,borderRadius:7,padding:"3px 8px",fontSize:12,fontWeight:800}}>{sc}</span>
+                    :<span title="no gifts on file" style={{color:T.ink3,fontSize:11}}>—</span>}
                 </div>
                 {isAdmin&&<div className="dir-col-assign dir-assign-cell" style={{textAlign:"right"}}>
                   {/* Reassigning the owner is Team (server 403s for Core). */}
@@ -5488,7 +5492,9 @@ function DirectoryView({donors,loading,serverTotal,page,pageSize,onPage,clientFi
                     {d.lastGift?<>{" · "}{d.lastAmount>0?fmtFull(d.lastAmount)+" ":""}{new Date(d.lastGift).toLocaleDateString("en-US",{month:"short",year:"numeric"})}</>:" · no gifts yet"}
                   </div>
                 </div>
-                <span style={{background:scColor+"18",color:scColor,borderRadius:8,padding:"5px 10px",fontSize:13,fontWeight:800,flexShrink:0}}>{sc}</span>
+                {sc!=null
+                  ?<span style={{background:scColor+"18",color:scColor,borderRadius:8,padding:"5px 10px",fontSize:13,fontWeight:800,flexShrink:0}}>{sc}</span>
+                  :<span title="no gifts on file" style={{color:T.ink3,fontSize:11,flexShrink:0}}>—</span>}
               </div>
             ];
           })}
@@ -6120,7 +6126,7 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
   const generateCallList=async()=>{
     setCallLoading(true);setCallList("");
     await askClaude(`You are a chief development officer. Be tactical. Max 200 words.`,
-      `Prioritized call list for this week:\n${data.donors.map(d=>`${d.name} [${d.stage||"cultivate"}]: ${daysDiff(d.lastTouchpoint||d.lastGift)}d since contact, ${fmtFull(d.lastAmount)} last gift, score ${donorScore(d)}, notes: ${d.notes}`).join("\n")}`,
+      `Prioritized call list for this week:\n${data.donors.map(d=>`${d.name} [${d.stage||"cultivate"}]: ${daysDiff(d.lastTouchpoint||d.lastGift)}d since contact, ${fmtFull(d.lastAmount)} last gift, score ${donorScore(d)??"none (no gifts on file)"}, notes: ${d.notes}`).join("\n")}`,
       chunk=>setCallList(chunk));
     setCallLoading(false);
   };

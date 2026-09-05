@@ -27,6 +27,7 @@ async function reset() {
     await q(`DELETE FROM giving_pages WHERE org_id=$1`, [o]).catch(() => {});
     await q(`DELETE FROM workflows WHERE org_id=$1`, [o]).catch(() => {});
     await q(`DELETE FROM invites WHERE org_id=$1`, [o]).catch(() => {});
+    await q(`DELETE FROM gifts WHERE org_id=$1`, [o]).catch(() => {});
     await q(`DELETE FROM donors WHERE org_id=$1`, [o]).catch(() => {});
     await q(`DELETE FROM users WHERE org_id=$1`, [o]).catch(() => {});
     await q(`DELETE FROM orgs WHERE id=$1`, [o]);
@@ -74,7 +75,20 @@ const item = (body, key) => (body.items || []).find(i => i.key === key);
   ok("10 sample + 1 trashed donor → donors item still NOT done", item(r.body, "donors").done === false && item(r.body, "donors").count === 0, item(r.body, "donors"));
   for (let i = 0; i < 6; i++) await q(`INSERT INTO donors (id,org_id,name) VALUES ($1,$2,$3)`, [`d_su_r${i}`, ORG_C, `Real ${i}`]);
   r = await api("GET", "/org/setup-status", tokC);
-  ok("6 real donors → donors item checks itself off (count 6 > 5)", item(r.body, "donors").done === true && item(r.body, "donors").count === 6, item(r.body, "donors"));
+  // BUILD-79 Part 6 — donors alone do not tick the box: an import that
+  // dropped every dollar is not "done". 1,111 donors at $0 once ticked it.
+  ok("6 real donors with ZERO gifts → donors item NOT done, needsGiftConfirm flagged",
+     item(r.body, "donors").done === false && item(r.body, "donors").count === 6 && item(r.body, "donors").needsGiftConfirm === true, item(r.body, "donors"));
+  // the explicit human confirmation path ticks it at $0
+  r = await api("POST", "/org/setup-confirm-no-gifts", tokC, {});
+  ok("admin confirms the file genuinely had no gifts → 200", r.status === 200, r.status);
+  r = await api("GET", "/org/setup-status", tokC);
+  ok("after confirmation → donors item done at $0", item(r.body, "donors").done === true, item(r.body, "donors"));
+  // reset the confirmation and tick it the honest way instead: one real gift
+  await q(`UPDATE orgs SET setup_no_gifts_confirmed=FALSE WHERE id=$1`, [ORG_C]);
+  await q(`INSERT INTO gifts (id,org_id,donor_id,amount,date) VALUES ('g_su_1',$1,'d_su_r0',250,'2026-01-15')`, [ORG_C]);
+  r = await api("GET", "/org/setup-status", tokC);
+  ok("one real gift → donors item done (count 6 > 5, gifts > 0)", item(r.body, "donors").done === true && item(r.body, "donors").count === 6, item(r.body, "donors"));
 
   // ── Stripe / address / giving page / workflow flip from the real change ──
   ok("stripe not done before connect", item(r.body, "stripe").done === false);
