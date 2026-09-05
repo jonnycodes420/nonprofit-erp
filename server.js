@@ -6298,6 +6298,7 @@ app.post("/gifts/import-history", requireAuth, checkWriteAccess, wrapImport(asyn
   const importerId   = req.user.userId;
 
   const ledger = importLedger("gifts");
+  const importToday = orgToday(await orgTz(orgId));
   let roundingAdjustment = 0;
   let invalid = 0, externalIdDupes = 0;
   const seenExternalIds = new Set();
@@ -6315,6 +6316,9 @@ app.post("/gifts/import-history", requireAuth, checkWriteAccess, wrapImport(asyn
     if (amt === 0) { invalid++; ledger.skipped("zero_amount", amt); continue; }
     const date = normalizeGiftDate(g.date);
     if (!date) { invalid++; ledger.errored("unparseable_or_missing_date", amt); continue; }
+    // BUILD-79 Part 4 — the future-date guard existed on import-combined but
+    // not here; the two paths must refuse the same garbage.
+    if (date > importToday) { invalid++; ledger.errored("future_date", amt); continue; }
     const externalId = (g.externalId || g.external_id || "").toString().trim().slice(0, 128) || null;
     const rowKey = `${g.donorId}|${date}|${amt}`;
     // The ONLY deliberate drop: the user deselected this row in the review.

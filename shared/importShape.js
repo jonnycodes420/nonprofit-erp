@@ -529,7 +529,7 @@ export function analyzeCsvText(text, opts = {}) {
 // counted. tx = { donorEmail, donorName, amount, date, type, campaign,
 // notes, externalId, phone } (header names or "").
 export function buildGiftItemsFromLedger(rows = [], tx = {}, idCol = "") {
-  const report = { giftRows: rows.length, builtGifts: 0, negativeRows: 0, unparsableAmountRows: 0, zeroAmountRows: 0, noAmountColumn: !tx.amount };
+  const report = { giftRows: rows.length, builtGifts: 0, negativeRows: 0, unparsableAmountRows: 0, unparsableDateRows: 0, zeroAmountRows: 0, noAmountColumn: !tx.amount };
   const items = rows.map(row => {
     const rawEmail = tx.donorEmail ? String(row[tx.donorEmail] || "").trim() : "";
     const name = tx.donorName ? String(row[tx.donorName] || "").trim() : "";
@@ -546,9 +546,14 @@ export function buildGiftItemsFromLedger(rows = [], tx = {}, idCol = "") {
         const amt = Math.round(amtVal);
         if (amt > 0) {
           const { value: parsedDate } = normalizeDate(tx.date ? row[tx.date] : "");
+          // BUILD-79 Part 4 — no date defaults to today, on ANY path. A gift
+          // whose date does not parse rides with date:null; the server's
+          // ledger errors it as unparseable_or_missing_date with its row,
+          // which is an accounted refusal instead of a silent un-drift.
+          if (!parsedDate) report.unparsableDateRows = (report.unparsableDateRows || 0) + 1;
           gift = {
             amount: amt,
-            date: parsedDate || new Date().toISOString().split("T")[0],
+            date: parsedDate,
             type: tx.type ? (String(row[tx.type] || "").toLowerCase() || "cash") : "cash",
             campaign: tx.campaign ? String(row[tx.campaign] || "") : "",
             notes: tx.notes ? String(row[tx.notes] || "") : "",

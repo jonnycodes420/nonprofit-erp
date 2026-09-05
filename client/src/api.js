@@ -119,7 +119,11 @@ export function adaptDonor(d) {
     // parseFloat: these are NUMERIC since the cover-fees migration, and pg
     // serializes numerics as strings — "51.81" would concatenate in sums.
     total:          parseFloat(d.total_giving) || 0,
-    lastGift:       d.last_gift_date || new Date().toISOString().split("T")[0],
+    // BUILD-79 Part 4 — a donor with no gift on file has lastGift null,
+    // rendered "no gift on file". The old || today here told the whole client
+    // that 1,111 giftless imports gave TODAY (the "Sep 2026" column, the
+    // 35-score, un-drifting every surface). Read paths default to nothing.
+    lastGift:       d.last_gift_date || null,
     lastAmount:     parseFloat(d.last_gift_amount) || 0,
     gifts:          d.gift_count || 0,
     status:         d.status,

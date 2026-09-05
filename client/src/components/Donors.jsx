@@ -2076,6 +2076,7 @@ function GiftHistoryImport({ donors, onClose, onImported }) {
   const [txMap, setTxMap] = useState({ donorName:"",donorEmail:"",amount:"",date:"",type:"",campaign:"",notes:"",externalId:"" });
 
   const [matchedGifts, setMatchedGifts] = useState([]);
+  const [dateRefused, setDateRefused] = useState([]);   // BUILD-79 Part 4 — rows refused for unparseable dates (never dated today)
   const [overrides, setOverrides]       = useState({});
   const [pickingIdx, setPickingIdx]     = useState(null);
   const [pickSearch, setPickSearch]     = useState("");
@@ -2127,6 +2128,7 @@ function GiftHistoryImport({ donors, onClose, onImported }) {
   const buildPreview = () => {
     setErr("");
     const gifts = [];
+    const refusedDates = [];
     if (effectiveFormat === "wide") {
       if (!wideDonorNameCol && !wideDonorEmailCol) {
         setErr("Select at least one donor identifier column (name or email)."); return;
@@ -2157,10 +2159,13 @@ function GiftHistoryImport({ donors, onClose, onImported }) {
         if (amt <= 0) continue;
         const rawDate = txMap.date ? row[txMap.date] : null;
         const { value: parsedDate } = normalizeDate(rawDate || "");
-        const finalDate = parsedDate || new Date().toISOString().split("T")[0];
+        // BUILD-79 Part 4 — a gift whose date does not parse is REFUSED with
+        // its row and reason, never stamped with today (the || today here was
+        // the last write-path survivor of the BUILD-77 sweep).
+        if (!parsedDate) { refusedDates.push({ row: i + 2, rawDate: String(rawDate ?? ""), rawName, rawEmail, amount: amt }); continue; }
         const match = matchDonorForGift(rawName, rawEmail, donors);
         gifts.push({
-          amount:amt, date:finalDate,
+          amount:amt, date:parsedDate,
           type:     txMap.type     ? (String(row[txMap.type]    ||"").toLowerCase() || "cash") : "cash",
           campaign: txMap.campaign ? String(row[txMap.campaign] ||"") : "",
           notes:    txMap.notes    ? String(row[txMap.notes]    ||"") : "",
@@ -2169,7 +2174,8 @@ function GiftHistoryImport({ donors, onClose, onImported }) {
         });
       }
     }
-    if (!gifts.length) { setErr("No valid gift rows found. Check your column mapping."); return; }
+    setDateRefused(refusedDates);
+    if (!gifts.length) { setErr(refusedDates.length ? `All ${refusedDates.length} gift rows had unparseable dates — nothing was stamped with today. Fix the date column and re-upload.` : "No valid gift rows found. Check your column mapping."); return; }
     setMatchedGifts(gifts); setOverrides({}); setPickingIdx(null);
     setStep("preview");
   };
@@ -2456,6 +2462,15 @@ function GiftHistoryImport({ donors, onClose, onImported }) {
 
         {/* Preview */}
         {step === "preview" && (<>
+
+          {/* BUILD-79 Part 4 — refused dates are named, never today-stamped */}
+          {dateRefused.length > 0 && (
+            <div style={{background:T.terra100||"#f6e3dd",border:`1px solid ${T.terra200||"#eac6b8"}`,borderRadius:10,padding:"10px 14px",marginBottom:12,fontSize:12.5,color:T.terra700||"#8a3a24",lineHeight:1.6}}>
+              <strong>{dateRefused.length} gift row{dateRefused.length===1?"":"s"} refused — the gift date could not be read.</strong>{" "}
+              Nothing is ever stamped with today's date. Examples:{" "}
+              {dateRefused.slice(0,3).map(r=>`row ${r.row} (“${r.rawDate||"blank"}”)`).join(" · ")}{dateRefused.length>3?" · …":""}
+            </div>
+          )}
 
           {/* Summary card */}
           <div style={{background:T.bg,borderRadius:12,padding:"14px 16px",marginBottom:16}}>
@@ -4916,8 +4931,11 @@ function ReEngageView({donors,org,onLogTouchpoint,onSelectDonor}){
   const askable=d=>!d.deceased&&!d.doNotContact&&!d.doNotSolicit&&!d.importedSustainer;
   const lapsed=[...donors].filter(d=>askable(d)&&(d.stage==="lapsed"||(d.lastGift&&daysDiff(d.lastGift)>365))).sort((a,b)=>b.total-a.total);
   const totalValue=lapsed.reduce((s,d)=>s+d.total,0);
-  const avgDays=lapsed.length
-    ?Math.round(lapsed.reduce((s,d)=>s+daysDiff(d.lastGift||d.lastTouchpoint||new Date().toISOString()),0)/lapsed.length)
+  // BUILD-79 Part 4 — averaged over donors with a REAL date only; a donor
+  // with no dates contributes nothing rather than a today-anchored zero.
+  const lapsedDated=lapsed.filter(d=>d.lastGift||d.lastTouchpoint);
+  const avgDays=lapsedDated.length
+    ?Math.round(lapsedDated.reduce((s,d)=>s+daysDiff(d.lastGift||d.lastTouchpoint),0)/lapsedDated.length)
     :0;
   const[aiText,setAiText]=useState("");
   const[aiLoading,setAiLoading]=useState(false);
@@ -4926,7 +4944,7 @@ function ReEngageView({donors,org,onLogTouchpoint,onSelectDonor}){
     setAiLoading(true);setAiText("");
     await askClaude(
       `You are a nonprofit major gifts officer. Be specific and tactical. Max 250 words.`,
-      `Re-engagement strategy for ${org?.name||"this organization"}.\n\nLapsed donors: ${lapsed.length} total, ${fmtFull(totalValue)} combined lifetime value, avg ${avgDays} days lapsed.\n\nTop lapsed donors:\n${lapsed.slice(0,8).map(d=>`- ${d.name}: ${fmtFull(d.total)} lifetime, last gift ${d.lastGift||"unknown"} (${fmtFull(d.lastAmount)}), ${daysDiff(d.lastGift||d.lastTouchpoint||new Date().toISOString())}d lapsed`).join("\n")}\n\nProvide:\n1. Top 3 highest-priority donors to call this week and why\n2. Best re-engagement message angle for this portfolio\n3. One creative re-engagement tactic for the full group`,
+      `Re-engagement strategy for ${org?.name||"this organization"}.\n\nLapsed donors: ${lapsed.length} total, ${fmtFull(totalValue)} combined lifetime value, avg ${avgDays} days lapsed.\n\nTop lapsed donors:\n${lapsed.slice(0,8).map(d=>`- ${d.name}: ${fmtFull(d.total)} lifetime, last gift ${d.lastGift||"unknown"} (${fmtFull(d.lastAmount)})${(d.lastGift||d.lastTouchpoint)?`, ${daysDiff(d.lastGift||d.lastTouchpoint)}d lapsed`:", no dates on file"}`).join("\n")}\n\nProvide:\n1. Top 3 highest-priority donors to call this week and why\n2. Best re-engagement message angle for this portfolio\n3. One creative re-engagement tactic for the full group`,
       chunk=>setAiText(chunk)
     );
     setAiLoading(false);
@@ -4971,7 +4989,7 @@ function ReEngageView({donors,org,onLogTouchpoint,onSelectDonor}){
           <div className="re-col-actions" style={{fontSize:10,fontWeight:700,color:"#fff",textTransform:"uppercase",letterSpacing:".06em",textAlign:"right"}}></div>
         </div>
         {lapsed.map((d,idx)=>{
-          const days=daysDiff(d.lastGift||d.lastTouchpoint||new Date().toISOString());
+          const days=(d.lastGift||d.lastTouchpoint)?daysDiff(d.lastGift||d.lastTouchpoint):null;
           const sc=donorScore(d);
           const scColor=sc>70?"#1a6b4a":sc>45?"#a97f22":"#b8593f";
           const rowBg=days>730?"#b8593f09":days>365?"#a97f2209":"#a97f2209";
@@ -4989,12 +5007,14 @@ function ReEngageView({donors,org,onLogTouchpoint,onSelectDonor}){
               <div className="re-col-lastgift" style={{textAlign:"right"}}>
                 {giftDate
                   ?<><div style={{fontSize:13,color:T.ink,fontWeight:600}}>{giftDate}</div><div style={{fontSize:11,color:T.ink3,marginTop:1}}>{d.lastAmount>0?fmtFull(d.lastAmount):""}</div></>
-                  :<div style={{fontSize:13,color:T.ink3}}>—</div>
+                  :<div style={{fontSize:11,color:T.ink3}}>no gift on file</div>
                 }
               </div>
               <div className="re-col-days" style={{textAlign:"right"}}>
-                <div style={{fontSize:13,fontWeight:700,color:daysColor}}>{days}d</div>
-                <div style={{fontSize:10,color:daysColor,fontWeight:700,marginTop:2,textTransform:"uppercase",letterSpacing:".04em"}}>{urgencyLabel}</div>
+                {days!=null?<>
+                  <div style={{fontSize:13,fontWeight:700,color:daysColor}}>{days}d</div>
+                  <div style={{fontSize:10,color:daysColor,fontWeight:700,marginTop:2,textTransform:"uppercase",letterSpacing:".04em"}}>{urgencyLabel}</div>
+                </>:<div style={{fontSize:11,color:T.ink3}}>no dates on file</div>}
               </div>
               <div className="re-col-score" style={{textAlign:"right"}}>
                 <span style={{fontSize:13,fontWeight:800,color:scColor,background:scColor+"18",borderRadius:7,padding:"3px 9px",display:"inline-block"}}>{sc}</span>
@@ -5406,7 +5426,7 @@ function DirectoryView({donors,loading,serverTotal,page,pageSize,onPage,clientFi
                 <div style={{textAlign:"right"}}>
                   {d.lastGift
                     ?<><div style={{fontSize:12,color:T.ink}}>{new Date(d.lastGift).toLocaleDateString("en-US",{month:"short",year:"numeric"})}</div>{!compact&&<div style={{fontSize:11,color:T.ink3}}>{d.lastAmount>0?fmtFull(d.lastAmount):""}</div>}</>
-                    :<div style={{fontSize:12,color:T.ink3}}>—</div>}
+                    :<div style={{fontSize:11,color:T.ink3}}>no gift on file</div>}
                 </div>
                 <div style={{textAlign:"right"}}>
                   <span style={{background:scColor+"18",color:scColor,borderRadius:7,padding:"3px 8px",fontSize:12,fontWeight:800}}>{sc}</span>

@@ -233,6 +233,22 @@ const UTC = { timezone: "UTC" };
   ok(`call sites of process-clock date helpers: ${callSites} — must stay 0`,
      callSites === 0, { callSites, helpers: helpers.map(h => `${h.name}:${h.callers}`) });
 
+  console.log("\n— §7b · BUILD-79 Part 4: the today-fallback axis, at ZERO —");
+  const { scanTodayFallbacks } = require("../scripts/build72-date-audit");
+  const tf = scanTodayFallbacks();
+  ok(`today-fallback sites across the import/read files: ${tf.length} — must stay 0 (BUILD-77 removed the per-gift ones; BUILD-79 removed the import-both, gift-history and READ-side survivors)`,
+     tf.length === 0, tf);
+  // proven able to catch the class: the three historical defect lines all match
+  const RE = /\|\|\s*(?:new Date\(\)\.toISOString\(\)|today\b)/;
+  ok("the pattern catches importShape's old ledger-builder fallback",
+     RE.test('date: parsedDate || new Date().toISOString().split("T")[0],'));
+  ok("the pattern catches GiftHistoryImport's old finalDate fallback",
+     RE.test('const finalDate = parsedDate || new Date().toISOString().split("T")[0];'));
+  ok("the pattern catches api.js's old read-side fallback (the Sep-2026 / 35-score mechanism)",
+     RE.test('lastGift: d.last_gift_date || new Date().toISOString().split("T")[0],'));
+  ok("the parameter default `opts.today ||` is NOT flagged (test-injectable boundary, not a value fallback)",
+     !( RE.test("const today = opts.today || x") && !/opts\.today/.test("const today = opts.today || x") ));
+
   console.log("\n— §8 · the guard proven to FAIL on trees where the defect exists —");
   const { scan: _scan, DEFECTS: _DEFECTS } = require("../scripts/build72-date-audit");
   const mkTree = lines => [{ f: "synthetic.js", lines }];

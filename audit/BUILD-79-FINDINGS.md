@@ -231,3 +231,32 @@ the Part 8 golden.
   BUILD-78 finding) still suppresses its file panel; its summaryHealth is not
   computed. Its gifts are real by construction; folding it into this layer
   rides with the Part 8/BUILD-80 work.
+
+## Part 4 — nothing falls through to today, on every path
+
+All three survivors of the BUILD-77 sweep are gone:
+1. **import-both ledger builder** (shared/importShape.js): an unparseable gift
+   date now rides as `date:null` (counted in `report.unparsableDateRows`); the
+   server's ledger errors it as `unparseable_or_missing_date` with its row — an
+   accounted refusal, not a silent un-drift.
+2. **GiftHistoryImport** (Donors.jsx): unparseable dates are REFUSED with row
+   number and the raw value shown on the preview ("Nothing is ever stamped with
+   today's date"); `/gifts/import-history` also gains the **future-date guard**
+   import-combined always had (`orgToday`-based, ORG_TZ-seamed).
+3. **The read side** (api.js `adaptDonor`): `lastGift` is null when
+   `last_gift_date` is null — the mechanism behind "Sep 2026" on 1,111 rows and
+   every 35-score. List cells render "no gift on file"; the re-engage view's
+   days column says "no dates on file" instead of a today-anchored 0; the
+   avg-days figure and the AI prompt only average donors with real dates.
+
+**The audit now covers the class**: `scanTodayFallbacks()` in
+build72-date-audit.js scans shared/ + the client import/read files for
+`|| today`-style date-value fallbacks (parameter defaults `opts.today ||` and
+reviewed `TODAY_FALLBACK_OK` sites excluded); date-seam §7b pins it at ZERO and
+proves the pattern catches all three historical defect lines. Two more display
+sites found by the new scan (lapsed avg-days + the strategy prompt) fixed in
+the same pass.
+
+Noted, not fixed (manual-entry form, not an import path): the Add-Donor quick
+form stamps `lastGift: today` when a "last amount" is typed (Donors.jsx
+~6100) — a data-entry assumption worth its own small FIX.

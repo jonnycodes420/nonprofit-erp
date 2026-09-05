@@ -186,6 +186,42 @@ function scanHelpers(sources = null) {
   return { helpers: rows, callSites };
 }
 
+// ── BUILD-79 Part 4 — the today-fallback scan ─────────────────────────────
+// BUILD-77 removed `|| today` from the per-gift import; BUILD-79 found THREE
+// survivors on paths this audit never scanned (the import-both ledger builder,
+// the legacy gift-history importer, and the READ side — api.js's adaptDonor,
+// which told the whole client a giftless donor gave today: the "Sep 2026"
+// column and the 35-score). A date VALUE produced by `|| today`-style fallback
+// is a defect wherever it appears; this scan covers the client/shared files
+// the timezone scan deliberately does not.
+const TODAY_FALLBACK_FILES = [
+  "shared/importShape.js",
+  "shared/customFieldShape.js",
+  "client/src/api.js",
+  "client/src/components/Donors.jsx",
+  "client/src/components/Dashboard.jsx",
+  "client/src/components/shared.jsx",
+];
+const TODAY_FALLBACK_RE = /\|\|\s*(?:new Date\(\)\.toISOString\(\)|today\b)/;
+// `opts.today || …` is a test-injectable PARAMETER default (the future-date
+// boundary), not a value fallback; TODAY_FALLBACK_OK marks a reviewed site.
+const TODAY_ALLOWED = /opts\.today|TODAY_FALLBACK_OK/;
+function scanTodayFallbacks() {
+  const found = [];
+  for (const f of TODAY_FALLBACK_FILES) {
+    const p2 = path.join(__dirname, "..", f);
+    if (!fs.existsSync(p2)) continue;
+    const lines = fs.readFileSync(p2, "utf8").split("\n");
+    lines.forEach((line, i) => {
+      const code = line.replace(/\/\/.*$/, "");
+      if (TODAY_FALLBACK_RE.test(code) && !TODAY_ALLOWED.test(line)) {
+        found.push({ file: f, line: i + 1, text: line.trim().slice(0, 120) });
+      }
+    });
+  }
+  return found;
+}
+
 if (require.main === module) {
   const r = report(scan(), { verbose: !process.argv.includes("--count") });
   const h = scanHelpers();
@@ -198,4 +234,4 @@ if (require.main === module) {
     for (const x of h.helpers) console.log(`  ${String(x.callers).padStart(3)}  ${x.name.padEnd(28)} ${x.at}`);
   }
 }
-module.exports = { scan, report, scanHelpers, DEFECTS, CIVIL_COLUMNS };
+module.exports = { scan, report, scanHelpers, scanTodayFallbacks, DEFECTS, CIVIL_COLUMNS };
