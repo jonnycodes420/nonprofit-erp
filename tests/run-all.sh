@@ -86,7 +86,7 @@ CORE=(
   portal-contrast
   finance-reports-consistency name-normalize reserved-recovered concurrency
   demo-content
-  script-guards deploy-shape
+  script-guards deploy-shape import-header
 )
 
 # SUITES="name1 name2" runs only those suites (each must be in CORE above —

@@ -31,7 +31,7 @@ import { T, fmt, fmtFull, daysDiff, SC, askClaude, STAGES, STAGE_ACTION, TIER_CO
 // profile button, and modal render below, and add `VoiceMemoModal` back to
 // the import above).
 import { DonorMap } from "./DonorMap";
-import { detectImportShape, groupTransactions, shapeLabel, YEAR_HDR_PAT, detectWorkbookRoles, pickMatchKey, linkGiftsToDonors, detectOwnerColumn, matchOwnersToUsers, applyOwnerAssignment, groupOwnerMatches, normalizeName, normalizeDate, normalizeMoney, normalizeEmail, detectFlagColumns, parseBoolFlag, classifyColumns, decodeSpreadsheetBytes, buildGiftItemsFromLedger, buildTransactionRows, detectNoteMarkers, autoDetectTxMapping } from "../../../shared/importShape";
+import { detectImportShape, groupTransactions, shapeLabel, YEAR_HDR_PAT, detectWorkbookRoles, pickMatchKey, linkGiftsToDonors, detectOwnerColumn, matchOwnersToUsers, applyOwnerAssignment, groupOwnerMatches, normalizeName, normalizeDate, normalizeMoney, normalizeEmail, detectFlagColumns, parseBoolFlag, classifyColumns, decodeSpreadsheetBytes, decodeSpreadsheetBytesDetailed, analyzeCsvText, analyzeSheetRows, buildGiftItemsFromLedger, buildTransactionRows, detectNoteMarkers, autoDetectTxMapping } from "../../../shared/importShape";
 
 // ── CSV Import helpers ─────────────────────────────────────────────────────
 // ── Import field registry ──────────────────────────────────────────────────
@@ -134,6 +134,33 @@ function normalizeStage(val) {
   return null;
 }
 
+// cp1252RowNames(report, parsed) — which donors' NAMES the per-line encoding
+// repair touched: map each repaired physical line onto the body row that spans
+// it (rowLines is each row's starting line), then pull the best name cell.
+function cp1252RowNames(report, parsed) {
+  if (!report?.cp1252Lines?.length || !report.rowLines?.length || !parsed?.rows) return [];
+  const names = new Set();
+  for (const line of report.cp1252Lines) {
+    // last row whose starting line ≤ the repaired line
+    let idx = -1;
+    for (let i = 0; i < report.rowLines.length; i++) {
+      if (report.rowLines[i] <= line) idx = i; else break;
+    }
+    const row = idx >= 0 ? parsed.rows[idx] : null;
+    if (!row) continue;
+    const name = row.Name || row.name || [row["First Name"], row["Last Name"]].filter(Boolean).join(" ");
+    if (name) names.add(String(name).trim());
+  }
+  return [...names];
+}
+
+// The slice of an analyzeSheetRows result the importers carry as the parse
+// report (chrome banner, record count, the file's own TOTAL row for Part 3.2).
+function reportFromAnalysis(a) {
+  return { records: a.records, rowLines: a.rowLines, chromeAbove: a.chromeAbove,
+           chromeRows: a.chromeRows, totalRow: a.totalRow, headerLine: a.headerLine };
+}
+
 // ── Shared file-parsing helper ────────────────────────────────────────────
 // Replaces the identical ~45-line xlsx/CSV block duplicated in each importer.
 async function parseFileToSheets(file, { onSingle, onMulti, onError }) {
@@ -151,44 +178,37 @@ async function parseFileToSheets(file, { onSingle, onMulti, onError }) {
         if (!ws) return null;
         const rawArr = XLSX.utils.sheet_to_json(ws, { header:1, defval:"" });
         if (rawArr.length < 2) return { name:sn, rowCount:0, headers:[], rows:[] };
-        const headers = rawArr[0].map(h => String(h||"").trim());
-        const dataRows = rawArr.slice(1).filter(r => r.some(c => String(c||"").trim()));
-        const rows = dataRows.map(r =>
-          Object.fromEntries(headers.map((h,i) => {
-            const v = r[i];
-            if (v instanceof Date) return [h, isNaN(v) ? "" : v.toISOString().split("T")[0]];
-            return [h, String(v ?? "").trim()];
-          }))
-        );
-        return { name:sn, rowCount:rows.length, headers, rows, rawWidths: dataRows.map(r => r.length) };
+        // BUILD-79 Part 1 — an XLSX report export carries the same chrome a
+        // CSV one does; every sheet goes through the same header-by-evidence
+        // + chrome classification layer. Sheet row index + 1 = "line".
+        const records = rawArr.map((r, i) => ({
+          cells: r.map(v => v instanceof Date ? (isNaN(v) ? "" : v.toISOString().split("T")[0]) : String(v ?? "").trim()),
+          line: i + 1,
+        }));
+        const analysis = analyzeSheetRows(records);
+        return { name:sn, rowCount:analysis.records, headers:analysis.headers, rows:analysis.rows,
+                 physical:analysis.physical, report:reportFromAnalysis(analysis) };
       }).filter(s => s && s.rowCount > 0);
       if (!sheetsData.length) { onError("No data rows found in this file."); return; }
       if (sheetsData.length === 1) {
-        // BUILD-78 Part 3.1 — the physical column count, taken ONCE at parse
-        // entry from the sheet's raw header row (blank headers count) plus any
-        // overflow cells body rows carry beyond the header width.
         const s0 = sheetsData[0];
-        let maxOverflow = 0, overflowRows = 0;
-        for (const r of s0.rawWidths || []) { const extra = r - s0.headers.length; if (extra > 0) { overflowRows++; if (extra > maxOverflow) maxOverflow = extra; } }
-        onSingle(s0.headers, s0.rows, { headerCells: s0.headers, headerCount: s0.headers.length, orphanColumns: maxOverflow, overflowRows, total: s0.headers.length + maxOverflow });
+        onSingle(s0.headers, s0.rows, s0.physical, s0.report);
       }
       else { sheetsData.sort((a,b) => b.rowCount - a.rowCount); onMulti(sheetsData); }
     } catch(ex) { onError("Could not read Excel file: " + ex.message); }
   } else {
-    // BUILD-58 Part 2 — decode the BYTES first: a windows-1252 CSV read as
-    // UTF-8 stores permanent mojibake ("Jos\u00e9" → "Jos\ufffd"). decodeSpreadsheetBytes
-    // tries strict UTF-8 and falls back to windows-1252.
+    // BUILD-79 Part 1 — the report-export layer. Decode strictly (per-LINE
+    // windows-1252 repair, never whole-file — a mixed file must not have its
+    // valid UTF-8 names corrupted), then find the header by EVIDENCE instead
+    // of assuming line 1, classify the chrome (title/generated lines, repeated
+    // headers, Page N of M, TOTAL, End of report) by line number, and count
+    // records ONCE. "Rows in your file" is analysis.records everywhere.
     try {
       const buf = await file.arrayBuffer();
-      const text = decodeSpreadsheetBytes(new Uint8Array(buf));
-      Papa.parse(text, {
-        header:true, skipEmptyLines:true, transformHeader: h => h.trim(),
-        complete: res => {
-          if (!res.data?.length) { onError("No rows found."); return; }
-          onSingle(res.meta.fields || [], res.data, countPhysicalColumns(text, res.data));
-        },
-        error: ex => onError("Parse error: " + ex.message),
-      });
+      const dec = decodeSpreadsheetBytesDetailed(new Uint8Array(buf));
+      const analysis = analyzeCsvText(dec.text);
+      if (!analysis.rows.length) { onError("No rows found."); return; }
+      onSingle(analysis.headers, analysis.rows, analysis.physical, { ...reportFromAnalysis(analysis), cp1252Lines: dec.cp1252Lines });
     } catch (ex) { onError("Could not read file: " + ex.message); }
   }
 }
@@ -528,6 +548,7 @@ export function DonorImport({ onClose, onImported, withHistory = false }) {
   const [ackUnmapped, setAckUnmapped] = useState(false);    // BUILD-77 Part 3d — homeless columns require an explicit acknowledgement (aggregate/wide shapes)
   // ── BUILD-78 — the column mapper (transaction shape) ──
   const [physicalCols, setPhysicalCols] = useState(null);   // { headerCells, orphanColumns, overflowRows, total } — parse entry, never derived from the mapping
+  const [parseReport, setParseReport] = useState(null);     // BUILD-79 Part 1 — { records, chromeAbove, chromeRows, totalRow, headerLine, cp1252Lines } from parse entry
   const [cfDefs, setCfDefs] = useState({ donor: [], gift: [] });
   const [savedCfMappings, setSavedCfMappings] = useState([]);
   const [cfDecisions, setCfDecisions] = useState({});       // columnIndex → { action, entity?, type?, label?, options?, role? }
@@ -590,7 +611,8 @@ export function DonorImport({ onClose, onImported, withHistory = false }) {
     setErr("");
   };
 
-  const applyParsed = (headers, rows, physical) => {
+  const applyParsed = (headers, rows, physical, report) => {
+    setParseReport(report || null);
     const det = detectImportShape(headers, rows);
     setShape(det.shape); setShapeOverride(null);
     // Donor-field mapping is over the non-year columns (year columns are gifts,
@@ -617,16 +639,11 @@ export function DonorImport({ onClose, onImported, withHistory = false }) {
   // ── Paste flow ──
   const doParse = () => {
     if (!csvText.trim()) return;
-    Papa.parse(csvText, {
-      header: true,
-      skipEmptyLines: true,
-      transformHeader: h => h.trim(),
-      complete: res => {
-        if (!res.data?.length) { setErr("No rows found. Check CSV format."); return; }
-        applyParsed(res.meta.fields || [], res.data, countPhysicalColumns(csvText, res.data));
-      },
-      error: ex => setErr("Parse error: " + ex.message),
-    });
+    try {
+      const analysis = analyzeCsvText(csvText);
+      if (!analysis.rows.length) { setErr("No rows found. Check CSV format."); return; }
+      applyParsed(analysis.headers, analysis.rows, analysis.physical, { ...reportFromAnalysis(analysis), cp1252Lines: [] });
+    } catch (ex) { setErr("Parse error: " + ex.message); }
   };
 
   // ── AI column mapping (aggregate/wide donor fields only) ──
@@ -1420,7 +1437,7 @@ export function DonorImport({ onClose, onImported, withHistory = false }) {
                   <div style={{fontSize:14,fontWeight:600,color:T.ink}}>{s.name}</div>
                   <div style={{fontSize:12,color:T.ink3,marginTop:2}}>{s.rowCount.toLocaleString()} rows · {s.headers.filter(Boolean).length} columns</div>
                 </div>
-                <button onClick={()=>applyParsed(s.headers,s.rows)}
+                <button onClick={()=>applyParsed(s.headers,s.rows,s.physical,s.report)}
                   style={{background:"#1a6b4a",border:"none",borderRadius:8,padding:"8px 16px",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer"}}>
                   {i===0?"Use this ←":"Select"}
                 </button>
@@ -1508,6 +1525,35 @@ export function DonorImport({ onClose, onImported, withHistory = false }) {
 
         {/* ── Step 2: Detection + shape-specific mapping + preview ── */}
         {parsed && (<>
+
+          {/* BUILD-79 Part 1.2/1.3/1.4 — report chrome is SHOWN, never imported,
+              never counted. Everything above the detected header, every repeated
+              header / page line / TOTAL / end marker by line number, and any
+              windows-1252 repair. */}
+          {parseReport && (parseReport.chromeAbove?.length > 0 || parseReport.chromeRows?.length > 0 || parseReport.cp1252Lines?.length > 0) && (
+            <div style={{background:T.bg,border:`1px solid ${T.bg3}`,borderRadius:10,padding:"11px 14px",marginBottom:10,fontSize:12.5,color:T.ink,lineHeight:1.6}}>
+              <div style={{fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.08em",color:T.ink3,marginBottom:4}}>This looks like a report export — here's what we set aside</div>
+              {parseReport.chromeAbove?.length > 0 && (
+                <div>We skipped {parseReport.chromeAbove.length} line{parseReport.chromeAbove.length===1?"":"s"} above your column headers (found on line {parseReport.headerLine?.line}):{" "}
+                  {parseReport.chromeAbove.map(c => c.text ? `“${c.text}”` : "(blank)").join(", ")}.</div>
+              )}
+              {parseReport.chromeRows?.length > 0 && (
+                <div>Not imported, not counted: {parseReport.chromeRows.map(c => {
+                  const label = c.kind === "repeated_header" ? "repeated header" : c.kind === "page_marker" ? "page marker"
+                    : c.kind === "total_row" ? "the report's own TOTAL row" : c.kind === "subtotal_row" ? "subtotal"
+                    : c.kind === "end_marker" ? "end-of-report marker" : c.kind === "currency_only" ? "a bare total figure" : c.kind;
+                  return `${label} (line ${c.line})`;
+                }).join(" · ")}.</div>
+              )}
+              {parseReport.totalRow && (
+                <div>Your file's own total row says <strong>{fmtFull(parseReport.totalRow.amount)}</strong> — we'll reconcile against it after the import.</div>
+              )}
+              {parseReport.cp1252Lines?.length > 0 && (() => {
+                const affected = cp1252RowNames(parseReport, parsed);
+                return <div>{affected.length || parseReport.cp1252Lines.length} name{(affected.length||parseReport.cp1252Lines.length)===1?"":"s"} contained Windows-1252 characters and were converted{affected.length ? `: ${affected.map(n=>`“${n}”`).join(" · ")}` : ""}.</div>;
+              })()}
+            </div>
+          )}
 
           {/* Detection banner + override */}
           <div style={{background:T.gold100||"#f6eccf",border:`1px solid ${T.gold300||"#e7cf91"}`,borderRadius:10,padding:"11px 14px",marginBottom:14,display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,flexWrap:"wrap"}}>
@@ -2118,7 +2164,7 @@ function GiftHistoryImport({ donors, onClose, onImported }) {
                   <div style={{fontSize:14,fontWeight:600,color:T.ink}}>{s.name}</div>
                   <div style={{fontSize:12,color:T.ink3,marginTop:2}}>{s.rowCount.toLocaleString()} rows · {s.headers.filter(Boolean).length} columns</div>
                 </div>
-                <button onClick={()=>applyParsed(s.headers,s.rows)}
+                <button onClick={()=>applyParsed(s.headers,s.rows,s.physical,s.report)}
                   style={{background:"#1a6b4a",border:"none",borderRadius:8,padding:"8px 16px",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer"}}>
                   {i===0?"Use this ←":"Select"}
                 </button>

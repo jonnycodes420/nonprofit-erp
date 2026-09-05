@@ -215,15 +215,274 @@ export function classifyColumns(headers = [], mapping = {}, deliberatelyIgnored 
 // windows-1252 (the overwhelmingly common non-UTF8 nonprofit export
 // encoding). Strips a UTF-8 BOM.
 export function decodeSpreadsheetBytes(bytes) {
+  return decodeSpreadsheetBytesDetailed(bytes).text;
+}
+
+// BUILD-79 Part 1.4 — decode strictly; on failure repair ONLY the offending
+// LINES as windows-1252 and report them. The old whole-file fallback corrupted
+// MIXED files: one CP1252 byte anywhere re-decoded every valid UTF-8 name in
+// the file into mojibake ("García" → "GarcÃ­a"). Real report exports mix
+// encodings line by line (different source systems feeding one report), so the
+// repair is per line. Never emits U+FFFD.
+export function decodeSpreadsheetBytesDetailed(bytes) {
   const buf = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
   let start = 0;
   if (buf.length >= 3 && buf[0] === 0xEF && buf[1] === 0xBB && buf[2] === 0xBF) start = 3;
   const body = start ? buf.subarray(start) : buf;
+  const strict = new TextDecoder("utf-8", { fatal: true });
   try {
-    return new TextDecoder("utf-8", { fatal: true }).decode(body);
+    return { text: strict.decode(body), cp1252Lines: [] };
   } catch {
-    return new TextDecoder("windows-1252").decode(body);
+    // split on \n at the BYTE level so line numbers survive the repair
+    const lines = [];
+    let lineStart = 0;
+    for (let i = 0; i <= body.length; i++) {
+      if (i === body.length || body[i] === 0x0A) {
+        lines.push(body.subarray(lineStart, i));
+        lineStart = i + 1;
+      }
+    }
+    // Within a failed line, repair BYTE RUNS: real report exports mix
+    // encodings inside one line (a CP1252 "Garc\xEDa" cell beside a valid
+    // UTF-8 "García" cell) — decoding the whole line as CP1252 would corrupt
+    // the valid cell. Valid UTF-8 sequences decode as UTF-8; only the invalid
+    // bytes decode as windows-1252.
+    const cp1252 = new TextDecoder("windows-1252");
+    const repairLine = (lineBytes) => {
+      const out = [];
+      let i = 0;
+      while (i < lineBytes.length) {
+        const b = lineBytes[i];
+        let len = b < 0x80 ? 1 : (b & 0xE0) === 0xC0 ? 2 : (b & 0xF0) === 0xE0 ? 3 : (b & 0xF8) === 0xF0 ? 4 : 0;
+        let valid = len > 0 && i + len <= lineBytes.length;
+        if (valid && len > 1) {
+          for (let j = 1; j < len; j++) if ((lineBytes[i + j] & 0xC0) !== 0x80) { valid = false; break; }
+          if (valid) { try { strict.decode(lineBytes.subarray(i, i + len)); } catch { valid = false; } }
+        }
+        if (valid) { out.push(strict.decode(lineBytes.subarray(i, i + len))); i += len; }
+        else { out.push(cp1252.decode(lineBytes.subarray(i, i + 1))); i += 1; }
+      }
+      return out.join("");
+    };
+    const cp1252Lines = [];
+    const out = lines.map((lineBytes, idx) => {
+      try {
+        return strict.decode(lineBytes);
+      } catch {
+        cp1252Lines.push(idx + 1); // 1-based physical line number
+        return repairLine(lineBytes);
+      }
+    });
+    return { text: out.join("\n"), cp1252Lines };
   }
+}
+
+// ── BUILD-79 Part 1 — the report-export layer: find the header by EVIDENCE,
+// show the chrome, count records once ─────────────────────────────────────
+
+// A line-aware RFC-4180 record parser. Papa can't report which PHYSICAL line a
+// record started on once quoted fields carry embedded newlines — and every
+// chrome/refusal report in this layer speaks in line numbers, so the parser
+// must know them. Handles quotes, escaped quotes ("") and \r\n.
+export function parseCsvRecords(text) {
+  const records = [];
+  let cells = [], cell = "", inQuotes = false, line = 1, recordLine = 1, sawAny = false;
+  const pushCell = () => { cells.push(cell); cell = ""; };
+  const pushRecord = () => { pushCell(); records.push({ cells, line: recordLine }); cells = []; sawAny = false; };
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (inQuotes) {
+      if (ch === '"') {
+        if (text[i + 1] === '"') { cell += '"'; i++; }
+        else inQuotes = false;
+      } else {
+        if (ch === "\n") line++;
+        cell += ch;
+      }
+    } else if (ch === '"' && cell === "") {
+      inQuotes = true; sawAny = true;
+    } else if (ch === ",") {
+      pushCell(); sawAny = true;
+    } else if (ch === "\n") {
+      pushRecord(); line++; recordLine = line;
+    } else if (ch === "\r") {
+      // swallow; \r\n ends the record at the \n
+    } else {
+      cell += ch; sawAny = true;
+    }
+  }
+  if (sawAny || cell !== "" || cells.length) pushRecord();
+  return records;
+}
+
+// The header vocabulary — a candidate row earns points per cell matching one
+// of these (word-boundary, case-insensitive).
+const HEADER_VOCAB = [
+  "name", "first", "last", "email", "phone", "date", "amount", "gift", "fund",
+  "appeal", "id", "notes", "note", "status", "address", "city", "state", "zip",
+  "postal", "spouse", "salutation", "frequency", "type", "receipt", "campaign",
+  "solicit", "constituent", "donor", "member", "account", "employer", "total",
+];
+const VOCAB_RE = new RegExp(`\\b(${HEADER_VOCAB.join("|")})\\b`, "i");
+
+const cellNonEmpty = (c) => String(c ?? "").trim() !== "";
+const looksNumericCell = (c) => {
+  const s = String(c ?? "").trim();
+  return s !== "" && !isNaN(parseFloat(s.replace(/[$,%\s]/g, ""))) && /\d/.test(s);
+};
+
+// scoreHeaderRow(cells, modalCount) → { score, vocabHits, reasons } — the
+// evidence for ONE candidate row. Position contributes NOTHING here.
+export function scoreHeaderRow(cells, modalCount) {
+  const filled = cells.filter(cellNonEmpty);
+  if (!filled.length) return { score: -1, vocabHits: 0, reasons: ["blank row"] };
+  const reasons = [];
+  let score = 0;
+  const vocabHits = filled.filter(c => VOCAB_RE.test(String(c))).length;
+  score += vocabHits * 3;
+  if (vocabHits) reasons.push(`${vocabHits} cells match header vocabulary`);
+  const nonNumeric = filled.filter(c => !looksNumericCell(c)).length;
+  if (nonNumeric / filled.length >= 0.8) { score += 4; reasons.push("mostly non-numeric"); }
+  const short = filled.filter(c => String(c).trim().length <= 30).length;
+  if (short === filled.length) { score += 2; reasons.push("all cells short"); }
+  if (filled.length === modalCount) { score += 4; reasons.push(`fills the file's modal column count (${modalCount})`); }
+  else if (Math.abs(filled.length - modalCount) <= 2) { score += 1; }
+  return { score, vocabHits, reasons };
+}
+
+// detectHeaderRow(records) → { index, score, evidence } over the first 20
+// records. A row must have ≥3 vocabulary matches to be a header CANDIDATE at
+// all; highest score wins; among equal scores the earliest wins (equal-content
+// repeats collapse into chrome anyway — position alone never beats evidence).
+export function detectHeaderRow(records) {
+  const scan = records.slice(0, 20);
+  // modal non-empty cell count over a wider sample (the body defines the shape)
+  const counts = {};
+  for (const r of records.slice(0, 200)) {
+    const n = r.cells.filter(cellNonEmpty).length;
+    if (n > 0) counts[n] = (counts[n] || 0) + 1;
+  }
+  const modalCount = Number(Object.entries(counts).sort((a, b) => b[1] - a[1])[0]?.[0] || 0);
+  let best = null;
+  for (let i = 0; i < scan.length; i++) {
+    const s = scoreHeaderRow(scan[i].cells, modalCount);
+    if (s.vocabHits < 3) continue; // not a candidate
+    if (!best || s.score > best.score) best = { index: i, score: s.score, evidence: s.reasons };
+  }
+  if (!best) return { index: 0, score: 0, evidence: ["no row scored as a header — fell back to the first row"], fallback: true };
+  return best;
+}
+
+// papa-like header naming: trim; blank → _1, _2 (position-stable); duplicate →
+// name_1, name_2. The mapper's evidence lines ("_5 → email: …") key off these.
+export function dedupeHeaderCells(cells) {
+  const seen = new Map();
+  let blankN = 0;
+  return cells.map(c => {
+    let name = String(c ?? "").trim();
+    if (!name) name = `_${++blankN}`;
+    if (seen.has(name)) {
+      const n = seen.get(name) + 1;
+      seen.set(name, n);
+      return `${name}_${n}`;
+    }
+    seen.set(name, 0);
+    return name;
+  });
+}
+
+const PAGE_RE = /^page\s+\d+(\s+of\s+\d+)?$/i;
+const TOTAL_LABEL_RE = /^(grand\s+)?total[s]?$/i;
+const SUBTOTAL_RE = /^sub\s*-?\s*total[s]?$/i;
+const END_RE = /^end\s+of\s+report\b/i;
+const CURRENCY_RE = /^\(?-?\$\s?[\d,]+(\.\d{1,2})?\)?$/;
+
+// classifyBodyRow(cells, headerCells) → chrome kind or null (a data row).
+export function classifyBodyRow(cells, headerCells) {
+  const filled = cells.map(c => String(c ?? "").trim()).filter(Boolean);
+  if (!filled.length) return { kind: "blank" };
+  // an exact repeat of the header (page-break re-print)
+  const hc = headerCells.map(c => String(c ?? "").trim());
+  const cc = cells.map(c => String(c ?? "").trim());
+  if (hc.length && cc.length && hc.filter(Boolean).join(" ") === cc.filter(Boolean).join(" ")) {
+    return { kind: "repeated_header" };
+  }
+  if (filled.length <= 2 && filled.some(c => PAGE_RE.test(c))) return { kind: "page_marker" };
+  if (filled.some(c => END_RE.test(c)) && filled.length <= 2) return { kind: "end_marker" };
+  const label = filled.find(c => TOTAL_LABEL_RE.test(c));
+  const subLabel = filled.find(c => SUBTOTAL_RE.test(c));
+  if (label || subLabel) {
+    const amountCell = filled.find(c => CURRENCY_RE.test(c));
+    const { value } = amountCell ? normalizeMoney(amountCell) : { value: null };
+    return { kind: label ? "total_row" : "subtotal_row", amount: value };
+  }
+  // a line whose ONLY non-empty content is one currency value (an unlabeled
+  // report total) is chrome, not a donor
+  if (filled.length === 1 && CURRENCY_RE.test(filled[0])) {
+    const { value } = normalizeMoney(filled[0]);
+    return { kind: "currency_only", amount: value };
+  }
+  return null;
+}
+
+// analyzeSheetRows(records) — records = [{cells, line}] from parseCsvRecords
+// (or an XLSX 2-D array mapped to that shape). Returns everything the mapper,
+// the summary and the chrome banner need, computed ONCE:
+//   headers        deduped field names from the DETECTED header row
+//   headerCells    the raw header cells (blanks preserved — the column axis)
+//   rows           body row objects keyed by headers (+ __parsed_extra overflow)
+//   rowLines       physical line number per body row
+//   records        rows.length — THE count every surface shows
+//   chromeAbove    [{line, text}] lines above the header (shown, never counted)
+//   chromeRows     [{line, kind, text}] excluded rows below it, by line number
+//   totalRow       {line, amount} when the report carries its own TOTAL row
+//   headerLine     physical line the header was found on + its evidence
+export function analyzeSheetRows(records, opts = {}) {
+  const det = detectHeaderRow(records);
+  const headerRec = records[det.index];
+  const headerCells = (headerRec?.cells || []).map(c => String(c ?? "").trim());
+  const headers = dedupeHeaderCells(headerCells);
+  const chromeAbove = records.slice(0, det.index)
+    .map(r => ({ line: r.line, text: r.cells.map(c => String(c ?? "").trim()).filter(Boolean).join(" · ") }))
+    .filter(c => true); // blank chrome lines are shown too ("(blank)")
+  const rows = [], rowLines = [], chromeRows = [];
+  let totalRow = null;
+  for (const rec of records.slice(det.index + 1)) {
+    const chrome = classifyBodyRow(rec.cells, headerCells);
+    if (chrome) {
+      if (chrome.kind !== "blank" || rec.cells.some(cellNonEmpty)) {
+        chromeRows.push({ line: rec.line, kind: chrome.kind,
+          text: rec.cells.map(c => String(c ?? "").trim()).filter(Boolean).join(" · ").slice(0, 120),
+          ...(chrome.amount != null ? { amount: chrome.amount } : {}) });
+      }
+      if ((chrome.kind === "total_row" || chrome.kind === "currency_only") && chrome.amount != null && !totalRow) {
+        totalRow = { line: rec.line, amount: chrome.amount };
+      }
+      continue;
+    }
+    const obj = {};
+    headers.forEach((h, i) => { obj[h] = String(rec.cells[i] ?? "").trim(); });
+    if (rec.cells.length > headers.length) obj.__parsed_extra = rec.cells.slice(headers.length).map(c => String(c ?? "").trim());
+    rows.push(obj);
+    rowLines.push(rec.line);
+  }
+  // physical-column equation (BUILD-78) from the DETECTED header, not line 1
+  let maxOverflow = 0, overflowRows = 0;
+  for (const r of rows) {
+    const extra = r.__parsed_extra ? r.__parsed_extra.length : 0;
+    if (extra > 0) { overflowRows++; if (extra > maxOverflow) maxOverflow = extra; }
+  }
+  return {
+    headers, headerCells, rows, rowLines, records: rows.length,
+    chromeAbove, chromeRows, totalRow,
+    headerLine: { line: headerRec?.line ?? 1, index: det.index, evidence: det.evidence, fallback: !!det.fallback },
+    physical: { headerCells, headerCount: headerCells.length, orphanColumns: maxOverflow, overflowRows, total: headerCells.length + maxOverflow },
+  };
+}
+
+// analyzeCsvText(text, opts) — the one-call CSV entry: records → analysis.
+export function analyzeCsvText(text, opts = {}) {
+  return analyzeSheetRows(parseCsvRecords(text), opts);
 }
 
 // ── BUILD-58 Part 2 — the ONE gift-ledger row builder (used by Import-both) ─

@@ -132,3 +132,43 @@ export GET exercises the identical dynamic import at runtime in prod.
 its own name: the flash now carries the HTTP status and the server's
 error/message body. The round-trip-on-the-imported-org assertion lands with the
 Part 8 golden.
+
+## Part 1 — find the header, don't assume it
+
+New report-export layer in `shared/importShape.js`, used by every parse entry
+(CSV upload, paste, every XLSX sheet):
+- `parseCsvRecords` — line-aware RFC-4180 records (Papa can't say which
+  physical line a record started on once quoted newlines exist, and every
+  chrome/refusal report speaks in line numbers).
+- `detectHeaderRow` / `scoreHeaderRow` — evidence: vocabulary hits (≥3 to be a
+  candidate at all), mostly-non-numeric, short cells, modal column count.
+  Position contributes nothing; a title line can never win.
+- `classifyBodyRow` / `analyzeSheetRows` — chrome above the header shown
+  verbatim; repeated headers, `Page N of M`, TOTAL/Subtotal/Grand Total,
+  `End of report`, and bare-currency lines excluded BY LINE NUMBER; the TOTAL
+  row's amount captured for Part 3.2. A donor named "Total Insurance Co" is
+  data, not chrome (anchored label match).
+- `decodeSpreadsheetBytesDetailed` — strict UTF-8; on failure, BYTE-RUN repair
+  inside only the failing lines (the fixture mixes encodings WITHIN one line:
+  CP1252 `Garc\xEDa` in Name beside valid-UTF-8 `García` in Last Name — both
+  line-level and whole-file fallback corrupt the valid cell). Never U+FFFD.
+  Source-borne mojibake ("GarcÃ­a" already double-encoded in the bytes) passes
+  through as data — a BUILD-80 semantic finding, the decoder never guesses.
+- `dedupeHeaderCells` — blank → `_N`, duplicate → `name_N`, position-stable.
+
+Client: chrome banner ("This looks like a report export — here's what we set
+aside") lists the skipped lines above the header (with the header's line
+number), every excluded row by kind + line, the file's own TOTAL figure, and
+the converted Windows-1252 names. `parsed.rows` is now 2,500 on this file and
+every surface reads it. **On the fixture, correct headers alone flip shape
+detection to "individual gifts"** — Gift Date and Amount become visible, so the
+Part 0 catastrophe was the header layer all along, exactly as the spec framed.
+The mid-file stray-header row in v1 is now chrome (v1 through the UI reads
+2,501); `buildTransactionRows`' `stray_header_row` disposition remains as
+defense-in-depth for callers feeding un-analyzed rows.
+
+Suite: `tests/import-header.test.js` (33) — in run-all. Lesson recorded: an
+earlier local `build-local-dist` run FAILED on eslint (`no-undef`) while a
+`tail -2` hid everything but eslint's warning summary — the walk then ran green
+against a stale bundle; caught by mtime comparison. Check the bundle hash, not
+the build's last two lines.

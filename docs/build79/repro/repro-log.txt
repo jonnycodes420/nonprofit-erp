@@ -1,4 +1,4 @@
-fresh org: org_cfbdfba1
+fresh org: org_c6f2b7a3
 === MAPPER STATE ===
   mapper text: ["We detected: one row per donor — we'll import donors and their totals","detected"]
   mapper text: ["2,510 rows · one row per donor — we'll import donors and their totals\n","2,510 rows)\n✦ Auto-map\nDonor Giving History Report\n— skip —\nfirstName\n"]
@@ -47,7 +47,7 @@ shot: 08-donorlist-1440
 (270) 300-6741
   [pageerror] Unexpected token '<'
   [pageerror] Unexpected token '<'
-  home text: "NEEDS YOUR ATTENTION 6 items 1 1 (502) 220-8677 New prospect — no contact yet. First outreach sets the tone. Log call → M Madison New prospect — no contact yet. First outreach sets the tone. Log call "
+  home text: "NEEDS YOUR ATTENTION 6 items 5 5025521436 New prospect — no contact yet. First outreach sets the tone. Log call → K Keith New prospect — no contact yet. First outreach sets the tone. Log call → ( (502"
   home text: "DRIFTING watching every donor's own giving pattern No donors drifting"
   home text: "Import your donors Connect Stripe unlocks online giving and failed-card recove"
 shot: 09-home-1440
