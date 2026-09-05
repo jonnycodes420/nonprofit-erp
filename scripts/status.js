@@ -68,6 +68,40 @@ async function fetchText(url, { timeoutMs = 15000 } = {}) {
     else frontendErr = /just a moment|checkpoint|challenge/i.test(feRes.text) ? "bot-challenge page (SHA hidden)" : "no build-sha meta";
   } else frontendErr = feRes.error || `HTTP ${feRes.status}`;
 
+  // ── post-deploy smoke (BUILD-79 Part 7.3) ────────────────────────────────────
+  // "Aligned" used to mean "the same commit is deployed" — it said nothing about
+  // whether that commit WORKS. The Sept 5 incident: status.js reported aligned
+  // while GET /donors/export/csv threw ERR_MODULE_NOT_FOUND in prod (a module
+  // the deploy tarball never contained). The smoke drives the exact surface
+  // that crashed — the dynamic import of shared/customFieldShape.js — via a
+  // READ-ONLY export against the demo org. (A prod WRITE from a status check
+  // would violate this repo's PROD_READONLY script discipline; the write-path
+  // coverage lives in tests/deploy-shape.test.js + the custom-fields suite,
+  // which prove the same module ships and validates.) Aligned now REQUIRES the
+  // smoke; STATUS_SKIP_SMOKE=1 skips it (and the verdict says so).
+  let smokeOk = null, smokeDetail = "";
+  if (process.env.STATUS_SKIP_SMOKE === "1") {
+    smokeDetail = "skipped (STATUS_SKIP_SMOKE=1)";
+  } else if (backendSha) {
+    try {
+      const email = process.env.STATUS_SMOKE_EMAIL || "admin@creoarts.org";
+      const password = process.env.STATUS_SMOKE_PASSWORD || "demo1234";
+      const login = await fetch(`${BACKEND}/auth/login`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email, password }) });
+      const auth = login.ok ? await login.json() : null;
+      if (!auth?.token) { smokeOk = null; smokeDetail = `demo login failed (HTTP ${login.status}) — smoke unverifiable`; }
+      else {
+        const ex = await fetch(`${BACKEND}/donors/export/csv`, { headers: { Authorization: "Bearer " + auth.token } });
+        const body = ex.ok ? await ex.text() : await ex.text().catch(() => "");
+        const looksCsv = ex.ok && /^\uFEFF?Name,/.test(body);
+        const cf = await fetch(`${BACKEND}/custom-fields?entity=donor`, { headers: { Authorization: "Bearer " + auth.token } });
+        smokeOk = looksCsv && cf.ok;
+        smokeDetail = smokeOk
+          ? `export/csv 200 (${body.length}B) · custom-fields 200`
+          : `export/csv ${ex.status}${ex.ok && !looksCsv ? " (not CSV-shaped)" : ""} · custom-fields ${cf.status}${!ex.ok ? " — " + body.slice(0, 120) : ""}`;
+      }
+    } catch (e) { smokeOk = null; smokeDetail = `smoke errored: ${e.message}`; }
+  } else smokeDetail = "backend unreachable — smoke not run";
+
   // ── report ───────────────────────────────────────────────────────────────────
   const row = (label, val, note = "") => console.log(`  ${label.padEnd(18)} ${val}${note ? "  " + DIM + note + RESET : ""}`);
   console.log("\nDeploy status\n─────────────");
@@ -76,6 +110,7 @@ async function fetchText(url, { timeoutMs = 15000 } = {}) {
   row("origin/main", short(originMain) + (originMain === null ? `  ${YELLOW}(unreachable)${RESET}` : ""));
   row("prod backend", backendSha ? short(backendSha) : `${YELLOW}${backendErr}${RESET}`, backendSha ? "" : BACKEND);
   row("prod frontend", frontendSha ? short(frontendSha) : `${YELLOW}${frontendErr}${RESET}`, frontendSha ? "" : FRONTEND);
+  row("prod smoke", smokeOk === true ? `${GREEN}ok${RESET}` : smokeOk === false ? `${RED}FAILING${RESET}` : `${YELLOW}unverified${RESET}`, smokeDetail);
 
   // ── divergence flags (loud) ───────────────────────────────────────────────────
   const flags = [];
@@ -88,6 +123,9 @@ async function fetchText(url, { timeoutMs = 15000 } = {}) {
   if (backendSha && frontendSha && backendSha !== frontendSha) {
     flags.push(`SPLIT-BRAIN: prod backend (${short(backendSha)}) and frontend (${short(frontendSha)}) are on DIFFERENT commits.`);
   }
+  if (smokeOk === false) {
+    flags.push(`PROD SMOKE FAILING: the deployed commit does not WORK — ${smokeDetail}. Aligned means nothing while this is red.`);
+  }
 
   console.log("");
   if (flags.length) {
@@ -96,8 +134,11 @@ async function fetchText(url, { timeoutMs = 15000 } = {}) {
     process.exit(1);
   }
   // fully aligned only if we could actually read every link
-  if (originMain && backendSha && frontendSha && localHead === originMain && originMain === backendSha && backendSha === frontendSha) {
-    console.log(`${GREEN}✓ aligned — local HEAD == origin/main == prod backend == prod frontend.${RESET}\n`);
+  if (originMain && backendSha && frontendSha && localHead === originMain && originMain === backendSha && backendSha === frontendSha && smokeOk === true) {
+    console.log(`${GREEN}✓ aligned — local HEAD == origin/main == prod backend == prod frontend, and the smoke passes.${RESET}\n`);
+  } else if (originMain && backendSha && frontendSha && localHead === originMain && originMain === backendSha && backendSha === frontendSha) {
+    console.log(`${YELLOW}~ same commit everywhere, but the smoke is ${smokeOk === false ? "FAILING" : "unverified"} (${smokeDetail}) — aligned is not claimed until the deployed code WORKS.${RESET}\n`);
+    process.exit(2);
   } else {
     console.log(`${YELLOW}~ no divergence flagged, but not every link could be read (see above) — verify the unreachable one by hand.${RESET}\n`);
     process.exit(2);

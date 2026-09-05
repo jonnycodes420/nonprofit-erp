@@ -58,8 +58,8 @@ async function resetOrg(org) {
   await resetOrg(A); await resetOrg(B);
   const tokA = await login(`${A}@test.local`);
   const tokB = await login(`${B}@test.local`);
-  const cf = await import("../client/src/lib/customFieldShape.js");
-  const lib = await import("../client/src/lib/importShape.js");
+  const cf = await import("../shared/customFieldShape.js");
+  const lib = await import("../shared/importShape.js");
 
   // ── §1 · org A: the full type matrix, values through the seam ────────────
   console.log("\n— §1 · all eight types on org A —");

@@ -79,8 +79,8 @@ async function reset() {
   console.log("import-messy-cf (BUILD-78 golden)");
   await reset();
   const tok = await login("b78golden@test.local");
-  const lib = await import("../client/src/lib/importShape.js");
-  const cf = await import("../client/src/lib/customFieldShape.js");
+  const lib = await import("../shared/importShape.js");
+  const cf = await import("../shared/customFieldShape.js");
   const TODAY = new Date().toISOString().slice(0, 10);
 
   // future-date rows move with the calendar, same re-derivation as B77

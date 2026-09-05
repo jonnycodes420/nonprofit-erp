@@ -1983,7 +1983,7 @@ function normalizeGiftDate(raw) {
 // Eleanor Fitzgerald) — any internal mixed case means a human already cased it, so
 // it is preserved verbatim (McKinney, O'Brien, van der Berg). Roman-numeral
 // suffixes (II/III/IV…) stay upper. The value stays fully editable after import.
-// MUST stay in lock-step with normalizeName in client/src/lib/importShape.js
+// MUST stay in lock-step with normalizeName in shared/importShape.js
 // (asserted by tests/name-normalize.test.js parity sweep).
 const _ROMAN_SUFFIX = /^(?:i{1,3}|iv|vi{0,3}|ix|xi{0,3}|x)$/i;
 // A "Last, First" flip must NOT eat a corporate name like "Acme, Inc." → "Inc. Acme".
@@ -14818,7 +14818,7 @@ async function cfEvent(req, orgId, entity, event, { fieldId, entityId, detail } 
      JSON.stringify(detail || {}), actor(req).id, actor(req).name]
   );
 }
-async function cfShape() { return import("./client/src/lib/customFieldShape.js"); }
+async function cfShape() { return import("./shared/customFieldShape.js"); }
 
 app.get("/import-field-mappings", requireAuth, wrap(async (req, res) => {
   const entity = String(req.query.entity || "").toLowerCase();

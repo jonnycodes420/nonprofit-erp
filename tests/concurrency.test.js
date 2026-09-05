@@ -140,7 +140,7 @@ const movesFor = id => q(`SELECT id, from_stage, to_stage FROM moves WHERE donor
 
   // ═══ Scenario 3 — parallel imports, overlapping files ═══
   console.log("\n── 3. parallel imports — overlapping emails dedupe, gifts attach once ──");
-  const { groupTransactions } = await import("../client/src/lib/importShape.js");
+  const { groupTransactions } = await import("../shared/importShape.js");
   let importDupe = false, importErr = false, giftDupe = false, giftFlagMissing = false;
   for (let i = 0; i < N; i++) {
     const shared = `cc3_shared_${i}@cc.local`;

@@ -69,7 +69,7 @@ function parseCsv(text) {
 (async () => {
   await reset();
   const tok = await login("b72recon@test.local");
-  const { groupTransactions } = await import("../client/src/lib/importShape.js");
+  const { groupTransactions } = await import("../shared/importShape.js");
 
   // ── §1 · the Part 0 fixture matrix, asserted on DOLLARS ──────────────────
   console.log("\n— §1 · the twins matrix (dollar totals are the assertion) —");

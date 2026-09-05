@@ -1,5 +1,5 @@
 // FIX — magical one-file import: shape AUTO-DETECTION + transaction grouping.
-// Pure unit test of client/src/lib/importShape.js (JSX/React-free), dynamic-
+// Pure unit test of shared/importShape.js (JSX/React-free), dynamic-
 // imported like tests/finance-funds.test.js imports money.js. No server needed.
 //
 // Covers the three real nonprofit export shapes:
@@ -12,7 +12,7 @@ const { ok, summary } = require("./helpers");
 
 (async () => {
   const { detectImportShape, groupTransactions, shapeLabel } =
-    await import("../client/src/lib/importShape.js");
+    await import("../shared/importShape.js");
 
   // ── Shape detection ──────────────────────────────────────────────────────
   // Aggregate: one row per donor with Total Giving + Last Gift columns.

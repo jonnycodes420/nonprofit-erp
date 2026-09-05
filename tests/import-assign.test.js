@@ -1,6 +1,6 @@
 // FIX — Team onboarding: assign donors to officers on import.
 // Two layers in one suite (like import-both.test.js):
-//   1. PURE lib (client/src/lib/importShape.js, dynamic-imported): owner-column
+//   1. PURE lib (shared/importShape.js, dynamic-imported): owner-column
 //      detection + owner→user matching (email → name, fuzzy-tolerant) +
 //      applyOwnerAssignment.
 //   2. SERVER contract (local scratch server + Postgres): a Team import that
@@ -38,7 +38,7 @@ async function seedUser(o, id, email, name, role = "staff") {
   // 1 — PURE LIB: owner detection + matching
   // ══════════════════════════════════════════════════════════════════════════
   const { detectOwnerColumn, matchOwnersToUsers, applyOwnerAssignment, groupOwnerMatches } =
-    await import("../client/src/lib/importShape.js");
+    await import("../shared/importShape.js");
 
   ok("detectOwnerColumn — 'Assigned Officer'", detectOwnerColumn(["Name", "Email", "Assigned Officer"]) === "Assigned Officer");
   ok("detectOwnerColumn — 'Owner'", detectOwnerColumn(["Owner", "Name"]) === "Owner");

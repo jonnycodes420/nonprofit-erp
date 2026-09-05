@@ -96,3 +96,39 @@ Jonathan's aggregate import succeeded in prod because the aggregate payload
 carries neither `columns` nor `customFields` — the only reason 1,111 donors
 landed at all. **Every BUILD-78 custom-fields assertion passed against a build
 the customer never gets.**
+
+## Part 7 — the fix, and the guard
+
+**7.2** `client/src/lib/customFieldShape.js` and `client/src/lib/importShape.js`
+moved to **`shared/`** at the repo root (customFieldShape imports importShape, so
+both are runtime server dependencies; `.railwayignore` keeps `shared/`). All 20
+import sites updated (server.js, customFields.js, Donors.jsx, 15 suites, the
+migration-reconcile script). No copy, no symlink, no re-export shim.
+`shared/package.json` (`"type":"module"`) is load-bearing: the root package.json
+is CJS, so without the marker the moved ESM files parse as CJS and the server's
+dynamic import dies a SECOND way — hit live while fixing, now pinned.
+
+**7.3a** `tests/deploy-shape.test.js` (in run-all): computes the deploy artifact
+list the way `railway up` does (git-tracked minus `.railwayignore`), statically
+resolves every relative require/import in the server tree transitively from
+package.json main, and fails on any resolution outside the artifact — plus the
+ESM-marker check. Proven able to fail (BUILD-75 A.6): §4 runs the same checker
+over a synthetic tree carrying the exact BUILD-78 defect and over one missing
+the type-module marker; both are flagged, and the marker fix turns it green.
+
+**7.3b** `scripts/status.js` now runs a post-deploy smoke and **"aligned"
+requires it**: demo-org login → `GET /donors/export/csv` must answer 200 with
+CSV-shaped bytes (the exact surface that crashed Sept 5) + `GET /custom-fields`
+200. Same-commit-everywhere with a failing smoke prints "aligned is not claimed
+until the deployed code WORKS" and exits non-zero. **Deliberate deviation from
+the spec's "one custom-field write":** status.js is classified PROD_READONLY and
+this repo's prod-write discipline (`--i-know-this-is-prod`) forbids a status
+check writing to production; the write-path coverage lives in
+tests/deploy-shape.test.js (static, proves the module ships) + the custom-fields
+battery (drives validateCustomFields through the same module). The read-only
+export GET exercises the identical dynamic import at runtime in prod.
+
+**7.4** `Donors.jsx` export handler no longer throws an error whose message is
+its own name: the flash now carries the HTTP status and the server's
+error/message body. The round-trip-on-the-imported-org assertion lands with the
+Part 8 golden.

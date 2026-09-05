@@ -36,7 +36,7 @@ const CASES = [
 ];
 
 (async () => {
-  const { normalizeName } = await import("../client/src/lib/importShape.js");
+  const { normalizeName } = await import("../shared/importShape.js");
 
   // ── 1. Pure lib unit cases ──
   for (const [inp, exp] of CASES) ok(`lib: ${JSON.stringify(inp)} → ${JSON.stringify(exp)}`, normalizeName(inp) === exp, normalizeName(inp));

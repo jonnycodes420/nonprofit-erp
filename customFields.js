@@ -16,7 +16,7 @@
 //     (deterministic def ids, value merge only fills missing keys) so the
 //     suite can drive it directly.
 //
-// The type rules themselves live in client/src/lib/customFieldShape.js (ESM,
+// The type rules themselves live in shared/customFieldShape.js (ESM,
 // shared byte-for-byte with the client mapper); this file only adds what the
 // server owns: the defs lookup, the money-seam cents conversion, and the DB
 // writes. CJS↔ESM: the shape module is loaded once via dynamic import.
@@ -26,7 +26,7 @@ const { toCents } = require("./money.js");
 
 let _shapePromise = null;
 function shape() {
-  _shapePromise ||= import("./client/src/lib/customFieldShape.js");
+  _shapePromise ||= import("./shared/customFieldShape.js");
   return _shapePromise;
 }
 

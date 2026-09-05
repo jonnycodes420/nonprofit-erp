@@ -24,7 +24,7 @@
 const { query } = require("../db.js");
 
 (async () => {
-  const shape = await import("../client/src/lib/customFieldShape.js");
+  const shape = await import("../shared/customFieldShape.js");
   const { coerceCustomValue } = shape;
   const { toCents } = require("../money.js");
 

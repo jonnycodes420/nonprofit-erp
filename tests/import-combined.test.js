@@ -38,7 +38,7 @@ const countGifts  = async o => (await q(`SELECT COUNT(*)::int n FROM gifts WHERE
   const tA = await login("a-admin@ic.local");
   const tB = await login("b-admin@ic.local");
 
-  const { groupTransactions } = await import("../client/src/lib/importShape.js");
+  const { groupTransactions } = await import("../shared/importShape.js");
 
   // ── 1. A transaction ledger → donors + individual gift history ───────────
   // 3 donors, 6 gift rows (Jane×3, Bob×2, Carol×1). Client-side grouping.

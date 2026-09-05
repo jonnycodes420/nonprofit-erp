@@ -6,7 +6,7 @@ import UpgradeModal from "./UpgradeModal";
 import Uploader from "./Uploader";
 import { bestCampaignMatch } from "../lib/campaignMatch";
 import { dueBadge } from "../lib/taskDue";
-import { renderCustomValue, coerceCustomValue, parseBoolValue, buildMapperPlan, buildColumnLedger, summarizeColumnLedger, countPhysicalColumns, proposalEvidenceText, generateFieldKey, CF_TYPES } from "../lib/customFieldShape";
+import { renderCustomValue, coerceCustomValue, parseBoolValue, buildMapperPlan, buildColumnLedger, summarizeColumnLedger, countPhysicalColumns, proposalEvidenceText, generateFieldKey, CF_TYPES } from "../../../shared/customFieldShape";
 
 class ErrorBoundary extends Component {
   constructor(props) { super(props); this.state = { error: null }; }
@@ -31,7 +31,7 @@ import { T, fmt, fmtFull, daysDiff, SC, askClaude, STAGES, STAGE_ACTION, TIER_CO
 // profile button, and modal render below, and add `VoiceMemoModal` back to
 // the import above).
 import { DonorMap } from "./DonorMap";
-import { detectImportShape, groupTransactions, shapeLabel, YEAR_HDR_PAT, detectWorkbookRoles, pickMatchKey, linkGiftsToDonors, detectOwnerColumn, matchOwnersToUsers, applyOwnerAssignment, groupOwnerMatches, normalizeName, normalizeDate, normalizeMoney, normalizeEmail, detectFlagColumns, parseBoolFlag, classifyColumns, decodeSpreadsheetBytes, buildGiftItemsFromLedger, buildTransactionRows, detectNoteMarkers, autoDetectTxMapping } from "../lib/importShape";
+import { detectImportShape, groupTransactions, shapeLabel, YEAR_HDR_PAT, detectWorkbookRoles, pickMatchKey, linkGiftsToDonors, detectOwnerColumn, matchOwnersToUsers, applyOwnerAssignment, groupOwnerMatches, normalizeName, normalizeDate, normalizeMoney, normalizeEmail, detectFlagColumns, parseBoolFlag, classifyColumns, decodeSpreadsheetBytes, buildGiftItemsFromLedger, buildTransactionRows, detectNoteMarkers, autoDetectTxMapping } from "../../../shared/importShape";
 
 // ── CSV Import helpers ─────────────────────────────────────────────────────
 // ── Import field registry ──────────────────────────────────────────────────
@@ -119,7 +119,7 @@ function inferStage(total, lastGiftStr, hasContactInfo) {
 const STAGE_COLORS = Object.fromEntries(STAGES.map(s => [s.id, s.color]));
 
 // ── Normalization helpers (normalizeDate/Money/Email) live in
-// lib/importShape.js — BUILD-58 Part 2 moved them so the pure ledger-row
+// (now shared/importShape.js) — BUILD-58 Part 2 moved them so the pure ledger-row
 // builder there can use them and the Node suite can test the pipeline. ────
 function normalizeStage(val) {
   if (!val) return null;
@@ -1839,7 +1839,7 @@ function autoDetectWideConfig(headers, rows) {
   return { yearCols: validYearCols, donorNameCol, donorEmailCol };
 }
 
-// autoDetectTxMapping moved to lib/importShape.js (BUILD-77) so the golden
+// autoDetectTxMapping moved to (now shared/importShape.js) (BUILD-77) so the golden
 // fixture suite drives the REAL auto-mapping, not a copy.
 
 // ── GiftHistoryImport ──────────────────────────────────────────────────────
@@ -4875,13 +4875,18 @@ function DirectoryView({donors,loading,serverTotal,page,pageSize,onPage,clientFi
       const qs=new URLSearchParams();
       Object.entries(exportParams||{}).forEach(([k,v])=>{if(v)qs.set(k,v);});
       const res=await fetch(`${API}/donors/export/csv?${qs.toString()}`,{headers:{Authorization:`Bearer ${getToken()}`}});
-      if(!res.ok)throw new Error("Export failed");
+      if(!res.ok){
+        // BUILD-79 Part 7.4 — "Export failed: Export failed" was an error whose
+        // message was its own name. Carry the server's actual reason + status.
+        const body=await res.json().catch(()=>({}));
+        throw new Error(`the server answered ${res.status}${body.error?` — ${body.error}`:""}${body.message?`: ${body.message}`:""}`);
+      }
       const blob=await res.blob();
       const url=URL.createObjectURL(blob);
       const a=document.createElement("a");
       a.href=url;a.download=`donors-${new Date().toISOString().split("T")[0]}.csv`;
       document.body.appendChild(a);a.click();document.body.removeChild(a);URL.revokeObjectURL(url);
-    }catch(e){flash("Export failed: "+(e.message||"unknown error"));}
+    }catch(e){flash("Export failed — "+(e.message||"unknown error"));}
     setExporting(false);
   }
 

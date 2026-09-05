@@ -183,7 +183,7 @@ const settle = (ms = 400) => new Promise(r => setTimeout(r, ms));
 (async () => {
   await reset();
   const tok = await login("b76drift@test.local");
-  const { groupTransactions } = await import("../client/src/lib/importShape.js");
+  const { groupTransactions } = await import("../shared/importShape.js");
   const stripeMock = await startStripeMock();
 
   // ── §1 · the fixture, through the REAL import path ───────────────────────

@@ -26,7 +26,7 @@ const uniq = () => Math.random().toString(36).slice(2, 8);
 
 (async () => {
   console.log("import-columns (BUILD-58 Part 2)");
-  const shape = await import("../client/src/lib/importShape.js");
+  const shape = await import("../shared/importShape.js");
 
   // ── §1 "Donor Email" is an email column ──────────────────────────────────
   console.log("\n§1 email-column probe recognizes real-world headers");

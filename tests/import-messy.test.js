@@ -73,7 +73,7 @@ async function reset() {
 (async () => {
   await reset();
   const tok = await login("b77golden@test.local");
-  const lib = await import("../client/src/lib/importShape.js");
+  const lib = await import("../shared/importShape.js");
   const TODAY = new Date().toISOString().slice(0, 10);
 
   // The key was generated on a fixed day; future-vs-today moves with the

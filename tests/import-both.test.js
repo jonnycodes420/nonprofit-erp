@@ -2,7 +2,7 @@
 // A workbook with a donor-shaped sheet AND a gift-ledger sheet is detected as a
 // pair; the gifts are LINKED to the donors by a shared key (email → name →
 // donor-id) and imported in ONE pass so a first-timer drops one workbook and
-// gets a full CRM. Pure role-detection/linking (client/src/lib/importShape.js,
+// gets a full CRM. Pure role-detection/linking (shared/importShape.js,
 // JSX-free) + the real /donors/import-combined contract (smart-stage on the
 // linked history, idempotent re-run) against a local scratch server + Postgres.
 
@@ -31,7 +31,7 @@ const countDonors = async o => (await q(`SELECT COUNT(*)::int n FROM donors WHER
 
 (async () => {
   const { detectWorkbookRoles, pickMatchKey, linkGiftsToDonors, findDonorIdHdr } =
-    await import("../client/src/lib/importShape.js");
+    await import("../shared/importShape.js");
 
   // ── The two sheets (donor-shaped + gift-ledger), like the real CRM export ──
   const donorSheet = {

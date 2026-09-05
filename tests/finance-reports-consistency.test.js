@@ -49,7 +49,7 @@ async function seedOrg(o, tag) {
 
   // ── Import a large HISTORICAL giving history (all prior-FY dated) ──
   // 3 donors, big totals, gifts dated 400–900 days ago (well before this FY).
-  const { groupTransactions } = await import("../client/src/lib/importShape.js");
+  const { groupTransactions } = await import("../shared/importShape.js");
   const ledger = [
     { key: "h1@frc.local", donor: { name: "Historic One", email: "h1@frc.local" }, gift: { amount: 400000, date: daysAgo(500) } },
     { key: "h2@frc.local", donor: { name: "Historic Two", email: "h2@frc.local" }, gift: { amount: 200000, date: daysAgo(700) } },

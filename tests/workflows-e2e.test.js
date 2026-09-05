@@ -144,7 +144,7 @@ async function fireWebhook(type, object, evtId, account = ACCT_A) {
     { key: "lapsed1@wfe.local", donor: { name: "Lapsed One", email: "lapsed1@wfe.local" }, gift: { amount: 300, date: daysAgo(500) } },
     { key: "lapsed2@wfe.local", donor: { name: "Lapsed Two", email: "lapsed2@wfe.local" }, gift: { amount: 800, date: daysAgo(900) } },
   ];
-  const { groupTransactions } = await import("../client/src/lib/importShape.js");
+  const { groupTransactions } = await import("../shared/importShape.js");
   const grouped = groupTransactions(ledger);
   const imp = await api("POST", "/donors/import-combined", tA, grouped);
   ok("A0: combined import 200 (4 donors, 4 gifts)", imp.status === 200 && imp.body.created === 4 && imp.body.giftsInserted === 4, imp.body);
