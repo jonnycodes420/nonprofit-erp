@@ -2720,7 +2720,7 @@ app.post("/auth/register-org", registerLimiter, wrap(async (req, res) => {
 
 // ── Me ─────────────────────────────────────────────────────────────────────
 app.get("/me", requireAuth, wrap(async (req, res) => {
-  const users = await query("SELECT id, email, name, role, notify_portfolio_gifts, notify_task_assignments, notify_daily_tasks FROM users WHERE id = ?", [req.user.userId]);
+  const users = await query("SELECT id, email, name, role, notify_portfolio_gifts, notify_task_assignments, notify_daily_tasks, notify_thread_nudge FROM users WHERE id = ?", [req.user.userId]);
   const orgs  = await query("SELECT * FROM orgs WHERE id = ?", [req.user.orgId]);
   if (!users.length || !orgs.length) return res.status(404).json({ error: "Not found" });
   const u = users[0];
@@ -2735,7 +2735,7 @@ app.get("/me", requireAuth, wrap(async (req, res) => {
 // about: portfolio gifts / task assignments / daily task reminder". Default on.
 app.put("/me/notification-prefs", requireAuth, wrap(async (req, res) => {
   const b = req.body || {};
-  const map = { portfolioGifts: "notify_portfolio_gifts", taskAssignments: "notify_task_assignments", dailyTasks: "notify_daily_tasks" };
+  const map = { portfolioGifts: "notify_portfolio_gifts", taskAssignments: "notify_task_assignments", dailyTasks: "notify_daily_tasks", threadNudge: "notify_thread_nudge" };
   const sets = [], params = [];
   for (const [k, col] of Object.entries(map)) {
     if (typeof b[k] === "boolean") { sets.push(`${col}=?`); params.push(b[k]); }
@@ -2743,7 +2743,7 @@ app.put("/me/notification-prefs", requireAuth, wrap(async (req, res) => {
   if (!sets.length) return res.status(400).json({ error: "No valid preferences provided" });
   params.push(req.user.userId);
   await run(`UPDATE users SET ${sets.join(",")} WHERE id=?`, params);
-  const rows = await query("SELECT notify_portfolio_gifts, notify_task_assignments, notify_daily_tasks FROM users WHERE id=?", [req.user.userId]);
+  const rows = await query("SELECT notify_portfolio_gifts, notify_task_assignments, notify_daily_tasks, notify_thread_nudge FROM users WHERE id=?", [req.user.userId]);
   res.json({ notifications: mapNotifyPrefs(rows[0]) });
 }));
 
@@ -2930,6 +2930,12 @@ app.patch("/orgs/:id", requireAuth, requireAdmin, wrap(async (req, res) => {
   // (Settings' Giving section sends it; no other PATCH caller does).
   if (req.body.coverFeesEnabled !== undefined) {
     await run(`UPDATE orgs SET cover_fees_enabled=? WHERE id=?`, [!!req.body.coverFeesEnabled, req.params.id]);
+  }
+
+  // BUILD-81 — the thread-nudge weekend toggle (org-level; the nudge itself
+  // is weekday-only by default). Only touched when the request includes it.
+  if (req.body.threadNudgeWeekends !== undefined) {
+    await run(`UPDATE orgs SET thread_nudge_weekends=? WHERE id=?`, [!!req.body.threadNudgeWeekends, req.params.id]);
   }
 
   // Tax receipt settings — only touched when the request actually includes
@@ -14002,6 +14008,125 @@ app.post("/digests/run-daily", requireAuth, requireAdmin, wrap(async (req, res) 
   res.json({ today, ...out });
 }));
 
+// ── BUILD-81 Part 2 — THE NUDGE LEAVES THE APP ──────────────────────────────
+// A reminder in a dashboard nobody opens is not a reminder. ONE email per
+// user per weekday morning, listing every open thread that is due or
+// overdue, oldest first. Nothing on weekends by default (org toggle
+// thread_nudge_weekends). NO email when nothing is due, and an empty morning
+// reserves nothing. The SUBJECT is what escalates ("2 threads open · Bill
+// Harmon, day 3" becomes "… day 11"); the body doesn't nag, the number does.
+// Links open the donor's log-one-line screen in the app — a GET changes
+// NOTHING (mail clients prefetch links); Done and Snooze happen there, after
+// a page load, as POSTs. Idempotent per (org, user, day) via digest_sends
+// ('thread_nudge', day:YYYY-MM-DD); per-user off switch notify_thread_nudge
+// (default on); rides the existing 5-minute tick — never a second scheduler.
+
+// Weekday check on the ORG's civil day (orgTime.dayOfWeek: 0=Mon … 6=Sun).
+function threadNudgeDayOk(org, todayStr) {
+  const dow = orgTime.dayOfWeek(todayStr);
+  if (dow === null) return false;
+  return dow < 5 || !!org.thread_nudge_weekends;
+}
+
+// Every open thread due or overdue on `today`, OLDEST first (longest open).
+async function composeThreadNudge(orgId, today) {
+  const rows = await query(
+    `SELECT t.id, t.donor_id, d.name AS donor_name, t.next_step_type, t.next_step_label,
+            t.due_date, t.opened_on
+       FROM threads t JOIN donors d ON d.id = t.donor_id AND d.org_id = t.org_id
+      WHERE t.org_id = ? AND t.closed_at IS NULL AND d.deleted_at IS NULL
+        AND (t.snoozed_until IS NULL OR t.snoozed_until <= ?)
+        AND t.due_date <= ?
+      ORDER BY t.opened_on ASC, t.due_date ASC`,
+    [orgId, today, today]);
+  return rows.map(r => ({
+    id: r.id, donorId: r.donor_id,
+    donorName: displayNameCase(r.donor_name || ""),
+    stepLabel: r.next_step_label, due: r.due_date,
+    daysOpen: Math.max(0, orgTime.daysBetween(r.opened_on, today) ?? 0),
+  }));
+}
+
+function threadNudgeSubject(threads) {
+  const oldest = threads[0];
+  return `${threads.length} thread${threads.length === 1 ? "" : "s"} open · ${oldest.donorName}, day ${oldest.daysOpen}`;
+}
+
+function renderThreadNudgeBody(threads, org) {
+  // The row says "day 24", never a date the reader has to subtract.
+  const li = t => {
+    const url = `${publicAppUrl()}/donors/${encodeURIComponent(t.donorId)}?conversation=1`;
+    return `<tr><td style="padding:7px 0;font-size:14px;color:#0f1a12;">
+      <a href="${url}" style="color:#0d5c3a;font-weight:700;text-decoration:underline;">${digestEsc(t.donorName)}</a>
+      <span style="color:#6b7d70;"> · ${digestEsc(t.stepLabel)} · day ${t.daysOpen}</span></td></tr>`;
+  };
+  // CAN-SPAM: the org's mailing address in the footer. No address on file →
+  // the email SAYS SO and links to add it, never a footer that pretends
+  // (the address item is on the setup checklist for exactly this).
+  const addr = org.receipt_address && String(org.receipt_address).trim();
+  const footer = addr
+    ? `<div style="margin-top:22px;padding-top:12px;border-top:1px solid #dcd8cd;font-size:11px;color:#6b7d70;">${digestEsc(displayNameCase(org.legal_name || org.name || ""))} · ${digestEsc(addr)}</div>`
+    : `<div style="margin-top:22px;padding-top:12px;border-top:1px solid #dcd8cd;font-size:11px;color:#6b7d70;">Steward has no mailing address on file for ${digestEsc(displayNameCase(org.name || ""))}, so this footer cannot carry one yet. <a href="${publicAppUrl()}/dashboard" style="color:#0d5c3a;">Add it in Settings</a> and it will.</div>`;
+  return `<div style="padding:22px;background:#f0ede6;font-family:'DM Sans',Helvetica,Arial,sans-serif;">
+      <div style="font-family:'DM Serif Display',Georgia,serif;font-size:20px;color:#0f1a12;">These are waiting on you.</div>
+      <div style="font-size:12.5px;color:#6b7d70;margin-top:2px;">Each name opens the donor's record. Log what happened there, and the next step comes back when it is due.</div>
+      <table style="margin-top:12px;border-collapse:collapse;">${threads.map(li).join("")}</table>
+      ${footer}
+    </div>`;
+}
+
+// Run the nudge for one org. send=false → compose only, reserving nothing.
+async function runThreadNudgesForOrg(org, { today, send = true }) {
+  const out = { sent: [], skipped: [] };
+  const threads = await composeThreadNudge(org.id, today);
+  if (threads.length === 0) return out;   // no email when nothing is due, nothing reserved
+  const users = await query("SELECT id, name, email FROM users WHERE org_id=? AND email IS NOT NULL", [org.id]);
+  const subject = threadNudgeSubject(threads);
+  const body = renderThreadNudgeBody(threads, org);
+  for (const u of users) {
+    if (!send) { out.sent.push({ recipientUserId: u.id, email: u.email, count: threads.length, subject }); continue; }
+    if (!(await userWantsEmail(u.id, "thread_nudge"))) { out.skipped.push({ recipientUserId: u.id, reason: "opted_out" }); continue; }
+    const rid = await reserveDigest(org.id, "thread_nudge", "day:" + today, u.id, u.email, "user", { count: threads.length, oldestDays: threads[0].daysOpen });
+    if (!rid) { out.skipped.push({ recipientUserId: u.id, reason: "already_sent" }); continue; }
+    await sendDigestEmail(org, u.email, subject, body);
+    out.sent.push({ recipientUserId: u.id, email: u.email, count: threads.length, subject });
+  }
+  return out;
+}
+
+async function processThreadNudges(now = new Date()) {
+  try {
+    // ORG_TZ_SEAM_OK — window, weekday, and "today" are the ORGANIZATION's.
+    const orgs = await query("SELECT id, name, legal_name, timezone, receipt_address, thread_nudge_weekends FROM orgs WHERE onboarding_complete=1", []);
+    for (const org of orgs) {
+      const clock = orgTime.orgClock(org, now);
+      if (!inDailyReminderWindow(clock)) continue;
+      if (!threadNudgeDayOk(org, clock.date)) continue;
+      await runThreadNudgesForOrg(org, { today: clock.date }).catch(e => console.error("[thread-nudge]", org.id, e.message));
+    }
+  } catch (e) { console.error("[thread-nudge] processThreadNudges:", e.message); }
+}
+if (!backgroundTicksDisabled()) {
+  setTimeout(() => processThreadNudges().catch(console.error), 50000);
+  setInterval(() => processThreadNudges().catch(console.error), 5 * 60 * 1000);
+}
+
+// POST /nudges/run (requireAuth + requireAdmin) — drive the thread nudge for
+// the caller's org NOW (ops/test hook, /digests/run-daily's bar). {today?}
+// pins the date; the WEEKDAY rule still applies to the pinned date (that is
+// how the schedule is testable) unless {force:true}; the wall-clock morning
+// window deliberately does not (it would make the hook time-of-day flaky).
+app.post("/nudges/run", requireAuth, requireAdmin, wrap(async (req, res) => {
+  const [org] = await query("SELECT id, name, legal_name, timezone, receipt_address, thread_nudge_weekends FROM orgs WHERE id=?", [req.user.orgId]);
+  if (!org) return res.status(404).json({ error: "Org not found" });
+  const today = (req.body && req.body.today) || orgToday(org);   // ORG_TZ_SEAM_OK
+  if (!req.body?.force && !threadNudgeDayOk(org, today)) {
+    return res.json({ today, skippedWeekend: true, sent: [], skipped: [] });
+  }
+  const out = await runThreadNudgesForOrg(org, { today, send: !(req.body && req.body.dryRun) });
+  res.json({ today, ...out });
+}));
+
 // GET /digests/preview — compose (never send) the caller's current digest, for
 // the in-app "Week in Review" view. Scope follows the caller's role/plan.
 app.get("/digests/preview", requireAuth, wrap(async (req, res) => {
@@ -15892,6 +16017,7 @@ const NOTIFY_PREF_COLUMN = {
   portfolio_gifts: "notify_portfolio_gifts",
   task_assignments: "notify_task_assignments",
   daily_tasks: "notify_daily_tasks",
+  thread_nudge: "notify_thread_nudge",   // BUILD-81 — the Thread's morning email
 };
 async function userWantsEmail(userId, prefKind) {
   const col = NOTIFY_PREF_COLUMN[prefKind];
@@ -15904,6 +16030,7 @@ function mapNotifyPrefs(row) {
     portfolioGifts: row?.notify_portfolio_gifts !== false,
     taskAssignments: row?.notify_task_assignments !== false,
     dailyTasks: row?.notify_daily_tasks !== false,
+    threadNudge: row?.notify_thread_nudge !== false,
   };
 }
 

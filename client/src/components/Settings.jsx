@@ -1027,6 +1027,14 @@ export function Settings({auth,logout,initialSection,onNavigate}) {
 
   // BUILD-36 A4 — per-user email notification toggles (default on).
   const [notifyPrefs,setNotifyPrefs]=useState(null);
+  // BUILD-81 — org-level: send the thread nudge on weekends too (default off).
+  const [nudgeWeekends,setNudgeWeekends]=useState(null);
+  useEffect(()=>{apiFetch("/org").then(o=>setNudgeWeekends(!!(o?.threadNudgeWeekends??o?.thread_nudge_weekends))).catch(()=>{});},[]);
+  async function toggleNudgeWeekends(){
+    const next=!nudgeWeekends; setNudgeWeekends(next);
+    try{ await apiFetch(`/orgs/${auth?.org?.id}`,{method:"PATCH",body:JSON.stringify({threadNudgeWeekends:next})}); }
+    catch{ setNudgeWeekends(!next); }
+  }
   const [notifySaving,setNotifySaving]=useState("");
   async function toggleNotifyPref(key){
     if(!notifyPrefs) return;
@@ -1863,6 +1871,7 @@ export function Settings({auth,logout,initialSection,onNavigate}) {
           {key:"portfolioGifts",label:"Gifts to my donors",hint:"A gift lands for a donor you own — or anywhere in your org."},
           {key:"taskAssignments",label:"Task assignments",hint:"Someone assigns you a task (or an automation does)."},
           {key:"dailyTasks",label:"Daily task reminder",hint:"A morning summary of tasks due today and overdue."},
+          {key:"threadNudge",label:"The Thread",hint:"One weekday-morning email listing every open thread that is due or overdue. It stops when you have none."},
         ].map(row=>(
           <label key={row.key} style={{display:"flex",alignItems:"flex-start",gap:12,padding:"10px 0",borderTop:"1px solid "+T.bg2,cursor:notifyPrefs?"pointer":"default"}}>
             <input type="checkbox" disabled={!notifyPrefs||notifySaving===row.key}
@@ -1875,6 +1884,16 @@ export function Settings({auth,logout,initialSection,onNavigate}) {
             </div>
           </label>
         ))}
+        {isAdmin&&nudgeWeekends!==null&&(
+          <label style={{display:"flex",alignItems:"flex-start",gap:12,padding:"10px 0 0",borderTop:"1px solid "+T.bg2,cursor:"pointer"}}>
+            <input type="checkbox" checked={nudgeWeekends} onChange={toggleNudgeWeekends}
+              style={{width:16,height:16,marginTop:2,cursor:"pointer",accentColor:T.greenMid}}/>
+            <div>
+              <div style={{fontSize:14,fontWeight:600,color:T.ink}}>Send the Thread email on weekends too</div>
+              <div style={{fontSize:12,color:T.ink3,marginTop:1}}>Whole organization. Off means weekday mornings only.</div>
+            </div>
+          </label>
+        )}
       </div>
 
       {/* On-brand Account panel (BUILD-31 Part 2.3): plain white/cream section,
