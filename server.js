@@ -6266,6 +6266,165 @@ app.post("/donors/:id/year-end-statement", requireAuth, checkWriteAccess, wrap(a
 // Accepts pre-matched gifts (donorId already resolved by frontend) and inserts
 // them transactionally, then recalcs each affected donor's summary. Deduplicates
 // by exact (donor_id, amount, date) fingerprint so re-running is safe.
+// ── BUILD-80 Part 5/7 — the SEMANTIC rows an import carries besides gifts ──
+// One follow-up call after the chunked /donors/import-combined: pledge
+// commitments (never in totals — the pledges table), in-kind records (FMV +
+// description as an interaction, never a $0 gift), and relationship links
+// (soft credits, corporate-match attributions, DAF recommendations — the
+// money stays where it legally landed, the PERSON gets the relationship).
+// Donor resolution: email first, then a unique name match (both name tokens;
+// an ambiguous name never links — same rule as owner matching); a person who
+// exists only through links (a soft-credited spouse, a DAF advisor) is
+// created with no gift. Idempotent: pledges ride the BUILD-72
+// idempotency_key; links and in-kind check for their own row first.
+app.post("/donors/import-semantics", requireAuth, checkWriteAccess, wrapImport(async (req, res) => {
+  const orgId = req.user.orgId;
+  const pledges = Array.isArray(req.body.pledges) ? req.body.pledges : [];
+  const inKind = Array.isArray(req.body.inKind) ? req.body.inKind : [];
+  const links = Array.isArray(req.body.links) ? req.body.links : [];
+  const reviewTwins = Array.isArray(req.body.reviewTwins) ? req.body.reviewTwins : [];
+  const counts = { pledges: 0, inKind: 0, links: 0, personsCreated: 0, twinsFlagged: 0, unresolved: [] };
+
+  const findDonor = async (email, name) => {
+    const em = String(email || "").trim().toLowerCase();
+    if (em && em.includes("@")) {
+      const r = await query("SELECT id, name FROM donors WHERE org_id=? AND deleted_at IS NULL AND LOWER(email)=?", [orgId, em]);
+      if (r.length === 1) return r[0];
+    }
+    const nm = String(name || "").trim();
+    if (!nm) return null;
+    const exact = await query("SELECT id, name FROM donors WHERE org_id=? AND deleted_at IS NULL AND LOWER(name)=LOWER(?)", [orgId, nm]);
+    if (exact.length === 1) return exact[0];
+    if (exact.length > 1) return null; // ambiguous — never mis-link
+    const parts = nm.split(/\s+/).filter(Boolean);
+    if (parts.length >= 2) {
+      const fuzzy = await query(
+        "SELECT id, name FROM donors WHERE org_id=? AND deleted_at IS NULL AND name ILIKE ? AND name ILIKE ? LIMIT 3",
+        [orgId, `%${parts[0]}%`, `%${parts[parts.length - 1]}%`]);
+      if (fuzzy.length === 1) return fuzzy[0];
+    }
+    return null;
+  };
+  // A LINK names a PERSON — resolution is name-first (the spouse on a soft
+  // credit shares the couple's email, so email-first would dissolve her into
+  // the base record) and DETERMINISTIC (exact name matches take the earliest
+  // record; a fuzzy both-token match only when unique) so a re-post never
+  // mints a second copy of the same person.
+  const findPersonByName = async (name) => {
+    const nm = String(name || "").trim();
+    if (!nm) return null;
+    const exact = await query(
+      "SELECT id, name FROM donors WHERE org_id=? AND deleted_at IS NULL AND LOWER(name)=LOWER(?) ORDER BY created_at, id LIMIT 1", [orgId, nm]);
+    if (exact.length) return exact[0];
+    const parts = nm.split(/\s+/).filter(Boolean);
+    if (parts.length >= 2) {
+      const fuzzy = await query(
+        "SELECT id, name FROM donors WHERE org_id=? AND deleted_at IS NULL AND name ILIKE ? AND name ILIKE ? ORDER BY created_at, id LIMIT 2",
+        [orgId, `%${parts[0]}%`, `%${parts[parts.length - 1]}%`]);
+      if (fuzzy.length === 1) return fuzzy[0];
+    }
+    return null;
+  };
+  const createPerson = async (name, email) => {
+    const id = importId("d_");
+    await run(
+      `INSERT INTO donors (id,org_id,name,email,stage,status,tags,notes) VALUES (?,?,?,?,?,?,?,?)`,
+      [id, orgId, name, (email || null), "prospect", "active", JSON.stringify([]), null]);
+    counts.personsCreated++;
+    return { id, name };
+  };
+  const linkExists = async (a, b, type) => {
+    const r = await query(
+      "SELECT id FROM donor_relationships WHERE org_id=? AND donor_id_a=? AND donor_id_b=? AND relationship_type=?",
+      [orgId, a, b, type]);
+    return r.length > 0;
+  };
+
+  for (const p of pledges) {
+    const donor = await findDonor(p.donorEmail, p.donorName);
+    if (!donor) { counts.unresolved.push({ kind: "pledge", name: p.donorName }); continue; }
+    const idem = `import:pledge:${p.externalId || `${p.donorName}:${p.amount}:${p.date || ""}`}`.slice(0, 200);
+    const due = p.dueDate || p.date || (await (async () => orgToday(await orgTz(orgId)))());  // ORG_TZ_SEAM_OK
+    const ins = await query(
+      `INSERT INTO pledges (id,org_id,donor_id,amount,due_date,status,notes,idempotency_key)
+       VALUES (?,?,?,?,?,?,?,?)
+       ON CONFLICT (org_id, idempotency_key) WHERE idempotency_key IS NOT NULL DO NOTHING
+       RETURNING id`,
+      [importId("pl_"), orgId, donor.id, p.amount, due, p.status === "fulfilled" ? "fulfilled" : "open",
+       (p.notes || "").slice(0, 500) || null, idem]);
+    if (ins.length) {
+      counts.pledges++;
+      // link the payments that name this pledge in their notes
+      if (p.externalId) {
+        await run(
+          `UPDATE gifts SET pledge_id=? WHERE org_id=? AND pledge_id IS NULL AND notes ILIKE ?`,
+          [ins[0].id, orgId, `%on pledge ${p.externalId}%`]);
+      }
+    }
+  }
+
+  for (const k of inKind) {
+    const donor = await findDonor(k.donorEmail, k.donorName);
+    if (!donor) { counts.unresolved.push({ kind: "in_kind", name: k.donorName }); continue; }
+    const note = `In-kind gift${k.description ? `: ${k.description}` : ""}${k.fmv ? ` (fair market value $${Number(k.fmv).toLocaleString()})` : " (no value stated)"}`;
+    const dupe = await query(
+      "SELECT id FROM interactions WHERE org_id=? AND donor_id=? AND type='in_kind' AND note=? AND date IS NOT DISTINCT FROM ?",
+      [orgId, donor.id, note, k.date || null]);
+    if (dupe.length) continue;
+    await run(
+      `INSERT INTO interactions (id,org_id,donor_id,type,note,date,created_by) VALUES (?,?,?,?,?,?,?)`,
+      [importId("int_"), orgId, donor.id, "in_kind", note, k.date || null, req.user.userId]);
+    counts.inKind++;
+  }
+
+  for (const l of links) {
+    let baseDonor = null;
+    if (l.type === "soft_credit" && l.baseGiftExternalId) {
+      const g = await query(
+        "SELECT donor_id FROM gifts WHERE org_id=? AND external_id=? LIMIT 1", [orgId, l.baseGiftExternalId]);
+      if (g.length) baseDonor = { id: g[0].donor_id };
+    }
+    if (!baseDonor && (l.corpName || l.corpKey)) baseDonor = await findDonor("", l.corpName);
+    if (!baseDonor) { counts.unresolved.push({ kind: l.type, name: l.personName }); continue; }
+    let person = await findPersonByName(l.personName);
+    if (!person && l.personName) person = await createPerson(l.personName, "");
+    if (!person) continue;
+    if (person.id === baseDonor.id) {
+      // The credited person grouped into the base record (a spouse on the
+      // couple's shared email): a household fold, not a link — counted so
+      // the summary can say where the 46 spouses went.
+      counts.householdFolds = (counts.householdFolds || 0) + 1;
+      continue;
+    }
+    if (await linkExists(person.id, baseDonor.id, l.type)) continue;
+    const when = l.date ? String(l.date).slice(0, 4) : "";
+    const note = l.type === "soft_credit"
+      ? `Soft credit on gift ${l.baseGiftExternalId || ""} ($${Number(l.dollars || 0).toLocaleString()}${l.date ? `, ${l.date}` : ""})`
+      : l.type === "matching_gift"
+        ? `Corporate match by ${l.corpName} ($${Number(l.dollars || 0).toLocaleString()}${l.date ? `, ${l.date}` : ""})`
+        : `$${Number(l.dollars || 0).toLocaleString()} via ${l.corpName}${when ? `, ${when}` : ""}`;
+    await run(
+      `INSERT INTO donor_relationships (id,org_id,donor_id_a,donor_id_b,relationship_type,notes) VALUES (?,?,?,?,?,?)`,
+      [importId("rel_"), orgId, person.id, baseDonor.id, l.type, note]);
+    counts.links++;
+  }
+
+  for (const t of reviewTwins) {
+    const donor = await findDonor("", t.name);
+    if (!donor) continue;
+    const r = await query("SELECT tags FROM donors WHERE id=?", [donor.id]);
+    let tags = [];
+    try { tags = Array.isArray(r[0]?.tags) ? r[0].tags : JSON.parse(r[0]?.tags || "[]"); } catch { tags = []; }
+    if (!tags.includes("possible-duplicate")) {
+      tags.push("possible-duplicate");
+      await run("UPDATE donors SET tags=? WHERE id=?", [JSON.stringify(tags), donor.id]);
+      counts.twinsFlagged++;
+    }
+  }
+
+  res.json({ ok: true, counts });
+}));
+
 app.post("/gifts/import-history", requireAuth, checkWriteAccess, wrapImport(async (req, res) => {
   const { gifts } = req.body;
   if (!Array.isArray(gifts) || !gifts.length)

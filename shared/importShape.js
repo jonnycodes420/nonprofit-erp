@@ -1295,6 +1295,45 @@ export function detectNoteMarkers(text) {
   return out;
 }
 
+// ── BUILD-80 Part 5 — GIFT TYPE IS A CLOSED VOCABULARY WITH MEANING ────────
+// blank/cash/check/cc/ach/online/venmo/stock/recurring/grant → a gift.
+// Bequest → a gift, and the donor is never solicited again. Matching Gift →
+// a gift on the CORPORATION plus a relationship link to the person in Notes;
+// no gift on the person. Pledge → a commitment, never in totals. Pledge
+// Payment → a gift, linked to its pledge. Soft Credit → a link, no money on
+// the credited person (created if new). In-Kind → recorded with FMV, never
+// cash, never a $0 gift. Refund/Reversal → negative gift; a POSITIVE
+// Reversal is an error asking for a human. Anything else → shown on the
+// mapper as an unrecognised type with count and examples.
+const GIFT_TYPE_CASH = new Set(["", "cash", "check", "credit card", "cc", "ach", "online", "venmo", "stock", "recurring", "grant", "eft", "wire", "paypal", "card"]);
+export function classifyGiftType(raw) {
+  const t = String(raw ?? "").trim().toLowerCase();
+  if (GIFT_TYPE_CASH.has(t)) return { kind: "gift" };
+  if (t === "bequest") return { kind: "gift", neverSolicit: true };
+  if (t === "matching gift" || t === "matching" || t === "corporate match") return { kind: "gift", matching: true };
+  if (t === "pledge") return { kind: "pledge" };
+  if (t === "pledge payment" || t === "pledge installment") return { kind: "pledge_payment" };
+  if (t === "soft credit" || t === "soft-credit" || t === "softcredit") return { kind: "soft_credit" };
+  if (t === "in-kind" || t === "in kind" || t === "inkind" || t === "gik") return { kind: "in_kind" };
+  if (t === "refund") return { kind: "refund" };
+  if (t === "reversal") return { kind: "reversal" };
+  return { kind: "unrecognized" };
+}
+
+// Notes-borne attribution: the person a corporate match or DAF grant belongs
+// to. "Match for Jane Smith" · "MG: Smith, Jane" · "recommended by X" ·
+// "Recommended by X, ack to donor" — the name ends at a sentence break.
+export function parseAttributionNote(note) {
+  const t = String(note || "");
+  let m = t.match(/\bmatch(?:ing gift)? for ([^,;.\n(]+)/i) || t.match(/\bMG:\s*([^;.\n(]+)/i)
+    || t.match(/\bmatching gift\s*[-\u2013\u2014]\s*([^(\n;]+?)\s*(?:\(|$)/im);
+  if (m) return { kind: "match", person: normalizeName(m[1].trim()) };
+  m = t.match(/\brecommended by ([^,;.\n(]+)/i) || t.match(/\badvised by ([^,;.\n(]+)/i)
+    || t.match(/\bper advisor:\s*([^\n(]+?)\s*donor advised fund/i);
+  if (m) return { kind: "daf", person: normalizeName(m[1].trim()) };
+  return null;
+}
+
 // ── BUILD-77 Parts 2+3 — THE ACCOUNTED TRANSACTION BUILDER ─────────────────
 // One row per gift, donor repeated: every PHYSICAL row leaves with exactly
 // one disposition — gift · donor_only · skipped(reason) · errored(reason) —
@@ -1361,6 +1400,13 @@ export function buildTransactionRows(parsed, txMap, opts = {}) {
   // a refused row gets no high-confidence drift call until it is resolved.
   const refusedByKey = new Map();
   const bumpRefused = k => { if (k) refusedByKey.set(k, (refusedByKey.get(k) || 0) + 1); };
+  // BUILD-80 Part 5 — the rows that are NOT gifts, collected for their own
+  // surfaces: pledges (commitments), in-kind (FMV records), soft credits and
+  // matching/DAF attributions (relationship links), plus the review-queue
+  // twins and the unrecognized types the mapper must show.
+  const semantics = { pledges: [], inKind: [], links: [], reviewTwins: [], unrecognizedTypes: new Map() };
+  const semanticTally = { softCredits: { rows: 0, dollars: 0 }, pledges: { rows: 0, dollars: 0 },
+    inKind: { rows: 0, dollars: 0 }, matching: { rows: 0, dollars: 0 }, pledgeScheduled: { rows: 0, dollars: 0 } };
   rows.forEach((row, i) => {
     // BUILD-79 Part 1/5 — real physical lines when the caller has them (chrome
     // removal makes "index + 2" wrong on report exports).
@@ -1536,20 +1582,112 @@ export function buildTransactionRows(parsed, txMap, opts = {}) {
       customFields: rowGiftCf,   // BUILD-78: raw, re-validated by the server seam
     });
 
+    // ── BUILD-80 Part 5 — the row's MEANING comes before its money ────────
+    const typeRaw = txMap.type ? String(row[txMap.type] || "").trim() : "";
+    const typed = classifyGiftType(typeRaw);
+    if (typed.kind === "unrecognized") {
+      const e = semantics.unrecognizedTypes.get(typeRaw) || { count: 0, examples: [] };
+      e.count++; if (e.examples.length < 3) e.examples.push({ line, name: donor.name });
+      semantics.unrecognizedTypes.set(typeRaw, e);
+    }
+    if (typed.neverSolicit) donor.doNotSolicit = true;   // a bequest's donor is never solicited
+    const attribution = parseAttributionNote(noteText);
+    // The legacy-migration twins: imported, FLAGGED for a human, never
+    // decided by the machine.
+    if (/migrated from legacy id/i.test(noteText) && /may duplicate/i.test(noteText)) {
+      semantics.reviewTwins.push({ line, name: donor.name, note: noteText.slice(0, 160) });
+    }
+
     if (!txMap.amount) { items.push({ key, donor, gift: null }); record("donor_only", null, 0, donor.name); return; }
     const money = normalizeMoney(rawAmount, moneyOpts);
     if (money.convention === "comma-decimal") conventionCounts.commaDecimal++;
     else if (money.convention === "space-thousands") conventionCounts.spaceThousands++;
-    if (money.blank) { items.push({ key, donor, gift: null }); record("skipped", "no_amount", 0, donor.name); return; }
-    if (money.value == null) { items.push({ key, donor, gift: null }); record("errored", "unparseable_amount", 0, donor.name); bumpRefused(key); return; }
-    if (money.value === 0) { items.push({ key, donor, gift: null }); record("skipped", "zero_amount", 0, donor.name); return; }
+    if (money.value == null && !money.blank) {
+      items.push({ key, donor, gift: null }); record("errored", "unparseable_amount", 0, donor.name); bumpRefused(key); return;
+    }
+    const dollars = money.blank ? 0 : money.value;
+    const externalIdVal = txMap.externalId ? String(row[txMap.externalId] || "").trim() : "";
+    const dateParse = normalizeDate(rawDate, { currentYear, dayFirst });
+    const dateVal = dateParse.value;
 
-    const { value: dateVal } = normalizeDate(rawDate, { currentYear, dayFirst });
+    if (typed.kind === "soft_credit") {
+      // Not money. A link from the credited person to the base gift (same
+      // Gift ID or a -SC suffix); the person is created if new.
+      items.push({ key, donor, gift: null });
+      semanticTally.softCredits.rows++; semanticTally.softCredits.dollars += dollars;
+      const baseGiftId = externalIdVal.replace(/-SC$/i, "");
+      semantics.links.push({ type: "soft_credit", personKey: key, personName: donor.name, personEmail: donor.email || "",
+        baseGiftExternalId: baseGiftId || undefined, dollars, date: dateVal || null, line });
+      record("skipped", "soft_credit", dollars, donor.name);
+      fileDollars += dollars;
+      return;
+    }
+    if (typed.kind === "pledge") {
+      // A commitment with an amount and a schedule — shown on the record,
+      // never in totals.
+      items.push({ key, donor, gift: null });
+      semanticTally.pledges.rows++; semanticTally.pledges.dollars += dollars;
+      semantics.pledges.push({ donorKey: key, donorName: donor.name, donorEmail: donor.email || "",
+        amount: dollars, date: dateVal || null, notes: noteText.slice(0, 500), externalId: externalIdVal || undefined, line });
+      record("skipped", "pledge_commitment", dollars, donor.name);
+      fileDollars += dollars;
+      return;
+    }
+    if (typed.kind === "in_kind") {
+      // FMV where present, description from Notes — never cash, never $0.
+      items.push({ key, donor, gift: null });
+      semanticTally.inKind.rows++; semanticTally.inKind.dollars += dollars;
+      semantics.inKind.push({ donorKey: key, donorName: donor.name, donorEmail: donor.email || "",
+        fmv: dollars || null, date: dateVal || null, description: noteText.slice(0, 300), line });
+      record("skipped", "in_kind", dollars, donor.name);
+      fileDollars += dollars;
+      return;
+    }
+    if (money.blank) { items.push({ key, donor, gift: null }); record("skipped", "no_amount", 0, donor.name); return; }
+    if (money.value === 0) { items.push({ key, donor, gift: null }); record("skipped", "zero_amount", 0, donor.name); return; }
+    if (typed.kind === "reversal" && money.value > 0) {
+      // The type says money left; the sign says it arrived. A human decides.
+      items.push({ key, donor, gift: null });
+      record("errored", "positive_reversal", money.value, donor.name);
+      fileDollars += money.value; bumpRefused(key);
+      return;
+    }
+
     if (!dateVal) { items.push({ key, donor, gift: null }); record("errored", "unparseable_date", money.value, donor.name); fileDollars += money.value; bumpRefused(key); return; }
-    if (dateVal > today) { items.push({ key, donor, gift: null }); record("errored", "future_date", money.value, donor.name); fileDollars += money.value; bumpRefused(key); return; }
+    if (dateVal > today) {
+      if (typed.kind === "pledge_payment") {
+        // A future-dated pledge payment is the pledge's SCHEDULE, not a
+        // failed row: routed to the pledge surface, never an error.
+        items.push({ key, donor, gift: null });
+        semanticTally.pledgeScheduled.rows++; semanticTally.pledgeScheduled.dollars += money.value;
+        record("skipped", "pledge_scheduled", money.value, donor.name);
+        fileDollars += money.value;
+        return;
+      }
+      items.push({ key, donor, gift: null }); record("errored", "future_date", money.value, donor.name); fileDollars += money.value; bumpRefused(key); return;
+    }
 
     const gift = mkGift(money.value);   // cents preserved — the money seam owns rounding, and it doesn't
     gift.date = dateVal;
+    if (typed.kind === "pledge_payment") {
+      const pm = noteText.match(/\bon pledge (G-[\w-]+)/i);
+      if (pm) gift.pledgeExternalRef = pm[1];
+      gift._pledgePayment = true;
+    }
+    if (typed.kind === "gift" && typed.matching) {
+      semanticTally.matching.rows++; semanticTally.matching.dollars += money.value;
+      if (attribution && attribution.person) {
+        semantics.links.push({ type: "matching_gift", personName: attribution.person,
+          corpKey: key, corpName: donor.name, giftExternalId: externalIdVal || undefined,
+          dollars: money.value, date: dateVal, line });
+      }
+    } else if (attribution && attribution.kind === "daf" && attribution.person) {
+      // BUILD-80 Part 7 — a DAF grant's recommending donor: the money stays
+      // on the institution, the person gets the relationship.
+      semantics.links.push({ type: "daf_recommendation", personName: attribution.person,
+        corpKey: key, corpName: donor.name, giftExternalId: externalIdVal || undefined,
+        dollars: money.value, date: dateVal, line });
+    }
     items.push({ key, donor, gift });
     fileDollars += money.value;
     record("gift", null, money.value, donor.name);
@@ -1572,6 +1710,56 @@ export function buildTransactionRows(parsed, txMap, opts = {}) {
     }
   }
   detectImportedSustainers(donors, gifts);
+  // BUILD-80 Part 5 — pledge status from its own payments: linked by the
+  // "on pledge G-xxxx" note first, by donor otherwise. Fully-paid (and
+  // over-paid) pledges arrive FULFILLED so no reminder ever chases a pledge
+  // the donor already finished; a pledge with payments still owed stays open
+  // (the two active pledgers keep their contractual-cadence drift exclusion).
+  {
+    const paidByRef = new Map(), paidByDonor = new Map();
+    const schedByRef = new Map(), schedByDonor = new Map(), schedDateByRef = new Map(), schedDateByDonor = new Map();
+    for (const d of dispositions) {
+      if (d.reason !== "pledge_scheduled") continue;
+      const note = String(d.raw?.[txMap.notes] ?? "");
+      const pm = note.match(/\bon pledge (G-[\w-]+)/i);
+      const nm = String(d.name || "").toLowerCase();
+      if (pm) {
+        schedByRef.set(pm[1], (schedByRef.get(pm[1]) || 0) + (d.dollars || 0));
+      } else if (nm) {
+        schedByDonor.set(nm, (schedByDonor.get(nm) || 0) + (d.dollars || 0));
+      }
+      const dRaw = txMap.date ? String(d.raw?.[txMap.date] ?? "") : "";
+      const dv = normalizeDate(dRaw, { currentYear, dayFirst }).value;
+      if (dv) {
+        const key2 = pm ? pm[1] : nm;
+        const box = pm ? schedDateByRef : schedDateByDonor;
+        if (!box.get(key2) || dv > box.get(key2)) box.set(key2, dv);
+      }
+    }
+    for (const g of gifts) {
+      if (!g._pledgePayment) continue;
+      if (g.pledgeExternalRef) paidByRef.set(g.pledgeExternalRef, (paidByRef.get(g.pledgeExternalRef) || 0) + g.amount);
+      else {
+        const dk = donors[g.donorIndex] ? (donors[g.donorIndex].email || donors[g.donorIndex].name || "").toLowerCase() : "";
+        if (dk) paidByDonor.set(dk, (paidByDonor.get(dk) || 0) + g.amount);
+      }
+    }
+    for (const p of semantics.pledges) {
+      const byRef = p.externalId ? (paidByRef.get(p.externalId) || 0) : 0;
+      const byDonor = paidByDonor.get(p.donorKey) || 0;
+      const paid = byRef || byDonor;
+      const nmKey = String(p.donorName || "").toLowerCase();
+      const scheduled = (p.externalId ? schedByRef.get(p.externalId) : 0) || schedByDonor.get(nmKey) || 0;
+      const lastSched = (p.externalId ? schedDateByRef.get(p.externalId) : null) || schedDateByDonor.get(nmKey) || null;
+      p.status = paid >= p.amount && p.amount > 0 ? "fulfilled" : "open";
+      p.paidObserved = Math.round(paid * 100) / 100;
+      p.scheduledObserved = Math.round(scheduled * 100) / 100;
+      // An open pledge whose remaining installments are SCHEDULED in the
+      // future is on schedule — due when the last installment is, so no
+      // reminder chases a donor who is paying as agreed.
+      if (p.status === "open" && lastSched && (!p.date || lastSched > p.date)) p.dueDate = lastSched;
+    }
+  }
   // BUILD-80 Part 4.3 — the conflicts, shown: "Status says Active, Notes say
   // deceased. We set deceased." Most restrictive already won (flags OR); this
   // is the sentence a human reads before trusting the record.
@@ -1597,6 +1785,14 @@ export function buildTransactionRows(parsed, txMap, opts = {}) {
                  date: (txMap.date && d.raw && d.raw[txMap.date]) ? String(d.raw[txMap.date]) : "" }));
   return {
     donors, gifts, dispositions, flaggedRows, largestGifts, exclusionConflicts,
+    semantics: {
+      pledges: semantics.pledges,
+      inKind: semantics.inKind,
+      links: semantics.links,
+      reviewTwins: semantics.reviewTwins,
+      unrecognizedTypes: [...semantics.unrecognizedTypes.entries()].map(([type, e]) => ({ type, count: e.count, examples: e.examples })),
+      tally: Object.fromEntries(Object.entries(semanticTally).map(([k, v]) => [k, { rows: v.rows, dollars: Math.round(v.dollars * 100) / 100 }])),
+    },
     amountConventions: { ...conventionCounts, column: amountConv ? amountConv.columnConvention : "us" },
     dateConvention: dateConv ? { ...dateConv, applied: dateConvApplied } : null,
     file: {

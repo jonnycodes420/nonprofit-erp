@@ -162,6 +162,13 @@ const IMPORT_REASON_LABELS = {
   already_in_steward: "already in Steward before this import",
   already_on_file: "already in Steward before this import", // legacy key from older servers
   duplicate_within_this_import: "duplicate rows within this file (collapsed)",
+  // BUILD-80 Part 5 — rows that are not gifts, routed to their own surfaces
+  soft_credit: "soft credits — a link to the real gift, never money",
+  pledge_commitment: "pledge commitments — on the record, never in totals",
+  pledge_scheduled: "future pledge installments — the schedule, not failed rows",
+  in_kind: "in-kind gifts — recorded at fair market value, never cash",
+  positive_reversal: "reversals with a POSITIVE amount — a human must decide",
+  unrecognized_exclusion_value: "unrecognised value in an exclusion column",
 };
 
 // The slice of an analyzeSheetRows result the importers carry as the parse
@@ -925,6 +932,24 @@ export function DonorImport({ onClose, onImported, withHistory = false }) {
         totals.amountConventions = payloadForSummary.amountConventions || null;
         totals.dateConvention = payloadForSummary.dateConvention || null;
         totals.exclusionConflicts = payloadForSummary.exclusionConflicts || [];
+        totals.semantics = payloadForSummary.semantics || null;
+        // BUILD-80 Part 5/7 — the semantic rows land in ONE follow-up call:
+        // pledges to the pledges table, in-kind as FMV records, soft credits
+        // and matching/DAF attributions as relationship links.
+        if (payloadForSummary.semantics && (payloadForSummary.semantics.pledges.length || payloadForSummary.semantics.inKind.length || payloadForSummary.semantics.links.length || payloadForSummary.semantics.reviewTwins.length)) {
+          try {
+            const semRes = await apiFetch("/donors/import-semantics", { method: "POST", body: JSON.stringify({
+              pledges: payloadForSummary.semantics.pledges.map(p => ({ ...p, dueDate: p.dueDate })),
+              inKind: payloadForSummary.semantics.inKind,
+              links: payloadForSummary.semantics.links,
+              reviewTwins: payloadForSummary.semantics.reviewTwins,
+            }) });
+            totals.semanticsApplied = semRes?.counts || null;
+          } catch (e) {
+            console.error("[import] semantics call failed:", e);
+            totals.semanticsError = e.message || "the pledge/in-kind/link rows could not be recorded";
+          }
+        }
       }
       // ── BUILD-79 Part 3 — the file-level equation exists on EVERY path.
       // The aggregate/wide paths used to show only the server's payload-scoped
@@ -1460,6 +1485,45 @@ export function DonorImport({ onClose, onImported, withHistory = false }) {
               )}
             </div>;
           })()}
+          {/* BUILD-80 Part 5.2 — the rows that are NOT gifts, each on its own
+              line with rows and dollars, outside net cash. */}
+          {result.semantics?.tally && (() => {
+            const t = result.semantics.tally;
+            const money = n => "$" + Number(n || 0).toLocaleString(undefined, { maximumFractionDigits: 2 });
+            const rows = [
+              ["Soft credits", t.softCredits, "a link to the real gift — no money on the credited person"],
+              ["Pledge commitments", t.pledges, "on the donor's record, never in totals"],
+              ["Future pledge installments", t.pledgeScheduled, "the schedule — money that hasn't arrived yet"],
+              ["In-kind gifts", t.inKind, "recorded at fair market value, never cash"],
+              ["Corporate matching gifts", t.matching, "counted as cash on the CORPORATION; the person gets the relationship"],
+            ].filter(([, v]) => v && v.rows > 0);
+            if (!rows.length) return null;
+            return <div style={{textAlign:"left",background:T.bg2,border:`1px solid ${T.bg3}`,borderRadius:10,padding:"12px 16px",marginBottom:16,fontSize:12,lineHeight:1.8}}>
+              <div style={{fontSize:10,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",color:T.ink3,marginBottom:6}}>
+                Rows that are not gifts — tracked on their own surfaces
+              </div>
+              {rows.map(([label, v, hint]) => (
+                <div key={label}>
+                  <div style={{display:"flex",justifyContent:"space-between",gap:12,color:T.ink}}>
+                    <span>{label}</span>
+                    <span style={{fontVariantNumeric:"tabular-nums"}}>{v.rows.toLocaleString()} · {money(v.dollars)}</span>
+                  </div>
+                  <div style={{paddingLeft:12,color:T.ink3,fontSize:11}}>{hint}</div>
+                </div>
+              ))}
+              {result.semanticsApplied && (
+                <div style={{marginTop:6,paddingTop:6,borderTop:`1px solid ${T.bg3}`,color:T.ink3,fontSize:11}}>
+                  Recorded: {result.semanticsApplied.pledges} pledge{result.semanticsApplied.pledges===1?"":"s"} · {result.semanticsApplied.inKind} in-kind · {result.semanticsApplied.links} relationship link{result.semanticsApplied.links===1?"":"s"}{result.semanticsApplied.personsCreated ? ` · ${result.semanticsApplied.personsCreated} people created from links` : ""}{result.semanticsApplied.twinsFlagged ? ` · ${result.semanticsApplied.twinsFlagged} possible duplicates flagged for review` : ""}
+                </div>
+              )}
+              {result.semanticsError && (
+                <div style={{marginTop:6,color:T.terracotta,fontSize:11}}>These rows could not be recorded: {result.semanticsError}</div>
+              )}
+              {result.semantics.reviewTwins?.length > 0 && (
+                <div style={{marginTop:4,color:T.ink3,fontSize:11}}>{result.semantics.reviewTwins.length} rows say "migrated from legacy ID … may duplicate" — imported and flagged for a human, never decided by the machine.</div>
+              )}
+            </div>;
+          })()}
           {/* BUILD-80 Part 1.4 — THE LARGEST GIFTS, before anything trusts
               them. A number that is 10% of the file in one row is a parse
               error until a human says otherwise; a $200,000 row next to
@@ -1874,6 +1938,15 @@ export function DonorImport({ onClose, onImported, withHistory = false }) {
                   {dateConvEvidence.convention === "mdy"
                     ? `${dateConvEvidence.slashCells.toLocaleString()} dates use month/day/year — ${dateConvEvidence.monthFirstEvidence.toLocaleString()} would have been impossible the other way.`
                     : `${dateConvEvidence.slashCells.toLocaleString()} slash dates are all ambiguous — read as US month/day/year by default.`}
+                </div>
+              )}
+              {/* BUILD-80 Part 5 — unrecognised gift types, shown before the
+                  write with count and examples. */}
+              {payload?.semantics?.unrecognizedTypes?.length > 0 && (
+                <div style={{background:T.bg2,border:`1px solid ${T.bg3}`,borderRadius:8,padding:"8px 12px",marginTop:8,fontSize:12,color:T.ink,lineHeight:1.5}}>
+                  <strong>Gift types we don't recognise:</strong>{" "}
+                  {payload.semantics.unrecognizedTypes.map(u => `“${u.type}” (${u.count}${u.examples?.[0] ? `, e.g. line ${u.examples[0].line}` : ""})`).join(" · ")}
+                  {" — "}these rows import as ordinary gifts with the type kept as written.
                 </div>
               )}
               {dateConvEvidence?.convention === "mixed" && (

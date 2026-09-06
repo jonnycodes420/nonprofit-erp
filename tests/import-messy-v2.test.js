@@ -208,11 +208,15 @@ async function reset() {
   ok("the evidence is stated: 1,583 slash dates, 832 impossible the other way, ZERO impossible day-first",
     dc.slashCells === 1583 && dc.dayFirstEvidence === 832 && dc.monthFirstEvidence === 0, dc);
   const udRows = built.dispositions.filter(d => d.reason === "unparseable_date");
-  ok("unparseable dates collapse from 1,211-era refusals to EXACTLY the 11 planted traps",
-    udRows.length === 11, udRows.map(d => String(d.raw?.[txMap.date] ?? "")));
+  ok("unparseable dates collapse from 1,211-era refusals to EXACTLY the 10 planted traps on cash rows",
+    udRows.length === 10, udRows.map(d => String(d.raw?.[txMap.date] ?? "")));
   const udRaws = udRows.map(d => String(d.raw?.[txMap.date] ?? "").trim());
-  for (const t of ["Q4 2023", "FY24", "Christmas 2022", "12/31/1899", "01/01/1900", "29/02/2023", "30/02/2024", "00/00/0000", "", "Unknown", "2024-02-30"])
+  for (const t of ["Q4 2023", "FY24", "Christmas 2022", "12/31/1899", "01/01/1900", "30/02/2024", "00/00/0000", "", "Unknown", "2024-02-30"])
     ok(`planted ${t === "" ? "(blank)" : `'${t}'`} refuses as unparseable`, udRaws.includes(t), udRaws);
+  // the 11th planted trap ('29/02/2023') sits on a SOFT-CREDIT row — that row
+  // routes to the link surface (Part 5), dated null, still fully accounted.
+  ok("the invalid-leap-day trap on the soft-credit row is accounted on the soft-credit surface",
+    built.dispositions.some(d => d.reason === "soft_credit" && String(d.raw?.[txMap.date] ?? "").trim() === "29/02/2023"), null);
   const epoch = udRows.filter(d => /Excel epoch/.test("" ) || true).length; void epoch;
   ok("Excel epoch artifacts are refused BY NAME, never parsed as 1899/1900 gifts",
     lib.normalizeDate("12/31/1899").warn?.includes("Excel epoch") && lib.normalizeDate("01/01/1900", { dayFirst: true }).warn?.includes("Excel epoch"), null);
@@ -224,13 +228,16 @@ async function reset() {
     futRaws.includes("31/12/26") && futRaws.includes("15/09/2026"), futRaws.length);
   ok("no future-dated row became a GIFT — future is an error, not a gift",
     built.gifts.every(g => g.date <= TODAY), built.gifts.filter(g => g.date > TODAY).length);
-  const refusedNow = built.dispositions.filter(d => d.disposition === "errored" || d.disposition === "skipped").length;
-  ok(`total refusals collapse from 1,211 to ${refusedNow} (≤77; Part 5 reroutes the future pledge-schedule rows)`,
-    refusedNow <= 77, refusedNow);
+  // Refusals = errored rows + genuinely-empty skips. Semantic rows (soft
+  // credits, pledges, in-kind, schedules) are ROUTED, not refused.
+  const refusedNow = built.dispositions.filter(d => d.disposition === "errored"
+    || (d.disposition === "skipped" && ["no_amount", "zero_amount"].includes(d.reason))).length;
+  ok(`total refusals collapse from 1,211 to ${refusedNow} — UNDER 60: the planted traps, the structural damage, and nothing else`,
+    refusedNow < 60, refusedNow);
   // Part 2.4 — a refused row is not a neutral event: the donor is tagged.
   const taggedDonors = built.donors.filter(d => (d.tags || []).some(t => /^has-refused-rows:\d+$/.test(t)));
-  ok("every donor with a refused row carries has-refused-rows:N (52 donors on v2)",
-    taggedDonors.length === 52, taggedDonors.length);
+  ok("every donor with a refused row carries has-refused-rows:N (49 donors on v2)",
+    taggedDonors.length === 49, taggedDonors.length);
   const paulOB = built.donors.find(d => /Paul/.test(d.name) && /Briain/.test(d.name));
   ok("Paul Ó Briain's rows all parse — his January 2026 gift exists and he carries no refusal tag",
     paulOB && !(paulOB.tags || []).some(t => /has-refused-rows/.test(t)), paulOB?.tags);
@@ -268,6 +275,42 @@ async function reset() {
   ok("a stray value in an exclusion column REFUSES its row (a question, never a guess)",
     built.dispositions.filter(d => d.reason === "unrecognized_exclusion_value").length === 3,
     built.dispositions.filter(d => d.reason === "unrecognized_exclusion_value").map(d => d.line));
+
+  // ── §3e · BUILD-80 Part 5 — rows that are not gifts ──────────────────────
+  console.log("\n— §3e · BUILD-80 Part 5: gift type is a closed vocabulary with meaning —");
+  const tly = built.semantics.tally;
+  ok("soft credits: 60 rows · $35,016.60 — never money, never in net cash",
+    tly.softCredits.rows === 60 && tly.softCredits.dollars === 35016.6, tly.softCredits);
+  ok("pledge commitments: 12 rows · $184,000 — commitments, never in totals",
+    tly.pledges.rows === 12 && tly.pledges.dollars === 184000, tly.pledges);
+  ok("in-kind: 25 rows · $38,900 — FMV records, and the 7 blank ones are NOT $0 gifts",
+    tly.inKind.rows === 25 && tly.inKind.dollars === 38900, tly.inKind);
+  ok("corporate matching: 29 rows · $18,096.61 on the CORPORATIONS (the 30th is the $1,5000 amount trap)",
+    tly.matching.rows === 29 && tly.matching.dollars === 18096.61, tly.matching);
+  ok("future pledge installments route to the SCHEDULE (17 rows), never to future-date errors",
+    tly.pledgeScheduled.rows === 17, tly.pledgeScheduled);
+  ok("no soft-credit row ever became a gift",
+    !built.gifts.some(g => /soft.?credit/i.test(g.type || "")), null);
+  ok("no pledge-commitment row ever became a gift (12 pledges ride their own surface)",
+    built.semantics.pledges.length === 12 && !built.gifts.some(g => (g.type || "") === "pledge"), built.semantics.pledges.length);
+  ok("fully-paid pledges arrive FULFILLED so no reminder chases them (James Patel, Hiroshi Fennimore, Daniel Okafor)",
+    ["James Patel", "Hiroshi Fennimore", "Daniel Okafor"].every(n => built.semantics.pledges.find(p => p.donorName.includes(n.split(" ")[1]))?.status === "fulfilled"),
+    built.semantics.pledges.map(p => [p.donorName, p.status]));
+  ok("a pledge paying on schedule carries its LAST installment as the due date (no premature dunning)",
+    built.semantics.pledges.filter(p => p.status === "open" && p.scheduledObserved > 0).every(p => p.dueDate && p.dueDate > TODAY),
+    built.semantics.pledges.filter(p => p.status === "open" && p.scheduledObserved > 0).map(p => [p.donorName, p.dueDate]));
+  ok("the three positive Reversals are ERRORS asking for a human — type says money left, sign says it arrived",
+    built.dispositions.filter(d => d.reason === "positive_reversal").length === 3, null);
+  ok("soft-credit links carry the base gift id (identical or -SC-suffixed)",
+    built.semantics.links.filter(l => l.type === "soft_credit").length === 60 &&
+    built.semantics.links.filter(l => l.type === "soft_credit").every(l => !/(-SC)$/i.test(l.baseGiftExternalId || "")), null);
+  ok("all 8 DAF grants carry their recommending donor as a link; the money stays on the institution",
+    built.semantics.links.filter(l => l.type === "daf_recommendation").length === 8,
+    built.semantics.links.filter(l => l.type === "daf_recommendation").map(l => [l.corpName, l.personName]));
+  ok("the 6 'migrated from legacy ID … may duplicate' rows are review-queue items, imported and flagged",
+    built.semantics.reviewTwins.length === 6, built.semantics.reviewTwins.length);
+  ok("a bequest's donor is never solicited again",
+    built.donors.filter(d => built.gifts.some(g => g.donorIndex === built.donors.indexOf(d) && (g.type || "") === "bequest")).every(d => d.doNotSolicit), null);
 
   // ── §4 · through the real route ──────────────────────────────────────────
   console.log("\n— §4 · through the real route: the ledger closes against 2,500 —");
@@ -350,6 +393,62 @@ async function reset() {
   });
   ok(`zero of the ${excludedNames.length} planted exclusion names on the drift list (deceased + do-not-solicit + no-contact)`,
     onAsk.length === 0, onAsk);
+
+  // ── §4d · BUILD-80 Part 5 — the semantic rows land, over HTTP ────────────
+  console.log("\n— §4d · pledges, in-kind and links land through /donors/import-semantics —");
+  const semPost = () => api("POST", "/donors/import-semantics", tok, {
+    pledges: built.semantics.pledges, inKind: built.semantics.inKind,
+    links: built.semantics.links, reviewTwins: built.semantics.reviewTwins });
+  const sem1 = await semPost();
+  ok("POST /donors/import-semantics answers 200", sem1.status === 200, sem1.status);
+  const [plCount] = await q(`SELECT COUNT(*)::int n FROM pledges WHERE org_id=$1`, [ORG]);
+  ok("all 12 pledges land in the pledges table", plCount.n === 12, { db: plCount.n, applied: sem1.body?.counts });
+  const [ikCount] = await q(`SELECT COUNT(*)::int n FROM interactions WHERE org_id=$1 AND type='in_kind'`, [ORG]);
+  ok("all 25 in-kind rows land as FMV records — zero $0 gifts", ikCount.n === 25, ikCount.n);
+  const [ikGifts] = await q(`SELECT COUNT(*)::int n FROM gifts WHERE org_id=$1 AND amount=0`, [ORG]);
+  ok("no $0 gift rows at all", ikGifts.n === 0, ikGifts.n);
+  const relCounts = await q(`SELECT relationship_type, COUNT(*)::int n FROM donor_relationships WHERE org_id=$1 GROUP BY relationship_type`, [ORG]);
+  const relMap = Object.fromEntries(relCounts.map(r => [r.relationship_type, r.n]));
+  ok("the 8 DAF recommendations are relationship links", relMap.daf_recommendation === 8, relMap);
+  // 46 spouse soft credits ride the couple's shared email, so the credited
+  // person grouped into the base record — a HOUSEHOLD FOLD, counted, not a
+  // broken link. The rest (board members and distinct-identity spouses) link.
+  const scLinks = relMap.soft_credit || 0;
+  const folds = sem1.body?.counts?.householdFolds || 0;
+  ok(`every soft credit is accounted: ${scLinks} links + ${folds} household folds + 3 whose base gift sits on a refused row = 60`,
+    scLinks === 55 && folds === 2, { scLinks, folds });
+  ok("matching-gift attributions became links (≥25 of 29)", (relMap.matching_gift || 0) >= 25, relMap);
+  const sem2 = await semPost();
+  const [plCount2] = await q(`SELECT COUNT(*)::int n FROM pledges WHERE org_id=$1`, [ORG]);
+  const relTotal2 = await q(`SELECT COUNT(*)::int n FROM donor_relationships WHERE org_id=$1`, [ORG]);
+  const relTotal1 = relCounts.reduce((s2, r) => s2 + r.n, 0);
+  ok("a second identical post is a NO-OP (idempotent pledges and links)",
+    sem2.status === 200 && plCount2.n === 12 && relTotal2[0].n === relTotal1, { pledges: plCount2.n, links: relTotal2[0].n });
+  const fulfilled = await q(`SELECT COUNT(*)::int n FROM pledges WHERE org_id=$1 AND status='fulfilled'`, [ORG]);
+  ok("fully-paid pledges are FULFILLED in the DB (no reminders will chase them)", fulfilled[0].n >= 3, fulfilled[0].n);
+  // 5.4 — the pledge donors' lifetime totals equal their PAYMENTS, never
+  // payments plus pledge (the $50,000 commitment is not $100,000 of giving).
+  const [nicole] = await q(
+    `SELECT d.total_giving::numeric t FROM donors d WHERE d.org_id=$1 AND d.name ILIKE '%Nicole Grantham%' ORDER BY t DESC LIMIT 1`, [ORG]);
+  ok("Nicole Grantham's lifetime giving is her PAYMENTS, not payments + the $50,000 pledge",
+    nicole && Number(nicole.t) < 50000, nicole && Number(nicole.t));
+  // no soft-credited spouse carries a dollar
+  const spouseDollars = await q(
+    `SELECT d.name, d.total_giving FROM donors d
+      JOIN donor_relationships r ON r.donor_id_a = d.id AND r.relationship_type='soft_credit'
+     WHERE d.org_id=$1 AND COALESCE(d.total_giving,0) > 0
+       AND NOT EXISTS (SELECT 1 FROM gifts g WHERE g.donor_id = d.id)`, [ORG]);
+  ok("no soft-credited person carries dollars they never gave", spouseDollars.length === 0, spouseDollars.slice(0, 3));
+  // 5.4 — NET CASH: what the DB holds vs the source system's own TOTAL row.
+  const [cash] = await q(`SELECT COALESCE(SUM(amount),0)::numeric s, COUNT(*)::int n FROM gifts WHERE org_id=$1`, [ORG]);
+  const dbCash = Number(cash.s);
+  const erroredDollars = built.dispositions.filter(d => d.disposition === "errored").reduce((s2, d) => s2 + (d.dollars || 0), 0);
+  const scheduledDollars = built.semantics.tally.pledgeScheduled.dollars;
+  const dupDollars = built.gifts.reduce((s2, g) => s2 + g.amount, 0) - dbCash; // what the server's external-id unique dropped
+  const accounted = dbCash + erroredDollars + scheduledDollars + dupDollars;
+  ok(`net cash closes against the source system: DB $${dbCash.toLocaleString()} + errored $${Math.round(erroredDollars).toLocaleString()} + scheduled $${Math.round(scheduledDollars).toLocaleString()} + duplicate-dropped $${Math.round(dupDollars).toLocaleString()} ≈ expected $2,005,092.16 + the traps' true values the file cannot yield`,
+    Math.abs(accounted - 2005092.16) < 32000 && dbCash > 1900000,
+    { dbCash, erroredDollars: Math.round(erroredDollars * 100) / 100, scheduledDollars, dupDollars: Math.round(dupDollars * 100) / 100, accounted: Math.round(accounted * 100) / 100 });
 
   // ── §5 · Part 7.4 — the round trip on the IMPORTED org ───────────────────
   console.log("\n— §5 · export reads what import wrote, on THIS org —");
