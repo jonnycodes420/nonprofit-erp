@@ -113,6 +113,21 @@ const rgb = s => (s.match(/\d+/g) || []).slice(0, 3).map(Number);
      !SOCIAL_PROOF.some(re => re.test(text)), SOCIAL_PROOF.filter(re => re.test(text)).map(String));
   const imgs = await page.evaluate(() => [...document.querySelectorAll("img")].map(i => i.getAttribute("src") || ""));
   ok("no logo-bar imagery", !imgs.some(s => /logo|client|partner/i.test(s)), imgs);
+  // FIX after BUILD-81 — section two got its pictures back: the three
+  // how-it-works cards are REAL screenshots of the product (webp, 1x + 2x),
+  // each with intrinsic dimensions (CLS stays 0.0000) and real alt text.
+  const hiw = await page.evaluate(() => [...document.querySelectorAll("#how-it-works img")].map(i => ({
+    src: i.getAttribute("src"), w: Number(i.getAttribute("width")) || 0, h: Number(i.getAttribute("height")) || 0,
+    alt: (i.getAttribute("alt") || "").trim(), loading: i.getAttribute("loading"),
+    loaded: i.naturalWidth > 0,
+  })));
+  ok("three product screenshots inside #how-it-works, each with intrinsic dimensions",
+     hiw.length === 3 && hiw.every(i => i.w > 100 && i.h > 50), hiw);
+  ok("…each with real, non-empty alt text (a screen reader hears the screen, not a filename)",
+     hiw.every(i => i.alt.length > 20 && !/\.webp|\.png/i.test(i.alt)), hiw.map(i => i.alt));
+  ok("…each actually loads (no broken image ships)", hiw.every(i => i.loaded), hiw);
+  ok('the retired caption is gone — "drawn in code" absent from rendered text',
+     !/drawn in code/i.test(text), null);
   ok("the 43%-class stat is attributed to the Fundraising Effectiveness Project",
      /Fundraising Effectiveness Project/.test(text), null);
   ok('"full-year 2025" is intact — FEP rebased in Q1 2026 and now headlines a QUARTERLY figure',

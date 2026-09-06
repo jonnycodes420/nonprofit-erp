@@ -172,6 +172,14 @@ function serveDist() {
      !BANNED.some(re => re.test(text)), BANNED.filter(re => re.test(text)).map(String));
   ok("no invented social proof (no testimonial, logo bar, review score or customer count)",
      !/trusted by|as seen in|\d+\s*(customers|nonprofits) use|★|rated \d/i.test(text), null);
+  // FIX after BUILD-81: the how-it-works cards are real screenshots.
+  const hiw = await page.evaluate(() => [...document.querySelectorAll("#how-it-works img")].map(i => ({
+    w: Number(i.getAttribute("width")) || 0, h: Number(i.getAttribute("height")) || 0,
+    alt: (i.getAttribute("alt") || "").trim(), loaded: i.naturalWidth > 0,
+  })));
+  ok("three real screenshots in #how-it-works: intrinsic dimensions, real alt, all loading",
+     hiw.length === 3 && hiw.every(i => i.w > 100 && i.h > 50 && i.alt.length > 20 && i.loaded), hiw);
+  ok('the "drawn in code" caption is gone', !/drawn in code/i.test(text), null);
   ok("no em dash in the rendered copy (Jonathan's voice uses periods)", !text.includes("—"), null);
 
   // ── §6 · copy that must not change ─────────────────────────────────────

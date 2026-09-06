@@ -127,61 +127,12 @@ function DonorField({ count, size, gap, label, className = "" }) {
   );
 }
 
-// ── HOW IT WORKS — three beats, tight renders of the REAL Part 1 UI ─────────
-// These are live DOM (never rasters of text): the same layout, copy shapes
-// and defaults the app ships. Values are sample-labeled by the section
-// footer line. Names invented; no fixture or production donor shares them.
-
-function BeatLogIt() {
-  const chip = (label, on) => (
-    <span style={{
-      background: on ? C.greenDk : "rgba(15,26,18,0.06)", color: on ? C.cream : C.ink3,
-      borderRadius: 6, padding: "4px 9px", fontSize: 11, fontWeight: 600, whiteSpace: "nowrap",
-    }}>{label}</span>
-  );
-  return (
-    <div aria-hidden="true" style={{ background: "#FFFFFF", border: "1px solid rgba(15,26,18,0.12)", borderRadius: 10, padding: 16, display: "flex", flexDirection: "column", gap: 10 }}>
-      <div style={{ fontSize: 12, fontWeight: 800, color: C.ink }}>Log a conversation</div>
-      <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
-        {chip("Call · reached", true)}{chip("Meeting")}{chip("Email sent")}
-      </div>
-      <div style={{ background: C.cream, border: "1px solid rgba(15,26,18,0.12)", borderRadius: 7, padding: "8px 10px", fontSize: 12, color: C.ink }}>
-        Asked about the fall appeal. She wants the impact report first.
-      </div>
-    </div>
-  );
-}
-
-function BeatComesBack() {
-  return (
-    <div aria-hidden="true" style={{ background: "#FFFFFF", border: "1px solid rgba(15,26,18,0.12)", borderRadius: 10, padding: 16, display: "flex", flexDirection: "column", gap: 8 }}>
-      <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.1em", color: C.ink3 }}>NEXT STEP</div>
-      <div style={{ display: "flex", alignItems: "baseline", gap: 10, borderLeft: `3px solid ${C.greenDk}`, paddingLeft: 10 }}>
-        <span style={{ fontSize: 13, fontWeight: 700, color: C.ink }}>Follow up</span>
-        <span style={{ fontSize: 12, color: C.ink3 }}>due in 7 days</span>
-      </div>
-      <div style={{ fontSize: 11.5, color: C.ink3, lineHeight: 1.5 }}>
-        Prefilled from what you logged. Change it, or skip it. Skipping is recorded as skipped.
-      </div>
-    </div>
-  );
-}
-
-function BeatKeepsAsking() {
-  const row = (subj, strong) => (
-    <div style={{
-      background: strong ? C.cream : "rgba(15,26,18,0.04)", border: "1px solid rgba(15,26,18,0.1)",
-      borderRadius: 7, padding: "8px 10px", fontSize: 12, color: C.ink, fontWeight: strong ? 700 : 500,
-    }}>{subj}</div>
-  );
-  return (
-    <div aria-hidden="true" style={{ background: "#FFFFFF", border: "1px solid rgba(15,26,18,0.12)", borderRadius: 10, padding: 16, display: "flex", flexDirection: "column", gap: 8 }}>
-      <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.1em", color: C.ink3 }}>MONDAY&apos;S EMAIL · THEN THE NEXT MONDAY&apos;S</div>
-      {row("1 thread open · L. Okonjo, day 3", false)}
-      {row("1 thread open · L. Okonjo, day 10", true)}
-    </div>
-  );
-}
+// ── HOW IT WORKS — three beats, REAL screenshots of the product ─────────────
+// Captured from the demo org by `scripts/build81-capture.js --landing-shots`
+// (1440, DPR 2, cropped tight, 1x + 2x webp). Re-capture there when the UI
+// changes and paste the printed intrinsic dimensions below — width/height
+// keep CLS at 0.0000. Donor names in the shots are the demo file's own
+// fiction (the capture skips the Atkinson records).
 
 function CalendlyModal({ onClose }) {
   useEffect(() => {
@@ -290,6 +241,7 @@ const STYLES = `
   .lp-sechead { display: flex; justify-content: space-between; align-items: flex-end; gap: 40px; flex-wrap: wrap; margin-bottom: 56px; }
 
   .lp-beats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; }
+  .lp-shot { width: 100%; height: auto; display: block; border-radius: 10px; border: 1px solid rgba(15, 26, 18, 0.12); background: #FFFFFF; }
   .lp-beat { background: ${C.cream}; border: 1px solid rgba(15, 26, 18, 0.1); border-radius: 14px; padding: 26px; display: flex; flex-direction: column; gap: 20px; box-shadow: 0 14px 40px rgba(15, 26, 18, 0.06); }
 
   .lp-split { display: grid; grid-template-columns: 1fr 1fr; gap: 64px; align-items: center; max-width: 1440px; margin: 0 auto; }
@@ -418,7 +370,14 @@ export default function Landing() {
             </div>
             <div className="lp-beats">
               <article className="lp-beat">
-                <BeatLogIt />
+                <img
+                  className="lp-shot"
+                  src="/hiw-log.webp"
+                  srcSet="/hiw-log.webp 1x, /hiw-log-2x.webp 2x"
+                  width="454" height="214"
+                  alt="The Log a conversation panel on a donor's record: touch-type chips with Call reached selected, and one line typed about the scholarship fund."
+                  loading="lazy" decoding="async"
+                />
                 <div>
                   <h3 className="lp-serif" style={{ fontSize: 24, lineHeight: 1.2, marginBottom: 8 }}>Log it.</h3>
                   <p style={{ fontSize: 15, lineHeight: 1.65, color: C.ink3 }}>
@@ -427,7 +386,14 @@ export default function Landing() {
                 </div>
               </article>
               <article className="lp-beat">
-                <BeatComesBack />
+                <img
+                  className="lp-shot"
+                  src="/hiw-nextstep.webp"
+                  srcSet="/hiw-nextstep.webp 1x, /hiw-nextstep-2x.webp 2x"
+                  width="456" height="108"
+                  alt="The next-step prompt in the same flow, prefilled with the default: Follow up, dated seven days out."
+                  loading="lazy" decoding="async"
+                />
                 <div>
                   <h3 className="lp-serif" style={{ fontSize: 24, lineHeight: 1.2, marginBottom: 8 }}>The next step comes back.</h3>
                   <p style={{ fontSize: 15, lineHeight: 1.65, color: C.ink3 }}>
@@ -436,7 +402,14 @@ export default function Landing() {
                 </div>
               </article>
               <article className="lp-beat">
-                <BeatKeepsAsking />
+                <img
+                  className="lp-shot"
+                  src="/hiw-thread.webp"
+                  srcSet="/hiw-thread.webp 1x, /hiw-thread-2x.webp 2x"
+                  width="760" height="212"
+                  alt="The Thread on the home screen: three open conversations with their next steps, the oldest overdue at day 11."
+                  loading="lazy" decoding="async"
+                />
                 <div>
                   <h3 className="lp-serif" style={{ fontSize: 24, lineHeight: 1.2, marginBottom: 8 }}>It keeps asking.</h3>
                   <p style={{ fontSize: 15, lineHeight: 1.65, color: C.ink3 }}>
@@ -445,9 +418,6 @@ export default function Landing() {
                 </div>
               </article>
             </div>
-            <p style={{ fontSize: 13, color: C.ink3, marginTop: 26 }}>
-              These are the product&apos;s own screens, drawn in code with sample values.
-            </p>
           </div>
         </section>
 
