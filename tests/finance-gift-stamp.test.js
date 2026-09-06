@@ -25,7 +25,7 @@ const { BASE, ok, summary, login, api, q, closeDb } = require("./helpers");
 const { findManualDupes } = require("../scripts/dedupe-finance-gift-stamps");
 
 const ORG_A = "org_gstamp_a", ORG_B = "org_gstamp_b";
-const today = new Date().toISOString().slice(0, 10);
+const today = require("./helpers").civilToday();
 
 async function fixture() {
   for (const org of [ORG_A, ORG_B]) {

@@ -86,4 +86,10 @@ async function closeDb() { if (_pool) await _pool.end(); }
 const SINK_PORT        = Number(process.env.SINK_PORT || 5602);
 const STRIPE_MOCK_PORT = Number(process.env.STRIPE_MOCK_PORT || 5603);
 
-module.exports = { BASE, ok, summary, login, api, wireSize, q, closeDb, SINK_PORT, STRIPE_MOCK_PORT };
+// The server's "today" is the ORG's civil date (orgTime.js, default
+// America/New_York) — a test that stamps a gift with UTC-today submits a
+// FUTURE date every evening after 8pm Eastern and the import refuses it.
+// Tests that date something "today" must use the same civil clock.
+const civilToday = () => new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York" }).format(new Date());
+
+module.exports = { BASE, ok, summary, login, api, wireSize, q, closeDb, SINK_PORT, STRIPE_MOCK_PORT, civilToday };

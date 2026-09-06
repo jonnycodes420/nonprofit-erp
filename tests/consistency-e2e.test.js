@@ -31,7 +31,7 @@ const { BASE, ok, summary, login, api, q, closeDb } = require("./helpers");
 const WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET || "whsec_localtest";
 const A = "org_ce2e_a", B = "org_ce2e_b", C = "org_ce2e_c";
 const ACCT_A = "acct_ce2e_a";
-const today = new Date().toISOString().slice(0, 10);
+const today = require("./helpers").civilToday();
 const daysAgo = n => new Date(Date.now() - n * 86400000).toISOString().slice(0, 10);
 const num = v => (v == null || v === "" || isNaN(Number(v)) ? 0 : Number(v));
 const close = (a, b) => Math.abs(num(a) - num(b)) < 1;

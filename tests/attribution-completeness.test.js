@@ -40,7 +40,7 @@ const ORG_A = "org_ac_a";
 const ORG_B = "org_ac_b";
 const ACCT_A = "acct_ac_a";
 const iso = d => d.toISOString().slice(0, 10);
-const TODAY = iso(new Date());
+const TODAY = require("./helpers").civilToday();
 const SECRET = process.env.STRIPE_WEBHOOK_SECRET || "whsec_localtest";
 
 async function fixture() {
