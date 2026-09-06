@@ -52,7 +52,7 @@ async function reset() {
   await q(`INSERT INTO accounts (id,org_id,code,name,type) VALUES ('acct_b81t4010',$1,'4010','Contributions','revenue')`, [ORG]);
   await q(`INSERT INTO fin_funds (id,org_id,name,restricted) VALUES ('fund_b81t',$1,'General',false)`, [ORG]);
   const donors = [
-    ["d_b81_ruth", "Ruth Harmon", "ruth@b81.test", {}],
+    ["d_b81_ruth", "Ruth Halloran", "ruth@b81.test", {}],
     ["d_b81_bill", "Bill Okafor", "bill@b81.test", {}],
     ["d_b81_mei",  "Mei Tanaka", "mei@b81.test", {}],
     ["d_b81_gary", "Gary Voss", "gary@b81.test", {}],

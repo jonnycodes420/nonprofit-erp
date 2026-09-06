@@ -1,25 +1,29 @@
-// BUILD-73 Part 4 — THE LANDING PAGE, IN A REAL BROWSER.
+// BUILD-81 Part 4 — THE LANDING PAGE, IN A REAL BROWSER.
 //
-// tests/donor-field.test.js proves the field's MATH. This proves the page
-// actually renders it, and pins the four things a green build would otherwise
-// say nothing about:
+// The page was rebuilt around THE THREAD: hero question → how-it-works →
+// when-a-card-stops → Drift (the ONE dot field, moved down as evidence, FEP
+// caption intact) → the record → your data → closing. This suite is the
+// local pre-push mirror of scripts/landing-prod-verify.js and pins:
 //
-//   1. REDUCED MOTION. The entrance wave lives inside a
-//      prefers-reduced-motion: no-preference query. If an `opacity: 0` base
-//      state ever escapes that query, the animation never runs and the field
-//      is INVISIBLE for anyone with the setting on — a blank hero, silently,
-//      for the visitors most likely to need the page to just work. This is
-//      the single highest-consequence failure on the page and the reason
-//      Part 4's brief calls it out by name.
-//   2. THE NESTING, ON SCREEN. June's gold dots must be a subset of
-//      December's — asserted from computed background colours, not from the
-//      module the page imports, so a rendering bug between the two is caught.
-//   3. NO PRICE, NO OUTCOME CLAIM, anywhere in the rendered text.
-//   4. NO HORIZONTAL SCROLL from 320 to 1920, and every tap target ≥44px.
+//   1. REDUCED MOTION. The dot field's entrance wave AND the thread visual's
+//      breathing brass knot live inside prefers-reduced-motion:
+//      no-preference; with the setting on, everything renders at full
+//      opacity, static. A blank hero for the visitors most likely to need
+//      the page to just work is the highest-consequence failure here.
+//   2. THE STRUCTURE: the question as the H1, the BUILD-81 section order,
+//      the five thread knots, one 199-dot field with 74 gold.
+//   3. NO PRICE, NO OUTCOME CLAIM, NO EM DASH, anywhere in rendered text.
+//   4. CTA SEMANTICS: a navigating CTA is a real <a href>; <button> is for
+//      on-page actions only.
+//   5. NO HORIZONTAL SCROLL from 320 to 1920, tap targets ≥44px at 390.
 //
-// Same browser-suite conventions as landing-reveal: serves client/dist on its
-// own port, loads Playwright from PLAYWRIGHT_DIR, and SKIPs cleanly (exit 0,
-// "0 failed") when either is missing so run-all stays portable.
+// The year-progression assertions (four fields, June ⊆ December) died WITH
+// their section in BUILD-81 — the nesting math is still proven in
+// tests/donor-field.test.js, which is untouched.
+//
+// Same browser-suite conventions as landing-reveal: serves client/dist on
+// its own port, loads Playwright from PLAYWRIGHT_DIR, SKIPs cleanly when
+// either is missing.
 
 const path = require("path");
 const fs = require("fs");
@@ -58,52 +62,53 @@ function serveDist() {
   });
 }
 
-// Runs INSIDE the browser, so it can close over nothing from this file — the
-// gold literal is inlined deliberately.
-const goldIndices = () => [...document.querySelectorAll('[role="img"]')].map(f =>
-  [...f.querySelectorAll("span")]
-    .map((d, i) => getComputedStyle(d).backgroundColor === "rgb(201, 168, 76)" ? i : -1)
-    .filter(i => i >= 0));
-
 (async () => {
   const srv = await serveDist();
   const browser = await chromium.launch();
   const URL = `http://localhost:${PORT}/`;
 
-  // ── §1 · REDUCED MOTION — the field must be visible ─────────────────────
-  console.log("\n— §1 · reduced motion: the field is never invisible —");
+  // ── §1 · REDUCED MOTION — everything visible, nothing animating ─────────
+  console.log("\n— §1 · reduced motion: nothing is ever invisible —");
   const rctx = await browser.newContext({ reducedMotion: "reduce", viewport: { width: 1440, height: 1000 } });
   const rp = await rctx.newPage();
   await rp.goto(URL, { waitUntil: "networkidle" });
   await rp.waitForTimeout(900);
   const rm = await rp.evaluate(() => {
     const dots = [...document.querySelectorAll(".df-dot")];
+    const knots = [...document.querySelectorAll(".lt-knot")];
+    const knotDots = [...document.querySelectorAll(".lt-dot")];
     return {
       n: dots.length,
       minOpacity: dots.length ? Math.min(...dots.map(d => parseFloat(getComputedStyle(d).opacity))) : -1,
-      anyAnimation: dots.some(d => getComputedStyle(d).animationName !== "none"),
+      anyAnimation: [...dots, ...knotDots].some(d => getComputedStyle(d).animationName !== "none"),
       allSized: dots.every(d => d.getBoundingClientRect().width > 0),
+      knots: knots.length,
+      knotMin: knotDots.length ? Math.min(...knotDots.map(d => parseFloat(getComputedStyle(d).opacity))) : -1,
     };
   });
-  ok("all four fields render (796 dots)", rm.n === 796, rm.n);
+  ok("the field renders (199 dots)", rm.n === 199, rm.n);
   ok("EVERY dot is fully visible with reduced motion on (min opacity 1)", rm.minOpacity === 1, rm.minOpacity);
+  ok("the thread visual renders all five knots at FULL opacity, static", rm.knots === 5 && rm.knotMin === 1, rm);
   ok("no animation runs at all under reduced motion", rm.anyAnimation === false, rm.anyAnimation);
   ok("every dot has real geometry, not a collapsed box", rm.allSized === true, rm.allSized);
   await rctx.close();
 
-  // ── §2 · motion allowed — the wave runs, and only cheaply ───────────────
+  // ── §2 · motion allowed — the wave runs, the brass knot breathes ────────
   console.log("\n— §2 · motion allowed —");
   const mctx = await browser.newContext({ reducedMotion: "no-preference", viewport: { width: 1440, height: 1000 } });
   const mp = await mctx.newPage();
   await mp.goto(URL, { waitUntil: "networkidle" });
-  const names = await mp.evaluate(() =>
-    [...new Set([...document.querySelectorAll(".df-dot")].map(d => getComputedStyle(d).animationName))]);
-  ok("the entrance wave animates when motion is allowed", names.some(n => n.includes("lpDotIn")), names);
-  ok("drifting dots also breathe", names.some(n => n.includes("lpDotGlow")), names);
+  const names = await mp.evaluate(() => ({
+    dots: [...new Set([...document.querySelectorAll(".df-dot")].map(d => getComputedStyle(d).animationName))],
+    knot: getComputedStyle(document.querySelector(".lt-dot-open")).animationName,
+  }));
+  ok("the entrance wave animates when motion is allowed", names.dots.some(n => n.includes("lpDotIn")), names);
+  ok("drifting dots also breathe", names.dots.some(n => n.includes("lpDotGlow")), names);
+  ok("the open knot breathes (opacity + transform only, one slow cycle)", /ltBreathe/.test(names.knot), names.knot);
   await mctx.close();
 
-  // ── §3 · THE NESTING, from rendered pixels ─────────────────────────────
-  console.log("\n— §3 · the year progression, read off the screen —");
+  // ── §3 · structure — the question, the order, the knots, the field ──────
+  console.log("\n— §3 · the page is the page —");
   const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
   const consoleErrors = [];
   page.on("pageerror", e => consoleErrors.push(String(e).slice(0, 160)));
@@ -111,38 +116,54 @@ const goldIndices = () => [...document.querySelectorAll('[role="img"]')].map(f =
   await page.goto(URL, { waitUntil: "networkidle" });
   await page.waitForTimeout(900);
 
-  const fields = await page.evaluate(goldIndices);
-  ok("four dot fields on the page", fields.length === 4, fields.length);
-  const [hero, jan, jun, dec] = fields;
-  ok("January is ALL emerald — zero gold", jan.length === 0, jan.length);
-  ok("June shows 31 gold", jun.length === 31, jun.length);
-  ok("December shows 74 gold", dec.length === 74, dec.length);
-  ok("the hero shows 74 gold", hero.length === 74, hero.length);
-  ok("ON SCREEN, June's 31 are a subset of December's 74",
-     jun.every(i => dec.includes(i)), jun.filter(i => !dec.includes(i)));
-  ok("ON SCREEN, the hero field is the same set as December",
-     JSON.stringify(hero) === JSON.stringify(dec), null);
-  ok("each field is exactly 199 dots",
-     await page.evaluate(() => [...document.querySelectorAll('[role="img"]')].every(f => f.querySelectorAll("span").length === 199)), null);
+  const h1 = await page.evaluate(() => document.querySelector("h1")?.textContent?.trim());
+  ok("the question renders as THE H1", h1 === "Who did you mean to call back?", h1);
+  const text = await page.evaluate(() => document.body.innerText);
+  const SECTIONS = [
+    "Who did you mean to call back?",
+    "Log it. The next step comes back. It keeps asking.",
+    "A monthly donor's card expires.",
+    "And the ones who already went quiet.",
+    "Built with a development director",
+    "Yours, plainly.",
+    "Start with one conversation.",
+  ];
+  const positions = SECTIONS.map(s => text.indexOf(s));
+  ok("every BUILD-81 section is present, in order",
+     positions.every(p => p >= 0) && positions.every((p, i) => i === 0 || p > positions[i - 1]), positions);
+  ok('"The Thread" is named on the page', /the Thread/i.test(text), null);
+  const knots = await page.evaluate(() => [...document.querySelectorAll(".lt-knot")].map(k => k.textContent.trim()));
+  ok("the thread visual: five knots, coffee → thank-you → follow up → try again → still open · day 11",
+     knots.length === 5 && /Coffee/.test(knots[0]) && /Still open · day 11/.test(knots[4]), knots);
+  const field = await page.evaluate(() => ({
+    total: document.querySelectorAll(".df-dot").length,
+    gold: [...document.querySelectorAll(".df-dot")].filter(d => getComputedStyle(d).backgroundColor === "rgb(201, 168, 76)").length,
+  }));
+  ok("ONE field of 199 dots, in the Drift section", field.total === 199, field);
+  ok("74 gold — the FEP expectation, unchanged", field.gold === 74, field);
+  const fepIdx = text.indexOf("Fundraising Effectiveness Project, full-year 2025");
+  const driftIdx = text.indexOf("And the ones who already went quiet.");
+  ok("the FEP caption sits IN the Drift section, under its dot field", driftIdx >= 0 && fepIdx > driftIdx, { driftIdx, fepIdx });
 
   // ── §4 · accessibility ──────────────────────────────────────────────────
   console.log("\n— §4 · accessibility —");
   const a11y = await page.evaluate(() => {
-    const fs_ = [...document.querySelectorAll('[role="img"]')];
+    const imgs = [...document.querySelectorAll('[role="img"]')];
     return {
-      labelled: fs_.every(f => (f.getAttribute("aria-label") || "").length > 20),
-      containersHidden: fs_.every(f => f.firstElementChild?.getAttribute("aria-hidden") === "true"),
-      labels: fs_.map(f => (f.getAttribute("aria-label") || "").slice(0, 30)),
+      count: imgs.length,
+      labelled: imgs.every(f => (f.getAttribute("aria-label") || "").length > 20),
+      containersHidden: imgs.every(f => f.firstElementChild?.getAttribute("aria-hidden") === "true"),
       legendIsText: /125 steady/.test(document.body.innerText) && /74 drifting/.test(document.body.innerText),
+      threadLabel: /conversation/.test(document.querySelector(".lt-wrap")?.getAttribute("aria-label") || ""),
     };
   });
-  ok("every field states the fact in words via aria-label", a11y.labelled, a11y.labels);
-  ok("the dot container is aria-hidden — no reader is read 199 empty elements", a11y.containersHidden, null);
-  ok("the legend below the hero field is real text, not decoration", a11y.legendIsText, null);
+  ok("both role=img figures (thread visual + dot field) state the fact in words", a11y.count === 2 && a11y.labelled, a11y);
+  ok("their containers are aria-hidden — no reader is read 199 empty elements", a11y.containersHidden, null);
+  ok("the field's legend is real text, not decoration", a11y.legendIsText, null);
+  ok("the thread visual's aria-label reads the sequence", a11y.threadLabel, null);
 
   // ── §5 · what the page must NOT say ────────────────────────────────────
-  console.log("\n— §5 · no price, no outcome claim —");
-  const text = await page.evaluate(() => document.body.innerText);
+  console.log("\n— §5 · no price, no outcome claim, no em dash —");
   const PRICE = [/\$\d{2,4}\s*\/\s*mo/i, /\bper month\b/i, /\bfounding[- ]partner\b/i, /\bCore plan\b/i, /\bTeam plan\b/i, /\bpricing\b/i, /\bplans?\b/i, /\btiers?\b/i];
   const BANNED = [/\brecovered\b/i, /\bre-?engaged\b/i, /\brecaptured\b/i, /\bwon\s+back\b/i, /\bbrought\s+back\b/i];
   ok("no price, plan name or tier in the rendered text",
@@ -151,33 +172,43 @@ const goldIndices = () => [...document.querySelectorAll('[role="img"]')].map(f =
      !BANNED.some(re => re.test(text)), BANNED.filter(re => re.test(text)).map(String));
   ok("no invented social proof (no testimonial, logo bar, review score or customer count)",
      !/trusted by|as seen in|\d+\s*(customers|nonprofits) use|★|rated \d/i.test(text), null);
+  ok("no em dash in the rendered copy (Jonathan's voice uses periods)", !text.includes("—"), null);
 
   // ── §6 · copy that must not change ─────────────────────────────────────
   console.log("\n— §6 · load-bearing copy —");
   ok('"Fundraising Effectiveness Project, full-year 2025" is intact — FEP rebased in Q1 2026 and now headlines a QUARTERLY figure',
      /Fundraising Effectiveness Project, full-year 2025/.test(text), null);
-  // BUILD-74 removed the founder section; [LAST NAME], [SCHOOL] and
-  // [ FOUNDER PHOTO ] went with it. The © line is the last unfilled value.
   ok("the © placeholder is VISIBLE on the page, not silently blank",
      text.includes("[LEGAL ENTITY NAME]"), null);
-  ok("the 'Built for orgs like yours' section is present with all three verticals",
-     /You know your donors\. Steward notices when they're slipping\./.test(text)
-     && /Arts & culture/.test(text) && /Rescue & relief/.test(text) && /Faith & community/.test(text), null);
+  ok("the honest fee line survives (no platform fee · own Stripe)",
+     /No platform fee/i.test(text) && /own Stripe/i.test(text), null);
+  ok("the card-stops arithmetic stays the READER's, never a number on the page",
+     /You know what four fifty-dollar sustainers a month are worth to you by December\./.test(text), null);
 
-  // ── §7 · wiring ─────────────────────────────────────────────────────────
+  // ── §7 · wiring + CTA semantics ────────────────────────────────────────
   console.log("\n— §7 · every path goes somewhere real —");
   const links = await page.evaluate(() => [...document.querySelectorAll("a")].map(a => a.getAttribute("href")));
   ok('no dead href="#"', !links.includes("#"), links.filter(l => l === "#"));
   ok("Terms and Privacy link to their real routes", links.includes("/terms") && links.includes("/privacy"), links);
   ok("Log in links to /login", links.includes("/login"), links);
   ok("no /pricing link in nav or footer — price is a conversation", !links.includes("/pricing"), links);
+  const semantics = await page.evaluate(() => ({
+    startFreeAnchors: [...document.querySelectorAll("a")].filter(a => /start free/i.test(a.textContent || "")).map(a => a.getAttribute("href")),
+    startFreeButtons: [...document.querySelectorAll("button")].filter(b => /start free/i.test(b.textContent || "")).length,
+    talkButtons: [...document.querySelectorAll("button")].filter(b => /talk to the founder/i.test(b.textContent || "")).length,
+    talkAnchors: [...document.querySelectorAll("a")].filter(a => /talk to the founder/i.test(a.textContent || "")).length,
+  }));
+  ok("Start free is a REAL <a href=/signup> everywhere, never a <button>",
+     semantics.startFreeAnchors.length >= 2 && semantics.startFreeAnchors.every(h => h === "/signup") && semantics.startFreeButtons === 0, semantics);
+  ok("Talk to the founder stays a <button> (an on-page action), never a fake anchor",
+     semantics.talkButtons >= 2 && semantics.talkAnchors === 0, semantics);
   const scrolled = await page.evaluate(async () => {
     const before = window.scrollY;
-    [...document.querySelectorAll("button")].find(b => b.innerText.trim() === "How it works")?.click();
+    [...document.querySelectorAll("a")].find(a => a.getAttribute("href") === "#how-it-works")?.click();
     await new Promise(r => setTimeout(r, 700));
     return { before, after: window.scrollY, target: !!document.getElementById("how-it-works") };
   });
-  ok("the How-it-works nav item scrolls to its section", scrolled.target && scrolled.after > scrolled.before, scrolled);
+  ok("the How-it-works nav anchor jumps to its section", scrolled.target && scrolled.after > scrolled.before, scrolled);
   ok("console is clean — no page errors, no asset 404s", consoleErrors.length === 0, consoleErrors.slice(0, 4));
   await page.close();
 
@@ -195,8 +226,12 @@ const goldIndices = () => [...document.querySelectorAll('[role="img"]')].map(f =
         .map(e => ({ t: (e.innerText || e.getAttribute("aria-label") || "").slice(0, 24), h: Math.round(e.getBoundingClientRect().height) }))
         .filter(e => e.h < 44));
       ok("390px: every visible tap target is at least 44px tall", small.length === 0, small);
-      const stillFour = await p.evaluate(() => [...document.querySelectorAll('[role="img"]')].length);
-      ok("390px: the field rewraps and all four remain", stillFour === 4, stillFour);
+      const both = await p.evaluate(() => ({
+        knots: document.querySelectorAll(".lt-knot").length,
+        dots: document.querySelectorAll(".df-dot").length,
+      }));
+      ok("390px: the thread visual (stacked below the copy) and the field both survive",
+         both.knots === 5 && both.dots === 199, both);
     }
     await p.close();
   }

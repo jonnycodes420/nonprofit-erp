@@ -88,9 +88,13 @@ const { ok, summary } = require("./helpers");
      /from\s+"\.\.\/lib\/donorField"/.test(src), null);
   ok("Landing.jsx does NOT contain a second hard-coded drift list",
      !/\[\s*3,\s*10,\s*23,\s*24,\s*36/.test(src), null);
-  ok("there is ONE DonorField component, rendered four times",
+  // BUILD-81 moved the field DOWN the page as evidence (the Drift section)
+  // and retired the year panels — ONE component, ONE render. The nesting
+  // math above still holds and still matters: the 74 ARE the FEP
+  // expectation, and a reintroduced multi-render section inherits it.
+  ok("there is ONE DonorField component, rendered on the page",
      (src.match(/function DonorField/g) || []).length === 1
-     && (src.match(/<DonorField/g) || []).length >= 2, null);
+     && (src.match(/<DonorField/g) || []).length >= 1, null);
   ok("the dot container is aria-hidden (a reader is not read 199 empty elements)",
      /aria-hidden="true"[\s\S]{0,120}flexWrap/.test(src) || /flexWrap[\s\S]{0,200}aria-hidden/.test(src)
      || /aria-hidden="true"/.test(src), null);

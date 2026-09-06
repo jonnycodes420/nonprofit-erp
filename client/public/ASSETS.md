@@ -16,8 +16,13 @@ must never be captioned as such (they render `aria-hidden`, no caption).
 | **Verticals card — Arts & culture** — patrons at an arts space | `card-arts-{400,800}.webp` | Dillon Wanner | https://unsplash.com/photos/EeAL5G9HDV0 | Unsplash (free, commercial OK, no attribution required) |
 | **Verticals card — Rescue & relief** — shelter dogs | `card-rescue-{400,800}.webp` | Sasha Sashina | https://unsplash.com/photos/Xcscr_sNSEY | Unsplash (free, commercial OK, no attribution required) |
 | **Verticals card — Faith & community** — hillside chapel at dusk | `card-faith-{400,800}.webp` | Kevin Mueller | https://unsplash.com/photos/8IbeGOj9AGA | Unsplash (free, commercial OK, no attribution required) |
+| **The record — donor map screenshot (BUILD-81)** — a real capture of the product's Donor Map view over the 25-donor SAMPLE fixture (no real donor data; pins only, no names visible) | `donor-map-shot{,-2x}.webp` | screenshot of the product; base map tiles © OpenStreetMap contributors (ODbL) — attribution rendered in the caption under the image | https://www.openstreetmap.org/copyright | OSM tiles: attribution required and provided on-page |
 
-All three verticals cards now carry a photo — the graceful cream-panel + gold-rule
+**BUILD-81 note:** the verticals cards left the page with their section (the
+BUILD-81 landing has no "Built for orgs like yours" section); the `card-*` files
+stay committed as the audit record and for any future reuse.
+
+All three verticals cards carried a photo — the graceful cream-panel + gold-rule
 fallback (still in `Landing.jsx` for any `img: null` slot) is currently unused.
 
 **Retired (FIX 2026-07-30):** the mid-page full-bleed **studio band**
