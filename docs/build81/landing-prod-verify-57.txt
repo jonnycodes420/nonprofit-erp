@@ -1,0 +1,77 @@
+landing-prod-verify → https://www.stewardapp.dev
+
+— §1 · the page is the page —
+  PASS  every section is present
+  PASS  the sections render IN ORDER
+  PASS  the question renders as THE H1
+  PASS  "The Thread" is named on the page (the app names it too — tests/threads + the Home suite)
+
+— §2 · no pricing, anywhere —
+  PASS  no price, plan name or tier in the rendered text
+  PASS  no /pricing link in nav or footer (the ROUTE survives; the links do not)
+
+— §3 · honesty —
+  PASS  no fabricated social proof — the whole family (logos, review scores, testimonials, customer counts, trusted-by, join-hundreds-of)
+  PASS  no logo-bar imagery
+  PASS  three product screenshots inside #how-it-works, each with intrinsic dimensions
+  PASS  …each with real, non-empty alt text (a screen reader hears the screen, not a filename)
+  PASS  …each actually loads (no broken image ships)
+  PASS  the retired caption is gone — "drawn in code" absent from rendered text
+  PASS  #who-its-for exists with EXACTLY three photographs, each with intrinsic dimensions
+  PASS  …each with real, non-empty alt text describing the photograph
+  PASS  …each actually loads
+  PASS  the strip sits AFTER the hero and BEFORE #how-it-works
+  PASS  no customer language anywhere: "trusted by", "customers" and "clients" absent from rendered text
+  PASS  card-stops carries ONE photograph with intrinsic dimensions and real alt
+  PASS  your-data carries ONE photograph with intrinsic dimensions and real alt
+  PASS  the close carries ONE decorative background photograph: alt="" AND aria-hidden, dimensions set
+  PASS  …at 0.28 opacity under the ink gradient, with the text stacked above
+  PASS  EVERY <img> on the page has width, height and non-empty alt — except the ONE decorative close background
+  PASS  the 43%-class stat is attributed to the Fundraising Effectiveness Project
+  PASS  "full-year 2025" is intact — FEP rebased in Q1 2026 and now headlines a QUARTERLY figure
+  PASS  the FEP caption sits IN the Drift section, with its dot field (moved down the page as evidence, never re-captioned)
+  PASS  no competitor cited as the authority (Bloomerang republishes FEP's number)
+  PASS  no "keep 100% of every gift" overclaim — Stripe's own fee still applies
+  PASS  the fee claim is the honest one (no platform fee · no donor tip · own Stripe)
+  PASS  no outcome-claim language (recovery stays a feature noun, recovered a banned outcome)
+  PASS  no em dash in the rendered copy (Jonathan's voice uses periods)
+  PASS  the ProductMark pills render the literal names: "The Thread" (hero panel + how-it-works) and "Drift" (the Drift section)
+  PASS  no naggy language: "keeps asking" and "until you've done it" absent from rendered text
+  PASS  the © placeholder is VISIBLE, not silently blank or invented
+  PASS  the placeholder never ships as bare bracket text: it renders flagged (dashed outline) until filled
+
+— §4 · the thread visual, and the dot field as evidence —
+  PASS  the thread visual renders all five knots
+  PASS  the knots read the sequence: coffee → thank-you → called → try again → still open, day 11
+  PASS  the visual carries role="img" and an aria-label that reads the sequence
+  PASS  the panel carries the donor and lifetime at the top, and 'Log the call' is a REAL anchor to /signup
+  PASS  ONE field of 199 dots remains, in the Drift section
+  PASS  74 of them are gold — the FEP expectation, unchanged
+
+— §5 · measured contrast (floor 5.0:1, every text element) —
+  PASS  all 56 visible text elements ≥ 5.0:1 (worst 5.81:1)
+
+— §6 · wiring —
+  PASS  no dead href="#"
+  PASS  Terms and Privacy link to real routes
+  PASS  Log in links to /login
+  PASS  "Start free" is present
+  PASS  "Talk to the founder" is present
+  PASS  every navigating CTA is a REAL anchor: Start free is <a href=/signup>, never a <button>
+  PASS  on-page actions stay <button>: Talk to the founder opens the modal, never a fake anchor
+  PASS  NO auto popup, modal or interstitial covers the page on load
+  PASS  console is clean — no page errors, no asset 404s
+
+— §7 · layout stability —
+  PASS  1440px: CLS 0.0000 === 0.0000 over a full scroll
+  PASS  1440px: the page body does not scroll sideways
+  PASS  390px: CLS 0.0000 === 0.0000 over a full scroll
+  PASS  390px: the page body does not scroll sideways
+
+— §8 · reduced motion —
+  PASS  all 199 dots present with reduced motion on
+  PASS  EVERY dot is fully visible with reduced motion on
+  PASS  the thread visual renders all five knots under reduced motion, at full opacity, not breathing
+
+57 passed, 0 failed
+57 guards ran — 28 MORE than BUILD-74's 29.
