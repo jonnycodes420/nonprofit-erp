@@ -1,0 +1,48 @@
+{
+  "source": "derived from the artifact — see gen-truth note in messy-25k-v3-fixture-key.md; the Cowork generator (gen-messy-v3.py, seed 20260906) and its key/truth files were NOT found on disk, so every number here was MEASURED from steward-messy-25k-v3.xlsx and cross-checked against the BUILD-82 spec's stated numbers",
+  "anchorDate": "2026-09-06",
+  "bytes": 7626627,
+  "sheets": {
+    "Cover": { "role": "chrome", "physicalRows": 14, "legend": ["yellow = do not contact", "hidden = deceased", "Old export is superseded"] },
+    "Donors": { "role": "donors", "headerRow": 3, "peopleRows": 25300, "nonDataRows": ["title r1", "band r2", "note r25305 'Exported by Cheryl 9/4/26'", "stray 'x' r30000", "blank rows 25304+"], "hiddenColumn": "AD (Internal Score)" },
+    "Gifts 2023-2026": { "role": "gifts", "headerRow": 1, "giftRows": 56177, "nonDataRows": [11049, 27709, 45789, 56182, 56183], "subtotalLabels": ["2023 Total", "2024 Total", "2025 Total", "2026 Total", "GRAND TOTAL"], "grandTotalCached": 32523933.89, "dateConvention": "monthFirst" },
+    "Gifts 2019-2022": { "role": "gifts", "headerRow": 2, "giftRows": 36050, "nonDataRows": [36053], "totalRowCached": 19852987.83, "totalRowIsStale": "cached SUM(B3:B36052)=19852987.83 but the numeric cells now sum to 13952450.79 — 10,818 amounts were later turned to text; reconciliation must EXPLAIN, not equal", "dateConvention": "dayFirst", "impossibleDayFirstCases": 14356, "trailingMinusAmounts": 937 },
+    "Old export (do not use)": { "role": "decoy", "rows": 8000, "dollarsIfImported": 4329708.73, "dupByIdAmount": 7538 },
+    "Pledges": { "role": "pledges", "rows": 60, "totalPledged": 1881000, "paidToDate": 1179025, "outstanding": 701975 },
+    "Recurring": { "role": "recurring", "rows": 600, "failed": 100, "active": 500, "activeStale": 60 },
+    "Summary": { "role": "chrome", "rows": 7, "legacyTotalCellIsError": true },
+    "Sheet1": { "role": "empty" }
+  },
+  "join": {
+    "orphanGiftRows": 500,
+    "orphanByShee": { "Gifts 2023-2026": 288, "Gifts 2019-2022": 212 },
+    "idForms": ["4212", "004212", "4212.0", " 4212 "],
+    "donorRowsWithNoGiftAnywhere_beforeDedup": 490,
+    "specSaysProspectsAfterDedup": 300
+  },
+  "typedCells": {
+    "percentFormatAmounts": 560,
+    "percentValueRange": [0.1, 250],
+    "zeroCachedFormulas": 843,
+    "zeroCachedFormulaShape": "N*1",
+    "zeroCachedFormulaTrueSum": 405876.20,
+    "nonZeroCachedFormulas": 797,
+    "floatNoiseAmounts": 6723,
+    "textAmounts2326": 8962,
+    "legacyTextAmounts": 10818
+  },
+  "exclusions": {
+    "specTotal": 800,
+    "measuredUnion": 800,
+    "perCause": { "doNotSolicitY": 200, "deceasedColXorDate": 100, "doNotMailTrue": 50, "statusDeceased": 60, "noteDeceased": 110, "noteDoNotSolicit": 78, "noteRemoveFromAppeals": 22, "noteDoNotMail": 23, "hiddenRows": 40, "yellowRows": 100, "commentRows": 40 },
+    "negativeTrap": { "phrase": "Do not include in vendor mailing", "rows": 331, "mustNotExclude": true },
+    "commentTexts": { "Deceased 2024": 7, "DO NOT CALL - deceased": 11, "passed away last spring - Cheryl": 10, "d. 2023": 12 }
+  },
+  "money": {
+    "specNetCash": 53231102.55,
+    "measuredMaximalReading": 52981462.36,
+    "note": "the spec's net-cash embeds generator-known true values of damaged cells not fully recoverable from the artifact (BUILD-80 precedent: v2 key $2,327,646.22 vs measured $2,293,751.22). The verifiable assertion is the BRACKET: |imported net cash − 53,231,102.55| ≤ refused+routed dollars, plus both TOTAL rows explained line by line.",
+    "components2326": { "posPlain": 30690181.25, "pledgePayments": 1157000.00, "pctX100": 299555.94, "inKind": 92926.44, "matching": 43674.10, "negatives": 72303.60, "softCreditLinkedRows": 805 },
+    "componentsLegacy": { "pos": 19382907.00, "negAbs": 545113.71, "inKind": 49754.31, "matching": 27907.48 }
+  }
+}
