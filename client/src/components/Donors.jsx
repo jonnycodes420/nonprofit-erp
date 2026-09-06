@@ -1434,7 +1434,14 @@ export function DonorImport({ onClose, onImported, withHistory = false }) {
                     const a=document.createElement("a");a.href=URL.createObjectURL(blob);
                     a.download="not-imported-rows.csv";a.click();URL.revokeObjectURL(a.href);
                   }} style={{background:"transparent",border:"none",padding:0,color:T.greenDk,fontSize:12,fontWeight:700,cursor:"pointer"}}>
-                    ↓ Download the {result.refusedRows.length} rows that were not imported (line numbers + reasons)
+                    {(()=>{
+                      // BUILD-80 Part 10 — the download keeps EVERYTHING that
+                      // isn't a gift row, but the label separates true
+                      // refusals from rows routed to their own surfaces.
+                      const refusedN = result.refusedRows.filter(r2=>r2.disposition==="errored"||["no_amount","zero_amount"].includes(r2.reason)).length;
+                      const routedN = result.refusedRows.length - refusedN;
+                      return <>↓ Download the {result.refusedRows.length} rows that are not gift rows ({refusedN} refused · {routedN} routed to pledge/soft-credit/in-kind surfaces) — line numbers + reasons</>;
+                    })()}
                   </button>
                 </div>
               )}

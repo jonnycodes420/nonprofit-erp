@@ -1,0 +1,290 @@
+Steward
+⌕
+?
+B
+B80 Walker
+Sign out
+◈
+Home
+PEOPLE
+♦
+Donors
+◫
+Pipeline
+◻
+Tasks
+FUNDRAISING
+↗
+Fundraising
+◉
+Grants
+◑
+Communications
+◫
+Donor Portal
+◧
+Workflows
+INSIGHT
+▤
+Reports
+◇
+Finance
+⚙
+Settings
+Your donors.
+✓
+Import complete.
+465 donors added · 2316 gifts attached · 31 duplicates skipped · 170 refused with line-numbered reasons
+EVERY ROW AND EVERY DOLLAR ACCOUNTED FOR
+In your file
+2,500 · $2,293,751.22
+4 amounts used a comma decimal (European format) and were read as such
+1,583 dates use day/month/year — 832 would have been impossible the other way
+8 amounts used a space between thousands and were read as such
+Imported
+2,316 · $1,967,865.92
+Skipped
+130 · $302,072.2
+external id repeated in file: 14 · $14,780.6
+in-kind gifts — recorded at fair market value, never cash: 25 · $38,900
+no amount: 2 · $0
+soft credits — a link to the real gift, never money: 60 · $35,016.6
+pledge commitments — on the record, never in totals: 12 · $184,000
+future pledge installments — the schedule, not failed rows: 17 · $29,375
+Errored
+54 · $23,813.1
+reversals with a POSITIVE amount — a human must decide: 3 · $3,000
+unrecognised value in an exclusion column: 3 · $0
+unparseable date: 10 · $6,695.99
+unparseable amount: 8 · $0
+future date: 30 · $14,117.11
+Balanced
+2,500 · $2,293,751.22
+↓ Download the 170 rows that are not gift rows (56 refused · 114 routed to pledge/soft-credit/in-kind surfaces) — line numbers + reasons
+Your file's own total row (line 2852) says $2,035,978.52.
+Steward imported $1,967,865.92 · difference $68,112.6
+of which: skipped rows $302,072.2 · errored rows $23,813.1
+FREQUENCY FLAGS THE GIFTS CONTRADICT
+Maria Ogletree — file says monthly, gifts say yearly. The pattern wins; no monthly expectations were set.
+Anthony Quimby — file says monthly, gifts say yearly. The pattern wins; no monthly expectations were set.
+Joe Fitzgerald — file says monthly, gifts say yearly. The pattern wins; no monthly expectations were set.
+The Hutchinson Family — file says monthly, gifts say yearly. The pattern wins; no monthly expectations were set.
+Christian García — file says monthly, gifts say yearly. The pattern wins; no monthly expectations were set.
+ROWS WE MERGED INTO ONE DONOR — REVIEW THESE
+Dylan Hollingsworth ← Mr. and Mrs. Dylan Hollingsworth (email hollingsworth92@yahoo.com) · dylan hollingsworth (email hollingsworth92@yahoo.com)
+Undo
+Jennifer E. Sowande ← Jennifer A. Sowande (email jennifer.sowande@uky.edu) · jennifer sowande (email jennifer.sowande@uky.edu) · JENNIFER SOWANDE (email jennifer.sowande@uky.edu) · Jennifer J. Sowande (email jennifer.sowande@uky.edu) · Jennifer C. Sowande (name) · Jennifer K. Sowande (email jennifer.sowande@uky.edu)
+Undo
+Diana Oyelaran ← DIANA OYELARAN (ID 29215)
+Undo
+Mr. and Mrs. Betty Kowalski ← BETTY KOWALSKI (ID 19240)
+Undo
+Steven S. Barrowman ← Steven H. Barrowman (ID 47430) · Steven B. Barrowman (ID 47430) · Barrowman, Steven (ID 47430) · Steven D. Barrowman (ID 47430) · Steven P. Barrowman (ID 47430)
+Undo
+Catherine Kingsley ← CATHERINE KINGSLEY (email catherine1968@twc.com)
+Undo
+OLIVIA VANDERMEER ← Olivia L. Vandermeer (email vandermeer67@hotmail.com) · Olivia B. Vandermeer (email vandermeer67@hotmail.com) · Olivia J. Vandermeer (email vandermeer67@hotmail.com) · Olivia K. Vandermeer (email vandermeer67@hotmail.com) · Olivia A. Vandermeer (email vandermeer67@hotmail.com) · Olivia P. Vandermeer (email vandermeer67@hotmail.com)
+Undo
+Mr. and Mrs. Larry Kensington ← The Kensington Family (email kensington59@gmail.com)
+Undo
+Andrew Çelik ← Çelik, Andrew (ID 91858)
+Undo
+judy villalobos ← Judy Villalobos (ID 58412)
+Undo
+Debra B. Bancroft ← Debra L. Bancroft (ID 16533) · Debra J. Bancroft (ID 16533) · Debra P. Bancroft (ID 16533) · Debra C. Bancroft (ID 16533) · Debra K. Bancroft (ID 16533) · Debra E. Bancroft (ID 16533)
+Undo
+Heather Kensington ← HEATHER KENSINGTON (ID 78558)
+Undo
+Kenneth D. Kensington ← Kenneth R. Kensington (ID 35346) · Kenneth P. Kensington (ID 35346) · Kenneth Kensington (ID 35346) · Kenneth W. Kensington (ID 35346) · KENNETH KENSINGTON (ID 35346) · Kenneth E. Kensington (ID 35346)
+Undo
+STEPHANIE FENNIMORE ← Fennimore, Stephanie (ID 85657) · Mr. and Mrs. Kwame Fennimore (email stephanie.fennimore@twc.com)
+Undo
+Mr. and Mrs. Heather Grantham ← HEATHER GRANTHAM (ID 69087) · Grantham, Heather (ID 69087)
+Undo
+The Culpepper Family ← Mr. and Mrs. Helen Culpepper (ID 55658) · Culpepper, Helen (ID 55658) · Madison Culpepper (email helen1951@aol.com)
+Undo
+Pemberton, Ronald ← RONALD PEMBERTON (ID 52421) · Mr. and Mrs. Ronald Pemberton (ID 52421)
+Undo
+Christina Sedgwick ← Mr. and Mrs. Christina Sedgwick (ID 47225)
+Undo
+ALEXANDER SALCEDO ← Salcedo, Alexander (email asalcedo@aol.com)
+Undo
+The Hollingsworth Family ← Mr. and Mrs. Sara Hollingsworth (email sara.hollingsworth@outlook.com)
+Undo
+Andrea L. O?Brien ← Andrea E. O?Brien (ID 25164) · Andrea A. O'Brien (ID 25164) · Andrea E. O'Brien (ID 25164) · Andrea K. O?Brien (ID 25164) · Andrea R. O?Brien (ID 25164) · Andrea A. O?Brien (ID 25164)
+Undo
+The Tran Family ← Janice Tran (ID 47520)
+Undo
+Wainwright, Priya ← priya wainwright (ID 98650)
+Undo
+Ellingsworth, Donald ← Donald Ellingsworth (ID 27770)
+Undo
+Hannah Nguyễn ← Mr. and Mrs. Hannah Nguyễn (ID 24502)
+Undo
++140 more merges recorded — every one is undoable.
+27 emails sit behind more than one person (e.g. Catherine Kingsley + RONALD KINGSLEY) — kept as separate people, household candidates for you to join.
+4 donor IDs shared by different people (legacy merge damage) — never merged on, both sides flagged.
+ROWS THAT ARE NOT GIFTS — TRACKED ON THEIR OWN SURFACES
+Soft credits
+60 · $35,016.6
+a link to the real gift — no money on the credited person
+Pledge commitments
+12 · $184,000
+on the donor's record, never in totals
+Future pledge installments
+17 · $29,375
+the schedule — money that hasn't arrived yet
+In-kind gifts
+25 · $38,900
+recorded at fair market value, never cash
+Corporate matching gifts
+29 · $18,096.61
+counted as cash on the CORPORATION; the person gets the relationship
+Anonymous gifts
+15 · $13,650
+one holding record — different people, never a cadence, never on a list
+Recorded: 12 pledges · 25 in-kind · 90 relationship links · 41 people created from links · 6 possible duplicates flagged for review
+6 rows say "migrated from legacy ID … may duplicate" — imported and flagged for a human, never decided by the machine.
+THE FIVE LARGEST GIFTS WE IMPORTED — CHECK THESE FIRST
+Estate of Aisha Ivester — 09/07/2025
+$150,000 · line 2145
+Estate of Dorothy Ackerly — 10/01/2025
+$75,000 · line 2150
+Estate of Leila Marchetti — 08/07/2025
+$75,000 · line 2156
+National Christian Foundation — 19/03/2024
+$25,000 · line 2021
+National Christian Foundation — 16/03/2025
+$25,000 · line 2024
+If one of these is far larger than the others, open the row before it leads a thank-you queue or sets a goal.
+WE FLAGGED THESE — FROM THE NOTES COLUMN, PLEASE CONFIRM
+Jennifer E. Sowande — deceased
+line 18 · "DECEASED"
+Jennifer A. Sowande — deceased
+line 19 · "DECEASED"
+Jennifer Sowande — deceased
+line 20 · "DECEASED"
+Jennifer Sowande — deceased
+line 22 · "DECEASED"
+Jennifer J. Sowande — deceased
+line 23 · "DECEASED"
+Jennifer K. Sowande — deceased
+line 25 · "DECEASED"
+Diana Oyelaran — deceased
+line 26 · "DECEASED"
+Diana Oyelaran — deceased
+line 28 · "DECEASED"
+Diana Oyelaran — deceased
+line 31 · "DECEASED"
+Diana Oyelaran — deceased
+line 33 · "DECEASED"
+Mr. and Mrs. Betty Kowalski — deceased
+line 34 · "Solicit Code: DEC"
+Mr. and Mrs. Betty Kowalski — deceased
+line 35 · "Solicit Code: DEC"
+Betty Kowalski — deceased
+line 36 · "Solicit Code: DEC"
+Mr. and Mrs. Betty Kowalski — deceased
+line 37 · "Solicit Code: DEC"
+Mr. and Mrs. Betty Kowalski — deceased
+line 38 · "Solicit Code: DEC"
+Betty Kowalski — deceased
+line 39 · "Solicit Code: DEC"
+Evelyn Pemberton — do-not-contact
+line 40 · "Solicit Code: NC"
+Evelyn Pemberton — do-not-contact
+line 41 · "Solicit Code: NC"
+Evelyn Pemberton — do-not-contact
+line 43 · "Solicit Code: NC"
+Evelyn Pemberton — do-not-contact
+line 44 · "Solicit Code: NC"
+Evelyn Pemberton — do-not-contact
+line 45 · "Solicit Code: NC"
+Evelyn Pemberton — do-not-contact
+line 46 · "Solicit Code: NC"
+Catherine Kingsley — deceased
+line 61 · "Died"
+Catherine Kingsley — deceased
+line 62 · "Died"
+Catherine Kingsley — deceased
+line 64 · "Died"
+Catherine Kingsley — deceased
+line 65 · "Died"
+Catherine Kingsley — deceased
+line 66 · "Died"
+Catherine Kingsley — deceased
+line 67 · "Died"
+Mr. and Mrs. Larry Kensington — do-not-email
+line 87 · "Solicit Code: DNE"
+The Kensington Family — do-not-email
+line 88 · "Solicit Code: DNE"
++199 more — every one is on the donor's record with its flag set.
+COLUMNS THAT DISAGREE — WE KEPT THE MOST RESTRICTIVE
+Jennifer E. Sowande — Status says Active, Notes say deceased. We set deceased.
+Diana Oyelaran — Status says Active, Notes say deceased. We set deceased.
+Betty Kowalski — One column says Active while another marks deceased. We set deceased.
+Catherine Kingsley — Status says Active, Notes say deceased. We set deceased.
+Mr. and Mrs. Kimberly Müller — One column says Active while another marks deceased. We set deceased.
+Hannah Nguyễn — Status says Active, Notes say deceased. We set deceased.
+Sean Coventry — Status says Active, Notes say deceased. We set deceased.
+Matthew Ellingsworth — Status says Active, Notes say deceased. We set deceased.
+Teresa Oyelaran — One column says Active while another marks deceased. We set deceased.
+Aisha Ivester — One column says Active while another marks deceased. We set deceased.
+Estate of Aisha Ivester — Status says Active, Notes say deceased. We set deceased.
+Estate of Dorothy Ackerly — Status says Active, Notes say deceased. We set deceased.
+Estate of Leila Marchetti — Status says Active, Notes say deceased. We set deceased.
+Grace Delacroix — One column says Active while another marks deceased. We set deceased.
+Margaret Jessup — Status says Active, Notes say deceased. We set deceased.
+Kwame Bancroft — Status says Active, Notes say deceased. We set deceased.
+Deborah Adebayo — Status says Active, Notes say deceased. We set deceased.
+Brian T. Ogletree — Status says Active, Notes say deceased. We set deceased.
+EVERY COLUMN ACCOUNTED FOR
+Columns in your file
+23
+Mapped
+15
+Flagged
+3
+Discarded
+4
+Refused
+1
+Balanced
+23
+Constituent ID discarded (acknowledged)
+Name → donorName
+First Name → firstName
+Last Name → lastName
+Spouse discarded (acknowledged)
+Email → donorEmail
+Phone → phone
+Address → address
+City → city
+State → state
+ZIP → zip
+Gift ID → externalId
+Gift Date → date
+Amount → amount
+Receipt Amount discarded (acknowledged)
+Gift Type → type
+Fund discarded (acknowledged)
+Appeal → campaign
+Frequency → frequency flag
+Solicit Code → exclusion flag
+Status → exclusion flag
+Notes → notes
+(column 23, no header) not importable — overflow cells beyond the header row (4 rows)
+Done
+Directory
+Team
+Re-engage
+Map
+✦ Call List
++ Add
+↑ Import & tools
+▾
+⊞ Filters
+No donors yet.
+Every relationship in Steward starts as one row — bring in a spreadsheet from Import above, or add a single name to begin.
+Add a donor →
+Explore with sample data
