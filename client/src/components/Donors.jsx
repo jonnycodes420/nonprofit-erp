@@ -950,6 +950,14 @@ export function DonorImport({ onClose, onImported, withHistory = false }) {
               links: payloadForSummary.semantics.links,
               reviewTwins: payloadForSummary.semantics.reviewTwins,
               merges: payloadForSummary.identity?.mergeReview || [],
+              // BUILD-80 Part 9 — the import's health rides with it, so every
+              // headline stat can carry the caveat while refusals are high.
+              fileStats: {
+                rows: payloadForSummary.file?.rows || 0,
+                refused: (payloadForSummary.dispositions || []).filter(d2 => d2.disposition === "errored" || (d2.disposition === "skipped" && ["no_amount", "zero_amount"].includes(d2.reason))).length,
+                refusedDollars: (payloadForSummary.dispositions || []).filter(d2 => d2.disposition === "errored").reduce((s2, d2) => s2 + (d2.dollars || 0), 0),
+                largestGifts: payloadForSummary.largestGifts || [],
+              },
             }) });
             totals.semanticsApplied = semRes?.counts || null;
             totals.mergeRows = semRes?.merges || [];

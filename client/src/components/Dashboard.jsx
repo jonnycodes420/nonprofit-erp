@@ -427,7 +427,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
     setRetentionBreakdownLoading(true);
     apiFetch(`/dashboard/retention/breakdown?scope=${scope||"mine"}`)
       .then(r=>setRetentionBreakdown(r))
-      .catch(()=>setRetentionBreakdown({retentionRate:null,sectorAverage:43,retained:0,prevYearCount:0,nonRetainedCount:0,rows:[]}))
+      .catch(()=>setRetentionBreakdown({retentionRate:null,retained:0,prevYearCount:0,nonRetainedCount:0,rows:[]}))
       .finally(()=>setRetentionBreakdownLoading(false));
   };
 
@@ -506,7 +506,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
     setRetentionBreakdownLoading(true);
     apiFetch(`/dashboard/retention/breakdown?scope=${scope}`)
       .then(r=>setRetentionBreakdown(r))
-      .catch(()=>setRetentionBreakdown({retentionRate:null,sectorAverage:43,retained:0,prevYearCount:0,nonRetainedCount:0,rows:[]}))
+      .catch(()=>setRetentionBreakdown({retentionRate:null,retained:0,prevYearCount:0,nonRetainedCount:0,rows:[]}))
       .finally(()=>setRetentionBreakdownLoading(false));
   },[scope]);
 
@@ -721,7 +721,8 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
   // while staying inside the brand palette (see CLAUDE.md's "name the vague
   // anxiety as a number" pattern).
   const retentionCurrent=stewardMetrics?.retentionRate?.current;
-  const retentionSector=stewardMetrics?.retentionRate?.sectorAverage??43;
+  // BUILD-80 Part 9 — the sector comparison is gone (BUILD-73's ban): the
+  // tile reports the rate, the window and the denominator, nothing else.
   // "Too early to measure" (QA_FRESH_ORG R2): a day-one org isn't 0% retained,
   // it just has nothing to measure yet — either no prior-year giving to compare
   // against (current==null), or prior-year history exists but no gift has been
@@ -734,7 +735,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
   // "100% · 57pt above the sector average" on 16 donors is arithmetically
   // true and reads as fake — and then everything else on the screen does too.
   const retentionThin=!retentionTooEarly&&!!stewardMetrics?.retentionRate?.thinData;
-  const retentionColor=(retentionTooEarly||retentionThin)?T.ink:retentionCurrent>=retentionSector?T.greenMid:T.terracotta;
+  const retentionColor=T.ink;
 
   // Goal banner: greeting is real (time-of-day + the logged-in user's own
   // `name` field from the DB — not a role label or placeholder; an empty
@@ -835,7 +836,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
     : driftData&&driftData.counts.driftingHigh>0
       // Edge: a short-cadence drifter can exist before anyone crosses the
       // 180-day quiet line — never claim "no donors drifting" over them.
-      ? {label:"At risk",value:fmtFull(driftData.atRiskAmount),valueColor:T.gold,sub:`${driftData.counts.driftingHigh} donor${driftData.counts.driftingHigh===1?"":"s"} past their own pattern`,onClick:()=>document.getElementById("dash-drifting")?.scrollIntoView({behavior:"smooth",block:"start"})}
+      ? {label:"At risk",value:fmtFull(driftData.atRiskAmount),valueColor:T.gold,sub:`${driftData.counts.driftingHigh} donor${driftData.counts.driftingHigh===1?"":"s"} past their own pattern${driftData.importCaveat?` — ${driftData.importCaveat}`:""}`,onClick:()=>document.getElementById("dash-drifting")?.scrollIntoView({behavior:"smooth",block:"start"})}
       : {label:"At risk",
          // BUILD-79 Part 6 — a pattern needs gifts. An org with donors but $0
          // of giving gets the truth, not "1,111 giving patterns checked".
@@ -1200,10 +1201,10 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
                     ?`A real rate needs about ${stewardMetrics.retentionRate.floor?.minPriorYearDonors??20} donors from last year and ${Math.round((stewardMetrics.retentionRate.floor?.minHistoryDays??548)/30.44)} months of history — this file has ${stewardMetrics.retentionRate.prevYearCount} prior-year donor${stewardMetrics.retentionRate.prevYearCount===1?"":"s"} and ${Math.max(1,Math.round((stewardMetrics.retentionRate.historyDays||0)/30.44))} month${Math.round((stewardMetrics.retentionRate.historyDays||0)/30.44)===1?"":"s"} so far. The number will appear when it can mean something.`
                     :retentionTooEarly
                     ?!myStats?.orgHasGiftHistory
-                      ?`Too early to measure — import your donors to start tracking. The typical nonprofit retains ${retentionSector}% of its donors year over year.`
+                      ?`Too early to measure — import your donors to start tracking.`
                       :stewardMetrics.retentionRate.prevYearCount>0
                         ?`Too early to measure — as this year's gifts land, you'll see how many of last year's ${stewardMetrics.retentionRate.prevYearCount} donor${stewardMetrics.retentionRate.prevYearCount===1?"":"s"} stick with you.`
-                        :`Too early to measure — you'll see this once there's a prior year of giving to compare against. The typical nonprofit retains ${retentionSector}%.`
+                        :`Too early to measure — you'll see this once there's a prior year of giving to compare against.`
                     :(()=>{
                       // BUILD-77 Part 4 — STATE THE WINDOW AND DENOMINATOR, and
                       // remove the congratulation. Steward reports numbers; it
@@ -1214,7 +1215,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
                       const py=rr.prevYear, cy=rr.year;
                       const denom=rr.prevYearCount||0, kept=rr.retained||0;
                       const window=py&&cy?`FY ${py} → FY ${cy}`:"year over year";
-                      return `${kept.toLocaleString()} of ${denom.toLocaleString()} donor${denom===1?"":"s"} who gave in ${py?`FY ${py}`:"the prior year"} gave again (${window}). The nonprofit sector average is about ${retentionSector}%.`;
+                      return `${kept.toLocaleString()} of ${denom.toLocaleString()} donor${denom===1?"":"s"} who gave in ${py?`FY ${py}`:"the prior year"} gave again (${window}).${stewardMetrics?.importCaveat?` (${stewardMetrics.importCaveat})`:""}`;
                     })()}
                 </div>
               </div>
@@ -1356,6 +1357,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
               {driftData.counts.driftingHigh>0
                 ?`${fmtFull(driftData.atRiskAmount)} at risk · ${driftData.counts.driftingHigh} donor${driftData.counts.driftingHigh===1?"":"s"} past their own pattern`
                 :"watching every donor's own giving pattern"}
+              {driftData.importCaveat && <span style={{color:T.gold700||"#8a6d1f"}}> · {driftData.importCaveat}</span>}
             </span>
           </span>
           {driftData.total>driftData.list.length&&!driftAllData&&(

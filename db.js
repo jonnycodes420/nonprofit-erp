@@ -1395,6 +1395,10 @@ async function initSchema() {
   // BUILD-80 Part 7 — organisations and the anonymous holding record are not
   // people: kind gates every person surface (drift, re-engage, attention).
   await pool.query(`ALTER TABLE donors ADD COLUMN IF NOT EXISTS kind TEXT`);
+  // BUILD-80 Part 9 — derived surfaces must not outrun the import: the last
+  // import's row/refusal counts and largest gifts, read by every headline
+  // stat while refusals exceed 5% of rows.
+  await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS last_import_stats JSONB`);
 
   // ── Giving Pages (2026-07-14) ────────────────────────────────────────────
   // Campaign-specific donation pages (gala/appeal/etc.), distinct from the

@@ -135,8 +135,16 @@ export default function WelcomePage() {
   // read as lapsed (real win-back opportunity) take priority over a flat
   // "match what you've raised" suggestion, matching the existing product's
   // "lapsed_recovery" vs "total_raised" goal types.
+  const [importHealth, setImportHealth] = useState(null);
+  useEffect(() => {
+    apiFetch("/org/import-health").then(setImportHealth).catch(() => setImportHealth(null));
+  }, []);
   const suggestion = useMemo(() => {
     if (!donorsSnapshot.length) return null;
+    // BUILD-80 Part 9 — no goal is auto-set from an unbalanced import. "Win
+    // back $604,337 in lapsed giving" was once computed from a file where
+    // half the gifts were refused and one was a hundred times too large.
+    if (importHealth?.caveat) return null;
     const lapsed = donorsSnapshot.filter(d => d.stage === "lapsed");
     const lapsedTotal = Math.round(lapsed.reduce((s, d) => s + (Number(d.total_giving) || 0), 0));
     if (lapsedTotal > 0) {
@@ -147,7 +155,7 @@ export default function WelcomePage() {
       return { goalType: "total_raised", amount: total, label: `Raise $${total.toLocaleString()} this quarter` };
     }
     return null;
-  }, [donorsSnapshot]);
+  }, [donorsSnapshot, importHealth]);
 
   useEffect(() => {
     if (stepKey === "goal" && suggestion && !goalPrefilled) {

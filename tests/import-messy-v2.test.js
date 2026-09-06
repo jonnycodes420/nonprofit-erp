@@ -488,10 +488,16 @@ async function reset() {
 
   // ── §4d · BUILD-80 Part 5 — the semantic rows land, over HTTP ────────────
   console.log("\n— §4d · pledges, in-kind and links land through /donors/import-semantics —");
+  const fileStats = {
+    rows: built.file.rows,
+    refused: built.dispositions.filter(d => d.disposition === "errored" || (d.disposition === "skipped" && ["no_amount", "zero_amount"].includes(d.reason))).length,
+    refusedDollars: built.dispositions.filter(d => d.disposition === "errored").reduce((s2, d) => s2 + (d.dollars || 0), 0),
+    largestGifts: built.largestGifts,
+  };
   const semPost = () => api("POST", "/donors/import-semantics", tok, {
     pledges: built.semantics.pledges, inKind: built.semantics.inKind,
     links: built.semantics.links, reviewTwins: built.semantics.reviewTwins,
-    merges: built.identity.mergeReview });
+    merges: built.identity.mergeReview, fileStats });
   const sem1 = await semPost();
   ok("POST /donors/import-semantics answers 200", sem1.status === 200, sem1.status);
   const [plCount] = await q(`SELECT COUNT(*)::int n FROM pledges WHERE org_id=$1`, [ORG]);
@@ -564,6 +570,37 @@ async function reset() {
     const again = await api("POST", `/import-merges/${undoable.id}/undo`, tok, {});
     ok("a second undo answers 409 — never a second split", again.status === 409, again.status);
   }
+
+  // ── §4g · BUILD-80 Part 9 — derived surfaces do not outrun the import ────
+  console.log("\n— §4g · the caveat, the empty goal card, the confirm-first queue —");
+  const ih = await api("GET", "/org/import-health", tok);
+  ok("GET /org/import-health carries the last import's stats and largest gifts",
+    ih.status === 200 && ih.body?.stats?.rows === 2500 && (ih.body.stats.largestGifts || []).length === 5,
+    ih.body?.stats && { rows: ih.body.stats.rows, largest: ih.body.stats.largestGifts?.length });
+  ok(`this import's refusals are UNDER the 5% caveat line (${fileStats.refused} of 2,500) — no caveat`,
+    ih.body?.caveat === null && fileStats.refused / 2500 < 0.05, { caveat: ih.body?.caveat, refused: fileStats.refused });
+  // Simulate the BUILD-79-era import (1,211 refusals) and the caveat appears
+  // on EVERY headline surface with its exact honest sentence.
+  await api("POST", "/donors/import-semantics", tok, { fileStats: { rows: 2500, refused: 1211, refusedDollars: 1540000, largestGifts: built.largestGifts } });
+  const ih2 = await api("GET", "/org/import-health", tok);
+  ok("refusals over 5% produce the caveat: 'computed on 1,289 of 2,500 rows; 1,211 could not be read'",
+    ih2.body?.caveat === "computed on 1,289 of 2,500 rows; 1,211 could not be read", ih2.body?.caveat);
+  const dr2 = await api("GET", "/drift", tok);
+  ok("the at-risk surface carries the caveat", dr2.body?.importCaveat === ih2.body.caveat, dr2.body?.importCaveat);
+  const sm = await api("GET", "/metrics/stewardship-summary", tok);
+  ok("the retention surface carries the caveat and NO sector average",
+    sm.status === 200 && sm.body?.importCaveat === ih2.body.caveat && sm.body?.retentionRate?.sectorAverage === undefined,
+    { caveat: sm.body?.importCaveat, sector: sm.body?.retentionRate?.sectorAverage });
+  // The largest gift waits for confirmation.
+  const big = built.largestGifts[0];
+  const cg = await api("POST", "/org/import-health/confirm-gift", tok, { name: big.name, dollars: big.dollars });
+  ok("POST /org/import-health/confirm-gift marks the panel row confirmed", cg.status === 200, cg.status);
+  const ih3 = await api("GET", "/org/import-health", tok);
+  ok("the confirmation sticks", ih3.body?.stats?.largestGifts?.find(g => g.name === big.name)?.confirmed === true, null);
+  // restore the true stats so later sections read the real health
+  await api("POST", "/donors/import-semantics", tok, { fileStats });
+  const ih4 = await api("GET", "/org/import-health", tok);
+  ok("restoring the honest stats clears the caveat", ih4.body?.caveat === null, ih4.body?.caveat);
 
   // ── §5 · Part 7.4 — the round trip on the IMPORTED org ───────────────────
   console.log("\n— §5 · export reads what import wrote, on THIS org —");

@@ -6281,6 +6281,38 @@ app.post("/donors/:id/year-end-statement", requireAuth, checkWriteAccess, wrap(a
 // exists only through links (a soft-credited spouse, a DAF advisor) is
 // created with no gift. Idempotent: pledges ride the BUILD-72
 // idempotency_key; links and in-kind check for their own row first.
+// BUILD-80 Part 9 — the last import's health, one read for every surface.
+async function importHealth(orgId) {
+  const [o] = await query("SELECT last_import_stats FROM orgs WHERE id=?", [orgId]);
+  let st = o?.last_import_stats;
+  if (typeof st === "string") { try { st = JSON.parse(st); } catch { st = null; } }
+  if (!st || !st.rows) return { stats: null, caveat: null };
+  const ratio = st.refused / st.rows;
+  const caveat = ratio > 0.05
+    ? `computed on ${(st.rows - st.refused).toLocaleString()} of ${st.rows.toLocaleString()} rows; ${st.refused.toLocaleString()} could not be read`
+    : null;
+  return { stats: st, caveat };
+}
+
+app.get("/org/import-health", requireAuth, wrap(async (req, res) => {
+  res.json(await importHealth(req.user.orgId));
+}));
+
+// Confirm one of the last import's largest gifts as REAL — until then it
+// waits in the queue as a question, never a thank-you task.
+app.post("/org/import-health/confirm-gift", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  const { stats } = await importHealth(req.user.orgId);
+  if (!stats) return res.status(404).json({ error: "no import on record" });
+  const { name, dollars } = req.body || {};
+  let hit = false;
+  for (const g of stats.largestGifts || []) {
+    if (g.name === name && Number(g.dollars) === Number(dollars)) { g.confirmed = true; hit = true; }
+  }
+  if (!hit) return res.status(404).json({ error: "no such gift on the largest-gifts panel" });
+  await run("UPDATE orgs SET last_import_stats=? WHERE id=?", [JSON.stringify(stats), req.user.orgId]);
+  res.json({ ok: true });
+}));
+
 app.post("/donors/import-semantics", requireAuth, checkWriteAccess, wrapImport(async (req, res) => {
   const orgId = req.user.orgId;
   const pledges = Array.isArray(req.body.pledges) ? req.body.pledges : [];
@@ -6288,6 +6320,19 @@ app.post("/donors/import-semantics", requireAuth, checkWriteAccess, wrapImport(a
   const links = Array.isArray(req.body.links) ? req.body.links : [];
   const reviewTwins = Array.isArray(req.body.reviewTwins) ? req.body.reviewTwins : [];
   const merges = Array.isArray(req.body.merges) ? req.body.merges : [];
+  // BUILD-80 Part 9 — the import's own health, persisted: every headline
+  // stat carries the caveat while refusals exceed 5% of rows, the goal card
+  // stays empty, and the thank-you queue reads the largest gifts first.
+  if (req.body.fileStats && Number(req.body.fileStats.rows) > 0) {
+    const fsIn = req.body.fileStats;
+    await run("UPDATE orgs SET last_import_stats=? WHERE id=?", [JSON.stringify({
+      rows: Number(fsIn.rows) || 0,
+      refused: Number(fsIn.refused) || 0,
+      refusedDollars: Number(fsIn.refusedDollars) || 0,
+      largestGifts: Array.isArray(fsIn.largestGifts) ? fsIn.largestGifts.slice(0, 5).map(g => ({ name: String(g.name || ""), dollars: Number(g.dollars) || 0, line: g.line || null, confirmed: false })) : [],
+      at: new Date().toISOString(),
+    }), orgId]);
+  }
   const counts = { pledges: 0, inKind: 0, links: 0, personsCreated: 0, twinsFlagged: 0, merges: 0, unresolved: [] };
   const mergeRows = [];
 
@@ -8655,9 +8700,27 @@ app.get("/dashboard/today", requireAuth, wrap(async (req, res) => {
     upsertItem(lapsedItem);
   }
 
-  // Unacknowledged recent gifts (need a thank-you)
+  // Unacknowledged recent gifts (need a thank-you).
+  // BUILD-80 Part 9 — the queue reads the LARGEST-GIFTS panel first: a
+  // number that is 10% of the file in one row is a parse error until a
+  // human says otherwise, and a $200,000 misparse must never LEAD the
+  // thank-you queue. An unconfirmed largest-import gift becomes a
+  // confirm-this-amount question, not a thank-you task.
+  const { stats: impStats } = await importHealth(orgId);
+  const unconfirmedLargest = (impStats?.largestGifts || []).filter(g => !g.confirmed);
   for (const g of unacked) {
     const giftDate = new Date(g.date).toLocaleDateString("en-US", { month: "long", day: "numeric" });
+    const flagged = unconfirmedLargest.find(x => Number(x.dollars) === Number(g.amount) && x.name && g.donor_name && (g.donor_name.includes(x.name) || x.name.includes(g.donor_name)));
+    if (flagged) {
+      upsertItem({
+        donorId: g.donor_id, donorName: g.donor_name,
+        reason: `Imported gift of $${Number(g.amount).toLocaleString()} on ${giftDate} — one of the file's largest. Confirm the amount is real before thanking.`,
+        priority: 90, action: "confirm-gift",
+        totalGiving: parseFloat(g.total_giving) || 0,
+        confirmGift: { name: flagged.name, dollars: flagged.dollars },
+      });
+      continue;
+    }
     upsertItem({
       donorId: g.donor_id, donorName: g.donor_name,
       reason: `Gave $${Number(g.amount).toLocaleString()} on ${giftDate} — not yet thanked`,
@@ -8895,9 +8958,11 @@ app.get("/drift", requireAuth, wrap(async (req, res) => {
       ORDER BY total_giving DESC NULLS LAST LIMIT 50`, [orgId]))
     .map(r => ({ donorId: r.id, name: r.name, totalGiving: r.total_giving, lastGiftDate: r.last_gift_date, giftCount: r.gift_count }));
 
+  const { caveat: importCaveat } = await importHealth(orgId);
   res.json({
     today,
     institutional,
+    importCaveat,
     atRiskAmount,
     atRiskBasis: "trailing24mo",
     counts: {
@@ -9109,8 +9174,12 @@ app.get("/metrics/stewardship-summary", requireAuth, wrap(async (req, res) => {
   res.json({
     stewardshipDebt: { current: debt, trend: debtTrend.map(r => ({ date: r.snapshot_date, value: Number(r.value) })), deltaVsTrendStart: trendDelta(debtTrend) },
     firstTouchDelay: { current: firstTouch.avgDays, sampleSize: firstTouch.sampleSize, untouchedCount: firstTouch.untouchedCount, newestUntouched: firstTouch.newestUntouched, trend: touchTrend.map(r => ({ date: r.snapshot_date, value: Number(r.value) })), deltaVsTrendStart: trendDelta(touchTrend) },
+    importCaveat: (await importHealth(orgId)).caveat,
     retentionRate: {
-      current: retention.retentionRate, sectorAverage: SECTOR_AVG_RETENTION_RATE,
+      // BUILD-80 Part 9 — the sector comparison is GONE (the sentence
+      // BUILD-73 banned: no benchmarking an org on first contact, no
+      // unsourced sector statistics). Rate, window, denominator — nothing else.
+      current: retention.retentionRate,
       // BUILD-76 follow-up — the confidence floor: below it the client says
       // "not enough history yet" and drops the sector comparison entirely.
       thinData: retention.thinData, historyDays: retention.historyDays, floor: retention.floor,
@@ -9184,7 +9253,7 @@ app.get("/dashboard/retention/breakdown", requireAuth, wrap(async (req, res) => 
   }
 
   res.json({
-    retentionRate: retention.retentionRate, sectorAverage: SECTOR_AVG_RETENTION_RATE,
+    retentionRate: retention.retentionRate,
     thinData: retention.thinData, historyDays: retention.historyDays, floor: retention.floor,
     retained: retention.retained, prevYearCount: retention.prevYearCount,
     year: retention.year, prevYear: retention.prevYear,
@@ -13744,7 +13813,7 @@ async function sendOnboardingSequence(orgId, userId, userName, userEmail) {
       {
         delay_days: 10,
         subject: "The donors you're about to lose (and how to keep them)",
-        body: `Hi {{first_name}},\n\nHere's a number most development officers don't know off the top of their head:\n\nTheir donor retention rate.\n\nThe nonprofit sector average is about ${SECTOR_AVG_RETENTION_RATE}%. That means for every 100 donors you had last year, ${100 - SECTOR_AVG_RETENTION_RATE} didn't give again.\n\nSteward tracks this automatically. It flags donors who are at risk of lapsing and puts them in a Re-engage queue so nothing falls through the cracks.\n\nGo to Donors → Re-engage and see who's there.\n\nIf you've set up email sequences, Steward will also automatically reach out to lapsed donors on your behalf — a warm, personal email that goes out without you having to remember to send it.\n\nRetaining one major donor is worth more than acquiring ten new ones. This is where the money is.\n\n— Jonathan`,
+        body: `Hi {{first_name}},\n\nHere's a number most development officers don't know off the top of their head:\n\nTheir donor retention rate — of the donors who gave last year, how many gave again this year.\n\nSteward tracks this automatically. It flags donors who are at risk of lapsing and puts them in a Re-engage queue so nothing falls through the cracks.\n\nGo to Donors → Re-engage and see who's there.\n\nIf you've set up email sequences, Steward will also automatically reach out to lapsed donors on your behalf — a warm, personal email that goes out without you having to remember to send it.\n\nRetaining one major donor is worth more than acquiring ten new ones. This is where the money is.\n\n— Jonathan`,
       },
       {
         delay_days: 18,
@@ -22106,7 +22175,10 @@ async function computeFirstTouchDelay(orgId) {
 // Sector benchmark line already used in the onboarding drip email (see
 // sendOnboardingSequence's step-0 body) — pulled out as a named constant so
 // both places read from one source instead of a second hardcoded "43".
-const SECTOR_AVG_RETENTION_RATE = 43;
+// BUILD-80 Part 9 — the sector-average constant is GONE from every surface
+// (BUILD-73's ban: no benchmarking an org on first contact, no unsourced
+// sector statistics). Nothing reads it any more; removed rather than left
+// as a temptation.
 
 // BUILD-76 follow-up — THE RETENTION CONFIDENCE FLOOR. Below these, the card
 // says "not enough history yet" instead of a percentage and drops the sector
