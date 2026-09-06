@@ -1372,6 +1372,27 @@ async function initSchema() {
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_donor_rel_a ON donor_relationships (org_id, donor_id_a)`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_donor_rel_b ON donor_relationships (org_id, donor_id_b)`);
 
+  // BUILD-80 Part 6.2 — every merge the IMPORTER makes is reviewable and
+  // reversible: the surviving donor, the identity variants that folded into
+  // it (with their gift external ids), and the reason. Undo re-creates the
+  // folded identity and moves its gifts back.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS import_merges (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL REFERENCES orgs(id),
+      donor_id TEXT REFERENCES donors(id) ON DELETE CASCADE,
+      surviving TEXT NOT NULL,
+      folded JSONB NOT NULL,
+      undone_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_import_merges_org ON import_merges (org_id)`);
+
+  // BUILD-80 Part 6.1 — the source system's donor id, stored AS TEXT with
+  // leading zeros kept (never grouped on when spreadsheet-damaged).
+  await pool.query(`ALTER TABLE donors ADD COLUMN IF NOT EXISTS external_donor_id TEXT`);
+
   // ── Giving Pages (2026-07-14) ────────────────────────────────────────────
   // Campaign-specific donation pages (gala/appeal/etc.), distinct from the
   // one org-wide /give/:orgSlug page. Deliberately NOT the `campaigns` table

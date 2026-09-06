@@ -119,6 +119,7 @@ for (const { r } of body) {
 // ── the row axis ───────────────────────────────────────────────────────────
 const dispositions = [];
 const donors = new Map(); // identity key → { name, deceased, custom:{}, gifts:[] }
+const byEmailKey = new Map(), byNameKey = new Map(); // BUILD-80 Part 6 chaining
 for (const { r, line } of body) {
   const name = col(r, "Donor Name"), email = col(r, "Email").toLowerCase();
   const rec = (disposition, reason, dollars) => dispositions.push({ line, disposition, reason: reason || null, dollars: dollars || 0, name: name || email || "(none)" });
@@ -143,9 +144,43 @@ for (const { r, line } of body) {
   const gl = col(r, "Gift Level");
   if (gl && !glCanon.has(gl.toLowerCase())) { rec("errored", "gift_level_invalid", dollars); continue; }
 
-  const key = email.includes("@") ? email : name.toLowerCase();
-  if (!donors.has(key)) donors.set(key, { name, deceased: false, custom: {}, giftCustom: [], gifts: [] });
+  // BUILD-80 Part 6 — identity policy, independently restated: a REAL email
+  // (one @, dotted domain, none of the "none"/"n/a" placeholders) is the
+  // identity; otherwise the MATCHING name (case-folded, punctuation and
+  // honorifics stripped, "Last, First" flipped, middle initials dropped).
+  const realEmail = (() => {
+    const e = email.replace(/[\u200B-\u200D\uFEFF]/g, "").trim();
+    if (!e || /^\(?(none|n\/a|na|unknown|no e?-?mail|null|missing|tbd|-)\)?\.?$/i.test(e)) return null;
+    const at = e.indexOf("@");
+    if (at <= 0 || at !== e.lastIndexOf("@") || /\s/.test(e)) return null;
+    if (!/^[^@\s]+\.[a-z]{2,}$/i.test(e.slice(at + 1))) return null;
+    return e;
+  })();
+  const matchKey = (() => {
+    let n = name.replace(/\s+/g, " ").trim();
+    const ci = n.indexOf(",");
+    if (ci > 0) n = (n.slice(ci + 1).trim() + " " + n.slice(0, ci).trim());
+    n = n.replace(/^(mr|mrs|ms|miss|dr|rev|prof)\.?\s+/i, "");
+    return n.toLowerCase().replace(/[^\p{L}\p{N} ]/gu, "").split(/\s+/).filter(Boolean)
+      .filter((t, i, arr) => !(t.length === 1 && i > 0 && i < arr.length - 1)).join(" ");
+  })();
+  // chain the keys the way the resolver does: a row with an email joins the
+  // donor its NAME already created (and vice versa), so a donor whose first
+  // row lacked the address still lands as one person.
+  let key = realEmail && byEmailKey.get(realEmail);
+  if (!key && matchKey && byNameKey.has(matchKey)) {
+    // same name, two DIFFERENT real emails = two people — never joined by
+    // name alone (the resolver's rule)
+    const candKey = byNameKey.get(matchKey);
+    const cand = donors.get(candKey);
+    if (!(realEmail && cand && cand.emails.size && !cand.emails.has(realEmail))) key = candKey;
+  }
+  if (!key) key = realEmail || matchKey;
+  if (!donors.has(key)) donors.set(key, { name, deceased: false, custom: {}, giftCustom: [], gifts: [], emails: new Set() });
+  if (realEmail) byEmailKey.set(realEmail, key);
+  if (matchKey && !byNameKey.has(matchKey)) byNameKey.set(matchKey, key);
   const d = donors.get(key);
+  if (realEmail) d.emails.add(realEmail);
   if (dec && TRUTHY.includes(dec.toLowerCase())) d.deceased = true;
   if (/do not solicit/i.test(col(r, "Notes"))) d.doNotSolicit = true;   // detectNoteMarkers still runs on notes
   // donor custom values: first non-blank per key wins

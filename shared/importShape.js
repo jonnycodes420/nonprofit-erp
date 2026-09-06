@@ -311,6 +311,59 @@ export function normalizeEmail(val) {
   return { value: lower, warn: null };
 }
 
+// BUILD-80 Part 6.1 — an email is an IDENTITY only when it is a real
+// address. "none", "n/a", "unknown", "NO EMAIL", "(none)", "@@", a missing
+// TLD, "jane at example dot com" — none of these identify anyone, and two
+// people who both wrote "none" are two people. Zero-width characters are
+// stripped first (one planted address hides a U+200B).
+export function emailIdentity(val) {
+  const s = String(val ?? "").replace(/[\u200B-\u200D\uFEFF]/g, "").trim().toLowerCase();
+  if (!s) return null;
+  if (/^\(?(none|n\/a|na|unknown|no e?-?mail|null|missing|tbd|-)\)?\.?$/i.test(s)) return null;
+  // exactly one @, a dot AFTER it, at least one char each side
+  const at = s.indexOf("@");
+  if (at <= 0 || at !== s.lastIndexOf("@")) return null;
+  const domain = s.slice(at + 1);
+  if (!/^[^@\s]+\.[a-z]{2,}$/i.test(domain)) return null;
+  if (/\s/.test(s)) return null;
+  return s;
+}
+
+// BUILD-80 Part 6.1 — the MATCHING name: case-folded, punctuation and
+// honorifics stripped, "Last, First" already flipped by normalizeName,
+// middle initials dropped FOR MATCHING ONLY (display keeps them), and the
+// household forms ("Mr. and Mrs. X Y", "The Y Family") reduced to a
+// household CANDIDATE against X Y — never an automatic merge.
+const HONORIFICS_RE = /^(mr|mrs|ms|miss|dr|rev|revd|fr|sr|prof|hon)\.?\s+/i;
+export function matchNameKey(raw) {
+  let s = normalizeName(raw) || "";
+  if (!s) return { key: "", household: false };
+  let household = false;
+  let m = s.match(/^the\s+(.+?)\s+family$/i);
+  if (m) return { key: m[1].toLowerCase().replace(/[^\p{L}\p{N} ]/gu, ""), household: true, lastOnly: true };
+  m = s.match(/^mr\.?\s*(?:and|&)\s*mrs\.?\s+(.+)$/i) || s.match(/^mrs\.?\s*(?:and|&)\s*mr\.?\s+(.+)$/i);
+  if (m) { s = m[1]; household = true; }
+  while (HONORIFICS_RE.test(s)) s = s.replace(HONORIFICS_RE, "");
+  const tokens = s.toLowerCase().replace(/[^\p{L}\p{N} ]/gu, "").split(/\s+/).filter(Boolean)
+    .filter((t, i, arr) => !(t.length === 1 && i > 0 && i < arr.length - 1)); // drop middle initials
+  return { key: tokens.join(" "), household };
+}
+
+// Are two matching names the same person (or a household form of them)?
+export function matchNamesCompatible(a, b) {
+  if (!a.key || !b.key) return false;
+  if (a.key === b.key) return true;
+  // surname comparison handles multi-token surnames ("Ó Briain", "van der
+  // Berg"): a last-only household form matches when the person's key ENDS
+  // WITH it.
+  const endsWithKey = (k, suffix) => k.key === suffix || k.key.endsWith(" " + suffix);
+  if (a.lastOnly) return endsWithKey(b, a.key);
+  if (b.lastOnly) return endsWithKey(a, b.key);
+  const lastOf = k => k.key.split(" ").slice(-1)[0];
+  if ((a.household || b.household) && lastOf(a) === lastOf(b)) return true;
+  return false;
+}
+
 // ── BUILD-58 Part 2 — deceased / do-not-contact flag columns ───────────────
 // The single most damaging silent discard the hostile import found: a
 // Deceased=Y or Do Not Contact=TRUE column landed the donor as a normal
@@ -1295,6 +1348,172 @@ export function detectNoteMarkers(text) {
   return out;
 }
 
+// ── BUILD-80 Part 6 — WHO IS WHO: the identity resolver ────────────────────
+// Grouping order: (1) external donor ID, when a column is recognised as one
+// — stored as TEXT, leading zeros kept; a spreadsheet-damaged ID (1.23E+05)
+// is lossy and never groups; an ID shared by two DIFFERENT names never
+// groups and flags both sides. (2) email, only when it is a REAL address
+// (emailIdentity) — and only joining names that are compatible: one email in
+// front of two distinct people is a household candidate, not a merge.
+// (3) the matching name (matchNameKey). Household forms ("Mr. and Mrs. X Y",
+// "The Y Family") never auto-merge with the person by name alone — they
+// join only via a shared ID or a shared real email, and otherwise surface
+// as household candidates. Every union is LOGGED with its reason so the
+// merge review list can show — and undo — what the importer decided.
+export function resolveIdentities(rows = [], txMap = {}, opts = {}) {
+  const headers = rows.length ? Object.keys(rows[0]) : [];
+  const donorIdCol = opts.donorIdColumn !== undefined ? opts.donorIdColumn
+    : findDonorIdHdr(headers.filter(h => h !== txMap.externalId));
+  const damagedId = v => /e\+/i.test(v) || /^\d+\.\d+$/.test(v);
+  const displayNameOf = row => {
+    const rawName = txMap.donorName ? String(row[txMap.donorName] || "").trim() : "";
+    const first = txMap.firstName ? String(row[txMap.firstName] || "").trim() : "";
+    const last = txMap.lastName ? String(row[txMap.lastName] || "").trim() : "";
+    const orgName = txMap.orgName ? String(row[txMap.orgName] || "").trim() : "";
+    return { display: rawName || [first, last].filter(Boolean).join(" ") || orgName,
+             fromNameCol: rawName, fromParts: [first, last].filter(Boolean).join(" ") };
+  };
+
+  // pass 1 — which IDs are damaged or shared by different people
+  const idNames = new Map();
+  for (const row of rows) {
+    const id = donorIdCol ? String(row[donorIdCol] ?? "").trim() : "";
+    if (!id || damagedId(id)) continue;
+    const mk = matchNameKey(displayNameOf(row).display);
+    if (!mk.key) continue;
+    if (!idNames.has(id)) idNames.set(id, []);
+    const list = idNames.get(id);
+    if (!list.some(x => matchNamesCompatible(x, mk))) list.push(mk);
+  }
+  const conflictedIds = new Set([...idNames.entries()].filter(([, l]) => l.length > 1).map(([id]) => id));
+
+  // pass 2 — union-find over per-row identities
+  const parent = [];
+  const find = x => { while (parent[x] !== x) { parent[x] = parent[parent[x]]; x = parent[x]; } return x; };
+  const groupMeta = [];   // gid → { label } (first identity seen, for the log)
+  const log = [];
+  const union = (a, b, reason) => {
+    const ra = find(a), rb = find(b);
+    if (ra === rb) return ra;
+    parent[rb] = ra;
+    log.push({ reason, surviving: groupMeta[ra].label, folded: groupMeta[rb].label });
+    return ra;
+  };
+  const newGid = label => { const g = parent.length; parent.push(g); groupMeta.push({ label }); return g; };
+
+  const byId = new Map(), byName = new Map(), byEmail = new Map();
+  const rowInfo = [];
+  for (const row of rows) {
+    const dn = displayNameOf(row);
+    const mk = matchNameKey(dn.display);
+    const idRaw = donorIdCol ? String(row[donorIdCol] ?? "").trim() : "";
+    const damaged = !!(idRaw && damagedId(idRaw));
+    const vid = idRaw && !damaged && !conflictedIds.has(idRaw) ? idRaw : null;
+    const vem = emailIdentity(txMap.donorEmail ? row[txMap.donorEmail] : "");
+    const nameConflict = !!(dn.fromNameCol && dn.fromParts &&
+      matchNameKey(dn.fromNameCol).key && matchNameKey(dn.fromParts).key &&
+      !matchNamesCompatible(matchNameKey(dn.fromNameCol), matchNameKey(dn.fromParts)));
+
+    let gid = null;
+    const label = dn.display || vem || (idRaw ? `ID ${idRaw}` : "(no identity)");
+    if (vid && byId.has(vid)) gid = find(byId.get(vid));
+    // email joins only compatible names (household forms count as compatible)
+    let emailEntry = null;
+    if (vem) {
+      const list = byEmail.get(vem) || [];
+      emailEntry = list.find(e => !mk.key || !e.mk.key || matchNamesCompatible(e.mk, mk)) || null;
+      if (emailEntry) {
+        const eg = find(emailEntry.gid);
+        gid = gid === null ? eg : union(gid, eg, `email ${vem}`);
+      }
+    }
+    // exact matching-name joins — but a household form never joins a person
+    // by name alone, and a name never joins across two different known IDs
+    if (mk.key && byName.has(mk.key)) {
+      const cand = find(byName.get(mk.key));
+      const candIds = groupMeta[cand].idSet || null;
+      const crossesIds = vid && candIds && candIds.size && !candIds.has(vid);
+      // Same name, two DIFFERENT real emails = two people until a human says
+      // otherwise (the same rule IDs get) — never a name-only merge across
+      // distinct addresses.
+      const candEmails = groupMeta[cand].emailSet || null;
+      const crossesEmails = vem && candEmails && candEmails.size && !candEmails.has(vem);
+      const bothHouseholdSafe = !(mk.household && !(groupMeta[cand].sawHousehold));
+      if (!crossesIds && !crossesEmails && (bothHouseholdSafe || gid !== null)) {
+        gid = gid === null ? cand : union(gid, cand, `name "${mk.key}"`);
+      }
+    }
+    let via = "first row";
+    if (gid !== null) via = vid && byId.has(vid) && find(byId.get(vid)) === find(gid) ? `ID ${vid}` : (emailEntry ? `email ${vem}` : "name");
+    if (gid === null) gid = newGid(label);
+    const rg = find(gid);
+    const giftId = txMap.externalId ? String(row[txMap.externalId] ?? "").trim() : "";
+    (groupMeta[rg].members = groupMeta[rg].members || []).push({ label, via, giftId });
+    // register + group attributes
+    if (vid) {
+      byId.set(vid, rg);
+      (groupMeta[rg].idSet = groupMeta[rg].idSet || new Set()).add(vid);
+    }
+    // FIRST claimant keeps the name (deterministic): when two distinct-email
+    // people share a name, an email-less row of that name attaches to the
+    // earliest, and a re-run groups identically.
+    if (mk.key && !mk.household && !byName.has(mk.key)) byName.set(mk.key, rg);
+    if (mk.key && mk.household) {
+      groupMeta[rg].sawHousehold = true;
+      if (!byName.has(mk.key)) byName.set(mk.key, rg);
+    }
+    if (vem) {
+      const list = byEmail.get(vem) || [];
+      if (emailEntry) emailEntry.gid = rg;
+      else list.push({ gid: rg, mk });
+      byEmail.set(vem, list);
+      (groupMeta[rg].emailSet = groupMeta[rg].emailSet || new Set()).add(vem);
+    }
+    rowInfo.push({ gid: rg, idRaw, damaged, conflicted: !!(idRaw && conflictedIds.has(idRaw)), vem, mk, nameConflict });
+  }
+
+  // household candidates: one real email, several groups behind it
+  const householdCandidates = [];
+  for (const [em, list] of byEmail) {
+    const gids = [...new Set(list.map(e => find(e.gid)))];
+    if (gids.length > 1) householdCandidates.push({ email: em, names: gids.map(g => groupMeta[g].label) });
+  }
+
+  // The MERGE REVIEW LIST (Part 6.2): one entry per group assembled from
+  // more than one distinct identity label — the surviving record, every
+  // variant that folded into it with its reason and its gift ids (so an
+  // undo can split the gifts back out).
+  const mergeReview = [];
+  const seenRoots = new Set();
+  for (let g = 0; g < parent.length; g++) {
+    const root = find(g);
+    if (seenRoots.has(root)) continue;
+    seenRoots.add(root);
+    const members = [];
+    for (let h = 0; h < parent.length; h++) if (find(h) === root && groupMeta[h].members) members.push(...groupMeta[h].members);
+    const byLabel = new Map();
+    for (const m of members) {
+      if (!byLabel.has(m.label)) byLabel.set(m.label, { label: m.label, via: m.via, rows: 0, giftIds: [] });
+      const e = byLabel.get(m.label);
+      e.rows++;
+      if (m.giftId) e.giftIds.push(m.giftId);
+    }
+    if (byLabel.size > 1) {
+      const variants = [...byLabel.values()];
+      mergeReview.push({ surviving: variants[0].label, folded: variants.slice(1) });
+    }
+  }
+  return {
+    donorIdCol,
+    keys: rowInfo.map(r => `grp_${find(r.gid)}`),
+    rowInfo,
+    conflictedIds: [...conflictedIds],
+    log,
+    mergeReview,
+    householdCandidates,
+  };
+}
+
 // ── BUILD-80 Part 5 — GIFT TYPE IS A CLOSED VOCABULARY WITH MEANING ────────
 // blank/cash/check/cc/ach/online/venmo/stock/recurring/grant → a gift.
 // Bequest → a gift, and the donor is never solicited again. Matching Gift →
@@ -1393,6 +1612,9 @@ export function buildTransactionRows(parsed, txMap, opts = {}) {
   // as US (each impossible cell refuses, which is the honest outcome) and the
   // mapper is expected to have asked; the caller can override via
   // opts.dateConvention ("dmy"|"mdy") after asking a human.
+  // BUILD-80 Part 6 — WHO IS WHO, decided once for the whole file: external
+  // donor ID → real email → matching name, unions logged for review.
+  const identity = resolveIdentities(rows, txMap, opts);
   const dateConv = txMap.date ? inferDateConvention(rows.map(r => r[txMap.date])) : null;
   const dateConvApplied = opts.dateConvention || (dateConv ? dateConv.convention : "default-mdy");
   const dayFirst = dateConvApplied === "dmy";
@@ -1449,7 +1671,20 @@ export function buildTransactionRows(parsed, txMap, opts = {}) {
     // is still blank after grouping becomes "Unnamed donor (line N)" +
     // a needs-name tag, excluded from actionable surfaces until named.
     const donor = { name, email, stage: "prospect" };
-    const dkey = (email && email.includes("@")) ? email.toLowerCase() : (name || `__line_${line}`).toLowerCase();
+    // BUILD-80 Part 6 — the identity resolver's verdict for this row (ID →
+    // real email → matching name; damaged and shared IDs never group).
+    const idv = identity.rowInfo[i];
+    const dkey = idv ? identity.keys[i] : ((email && email.includes("@")) ? email.toLowerCase() : (name || `__line_${line}`).toLowerCase());
+    if (idv) {
+      if (idv.idRaw) {
+        donor.externalDonorId = idv.idRaw;   // TEXT, leading zeros kept, stored as given
+        if (idv.damaged) donor.tags = [...new Set([...(donor.tags || []), "id-damaged"])];
+        if (idv.conflicted) donor.tags = [...new Set([...(donor.tags || []), `shares-id:${idv.idRaw}`])];
+      }
+      if (idv.nameConflict) donor.tags = [...new Set([...(donor.tags || []), "name-conflict"])];
+      // an invalid email never becomes the donor's stored address either
+      if (donor.email && !idv.vem) donor.email = "";
+    }
     if (!keyFirstLine.has(dkey)) keyFirstLine.set(dkey, line);
     if (txMap.phone && row[txMap.phone]) donor.phone = String(row[txMap.phone]).trim() || null;
     if (txMap.city && row[txMap.city]) donor.city = String(row[txMap.city]).trim() || null;
@@ -1795,6 +2030,12 @@ export function buildTransactionRows(parsed, txMap, opts = {}) {
     },
     amountConventions: { ...conventionCounts, column: amountConv ? amountConv.columnConvention : "us" },
     dateConvention: dateConv ? { ...dateConv, applied: dateConvApplied } : null,
+    identity: {
+      donorIdColumn: identity.donorIdCol || "",
+      mergeReview: identity.mergeReview,
+      householdCandidates: identity.householdCandidates,
+      conflictedIds: identity.conflictedIds,
+    },
     file: {
       rows: rows.length,                       // physical non-blank rows, counted ONCE at parse entry
       dollars: Math.round(fileDollars * 100) / 100,
@@ -1867,6 +2108,16 @@ export function groupTransactions(items = []) {
     } else {
       const canon = donors[di];
       if ((!canon.name || !String(canon.name).trim()) && donor.name) canon.name = donor.name;
+      // BUILD-80 Part 6 — a person-form name outranks a household form for
+      // display ("Janice Tran" over "The Tran Family"); ALL-CAPS/lower rows
+      // never displace a mixed-case one (normalizeName already re-cased).
+      else if (canon.name && donor.name) {
+        const ck = matchNameKey(canon.name), dk2 = matchNameKey(donor.name);
+        if (ck.household && !dk2.household && matchNamesCompatible(ck, dk2)) canon.name = donor.name;
+      }
+      if (donor.externalDonorId && !canon.externalDonorId) canon.externalDonorId = donor.externalDonorId;
+      if (Array.isArray(donor.tags) && donor.tags.length)
+        canon.tags = [...new Set([...(canon.tags || []), ...donor.tags])];
       for (const k of ["email", "phone", "city", "state", "address", "zip", "notes", "owner"]) {
         if ((canon[k] == null || canon[k] === "") && donor[k]) canon[k] = donor[k];
       }

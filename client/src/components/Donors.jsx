@@ -933,6 +933,7 @@ export function DonorImport({ onClose, onImported, withHistory = false }) {
         totals.dateConvention = payloadForSummary.dateConvention || null;
         totals.exclusionConflicts = payloadForSummary.exclusionConflicts || [];
         totals.semantics = payloadForSummary.semantics || null;
+        totals.identity = payloadForSummary.identity || null;
         // BUILD-80 Part 5/7 — the semantic rows land in ONE follow-up call:
         // pledges to the pledges table, in-kind as FMV records, soft credits
         // and matching/DAF attributions as relationship links.
@@ -943,8 +944,10 @@ export function DonorImport({ onClose, onImported, withHistory = false }) {
               inKind: payloadForSummary.semantics.inKind,
               links: payloadForSummary.semantics.links,
               reviewTwins: payloadForSummary.semantics.reviewTwins,
+              merges: payloadForSummary.identity?.mergeReview || [],
             }) });
             totals.semanticsApplied = semRes?.counts || null;
+            totals.mergeRows = semRes?.merges || [];
           } catch (e) {
             console.error("[import] semantics call failed:", e);
             totals.semanticsError = e.message || "the pledge/in-kind/link rows could not be recorded";
@@ -1481,6 +1484,46 @@ export function DonorImport({ onClose, onImported, withHistory = false }) {
               {Math.abs(result.roundingAdjustment || 0) >= 0.005 && (
                 <div style={{marginTop:6,color:T.terra700,fontSize:11}}>
                   {money(Math.abs(result.roundingAdjustment))} of cents could not be stored — please report this.
+                </div>
+              )}
+            </div>;
+          })()}
+          {/* BUILD-80 Part 6.2 — every merge the importer made, reviewable and
+              reversible: the surviving record, the folded variants, the
+              reason. Undo splits them back with their gifts. */}
+          {(result.mergeRows?.length > 0 || result.identity?.mergeReview?.length > 0) && (() => {
+            const merges = result.mergeRows?.length ? result.mergeRows : (result.identity.mergeReview || []).map(m => ({ ...m, id: null }));
+            return <div style={{textAlign:"left",background:T.bg2,border:`1px solid ${T.bg3}`,borderRadius:10,padding:"12px 16px",marginBottom:16,fontSize:12,lineHeight:1.7}}>
+              <div style={{fontSize:10,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",color:T.ink3,marginBottom:6}}>
+                Rows we merged into one donor — review these
+              </div>
+              {merges.slice(0,25).map((m,i)=>(
+                <div key={i} style={{display:"flex",justifyContent:"space-between",gap:10,alignItems:"baseline"}}>
+                  <span style={{minWidth:0,color:T.ink2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
+                    <strong style={{color:T.ink}}>{m.surviving}</strong>
+                    {" ← "}{m.folded.map(f=>`${f.label} (${f.via})`).join(" · ")}
+                  </span>
+                  {m.id && (
+                    <button onClick={async()=>{
+                      try { await apiFetch(`/import-merges/${m.id}/undo`, { method:"POST", body: JSON.stringify({}) });
+                        setResult(r=>({ ...r, mergeRows: r.mergeRows.map(x=>x.id===m.id?{...x, undone:true}:x) }));
+                      } catch(e){ alert(e.message || "Undo failed"); }
+                    }} disabled={m.undone}
+                      style={{background:"transparent",border:`1px solid ${T.bg3}`,borderRadius:6,padding:"2px 8px",color:m.undone?T.ink3:T.ink,fontSize:11,cursor:m.undone?"default":"pointer",flexShrink:0}}>
+                      {m.undone ? "Split back" : "Undo"}
+                    </button>
+                  )}
+                </div>
+              ))}
+              {merges.length > 25 && <div style={{color:T.ink3}}>+{merges.length-25} more merges recorded — every one is undoable.</div>}
+              {result.identity?.householdCandidates?.length > 0 && (
+                <div style={{marginTop:6,paddingTop:6,borderTop:`1px solid ${T.bg3}`,color:T.ink3,fontSize:11}}>
+                  {result.identity.householdCandidates.length} email{result.identity.householdCandidates.length===1?"":"s"} sit behind more than one person (e.g. {result.identity.householdCandidates[0].names.join(" + ")}) — kept as separate people, household candidates for you to join.
+                </div>
+              )}
+              {result.identity?.conflictedIds?.length > 0 && (
+                <div style={{marginTop:4,color:T.ink3,fontSize:11}}>
+                  {result.identity.conflictedIds.length} donor ID{result.identity.conflictedIds.length===1?"":"s"} shared by different people (legacy merge damage) — never merged on, both sides flagged.
                 </div>
               )}
             </div>;

@@ -47,7 +47,7 @@ async function reset() {
   for (const t of ["gifts", "fin_transactions", "interactions", "donors", "accounts", "fin_funds", "budgets", "users"])
     await q(`DELETE FROM ${t} WHERE org_id='org_b79r'`).catch(() => {});
   await q(`DELETE FROM orgs WHERE id='org_b79r'`).catch(() => {});
-  for (const t of ["workflow_runs", "workflows", "digest_sends", "moves", "opportunities", "tasks",
+  for (const t of ["import_merges", "donor_relationships", "workflow_runs", "workflows", "digest_sends", "moves", "opportunities", "tasks",
     "payment_recovery_events", "reconnect_sends", "recurring_subscriptions", "receipts", "pledges", "fin_audit_log",
     "fin_transactions", "gifts", "interactions", "milestone_drafts", "note_reminders",
     "fundraising_goals", "metric_snapshots", "custom_field_values", "custom_field_defs",
@@ -236,8 +236,8 @@ async function reset() {
     refusedNow < 60, refusedNow);
   // Part 2.4 — a refused row is not a neutral event: the donor is tagged.
   const taggedDonors = built.donors.filter(d => (d.tags || []).some(t => /^has-refused-rows:\d+$/.test(t)));
-  ok("every donor with a refused row carries has-refused-rows:N (49 donors on v2)",
-    taggedDonors.length === 49, taggedDonors.length);
+  ok("every donor with a refused row carries has-refused-rows:N (50 donors on v2)",
+    taggedDonors.length === 50, taggedDonors.length);
   const paulOB = built.donors.find(d => /Paul/.test(d.name) && /Briain/.test(d.name));
   ok("Paul Ó Briain's rows all parse — his January 2026 gift exists and he carries no refusal tag",
     paulOB && !(paulOB.tags || []).some(t => /has-refused-rows/.test(t)), paulOB?.tags);
@@ -312,6 +312,41 @@ async function reset() {
   ok("a bequest's donor is never solicited again",
     built.donors.filter(d => built.gifts.some(g => g.donorIndex === built.donors.indexOf(d) && (g.type || "") === "bequest")).every(d => d.doNotSolicit), null);
 
+  // ── §3f · BUILD-80 Part 6 — WHO IS WHO ───────────────────────────────────
+  console.log("\n— §3f · BUILD-80 Part 6: identity — ID before email before name, conflicts block merges —");
+  ok("the Constituent ID column is recognised as the donor id and grouped on FIRST",
+    built.identity.donorIdColumn === "Constituent ID", built.identity.donorIdColumn);
+  ok("donor count lands at 499 — variants folded by ID, real email and matching name (was 553 under email-else-name)",
+    built.donors.length === 499, built.donors.length);
+  const paul6 = built.donors.filter(d => /Paul/.test(d.name) && /Briain/.test(d.name));
+  ok("Paul Ó Briain is ONE person — the '@@' email row grouped by his ID, no refusal tag",
+    paul6.length === 1 && paul6[0].externalDonorId === "81481" && !(paul6[0].tags || []).some(t => /has-refused-rows/.test(t)),
+    paul6.map(d => [d.name, d.externalDonorId, d.tags]));
+  const sean = built.donors.filter(d => /Sean Coventry/.test(d.name));
+  const vc = built.donors.filter(d => /Vincent/.test(d.name) && /Çelik/.test(d.name));
+  ok("Sean Coventry and Vincent Çelik STAY TWO PEOPLE despite sharing ID 33226, both flagged",
+    sean.length === 1 && vc.length === 1 &&
+    (sean[0].tags || []).includes("shares-id:33226") && (vc[0].tags || []).includes("shares-id:33226"),
+    { sean: sean.map(d => d.tags), vc: vc.map(d => d.tags) });
+  ok("spreadsheet-damaged IDs (1.23E+05) are stored AS GIVEN and never grouped on — 10 donors flagged id-damaged",
+    built.donors.filter(d => (d.tags || []).includes("id-damaged")).length === 10, null);
+  const nmConf = built.donors.filter(d => (d.tags || []).includes("name-conflict"));
+  ok("Name-vs-First/Last disagreements: the Name column wins and the conflict is flagged (5 reachable of the 8 planted)",
+    nmConf.length >= 5, nmConf.map(d => d.name));
+  ok("the merge review list names every fold with its reason and its gift ids (165 groups on v2)",
+    built.identity.mergeReview.length === 165 &&
+    built.identity.mergeReview.every(m => m.surviving && m.folded.length && m.folded.every(f => f.via)),
+    built.identity.mergeReview.length);
+  const sowandeMerge = built.identity.mergeReview.find(m => /Sowande/.test(m.surviving));
+  ok("the Jennifer E./A./J./K. Sowande initials rotation folds to ONE person (the pinned fixture artifact)",
+    !!sowandeMerge && built.donors.filter(d => /Sowande/.test(d.name) && /Jennifer/.test(d.name)).length === 1,
+    sowandeMerge && sowandeMerge.folded.map(f => f.label));
+  ok("one email behind several distinct people is a HOUSEHOLD CANDIDATE, never a merge (27 on v2)",
+    built.identity.householdCandidates.length >= 20, built.identity.householdCandidates.length);
+  ok("household candidates keep distinct people separate (Catherine + Ronald Kingsley)",
+    built.donors.some(d => /Catherine/.test(d.name) && /Kingsley/.test(d.name)) &&
+    built.donors.some(d => /Ronald/.test(d.name) && /Kingsley/.test(d.name)), null);
+
   // ── §4 · through the real route ──────────────────────────────────────────
   console.log("\n— §4 · through the real route: the ledger closes against 2,500 —");
   const CHUNK = 500;
@@ -358,16 +393,16 @@ async function reset() {
   const dr = await api("GET", "/drift?includeMedium=1&all=1", tok);
   ok("GET /drift answers 200 on the imported org", dr.status === 200, dr.status);
   const dlist = dr.body?.list || [];
-  // Paul Ó Briain's January 2026 row now PARSES (dd/mm) — the date layer's
-  // half of his story. He still shows on drift because his 2026 row carries
-  // the planted '@@' email and identity-splits him into two records; §6b
-  // (BUILD-80 Part 6, external-ID grouping) owns the other half and asserts
-  // his absence from the list.
   const [paulGift] = await q(
     `SELECT COUNT(*)::int n FROM gifts g JOIN donors d ON d.id=g.donor_id
       WHERE g.org_id=$1 AND d.name ILIKE '%Briain%' AND d.name ILIKE '%Paul%' AND g.date='2026-01-09'`, [ORG]);
   ok("Paul Ó Briain's January 2026 gift EXISTS in the DB — the refused row that un-quieted him now parses",
     paulGift.n >= 1, paulGift.n);
+  // Part 6 closed the other half: the '@@' row groups by his Constituent ID,
+  // so he is ONE record whose 2026 gift keeps him off the list entirely.
+  ok("Paul Ó Briain is NOT on the drift list — he gave in January 2026",
+    !dlist.some(x => /Paul/.test(x.donorName) && /Briain/.test(x.donorName)),
+    dlist.filter(x => /Briain/.test(x.donorName)).map(x => x.donorName));
   ok("Kenneth Kensington is NOT on the drift list — he gave in May 2026",
     !dlist.some(x => /Kenneth/.test(x.donorName) && /Kensington/.test(x.donorName)),
     dlist.filter(x => /Kensington/.test(x.donorName)).map(x => x.donorName));
@@ -398,7 +433,8 @@ async function reset() {
   console.log("\n— §4d · pledges, in-kind and links land through /donors/import-semantics —");
   const semPost = () => api("POST", "/donors/import-semantics", tok, {
     pledges: built.semantics.pledges, inKind: built.semantics.inKind,
-    links: built.semantics.links, reviewTwins: built.semantics.reviewTwins });
+    links: built.semantics.links, reviewTwins: built.semantics.reviewTwins,
+    merges: built.identity.mergeReview });
   const sem1 = await semPost();
   ok("POST /donors/import-semantics answers 200", sem1.status === 200, sem1.status);
   const [plCount] = await q(`SELECT COUNT(*)::int n FROM pledges WHERE org_id=$1`, [ORG]);
@@ -416,7 +452,7 @@ async function reset() {
   const scLinks = relMap.soft_credit || 0;
   const folds = sem1.body?.counts?.householdFolds || 0;
   ok(`every soft credit is accounted: ${scLinks} links + ${folds} household folds + 3 whose base gift sits on a refused row = 60`,
-    scLinks === 55 && folds === 2, { scLinks, folds });
+    scLinks === 54 && folds === 3, { scLinks, folds });
   ok("matching-gift attributions became links (≥25 of 29)", (relMap.matching_gift || 0) >= 25, relMap);
   const sem2 = await semPost();
   const [plCount2] = await q(`SELECT COUNT(*)::int n FROM pledges WHERE org_id=$1`, [ORG]);
@@ -449,6 +485,28 @@ async function reset() {
   ok(`net cash closes against the source system: DB $${dbCash.toLocaleString()} + errored $${Math.round(erroredDollars).toLocaleString()} + scheduled $${Math.round(scheduledDollars).toLocaleString()} + duplicate-dropped $${Math.round(dupDollars).toLocaleString()} ≈ expected $2,005,092.16 + the traps' true values the file cannot yield`,
     Math.abs(accounted - 2005092.16) < 32000 && dbCash > 1900000,
     { dbCash, erroredDollars: Math.round(erroredDollars * 100) / 100, scheduledDollars, dupDollars: Math.round(dupDollars * 100) / 100, accounted: Math.round(accounted * 100) / 100 });
+
+  // ── §4e · BUILD-80 Part 6.2 — merges are reviewable AND reversible ───────
+  console.log("\n— §4e · the merge review list, over HTTP, with a real undo —");
+  const ml = await api("GET", "/import-merges", tok);
+  ok("GET /import-merges lists the folds this import made", ml.status === 200 && (ml.body?.merges || []).length >= 150, ml.body?.merges?.length);
+  const undoable = (ml.body.merges || []).find(m => !m.undone_at && m.folded.some(f => (f.giftIds || []).length > 0));
+  ok("a merge row carries the folded variants with their gift ids", !!undoable, undoable && undoable.surviving);
+  if (undoable) {
+    const foldedWithGifts = undoable.folded.find(f => (f.giftIds || []).length > 0);
+    const giftIds = foldedWithGifts.giftIds;
+    const un = await api("POST", `/import-merges/${undoable.id}/undo`, tok, { label: foldedWithGifts.label });
+    ok("POST /import-merges/:id/undo answers 200 and creates the split-back donor",
+      un.status === 200 && (un.body?.created || []).length === 1, un.body);
+    const newDonorId = un.body.created[0].id;
+    const moved = await q(
+      `SELECT COUNT(*)::int n FROM gifts WHERE org_id=$1 AND donor_id=$2 AND external_id = ANY($3)`,
+      [ORG, newDonorId, giftIds]);
+    ok(`the folded identity's ${giftIds.length} gift(s) moved BACK to the split donor`,
+      moved[0].n === giftIds.length, { moved: moved[0].n, expected: giftIds.length });
+    const again = await api("POST", `/import-merges/${undoable.id}/undo`, tok, {});
+    ok("a second undo answers 409 — never a second split", again.status === 409, again.status);
+  }
 
   // ── §5 · Part 7.4 — the round trip on the IMPORTED org ───────────────────
   console.log("\n— §5 · export reads what import wrote, on THIS org —");

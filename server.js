@@ -4370,9 +4370,11 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(as
         d.importedSustainerAmount != null ? toDollars(toCents(d.importedSustainerAmount) || 0) : null,
         d.importedSustainerLastGift || null,
         // BUILD-78 — validated through the ONE seam above; raw never lands.
-        d._cfValidated && Object.keys(d._cfValidated).length ? JSON.stringify(d._cfValidated) : null
+        d._cfValidated && Object.keys(d._cfValidated).length ? JSON.stringify(d._cfValidated) : null,
+        // BUILD-80 Part 6 — the source system's donor id, TEXT, as given.
+        d.externalDonorId || null
       );
-      return "(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)";
+      return "(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)";
     });
     // SAVEPOINT, not a nested transaction: we are already inside the request's
     // one transaction, so a failed batch must be rolled back to a point rather
@@ -4383,7 +4385,7 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(as
           last_gift_date,gift_count,tags,notes,city,state,assigned_to,assigned_to_name,
           pending_assignee_invite_id,pending_assignee_name,deceased,do_not_contact,
           do_not_solicit,do_not_mail,do_not_email,deceased_date,address,zip,
-          imported_sustainer,imported_sustainer_amount,imported_sustainer_last_gift,custom_fields)
+          imported_sustainer,imported_sustainer_amount,imported_sustainer_last_gift,custom_fields,external_donor_id)
        VALUES ${tuples.join(",")}`,
       params
     ));
@@ -6283,7 +6285,9 @@ app.post("/donors/import-semantics", requireAuth, checkWriteAccess, wrapImport(a
   const inKind = Array.isArray(req.body.inKind) ? req.body.inKind : [];
   const links = Array.isArray(req.body.links) ? req.body.links : [];
   const reviewTwins = Array.isArray(req.body.reviewTwins) ? req.body.reviewTwins : [];
-  const counts = { pledges: 0, inKind: 0, links: 0, personsCreated: 0, twinsFlagged: 0, unresolved: [] };
+  const merges = Array.isArray(req.body.merges) ? req.body.merges : [];
+  const counts = { pledges: 0, inKind: 0, links: 0, personsCreated: 0, twinsFlagged: 0, merges: 0, unresolved: [] };
+  const mergeRows = [];
 
   const findDonor = async (email, name) => {
     const em = String(email || "").trim().toLowerCase();
@@ -6422,7 +6426,62 @@ app.post("/donors/import-semantics", requireAuth, checkWriteAccess, wrapImport(a
     }
   }
 
-  res.json({ ok: true, counts });
+  // BUILD-80 Part 6.2 — the merge review list, persisted: surviving donor,
+  // folded identity variants (with their gift ids), reviewable and undoable.
+  for (const m of merges) {
+    if (!m || !m.surviving || !Array.isArray(m.folded) || !m.folded.length) continue;
+    const donor = await findDonor(m.survivingEmail, m.surviving);
+    const existing = await query(
+      "SELECT id FROM import_merges WHERE org_id=? AND surviving=? AND folded::text=?",
+      [orgId, m.surviving, JSON.stringify(m.folded)]);
+    if (existing.length) { mergeRows.push({ id: existing[0].id, surviving: m.surviving, folded: m.folded }); continue; }
+    const id = importId("mrg_");
+    await run(
+      `INSERT INTO import_merges (id,org_id,donor_id,surviving,folded) VALUES (?,?,?,?,?)`,
+      [id, orgId, donor ? donor.id : null, m.surviving, JSON.stringify(m.folded)]);
+    counts.merges++;
+    mergeRows.push({ id, surviving: m.surviving, folded: m.folded });
+  }
+
+  res.json({ ok: true, counts, merges: mergeRows });
+}));
+
+// The merge review list — every fold the importer made, newest import first.
+app.get("/import-merges", requireAuth, wrap(async (req, res) => {
+  const rows = await query(
+    `SELECT id, donor_id, surviving, folded, undone_at, created_at
+       FROM import_merges WHERE org_id=? ORDER BY created_at DESC LIMIT 500`, [req.user.orgId]);
+  res.json({ merges: rows.map(r => ({ ...r, folded: typeof r.folded === "string" ? JSON.parse(r.folded) : r.folded })) });
+}));
+
+// BUILD-80 Part 6.2 — UNDO a fold: re-create the folded identity as its own
+// donor and move its gifts back (by the gift external ids the review row
+// recorded). Reversible in the only sense that matters: the gifts follow.
+app.post("/import-merges/:id/undo", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  const [m] = await query("SELECT * FROM import_merges WHERE id=? AND org_id=?", [req.params.id, orgId]);
+  if (!m) return res.status(404).json({ error: "merge not found" });
+  if (m.undone_at) return res.status(409).json({ error: "already undone" });
+  const folded = typeof m.folded === "string" ? JSON.parse(m.folded) : m.folded;
+  const label = String(req.body?.label || "").trim();
+  const targets = label ? folded.filter(f => f.label === label) : folded;
+  if (!targets.length) return res.status(400).json({ error: "no folded identity matches that label" });
+  const createdDonors = [];
+  for (const f of targets) {
+    const id = importId("d_");
+    await run(
+      `INSERT INTO donors (id,org_id,name,email,stage,status,tags,notes) VALUES (?,?,?,?,?,?,?,?)`,
+      [id, orgId, f.label, null, "prospect", "active", JSON.stringify(["split-from-merge"]), null]);
+    const giftIds = (f.giftIds || []).filter(Boolean);
+    if (giftIds.length) {
+      await run(`UPDATE gifts SET donor_id=? WHERE org_id=? AND external_id = ANY(?)`, [id, orgId, giftIds]);
+    }
+    createdDonors.push({ id, name: f.label, giftsMoved: giftIds.length });
+  }
+  await run("UPDATE import_merges SET undone_at=NOW() WHERE id=?", [m.id]);
+  const affected = [m.donor_id, ...createdDonors.map(d => d.id)].filter(Boolean);
+  try { await recalcDonorSummaryBatch(affected, orgId); } catch (e) { console.error("[merge-undo] recalc failed:", e.message); }
+  res.json({ ok: true, created: createdDonors });
 }));
 
 app.post("/gifts/import-history", requireAuth, checkWriteAccess, wrapImport(async (req, res) => {
