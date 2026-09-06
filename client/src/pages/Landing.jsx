@@ -3,17 +3,21 @@ import {
   FIELD_SIZE, DRIFT_COUNTS, STEADY_COUNT, fieldDots, breatheDelay,
 } from "../lib/donorField";
 
-// ── Landing — BUILD-81 rebuild: THE THREAD ──────────────────────────────────
+// ── Landing — BUILD-81 + the photograph pass ────────────────────────────────
 //
-// The page says the one sentence the product says: you log a conversation,
-// Steward hands you the next step, and it keeps asking until you've done it.
-// Built on the question, not a statistic. Section order (BUILD-81 §4.4):
-//   Hero (the question, the thread visual) · How it works (three beats,
-//   tight renders of the real Part 1 UI) · When a card stops · Drift (the
-//   dot field moves DOWN the page as evidence, its FEP caption byte-intact)
-//   · The record · Your data · Closing CTAs · Footer.
+// DESIGN SOURCE: docs/build81/landing/proposal.html — build to match it
+// section for section. The photographs are JONATHAN'S OWN (supplied inside
+// the proposal, extracted to client/public/photos/; originals in
+// docs/build81/photos-src/). Section order:
+//   Hero (the question + the ink Thread panel) · Who it's for (three
+//   photographs) · How it works (REAL product screenshots, kept from the
+//   prior FIX) · When a card stops (copy + the chapel, 4:5) · Drift (the
+//   dot field, byte-identical FEP caption) · Your data (the potter's hands,
+//   4:3 + the four sentences) · Closing (the doorway behind the ink
+//   gradient) · Footer. The record section is DELETED (headline, map,
+//   caption — the donor-map asset went with it).
 //
-// What this page must never grow (unchanged from BUILD-73/74):
+// What this page must never grow (unchanged from BUILD-73/74/81):
 //   · a price, a plan name, a tier, or a founding-partner rate. Cost is a
 //     conversation. Every path ends at Start free or Talk to the founder.
 //   · invented social proof — no logos, no review scores, no testimonials,
@@ -24,19 +28,18 @@ import {
 //
 // Copy that is load-bearing and must not be edited casually:
 //   · "Fundraising Effectiveness Project, full-year 2025." FEP rebased in
-//     Q1 2026 and now headlines a QUARTERLY figure — dropping "full-year"
-//     would silently change what the number means. The caption moved to the
-//     Drift section WITH its dot field; the words are byte-identical.
-//   · The hero copy and the card-stops copy are supplied by the BUILD-81
-//     spec verbatim. Do not invent claims beyond them.
+//     Q1 2026 and now headlines a QUARTERLY figure. The caption lives in
+//     the Drift section with its dot field; the words are byte-identical.
+//   · The hero, card-stops, who-it's-for and your-data copy match the
+//     proposal verbatim. Do not invent claims beyond them.
 //
-// Semantics rule (new in BUILD-81, asserted by landing-prod-verify): every
-// CTA that NAVIGATES is a real <a href> (styled as a button), so cmd-click,
-// open-in-new-tab and crawlers all work; <button> is reserved for actions
-// on this page (the Calendly modal). No element fakes the other.
+// Semantics rule (BUILD-81, asserted by landing-prod-verify): every CTA
+// that NAVIGATES is a real <a href> (styled as a button); <button> is
+// reserved for actions on this page (the Calendly modal).
 //
-// The thread visual's names are INVENTED and must not match any donor in
-// any fixture or in production ("R. Harmon" is the spec's own invention).
+// The hero panel's donor is INVENTED ("Robert Harmon" — the spec's own
+// R. Harmon) and must not match any donor in any fixture or in production
+// (tests/threads.test.js renamed its own Harmon for exactly this).
 
 const C = {
   ink:     "#0F1A12",
@@ -69,42 +72,62 @@ function Placeholder({ value }) {
   return <span style={style}>{value}</span>;
 }
 
-// ── THE THREAD VISUAL — one conversation and the thread that comes off it ──
-// Built in code, deterministic. A single line with five knots; each knot a
-// dated event in DM Sans small caps; the last knot brass, larger, breathing
-// (opacity + transform only, one slow cycle) — and under reduced motion it
-// renders at full opacity and stays. role="img" reads the sequence.
-const THREAD_KNOTS = [
-  { date: "Mar 3",  label: "Coffee with R. Harmon" },
-  { date: "Mar 5",  label: "Thank-you sent" },
-  { date: "Mar 19", label: "Follow up · called, left message" },
-  { date: "Mar 21", label: "Try again" },
-  { date: null,     label: "Still open · day 11", open: true },
+// ── THE THREAD PANEL — the hero's ink panel, from the proposal ──────────────
+// One donor, one thread: the conversation as cream cards down a rail, the
+// open step as a brass card. The brass knot breathes (opacity + transform
+// only, one slow cycle) and holds full opacity, static, under reduced
+// motion. role="img" + an aria-label that reads the sequence; the one
+// interactive element is the real "Log the call" anchor to /signup.
+const PANEL_KNOTS = [
+  { date: "Mar 3",  text: "Coffee. He's interested in the scholarship fund." },
+  { date: "Mar 5",  text: "Thank-you note sent." },
+  { date: "Mar 19", text: "Called, left a message." },
+  { date: "Mar 21", text: "Try again." },
 ];
 
-function ThreadVisual() {
+function ThreadPanel() {
   return (
     <div
       role="img"
-      className="lt-wrap"
-      aria-label="A single conversation and its thread: March 3, coffee with R. Harmon. March 5, thank-you sent. March 19, follow up, called and left a message. March 21, try again. The last knot is still open, day 11."
+      className="lt-wrap lt-panel"
+      aria-label="The Thread for one donor, Robert Harmon, lifetime giving $14,500. The conversation so far: March 3, coffee, he's interested in the scholarship fund. March 5, thank-you note sent. March 19, called and left a message. March 21, try again. Still open, day 11. Tuesday's email will ask again."
     >
-      <div aria-hidden="true" className="lt-line">
-        {THREAD_KNOTS.map((k, i) => (
-          <div key={i} className={k.open ? "lt-knot lt-knot-open" : "lt-knot"}>
-            <span className={k.open ? "lt-dot lt-dot-open" : "lt-dot"} />
-            <span className="lt-label">
-              {k.date && <span className="lt-date">{k.date}</span>}
-              <span className={k.open ? "lt-text lt-text-open" : "lt-text"}>{k.label}</span>
-            </span>
+      <div aria-hidden="true" className="lt-phead">
+        <div>
+          <div className="lt-cap" style={{ color: C.sage, marginBottom: 6 }}>The Thread</div>
+          <div className="lp-serif" style={{ fontSize: 24, color: C.cream, letterSpacing: "-0.01em" }}>Robert Harmon</div>
+        </div>
+        <div style={{ textAlign: "right" }}>
+          <div className="lt-cap" style={{ color: C.sage, marginBottom: 6 }}>Lifetime</div>
+          <div className="lp-serif" style={{ fontSize: 22, color: C.cream }}>$14,500</div>
+        </div>
+      </div>
+      <div className="lt-rail">
+        {PANEL_KNOTS.map((k, i) => (
+          <div key={i} className="lt-knot" aria-hidden="true">
+            <span className="lt-dot" />
+            <div className="lt-card">
+              <span className="lt-cap lt-carddate">{k.date}</span>
+              <span className="lt-cardtext">{k.text}</span>
+            </div>
           </div>
         ))}
+        <div className="lt-knot lt-knot-open">
+          <span className="lt-dot lt-dot-open" aria-hidden="true" />
+          <div className="lt-card-open">
+            <div aria-hidden="true" className="lp-serif lt-openbig">Still open. Day 11.</div>
+            <div className="lt-openrow">
+              <span aria-hidden="true" style={{ fontSize: 13, color: "rgba(15,26,18,0.72)", fontWeight: 500 }}>Tuesday&apos;s email will ask again.</span>
+              <a href="/signup" className="lt-mini lp-focus">Log the call →</a>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   );
 }
 
-// ── THE DONOR FIELD — kept, one render, in the Drift section ───────────────
+// ── THE DONOR FIELD — untouched: the Drift section's evidence ──────────────
 function DonorField({ count, size, gap, label, className = "" }) {
   const dots = fieldDots(count);
   return (
@@ -126,13 +149,6 @@ function DonorField({ count, size, gap, label, className = "" }) {
     </div>
   );
 }
-
-// ── HOW IT WORKS — three beats, REAL screenshots of the product ─────────────
-// Captured from the demo org by `scripts/build81-capture.js --landing-shots`
-// (1440, DPR 2, cropped tight, 1x + 2x webp). Re-capture there when the UI
-// changes and paste the printed intrinsic dimensions below — width/height
-// keep CLS at 0.0000. Donor names in the shots are the demo file's own
-// fiction (the capture skips the Atkinson records).
 
 function CalendlyModal({ onClose }) {
   useEffect(() => {
@@ -198,34 +214,28 @@ const STYLES = `
   .lp .lp-btn-ghost { background: transparent; color: ${C.cream}; border: 1.5px solid rgba(240, 237, 230, 0.4); }
 
   .lp-hero {
-    display: grid; grid-template-columns: 1.1fr 0.9fr; gap: 64px; align-items: center;
-    max-width: 1440px; margin: 0 auto; padding: 56px 48px 96px;
+    display: grid; grid-template-columns: 1fr 620px; gap: 72px; align-items: center;
+    max-width: 1440px; margin: 0 auto; padding: 48px 64px 88px;
   }
-  .lp-h1 { }
-  .lp-lede { }
   .lp-ctarow { display: flex; gap: 12px; flex-wrap: wrap; }
   .lp-hero-col { display: flex; flex-direction: column; gap: 26px; }
 
-  /* the thread visual */
-  .lt-wrap { padding: 12px 0 12px 8px; }
-  .lt-line { position: relative; display: flex; flex-direction: column; gap: 34px; padding-left: 22px; }
-  .lt-line::before {
-    content: ""; position: absolute; left: 5px; top: 8px; bottom: 14px; width: 2px;
-    background: rgba(15, 26, 18, 0.7);
-  }
-  .lt-knot { position: relative; display: flex; align-items: baseline; gap: 14px; }
-  .lt-dot {
-    position: absolute; left: -22px; top: 3px; width: 12px; height: 12px; border-radius: 50%;
-    background: ${C.ink}; display: block;
-  }
-  .lt-dot-open { width: 18px; height: 18px; left: -25px; top: 0; background: ${C.gold}; opacity: 1; }
-  .lt-label { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
-  .lt-date {
-    font-size: 12px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase;
-    color: ${C.ink3}; white-space: nowrap;
-  }
-  .lt-text { font-size: 14px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: ${C.ink}; }
-  .lt-text-open { font-size: 17px; color: ${C.ink}; }
+  /* the Thread panel (the proposal's ink panel) */
+  .lt-panel { background: ${C.ink}; border-radius: 22px; padding: 34px 34px 30px; position: relative; box-shadow: 0 30px 70px rgba(15,26,18,0.22); }
+  .lt-phead { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 22px; }
+  .lt-cap { font-size: 11px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; }
+  .lt-rail { position: relative; padding-left: 30px; display: flex; flex-direction: column; gap: 12px; }
+  .lt-rail::before { content: ""; position: absolute; left: 9px; top: 18px; bottom: 44px; width: 2px; background: rgba(240,237,230,0.22); }
+  .lt-knot { position: relative; }
+  .lt-dot { position: absolute; left: -27px; top: 18px; width: 10px; height: 10px; border-radius: 50%; background: ${C.sage}; display: block; }
+  .lt-dot-open { background: ${C.gold}; width: 16px; height: 16px; left: -30px; top: 22px; box-shadow: 0 0 0 6px rgba(201,168,76,0.18); }
+  .lt-card { background: ${C.cream}; border-radius: 12px; padding: 13px 16px; display: flex; align-items: baseline; gap: 14px; }
+  .lt-carddate { color: ${C.ink3}; white-space: nowrap; }
+  .lt-cardtext { font-size: 15px; font-weight: 500; color: ${C.ink}; }
+  .lt-card-open { background: ${C.gold}; border-radius: 14px; padding: 18px 18px 16px; display: flex; flex-direction: column; gap: 12px; }
+  .lt-openbig { font-size: 26px; letter-spacing: -0.01em; color: ${C.ink}; line-height: 1.05; }
+  .lt-openrow { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+  .lp .lt-mini { background: ${C.ink}; color: ${C.cream}; border-radius: 8px; padding: 9px 14px; font-size: 13px; font-weight: 600; display: inline-flex; align-items: center; min-height: 44px; }
   @media (prefers-reduced-motion: no-preference) {
     .lt-dot-open { animation: ltBreathe 4.5s ease-in-out infinite; }
     @keyframes ltBreathe {
@@ -237,25 +247,37 @@ const STYLES = `
   .lp-sec { padding: 96px 48px; }
   .lp-sec-inner { max-width: 1440px; margin: 0 auto; }
   .lp-eyebrow { font-size: 13px; font-weight: 700; letter-spacing: 0.18em; text-transform: uppercase; }
-  .lp-h2 { }
   .lp-sechead { display: flex; justify-content: space-between; align-items: flex-end; gap: 40px; flex-wrap: wrap; margin-bottom: 56px; }
+
+  /* who it's for — the photo strip (proposal) */
+  .lp-whohead { display: grid; grid-template-columns: 1fr 1fr; gap: 48px; align-items: end; margin-bottom: 40px; }
+  .lp-whostrip { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
+  .lp-whofig { margin: 0; }
+  .lp-whobox { aspect-ratio: 3 / 2; border-radius: 14px; overflow: hidden; box-shadow: 0 18px 44px rgba(15,26,18,0.14); }
+  .lp-whoimg { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .lp-whocap { font-size: 14px; color: ${C.ink3}; margin-top: 12px; line-height: 1.5; }
 
   .lp-beats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; }
   .lp-shot { width: 100%; height: auto; display: block; border-radius: 10px; border: 1px solid rgba(15, 26, 18, 0.12); background: #FFFFFF; }
-  .lp-whostrip { display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; }
-  .lp-whofig { margin: 0; display: flex; flex-direction: column; gap: 10px; }
-  .lp-whoimg { width: 100%; height: auto; display: block; border-radius: 12px; }
-  .lp-whocap { font-size: 14px; line-height: 1.55; color: ${C.ink3}; }
   .lp-beat { background: ${C.cream}; border: 1px solid rgba(15, 26, 18, 0.1); border-radius: 14px; padding: 26px; display: flex; flex-direction: column; gap: 20px; box-shadow: 0 14px 40px rgba(15, 26, 18, 0.06); }
 
   .lp-split { display: grid; grid-template-columns: 1fr 1fr; gap: 64px; align-items: center; max-width: 1440px; margin: 0 auto; }
 
+  /* card-stops + your-data photo grids (proposal) */
+  .lp-cardstops { display: grid; grid-template-columns: 1fr 420px; gap: 64px; align-items: center; }
+  .lp-chapelbox { aspect-ratio: 4 / 5; border-radius: 18px; overflow: hidden; box-shadow: 0 30px 70px rgba(0,0,0,0.35); }
+  .lp-datagrid { display: grid; grid-template-columns: 480px 1fr; gap: 72px; align-items: center; }
+  .lp-potterbox { aspect-ratio: 4 / 3; border-radius: 18px; overflow: hidden; box-shadow: 0 22px 56px rgba(15,26,18,0.14); }
+  .lp-coverimg { width: 100%; height: 100%; object-fit: cover; display: block; }
+
   .lp-field-drift { max-width: 620px; }
   .lp-legend { display: flex; align-items: baseline; gap: 18px; flex-wrap: wrap; margin-top: 22px; }
 
-  .lp-map-img { width: 100%; height: auto; border-radius: 12px; border: 1px solid rgba(15, 26, 18, 0.14); box-shadow: 0 22px 56px rgba(15, 26, 18, 0.12); display: block; }
-
-  .lp-strip { max-width: 1440px; margin: 0 auto; display: flex; justify-content: space-between; gap: 40px; flex-wrap: wrap; padding: 0 0; }
+  /* the close — the doorway behind the ink gradient (proposal) */
+  .lp-close { position: relative; overflow: hidden; }
+  .lp-closeimg { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; opacity: 0.28; display: block; }
+  .lp-closegrad { position: absolute; inset: 0; background: linear-gradient(180deg, rgba(15,26,18,0.55), rgba(15,26,18,0.85)); }
+  .lp-closeinner { position: relative; }
 
   .lp-footer {
     background: ${C.ink}; padding: 34px 48px; display: flex; align-items: center;
@@ -278,6 +300,11 @@ const STYLES = `
     .lp-sec { padding: 64px 28px; }
     .lp-split { grid-template-columns: 1fr; gap: 44px; }
     .lp-beats { grid-template-columns: 1fr; }
+    .lp-whohead { grid-template-columns: 1fr; align-items: start; gap: 16px; }
+    .lp-cardstops { grid-template-columns: 1fr; gap: 44px; }
+    .lp-cardstops .lp-chapelbox { max-width: 420px; }
+    .lp-datagrid { grid-template-columns: 1fr; gap: 44px; }
+    .lp-datagrid .lp-potterbox { max-width: 480px; }
     .lp-h1 { font-size: 54px !important; }
   }
   @media (max-width: 640px) {
@@ -292,6 +319,7 @@ const STYLES = `
     .lp-nav { padding: 0 20px; }
     .lp-footer { padding: 28px 20px; }
     .lp-whostrip { grid-template-columns: 1fr; }
+    .lt-panel { padding: 24px 20px 22px; }
   }
 `;
 
@@ -323,9 +351,7 @@ export default function Landing() {
         <nav className="lp-nav">
           <a href="/" className="lp-serif lp-focus" style={{ fontSize: 26, letterSpacing: "-0.01em", display: "inline-flex", alignItems: "center", minHeight: 44 }}>Steward</a>
           <div className="lp-navwrap">
-            {/* No Pricing link, deliberately. Price is a conversation, and
-                every path on this page ends at Start free or Talk to the
-                founder. Navigation is real <a href> — semantics first. */}
+            {/* No Pricing link, deliberately. Price is a conversation. */}
             <a href="#how-it-works" className="lp-navlink lp-navlink-hide lp-focus">How it works</a>
             <a href="#your-data" className="lp-navlink lp-navlink-hide lp-focus">Your data</a>
             <a href="/login" className="lp-navlink lp-focus">Log in</a>
@@ -333,16 +359,16 @@ export default function Landing() {
           </div>
         </nav>
 
-        {/* ── HERO — the question ────────────────────────────────────────── */}
+        {/* ── HERO — the question + the Thread panel ─────────────────────── */}
         <header className="lp-hero">
           <div className="lp-hero-col">
-            <h1 className="up lp-h1" style={{ fontSize: 64, lineHeight: 1.04, letterSpacing: "-0.032em" }}>
-              Who did you mean to call back?
+            <h1 className="up lp-h1" style={{ fontSize: 76, lineHeight: 0.98, letterSpacing: "-0.035em" }}>
+              Who did you <br />mean to call back?
             </h1>
-            <p className="up lp-lede" style={{ fontSize: 19, lineHeight: 1.6, color: C.ink3, maxWidth: 520, animationDelay: "0.08s" }}>
+            <p className="up" style={{ fontSize: 20, lineHeight: 1.55, color: C.ink3, maxWidth: 540, animationDelay: "0.08s" }}>
               Every fundraiser has one. The gala guy. The board member&apos;s friend who said &quot;let&apos;s talk in the spring.&quot; The one who was polite and busy and said nothing at all, so he never made it onto today&apos;s list.
             </p>
-            <p className="up" style={{ fontSize: 19, lineHeight: 1.6, color: C.ink, maxWidth: 520, fontWeight: 500, animationDelay: "0.14s" }}>
+            <p className="up" style={{ fontSize: 20, lineHeight: 1.5, color: C.ink, maxWidth: 540, fontWeight: 500, animationDelay: "0.14s" }}>
               Steward writes the conversation down, hands you the next step, and keeps asking until you&apos;ve done it.
             </p>
             <div className="up lp-ctarow" style={{ animationDelay: "0.22s" }}>
@@ -355,65 +381,69 @@ export default function Landing() {
           </div>
 
           <div className="lp-hero-col">
-            <ThreadVisual />
+            <ThreadPanel />
           </div>
         </header>
 
-        {/* ── WHO IT'S FOR — the photo strip, restored ───────────────────── */}
-        {/* The pre-BUILD-41 page's photographs, back on the page (the files
-            never left the repo; provenance in client/public/ASSETS.md).
-            Captions are DESCRIPTIVE, never testimonial — no org names, no
-            customer language; the reserved-word family covers this section. */}
-        <section id="who-its-for" className="lp-sec" style={{ background: C.cream, paddingTop: 24 }}>
+        {/* ── WHO IT'S FOR — the photo strip (Jonathan's photographs) ────── */}
+        <section id="who-its-for" className="lp-sec" style={{ background: C.cream2, paddingTop: 72, paddingBottom: 80 }}>
           <div className="lp-sec-inner">
-            <div style={{ display: "flex", flexDirection: "column", gap: 18, maxWidth: 820, marginBottom: 44 }}>
-              <div className="lp-eyebrow" style={{ color: C.greenDk }}>WHO IT&apos;S FOR</div>
-              <h2 className="lp-h2" style={{ fontSize: 46, lineHeight: 1.08, letterSpacing: "-0.025em" }}>
-                For the shops where one person holds the whole donor file in her head.
-              </h2>
-              <p style={{ fontSize: 18, lineHeight: 1.65, color: C.ink3 }}>
+            <div className="lp-whohead">
+              <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+                <div className="lp-eyebrow" style={{ color: C.greenDk }}>WHO IT&apos;S FOR</div>
+                <h2 className="lp-h2" style={{ fontSize: 46, lineHeight: 1.06, letterSpacing: "-0.025em" }}>
+                  For the shops where one person holds the whole donor file in her head.
+                </h2>
+              </div>
+              <p style={{ fontSize: 18, lineHeight: 1.6, color: C.ink3, maxWidth: 520, justifySelf: "end" }}>
                 A church, a shelter, a food pantry, a school foundation. Fewer than three people ever touch the database, and one of them is the executive director.
               </p>
             </div>
             <div className="lp-whostrip">
               <figure className="lp-whofig">
-                <img
-                  className="lp-whoimg"
-                  src="/who-church.webp"
-                  srcSet="/who-church.webp 1x, /who-church-2x.webp 2x"
-                  width="400" height="267"
-                  alt="A small hillside chapel at dusk, lit from inside, under a crescent moon."
-                  loading="lazy" decoding="async"
-                />
+                <div className="lp-whobox">
+                  <img
+                    className="lp-whoimg"
+                    src="/photos/church.webp"
+                    srcSet="/photos/church.webp 1x, /photos/church-2x.webp 2x"
+                    width="450" height="300"
+                    alt="A white country church steeple above autumn trees at golden hour"
+                    loading="lazy" decoding="async"
+                  />
+                </div>
                 <figcaption className="lp-whocap">A church with four hundred households and a volunteer treasurer.</figcaption>
               </figure>
               <figure className="lp-whofig">
-                <img
-                  className="lp-whoimg"
-                  src="/who-shelter.webp"
-                  srcSet="/who-shelter.webp 1x, /who-shelter-2x.webp 2x"
-                  width="400" height="267"
-                  alt="Two shelter dogs looking out through a kennel fence."
-                  loading="lazy" decoding="async"
-                />
+                <div className="lp-whobox">
+                  <img
+                    className="lp-whoimg"
+                    src="/photos/shelter.webp"
+                    srcSet="/photos/shelter.webp 1x, /photos/shelter-2x.webp 2x"
+                    width="450" height="300"
+                    alt="Three shelter dogs looking through a kennel fence"
+                    loading="lazy" decoding="async"
+                  />
+                </div>
                 <figcaption className="lp-whocap">A shelter that runs on monthly givers.</figcaption>
               </figure>
               <figure className="lp-whofig">
-                <img
-                  className="lp-whoimg"
-                  src="/who-arts.webp"
-                  srcSet="/who-arts.webp 1x, /who-arts-2x.webp 2x"
-                  width="400" height="267"
-                  alt="Visitors at a small storefront gallery, seen through its open front doors."
-                  loading="lazy" decoding="async"
-                />
-                <figcaption className="lp-whocap">A storefront gallery where the opening-night list is the donor list.</figcaption>
+                <div className="lp-whobox">
+                  <img
+                    className="lp-whoimg"
+                    src="/photos/museum.webp"
+                    srcSet="/photos/museum.webp 1x, /photos/museum-2x.webp 2x"
+                    width="450" height="300"
+                    alt="A group of students sitting on a museum floor under a hanging installation"
+                    loading="lazy" decoding="async"
+                  />
+                </div>
+                <figcaption className="lp-whocap">An arts education program with one development hire.</figcaption>
               </figure>
             </div>
           </div>
         </section>
 
-        {/* ── HOW IT WORKS — three beats, the real UI ────────────────────── */}
+        {/* ── HOW IT WORKS — the REAL product screenshots (prior FIX) ────── */}
         <section id="how-it-works" className="lp-sec" style={{ background: C.cream2 }}>
           <div className="lp-sec-inner">
             <div className="lp-sechead">
@@ -480,9 +510,9 @@ export default function Landing() {
           </div>
         </section>
 
-        {/* ── WHEN A CARD STOPS ──────────────────────────────────────────── */}
-        <section className="lp-sec" style={{ background: C.ink }}>
-          <div className="lp-sec-inner" style={{ maxWidth: 900 }}>
+        {/* ── WHEN A CARD STOPS — the copy + the chapel at dusk ──────────── */}
+        <section id="card-stops" className="lp-sec" style={{ background: C.ink }}>
+          <div className="lp-sec-inner lp-cardstops">
             <div style={{ display: "flex", flexDirection: "column", gap: 22 }}>
               <div className="lp-eyebrow" style={{ color: C.gold }}>WHEN A CARD STOPS</div>
               <h2 className="lp-h2" style={{ fontSize: 46, lineHeight: 1.08, color: C.cream, letterSpacing: "-0.025em" }}>
@@ -495,10 +525,20 @@ export default function Landing() {
                 You know what four fifty-dollar sustainers a month are worth to you by December.
               </p>
             </div>
+            <div className="lp-chapelbox">
+              <img
+                className="lp-coverimg"
+                src="/photos/chapel.webp"
+                srcSet="/photos/chapel.webp 1x, /photos/chapel-2x.webp 2x"
+                width="420" height="525"
+                alt="A small chapel on a hillside at dusk"
+                loading="lazy" decoding="async"
+              />
+            </div>
           </div>
         </section>
 
-        {/* ── DRIFT — the dot field, as evidence ─────────────────────────── */}
+        {/* ── DRIFT — untouched: the dot field as evidence ───────────────── */}
         <section id="drift" className="lp-sec" style={{ background: C.cream }}>
           <div className="lp-split">
             <div style={{ display: "flex", flexDirection: "column", gap: 22 }}>
@@ -535,37 +575,19 @@ export default function Landing() {
           </div>
         </section>
 
-        {/* ── THE RECORD — the credential, and the one surprise ──────────── */}
-        <section className="lp-sec" style={{ background: C.cream2 }}>
-          <div className="lp-split">
-            <div style={{ display: "flex", flexDirection: "column", gap: 22 }}>
-              <div className="lp-eyebrow" style={{ color: C.greenDk }}>THE RECORD</div>
-              <h2 className="lp-h2" style={{ fontSize: 46, lineHeight: 1.08, letterSpacing: "-0.025em" }}>
-                Built with a development director who has done this for twenty years.
-              </h2>
-              <p style={{ fontSize: 18, lineHeight: 1.65, color: C.ink3, maxWidth: 480 }}>
-                He said what he&apos;d want on a donor&apos;s record, and that&apos;s what&apos;s there.
-              </p>
-            </div>
-            <div>
+        {/* ── YOUR DATA — the potter's hands + the four sentences ────────── */}
+        <section id="your-data" className="lp-sec" style={{ background: C.cream }}>
+          <div className="lp-sec-inner lp-datagrid">
+            <div className="lp-potterbox">
               <img
-                className="lp-map-img"
-                src="/donor-map-shot.webp"
-                srcSet="/donor-map-shot.webp 1x, /donor-map-shot-2x.webp 2x"
-                width="1200" height="760"
-                alt="The donor map: every donor on a map of the country, sized by giving."
+                className="lp-coverimg"
+                src="/photos/potter.webp"
+                srcSet="/photos/potter.webp 1x, /photos/potter-2x.webp 2x"
+                width="480" height="360"
+                alt="Hands shaping a clay pot on a wheel"
                 loading="lazy" decoding="async"
               />
-              <p style={{ fontSize: 13, color: C.ink3, marginTop: 10 }}>
-                The donor map, from the sample file. Nobody expects their file drawn on a map. Map data © OpenStreetMap contributors.
-              </p>
             </div>
-          </div>
-        </section>
-
-        {/* ── YOUR DATA — four sentences, all true ───────────────────────── */}
-        <section id="your-data" className="lp-sec" style={{ background: C.cream }}>
-          <div className="lp-sec-inner" style={{ maxWidth: 820 }}>
             <div style={{ display: "flex", flexDirection: "column", gap: 22 }}>
               <div className="lp-eyebrow" style={{ color: C.greenDk }}>YOUR DATA</div>
               <h2 className="lp-h2" style={{ fontSize: 44, lineHeight: 1.08, letterSpacing: "-0.025em" }}>
@@ -581,9 +603,17 @@ export default function Landing() {
           </div>
         </section>
 
-        {/* ── CLOSING ────────────────────────────────────────────────────── */}
-        <section className="lp-sec" style={{ background: C.ink, paddingTop: 110, paddingBottom: 110 }}>
-          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 24, textAlign: "center" }}>
+        {/* ── CLOSING — the doorway behind the ink gradient ──────────────── */}
+        <section id="closing" className="lp-sec lp-close" style={{ background: C.ink, paddingTop: 130, paddingBottom: 130 }}>
+          <img
+            className="lp-closeimg"
+            src="/photos/doorway.webp"
+            width="1440" height="640"
+            alt="" aria-hidden="true"
+            loading="lazy" decoding="async"
+          />
+          <div className="lp-closegrad" aria-hidden="true" />
+          <div className="lp-closeinner" style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 24, textAlign: "center" }}>
             <h2 className="lp-close-h" style={{ fontSize: 58, lineHeight: 1.05, color: C.cream, letterSpacing: "-0.03em", maxWidth: 820 }}>
               Start with one conversation.
             </h2>

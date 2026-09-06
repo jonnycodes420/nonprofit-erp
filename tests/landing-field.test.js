@@ -120,12 +120,11 @@ function serveDist() {
   ok("the question renders as THE H1", h1 === "Who did you mean to call back?", h1);
   const text = await page.evaluate(() => document.body.innerText);
   const SECTIONS = [
-    "Who did you mean to call back?",
+    "mean to call back?",  // the hero H1 wraps over a <br>; innerText carries a newline
     "For the shops where one person holds the whole donor file",
     "Log it. The next step comes back. It keeps asking.",
     "A monthly donor's card expires.",
     "And the ones who already went quiet.",
-    "Built with a development director",
     "Yours, plainly.",
     "Start with one conversation.",
   ];
@@ -134,8 +133,13 @@ function serveDist() {
      positions.every(p => p >= 0) && positions.every((p, i) => i === 0 || p > positions[i - 1]), positions);
   ok('"The Thread" is named on the page', /the Thread/i.test(text), null);
   const knots = await page.evaluate(() => [...document.querySelectorAll(".lt-knot")].map(k => k.textContent.trim()));
-  ok("the thread visual: five knots, coffee → thank-you → follow up → try again → still open · day 11",
-     knots.length === 5 && /Coffee/.test(knots[0]) && /Still open · day 11/.test(knots[4]), knots);
+  ok("the thread panel: five knots, coffee first, 'Still open. Day 11.' last, donor + lifetime on top",
+     knots.length === 5 && /Coffee/.test(knots[0]) && /Still open[.] Day 11[.]/.test(knots[4]), knots);
+  const panel = await page.evaluate(() => ({
+    name: document.querySelector(".lt-panel")?.textContent.includes("Robert Harmon"),
+    logCall: [...document.querySelectorAll(".lt-panel a")].map(a => a.getAttribute("href")),
+  }));
+  ok("…and 'Log the call' is a real anchor to /signup", panel.name && panel.logCall.length === 1 && panel.logCall[0] === "/signup", panel);
   const field = await page.evaluate(() => ({
     total: document.querySelectorAll(".df-dot").length,
     gold: [...document.querySelectorAll(".df-dot")].filter(d => getComputedStyle(d).backgroundColor === "rgb(201, 168, 76)").length,
@@ -181,6 +185,23 @@ function serveDist() {
   ok("three real screenshots in #how-it-works: intrinsic dimensions, real alt, all loading",
      hiw.length === 3 && hiw.every(i => i.w > 100 && i.h > 50 && i.alt.length > 20 && i.loaded), hiw);
   ok('the "drawn in code" caption is gone', !/drawn in code/i.test(text), null);
+  // photograph pass: the chapel (card-stops), the potter's hands (your-data),
+  // the decorative doorway (close) — dimensions everywhere, alt everywhere
+  // except the one decorative background.
+  const photoSecs = await page.evaluate(() => {
+    const one = id => (document.getElementById(id)?.querySelectorAll("img") || []).length;
+    const allImgs = [...document.querySelectorAll("img")].map(i => ({
+      w: Number(i.getAttribute("width")) || 0, h: Number(i.getAttribute("height")) || 0,
+      alt: i.getAttribute("alt"), hidden: i.getAttribute("aria-hidden") === "true",
+    }));
+    return { cardStops: one("card-stops"), yourData: one("your-data"), closing: one("closing"), allImgs };
+  });
+  ok("one photograph each in card-stops, your-data and the close",
+     photoSecs.cardStops === 1 && photoSecs.yourData === 1 && photoSecs.closing === 1, photoSecs);
+  ok("every img carries width, height and alt; only the close background is decorative (alt='' + aria-hidden)",
+     photoSecs.allImgs.every(i => i.w > 0 && i.h > 0) && photoSecs.allImgs.filter(i => !(i.alt || "").length).length === 1
+       && photoSecs.allImgs.filter(i => !(i.alt || "").length).every(i => i.hidden),
+     photoSecs.allImgs.filter(i => !(i.alt || "").length || !i.w));
   // FIX after BUILD-81: the who-it's-for photo strip, between hero and hiw.
   const strip = await page.evaluate(() => {
     const sec = document.getElementById("who-its-for");

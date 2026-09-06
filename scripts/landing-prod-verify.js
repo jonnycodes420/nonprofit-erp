@@ -13,6 +13,9 @@
 //     the every-dot-is-a-person section are gone; ONE field remains, in the
 //     Drift section, and it is asserted there (199 dots, 74 gold).
 //   · the old section-order strings — replaced by the BUILD-81 order.
+//   · (photograph pass) the RECORD section died whole — its SECTIONS entry
+//     "Built with a development director" went with the headline, the
+//     donor-map screenshot and the caption; the map asset was deleted.
 // Everything else carried forward: the honesty gates, NO PRICING, the FEP
 // attribution incl. "full-year 2025", no competitor as the authority, no
 // "keep 100%" overclaim, no outcome-claim language, measured contrast,
@@ -73,12 +76,11 @@ const rgb = s => (s.match(/\d+/g) || []).slice(0, 3).map(Number);
 
   const text = await page.evaluate(() => document.body.innerText);
   const SECTIONS = [
-    "Who did you mean to call back?",                            // hero — the question
+    "mean to call back?",   // the hero H1 wraps over a <br>; innerText carries a newline
     "For the shops where one person holds the whole donor file", // who it's for
     "Log it. The next step comes back. It keeps asking.",        // how it works
     "A monthly donor's card expires.",                           // when a card stops
     "And the ones who already went quiet.",                      // drift
-    "Built with a development director",                         // the record
     "Yours, plainly.",                                           // your data
     "Start with one conversation.",                              // closing
   ];
@@ -152,7 +154,41 @@ const rgb = s => (s.match(/\d+/g) || []).slice(0, 3).map(Number);
   ok("…each actually loads", strip.imgsIn.every(i => i.loaded), null);
   ok("the strip sits AFTER the hero and BEFORE #how-it-works", strip.after && strip.before, strip);
   ok('no customer language anywhere: "trusted by", "customers" and "clients" absent from rendered text',
-     !/trusted by/i.test(text) && !/customers?/i.test(text) && !/clients?/i.test(text), null);
+     !/trusted by/i.test(text) && !/customers?/i.test(text) && !/clients?/i.test(text), null);
+  // photograph pass — one photograph each in card-stops (the chapel, 4:5),
+  // your-data (the potter's hands, 4:3) and the close (the doorway,
+  // DECORATIVE: alt="" + aria-hidden under the ink gradient, text above).
+  const secImgs = await page.evaluate(() => {
+    const grab = id => [...(document.getElementById(id)?.querySelectorAll("img") || [])].map(i => ({
+      w: Number(i.getAttribute("width")) || 0, h: Number(i.getAttribute("height")) || 0,
+      alt: i.getAttribute("alt"), hidden: i.getAttribute("aria-hidden") === "true", loaded: i.naturalWidth > 0,
+    }));
+    return { cardStops: grab("card-stops"), yourData: grab("your-data"), closing: grab("closing") };
+  });
+  ok("card-stops carries ONE photograph with intrinsic dimensions and real alt",
+     secImgs.cardStops.length === 1 && secImgs.cardStops[0].w > 100 && secImgs.cardStops[0].h > 100 && (secImgs.cardStops[0].alt || "").length > 10 && secImgs.cardStops[0].loaded, secImgs.cardStops);
+  ok("your-data carries ONE photograph with intrinsic dimensions and real alt",
+     secImgs.yourData.length === 1 && secImgs.yourData[0].w > 100 && secImgs.yourData[0].h > 100 && (secImgs.yourData[0].alt || "").length > 10 && secImgs.yourData[0].loaded, secImgs.yourData);
+  ok('the close carries ONE decorative background photograph: alt="" AND aria-hidden, dimensions set',
+     secImgs.closing.length === 1 && secImgs.closing[0].alt === "" && secImgs.closing[0].hidden && secImgs.closing[0].w > 100 && secImgs.closing[0].loaded, secImgs.closing);
+  const closeStack = await page.evaluate(() => {
+    const img = document.querySelector("#closing img");
+    const grad = document.querySelector("#closing .lp-closegrad");
+    const inner = document.querySelector("#closing .lp-closeinner");
+    return { imgOpacity: img ? getComputedStyle(img).opacity : null,
+             grad: grad ? getComputedStyle(grad).backgroundImage.includes("linear-gradient") : false,
+             textAbove: inner ? getComputedStyle(inner).position === "relative" : false };
+  });
+  ok("…at 0.28 opacity under the ink gradient, with the text stacked above",
+     closeStack.imgOpacity === "0.28" && closeStack.grad && closeStack.textAbove, closeStack);
+  const allImgs = await page.evaluate(() => [...document.querySelectorAll("img")].map(i => ({
+    src: (i.getAttribute("src") || "").slice(0, 40),
+    w: Number(i.getAttribute("width")) || 0, h: Number(i.getAttribute("height")) || 0,
+    alt: i.getAttribute("alt"), hidden: i.getAttribute("aria-hidden") === "true",
+  })));
+  ok("EVERY <img> on the page has width, height and non-empty alt — except the ONE decorative close background",
+     allImgs.every(i => i.w > 0 && i.h > 0) && allImgs.filter(i => !(i.alt || "").length).every(i => i.hidden) && allImgs.filter(i => !(i.alt || "").length).length === 1,
+     allImgs.filter(i => !(i.alt || "").length || !i.w || !i.h));
   ok("the 43%-class stat is attributed to the Fundraising Effectiveness Project",
      /Fundraising Effectiveness Project/.test(text), null);
   ok('"full-year 2025" is intact — FEP rebased in Q1 2026 and now headlines a QUARTERLY figure',
@@ -192,15 +228,22 @@ const rgb = s => (s.match(/\d+/g) || []).slice(0, 3).map(Number);
   const knots = await page.evaluate(() =>
     [...document.querySelectorAll(".lt-knot")].map(k => k.textContent.trim()));
   ok("the thread visual renders all five knots", knots.length === 5, knots);
-  ok("the knots read the sequence: coffee → thank-you → follow up → try again → still open",
-     /Coffee/.test(knots[0] || "") && /Thank-you/.test(knots[1] || "") && /Follow up/.test(knots[2] || "")
-       && /Try again/.test(knots[3] || "") && /Still open · day 11/.test(knots[4] || ""), knots);
+  ok("the knots read the sequence: coffee → thank-you → called → try again → still open, day 11",
+     /Coffee/.test(knots[0] || "") && /Thank-you/.test(knots[1] || "") && /Called, left a message/.test(knots[2] || "")
+       && /Try again/.test(knots[3] || "") && /Still open[.] Day 11[.]/.test(knots[4] || ""), knots);
   const visualA11y = await page.evaluate(() => {
     const w = document.querySelector(".lt-wrap");
-    return { role: w?.getAttribute("role"), label: (w?.getAttribute("aria-label") || "").slice(0, 60) };
+    return { role: w?.getAttribute("role"), label: (w?.getAttribute("aria-label") || "").slice(0, 200) };
   });
   ok('the visual carries role="img" and an aria-label that reads the sequence',
      visualA11y.role === "img" && /conversation/.test(visualA11y.label), visualA11y);
+  const panel = await page.evaluate(() => ({
+    name: document.querySelector(".lt-panel")?.textContent.includes("Robert Harmon"),
+    lifetime: document.querySelector(".lt-panel")?.textContent.includes("$14,500"),
+    logCall: [...document.querySelectorAll(".lt-panel a")].map(a => [a.textContent.trim(), a.getAttribute("href")]),
+  }));
+  ok("the panel carries the donor and lifetime at the top, and 'Log the call' is a REAL anchor to /signup",
+     panel.name && panel.lifetime && panel.logCall.length === 1 && /Log the call/.test(panel.logCall[0][0]) && panel.logCall[0][1] === "/signup", panel);
   const fields = await page.evaluate(() =>
     [...document.querySelectorAll('[role="img"] .df-dot')].length
       ? {

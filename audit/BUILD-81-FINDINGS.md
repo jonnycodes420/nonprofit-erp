@@ -198,3 +198,49 @@ asserted, READ-ALOUD.md.
    every weekday. It reads as an example, not a claim, and the beat copy
    says "one weekday-morning email" — but if anyone reads it as
    weekly-only, tighten the mock's eyebrow.
+
+## THE PHOTOGRAPH PASS (FIX, 2026-09-06 — design source docs/build81/landing/proposal.html)
+
+Landing rebuilt to the proposal section for section: the hero's bare thread
+line became the INK PANEL (donor + lifetime up top, the conversation as
+cream cards down a rail, the brass "Still open. Day 11." card with a real
+<a href="/signup"> "Log the call" — same role="img"/aria-label, breathing
+brass knot, static under reduced motion); Who-it's-for uses the proposal's
+three photographs; How-it-works keeps the REAL product screenshots; When-a-
+card-stops gained the chapel (4:5); the RECORD SECTION IS DELETED (headline,
+donor map, caption — assets removed); Your-data gained the potter's hands
+(4:3); the close gained the doorway photograph at 0.28 opacity under the
+ink gradient (decorative: alt="" + aria-hidden). Drift untouched; the FEP
+caption byte-identical.
+
+**Verifier guards REMOVED (the §4.5 paper trail):** exactly one — the
+SECTIONS entry "Built with a development director" (the record section's
+presence-and-order membership), which died with its section. The record
+section never had other guards of its own; the donor-map image was covered
+by the generic img rules, which now assert the NEW set. Guards ADDED: the
+panel (donor + lifetime + the one real anchor to /signup), one photograph
+each with dimensions + alt in #card-stops and #your-data, the decorative
+close background (alt="" AND aria-hidden AND 0.28 under the gradient, text
+stacked above), and the every-img rule (width+height+non-empty alt, one
+decorative exception). 49 → 55 guards; grows, never shrinks.
+
+**DEFECT FOUND AND FIXED in the verifier itself:** the strip-FIX edit had
+written literal BACKSPACE characters (\x08) into the customers/clients
+regexes (a \b that lost its backslash on the way through an edit pipeline),
+so /\x08customers?\x08/ could never match and that guard was passing
+VACUOUSLY. Replaced with plain /customers?/i · /clients?/i — stricter than
+the word-boundary version. The "trusted by" half was always real. Lesson
+recorded in memory: never write \b into a file through a python
+double-quoted string.
+
+**Photo provenance, stated plainly (client/public/ASSETS.md has the table):**
+the three strip photographs are new to this repo (per Jonathan, his own);
+the chapel, the potter's hands and the doorway are demonstrably the SAME
+photographs as the repo's documented Unsplash set (Mueller / Wilcox /
+Wanner — the doorway is a wider crop of the card-arts gallery shot). Every
+use is license-safe; the record was kept accurate rather than re-attributed.
+
+Cosmetic note: the hero H1 wraps over a <br>, so innerText carries a
+newline — the SECTIONS order check keys on "mean to call back?" while the
+H1 guard still asserts the full question via textContent.
+

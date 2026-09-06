@@ -1,4 +1,26 @@
-# Landing photography — sources & licenses (BUILD-28)
+# Landing photography — sources & licenses
+
+## public/photos/ — the photograph pass (2026-09-06)
+
+Supplied by Jonathan inside the design source `docs/build81/landing/proposal.html`
+(embedded JPEGs, extracted verbatim to `docs/build81/photos-src/*.jpg` and
+derived to webp here). The brief described them as Jonathan's own; the honest
+per-photo record, from comparing against this repo's history:
+
+| File(s) | Photograph | Provenance (as verifiable from this repo) | Where it renders |
+|---|---|---|---|
+| `photos/church{,-2x}.webp` | white country church steeple above autumn trees, golden hour (3:2) | NEW — no prior record here; per Jonathan, his own | Who it's for |
+| `photos/shelter{,-2x}.webp` | three shelter dogs at a kennel fence (3:2) | NEW — no prior record here; per Jonathan, his own (distinct from the two-dog Unsplash `card-rescue`) | Who it's for |
+| `photos/museum{,-2x}.webp` | students on a museum floor under a hanging installation (3:2) | NEW — no prior record here; per Jonathan, his own | Who it's for |
+| `photos/chapel{,-2x}.webp` | small hillside chapel at dusk (4:5) | the SAME photograph as `card-faith` below — Kevin Mueller, Unsplash (free tier, commercial OK) — at a different crop | When a card stops |
+| `photos/potter{,-2x}.webp` | hands shaping a clay pot on a wheel (4:3) | the SAME photograph as the retired `band-studio` — Earl Wilcox, Unsplash (free tier, commercial OK) | Your data |
+| `photos/doorway.webp` | a gallery interior seen through open doors (decorative background, alt="" aria-hidden) | a WIDER crop of the SAME photograph as `card-arts` below — Dillon Wanner, Unsplash (free tier, commercial OK) | the closing, at 0.28 opacity under the ink gradient |
+
+Every use is license-safe either way (the Unsplash license needs no
+attribution). The earlier `who-*` derivations and the `donor-map-shot`
+were REMOVED with the photograph pass (the record section is deleted).
+
+# Historical record (BUILD-28 Unsplash set)
 
 The image-forward landing (`client/src/pages/Landing.jsx`) uses four photographs
 (hero + three verticals cards). All are **free-tier Unsplash** downloads, user-confirmed for commercial use. The
