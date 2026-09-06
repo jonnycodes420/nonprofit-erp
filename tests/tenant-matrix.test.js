@@ -78,7 +78,7 @@ async function reset() {
       "receipts", "pledges", "milestone_drafts", "note_reminders", "donor_materials", "planned_gifts",
       "custom_field_events", "custom_field_defs", "custom_field_values", "custom_fields", "impact_metrics", "sequence_enrollments", "sequence_steps", "sequences",
       "peer_fundraisers", "giving_pages", "event_attendees", "events", "volunteers", "board_members",
-      "opportunities", "moves", "program_grants", "programs", "tasks", "interactions", "gifts", "grants",
+      "opportunities", "moves", "program_grants", "programs", "tasks", "threads", "interactions", "gifts", "grants",
       "households", "donors", "fin_audit_log", "fin_transactions", "budgets", "accounts", "fin_funds",
       "invites", "portal_settings", "annual_fund_goals", "fundraising_goals", "metric_snapshots", "campaigns", "users"])
       await q(`DELETE FROM ${t} WHERE org_id=$1`, [org]).catch(() => {});
@@ -120,6 +120,9 @@ async function seedOrg(o, tag) {
   await q(`INSERT INTO programs (id,org_id,name) VALUES ($1,$2,$3)`, [`prg_${o}`, o, `${mark} Program`]);
   await q(`INSERT INTO tasks (id,org_id,title,due,priority,done,donor_id,assigned_to) VALUES ($1,$2,$3,$4,'high',0,$5,$6)`,
     [`t_${o}`, o, `${mark} Task`, TODAY, `d_${o}`, `u_${o}_staff`]);
+  await q(`INSERT INTO threads (id,org_id,donor_id,next_step_type,next_step_label,due_date,opened_on,created_by,created_by_name)
+           VALUES ($1,$2,$3,'follow_up','Follow up',$4,$4,$5,'Matrix Admin')`,
+    [`th_${o}`, o, `d_${o}`, TODAY, `u_${o}_admin`]);   // BUILD-81 — the Thread
   await q(`INSERT INTO interactions (id,org_id,donor_id,type,note,date) VALUES ($1,$2,$3,'note',$4,$5)`,
     [`i_${o}`, o, `d_${o}`, `${mark} interaction`, TODAY]);
   await q(`INSERT INTO events (id,org_id,name,event_type,date,status) VALUES ($1,$2,$3,'gala',$4,'upcoming')`,
@@ -202,6 +205,7 @@ function bResolver(routePath, param) {
     recurring: `rs_${B}`, orgs: B, board: `bd_${B}`, "peer-fundraisers": `pf_${B}`,
     "donor-relationships": `dr_${B}`, users: `u_${B}_staff`,
     "import-merges": `mrg_${B}`,   // BUILD-80 Part 6.2 — merge-review undo
+    threads: `th_${B}`,            // BUILD-81 — the Thread (dismiss route)
   };
   if (routePath.startsWith("/fundraising/campaigns")) return `c_${B}`;
   if (routePath.startsWith("/reports/board")) return `br_${B}`;

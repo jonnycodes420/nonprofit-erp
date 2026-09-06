@@ -26,6 +26,7 @@ class ErrorBoundary extends Component {
   }
 }
 import { T, fmt, fmtFull, daysDiff, SC, askClaude, STAGES, STAGE_ACTION, TIER_COLOR, donorScore, moveUrgency, Spin, Pill, Card, AIBtn, AIPanel, PageTitle, EmptyState, GivingHistoryChart, TpField, TpYesNo, TouchpointTimeline, LockedFeature, goToPricing, DriftBadge } from "./shared";
+import { LogConversationModal, ThreadDismissMenu } from "./LogConversation";
 // SHELVED — voice capture works but unproven adoption assumption, revisit
 // later. Code intact, re-enable by uncommenting (see showVoiceMemo state,
 // profile button, and modal render below, and add `VoiceMemoModal` back to
@@ -3375,12 +3376,22 @@ function GiftLinkModal({donor,orgName,onClose}){
 }
 
 // ── Donor Profile ──────────────────────────────────────────────────────────
-function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loadingKey,getAI,isAdmin,onEdit,onDelete,tasks=[],onTaskToggle,onAddTask,orgName="",orgTeam=[],onReassign,onCfSaved,onInteractionAdded,isReadOnly=false,allDonors=[],onSelectRelatedDonor,onNavigate}){
+function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loadingKey,getAI,isAdmin,onEdit,onDelete,tasks=[],onTaskToggle,onAddTask,orgName="",orgTeam=[],onReassign,onCfSaved,onInteractionAdded,isReadOnly=false,allDonors=[],onSelectRelatedDonor,onNavigate,initialOpenConversation=false}){
   const [gifts,setGifts]=useState([]);
   const [giftLoading,setGiftLoading]=useState(true);
   const [localInts,setLocalInts]=useState(null); // loaded lazily from GET /donors/:id
   const [sequences,setSequences]=useState([]);
   useEffect(()=>{apiFetch("/sequences").then(rows=>setSequences(Array.isArray(rows)?rows.filter(s=>s.status==="active"):[])).catch(()=>{});},[]);
+  // ── BUILD-81 — the donor's THREAD, shown at the top of the record. One
+  // open thread per donor: the last touch, the next step, days open. "Log a
+  // conversation" is the primary action; the next-step prompt rides the same
+  // flow and a skip is recorded as skipped.
+  const [dpThread,setDpThread]=useState(null);
+  const [convoOpen,setConvoOpen]=useState(initialOpenConversation);
+  const loadDpThread=()=>apiFetch(`/threads?donorId=${donor.id}`).then(r=>setDpThread((r.list&&r.list[0])||null)).catch(()=>{});
+  useEffect(()=>{loadDpThread();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[donor.id]);
 
   // Related donors (household/spouse/family/employer_match) — manual
   // linking only, see server.js's donor_relationships routes.
@@ -4067,7 +4078,10 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
             it now lives at the bottom of the Overview record (still behind
             the existing confirm). */}
         <div className="dph-actions" style={{display:"flex",gap:6,flexShrink:0,alignItems:"center",position:"relative"}}>
-          <button onClick={()=>setShowGiftModal(true)} className="dph-primary" style={{background:T.green,border:"none",borderRadius:8,padding:"7px 14px",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer"}}>
+          <button onClick={()=>setConvoOpen(true)} disabled={isReadOnly} className="dph-primary" style={{background:T.gold500,border:"none",borderRadius:8,padding:"7px 14px",color:T.ink,fontSize:13,fontWeight:800,cursor:isReadOnly?"not-allowed":"pointer",opacity:isReadOnly?0.5:1}}>
+            Log a conversation
+          </button>
+          <button onClick={()=>setShowGiftModal(true)} className="dph-desktop-act" style={{background:T.green,border:"none",borderRadius:8,padding:"7px 14px",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer"}}>
             Request Gift
           </button>
           {/* SHELVED — voice capture works but unproven adoption assumption, revisit later.
@@ -4086,9 +4100,13 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
               <button onClick={()=>{setDpMoreOpen(false);downloadImpactSummary();}} disabled={impactPdfLoading} style={{display:"block",width:"100%",textAlign:"left",background:"none",border:"none",borderBottom:"1px solid "+T.bg3,padding:"13px 16px",color:T.ink,fontSize:14,fontWeight:600,cursor:"pointer"}}>
                 {impactPdfLoading?"Generating…":"↓ Impact Summary"}
               </button>
+              <button onClick={()=>{setDpMoreOpen(false);setShowGiftModal(true);}} style={{display:"block",width:"100%",textAlign:"left",background:"none",border:"none",borderBottom:"1px solid "+T.bg3,padding:"13px 16px",color:T.ink,fontSize:14,fontWeight:600,cursor:"pointer"}}>Request Gift</button>
               <button onClick={()=>{setDpMoreOpen(false);onEdit();}} style={{display:"block",width:"100%",textAlign:"left",background:"none",border:"none",padding:"13px 16px",color:T.ink,fontSize:14,fontWeight:600,cursor:"pointer"}}>Edit</button>
             </div>
           )}
+          {convoOpen&&<LogConversationModal donor={{id:donor.id,name:donor.name}} thread={dpThread}
+            onSaved={r=>{loadDpThread();if(onInteractionAdded)onInteractionAdded();setLocalInts(prev=>prev?[{id:r.interactionId,type:r.touch==="gift"?"gift":r.touch.startsWith("call")?"call":r.touch==="email"?"email":"meeting",note:r.line,date:r.date,metadata:null},...prev]:prev);}}
+            onClose={()=>setConvoOpen(false)}/>}
         </div>
       </div>
 
@@ -4109,6 +4127,32 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
 
           {/* Overview tab */}
           {dpTab==="overview"&&<div style={{padding:"22px 20px 24px 24px",display:"flex",flexDirection:"column",gap:18}}>
+            {/* BUILD-81 — the donor's thread, above giving history. */}
+            {dpThread&&(
+              <div style={{background:T.white,border:"1px solid "+(dpThread.overdue?T.terracotta+"66":T.gold500+"55"),borderRadius:14,padding:"14px 16px"}}>
+                <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}>
+                  <span style={{fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.1em",color:T.ink3}}>The Thread</span>
+                  {dpThread.snoozedUntil&&<span style={{fontSize:10,color:T.ink3}}>· set aside until {dpThread.snoozedUntil}</span>}
+                </div>
+                <div style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
+                  <div style={{flex:"1 1 220px",minWidth:0}}>
+                    <div style={{fontSize:13.5,fontWeight:700,color:dpThread.overdue?T.terracotta:T.ink}}>
+                      {dpThread.nextStep.label} · {dpThread.overdue?"overdue":"due"} {String(dpThread.nextStep.due).slice(0,10)} · day {dpThread.daysOpen}
+                    </div>
+                    <div style={{fontSize:12,color:T.ink3,marginTop:3,lineHeight:1.5}}>
+                      {dpThread.lastTouch?.line?<>"{dpThread.lastTouch.line}"</>:dpThread.lastTouch?.kind==="gift"&&dpThread.lastTouch.amount!=null?<>{fmtFull(dpThread.lastTouch.amount)} received</>:null}
+                      {dpThread.lastTouch?.date?<> · {String(dpThread.lastTouch.date).slice(0,10)}</>:null}
+                      {dpThread.lastTouch?.actor?<> · {dpThread.lastTouch.actor}</>:null}
+                    </div>
+                  </div>
+                  <div style={{display:"flex",gap:6,alignItems:"center",flexShrink:0}}>
+                    <button onClick={()=>setConvoOpen(true)} disabled={isReadOnly}
+                      style={{background:T.greenDk,border:"none",borderRadius:7,padding:"7px 12px",color:"#fff",fontSize:12,fontWeight:700,cursor:isReadOnly?"not-allowed":"pointer",opacity:isReadOnly?0.5:1}}>Done</button>
+                    <ThreadDismissMenu thread={dpThread} onDone={loadDpThread}/>
+                  </div>
+                </div>
+              </div>
+            )}
             <div className="donor-stat-grid" style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10}}>
               {[["Lifetime",fmtFull(donor.total),T.ink],["Last Gift",lastGiftDisplay,"#1a6b4a"],["Contact",`${urg.days}d ago`,urg.urgencyColor],["Score",sc!=null?`${sc}/99`:"no gifts on file",sc!=null?scoreColor:T.ink3]].map(([l,v,c])=>(
                 <div key={l} style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:12,padding:"12px 14px"}}>
@@ -6124,7 +6168,7 @@ function MergeDuplicatesModal({onClose,onMerged,isReadOnly}){
 }
 
 // ── Donors ─────────────────────────────────────────────────────────────────
-export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,initialLogDonorId,initialStageFilter,initialSelectDonorId,initialOpenImport,onIntentConsumed}){
+export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,initialLogDonorId,initialStageFilter,initialSelectDonorId,initialOpenImport,initialOpenConversation,onIntentConsumed}){
   const{auth}=useAuth();
   const isAdmin=auth?.user?.role==="admin";
   const userId=auth?.user?.id||"";
@@ -6134,6 +6178,10 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
   const[search,setSearch]=useState("");
   const[selected,setSelected]=useState(()=>initialSelectDonorId?data.donors.find(d=>d.id===initialSelectDonorId)||null:null);
   const[logTarget,setLogTarget]=useState(()=>initialLogDonorId?data.donors.find(d=>d.id===initialLogDonorId)||null:null);
+  // BUILD-81 — the "Log a conversation" picker (directory toolbar) + target.
+  const[convoPickerOpen,setConvoPickerOpen]=useState(false);
+  const[convoTarget,setConvoTarget]=useState(null);
+  const[convoSearch,setConvoSearch]=useState("");
   const[editTarget,setEditTarget]=useState(null);
   const[followUpTarget,setFollowUpTarget]=useState(null);
   const[aiMap,setAiMap]=useState({});const[loadingKey,setLoadingKey]=useState(null);
@@ -6457,6 +6505,30 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
       {showCombinedImport&&<DonorImport withHistory onClose={()=>setShowCombinedImport(false)} onImported={()=>{reloadDonors();setShowCombinedImport(false);}}/>}
       {upgradeModal&&<UpgradeModal open={true} onClose={()=>setUpgradeModal(null)} reason={upgradeModal.reason} current={upgradeModal.current} limit={upgradeModal.limit} plan={upgradeModal.plan}/>}
       {logTarget&&<LogTouchpointModal donor={logTarget} onSave={int=>handleLogged(logTarget,int)} onClose={()=>setLogTarget(null)}/>}
+      {convoPickerOpen&&(
+        <div className="modal-sheet-overlay" style={{position:"fixed",inset:0,background:"#0f1a12cc",backdropFilter:"blur(4px)",zIndex:300,display:"flex",alignItems:"flex-start",justifyContent:"center",padding:"10vh 20px 20px"}}
+          onClick={e=>{if(e.target===e.currentTarget)setConvoPickerOpen(false);}}>
+          <div className="fade-in" style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:16,width:"100%",maxWidth:420,maxHeight:"70vh",display:"flex",flexDirection:"column",overflow:"hidden",boxShadow:"0 4px 32px rgba(15,15,15,0.14)"}}>
+            <div style={{padding:"16px 18px 10px"}}>
+              <div style={{fontSize:15,fontWeight:800,color:T.ink,marginBottom:8}}>Who did you talk to?</div>
+              <input autoFocus value={convoSearch} onChange={e=>setConvoSearch(e.target.value)} placeholder="Search donors…"
+                style={{width:"100%",background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"9px 12px",color:T.ink,fontSize:13,outline:"none",boxSizing:"border-box"}}/>
+            </div>
+            <div style={{overflowY:"auto",padding:"0 8px 10px"}}>
+              {data.donors.filter(d=>!convoSearch.trim()||(d.name||"").toLowerCase().includes(convoSearch.toLowerCase())||(d.email||"").toLowerCase().includes(convoSearch.toLowerCase())).slice(0,30).map(d=>(
+                <button key={d.id} onClick={()=>{setConvoPickerOpen(false);setConvoSearch("");setConvoTarget(d);}}
+                  style={{display:"block",width:"100%",textAlign:"left",background:"none",border:"none",borderRadius:8,padding:"9px 10px",cursor:"pointer"}} className="click-card">
+                  <span style={{fontSize:13,fontWeight:700,color:T.ink}}>{d.name}</span>
+                  {d.email&&<span style={{fontSize:11.5,color:T.ink3,marginLeft:8}}>{d.email}</span>}
+                </button>
+              ))}
+              {data.donors.length===0&&<div style={{fontSize:12.5,color:T.ink3,padding:"6px 10px 12px"}}>No donors yet. Import your donors first, then log the first call.</div>}
+            </div>
+          </div>
+        </div>
+      )}
+      {convoTarget&&<LogConversationModal donor={{id:convoTarget.id,name:convoTarget.name}}
+        onSaved={()=>{reloadDonors&&reloadDonors();}} onClose={()=>setConvoTarget(null)}/>}
       {followUpTarget&&<FollowUpTaskModal donor={followUpTarget} onClose={()=>setFollowUpTarget(null)} onSave={task=>{setData(prev=>({...prev,tasks:[task,...prev.tasks]}));setFollowUpTarget(null);}}/>}
       {editTarget&&<EditDonorModal donor={editTarget} onSave={handleEditSaved} onClose={()=>setEditTarget(null)}/>}
       {selected ? (
@@ -6467,6 +6539,7 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
         tasks={data.tasks.filter(t=>t.donorId===selected.id)} onTaskToggle={toggleTask} onAddTask={()=>setFollowUpTarget(selected)}
         orgName={data.org?.name||""} orgTeam={orgTeam} onReassign={handleAssign} onCfSaved={reloadCfValues} onInteractionAdded={reloadDonors}
         onNavigate={onNavigate}
+        initialOpenConversation={!!initialOpenConversation&&selected.id===initialSelectDonorId}
         isReadOnly={isReadOnly} allDonors={data.donors} onSelectRelatedDonor={id=>{const d=data.donors.find(x=>x.id===id);if(d)selectDonor(d);}}/></ErrorBoundary>
       ) : (<>
 
@@ -6481,7 +6554,10 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
           ))}
         </div>
         <AIBtn onClick={generateCallList} loading={callLoading} label="✦ Call List"/>
-        <button onClick={()=>setShowAdd(!showAdd)} disabled={isReadOnly} title={isReadOnly?"Reactivate your subscription to make changes.":undefined} style={{background:T.gold500,border:"none",borderRadius:10,padding:"10px 14px",color:T.ink,fontSize:13,fontWeight:700,cursor:isReadOnly?"not-allowed":"pointer",opacity:isReadOnly?0.45:1}}>+ Add</button>
+        {/* BUILD-81 Part 5 — logging a conversation is the primary act (it IS
+            creating the follow-up); above the fold at 1440 and 390. */}
+        <button onClick={()=>setConvoPickerOpen(true)} disabled={isReadOnly} title={isReadOnly?"Reactivate your subscription to make changes.":undefined} style={{background:T.gold500,border:"none",borderRadius:10,padding:"10px 14px",color:T.ink,fontSize:13,fontWeight:800,cursor:isReadOnly?"not-allowed":"pointer",opacity:isReadOnly?0.45:1}}>Log a conversation</button>
+        <button onClick={()=>setShowAdd(!showAdd)} disabled={isReadOnly} title={isReadOnly?"Reactivate your subscription to make changes.":undefined} style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:10,padding:"10px 14px",color:T.ink2,fontSize:13,fontWeight:700,cursor:isReadOnly?"not-allowed":"pointer",opacity:isReadOnly?0.45:1}}>+ Add</button>
         {/* BUILD-33 Part 3 — ONE "Import & tools" menu instead of four sibling
             buttons. "Import + History" is the recommended default (the magical
             one-file path); the others are labeled as the specific cases they

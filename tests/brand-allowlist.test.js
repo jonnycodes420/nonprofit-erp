@@ -172,7 +172,11 @@ ok("menu reaches donor-only import", menuBlock.includes("setShowImport(true)"));
 ok("menu reaches giving-history import", menuBlock.includes("setShowGiftImport(true)"));
 ok("menu reaches merge duplicates", menuBlock.includes("setShowMerge(true)"));
 ok("the four sibling toolbar buttons are gone", !donors.includes("↑ Giving History</button>") && !donors.includes("⇆ Merge duplicates</button>"));
-ok("+ Add is the gold primary action", /setShowAdd\(!showAdd\)[^\n]*background:T\.gold500/.test(donors));
+// BUILD-81 — "Log a conversation" is the directory's gold primary action
+// (logging a conversation IS creating the follow-up); + Add steps down to a
+// quiet outline beside it.
+ok("Log a conversation is the gold primary action", /setConvoPickerOpen\(true\)[^\n]*background:T\.gold500/.test(donors));
+ok("+ Add stepped down to a quiet outline", /setShowAdd\(!showAdd\)[^\n]*background:T\.bg,/.test(donors));
 
 // Communications (Part 4 known offenders): conventions applied.
 const comms = read("src/components/Communications.jsx");

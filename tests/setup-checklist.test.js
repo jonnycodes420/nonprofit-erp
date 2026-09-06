@@ -28,6 +28,10 @@ async function reset() {
     await q(`DELETE FROM workflows WHERE org_id=$1`, [o]).catch(() => {});
     await q(`DELETE FROM invites WHERE org_id=$1`, [o]).catch(() => {});
     await q(`DELETE FROM gifts WHERE org_id=$1`, [o]).catch(() => {});
+    // BUILD-81 — the conversation item's fixture logs a real conversation, so
+    // its interaction (and thread, via donor cascade) must clear first.
+    await q(`DELETE FROM threads WHERE org_id=$1`, [o]).catch(() => {});
+    await q(`DELETE FROM interactions WHERE org_id=$1`, [o]).catch(() => {});
     await q(`DELETE FROM donors WHERE org_id=$1`, [o]).catch(() => {});
     await q(`DELETE FROM users WHERE org_id=$1`, [o]).catch(() => {});
     await q(`DELETE FROM orgs WHERE id=$1`, [o]);
@@ -107,12 +111,19 @@ const item = (body, key) => (body.items || []).find(i => i.key === key);
   r = await api("GET", "/org/setup-status", tokC);
   ok("a LIVE giving page → item done", item(r.body, "givingPage").done === true);
 
-  await q(`INSERT INTO workflows (id,org_id,recipe_key,name,trigger,enabled) VALUES ('wf_su_off',$1,'new_donor_welcome','Welcome','gift_received',FALSE)`, [ORG_C]);
+  // BUILD-81 — "Turn on your first automation" became "Log your first
+  // conversation". The old workflow item ticked on a fresh org that had done
+  // nothing; the new item ticks only when the first THREAD exists, and only a
+  // real logged conversation (or a live gift) can create one.
+  await q(`INSERT INTO workflows (id,org_id,recipe_key,name,trigger,enabled) VALUES ('wf_su_on',$1,'new_donor_welcome','Welcome','gift_received',TRUE)`, [ORG_C]);
   r = await api("GET", "/org/setup-status", tokC);
-  ok("a provisioned-but-DISABLED workflow does not count", item(r.body, "workflow").done === false);
-  await q(`UPDATE workflows SET enabled=TRUE WHERE id='wf_su_off'`);
+  ok("an ENABLED workflow does NOT tick the conversation item (the old auto-tick defect, proven dead)",
+     item(r.body, "conversation").done === false, item(r.body, "conversation"));
+  const conv = await api("POST", "/donors/d_su_r0/conversations", tokC,
+    { touch: "call_reached", line: "First call — she remembered the spring appeal.", nextStep: { type: "follow_up", due: "2099-01-08" } });
+  ok("logging the first conversation opens a thread (201)", conv.status === 201 && conv.body.thread, conv.body);
   r = await api("GET", "/org/setup-status", tokC);
-  ok("first enabled workflow → item done", item(r.body, "workflow").done === true);
+  ok("first conversation logged → item done", item(r.body, "conversation").done === true);
   ok("Core org is now COMPLETE (5 of 5) — an established org has nothing to be nagged about", r.body.complete === true && r.body.doneCount === 5, r.body);
 
   // ── Team item: 2+ users OR a live pending invite ─────────────────────────
@@ -158,7 +169,7 @@ const item = (body, key) => (body.items || []).find(i => i.key === key);
   // ── Isolation: org A's seeded data never counts for org B ────────────────
   // (ORG_T has no donors/pages/workflows; ORG_C's completions must not leak.)
   r = await api("GET", "/org/setup-status", tokT);
-  ok("org B's donors/pages/workflows don't count for org A", item(r.body, "donors").done === false && item(r.body, "givingPage").done === false && item(r.body, "workflow").done === false);
+  ok("org B's donors/pages/conversations don't count for org A", item(r.body, "donors").done === false && item(r.body, "givingPage").done === false && item(r.body, "conversation").done === false);
 
   // ── Client-source guard: exact deep links + layout integration ───────────
   const root = path.join(__dirname, "..");

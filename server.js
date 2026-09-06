@@ -668,6 +668,16 @@ app.post("/stripe/webhook", express.raw({ type: "application/json" }), async (re
               dedupKey: `gift:${giftId}`, donorId, giftId, amount, isFirstGift: wasFirstGift,
               entityType: "gift", entityId: giftId,
             }).catch(e => console.error("[workflow] gift_received:", e.message));
+
+            // BUILD-81 — a live one-time gift opens a thread (next step
+            // "Thank", +2 days). Recurring charges are excluded: their
+            // thank-you path is transactional and automatic, and a thread
+            // per renewal would be noise, not remembering.
+            if (!recurringSubDbId) {
+              openGiftThread(orgId, donorId, {
+                giftId, actorId: SYS_STRIPE.id, actorName: SYS_STRIPE.name,
+              }).catch(() => {});
+            }
           }
         }
       }
@@ -2811,12 +2821,12 @@ app.get("/org/setup-status", requireAuth, wrap(async (req, res) => {
   const org = orgs[0];
   const tier = orgPlanTier(org);
 
-  const [donorRow, giftRow, pageRow, wfRow, userRow, inviteRow] = await Promise.all([
+  const [donorRow, giftRow, pageRow, threadRow, userRow, inviteRow] = await Promise.all([
     query(`SELECT COUNT(*)::int AS n FROM donors WHERE org_id = ? AND deleted_at IS NULL AND is_sample IS NOT TRUE`, [orgId]),
     query(`SELECT COUNT(*)::int AS n FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
              WHERE g.org_id = ? AND d.deleted_at IS NULL AND d.is_sample IS NOT TRUE`, [orgId]),
     query(`SELECT COUNT(*)::int AS n FROM giving_pages WHERE org_id = ? AND status = 'active'`, [orgId]),
-    query(`SELECT COUNT(*)::int AS n FROM workflows WHERE org_id = ? AND enabled = TRUE`, [orgId]),
+    query(`SELECT COUNT(*)::int AS n FROM threads WHERE org_id = ?`, [orgId]),
     query(`SELECT COUNT(*)::int AS n FROM users WHERE org_id = ?`, [orgId]),
     query(`SELECT COUNT(*)::int AS n FROM invites WHERE org_id = ? AND accepted_at IS NULL AND expires_at > NOW()`, [orgId]),
   ]);
@@ -2837,7 +2847,11 @@ app.get("/org/setup-status", requireAuth, wrap(async (req, res) => {
     { key: "stripe", done: !!org.stripe_account_id },
     { key: "address", done: !!(org.receipt_address && String(org.receipt_address).trim()) },
     { key: "givingPage", done: pageRow[0].n > 0 },
-    { key: "workflow", done: wfRow[0].n > 0 },
+    // BUILD-81 — "Turn on your first automation" became "Log your first
+    // conversation": it ticks when the first THREAD exists, which only a real
+    // logged conversation (or a live gift) can create. The old workflow item
+    // ticked on a fresh org that had done nothing.
+    { key: "conversation", done: threadRow[0].n > 0 },
     ...(tier === "team" ? [{ key: "team", done: userRow[0].n >= 2 || inviteRow[0].n > 0 }] : []),
   ];
   const doneCount = items.filter(i => i.done).length;
@@ -5381,6 +5395,12 @@ app.post("/donors/:id/gifts", requireAuth, checkWriteAccess, wrap(async (req, re
     return { ...fp, paid, balance: round2(parseFloat(fp.balance) || 0), surplus, overpaid: surplus > 0,
              displayStatus: pledgeDisplayStatus(paid, amount, fp.status) };
   })() : null;
+  // BUILD-81 — a live gift is a touch: it opens a thread whose next step is
+  // "Thank" (+2 days) unless the donor already has one open. Fire-and-forget
+  // beside the response like the score recalc — the gift itself never waits.
+  openGiftThread(req.user.orgId, req.params.id, {
+    giftId: giftRows[0]?.id, actorId: req.user.userId, actorName: actor(req).name,
+  }).catch(() => {});
   res.status(201).json({ gift: giftRows[0], donor: donorRows[0], pledge: fpOut });
 }));
 
@@ -9024,7 +9044,255 @@ app.post("/drift/:donorId/done", requireAuth, wrap(async (req, res) => {
     );
     return { id, skipped, status: 201 };
   });
-  res.status(result.status).json({ id: result.id, skipped: result.skipped, deduped: result.deduped });
+
+  // BUILD-81 — marking a drift item done WITH a logged line opens a thread:
+  // this is BUILD-76's byproduct logging, unchanged, now visibly the point.
+  // The next-step prompt runs in the same flow; {skipped:true} is recorded as
+  // skipped on the interaction (never as nothing), an explicit {type,due} is
+  // the user's decision, and an absent nextStep takes the call default
+  // (Follow up, +7 days) — the drift row was a call to make.
+  let thread = null;
+  if (!skipped) {
+    const shape = await threadShapeMod();
+    const ns = req.body?.nextStep;
+    if (ns && ns.skipped === true) {
+      await run("UPDATE interactions SET metadata = jsonb_set(metadata, '{next_step}', '\"skipped\"') WHERE id = ?", [result.id]);
+    } else {
+      let step = null;
+      if (ns && shape.nextStepLabelFor(ns.type) && /^\d{4}-\d{2}-\d{2}$/.test(String(ns.due || ""))) {
+        step = { type: ns.type, label: shape.nextStepLabelFor(ns.type), due: ns.due };
+      } else {
+        const s = shape.nextStepSuggestion("call_reached", todayStr);
+        step = { type: s.type, label: s.label, due: s.due };
+      }
+      const [dRow] = await query("SELECT assigned_to, assigned_to_name FROM donors WHERE id = ? AND org_id = ?", [req.params.donorId, orgId]);
+      thread = await withTransaction(client => openThreadTx(client, {
+        orgId, donorId: req.params.donorId, step, openedOn: todayStr,
+        ownerId: dRow?.assigned_to || userId, ownerName: dRow?.assigned_to ? dRow.assigned_to_name : (userRow[0]?.name || ""),
+        actorId: userId, actorName: userRow[0]?.name || "", openingInteractionId: result.id,
+      }));
+      await run("UPDATE interactions SET metadata = jsonb_set(metadata, '{next_step}', '\"set\"') WHERE id = ?", [result.id]);
+    }
+  }
+  res.status(result.status).json({ id: result.id, skipped: result.skipped, deduped: result.deduped, thread });
+}));
+
+// ── BUILD-81 — THE THREAD ───────────────────────────────────────────────────
+// A thread is a donor plus an open next step: the last touch, the next step
+// with a due date, days open, and who owns it. One open thread per donor
+// (partial unique index threads_one_open). The engine is BUILD-76's byproduct
+// logging with a name and a place: logging a conversation IS creating the
+// follow-up — nothing here asks anyone to create a task.
+//
+// Ways out of a thread, and silent is not one of them (threads_close_honest
+// CHECK in db.js — the DATABASE refuses a close with no outcome and no
+// reason): an outcome logged (one line, and the next-step prompt runs again)
+// or a dismissal with a reason. "Not now, revisit on [date]" is a SNOOZE on
+// an open thread, deliberately not a close.
+//
+// Threads are NEVER inferred from imported data — a Last Contact column in a
+// file is history, not an open loop. The only non-human opener is a LIVE gift
+// landing (webhook / manual entry), whose next step is "Thank".
+async function threadShapeMod() { return import("./shared/threadShape.js"); }
+
+// Open a thread inside a caller-held transaction. Returns the row, or null
+// when the donor already has an open thread (the one-open-thread rule — the
+// partial unique index decides under a race, not a check-then-insert).
+async function openThreadTx(client, { orgId, donorId, step, openedOn, ownerId, ownerName, actorId, actorName, openingInteractionId = null, openingGiftId = null, followon = null }) {
+  const id = "th_" + uuid().slice(0, 8);
+  const rows = await queryTx(client,
+    `INSERT INTO threads (id,org_id,donor_id,next_step_type,next_step_label,due_date,opened_on,
+                          opening_interaction_id,opening_gift_id,owner_id,owner_name,
+                          created_by,created_by_name,followon_type,followon_label,followon_due)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+     ON CONFLICT (org_id, donor_id) WHERE closed_at IS NULL DO NOTHING
+     RETURNING *`,
+    [id, orgId, donorId, step.type, step.label, step.due, openedOn,
+     openingInteractionId, openingGiftId, ownerId || null, ownerName || null,
+     actorId || null, actorName || null,
+     followon?.type || null, followon?.label || null, followon?.due || null]);
+  return rows[0] || null;
+}
+
+// A LIVE gift opens a thread whose next step is "Thank" (+2 days) — the
+// "gift received" row of the defaults table, applied on the server so a gift
+// not yet thanked IS a thread rather than a parallel computation. Gated the
+// way every person surface is: never for sample/deceased/do-not-contact
+// donors or non-person records (orgs/DAFs/anonymous), never for recurring
+// renewals (their thank-you path is transactional and automatic), and never
+// from an import (imports call bulk inserts, not this).
+async function openGiftThread(orgId, donorId, { giftId, giftDate, actorId, actorName }) {
+  try {
+    const [d] = await query(
+      `SELECT id, assigned_to, assigned_to_name FROM donors
+        WHERE id = ? AND org_id = ? AND deleted_at IS NULL
+          AND is_sample IS NOT TRUE AND deceased IS NOT TRUE AND do_not_contact IS NOT TRUE
+          AND (kind IS NULL OR kind = 'person')`, [donorId, orgId]);
+    if (!d) return null;
+    const org = await orgTz(orgId);
+    const today = orgToday(org);                       // ORG_TZ_SEAM_OK
+    const { nextStepSuggestion } = await threadShapeMod();
+    const step = nextStepSuggestion("gift", today);
+    return await withTransaction(client => openThreadTx(client, {
+      orgId, donorId, step: { type: step.type, label: step.label, due: step.due },
+      openedOn: today, openingGiftId: giftId || null,
+      ownerId: d.assigned_to || null, ownerName: d.assigned_to_name || null,
+      actorId, actorName,
+    }));
+  } catch (e) { console.error("[thread] gift thread:", e.message); return null; }
+}
+
+// Compose the org's open threads: overdue first, then by due date. Snoozed
+// threads (revisit dates still in the future) stay off the list and out of
+// the stat — they resurface by construction the day snoozed_until arrives.
+async function composeThreads(orgId, { donorId = null } = {}) {
+  const org = await orgTz(orgId);
+  const today = orgToday(org);                         // ORG_TZ_SEAM_OK
+  const rows = await query(
+    `SELECT t.*, d.name AS donor_name,
+            i.type AS touch_type, i.note AS touch_note, i.date AS touch_date, i.logged_by_name AS touch_actor,
+            g.amount AS gift_amount, g.date AS gift_date
+       FROM threads t
+       JOIN donors d ON d.id = t.donor_id AND d.org_id = t.org_id
+       LEFT JOIN interactions i ON i.id = t.opening_interaction_id
+       LEFT JOIN gifts g ON g.id = t.opening_gift_id
+      WHERE t.org_id = ? AND t.closed_at IS NULL AND d.deleted_at IS NULL
+        ${donorId ? "AND t.donor_id = ?" : ""}
+      ORDER BY t.due_date ASC, t.opened_on ASC`,
+    donorId ? [orgId, donorId] : [orgId]);
+  const list = [];
+  let snoozed = 0;
+  for (const t of rows) {
+    const snoozedOut = t.snoozed_until && String(t.snoozed_until) > today;
+    if (snoozedOut && !donorId) { snoozed++; continue; }
+    const daysOpen = orgTime.daysBetween(t.opened_on, today) ?? 0;
+    const lastTouch = t.opening_interaction_id
+      ? { kind: "interaction", type: t.touch_type, date: t.touch_date, line: t.touch_note, actor: t.touch_actor }
+      : t.opening_gift_id
+        ? { kind: "gift", type: "gift", date: t.gift_date ? String(t.gift_date).slice(0, 10) : t.opened_on, amount: t.gift_amount != null ? parseFloat(t.gift_amount) : null, actor: t.created_by_name || null }
+        : { kind: "none", type: null, date: t.opened_on, line: null, actor: t.created_by_name || null };
+    list.push({
+      id: t.id, donorId: t.donor_id, donorName: t.donor_name,
+      nextStep: { type: t.next_step_type, label: t.next_step_label, due: t.due_date },
+      overdue: t.due_date < today, daysOpen, openedOn: t.opened_on,
+      owner: t.owner_id ? { id: t.owner_id, name: t.owner_name } : null,
+      lastTouch, snoozedUntil: snoozedOut ? t.snoozed_until : null,
+      followon: t.followon_type ? { type: t.followon_type, label: t.followon_label, due: t.followon_due } : null,
+    });
+  }
+  // Overdue first (list is already due-date ascending inside each half).
+  list.sort((a, b) => (b.overdue ? 1 : 0) - (a.overdue ? 1 : 0) || (a.nextStep.due < b.nextStep.due ? -1 : a.nextStep.due > b.nextStep.due ? 1 : 0));
+  const overdue = list.filter(t => t.overdue).length;
+  const oldestDays = list.reduce((m, t) => Math.max(m, t.daysOpen), 0);
+  const [{ n: everCount } = { n: 0 }] = await query(`SELECT COUNT(*)::int AS n FROM threads WHERE org_id = ?`, [orgId]);
+  return { list, stat: { open: list.length, overdue, oldestDays, snoozed }, hasAny: everCount > 0, today };
+}
+
+app.get("/threads", requireAuth, wrap(async (req, res) => {
+  const donorId = req.query.donorId ? String(req.query.donorId) : null;
+  res.json(await composeThreads(req.user.orgId, { donorId }));
+}));
+
+// POST /donors/:id/conversations — THE write path of the Thread. Logs the
+// touch (one line, an interactions row with the BUILD-75 actor), and the
+// next-step decision travels IN THE SAME REQUEST: {type, due} opens the next
+// thread, {skipped:true} is recorded as skipped on the interaction (the
+// BUILD-76 rule — never as nothing). If the donor had an open thread, this
+// conversation IS its outcome: the thread closes pointing at this
+// interaction, and the next-step prompt's answer decides whether another
+// opens. One request, one transaction — no half-logged state.
+app.post("/donors/:id/conversations", requireAuth, wrap(async (req, res) => {
+  const { orgId, userId } = req.user;
+  const [donor] = await query(
+    "SELECT id, assigned_to, assigned_to_name FROM donors WHERE id = ? AND org_id = ? AND deleted_at IS NULL",
+    [req.params.id, orgId]);
+  if (!donor) return res.status(404).json({ error: "Donor not found" });
+
+  const shape = await threadShapeMod();
+  const touch = shape.touchTypeFor(String(req.body?.touch || ""));
+  if (!touch) return res.status(400).json({ error: "Unknown touch type" });
+  const line = typeof req.body?.line === "string" ? req.body.line.trim() : "";
+  if (!line) return res.status(400).json({ error: "The one line is required — what happened?" });
+
+  const org = await orgTz(orgId);
+  const today = orgToday(org);                          // ORG_TZ_SEAM_OK
+  const date = /^\d{4}-\d{2}-\d{2}$/.test(String(req.body?.date || "")) ? req.body.date : today;
+
+  const ns = req.body?.nextStep;
+  const nsSkipped = !!(ns && ns.skipped === true);
+  let step = null;
+  if (!nsSkipped) {
+    const label = shape.nextStepLabelFor(ns?.type);
+    if (!ns || !label) return res.status(400).json({ error: "nextStep must be {type, due} from the offered set, or {skipped:true} — a skip is recorded, silence is not accepted" });
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(String(ns.due || ""))) return res.status(400).json({ error: "nextStep.due must be a date (YYYY-MM-DD)" });
+    step = { type: ns.type, label, due: ns.due };
+  }
+
+  const userRow = await query("SELECT name FROM users WHERE id=?", [userId]);
+  const userName = userRow[0]?.name || "";
+
+  const out = await withTransaction(async (client) => {
+    const intId = "int_" + uuid().slice(0, 8);
+    await runTx(client,
+      "INSERT INTO interactions (id,org_id,donor_id,type,note,date,created_by,logged_by_name,metadata) VALUES (?,?,?,?,?,?,?,?,?)",
+      [intId, orgId, req.params.id, touch.interactionType, line, date, userId, userName,
+       JSON.stringify({ via: "thread_log", touch: touch.key, next_step: nsSkipped ? "skipped" : "set" })]);
+
+    // An open thread on this donor closes on this conversation — the outcome.
+    const closedRows = await queryTx(client,
+      `UPDATE threads SET closed_at = NOW(), close_kind = 'outcome', closing_interaction_id = ?
+        WHERE org_id = ? AND donor_id = ? AND closed_at IS NULL RETURNING id`,
+      [intId, orgId, req.params.id]);
+
+    let thread = null;
+    if (step) {
+      // The meeting/visit chain: when the user KEPT the thank-you-note
+      // default, the second thread (Follow up, +14 from the touch) rides
+      // along and prefills the prompt when this one closes. A changed type
+      // is the user's decision replacing the plan — no follow-on.
+      const def = shape.NEXT_STEP_DEFAULTS[touch.key];
+      const followon = def?.followon && step.type === def.type
+        ? { type: def.followon.type, label: def.followon.label, due: shape.addCivilDays(date, def.followon.plusDays) }
+        : null;
+      thread = await openThreadTx(client, {
+        orgId, donorId: req.params.id, step, openedOn: today,
+        ownerId: donor.assigned_to || userId, ownerName: donor.assigned_to ? donor.assigned_to_name : userName,
+        actorId: userId, actorName: userName, openingInteractionId: intId, followon,
+      });
+    }
+    return { interactionId: intId, closedThreadId: closedRows[0]?.id || null, thread };
+  });
+
+  calcWealthScore(req.params.id, orgId).catch(e => console.error("score recalc:", e.message));
+  res.status(201).json({ ...out, skipped: nsSkipped });
+}));
+
+// POST /threads/:id/dismiss — the other way out. reason ∈ the short fixed
+// list; "revisit" is a snooze (the thread stays open, resurfaces on the
+// date), the other two close the thread with the reason on the row.
+app.post("/threads/:id/dismiss", requireAuth, wrap(async (req, res) => {
+  const { orgId } = req.user;
+  const [t] = await query("SELECT * FROM threads WHERE id = ? AND org_id = ?", [req.params.id, orgId]);
+  if (!t) return res.status(404).json({ error: "Thread not found" });
+  if (t.closed_at) return res.status(400).json({ error: "Thread is already closed" });
+
+  const { DISMISS_REASONS } = await threadShapeMod();
+  const reason = String(req.body?.reason || "");
+  if (!DISMISS_REASONS.some(r => r.key === reason)) {
+    return res.status(400).json({ error: "reason must be one of: " + DISMISS_REASONS.map(r => r.key).join(", ") });
+  }
+  if (reason === "revisit") {
+    const on = String(req.body?.revisitOn || "");
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(on)) return res.status(400).json({ error: "revisitOn must be a date (YYYY-MM-DD)" });
+    const org = await orgTz(orgId);
+    if (on <= orgToday(org)) return res.status(400).json({ error: "revisitOn must be a future date — a revisit today is just the open thread" });   // ORG_TZ_SEAM_OK
+    await run("UPDATE threads SET snoozed_until = ? WHERE id = ?", [on, req.params.id]);
+    return res.json({ ok: true, snoozedUntil: on });
+  }
+  await run(
+    "UPDATE threads SET closed_at = NOW(), close_kind = 'dismissed', close_reason = ? WHERE id = ?",
+    [reason, req.params.id]);
+  res.json({ ok: true, dismissed: reason });
 }));
 
 // ── Fundraising goals (home screen goal banner) ─────────────────────────────

@@ -6,6 +6,7 @@ import { mergeLayout, sectionMeta, isDefaultLayout, moveToTop } from "../lib/hom
 import { greetingForHour } from "../lib/greeting";
 import FunnelChart from "./FunnelChart";
 import MetricBreakdownPanel from "./MetricBreakdownPanel";
+import { LogConversationModal, ThreadDismissMenu } from "./LogConversation";
 
 // BUILD-34 — customizable Home. Sections render from a per-user ordered
 // [{id,visible}] config (client/src/lib/homeLayout.js is the canonical list +
@@ -134,7 +135,10 @@ const SETUP_ITEM_META = {
   stripe:     { label: "Connect Stripe",                 why: "unlocks online giving and failed-card recovery — no platform fee, no donor tip", cta: "Connect", nav: ["settings", { section: "giving" }] },
   address:    { label: "Add your mailing address",       why: "goes in every email footer (CAN-SPAM) and clears the reminder banner",         cta: "Add",     nav: ["settings", { section: "receipts" }] },
   givingPage: { label: "Publish a giving page",          why: "a shareable page your donors can give through today",                          cta: "Publish", nav: ["settings", { section: "giving" }] },
-  workflow:   { label: "Turn on your first automation",  why: "automations are how Steward watches your donors while you work",               cta: "Turn on", nav: ["workflows", undefined] },
+  // BUILD-81 — the automation item is gone (it ticked on a fresh org that had
+  // done nothing). Logging a conversation is the real first act: it opens a
+  // thread, and the next step comes back to you.
+  conversation: { label: "Log your first conversation",  why: "log one call from a donor's record and the next step comes back to you",      cta: "Log",     nav: ["donors", undefined] },
   team:       { label: "Invite your team",               why: "portfolios and pipelines start when your gift officers are in",                cta: "Invite",  nav: ["settings", { section: "team" }] },
 };
 
@@ -229,9 +233,14 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
   // BUILD-77 Part 7 — the four recurring counts, for the ONE cross-link line
   // (the tab itself moved to Fundraising → Recurring Giving).
   const [recurringAttention,setRecurringAttention]=useState(0);
+  // BUILD-81 §3.1 — the failed-card count leads the line when non-zero:
+  // "3 cards stopped this month." A stopped card is money already moving
+  // that quietly stopped; the rest of the exceptions ride behind it.
+  const [recurringFailed,setRecurringFailed]=useState(0);
   useEffect(()=>{
     apiFetch("/recurring/exceptions").then(d=>{
       const c=d?.counts||{};
+      setRecurringFailed(c.failedCards||0);
       setRecurringAttention((c.failedCards||0)+(c.aboutToLapse||0)+(c.pendingProposals||0)+(c.anniversaries||0));
     }).catch(()=>{});
   },[]);
@@ -289,6 +298,11 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
   const [driftLine,setDriftLine]=useState("");
   const [driftBusy,setDriftBusy]=useState(false);
   const loadDrift=()=>apiFetch("/drift").then(r=>{setDriftData(r);setDriftAllData(null);}).catch(()=>{});
+
+  // ── BUILD-81 — THE THREAD, the first section of the work column ──────────
+  const [threadsData,setThreadsData]=useState(null);
+  const [convoFor,setConvoFor]=useState(null); // {donor:{id,name}, thread} → the log-one-line modal
+  const loadThreads=()=>apiFetch("/threads").then(r=>setThreadsData(r)).catch(()=>{});
 
   // ── BUILD-35: activation checklist state ──────────────────────────────────
   const setupOrgId=(()=>{try{return JSON.parse(localStorage.getItem("npe_org")||"{}").id||"org";}catch{return "org";}})();
@@ -478,6 +492,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
     apiFetch("/fundraising/overview").then(r=>setFundOverview(r||null)).catch(()=>setFundOverview(null));
     loadGoal();
     loadDrift();
+    loadThreads();
   },[]);
 
   // Queue + hero metrics are re-fetched whenever scope changes (including
@@ -1444,29 +1459,89 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
   ):null;
 
   // The two-column queue/briefing + funnel/grant/recurring grid — one section.
+  // ── BUILD-81 — THE THREAD, first. A thread is a donor plus an open next
+  // step: the last touch, the next step with its due date, days open, who
+  // owns it. This is the day view's follow-up spine with its name on screen.
+  // Needs Your Attention FOLDS IN below the thread rows (a gift not yet
+  // thanked is a thread whose next step is "thank"; a move due is a thread);
+  // Drift stays its own section — Drift finds them, the Thread keeps them.
+  const threadList=threadsData?.list||[];
+  const threadStat=threadsData?.stat;
+  const TOUCH_WORD={call:"Call",meeting:"Meeting",email:"Email",gift:"Gift",other:"Note",stewardship:"Stewardship",note:"Note",event:"Event"};
+  const threadRows=threadList.map((t,i)=>(
+    <li key={t.id} style={{display:"flex",alignItems:"center",gap:12,padding:"12px 20px",borderBottom:i<threadList.length-1?"1px solid "+T.bg3:"none",borderLeft:"3px solid "+(t.overdue?T.terracotta:T.greenMid)}}>
+      <a href={`/donors/${t.donorId}`} style={{flex:1,minWidth:0,textDecoration:"none",color:"inherit"}}
+        onClick={e=>{if(e.metaKey||e.ctrlKey||e.shiftKey||e.altKey)return;e.preventDefault();onNavigate("donors",{selectDonorId:t.donorId});}}>
+        <div style={{fontSize:13,fontWeight:700,color:T.ink}}>{t.donorName}</div>
+        <div style={{fontSize:12,color:T.ink3,marginTop:2,lineHeight:1.45,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
+          {TOUCH_WORD[t.lastTouch?.type]||"Touch"} · {String(t.lastTouch?.date||t.openedOn).slice(0,10)}
+          {t.lastTouch?.line?<> · {t.lastTouch.line}</>:t.lastTouch?.kind==="gift"&&t.lastTouch.amount!=null?<> · {fmtFull(t.lastTouch.amount)} received</>:null}
+          {t.lastTouch?.actor?<> · {t.lastTouch.actor}</>:null}
+        </div>
+      </a>
+      <div style={{textAlign:"right",flexShrink:0}}>
+        <div style={{fontSize:12.5,fontWeight:700,color:t.overdue?T.terracotta:T.ink}}>
+          {t.nextStep.label}{t.overdue?` · overdue`:` · due ${String(t.nextStep.due).slice(5)}`}
+        </div>
+        <div style={{fontSize:11,color:T.ink3,marginTop:2}}>day {t.daysOpen}{t.owner?` · ${t.owner.name}`:""}</div>
+      </div>
+      <div style={{display:"flex",gap:6,flexShrink:0,alignItems:"center"}}>
+        <button onClick={()=>setConvoFor({donor:{id:t.donorId,name:t.donorName},thread:t})} disabled={isReadOnly}
+          style={{background:T.greenDk,border:"none",borderRadius:7,padding:"7px 12px",color:"#fff",fontSize:12,fontWeight:700,cursor:isReadOnly?"not-allowed":"pointer",opacity:isReadOnly?0.45:1}}>Done</button>
+        <ThreadDismissMenu thread={t} onDone={loadThreads}/>
+      </div>
+    </li>
+  ));
+  // The thank queue items fold into the thread rows themselves once a gift
+  // opens its thread — a donor with an open thread never shows a second
+  // "thank" line below.
+  const threadDonorIds=new Set(threadList.map(t=>t.donorId));
+  const foldedQueue=visibleQueue.filter(item=>!(item.action==="thank"&&threadDonorIds.has(item.donorId)));
+
   const workSection=(
       <div className="dash-main-grid" style={{display:"grid",gridTemplateColumns:"minmax(0,1fr) 320px",gap:16,alignItems:"start"}}>
-        {/* LEFT: the queue is the hero (the "Need to Do" command card scrolls here) */}
+        {/* LEFT: the Thread is the hero (the "Need to Do" command card scrolls here) */}
         <div style={{display:"flex",flexDirection:"column",gap:14}}>
-          {driftSection}
-          <div id="dash-needtodo" style={{...cardWrap,scrollMarginTop:64}}>
+          <div id="dash-thread" style={{...cardWrap,borderColor:threadStat?.overdue>0?T.gold500+"55":T.bg3,scrollMarginTop:64}}>
             <div className="dash-cpad" style={{...cPad,borderBottom:"1px solid "+T.bg3,...sHdr}}>
               <span style={{display:"flex",alignItems:"center",gap:8}}>
-                <span style={sTitle}>Needs Your Attention</span>
+                <span aria-hidden style={{color:T.greenDk,fontSize:13,lineHeight:1}}>◈</span>
+                <span style={sTitle}>The Thread</span>
+              </span>
+              {threadStat&&threadStat.open>0&&(
+                <span style={{fontSize:11.5,color:T.ink3}}>
+                  {threadStat.open} open · {threadStat.overdue} overdue · oldest {threadStat.oldestDays} day{threadStat.oldestDays===1?"":"s"}
+                </span>
+              )}
+            </div>
+            {threadsData&&threadList.length===0&&(
+              <div style={{...cPad,fontSize:12.5,color:T.ink3,lineHeight:1.6}}>
+                {threadsData.hasAny
+                  ?<>Nothing waiting. Every conversation has its next step scheduled{threadStat?.snoozed>0?` — ${threadStat.snoozed} set aside to revisit later`:""}.</>
+                  :<>No conversations logged yet. Log your first call from a donor's record and the next step will come back to you.</>}
+              </div>
+            )}
+            {threadList.length>0&&(
+              <ul style={{listStyle:"none",margin:0,padding:0}}>{threadRows}</ul>
+            )}
+          <div id="dash-needtodo" style={{scrollMarginTop:64,borderTop:"1px solid "+T.bg3}}>
+            <div className="dash-cpad" style={{...cPad,borderBottom:"1px solid "+T.bg3,...sHdr}}>
+              <span style={{display:"flex",alignItems:"center",gap:8}}>
+                <span style={{...sTitle,fontSize:11.5,color:T.ink2}}>Needs Your Attention</span>
                 {scope==="mine"&&<span style={{fontSize:9,fontWeight:800,letterSpacing:"0.06em",textTransform:"uppercase",color:T.greenDk,background:T.greenDk+"10",padding:"2px 7px",borderRadius:99}}>Mine</span>}
               </span>
-              {!queueLoading&&<span style={{fontSize:11,color:T.ink3}}>{visibleQueue.length} {visibleQueue.length===1?"item":"items"}</span>}
+              {!queueLoading&&<span style={{fontSize:11,color:T.ink3}}>{foldedQueue.length} {foldedQueue.length===1?"item":"items"}</span>}
             </div>
             {queueLoading&&<div style={{...cPad}}><Spin/></div>}
-            {!queueLoading&&visibleQueue.length===0&&<MiniEmpty icon="✓" text="You're all caught up — nothing needs attention right now."/>}
+            {!queueLoading&&foldedQueue.length===0&&<MiniEmpty icon="✓" text="You're all caught up — nothing needs attention right now."/>}
             {/* D-1 (BUILD-45): each row's left region is a REAL <a href="/donors/:id">
                 (cmd/middle-click open the donor in a new tab), NOT an onClick div.
                 The action button is a SIBLING of the anchor — never nested — so
                 keyboard traversal and open-in-new-tab both work. Orphaned rows
                 (no resolvable donor) render the main as a <span>, never a dead link. */}
-            {!queueLoading&&visibleQueue.length>0&&(
+            {!queueLoading&&foldedQueue.length>0&&(
               <ul className="attn-list" style={{listStyle:"none",margin:0,padding:0}}>
-                {visibleQueue.map((item,i)=>{
+                {foldedQueue.map((item,i)=>{
                   const color=rowColor(item);
                   const busy=busyDonorId===item.donorId;
                   const href=item.donorId?`/donors/${item.donorId}`:null;
@@ -1491,7 +1566,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
                   return(
                     <li key={item.donorId+"_"+item.action} className="attn-row" style={{
                       display:"flex",alignItems:"stretch",
-                      borderBottom:i<visibleQueue.length-1?"1px solid "+T.bg3:"none",
+                      borderBottom:i<foldedQueue.length-1?"1px solid "+T.bg3:"none",
                       borderLeft:"3px solid "+color,
                     }}>
                       {href?(
@@ -1517,6 +1592,9 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
               </ul>
             )}
           </div>
+          </div>
+
+          {driftSection}
 
           {/* Today's Suggested Outreach */}
           <div style={{...cardWrap}}>
@@ -1681,7 +1759,9 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
           style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:12,padding:"10px 16px",display:"flex",alignItems:"center",gap:10}}>
           <span aria-hidden style={{color:T.terracotta,fontSize:13,lineHeight:1}}>◑</span>
           <span style={{flex:1,fontSize:13,color:T.ink2}}>
-            <strong style={{color:T.ink}}>{recurringAttention}</strong> recurring item{recurringAttention===1?"":"s"} need{recurringAttention===1?"s":""} a person — failed cards, expiring cards, or waiting proposals.
+            {recurringFailed>0
+              ?<><strong style={{color:T.ink}}>{recurringFailed}</strong> card{recurringFailed===1?"":"s"} stopped this month.{recurringAttention>recurringFailed?<> {recurringAttention-recurringFailed} more recurring item{recurringAttention-recurringFailed===1?"":"s"} need{recurringAttention-recurringFailed===1?"s":""} a person.</>:null}</>
+              :<><strong style={{color:T.ink}}>{recurringAttention}</strong> recurring item{recurringAttention===1?"":"s"} need{recurringAttention===1?"s":""} a person: expiring cards or waiting proposals.</>}
           </span>
           <span style={{fontSize:12,fontWeight:700,color:T.greenDk,whiteSpace:"nowrap"}}>Open Recurring →</span>
         </div>
@@ -1907,6 +1987,9 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
         rows={portfolioBreakdown.data?.rows||[]}
         onSelectDonor={goToDonorFromPortfolio}
       />
+
+      {convoFor&&<LogConversationModal donor={convoFor.donor} thread={convoFor.thread}
+        onSaved={()=>{loadThreads();loadDrift();}} onClose={()=>setConvoFor(null)}/>}
     </div>
   );
 }

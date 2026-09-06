@@ -1400,6 +1400,54 @@ async function initSchema() {
   // stat while refusals exceed 5% of rows.
   await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS last_import_stats JSONB`);
 
+  // ── BUILD-81 — THE THREAD ─────────────────────────────────────────────────
+  // A thread is a donor plus an open next step. One open thread per donor
+  // (partial unique index). The CHECK constraint is the structural guarantee
+  // behind "no code path closes a thread without an outcome or a reason":
+  // a closed row must be either an outcome (pointing at the interaction that
+  // closed it) or a dismissal (carrying its reason) — the database refuses
+  // anything else, not just the routes. "Revisit on [date]" is a SNOOZE on an
+  // open thread (snoozed_until), deliberately not a close: the thread never
+  // left, it just stops surfacing until that date.
+  // donor_id cascades (import_merges precedent) so suite org-resets that
+  // delete donors before orgs keep working without touching every list.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS threads (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL REFERENCES orgs(id),
+      donor_id TEXT NOT NULL REFERENCES donors(id) ON DELETE CASCADE,
+      next_step_type TEXT NOT NULL,
+      next_step_label TEXT NOT NULL,
+      due_date TEXT NOT NULL,
+      opened_on TEXT NOT NULL,
+      opening_interaction_id TEXT,
+      opening_gift_id TEXT,
+      owner_id TEXT,
+      owner_name TEXT,
+      created_by TEXT,
+      created_by_name TEXT,
+      followon_type TEXT,
+      followon_label TEXT,
+      followon_due TEXT,
+      snoozed_until TEXT,
+      closed_at TIMESTAMPTZ,
+      close_kind TEXT,
+      close_reason TEXT,
+      closing_interaction_id TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      CONSTRAINT threads_close_honest CHECK (
+        closed_at IS NULL
+        OR (close_kind = 'outcome'   AND closing_interaction_id IS NOT NULL)
+        OR (close_kind = 'dismissed' AND close_reason IS NOT NULL)
+      )
+    )`);
+  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS threads_one_open ON threads (org_id, donor_id) WHERE closed_at IS NULL`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_threads_org_open ON threads (org_id, due_date) WHERE closed_at IS NULL`);
+  // Per-user nudge-email switch (default on — NULL is on, BUILD-36 pref
+  // convention) and the org-level weekend toggle (default off: no weekend mail).
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS notify_thread_nudge BOOLEAN`);
+  await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS thread_nudge_weekends BOOLEAN DEFAULT FALSE`);
+
   // ── Giving Pages (2026-07-14) ────────────────────────────────────────────
   // Campaign-specific donation pages (gala/appeal/etc.), distinct from the
   // one org-wide /give/:orgSlug page. Deliberately NOT the `campaigns` table

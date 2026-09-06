@@ -136,7 +136,7 @@ function AppShell() {
     if(t!==tab&&!confirmIfDirty())return;   // BUILD-54 §6 — unsaved-state guard
     setCommsInitialNav(opts?.subtab||null);
     setCommsHighlightDraftId(opts?.highlightDraftId||null);
-    setDonorsIntent(opts?.view||opts?.logDonorId||opts?.stageFilter||opts?.selectDonorId||opts?.openImport?{view:opts.view,logDonorId:opts.logDonorId,stageFilter:opts.stageFilter,selectDonorId:opts.selectDonorId,openImport:opts.openImport}:null);
+    setDonorsIntent(opts?.view||opts?.logDonorId||opts?.stageFilter||opts?.selectDonorId||opts?.openImport||opts?.openConversation?{view:opts.view,logDonorId:opts.logDonorId,stageFilter:opts.stageFilter,selectDonorId:opts.selectDonorId,openImport:opts.openImport,openConversation:opts.openConversation}:null);
     setGrantsIntent(opts?.grantId?{grantId:opts.grantId}:null);
     setSettingsIntent(opts?.section?{section:opts.section}:null);
     setTasksIntent(opts?.scope&&t==="tasks"?{scope:opts.scope}:null);
@@ -154,7 +154,11 @@ function AppShell() {
     // URL back to /dashboard (the app doesn't otherwise sync tab↔URL).
     const donorMatch=window.location.pathname.match(/^\/donors\/([^/]+)\/?$/);
     if(donorMatch){
-      navigateTo("donors",{selectDonorId:decodeURIComponent(donorMatch[1])});
+      // BUILD-81 — the nudge email's links land here with ?conversation=1:
+      // a GET that changes nothing, opening the log-one-line flow after a
+      // real page load (Done/Skip happen there, as POSTs).
+      const wantsConversation=new URLSearchParams(window.location.search).get("conversation")==="1";
+      navigateTo("donors",{selectDonorId:decodeURIComponent(donorMatch[1]),openConversation:wantsConversation});
       window.history.replaceState({},"","/dashboard");
     }
     const params=new URLSearchParams(window.location.search);
@@ -472,7 +476,7 @@ function AppShell() {
           screen. The shell itself is wrapped app-level in the App export below. */}
     <ErrorBoundary label={tab} resetKey={tab} onHome={()=>setTab("dashboard")}>
       {tab==="dashboard"&&<Dashboard data={data} setData={setData} onNavigate={navigateTo} isReadOnly={isReadOnly}/>}
-      {tab==="donors"&&<Donors key={navNonce} data={data} setData={setData} isReadOnly={isReadOnly} onNavigate={navigateTo} initialView={donorsIntent?.view} initialLogDonorId={donorsIntent?.logDonorId} initialStageFilter={donorsIntent?.stageFilter} initialSelectDonorId={donorsIntent?.selectDonorId} initialOpenImport={donorsIntent?.openImport} onIntentConsumed={()=>setDonorsIntent(null)}/>}
+      {tab==="donors"&&<Donors key={navNonce} data={data} setData={setData} isReadOnly={isReadOnly} onNavigate={navigateTo} initialView={donorsIntent?.view} initialLogDonorId={donorsIntent?.logDonorId} initialStageFilter={donorsIntent?.stageFilter} initialSelectDonorId={donorsIntent?.selectDonorId} initialOpenImport={donorsIntent?.openImport} initialOpenConversation={donorsIntent?.openConversation} onIntentConsumed={()=>setDonorsIntent(null)}/>}
       {tab==="grants"&&<Grants key={navNonce} data={data} setData={setData} isReadOnly={isReadOnly} initialGrantId={grantsIntent?.grantId} onIntentConsumed={()=>setGrantsIntent(null)}/>}
       {tab==="communications"&&<Communications key={navNonce} data={data} isReadOnly={isReadOnly} initialNav={commsInitialNav} highlightDraftId={commsHighlightDraftId} onInitialNavConsumed={()=>{setCommsInitialNav(null);setCommsHighlightDraftId(null);}} onNavigate={navigateTo}/>}
       {tab==="reports"&&<Reports key={navNonce} onNavigate={navigateTo} initialReport={reportsIntent?.report} initialParams={reportsIntent}/>}
