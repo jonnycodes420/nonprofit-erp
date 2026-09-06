@@ -112,7 +112,13 @@ const fmtAmt = n => "$" + Number(n || 0).toLocaleString("en-US", { maximumFracti
 //   'ok'           — inside their own threshold
 //   'drifting'     — past threshold, before the lapse boundary
 //   'lapsed'       — past the boundary: different state, different list
-function assessDrift(gifts, today) {
+// opts.refusedRows (BUILD-80 Part 2.4) — the count of this donor's import
+// rows that could not be read. A refusal that changes a donor's story must
+// change the confidence of that story: Paul Ó Briain gave in January 2026,
+// the row was refused as unparseable, and the engine wrote "Nothing for over
+// a year" with full confidence. Any donor with a refused row is capped at
+// MEDIUM until the refusal is resolved, and the sentence says why.
+function assessDrift(gifts, today, opts = {}) {
   // Collapse same-day gifts into one giving EVENT (two receipts on one
   // occasion are one act of giving; zero-length intervals poison the median).
   const byDay = new Map();
@@ -186,6 +192,8 @@ function assessDrift(gifts, today) {
   else if (seasonal) confidence = "high";
   else if (cv != null && cv <= DRIFT.HIGH_CONFIDENCE_MAX_CV && cadence <= DRIFT.MAX_CADENCE_FOR_HIGH) confidence = "high";
   else confidence = "medium";
+  const refusedRows = Number(opts.refusedRows) || 0;
+  if (refusedRows > 0 && confidence === "high") confidence = "medium";
 
   const out = {
     state, confidence, basis, events: n,
@@ -195,8 +203,21 @@ function assessDrift(gifts, today) {
     lastGiftDate: last.date, firstGiftDate: first.date,
     valueAtRisk: Math.round(valueAtRisk * 100) / 100,
     seasonal: seasonal ? { kind: seasonal.kind, month: seasonal.month || null, quarter: seasonal.quarter || null, years: seasonal.years } : null,
+    refusedRows: refusedRows || 0,
   };
   out.reason = composeReason(out, events, today);
+  if (refusedRows > 0) {
+    // "Gave every January since 2021. One row from this import could not be
+    // read. Nothing we can see since January 2025." — the gap claim is
+    // hedged and the reason for the hedge is stated, mid-sentence, where a
+    // fundraiser will actually read it.
+    const rowPhrase = refusedRows === 1
+      ? "One row from the last import could not be read."
+      : `${refusedRows} rows from the last import could not be read.`;
+    out.reason = String(out.reason || "")
+      .replace(/Nothing for ([^.]+)\./, `${rowPhrase} Nothing we can see for $1.`)
+      .replace(/^((?!.*could not be read).*)$/s, m => /could not be read/.test(m) ? m : `${m} ${rowPhrase}`.trim());
+  }
   return out;
 }
 

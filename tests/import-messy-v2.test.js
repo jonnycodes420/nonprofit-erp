@@ -118,7 +118,7 @@ async function reset() {
     built.file.dollars > 1000000, built.file.dollars);
   const todayOrLater = built.gifts.filter(g => g.date >= TODAY);
   const rawToday = a.rows.filter(r => {
-    const { value } = lib.normalizeDate(r["Gift Date"] || "", { currentYear: Number(TODAY.slice(0, 4)) });
+    const { value } = lib.normalizeDate(r["Gift Date"] || "", { currentYear: Number(TODAY.slice(0, 4)), dayFirst: built.dateConvention?.applied === "dmy" });
     return value != null && value >= TODAY;
   });
   ok(`no gift dated today-or-later unless the FILE says so (built ${todayOrLater.length}, file ${rawToday.length})`,
@@ -176,6 +176,41 @@ async function reset() {
   ok("its biggest row is the planted $150,000 estate bequest — not a parse artifact",
     built.largestGifts[0].dollars === 150000 && /Estate of/.test(built.largestGifts[0].name), built.largestGifts[0]);
 
+  // ── §3c · BUILD-80 Part 2 — DATES: the column has a convention ───────────
+  console.log("\n— §3c · BUILD-80 Part 2: dates — column-level dd/mm, planted traps, refusals collapse —");
+  const dc = built.dateConvention;
+  ok("the column-level inference reads day/month/year from impossible-month evidence",
+    dc && dc.applied === "dmy" && dc.convention === "dmy", dc);
+  ok("the evidence is stated: 1,583 slash dates, 832 impossible the other way, ZERO impossible day-first",
+    dc.slashCells === 1583 && dc.dayFirstEvidence === 832 && dc.monthFirstEvidence === 0, dc);
+  const udRows = built.dispositions.filter(d => d.reason === "unparseable_date");
+  ok("unparseable dates collapse from 1,211-era refusals to EXACTLY the 11 planted traps",
+    udRows.length === 11, udRows.map(d => String(d.raw?.[txMap.date] ?? "")));
+  const udRaws = udRows.map(d => String(d.raw?.[txMap.date] ?? "").trim());
+  for (const t of ["Q4 2023", "FY24", "Christmas 2022", "12/31/1899", "01/01/1900", "29/02/2023", "30/02/2024", "00/00/0000", "", "Unknown", "2024-02-30"])
+    ok(`planted ${t === "" ? "(blank)" : `'${t}'`} refuses as unparseable`, udRaws.includes(t), udRaws);
+  const epoch = udRows.filter(d => /Excel epoch/.test("" ) || true).length; void epoch;
+  ok("Excel epoch artifacts are refused BY NAME, never parsed as 1899/1900 gifts",
+    lib.normalizeDate("12/31/1899").warn?.includes("Excel epoch") && lib.normalizeDate("01/01/1900", { dayFirst: true }).warn?.includes("Excel epoch"), null);
+  ok("the ISO-Z civil-date seam holds: 2025-06-13T03:00:00.000Z is 13 June, never 12",
+    lib.normalizeDate("2025-06-13T03:00:00.000Z").value === "2025-06-13", lib.normalizeDate("2025-06-13T03:00:00.000Z"));
+  const futRows = built.dispositions.filter(d => d.reason === "future_date");
+  const futRaws = futRows.map(d => String(d.raw?.[txMap.date] ?? "").trim());
+  ok("the two planted future dates are among the future refusals ('31/12/26', '15/09/2026')",
+    futRaws.includes("31/12/26") && futRaws.includes("15/09/2026"), futRaws.length);
+  ok("no future-dated row became a GIFT — future is an error, not a gift",
+    built.gifts.every(g => g.date <= TODAY), built.gifts.filter(g => g.date > TODAY).length);
+  const refusedNow = built.dispositions.filter(d => d.disposition === "errored" || d.disposition === "skipped").length;
+  ok(`total refusals collapse from 1,211 to ${refusedNow} (≤77; Part 5 reroutes the future pledge-schedule rows)`,
+    refusedNow <= 77, refusedNow);
+  // Part 2.4 — a refused row is not a neutral event: the donor is tagged.
+  const taggedDonors = built.donors.filter(d => (d.tags || []).some(t => /^has-refused-rows:\d+$/.test(t)));
+  ok("every donor with a refused row carries has-refused-rows:N (50 donors on v2)",
+    taggedDonors.length === 50, taggedDonors.length);
+  const paulOB = built.donors.find(d => /Paul/.test(d.name) && /Briain/.test(d.name));
+  ok("Paul Ó Briain's rows all parse — his January 2026 gift exists and he carries no refusal tag",
+    paulOB && !(paulOB.tags || []).some(t => /has-refused-rows/.test(t)), paulOB?.tags);
+
   // ── §4 · through the real route ──────────────────────────────────────────
   console.log("\n— §4 · through the real route: the ledger closes against 2,500 —");
   const CHUNK = 500;
@@ -216,6 +251,36 @@ async function reset() {
     `SELECT COUNT(*)::int n FROM gifts WHERE org_id=$1 AND (date IS NULL OR date = '')`, [ORG]);
   ok("no gift row landed with an empty date", nullDates.n === 0, nullDates.n);
   void clientRefused; void created; void sumRows;
+
+  // ── §4c · BUILD-80 Part 2.4/2.5 — drift after the honest date layer ──────
+  console.log("\n— §4c · drift: the 2026 givers are not told they went quiet —");
+  const dr = await api("GET", "/drift?includeMedium=1&all=1", tok);
+  ok("GET /drift answers 200 on the imported org", dr.status === 200, dr.status);
+  const dlist = dr.body?.list || [];
+  // Paul Ó Briain's January 2026 row now PARSES (dd/mm) — the date layer's
+  // half of his story. He still shows on drift because his 2026 row carries
+  // the planted '@@' email and identity-splits him into two records; §6b
+  // (BUILD-80 Part 6, external-ID grouping) owns the other half and asserts
+  // his absence from the list.
+  const [paulGift] = await q(
+    `SELECT COUNT(*)::int n FROM gifts g JOIN donors d ON d.id=g.donor_id
+      WHERE g.org_id=$1 AND d.name ILIKE '%Briain%' AND d.name ILIKE '%Paul%' AND g.date='2026-01-09'`, [ORG]);
+  ok("Paul Ó Briain's January 2026 gift EXISTS in the DB — the refused row that un-quieted him now parses",
+    paulGift.n >= 1, paulGift.n);
+  ok("Kenneth Kensington is NOT on the drift list — he gave in May 2026",
+    !dlist.some(x => /Kenneth/.test(x.donorName) && /Kensington/.test(x.donorName)),
+    dlist.filter(x => /Kensington/.test(x.donorName)).map(x => x.donorName));
+  // Every drifting donor with a refused row is capped at medium, and says why.
+  const refusedTagged = await q(
+    `SELECT id, name FROM donors WHERE org_id=$1 AND tags::text LIKE '%has-refused-rows%'`, [ORG]);
+  const refusedIds = new Set(refusedTagged.map(r => r.id));
+  const highWithRefusals = dlist.filter(x => refusedIds.has(x.donorId) && x.confidence === "high");
+  ok(`no donor with a refused row gets a HIGH-confidence drift call (${refusedTagged.length} tagged donors)`,
+    highWithRefusals.length === 0, highWithRefusals.map(x => x.donorName));
+  const cappedOnList = dlist.filter(x => refusedIds.has(x.donorId));
+  ok("a capped drift sentence says WHY: 'could not be read' appears in the reason",
+    cappedOnList.every(x => /could not be read/.test(x.reason || "")),
+    cappedOnList.filter(x => !/could not be read/.test(x.reason || "")).map(x => [x.donorName, x.reason]));
 
   // ── §5 · Part 7.4 — the round trip on the IMPORTED org ───────────────────
   console.log("\n— §5 · export reads what import wrote, on THIS org —");

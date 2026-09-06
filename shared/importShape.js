@@ -79,15 +79,41 @@ function pivotYear2(yy, currentYear) {
 const civil = (y, m, d) => validCivil(y, m, d)
   ? { value: `${y}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`, warn: null }
   : null;
+// BUILD-80 Part 2 — normalizeDate grows opts.dayFirst (the COLUMN's slash
+// convention, decided by inferDateConvention's evidence, never per cell) and
+// the real-world formats the v2 report refused 1,211 rows over: ISO datetimes
+// with a Z (civil date is the DATE PART — the BUILD-75 seam says a gift date
+// never timezone-converts, so 2025-06-13T03:00:00Z is 13 June, not 12),
+// compact 20240315, dotted 2024.03.15, ordinal "March 15th, 2024", and a
+// trailing " 0:00" time on slash dates. Excel epoch artifacts (12/31/1899,
+// 1/1/1900 and serials 0/1) are refused BY NAME: they are how a spreadsheet
+// says "no date", never a gift date.
 export function normalizeDate(val, opts = {}) {
   const currentYear = opts.currentYear || new Date().getFullYear();
+  const dayFirst = !!opts.dayFirst;
   if (val === null || val === undefined || val === "") return { value: null, warn: null };
   if (val instanceof Date) {
     return isNaN(val) ? { value: null, warn: "invalid date" } : { value: val.toISOString().split("T")[0], warn: null };
   }
-  const s = String(val).trim();
+  let s = String(val).trim();
   if (!s) return { value: null, warn: null };
   let m, r;
+  // trailing time-of-day on any format ("5/3/23 0:00", "2024-03-15 14:30:00")
+  s = s.replace(/[T ]\d{1,2}:\d{2}(:\d{2}(\.\d+)?)?\s*(Z|[APap]\.?[Mm]\.?)?$/, "");
+  // Excel epoch artifacts — a spreadsheet's zero, not a gift date
+  if (/^(12\/31\/1899|31\/12\/1899|0?1\/0?1\/1900|1900-01-01|1899-12-3[01])$/.test(s)) {
+    return { value: null, warn: `'${String(val).trim()}' is the Excel epoch — a spreadsheet's blank, not a gift date` };
+  }
+  // compact yyyymmdd
+  if (m = s.match(/^(\d{4})(\d{2})(\d{2})$/)) {
+    if (+m[1] >= 1900 && +m[1] <= 2100 && (r = civil(+m[1], +m[2], +m[3]))) return r;
+    return { value: null, warn: `couldn't parse date '${s}'` };
+  }
+  // dotted yyyy.mm.dd
+  if (m = s.match(/^(\d{4})\.(\d{1,2})\.(\d{1,2})$/)) {
+    if (r = civil(+m[1], +m[2], +m[3])) return r;
+    return { value: null, warn: `not a real calendar date '${s}'` };
+  }
   // Excel serial — 5-digit day count from 1899-12-30 (Lotus epoch, bug and all)
   if (/^\d{5}$/.test(s)) {
     const n = parseInt(s, 10);
@@ -102,14 +128,19 @@ export function normalizeDate(val, opts = {}) {
     if (r = civil(+m[1], +m[2], +m[3])) return r;
     return { value: null, warn: `not a real calendar date '${s}'` };
   }
-  // m/d/yyyy and mm-dd-yyyy
+  // m/d/yyyy and mm-dd-yyyy — or d/m/yyyy when the COLUMN said day-first.
+  // No per-cell fallback in either direction: under the wrong convention an
+  // impossible month is an ERROR, which is exactly the evidence the column
+  // scan counts. Refusing 828 rows and silently misdating 688 more is the
+  // worst outcome, and it is what a per-cell parser produces.
   if (m = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/)) {
-    if (r = civil(+m[3], +m[1], +m[2])) return r;
+    if (r = dayFirst ? civil(+m[3], +m[2], +m[1]) : civil(+m[3], +m[1], +m[2])) return r;
     return { value: null, warn: `not a real calendar date '${s}'` };
   }
-  // m/d/yy — two-digit year pivots to the past
-  if (m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2})$/)) {
-    if (r = civil(pivotYear2(+m[3], currentYear), +m[1], +m[2])) return r;
+  // m/d/yy (or d/m/yy day-first) — two-digit year pivots to the past
+  if (m = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2})$/)) {
+    const y2 = pivotYear2(+m[3], currentYear);
+    if (r = dayFirst ? civil(y2, +m[2], +m[1]) : civil(y2, +m[1], +m[2])) return r;
     return { value: null, warn: `not a real calendar date '${s}'` };
   }
   // dd-Mon-yy / dd-Mon-yyyy ("4-Mar-24")
@@ -119,8 +150,8 @@ export function normalizeDate(val, opts = {}) {
     if (mon && (r = civil(y, mon, +m[1]))) return r;
     return { value: null, warn: `couldn't parse date '${s}'` };
   }
-  // "March 4, 2024" / "Mar 4 2024"
-  if (m = s.match(/^([A-Za-z]{3,9})\.?\s+(\d{1,2}),?\s+(\d{4})$/)) {
+  // "March 4, 2024" / "Mar 4 2024" / "March 15th, 2024" (ordinal suffix)
+  if (m = s.match(/^([A-Za-z]{3,9})\.?\s+(\d{1,2})(?:st|nd|rd|th)?,?\s+(\d{4})$/)) {
     const mon = MONTH_NUM[m[1].toLowerCase()];
     if (mon && (r = civil(+m[3], mon, +m[2]))) return r;
     return { value: null, warn: `couldn't parse date '${s}'` };
@@ -162,6 +193,35 @@ export function normalizeDate(val, opts = {}) {
 // the genuinely ambiguous shapes (1.250 with no decimals, 1,000 in an
 // all-European column) — never guessed per cell, only applied when the
 // COLUMN's evidence says so (inferAmountConvention).
+// BUILD-80 Part 2.2 — the DATE column has a convention, decided at the
+// column level from impossible-month evidence. Scan every slash/dash-format
+// cell: a first component above 12 is impossible as a month (day-first
+// evidence); a second component above 12 is impossible as a day-first month
+// (month-first evidence). One-sided evidence decides the whole column; both
+// sides non-zero means the column genuinely mixes conventions and the mapper
+// must ask a human, showing examples; no evidence defaults to US and says so.
+export function inferDateConvention(values = []) {
+  let slashCells = 0, dayFirstEvidence = 0, monthFirstEvidence = 0;
+  const dayFirstExamples = [], monthFirstExamples = [];
+  for (const v of values) {
+    const s = String(v ?? "").trim().replace(/[T ]\d{1,2}:\d{2}(:\d{2}(\.\d+)?)?\s*(Z|[APap]\.?[Mm]\.?)?$/, "");
+    const m = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2}|\d{4})$/);
+    if (!m) continue;
+    // Excel epoch artifacts (12/31/1899, 1/1/1900) are a spreadsheet's blank,
+    // not evidence for either convention — normalizeDate refuses them by name.
+    if (/^(12[\/\-]31[\/\-]1899|31[\/\-]12[\/\-]1899|0?1[\/\-]0?1[\/\-]1900|00[\/\-]00[\/\-]0000)$/.test(s)) continue;
+    slashCells++;
+    const first = +m[1], second = +m[2];
+    if (first > 12 && second <= 12) { dayFirstEvidence++; if (dayFirstExamples.length < 3) dayFirstExamples.push(s); }
+    else if (second > 12 && first <= 12) { monthFirstEvidence++; if (monthFirstExamples.length < 3) monthFirstExamples.push(s); }
+  }
+  const convention = dayFirstEvidence > 0 && monthFirstEvidence === 0 ? "dmy"
+    : monthFirstEvidence > 0 && dayFirstEvidence === 0 ? "mdy"
+    : dayFirstEvidence > 0 && monthFirstEvidence > 0 ? "mixed"
+    : "default-mdy";
+  return { slashCells, dayFirstEvidence, monthFirstEvidence, dayFirstExamples, monthFirstExamples, convention };
+}
+
 export function normalizeMoney(val, opts = {}) {
   if (val === null || val === undefined || val === "") return { value: null, warn: null, blank: true };
   if (typeof val === "number" && !isNaN(val)) return { value: val, warn: null };
@@ -672,6 +732,9 @@ export function analyzeCsvText(text, opts = {}) {
 // notes, externalId, phone } (header names or "").
 export function buildGiftItemsFromLedger(rows = [], tx = {}, idCol = "") {
   const report = { giftRows: rows.length, builtGifts: 0, negativeRows: 0, unparsableAmountRows: 0, unparsableDateRows: 0, zeroAmountRows: 0, noAmountColumn: !tx.amount };
+  // BUILD-80 Part 2 — the gift sheet's date column has a convention too.
+  const ledgerDateConv = tx.date ? inferDateConvention(rows.map(r => r[tx.date])) : null;
+  const ledgerDayFirst = !!(ledgerDateConv && ledgerDateConv.convention === "dmy");
   const items = rows.map(row => {
     const rawEmail = tx.donorEmail ? String(row[tx.donorEmail] || "").trim() : "";
     const name = tx.donorName ? String(row[tx.donorName] || "").trim() : "";
@@ -687,7 +750,7 @@ export function buildGiftItemsFromLedger(rows = [], tx = {}, idCol = "") {
       } else {
         const amt = Math.round(amtVal);
         if (amt > 0) {
-          const { value: parsedDate } = normalizeDate(tx.date ? row[tx.date] : "");
+          const { value: parsedDate } = normalizeDate(tx.date ? row[tx.date] : "", { dayFirst: ledgerDayFirst });
           // BUILD-79 Part 4 — no date defaults to today, on ANY path. A gift
           // whose date does not parse rides with date:null; the server's
           // ledger errors it as unparseable_or_missing_date with its row,
@@ -1228,6 +1291,18 @@ export function buildTransactionRows(parsed, txMap, opts = {}) {
   const amountConv = txMap.amount ? inferAmountConvention(rows.map(r => r[txMap.amount])) : null;
   const moneyOpts = amountConv && amountConv.columnConvention === "eu" ? { convention: "eu" } : {};
   const conventionCounts = { commaDecimal: 0, spaceThousands: 0 };
+  // BUILD-80 Part 2.2 — the date column's convention, decided ONCE from
+  // impossible-month evidence across the whole column. A mixed column parses
+  // as US (each impossible cell refuses, which is the honest outcome) and the
+  // mapper is expected to have asked; the caller can override via
+  // opts.dateConvention ("dmy"|"mdy") after asking a human.
+  const dateConv = txMap.date ? inferDateConvention(rows.map(r => r[txMap.date])) : null;
+  const dateConvApplied = opts.dateConvention || (dateConv ? dateConv.convention : "default-mdy");
+  const dayFirst = dateConvApplied === "dmy";
+  // BUILD-80 Part 2.4 — a refused row is not a neutral event: any donor with
+  // a refused row gets no high-confidence drift call until it is resolved.
+  const refusedByKey = new Map();
+  const bumpRefused = k => { if (k) refusedByKey.set(k, (refusedByKey.get(k) || 0) + 1); };
   rows.forEach((row, i) => {
     // BUILD-79 Part 1/5 — real physical lines when the caller has them (chrome
     // removal makes "index + 2" wrong on report exports).
@@ -1297,7 +1372,7 @@ export function buildTransactionRows(parsed, txMap, opts = {}) {
       const rawV = String(row[fieldName] ?? "").trim();
       if (!rawV) continue;
       if (flag === "deceasedDate") {
-        const dd = normalizeDate(rawV, { currentYear });
+        const dd = normalizeDate(rawV, { currentYear, dayFirst });
         if (dd.value) { donor.deceased = true; donor.deceasedDate = donor.deceasedDate || dd.value; colMatched.push(`${fieldName}: ${rawV}`); }
         else { flagRefusal = `unreadable_${flag}`; break; }
         continue;
@@ -1316,6 +1391,7 @@ export function buildTransactionRows(parsed, txMap, opts = {}) {
       const dol = (!m0.blank && m0.value != null) ? m0.value : 0;
       record("errored", flagRefusal, dol, donor.name);
       fileDollars += dol;
+      bumpRefused(dkey);
       return;
     }
     if (colMatched.length) flaggedRows.push({ line, name: donor.name, matched: colMatched, note: noteText,
@@ -1341,6 +1417,7 @@ export function buildTransactionRows(parsed, txMap, opts = {}) {
         const dol = (!m0.blank && m0.value != null) ? m0.value : 0;
         record("errored", cfRefusal, dol, donor.name);
         fileDollars += dol;
+        bumpRefused(dkey);
         return;
       }
       if (Object.keys(donorCf).length) donor.customFields = donorCf;
@@ -1365,12 +1442,12 @@ export function buildTransactionRows(parsed, txMap, opts = {}) {
     if (money.convention === "comma-decimal") conventionCounts.commaDecimal++;
     else if (money.convention === "space-thousands") conventionCounts.spaceThousands++;
     if (money.blank) { items.push({ key, donor, gift: null }); record("skipped", "no_amount", 0, donor.name); return; }
-    if (money.value == null) { items.push({ key, donor, gift: null }); record("errored", "unparseable_amount", 0, donor.name); return; }
+    if (money.value == null) { items.push({ key, donor, gift: null }); record("errored", "unparseable_amount", 0, donor.name); bumpRefused(key); return; }
     if (money.value === 0) { items.push({ key, donor, gift: null }); record("skipped", "zero_amount", 0, donor.name); return; }
 
-    const { value: dateVal } = normalizeDate(rawDate, { currentYear });
-    if (!dateVal) { items.push({ key, donor, gift: null }); record("errored", "unparseable_date", money.value, donor.name); fileDollars += money.value; return; }
-    if (dateVal > today) { items.push({ key, donor, gift: null }); record("errored", "future_date", money.value, donor.name); fileDollars += money.value; return; }
+    const { value: dateVal } = normalizeDate(rawDate, { currentYear, dayFirst });
+    if (!dateVal) { items.push({ key, donor, gift: null }); record("errored", "unparseable_date", money.value, donor.name); fileDollars += money.value; bumpRefused(key); return; }
+    if (dateVal > today) { items.push({ key, donor, gift: null }); record("errored", "future_date", money.value, donor.name); fileDollars += money.value; bumpRefused(key); return; }
 
     const gift = mkGift(money.value);   // cents preserved — the money seam owns rounding, and it doesn't
     gift.date = dateVal;
@@ -1379,7 +1456,13 @@ export function buildTransactionRows(parsed, txMap, opts = {}) {
     record("gift", null, money.value, donor.name);
   });
 
-  const { donors, gifts } = groupTransactions(items);
+  const { donors, gifts, idxByKey } = groupTransactions(items);
+  for (const [k, count] of refusedByKey) {
+    const di = idxByKey.get(k);
+    if (di === undefined) continue;
+    const d = donors[di];
+    d.tags = [...new Set([...(Array.isArray(d.tags) ? d.tags : []), `has-refused-rows:${count}`])];
+  }
   // BUILD-79 Part 5 — name the nameless honestly, and flag them for review.
   for (const d of donors) {
     if (!d.name || !String(d.name).trim()) {
@@ -1403,6 +1486,7 @@ export function buildTransactionRows(parsed, txMap, opts = {}) {
   return {
     donors, gifts, dispositions, flaggedRows, largestGifts,
     amountConventions: { ...conventionCounts, column: amountConv ? amountConv.columnConvention : "us" },
+    dateConvention: dateConv ? { ...dateConv, applied: dateConvApplied } : null,
     file: {
       rows: rows.length,                       // physical non-blank rows, counted ONCE at parse entry
       dollars: Math.round(fileDollars * 100) / 100,
@@ -1491,5 +1575,5 @@ export function groupTransactions(items = []) {
     }
     if (gift) gifts.push({ ...gift, donorIndex: di });
   }
-  return { donors, gifts };
+  return { donors, gifts, idxByKey };
 }

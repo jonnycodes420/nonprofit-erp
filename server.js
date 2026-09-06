@@ -13873,7 +13873,7 @@ async function computeDriftForDonors(orgId, { donorIds = null } = {}) {
   const idParams = donorIds ? [donorIds] : [];
   const [donors, giftAgg, recurringRows, pledgeRows, contactRows] = await Promise.all([
     query(`SELECT d.id, d.name, d.total_giving, d.deceased, d.do_not_contact, d.do_not_solicit,
-                  d.imported_sustainer,
+                  d.imported_sustainer, d.tags,
                   d.assigned_to, d.assigned_to_name, d.stripe_subscription_status,
                   d.created_at::date::text AS created_date
              FROM donors d WHERE d.org_id = ? AND d.deleted_at IS NULL${idFilter}`, [orgId, ...idParams]),
@@ -13928,7 +13928,14 @@ async function computeDriftForDonors(orgId, { donorIds = null } = {}) {
     const gifts = agg
       ? agg.dates.map((date, i) => ({ date: String(date).slice(0, 10), amount: parseFloat(agg.amounts[i]) || 0 }))
       : [];
-    const a = driftEngine.assessDrift(gifts, today);
+    // BUILD-80 Part 2.4 — the import stamps has-refused-rows:N; a refused row
+    // caps this donor's drift confidence until it is resolved.
+    let refusedRows = 0;
+    try {
+      const tags = Array.isArray(d.tags) ? d.tags : JSON.parse(d.tags || "[]");
+      for (const tg of tags) { const m = /^has-refused-rows:(\d+)$/.exec(String(tg)); if (m) refusedRows += Number(m[1]); }
+    } catch { /* unreadable tags never break drift */ }
+    const a = driftEngine.assessDrift(gifts, today, { refusedRows });
     a.donorId = d.id;
     a.donorName = d.name;
     a.assignedTo = d.assigned_to || null;

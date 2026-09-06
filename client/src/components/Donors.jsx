@@ -31,7 +31,7 @@ import { T, fmt, fmtFull, daysDiff, SC, askClaude, STAGES, STAGE_ACTION, TIER_CO
 // profile button, and modal render below, and add `VoiceMemoModal` back to
 // the import above).
 import { DonorMap } from "./DonorMap";
-import { detectImportShape, groupTransactions, shapeLabel, YEAR_HDR_PAT, detectWorkbookRoles, pickMatchKey, linkGiftsToDonors, detectOwnerColumn, matchOwnersToUsers, applyOwnerAssignment, groupOwnerMatches, normalizeName, normalizeDate, normalizeMoney, normalizeEmail, detectFlagColumns, parseBoolFlag, classifyColumns, decodeSpreadsheetBytes, decodeSpreadsheetBytesDetailed, analyzeCsvText, analyzeSheetRows, assessAggregateCollapse, scanAmountShapedColumns, validateMappingChoice, columnTypeEvidence, buildGiftItemsFromLedger, buildTransactionRows, detectNoteMarkers, autoDetectTxMapping } from "../../../shared/importShape";
+import { detectImportShape, groupTransactions, shapeLabel, YEAR_HDR_PAT, detectWorkbookRoles, pickMatchKey, linkGiftsToDonors, detectOwnerColumn, matchOwnersToUsers, applyOwnerAssignment, groupOwnerMatches, normalizeName, normalizeDate, normalizeMoney, normalizeEmail, detectFlagColumns, parseBoolFlag, classifyColumns, decodeSpreadsheetBytes, decodeSpreadsheetBytesDetailed, analyzeCsvText, analyzeSheetRows, assessAggregateCollapse, scanAmountShapedColumns, validateMappingChoice, columnTypeEvidence, buildGiftItemsFromLedger, buildTransactionRows, detectNoteMarkers, autoDetectTxMapping, inferDateConvention } from "../../../shared/importShape";
 
 // ── CSV Import helpers ─────────────────────────────────────────────────────
 // ── Import field registry ──────────────────────────────────────────────────
@@ -391,10 +391,13 @@ function buildAggregatePayload(parsed, mapping, seedHistory, rowLines) {
 // every physical row leaves with a disposition, no date ever defaults to
 // today, refunds import as negative gifts, and the file-level counts are
 // taken at parse entry and carried through unchanged.
-function buildTransactionPayload(parsed, txMap, cfInputs, rowLines) {
+function buildTransactionPayload(parsed, txMap, cfInputs, rowLines, dateConvention) {
   if (!parsed) return { donors: [], gifts: [], warnedCount: 0, skippedCount: 0, dispositions: [], flaggedRows: [], file: { rows: 0, dollars: 0, imported: 0, donorOnly: 0, skipped: 0, errored: 0 } };
   const built = buildTransactionRows(parsed, txMap, {
     rowLines,
+    // BUILD-80 Part 2.2 — a human's answer to a mixed-convention date column;
+    // otherwise the builder infers from the column's own evidence.
+    dateConvention: dateConvention || undefined,
     // BUILD-78 — exclusion-shaped columns route to the flag family; custom
     // columns coerce per type and a failed value refuses the row pre-write.
     flagColumns: cfInputs ? cfInputs.flagColumns : {},
@@ -567,7 +570,8 @@ export function DonorImport({ onClose, onImported, withHistory = false }) {
   // ── BUILD-78 — the column mapper (transaction shape) ──
   const [physicalCols, setPhysicalCols] = useState(null);   // { headerCells, orphanColumns, overflowRows, total } — parse entry, never derived from the mapping
   const [parseReport, setParseReport] = useState(null);
-  const [mapRefusal, setMapRefusal] = useState(null);       // BUILD-79 Part 5 — last refused mapping choice + its evidence     // BUILD-79 Part 1 — { records, chromeAbove, chromeRows, totalRow, headerLine, cp1252Lines } from parse entry
+  const [mapRefusal, setMapRefusal] = useState(null);       // BUILD-79 Part 5 — last refused mapping choice + its evidence
+  const [dateConventionChoice, setDateConventionChoice] = useState(null); // BUILD-80 Part 2.2 — a human's answer for a MIXED date column     // BUILD-79 Part 1 — { records, chromeAbove, chromeRows, totalRow, headerLine, cp1252Lines } from parse entry
   const [cfDefs, setCfDefs] = useState({ donor: [], gift: [] });
   const [savedCfMappings, setSavedCfMappings] = useState([]);
   const [cfDecisions, setCfDecisions] = useState({});       // columnIndex → { action, entity?, type?, label?, options?, role? }
@@ -756,6 +760,14 @@ export function DonorImport({ onClose, onImported, withHistory = false }) {
     return { flagColumns, cfColumns, undecided, ledger };
   }, [mapperPlan, cfDecisions, cfDefs]);
 
+  // BUILD-80 Part 2.2 — the date column's convention, inferred at the column
+  // level (impossible-month evidence). Shown on the mapper; a MIXED column
+  // blocks the import until a human chooses, with examples of both readings.
+  const dateConvEvidence = useMemo(() => {
+    if (!parsed || effectiveShape !== "transaction" || !txMap.date) return null;
+    try { return inferDateConvention(parsed.rows.map(r => r[txMap.date])); } catch { return null; }
+  }, [parsed, effectiveShape, txMap.date]);
+
   // ── Shape-aware payload build (memoized) ──
   // aggregate → donors (+ one seeded gift/donor from total+lastGift when
   // withHistory, so onboarding gets real gifts rows); transaction → group the
@@ -763,14 +775,14 @@ export function DonorImport({ onClose, onImported, withHistory = false }) {
   const payload = useMemo(() => {
     if (!parsed) return { donors:[], gifts:[], warnedCount:0, skippedCount:0 };
     try {
-      if (effectiveShape === "transaction") return buildTransactionPayload(parsed, txMap, cfBuildInputs, parseReport?.rowLines);
+      if (effectiveShape === "transaction") return buildTransactionPayload(parsed, txMap, cfBuildInputs, parseReport?.rowLines, dateConventionChoice);
       if (effectiveShape === "wide")        return buildWidePayload(parsed, mapping, yearCols, parseReport?.rowLines);
       return buildAggregatePayload(parsed, mapping, withHistory, parseReport?.rowLines);
     } catch (e) {
       console.error("[import] payload build failed:", e);
       return { donors:[], gifts:[], warnedCount:0, skippedCount:0, error:e.message };
     }
-  }, [parsed, effectiveShape, mapping, txMap, yearCols, withHistory, cfBuildInputs, parseReport]);
+  }, [parsed, effectiveShape, mapping, txMap, yearCols, withHistory, cfBuildInputs, parseReport, dateConventionChoice]);
 
   // Stage-count preview from the built payload (aggregate donors carry a client
   // stage; transaction/wide donors are re-staged server-side from their gifts,
@@ -804,6 +816,11 @@ export function DonorImport({ onClose, onImported, withHistory = false }) {
     // BUILD-79 Part 2 — shape is a decision with evidence, or a question.
     if (effectiveShape === "unknown") { setErr("Choose how this file is shaped before importing — we couldn't tell from the columns."); return; }
     if (aggregateCollapse?.refuse) { setErr(`${aggregateCollapse.collapsed.toLocaleString()} of ${aggregateCollapse.keyedRows.toLocaleString()} rows collapse onto the same donors — this file is one row per gift. Switch the shape to individual gifts.`); return; }
+    // BUILD-80 Part 2.2 — a MIXED date column is a question, never a guess.
+    if (dateConvEvidence?.convention === "mixed" && !dateConventionChoice) {
+      setErr("This file's date column mixes day-first and month-first dates — choose which convention to apply (above the mapping) before importing.");
+      return;
+    }
     let activePayload = payload;
     let importExtras = null;
     setLoading(true); setErr("");
@@ -834,7 +851,7 @@ export function DonorImport({ onClose, onImported, withHistory = false }) {
             fieldMappings.push({ entity: created.entity, header: String(entry.header).trim(), fieldId: created.id });
           }
         }
-        activePayload = buildTransactionPayload(parsed, txMap, { flagColumns: cfBuildInputs.flagColumns, cfColumns: finalCfColumns }, parseReport?.rowLines);
+        activePayload = buildTransactionPayload(parsed, txMap, { flagColumns: cfBuildInputs.flagColumns, cfColumns: finalCfColumns }, parseReport?.rowLines, dateConventionChoice);
         importExtras = {
           columns: { inFile: physicalCols.total, ledger: ledger.map(({ index, header, disposition, flag, role, fieldId, entity, reason }) => ({ index, header, disposition, flag, role, fieldId, entity, reason })) },
           fieldMappings,
@@ -901,6 +918,7 @@ export function DonorImport({ onClose, onImported, withHistory = false }) {
         // ride the same accounted builder output.
         totals.largestGifts = payloadForSummary.largestGifts || [];
         totals.amountConventions = payloadForSummary.amountConventions || null;
+        totals.dateConvention = payloadForSummary.dateConvention || null;
       }
       // ── BUILD-79 Part 3 — the file-level equation exists on EVERY path.
       // The aggregate/wide paths used to show only the server's payload-scoped
@@ -1328,6 +1346,9 @@ export function DonorImport({ onClose, onImported, withHistory = false }) {
                   become $200,000 again without this line saying why. */}
               {result.amountConventions?.commaDecimal > 0 && (
                 <div style={{paddingLeft:12,color:T.ink3,fontSize:11}}>{result.amountConventions.commaDecimal.toLocaleString()} amount{result.amountConventions.commaDecimal===1?"":"s"} used a comma decimal (European format) and {result.amountConventions.commaDecimal===1?"was":"were"} read as such</div>
+              )}
+              {result.dateConvention?.applied === "dmy" && (
+                <div style={{paddingLeft:12,color:T.ink3,fontSize:11}}>{result.dateConvention.slashCells.toLocaleString()} dates use day/month/year — {result.dateConvention.dayFirstEvidence.toLocaleString()} would have been impossible the other way</div>
               )}
               {result.amountConventions?.spaceThousands > 0 && (
                 <div style={{paddingLeft:12,color:T.ink3,fontSize:11}}>{result.amountConventions.spaceThousands.toLocaleString()} amount{result.amountConventions.spaceThousands===1?"":"s"} used a space between thousands and {result.amountConventions.spaceThousands===1?"was":"were"} read as such</div>
@@ -1813,6 +1834,34 @@ export function DonorImport({ onClose, onImported, withHistory = false }) {
                 ))}
               </div>
               <div style={{fontSize:11,color:T.ink3,marginTop:8}}>Rows are grouped by donor (email, else name); each row becomes one gift.</div>
+              {/* BUILD-80 Part 2.2 — the date column has a convention, decided
+                  at the column level and SAID here before the write. */}
+              {dateConvEvidence && dateConvEvidence.slashCells > 0 && dateConvEvidence.convention === "dmy" && (
+                <div style={{background:T.bg2,border:`1px solid ${T.bg3}`,borderRadius:8,padding:"8px 12px",marginTop:8,fontSize:12,color:T.ink,lineHeight:1.5}}>
+                  {dateConvEvidence.slashCells.toLocaleString()} dates use <strong>day/month/year</strong>. {dateConvEvidence.dayFirstEvidence.toLocaleString()} would have been impossible the other way (e.g. {dateConvEvidence.dayFirstExamples.join(", ")}) — every slash date in this column will be read day-first.
+                </div>
+              )}
+              {dateConvEvidence && dateConvEvidence.slashCells > 0 && (dateConvEvidence.convention === "mdy" || dateConvEvidence.convention === "default-mdy") && (
+                <div style={{fontSize:11,color:T.ink3,marginTop:8}}>
+                  {dateConvEvidence.convention === "mdy"
+                    ? `${dateConvEvidence.slashCells.toLocaleString()} dates use month/day/year — ${dateConvEvidence.monthFirstEvidence.toLocaleString()} would have been impossible the other way.`
+                    : `${dateConvEvidence.slashCells.toLocaleString()} slash dates are all ambiguous — read as US month/day/year by default.`}
+                </div>
+              )}
+              {dateConvEvidence?.convention === "mixed" && (
+                <div style={{background:T.gold100||"#f6eccf",border:`1px solid ${(T.gold500||"#c9a84c")}55`,borderRadius:8,padding:"10px 12px",marginTop:8,fontSize:12,color:T.ink,lineHeight:1.6}}>
+                  <div style={{fontWeight:700,marginBottom:4}}>This date column mixes conventions — we won't guess.</div>
+                  <div style={{color:T.ink2}}>
+                    {dateConvEvidence.dayFirstEvidence.toLocaleString()} dates only work day-first (e.g. {dateConvEvidence.dayFirstExamples.join(", ")}) and {dateConvEvidence.monthFirstEvidence.toLocaleString()} only work month-first (e.g. {dateConvEvidence.monthFirstExamples.join(", ")}). Choose which to apply; impossible dates under your choice will be refused with their line numbers.
+                  </div>
+                  <div style={{display:"flex",gap:8,marginTop:8}}>
+                    {[["dmy","Day / Month / Year"],["mdy","Month / Day / Year"]].map(([v,l])=>(
+                      <button key={v} onClick={()=>setDateConventionChoice(v)}
+                        style={{background:dateConventionChoice===v?T.green600:"transparent",border:`1px solid ${dateConventionChoice===v?T.green600:T.bg3}`,borderRadius:7,padding:"6px 12px",color:dateConventionChoice===v?"#fff":T.ink,fontSize:12,fontWeight:700,cursor:"pointer"}}>{l}</button>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           ) : (
             <div style={{marginBottom:14}}>
