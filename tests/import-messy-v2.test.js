@@ -367,6 +367,29 @@ async function reset() {
     !built.exclusionConflicts.some(c => /never auto-mark/.test(c.message)),
     built.exclusionConflicts.filter(c => /never auto-mark/.test(c.message)));
 
+  // ── §3h · BUILD-80 Part 8 — sustainers from the PATTERN ──────────────────
+  console.log("\n— §3h · BUILD-80 Part 8: the Frequency column lies both ways —");
+  const sustainers = built.donors.filter(d => d.importedSustainer);
+  ok("all 25 planted sustainers are recognised (10 broken-card + 12 healthy + 3 with NO flag at all)",
+    sustainers.length === 25, sustainers.length);
+  for (const [f, l] of [["Christine", "Ramirez"], ["Samuel", "Quarles"], ["Natalie", "Kirkpatrick"]]) {
+    const d = built.donors.find(x => x.name.includes(f) && x.name.includes(l));
+    ok(`UNFLAGGED sustainer ${f} ${l} recognised from the pattern alone (no Frequency, no Recurring type)`,
+      !!(d && d.importedSustainer), d && d.name);
+  }
+  ok("a sustainer with one-off gifts BESIDE the monthly one is still a sustainer (Brandon Caldwell, Gloria Okafor)",
+    [["Brandon", "Caldwell"], ["Gloria", "Okafor"]].every(([f, l]) => built.donors.find(x => x.name.includes(f) && x.name.includes(l))?.importedSustainer), null);
+  ok("the five stale Frequency flags are OVERRIDDEN by the pattern and SHOWN ('file says monthly, gifts say yearly')",
+    built.frequencyConflicts.length === 5 && built.frequencyConflicts.every(c => /file says monthly, gifts say yearly/.test(c.message)),
+    built.frequencyConflicts.map(c => c.name));
+  ok("no stale-flag donor became a sustainer — an annual giver gets no monthly expectations",
+    ["Ogletree", "Quimby", "Fitzgerald"].every(l => !built.donors.find(x => x.name.includes(l))?.importedSustainer), null);
+  ok("the Frequency column routes to the recurring surface, never a custom select",
+    plan.columns.find(c => c.field === "Frequency")?.flag === "frequency",
+    plan.columns.find(c => c.field === "Frequency")?.status);
+  ok("the weekly $20 giver is NOT called a monthly sustainer (weekly is not monthly)",
+    (() => { const w = built.donors.map((d, i2) => [d, built.gifts.filter(g => g.donorIndex === i2).length]).sort((x, y) => y[1] - x[1])[0]; return w[1] > 150 && !w[0].importedSustainer; })(), null);
+
   // ── §4 · through the real route ──────────────────────────────────────────
   console.log("\n— §4 · through the real route: the ledger closes against 2,500 —");
   const CHUNK = 500;
@@ -442,6 +465,12 @@ async function reset() {
     ["National Christian Foundation", "Schwab Charitable", "Fidelity Charitable"].every(n => dr.body.institutional.some(i => i.name === n)),
     (dr.body.institutional || []).slice(0, 5).map(i => i.name));
   ok("the excluded tally names the organisations", (dr.body.excluded?.organisation || 0) >= 15, dr.body.excluded);
+  ok("the sustainers ride the recovery/recurring surface, never drift (25 excluded as unlinked sustainers)",
+    (dr.body.excluded?.unlinkedSustainer || 0) === 25, dr.body.excluded);
+  ok("no broken-card sustainer is on the drift OR lapsed list (their card stopped; they did not)",
+    !dlist.some(x => ["Caldwell", "Blackwood", "Moreau", "Duong", "Isley"].some(l => x.donorName.includes(l)) &&
+      ["Brandon", "Amanda", "Sharon", "Benjamin", "Jacob"].some(f => x.donorName.includes(f))),
+    null);
   ok("a capped drift sentence says WHY: 'could not be read' appears in the reason",
     cappedOnList.every(x => /could not be read/.test(x.reason || "")),
     cappedOnList.filter(x => !/could not be read/.test(x.reason || "")).map(x => [x.donorName, x.reason]));

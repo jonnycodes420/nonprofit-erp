@@ -752,6 +752,10 @@ export function DonorImport({ onClose, onImported, withHistory = false }) {
       // Status): each cell parses through the family, several flags per
       // column. Never storable as a custom field.
       if (c.status === "flag" && action === "flag" && c.flag === "exclusion") { exclusionColumns.push(c.field); continue; }
+      // BUILD-80 Part 8 — Frequency maps to the recurring surface; the
+      // builder reads the column itself (a cadence claim the pattern can
+      // override), so nothing to collect here.
+      if (c.status === "flag" && c.flag === "frequency") continue;
       if (c.status === "flag" && action === "flag") { flagColumns[c.flag] = c.field; continue; }
       if (action === "existing" && (c.def || d.fieldId)) {
         const def = c.def || [...cfDefs.donor, ...cfDefs.gift].find(x => x.id === d.fieldId);
@@ -932,6 +936,7 @@ export function DonorImport({ onClose, onImported, withHistory = false }) {
         totals.amountConventions = payloadForSummary.amountConventions || null;
         totals.dateConvention = payloadForSummary.dateConvention || null;
         totals.exclusionConflicts = payloadForSummary.exclusionConflicts || [];
+        totals.frequencyConflicts = payloadForSummary.frequencyConflicts || [];
         totals.semantics = payloadForSummary.semantics || null;
         totals.identity = payloadForSummary.identity || null;
         // BUILD-80 Part 5/7 — the semantic rows land in ONE follow-up call:
@@ -1488,6 +1493,18 @@ export function DonorImport({ onClose, onImported, withHistory = false }) {
               )}
             </div>;
           })()}
+          {/* BUILD-80 Part 8 — stale Frequency flags: the pattern wins, and
+              the flag is SHOWN rather than silently overridden. */}
+          {result.frequencyConflicts?.length > 0 && (
+            <div style={{textAlign:"left",background:T.bg2,border:`1px solid ${T.bg3}`,borderRadius:10,padding:"12px 16px",marginBottom:16,fontSize:12,lineHeight:1.7}}>
+              <div style={{fontSize:10,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",color:T.ink3,marginBottom:6}}>
+                Frequency flags the gifts contradict
+              </div>
+              {result.frequencyConflicts.slice(0,10).map((c,i)=>(
+                <div key={i} style={{color:T.ink2}}><strong style={{color:T.ink}}>{c.name}</strong> — {c.message}. The pattern wins; no monthly expectations were set.</div>
+              ))}
+            </div>
+          )}
           {/* BUILD-80 Part 6.2 — every merge the importer made, reviewable and
               reversible: the surviving record, the folded variants, the
               reason. Undo splits them back with their gifts. */}

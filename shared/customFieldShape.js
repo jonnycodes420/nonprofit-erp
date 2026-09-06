@@ -184,6 +184,13 @@ const EXCLUSION_HDR_PROBES = [
 
 // classifyExclusionHeader(header) → 'deceased' | 'deceasedDate' |
 // 'doNotSolicit' | 'doNotContact' | 'doNotMail' | 'doNotEmail' | null
+// BUILD-80 Part 8 — a Frequency column maps to the RECURRING surface (the
+// builder reads it as a cadence claim the gift pattern can override); it is
+// never a custom select.
+export function isFrequencyHeader(header) {
+  return /^(gift\s*)?frequency$/i.test(normalizeHeaderText(header));
+}
+
 export function classifyExclusionHeader(header) {
   const h = normalizeHeaderText(header);
   if (!h) return null;
@@ -451,6 +458,13 @@ export function buildMapperPlan({ headers = [], fields = [], rows = [], txMap = 
     }
     if (roleByField[field] !== undefined) {
       columns.push({ ...base, status: "core", role: roleByField[field] });
+      return;
+    }
+    // BUILD-80 Part 8 — Frequency → the recurring surface, never a custom
+    // select. The builder consumes it as a cadence claim.
+    if (isFrequencyHeader(base.field)) {
+      columns.push({ ...base, status: "flag", flag: "frequency", via: "header",
+        matchedValues: [], evidenceText: "maps to the recurring surface — a cadence claim the gift pattern can override" });
       return;
     }
     // Part 2 — the trap. Detected exclusion shape routes to the flag family

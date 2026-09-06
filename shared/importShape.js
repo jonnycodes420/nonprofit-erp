@@ -1642,6 +1642,7 @@ export function buildTransactionRows(parsed, txMap, opts = {}) {
   // a refused row gets no high-confidence drift call until it is resolved.
   const refusedByKey = new Map();
   const bumpRefused = k => { if (k) refusedByKey.set(k, (refusedByKey.get(k) || 0) + 1); };
+  const freqCol = rows.length ? Object.keys(rows[0]).find(h => /^frequency$/i.test(String(h).trim())) : null;
   // BUILD-80 Part 5 — the rows that are NOT gifts, collected for their own
   // surfaces: pledges (commitments), in-kind (FMV records), soft credits and
   // matching/DAF attributions (relationship links), plus the review-queue
@@ -1850,6 +1851,13 @@ export function buildTransactionRows(parsed, txMap, opts = {}) {
       customFields: rowGiftCf,   // BUILD-78: raw, re-validated by the server seam
     });
 
+    // ── BUILD-80 Part 8 — the Frequency column is a CLAIM about cadence,
+    // weighed against the gift pattern (the pattern wins), never a custom
+    // select. Monthly-ish spellings: Monthly, monthly, M, Every month, 12.
+    if (freqCol) {
+      const fv = String(row[freqCol] ?? "").trim().toLowerCase();
+      if (fv && /^(monthly|m|every month|12|mo)$/.test(fv)) donor._freqMonthlyClaim = true;
+    }
     // ── BUILD-80 Part 5 — the row's MEANING comes before its money ────────
     const typeRaw = txMap.type ? String(row[txMap.type] || "").trim() : "";
     const typed = classifyGiftType(typeRaw);
@@ -2050,6 +2058,9 @@ export function buildTransactionRows(parsed, txMap, opts = {}) {
   // BUILD-80 Part 4.3 — the conflicts, shown: "Status says Active, Notes say
   // deceased. We set deceased." Most restrictive already won (flags OR); this
   // is the sentence a human reads before trusting the record.
+  const frequencyConflicts = donors.filter(d => d.staleFrequency)
+    .map(d => ({ name: d.name, message: "file says monthly, gifts say yearly" }));
+  for (const d of donors) delete d.staleFrequency;
   const exclusionConflicts = [...exclusionConflictsPre];
   for (const d of donors) {
     if (d.deceased && d._activeColumnConflict) {
@@ -2071,7 +2082,7 @@ export function buildTransactionRows(parsed, txMap, opts = {}) {
     .map(d => ({ line: d.line, name: d.name, dollars: d.dollars,
                  date: (txMap.date && d.raw && d.raw[txMap.date]) ? String(d.raw[txMap.date]) : "" }));
   return {
-    donors, gifts, dispositions, flaggedRows, largestGifts, exclusionConflicts,
+    donors, gifts, dispositions, flaggedRows, largestGifts, exclusionConflicts, frequencyConflicts,
     semantics: {
       pledges: semantics.pledges,
       inKind: semantics.inKind,
@@ -2137,11 +2148,41 @@ export function detectImportedSustainers(donors = [], gifts = []) {
       intervalMonthly = median >= 20 && median <= 40 && amtStable;
       intervalContradicts = median > 60;
     }
-    if (intervalMonthly || (noteHits >= 2 && !intervalContradicts)) {
+    // BUILD-80 Part 8 — a real sustainer often gives one-off gifts BESIDE
+    // the monthly one; requiring every amount stable missed ten of them.
+    // The MODAL amount's own gifts decide: 12+ occurrences of one amount at
+    // a monthly cadence is a sustainer whether or not Frequency says so.
+    let modalMonthly = false, modalAmount = null, modalLast = null;
+    if (gs.length >= 12) {
+      const byAmt = new Map();
+      for (const g of gs) byAmt.set(g.amount, (byAmt.get(g.amount) || 0) + 1);
+      const [amt, count] = [...byAmt.entries()].sort((x, y) => y[1] - x[1])[0];
+      if (count >= 12) {
+        const mg = gs.filter(g => g.amount === amt);
+        const miv = [];
+        for (let k = 1; k < mg.length; k++) {
+          const a2 = new Date(mg[k - 1].date + "T12:00:00Z"), b2 = new Date(mg[k].date + "T12:00:00Z");
+          miv.push(Math.round((b2 - a2) / 86400000));
+        }
+        const ms = [...miv].sort((x, y) => x - y);
+        const mMed = ms[Math.floor(ms.length / 2)];
+        if (mMed >= 20 && mMed <= 40) { modalMonthly = true; modalAmount = amt; modalLast = mg[mg.length - 1].date; }
+      }
+    }
+    // The Frequency column's monthly claim counts like a note — unless the
+    // pattern contradicts it, in which case the PATTERN wins and the stale
+    // flag is shown ("file says monthly, gifts say yearly").
+    const freqClaim = !!d._freqMonthlyClaim;
+    delete d._freqMonthlyClaim;
+    if (freqClaim && intervalContradicts && !modalMonthly && !intervalMonthly) {
+      d.tags = [...new Set([...(Array.isArray(d.tags) ? d.tags : []), "stale-frequency"])];
+      d.staleFrequency = true;
+    }
+    if (intervalMonthly || modalMonthly || ((noteHits >= 2 || (freqClaim && !d.staleFrequency)) && !intervalContradicts)) {
       const amts = gs.map(g => g.amount).sort((a, b) => a - b);
       d.importedSustainer = true;
-      d.importedSustainerAmount = amts.length ? amts[Math.floor(amts.length / 2)] : null;
-      d.importedSustainerLastGift = gs.length ? gs[gs.length - 1].date : null;
+      d.importedSustainerAmount = modalAmount != null ? modalAmount : (amts.length ? amts[Math.floor(amts.length / 2)] : null);
+      d.importedSustainerLastGift = modalLast || (gs.length ? gs[gs.length - 1].date : null);
     }
   });
   return donors;
@@ -2177,7 +2218,7 @@ export function groupTransactions(items = []) {
       // saying deceased makes the DONOR deceased, whichever row said it.
       if (donor.kind && !canon.kind) canon.kind = donor.kind;
       if (donor._estateOf && !canon._estateOf) canon._estateOf = donor._estateOf;
-      for (const k of ["deceased", "doNotContact", "doNotSolicit", "doNotMail", "doNotEmail", "_activeColumnConflict", "_sawActiveColumn"]) {
+      for (const k of ["deceased", "doNotContact", "doNotSolicit", "doNotMail", "doNotEmail", "_activeColumnConflict", "_sawActiveColumn", "_freqMonthlyClaim"]) {
         if (donor[k]) canon[k] = true;
       }
       if (donor.status && !canon.status) canon.status = donor.status;
