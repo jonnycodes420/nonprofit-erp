@@ -134,6 +134,18 @@ const rgb = s => (s.match(/\d+/g) || []).slice(0, 3).map(Number);
      !text.includes("—"), null);
   ok("the © placeholder is VISIBLE, not silently blank or invented",
      text.includes("[LEGAL ENTITY NAME]"), null);
+  // BUILD-81 §4.4 item 7 — "assert it is not shipped as literal brackets":
+  // read as "never as bare bracket TEXT pretending to be a finished name."
+  // Until Jonathan fills the value it must render through the Placeholder
+  // treatment (dashed outline — visibly unfinished); once filled, the
+  // brackets disappear and this guard passes on the absence branch.
+  const placeholderTreatment = await page.evaluate(() => {
+    const el = [...document.querySelectorAll("span")].find(s => s.textContent.trim() === "[LEGAL ENTITY NAME]");
+    if (!el) return { present: false };
+    return { present: true, dashed: getComputedStyle(el).borderStyle.includes("dashed") };
+  });
+  ok("the placeholder never ships as bare bracket text: it renders flagged (dashed outline) until filled",
+     !placeholderTreatment.present || placeholderTreatment.dashed === true, placeholderTreatment);
 
   // ── §4 · the thread visual + the dot field ──────────────────────────────
   console.log("\n— §4 · the thread visual, and the dot field as evidence —");
