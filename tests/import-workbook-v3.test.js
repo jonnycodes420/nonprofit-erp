@@ -193,6 +193,62 @@ const fs = require("fs");
   ok("legacy TOTAL cached (19,852,987.83) is STALE by design — the reconciliation explains, never equals",
      g2.totalRow.amount === 19852987.83 && Math.abs(b2.report.dollarsIn - g2.totalRow.amount) > 100000, b2.report.dollarsIn);
 
+  // ── THE SUBMISSION BUILDER — what the summary shows IS what the write sends ─
+  const sub = IS.buildWorkbookSubmission(roled, {
+    signalAnswers: { hidden_rows: "legend", filled_rows: "legend", comments: "route" },
+    anchorDate: "2026-09-06", currentYear: 2026,
+    customAssignments: { Donors: { "Internal Score": { entity: "donor", key: "internal_score" } } },
+  });
+  ok("ALL 800 exclusions found (flags + status + notes + hidden + yellow + comments)",
+     sub.exclusionSummary.total === 800, sub.exclusionSummary);
+  ok("the 40 hidden, 100 yellow and 40 comment rows are among them",
+     sub.exclusionSummary.fromHidden === 40 && sub.exclusionSummary.fromFill === 100 && sub.exclusionSummary.fromComments === 40, sub.exclusionSummary);
+  ok("'Do not include in vendor mailing' (331 rows) excluded NOTHING",
+     sub.exclusionSummary.total === 800 && !IS.detectNoteMarkers("Do not include in vendor mailing").doNotSolicit
+     && !IS.detectNoteMarkers("Do not include in vendor mailing").doNotMail, null);
+  ok("'remove from appeals' IS a no-ask", IS.detectNoteMarkers("remove from appeals").doNotSolicit === true, null);
+  ok("a DATE in the Deceased column means deceased (with the date), never FALSE",
+     sub.donors.filter(d => d.deceased && d.deceasedDate).length >= 45, sub.donors.filter(d => d.deceased && d.deceasedDate).length);
+  ok("792 surviving records carry an exclusion flag (800 rows − 8 folded duplicates)",
+     sub.donors.filter(d => d.deceased || d.doNotContact || d.doNotSolicit || d.doNotMail || d.doNotEmail).length === 792, null);
+  ok("submission totals: 25,034 donors / 89,681 gifts / $51,348,667.87",
+     sub.totals.donors === 25034 && sub.totals.gifts === 89681 && sub.totals.cash === 51348667.87, sub.totals);
+  ok("recovery sustainers tagged card-failed (100)", sub.donors.filter(d => (d.tags || []).includes("card-failed")).length === 100, null);
+  ok("stale 'Active' claims tagged — the pattern won, the mismatch shows (60)",
+     sub.donors.filter(d => (d.tags || []).includes("stale-frequency")).length === 60, null);
+  ok("custom assignment rides the donor rows (Internal Score)",
+     sub.donors.filter(d => d.customFields && d.customFields.internal_score).length > 20000, null);
+  ok("merges list = the review list (266, each with reason + folded id)",
+     sub.merges.length === 266 && sub.merges.every(m => m.reason && m.foldedId !== undefined), sub.merges.length);
+  ok("workbook invariant balanced with orphans as refusals",
+     sub.reconciliation.workbook.balanced && sub.reconciliation.workbook.refused === 1333, sub.reconciliation.workbook);
+  ok("TOTAL-rows panel explains both sheets (GRAND consistent, legacy STALE)",
+     sub.totalRows.length === 2 && sub.totalRows.every(t => t.stated && t.readable != null), sub.totalRows);
+  ok("largest-gifts panel tops out at real $25,000 gifts — never the $32.5M GRAND TOTAL",
+     sub.largestGifts.length === 5 && sub.largestGifts.every(g => g.dollars === 25000), sub.largestGifts);
+  ok("skip reasons itemised: formula_no_value 843 + no_donor_match 490",
+     sub.refusals.filter(x => x.reason === "formula_no_value").length === 843
+     && sub.refusals.filter(x => x.reason === "no_donor_match").length === 490, null);
+  ok("fileStats ready for orgs.last_import_stats", sub.fileStats.rows === 92227 && sub.fileStats.largestGifts.length === 5, sub.fileStats);
+
+  // hidden rows SKIPPED by choice — counted, listed, and the count moves
+  const subSkip = IS.buildWorkbookSubmission(roled, {
+    signalAnswers: { hidden_rows: "skip", filled_rows: "legend", comments: "ignore" },
+    anchorDate: "2026-09-06", currentYear: 2026,
+  });
+  ok("hidden rows skipped by choice: 40 fewer donors, each listed by line",
+     subSkip.donors.length + subSkip.foldedRows === 25260
+     && subSkip.refusals.filter(x => x.reason === "hidden_row_skipped_by_choice").length === 40, subSkip.donors.length);
+
+  // decoy override — deduplicated against the real sheets BEFORE a row lands
+  const subDecoy = IS.buildWorkbookSubmission(roled, {
+    signalAnswers: { hidden_rows: "legend", filled_rows: "legend", comments: "route" },
+    anchorDate: "2026-09-06", currentYear: 2026, includeDecoy: true,
+  });
+  ok("decoy override dedupes by donor+date+amount and SHOWS the overlap",
+     subDecoy.decoyOverlap > 6000 && subDecoy.refusals.filter(x => x.reason === "decoy_duplicate").length === subDecoy.decoyOverlap, subDecoy.decoyOverlap);
+  ok("decoy rows that survive the dedupe are counted in the workbook equation", subDecoy.reconciliation.workbook.balanced, subDecoy.reconciliation.workbook);
+
   console.log(`  (pipeline: ${((Date.now() - t0) / 1000).toFixed(1)}s, heap ${Math.round(process.memoryUsage().heapUsed / 1e6)}MB)`);
   summary("import-workbook-v3");
 })();

@@ -1,3 +1,10 @@
+// BUILD-82 — parseExclusionValue lives in customFieldShape.js (the flag-value
+// grammar is custom-field law); this is a CYCLE with customFieldShape's own
+// import of normalizeDate/normalizeMoney, and it is safe: both modules bind
+// each other's functions at CALL time only (ESM live bindings), never at
+// module-evaluation time. tests/import-workbook-v3 + custom-fields pin both
+// load orders.
+import { parseExclusionValue } from "./customFieldShape.js";
 // Pure, JSX/React-free import-shape detection + transaction grouping — kept in a
 // lib (like client/src/lib/money.js) so the Node suite can unit-test it directly
 // (tests/import-shape.test.js dynamic-imports it). Donors.jsx imports these so
@@ -1334,6 +1341,7 @@ export function detectNoteMarkers(text) {
   // BUILD-80 Part 4 — phrasings the v2 file planted that the conservative set
   // missed, each an unambiguous no-ask in a donor note:
   hit("doNotSolicit", /no more asks/i);                                  // "no more asks - complained about mail volume"
+  hit("doNotSolicit", /remove(d)? from (all )?(appeals|solicitations)/i); // BUILD-82 v3 phrasing — an appeal IS an ask ("vendor mailing" still a pinned non-match)
   hit("doNotSolicit", /unsubscribed from (everything|all)\b/i);          // everything includes the ask
   if (hit("doNotSolicit", /removed from (the )?mailing list/i)) out.doNotMail = true; // leaving the LIST is leaving the asks; vendor-mailing note still a non-match
   hit("doNotContact", /do not contact/i);
@@ -2868,7 +2876,9 @@ export function resolveDonorSheetDuplicates(donors = []) {
 // Part 6 skip-reason download.
 export function buildWorkbookGiftRows(sheet, opts = {}) {
   const { headers = [], rows = [], typedRows = [], rowLines = [], name: sheetName = "" } = sheet;
-  const { mapping } = buildStandardMapping(headers, rows, "gift");
+  const auto = buildStandardMapping(headers, rows, "gift");
+  const mapping = { ...auto.mapping, ...(opts.mappingOverrides || {}) };
+  for (const [h, k] of Object.entries(mapping)) if (!k) delete mapping[h];
   const col = key => Object.keys(mapping).find(h => mapping[h] === key) || "";
   const amountCol = col("amount"), dateCol = col("date"), idCol = col("donorId"),
         typeCol = col("type"), fundCol = col("fund"), campaignCol = col("campaign"),
@@ -3134,4 +3144,310 @@ export function extractWorkbookFromSheetJS(wb, XLSX) {
     out.push({ name, records, meta, formulaCellRatio: totalCells ? formulaCells / totalCells : 0 });
   }
   return out;
+}
+
+// ── BUILD-82 — THE WORKBOOK DONOR BUILDER. Every donors-sheet row becomes a
+// donor. Standard fields land whole (Part 4.2), exclusion columns route to
+// the flag family (a date in a Deceased column is a death date, not FALSE),
+// notes go through the BUILD-77 marker family, and the Part 3.5 signals
+// (hidden rows, fill colours, comments) apply ONLY as the user answered —
+// detected always, acted on never without a decision.
+//   signalAnswers: { hidden_rows: "legend"|"import"|"skip",
+//                    filled_rows: "legend"|"import"|"skip",
+//                    comments: "route"|"ignore" }
+export function buildWorkbookDonors(sheet, mapping, opts = {}) {
+  const { rows = [], typedRows = [], rowLines = [], meta = {} } = sheet;
+  const answers = opts.signalAnswers || {};
+  const legend = opts.legend || [];
+  const legendSays = re => legend.some(l => re.test(l.text));
+  const hiddenMeansDeceased = legendSays(/hidden/i) && legendSays(/deceased/i);
+  const fillMeansNoContact = legendSays(/yellow|colou?r|highlight/i) && legendSays(/do not contact/i);
+  const hiddenSet = new Set(meta.hiddenRows || []);
+  const fillSet = new Set(Object.keys(meta.fillRows || {}).map(Number));
+  const commentByRow = new Map();
+  for (const c of (meta.comments || [])) commentByRow.set(c.row, c.text);
+
+  const col = key => Object.keys(mapping).find(h => mapping[h] === key) || "";
+  const donors = [], skippedByChoice = [], warnings = [];
+  const excl = { deceased: 0, doNotMail: 0, doNotSolicit: 0, doNotEmail: 0, doNotContact: 0,
+                 fromHidden: 0, fromFill: 0, fromComments: 0, fromNotes: 0, rows: new Set() };
+
+  rows.forEach((row, i) => {
+    const line = rowLines[i] || i + 2;
+    const typed = typedRows[i] || {};
+    const get = key => { const h = col(key); return h ? String(row[h] ?? "").trim() : ""; };
+    const cellOf = key => { const h = col(key); return h ? (typed[h] !== undefined ? typed[h] : row[h]) : null; };
+
+    // hidden / filled rows the user chose to SKIP — counted, listed, gone
+    const isHidden = hiddenSet.has(line), isFilled = fillSet.has(line);
+    if ((isHidden && answers.hidden_rows === "skip") || (isFilled && answers.filled_rows === "skip")) {
+      skippedByChoice.push({ line, reason: isHidden ? "hidden_row_skipped_by_choice" : "highlighted_row_skipped_by_choice" });
+      return;
+    }
+
+    const d = { _line: line };
+    d.name = normalizeName([get("_firstName"), get("_lastName")].filter(Boolean).join(" ") || get("name")) || "";
+    for (const k of ["middleName", "suffix", "salutation", "spouse", "householdId", "email", "email2",
+                     "phone", "mobile", "address1", "address2", "city", "state", "zip", "country",
+                     "donorType", "status", "notes", "owner"]) {
+      const v = get(k);
+      if (v) d[k] = v;
+    }
+    if (d.address1) { d.address = d.address1; delete d.address1; }
+    const xid = get("donorId");
+    if (xid) d.externalDonorId = xid;
+    if (d.email) { const { value } = normalizeEmail(d.email); d.email = value || d.email; }
+
+    // aggregate history columns
+    const total = get("total");
+    if (total) { const m = normalizeMoneyCell(cellOf("total")); if (m.value != null) d.total = m.value; }
+    const lg = cellOf("lastGift");
+    if (lg !== null && lg !== "") { const dd = normalizeDateCell(lg, opts); if (dd.value) d.lastGift = dd.value; }
+    const fg = cellOf("firstGift");
+    if (fg !== null && fg !== "") { const dd = normalizeDateCell(fg, opts); if (dd.value) d.firstGift = dd.value; }
+    const gc = get("gifts");
+    if (gc) d.gifts = parseInt(gc) || null;
+
+    // ── the flag family ──
+    const mark = (flag, source) => {
+      if (d[flag]) return;
+      d[flag] = true;
+      excl[flag] = (excl[flag] || 0) + 1;
+      excl.rows.add(line);
+      if (source) excl[source] = (excl[source] || 0) + 1;
+    };
+    // Deceased column: X/yes → deceased; a DATE is a death date, which is the
+    // strongest yes there is (parseBoolFlag alone read the 49 dated cells as
+    // FALSE — calling the dead alive is the worst false negative in the file).
+    const decCell = cellOf("deceased");
+    if (decCell !== null && String(decCell).trim() !== "") {
+      if (parseBoolFlag(decCell)) mark("deceased");
+      else {
+        const dd = normalizeDateCell(decCell, opts);
+        if (dd.value) { mark("deceased"); d.deceasedDate = dd.value; }
+      }
+    }
+    if (parseBoolFlag(get("doNotMail")) || String(get("doNotMail")).toLowerCase() === "true") mark("doNotMail");
+    if (parseBoolFlag(get("doNotSolicit"))) mark("doNotSolicit");
+    if (parseBoolFlag(get("doNotEmail"))) mark("doNotEmail");
+    if (d.status) {
+      const pe = parseExclusionValue(d.status);
+      if (pe.flags.deceased) mark("deceased");
+      if (pe.flags.doNotSolicit) mark("doNotSolicit");
+      if (pe.flags.doNotContact) mark("doNotContact");
+    }
+    if (d.notes) {
+      const nm = detectNoteMarkers(d.notes);
+      if (nm.deceased) { mark("deceased", "fromNotes"); if (nm.deceasedDate && !d.deceasedDate) d.deceasedDateText = nm.deceasedDate; }
+      if (nm.doNotSolicit) mark("doNotSolicit", "fromNotes");
+      if (nm.doNotContact) mark("doNotContact", "fromNotes");
+      if (nm.doNotMail) mark("doNotMail", "fromNotes");
+      if (nm.doNotEmail) mark("doNotEmail", "fromNotes");
+    }
+    // Part 3.5 — only as answered, never silently
+    if (isHidden && answers.hidden_rows === "legend" && hiddenMeansDeceased) mark("deceased", "fromHidden");
+    if (isFilled && answers.filled_rows === "legend" && fillMeansNoContact) mark("doNotContact", "fromFill");
+    if (answers.comments === "route" && commentByRow.has(line)) {
+      const txt = commentByRow.get(line);
+      if (/deceas|passed away|\bd\.\s*\d{4}/i.test(txt)) { mark("deceased", "fromComments"); }
+      else if (/do not (call|contact|mail|solicit)/i.test(txt)) { mark("doNotContact", "fromComments"); }
+      d.notes = [d.notes, `[cell comment] ${txt}`].filter(Boolean).join(" · ");
+    }
+    if (get("board") && parseBoolFlag(get("board"))) d.board = true;
+
+    // custom-field raw values decided in the mapper ride separately (the UI
+    // attaches customFields per its decisions — this builder only does
+    // standard + flags).
+    donors.push(d);
+  });
+  const { rows: exclRowSet, ...exclCounts } = excl;
+  return { donors, skippedByChoice, warnings,
+           exclusionSummary: { ...exclCounts, total: exclRowSet.size } };
+}
+
+// ── THE ONE SUBMISSION BUILDER. Everything the pre-write summary shows and
+// everything the submit sends comes from THIS function, so the screen and the
+// write can never disagree. Pure: sheets in, payload + accounting out.
+//   roled:  classifyWorkbookSheets output (each sheet analyzeWorkbookSheet-shaped)
+//   opts:   { signalAnswers, legend, anchorDate, currentYear,
+//             mappingOverrides: {sheetName: {header: stdKeyOr""}},
+//             customAssignments: {sheetName: {header: {entity, key}}},   // decided in the mapper
+//             includeDecoy: false }
+export function buildWorkbookSubmission(roled = [], opts = {}) {
+  const legend = opts.legend !== undefined ? opts.legend : extractWorkbookLegend(roled);
+  const donorsSheet = roled.find(s => s.role === "donors") || null;
+  const giftSheets = roled.filter(s => s.role === "gifts" || (s.role === "decoy" && opts.includeDecoy));
+  const pledgeSheet = roled.find(s => s.role === "pledges") || null;
+  const recurringSheet = roled.find(s => s.role === "recurring") || null;
+
+  // donors
+  let donors = [], skippedByChoice = [], exclusionSummary = null, donorMapping = {};
+  if (donorsSheet) {
+    const auto = buildStandardMapping(donorsSheet.headers, donorsSheet.rows, "donor");
+    donorMapping = { ...auto.mapping, ...((opts.mappingOverrides || {})[donorsSheet.name] || {}) };
+    for (const [h, k] of Object.entries(donorMapping)) if (!k) delete donorMapping[h];
+    const built = buildWorkbookDonors(donorsSheet, donorMapping, { signalAnswers: opts.signalAnswers, legend, currentYear: opts.currentYear });
+    donors = built.donors; skippedByChoice = built.skippedByChoice; exclusionSummary = built.exclusionSummary;
+    // custom-field raw values decided in the mapper ride each donor row
+    const assigns = (opts.customAssignments || {})[donorsSheet.name] || {};
+    const entries = Object.entries(assigns).filter(([, a]) => a && a.entity === "donor" && a.key);
+    if (entries.length) {
+      const lineToIdx = new Map(donors.map((d, i) => [d._line, i]));
+      donorsSheet.rows.forEach((row, ri) => {
+        const line = donorsSheet.rowLines[ri] || ri + 2;
+        const di = lineToIdx.get(line);
+        if (di === undefined) return;
+        for (const [h, a] of entries) {
+          const v = String(row[h] ?? "").trim();
+          if (v) (donors[di].customFields = donors[di].customFields || {})[a.key] = v;
+        }
+      });
+    }
+  }
+
+  // duplicate fold (identity pass — the server is told identityResolved)
+  const dedup = resolveDonorSheetDuplicates(donors);
+
+  // gift sheets — typed seams, one disposition per row
+  const builds = giftSheets.map(s => {
+    const overrides = (opts.mappingOverrides || {})[s.name];
+    const b = buildWorkbookGiftRows(s, { currentYear: opts.currentYear, mappingOverrides: overrides });
+    return { name: s.name, decoy: s.role === "decoy", ...b };
+  });
+
+  // decoy override: dedupe against the real sheets BEFORE a single row lands
+  let decoyOverlap = 0;
+  if (opts.includeDecoy) {
+    const realKeys = new Set();
+    for (const b of builds) if (!b.decoy) for (const it of b.items) realKeys.add(donorIdKey(it.donorId) + "|" + Math.round(it.gift.amount * 100) + "|" + it.gift.date);
+    for (const b of builds) if (b.decoy) {
+      const kept = [];
+      for (const it of b.items) {
+        const k = donorIdKey(it.donorId) + "|" + Math.round(it.gift.amount * 100) + "|" + it.gift.date;
+        if (realKeys.has(k)) { decoyOverlap++; b.refusals.push({ sheet: b.name, line: it.line, reason: "decoy_duplicate", detail: "already on a real gift sheet (same donor, date, amount)", dollars: it.gift.amount }); }
+        else kept.push(it);
+      }
+      b.items = kept;
+      b.report.builtGifts = kept.length;
+      b.report.refused = b.refusals.length;
+      b.report.dollarsIn = Math.round(kept.reduce((s2, it) => s2 + it.gift.amount, 0) * 100) / 100;
+    }
+  }
+
+  const linked = linkWorkbookGifts(dedup.donors, builds.flatMap(b => b.items));
+
+  // recurring → sustainer states (claims applied to the SURVIVING records)
+  let recurring = { claims: [], recovery: [], stale: [] };
+  if (recurringSheet) {
+    recurring = extractWorkbookRecurring(recurringSheet, opts);
+    const byExt = new Map();
+    linked.donors.forEach((d, i) => {
+      const ids = Array.isArray(d.externalDonorIds) && d.externalDonorIds.length ? d.externalDonorIds : [d.externalDonorId];
+      for (const one of ids) { const k = donorIdKey(one); if (k && !byExt.has(k)) byExt.set(k, i); }
+    });
+    for (const c of recurring.claims) {
+      const di = byExt.get(donorIdKey(c.donorExternalId));
+      if (di === undefined) continue;
+      const d = linked.donors[di];
+      if (c.recovery) {
+        // their card stopped, they didn't — the reconnect surface owns them
+        d.importedSustainer = true;
+        if (c.amount != null) d.importedSustainerAmount = c.amount;
+        if (c.lastCharge) d.importedSustainerLastGift = c.lastCharge;
+        d.tags = [...new Set([...(Array.isArray(d.tags) ? d.tags : []), "card-failed"])];
+      } else if (c.monthly) {
+        d._freqMonthlyClaim = true;   // a claim the gift PATTERN gets to overrule
+        if (c.staleClaim) d._staleChargeClaim = true;
+      }
+    }
+    detectImportedSustainers(linked.donors, linked.gifts);
+    // "Active" with a stale last charge: whatever the pattern said, the
+    // mismatch is SHOWN (tag), and the pattern's verdict stands.
+    for (const c of recurring.stale) {
+      const di = byExt.get(donorIdKey(c.donorExternalId));
+      if (di === undefined) continue;
+      const d = linked.donors[di];
+      d.tags = [...new Set([...(Array.isArray(d.tags) ? d.tags : []), "stale-frequency"])];
+      d.staleFrequency = true;
+    }
+  }
+
+  // pledges → commitments, resolved by external donor id server-side
+  let pledges = { pledges: [], refusals: [], totalPledged: 0 };
+  if (pledgeSheet) {
+    pledges = extractWorkbookPledges(pledgeSheet, opts);
+  }
+
+  // accounting: refusals (with orphans), reconciliation, largest gifts, TOTAL rows
+  const refusals = [
+    ...builds.flatMap(b => b.refusals),
+    ...linked.refusedOrphans.map(o => ({ sheet: o.sheet, line: o.line, reason: "no_donor_match", detail: o.reason, dollars: o.dollars, id: o.id })),
+    ...skippedByChoice.map(s => ({ sheet: donorsSheet ? donorsSheet.name : "", line: s.line, reason: s.reason })),
+  ];
+  const routed = { pledges: [], softCredits: [], inKind: [], refunds: [], reversals: [] };
+  for (const b of builds) for (const k of Object.keys(routed)) routed[k].push(...b.routed[k]);
+  const flags = builds.flatMap(b => b.flags);
+  const orphanSet = new Set(linked.refusedOrphans.map(o => `${o.sheet}|${o.line}`));
+  const reconciliation = reconcileWorkbook(builds.map(b => {
+    // orphaned rows are refusals of THIS sheet for the per-sheet equation
+    const orphansHere = linked.refusedOrphans.filter(o => o.sheet === b.name).length;
+    return { ...b.report, builtGifts: b.report.builtGifts - orphansHere, refused: b.report.refused + orphansHere };
+  }));
+  const nameByIndex = i => linked.donors[i] ? (linked.donors[i].name || linked.donors[i].email || "?") : "?";
+  const largestGifts = [...linked.gifts].sort((a, b) => b.amount - a.amount).slice(0, 5)
+    .map(g => ({ name: nameByIndex(g.donorIndex), dollars: g.amount, date: g.date }));
+  const totalRows = builds.filter(b => !b.decoy).map(b => {
+    const sheet = roled.find(s => s.name === b.name);
+    return sheet && sheet.totalRow ? {
+      sheet: b.name, line: sheet.totalRow.line, stated: sheet.totalRow.amount,
+      readable: b.report.dollarsIn,
+      routedAbs: Math.round(Object.values(b.routed).flat().reduce((s2, x) => s2 + Math.abs(x.dollars || 0), 0) * 100) / 100,
+      refusedCount: b.report.refused,
+    } : null;
+  }).filter(Boolean);
+  // subtotal/GRAND rows the sheet itself carried, for the same panel
+  for (const s of roled) {
+    if ((s.role === "gifts") && s.chromeRows) {
+      const gr = s.chromeRows.find(c => c.kind === "total_row" && c.amount != null);
+      if (gr && !totalRows.some(t => t.sheet === s.name)) {
+        const b = builds.find(x => x.name === s.name);
+        totalRows.push({ sheet: s.name, line: gr.line, stated: gr.amount, readable: b ? b.report.dollarsIn : null,
+          routedAbs: b ? Math.round(Object.values(b.routed).flat().reduce((s2, x) => s2 + Math.abs(x.dollars || 0), 0) * 100) / 100 : null,
+          refusedCount: b ? b.report.refused : null });
+      }
+    }
+  }
+
+  const r2 = x => Math.round(x * 100) / 100;
+  const cash = r2(linked.gifts.reduce((s2, g) => s2 + g.amount, 0));
+  const refusedDollars = r2(refusals.reduce((s2, x) => s2 + (x.dollars || 0), 0));
+  const routedDollars = r2(Object.values(routed).flat().reduce((s2, x) => s2 + Math.abs(x.dollars || 0), 0));
+
+  return {
+    donors: linked.donors,
+    gifts: linked.gifts,
+    merges: dedup.review,
+    foldedRows: dedup.foldedRows,
+    pledges,
+    recurring,
+    refusals, routed, flags,
+    columnNotes: builds.flatMap(b => b.columnNotes || []),
+    conventions: builds.map(b => ({ sheet: b.name, ...b.convention })),
+    reconciliation,
+    largestGifts,
+    totalRows,
+    exclusionSummary,
+    decoyOverlap,
+    donorMapping,
+    giftMappings: Object.fromEntries(builds.map(b => [b.name, b.mapping])),
+    totals: { donors: linked.donors.length, folded: dedup.foldedRows, gifts: linked.gifts.length,
+              cash, refused: refusals.length, refusedDollars, routedDollars,
+              orphans: linked.refusedOrphans.length },
+    fileStats: {
+      rows: reconciliation.workbook.rowsInFile,
+      refused: refusals.length,
+      refusedDollars: r2(refusedDollars + routedDollars),
+      largestGifts,
+    },
+  };
 }

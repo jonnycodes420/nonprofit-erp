@@ -4388,6 +4388,13 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(as
 
   // Generate all donor IDs in JS before inserting — gifts reference these IDs directly,
   // no extra round trip needed.
+  // BUILD-82 — identityResolved: the workbook flow runs the FULL identity
+  // pass client-side (ID → email-with-compatible-name → phone, with a review
+  // list and undo) BEFORE submitting. The blunt within-file email fold here
+  // would undo that work — two household members legitimately share an
+  // address book — so it is skipped; matching against donors ALREADY on file
+  // still applies.
+  const identityResolved = req.body.identityResolved === true;
   donors.forEach((d, idx) => {
     if (!d.name || !String(d.name).trim()) { namelessRows++; return; }
     const emailLower = (d.email || "").toLowerCase().trim();
@@ -4395,7 +4402,7 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(as
       // Already on file, or already claimed earlier in THIS file → route this
       // row's gifts to that donor. `duplicates` still counts donors not
       // created, so the existing summary sentence stays true.
-      const priorId = existingByEmail.get(emailLower) || seenEmails.get(emailLower);
+      const priorId = existingByEmail.get(emailLower) || (identityResolved ? undefined : seenEmails.get(emailLower));
       if (priorId) {
         duplicates++; indexToId[idx] = priorId; matchedIds.add(priorId);
         // BUILD-78 4.5 — a matched donor's custom values FILL MISSING keys
@@ -4406,7 +4413,7 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(as
       }
     }
     const id = importId("d_");
-    if (emailLower) seenEmails.set(emailLower, id);
+    if (emailLower && !identityResolved) seenEmails.set(emailLower, id);
     indexToId[idx] = id;
     donorsToInsert.push({ ...d, _id: id, _cfValidated: donorCfById.get(idx) || null });
     if (d._stageExplicit) explicitStageIds.push(id);
