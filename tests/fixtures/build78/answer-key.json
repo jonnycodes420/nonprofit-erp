@@ -1,5 +1,5 @@
 {
- "generatedAt": "2026-09-04",
+ "generatedAt": "2026-09-06",
  "file": {
   "physicalRows": 1548
  },
@@ -75,15 +75,15 @@
  ],
  "buckets": {
   "gift": {
-   "rows": 1372,
-   "dollars": 342024.5
+   "rows": 1368,
+   "dollars": 342016.5
   },
   "skipped": {
    "rows": 14,
    "dollars": 0
   },
   "errored": {
-   "rows": 162,
+   "rows": 166,
    "dollars": 36264.5
   }
  },
@@ -96,13 +96,13 @@
    "rows": 21,
    "dollars": 5443
   },
+  "unparseable_amount": {
+   "rows": 13,
+   "dollars": 0
+  },
   "board_member_invalid": {
    "rows": 1,
    "dollars": 425
-  },
-  "unparseable_amount": {
-   "rows": 9,
-   "dollars": 0
   },
   "zero_amount": {
    "rows": 14,
@@ -518,9 +518,9 @@
   },
   {
    "line": 36,
-   "disposition": "gift",
-   "reason": null,
-   "dollars": 2,
+   "disposition": "errored",
+   "reason": "unparseable_amount",
+   "dollars": 0,
    "name": "Luis Keller"
   },
   {
@@ -1316,9 +1316,9 @@
   },
   {
    "line": 150,
-   "disposition": "gift",
-   "reason": null,
-   "dollars": 2,
+   "disposition": "errored",
+   "reason": "unparseable_amount",
+   "dollars": 0,
    "name": "Tina Ellison"
   },
   {
@@ -7462,16 +7462,16 @@
   },
   {
    "line": 1028,
-   "disposition": "gift",
-   "reason": null,
-   "dollars": 2,
+   "disposition": "errored",
+   "reason": "unparseable_amount",
+   "dollars": 0,
    "name": "Zach Okafor"
   },
   {
    "line": 1029,
-   "disposition": "gift",
-   "reason": null,
-   "dollars": 2,
+   "disposition": "errored",
+   "reason": "unparseable_amount",
+   "dollars": 0,
    "name": "Hector Yancey"
   },
   {

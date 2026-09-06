@@ -139,23 +139,106 @@ export function normalizeDate(val, opts = {}) {
   return { value: null, warn: `couldn't parse date '${s}'` };
 }
 
-export function normalizeMoney(val) {
+// BUILD-80 Part 1 — the CLOSED money grammar. The old parser stripped every
+// non-digit and hoped: "2\u00A0000,00" (French-Canadian Excel, non-breaking-
+// space thousands + comma decimal) became 200000 — a $2,000 gift imported as
+// $200,000, led the thank-you queue, and inflated "In your file" by $1.5M.
+// "$1,5000" parsed as 15000, "1e3" as 1000, "500 (pledge)" as 500, "$25O.00"
+// as 25, "500.00-" (SAP trailing minus) as POSITIVE 500. Every accepted shape
+// is now explicit; everything else is an error with its line number.
+//
+// Accepted: $1,000.00 · 1,000 · 1000 · 1000.5 · $ 250 · USD 750.00 ·
+//   '1000.00 (Excel text apostrophe) · (500.00) · -$500.00 · 500.00-
+//   (trailing minus) · CR 500.00 (credit → negative) · 2.5k · 250 dollars ·
+//   1.250,00 (dot thousands, comma decimal) · 2\u00A0000,00 / 2 000,00
+//   (space thousands) · 2000,00 (bare comma decimal) · trailing tab/space.
+// Refused, by design: 1e3 (a scientific-notation amount in a donor file is a
+//   spreadsheet accident, not a gift), $1,5000, 500 (pledge), 1,000.00.,
+//   bare $, one hundred, 100..00, $25O.00, and any shape not listed above.
+//
+// `convention` on the result names a non-US shape that was applied
+// ("comma-decimal" | "space-thousands") so the summary can say how many
+// amounts were read under which convention. opts.convention === "eu" resolves
+// the genuinely ambiguous shapes (1.250 with no decimals, 1,000 in an
+// all-European column) — never guessed per cell, only applied when the
+// COLUMN's evidence says so (inferAmountConvention).
+export function normalizeMoney(val, opts = {}) {
   if (val === null || val === undefined || val === "") return { value: null, warn: null, blank: true };
   if (typeof val === "number" && !isNaN(val)) return { value: val, warn: null };
-  const s = String(val).trim();
+  let s = String(val).replace(/[\t\u00A0 ]+$/, "").replace(/^[\t ]+/, "").trim();
   // BUILD-77 Part 3 — deliberate blanks ("", "n/a", "TBD", "-") are a
   // DIFFERENT disposition than an unparseable amount: skipped, not errored.
   if (!s || /^(n\/a|na|tbd|-|—|unknown)$/i.test(s)) return { value: null, warn: null, blank: true };
-  // Accounting-style negatives: "(1,000)" = -1000 (refund/adjustment rows —
-  // recognized so the row REPORT can say "refund", never silently vanish).
-  const paren = s.match(/^\((.+)\)$/);
+  const refuse = () => ({ value: null, warn: `couldn't parse amount '${String(val).trim()}'` });
+  if (s.startsWith("'")) s = s.slice(1).trim();                      // Excel forcing text
+  let sign = 1, negMarks = 0;
+  const paren = s.match(/^\((.*)\)$/);                               // accounting negative
+  if (paren) { s = paren[1].trim(); sign = -1; negMarks++; }
+  if (/^CR\s+/i.test(s)) { s = s.replace(/^CR\s+/i, ""); sign = -1; negMarks++; }  // credit
+  if (s.startsWith("-")) { s = s.slice(1).trim(); if (negMarks++) return refuse(); sign = -1; }
+  s = s.replace(/^\$\s*/, "");
   // Currency-code prefixes: "USD 750.00" is how QuickBooks and half the
   // legacy CRMs export money. 54 such rows ($154,849.63) vanished from a
   // real file without a trace — the exact silent loss BUILD-77 Part 3 found.
-  const core = (paren ? paren[1] : s).replace(/^[A-Za-z]{3}\s+/, "");
-  const n = parseFloat(core.replace(/[$,\s]/g, ""));
-  if (isNaN(n)) return { value: null, warn: `couldn't parse amount '${s}'` };
-  return { value: paren ? -n : n, warn: null };
+  s = s.replace(/^[A-Za-z]{3}\s+(?=[\d($])/, "");
+  s = s.replace(/\s+dollars?$/i, "").trim();
+  if (s.endsWith("-")) { s = s.slice(0, -1).trim(); if (negMarks++) return refuse(); sign = -1; }
+  let kMult = 1;
+  const km = s.match(/^(\d+(?:\.\d{1,2})?)[kK]$/);
+  if (km) { kMult = 1000; s = km[1]; }
+  if (!s) return refuse();
+
+  const eu = opts.convention === "eu";
+  let num = null, convention = null;
+  if (/^\d{1,3}(\.\d{3})+,\d{2}$/.test(s)) {                        // 1.250,00 — European
+    num = parseFloat(s.replace(/\./g, "").replace(",", "."));
+    convention = "comma-decimal";
+  } else if (/^\d{1,3}([\u00A0\u202F ]\d{3})+(,\d{2}|\.\d{1,2})?$/.test(s)) {  // 2 000,00 — space thousands
+    num = parseFloat(s.replace(/[\u00A0\u202F ]/g, "").replace(",", "."));
+    convention = "space-thousands";
+  } else if (/^\d+,\d{2}$/.test(s) && !/^\d{1,3},\d{3}$/.test(s)) { // 2000,00 — bare comma decimal
+    num = parseFloat(s.replace(",", "."));
+    convention = "comma-decimal";
+  } else if (/^\d{1,3}(,\d{3})+(\.\d{1,2})?$/.test(s)) {            // 1,000.00 — US grouped
+    if (eu && !s.includes(".")) { num = parseFloat(s.replace(",", ".")); convention = "comma-decimal"; }
+    else num = parseFloat(s.replace(/,/g, ""));
+  } else if (/^\d+(\.\d{1,2})?$/.test(s)) {                          // 1000 / 1000.5 — plain
+    num = parseFloat(s);
+  } else if (eu && /^\d{1,3}(\.\d{3})+$/.test(s)) {                  // 1.250 in an all-EU column
+    num = parseFloat(s.replace(/\./g, ""));
+    convention = "comma-decimal";
+  } else {
+    return refuse();
+  }
+  if (num == null || isNaN(num)) return refuse();
+  const out = { value: sign * kMult * num, warn: null };
+  if (convention) out.convention = convention;
+  return out;
+}
+
+// BUILD-80 Part 1.2 — scan an amount COLUMN for its number-format convention
+// before parsing it. Evidence, not hope: any cell shaped d.ddd,dd is European;
+// any cell with a space (or NBSP) between digit groups is space-thousands; a
+// column can carry several conventions at once (two donors pasted from two
+// systems into one report) and each cell's own shape decides, so what this
+// returns is the EVIDENCE for the summary lines ("12 amounts used a comma
+// decimal and were read as such") plus `columnConvention: "eu"` only when the
+// comma-decimal evidence is uncontradicted (no US-decimal cell) — that is the
+// only case where the ambiguous shapes (1.250 / 1,000) may be read European.
+export function inferAmountConvention(values = []) {
+  let commaDecimal = 0, spaceThousands = 0, usDecimal = 0, plain = 0;
+  for (const v of values) {
+    const s = String(v ?? "").trim();
+    if (!s || !/\d/.test(s)) continue;
+    if (/\d[\u00A0\u202F ]\d{3}/.test(s)) spaceThousands++;
+    else if (/\d{1,3}(\.\d{3})+,\d{2}/.test(s) || (/\d,\d{2}$/.test(s) && !/\d,\d{3}/.test(s))) commaDecimal++;
+    else if (/\.\d{1,2}$/.test(s)) usDecimal++;
+    else plain++;
+  }
+  return {
+    commaDecimal, spaceThousands, usDecimal, plain,
+    columnConvention: commaDecimal > 0 && usDecimal === 0 ? "eu" : "us",
+  };
 }
 
 export function normalizeEmail(val) {
@@ -541,19 +624,24 @@ export function validateMappingChoice(headers = [], rows = [], header, field) {
 // column for currency-shaped values and sums the best candidate, mapping or no
 // mapping. Excluded: id/zip/phone/year/count-shaped headers.
 const AMOUNT_EXCLUDE_HDR = /\b(zip|postal|phone|fax|id|#|number|no\.|year|count|qty|quantity|age|score)\b/i;
-const CURRENCY_CELL_RE = /^\(?-?\$?\s?[\d,]+(\.\d{1,2})?\)?$/;
 export function scanAmountShapedColumns(headers = [], rows = []) {
   const candidates = [];
   for (const h of headers.map(x => String(x))) {
     if (AMOUNT_EXCLUDE_HDR.test(h) || YEAR_HDR_PAT.test(h)) continue;
+    // BUILD-80 Part 1 — the scan speaks the same closed grammar as the import:
+    // "1.250,00" and "2\u00A0000,00" are currency (convention-inferred), and a
+    // trap like "$1,5000" is NOT — the scan's sum is the number the summary
+    // shows as "in your file", so it must be the convention-correct one.
+    const conv = inferAmountConvention(rows.map(r => r[h]));
+    const cellOpts = conv.columnConvention === "eu" ? { convention: "eu" } : {};
     let nonEmpty = 0, currency = 0, dollarSigns = 0, sum = 0;
     for (const r of rows) {
       const raw = String(r[h] ?? "").trim();
       if (!raw) continue;
       nonEmpty++;
-      if (CURRENCY_CELL_RE.test(raw) && /\d/.test(raw)) {
-        const { value } = normalizeMoney(raw);
-        if (value != null && Math.abs(value) < 1e9) {
+      if (/\d/.test(raw)) {
+        const { value, blank } = normalizeMoney(raw, cellOpts);
+        if (!blank && value != null && Math.abs(value) < 1e9) {
           currency++; sum += value;
           if (raw.includes("$")) dollarSigns++;
         }
@@ -1135,6 +1223,11 @@ export function buildTransactionRows(parsed, txMap, opts = {}) {
 
   const headerText = c => String(txMap[c] || "");
   const keyFirstLine = new Map();   // donor key → first physical line (for "Unnamed donor (line N)")
+  // BUILD-80 Part 1.2 — the amount column's convention, inferred ONCE from all
+  // its values before any cell parses; per-cell tallies feed the summary lines.
+  const amountConv = txMap.amount ? inferAmountConvention(rows.map(r => r[txMap.amount])) : null;
+  const moneyOpts = amountConv && amountConv.columnConvention === "eu" ? { convention: "eu" } : {};
+  const conventionCounts = { commaDecimal: 0, spaceThousands: 0 };
   rows.forEach((row, i) => {
     // BUILD-79 Part 1/5 — real physical lines when the caller has them (chrome
     // removal makes "index + 2" wrong on report exports).
@@ -1160,7 +1253,16 @@ export function buildTransactionRows(parsed, txMap, opts = {}) {
     const name = normalizeName(rawName || [first, last].filter(Boolean).join(" ") || orgName) || "";
     const { value: emailVal } = normalizeEmail(rawEmail);
     const email = emailVal || "";
-    if (!name && !email) { record("errored", "no_donor_identity", 0); return; }
+    if (!name && !email) {
+      // BUILD-80 Part 1 — the row is refused, but its DOLLARS are still in the
+      // file: parse the amount cell so the equation's left and right sides
+      // agree with the independent scan instead of losing this row's money.
+      const m0 = txMap.amount ? normalizeMoney(row[txMap.amount], moneyOpts) : { blank: true };
+      const dol = (!m0.blank && m0.value != null) ? m0.value : 0;
+      record("errored", "no_donor_identity", dol);
+      fileDollars += dol;
+      return;
+    }
 
     // BUILD-79 Part 5 — a display name NEVER falls back to email (or the
     // phone number living in an email-mapped column). Blank stays blank here;
@@ -1210,7 +1312,7 @@ export function buildTransactionRows(parsed, txMap, opts = {}) {
     if (flagRefusal) {
       // The whole ROW is refused (its dollars still land in the equation);
       // no donor and no values are built from a row a human must look at.
-      const m0 = txMap.amount ? normalizeMoney(row[txMap.amount]) : { blank: true };
+      const m0 = txMap.amount ? normalizeMoney(row[txMap.amount], moneyOpts) : { blank: true };
       const dol = (!m0.blank && m0.value != null) ? m0.value : 0;
       record("errored", flagRefusal, dol, donor.name);
       fileDollars += dol;
@@ -1259,7 +1361,9 @@ export function buildTransactionRows(parsed, txMap, opts = {}) {
     });
 
     if (!txMap.amount) { items.push({ key, donor, gift: null }); record("donor_only", null, 0, donor.name); return; }
-    const money = normalizeMoney(rawAmount);
+    const money = normalizeMoney(rawAmount, moneyOpts);
+    if (money.convention === "comma-decimal") conventionCounts.commaDecimal++;
+    else if (money.convention === "space-thousands") conventionCounts.spaceThousands++;
     if (money.blank) { items.push({ key, donor, gift: null }); record("skipped", "no_amount", 0, donor.name); return; }
     if (money.value == null) { items.push({ key, donor, gift: null }); record("errored", "unparseable_amount", 0, donor.name); return; }
     if (money.value === 0) { items.push({ key, donor, gift: null }); record("skipped", "zero_amount", 0, donor.name); return; }
@@ -1286,8 +1390,19 @@ export function buildTransactionRows(parsed, txMap, opts = {}) {
     }
   }
   detectImportedSustainers(donors, gifts);
+  // BUILD-80 Part 1.4 — the largest-gifts panel: the five biggest imported
+  // gifts with donor, date and line. A $200,000 row next to $2,500 rows is a
+  // question a human answers in one second; no suite caught the hundredfold
+  // parse, this panel would have.
+  const largestGifts = dispositions
+    .filter(d => d.disposition === "gift" && d.dollars > 0)
+    .sort((a, b) => b.dollars - a.dollars)
+    .slice(0, 5)
+    .map(d => ({ line: d.line, name: d.name, dollars: d.dollars,
+                 date: (txMap.date && d.raw && d.raw[txMap.date]) ? String(d.raw[txMap.date]) : "" }));
   return {
-    donors, gifts, dispositions, flaggedRows,
+    donors, gifts, dispositions, flaggedRows, largestGifts,
+    amountConventions: { ...conventionCounts, column: amountConv ? amountConv.columnConvention : "us" },
     file: {
       rows: rows.length,                       // physical non-blank rows, counted ONCE at parse entry
       dollars: Math.round(fileDollars * 100) / 100,

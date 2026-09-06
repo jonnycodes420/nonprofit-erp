@@ -56,13 +56,31 @@ function dateOf(raw) {
   return null;
 }
 function amountOf(raw) {
-  const t = String(raw ?? "").trim();
+  // BUILD-80 Part 1 — the CLOSED grammar, independently restated. The old
+  // strip-everything-and-parseFloat policy read "2 tickets" as $2 (4 rows,
+  // $8) — a quantity annotation is not money. Accepted shapes only; anything
+  // else is unparseable.
+  let t = String(raw ?? "").trim();
   if (!t || /^(n\/a|na|tbd|-|—|unknown)$/i.test(t)) return { kind: "blank" };
-  const paren = t.match(/^\((.+)\)$/);
-  const core = (paren ? paren[1] : t).replace(/^[A-Za-z]{3}\s+/, "").replace(/[$,\s]/g, "");
-  const n = parseFloat(core);
-  if (isNaN(n)) return { kind: "unparseable" };
-  const v = paren ? -n : n;
+  if (t.startsWith("'")) t = t.slice(1).trim();
+  let sign = 1;
+  const paren = t.match(/^\((.*)\)$/);
+  if (paren) { t = paren[1].trim(); sign = -1; }
+  if (/^CR\s+/i.test(t)) { t = t.replace(/^CR\s+/i, ""); sign = -1; }
+  else if (t.startsWith("-")) { t = t.slice(1).trim(); sign = -1; }
+  t = t.replace(/^\$\s*/, "").replace(/^[A-Za-z]{3}\s+(?=[\d($])/, "").replace(/\s+dollars?$/i, "").trim();
+  if (t.endsWith("-") && sign === 1) { t = t.slice(0, -1).trim(); sign = -1; }
+  let mult = 1;
+  const km = t.match(/^(\d+(?:\.\d{1,2})?)[kK]$/);
+  if (km) { mult = 1000; t = km[1]; }
+  let n = null;
+  if (/^\d{1,3}(\.\d{3})+,\d{2}$/.test(t)) n = parseFloat(t.replace(/\./g, "").replace(",", "."));
+  else if (/^\d{1,3}([\u00A0\u202F ]\d{3})+(,\d{2}|\.\d{1,2})?$/.test(t)) n = parseFloat(t.replace(/[\u00A0\u202F ]/g, "").replace(",", "."));
+  else if (/^\d+,\d{2}$/.test(t) && !/^\d{1,3},\d{3}$/.test(t)) n = parseFloat(t.replace(",", "."));
+  else if (/^\d{1,3}(,\d{3})+(\.\d{1,2})?$/.test(t)) n = parseFloat(t.replace(/,/g, ""));
+  else if (/^\d+(\.\d{1,2})?$/.test(t)) n = parseFloat(t);
+  if (n == null || isNaN(n)) return { kind: "unparseable" };
+  const v = sign * mult * n;
   return v === 0 ? { kind: "zero", v: 0 } : { kind: "ok", v };
 }
 

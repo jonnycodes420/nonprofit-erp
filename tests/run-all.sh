@@ -76,7 +76,7 @@ CORE=(
   empty-states presentation-wiring notify-delivery concurrency2 permissions-matrix
   portal-visual
   gift-idempotency pledge-math portal
-  money-cents demo-shape donor-field landing-field
+  money-cents money-grammar demo-shape donor-field landing-field
   donor-accounts donor-linking org-blindness network-gate donor-dashboard network-directory theme-depth donor-front-door theme-assets
   campaign-impact portal-page portal-designation asset-retention recurring-surface giving-flow-brand portal-crop giving-summary
   ledger-provisioning mail-suppression first-login-matrix import-columns

@@ -67,7 +67,10 @@ async function reset() {
   await reset();
   const tok = await login("b79golden@test.local");
   const lib = await import("../shared/importShape.js");
-  const TODAY = new Date().toISOString().slice(0, 10);
+  // The org's civil today, not UTC — after 8pm Eastern those differ and a
+  // client-accepted gift dated UTC-today is future to the server (see
+  // helpers.civilToday).
+  const TODAY = require("./helpers").civilToday();
 
   // ── §1 · the file layer ──────────────────────────────────────────────────
   console.log("\n— §1 · the file layer: evidence, chrome, one count —");
@@ -125,6 +128,53 @@ async function reset() {
     built.donors.every(d => !d.name.includes("@") && !/^\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4}$/.test(d.name)) &&
     unnamed.every(d => (d.tags || []).includes("needs-name")),
     { donors: built.donors.length, unnamed: unnamed.length });
+
+  // ── §3b · BUILD-80 Part 1 — MONEY: the closed grammar over the real file ──
+  console.log("\n— §3b · BUILD-80 Part 1: money — conventions, traps, refunds, the largest gifts —");
+  // The independent scan and the accounted builder speak the SAME number:
+  // every parseable amount cell, convention-correct. $2,293,751.22 is what
+  // the file's Amount column actually says — the fixture key's $2,327,646.22
+  // additionally counts the TRUE values of the 16 damaged cells (8 amount
+  // traps $15,170 + 5 column-shifted amounts $3,025 + $15,700 of other
+  // damage) that no honest parser can read out of the written bytes; the
+  // written-cells number is the one the summary may claim (BLOCKED-build80.md).
+  const amtScan = lib.scanAmountShapedColumns(a.headers, a.rows);
+  ok("the independent scan reads the Amount column at $2,293,751.22 — convention-correct, never strip-and-hope",
+    amtScan.header === "Amount" && amtScan.sum === 2293751.22, amtScan);
+  ok("builder file dollars equal the independent scan to the cent (both sides, one number)",
+    built.file.dollars === 2293751.22, built.file.dollars);
+  ok("the old $3,856,421.48 overread is dead: no amount parsed above the $150,000 bequest",
+    Math.max(...built.gifts.map(g => g.amount)) <= 150000, Math.max(...built.gifts.map(g => g.amount)));
+  const convs = built.amountConventions;
+  ok("convention lines carry the counts: 4 comma-decimal, 8 space-thousands, column stays US",
+    convs && convs.commaDecimal === 4 && convs.spaceThousands === 8 && convs.column === "us", convs);
+  const uaRows = built.dispositions.filter(d => d.reason === "unparseable_amount");
+  ok("exactly the 8 planted amount traps refuse, each with its line",
+    uaRows.length === 8 && uaRows.every(d => d.line > 4), uaRows.map(d => d.line));
+  const trapRaws = uaRows.map(d => String(d.raw?.[txMap.amount] ?? ""));
+  for (const t of ["$1,5000", "1e3", "500 (pledge)", "1,000.00.", "$", "one hundred", "100..00", "$25O.00"])
+    ok(`trap ${JSON.stringify(t)} is among the refusals`, trapRaws.includes(t), trapRaws);
+  // Dylan Søndergaard (NBSP thousands + comma decimal): $1,500–$2,500 each,
+  // never $150,000–$250,000. Parse-level so the date layer can't hide it.
+  const dylAmts = a.rows.filter(r => /Søndergaard/.test(String(r["Name"] || "") + String(r["Last Name"] || "")) && /Dylan/.test(String(r["Name"] || "") + String(r["First Name"] || "")))
+    .map(r => lib.normalizeMoney(r[txMap.amount]).value).filter(v => v != null);
+  ok(`Dylan Søndergaard's amounts are $1,500–$2,500, none above $10,000 (${dylAmts.length} cells)`,
+    dylAmts.length >= 5 && dylAmts.every(v => v >= 1500 && v <= 2500), dylAmts);
+  // Stephanie Müller (dot thousands + comma decimal): $1,250 and up, never $1.25.
+  const steAmts = a.rows.filter(r => /Müller/.test(String(r["Name"] || "") + String(r["Last Name"] || "")) && /Stephanie/.test(String(r["Name"] || "") + String(r["First Name"] || "")))
+    .map(r => lib.normalizeMoney(r[txMap.amount]).value).filter(v => v != null);
+  ok(`Stephanie Müller's amounts are $1,250 and up, none below $1,000 (${steAmts.length} cells)`,
+    steAmts.length >= 3 && steAmts.every(v => v >= 1000), steAmts);
+  // Refunds import as NEGATIVE gifts — trailing minus and CR both.
+  const negGifts = built.gifts.filter(g => g.amount < 0);
+  ok("refunds written '500.00-' and 'CR 500.00' become NEGATIVE gifts, not unparseable",
+    negGifts.length >= 5 && negGifts.reduce((s, g) => s + g.amount, 0) <= -5000, { n: negGifts.length, sum: negGifts.reduce((s, g) => s + g.amount, 0) });
+  // The largest-gifts panel: five rows, donor + date + real line number.
+  ok("the largest-gifts panel carries five gifts with donor, date and line",
+    built.largestGifts.length === 5 && built.largestGifts.every(g => g.name && g.line > 4 && g.dollars > 0),
+    built.largestGifts.map(g => [g.name, g.dollars, g.line]));
+  ok("its biggest row is the planted $150,000 estate bequest — not a parse artifact",
+    built.largestGifts[0].dollars === 150000 && /Estate of/.test(built.largestGifts[0].name), built.largestGifts[0]);
 
   // ── §4 · through the real route ──────────────────────────────────────────
   console.log("\n— §4 · through the real route: the ledger closes against 2,500 —");

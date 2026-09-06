@@ -897,6 +897,10 @@ export function DonorImport({ onClose, onImported, withHistory = false }) {
         R.balanced = R.rows.balanced && R.dollars.balanced;
         totals.refusedRows = payloadForSummary.dispositions.filter(d => d.disposition === "skipped" || d.disposition === "errored");
         totals.flaggedRows = payloadForSummary.flaggedRows || [];
+        // BUILD-80 Part 1 — the largest-gifts panel + the convention lines
+        // ride the same accounted builder output.
+        totals.largestGifts = payloadForSummary.largestGifts || [];
+        totals.amountConventions = payloadForSummary.amountConventions || null;
       }
       // ── BUILD-79 Part 3 — the file-level equation exists on EVERY path.
       // The aggregate/wide paths used to show only the server's payload-scoped
@@ -1319,6 +1323,15 @@ export function DonorImport({ onClose, onImported, withHistory = false }) {
               {R.dollars.scanColumn && R.dollars.inFile != null && (
                 <div style={{paddingLeft:12,color:T.ink3,fontSize:11}}>dollars scanned independently from your “{R.dollars.scanColumn}” column — not from the mapping</div>
               )}
+              {/* BUILD-80 Part 1.2 — the number-format conventions the parser
+                  actually applied, shown so a $2,000 gift can never silently
+                  become $200,000 again without this line saying why. */}
+              {result.amountConventions?.commaDecimal > 0 && (
+                <div style={{paddingLeft:12,color:T.ink3,fontSize:11}}>{result.amountConventions.commaDecimal.toLocaleString()} amount{result.amountConventions.commaDecimal===1?"":"s"} used a comma decimal (European format) and {result.amountConventions.commaDecimal===1?"was":"were"} read as such</div>
+              )}
+              {result.amountConventions?.spaceThousands > 0 && (
+                <div style={{paddingLeft:12,color:T.ink3,fontSize:11}}>{result.amountConventions.spaceThousands.toLocaleString()} amount{result.amountConventions.spaceThousands===1?"":"s"} used a space between thousands and {result.amountConventions.spaceThousands===1?"was":"were"} read as such</div>
+              )}
               <div style={{height:1,background:T.bg3,margin:"6px 0"}} />
               {line("Imported", R.rows.created, R.dollars.created)}
               {R.rows.skipped > 0 && line("Skipped", R.rows.skipped, R.dollars.skipped)}
@@ -1361,7 +1374,19 @@ export function DonorImport({ onClose, onImported, withHistory = false }) {
                 <div style={{marginTop:8,paddingTop:8,borderTop:`1px solid ${T.bg3}`,color:T.ink2}}>
                   <div style={{fontWeight:700,color:T.ink}}>Your file's own total row (line {result.fileTotalRow.line}) says {money(result.fileTotalRow.stated)}.</div>
                   <div>Steward imported {money(result.fileTotalRow.imported)} · difference {money(Math.abs(result.fileTotalRow.difference))}{result.fileTotalRow.difference < 0 ? " (Steward imported MORE than the report's total)" : ""}</div>
-                  {result.fileTotalRow.difference !== 0 && (
+                  {/* BUILD-80 Part 1.5 — when Steward imported MORE than the
+                      report's own total, skipped and errored rows cannot be
+                      the reason (refusing rows only ever lowers the import).
+                      The line says what it can't explain instead of
+                      manufacturing a cause. */}
+                  {result.fileTotalRow.difference < 0 && (
+                    <div style={{color:T.terracotta,fontSize:11}}>
+                      We cannot explain importing more than the report's own total — that usually means an amount was misread
+                      (a European decimal, a shifted column) or the report's total excludes rows we counted. Check the largest
+                      gifts below before trusting these numbers.
+                    </div>
+                  )}
+                  {result.fileTotalRow.difference > 0 && (
                     <div style={{color:T.ink3,fontSize:11}}>
                       of which: skipped rows {money(result.fileTotalRow.explained.skipped)} · errored rows {money(result.fileTotalRow.explained.errored)}
                       {Math.abs(result.fileTotalRow.difference) - result.fileTotalRow.explained.skipped - result.fileTotalRow.explained.errored > 0.005 &&
@@ -1408,6 +1433,28 @@ export function DonorImport({ onClose, onImported, withHistory = false }) {
               )}
             </div>;
           })()}
+          {/* BUILD-80 Part 1.4 — THE LARGEST GIFTS, before anything trusts
+              them. A number that is 10% of the file in one row is a parse
+              error until a human says otherwise; a $200,000 row next to
+              $2,500 rows is a question a human answers in one second. */}
+          {result.largestGifts?.length > 0 && (
+            <div style={{textAlign:"left",background:T.bg2,border:`1px solid ${T.bg3}`,borderRadius:10,padding:"12px 16px",marginBottom:16,fontSize:12,lineHeight:1.8}}>
+              <div style={{fontSize:10,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",color:T.ink3,marginBottom:6}}>
+                The five largest gifts we imported — check these first
+              </div>
+              {result.largestGifts.map((g,i)=>(
+                <div key={i} style={{display:"flex",justifyContent:"space-between",gap:10,color:T.ink2}}>
+                  <span style={{minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
+                    <strong style={{color:T.ink}}>{g.name}</strong>{g.date ? ` — ${g.date}` : ""}
+                  </span>
+                  <span style={{color:T.ink,flexShrink:0,fontVariantNumeric:"tabular-nums"}}>
+                    {"$" + Number(g.dollars).toLocaleString(undefined,{maximumFractionDigits:2})}<span style={{color:T.ink3}}> · line {g.line}</span>
+                  </span>
+                </div>
+              ))}
+              <div style={{marginTop:4,color:T.ink3,fontSize:11}}>If one of these is far larger than the others, open the row before it leads a thank-you queue or sets a goal.</div>
+            </div>
+          )}
           {/* BUILD-77 Part 1c — WE FLAGGED THESE. Every row where a free-text
               safety marker was detected, with the matched phrase, so a human
               confirms now rather than discovering after an ask goes out. */}
