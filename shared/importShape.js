@@ -237,6 +237,8 @@ export function normalizeMoney(val, opts = {}) {
   if (/^CR\s+/i.test(s)) { s = s.replace(/^CR\s+/i, ""); sign = -1; negMarks++; }  // credit
   if (s.startsWith("-")) { s = s.slice(1).trim(); if (negMarks++) return refuse(); sign = -1; }
   s = s.replace(/^\$\s*/, "");
+  // BUILD-82 — "$-500.37": the sign can ride INSIDE the currency symbol.
+  if (s.startsWith("-")) { s = s.slice(1).trim(); if (negMarks++) return refuse(); sign = -1; }
   // Currency-code prefixes: "USD 750.00" is how QuickBooks and half the
   // legacy CRMs export money. 54 such rows ($154,849.63) vanished from a
   // real file without a trace — the exact silent loss BUILD-77 Part 3 found.
@@ -660,7 +662,10 @@ export function classifyBodyRow(cells, headerCells) {
   const label = filled.find(c => TOTAL_LABEL_RE.test(c));
   const subLabel = filled.find(c => SUBTOTAL_RE.test(c));
   if (label || subLabel) {
-    const amountCell = filled.find(c => CURRENCY_RE.test(c));
+    // BUILD-82: a workbook's TOTAL cell is numeric and stringifies bare
+    // ("32523933.89") — accept it alongside the $-prefixed report form.
+    const amountCell = filled.find(c => CURRENCY_RE.test(c))
+      || filled.find(c => c !== label && c !== subLabel && /^-?[\d,]+\.\d{1,2}$/.test(c));
     const { value } = amountCell ? normalizeMoney(amountCell) : { value: null };
     return { kind: label ? "total_row" : "subtotal_row", amount: value };
   }
@@ -2231,4 +2236,902 @@ export function groupTransactions(items = []) {
     if (gift) gifts.push({ ...gift, donorIndex: di });
   }
   return { donors, gifts, idxByKey };
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// BUILD-82 — THE WORKBOOK LAYER
+// A workbook is one import: sheets get roles with evidence, typed cells go
+// through the same money/date seams a CSV string does, Donor ID is a standard
+// field and the first identity key, and the join refuses orphans instead of
+// inventing donors. All pure/JSX-free; tests/import-workbook-v3.test.js is
+// the golden suite over tests/fixtures/build82/steward-messy-25k-v3.xlsx.
+// ═══════════════════════════════════════════════════════════════════════════
+
+// ── Part 2.2 — Donor ID comparison key. Trim, strip a trailing ".0" (a
+// float-through-spreadsheet artifact), strip leading zeros for COMPARISON
+// only (the record keeps the original string), compare as case-folded text.
+// 4212 matches "004212", "4212.0" and " 4212 ".
+export function donorIdKey(v) {
+  if (v === null || v === undefined) return "";
+  let s = String(v).trim();
+  if (!s) return "";
+  s = s.replace(/\.0+$/, "");          // 4212.0 / 4212.000 → 4212
+  s = s.replace(/^0+(?=[0-9])/, "");   // 004212 → 4212 (never eats a lone 0)
+  return s.toLowerCase();
+}
+
+// ── Part 3.3 — an identifier cell read as its integer text, never a float.
+// A numeric 8763 that Excel held as 8763.0 must come out "8763"; scientific
+// notation (1.2E+7) is damage, not an id. `siblingsZeroPadded` (the column
+// carries text ids like "004212") means numeric cells LOST leading zeros —
+// noted on the record, since the padding cannot be reconstructed.
+export function normalizeIdCell(cell, opts = {}) {
+  if (cell === null || cell === undefined || cell === "") return { value: null };
+  if (typeof cell === "object" && cell.t === "n") {
+    const v = cell.v;
+    if (v === null || v === undefined || isNaN(v)) return { value: null };
+    if (!isFinite(v) || Math.abs(v) >= 1e15) return { value: String(v), warn: "id too large for a spreadsheet number — likely damaged" };
+    if (Math.round(v) !== v) return { value: String(v), warn: `id ${v} is not a whole number` };
+    const out = { value: String(Math.round(v)) };
+    if (opts.siblingsZeroPadded) out.warn = "numeric id — any leading zeros were lost by the spreadsheet";
+    return out;
+  }
+  const s = String(typeof cell === "object" ? cell.v ?? "" : cell).trim();
+  if (!s) return { value: null };
+  if (/e\+/i.test(s)) return { value: s, warn: `id '${s}' is scientific notation — damaged by the spreadsheet` };
+  return { value: s };
+}
+
+// ── Part 3.1 — MONEY THROUGH THE TYPED SEAM. A cell is {t,v,z,f} from the
+// xlsx reader (t: n/s/b/e/d, z: number format, f: formula text) or a bare
+// string from a CSV. Every typed shape lands on the table in the spec:
+//   number (any currency/plain format)      → the number, rounded to cents
+//   number with float noise (1000.0000001)  → rounded to cents (flagged)
+//   number with a PERCENT format            → ×100, flagged "stored as 25%, read as $25"
+//   parens-negative FORMAT                  → the number; format is display only
+//   text                                    → normalizeMoney (BUILD-80), unchanged
+//   formula with a cached value             → the cached value
+//   formula cached 0 / none                 → REFUSED with the formula text
+//   boolean, error (#N/A, #REF!)            → REFUSED with reason
+export function normalizeMoneyCell(cell, opts = {}) {
+  if (cell === null || cell === undefined || cell === "") return { value: null, warn: null, blank: true };
+  if (typeof cell !== "object" || cell instanceof Date) return normalizeMoney(cell, opts);
+  const { t, v, z, f } = cell;
+  if (t === "e") return { value: null, refuse: "excel_error", warn: `cell is a spreadsheet error (${cell.w || v})` };
+  if (t === "b") return { value: null, refuse: "boolean", warn: `cell is TRUE/FALSE, not an amount` };
+  if (t === "n" || typeof v === "number") {
+    if (f !== undefined && (v === 0 || v === null || v === undefined)) {
+      return { value: null, refuse: "formula_no_value", formula: f,
+               warn: `formula =${f} has no computed value — refusing to import $0` };
+    }
+    if (v === null || v === undefined || isNaN(v)) return { value: null, warn: null, blank: true };
+    let n = v, flag = null;
+    if (z && /%/.test(String(z))) {
+      n = v * 100;
+      flag = { kind: "percent_format", text: `stored as ${(v * 100) % 1 === 0 ? v * 100 : (v * 100).toFixed(2)}%, read as $${n % 1 === 0 ? n : n.toFixed(2)}` };
+    }
+    const cents = Math.round(n * 100);
+    const out = { value: cents / 100, warn: null };
+    if (Math.abs(n * 100 - cents) > 1e-7) out.floatNoise = true;   // 1000.0000001 → $1,000.00
+    if (flag) out.flag = flag;
+    if (f !== undefined) out.fromFormula = true;
+    return out;
+  }
+  if (t === "d" || v instanceof Date) return { value: null, refuse: "date_in_amount", warn: "cell is a date, not an amount" };
+  return normalizeMoney(v, opts);   // t === "s" — text through the BUILD-80 grammar, unchanged
+}
+
+// ── Part 3.2 — DATES THROUGH THE TYPED SEAM.
+//   date cell            → the civil date, time dropped, NO timezone conversion
+//   General number in a date column → Excel serial if 1990..(currentYear); else refused
+//   serial 0, 60, pre-1900 → refused by name (Excel's blank / the leap-year ghost)
+//   text                 → normalizeDate with the SHEET's inferred convention
+const EXCEL_EPOCH_UTC = Date.UTC(1899, 11, 30);   // serial 1 = 1900-01-01 (Excel's fictional calendar)
+export function excelSerialToCivil(serial) {
+  if (typeof serial !== "number" || isNaN(serial)) return null;
+  const days = Math.floor(serial);                 // time of day dropped
+  const ms = EXCEL_EPOCH_UTC + days * 86400000;
+  const d = new Date(ms);
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`;
+}
+export function cellFormatIsDate(z) {
+  if (!z || typeof z !== "string") return false;
+  if (/^general$/i.test(z)) return false;
+  // strip color/locale sections and quoted literals — "[RED]" carries a 'd'
+  const bare = z.replace(/\[[^\]]*\]/g, "").replace(/"[^"]*"/g, "");
+  if (/[#0?]/.test(bare)) return false;    // numeric placeholders → a number format
+  return /[dmy]/i.test(bare);
+}
+export function normalizeDateCell(cell, opts = {}) {
+  const currentYear = opts.currentYear || new Date().getFullYear();
+  if (cell === null || cell === undefined || cell === "") return { value: null, warn: null };
+  if (cell instanceof Date) return normalizeDate(cell, opts);
+  if (typeof cell !== "object") return normalizeDate(cell, opts);
+  const { t, v, z } = cell;
+  if (t === "e") return { value: null, warn: `cell is a spreadsheet error (${cell.w || v})` };
+  if (t === "b") return { value: null, warn: "cell is TRUE/FALSE, not a date" };
+  if (t === "d" || v instanceof Date) return normalizeDate(v, opts);
+  if (t === "n" || typeof v === "number") {
+    const serial = v;
+    if (serial === 0) return { value: null, warn: "serial 0 — a spreadsheet's blank date, refused by name" };
+    if (serial === 60) return { value: null, warn: "serial 60 — Excel's fictional 1900-02-29, refused by name" };
+    if (cellFormatIsDate(z)) {
+      if (serial < 2) return { value: null, warn: `serial ${serial} — an Excel epoch artifact, not a gift date` };
+      const civil = excelSerialToCivil(serial);
+      const y = +civil.slice(0, 4);
+      if (y < 1900) return { value: null, warn: `date ${civil} is before 1900 — refused` };
+      return { value: civil, warn: null };
+    }
+    // General-format number in a date column: an Excel serial only if it lands
+    // in a plausible gift window (1990..today); otherwise it is just a number.
+    const civil = excelSerialToCivil(serial);
+    const y = civil ? +civil.slice(0, 4) : 0;
+    if (y >= 1990 && y <= currentYear) return { value: civil, warn: null, viaSerial: true };
+    return { value: null, warn: `number ${serial} in a date column is not a plausible Excel serial (lands ${civil || "nowhere"})` };
+  }
+  return normalizeDate(v, opts);
+}
+
+// Convention inference over a TYPED date column: only the text cells vote
+// (date cells and serials carry no day/month ambiguity).
+export function inferDateConventionCells(cells = []) {
+  const texts = [];
+  for (const c of cells) {
+    if (c === null || c === undefined) continue;
+    if (typeof c === "object" && c.t !== "s") continue;
+    texts.push(typeof c === "object" ? c.v : c);
+  }
+  return inferDateConvention(texts);
+}
+
+// ── Part 1.3 — rows that are not data, for WORKBOOK sheets. Adds to
+// classifyBodyRow the shapes a spreadsheet grows that a report export doesn't:
+// year-subtotal rows ("2023 Total" + a SUBTOTAL/SUM formula in the amount
+// column), a GRAND TOTAL row, single-cell note rows ("Exported by Cheryl —
+// please do not edit"), and the stray cell that inflates the used range ("x").
+const YEAR_TOTAL_RE = /^((19|20)\d{2}|q[1-4]|fy\s*\d{2,4})\s+(sub)?total$/i;
+const GRAND_TOTAL_RE = /^grand\s+total$/i;
+const NOTE_ROW_RE = /exported|do not edit|confidential|generated|page \d+ of|report [A-Z0-9-]|as of \d/i;
+export function classifyWorkbookBodyRow(cells, typedCells, headerCells) {
+  const base = classifyBodyRow(cells, headerCells);
+  if (base) return base;
+  const filled = cells.map(c => String(c ?? "").trim()).filter(Boolean);
+  const first = filled[0] || "";
+  if (YEAR_TOTAL_RE.test(first) || filled.some(c => GRAND_TOTAL_RE.test(c))) {
+    const amountCell = filled.find(c => /^\$?-?[\d,]+(\.\d+)?$/.test(c) && c !== first);
+    const { value } = amountCell ? normalizeMoney(amountCell) : { value: null };
+    return { kind: filled.some(c => GRAND_TOTAL_RE.test(c)) ? "total_row" : "subtotal_row", amount: value };
+  }
+  // a SUBTOTAL()/SUM() formula anywhere on the row = an aggregate row, not a gift
+  if (typedCells && typedCells.some(tc => tc && typeof tc === "object" && tc.f && /^\s*(SUBTOTAL|SUM)\s*\(/i.test(tc.f))) {
+    const amt = typedCells.find(tc => tc && tc.f && /^\s*(SUBTOTAL|SUM)\s*\(/i.test(tc.f));
+    return { kind: "subtotal_row", amount: typeof amt.v === "number" ? amt.v : null };
+  }
+  if (filled.length === 1) {
+    if (NOTE_ROW_RE.test(first)) return { kind: "note_row" };
+    if (first.length <= 2 && !/^\d+$/.test(first)) return { kind: "stray_cell" };  // "x", "." — the used-range inflator
+  }
+  return null;
+}
+
+// analyzeWorkbookSheet(records, opts) — analyzeSheetRows with the workbook
+// row rules above. records may carry a parallel `typed` array per record
+// (null-sparse: only non-string/format-bearing cells). Returns the same shape
+// as analyzeSheetRows plus `typedRows` aligned with `rows`.
+export function analyzeWorkbookSheet(records, opts = {}) {
+  const det = detectHeaderRow(records);
+  const headerRec = records[det.index];
+  const headerCells = (headerRec?.cells || []).map(c => String(c ?? "").trim());
+  const headers = dedupeHeaderCells(headerCells);
+  const chromeAbove = records.slice(0, det.index)
+    .map(r => ({ line: r.line, text: r.cells.map(c => String(c ?? "").trim()).filter(Boolean).join(" · ") }));
+  const rows = [], typedRows = [], rowLines = [], chromeRows = [];
+  let totalRow = null;
+  for (const rec of records.slice(det.index + 1)) {
+    const chrome = classifyWorkbookBodyRow(rec.cells, rec.typed, headerCells);
+    if (chrome) {
+      if (chrome.kind !== "blank" || rec.cells.some(cellNonEmpty)) {
+        chromeRows.push({ line: rec.line, kind: chrome.kind,
+          text: rec.cells.map(c => String(c ?? "").trim()).filter(Boolean).join(" · ").slice(0, 120),
+          ...(chrome.amount != null ? { amount: chrome.amount } : {}) });
+      }
+      if ((chrome.kind === "total_row" || chrome.kind === "currency_only") && chrome.amount != null && !totalRow) {
+        totalRow = { line: rec.line, amount: chrome.amount };
+      }
+      continue;
+    }
+    const obj = {};
+    headers.forEach((h, i) => { obj[h] = String(rec.cells[i] ?? "").trim(); });
+    if (rec.cells.length > headers.length) obj.__parsed_extra = rec.cells.slice(headers.length).map(c => String(c ?? "").trim());
+    rows.push(obj);
+    rowLines.push(rec.line);
+    if (rec.typed) {
+      let t = null;
+      rec.typed.forEach((tc, i) => { if (tc && headers[i]) { (t = t || {})[headers[i]] = tc; } });
+      typedRows.push(t);
+    } else typedRows.push(null);
+  }
+  let maxOverflow = 0, overflowRows = 0;
+  for (const r of rows) {
+    const extra = r.__parsed_extra ? r.__parsed_extra.length : 0;
+    if (extra > 0) { overflowRows++; if (extra > maxOverflow) maxOverflow = extra; }
+  }
+  return {
+    headers, headerCells, rows, typedRows, rowLines, records: rows.length,
+    chromeAbove, chromeRows, totalRow,
+    headerLine: { line: headerRec?.line ?? 1, index: det.index, evidence: det.evidence, fallback: !!det.fallback },
+    physical: { headerCells, headerCount: headerCells.length, orphanColumns: maxOverflow, overflowRows, total: headerCells.length + maxOverflow },
+  };
+}
+
+// ── Part 1.1 — EVERY SHEET GETS A ROLE, WITH EVIDENCE ──────────────────────
+// classifyWorkbookSheets(sheets) — sheets = [{name, headers, rows, typedRows?,
+// rowCount, formulaCellRatio?}] (analyzeWorkbookSheet output + name). Returns
+// [{name, role, evidence, ...perRole}] in the input order. Roles are a closed
+// set; chrome and decoy are never imported without an explicit override.
+const DECOY_NAME_RE = /\b(old|do not use|don'?t use|backup|archive|copy|superseded)\b|\bv1\b/i;
+const PLEDGE_HDR_RE = /pledge\s*(id|#)|total\s*pledged|installments?|balance|paid\s*to\s*date/i;
+const RECURRING_HDR_RE = /frequency|last\s*charge|card\s*on\s*file|next\s*charge/i;
+const LIFETIME_HDR_RE = /lifetime|total\s*giv|cumulative/i;
+const CONTACT_HDR_RE = /e-?mail|phone|mobile|address|city|state|zip/i;
+const NAMEID_HDR_RE = /^(last|first|name|full\s*name)$|\b(last|first)\s*name\b|constituent|donor\s*id|account\s*(no|#|id)/i;
+const AMOUNT_HDR_RE = /amount|^amt$|gift\s*\$|\$$/i;
+const DATE_HDR_RE = /date/i;
+
+export function classifyWorkbookSheets(sheets = []) {
+  const fmtN = x => (x == null ? "?" : Number(x).toLocaleString());
+  // first pass — role by structure
+  const roled = sheets.map(s => {
+    const headers = (s.headers || []).map(h => String(h));
+    const rc = s.rowCount != null ? s.rowCount : (s.rows || []).length;
+    const has = re => headers.some(h => re.test(h));
+    const matching = re => headers.filter(h => re.test(h));
+    if (rc === 0) return { ...s, role: "empty", evidence: "no cells — nothing to import" };
+    const pledgeHits = matching(PLEDGE_HDR_RE);
+    if (pledgeHits.length >= 2) return { ...s, role: "pledges", evidence: `pledge-shaped headers: ${pledgeHits.slice(0, 3).join(", ")} — commitments, not cash` };
+    const recurringHits = matching(RECURRING_HDR_RE);
+    if (recurringHits.length >= 2) return { ...s, role: "recurring", evidence: `sustainer-shaped headers: ${recurringHits.slice(0, 3).join(", ")}` };
+    const amount = has(AMOUNT_HDR_RE), date = has(DATE_HDR_RE), nameid = has(NAMEID_HDR_RE), contact = has(CONTACT_HDR_RE), lifetime = has(LIFETIME_HDR_RE);
+    // chrome: too small to be data, or no amount and no name/id, or mostly formulas
+    const fr = s.formulaCellRatio || 0;
+    if (rc < 15 && !(amount && date) && !(nameid && contact)) {
+      return { ...s, role: "chrome", evidence: `${fmtN(rc)} row${rc === 1 ? "" : "s"}, no donor or gift shape — a cover page, summary or legend` };
+    }
+    if (fr > 0.5) return { ...s, role: "chrome", evidence: `${Math.round(fr * 100)}% of its cells are formulas — a computed summary, not records` };
+    if (!amount && !nameid) return { ...s, role: "chrome", evidence: "no amount column and no name column — nothing importable" };
+    if (nameid && contact && (!amount || lifetime) && !(amount && date && !lifetime)) {
+      return { ...s, role: "donors", evidence: `name/ID plus contact columns${lifetime ? " and a lifetime-total column" : ""}, no per-gift amount — one row per person` };
+    }
+    if (amount && date) {
+      return { ...s, role: "gifts", evidence: `an amount column and a date column — one row per gift` };
+    }
+    return { ...s, role: "unknown", evidence: "shape unclear — pick its role" };
+  });
+  // second pass — decoys: name says so, or its gift rows duplicate another
+  // gift sheet at a high rate (probed on a sample, by donor-id + amount).
+  const giftSheets = roled.filter(s => s.role === "gifts");
+  for (const s of roled) {
+    if (s.role !== "gifts") continue;
+    const nameHit = DECOY_NAME_RE.test(String(s.name || ""));
+    let dupRate = 0;
+    if (giftSheets.length > 1) {
+      const others = giftSheets.filter(o => o !== s && !DECOY_NAME_RE.test(String(o.name || "")));
+      if (others.length && nameHit) {
+        // probe: sample this sheet's rows against the union of others' id+amount keys
+        const keyOfRow = (sheet, row) => {
+          const idHdr = sheet.headers.find(h => /constituent|donor|^id$/i.test(String(h))) || sheet.headers[0];
+          const amtHdr = sheet.headers.find(h => AMOUNT_HDR_RE.test(String(h)));
+          if (!idHdr || !amtHdr) return null;
+          const m = normalizeMoney(row[amtHdr]);
+          if (m.value == null) return null;
+          return donorIdKey(row[idHdr]) + "|" + Math.round(m.value * 100);
+        };
+        const target = new Set();
+        for (const o of others) for (const r of (o.rows || [])) { const k = keyOfRow(o, r); if (k) target.add(k); }
+        const sample = (s.rows || []).slice(0, 2000);
+        let hit = 0, tried = 0;
+        for (const r of sample) { const k = keyOfRow(s, r); if (!k) continue; tried++; if (target.has(k)) hit++; }
+        dupRate = tried ? hit / tried : 0;
+      }
+    }
+    if (nameHit || dupRate >= 0.5) {
+      // the dollars an override would add — the warning the spec requires
+      const amtHdr = s.headers.find(h => AMOUNT_HDR_RE.test(String(h)));
+      let dollars = 0;
+      if (amtHdr) for (const r of (s.rows || [])) { const m = normalizeMoney(r[amtHdr]); if (m.value != null && m.value > 0) dollars += m.value; }
+      s.role = "decoy";
+      s.decoyDollars = Math.round(dollars * 100) / 100;
+      s.decoyDupRate = Math.round(dupRate * 100);
+      s.evidence = nameHit
+        ? `its name says so ("${s.name}")${dupRate ? ` and ${Math.round(dupRate * 100)}% of its sampled rows duplicate another sheet's gifts` : ""} — importing it would add $${s.decoyDollars.toLocaleString(undefined, { minimumFractionDigits: 2 })} that is already there or superseded`
+        : `${Math.round(dupRate * 100)}% of its sampled rows duplicate another gift sheet by donor and amount`;
+    }
+  }
+  return roled;
+}
+
+// ── Part 1.4 — THE LEGEND. Chrome sheets are read for sentences about
+// hidden rows, colours and comments; what is found is QUOTED back on the
+// mapper next to what the file's own structure shows. Never acted on
+// automatically.
+const LEGEND_RE = /hidden|yellow|colou?r|highlight|comment/i;
+export function extractWorkbookLegend(sheets = []) {
+  const lines = [];
+  for (const s of sheets) {
+    if (s.role !== "chrome") continue;
+    const scan = txt => { const t = String(txt || "").trim(); if (t && LEGEND_RE.test(t) && t.length < 300) lines.push({ sheet: s.name, text: t }); };
+    for (const c of (s.chromeAbove || [])) scan(c.text);
+    for (const r of (s.rows || [])) for (const v of Object.values(r)) scan(v);
+    // header cells of a chrome sheet are content too (Cover has no real header)
+    for (const h of (s.headers || [])) scan(h);
+  }
+  return lines;
+}
+
+// ── Part 3.5 — WHAT THE SHEET KNOWS THAT THE CELLS DON'T. Hidden rows,
+// hidden columns, fill colours and cell comments are detected (by the reader)
+// and SURFACED as questions, never silently included or excluded. `meta` is
+// {hiddenRows:[rowNo], hiddenCols:[{index, header}], fillRows:{rowNo:count},
+// comments:[{row, col, header, text}]} from the workbook reader; rowToLine
+// maps a physical sheet row to the analyzed body row (or null for chrome).
+const EXCLUSION_COMMENT_RE = /deceas|passed away|\bd\.\s*\d{4}|do not (call|contact|mail|solicit|email)|dnc\b/i;
+export function buildSheetSignals(sheetName, meta = {}, legend = [], opts = {}) {
+  const signals = [];
+  const legendFor = re => legend.filter(l => re.test(l.text)).map(l => `The ${l.sheet} sheet says: “${l.text}”`).join(" ");
+  const hr = meta.hiddenRows || [];
+  if (hr.length) {
+    signals.push({ kind: "hidden_rows", sheet: sheetName, count: hr.length, rows: hr,
+      legend: legendFor(/hidden/i) || null,
+      question: `${hr.length} rows on ${sheetName} are hidden.` + (legendFor(/hidden/i) ? ` ${legendFor(/hidden/i)}` : "") + ` Treat them per the legend / import as normal / skip?`,
+      options: ["legend", "import", "skip"] });
+  }
+  const fillRows = Object.keys(meta.fillRows || {});
+  if (fillRows.length) {
+    signals.push({ kind: "filled_rows", sheet: sheetName, count: fillRows.length, rows: fillRows.map(Number),
+      color: meta.fillColor || "yellow",
+      legend: legendFor(/yellow|colou?r|highlight/i) || null,
+      question: `${fillRows.length} rows are highlighted ${meta.fillColorName || "yellow"}.` + (legendFor(/yellow|colou?r|highlight/i) ? ` ${legendFor(/yellow|colou?r|highlight/i)}` : " The file's legend doesn't say why."),
+      options: ["legend", "import", "skip"] });
+  }
+  const comments = meta.comments || [];
+  if (comments.length) {
+    const excl = comments.filter(c => EXCLUSION_COMMENT_RE.test(String(c.text || "")));
+    signals.push({ kind: "comments", sheet: sheetName, count: comments.length, exclusionCount: excl.length,
+      comments: comments.slice(0, 60),
+      question: `${comments.length} names carry a comment. ${excl.length} of them mention deceased or do-not-contact. Here they are.`,
+      options: ["route", "ignore"] });
+  }
+  for (const hc of (meta.hiddenCols || [])) {
+    const header = hc.header || (opts.headerCells ? opts.headerCells[hc.index] : null);
+    signals.push({ kind: "hidden_column", sheet: sheetName, index: hc.index, header,
+      question: `Column ${hc.ref || ""} is hidden. It's called ${header || "(no header)"}. It was not auto-mapped.`,
+      options: ["map", "ignore"] });
+  }
+  return signals;
+}
+
+// ── Part 4.2 — THE STANDARD LIST IS COMPLETE. One entry per standard field,
+// with the header vocabulary that auto-maps to it. Aliases match the WHOLE
+// normalized header (never a substring — "Unnamed: 31" containing "name" is
+// the pinned trap that threw away 23,867 donors), case- and punctuation-
+// insensitive.
+const normHdr = h => String(h || "").toLowerCase().replace(/[?_.:#/\\-]+/g, " ").replace(/\s+/g, " ").trim();
+export const STANDARD_DONOR_FIELDS = [
+  { key: "donorId",    label: "Donor ID",     aliases: ["donor id", "constituent id", "account id", "account no", "account number", "account", "record id", "supporter id", "member id", "contact id", "customer id", "pid", "cid", "donor no", "donor number", "constituent"] },
+  { key: "_firstName", label: "First name",   aliases: ["first", "first name", "firstname", "given name"] },
+  { key: "_lastName",  label: "Last name",    aliases: ["last", "last name", "lastname", "surname", "family name"] },
+  { key: "name",       label: "Full name",    aliases: ["name", "full name", "donor name", "display name", "contact name"] },
+  { key: "middleName", label: "Middle",       aliases: ["middle", "middle name", "middle initial", "mi"] },
+  { key: "suffix",     label: "Suffix",       aliases: ["suffix", "name suffix"] },
+  { key: "salutation", label: "Salutation",   aliases: ["salutation", "title", "prefix", "greeting", "dear"] },
+  { key: "spouse",     label: "Spouse",       aliases: ["spouse", "spouse name", "partner", "partner name"] },
+  { key: "householdId",label: "Household ID", aliases: ["household id", "household", "hh id", "family id"] },
+  { key: "email",      label: "Email",        aliases: ["email", "email address", "e mail", "primary email"] },
+  { key: "email2",     label: "Email 2",      aliases: ["email 2", "email2", "secondary email", "alt email", "other email"] },
+  { key: "phone",      label: "Phone",        aliases: ["phone", "phone number", "telephone", "home phone", "primary phone"] },
+  { key: "mobile",     label: "Mobile",       aliases: ["mobile", "cell", "cell phone", "mobile phone"] },
+  { key: "address1",   label: "Address 1",    aliases: ["address", "address 1", "address1", "street", "street address", "addr 1", "address line 1"] },
+  { key: "address2",   label: "Address 2",    aliases: ["address 2", "address2", "addr 2", "address line 2", "apt", "unit"] },
+  { key: "city",       label: "City",         aliases: ["city", "town"] },
+  { key: "state",      label: "State",        aliases: ["state", "province", "region", "st"] },
+  { key: "zip",        label: "ZIP",          aliases: ["zip", "zip code", "postal", "postal code", "postcode"] },
+  { key: "country",    label: "Country",      aliases: ["country"] },
+  { key: "donorType",  label: "Donor type",   aliases: ["donor type", "constituent type", "record type", "entity type"] },
+  { key: "board",      label: "Board",        aliases: ["board", "board member", "board?"] },
+  // The flag family (BUILD-58/BUILD-80) — detectExclusionColumn routes these;
+  // they are here so the DROPDOWN shows them as standard targets too.
+  { key: "doNotMail",    label: "Do not mail",    aliases: ["do not mail", "dnm", "no mail"], flag: true },
+  { key: "doNotSolicit", label: "Do not solicit", aliases: ["do not solicit", "dns", "no solicit", "no appeals"], flag: true },
+  { key: "doNotEmail",   label: "Do not email",   aliases: ["do not email", "no email"], flag: true },
+  { key: "deceased",     label: "Deceased",       aliases: ["deceased", "is deceased", "deceased?", "deceased date"], flag: true },
+  { key: "status",     label: "Status",       aliases: ["status", "donor status"] },
+  { key: "notes",      label: "Notes",        aliases: ["notes", "note", "comments", "memo", "remarks"] },
+  { key: "owner",      label: "Owner",        aliases: ["owner", "assigned to", "assigned officer", "solicitor", "gift officer", "relationship manager", "account manager", "managed by", "assigned fundraiser"] },
+  // aggregate history columns a donors sheet legitimately carries
+  { key: "total",      label: "Lifetime giving", aliases: ["lifetime giving", "lifetime", "total giving", "total", "total donated", "cumulative giving"] },
+  { key: "lastGift",   label: "Last gift date",  aliases: ["last gift", "last gift date", "last donation date", "most recent gift date"] },
+  { key: "firstGift",  label: "First gift date", aliases: ["first gift", "first gift date"] },
+  { key: "gifts",      label: "Gift count",      aliases: ["gift count", "gifts", "number of gifts", "# gifts", "# donations", "donations"] },
+];
+export const STANDARD_GIFT_FIELDS = [
+  { key: "externalId", label: "Gift ID",      aliases: ["gift id", "gift no", "gift number", "transaction id", "ref", "reference", "ref no", "receipt id"] },
+  { key: "donorId",    label: "Donor ID",     aliases: ["donor id", "constituent id", "account id", "account no", "id", "pid", "cid", "supporter id", "member id", "donor no", "constituent"] },
+  { key: "date",       label: "Date",         aliases: ["date", "gift date", "donation date", "transaction date", "posted", "post date"] },
+  { key: "amount",     label: "Amount",       aliases: ["amount", "gift amount", "donation amount", "amt", "total", "value"] },
+  { key: "type",       label: "Gift type",    aliases: ["type", "gift type", "payment type", "transaction type"] },
+  { key: "fund",       label: "Fund",         aliases: ["fund", "designation", "restriction", "purpose", "allocation"] },
+  { key: "campaign",   label: "Appeal",       aliases: ["appeal", "campaign", "appeal code", "source", "source code", "solicitation"] },
+  { key: "paymentMethod", label: "Payment method", aliases: ["payment method", "payment", "pay method", "tender", "method"] },
+  { key: "receipt",    label: "Receipt",      aliases: ["receipt", "receipt no", "receipt #", "receipt number", "receipted"] },
+  { key: "softCreditTo", label: "Soft credit to", aliases: ["soft credit", "soft credit id", "soft credit to", "credited to"] },
+  { key: "pledgeId",   label: "Pledge ID",    aliases: ["pledge id", "pledge no", "pledge #"] },
+  { key: "donorName",  label: "Donor name",   aliases: ["donor name", "donor", "name", "constituent name", "full name", "donor email"] },
+  { key: "donorEmail", label: "Donor email",  aliases: ["email", "donor email", "email address"] },
+  { key: "notes",      label: "Notes",        aliases: ["notes", "note", "comments", "memo"] },
+];
+export const STANDARD_RECURRING_FIELDS = [
+  { key: "donorId",    label: "Donor ID",     aliases: ["donor id", "constituent id", "id", "account id"] },
+  { key: "frequency",  label: "Frequency",    aliases: ["frequency", "freq", "cadence", "interval"] },
+  { key: "amount",     label: "Amount",       aliases: ["amount", "gift amount", "amt"] },
+  { key: "startDate",  label: "Start date",   aliases: ["start date", "started", "since", "first charge"] },
+  { key: "lastCharge", label: "Last charge",  aliases: ["last charge", "last charged", "last payment", "last gift"] },
+  { key: "status",     label: "Status",       aliases: ["status", "state"] },
+  { key: "cardOnFile", label: "Card on file", aliases: ["card on file", "card", "payment method"] },
+];
+
+// guessStandardField(header, entity) — WHOLE-HEADER alias match (normalized),
+// with the evidence sentence the BUILD-80 rule requires per guess. Entity
+// vocabulary differs: a bare "ID" on a GIFTS sheet is the donor key (the
+// legacy-export shape this build exists for); on a donors sheet it is the
+// Donor ID too; "Ref" on gifts is the gift id; "Designation"→Fund,
+// "Campaign"→Appeal.
+export function guessStandardField(header, entity = "donor") {
+  const h = normHdr(header);
+  if (!h) return null;
+  const list = entity === "gift" ? STANDARD_GIFT_FIELDS : entity === "recurring" ? STANDARD_RECURRING_FIELDS : STANDARD_DONOR_FIELDS;
+  if (entity === "gift" && h === "id") return { key: "donorId", evidence: `“${header}” on a gift sheet is the donor key — the column that links each gift to its person` };
+  if (entity === "donor" && h === "id") return { key: "donorId", evidence: `“${header}” — the donor's identifier from the source system` };
+  for (const f of list) {
+    if (f.aliases.includes(h)) return { key: f.key, evidence: `“${header}” matches the standard ${f.label} field` };
+  }
+  return null;
+}
+
+// buildStandardMapping(headers, rows, entity) — the auto-mapper, rebuilt on
+// three rules the Part 0 catastrophe demands:
+//  1. WHOLE-header vocabulary only (substring matching is how "Unnamed: 31"
+//     became the name column and 23,867 of 25,300 donors were thrown away).
+//  2. ONE header per field: a second header guessing an already-taken field
+//     falls to its secondary slot (Email→Email 2, Phone→Mobile) or stays
+//     unmapped — never a silent overwrite (Email 2 overwriting Email was the
+//     other half of the catastrophe).
+//  3. Every guess still passes validateMappingChoice over the full values.
+const SECONDARY_SLOT = { email: "email2", phone: "mobile", address1: "address2" };
+export function buildStandardMapping(headers = [], rows = [], entity = "donor") {
+  const mapping = {};   // header → field key
+  const evidence = {};  // header → sentence
+  const taken = new Set();
+  for (const header of headers) {
+    const g = guessStandardField(header, entity);
+    if (!g) continue;
+    let key = g.key;
+    if (taken.has(key)) {
+      const alt = SECONDARY_SLOT[key];
+      if (alt && !taken.has(alt)) { key = alt; }
+      else { evidence[header] = `“${header}” also looks like ${g.key}, but that field is already mapped — left for you`; continue; }
+    }
+    const legacyKey = { address1: "address", middleName: "middle" }[key] || key;
+    const v = validateMappingChoice(headers, rows, header, legacyKey === "donorId" ? "" : legacyKey);
+    if (!v.ok) { evidence[header] = `“${header}” → ${key} refused: ${v.summary}`; continue; }
+    mapping[header] = key;
+    taken.add(key);
+    evidence[header] = g.evidence + (v.summary ? ` — ${v.summary}` : "");
+  }
+  return { mapping, evidence };
+}
+
+// ── Part 2 — THE JOIN ──────────────────────────────────────────────────────
+// linkWorkbookGifts(donors, giftItems, opts) — the workbook-wide link.
+//  * The donors sheet is the source of record: EVERY donor row is a donor,
+//    gifts or none (prospects get records).
+//  * Donor ID first, then email, then name — per GIFT ROW, so a legacy sheet
+//    with only an ID column still links, and a gift sheet with emails links
+//    the rows an ID typo orphaned.
+//  * An orphan (matches nothing, and the row carries no name/email of its
+//    own) is REFUSED with its sheet, row and id — never a donor named after
+//    an ID, never silently dropped.
+export function linkWorkbookGifts(donors = [], giftItems = [], opts = {}) {
+  const byId = new Map(), byEmail = new Map(), byName = new Map();
+  donors.forEach((d, i) => {
+    // a folded duplicate's id must land its gifts on the SURVIVING record —
+    // index every id the row carries (externalDonorIds after a dedup pass).
+    const ids = Array.isArray(d.externalDonorIds) && d.externalDonorIds.length
+      ? d.externalDonorIds : [d.externalDonorId ?? d._donorId];
+    for (const one of ids) {
+      const idk = donorIdKey(one);
+      if (idk && !byId.has(idk)) byId.set(idk, i);
+    }
+    const em = String(d.email || "").toLowerCase().trim();
+    if (em && !byEmail.has(em)) byEmail.set(em, i);
+    const nk = matchNameKey(d.name || "");
+    if (nk.key && !byName.has(nk.key)) byName.set(nk.key, i);
+  });
+  const outDonors = donors.slice();
+  const gifts = [];
+  const refusedOrphans = [];
+  const minimalByKey = new Map();
+  let matchedById = 0, matchedByEmail = 0, matchedByName = 0, newDonors = 0, skippedNoGift = 0;
+  for (const item of giftItems) {
+    if (!item || !item.gift) { skippedNoGift++; continue; }
+    let di;
+    const idk = donorIdKey(item.donorId);
+    if (idk !== "" && byId.has(idk)) { di = byId.get(idk); matchedById++; }
+    if (di === undefined) {
+      const em = String(item.email || "").toLowerCase().trim();
+      if (em && byEmail.has(em)) { di = byEmail.get(em); matchedByEmail++; }
+    }
+    if (di === undefined) {
+      const nk = matchNameKey(item.name || "");
+      if (nk.key && byName.has(nk.key)) { di = byName.get(nk.key); matchedByName++; }
+    }
+    if (di === undefined) {
+      const minKey = String(item.email || "").toLowerCase().trim() || matchNameKey(item.name || "").key;
+      if (!minKey) {
+        refusedOrphans.push({ sheet: item.sheet || "", line: item.line || null, id: item.donorId || "",
+          dollars: item.gift.amount, reason: "no matching donor — the id matches nothing on any sheet and the row carries no name or email" });
+        continue;
+      }
+      if (minimalByKey.has(minKey)) di = minimalByKey.get(minKey);
+      else {
+        di = outDonors.length;
+        const md = { name: item.name || "", email: item.email || "", stage: "prospect" };
+        if (!md.name) { md.name = `Unnamed donor (${item.sheet || "gifts"} line ${item.line || "?"})`; md.tags = ["needs-name"]; }
+        outDonors.push(md);
+        minimalByKey.set(minKey, di);
+        newDonors++;
+      }
+    }
+    gifts.push({ ...item.gift, donorIndex: di });
+  }
+  return { donors: outDonors, gifts, refusedOrphans,
+           matchedById, matchedByEmail, matchedByName, newDonors, skippedNoGift,
+           matchedGifts: matchedById + matchedByEmail + matchedByName };
+}
+
+// ── Part 2 / verification 3 — duplicate PEOPLE on the donors sheet fold
+// through a review list. BUILD-80's identity order, applied to one-row-per-
+// donor data: distinct IDs stay distinct people UNLESS a stronger key (same
+// email with compatible names, same phone with compatible names) says they
+// are one person twice. Never name-only across distinct IDs. Returns the
+// surviving donor list, an index map (original → surviving), and the review
+// list with every fold's reason — the UNDO surface.
+export function resolveDonorSheetDuplicates(donors = []) {
+  const parent = donors.map((_, i) => i);
+  const find = x => { while (parent[x] !== x) { parent[x] = parent[parent[x]]; x = parent[x]; } return x; };
+  const folds = [];
+  const union = (a, b, reason) => {
+    const ra = find(a), rb = find(b);
+    if (ra === rb) return;
+    const keep = Math.min(ra, rb), fold = Math.max(ra, rb);
+    parent[fold] = keep;
+    folds.push({ surviving: keep, folded: fold, reason });
+  };
+  const phoneKey = v => { const d = String(v || "").replace(/\D/g, ""); return d.length >= 7 ? d.slice(-10) : ""; };
+  const byEmail = new Map(), byPhone = new Map();
+  donors.forEach((d, i) => {
+    const mk = matchNameKey(d.name || "");
+    const em = emailIdentity(d.email);
+    if (em) {
+      const list = byEmail.get(em) || [];
+      const hit = list.find(e => !mk.key || !e.mk.key || matchNamesCompatible(e.mk, mk));
+      if (hit) union(hit.i, i, `same email ${em}`);
+      else { list.push({ i, mk }); byEmail.set(em, list); }
+    }
+    for (const p of [phoneKey(d.phone), phoneKey(d.mobile)]) {
+      if (!p) continue;
+      const list = byPhone.get(p) || [];
+      const hit = list.find(e => mk.key && e.mk.key && matchNamesCompatible(e.mk, mk));
+      if (hit) union(hit.i, i, `same phone …${p.slice(-4)} and a compatible name`);
+      else { list.push({ i, mk }); byPhone.set(p, list); }
+    }
+  });
+  // assemble: surviving donor absorbs the folded rows' ids/emails; gifts
+  // posted to EITHER external id land on the survivor.
+  const rootSet = new Map();  // root → surviving output index
+  const out = [], indexMap = new Array(donors.length), review = [];
+  donors.forEach((d, i) => {
+    const r = find(i);
+    if (!rootSet.has(r)) { rootSet.set(r, out.length); out.push({ ...donors[r], externalDonorIds: [] }); }
+    const oi = rootSet.get(r);
+    indexMap[i] = oi;
+    const surv = out[oi];
+    const xid = d.externalDonorId ?? d._donorId;
+    if (xid && !surv.externalDonorIds.includes(String(xid))) surv.externalDonorIds.push(String(xid));
+    if (i !== r) {
+      if (!surv.email && d.email) surv.email = d.email;
+      if (!surv.phone && d.phone) surv.phone = d.phone;
+    }
+  });
+  for (const f of folds) {
+    review.push({ surviving: donors[f.surviving].name || donors[f.surviving].email || `row ${f.surviving}`,
+                  folded: donors[f.folded].name || donors[f.folded].email || `row ${f.folded}`,
+                  foldedId: String(donors[f.folded].externalDonorId ?? donors[f.folded]._donorId ?? ""),
+                  reason: f.reason });
+  }
+  return { donors: out, indexMap, review, foldedRows: donors.length - out.length };
+}
+
+// ── THE GIFT-ROW BUILDER FOR A WORKBOOK SHEET — every cell through the
+// typed seams, every row exactly one disposition, cents preserved. Returns
+// { items, refusals, routed, flags, convention, report } where items feed
+// linkWorkbookGifts and refusals/routed are itemised by sheet+line for the
+// Part 6 skip-reason download.
+export function buildWorkbookGiftRows(sheet, opts = {}) {
+  const { headers = [], rows = [], typedRows = [], rowLines = [], name: sheetName = "" } = sheet;
+  const { mapping } = buildStandardMapping(headers, rows, "gift");
+  const col = key => Object.keys(mapping).find(h => mapping[h] === key) || "";
+  const amountCol = col("amount"), dateCol = col("date"), idCol = col("donorId"),
+        typeCol = col("type"), fundCol = col("fund"), campaignCol = col("campaign"),
+        payCol = col("paymentMethod"), notesCol = col("notes"), extIdCol = col("externalId"),
+        nameCol = col("donorName"), emailCol = col("donorEmail"),
+        softCol = col("softCreditTo"), pledgeCol = col("pledgeId"), receiptCol = col("receipt");
+
+  // per-SHEET date convention (Part 3.2): the text cells of THIS sheet vote.
+  const dateCells = rows.map((r, i) => {
+    const t = typedRows[i];
+    return t && t[dateCol] !== undefined ? t[dateCol] : r[dateCol];
+  });
+  const convention = inferDateConventionCells(dateCells);
+  const dayFirst = convention.convention === "dmy";
+
+  // id-column padding probe: any text id with a leading zero means numeric
+  // siblings LOST theirs (Part 3.3's note).
+  const siblingsZeroPadded = idCol ? rows.some(r => /^0\d+$/.test(String(r[idCol] ?? "").trim())) : false;
+
+  const items = [];
+  const refusals = [];   // [{sheet, line, reason, detail, dollars}]
+  const routed = { pledges: [], softCredits: [], inKind: [], refunds: [], reversals: [] };
+  const flags = [];      // [{sheet, line, kind, text}] — imported but flagged (percent reads)
+  const columnNotes = [];
+  if (siblingsZeroPadded && idCol) columnNotes.push(`Numeric ids in “${idCol}” lost their leading zeros to the spreadsheet — matched by value, originals kept where the cell was text`);
+  let builtGifts = 0, dollarsIn = 0, floatNoiseRows = 0;
+
+  rows.forEach((row, i) => {
+    const line = rowLines[i] || i + 2;
+    const typed = typedRows[i] || {};
+    const cellOf = h => (typed[h] !== undefined ? typed[h] : row[h]);
+    const idv = idCol ? normalizeIdCell(cellOf(idCol), { siblingsZeroPadded }) : { value: null };
+    const donorId = idv.value || "";
+    const email = emailCol ? String(row[emailCol] || "").trim() : "";
+    const dname = nameCol ? String(row[nameCol] || "").trim() : "";
+    const base = { sheet: sheetName, line, donorId, email, name: dname };
+
+    const m = normalizeMoneyCell(cellOf(amountCol), opts);
+    if (m.refuse) {
+      refusals.push({ ...base, reason: m.refuse, detail: m.warn, formula: m.formula || undefined });
+      return;
+    }
+    if (m.blank) { refusals.push({ ...base, reason: "no_amount", detail: "amount cell is blank" }); return; }
+    if (m.value == null) { refusals.push({ ...base, reason: "unreadable_amount", detail: m.warn || `couldn't read amount '${row[amountCol] ?? ""}'` }); return; }
+
+    const typeRaw = typeCol ? String(row[typeCol] || "") : "";
+    const cls = classifyGiftType(typeRaw);
+    const dollars = m.value;
+
+    if (m.value < 0 || cls.kind === "refund" || cls.kind === "reversal") {
+      if (m.value >= 0 && cls.kind === "reversal") { routed.reversals.push({ ...base, dollars, detail: "reversal with a POSITIVE amount — a human must decide" }); return; }
+      routed.refunds.push({ ...base, dollars, type: typeRaw });
+      return;
+    }
+    if (cls.kind === "pledge") { routed.pledges.push({ ...base, dollars, detail: "pledge commitment — on the record, never in totals" }); return; }
+    if (cls.kind === "soft_credit") { routed.softCredits.push({ ...base, dollars }); return; }
+    if (cls.kind === "in_kind") { routed.inKind.push({ ...base, dollars, description: notesCol ? row[notesCol] : "" }); return; }
+    if (m.value === 0) { refusals.push({ ...base, reason: "zero_amount", detail: "amount is $0" }); return; }
+
+    const d = normalizeDateCell(cellOf(dateCol), { dayFirst, currentYear: opts.currentYear });
+    if (!d.value) {
+      refusals.push({ ...base, reason: "unreadable_date", detail: d.warn || `couldn't read date '${row[dateCol] ?? ""}'`, dollars });
+      return;
+    }
+    if (m.flag) flags.push({ ...base, kind: m.flag.kind, text: m.flag.text, dollars });
+    if (m.floatNoise) floatNoiseRows++;
+
+    const gift = {
+      amount: dollars,                      // decimal dollars — the server's toCents seam keeps the pennies
+      date: d.value,
+      type: typeRaw ? typeRaw.toLowerCase() : (payCol ? String(row[payCol] || "").toLowerCase() || "cash" : "cash"),
+      campaign: campaignCol ? String(row[campaignCol] || "") : "",
+      notes: [notesCol ? String(row[notesCol] || "") : "",
+              fundCol && row[fundCol] ? `Fund: ${row[fundCol]}` : "",
+              receiptCol && row[receiptCol] ? `Receipt ${row[receiptCol]}` : "",
+              pledgeCol && row[pledgeCol] ? `on pledge ${row[pledgeCol]}` : "",
+              softCol && row[softCol] ? `soft credit to ${row[softCol]}` : ""].filter(Boolean).join(" · "),
+      externalId: extIdCol ? (String(row[extIdCol] || "").trim() || undefined) : undefined,
+    };
+    dollarsIn += dollars;
+    builtGifts++;
+    items.push({ ...base, gift });
+  });
+
+  return { items, refusals, routed, flags, convention, mapping, columnNotes,
+           report: { sheet: sheetName, giftRows: rows.length, builtGifts,
+                     dollarsIn: Math.round(dollarsIn * 100) / 100,
+                     refused: refusals.length, floatNoiseRows,
+                     routedCounts: Object.fromEntries(Object.entries(routed).map(([k, v]) => [k, v.length])) } };
+}
+
+// ── Part 5 — PLEDGES ARE COMMITMENTS, NEVER CASH ───────────────────────────
+export function extractWorkbookPledges(sheet, opts = {}) {
+  const { headers = [], rows = [], typedRows = [], rowLines = [] } = sheet;
+  const find = re => headers.find(h => re.test(String(h))) || "";
+  const idCol = find(/pledge\s*(id|#|no)/i);
+  const donorCol = find(/constituent|donor|account/i);
+  const dateCol = find(/pledge\s*date|^date$/i);
+  const totalCol = find(/total\s*pledged|pledge\s*amount|^amount$/i);
+  const paidCol = find(/paid\s*to\s*date|^paid$/i);
+  const installCol = find(/installment/i);
+  const statusCol = find(/status/i);
+  const pledges = [], refusals = [];
+  rows.forEach((row, i) => {
+    const typed = typedRows[i] || {};
+    const cellOf = h => (typed[h] !== undefined ? typed[h] : row[h]);
+    const line = rowLines[i] || i + 2;
+    const total = normalizeMoneyCell(cellOf(totalCol), opts);
+    if (total.value == null || total.value <= 0) { refusals.push({ sheet: sheet.name, line, reason: "unreadable_amount", detail: total.warn || "no pledged amount" }); return; }
+    const paid = normalizeMoneyCell(cellOf(paidCol), opts);
+    const d = normalizeDateCell(cellOf(dateCol), opts);
+    pledges.push({
+      externalId: String(row[idCol] || "").trim() || undefined,
+      donorExternalId: normalizeIdCell(cellOf(donorCol)).value || "",
+      date: d.value || null,
+      amount: total.value,
+      paidToDate: paid.value || 0,
+      installments: installCol ? parseInt(row[installCol]) || null : null,
+      status: /fulfilled|complete|paid/i.test(String(row[statusCol] || "")) ? "fulfilled" : "open",
+    });
+  });
+  const totalPledged = Math.round(pledges.reduce((s, p) => s + p.amount, 0) * 100) / 100;
+  return { pledges, refusals, totalPledged };
+}
+
+// ── Part 5 — RECURRING → THE BUILD-77 SUSTAINER STATES ─────────────────────
+// Failed + a last charge 3–6 months back = the RECOVERY list (they didn't
+// leave; their card did). Active + a stale last charge = a claim the gift
+// PATTERN gets to overrule (the stale flag is shown either way).
+export function extractWorkbookRecurring(sheet, opts = {}) {
+  const { headers = [], rows = [], typedRows = [], rowLines = [] } = sheet;
+  const anchor = opts.anchorDate ? new Date(opts.anchorDate + "T12:00:00Z") : new Date();
+  const find = re => headers.find(h => re.test(String(h))) || "";
+  const idCol = find(/constituent|donor|account|^id$/i);
+  const freqCol = find(/frequency|freq/i);
+  const amtCol = find(/amount/i);
+  const lastCol = find(/last\s*charge|last\s*payment/i);
+  const statusCol = find(/status/i);
+  const cardCol = find(/card/i);
+  const claims = [];
+  rows.forEach((row, i) => {
+    const typed = typedRows[i] || {};
+    const cellOf = h => (typed[h] !== undefined ? typed[h] : row[h]);
+    const id = normalizeIdCell(cellOf(idCol)).value;
+    if (!id) return;
+    const amt = normalizeMoneyCell(cellOf(amtCol), opts);
+    const last = normalizeDateCell(cellOf(lastCol), opts);
+    const status = String(row[statusCol] || "").trim().toLowerCase();
+    const daysSince = last.value ? Math.round((anchor - new Date(last.value + "T12:00:00Z")) / 86400000) : null;
+    const freqRaw = String(row[freqCol] || "").trim();
+    const monthly = /^m(onthly)?$|every\s*month|^12\s*\/\s*yr/i.test(freqRaw);
+    const c = { donorExternalId: id, line: rowLines[i] || i + 2,
+      frequency: freqRaw, monthly, amount: amt.value, lastCharge: last.value || null,
+      status, cardOnFile: cardCol ? String(row[cardCol] || "") : "", daysSince };
+    if (/failed|declined|past.?due/.test(status) && daysSince != null && daysSince >= 60 && daysSince <= 200) {
+      c.recovery = true;   // failed 3–6 months back: recoverable — the reconnect surface
+    } else if (/active|current|ok/.test(status) && daysSince != null && daysSince >= 100) {
+      c.staleClaim = true; // "Active" with no charge for 3.5+ months — the pattern wins
+    }
+    claims.push(c);
+  });
+  return { claims,
+           recovery: claims.filter(c => c.recovery),
+           stale: claims.filter(c => c.staleClaim) };
+}
+
+// ── Part 6 — the workbook reconciliation: per sheet and once for the whole
+// workbook. "In your file" is the sum of gift rows across the gift sheets
+// AFTER Part 1.3 (subtotal/note rows are never counted), and every row is
+// imported, refused (by reason) or routed (by kind) — the two-axis invariant
+// from BUILD-78 applied at workbook scale.
+export function reconcileWorkbook(sheetReports = []) {
+  const total = { rowsInFile: 0, imported: 0, refused: 0, routed: 0 };
+  const perSheet = sheetReports.map(r => {
+    const routedN = Object.values(r.routedCounts || {}).reduce((s, n) => s + n, 0);
+    const acc = { sheet: r.sheet, rowsInFile: r.giftRows, imported: r.builtGifts, refused: r.refused, routed: routedN,
+                  balanced: r.giftRows === r.builtGifts + r.refused + routedN };
+    total.rowsInFile += acc.rowsInFile; total.imported += acc.imported; total.refused += acc.refused; total.routed += acc.routed;
+    return acc;
+  });
+  return { perSheet, workbook: { ...total, balanced: total.rowsInFile === total.imported + total.refused + total.routed } };
+}
+
+// ── THE WORKBOOK READER — one pass over a SheetJS workbook, shared verbatim
+// by the client (which lazy-imports xlsx) and the Node suites (which require
+// it). Produces, per sheet: records ({cells, typed, line}) ready for
+// analyzeWorkbookSheet, plus the Part 3.5 meta the cells can't carry (hidden
+// rows/cols, fill colours, comments) and a formula ratio for role evidence.
+// The file is read ONCE; `typed` is null-sparse (only non-text cells and
+// %-formatted cells allocate), so 92,000 rows are never held as strings four
+// times over.
+export function extractWorkbookFromSheetJS(wb, XLSX) {
+  const out = [];
+  for (const name of wb.SheetNames) {
+    const ws = wb.Sheets[name];
+    if (!ws || !ws["!ref"]) { out.push({ name, records: [], meta: {}, formulaCellRatio: 0 }); continue; }
+    const range = XLSX.utils.decode_range(ws["!ref"]);
+    const records = [];
+    let formulaCells = 0, totalCells = 0;
+    for (let r = range.s.r; r <= range.e.r; r++) {
+      const cells = [];
+      let typed = null;
+      for (let c = range.s.c; c <= range.e.c; c++) {
+        const cell = ws[XLSX.utils.encode_cell({ r, c })];
+        if (!cell || cell.v === undefined || cell.v === null) { cells.push(""); continue; }
+        totalCells++;
+        if (cell.f !== undefined) formulaCells++;
+        const t = cell.t;
+        if (t === "s") {
+          cells.push(String(cell.v).trim());
+          if (cell.f !== undefined) { (typed = typed || [])[c - range.s.c] = { t, v: cell.v, f: cell.f }; }
+          continue;
+        }
+        const tc = { t, v: cell.v };
+        if (cell.z && cell.z !== "General") tc.z = cell.z;
+        if (cell.f !== undefined) tc.f = cell.f;
+        if (t === "e") tc.w = cell.w;
+        (typed = typed || [])[c - range.s.c] = tc;
+        if (t === "n") cells.push(cellFormatIsDate(cell.z) ? (excelSerialToCivil(cell.v) || String(cell.v)) : String(cell.v));
+        else if (t === "d" || cell.v instanceof Date) cells.push(isNaN(cell.v) ? "" : new Date(cell.v).toISOString().split("T")[0]);
+        else if (t === "b") cells.push(cell.v ? "TRUE" : "FALSE");
+        else if (t === "e") cells.push(String(cell.w || "#ERROR"));
+        else cells.push(String(cell.v).trim());
+      }
+      const rec = { cells, line: r + 1 };
+      if (typed) rec.typed = typed;
+      records.push(rec);
+    }
+    // Part 3.5 meta — hidden rows/cols, fills, comments
+    const meta = { hiddenRows: [], hiddenCols: [], fillRows: {}, comments: [] };
+    (ws["!rows"] || []).forEach((rw, i) => { if (rw && rw.hidden) meta.hiddenRows.push(i + 1); });
+    (ws["!cols"] || []).forEach((cl, i) => {
+      if (cl && cl.hidden) meta.hiddenCols.push({ index: i, ref: XLSX.utils.encode_col(i), header: null });
+    });
+    const fillCount = {};   // rgb → Set of rows
+    for (const addr in ws) {
+      if (addr[0] === "!") continue;
+      const cell = ws[addr];
+      const m = addr.match(/^([A-Z]+)(\d+)$/);
+      if (!m) continue;
+      const row = +m[2];
+      if (cell.s && cell.s.patternType === "solid" && cell.s.fgColor && cell.s.fgColor.rgb) {
+        const rgb = cell.s.fgColor.rgb;
+        (fillCount[rgb] = fillCount[rgb] || new Set()).add(row);
+      }
+      if (cell.c && cell.c.length) {
+        meta.comments.push({ row, col: m[1], text: cell.c.map(x => String(x.t || "")).join(" ").trim() });
+      }
+    }
+    // dominant body fill (a header band styles a row or two; a highlight
+    // convention styles many) — pick the colour covering the most rows,
+    // ignoring colours confined to the top 3 lines.
+    let best = null;
+    for (const [rgb, rowsSet] of Object.entries(fillCount)) {
+      const bodyRows = [...rowsSet].filter(r => r > 3);
+      if (bodyRows.length >= 3 && (!best || bodyRows.length > best.rows.length)) best = { rgb, rows: bodyRows };
+    }
+    if (best) {
+      for (const r of best.rows) meta.fillRows[r] = true;
+      meta.fillColor = best.rgb;
+      meta.fillColorName = /^FFFF/i.test(best.rgb) ? "yellow" : /^FF/i.test(best.rgb) ? "red-ish" : `#${best.rgb}`;
+    }
+    out.push({ name, records, meta, formulaCellRatio: totalCells ? formulaCells / totalCells : 0 });
+  }
+  return out;
 }

@@ -19,9 +19,10 @@ re-pointed at it; nothing asserts on a number that wasn't independently measured
 
 ## Net cash $53,231,102.55 cannot be reproduced exactly from the artifact (decided: assert the bracket)
 The spec's verification #4 says "net cash within refusals of $53,231,102.55". The
-maximal reading recoverable from the file (every readable amount positive, damaged
-formulas at their true `N*1` values, percent cells ×100, negatives at absolute value)
-measures $52,981,462.36 — $249,640.19 short. The remainder is generator-side truth for
+maximal reading recoverable from the file (every readable amount, damaged formulas at
+their `N*1` face values, percent cells ×100, refunds/in-kind/orphans at absolute value)
+measures $52,767,200.03 — $463,902.52 short (an earlier draft said $249,640.19 off a
+buggy walk; the golden suite's waterfall is the correct figure). The remainder is generator-side truth for
 damaged cells that the artifact no longer carries (BUILD-80 precedent: the v2 key's
 $2,327,646.22 vs measured $2,293,751.22, pinned deliberately). The suite therefore
 asserts what the phrase actually promises: |imported net cash − 53,231,102.55| ≤ the
@@ -33,6 +34,8 @@ line (the legacy TOTAL's cached SUM is itself stale by design: 19,852,987.83 cac
 No static measurement of the sheet yields exactly 300 (email-shared rows: 715 raw;
 same name+email: 95 groups; same name+phone: 247 pairs). The 300 emerges from the
 BUILD-80-style identity fold (ID first, then email with compatible names, then
-phone with compatible names, never name-only across distinct IDs). The golden suite
-pins whatever the implemented fold measures and shows its review list; if it lands
-far from 300 the fold rules get revisited, not the assertion deleted.
+phone with compatible names, never name-only across distinct IDs). The implemented
+fold measures **266** (every fold with a reason + the folded ID on the review list);
+the golden suite pins 266. The ~34 the spec's number implies beyond that would need
+a looser key (name+address matched nothing; nickname-compatible email pairs may be
+the remainder) — not loosened without Jonathan's say-so.

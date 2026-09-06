@@ -86,7 +86,7 @@ CORE=(
   portal-contrast
   finance-reports-consistency name-normalize reserved-recovered concurrency
   demo-content
-  script-guards deploy-shape import-header import-messy-v2
+  script-guards deploy-shape import-header import-messy-v2 import-workbook-v3
   threads thread-nudge
 )
 
