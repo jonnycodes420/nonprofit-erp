@@ -316,8 +316,8 @@ async function reset() {
   console.log("\n— §3f · BUILD-80 Part 6: identity — ID before email before name, conflicts block merges —");
   ok("the Constituent ID column is recognised as the donor id and grouped on FIRST",
     built.identity.donorIdColumn === "Constituent ID", built.identity.donorIdColumn);
-  ok("donor count lands at 499 — variants folded by ID, real email and matching name (was 553 under email-else-name)",
-    built.donors.length === 499, built.donors.length);
+  ok("donor count lands at 496 — variants folded by ID, real email and matching name; anonymous collapses to one holding record",
+    built.donors.length === 496, built.donors.length);
   const paul6 = built.donors.filter(d => /Paul/.test(d.name) && /Briain/.test(d.name));
   ok("Paul Ó Briain is ONE person — the '@@' email row grouped by his ID, no refusal tag",
     paul6.length === 1 && paul6[0].externalDonorId === "81481" && !(paul6[0].tags || []).some(t => /has-refused-rows/.test(t)),
@@ -346,6 +346,26 @@ async function reset() {
   ok("household candidates keep distinct people separate (Catherine + Ronald Kingsley)",
     built.donors.some(d => /Catherine/.test(d.name) && /Kingsley/.test(d.name)) &&
     built.donors.some(d => /Ronald/.test(d.name) && /Kingsley/.test(d.name)), null);
+
+  // ── §3g · BUILD-80 Part 7 — organisations, DAFs, anonymous, estates ──────
+  console.log("\n— §3g · BUILD-80 Part 7: a grant cycle is not a giving cadence —");
+  const orgs = built.donors.filter(d => d.kind === "organisation");
+  ok("organisations are detected as kind:organisation (churches, foundations, banks, DAFs, estates, matching corps)",
+    orgs.length >= 20, orgs.map(d => d.name));
+  for (const nm of ["National Christian Foundation", "Schwab Charitable", "Fidelity Charitable"])
+    ok(`${nm} is an organisation`, orgs.some(d => d.name === nm), null);
+  const estates = orgs.filter(d => /^Estate of /.test(d.name));
+  ok("the three estates are organisations that arrive DECEASED and never solicited",
+    estates.length === 3 && estates.every(d => d.deceased && d.doNotSolicit), estates.map(d => [d.name, d.deceased, d.doNotSolicit]));
+  const anon = built.donors.filter(d => d.kind === "anonymous");
+  ok("the anonymous family collapses to ONE holding record (15 rows, total shown on the summary)",
+    anon.length === 1 && built.semantics.tally.anonymous.rows === 15 && built.semantics.tally.anonymous.dollars > 0,
+    { records: anon.length, tally: built.semantics.tally.anonymous });
+  ok("no organisation and no anonymous record is ever an imported sustainer",
+    built.donors.filter(d => d.kind).every(d => !d.importedSustainer), null);
+  ok("the estate persons ARE deceased via their Status column, so no false estate contradiction fires",
+    !built.exclusionConflicts.some(c => /never auto-mark/.test(c.message)),
+    built.exclusionConflicts.filter(c => /never auto-mark/.test(c.message)));
 
   // ── §4 · through the real route ──────────────────────────────────────────
   console.log("\n— §4 · through the real route: the ledger closes against 2,500 —");
@@ -414,6 +434,14 @@ async function reset() {
   ok(`no donor with a refused row gets a HIGH-confidence drift call (${refusedTagged.length} tagged donors)`,
     highWithRefusals.length === 0, highWithRefusals.map(x => x.donorName));
   const cappedOnList = dlist.filter(x => refusedIds.has(x.donorId));
+  ok("no organisation is on the drift list — NCF does not get a Re-engage button",
+    !dlist.some(x => /Foundation|Charitable|Church|Bank|Trust|Estate of|Fellowship|Corporate/.test(x.donorName)),
+    dlist.filter(x => /Foundation|Charitable|Church|Bank|Trust|Estate of/.test(x.donorName)).map(x => x.donorName));
+  ok("the institutional-giving list carries the DAFs and foundations with their giving",
+    (dr.body.institutional || []).length >= 10 &&
+    ["National Christian Foundation", "Schwab Charitable", "Fidelity Charitable"].every(n => dr.body.institutional.some(i => i.name === n)),
+    (dr.body.institutional || []).slice(0, 5).map(i => i.name));
+  ok("the excluded tally names the organisations", (dr.body.excluded?.organisation || 0) >= 15, dr.body.excluded);
   ok("a capped drift sentence says WHY: 'could not be read' appears in the reason",
     cappedOnList.every(x => /could not be read/.test(x.reason || "")),
     cappedOnList.filter(x => !/could not be read/.test(x.reason || "")).map(x => [x.donorName, x.reason]));

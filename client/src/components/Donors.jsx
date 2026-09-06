@@ -1539,6 +1539,7 @@ export function DonorImport({ onClose, onImported, withHistory = false }) {
               ["Future pledge installments", t.pledgeScheduled, "the schedule — money that hasn't arrived yet"],
               ["In-kind gifts", t.inKind, "recorded at fair market value, never cash"],
               ["Corporate matching gifts", t.matching, "counted as cash on the CORPORATION; the person gets the relationship"],
+              ["Anonymous gifts", t.anonymous, "one holding record — different people, never a cadence, never on a list"],
             ].filter(([, v]) => v && v.rows > 0);
             if (!rows.length) return null;
             return <div style={{textAlign:"left",background:T.bg2,border:`1px solid ${T.bg3}`,borderRadius:10,padding:"12px 16px",marginBottom:16,fontSize:12,lineHeight:1.8}}>

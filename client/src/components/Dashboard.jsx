@@ -1419,6 +1419,25 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
           })}
         </ul>
         )}
+        {/* BUILD-80 Part 7 — INSTITUTIONAL GIVING: a foundation's grant cycle
+            is not a person's giving cadence. Their own list, grant-cycle
+            language, and never a Re-engage button. */}
+        {driftData.institutional?.length > 0 && (
+          <div style={{...cPad,borderTop:"1px solid "+T.bg3}}>
+            <div style={{fontSize:11,fontWeight:800,letterSpacing:"0.06em",textTransform:"uppercase",color:T.ink3,marginBottom:6}}>
+              Institutional giving — foundations, DAFs and corporations
+            </div>
+            {driftData.institutional.slice(0,8).map(inst=>(
+              <div key={inst.donorId} style={{display:"flex",justifyContent:"space-between",gap:10,fontSize:12.5,color:T.ink2,padding:"3px 0"}}>
+                <span style={{minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",color:T.ink}}>{inst.name}</span>
+                <span style={{flexShrink:0,fontVariantNumeric:"tabular-nums",color:T.ink3}}>
+                  {fmtFull(inst.totalGiving)}{inst.lastGiftDate?` · last grant ${String(inst.lastGiftDate).slice(0,10)}`:""}
+                </span>
+              </div>
+            ))}
+            <div style={{fontSize:11,color:T.ink3,marginTop:4}}>Grant cycles run on their own calendars — review these when planning applications, not as lapsed donors.</div>
+          </div>
+        )}
       </div>
   ):null;
 

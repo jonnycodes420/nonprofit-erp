@@ -1392,6 +1392,9 @@ async function initSchema() {
   // BUILD-80 Part 6.1 — the source system's donor id, stored AS TEXT with
   // leading zeros kept (never grouped on when spreadsheet-damaged).
   await pool.query(`ALTER TABLE donors ADD COLUMN IF NOT EXISTS external_donor_id TEXT`);
+  // BUILD-80 Part 7 — organisations and the anonymous holding record are not
+  // people: kind gates every person surface (drift, re-engage, attention).
+  await pool.query(`ALTER TABLE donors ADD COLUMN IF NOT EXISTS kind TEXT`);
 
   // ── Giving Pages (2026-07-14) ────────────────────────────────────────────
   // Campaign-specific donation pages (gala/appeal/etc.), distinct from the

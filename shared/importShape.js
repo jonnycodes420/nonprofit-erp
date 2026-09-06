@@ -1348,6 +1348,26 @@ export function detectNoteMarkers(text) {
   return out;
 }
 
+// ── BUILD-80 Part 7 — organisations, DAFs, anonymous, estates ──────────────
+// A grant cycle is not a giving cadence: an organisation must never see a
+// person surface (drift, re-engage, needs-attention-as-a-person). Detection:
+// an org-shaped name (Church, Foundation, Charitable, Fund, Inc, Bank,
+// Trust, Corp, Estate of, Ministries, Fellowship, …) or a name with no
+// first/last split that isn't a person's. "Estate of X" is an organisation
+// that arrives deceased and never solicited. The anonymous family
+// (Anonymous, ANONYMOUS DONOR, Anon., Cash donor) collapses to ONE holding
+// record per import — different people, no cadence, no lists.
+const ORG_NAME_RE = /\b(church|foundation|charitable|fund|inc\.?|bank|trust|corp(oration)?\.?|estate of|ministries|fellowship|llc|company|co\.|university|college|school|rotary|club|association|society|committee|giving)\b/i;
+const ANON_RE = /^(anonymous( donor)?|anon\.?|cash donor)$/i;
+export function detectDonorKind(name) {
+  const n = String(name || "").trim();
+  if (!n) return null;
+  if (ANON_RE.test(n)) return "anonymous";
+  if (/^estate of\s+/i.test(n)) return "organisation";
+  if (ORG_NAME_RE.test(n)) return "organisation";
+  return null;
+}
+
 // ── BUILD-80 Part 6 — WHO IS WHO: the identity resolver ────────────────────
 // Grouping order: (1) external donor ID, when a column is recognised as one
 // — stored as TEXT, leading zeros kept; a spreadsheet-damaged ID (1.23E+05)
@@ -1628,7 +1648,8 @@ export function buildTransactionRows(parsed, txMap, opts = {}) {
   // twins and the unrecognized types the mapper must show.
   const semantics = { pledges: [], inKind: [], links: [], reviewTwins: [], unrecognizedTypes: new Map() };
   const semanticTally = { softCredits: { rows: 0, dollars: 0 }, pledges: { rows: 0, dollars: 0 },
-    inKind: { rows: 0, dollars: 0 }, matching: { rows: 0, dollars: 0 }, pledgeScheduled: { rows: 0, dollars: 0 } };
+    inKind: { rows: 0, dollars: 0 }, matching: { rows: 0, dollars: 0 }, pledgeScheduled: { rows: 0, dollars: 0 },
+    anonymous: { rows: 0, dollars: 0 } };
   rows.forEach((row, i) => {
     // BUILD-79 Part 1/5 — real physical lines when the caller has them (chrome
     // removal makes "index + 2" wrong on report exports).
@@ -1671,10 +1692,22 @@ export function buildTransactionRows(parsed, txMap, opts = {}) {
     // is still blank after grouping becomes "Unnamed donor (line N)" +
     // a needs-name tag, excluded from actionable surfaces until named.
     const donor = { name, email, stage: "prospect" };
+    // BUILD-80 Part 7 — organisations and the anonymous holding record.
+    const kind = detectDonorKind(name);
+    if (kind) donor.kind = kind;
+    if (kind === "anonymous") { donor.name = "Anonymous"; donor.email = ""; }
+    if (/^estate of\s+/i.test(name)) {
+      donor.deceased = true;               // the estate itself is never a living record
+      donor.doNotSolicit = true;           // and is never solicited
+      const estOf = name.replace(/^estate of\s+/i, "").trim();
+      if (estOf) donor._estateOf = estOf;
+    }
     // BUILD-80 Part 6 — the identity resolver's verdict for this row (ID →
     // real email → matching name; damaged and shared IDs never group).
     const idv = identity.rowInfo[i];
-    const dkey = idv ? identity.keys[i] : ((email && email.includes("@")) ? email.toLowerCase() : (name || `__line_${line}`).toLowerCase());
+    const dkey = kind === "anonymous" ? "__anonymous__"
+      : idv ? identity.keys[i] : ((email && email.includes("@")) ? email.toLowerCase() : (name || `__line_${line}`).toLowerCase());
+    if (kind === "anonymous") { semanticTally.anonymous.rows++; }
     if (idv) {
       if (idv.idRaw) {
         donor.externalDonorId = idv.idRaw;   // TEXT, leading zeros kept, stored as given
@@ -1910,6 +1943,7 @@ export function buildTransactionRows(parsed, txMap, opts = {}) {
       gift._pledgePayment = true;
     }
     if (typed.kind === "gift" && typed.matching) {
+      donor.kind = donor.kind || "organisation";   // the donor of record on a corporate match IS the corporation
       semanticTally.matching.rows++; semanticTally.matching.dollars += money.value;
       if (attribution && attribution.person) {
         semantics.links.push({ type: "matching_gift", personName: attribution.person,
@@ -1925,6 +1959,7 @@ export function buildTransactionRows(parsed, txMap, opts = {}) {
     }
     items.push({ key, donor, gift });
     fileDollars += money.value;
+    if (donor.kind === "anonymous") semanticTally.anonymous.dollars += money.value;
     record("gift", null, money.value, donor.name);
   });
 
@@ -1944,7 +1979,21 @@ export function buildTransactionRows(parsed, txMap, opts = {}) {
       d.tags = [...new Set([...(Array.isArray(d.tags) ? d.tags : []), "needs-name"])];
     }
   }
+  const exclusionConflictsPre = [];
   detectImportedSustainers(donors, gifts);
+  for (const d of donors) if (d.kind) { delete d.importedSustainer; delete d.importedSustainerAmount; delete d.importedSustainerLastGift; }
+  // BUILD-80 Part 7 — an estate must not un-decease (or leave un-deceased)
+  // its person: if a person named X exists in this file and is NOT marked
+  // deceased, that is a contradiction for a human — never an auto-mark.
+  for (const d of donors) {
+    if (!d._estateOf) continue;
+    const estMk = matchNameKey(d._estateOf);
+    const person = donors.find(p => p !== d && !p.kind && matchNamesCompatible(matchNameKey(p.name), estMk));
+    if (person && !person.deceased) {
+      exclusionConflictsPre.push({ name: person.name, message: `"${d.name}" is in this file, but ${person.name} is not marked deceased. Flagging for review — we never auto-mark a death.` });
+    }
+    delete d._estateOf;
+  }
   // BUILD-80 Part 5 — pledge status from its own payments: linked by the
   // "on pledge G-xxxx" note first, by donor otherwise. Fully-paid (and
   // over-paid) pledges arrive FULFILLED so no reminder ever chases a pledge
@@ -1998,7 +2047,7 @@ export function buildTransactionRows(parsed, txMap, opts = {}) {
   // BUILD-80 Part 4.3 — the conflicts, shown: "Status says Active, Notes say
   // deceased. We set deceased." Most restrictive already won (flags OR); this
   // is the sentence a human reads before trusting the record.
-  const exclusionConflicts = [];
+  const exclusionConflicts = [...exclusionConflictsPre];
   for (const d of donors) {
     if (d.deceased && d._activeColumnConflict) {
       exclusionConflicts.push({ name: d.name, message: "Status says Active, Notes say deceased. We set deceased." });
@@ -2123,6 +2172,8 @@ export function groupTransactions(items = []) {
       }
       // BUILD-77 Part 1 — safety flags OR across a donor's rows: one row
       // saying deceased makes the DONOR deceased, whichever row said it.
+      if (donor.kind && !canon.kind) canon.kind = donor.kind;
+      if (donor._estateOf && !canon._estateOf) canon._estateOf = donor._estateOf;
       for (const k of ["deceased", "doNotContact", "doNotSolicit", "doNotMail", "doNotEmail", "_activeColumnConflict", "_sawActiveColumn"]) {
         if (donor[k]) canon[k] = true;
       }

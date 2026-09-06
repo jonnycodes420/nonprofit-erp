@@ -4372,9 +4372,11 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(as
         // BUILD-78 — validated through the ONE seam above; raw never lands.
         d._cfValidated && Object.keys(d._cfValidated).length ? JSON.stringify(d._cfValidated) : null,
         // BUILD-80 Part 6 — the source system's donor id, TEXT, as given.
-        d.externalDonorId || null
+        d.externalDonorId || null,
+        // BUILD-80 Part 7 — organisation / anonymous, never a person surface.
+        d.kind || null
       );
-      return "(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)";
+      return "(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)";
     });
     // SAVEPOINT, not a nested transaction: we are already inside the request's
     // one transaction, so a failed batch must be rolled back to a point rather
@@ -4385,7 +4387,7 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(as
           last_gift_date,gift_count,tags,notes,city,state,assigned_to,assigned_to_name,
           pending_assignee_invite_id,pending_assignee_name,deceased,do_not_contact,
           do_not_solicit,do_not_mail,do_not_email,deceased_date,address,zip,
-          imported_sustainer,imported_sustainer_amount,imported_sustainer_last_gift,custom_fields,external_donor_id)
+          imported_sustainer,imported_sustainer_amount,imported_sustainer_last_gift,custom_fields,external_donor_id,kind)
        VALUES ${tuples.join(",")}`,
       params
     ));
@@ -8855,11 +8857,12 @@ app.get("/drift", requireAuth, wrap(async (req, res) => {
   // name what was checked and who was excluded and why, or a healthy file
   // and a silently failed import read identically. Tallied from the same
   // map every other figure reads.
-  const excludedTally = { singleGift: 0, activeRecurring: 0, deceased: 0, doNotContact: 0, doNotSolicit: 0, pledgeCadence: 0, unlinkedSustainer: 0 };
+  const excludedTally = { singleGift: 0, activeRecurring: 0, deceased: 0, doNotContact: 0, doNotSolicit: 0, pledgeCadence: 0, unlinkedSustainer: 0, organisation: 0 };
   let onPattern = 0;
   for (const a of map.values()) {
     if (a.state === "excluded") {
-      if (a.excludedReason === "deceased") excludedTally.deceased++;
+      if (a.excludedReason === "organisation") excludedTally.organisation++;
+      else if (a.excludedReason === "deceased") excludedTally.deceased++;
       else if (a.excludedReason === "do_not_contact") excludedTally.doNotContact++;
       else if (a.excludedReason === "do_not_solicit") excludedTally.doNotSolicit++;
       else if (a.excludedReason === "active_recurring") excludedTally.activeRecurring++;
@@ -8884,8 +8887,17 @@ app.get("/drift", requireAuth, wrap(async (req, res) => {
     lastGiftDate: a.lastGiftDate, assignedTo: a.assignedTo, assignedToName: a.assignedToName,
     basis: a.basis, seasonal: !!a.seasonal,
   });
+  // BUILD-80 Part 7 — "Institutional giving": organisations get their own
+  // list with grant-cycle language, never a Re-engage button.
+  const institutional = (await query(
+    `SELECT id, name, total_giving, last_gift_date, gift_count FROM donors
+      WHERE org_id = ? AND deleted_at IS NULL AND kind = 'organisation' AND COALESCE(gift_count,0) > 0
+      ORDER BY total_giving DESC NULLS LAST LIMIT 50`, [orgId]))
+    .map(r => ({ donorId: r.id, name: r.name, totalGiving: r.total_giving, lastGiftDate: r.last_gift_date, giftCount: r.gift_count }));
+
   res.json({
     today,
+    institutional,
     atRiskAmount,
     atRiskBasis: "trailing24mo",
     counts: {
@@ -14091,7 +14103,7 @@ async function computeDriftForDonors(orgId, { donorIds = null } = {}) {
   const idParams = donorIds ? [donorIds] : [];
   const [donors, giftAgg, recurringRows, pledgeRows, contactRows] = await Promise.all([
     query(`SELECT d.id, d.name, d.total_giving, d.deceased, d.do_not_contact, d.do_not_solicit,
-                  d.imported_sustainer, d.tags,
+                  d.imported_sustainer, d.tags, d.kind,
                   d.assigned_to, d.assigned_to_name, d.stripe_subscription_status,
                   d.created_at::date::text AS created_date
              FROM donors d WHERE d.org_id = ? AND d.deleted_at IS NULL${idFilter}`, [orgId, ...idParams]),
@@ -14132,7 +14144,10 @@ async function computeDriftForDonors(orgId, { donorIds = null } = {}) {
   for (const d of donors) {
     const agg0 = giftsByDonor.get(d.id);
     let excludedReason = null;
-    if (d.deceased) excludedReason = "deceased";
+    // BUILD-80 Part 7 — a grant cycle is not a giving cadence: organisations
+    // (and the anonymous holding record) are off every person surface.
+    if (d.kind === "organisation" || d.kind === "anonymous") excludedReason = "organisation";
+    else if (d.deceased) excludedReason = "deceased";
     else if (d.do_not_contact) excludedReason = "do_not_contact";
     else if (d.do_not_solicit) excludedReason = "do_not_solicit";           // BUILD-77 — an ask list may never carry a no-ask donor
     else if (onSubscription.has(d.id) || d.stripe_subscription_status === "active") excludedReason = "active_recurring";
