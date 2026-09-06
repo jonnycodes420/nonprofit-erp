@@ -1971,14 +1971,17 @@ export function buildTransactionRows(parsed, txMap, opts = {}) {
     d.tags = [...new Set([...(Array.isArray(d.tags) ? d.tags : []), `has-refused-rows:${count}`])];
   }
   // BUILD-79 Part 5 — name the nameless honestly, and flag them for review.
-  for (const d of donors) {
+  // (BUILD-80 Part 6 changed the group keys, so the first line is looked up
+  // through idxByKey — the donor's own key — not by email.)
+  const keyByIndex = new Map([...idxByKey.entries()].map(([k, di]) => [di, k]));
+  donors.forEach((d, di) => {
     if (!d.name || !String(d.name).trim()) {
-      const k = (d.email && d.email.includes("@")) ? d.email.toLowerCase() : null;
+      const k = keyByIndex.get(di);
       const ln = (k && keyFirstLine.get(k)) || "?";
       d.name = `Unnamed donor (line ${ln})`;
       d.tags = [...new Set([...(Array.isArray(d.tags) ? d.tags : []), "needs-name"])];
     }
-  }
+  });
   const exclusionConflictsPre = [];
   detectImportedSustainers(donors, gifts);
   for (const d of donors) if (d.kind) { delete d.importedSustainer; delete d.importedSustainerAmount; delete d.importedSustainerLastGift; }

@@ -6334,8 +6334,8 @@ app.post("/donors/import-semantics", requireAuth, checkWriteAccess, wrapImport(a
   const createPerson = async (name, email) => {
     const id = importId("d_");
     await run(
-      `INSERT INTO donors (id,org_id,name,email,stage,status,tags,notes) VALUES (?,?,?,?,?,?,?,?)`,
-      [id, orgId, name, (email || null), "prospect", "active", JSON.stringify([]), null]);
+      `INSERT INTO donors (id,org_id,name,email,stage,status,tags,notes,created_by,created_by_name) VALUES (?,?,?,?,?,?,?,?,?,?)`,
+      [id, orgId, name, (email || null), "prospect", "active", JSON.stringify([]), null, actor(req).id, actor(req).name]);
     counts.personsCreated++;
     return { id, name };
   };
@@ -6352,12 +6352,12 @@ app.post("/donors/import-semantics", requireAuth, checkWriteAccess, wrapImport(a
     const idem = `import:pledge:${p.externalId || `${p.donorName}:${p.amount}:${p.date || ""}`}`.slice(0, 200);
     const due = p.dueDate || p.date || (await (async () => orgToday(await orgTz(orgId)))());  // ORG_TZ_SEAM_OK
     const ins = await query(
-      `INSERT INTO pledges (id,org_id,donor_id,amount,due_date,status,notes,idempotency_key)
-       VALUES (?,?,?,?,?,?,?,?)
+      `INSERT INTO pledges (id,org_id,donor_id,amount,due_date,status,notes,idempotency_key,created_by,created_by_name)
+       VALUES (?,?,?,?,?,?,?,?,?,?)
        ON CONFLICT (org_id, idempotency_key) WHERE idempotency_key IS NOT NULL DO NOTHING
        RETURNING id`,
       [importId("pl_"), orgId, donor.id, p.amount, due, p.status === "fulfilled" ? "fulfilled" : "open",
-       (p.notes || "").slice(0, 500) || null, idem]);
+       (p.notes || "").slice(0, 500) || null, idem, actor(req).id, actor(req).name]);
     if (ins.length) {
       counts.pledges++;
       // link the payments that name this pledge in their notes
@@ -6472,8 +6472,8 @@ app.post("/import-merges/:id/undo", requireAuth, checkWriteAccess, wrap(async (r
   for (const f of targets) {
     const id = importId("d_");
     await run(
-      `INSERT INTO donors (id,org_id,name,email,stage,status,tags,notes) VALUES (?,?,?,?,?,?,?,?)`,
-      [id, orgId, f.label, null, "prospect", "active", JSON.stringify(["split-from-merge"]), null]);
+      `INSERT INTO donors (id,org_id,name,email,stage,status,tags,notes,created_by,created_by_name) VALUES (?,?,?,?,?,?,?,?,?,?)`,
+      [id, orgId, f.label, null, "prospect", "active", JSON.stringify(["split-from-merge"]), null, actor(req).id, actor(req).name]);
     const giftIds = (f.giftIds || []).filter(Boolean);
     if (giftIds.length) {
       await run(`UPDATE gifts SET donor_id=? WHERE org_id=? AND external_id = ANY(?)`, [id, orgId, giftIds]);
