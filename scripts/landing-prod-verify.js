@@ -158,6 +158,12 @@ const rgb = s => (s.match(/\d+/g) || []).slice(0, 3).map(Number);
   // photograph pass — one photograph each in card-stops (the chapel, 4:5),
   // your-data (the potter's hands, 4:3) and the close (the doorway,
   // DECORATIVE: alt="" + aria-hidden under the ink gradient, text above).
+  // the close photo is loading="lazy": bring it into the viewport and wait for
+  // the fetch before asserting — the guard tests what a reader who scrolls
+  // there actually sees, not the browser's lazy-margin heuristics (which moved
+  // when BUILD-82 shortened the section heads and turned this into a flake).
+  await page.evaluate(() => document.getElementById("closing")?.scrollIntoView({ block: "center" }));
+  await page.waitForFunction(() => { const i = document.querySelector("#closing img"); return i && i.naturalWidth > 0; }, { timeout: 15000 }).catch(() => {});
   const secImgs = await page.evaluate(() => {
     const grab = id => [...(document.getElementById(id)?.querySelectorAll("img") || [])].map(i => ({
       w: Number(i.getAttribute("width")) || 0, h: Number(i.getAttribute("height")) || 0,
