@@ -353,6 +353,39 @@ const rgb = s => (s.match(/\d+/g) || []).slice(0, 3).map(Number);
   await page.close();
 
   // ── §8 · reduced motion — field AND thread visual fully visible ────────
+  // ── §7b · BUILD-82 Part 8 — the section heads STACK, left-aligned ───────
+  console.log("\n— §7b · stacked section heads —");
+  {
+    const hp = await browser.newPage({ viewport: { width: 1440, height: 1200 } });
+    await hp.goto(BASE + "/", { waitUntil: "networkidle" });
+    await hp.waitForTimeout(800);
+    const heads = await hp.evaluate(() => {
+      const out = {};
+      for (const id of ["who-its-for", "how-it-works"]) {
+        const sec = document.getElementById(id);
+        if (!sec) { out[id] = null; continue; }
+        const h2 = sec.querySelector("h2");
+        const p = sec.querySelector(".lp-sechead-p") || (h2 && h2.parentElement.querySelector("p"));
+        if (!h2 || !p) { out[id] = { missing: true }; continue; }
+        const hb = h2.getBoundingClientRect(), pb = p.getBoundingClientRect();
+        out[id] = { hx: hb.x, px: pb.x, hBottom: hb.bottom, pTop: pb.top,
+                    hMax: parseFloat(getComputedStyle(h2).maxWidth) || null,
+                    pMax: parseFloat(getComputedStyle(p).maxWidth) || null };
+      }
+      return out;
+    });
+    for (const id of ["who-its-for", "how-it-works"]) {
+      const h = heads[id];
+      ok(`#${id}: H2 and its paragraph share the same left edge (within 1px)`,
+         h && !h.missing && Math.abs(h.hx - h.px) <= 1, h);
+      ok(`#${id}: the paragraph sits BELOW the headline, never beside it`,
+         h && !h.missing && h.pTop > h.hBottom - 1, h && { hBottom: h.hBottom, pTop: h.pTop });
+    }
+    ok("the head measures: H2 capped at 920, paragraph at 620",
+       heads["how-it-works"] && heads["how-it-works"].hMax === 920 && heads["how-it-works"].pMax === 620, heads["how-it-works"]);
+    await hp.close();
+  }
+
   console.log("\n— §8 · reduced motion —");
   const rctx = await browser.newContext({ reducedMotion: "reduce", viewport: { width: 1440, height: 1000 } });
   const rp = await rctx.newPage();

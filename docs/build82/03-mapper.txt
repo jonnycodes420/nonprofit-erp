@@ -1,0 +1,1315 @@
+Steward
+⌕
+?
+B
+B82 Walker
+Sign out
+◈
+Home
+PEOPLE
+♦
+Donors
+◫
+Pipeline
+◻
+Tasks
+FUNDRAISING
+↗
+Fundraising
+◉
+Grants
+◑
+Communications
+◫
+Donor Portal
+◧
+Workflows
+INSIGHT
+▤
+Reports
+◇
+Finance
+⚙
+Settings
+Your donors.
+Import Donors
+One file — donors and their giving history · shape auto-detected · stages auto-assigned
+✕ Close
+▤
+steward-messy-25k-v3.xlsx
+7.3 MB · 9 sheets · one import
+Replace
+Remove
+Every column, one decision.
+Standard fields · your existing custom fields · a new custom field created right here. Exclusion-shaped columns route to the safety flags and can never become custom fields.
+DONORS — ONE ROW PER PERSON
+Constituent IDe.g. “20474”
+Donor ID
+First name
+Last name
+Full name
+Middle
+Suffix
+Salutation
+Spouse
+Household ID
+Email
+Email 2
+Phone
+Mobile
+Address 1
+Address 2
+City
+State
+ZIP
+Country
+Donor type
+Board
+Status
+Notes
+Owner
+Lifetime giving
+Last gift date
+First gift date
+Gift count
+＋ New custom field…
+Don't import this column
+“Constituent ID” matches the standard Donor ID field
+Laste.g. “Wexford”
+Donor ID
+First name
+Last name
+Full name
+Middle
+Suffix
+Salutation
+Spouse
+Household ID
+Email
+Email 2
+Phone
+Mobile
+Address 1
+Address 2
+City
+State
+ZIP
+Country
+Donor type
+Board
+Status
+Notes
+Owner
+Lifetime giving
+Last gift date
+First gift date
+Gift count
+＋ New custom field…
+Don't import this column
+“Last” matches the standard Last name field
+Firste.g. “Donald”
+Donor ID
+First name
+Last name
+Full name
+Middle
+Suffix
+Salutation
+Spouse
+Household ID
+Email
+Email 2
+Phone
+Mobile
+Address 1
+Address 2
+City
+State
+ZIP
+Country
+Donor type
+Board
+Status
+Notes
+Owner
+Lifetime giving
+Last gift date
+First gift date
+Gift count
+＋ New custom field…
+Don't import this column
+“First” matches the standard First name field
+Middlee.g. “K.”
+Donor ID
+First name
+Last name
+Full name
+Middle
+Suffix
+Salutation
+Spouse
+Household ID
+Email
+Email 2
+Phone
+Mobile
+Address 1
+Address 2
+City
+State
+ZIP
+Country
+Donor type
+Board
+Status
+Notes
+Owner
+Lifetime giving
+Last gift date
+First gift date
+Gift count
+＋ New custom field…
+Don't import this column
+“Middle” matches the standard Middle field
+Suffixe.g. “Jr.”
+Donor ID
+First name
+Last name
+Full name
+Middle
+Suffix
+Salutation
+Spouse
+Household ID
+Email
+Email 2
+Phone
+Mobile
+Address 1
+Address 2
+City
+State
+ZIP
+Country
+Donor type
+Board
+Status
+Notes
+Owner
+Lifetime giving
+Last gift date
+First gift date
+Gift count
+＋ New custom field…
+Don't import this column
+“Suffix” matches the standard Suffix field
+Salutatione.g. “Mrs.”
+Donor ID
+First name
+Last name
+Full name
+Middle
+Suffix
+Salutation
+Spouse
+Household ID
+Email
+Email 2
+Phone
+Mobile
+Address 1
+Address 2
+City
+State
+ZIP
+Country
+Donor type
+Board
+Status
+Notes
+Owner
+Lifetime giving
+Last gift date
+First gift date
+Gift count
+＋ New custom field…
+Don't import this column
+“Salutation” matches the standard Salutation field
+Spousee.g. “Samuel”
+Donor ID
+First name
+Last name
+Full name
+Middle
+Suffix
+Salutation
+Spouse
+Household ID
+Email
+Email 2
+Phone
+Mobile
+Address 1
+Address 2
+City
+State
+ZIP
+Country
+Donor type
+Board
+Status
+Notes
+Owner
+Lifetime giving
+Last gift date
+First gift date
+Gift count
+＋ New custom field…
+Don't import this column
+“Spouse” matches the standard Spouse field
+Household IDe.g. “H10237”
+Donor ID
+First name
+Last name
+Full name
+Middle
+Suffix
+Salutation
+Spouse
+Household ID
+Email
+Email 2
+Phone
+Mobile
+Address 1
+Address 2
+City
+State
+ZIP
+Country
+Donor type
+Board
+Status
+Notes
+Owner
+Lifetime giving
+Last gift date
+First gift date
+Gift count
+＋ New custom field…
+Don't import this column
+“Household ID” matches the standard Household ID field
+Emaile.g. “donald.wexford30@gmail.com”
+Donor ID
+First name
+Last name
+Full name
+Middle
+Suffix
+Salutation
+Spouse
+Household ID
+Email
+Email 2
+Phone
+Mobile
+Address 1
+Address 2
+City
+State
+ZIP
+Country
+Donor type
+Board
+Status
+Notes
+Owner
+Lifetime giving
+Last gift date
+First gift date
+Gift count
+＋ New custom field…
+Don't import this column
+“Email” matches the standard Email field — 17,399 of 18,023 values contain @
+Email 2e.g. “kathryn48@gmail.com”
+Donor ID
+First name
+Last name
+Full name
+Middle
+Suffix
+Salutation
+Spouse
+Household ID
+Email
+Email 2
+Phone
+Mobile
+Address 1
+Address 2
+City
+State
+ZIP
+Country
+Donor type
+Board
+Status
+Notes
+Owner
+Lifetime giving
+Last gift date
+First gift date
+Gift count
+＋ New custom field…
+Don't import this column
+“Email 2” matches the standard Email 2 field
+Phonee.g. “5026282134”
+Donor ID
+First name
+Last name
+Full name
+Middle
+Suffix
+Salutation
+Spouse
+Household ID
+Email
+Email 2
+Phone
+Mobile
+Address 1
+Address 2
+City
+State
+ZIP
+Country
+Donor type
+Board
+Status
+Notes
+Owner
+Lifetime giving
+Last gift date
+First gift date
+Gift count
+＋ New custom field…
+Don't import this column
+“Phone” matches the standard Phone field — 22,779 of 22,779 values look like phone numbers
+Mobilee.g. “8596374607”
+Donor ID
+First name
+Last name
+Full name
+Middle
+Suffix
+Salutation
+Spouse
+Household ID
+Email
+Email 2
+Phone
+Mobile
+Address 1
+Address 2
+City
+State
+ZIP
+Country
+Donor type
+Board
+Status
+Notes
+Owner
+Lifetime giving
+Last gift date
+First gift date
+Gift count
+＋ New custom field…
+Don't import this column
+“Mobile” matches the standard Mobile field
+Address 1e.g. “513 Harrodsburg Rd”
+Donor ID
+First name
+Last name
+Full name
+Middle
+Suffix
+Salutation
+Spouse
+Household ID
+Email
+Email 2
+Phone
+Mobile
+Address 1
+Address 2
+City
+State
+ZIP
+Country
+Donor type
+Board
+Status
+Notes
+Owner
+Lifetime giving
+Last gift date
+First gift date
+Gift count
+＋ New custom field…
+Don't import this column
+“Address 1” matches the standard Address 1 field
+Address 2e.g. “Apt 4”
+Donor ID
+First name
+Last name
+Full name
+Middle
+Suffix
+Salutation
+Spouse
+Household ID
+Email
+Email 2
+Phone
+Mobile
+Address 1
+Address 2
+City
+State
+ZIP
+Country
+Donor type
+Board
+Status
+Notes
+Owner
+Lifetime giving
+Last gift date
+First gift date
+Gift count
+＋ New custom field…
+Don't import this column
+“Address 2” matches the standard Address 2 field
+Citye.g. “Cincinnati”
+Donor ID
+First name
+Last name
+Full name
+Middle
+Suffix
+Salutation
+Spouse
+Household ID
+Email
+Email 2
+Phone
+Mobile
+Address 1
+Address 2
+City
+State
+ZIP
+Country
+Donor type
+Board
+Status
+Notes
+Owner
+Lifetime giving
+Last gift date
+First gift date
+Gift count
+＋ New custom field…
+Don't import this column
+“City” matches the standard City field
+Statee.g. “OH”
+Donor ID
+First name
+Last name
+Full name
+Middle
+Suffix
+Salutation
+Spouse
+Household ID
+Email
+Email 2
+Phone
+Mobile
+Address 1
+Address 2
+City
+State
+ZIP
+Country
+Donor type
+Board
+Status
+Notes
+Owner
+Lifetime giving
+Last gift date
+First gift date
+Gift count
+＋ New custom field…
+Don't import this column
+“State” matches the standard State field
+ZIPe.g. “45202”
+Donor ID
+First name
+Last name
+Full name
+Middle
+Suffix
+Salutation
+Spouse
+Household ID
+Email
+Email 2
+Phone
+Mobile
+Address 1
+Address 2
+City
+State
+ZIP
+Country
+Donor type
+Board
+Status
+Notes
+Owner
+Lifetime giving
+Last gift date
+First gift date
+Gift count
+＋ New custom field…
+Don't import this column
+“ZIP” matches the standard ZIP field
+Countrye.g. “USA”
+Donor ID
+First name
+Last name
+Full name
+Middle
+Suffix
+Salutation
+Spouse
+Household ID
+Email
+Email 2
+Phone
+Mobile
+Address 1
+Address 2
+City
+State
+ZIP
+Country
+Donor type
+Board
+Status
+Notes
+Owner
+Lifetime giving
+Last gift date
+First gift date
+Gift count
+＋ New custom field…
+Don't import this column
+“Country” matches the standard Country field
+Donor Typee.g. “Individual”
+Donor ID
+First name
+Last name
+Full name
+Middle
+Suffix
+Salutation
+Spouse
+Household ID
+Email
+Email 2
+Phone
+Mobile
+Address 1
+Address 2
+City
+State
+ZIP
+Country
+Donor type
+Board
+Status
+Notes
+Owner
+Lifetime giving
+Last gift date
+First gift date
+Gift count
+＋ New custom field…
+Don't import this column
+“Donor Type” matches the standard Donor type field
+Board?e.g. “Y”
+Donor ID
+First name
+Last name
+Full name
+Middle
+Suffix
+Salutation
+Spouse
+Household ID
+Email
+Email 2
+Phone
+Mobile
+Address 1
+Address 2
+City
+State
+ZIP
+Country
+Donor type
+Board
+Status
+Notes
+Owner
+Lifetime giving
+Last gift date
+First gift date
+Gift count
+＋ New custom field…
+Don't import this column
+“Board?” matches the standard Board field
+Do Not Maile.g. “FALSE”
+→ safety flags (doNotMail) — locked
+Values match the exclusion family — routed to doNotMail; never a custom field.
+Do Not Solicite.g. “N”
+→ safety flags (doNotSolicit) — locked
+Values match the exclusion family — routed to doNotSolicit; never a custom field.
+Deceasede.g. “2025-04-02”
+→ safety flags (deceased) — locked
+Values match the exclusion family — routed to deceased; never a custom field.
+Statuse.g. “Active”
+→ safety flags (exclusion) — locked
+Values match the exclusion family — routed to exclusion; never a custom field.
+Lifetime Givinge.g. “900”
+Donor ID
+First name
+Last name
+Full name
+Middle
+Suffix
+Salutation
+Spouse
+Household ID
+Email
+Email 2
+Phone
+Mobile
+Address 1
+Address 2
+City
+State
+ZIP
+Country
+Donor type
+Board
+Status
+Notes
+Owner
+Lifetime giving
+Last gift date
+First gift date
+Gift count
+＋ New custom field…
+Don't import this column
+“Lifetime Giving” matches the standard Lifetime giving field — 25,004 of 25,004 values parse as amounts
+First Gifte.g. “2020-04-26”
+Donor ID
+First name
+Last name
+Full name
+Middle
+Suffix
+Salutation
+Spouse
+Household ID
+Email
+Email 2
+Phone
+Mobile
+Address 1
+Address 2
+City
+State
+ZIP
+Country
+Donor type
+Board
+Status
+Notes
+Owner
+Lifetime giving
+Last gift date
+First gift date
+Gift count
+＋ New custom field…
+Don't import this column
+“First Gift” matches the standard First gift date field
+Last Gifte.g. “2025-03-12”
+Donor ID
+First name
+Last name
+Full name
+Middle
+Suffix
+Salutation
+Spouse
+Household ID
+Email
+Email 2
+Phone
+Mobile
+Address 1
+Address 2
+City
+State
+ZIP
+Country
+Donor type
+Board
+Status
+Notes
+Owner
+Lifetime giving
+Last gift date
+First gift date
+Gift count
+＋ New custom field…
+Don't import this column
+“Last Gift” matches the standard Last gift date field — 24,692 of 24,692 values parse as dates
+Gift Counte.g. “6”
+Donor ID
+First name
+Last name
+Full name
+Middle
+Suffix
+Salutation
+Spouse
+Household ID
+Email
+Email 2
+Phone
+Mobile
+Address 1
+Address 2
+City
+State
+ZIP
+Country
+Donor type
+Board
+Status
+Notes
+Owner
+Lifetime giving
+Last gift date
+First gift date
+Gift count
+＋ New custom field…
+Don't import this column
+“Gift Count” matches the standard Gift count field — 25,300 of 25,300 values are whole numbers
+Notese.g. “Spouse handles giving”
+Donor ID
+First name
+Last name
+Full name
+Middle
+Suffix
+Salutation
+Spouse
+Household ID
+Email
+Email 2
+Phone
+Mobile
+Address 1
+Address 2
+City
+State
+ZIP
+Country
+Donor type
+Board
+Status
+Notes
+Owner
+Lifetime giving
+Last gift date
+First gift date
+Gift count
+＋ New custom field…
+Don't import this column
+“Notes” matches the standard Notes field
+Internal ScoreHIDDEN COLUMN — NOT AUTO-MAPPEDe.g. “16”
+Donor ID
+First name
+Last name
+Full name
+Middle
+Suffix
+Salutation
+Spouse
+Household ID
+Email
+Email 2
+Phone
+Mobile
+Address 1
+Address 2
+City
+State
+ZIP
+Country
+Donor type
+Board
+Status
+Notes
+Owner
+Lifetime giving
+Last gift date
+First gift date
+Gift count
+＋ New custom field…
+Don't import this column
+3,000 of the first 3,000 (of 25,300) values parse as a number.
+Column1e.g. “TRUE”
+Donor ID
+First name
+Last name
+Full name
+Middle
+Suffix
+Salutation
+Spouse
+Household ID
+Email
+Email 2
+Phone
+Mobile
+Address 1
+Address 2
+City
+State
+ZIP
+Country
+Donor type
+Board
+Status
+Notes
+Owner
+Lifetime giving
+Last gift date
+First gift date
+Gift count
+＋ New custom field…
+Don't import this column
+3,000 of the first 3,000 (of 10,859) values read as yes/no.
+Unnamed: 31e.g. “”
+Donor ID
+First name
+Last name
+Full name
+Middle
+Suffix
+Salutation
+Spouse
+Household ID
+Email
+Email 2
+Phone
+Mobile
+Address 1
+Address 2
+City
+State
+ZIP
+Country
+Donor type
+Board
+Status
+Notes
+Owner
+Lifetime giving
+Last gift date
+First gift date
+Gift count
+＋ New custom field…
+Don't import this column
+Free text.
+GIFTS 2023-2026 — ONE ROW PER GIFT
+Dates on this sheet read month/day/year (4,991 cases would be impossible day-first).
+Gift IDe.g. “G700000”
+Gift ID
+Donor ID
+Date
+Amount
+Gift type
+Fund
+Appeal
+Payment method
+Receipt
+Soft credit to
+Pledge ID
+Donor name
+Donor email
+Notes
+＋ New custom field…
+Don't import this column
+“Gift ID” matches the standard Gift ID field
+Constituent IDe.g. “006997”
+Gift ID
+Donor ID
+Date
+Amount
+Gift type
+Fund
+Appeal
+Payment method
+Receipt
+Soft credit to
+Pledge ID
+Donor name
+Donor email
+Notes
+＋ New custom field…
+Don't import this column
+“Constituent ID” matches the standard Donor ID field
+Gift Datee.g. “2023-01-01”
+Gift ID
+Donor ID
+Date
+Amount
+Gift type
+Fund
+Appeal
+Payment method
+Receipt
+Soft credit to
+Pledge ID
+Donor name
+Donor email
+Notes
+＋ New custom field…
+Don't import this column
+“Gift Date” matches the standard Date field
+Gift Amounte.g. “35”
+Gift ID
+Donor ID
+Date
+Amount
+Gift type
+Fund
+Appeal
+Payment method
+Receipt
+Soft credit to
+Pledge ID
+Donor name
+Donor email
+Notes
+＋ New custom field…
+Don't import this column
+“Gift Amount” matches the standard Amount field
+Typee.g. “Stock”
+Gift ID
+Donor ID
+Date
+Amount
+Gift type
+Fund
+Appeal
+Payment method
+Receipt
+Soft credit to
+Pledge ID
+Donor name
+Donor email
+Notes
+＋ New custom field…
+Don't import this column
+“Type” matches the standard Gift type field
+Funde.g. “Unrestricted”
+Gift ID
+Donor ID
+Date
+Amount
+Gift type
+Fund
+Appeal
+Payment method
+Receipt
+Soft credit to
+Pledge ID
+Donor name
+Donor email
+Notes
+＋ New custom field…
+Don't import this column
+“Fund” matches the standard Fund field
+Appeale.g. “Gala25”
+Gift ID
+Donor ID
+Date
+Amount
+Gift type
+Fund
+Appeal
+Payment method
+Receipt
+Soft credit to
+Pledge ID
+Donor name
+Donor email
+Notes
+＋ New custom field…
+Don't import this column
+“Appeal” matches the standard Appeal field
+Payment Methode.g. “Card”
+Gift ID
+Donor ID
+Date
+Amount
+Gift type
+Fund
+Appeal
+Payment method
+Receipt
+Soft credit to
+Pledge ID
+Donor name
+Donor email
+Notes
+＋ New custom field…
+Don't import this column
+“Payment Method” matches the standard Payment method field
+Receipt #e.g. “21261”
+Gift ID
+Donor ID
+Date
+Amount
+Gift type
+Fund
+Appeal
+Payment method
+Receipt
+Soft credit to
+Pledge ID
+Donor name
+Donor email
+Notes
+＋ New custom field…
+Don't import this column
+“Receipt #” matches the standard Receipt field
+Soft Credit IDe.g. “4112”
+Gift ID
+Donor ID
+Date
+Amount
+Gift type
+Fund
+Appeal
+Payment method
+Receipt
+Soft credit to
+Pledge ID
+Donor name
+Donor email
+Notes
+＋ New custom field…
+Don't import this column
+“Soft Credit ID” matches the standard Soft credit to field
+Notese.g. “Refund of gift”
+Gift ID
+Donor ID
+Date
+Amount
+Gift type
+Fund
+Appeal
+Payment method
+Receipt
+Soft credit to
+Pledge ID
+Donor name
+Donor email
+Notes
+＋ New custom field…
+Don't import this column
+“Notes” matches the standard Notes field
+GIFTS 2019-2022 — ONE ROW PER GIFT
+25,107 dates on this sheet use day/month/year — 14,356 would be impossible the other way (e.g. 27/12/20, 21/04/2020, 23/04/2019). Every slash date here reads day-first.
+Datee.g. “04/11/2019”
+Gift ID
+Donor ID
+Date
+Amount
+Gift type
+Fund
+Appeal
+Payment method
+Receipt
+Soft credit to
+Pledge ID
+Donor name
+Donor email
+Notes
+＋ New custom field…
+Don't import this column
+“Date” matches the standard Date field
+Amounte.g. “300”
+Gift ID
+Donor ID
+Date
+Amount
+Gift type
+Fund
+Appeal
+Payment method
+Receipt
+Soft credit to
+Pledge ID
+Donor name
+Donor email
+Notes
+＋ New custom field…
+Don't import this column
+“Amount” matches the standard Amount field
+IDe.g. “12254”
+Gift ID
+Donor ID
+Date
+Amount
+Gift type
+Fund
+Appeal
+Payment method
+Receipt
+Soft credit to
+Pledge ID
+Donor name
+Donor email
+Notes
+＋ New custom field…
+Don't import this column
+“ID” on a gift sheet is the donor key — the column that links each gift to its person
+Refe.g. “RE-827709”
+Gift ID
+Donor ID
+Date
+Amount
+Gift type
+Fund
+Appeal
+Payment method
+Receipt
+Soft credit to
+Pledge ID
+Donor name
+Donor email
+Notes
+＋ New custom field…
+Don't import this column
+“Ref” matches the standard Gift ID field
+Gift Typee.g. “Check”
+Gift ID
+Donor ID
+Date
+Amount
+Gift type
+Fund
+Appeal
+Payment method
+Receipt
+Soft credit to
+Pledge ID
+Donor name
+Donor email
+Notes
+＋ New custom field…
+Don't import this column
+“Gift Type” matches the standard Gift type field
+Designatione.g. “Food Program”
+Gift ID
+Donor ID
+Date
+Amount
+Gift type
+Fund
+Appeal
+Payment method
+Receipt
+Soft credit to
+Pledge ID
+Donor name
+Donor email
+Notes
+＋ New custom field…
+Don't import this column
+“Designation” matches the standard Fund field
+Campaigne.g. “YE25”
+Gift ID
+Donor ID
+Date
+Amount
+Gift type
+Fund
+Appeal
+Payment method
+Receipt
+Soft credit to
+Pledge ID
+Donor name
+Donor email
+Notes
+＋ New custom field…
+Don't import this column
+“Campaign” matches the standard Appeal field
+Notese.g. “Refund of gift”
+Gift ID
+Donor ID
+Date
+Amount
+Gift type
+Fund
+Appeal
+Payment method
+Receipt
+Soft credit to
+Pledge ID
+Donor name
+Donor email
+Notes
+＋ New custom field…
+Don't import this column
+“Notes” matches the standard Notes field
+Review the import →
+← Back
+Directory
+Team
+Re-engage
+Map
+✦ Call List
+Log a conversation
++ Add
+↑ Import & tools
+▾
+⊞ Filters
+No donors yet.
+Every relationship in Steward starts as one row — bring in a spreadsheet from Import above, or add a single name to begin.
+Add a donor →
+Explore with sample data

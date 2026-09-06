@@ -248,10 +248,17 @@ const STYLES = `
   .lp-sec { padding: 96px 48px; }
   .lp-sec-inner { max-width: 1440px; margin: 0 auto; }
   .lp-eyebrow { font-size: 13px; font-weight: 700; letter-spacing: 0.18em; text-transform: uppercase; }
-  .lp-sechead { display: flex; justify-content: space-between; align-items: flex-end; gap: 40px; flex-wrap: wrap; margin-bottom: 56px; }
+  /* BUILD-82 Part 8 — section heads STACK: one left-aligned column (eyebrow →
+     mark → H2 → paragraph), 18px between, 48px before the grid. Nothing
+     right-aligned, nothing vertically centred against the headline. */
+  .lp-sechead { display: flex; flex-direction: column; align-items: flex-start; gap: 18px; margin-bottom: 48px; }
+  .lp-sechead .lp-h2 { max-width: 920px; }
+  .lp-sechead .lp-sechead-p { max-width: 620px; margin: 0; }
 
   /* who it's for — the photo strip (proposal) */
-  .lp-whohead { display: grid; grid-template-columns: 1fr 1fr; gap: 48px; align-items: end; margin-bottom: 40px; }
+  .lp-whohead { display: flex; flex-direction: column; align-items: flex-start; gap: 18px; margin-bottom: 48px; }
+  .lp-whohead .lp-h2 { max-width: 920px; }
+  .lp-whohead .lp-sechead-p { max-width: 620px; margin: 0; }
   .lp-whostrip { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
   .lp-whofig { margin: 0; }
   .lp-whobox { aspect-ratio: 3 / 2; border-radius: 14px; overflow: hidden; box-shadow: 0 18px 44px rgba(15,26,18,0.14); }
@@ -301,7 +308,7 @@ const STYLES = `
     .lp-sec { padding: 64px 28px; }
     .lp-split { grid-template-columns: 1fr; gap: 44px; }
     .lp-beats { grid-template-columns: 1fr; }
-    .lp-whohead { grid-template-columns: 1fr; align-items: start; gap: 16px; }
+
     .lp-cardstops { grid-template-columns: 1fr; gap: 44px; }
     .lp-cardstops .lp-chapelbox { max-width: 420px; }
     .lp-datagrid { grid-template-columns: 1fr; gap: 44px; }
@@ -309,6 +316,7 @@ const STYLES = `
     .lp-h1 { font-size: 54px !important; }
   }
   @media (max-width: 640px) {
+    .lp-sechead, .lp-whohead { gap: 14px; margin-bottom: 36px; }
     .lp-h1 { font-size: 40px !important; }
     .lp-h2 { font-size: 33px !important; }
     .lp-close-h { font-size: 38px !important; }
@@ -390,13 +398,11 @@ export default function Landing() {
         <section id="who-its-for" className="lp-sec" style={{ background: C.cream2, paddingTop: 72, paddingBottom: 80 }}>
           <div className="lp-sec-inner">
             <div className="lp-whohead">
-              <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-                <div className="lp-eyebrow" style={{ color: C.greenDk }}>WHO IT&apos;S FOR</div>
-                <h2 className="lp-h2" style={{ fontSize: 46, lineHeight: 1.06, letterSpacing: "-0.025em" }}>
-                  For the shops where one person holds the whole donor file in her head.
-                </h2>
-              </div>
-              <p style={{ fontSize: 18, lineHeight: 1.6, color: C.ink3, maxWidth: 520, justifySelf: "end" }}>
+              <div className="lp-eyebrow" style={{ color: C.greenDk }}>WHO IT&apos;S FOR</div>
+              <h2 className="lp-h2" style={{ fontSize: 46, lineHeight: 1.06, letterSpacing: "-0.025em" }}>
+                For the shops where one person holds the whole donor file in her head.
+              </h2>
+              <p className="lp-sechead-p" style={{ fontSize: 18, lineHeight: 1.6, color: C.ink3 }}>
                 A church, a shelter, a food pantry, a school foundation. Fewer than three people ever touch the database, and one of them is the executive director.
               </p>
             </div>
@@ -448,14 +454,12 @@ export default function Landing() {
         <section id="how-it-works" className="lp-sec" style={{ background: C.cream2 }}>
           <div className="lp-sec-inner">
             <div className="lp-sechead">
-              <div style={{ display: "flex", flexDirection: "column", gap: 18, maxWidth: 760 }}>
-                <div className="lp-eyebrow" style={{ color: C.greenDk }}>HOW IT WORKS</div>
-                <div><ProductMark product="thread" on="cream" /></div>
-                <h2 className="lp-h2" style={{ fontSize: 50, lineHeight: 1.06, letterSpacing: "-0.025em" }}>
-                  Log it. The next step comes back. It stays with you.
-                </h2>
-              </div>
-              <p style={{ fontSize: 16, lineHeight: 1.6, color: C.ink3, maxWidth: 340 }}>
+              <div className="lp-eyebrow" style={{ color: C.greenDk }}>HOW IT WORKS</div>
+              <div><ProductMark product="thread" on="cream" /></div>
+              <h2 className="lp-h2" style={{ fontSize: 50, lineHeight: 1.06, letterSpacing: "-0.025em" }}>
+                Log it. The next step comes back. It stays with you.
+              </h2>
+              <p className="lp-sechead-p" style={{ fontSize: 16, lineHeight: 1.6, color: C.ink3 }}>
                 This is the Thread: a donor and an open next step. Never a task you had to remember to create.
               </p>
             </div>

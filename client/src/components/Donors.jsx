@@ -32,7 +32,8 @@ import { LogConversationModal, ThreadDismissMenu } from "./LogConversation";
 // profile button, and modal render below, and add `VoiceMemoModal` back to
 // the import above).
 import { DonorMap } from "./DonorMap";
-import { detectImportShape, groupTransactions, shapeLabel, YEAR_HDR_PAT, detectWorkbookRoles, pickMatchKey, linkGiftsToDonors, detectOwnerColumn, matchOwnersToUsers, applyOwnerAssignment, groupOwnerMatches, normalizeName, normalizeDate, normalizeMoney, normalizeEmail, detectFlagColumns, parseBoolFlag, classifyColumns, decodeSpreadsheetBytes, decodeSpreadsheetBytesDetailed, analyzeCsvText, analyzeSheetRows, assessAggregateCollapse, scanAmountShapedColumns, validateMappingChoice, columnTypeEvidence, buildGiftItemsFromLedger, buildTransactionRows, detectNoteMarkers, autoDetectTxMapping, inferDateConvention } from "../../../shared/importShape";
+import { detectImportShape, groupTransactions, shapeLabel, YEAR_HDR_PAT, detectWorkbookRoles, pickMatchKey, linkGiftsToDonors, detectOwnerColumn, matchOwnersToUsers, applyOwnerAssignment, groupOwnerMatches, normalizeName, normalizeDate, normalizeMoney, normalizeEmail, detectFlagColumns, parseBoolFlag, classifyColumns, decodeSpreadsheetBytes, decodeSpreadsheetBytesDetailed, analyzeCsvText, analyzeSheetRows, assessAggregateCollapse, scanAmountShapedColumns, validateMappingChoice, columnTypeEvidence, buildGiftItemsFromLedger, buildTransactionRows, detectNoteMarkers, autoDetectTxMapping, inferDateConvention, extractWorkbookFromSheetJS, analyzeWorkbookSheet, classifyWorkbookSheets } from "../../../shared/importShape";
+import { WorkbookImport } from "./WorkbookImport";
 
 // ── CSV Import helpers ─────────────────────────────────────────────────────
 // ── Import field registry ──────────────────────────────────────────────────
@@ -181,7 +182,7 @@ function reportFromAnalysis(a) {
 
 // ── Shared file-parsing helper ────────────────────────────────────────────
 // Replaces the identical ~45-line xlsx/CSV block duplicated in each importer.
-async function parseFileToSheets(file, { onSingle, onMulti, onError }) {
+async function parseFileToSheets(file, { onSingle, onMulti, onWorkbook, onError }) {
   const name = file.name.toLowerCase();
   if (name.endsWith(".xlsx") || name.endsWith(".xls")) {
     try {
@@ -190,29 +191,21 @@ async function parseFileToSheets(file, { onSingle, onMulti, onError }) {
       // the Donors route chunk every CRM session pays to parse.
       const XLSX = await import("xlsx");
       const buf = await file.arrayBuffer();
-      const wb = XLSX.read(new Uint8Array(buf), { type:"array" });
-      const sheetsData = wb.SheetNames.map(sn => {
-        const ws = wb.Sheets[sn];
-        if (!ws) return null;
-        const rawArr = XLSX.utils.sheet_to_json(ws, { header:1, defval:"" });
-        if (rawArr.length < 2) return { name:sn, rowCount:0, headers:[], rows:[] };
-        // BUILD-79 Part 1 — an XLSX report export carries the same chrome a
-        // CSV one does; every sheet goes through the same header-by-evidence
-        // + chrome classification layer. Sheet row index + 1 = "line".
-        const records = rawArr.map((r, i) => ({
-          cells: r.map(v => v instanceof Date ? (isNaN(v) ? "" : v.toISOString().split("T")[0]) : String(v ?? "").trim()),
-          line: i + 1,
-        }));
-        const analysis = analyzeSheetRows(records);
-        return { name:sn, rowCount:analysis.records, headers:analysis.headers, rows:analysis.rows,
-                 physical:analysis.physical, report:reportFromAnalysis(analysis) };
-      }).filter(s => s && s.rowCount > 0);
-      if (!sheetsData.length) { onError("No data rows found in this file."); return; }
-      if (sheetsData.length === 1) {
-        const s0 = sheetsData[0];
-        onSingle(s0.headers, s0.rows, s0.physical, s0.report);
-      }
-      else { sheetsData.sort((a,b) => b.rowCount - a.rowCount); onMulti(sheetsData); }
+      // BUILD-82 — A WORKBOOK IS ONE IMPORT. The file is read ONCE, typed
+      // (number formats, formulas, hidden rows/cols, fills, comments ride
+      // along), every sheet gets a role with evidence, and the whole thing
+      // goes to the workbook flow — including a single-sheet xlsx, so a
+      // legacy gift sheet with only an ID column still imports by Donor ID.
+      const wb = XLSX.read(new Uint8Array(buf), { type:"array", cellNF:true, cellFormula:true, cellStyles:true });
+      const raw = extractWorkbookFromSheetJS(wb, XLSX);
+      const sheets = raw.map(s => {
+        if (!s.records.length) return { name:s.name, headers:[], rows:[], typedRows:[], rowCount:0, chromeRows:[], chromeAbove:[], meta:s.meta, formulaCellRatio:s.formulaCellRatio };
+        const a = analyzeWorkbookSheet(s.records);
+        return { name:s.name, ...a, rowCount:a.records, meta:s.meta, formulaCellRatio:s.formulaCellRatio };
+      });
+      const roled = classifyWorkbookSheets(sheets);
+      if (!roled.some(s => s.rowCount > 0)) { onError("No data rows found in this file."); return; }
+      onWorkbook({ roled });
     } catch(ex) { onError("Could not read Excel file: " + ex.message); }
   } else {
     // BUILD-79 Part 1 — the report-export layer. Decode strictly (per-LINE
@@ -564,7 +557,8 @@ export function DonorImport({ onClose, onImported, withHistory = false }) {
   const [csvText,    setCsvText]    = useState("");
   const [srcFile,    setSrcFile]    = useState(null);       // the uploaded File (name/size for the file tile)
   const [parsed,     setParsed]     = useState(null);       // { headers:[], rows:[] }
-  const [xlsxSheets, setXlsxSheets]= useState(null);       // [{name, rowCount, headers, rows}] | null
+  const [xlsxSheets, setXlsxSheets]= useState(null);       // [{name, rowCount, headers, rows}] | null (legacy multi-sheet path — CSV only now)
+  const [workbook,   setWorkbook]   = useState(null);       // BUILD-82 — the one-import workbook flow ({roled})
   const [mapping,    setMapping]    = useState({});         // aggregate + wide donor-field mapping
   const [txMap,      setTxMap]      = useState({ donorName:"",donorEmail:"",amount:"",date:"",type:"",campaign:"",notes:"",phone:"",city:"",state:"",owner:"",externalId:"" });
   const [yearCols,   setYearCols]   = useState([]);         // wide year columns
@@ -689,7 +683,7 @@ export function DonorImport({ onClose, onImported, withHistory = false }) {
   const handleFile = async (e) => {
     const file = e.target.files?.[0]; if (!file) return;
     setErr("");
-    await parseFileToSheets(file, { onSingle:applyParsed, onMulti:s=>setXlsxSheets(s), onError:msg=>setErr(msg) });
+    await parseFileToSheets(file, { onSingle:applyParsed, onMulti:s=>setXlsxSheets(s), onWorkbook:w=>{ setWorkbook(w); setParsed(null); setXlsxSheets(null); }, onError:msg=>setErr(msg) });
   };
 
   // ── Paste flow ──
@@ -1764,7 +1758,7 @@ export function DonorImport({ onClose, onImported, withHistory = false }) {
 
         {/* The uploaded file as a tile — name, size, detected shape/row count.
             Still a drop target: dropping a new file re-parses. */}
-        {srcFile && (parsed || xlsxSheets || bothMode) && (
+        {srcFile && (parsed || xlsxSheets || bothMode || workbook) && (
           <div style={{marginBottom:16}}>
             <Uploader accept={[".csv",".tsv",".xlsx",".xls"]} acceptLabel=".csv, .tsv, .xlsx, .xls" compact readAs="none"
               label="Replace file"
@@ -1772,15 +1766,23 @@ export function DonorImport({ onClose, onImported, withHistory = false }) {
                 name: srcFile.name, size: srcFile.size,
                 detail: parsed ? `${parsed.rows.length.toLocaleString()} rows · ${shapeLabel(effectiveShape)}`
                   : bothMode ? "donors + gift history workbook"
-                  : `${xlsxSheets.length} sheets`,
+                  : workbook ? `${workbook.roled.length} sheets · one import`
+                  : `${(xlsxSheets || []).length} sheets`,
               } : null}
               onFile={({file})=>{setSrcFile(file);handleFile({target:{files:[file]}});}}
-              onRemove={()=>{setSrcFile(null);setParsed(null);setXlsxSheets(null);setBothMode(null);setErr("");}}/>
+              onRemove={()=>{setSrcFile(null);setParsed(null);setXlsxSheets(null);setBothMode(null);setWorkbook(null);setErr("");}}/>
           </div>
         )}
 
+        {/* ── BUILD-82: a workbook is ONE import (all xlsx land here) ── */}
+        {workbook && (
+          <WorkbookImport workbook={workbook} fileName={srcFile?.name}
+            onClose={()=>{setWorkbook(null);setSrcFile(null);setErr("");}}
+            onImported={onImported} />
+        )}
+
         {/* ── Step 1a: Upload / Paste ── */}
-        {!parsed && !xlsxSheets && (<>
+        {!parsed && !xlsxSheets && !workbook && (<>
           <div style={{marginBottom:14}}>
             <div style={{fontSize:11,fontWeight:700,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:6}}>Upload file</div>
             <Uploader accept={[".csv",".tsv",".xlsx",".xls"]} acceptLabel=".csv, .tsv, .xlsx, .xls" compact readAs="none"
@@ -2378,6 +2380,7 @@ function GiftHistoryImport({ donors, onClose, onImported }) {
   const [csvText, setCsvText]       = useState("");
   const [srcFile, setSrcFile]       = useState(null); // the uploaded File (name/size for the file tile)
   const [xlsxSheets, setXlsxSheets] = useState(null);
+  const [workbook, setWorkbook]     = useState(null); // BUILD-82 — xlsx goes through the workbook flow (gift-alone links by Donor ID)
   const [parsed, setParsed]         = useState(null);
   const [err, setErr]               = useState("");
 
@@ -2408,7 +2411,7 @@ function GiftHistoryImport({ donors, onClose, onImported }) {
   const handleFile = async (e) => {
     const file = e.target.files?.[0]; if (!file) return;
     setErr("");
-    await parseFileToSheets(file, { onSingle:applyParsed, onMulti:s=>setXlsxSheets(s), onError:msg=>setErr(msg) });
+    await parseFileToSheets(file, { onSingle:applyParsed, onMulti:s=>setXlsxSheets(s), onWorkbook:w=>{ setWorkbook(w); setParsed(null); setXlsxSheets(null); }, onError:msg=>setErr(msg) });
   };
 
   const doPaste = () => {
@@ -2606,22 +2609,31 @@ function GiftHistoryImport({ donors, onClose, onImported }) {
         </div>
 
         {/* The uploaded file as a tile — still a drop target for a replacement */}
-        {srcFile && (parsed || xlsxSheets) && (
+        {srcFile && (parsed || xlsxSheets || workbook) && (
           <div style={{marginBottom:16}}>
             <Uploader accept={[".csv",".tsv",".xlsx",".xls"]} acceptLabel=".csv, .tsv, .xlsx, .xls" compact readAs="none"
               label="Replace file"
               fileMeta={srcFile ? {
                 name: srcFile.name, size: srcFile.size,
                 detail: parsed ? `${parsed.rows.length.toLocaleString()} rows · ${effectiveFormat === "wide" ? "wide year columns" : "transaction ledger"}`
-                  : `${xlsxSheets.length} sheets`,
+                  : workbook ? `${workbook.roled.length} sheets · one import`
+                  : `${(xlsxSheets || []).length} sheets`,
               } : null}
               onFile={({file})=>{setSrcFile(file);handleFile({target:{files:[file]}});}}
-              onRemove={()=>{setSrcFile(null);setParsed(null);setXlsxSheets(null);setStep("upload");setErr("");}}/>
+              onRemove={()=>{setSrcFile(null);setParsed(null);setXlsxSheets(null);setWorkbook(null);setStep("upload");setErr("");}}/>
           </div>
         )}
 
+        {/* BUILD-82: xlsx routes through the workbook flow — a gift sheet with
+            only an ID column links to existing donors by Donor ID */}
+        {workbook && (
+          <WorkbookImport workbook={workbook} fileName={srcFile?.name}
+            onClose={()=>{setWorkbook(null);setSrcFile(null);setErr("");}}
+            onImported={onImported} />
+        )}
+
         {/* Upload */}
-        {step === "upload" && !xlsxSheets && (<>
+        {step === "upload" && !xlsxSheets && !workbook && (<>
           <div style={{marginBottom:14}}>
             <div style={{fontSize:11,fontWeight:700,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:6}}>Upload file</div>
             <Uploader accept={[".csv",".tsv",".xlsx",".xls"]} acceptLabel=".csv, .tsv, .xlsx, .xls" compact readAs="none"

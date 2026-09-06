@@ -3334,7 +3334,38 @@ export function buildWorkbookSubmission(roled = [], opts = {}) {
     }
   }
 
-  const linked = linkWorkbookGifts(dedup.donors, builds.flatMap(b => b.items));
+  // F-4 (BUILD-80) at workbook scale: a repeated source Gift ID inside the
+  // file is the SAME gift listed twice — imported once, the repeat counted
+  // and itemised (the server's external-id unique would collapse it anyway;
+  // the pre-write summary must say so first, not discover it after).
+  const seenGiftIds = new Set();
+  for (const b of builds) {
+    const kept = [];
+    for (const it of b.items) {
+      const xid = it.gift.externalId;
+      if (xid && seenGiftIds.has(xid)) {
+        b.refusals.push({ sheet: b.name, line: it.line, reason: "gift_id_repeated_in_file", detail: `gift id ${xid} already appears earlier in this workbook — the same gift listed twice, imported once`, dollars: it.gift.amount });
+        continue;
+      }
+      if (xid) seenGiftIds.add(xid);
+      kept.push(it);
+    }
+    if (kept.length !== b.items.length) {
+      b.items = kept;
+      b.report.builtGifts = kept.length;
+      b.report.refused = b.refusals.length;
+      b.report.dollarsIn = Math.round(kept.reduce((s2, it) => s2 + it.gift.amount, 0) * 100) / 100;
+    }
+  }
+
+  // Part 2.5 — no donors sheet in the workbook: the gifts link to the org's
+  // EXISTING records server-side (Donor ID → email → name). The flat items
+  // are preserved for that path instead of being refused against zero donors.
+  const giftAlone = !donorsSheet && builds.length > 0;
+  const linked = giftAlone
+    ? { donors: [], gifts: [], refusedOrphans: [], matchedById: 0, matchedByEmail: 0, matchedByName: 0, newDonors: 0, skippedNoGift: 0 }
+    : linkWorkbookGifts(dedup.donors, builds.flatMap(b => b.items));
+  const giftAloneItems = giftAlone ? builds.flatMap(b => b.items) : null;
 
   // recurring → sustainer states (claims applied to the SURVIVING records)
   let recurring = { claims: [], recovery: [], stale: [] };
@@ -3426,6 +3457,7 @@ export function buildWorkbookSubmission(roled = [], opts = {}) {
   return {
     donors: linked.donors,
     gifts: linked.gifts,
+    giftAloneItems,
     merges: dedup.review,
     foldedRows: dedup.foldedRows,
     pledges,

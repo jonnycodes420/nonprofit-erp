@@ -302,7 +302,9 @@ export function proposeCustomField(header, values = [], opts = {}) {
   const nonblank = nonblankRaw.slice(0, 3000);
   const label = String(header || "").trim().slice(0, CF_LIMITS.LABEL_MAX) || "Imported field";
   const n = nonblank.length;
-  const ev = extra => ({ nonblank: n, sample: nonblank.slice(0, 3), ...extra });
+  // BUILD-82 Part 4.4 — the evidence SAYS its sample: totalNonblank rides so
+  // "3,000 of 3,000 parse" on a 36,050-row column reads "of the first 3,000".
+  const ev = extra => ({ nonblank: n, totalNonblank: nonblankRaw.length, sample: nonblank.slice(0, 3), ...extra });
   if (!n) return { label, type: "text", evidence: ev({ parsed: 0, failed: 0 }) };
 
   // checkbox: virtually every value in the explicit sets
@@ -343,10 +345,13 @@ export function proposeCustomField(header, values = [], opts = {}) {
 // guess so every consumer says the same thing.
 export function proposalEvidenceText(type, evidence) {
   const n = evidence.nonblank || 0;
+  const total = evidence.totalNonblank || n;
+  // Part 4.4 — a capped scan must say so: "of the first 3,000" on a 36,050-row column.
+  const ofN = total > n ? `of the first ${n.toLocaleString()} (of ${total.toLocaleString()})` : `of ${n.toLocaleString()}`;
   const word = { checkbox: "read as yes/no", date: "parse as a date", money: "parse as an amount", number: "parse as a number" }[type];
   if (word) {
     const failed = evidence.failed || 0;
-    return `${(evidence.parsed || 0).toLocaleString()} of ${n.toLocaleString()} values ${word}.` + (failed ? ` ${failed.toLocaleString()} do not.` : "");
+    return `${(evidence.parsed || 0).toLocaleString()} ${ofN} values ${word}.` + (failed ? ` ${failed.toLocaleString()} do not.` : "");
   }
   if (type === "select") return `${n.toLocaleString()} values, only ${evidence.distinct} distinct — looks like a fixed set of choices.`;
   if (type === "long_text") return `Long free-text values — stored up to ${CF_LIMITS.LONG_TEXT_MAX.toLocaleString()} characters.`;

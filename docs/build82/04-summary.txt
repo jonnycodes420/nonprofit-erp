@@ -1,0 +1,362 @@
+Steward
+⌕
+?
+B
+B82 Walker
+Sign out
+◈
+Home
+PEOPLE
+♦
+Donors
+◫
+Pipeline
+◻
+Tasks
+FUNDRAISING
+↗
+Fundraising
+◉
+Grants
+◑
+Communications
+◫
+Donor Portal
+◧
+Workflows
+INSIGHT
+▤
+Reports
+◇
+Finance
+⚙
+Settings
+Your donors.
+Import Donors
+One file — donors and their giving history · shape auto-detected · stages auto-assigned
+✕ Close
+▤
+steward-messy-25k-v3.xlsx
+7.3 MB · 9 sheets · one import
+Replace
+Remove
+One import, fully accounted — before anything is written.
+25,034 donors (after 266 duplicate rows fold) · 88,967 gifts, $50,979,808.17 · 60 pledges as commitments ($1,881,000.00, $0 in cash) · 100 failed sustainers to the recovery list · 60 stale “Active” flags
+800 people carry an exclusion (deceased / do-not-contact family) and stay off every ask surface — including 40 hidden rows, 100 highlighted, 40 from comments.
+EVERY ROW, ONE DISPOSITION — PER SHEET AND FOR THE WORKBOOK
+Gifts 2023-2026
+56,177 rows = 54,871 imported + 1,130 refused + 176 routed ✓
+Gifts 2019-2022
+36,050 rows = 34,096 imported + 917 refused + 1,037 routed ✓
+Workbook
+92,227 = 88,967 + 2,047 + 1,213 ✓ balanced
+SET ASIDE, BY REASON — EVERY ROW HAS ITS SHEET, ROW NUMBER AND REASON
+formula without a computed value (shown with its formula — never imported as $0) — 843
+Download
+the same gift id listed twice in the file — imported once — 721 ($369,944.70)
+Download
+no donor match — the ID matches nothing on any sheet — 483 ($251,422.90)
+Download
+percent-format amounts, read as dollars and flagged (e.g. “stored as 10000%, read as $10000”) — 559
+Download
+Routed to their own surfaces (never dropped): 1,016 refunds/negatives · 197 in-kind ·
+THE FILE'S OWN TOTALS, RECONCILED
+Gifts 2023-2026 row 56,183 says $32,523,933.89; the readable cells hold $32,190,361.29 — the $333,572.60 difference is 843 refused rows + $165,280.04 routed + amounts the sheet itself no longer carries (its cached total is stale).
+Gifts 2019-2022 row 36,053 says $19,852,987.83; the readable cells hold $19,040,869.78 — the $812,118.05 difference is 721 refused rows + $594,868.02 routed + amounts the sheet itself no longer carries (its cached total is stale).
+LARGEST GIFTS ABOUT TO LAND
+Yarborough Church
+$25,000.00 · 2023-01-01
+Gomez Hardware
+$25,000.00 · 2023-01-02
+Ellingsworth Charitable Fund
+$25,000.00 · 2023-01-05
+Ledbetter Ministries
+$25,000.00 · 2023-01-06
+Butler Industries
+$25,000.00 · 2023-01-06
+DUPLICATE PEOPLE FOLDED — REVIEW LIST (266, UNDO AFTER IMPORT)
+Megan Collins (id 76023) folds into Megan Collins — same email megan.collins70@icloud.com; gifts posted to either id land on the surviving record.
+Philip Fairbairn (id 76296) folds into Philip Fairbairn — same phone …8294 and a compatible name; gifts posted to either id land on the surviving record.
+Gary GRAY (id 76210) folds into Gary Gray — same phone …6638 and a compatible name; gifts posted to either id land on the surviving record.
+Jose Kirkpatrick (id 001399) folds into Jose Kirkpatrick — same phone …7081 and a compatible name; gifts posted to either id land on the surviving record.
+Katherine Rogers (id 76228) folds into Katherine Rogers — same phone …2603 and a compatible name; gifts posted to either id land on the surviving record.
+Larry Stewart (id 76246) folds into Larry Stewart — same phone …9763 and a compatible name; gifts posted to either id land on the surviving record.
+Lily Myers (id 18371) folds into Lily Myers — same phone …6534 and a compatible name; gifts posted to either id land on the surviving record.
+Olivia ULMER (id 76086) folds into Olivia Ulmer — same phone …1666 and a compatible name; gifts posted to either id land on the surviving record.
+grace Roberts (id 019781) folds into Grace Roberts — same phone …9263 and a compatible name; gifts posted to either id land on the surviving record.
+Austin Delacroix (id 14970) folds into Austin Delacroix — same phone …7411 and a compatible name; gifts posted to either id land on the surviving record.
+Judy Vasquez (id 76115) folds into Judy Vasquez — same phone …3970 and a compatible name; gifts posted to either id land on the surviving record.
+Paul Cooper (id 76247) folds into Paul Cooper — same email paul.cooper85@yahoo.com; gifts posted to either id land on the surviving record.
+Eugene Adams (id 25086) folds into Eugene Adams — same phone …9230 and a compatible name; gifts posted to either id land on the surviving record.
+Amanda LEDBETTER (id 76202) folds into Amanda LEDBETTER — same email amanda.ledbetter95@yahoo.com; gifts posted to either id land on the surviving record.
+Virginia Hill (id 76135) folds into Virginia Hill — same phone …7228 and a compatible name; gifts posted to either id land on the surviving record.
+Brandon Fisher (id 3889) folds into Brandon Fisher — same email brandon.fisher31@gmail.com; gifts posted to either id land on the surviving record.
+Evelyn Kingsley (id 76187) folds into Evelyn Kingsley — same email evelyn.kingsley52@twc.com; gifts posted to either id land on the surviving record.
+Emily Delacroix (id 76234) folds into Emily Delacroix — same phone …4957 and a compatible name; gifts posted to either id land on the surviving record.
+Karen Ibáñez (id 14151) folds into Karen Ibáñez — same phone …1713 and a compatible name; gifts posted to either id land on the surviving record.
+Judith Fontaine (id 76299) folds into Judith Fontaine — same phone …4517 and a compatible name; gifts posted to either id land on the surviving record.
+Ann Hutchinson (id 4171) folds into Ann Hutchinson — same phone …3603 and a compatible name; gifts posted to either id land on the surviving record.
+Isla Green (id 76120) folds into Isla Green — same phone …5196 and a compatible name; gifts posted to either id land on the surviving record.
+Jonathan Ward (id 76074) folds into Jonathan Ward — same email jonathan.ward42@yahoo.com; gifts posted to either id land on the surviving record.
+Richard Nakamura (id 22792) folds into Richard Nakamura — same phone …3514 and a compatible name; gifts posted to either id land on the surviving record.
+Alexander Perry (id 76277) folds into Alexander Perry — same phone …8471 and a compatible name; gifts posted to either id land on the surviving record.
+Vincent Yeardley (id 76009) folds into Vincent Yeardley — same phone …9683 and a compatible name; gifts posted to either id land on the surviving record.
+Ravi Haddad (id 76162) folds into Ravi Haddad — same phone …9186 and a compatible name; gifts posted to either id land on the surviving record.
+Judith Diaz (id 76140) folds into Judith Diaz — same phone …4272 and a compatible name; gifts posted to either id land on the surviving record.
+Nicholas Flores (id 76248) folds into Nicholas Flores — same phone …4299 and a compatible name; gifts posted to either id land on the surviving record.
+philip Ferreira (id 5190) folds into philip Ferreira — same email philip.ferreira27@aol.com; gifts posted to either id land on the surviving record.
+Peter Pickering (id 20650.0) folds into Peter Pickering — same email peter.pickering33@yahoo.com; gifts posted to either id land on the surviving record.
+jack WILLIAMS (id 21082) folds into Jack Williams — same phone …2005 and a compatible name; gifts posted to either id land on the surviving record.
+Timothy Nwachukwu (id 16266) folds into Timothy NWACHUKWU — same phone …5709 and a compatible name; gifts posted to either id land on the surviving record.
+Virginia Çelik (id 76270) folds into Virginia Çelik — same phone …9807 and a compatible name; gifts posted to either id land on the surviving record.
+nancy Tillotson (id 76026) folds into Nancy Tillotson — same phone …7291 and a compatible name; gifts posted to either id land on the surviving record.
+Ashley Isley (id 76292) folds into Ashley Isley — same phone …5600 and a compatible name; gifts posted to either id land on the surviving record.
+Peter HOLLINGSWORTH (id 76175) folds into Peter Hollingsworth — same email peter.hollingsworth89@outlook.com; gifts posted to either id land on the surviving record.
+Evelyn Sedgwick (id 76159) folds into evelyn Sedgwick — same email evelyn.sedgwick3@hotmail.com; gifts posted to either id land on the surviving record.
+Alexander Ortiz (id 1671) folds into Alexander Ortiz — same phone …3448 and a compatible name; gifts posted to either id land on the surviving record.
+Kenneth Taylor (id 76207) folds into Kenneth Taylor — same email kenneth.taylor71@yahoo.com; gifts posted to either id land on the surviving record.
+logan Cruz (id 76075) folds into Logan Cruz — same phone …5047 and a compatible name; gifts posted to either id land on the surviving record.
+arthur Vandyke (id 76201) folds into Arthur Vandyke — same email arthur.vandyke92@twc.com; gifts posted to either id land on the surviving record.
+Sophia Prieto (id 2300) folds into Sophia PRIETO — same phone …9529 and a compatible name; gifts posted to either id land on the surviving record.
+Jesse Featherstone (id 76095) folds into Jesse Featherstone — same phone …4379 and a compatible name; gifts posted to either id land on the surviving record.
+Matthew Wood (id 76224) folds into Matthew Wood — same phone …1915 and a compatible name; gifts posted to either id land on the surviving record.
+Henry Kelly (id 16348) folds into henry Kelly — same phone …7017 and a compatible name; gifts posted to either id land on the surviving record.
+Shirley Kane (id 76005) folds into Shirley Kane — same email shirley.kane23@yahoo.com; gifts posted to either id land on the surviving record.
+Russell Long (id 76254) folds into Russell Long — same email russell.long29@icloud.com; gifts posted to either id land on the surviving record.
+Joan Wright (id 76258) folds into Joan Wright — same phone …9659 and a compatible name; gifts posted to either id land on the surviving record.
+Margaret Villalobos (id 15463) folds into Margaret Villalobos — same phone …9570 and a compatible name; gifts posted to either id land on the surviving record.
+Natalie Cooper (id 20865) folds into natalie Cooper — same phone …7139 and a compatible name; gifts posted to either id land on the surviving record.
+Benjamin Adams (id 16443) folds into Benjamin Adams — same email benjamin.adams15@yahoo.com; gifts posted to either id land on the surviving record.
+Stephanie Stewart (id 76136) folds into Stephanie Stewart — same phone …9499 and a compatible name; gifts posted to either id land on the surviving record.
+Stephanie Yeardley (id 76163) folds into Stephanie YEARDLEY — same email stephanie.yeardley47@yahoo.com; gifts posted to either id land on the surviving record.
+Logan Ramirez (id 76124) folds into Logan Ramirez — same email logan.ramirez87@icloud.com; gifts posted to either id land on the surviving record.
+Diana Jessup (id 24425) folds into Diana Jessup — same phone …3740 and a compatible name; gifts posted to either id land on the surviving record.
+Alexander Fisher (id 17804) folds into Alexander Fisher — same email alexander.fisher49@icloud.com; gifts posted to either id land on the surviving record.
+Sarah KIRTLAND (id 17951) folds into Sarah Kirtland — same phone …3796 and a compatible name; gifts posted to either id land on the surviving record.
+Carolyn Morales (id 18023) folds into Carolyn Morales — same phone …9364 and a compatible name; gifts posted to either id land on the surviving record.
+Amy Gomez (id 76070) folds into Amy Gomez — same email amy.gomez61@aol.com; gifts posted to either id land on the surviving record.
+Billy Okafor (id 15165) folds into Billy OKAFOR — same phone …3609 and a compatible name; gifts posted to either id land on the surviving record.
+Ravi Søndergaard (id 2565) folds into Ravi Søndergaard — same email ravi.sndergaard79@icloud.com; gifts posted to either id land on the surviving record.
+Gerald Bancroft (id 18831) folds into Gerald Bancroft — same email gerald.bancroft5@hotmail.com; gifts posted to either id land on the surviving record.
+Dorothy Cox (id 2404) folds into Dorothy Cox — same phone …9146 and a compatible name; gifts posted to either id land on the surviving record.
+Sophia Çelik (id 17156.0) folds into Sophia ÇELIK — same email sophia.elik3@hotmail.com; gifts posted to either id land on the surviving record.
+Patrick HAVISHAM (id 076065) folds into Patrick Havisham — same phone …4082 and a compatible name; gifts posted to either id land on the surviving record.
+Kenneth Voss (id 15847) folds into Kenneth Voss — same phone …8896 and a compatible name; gifts posted to either id land on the surviving record.
+Ruth Kirtland (id 22026) folds into Ruth Kirtland — same phone …6669 and a compatible name; gifts posted to either id land on the surviving record.
+Jacob Wainwright (id 16935) folds into Jacob Wainwright — same phone …2871 and a compatible name; gifts posted to either id land on the surviving record.
+John Green (id 15249) folds into John Green — same phone …7103 and a compatible name; gifts posted to either id land on the surviving record.
+Sarah LEDBETTER (id 76123) folds into Sarah Ledbetter — same phone …5914 and a compatible name; gifts posted to either id land on the surviving record.
+Brandon Nightingale (id 76196) folds into Brandon Nightingale — same phone …8049 and a compatible name; gifts posted to either id land on the surviving record.
+Helen Brooks (id 076295) folds into Helen Brooks — same email helen.brooks34@yahoo.com; gifts posted to either id land on the surviving record.
+Rebecca Fontaine (id 76092) folds into Rebecca Fontaine — same phone …9060 and a compatible name; gifts posted to either id land on the surviving record.
+Amara Mordecai (id 15914) folds into Amara Mordecai — same phone …6222 and a compatible name; gifts posted to either id land on the surviving record.
+Rebecca Long (id 23372) folds into Rebecca Long — same phone …9756 and a compatible name; gifts posted to either id land on the surviving record.
+Adam Havisham (id 76103) folds into Adam HAVISHAM — same phone …1450 and a compatible name; gifts posted to either id land on the surviving record.
+Henry Prieto (id 16953) folds into Henry Prieto — same email henry.prieto78@twc.com; gifts posted to either id land on the surviving record.
+Fatima Nguyễn (id 076172) folds into Fatima Nguyễn — same phone …9920 and a compatible name; gifts posted to either id land on the surviving record.
+Megan Søndergaard (id 18013) folds into Megan Søndergaard — same email megan.sndergaard45@icloud.com; gifts posted to either id land on the surviving record.
+Jerry VANDYKE (id 76273) folds into Jerry Vandyke — same phone …5273 and a compatible name; gifts posted to either id land on the surviving record.
+Raymond Anderson (id 2084) folds into Raymond ANDERSON — same phone …5334 and a compatible name; gifts posted to either id land on the surviving record.
+Denise FEATHERSTONE (id 24428) folds into Denise FEATHERSTONE — same phone …4377 and a compatible name; gifts posted to either id land on the surviving record.
+Chloe Bancroft (id 76118) folds into Chloe Bancroft — same phone …4676 and a compatible name; gifts posted to either id land on the surviving record.
+Vincent Jessup (id 20092) folds into Vincent Jessup — same email vincent.jessup2@gmail.com; gifts posted to either id land on the surviving record.
+melissa Powell (id 15185) folds into Melissa Powell — same phone …9971 and a compatible name; gifts posted to either id land on the surviving record.
+Philip Foster (id 076043) folds into Philip Foster — same phone …5216 and a compatible name; gifts posted to either id land on the surviving record.
+Donna Quimby (id 24641) folds into Donna Quimby — same phone …3206 and a compatible name; gifts posted to either id land on the surviving record.
+Nicole Ulverston (id 76084) folds into Nicole Ulverston — same phone …6943 and a compatible name; gifts posted to either id land on the surviving record.
+Danielle Ibáñez (id 4517) folds into danielle Ibáñez — same email danielle.ibez81@outlook.com; gifts posted to either id land on the surviving record.
+Bryan Villalobos (id 17270) folds into Bryan Villalobos — same phone …4156 and a compatible name; gifts posted to either id land on the surviving record.
+Kathleen Sedgwick (id 18715) folds into Kathleen Sedgwick — same phone …7530 and a compatible name; gifts posted to either id land on the surviving record.
+Keith JENKINS (id 15112) folds into Keith Jenkins — same phone …3141 and a compatible name; gifts posted to either id land on the surviving record.
+douglas Baker (id 76219) folds into douglas Baker — same phone …6570 and a compatible name; gifts posted to either id land on the surviving record.
+Eric Powell (id 25406) folds into Eric Powell — same email eric.powell65@icloud.com; gifts posted to either id land on the surviving record.
+Hazel Vanterpool (id 16140) folds into Hazel Vanterpool — same phone …2880 and a compatible name; gifts posted to either id land on the surviving record.
+Amber ALLEN (id 76129) folds into Amber Allen — same phone …5735 and a compatible name; gifts posted to either id land on the surviving record.
+Samantha Cruz (id 5258) folds into Samantha Cruz — same email samantha.cruz66@outlook.com; gifts posted to either id land on the surviving record.
+Leila Cox (id 76021) folds into Leila Cox — same phone …7334 and a compatible name; gifts posted to either id land on the surviving record.
+eugene Sandoval (id 2157) folds into Eugene Sandoval — same phone …3403 and a compatible name; gifts posted to either id land on the surviving record.
+Vincent Wood (id 22199) folds into vincent Wood — same email vincent.wood69@hotmail.com; gifts posted to either id land on the surviving record.
+Levi Miller (id 17424) folds into Levi Miller — same email levi.miller67@yahoo.com; gifts posted to either id land on the surviving record.
+katherine Fontaine (id 76090) folds into Katherine Fontaine — same email katherine.fontaine81@icloud.com; gifts posted to either id land on the surviving record.
+Paul Hall (id 3110) folds into paul Hall — same email paul.hall86@hotmail.com; gifts posted to either id land on the surviving record.
+Logan Yarborough (id 22050) folds into Logan Yarborough — same email logan.yarborough84@hotmail.com; gifts posted to either id land on the surviving record.
+Bradley Ross (id 76249) folds into Bradley Ross — same phone …4917 and a compatible name; gifts posted to either id land on the surviving record.
+Mateo Barrowman (id 076134) folds into mateo BARROWMAN — same email mateo.barrowman46@yahoo.com; gifts posted to either id land on the surviving record.
+George Brantley (id 14890) folds into George Brantley — same phone …6934 and a compatible name; gifts posted to either id land on the surviving record.
+Theresa Singh (id 76225) folds into Theresa Singh — same email theresa.singh4@yahoo.com; gifts posted to either id land on the surviving record.
+Sara Kirtland (id 76242) folds into Sara Kirtland — same email sara.kirtland87@yahoo.com; gifts posted to either id land on the surviving record.
+Carolyn Gallagher (id 004771) folds into Carolyn Gallagher — same phone …4796 and a compatible name; gifts posted to either id land on the surviving record.
+Eric ROSS (id 17888) folds into Eric Ross — same email eric.ross62@gmail.com; gifts posted to either id land on the surviving record.
+donald Gallagher (id 76003) folds into Donald Gallagher — same email donald.gallagher72@aol.com; gifts posted to either id land on the surviving record.
+Helen Quarles (id 24148) folds into Helen Quarles — same phone …1597 and a compatible name; gifts posted to either id land on the surviving record.
+Christina Singh (id 24130) folds into christina Singh — same phone …2525 and a compatible name; gifts posted to either id land on the surviving record.
+Leila Quarles (id 76152) folds into leila Quarles — same email leila.quarles69@outlook.com; gifts posted to either id land on the surviving record.
+Nicholas James (id 25580) folds into Nicholas James — same phone …9041 and a compatible name; gifts posted to either id land on the surviving record.
+Christina Gray (id 2903) folds into Christina Gray — same phone …8814 and a compatible name; gifts posted to either id land on the surviving record.
+Levi Sowande (id 4900) folds into Levi Sowande — same phone …5779 and a compatible name; gifts posted to either id land on the surviving record.
+Johnny Fennimore (id 19474) folds into Johnny Fennimore — same phone …5843 and a compatible name; gifts posted to either id land on the surviving record.
+lawrence Rivera (id 76233) folds into Lawrence Rivera — same email lawrence.rivera58@yahoo.com; gifts posted to either id land on the surviving record.
+Elijah Davis (id 76067) folds into Elijah DAVIS — same phone …4872 and a compatible name; gifts posted to either id land on the surviving record.
+Ashley Lewis (id 76050) folds into Ashley Lewis — same phone …5414 and a compatible name; gifts posted to either id land on the surviving record.
+Abigail Yancey (id 76082) folds into Abigail Yancey — same phone …7515 and a compatible name; gifts posted to either id land on the surviving record.
+Hannah Walker (id 076038) folds into Hannah Walker — same email hannah.walker28@twc.com; gifts posted to either id land on the surviving record.
+Alan Nightingale (id 21716) folds into Alan Nightingale — same phone …7005 and a compatible name; gifts posted to either id land on the surviving record.
+Ryan Vandermeer (id 17203) folds into Ryan Vandermeer — same email ryan.vandermeer95@gmail.com; gifts posted to either id land on the surviving record.
+Virginia SANDOVAL (id 19300) folds into Virginia Sandoval — same email virginia.sandoval58@gmail.com; gifts posted to either id land on the surviving record.
+Doris Abernathy (id 19026) folds into Doris Abernathy — same phone …9134 and a compatible name; gifts posted to either id land on the surviving record.
+doris Pemberton (id 022747) folds into Doris Pemberton — same email doris.pemberton76@yahoo.com; gifts posted to either id land on the surviving record.
+Liam Diaz (id 076280) folds into Liam DIAZ — same phone …3677 and a compatible name; gifts posted to either id land on the surviving record.
+Patrick Halvorsen (id 20160) folds into Patrick Halvorsen — same email patrick.halvorsen4@outlook.com; gifts posted to either id land on the surviving record.
+Bobby Ledbetter (id 76031) folds into Bobby Ledbetter — same phone …5310 and a compatible name; gifts posted to either id land on the surviving record.
+Jose Kensington (id 16839.0) folds into jose Kensington — same phone …9842 and a compatible name; gifts posted to either id land on the surviving record.
+Elizabeth Wilson (id 16794) folds into Elizabeth Wilson — same email elizabeth.wilson84@aol.com; gifts posted to either id land on the surviving record.
+Aaron James (id 76057) folds into Aaron James — same phone …8784 and a compatible name; gifts posted to either id land on the surviving record.
+nancy Nguyen (id 17997) folds into Nancy Nguyen — same email nancy.nguyen80@outlook.com; gifts posted to either id land on the surviving record.
+Stephanie Fairbairn (id 1173) folds into Stephanie Fairbairn — same phone …4365 and a compatible name; gifts posted to either id land on the surviving record.
+Aisha Ross (id 16200) folds into Aisha Ross — same email aisha.ross43@hotmail.com; gifts posted to either id land on the surviving record.
+Mary Turner (id 76167) folds into Mary Turner — same email mary.turner59@twc.com; gifts posted to either id land on the surviving record.
+Kyle Barnes (id 19696) folds into Kyle Barnes — same phone …9586 and a compatible name; gifts posted to either id land on the surviving record.
+Jeremy Evans (id 76025) folds into Jeremy Evans — same phone …4544 and a compatible name; gifts posted to either id land on the surviving record.
+Brandon Halvorsen (id 2688) folds into Brandon Halvorsen — same phone …8405 and a compatible name; gifts posted to either id land on the surviving record.
+Kyle Jones (id 14706) folds into Kyle Jones — same phone …1653 and a compatible name; gifts posted to either id land on the surviving record.
+jesse Abernathy (id 3031) folds into Jesse Abernathy — same phone …5809 and a compatible name; gifts posted to either id land on the surviving record.
+Ronald Salcedo (id 76199) folds into Ronald Salcedo — same phone …7998 and a compatible name; gifts posted to either id land on the surviving record.
+Wei Halvorsen (id 76046) folds into Wei Halvorsen — same phone …6849 and a compatible name; gifts posted to either id land on the surviving record.
+Joe Mordecai (id 76132.0) folds into Joe Mordecai — same phone …4462 and a compatible name; gifts posted to either id land on the surviving record.
+Amy Vandyke (id 004111) folds into Amy Vandyke — same email amy.vandyke54@outlook.com; gifts posted to either id land on the surviving record.
+Sophia Taylor (id 76079) folds into Sophia Taylor — same phone …4952 and a compatible name; gifts posted to either id land on the surviving record.
+Kyle Wood (id 4876) folds into Kyle Wood — same email kyle.wood10@hotmail.com; gifts posted to either id land on the surviving record.
+Bruce Trujillo (id 15946) folds into Bruce Trujillo — same phone …8325 and a compatible name; gifts posted to either id land on the surviving record.
+Bradley Quimby (id 76286) folds into Bradley Quimby — same phone …1598 and a compatible name; gifts posted to either id land on the surviving record.
+Gary Tolliver (id 76035) folds into Gary Tolliver — same email gary.tolliver82@gmail.com; gifts posted to either id land on the surviving record.
+Vincent Bell (id 5414) folds into Vincent Bell — same phone …5186 and a compatible name; gifts posted to either id land on the surviving record.
+Emma Williams (id 1406) folds into Emma Williams — same phone …4561 and a compatible name; gifts posted to either id land on the surviving record.
+Jacob Hargrove (id 76012) folds into Jacob Hargrove — same phone …4910 and a compatible name; gifts posted to either id land on the surviving record.
+James Cruz (id 76016) folds into James Cruz — same email james.cruz43@icloud.com; gifts posted to either id land on the surviving record.
+Linda Adams (id 76080) folds into Linda ADAMS — same phone …8067 and a compatible name; gifts posted to either id land on the surviving record.
+Samuel Butler (id 22233) folds into Samuel Butler — same phone …3335 and a compatible name; gifts posted to either id land on the surviving record.
+George Ivester (id 3619.0) folds into George Ivester — same phone …9344 and a compatible name; gifts posted to either id land on the surviving record.
+Joyce Cruz (id 24678) folds into Joyce Cruz — same phone …9734 and a compatible name; gifts posted to either id land on the surviving record.
+Leila Brannigan (id 76030) folds into Leila Brannigan — same phone …4480 and a compatible name; gifts posted to either id land on the surviving record.
+Sean Ledbetter (id 5126) folds into Sean Ledbetter — same email sean.ledbetter78@outlook.com; gifts posted to either id land on the surviving record.
+Janet Fisher (id 19255) folds into Janet Fisher — same phone …4941 and a compatible name; gifts posted to either id land on the surviving record.
+Megan Lattimore (id 23157) folds into Megan Lattimore — same email megan.lattimore16@twc.com; gifts posted to either id land on the surviving record.
+Albert Zabala (id 076062) folds into Albert Zabala — same email albert.zabala20@yahoo.com; gifts posted to either id land on the surviving record.
+Aisha Cook (id 76028) folds into Aisha COOK — same phone …8778 and a compatible name; gifts posted to either id land on the surviving record.
+Nicole Merriweather (id 022959) folds into Nicole MERRIWEATHER — same phone …1728 and a compatible name; gifts posted to either id land on the surviving record.
+Christina Sedgwick (id 76076) folds into Christina Sedgwick — same email christina.sedgwick54@gmail.com; gifts posted to either id land on the surviving record.
+Janice Hargrove (id 76293) folds into janice Hargrove — same phone …9787 and a compatible name; gifts posted to either id land on the surviving record.
+Benjamin Rivera (id 76048) folds into Benjamin Rivera — same email benjamin.rivera43@hotmail.com; gifts posted to either id land on the surviving record.
+Charles Vasquez (id 76208) folds into Charles Vasquez — same phone …2790 and a compatible name; gifts posted to either id land on the surviving record.
+Eric Gomez (id 4988) folds into Eric Gomez — same phone …8105 and a compatible name; gifts posted to either id land on the surviving record.
+Janice Perry (id 18320) folds into Janice Perry — same email janice.perry78@hotmail.com; gifts posted to either id land on the surviving record.
+Lisa Anderson (id 76266) folds into Lisa Anderson — same phone …5473 and a compatible name; gifts posted to either id land on the surviving record.
+Ingrid Ulmer (id 20099.0) folds into Ingrid Ulmer — same phone …2421 and a compatible name; gifts posted to either id land on the surviving record.
+frank Young (id 76271) folds into Frank Young — same email frank.young36@outlook.com; gifts posted to either id land on the surviving record.
+Brandon Underhill (id 16501) folds into Brandon UNDERHILL — same email brandon.underhill50@icloud.com; gifts posted to either id land on the surviving record.
+Dylan Russell (id 76268) folds into dylan Russell — same email dylan.russell96@outlook.com; gifts posted to either id land on the surviving record.
+Gary Rivera (id 14882) folds into Gary Rivera — same phone …1827 and a compatible name; gifts posted to either id land on the surviving record.
+Sandra Underhill (id 20289) folds into Sandra Underhill — same phone …3939 and a compatible name; gifts posted to either id land on the surviving record.
+Amber Bennett (id 1314) folds into Amber Bennett — same phone …9153 and a compatible name; gifts posted to either id land on the surviving record.
+carl Parker (id 76150) folds into Carl Parker — same email carl.parker27@aol.com; gifts posted to either id land on the surviving record.
+Edward Pemberton (id 2443) folds into Edward Pemberton — same phone …3312 and a compatible name; gifts posted to either id land on the surviving record.
+Megan Kirkpatrick (id 76081) folds into Megan KIRKPATRICK — same email megan.kirkpatrick72@hotmail.com; gifts posted to either id land on the surviving record.
+Judy KINGSLEY (id 14636) folds into Judy Kingsley — same phone …8422 and a compatible name; gifts posted to either id land on the surviving record.
+Raymond Rogers (id 1511) folds into Raymond Rogers — same email raymond.rogers8@icloud.com; gifts posted to either id land on the surviving record.
+Jerry Bennett (id 76097) folds into Jerry Bennett — same phone …3170 and a compatible name; gifts posted to either id land on the surviving record.
+Zoe Søndergaard (id 20487) folds into Zoe Søndergaard — same email zoe.sndergaard10@icloud.com; gifts posted to either id land on the surviving record.
+Jacob Wright (id 76112) folds into Jacob Wright — same phone …8200 and a compatible name; gifts posted to either id land on the surviving record.
+Rebecca Barrowman (id 76178) folds into Rebecca Barrowman — same phone …9417 and a compatible name; gifts posted to either id land on the surviving record.
+Sharon Kirtland (id 4506) folds into Sharon Kirtland — same email sharon.kirtland43@twc.com; gifts posted to either id land on the surviving record.
+beverly Gallagher (id 2910) folds into Beverly Gallagher — same email beverly.gallagher45@gmail.com; gifts posted to either id land on the surviving record.
+Levi Butler (id 76275) folds into Levi Butler — same email levi.butler63@aol.com; gifts posted to either id land on the surviving record.
+Matthew Bergström (id 17615) folds into Matthew Bergström — same email matthew.bergstrm70@aol.com; gifts posted to either id land on the surviving record.
+Mateo Murphy (id 76206) folds into Mateo Murphy — same email mateo.murphy8@yahoo.com; gifts posted to either id land on the surviving record.
+Kenneth Williams (id 76177) folds into Kenneth Williams — same email kenneth.williams14@outlook.com; gifts posted to either id land on the surviving record.
+Ethan Brannigan (id 015666) folds into Ethan Brannigan — same phone …4787 and a compatible name; gifts posted to either id land on the surviving record.
+Amara Singh (id 18440) folds into Amara Singh — same phone …5336 and a compatible name; gifts posted to either id land on the surviving record.
+Jason Miller (id 76054) folds into Jason Miller — same phone …9221 and a compatible name; gifts posted to either id land on the surviving record.
+Ravi Myers (id 17903) folds into ravi Myers — same phone …4748 and a compatible name; gifts posted to either id land on the surviving record.
+Hazel Mitchell (id 19980) folds into Hazel Mitchell — same phone …2846 and a compatible name; gifts posted to either id land on the surviving record.
+joe King (id 76289) folds into Joe King — same email joe.king15@icloud.com; gifts posted to either id land on the surviving record.
+Nathan Ogletree (id 76085) folds into Nathan Ogletree — same phone …9094 and a compatible name; gifts posted to either id land on the surviving record.
+Joyce Dunmore (id 14065) folds into Joyce Dunmore — same phone …9133 and a compatible name; gifts posted to either id land on the surviving record.
+Scott Quarles (id 76100) folds into Scott Quarles — same phone …8178 and a compatible name; gifts posted to either id land on the surviving record.
+Wei Tolliver (id 5359) folds into Wei Tolliver — same phone …6580 and a compatible name; gifts posted to either id land on the surviving record.
+Christopher Bailey (id 18722) folds into Christopher BAILEY — same phone …1362 and a compatible name; gifts posted to either id land on the surviving record.
+Carl Yarborough (id 15681) folds into Carl Yarborough — same phone …9146 and a compatible name; gifts posted to either id land on the surviving record.
+Ronald Howard (id 76039) folds into Ronald Howard — same email ronald.howard68@hotmail.com; gifts posted to either id land on the surviving record.
+Douglas Reed (id 76174) folds into Douglas Reed — same email douglas.reed86@gmail.com; gifts posted to either id land on the surviving record.
+bobby Green (id 4523) folds into Bobby Green — same email bobby.green11@gmail.com; gifts posted to either id land on the surviving record.
+Elijah Carter (id 076108) folds into Elijah Carter — same phone …1747 and a compatible name; gifts posted to either id land on the surviving record.
+Adam Kirtland (id 2992.0) folds into adam Kirtland — same phone …9701 and a compatible name; gifts posted to either id land on the surviving record.
+Jason Kirtland (id 5370) folds into Jason Kirtland — same email jason.kirtland53@gmail.com; gifts posted to either id land on the surviving record.
+Stephen Mulvaney (id 076209) folds into Stephen Mulvaney — same phone …2116 and a compatible name; gifts posted to either id land on the surviving record.
+Arthur Lewis (id 76259) folds into Arthur Lewis — same phone …1464 and a compatible name; gifts posted to either id land on the surviving record.
+Doris Søndergaard (id 3010) folds into Doris Søndergaard — same phone …1290 and a compatible name; gifts posted to either id land on the surviving record.
+Michael Rivera (id 3269) folds into Michael Rivera — same email michael.rivera92@twc.com; gifts posted to either id land on the surviving record.
+Lawrence Jenkins (id 3776) folds into lawrence JENKINS — same email lawrence.jenkins68@yahoo.com; gifts posted to either id land on the surviving record.
+Kathryn Gray (id 76151) folds into Kathryn GRAY — same phone …3405 and a compatible name; gifts posted to either id land on the surviving record.
+Levi Nelson (id 76010) folds into Levi Nelson — same email levi.nelson25@aol.com; gifts posted to either id land on the surviving record.
+Amy Torres (id 76122) folds into Amy Torres — same phone …3337 and a compatible name; gifts posted to either id land on the surviving record.
+Levi Hill (id 19955) folds into Levi Hill — same phone …9204 and a compatible name; gifts posted to either id land on the surviving record.
+william Sowande (id 76171) folds into william Sowande — same phone …2558 and a compatible name; gifts posted to either id land on the surviving record.
+Robert Halvorsen (id 4633) folds into Robert Halvorsen — same phone …3209 and a compatible name; gifts posted to either id land on the surviving record.
+Kathleen Ortiz (id 14950) folds into kathleen Ortiz — same phone …8683 and a compatible name; gifts posted to either id land on the surviving record.
+Dennis DELACROIX (id 76267) folds into Dennis Delacroix — same phone …2441 and a compatible name; gifts posted to either id land on the surviving record.
+Christopher O'Brien (id 15902) folds into Christopher O'Brien — same email christopher.obrien29@outlook.com; gifts posted to either id land on the surviving record.
+Zachary Müller (id 19501) folds into Zachary Müller — same phone …6248 and a compatible name; gifts posted to either id land on the surviving record.
+Susan Bell (id 76088) folds into Susan Bell — same phone …8261 and a compatible name; gifts posted to either id land on the surviving record.
+Mark Turner (id 19593) folds into Mark Turner — same phone …1113 and a compatible name; gifts posted to either id land on the surviving record.
+Jordan Salcedo (id 76223) folds into Jordan Salcedo — same email jordan.salcedo33@yahoo.com; gifts posted to either id land on the surviving record.
+Julie Reyes (id 16881) folds into Julie REYES — same phone …9128 and a compatible name; gifts posted to either id land on the surviving record.
+Joseph Hughes (id 15683) folds into Joseph Hughes — same phone …8563 and a compatible name; gifts posted to either id land on the surviving record.
+Sofia Winterbourne (id 18683) folds into Sofia Winterbourne — same phone …3660 and a compatible name; gifts posted to either id land on the surviving record.
+Gabriel Søndergaard (id 76146) folds into Gabriel Søndergaard — same phone …6475 and a compatible name; gifts posted to either id land on the surviving record.
+Mary Villalobos (id 76024) folds into Mary Villalobos — same phone …9344 and a compatible name; gifts posted to either id land on the surviving record.
+Linda Gutierrez (id 76004) folds into Linda Gutierrez — same phone …1111 and a compatible name; gifts posted to either id land on the surviving record.
+Kenneth Jenkins (id 76077) folds into Kenneth Jenkins — same email kenneth.jenkins29@twc.com; gifts posted to either id land on the surviving record.
+Raymond Underhill (id 16149) folds into raymond Underhill — same phone …3136 and a compatible name; gifts posted to either id land on the surviving record.
+Bobby Stapleton (id 17834) folds into Bobby Stapleton — same phone …3427 and a compatible name; gifts posted to either id land on the surviving record.
+Mason O'BRIEN (id 76017) folds into Mason O'Brien — same email mason.obrien76@outlook.com; gifts posted to either id land on the surviving record.
+Keith PRICE (id 76019) folds into keith Price — same phone …3088 and a compatible name; gifts posted to either id land on the surviving record.
+Nancy WHITFIELD (id 20830) folds into Nancy Whitfield — same phone …9443 and a compatible name; gifts posted to either id land on the surviving record.
+Bryan Dunmore (id 1955) folds into Bryan Dunmore — same phone …3480 and a compatible name; gifts posted to either id land on the surviving record.
+Maria Cox (id 76131) folds into Maria Cox — same email maria.cox79@hotmail.com; gifts posted to either id land on the surviving record.
+Carl Çelik (id 2558) folds into carl Çelik — same phone …5591 and a compatible name; gifts posted to either id land on the surviving record.
+Danielle Vasquez (id 25506) folds into Danielle Vasquez — same phone …8040 and a compatible name; gifts posted to either id land on the surviving record.
+Dennis Kirtland (id 76274) folds into Dennis Kirtland — same email dennis.kirtland87@yahoo.com; gifts posted to either id land on the surviving record.
+Mark Jackson (id 17164) folds into Mark Jackson — same phone …8763 and a compatible name; gifts posted to either id land on the surviving record.
+Lauren Nguyễn (id 76015) folds into Lauren Nguyễn — same email lauren.nguyn9@hotmail.com; gifts posted to either id land on the surviving record.
+Jacqueline Taylor (id 076269) folds into Jacqueline Taylor — same phone …8227 and a compatible name; gifts posted to either id land on the surviving record.
+Robert ULVERSTON (id 76262) folds into Robert Ulverston — same email robert.ulverston27@yahoo.com; gifts posted to either id land on the surviving record.
+Kwame Morgan (id 4559) folds into Kwame Morgan — same email kwame.morgan3@yahoo.com; gifts posted to either id land on the surviving record.
+Jessica Havisham (id 14007) folds into Jessica Havisham — same phone …5466 and a compatible name; gifts posted to either id land on the surviving record.
+Dmitri Myers (id 2371) folds into Dmitri Myers — same phone …5768 and a compatible name; gifts posted to either id land on the surviving record.
+Justin White (id 76236) folds into Justin White — same email justin.white55@icloud.com; gifts posted to either id land on the surviving record.
+Dorothy Cooper (id 21488) folds into Dorothy COOPER — same phone …9020 and a compatible name; gifts posted to either id land on the surviving record.
+Christian Cox (id 76072) folds into Christian Cox — same email christian.cox55@hotmail.com; gifts posted to either id land on the surviving record.
+susan Cox (id 76212) folds into Susan COX — same phone …5207 and a compatible name; gifts posted to either id land on the surviving record.
+Larry Barrowman (id 76287) folds into Larry Barrowman — same email larry.barrowman97@icloud.com; gifts posted to either id land on the surviving record.
+Thomas Çelik (id 76232) folds into Thomas Çelik — same email thomas.elik12@hotmail.com; gifts posted to either id land on the surviving record.
+Diana Thompson (id 76121) folds into Diana Thompson — same phone …2077 and a compatible name; gifts posted to either id land on the surviving record.
+Emma Foster (id 76149) folds into Emma Foster — same phone …5557 and a compatible name; gifts posted to either id land on the surviving record.
+Numeric ids in “Constituent ID” lost their leading zeros to the spreadsheet — matched by value, originals kept where the cell was text
+Numeric ids in “ID” lost their leading zeros to the spreadsheet — matched by value, originals kept where the cell was text
+Import 25,034 donors + 88,967 gifts →
+← Back
+One transaction: if anything fails mid-way, nothing lands — never a half-imported org.
+Directory
+Team
+Re-engage
+Map
+✦ Call List
+Log a conversation
++ Add
+↑ Import & tools
+▾
+⊞ Filters
+No donors yet.
+Every relationship in Steward starts as one row — bring in a spreadsheet from Import above, or add a single name to begin.
+Add a donor →
+Explore with sample data

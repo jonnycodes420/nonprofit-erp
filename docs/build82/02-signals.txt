@@ -1,0 +1,117 @@
+Steward
+⌕
+?
+B
+B82 Walker
+Sign out
+◈
+Home
+PEOPLE
+♦
+Donors
+◫
+Pipeline
+◻
+Tasks
+FUNDRAISING
+↗
+Fundraising
+◉
+Grants
+◑
+Communications
+◫
+Donor Portal
+◧
+Workflows
+INSIGHT
+▤
+Reports
+◇
+Finance
+⚙
+Settings
+Your donors.
+Import Donors
+One file — donors and their giving history · shape auto-detected · stages auto-assigned
+✕ Close
+▤
+steward-messy-25k-v3.xlsx
+7.3 MB · 9 sheets · one import
+Replace
+Remove
+What the sheet knows that the cells don't.
+Hidden rows, highlights and comments were detected — they are never silently included or excluded. The file's legend is quoted where it speaks.
+40 rows on Donors are hidden. The Cover sheet says: “Hidden rows on the Donors tab = deceased, left in for the auditors” Treat them per the legend / import as normal / skip?
+Treat them per the legend
+Import as normal
+Skip these rows
+100 rows are highlighted yellow. The Cover sheet says: “Yellow rows on the Donors tab = do not contact (per Cheryl)”
+Treat them per the legend
+Import as normal
+Skip these rows
+40 names carry a comment. 40 of them mention deceased or do-not-contact. Here they are.
+row 336: “Deceased 2024”
+row 448: “DO NOT CALL - deceased”
+row 3626: “passed away last spring - Cheryl”
+row 4028: “passed away last spring - Cheryl”
+row 4772: “d. 2023”
+row 4835: “passed away last spring - Cheryl”
+row 5557: “DO NOT CALL - deceased”
+row 5580: “d. 2023”
+row 5885: “passed away last spring - Cheryl”
+row 5959: “d. 2023”
+row 6149: “Deceased 2024”
+row 6794: “Deceased 2024”
+row 6915: “DO NOT CALL - deceased”
+row 7623: “DO NOT CALL - deceased”
+row 7764: “d. 2023”
+row 8176: “d. 2023”
+row 8383: “d. 2023”
+row 8589: “DO NOT CALL - deceased”
+row 9445: “d. 2023”
+row 10075: “Deceased 2024”
+row 11781: “d. 2023”
+row 12610: “passed away last spring - Cheryl”
+row 13230: “passed away last spring - Cheryl”
+row 14427: “Deceased 2024”
+row 15276: “DO NOT CALL - deceased”
+row 15962: “DO NOT CALL - deceased”
+row 16700: “passed away last spring - Cheryl”
+row 17657: “passed away last spring - Cheryl”
+row 18540: “d. 2023”
+row 19040: “d. 2023”
+row 19065: “passed away last spring - Cheryl”
+row 20379: “DO NOT CALL - deceased”
+row 20604: “DO NOT CALL - deceased”
+row 20901: “Deceased 2024”
+row 21590: “DO NOT CALL - deceased”
+row 21960: “DO NOT CALL - deceased”
+row 22405: “d. 2023”
+row 22733: “d. 2023”
+row 23835: “passed away last spring - Cheryl”
+row 24150: “Deceased 2024”
+Flag the 40 that match the exclusion family (deceased / do-not-contact)
+Keep as note text only
+Column AD is hidden. It's called Internal Score. It was not auto-mapped.
+It stays unmapped unless you map it yourself on the next screen.
+5 rows are highlighted #DDEBF7. The Cover sheet says: “Yellow rows on the Donors tab = do not contact (per Cheryl)”
+Treat them per the legend
+Import as normal
+Skip these rows
+Continue to the mapping →
+← Back
+Directory
+Team
+Re-engage
+Map
+✦ Call List
+Log a conversation
++ Add
+↑ Import & tools
+▾
+⊞ Filters
+No donors yet.
+Every relationship in Steward starts as one row — bring in a spreadsheet from Import above, or add a single name to begin.
+Add a donor →
+Explore with sample data

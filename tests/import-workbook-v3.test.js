@@ -211,8 +211,9 @@ const fs = require("fs");
      sub.donors.filter(d => d.deceased && d.deceasedDate).length >= 45, sub.donors.filter(d => d.deceased && d.deceasedDate).length);
   ok("792 surviving records carry an exclusion flag (800 rows − 8 folded duplicates)",
      sub.donors.filter(d => d.deceased || d.doNotContact || d.doNotSolicit || d.doNotMail || d.doNotEmail).length === 792, null);
-  ok("submission totals: 25,034 donors / 89,681 gifts / $51,348,667.87",
-     sub.totals.donors === 25034 && sub.totals.gifts === 89681 && sub.totals.cash === 51348667.87, sub.totals);
+  ok("submission totals: 25,034 donors / 88,967 gifts / $50,979,808.17 (721 repeated gift ids collapsed — F-4 at workbook scale)",
+     sub.totals.donors === 25034 && sub.totals.gifts === 88967 && sub.totals.cash === 50979808.17
+     && sub.refusals.filter(x => x.reason === "gift_id_repeated_in_file").length === 721, sub.totals);
   ok("recovery sustainers tagged card-failed (100)", sub.donors.filter(d => (d.tags || []).includes("card-failed")).length === 100, null);
   ok("stale 'Active' claims tagged — the pattern won, the mismatch shows (60)",
      sub.donors.filter(d => (d.tags || []).includes("stale-frequency")).length === 60, null);
@@ -220,15 +221,16 @@ const fs = require("fs");
      sub.donors.filter(d => d.customFields && d.customFields.internal_score).length > 20000, null);
   ok("merges list = the review list (266, each with reason + folded id)",
      sub.merges.length === 266 && sub.merges.every(m => m.reason && m.foldedId !== undefined), sub.merges.length);
-  ok("workbook invariant balanced with orphans as refusals",
-     sub.reconciliation.workbook.balanced && sub.reconciliation.workbook.refused === 1333, sub.reconciliation.workbook);
+  ok("workbook invariant balanced with orphans + repeated ids as refusals",
+     sub.reconciliation.workbook.balanced && sub.reconciliation.workbook.refused === 2047, sub.reconciliation.workbook);
   ok("TOTAL-rows panel explains both sheets (GRAND consistent, legacy STALE)",
      sub.totalRows.length === 2 && sub.totalRows.every(t => t.stated && t.readable != null), sub.totalRows);
   ok("largest-gifts panel tops out at real $25,000 gifts — never the $32.5M GRAND TOTAL",
      sub.largestGifts.length === 5 && sub.largestGifts.every(g => g.dollars === 25000), sub.largestGifts);
-  ok("skip reasons itemised: formula_no_value 843 + no_donor_match 490",
+  ok("skip reasons itemised: formula_no_value 843 + no_donor_match 483 + gift_id_repeated 721",
      sub.refusals.filter(x => x.reason === "formula_no_value").length === 843
-     && sub.refusals.filter(x => x.reason === "no_donor_match").length === 490, null);
+     && sub.refusals.filter(x => x.reason === "no_donor_match").length === 483
+     && sub.refusals.filter(x => x.reason === "gift_id_repeated_in_file").length === 721, null);
   ok("fileStats ready for orgs.last_import_stats", sub.fileStats.rows === 92227 && sub.fileStats.largestGifts.length === 5, sub.fileStats);
 
   // hidden rows SKIPPED by choice — counted, listed, and the count moves

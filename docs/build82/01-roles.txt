@@ -1,0 +1,157 @@
+Steward
+⌕
+?
+B
+B82 Walker
+Sign out
+◈
+Home
+PEOPLE
+♦
+Donors
+◫
+Pipeline
+◻
+Tasks
+FUNDRAISING
+↗
+Fundraising
+◉
+Grants
+◑
+Communications
+◫
+Donor Portal
+◧
+Workflows
+INSIGHT
+▤
+Reports
+◇
+Finance
+⚙
+Settings
+Your donors.
+Import Donors
+One file — donors and their giving history · shape auto-detected · stages auto-assigned
+✕ Close
+▤
+steward-messy-25k-v3.xlsx
+7.3 MB · 9 sheets · one import
+Replace
+Remove
+This workbook is one import.
+9 sheets — each with a role and the reason. Roles are editable; nothing marked “not data” or “superseded” imports without your say-so.
+THE FILE'S OWN LEGEND
+“Yellow rows on the Donors tab = do not contact (per Cheryl)” — Cover
+“Hidden rows on the Donors tab = deceased, left in for the auditors” — Cover
+Cover9 rows
+Donors
+Gifts
+Pledges
+Recurring
+Not data
+Superseded copy
+Empty
+Unknown
+9 rows, no donor or gift shape — a cover page, summary or legend
+Donors25,300 rows
+Donors
+Gifts
+Pledges
+Recurring
+Not data
+Superseded copy
+Empty
+Unknown
+name/ID plus contact columns and a lifetime-total column, no per-gift amount — one row per person
+Not counted: row 25305 (note row) · row 30000 (stray cell)
+Gifts 2023-202656,177 rows
+Donors
+Gifts
+Pledges
+Recurring
+Not data
+Superseded copy
+Empty
+Unknown
+an amount column and a date column — one row per gift
+Not counted: row 11049 (subtotal row, $8,453,225.71) · row 27709 (subtotal row, $10,585,093.03) · row 45789 (subtotal row, $9,983,158.73) · row 56182 (subtotal row, $3,502,456.42) · row 56183 (total row, $32,523,933.89) · row 56185 (note row)
+Gifts 2019-202236,050 rows
+Donors
+Gifts
+Pledges
+Recurring
+Not data
+Superseded copy
+Empty
+Unknown
+an amount column and a date column — one row per gift
+Not counted: row 36053 (total row, $19,852,987.83)
+Old export (do not use)8,000 rows
+Donors
+Gifts
+Pledges
+Recurring
+Not data
+Superseded copy
+Empty
+Unknown
+its name says so ("Old export (do not use)") and 99% of its sampled rows duplicate another sheet's gifts — importing it would add $4,342,760.71 that is already there or superseded
+Import it anyway — this would add $4,342,760.71 of gifts that look already-imported; anything duplicating a real sheet (same donor, date, amount) will be excluded and shown.
+Pledges60 rows
+Donors
+Gifts
+Pledges
+Recurring
+Not data
+Superseded copy
+Empty
+Unknown
+pledge-shaped headers: Pledge ID, Total Pledged, Installments — commitments, not cash
+Recurring600 rows
+Donors
+Gifts
+Pledges
+Recurring
+Not data
+Superseded copy
+Empty
+Unknown
+sustainer-shaped headers: Frequency, Last Charge, Card on file
+Summary5 rows
+Donors
+Gifts
+Pledges
+Recurring
+Not data
+Superseded copy
+Empty
+Unknown
+5 rows, no donor or gift shape — a cover page, summary or legend
+Sheet1—
+Donors
+Gifts
+Pledges
+Recurring
+Not data
+Superseded copy
+Empty
+Unknown
+no cells — nothing to import
+Continue — one import: 25,300 donors + 92,227 gifts + 60 pledges + 600 recurring →
+← Back
+Directory
+Team
+Re-engage
+Map
+✦ Call List
+Log a conversation
++ Add
+↑ Import & tools
+▾
+⊞ Filters
+No donors yet.
+Every relationship in Steward starts as one row — bring in a spreadsheet from Import above, or add a single name to begin.
+Add a donor →
+Explore with sample data
