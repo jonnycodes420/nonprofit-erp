@@ -218,7 +218,7 @@ async function parseFileToSheets(file, { onSingle, onMulti, onError }) {
       const dec = decodeSpreadsheetBytesDetailed(new Uint8Array(buf));
       const analysis = analyzeCsvText(dec.text);
       if (!analysis.rows.length) { onError("No rows found."); return; }
-      onSingle(analysis.headers, analysis.rows, analysis.physical, { ...reportFromAnalysis(analysis), cp1252Lines: dec.cp1252Lines });
+      onSingle(analysis.headers, analysis.rows, analysis.physical, { ...reportFromAnalysis(analysis), cp1252Lines: dec.cp1252Lines, mojibakeRepaired: dec.mojibakeRepaired || 0, mojibakeRepairs: dec.mojibakeRepairs || [] });
     } catch (ex) { onError("Could not read file: " + ex.message); }
   }
 }
@@ -1784,6 +1784,12 @@ export function DonorImport({ onClose, onImported, withHistory = false }) {
                 const affected = cp1252RowNames(parseReport, parsed);
                 return <div>{affected.length || parseReport.cp1252Lines.length} name{(affected.length||parseReport.cp1252Lines.length)===1?"":"s"} contained Windows-1252 characters and were converted{affected.length ? `: ${affected.map(n=>`“${n}”`).join(" · ")}` : ""}.</div>;
               })()}
+              {/* BUILD-80 Part 3 — the source system double-encoded some
+                  characters ("æ\u009D\u008E" was 李); each reversal is a
+                  byte-exact repair, counted and shown, never silent. */}
+              {parseReport.mojibakeRepaired > 0 && (
+                <div>{parseReport.mojibakeRepaired} character sequence{parseReport.mojibakeRepaired===1?"":"s"} arrived double-encoded from the source system and {parseReport.mojibakeRepaired===1?"was":"were"} repaired ({parseReport.mojibakeRepairs.slice(0,5).map(r=>r.sequence).join(" · ")}).</div>
+              )}
             </div>
           )}
 

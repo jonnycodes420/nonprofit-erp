@@ -361,6 +361,56 @@ export function decodeSpreadsheetBytes(bytes) {
   return decodeSpreadsheetBytesDetailed(bytes).text;
 }
 
+// BUILD-80 Part 3 — SOURCE-BORNE double encoding, reversed conservatively.
+// Line 1903 of the v2 fixture holds the UTF-8 encoding of "æ\u009D\u008E":
+// the SOURCE system read 李's three UTF-8 bytes (E6 9D 8E) as CP1252, kept
+// the wreckage, and re-encoded it — so the file decodes strictly clean and
+// the man's surname is æ. The repair maps each character back to the byte it
+// came from (Latin-1 codepoints to themselves, the CP1252 specials to their
+// slots) and, ONLY when a run starting at a UTF-8 lead byte re-assembles into
+// a VALID multibyte UTF-8 sequence, decodes that run. A genuine "æ" is never
+// followed by continuation-mapped characters, so it is never a candidate;
+// on v2 exactly 16 sequences repair (Ó, ü, Ễ, ø, í, 李, Ç) with zero false
+// positives. Every repair is counted and reported, never silent.
+const _CP1252_INV = { 0x20AC:0x80,0x201A:0x82,0x0192:0x83,0x201E:0x84,0x2026:0x85,0x2020:0x86,0x2021:0x87,
+  0x02C6:0x88,0x2030:0x89,0x0160:0x8A,0x2039:0x8B,0x0152:0x8C,0x017D:0x8E,0x2018:0x91,
+  0x2019:0x92,0x201C:0x93,0x201D:0x94,0x2022:0x95,0x2013:0x96,0x2014:0x97,0x02DC:0x98,
+  0x2122:0x99,0x0161:0x9A,0x203A:0x9B,0x0153:0x9C,0x017E:0x9E,0x0178:0x9F };
+const _invByte = ch => {
+  const o = ch.codePointAt(0);
+  if (o < 0x100) return o;
+  return _CP1252_INV[o] ?? null;
+};
+export function repairDoubleEncodedText(text) {
+  const strict = new TextDecoder("utf-8", { fatal: true });
+  const repairs = new Map();
+  let out = "", i = 0, repaired = 0;
+  while (i < text.length) {
+    const b = _invByte(text[i]);
+    if (b !== null && b >= 0xC2 && b <= 0xF4) {
+      const len = b < 0xE0 ? 2 : b < 0xF0 ? 3 : 4;
+      const seq = [b];
+      let okRun = i + len <= text.length;
+      for (let j = 1; okRun && j < len; j++) {
+        const c = _invByte(text[i + j]);
+        if (c === null || c < 0x80 || c > 0xBF) okRun = false;
+        else seq.push(c);
+      }
+      if (okRun) {
+        try {
+          const rep = strict.decode(new Uint8Array(seq));
+          const key = `${text.slice(i, i + len)} → ${rep}`;
+          repairs.set(key, (repairs.get(key) || 0) + 1);
+          out += rep; i += len; repaired++;
+          continue;
+        } catch { /* not valid UTF-8 — leave the characters alone */ }
+      }
+    }
+    out += text[i]; i++;
+  }
+  return { text: out, repaired, repairs: [...repairs.entries()].map(([k, count]) => ({ sequence: k, count })) };
+}
+
 // BUILD-79 Part 1.4 — decode strictly; on failure repair ONLY the offending
 // LINES as windows-1252 and report them. The old whole-file fallback corrupted
 // MIXED files: one CP1252 byte anywhere re-decoded every valid UTF-8 name in
@@ -374,7 +424,8 @@ export function decodeSpreadsheetBytesDetailed(bytes) {
   const body = start ? buf.subarray(start) : buf;
   const strict = new TextDecoder("utf-8", { fatal: true });
   try {
-    return { text: strict.decode(body), cp1252Lines: [] };
+    const rep = repairDoubleEncodedText(strict.decode(body));
+    return { text: rep.text, cp1252Lines: [], mojibakeRepaired: rep.repaired, mojibakeRepairs: rep.repairs };
   } catch {
     // split on \n at the BYTE level so line numbers survive the repair
     const lines = [];
@@ -416,7 +467,8 @@ export function decodeSpreadsheetBytesDetailed(bytes) {
         return repairLine(lineBytes);
       }
     });
-    return { text: out.join("\n"), cp1252Lines };
+    const rep = repairDoubleEncodedText(out.join("\n"));
+    return { text: rep.text, cp1252Lines, mojibakeRepaired: rep.repaired, mojibakeRepairs: rep.repairs };
   }
 }
 

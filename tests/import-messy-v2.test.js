@@ -176,6 +176,22 @@ async function reset() {
   ok("its biggest row is the planted $150,000 estate bequest — not a parse artifact",
     built.largestGifts[0].dollars === 150000 && /Estate of/.test(built.largestGifts[0].name), built.largestGifts[0]);
 
+  // ── §3b2 · BUILD-80 Part 3 — ENCODING: the repair never touches valid bytes ──
+  console.log("\n— §3b2 · BUILD-80 Part 3: encoding — 李 keeps his name, twelve surnames survive —");
+  ok("the four raw-CP1252 lines are repaired per byte-run (1541, 1542, 1545, 1913)",
+    JSON.stringify(dec.cp1252Lines) === JSON.stringify([1541, 1542, 1545, 1913]), dec.cp1252Lines);
+  ok("exactly 16 source-borne double-encoded sequences are reversed, each reported",
+    dec.mojibakeRepaired === 16 && Array.isArray(dec.mojibakeRepairs) && dec.mojibakeRepairs.length >= 5,
+    { repaired: dec.mojibakeRepaired, kinds: dec.mojibakeRepairs?.length });
+  ok("Christopher keeps his name: the surname 李 survives (the source wrote æ\\u009D\\u008E)",
+    dec.text.includes("李, Christopher"), dec.text.match(/.{0,10}Christopher/)?.[0]);
+  for (const sn of ["Nguyễn", "Müller", "García", "Ó Briain", "D'Angelo-Ruiz", "O'Brien", "Søndergaard", "Çelik", "Ibáñez", "李", "Al-Rashid", "van der Berg"])
+    ok(`surname '${sn}' survives import byte-for-byte`, dec.text.includes(sn), sn);
+  ok("no U+FFFD replacement character anywhere in the decoded text",
+    !dec.text.includes("\uFFFD"), null);
+  ok("a genuine 'æ' is never a repair candidate (no continuation-mapped follower)",
+    (await import("../shared/importShape.js")).repairDoubleEncodedText("Ærø, Næstved — æsthetic").text === "Ærø, Næstved — æsthetic", null);
+
   // ── §3c · BUILD-80 Part 2 — DATES: the column has a convention ───────────
   console.log("\n— §3c · BUILD-80 Part 2: dates — column-level dd/mm, planted traps, refusals collapse —");
   const dc = built.dateConvention;

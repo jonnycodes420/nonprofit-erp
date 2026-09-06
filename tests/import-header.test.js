@@ -36,13 +36,18 @@ const ok = (cond, label, detail) => {
   // valid-UTF-8 Last Name cell), so even line-level repair corrupts it. Assert
   // the byte-run repair leaves both cells right. (Lines like 1546's
   // "GarcÃ­a" are mojibake ALREADY IN the source bytes — valid UTF-8 of
-  // double-encoded text. That is data, a BUILD-80 semantic finding, and the
-  // decoder must NOT touch it.)
+  // double-encoded text. BUILD-79 passed it through as data; BUILD-80 Part 3
+  // reverses it, but ONLY when the run re-assembles into valid UTF-8, with
+  // every repair counted and reported — never a guess, never silent.)
   const l1541 = dec.text.split("\n")[1540];
   ok(l1541.includes('"García, Christian"') && !l1541.includes("Ã"),
     "a mixed-encoding line: the CP1252 cell repaired AND the valid-UTF-8 cell untouched", l1541.slice(0, 60));
   const l1546 = dec.text.split("\n")[1545];
-  ok(l1546.includes("GarcÃ­a"), "source-borne mojibake (valid UTF-8 of double-encoded text) passes through as data — the decoder never guesses", l1546.slice(0, 40));
+  ok(l1546.includes("García") && !l1546.includes("GarcÃ­a"),
+    "source-borne double-encoding is REVERSED (BUILD-80 Part 3): 'GarcÃ­a' reads García, validity-gated and reported",
+    { line: l1546.slice(0, 40), repaired: dec.mojibakeRepaired });
+  ok(dec.mojibakeRepaired > 0 && Array.isArray(dec.mojibakeRepairs),
+    "every double-encoding reversal is counted and itemised — never silent", dec.mojibakeRepaired);
   const pure1252 = new Uint8Array([0x4A, 0x6F, 0x73, 0xE9]); // "José" in cp1252
   ok(lib.decodeSpreadsheetBytes(pure1252) === "José", "a pure windows-1252 file still decodes (back-compat)");
 
