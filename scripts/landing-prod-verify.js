@@ -74,6 +74,7 @@ const rgb = s => (s.match(/\d+/g) || []).slice(0, 3).map(Number);
   const text = await page.evaluate(() => document.body.innerText);
   const SECTIONS = [
     "Who did you mean to call back?",                            // hero — the question
+    "For the shops where one person holds the whole donor file", // who it's for
     "Log it. The next step comes back. It keeps asking.",        // how it works
     "A monthly donor's card expires.",                           // when a card stops
     "And the ones who already went quiet.",                      // drift
@@ -128,6 +129,30 @@ const rgb = s => (s.match(/\d+/g) || []).slice(0, 3).map(Number);
   ok("…each actually loads (no broken image ships)", hiw.every(i => i.loaded), hiw);
   ok('the retired caption is gone — "drawn in code" absent from rendered text',
      !/drawn in code/i.test(text), null);
+  // FIX after BUILD-81 — the "Who it's for" photo strip: the pre-BUILD-41
+  // page's photographs, back between the hero and how-it-works. Exactly
+  // three photos, intrinsic dimensions (CLS stays 0.0000), real alt text,
+  // and NOTHING testimonial around them.
+  const strip = await page.evaluate(() => {
+    const sec = document.getElementById("who-its-for");
+    const hiwSec = document.getElementById("how-it-works");
+    const hero = document.querySelector(".lp-hero");
+    const imgsIn = sec ? [...sec.querySelectorAll("img")].map(i => ({
+      w: Number(i.getAttribute("width")) || 0, h: Number(i.getAttribute("height")) || 0,
+      alt: (i.getAttribute("alt") || "").trim(), loaded: i.naturalWidth > 0,
+    })) : [];
+    const after = sec && hero ? !!(hero.compareDocumentPosition(sec) & Node.DOCUMENT_POSITION_FOLLOWING) : false;
+    const before = sec && hiwSec ? !!(sec.compareDocumentPosition(hiwSec) & Node.DOCUMENT_POSITION_FOLLOWING) : false;
+    return { exists: !!sec, count: imgsIn.length, imgsIn, after, before };
+  });
+  ok("#who-its-for exists with EXACTLY three photographs, each with intrinsic dimensions",
+     strip.exists && strip.count === 3 && strip.imgsIn.every(i => i.w > 100 && i.h > 50), strip);
+  ok("…each with real, non-empty alt text describing the photograph",
+     strip.imgsIn.every(i => i.alt.length > 20 && !/\.webp|\.png/i.test(i.alt)), strip.imgsIn.map(i => i.alt));
+  ok("…each actually loads", strip.imgsIn.every(i => i.loaded), null);
+  ok("the strip sits AFTER the hero and BEFORE #how-it-works", strip.after && strip.before, strip);
+  ok('no customer language anywhere: "trusted by", "customers" and "clients" absent from rendered text',
+     !/trusted by/i.test(text) && !/customers?/i.test(text) && !/clients?/i.test(text), null);
   ok("the 43%-class stat is attributed to the Fundraising Effectiveness Project",
      /Fundraising Effectiveness Project/.test(text), null);
   ok('"full-year 2025" is intact — FEP rebased in Q1 2026 and now headlines a QUARTERLY figure',

@@ -242,6 +242,10 @@ const STYLES = `
 
   .lp-beats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; }
   .lp-shot { width: 100%; height: auto; display: block; border-radius: 10px; border: 1px solid rgba(15, 26, 18, 0.12); background: #FFFFFF; }
+  .lp-whostrip { display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; }
+  .lp-whofig { margin: 0; display: flex; flex-direction: column; gap: 10px; }
+  .lp-whoimg { width: 100%; height: auto; display: block; border-radius: 12px; }
+  .lp-whocap { font-size: 14px; line-height: 1.55; color: ${C.ink3}; }
   .lp-beat { background: ${C.cream}; border: 1px solid rgba(15, 26, 18, 0.1); border-radius: 14px; padding: 26px; display: flex; flex-direction: column; gap: 20px; box-shadow: 0 14px 40px rgba(15, 26, 18, 0.06); }
 
   .lp-split { display: grid; grid-template-columns: 1fr 1fr; gap: 64px; align-items: center; max-width: 1440px; margin: 0 auto; }
@@ -287,6 +291,7 @@ const STYLES = `
     .lp-hero { padding: 24px 20px 56px; }
     .lp-nav { padding: 0 20px; }
     .lp-footer { padding: 28px 20px; }
+    .lp-whostrip { grid-template-columns: 1fr; }
   }
 `;
 
@@ -353,6 +358,60 @@ export default function Landing() {
             <ThreadVisual />
           </div>
         </header>
+
+        {/* ── WHO IT'S FOR — the photo strip, restored ───────────────────── */}
+        {/* The pre-BUILD-41 page's photographs, back on the page (the files
+            never left the repo; provenance in client/public/ASSETS.md).
+            Captions are DESCRIPTIVE, never testimonial — no org names, no
+            customer language; the reserved-word family covers this section. */}
+        <section id="who-its-for" className="lp-sec" style={{ background: C.cream, paddingTop: 24 }}>
+          <div className="lp-sec-inner">
+            <div style={{ display: "flex", flexDirection: "column", gap: 18, maxWidth: 820, marginBottom: 44 }}>
+              <div className="lp-eyebrow" style={{ color: C.greenDk }}>WHO IT&apos;S FOR</div>
+              <h2 className="lp-h2" style={{ fontSize: 46, lineHeight: 1.08, letterSpacing: "-0.025em" }}>
+                For the shops where one person holds the whole donor file in her head.
+              </h2>
+              <p style={{ fontSize: 18, lineHeight: 1.65, color: C.ink3 }}>
+                A church, a shelter, a food pantry, a school foundation. Fewer than three people ever touch the database, and one of them is the executive director.
+              </p>
+            </div>
+            <div className="lp-whostrip">
+              <figure className="lp-whofig">
+                <img
+                  className="lp-whoimg"
+                  src="/who-church.webp"
+                  srcSet="/who-church.webp 1x, /who-church-2x.webp 2x"
+                  width="400" height="267"
+                  alt="A small hillside chapel at dusk, lit from inside, under a crescent moon."
+                  loading="lazy" decoding="async"
+                />
+                <figcaption className="lp-whocap">A church with four hundred households and a volunteer treasurer.</figcaption>
+              </figure>
+              <figure className="lp-whofig">
+                <img
+                  className="lp-whoimg"
+                  src="/who-shelter.webp"
+                  srcSet="/who-shelter.webp 1x, /who-shelter-2x.webp 2x"
+                  width="400" height="267"
+                  alt="Two shelter dogs looking out through a kennel fence."
+                  loading="lazy" decoding="async"
+                />
+                <figcaption className="lp-whocap">A shelter that runs on monthly givers.</figcaption>
+              </figure>
+              <figure className="lp-whofig">
+                <img
+                  className="lp-whoimg"
+                  src="/who-arts.webp"
+                  srcSet="/who-arts.webp 1x, /who-arts-2x.webp 2x"
+                  width="400" height="267"
+                  alt="Visitors at a small storefront gallery, seen through its open front doors."
+                  loading="lazy" decoding="async"
+                />
+                <figcaption className="lp-whocap">A storefront gallery where the opening-night list is the donor list.</figcaption>
+              </figure>
+            </div>
+          </div>
+        </section>
 
         {/* ── HOW IT WORKS — three beats, the real UI ────────────────────── */}
         <section id="how-it-works" className="lp-sec" style={{ background: C.cream2 }}>

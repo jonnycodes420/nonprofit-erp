@@ -121,6 +121,7 @@ function serveDist() {
   const text = await page.evaluate(() => document.body.innerText);
   const SECTIONS = [
     "Who did you mean to call back?",
+    "For the shops where one person holds the whole donor file",
     "Log it. The next step comes back. It keeps asking.",
     "A monthly donor's card expires.",
     "And the ones who already went quiet.",
@@ -180,6 +181,24 @@ function serveDist() {
   ok("three real screenshots in #how-it-works: intrinsic dimensions, real alt, all loading",
      hiw.length === 3 && hiw.every(i => i.w > 100 && i.h > 50 && i.alt.length > 20 && i.loaded), hiw);
   ok('the "drawn in code" caption is gone', !/drawn in code/i.test(text), null);
+  // FIX after BUILD-81: the who-it's-for photo strip, between hero and hiw.
+  const strip = await page.evaluate(() => {
+    const sec = document.getElementById("who-its-for");
+    const hiwSec = document.getElementById("how-it-works");
+    const hero = document.querySelector(".lp-hero");
+    return {
+      imgs: sec ? [...sec.querySelectorAll("img")].map(i => ({
+        w: Number(i.getAttribute("width")) || 0, h: Number(i.getAttribute("height")) || 0,
+        alt: (i.getAttribute("alt") || "").trim(), loaded: i.naturalWidth > 0,
+      })) : [],
+      after: sec && hero ? !!(hero.compareDocumentPosition(sec) & Node.DOCUMENT_POSITION_FOLLOWING) : false,
+      before: sec && hiwSec ? !!(sec.compareDocumentPosition(hiwSec) & Node.DOCUMENT_POSITION_FOLLOWING) : false,
+    };
+  });
+  ok("who-its-for strip: three photos, dimensions, alt, loading, hero→strip→how-it-works order",
+     strip.imgs.length === 3 && strip.imgs.every(i => i.w > 100 && i.h > 50 && i.alt.length > 20 && i.loaded) && strip.after && strip.before, strip);
+  ok("no customer language: trusted by / customers / clients absent",
+     !/trusted by|\bcustomers?\b|\bclients?\b/i.test(text), null);
   ok("no em dash in the rendered copy (Jonathan's voice uses periods)", !text.includes("—"), null);
 
   // ── §6 · copy that must not change ─────────────────────────────────────
