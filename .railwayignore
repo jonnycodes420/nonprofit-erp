@@ -2,3 +2,11 @@ client/
 node_modules/
 .env
 *.log
+# BUILD-80 — the backend tarball needs no documentation artifacts: docs/ is
+# ~220MB of build screenshots and crossed Railway's upload limit (211MB
+# rejected, 2026-09-06). audit/ and claude/ are review documents, tests/ and
+# scripts/ stay IN the artifact (deploy-shape resolves server imports against
+# it, and ops scripts run on the deployed checkout).
+docs/
+audit/
+claude/
