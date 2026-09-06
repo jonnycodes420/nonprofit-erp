@@ -1,0 +1,1085 @@
+{
+  "Nicole Grantham": {
+    "name": "Nicole Grantham",
+    "pledge": {
+      "amount": 50000,
+      "state": "fully_paid",
+      "payments": 8
+    }
+  },
+  "Kimberly Ulmer": {
+    "name": "Kimberly Ulmer",
+    "pledge": {
+      "amount": 10000,
+      "state": "fully_paid",
+      "payments": 5
+    }
+  },
+  "James Patel": {
+    "name": "James Patel",
+    "pledge": {
+      "amount": 25000,
+      "state": "fully_paid",
+      "payments": 8
+    }
+  },
+  "Hiroshi Fennimore": {
+    "name": "Hiroshi Fennimore",
+    "pledge": {
+      "amount": 25000,
+      "state": "fully_paid",
+      "payments": 4
+    }
+  },
+  "Daniel Okafor": {
+    "name": "Daniel Okafor",
+    "pledge": {
+      "amount": 12000,
+      "state": "fully_paid",
+      "payments": 4
+    }
+  },
+  "Keith Pennington": {
+    "name": "Keith Pennington",
+    "pledge": {
+      "amount": 5000,
+      "state": "fully_paid",
+      "payments": 8
+    }
+  },
+  "Teresa Culpepper": {
+    "name": "Teresa Culpepper",
+    "pledge": {
+      "amount": 5000,
+      "state": "overpaid",
+      "payments": 5,
+      "scheduled": 4
+    }
+  },
+  "Priya D'Angelo": {
+    "name": "Priya D'Angelo",
+    "pledge": {
+      "amount": 5000,
+      "state": "overpaid",
+      "payments": 9,
+      "scheduled": 8
+    }
+  },
+  "Kyle Çelik": {
+    "name": "Kyle Çelik",
+    "pledge": {
+      "amount": 5000,
+      "state": "zero_payments",
+      "payments": 0
+    }
+  },
+  "Richard Stoddard": {
+    "name": "Richard Stoddard",
+    "pledge": {
+      "amount": 12000,
+      "state": "zero_payments",
+      "payments": 0
+    }
+  },
+  "Frances Ibáñez": {
+    "name": "Frances Ibáñez",
+    "pledge": {
+      "amount": 25000,
+      "state": "active",
+      "payments": 1,
+      "scheduled": 4
+    },
+    "contractualCadence": true,
+    "neverDrift": true
+  },
+  "Harold Bergström": {
+    "name": "Harold Bergström",
+    "pledge": {
+      "amount": 5000,
+      "state": "active",
+      "payments": 2,
+      "scheduled": 4
+    },
+    "contractualCadence": true,
+    "neverDrift": true
+  },
+  "Sarah Redgrave": {
+    "name": "Sarah Redgrave",
+    "dafSponsor": "National Christian Foundation"
+  },
+  "Michael Fernandes": {
+    "name": "Michael Fernandes",
+    "dafSponsor": "Schwab Charitable"
+  },
+  "Anthony Nakamura": {
+    "name": "Anthony Nakamura",
+    "dafSponsor": "National Christian Foundation"
+  },
+  "Scott Zabala": {
+    "name": "Scott Zabala",
+    "dafSponsor": "Schwab Charitable"
+  },
+  "Vincent Çelik": {
+    "name": "Vincent Çelik",
+    "dafSponsor": "Schwab Charitable",
+    "sharedConstituentId": "33226"
+  },
+  "Debra Ivester": {
+    "name": "Debra Ivester",
+    "dafSponsor": "National Christian Foundation"
+  },
+  "Richard Quarles": {
+    "name": "Richard Quarles",
+    "dafSponsor": "National Christian Foundation"
+  },
+  "Priya Abernathy": {
+    "name": "Priya Abernathy",
+    "dafSponsor": "Fidelity Charitable"
+  },
+  "Estate of Aisha Ivester": {
+    "name": "Estate of Aisha Ivester",
+    "estate": true,
+    "estateOf": "Aisha Ivester",
+    "organisation": true,
+    "deceased": true,
+    "doNotSolicit": true
+  },
+  "Estate of Dorothy Ackerly": {
+    "name": "Estate of Dorothy Ackerly",
+    "estate": true,
+    "estateOf": "Dorothy Ackerly",
+    "organisation": true,
+    "deceased": true,
+    "doNotSolicit": true
+  },
+  "Estate of Leila Marchetti": {
+    "name": "Estate of Leila Marchetti",
+    "estate": true,
+    "estateOf": "Leila Marchetti",
+    "organisation": true,
+    "deceased": true,
+    "doNotSolicit": true
+  },
+  "Jennifer Sowande": {
+    "name": "Jennifer Sowande",
+    "deceased": true,
+    "deceasedVia": "notes",
+    "drift": "high",
+    "driftKind": "seasonal"
+  },
+  "Betty Kowalski": {
+    "name": "Betty Kowalski",
+    "deceased": true,
+    "deceasedVia": "solicit_code",
+    "drift": "high",
+    "driftKind": "seasonal"
+  },
+  "Catherine Kingsley": {
+    "name": "Catherine Kingsley",
+    "deceased": true,
+    "deceasedVia": "notes",
+    "drift": "high",
+    "driftKind": "seasonal"
+  },
+  "Kimberly Müller": {
+    "name": "Kimberly Müller",
+    "deceased": true,
+    "deceasedVia": "solicit_code",
+    "drift": "high",
+    "driftKind": "quarterly",
+    "nameConflict": {
+      "nameCol": "Kimberly Müller",
+      "firstNameCol": "Margaret"
+    }
+  },
+  "Jean Lattimore": {
+    "name": "Jean Lattimore",
+    "deceased": true,
+    "deceasedVia": "status",
+    "drift": "high",
+    "driftKind": "quarterly"
+  },
+  "Sean Coventry": {
+    "name": "Sean Coventry",
+    "deceased": true,
+    "deceasedVia": "notes",
+    "drift": "high",
+    "driftKind": "declining",
+    "sharedConstituentId": "33226"
+  },
+  "Carolyn Haddad": {
+    "name": "Carolyn Haddad",
+    "deceased": true,
+    "deceasedVia": "status",
+    "drift": "high",
+    "driftKind": "declining"
+  },
+  "Matthew Ellingsworth": {
+    "name": "Matthew Ellingsworth",
+    "deceased": true,
+    "deceasedVia": "notes",
+    "drift": "high",
+    "driftKind": "declining"
+  },
+  "Jeremy Jefferies": {
+    "name": "Jeremy Jefferies",
+    "deceased": true,
+    "deceasedVia": "status",
+    "drift": "high",
+    "driftKind": "declining"
+  },
+  "Teresa Oyelaran": {
+    "name": "Teresa Oyelaran",
+    "deceased": true,
+    "deceasedVia": "solicit_code",
+    "drift": "none",
+    "lapsed": true
+  },
+  "Nancy Singh": {
+    "name": "Nancy Singh",
+    "deceased": true,
+    "deceasedVia": "status"
+  },
+  "Grace Delacroix": {
+    "name": "Grace Delacroix",
+    "deceased": true,
+    "deceasedVia": "solicit_code",
+    "nameConflict": {
+      "nameCol": "Grace Delacroix",
+      "firstNameCol": "Noah"
+    }
+  },
+  "Priya Jessup": {
+    "name": "Priya Jessup",
+    "deceased": true,
+    "deceasedVia": "status"
+  },
+  "Kwame Bancroft": {
+    "name": "Kwame Bancroft",
+    "deceased": true,
+    "deceasedVia": "notes"
+  },
+  "Deborah Adebayo": {
+    "name": "Deborah Adebayo",
+    "deceased": true,
+    "deceasedVia": "notes"
+  },
+  "Aisha Ivester": {
+    "name": "Aisha Ivester",
+    "deceased": true,
+    "deceasedVia": "status",
+    "hasEstate": true
+  },
+  "Dorothy Ackerly": {
+    "name": "Dorothy Ackerly",
+    "deceased": true,
+    "deceasedVia": "status",
+    "hasEstate": true
+  },
+  "Leila Marchetti": {
+    "name": "Leila Marchetti",
+    "deceased": true,
+    "deceasedVia": "status",
+    "hasEstate": true
+  },
+  "Diana Oyelaran": {
+    "name": "Diana Oyelaran",
+    "deceased": true,
+    "deceasedVia": "notes",
+    "contradiction": true,
+    "drift": "high",
+    "driftKind": "seasonal"
+  },
+  "Hannah Nguyễn": {
+    "name": "Hannah Nguyễn",
+    "deceased": true,
+    "deceasedVia": "notes",
+    "contradiction": true,
+    "drift": "high",
+    "driftKind": "quarterly"
+  },
+  "Margaret Jessup": {
+    "name": "Margaret Jessup",
+    "deceased": true,
+    "deceasedVia": "notes",
+    "contradiction": true
+  },
+  "Brian Ogletree": {
+    "name": "Brian Ogletree",
+    "deceased": true,
+    "deceasedVia": "notes",
+    "contradiction": true
+  },
+  "Evelyn Pemberton": {
+    "name": "Evelyn Pemberton",
+    "doNotSolicit": true,
+    "dnsVia": "solicit_code",
+    "dnsCode": "NC",
+    "drift": "high",
+    "driftKind": "seasonal"
+  },
+  "Ronald Pemberton": {
+    "name": "Ronald Pemberton",
+    "doNotSolicit": true,
+    "dnsVia": "solicit_code",
+    "dnsCode": "DNS",
+    "drift": "high",
+    "driftKind": "quarterly"
+  },
+  "Sara Stoddard": {
+    "name": "Sara Stoddard",
+    "doNotSolicit": true,
+    "dnsVia": "notes",
+    "drift": "high",
+    "driftKind": "quarterly"
+  },
+  "Bradley Kirtland": {
+    "name": "Bradley Kirtland",
+    "doNotSolicit": true,
+    "dnsVia": "notes",
+    "drift": "high",
+    "driftKind": "declining"
+  },
+  "Nicole Ulmer": {
+    "name": "Nicole Ulmer",
+    "doNotSolicit": true,
+    "dnsVia": "solicit_code",
+    "dnsCode": "DNS;DNM",
+    "drift": "high",
+    "driftKind": "declining"
+  },
+  "Natalie Okafor": {
+    "name": "Natalie Okafor",
+    "doNotSolicit": true,
+    "dnsVia": "solicit_code",
+    "dnsCode": "dns",
+    "drift": "high",
+    "driftKind": "declining"
+  },
+  "Mateo Castellanos": {
+    "name": "Mateo Castellanos",
+    "doNotSolicit": true,
+    "dnsVia": "notes",
+    "drift": "high",
+    "driftKind": "declining"
+  },
+  "Angela Chen": {
+    "name": "Angela Chen",
+    "doNotSolicit": true,
+    "dnsVia": "solicit_code",
+    "dnsCode": "Do Not Solicit"
+  },
+  "Aisha Ibáñez": {
+    "name": "Aisha Ibáñez",
+    "doNotSolicit": true,
+    "dnsVia": "notes"
+  },
+  "Bobby Müller": {
+    "name": "Bobby Müller",
+    "doNotSolicit": true,
+    "dnsVia": "solicit_code",
+    "dnsCode": "D.N.S."
+  },
+  "Thomas Pennington": {
+    "name": "Thomas Pennington",
+    "doNotSolicit": true,
+    "dnsVia": "solicit_code",
+    "dnsCode": "DNS - spouse request"
+  },
+  "Jack Haddad": {
+    "name": "Jack Haddad",
+    "doNotSolicit": true,
+    "dnsVia": "notes"
+  },
+  "Frank Ibáñez": {
+    "name": "Frank Ibáñez",
+    "doNotSolicit": true,
+    "dnsVia": "solicit_code",
+    "dnsCode": "No Contact"
+  },
+  "Harold Sowande": {
+    "name": "Harold Sowande",
+    "doNotSolicit": true,
+    "dnsVia": "notes"
+  },
+  "Pamela Pemberton": {
+    "name": "Pamela Pemberton",
+    "doNotSolicit": true,
+    "dnsVia": "notes"
+  },
+  "Albert Çelik": {
+    "name": "Albert Çelik",
+    "doNotSolicit": true,
+    "dnsVia": "notes"
+  },
+  "Larry Kensington": {
+    "name": "Larry Kensington",
+    "dnChannelVia": "solicit_code",
+    "dnCode": "DNE",
+    "doNotEmail": true,
+    "drift": "high",
+    "driftKind": "seasonal"
+  },
+  "Helen Culpepper": {
+    "name": "Helen Culpepper",
+    "dnChannelVia": "solicit_code",
+    "dnCode": "DNM",
+    "doNotMail": true,
+    "drift": "high",
+    "driftKind": "quarterly"
+  },
+  "Susan Brannigan": {
+    "name": "Susan Brannigan",
+    "dnChannelVia": "solicit_code",
+    "dnCode": "NO MAIL",
+    "doNotMail": true
+  },
+  "Janice Hollingsworth": {
+    "name": "Janice Hollingsworth",
+    "dnChannelVia": "solicit_code",
+    "dnCode": "DNM,DNE",
+    "doNotEmail": true,
+    "doNotMail": true
+  },
+  "Janice Tran": {
+    "name": "Janice Tran",
+    "doNotSolicit": true,
+    "dnsVia": "solicit_code",
+    "inconsistentRows": true,
+    "drift": "high",
+    "driftKind": "quarterly"
+  },
+  "Kenneth Nolasco": {
+    "name": "Kenneth Nolasco",
+    "doNotSolicit": true,
+    "dnsVia": "solicit_code",
+    "inconsistentRows": true,
+    "sharedConstituentId": "93134"
+  },
+  "Sophia Castellanos": {
+    "name": "Sophia Castellanos",
+    "doNotSolicit": true,
+    "dnsVia": "solicit_code",
+    "inconsistentRows": true
+  },
+  "Amy Ramirez": {
+    "name": "Amy Ramirez",
+    "doNotSolicit": true,
+    "dnsVia": "solicit_code",
+    "inconsistentRows": true
+  },
+  "Emily Vandyke": {
+    "name": "Emily Vandyke",
+    "doNotSolicit": true,
+    "newsletterOnly": true,
+    "drift": "none",
+    "lapsed": true
+  },
+  "Joyce Bancroft": {
+    "name": "Joyce Bancroft",
+    "doNotSolicit": true,
+    "newsletterOnly": true,
+    "drift": "none",
+    "lapsed": true
+  },
+  "Evelyn Vanterpool": {
+    "name": "Evelyn Vanterpool",
+    "doNotSolicit": true,
+    "newsletterOnly": true
+  },
+  "Patrick Ó Briain": {
+    "name": "Patrick Ó Briain",
+    "doNotSolicit": true,
+    "newsletterOnly": true
+  },
+  "Peter Kowalczyk": {
+    "name": "Peter Kowalczyk",
+    "doNotSolicit": true,
+    "newsletterOnly": true
+  },
+  "Brandon Caldwell": {
+    "name": "Brandon Caldwell",
+    "sustainer": true,
+    "sustainerState": "card_stopped",
+    "neverDrift": true,
+    "neverLapsed": true
+  },
+  "Beverly D'Angelo-Ruiz": {
+    "name": "Beverly D'Angelo-Ruiz",
+    "sustainer": true,
+    "sustainerState": "card_stopped",
+    "neverDrift": true,
+    "neverLapsed": true
+  },
+  "Anna Haddad": {
+    "name": "Anna Haddad",
+    "sustainer": true,
+    "sustainerState": "card_stopped",
+    "neverDrift": true,
+    "neverLapsed": true
+  },
+  "Sharon Moreau": {
+    "name": "Sharon Moreau",
+    "sustainer": true,
+    "sustainerState": "card_stopped",
+    "neverDrift": true,
+    "neverLapsed": true
+  },
+  "Benjamin Duong": {
+    "name": "Benjamin Duong",
+    "sustainer": true,
+    "sustainerState": "card_stopped",
+    "neverDrift": true,
+    "neverLapsed": true
+  },
+  "Jacob Isley": {
+    "name": "Jacob Isley",
+    "sustainer": true,
+    "sustainerState": "card_stopped",
+    "neverDrift": true,
+    "neverLapsed": true
+  },
+  "Gloria Okafor": {
+    "name": "Gloria Okafor",
+    "sustainer": true,
+    "sustainerState": "card_stopped",
+    "neverDrift": true,
+    "neverLapsed": true
+  },
+  "Dmitri Haddad": {
+    "name": "Dmitri Haddad",
+    "sustainer": true,
+    "sustainerState": "card_stopped",
+    "neverDrift": true,
+    "neverLapsed": true
+  },
+  "Douglas Ulmer": {
+    "name": "Douglas Ulmer",
+    "sustainer": true,
+    "sustainerState": "card_stopped",
+    "neverDrift": true,
+    "neverLapsed": true
+  },
+  "Amanda Blackwood": {
+    "name": "Amanda Blackwood",
+    "sustainer": true,
+    "sustainerState": "card_stopped",
+    "neverDrift": true,
+    "neverLapsed": true
+  },
+  "Alice Petrov": {
+    "name": "Alice Petrov",
+    "sustainer": true,
+    "sustainerState": "healthy",
+    "neverDrift": true
+  },
+  "Aisha Ó Briain": {
+    "name": "Aisha Ó Briain",
+    "sustainer": true,
+    "sustainerState": "healthy",
+    "neverDrift": true
+  },
+  "Bobby Ravensworth": {
+    "name": "Bobby Ravensworth",
+    "sustainer": true,
+    "sustainerState": "healthy",
+    "neverDrift": true
+  },
+  "Johnny Villalobos": {
+    "name": "Johnny Villalobos",
+    "sustainer": true,
+    "sustainerState": "healthy",
+    "neverDrift": true
+  },
+  "Jordan Coventry": {
+    "name": "Jordan Coventry",
+    "sustainer": true,
+    "sustainerState": "healthy",
+    "neverDrift": true
+  },
+  "Catherine Hutchinson": {
+    "name": "Catherine Hutchinson",
+    "sustainer": true,
+    "sustainerState": "healthy",
+    "neverDrift": true
+  },
+  "Fatima Whitaker": {
+    "name": "Fatima Whitaker",
+    "sustainer": true,
+    "sustainerState": "healthy",
+    "neverDrift": true
+  },
+  "Jeremy Featherstone": {
+    "name": "Jeremy Featherstone",
+    "sustainer": true,
+    "sustainerState": "healthy",
+    "neverDrift": true
+  },
+  "Vincent Mulvaney": {
+    "name": "Vincent Mulvaney",
+    "sustainer": true,
+    "sustainerState": "healthy",
+    "neverDrift": true
+  },
+  "Willie García": {
+    "name": "Willie García",
+    "sustainer": true,
+    "sustainerState": "healthy",
+    "neverDrift": true
+  },
+  "Donald Ackerly": {
+    "name": "Donald Ackerly",
+    "sustainer": true,
+    "sustainerState": "healthy",
+    "neverDrift": true
+  },
+  "Anna Brantley": {
+    "name": "Anna Brantley",
+    "sustainer": true,
+    "sustainerState": "healthy",
+    "neverDrift": true
+  },
+  "Maria Ogletree": {
+    "name": "Maria Ogletree",
+    "staleMonthlyFlag": true,
+    "trueCadence": "annual"
+  },
+  "Anthony Quimby": {
+    "name": "Anthony Quimby",
+    "staleMonthlyFlag": true,
+    "trueCadence": "annual"
+  },
+  "Joe Fitzgerald": {
+    "name": "Joe Fitzgerald",
+    "staleMonthlyFlag": true,
+    "trueCadence": "annual"
+  },
+  "Carol Hutchinson": {
+    "name": "Carol Hutchinson",
+    "staleMonthlyFlag": true,
+    "trueCadence": "annual"
+  },
+  "Christian García": {
+    "name": "Christian García",
+    "staleMonthlyFlag": true,
+    "trueCadence": "annual"
+  },
+  "Christine Ramirez": {
+    "name": "Christine Ramirez",
+    "sustainer": true,
+    "sustainerState": "unflagged",
+    "fromPattern": true
+  },
+  "Samuel Quarles": {
+    "name": "Samuel Quarles",
+    "sustainer": true,
+    "sustainerState": "unflagged",
+    "fromPattern": true
+  },
+  "Natalie Kirkpatrick": {
+    "name": "Natalie Kirkpatrick",
+    "sustainer": true,
+    "sustainerState": "unflagged",
+    "fromPattern": true
+  },
+  "Dylan Hollingsworth": {
+    "name": "Dylan Hollingsworth",
+    "drift": "high",
+    "driftKind": "seasonal"
+  },
+  "Heather Coventry": {
+    "name": "Heather Coventry",
+    "drift": "high",
+    "driftKind": "seasonal"
+  },
+  "Steven Barrowman": {
+    "name": "Steven Barrowman",
+    "drift": "high",
+    "driftKind": "seasonal"
+  },
+  "James Kowalski": {
+    "name": "James Kowalski",
+    "drift": "high",
+    "driftKind": "seasonal"
+  },
+  "Kenneth Fitzgerald": {
+    "name": "Kenneth Fitzgerald",
+    "drift": "high",
+    "driftKind": "seasonal"
+  },
+  "Olivia Vandermeer": {
+    "name": "Olivia Vandermeer",
+    "drift": "high",
+    "driftKind": "seasonal",
+    "sharedConstituentId": "15766"
+  },
+  "Stephanie Fennimore": {
+    "name": "Stephanie Fennimore",
+    "drift": "high",
+    "driftKind": "quarterly"
+  },
+  "Jose Ibáñez": {
+    "name": "Jose Ibáñez",
+    "drift": "high",
+    "driftKind": "quarterly"
+  },
+  "Heather Grantham": {
+    "name": "Heather Grantham",
+    "drift": "high",
+    "driftKind": "quarterly"
+  },
+  "David Wainwright": {
+    "name": "David Wainwright",
+    "drift": "high",
+    "driftKind": "quarterly"
+  },
+  "Christina Sedgwick": {
+    "name": "Christina Sedgwick",
+    "drift": "high",
+    "driftKind": "quarterly"
+  },
+  "Jean Kirtland": {
+    "name": "Jean Kirtland",
+    "drift": "high",
+    "driftKind": "quarterly"
+  },
+  "Alexander Salcedo": {
+    "name": "Alexander Salcedo",
+    "drift": "high",
+    "driftKind": "quarterly"
+  },
+  "Terry García": {
+    "name": "Terry García",
+    "drift": "high",
+    "driftKind": "quarterly"
+  },
+  "Sara Hollingsworth": {
+    "name": "Sara Hollingsworth",
+    "drift": "high",
+    "driftKind": "quarterly",
+    "sharedConstituentId": "15766"
+  },
+  "Andrea O'Brien": {
+    "name": "Andrea O'Brien",
+    "drift": "high",
+    "driftKind": "quarterly"
+  },
+  "Sandra Yeardley": {
+    "name": "Sandra Yeardley",
+    "drift": "high",
+    "driftKind": "quarterly"
+  },
+  "Priya Wainwright": {
+    "name": "Priya Wainwright",
+    "drift": "high",
+    "driftKind": "quarterly"
+  },
+  "Donald Ellingsworth": {
+    "name": "Donald Ellingsworth",
+    "drift": "high",
+    "driftKind": "quarterly",
+    "nameConflict": {
+      "nameCol": "Donald Ellingsworth",
+      "firstNameCol": "Steven"
+    }
+  },
+  "Charles Nightingale": {
+    "name": "Charles Nightingale",
+    "drift": "high",
+    "driftKind": "declining"
+  },
+  "Ryan Sandoval": {
+    "name": "Ryan Sandoval",
+    "drift": "high",
+    "driftKind": "declining"
+  },
+  "Donald Olawale": {
+    "name": "Donald Olawale",
+    "drift": "high",
+    "driftKind": "declining"
+  },
+  "Peter Sedgwick": {
+    "name": "Peter Sedgwick",
+    "drift": "high",
+    "driftKind": "declining"
+  },
+  "Gabriel Bergström": {
+    "name": "Gabriel Bergström",
+    "drift": "high",
+    "driftKind": "declining"
+  },
+  "Noah Kowalski": {
+    "name": "Noah Kowalski",
+    "drift": "high",
+    "driftKind": "declining"
+  },
+  "Judy Bancroft": {
+    "name": "Judy Bancroft",
+    "drift": "high",
+    "driftKind": "declining"
+  },
+  "Andrew Çelik": {
+    "name": "Andrew Çelik",
+    "drift": "none",
+    "driftKind": "seasonal_open"
+  },
+  "Judy Villalobos": {
+    "name": "Judy Villalobos",
+    "drift": "none",
+    "driftKind": "seasonal_open"
+  },
+  "Paul Ó Briain": {
+    "name": "Paul Ó Briain",
+    "drift": "none",
+    "driftKind": "seasonal_open"
+  },
+  "Debra Bancroft": {
+    "name": "Debra Bancroft",
+    "drift": "none",
+    "driftKind": "seasonal_open"
+  },
+  "Paul Sandoval": {
+    "name": "Paul Sandoval",
+    "drift": "none",
+    "driftKind": "seasonal_open"
+  },
+  "Heather Kensington": {
+    "name": "Heather Kensington",
+    "drift": "none",
+    "driftKind": "seasonal_open"
+  },
+  "Kenneth Kensington": {
+    "name": "Kenneth Kensington",
+    "drift": "none",
+    "driftKind": "seasonal_open"
+  },
+  "Nathan Devereaux": {
+    "name": "Nathan Devereaux",
+    "drift": "none",
+    "driftKind": "seasonal_open"
+  },
+  "Timothy Pemberton": {
+    "name": "Timothy Pemberton",
+    "drift": "none",
+    "driftKind": "seasonal_open"
+  },
+  "Margaret Whitfield": {
+    "name": "Margaret Whitfield",
+    "drift": "none",
+    "driftKind": "seasonal_open"
+  },
+  "Mateo Lattimore": {
+    "name": "Mateo Lattimore",
+    "drift": "none",
+    "driftKind": "quarterly_ok"
+  },
+  "Janet Ellingsworth": {
+    "name": "Janet Ellingsworth",
+    "drift": "none",
+    "driftKind": "quarterly_ok"
+  },
+  "Kyle O'Brien": {
+    "name": "Kyle O'Brien",
+    "drift": "none",
+    "driftKind": "quarterly_ok"
+  },
+  "Jacqueline Jessup": {
+    "name": "Jacqueline Jessup",
+    "drift": "none",
+    "driftKind": "quarterly_ok"
+  },
+  "Henry Vanterpool": {
+    "name": "Henry Vanterpool",
+    "drift": "none",
+    "driftKind": "quarterly_ok"
+  },
+  "Nicholas Vandyke": {
+    "name": "Nicholas Vandyke",
+    "drift": "none",
+    "driftKind": "quarterly_ok"
+  },
+  "Jacqueline Sinclair": {
+    "name": "Jacqueline Sinclair",
+    "drift": "none",
+    "driftKind": "quarterly_ok"
+  },
+  "Dylan Søndergaard": {
+    "name": "Dylan Søndergaard",
+    "drift": "none",
+    "driftKind": "quarterly_ok"
+  },
+  "Nicole Featherstone": {
+    "name": "Nicole Featherstone",
+    "drift": "none",
+    "lapsed": true
+  },
+  "John Trujillo": {
+    "name": "John Trujillo",
+    "drift": "none",
+    "lapsed": true
+  },
+  "Julie Bancroft": {
+    "name": "Julie Bancroft",
+    "drift": "none",
+    "lapsed": true
+  },
+  "Kwame Vandermeer": {
+    "name": "Kwame Vandermeer",
+    "drift": "none",
+    "lapsed": true
+  },
+  "Steven García": {
+    "name": "Steven García",
+    "drift": "none",
+    "lapsed": true
+  },
+  "Logan Halvorsen": {
+    "name": "Logan Halvorsen",
+    "drift": "none",
+    "lapsed": true
+  },
+  "Amara Ó Briain": {
+    "name": "Amara Ó Briain",
+    "drift": "none",
+    "lapsed": true
+  },
+  "Harold Devereaux": {
+    "name": "Harold Devereaux",
+    "drift": "none",
+    "lapsed": true
+  },
+  "Gary Fennimore": {
+    "name": "Gary Fennimore",
+    "drift": "none",
+    "lapsed": true
+  },
+  "Harold Culpepper": {
+    "name": "Harold Culpepper",
+    "drift": "none",
+    "lapsed": true
+  },
+  "Samuel Fitzgerald": {
+    "name": "Samuel Fitzgerald",
+    "drift": "none",
+    "lapsed": true
+  },
+  "Sean Caldwell": {
+    "name": "Sean Caldwell",
+    "drift": "none",
+    "lapsed": true
+  },
+  "Emily Ó Briain": {
+    "name": "Emily Ó Briain",
+    "drift": "none",
+    "lapsed": true
+  },
+  "Patricia Ramirez": {
+    "name": "Patricia Ramirez",
+    "drift": "none",
+    "lapsed": true
+  },
+  "Michael Kowalski": {
+    "name": "Michael Kowalski",
+    "drift": "none",
+    "lapsed": true
+  },
+  "Kelly Müller": {
+    "name": "Kelly Müller",
+    "drift": "none",
+    "lapsed": true
+  },
+  "Arthur Underhill": {
+    "name": "Arthur Underhill",
+    "drift": "none",
+    "lapsed": true
+  },
+  "Jack van der Berg": {
+    "name": "Jack van der Berg",
+    "drift": "medium_at_most",
+    "driftKind": "erratic"
+  },
+  "Amara Merriweather": {
+    "name": "Amara Merriweather",
+    "drift": "medium_at_most",
+    "driftKind": "erratic"
+  },
+  "Hannah Salcedo": {
+    "name": "Hannah Salcedo",
+    "drift": "medium_at_most",
+    "driftKind": "erratic"
+  },
+  "Angela Quarles": {
+    "name": "Angela Quarles",
+    "drift": "medium_at_most",
+    "driftKind": "erratic"
+  },
+  "Michelle Devereaux": {
+    "name": "Michelle Devereaux",
+    "drift": "medium_at_most",
+    "driftKind": "erratic"
+  },
+  "Rebecca Kingsley": {
+    "name": "Rebecca Kingsley",
+    "drift": "medium_at_most",
+    "driftKind": "erratic"
+  },
+  "Kathryn Yeardley": {
+    "name": "Kathryn Yeardley",
+    "drift": "medium_at_most",
+    "driftKind": "erratic"
+  },
+  "Peter Nakamura": {
+    "name": "Peter Nakamura",
+    "drift": "medium_at_most",
+    "driftKind": "erratic"
+  },
+  "Keith Nguyễn": {
+    "name": "Keith Nguyễn",
+    "drift": "medium_at_most",
+    "driftKind": "erratic"
+  },
+  "Jennifer Kirkpatrick": {
+    "name": "Jennifer Kirkpatrick",
+    "drift": "medium_at_most",
+    "driftKind": "erratic"
+  },
+  "William Caldwell": {
+    "name": "William Caldwell",
+    "sharedConstituentId": "93134"
+  },
+  "Cheryl Wainwright": {
+    "name": "Cheryl Wainwright",
+    "nameConflict": {
+      "nameCol": "Cheryl Wainwright",
+      "firstNameCol": "Barbara"
+    }
+  },
+  "Patrick Nakamura": {
+    "name": "Patrick Nakamura",
+    "nameConflict": {
+      "nameCol": "Patrick Nakamura",
+      "firstNameCol": "Samantha"
+    }
+  },
+  "Laura Abernathy": {
+    "name": "Laura Abernathy",
+    "nameConflict": {
+      "nameCol": "Laura Abernathy",
+      "firstNameCol": "Cheryl"
+    }
+  },
+  "Brian Kensington": {
+    "name": "Brian Kensington",
+    "nameConflict": {
+      "nameCol": "Brian Kensington",
+      "firstNameCol": "Susan"
+    }
+  },
+  "Isabella Gallagher": {
+    "name": "Isabella Gallagher",
+    "nameConflict": {
+      "nameCol": "Isabella Gallagher",
+      "firstNameCol": "Jennifer"
+    }
+  }
+}

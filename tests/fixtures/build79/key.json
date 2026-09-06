@@ -1,0 +1,249 @@
+{
+  "source": "claude/messy-2500-v2-fixture-key.md",
+  "seed": 20260905,
+  "anchorDate": "2026-09-05",
+  "bytes": 438319,
+  "physicalLines": 2853,
+  "dataRecords": 2500,
+  "headerLine": 4,
+  "totalRowAmount": 2035978.52,
+  "fileAmountCellSum": 2327646.22,
+  "expectedNetCash": 2005092.16,
+  "refusableCashRows": {
+    "rows": 33,
+    "dollars": 30886.36
+  },
+  "refunds": {
+    "rows": 7,
+    "dollars": -7850
+  },
+  "positiveReversalRows": 3,
+  "exactDuplicates": {
+    "rows": 15,
+    "dollars": 16030.6
+  },
+  "softCredits": {
+    "rows": 60,
+    "dollars": 35016.6
+  },
+  "pledgeCommitments": {
+    "rows": 12,
+    "dollars": 184000
+  },
+  "pledgePayments": {
+    "dollars": 147625
+  },
+  "inKind": {
+    "rows": 25,
+    "dollars": 38900,
+    "blankAmountRows": 7
+  },
+  "matchingGifts": {
+    "rows": 30,
+    "dollars": 18346.61
+  },
+  "sameDayTwins": {
+    "rows": 10
+  },
+  "legacyMigrationTwins": {
+    "rows": 6
+  },
+  "slashDates": {
+    "total": 1581,
+    "dayFirstUnambiguous": 828,
+    "ambiguous": 753,
+    "silentlyWrongUnderUS": 688
+  },
+  "isoZDates": 96,
+  "cp1252": {
+    "lines": [
+      1541,
+      1542,
+      1545,
+      1913
+    ],
+    "donors": [
+      "Christian García",
+      "Stephanie Müller"
+    ]
+  },
+  "embeddedNewlineCells": 336,
+  "columnShiftRows": [
+    "G-6514",
+    "G-4210",
+    "G-8053",
+    "G-7877",
+    "G-4747"
+  ],
+  "extraColumnRows": [
+    "G-5204",
+    "G-7692",
+    "G-5041",
+    "G-5654"
+  ],
+  "shortRows": [
+    "G-5318",
+    "G-6515",
+    "G-6678"
+  ],
+  "anonymousRows": 15,
+  "organisations": 20,
+  "plantedDates": [
+    {
+      "raw": "Q4 2023",
+      "giftId": "G-4308",
+      "donor": "Wainwright, David",
+      "trueDate": "2024-09-19",
+      "reason": "unparseable period"
+    },
+    {
+      "raw": "FY24",
+      "giftId": "G-6688",
+      "donor": "Whitaker Bank Foundation",
+      "trueDate": "2024-08-06",
+      "reason": "unparseable period"
+    },
+    {
+      "raw": "Christmas 2022",
+      "giftId": "G-7844",
+      "donor": "Mr. and Mrs. Catherine Nguyễn",
+      "trueDate": "2023-09-04",
+      "reason": "unparseable"
+    },
+    {
+      "raw": "12/31/1899",
+      "giftId": "G-7677",
+      "donor": "larry everhart",
+      "trueDate": "2022-12-12",
+      "reason": "Excel epoch zero, not a real gift date"
+    },
+    {
+      "raw": "01/01/1900",
+      "giftId": "G-5293",
+      "donor": "Anna Haddad",
+      "trueDate": "2025-08-01",
+      "reason": "Excel serial 1, not a real gift date"
+    },
+    {
+      "raw": "29/02/2023",
+      "giftId": "G-7497-SC",
+      "donor": "Mr. and Mrs. Matthew Vasquez",
+      "trueDate": "2024-12-09",
+      "reason": "invalid leap day"
+    },
+    {
+      "raw": "30/02/2024",
+      "giftId": "G-5345",
+      "donor": "sharon moreau",
+      "trueDate": "2026-03-15",
+      "reason": "impossible date"
+    },
+    {
+      "raw": "00/00/0000",
+      "giftId": "G-5874",
+      "donor": "Jeremy Featherstone",
+      "trueDate": "2026-06-15",
+      "reason": "unparseable"
+    },
+    {
+      "raw": "",
+      "giftId": "G-4430",
+      "donor": "priya wainwright",
+      "trueDate": "2025-12-10",
+      "reason": "blank"
+    },
+    {
+      "raw": "05/01/31",
+      "giftId": "G-5631",
+      "donor": "Aisha S. Ó Briain",
+      "trueDate": "2025-06-01",
+      "reason": "two-digit year: 5 Jan 1931 under dd/mm, never 2031"
+    },
+    {
+      "raw": "31/12/26",
+      "giftId": "G-6328",
+      "donor": "Gallagher, Scott",
+      "trueDate": "2024-07-23",
+      "reason": "31 Dec 2026, FUTURE, must error"
+    },
+    {
+      "raw": "15/09/2026",
+      "giftId": "G-4486",
+      "donor": "MATEO LATTIMORE",
+      "trueDate": "2025-09-04",
+      "reason": "15 Sep 2026, ten days in the future, must error"
+    },
+    {
+      "raw": "Unknown",
+      "giftId": "G-6540",
+      "donor": "Kimberly Ulmer",
+      "trueDate": "2025-03-11",
+      "reason": "unparseable"
+    },
+    {
+      "raw": "2024-02-30",
+      "giftId": "G-7779",
+      "donor": "Bancroft, Kwame",
+      "trueDate": "2021-03-20",
+      "reason": "impossible ISO date"
+    }
+  ],
+  "plantedAmounts": [
+    {
+      "raw": "$1,5000",
+      "giftId": "G-6783",
+      "donor": "Valvoline",
+      "trueAmount": 250,
+      "reason": "misplaced comma"
+    },
+    {
+      "raw": "1e3",
+      "giftId": "G-6233",
+      "donor": "Gallagher, Scott",
+      "trueAmount": 20,
+      "reason": "scientific"
+    },
+    {
+      "raw": "500 (pledge)",
+      "giftId": "G-6527",
+      "donor": "Nicole Grantham",
+      "trueAmount": 6250,
+      "reason": "annotated"
+    },
+    {
+      "raw": "1,000.00.",
+      "giftId": "G-7517",
+      "donor": "Mary Ivester",
+      "trueAmount": 100,
+      "reason": "trailing period"
+    },
+    {
+      "raw": "$",
+      "giftId": "G-6099",
+      "donor": "samuel quarles",
+      "trueAmount": 50,
+      "reason": "symbol only"
+    },
+    {
+      "raw": "one hundred",
+      "giftId": "G-6478",
+      "donor": "Whitfield, Isabella",
+      "trueAmount": 5000,
+      "reason": "words"
+    },
+    {
+      "raw": "100..00",
+      "giftId": "G-4340",
+      "donor": "Jean Kirtland",
+      "trueAmount": 2000,
+      "reason": "double point"
+    },
+    {
+      "raw": "$25O.00",
+      "giftId": "G-7777",
+      "donor": "donald hutchinson",
+      "trueAmount": 1500,
+      "reason": "letter O for zero"
+    }
+  ]
+}
