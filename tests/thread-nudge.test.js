@@ -105,6 +105,8 @@ async function reset() {
   ok("no exclamation marks, no 'friendly reminder', no em dash in the copy",
      !/!/.test(html.replace(/<[^>]+>/g, "").replace(/&#33;/g, "!")) && !/friendly reminder/i.test(html) && !html.replace(/<[^>]+>/g, "").includes("—"), null);
   ok("the word family holds: no 'recovered' as an outcome in the email", !/\brecovered\b/i.test(html.replace(/<[^>]+>/g, "")), null);
+  ok("no naggy language in the email: 'keeps asking' / 'until you've done it' absent — Steward holds things, it doesn't nag",
+     !/keeps asking/i.test(html) && !/until you['\u2019]ve done it/i.test(html), null);
 
   // ── §2 · links do nothing on their own ───────────────────────────────────
   console.log("\n— §2 · GET must never change state —");

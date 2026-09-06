@@ -78,7 +78,7 @@ const rgb = s => (s.match(/\d+/g) || []).slice(0, 3).map(Number);
   const SECTIONS = [
     "mean to call back?",   // the hero H1 wraps over a <br>; innerText carries a newline
     "For the shops where one person holds the whole donor file", // who it's for
-    "Log it. The next step comes back. It keeps asking.",        // how it works
+    "Log it. The next step comes back. It stays with you.",        // how it works
     "A monthly donor's card expires.",                           // when a card stops
     "And the ones who already went quiet.",                      // drift
     "Yours, plainly.",                                           // your data
@@ -208,6 +208,15 @@ const rgb = s => (s.match(/\d+/g) || []).slice(0, 3).map(Number);
      !BANNED.some(re => re.test(text)), BANNED.filter(re => re.test(text)).map(String));
   ok("no em dash in the rendered copy (Jonathan's voice uses periods)",
      !text.includes("—"), null);
+  // FIX (product marks + language): The Thread and Drift are NAMED PRODUCTS,
+  // rendered by the shared ProductMark pill on the landing AND in the app;
+  // and Steward HOLDS things, it doesn't nag — "keeps asking" and "until
+  // you've done it" are banned from every rendered surface.
+  const marks = await page.evaluate(() => [...document.querySelectorAll(".pm-mark")].map(m => m.textContent.trim()));
+  ok('the ProductMark pills render the literal names: "The Thread" (hero panel + how-it-works) and "Drift" (the Drift section)',
+     marks.filter(m => m === "The Thread").length >= 2 && marks.filter(m => m === "Drift").length >= 1, marks);
+  ok('no naggy language: "keeps asking" and "until you\'ve done it" absent from rendered text',
+     !/keeps asking/i.test(text) && !/until you['\u2019]ve done it/i.test(text), null);
   ok("the © placeholder is VISIBLE, not silently blank or invented",
      text.includes("[LEGAL ENTITY NAME]"), null);
   // BUILD-81 §4.4 item 7 — "assert it is not shipped as literal brackets":

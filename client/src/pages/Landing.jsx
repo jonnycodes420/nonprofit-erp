@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import {
   FIELD_SIZE, DRIFT_COUNTS, STEADY_COUNT, fieldDots, breatheDelay,
 } from "../lib/donorField";
+import { ProductMark } from "../components/ProductMark";
 
 // ── Landing — BUILD-81 + the photograph pass ────────────────────────────────
 //
@@ -90,11 +91,11 @@ function ThreadPanel() {
     <div
       role="img"
       className="lt-wrap lt-panel"
-      aria-label="The Thread for one donor, Robert Harmon, lifetime giving $14,500. The conversation so far: March 3, coffee, he's interested in the scholarship fund. March 5, thank-you note sent. March 19, called and left a message. March 21, try again. Still open, day 11. Tuesday's email will ask again."
+      aria-label="The Thread for one donor, Robert Harmon, lifetime giving $14,500. The conversation so far: March 3, coffee, he's interested in the scholarship fund. March 5, thank-you note sent. March 19, called and left a message. March 21, try again. Still open, day 11. Back in your inbox Tuesday morning."
     >
       <div aria-hidden="true" className="lt-phead">
         <div>
-          <div className="lt-cap" style={{ color: C.sage, marginBottom: 6 }}>The Thread</div>
+          <div style={{ marginBottom: 10 }}><ProductMark product="thread" on="ink" /></div>
           <div className="lp-serif" style={{ fontSize: 24, color: C.cream, letterSpacing: "-0.01em" }}>Robert Harmon</div>
         </div>
         <div style={{ textAlign: "right" }}>
@@ -117,7 +118,7 @@ function ThreadPanel() {
           <div className="lt-card-open">
             <div aria-hidden="true" className="lp-serif lt-openbig">Still open. Day 11.</div>
             <div className="lt-openrow">
-              <span aria-hidden="true" style={{ fontSize: 13, color: "rgba(15,26,18,0.72)", fontWeight: 500 }}>Tuesday&apos;s email will ask again.</span>
+              <span aria-hidden="true" style={{ fontSize: 13, color: "rgba(15,26,18,0.72)", fontWeight: 500 }}>Back in your inbox Tuesday morning.</span>
               <a href="/signup" className="lt-mini lp-focus">Log the call →</a>
             </div>
           </div>
@@ -366,10 +367,10 @@ export default function Landing() {
               Who did you <br />mean to call back?
             </h1>
             <p className="up" style={{ fontSize: 20, lineHeight: 1.55, color: C.ink3, maxWidth: 540, animationDelay: "0.08s" }}>
-              Every fundraiser has one. The gala guy. The board member&apos;s friend who said &quot;let&apos;s talk in the spring.&quot; The one who was polite and busy and said nothing at all, so he never made it onto today&apos;s list.
+              You talked to a donor in March and it went well. You meant to follow up. Then the gala, then the grant, then the board meeting, and the name slid off the list.
             </p>
             <p className="up" style={{ fontSize: 20, lineHeight: 1.5, color: C.ink, maxWidth: 540, fontWeight: 500, animationDelay: "0.14s" }}>
-              Steward writes the conversation down, hands you the next step, and keeps asking until you&apos;ve done it.
+              Log the conversation once. Steward carries it from there.
             </p>
             <div className="up lp-ctarow" style={{ animationDelay: "0.22s" }}>
               <a href="/signup" className="lp-btn lp-btn-ink lp-focus">Start free</a>
@@ -449,12 +450,13 @@ export default function Landing() {
             <div className="lp-sechead">
               <div style={{ display: "flex", flexDirection: "column", gap: 18, maxWidth: 760 }}>
                 <div className="lp-eyebrow" style={{ color: C.greenDk }}>HOW IT WORKS</div>
+                <div><ProductMark product="thread" on="cream" /></div>
                 <h2 className="lp-h2" style={{ fontSize: 50, lineHeight: 1.06, letterSpacing: "-0.025em" }}>
-                  Log it. The next step comes back. It keeps asking.
+                  Log it. The next step comes back. It stays with you.
                 </h2>
               </div>
               <p style={{ fontSize: 16, lineHeight: 1.6, color: C.ink3, maxWidth: 340 }}>
-                This is called the Thread: a donor plus an open next step. Never a task you had to remember to create.
+                This is the Thread: a donor and an open next step. Never a task you had to remember to create.
               </p>
             </div>
             <div className="lp-beats">
@@ -500,9 +502,9 @@ export default function Landing() {
                   loading="lazy" decoding="async"
                 />
                 <div>
-                  <h3 className="lp-serif" style={{ fontSize: 24, lineHeight: 1.2, marginBottom: 8 }}>It keeps asking.</h3>
+                  <h3 className="lp-serif" style={{ fontSize: 24, lineHeight: 1.2, marginBottom: 8 }}>It stays with you.</h3>
                   <p style={{ fontSize: 15, lineHeight: 1.65, color: C.ink3 }}>
-                    One weekday-morning email with everything due or overdue. The subject line carries the day count, and the count keeps climbing until you&apos;ve done it or said why not.
+                    One email on weekday mornings with what&apos;s due. The subject line shows how long each one has been open. It stops when the thread closes.
                   </p>
                 </div>
               </article>
@@ -542,7 +544,7 @@ export default function Landing() {
         <section id="drift" className="lp-sec" style={{ background: C.cream }}>
           <div className="lp-split">
             <div style={{ display: "flex", flexDirection: "column", gap: 22 }}>
-              <div className="lp-eyebrow" style={{ color: C.greenDk }}>DRIFT</div>
+              <div><ProductMark product="drift" on="cream" /></div>
               <h2 className="lp-h2" style={{ fontSize: 50, lineHeight: 1.06, letterSpacing: "-0.025em" }}>
                 And the ones who already went quiet.
               </h2>

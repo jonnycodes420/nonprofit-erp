@@ -122,7 +122,7 @@ function serveDist() {
   const SECTIONS = [
     "mean to call back?",  // the hero H1 wraps over a <br>; innerText carries a newline
     "For the shops where one person holds the whole donor file",
-    "Log it. The next step comes back. It keeps asking.",
+    "Log it. The next step comes back. It stays with you.",
     "A monthly donor's card expires.",
     "And the ones who already went quiet.",
     "Yours, plainly.",
@@ -221,6 +221,11 @@ function serveDist() {
   ok("no customer language: trusted by / customers / clients absent",
      !/trusted by|\bcustomers?\b|\bclients?\b/i.test(text), null);
   ok("no em dash in the rendered copy (Jonathan's voice uses periods)", !text.includes("—"), null);
+  const marks = await page.evaluate(() => [...document.querySelectorAll(".pm-mark")].map(m => m.textContent.trim()));
+  ok("the ProductMark pills render the literal product names on the page",
+     marks.filter(m => m === "The Thread").length >= 2 && marks.filter(m => m === "Drift").length >= 1, marks);
+  ok("no naggy language: 'keeps asking' / 'until you've done it' absent",
+     !/keeps asking/i.test(text) && !/until you['\u2019]ve done it/i.test(text), null);
 
   // ── §6 · copy that must not change ─────────────────────────────────────
   console.log("\n— §6 · load-bearing copy —");

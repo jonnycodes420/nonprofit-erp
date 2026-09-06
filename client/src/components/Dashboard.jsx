@@ -7,6 +7,7 @@ import { greetingForHour } from "../lib/greeting";
 import FunnelChart from "./FunnelChart";
 import MetricBreakdownPanel from "./MetricBreakdownPanel";
 import { LogConversationModal, ThreadDismissMenu } from "./LogConversation";
+import { ProductMark } from "./ProductMark";
 
 // BUILD-34 — customizable Home. Sections render from a per-user ordered
 // [{id,visible}] config (client/src/lib/homeLayout.js is the canonical list +
@@ -1365,9 +1366,8 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
   const driftSection=driftData?(
       <div id="dash-drifting" style={{...cardWrap,borderColor:driftRows.length>0?T.gold500+"55":T.bg3,scrollMarginTop:64}}>
         <div className="dash-cpad" style={{...cPad,borderBottom:"1px solid "+T.bg3,...sHdr}}>
-          <span style={{display:"flex",alignItems:"center",gap:8}}>
-            <span aria-hidden style={{color:T.gold500,fontSize:13,lineHeight:1}}>◉</span>
-            <span style={sTitle}>Drifting</span>
+          <span style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+            <ProductMark product="drift" on="cream"/>
             <span style={{fontSize:11.5,color:T.ink3}}>
               {driftData.counts.driftingHigh>0
                 ?`${fmtFull(driftData.atRiskAmount)} at risk · ${driftData.counts.driftingHigh} donor${driftData.counts.driftingHigh===1?"":"s"} past their own pattern`
@@ -1505,8 +1505,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
           <div id="dash-thread" style={{...cardWrap,borderColor:threadStat?.overdue>0?T.gold500+"55":T.bg3,scrollMarginTop:64}}>
             <div className="dash-cpad" style={{...cPad,borderBottom:"1px solid "+T.bg3,...sHdr}}>
               <span style={{display:"flex",alignItems:"center",gap:8}}>
-                <span aria-hidden style={{color:T.greenDk,fontSize:13,lineHeight:1}}>◈</span>
-                <span style={sTitle}>The Thread</span>
+                <ProductMark product="thread" on="cream"/>
               </span>
               {threadStat&&threadStat.open>0&&(
                 <span style={{fontSize:11.5,color:T.ink3}}>

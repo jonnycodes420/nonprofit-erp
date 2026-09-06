@@ -244,3 +244,24 @@ Cosmetic note: the hero H1 wraps over a <br>, so innerText carries a
 newline — the SECTIONS order check keys on "mean to call back?" while the
 H1 guard still asserts the full question via textContent.
 
+## THE PRODUCT MARKS + THE VOICE (FIX, 2026-09-06)
+
+`client/src/components/ProductMark.jsx` — one dependency-free pill (the
+landing is the eager entry chunk; the component imports nothing) rendering
+The Thread and Drift as NAMED PRODUCTS with their 18×18 glyphs (the knot on
+a thread; three dots with the third gone brass), ink and cream variants per
+the brief. Placed: the hero panel head (replacing the small-caps cap), the
+how-it-works head above the H2, the landing Drift head (replacing the DRIFT
+eyebrow), and Home's Thread and Drift section headings (Drift's mark
+followed by the existing grey sentence). Literal names asserted inside
+`.pm-mark` on the landing (both gates) AND on Home (presentation-wiring).
+
+**The language rule, now asserted:** Steward HOLDS things; it doesn't nag.
+"keeps asking" and "until you've done it" are banned and asserted ZERO on
+the rendered landing (both gates), on Home (presentation-wiring), and in
+the nudge email bytes (thread-nudge). The hero's fragment-list paragraph
+("The gala guy. The board member's friend…") was replaced with the
+March-donor paragraph verbatim; the panel line became "Back in your inbox
+Tuesday morning."; how-it-works became "It stays with you." with the
+stops-when-it-closes body. Verifier 55 → 57; guard count up, never down.
+

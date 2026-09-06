@@ -158,6 +158,14 @@ const rendersMoney = (text, n) => text.includes(fmtFull(n)) || text.includes(fmt
     // ── Home: hero goal figures + tasks card ──
     {
       const text = await bodyText();
+      // FIX (product marks): The Thread and Drift render as NAMED PRODUCTS on
+      // Home via the shared ProductMark pill — the same component the landing
+      // uses — and the naggy phrases are banned from the rendered surface.
+      const marks = await page.evaluate(() => [...document.querySelectorAll(".pm-mark")].map(m => m.textContent.trim()));
+      ok(`${label} Home: ProductMark renders the literal "The Thread"`, marks.includes("The Thread"), marks);
+      ok(`${label} Home: ProductMark renders the literal "Drift"`, marks.includes("Drift"), marks);
+      ok(`${label} Home: no naggy language ("keeps asking" / "until you've done it")`,
+         !/keeps asking/i.test(text) && !/until you['\u2019]ve done it/i.test(text), null);
       if (A.rollup && A.rollup.totalGoal > 0) {
         const pct = Math.round((A.rollup.rawPercent ?? A.rollup.percent) || 0);
         ok(`${label} Home hero: rollup % (${pct}%) rendered`, new RegExp(`\\b${pct}\\s*%`).test(text), text.match(/\d+\s*%/g));
