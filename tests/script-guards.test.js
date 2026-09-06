@@ -70,7 +70,7 @@ const SELF_REFUSING = [
   "build78-repro-crossorg-fieldid"];
 
 // Loopback is HARDCODED (no BASE env at all) — cannot reach a remote host.
-const LOOPBACK_HARDCODED = ["build45-portal-capture", "onramp-capture", "build78-capture", "build79-repro", "build79-capture"];
+const LOOPBACK_HARDCODED = ["build45-portal-capture", "onramp-capture", "build78-capture", "build79-repro", "build79-capture", "build80-capture"];
 
 // Read-only against whatever BASE points at (may default to prod): their only
 // write-shaped call is POST /auth/login. Verified below, not just trusted.
