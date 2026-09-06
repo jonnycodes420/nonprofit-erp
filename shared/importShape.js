@@ -1262,6 +1262,7 @@ export function detectNoteMarkers(text) {
   // deceased — the worst possible false positive is calling the dead
   hit("deceased", /\bdeceased\b/i);
   hit("deceased", /passed away/i);
+  hit("deceased", /\bdied\b/i);                     // "Died 2023. Family still gives."
   hit("deceased", /^d\.\s+/i, "d. <date>");            // "d. Nov 2023" — anchored so "Ph.D." can't match
   if (hit("deceased", /estate of decedent|\bbequest\b/i)) out.doNotSolicit = true; // an estate is never solicited
   let dm = t.match(/deceased\s+(\d{1,2}\/\d{4})/i) || t.match(/^d\.\s+([A-Za-z]{3,9}\.?\s+\d{4})/i);
@@ -1272,6 +1273,11 @@ export function detectNoteMarkers(text) {
   hit("doNotSolicit", /no solicitation/i);
   hit("doNotSolicit", /\bDNS\b/);
   hit("doNotSolicit", /do not (mail or |mail\/)?call/i);  // a fundraiser's call IS an ask ("do not mail or call" blocks both)
+  // BUILD-80 Part 4 — phrasings the v2 file planted that the conservative set
+  // missed, each an unambiguous no-ask in a donor note:
+  hit("doNotSolicit", /no more asks/i);                                  // "no more asks - complained about mail volume"
+  hit("doNotSolicit", /unsubscribed from (everything|all)\b/i);          // everything includes the ask
+  if (hit("doNotSolicit", /removed from (the )?mailing list/i)) out.doNotMail = true; // leaving the LIST is leaving the asks; vendor-mailing note still a non-match
   hit("doNotContact", /do not contact/i);
   hit("doNotContact", /no further contact/i);
   hit("doNotMail", /do not mail\b/i);
@@ -1449,6 +1455,47 @@ export function buildTransactionRows(parsed, txMap, opts = {}) {
     if (colMatched.length) flaggedRows.push({ line, name: donor.name, matched: colMatched, note: noteText,
       flags: { deceased: !!donor.deceased, doNotSolicit: !!donor.doNotSolicit, doNotContact: !!donor.doNotContact, doNotMail: !!donor.doNotMail, doNotEmail: !!donor.doNotEmail } });
 
+    // ── BUILD-80 Part 4 — exclusion-shaped columns, VALUE-routed ───────────
+    // opts.exclusionColumns: fields whose VALUES carry the exclusion family
+    // (a Solicit Code / Status column). Each cell parses through the injected
+    // opts.parseExclusionValue; flags land on the donor (a flag on any row
+    // sets the donor — grouping ORs them), "Newsletter only" sets
+    // do-not-solicit and leaves mail ON, Inactive/Lost/Moved are shown as the
+    // donor's status and never acted on, and an unrecognized value refuses
+    // the row — a stray in an exclusion column is a question for a human.
+    const exclCols = opts.exclusionColumns || [];
+    const parseExcl = opts.parseExclusionValue || null;
+    let exclRefusal = null;
+    const exclMatched = [];
+    let rowSaysActive = false;
+    if (exclCols.length && parseExcl) {
+      for (const f of exclCols) {
+        const rawV = String(row[f] ?? "").trim();
+        if (!rawV) continue;
+        const p = parseExcl(rawV);
+        if (p.unrecognized && p.unrecognized.length) { exclRefusal = "unrecognized_exclusion_value"; break; }
+        const flagKeys = Object.keys(p.flags).filter(k => p.flags[k]);
+        for (const k of flagKeys) donor[k] = true;
+        if (flagKeys.length) exclMatched.push(`${f}: ${rawV}`);
+        if (p.status) donor.status = p.status;
+        if (p.neutral) rowSaysActive = true;
+      }
+    }
+    if (exclRefusal) {
+      const m0 = txMap.amount ? normalizeMoney(row[txMap.amount], moneyOpts) : { blank: true };
+      const dol = (!m0.blank && m0.value != null) ? m0.value : 0;
+      record("errored", exclRefusal, dol, donor.name);
+      fileDollars += dol;
+      bumpRefused(dkey);
+      return;
+    }
+    if (exclMatched.length) flaggedRows.push({ line, name: donor.name, matched: exclMatched, note: noteText,
+      flags: { deceased: !!donor.deceased, doNotSolicit: !!donor.doNotSolicit, doNotContact: !!donor.doNotContact, doNotMail: !!donor.doNotMail, doNotEmail: !!donor.doNotEmail } });
+    // Part 4.3 — most restrictive wins ACROSS homes, and the conflict is
+    // SHOWN: a row whose column says Active while its note says deceased.
+    if (rowSaysActive && markers.deceased) donor._activeColumnConflict = true;
+    if (rowSaysActive) donor._sawActiveColumn = true;
+
     // ── BUILD-78 Part 4.2 — custom-field values; a failed coercion refuses the row ──
     if (cfCols.length && coerceCf) {
       const donorCf = {}, giftCf = {};
@@ -1525,6 +1572,19 @@ export function buildTransactionRows(parsed, txMap, opts = {}) {
     }
   }
   detectImportedSustainers(donors, gifts);
+  // BUILD-80 Part 4.3 — the conflicts, shown: "Status says Active, Notes say
+  // deceased. We set deceased." Most restrictive already won (flags OR); this
+  // is the sentence a human reads before trusting the record.
+  const exclusionConflicts = [];
+  for (const d of donors) {
+    if (d.deceased && d._activeColumnConflict) {
+      exclusionConflicts.push({ name: d.name, message: "Status says Active, Notes say deceased. We set deceased." });
+    } else if (d.deceased && d._sawActiveColumn) {
+      exclusionConflicts.push({ name: d.name, message: "One column says Active while another marks deceased. We set deceased." });
+    }
+    delete d._activeColumnConflict;
+    delete d._sawActiveColumn;
+  }
   // BUILD-80 Part 1.4 — the largest-gifts panel: the five biggest imported
   // gifts with donor, date and line. A $200,000 row next to $2,500 rows is a
   // question a human answers in one second; no suite caught the hundredfold
@@ -1536,7 +1596,7 @@ export function buildTransactionRows(parsed, txMap, opts = {}) {
     .map(d => ({ line: d.line, name: d.name, dollars: d.dollars,
                  date: (txMap.date && d.raw && d.raw[txMap.date]) ? String(d.raw[txMap.date]) : "" }));
   return {
-    donors, gifts, dispositions, flaggedRows, largestGifts,
+    donors, gifts, dispositions, flaggedRows, largestGifts, exclusionConflicts,
     amountConventions: { ...conventionCounts, column: amountConv ? amountConv.columnConvention : "us" },
     dateConvention: dateConv ? { ...dateConv, applied: dateConvApplied } : null,
     file: {
@@ -1616,9 +1676,10 @@ export function groupTransactions(items = []) {
       }
       // BUILD-77 Part 1 — safety flags OR across a donor's rows: one row
       // saying deceased makes the DONOR deceased, whichever row said it.
-      for (const k of ["deceased", "doNotContact", "doNotSolicit", "doNotMail", "doNotEmail"]) {
+      for (const k of ["deceased", "doNotContact", "doNotSolicit", "doNotMail", "doNotEmail", "_activeColumnConflict", "_sawActiveColumn"]) {
         if (donor[k]) canon[k] = true;
       }
+      if (donor.status && !canon.status) canon.status = donor.status;
       if (donor.deceasedDate && !canon.deceasedDate) canon.deceasedDate = donor.deceasedDate;
       // BUILD-78 — donor custom values: first non-blank per key wins across
       // the donor's rows (a donor-level column is constant per donor; when a

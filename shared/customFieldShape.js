@@ -215,7 +215,61 @@ export function detectExclusionColumn(header, values = []) {
     return { flag: contentFlag, via: "content", matchedCount: nonblank.length, nonblank: nonblank.length,
              matchedValues: [...new Set(nonblank.map(v => String(v).trim()))].slice(0, 8) };
   }
+  // BUILD-80 Part 4.2 — the VALUE-FAMILY tally. A real Solicit Code column is
+  // mostly OK/Active with exclusion codes scattered through it; a real Status
+  // column is mostly Active with Deceased scattered through it. Two or more
+  // exclusion-family cells, with ≥90% of the non-blank cells recognized
+  // (exclusion + neutral + informational), makes the column exclusion-shaped
+  // — value-routed to the flag family, never storable as a custom field.
+  if (nonblank.length >= 2) {
+    let excl = 0, neutral = 0, informational = 0;
+    const matched = new Set();
+    for (const v of nonblank) {
+      const p = parseExclusionValue(v);
+      if (Object.keys(p.flags).length) { excl++; matched.add(String(v).trim()); }
+      else if (p.neutral) neutral++;
+      else if (p.status) informational++;
+    }
+    if (excl >= 2 && (excl + neutral + informational) / nonblank.length >= 0.9) {
+      return { flag: "exclusion", via: "values", matchedCount: excl, nonblank: nonblank.length,
+               matchedValues: [...matched].slice(0, 8) };
+    }
+  }
   return null;
+}
+
+// BUILD-80 Part 4.2 — a column is exclusion-shaped when its VALUES match the
+// family, regardless of header. "Solicit Code" (DNS, DNM, DEC, "Do Not
+// Solicit", "D.N.S.", "DNS;DNM", "Newsletter only") and "Status" (Deceased,
+// Inactive, Lost) were offered as custom fields and ACCEPTED — fifteen
+// deceased donors were invisible to the BUILD-79 run because the test
+// asserted on headers when it needed to assert on values.
+// parseExclusionValue(raw) reads ONE cell: compounds split on ; , / ; dots
+// stripped (D.N.S.); a dash-suffix annotation kept ("DNS - spouse request"
+// is DNS). Families: deceased (DEC, DECEASED, d., died, passed) ·
+// do-not-solicit (DNS, Do Not Solicit) · no-contact (NC, No Contact, DNC) ·
+// do-not-mail (DNM, NO MAIL) · do-not-email (DNE, unsubscribed, no email) ·
+// "Newsletter only" (do-not-solicit with mail explicitly LEFT ON — not the
+// same as do-not-mail). Inactive/Lost/Moved are INFORMATIONAL: shown as the
+// donor's status, never acted on. Anything else in an exclusion column is
+// unrecognized — a question for a human, never a guess.
+export function parseExclusionValue(raw) {
+  const s0 = String(raw ?? "").replace(/\u00A0/g, " ").trim();
+  const out = { flags: {}, status: null, neutral: false, newsletterOnly: false, unrecognized: [], blank: !s0 };
+  if (!s0) return out;
+  if (/^newsletter only$/i.test(s0)) { out.flags.doNotSolicit = true; out.newsletterOnly = true; return out; }
+  for (const tok of s0.split(/[;,\/]/).map(t => t.trim()).filter(Boolean)) {
+    const tl = tok.replace(/\./g, "").trim().toLowerCase();
+    if (/^(ok|active|current|normal|living|ok to contact|solicit ok|yes|y)$/.test(tl)) { out.neutral = true; continue; }
+    if (/^(dec|deceased|died|passed( away)?|d)$/.test(tl)) { out.flags.deceased = true; continue; }
+    if (/^dns\b/.test(tl) || /^do not solicit\b/.test(tl) || /^no solicitation/.test(tl)) { out.flags.doNotSolicit = true; continue; }
+    if (/^(nc|dnc|no contact|do not contact)$/.test(tl)) { out.flags.doNotContact = true; continue; }
+    if (/^(dnm|no mail|do not mail)$/.test(tl)) { out.flags.doNotMail = true; continue; }
+    if (/^(dne|do not e-?mail|no e-?mail|unsubscribed?)$/.test(tl)) { out.flags.doNotEmail = true; continue; }
+    if (/^(inactive|lost|moved)$/.test(tl)) { out.status = tl; continue; }
+    out.unrecognized.push(tok);
+  }
+  return out;
 }
 
 // Cell-level boolean read for a FLAG column (wider than the checkbox type's

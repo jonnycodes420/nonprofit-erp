@@ -108,7 +108,15 @@ async function reset() {
   ok("auto-mapping claims the money columns (amount + date + email + name)",
     txMap.amount === "Amount" && txMap.date === "Gift Date" && txMap.donorEmail === "Email" && !!txMap.donorName,
     { amount: txMap.amount, date: txMap.date, email: txMap.donorEmail, name: txMap.donorName });
-  const built = lib.buildTransactionRows({ rows: a.rows }, txMap, { today: TODAY, rowLines: a.rowLines });
+  // BUILD-80 Part 4 — build the way the CLIENT builds: the mapper plan
+  // routes value-shaped exclusion columns (Solicit Code, Status) to the flag
+  // family, and the builder parses each cell through the family.
+  const cfs = await import("../shared/customFieldShape.js");
+  const plan = cfs.buildMapperPlan({ headers: a.physical.headerCells, fields: a.headers, rows: a.rows, txMap,
+    existingDefs: { donor: [], gift: [] }, savedMappings: [], orphanColumns: a.physical.orphanColumns, overflowRows: a.physical.overflowRows });
+  const exclusionColumns = plan.columns.filter(c => c.status === "flag" && c.flag === "exclusion").map(c => c.field);
+  const built = lib.buildTransactionRows({ rows: a.rows }, txMap, { today: TODAY, rowLines: a.rowLines,
+    exclusionColumns, parseExclusionValue: cfs.parseExclusionValue });
   ok("every record leaves with exactly one disposition (2,500 of 2,500)",
     built.dispositions.length === 2500, built.dispositions.length);
   const lines = new Set(built.dispositions.map(d => d.line));
@@ -221,11 +229,45 @@ async function reset() {
     refusedNow <= 77, refusedNow);
   // Part 2.4 — a refused row is not a neutral event: the donor is tagged.
   const taggedDonors = built.donors.filter(d => (d.tags || []).some(t => /^has-refused-rows:\d+$/.test(t)));
-  ok("every donor with a refused row carries has-refused-rows:N (50 donors on v2)",
-    taggedDonors.length === 50, taggedDonors.length);
+  ok("every donor with a refused row carries has-refused-rows:N (52 donors on v2)",
+    taggedDonors.length === 52, taggedDonors.length);
   const paulOB = built.donors.find(d => /Paul/.test(d.name) && /Briain/.test(d.name));
   ok("Paul Ó Briain's rows all parse — his January 2026 gift exists and he carries no refusal tag",
     paulOB && !(paulOB.tags || []).some(t => /has-refused-rows/.test(t)), paulOB?.tags);
+
+  // ── §3d · BUILD-80 Part 4 — exclusions live in COLUMNS too ───────────────
+  console.log("\n— §3d · BUILD-80 Part 4: Solicit Code and Status route to flags, never custom fields —");
+  ok("'Solicit Code' is exclusion-shaped BY ITS VALUES and routes to the flag family",
+    exclusionColumns.includes("Solicit Code"), exclusionColumns);
+  ok("'Status' is exclusion-shaped BY ITS VALUES and routes to the flag family",
+    exclusionColumns.includes("Status"), exclusionColumns);
+  ok("neither is ever offered as a custom field",
+    plan.columns.filter(c => ["Solicit Code", "Status"].includes(c.field)).every(c => c.status === "flag"),
+    plan.columns.filter(c => ["Solicit Code", "Status"].includes(c.field)).map(c => c.status));
+  const findDonor = (first, last) => built.donors.find(d => d.name.includes(first) && d.name.includes(last));
+  // the fifteen who were invisible: deceased via Solicit Code or Status only
+  for (const [f, l] of [["Betty", "Kowalski"], ["Kimberly", "Müller"], ["Jean", "Lattimore"], ["Carolyn", "Haddad"], ["Jeremy", "Jefferies"], ["Teresa", "Oyelaran"], ["Nancy", "Singh"], ["Grace", "Delacroix"], ["Priya", "Jessup"]]) {
+    const d = findDonor(f, l);
+    ok(`${f} ${l} (deceased via a COLUMN) is deceased on the built donor`, !!(d && d.deceased), d ? d.name : "not found");
+  }
+  const vandyke = findDonor("Emily", "Vandyke");
+  ok("'Newsletter only' sets do-not-solicit and LEAVES MAIL ON (Emily Vandyke)",
+    vandyke && vandyke.doNotSolicit === true && !vandyke.doNotMail, vandyke && { dns: vandyke.doNotSolicit, dnm: vandyke.doNotMail });
+  const holl = findDonor("Janice", "Hollingsworth");
+  ok("'DNM,DNE' splits on the compound: do-not-mail AND do-not-email, not solicit (Janice Hollingsworth)",
+    holl && holl.doNotMail === true && holl.doNotEmail === true && !holl.doNotSolicit, holl && { dnm: holl.doNotMail, dne: holl.doNotEmail, dns: holl.doNotSolicit });
+  const kensL = findDonor("Larry", "Kensington");
+  ok("'DNE' is do-not-email, never do-not-solicit — the flags are different (Larry Kensington)",
+    kensL && kensL.doNotEmail === true && !kensL.doNotSolicit, kensL && { dne: kensL.doNotEmail, dns: kensL.doNotSolicit });
+  ok("the four one-row DNS donors are flagged at the DONOR (flag propagates off the gift row)",
+    [["Kenneth", "Nolasco"], ["Sophia", "Castellanos"], ["Amy", "Ramirez"]].every(([f, l]) => { const d = findDonor(f, l); return d && d.doNotSolicit; }),
+    null);
+  ok("contradictions are SHOWN: 'Status says Active, Notes say deceased. We set deceased.'",
+    built.exclusionConflicts.length >= 4 && built.exclusionConflicts.some(c => /Diana Oyelaran/.test(c.name) && /Notes say deceased/.test(c.message)),
+    built.exclusionConflicts.slice(0, 4));
+  ok("a stray value in an exclusion column REFUSES its row (a question, never a guess)",
+    built.dispositions.filter(d => d.reason === "unrecognized_exclusion_value").length === 3,
+    built.dispositions.filter(d => d.reason === "unrecognized_exclusion_value").map(d => d.line));
 
   // ── §4 · through the real route ──────────────────────────────────────────
   console.log("\n— §4 · through the real route: the ledger closes against 2,500 —");
@@ -297,6 +339,17 @@ async function reset() {
   ok("a capped drift sentence says WHY: 'could not be read' appears in the reason",
     cappedOnList.every(x => /could not be read/.test(x.reason || "")),
     cappedOnList.filter(x => !/could not be read/.test(x.reason || "")).map(x => [x.donorName, x.reason]));
+
+  // Part 4.4 — zero exclusion names on the ask surface, including the
+  // column-only deceased. The truth file names every planted exclusion.
+  const truth = JSON.parse(fs.readFileSync(path.join(__dirname, "fixtures", "build79", "donor-truth.json"), "utf8"));
+  const excludedNames = Object.values(truth).filter(t => (t.deceased || t.doNotSolicit || t.doNotContact) && !t.estate).map(t => t.name);
+  const onAsk = excludedNames.filter(nm => {
+    const parts = nm.split(" ");
+    return dlist.some(x => parts.every(p => x.donorName.includes(p)));
+  });
+  ok(`zero of the ${excludedNames.length} planted exclusion names on the drift list (deceased + do-not-solicit + no-contact)`,
+    onAsk.length === 0, onAsk);
 
   // ── §5 · Part 7.4 — the round trip on the IMPORTED org ───────────────────
   console.log("\n— §5 · export reads what import wrote, on THIS org —");

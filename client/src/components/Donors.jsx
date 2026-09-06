@@ -6,7 +6,7 @@ import UpgradeModal from "./UpgradeModal";
 import Uploader from "./Uploader";
 import { bestCampaignMatch } from "../lib/campaignMatch";
 import { dueBadge } from "../lib/taskDue";
-import { renderCustomValue, coerceCustomValue, parseBoolValue, buildMapperPlan, buildColumnLedger, summarizeColumnLedger, countPhysicalColumns, proposalEvidenceText, generateFieldKey, CF_TYPES } from "../../../shared/customFieldShape";
+import { renderCustomValue, coerceCustomValue, parseBoolValue, parseExclusionValue, buildMapperPlan, buildColumnLedger, summarizeColumnLedger, countPhysicalColumns, proposalEvidenceText, generateFieldKey, CF_TYPES } from "../../../shared/customFieldShape";
 
 class ErrorBoundary extends Component {
   constructor(props) { super(props); this.state = { error: null }; }
@@ -402,7 +402,8 @@ function buildTransactionPayload(parsed, txMap, cfInputs, rowLines, dateConventi
     // columns coerce per type and a failed value refuses the row pre-write.
     flagColumns: cfInputs ? cfInputs.flagColumns : {},
     cfColumns: cfInputs ? cfInputs.cfColumns : [],
-    coerceCustomValue, parseBoolValue,
+    exclusionColumns: cfInputs ? (cfInputs.exclusionColumns || []) : [],
+    coerceCustomValue, parseBoolValue, parseExclusionValue,
   });
   return { ...built,
     warnedCount: 0,
@@ -734,12 +735,16 @@ export function DonorImport({ onClose, onImported, withHistory = false }) {
   // Preview keys for not-yet-created fields are provisional; doImport swaps in
   // the real ones after the explicit accepts create the fields.
   const cfBuildInputs = useMemo(() => {
-    if (!mapperPlan) return { flagColumns: {}, cfColumns: [], undecided: 0, ledger: null };
-    const flagColumns = {}, cfColumns = [];
+    if (!mapperPlan) return { flagColumns: {}, cfColumns: [], exclusionColumns: [], undecided: 0, ledger: null };
+    const flagColumns = {}, cfColumns = [], exclusionColumns = [];
     let undecided = 0;
     for (const c of mapperPlan.columns) {
       const d = cfDecisions[c.index] || {};
       const action = d.action || (c.status === "flag" ? "flag" : c.status === "custom-existing" ? "existing" : null);
+      // BUILD-80 Part 4 — a VALUE-routed exclusion column (Solicit Code /
+      // Status): each cell parses through the family, several flags per
+      // column. Never storable as a custom field.
+      if (c.status === "flag" && action === "flag" && c.flag === "exclusion") { exclusionColumns.push(c.field); continue; }
       if (c.status === "flag" && action === "flag") { flagColumns[c.flag] = c.field; continue; }
       if (action === "existing" && (c.def || d.fieldId)) {
         const def = c.def || [...cfDefs.donor, ...cfDefs.gift].find(x => x.id === d.fieldId);
@@ -757,7 +762,7 @@ export function DonorImport({ onClose, onImported, withHistory = false }) {
       if (c.status === "custom-proposed" && !d.action) undecided++;
     }
     const ledger = buildColumnLedger(mapperPlan, cfDecisions);
-    return { flagColumns, cfColumns, undecided, ledger };
+    return { flagColumns, cfColumns, exclusionColumns, undecided, ledger };
   }, [mapperPlan, cfDecisions, cfDefs]);
 
   // BUILD-80 Part 2.2 — the date column's convention, inferred at the column
@@ -851,7 +856,7 @@ export function DonorImport({ onClose, onImported, withHistory = false }) {
             fieldMappings.push({ entity: created.entity, header: String(entry.header).trim(), fieldId: created.id });
           }
         }
-        activePayload = buildTransactionPayload(parsed, txMap, { flagColumns: cfBuildInputs.flagColumns, cfColumns: finalCfColumns }, parseReport?.rowLines, dateConventionChoice);
+        activePayload = buildTransactionPayload(parsed, txMap, { flagColumns: cfBuildInputs.flagColumns, cfColumns: finalCfColumns, exclusionColumns: cfBuildInputs.exclusionColumns }, parseReport?.rowLines, dateConventionChoice);
         importExtras = {
           columns: { inFile: physicalCols.total, ledger: ledger.map(({ index, header, disposition, flag, role, fieldId, entity, reason }) => ({ index, header, disposition, flag, role, fieldId, entity, reason })) },
           fieldMappings,
@@ -919,6 +924,7 @@ export function DonorImport({ onClose, onImported, withHistory = false }) {
         totals.largestGifts = payloadForSummary.largestGifts || [];
         totals.amountConventions = payloadForSummary.amountConventions || null;
         totals.dateConvention = payloadForSummary.dateConvention || null;
+        totals.exclusionConflicts = payloadForSummary.exclusionConflicts || [];
       }
       // ── BUILD-79 Part 3 — the file-level equation exists on EVERY path.
       // The aggregate/wide paths used to show only the server's payload-scoped
@@ -1494,6 +1500,22 @@ export function DonorImport({ onClose, onImported, withHistory = false }) {
                 </div>
               ))}
               {result.flaggedRows.length > 30 && <div style={{color:T.ink3}}>+{result.flaggedRows.length-30} more — every one is on the donor's record with its flag set.</div>}
+            </div>
+          )}
+          {/* BUILD-80 Part 4.3 — the CONFLICTS, shown: most restrictive won,
+              and the human is told which homes disagreed before an ask can
+              go out on a column's say-so. */}
+          {result.exclusionConflicts?.length > 0 && (
+            <div style={{textAlign:"left",background:T.gold100||"#f6eccf",border:`1px solid ${(T.gold500||"#c9a84c")}55`,borderRadius:10,padding:"12px 16px",marginBottom:16,fontSize:12,lineHeight:1.7}}>
+              <div style={{fontSize:10,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",color:T.gold600||"#a97f22",marginBottom:6}}>
+                Columns that disagree — we kept the most restrictive
+              </div>
+              {result.exclusionConflicts.slice(0,20).map((c,i)=>(
+                <div key={i} style={{color:T.ink2}}>
+                  <strong style={{color:T.ink}}>{c.name}</strong> — {c.message}
+                </div>
+              ))}
+              {result.exclusionConflicts.length > 20 && <div style={{color:T.ink3}}>+{result.exclusionConflicts.length-20} more, each set on the donor's record.</div>}
             </div>
           )}
           {/* BUILD-78 Part 3.3 — the COLUMN axis of the invariant. Left side
