@@ -84,3 +84,102 @@ grammar sees them, so:
 The join defect (46,086) and the typed-cell defect (7,814) are independent:
 fixing the join without the cell types still refuses 7,814 readable gifts;
 fixing cell types without the join still drops 46,086 gifts and 23,867 donors.
+
+---
+
+## The build (Parts 1–8) — what shipped and what it measured
+
+### The workbook layer (Parts 1, 3)
+- One shared reader (`extractWorkbookFromSheetJS`) reads the file ONCE with
+  types, formats, formulas, hidden rows/columns, fills and comments; the same
+  code runs in the browser and in the Node suites. 7.6MB / nine sheets parses
+  to the roles screen in **6.2s** in the real UI.
+- Roles with evidence, all nine right on the fixture: Cover/Summary chrome,
+  both gift sheets gifts, Old export a decoy — name evidence plus a sampled
+  duplicate probe (99% overlap) and the dollar warning ($4,342,760.71).
+- Rows that are not data are found by content and listed by row number: the
+  four year-subtotals (SUBTOTAL formulas + "2023 Total" labels), GRAND TOTAL
+  ($32,523,933.89 — the would-be largest gift, never imported), the "Exported
+  by Cheryl" note row, the stray "x" at row 30000. Counts land EXACTLY:
+  56,177 / 36,050 / 25,300.
+- Typed cells through the BUILD-80 seams: float noise rounds (6,691 cells),
+  percent formats read ×100 and flagged with the spec's sentence (559
+  imported + 1 that was a refund), zero-cached formulas refused WITH the
+  formula text (843 × `N*1`), date serials → civil dates with no timezone
+  conversion, serial 0/60/pre-1900 refused by name, trailing-minus legacy
+  amounts route as refunds (948), "$-500.37" parses (the sign inside the
+  symbol — a normalizeMoney gap this file found).
+
+### The join (Part 2)
+- Donor ID is a standard field on donors and gifts, first in the identity
+  order. All four damaged forms match (4212 ≡ 004212 ≡ 4212.0 ≡ " 4212 ").
+- Every donors-sheet row becomes a donor. 490 orphan gift rows reach the
+  link and are REFUSED by row with their ids and dollars ($252,507.90) —
+  never a donor minted from a bare id. (The spec's 500: ten more orphan-id
+  rows die earlier at amount refusals — accounted there.)
+- Duplicate people fold through a review list: 266 folds, each with its
+  reason (same email with a compatible name, same phone with a compatible
+  name — never name-only across distinct IDs) and the folded id; gifts
+  posted to EITHER id land on the surviving record (pinned in the server
+  suite with the damaged forms). The spec's ~300 — see BLOCKED-build82.md.
+- Repeated gift ids inside the workbook (721 rows) are the same gift listed
+  twice: collapsed BEFORE the pre-write summary, itemised, so the screen and
+  the write agree to the row (the server's F-4 unique would have collapsed
+  them silently after the promise was made).
+
+### The mapper (Part 4)
+- The Part-0 catastrophe is dead by construction: whole-header vocabulary
+  (never substring — "Unnamed: 31" maps to nothing), one header per field
+  with secondary slots (Email 2, Mobile, Address 2), the full standard list
+  on donors (29 fields) and gifts (14), `ID`→Donor ID on a gift sheet,
+  Ref→Gift ID, Designation→Fund, Campaign→Appeal.
+- One dropdown per column: standard · existing custom · "＋ New custom
+  field…" created inline (the field exists the moment it's created, POST
+  with the import as source — BUILD-78's explicit-accept law kept).
+- Exclusion-shaped columns are locked to the flag family — no custom option
+  rendered at all. Hidden columns are never auto-mapped and say so.
+- Evidence says its sample: "3,000 of the first 3,000 (of 36,050) values
+  parse as a number."
+
+### What the sheet knows (Part 3.5) + the 800
+- Hidden rows (40), yellow rows (100), comments (40), hidden column AD all
+  surfaced as questions with the cover sheet's legend QUOTED; nothing acted
+  on without an answer; "skip" answers are counted and listed by row.
+- After confirming: **exactly 800 exclusion rows** — Do Not Solicit Y (200),
+  deceased column X-or-death-date (100 — a DATE in a Deceased column is a
+  yes, not a FALSE), Status Deceased (60), Do Not Mail (50), notes markers
+  (deceased 110 / "remove from appeals" +22 new family member / DNS 78 /
+  DNM 23), hidden 40, yellow 100, comments 40. The planted trap — "Do not
+  include in vendor mailing" × 331 — excludes nothing (pinned).
+- 792 surviving records carry flags (8 duplicates folded); DB-verified.
+
+### The other sheets (Part 5)
+- Pledges → 60 commitments, $1,881,000, $0 in cash; resolved server-side by
+  external donor id (the sheet has no names).
+- Recurring → 100 Failed with 2–6-month-old last charges land on the
+  reconnect/recovery surface (`imported_sustainer` + card-failed tag); 60
+  "Active" rows with stale charges get the stale flag and the gift pattern's
+  verdict stands. DB-verified: 600 sustainers / 100 / 60.
+
+### The summary + scale (Parts 6, 7)
+- Two-axis invariant per sheet and workbook: 92,227 rows = 88,967 imported +
+  2,047 refused + 1,213 routed ✓, every refusal downloadable with sheet, row
+  and reason. TOTAL rows reconciled on screen: GRAND consistent net of
+  refusals+routing; legacy's cached SUM called stale by name (19,852,987.83
+  vs 13,952,450.79 numeric — 10,818 amounts were textified after the total
+  was cached).
+- **Timing, real UI, fresh org: parse 6.2s · summary 2.8s · write 15.2s —
+  36.5s click-to-done for 25,300 donors + 92,682 gift rows.** One request,
+  one transaction (22.3MB payload; json limit raised to 64mb): all or
+  nothing. Mid-request kill drill: the org ends at zero-or-all, never a
+  slice. The sabotaged-ledger drill still 409s and rolls back in full.
+- Net cash imported: **$50,979,808.17** + $252,507.90 orphaned = the sheets'
+  readable dollars to the cent. The spec's $53,231,102.55 vs the artifact:
+  BLOCKED-build82.md (the $463,902.52 is generator-side truth the file no
+  longer carries; every recoverable dollar is itemised on the waterfall,
+  pinned at $52,767,200.03… before the gift-id collapse).
+
+### Landing (Part 8)
+- Both section heads are one left-aligned column: eyebrow → mark → H2
+  (920px) → paragraph (620px), 18px gaps, 48px to the grid; 14/36 at 390.
+  +5 guards in landing-prod-verify.js (34 total, gate grew).

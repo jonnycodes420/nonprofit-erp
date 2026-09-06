@@ -91,6 +91,26 @@ const countGifts = async () => (await q(`SELECT COUNT(*)::int n FROM gifts WHERE
   ok("unbalanced import refused (409, named discrepancy)", r.status === 409, r.status);
   ok("the org has ZERO of the failed file's donors afterwards", (await countDonors()) === before, await countDonors());
 
+  // ── 6) MID-REQUEST KILL — the client dies at "row 40,000": the org ends
+  // with ZERO of the file's donors or ALL of them, never a slice (one
+  // transaction; a dropped socket can't leave half an import behind).
+  const before6 = await countDonors();
+  const bigDonors = Array.from({ length: 5000 }, (_, i) => ({ name: `Kill Drill ${i}`, email: `kd${i}@x.org`, stage: "prospect" }));
+  const bigGifts = Array.from({ length: 15000 }, (_, i) => ({ donorIndex: i % 5000, amount: 25, date: "2024-02-01", type: "cash", campaign: "", notes: "" }));
+  const ac = new AbortController();
+  const killReq = fetch("http://localhost:5601/donors/import-combined", {
+    method: "POST", signal: ac.signal,
+    headers: { "Content-Type": "application/json", Authorization: "Bearer " + tok },
+    body: JSON.stringify({ donors: bigDonors, gifts: bigGifts, identityResolved: true }),
+  }).catch(() => "aborted");
+  setTimeout(() => ac.abort(), 250);
+  await killReq;
+  // give the server time to finish or roll back whatever the socket's death left
+  await new Promise(r => setTimeout(r, 8000));
+  const after6 = await countDonors();
+  ok("mid-request kill leaves the org at ZERO of the file's donors or ALL — never a slice",
+     after6 === before6 || after6 === before6 + 5000, { before6, after6 });
+
   await closeDb();
   summary("import-workbook-server");
 })();

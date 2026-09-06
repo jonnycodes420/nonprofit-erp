@@ -152,6 +152,47 @@ const shoot = async (page, name, mobile) => {
   ok("pledges + merges recorded via semantics", /60 pledges recorded as commitments/.test(body), null);
   await shoot(page, "05-result", false);
 
+  // ── verification 9: the LEGACY SHEET ALONE, into the org that now has the
+  // donors — links by Donor ID, zero new donors, "map a name or email" dead ──
+  {
+    const XLSX = require(path.join(__dirname, "..", "client", "node_modules", "xlsx"));
+    const src = XLSX.read(fs.readFileSync(FIXTURE), { type: "buffer", cellNF: true, cellFormula: true });
+    const solo = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(solo, src.Sheets["Gifts 2019-2022"], "Gifts 2019-2022");
+    const soloPath = path.join(require("os").tmpdir(), "b82-legacy-alone.xlsx");
+    XLSX.writeFile(solo, soloPath);
+
+    const donorsBefore = (await j("/donors?limit=1")).total ?? (await j("/donors")).length ?? null;
+    await page.click('[data-testid="wb-done"]');
+    await page.waitForTimeout(2500);
+    await page.click('button:has-text("Import & tools")');
+    await page.waitForTimeout(400);
+    await page.click('button:has-text("Import + History")');
+    await page.waitForTimeout(800);
+    await (await page.$('input[type="file"]')).setInputFiles(soloPath);
+    await page.waitForSelector('[data-testid="wb-sheet-roles"]', { timeout: 120000 });
+    body = await page.innerText("body");
+    ok("gift sheet alone → 'link to your existing records' CTA", /link 36,050 gifts to your existing records/.test(body), body.match(/link [^\n]*/)?.[0]);
+    await page.click('[data-testid="wb-continue"]');
+    // no donors sheet → no signal questions on this file; straight to mapper
+    await page.waitForSelector('[data-testid="wb-mapper"]', { timeout: 60000 });
+    body = await page.innerText("body");
+    ok("legacy ID → Donor ID (never 'map a name or email')", !/map at least one column to name or email/i.test(body) && /donor key|Donor ID/.test(body), null);
+    await page.click('[data-testid="wb-review"]');
+    await page.waitForSelector('[data-testid="wb-summary"]', { timeout: 300000 });
+    body = await page.innerText("body");
+    fs.writeFileSync(OUT + "/06-gift-alone.txt", body);
+    ok("pre-write link preview from the server dryRun (by Donor ID)", /link to donors already in Steward/.test(body) && /by Donor ID/.test(body), body.match(/link to donors[^\n]*/)?.[0]);
+    await shoot(page, "06-gift-alone", false);
+    await page.click('[data-testid="wb-import"]');
+    await page.waitForSelector('[data-testid="wb-result"]', { timeout: 600000 });
+    await page.waitForTimeout(1000);
+    const donorsAfter = (await j("/donors?limit=1")).total ?? (await j("/donors")).length ?? null;
+    ok("ZERO new donors from the gift-sheet-alone import", donorsBefore !== null && donorsAfter === donorsBefore, { donorsBefore, donorsAfter });
+    await shoot(page, "07-gift-alone-result", false);
+    fs.unlinkSync(soloPath);
+  }
+
   // ── server truth after the write ──
   const donorsCount = (await j("/donors/summaries?limit=1")).total ?? null;
   console.log("  server donor count:", donorsCount);

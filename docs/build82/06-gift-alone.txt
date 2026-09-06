@@ -1,0 +1,632 @@
+Steward
+⌕
+?
+B
+B82 Walker
+Sign out
+◈
+Home
+PEOPLE
+♦
+Donors
+◫
+Pipeline
+◻
+Tasks
+FUNDRAISING
+↗
+Fundraising
+◉
+Grants
+◑
+Communications
+◫
+Donor Portal
+◧
+Workflows
+INSIGHT
+▤
+Reports
+◇
+Finance
+⚙
+Settings
+Your donors.
+Import Donors
+One file — donors and their giving history · shape auto-detected · stages auto-assigned
+✕ Close
+▤
+b82-legacy-alone.xlsx
+9.4 MB · 1 sheets · one import
+Replace
+Remove
+One import, fully accounted — before anything is written.
+34,292 gifts → your existing records · 0 gifts, $0.00
+34,096 of these gifts link to donors already in Steward — 34,096 by Donor ID, 0 by email, 0 by name. 196 match nothing and will be refused with their rows — never invented as new donors.
+EVERY ROW, ONE DISPOSITION — PER SHEET AND FOR THE WORKBOOK
+Gifts 2019-2022
+36,050 rows = 34,292 imported + 721 refused + 1,037 routed ✓
+Workbook
+36,050 = 34,292 + 721 + 1,037 ✓ balanced
+SET ASIDE, BY REASON — EVERY ROW HAS ITS SHEET, ROW NUMBER AND REASON
+the same gift id listed twice in the file — imported once — 721 ($369,944.70)
+Download
+Routed to their own surfaces (never dropped): 948 refunds/negatives · 89 in-kind ·
+THE FILE'S OWN TOTALS, RECONCILED
+Gifts 2019-2022 row 36,053 says $19,852,987.83; the readable cells hold $19,040,869.78 — the $812,118.05 difference is 721 refused rows + $594,868.02 routed + amounts the sheet itself no longer carries (its cached total is stale).
+LARGEST GIFTS ABOUT TO LAND
+Numeric ids in “ID” lost their leading zeros to the spreadsheet — matched by value, originals kept where the cell was text
+Import 0 donors + 0 gifts →
+← Back
+One transaction: if anything fails mid-way, nothing lands — never a half-imported org.
+Directory
+Team
+Re-engage
+17576
+Map
+✦ Call List
+Log a conversation
++ Add
+↑ Import & tools
+▾
+⊞ Filters
+All stages
+Prospect
+Qualify
+Cultivate
+Solicit
+Steward
+Lapsed
+All owners
+B82 Walker
+All designations
+Planned gift confirmed
+Planned-giving prospect
+Estate giving
+25034 donors
+Export CSV
+Comfortable
+Compact
+DONOR
+STAGE
+OWNER
+LIFETIME
+LAST GIFT
+SCORE
+D
+Donna Patel
+STEWARD
+?
+—
+$100,000
+Jul 2026
+$12,500
+85
+Assign
+L
+Lauren Zabala
+LAPSED
+?
+—
+$100,000
+Jul 2025
+$25,000
+51
+Assign
+M
+Matthew Turner
+matthew.turner83@twc.com
+CULTIVATE
+?
+—
+$100,000
+Oct 2025
+$20,000
+67
+Assign
+R
+Reed Bank
+no email
+LAPSED
+?
+—
+$76,525
+Apr 2025
+$25,000
+55
+Assign
+S
+Samantha STODDARD
+LAPSED
+?
+—
+$75,000
+Mar 2025
+$25,000
+47
+Assign
+J
+Joe Ward
+joe.ward68@icloud.com
+STEWARD
+?
+—
+$62,500
+Aug 2026
+$12,500
+85
+Assign
+V
+Voss Community Foundation
+CULTIVATE
+?
+—
+$60,000
+Dec 2025
+$25,000
+59
+Assign
+C
+Cook Inc.
+◉
+DRIFTING · UNSURE
+LAPSED
+?
+—
+$60,000
+Feb 2025
+$25,000
+47
+Assign
+O
+O'Brien Dental
+◉
+DRIFTING
+LAPSED
+?
+—
+$60,000
+Jun 2025
+$25,000
+47
+Assign
+w
+wyatt Carter
+STEWARD
+?
+—
+$60,000
+Aug 2026
+$20,000
+77
+Assign
+P
+Peterson Foundation
+CULTIVATE
+?
+—
+$60,000
+Nov 2025
+$25,000
+59
+Assign
+M
+Miller Bank
+◉
+DRIFTING
+LAPSED
+?
+—
+$60,000
+May 2025
+$25,000
+47
+Assign
+S
+Singh Family Foundation
+LAPSED
+?
+—
+$60,000
+Aug 2025
+$25,000
+47
+Assign
+Q
+Quarles Hardware
+CULTIVATE
+?
+—
+$60,000
+Dec 2025
+$25,000
+59
+Assign
+C
+Collins Farm Bureau
+CULTIVATE
+?
+—
+$60,000
+Dec 2025
+$25,000
+59
+Assign
+W
+Wilson Auto Group
+CULTIVATE
+?
+—
+$60,000
+Nov 2025
+$25,000
+59
+Assign
+B
+Barnes Foundation
+CULTIVATE
+?
+—
+$60,000
+Sep 2025
+$25,000
+59
+Assign
+H
+Hollingsworth LLC
+CULTIVATE
+?
+—
+$55,250
+Dec 2025
+$25,000
+63
+Assign
+L
+Ledbetter Ministries
+LAPSED
+?
+—
+$55,000
+May 2025
+$25,000
+47
+Assign
+Y
+Yancey Realty
+◉
+DRIFTING
+LAPSED
+?
+—
+$55,000
+May 2025
+$25,000
+47
+Assign
+R
+Rivera Corp
+◉
+DRIFTING · UNSURE
+LAPSED
+?
+—
+$55,000
+May 2025
+$25,000
+47
+Assign
+D
+Davis Dental
+LAPSED
+?
+—
+$55,000
+Aug 2025
+$5,000
+47
+Assign
+P
+Prieto Farm Bureau
+◉
+DRIFTING
+LAPSED
+?
+—
+$55,000
+Apr 2025
+$5,000
+47
+Assign
+T
+Tran Bank
+◉
+DRIFTING · UNSURE
+LAPSED
+?
+—
+$53,000
+Jan 2025
+$25,000
+51
+Assign
+P
+Prieto Corp
+SOLICIT
+?
+—
+$52,550
+Apr 2026
+$50
+73
+Assign
+S
+Stewart Church
+CULTIVATE
+?
+—
+$52,500
+Oct 2025
+$2,500
+59
+Assign
+U
+Ulmer Hardware
+◉
+DRIFTING · UNSURE
+LAPSED
+?
+—
+$52,500
+Aug 2025
+$25,000
+47
+Assign
+M
+Morris Charitable Fund
+CULTIVATE
+?
+—
+$52,500
+Oct 2025
+$2,500
+59
+Assign
+R
+Ramirez LLC
+LAPSED
+?
+—
+$52,300
+Jul 2025
+$25,000
+55
+Assign
+N
+Nguyễn Industries
+STEWARD
+?
+—
+$51,650
+Aug 2026
+$100
+85
+Assign
+K
+Kane Fellowship
+CULTIVATE
+?
+—
+$51,000
+Oct 2025
+$25,000
+59
+Assign
+V
+Villalobos Fellowship
+CULTIVATE
+?
+—
+$51,000
+Dec 2025
+$25,000
+59
+Assign
+H
+Hutchinson Farm Bureau
+CULTIVATE
+?
+—
+$51,000
+Sep 2025
+$1,000
+59
+Assign
+B
+Brooks Foundation
+none
+CULTIVATE
+?
+—
+$51,000
+Oct 2025
+$25,000
+59
+Assign
+L
+Long Realty
+CULTIVATE
+?
+—
+$51,000
+Oct 2025
+$25,000
+59
+Assign
+V
+Vandyke Ministries
+CULTIVATE
+?
+—
+$51,000
+Dec 2025
+$25,000
+59
+Assign
+E
+Ellingsworth Bank
+◉
+DRIFTING
+no email
+LAPSED
+?
+—
+$51,000
+Feb 2025
+$1,000
+47
+Assign
+P
+Powell Fellowship
+◉
+DRIFTING
+LAPSED
+?
+—
+$51,000
+Feb 2025
+$25,000
+47
+Assign
+R
+Rogers Corp
+CULTIVATE
+?
+—
+$50,575.50
+Dec 2025
+$25,000
+67
+Assign
+Y
+Yarborough Church
+LAPSED
+?
+—
+$50,500
+May 2025
+$25,000
+47
+Assign
+I
+Ivester Fellowship
+◉
+DRIFTING
+LAPSED
+?
+—
+$50,500
+Apr 2025
+$25,000
+47
+Assign
+E
+Eastwick Community Foundation
+LAPSED
+?
+—
+$50,500
+May 2025
+$500
+47
+Assign
+A
+Ava Moore
+ava.moore80@yahoo.com
+STEWARD
+?
+—
+$50,000
+Sep 2026
+$6,250
+85
+Assign
+F
+Fatima Everhart
+fatima.everhart71@gmail.com
+LAPSED
+?
+—
+$50,000
+May 2025
+$12,500
+51
+Assign
+B
+Barnes Community Foundation
+LAPSED
+?
+—
+$50,000
+May 2024
+$25,000
+43
+Assign
+S
+Sarah Merriweather
+sarah.merriweather15@aol.com
+LAPSED
+?
+—
+$50,000
+Aug 2025
+$10,000
+55
+Assign
+A
+Aldridge Fellowship
+LAPSED
+?
+—
+$50,000
+Jan 2024
+$25,000
+43
+Assign
+R
+Russell Watson
+russell.watson65@yahoo.com
+STEWARD
+?
+—
+$50,000
+Jun 2026
+$25,000
+73
+Assign
+L
+Lisa BRANNIGAN
+LAPSED
+?
+—
+$50,000
+Jul 2025
+$10,000
+55
+Assign
+K
+Kwame Quimby
+◉
+DRIFTING
+kwame.quimby20@hotmail.com
+SOLICIT
+?
+—
+$50,000
+Apr 2026
+$12,500
+73
+Assign
+← Prev
+Page 1 of 501
+Next →
