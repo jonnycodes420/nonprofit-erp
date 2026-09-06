@@ -75,7 +75,7 @@ const shoot = async (page, name, mobile) => {
   ok("counts are the REAL counts (56,177 / 36,050 / 25,300)", /56,177/.test(body) && /36,050/.test(body) && /25,300/.test(body), null);
   ok("subtotal rows listed by row number", /11,049|11049/.test(body) && /GRAND|total row/i.test(body), null);
   ok("the legend is quoted", /Yellow rows on the Donors tab = do not contact/.test(body) && /Hidden rows on the Donors tab = deceased/.test(body), null);
-  ok("one-pass headline (donors + gifts + pledges + recurring)", /one import: 25,300 donors \+ 92,227 gifts \+ 60 pledges \+ 600 recurring/.test(body), body.match(/one import[^\n]*/)?.[0]);
+  ok("one-pass headline (donors + gift rows + pledges + recurring)", /one import: 25,300 donors \+ 92,227 gift rows \+ 60 pledges \+ 600 recurring/.test(body), body.match(/one import[^\n]*/)?.[0]);
   await shoot(page, "01-roles", true);
 
   // ── SCREEN 2: the signals ──
@@ -130,7 +130,7 @@ const shoot = async (page, name, mobile) => {
   ok("88,967 gifts and the cash figure (721 repeated gift ids collapsed pre-write)", /88,967/.test(body) && /\$50,979,808\.17/.test(body) && /listed twice in the file/.test(body), null);
   ok("pledges as commitments, $0 in cash", /60 pledges as commitments/.test(body) && /\$0 in cash/.test(body), null);
   ok("recovery + stale sustainers stated", /100 failed sustainers to the recovery list/.test(body) && /60 stale/.test(body), null);
-  ok("the 800 exclusions with hidden/yellow/comment provenance", /800/.test(body) && /40 hidden rows, 100 highlighted, 40 from comments/.test(body), null);
+  ok("the 800 exclusions with hidden/yellow/comment provenance", /800/.test(body) && /rows carry an exclusion/.test(body) && /40 hidden rows, 100 highlighted, 40 from comments/.test(body), null);
   ok("per-sheet + workbook invariant balanced", /92,227 = 88,967 \+ 2,047 \+ 1,213 ✓ balanced/.test(body.replace(/ /g, " ")), body.match(/92,227[^\n]*/)?.[0]);
   ok("skip reasons itemised with downloads", /no donor match/.test(body) && /formula without a computed value/.test(body) && (body.match(/Download/g) || []).length >= 3, null);
   ok("percent-format flagged with its sentence", /stored as .*%, read as \$/.test(body), null);

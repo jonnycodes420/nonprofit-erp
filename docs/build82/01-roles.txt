@@ -139,7 +139,7 @@ Superseded copy
 Empty
 Unknown
 no cells — nothing to import
-Continue — one import: 25,300 donors + 92,227 gifts + 60 pledges + 600 recurring →
+Continue — one import: 25,300 donors + 92,227 gift rows + 60 pledges + 600 recurring →
 ← Back
 Directory
 Team

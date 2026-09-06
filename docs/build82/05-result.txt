@@ -41,7 +41,7 @@ steward-messy-25k-v3.xlsx
 Replace
 Remove
 Imported: 25,034 donors created, 88,967 gifts recorded.
-Click to summary: 14.3s for the write.
+Click to summary: 14.8s for the write.
 60 pledges recorded as commitments · 0 merges logged for undo.
 Done
 Directory

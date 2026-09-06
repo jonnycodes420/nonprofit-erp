@@ -42,7 +42,7 @@ Replace
 Remove
 One import, fully accounted — before anything is written.
 25,034 donors (after 266 duplicate rows fold) · 88,967 gifts, $50,979,808.17 · 60 pledges as commitments ($1,881,000.00, $0 in cash) · 100 failed sustainers to the recovery list · 60 stale “Active” flags
-800 people carry an exclusion (deceased / do-not-contact family) and stay off every ask surface — including 40 hidden rows, 100 highlighted, 40 from comments.
+800 rows carry an exclusion (deceased / do-not-contact family) — those people stay off every ask surface — including 40 hidden rows, 100 highlighted, 40 from comments.
 EVERY ROW, ONE DISPOSITION — PER SHEET AND FOR THE WORKBOOK
 Gifts 2023-2026
 56,177 rows = 54,871 imported + 1,130 refused + 176 routed ✓
@@ -57,12 +57,12 @@ the same gift id listed twice in the file — imported once — 721 ($369,944.70
 Download
 no donor match — the ID matches nothing on any sheet — 483 ($251,422.90)
 Download
-percent-format amounts, read as dollars and flagged (e.g. “stored as 10000%, read as $10000”) — 559
+percent-format amounts, read as dollars and flagged (e.g. “stored as 25%, read as $25”) — 559
 Download
-Routed to their own surfaces (never dropped): 1,016 refunds/negatives · 197 in-kind ·
+Routed to their own surfaces (never dropped): 1,016 refunds/negatives · 197 in-kind
 THE FILE'S OWN TOTALS, RECONCILED
-Gifts 2023-2026 row 56,183 says $32,523,933.89; the readable cells hold $32,190,361.29 — the $333,572.60 difference is 843 refused rows + $165,280.04 routed + amounts the sheet itself no longer carries (its cached total is stale).
-Gifts 2019-2022 row 36,053 says $19,852,987.83; the readable cells hold $19,040,869.78 — the $812,118.05 difference is 721 refused rows + $594,868.02 routed + amounts the sheet itself no longer carries (its cached total is stale).
+Gifts 2023-2026 row 56,183 says $32,523,933.89; the readable cells hold $32,190,361.29 — the $333,572.60 difference is 1,130 refused rows + $165,280.04 routed + amounts the sheet itself no longer carries (its cached total is stale).
+Gifts 2019-2022 row 36,053 says $19,852,987.83; the readable cells hold $19,040,869.78 — the $812,118.05 difference is 917 refused rows + $594,868.02 routed + amounts the sheet itself no longer carries (its cached total is stale).
 LARGEST GIFTS ABOUT TO LAND
 Yarborough Church
 $25,000.00 · 2023-01-01

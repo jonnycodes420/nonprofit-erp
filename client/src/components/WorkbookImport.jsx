@@ -287,7 +287,7 @@ export function WorkbookImport({ workbook, fileName, hasExistingDonors, onClose,
         <div style={{ display: "flex", gap: 10, marginTop: 16, alignItems: "center" }}>
           {btn(giftAlone
             ? `Continue — link ${fmtN(giftsN)} gifts to your existing records →`
-            : `Continue — one import: ${fmtN(donorsN)} donors + ${fmtN(giftsN)} gifts${pledgeSheet ? ` + ${fmtN(pledgeSheet.rowCount)} pledges` : ""}${recurringSheet ? ` + ${fmtN(recurringSheet.rowCount)} recurring` : ""} →`,
+            : `Continue — one import: ${fmtN(donorsN)} donors + ${fmtN(giftsN)} gift rows${pledgeSheet ? ` + ${fmtN(pledgeSheet.rowCount)} pledges` : ""}${recurringSheet ? ` + ${fmtN(recurringSheet.rowCount)} recurring` : ""} →`,
             () => setStep(signals.length ? "signals" : "mapper"), { disabled: !importables.length, testid: "wb-continue" })}
           {btn("← Back", onClose, { secondary: true })}
         </div>
@@ -470,7 +470,7 @@ export function WorkbookImport({ workbook, fileName, hasExistingDonors, onClose,
           </div>
           {s.exclusionSummary && s.exclusionSummary.total > 0 && (
             <div style={{ fontSize: 12.5, color: T.ink, marginTop: 6 }}>
-              <strong>{fmtN(s.exclusionSummary.total)}</strong> people carry an exclusion (deceased / do-not-contact family) and stay off every ask surface — including {s.exclusionSummary.fromHidden} hidden rows, {s.exclusionSummary.fromFill} highlighted, {s.exclusionSummary.fromComments} from comments.
+              <strong>{fmtN(s.exclusionSummary.total)}</strong> rows carry an exclusion (deceased / do-not-contact family) — those people stay off every ask surface — including {s.exclusionSummary.fromHidden} hidden rows, {s.exclusionSummary.fromFill} highlighted, {s.exclusionSummary.fromComments} from comments.
             </div>
           )}
         </div>
@@ -505,14 +505,20 @@ export function WorkbookImport({ workbook, fileName, hasExistingDonors, onClose,
           ))}
           {s.flags.length > 0 && (
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, fontSize: 12.5, color: T.ink, padding: "3px 0" }}>
-              <span>percent-format amounts, read as dollars and flagged (e.g. “{s.flags[0].text}”) — <strong>{fmtN(s.flags.length)}</strong></span>
+              <span>percent-format amounts, read as dollars and flagged (e.g. “{(s.flags.find(f => /^stored as \d{1,2}(\.|%)/.test(f.text)) || s.flags[0]).text}”) — <strong>{fmtN(s.flags.length)}</strong></span>
               <button onClick={() => downloadCsv("flagged-percent-format.csv", s.flags, ["sheet", "line", "kind", "text", "dollars"])}
                 style={{ background: "transparent", border: "1px solid " + T.bg3, borderRadius: 7, padding: "3px 10px", fontSize: 11.5, color: T.ink3, cursor: "pointer" }}>Download</button>
             </div>
           )}
           {(s.routed.refunds.length + s.routed.inKind.length + s.routed.pledges.length + s.routed.softCredits.length + s.routed.reversals.length) > 0 && (
             <div style={{ fontSize: 12.5, color: T.ink3, padding: "3px 0" }}>
-              Routed to their own surfaces (never dropped): {s.routed.refunds.length ? `${fmtN(s.routed.refunds.length)} refunds/negatives · ` : ""}{s.routed.inKind.length ? `${fmtN(s.routed.inKind.length)} in-kind · ` : ""}{s.routed.pledges.length ? `${fmtN(s.routed.pledges.length)} pledge rows · ` : ""}{s.routed.softCredits.length ? `${fmtN(s.routed.softCredits.length)} soft credits · ` : ""}{s.routed.reversals.length ? `${fmtN(s.routed.reversals.length)} positive reversals (need a human)` : ""}
+              Routed to their own surfaces (never dropped): {[
+                s.routed.refunds.length && `${fmtN(s.routed.refunds.length)} refunds/negatives`,
+                s.routed.inKind.length && `${fmtN(s.routed.inKind.length)} in-kind`,
+                s.routed.pledges.length && `${fmtN(s.routed.pledges.length)} pledge rows`,
+                s.routed.softCredits.length && `${fmtN(s.routed.softCredits.length)} soft credits`,
+                s.routed.reversals.length && `${fmtN(s.routed.reversals.length)} positive reversals (need a human)`,
+              ].filter(Boolean).join(" · ")}
             </div>
           )}
         </div>

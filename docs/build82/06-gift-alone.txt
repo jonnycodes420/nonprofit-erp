@@ -51,7 +51,7 @@ Workbook
 SET ASIDE, BY REASON — EVERY ROW HAS ITS SHEET, ROW NUMBER AND REASON
 the same gift id listed twice in the file — imported once — 721 ($369,944.70)
 Download
-Routed to their own surfaces (never dropped): 948 refunds/negatives · 89 in-kind ·
+Routed to their own surfaces (never dropped): 948 refunds/negatives · 89 in-kind
 THE FILE'S OWN TOTALS, RECONCILED
 Gifts 2019-2022 row 36,053 says $19,852,987.83; the readable cells hold $19,040,869.78 — the $812,118.05 difference is 721 refused rows + $594,868.02 routed + amounts the sheet itself no longer carries (its cached total is stale).
 LARGEST GIFTS ABOUT TO LAND
@@ -103,16 +103,6 @@ Jul 2026
 $12,500
 85
 Assign
-L
-Lauren Zabala
-LAPSED
-?
-—
-$100,000
-Jul 2025
-$25,000
-51
-Assign
 M
 Matthew Turner
 matthew.turner83@twc.com
@@ -123,6 +113,16 @@ $100,000
 Oct 2025
 $20,000
 67
+Assign
+L
+Lauren Zabala
+LAPSED
+?
+—
+$100,000
+Jul 2025
+$25,000
+51
 Assign
 R
 Reed Bank
@@ -156,15 +156,25 @@ Aug 2026
 $12,500
 85
 Assign
-V
-Voss Community Foundation
+P
+Peterson Foundation
 CULTIVATE
 ?
 —
 $60,000
-Dec 2025
+Nov 2025
 $25,000
 59
+Assign
+w
+wyatt Carter
+STEWARD
+?
+—
+$60,000
+Aug 2026
+$20,000
+77
 Assign
 C
 Cook Inc.
@@ -178,35 +188,33 @@ Feb 2025
 $25,000
 47
 Assign
-O
-O'Brien Dental
-◉
-DRIFTING
-LAPSED
-?
-—
-$60,000
-Jun 2025
-$25,000
-47
-Assign
-w
-wyatt Carter
-STEWARD
-?
-—
-$60,000
-Aug 2026
-$20,000
-77
-Assign
-P
-Peterson Foundation
+C
+Collins Farm Bureau
 CULTIVATE
 ?
 —
 $60,000
-Nov 2025
+Dec 2025
+$25,000
+59
+Assign
+B
+Barnes Foundation
+CULTIVATE
+?
+—
+$60,000
+Sep 2025
+$25,000
+59
+Assign
+V
+Voss Community Foundation
+CULTIVATE
+?
+—
+$60,000
+Dec 2025
 $25,000
 59
 Assign
@@ -222,28 +230,20 @@ May 2025
 $25,000
 47
 Assign
-S
-Singh Family Foundation
+O
+O'Brien Dental
+◉
+DRIFTING
 LAPSED
 ?
 —
 $60,000
-Aug 2025
+Jun 2025
 $25,000
 47
 Assign
 Q
 Quarles Hardware
-CULTIVATE
-?
-—
-$60,000
-Dec 2025
-$25,000
-59
-Assign
-C
-Collins Farm Bureau
 CULTIVATE
 ?
 —
@@ -262,15 +262,15 @@ Nov 2025
 $25,000
 59
 Assign
-B
-Barnes Foundation
-CULTIVATE
+S
+Singh Family Foundation
+LAPSED
 ?
 —
 $60,000
-Sep 2025
+Aug 2025
 $25,000
-59
+47
 Assign
 H
 Hollingsworth LLC
@@ -282,32 +282,10 @@ Dec 2025
 $25,000
 63
 Assign
-L
-Ledbetter Ministries
-LAPSED
-?
-—
-$55,000
-May 2025
-$25,000
-47
-Assign
 Y
 Yancey Realty
 ◉
 DRIFTING
-LAPSED
-?
-—
-$55,000
-May 2025
-$25,000
-47
-Assign
-R
-Rivera Corp
-◉
-DRIFTING · UNSURE
 LAPSED
 ?
 —
@@ -338,6 +316,28 @@ Apr 2025
 $5,000
 47
 Assign
+R
+Rivera Corp
+◉
+DRIFTING · UNSURE
+LAPSED
+?
+—
+$55,000
+May 2025
+$25,000
+47
+Assign
+L
+Ledbetter Ministries
+LAPSED
+?
+—
+$55,000
+May 2025
+$25,000
+47
+Assign
 T
 Tran Bank
 ◉
@@ -360,16 +360,6 @@ Apr 2026
 $50
 73
 Assign
-S
-Stewart Church
-CULTIVATE
-?
-—
-$52,500
-Oct 2025
-$2,500
-59
-Assign
 U
 Ulmer Hardware
 ◉
@@ -384,6 +374,16 @@ $25,000
 Assign
 M
 Morris Charitable Fund
+CULTIVATE
+?
+—
+$52,500
+Oct 2025
+$2,500
+59
+Assign
+S
+Stewart Church
 CULTIVATE
 ?
 —
@@ -412,8 +412,31 @@ Aug 2026
 $100
 85
 Assign
-K
-Kane Fellowship
+V
+Vandyke Ministries
+CULTIVATE
+?
+—
+$51,000
+Dec 2025
+$25,000
+59
+Assign
+P
+Powell Fellowship
+◉
+DRIFTING
+LAPSED
+?
+—
+$51,000
+Feb 2025
+$25,000
+47
+Assign
+B
+Brooks Foundation
+none
 CULTIVATE
 ?
 —
@@ -432,6 +455,16 @@ Dec 2025
 $25,000
 59
 Assign
+K
+Kane Fellowship
+CULTIVATE
+?
+—
+$51,000
+Oct 2025
+$25,000
+59
+Assign
 H
 Hutchinson Farm Bureau
 CULTIVATE
@@ -442,17 +475,6 @@ Sep 2025
 $1,000
 59
 Assign
-B
-Brooks Foundation
-none
-CULTIVATE
-?
-—
-$51,000
-Oct 2025
-$25,000
-59
-Assign
 L
 Long Realty
 CULTIVATE
@@ -460,16 +482,6 @@ CULTIVATE
 —
 $51,000
 Oct 2025
-$25,000
-59
-Assign
-V
-Vandyke Ministries
-CULTIVATE
-?
-—
-$51,000
-Dec 2025
 $25,000
 59
 Assign
@@ -486,18 +498,6 @@ Feb 2025
 $1,000
 47
 Assign
-P
-Powell Fellowship
-◉
-DRIFTING
-LAPSED
-?
-—
-$51,000
-Feb 2025
-$25,000
-47
-Assign
 R
 Rogers Corp
 CULTIVATE
@@ -507,6 +507,16 @@ $50,575.50
 Dec 2025
 $25,000
 67
+Assign
+E
+Eastwick Community Foundation
+LAPSED
+?
+—
+$50,500
+May 2025
+$500
+47
 Assign
 Y
 Yarborough Church
@@ -530,15 +540,25 @@ Apr 2025
 $25,000
 47
 Assign
-E
-Eastwick Community Foundation
+L
+Lisa BRANNIGAN
 LAPSED
 ?
 —
-$50,500
-May 2025
-$500
-47
+$50,000
+Jul 2025
+$10,000
+55
+Assign
+B
+Barnes Community Foundation
+LAPSED
+?
+—
+$50,000
+May 2024
+$25,000
+43
 Assign
 A
 Ava Moore
@@ -562,58 +582,6 @@ May 2025
 $12,500
 51
 Assign
-B
-Barnes Community Foundation
-LAPSED
-?
-—
-$50,000
-May 2024
-$25,000
-43
-Assign
-S
-Sarah Merriweather
-sarah.merriweather15@aol.com
-LAPSED
-?
-—
-$50,000
-Aug 2025
-$10,000
-55
-Assign
-A
-Aldridge Fellowship
-LAPSED
-?
-—
-$50,000
-Jan 2024
-$25,000
-43
-Assign
-R
-Russell Watson
-russell.watson65@yahoo.com
-STEWARD
-?
-—
-$50,000
-Jun 2026
-$25,000
-73
-Assign
-L
-Lisa BRANNIGAN
-LAPSED
-?
-—
-$50,000
-Jul 2025
-$10,000
-55
-Assign
 K
 Kwame Quimby
 ◉
@@ -626,6 +594,38 @@ $50,000
 Apr 2026
 $12,500
 73
+Assign
+S
+Sarah Merriweather
+sarah.merriweather15@aol.com
+LAPSED
+?
+—
+$50,000
+Aug 2025
+$10,000
+55
+Assign
+R
+Russell Watson
+russell.watson65@yahoo.com
+STEWARD
+?
+—
+$50,000
+Jun 2026
+$25,000
+73
+Assign
+A
+Aldridge Fellowship
+LAPSED
+?
+—
+$50,000
+Jan 2024
+$25,000
+43
 Assign
 ← Prev
 Page 1 of 501

@@ -2316,7 +2316,9 @@ export function normalizeMoneyCell(cell, opts = {}) {
     let n = v, flag = null;
     if (z && /%/.test(String(z))) {
       n = v * 100;
-      flag = { kind: "percent_format", text: `stored as ${(v * 100) % 1 === 0 ? v * 100 : (v * 100).toFixed(2)}%, read as $${n % 1 === 0 ? n : n.toFixed(2)}` };
+      const pctShown = (v * 100) % 1 === 0 ? (v * 100).toLocaleString() : (v * 100).toFixed(2);
+      const usdShown = n.toLocaleString(undefined, { minimumFractionDigits: n % 1 === 0 ? 0 : 2, maximumFractionDigits: 2 });
+      flag = { kind: "percent_format", text: `stored as ${pctShown}%, read as $${usdShown}` };
     }
     const cents = Math.round(n * 100);
     const out = { value: cents / 100, warn: null };
@@ -3429,11 +3431,12 @@ export function buildWorkbookSubmission(roled = [], opts = {}) {
     .map(g => ({ name: nameByIndex(g.donorIndex), dollars: g.amount, date: g.date }));
   const totalRows = builds.filter(b => !b.decoy).map(b => {
     const sheet = roled.find(s => s.name === b.name);
+    const orphansHere = linked.refusedOrphans.filter(o => o.sheet === b.name).length;
     return sheet && sheet.totalRow ? {
       sheet: b.name, line: sheet.totalRow.line, stated: sheet.totalRow.amount,
       readable: b.report.dollarsIn,
       routedAbs: Math.round(Object.values(b.routed).flat().reduce((s2, x) => s2 + Math.abs(x.dollars || 0), 0) * 100) / 100,
-      refusedCount: b.report.refused,
+      refusedCount: b.report.refused + orphansHere,
     } : null;
   }).filter(Boolean);
   // subtotal/GRAND rows the sheet itself carried, for the same panel
