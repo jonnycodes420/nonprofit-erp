@@ -2111,7 +2111,20 @@ export function DonorImport({ onClose, onImported, withHistory = false }) {
                 ? <>{" "}<span style={{color:T.green600}}>{donorCount.toLocaleString()}</span>{" donors ready"}
                     {giftCount>0&&<>{" · "}<span style={{color:T.green600}}>{giftCount.toLocaleString()}</span>{" gifts"}</>}
                     {payload.warnedCount>0&&<>{" · "}<span style={{color:T.gold600||"#a97f22"}}>{payload.warnedCount}</span>{" with warnings"}</>}
-                    {payload.skippedCount>0&&<>{" · "}<span style={{color:T.ink3}}>{payload.skippedCount.toLocaleString()}</span>{effectiveShape==="transaction"?" rows will be refused, each with its line and reason":" skipped (no name or email)"}</>}</>
+                    {(()=>{
+                      if (effectiveShape !== "transaction") return payload.skippedCount>0&&<>{" · "}<span style={{color:T.ink3}}>{payload.skippedCount.toLocaleString()}</span>{" skipped (no name or email)"}</>;
+                      // BUILD-80 Part 10 — the refusal line shows DOLLARS, not
+                      // only rows, before the write — and routed semantic rows
+                      // (soft credits, pledges, in-kind) are not "refused".
+                      const disp = payload.dispositions || [];
+                      const refused = disp.filter(d=>d.disposition==="errored"||(d.disposition==="skipped"&&["no_amount","zero_amount"].includes(d.reason)));
+                      const refusedDollars = refused.reduce((s2,d)=>s2+(d.dollars||0),0);
+                      const routed = disp.filter(d=>d.disposition==="skipped"&&!["no_amount","zero_amount"].includes(d.reason)).length;
+                      return <>
+                        {refused.length>0&&<>{" · "}<span style={{color:T.terracotta}}>{refused.length.toLocaleString()}</span>{" rows will be refused ("}<span style={{color:T.terracotta}}>{"$"+refusedDollars.toLocaleString(undefined,{maximumFractionDigits:2})}</span>{"), each with its line and reason"}</>}
+                        {routed>0&&<>{" · "}<span style={{color:T.ink3}}>{routed.toLocaleString()}</span>{" rows route to their own surfaces (soft credits, pledges, in-kind)"}</>}
+                      </>;
+                    })()}</>
                 : <span style={{color:T.ink3}}>No rows ready — map at least one column to <em>name</em> or <em>email</em>.</span>}
             </div>
           </div>
@@ -6403,8 +6416,11 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
     if(!newDonor.name)return;
     const assignTo=newDonorAssignee||userId;
     const assignToName=newDonorAssignee?(orgTeam.find(u=>u.id===newDonorAssignee)?.name||""):userName;
+    // BUILD-80 Part 10 — a typed last amount NEVER stamps a last-gift date
+    // of today (the same class BUILD-79 Part 4 killed on the import paths):
+    // the amount tells us what they gave, not when. No date means no date.
     const temp={id:"tmp_"+Date.now(),name:newDonor.name,email:newDonor.email,phone:newDonor.phone,
-      total:parseInt(newDonor.lastAmount)||0,lastGift:new Date().toISOString().split("T")[0],
+      total:parseInt(newDonor.lastAmount)||0,lastGift:null,
       lastAmount:parseInt(newDonor.lastAmount)||0,gifts:newDonor.lastAmount?1:0,
       status:"new",stage:newDonor.stage,tags:[],notes:"",interactions:[],lastTouchpoint:null,
       assignedTo:assignTo,assignedToName:assignToName};

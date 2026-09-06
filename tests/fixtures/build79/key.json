@@ -245,5 +245,8 @@
       "trueAmount": 1500,
       "reason": "letter O for zero"
     }
+  ],
+  "knownArtifacts": [
+    "fl_mi donors rotate middle initials per row (Jennifer E./A./J./K. Sowande) — a generator artifact, PINNED as a same-person merge case; the file is golden, do not regenerate"
   ]
 }

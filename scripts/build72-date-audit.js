@@ -203,11 +203,31 @@ const TODAY_FALLBACK_FILES = [
   "client/src/components/shared.jsx",
 ];
 const TODAY_FALLBACK_RE = /\|\|\s*(?:new Date\(\)\.toISOString\(\)|today\b)/;
+// BUILD-80 Part 10 — the quick-form class: a gift-date FIELD stamped directly
+// from the clock ("lastGift: new Date()...", "last_gift_date ... today") is
+// the same fiction without the || — a donor whose date we never knew reads as
+// having given the day they were typed in.
+const TODAY_STAMP_RE = /last_?gift(_date)?\s*[:=][^,\n]{0,40}(new Date\(\)|\btoday\b)/i;
 // `opts.today || …` is a test-injectable PARAMETER default (the future-date
 // boundary), not a value fallback; TODAY_FALLBACK_OK marks a reviewed site.
 const TODAY_ALLOWED = /opts\.today|TODAY_FALLBACK_OK/;
+// server.js is scanned ONLY for the gift-date stamp class: its legitimate
+// "|| today" defaults (an interaction logged now IS today, a report range
+// ending today) are not the defect; a gift date stamped from the clock is.
+const TODAY_STAMP_FILES = ["server.js", ...TODAY_FALLBACK_FILES];
 function scanTodayFallbacks() {
   const found = [];
+  for (const f of TODAY_STAMP_FILES) {
+    const p2 = path.join(__dirname, "..", f);
+    if (!fs.existsSync(p2)) continue;
+    const lines = fs.readFileSync(p2, "utf8").split("\n");
+    lines.forEach((line, i) => {
+      const code = line.replace(/\/\/.*$/, "");
+      if (TODAY_STAMP_RE.test(code) && !TODAY_ALLOWED.test(line)) {
+        found.push({ file: f, line: i + 1, text: line.trim().slice(0, 120), kind: "stamp" });
+      }
+    });
+  }
   for (const f of TODAY_FALLBACK_FILES) {
     const p2 = path.join(__dirname, "..", f);
     if (!fs.existsSync(p2)) continue;

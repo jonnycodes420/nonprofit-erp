@@ -987,6 +987,20 @@ export function Settings({auth,logout,initialSection,onNavigate}) {
   // immutable after creation (the modal says so instead of hiding it).
   const [customFields,setCustomFields]=useState({donor:[],gift:[]});
   const [cfEntity,setCfEntity]=useState("donor");
+  // BUILD-80 Part 10 — the kept-raw surface: stored custom values that do
+  // not coerce under their field's current type, with a fix-in-place.
+  const [keptRaw,setKeptRaw]=useState(null);
+  const [keptRawEdits,setKeptRawEdits]=useState({});
+  const loadKeptRaw=()=>apiFetch("/custom-fields/kept-raw").then(r=>setKeptRaw(r.keptRaw||[])).catch(()=>setKeptRaw([]));
+  useEffect(()=>{ if(isAdmin) loadKeptRaw(); },[]); // eslint-disable-line
+  const fixKeptRaw=async(row)=>{
+    const val=keptRawEdits[`${row.donorId}|${row.key}`];
+    if(val===undefined)return;
+    try{
+      await apiFetch(`/custom-fields/kept-raw/${row.donorId}`,{method:"PUT",body:JSON.stringify({key:row.key,value:val})});
+      loadKeptRaw();
+    }catch(e){alert(e.details?.[0]?.error||e.message||"That value still doesn't match the field's type.");}
+  };
   const [cfShowArchived,setCfShowArchived]=useState(false);
   const [showAddField,setShowAddField]=useState(false);
   const [editingField,setEditingField]=useState(null);
@@ -1551,6 +1565,31 @@ export function Settings({auth,logout,initialSection,onNavigate}) {
 
       {/* ── Customization ─────────────────────────────────────────────────── */}
       {section==="customization"&&<>
+      {/* BUILD-80 Part 10 — kept-raw values: what the migration stored that
+          doesn't type, each fixable in place through the validated seam. */}
+      {isAdmin&&keptRaw&&keptRaw.length>0&&(
+        <div style={{background:T.white,border:"1px solid "+(T.gold500||"#c9a84c")+"55",borderRadius:16,padding:"24px 28px",marginBottom:16}}>
+          <SectionLabel>Values that don't match their field's type</SectionLabel>
+          <div style={{fontSize:12.5,color:T.ink3,margin:"10px 0 12px",lineHeight:1.6}}>
+            These came in through the one-time migration and were kept as written. Fix each in place — the corrected value is validated against the field's type before it's stored.
+          </div>
+          {keptRaw.slice(0,30).map(row=>(
+            <div key={row.donorId+row.key} style={{display:"flex",gap:8,alignItems:"center",padding:"6px 0",borderBottom:"1px solid "+T.bg2,fontSize:12.5}}>
+              <span style={{minWidth:0,flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
+                <strong style={{color:T.ink}}>{row.donorName}</strong>
+                <span style={{color:T.ink3}}> · {row.label}{row.type?` (${row.type})`:""} · </span>
+                <span style={{color:T.terracotta}}>"{String(row.value).slice(0,40)}"</span>
+                <span style={{color:T.ink3}}> — {row.problem}</span>
+              </span>
+              <input defaultValue={String(row.value)} onChange={e=>setKeptRawEdits(p=>({...p,[`${row.donorId}|${row.key}`]:e.target.value}))}
+                style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:6,padding:"4px 8px",fontSize:12,color:T.ink,width:140}}/>
+              <button onClick={()=>fixKeptRaw(row)} disabled={isReadOnly}
+                style={{background:T.green,border:"none",borderRadius:6,padding:"4px 10px",color:"#fff",fontSize:11.5,fontWeight:700,cursor:"pointer"}}>Fix</button>
+            </div>
+          ))}
+          {keptRaw.length>30&&<div style={{fontSize:12,color:T.ink3,marginTop:6}}>+{keptRaw.length-30} more.</div>}
+        </div>
+      )}
       <div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:16,padding:"24px 28px"}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
           <SectionLabel>Custom Fields</SectionLabel>

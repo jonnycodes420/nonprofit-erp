@@ -3744,7 +3744,6 @@ app.post("/donors", requireAuth, checkWriteAccess, wrap(async (req, res) => {
   }
 
   const id = "d_" + uuid().slice(0, 8);
-  const today = new Date().toISOString().split("T")[0];
   let selfName = assignedToName;
   if (!assignedTo && !selfName) {
     const uRow = await query("SELECT name FROM users WHERE id = ?", [req.user.userId]);
@@ -3755,8 +3754,10 @@ app.post("/donors", requireAuth, checkWriteAccess, wrap(async (req, res) => {
   await run(
     `INSERT INTO donors (id,org_id,name,email,phone,status,stage,total_giving,last_gift_amount,last_gift_date,gift_count,tags,notes,assigned_to,assigned_to_name,created_by,created_by_name)
      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+    // BUILD-80 Part 10 — the quick form's typed amount carries NO date: a
+    // last_gift_date of "today" was a fiction that un-drifted the donor.
     [id, req.user.orgId, name, email || "", phone || "", status || "new", stage || "prospect",
-     lastAmount || 0, lastAmount || 0, today, lastAmount ? 1 : 0,
+     lastAmount || 0, lastAmount || 0, null, lastAmount ? 1 : 0,
      JSON.stringify(tags || []), notes || "", finalAssignedTo, finalAssignedToName, actor(req).id, actor(req).name]
   );
   const rows = await query("SELECT * FROM donors WHERE id = ?", [id]);
@@ -15178,6 +15179,53 @@ app.get("/custom-fields", requireAuth, wrap(async (req, res) => {
   if (!CF_ENTITIES.includes(entity)) return res.status(400).json({ error: "entity must be donor or gift" });
   const defs = await loadCfDefs(entity, req.user.orgId, { includeArchived: req.query.includeArchived === "1" });
   res.json(defs.map(cfDefOut));
+}));
+
+// BUILD-80 Part 10 — the KEPT-RAW surface (BUILD-78's named gap): every
+// stored custom value that does not coerce under its field's current type,
+// listed with donor, field and value so an admin can fix it in place (the
+// fix goes through the normal validated donor-update path). The population
+// is a frozen migration artifact — no write path can add to it — but it must
+// not sit there quietly forever.
+app.get("/custom-fields/kept-raw", requireAuth, requireAdmin, wrap(async (req, res) => {
+  const { coerceCustomValue } = await cfShape();
+  const orgId = req.user.orgId;
+  const defs = await loadCfDefs("donor", orgId, {});
+  const byKey = new Map(defs.map(d => [d.key, d]));
+  const rows = await query(
+    "SELECT id, name, custom_fields FROM donors WHERE org_id=? AND deleted_at IS NULL AND custom_fields IS NOT NULL", [orgId]);
+  const keptRaw = [];
+  for (const r of rows) {
+    let cf = r.custom_fields;
+    if (typeof cf === "string") { try { cf = JSON.parse(cf); } catch { continue; } }
+    if (!cf || typeof cf !== "object") continue;
+    for (const [k, v] of Object.entries(cf)) {
+      const def = byKey.get(k);
+      if (!def) { keptRaw.push({ donorId: r.id, donorName: r.name, key: k, label: k, value: v, problem: "no field definition" }); continue; }
+      const c = coerceCustomValue(def, v);
+      if (!c.ok) keptRaw.push({ donorId: r.id, donorName: r.name, key: k, label: def.label, type: def.type, value: v, problem: c.errors?.[0] || "does not match the field's type" });
+    }
+    if (keptRaw.length >= 500) break;
+  }
+  res.json({ keptRaw, count: keptRaw.length });
+}));
+
+// The fix-in-place: one donor, one key, one corrected value — validated
+// through the SAME seam every other custom-field write uses.
+app.put("/custom-fields/kept-raw/:donorId", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  const { key, value } = req.body || {};
+  if (!key) return res.status(400).json({ error: "key required" });
+  const [donor] = await query("SELECT id, custom_fields FROM donors WHERE id=? AND org_id=? AND deleted_at IS NULL", [req.params.donorId, orgId]);
+  if (!donor) return res.status(404).json({ error: "donor not found" });
+  const v = await validateCustomFields("donor", orgId, { [key]: value });
+  if (!v.ok) return res.status(422).json({ error: "invalid value", details: v.errors });
+  let cf = donor.custom_fields;
+  if (typeof cf === "string") { try { cf = JSON.parse(cf); } catch { cf = {}; } }
+  cf = { ...(cf || {}), ...v.values };
+  if (value === "" || value === null) delete cf[key];
+  await run("UPDATE donors SET custom_fields=?, updated_at=NOW() WHERE id=?", [JSON.stringify(cf), donor.id]);
+  res.json({ ok: true, stored: v.values[key] ?? null });
 }));
 
 app.post("/custom-fields", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {

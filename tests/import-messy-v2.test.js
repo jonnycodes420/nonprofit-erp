@@ -602,6 +602,39 @@ async function reset() {
   const ih4 = await api("GET", "/org/import-health", tok);
   ok("restoring the honest stats clears the caveat", ih4.body?.caveat === null, ih4.body?.caveat);
 
+  // ── §4h · BUILD-80 Part 10 — the leftovers, all small ───────────────────
+  console.log("\n— §4h · quick-form honesty, kept-raw fix-in-place —");
+  // The Add-Donor quick form: a typed amount NEVER stamps a today last-gift.
+  const qf = await api("POST", "/donors", tok, { name: "Quickform Test", lastAmount: 250 });
+  ok("POST /donors with a typed lastAmount stores NO last-gift date (the amount says what, never when)",
+    qf.status === 201 && qf.body.last_gift_date == null && Number(qf.body.total_giving) === 250,
+    { status: qf.status, lastGift: qf.body?.last_gift_date, total: qf.body?.total_giving });
+  // The kept-raw surface: a migration-era value that doesn't type is LISTED
+  // and fixable in place through the validated seam.
+  const cfMk = await api("POST", "/custom-fields", tok, { entity: "donor", label: "Member Since", type: "date" });
+  ok("setup: a date-typed custom field exists", cfMk.status === 201 || cfMk.status === 200, cfMk.status);
+  const cfKey = cfMk.body.key || "member_since";
+  await q(`UPDATE donors SET custom_fields = jsonb_build_object($3::text, 'the nineties')
+            WHERE id = $1 AND org_id = $2`, [qf.body.id, ORG, cfKey]);
+  const kr = await api("GET", "/custom-fields/kept-raw", tok);
+  ok("GET /custom-fields/kept-raw lists the value that doesn't match its field's type",
+    kr.status === 200 && kr.body.keptRaw.some(r => r.donorId === qf.body.id && r.key === cfKey && r.value === "the nineties"),
+    kr.body?.keptRaw?.slice(0, 2));
+  const bad = await api("PUT", `/custom-fields/kept-raw/${qf.body.id}`, tok, { key: cfKey, value: "still not a date" });
+  ok("a fix that still doesn't type is REFUSED (422) — never quietly stored", bad.status === 422, bad.status);
+  const good = await api("PUT", `/custom-fields/kept-raw/${qf.body.id}`, tok, { key: cfKey, value: "1996-04-01" });
+  const kr2 = await api("GET", "/custom-fields/kept-raw", tok);
+  ok("the fix-in-place goes through the validated seam and clears the row",
+    good.status === 200 && !kr2.body.keptRaw.some(r => r.donorId === qf.body.id && r.key === cfKey),
+    { fix: good.status, remaining: kr2.body?.keptRaw?.length });
+  // entity inference (BUILD-78, re-pinned): Receipt Amount varies within a
+  // donor's rows → proposed as a GIFT field, never a donor field.
+  const receiptCol = plan.columns.find(c => c.field === "Receipt Amount");
+  ok("a column that VARIES within a donor group is proposed as a GIFT field (Receipt Amount)",
+    receiptCol && receiptCol.entity === "gift", receiptCol && { status: receiptCol.status, entity: receiptCol.entity });
+  ok("the fixture key PINS the initials rotation as a known artifact (the file is golden)",
+    JSON.parse(fs.readFileSync(path.join(__dirname, "fixtures", "build79", "key.json"), "utf8")).knownArtifacts.some(t => /Sowande/.test(t)), null);
+
   // ── §5 · Part 7.4 — the round trip on the IMPORTED org ───────────────────
   console.log("\n— §5 · export reads what import wrote, on THIS org —");
   const ex = await api("GET", "/donors/export/csv", tok);

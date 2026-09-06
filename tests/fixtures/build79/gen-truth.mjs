@@ -43,6 +43,9 @@ const key = {
   organisations: 20,
   plantedDates: [],
   plantedAmounts: [],
+  knownArtifacts: [
+    "fl_mi donors rotate middle initials per row (Jennifer E./A./J./K. Sowande) — a generator artifact, PINNED as a same-person merge case; the file is golden, do not regenerate",
+  ],
 };
 
 // planted dates: "- `X` on gift `G-nnnn` (Name), true date YYYY-MM-DD: reason"
