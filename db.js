@@ -1395,6 +1395,25 @@ async function initSchema() {
   // BUILD-80 Part 7 — organisations and the anonymous holding record are not
   // people: kind gates every person surface (drift, re-engage, attention).
   await pool.query(`ALTER TABLE donors ADD COLUMN IF NOT EXISTS kind TEXT`);
+  // BUILD-82 — the standard donor list is COMPLETE: every column a real CRM
+  // export carries lands whole (middle/suffix/salutation/spouse/second email/
+  // mobile/address 2/country/type/board), never split, dropped, or shunted to
+  // a custom field. external_household_id is the SOURCE system's household
+  // key (TEXT — the FK household_id belongs to Steward's own households).
+  // external_donor_ids carries EVERY source id a record answers to after a
+  // duplicate fold, so a gift posted to the folded id still finds its person.
+  await pool.query(`ALTER TABLE donors ADD COLUMN IF NOT EXISTS middle_name TEXT`);
+  await pool.query(`ALTER TABLE donors ADD COLUMN IF NOT EXISTS suffix TEXT`);
+  await pool.query(`ALTER TABLE donors ADD COLUMN IF NOT EXISTS salutation TEXT`);
+  await pool.query(`ALTER TABLE donors ADD COLUMN IF NOT EXISTS spouse_name TEXT`);
+  await pool.query(`ALTER TABLE donors ADD COLUMN IF NOT EXISTS email2 TEXT`);
+  await pool.query(`ALTER TABLE donors ADD COLUMN IF NOT EXISTS mobile TEXT`);
+  await pool.query(`ALTER TABLE donors ADD COLUMN IF NOT EXISTS address2 TEXT`);
+  await pool.query(`ALTER TABLE donors ADD COLUMN IF NOT EXISTS country TEXT`);
+  await pool.query(`ALTER TABLE donors ADD COLUMN IF NOT EXISTS donor_type TEXT`);
+  await pool.query(`ALTER TABLE donors ADD COLUMN IF NOT EXISTS board_member BOOLEAN DEFAULT false`);
+  await pool.query(`ALTER TABLE donors ADD COLUMN IF NOT EXISTS external_household_id TEXT`);
+  await pool.query(`ALTER TABLE donors ADD COLUMN IF NOT EXISTS external_donor_ids JSONB`);
   // BUILD-80 Part 9 — derived surfaces must not outrun the import: the last
   // import's row/refusal counts and largest gifts, read by every headline
   // stat while refusals exceed 5% of rows.

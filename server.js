@@ -1608,7 +1608,9 @@ app.post("/billing/webhook", express.raw({ type: "application/json" }), async (r
 // physically complete onboarding step 2. body-parser marks parsed requests
 // (req._body), so the global parser skips bodies these already handled; the
 // 5mb cap stays in force for every other route.
-app.use(["/donors/import-combined", "/donors/import", "/gifts/import-history"], express.json({ limit: "30mb" }));
+// BUILD-82 — a whole workbook (25,300 donors + 92,682 gift rows) arrives as ONE
+// request so the existing one-transaction wrapper makes the import all-or-nothing.
+app.use(["/donors/import-combined", "/donors/import", "/gifts/import-history"], express.json({ limit: "64mb" }));
 // BUILD-65 Part 1 — image-upload routes accept a real camera photo (~15MB of
 // image ≈ 20MB of base64 + JSON). The global 5mb cap below still guards every
 // other route. Without this a phone photo is rejected by the body parser
@@ -4189,10 +4191,54 @@ app.post("/donors/import", requireAuth, wrap(async (req, res) => {
 // interaction format that /gifts/import-history and the single-gift route use.
 app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(async (req, res) => {
   const { donors, gifts } = req.body;
-  if (!Array.isArray(donors) || !donors.length)
+  // BUILD-82 Part 2.5 — a gift sheet imported ALONE links to the donors the
+  // org already has (Donor ID first, then email, then name); donors may be
+  // empty in that mode and no new donor is ever minted from a bare id.
+  const linkToExisting = req.body.linkToExisting === true;
+  if (!Array.isArray(donors) || (!donors.length && !linkToExisting))
     return res.status(400).json({ error: "donors array required" });
   if (!Array.isArray(gifts))
     return res.status(400).json({ error: "gifts array required" });
+
+  // The link-key normalisation must match shared/importShape.js donorIdKey
+  // (4212 ≡ "004212" ≡ "4212.0" ≡ " 4212 ") — the client and this resolver
+  // read the same seam via dynamic import so there is exactly one.
+  const { donorIdKey } = await import("./shared/importShape.js");
+  const buildExistingResolver = async (q) => {
+    const rows = await q(
+      `SELECT id, external_donor_id, external_donor_ids, LOWER(email) AS e, LOWER(name) AS n
+         FROM donors WHERE org_id=? AND deleted_at IS NULL`, [req.user.orgId]);
+    const byExt = new Map(), byEmail = new Map(), byName = new Map();
+    for (const r of rows) {
+      const ids = [r.external_donor_id, ...(Array.isArray(r.external_donor_ids) ? r.external_donor_ids : [])];
+      for (const one of ids) { const k = donorIdKey(one); if (k && !byExt.has(k)) byExt.set(k, r.id); }
+      if (r.e && !byEmail.has(r.e)) byEmail.set(r.e, r.id);
+      if (r.n && !byName.has(r.n)) byName.set(r.n, r.id);
+    }
+    return (g) => {
+      const k = donorIdKey(g.donorExternalId);
+      if (k && byExt.has(k)) return byExt.get(k);
+      const em = String(g.email || "").toLowerCase().trim();
+      if (em && byEmail.has(em)) return byEmail.get(em);
+      const nm = String(g.name || "").toLowerCase().trim();
+      if (nm && byName.has(nm)) return byName.get(nm);
+      return null;
+    };
+  };
+
+  // Dry run: resolve and report BEFORE anything is written — the pre-write
+  // summary for a gift-sheet-alone import states its link counts honestly.
+  if (linkToExisting && req.body.dryRun === true) {
+    const resolve = await buildExistingResolver(query);
+    let byKey = { donorId: 0, email: 0, name: 0 };
+    const refused = [];
+    for (const g of gifts) {
+      const id = resolve(g);
+      if (!id) { refused.push({ line: g.line || null, id: g.donorExternalId || "", reason: "no_donor_match" }); continue; }
+      if (donorIdKey(g.donorExternalId)) byKey.donorId++; else if (g.email) byKey.email++; else byKey.name++;
+    }
+    return res.json({ dryRun: true, linkable: gifts.length - refused.length, byKey, refused: refused.slice(0, 2000), refusedCount: refused.length });
+  }
 
   const orgId = req.user.orgId;
 
@@ -4335,6 +4381,9 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(as
   );
   const existingByEmail = new Map();
   for (const r of existingEmailRows) if (!existingByEmail.has(r.e)) existingByEmail.set(r.e, r.id);
+  // BUILD-82 Part 2.5 — the existing-record resolver for a gift-sheet-alone
+  // import, built INSIDE the transaction so it sees a consistent snapshot.
+  const resolveExisting = linkToExisting ? await buildExistingResolver((sql, params) => queryTx(txc, sql, params)) : null;
   const seenEmails = new Map(); // within-file email → the id we already assigned it
 
   // Generate all donor IDs in JS before inserting — gifts reference these IDs directly,
@@ -4395,9 +4444,16 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(as
         // BUILD-80 Part 6 — the source system's donor id, TEXT, as given.
         d.externalDonorId || null,
         // BUILD-80 Part 7 — organisation / anonymous, never a person surface.
-        d.kind || null
+        d.kind || null,
+        // BUILD-82 — the standard list is complete; these arrive whole.
+        d.middleName || null, d.suffix || null, d.salutation || null, d.spouse || null,
+        d.email2 || null, d.mobile || null, d.address2 || null, d.country || null,
+        d.donorType || null, d.board === true,
+        d.householdId || null,
+        Array.isArray(d.externalDonorIds) && d.externalDonorIds.length ? JSON.stringify(d.externalDonorIds) : null,
+        d.firstGift || null
       );
-      return "(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)";
+      return "(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)";
     });
     // SAVEPOINT, not a nested transaction: we are already inside the request's
     // one transaction, so a failed batch must be rolled back to a point rather
@@ -4408,7 +4464,9 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(as
           last_gift_date,gift_count,tags,notes,city,state,assigned_to,assigned_to_name,
           pending_assignee_invite_id,pending_assignee_name,deceased,do_not_contact,
           do_not_solicit,do_not_mail,do_not_email,deceased_date,address,zip,
-          imported_sustainer,imported_sustainer_amount,imported_sustainer_last_gift,custom_fields,external_donor_id,kind)
+          imported_sustainer,imported_sustainer_amount,imported_sustainer_last_gift,custom_fields,external_donor_id,kind,
+          middle_name,suffix,salutation,spouse_name,email2,mobile,address2,country,
+          donor_type,board_member,external_household_id,external_donor_ids,first_gift_date)
        VALUES ${tuples.join(",")}`,
       params
     ));
@@ -4459,8 +4517,9 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(as
     // which tests/money-cents.test.js fails on first.
     roundingAdjustment += round2(rawAmt - amt);
 
-    const donorId = indexToId[g.donorIndex];
-    if (!donorId) { ledger.errored("donor_row_unusable", amt); continue; }
+    const donorId = g.donorIndex != null ? indexToId[g.donorIndex]
+      : (resolveExisting ? resolveExisting(g) : undefined);
+    if (!donorId) { ledger.errored(g.donorIndex != null ? "donor_row_unusable" : "no_donor_match", amt); continue; }
     if (failedIds.has(donorId)) { ledger.errored("donor_batch_failed", amt); continue; }
     // BUILD-77 Part 3c — a NEGATIVE amount is a refund/adjustment row: it
     // imports as a negative gift (reducing the dollar total, not the row
@@ -6363,7 +6422,30 @@ app.post("/donors/import-semantics", requireAuth, checkWriteAccess, wrapImport(a
   const counts = { pledges: 0, inKind: 0, links: 0, personsCreated: 0, twinsFlagged: 0, merges: 0, unresolved: [] };
   const mergeRows = [];
 
-  const findDonor = async (email, name) => {
+  // BUILD-82 — a pledge/in-kind row from a workbook names its person by the
+  // SOURCE system's id; that outranks email and name (same order as the join).
+  // Normalisation is shared/importShape.js donorIdKey (4212 ≡ 004212 ≡ 4212.0),
+  // resolved in JS over one org-wide key load — never string surgery in SQL.
+  const { donorIdKey: extKey } = await import("./shared/importShape.js");
+  let extIdMap = null;
+  const extIdLookup = async (externalId) => {
+    const xk = extKey(externalId);
+    if (!xk) return null;
+    if (!extIdMap) {
+      extIdMap = new Map();
+      const rows = await query(
+        "SELECT id, name, external_donor_id, external_donor_ids FROM donors WHERE org_id=? AND deleted_at IS NULL AND (external_donor_id IS NOT NULL OR external_donor_ids IS NOT NULL) ORDER BY created_at, id",
+        [orgId]);
+      for (const r of rows) {
+        const ids = [r.external_donor_id, ...(Array.isArray(r.external_donor_ids) ? r.external_donor_ids : [])];
+        for (const one of ids) { const k = extKey(one); if (k && !extIdMap.has(k)) extIdMap.set(k, { id: r.id, name: r.name }); }
+      }
+    }
+    return extIdMap.get(xk) || null;
+  };
+  const findDonor = async (email, name, externalId) => {
+    const byExt = await extIdLookup(externalId);
+    if (byExt) return byExt;
     const em = String(email || "").trim().toLowerCase();
     if (em && em.includes("@")) {
       const r = await query("SELECT id, name FROM donors WHERE org_id=? AND deleted_at IS NULL AND LOWER(email)=?", [orgId, em]);
@@ -6419,7 +6501,7 @@ app.post("/donors/import-semantics", requireAuth, checkWriteAccess, wrapImport(a
   };
 
   for (const p of pledges) {
-    const donor = await findDonor(p.donorEmail, p.donorName);
+    const donor = await findDonor(p.donorEmail, p.donorName, p.donorExternalId);
     if (!donor) { counts.unresolved.push({ kind: "pledge", name: p.donorName }); continue; }
     const idem = `import:pledge:${p.externalId || `${p.donorName}:${p.amount}:${p.date || ""}`}`.slice(0, 200);
     const due = p.dueDate || p.date || (await (async () => orgToday(await orgTz(orgId)))());  // ORG_TZ_SEAM_OK
