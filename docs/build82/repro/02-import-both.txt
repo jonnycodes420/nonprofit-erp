@@ -1,0 +1,74 @@
+Steward
+⌕
+?
+B
+B82 Repro
+Sign out
+◈
+Home
+PEOPLE
+♦
+Donors
+◫
+Pipeline
+◻
+Tasks
+FUNDRAISING
+↗
+Fundraising
+◉
+Grants
+◑
+Communications
+◫
+Donor Portal
+◧
+Workflows
+INSIGHT
+▤
+Reports
+◇
+Finance
+⚙
+Settings
+Your donors.
+Import Donors
+One file — donors and their giving history · shape auto-detected · stages auto-assigned
+✕ Close
+▤
+steward-messy-25k-v3.xlsx
+7.3 MB · donors + gift history workbook
+Replace
+Remove
+Importing both sheets: donors from Donors, giving history from Gifts 2023-2026 — each gift attached to its donor.
+Link gifts to donors by
+Donor ID column
+Matched on Constituent ID. Unmatched gifts become new donor records — never dropped.
+2,282 gifts → 1,433 donors · 1,433 warnings · 53,900 gift rows skipped (no amount / no donor)
+SMART STAGE ASSIGNMENT PREVIEW
+lapsed × 437
+qualify × 691
+steward × 95
+cultivate × 178
+solicit × 32
+Based on the linked giving history. Override after import by dragging in the Kanban.
+ASSIGN THESE DONORS TO AN OFFICER
+No owner/officer column detected. Route them all now, or leave unassigned and split them from the Directory later.
+Leave unassigned (assign later from the Directory)
+Assign all to me
+← Back
+Import 1,433 donors + 2,282 gifts →
+Directory
+Team
+Re-engage
+Map
+✦ Call List
+Log a conversation
++ Add
+↑ Import & tools
+▾
+⊞ Filters
+No donors yet.
+Every relationship in Steward starts as one row — bring in a spreadsheet from Import above, or add a single name to begin.
+Add a donor →
+Explore with sample data

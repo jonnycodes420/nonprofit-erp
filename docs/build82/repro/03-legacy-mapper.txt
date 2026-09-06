@@ -1,0 +1,272 @@
+Steward
+⌕
+?
+B
+B82 Repro
+Sign out
+◈
+Home
+PEOPLE
+♦
+Donors
+◫
+Pipeline
+◻
+Tasks
+FUNDRAISING
+↗
+Fundraising
+◉
+Grants
+◑
+Communications
+◫
+Donor Portal
+◧
+Workflows
+INSIGHT
+▤
+Reports
+◇
+Finance
+⚙
+Settings
+Your donors.
+Import Donors
+One file — donors and their giving history · shape auto-detected · stages auto-assigned
+✕ Close
+▤
+steward-messy-25k-v3.xlsx
+7.3 MB · 36,050 rows · individual gifts — we'll build donors + their giving history
+Replace
+Remove
+THIS LOOKS LIKE A REPORT EXPORT — HERE'S WHAT WE SET ASIDE
+We skipped 1 line above your column headers (found on line 2): “Legacy system export (Raiser's Edge) — dates are day/month/year”.
+Not imported, not counted: the report's own TOTAL row (line 36053).
+We detected: individual gifts — we'll build donors + their giving history. (amount + gift-date columns, no lifetime-total column)
+One row per donor (totals)
+One row per gift (build history)
+Year columns (build history)
+Map gift columns (8 columns · 36,050 rows)
+Donor name
+— none —
+Date
+Amount
+ID
+Ref
+Gift Type
+Designation
+Campaign
+Notes
+Email
+— none —
+Date
+Amount
+ID
+Ref
+Gift Type
+Designation
+Campaign
+Notes
+Gift amount
+— none —
+Date
+Amount
+ID
+Ref
+Gift Type
+Designation
+Campaign
+Notes
+Gift date
+— none —
+Date
+Amount
+ID
+Ref
+Gift Type
+Designation
+Campaign
+Notes
+Type
+— none —
+Date
+Amount
+ID
+Ref
+Gift Type
+Designation
+Campaign
+Notes
+Campaign / fund
+— none —
+Date
+Amount
+ID
+Ref
+Gift Type
+Designation
+Campaign
+Notes
+Notes
+— none —
+Date
+Amount
+ID
+Ref
+Gift Type
+Designation
+Campaign
+Notes
+Gift / transaction ID
+— none —
+Date
+Amount
+ID
+Ref
+Gift Type
+Designation
+Campaign
+Notes
+Phone
+— none —
+Date
+Amount
+ID
+Ref
+Gift Type
+Designation
+Campaign
+Notes
+City
+— none —
+Date
+Amount
+ID
+Ref
+Gift Type
+Designation
+Campaign
+Notes
+State
+— none —
+Date
+Amount
+ID
+Ref
+Gift Type
+Designation
+Campaign
+Notes
+Assigned officer
+— none —
+Date
+Amount
+ID
+Ref
+Gift Type
+Designation
+Campaign
+Notes
+Rows are grouped by donor (email, else name); each row becomes one gift.
+25,107 dates use day/month/year. 14,356 would have been impossible the other way (e.g. 27/12/20, 21/04/2020, 23/04/2019) — every slash date in this column will be read day-first.
+ASSIGN THESE DONORS TO AN OFFICER
+No owner/officer column detected. Route them all now, or leave unassigned and split them from the Directory later.
+Leave unassigned (assign later from the Directory)
+Assign all to me
+No rows ready — map at least one column to name or email.
+COLUMNS WITHOUT A STANDARD HOME — 3 STILL NEED A DECISION
+ID → Number (donor field). 3,000 of 3,000 values parse as a number.
+Store it
+Text
+Long text
+Number
+Money
+Date
+Select
+Multi-select
+Yes/No
+on the donor
+on the gift
+…or map to a standard field
+donorName
+firstName
+lastName
+orgName
+donorEmail
+phone
+address
+city
+state
+zip
+owner
+externalId
+Discard
+Ref → Text (donor field). Free text. 3,000 distinct values across 3,000.
+Store it
+Text
+Long text
+Number
+Money
+Date
+Select
+Multi-select
+Yes/No
+on the donor
+on the gift
+…or map to a standard field
+donorName
+firstName
+lastName
+orgName
+donorEmail
+phone
+address
+city
+state
+zip
+owner
+externalId
+Discard
+Campaign → Text (donor field). Free text. 15 distinct values across 3,000.
+Store it
+Text
+Long text
+Number
+Money
+Date
+Select
+Multi-select
+Yes/No
+on the donor
+on the gift
+…or map to a standard field
+donorName
+firstName
+lastName
+orgName
+donorEmail
+phone
+address
+city
+state
+zip
+owner
+externalId
+Discard
+← Back
+Import 0 donors →
+Directory
+Team
+Re-engage
+Map
+✦ Call List
+Log a conversation
++ Add
+↑ Import & tools
+▾
+⊞ Filters
+No donors yet.
+Every relationship in Steward starts as one row — bring in a spreadsheet from Import above, or add a single name to begin.
+Add a donor →
+Explore with sample data

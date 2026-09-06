@@ -1,0 +1,42 @@
+uploading /Users/jonathanatkinson/Downloads/steward-messy-25k-v3.xlsx …
+sheet picker rendered after 3.4s
+— screen 1 (sheet picker) —
+  sheets offered: 8
+  | This workbook has 8 sheets with data.
+  | Import both — donors + their gift history →
+  | 56,182 rows · 11 columns
+  | 36,050 rows · 8 columns
+  | 25,302 rows · 32 columns
+  | Old export (do not use)
+  | 8,000 rows · 5 columns
+  | 600 rows · 7 columns
+  | 60 rows · 8 columns
+  | 10 rows · 8 columns
+  | 5 rows · 2 columns
+import-both summary rendered after 1.3s
+— screen 2 (import both pre-write) —
+  | Matched on Constituent ID. Unmatched gifts become new donor records — never dropped.
+  | 2,282 gifts → 1,433 donors · 1,433 warnings · 53,900 gift rows skipped (no amount / no donor)
+  | Import 1,433 donors + 2,282 gifts →
+  [pageerror] Unexpected token '<'
+  [pageerror] Unexpected token '<'
+— screen 3 (legacy sheet alone) —
+  | THIS LOOKS LIKE A REPORT EXPORT — HERE'S WHAT WE SET ASIDE
+  | We skipped 1 line above your column headers (found on line 2): “Legacy system export (Raiser's Edge) — dates are day/month/year”.
+  | ID
+  | ID
+  | ID
+  | ID
+  | ID
+  | ID
+  | ID
+  | Gift / transaction ID
+  | ID
+  | ID
+  | ID
+  | ID
+  | ID
+  | 25,107 dates use day/month/year. 14,356 would have been impossible the other way (e.g. 27/12/20, 21/04/2020, 23/04/2019) — every slash date in this column will 
+  | No rows ready — map at least one column to name or email.
+  | ID → Number (donor field). 3,000 of 3,000 values parse as a number.
+  | Import 0 donors →

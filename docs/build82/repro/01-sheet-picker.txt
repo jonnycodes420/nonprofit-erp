@@ -1,0 +1,87 @@
+Steward
+⌕
+?
+B
+B82 Repro
+Sign out
+◈
+Home
+PEOPLE
+♦
+Donors
+◫
+Pipeline
+◻
+Tasks
+FUNDRAISING
+↗
+Fundraising
+◉
+Grants
+◑
+Communications
+◫
+Donor Portal
+◧
+Workflows
+INSIGHT
+▤
+Reports
+◇
+Finance
+⚙
+Settings
+Your donors.
+Import Donors
+One file — donors and their giving history · shape auto-detected · stages auto-assigned
+✕ Close
+▤
+steward-messy-25k-v3.xlsx
+7.3 MB · 8 sheets
+Replace
+Remove
+This workbook has 8 sheets with data.
+Pick the sheet to import. You can import the others separately afterward.
+DONORS + GIFT HISTORY DETECTED
+Donors (25,302 donors) and Gifts 2023-2026 (56,182 gifts) — we can link the gifts to their donors in one pass.
+Import both — donors + their gift history →
+OR IMPORT ONE SHEET AT A TIME
+Gifts 2023-2026
+56,182 rows · 11 columns
+Use this ←
+Gifts 2019-2022
+36,050 rows · 8 columns
+Select
+Donors
+25,302 rows · 32 columns
+Select
+Old export (do not use)
+8,000 rows · 5 columns
+Select
+Recurring
+600 rows · 7 columns
+Select
+Pledges
+60 rows · 8 columns
+Select
+Cover
+10 rows · 8 columns
+Select
+Summary
+5 rows · 2 columns
+Select
+← Back
+Directory
+Team
+Re-engage
+Map
+✦ Call List
+Log a conversation
++ Add
+↑ Import & tools
+▾
+⊞ Filters
+No donors yet.
+Every relationship in Steward starts as one row — bring in a spreadsheet from Import above, or add a single name to begin.
+Add a donor →
+Explore with sample data
