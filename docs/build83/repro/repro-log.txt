@@ -1,0 +1,12 @@
+org: org_41aa58b3
+fill prompts on screen: 2 (expected defect: 2 — yellow + the subtotal-row blue)
+  the bogus blue prompt renders
+  yellow prompt quotes the legend
+  answered the blue prompt Import-as-normal (after answering yellow per-legend)
+click-to-summary: 13.4s (upload → fully-accounted pre-write summary)
+pre-write exclusion line: 700 rows carry an exclusion (deceased / do-not-contact family) — those people stay off every ask surface — including 40 hidden rows, 0 highlighted, 40 from comments.
+import write: 125.9s
+DB after commit: donors 25034 · gifts 88967 · cash $50,979,808.17 · exclusion records 693 (deceased 348, dnc 0, dns 296, dnm 72) · sustainers 600 (failed 100, stale 60) · pledges 60 · LEDGER ROWS 3107 ($1,010,106.39 income) · goals 0
+>>> THE CLOBBER REPRODUCED: do_not_contact from fill = 0 (the 100 yellow rows were chosen per-legend and NOT applied)
+  [pageerror] Unexpected token '<'
+  [pageerror] Unexpected token '<'

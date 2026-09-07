@@ -1,0 +1,166 @@
+Steward
+⌕
+?
+B
+B83
+Sign out
+◈
+Home
+PEOPLE
+♦
+Donors
+◫
+Pipeline
+◻
+Tasks
+FUNDRAISING
+↗
+Fundraising
+◉
+Grants
+◑
+Communications
+◫
+Donor Portal
+◧
+Workflows
+INSIGHT
+▤
+Reports
+◇
+Finance
+⚙
+Settings
+Your finances.
+Year basis:
+Fiscal Year
+Calendar Year
+Fiscal Year  ·  Jul 2026 – Jun 2027
+CASH ON HAND
+$1M
+All-time · income − expenses
+FY REVENUE
+$1M
+Jul 2026 – Jun 2027
+FY EXPENSES
+$0
+Jul 2026 – Jun 2027
+NET SURPLUS
+$1M
+Jul 2026 – Jun 2027
+Overview
+Transactions
+Funds
+Budgets
+Accounts
+Audit Log
++ Add account
+ASSETS
+1010
+Cash & Cash Equivalents
+$0
+Edit
+1020
+Savings / Reserve Account
+$0
+Edit
+1100
+Accounts Receivable
+$0
+Edit
+1200
+Prepaid Expenses
+$0
+Edit
+LIABILITIES
+2010
+Accounts Payable
+$0
+Edit
+2100
+Accrued Expenses
+$0
+Edit
+2200
+Deferred Revenue
+$0
+Edit
+NET ASSETS
+3010
+Unrestricted Net Assets
+$0
+Edit
+3100
+Temporarily Restricted Net Assets
+$0
+Edit
+3200
+Permanently Restricted Net Assets
+$0
+Edit
+REVENUES
+4010
+Individual Contributions
+$1,010,106.39
+Edit
+4020
+Foundation Grants
+$0
+Edit
+4030
+Government Grants
+$0
+Edit
+4040
+Program Revenue
+$0
+Edit
+4050
+Special Events Revenue
+$0
+Edit
+4060
+Other Revenue
+$0
+Edit
+EXPENSES
+5010
+Program Services — Salaries
+$0
+Edit
+5020
+Program Services — Supplies
+$0
+Edit
+5030
+Program Services — Contractors
+$0
+Edit
+5040
+Program Services — Occupancy
+$0
+Edit
+6010
+Management & General — Salaries
+$0
+Edit
+6020
+Management & General — Admin
+$0
+Edit
+6030
+Management & General — Technology
+$0
+Edit
+7010
+Fundraising — Salaries
+$0
+Edit
+7020
+Fundraising — Events
+$0
+Edit
+7030
+Fundraising — Marketing
+$0
+Edit
