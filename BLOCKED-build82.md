@@ -39,3 +39,17 @@ fold measures **266** (every fold with a reason + the folded ID on the review li
 the golden suite pins 266. The ~34 the spec's number implies beyond that would need
 a looser key (name+address matched nothing; nickname-compatible email pairs may be
 the remainder) — not loosened without Jonathan's say-so.
+
+
+---
+
+## RESOLVED Sept 7 — Cowork's real key arrived (claude/messy-25k-v3-fixture-key.md)
+Every open question above closed:
+- **Net cash**: the BUILD-82 spec's $53,231,102.55 was WRONG (Cowork's own correction). The key's
+  figure is **$52,376,921.72** — exactly the two TOTAL rows, which BUILD-82 had already measured.
+  The "$463,902.52 generator-side gap" was the spec's error plus two things BUILD-83 fixes:
+  896 trailing-minus rows Cowork wrote by mistake (Steward's negative read is RIGHT — "do not fix
+  the parser to match the key") and the 843 constant formulas + 721 collided legacy Refs.
+- **Duplicates**: the key plants 300 (BUILD-82's fold found 266); 336 gifts posted to second IDs.
+- **Orphans**: 500 confirmed (288 + 212), matching BUILD-82's measurement exactly.
+- The corrected reconciliation and all follow-on work live in BUILD-83 (BLOCKED-build83.md).
