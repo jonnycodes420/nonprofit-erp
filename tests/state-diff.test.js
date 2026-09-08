@@ -211,7 +211,10 @@ async function buildFixture() {
   // A8 — advance a move stage + log an ask
   {
     const donorId = idByEmail[em(FIX.A8.donor)];
-    const st = (await q(`SELECT stage FROM donors WHERE id=$1`, [donorId]))[0].stage;
+    // BUILD-83 Part 3.5 — the column a donor is IN is the placed stage or, for
+    // an imported donor nobody has touched, the suggestion. The move writes a
+    // real `stage`: a human moving the card IS the decision.
+    const st = (await q(`SELECT COALESCE(stage, suggested_stage) AS stage FROM donors WHERE id=$1`, [donorId]))[0].stage;
     const to = st === "cultivate" ? "solicit" : "cultivate";
     const mv = await api("POST", `/pipeline/${donorId}/move`, token, { toStage: to, description: "state-diff A8 move" });
     ok("A8 move: 200/201", mv.status === 200 || mv.status === 201, { status: mv.status, body: mv.body });

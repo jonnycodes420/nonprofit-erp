@@ -2155,7 +2155,13 @@ function portfolioMembership({ orgId, userId, scope = "mine", assignedTo = null,
   // belt-and-braces guard so a donor in some non-pipeline stage can never make the
   // Portfolio card, the Pipeline card, and the board disagree — all three exclude
   // it identically. It also keeps the board's per-stage columns exhaustive.
-  const clauses = [`${a}org_id = ?`, `${a}deleted_at IS NULL`, `${a}stage = ANY(?)`];
+  // BUILD-83 Part 3.5 — an imported donor's `stage` is NULL until a human
+  // places them, but assignment IS membership (BUILD-30's single definition):
+  // assigning someone from an import must never make them vanish off the board.
+  // So membership reads the placed stage OR the suggestion, and the CARD says
+  // which it is. Moving the card writes `stage` and the suggestion stops
+  // mattering for that donor.
+  const clauses = [`${a}org_id = ?`, `${a}deleted_at IS NULL`, `COALESCE(${a}stage, ${a}suggested_stage) = ANY(?)`];
   const params = [orgId, ALL_PIPELINE_STAGES];
   if (assignedTo) {
     clauses.push(`${a}assigned_to = ?`); params.push(String(assignedTo));
@@ -4500,9 +4506,18 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(as
         d.donorType || null, d.board === true,
         d.householdId || null,
         Array.isArray(d.externalDonorIds) && d.externalDonorIds.length ? JSON.stringify(d.externalDonorIds) : null,
-        d.firstGift || null
+        d.firstGift || null,
+        // BUILD-83 Part 3.5 — the inference the CLIENT made (from the aggregate
+        // total/last-gift columns) is a suggestion too, and it is the only one a
+        // donor with no gift rows will ever get: the post-insert pass below only
+        // revisits donors whose gifts landed. Without this a gift-less prospect
+        // came out of the import with no stage and no suggestion at all.
+        // …and a donor the file says nothing about is still a PROSPECT — the
+        // default the insert always used. A suggestion of "we don't know yet"
+        // is a suggestion; leaving it null would drop them off every board.
+        d._stageExplicit ? null : (d.stage || "prospect")
       );
-      return "(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)";
+      return "(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)";
     });
     // SAVEPOINT, not a nested transaction: we are already inside the request's
     // one transaction, so a failed batch must be rolled back to a point rather
@@ -4515,7 +4530,7 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(as
           do_not_solicit,do_not_mail,do_not_email,deceased_date,address,zip,
           imported_sustainer,imported_sustainer_amount,imported_sustainer_last_gift,custom_fields,external_donor_id,kind,
           middle_name,suffix,salutation,spouse_name,email2,mobile,address2,country,
-          donor_type,board_member,external_household_id,external_donor_ids,first_gift_date)
+          donor_type,board_member,external_household_id,external_donor_ids,first_gift_date,suggested_stage)
        VALUES ${tuples.join(",")}`,
       params
     ));
@@ -7322,7 +7337,7 @@ app.get("/portfolio/officers", requireAuth, wrap(async (req, res) => {
     `SELECT u.id, u.name, u.email, u.role, u.portfolio_color,
             COUNT(d.id)::int AS portfolio_count, COALESCE(SUM(d.total_giving),0) AS portfolio_giving
      FROM users u
-     LEFT JOIN donors d ON d.assigned_to = u.id AND d.org_id = u.org_id AND d.deleted_at IS NULL AND d.stage = ANY(?)
+     LEFT JOIN donors d ON d.assigned_to = u.id AND d.org_id = u.org_id AND d.deleted_at IS NULL AND COALESCE(d.stage, d.suggested_stage) = ANY(?)
      WHERE u.org_id=? GROUP BY u.id ORDER BY portfolio_giving DESC, u.name`, [ALL_PIPELINE_STAGES, req.user.orgId]);
   // Pending invitees (invited, not yet accepted, unexpired) are surfaced too so
   // the import officer-mapping screen can match + assign donors to them BEFORE
@@ -7427,7 +7442,8 @@ app.get("/pipeline", requireAuth, wrap(async (req, res) => {
   if (Number.isFinite(minGiving) && minGiving > 0) { filters.push("d.total_giving >= ?"); params.push(minGiving); }
 
   const donors = await query(
-    `SELECT d.id, d.name, d.stage, d.total_giving, d.last_gift_date, d.assigned_to, d.assigned_to_name, d.updated_at, d.created_at
+    `SELECT d.id, d.name, COALESCE(d.stage, d.suggested_stage) AS stage, (d.stage IS NULL) AS stage_suggested,
+            d.total_giving, d.last_gift_date, d.assigned_to, d.assigned_to_name, d.updated_at, d.created_at
        FROM donors d WHERE ${filters.join(" AND ")}`, params);
 
   // Open asks aggregated per donor (org-wide, joined in JS).
@@ -7466,6 +7482,9 @@ app.get("/pipeline", requireAuth, wrap(async (req, res) => {
     const stageAge = enteredStage ? Math.max(0, Math.floor((now - new Date(enteredStage).getTime()) / 86400000)) : null;
     (columns[d.stage] = columns[d.stage] || []).push({
       donorId: d.id, name: d.name, stage: d.stage,
+      // BUILD-83 Part 3.5 — the card says whether a human placed this donor or
+      // the giving history merely suggests it.
+      stageSuggested: d.stage_suggested === true || d.stage_suggested === "t",
       totalGiving: parseFloat(d.total_giving) || 0,
       lastGiftDate: d.last_gift_date || null,
       assignedTo: d.assigned_to, assignedToName: d.assigned_to_name,

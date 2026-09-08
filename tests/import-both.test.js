@@ -124,13 +124,21 @@ const countDonors = async o => (await q(`SELECT COUNT(*)::int n FROM donors WHER
 
   const jane = await donorRow(A, "jane@x.org");
   ok("Jane total = sum of linked gifts (500)", Number(jane.total_giving) === 500, jane.total_giving);
-  ok("Jane smart-staged from recent gift → steward", jane.stage === "steward", jane.stage);
+  // ── CONTRACT CHANGE, BUILD-83 Part 3.5 (deliberate, reviewed) ────────────
+  // A PIPELINE STAGE IS A DECISION. Giving history can suggest one; it cannot
+  // make one. An import now writes `suggested_stage` and leaves `stage` NULL
+  // until a human places the donor, so a funnel reading "Cultivate 3,143 ·
+  // Solicit 926 · Steward 2,719" the minute a file lands can say plainly that
+  // nobody decided any of it. The INFERENCE is unchanged and still asserted —
+  // it just lands in the column that says it is a suggestion.
+  ok("Jane's stage is NOT decided by the import", jane.stage === null, jane.stage);
+  ok("Jane suggested from recent gift → steward", jane.suggested_stage === "steward", jane.suggested_stage);
   const bob = await donorRow(A, "bob@x.org");
-  ok("Bob smart-staged (>365d) → lapsed", bob.stage === "lapsed", bob.stage);
+  ok("Bob suggested (>365d) → lapsed, stage still undecided", bob.suggested_stage === "lapsed" && bob.stage === null, { s: bob.stage, sug: bob.suggested_stage });
   const carol = await donorRow(A, "carol@x.org");
-  ok("Carol smart-staged ($1500 @120d) → solicit", carol.stage === "solicit", carol.stage);
+  ok("Carol suggested ($1500 @120d) → solicit, stage still undecided", carol.suggested_stage === "solicit" && carol.stage === null, { s: carol.stage, sug: carol.suggested_stage });
   const dave = await donorRow(A, "dave@x.org");
-  ok("Dave (unmatched) created with his gift → steward", dave && dave.stage === "steward" && Number(dave.total_giving) === 250, dave);
+  ok("Dave (unmatched) created with his gift, suggested steward", dave && dave.suggested_stage === "steward" && dave.stage === null && Number(dave.total_giving) === 250, dave);
 
   // Re-run — every DONOR dedupes by email and no donor row is created. Their
   // GIFTS now land and are flagged (BUILD-72 Part 1; the old "attached 0 gifts"

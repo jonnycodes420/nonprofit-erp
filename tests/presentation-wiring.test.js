@@ -177,10 +177,25 @@ const rendersMoney = (text, n) => text.includes(fmtFull(n)) || text.includes(fmt
       } else {
         ok(`${label} Home hero: no goal (API) → no thermometer % claimed`, true);
       }
-      if (Number.isFinite(A.tasksTotal) && width >= 1000) {
-        ok(`${label} Home: tasks card count (${A.tasksTotal}) rendered`,
-          new RegExp(`(^|\\n)\\s*${A.tasksTotal}\\s*($|\\n)`).test(text) || text.includes(`${A.tasksTotal} task`) || new RegExp(`Tasks[\\s\\S]{0,40}\\b${A.tasksTotal}\\b`).test(text),
-          null);
+      // ── BUILD-83 Part 3.1/3.4 — ONE NUMBER, ONE CODE PATH ────────────────
+      // The four tiles (Portfolio / Tasks / Need to do / Pipeline) are GONE:
+      // their contents live in the cards above or in the checklist, and they
+      // contradicted them ("0 prospects" beside a funnel of thousands, "0
+      // donors" the screen after importing 25,034). What replaces the old
+      // tile assertion is the property the tiles were breaking — no sentence
+      // on Home contradicts another sentence on Home about the same cohort.
+      // Each pair below is one Jonathan hit on the Sept-7 production run.
+      if (width >= 1000) {
+        ok(`${label} Home: the four zero-tiles are gone (Portfolio/Tasks/Need to do/Pipeline)`,
+           !/\bNEED TO DO\b/i.test(text), (text.match(/NEED TO DO/gi) || []).slice(0, 2));
+        ok(`${label} Home: no "quiet donors" cohort anywhere — at risk is the next gift, not the lifetime`,
+           !/quiet donors?/i.test(text) && !/no gift in over/i.test(text), (text.match(/.{0,40}quiet donor.{0,40}/i) || [])[0]);
+        ok(`${label} Home: the footer never staples a risk figure to "no platform fee"`,
+           !/at risk[\s\S]{0,80}No platform fee/i.test(text), (text.match(/at risk[\s\S]{0,80}No platform fee/i) || [])[0]);
+        ok(`${label} Home: a portfolio with nobody assigned says so, never "0 donors" beside a full file`,
+           !/\b0\s*\n?\s*donors\b/i.test(text) || /no one assigned/i.test(text), (text.match(/.{0,30}0\s*\n?\s*donors.{0,30}/i) || [])[0]);
+        ok(`${label} Home: no auto-set goal — a goal is something a human entered`,
+           !/Win back \$[\d,]+ in lapsed giving/i.test(text), (text.match(/Win back[^\n]*/i) || [])[0]);
       }
     }
 

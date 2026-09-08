@@ -40,8 +40,19 @@ async function seedUser(o, tag) {
   await q(`INSERT INTO users (id,org_id,email,password_hash,name,role) VALUES ($1,$2,$3,$4,$5,'admin')`,
     ["u_" + o, o, `${tag}@is.local`, bcrypt.hashSync("loadtest1234", 10), `User ${tag}`]);
 }
-// Map of donor name → stage for one org.
+// ── CONTRACT CHANGE, BUILD-83 Part 3.5 (deliberate, reviewed) ──────────────
+// A PIPELINE STAGE IS A DECISION. Giving history can suggest one; it cannot
+// make one. An import writes `suggested_stage` and leaves `stage` NULL until a
+// human places the donor — so a funnel the minute a file lands can say plainly
+// that nobody decided any of it. The INFERENCE ITSELF is unchanged, and every
+// case below still asserts exactly what it always did; it just reads the column
+// that admits it is a suggestion. `placedStagesByName` proves the other half:
+// an explicit stage column in the FILE is a decision and still lands in `stage`.
 async function stagesByName(o) {
+  const rows = await q(`SELECT name, COALESCE(stage, suggested_stage) AS stage FROM donors WHERE org_id=$1 AND deleted_at IS NULL`, [o]);
+  return Object.fromEntries(rows.map(r => [r.name, r.stage]));
+}
+async function placedStagesByName(o) {
   const rows = await q(`SELECT name, stage FROM donors WHERE org_id=$1 AND deleted_at IS NULL`, [o]);
   return Object.fromEntries(rows.map(r => [r.name, r.stage]));
 }
@@ -88,6 +99,13 @@ const donorId = async (o, name) => (await q(`SELECT id FROM donors WHERE org_id=
   ok("no gift + contact keeps qualify",    st["Contactable Prospect"] === "qualify", st);
   ok("explicit stage column wins over inference", st["Explicit Cultivate"] === "cultivate", st);
   ok("non-explicit client guess overridden by server inference", st["Guess Lapsed"] === "steward", st);
+  // The other half of the contract: NOTHING inferred was decided, and the one
+  // donor the FILE placed explicitly is the one donor with a real stage.
+  const placed = await placedStagesByName(A);
+  ok("nothing the import inferred is a DECISION — every inferred stage is null",
+     ["Margaret Chen", "Robert Atkinson", "Solicit Ready", "Cultivate Mid", "No Gift Prospect", "Contactable Prospect", "Guess Lapsed"]
+       .every(n => placed[n] === null), placed);
+  ok("the stage the FILE stated IS a decision and lands in `stage`", placed["Explicit Cultivate"] === "cultivate", placed);
 
   // Hard credit invariant sanity: the explicit-cultivate donor really did get
   // its recent gift (so 'cultivate' is genuinely the explicit override, not a

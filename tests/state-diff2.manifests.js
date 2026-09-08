@@ -280,7 +280,13 @@ function buildManifests2(ctx) {
       "counts.subsActive": { d: 1 },
       "recurring.active": { d: 1 },
       "tasks.open": { d: 1 }, // the welcome task
-      [`donors.perDonor.${em(FIX2.B11.donor)}.stage`]: { to: "steward" }, // a lapsed donor starting a subscription steps to steward
+      // CONTRACT CHANGE, BUILD-83 Part 3.5 (deliberate, reviewed): the
+      // auto-unlapse-on-gift step fires for a donor a human PLACED at lapsed.
+      // This fixture donor was never placed — the import only SUGGESTED lapsed
+      // — so there is no decision to revise, and the product does not invent
+      // one on the donor's behalf. Their suggestion still updates with their
+      // giving; what stays still is `stage`, which is the point.
+      [`donors.perDonor.${em(FIX2.B11.donor)}.stage`]: { d: 0 },
     },
     allow: [], reversalExclude: APPEND_ONLY,
   };

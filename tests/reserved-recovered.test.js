@@ -166,44 +166,33 @@ function chunksOf(line) {
   ok("recent momentum figure is the re-engaged slice only", Number(goal.recentAmount) === 1000, goal.recentAmount);
   ok("recent momentum donor count is 1 (the winback donor)", Number(goal.recentDonorCount) === 1, goal.recentDonorCount);
 
-  // ── 3. Live: GET /impact LEADS with at risk, and says nothing else ──
-  // Donor QD lapsed and never came back — $2,400 of lifetime giving sitting
-  // quiet. That is the number the product now leads with.
+  // ── 3. Live: GET /impact carries the attributable figures, and NOT a
+  // lifetime-giving "at risk" cohort ──────────────────────────────────────
+  // CONTRACT CHANGE, BUILD-83 Part 3.3 (deliberate, reviewed): the quiet-donor
+  // cohort is DELETED. It summed the LIFETIME giving of every donor with no
+  // gift in six months, which on a real file is most of the file — "$38.7M at
+  // risk across 19,855 quiet donors" was 79% of a 25,000-donor import, and it
+  // is the number that makes an ED close the laptop. At risk is the NEXT gift,
+  // not the lifetime, and the donors at risk are the ones past their OWN
+  // pattern — which is Drift, donor by donor, with a sentence. So this section
+  // now asserts the cohort is GONE and that /impact still carries the honest,
+  // attributable figures it was always allowed to claim.
   await q(`INSERT INTO donors (id,org_id,name,email,status,stage,gift_count,total_giving) VALUES ('d_quiet',$1,'Quiet Quinn','quiet@rr.local','mid','lapsed',1,2400)`, [A]);
   await q(`INSERT INTO gifts (id,org_id,donor_id,amount,date) VALUES ('g_quiet',$1,'d_quiet',2400,$2)`, [A, daysAgo(800)]);
   const impact = (await api("GET", "/impact", tA)).body;
 
-  ok("/impact exposes atRiskAmount", typeof impact.atRiskAmount === "number", impact.atRiskAmount);
-  ok("/impact exposes quietDonorCount", typeof impact.quietDonorCount === "number", impact.quietDonorCount);
-  ok("the quiet donor's lifetime giving is counted as at risk ($2,400)",
-     Math.round(impact.atRiskAmount * 100) === 240000, impact.atRiskAmount);
-  ok("exactly one donor is counted as quiet", impact.quietDonorCount === 1, impact.quietDonorCount);
-  ok("the drill-down names the same donor the figure claims",
-     (impact.atRiskDonors || []).length === 1 && impact.atRiskDonors[0].id === "d_quiet",
-     impact.atRiskDonors);
-  ok("the drill-down total equals the headline figure — every aggregate drills into its source",
-     Math.round((impact.atRiskDonors || []).reduce((s, r) => s + r.amount, 0) * 100)
-       === Math.round(impact.atRiskAmount * 100), impact.atRiskDonors);
-  // The donors who gave again are NOT at risk — they are not quiet.
-  ok("a donor who gave recently is NOT counted as at risk",
-     !(impact.atRiskDonors || []).some(r => r.id === "d_wb" || r.id === "d_rp"), impact.atRiskDonors);
-
-  // The band that matters: a donor 200 days quiet is DRIFTING and must be
-  // counted, even though the 365-day lapse sweep would still call them active.
-  // This is the difference between telling Steward's story and telling the
-  // lapsed-recapture story every other tool tells.
-  await q(`INSERT INTO donors (id,org_id,name,email,status,stage,gift_count,total_giving) VALUES ('d_drift',$1,'Drifting Dana','drift@rr.local','mid','cultivate',1,5000)`, [A]);
-  await q(`INSERT INTO gifts (id,org_id,donor_id,amount,date) VALUES ('g_drift',$1,'d_drift',5000,$2)`, [A, daysAgo(200)]);
-  const impact2 = (await api("GET", "/impact", tA)).body;
-  ok("a donor quiet for 200 days IS at risk — drifting, not yet lapsed",
-     (impact2.atRiskDonors || []).some(r => r.id === "d_drift"), impact2.atRiskDonors);
-  ok("...and the headline figure grew by exactly their lifetime giving ($5,000)",
-     Math.round((impact2.atRiskAmount - impact.atRiskAmount) * 100) === 500000,
-     { before: impact.atRiskAmount, after: impact2.atRiskAmount });
-  // 180, not 365 — see server.js QUIET_DAYS. The figure is about DRIFT (a donor
-  // slipping, still reachable), not about recapture (a donor already gone).
-  ok("the quiet threshold is stated in the payload, not implied",
+  ok("/impact no longer publishes a lifetime-giving at-risk headline",
+     impact.atRiskAmount === undefined && impact.quietDonorCount === undefined,
+     { atRiskAmount: impact.atRiskAmount, quietDonorCount: impact.quietDonorCount });
+  ok("the re-engagement LIST survives (a list of people to call is not a headline dollar figure)",
+     Array.isArray(impact.reengageCandidates) && impact.reengageCandidates.some(r => r.id === "d_quiet"),
+     impact.reengageCandidates);
+  ok("the attributable figures are still there and still separate",
+     typeof impact.recoveredAmount === "number" && typeof impact.reengagedAmount === "number"
+     && impact.platformFeesPaid === 0, { r: impact.recoveredAmount, re: impact.reengagedAmount });
+  ok("the quiet threshold is still stated in the payload, not implied",
      impact.quietSinceDays === 180, impact.quietSinceDays);
+
   // And nothing in the payload carries a banned LABEL (field names are fine).
   const labels = JSON.stringify(impact).match(/"[^"]{6,}"/g) || [];
   const badLabel = labels.filter(l => !/^"[a-zA-Z0-9_]+"$/.test(l) && FAMILY.some(f => f.re.test(l)));

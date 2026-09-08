@@ -423,7 +423,12 @@ function buildManifests(ctx) {
       "reports.solicitations.byOfficer.Wap Officer.asksMade": { d: 1 },
     },
     allow: ["^reports\\.solicitations\\.byStage"],
-    reversalExclude: APPEND_ONLY,
+    // BUILD-83 Part 3.5 — moving the card back restores the COLUMN but not the
+    // undecidedness: `stage` was NULL (imported, nobody had placed this donor)
+    // and both moves are human decisions, so the donor stays placed afterwards.
+    // That is the decision trail working, exactly like the append-only move and
+    // interaction rows beside it — not a leak.
+    reversalExclude: [...APPEND_ONLY, `^donors\\.perDonor\\.${em(FIX.A8.donor).replace(/[.+]/g, "\\$&")}\\.stage$`],
   });
 
   // ── A9a: record a pledge (campaign-attributed) ──

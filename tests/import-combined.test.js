@@ -64,14 +64,18 @@ const countGifts  = async o => (await q(`SELECT COUNT(*)::int n FROM gifts WHERE
   ok("Jane gift_count = 3", Number(jane.gift_count) === 3, jane.gift_count);
   ok("Jane last_gift_amount = most-recent (400)", Number(jane.last_gift_amount) === 400, jane.last_gift_amount);
   ok("Jane last_gift_date = most-recent", iso(jane.last_gift_date) === daysAgo(20), jane.last_gift_date);
-  ok("Jane recent gift → steward", jane.stage === "steward", jane.stage);
+  // CONTRACT CHANGE, BUILD-83 Part 3.5 (deliberate, reviewed): the smart-stage
+  // INFERENCE is unchanged and still asserted — it now lands in
+  // `suggested_stage`, because a stage is a decision a human makes and an
+  // import cannot make one. `stage` stays NULL until someone places the donor.
+  ok("Jane recent gift → suggested steward, stage undecided", jane.suggested_stage === "steward" && jane.stage === null, { s: jane.stage, sug: jane.suggested_stage });
 
   const bob = await donorRow(A, "bob@ic.local");
   ok("Bob total = 3500", Number(bob.total_giving) === 3500, bob.total_giving);
-  ok("Bob >365d → lapsed", bob.stage === "lapsed", bob.stage);
+  ok("Bob >365d → suggested lapsed, stage undecided", bob.suggested_stage === "lapsed" && bob.stage === null, { s: bob.stage, sug: bob.suggested_stage });
 
   const carol = await donorRow(A, "carol@ic.local");
-  ok("Carol $1500 @120d → solicit", carol.stage === "solicit", carol.stage);
+  ok("Carol $1500 @120d → suggested solicit, stage undecided", carol.suggested_stage === "solicit" && carol.stage === null, { s: carol.stage, sug: carol.suggested_stage });
 
   // ── 2. Re-run — donors dedupe; gifts LAND and are FLAGGED (BUILD-72 Part 1) ──
   // REVIEWED MONEY-CONTRACT CHANGE. This used to assert "re-run attaches 0 new
@@ -127,7 +131,7 @@ const countGifts  = async o => (await q(`SELECT COUNT(*)::int n FROM gifts WHERE
   ok("1,500-donor import finishes fast (< 10s — no N+1 recalc hang)", bigMs < 10000, bigMs + "ms");
   const sample = await donorRow(A, "big750@ic.local");
   ok("sampled big donor recalced (total 850)", Number(sample.total_giving) === 850, sample.total_giving);
-  ok("sampled big donor recent gift → steward", sample.stage === "steward", sample.stage);
+  ok("sampled big donor recent gift → suggested steward", sample.suggested_stage === "steward" && sample.stage === null, { s: sample.stage, sug: sample.suggested_stage });
   // BUILD-57 §2b — import-minted ids carry FULL uuid entropy (32 hex). The old
   // 8-hex ids birthday-collided at multi-tenant scale and ONE collision
   // aborted a whole 500-row batch (BUILD-54 finding, hit live in a pre-push).
